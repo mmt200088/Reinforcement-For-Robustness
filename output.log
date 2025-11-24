@@ -1,0 +1,161 @@
+/root/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/root/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/file_download.py:943: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+/root/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/root/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+Finetuning model with params:
+base_model: textattack/bert-base-uncased-STS-B
+data_path: stsb
+output_dir: output.log
+batch_size: 16
+micro_batch_size: 16
+num_epochs: 1
+learning_rate: 0.0002
+cutoff_len: 256
+val_set_size: 120
+use_gradient_checkpointing: False
+lora_r: 32
+lora_alpha: 64
+lora_dropout: 0.05
+lora_target_modules: None
+Wdecompose_target_modules: None
+bottleneck_size: 256
+non_linearity: tanh
+adapter_dropout: 0.0
+use_parallel_adapter: True
+use_adapterp: False
+train_on_inputs: True
+scaling: 1.0
+adapter_name: lora
+target_modules: ['q_proj', 'k_proj', 'v_proj', 'up_proj', 'down_proj']
+group_by_length: False
+wandb_project: 
+wandb_run_name: 
+wandb_watch: 
+wandb_log_model: 
+resume_from_checkpoint: None
+
+BertForSequenceClassification(
+  (bert): BertModel(
+    (embeddings): BertEmbeddings(
+      (word_embeddings): Embedding(30522, 768, padding_idx=0)
+      (position_embeddings): Embedding(512, 768)
+      (token_type_embeddings): Embedding(2, 768)
+      (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+      (dropout): Dropout(p=0.1, inplace=False)
+    )
+    (encoder): BertEncoder(
+      (layer): ModuleList(
+        (0-11): 12 x BertLayer(
+          (attention): BertAttention(
+            (self): BertSelfAttention(
+              (query): Linear(in_features=768, out_features=768, bias=True)
+              (key): Linear(in_features=768, out_features=768, bias=True)
+              (value): Linear(in_features=768, out_features=768, bias=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+            (output): BertSelfOutput(
+              (dense): Linear(in_features=768, out_features=768, bias=True)
+              (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+          )
+          (intermediate): BertIntermediate(
+            (dense): Linear(in_features=768, out_features=3072, bias=True)
+            (intermediate_act_fn): GELUActivation()
+          )
+          (output): BertOutput(
+            (dense): Linear(in_features=3072, out_features=768, bias=True)
+            (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+            (dropout): Dropout(p=0.1, inplace=False)
+          )
+        )
+      )
+    )
+    (pooler): BertPooler(
+      (dense): Linear(in_features=768, out_features=768, bias=True)
+      (activation): Tanh()
+    )
+  )
+  (dropout): Dropout(p=0.1, inplace=False)
+  (classifier): Linear(in_features=768, out_features=1, bias=True)
+)
+Loading dataset: Dataset({
+    features: ['sentence1', 'sentence2', 'label', 'idx'],
+    num_rows: 1500
+})
+Map:   0%|          | 0/5749 [00:00<?, ? examples/s]Map:   4%|▍         | 237/5749 [00:00<00:02, 2325.65 examples/s]Map:   9%|▉         | 537/5749 [00:00<00:01, 2716.91 examples/s]Map:  15%|█▍        | 844/5749 [00:00<00:01, 2871.47 examples/s]Map:  21%|██        | 1199/5749 [00:00<00:01, 2619.61 examples/s]Map:  26%|██▋       | 1513/5749 [00:00<00:01, 2784.55 examples/s]Map:  32%|███▏      | 1828/5749 [00:00<00:01, 2894.34 examples/s]Map:  38%|███▊      | 2204/5749 [00:00<00:01, 2733.60 examples/s]Map:  43%|████▎     | 2485/5749 [00:00<00:01, 2753.48 examples/s]Map:  49%|████▊     | 2795/5749 [00:01<00:01, 2850.92 examples/s]Map:  55%|█████▌    | 3174/5749 [00:01<00:00, 2724.01 examples/s]Map:  61%|██████    | 3490/5749 [00:01<00:00, 2837.51 examples/s]Map:  66%|██████▌   | 3808/5749 [00:01<00:00, 2929.42 examples/s]Map:  73%|███████▎  | 4185/5749 [00:01<00:00, 2773.39 examples/s]Map:  78%|███████▊  | 4504/5749 [00:01<00:00, 2879.86 examples/s]Map:  84%|████████▍ | 4822/5749 [00:01<00:00, 2959.52 examples/s]Map:  90%|█████████ | 5195/5749 [00:01<00:00, 2781.97 examples/s]Map:  96%|█████████▌| 5512/5749 [00:01<00:00, 2878.97 examples/s]Map: 100%|██████████| 5749/5749 [00:02<00:00, 2794.07 examples/s]
+Map:   0%|          | 0/1500 [00:00<?, ? examples/s]Map:  20%|██        | 302/1500 [00:00<00:00, 2983.27 examples/s]Map:  41%|████      | 611/1500 [00:00<00:00, 3041.46 examples/s]Map:  67%|██████▋   | 1000/1500 [00:00<00:00, 2662.23 examples/s]Map:  87%|████████▋ | 1298/1500 [00:00<00:00, 2456.52 examples/s]Map: 100%|██████████| 1500/1500 [00:00<00:00, 2117.70 examples/s]
+Map:   0%|          | 0/1379 [00:00<?, ? examples/s]Map:  13%|█▎        | 175/1379 [00:00<00:00, 1712.12 examples/s]Map:  28%|██▊       | 381/1379 [00:00<00:00, 1471.12 examples/s]Map:  48%|████▊     | 663/1379 [00:00<00:00, 1996.99 examples/s]Map:  70%|██████▉   | 960/1379 [00:00<00:00, 2341.50 examples/s]Map:  96%|█████████▌| 1327/1379 [00:00<00:00, 2383.67 examples/s]Map: 100%|██████████| 1379/1379 [00:00<00:00, 2166.63 examples/s]
+You're using a BertTokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
+7414852fbdc1:435171:435171 [0] NCCL INFO cudaDriverVersion 12080
+7414852fbdc1:435171:435171 [0] NCCL INFO Bootstrap: Using eth0:172.17.0.3<0>
+7414852fbdc1:435171:435171 [0] NCCL INFO NCCL version 2.26.2+cuda12.2
+7414852fbdc1:435171:435566 [1] NCCL INFO NET/Plugin: Could not find: libnccl-net.so. Using internal net plugin.
+7414852fbdc1:435171:435566 [1] NCCL INFO NET/IB : Using [0]mlx5_0:1/RoCE [RO]; OOB eth0:172.17.0.3<0>
+7414852fbdc1:435171:435566 [1] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so. 
+7414852fbdc1:435171:435566 [1] NCCL INFO Using network IB
+7414852fbdc1:435171:435565 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so. 
+7414852fbdc1:435171:435565 [0] NCCL INFO Using network IB
+7414852fbdc1:435171:435566 [1] NCCL INFO ncclCommInitAll comm 0x22200fa0 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId a1000 commId 0xd9d3a79a9d0c066a - Init START
+7414852fbdc1:435171:435565 [0] NCCL INFO ncclCommInitAll comm 0x221813e0 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 41000 commId 0xd9d3a79a9d0c066a - Init START
+7414852fbdc1:435171:435566 [1] NCCL INFO RAS client listening socket at ::1<28028>
+7414852fbdc1:435171:435566 [1] NCCL INFO Bootstrap timings total 0.004954 (create 0.000061, send 0.000207, recv 0.002129, ring 0.000794, delay 0.000000)
+7414852fbdc1:435171:435565 [0] NCCL INFO Bootstrap timings total 0.004588 (create 0.000529, send 0.001436, recv 0.000520, ring 0.000314, delay 0.000001)
+7414852fbdc1:435171:435566 [1] NCCL INFO Setting affinity for GPU 1 to ff00,00000000,0000ff00,00000000
+7414852fbdc1:435171:435565 [0] NCCL INFO Setting affinity for GPU 0 to ff0000,00000000,00ff0000
+7414852fbdc1:435171:435565 [0] NCCL INFO comm 0x221813e0 rank 0 nRanks 2 nNodes 1 localRanks 2 localRank 0 MNNVL 0
+7414852fbdc1:435171:435566 [1] NCCL INFO comm 0x22200fa0 rank 1 nRanks 2 nNodes 1 localRanks 2 localRank 1 MNNVL 0
+7414852fbdc1:435171:435566 [1] NCCL INFO Trees [0] -1/-1/-1->1->0 [1] 0/-1/-1->1->-1 [2] -1/-1/-1->1->0 [3] 0/-1/-1->1->-1
+7414852fbdc1:435171:435566 [1] NCCL INFO P2P Chunksize set to 131072
+7414852fbdc1:435171:435565 [0] NCCL INFO Channel 00/04 : 0 1
+7414852fbdc1:435171:435565 [0] NCCL INFO Channel 01/04 : 0 1
+7414852fbdc1:435171:435565 [0] NCCL INFO Channel 02/04 : 0 1
+7414852fbdc1:435171:435565 [0] NCCL INFO Channel 03/04 : 0 1
+7414852fbdc1:435171:435565 [0] NCCL INFO Trees [0] 1/-1/-1->0->-1 [1] -1/-1/-1->0->1 [2] 1/-1/-1->0->-1 [3] -1/-1/-1->0->1
+7414852fbdc1:435171:435565 [0] NCCL INFO P2P Chunksize set to 131072
+7414852fbdc1:435171:435565 [0] NCCL INFO Check P2P Type intraNodeP2pSupport 0 directMode 1
+7414852fbdc1:435171:435569 [1] NCCL INFO [Proxy Service] Device 1 CPU core 108
+7414852fbdc1:435171:435570 [0] NCCL INFO [Proxy Service] Device 0 CPU core 21
+7414852fbdc1:435171:435571 [1] NCCL INFO [Proxy Service UDS] Device 1 CPU core 105
+7414852fbdc1:435171:435572 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 81
+7414852fbdc1:435171:435566 [1] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+7414852fbdc1:435171:435566 [1] NCCL INFO 4 coll channels, 4 collnet channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+7414852fbdc1:435171:435565 [0] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+7414852fbdc1:435171:435565 [0] NCCL INFO 4 coll channels, 4 collnet channels, 0 nvls channels, 4 p2p channels, 2 p2p channels per peer
+7414852fbdc1:435171:435565 [0] NCCL INFO CC Off, workFifoBytes 1048576
+7414852fbdc1:435171:435566 [1] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so. Using internal tuner plugin.
+7414852fbdc1:435171:435566 [1] NCCL INFO ncclCommInitAll comm 0x22200fa0 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId a1000 commId 0xd9d3a79a9d0c066a - Init COMPLETE
+7414852fbdc1:435171:435566 [1] NCCL INFO Init timings - ncclCommInitAll: rank 1 nranks 2 total 0.52 (kernels 0.46, alloc 0.02, bootstrap 0.00, allgathers 0.00, topo 0.03, graphs 0.00, connections 0.00, rest 0.01)
+7414852fbdc1:435171:435565 [0] NCCL INFO ncclCommInitAll comm 0x221813e0 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 41000 commId 0xd9d3a79a9d0c066a - Init COMPLETE
+7414852fbdc/root/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/nn/parallel/_functions.py:71: UserWarning: Was asked to gather along dimension 0, but all input tensors were scalars; will instead unsqueeze and return a vector.
+  warnings.warn(
+After tokenize: {'sentence1': 'The brown dog is resting his head on a white pillow.', 'sentence2': 'A tan dog is lying on a couch and has its head on a white pillow.', 'label': 3.4000000953674316, 'idx': 270, 'input_ids': [101, 1996, 2829, 3899, 2003, 8345, 2010, 2132, 2006, 1037, 2317, 10005, 1012, 102, 1037, 9092, 3899, 2003, 4688, 2006, 1037, 6411, 1998, 2038, 2049, 2132, 2006, 1037, 2317, 10005, 1012, 102], 'token_type_ids': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 'attention_mask': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}
+After add label: {'sentence1': 'The brown dog is resting his head on a white pillow.', 'sentence2': 'A tan dog is lying on a couch and has its head on a white pillow.', 'labels': 3.4000000953674316, 'idx': 270, 'input_ids': [101, 1996, 2829, 3899, 2003, 8345, 2010, 2132, 2006, 1037, 2317, 10005, 1012, 102, 1037, 9092, 3899, 2003, 4688, 2006, 1037, 6411, 1998, 2038, 2049, 2132, 2006, 1037, 2317, 10005, 1012, 102], 'token_type_ids': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 'attention_mask': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}
+After format: Dataset({
+    features: ['sentence1', 'sentence2', 'labels', 'idx', 'input_ids', 'token_type_ids', 'attention_mask'],
+    num_rows: 1500
+})
+Train data size: 5749
+Validation data size: 1500
+Reinforcement Learning to evaluate layer sensitivity to approximation
+Model compile started
+Model compile finished
+Starting evaluation...
+Round 0 of evaluation
+{'labels': tensor(3.4000), 'input_ids': tensor([  101,  1996,  2829,  3899,  2003,  8345,  2010,  2132,  2006,  1037,
+         2317, 10005,  1012,   102,  1037,  9092,  3899,  2003,  4688,  2006,
+         1037,  6411,  1998,  2038,  2049,  2132,  2006,  1037,  2317, 10005,
+         1012,   102]), 'token_type_ids': tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1]), 'attention_mask': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1])}
+{'labels': tensor(3.4000), 'input_ids': tensor([  101,  1996,  2829,  3899,  2003,  8345,  2010,  2132,  2006,  1037,
+         2317, 10005,  1012,   102,  1037,  9092,  3899,  2003,  4688,  2006,
+         1037,  6411,  1998,  2038,  2049,  2132,  2006,  1037,  2317, 10005,
+         1012,   102]), 'token_type_ids': tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1]), 'attention_mask': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1])}
+  0%|          | 0/47 [00:00<?, ?it/s]  6%|▋         | 3/47 [00:00<00:02, 16.44it/s] 11%|█         | 5/47 [00:00<00:03, 10.68it/s] 15%|█▍        | 7/47 [00:00<00:04,  9.46it/s] 17%|█▋        | 8/47 [00:00<00:04,  9.11it/s] 19%|█▉        | 9/47 [00:00<00:04,  8.72it/s] 21%|██▏       | 10/47 [00:01<00:04,  8.47it/s] 23%|██▎       | 11/47 [00:01<00:04,  8.16it/s] 26%|██▌       | 12/47 [00:01<00:04,  8.08it/s] 28%|██▊       | 13/47 [00:01<00:04,  7.89it/s] 30%|██▉       | 14/47 [00:01<00:04,  7.73it/s] 32%|███▏      | 15/47 [00:01<00:04,  7.61it/s] 34%|███▍      | 16/47 [00:01<00:04,  7.63it/s] 36%|███▌      | 17/47 [00:01<00:03,  7.63it/s] 38%|███▊      | 18/47 [00:02<00:03,  7.69it/s] 40%|████      | 19/47 [00:02<00:03,  7.61it/s] 43%|████▎     | 20/47 [00:02<00:03,  7.57it/s] 45%|████▍     | 21/47 [00:02<00:03,  7.57it/s] 47%|████▋     | 22/47 [00:02<00:03,  7.66it/s] 49%|████▉     | 23/47 [00:02<00:03,  7.95it/s] 51%|█████     | 24/47 [00:02<00:03,  7.64it/s] 53%|█████▎    | 25/47 [00:03<00:02,  7.61it/s] 55%|█████▌    | 26/47 [00:03<00:02,  7.56it/s] 57%|█████▋    | 27/47 [00:03<00:02,  7.51it/s] 60%|█████▉    | 28/47 [00:03<00:02,  7.57it/s] 62%|██████▏   | 29/47 [00:03<00:02,  7.52it/s] 64%|██████▍   | 30/47 [00:03<00:02,  7.41it/s] 66%|██████▌   | 31/47 [00:03<00:02,  7.52it/s] 68%|██████▊   | 32/47 [00:03<00:02,  7.44it/s] 70%|███████   | 33/47 [00:04<00:01,  7.39it/s] 72%|███████▏  | 34/47 [00:04<00:01,  7.39it/s] 74%|███████▍  | 35/47 [00:04<00:01,  7.92it/s] 77%|███████▋  | 36/47 [00:04<00:01,  7.65it/s] 79%|███████▊  | 37/47 [00:04<00:01,  7.69it/s] 81%|████████  | 38/47 [00:04<00:01,  7.59it/s] 83%|████████▎ | 39/47 [00:04<00:01,  7.57it/s] 85%|████████▌ | 40/47 [00:05<00:00,  7.51it/s] 87%|████████▋ | 41/47 [00:05<00:00,  7.48it/s] 89%|████████▉ | 42/47 [00:05<00:00,  7.45it/s] 91%|█████████▏| 43/47 [00:05<00:00,  7.48it/s] 94%|█████████▎| 44/47 [00:05<00:00,  7.46it/s] 96%|█████████▌| 45/47 [00:05<00:00,  7.45it/s] 98%|█████████▊| 46/47 [00:05<00:00,  7.46it/s]100%|██████████| 47/47 [00:05<00:00,  7.64it/s]
