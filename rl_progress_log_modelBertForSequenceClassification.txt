@@ -1,141 +1,6 @@
-/root/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
-  _torch_pytree._register_pytree_node(
-/root/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/file_download.py:943: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
-  warnings.warn(
-/root/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
-  _torch_pytree._register_pytree_node(
-/root/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
-  _torch_pytree._register_pytree_node(
-/root/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/modeling_utils.py:519: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
-  return torch.load(checkpoint_file, map_location=map_location)
-Finetuning model with params:
-base_model: textattack/bert-base-uncased-STS-B
-data_path: stsb
-output_dir: output.log
-batch_size: 16
-micro_batch_size: 16
-num_epochs: 1
-learning_rate: 0.0002
-cutoff_len: 256
-val_set_size: 120
-use_gradient_checkpointing: False
-lora_r: 32
-lora_alpha: 64
-lora_dropout: 0.05
-lora_target_modules: None
-Wdecompose_target_modules: None
-bottleneck_size: 256
-non_linearity: tanh
-adapter_dropout: 0.0
-use_parallel_adapter: True
-use_adapterp: False
-train_on_inputs: True
-scaling: 1.0
-adapter_name: lora
-target_modules: ['q_proj', 'k_proj', 'v_proj', 'up_proj', 'down_proj']
-group_by_length: False
-wandb_project: 
-wandb_run_name: 
-wandb_watch: 
-wandb_log_model: 
-resume_from_checkpoint: None
-
-BertForSequenceClassification(
-  (bert): BertModel(
-    (embeddings): BertEmbeddings(
-      (word_embeddings): Embedding(30522, 768, padding_idx=0)
-      (position_embeddings): Embedding(512, 768)
-      (token_type_embeddings): Embedding(2, 768)
-      (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
-      (dropout): Dropout(p=0.1, inplace=False)
-    )
-    (encoder): BertEncoder(
-      (layer): ModuleList(
-        (0-11): 12 x BertLayer(
-          (attention): BertAttention(
-            (self): BertSelfAttention(
-              (query): Linear(in_features=768, out_features=768, bias=True)
-              (key): Linear(in_features=768, out_features=768, bias=True)
-              (value): Linear(in_features=768, out_features=768, bias=True)
-              (dropout): Dropout(p=0.1, inplace=False)
-            )
-            (output): BertSelfOutput(
-              (dense): Linear(in_features=768, out_features=768, bias=True)
-              (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
-              (dropout): Dropout(p=0.1, inplace=False)
-            )
-          )
-          (intermediate): BertIntermediate(
-            (dense): Linear(in_features=768, out_features=3072, bias=True)
-            (intermediate_act_fn): GELUActivation()
-          )
-          (output): BertOutput(
-            (dense): Linear(in_features=3072, out_features=768, bias=True)
-            (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
-            (dropout): Dropout(p=0.1, inplace=False)
-          )
-        )
-      )
-    )
-    (pooler): BertPooler(
-      (dense): Linear(in_features=768, out_features=768, bias=True)
-      (activation): Tanh()
-    )
-  )
-  (dropout): Dropout(p=0.1, inplace=False)
-  (classifier): Linear(in_features=768, out_features=1, bias=True)
-)
-Loading dataset: Dataset({
-    features: ['sentence1', 'sentence2', 'label', 'idx'],
-    num_rows: 1500
-})
-Map:   0%|          | 0/5749 [00:00<?, ? examples/s]Map:   3%|▎         | 190/5749 [00:00<00:02, 1862.48 examples/s]Map:   8%|▊         | 460/5749 [00:00<00:02, 2345.29 examples/s]Map:  13%|█▎        | 734/5749 [00:00<00:01, 2521.36 examples/s]Map:  17%|█▋        | 1000/5749 [00:00<00:02, 2238.09 examples/s]Map:  22%|██▏       | 1289/5749 [00:00<00:01, 2446.21 examples/s]Map:  28%|██▊       | 1587/5749 [00:00<00:01, 2613.56 examples/s]Map:  34%|███▍      | 1962/5749 [00:00<00:01, 2563.98 examples/s]Map:  40%|███▉      | 2295/5749 [00:00<00:01, 2415.78 examples/s]Map:  45%|████▍     | 2584/5749 [00:01<00:01, 2534.91 examples/s]Map:  50%|████▉     | 2873/5749 [00:01<00:01, 2626.80 examples/s]Map:  55%|█████▍    | 3148/5749 [00:01<00:01, 2424.65 examples/s]Map:  60%|█████▉    | 3442/5749 [00:01<00:00, 2559.09 examples/s]Map:  65%|██████▍   | 3725/5749 [00:01<00:00, 2629.66 examples/s]Map:  70%|██████▉   | 4017/5749 [00:01<00:00, 2374.00 examples/s]Map:  75%|███████▌  | 4321/5749 [00:01<00:00, 2546.30 examples/s]Map:  80%|████████  | 4626/5749 [00:01<00:00, 2680.27 examples/s]Map:  86%|████████▌ | 4930/5749 [00:01<00:00, 2779.20 examples/s]Map:  92%|█████████▏| 5300/5749 [00:02<00:00, 2600.56 examples/s]Map:  97%|█████████▋| 5598/5749 [00:02<00:00, 2697.74 examples/s]Map: 100%|██████████| 5749/5749 [00:02<00:00, 2512.26 examples/s]
-Map:   0%|          | 0/1500 [00:00<?, ? examples/s]Map:  19%|█▊        | 281/1500 [00:00<00:00, 2767.08 examples/s]Map:  38%|███▊      | 570/1500 [00:00<00:00, 2829.96 examples/s]Map:  58%|█████▊    | 864/1500 [00:00<00:00, 2878.09 examples/s]Map:  86%|████████▌ | 1287/1500 [00:00<00:00, 2512.96 examples/s]Map: 100%|██████████| 1500/1500 [00:00<00:00, 2546.44 examples/s]
-Map:   0%|          | 0/1379 [00:00<?, ? examples/s]Map:  21%|██▏       | 295/1379 [00:00<00:00, 2903.42 examples/s]Map:  43%|████▎     | 598/1379 [00:00<00:00, 2970.77 examples/s]Map:  73%|███████▎  | 1000/1379 [00:00<00:00, 2545.66 examples/s]Map:  95%|█████████▌| 1311/1379 [00:00<00:00, 2724.87 examples/s]Map: 100%|██████████| 1379/1379 [00:00<00:00, 2649.06 examples/s]
-After tokenize: {'sentence1': 'A woman is mixing eggs in the bowl.', 'sentence2': 'A man is doing push ups.', 'label': 0.0, 'idx': 226, 'input_ids': [101, 1037, 2450, 2003, 6809, 6763, 1999, 1996, 4605, 1012, 102, 1037, 2158, 2003, 2725, 5245, 11139, 1012, 102], 'token_type_ids': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1], 'attention_mask': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}
-After add label: {'sentence1': 'A woman is mixing eggs in the bowl.', 'sentence2': 'A man is doing push ups.', 'labels': 0.0, 'idx': 226, 'input_ids': [101, 1037, 2450, 2003, 6809, 6763, 1999, 1996, 4605, 1012, 102, 1037, 2158, 2003, 2725, 5245, 11139, 1012, 102], 'token_type_ids': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1], 'attention_mask': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}
-After format: Dataset({
-    features: ['sentence1', 'sentence2', 'labels', 'idx', 'input_ids', 'token_type_ids', 'attention_mask'],
-    num_rows: 1500
-})
-Train data size: 5749
-Validation data size: 1500
-Reinforcement Learning to evaluate layer sensitivity to approximation
---- RL Evaluator Initialized ---
-Model Class: BertForSequenceClassification
-Device: cuda
-Total Layers: 12
-Compiled Model Unwrapped: False
-You're using a BertTokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
-7414852fbdc1:3024871:3024871 [0] NCCL INFO cudaDriverVersion 12080
-7414852fbdc1:3024871:3024871 [0] NCCL INFO Bootstrap : Using eth0:172.17.0.4<0>
-7414852fbdc1:3024871:3024871 [0] NCCL INFO NET/Plugin: No plugin found (libnccl-net.so)
-7414852fbdc1:3024871:3024871 [0] NCCL INFO NET/Plugin: Plugin load returned 2 : libnccl-net.so: cannot open shared object file: No such file or directory : when loading libnccl-net.so
-7414852fbdc1:3024871:3024871 [0] NCCL INFO NET/Plugin: Using internal network plugin.
-NCCL version 2.21.5+cuda12.4
-/root/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/nn/parallel/_functions.py:71: UserWarning: Was asked to gather along dimension 0, but all input tensors were scalars; will instead unsqueeze and return a vector.
-  warnings.warn(
-Model compile started
-Model compile finished
-Starting evaluation...
-Round 0 of evaluation
-{'labels': tensor(0.), 'input_ids': tensor([  101,  1037,  2450,  2003,  6809,  6763,  1999,  1996,  4605,  1012,
-          102,  1037,  2158,  2003,  2725,  5245, 11139,  1012,   102]), 'token_type_ids': tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1]), 'attention_mask': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])}
-{'labels': tensor(0.), 'input_ids': tensor([  101,  1037,  2450,  2003,  6809,  6763,  1999,  1996,  4605,  1012,
-          102,  1037,  2158,  2003,  2725,  5245, 11139,  1012,   102]), 'token_type_ids': tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1]), 'attention_mask': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])}
-  0%|          | 0/47 [00:00<?, ?it/s]  6%|▋         | 3/47 [00:00<00:03, 12.62it/s] 11%|█         | 5/47 [00:00<00:05,  7.92it/s] 13%|█▎        | 6/47 [00:00<00:05,  7.14it/s] 15%|█▍        | 7/47 [00:00<00:05,  6.77it/s] 17%|█▋        | 8/47 [00:01<00:06,  6.36it/s] 19%|█▉        | 9/47 [00:01<00:06,  6.08it/s] 21%|██▏       | 10/47 [00:01<00:06,  6.00it/s] 23%|██▎       | 11/47 [00:01<00:08,  4.10it/s] 28%|██▊       | 13/47 [00:02<00:06,  5.07it/s] 30%|██▉       | 14/47 [00:02<00:06,  5.17it/s] 32%|███▏      | 15/47 [00:02<00:06,  5.18it/s] 34%|███▍      | 16/47 [00:02<00:05,  5.27it/s] 36%|███▌      | 17/47 [00:02<00:05,  5.24it/s] 38%|███▊      | 18/47 [00:03<00:05,  5.30it/s] 40%|████      | 19/47 [00:03<00:05,  5.37it/s] 43%|████▎     | 20/47 [00:03<00:04,  5.42it/s] 45%|████▍     | 21/47 [00:03<00:04,  5.55it/s] 47%|████▋     | 22/47 [00:03<00:04,  5.36it/s] 49%|████▉     | 23/47 [00:04<00:04,  5.34it/s] 51%|█████     | 24/47 [00:04<00:04,  5.41it/s] 53%|█████▎    | 25/47 [00:04<00:04,  5.46it/s] 55%|█████▌    | 26/47 [00:04<00:03,  5.53it/s] 57%|█████▋    | 27/47 [00:04<00:03,  5.48it/s] 60%|█████▉    | 28/47 [00:04<00:03,  5.47it/s] 62%|██████▏   | 29/47 [00:05<00:03,  5.48it/s] 64%|██████▍   | 30/47 [00:05<00:03,  5.53it/s] 66%|██████▌   | 31/47 [00:05<00:02,  5.47it/s] 68%|██████▊   | 32/47 [00:05<00:02,  5.44it/s] 70%|███████   | 33/47 [00:05<00:02,  5.54it/s] 72%|███████▏  | 34/47 [00:06<00:02,  5.34it/s] 74%|███████▍  | 35/47 [00:06<00:02,  5.25it/s] 77%|███████▋  | 36/47 [00:06<00:02,  5.17it/s] 79%|███████▊  | 37/47 [00:06<00:01,  5.10it/s] 81%|████████  | 38/47 [00:06<00:01,  5.28it/s] 83%|████████▎ | 39/47 [00:07<00:01,  5.32it/s] 85%|████████▌ | 40/47 [00:07<00:01,  5.32it/s] 87%|████████▋ | 41/47 [00:07<00:01,  5.45it/s] 89%|████████▉ | 42/47 [00:07<00:00,  5.51it/s] 91%|█████████▏| 43/47 [00:07<00:00,  5.54it/s] 94%|█████████▎| 44/47 [00:07<00:00,  5.49it/s] 96%|█████████▌| 45/47 [00:08<00:00,  5.44it/s] 98%|█████████▊| 46/47 [00:08<00:00,  5.36it/s]100%|██████████| 47/47 [00:08<00:00,  5.66it/s]
-============================================================
-STARTING REINFORCEMENT LEARNING TUNING
-============================================================
 [Rank 0] 
 ==================== NEW EVALUATION SESSION ====================
-Step  | Loss       | Reward     | Epsilon  | GELU Degs | Softmax Degs
----------------------------------------------------------------------
 [Rank 0] RL Step 1 | Applying configuration...
-已替换 6 层的GELU函数
-已替换 6 层的GELU函数
-已替换 4 层的Softmax函数
-已替换 8 层的Softmax函数
 [Rank 0] --- RL Step 1/100 Started ---
 [Rank 0] RL Step 1 | Batch 1/100 | Batch Loss: 0.2300
 [Rank 0] RL Step 1 | Batch 2/100 | Batch Loss: 0.4528
@@ -238,16 +103,8 @@ Step  | Loss       | Reward     | Epsilon  | GELU Degs | Softmax Degs
 [Rank 0] RL Step 1 | Batch 99/100 | Batch Loss: 0.4836
 [Rank 0] RL Step 1 | Batch 100/100 | Batch Loss: 0.1424
 [Rank 0] RL Step 1 | Eval Loop Finished. Avg Loss: 0.3687
-1     | 0.3687     | 6.07       | 0.28     | [4, 3, 4, 3, 4, 4, 4, 4, 3, 3, 3, 3] | [3, 3, 4, 3, 4, 4, 4, 4, 3, 4, 4, 4]
 [Rank 0] RL Step 1 | Restoring model state...
-已完全恢复原始模型状态
 [Rank 0] RL Step 2 | Applying configuration...
-已替换 4 层的GELU函数
-已替换 1 层的GELU函数
-已替换 7 层的GELU函数
-已替换 2 层的Softmax函数
-已替换 1 层的Softmax函数
-已替换 9 层的Softmax函数
 [Rank 0] --- RL Step 2/100 Started ---
 [Rank 0] RL Step 2 | Batch 1/100 | Batch Loss: 0.2564
 [Rank 0] RL Step 2 | Batch 2/100 | Batch Loss: 0.4462
@@ -350,17 +207,8 @@ Step  | Loss       | Reward     | Epsilon  | GELU Degs | Softmax Degs
 [Rank 0] RL Step 2 | Batch 99/100 | Batch Loss: 0.3066
 [Rank 0] RL Step 2 | Batch 100/100 | Batch Loss: 0.2927
 [Rank 0] RL Step 2 | Eval Loop Finished. Avg Loss: 0.3806
-2     | 0.3806     | 5.91       | 0.27     | [4, 2, 4, 4, 4, 4, 4, 4, 2, 2, 3, 2] | [2, 4, 4, 2, 4, 4, 4, 4, 4, 4, 3, 4]
 [Rank 0] RL Step 2 | Restoring model state...
-已完全恢复原始模型状态
 [Rank 0] RL Step 3 | Applying configuration...
-已替换 2 层的GELU函数
-已替换 1 层的GELU函数
-已替换 3 层的GELU函数
-已替换 6 层的GELU函数
-已替换 1 层的Softmax函数
-已替换 4 层的Softmax函数
-已替换 7 层的Softmax函数
 [Rank 0] --- RL Step 3/100 Started ---
 [Rank 0] RL Step 3 | Batch 1/100 | Batch Loss: 0.5521
 [Rank 0] RL Step 3 | Batch 2/100 | Batch Loss: 0.3790
@@ -463,18 +311,8 @@ Step  | Loss       | Reward     | Epsilon  | GELU Degs | Softmax Degs
 [Rank 0] RL Step 3 | Batch 99/100 | Batch Loss: 0.3481
 [Rank 0] RL Step 3 | Batch 100/100 | Batch Loss: 0.3457
 [Rank 0] RL Step 3 | Eval Loop Finished. Avg Loss: 0.3447
-3     | 0.3447     | 6.47       | 0.26     | [4, 1, 4, 3, 4, 4, 4, 4, 3, 1, 3, 2] | [3, 3, 4, 3, 4, 4, 4, 3, 4, 4, 2, 4]
 [Rank 0] RL Step 3 | Restoring model state...
-已完全恢复原始模型状态
 [Rank 0] RL Step 4 | Applying configuration...
-已替换 1 层的GELU函数
-已替换 4 层的GELU函数
-已替换 2 层的GELU函数
-已替换 5 层的GELU函数
-已替换 1 层的Softmax函数
-已替换 2 层的Softmax函数
-已替换 4 层的Softmax函数
-已替换 5 层的Softmax函数
 [Rank 0] --- RL Step 4/100 Started ---
 [Rank 0] RL Step 4 | Batch 1/100 | Batch Loss: 0.1903
 [Rank 0] RL Step 4 | Batch 2/100 | Batch Loss: 0.4823
@@ -577,18 +415,8 @@ Step  | Loss       | Reward     | Epsilon  | GELU Degs | Softmax Degs
 [Rank 0] RL Step 4 | Batch 99/100 | Batch Loss: 0.4016
 [Rank 0] RL Step 4 | Batch 100/100 | Batch Loss: 0.3406
 [Rank 0] RL Step 4 | Eval Loop Finished. Avg Loss: 0.3863
-4     | 0.3863     | 5.88       | 0.24     | [4, 2, 4, 2, 4, 3, 4, 4, 2, 2, 3, 1] | [2, 2, 3, 3, 3, 4, 4, 3, 4, 4, 1, 4]
 [Rank 0] RL Step 4 | Restoring model state...
-已完全恢复原始模型状态
 [Rank 0] RL Step 5 | Applying configuration...
-已替换 3 层的GELU函数
-已替换 2 层的GELU函数
-已替换 2 层的GELU函数
-已替换 5 层的GELU函数
-已替换 1 层的Softmax函数
-已替换 2 层的Softmax函数
-已替换 3 层的Softmax函数
-已替换 6 层的Softmax函数
 [Rank 0] --- RL Step 5/100 Started ---
 [Rank 0] RL Step 5 | Batch 1/100 | Batch Loss: 0.4205
 [Rank 0] RL Step 5 | Batch 2/100 | Batch Loss: 0.4882

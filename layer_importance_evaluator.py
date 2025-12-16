@@ -2,6 +2,7 @@
 import numpy as np
 import math
 import torch
+import torch.distributed as dist
 from torch.utils.data import DataLoader
 from transformers.trainer_callback import TrainerCallback
 from transformers import BertForSequenceClassification, BertConfig
@@ -11,32 +12,76 @@ from scipy.stats import pearsonr, spearmanr
 from typing import Optional, Iterable, Union
 import datasets
 import pandas as pd
+import random
+import sys
+import copy
+import os
+import traceback 
+import matplotlib.pyplot as plt # [Modification 1] Import matplotlib for plotting
 
-# mount -o remount,size=64G /dev/shm
+# Store original deepcopy immediately to ensure we have a valid reference
+_ORIGINAL_DEEPCOPY = copy.deepcopy
 
+# 定义动作映射
+ACTION_DECREASE = 0  # 对应 -1 (降低精度/降低开销)
+ACTION_STAY = 1      # 对应 0  (保持不变)
+ACTION_INCREASE = 2  # 对应 +1 (提高精度/增加开销)
 
-# from transformers import PeftModel
-# Customized Callback function
 class LayerImportanceEvaluator(TrainerCallback):
-    def __init__(self, model, train_data, test_data, data_collator, rl_lr=100, degree=2, device='gpu'):
-        self.batch_size = 16
+    def __init__(self, model, train_data, test_data, data_collator, rl_lr=100, degree=2, device='cuda'):
+        # Safety measure: Significantly increase recursion limit for complex model graphs
+        # 50000 should be sufficient for most Transformer models to deepcopy
+        sys.setrecursionlimit(50000)
+        
+        self.batch_size = 16  # 基础 batch size
         self.train_dataset = train_data
         self.data_collator = data_collator
-        # Get base model
-        # self.model = model.get_base_model() 
-        self.model = model
+        
+        # --- Handle torch.compile unwrapping (CRITICAL FIX) ---
+        # If rl_tune.py used torch.compile, 'model' is an OptimizedModule.
+        # Dynamic layer swapping on a compiled model causes recompilation hangs/deadlocks.
+        # We must extract the original eager-mode model for RL tuning to allow dynamic changes.
+        self.is_compiled = False
+        if hasattr(model, "_orig_mod"):
+            # 如果是编译后的模型，取出原始模型
+            self.model = model._orig_mod
+            self.is_compiled = True
+        else:
+            self.model = model
+        
+        # 数据加载器
         self.dataloader = DataLoader(train_data, batch_size=self.batch_size, shuffle=True, collate_fn=data_collator)
         self.dataloader_test = DataLoader(test_data, batch_size=self.batch_size, shuffle=False, collate_fn=data_collator)
         
-        self.dataloader = iter(self.dataloader)
-        self.dataloader_test = iter(self.dataloader_test)
-        self.reversible_layer_handler = ReversibleLayerHandler(self.model)
+        # 转换为迭代器以便按需获取 batch
+        self.train_iter = iter(self.dataloader)
+        self.test_iter = iter(self.dataloader_test)
         
-        self.device = device
-        self.degree = degree
-        # Determine the way to access layers based on the model type
-        # Todo: Add more model types as needed (MOE models)
-        # Base layer: Transformer layer 
+        # --- ReversibleLayerHandler Initialization ---
+        # Removed monkey patch that disabled deepcopy. 
+        # We rely on sys.setrecursionlimit(50000) to handle the deep copy of the model.
+        # This is necessary because restore_all() needs a valid self.backup_model.
+        try:
+            self.reversible_layer_handler = ReversibleLayerHandler(self.model)
+        except RecursionError:
+            print("[Warning] RecursionError during ReversibleLayerHandler init (deepcopy). "
+                  "Increasing limit didn't help. 'restore_all' will fail.", flush=True)
+            # Fallback: try init with disabled deepcopy just to keep going, but restore_all won't work
+            copy.deepcopy = lambda x, memo=None: None
+            self.reversible_layer_handler = ReversibleLayerHandler(self.model)
+            copy.deepcopy = _ORIGINAL_DEEPCOPY
+        
+        # --- 修复设备名称 ---
+        if device == 'gpu':
+            device = 'cuda'
+        
+        if device.startswith('cuda') and not torch.cuda.is_available():
+            print("[Warning] CUDA requested but not available. Falling back to CPU.", flush=True)
+            self.device = 'cpu'
+        else:
+            self.device = device
+        
+        # 确定模型层访问路径
         class_to_layers_map = {
             'LlamaForCausalLM': 'model.model.layers',
             'Qwen2ForCausalLM': 'model.model.layers',
@@ -51,741 +96,482 @@ class LayerImportanceEvaluator(TrainerCallback):
         if model_class_name in class_to_layers_map:
             self.layers_attribute = class_to_layers_map[model_class_name]
         else:
-            print(model_class_name)
-            raise NotImplementedError
+            self.layers_attribute = 'model.bert.encoder.layer'
+            if self.is_main_process():
+                print(f"[Info] Unknown model class {model_class_name}, defaulting to '{self.layers_attribute}'", flush=True)
 
-        self.total_layers = len(eval('self.' + self.layers_attribute))  # Dynamically execute to get the number of layers
-        bert = getattr(self.model, "bert", self.model)
-        self.num_heads = bert.config.num_attention_heads
+        # 动态获取总层数
+        try:
+            self.total_layers = len(eval('self.' + self.layers_attribute))
+        except Exception as e:
+            if self.is_main_process():
+                print(f"[Warning] Failed to detect layers using path 'self.{self.layers_attribute}': {e}", flush=True)
+                print("Attempting fallback detection to ensure initialization proceeds...", flush=True)
+            if hasattr(self.model, 'bert'):
+                self.total_layers = len(self.model.bert.encoder.layer)
+            elif hasattr(self.model, 'model') and hasattr(self.model.model, 'layers'):
+                self.total_layers = len(self.model.model.layers)
+            else:
+                self.total_layers = 12 
 
-        # Initialize importance scores for each layer(all zeros)
-        self.importance_score_activation = torch.zeros(self.total_layers)
-        self.importance_score_softmax = torch.zeros(self.total_layers)
-
-        ### hyper parameters reinforecement learning step/rate
-        # number of candidate networks(RL joint action) in each RL step
-        self.rl_action = 24
-        # updating rate of importance score
-        self.rl_lr = rl_lr
-        self.update_importance_steps = 20
-        self.log_path = f"./importance_scores_lr{self.rl_lr}_steps{self.update_importance_steps}_degree{self.degree}_actions{self.rl_action}_model{model_class_name}.txt" # Path to save importance scores
-
-        self.train_batch_number = 200 # Number of training batches to evaluate importance scores
-        self.update_importance_interval_steps = 1 # Set to 0 for continuous evaluation
-
-        # hyper parameters for layer importance evaluation
-        # take the saved time and the declined accuracy into account 
-        self.time_rate = 0.25 # benefit for reward 
-        self.accurate_rate = 0.25 # harmful to reward
+        # --- 新 RL 策略参数设置 ---
+        self.rl_epochs = 100          
+        self.eval_batch_count = 100   
         
-        # number of layers to be updated in each RL step
-        # number of layers to be updated with degree 0,1,2,3,4 polynomial approximation
-        self.gelu_approximation_layers = [0,4,4,4,0]
-        self.softmax_approximation_layers = [0,0,4,4,4,0,0]
+        # Q-Learning 参数
+        self.alpha = 0.1     
+        self.gamma = 0.9     
+        self.epsilon = 0.3   
+        self.epsilon_decay = 0.95
         
-        self.group_number = 4 # number of groups to sample from
-        self.number_of_layers_per_group = 3 # number of layers of each group
-
-
-        self.non_linear_approximation_softmax = []
-        self.non_linear_approximation_root_reciprocal = []
+        # [修改点 1] 分离 GELU 和 Softmax 的状态数组
+        # 初始状态: 全部设为 2
+        self.current_gelu_degrees = np.full(self.total_layers, 4, dtype=int)
+        self.current_softmax_degrees = np.full(self.total_layers, 4, dtype=int)
         
-        # mean error in ULP:high->low
-        self.non_linear_approximation_gelu_error = []
-        self.non_linear_approximation_softmax_error = []
-        self.non_linear_approximation_root_reciprocal_error = []
-
-        ###
-        self.active_layers_indices = []
-        self.trainable_module_name = []
-        # self.raw_scaling = None
-
-    # sample layers index based on importance score
-    # group_num: number of groups to sample from
-    # num: number of layers of each group
-    def sampling_less_important_selection(self, importance_score, num, group_num):
-        if num == 0:
-            return torch.tensor([], dtype=torch.long)
-        prob = torch.zeros(group_num, num)
-        selects = torch.tensor([], dtype=torch.long)
-        for i in range(group_num):
-            prob[i] = (-importance_score).sigmoid()[i*num:(i+1)*num]
-            select = torch.sort(torch.multinomial(prob[i], 1))[0]
-            selects = torch.cat((selects, select + i * num), dim=0)
-        return selects
-
-    # def sampling_more_important_selection(self, importance_score, num):
-    #     if num == 0:
-    #         return torch.tensor([], dtype=torch.long)
-    #     prob = (importance_score).sigmoid()
-    #     select = torch.sort(torch.multinomial(prob, num))[0]
-    #     return select
-
-    def tensor_in_list(self, tensor_list, new_tensor):
-        if len(new_tensor) == 0:
-            return False
-        for tensor in tensor_list:
-            if torch.equal(tensor, new_tensor):
-                return True
-        return False
-    
-
-    # RL training step
-    def on_evaluate(self, args, state, control, **kwargs):
-        # def on_step_begin(self, args, state, control, device, **kwargs):
-        # Check if it's time to switch active layers, including at step 0
+        # [修改点 2] 分离 GELU 和 Softmax 的 Q-Table
+        # Q-Table: [Layer, Current_Degree(0-4), Action(0,1,2)]
+        self.q_table_gelu = np.zeros((self.total_layers, 5, 3))
+        self.q_table_softmax = np.zeros((self.total_layers, 5, 3))
         
-        val_batches = list(self.dataloader)
-        val_batches_test = list(self.dataloader_test)
-
-        # compute norm upper bound - input after embedding layer, or compute from norm parameters galma
-        # norm_bound = self.compute_euclidean_norm_bound(data_or_tensor = self.train_dataset)
+        # --- 日志文件设置 ---
+        self.log_path = f"./rl_training_log_model{model_class_name}.txt"
+        self.progress_log_path = f"./rl_progress_log_model{model_class_name}.txt"
+        self.plot_path = f"./rl_learning_curve_model{model_class_name}.png" 
         
-        # self.logs(f"Norm Bound: {norm_bound}")
+        # 初始化清空文件 (仅在主进程)
+        if self.is_main_process():
+            with open(self.log_path, 'w') as f:
+                f.write("")
+            with open(self.progress_log_path, 'w') as f:
+                f.write("")
         
-        self.logs(f"Model Structure: {self.model}")
-        weights = self.get_weights() 
-        # self.logs(f"Weights: {weights}")
-        per_layer_qkv_spectral_norm = []
-        for i in range(self.total_layers):
-            self.logs(f"print bias: weights: {weights[0]['query']['b'].shape}")
+        self.logs("--- RL Evaluator Initialized ---")
+        self.logs(f"Model Class: {model_class_name}")
+        self.logs(f"Device: {self.device}")
+        self.logs(f"Total Layers: {self.total_layers}")
+        self.logs(f"Compiled Model Unwrapped: {self.is_compiled}") # Debug info
 
-            Wqk_spectral_norm = []
-            # Wk_spectral_norm = []
-            Wv_spectral_norm = []
-            for head in range(self.num_heads):
-                Wq_h = weights[i]["query"]["W_heads"][head]
-                Wk_h = weights[i]["key"]["W_heads"][head]
-                Wv_h = weights[i]["value"]["W_heads"][head]
-                Wqk_h = Wq_h @ Wk_h.T  # [Dh, Dh]
-                Wqk_h_spectral_norm = self.compute_spectral_norm(Wqk_h, n_iters=10, eps=1e-12, track_gradients=False)
-                # Wk_h_spectral_norm = self.compute_spectral_norm(Wk_h, n_iters=10, eps=1e-12, track_gradients=False)
-                Wv_h_spectral_norm = self.compute_spectral_norm(Wv_h, n_iters=10, eps=1e-12, track_gradients=False)
-                Wqk_spectral_norm.append(Wqk_h_spectral_norm)
-                # Wk_spectral_norm.append(Wk_h_spectral_norm)
-                Wv_spectral_norm.append(Wv_h_spectral_norm)
+    def is_main_process(self):
+        """Check if this is the main process (Rank 0) to avoid duplicate logs."""
+        if not dist.is_initialized():
+            return True
+        return dist.get_rank() == 0
+        
+    def get_rank(self):
+        if not dist.is_initialized():
+            return 0
+        return dist.get_rank()
+
+    def logs(self, result):
+        """Only log if main process. Outputs to output.log AND rl_training_log...txt"""
+        if self.is_main_process():
+            print(result, flush=True)  # 强制刷新控制台输出
+            with open(self.log_path, 'a') as f:
+                f.write(f"{result}\n")
+                f.flush() 
+
+    def log_progress(self, message):
+        """
+        Dedicated logger for batch-level progress. 
+        Outputs to output.log AND rl_progress_log...txt
+        """
+        rank = self.get_rank()
+        msg_with_rank = f"[Rank {rank}] {message}"
+        
+        # Print to console for ALL ranks to see if one is stuck
+        print(msg_with_rank, flush=True) 
+        
+        if self.is_main_process():
+            with open(self.progress_log_path, 'a') as f:
+                f.write(f"{msg_with_rank}\n")
+                f.flush() 
+
+    # [修改点 1]：拆分数据集获取方法，明确训练集和验证集的用途
+    def get_train_batch_data(self, num_batches):
+        """Safely get batch data from TRAINING set."""
+        batches = []
+        for _ in range(num_batches):
+            try:
+                batch = next(self.train_iter)
+            except StopIteration:
+                self.train_iter = iter(self.dataloader) # Reset training iterator
+                batch = next(self.train_iter)
+            batches.append(batch)
+        return batches
+
+    def get_eval_batch_data(self, num_batches):
+        """Safely get batch data from VALIDATION/TEST set."""
+        batches = []
+        for _ in range(num_batches):
+            try:
+                batch = next(self.test_iter)
+            except StopIteration:
+                self.test_iter = iter(self.dataloader_test) # Reset test iterator
+                batch = next(self.test_iter)
+            batches.append(batch)
+        return batches
+
+    def choose_action(self, layer_idx, current_degree, q_table):
+        """[修改点 3] 更新 choose_action 接受特定的 q_table"""
+        if np.random.rand() < self.epsilon:
+            return np.random.randint(0, 3) 
+        else:
+            q_values = q_table[layer_idx, current_degree, :]
+            max_q = np.max(q_values)
+            best_actions = np.where(q_values == max_q)[0]
+            return np.random.choice(best_actions)
+
+    def apply_configuration(self):
+        """[修改点 4] 分别应用 GELU 和 Softmax 的配置"""
+        
+        # 1. 应用 GELU 配置
+        gelu_map = {d: [] for d in range(5)}
+        for idx, deg in enumerate(self.current_gelu_degrees):
+            gelu_map[deg].append(idx)
             
-            per_layer_qkv_spectral_norm.append({
-                "Wqk_spectral_norm": Wqk_spectral_norm,
-                "Wv_spectral_norm": Wv_spectral_norm
-            })
+        if gelu_map[0]:
+            self.reversible_layer_handler.restore_layer_gelu(gelu_map[0], self.layers_attribute)
         
-        self.logs(f"Per Layer QKV Spectral Norm: {per_layer_qkv_spectral_norm}")
+        for d in range(1, 5):
+            if gelu_map[d]:
+                self.reversible_layer_handler.replace_layer_gelu(
+                    layer_indices=gelu_map[d], 
+                    layer_name=self.layers_attribute, 
+                    degree=d
+                )
 
-        # 获取层数 & 头数
-        num_layers = len(per_layer_qkv_spectral_norm)
-        num_heads = len(per_layer_qkv_spectral_norm[0]["Wqk_spectral_norm"])
-
-        # 构造三个表
-        Wqk_table = []
-        Wv_table = []
-
-        for layer_idx, layer_data in enumerate(per_layer_qkv_spectral_norm):
-            row_qk = [layer_idx] + layer_data["Wqk_spectral_norm"]
-            row_v = [layer_idx] + layer_data["Wv_spectral_norm"]
-            Wqk_table.append(row_qk)
-            Wv_table.append(row_v)
-
-        # 列名：layer + head0, head1, ...
-        columns = ["layer"] + [f"head{h}" for h in range(num_heads)]
-
-        df_Wqk = pd.DataFrame(Wqk_table, columns=columns)
-        df_Wv = pd.DataFrame(Wv_table, columns=columns)
-
-        # 保存为 Excel，三个表在同一个文件的不同 sheet
-        with pd.ExcelWriter("qk_v_spectral_norm_tables.xlsx") as writer:
-            df_Wqk.to_excel(writer, sheet_name="Wqk_spectral_norm", index=False)
-            df_Wv.to_excel(writer, sheet_name="Wv_spectral_norm", index=False)
-
-        print("三个表已保存到 qk-v_spectral_norm_tables.xlsx")
-
-
-        # self.logs("Evaluating random combination 4-4-4:")
-        # self.get_final_metrics(val_batches_test,[0,3,6,9],[1,4,7,10],[2,5,8,11],[2,5,8,11],[0,3,6,9],[1,4,7,10])
-        
-        # # accuracy test
-        # # self.logs("Evaluating origin:")
-        
-
-        
-        self.logs("Evaluating origin:")
-        self.get_final_metrics(val_batches_test,[],[],[],[],[],[])
-        
-        self.logs("Evaluating best combination 4-4-4-lr15-group:")
-        self.get_final_metrics(val_batches_test,[2,3,6,9],[0,5,7,10],[1,4,8,11],[0,5,6,9],[1,4,7,10],[2,3,8,11])
-        
-        self.logs("Evaluating worst combination 4-4-4-lr15-group:")
-        self.get_final_metrics(val_batches_test,[1,4,8,11],[0,5,7,10],[2,3,6,9],[2,3,8,11],[1,4,7,10],[0,5,6,9])
-        
-        self.logs("Evaluating all 1:")
-        self.get_final_metrics(val_batches_test,[0,1,2,3,4,5,6,7,8,9,10,11],[],[],[0,1,2,3,4,5,6,7,8,9,10,11],[],[])
-        
-        self.logs("Evaluating all 3:")
-        self.get_final_metrics(val_batches_test,[],[],[0,1,2,3,4,5,6,7,8,9,10,11],[],[],[0,1,2,3,4,5,6,7,8,9,10,11])
-        
-        
-        self.logs("Evaluating random1 combination 4-4-4-lr15-group:")
-        self.get_final_metrics(val_batches_test,[1,4,6,10],[0,5,7,9],[2,3,8,11],[0,5,8,9],[2,4,7,10],[1,3,6,11])
-        
-        self.logs("Evaluating random2 combination 4-4-4-lr15-group:")
-        self.get_final_metrics(val_batches_test,[2,3,8,11],[0,5,7,9],[1,4,6,10],[1,3,6,11],[2,4,7,10],[0,5,8,9])
-        
-        self.logs("Evaluating origin:")
-        self.get_final_metrics(val_batches_test,[1,2,4,6],[7,3,11,10],[5,0,8,9],[4,10,11,7],[1,2,5,8],[3,6,9,0])
-        
-
-        # self.logs("Evaluating middle:")
-        # self.get_final_metrics(val_batches_test, [1,0,8],[10,2,7,9,3,4],[1,0,8],[10,2,7,9,3,4])
-
-        # self.logs("Evaluating worst:")
-        # self.get_final_metrics(val_batches_test, [3,4,9],[10,2,8,0,1,7],[3,4,9],[10,2,8,0,1,7])
-        # self.logs("random:")
-        # self.get_final_metrics(val_batches_test, [7,1,10],[5,9,2,8,0,11],[7,1,10],[5,9,2,8,0,11])
-        
-        # self.logs("Evaluating worst 2:")
-        # self.get_final_loss(val_batches_test, [], [0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11])
-        # self.get_final_metrics(val_batches_test, [], [0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11])
-
-        # self.logs("Evaluating middle:")
-        # self.get_final_loss(val_batches_test, [9,6,8], [7,2,4])
-        # self.get_final_metrics(val_batches_test, [9,6,8], [7,2,4])
-
-        # self.logs("Evaluating best:")
-        # self.get_final_loss(val_batches_test, [0,11,10], [9,6,8])
-        # self.get_final_metrics(val_batches_test, [0,11,10], [9,6,8])
-
-
-
-        for _ in range(self.update_importance_steps):
-            self.logs(f"In the {_}'th rl step, updating importance scores...")
-            self.logs(f"Current Activation Importance Scores: {self.importance_score_activation.tolist()}")
-            self.logs(f"Current Softmax Importance Scores: {self.importance_score_softmax.tolist()}")
-
-            selects_activation = {
-                "selects1": [],
-                "selects2": [],
-                "selects3": [],
-                "selects4": []
-            }
-            selects_softmax = {
-                "selects1": [],
-                "selects2": [],
-                "selects3": [],
-                "selects4": [],
-                "selects5": [],
-                "selects6": []
-            }
-            # Record the losses for each action
-            rets = []
-            # Calculate rewards based on the losses
-            rewards = []
-
+        # 2. 应用 Softmax 配置
+        softmax_map = {d: [] for d in range(5)}
+        for idx, deg in enumerate(self.current_softmax_degrees):
+            softmax_map[deg].append(idx)
             
-            # RL action: select layers for polynomial approximation
-            for k in range(self.rl_action):
+        if softmax_map[0]:
+            self.reversible_layer_handler.restore_layer_softmax(softmax_map[0], self.layers_attribute)
+            
+        for d in range(1, 5):
+            if softmax_map[d]:
+                # 根据 Softmax degree 计算 bound (保持与原逻辑类似的比例)
+                # 原逻辑: d_soft = d_gelu + 1; bound = -2 * d_gelu - 2
+                # 现逻辑: bound = -2 * (d - 1) - 2 = -2d (例如 d=2 -> bound=-4)
+                # 或者直接简化为 -2 * d
+                soft_bound = -2 * d 
                 
-                total_layers_index = torch.arange(self.total_layers, dtype=torch.long)
-                '''activation selection'''
-                # todo: classify the approximation degree
-                # now: degree 1 polynomial approximation
-                select1_activation = self.sampling_less_important_selection(importance_score=self.importance_score_activation, num=self.number_of_layers_per_group, group_num=self.group_number)
-                select2_activation = self.sampling_less_important_selection(importance_score=self.importance_score_activation,  num=self.number_of_layers_per_group, group_num=self.group_number)
+                self.reversible_layer_handler.replace_layer_softmax(
+                    layer_indices=softmax_map[d],
+                    layer_name=self.layers_attribute,
+                    degree=d,
+                    lower_bound=soft_bound
+                )
 
-                while self.tensor_in_list(selects_activation["selects1"], select1_activation):
-                    select1_activation = self.sampling_less_important_selection(importance_score=self.importance_score_activation, num=self.number_of_layers_per_group, group_num=self.group_number)
-                
-                while len(set(select1_activation.tolist()) & set(select2_activation.tolist())) > 0:
-                    select2_activation = self.sampling_less_important_selection(importance_score=self.importance_score_activation, num=self.number_of_layers_per_group, group_num=self.group_number)
-                    while self.tensor_in_list(selects_activation["selects2"], select2_activation):
-                        select2_activation = self.sampling_less_important_selection(importance_score=self.importance_score_activation, num=self.number_of_layers_per_group, group_num=self.group_number)
-                
-                exclude_activation = torch.cat((select1_activation, select2_activation), dim=0)  
-                mask_activation = torch.isin(total_layers_index, exclude_activation, invert=True)
-                select3_activation = total_layers_index[mask_activation]
+    def calculate_reward(self, loss):
+        """[修改点 5] 计算奖励时同时考虑 GELU 和 Softmax 的开销"""
+        # 1. 精度奖励
+        accuracy_reward = 2.0 / (loss + 1e-4)
+        
+        # 2. 效率奖励
+        cost_map = {0: 10, 4: 4, 3: 3, 2: 2, 1: 1}
+        
+        gelu_costs = [cost_map[d] for d in self.current_gelu_degrees]
+        softmax_costs = [cost_map[d] for d in self.current_softmax_degrees]
+        
+        # 计算综合平均开销
+        avg_cost = (np.mean(gelu_costs) + np.mean(softmax_costs)) / 2.0
+        
+        efficiency_reward = (10 - avg_cost) * 0.1 
+        
+        total_reward = accuracy_reward + efficiency_reward
+        return total_reward
 
-                selects_activation["selects1"].append(select1_activation)
-                selects_activation["selects2"].append(select2_activation)
-                selects_activation["selects3"].append(select3_activation)
-                
-                ''' softmax selection '''
-                # todo: classify the approximation degree
-                select1_softmax = self.sampling_less_important_selection(importance_score=self.importance_score_softmax, num=self.number_of_layers_per_group, group_num=self.group_number)
-                select2_softmax = self.sampling_less_important_selection(importance_score=self.importance_score_softmax, num=self.number_of_layers_per_group, group_num=self.group_number)
-                
-                while self.tensor_in_list(selects_softmax["selects2"], select1_softmax):
-                    select1_softmax = self.sampling_less_important_selection(importance_score=self.importance_score_softmax, num=self.number_of_layers_per_group, group_num=self.group_number)
-                
-                while len(set(select1_softmax.tolist()) & set(select2_softmax.tolist())) > 0:
-                    select2_softmax = self.sampling_less_important_selection(importance_score=self.importance_score_softmax, num=self.number_of_layers_per_group, group_num=self.group_number)
-                    while self.tensor_in_list(selects_softmax["selects3"], select2_softmax):
-                        select2_softmax = self.sampling_less_important_selection(importance_score=self.importance_score_softmax, num=self.number_of_layers_per_group, group_num=self.group_number)
-                
-                
-                exclude_softmax = torch.cat((select1_softmax, select2_softmax), dim=0)  
-                mask_softmax = torch.isin(total_layers_index, exclude_softmax, invert=True)
-                select3_softmax = total_layers_index[mask_softmax]
-
-                selects_softmax["selects2"].append(select1_softmax)
-                selects_softmax["selects3"].append(select2_softmax)
-                selects_softmax["selects4"].append(select3_softmax)
-
-                # self.switch_active_adapter(select)
-
-                # Evaluate the model with the selected layers
-                # Replace the GELU function in the selected layers with degree 1 polynomial approximation
-                # to do: divide into 4 groups according to importance
-
-                self.reversible_layer_handler.replace_layer_gelu(layer_indices=select1_activation, layer_name=self.layers_attribute, degree=1)
-                self.reversible_layer_handler.replace_layer_gelu(layer_indices=select2_activation, layer_name=self.layers_attribute, degree=2)
-                self.reversible_layer_handler.replace_layer_gelu(layer_indices=select3_activation, layer_name=self.layers_attribute, degree=3)
-
-                # same replace layer, need better policy
-                self.reversible_layer_handler.replace_layer_softmax(layer_indices=select1_softmax, layer_name=self.layers_attribute, attention_name="attention.self", degree=2, lower_bound=-4)
-                self.reversible_layer_handler.replace_layer_softmax(layer_indices=select2_softmax, layer_name=self.layers_attribute, attention_name="attention.self", degree=3, lower_bound=-10)
-                self.reversible_layer_handler.replace_layer_softmax(layer_indices=select3_softmax, layer_name=self.layers_attribute, attention_name="attention.self", degree=4, lower_bound=-13)
-
-                self.reversible_layer_handler.model.eval()
-                
-                # do actior to get rewards
-                # inference mode is used to avoid gradient calculation
-                total_loss = 0
-                batch_indices = np.random.choice(len(val_batches), size=self.train_batch_number, replace=True)
-                random_batches = [val_batches[i] for i in batch_indices]
-
-                batch_number = 0
-                for val_batch in random_batches:
-                    batch_number += 1
-                    print(f"Evaluating with batch: {batch_number}")
-                    with torch.inference_mode():
-                        self.reversible_layer_handler.model.to("cuda")
-                        device = next(self.reversible_layer_handler.model.parameters()).device
-                        val_batch = {k: v.to(device) for k, v in val_batch.items()}
-                        outputs = self.reversible_layer_handler.model(**val_batch)
-                        total_loss += outputs.loss.item()
-                    
-                
-                total_loss = total_loss / self.train_batch_number  # Average loss over the dataset
-                # self.model.train()
-                self.logs(f"RL Action {k}, Selected1 Activation Layers: {select1_activation}, Selected2 Activation Layers: {select2_activation}, Selected3 Activation Layers: {select3_activation},"
-                          f"Selected1 Softmax Layers: {select1_softmax}, Selected2 Softmax Layers: {select2_softmax}, Selected3 Softmax Layers: {select3_softmax}, Loss: {total_loss}")
-                rets.append(total_loss)
-
-                # todo recover the original gelu function
-                self.reversible_layer_handler.restore_all() 
-
-            self.logs(f"All action Losses: {rets}")
-
-            for i in range(self.rl_action):
-                rewards.append(math.exp(-rets[i]))
-
-            _mean = np.mean(rewards)
-
-            # rewards = np.array([(r - _mean) for r in rewards]).tolist() + \
-            #     self.get_time_reward(rewards)
-
-
-            # without time reward term
-            rewards = np.array([(r - _mean) for r in rewards]).tolist()
-            self.logs(f"Rewards: {rewards}")
-            prob_activation = self.importance_score_activation.sigmoid()
-            prob_softmax = self.importance_score_softmax.sigmoid()
-            self.logs(f"Probs_Activation:{prob_activation}, Probs_Softmax:{prob_softmax}")
-            for k in range(self.rl_action):
-                for i in range(self.total_layers):
-                    # activation importance score update
-                    if i not in selects_activation["selects1"][k]:
-                        self.importance_score_activation[i] += rewards[k] * prob_activation[i] * (1 - prob_activation[i]) * self.rl_lr * 0.5
-                        if i not in selects_activation["selects2"][k]:
-                            self.importance_score_activation[i] += rewards[k] * prob_activation[i] * (1 - prob_activation[i]) * self.rl_lr * 0.5
-                    # softmax_importance score update
-                    if i not in selects_softmax["selects2"][k]:
-                        self.importance_score_softmax[i] += rewards[k] * prob_softmax[i] * (1 - prob_softmax[i]) * self.rl_lr * 0.5
-                        if i not in selects_softmax["selects3"][k]:
-                            self.importance_score_softmax[i] += rewards[k] * prob_softmax[i] * (1 - prob_softmax[i]) * self.rl_lr * 0.5
-                    # else:
-                    #     self.importance_score[i] -= rewards[k] * prob[i] * (1 - prob[i]) * self.rl_lr
-
-        self.logs(f"Final Activation Importance Scores: {self.importance_score_activation.tolist()}")
-        self.logs(f"Final Softmax Importance Scores: {self.importance_score_softmax.tolist()}")
-        # less_importance_layers_1_activation = np.argsort(np.array(self.importance_score_activation))[:self.gelu_approximation_layers[1]]
-        # less_importance_layers_2_activation = np.argsort(np.array(self.importance_score_activation))[self.gelu_approximation_layers[1]:self.gelu_approximation_layers[2]+self.gelu_approximation_layers[1]]
-        # less_importance_layers_3_activation = np.argsort(np.array(self.importance_score_activation))[self.gelu_approximation_layers[2]+self.gelu_approximation_layers[1]:]
-
-        # less_importance_layers_1_softmax = np.argsort(np.array(self.importance_score_softmax))[:self.softmax_approximation_layers[2]]
-        # less_importance_layers_2_softmax = np.argsort(np.array(self.importance_score_softmax))[self.softmax_approximation_layers[2]:self.softmax_approximation_layers[3]+self.gelu_approximation_layers[2]]
-        # less_importance_layers_3_softmax = np.argsort(np.array(self.importance_score_softmax))[self.softmax_approximation_layers[3]+self.gelu_approximation_layers[2]:]
-        # check the final effect
-        # self.get_final_metrics(val_batches_test, less_importance_layers_1_activation, less_importance_layers_2_activation, less_importance_layers_3_activation, less_importance_layers_1_softmax,less_importance_layers_2_softmax,less_importance_layers_3_softmax)
-
-
-    # calculate the reward based on the time saved (he)
-    # or the communication cost saved (mpc)
-
-
-    def get_final_metrics(self, val_batches=[], selected_layers1_gelu=[], selected_layers2_gelu=[], selected_layers3_gelu=[], selected_layers1_softmax=[], selected_layers2_softmax=[], selected_layers3_softmax=[]):
-        total_loss_final = 0
-        total_correct = 0
-        total_samples = 0
+    def get_final_metrics(self, name="Evaluation"):
+        """
+        在强化学习结束后，对当前配置进行完整评估。
+        [修改点]：这里使用验证集 (Test Set) 进行评估。
+        """
+        self.log_progress(f"\n>>> Starting Final Evaluation: {name} <<<")
+        
+        # 应用当前配置
+        self.apply_configuration()
+        self.reversible_layer_handler.model.eval()
+        
+        # 使用 get_eval_batch_data 从验证集获取数据
+        eval_batches = self.get_eval_batch_data(self.eval_batch_count)
+        
+        total_loss = 0
         all_predictions = []
         all_labels = []
         
-        if len(selected_layers1_gelu) == 0 and len(selected_layers2_gelu) == 0 and len(selected_layers3_gelu) and len(selected_layers1_softmax) == 0 and len(selected_layers2_softmax) == 0 and len(selected_layers3_softmax) == 0:
-            self.logs("No layers selected for evaluation.")
-        else:
-            self.reversible_layer_handler.replace_layer_gelu(layer_indices=selected_layers1_gelu, layer_name=self.layers_attribute, degree=1)
-            self.reversible_layer_handler.replace_layer_gelu(layer_indices=selected_layers2_gelu, layer_name=self.layers_attribute, degree=2)
-            self.reversible_layer_handler.replace_layer_gelu(layer_indices=selected_layers3_gelu, layer_name=self.layers_attribute, degree=3)
-
-            ## same replace for the softmax
-            self.reversible_layer_handler.replace_layer_softmax(layer_indices=selected_layers1_softmax, layer_name=self.layers_attribute, attention_name="attention.self", degree=2, lower_bound=-4)
-            self.reversible_layer_handler.replace_layer_softmax(layer_indices=selected_layers2_softmax, layer_name=self.layers_attribute, attention_name="attention.self", degree=3, lower_bound=-10)
-            self.reversible_layer_handler.replace_layer_softmax(layer_indices=selected_layers3_softmax, layer_name=self.layers_attribute, attention_name="attention.self", degree=4, lower_bound=-13)
-
-        self.reversible_layer_handler.model.eval()
-        for val_batch in val_batches:
-            with torch.inference_mode():
-                self.reversible_layer_handler.model.to("cuda")
-                device = next(self.reversible_layer_handler.model.parameters()).device
-                val_batch = {k: v.to(device) for k, v in val_batch.items()}
-                outputs = self.reversible_layer_handler.model(**val_batch)
-                #pearson and spearman correlation
+        with torch.inference_mode():
+            self.reversible_layer_handler.model.to(self.device)
+            for batch in eval_batches:
+                batch = {k: v.to(self.device) for k, v in batch.items()}
+                outputs = self.reversible_layer_handler.model(**batch)
                 
-                logits = outputs.logits.squeeze().detach().cpu().numpy()  # shape: (batch_size,)
-                labels = val_batch["labels"].detach().cpu().numpy()
-                total_loss_final += outputs.loss.item()
-
+                total_loss += outputs.loss.item()
+                
+                logits = outputs.logits.squeeze().detach().cpu().numpy()
+                labels = batch["labels"].detach().cpu().numpy()
+                
+                # 处理 batch_size=1 的情况
+                if np.ndim(logits) == 0:
+                    logits = [logits]
+                
                 all_predictions.extend(logits)
                 all_labels.extend(labels)
+        
+        avg_loss = total_loss / len(eval_batches)
+        
+        # 汇总 DDP 结果
+        if dist.is_initialized():
+            loss_tensor = torch.tensor(avg_loss, device=self.device)
+            dist.all_reduce(loss_tensor, op=dist.ReduceOp.AVG)
+            avg_loss = loss_tensor.item()
+        
+        # 计算相关系数
+        try:
+            pearson_corr = pearsonr(all_predictions, all_labels)[0]
+            spearman_corr = spearmanr(all_predictions, all_labels)[0]
+        except Exception as e:
+            self.log_progress(f"Error calculating correlation: {e}")
+            pearson_corr = 0.0
+            spearman_corr = 0.0
+
+        # 输出结果
+        self.logs(f"[{name}] Final Metrics:")
+        self.logs(f"  - Avg Loss: {avg_loss:.4f}")
+        self.logs(f"  - Pearson:  {pearson_corr:.4f}")
+        self.logs(f"  - Spearman: {spearman_corr:.4f}")
+        self.logs(f"  - Gelu Degs: {self.current_gelu_degrees.tolist()}")
+        self.logs(f"  - Softmax Degs: {self.current_softmax_degrees.tolist()}")
+        
+        return avg_loss
+
+    def on_evaluate(self, args, state, control, **kwargs):
+        self.logs("\n" + "="*60)
+        self.logs("STARTING REINFORCEMENT LEARNING TUNING")
+        self.logs("="*60)
+        
+        self.log_progress(f"\n{'='*20} NEW EVALUATION SESSION {'='*20}")
+        
+        best_loss = float('inf')
+        best_config_gelu = None
+        best_config_softmax = None
+        
+        # Initialize history lists for plotting
+        loss_history = []
+        reward_history = []
+        
+        # [Modification] Updated header to show both arrays
+        header = f"{'Step':<5} | {'Loss':<10} | {'Reward':<10} | {'Epsilon':<8} | {'GELU Degs'} | {'Softmax Degs'}"
+        self.logs(header)
+        self.logs("-" * len(header))
+
+        for step in range(1, self.rl_epochs + 1):
+            try:
+                # --- DDP Synchronization for Actions ---
+                current_seed = 42 + step
+                random.seed(current_seed)
+                np.random.seed(current_seed)
+                torch.manual_seed(current_seed)
                 
+                # 1. Choose Actions (Separately for GELU and Softmax)
+                actions_gelu = [] 
+                actions_softmax = []
                 
-                # acc and f1 score
-                # logits = outputs.logits
-                # predictions = torch.argmax(logits, dim=-1)
-                # labels = val_batch["labels"]
-                # total_loss_final += outputs.loss.item()
+                prev_degrees_gelu = self.current_gelu_degrees.copy()
+                prev_degrees_softmax = self.current_softmax_degrees.copy()
+                
+                # --- GELU Action Selection ---
+                for i in range(self.total_layers):
+                    curr_deg = self.current_gelu_degrees[i]
+                    action = self.choose_action(i, curr_deg, self.q_table_gelu)
+                    
+                    new_deg = curr_deg
+                    # [修改点 2]：状态转移逻辑修改，范围限制在 1-4
+                    if action == ACTION_DECREASE: 
+                        new_deg = max(1, curr_deg - 1)
+                    elif action == ACTION_INCREASE: 
+                        new_deg = min(4, curr_deg + 1)
+                    
+                    self.current_gelu_degrees[i] = new_deg
+                    actions_gelu.append(action)
 
-                # # 累计统计量
-                # total_correct += (predictions == labels).sum().item()
-                # total_samples += labels.size(0)
-                # all_predictions.extend(predictions.detach().cpu().numpy())
-                # all_labels.extend(labels.detach().cpu().numpy())
+                # --- Softmax Action Selection ---
+                for i in range(self.total_layers):
+                    curr_deg = self.current_softmax_degrees[i]
+                    action = self.choose_action(i, curr_deg, self.q_table_softmax)
+                    
+                    new_deg = curr_deg
+                    if action == ACTION_DECREASE: 
+                        new_deg = max(1, curr_deg - 1)
+                    elif action == ACTION_INCREASE: 
+                        new_deg = min(4, curr_deg + 1)
+                    
+                    self.current_softmax_degrees[i] = new_deg
+                    actions_softmax.append(action)
+                
+                # 2. Apply Config
+                self.log_progress(f"RL Step {step} | Applying configuration...")
+                self.apply_configuration()
+                self.reversible_layer_handler.model.eval()
+                
+                # [修改点 1]：强化学习循环中使用 训练集 (get_train_batch_data)
+                eval_batches = self.get_train_batch_data(self.eval_batch_count)
+                total_loss = 0
+                
+                self.log_progress(f"--- RL Step {step}/{self.rl_epochs} Started ---")
+                
+                with torch.inference_mode():
+                    self.reversible_layer_handler.model.to(self.device)
+                    for batch_idx, batch in enumerate(eval_batches):
+                        batch = {k: v.to(self.device) for k, v in batch.items()}
+                        outputs = self.reversible_layer_handler.model(**batch)
+                        
+                        batch_loss = outputs.loss.item()
+                        total_loss += batch_loss
+                        
+                        # --- MODIFICATION: Log EVERY single batch ---
+                        self.log_progress(f"RL Step {step} | Batch {batch_idx + 1}/{self.eval_batch_count} | Batch Loss: {batch_loss:.4f}")
+                
+                avg_loss = total_loss / len(eval_batches)
+                self.log_progress(f"RL Step {step} | Eval Loop Finished. Avg Loss: {avg_loss:.4f}")
 
-        # 计算指标
-        # accuracy = total_correct / total_samples
-        # f1 = f1_score(all_labels, all_predictions, average='macro')
-        total_loss_final = total_loss_final / len(val_batches)  # Average loss over the dataset
-        
-        pearson_corr = pearsonr(all_predictions, all_labels)[0]
-        spearman_corr = spearmanr(all_predictions, all_labels)[0]
+                # --- DDP Synchronization for Loss ---
+                if dist.is_initialized():
+                    self.log_progress(f"RL Step {step} | Waiting for DDP sync...")
+                    loss_tensor = torch.tensor(avg_loss, device=self.device)
+                    dist.all_reduce(loss_tensor, op=dist.ReduceOp.AVG)
+                    avg_loss = loss_tensor.item()
+                    self.log_progress(f"RL Step {step} | DDP Sync Complete. Global Avg Loss: {avg_loss:.4f}")
+                
+                # 3. Calculate Reward & Update Q-Table
+                reward = self.calculate_reward(avg_loss) 
+                
+                # Append metrics to history for plotting
+                loss_history.append(avg_loss)
+                reward_history.append(reward)
+                
+                # Update Q-Tables (Separately)
+                for i in range(self.total_layers):
+                    # Update GELU Q-Table
+                    s = prev_degrees_gelu[i]
+                    a = actions_gelu[i]
+                    s_prime = self.current_gelu_degrees[i]
+                    q_predict = self.q_table_gelu[i, s, a]
+                    q_target = reward + self.gamma * np.max(self.q_table_gelu[i, s_prime, :])
+                    self.q_table_gelu[i, s, a] += self.alpha * (q_target - q_predict)
 
-        # self.reversible_layer_handler.restore_all()
-        # self.logs(f"Final Gelu Layer1:{selected_layers1_gelu}; Final Gelu Layer2: {selected_layers2_gelu}; Final Gelu Layer3: {selected_layers3_gelu}; Final Softmax Layer1: {selected_layers1_softmax}; Final Softmax Layer2: {selected_layers2_softmax}; Final Softmax Layer3: {selected_layers3_softmax};")
-        # self.logs(f"Final Metrics - Accuracy: {accuracy}, F1 Score: {f1}, Total Loss: {total_loss_final}")
-        # return accuracy, f1, total_loss_final
+                    # Update Softmax Q-Table
+                    s = prev_degrees_softmax[i]
+                    a = actions_softmax[i]
+                    s_prime = self.current_softmax_degrees[i]
+                    q_predict = self.q_table_softmax[i, s, a]
+                    q_target = reward + self.gamma * np.max(self.q_table_softmax[i, s_prime, :])
+                    self.q_table_softmax[i, s, a] += self.alpha * (q_target - q_predict)
 
-        self.reversible_layer_handler.restore_all()
-        self.logs(f"Final Gelu Layer1:{selected_layers1_gelu}; Final Gelu Layer2: {selected_layers2_gelu}; Final Gelu Layer3: {selected_layers3_gelu}; Final Softmax Layer1: {selected_layers1_softmax}; Final Softmax Layer2: {selected_layers2_softmax}; Final Softmax Layer3: {selected_layers3_softmax};")
-        self.logs(f"Final Metrics - pearson: {pearson_corr}, spearman: {spearman_corr}, Total Loss: {total_loss_final}")
-        return pearson_corr, spearman_corr, total_loss_final
-        
-    # def get_time_reward(self, degree):
-    #     """
-    #     Calculate the time reward based on the time saved.
-    #     The higher the time saved, the higher the reward.
-    #     """
-    #     time_reward = []
-    #     for i in range(self.rl_action):
-    #         # to be adjusted: confirm the relation bewtween the time saved and 
-    #         time_reward.append(-1 * self.time_rate * degree[i])
-    #     return time_reward
-    
-    
-    def logs(self, result):
-        """
-        Write the importance scores to a file.
-        """
-        with open(self.log_path, 'a') as f:
-            f.write(f"{result}\n")
-
-    def get_weights(self, num_heads = 12, head_dim = 64, hidden_size = 768) -> list:
-        # 用于存放结果： per layer -> {q,k,v}->{W_heads, b_heads}
-        per_layer_qkv = []
-        with torch.no_grad():
-            for i in range(self.total_layers):
-                sa = self.model.bert.encoder.layer[i].attention.self  # BertSelfAttention
-
-                layer_dict = {}
-                for name in ["query", "key", "value"]:
-                    linear = getattr(sa, name)                   # nn.Linear
-                    W = linear.weight.data.clone()               # [hidden_size, hidden_size]
-                    b = linear.bias.data.clone() if linear.bias is not None else None  # [hidden_size]
-
-                    # 关键：按“输出维度”分头。权重形状 [out_features, in_features]
-                    # 先把 out_features=hidden_size 切成 [num_heads, head_dim]
-                    W_heads = W.view(num_heads, head_dim, hidden_size)   # [H, Dh, hidden_size]
-                    b_heads = b.view(num_heads, head_dim) if b is not None else None  # [H, Dh]
-
-                    # 可选：如果你更习惯做 x @ W^T 的每头权重，可保留转置版本
-                    # per-head 矩阵乘法通常是: y_h = x @ W_h^T + b_h
-                    W_heads_T = W_heads.transpose(1, 2).contiguous()     # [H, hidden_size, Dh]
-
-                    layer_dict[name] = {
-                        "W": W,                       # [hidden_size, hidden_size]
-                        "b": b,                       # [hidden_size]
-                        "W_heads": W_heads,           # [H, Dh, hidden_size]
-                        "b_heads": b_heads,           # [H, Dh]
-                        "W_heads_T": W_heads_T,       # [H, hidden_size, Dh] 方便做 x @ W_h^T
-                    }
-
-                per_layer_qkv.append(layer_dict)
-        return per_layer_qkv
-        # —— 使用示例 —— #
-        # 第0层、第0个头的 Query 权重（按头切好）形状：
-        # print(per_layer_qkv[0]["query"]["W_heads"].shape)   # torch.Size([num_heads, head_dim, hidden_size])
-        # print(per_layer_qkv[0]["query"]["b_heads"].shape)   # torch.Size([num_heads, head_dim])
-
-        # # 若想看某一头（比如 head=0）的 Wq：
-        # head = 0
-        # Wq_h = per_layer_qkv[0]["query"]["W_heads"][head]    # [Dh, hidden_size]
-        # bq_h = per_layer_qkv[0]["query"]["b_heads"][head]    # [Dh]
-        # print(Wq_h.shape, bq_h.shape)
-    
-    def compute_importance_matrix_lipschitz(self, layer_indices, layer_name, data_euclidean_bound=1, sequence_length=128, has_mask = False, has_data_info=False):
-        """
-        Compute the Lipschitz constant for the specified layer.
-        Formula:
-        q = ||Wq||_2, k = ||Wk||_2, v = ||Wv||_2
-        d: hidden size, h: number of heads, L: sequence length, C: data euclidean norm bound
-        Q = XWq + 1*bq, K = XWk + 1*bk, V = XWv + 1*bv
-            has_mask=false(bert): 
-                has_data_info=false: 1/(sqrt(d/h)) * (q * ||K||_2 + k * ||Q||_2)
-                has_data_info=true: 1/(sqrt(d/h)) * (q * sqrt(k^2 * C^2 + L * ||bk||_2^2) + k * sqrt(q^2 * C^2 + L * ||bq||_2^2))
-            has_mask=true(gpt):
-                has_data_info=false:
-                has_data_info=true: 
-        """
-        pass
-
-        
-    def compute_self_attention_lipschitz(self, layer_indices, layer_name, data_euclidean_bound=1, sequence_length=128, has_mask = False, has_data_info=False, attention_name=None):
-        """
-        Compute the Lipschitz constant for the specified layer.
-        Formula from: How smooth is Attention? 
-        paper url: https://arxiv.org/pdf/2312.14820
-        """
-        pass
-    
-    
-    def compute_spectral_norm(self,
-                            W: torch.Tensor,
-                            n_iters: int = 10,
-                            eps: float = 1e-12,
-                            u_init: torch.Tensor | None = None,
-                            v_init: torch.Tensor | None = None,
-                            track_gradients: bool = False,
-                            return_uv: bool = False):
-        """
-        计算矩阵 W 的谱范数 (最大奇异值) —— power iteration 版。
-
-        Args:
-            W: 形状 (m, n) 的 2D 矩阵 (torch.Tensor)。
-            n_iters: 幂迭代次数，通常 5~10 就足够。
-            eps: 防止除零的稳定项。
-            u_init, v_init: 可选的初始向量 (分别为形状 (m,), (n,))。若为 None 随机初始化。
-            track_gradients: 是否让迭代过程参与 autograd。多数场景下 False 更稳定；
-                            若希望对 W 的梯度更精确，可设为 True。
-            return_uv: 是否返回最终的左右奇异向量近似 (u, v)。
-
-        Returns:
-            sigma: 近似的最大奇异值 (谱范数)，标量张量。
-            (可选) u, v: 近似的主奇异向量（左、右）。
-        """
-        assert W.dim() == 2, "W 必须是 2D 矩阵张量。"
-        m, n = W.shape
-        device, dtype = W.device, W.dtype
-
-        # 初始化 u, v
-        if u_init is None:
-            u = torch.randn(m, device=device, dtype=dtype)
-        else:
-            u = u_init.to(device=device, dtype=dtype)
-
-        if v_init is None:
-            v = torch.randn(n, device=device, dtype=dtype)
-        else:
-            v = v_init.to(device=device, dtype=dtype)
-
-        def _normalize(x):
-            return x / (x.norm(p=2) + eps)
-
-        # 迭代
-        if not track_gradients:
-            with torch.no_grad():
-                u = _normalize(u)
-                v = _normalize(v)
-                for _ in range(n_iters):
-                    # 右乘得到 v（近似主右奇异向量）
-                    v = _normalize(W.t().matmul(u))
-                    # 左乘得到 u（近似主左奇异向量）
-                    u = _normalize(W.matmul(v))
-            # 迭代结束后，再计算一次 sigma（这一步要参与梯度可求导）
-            # 注意：这里用上一步的 u,v（视为常量方向）来度量 W 的放大
-            sigma = u @ (W @ v)
-        else:
-            # 完全可微的版本（更耗算、更不稳定一点）
-            u = _normalize(u)
-            v = _normalize(v)
-            for _ in range(n_iters):
-                v = _normalize(W.t() @ u)
-                u = _normalize(W @ v)
-            sigma = u @ (W @ v)
-
-        # 谱范数应为非负；数值波动时取绝对值更稳
-        sigma = sigma.abs()
-
-        if return_uv:
-            return sigma, u, v
-        return sigma.item()
-    
-    
-    
-    
-    def _tensor_max_l2_norm(self, x: torch.Tensor) -> float:
-        """
-        计算张量 x 在最后一维上的向量 L2 范数，并返回全局最大值。
-        适配形状: (..., d)
-        例如:
-        - (B, D) → 每个样本向量的范数; 取 max
-        - (B, T, D) → 每个 token 向量范数; 取 max
-        - (D,) → 单个向量范数
-        """
-        if x.numel() == 0:
-            return 0.0
-        # 在最后一维求向量范数
-        norms = torch.linalg.vector_norm(x, ord=2, dim=-1)
-        # 再在剩余维上取最大
-        return norms.max().item()
-
-
-    def compute_euclidean_norm_bound(
-        self,
-        data_or_tensor: Union[torch.Tensor, datasets.dataset_dict.Dataset, Iterable],
-        input_key: Optional[str] = None,
-        to_float: bool = True,
-        device: Optional[torch.device] = None,
-        batch_size: Optional[int] = None,
-    ) -> float:
-        """
-        计算“每层输入向量”的欧几里得范数（L2，沿最后一维）最大值。
-        - 若传入的是 torch.Tensor（如中间层激活）：按最后一维求向量范数并取全局最大。
-        - 若传入的是 HuggingFace Dataset / 可迭代样本：会从样本中取 `input_key` 字段（或自动猜测）转成 tensor 计算，并不断更新最大值。
-
-        Args:
-            data_or_tensor: torch.Tensor，或 HuggingFace Dataset，或可迭代的样本/张量。
-            input_key: 当输入为样本字典时，从该 key 取向量/张量；若为 None 将自动尝试常见 key。
-            to_float: 是否把数据转为 float 计算范数（推荐 True）。
-            device: 若给定，会把张量移到该设备后再计算（如 torch.device("cuda")）。
-            batch_size: 对支持 `.with_format("torch")` 的 Dataset，可指定批大小进行批处理（更快）。
-
-        Returns:
-            float: 数据中所有向量（沿最后一维）的 L2 范数的最大值。
-        """
-        # 1) 直接是 Tensor
-        if isinstance(data_or_tensor, torch.Tensor):
-            x = data_or_tensor
-            if to_float:
-                x = x.float()
-            if device is not None:
-                x = x.to(device)
-            return self._tensor_max_l2_norm(x)
-
-        # 2) HuggingFace Dataset
-        if isinstance(data_or_tensor, datasets.dataset_dict.Dataset):
-            ds = data_or_tensor
-
-            # 自动猜测 input_key
-            if input_key is None:
-                for k in ("hidden_states", "layer_input", "inputs", "input", "input_ids", "x"):
-                    if k in ds.features:
-                        input_key = k
-                        break
-                if input_key is None:
-                    raise ValueError("请指定 input_key（样本字典中对应输入向量的字段名）。")
-
-            max_norm = 0.0
-
-            # 优先用 torch 格式 + 批处理
-            if hasattr(ds, "with_format"):
-                ds_t = ds.with_format("torch")
-                if batch_size is None:
-                    # 逐条遍历（通用但慢）
-                    for ex in ds_t:
-                        vec = ex[input_key]
-                        if not isinstance(vec, torch.Tensor):
-                            vec = torch.tensor(vec)
-                        if to_float:
-                            vec = vec.float()
-                        if device is not None:
-                            vec = vec.to(device)
-                        max_norm = max(max_norm, self._tensor_max_l2_norm(vec))
+                # 5. Update Epsilon & Log
+                self.epsilon = max(0.05, self.epsilon * self.epsilon_decay)
+                
+                if avg_loss < best_loss:
+                    best_loss = avg_loss
+                    best_config_gelu = self.current_gelu_degrees.copy()
+                    best_config_softmax = self.current_softmax_degrees.copy()
+                
+                gelu_str = str(self.current_gelu_degrees.tolist())
+                softmax_str = str(self.current_softmax_degrees.tolist())
+                
+                # [Modification] Updated log format for separated arrays
+                log_str = f"{step:<5} | {avg_loss:<10.4f} | {reward:<10.2f} | {self.epsilon:<8.2f} | {gelu_str} | {softmax_str}"
+                self.logs(log_str)
+                
+                # --- CRITICAL: Restore entire model using restore_all() ---
+                self.log_progress(f"RL Step {step} | Restoring model state...")
+                
+                # Make sure deepcopy is AVAILABLE for restore_all
+                copy.deepcopy = _ORIGINAL_DEEPCOPY
+                
+                # Safety check before calling restore_all
+                if hasattr(self.reversible_layer_handler, 'backup_model') and self.reversible_layer_handler.backup_model is not None:
+                    try:
+                        self.reversible_layer_handler.restore_all()
+                    except Exception as restore_e:
+                        self.log_progress(f"Warning: restore_all failed: {restore_e}. Trying to proceed with in-place updates.")
                 else:
-                    # 批处理：利用 select+batched=True
-                    for i in range(0, len(ds_t), batch_size):
-                        batch = ds_t.select(range(i, min(i + batch_size, len(ds_t)))).to_dict()
-                        vec = batch[input_key]  # 可能是 list[Tensor] 或 Tensor
-                        if isinstance(vec, list):
-                            vec = torch.nn.utils.rnn.pad_sequence(
-                                [v if isinstance(v, torch.Tensor) else torch.tensor(v) for v in vec],
-                                batch_first=True
-                            )
-                        if not isinstance(vec, torch.Tensor):
-                            vec = torch.tensor(vec)
-                        if to_float:
-                            vec = vec.float()
-                        if device is not None:
-                            vec = vec.to(device)
-                        max_norm = max(max_norm, self._tensor_max_l2_norm(vec))
-            else:
-                # 退化路径：把 Dataset 当作普通可迭代
-                for ex in ds:
-                    vec = ex[input_key]
-                    if not isinstance(vec, torch.Tensor):
-                        vec = torch.tensor(vec)
-                    if to_float:
-                        vec = vec.float()
-                    if device is not None:
-                        vec = vec.to(device)
-                    max_norm = max(max_norm, self._tensor_max_l2_norm(vec))
-            return max_norm
+                    self.log_progress(f"Warning: backup_model is None or missing. Skipping restore_all. This might cause accumulation errors.")
+            
+            except Exception as e:
+                self.log_progress(f"CRITICAL ERROR in Step {step}: {str(e)}")
+                traceback.print_exc()
 
-        # 3) 其它可迭代（list/tuple/生成器等）：元素可为 Tensor 或 dict
-        if isinstance(data_or_tensor, Iterable):
-            max_norm = 0.0
-            for ex in data_or_tensor:
-                if isinstance(ex, torch.Tensor):
-                    vec = ex
-                elif isinstance(ex, dict):
-                    key = input_key
-                    if key is None:
-                        for k in ("hidden_states", "layer_input", "inputs", "input", "input_ids", "x"):
-                            if k in ex:
-                                key = k
-                                break
-                        if key is None:
-                            raise ValueError("元素为字典但未找到输入字段；请显式设置 input_key。")
-                    vec = ex[key]
-                else:
-                    # 假定是 array-like
-                    vec = torch.tensor(ex)
+        # Plot Learning Curve
+        if self.is_main_process() and len(loss_history) > 0:
+            try:
+                plt.figure(figsize=(12, 5))
+                
+                # Plot Loss
+                plt.subplot(1, 2, 1)
+                plt.plot(range(1, len(loss_history) + 1), loss_history, marker='o', label='Loss')
+                plt.title('Loss vs Steps')
+                plt.xlabel('Step')
+                plt.ylabel('Loss')
+                plt.grid(True)
+                
+                # Plot Reward
+                plt.subplot(1, 2, 2)
+                plt.plot(range(1, len(reward_history) + 1), reward_history, marker='o', color='orange', label='Reward')
+                plt.title('Reward vs Steps')
+                plt.xlabel('Step')
+                plt.ylabel('Reward')
+                plt.grid(True)
+                
+                plt.tight_layout()
+                plt.savefig(self.plot_path)
+                self.logs(f"Learning curve saved to {self.plot_path}")
+            except Exception as e:
+                self.logs(f"Failed to plot learning curve: {e}")
 
-                if not isinstance(vec, torch.Tensor):
-                    vec = torch.tensor(vec)
-                if to_float:
-                    vec = vec.float()
-                if device is not None:
-                    vec = vec.to(device)
+        self.logs("="*60)
+        self.logs("RL TUNING FINISHED")
+        
+        # --- 最终评估阶段 ---
+        self.logs("\n" + "="*30)
+        self.logs("FINAL EVALUATION PHASE")
+        self.logs("="*30)
 
-                max_norm = max(max_norm, self._tensor_max_l2_norm(vec))
-            return max_norm
+        # 1. 恢复到 RL 找到的最佳配置
+        self.current_gelu_degrees = best_config_gelu
+        self.current_softmax_degrees = best_config_softmax
+        self.get_final_metrics(name="Best RL Policy")
+        
+        # 2. 恢复模型状态以便后续评估
+        copy.deepcopy = _ORIGINAL_DEEPCOPY
+        try:
+            if hasattr(self.reversible_layer_handler, 'backup_model') and self.reversible_layer_handler.backup_model is not None:
+                self.reversible_layer_handler.restore_all()
+        except: pass
 
-        raise TypeError("不支持的输入类型：请传入 torch.Tensor、HuggingFace Dataset 或可迭代对象。")
+        # 3. 评估基准：全 Origin (Degree 0)
+        self.current_gelu_degrees = np.zeros(self.total_layers, dtype=int)
+        self.current_softmax_degrees = np.zeros(self.total_layers, dtype=int)
+        self.get_final_metrics(name="Baseline: All Origin (Degree 0)")
+        
+        # 恢复模型
+        copy.deepcopy = _ORIGINAL_DEEPCOPY
+        try:
+            if hasattr(self.reversible_layer_handler, 'backup_model') and self.reversible_layer_handler.backup_model is not None:
+                self.reversible_layer_handler.restore_all()
+        except: pass
+
+        # 4. 评估基准：全 Degree 1 (最低阶近似)
+        self.current_gelu_degrees = np.ones(self.total_layers, dtype=int)
+        self.current_softmax_degrees = np.ones(self.total_layers, dtype=int)
+        self.get_final_metrics(name="Baseline: All Degree 1")
+
+        # 最后恢复到最佳配置，以便 Trainer 保存或后续使用
+        self.current_gelu_degrees = best_config_gelu
+        self.current_softmax_degrees = best_config_softmax
+        self.apply_configuration()
+
+    # 兼容旧接口
+    def compute_spectral_norm(self, *args, **kwargs): pass
+    def compute_importance_matrix_lipschitz(self, *args, **kwargs): pass
