@@ -1,7 +1,8 @@
 export NCCL_DEBUG=INFO
+export CUDA_VISIBLE_DEVICES=1
 nohup  python rl_tune.py \
-    --base_model 'textattack/bert-base-uncased-STS-B' \
-    --data_path 'stsb' \
+    --base_model 'textattack/bert-base-uncased-MRPC' \
+    --data_path 'mrpc' \
     --output_dir $3 \
     --batch_size 16  --micro_batch_size 16 --num_epochs 1 \
     --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 \

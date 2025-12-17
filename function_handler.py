@@ -35,12 +35,14 @@ SiLU_COEEF = {
 }
 
 
-# Exponential approximation coeff, ignore the noise introduced by division
-# exp(x) = (1+ x/(2^n))^(2^n) n = 1,2,3,4,5,6 (6 is the bumblebee high precision value) in [T_exp, 0]
-# otherwise 0
-# Note: the input to softmax is always less than 0 because of the numerical stability demands
-# i: degree = 2^i
-Exponential_COEEF = {
+# Exponential approximation Taylor bound
+Exp_bound = {
+    1:-2,
+    2:-4,
+    3:-8,
+    4:-12,
+    5:-13,
+    6:-13
 }
 
 # Tanh approximation coeff
@@ -69,6 +71,8 @@ Less_than_COEEF = {
 ReSqrt_COEFF = {
 
 }
+
+
 
 # millionaire approximation used in protocol type: 0->mpc; 1->HE
 def less_than_approximaion (
@@ -173,9 +177,8 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
         self.lower_bound = lower_bound
 
     def approximation_exponential(self, x: torch.Tensor) -> torch.Tensor:
-        """近似计算指数函数"""
-        # degree = 1,2,3,4,5,6
-        x = torch.pow(1 + x / (2 ** self.degree), 2 ** self.degree)
+        """近似计算指数函数""" # degree = 1,2,3,4,5,6 
+        x = torch.pow(1 + x / (2 ** self.degree), 2 ** self.degree) 
         return x
 
 
@@ -388,7 +391,7 @@ class ReversibleLayerHandler:
     def replace_layer_linear(self, layer_indices=None, layer_name="model.model.layers", degree=1):
         pass
 
-    def replace_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention", degree=1, lower_bound = -2):
+    def replace_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention", degree=1):
         """替换指定层的Softmax函数"""
         for i, layer in enumerate(eval("self." + layer_name)):
             if i in layer_indices:
@@ -400,7 +403,7 @@ class ReversibleLayerHandler:
                 
                 # 应用新函数
                 orig_sd = layer.attention.self.state_dict()
-                new_attn = BertSelfAttentionWithAproximation(self.model.config, degree=degree, lower_bound=lower_bound)
+                new_attn = BertSelfAttentionWithAproximation(self.model.config, degree=degree, lower_bound=Exp_bound[degree])
                 new_attn.load_state_dict(orig_sd, strict=False)
                 layer.attention.self = new_attn
         
