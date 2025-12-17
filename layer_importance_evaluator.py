@@ -118,10 +118,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.rl_epochs = 60           # [Modification] Set to 60 as requested
         # self.eval_batch_count = 200   # [Modification] Set to 200 as requested
         self.steps_per_epoch = len(self.dataloader)  # 360
-        
-        if self.steps_per_epoch >= 500:
-            self.steps_per_epoch = 500
-            
         self.eval_steps = len(self.dataloader_test)  # 94
 
         
@@ -586,10 +582,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                 
                 if avg_loss < best_loss:
                     best_loss = avg_loss
-                
-                # [关键修改]：更新 best_config 为当前 Step 的配置
-                best_config_gelu = self.current_gelu_degrees.copy()
-                best_config_softmax = self.current_softmax_degrees.copy()
+                    # [关键修改]：只有当 Loss 更好时，才更新最佳配置
+                    best_config_gelu = self.current_gelu_degrees.copy()
+                    best_config_softmax = self.current_softmax_degrees.copy()
                 
                 gelu_str = str(self.current_gelu_degrees.tolist())
                 softmax_str = str(self.current_softmax_degrees.tolist())
@@ -651,9 +646,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.logs("FINAL EVALUATION PHASE")
         self.logs("="*30)
 
-        # 1. Final RL Policy
-        self.current_gelu_degrees = best_config_gelu
-        self.current_softmax_degrees = best_config_softmax
+        # 0. Capture Last Step Config (Currently held in self.current_... variables)
+        last_step_gelu = self.current_gelu_degrees.copy()
+        last_step_softmax = self.current_softmax_degrees.copy()
+
+        # 1. Final RL Policy (Last Step)
         self.get_final_metrics(name="Final RL Policy (Last Step)")
         
         copy.deepcopy = _ORIGINAL_DEEPCOPY
@@ -661,6 +658,21 @@ class LayerImportanceEvaluator(TrainerCallback):
             if hasattr(self.reversible_layer_handler, 'backup_model') and self.reversible_layer_handler.backup_model is not None:
                 self.reversible_layer_handler.restore_all()
         except: pass
+
+        # 1.5 Final RL Policy (Best Loss)
+        if best_config_gelu is not None:
+            self.current_gelu_degrees = best_config_gelu
+            self.current_softmax_degrees = best_config_softmax
+            self.get_final_metrics(name="Final RL Policy (Best Loss)")
+
+            copy.deepcopy = _ORIGINAL_DEEPCOPY
+            try:
+                if hasattr(self.reversible_layer_handler, 'backup_model') and self.reversible_layer_handler.backup_model is not None:
+                    self.reversible_layer_handler.restore_all()
+            except: pass
+        else:
+             self.logs("Warning: No best config found (loss never decreased?), skipping Best Loss eval.")
+
 
         # 2. Baseline: Origin
         self.current_gelu_degrees = np.zeros(self.total_layers, dtype=int)
@@ -691,6 +703,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.get_final_metrics(name="Baseline: All Max Approx (Gelu 4, Softmax 6)")
         
         # 5: Random placement (independent shuffle)
+        # We shuffle based on the BEST configuration found
         for rand_seed in [0, 1, 2, 3, 4]:
             copy.deepcopy = _ORIGINAL_DEEPCOPY
             try:
@@ -700,15 +713,22 @@ class LayerImportanceEvaluator(TrainerCallback):
                 pass
             
             rand_gelu, rand_softmax = self.make_randomized_layer_config_independent(
-                best_config_gelu, best_config_softmax, seed=rand_seed
+                best_config_gelu if best_config_gelu is not None else last_step_gelu, 
+                best_config_softmax if best_config_softmax is not None else last_step_softmax, 
+                seed=rand_seed
             )
             self.current_gelu_degrees = rand_gelu
             self.current_softmax_degrees = rand_softmax
             self.get_final_metrics(name=f"Baseline: Random Placement (indep shuffle, seed={rand_seed})")
 
-        # 最后恢复到最佳配置
-        self.current_gelu_degrees = best_config_gelu
-        self.current_softmax_degrees = best_config_softmax
+        # 最后恢复到最佳配置 (如果有，否则恢复最后一步)
+        if best_config_gelu is not None:
+            self.current_gelu_degrees = best_config_gelu
+            self.current_softmax_degrees = best_config_softmax
+        else:
+            self.current_gelu_degrees = last_step_gelu
+            self.current_softmax_degrees = last_step_softmax
+            
         self.apply_configuration()
 
     def compute_spectral_norm(self, *args, **kwargs): pass
