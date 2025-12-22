@@ -22,10 +22,9 @@ import matplotlib.pyplot as plt # [Modification 1] Import matplotlib for plottin
 # Store original deepcopy immediately to ensure we have a valid reference
 _ORIGINAL_DEEPCOPY = copy.deepcopy
 
-# 定义动作映射
+# [修改点] 定义动作映射 (移除 ACTION_STAY，改为二元动作)
 ACTION_DECREASE = 0  # 对应 -1 (降低精度/降低开销)
-ACTION_STAY = 1      # 对应 0  (保持不变)
-ACTION_INCREASE = 2  # 对应 +1 (提高精度/增加开销)
+ACTION_INCREASE = 1  # 对应 +1 (提高精度/增加开销)
 
 class LayerImportanceEvaluator(TrainerCallback):
     def __init__(self, model, train_data, test_data, data_collator, rl_lr=100, degree=2, device='cuda'):
@@ -115,8 +114,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.total_layers = 12 
 
         # --- 新 RL 策略参数设置 ---
-        self.rl_epochs = 60           # [Modification] Set to 60 as requested
-        # self.eval_batch_count = 200   # [Modification] Set to 200 as requested
+        self.rl_epochs = 300          # [Modification] Increased max epochs to 300
+        self.patience = 50            # [Modification] Patience for early stopping
         self.steps_per_epoch = len(self.dataloader)  # 360
         self.eval_steps = len(self.dataloader_test)  # 94
 
@@ -137,10 +136,13 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.baseline_loss = None
 
         # [修改点 2] 分离 GELU 和 Softmax 的 Q-Table，并调整大小
-        # GELU Q-Table: [Layer, 5, 3] (States: 0,1,2,3,4)
-        self.q_table_gelu = np.zeros((self.total_layers, 5, 3))
-        # Softmax Q-Table: [Layer, 8, 3] (States: 0-7, 保险起见开大一点，实际用到 1-6)
-        self.q_table_softmax = np.zeros((self.total_layers, 8, 3))
+        # GELU Q-Table: [Layer, 5, 2] (States: 0-4, Actions: Dec=0, Inc=1)
+        self.q_table_gelu = np.zeros((self.total_layers, 5, 2))
+        # Softmax Q-Table: [Layer, 8, 2] (States: 0-7, Actions: Dec=0, Inc=1)
+        self.q_table_softmax = np.zeros((self.total_layers, 8, 2))
+        
+        # [新增] Global Stay Q-Value (Scalar)
+        self.q_global_stay = 0.0
         
         # --- 日志文件设置 ---
         self.log_path = f"./rl_training_log_model{model_class_name}.txt"
@@ -159,6 +161,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.logs(f"Device: {self.device}")
         self.logs(f"Total Layers: {self.total_layers}")
         self.logs(f"Compiled Model Unwrapped: {self.is_compiled}") # Debug info
+        self.logs(f"Max RL Epochs: {self.rl_epochs}, Patience: {self.patience}")
 
     def is_main_process(self):
         """Check if this is the main process (Rank 0) to avoid duplicate logs."""
@@ -221,15 +224,52 @@ class LayerImportanceEvaluator(TrainerCallback):
             batches.append(batch)
         return batches
 
-    def choose_action(self, layer_idx, current_degree, q_table):
-        """更新 choose_action 接受特定的 q_table"""
-        if np.random.rand() < self.epsilon:
-            return np.random.randint(0, 3) 
-        else:
-            q_values = q_table[layer_idx, current_degree, :]
-            max_q = np.max(q_values)
-            best_actions = np.where(q_values == max_q)[0]
-            return np.random.choice(best_actions)
+    def get_all_valid_actions(self):
+        """
+        Helper method to collect ALL valid actions across the entire model.
+        Returns a list of dicts: {'type': str, 'layer': int, 'action': int, 'q_val': float}
+        """
+        actions = []
+        
+        # 1. GELU Actions (Valid Range 1-4)
+        for i in range(self.total_layers):
+            d = self.current_gelu_degrees[i]
+            # Decrease (valid if d > 1)
+            if d > 1:
+                actions.append({
+                    'type': 'gelu', 'layer': i, 'action': ACTION_DECREASE,
+                    'q_val': self.q_table_gelu[i, d, ACTION_DECREASE]
+                })
+            # Increase (valid if d < 4)
+            if d < 4:
+                actions.append({
+                    'type': 'gelu', 'layer': i, 'action': ACTION_INCREASE,
+                    'q_val': self.q_table_gelu[i, d, ACTION_INCREASE]
+                })
+
+        # 2. Softmax Actions (Valid Range 2-6)
+        for i in range(self.total_layers):
+            d = self.current_softmax_degrees[i]
+            # Decrease (valid if d > 2)
+            if d > 2:
+                actions.append({
+                    'type': 'softmax', 'layer': i, 'action': ACTION_DECREASE,
+                    'q_val': self.q_table_softmax[i, d, ACTION_DECREASE]
+                })
+            # Increase (valid if d < 6)
+            if d < 6:
+                actions.append({
+                    'type': 'softmax', 'layer': i, 'action': ACTION_INCREASE,
+                    'q_val': self.q_table_softmax[i, d, ACTION_INCREASE]
+                })
+                
+        # 3. Global Stay
+        actions.append({
+            'type': 'global_stay', 'layer': -1, 'action': -1,
+            'q_val': self.q_global_stay
+        })
+        
+        return actions
 
     def apply_configuration(self):
         """分别应用 GELU 和 Softmax 的配置"""
@@ -425,9 +465,12 @@ class LayerImportanceEvaluator(TrainerCallback):
         
         self.log_progress(f"\n{'='*20} NEW EVALUATION SESSION {'='*20}")
         
-        best_loss = float('inf')
+        # [修改点] 将最佳指标追踪从 Loss 改为 Reward
+        best_reward = -float('inf') 
         best_config_gelu = None
         best_config_softmax = None
+        
+        steps_without_improvement = 0 # [Modification] Auto-stop counter
         
         loss_history = []
         reward_history = []
@@ -479,46 +522,60 @@ class LayerImportanceEvaluator(TrainerCallback):
                 np.random.seed(current_seed)
                 torch.manual_seed(current_seed)
                 
-                # 1. Choose Actions (Separately for GELU and Softmax)
-                actions_gelu = [] 
-                actions_softmax = []
+                # 1. 获取所有合法动作 & 选择一个
+                valid_actions = self.get_all_valid_actions()
+                selected_action = None
                 
-                prev_degrees_gelu = self.current_gelu_degrees.copy()
-                prev_degrees_softmax = self.current_softmax_degrees.copy()
+                # Epsilon-Greedy Strategy
+                if np.random.rand() < self.epsilon:
+                    # Random Exploration
+                    selected_action = np.random.choice(valid_actions)
+                else:
+                    # Greedy Exploitation: Find Max Q-Value
+                    max_q = -float('inf')
+                    for act in valid_actions:
+                        if act['q_val'] > max_q:
+                            max_q = act['q_val']
+                    
+                    # Tie-breaking: randomly choose among best
+                    best_candidates = [act for act in valid_actions if act['q_val'] == max_q]
+                    selected_action = np.random.choice(best_candidates)
                 
-                # --- GELU Action Selection (Range 1-4) [不可选0] ---
-                for i in range(self.total_layers):
-                    curr_deg = self.current_gelu_degrees[i]
-                    action = self.choose_action(i, curr_deg, self.q_table_gelu)
-                    
-                    # 限制范围 [1, 4]
-                    if action == ACTION_DECREASE: 
-                        new_deg = max(1, curr_deg - 1)
-                    elif action == ACTION_INCREASE: 
-                        new_deg = min(4, curr_deg + 1)
-                    else: # STAY
-                        new_deg = curr_deg
-                    
-                    self.current_gelu_degrees[i] = new_deg
-                    actions_gelu.append(action)
+                # Extract details
+                action_type = selected_action['type']
+                layer_idx = selected_action['layer']
+                action_code = selected_action['action']
+                current_q = selected_action['q_val']
+                
+                # Store State for Update (Degree BEFORE action)
+                state_idx = 0
+                if action_type == 'gelu':
+                    state_idx = self.current_gelu_degrees[layer_idx]
+                elif action_type == 'softmax':
+                    state_idx = self.current_softmax_degrees[layer_idx]
+                
+                # 2. Execute Action (Update Internal State)
+                if action_type == 'gelu':
+                    if action_code == ACTION_DECREASE:
+                        self.current_gelu_degrees[layer_idx] -= 1
+                        log_msg = f"Layer {layer_idx} GELU Decrease ({state_idx}->{self.current_gelu_degrees[layer_idx]})"
+                    else:
+                        self.current_gelu_degrees[layer_idx] += 1
+                        log_msg = f"Layer {layer_idx} GELU Increase ({state_idx}->{self.current_gelu_degrees[layer_idx]})"
+                        
+                elif action_type == 'softmax':
+                    if action_code == ACTION_DECREASE:
+                        self.current_softmax_degrees[layer_idx] -= 1
+                        log_msg = f"Layer {layer_idx} Softmax Decrease ({state_idx}->{self.current_softmax_degrees[layer_idx]})"
+                    else:
+                        self.current_softmax_degrees[layer_idx] += 1
+                        log_msg = f"Layer {layer_idx} Softmax Increase ({state_idx}->{self.current_softmax_degrees[layer_idx]})"
+                else:
+                    log_msg = "Global Stay (No Change)"
 
-                # --- Softmax Action Selection (Range 1-6) [不可选0] ---
-                for i in range(self.total_layers):
-                    curr_deg = self.current_softmax_degrees[i]
-                    action = self.choose_action(i, curr_deg, self.q_table_softmax)
-                    
-                    # 限制范围 [2, 6]
-                    if action == ACTION_DECREASE: 
-                        new_deg = max(2, curr_deg - 1)
-                    elif action == ACTION_INCREASE: 
-                        new_deg = min(6, curr_deg + 1)
-                    else: # STAY
-                        new_deg = curr_deg
-                    
-                    self.current_softmax_degrees[i] = new_deg
-                    actions_softmax.append(action)
-                
-                # 2. Apply Config
+                self.log_progress(f"RL Step {step} | Action: {log_msg}")
+
+                # 3. Apply Config & Eval
                 self.log_progress(f"RL Step {step} | Applying configuration...")
                 self.apply_configuration()
                 self.reversible_layer_handler.model.eval()
@@ -552,39 +609,43 @@ class LayerImportanceEvaluator(TrainerCallback):
                     avg_loss = loss_tensor.item()
                     self.log_progress(f"RL Step {step} | DDP Sync Complete. Global Avg Loss: {avg_loss:.4f}")
                 
-                # 3. Calculate Reward & Update Q-Table
+                # 4. Calculate Reward & Update Q-Table
                 reward = self.calculate_reward(avg_loss) 
                 
                 # Append metrics to history for plotting
                 loss_history.append(avg_loss)
                 reward_history.append(reward)
                 
-                # Update Q-Tables (Separately)
-                for i in range(self.total_layers):
-                    # Update GELU Q-Table
-                    s = prev_degrees_gelu[i]
-                    a = actions_gelu[i]
-                    s_prime = self.current_gelu_degrees[i]
-                    q_predict = self.q_table_gelu[i, s, a]
-                    q_target = reward + self.gamma * np.max(self.q_table_gelu[i, s_prime, :])
-                    self.q_table_gelu[i, s, a] += self.alpha * (q_target - q_predict)
-
-                    # Update Softmax Q-Table
-                    s = prev_degrees_softmax[i]
-                    a = actions_softmax[i]
-                    s_prime = self.current_softmax_degrees[i]
-                    q_predict = self.q_table_softmax[i, s, a]
-                    q_target = reward + self.gamma * np.max(self.q_table_softmax[i, s_prime, :])
-                    self.q_table_softmax[i, s, a] += self.alpha * (q_target - q_predict)
+                # Calculate Max Q of NEXT state (Global Max)
+                next_valid_actions = self.get_all_valid_actions()
+                max_q_next = -float('inf')
+                for act in next_valid_actions:
+                    if act['q_val'] > max_q_next:
+                        max_q_next = act['q_val']
+                
+                # Q-Learning Update Rule
+                q_target = reward + self.gamma * max_q_next
+                
+                if action_type == 'gelu':
+                    self.q_table_gelu[layer_idx, state_idx, action_code] += self.alpha * (q_target - current_q)
+                elif action_type == 'softmax':
+                    self.q_table_softmax[layer_idx, state_idx, action_code] += self.alpha * (q_target - current_q)
+                else: # Global Stay
+                    self.q_global_stay += self.alpha * (q_target - current_q)
 
                 # 5. Update Epsilon & Log
                 self.epsilon = max(0.05, self.epsilon * self.epsilon_decay)
                 
-                if avg_loss < best_loss:
-                    best_loss = avg_loss
-                    # [关键修改]：只有当 Loss 更好时，才更新最佳配置
+                # [Modification] Auto-stopping logic based on REWARD (Maximize Reward = Balance Loss & Degree)
+                if reward > best_reward:
+                    best_reward = reward
+                    steps_without_improvement = 0 # Reset counter
+                    # [关键修改]：当 Reward 更好时（性价比更高），更新最佳配置
                     best_config_gelu = self.current_gelu_degrees.copy()
                     best_config_softmax = self.current_softmax_degrees.copy()
+                    self.log_progress(f"Step {step} | New Best Reward: {best_reward:.4f} (Saved Config)")
+                else:
+                    steps_without_improvement += 1
                 
                 gelu_str = str(self.current_gelu_degrees.tolist())
                 softmax_str = str(self.current_softmax_degrees.tolist())
@@ -607,6 +668,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                         self.log_progress(f"Warning: restore_all failed: {restore_e}. Trying to proceed with in-place updates.")
                 else:
                     self.log_progress(f"Warning: backup_model is None or missing. Skipping restore_all. This might cause accumulation errors.")
+                
+                # Check for Early Stopping
+                if steps_without_improvement >= self.patience:
+                    self.logs(f"\n[Early Stopping] No improvement in Reward for {self.patience} steps. Stopping RL tuning.")
+                    break
             
             except Exception as e:
                 self.log_progress(f"CRITICAL ERROR in Step {step}: {str(e)}")
@@ -659,11 +725,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.reversible_layer_handler.restore_all()
         except: pass
 
-        # 1.5 Final RL Policy (Best Loss)
+        # 1.5 Final RL Policy (Best Reward/Config)
         if best_config_gelu is not None:
             self.current_gelu_degrees = best_config_gelu
             self.current_softmax_degrees = best_config_softmax
-            self.get_final_metrics(name="Final RL Policy (Best Loss)")
+            self.get_final_metrics(name="Final RL Policy (Best Reward)")
 
             copy.deepcopy = _ORIGINAL_DEEPCOPY
             try:
@@ -671,7 +737,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     self.reversible_layer_handler.restore_all()
             except: pass
         else:
-             self.logs("Warning: No best config found (loss never decreased?), skipping Best Loss eval.")
+             self.logs("Warning: No best config found (reward never improved?), skipping Best Reward eval.")
 
 
         # 2. Baseline: Origin
