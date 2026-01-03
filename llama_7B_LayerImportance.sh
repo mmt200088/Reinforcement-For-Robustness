@@ -1,4 +1,5 @@
 export NCCL_DEBUG=INFO
+export CUDA_VISIBLE_DEVICES=0
 nohup  python rl_tune.py \
     --base_model 'textattack/bert-base-uncased-STS-B' \
     --data_path 'stsb' \
