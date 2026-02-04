@@ -9,7 +9,8 @@ Please Ignore the LLM-Adapters, EzPC, and importance-aware-sparse-tuning-IST-pap
 ### Activate python enviroment first
     conda activate llm_ist
 ### Go into the .sh located directory (/root/ppml/MoE-Privacy)
-    cd /root/ppml/MoE-Privacy
+    cd /root/ppml/MoE-Privacy 
+    cd /var/tmp/root-home/Reinforcement-For-Robustness
 ### Execute the running scripts 
     bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [degree]
 
@@ -19,8 +20,7 @@ logfile_path: the log file output path, you can change it when the learning rate
 rl_lr: reinforcement learning rate used in importance score update, now 20-40 is acceptable.  
 degree: parameter for early debug, now deprecated. Just set it to 2.  
 
-example: `bash llama_7B_LayerImportance.sh 32 
-64 output.log 20 2`
+example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
 #### Note: Though we call the script "llama_7B_LayerImportance.sh", we just evaluate the Bert-base model for different tasks now, please check out the .sh for more detials!
 

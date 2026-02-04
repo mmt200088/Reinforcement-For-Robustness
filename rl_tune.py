@@ -286,7 +286,7 @@ def train(
         data = load_dataset("json", data_files=data_path)
     else:
         # glue tasks: "stsb", "mnli", "sst2", "cola", "qnli", "rte", "wnli", "mrpc"
-        data = load_dataset("glue", data_path)
+        data = load_dataset("nyu-mll/glue", data_path)
 
 
 
