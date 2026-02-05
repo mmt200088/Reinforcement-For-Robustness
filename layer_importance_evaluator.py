@@ -9,6 +9,7 @@ from torch.distributions import Categorical
 from torch.utils.data import DataLoader
 from transformers.trainer_callback import TrainerCallback
 from scipy.stats import pearsonr, spearmanr
+from sklearn.metrics import accuracy_score, f1_score
 from function_handler import ReversibleLayerHandler
 import os
 import hashlib
@@ -34,8 +35,8 @@ PPO_MAX_EPISODES = 1700
 # PDF 6.4：增加采样步数以获得更稳定的梯度估计
 # "建议增加采样步数，例如每2048 steps更新一次"
 # 折中方案：每50 episodes更新一次（600步），在训练时间和稳定性之间平衡
-PPO_UPDATE_INTERVAL = 170  # 每50个episode更新一次（600步）
-PPO_BATCH_SIZE = 12 * 170  # 50 episodes per update, 每个episode 12步 = 600步
+PPO_UPDATE_INTERVAL = 170  # 每170个episode更新一次
+PPO_BATCH_SIZE = 12 * 170  # 170 episodes per update
 
 # ==================== 策略二：超参数配置（PDF 6.4 稳定性修复） ====================
 # PDF 6.4：降低学习率，使用恒定学习率先跑通基线
@@ -81,14 +82,66 @@ RUNNING_REWARD_MIN_SAMPLES = 10    # 开始标准化前的最小样本数
 RUNNING_REWARD_EPSILON = 1e-8      # 防止除零的小常数
 
 # ==================== 显式历史编码配置（PDF优化方案一） ====================
-# 状态向量维度：17维原始特征 + 12维GELU历史 + 12维Softmax历史 = 41维
+# 状态向量维度：17维原始特征 + 12维GELU历史 + 12维Softmax历史 + 3维预算余量 = 44维
 STATE_DIM_ORIGINAL = 17  # 原始状态维度
 STATE_DIM_HISTORY = 24   # 历史编码维度（12 GELU + 12 Softmax）
-STATE_DIM_TOTAL = STATE_DIM_ORIGINAL + STATE_DIM_HISTORY  # 总维度 = 41
+STATE_DIM_BUDGET = 3     # 预算感知维度（敏锐度优化PDF 3.3: Loss/Pearson/Spearman余量）
+STATE_DIM_TOTAL = STATE_DIM_ORIGINAL + STATE_DIM_HISTORY + STATE_DIM_BUDGET  # 总维度 = 44
 # PDF 6.2 步骤1：将填充值从 -1.0 改为 0.0
 # 理由：在ReLU/SiLU激活的网络中，0输入通常产生0输出，天然表示"无信息"
 # -1.0 是一个强烈的信号值，会干扰特征提取
 HISTORY_MASK_VALUE = 0.0  # 未访问层的掩码值（PDF 6.2：零值填充）
+
+# ==================== 敏锐度优化PDF：数据集相关配置 ====================
+# 根据数据集选择不同的评估指标
+REGRESSION_DATASETS = ['stsb']  # 回归任务：使用 pearson, spearman
+CLASSIFICATION_DATASETS = ['mrpc', 'mnli', 'sst2', 'cola', 'qnli', 'rte', 'wnli']  # 分类任务：使用 accuracy, f1
+
+# ==================== 敏锐度优化PDF：差分奖励与对数障碍配置 ====================
+# 优化方案二：信号放大与差分奖励重构
+DIFF_REWARD_SCALE_ACC = 50.0       # 精度差分奖励缩放因子
+DIFF_REWARD_POWER = 0.5            # 根号变换指数（放大微小信号）
+LOG_BARRIER_VIOLATION_SCALE = 10.0  # 违反约束时的指数惩罚系数
+LOG_BARRIER_VIOLATION_STEEPNESS = 20.0  # 违反约束时的指数陡度
+LOG_BARRIER_SATISFACTION_SCALE = 0.5   # 满足约束时的对数奖励系数
+
+# ==================== 敏锐度优化PDF：解耦归一化配置（Disentangled PopArt） ====================
+# 优化方案二（4.3）：分别维护成本和精度的统计量
+
+# ==================== 敏锐度优化PDF：PPO-Lagrangian配置 ====================
+# 优化方案四：自适应惩罚系数
+LAGRANGIAN_LR = 0.01              # 拉格朗日乘子学习率
+LAGRANGIAN_INITIAL = 0.1          # 初始拉格朗日乘子值
+LAGRANGIAN_MAX = 10.0             # 拉格朗日乘子上限
+
+# ==================== 敏锐度优化PDF：课程学习配置 ====================
+# 优化方案四（6.2）：从宽松到严格的约束调度
+CURRICULUM_PHASE1_RATIO = 0.30    # 探索期：前30%的episodes
+CURRICULUM_PHASE2_RATIO = 0.40    # 收紧期：中间40%的episodes
+CURRICULUM_PHASE3_RATIO = 0.30    # 精调期：后30%的episodes
+CURRICULUM_INITIAL_SLACK = 1.2    # 探索期约束放宽系数（1.2倍目标值）
+CURRICULUM_SAFETY_BUFFER = 0.95   # 精调期约束收紧系数（0.95倍目标值，略严于目标）
+
+# ==================== 敏锐度优化PDF：超参数调整 ====================
+# 优化方案（第三步）：熵系数线性衰减 + Critic学习率调整
+PPO_ENTROPY_START = 0.05          # 熵系数起始值（高探索）
+PPO_ENTROPY_END = 0.001           # 熵系数结束值（强制收敛）
+PPO_LR_ACTOR = 3e-5               # Actor学习率
+PPO_LR_CRITIC = 3e-4              # Critic学习率（Actor的10倍）
+
+# ==================== 验证集引导（Validation Guided）配置 ====================
+# 在计算奖励时使用验证集而非训练集，防止过拟合，提高泛化能力
+#
+# 原理与优势：
+# 1. 防止过拟合：使用训练集计算奖励可能导致Agent学习到只在训练集上表现好的配置
+# 2. 提高泛化性：验证集作为未见数据的代理，迫使Agent寻找在新数据上也稳健的策略
+# 3. 更真实的优化目标：实际部署时关心的是在新数据上的表现，而非训练数据
+#
+# 实施策略：
+# - Baseline计算：同时在训练集和验证集上评估，报告两者差异
+# - 奖励计算：使用验证集指标，让Agent优化真实的泛化目标
+# - 约束设定：基于验证集baseline，确保在未见数据上满足性能要求
+USE_VALIDATION_FOR_REWARD = True  # True: 使用验证集计算奖励, False: 使用训练集
 
 
 def orthogonal_init(layer, gain=1.0):
@@ -159,6 +212,49 @@ class RunningMeanStd:
         return x * self.std + self.mean
 
 
+# ==================== 敏锐度优化PDF：解耦归一化（Disentangled PopArt） ====================
+class DisentangledNormalizer:
+    """
+    敏锐度优化PDF 4.3：解耦的奖励归一化
+    分别维护成本和精度的统计量，防止精度信号被成本信号掩盖
+    
+    实施逻辑：
+    1. 维护两个独立的统计量流：r_cost_stats 和 r_acc_stats
+    2. 分别归一化：r_cost_norm = (r_cost - μ_cost) / σ_cost
+    3. 再加权求和：r_total = w_cost * r_cost_norm + w_acc * r_acc_norm
+    """
+    def __init__(self, cost_weight=1.0, acc_weight=1.0):
+        self.cost_stats = RunningMeanStd()
+        self.acc_stats = RunningMeanStd()
+        self.cost_weight = cost_weight
+        self.acc_weight = acc_weight
+    
+    def update(self, cost_rewards, acc_rewards):
+        """更新两个独立的统计量"""
+        if len(cost_rewards) > 0:
+            self.cost_stats.update(cost_rewards)
+        if len(acc_rewards) > 0:
+            self.acc_stats.update(acc_rewards)
+    
+    def normalize_cost(self, cost_reward):
+        """归一化成本奖励"""
+        if self.cost_stats.count < 2:
+            return cost_reward
+        return (cost_reward - self.cost_stats.mean) / (self.cost_stats.std + 1e-8)
+    
+    def normalize_acc(self, acc_reward):
+        """归一化精度奖励"""
+        if self.acc_stats.count < 2:
+            return acc_reward
+        return (acc_reward - self.acc_stats.mean) / (self.acc_stats.std + 1e-8)
+    
+    def get_combined_reward(self, cost_reward, acc_reward):
+        """获取加权归一化后的总奖励"""
+        cost_norm = self.normalize_cost(cost_reward)
+        acc_norm = self.normalize_acc(acc_reward)
+        return self.cost_weight * cost_norm + self.acc_weight * acc_norm
+
+
 # ==================== PDF网络优化方案：残差块 ====================
 class ResidualBlock(nn.Module):
     """
@@ -193,13 +289,14 @@ class ResidualBlock(nn.Module):
 # ==================== PDF网络优化方案：状态编码器 ====================
 class StateEncoder(nn.Module):
     """
-    状态编码器 - PDF 4.1节 & 5.2节
-    将异构的原始输入（41维）转化为统一的语义向量
+    状态编码器 - PDF 4.1节 & 5.2节 + 敏锐度优化PDF 3.3
+    将异构的原始输入（44维）转化为统一的语义向量
     
-    输入分解为三个流：
+    输入分解为四个流：
     1. 层级流 (Layer Stream): Index 0-11，通过Embedding映射
     2. 指标流 (Metric Stream): Index 12-16，通过全连接层映射
     3. 历史序列流 (History Stream): Index 17-40，通过Transformer Encoder处理
+    4. 预算感知流 (Budget Stream): Index 41-43，通过全连接层映射（敏锐度优化PDF 3.3）
     """
     def __init__(self, embed_dim=64, num_layers=12):
         super(StateEncoder, self).__init__()
@@ -229,10 +326,16 @@ class StateEncoder(nn.Module):
         )
         self.hist_transformer = nn.TransformerEncoder(encoder_layer, num_layers=1)
         
-        # 4. 融合层 - PDF 4.1.2
-        # 拼接三个流的输出：Layer(32) + Metric(32) + Hist(32) = 96
+        # 4. 敏锐度优化PDF 3.3：预算感知流（Index 41-43: loss_budget, m1_budget, m2_budget）
+        self.budget_proj = nn.Sequential(
+            nn.Linear(3, 32),
+            nn.SiLU()
+        )
+        
+        # 5. 融合层 - PDF 4.1.2 + 敏锐度优化PDF
+        # 拼接四个流的输出：Layer(32) + Metric(32) + Hist(32) + Budget(32) = 128
         self.fusion = nn.Sequential(
-            nn.Linear(32 * 3, embed_dim),
+            nn.Linear(32 * 4, embed_dim),
             nn.LayerNorm(embed_dim),
             nn.SiLU()
         )
@@ -243,7 +346,7 @@ class StateEncoder(nn.Module):
     def forward(self, state_vector):
         """
         Args:
-            state_vector: (Batch, 41) 或 (41,) 的状态向量
+            state_vector: (Batch, 44) 或 (44,) 的状态向量（敏锐度优化PDF扩展）
         Returns:
             (Batch, embed_dim) 的编码向量
         """
@@ -292,8 +395,17 @@ class StateEncoder(nn.Module):
         valid_count = mask_float.sum(dim=1).clamp(min=1e-6)  # (Batch, 1) 避免除以0
         h_pooled = (h_out * mask_float).sum(dim=1) / valid_count  # (Batch, 32)
         
-        # D. 融合
-        combined = torch.cat([l_emb, m_emb, h_pooled], dim=1)  # (Batch, 96)
+        # D. 敏锐度优化PDF 3.3：解析 Budget (Index 41-43)
+        # 处理状态向量可能是41维或44维的情况（向后兼容）
+        if state_vector.size(1) >= 44:
+            budget = state_vector[:, 41:44]
+        else:
+            # 向后兼容：如果状态向量不包含预算维度，使用零填充
+            budget = torch.zeros(batch_size, 3, device=state_vector.device)
+        b_emb = self.budget_proj(budget)  # (Batch, 32)
+        
+        # E. 融合
+        combined = torch.cat([l_emb, m_emb, h_pooled, b_emb], dim=1)  # (Batch, 128)
         return self.fusion(combined)  # (Batch, embed_dim)
 
 
@@ -425,18 +537,91 @@ class ValueNetwork(nn.Module):
         return value.squeeze(-1)
 
 
+# ==================== 敏锐度优化PDF：双头非对称Critic架构 ====================
+class DualHeadValueNetwork(nn.Module):
+    """
+    敏锐度优化PDF 5.1：双头非对称Critic架构
+    
+    解决问题：单一Critic为了拟合大幅波动的Cost，会主导共享层的特征提取，
+    导致无法提取到关于Accuracy的微弱特征。
+    
+    架构设计：
+    - 共享骨干网络：StateEncoder + 2个ResidualBlock
+    - Head A (V_cost)：专门预测预期的Simulation Cost
+    - Head B (V_acc)：专门预测预期的Loss/Pearson/Spearman
+    - 优势计算（GAE）：分别计算 A_cost 和 A_acc，然后加权组合
+    """
+    def __init__(self, state_dim=STATE_DIM_TOTAL, hidden_dim=64, res_hidden_dim=128, num_layers=12):
+        super(DualHeadValueNetwork, self).__init__()
+        
+        # 共享的状态编码器
+        self.encoder = StateEncoder(embed_dim=hidden_dim, num_layers=num_layers)
+        
+        # 共享的残差骨干网络：2个残差块
+        self.shared_res_block1 = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
+        self.shared_res_block2 = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
+        
+        # Head A (V_cost)：成本预测头 - 额外1个残差块
+        self.cost_res_block = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
+        self.cost_head = nn.Linear(hidden_dim, 1)
+        
+        # Head B (V_acc)：精度预测头 - 额外1个残差块
+        self.acc_res_block = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
+        self.acc_head = nn.Linear(hidden_dim, 1)
+        
+        # 正交初始化
+        orthogonal_init(self.cost_head, gain=1.0)
+        orthogonal_init(self.acc_head, gain=1.0)
+    
+    def forward(self, state):
+        """
+        返回两个价值预测：V_cost 和 V_acc
+        """
+        # 共享特征编码
+        x = self.encoder(state)
+        x = self.shared_res_block1(x)
+        x = self.shared_res_block2(x)
+        
+        # Head A：成本价值
+        x_cost = self.cost_res_block(x)
+        v_cost = self.cost_head(x_cost).squeeze(-1)
+        
+        # Head B：精度价值
+        x_acc = self.acc_res_block(x)
+        v_acc = self.acc_head(x_acc).squeeze(-1)
+        
+        return v_cost, v_acc
+    
+    def get_combined_value(self, state, cost_weight=1.0, acc_weight=1.0):
+        """获取加权组合的价值估计"""
+        v_cost, v_acc = self.forward(state)
+        return cost_weight * v_cost + acc_weight * v_acc
+
+
 class RolloutBuffer:
-    """存储Rollout数据的Buffer"""
+    """
+    存储Rollout数据的Buffer
+    敏锐度优化PDF：扩展以支持双头Critic的分离奖励存储
+    """
     def __init__(self):
         self.states = []
         self.gelu_actions = []
         self.softmax_actions = []
         self.logprobs = []
-        self.rewards = []
+        self.rewards = []           # 总奖励（向后兼容）
+        self.cost_rewards = []      # 成本奖励（双头Critic）
+        self.acc_rewards = []       # 精度奖励（双头Critic）
         self.dones = []
-        self.values = []
+        self.values = []            # 总价值（单头Critic向后兼容）
+        self.values_cost = []       # 成本价值（双头Critic）
+        self.values_acc = []        # 精度价值（双头Critic）
     
-    def add(self, state, gelu_action, softmax_action, logprob, reward, done, value):
+    def add(self, state, gelu_action, softmax_action, logprob, reward, done, value,
+            cost_reward=None, acc_reward=None, value_cost=None, value_acc=None):
+        """
+        添加经验数据
+        敏锐度优化PDF：支持分离的成本/精度奖励和价值
+        """
         self.states.append(state)
         self.gelu_actions.append(gelu_action)
         self.softmax_actions.append(softmax_action)
@@ -444,6 +629,16 @@ class RolloutBuffer:
         self.rewards.append(reward)
         self.dones.append(done)
         self.values.append(value)
+        
+        # 双头Critic数据（可选）
+        if cost_reward is not None:
+            self.cost_rewards.append(cost_reward)
+        if acc_reward is not None:
+            self.acc_rewards.append(acc_reward)
+        if value_cost is not None:
+            self.values_cost.append(value_cost)
+        if value_acc is not None:
+            self.values_acc.append(value_acc)
     
     def clear(self):
         self.states.clear()
@@ -451,10 +646,15 @@ class RolloutBuffer:
         self.softmax_actions.clear()
         self.logprobs.clear()
         self.rewards.clear()
+        self.cost_rewards.clear()
+        self.acc_rewards.clear()
         self.dones.clear()
         self.values.clear()
+        self.values_cost.clear()
+        self.values_acc.clear()
     
     def get_tensors(self, device):
+        """获取基础张量（向后兼容）"""
         states = torch.stack(self.states).to(device)
         gelu_actions = torch.stack(self.gelu_actions).to(device)
         softmax_actions = torch.stack(self.softmax_actions).to(device)
@@ -463,6 +663,20 @@ class RolloutBuffer:
         dones = torch.tensor(self.dones, dtype=torch.float32).to(device)
         values = torch.stack(self.values).to(device)
         return states, gelu_actions, softmax_actions, logprobs, rewards, dones, values
+    
+    def get_dual_head_tensors(self, device):
+        """
+        敏锐度优化PDF：获取双头Critic的分离奖励和价值张量
+        """
+        base_tensors = self.get_tensors(device)
+        
+        # 分离的成本/精度数据
+        cost_rewards = torch.tensor(self.cost_rewards, dtype=torch.float32).to(device) if self.cost_rewards else None
+        acc_rewards = torch.tensor(self.acc_rewards, dtype=torch.float32).to(device) if self.acc_rewards else None
+        values_cost = torch.stack(self.values_cost).to(device) if self.values_cost else None
+        values_acc = torch.stack(self.values_acc).to(device) if self.values_acc else None
+        
+        return base_tensors + (cost_rewards, acc_rewards, values_cost, values_acc)
 
 
 class TransformerOptEnv:
@@ -473,12 +687,44 @@ class TransformerOptEnv:
     - 策略三：回报归一化（固定缩放）
     - 策略四：状态空间增强（累积复杂度债务、成本偏差相对化）
     - PDF优化方案一：显式历史编码（Flattened History）- 解决序列依赖性问题
+    - 敏锐度优化PDF：预算感知状态特征、差分奖励、对数障碍函数、课程学习
     """
-    def __init__(self, total_layers, baseline_cost, baseline_metrics, evaluator):
+    def __init__(self, total_layers, baseline_cost, baseline_metrics, evaluator,
+                 constraint_limits=None, prev_metrics=None):
+        """
+        初始化环境
+        
+        敏锐度优化PDF扩展参数：
+        - constraint_limits: 约束阈值字典 {'loss': float, 'metric1': float, 'metric2': float}
+                            用于课程学习的动态约束调整
+        - prev_metrics: 上一episode结束时的指标（用于差分奖励计算）
+        """
         self.total_layers = total_layers
         self.baseline_cost = baseline_cost  # 72.0 for 12 layers
         self.baseline_loss, self.baseline_p, self.baseline_s = baseline_metrics
         self.evaluator = evaluator
+        
+        # 敏锐度优化PDF 3.3：约束阈值（用于预算感知和课程学习）
+        if constraint_limits is None:
+            # 默认约束：1%偏差
+            self.constraint_limits = {
+                'loss': self.baseline_loss * (1 + REWARD_THRESHOLD),
+                'metric1': self.baseline_p * (1 - REWARD_THRESHOLD),
+                'metric2': self.baseline_s * (1 - REWARD_THRESHOLD)
+            }
+        else:
+            self.constraint_limits = constraint_limits
+        
+        # 敏锐度优化PDF 4.1：差分奖励所需的上一episode指标
+        if prev_metrics is None:
+            self.prev_episode_metrics = {
+                'loss': self.baseline_loss,
+                'metric1': self.baseline_p,
+                'metric2': self.baseline_s,
+                'cost': self.baseline_cost
+            }
+        else:
+            self.prev_episode_metrics = prev_metrics
         
         # 策略四：计算理论中间成本（假设每层选中间阶数）
         # GELU中间阶数=2 (cost=2.5), Softmax中间阶数=4 (cost=2.0)
@@ -495,6 +741,9 @@ class TransformerOptEnv:
         self.gelu_degree_to_norm = {4: 0.0, 2: 0.5, 1: 1.0}
         # Softmax: degree 6->0.0, 5->0.25, 4->0.5, 3->0.75, 2->1.0
         self.softmax_degree_to_norm = {6: 0.0, 5: 0.25, 4: 0.5, 3: 0.75, 2: 1.0}
+        
+        # 敏锐度优化PDF：存储当前episode的最终指标（用于下一episode的差分奖励）
+        self.current_episode_metrics = None
         
         self.reset()
     
@@ -520,7 +769,7 @@ class TransformerOptEnv:
     
     def _get_state(self):
         """
-        构造41维状态向量（PDF优化方案一：显式历史编码）
+        构造44维状态向量（敏锐度优化PDF：增加预算感知维度）
         
         原始17维特征：
         - 12维: 位置编码 (One-Hot)
@@ -532,6 +781,11 @@ class TransformerOptEnv:
         新增24维历史编码（PDF优化方案一 + PDF 6.2零值填充）：
         - 12维: GELU动作历史（归一化，未访问层为0）
         - 12维: Softmax动作历史（归一化，未访问层为0）
+        
+        敏锐度优化PDF 3.3：新增3维预算感知特征
+        - 1维: Loss剩余预算 (1 - curr_loss/limit_loss)
+        - 1维: Metric1剩余预算 (curr_metric1/limit_metric1 - 1)
+        - 1维: Metric2剩余预算 (curr_metric2/limit_metric2 - 1)
         """
         # ========== 原始17维特征 ==========
         # 1. 位置编码 (12维 One-Hot)
@@ -573,6 +827,26 @@ class TransformerOptEnv:
         # 7. Softmax动作历史 (12维) - 同上
         # 注意：self.gelu_history 和 self.softmax_history 在step()中更新
         
+        # ========== 敏锐度优化PDF 3.3：预算感知特征 (3维) ==========
+        # 使用上一episode的指标估计当前预算余量
+        # 当 budget > 0 时表示满足约束，< 0 表示违反约束
+        # 智能体需要保持 budget > 0
+        prev_loss = self.prev_episode_metrics['loss']
+        prev_m1 = self.prev_episode_metrics['metric1']
+        prev_m2 = self.prev_episode_metrics['metric2']
+        
+        # Loss预算：约束是 loss < limit，所以 budget = 1 - loss/limit
+        loss_budget = 1.0 - prev_loss / (self.constraint_limits['loss'] + 1e-8)
+        # Metric1预算（如Pearson）：约束是 metric > limit，所以 budget = metric/limit - 1
+        m1_budget = prev_m1 / (self.constraint_limits['metric1'] + 1e-8) - 1.0
+        # Metric2预算（如Spearman）：约束是 metric > limit，所以 budget = metric/limit - 1
+        m2_budget = prev_m2 / (self.constraint_limits['metric2'] + 1e-8) - 1.0
+        
+        # 截断到合理范围 [-1, 1]
+        loss_budget = np.clip(loss_budget, -1.0, 1.0)
+        m1_budget = np.clip(m1_budget, -1.0, 1.0)
+        m2_budget = np.clip(m2_budget, -1.0, 1.0)
+        
         state = np.concatenate([
             position,                          # 12维: 位置编码
             [cost_deviation],                  # 1维: 成本偏差
@@ -580,7 +854,8 @@ class TransformerOptEnv:
             [complexity_debt],                 # 1维: 复杂度债务
             [progress],                        # 1维: 进度指示
             self.gelu_history,                 # 12维: GELU完整历史（PDF优化方案一）
-            self.softmax_history               # 12维: Softmax完整历史（PDF优化方案一）
+            self.softmax_history,              # 12维: Softmax完整历史（PDF优化方案一）
+            [loss_budget, m1_budget, m2_budget]  # 3维: 预算感知（敏锐度优化PDF 3.3）
         ])
         return state.astype(np.float32)
     
@@ -681,65 +956,128 @@ class TransformerOptEnv:
     
     def _compute_final_reward(self):
         """
-        策略一（3.2, 3.3）+ 策略三（5.1）：计算最终奖励
-        - 指数障碍软约束替代二进制惩罚
-        - 引入安全边界
-        - 回报归一化（固定缩放）
+        敏锐度优化PDF：差分奖励 + 对数障碍函数 + 解耦奖励
+        
+        实现要点：
+        1. 差分精度奖励（信号放大）：使用0.5次幂放大微小变化
+        2. 对数障碍惩罚（约束敏感性）：Log-Barrier函数
+        3. 成本奖励：相对于基线的节省
+        4. 返回分离的成本/精度奖励（用于双头Critic）
         """
         # 获取当前配置的指标
         gelu_arr = np.array(self.gelu_config)
         softmax_arr = np.array(self.softmax_config)
         
         # 评估模型
-        loss, p, s, _ = self.evaluator.evaluate_model(gelu_arr, softmax_arr)
+        loss, m1, m2, _ = self.evaluator.evaluate_model(gelu_arr, softmax_arr)
         
-        # 计算指标偏差百分比
-        loss_diff_pct = (loss - self.baseline_loss) / (abs(self.baseline_loss) + 1e-8)
-        p_diff_pct = (self.baseline_p - p) / (abs(self.baseline_p) + 1e-8)
-        s_diff_pct = (self.baseline_s - s) / (abs(self.baseline_s) + 1e-8)
+        # 存储当前指标（用于下一episode的差分计算）
+        self.current_episode_metrics = {
+            'loss': loss,
+            'metric1': m1,
+            'metric2': m2,
+            'cost': self.accumulated_cost
+        }
         
-        max_dev = max(loss_diff_pct, p_diff_pct, s_diff_pct)
+        # ==================== 敏锐度优化PDF 4.1：差分精度奖励 ====================
+        # 1. 计算与上一episode的差值
+        delta_loss = self.prev_episode_metrics['loss'] - loss  # 正值表示loss变小（改善）
+        delta_m1 = m1 - self.prev_episode_metrics['metric1']   # 正值表示metric变大（改善）
+        delta_m2 = m2 - self.prev_episode_metrics['metric2']   # 正值表示metric变大（改善）
         
-        # PDF 6.1：基于线性惩罚的软约束奖励（移除指数惩罚，防止梯度爆炸）
-        if max_dev <= REWARD_TARGET:
-            # 安全区域：给予正向激励，距离边界越远越好
-            # safety_reward = 基础奖励 + 距离目标阈值的额外奖励
-            safety_reward = REWARD_SAFETY_BONUS + (REWARD_TARGET - max_dev) * 100.0
-        elif max_dev <= REWARD_THRESHOLD:
-            # 缓冲区域（TARGET到THRESHOLD之间）：给予微小警示
-            # 线性插值从0到-1
-            buffer_penalty = -1.0 * (max_dev - REWARD_TARGET) / REWARD_SAFETY_BUFFER
-            safety_reward = buffer_penalty
-        else:
-            # 危险区域：线性惩罚（PDF 6.1 - 替代指数惩罚）
-            # 线性惩罚提供恒定梯度指引，告诉代理"你越界了，请往回走"
-            # 而非指数惩罚的"你毁灭了"，后者会导致梯度爆炸
-            violation = max_dev - REWARD_THRESHOLD
-            safety_reward = -REWARD_PENALTY_SLOPE * violation
+        # 2. 使用根号变换放大微小信号（敏锐度优化PDF 4.1）
+        # 例如: 1e-4 -> 1e-2，信号强度提升100倍
+        def amplify_signal(delta):
+            sign = 1.0 if delta >= 0 else -1.0
+            return sign * (abs(delta) ** DIFF_REWARD_POWER) * DIFF_REWARD_SCALE_ACC
         
-        # 计算成本奖励
+        r_loss_diff = amplify_signal(delta_loss)
+        r_m1_diff = amplify_signal(delta_m1)
+        r_m2_diff = amplify_signal(delta_m2)
+        
+        # 综合精度差分奖励
+        r_accuracy_diff = (r_loss_diff + r_m1_diff + r_m2_diff) / 3.0
+        
+        # ==================== 敏锐度优化PDF 4.2：对数障碍约束奖励 ====================
+        def log_barrier_reward(curr_value, limit_value, is_upper_bound=True):
+            """
+            对数障碍函数：当接近约束边界时梯度急剧增大
+            
+            Args:
+                curr_value: 当前指标值
+                limit_value: 约束阈值
+                is_upper_bound: True表示约束为 curr < limit，False表示 curr > limit
+            """
+            if is_upper_bound:
+                # 约束: curr < limit (如Loss)
+                margin = limit_value - curr_value
+            else:
+                # 约束: curr > limit (如Pearson/Spearman)
+                margin = curr_value - limit_value
+            
+            if margin < 0:
+                # 违反约束：指数级爆炸惩罚
+                return -LOG_BARRIER_VIOLATION_SCALE * np.exp(-margin * LOG_BARRIER_VIOLATION_STEEPNESS)
+            else:
+                # 满足约束：对数奖励，鼓励远离边界但收益递减
+                return LOG_BARRIER_SATISFACTION_SCALE * np.log(margin + 1e-5)
+        
+        r_loss_barrier = log_barrier_reward(loss, self.constraint_limits['loss'], is_upper_bound=True)
+        r_m1_barrier = log_barrier_reward(m1, self.constraint_limits['metric1'], is_upper_bound=False)
+        r_m2_barrier = log_barrier_reward(m2, self.constraint_limits['metric2'], is_upper_bound=False)
+        
+        # 综合约束奖励
+        r_constraint = (r_loss_barrier + r_m1_barrier + r_m2_barrier) / 3.0
+        
+        # ==================== 成本奖励 ====================
         cost_saving = (self.baseline_cost - self.accumulated_cost) / self.baseline_cost
-        cost_reward = cost_saving * REWARD_COST_WEIGHT
+        r_cost = cost_saving * REWARD_COST_WEIGHT
         
-        # 原始奖励
-        raw_reward = safety_reward + cost_reward
+        # ==================== 综合奖励（用于双头Critic） ====================
+        # 精度奖励 = 差分奖励 + 约束奖励
+        r_accuracy = r_accuracy_diff + r_constraint
+        
+        # 总奖励
+        raw_reward = r_accuracy + r_cost
         
         # 策略三（5.1）：回报归一化 - 固定缩放
-        # 将-100量级缩放到-5左右，使Critic能够有效学习
         scaled_reward = raw_reward / REWARD_NORMALIZATION_SCALE
         
-        # PDF 6.1：奖励截断，防止任何单一step产生过大影响
-        # 这是防止训练发散的最后一道防线
+        # 奖励截断，防止训练发散
         clipped_reward = np.clip(scaled_reward, REWARD_CLIP_MIN, REWARD_CLIP_MAX)
         
+        # 存储分离的奖励（用于双头Critic）
+        self.last_cost_reward = r_cost / REWARD_NORMALIZATION_SCALE
+        self.last_acc_reward = r_accuracy / REWARD_NORMALIZATION_SCALE
+        
         return clipped_reward
+    
+    def get_separated_rewards(self):
+        """
+        敏锐度优化PDF：获取分离的成本/精度奖励（用于双头Critic）
+        """
+        return getattr(self, 'last_cost_reward', 0.0), getattr(self, 'last_acc_reward', 0.0)
+    
+    def update_prev_metrics(self):
+        """
+        敏锐度优化PDF：更新上一episode指标（在episode结束后调用）
+        用于下一episode的差分奖励计算
+        """
+        if self.current_episode_metrics is not None:
+            self.prev_episode_metrics = self.current_episode_metrics.copy()
 
 
 class LayerImportanceEvaluator(TrainerCallback):
-    def __init__(self, model, train_data, test_data, data_collator, rl_lr=None, degree=None, device='cuda'):
+    def __init__(self, model, train_data, test_data, data_collator, rl_lr=None, degree=None, 
+                 device='cuda', data_path='stsb'):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
+        
+        敏锐度优化PDF扩展：
+        - data_path: 数据集名称，用于选择评估指标
+            - 'stsb': 回归任务，使用 pearson, spearman
+            - 'mrpc' 等: 分类任务，使用 accuracy, f1
         """
         # 增加递归深度以支持深拷贝复杂模型图
         sys.setrecursionlimit(50000)
@@ -747,6 +1085,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.model = model
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.data_collator = data_collator
+        
+        # ==================== 敏锐度优化PDF：数据集检测与指标选择 ====================
+        self.data_path = data_path
+        self.is_regression = self._detect_task_type()
+        self._log_task_type()
         
         # 训练集用于RL训练，测试集用于最终评估
         self.dataloader_train = DataLoader(train_data, batch_size=16, shuffle=False, collate_fn=data_collator)
@@ -793,6 +1136,58 @@ class LayerImportanceEvaluator(TrainerCallback):
         # 使用 RunningMeanStd 跟踪 returns 的统计量
         # Critic 在归一化空间学习，推理时反归一化
         self.return_normalizer = RunningMeanStd()
+        
+        # ==================== 敏锐度优化PDF：解耦归一化 ====================
+        self.disentangled_normalizer = DisentangledNormalizer()
+        
+        # ==================== 敏锐度优化PDF：PPO-Lagrangian ====================
+        # 可学习的拉格朗日乘子
+        self.lagrangian_loss = LAGRANGIAN_INITIAL
+        self.lagrangian_m1 = LAGRANGIAN_INITIAL
+        self.lagrangian_m2 = LAGRANGIAN_INITIAL
+        
+        # ==================== 敏锐度优化PDF：课程学习状态 ====================
+        self.curriculum_phase = 1  # 1=探索, 2=收紧, 3=精调
+        self.constraint_slack = CURRICULUM_INITIAL_SLACK  # 当前约束放宽系数
+    
+    def _detect_task_type(self):
+        """
+        敏锐度优化PDF：检测任务类型（回归/分类）
+        根据数据集名称确定使用哪种评估指标
+        """
+        data_name = self.data_path.lower()
+        
+        # 检查是否为回归任务
+        for reg_dataset in REGRESSION_DATASETS:
+            if reg_dataset in data_name:
+                return True
+        
+        # 检查是否为分类任务
+        for cls_dataset in CLASSIFICATION_DATASETS:
+            if cls_dataset in data_name:
+                return False
+        
+        # 默认假设为回归任务
+        print(f"[Warning] Unknown dataset '{data_name}', assuming regression task")
+        return True
+    
+    def _log_task_type(self):
+        """记录任务类型信息"""
+        if self.is_regression:
+            print(f"[Info] Dataset '{self.data_path}' detected as REGRESSION task")
+            print(f"[Info] Using metrics: Pearson correlation, Spearman correlation")
+        else:
+            print(f"[Info] Dataset '{self.data_path}' detected as CLASSIFICATION task")
+            print(f"[Info] Using metrics: Accuracy, F1 Score")
+    
+    def get_metric_names(self):
+        """
+        敏锐度优化PDF：获取当前数据集的指标名称
+        """
+        if self.is_regression:
+            return 'Pearson', 'Spearman'
+        else:
+            return 'Accuracy', 'F1'
 
     def _write_step_info(self, step_info, f):
         """将单步 StepInfo 写入文件"""
@@ -816,27 +1211,104 @@ class LayerImportanceEvaluator(TrainerCallback):
     
     def update_hyperparameters(self, optimizer, episode):
         """
-        PDF 6.4：简化超参数调度
-        - 学习率：恒定（移除复杂Warmup和衰减，先跑通基线）
-        - 熵系数：固定为0.01（移除激进衰减，防止探索不足）
+        敏锐度优化PDF：超参数调度
+        - 熵系数：线性衰减（0.05 -> 0.001）
+        - 学习率：Actor 和 Critic 分离（Critic 是 Actor 的 10 倍）
+        - 课程学习：动态调整约束阈值
         """
         self.current_episode = episode
+        progress = episode / self.total_episodes
         
-        # PDF 6.4：使用恒定学习率
-        # "建议将基础学习率从3e-4降低至1e-4或5e-5，并移除复杂的Warmup机制，先用恒定学习率跑通基线"
-        new_lr = PPO_LR_INITIAL  # 恒定学习率
-        
-        # 更新优化器学习率
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = new_lr
-        self.current_lr = new_lr
-        
-        # PDF 6.4：固定熵系数
-        # "建议固定熵系数为0.01，或者仅在检测到KL散度过低时才衰减"
-        new_entropy = PPO_ENTROPY_COEF_FIXED
+        # ==================== 敏锐度优化PDF：熵系数线性衰减 ====================
+        # 从 0.05（高探索）线性衰减到 0.001（强制收敛）
+        new_entropy = PPO_ENTROPY_START - (PPO_ENTROPY_START - PPO_ENTROPY_END) * progress
         self.current_entropy_coef = new_entropy
         
-        return new_lr, new_entropy
+        # ==================== 敏锐度优化PDF：学习率调度 ====================
+        # 注意：如果使用分离优化器，这里的 optimizer 应该是一个字典
+        # 如果使用统一优化器，保持向后兼容
+        if hasattr(optimizer, 'param_groups'):
+            # 统一优化器（向后兼容）
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = PPO_LR_ACTOR
+            self.current_lr = PPO_LR_ACTOR
+        elif isinstance(optimizer, dict):
+            # 分离优化器（敏锐度优化PDF推荐）
+            if 'actor' in optimizer:
+                for param_group in optimizer['actor'].param_groups:
+                    param_group['lr'] = PPO_LR_ACTOR
+            if 'critic' in optimizer:
+                for param_group in optimizer['critic'].param_groups:
+                    param_group['lr'] = PPO_LR_CRITIC
+            self.current_lr = PPO_LR_ACTOR
+        
+        # ==================== 敏锐度优化PDF：课程学习阶段更新 ====================
+        self._update_curriculum_phase(episode)
+        
+        return self.current_lr, new_entropy
+    
+    def _update_curriculum_phase(self, episode):
+        """
+        敏锐度优化PDF 6.2：课程学习阶段更新
+        - 阶段一（探索期，前30%）：放宽约束阈值（1.2倍目标值）
+        - 阶段二（收紧期，中间40%）：线性收紧约束阈值
+        - 阶段三（精调期，后30%）：略严于目标的约束（0.95倍）
+        """
+        progress = episode / self.total_episodes
+        
+        phase1_end = CURRICULUM_PHASE1_RATIO
+        phase2_end = CURRICULUM_PHASE1_RATIO + CURRICULUM_PHASE2_RATIO
+        
+        if progress < phase1_end:
+            # 阶段一：探索期 - 放宽约束
+            self.curriculum_phase = 1
+            self.constraint_slack = CURRICULUM_INITIAL_SLACK
+        elif progress < phase2_end:
+            # 阶段二：收紧期 - 线性收紧
+            self.curriculum_phase = 2
+            # 从 1.2 线性过渡到 1.0
+            phase2_progress = (progress - phase1_end) / CURRICULUM_PHASE2_RATIO
+            self.constraint_slack = CURRICULUM_INITIAL_SLACK - (CURRICULUM_INITIAL_SLACK - 1.0) * phase2_progress
+        else:
+            # 阶段三：精调期 - 严格约束
+            self.curriculum_phase = 3
+            self.constraint_slack = CURRICULUM_SAFETY_BUFFER
+    
+    def get_curriculum_constraints(self, base_limits):
+        """
+        敏锐度优化PDF：获取当前课程阶段的约束阈值
+        
+        Args:
+            base_limits: 基线约束字典 {'loss': float, 'metric1': float, 'metric2': float}
+        
+        Returns:
+            调整后的约束字典
+        """
+        return {
+            'loss': base_limits['loss'] * self.constraint_slack,
+            'metric1': base_limits['metric1'] / self.constraint_slack,  # metric 是越大越好，所以除以 slack
+            'metric2': base_limits['metric2'] / self.constraint_slack
+        }
+    
+    def update_lagrangian_multipliers(self, loss_violation, m1_violation, m2_violation):
+        """
+        敏锐度优化PDF 6.1：更新拉格朗日乘子
+        
+        当约束被违反时，通过梯度上升增大对应的惩罚权重
+        """
+        # 梯度上升：如果违反约束（violation > 0），增大乘子
+        self.lagrangian_loss = np.clip(
+            self.lagrangian_loss + LAGRANGIAN_LR * loss_violation,
+            0.0, LAGRANGIAN_MAX
+        )
+        self.lagrangian_m1 = np.clip(
+            self.lagrangian_m1 + LAGRANGIAN_LR * m1_violation,
+            0.0, LAGRANGIAN_MAX
+        )
+        self.lagrangian_m2 = np.clip(
+            self.lagrangian_m2 + LAGRANGIAN_LR * m2_violation,
+            0.0, LAGRANGIAN_MAX
+        )
     
     def get_current_entropy_coef(self):
         """获取当前熵系数（供ppo_update使用）"""
@@ -955,12 +1427,33 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         avg_loss = total_loss / len(dataloader)
         avg_time = sum(batch_times) / len(batch_times)
-        try:
-            p = pearsonr(all_preds, all_labels)[0]
-            s = spearmanr(all_preds, all_labels)[0]
-        except: p, s = 0.0, 0.0
+        # ==================== 敏锐度优化PDF：根据数据集类型计算不同指标 ====================
+        if self.is_regression:
+            # 回归任务：使用 Pearson 和 Spearman 相关系数
+            try:
+                metric1 = pearsonr(all_preds, all_labels)[0]
+                metric2 = spearmanr(all_preds, all_labels)[0]
+            except:
+                metric1, metric2 = 0.0, 0.0
+        else:
+            # 分类任务：使用 Accuracy 和 F1 Score
+            try:
+                # 将 logits 转换为预测类别
+                preds_arr = np.array(all_preds)
+                if len(preds_arr.shape) == 1:
+                    # 二分类：logits 是单个值，> 0.5 为正类
+                    pred_classes = (preds_arr > 0.5).astype(int)
+                else:
+                    # 多分类：取 argmax
+                    pred_classes = np.argmax(preds_arr, axis=1)
+                
+                metric1 = accuracy_score(all_labels, pred_classes)
+                metric2 = f1_score(all_labels, pred_classes, average='weighted')
+            except Exception as e:
+                print(f"[Warning] Failed to compute classification metrics: {e}")
+                metric1, metric2 = 0.0, 0.0
             
-        return avg_loss, p, s, avg_time
+        return avg_loss, metric1, metric2, avg_time
 
     def compute_gae(self, rewards, values, dones, gamma=PPO_GAMMA, lam=PPO_LAMBDA):
         """计算广义优势估计 (GAE)"""
@@ -1130,19 +1623,39 @@ class LayerImportanceEvaluator(TrainerCallback):
         base_softmax = np.full(self.total_layers, 6, dtype=int)
         
         # 使用训练集计算baseline
-        base_loss, base_p, base_s, base_time = self.evaluate_model(base_gelu, base_softmax, use_train=True)
+        base_loss_train, base_p_train, base_s_train, base_time_train = self.evaluate_model(base_gelu, base_softmax, use_train=True)
         base_tot_c, base_g_c, base_s_c = self.get_simulated_cost(base_gelu, base_softmax)
         
+        # 获取当前数据集对应的指标名称
+        metric1_name, metric2_name = self.get_metric_names()
+        
         self.log(f"Baseline Metrics (Training Set):")
-        self.log(f"  Loss: {base_loss:.6f}, P: {base_p:.6f}, S: {base_s:.6f}")
+        self.log(f"  Loss: {base_loss_train:.6f}, {metric1_name}: {base_p_train:.6f}, {metric2_name}: {base_s_train:.6f}")
         self.log(f"  Sim Cost: {base_tot_c:.2f} (G={base_g_c:.2f}, S={base_s_c:.2f})")
+        
+        # ==================== 验证集引导（Validation Guided）：计算验证集baseline ====================
+        if USE_VALIDATION_FOR_REWARD:
+            base_loss_val, base_p_val, base_s_val, base_time_val = self.evaluate_model(base_gelu, base_softmax, use_train=False)
+            self.log(f"Baseline Metrics (Validation Set - used for reward):")
+            self.log(f"  Loss: {base_loss_val:.6f}, {metric1_name}: {base_p_val:.6f}, {metric2_name}: {base_s_val:.6f}")
+            
+            # 使用验证集的baseline作为约束基准
+            base_loss = base_loss_val
+            base_p = base_p_val
+            base_s = base_s_val
+        else:
+            # 使用训练集的baseline
+            base_loss = base_loss_train
+            base_p = base_p_train
+            base_s = base_s_train
         
         # Constraints
         limit_loss = base_loss + self.error_threshold
         limit_p = base_p * (1.0 - self.correlation_drop_ratio)
         limit_s = base_s * (1.0 - self.correlation_drop_ratio)
         
-        self.log(f"Constraints: Loss<={limit_loss:.4f}, P>={limit_p:.4f}, S>={limit_s:.4f}")
+        self.log(f"Constraints (based on {'Validation' if USE_VALIDATION_FOR_REWARD else 'Training'} Set):")
+        self.log(f"  Loss<={limit_loss:.4f}, {metric1_name}>={limit_p:.4f}, {metric2_name}>={limit_s:.4f}")
 
         # ---------------------------------------------------------
         # Phase 2: PPO Training
@@ -1189,7 +1702,16 @@ class LayerImportanceEvaluator(TrainerCallback):
             def evaluate_model(wrapper_self, gelu_arr, softmax_arr):
                 return wrapper_self.evaluator.evaluate_model(gelu_arr, softmax_arr, use_train=wrapper_self.use_train)
         
-        rl_evaluator = RLEvaluatorWrapper(self, use_train=True)
+        # ==================== 验证集引导（Validation Guided）====================
+        # 使用验证集计算奖励，迫使Agent寻找泛化能力更强的配置
+        # 这能有效防止Agent过拟合训练集，找到在未见数据上也表现良好的配置
+        if USE_VALIDATION_FOR_REWARD:
+            self.log("[Info] Using VALIDATION set for reward calculation (Validation Guided RL)")
+            rl_evaluator = RLEvaluatorWrapper(self, use_train=False)  # 使用验证集
+        else:
+            self.log("[Info] Using TRAINING set for reward calculation")
+            rl_evaluator = RLEvaluatorWrapper(self, use_train=True)   # 使用训练集
+        
         env = TransformerOptEnv(self.total_layers, base_tot_c, baseline_metrics, rl_evaluator)
         
         buffer = RolloutBuffer()
@@ -1200,6 +1722,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         best_cost = float('inf')
         
         episode_rewards = []
+        episode_losses = []      # 记录每个episode的loss
+        episode_metric1s = []    # 记录每个episode的metric1（Pearson或Accuracy）
+        episode_metric2s = []    # 记录每个episode的metric2（Spearman或F1）
         
         for episode in range(PPO_MAX_EPISODES):
             # 策略二：动态超参数调度（学习率和熵系数）
@@ -1256,6 +1781,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                 state_tensor = torch.tensor(state, dtype=torch.float32).to(self.device)
             
             episode_rewards.append(episode_reward)
+            
+            # 收集当前episode的指标（从环境中获取）
+            if hasattr(env, 'current_episode_metrics') and env.current_episode_metrics is not None:
+                episode_losses.append(env.current_episode_metrics['loss'])
+                episode_metric1s.append(env.current_episode_metrics['metric1'])
+                episode_metric2s.append(env.current_episode_metrics['metric2'])
+            else:
+                # 如果环境中没有指标，使用baseline值
+                episode_losses.append(base_loss)
+                episode_metric1s.append(base_p)
+                episode_metric2s.append(base_s)
             
             # PPO 7.1: 更新运行时回报统计量
             self.update_reward_statistics(episode_reward)
@@ -1314,7 +1850,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.log(f"  Cost: {best_config['cost']:.2f}, Reward: {best_config['reward']:.4f}")
 
         # ---------------------------------------------------------
-        # Plot: PPO Training Curve (Episode Reward)
+        # Plot: PPO Training Curves (Reward and Metrics)
         # ---------------------------------------------------------
         try:
             import matplotlib
@@ -1323,34 +1859,94 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             episodes = np.arange(1, len(episode_rewards) + 1)
             rewards = np.array(episode_rewards, dtype=np.float32)
+            losses = np.array(episode_losses, dtype=np.float32)
+            metric1s = np.array(episode_metric1s, dtype=np.float32)
+            metric2s = np.array(episode_metric2s, dtype=np.float32)
+
+            # 获取指标名称
+            metric1_name, metric2_name = self.get_metric_names()
 
             # Simple moving average for smoother convergence view
             # 使用合理的窗口大小，避免窗口过大导致曲线过于平滑
             window = min(max(5, PPO_UPDATE_INTERVAL // 5), 50)
+            
+            def compute_ma(data):
+                """计算移动平均"""
+                if len(data) >= window:
+                    kernel = np.ones(window, dtype=np.float32) / window
+                    data_ma = np.convolve(data, kernel, mode="valid")
+                    return data_ma
+                return data
+            
+            rewards_ma = compute_ma(rewards)
+            losses_ma = compute_ma(losses)
+            metric1s_ma = compute_ma(metric1s)
+            metric2s_ma = compute_ma(metric2s)
+            
             if len(rewards) >= window:
-                kernel = np.ones(window, dtype=np.float32) / window
-                rewards_ma = np.convolve(rewards, kernel, mode="valid")
                 episodes_ma = episodes[window - 1:]
             else:
-                rewards_ma = rewards
                 episodes_ma = episodes
 
-            plt.figure(figsize=(10, 4))
-            plt.plot(episodes, rewards, label="Episode Reward", alpha=0.6)
-            plt.plot(episodes_ma, rewards_ma, label=f"Moving Avg ({window})", linewidth=2)
-            plt.xlabel("Episode")
-            plt.ylabel("Reward")
-            plt.title("PPO Training Curve")
-            plt.grid(True, alpha=0.3)
-            plt.legend()
+            # 创建 2x2 子图布局
+            dataset_info = f" ({self.data_path})"
+            val_guided_info = " [Validation Guided]" if USE_VALIDATION_FOR_REWARD else ""
+            fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+            fig.suptitle(f"PPO Training Curves{dataset_info}{val_guided_info}", fontsize=14, fontweight='bold')
+            
+            # 子图1: Episode Reward
+            ax1 = axes[0, 0]
+            ax1.plot(episodes, rewards, label="Episode Reward", alpha=0.6, color='blue')
+            ax1.plot(episodes_ma, rewards_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkblue')
+            ax1.set_xlabel("Episode")
+            ax1.set_ylabel("Reward")
+            ax1.set_title("Episode Reward")
+            ax1.grid(True, alpha=0.3)
+            ax1.legend()
+            
+            # 子图2: Loss
+            ax2 = axes[0, 1]
+            ax2.plot(episodes, losses, label="Loss", alpha=0.6, color='red')
+            ax2.plot(episodes_ma, losses_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkred')
+            ax2.set_xlabel("Episode")
+            ax2.set_ylabel("Loss")
+            ax2.set_title("Loss (lower is better)")
+            ax2.grid(True, alpha=0.3)
+            # 添加baseline参考线
+            ax2.axhline(y=base_loss, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
+            ax2.legend()
+            
+            # 子图3: Metric1 (Pearson or Accuracy)
+            ax3 = axes[1, 0]
+            ax3.plot(episodes, metric1s, label=metric1_name, alpha=0.6, color='green')
+            ax3.plot(episodes_ma, metric1s_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkgreen')
+            ax3.set_xlabel("Episode")
+            ax3.set_ylabel(metric1_name)
+            ax3.set_title(f"{metric1_name} (higher is better)")
+            ax3.grid(True, alpha=0.3)
+            # 添加baseline参考线
+            ax3.axhline(y=base_p, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
+            ax3.legend()
+            
+            # 子图4: Metric2 (Spearman or F1)
+            ax4 = axes[1, 1]
+            ax4.plot(episodes, metric2s, label=metric2_name, alpha=0.6, color='purple')
+            ax4.plot(episodes_ma, metric2s_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkviolet')
+            ax4.set_xlabel("Episode")
+            ax4.set_ylabel(metric2_name)
+            ax4.set_title(f"{metric2_name} (higher is better)")
+            ax4.grid(True, alpha=0.3)
+            # 添加baseline参考线
+            ax4.axhline(y=base_s, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
+            ax4.legend()
 
             plot_path = "ppo_training_curve.png"
             plt.tight_layout()
             plt.savefig(plot_path, dpi=150)
             plt.close()
-            self.log(f"PPO training curve saved to: {plot_path}")
+            self.log(f"PPO training curves saved to: {plot_path}")
         except Exception as e:
-            self.log(f"[Warning] Failed to plot PPO training curve: {e}")
+            self.log(f"[Warning] Failed to plot PPO training curves: {e}")
 
         # ---------------------------------------------------------
         # Phase 3: Final Report (使用测试集进行最终评估)
@@ -1435,8 +2031,12 @@ class LayerImportanceEvaluator(TrainerCallback):
              self.log(f"[{res['name']}] GELU   : {res['gelu'].tolist()}")
              self.log(f"[{res['name']}] Softmax: {res['softmax'].tolist()}")
 
+        # 根据数据集类型设置表头
+        metric1_short = "Pear." if self.is_regression else "Acc."
+        metric2_short = "Spear." if self.is_regression else "F1"
+        
         self.log("\nPerformance Comparison Table:")
-        header = f"{'Method':<15} | {'Loss':<6} {'Pear.':<6} {'Spear.':<6} | {'Tot C':<6} {'Tot S':<5} | {'GELU C':<6} {'GELU S':<6} | {'Smax C':<6} {'Smax S':<6}"
+        header = f"{'Method':<15} | {'Loss':<6} {metric1_short:<6} {metric2_short:<6} | {'Tot C':<6} {'Tot S':<5} | {'GELU C':<6} {'GELU S':<6} | {'Smax C':<6} {'Smax S':<6}"
         self.log("-" * len(header))
         self.log(header)
         self.log("-" * len(header))
@@ -1482,15 +2082,19 @@ class LayerImportanceEvaluator(TrainerCallback):
                 
                 is_viol = False
                 viol_tags = []
+                # 根据数据集类型设置违规标签
+                metric1_tag = "PEAR" if self.is_regression else "ACC"
+                metric2_tag = "SPEAR" if self.is_regression else "F1"
+                
                 if l > limit_loss: 
                     is_viol = True
                     viol_tags.append("LOSS")
                 if p < limit_p: 
                     is_viol = True
-                    viol_tags.append("PEAR")
+                    viol_tags.append(metric1_tag)
                 if s < limit_s: 
                     is_viol = True
-                    viol_tags.append("SPEAR")
+                    viol_tags.append(metric2_tag)
                 
                 status = f"VIOLATED ({','.join(viol_tags)})" if is_viol else "SAFE"
                 
@@ -1501,8 +2105,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 
                 msg = (f"L{i} GELU {cd}->{td}: {status} | "
                        f"Loss: {l:.4f} ({d_l:+.4f}) | "
-                       f"P: {p:.4f} ({d_p:+.4f}) | "
-                       f"S: {s:.4f} ({d_s:+.4f})")
+                       f"{metric1_name}: {p:.4f} ({d_p:+.4f}) | "
+                       f"{metric2_name}: {s:.4f} ({d_s:+.4f})")
                 self.log(msg)
 
             # Softmax Check
@@ -1521,10 +2125,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                     viol_tags.append("LOSS")
                 if p < limit_p: 
                     is_viol = True
-                    viol_tags.append("PEAR")
+                    viol_tags.append(metric1_tag)
                 if s < limit_s: 
                     is_viol = True
-                    viol_tags.append("SPEAR")
+                    viol_tags.append(metric2_tag)
                 
                 status = f"VIOLATED ({','.join(viol_tags)})" if is_viol else "SAFE"
                 
@@ -1535,8 +2139,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 
                 msg = (f"L{i} Smax {cd_s}->{cd_s-1}: {status} | "
                        f"Loss: {l:.4f} ({d_l:+.4f}) | "
-                       f"P: {p:.4f} ({d_p:+.4f}) | "
-                       f"S: {s:.4f} ({d_s:+.4f})")
+                       f"{metric1_name}: {p:.4f} ({d_p:+.4f}) | "
+                       f"{metric2_name}: {s:.4f} ({d_s:+.4f})")
                 self.log(msg)
 
         self.log("\nPPO Optimization Finished.")

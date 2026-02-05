@@ -161,8 +161,8 @@ def train(
         # config.use_causal_lm = False  # 关键！关闭因果掩码 for mrpc
         model = AutoModelForSequenceClassification.from_pretrained(
             base_model,
-            num_labels=1,  # stsb        
-            # num_labels=2,  # sst2/mrpc
+            # num_labels=1,  # stsb        
+            num_labels=2,  # sst2/mrpc
             # load_in_8bit=False,
             # torch_dtype=torch.float16,
             device_map={"": int(os.environ.get("LOCAL_RANK") or 0)},
@@ -375,7 +375,16 @@ def train(
     if use_ist:
         from layer_importance_evaluator import LayerImportanceEvaluator
         print('Reinforcement Learning to evaluate layer sensitivity to approximation')
-        importance_evaluator = LayerImportanceEvaluator(model=model, train_data = train_data, test_data=val_data, data_collator=data_collator, rl_lr=rl_lr, degree=degree)
+        # 敏锐度优化PDF：传递 data_path 用于数据集检测和指标选择
+        importance_evaluator = LayerImportanceEvaluator(
+            model=model, 
+            train_data=train_data, 
+            test_data=val_data, 
+            data_collator=data_collator, 
+            rl_lr=rl_lr, 
+            degree=degree,
+            data_path=data_path  # 传递数据集名称用于动态指标选择
+        )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:
     #     from rst import RSTCallback
