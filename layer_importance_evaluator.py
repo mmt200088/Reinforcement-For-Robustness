@@ -9,7 +9,7 @@ from torch.distributions import Categorical
 from torch.utils.data import DataLoader
 from transformers.trainer_callback import TrainerCallback
 from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
 from function_handler import ReversibleLayerHandler
 import os
 import hashlib
@@ -31,7 +31,7 @@ PPO_ENTROPY_COEF = 0.05  # 初始熵系数（策略二：从0.05开始衰减）
 PPO_VALUE_COEF = 0.5
 # PDF 6.4：由于采样步数大幅增加，需要相应调整总episodes
 # PDF建议：每2048 steps更新，考虑到每episode 12步，即每170 episodes更新
-PPO_MAX_EPISODES = 1700
+PPO_MAX_EPISODES = 34000
 # PDF 6.4：增加采样步数以获得更稳定的梯度估计
 # "建议增加采样步数，例如每2048 steps更新一次"
 # 折中方案：每50 episodes更新一次（600步），在训练时间和稳定性之间平衡
@@ -85,17 +85,53 @@ RUNNING_REWARD_EPSILON = 1e-8      # 防止除零的小常数
 # 状态向量维度：17维原始特征 + 12维GELU历史 + 12维Softmax历史 + 3维预算余量 = 44维
 STATE_DIM_ORIGINAL = 17  # 原始状态维度
 STATE_DIM_HISTORY = 24   # 历史编码维度（12 GELU + 12 Softmax）
-STATE_DIM_BUDGET = 3     # 预算感知维度（敏锐度优化PDF 3.3: Loss/Pearson/Spearman余量）
+STATE_DIM_BUDGET = 3     # 预算感知维度（敏锐度优化PDF 3.3: Loss/Metric1/Metric2余量）
 STATE_DIM_TOTAL = STATE_DIM_ORIGINAL + STATE_DIM_HISTORY + STATE_DIM_BUDGET  # 总维度 = 44
 # PDF 6.2 步骤1：将填充值从 -1.0 改为 0.0
 # 理由：在ReLU/SiLU激活的网络中，0输入通常产生0输出，天然表示"无信息"
 # -1.0 是一个强烈的信号值，会干扰特征提取
 HISTORY_MASK_VALUE = 0.0  # 未访问层的掩码值（PDF 6.2：零值填充）
 
+# ==================== LSTM 策略价值网络配置（LSTM PDF优化方案） ====================
+LSTM_HIDDEN_DIM = 128        # LSTM隐藏层维度（PDF 3.2：128足以编码12步历史）
+LSTM_NUM_LAYERS = 2          # LSTM堆叠层数（PDF 3.2：双层增强表达能力）
+LSTM_DROPOUT = 0.1           # LSTM层间Dropout（PDF 3.2）
+LSTM_CONT_DIM = 6            # 连续特征维度（cost_deviation + complexity_debt + progress + 3 budget）
+LSTM_POS_DIM = 16            # 层级位置嵌入维度（PDF 3.1.1）
+LSTM_ACT_G_DIM = 8           # GELU动作嵌入维度（PDF 3.1.2）
+LSTM_ACT_S_DIM = 8           # Softmax动作嵌入维度（PDF 3.1.2）
+LSTM_PROJ_DIM = 32           # 连续特征投影维度（PDF 3.1.3）
+SOS_TOKEN_GELU = 3           # GELU前一动作的SOS标记（词表大小=4: 0,1,2为动作, 3为SOS）
+SOS_TOKEN_SOFTMAX = 5        # Softmax前一动作的SOS标记（词表大小=6: 0-4为动作, 5为SOS）
+LSTM_MINI_BATCH_EPISODES = 8 # LSTM PPO更新时的mini-batch大小（按episode数）
+
 # ==================== 敏锐度优化PDF：数据集相关配置 ====================
-# 根据数据集选择不同的评估指标
-REGRESSION_DATASETS = ['stsb']  # 回归任务：使用 pearson, spearman
-CLASSIFICATION_DATASETS = ['mrpc', 'mnli', 'sst2', 'cola', 'qnli', 'rte', 'wnli']  # 分类任务：使用 accuracy, f1
+# 根据数据集选择不同的评估指标（细分版）
+# type: regression / classification
+# metrics: 该数据集使用的指标列表
+# metric_names: 显示用的指标短名 (表格用)
+# metric_full_names: 完整指标名 (日志用)
+DATASET_METRICS_CONFIG = {
+    'sst2':  {'type': 'classification', 'metrics': ['accuracy'],
+              'metric_names': ['Acc.'], 'metric_full_names': ['Accuracy']},
+    'qnli':  {'type': 'classification', 'metrics': ['accuracy'],
+              'metric_names': ['Acc.'], 'metric_full_names': ['Accuracy']},
+    'mnli':  {'type': 'classification', 'metrics': ['matched_accuracy', 'mismatched_accuracy'],
+              'metric_names': ['M-Acc.', 'MM-Acc.'], 'metric_full_names': ['Matched Accuracy', 'Mismatched Accuracy']},
+    'cola':  {'type': 'classification', 'metrics': ['mcc'],
+              'metric_names': ['MCC'], 'metric_full_names': ['Matthews Correlation']},
+    'stsb':  {'type': 'regression', 'metrics': ['pearson', 'spearman'],
+              'metric_names': ['Pear.', 'Spear.'], 'metric_full_names': ['Pearson', 'Spearman']},
+    'mrpc':  {'type': 'classification', 'metrics': ['accuracy', 'f1'],
+              'metric_names': ['Acc.', 'F1'], 'metric_full_names': ['Accuracy', 'F1']},
+    'rte':   {'type': 'classification', 'metrics': ['accuracy'],
+              'metric_names': ['Acc.'], 'metric_full_names': ['Accuracy']},
+    'wnli':  {'type': 'classification', 'metrics': ['accuracy'],
+              'metric_names': ['Acc.'], 'metric_full_names': ['Accuracy']},
+}
+# 向后兼容
+REGRESSION_DATASETS = ['stsb']
+CLASSIFICATION_DATASETS = ['mrpc', 'mnli', 'sst2', 'cola', 'qnli', 'rte', 'wnli']
 
 # ==================== 敏锐度优化PDF：差分奖励与对数障碍配置 ====================
 # 优化方案二：信号放大与差分奖励重构
@@ -142,6 +178,23 @@ PPO_LR_CRITIC = 3e-4              # Critic学习率（Actor的10倍）
 # - 奖励计算：使用验证集指标，让Agent优化真实的泛化目标
 # - 约束设定：基于验证集baseline，确保在未见数据上满足性能要求
 USE_VALIDATION_FOR_REWARD = True  # True: 使用验证集计算奖励, False: 使用训练集
+
+# ==================== 搜索模式与贪心配置 ====================
+# SEARCH_MODE: 选择优化方式
+#   - "rl": 仅强化学习（Phase 2），不执行贪心
+#   - "greedy": 仅贪婪算法（从下方 GREEDY_INITIAL_* 指定的配置出发），不执行 RL
+#   - "both": 先 RL 再根据 USE_GREEDY_SEARCH 决定是否执行贪心
+SEARCH_MODE = "rl"  # "rl" | "greedy" | "both"
+
+# 仅当 SEARCH_MODE == "greedy" 时生效：贪婪算法的初始 GELU/Softmax 配置
+# 长度需与模型层数一致（如 12）；不足会按最后一值填充，超出会截断
+# GELU 每层取值: 4, 2, 1  ;  Softmax 每层取值: 6, 5, 4, 3, 2
+GREEDY_INITIAL_GELU = [1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1]
+GREEDY_INITIAL_SOFTMAX = [2, 3, 4, 6, 4, 4, 5, 4, 4, 5, 5, 2]
+
+# 仅当 SEARCH_MODE == "both" 时生效：PPO 结束后是否再执行贪心搜索
+# True: PPO 结束后执行贪心 refinement; False: 直接使用 RL 结果
+USE_GREEDY_SEARCH = False
 
 
 def orthogonal_init(layer, gain=1.0):
@@ -598,6 +651,205 @@ class DualHeadValueNetwork(nn.Module):
         return cost_weight * v_cost + acc_weight * v_acc
 
 
+# ==================== LSTM PDF优化方案：LSTM策略价值网络 ====================
+class LSTMStrategyNetwork(nn.Module):
+    """
+    基于LSTM的策略价值网络（LSTM PDF优化方案）
+    
+    核心改进：将架构搜索问题建模为序列决策过程（POMDP），
+    利用LSTM的时间记忆特性捕捉Transformer层间的量化误差传播。
+    
+    架构设计（PDF 3节）：
+    - 层级位置嵌入 (Embedding, 12→16)：感知当前网络深度
+    - 历史动作嵌入 (Embedding, 4→8 / 6→8)：自回归特性，记忆上一步决策
+    - 连续特征投影 (Linear, 6→32)：成本/预算/进度等实时特征
+    - 双层堆叠LSTM (hidden=128, dropout=0.1)：序列化建模核心
+    - 多头Actor (GELU+Softmax logits)：独立动作输出
+    - Critic Head (标量Value)：状态价值估计
+    """
+    def __init__(self, num_layers=12, hidden_dim=LSTM_HIDDEN_DIM):
+        super(LSTMStrategyNetwork, self).__init__()
+        self.num_layers = num_layers
+        self.hidden_dim = hidden_dim
+        
+        # 1. 嵌入层（PDF 3.1）
+        self.embed_layer_idx = nn.Embedding(num_layers, LSTM_POS_DIM)            # 层索引 0-11
+        self.embed_prev_g = nn.Embedding(SOS_TOKEN_GELU + 1, LSTM_ACT_G_DIM)    # 0-2动作 + 3=SOS
+        self.embed_prev_s = nn.Embedding(SOS_TOKEN_SOFTMAX + 1, LSTM_ACT_S_DIM) # 0-4动作 + 5=SOS
+        
+        # 2. 连续特征投影（PDF 3.1.3 + 3.1.4）
+        # 输入6维: cost_deviation, complexity_debt, progress, loss_budget, m1_budget, m2_budget
+        self.fc_continuous = nn.Sequential(
+            nn.Linear(LSTM_CONT_DIM, LSTM_PROJ_DIM),
+            nn.LayerNorm(LSTM_PROJ_DIM),
+            nn.SiLU()
+        )
+        
+        # 3. LSTM核心控制器（PDF 3.2）
+        # 输入维度 = 16(pos) + 8(prev_g) + 8(prev_s) + 32(continuous) = 64
+        lstm_input_dim = LSTM_POS_DIM + LSTM_ACT_G_DIM + LSTM_ACT_S_DIM + LSTM_PROJ_DIM
+        self.lstm = nn.LSTM(
+            input_size=lstm_input_dim,
+            hidden_size=hidden_dim,
+            num_layers=LSTM_NUM_LAYERS,
+            batch_first=True,
+            dropout=LSTM_DROPOUT
+        )
+        
+        # 4. 多头策略网络 Actor（PDF 3.3.1）
+        self.actor_head = nn.Sequential(
+            nn.Linear(hidden_dim, 64),
+            nn.Tanh()
+        )
+        self.head_g = nn.Linear(64, 3)   # GELU logits (3个动作)
+        self.head_s = nn.Linear(64, 5)   # Softmax logits (5个动作)
+        
+        # 5. 价值网络 Critic（PDF 3.3.2）
+        self.critic_head = nn.Sequential(
+            nn.Linear(hidden_dim, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+        
+        # 初始化
+        self._initialize_weights()
+    
+    def _initialize_weights(self):
+        """正交初始化 + LSTM遗忘门偏置初始化（PDF 3.2 + 7.1）"""
+        # 线性层正交初始化
+        for module in [self.actor_head, self.critic_head, self.fc_continuous]:
+            for layer in module:
+                if isinstance(layer, nn.Linear):
+                    nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
+                    if layer.bias is not None:
+                        nn.init.constant_(layer.bias, 0.0)
+        
+        # 策略输出头使用极小gain（确保初始动作均匀分布，最大化探索）
+        nn.init.orthogonal_(self.head_g.weight, gain=0.01)
+        nn.init.constant_(self.head_g.bias, 0.0)
+        nn.init.orthogonal_(self.head_s.weight, gain=0.01)
+        nn.init.constant_(self.head_s.bias, 0.0)
+        
+        # LSTM权重正交初始化 + 遗忘门偏置初始化为1.0（PDF 7.1：鼓励保留长期记忆）
+        for name, param in self.lstm.named_parameters():
+            if 'weight_ih' in name or 'weight_hh' in name:
+                nn.init.orthogonal_(param)
+            elif 'bias' in name:
+                n = param.size(0)
+                # LSTM bias: [input_gate, forget_gate, cell_gate, output_gate]
+                param.data.zero_()
+                param.data[n // 4: n // 2].fill_(1.0)  # forget gate = 1.0
+    
+    def forward(self, cont_features, layer_indices, prev_g_actions, prev_s_actions, hidden=None):
+        """
+        全序列前向传播（支持Full-Episode BPTT, PDF 4.2）
+        
+        Args:
+            cont_features: (Batch, Seq, 6) 连续特征
+            layer_indices: (Batch, Seq) long 层索引
+            prev_g_actions: (Batch, Seq) long 前一步GELU动作（SOS=3）
+            prev_s_actions: (Batch, Seq) long 前一步Softmax动作（SOS=5）
+            hidden: LSTM隐藏状态元组 (h_0, c_0)，None则零初始化
+        
+        Returns:
+            logits_g: (Batch, Seq, 3) GELU动作logits
+            logits_s: (Batch, Seq, 5) Softmax动作logits
+            values: (Batch, Seq) 价值估计
+            new_hidden: 更新后的隐藏状态
+        """
+        # 特征嵌入
+        emb_l = self.embed_layer_idx(layer_indices)      # (B, S, 16)
+        emb_pg = self.embed_prev_g(prev_g_actions)       # (B, S, 8)
+        emb_ps = self.embed_prev_s(prev_s_actions)       # (B, S, 8)
+        feat_c = self.fc_continuous(cont_features)        # (B, S, 32)
+        
+        # 拼接输入（PDF 3.1.5: dim = 16+8+8+32 = 64）
+        lstm_input = torch.cat([emb_l, emb_pg, emb_ps, feat_c], dim=-1)
+        
+        # LSTM前向传播
+        self.lstm.flatten_parameters()
+        lstm_out, new_hidden = self.lstm(lstm_input, hidden)  # (B, S, 128)
+        
+        # Actor解码（PDF 3.3.1）
+        actor_feat = self.actor_head(lstm_out)  # (B, S, 64)
+        logits_g = self.head_g(actor_feat)      # (B, S, 3)
+        logits_s = self.head_s(actor_feat)      # (B, S, 5)
+        
+        # Critic解码（PDF 3.3.2）
+        values = self.critic_head(lstm_out).squeeze(-1)  # (B, S)
+        
+        return logits_g, logits_s, values, new_hidden
+    
+    def get_action_and_logprob(self, cont_feat, layer_idx, prev_g, prev_s, hidden, return_probs=False):
+        """
+        单步前向推理（用于Rollout自回归采样, PDF 5.2）
+        
+        Args:
+            cont_feat: (1, 1, 6) 当前步连续特征
+            layer_idx: (1, 1) long 当前层索引
+            prev_g: (1, 1) long 前一步GELU动作
+            prev_s: (1, 1) long 前一步Softmax动作
+            hidden: LSTM隐藏状态
+            return_probs: 是否返回概率分布
+        
+        Returns:
+            action_g, action_s, logprob, value, new_hidden, [g_probs, s_probs]
+        """
+        logits_g, logits_s, values, new_hidden = self.forward(
+            cont_feat, layer_idx, prev_g, prev_s, hidden
+        )
+        
+        # Squeeze: (1,1,D) -> (D,)
+        lg = logits_g.squeeze(0).squeeze(0)
+        ls = logits_s.squeeze(0).squeeze(0)
+        val = values.squeeze(0).squeeze(0)
+        
+        dist_g = Categorical(logits=lg)
+        dist_s = Categorical(logits=ls)
+        
+        action_g = dist_g.sample()
+        action_s = dist_s.sample()
+        
+        logprob = dist_g.log_prob(action_g) + dist_s.log_prob(action_s)
+        
+        if return_probs:
+            g_probs = torch.softmax(lg, dim=-1)
+            s_probs = torch.softmax(ls, dim=-1)
+            return action_g, action_s, logprob, val, new_hidden, g_probs, s_probs
+        
+        return action_g, action_s, logprob, val, new_hidden
+    
+    def evaluate_actions(self, cont_features, layer_indices, prev_g_actions, prev_s_actions, 
+                         actions_g, actions_s):
+        """
+        评估动作（用于PPO更新时的Full-Episode BPTT, PDF 4.2）
+        
+        Args:
+            cont_features: (Batch, 12, 6) 完整episode连续特征
+            layer_indices: (Batch, 12) 层索引
+            prev_g_actions: (Batch, 12) 前一步GELU动作
+            prev_s_actions: (Batch, 12) 前一步Softmax动作
+            actions_g: (Batch, 12) 实际采取的GELU动作
+            actions_s: (Batch, 12) 实际采取的Softmax动作
+        
+        Returns:
+            logprobs: (Batch, 12)
+            entropy: (Batch, 12)
+            values: (Batch, 12)
+        """
+        logits_g, logits_s, values, _ = self.forward(
+            cont_features, layer_indices, prev_g_actions, prev_s_actions
+        )
+        
+        dist_g = Categorical(logits=logits_g)
+        dist_s = Categorical(logits=logits_s)
+        
+        logprobs = dist_g.log_prob(actions_g) + dist_s.log_prob(actions_s)
+        entropy = dist_g.entropy() + dist_s.entropy()
+        
+        return logprobs, entropy, values
+
+
 class RolloutBuffer:
     """
     存储Rollout数据的Buffer
@@ -679,6 +931,122 @@ class RolloutBuffer:
         return base_tensors + (cost_rewards, acc_rewards, values_cost, values_acc)
 
 
+# ==================== LSTM PDF优化方案：循环网络专用Rollout Buffer ====================
+class RecurrentRolloutBuffer:
+    """
+    循环网络专用Rollout Buffer（LSTM PDF 4.1）
+    
+    以完整Episode为单位存储轨迹数据，保持时间维度完整性。
+    存储形状: (Num_Episodes, 12, Feature_Dim)
+    
+    与传统的flat buffer不同，LSTM需要保留序列结构以进行Full-Episode BPTT。
+    """
+    def __init__(self):
+        self.episodes = []
+        self._current = None
+    
+    def start_episode(self):
+        """开始记录新的Episode"""
+        self._current = {
+            'cont_features': [],   # (Step, 6) 连续特征
+            'layer_indices': [],   # (Step,) 层索引
+            'prev_g_actions': [],  # (Step,) 前一步GELU动作
+            'prev_s_actions': [],  # (Step,) 前一步Softmax动作
+            'actions_g': [],       # (Step,) 采取的GELU动作
+            'actions_s': [],       # (Step,) 采取的Softmax动作
+            'logprobs': [],        # (Step,) 对数概率
+            'rewards': [],         # (Step,) 奖励
+            'values': [],          # (Step,) 价值估计
+            'dones': [],           # (Step,) 终止标记
+        }
+    
+    def add_step(self, cont_feat, layer_idx, prev_g, prev_s, 
+                 action_g, action_s, logprob, reward, value, done):
+        """添加一步数据到当前Episode"""
+        self._current['cont_features'].append(cont_feat)
+        self._current['layer_indices'].append(layer_idx)
+        self._current['prev_g_actions'].append(prev_g)
+        self._current['prev_s_actions'].append(prev_s)
+        self._current['actions_g'].append(action_g)
+        self._current['actions_s'].append(action_s)
+        self._current['logprobs'].append(logprob)
+        self._current['rewards'].append(reward)
+        self._current['values'].append(value)
+        self._current['dones'].append(done)
+    
+    def end_episode(self):
+        """结束当前Episode，加入存储"""
+        self.episodes.append(self._current)
+        self._current = None
+    
+    def clear(self):
+        """清空所有存储"""
+        self.episodes.clear()
+    
+    @property
+    def num_episodes(self):
+        return len(self.episodes)
+    
+    def get_batch(self, device):
+        """
+        将所有Episode堆叠为batch张量（LSTM PDF 4.1.1）
+        
+        Returns:
+            cont_features: (N_eps, 12, 6) float
+            layer_indices: (N_eps, 12) long
+            prev_g_actions: (N_eps, 12) long
+            prev_s_actions: (N_eps, 12) long
+            actions_g: (N_eps, 12) long
+            actions_s: (N_eps, 12) long
+            logprobs: (N_eps, 12) float
+            rewards: (N_eps, 12) float
+            values: (N_eps, 12) float
+            dones: (N_eps, 12) float
+        """
+        cont_features = torch.stack([
+            torch.stack(ep['cont_features']) for ep in self.episodes
+        ]).to(device)
+        
+        layer_indices = torch.stack([
+            torch.tensor(ep['layer_indices'], dtype=torch.long) for ep in self.episodes
+        ]).to(device)
+        
+        prev_g_actions = torch.stack([
+            torch.tensor(ep['prev_g_actions'], dtype=torch.long) for ep in self.episodes
+        ]).to(device)
+        
+        prev_s_actions = torch.stack([
+            torch.tensor(ep['prev_s_actions'], dtype=torch.long) for ep in self.episodes
+        ]).to(device)
+        
+        actions_g = torch.stack([
+            torch.tensor(ep['actions_g'], dtype=torch.long) for ep in self.episodes
+        ]).to(device)
+        
+        actions_s = torch.stack([
+            torch.tensor(ep['actions_s'], dtype=torch.long) for ep in self.episodes
+        ]).to(device)
+        
+        logprobs = torch.stack([
+            torch.stack(ep['logprobs']) for ep in self.episodes
+        ]).to(device)
+        
+        rewards = torch.tensor([
+            ep['rewards'] for ep in self.episodes
+        ], dtype=torch.float32).to(device)
+        
+        values = torch.stack([
+            torch.stack(ep['values']) for ep in self.episodes
+        ]).to(device)
+        
+        dones = torch.tensor([
+            ep['dones'] for ep in self.episodes
+        ], dtype=torch.float32).to(device)
+        
+        return (cont_features, layer_indices, prev_g_actions, prev_s_actions,
+                actions_g, actions_s, logprobs, rewards, values, dones)
+
+
 class TransformerOptEnv:
     """
     Transformer优化环境
@@ -690,7 +1058,7 @@ class TransformerOptEnv:
     - 敏锐度优化PDF：预算感知状态特征、差分奖励、对数障碍函数、课程学习
     """
     def __init__(self, total_layers, baseline_cost, baseline_metrics, evaluator,
-                 constraint_limits=None, prev_metrics=None):
+                 constraint_limits=None, prev_metrics=None, num_metrics=2):
         """
         初始化环境
         
@@ -698,11 +1066,13 @@ class TransformerOptEnv:
         - constraint_limits: 约束阈值字典 {'loss': float, 'metric1': float, 'metric2': float}
                             用于课程学习的动态约束调整
         - prev_metrics: 上一episode结束时的指标（用于差分奖励计算）
+        - num_metrics: 当前数据集的评估指标数量 (1 或 2)
         """
         self.total_layers = total_layers
         self.baseline_cost = baseline_cost  # 72.0 for 12 layers
         self.baseline_loss, self.baseline_p, self.baseline_s = baseline_metrics
         self.evaluator = evaluator
+        self.num_metrics = num_metrics
         
         # 敏锐度优化PDF 3.3：约束阈值（用于预算感知和课程学习）
         if constraint_limits is None:
@@ -839,8 +1209,12 @@ class TransformerOptEnv:
         loss_budget = 1.0 - prev_loss / (self.constraint_limits['loss'] + 1e-8)
         # Metric1预算（如Pearson）：约束是 metric > limit，所以 budget = metric/limit - 1
         m1_budget = prev_m1 / (self.constraint_limits['metric1'] + 1e-8) - 1.0
-        # Metric2预算（如Spearman）：约束是 metric > limit，所以 budget = metric/limit - 1
-        m2_budget = prev_m2 / (self.constraint_limits['metric2'] + 1e-8) - 1.0
+        # Metric2预算：单指标数据集设为0.0（表示该维度为空），双指标数据集正常计算
+        if self.num_metrics == 1:
+            m2_budget = 0.0
+        else:
+            # Metric2预算（如Spearman）：约束是 metric > limit，所以 budget = metric/limit - 1
+            m2_budget = prev_m2 / (self.constraint_limits['metric2'] + 1e-8) - 1.0
         
         # 截断到合理范围 [-1, 1]
         loss_budget = np.clip(loss_budget, -1.0, 1.0)
@@ -995,8 +1369,11 @@ class TransformerOptEnv:
         r_m1_diff = amplify_signal(delta_m1)
         r_m2_diff = amplify_signal(delta_m2)
         
-        # 综合精度差分奖励
-        r_accuracy_diff = (r_loss_diff + r_m1_diff + r_m2_diff) / 3.0
+        # 综合精度差分奖励（根据指标数量调整分母）
+        if self.num_metrics == 1:
+            r_accuracy_diff = (r_loss_diff + r_m1_diff) / 2.0
+        else:
+            r_accuracy_diff = (r_loss_diff + r_m1_diff + r_m2_diff) / 3.0
         
         # ==================== 敏锐度优化PDF 4.2：对数障碍约束奖励 ====================
         def log_barrier_reward(curr_value, limit_value, is_upper_bound=True):
@@ -1026,8 +1403,11 @@ class TransformerOptEnv:
         r_m1_barrier = log_barrier_reward(m1, self.constraint_limits['metric1'], is_upper_bound=False)
         r_m2_barrier = log_barrier_reward(m2, self.constraint_limits['metric2'], is_upper_bound=False)
         
-        # 综合约束奖励
-        r_constraint = (r_loss_barrier + r_m1_barrier + r_m2_barrier) / 3.0
+        # 综合约束奖励（根据指标数量调整分母）
+        if self.num_metrics == 1:
+            r_constraint = (r_loss_barrier + r_m1_barrier) / 2.0
+        else:
+            r_constraint = (r_loss_barrier + r_m1_barrier + r_m2_barrier) / 3.0
         
         # ==================== 成本奖励 ====================
         cost_saving = (self.baseline_cost - self.accumulated_cost) / self.baseline_cost
@@ -1069,15 +1449,15 @@ class TransformerOptEnv:
 
 class LayerImportanceEvaluator(TrainerCallback):
     def __init__(self, model, train_data, test_data, data_collator, rl_lr=None, degree=None, 
-                 device='cuda', data_path='stsb'):
+                 device='cuda', data_path='stsb', test_data_mm=None):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
         
         敏锐度优化PDF扩展：
         - data_path: 数据集名称，用于选择评估指标
-            - 'stsb': 回归任务，使用 pearson, spearman
-            - 'mrpc' 等: 分类任务，使用 accuracy, f1
+            各数据集使用不同指标（详见 DATASET_METRICS_CONFIG）
+        - test_data_mm: MNLI mismatched 验证集（仅 MNLI 使用）
         """
         # 增加递归深度以支持深拷贝复杂模型图
         sys.setrecursionlimit(50000)
@@ -1094,6 +1474,12 @@ class LayerImportanceEvaluator(TrainerCallback):
         # 训练集用于RL训练，测试集用于最终评估
         self.dataloader_train = DataLoader(train_data, batch_size=16, shuffle=False, collate_fn=data_collator)
         self.dataloader_test = DataLoader(test_data, batch_size=16, shuffle=False, collate_fn=data_collator)
+        
+        # MNLI mismatched 验证集（仅 MNLI 需要）
+        if test_data_mm is not None:
+            self.dataloader_test_mm = DataLoader(test_data_mm, batch_size=16, shuffle=False, collate_fn=data_collator)
+        else:
+            self.dataloader_test_mm = None
         
         try:
             self.reversible_handler = ReversibleLayerHandler(self.model)
@@ -1154,40 +1540,61 @@ class LayerImportanceEvaluator(TrainerCallback):
         """
         敏锐度优化PDF：检测任务类型（回归/分类）
         根据数据集名称确定使用哪种评估指标
+        同时设置 self.dataset_config 和 self.dataset_key
         """
         data_name = self.data_path.lower()
         
-        # 检查是否为回归任务
-        for reg_dataset in REGRESSION_DATASETS:
-            if reg_dataset in data_name:
-                return True
+        for ds_key, ds_cfg in DATASET_METRICS_CONFIG.items():
+            if ds_key in data_name:
+                self.dataset_key = ds_key
+                self.dataset_config = ds_cfg
+                return ds_cfg['type'] == 'regression'
         
-        # 检查是否为分类任务
-        for cls_dataset in CLASSIFICATION_DATASETS:
-            if cls_dataset in data_name:
-                return False
-        
-        # 默认假设为回归任务
-        print(f"[Warning] Unknown dataset '{data_name}', assuming regression task")
+        # 默认假设为回归任务 (stsb 行为)
+        print(f"[Warning] Unknown dataset '{data_name}', assuming regression task (pearson + spearman)")
+        self.dataset_key = 'stsb'
+        self.dataset_config = DATASET_METRICS_CONFIG['stsb']
         return True
     
     def _log_task_type(self):
         """记录任务类型信息"""
-        if self.is_regression:
-            print(f"[Info] Dataset '{self.data_path}' detected as REGRESSION task")
-            print(f"[Info] Using metrics: Pearson correlation, Spearman correlation")
-        else:
-            print(f"[Info] Dataset '{self.data_path}' detected as CLASSIFICATION task")
-            print(f"[Info] Using metrics: Accuracy, F1 Score")
+        full_names = self.dataset_config['metric_full_names']
+        task_type = 'REGRESSION' if self.is_regression else 'CLASSIFICATION'
+        print(f"[Info] Dataset '{self.data_path}' detected as {task_type} task")
+        print(f"[Info] Using metrics: {', '.join(full_names)}")
     
     def get_metric_names(self):
         """
-        敏锐度优化PDF：获取当前数据集的指标名称
+        获取当前数据集的完整指标名称（用于日志显示）
+        单指标数据集返回 (name,)，双指标返回 (name1, name2)
         """
-        if self.is_regression:
-            return 'Pearson', 'Spearman'
-        else:
-            return 'Accuracy', 'F1'
+        full_names = self.dataset_config['metric_full_names']
+        if len(full_names) == 1:
+            return (full_names[0],)
+        return (full_names[0], full_names[1])
+    
+    def get_metric_short_names(self):
+        """获取当前数据集的短指标名称（用于表格）"""
+        return self.dataset_config['metric_names']
+    
+    def get_num_metrics(self):
+        """返回当前数据集的评估指标数量 (1 或 2)"""
+        return len(self.dataset_config['metrics'])
+
+    def _fmt_metrics(self, loss, m1, m2, prefix=""):
+        """格式化指标字符串，单指标数据集只显示一个指标"""
+        names = self.get_metric_names()
+        p = f"{prefix}" if prefix else ""
+        if self.get_num_metrics() == 1:
+            return f"{p}Loss: {loss:.6f}, {names[0]}: {m1:.6f}"
+        return f"{p}Loss: {loss:.6f}, {names[0]}: {m1:.6f}, {names[1]}: {m2:.6f}"
+
+    def _fmt_constraints(self, limit_loss, limit_p, limit_s):
+        """格式化约束字符串"""
+        names = self.get_metric_names()
+        if self.get_num_metrics() == 1:
+            return f"Loss<={limit_loss:.4f}, {names[0]}>={limit_p:.4f}"
+        return f"Loss<={limit_loss:.4f}, {names[0]}>={limit_p:.4f}, {names[1]}>={limit_s:.4f}"
 
     def _write_step_info(self, step_info, f):
         """将单步 StepInfo 写入文件"""
@@ -1427,33 +1834,62 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         avg_loss = total_loss / len(dataloader)
         avg_time = sum(batch_times) / len(batch_times)
-        # ==================== 敏锐度优化PDF：根据数据集类型计算不同指标 ====================
-        if self.is_regression:
-            # 回归任务：使用 Pearson 和 Spearman 相关系数
-            try:
+        # ==================== 根据数据集细分计算不同指标 ====================
+        ds = self.dataset_key
+        try:
+            if ds == 'stsb':
                 metric1 = pearsonr(all_preds, all_labels)[0]
                 metric2 = spearmanr(all_preds, all_labels)[0]
-            except:
-                metric1, metric2 = 0.0, 0.0
-        else:
-            # 分类任务：使用 Accuracy 和 F1 Score
-            try:
-                # 将 logits 转换为预测类别
-                preds_arr = np.array(all_preds)
-                if len(preds_arr.shape) == 1:
-                    # 二分类：logits 是单个值，> 0.5 为正类
-                    pred_classes = (preds_arr > 0.5).astype(int)
-                else:
-                    # 多分类：取 argmax
-                    pred_classes = np.argmax(preds_arr, axis=1)
-                
+            elif ds == 'mrpc':
+                pred_classes = self._logits_to_classes(all_preds)
                 metric1 = accuracy_score(all_labels, pred_classes)
                 metric2 = f1_score(all_labels, pred_classes, average='weighted')
-            except Exception as e:
-                print(f"[Warning] Failed to compute classification metrics: {e}")
-                metric1, metric2 = 0.0, 0.0
-            
+            elif ds == 'cola':
+                pred_classes = self._logits_to_classes(all_preds)
+                metric1 = matthews_corrcoef(all_labels, pred_classes)
+                metric2 = metric1
+            elif ds == 'mnli':
+                pred_classes = self._logits_to_classes(all_preds)
+                metric1 = accuracy_score(all_labels, pred_classes)  # Matched Accuracy
+                # Mismatched Accuracy: 需要在 mismatched 数据上评估
+                if not use_train and self.dataloader_test_mm is not None:
+                    metric2 = self._evaluate_accuracy_on_dataloader(self.dataloader_test_mm)
+                else:
+                    metric2 = metric1
+            else:
+                # sst2, qnli, rte, wnli: 仅 accuracy
+                pred_classes = self._logits_to_classes(all_preds)
+                metric1 = accuracy_score(all_labels, pred_classes)
+                metric2 = metric1
+        except Exception as e:
+            print(f"[Warning] Failed to compute metrics for dataset '{ds}': {e}")
+            metric1, metric2 = 0.0, 0.0
+
         return avg_loss, metric1, metric2, avg_time
+
+    @staticmethod
+    def _logits_to_classes(all_preds):
+        """将 logits 转换为预测类别"""
+        preds_arr = np.array(all_preds)
+        if len(preds_arr.shape) == 1:
+            return (preds_arr > 0.5).astype(int)
+        return np.argmax(preds_arr, axis=1)
+
+    def _evaluate_accuracy_on_dataloader(self, dataloader):
+        """在指定 dataloader 上计算 accuracy（用于 MNLI mismatched）"""
+        all_preds, all_labels = [], []
+        with torch.no_grad():
+            for batch in dataloader:
+                batch = {k: v.to(self.device) for k, v in batch.items()}
+                labels = batch["labels"].detach().cpu().numpy()
+                outputs = self.model(**batch)
+                logits = outputs.logits.squeeze().detach().cpu().numpy()
+                if np.ndim(logits) == 0:
+                    logits = [logits]
+                all_preds.extend(logits)
+                all_labels.extend(labels)
+        pred_classes = self._logits_to_classes(all_preds)
+        return accuracy_score(all_labels, pred_classes)
 
     def compute_gae(self, rewards, values, dones, gamma=PPO_GAMMA, lam=PPO_LAMBDA):
         """计算广义优势估计 (GAE)"""
@@ -1610,9 +2046,141 @@ class LayerImportanceEvaluator(TrainerCallback):
         
         return last_policy_loss, last_value_loss, last_entropy
 
+    def ppo_update_lstm(self, lstm_net, optimizer, buffer, device, 
+                        mini_batch_episodes=LSTM_MINI_BATCH_EPISODES, entropy_coef=None):
+        """
+        LSTM版PPO更新（LSTM PDF 4.2：Full-Episode BPTT）
+        
+        关键区别：
+        - 以完整Episode为单位进行mini-batch处理，保持LSTM序列完整性
+        - 梯度通过12步时间序列完整反向传播（BPTT）
+        - Mini-batch按Episode数划分（而非按步数）
+        
+        Args:
+            lstm_net: LSTM策略价值网络
+            optimizer: 优化器
+            buffer: RecurrentRolloutBuffer
+            device: 设备
+            mini_batch_episodes: 每个mini-batch包含的episode数
+            entropy_coef: 动态熵系数
+        """
+        if entropy_coef is None:
+            entropy_coef = self.get_current_entropy_coef()
+        
+        # 获取所有episode的batch数据
+        (cont_features, layer_indices, prev_g_actions, prev_s_actions,
+         actions_g, actions_s, old_logprobs, rewards, values, dones) = buffer.get_batch(device)
+        
+        n_eps = cont_features.size(0)
+        seq_len = cont_features.size(1)
+        
+        # 计算每个Episode的GAE（保持序列独立性）
+        all_advantages = []
+        all_returns = []
+        for i in range(n_eps):
+            ep_rewards = rewards[i].cpu().numpy()
+            ep_values = values[i].cpu().numpy()
+            ep_dones = dones[i].cpu().numpy()
+            adv, ret = self.compute_gae(ep_rewards, ep_values, ep_dones)
+            all_advantages.append(adv)
+            all_returns.append(ret)
+        
+        advantages = torch.stack(all_advantages).to(device)  # (N_eps, 12)
+        returns = torch.stack(all_returns).to(device)         # (N_eps, 12)
+        
+        # 标准化优势（跨所有episode展平后标准化）
+        adv_flat = advantages.reshape(-1)
+        advantages = (advantages - adv_flat.mean()) / (adv_flat.std() + 1e-8)
+        
+        # Return Normalization（PopArt风格, PDF 3.3.2 + 5）
+        self.return_normalizer.update(returns)
+        returns_normalized = torch.tensor(
+            self.return_normalizer.normalize(returns.cpu().numpy()),
+            dtype=torch.float32
+        ).to(device)
+        values_normalized = torch.tensor(
+            self.return_normalizer.normalize(values.cpu().numpy()),
+            dtype=torch.float32
+        ).to(device)
+        
+        last_policy_loss = 0.0
+        last_value_loss = 0.0
+        last_entropy = 0.0
+        
+        # PPO K-Epoch更新
+        for epoch in range(PPO_K_EPOCHS):
+            # Shuffle episodes（不打乱步序，保持每个episode内的时间顺序）
+            ep_indices = torch.randperm(n_eps)
+            
+            # 按Episode mini-batch更新
+            for start in range(0, n_eps, mini_batch_episodes):
+                end = min(start + mini_batch_episodes, n_eps)
+                mb_idx = ep_indices[start:end]
+                
+                # 获取mini-batch数据（保持 (mb_size, 12, ...) 形状）
+                mb_cont = cont_features[mb_idx]
+                mb_layer = layer_indices[mb_idx]
+                mb_prev_g = prev_g_actions[mb_idx]
+                mb_prev_s = prev_s_actions[mb_idx]
+                mb_act_g = actions_g[mb_idx]
+                mb_act_s = actions_s[mb_idx]
+                mb_old_lp = old_logprobs[mb_idx]
+                mb_adv = advantages[mb_idx]
+                mb_ret = returns_normalized[mb_idx]
+                mb_old_val = values_normalized[mb_idx]
+                
+                # Full-Episode BPTT前向传播（LSTM PDF 4.2）
+                new_logprobs, entropy, new_values_raw = lstm_net.evaluate_actions(
+                    mb_cont, mb_layer, mb_prev_g, mb_prev_s, mb_act_g, mb_act_s
+                )
+                
+                # 展平为 (mb_size * 12,) 用于损失计算
+                new_logprobs_flat = new_logprobs.reshape(-1)
+                entropy_flat = entropy.reshape(-1)
+                new_values_flat = new_values_raw.reshape(-1)
+                mb_old_lp_flat = mb_old_lp.reshape(-1)
+                mb_adv_flat = mb_adv.reshape(-1)
+                mb_ret_flat = mb_ret.reshape(-1)
+                mb_old_val_flat = mb_old_val.reshape(-1)
+                
+                # PPO-Clip策略损失
+                ratios = torch.exp(new_logprobs_flat - mb_old_lp_flat)
+                surr1 = ratios * mb_adv_flat
+                surr2 = torch.clamp(ratios, 1 - PPO_EPS_CLIP, 1 + PPO_EPS_CLIP) * mb_adv_flat
+                policy_loss = -torch.min(surr1, surr2).mean()
+                
+                # 价值损失（PopArt归一化 + Value Clipping + Huber Loss）
+                new_values_norm = (new_values_flat - self.return_normalizer.mean) / self.return_normalizer.std
+                value_clipped = mb_old_val_flat + torch.clamp(
+                    new_values_norm - mb_old_val_flat,
+                    -VALUE_CLIP_RANGE, VALUE_CLIP_RANGE
+                )
+                huber_loss_fn = nn.HuberLoss(reduction='none', delta=1.0)
+                vl_unclipped = huber_loss_fn(new_values_norm, mb_ret_flat)
+                vl_clipped = huber_loss_fn(value_clipped, mb_ret_flat)
+                value_loss = torch.max(vl_unclipped, vl_clipped).mean()
+                
+                # 熵正则项
+                entropy_loss = -entropy_flat.mean()
+                
+                # 总损失
+                loss = policy_loss + PPO_VALUE_COEF * value_loss + entropy_coef * entropy_loss
+                
+                optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(lstm_net.parameters(), 0.5)
+                optimizer.step()
+                
+                last_policy_loss = policy_loss.item()
+                last_value_loss = value_loss.item()
+                last_entropy = entropy_flat.mean().item()
+        
+        return last_policy_loss, last_value_loss, last_entropy
+
     def on_evaluate(self, args, state, control, **kwargs):
         self.log("\n" + "="*60)
-        self.log("STARTING PPO REINFORCEMENT LEARNING OPTIMIZATION")
+        self.log("STARTING OPTIMIZATION")
+        self.log(f"SEARCH_MODE={SEARCH_MODE}" + (" (USE_GREEDY_SEARCH=" + str(USE_GREEDY_SEARCH) + ")" if SEARCH_MODE == "both" else ""))
         self.log("="*60)
 
         # ---------------------------------------------------------
@@ -1627,17 +2195,20 @@ class LayerImportanceEvaluator(TrainerCallback):
         base_tot_c, base_g_c, base_s_c = self.get_simulated_cost(base_gelu, base_softmax)
         
         # 获取当前数据集对应的指标名称
-        metric1_name, metric2_name = self.get_metric_names()
+        metric_names = self.get_metric_names()
+        num_metrics = self.get_num_metrics()
+        metric1_name = metric_names[0]
+        metric2_name = metric_names[1] if num_metrics > 1 else metric_names[0]
         
         self.log(f"Baseline Metrics (Training Set):")
-        self.log(f"  Loss: {base_loss_train:.6f}, {metric1_name}: {base_p_train:.6f}, {metric2_name}: {base_s_train:.6f}")
+        self.log(f"  {self._fmt_metrics(base_loss_train, base_p_train, base_s_train)}")
         self.log(f"  Sim Cost: {base_tot_c:.2f} (G={base_g_c:.2f}, S={base_s_c:.2f})")
         
         # ==================== 验证集引导（Validation Guided）：计算验证集baseline ====================
         if USE_VALIDATION_FOR_REWARD:
             base_loss_val, base_p_val, base_s_val, base_time_val = self.evaluate_model(base_gelu, base_softmax, use_train=False)
             self.log(f"Baseline Metrics (Validation Set - used for reward):")
-            self.log(f"  Loss: {base_loss_val:.6f}, {metric1_name}: {base_p_val:.6f}, {metric2_name}: {base_s_val:.6f}")
+            self.log(f"  {self._fmt_metrics(base_loss_val, base_p_val, base_s_val)}")
             
             # 使用验证集的baseline作为约束基准
             base_loss = base_loss_val
@@ -1655,298 +2226,528 @@ class LayerImportanceEvaluator(TrainerCallback):
         limit_s = base_s * (1.0 - self.correlation_drop_ratio)
         
         self.log(f"Constraints (based on {'Validation' if USE_VALIDATION_FOR_REWARD else 'Training'} Set):")
-        self.log(f"  Loss<={limit_loss:.4f}, {metric1_name}>={limit_p:.4f}, {metric2_name}>={limit_s:.4f}")
+        self.log(f"  {self._fmt_constraints(limit_loss, limit_p, limit_s)}")
+
+        # 供绘图使用：仅 RL 时会填充
+        episode_rewards = []
+        episode_losses = []
+        episode_metric1s = []
+        episode_metric2s = []
+        episode_entropies = []
+        best_config = None
 
         # ---------------------------------------------------------
-        # Phase 2: PPO Training
+        # Phase 2: PPO Training（仅当 SEARCH_MODE 为 "rl" 或 "both" 时执行）
         # ---------------------------------------------------------
-        self.log("\n--- Phase 2: PPO Reinforcement Learning Training ---")
+        if SEARCH_MODE in ("rl", "both"):
+            self.log("\n--- Phase 2: PPO Reinforcement Learning Training ---")
         
-        # 初始化 StepInfo 输出文件
-        with open(self.step_info_file, "w", encoding="utf-8") as f:
-            f.write("=== PPO StepInfo 中间结果日志 ===\n")
-            f.write("每步包含: step_global, episode_id, layer_index, state_vector, curr_gelu_degree, curr_softmax_degree, gelu_prob_dist, softmax_prob_dist, critic_value, accumulated_cost, gelu_config, softmax_config\n\n")
+            # 初始化 StepInfo 输出文件
+            with open(self.step_info_file, "w", encoding="utf-8") as f:
+                f.write("=== PPO StepInfo 中间结果日志 ===\n")
+                f.write("每步包含: step_global, episode_id, layer_index, state_vector, curr_gelu_degree, curr_softmax_degree, gelu_prob_dist, softmax_prob_dist, critic_value, accumulated_cost, gelu_config, softmax_config\n\n")
         
-        # 初始化网络 - PDF网络优化方案
-        # 使用 StateEncoder (Embedding + Transformer) + ResMLP 架构
-        # - PolicyNetwork: StateEncoder(embed_dim=64) + 2个ResidualBlock(64->128)
-        # - ValueNetwork: 独立StateEncoder(embed_dim=64) + 3个ResidualBlock(64->128)
-        policy_net = PolicyNetwork(
-            state_dim=STATE_DIM_TOTAL, 
-            hidden_dim=64,           # 编码器输出维度（PDF建议）
-            res_hidden_dim=128,      # 残差块隐藏维度
-            num_layers=self.total_layers
-        ).to(self.device)
-        value_net = ValueNetwork(
-            state_dim=STATE_DIM_TOTAL, 
-            hidden_dim=64,           # 编码器输出维度（PDF建议）
-            res_hidden_dim=128,      # 残差块隐藏维度
-            num_layers=self.total_layers
-        ).to(self.device)
-        
-        # 策略二：使用初始学习率
-        optimizer = optim.Adam(
-            list(policy_net.parameters()) + list(value_net.parameters()),
-            lr=PPO_LR_INITIAL
-        )
-        
-        # 初始化环境
-        baseline_metrics = (base_loss, base_p, base_s)
-        
-        # 创建用于RL的评估器包装
-        class RLEvaluatorWrapper:
-            def __init__(wrapper_self, evaluator, use_train=True):
-                wrapper_self.evaluator = evaluator
-                wrapper_self.use_train = use_train
+            # 初始化LSTM策略价值网络（LSTM PDF优化方案）
+            # 共享LSTM骨干 + 独立Actor/Critic头
+            # - 双层堆叠LSTM (hidden=128, dropout=0.1)
+            # - 多头Actor: GELU Head (3) + Softmax Head (5)
+            # - Critic: 标量Value + PopArt归一化
+            lstm_net = LSTMStrategyNetwork(
+                num_layers=self.total_layers,
+                hidden_dim=LSTM_HIDDEN_DIM
+            ).to(self.device)
             
-            def evaluate_model(wrapper_self, gelu_arr, softmax_arr):
-                return wrapper_self.evaluator.evaluate_model(gelu_arr, softmax_arr, use_train=wrapper_self.use_train)
-        
-        # ==================== 验证集引导（Validation Guided）====================
-        # 使用验证集计算奖励，迫使Agent寻找泛化能力更强的配置
-        # 这能有效防止Agent过拟合训练集，找到在未见数据上也表现良好的配置
-        if USE_VALIDATION_FOR_REWARD:
-            self.log("[Info] Using VALIDATION set for reward calculation (Validation Guided RL)")
-            rl_evaluator = RLEvaluatorWrapper(self, use_train=False)  # 使用验证集
-        else:
-            self.log("[Info] Using TRAINING set for reward calculation")
-            rl_evaluator = RLEvaluatorWrapper(self, use_train=True)   # 使用训练集
-        
-        env = TransformerOptEnv(self.total_layers, base_tot_c, baseline_metrics, rl_evaluator)
-        
-        buffer = RolloutBuffer()
-        
-        # 记录最优解
-        best_config = None
-        best_reward = float('-inf')
-        best_cost = float('inf')
-        
-        episode_rewards = []
-        episode_losses = []      # 记录每个episode的loss
-        episode_metric1s = []    # 记录每个episode的metric1（Pearson或Accuracy）
-        episode_metric2s = []    # 记录每个episode的metric2（Spearman或F1）
-        
-        for episode in range(PPO_MAX_EPISODES):
-            # 策略二：动态超参数调度（学习率和熵系数）
-            current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
+            # 使用初始学习率
+            optimizer = optim.Adam(lstm_net.parameters(), lr=PPO_LR_INITIAL)
             
-            state = env.reset()
-            state_tensor = torch.tensor(state, dtype=torch.float32).to(self.device)
+            # 初始化环境
+            baseline_metrics = (base_loss, base_p, base_s)
             
-            episode_reward = 0
-            step_infos = []  # 存储中间结果
-            
-            for step in range(self.total_layers):
-                # 选择动作（同时获取概率分布用于记录中间结果）
-                with torch.no_grad():
-                    gelu_action, softmax_action, logprob, gelu_probs, softmax_probs = \
-                        policy_net.get_action_and_logprob(state_tensor, return_probs=True)
-                    value = value_net(state_tensor)
+            # 创建用于RL的评估器包装
+            class RLEvaluatorWrapper:
+                def __init__(wrapper_self, evaluator, use_train=True):
+                    wrapper_self.evaluator = evaluator
+                    wrapper_self.use_train = use_train
                 
-                # 执行动作
-                next_state, reward, done, info = env.step(gelu_action.item(), softmax_action.item())
-                
-                # 记录中间结果（按照PDF 5.2节 StepInfo 结构要求）
-                step_info = {
-                    'step_global': episode * self.total_layers + step,  # 全局训练步数索引
-                    'episode_id': episode,                               # 当前回合ID
-                    'layer_index': info['layer_index'],                  # 当前决策的层 (0-11)
-                    'state_vector': state.tolist(),                      # 输入状态向量 (17维，策略四增强)
-                    'curr_gelu_degree': info['curr_gelu_degree'],        # 当前选择的GELU近似次数
-                    'curr_softmax_degree': info['curr_softmax_degree'],  # 当前选择的Softmax近似次数
-                    'gelu_prob_dist': gelu_probs.cpu().numpy().tolist(), # 策略网络输出的GELU概率分布
-                    'softmax_prob_dist': softmax_probs.cpu().numpy().tolist(),  # 策略网络输出的Softmax概率分布
-                    'critic_value': value.item(),                        # 价值网络预估的长期回报
-                    'accumulated_cost': info['accumulated_cost'],        # 截止当前层的累积开销
-                    'gelu_config': info['gelu_config'],                  # 当前各层GELU近似次数配置
-                    'softmax_config': info['softmax_config'],            # 当前各层Softmax近似次数配置
-                    'current_lr': current_lr,                            # 策略二：当前学习率
-                    'current_entropy_coef': current_entropy              # 策略二：当前熵系数
-                }
-                step_infos.append(step_info)
-                
-                # 存入buffer
-                buffer.add(
-                    state_tensor.cpu(),
-                    gelu_action.cpu(),
-                    softmax_action.cpu(),
-                    logprob.cpu(),
-                    reward,
-                    float(done),
-                    value.cpu()
-                )
-                
-                episode_reward += reward
-                state = next_state
-                state_tensor = torch.tensor(state, dtype=torch.float32).to(self.device)
+                def evaluate_model(wrapper_self, gelu_arr, softmax_arr):
+                    return wrapper_self.evaluator.evaluate_model(gelu_arr, softmax_arr, use_train=wrapper_self.use_train)
             
-            episode_rewards.append(episode_reward)
-            
-            # 收集当前episode的指标（从环境中获取）
-            if hasattr(env, 'current_episode_metrics') and env.current_episode_metrics is not None:
-                episode_losses.append(env.current_episode_metrics['loss'])
-                episode_metric1s.append(env.current_episode_metrics['metric1'])
-                episode_metric2s.append(env.current_episode_metrics['metric2'])
+            # ==================== 验证集引导（Validation Guided）====================
+            if USE_VALIDATION_FOR_REWARD:
+                self.log("[Info] Using VALIDATION set for reward calculation (Validation Guided RL)")
+                rl_evaluator = RLEvaluatorWrapper(self, use_train=False)  # 使用验证集
             else:
-                # 如果环境中没有指标，使用baseline值
-                episode_losses.append(base_loss)
-                episode_metric1s.append(base_p)
-                episode_metric2s.append(base_s)
+                self.log("[Info] Using TRAINING set for reward calculation")
+                rl_evaluator = RLEvaluatorWrapper(self, use_train=True)   # 使用训练集
             
-            # PPO 7.1: 更新运行时回报统计量
-            self.update_reward_statistics(episode_reward)
+            env = TransformerOptEnv(self.total_layers, base_tot_c, baseline_metrics, rl_evaluator,
+                                   num_metrics=self.get_num_metrics())
             
-            # 将 StepInfo 中间结果输出到文件
-            with open(self.step_info_file, "a", encoding="utf-8") as f:
-                f.write(f"--- Episode {episode + 1} (Reward={episode_reward:.4f}) ---\n")
-                for si in step_infos:
-                    self._write_step_info(si, f)
-                    f.write("\n")
+            buffer = RecurrentRolloutBuffer()  # LSTM PDF：使用循环网络专用Buffer
             
-            # 检查是否为最优解
-            final_config = {
-                'gelu': np.array(env.gelu_config),
-                'softmax': np.array(env.softmax_config),
-                'cost': env.accumulated_cost,
-                'reward': episode_reward
-            }
+            # 记录最优解
+            best_reward = float('-inf')
+            best_cost = float('inf')
             
-            if episode_reward > best_reward or (episode_reward == best_reward and env.accumulated_cost < best_cost):
-                best_reward = episode_reward
-                best_cost = env.accumulated_cost
-                best_config = final_config.copy()
-                self.log(f"  Episode {episode+1}: New Best! Reward={episode_reward:.4f}, Cost={env.accumulated_cost:.2f}")
-                self.log(f"    GELU: {env.gelu_config}")
-                self.log(f"    Softmax: {env.softmax_config}")
-            
-            # PPO更新（策略二：使用动态熵系数）
-            if (episode + 1) % PPO_UPDATE_INTERVAL == 0:
-                policy_loss, value_loss, entropy = self.ppo_update(
-                    policy_net, value_net, optimizer, buffer, self.device,
-                    entropy_coef=current_entropy  # 策略二：传入当前熵系数
-                )
-                buffer.clear()
+            for episode in range(PPO_MAX_EPISODES):
+                # 动态超参数调度（学习率和熵系数）
+                current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
                 
-                avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
-                # 策略二：日志输出当前学习率和熵系数
-                self.log(f"  Episode {episode+1}: Avg Reward={avg_reward:.4f}, "
-                        f"Policy Loss={policy_loss:.4f}, Value Loss={value_loss:.4f}, Entropy={entropy:.4f}")
-                self.log(f"    [Dynamic Schedule] LR={current_lr:.6f}, Entropy Coef={current_entropy:.6f}")
-        
-        # 如果没有找到满足约束的解，使用baseline
-        if best_config is None or best_reward < -50:  # 如果最好的奖励也很差，说明没找到可行解
-            self.log("\nNo feasible solution found, using baseline configuration.")
+                # LSTM PDF 5.2：环境重置 + LSTM隐藏状态零初始化 + SOS标记
+                state = env.reset()  # 44-dim numpy array
+                hidden = None  # LSTM hidden state（None = 零初始化）
+                prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long).to(self.device)    # SOS for GELU
+                prev_s = torch.tensor([[SOS_TOKEN_SOFTMAX]], dtype=torch.long).to(self.device)  # SOS for Softmax
+                
+                episode_reward = 0
+                step_infos = []
+                buffer.start_episode()  # LSTM PDF 4.1：开始记录新Episode
+                
+                for step in range(self.total_layers):
+                    # LSTM PDF 3.1：从44维状态中提取LSTM输入特征
+                    layer_idx = int(np.argmax(state[0:12]))
+                    cont_feat_np = np.array([
+                        state[12],  # cost_deviation
+                        state[15],  # complexity_debt
+                        state[16],  # progress
+                        state[41] if len(state) > 41 else 0.0,  # loss_budget
+                        state[42] if len(state) > 42 else 0.0,  # m1_budget
+                        state[43] if len(state) > 43 else 0.0,  # m2_budget
+                    ], dtype=np.float32)
+                    
+                    cont_feat_t = torch.tensor(cont_feat_np, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device)  # (1,1,6)
+                    layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long).to(self.device)  # (1,1)
+                    
+                    # LSTM PDF 5.2：自回归采样（隐藏状态在步间传递）
+                    with torch.no_grad():
+                        gelu_action, softmax_action, logprob, value, hidden, gelu_probs, softmax_probs = \
+                            lstm_net.get_action_and_logprob(
+                                cont_feat_t, layer_idx_t, prev_g, prev_s, hidden, return_probs=True
+                            )
+                    
+                    # 执行动作
+                    next_state, reward, done, info = env.step(gelu_action.item(), softmax_action.item())
+                    
+                    # 记录中间结果
+                    step_info = {
+                        'step_global': episode * self.total_layers + step,
+                        'episode_id': episode,
+                        'layer_index': info['layer_index'],
+                        'state_vector': state.tolist(),
+                        'curr_gelu_degree': info['curr_gelu_degree'],
+                        'curr_softmax_degree': info['curr_softmax_degree'],
+                        'gelu_prob_dist': gelu_probs.cpu().numpy().tolist(),
+                        'softmax_prob_dist': softmax_probs.cpu().numpy().tolist(),
+                        'critic_value': value.item(),
+                        'accumulated_cost': info['accumulated_cost'],
+                        'gelu_config': info['gelu_config'],
+                        'softmax_config': info['softmax_config'],
+                        'current_lr': current_lr,
+                        'current_entropy_coef': current_entropy
+                    }
+                    step_infos.append(step_info)
+                    
+                    # LSTM PDF 4.1.1：存入RecurrentRolloutBuffer
+                    buffer.add_step(
+                        cont_feat=torch.tensor(cont_feat_np, dtype=torch.float32),
+                        layer_idx=layer_idx,
+                        prev_g=prev_g.squeeze().item(),
+                        prev_s=prev_s.squeeze().item(),
+                        action_g=gelu_action.item(),
+                        action_s=softmax_action.item(),
+                        logprob=logprob.cpu(),
+                        reward=reward,
+                        value=value.cpu(),
+                        done=float(done)
+                    )
+                    
+                    # LSTM PDF 3.1.2：更新前一步动作（自回归输入下一步）
+                    prev_g = gelu_action.reshape(1, 1).to(self.device)
+                    prev_s = softmax_action.reshape(1, 1).to(self.device)
+                    
+                    episode_reward += reward
+                    state = next_state
+                
+                buffer.end_episode()  # LSTM PDF 4.1：结束Episode记录
+                episode_rewards.append(episode_reward)
+                
+                # 收集当前episode的指标
+                if hasattr(env, 'current_episode_metrics') and env.current_episode_metrics is not None:
+                    episode_losses.append(env.current_episode_metrics['loss'])
+                    episode_metric1s.append(env.current_episode_metrics['metric1'])
+                    episode_metric2s.append(env.current_episode_metrics['metric2'])
+                else:
+                    episode_losses.append(base_loss)
+                    episode_metric1s.append(base_p)
+                    episode_metric2s.append(base_s)
+                
+                # 更新运行时回报统计量
+                self.update_reward_statistics(episode_reward)
+                
+                # 将 StepInfo 中间结果输出到文件
+                with open(self.step_info_file, "a", encoding="utf-8") as f:
+                    f.write(f"--- Episode {episode + 1} (Reward={episode_reward:.4f}) ---\n")
+                    for si in step_infos:
+                        self._write_step_info(si, f)
+                        f.write("\n")
+                
+                # 检查是否为最优解
+                final_config = {
+                    'gelu': np.array(env.gelu_config),
+                    'softmax': np.array(env.softmax_config),
+                    'cost': env.accumulated_cost,
+                    'reward': episode_reward
+                }
+                
+                if episode_reward > best_reward or (episode_reward == best_reward and env.accumulated_cost < best_cost):
+                    best_reward = episode_reward
+                    best_cost = env.accumulated_cost
+                    best_config = final_config.copy()
+                    self.log(f"  Episode {episode+1}: New Best! Reward={episode_reward:.4f}, Cost={env.accumulated_cost:.2f}")
+                    self.log(f"    GELU: {env.gelu_config}")
+                    self.log(f"    Softmax: {env.softmax_config}")
+                
+                # LSTM PDF 4.2：PPO更新（Full-Episode BPTT）
+                if (episode + 1) % PPO_UPDATE_INTERVAL == 0:
+                    policy_loss, value_loss, entropy = self.ppo_update_lstm(
+                        lstm_net, optimizer, buffer, self.device,
+                        entropy_coef=current_entropy
+                    )
+                    buffer.clear()
+                    episode_entropies.append(entropy)  # 记录当前更新步的策略熵，用于绘制熵曲线
+                    
+                    avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
+                    self.log(f"  Episode {episode+1}: Avg Reward={avg_reward:.4f}, "
+                            f"Policy Loss={policy_loss:.4f}, Value Loss={value_loss:.4f}, Entropy={entropy:.4f}")
+                    self.log(f"    [LSTM Dynamic Schedule] LR={current_lr:.6f}, Entropy Coef={current_entropy:.6f}")
+            
+            # 如果没有找到满足约束的解，使用baseline
+            if best_config is None or best_reward < -50:  # 如果最好的奖励也很差，说明没找到可行解
+                self.log("\nNo feasible solution found, using baseline configuration.")
+                best_config = {
+                    'gelu': base_gelu.copy(),
+                    'softmax': base_softmax.copy(),
+                    'cost': base_tot_c,
+                    'reward': 0
+                }
+            
+            self.log(f"\n--- PPO Training Completed ---")
+            self.log(f"Best Configuration Found (by RL):")
+            self.log(f"  GELU: {best_config['gelu'].tolist()}")
+            self.log(f"  Softmax: {best_config['softmax'].tolist()}")
+            self.log(f"  Cost: {best_config['cost']:.2f}, Reward: {best_config['reward']:.4f}")
+
+        # ---------------------------------------------------------
+        # 仅贪婪模式：从用户指定的初始配置开始
+        # ---------------------------------------------------------
+        if SEARCH_MODE == "greedy":
+            # 将 GREEDY_INITIAL_* 转为数组并 pad/truncate 到 total_layers
+            def _pad_or_truncate(arr, length, default_val):
+                a = np.asarray(arr, dtype=int)
+                if len(a) < length:
+                    a = np.concatenate([a, np.full(length - len(a), default_val, dtype=int)])
+                elif len(a) > length:
+                    a = a[:length].copy()
+                return a
+            init_gelu = _pad_or_truncate(GREEDY_INITIAL_GELU, self.total_layers, 4)
+            init_softmax = _pad_or_truncate(GREEDY_INITIAL_SOFTMAX, self.total_layers, 6)
+            if len(GREEDY_INITIAL_GELU) != self.total_layers or len(GREEDY_INITIAL_SOFTMAX) != self.total_layers:
+                self.log(f"[Info] GREEDY_INITIAL_* length adjusted to total_layers={self.total_layers} (pad/truncate).")
+            init_cost = self.get_simulated_cost(init_gelu, init_softmax)[0]
             best_config = {
-                'gelu': base_gelu.copy(),
-                'softmax': base_softmax.copy(),
-                'cost': base_tot_c,
+                'gelu': init_gelu,
+                'softmax': init_softmax,
+                'cost': init_cost,
                 'reward': 0
             }
-        
-        self.log(f"\n--- PPO Training Completed ---")
-        self.log(f"Best Configuration Found:")
-        self.log(f"  GELU: {best_config['gelu'].tolist()}")
-        self.log(f"  Softmax: {best_config['softmax'].tolist()}")
-        self.log(f"  Cost: {best_config['cost']:.2f}, Reward: {best_config['reward']:.4f}")
+            self.log("\n--- Greedy-Only Mode: Using user-specified initial configuration ---")
+            self.log(f"  GELU: {best_config['gelu'].tolist()}")
+            self.log(f"  Softmax: {best_config['softmax'].tolist()}")
 
         # ---------------------------------------------------------
-        # Plot: PPO Training Curves (Reward and Metrics)
+        # Phase 2.5: Greedy Search（SEARCH_MODE=="both" 且 USE_GREEDY_SEARCH 时从 RL 结果出发；SEARCH_MODE=="greedy" 时从指定初始配置出发）
         # ---------------------------------------------------------
-        try:
-            import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-
-            episodes = np.arange(1, len(episode_rewards) + 1)
-            rewards = np.array(episode_rewards, dtype=np.float32)
-            losses = np.array(episode_losses, dtype=np.float32)
-            metric1s = np.array(episode_metric1s, dtype=np.float32)
-            metric2s = np.array(episode_metric2s, dtype=np.float32)
-
-            # 获取指标名称
-            metric1_name, metric2_name = self.get_metric_names()
-
-            # Simple moving average for smoother convergence view
-            # 使用合理的窗口大小，避免窗口过大导致曲线过于平滑
-            window = min(max(5, PPO_UPDATE_INTERVAL // 5), 50)
-            
-            def compute_ma(data):
-                """计算移动平均"""
-                if len(data) >= window:
-                    kernel = np.ones(window, dtype=np.float32) / window
-                    data_ma = np.convolve(data, kernel, mode="valid")
-                    return data_ma
-                return data
-            
-            rewards_ma = compute_ma(rewards)
-            losses_ma = compute_ma(losses)
-            metric1s_ma = compute_ma(metric1s)
-            metric2s_ma = compute_ma(metric2s)
-            
-            if len(rewards) >= window:
-                episodes_ma = episodes[window - 1:]
+        if (SEARCH_MODE == "both" and USE_GREEDY_SEARCH) or SEARCH_MODE == "greedy":
+            self.log("\n" + "="*60)
+            if SEARCH_MODE == "greedy":
+                self.log("PHASE 2.5: GREEDY SEARCH (Greedy-Only Mode, from user-specified initial config)")
             else:
-                episodes_ma = episodes
+                self.log("PHASE 2.5: GREEDY SEARCH (Post-RL Refinement)")
+            self.log("Greedily reduce cost while maintaining 0.5% constraint")
+            self.log("="*60)
+            
+            greedy_gelu = best_config['gelu'].copy()
+            greedy_softmax = best_config['softmax'].copy()
+            
+            # 在训练集上评估初始配置（用于记录）
+            init_loss, init_p, init_s, _ = self.evaluate_model(greedy_gelu, greedy_softmax, use_train=True)
+            init_cost = best_config['cost']
+            
+            self.log(f"Initial (evaluated on Training Set):")
+            self.log(f"  {self._fmt_metrics(init_loss, init_p, init_s)}, Cost: {init_cost:.2f}")
+            
+            # 设定 0.5% 的严格约束（贪心在训练集上做，故 baseline 用训练集）
+            GREEDY_CONSTRAINT_RATIO = 0.005
+            greedy_limit_loss = base_loss_train * (1 + GREEDY_CONSTRAINT_RATIO)
+            greedy_limit_p = base_p_train * (1 - GREEDY_CONSTRAINT_RATIO)
+            greedy_limit_s = base_s_train * (1 - GREEDY_CONSTRAINT_RATIO)
+            
+            self.log(f"Greedy Constraints (0.5% tolerance, baseline on Training Set):")
+            self.log(f"  Baseline (Train): {self._fmt_metrics(base_loss_train, base_p_train, base_s_train)}")
+            self.log(f"  Limits: {self._fmt_constraints(greedy_limit_loss, greedy_limit_p, greedy_limit_s)}")
+            
+            # Best-First 贪心搜索：每轮枚举所有可行的单步降精度，选择成本节省最大的接受
+            # （避免 first-fit 策略中因层序固定导致约束预算被低价值修改抢占的问题）
+            iteration = 0
+            max_iterations = 200  # 每次只接受一步，需要足够多的迭代
+            current_cost = self.get_simulated_cost(greedy_gelu, greedy_softmax)[0]
+            
+            while iteration < max_iterations:
+                iteration += 1
+                
+                # 收集所有可行的候选修改，每个候选 = (成本节省, 类型, 层号, 旧值, 新值, 评估结果)
+                candidates = []
+                
+                # 枚举所有层的 GELU 降精度候选
+                for layer_idx in range(self.total_layers):
+                    cur_deg = greedy_gelu[layer_idx]
+                    if cur_deg == 4:
+                        cand_deg = 2
+                    elif cur_deg == 2:
+                        cand_deg = 1
+                    else:
+                        continue  # 已是最低精度
+                    
+                    test_gelu = greedy_gelu.copy()
+                    test_gelu[layer_idx] = cand_deg
+                    test_loss, test_p, test_s, _ = self.evaluate_model(test_gelu, greedy_softmax, use_train=True)
+                    
+                    # 检查约束
+                    if (test_loss <= greedy_limit_loss and 
+                        test_p >= greedy_limit_p and 
+                        test_s >= greedy_limit_s):
+                        new_cost = self.get_simulated_cost(test_gelu, greedy_softmax)[0]
+                        cost_saving = current_cost - new_cost
+                        candidates.append({
+                            'type': 'GELU', 'layer': layer_idx,
+                            'old_deg': cur_deg, 'new_deg': cand_deg,
+                            'cost_saving': cost_saving, 'new_cost': new_cost,
+                            'loss': test_loss, 'p': test_p, 's': test_s,
+                            'test_gelu': test_gelu, 'test_softmax': greedy_softmax.copy()
+                        })
+                
+                # 枚举所有层的 Softmax 降精度候选
+                for layer_idx in range(self.total_layers):
+                    cur_deg = greedy_softmax[layer_idx]
+                    if cur_deg <= 2:
+                        continue  # 已是最低精度
+                    cand_deg = cur_deg - 1
+                    
+                    test_softmax = greedy_softmax.copy()
+                    test_softmax[layer_idx] = cand_deg
+                    test_loss, test_p, test_s, _ = self.evaluate_model(greedy_gelu, test_softmax, use_train=True)
+                    
+                    # 检查约束
+                    if (test_loss <= greedy_limit_loss and 
+                        test_p >= greedy_limit_p and 
+                        test_s >= greedy_limit_s):
+                        new_cost = self.get_simulated_cost(greedy_gelu, test_softmax)[0]
+                        cost_saving = current_cost - new_cost
+                        candidates.append({
+                            'type': 'Softmax', 'layer': layer_idx,
+                            'old_deg': cur_deg, 'new_deg': cand_deg,
+                            'cost_saving': cost_saving, 'new_cost': new_cost,
+                            'loss': test_loss, 'p': test_p, 's': test_s,
+                            'test_gelu': greedy_gelu.copy(), 'test_softmax': test_softmax
+                        })
+                
+                # 如果没有任何可行候选，搜索结束
+                if not candidates:
+                    self.log(f"  [Iter {iteration}] No feasible single-step change found. Search complete.")
+                    break
+                
+                # 选择成本节省最大的候选
+                best_cand = max(candidates, key=lambda c: c['cost_saving'])
+                
+                # 如果最大成本节省 <= 0，说明无法进一步降低成本，结束
+                if best_cand['cost_saving'] <= 0:
+                    self.log(f"  [Iter {iteration}] No cost-saving candidate found. Search complete.")
+                    break
+                
+                # 接受最佳候选
+                greedy_gelu = best_cand['test_gelu']
+                greedy_softmax = best_cand['test_softmax']
+                current_cost = best_cand['new_cost']
+                
+                self.log(f"  [Iter {iteration}] Layer {best_cand['layer']} {best_cand['type']} "
+                        f"{best_cand['old_deg']}->{best_cand['new_deg']}: "
+                        f"{self._fmt_metrics(best_cand['loss'], best_cand['p'], best_cand['s'])}, "
+                        f"Cost={current_cost:.2f}, Saved={best_cand['cost_saving']:.2f} ✓")
+            
+            # 最终的贪心搜索结果（在验证集上评估）
+            final_loss, final_p, final_s, _ = self.evaluate_model(greedy_gelu, greedy_softmax, use_train=False)
+            final_cost = self.get_simulated_cost(greedy_gelu, greedy_softmax)[0]
+            
+            self.log(f"\n--- Greedy Search Completed (Iterations: {iteration}) ---")
+            self.log(f"Final Configuration (after Greedy, evaluated on Validation Set):")
+            self.log(f"  GELU: {greedy_gelu.tolist()}")
+            self.log(f"  Softmax: {greedy_softmax.tolist()}")
+            self.log(f"  {self._fmt_metrics(final_loss, final_p, final_s)}")
+            self.log(f"  Cost: {final_cost:.2f}")
+            self.log(f"Cost Reduction: RL={init_cost:.2f} -> Greedy={final_cost:.2f} (Δ={init_cost - final_cost:.2f})")
+            
+            # 更新 best_config 为贪心搜索的结果
+            best_config = {
+                'gelu': greedy_gelu,
+                'softmax': greedy_softmax,
+                'cost': final_cost,
+                'reward': best_config['reward']  # 保留RL的reward供参考
+            }
+        else:
+            # 跳过贪心搜索
+            self.log("\n" + "="*60)
+            self.log("PHASE 2.5: GREEDY SEARCH (SKIPPED)")
+            self.log("="*60)
+            if SEARCH_MODE == "rl":
+                self.log("[Info] SEARCH_MODE=rl, greedy search not run.")
+            elif SEARCH_MODE == "both":
+                self.log("[Info] USE_GREEDY_SEARCH=False, skipping greedy refinement.")
+            self.log("[Info] Using current best_config as final configuration.")
+            self.log("="*60)
 
-            # 创建 2x2 子图布局
-            dataset_info = f" ({self.data_path})"
-            val_guided_info = " [Validation Guided]" if USE_VALIDATION_FOR_REWARD else ""
-            fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-            fig.suptitle(f"PPO Training Curves{dataset_info}{val_guided_info}", fontsize=14, fontweight='bold')
-            
-            # 子图1: Episode Reward
-            ax1 = axes[0, 0]
-            ax1.plot(episodes, rewards, label="Episode Reward", alpha=0.6, color='blue')
-            ax1.plot(episodes_ma, rewards_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkblue')
-            ax1.set_xlabel("Episode")
-            ax1.set_ylabel("Reward")
-            ax1.set_title("Episode Reward")
-            ax1.grid(True, alpha=0.3)
-            ax1.legend()
-            
-            # 子图2: Loss
-            ax2 = axes[0, 1]
-            ax2.plot(episodes, losses, label="Loss", alpha=0.6, color='red')
-            ax2.plot(episodes_ma, losses_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkred')
-            ax2.set_xlabel("Episode")
-            ax2.set_ylabel("Loss")
-            ax2.set_title("Loss (lower is better)")
-            ax2.grid(True, alpha=0.3)
-            # 添加baseline参考线
-            ax2.axhline(y=base_loss, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
-            ax2.legend()
-            
-            # 子图3: Metric1 (Pearson or Accuracy)
-            ax3 = axes[1, 0]
-            ax3.plot(episodes, metric1s, label=metric1_name, alpha=0.6, color='green')
-            ax3.plot(episodes_ma, metric1s_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkgreen')
-            ax3.set_xlabel("Episode")
-            ax3.set_ylabel(metric1_name)
-            ax3.set_title(f"{metric1_name} (higher is better)")
-            ax3.grid(True, alpha=0.3)
-            # 添加baseline参考线
-            ax3.axhline(y=base_p, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
-            ax3.legend()
-            
-            # 子图4: Metric2 (Spearman or F1)
-            ax4 = axes[1, 1]
-            ax4.plot(episodes, metric2s, label=metric2_name, alpha=0.6, color='purple')
-            ax4.plot(episodes_ma, metric2s_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkviolet')
-            ax4.set_xlabel("Episode")
-            ax4.set_ylabel(metric2_name)
-            ax4.set_title(f"{metric2_name} (higher is better)")
-            ax4.grid(True, alpha=0.3)
-            # 添加baseline参考线
-            ax4.axhline(y=base_s, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
-            ax4.legend()
+        # ---------------------------------------------------------
+        # Plot: PPO Training Curves（仅当执行过 RL 时绘制）
+        # ---------------------------------------------------------
+        if len(episode_rewards) > 0:
+            try:
+                import matplotlib
+                matplotlib.use("Agg")
+                import matplotlib.pyplot as plt
 
-            plot_path = "ppo_training_curve.png"
-            plt.tight_layout()
-            plt.savefig(plot_path, dpi=150)
-            plt.close()
-            self.log(f"PPO training curves saved to: {plot_path}")
-        except Exception as e:
-            self.log(f"[Warning] Failed to plot PPO training curves: {e}")
+                episodes = np.arange(1, len(episode_rewards) + 1)
+                rewards = np.array(episode_rewards, dtype=np.float32)
+                losses = np.array(episode_losses, dtype=np.float32)
+                metric1s = np.array(episode_metric1s, dtype=np.float32)
+                metric2s = np.array(episode_metric2s, dtype=np.float32)
+
+                # 获取指标名称
+                metric_names_tuple = self.get_metric_names()
+                _num_m = self.get_num_metrics()
+                _m1_name = metric_names_tuple[0]
+                _m2_name = metric_names_tuple[1] if _num_m > 1 else None
+
+                # Simple moving average for smoother convergence view
+                window = min(max(5, PPO_UPDATE_INTERVAL // 5), 50)
+                
+                def compute_ma(data):
+                    if len(data) >= window:
+                        kernel = np.ones(window, dtype=np.float32) / window
+                        return np.convolve(data, kernel, mode="valid")
+                    return data
+                
+                rewards_ma = compute_ma(rewards)
+                losses_ma = compute_ma(losses)
+                metric1s_ma = compute_ma(metric1s)
+                metric2s_ma = compute_ma(metric2s) if _num_m > 1 else None
+                
+                if len(rewards) >= window:
+                    episodes_ma = episodes[window - 1:]
+                else:
+                    episodes_ma = episodes
+
+                dataset_info = f" ({self.data_path})"
+                val_guided_info = " [Validation Guided]" if USE_VALIDATION_FOR_REWARD else ""
+                
+                if _num_m == 1:
+                    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+                    fig.suptitle(f"PPO Training Curves{dataset_info}{val_guided_info}", fontsize=14, fontweight='bold')
+                    
+                    ax1 = axes[0]
+                    ax1.plot(episodes, rewards, label="Episode Reward", alpha=0.6, color='blue')
+                    ax1.plot(episodes_ma, rewards_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkblue')
+                    ax1.set_xlabel("Episode"); ax1.set_ylabel("Reward")
+                    ax1.set_title("Episode Reward"); ax1.grid(True, alpha=0.3); ax1.legend()
+                    
+                    ax2 = axes[1]
+                    ax2.plot(episodes, losses, label="Loss", alpha=0.6, color='red')
+                    ax2.plot(episodes_ma, losses_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkred')
+                    ax2.set_xlabel("Episode"); ax2.set_ylabel("Loss")
+                    ax2.set_title("Loss (lower is better)"); ax2.grid(True, alpha=0.3)
+                    ax2.axhline(y=base_loss, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
+                    ax2.legend()
+                    
+                    ax3 = axes[2]
+                    ax3.plot(episodes, metric1s, label=_m1_name, alpha=0.6, color='green')
+                    ax3.plot(episodes_ma, metric1s_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkgreen')
+                    ax3.set_xlabel("Episode"); ax3.set_ylabel(_m1_name)
+                    ax3.set_title(f"{_m1_name} (higher is better)"); ax3.grid(True, alpha=0.3)
+                    ax3.axhline(y=base_p, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
+                    ax3.legend()
+                else:
+                    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+                    fig.suptitle(f"PPO Training Curves{dataset_info}{val_guided_info}", fontsize=14, fontweight='bold')
+                    
+                    ax1 = axes[0, 0]
+                    ax1.plot(episodes, rewards, label="Episode Reward", alpha=0.6, color='blue')
+                    ax1.plot(episodes_ma, rewards_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkblue')
+                    ax1.set_xlabel("Episode"); ax1.set_ylabel("Reward")
+                    ax1.set_title("Episode Reward"); ax1.grid(True, alpha=0.3); ax1.legend()
+                    
+                    ax2 = axes[0, 1]
+                    ax2.plot(episodes, losses, label="Loss", alpha=0.6, color='red')
+                    ax2.plot(episodes_ma, losses_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkred')
+                    ax2.set_xlabel("Episode"); ax2.set_ylabel("Loss")
+                    ax2.set_title("Loss (lower is better)"); ax2.grid(True, alpha=0.3)
+                    ax2.axhline(y=base_loss, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
+                    ax2.legend()
+                    
+                    ax3 = axes[1, 0]
+                    ax3.plot(episodes, metric1s, label=_m1_name, alpha=0.6, color='green')
+                    ax3.plot(episodes_ma, metric1s_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkgreen')
+                    ax3.set_xlabel("Episode"); ax3.set_ylabel(_m1_name)
+                    ax3.set_title(f"{_m1_name} (higher is better)"); ax3.grid(True, alpha=0.3)
+                    ax3.axhline(y=base_p, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
+                    ax3.legend()
+                    
+                    ax4 = axes[1, 1]
+                    ax4.plot(episodes, metric2s, label=_m2_name, alpha=0.6, color='purple')
+                    ax4.plot(episodes_ma, metric2s_ma, label=f"Moving Avg ({window})", linewidth=2, color='darkviolet')
+                    ax4.set_xlabel("Episode"); ax4.set_ylabel(_m2_name)
+                    ax4.set_title(f"{_m2_name} (higher is better)"); ax4.grid(True, alpha=0.3)
+                    ax4.axhline(y=base_s, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
+                    ax4.legend()
+
+                plot_path = "ppo_training_curve.png"
+                plt.tight_layout()
+                plt.savefig(plot_path, dpi=150)
+                plt.close()
+                self.log(f"PPO training curves saved to: {plot_path}")
+
+                if episode_entropies:
+                    update_episodes = np.arange(PPO_UPDATE_INTERVAL, len(episode_rewards) + 1, PPO_UPDATE_INTERVAL)
+                    entropies = np.array(episode_entropies, dtype=np.float32)
+                    if len(update_episodes) == len(entropies):
+                        fig_ent, ax_ent = plt.subplots(1, 1, figsize=(10, 5))
+                        ax_ent.plot(update_episodes, entropies, label="Policy Entropy", alpha=0.8, color='teal', marker='o', markersize=3)
+                        window_ent = min(5, max(1, len(entropies) // 5))
+                        if len(entropies) >= window_ent:
+                            kernel_ent = np.ones(window_ent, dtype=np.float32) / window_ent
+                            ent_ma = np.convolve(entropies, kernel_ent, mode="valid")
+                            ax_ent.plot(update_episodes[window_ent - 1:], ent_ma, label=f"Moving Avg ({window_ent})", linewidth=2, color='darkgreen')
+                        ax_ent.set_xlabel("Episode (at PPO update)")
+                        ax_ent.set_ylabel("Entropy")
+                        ax_ent.set_title("PPO Training: Policy Entropy over Episodes")
+                        ax_ent.grid(True, alpha=0.3)
+                        ax_ent.legend()
+                        plt.tight_layout()
+                        entropy_plot_path = "ppo_entropy_curve.png"
+                        plt.savefig(entropy_plot_path, dpi=150)
+                        plt.close()
+                        self.log(f"PPO entropy curve saved to: {entropy_plot_path}")
+                    else:
+                        self.log(f"[Warning] Entropy curve not plotted: update_episodes len={len(update_episodes)}, entropies len={len(entropies)}")
+            except Exception as e:
+                self.log(f"[Warning] Failed to plot PPO training curves: {e}")
 
         # ---------------------------------------------------------
         # Phase 3: Final Report (使用测试集进行最终评估)
@@ -2031,24 +2832,47 @@ class LayerImportanceEvaluator(TrainerCallback):
              self.log(f"[{res['name']}] GELU   : {res['gelu'].tolist()}")
              self.log(f"[{res['name']}] Softmax: {res['softmax'].tolist()}")
 
-        # 根据数据集类型设置表头
-        metric1_short = "Pear." if self.is_regression else "Acc."
-        metric2_short = "Spear." if self.is_regression else "F1"
+        # 根据数据集类型设置表头（支持单指标/双指标）
+        short_names = self.get_metric_short_names()
+        m1_short = short_names[0]
         
         self.log("\nPerformance Comparison Table:")
-        header = f"{'Method':<15} | {'Loss':<6} {metric1_short:<6} {metric2_short:<6} | {'Tot C':<6} {'Tot S':<5} | {'GELU C':<6} {'GELU S':<6} | {'Smax C':<6} {'Smax S':<6}"
+        if num_metrics == 1:
+            header = (f"{'Method':<15} | {'Loss':<6} {m1_short:<6} | "
+                     f"{'Loss Δ%':<8} {m1_short + ' Δ%':<10} | "
+                     f"{'Tot C':<6} {'Tot S':<5} | {'GELU C':<6} {'GELU S':<6} | {'Smax C':<6} {'Smax S':<6}")
+        else:
+            m2_short = short_names[1]
+            header = (f"{'Method':<15} | {'Loss':<6} {m1_short:<6} {m2_short:<6} | "
+                     f"{'Loss Δ%':<8} {m1_short + ' Δ%':<10} {m2_short + ' Δ%':<10} | "
+                     f"{'Tot C':<6} {'Tot S':<5} | {'GELU C':<6} {'GELU S':<6} | {'Smax C':<6} {'Smax S':<6}")
         self.log("-" * len(header))
         self.log(header)
         self.log("-" * len(header))
         
-        self.log(f"{'Baseline':<15} | {base_loss:<6.4f} {base_p:<6.4f} {base_s:<6.4f} | "
-                 f"{base_tot_c:<6.1f} {'1.0x':<5} | {base_g_c:<6.1f} {'1.0x':<6} | {base_s_c:<6.1f} {'1.0x':<6}")
+        # Baseline行：变化百分比为0.00%
+        if num_metrics == 1:
+            self.log(f"{'Baseline':<15} | {base_loss:<6.4f} {base_p:<6.4f} | "
+                     f"{'0.00%':<8} {'0.00%':<10} | "
+                     f"{base_tot_c:<6.1f} {'1.0x':<5} | {base_g_c:<6.1f} {'1.0x':<6} | {base_s_c:<6.1f} {'1.0x':<6}")
+        else:
+            self.log(f"{'Baseline':<15} | {base_loss:<6.4f} {base_p:<6.4f} {base_s:<6.4f} | "
+                     f"{'0.00%':<8} {'0.00%':<10} {'0.00%':<10} | "
+                     f"{base_tot_c:<6.1f} {'1.0x':<5} | {base_g_c:<6.1f} {'1.0x':<6} | {base_s_c:<6.1f} {'1.0x':<6}")
         
         def format_row(r):
-            return (f"{r['name']:<15} | {r['loss']:<6.4f} {r['p']:<6.4f} {r['s']:<6.4f} | "
-                    f"{r['tot_c']:<6.1f} {r['tot_spd']:<5.2f} | "
-                    f"{r['g_c']:<6.1f} {r['g_spd']:<6.2f} | "
-                    f"{r['s_c']:<6.1f} {r['s_spd']:<6.2f}")
+            loss_delta_pct = ((r['loss'] - base_loss) / (base_loss + 1e-8)) * 100.0
+            metric1_delta_pct = ((r['p'] - base_p) / (base_p + 1e-8)) * 100.0
+            cost_part = (f"{r['tot_c']:<6.1f} {r['tot_spd']:<5.2f} | "
+                         f"{r['g_c']:<6.1f} {r['g_spd']:<6.2f} | "
+                         f"{r['s_c']:<6.1f} {r['s_spd']:<6.2f}")
+            if num_metrics == 1:
+                return (f"{r['name']:<15} | {r['loss']:<6.4f} {r['p']:<6.4f} | "
+                        f"{loss_delta_pct:>7.2f}% {metric1_delta_pct:>9.2f}% | {cost_part}")
+            else:
+                metric2_delta_pct = ((r['s'] - base_s) / (base_s + 1e-8)) * 100.0
+                return (f"{r['name']:<15} | {r['loss']:<6.4f} {r['p']:<6.4f} {r['s']:<6.4f} | "
+                        f"{loss_delta_pct:>7.2f}% {metric1_delta_pct:>9.2f}% {metric2_delta_pct:>9.2f}% | {cost_part}")
         
         self.log(format_row(opt_res))
         self.log("-" * len(header))
@@ -2068,6 +2892,35 @@ class LayerImportanceEvaluator(TrainerCallback):
         opt_p = opt_res['p']
         opt_s = opt_res['s']
         
+        # 根据数据集设置违规标签（使用短名称）
+        short_names = self.get_metric_short_names()
+        metric1_tag = short_names[0].upper().rstrip('.')
+        metric2_tag = short_names[1].upper().rstrip('.') if num_metrics > 1 else None
+        
+        def _check_violation(l, p, s):
+            """检查约束违反情况，返回 (is_viol, viol_tags)"""
+            is_viol = False
+            viol_tags = []
+            if l > limit_loss:
+                is_viol = True
+                viol_tags.append("LOSS")
+            if p < limit_p:
+                is_viol = True
+                viol_tags.append(metric1_tag)
+            if num_metrics > 1 and s < limit_s:
+                is_viol = True
+                viol_tags.append(metric2_tag)
+            return is_viol, viol_tags
+        
+        def _format_sensitivity_msg(prefix, status, l, p, s, d_l, d_p, d_s):
+            """格式化敏感性分析消息"""
+            msg = (f"{prefix}: {status} | "
+                   f"Loss: {l:.4f} ({d_l:+.4f}) | "
+                   f"{metric1_name}: {p:.4f} ({d_p:+.4f})")
+            if num_metrics > 1:
+                msg += f" | {metric2_name}: {s:.4f} ({d_s:+.4f})"
+            return msg
+        
         for i in range(self.total_layers):
             # GELU Check
             cd = opt_gelu[i]
@@ -2075,39 +2928,14 @@ class LayerImportanceEvaluator(TrainerCallback):
             if td is not None:
                 tmp = opt_gelu.copy()
                 tmp[i] = td
-                # Use cache if possible (might have been visited in beam search)
                 sig = (tuple(tmp), tuple(opt_softmax))
                 if sig in eval_cache: l, p, s, t = eval_cache[sig]
                 else: l, p, s, t = self.evaluate_model(tmp, opt_softmax, use_train=False)
                 
-                is_viol = False
-                viol_tags = []
-                # 根据数据集类型设置违规标签
-                metric1_tag = "PEAR" if self.is_regression else "ACC"
-                metric2_tag = "SPEAR" if self.is_regression else "F1"
-                
-                if l > limit_loss: 
-                    is_viol = True
-                    viol_tags.append("LOSS")
-                if p < limit_p: 
-                    is_viol = True
-                    viol_tags.append(metric1_tag)
-                if s < limit_s: 
-                    is_viol = True
-                    viol_tags.append(metric2_tag)
-                
+                is_viol, viol_tags = _check_violation(l, p, s)
                 status = f"VIOLATED ({','.join(viol_tags)})" if is_viol else "SAFE"
-                
-                # Calculate Deltas relative to Optimized state
-                d_l = l - opt_loss
-                d_p = p - opt_p
-                d_s = s - opt_s
-                
-                msg = (f"L{i} GELU {cd}->{td}: {status} | "
-                       f"Loss: {l:.4f} ({d_l:+.4f}) | "
-                       f"{metric1_name}: {p:.4f} ({d_p:+.4f}) | "
-                       f"{metric2_name}: {s:.4f} ({d_s:+.4f})")
-                self.log(msg)
+                d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
+                self.log(_format_sensitivity_msg(f"L{i} GELU {cd}->{td}", status, l, p, s, d_l, d_p, d_s))
 
             # Softmax Check
             cd_s = opt_softmax[i]
@@ -2118,30 +2946,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 if sig in eval_cache: l, p, s, t = eval_cache[sig]
                 else: l, p, s, t = self.evaluate_model(opt_gelu, tmp_s, use_train=False)
                 
-                is_viol = False
-                viol_tags = []
-                if l > limit_loss: 
-                    is_viol = True
-                    viol_tags.append("LOSS")
-                if p < limit_p: 
-                    is_viol = True
-                    viol_tags.append(metric1_tag)
-                if s < limit_s: 
-                    is_viol = True
-                    viol_tags.append(metric2_tag)
-                
+                is_viol, viol_tags = _check_violation(l, p, s)
                 status = f"VIOLATED ({','.join(viol_tags)})" if is_viol else "SAFE"
-                
-                # Calculate Deltas relative to Optimized state
-                d_l = l - opt_loss
-                d_p = p - opt_p
-                d_s = s - opt_s
-                
-                msg = (f"L{i} Smax {cd_s}->{cd_s-1}: {status} | "
-                       f"Loss: {l:.4f} ({d_l:+.4f}) | "
-                       f"{metric1_name}: {p:.4f} ({d_p:+.4f}) | "
-                       f"{metric2_name}: {s:.4f} ({d_s:+.4f})")
-                self.log(msg)
+                d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
+                self.log(_format_sensitivity_msg(f"L{i} Smax {cd_s}->{cd_s-1}", status, l, p, s, d_l, d_p, d_s))
 
         self.log("\nPPO Optimization Finished.")
         self.apply_configuration(opt_gelu, opt_softmax)

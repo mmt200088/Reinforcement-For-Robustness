@@ -162,7 +162,7 @@ def train(
         model = AutoModelForSequenceClassification.from_pretrained(
             base_model,
             # num_labels=1,  # stsb        
-            num_labels=2,  # sst2/mrpc
+            num_labels=2,  # sst2/mrpc/qnli
             # load_in_8bit=False,
             # torch_dtype=torch.float16,
             device_map={"": int(os.environ.get("LOCAL_RANK") or 0)},
@@ -207,11 +207,11 @@ def train(
         # print(f"examples keys: {examples.keys()}")
         
         tokenized = tokenizer(
-            # examples["question"], 
-            # examples["sentence"],
+            examples["question"],  # QNLI
+            examples["sentence"],  # QNLI
             # examples["sentence"],   # SST-2 
-            examples["sentence1"],  # stsb/mrpc
-            examples["sentence2"],
+            # examples["sentence1"],  # stsb/mrpc
+            # examples["sentence2"],
             truncation=True,
             padding=False,
             max_length=128,
@@ -327,30 +327,55 @@ def train(
     #     train_data = data["train"].shuffle().map(generate_and_tokenize_prompt)
     #     val_data = None
     
+    # MNLI 需要特殊处理：有 validation_matched 和 validation_mismatched 两个验证集
+    val_data_mm = None  # MNLI mismatched 验证集
+    
     if val_set_size > 0:
+        is_mnli = data_path.lower() == 'mnli'
+        
+        if is_mnli:
+            print(f"Loading MNLI dataset (matched + mismatched validation sets)")
+            train_data = data["train"].shuffle().map(tokenize_fn)
+            val_data = data["validation_matched"].shuffle().map(tokenize_fn)
+            val_data_mm = data["validation_mismatched"].shuffle().map(tokenize_fn)
+            
+            print(f"After tokenize matched: {val_data[0]}")
+            train_data = train_data.rename_column("label", "labels")
+            val_data = val_data.rename_column("label", "labels")
+            val_data_mm = val_data_mm.rename_column("label", "labels")
+            
+            columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
+            train_data.set_format(type="torch", columns=columns)
+            val_data.set_format(type="torch", columns=columns)
+            val_data_mm.set_format(type="torch", columns=columns)
+            
+            print(f"Train data size: {len(train_data)}")
+            print(f"Validation matched size: {len(val_data)}")
+            print(f"Validation mismatched size: {len(val_data_mm)}")
+        else:
+            print(f"Loading dataset: {data['validation']}")
+            train_data = data["train"].shuffle().map(tokenize_fn)
+            val_data = data["validation"].shuffle().map(tokenize_fn)
+            test_data = data["test"].shuffle().map(tokenize_fn)
+            
+            print(f"After tokenize: {val_data[0]}")
+            # add label
+            train_data = train_data.rename_column("label", "labels")
+            val_data = val_data.rename_column("label", "labels")
+            
+            print(f"After add label: {val_data[0]}")
+            
+            # 设置PyTorch格式
+            columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
+            train_data.set_format(type="torch", columns=columns)
+            val_data.set_format(type="torch", columns=columns)
 
-        print(f"Loading dataset: {data['validation']}")
-        train_data = data["train"].shuffle().map(tokenize_fn)
-        val_data = data["validation"].shuffle().map(tokenize_fn)
-        test_data = data["test"].shuffle().map(tokenize_fn)
-        
-        print(f"After tokenize: {val_data[0]}")
-        # add label
-        train_data = train_data.rename_column("label", "labels")
-        val_data = val_data.rename_column("label", "labels")
-        
-        print(f"After add label: {val_data[0]}")
-        
-        # 设置PyTorch格式
-        columns = ["input_ids", "attention_mask",  "token_type_ids", "labels"]
-        train_data.set_format(type="torch", columns=columns)
-        val_data.set_format(type="torch", columns=columns)
-
-        print(f"After format: {val_data}")
-        
-        print(f"Train data size: {len(train_data)}")
-        print(f"Validation data size: {len(val_data)}") 
-        # print(f"Test data size: {len(test_data)}")
+            print(f"After format: {val_data}")
+            
+            print(f"Train data size: {len(train_data)}")
+            print(f"Validation data size: {len(val_data)}") 
+            # print(f"Test data size: {len(test_data)}")
+            
     else:
         train_data = data["train"].shuffle().map(tokenize_fn)
         val_data = None
@@ -383,7 +408,8 @@ def train(
             data_collator=data_collator, 
             rl_lr=rl_lr, 
             degree=degree,
-            data_path=data_path  # 传递数据集名称用于动态指标选择
+            data_path=data_path,  # 传递数据集名称用于动态指标选择
+            test_data_mm=val_data_mm  # MNLI mismatched 验证集（非MNLI时为None）
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

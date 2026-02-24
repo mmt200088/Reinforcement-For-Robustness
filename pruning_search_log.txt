@@ -1,71 +1,514 @@
 === PPO RL Optimization Log Started ===
 
 ============================================================
-STARTING PPO REINFORCEMENT LEARNING OPTIMIZATION
+STARTING OPTIMIZATION
+SEARCH_MODE=rl
 ============================================================
 
 --- Phase 1: Establishing Baseline (on Training Set) ---
 Baseline Metrics (Training Set):
-  Loss: 0.116608, Accuracy: 0.965921, F1: 0.965903
+  Loss: 0.076748, Accuracy: 0.976772
   Sim Cost: 72.00 (G=36.00, S=36.00)
 Baseline Metrics (Validation Set - used for reward):
-  Loss: 0.348528, Accuracy: 0.879902, F1: 0.877442
+  Loss: 0.260287, Accuracy: 0.913784
 Constraints (based on Validation Set):
-  Loss<=0.3635, Accuracy>=0.8667, F1>=0.8643
+  Loss<=0.2753, Accuracy>=0.9001
 
 --- Phase 2: PPO Reinforcement Learning Training ---
 [Info] Using VALIDATION set for reward calculation (Validation Guided RL)
-  Episode 1: New Best! Reward=-0.2526, Cost=50.00
-    GELU: [4, 4, 4, 1, 2, 1, 1, 4, 1, 1, 2, 4]
-    Softmax: [6, 3, 6, 6, 6, 2, 2, 5, 2, 4, 4, 4]
-  Episode 3: New Best! Reward=0.1177, Cost=50.50
-    GELU: [4, 2, 2, 4, 2, 4, 1, 4, 1, 2, 4, 1]
-    Softmax: [2, 2, 4, 4, 2, 3, 5, 6, 6, 4, 3, 4]
-  Episode 4: New Best! Reward=0.8644, Cost=48.00
-    GELU: [1, 4, 2, 4, 1, 1, 4, 1, 4, 1, 1, 4]
-    Softmax: [4, 3, 5, 4, 2, 6, 3, 6, 5, 5, 4, 2]
-  Episode 71: New Best! Reward=0.8844, Cost=46.50
-    GELU: [1, 1, 4, 1, 2, 1, 1, 2, 1, 4, 4, 1]
-    Softmax: [5, 2, 5, 5, 2, 3, 6, 4, 4, 5, 4, 6]
-  Episode 73: New Best! Reward=1.0687, Cost=48.50
-    GELU: [1, 2, 1, 2, 1, 1, 4, 1, 2, 4, 2, 4]
-    Softmax: [4, 4, 5, 2, 5, 5, 3, 5, 3, 4, 4, 5]
-  Episode 170: Avg Reward=0.1457, Policy Loss=-0.1619, Value Loss=3.3391, Entropy=2.7072
-    [Dynamic Schedule] LR=0.000030, Entropy Coef=0.045129
-  Episode 331: New Best! Reward=1.1551, Cost=43.00
-    GELU: [1, 2, 1, 1, 1, 2, 1, 1, 2, 4, 4, 1]
-    Softmax: [2, 5, 4, 2, 3, 4, 5, 4, 3, 5, 4, 4]
-  Episode 340: Avg Reward=0.1867, Policy Loss=-0.1727, Value Loss=1.5290, Entropy=2.7071
-    [Dynamic Schedule] LR=0.000030, Entropy Coef=0.040229
-  Episode 510: Avg Reward=0.1796, Policy Loss=0.1222, Value Loss=1.0467, Entropy=2.7070
-    [Dynamic Schedule] LR=0.000030, Entropy Coef=0.035329
-  Episode 550: New Best! Reward=1.2574, Cost=45.00
-    GELU: [1, 1, 2, 2, 2, 1, 1, 4, 1, 1, 4, 1]
-    Softmax: [2, 5, 6, 2, 3, 5, 3, 3, 6, 3, 5, 6]
-  Episode 680: Avg Reward=0.1899, Policy Loss=-0.0876, Value Loss=0.9654, Entropy=2.7062
-    [Dynamic Schedule] LR=0.000030, Entropy Coef=0.030429
-  Episode 850: Avg Reward=0.1678, Policy Loss=0.0233, Value Loss=0.8465, Entropy=2.7059
-    [Dynamic Schedule] LR=0.000030, Entropy Coef=0.025529
-  Episode 1020: Avg Reward=0.1680, Policy Loss=0.0348, Value Loss=0.7180, Entropy=2.7060
-    [Dynamic Schedule] LR=0.000030, Entropy Coef=0.020629
-  Episode 1190: Avg Reward=0.1769, Policy Loss=0.0693, Value Loss=0.7187, Entropy=2.7052
-    [Dynamic Schedule] LR=0.000030, Entropy Coef=0.015729
-  Episode 1360: Avg Reward=0.2098, Policy Loss=0.0101, Value Loss=0.6399, Entropy=2.7042
-    [Dynamic Schedule] LR=0.000030, Entropy Coef=0.010829
-  Episode 1493: New Best! Reward=1.3527, Cost=42.00
-    GELU: [1, 1, 2, 2, 1, 2, 1, 1, 1, 1, 1, 2]
-    Softmax: [2, 2, 6, 2, 5, 6, 4, 4, 4, 4, 6, 3]
-  Episode 1530: Avg Reward=0.1690, Policy Loss=0.0447, Value Loss=0.6568, Entropy=2.7018
-    [Dynamic Schedule] LR=0.000030, Entropy Coef=0.005929
-  Episode 1700: Avg Reward=0.1837, Policy Loss=-0.0257, Value Loss=0.7164, Entropy=2.7013
-    [Dynamic Schedule] LR=0.000030, Entropy Coef=0.001029
+  Episode 1: New Best! Reward=-0.4381, Cost=52.50
+    GELU: [4, 4, 1, 4, 1, 2, 1, 2, 2, 1, 2, 1]
+    Softmax: [6, 5, 5, 5, 3, 3, 6, 6, 5, 4, 6, 3]
+  Episode 2: New Best! Reward=-0.1050, Cost=44.50
+    GELU: [4, 4, 2, 1, 4, 1, 2, 2, 1, 2, 1, 1]
+    Softmax: [5, 4, 2, 4, 2, 2, 3, 2, 2, 6, 3, 6]
+  Episode 4: New Best! Reward=-0.0162, Cost=45.00
+    GELU: [1, 4, 1, 2, 4, 1, 1, 4, 4, 2, 1, 1]
+    Softmax: [4, 6, 3, 4, 3, 3, 6, 4, 2, 4, 2, 3]
+  Episode 5: New Best! Reward=0.0200, Cost=47.00
+    GELU: [1, 1, 2, 4, 4, 1, 2, 4, 4, 4, 4, 4]
+    Softmax: [5, 2, 4, 2, 3, 2, 3, 2, 3, 3, 2, 5]
+  Episode 16: New Best! Reward=0.1834, Cost=49.50
+    GELU: [2, 2, 1, 1, 1, 1, 4, 2, 4, 4, 2, 2]
+    Softmax: [6, 2, 2, 6, 5, 2, 2, 2, 5, 6, 4, 6]
+  Episode 26: New Best! Reward=0.2566, Cost=49.00
+    GELU: [1, 2, 4, 1, 4, 2, 2, 2, 1, 1, 2, 2]
+    Softmax: [2, 4, 4, 4, 6, 2, 2, 5, 5, 6, 4, 4]
+  Episode 69: New Best! Reward=0.2913, Cost=46.00
+    GELU: [1, 1, 1, 2, 4, 1, 2, 4, 4, 2, 1, 2]
+    Softmax: [5, 3, 2, 2, 4, 5, 3, 6, 4, 2, 4, 4]
+  Episode 74: New Best! Reward=0.4479, Cost=44.50
+    GELU: [1, 4, 2, 1, 1, 1, 4, 2, 4, 1, 2, 1]
+    Softmax: [2, 5, 5, 4, 3, 2, 2, 2, 5, 5, 4, 5]
+  Episode 170: Avg Reward=-0.2332, Policy Loss=0.0650, Value Loss=1.0751, Entropy=2.7080
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.049756
+  Episode 183: New Best! Reward=0.4880, Cost=48.50
+    GELU: [1, 4, 1, 1, 4, 1, 4, 4, 4, 1, 2, 2]
+    Softmax: [3, 4, 2, 5, 2, 4, 2, 3, 6, 4, 6, 6]
+  Episode 340: Avg Reward=-0.2674, Policy Loss=-0.1199, Value Loss=0.5775, Entropy=2.7079
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.049511
+  Episode 510: Avg Reward=-0.2513, Policy Loss=0.2060, Value Loss=0.2157, Entropy=2.7078
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.049266
+  Episode 640: New Best! Reward=0.5701, Cost=42.50
+    GELU: [1, 1, 2, 1, 4, 4, 2, 1, 1, 1, 1, 1]
+    Softmax: [2, 4, 3, 5, 3, 2, 3, 5, 6, 3, 5, 6]
+  Episode 680: Avg Reward=-0.2872, Policy Loss=1.0010, Value Loss=0.6826, Entropy=2.7075
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.049021
+  Episode 850: Avg Reward=-0.2616, Policy Loss=-0.8200, Value Loss=0.1219, Entropy=2.7072
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.048776
+  Episode 1020: Avg Reward=-0.2230, Policy Loss=-0.5639, Value Loss=0.0975, Entropy=2.7064
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.048531
+  Episode 1190: Avg Reward=-0.2795, Policy Loss=0.0812, Value Loss=0.1458, Entropy=2.7050
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.048286
+  Episode 1360: Avg Reward=-0.2745, Policy Loss=-0.3054, Value Loss=0.2665, Entropy=2.7022
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.048041
+  Episode 1435: New Best! Reward=0.6313, Cost=45.00
+    GELU: [2, 1, 1, 1, 4, 2, 4, 4, 4, 1, 1, 1]
+    Softmax: [2, 3, 3, 4, 4, 5, 3, 3, 3, 4, 5, 5]
+  Episode 1530: Avg Reward=-0.2157, Policy Loss=1.0139, Value Loss=0.2967, Entropy=2.6962
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.047796
+  Episode 1700: Avg Reward=-0.2479, Policy Loss=-1.1791, Value Loss=0.3243, Entropy=2.6871
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.047551
+  Episode 1870: Avg Reward=-0.1632, Policy Loss=0.2503, Value Loss=0.0523, Entropy=2.6776
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.047306
+  Episode 2040: Avg Reward=-0.1829, Policy Loss=-1.3152, Value Loss=0.3863, Entropy=2.6484
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.047061
+  Episode 2210: Avg Reward=-0.1842, Policy Loss=-1.0895, Value Loss=0.3483, Entropy=2.6104
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.046816
+  Episode 2380: Avg Reward=-0.1629, Policy Loss=-0.2799, Value Loss=0.2064, Entropy=2.6094
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.046571
+  Episode 2550: Avg Reward=-0.1793, Policy Loss=-0.0289, Value Loss=0.0570, Entropy=2.5604
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.046326
+  Episode 2583: New Best! Reward=0.6721, Cost=44.00
+    GELU: [1, 1, 1, 1, 2, 4, 1, 4, 4, 1, 1, 1]
+    Softmax: [2, 5, 3, 4, 5, 4, 5, 4, 3, 5, 4, 5]
+  Episode 2720: Avg Reward=-0.0902, Policy Loss=0.0911, Value Loss=0.0836, Entropy=2.5219
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.046081
+  Episode 2890: Avg Reward=-0.1006, Policy Loss=-0.6163, Value Loss=0.1108, Entropy=2.4623
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.045836
+  Episode 3060: Avg Reward=-0.0922, Policy Loss=-0.0411, Value Loss=0.0689, Entropy=2.4175
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.045591
+  Episode 3230: Avg Reward=-0.0714, Policy Loss=1.3857, Value Loss=0.3170, Entropy=2.3858
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.045346
+  Episode 3400: Avg Reward=-0.0596, Policy Loss=-0.8042, Value Loss=0.3308, Entropy=2.3622
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.045101
+  Episode 3570: Avg Reward=-0.0693, Policy Loss=0.8095, Value Loss=0.5735, Entropy=2.3305
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.044856
+  Episode 3740: Avg Reward=-0.0365, Policy Loss=-0.3968, Value Loss=0.3165, Entropy=2.3055
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.044611
+  Episode 3857: New Best! Reward=0.6826, Cost=43.50
+    GELU: [1, 1, 1, 1, 4, 1, 4, 2, 4, 1, 1, 1]
+    Softmax: [2, 4, 5, 4, 4, 3, 5, 3, 4, 4, 5, 5]
+  Episode 3910: Avg Reward=-0.0251, Policy Loss=0.3915, Value Loss=0.0716, Entropy=2.2550
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.044366
+  Episode 4080: Avg Reward=-0.0232, Policy Loss=0.0992, Value Loss=0.0648, Entropy=2.2431
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.044121
+  Episode 4250: Avg Reward=-0.0055, Policy Loss=-0.8231, Value Loss=0.1190, Entropy=2.2139
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.043876
+  Episode 4420: Avg Reward=0.0338, Policy Loss=-1.0140, Value Loss=0.1632, Entropy=2.2022
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.043631
+  Episode 4590: Avg Reward=0.0274, Policy Loss=0.7188, Value Loss=0.3532, Entropy=2.2198
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.043386
+  Episode 4760: Avg Reward=0.0354, Policy Loss=0.0214, Value Loss=0.0968, Entropy=2.2047
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.043141
+  Episode 4930: Avg Reward=0.0368, Policy Loss=0.7896, Value Loss=0.1453, Entropy=2.2486
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.042896
+  Episode 5100: Avg Reward=0.0589, Policy Loss=-0.4506, Value Loss=0.0929, Entropy=2.1588
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.042651
+  Episode 5270: Avg Reward=0.0693, Policy Loss=-0.0532, Value Loss=0.0816, Entropy=2.1828
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.042406
+  Episode 5440: Avg Reward=0.1065, Policy Loss=-0.1648, Value Loss=0.0504, Entropy=2.2326
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.042161
+  Episode 5610: Avg Reward=0.1141, Policy Loss=0.2060, Value Loss=0.0723, Entropy=2.2384
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.041916
+  Episode 5780: Avg Reward=0.1040, Policy Loss=0.2652, Value Loss=0.1812, Entropy=2.2081
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.041671
+  Episode 5950: Avg Reward=0.2023, Policy Loss=-0.3481, Value Loss=0.0572, Entropy=2.1623
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.041426
+  Episode 6120: Avg Reward=0.2267, Policy Loss=1.2284, Value Loss=0.2419, Entropy=2.1218
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.041181
+  Episode 6290: Avg Reward=0.2268, Policy Loss=-0.3241, Value Loss=0.0241, Entropy=2.1699
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.040936
+  Episode 6460: Avg Reward=0.2609, Policy Loss=0.1789, Value Loss=0.0472, Entropy=2.1507
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.040691
+  Episode 6544: New Best! Reward=0.7059, Cost=41.00
+    GELU: [1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 1, 1]
+    Softmax: [2, 3, 3, 3, 4, 3, 2, 4, 4, 4, 4, 6]
+  Episode 6630: Avg Reward=0.3288, Policy Loss=-0.5840, Value Loss=0.0747, Entropy=2.0952
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.040446
+  Episode 6800: Avg Reward=0.3276, Policy Loss=0.4196, Value Loss=0.1582, Entropy=2.0914
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.040201
+  Episode 6970: Avg Reward=0.3868, Policy Loss=-0.7116, Value Loss=0.0898, Entropy=2.0079
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.039956
+  Episode 7140: Avg Reward=0.3887, Policy Loss=-0.0803, Value Loss=0.0175, Entropy=2.0481
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.039711
+  Episode 7172: New Best! Reward=0.7137, Cost=44.50
+    GELU: [1, 1, 1, 1, 1, 4, 2, 2, 4, 1, 2, 1]
+    Softmax: [3, 4, 4, 4, 5, 3, 2, 6, 3, 5, 5, 4]
+  Episode 7310: Avg Reward=0.4366, Policy Loss=-0.7626, Value Loss=0.0558, Entropy=1.9223
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.039466
+  Episode 7338: New Best! Reward=0.7698, Cost=44.50
+    GELU: [1, 1, 1, 1, 1, 2, 4, 4, 4, 2, 1, 1]
+    Softmax: [4, 4, 4, 3, 4, 2, 2, 5, 5, 5, 5, 4]
+  Episode 7480: Avg Reward=0.4257, Policy Loss=-0.0301, Value Loss=0.0190, Entropy=1.8784
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.039221
+  Episode 7650: Avg Reward=0.4377, Policy Loss=-0.3055, Value Loss=0.0129, Entropy=1.8922
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.038976
+  Episode 7820: Avg Reward=0.4526, Policy Loss=0.8992, Value Loss=0.1602, Entropy=1.9418
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.038731
+  Episode 7990: Avg Reward=0.4645, Policy Loss=-0.3117, Value Loss=0.0064, Entropy=1.8080
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.038486
+  Episode 8160: Avg Reward=0.4755, Policy Loss=-0.3453, Value Loss=0.0254, Entropy=1.8202
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.038241
+  Episode 8330: Avg Reward=0.4989, Policy Loss=-0.3978, Value Loss=0.0235, Entropy=1.8124
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.037996
+  Episode 8358: New Best! Reward=0.7885, Cost=44.00
+    GELU: [1, 1, 1, 1, 1, 4, 2, 4, 2, 1, 1, 1]
+    Softmax: [2, 4, 4, 5, 4, 3, 2, 5, 5, 6, 5, 5]
+  Episode 8500: Avg Reward=0.5073, Policy Loss=0.6107, Value Loss=0.0331, Entropy=1.8213
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.037751
+  Episode 8670: Avg Reward=0.5117, Policy Loss=0.4530, Value Loss=0.0338, Entropy=1.7792
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.037506
+  Episode 8798: New Best! Reward=0.8464, Cost=45.00
+    GELU: [1, 1, 1, 1, 1, 2, 4, 4, 4, 1, 1, 1]
+    Softmax: [4, 4, 4, 4, 5, 2, 3, 5, 5, 5, 5, 5]
+  Episode 8840: Avg Reward=0.5120, Policy Loss=-1.3075, Value Loss=0.0661, Entropy=1.7818
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.037261
+  Episode 9010: Avg Reward=0.5409, Policy Loss=0.8106, Value Loss=0.0832, Entropy=1.7300
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.037016
+  Episode 9180: Avg Reward=0.5712, Policy Loss=-0.1097, Value Loss=0.0165, Entropy=1.7114
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.036771
+  Episode 9350: Avg Reward=0.5693, Policy Loss=0.2357, Value Loss=0.0217, Entropy=1.7317
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.036526
+  Episode 9520: Avg Reward=0.5652, Policy Loss=-0.5276, Value Loss=0.0150, Entropy=1.6780
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.036281
+  Episode 9690: Avg Reward=0.6092, Policy Loss=-0.0230, Value Loss=0.0055, Entropy=1.6539
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.036036
+  Episode 9860: Avg Reward=0.5965, Policy Loss=0.3411, Value Loss=0.0086, Entropy=1.6376
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.035791
+  Episode 10030: Avg Reward=0.6157, Policy Loss=0.9044, Value Loss=0.0487, Entropy=1.5984
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.035546
+  Episode 10200: Avg Reward=0.6416, Policy Loss=-0.5781, Value Loss=0.0247, Entropy=1.5898
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.035301
+  Episode 10370: Avg Reward=0.6385, Policy Loss=0.3585, Value Loss=0.0232, Entropy=1.5582
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.035056
+  Episode 10540: Avg Reward=0.6599, Policy Loss=-0.1723, Value Loss=0.0082, Entropy=1.5447
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.034811
+  Episode 10710: Avg Reward=0.6627, Policy Loss=-0.5948, Value Loss=0.0070, Entropy=1.4784
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.034566
+  Episode 10880: Avg Reward=0.6786, Policy Loss=0.2626, Value Loss=0.0040, Entropy=1.4659
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.034321
+  Episode 11050: Avg Reward=0.6816, Policy Loss=-0.5013, Value Loss=0.0054, Entropy=1.4515
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.034076
+  Episode 11196: New Best! Reward=0.8468, Cost=42.00
+    GELU: [1, 1, 1, 1, 1, 2, 4, 4, 4, 1, 1, 1]
+    Softmax: [2, 4, 5, 4, 3, 2, 2, 5, 4, 5, 4, 5]
+  Episode 11220: Avg Reward=0.6945, Policy Loss=-0.2903, Value Loss=0.0074, Entropy=1.4098
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.033831
+  Episode 11390: Avg Reward=0.6885, Policy Loss=0.0120, Value Loss=0.0056, Entropy=1.3974
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.033586
+  Episode 11560: Avg Reward=0.6903, Policy Loss=0.2617, Value Loss=0.0065, Entropy=1.3802
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.033341
+  Episode 11730: Avg Reward=0.7027, Policy Loss=1.2259, Value Loss=0.0363, Entropy=1.3544
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.033096
+  Episode 11900: Avg Reward=0.7049, Policy Loss=0.2795, Value Loss=0.0041, Entropy=1.3468
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.032851
+  Episode 12070: Avg Reward=0.7094, Policy Loss=0.5063, Value Loss=0.0090, Entropy=1.2854
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.032606
+  Episode 12240: Avg Reward=0.7198, Policy Loss=-0.3196, Value Loss=0.0032, Entropy=1.2607
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.032361
+  Episode 12410: Avg Reward=0.7194, Policy Loss=-0.2687, Value Loss=0.0039, Entropy=1.2514
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.032116
+  Episode 12580: Avg Reward=0.7188, Policy Loss=0.2044, Value Loss=0.0054, Entropy=1.2375
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.031871
+  Episode 12712: New Best! Reward=0.8569, Cost=45.50
+    GELU: [1, 1, 1, 1, 4, 2, 4, 4, 4, 1, 1, 1]
+    Softmax: [4, 4, 3, 4, 4, 2, 2, 5, 5, 5, 5, 5]
+  Episode 12750: Avg Reward=0.7230, Policy Loss=-0.5933, Value Loss=0.0062, Entropy=1.2038
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.031626
+  Episode 12766: New Best! Reward=0.8732, Cost=44.50
+    GELU: [1, 1, 1, 1, 4, 4, 4, 4, 4, 1, 1, 1]
+    Softmax: [2, 5, 4, 4, 2, 2, 2, 5, 3, 5, 6, 5]
+  Episode 12920: Avg Reward=0.7356, Policy Loss=-0.6738, Value Loss=0.0024, Entropy=1.1881
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.031381
+  Episode 13090: Avg Reward=0.7363, Policy Loss=-0.4140, Value Loss=0.0068, Entropy=1.1527
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.031136
+  Episode 13260: Avg Reward=0.7327, Policy Loss=0.1114, Value Loss=0.0029, Entropy=1.1051
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.030891
+  Episode 13430: Avg Reward=0.7401, Policy Loss=-0.0259, Value Loss=0.0011, Entropy=1.1150
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.030646
+  Episode 13600: Avg Reward=0.7375, Policy Loss=-0.5366, Value Loss=0.0027, Entropy=1.0921
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.030401
+  Episode 13770: Avg Reward=0.7485, Policy Loss=1.2292, Value Loss=0.0292, Entropy=1.0751
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.030156
+  Episode 13940: Avg Reward=0.7483, Policy Loss=0.7786, Value Loss=0.0076, Entropy=1.0673
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.029911
+  Episode 14110: Avg Reward=0.7546, Policy Loss=-0.1677, Value Loss=0.0114, Entropy=1.0441
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.029666
+  Episode 14116: New Best! Reward=0.8737, Cost=45.00
+    GELU: [1, 1, 1, 1, 4, 2, 4, 4, 4, 1, 1, 1]
+    Softmax: [4, 3, 3, 4, 4, 2, 2, 5, 5, 5, 5, 5]
+  Episode 14280: Avg Reward=0.7541, Policy Loss=0.3687, Value Loss=0.0060, Entropy=1.0159
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.029421
+  Episode 14450: Avg Reward=0.7521, Policy Loss=2.0450, Value Loss=0.0354, Entropy=1.0081
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.029176
+  Episode 14620: Avg Reward=0.7605, Policy Loss=-0.7090, Value Loss=0.0029, Entropy=0.9883
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.028931
+  Episode 14790: Avg Reward=0.7519, Policy Loss=0.8237, Value Loss=0.0090, Entropy=0.9546
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.028686
+  Episode 14960: Avg Reward=0.7489, Policy Loss=-0.6203, Value Loss=0.0025, Entropy=0.9541
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.028441
+  Episode 15130: Avg Reward=0.7623, Policy Loss=-0.3564, Value Loss=0.0023, Entropy=0.9512
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.028196
+  Episode 15300: Avg Reward=0.7677, Policy Loss=-0.6591, Value Loss=0.0047, Entropy=0.9141
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.027951
+  Episode 15470: Avg Reward=0.7631, Policy Loss=-0.2426, Value Loss=0.0035, Entropy=0.9215
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.027706
+  Episode 15640: Avg Reward=0.7627, Policy Loss=0.2483, Value Loss=0.0058, Entropy=0.8931
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.027461
+  Episode 15810: Avg Reward=0.7644, Policy Loss=0.8362, Value Loss=0.0039, Entropy=0.8969
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.027216
+  Episode 15980: Avg Reward=0.7696, Policy Loss=-0.4680, Value Loss=0.0042, Entropy=0.8637
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.026971
+  Episode 16150: Avg Reward=0.7684, Policy Loss=0.8120, Value Loss=0.0047, Entropy=0.8819
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.026726
+  Episode 16320: Avg Reward=0.7658, Policy Loss=0.0356, Value Loss=0.0043, Entropy=0.8262
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.026481
+  Episode 16490: Avg Reward=0.7668, Policy Loss=-0.4127, Value Loss=0.0018, Entropy=0.8724
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.026236
+  Episode 16564: New Best! Reward=0.8792, Cost=43.00
+    GELU: [1, 1, 1, 1, 1, 4, 4, 4, 4, 1, 1, 1]
+    Softmax: [4, 4, 4, 3, 3, 2, 2, 5, 4, 5, 5, 5]
+  Episode 16660: Avg Reward=0.7728, Policy Loss=0.0128, Value Loss=0.0012, Entropy=0.8228
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.025991
+  Episode 16830: Avg Reward=0.7709, Policy Loss=0.0629, Value Loss=0.0038, Entropy=0.8069
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.025746
+  Episode 17000: Avg Reward=0.7744, Policy Loss=0.0625, Value Loss=0.0026, Entropy=0.7791
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.025501
+  Episode 17170: Avg Reward=0.7758, Policy Loss=-0.2458, Value Loss=0.0025, Entropy=0.7896
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.025256
+  Episode 17340: Avg Reward=0.7740, Policy Loss=-0.5598, Value Loss=0.0016, Entropy=0.7952
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.025011
+  Episode 17510: Avg Reward=0.7752, Policy Loss=-0.1721, Value Loss=0.0026, Entropy=0.7939
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.024766
+  Episode 17680: Avg Reward=0.7818, Policy Loss=-0.7032, Value Loss=0.0021, Entropy=0.7450
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.024521
+  Episode 17850: Avg Reward=0.7758, Policy Loss=1.0622, Value Loss=0.0139, Entropy=0.7809
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.024276
+  Episode 18020: Avg Reward=0.7781, Policy Loss=0.1822, Value Loss=0.0041, Entropy=0.7547
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.024031
+  Episode 18190: Avg Reward=0.7809, Policy Loss=-0.9309, Value Loss=0.0026, Entropy=0.7407
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.023786
+  Episode 18360: Avg Reward=0.7819, Policy Loss=-0.1908, Value Loss=0.0012, Entropy=0.7279
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.023541
+  Episode 18398: New Best! Reward=0.8847, Cost=45.00
+    GELU: [1, 1, 1, 1, 2, 4, 4, 4, 4, 1, 1, 1]
+    Softmax: [2, 4, 4, 5, 3, 2, 2, 5, 5, 5, 5, 5]
+  Episode 18530: Avg Reward=0.7782, Policy Loss=-0.9328, Value Loss=0.0058, Entropy=0.7196
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.023296
+  Episode 18700: Avg Reward=0.7836, Policy Loss=-0.4893, Value Loss=0.0017, Entropy=0.7263
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.023051
+  Episode 18870: Avg Reward=0.7831, Policy Loss=-0.3361, Value Loss=0.0036, Entropy=0.7175
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.022806
+  Episode 19040: Avg Reward=0.7776, Policy Loss=-0.0473, Value Loss=0.0010, Entropy=0.7196
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.022561
+  Episode 19210: Avg Reward=0.7812, Policy Loss=0.2930, Value Loss=0.0035, Entropy=0.7082
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.022316
+  Episode 19380: Avg Reward=0.7819, Policy Loss=-0.3958, Value Loss=0.0011, Entropy=0.7032
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.022071
+  Episode 19550: Avg Reward=0.7855, Policy Loss=-0.2932, Value Loss=0.0009, Entropy=0.6864
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.021826
+  Episode 19720: Avg Reward=0.7810, Policy Loss=-0.4236, Value Loss=0.0017, Entropy=0.6725
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.021581
+  Episode 19890: Avg Reward=0.7812, Policy Loss=-0.7834, Value Loss=0.0014, Entropy=0.6402
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.021336
+  Episode 20060: Avg Reward=0.7846, Policy Loss=-0.3212, Value Loss=0.0037, Entropy=0.6855
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.021091
+  Episode 20230: Avg Reward=0.7890, Policy Loss=-0.2190, Value Loss=0.0015, Entropy=0.6638
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.020846
+  Episode 20400: Avg Reward=0.7816, Policy Loss=0.1958, Value Loss=0.0018, Entropy=0.6467
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.020601
+  Episode 20570: Avg Reward=0.7853, Policy Loss=-0.2453, Value Loss=0.0011, Entropy=0.6096
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.020356
+  Episode 20740: Avg Reward=0.7926, Policy Loss=0.4674, Value Loss=0.0026, Entropy=0.6565
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.020111
+  Episode 20910: Avg Reward=0.7887, Policy Loss=-0.5833, Value Loss=0.0028, Entropy=0.5971
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.019866
+  Episode 21080: Avg Reward=0.7887, Policy Loss=-0.5728, Value Loss=0.0031, Entropy=0.6338
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.019621
+  Episode 21250: Avg Reward=0.7911, Policy Loss=0.8970, Value Loss=0.0035, Entropy=0.6256
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.019376
+  Episode 21420: Avg Reward=0.7896, Policy Loss=0.6526, Value Loss=0.0052, Entropy=0.6367
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.019131
+  Episode 21590: Avg Reward=0.7914, Policy Loss=-0.4283, Value Loss=0.0012, Entropy=0.6146
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.018886
+  Episode 21760: Avg Reward=0.7933, Policy Loss=0.2164, Value Loss=0.0009, Entropy=0.6246
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.018641
+  Episode 21930: Avg Reward=0.7920, Policy Loss=0.3680, Value Loss=0.0017, Entropy=0.6109
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.018396
+  Episode 22100: Avg Reward=0.7856, Policy Loss=0.3764, Value Loss=0.0044, Entropy=0.6190
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.018151
+  Episode 22270: Avg Reward=0.7930, Policy Loss=-0.1058, Value Loss=0.0018, Entropy=0.6202
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.017906
+  Episode 22440: Avg Reward=0.7898, Policy Loss=-0.2524, Value Loss=0.0028, Entropy=0.6012
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.017661
+  Episode 22610: Avg Reward=0.7954, Policy Loss=1.2893, Value Loss=0.0052, Entropy=0.6028
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.017416
+  Episode 22780: Avg Reward=0.7936, Policy Loss=0.4776, Value Loss=0.0012, Entropy=0.5973
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.017171
+  Episode 22950: Avg Reward=0.7933, Policy Loss=0.5862, Value Loss=0.0033, Entropy=0.6587
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.016926
+  Episode 23120: Avg Reward=0.7929, Policy Loss=0.1288, Value Loss=0.0010, Entropy=0.6302
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.016681
+  Episode 23290: Avg Reward=0.7970, Policy Loss=-0.0768, Value Loss=0.0008, Entropy=0.6160
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.016436
+  Episode 23460: Avg Reward=0.7954, Policy Loss=-0.3349, Value Loss=0.0008, Entropy=0.6356
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.016191
+  Episode 23630: Avg Reward=0.7940, Policy Loss=-0.0118, Value Loss=0.0006, Entropy=0.6416
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.015946
+  Episode 23800: Avg Reward=0.7954, Policy Loss=-0.4628, Value Loss=0.0010, Entropy=0.6327
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.015701
+  Episode 23970: Avg Reward=0.7939, Policy Loss=-0.0835, Value Loss=0.0031, Entropy=0.6391
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.015456
+  Episode 24140: Avg Reward=0.7987, Policy Loss=-0.0711, Value Loss=0.0009, Entropy=0.6565
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.015211
+  Episode 24310: Avg Reward=0.7952, Policy Loss=0.3900, Value Loss=0.0015, Entropy=0.6864
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.014966
+  Episode 24480: Avg Reward=0.7958, Policy Loss=0.1898, Value Loss=0.0011, Entropy=0.6551
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.014721
+  Episode 24650: Avg Reward=0.7990, Policy Loss=0.4877, Value Loss=0.0023, Entropy=0.6714
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.014476
+  Episode 24820: Avg Reward=0.8008, Policy Loss=0.8148, Value Loss=0.0041, Entropy=0.6729
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.014231
+  Episode 24990: Avg Reward=0.8012, Policy Loss=0.1936, Value Loss=0.0009, Entropy=0.6592
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.013986
+  Episode 25160: Avg Reward=0.7992, Policy Loss=0.2681, Value Loss=0.0014, Entropy=0.6306
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.013741
+  Episode 25330: Avg Reward=0.8040, Policy Loss=1.6235, Value Loss=0.0106, Entropy=0.6618
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.013496
+  Episode 25500: Avg Reward=0.8051, Policy Loss=-0.0750, Value Loss=0.0015, Entropy=0.6168
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.013251
+  Episode 25670: Avg Reward=0.8037, Policy Loss=-0.1271, Value Loss=0.0010, Entropy=0.6111
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.013006
+  Episode 25840: Avg Reward=0.8086, Policy Loss=-0.1066, Value Loss=0.0008, Entropy=0.6013
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.012761
+  Episode 26010: Avg Reward=0.8055, Policy Loss=-0.1289, Value Loss=0.0013, Entropy=0.5904
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.012516
+  Episode 26180: Avg Reward=0.8090, Policy Loss=0.3317, Value Loss=0.0013, Entropy=0.5996
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.012271
+  Episode 26248: New Best! Reward=0.8903, Cost=43.50
+    GELU: [1, 1, 1, 1, 2, 4, 4, 4, 4, 1, 1, 1]
+    Softmax: [2, 4, 4, 4, 3, 2, 2, 4, 4, 5, 5, 5]
+  Episode 26350: Avg Reward=0.8085, Policy Loss=0.3506, Value Loss=0.0013, Entropy=0.6136
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.012026
+  Episode 26520: Avg Reward=0.8102, Policy Loss=-0.3264, Value Loss=0.0017, Entropy=0.5825
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.011781
+  Episode 26690: Avg Reward=0.8083, Policy Loss=0.0352, Value Loss=0.0017, Entropy=0.5952
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.011536
+  Episode 26860: Avg Reward=0.8093, Policy Loss=0.1003, Value Loss=0.0011, Entropy=0.5812
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.011291
+  Episode 27030: Avg Reward=0.8159, Policy Loss=0.1239, Value Loss=0.0019, Entropy=0.5663
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.011046
+  Episode 27200: Avg Reward=0.8159, Policy Loss=0.0411, Value Loss=0.0028, Entropy=0.5366
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.010801
+  Episode 27370: Avg Reward=0.8090, Policy Loss=0.0426, Value Loss=0.0018, Entropy=0.5269
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.010556
+  Episode 27540: Avg Reward=0.8181, Policy Loss=1.1146, Value Loss=0.0039, Entropy=0.5397
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.010311
+  Episode 27710: Avg Reward=0.8150, Policy Loss=0.1693, Value Loss=0.0012, Entropy=0.5399
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.010066
+  Episode 27880: Avg Reward=0.8196, Policy Loss=-0.1474, Value Loss=0.0016, Entropy=0.5330
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.009821
+  Episode 28050: Avg Reward=0.8183, Policy Loss=0.4698, Value Loss=0.0013, Entropy=0.5371
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.009576
+  Episode 28220: Avg Reward=0.8189, Policy Loss=0.0410, Value Loss=0.0013, Entropy=0.5320
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.009331
+  Episode 28390: Avg Reward=0.8184, Policy Loss=0.3478, Value Loss=0.0024, Entropy=0.5184
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.009086
+  Episode 28422: New Best! Reward=0.8948, Cost=42.50
+    GELU: [1, 1, 1, 1, 2, 4, 4, 4, 4, 1, 1, 1]
+    Softmax: [2, 3, 4, 4, 3, 2, 2, 4, 3, 5, 5, 5]
+  Episode 28560: Avg Reward=0.8236, Policy Loss=-0.0067, Value Loss=0.0011, Entropy=0.5259
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.008841
+  Episode 28730: Avg Reward=0.8223, Policy Loss=-0.3896, Value Loss=0.0008, Entropy=0.5381
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.008596
+  Episode 28900: Avg Reward=0.8274, Policy Loss=-0.0241, Value Loss=0.0007, Entropy=0.4903
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.008351
+  Episode 29070: Avg Reward=0.8225, Policy Loss=0.2798, Value Loss=0.0015, Entropy=0.4826
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.008106
+  Episode 29240: Avg Reward=0.8326, Policy Loss=1.3448, Value Loss=0.0130, Entropy=0.4959
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.007861
+  Episode 29410: Avg Reward=0.8316, Policy Loss=-0.2673, Value Loss=0.0009, Entropy=0.4659
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.007616
+  Episode 29580: Avg Reward=0.8392, Policy Loss=-0.2244, Value Loss=0.0013, Entropy=0.4367
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.007371
+  Episode 29750: Avg Reward=0.8387, Policy Loss=-0.1013, Value Loss=0.0011, Entropy=0.4147
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.007126
+  Episode 29920: Avg Reward=0.8417, Policy Loss=0.6479, Value Loss=0.0027, Entropy=0.3920
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.006881
+  Episode 30090: Avg Reward=0.8527, Policy Loss=-0.1320, Value Loss=0.0027, Entropy=0.3639
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.006636
+  Episode 30260: Avg Reward=0.8544, Policy Loss=-0.0494, Value Loss=0.0009, Entropy=0.3501
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.006391
+  Episode 30430: Avg Reward=0.8557, Policy Loss=0.0607, Value Loss=0.0023, Entropy=0.3401
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.006146
+  Episode 30600: Avg Reward=0.8566, Policy Loss=-0.1544, Value Loss=0.0006, Entropy=0.3161
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.005901
+  Episode 30770: Avg Reward=0.8573, Policy Loss=0.2501, Value Loss=0.0017, Entropy=0.3112
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.005656
+  Episode 30940: Avg Reward=0.8619, Policy Loss=-0.4963, Value Loss=0.0014, Entropy=0.3008
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.005411
+  Episode 31110: Avg Reward=0.8591, Policy Loss=-0.2670, Value Loss=0.0012, Entropy=0.2972
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.005166
+  Episode 31280: Avg Reward=0.8609, Policy Loss=-0.0416, Value Loss=0.0022, Entropy=0.2979
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.004921
+  Episode 31450: Avg Reward=0.8618, Policy Loss=0.2764, Value Loss=0.0018, Entropy=0.3129
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.004676
+  Episode 31620: Avg Reward=0.8607, Policy Loss=1.6322, Value Loss=0.0090, Entropy=0.2729
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.004431
+  Episode 31790: Avg Reward=0.8635, Policy Loss=-0.1913, Value Loss=0.0016, Entropy=0.3216
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.004186
+  Episode 31960: Avg Reward=0.8612, Policy Loss=0.9554, Value Loss=0.0093, Entropy=0.2762
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.003941
+  Episode 32130: Avg Reward=0.8614, Policy Loss=0.1083, Value Loss=0.0009, Entropy=0.2605
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.003696
+  Episode 32300: Avg Reward=0.8649, Policy Loss=-0.1277, Value Loss=0.0011, Entropy=0.2530
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.003451
+  Episode 32470: Avg Reward=0.8638, Policy Loss=-0.2399, Value Loss=0.0009, Entropy=0.2405
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.003206
+  Episode 32640: Avg Reward=0.8663, Policy Loss=-0.0170, Value Loss=0.0009, Entropy=0.2383
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.002961
+  Episode 32810: Avg Reward=0.8676, Policy Loss=-0.0740, Value Loss=0.0007, Entropy=0.2196
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.002716
+  Episode 32980: Avg Reward=0.8610, Policy Loss=-0.5103, Value Loss=0.0017, Entropy=0.2178
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.002471
+  Episode 33150: Avg Reward=0.8678, Policy Loss=1.8730, Value Loss=0.0108, Entropy=0.2132
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.002226
+  Episode 33320: Avg Reward=0.8683, Policy Loss=0.5480, Value Loss=0.0028, Entropy=0.2658
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.001981
+  Episode 33490: Avg Reward=0.8622, Policy Loss=0.0272, Value Loss=0.0009, Entropy=0.2161
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.001736
+  Episode 33660: Avg Reward=0.8664, Policy Loss=0.5026, Value Loss=0.0014, Entropy=0.2241
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.001491
+  Episode 33830: Avg Reward=0.8655, Policy Loss=-0.2190, Value Loss=0.0003, Entropy=0.2057
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.001246
+  Episode 34000: Avg Reward=0.8663, Policy Loss=-0.0559, Value Loss=0.0005, Entropy=0.2069
+    [LSTM Dynamic Schedule] LR=0.000030, Entropy Coef=0.001001
 
 --- PPO Training Completed ---
-Best Configuration Found:
-  GELU: [1, 1, 2, 2, 1, 2, 1, 1, 1, 1, 1, 2]
-  Softmax: [2, 2, 6, 2, 5, 6, 4, 4, 4, 4, 6, 3]
-  Cost: 42.00, Reward: 1.3527
+Best Configuration Found (by RL):
+  GELU: [1, 1, 1, 1, 2, 4, 4, 4, 4, 1, 1, 1]
+  Softmax: [2, 3, 4, 4, 3, 2, 2, 4, 3, 5, 5, 5]
+  Cost: 42.50, Reward: 0.8948
+
+============================================================
+PHASE 2.5: GREEDY SEARCH (SKIPPED)
+============================================================
+[Info] SEARCH_MODE=rl, greedy search not run.
+[Info] Using current best_config as final configuration.
+============================================================
 PPO training curves saved to: ppo_training_curve.png
+PPO entropy curve saved to: ppo_entropy_curve.png
 
 ============================================================
 FINAL EVALUATION REPORT (on Test Set)
@@ -74,96 +517,97 @@ Generating 10 Permutations (Type 1)...
 Generating 10 Cost-Equivalent (Type 2)...
 
 Final Configurations Details:
-[Optimized] GELU   : [1, 1, 2, 2, 1, 2, 1, 1, 1, 1, 1, 2]
-[Optimized] Softmax: [2, 2, 6, 2, 5, 6, 4, 4, 4, 4, 6, 3]
+[Optimized] GELU   : [1, 1, 1, 1, 2, 4, 4, 4, 4, 1, 1, 1]
+[Optimized] Softmax: [2, 3, 4, 4, 3, 2, 2, 4, 3, 5, 5, 5]
 
 Random Configurations Details:
-[Perm_1] GELU   : [1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1]
-[Perm_1] Softmax: [6, 3, 6, 5, 4, 4, 2, 4, 4, 6, 2, 2]
-[Perm_2] GELU   : [1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1]
-[Perm_2] Softmax: [4, 2, 6, 6, 4, 6, 2, 5, 3, 2, 4, 4]
-[Perm_3] GELU   : [1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 2, 2]
-[Perm_3] Softmax: [2, 4, 3, 2, 5, 4, 6, 6, 2, 4, 4, 6]
-[Perm_4] GELU   : [1, 2, 1, 2, 1, 1, 1, 1, 2, 2, 1, 1]
-[Perm_4] Softmax: [5, 3, 6, 2, 4, 4, 6, 6, 4, 2, 2, 4]
-[Perm_5] GELU   : [1, 1, 2, 1, 1, 2, 1, 1, 2, 2, 1, 1]
-[Perm_5] Softmax: [2, 4, 2, 6, 6, 6, 2, 5, 4, 3, 4, 4]
-[Perm_6] GELU   : [1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2]
-[Perm_6] Softmax: [4, 2, 2, 6, 4, 5, 6, 4, 2, 6, 3, 4]
-[Perm_7] GELU   : [1, 2, 1, 2, 1, 1, 1, 1, 2, 1, 1, 2]
-[Perm_7] Softmax: [4, 6, 4, 5, 4, 6, 3, 4, 2, 2, 6, 2]
-[Perm_8] GELU   : [1, 1, 1, 2, 1, 1, 1, 2, 2, 1, 1, 2]
-[Perm_8] Softmax: [4, 6, 6, 4, 6, 4, 5, 4, 2, 2, 3, 2]
-[Perm_9] GELU   : [1, 1, 1, 1, 1, 2, 1, 2, 2, 2, 1, 1]
-[Perm_9] Softmax: [2, 4, 6, 3, 2, 2, 4, 6, 4, 6, 5, 4]
-[Perm_10] GELU   : [1, 2, 2, 1, 2, 1, 2, 1, 1, 1, 1, 1]
-[Perm_10] Softmax: [4, 5, 2, 2, 6, 3, 2, 4, 4, 4, 6, 6]
-[Equiv_1] GELU   : [1, 1, 2, 1, 2, 1, 2, 1, 1, 1, 2, 1]
-[Equiv_1] Softmax: [4, 2, 6, 3, 6, 3, 2, 6, 4, 6, 4, 2]
-[Equiv_2] GELU   : [2, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 2]
-[Equiv_2] Softmax: [2, 6, 2, 6, 4, 4, 5, 5, 6, 2, 2, 4]
-[Equiv_3] GELU   : [2, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 2]
-[Equiv_3] Softmax: [6, 6, 4, 3, 3, 6, 3, 5, 3, 2, 5, 2]
-[Equiv_4] GELU   : [4, 4, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1]
-[Equiv_4] Softmax: [6, 6, 6, 2, 4, 4, 6, 3, 4, 3, 2, 2]
-[Equiv_5] GELU   : [4, 1, 1, 4, 1, 1, 1, 1, 1, 4, 1, 1]
-[Equiv_5] Softmax: [5, 6, 5, 5, 2, 2, 2, 5, 6, 4, 4, 2]
-[Equiv_6] GELU   : [1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 2, 2]
-[Equiv_6] Softmax: [2, 3, 3, 2, 3, 6, 4, 6, 4, 3, 6, 6]
-[Equiv_7] GELU   : [2, 1, 2, 1, 1, 1, 1, 2, 1, 1, 2, 1]
-[Equiv_7] Softmax: [2, 6, 4, 3, 5, 4, 4, 5, 4, 4, 4, 3]
-[Equiv_8] GELU   : [2, 1, 2, 1, 1, 2, 1, 1, 1, 1, 2, 1]
-[Equiv_8] Softmax: [5, 2, 4, 3, 4, 6, 3, 5, 5, 4, 2, 5]
-[Equiv_9] GELU   : [1, 2, 1, 2, 1, 1, 2, 1, 1, 1, 2, 1]
-[Equiv_9] Softmax: [2, 5, 4, 4, 4, 2, 4, 3, 6, 6, 5, 3]
-[Equiv_10] GELU   : [1, 2, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1]
-[Equiv_10] Softmax: [4, 4, 6, 6, 3, 6, 2, 2, 3, 3, 3, 6]
+[Perm_1] GELU   : [1, 4, 4, 1, 1, 1, 4, 1, 2, 1, 1, 4]
+[Perm_1] Softmax: [2, 5, 4, 3, 5, 4, 3, 3, 2, 5, 4, 2]
+[Perm_2] GELU   : [1, 4, 1, 4, 2, 1, 4, 1, 1, 1, 4, 1]
+[Perm_2] Softmax: [2, 4, 5, 4, 3, 2, 3, 3, 5, 2, 4, 5]
+[Perm_3] GELU   : [1, 4, 4, 2, 4, 1, 4, 1, 1, 1, 1, 1]
+[Perm_3] Softmax: [2, 2, 5, 4, 3, 3, 5, 4, 3, 4, 5, 2]
+[Perm_4] GELU   : [4, 1, 1, 1, 4, 1, 1, 4, 4, 1, 1, 2]
+[Perm_4] Softmax: [3, 5, 4, 2, 3, 2, 2, 5, 5, 3, 4, 4]
+[Perm_5] GELU   : [1, 1, 1, 2, 1, 4, 4, 1, 1, 1, 4, 4]
+[Perm_5] Softmax: [4, 5, 2, 4, 2, 5, 3, 3, 2, 5, 3, 4]
+[Perm_6] GELU   : [4, 1, 1, 1, 1, 4, 1, 2, 4, 1, 1, 4]
+[Perm_6] Softmax: [2, 3, 4, 5, 3, 3, 2, 5, 2, 4, 5, 4]
+[Perm_7] GELU   : [1, 1, 4, 4, 1, 1, 4, 1, 1, 2, 4, 1]
+[Perm_7] Softmax: [3, 5, 4, 3, 2, 2, 5, 5, 4, 3, 4, 2]
+[Perm_8] GELU   : [1, 4, 4, 1, 4, 1, 1, 1, 4, 2, 1, 1]
+[Perm_8] Softmax: [3, 5, 4, 4, 2, 5, 3, 2, 2, 3, 5, 4]
+[Perm_9] GELU   : [4, 4, 1, 2, 4, 4, 1, 1, 1, 1, 1, 1]
+[Perm_9] Softmax: [4, 3, 5, 5, 2, 3, 2, 2, 5, 4, 3, 4]
+[Perm_10] GELU   : [4, 1, 4, 1, 1, 4, 1, 1, 2, 4, 1, 1]
+[Perm_10] Softmax: [5, 3, 3, 2, 4, 5, 4, 2, 3, 4, 2, 5]
+[Equiv_1] GELU   : [1, 2, 1, 2, 2, 2, 4, 2, 1, 1, 1, 1]
+[Equiv_1] Softmax: [6, 3, 4, 2, 4, 3, 3, 3, 2, 5, 5, 2]
+[Equiv_2] GELU   : [1, 4, 1, 1, 4, 2, 4, 4, 1, 1, 1, 1]
+[Equiv_2] Softmax: [3, 3, 6, 2, 2, 3, 4, 5, 2, 6, 4, 2]
+[Equiv_3] GELU   : [2, 1, 1, 1, 1, 2, 1, 2, 2, 2, 4, 1]
+[Equiv_3] Softmax: [6, 4, 5, 2, 2, 4, 3, 2, 2, 4, 5, 3]
+[Equiv_4] GELU   : [4, 2, 4, 1, 4, 1, 1, 1, 1, 4, 1, 1]
+[Equiv_4] Softmax: [2, 4, 4, 3, 3, 6, 2, 3, 2, 6, 5, 2]
+[Equiv_5] GELU   : [1, 1, 4, 1, 4, 4, 1, 4, 2, 1, 1, 1]
+[Equiv_5] Softmax: [4, 4, 4, 3, 3, 2, 3, 4, 4, 5, 4, 2]
+[Equiv_6] GELU   : [1, 2, 2, 2, 1, 2, 2, 1, 1, 1, 1, 4]
+[Equiv_6] Softmax: [4, 4, 6, 4, 2, 2, 2, 6, 3, 2, 4, 3]
+[Equiv_7] GELU   : [1, 4, 2, 1, 4, 1, 1, 1, 1, 1, 4, 4]
+[Equiv_7] Softmax: [3, 2, 4, 3, 6, 3, 2, 2, 6, 2, 5, 4]
+[Equiv_8] GELU   : [4, 1, 4, 1, 1, 1, 4, 4, 1, 1, 1, 2]
+[Equiv_8] Softmax: [4, 6, 2, 3, 3, 5, 4, 2, 4, 4, 2, 3]
+[Equiv_9] GELU   : [2, 2, 2, 4, 1, 1, 1, 1, 1, 2, 2, 1]
+[Equiv_9] Softmax: [4, 2, 6, 2, 2, 4, 2, 4, 5, 3, 3, 5]
+[Equiv_10] GELU   : [2, 4, 1, 1, 2, 1, 1, 2, 1, 2, 1, 2]
+[Equiv_10] Softmax: [2, 3, 5, 5, 4, 3, 3, 2, 5, 4, 4, 2]
 
 Performance Comparison Table:
--------------------------------------------------------------------------------------
-Method          | Loss   Acc.   F1     | Tot C  Tot S | GELU C GELU S | Smax C Smax S
--------------------------------------------------------------------------------------
-Baseline        | 0.3485 0.8799 0.8774 | 72.0   1.0x  | 36.0   1.0x   | 36.0   1.0x  
-Optimized (PPO) | 0.3404 0.8799 0.8781 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
--------------------------------------------------------------------------------------
-Perm_1          | 0.3570 0.8676 0.8665 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Perm_2          | 0.3489 0.8701 0.8694 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Perm_3          | 0.3599 0.8603 0.8578 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Perm_4          | 0.3676 0.8603 0.8601 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Perm_5          | 0.3404 0.8603 0.8598 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Perm_6          | 0.3484 0.8676 0.8665 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Perm_7          | 0.3533 0.8676 0.8658 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Perm_8          | 0.3634 0.8603 0.8595 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Perm_9          | 0.3508 0.8652 0.8638 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Perm_10         | 0.3515 0.8701 0.8688 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Equiv_1         | 0.3507 0.8701 0.8678 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Equiv_2         | 0.3556 0.8554 0.8532 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Equiv_3         | 0.3721 0.8603 0.8558 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Equiv_4         | 0.3667 0.8676 0.8665 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Equiv_5         | 0.3617 0.8775 0.8761 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Equiv_6         | 0.3548 0.8627 0.8601 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Equiv_7         | 0.3531 0.8676 0.8658 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Equiv_8         | 0.3540 0.8578 0.8569 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Equiv_9         | 0.3448 0.8725 0.8701 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
-Equiv_10        | 0.3497 0.8603 0.8598 | 42.0   1.71  | 18.0   2.00   | 24.0   1.50  
--------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------
+Method          | Loss   Acc.   | Loss Δ%  Acc. Δ%    | Tot C  Tot S | GELU C GELU S | Smax C Smax S
+----------------------------------------------------------------------------------------------------
+Baseline        | 0.2603 0.9138 | 0.00%    0.00%      | 72.0   1.0x  | 36.0   1.0x   | 36.0   1.0x  
+Optimized (PPO) | 0.2720 0.9114 |    4.49%     -0.26% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+----------------------------------------------------------------------------------------------------
+Perm_1          | 0.3234 0.9013 |   24.26%     -1.36% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Perm_2          | 0.3071 0.9066 |   18.00%     -0.78% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Perm_3          | 0.3215 0.9046 |   23.50%     -1.00% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Perm_4          | 0.2956 0.9066 |   13.55%     -0.78% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Perm_5          | 0.3150 0.9033 |   21.03%     -1.14% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Perm_6          | 0.2915 0.9061 |   11.99%     -0.84% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Perm_7          | 0.3281 0.9024 |   26.04%     -1.24% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Perm_8          | 0.3110 0.9021 |   19.48%     -1.28% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Perm_9          | 0.3074 0.9068 |   18.11%     -0.76% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Perm_10         | 0.3232 0.9010 |   24.17%     -1.40% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Equiv_1         | 0.3030 0.9077 |   16.43%     -0.66% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Equiv_2         | 0.3038 0.9083 |   16.72%     -0.60% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Equiv_3         | 0.3093 0.9002 |   18.83%     -1.48% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Equiv_4         | 0.3270 0.8999 |   25.65%     -1.52% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Equiv_5         | 0.2994 0.9087 |   15.04%     -0.56% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Equiv_6         | 0.3210 0.9037 |   23.32%     -1.10% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Equiv_7         | 0.3164 0.9032 |   21.54%     -1.16% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Equiv_8         | 0.3257 0.9052 |   25.15%     -0.94% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Equiv_9         | 0.3249 0.8993 |   24.82%     -1.58% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+Equiv_10        | 0.3205 0.9050 |   23.13%     -0.96% | 42.5   1.69  | 21.5   1.67   | 21.0   1.71  
+----------------------------------------------------------------------------------------------------
 
 ============================================================
 PHASE 4: SENSITIVITY ANALYSIS (Validation on Optimized)
 Verifying that any further single-layer downgrade from 'Optimized' violates constraints.
 ============================================================
-L2 GELU 2->1: SAFE | Loss: 0.3417 (+0.0013) | Accuracy: 0.8750 (-0.0049) | F1: 0.8731 (-0.0050)
-L2 Smax 6->5: SAFE | Loss: 0.3411 (+0.0006) | Accuracy: 0.8775 (-0.0025) | F1: 0.8754 (-0.0026)
-L3 GELU 2->1: SAFE | Loss: 0.3440 (+0.0035) | Accuracy: 0.8725 (-0.0074) | F1: 0.8705 (-0.0076)
-L4 Smax 5->4: SAFE | Loss: 0.3415 (+0.0011) | Accuracy: 0.8799 (+0.0000) | F1: 0.8781 (+0.0000)
-L5 GELU 2->1: SAFE | Loss: 0.3403 (-0.0001) | Accuracy: 0.8775 (-0.0025) | F1: 0.8758 (-0.0023)
-L5 Smax 6->5: SAFE | Loss: 0.3406 (+0.0002) | Accuracy: 0.8799 (+0.0000) | F1: 0.8781 (+0.0000)
-L6 Smax 4->3: SAFE | Loss: 0.3412 (+0.0008) | Accuracy: 0.8701 (-0.0098) | F1: 0.8681 (-0.0100)
-L7 Smax 4->3: SAFE | Loss: 0.3398 (-0.0006) | Accuracy: 0.8799 (+0.0000) | F1: 0.8781 (+0.0000)
-L8 Smax 4->3: SAFE | Loss: 0.3422 (+0.0017) | Accuracy: 0.8799 (+0.0000) | F1: 0.8781 (+0.0000)
-L9 Smax 4->3: SAFE | Loss: 0.3421 (+0.0016) | Accuracy: 0.8775 (-0.0025) | F1: 0.8754 (-0.0026)
-L10 Smax 6->5: SAFE | Loss: 0.3410 (+0.0006) | Accuracy: 0.8799 (+0.0000) | F1: 0.8784 (+0.0003)
-L11 GELU 2->1: SAFE | Loss: 0.3387 (-0.0017) | Accuracy: 0.8824 (+0.0025) | F1: 0.8807 (+0.0026)
-L11 Smax 3->2: SAFE | Loss: 0.3399 (-0.0005) | Accuracy: 0.8824 (+0.0025) | F1: 0.8804 (+0.0023)
+L1 Smax 3->2: SAFE | Loss: 0.2732 (+0.0012) | Accuracy: 0.9112 (-0.0002)
+L2 Smax 4->3: SAFE | Loss: 0.2737 (+0.0018) | Accuracy: 0.9103 (-0.0011)
+L3 Smax 4->3: SAFE | Loss: 0.2731 (+0.0011) | Accuracy: 0.9109 (-0.0005)
+L4 GELU 2->1: VIOLATED (LOSS) | Loss: 0.2757 (+0.0037) | Accuracy: 0.9110 (-0.0004)
+L4 Smax 3->2: SAFE | Loss: 0.2725 (+0.0005) | Accuracy: 0.9101 (-0.0013)
+L5 GELU 4->2: SAFE | Loss: 0.2738 (+0.0018) | Accuracy: 0.9099 (-0.0015)
+L6 GELU 4->2: SAFE | Loss: 0.2743 (+0.0023) | Accuracy: 0.9110 (-0.0004)
+L7 GELU 4->2: SAFE | Loss: 0.2742 (+0.0022) | Accuracy: 0.9098 (-0.0016)
+L7 Smax 4->3: SAFE | Loss: 0.2737 (+0.0017) | Accuracy: 0.9114 (+0.0000)
+L8 GELU 4->2: SAFE | Loss: 0.2753 (+0.0033) | Accuracy: 0.9098 (-0.0016)
+L8 Smax 3->2: SAFE | Loss: 0.2731 (+0.0011) | Accuracy: 0.9092 (-0.0022)
+L9 Smax 5->4: SAFE | Loss: 0.2746 (+0.0026) | Accuracy: 0.9112 (-0.0002)
+L10 Smax 5->4: SAFE | Loss: 0.2740 (+0.0020) | Accuracy: 0.9112 (-0.0002)
+L11 Smax 5->4: SAFE | Loss: 0.2748 (+0.0028) | Accuracy: 0.9118 (+0.0004)
 
 PPO Optimization Finished.
