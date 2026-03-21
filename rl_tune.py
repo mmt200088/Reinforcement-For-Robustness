@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 from typing import List
 
 import fire
@@ -25,6 +26,20 @@ sys.path.append(os.path.join(os.getcwd(), "./importance-aware-sparse-tuning-IST-
 # )
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer, LlamaTokenizer, DataCollatorWithPadding, AutoModel  # noqa: F402
 
+
+
+def parse_degree_config(raw_value):
+    if raw_value is None or raw_value == "":
+        return None
+    if isinstance(raw_value, (list, tuple)):
+        return [int(item) for item in raw_value]
+
+    text = str(raw_value).strip()
+    if not text:
+        return None
+    if text.startswith("["):
+        return [int(item) for item in json.loads(text)]
+    return [int(item.strip()) for item in text.split(",") if item.strip()]
 
 
 def train(
@@ -67,6 +82,14 @@ def train(
         use_rst: bool = False,
         rl_lr: float = 1e-4, 
         degree: int = 4,  # degree of polynomial for approximation
+        final_eval_config_source: str = "search",  # search | json | manual
+        final_eval_config_path: str = "glue_configs_best_ppo.json",
+        manual_final_gelu: str = "",
+        manual_final_softmax: str = "",
+        final_eval_random_seed: int = 42,
+        final_eval_permutation_trials: int = 10,
+        final_eval_cost_equivalent_trials: int = 10,
+        final_eval_budget_equivalent_trials: int = 10,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
         group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -103,6 +126,10 @@ def train(
         f"scaling: {scaling}\n"
         f"adapter_name: {adapter_name}\n"
         f"target_modules: {target_modules}\n"
+        f"final_eval_config_source: {final_eval_config_source}\n"
+        f"final_eval_config_path: {final_eval_config_path}\n"
+        f"manual_final_gelu: {manual_final_gelu}\n"
+        f"manual_final_softmax: {manual_final_softmax}\n"
         f"group_by_length: {group_by_length}\n"
         f"wandb_project: {wandb_project}\n"
         f"wandb_run_name: {wandb_run_name}\n"
@@ -395,6 +422,8 @@ def train(
     #     # keeps Trainer from trying its own DataParallelism when more than 1 gpu is available
     #     model.is_parallelizable = True
     #     model.model_parallel = True
+    parsed_manual_gelu = parse_degree_config(manual_final_gelu)
+    parsed_manual_softmax = parse_degree_config(manual_final_softmax)
     trainer_callbacks = []
 
     if use_ist:
@@ -408,6 +437,14 @@ def train(
             data_collator=data_collator, 
             rl_lr=rl_lr, 
             degree=degree,
+            final_eval_config_source=final_eval_config_source,
+            final_eval_config_path=final_eval_config_path,
+            manual_final_gelu=parsed_manual_gelu,
+            manual_final_softmax=parsed_manual_softmax,
+            final_eval_random_seed=final_eval_random_seed,
+            final_eval_permutation_trials=final_eval_permutation_trials,
+            final_eval_cost_equivalent_trials=final_eval_cost_equivalent_trials,
+            final_eval_budget_equivalent_trials=final_eval_budget_equivalent_trials,
             data_path=data_path,  # 传递数据集名称用于动态指标选择
             test_data_mm=val_data_mm  # MNLI mismatched 验证集（非MNLI时为None）
         )

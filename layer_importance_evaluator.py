@@ -11,6 +11,7 @@ from transformers.trainer_callback import TrainerCallback
 from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
 from function_handler import ReversibleLayerHandler
+from final_evaluation_module import FinalEvaluationModule
 import os
 import hashlib
 
@@ -1837,8 +1838,16 @@ class TransformerOptEnv:
 
 
 class LayerImportanceEvaluator(TrainerCallback):
-    def __init__(self, model, train_data, test_data, data_collator, rl_lr=None, degree=None, 
-                 device='cuda', data_path='stsb', test_data_mm=None):
+    def __init__(self, model, train_data, test_data, data_collator, rl_lr=None, degree=None,
+                 device='cuda', data_path='stsb', test_data_mm=None,
+                 final_eval_config_source='search',
+                 final_eval_config_path='glue_configs_best_ppo.json',
+                 manual_final_gelu=None,
+                 manual_final_softmax=None,
+                 final_eval_random_seed=42,
+                 final_eval_permutation_trials=10,
+                 final_eval_cost_equivalent_trials=10,
+                 final_eval_budget_equivalent_trials=10):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -1920,6 +1929,22 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.lagrangian_loss = LAGRANGIAN_INITIAL
         self.lagrangian_m1 = LAGRANGIAN_INITIAL
         self.lagrangian_m2 = LAGRANGIAN_INITIAL
+
+        self.final_eval_config_source = (final_eval_config_source or 'search').lower()
+        self.final_eval_config_path = final_eval_config_path or 'glue_configs_best_ppo.json'
+        self.manual_final_gelu = manual_final_gelu
+        self.manual_final_softmax = manual_final_softmax
+        self.final_eval_random_seed = int(final_eval_random_seed)
+        self.final_eval_permutation_trials = max(0, int(final_eval_permutation_trials))
+        self.final_eval_cost_equivalent_trials = max(0, int(final_eval_cost_equivalent_trials))
+        self.final_eval_budget_equivalent_trials = max(0, int(final_eval_budget_equivalent_trials))
+        self.skip_search_for_final_eval = self.final_eval_config_source in ('manual', 'json')
+
+        if self.final_eval_config_source not in ('search', 'json', 'manual'):
+            raise ValueError(
+                f"Unsupported final_eval_config_source '{self.final_eval_config_source}'. "
+                "Use one of: search, json, manual."
+            )
         
         # ==================== 敏锐度优化PDF：课程学习状态 ====================
         self.curriculum_phase = 1  # 1=探索, 2=收紧, 3=精调
@@ -2747,8 +2772,11 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     def on_evaluate(self, args, state, control, **kwargs):
         self.log("\n" + "="*60)
-        self.log("STARTING OPTIMIZATION")
+        self.log("STARTING CONFIGURATION EVALUATION")
         self.log(f"SEARCH_MODE={SEARCH_MODE}" + (" (USE_GREEDY_SEARCH=" + str(USE_GREEDY_SEARCH) + ")" if SEARCH_MODE == "both" else ""))
+        self.log(f"FINAL_EVAL_CONFIG_SOURCE={self.final_eval_config_source}")
+        if self.skip_search_for_final_eval:
+            self.log("[Info] External final-eval config selected, so RL/greedy search will be skipped.")
         self.log("="*60)
 
         # ---------------------------------------------------------
@@ -2823,7 +2851,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         # ---------------------------------------------------------
         # Phase 2: PPO Training（仅当 SEARCH_MODE 为 "rl" 或 "both" 时执行）
         # ---------------------------------------------------------
-        if SEARCH_MODE in ("rl", "both"):
+        if (not self.skip_search_for_final_eval) and SEARCH_MODE in ("rl", "both"):
             self.log("\n--- Phase 2: PPO Reinforcement Learning Training ---")
         
             # 初始化 StepInfo 输出文件
@@ -3059,7 +3087,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         # ---------------------------------------------------------
         # 仅贪婪模式：从用户指定的初始配置开始
         # ---------------------------------------------------------
-        if SEARCH_MODE == "greedy":
+        if (not self.skip_search_for_final_eval) and SEARCH_MODE == "greedy":
             # 将 GREEDY_INITIAL_* 转为数组并 pad/truncate 到 total_layers
             def _pad_or_truncate(arr, length, default_val):
                 a = np.asarray(arr, dtype=int)
@@ -3086,7 +3114,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         # ---------------------------------------------------------
         # Phase 2.5: Greedy Search（SEARCH_MODE=="both" 且 USE_GREEDY_SEARCH 时从 RL 结果出发；SEARCH_MODE=="greedy" 时从指定初始配置出发）
         # ---------------------------------------------------------
-        if (SEARCH_MODE == "both" and USE_GREEDY_SEARCH) or SEARCH_MODE == "greedy":
+        if (not self.skip_search_for_final_eval) and ((SEARCH_MODE == "both" and USE_GREEDY_SEARCH) or SEARCH_MODE == "greedy"):
             self.log("\n" + "="*60)
             if SEARCH_MODE == "greedy":
                 self.log("PHASE 2.5: GREEDY SEARCH (Greedy-Only Mode, from user-specified initial config)")
@@ -3229,11 +3257,19 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.log("\n" + "="*60)
             self.log("PHASE 2.5: GREEDY SEARCH (SKIPPED)")
             self.log("="*60)
-            if SEARCH_MODE == "rl":
+            if self.skip_search_for_final_eval:
+                self.log(
+                    f"[Info] Final evaluation will use config_source={self.final_eval_config_source}, "
+                    "so optimization is skipped."
+                )
+            elif SEARCH_MODE == "rl":
                 self.log("[Info] SEARCH_MODE=rl, greedy search not run.")
             elif SEARCH_MODE == "both":
                 self.log("[Info] USE_GREEDY_SEARCH=False, skipping greedy refinement.")
-            self.log("[Info] Using current best_config as final configuration.")
+            if self.skip_search_for_final_eval:
+                self.log("[Info] Final configuration will be resolved inside the standalone final-evaluation module.")
+            else:
+                self.log("[Info] Using current best_config as final configuration.")
             self.log("="*60)
 
         # ---------------------------------------------------------
@@ -3374,10 +3410,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         # Phase 3: Final Report (使用验证集进行最终评估)
         # ---------------------------------------------------------
         self.log("\n" + "="*60)
-        self.log("FINAL EVALUATION REPORT (on Test Set)")
+        self.log("FINAL EVALUATION REPORT (验证集)")
         self.log("="*60)
         
         # 重新计算验证集上的baseline
+        """
         base_loss, base_p, base_s, base_time = self.evaluate_model(base_gelu, base_softmax, use_train=False)
         
         # 用于缓存评估结果
@@ -3515,12 +3552,46 @@ class LayerImportanceEvaluator(TrainerCallback):
         for res in random_results: self.log(format_row(res))
         self.log("-" * len(header))
 
+        """
+        final_eval_runner = FinalEvaluationModule(
+            evaluator=self,
+            config_source=self.final_eval_config_source,
+            config_path=self.final_eval_config_path,
+            manual_gelu=self.manual_final_gelu,
+            manual_softmax=self.manual_final_softmax,
+            random_seed=self.final_eval_random_seed,
+            permutation_trials=self.final_eval_permutation_trials,
+            cost_equivalent_trials=self.final_eval_cost_equivalent_trials,
+            budget_equivalent_trials=self.final_eval_budget_equivalent_trials,
+        )
+        final_eval_result = final_eval_runner.run(
+            search_best_config=best_config,
+            base_gelu=base_gelu,
+            base_softmax=base_softmax,
+            base_tot_c=base_tot_c,
+            base_g_c=base_g_c,
+            base_s_c=base_s_c,
+            limit_loss=limit_loss,
+            limit_p=limit_p,
+            limit_s=limit_s,
+        )
+
+        selected_label = final_eval_result['selected_label']
+        selected_source = final_eval_result['selected_source']
+        opt_gelu = final_eval_result['selected_gelu']
+        opt_softmax = final_eval_result['selected_softmax']
+        opt_res = final_eval_result['selected_result']
+        eval_cache = final_eval_result['eval_cache']
+
         # ---------------------------------------------------------
-        # Phase 4: Sensitivity (Validation on Optimized)
+        # Phase 4: Sensitivity (Validation on Selected Config)
         # ---------------------------------------------------------
         self.log("\n" + "="*60)
-        self.log("PHASE 4: SENSITIVITY ANALYSIS (Validation on Optimized)")
-        self.log("Verifying that any further single-layer downgrade from 'Optimized' violates constraints.")
+        self.log(f"PHASE 4: SENSITIVITY ANALYSIS (Validation on {selected_label})")
+        self.log(
+            f"Checking whether further single-layer downgrades from the selected config remain safe "
+            f"(source={selected_source})."
+        )
         self.log("="*60)
         
         # Get metrics of the optimized state for delta calculation
@@ -3594,5 +3665,5 @@ class LayerImportanceEvaluator(TrainerCallback):
                 d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
                 self.log(_format_sensitivity_msg(f"L{i} Smax {cd_s}->{cd_s-1}", status, l, p, s, d_l, d_p, d_s))
 
-        self.log("\nPPO Optimization Finished.")
+        self.log("\nConfiguration evaluation finished.")
         self.apply_configuration(opt_gelu, opt_softmax)
