@@ -22,6 +22,29 @@ degree: parameter for early debug, now deprecated. Just set it to 2.
 
 example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
+#### Optional FINAL EVALUATION modes
+The original 5-argument command is still fully supported. You can now optionally append named arguments after the first 5 positional arguments.
+
+Use RL-learned configuration for final evaluation (default behavior):
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
+
+Use configuration from a JSON file for final evaluation:
+`bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json`
+
+Use manually specified layer-wise configuration for final evaluation:
+`bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --final-eval-source manual --manual-gelu "[1,1,1,4,1,1,1,1,1,1,1,1]" --manual-softmax "[2,3,4,6,4,4,5,4,4,5,5,2]"`
+
+Optional named arguments supported by the shell script:
+- `--final-eval-source search|json|manual`
+- `--final-eval-config PATH`
+- `--manual-gelu "[...]"` and `--manual-softmax "[...]"`
+- `--random-seed N`
+- `--perm-trials N`
+- `--cost-trials N`
+- `--budget-trials N`
+
+When `--final-eval-source json` is used, the code will automatically read the configuration entry that matches the current dataset name, for example `mrpc` or `sst2`.
+
 #### Note: Though we call the script "llama_7B_LayerImportance.sh", we just evaluate the Bert-base model for different tasks now, please check out the .sh for more detials!
 
 ### The Result file 
