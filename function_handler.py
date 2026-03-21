@@ -11,6 +11,8 @@ from typing import Optional
 # GELU approximation coeff
 # GELU_COEEF[i][0]-positive; GELU_COEEF[i][1]-negative (-2.7, 2.7)
 GELU_COEEF = {
+            # degree 0: same coefficients as degree 1, but applied without piecewise comparison
+            0: [[-0.20266642, 1.07484643], [-0.20266642, -0.57484643+0.5]],
             # todo: change the pivot point of degree 1
             # pivot point: use SEAF- -2.5, -0.75, 0 , 0.5, 2.5?
             1: [[-0.20266642, 1.07484643], [-0.20266642, -0.57484643+0.5]],
@@ -110,6 +112,10 @@ class PolynomialGELU(nn.Module):
         self.degree = degree
         
     def forward(self, x: Tensor) -> Tensor:
+
+        if self.degree == 0:
+            # Degree 0: skip piecewise comparison, directly use [-2.7, 0] interval polynomial
+            return polynomial(x, self.coeff, 1)
 
         y0 = torch.zeros_like(x, dtype=x.dtype, device=x.device) 
         y1 = polynomial(x, self.coeff, 1)

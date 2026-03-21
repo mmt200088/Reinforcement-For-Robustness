@@ -1,0 +1,315 @@
+task,arch,model,probe,probe_display,layer,count,mean,std,min,max,accum_max
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,input_ids,Input IDs,all,1094528,284.929519,1603.948331,0.000000,29593.000000,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,after_embed,After Embedding,all,1120796672,-0.051838,0.461364,-4.596697,5.637281,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,0,1120796672,-0.028513,0.923015,-6.188897,8.681005,20.448984
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,1,1120796672,-0.019150,1.177381,-7.212683,7.118389,22.735336
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,2,1120796672,-0.010133,0.911839,-10.349985,10.668406,27.644289
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,3,1120796672,-0.020167,0.946172,-8.785246,8.314692,33.543190
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,4,1120796672,-0.005944,0.951903,-8.434138,8.001632,28.118858
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,5,1120796672,0.048919,0.765646,-8.879137,8.746477,26.628847
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,6,1120796672,-0.006491,0.709509,-8.630838,8.527837,23.843107
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,7,1120796672,0.013514,0.646570,-8.635592,7.469734,22.477961
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,8,1120796672,-0.004607,0.636352,-7.767949,8.108418,23.496576
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,9,1120796672,0.008761,0.812970,-9.985390,9.638859,40.558193
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,10,1120796672,-0.025941,0.908734,-8.892915,9.775041,38.394161
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,11,1120796672,-0.076736,0.981402,-9.582509,9.227907,30.690008
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,12,1120796672,0.010551,1.050016,-7.863262,8.864742,32.456722
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,13,1120796672,0.015031,1.065971,-7.779952,8.490108,26.092281
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,14,1120796672,0.016378,1.086113,-9.405917,9.016341,24.231684
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,15,1120796672,-0.004346,1.088430,-7.853440,8.000441,24.634352
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,16,1120796672,-0.028391,1.104798,-8.417920,8.684687,23.967337
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,17,1120796672,-0.017573,1.123047,-9.685573,8.430893,29.003765
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,18,1120796672,0.008561,1.121915,-8.151023,8.173977,26.910727
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,19,1120796672,-0.031171,1.120291,-7.918082,7.731871,25.590590
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,20,1120796672,0.008544,1.234973,-7.846567,8.656235,25.430601
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,21,1120796672,0.026752,1.196187,-8.657231,8.378718,25.722429
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,22,1120796672,0.015530,1.268156,-8.195249,8.407525,26.088703
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,query_proj,XW_q + b_q,23,1120796672,-0.073374,1.395626,-9.372529,10.285283,28.269312
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,0,1120796672,-0.004320,0.942454,-6.644921,7.412483,20.590021
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,1,1120796672,0.042358,1.226088,-9.296849,9.016346,23.790386
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,2,1120796672,0.007643,0.769261,-7.271456,6.995258,27.229338
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,3,1120796672,-0.002309,0.845873,-8.230795,8.235720,32.220394
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,4,1120796672,0.005808,0.823059,-8.493648,8.957715,29.414537
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,5,1120796672,0.031346,0.738609,-8.557782,7.471722,27.544500
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,6,1120796672,-0.002713,0.522256,-6.684454,6.719518,23.587971
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,7,1120796672,0.010476,0.421605,-6.834810,7.410829,22.371384
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,8,1120796672,0.005203,0.530236,-7.245412,6.150726,23.737442
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,9,1120796672,0.001909,0.884201,-9.735253,9.515308,40.095459
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,10,1120796672,-0.028493,1.128837,-8.265571,8.056168,37.139244
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,11,1120796672,-0.009930,0.992538,-7.260695,7.670604,29.068514
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,12,1120796672,-0.002258,0.998056,-7.769487,8.440276,30.931259
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,13,1120796672,-0.001804,1.061713,-6.596500,7.005777,26.042070
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,14,1120796672,0.017564,0.976727,-7.300314,7.113710,24.198282
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,15,1120796672,-0.010059,0.873957,-6.816724,6.728151,23.866579
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,16,1120796672,-0.006591,1.135917,-7.869579,7.537036,23.785387
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,17,1120796672,0.002783,1.263193,-9.374865,8.526846,30.113361
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,18,1120796672,0.017775,1.070441,-7.303775,7.232108,26.923046
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,19,1120796672,-0.005325,0.990325,-7.952870,7.093394,25.434076
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,20,1120796672,0.016972,1.059505,-7.479352,7.693435,25.021742
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,21,1120796672,0.000360,1.170335,-7.767639,7.968659,25.665752
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,22,1120796672,-0.009896,1.245001,-8.623246,8.154243,26.337473
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,key_proj,XW_k + b_k,23,1120796672,0.007349,1.347622,-9.041319,9.076894,28.291906
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,0,1120796672,-0.006232,0.370293,-6.466997,3.359040,16.236465
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,1,1120796672,-0.004167,0.575227,-5.283233,5.692655,20.495268
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,2,1120796672,-0.017513,0.410317,-4.723027,4.890303,19.620310
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,3,1120796672,0.006132,0.332354,-4.447206,4.478827,18.827663
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,4,1120796672,0.001957,0.294321,-4.597992,4.969516,19.767895
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,5,1120796672,0.005321,0.237213,-4.510628,4.646431,20.419054
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,6,1120796672,0.000574,0.220043,-4.618212,5.140508,19.965435
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,7,1120796672,0.001284,0.212821,-4.865580,4.458262,19.572676
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,8,1120796672,-0.001568,0.220117,-4.722826,5.325914,19.813126
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,9,1120796672,-0.005731,0.282872,-4.488171,6.079129,17.770895
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,10,1120796672,-0.001914,0.308831,-5.095292,5.343315,19.942715
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,11,1120796672,0.000743,0.443600,-5.188383,4.817559,19.613253
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,12,1120796672,0.004392,0.459132,-6.170499,6.325654,21.387009
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,13,1120796672,-0.007812,0.456220,-4.818820,4.886526,19.510248
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,14,1120796672,-0.011970,0.566387,-5.591704,5.334181,20.072557
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,15,1120796672,0.006334,0.585542,-5.240195,5.385462,18.751318
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,16,1120796672,0.001079,0.600919,-6.839217,8.031766,21.456650
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,17,1120796672,-0.016988,0.573634,-5.566995,5.918533,19.478107
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,18,1120796672,-0.006173,0.645715,-6.424502,5.674873,23.595772
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,19,1120796672,-0.001898,0.664246,-5.960474,7.460852,22.346735
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,20,1120796672,0.014010,0.769274,-7.253137,6.227365,23.101913
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,21,1120796672,0.025310,0.835793,-6.877137,6.783991,23.552132
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,22,1120796672,-0.000602,0.811509,-5.402031,6.543169,23.732922
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,value_proj,XW_v + b_v,23,1120796672,0.018469,0.865187,-7.009309,5.661033,22.956820
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),0,2241593344,2.887718,15.762703,-116.206421,99.752037,160.626022
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),1,2241593344,-23.076722,17.926760,-184.035828,108.459129,197.749405
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),2,2241593344,0.594155,11.364376,-274.020081,166.584534,283.509064
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),3,2241593344,13.817195,15.467244,-247.011459,333.515747,358.334747
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),4,2241593344,11.888387,15.850171,-212.606476,223.342026,288.368500
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),5,2241593344,19.140725,7.549635,-195.398392,114.563156,210.377396
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),6,2241593344,13.187584,7.428233,-147.925812,88.120865,161.125793
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),7,2241593344,7.450763,6.758798,-105.837547,84.313164,147.463394
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),8,2241593344,10.644988,6.466236,-123.124886,95.479065,166.705826
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),9,2241593344,17.060647,15.705930,-337.614410,296.712494,406.341583
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),10,2241593344,21.788708,19.651217,-290.992859,309.374634,370.896698
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),11,2241593344,16.596830,12.594751,-131.633102,171.932938,212.387512
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),12,2241593344,8.853519,14.570663,-166.724609,204.139679,238.374023
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),13,2241593344,13.886859,14.071946,-89.417671,152.657288,174.670837
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),14,2241593344,13.790559,12.800580,-78.914192,139.374832,162.284348
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),15,2241593344,7.458240,12.220664,-100.568115,133.698441,183.336075
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),16,2241593344,25.070651,15.191814,-81.757500,153.666901,181.361649
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),17,2241593344,26.204781,18.051907,-241.147018,207.483994,270.478943
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),18,2241593344,8.006286,15.824162,-123.382584,140.496826,193.738159
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),19,2241593344,1.059176,13.264364,-106.703590,126.669891,171.932983
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),20,2241593344,0.243495,20.949185,-135.002365,158.373032,198.761551
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),21,2241593344,-12.393806,28.921389,-255.270370,101.343346,262.084442
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),22,2241593344,-18.795987,23.559337,-128.076706,90.740021,202.040909
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,qkt_raw,QKᵀ (raw),23,2241593344,-25.680371,23.625073,-156.273743,75.626183,262.906769
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,0,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,12.469005,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,1,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,13.557391,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,2,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,19.500320,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,3,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,34.184708,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,4,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,14.218718,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,5,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,14.320395,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,6,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,11.015108,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,7,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,10.539145,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,8,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,11.934883,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,9,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,37.089062,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,10,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,38.671829,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,11,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,21.491617,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,12,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,25.517460,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,13,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,19.082161,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,14,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,16.610586,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,15,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,16.712305,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,16,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,17.685295,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,17,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,23.535221,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,18,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,17.562103,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,19,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,15.833736,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,20,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,18.291435,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,21,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,12.667918,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,22,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,9.774585,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_scores,QKᵀ/√dₖ + mask,23,2241593344,-310169450656826017806995432616100888576.000000,96644194881692681633788340816712826880.000000,-340282346638528859811704183484516925440.000000,9.453273,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),0,2241593344,0.007812,0.054276,0.000000,1.000000,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),1,2241593344,0.007813,0.064804,0.000000,0.999989,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),2,2241593344,0.007812,0.049182,0.000000,0.999919,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),3,2241593344,0.007813,0.051399,0.000000,1.000000,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),4,2241593344,0.007813,0.051322,0.000000,0.999926,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),5,2241593344,0.007812,0.044214,0.000000,0.999667,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),6,2241593344,0.007812,0.050804,0.000000,0.994475,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),7,2241593344,0.007813,0.048355,0.000000,0.998404,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),8,2241593344,0.007813,0.051416,0.000000,0.998696,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),9,2241593344,0.007813,0.051850,0.000000,1.000000,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),10,2241593344,0.007813,0.056998,0.000000,1.000000,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),11,2241593344,0.007813,0.064651,0.000000,0.999991,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),12,2241593344,0.007813,0.063440,0.000000,1.000000,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),13,2241593344,0.007813,0.061574,0.000000,0.999957,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),14,2241593344,0.007813,0.065902,0.000000,0.999904,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),15,2241593344,0.007813,0.068401,0.000000,0.999990,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),16,2241593344,0.007813,0.065105,0.000000,0.999891,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),17,2241593344,0.007813,0.060971,0.000000,0.999997,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),18,2241593344,0.007812,0.050956,0.000000,0.999989,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),19,2241593344,0.007813,0.046296,0.000000,0.999933,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),20,2241593344,0.007812,0.050786,0.000000,0.999988,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),21,2241593344,0.007813,0.043763,0.000000,1.000000,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),22,2241593344,0.007813,0.048523,0.000000,0.999991,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_probs,Softmax(scores),23,2241593344,0.007812,0.050303,0.000000,0.999996,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,0,1120796672,-0.002728,0.163601,-5.902645,3.194021,5.911773
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,1,1120796672,-0.002020,0.178970,-4.650390,4.392030,4.666283
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,2,1120796672,0.002897,0.127323,-4.248133,4.641713,4.641995
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,3,1120796672,0.000893,0.117742,-3.457800,3.627669,3.627725
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,4,1120796672,0.000188,0.100874,-3.522309,3.379226,3.539065
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,5,1120796672,0.001960,0.092327,-3.873558,4.534945,4.548221
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,6,1120796672,-0.001213,0.090567,-4.292427,3.364253,4.293061
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,7,1120796672,0.002755,0.105682,-3.432908,3.761154,3.765448
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,8,1120796672,-0.002290,0.110803,-3.793377,3.739576,3.796573
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,9,1120796672,-0.000861,0.180044,-3.880005,4.076159,4.076643
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,10,1120796672,-0.001923,0.192966,-4.591660,3.425927,4.596664
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,11,1120796672,0.001515,0.181830,-4.009965,4.462610,4.462701
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,12,1120796672,-0.002246,0.197662,-4.060868,5.165656,5.165692
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,13,1120796672,-0.000168,0.239085,-4.037358,4.034201,4.040124
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,14,1120796672,-0.001558,0.206975,-4.768300,4.566673,4.774330
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,15,1120796672,0.002789,0.195501,-4.431257,4.810097,4.813908
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,16,1120796672,0.002082,0.242080,-5.375803,6.952106,6.957924
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,17,1120796672,-0.000503,0.237487,-4.318779,4.781268,4.847669
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,18,1120796672,0.003237,0.277422,-4.617190,4.880394,4.885287
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,19,1120796672,0.002090,0.292800,-4.062129,5.759984,5.761419
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,20,1120796672,0.004644,0.408375,-6.367096,5.309299,6.369120
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,21,1120796672,0.013806,0.459346,-3.636071,5.049878,5.049878
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,22,1120796672,-0.000990,0.398438,-3.744164,3.818331,3.818331
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_context,Softmax × V,23,1120796672,0.006562,0.420910,-3.587059,3.564263,3.587059
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,0,1120796672,-0.001179,0.203961,-4.254177,24.952909,31.232971
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,1,1120796672,-0.000130,0.202075,-3.088959,10.849854,17.834131
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,2,1120796672,-0.002019,0.123809,-2.290563,2.507985,9.873635
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,3,1120796672,-0.001662,0.103244,-2.418923,2.251062,8.295144
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,4,1120796672,0.000603,0.090551,-1.808577,2.065844,7.011513
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,5,1120796672,-0.001540,0.084994,-2.178700,2.194456,7.699942
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,6,1120796672,-0.000773,0.084476,-1.696885,3.025507,9.884120
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,7,1120796672,0.000139,0.100559,-2.672178,2.319496,10.246622
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,8,1120796672,-0.001032,0.099339,-2.908312,1.660610,10.353493
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,9,1120796672,-0.000494,0.150268,-2.500643,1.878002,10.512897
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,10,1120796672,-0.001831,0.169426,-1.943373,2.265858,11.242296
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,11,1120796672,-0.000625,0.179508,-3.099120,3.017015,14.704842
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,12,1120796672,-0.000021,0.193487,-2.883207,3.169774,18.223656
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,13,1120796672,0.000710,0.241075,-2.977674,3.282164,17.247875
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,14,1120796672,0.000193,0.200148,-4.943083,2.534389,16.724747
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,15,1120796672,0.000133,0.186756,-5.519829,2.727850,13.657428
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,16,1120796672,0.001033,0.263946,-4.289945,3.127414,13.734271
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,17,1120796672,0.000501,0.233579,-2.249293,2.186546,11.854654
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,18,1120796672,0.000631,0.287813,-3.480118,3.246134,17.467209
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,19,1120796672,0.001254,0.304446,-2.761193,2.509608,13.553249
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,20,1120796672,0.000939,0.483107,-4.394270,7.988418,20.712273
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,21,1120796672,0.000130,0.504305,-3.939187,3.158663,24.916115
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,22,1120796672,0.000712,0.453388,-6.059391,4.634801,25.017136
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,attn_output,Attn × Wₒ,23,1120796672,0.000750,0.510570,-6.819551,6.604535,27.309511
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,0,1120796672,-0.006525,1.185936,-11.924422,112.171593,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,1,1120796672,0.022737,1.593120,-7.758714,93.008446,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,2,1120796672,0.036130,2.041986,-7.254335,90.499710,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,3,1120796672,0.040734,2.063070,-6.295928,80.845573,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,4,1120796672,0.045973,1.981072,-6.746507,80.632347,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,5,1120796672,0.059947,2.135701,-10.403766,70.172997,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,6,1120796672,0.050149,2.510049,-29.248301,89.833832,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,7,1120796672,-0.023561,2.152144,-69.744331,33.887074,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,8,1120796672,-0.049543,2.271192,-76.556908,23.617943,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,9,1120796672,-0.046393,2.130340,-71.642891,39.607948,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,10,1120796672,-0.034066,1.719711,-57.088364,65.935493,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,11,1120796672,-0.028840,1.562250,-51.215866,82.796951,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,12,1120796672,-0.027921,1.458078,-47.188652,80.797340,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,13,1120796672,-0.023861,1.302009,-41.509819,83.705627,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,14,1120796672,-0.021419,1.176400,-33.665329,77.230843,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,15,1120796672,-0.021887,1.251377,-53.211731,49.172199,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,16,1120796672,-0.030908,1.315592,-64.255501,19.422825,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,17,1120796672,-0.025869,1.174487,-56.569916,11.039044,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,18,1120796672,-0.022376,1.122939,-53.883591,15.959802,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,19,1120796672,-0.013321,1.130548,-94.213295,18.014408,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,20,1120796672,0.004814,1.055112,-80.941956,37.578011,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,21,1120796672,0.010417,0.955175,-52.971333,41.692547,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,22,1120796672,0.011724,0.907996,-23.552969,41.515759,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_attn_ln,Post-Attn sub-block,23,1120796672,0.015771,0.944984,-14.107261,48.025517,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),0,4483186688,-3.311651,2.128422,-23.414944,31.179228,72.660904
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),1,4483186688,-3.198590,1.637321,-14.306588,12.539104,34.975296
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),2,4483186688,-2.857747,1.337902,-15.423259,9.231308,40.530132
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),3,4483186688,-2.651496,1.133579,-12.134889,9.968120,34.828133
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),4,4483186688,-2.517798,1.141873,-12.124784,17.388741,48.199627
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),5,4483186688,-2.694932,1.176223,-11.225773,12.109389,40.424480
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),6,4483186688,-3.016602,1.178334,-13.364298,9.627810,39.619011
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),7,4483186688,-2.799574,1.030852,-13.912828,17.693085,54.298393
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),8,4483186688,-2.364108,0.996637,-12.376825,12.346046,44.553654
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),9,4483186688,-2.289930,1.041156,-14.130761,11.186259,53.151817
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),10,4483186688,-1.880970,1.010461,-31.051479,13.008575,66.026268
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),11,4483186688,-1.790405,1.052760,-35.216766,16.627148,58.896389
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),12,4483186688,-1.942525,1.063516,-38.992790,10.560669,41.342113
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),13,4483186688,-1.923071,1.078015,-17.780416,10.465113,62.713520
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),14,4483186688,-2.089370,1.109239,-15.475718,11.430194,42.224895
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),15,4483186688,-2.039438,1.167500,-12.882652,11.329278,38.242130
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),16,4483186688,-1.904285,1.118487,-13.840775,15.180021,35.317234
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),17,4483186688,-1.613327,1.063870,-31.454136,89.556190,101.991127
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),18,4483186688,-1.510414,1.080067,-47.182369,67.532349,126.621841
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),19,4483186688,-1.546469,1.041336,-26.484030,25.843201,57.263065
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),20,4483186688,-1.336123,0.977870,-40.222340,62.045712,87.162910
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),21,4483186688,-1.363051,0.998195,-86.028107,175.092621,210.655716
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),22,4483186688,-1.295249,1.019389,-70.442551,87.296867,164.031769
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_input,FFN1 (GELU in),23,4483186688,-1.603189,0.954877,-24.304125,16.657339,40.742500
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,0,4483186688,0.025911,0.344544,-0.169971,31.179228,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,1,4483186688,-0.009786,0.245129,-0.169971,12.539104,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,2,4483186688,-0.016158,0.140650,-0.169971,9.231308,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,3,4483186688,-0.017973,0.158809,-0.169971,9.968120,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,4,4483186688,-0.026727,0.177418,-0.169971,17.388741,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,5,4483186688,-0.018676,0.157240,-0.169971,12.109389,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,6,4483186688,-0.012625,0.149645,-0.169971,9.627810,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,7,4483186688,-0.015691,0.116201,-0.169971,17.693085,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,8,4483186688,-0.018560,0.132541,-0.169971,12.346046,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,9,4483186688,-0.034074,0.097040,-0.169971,11.186259,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,10,4483186688,-0.049594,0.126148,-0.169971,13.008575,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,11,4483186688,-0.048800,0.145023,-0.169971,16.627148,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,12,4483186688,-0.045530,0.133672,-0.169971,10.560669,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,13,4483186688,-0.046695,0.139776,-0.169971,10.465113,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,14,4483186688,-0.041476,0.129375,-0.169971,11.430194,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,15,4483186688,-0.034988,0.163375,-0.169971,11.329278,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,16,4483186688,-0.040512,0.174235,-0.169971,15.180021,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,17,4483186688,-0.047630,0.218966,-0.169971,89.556190,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,18,4483186688,-0.047540,0.254876,-0.169971,67.532349,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,19,4483186688,-0.056382,0.180056,-0.169971,25.843201,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,20,4483186688,-0.062790,0.180454,-0.169971,62.045712,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,21,4483186688,-0.065439,0.174137,-0.169971,175.092621,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,22,4483186688,-0.056340,0.205954,-0.169971,87.296867,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,gelu_output,GELU output,23,4483186688,-0.065305,0.162783,-0.169971,16.657339,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,0,1120796672,-0.053684,1.597742,-32.703426,145.745697,169.379013
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,1,1120796672,0.004118,0.911486,-5.866385,45.427372,61.861969
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,2,1120796672,0.002221,0.398569,-4.303204,16.234411,33.643158
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,3,1120796672,-0.008261,0.434817,-4.019110,10.458134,27.958332
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,4,1120796672,0.052596,1.412038,-5.517350,77.549660,85.216660
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,5,1120796672,0.067008,1.716993,-6.733243,91.881683,103.089714
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,6,1120796672,0.044268,1.632971,-22.447044,95.029366,108.026497
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,7,1120796672,0.023245,1.169840,-28.030720,58.112976,71.264740
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,8,1120796672,0.004528,0.336730,-18.767305,35.293571,45.623913
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,9,1120796672,0.003943,0.261427,-8.731222,36.112324,38.229111
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,10,1120796672,0.000958,0.395643,-9.281466,92.921242,94.620285
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,11,1120796672,0.001993,0.423311,-25.779121,98.646927,100.344666
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,12,1120796672,0.000702,0.416057,-13.146619,99.720398,101.443695
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,13,1120796672,-0.000372,0.378208,-16.000336,76.519806,78.882904
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,14,1120796672,0.002869,0.331550,-28.841322,42.733898,50.921963
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,15,1120796672,0.001835,0.389329,-64.269562,33.568153,100.364151
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,16,1120796672,0.002034,0.399033,-43.625565,22.997061,69.790894
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,17,1120796672,-0.014900,2.136506,-1185.506226,353.404144,1199.182251
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,18,1120796672,-0.016305,3.188449,-755.414185,164.164474,766.123718
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,19,1120796672,-0.000901,1.406114,-233.884750,90.198837,238.132324
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,20,1120796672,0.008131,0.730696,-596.529236,547.426453,634.083191
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,21,1120796672,0.008184,1.729589,-927.578491,1216.605957,1247.764893
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,22,1120796672,0.004882,3.287335,-1142.245361,1186.781250,1320.797852
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,ffn2_output,FFN2 output,23,1120796672,0.000478,0.421515,-13.588787,22.768612,41.257702
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,0,1120796672,0.031966,0.660451,-4.839389,12.427217,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,1,1120796672,0.017320,0.584376,-5.165771,13.195270,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,2,1120796672,0.014337,0.530514,-4.805111,13.636353,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,3,1120796672,0.010061,0.475857,-4.471797,10.600143,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,4,1120796672,0.005650,0.356392,-4.817673,8.342030,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,5,1120796672,0.003282,0.310927,-5.794429,6.829971,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,6,1120796672,-0.004984,0.317302,-15.004658,5.399352,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,7,1120796672,-0.011594,0.402443,-12.838503,5.599339,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,8,1120796672,-0.012276,0.556881,-16.101234,9.647585,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,9,1120796672,-0.008697,0.556609,-15.866446,13.667980,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,10,1120796672,0.005999,0.666358,-18.702890,13.377075,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,11,1120796672,0.006959,0.677077,-18.331766,12.100753,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,12,1120796672,0.002969,0.666125,-17.108572,13.620545,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,13,1120796672,0.007958,0.637439,-13.708739,12.571534,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,14,1120796672,0.004571,0.626185,-14.281178,10.261333,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,15,1120796672,-0.011505,0.691771,-14.719174,6.568254,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,16,1120796672,-0.014315,0.679138,-13.013780,6.290841,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,17,1120796672,-0.016713,0.687137,-11.619226,5.810332,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,18,1120796672,-0.008228,0.706694,-9.792242,7.249573,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,19,1120796672,0.002189,0.755996,-8.246229,16.164047,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,20,1120796672,-0.002797,0.778040,-5.055529,16.086006,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,21,1120796672,-0.001031,0.811938,-6.967777,18.379951,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,22,1120796672,0.003064,0.841598,-6.458498,24.766733,
+bl_cola,bert,yoshitomo-matsubara/bert-large-uncased-cola,post_ffn_ln,Post-FFN sub-block,23,1120796672,0.003170,0.663172,-4.205443,6.911160,

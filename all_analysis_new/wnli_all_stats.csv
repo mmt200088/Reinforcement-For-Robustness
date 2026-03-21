@@ -1,0 +1,255 @@
+task,arch,model,probe,probe_display,layer,count,mean,std,min,max,accum_max
+wnli,bert,textattack/bert-base-uncased-WNLI,input_ids,Input IDs,all,81280,957.345620,2698.670668,0.000000,29353.000000,
+wnli,bert,textattack/bert-base-uncased-WNLI,after_embed,After Embedding,all,62423040,-0.042163,0.480627,-11.109372,4.247875,
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,0,62423040,0.004214,0.986148,-7.644509,6.545885,19.383846
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,1,62423040,0.040940,0.946939,-7.191443,7.669220,21.474707
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,2,62423040,0.047616,1.133579,-10.438147,9.402689,35.415588
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,3,62423040,-0.003585,1.006331,-8.094888,7.397543,25.433575
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,4,62423040,-0.002561,1.031392,-7.815654,9.252519,21.214792
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,5,62423040,-0.045318,1.161542,-7.121233,8.318690,22.637848
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,6,62423040,-0.069704,1.162425,-8.559620,7.775436,21.966480
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,7,62423040,-0.022980,1.187171,-8.762947,7.841440,23.058620
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,8,62423040,-0.053711,1.132002,-8.086472,7.751410,22.168604
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,9,62423040,0.017020,1.108935,-8.897743,8.251030,22.328051
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,10,62423040,0.003234,1.098586,-10.146015,7.897199,22.166363
+wnli,bert,textattack/bert-base-uncased-WNLI,query_proj,XW_q + b_q,11,62423040,0.037044,1.080533,-6.540181,7.659163,21.860647
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,0,62423040,-0.025179,1.074359,-6.717706,8.725266,19.875217
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,1,62423040,-0.023120,1.023951,-7.328720,6.965173,21.506865
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,2,62423040,0.030144,1.074270,-8.109360,9.237116,34.141872
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,3,62423040,-0.005809,0.976507,-6.626763,6.230650,25.045485
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,4,62423040,0.005431,0.950353,-6.566010,6.864866,20.753210
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,5,62423040,0.017815,1.094232,-6.535206,7.296382,22.833305
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,6,62423040,0.020176,1.118238,-6.977113,7.883103,22.044214
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,7,62423040,0.010453,1.130302,-7.055285,7.217446,22.486498
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,8,62423040,-0.008030,1.060783,-6.537321,7.081635,21.930454
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,9,62423040,-0.001299,1.030720,-6.425061,8.126355,22.389265
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,10,62423040,0.025152,1.075729,-8.734209,8.758601,21.354074
+wnli,bert,textattack/bert-base-uncased-WNLI,key_proj,XW_k + b_k,11,62423040,-0.009785,1.040356,-11.392029,10.244570,21.082661
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,0,62423040,0.014214,0.425094,-3.895497,3.086718,13.251246
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,1,62423040,-0.021392,0.518117,-4.704657,5.093214,18.003620
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,2,62423040,0.004131,0.512346,-4.868549,4.673154,17.446014
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,3,62423040,-0.014858,0.540959,-4.564727,4.709908,18.723221
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,4,62423040,0.017346,0.598489,-4.881819,6.311884,18.786091
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,5,62423040,-0.010305,0.553315,-5.324419,5.380897,18.002407
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,6,62423040,0.001553,0.578967,-4.789140,4.846538,17.771467
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,7,62423040,0.000949,0.511997,-4.014740,4.176991,16.002119
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,8,62423040,-0.009711,0.620601,-4.913670,4.619715,17.326864
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,9,62423040,0.000311,0.605430,-4.750485,5.493965,17.580133
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,10,62423040,-0.007454,0.621899,-9.775721,8.395794,17.670931
+wnli,bert,textattack/bert-base-uncased-WNLI,value_proj,XW_v + b_v,11,62423040,-0.006535,0.665499,-7.439672,8.903834,18.852203
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),0,124846080,3.316466,19.339233,-92.598724,99.572212,134.637680
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),1,124846080,-2.509312,15.671384,-114.387787,133.685501,176.887802
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),2,124846080,-3.959139,28.701449,-284.318481,261.427216,370.293396
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),3,124846080,4.348296,16.129067,-105.379471,131.134964,171.750534
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),4,124846080,-1.697013,13.619999,-82.209999,113.068520,149.433380
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),5,124846080,-2.695169,17.854705,-121.719337,102.549736,181.505905
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),6,124846080,-0.180289,17.958172,-133.222977,117.062065,185.400192
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),7,124846080,-0.225228,16.605976,-130.227295,112.955620,177.664169
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),8,124846080,5.798438,14.504943,-116.438545,134.347260,195.577347
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),9,124846080,7.797948,13.632758,-109.735886,119.575462,207.131851
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),10,124846080,-10.403795,17.109053,-124.481163,131.612381,237.480560
+wnli,bert,textattack/bert-base-uncased-WNLI,qkt_raw,QKᵀ (raw),11,124846080,-15.252623,14.161260,-102.583427,93.771622,149.602097
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,0,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,12.099603,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,1,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,16.710688,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,2,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,32.678402,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,3,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,16.391870,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,4,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,14.133565,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,5,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,12.818717,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,6,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,14.632758,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,7,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,14.119452,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,8,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,16.793407,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,9,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,14.946933,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,10,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,16.451548,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_scores,QKᵀ/√dₖ + mask,11,124846080,-241735272850089764158192442130055561216.000000,154344756214217537586890234460458975232.000000,-340282346638528859811704183484516925440.000000,11.721453,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),0,124846080,0.007813,0.048012,0.000000,0.999958,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),1,124846080,0.007813,0.040502,0.000000,0.999747,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),2,124846080,0.007813,0.044805,0.000000,1.000000,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),3,124846080,0.007812,0.038525,0.000000,0.999684,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),4,124846080,0.007813,0.036581,0.000000,0.997740,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),5,124846080,0.007812,0.047946,0.000000,0.996684,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),6,124846080,0.007813,0.045009,0.000000,0.998977,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),7,124846080,0.007812,0.047582,0.000000,0.999453,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),8,124846080,0.007813,0.043801,0.000000,0.994565,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),9,124846080,0.007812,0.040726,0.000000,0.970609,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),10,124846080,0.007813,0.038056,0.000000,0.996722,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_probs,Softmax(scores),11,124846080,0.007812,0.034981,0.000000,0.986941,
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,0,62423040,-0.005645,0.185373,-2.891754,2.402141,2.894193
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,1,62423040,-0.001262,0.221945,-3.269890,3.073262,3.276523
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,2,62423040,0.001607,0.237111,-3.724086,3.657315,3.724086
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,3,62423040,0.000470,0.202450,-4.108354,3.603883,4.126501
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,4,62423040,-0.007324,0.226768,-3.727893,3.586427,3.731439
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,5,62423040,-0.000257,0.176206,-3.367496,4.098725,4.137624
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,6,62423040,0.003032,0.196888,-3.598706,3.836750,3.839678
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,7,62423040,-0.004050,0.182417,-3.140718,3.094055,3.151681
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,8,62423040,-0.004004,0.207563,-3.225898,2.956506,3.298429
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,9,62423040,-0.001032,0.202358,-4.051893,3.313620,4.061501
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,10,62423040,-0.004807,0.188080,-5.232496,5.141241,5.833744
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_context,Softmax × V,11,62423040,-0.001597,0.190236,-5.359175,7.637662,7.655614
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,0,62423040,0.000601,0.212223,-4.396919,3.939922,13.155255
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,1,62423040,-0.002012,0.215216,-2.827277,2.399230,9.986525
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,2,62423040,0.001641,0.198664,-2.567489,2.911245,9.905835
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,3,62423040,0.001719,0.178533,-2.457314,2.315612,10.548979
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,4,62423040,-0.000024,0.228396,-3.362101,2.743500,13.008660
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,5,62423040,0.000814,0.173884,-2.755348,2.664590,12.837871
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,6,62423040,0.000167,0.186367,-2.109650,2.465313,12.171678
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,7,62423040,0.000500,0.170621,-2.105945,2.278292,15.116755
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,8,62423040,-0.000061,0.189274,-2.997674,5.814251,17.751932
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,9,62423040,0.000975,0.192283,-3.344066,3.414663,19.254494
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,10,62423040,0.001086,0.179539,-2.222533,2.221459,11.992429
+wnli,bert,textattack/bert-base-uncased-WNLI,attn_output,Attn × Wₒ,11,62423040,-0.000418,0.230961,-4.223608,4.762076,18.392670
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,0,62423040,-0.020775,1.129656,-63.942825,7.335515,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,1,62423040,-0.040669,1.332567,-65.968391,5.566690,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,2,62423040,-0.043007,1.484530,-53.164204,5.626199,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,3,62423040,-0.030160,1.348144,-94.367119,4.787032,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,4,62423040,-0.038469,1.339856,-103.054649,5.139252,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,5,62423040,-0.034234,1.193826,-93.274437,5.697308,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,6,62423040,-0.036937,1.151820,-92.109276,5.882161,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,7,62423040,-0.043277,1.111076,-90.520119,6.460076,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,8,62423040,-0.041155,1.103991,-85.855995,7.315728,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,9,62423040,-0.036296,0.936655,-57.814796,16.637518,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,10,62423040,-0.026886,0.972929,-59.182972,19.042099,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_attn_ln,Post-Attn sub-block,11,62423040,-0.053522,1.331148,-42.120533,8.766993,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),0,249692160,-2.383989,1.581671,-18.802307,13.444876,44.754990
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),1,249692160,-1.883409,1.172822,-19.451990,12.188170,45.099602
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),2,249692160,-2.141619,1.194705,-23.279646,64.668381,100.108116
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),3,249692160,-1.987407,1.218705,-60.082394,9.163334,83.031059
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),4,249692160,-1.978797,1.206748,-61.557999,11.038687,75.732117
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),5,249692160,-1.845050,1.095361,-49.452438,11.476265,54.405579
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),6,249692160,-1.771167,1.044690,-25.853579,8.208007,44.330025
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),7,249692160,-1.616306,0.985577,-19.421824,9.506878,47.098644
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),8,249692160,-1.486951,0.928950,-18.517338,23.544603,59.349319
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),9,249692160,-1.388982,1.022451,-42.734009,97.429573,112.669060
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),10,249692160,-1.386221,0.964939,-37.326656,139.865387,158.064743
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_input,FFN1 (GELU in),11,249692160,-1.179655,0.778052,-24.530455,12.445577,40.945110
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,0,249692160,0.010756,0.378786,-0.169971,13.444876,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,1,249692160,-0.029874,0.237513,-0.169971,12.188170,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,2,249692160,-0.034610,0.201083,-0.169971,64.668381,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,3,249692160,-0.037137,0.165005,-0.169971,9.163334,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,4,249692160,-0.036720,0.170010,-0.169971,11.038687,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,5,249692160,-0.050439,0.140046,-0.169971,11.476265,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,6,249692160,-0.050686,0.139680,-0.169971,8.208007,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,7,249692160,-0.058654,0.148969,-0.169971,9.506878,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,8,249692160,-0.065099,0.150709,-0.169971,23.544603,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,9,249692160,-0.071530,0.281968,-0.169971,97.429573,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,10,249692160,-0.075340,0.408283,-0.169971,139.865387,
+wnli,bert,textattack/bert-base-uncased-WNLI,gelu_output,GELU output,11,249692160,-0.081444,0.170208,-0.169971,12.445577,
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,0,62423040,-0.055053,2.101065,-63.086163,14.960665,76.610115
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,1,62423040,-0.011626,0.745158,-39.667667,5.008613,49.447140
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,2,62423040,-0.006419,1.079662,-271.330383,4.983921,273.180450
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,3,62423040,0.003662,0.555866,-102.790497,3.226125,103.266525
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,4,62423040,0.001125,0.474730,-84.325783,4.506933,85.010765
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,5,62423040,-0.002101,0.412292,-69.373802,2.945309,70.435379
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,6,62423040,-0.001869,0.334318,-41.837063,3.749937,44.771923
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,7,62423040,-0.000479,0.329249,-16.721825,3.378001,27.817205
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,8,62423040,-0.001228,0.436977,-139.353790,44.642448,163.671173
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,9,62423040,-0.024433,4.265882,-779.632935,545.033875,797.519897
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,10,62423040,-0.046815,5.781440,-1058.295044,35.817146,1077.568848
+wnli,bert,textattack/bert-base-uncased-WNLI,ffn2_output,FFN2 output,11,62423040,0.002347,0.379353,-56.471489,17.402718,72.912399
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,0,62423040,-0.018184,0.523356,-9.854693,3.322254,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,1,62423040,-0.015669,0.596445,-11.286384,4.201202,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,2,62423040,-0.017859,0.589554,-14.822009,4.140469,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,3,62423040,-0.027370,0.672055,-13.468742,3.998792,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,4,62423040,-0.025226,0.698318,-14.999959,4.216670,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,5,62423040,-0.027452,0.739466,-16.157970,4.518222,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,6,62423040,-0.027887,0.745043,-16.614107,4.632107,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,7,62423040,-0.031467,0.801128,-21.789730,4.495330,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,8,62423040,-0.032698,0.822516,-26.050243,5.818916,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,9,62423040,-0.032849,0.855840,-27.508379,5.317151,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,10,62423040,-0.040170,0.922897,-32.119072,4.470129,
+wnli,bert,textattack/bert-base-uncased-WNLI,post_ffn_ln,Post-FFN sub-block,11,62423040,-0.008940,0.430984,-9.444116,3.987905,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),0,81280,-31.919798,26.002419,-53.602196,33.732079,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),1,81280,-15.510320,3.597166,-33.164211,-3.844991,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),2,81280,-10.773681,2.796849,-31.855019,-2.321345,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),3,81280,-12.395574,2.087632,-25.705090,-1.582898,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),4,81280,-21.038828,2.043759,-31.494091,-11.252903,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),5,81280,-18.748130,2.120331,-28.086969,-9.449611,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),6,81280,-20.955096,1.807579,-27.839388,-12.572484,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),7,81280,-21.032651,1.973737,-28.727667,-11.173590,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),8,81280,-24.213530,3.486012,-34.219116,-10.636404,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),9,81280,-24.363039,5.228716,-37.621140,-5.184610,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),10,81280,-24.393925,6.710855,-37.692356,0.140897,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_mean_sum,LN₁ Σxᵢ (mean sum),11,81280,-31.171022,7.244949,-46.312088,-4.087162,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,0,81280,217.935612,59.535945,149.742065,503.625092,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,1,81280,244.665430,102.599683,164.161270,625.629089,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,2,81280,325.892814,110.444568,179.453949,722.298828,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,3,81280,320.462538,95.252673,194.903152,695.692383,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,4,81280,433.429367,78.676447,115.257919,870.006714,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,5,81280,418.980406,86.062512,104.092438,897.672974,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,6,81280,474.281123,69.234502,141.978821,795.866821,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,7,81280,468.508820,75.206238,120.121880,809.002991,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,8,81280,558.386158,135.129217,97.680862,954.841309,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,9,81280,581.115536,191.491907,72.331894,1143.112305,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,10,81280,612.887694,194.446294,31.195484,1113.477905,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var_sum,LN₁ Σ(xᵢ−μ)²,11,81280,721.174124,270.603633,17.755821,2445.447021,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,0,81280,0.283770,0.077521,0.194977,0.655762,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,1,81280,0.318575,0.133593,0.213752,0.814621,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,2,81280,0.424340,0.143808,0.233664,0.940493,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,3,81280,0.417269,0.124027,0.253780,0.905849,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,4,81280,0.564361,0.102443,0.150075,1.132821,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,5,81280,0.545547,0.112061,0.135537,1.168845,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,6,81280,0.617554,0.090149,0.184868,1.036285,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,7,81280,0.610038,0.097925,0.156409,1.053389,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,8,81280,0.727065,0.175950,0.127189,1.243283,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,9,81280,0.756661,0.249338,0.094182,1.488428,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,10,81280,0.798031,0.253185,0.040619,1.449841,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_var,LN₁ Variance,11,81280,0.939029,0.352348,0.023120,3.184176,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,0,81280,1.918867,0.211250,1.234886,2.264690,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,1,81280,1.857872,0.283662,1.107955,2.162944,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,2,81280,1.584361,0.201531,1.031151,2.068731,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,3,81280,1.587778,0.184345,1.050684,1.985049,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,4,81280,1.353250,0.178185,0.939549,2.581340,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,5,81280,1.381588,0.199318,0.924957,2.716258,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,6,81280,1.287650,0.145786,0.982337,2.325781,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,7,81280,1.299826,0.172213,0.974329,2.528538,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,8,81280,1.211633,0.235297,0.896840,2.803986,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,9,81280,1.219368,0.314313,0.819665,3.258485,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,10,81280,1.235599,0.578662,0.830500,4.961749,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln1_invstd,LN₁ 1/σ,11,81280,1.231015,0.960864,0.560404,6.576733,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),0,81280,-58.236145,17.622487,-81.332153,-0.984207,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),1,81280,-40.162474,9.469284,-79.619080,-4.530622,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),2,81280,-37.959326,27.344234,-288.951019,-3.017631,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),3,81280,-20.350455,18.657406,-179.994370,1.198570,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),4,81280,-28.679876,18.007705,-176.125778,-2.860018,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),5,81280,-27.905645,14.990884,-146.778015,-4.080944,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),6,81280,-29.802587,12.038816,-122.448463,-6.241054,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),7,81280,-33.604899,8.924847,-101.491295,-15.370574,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),8,81280,-32.549888,12.898307,-188.010162,-17.396580,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),9,81280,-46.639562,120.732552,-1305.274658,-15.363119,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),10,81280,-56.602540,202.511279,-1414.492188,-5.870513,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_mean_sum,LN₂ Σxᵢ (mean sum),11,81280,-39.302792,7.670007,-116.912979,-9.563619,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,0,81280,4631.071611,1799.665575,762.047607,8839.369141,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,1,81280,2450.706358,749.996782,668.951660,6617.491211,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,2,81280,2783.693881,6842.647298,729.721191,79466.828125,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,3,81280,2000.746351,3911.979223,691.488098,38555.625000,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,4,81280,1728.680566,3858.642519,650.477295,34938.507812,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,5,81280,1425.797789,2970.870093,646.527100,26324.472656,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,6,81280,1198.208227,2011.647460,641.771545,17788.656250,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,7,81280,1092.952264,1199.129417,606.368042,11464.173828,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,8,81280,1202.582964,1841.221518,470.579132,38339.359375,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,9,81280,15436.364032,113153.009050,418.073700,1617311.375000,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,10,81280,28358.312376,158943.348376,371.627686,1264192.625000,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var_sum,LN₂ Σ(xᵢ−μ)²,11,81280,1439.715181,388.516605,515.048584,8832.855469,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,0,81280,6.030041,2.343315,0.992249,11.509596,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,1,81280,3.191024,0.976558,0.871031,8.616526,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,2,81280,3.624602,8.909697,0.950158,103.472435,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,3,81280,2.605139,5.093723,0.900375,50.202637,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,4,81280,2.250886,5.024274,0.846976,45.492851,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,5,81280,1.856508,3.868321,0.841832,34.276657,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,6,81280,1.560167,2.619333,0.835640,23.162313,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,7,81280,1.423115,1.561366,0.789542,14.927310,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,8,81280,1.565863,2.397424,0.612733,49.921043,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,9,81280,20.099433,147.334651,0.544367,2105.874268,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,10,81280,36.924887,206.957491,0.483890,1646.084229,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_var,LN₂ Variance,11,81280,1.874629,0.505881,0.670636,11.501114,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,0,81280,0.451582,0.149156,0.294761,1.003898,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,1,81280,0.584771,0.114509,0.340670,1.071478,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,2,81280,0.637102,0.113610,0.098308,1.025893,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,3,81280,0.713398,0.101432,0.141136,1.053873,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,4,81280,0.781557,0.097543,0.148262,1.086587,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,5,81280,0.847853,0.097681,0.170805,1.089901,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,6,81280,0.894661,0.098450,0.207783,1.093932,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,7,81280,0.910944,0.131229,0.258827,1.125414,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,8,81280,0.925743,0.181488,0.141533,1.277510,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,9,81280,1.006307,0.214810,0.021791,1.355358,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,10,81280,1.018379,0.235552,0.024648,1.437562,
+wnli,bert,textattack/bert-base-uncased-WNLI,ln2_invstd,LN₂ 1/σ,11,81280,0.754221,0.122992,0.294870,1.221115,

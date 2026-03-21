@@ -1,0 +1,159 @@
+task,arch,model,probe,probe_display,layer,count,mean,std,min,max
+mnli,bert,textattack/bert-base-uncased-MNLI,input_ids,Input IDs,all,50265856,1146.044560,3129.017993,0.000000,30102.000000
+mnli,bert,textattack/bert-base-uncased-MNLI,after_embed,After Embedding,all,38604177408,-0.040601,0.483525,-11.188816,4.214314
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,0,38604177408,0.003248,0.981410,-7.719391,7.298074
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,1,38604177408,0.045001,1.011120,-8.056944,8.689608
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,2,38604177408,0.035412,1.169878,-14.358468,12.737723
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,3,38604177408,-0.014323,1.041679,-9.000648,9.209717
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,4,38604177408,0.005097,1.101243,-9.098135,9.338359
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,5,38604177408,-0.050555,1.259229,-10.257289,9.774059
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,6,38604177408,-0.044214,1.278319,-9.865473,9.051789
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,7,38604177408,-0.017187,1.345851,-11.145994,10.728271
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,8,38604177408,-0.044486,1.295880,-10.967394,9.900019
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,9,38604177408,0.017043,1.285108,-11.131929,9.768604
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,10,38604177408,-0.024650,1.245327,-11.754825,11.048114
+mnli,bert,textattack/bert-base-uncased-MNLI,query_proj,XW_q + b_q,11,38604177408,0.049195,1.240351,-9.203267,10.456716
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,0,38604177408,-0.024521,1.059444,-7.191996,8.703808
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,1,38604177408,-0.018802,1.026399,-8.276680,8.146731
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,2,38604177408,0.031952,1.139708,-12.532161,11.833468
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,3,38604177408,-0.010755,1.083519,-8.317271,8.451598
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,4,38604177408,0.024013,1.099808,-9.324562,9.356190
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,5,38604177408,0.037767,1.290983,-9.307369,10.551610
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,6,38604177408,0.018990,1.292816,-9.137062,9.826910
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,7,38604177408,0.012588,1.371408,-9.655594,10.300673
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,8,38604177408,0.015009,1.258845,-9.719349,11.095719
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,9,38604177408,0.007093,1.210308,-10.741068,11.517849
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,10,38604177408,0.003665,1.258177,-10.460478,10.118149
+mnli,bert,textattack/bert-base-uncased-MNLI,key_proj,XW_k + b_k,11,38604177408,-0.020048,1.163962,-12.559490,10.782173
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,0,38604177408,0.014338,0.431715,-4.874691,3.747820
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,1,38604177408,-0.021991,0.502145,-7.289021,6.294344
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,2,38604177408,0.006227,0.527207,-5.968500,5.431983
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,3,38604177408,-0.013077,0.573865,-6.324366,5.804466
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,4,38604177408,0.023119,0.662159,-6.289793,6.618485
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,5,38604177408,-0.010554,0.626356,-7.256668,7.506451
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,6,38604177408,-0.000780,0.655117,-6.624906,6.868058
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,7,38604177408,0.008667,0.579026,-5.811003,5.789334
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,8,38604177408,-0.006276,0.704524,-6.587213,6.020689
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,9,38604177408,0.004071,0.707701,-6.821846,7.470872
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,10,38604177408,0.001921,0.685826,-14.709444,12.272407
+mnli,bert,textattack/bert-base-uncased-MNLI,value_proj,XW_v + b_v,11,38604177408,0.009613,0.764244,-10.975042,9.235743
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),0,77208354816,2.513049,18.569319,-95.450798,115.156799
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),1,77208354816,-3.765085,15.546349,-173.158539,157.290100
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),2,77208354816,1.336330,27.446268,-490.366547,499.293427
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),3,77208354816,4.826743,18.207871,-167.913284,194.106049
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),4,77208354816,-3.817954,17.072988,-144.780579,158.639236
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),5,77208354816,-5.855620,20.885833,-193.787094,161.809204
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),6,77208354816,-3.014134,21.581083,-191.213516,145.946640
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),7,77208354816,-5.943603,22.293658,-195.090393,159.247864
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),8,77208354816,2.166640,19.629285,-177.679733,181.255356
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),9,77208354816,0.979599,19.528576,-175.514175,163.986084
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),10,77208354816,-17.509647,19.961564,-201.188629,179.281250
+mnli,bert,textattack/bert-base-uncased-MNLI,qkt_raw,QKᵀ (raw),11,77208354816,-16.959176,17.812583,-230.118561,138.631226
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,0,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,14.394600
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,1,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,17.903936
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,2,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,41.068150
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,3,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,24.263256
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,4,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,19.829905
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,5,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,20.226151
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,6,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,18.243330
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,7,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,19.905983
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,8,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,22.656919
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,9,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,20.498260
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,10,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,22.410156
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_scores,QKᵀ/√dₖ + mask,11,77208354816,-234476959383222270012995484585943891968.000000,157508493390002163309925908363591286784.000000,-340282346638528859811704183484516925440.000000,17.328903
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),0,77208354816,0.007813,0.050124,0.000000,1.000000
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),1,77208354816,0.007813,0.047113,0.000000,0.999992
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),2,77208354816,0.007813,0.043545,0.000000,1.000000
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),3,77208354816,0.007813,0.037156,0.000000,0.999993
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),4,77208354816,0.007813,0.037920,0.000000,0.999992
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),5,77208354816,0.007813,0.046466,0.000000,0.999997
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),6,77208354816,0.007813,0.045219,0.000000,0.999995
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),7,77208354816,0.007813,0.048262,0.000000,0.999995
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),8,77208354816,0.007813,0.044477,0.000000,0.999969
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),9,77208354816,0.007813,0.044278,0.000000,0.999973
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),10,77208354816,0.007813,0.043840,0.000000,0.999999
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_probs,Softmax(scores),11,77208354816,0.007813,0.039159,0.000000,0.999932
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,0,38604177408,-0.002295,0.174709,-3.233581,3.479868
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,1,38604177408,-0.002317,0.193381,-3.891337,3.931882
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,2,38604177408,0.006915,0.248161,-4.303217,4.530598
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,3,38604177408,-0.000246,0.257612,-4.261061,4.739096
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,4,38604177408,-0.000283,0.287462,-5.650236,5.429766
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,5,38604177408,0.000115,0.284862,-5.054543,5.377622
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,6,38604177408,-0.002805,0.285734,-5.670243,5.976720
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,7,38604177408,0.000805,0.273913,-4.612997,5.185259
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,8,38604177408,-0.002660,0.318047,-5.869719,4.963600
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,9,38604177408,0.002202,0.302811,-5.356533,6.394744
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,10,38604177408,0.000355,0.227671,-9.973862,8.387306
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_context,Softmax × V,11,38604177408,-0.000024,0.279187,-10.253282,8.244709
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,0,38604177408,0.000691,0.198154,-6.027666,5.539837
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,1,38604177408,0.001121,0.174044,-3.803455,3.766412
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,2,38604177408,0.000025,0.196766,-3.418449,3.593031
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,3,38604177408,-0.000371,0.227406,-3.860188,3.604243
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,4,38604177408,0.000431,0.286598,-4.470363,4.594271
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,5,38604177408,-0.001166,0.283384,-5.095974,5.227712
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,6,38604177408,-0.000093,0.275204,-4.001517,4.417718
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,7,38604177408,-0.000062,0.268971,-4.071606,4.002357
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,8,38604177408,-0.000653,0.296245,-5.544879,8.607188
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,9,38604177408,0.000547,0.296911,-6.529066,5.630925
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,10,38604177408,-0.000292,0.217023,-3.639168,3.509078
+mnli,bert,textattack/bert-base-uncased-MNLI,attn_output,Attn × Wₒ,11,38604177408,-0.001165,0.312141,-4.093711,3.802855
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,0,38604177408,-0.019608,1.129799,-71.028244,9.935358
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,1,38604177408,-0.042687,1.368498,-75.349068,5.731761
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,2,38604177408,-0.042200,1.457354,-59.567238,5.953488
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,3,38604177408,-0.027740,1.308919,-94.881775,6.275944
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,4,38604177408,-0.035346,1.287268,-102.797852,6.220075
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,5,38604177408,-0.029448,1.142628,-92.763725,6.487453
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,6,38604177408,-0.031245,1.086969,-91.537430,7.291474
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,7,38604177408,-0.036275,1.019741,-89.948959,7.698982
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,8,38604177408,-0.033549,0.981374,-86.122749,7.689574
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,9,38604177408,-0.031252,0.886519,-61.018803,18.112329
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,10,38604177408,-0.022419,0.914581,-61.247818,21.275709
+mnli,bert,textattack/bert-base-uncased-MNLI,post_attn_ln,Post-Attn sub-block,11,38604177408,-0.050993,1.248569,-41.319962,13.717068
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),0,154416709632,-2.280670,1.581398,-19.601151,14.650388
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),1,154416709632,-1.977784,1.193592,-22.422812,12.014790
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),2,154416709632,-2.082689,1.232842,-29.258949,65.777908
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),3,154416709632,-1.898105,1.271361,-60.818760,11.055528
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),4,154416709632,-1.907721,1.232516,-61.235561,11.973067
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),5,154416709632,-1.760413,1.166928,-49.296364,12.907030
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),6,154416709632,-1.748107,1.117820,-25.816446,10.141320
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),7,154416709632,-1.522090,1.037682,-19.470890,11.056583
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),8,154416709632,-1.408510,1.013534,-28.348486,35.313114
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),9,154416709632,-1.506118,1.117310,-54.533504,100.533791
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),10,154416709632,-1.449939,1.033989,-43.792278,150.216217
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_input,FFN1 (GELU in),11,154416709632,-1.267213,0.875309,-23.356306,20.036392
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,0,154416709632,0.009947,0.347852,-0.169971,14.650388
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,1,154416709632,-0.031586,0.201066,-0.169971,12.014790
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,2,154416709632,-0.030776,0.223901,-0.169971,65.777908
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,3,154416709632,-0.030188,0.198819,-0.169971,11.055528
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,4,154416709632,-0.033481,0.190463,-0.169971,11.973067
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,5,154416709632,-0.042600,0.171128,-0.169971,12.907030
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,6,154416709632,-0.044077,0.161344,-0.169971,10.141320
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,7,154416709632,-0.050643,0.172750,-0.169971,11.056583
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,8,154416709632,-0.050374,0.190759,-0.169971,35.313114
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,9,154416709632,-0.058429,0.279017,-0.169971,100.533791
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,10,154416709632,-0.064337,0.404974,-0.169971,150.216217
+mnli,bert,textattack/bert-base-uncased-MNLI,gelu_output,GELU output,11,154416709632,-0.070809,0.163873,-0.169971,20.036392
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,0,38604177408,-0.046830,1.682700,-57.779007,17.687321
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,1,38604177408,-0.011944,0.676467,-48.429184,5.541973
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,2,38604177408,-0.011223,1.133579,-274.751068,6.600551
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,3,38604177408,0.002271,0.673866,-135.498810,5.482080
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,4,38604177408,0.000619,0.522524,-95.703583,5.463360
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,5,38604177408,-0.000775,0.464150,-77.973907,5.349987
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,6,38604177408,0.001418,0.371701,-45.108719,5.261586
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,7,38604177408,0.000268,0.363504,-24.171515,4.969628
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,8,38604177408,-0.002877,0.570069,-216.582245,62.639130
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,9,38604177408,-0.023321,4.019085,-796.905579,548.330200
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,10,38604177408,-0.039648,5.693194,-1140.177979,37.486465
+mnli,bert,textattack/bert-base-uncased-MNLI,ffn2_output,FFN2 output,11,38604177408,0.009747,0.405568,-34.976128,14.434338
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,0,38604177408,-0.019165,0.537665,-10.309821,4.152136
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,1,38604177408,-0.017111,0.610167,-11.476428,4.910381
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,2,38604177408,-0.017896,0.602321,-14.765336,5.357104
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,3,38604177408,-0.027685,0.682098,-13.968582,5.174089
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,4,38604177408,-0.025401,0.712432,-14.922405,5.464575
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,5,38604177408,-0.028172,0.752328,-15.970651,6.015515
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,6,38604177408,-0.029468,0.765727,-16.429010,6.209066
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,7,38604177408,-0.033396,0.823877,-21.639324,7.344589
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,8,38604177408,-0.035989,0.871657,-26.334982,10.297563
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,9,38604177408,-0.035391,0.864788,-27.321623,9.875078
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,10,38604177408,-0.042251,0.924908,-30.541533,9.956816
+mnli,bert,textattack/bert-base-uncased-MNLI,post_ffn_ln,Post-FFN sub-block,11,38604177408,-0.010081,0.461076,-10.230989,4.723355

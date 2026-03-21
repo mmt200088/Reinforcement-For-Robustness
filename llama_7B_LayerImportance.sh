@@ -1,14 +1,32 @@
 export NCCL_DEBUG=INFO
 export CUDA_VISIBLE_DEVICES=0
 nohup  python rl_tune.py \
-    --base_model 'textattack/bert-base-uncased-QNLI' \
-    --data_path 'qnli' \
+    --base_model 'textattack/bert-base-uncased-MRPC' \
+    --data_path 'mrpc' \
     --output_dir $3 \
     --batch_size 16  --micro_batch_size 16 --num_epochs 1 \
     --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 \
     --eval_step 80  --adapter_name lora \
     --target_modules '["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"]' \
     --lora_r $1 --lora_alpha $2 --rl_lr $4 --degree $5 --use_ist > $3 2>&1 &
+
+# different data for base model
+# --base_model 'textattack/bert-base-uncased-WNLI' \
+# --base_model 'textattack/bert-base-uncased-RTE' \
+# --base_model 'textattack/bert-base-uncased-CoLA' \
+# --base_model 'textattack/bert-base-uncased-QNLI' \
+# --base_model 'textattack/bert-base-uncased-MRPC' \
+# --base_model 'textattack/bert-base-uncased-SST-2' \
+# --base_model 'textattack/bert-base-uncased-STS-B' \
+
+#different data for data_path
+# --data_path 'wnli' \
+# --data_path 'rte' \
+# --data_path 'cola' \
+# --data_path 'qnli' \
+# --data_path 'mrpc' \
+# --data_path 'sst2' \
+# --data_path 'stsb' \
 
 # CUDA_VISIBLE_DEVICES=$4 python commonsense_evaluate.py \
 #     --model LLaMA-7B \

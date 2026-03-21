@@ -16,10 +16,13 @@ import hashlib
 
 # ==================== PPO 常量与配置定义 ====================
 # 动作映射表（严格按照任务要求）
-GELU_MAP = {0: 4, 1: 2, 2: 1}
-GELU_COST = {4: 3.0, 2: 2.5, 1: 1.0}
+GELU_MAP = {0: 4, 1: 2, 2: 1, 3: 0}
+GELU_COST = {4: 3.0, 2: 2.5, 1: 1.0, 0: -1.0}
 SOFTMAX_MAP = {0: 6, 1: 5, 2: 4, 3: 3, 4: 2}
 SOFTMAX_COST = {6: 3.0, 5: 2.5, 4: 2.0, 3: 1.5, 2: 1.0}
+
+# GELU degree 0 资格阈值：[-2.7, 0) 区间占比 >= 此阈值才能使用 degree 0
+GELU_DEGREE0_THRESHOLD = 2.0 # 设为 2.0（不可能达到）以完全禁用 degree 0 动作 一般设置为 0.80
 
 # PPO 超参数
 PPO_LR = 3e-4
@@ -31,7 +34,7 @@ PPO_ENTROPY_COEF = 0.05  # 初始熵系数（策略二：从0.05开始衰减）
 PPO_VALUE_COEF = 0.5
 # PDF 6.4：由于采样步数大幅增加，需要相应调整总episodes
 # PDF建议：每2048 steps更新，考虑到每episode 12步，即每170 episodes更新
-PPO_MAX_EPISODES = 34000
+PPO_MAX_EPISODES = 51000
 # PDF 6.4：增加采样步数以获得更稳定的梯度估计
 # "建议增加采样步数，例如每2048 steps更新一次"
 # 折中方案：每50 episodes更新一次（600步），在训练时间和稳定性之间平衡
@@ -101,9 +104,19 @@ LSTM_POS_DIM = 16            # 层级位置嵌入维度（PDF 3.1.1）
 LSTM_ACT_G_DIM = 8           # GELU动作嵌入维度（PDF 3.1.2）
 LSTM_ACT_S_DIM = 8           # Softmax动作嵌入维度（PDF 3.1.2）
 LSTM_PROJ_DIM = 32           # 连续特征投影维度（PDF 3.1.3）
-SOS_TOKEN_GELU = 3           # GELU前一动作的SOS标记（词表大小=4: 0,1,2为动作, 3为SOS）
+SOS_TOKEN_GELU = 4           # GELU前一动作的SOS标记（词表大小=5: 0,1,2,3为动作, 4为SOS）
 SOS_TOKEN_SOFTMAX = 5        # Softmax前一动作的SOS标记（词表大小=6: 0-4为动作, 5为SOS）
 LSTM_MINI_BATCH_EPISODES = 8 # LSTM PPO更新时的mini-batch大小（按episode数）
+
+# ==================== GTrXL 策略价值网络配置（Transformer PDF优化方案） ====================
+GTRXL_D_MODEL = 64              # Token 维度（与 LSTM 输入维度一致：16+8+8+32=64）
+GTRXL_N_HEADS = 4               # 多头注意力头数（64/4=16 per head）
+GTRXL_N_LAYERS = 3              # GTrXL Block 堆叠层数
+GTRXL_D_FF = 128                # 前馈网络隐藏维度（2x d_model）
+GTRXL_DROPOUT = 0.1             # Dropout 率
+GTRXL_WARMUP_STEPS = 500        # 学习率线性预热步数（PPO update 计数）
+GTRXL_ENTROPY_LOWER_BOUND = 0.005  # 最小熵约束下界（防止 Mode Collapse）
+GTRXL_MINI_BATCH_EPISODES = 8   # GTrXL PPO更新时的mini-batch大小（按episode数）
 
 # ==================== 敏锐度优化PDF：数据集相关配置 ====================
 # 根据数据集选择不同的评估指标（细分版）
@@ -479,8 +492,8 @@ class PolicyNetwork(nn.Module):
         self.res_block1 = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
         self.res_block2 = ResidualBlock(input_dim=hidden_dim, hidden_dim=res_hidden_dim, dropout=0.1)
         
-        # GELU Head: 输出3个动作的logits (对应度数 1, 2, 4)
-        self.gelu_head = nn.Linear(hidden_dim, 3)
+        # GELU Head: 输出4个动作的logits (对应度数 4, 2, 1, 0)
+        self.gelu_head = nn.Linear(hidden_dim, 4)
         # Softmax Head: 输出5个动作的logits (对应度数 2, 3, 4, 5, 6)
         self.softmax_head = nn.Linear(hidden_dim, 5)
         
@@ -489,7 +502,7 @@ class PolicyNetwork(nn.Module):
         orthogonal_init(self.gelu_head, gain=0.01)
         orthogonal_init(self.softmax_head, gain=0.01)
     
-    def forward(self, state):
+    def forward(self, state, gelu_mask=None):
         # 特征编码
         x = self.encoder(state)
         
@@ -501,19 +514,23 @@ class PolicyNetwork(nn.Module):
         gelu_logits = self.gelu_head(x)
         softmax_logits = self.softmax_head(x)
         
+        if gelu_mask is not None:
+            gelu_logits = gelu_logits.masked_fill(~gelu_mask, float('-inf'))
+        
         return gelu_logits, softmax_logits
     
-    def get_action_and_logprob(self, state, return_probs=False):
+    def get_action_and_logprob(self, state, return_probs=False, gelu_mask=None):
         """
         获取动作和log概率
         Args:
             state: 状态张量
             return_probs: 是否返回概率分布（用于记录中间结果）
+            gelu_mask: (Batch, 4) bool Tensor, True=该动作可选
         Returns:
             gelu_action, softmax_action, logprob
             如果return_probs=True，还返回gelu_probs, softmax_probs
         """
-        gelu_logits, softmax_logits = self.forward(state)
+        gelu_logits, softmax_logits = self.forward(state, gelu_mask=gelu_mask)
         
         # 处理单样本情况
         if gelu_logits.dim() == 1:
@@ -530,15 +547,14 @@ class PolicyNetwork(nn.Module):
         softmax_logprob = softmax_dist.log_prob(softmax_action)
         
         if return_probs:
-            # 返回概率分布用于记录中间结果
             gelu_probs = torch.softmax(gelu_logits, dim=-1)
             softmax_probs = torch.softmax(softmax_logits, dim=-1)
             return gelu_action.squeeze(), softmax_action.squeeze(), (gelu_logprob + softmax_logprob).squeeze(), gelu_probs.squeeze(), softmax_probs.squeeze()
         
         return gelu_action.squeeze(), softmax_action.squeeze(), (gelu_logprob + softmax_logprob).squeeze()
     
-    def evaluate_actions(self, states, gelu_actions, softmax_actions):
-        gelu_logits, softmax_logits = self.forward(states)
+    def evaluate_actions(self, states, gelu_actions, softmax_actions, gelu_mask=None):
+        gelu_logits, softmax_logits = self.forward(states, gelu_mask=gelu_mask)
         
         gelu_dist = Categorical(logits=gelu_logits)
         softmax_dist = Categorical(logits=softmax_logits)
@@ -651,6 +667,335 @@ class DualHeadValueNetwork(nn.Module):
         return cost_weight * v_cost + acc_weight * v_acc
 
 
+# ==================== GTrXL PDF优化方案：GRU门控模块 ====================
+class GRUGate(nn.Module):
+    """
+    GTrXL 核心组件：GRU 门控机制（PDF 3.2节）
+    
+    用 GRU 的门控逻辑替代传统 Transformer 的加法残差连接 (x + sublayer(x))。
+    训练初期门控偏置使 z ≈ 0，子层输出被抑制，输入直通；
+    随着训练推进，门控逐渐打开，引入注意力/FFN 提取的特征。
+    """
+    def __init__(self, d_model):
+        super().__init__()
+        self.Wr = nn.Linear(d_model, d_model, bias=False)
+        self.Ur = nn.Linear(d_model, d_model, bias=False)
+        self.Wz = nn.Linear(d_model, d_model, bias=False)
+        self.Uz = nn.Linear(d_model, d_model, bias=False)
+        self.Wg = nn.Linear(d_model, d_model, bias=False)
+        self.Ug = nn.Linear(d_model, d_model, bias=False)
+        self.bg = nn.Parameter(torch.ones(d_model) * 2.0)
+
+    def forward(self, x, y):
+        """
+        Args:
+            x: (B, S, D) 直通路径输入（上一层输出）
+            y: (B, S, D) 子层输出（注意力或FFN的输出）
+        Returns:
+            (B, S, D) 门控融合后的输出
+        """
+        r = torch.sigmoid(self.Wr(y) + self.Ur(x))
+        z = torch.sigmoid(self.Wz(y) + self.Uz(x) - self.bg)
+        h_hat = torch.tanh(self.Wg(y) + self.Ug(r * x))
+        return (1 - z) * x + z * h_hat
+
+
+# ==================== GTrXL PDF优化方案：GTrXL Block ====================
+class GTrXLBlock(nn.Module):
+    """
+    单个 GTrXL Block（PDF 4.2节）
+    
+    结构：Pre-LayerNorm + CausalSelfAttention + GRU Gate
+         + Pre-LayerNorm + FFN + GRU Gate
+    
+    与标准 Transformer Block 的两个关键差异：
+    1. Pre-LN（恒等映射重排序）：LayerNorm 在子层之前，保证梯度直通
+    2. GRU Gate 替代残差加法：动态路由，训练初期自动旁路不稳定的子层输出
+    """
+    def __init__(self, d_model, n_heads, d_ff, dropout=0.1):
+        super().__init__()
+        self.ln1 = nn.LayerNorm(d_model)
+        self.attn = nn.MultiheadAttention(
+            d_model, n_heads, dropout=dropout, batch_first=True
+        )
+        self.gate1 = GRUGate(d_model)
+        
+        self.ln2 = nn.LayerNorm(d_model)
+        self.ff = nn.Sequential(
+            nn.Linear(d_model, d_ff),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_ff, d_model),
+            nn.Dropout(dropout)
+        )
+        self.gate2 = GRUGate(d_model)
+
+    def forward(self, x, attn_mask=None, key_padding_mask=None):
+        """
+        Args:
+            x: (B, S, D) 输入序列
+            attn_mask: (S, S) 因果掩码（上三角 = True 的 bool 矩阵）
+            key_padding_mask: (B, S) 填充掩码（True = 忽略）
+        Returns:
+            (B, S, D)
+        """
+        norm_x = self.ln1(x)
+        attn_out, _ = self.attn(
+            norm_x, norm_x, norm_x,
+            attn_mask=attn_mask,
+            key_padding_mask=key_padding_mask
+        )
+        x = self.gate1(x, attn_out)
+        
+        norm_x2 = self.ln2(x)
+        ff_out = self.ff(norm_x2)
+        x = self.gate2(x, ff_out)
+        return x
+
+
+# ==================== GTrXL PDF优化方案：GTrXL策略价值网络 ====================
+class GTrXLStrategyNetwork(nn.Module):
+    """
+    基于GTrXL的策略价值网络（Transformer PDF优化方案）
+    
+    替代 LSTMStrategyNetwork，解决 LSTM 的信息压缩瓶颈和长程依赖缺失问题。
+    
+    架构设计（PDF 3-4节）：
+    - 层级位置嵌入 (Embedding, 12→16)：感知当前网络深度
+    - 历史动作嵌入 (Embedding, 4→8 / 6→8)：自回归特性，记忆上一步决策
+    - 连续特征投影 (Linear, 6→32)：成本/预算/进度等实时特征
+    - N层GTrXL Block (d_model=64, n_heads=4)：因果自注意力 + GRU门控
+    - 多头Actor (GELU+Softmax logits)：独立动作输出
+    - Critic Head (标量Value)：状态价值估计
+    
+    与 LSTM 版本的关键差异：
+    - 无 hidden state：使用因果掩码自注意力替代递归隐状态
+    - 全局依赖：任意两层之间 O(1) 路径长度，精确建模非相邻层间关系
+    - Rollout 时递增构建 token 序列，训练时一次性处理完整 episode
+    """
+    def __init__(self, num_layers=12, d_model=GTRXL_D_MODEL,
+                 n_heads=GTRXL_N_HEADS, n_gtrxl_layers=GTRXL_N_LAYERS,
+                 d_ff=GTRXL_D_FF, dropout=GTRXL_DROPOUT):
+        super(GTrXLStrategyNetwork, self).__init__()
+        self.num_layers = num_layers
+        self.d_model = d_model
+        
+        # 1. 嵌入层（复用 LSTM 版本的维度设计）
+        self.embed_layer_idx = nn.Embedding(num_layers, LSTM_POS_DIM)
+        self.embed_prev_g = nn.Embedding(SOS_TOKEN_GELU + 1, LSTM_ACT_G_DIM)
+        self.embed_prev_s = nn.Embedding(SOS_TOKEN_SOFTMAX + 1, LSTM_ACT_S_DIM)
+        
+        # 2. 连续特征投影
+        self.fc_continuous = nn.Sequential(
+            nn.Linear(LSTM_CONT_DIM, LSTM_PROJ_DIM),
+            nn.LayerNorm(LSTM_PROJ_DIM),
+            nn.SiLU()
+        )
+        
+        # 3. 输入投影：将拼接后的嵌入投影到 d_model（如果维度不匹配）
+        token_input_dim = LSTM_POS_DIM + LSTM_ACT_G_DIM + LSTM_ACT_S_DIM + LSTM_PROJ_DIM  # 64
+        self.input_proj = nn.Identity() if token_input_dim == d_model else nn.Linear(token_input_dim, d_model)
+        
+        # 4. GTrXL 骨干网络
+        self.gtrxl_blocks = nn.ModuleList([
+            GTrXLBlock(d_model, n_heads, d_ff, dropout)
+            for _ in range(n_gtrxl_layers)
+        ])
+        self.ln_final = nn.LayerNorm(d_model)
+        
+        # 5. 多头策略网络 Actor
+        self.actor_head = nn.Sequential(
+            nn.Linear(d_model, 64),
+            nn.Tanh()
+        )
+        self.head_g = nn.Linear(64, 4)
+        self.head_s = nn.Linear(64, 5)
+        
+        # 6. 价值网络 Critic
+        self.critic_head = nn.Sequential(
+            nn.Linear(d_model, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+        
+        self._initialize_weights()
+        self._causal_mask_cache = {}
+    
+    def _initialize_weights(self):
+        """正交初始化"""
+        for module in [self.actor_head, self.critic_head, self.fc_continuous]:
+            for layer in module:
+                if isinstance(layer, nn.Linear):
+                    nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
+                    if layer.bias is not None:
+                        nn.init.constant_(layer.bias, 0.0)
+        
+        nn.init.orthogonal_(self.head_g.weight, gain=0.01)
+        nn.init.constant_(self.head_g.bias, 0.0)
+        nn.init.orthogonal_(self.head_s.weight, gain=0.01)
+        nn.init.constant_(self.head_s.bias, 0.0)
+        
+        if isinstance(self.input_proj, nn.Linear):
+            nn.init.orthogonal_(self.input_proj.weight, gain=1.0)
+            if self.input_proj.bias is not None:
+                nn.init.constant_(self.input_proj.bias, 0.0)
+        
+        for block in self.gtrxl_blocks:
+            for p in block.attn.in_proj_weight.chunk(3):
+                nn.init.orthogonal_(p)
+            nn.init.orthogonal_(block.attn.out_proj.weight)
+            for layer in block.ff:
+                if isinstance(layer, nn.Linear):
+                    nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
+                    if layer.bias is not None:
+                        nn.init.constant_(layer.bias, 0.0)
+    
+    def _get_causal_mask(self, seq_len, device):
+        """生成因果掩码（上三角 = True，禁止看到未来 token）"""
+        if seq_len not in self._causal_mask_cache or self._causal_mask_cache[seq_len].device != device:
+            mask = torch.triu(torch.ones(seq_len, seq_len, device=device, dtype=torch.bool), diagonal=1)
+            self._causal_mask_cache[seq_len] = mask
+        return self._causal_mask_cache[seq_len]
+    
+    def _build_tokens(self, cont_features, layer_indices, prev_g_actions, prev_s_actions):
+        """
+        构建 token 序列
+        
+        Args:
+            cont_features: (B, S, 6) 连续特征
+            layer_indices: (B, S) long
+            prev_g_actions: (B, S) long
+            prev_s_actions: (B, S) long
+        Returns:
+            tokens: (B, S, d_model)
+        """
+        emb_l = self.embed_layer_idx(layer_indices)
+        emb_pg = self.embed_prev_g(prev_g_actions)
+        emb_ps = self.embed_prev_s(prev_s_actions)
+        feat_c = self.fc_continuous(cont_features)
+        
+        token_input = torch.cat([emb_l, emb_pg, emb_ps, feat_c], dim=-1)
+        return self.input_proj(token_input)
+    
+    def forward(self, cont_features, layer_indices, prev_g_actions, prev_s_actions,
+                gelu_mask=None, key_padding_mask=None):
+        """
+        全序列前向传播
+        
+        Args:
+            cont_features: (B, S, 6) 连续特征
+            layer_indices: (B, S) long
+            prev_g_actions: (B, S) long
+            prev_s_actions: (B, S) long
+            gelu_mask: (B, S, 4) bool, True=可选
+            key_padding_mask: (B, S) bool, True=填充位置（忽略）
+        
+        Returns:
+            logits_g: (B, S, 4)
+            logits_s: (B, S, 5)
+            values: (B, S)
+        """
+        tokens = self._build_tokens(cont_features, layer_indices, prev_g_actions, prev_s_actions)
+        seq_len = tokens.size(1)
+        causal_mask = self._get_causal_mask(seq_len, tokens.device)
+        
+        x = tokens
+        for block in self.gtrxl_blocks:
+            x = block(x, attn_mask=causal_mask, key_padding_mask=key_padding_mask)
+        x = self.ln_final(x)
+        
+        actor_feat = self.actor_head(x)
+        logits_g = self.head_g(actor_feat)
+        logits_s = self.head_s(actor_feat)
+        
+        if gelu_mask is not None:
+            logits_g = logits_g.masked_fill(~gelu_mask, float('-inf'))
+        
+        values = self.critic_head(x).squeeze(-1)
+        
+        return logits_g, logits_s, values
+    
+    def get_action_and_logprob(self, cont_features, layer_indices, prev_g_actions, prev_s_actions,
+                                return_probs=False, gelu_mask=None, key_padding_mask=None):
+        """
+        序列前向推理，取最后一个 token 的输出做决策（用于 Rollout）
+        
+        在 Rollout 时，每一步将新 token 追加到序列中，将递增的完整序列传入，
+        取最后一个时间步的输出做动作采样。
+        
+        Args:
+            cont_features: (1, S, 6) 当前已构建的 token 序列（1 到 S 步）
+            layer_indices: (1, S) long
+            prev_g_actions: (1, S) long
+            prev_s_actions: (1, S) long
+            return_probs: 是否返回概率分布
+            gelu_mask: (1, S, 4) bool
+            key_padding_mask: (1, S) bool
+        
+        Returns:
+            action_g, action_s, logprob, value, [g_probs, s_probs]
+        """
+        logits_g, logits_s, values = self.forward(
+            cont_features, layer_indices, prev_g_actions, prev_s_actions,
+            gelu_mask=gelu_mask, key_padding_mask=key_padding_mask
+        )
+        
+        lg = logits_g[:, -1, :]  # (1, 4) 取最后一个时间步
+        ls = logits_s[:, -1, :]  # (1, 5)
+        val = values[:, -1]      # (1,)
+        
+        lg = lg.squeeze(0)  # (4,)
+        ls = ls.squeeze(0)  # (5,)
+        val = val.squeeze(0)  # scalar
+        
+        dist_g = Categorical(logits=lg)
+        dist_s = Categorical(logits=ls)
+        
+        action_g = dist_g.sample()
+        action_s = dist_s.sample()
+        
+        logprob = dist_g.log_prob(action_g) + dist_s.log_prob(action_s)
+        
+        if return_probs:
+            g_probs = torch.softmax(lg, dim=-1)
+            s_probs = torch.softmax(ls, dim=-1)
+            return action_g, action_s, logprob, val, g_probs, s_probs
+        
+        return action_g, action_s, logprob, val
+    
+    def evaluate_actions(self, cont_features, layer_indices, prev_g_actions, prev_s_actions,
+                         actions_g, actions_s, gelu_mask=None):
+        """
+        评估动作（用于PPO更新，完整 episode 一次前向传播）
+        
+        Args:
+            cont_features: (B, 12, 6)
+            layer_indices: (B, 12) long
+            prev_g_actions: (B, 12) long
+            prev_s_actions: (B, 12) long
+            actions_g: (B, 12) long
+            actions_s: (B, 12) long
+            gelu_mask: (B, 12, 4) bool
+        
+        Returns:
+            logprobs: (B, 12)
+            entropy: (B, 12)
+            values: (B, 12)
+        """
+        logits_g, logits_s, values = self.forward(
+            cont_features, layer_indices, prev_g_actions, prev_s_actions,
+            gelu_mask=gelu_mask
+        )
+        
+        dist_g = Categorical(logits=logits_g)
+        dist_s = Categorical(logits=logits_s)
+        
+        logprobs = dist_g.log_prob(actions_g) + dist_s.log_prob(actions_s)
+        entropy = dist_g.entropy() + dist_s.entropy()
+        
+        return logprobs, entropy, values
+
+
 # ==================== LSTM PDF优化方案：LSTM策略价值网络 ====================
 class LSTMStrategyNetwork(nn.Module):
     """
@@ -674,7 +1019,7 @@ class LSTMStrategyNetwork(nn.Module):
         
         # 1. 嵌入层（PDF 3.1）
         self.embed_layer_idx = nn.Embedding(num_layers, LSTM_POS_DIM)            # 层索引 0-11
-        self.embed_prev_g = nn.Embedding(SOS_TOKEN_GELU + 1, LSTM_ACT_G_DIM)    # 0-2动作 + 3=SOS
+        self.embed_prev_g = nn.Embedding(SOS_TOKEN_GELU + 1, LSTM_ACT_G_DIM)    # 0-3动作 + 4=SOS
         self.embed_prev_s = nn.Embedding(SOS_TOKEN_SOFTMAX + 1, LSTM_ACT_S_DIM) # 0-4动作 + 5=SOS
         
         # 2. 连续特征投影（PDF 3.1.3 + 3.1.4）
@@ -701,7 +1046,7 @@ class LSTMStrategyNetwork(nn.Module):
             nn.Linear(hidden_dim, 64),
             nn.Tanh()
         )
-        self.head_g = nn.Linear(64, 3)   # GELU logits (3个动作)
+        self.head_g = nn.Linear(64, 4)   # GELU logits (4个动作: degree 4/2/1/0)
         self.head_s = nn.Linear(64, 5)   # Softmax logits (5个动作)
         
         # 5. 价值网络 Critic（PDF 3.3.2）
@@ -740,19 +1085,21 @@ class LSTMStrategyNetwork(nn.Module):
                 param.data.zero_()
                 param.data[n // 4: n // 2].fill_(1.0)  # forget gate = 1.0
     
-    def forward(self, cont_features, layer_indices, prev_g_actions, prev_s_actions, hidden=None):
+    def forward(self, cont_features, layer_indices, prev_g_actions, prev_s_actions, hidden=None, gelu_mask=None):
         """
         全序列前向传播（支持Full-Episode BPTT, PDF 4.2）
         
         Args:
             cont_features: (Batch, Seq, 6) 连续特征
             layer_indices: (Batch, Seq) long 层索引
-            prev_g_actions: (Batch, Seq) long 前一步GELU动作（SOS=3）
+            prev_g_actions: (Batch, Seq) long 前一步GELU动作（SOS=4）
             prev_s_actions: (Batch, Seq) long 前一步Softmax动作（SOS=5）
             hidden: LSTM隐藏状态元组 (h_0, c_0)，None则零初始化
+            gelu_mask: (Batch, Seq, 4) bool Tensor, True=该动作可选。
+                       None 时不做 mask（所有动作可选）。
         
         Returns:
-            logits_g: (Batch, Seq, 3) GELU动作logits
+            logits_g: (Batch, Seq, 4) GELU动作logits
             logits_s: (Batch, Seq, 5) Softmax动作logits
             values: (Batch, Seq) 价值估计
             new_hidden: 更新后的隐藏状态
@@ -772,15 +1119,19 @@ class LSTMStrategyNetwork(nn.Module):
         
         # Actor解码（PDF 3.3.1）
         actor_feat = self.actor_head(lstm_out)  # (B, S, 64)
-        logits_g = self.head_g(actor_feat)      # (B, S, 3)
+        logits_g = self.head_g(actor_feat)      # (B, S, 4)
         logits_s = self.head_s(actor_feat)      # (B, S, 5)
+        
+        # Degree 0 action masking: 不合格层的 degree 0 logit 设为 -inf
+        if gelu_mask is not None:
+            logits_g = logits_g.masked_fill(~gelu_mask, float('-inf'))
         
         # Critic解码（PDF 3.3.2）
         values = self.critic_head(lstm_out).squeeze(-1)  # (B, S)
         
         return logits_g, logits_s, values, new_hidden
     
-    def get_action_and_logprob(self, cont_feat, layer_idx, prev_g, prev_s, hidden, return_probs=False):
+    def get_action_and_logprob(self, cont_feat, layer_idx, prev_g, prev_s, hidden, return_probs=False, gelu_mask=None):
         """
         单步前向推理（用于Rollout自回归采样, PDF 5.2）
         
@@ -791,12 +1142,13 @@ class LSTMStrategyNetwork(nn.Module):
             prev_s: (1, 1) long 前一步Softmax动作
             hidden: LSTM隐藏状态
             return_probs: 是否返回概率分布
+            gelu_mask: (1, 1, 4) bool Tensor, True=该动作可选
         
         Returns:
             action_g, action_s, logprob, value, new_hidden, [g_probs, s_probs]
         """
         logits_g, logits_s, values, new_hidden = self.forward(
-            cont_feat, layer_idx, prev_g, prev_s, hidden
+            cont_feat, layer_idx, prev_g, prev_s, hidden, gelu_mask=gelu_mask
         )
         
         # Squeeze: (1,1,D) -> (D,)
@@ -820,7 +1172,7 @@ class LSTMStrategyNetwork(nn.Module):
         return action_g, action_s, logprob, val, new_hidden
     
     def evaluate_actions(self, cont_features, layer_indices, prev_g_actions, prev_s_actions, 
-                         actions_g, actions_s):
+                         actions_g, actions_s, gelu_mask=None):
         """
         评估动作（用于PPO更新时的Full-Episode BPTT, PDF 4.2）
         
@@ -831,6 +1183,7 @@ class LSTMStrategyNetwork(nn.Module):
             prev_s_actions: (Batch, 12) 前一步Softmax动作
             actions_g: (Batch, 12) 实际采取的GELU动作
             actions_s: (Batch, 12) 实际采取的Softmax动作
+            gelu_mask: (Batch, 12, 4) bool Tensor, True=该动作可选
         
         Returns:
             logprobs: (Batch, 12)
@@ -838,7 +1191,7 @@ class LSTMStrategyNetwork(nn.Module):
             values: (Batch, 12)
         """
         logits_g, logits_s, values, _ = self.forward(
-            cont_features, layer_indices, prev_g_actions, prev_s_actions
+            cont_features, layer_indices, prev_g_actions, prev_s_actions, gelu_mask=gelu_mask
         )
         
         dist_g = Categorical(logits=logits_g)
@@ -958,10 +1311,11 @@ class RecurrentRolloutBuffer:
             'rewards': [],         # (Step,) 奖励
             'values': [],          # (Step,) 价值估计
             'dones': [],           # (Step,) 终止标记
+            'gelu_masks': [],      # (Step, 4) GELU动作掩码
         }
     
     def add_step(self, cont_feat, layer_idx, prev_g, prev_s, 
-                 action_g, action_s, logprob, reward, value, done):
+                 action_g, action_s, logprob, reward, value, done, gelu_mask=None):
         """添加一步数据到当前Episode"""
         self._current['cont_features'].append(cont_feat)
         self._current['layer_indices'].append(layer_idx)
@@ -973,6 +1327,8 @@ class RecurrentRolloutBuffer:
         self._current['rewards'].append(reward)
         self._current['values'].append(value)
         self._current['dones'].append(done)
+        if gelu_mask is not None:
+            self._current['gelu_masks'].append(gelu_mask)
     
     def end_episode(self):
         """结束当前Episode，加入存储"""
@@ -1043,8 +1399,17 @@ class RecurrentRolloutBuffer:
             ep['dones'] for ep in self.episodes
         ], dtype=torch.float32).to(device)
         
+        # GELU动作掩码: (N_eps, 12, 4) bool
+        has_masks = all(len(ep.get('gelu_masks', [])) > 0 for ep in self.episodes)
+        if has_masks:
+            gelu_masks = torch.stack([
+                torch.tensor(np.array(ep['gelu_masks']), dtype=torch.bool) for ep in self.episodes
+            ]).to(device)
+        else:
+            gelu_masks = None
+        
         return (cont_features, layer_indices, prev_g_actions, prev_s_actions,
-                actions_g, actions_s, logprobs, rewards, values, dones)
+                actions_g, actions_s, logprobs, rewards, values, dones, gelu_masks)
 
 
 class TransformerOptEnv:
@@ -1058,7 +1423,8 @@ class TransformerOptEnv:
     - 敏锐度优化PDF：预算感知状态特征、差分奖励、对数障碍函数、课程学习
     """
     def __init__(self, total_layers, baseline_cost, baseline_metrics, evaluator,
-                 constraint_limits=None, prev_metrics=None, num_metrics=2):
+                 constraint_limits=None, prev_metrics=None, num_metrics=2,
+                 gelu_degree0_eligible=None):
         """
         初始化环境
         
@@ -1067,12 +1433,20 @@ class TransformerOptEnv:
                             用于课程学习的动态约束调整
         - prev_metrics: 上一episode结束时的指标（用于差分奖励计算）
         - num_metrics: 当前数据集的评估指标数量 (1 或 2)
+        - gelu_degree0_eligible: np.ndarray[bool], shape=(total_layers,)
+                                 每层是否有资格使用 degree 0 动作
         """
         self.total_layers = total_layers
         self.baseline_cost = baseline_cost  # 72.0 for 12 layers
         self.baseline_loss, self.baseline_p, self.baseline_s = baseline_metrics
         self.evaluator = evaluator
         self.num_metrics = num_metrics
+        
+        # Degree 0 资格掩码
+        if gelu_degree0_eligible is None:
+            self.gelu_degree0_eligible = np.zeros(total_layers, dtype=bool)
+        else:
+            self.gelu_degree0_eligible = gelu_degree0_eligible
         
         # 敏锐度优化PDF 3.3：约束阈值（用于预算感知和课程学习）
         if constraint_limits is None:
@@ -1107,8 +1481,8 @@ class TransformerOptEnv:
         
         # PDF优化方案一：显式历史编码
         # 动作归一化映射（将degree映射到[0,1]区间）
-        # GELU: degree 4->0.0, 2->0.5, 1->1.0 (高精度->低精度)
-        self.gelu_degree_to_norm = {4: 0.0, 2: 0.5, 1: 1.0}
+        # GELU: degree 4->0.0, 2->0.5, 1->1.0, 0->1.25 (高精度->低精度)
+        self.gelu_degree_to_norm = {4: 0.0, 2: 0.5, 1: 1.0, 0: 1.25}
         # Softmax: degree 6->0.0, 5->0.25, 4->0.5, 3->0.75, 2->1.0
         self.softmax_degree_to_norm = {6: 0.0, 5: 0.25, 4: 0.5, 3: 0.75, 2: 1.0}
         
@@ -1136,6 +1510,21 @@ class TransformerOptEnv:
         self.softmax_history = np.full(self.total_layers, HISTORY_MASK_VALUE, dtype=np.float32)
         
         return self._get_state()
+    
+    def get_gelu_action_mask(self, layer_idx=None):
+        """
+        返回指定层的 GELU 动作掩码 (4-dim bool)。
+        True = 该动作可选, False = 被禁止。
+        动作索引: 0=degree4, 1=degree2, 2=degree1, 3=degree0
+        
+        如果 layer_idx 为 None，使用 self.current_layer。
+        """
+        if layer_idx is None:
+            layer_idx = self.current_layer
+        mask = np.array([True, True, True, False], dtype=bool)
+        if layer_idx < len(self.gelu_degree0_eligible) and self.gelu_degree0_eligible[layer_idx]:
+            mask[3] = True
+        return mask
     
     def _get_state(self):
         """
@@ -1471,7 +1860,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.is_regression = self._detect_task_type()
         self._log_task_type()
         
-        # 训练集用于RL训练，测试集用于最终评估
+        # 训练集用于RL训练，验证集用于最终评估
         self.dataloader_train = DataLoader(train_data, batch_size=16, shuffle=False, collate_fn=data_collator)
         self.dataloader_test = DataLoader(test_data, batch_size=16, shuffle=False, collate_fn=data_collator)
         
@@ -1491,7 +1880,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.total_layers = len(eval('self.model.' + self.layers_attribute))
         
         # --- 密文代价模型 ---
-        self.GELU_COST_MAP = {4: 3.0, 2: 2.5, 1: 1.0}
+        self.GELU_COST_MAP = {4: 3.0, 2: 2.5, 1: 1.0, 0: -1.0}
         self.SOFTMAX_COST_MAP = {6: 3.0, 5: 2.5, 4: 2.0, 3: 1.5, 2: 1.0}
 
         # 搜索状态初始化
@@ -1618,38 +2007,31 @@ class LayerImportanceEvaluator(TrainerCallback):
     
     def update_hyperparameters(self, optimizer, episode):
         """
-        敏锐度优化PDF：超参数调度
-        - 熵系数：线性衰减（0.05 -> 0.001）
-        - 学习率：Actor 和 Critic 分离（Critic 是 Actor 的 10 倍）
+        超参数调度（兼容 GTrXL 和 LSTM）
+        
+        - 熵系数：线性衰减（0.05 -> 0.001），下限为 GTRXL_ENTROPY_LOWER_BOUND
+        - 学习率：GTrXL模式下不在此处设置（由 ppo_update_gtrxl 的 Warmup 机制控制）；
+                  读取 optimizer 当前 LR 用于日志记录
         - 课程学习：动态调整约束阈值
         """
         self.current_episode = episode
         progress = episode / self.total_episodes
         
-        # ==================== 敏锐度优化PDF：熵系数线性衰减 ====================
-        # 从 0.05（高探索）线性衰减到 0.001（强制收敛）
+        # 熵系数线性衰减，但不低于最小熵约束下界（PDF 4.3）
         new_entropy = PPO_ENTROPY_START - (PPO_ENTROPY_START - PPO_ENTROPY_END) * progress
+        new_entropy = max(new_entropy, GTRXL_ENTROPY_LOWER_BOUND)
         self.current_entropy_coef = new_entropy
         
-        # ==================== 敏锐度优化PDF：学习率调度 ====================
-        # 注意：如果使用分离优化器，这里的 optimizer 应该是一个字典
-        # 如果使用统一优化器，保持向后兼容
+        # 学习率：GTrXL 的 Warmup 由 ppo_update_gtrxl 在每次 PPO 更新时设置，
+        # 此处仅读取当前优化器的学习率用于日志记录
         if hasattr(optimizer, 'param_groups'):
-            # 统一优化器（向后兼容）
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = PPO_LR_ACTOR
-            self.current_lr = PPO_LR_ACTOR
+            self.current_lr = optimizer.param_groups[0]['lr']
         elif isinstance(optimizer, dict):
-            # 分离优化器（敏锐度优化PDF推荐）
-            if 'actor' in optimizer:
-                for param_group in optimizer['actor'].param_groups:
-                    param_group['lr'] = PPO_LR_ACTOR
-            if 'critic' in optimizer:
-                for param_group in optimizer['critic'].param_groups:
-                    param_group['lr'] = PPO_LR_CRITIC
-            self.current_lr = PPO_LR_ACTOR
+            self.current_lr = optimizer.get('actor', optimizer.get('critic', {}))
+            if hasattr(self.current_lr, 'param_groups'):
+                self.current_lr = self.current_lr.param_groups[0]['lr']
         
-        # ==================== 敏锐度优化PDF：课程学习阶段更新 ====================
+        # 课程学习阶段更新
         self._update_curriculum_phase(episode)
         
         return self.current_lr, new_entropy
@@ -1770,6 +2152,63 @@ class LayerImportanceEvaluator(TrainerCallback):
             except: continue
         return 'bert.encoder.layer'
 
+    def analyze_gelu_distribution(self):
+        """
+        分析每层 GELU(x) 输入 x 的分布，判断哪些层有资格使用 degree 0。
+        
+        通过在每层的 intermediate_act_fn 上安装前向钩子，运行一次训练集前向传播，
+        统计 x 落在 [-2.7, 0) 区间的比例。若 >= GELU_DEGREE0_THRESHOLD (80%)，
+        则该层有资格使用 degree 0 动作。
+        
+        Returns:
+            gelu_degree0_eligible: np.ndarray[bool], shape=(total_layers,)
+        """
+        interval_counts = [np.zeros(4, dtype=np.int64) for _ in range(self.total_layers)]
+        hooks = []
+        layers = eval('self.model.' + self.layers_attribute)
+
+        def _make_hook(layer_idx):
+            @torch.no_grad()
+            def hook_fn(module, input_tensor, output_tensor):
+                x = input_tensor[0].detach().reshape(-1)
+                interval_counts[layer_idx][0] += (x < -2.7).sum().item()
+                interval_counts[layer_idx][1] += ((x >= -2.7) & (x < 0)).sum().item()
+                interval_counts[layer_idx][2] += ((x >= 0) & (x <= 2.7)).sum().item()
+                interval_counts[layer_idx][3] += (x > 2.7).sum().item()
+            return hook_fn
+
+        for i, layer in enumerate(layers):
+            act_fn = layer.intermediate.intermediate_act_fn
+            h = act_fn.register_forward_hook(_make_hook(i)) if isinstance(act_fn, nn.Module) else None
+            if h is not None:
+                hooks.append(h)
+            else:
+                hooks.append(
+                    layer.intermediate.register_forward_hook(
+                        lambda mod, inp, out, idx=i: _make_hook(idx)(mod, inp, out)
+                    )
+                )
+
+        self.model.eval()
+        self.model.to(self.device)
+        with torch.no_grad():
+            for batch in self.dataloader_train:
+                batch = {k: v.to(self.device) for k, v in batch.items()}
+                self.model(**batch)
+
+        for h in hooks:
+            h.remove()
+
+        eligible = np.zeros(self.total_layers, dtype=bool)
+        for i in range(self.total_layers):
+            ic = interval_counts[i]
+            total = ic.sum()
+            if total > 0:
+                neg_ratio = ic[1] / total
+                eligible[i] = neg_ratio >= GELU_DEGREE0_THRESHOLD
+
+        return eligible, interval_counts
+
     def log(self, message):
         print(message, flush=True)
         with open(self.log_file, "a") as f:
@@ -1782,11 +2221,11 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     def apply_configuration(self, gelu_degrees, softmax_degrees):
         handler_layer_name = "model." + self.layers_attribute
-        # GELU
-        gelu_map = {d: [] for d in [1, 2, 4]} 
+        # GELU (including degree 0)
+        gelu_map = {d: [] for d in [0, 1, 2, 4]} 
         for idx, deg in enumerate(gelu_degrees):
             if deg in gelu_map: gelu_map[deg].append(idx)
-        for d in [1, 2, 4]:
+        for d in [0, 1, 2, 4]:
             if gelu_map[d]:
                 self.reversible_handler.replace_layer_gelu(gelu_map[d], handler_layer_name, degree=d)
         # Softmax
@@ -1797,44 +2236,34 @@ class LayerImportanceEvaluator(TrainerCallback):
             if softmax_map[d]:
                 self.reversible_handler.replace_layer_softmax(softmax_map[d], handler_layer_name, degree=d)
 
-    def evaluate_model(self, gelu_degrees, softmax_degrees, use_train=True):
-        """评估模型，use_train=True时使用训练集，否则使用测试集"""
-        self.apply_configuration(gelu_degrees, softmax_degrees)
+    def _run_evaluation(self, dataloader, use_train=False):
+        """在当前模型上运行评估循环（不修改配置），用于无近似对照组等。"""
         self.model.eval()
         self.model.to(self.device)
-        
-        dataloader = self.dataloader_train if use_train else self.dataloader_test
-        
         total_loss = 0.0
         all_preds, all_labels = [], []
         batch_times = []
-        
         if torch.cuda.is_available():
             dummy = next(iter(dataloader))
             dummy = {k: v.to(self.device) for k, v in dummy.items()}
             with torch.no_grad(): _ = self.model(**dummy)
             torch.cuda.synchronize()
-
         with torch.no_grad():
             for batch in dataloader:
                 batch = {k: v.to(self.device) for k, v in batch.items()}
                 labels = batch["labels"].detach().cpu().numpy()
-                
                 if torch.cuda.is_available(): torch.cuda.synchronize()
                 start_time = time.time()
                 outputs = self.model(**batch)
                 if torch.cuda.is_available(): torch.cuda.synchronize()
                 batch_times.append((time.time() - start_time) * 1000.0)
-                
                 if outputs.loss is not None: total_loss += outputs.loss.item()
                 logits = outputs.logits.squeeze().detach().cpu().numpy()
                 if np.ndim(logits) == 0: logits = [logits]
                 all_preds.extend(logits)
                 all_labels.extend(labels)
-
         avg_loss = total_loss / len(dataloader)
         avg_time = sum(batch_times) / len(batch_times)
-        # ==================== 根据数据集细分计算不同指标 ====================
         ds = self.dataset_key
         try:
             if ds == 'stsb':
@@ -1850,22 +2279,25 @@ class LayerImportanceEvaluator(TrainerCallback):
                 metric2 = metric1
             elif ds == 'mnli':
                 pred_classes = self._logits_to_classes(all_preds)
-                metric1 = accuracy_score(all_labels, pred_classes)  # Matched Accuracy
-                # Mismatched Accuracy: 需要在 mismatched 数据上评估
+                metric1 = accuracy_score(all_labels, pred_classes)
                 if not use_train and self.dataloader_test_mm is not None:
                     metric2 = self._evaluate_accuracy_on_dataloader(self.dataloader_test_mm)
                 else:
                     metric2 = metric1
             else:
-                # sst2, qnli, rte, wnli: 仅 accuracy
                 pred_classes = self._logits_to_classes(all_preds)
                 metric1 = accuracy_score(all_labels, pred_classes)
                 metric2 = metric1
         except Exception as e:
             print(f"[Warning] Failed to compute metrics for dataset '{ds}': {e}")
             metric1, metric2 = 0.0, 0.0
-
         return avg_loss, metric1, metric2, avg_time
+
+    def evaluate_model(self, gelu_degrees, softmax_degrees, use_train=True):
+        """评估模型，use_train=True时使用训练集，否则使用验证集"""
+        self.apply_configuration(gelu_degrees, softmax_degrees)
+        dataloader = self.dataloader_train if use_train else self.dataloader_test
+        return self._run_evaluation(dataloader, use_train=use_train)
 
     @staticmethod
     def _logits_to_classes(all_preds):
@@ -2069,7 +2501,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         
         # 获取所有episode的batch数据
         (cont_features, layer_indices, prev_g_actions, prev_s_actions,
-         actions_g, actions_s, old_logprobs, rewards, values, dones) = buffer.get_batch(device)
+         actions_g, actions_s, old_logprobs, rewards, values, dones, gelu_masks) = buffer.get_batch(device)
         
         n_eps = cont_features.size(0)
         seq_len = cont_features.size(1)
@@ -2128,10 +2560,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                 mb_adv = advantages[mb_idx]
                 mb_ret = returns_normalized[mb_idx]
                 mb_old_val = values_normalized[mb_idx]
+                mb_gelu_mask = gelu_masks[mb_idx] if gelu_masks is not None else None
                 
                 # Full-Episode BPTT前向传播（LSTM PDF 4.2）
                 new_logprobs, entropy, new_values_raw = lstm_net.evaluate_actions(
-                    mb_cont, mb_layer, mb_prev_g, mb_prev_s, mb_act_g, mb_act_s
+                    mb_cont, mb_layer, mb_prev_g, mb_prev_s, mb_act_g, mb_act_s,
+                    gelu_mask=mb_gelu_mask
                 )
                 
                 # 展平为 (mb_size * 12,) 用于损失计算
@@ -2174,6 +2608,140 @@ class LayerImportanceEvaluator(TrainerCallback):
                 last_policy_loss = policy_loss.item()
                 last_value_loss = value_loss.item()
                 last_entropy = entropy_flat.mean().item()
+        
+        return last_policy_loss, last_value_loss, last_entropy
+
+    def ppo_update_gtrxl(self, gtrxl_net, optimizer, buffer, device,
+                          mini_batch_episodes=GTRXL_MINI_BATCH_EPISODES, entropy_coef=None,
+                          ppo_update_step=0):
+        """
+        GTrXL版PPO更新（Transformer PDF 4.2-4.3）
+        
+        与LSTM版的关键差异：
+        - 学习率线性预热（前 GTRXL_WARMUP_STEPS 步）
+        - 最小熵约束：当策略熵低于下界时，动态提升熵正则化系数
+        - evaluate_actions 无 hidden state，因果掩码自动处理时序依赖
+        
+        Args:
+            gtrxl_net: GTrXL策略价值网络
+            optimizer: 优化器
+            buffer: RecurrentRolloutBuffer
+            device: 设备
+            mini_batch_episodes: 每个mini-batch包含的episode数
+            entropy_coef: 动态熵系数
+            ppo_update_step: 当前PPO更新步数（用于学习率Warmup）
+        """
+        if entropy_coef is None:
+            entropy_coef = self.get_current_entropy_coef()
+        
+        # 学习率 Warmup（PDF 4.3）
+        if ppo_update_step < GTRXL_WARMUP_STEPS:
+            warmup_factor = (ppo_update_step + 1) / GTRXL_WARMUP_STEPS
+            current_lr = PPO_LR_INITIAL * warmup_factor
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = current_lr
+        
+        (cont_features, layer_indices, prev_g_actions, prev_s_actions,
+         actions_g, actions_s, old_logprobs, rewards, values, dones, gelu_masks) = buffer.get_batch(device)
+        
+        n_eps = cont_features.size(0)
+        
+        all_advantages = []
+        all_returns = []
+        for i in range(n_eps):
+            ep_rewards = rewards[i].cpu().numpy()
+            ep_values = values[i].cpu().numpy()
+            ep_dones = dones[i].cpu().numpy()
+            adv, ret = self.compute_gae(ep_rewards, ep_values, ep_dones)
+            all_advantages.append(adv)
+            all_returns.append(ret)
+        
+        advantages = torch.stack(all_advantages).to(device)
+        returns = torch.stack(all_returns).to(device)
+        
+        adv_flat = advantages.reshape(-1)
+        advantages = (advantages - adv_flat.mean()) / (adv_flat.std() + 1e-8)
+        
+        self.return_normalizer.update(returns)
+        returns_normalized = torch.tensor(
+            self.return_normalizer.normalize(returns.cpu().numpy()),
+            dtype=torch.float32
+        ).to(device)
+        values_normalized = torch.tensor(
+            self.return_normalizer.normalize(values.cpu().numpy()),
+            dtype=torch.float32
+        ).to(device)
+        
+        last_policy_loss = 0.0
+        last_value_loss = 0.0
+        last_entropy = 0.0
+        
+        for epoch in range(PPO_K_EPOCHS):
+            ep_indices = torch.randperm(n_eps)
+            
+            for start in range(0, n_eps, mini_batch_episodes):
+                end = min(start + mini_batch_episodes, n_eps)
+                mb_idx = ep_indices[start:end]
+                
+                mb_cont = cont_features[mb_idx]
+                mb_layer = layer_indices[mb_idx]
+                mb_prev_g = prev_g_actions[mb_idx]
+                mb_prev_s = prev_s_actions[mb_idx]
+                mb_act_g = actions_g[mb_idx]
+                mb_act_s = actions_s[mb_idx]
+                mb_old_lp = old_logprobs[mb_idx]
+                mb_adv = advantages[mb_idx]
+                mb_ret = returns_normalized[mb_idx]
+                mb_old_val = values_normalized[mb_idx]
+                mb_gelu_mask = gelu_masks[mb_idx] if gelu_masks is not None else None
+                
+                new_logprobs, entropy, new_values_raw = gtrxl_net.evaluate_actions(
+                    mb_cont, mb_layer, mb_prev_g, mb_prev_s, mb_act_g, mb_act_s,
+                    gelu_mask=mb_gelu_mask
+                )
+                
+                new_logprobs_flat = new_logprobs.reshape(-1)
+                entropy_flat = entropy.reshape(-1)
+                new_values_flat = new_values_raw.reshape(-1)
+                mb_old_lp_flat = mb_old_lp.reshape(-1)
+                mb_adv_flat = mb_adv.reshape(-1)
+                mb_ret_flat = mb_ret.reshape(-1)
+                mb_old_val_flat = mb_old_val.reshape(-1)
+                
+                ratios = torch.exp(new_logprobs_flat - mb_old_lp_flat)
+                surr1 = ratios * mb_adv_flat
+                surr2 = torch.clamp(ratios, 1 - PPO_EPS_CLIP, 1 + PPO_EPS_CLIP) * mb_adv_flat
+                policy_loss = -torch.min(surr1, surr2).mean()
+                
+                new_values_norm = (new_values_flat - self.return_normalizer.mean) / self.return_normalizer.std
+                value_clipped = mb_old_val_flat + torch.clamp(
+                    new_values_norm - mb_old_val_flat,
+                    -VALUE_CLIP_RANGE, VALUE_CLIP_RANGE
+                )
+                huber_loss_fn = nn.HuberLoss(reduction='none', delta=1.0)
+                vl_unclipped = huber_loss_fn(new_values_norm, mb_ret_flat)
+                vl_clipped = huber_loss_fn(value_clipped, mb_ret_flat)
+                value_loss = torch.max(vl_unclipped, vl_clipped).mean()
+                
+                # 最小熵约束（PDF 4.3）：当策略熵低于下界时提升熵正则化
+                mean_entropy = entropy_flat.mean()
+                effective_entropy_coef = entropy_coef
+                if mean_entropy.item() < GTRXL_ENTROPY_LOWER_BOUND:
+                    entropy_deficit = GTRXL_ENTROPY_LOWER_BOUND - mean_entropy.item()
+                    effective_entropy_coef = entropy_coef + 10.0 * entropy_deficit
+                
+                entropy_loss = -mean_entropy
+                
+                loss = policy_loss + PPO_VALUE_COEF * value_loss + effective_entropy_coef * entropy_loss
+                
+                optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(gtrxl_net.parameters(), 0.5)
+                optimizer.step()
+                
+                last_policy_loss = policy_loss.item()
+                last_value_loss = value_loss.item()
+                last_entropy = mean_entropy.item()
         
         return last_policy_loss, last_value_loss, last_entropy
 
@@ -2228,6 +2796,22 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.log(f"Constraints (based on {'Validation' if USE_VALIDATION_FOR_REWARD else 'Training'} Set):")
         self.log(f"  {self._fmt_constraints(limit_loss, limit_p, limit_s)}")
 
+        # ---------------------------------------------------------
+        # Phase 1.5: GELU Distribution Analysis (判断 degree 0 资格)
+        # ---------------------------------------------------------
+        self.log("\n--- Phase 1.5: GELU Input Distribution Analysis ---")
+        self.log(f"Threshold: [-2.7, 0) interval >= {GELU_DEGREE0_THRESHOLD*100:.0f}% -> eligible for degree 0")
+        gelu_degree0_eligible, gelu_interval_counts = self.analyze_gelu_distribution()
+        for i in range(self.total_layers):
+            ic = gelu_interval_counts[i]
+            total = ic.sum()
+            if total > 0:
+                pcts = ic / total * 100
+                status = "ELIGIBLE" if gelu_degree0_eligible[i] else "NOT eligible"
+                self.log(f"  Layer {i}: [-2.7,0)={pcts[1]:.2f}% | <-2.7={pcts[0]:.2f}% | [0,2.7]={pcts[2]:.2f}% | >2.7={pcts[3]:.2f}% -> {status}")
+        eligible_count = gelu_degree0_eligible.sum()
+        self.log(f"Summary: {eligible_count}/{self.total_layers} layers eligible for GELU degree 0")
+
         # 供绘图使用：仅 RL 时会填充
         episode_rewards = []
         episode_losses = []
@@ -2247,18 +2831,23 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f.write("=== PPO StepInfo 中间结果日志 ===\n")
                 f.write("每步包含: step_global, episode_id, layer_index, state_vector, curr_gelu_degree, curr_softmax_degree, gelu_prob_dist, softmax_prob_dist, critic_value, accumulated_cost, gelu_config, softmax_config\n\n")
         
-            # 初始化LSTM策略价值网络（LSTM PDF优化方案）
-            # 共享LSTM骨干 + 独立Actor/Critic头
-            # - 双层堆叠LSTM (hidden=128, dropout=0.1)
-            # - 多头Actor: GELU Head (3) + Softmax Head (5)
+            # 初始化GTrXL策略价值网络（Transformer PDF优化方案）
+            # GTrXL骨干 + 独立Actor/Critic头
+            # - 3层GTrXL Block (d_model=64, n_heads=4, GRU门控)
+            # - 多头Actor: GELU Head (4, with action masking) + Softmax Head (5)
             # - Critic: 标量Value + PopArt归一化
-            lstm_net = LSTMStrategyNetwork(
+            gtrxl_net = GTrXLStrategyNetwork(
                 num_layers=self.total_layers,
-                hidden_dim=LSTM_HIDDEN_DIM
+                d_model=GTRXL_D_MODEL,
+                n_heads=GTRXL_N_HEADS,
+                n_gtrxl_layers=GTRXL_N_LAYERS,
+                d_ff=GTRXL_D_FF,
+                dropout=GTRXL_DROPOUT
             ).to(self.device)
             
             # 使用初始学习率
-            optimizer = optim.Adam(lstm_net.parameters(), lr=PPO_LR_INITIAL)
+            optimizer = optim.Adam(gtrxl_net.parameters(), lr=PPO_LR_INITIAL)
+            gtrxl_ppo_update_count = 0  # GTrXL PPO更新计数（用于学习率Warmup）
             
             # 初始化环境
             baseline_metrics = (base_loss, base_p, base_s)
@@ -2281,9 +2870,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 rl_evaluator = RLEvaluatorWrapper(self, use_train=True)   # 使用训练集
             
             env = TransformerOptEnv(self.total_layers, base_tot_c, baseline_metrics, rl_evaluator,
-                                   num_metrics=self.get_num_metrics())
+                                   num_metrics=self.get_num_metrics(),
+                                   gelu_degree0_eligible=gelu_degree0_eligible)
             
-            buffer = RecurrentRolloutBuffer()  # LSTM PDF：使用循环网络专用Buffer
+            buffer = RecurrentRolloutBuffer()  # GTrXL/LSTM 通用的 Episode Buffer
             
             # 记录最优解
             best_reward = float('-inf')
@@ -2293,18 +2883,24 @@ class LayerImportanceEvaluator(TrainerCallback):
                 # 动态超参数调度（学习率和熵系数）
                 current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
                 
-                # LSTM PDF 5.2：环境重置 + LSTM隐藏状态零初始化 + SOS标记
+                # GTrXL Rollout：环境重置 + SOS标记 + 空token序列
                 state = env.reset()  # 44-dim numpy array
-                hidden = None  # LSTM hidden state（None = 零初始化）
-                prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long).to(self.device)    # SOS for GELU
-                prev_s = torch.tensor([[SOS_TOKEN_SOFTMAX]], dtype=torch.long).to(self.device)  # SOS for Softmax
+                prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long).to(self.device)
+                prev_s = torch.tensor([[SOS_TOKEN_SOFTMAX]], dtype=torch.long).to(self.device)
+                
+                # GTrXL：token序列累积器（每步追加，因果掩码自动处理时序依赖）
+                seq_cont_feats = []
+                seq_layer_indices = []
+                seq_prev_g = []
+                seq_prev_s = []
+                seq_gelu_masks = []
                 
                 episode_reward = 0
                 step_infos = []
-                buffer.start_episode()  # LSTM PDF 4.1：开始记录新Episode
+                buffer.start_episode()
                 
                 for step in range(self.total_layers):
-                    # LSTM PDF 3.1：从44维状态中提取LSTM输入特征
+                    # 从44维状态中提取输入特征
                     layer_idx = int(np.argmax(state[0:12]))
                     cont_feat_np = np.array([
                         state[12],  # cost_deviation
@@ -2318,11 +2914,29 @@ class LayerImportanceEvaluator(TrainerCallback):
                     cont_feat_t = torch.tensor(cont_feat_np, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device)  # (1,1,6)
                     layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long).to(self.device)  # (1,1)
                     
-                    # LSTM PDF 5.2：自回归采样（隐藏状态在步间传递）
+                    gelu_mask_np = env.get_gelu_action_mask(layer_idx)
+                    gelu_mask_t = torch.tensor(gelu_mask_np, dtype=torch.bool).unsqueeze(0).unsqueeze(0).to(self.device)  # (1,1,4)
+                    
+                    # GTrXL：将当前token追加到序列
+                    seq_cont_feats.append(cont_feat_t)
+                    seq_layer_indices.append(layer_idx_t)
+                    seq_prev_g.append(prev_g)
+                    seq_prev_s.append(prev_s)
+                    seq_gelu_masks.append(gelu_mask_t)
+                    
+                    # 拼接完整序列 (1, step+1, ...)
+                    full_cont = torch.cat(seq_cont_feats, dim=1)
+                    full_layer = torch.cat(seq_layer_indices, dim=1)
+                    full_prev_g = torch.cat(seq_prev_g, dim=1)
+                    full_prev_s = torch.cat(seq_prev_s, dim=1)
+                    full_gelu_mask = torch.cat(seq_gelu_masks, dim=1)
+                    
+                    # GTrXL：因果自注意力推理（无hidden state）
                     with torch.no_grad():
-                        gelu_action, softmax_action, logprob, value, hidden, gelu_probs, softmax_probs = \
-                            lstm_net.get_action_and_logprob(
-                                cont_feat_t, layer_idx_t, prev_g, prev_s, hidden, return_probs=True
+                        gelu_action, softmax_action, logprob, value, gelu_probs, softmax_probs = \
+                            gtrxl_net.get_action_and_logprob(
+                                full_cont, full_layer, full_prev_g, full_prev_s,
+                                return_probs=True, gelu_mask=full_gelu_mask
                             )
                     
                     # 执行动作
@@ -2347,7 +2961,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     }
                     step_infos.append(step_info)
                     
-                    # LSTM PDF 4.1.1：存入RecurrentRolloutBuffer
+                    # 存入RecurrentRolloutBuffer（与LSTM使用相同的Buffer格式）
                     buffer.add_step(
                         cont_feat=torch.tensor(cont_feat_np, dtype=torch.float32),
                         layer_idx=layer_idx,
@@ -2358,17 +2972,18 @@ class LayerImportanceEvaluator(TrainerCallback):
                         logprob=logprob.cpu(),
                         reward=reward,
                         value=value.cpu(),
-                        done=float(done)
+                        done=float(done),
+                        gelu_mask=gelu_mask_np
                     )
                     
-                    # LSTM PDF 3.1.2：更新前一步动作（自回归输入下一步）
+                    # 更新前一步动作（自回归输入下一步）
                     prev_g = gelu_action.reshape(1, 1).to(self.device)
                     prev_s = softmax_action.reshape(1, 1).to(self.device)
                     
                     episode_reward += reward
                     state = next_state
                 
-                buffer.end_episode()  # LSTM PDF 4.1：结束Episode记录
+                buffer.end_episode()
                 episode_rewards.append(episode_reward)
                 
                 # 收集当前episode的指标
@@ -2407,19 +3022,23 @@ class LayerImportanceEvaluator(TrainerCallback):
                     self.log(f"    GELU: {env.gelu_config}")
                     self.log(f"    Softmax: {env.softmax_config}")
                 
-                # LSTM PDF 4.2：PPO更新（Full-Episode BPTT）
+                # GTrXL PPO更新（因果自注意力 + GRU门控）
                 if (episode + 1) % PPO_UPDATE_INTERVAL == 0:
-                    policy_loss, value_loss, entropy = self.ppo_update_lstm(
-                        lstm_net, optimizer, buffer, self.device,
-                        entropy_coef=current_entropy
+                    policy_loss, value_loss, entropy = self.ppo_update_gtrxl(
+                        gtrxl_net, optimizer, buffer, self.device,
+                        entropy_coef=current_entropy,
+                        ppo_update_step=gtrxl_ppo_update_count
                     )
+                    gtrxl_ppo_update_count += 1
                     buffer.clear()
-                    episode_entropies.append(entropy)  # 记录当前更新步的策略熵，用于绘制熵曲线
+                    episode_entropies.append(entropy)
                     
                     avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
+                    warmup_status = "warmup" if gtrxl_ppo_update_count <= GTRXL_WARMUP_STEPS else "normal"
                     self.log(f"  Episode {episode+1}: Avg Reward={avg_reward:.4f}, "
                             f"Policy Loss={policy_loss:.4f}, Value Loss={value_loss:.4f}, Entropy={entropy:.4f}")
-                    self.log(f"    [LSTM Dynamic Schedule] LR={current_lr:.6f}, Entropy Coef={current_entropy:.6f}")
+                    self.log(f"    [GTrXL Schedule] LR={optimizer.param_groups[0]['lr']:.6f}, "
+                            f"Entropy Coef={current_entropy:.6f}, Update#{gtrxl_ppo_update_count} ({warmup_status})")
             
             # 如果没有找到满足约束的解，使用baseline
             if best_config is None or best_reward < -50:  # 如果最好的奖励也很差，说明没找到可行解
@@ -2508,15 +3127,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                 # 收集所有可行的候选修改，每个候选 = (成本节省, 类型, 层号, 旧值, 新值, 评估结果)
                 candidates = []
                 
-                # 枚举所有层的 GELU 降精度候选
+                # 枚举所有层的 GELU 降精度候选 (4->2->1->0, 0 only if eligible)
                 for layer_idx in range(self.total_layers):
                     cur_deg = greedy_gelu[layer_idx]
                     if cur_deg == 4:
                         cand_deg = 2
                     elif cur_deg == 2:
                         cand_deg = 1
+                    elif cur_deg == 1 and gelu_degree0_eligible[layer_idx]:
+                        cand_deg = 0
                     else:
-                        continue  # 已是最低精度
+                        continue  # 已是最低精度（或不符合 degree 0 资格）
                     
                     test_gelu = greedy_gelu.copy()
                     test_gelu[layer_idx] = cand_deg
@@ -2750,13 +3371,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.log(f"[Warning] Failed to plot PPO training curves: {e}")
 
         # ---------------------------------------------------------
-        # Phase 3: Final Report (使用测试集进行最终评估)
+        # Phase 3: Final Report (使用验证集进行最终评估)
         # ---------------------------------------------------------
         self.log("\n" + "="*60)
         self.log("FINAL EVALUATION REPORT (on Test Set)")
         self.log("="*60)
         
-        # 重新计算测试集上的baseline
+        # 重新计算验证集上的baseline
         base_loss, base_p, base_s, base_time = self.evaluate_model(base_gelu, base_softmax, use_train=False)
         
         # 用于缓存评估结果
@@ -2793,6 +3414,21 @@ class LayerImportanceEvaluator(TrainerCallback):
             }
 
         opt_res = get_result_dict('Optimized (PPO)', opt_gelu, opt_softmax)
+        
+        # --- 无近似对照组：直接用 GELU 和 exp(softmax)，不经过多项式/近似 ---
+        self.log("Evaluating No-Approx control (exact GELU + exact softmax)...")
+        self.reversible_handler.restore_all()
+        self.model = self.reversible_handler.model
+        no_approx_loss, no_approx_p, no_approx_s, no_approx_time = self._run_evaluation(self.dataloader_test, use_train=False)
+        self.apply_configuration(opt_gelu, opt_softmax)  # 恢复为 Optimized 配置，供后续 Phase 4 使用
+        no_approx_res = {
+            'name': 'No-Approx (Exact)',
+            'loss': no_approx_loss, 'p': no_approx_p, 's': no_approx_s,
+            'tot_c': base_tot_c, 'tot_spd': 1.0,
+            'g_c': base_g_c, 'g_spd': 1.0,
+            's_c': base_s_c, 's_spd': 1.0,
+            'gelu': base_gelu, 'softmax': base_softmax
+        }
         
         # --- Random Logic ---
         def generate_cost_equivalent_config(target_cost, cost_map, length, rng):
@@ -2859,7 +3495,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.log(f"{'Baseline':<15} | {base_loss:<6.4f} {base_p:<6.4f} {base_s:<6.4f} | "
                      f"{'0.00%':<8} {'0.00%':<10} {'0.00%':<10} | "
                      f"{base_tot_c:<6.1f} {'1.0x':<5} | {base_g_c:<6.1f} {'1.0x':<6} | {base_s_c:<6.1f} {'1.0x':<6}")
-        
         def format_row(r):
             loss_delta_pct = ((r['loss'] - base_loss) / (base_loss + 1e-8)) * 100.0
             metric1_delta_pct = ((r['p'] - base_p) / (base_p + 1e-8)) * 100.0
@@ -2874,6 +3509,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 return (f"{r['name']:<15} | {r['loss']:<6.4f} {r['p']:<6.4f} {r['s']:<6.4f} | "
                         f"{loss_delta_pct:>7.2f}% {metric1_delta_pct:>9.2f}% {metric2_delta_pct:>9.2f}% | {cost_part}")
         
+        self.log(format_row(no_approx_res))   # 无近似对照组（直接用 GELU 和 exp）
         self.log(format_row(opt_res))
         self.log("-" * len(header))
         for res in random_results: self.log(format_row(res))
@@ -2922,9 +3558,16 @@ class LayerImportanceEvaluator(TrainerCallback):
             return msg
         
         for i in range(self.total_layers):
-            # GELU Check
+            # GELU Check: downgrade path 4->2->1->0 (0 only if eligible)
             cd = opt_gelu[i]
-            td = 2 if cd == 4 else (1 if cd == 2 else None)
+            if cd == 4:
+                td = 2
+            elif cd == 2:
+                td = 1
+            elif cd == 1 and gelu_degree0_eligible[i]:
+                td = 0
+            else:
+                td = None
             if td is not None:
                 tmp = opt_gelu.copy()
                 tmp[i] = td

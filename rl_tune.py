@@ -162,7 +162,7 @@ def train(
         model = AutoModelForSequenceClassification.from_pretrained(
             base_model,
             # num_labels=1,  # stsb        
-            num_labels=2,  # sst2/mrpc/qnli
+            num_labels=2,  # sst2/mrpc/qnli/cola/rte/wnli
             # load_in_8bit=False,
             # torch_dtype=torch.float16,
             device_map={"": int(os.environ.get("LOCAL_RANK") or 0)},
@@ -207,11 +207,11 @@ def train(
         # print(f"examples keys: {examples.keys()}")
         
         tokenized = tokenizer(
-            examples["question"],  # QNLI
-            examples["sentence"],  # QNLI
-            # examples["sentence"],   # SST-2 
-            # examples["sentence1"],  # stsb/mrpc
-            # examples["sentence2"],
+            # examples["question"],  # qnli
+            # examples["sentence"],  # qnli
+            # examples["sentence"],   # sst2/cola
+            examples["sentence1"],  # stsb/mrpc/rte/wnli
+            examples["sentence2"],  # stsb/mrpc/rte/wnli
             truncation=True,
             padding=False,
             max_length=128,

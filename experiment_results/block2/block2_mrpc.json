@@ -1,0 +1,358 @@
+{
+  "task": "mrpc",
+  "primary_metric": "accuracy",
+  "pair_results": [
+    {
+      "layer_i": 1,
+      "layer_j": 5,
+      "group_data": {
+        "GELU=full,SM=full": {
+          "factor_a": "full",
+          "factor_b": "full",
+          "mean": 0.8814460784313723,
+          "std": 0.01655330173550852,
+          "single_metric": 0.8799019607843137
+        },
+        "GELU=full,SM=low": {
+          "factor_a": "full",
+          "factor_b": "low",
+          "mean": 0.8713480392156865,
+          "std": 0.01631143563656956,
+          "single_metric": 0.8700980392156863
+        },
+        "GELU=low,SM=full": {
+          "factor_a": "low",
+          "factor_b": "full",
+          "mean": 0.8742401960784315,
+          "std": 0.016407643349503485,
+          "single_metric": 0.8725490196078431
+        },
+        "GELU=low,SM=low": {
+          "factor_a": "low",
+          "factor_b": "low",
+          "mean": 0.8759558823529413,
+          "std": 0.016056802615304074,
+          "single_metric": 0.875
+        }
+      },
+      "industry_baseline": {
+        "mean": 0.8814460784313723,
+        "std": 0.01655330173550852,
+        "single_metric": 0.8799019607843137
+      },
+      "anova": {
+        "method": "statsmodels_type2_anova",
+        "factor_a_f": 0.6262083780887779,
+        "factor_a_p": 0.42922323573295884,
+        "factor_b_f": 6.518675394686102,
+        "factor_b_p": 0.011048767438679283,
+        "interaction_f": 12.947956143728774,
+        "interaction_p": 0.0003608485271427043,
+        "factor_a_eta_sq": 0.0015049727320817093,
+        "factor_b_eta_sq": 0.0156663964609297,
+        "interaction_eta_sq": 0.031117949893891488,
+        "factor_a_sig": false,
+        "factor_b_sig": true,
+        "interaction_sig": true
+      },
+      "baseline_comparisons": {
+        "GELU=full,SM=full": {
+          "group_mean": 0.8814460784313723,
+          "baseline_mean": 0.8814460784313723,
+          "diff": 0.0,
+          "t_stat": 0.0,
+          "p_value": 1.0,
+          "significant": false
+        },
+        "GELU=full,SM=low": {
+          "group_mean": 0.8713480392156865,
+          "baseline_mean": 0.8814460784313723,
+          "diff": -0.010098039215685861,
+          "t_stat": -4.323422927140453,
+          "p_value": 2.432197540682043e-05,
+          "significant": true
+        },
+        "GELU=low,SM=full": {
+          "group_mean": 0.8742401960784315,
+          "baseline_mean": 0.8814460784313723,
+          "diff": -0.00720588235294084,
+          "t_stat": -3.0762091969193537,
+          "p_value": 0.0023929908724220116,
+          "significant": true
+        },
+        "GELU=low,SM=low": {
+          "group_mean": 0.8759558823529413,
+          "baseline_mean": 0.8814460784313723,
+          "diff": -0.005490196078431042,
+          "t_stat": -2.3687429281145334,
+          "p_value": 0.018811113325987262,
+          "significant": true
+        }
+      }
+    },
+    {
+      "layer_i": 3,
+      "layer_j": 8,
+      "group_data": {
+        "GELU=full,SM=full": {
+          "factor_a": "full",
+          "factor_b": "full",
+          "mean": 0.8814460784313723,
+          "std": 0.01655330173550852,
+          "single_metric": 0.8799019607843137
+        },
+        "GELU=full,SM=low": {
+          "factor_a": "full",
+          "factor_b": "low",
+          "mean": 0.8783088235294118,
+          "std": 0.016277813124475286,
+          "single_metric": 0.8774509803921569
+        },
+        "GELU=low,SM=full": {
+          "factor_a": "low",
+          "factor_b": "full",
+          "mean": 0.8789460784313725,
+          "std": 0.016220583791086082,
+          "single_metric": 0.8774509803921569
+        },
+        "GELU=low,SM=low": {
+          "factor_a": "low",
+          "factor_b": "low",
+          "mean": 0.8734313725490196,
+          "std": 0.01619324739060825,
+          "single_metric": 0.8725490196078431
+        }
+      },
+      "industry_baseline": {
+        "mean": 0.8814460784313723,
+        "std": 0.01655330173550852,
+        "single_metric": 0.8799019607843137
+      },
+      "anova": {
+        "method": "statsmodels_type2_anova",
+        "factor_a_f": 5.062682558848048,
+        "factor_a_p": 0.024994709656280558,
+        "factor_b_f": 6.963011566928216,
+        "factor_b_p": 0.008649490805165158,
+        "interaction_f": 0.5257643977017671,
+        "interaction_p": 0.4688212971053033,
+        "factor_a_eta_sq": 0.012391786770618305,
+        "factor_b_eta_sq": 0.017043169034551556,
+        "interaction_eta_sq": 0.0012868988391374282,
+        "factor_a_sig": true,
+        "factor_b_sig": true,
+        "interaction_sig": false
+      },
+      "baseline_comparisons": {
+        "GELU=full,SM=full": {
+          "group_mean": 0.8814460784313723,
+          "baseline_mean": 0.8814460784313723,
+          "diff": 0.0,
+          "t_stat": 0.0,
+          "p_value": 1.0,
+          "significant": false
+        },
+        "GELU=full,SM=low": {
+          "group_mean": 0.8783088235294118,
+          "baseline_mean": 0.8814460784313723,
+          "diff": -0.0031372549019605955,
+          "t_stat": -1.344564010104678,
+          "p_value": 0.18030436821542606,
+          "significant": false
+        },
+        "GELU=low,SM=full": {
+          "group_mean": 0.8789460784313725,
+          "baseline_mean": 0.8814460784313723,
+          "diff": -0.0024999999999998357,
+          "t_stat": -1.0733028756966403,
+          "p_value": 0.284441577649815,
+          "significant": false
+        },
+        "GELU=low,SM=low": {
+          "group_mean": 0.8734313725490196,
+          "baseline_mean": 0.8814460784313723,
+          "diff": -0.008014705882352757,
+          "t_stat": -3.4437244515841217,
+          "p_value": 0.0007001875105056502,
+          "significant": true
+        }
+      }
+    },
+    {
+      "layer_i": 0,
+      "layer_j": 11,
+      "group_data": {
+        "GELU=full,SM=full": {
+          "factor_a": "full",
+          "factor_b": "full",
+          "mean": 0.8814460784313723,
+          "std": 0.01655330173550852,
+          "single_metric": 0.8799019607843137
+        },
+        "GELU=full,SM=low": {
+          "factor_a": "full",
+          "factor_b": "low",
+          "mean": 0.8788725490196078,
+          "std": 0.015683133876774988,
+          "single_metric": 0.8774509803921569
+        },
+        "GELU=low,SM=full": {
+          "factor_a": "low",
+          "factor_b": "full",
+          "mean": 0.8839460784313724,
+          "std": 0.016811563772314218,
+          "single_metric": 0.8823529411764706
+        },
+        "GELU=low,SM=low": {
+          "factor_a": "low",
+          "factor_b": "low",
+          "mean": 0.8813970588235293,
+          "std": 0.01589889222950254,
+          "single_metric": 0.8799019607843137
+        }
+      },
+      "industry_baseline": {
+        "mean": 0.8814460784313723,
+        "std": 0.01655330173550852,
+        "single_metric": 0.8799019607843137
+      },
+      "anova": {
+        "method": "statsmodels_type2_anova",
+        "factor_a_f": 2.368183781955078,
+        "factor_a_p": 0.12462968334778202,
+        "factor_b_f": 2.4615023385987045,
+        "factor_b_p": 0.11746582068308545,
+        "interaction_f": 5.63517854140947e-05,
+        "interaction_p": 0.994014290482161,
+        "factor_a_eta_sq": 0.005908203735950318,
+        "factor_b_eta_sq": 0.006141017189532959,
+        "interaction_eta_sq": 1.4058783429222064e-07,
+        "factor_a_sig": false,
+        "factor_b_sig": false,
+        "interaction_sig": false
+      },
+      "baseline_comparisons": {
+        "GELU=full,SM=full": {
+          "group_mean": 0.8814460784313723,
+          "baseline_mean": 0.8814460784313723,
+          "diff": 0.0,
+          "t_stat": 0.0,
+          "p_value": 1.0,
+          "significant": false
+        },
+        "GELU=full,SM=low": {
+          "group_mean": 0.8788725490196078,
+          "baseline_mean": 0.8814460784313723,
+          "diff": -0.0025735294117645857,
+          "t_stat": -1.1229399977107435,
+          "p_value": 0.2628227500662727,
+          "significant": false
+        },
+        "GELU=low,SM=full": {
+          "group_mean": 0.8839460784313724,
+          "baseline_mean": 0.8814460784313723,
+          "diff": 0.0025000000000000577,
+          "t_stat": 1.0543145864847525,
+          "p_value": 0.2930237524732243,
+          "significant": false
+        },
+        "GELU=low,SM=low": {
+          "group_mean": 0.8813970588235293,
+          "baseline_mean": 0.8814460784313723,
+          "diff": -4.901960784309267e-05,
+          "t_stat": -0.021250545441000898,
+          "p_value": 0.9830671936012053,
+          "significant": false
+        }
+      }
+    },
+    {
+      "layer_i": 6,
+      "layer_j": 10,
+      "group_data": {
+        "GELU=full,SM=full": {
+          "factor_a": "full",
+          "factor_b": "full",
+          "mean": 0.8814460784313723,
+          "std": 0.01655330173550852,
+          "single_metric": 0.8799019607843137
+        },
+        "GELU=full,SM=low": {
+          "factor_a": "full",
+          "factor_b": "low",
+          "mean": 0.8796813725490198,
+          "std": 0.01571342243305972,
+          "single_metric": 0.8774509803921569
+        },
+        "GELU=low,SM=full": {
+          "factor_a": "low",
+          "factor_b": "full",
+          "mean": 0.8838725490196078,
+          "std": 0.015939967515597644,
+          "single_metric": 0.8823529411764706
+        },
+        "GELU=low,SM=low": {
+          "factor_a": "low",
+          "factor_b": "low",
+          "mean": 0.8791421568627452,
+          "std": 0.01612325992983708,
+          "single_metric": 0.8774509803921569
+        }
+      },
+      "industry_baseline": {
+        "mean": 0.8814460784313723,
+        "std": 0.01655330173550852,
+        "single_metric": 0.8799019607843137
+      },
+      "anova": {
+        "method": "statsmodels_type2_anova",
+        "factor_a_f": 0.3406986699321652,
+        "factor_a_p": 0.5597585174806292,
+        "factor_b_f": 4.035345605669191,
+        "factor_b_p": 0.0452348600555791,
+        "interaction_f": 0.8413171237108855,
+        "interaction_p": 0.3595786164482192,
+        "factor_a_eta_sq": 0.000849162331220967,
+        "factor_b_eta_sq": 0.010057754209825945,
+        "interaction_eta_sq": 0.0020969110628130654,
+        "factor_a_sig": false,
+        "factor_b_sig": true,
+        "interaction_sig": false
+      },
+      "baseline_comparisons": {
+        "GELU=full,SM=full": {
+          "group_mean": 0.8814460784313723,
+          "baseline_mean": 0.8814460784313723,
+          "diff": 0.0,
+          "t_stat": 0.0,
+          "p_value": 1.0,
+          "significant": false
+        },
+        "GELU=full,SM=low": {
+          "group_mean": 0.8796813725490198,
+          "baseline_mean": 0.8814460784313723,
+          "diff": -0.0017647058823525574,
+          "t_stat": -0.769312837424683,
+          "p_value": 0.4426243716885171,
+          "significant": false
+        },
+        "GELU=low,SM=full": {
+          "group_mean": 0.8838725490196078,
+          "baseline_mean": 0.8814460784313723,
+          "diff": 0.0024264705882354187,
+          "t_stat": 1.050598709574924,
+          "p_value": 0.29472350444885603,
+          "significant": false
+        },
+        "GELU=low,SM=low": {
+          "group_mean": 0.8791421568627452,
+          "baseline_mean": 0.8814460784313723,
+          "diff": -0.002303921568627132,
+          "t_stat": -0.9920334736141719,
+          "p_value": 0.3223919733521823,
+          "significant": false
+        }
+      }
+    }
+  ]
+}
