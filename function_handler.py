@@ -47,6 +47,101 @@ Exp_bound = {
     6:-13
 }
 
+# Transformer-layer input noise table.
+# Values are variances sigma^2 for N(0, sigma^2).
+# Current x-noise injection uses the "fresh" column.
+INPUT_NOISE_VARIANCE_TABLE = {
+    16: {"encoding": 1.589457e-07, "fresh": 3.200195e-01, "rescale": 1.302242e-03},
+    18: {"encoding": 9.934107e-09, "fresh": 2.000122e-02, "rescale": 8.139014e-05},
+    20: {"encoding": 6.208817e-10, "fresh": 1.250076e-03, "rescale": 5.086884e-06},
+    22: {"encoding": 3.880511e-11, "fresh": 7.812977e-05, "rescale": 3.179302e-07},
+    24: {"encoding": 2.425319e-12, "fresh": 4.883110e-06, "rescale": 1.987064e-08},
+    26: {"encoding": 1.515824e-13, "fresh": 3.051944e-07, "rescale": 1.241915e-09},
+    28: {"encoding": 9.473903e-15, "fresh": 1.907465e-08, "rescale": 7.761969e-11},
+    30: {"encoding": 5.921189e-16, "fresh": 1.192166e-09, "rescale": 4.851231e-12},
+    32: {"encoding": 3.700743e-17, "fresh": 7.451035e-11, "rescale": 3.032019e-13},
+    34: {"encoding": 2.312965e-18, "fresh": 4.656897e-12, "rescale": 1.895012e-14},
+    36: {"encoding": 1.445603e-19, "fresh": 2.910561e-13, "rescale": 1.184382e-15},
+    38: {"encoding": 9.035018e-21, "fresh": 1.819100e-14, "rescale": 7.402390e-17},
+    40: {"encoding": 5.646886e-22, "fresh": 1.136938e-15, "rescale": 4.626494e-18},
+    42: {"encoding": 3.529304e-23, "fresh": 7.105861e-17, "rescale": 2.891559e-19},
+    44: {"encoding": 2.205815e-24, "fresh": 4.441163e-18, "rescale": 1.807224e-20},
+    46: {"encoding": 1.378634e-25, "fresh": 2.775727e-19, "rescale": 1.129515e-21},
+    48: {"encoding": 8.616464e-27, "fresh": 1.734829e-20, "rescale": 7.059470e-23},
+}
+
+INPUT_NOISE_ALLOWED_SCALING_FACTORS = (24, 26, 28, 30, 32, 34, 36, 38, 40)
+INPUT_NOISE_DEFAULT_SCALING_FACTOR = 40
+WEIGHT_NOISE_ALLOWED_SCALING_FACTORS = (16, 18, 20, 22, 24, 26, 28, 30, 32)
+WEIGHT_NOISE_DEFAULT_SCALING_FACTOR = 32
+
+
+def get_input_noise_variance(scaling_factor: int, distribution: str = "fresh") -> float:
+    if scaling_factor not in INPUT_NOISE_VARIANCE_TABLE:
+        raise ValueError(
+            f"Unsupported scaling factor {scaling_factor}. "
+            f"Supported values: {sorted(INPUT_NOISE_VARIANCE_TABLE)}"
+        )
+    distribution_key = str(distribution).lower()
+    if distribution_key not in INPUT_NOISE_VARIANCE_TABLE[scaling_factor]:
+        raise ValueError(
+            f"Unsupported input-noise distribution '{distribution}'. "
+            "Use one of: encoding, fresh, rescale."
+        )
+    return float(INPUT_NOISE_VARIANCE_TABLE[scaling_factor][distribution_key])
+
+
+def add_gaussian_input_noise(
+        hidden_states: Tensor,
+        scaling_factor: int,
+        distribution: str = "fresh"
+        ) -> Tensor:
+    variance = get_input_noise_variance(scaling_factor, distribution=distribution)
+    if variance <= 0.0:
+        return hidden_states
+    std = math.sqrt(variance)
+    noise = torch.randn_like(hidden_states) * std
+    return hidden_states + noise
+
+
+def _make_input_noise_forward(original_forward, scaling_factor: int, distribution: str = "fresh"):
+    def noisy_forward(hidden_states, *args, **kwargs):
+        if hidden_states is None:
+            return original_forward(hidden_states, *args, **kwargs)
+        noisy_hidden_states = add_gaussian_input_noise(
+            hidden_states,
+            scaling_factor=scaling_factor,
+            distribution=distribution,
+        )
+        return original_forward(noisy_hidden_states, *args, **kwargs)
+    return noisy_forward
+
+
+def add_gaussian_weight_noise(
+        weight: Tensor,
+        scaling_factor: int,
+        distribution: str = "encoding"
+        ) -> Tensor:
+    variance = get_input_noise_variance(scaling_factor, distribution=distribution)
+    if variance <= 0.0:
+        return weight
+    std = math.sqrt(variance)
+    noise = torch.randn_like(weight) * std
+    return weight + noise
+
+
+def _make_noisy_linear_forward(linear_module: nn.Linear, scaling_factor: int, distribution: str = "encoding"):
+    def noisy_forward(hidden_states):
+        if hidden_states is None:
+            return hidden_states
+        noisy_weight = add_gaussian_weight_noise(
+            linear_module.weight,
+            scaling_factor=scaling_factor,
+            distribution=distribution,
+        )
+        return nn.functional.linear(hidden_states, noisy_weight, linear_module.bias)
+    return noisy_forward
+
 # Tanh approximation coeff
 Tanh_COEEF = {
             1: [[0.5, 0.5], [0.5, 0.5]],
@@ -342,6 +437,15 @@ class ReversibleLayerHandler:
         self.model = model
         self.original_gelu = {}
         self.original_attention = {}
+        self.original_input_noise = {}
+        self.original_projection_noise = {
+            "query": {},
+            "key": {},
+            "value": {},
+            "wo": {},
+            "wffn1": {},
+            "wffn2": {},
+        }
         self.backup_model = copy.deepcopy(model)  # 完整模型备份
     
     def replace_layer_gelu(self, layer_indices=None, layer_name="model.model.layers", degree=1):
@@ -415,6 +519,230 @@ class ReversibleLayerHandler:
         
         print(f"已替换 {len(layer_indices)} 层的Softmax函数")
     
+    def replace_layer_input_noise(
+            self,
+            layer_indices=None,
+            layer_name="model.model.layers",
+            scaling_factor=INPUT_NOISE_DEFAULT_SCALING_FACTOR,
+            distribution="fresh"
+            ):
+        """Inject x-noise on transformer-layer inputs: x + N(0, sigma^2)."""
+        _ = get_input_noise_variance(int(scaling_factor), distribution=distribution)
+
+        layers = list(eval("self." + layer_name))
+        if layer_indices is None:
+            selected = set(range(len(layers)))
+        else:
+            selected = set(layer_indices)
+            if not selected:
+                return
+
+        for i, layer in enumerate(layers):
+            if i not in selected:
+                continue
+
+            stored_forward = self.original_input_noise.get(i, {}).get("forward")
+            if stored_forward is None or getattr(stored_forward, "__self__", None) is not layer:
+                self.original_input_noise[i] = {
+                    "forward": layer.forward,
+                }
+
+            original_forward = self.original_input_noise[i]["forward"]
+            layer.forward = _make_input_noise_forward(
+                original_forward,
+                scaling_factor=int(scaling_factor),
+                distribution=distribution,
+            )
+            self.original_input_noise[i]["scaling_factor"] = int(scaling_factor)
+            self.original_input_noise[i]["distribution"] = str(distribution).lower()
+
+        print(
+            f"Input noise enabled for {len(selected)} layers "
+            f"(scaling_factor={int(scaling_factor)}, distribution={distribution})"
+        )
+
+    def _replace_attention_projection_noise(
+            self,
+            projection_name,
+            layer_indices=None,
+            layer_name="model.model.layers",
+            scaling_factor=WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            distribution="encoding"
+            ):
+        """Temporarily use (W + We) inside Q/K/V projection without mutating the stored weight."""
+        _ = get_input_noise_variance(int(scaling_factor), distribution=distribution)
+
+        layers = list(eval("self." + layer_name))
+        if layer_indices is None:
+            selected = set(range(len(layers)))
+        else:
+            selected = set(layer_indices)
+            if not selected:
+                return
+
+        projection_store = self.original_projection_noise.setdefault(projection_name, {})
+        for i, layer in enumerate(layers):
+            if i not in selected:
+                continue
+
+            projection_module = getattr(layer.attention.self, projection_name)
+            stored_forward = projection_store.get(i, {}).get("forward")
+            if stored_forward is None or getattr(stored_forward, "__self__", None) is not projection_module:
+                projection_store[i] = {
+                    "forward": projection_module.forward,
+                }
+
+            projection_module.forward = _make_noisy_linear_forward(
+                projection_module,
+                scaling_factor=int(scaling_factor),
+                distribution=distribution,
+            )
+            projection_store[i]["scaling_factor"] = int(scaling_factor)
+            projection_store[i]["distribution"] = str(distribution).lower()
+
+        print(
+            f"{projection_name} noise enabled for {len(selected)} layers "
+            f"(scaling_factor={int(scaling_factor)}, distribution={distribution})"
+        )
+
+    def _replace_layer_linear_module_noise(
+            self,
+            store_key,
+            module_path,
+            layer_indices=None,
+            layer_name="model.model.layers",
+            scaling_factor=WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            distribution="encoding"
+            ):
+        """Temporarily use (W + We) inside a layer Linear module without mutating the stored weight."""
+        _ = get_input_noise_variance(int(scaling_factor), distribution=distribution)
+
+        layers = list(eval("self." + layer_name))
+        if layer_indices is None:
+            selected = set(range(len(layers)))
+        else:
+            selected = set(layer_indices)
+            if not selected:
+                return
+
+        projection_store = self.original_projection_noise.setdefault(store_key, {})
+        for i, layer in enumerate(layers):
+            if i not in selected:
+                continue
+
+            linear_module = eval("layer." + module_path)
+            stored_forward = projection_store.get(i, {}).get("forward")
+            if stored_forward is None or getattr(stored_forward, "__self__", None) is not linear_module:
+                projection_store[i] = {
+                    "forward": linear_module.forward,
+                }
+
+            linear_module.forward = _make_noisy_linear_forward(
+                linear_module,
+                scaling_factor=int(scaling_factor),
+                distribution=distribution,
+            )
+            projection_store[i]["scaling_factor"] = int(scaling_factor)
+            projection_store[i]["distribution"] = str(distribution).lower()
+
+        print(
+            f"{store_key} noise enabled for {len(selected)} layers "
+            f"(scaling_factor={int(scaling_factor)}, distribution={distribution})"
+        )
+
+    def replace_layer_query_noise(
+            self,
+            layer_indices=None,
+            layer_name="model.model.layers",
+            scaling_factor=WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            distribution="encoding"
+            ):
+        self._replace_attention_projection_noise(
+            "query",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+            scaling_factor=scaling_factor,
+            distribution=distribution,
+        )
+
+    def replace_layer_key_noise(
+            self,
+            layer_indices=None,
+            layer_name="model.model.layers",
+            scaling_factor=WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            distribution="encoding"
+            ):
+        self._replace_attention_projection_noise(
+            "key",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+            scaling_factor=scaling_factor,
+            distribution=distribution,
+        )
+
+    def replace_layer_value_noise(
+            self,
+            layer_indices=None,
+            layer_name="model.model.layers",
+            scaling_factor=WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            distribution="encoding"
+            ):
+        self._replace_attention_projection_noise(
+            "value",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+            scaling_factor=scaling_factor,
+            distribution=distribution,
+        )
+
+    def replace_layer_attention_output_noise(
+            self,
+            layer_indices=None,
+            layer_name="model.model.layers",
+            scaling_factor=WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            distribution="encoding"
+            ):
+        self._replace_layer_linear_module_noise(
+            "wo",
+            "attention.output.dense",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+            scaling_factor=scaling_factor,
+            distribution=distribution,
+        )
+
+    def replace_layer_ffn1_noise(
+            self,
+            layer_indices=None,
+            layer_name="model.model.layers",
+            scaling_factor=WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            distribution="encoding"
+            ):
+        self._replace_layer_linear_module_noise(
+            "wffn1",
+            "intermediate.dense",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+            scaling_factor=scaling_factor,
+            distribution=distribution,
+        )
+
+    def replace_layer_ffn2_noise(
+            self,
+            layer_indices=None,
+            layer_name="model.model.layers",
+            scaling_factor=WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            distribution="encoding"
+            ):
+        self._replace_layer_linear_module_noise(
+            "wffn2",
+            "output.dense",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+            scaling_factor=scaling_factor,
+            distribution=distribution,
+        )
+
     def restore_layer_gelu(self, layer_indices=None, layer_name="model.model.layers"):
         """恢复指定层的原始GELU函数"""
         for i, layer in enumerate(eval("self." + layer_name)):
@@ -433,9 +761,127 @@ class ReversibleLayerHandler:
                 layer.attention.self = self.original_attention[i]['attention']
 
    
+    def restore_layer_input_noise(self, layer_indices=None, layer_name="model.model.layers"):
+        """Restore original transformer-layer inputs for selected layers."""
+        layers = list(eval("self." + layer_name))
+        if layer_indices is None:
+            selected = set(range(len(layers)))
+        else:
+            selected = set(layer_indices)
+            if not selected:
+                return
+
+        for i, layer in enumerate(layers):
+            if i in selected and i in self.original_input_noise:
+                original_forward = self.original_input_noise[i]["forward"]
+                if getattr(original_forward, "__self__", None) is layer:
+                    layer.forward = original_forward
+                del self.original_input_noise[i]
+
+    def _restore_attention_projection_noise(
+            self,
+            projection_name,
+            layer_indices=None,
+            layer_name="model.model.layers"
+            ):
+        layers = list(eval("self." + layer_name))
+        if layer_indices is None:
+            selected = set(range(len(layers)))
+        else:
+            selected = set(layer_indices)
+            if not selected:
+                return
+
+        projection_store = self.original_projection_noise.get(projection_name, {})
+        for i, layer in enumerate(layers):
+            if i in selected and i in projection_store:
+                projection_module = getattr(layer.attention.self, projection_name)
+                original_forward = projection_store[i]["forward"]
+                if getattr(original_forward, "__self__", None) is projection_module:
+                    projection_module.forward = original_forward
+                del projection_store[i]
+
+    def _restore_layer_linear_module_noise(
+            self,
+            store_key,
+            module_path,
+            layer_indices=None,
+            layer_name="model.model.layers"
+            ):
+        layers = list(eval("self." + layer_name))
+        if layer_indices is None:
+            selected = set(range(len(layers)))
+        else:
+            selected = set(layer_indices)
+            if not selected:
+                return
+
+        projection_store = self.original_projection_noise.get(store_key, {})
+        for i, layer in enumerate(layers):
+            if i in selected and i in projection_store:
+                linear_module = eval("layer." + module_path)
+                original_forward = projection_store[i]["forward"]
+                if getattr(original_forward, "__self__", None) is linear_module:
+                    linear_module.forward = original_forward
+                del projection_store[i]
+
+    def restore_layer_query_noise(self, layer_indices=None, layer_name="model.model.layers"):
+        self._restore_attention_projection_noise(
+            "query",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+        )
+
+    def restore_layer_key_noise(self, layer_indices=None, layer_name="model.model.layers"):
+        self._restore_attention_projection_noise(
+            "key",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+        )
+
+    def restore_layer_value_noise(self, layer_indices=None, layer_name="model.model.layers"):
+        self._restore_attention_projection_noise(
+            "value",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+        )
+
+    def restore_layer_attention_output_noise(self, layer_indices=None, layer_name="model.model.layers"):
+        self._restore_layer_linear_module_noise(
+            "wo",
+            "attention.output.dense",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+        )
+
+    def restore_layer_ffn1_noise(self, layer_indices=None, layer_name="model.model.layers"):
+        self._restore_layer_linear_module_noise(
+            "wffn1",
+            "intermediate.dense",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+        )
+
+    def restore_layer_ffn2_noise(self, layer_indices=None, layer_name="model.model.layers"):
+        self._restore_layer_linear_module_noise(
+            "wffn2",
+            "output.dense",
+            layer_indices=layer_indices,
+            layer_name=layer_name,
+        )
+
     def restore_all(self):
         """完全恢复原始模型状态"""
         self.model = copy.deepcopy(self.backup_model)
         self.original_gelu = {}
         self.original_attention = {}
+        self.original_input_noise = {}
+        self.original_projection_noise = {
+            "query": {},
+            "key": {},
+            "value": {},
+            "wo": {},
+            "wffn1": {},
+            "wffn2": {},
+        }
         print("已完全恢复原始模型状态")

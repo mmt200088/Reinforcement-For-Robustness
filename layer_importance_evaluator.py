@@ -10,7 +10,11 @@ from torch.utils.data import DataLoader
 from transformers.trainer_callback import TrainerCallback
 from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
-from function_handler import ReversibleLayerHandler
+from function_handler import (
+    ReversibleLayerHandler,
+    INPUT_NOISE_ALLOWED_SCALING_FACTORS,
+    INPUT_NOISE_DEFAULT_SCALING_FACTOR,
+)
 from final_evaluation_module import FinalEvaluationModule
 import os
 import hashlib
@@ -21,6 +25,97 @@ GELU_MAP = {0: 4, 1: 2, 2: 1, 3: 0}
 GELU_COST = {4: 3.0, 2: 2.5, 1: 1.0, 0: -1.0}
 SOFTMAX_MAP = {0: 6, 1: 5, 2: 4, 3: 3, 4: 2}
 SOFTMAX_COST = {6: 3.0, 5: 2.5, 4: 2.0, 3: 1.5, 2: 1.0}
+
+# Action space for the current second-stage RL over transformer-layer x noise.
+# Stage 1 still optimizes GELU/Softmax; Stage 2 keeps them fixed and chooses
+# layer-wise scaling factors for x/Wq/Wk/Wv/Wo/Wffn1/Wffn2 noise.
+INPUT_NOISE_SCALING_MAP = {
+    idx: scaling_factor for idx, scaling_factor in enumerate(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
+}
+INPUT_NOISE_SCALING_TO_ACTION = {
+    scaling_factor: idx for idx, scaling_factor in INPUT_NOISE_SCALING_MAP.items()
+}
+INPUT_NOISE_ACTION_DIM = len(INPUT_NOISE_SCALING_MAP)
+INPUT_NOISE_SOS_TOKEN = INPUT_NOISE_ACTION_DIM
+INPUT_NOISE_COST_SCALE = 0.025
+INPUT_NOISE_COST_MAP = {
+    scaling_factor: scaling_factor * INPUT_NOISE_COST_SCALE
+    for scaling_factor in INPUT_NOISE_ALLOWED_SCALING_FACTORS
+}
+INPUT_NOISE_SCALING_TO_NORM = {
+    scaling_factor: idx / max(1, INPUT_NOISE_ACTION_DIM - 1)
+    for idx, scaling_factor in enumerate(sorted(INPUT_NOISE_ALLOWED_SCALING_FACTORS, reverse=True))
+}
+
+WEIGHT_NOISE_ALLOWED_SCALING_FACTORS = (16, 18, 20, 22, 24, 26, 28, 30, 32)
+WEIGHT_NOISE_DEFAULT_SCALING_FACTOR = 32
+WEIGHT_NOISE_ACTION_DIM = len(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+WEIGHT_NOISE_SOS_TOKEN = WEIGHT_NOISE_ACTION_DIM
+WEIGHT_NOISE_COST_SCALE = 0.025
+WEIGHT_NOISE_COST_MAP = {
+    scaling_factor: scaling_factor * WEIGHT_NOISE_COST_SCALE
+    for scaling_factor in WEIGHT_NOISE_ALLOWED_SCALING_FACTORS
+}
+WEIGHT_NOISE_SCALING_TO_NORM = {
+    scaling_factor: idx / max(1, WEIGHT_NOISE_ACTION_DIM - 1)
+    for idx, scaling_factor in enumerate(sorted(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, reverse=True))
+}
+
+WQ_NOISE_SCALING_MAP = {
+    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+}
+WQ_NOISE_SCALING_TO_ACTION = {
+    scaling_factor: idx for idx, scaling_factor in WQ_NOISE_SCALING_MAP.items()
+}
+WQ_NOISE_ACTION_DIM = len(WQ_NOISE_SCALING_MAP)
+
+WK_NOISE_SCALING_MAP = {
+    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+}
+WK_NOISE_SCALING_TO_ACTION = {
+    scaling_factor: idx for idx, scaling_factor in WK_NOISE_SCALING_MAP.items()
+}
+WK_NOISE_ACTION_DIM = len(WK_NOISE_SCALING_MAP)
+
+WV_NOISE_SCALING_MAP = {
+    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+}
+WV_NOISE_SCALING_TO_ACTION = {
+    scaling_factor: idx for idx, scaling_factor in WV_NOISE_SCALING_MAP.items()
+}
+WV_NOISE_ACTION_DIM = len(WV_NOISE_SCALING_MAP)
+
+WO_NOISE_SCALING_MAP = {
+    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+}
+WO_NOISE_SCALING_TO_ACTION = {
+    scaling_factor: idx for idx, scaling_factor in WO_NOISE_SCALING_MAP.items()
+}
+WO_NOISE_ACTION_DIM = len(WO_NOISE_SCALING_MAP)
+
+WFFN1_NOISE_SCALING_MAP = {
+    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+}
+WFFN1_NOISE_SCALING_TO_ACTION = {
+    scaling_factor: idx for idx, scaling_factor in WFFN1_NOISE_SCALING_MAP.items()
+}
+WFFN1_NOISE_ACTION_DIM = len(WFFN1_NOISE_SCALING_MAP)
+
+WFFN2_NOISE_SCALING_MAP = {
+    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+}
+WFFN2_NOISE_SCALING_TO_ACTION = {
+    scaling_factor: idx for idx, scaling_factor in WFFN2_NOISE_SCALING_MAP.items()
+}
+WFFN2_NOISE_ACTION_DIM = len(WFFN2_NOISE_SCALING_MAP)
+
+NOISE_STAGE_NUM_ACTIONS = 7
+NOISE_STAGE_SOS_TOKEN = WEIGHT_NOISE_SOS_TOKEN
+NOISE_STAGE_CONT_DIM = 6
+NOISE_STAGE_PREV_ACTION_EMBED_DIM = 4
+NOISE_STAGE_STEP_INFO_FILE = "noise_ppo_step_info.txt"
+NOISE_STAGE_TRAINING_CURVE_PATH = "noise_ppo_training_curve.png"
+NOISE_STAGE_ENTROPY_CURVE_PATH = "noise_ppo_entropy_curve.png"
 
 # GELU degree 0 资格阈值：[-2.7, 0) 区间占比 >= 此阈值才能使用 degree 0
 GELU_DEGREE0_THRESHOLD = 2.0 # 设为 2.0（不可能达到）以完全禁用 degree 0 动作 一般设置为 0.80
@@ -125,6 +220,30 @@ GTRXL_MINI_BATCH_EPISODES = 8   # GTrXL PPO更新时的mini-batch大小（按epi
 # metrics: 该数据集使用的指标列表
 # metric_names: 显示用的指标短名 (表格用)
 # metric_full_names: 完整指标名 (日志用)
+def resolve_ppo_learning_rate(raw_value, default_lr=PPO_LR_INITIAL):
+    """Resolve the user-facing rl_lr argument into a PPO optimizer LR.
+
+    Compatibility rules:
+    - `None` or empty: use the built-in PPO default.
+    - `0 < rl_lr < 1`: treat it as a direct optimizer learning rate.
+    - legacy integers such as 20 / 40: interpret them as 20e-6 / 40e-6 so
+      existing shell commands remain meaningful under the PPO implementation.
+    """
+    if raw_value is None or raw_value == "":
+        return float(default_lr), "default"
+
+    try:
+        lr = float(raw_value)
+    except (TypeError, ValueError):
+        return float(default_lr), "default"
+
+    if lr <= 0:
+        return float(default_lr), "default"
+    if lr < 1.0:
+        return float(lr), "direct"
+    return float(lr) * 1e-6, "legacy-micro"
+
+
 DATASET_METRICS_CONFIG = {
     'sst2':  {'type': 'classification', 'metrics': ['accuracy'],
               'metric_names': ['Acc.'], 'metric_full_names': ['Accuracy']},
@@ -1413,6 +1532,537 @@ class RecurrentRolloutBuffer:
                 actions_g, actions_s, logprobs, rewards, values, dones, gelu_masks)
 
 
+class NoiseRecurrentRolloutBuffer:
+    """Rollout buffer for the second-stage 7-action noise RL."""
+
+    def __init__(self):
+        self.episodes = []
+        self._current = None
+
+    def start_episode(self):
+        self._current = {
+            "cont_features": [],
+            "layer_indices": [],
+            "prev_actions": [],
+            "actions": [],
+            "logprobs": [],
+            "rewards": [],
+            "values": [],
+            "dones": [],
+        }
+
+    def add_step(self, cont_feat, layer_idx, prev_actions, actions, logprob, reward, value, done):
+        self._current["cont_features"].append(cont_feat)
+        self._current["layer_indices"].append(layer_idx)
+        self._current["prev_actions"].append(prev_actions)
+        self._current["actions"].append(actions)
+        self._current["logprobs"].append(logprob)
+        self._current["rewards"].append(reward)
+        self._current["values"].append(value)
+        self._current["dones"].append(done)
+
+    def end_episode(self):
+        self.episodes.append(self._current)
+        self._current = None
+
+    def clear(self):
+        self.episodes.clear()
+
+    @property
+    def num_episodes(self):
+        return len(self.episodes)
+
+    def get_batch(self, device):
+        cont_features = torch.stack([
+            torch.stack(ep["cont_features"]) for ep in self.episodes
+        ]).to(device)
+
+        layer_indices = torch.stack([
+            torch.tensor(ep["layer_indices"], dtype=torch.long) for ep in self.episodes
+        ]).to(device)
+
+        prev_actions = torch.stack([
+            torch.stack(ep["prev_actions"]) for ep in self.episodes
+        ]).to(device)
+
+        actions = torch.stack([
+            torch.stack(ep["actions"]) for ep in self.episodes
+        ]).to(device)
+
+        logprobs = torch.stack([
+            torch.stack(ep["logprobs"]) for ep in self.episodes
+        ]).to(device)
+
+        rewards = torch.tensor([
+            ep["rewards"] for ep in self.episodes
+        ], dtype=torch.float32).to(device)
+
+        values = torch.stack([
+            torch.stack(ep["values"]) for ep in self.episodes
+        ]).to(device)
+
+        dones = torch.tensor([
+            ep["dones"] for ep in self.episodes
+        ], dtype=torch.float32).to(device)
+
+        return cont_features, layer_indices, prev_actions, actions, logprobs, rewards, values, dones
+
+
+class NoiseGTrXLStrategyNetwork(nn.Module):
+    """Second-stage GTrXL actor-critic with 7 independent noise-action heads."""
+
+    action_names = ("x", "wq", "wk", "wv", "wo", "wffn1", "wffn2")
+
+    def __init__(self, num_layers=12, d_model=GTRXL_D_MODEL,
+                 n_heads=GTRXL_N_HEADS, n_gtrxl_layers=GTRXL_N_LAYERS,
+                 d_ff=GTRXL_D_FF, dropout=GTRXL_DROPOUT):
+        super().__init__()
+        self.num_layers = num_layers
+        self.d_model = d_model
+
+        self.embed_layer_idx = nn.Embedding(num_layers, LSTM_POS_DIM)
+        self.prev_action_embeddings = nn.ModuleList([
+            nn.Embedding(NOISE_STAGE_SOS_TOKEN + 1, NOISE_STAGE_PREV_ACTION_EMBED_DIM)
+            for _ in range(NOISE_STAGE_NUM_ACTIONS)
+        ])
+        self.fc_continuous = nn.Sequential(
+            nn.Linear(NOISE_STAGE_CONT_DIM, LSTM_PROJ_DIM),
+            nn.LayerNorm(LSTM_PROJ_DIM),
+            nn.SiLU()
+        )
+
+        token_input_dim = (
+            LSTM_POS_DIM +
+            NOISE_STAGE_NUM_ACTIONS * NOISE_STAGE_PREV_ACTION_EMBED_DIM +
+            LSTM_PROJ_DIM
+        )
+        self.input_proj = nn.Identity() if token_input_dim == d_model else nn.Linear(token_input_dim, d_model)
+
+        self.gtrxl_blocks = nn.ModuleList([
+            GTrXLBlock(d_model, n_heads, d_ff, dropout)
+            for _ in range(n_gtrxl_layers)
+        ])
+        self.ln_final = nn.LayerNorm(d_model)
+
+        self.actor_head = nn.Sequential(
+            nn.Linear(d_model, 64),
+            nn.Tanh()
+        )
+        self.noise_heads = nn.ModuleDict({
+            name: nn.Linear(64, INPUT_NOISE_ACTION_DIM)
+            for name in self.action_names
+        })
+
+        self.critic_head = nn.Sequential(
+            nn.Linear(d_model, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+
+        self._causal_mask_cache = {}
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for module in [self.actor_head, self.critic_head, self.fc_continuous]:
+            for layer in module:
+                if isinstance(layer, nn.Linear):
+                    nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
+                    if layer.bias is not None:
+                        nn.init.constant_(layer.bias, 0.0)
+
+        for head in self.noise_heads.values():
+            nn.init.orthogonal_(head.weight, gain=0.01)
+            nn.init.constant_(head.bias, 0.0)
+
+        if isinstance(self.input_proj, nn.Linear):
+            nn.init.orthogonal_(self.input_proj.weight, gain=1.0)
+            if self.input_proj.bias is not None:
+                nn.init.constant_(self.input_proj.bias, 0.0)
+
+        for block in self.gtrxl_blocks:
+            for p in block.attn.in_proj_weight.chunk(3):
+                nn.init.orthogonal_(p)
+            nn.init.orthogonal_(block.attn.out_proj.weight)
+            for layer in block.ff:
+                if isinstance(layer, nn.Linear):
+                    nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
+                    if layer.bias is not None:
+                        nn.init.constant_(layer.bias, 0.0)
+
+    def _get_causal_mask(self, seq_len, device):
+        if seq_len not in self._causal_mask_cache or self._causal_mask_cache[seq_len].device != device:
+            mask = torch.triu(torch.ones(seq_len, seq_len, device=device, dtype=torch.bool), diagonal=1)
+            self._causal_mask_cache[seq_len] = mask
+        return self._causal_mask_cache[seq_len]
+
+    def _build_tokens(self, cont_features, layer_indices, prev_actions):
+        emb_l = self.embed_layer_idx(layer_indices)
+        prev_embs = [
+            emb(prev_actions[:, :, idx])
+            for idx, emb in enumerate(self.prev_action_embeddings)
+        ]
+        feat_c = self.fc_continuous(cont_features)
+        token_input = torch.cat([emb_l, *prev_embs, feat_c], dim=-1)
+        return self.input_proj(token_input)
+
+    def forward(self, cont_features, layer_indices, prev_actions, key_padding_mask=None):
+        tokens = self._build_tokens(cont_features, layer_indices, prev_actions)
+        seq_len = tokens.size(1)
+        causal_mask = self._get_causal_mask(seq_len, tokens.device)
+
+        x = tokens
+        for block in self.gtrxl_blocks:
+            x = block(x, attn_mask=causal_mask, key_padding_mask=key_padding_mask)
+        x = self.ln_final(x)
+
+        actor_feat = self.actor_head(x)
+        logits = {name: self.noise_heads[name](actor_feat) for name in self.action_names}
+        values = self.critic_head(x).squeeze(-1)
+        return logits, values
+
+    def get_action_and_logprob(self, cont_features, layer_indices, prev_actions, return_probs=False):
+        logits_dict, values = self.forward(cont_features, layer_indices, prev_actions)
+        value = values[:, -1].squeeze(0)
+
+        actions = []
+        probs = []
+        logprob = torch.zeros((), dtype=torch.float32, device=cont_features.device)
+        for name in self.action_names:
+            logits = logits_dict[name][:, -1, :].squeeze(0)
+            dist = Categorical(logits=logits)
+            action = dist.sample()
+            actions.append(action)
+            logprob = logprob + dist.log_prob(action)
+            if return_probs:
+                probs.append(torch.softmax(logits, dim=-1))
+
+        actions_tensor = torch.stack(actions)
+        if return_probs:
+            return actions_tensor, logprob, value, probs
+        return actions_tensor, logprob, value
+
+    def evaluate_actions(self, cont_features, layer_indices, prev_actions, actions):
+        logits_dict, values = self.forward(cont_features, layer_indices, prev_actions)
+        logprobs = torch.zeros_like(values)
+        entropy = torch.zeros_like(values)
+        for idx, name in enumerate(self.action_names):
+            dist = Categorical(logits=logits_dict[name])
+            logprobs = logprobs + dist.log_prob(actions[:, :, idx])
+            entropy = entropy + dist.entropy()
+        return logprobs, entropy, values
+
+
+class NoiseOptEnv:
+    """Second-stage RL environment over x/Wq/Wk/Wv/Wo/Wffn1/Wffn2 noise scaling factors."""
+
+    def __init__(self, total_layers, baseline_cost, baseline_metrics, evaluator,
+                 fixed_gelu, fixed_softmax, constraint_limits=None, prev_metrics=None, num_metrics=2):
+        self.total_layers = total_layers
+        self.baseline_cost = baseline_cost
+        self.baseline_loss, self.baseline_p, self.baseline_s = baseline_metrics
+        self.evaluator = evaluator
+        self.fixed_gelu = np.asarray(fixed_gelu, dtype=int)
+        self.fixed_softmax = np.asarray(fixed_softmax, dtype=int)
+        self.num_metrics = num_metrics
+
+        if constraint_limits is None:
+            self.constraint_limits = {
+                "loss": self.baseline_loss * (1 + REWARD_THRESHOLD),
+                "metric1": self.baseline_p * (1 - REWARD_THRESHOLD),
+                "metric2": self.baseline_s * (1 - REWARD_THRESHOLD),
+            }
+        else:
+            self.constraint_limits = constraint_limits
+
+        if prev_metrics is None:
+            self.prev_episode_metrics = {
+                "loss": self.baseline_loss,
+                "metric1": self.baseline_p,
+                "metric2": self.baseline_s,
+                "cost": self.baseline_cost,
+            }
+        else:
+            self.prev_episode_metrics = prev_metrics
+
+        self.max_cost_per_layer = (
+            INPUT_NOISE_COST_MAP[max(INPUT_NOISE_ALLOWED_SCALING_FACTORS)] +
+            6 * WEIGHT_NOISE_COST_MAP[max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)]
+        )
+        self.expected_cost_per_layer = (
+            INPUT_NOISE_COST_MAP[int(np.mean(INPUT_NOISE_ALLOWED_SCALING_FACTORS))] +
+            6 * WEIGHT_NOISE_COST_MAP[int(np.mean(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS))]
+        )
+        self.current_episode_metrics = None
+        self.reset()
+
+    def reset(self):
+        self.current_layer = 0
+        self.accumulated_cost = 0.0
+        self.input_noise_config = []
+        self.wq_noise_config = []
+        self.wk_noise_config = []
+        self.wv_noise_config = []
+        self.wo_noise_config = []
+        self.wffn1_noise_config = []
+        self.wffn2_noise_config = []
+
+        self.prev_action_indices = np.full(NOISE_STAGE_NUM_ACTIONS, NOISE_STAGE_SOS_TOKEN, dtype=np.int64)
+        self.prev_scalings = {
+            "x": max(INPUT_NOISE_ALLOWED_SCALING_FACTORS),
+            "wq": max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+            "wk": max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+            "wv": max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+            "wo": max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+            "wffn1": max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+            "wffn2": max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+        }
+
+        self.accumulated_dense_reward = 0.0
+        self.input_history = np.full(self.total_layers, HISTORY_MASK_VALUE, dtype=np.float32)
+        self.wq_history = np.full(self.total_layers, HISTORY_MASK_VALUE, dtype=np.float32)
+        self.wk_history = np.full(self.total_layers, HISTORY_MASK_VALUE, dtype=np.float32)
+        self.wv_history = np.full(self.total_layers, HISTORY_MASK_VALUE, dtype=np.float32)
+        self.wo_history = np.full(self.total_layers, HISTORY_MASK_VALUE, dtype=np.float32)
+        self.wffn1_history = np.full(self.total_layers, HISTORY_MASK_VALUE, dtype=np.float32)
+        self.wffn2_history = np.full(self.total_layers, HISTORY_MASK_VALUE, dtype=np.float32)
+        return self._get_state()
+
+    def _get_budget_features(self):
+        prev_loss = self.prev_episode_metrics["loss"]
+        prev_m1 = self.prev_episode_metrics["metric1"]
+        prev_m2 = self.prev_episode_metrics["metric2"]
+
+        loss_budget = 1.0 - prev_loss / (self.constraint_limits["loss"] + 1e-8)
+        m1_budget = prev_m1 / (self.constraint_limits["metric1"] + 1e-8) - 1.0
+        if self.num_metrics == 1:
+            m2_budget = 0.0
+        else:
+            m2_budget = prev_m2 / (self.constraint_limits["metric2"] + 1e-8) - 1.0
+
+        return (
+            np.clip(loss_budget, -1.0, 1.0),
+            np.clip(m1_budget, -1.0, 1.0),
+            np.clip(m2_budget, -1.0, 1.0),
+        )
+
+    def get_continuous_features(self):
+        expected_cost_so_far = self.current_layer * self.expected_cost_per_layer
+        if expected_cost_so_far > 0:
+            cost_deviation = (self.accumulated_cost - expected_cost_so_far) / expected_cost_so_far
+        else:
+            cost_deviation = 0.0
+        cost_deviation = np.clip(cost_deviation, -1.0, 1.0)
+
+        baseline_cost_so_far = self.current_layer * self.max_cost_per_layer
+        if baseline_cost_so_far > 0:
+            complexity_debt = (baseline_cost_so_far - self.accumulated_cost) / baseline_cost_so_far
+        else:
+            complexity_debt = 0.0
+        complexity_debt = np.clip(complexity_debt, 0.0, 1.0)
+
+        progress = self.current_layer / self.total_layers
+        loss_budget, m1_budget, m2_budget = self._get_budget_features()
+        return np.array(
+            [cost_deviation, complexity_debt, progress, loss_budget, m1_budget, m2_budget],
+            dtype=np.float32,
+        )
+
+    def _get_state(self):
+        position = np.zeros(self.total_layers, dtype=np.float32)
+        if self.current_layer < self.total_layers:
+            position[self.current_layer] = 1.0
+
+        prev_norms = np.array([
+            INPUT_NOISE_SCALING_TO_NORM[self.prev_scalings["x"]],
+            WEIGHT_NOISE_SCALING_TO_NORM[self.prev_scalings["wq"]],
+            WEIGHT_NOISE_SCALING_TO_NORM[self.prev_scalings["wk"]],
+            WEIGHT_NOISE_SCALING_TO_NORM[self.prev_scalings["wv"]],
+            WEIGHT_NOISE_SCALING_TO_NORM[self.prev_scalings["wo"]],
+            WEIGHT_NOISE_SCALING_TO_NORM[self.prev_scalings["wffn1"]],
+            WEIGHT_NOISE_SCALING_TO_NORM[self.prev_scalings["wffn2"]],
+        ], dtype=np.float32)
+
+        cont = self.get_continuous_features()
+        state = np.concatenate([
+            position,
+            [cont[0]],
+            prev_norms,
+            [cont[1]],
+            [cont[2]],
+            self.input_history,
+            self.wq_history,
+            self.wk_history,
+            self.wv_history,
+            self.wo_history,
+            self.wffn1_history,
+            self.wffn2_history,
+            cont[3:],
+        ])
+        return state.astype(np.float32)
+
+    def _compute_dense_step_reward(self, step_cost):
+        cost_saving = (self.max_cost_per_layer - step_cost) / self.max_cost_per_layer
+        cost_reward = REWARD_DENSE_SCALE * cost_saving
+
+        layers_completed = self.current_layer + 1
+        expected_cost_so_far = layers_completed * self.expected_cost_per_layer
+        actual_cost_so_far = self.accumulated_cost + step_cost
+        if expected_cost_so_far > 0:
+            budget_deviation = (actual_cost_so_far - expected_cost_so_far) / expected_cost_so_far
+        else:
+            budget_deviation = 0.0
+
+        if budget_deviation <= 0:
+            budget_reward = BUDGET_DEVIATION_SCALE * (1.0 - abs(budget_deviation) * 0.5)
+        else:
+            budget_reward = -BUDGET_DEVIATION_SCALE * budget_deviation
+        return cost_reward + budget_reward
+
+    def step(self, input_action_idx, wq_action_idx, wk_action_idx, wv_action_idx,
+             wo_action_idx, wffn1_action_idx, wffn2_action_idx):
+        input_sf = INPUT_NOISE_SCALING_MAP[int(input_action_idx)]
+        wq_sf = WQ_NOISE_SCALING_MAP[int(wq_action_idx)]
+        wk_sf = WK_NOISE_SCALING_MAP[int(wk_action_idx)]
+        wv_sf = WV_NOISE_SCALING_MAP[int(wv_action_idx)]
+        wo_sf = WO_NOISE_SCALING_MAP[int(wo_action_idx)]
+        wffn1_sf = WFFN1_NOISE_SCALING_MAP[int(wffn1_action_idx)]
+        wffn2_sf = WFFN2_NOISE_SCALING_MAP[int(wffn2_action_idx)]
+
+        self.input_noise_config.append(input_sf)
+        self.wq_noise_config.append(wq_sf)
+        self.wk_noise_config.append(wk_sf)
+        self.wv_noise_config.append(wv_sf)
+        self.wo_noise_config.append(wo_sf)
+        self.wffn1_noise_config.append(wffn1_sf)
+        self.wffn2_noise_config.append(wffn2_sf)
+
+        step_cost = (
+            INPUT_NOISE_COST_MAP[input_sf] +
+            WEIGHT_NOISE_COST_MAP[wq_sf] +
+            WEIGHT_NOISE_COST_MAP[wk_sf] +
+            WEIGHT_NOISE_COST_MAP[wv_sf] +
+            WEIGHT_NOISE_COST_MAP[wo_sf] +
+            WEIGHT_NOISE_COST_MAP[wffn1_sf] +
+            WEIGHT_NOISE_COST_MAP[wffn2_sf]
+        )
+        self.accumulated_cost += step_cost
+
+        self.prev_action_indices = np.array([
+            int(input_action_idx), int(wq_action_idx), int(wk_action_idx), int(wv_action_idx),
+            int(wo_action_idx), int(wffn1_action_idx), int(wffn2_action_idx)
+        ], dtype=np.int64)
+        self.prev_scalings = {
+            "x": input_sf,
+            "wq": wq_sf,
+            "wk": wk_sf,
+            "wv": wv_sf,
+            "wo": wo_sf,
+            "wffn1": wffn1_sf,
+            "wffn2": wffn2_sf,
+        }
+
+        self.input_history[self.current_layer] = INPUT_NOISE_SCALING_TO_NORM[input_sf]
+        self.wq_history[self.current_layer] = WEIGHT_NOISE_SCALING_TO_NORM[wq_sf]
+        self.wk_history[self.current_layer] = WEIGHT_NOISE_SCALING_TO_NORM[wk_sf]
+        self.wv_history[self.current_layer] = WEIGHT_NOISE_SCALING_TO_NORM[wv_sf]
+        self.wo_history[self.current_layer] = WEIGHT_NOISE_SCALING_TO_NORM[wo_sf]
+        self.wffn1_history[self.current_layer] = WEIGHT_NOISE_SCALING_TO_NORM[wffn1_sf]
+        self.wffn2_history[self.current_layer] = WEIGHT_NOISE_SCALING_TO_NORM[wffn2_sf]
+
+        dense_reward = self._compute_dense_step_reward(step_cost)
+        self.accumulated_dense_reward += dense_reward
+
+        info = {
+            "layer_index": self.current_layer,
+            "curr_input_noise_scaling_factor": input_sf,
+            "curr_wq_noise_scaling_factor": wq_sf,
+            "curr_wk_noise_scaling_factor": wk_sf,
+            "curr_wv_noise_scaling_factor": wv_sf,
+            "curr_wo_noise_scaling_factor": wo_sf,
+            "curr_wffn1_noise_scaling_factor": wffn1_sf,
+            "curr_wffn2_noise_scaling_factor": wffn2_sf,
+            "accumulated_cost": self.accumulated_cost,
+            "input_noise_config": self.input_noise_config.copy(),
+            "wq_noise_config": self.wq_noise_config.copy(),
+            "wk_noise_config": self.wk_noise_config.copy(),
+            "wv_noise_config": self.wv_noise_config.copy(),
+            "wo_noise_config": self.wo_noise_config.copy(),
+            "wffn1_noise_config": self.wffn1_noise_config.copy(),
+            "wffn2_noise_config": self.wffn2_noise_config.copy(),
+            "dense_reward": dense_reward,
+        }
+
+        self.current_layer += 1
+        if self.current_layer < self.total_layers:
+            return self._get_state(), dense_reward, False, info
+
+        final_reward = self._compute_final_reward()
+        info["final_reward"] = final_reward
+        info["accumulated_dense_reward"] = self.accumulated_dense_reward
+        return self._get_state(), final_reward + dense_reward, True, info
+
+    def _compute_final_reward(self):
+        loss, m1, m2, _ = self.evaluator.evaluate_noise_model(
+            input_noise_scaling_factors=np.array(self.input_noise_config, dtype=int),
+            wq_noise_scaling_factors=np.array(self.wq_noise_config, dtype=int),
+            wk_noise_scaling_factors=np.array(self.wk_noise_config, dtype=int),
+            wv_noise_scaling_factors=np.array(self.wv_noise_config, dtype=int),
+            wo_noise_scaling_factors=np.array(self.wo_noise_config, dtype=int),
+            wffn1_noise_scaling_factors=np.array(self.wffn1_noise_config, dtype=int),
+            wffn2_noise_scaling_factors=np.array(self.wffn2_noise_config, dtype=int),
+        )
+
+        self.current_episode_metrics = {
+            "loss": loss,
+            "metric1": m1,
+            "metric2": m2,
+            "cost": self.accumulated_cost,
+        }
+
+        delta_loss = self.prev_episode_metrics["loss"] - loss
+        delta_m1 = m1 - self.prev_episode_metrics["metric1"]
+        delta_m2 = m2 - self.prev_episode_metrics["metric2"]
+
+        def amplify_signal(delta):
+            sign = 1.0 if delta >= 0 else -1.0
+            return sign * (abs(delta) ** DIFF_REWARD_POWER) * DIFF_REWARD_SCALE_ACC
+
+        r_loss_diff = amplify_signal(delta_loss)
+        r_m1_diff = amplify_signal(delta_m1)
+        r_m2_diff = amplify_signal(delta_m2)
+
+        if self.num_metrics == 1:
+            r_accuracy_diff = (r_loss_diff + r_m1_diff) / 2.0
+        else:
+            r_accuracy_diff = (r_loss_diff + r_m1_diff + r_m2_diff) / 3.0
+
+        def log_barrier_reward(curr_value, limit_value, is_upper_bound=True):
+            if is_upper_bound:
+                margin = limit_value - curr_value
+            else:
+                margin = curr_value - limit_value
+            if margin < 0:
+                return -LOG_BARRIER_VIOLATION_SCALE * np.exp(-margin * LOG_BARRIER_VIOLATION_STEEPNESS)
+            return LOG_BARRIER_SATISFACTION_SCALE * np.log(margin + 1e-5)
+
+        r_loss_barrier = log_barrier_reward(loss, self.constraint_limits["loss"], is_upper_bound=True)
+        r_m1_barrier = log_barrier_reward(m1, self.constraint_limits["metric1"], is_upper_bound=False)
+        r_m2_barrier = log_barrier_reward(m2, self.constraint_limits["metric2"], is_upper_bound=False)
+
+        if self.num_metrics == 1:
+            r_constraint = (r_loss_barrier + r_m1_barrier) / 2.0
+        else:
+            r_constraint = (r_loss_barrier + r_m1_barrier + r_m2_barrier) / 3.0
+
+        cost_saving = (self.baseline_cost - self.accumulated_cost) / self.baseline_cost
+        r_cost = cost_saving * REWARD_COST_WEIGHT
+        r_accuracy = r_accuracy_diff + r_constraint
+        raw_reward = r_accuracy + r_cost
+        scaled_reward = raw_reward / REWARD_NORMALIZATION_SCALE
+        self.last_cost_reward = r_cost / REWARD_NORMALIZATION_SCALE
+        self.last_acc_reward = r_accuracy / REWARD_NORMALIZATION_SCALE
+        return np.clip(scaled_reward, REWARD_CLIP_MIN, REWARD_CLIP_MAX)
+
 class TransformerOptEnv:
     """
     Transformer优化环境
@@ -1891,10 +2541,56 @@ class LayerImportanceEvaluator(TrainerCallback):
         # --- 密文代价模型 ---
         self.GELU_COST_MAP = {4: 3.0, 2: 2.5, 1: 1.0, 0: -1.0}
         self.SOFTMAX_COST_MAP = {6: 3.0, 5: 2.5, 4: 2.0, 3: 1.5, 2: 1.0}
+        self.INPUT_NOISE_COST_MAP = INPUT_NOISE_COST_MAP.copy()
+        self.WEIGHT_NOISE_COST_MAP = WEIGHT_NOISE_COST_MAP.copy()
 
         # 搜索状态初始化
         self.current_gelu_degrees = np.full(self.total_layers, 4, dtype=int)
         self.current_softmax_degrees = np.full(self.total_layers, 6, dtype=int)
+        self.current_input_noise_scaling_factors = np.full(
+            self.total_layers,
+            INPUT_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
+        self.input_noise_action_space = tuple(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
+        self.current_wq_noise_scaling_factors = np.full(
+            self.total_layers,
+            WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
+        self.current_wk_noise_scaling_factors = np.full(
+            self.total_layers,
+            WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
+        self.current_wv_noise_scaling_factors = np.full(
+            self.total_layers,
+            WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
+        self.current_wo_noise_scaling_factors = np.full(
+            self.total_layers,
+            WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
+        self.current_wffn1_noise_scaling_factors = np.full(
+            self.total_layers,
+            WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
+        self.current_wffn2_noise_scaling_factors = np.full(
+            self.total_layers,
+            WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
+        self.wq_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        self.wk_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        self.wv_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        self.wo_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        self.wffn1_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        self.wffn2_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        self.rl_lr_raw = rl_lr
+        self.ppo_lr_initial, self.ppo_lr_mode = resolve_ppo_learning_rate(rl_lr)
         
         # --- 用户阈值配置 (Strict 1.5%) ---
         self.error_threshold = 0.015
@@ -1902,14 +2598,20 @@ class LayerImportanceEvaluator(TrainerCallback):
         
         self.log_file = "pruning_search_log.txt"
         self.step_info_file = "ppo_step_info.txt"  # StepInfo 中间结果输出文件
+        self.noise_step_info_file = NOISE_STAGE_STEP_INFO_FILE
         with open(self.log_file, "w") as f:
             f.write("=== PPO RL Optimization Log Started ===\n")
+        with open(self.log_file, "a", encoding="utf-8") as f:
+            f.write(
+                f"[Info] PPO LR resolved from rl_lr={self.rl_lr_raw!r} -> "
+                f"{self.ppo_lr_initial:.6g} ({self.ppo_lr_mode})\n"
+            )
         
         # ==================== 策略二：动态超参数调度状态 ====================
         self.current_episode = 0
         self.total_episodes = PPO_MAX_EPISODES
         self.current_entropy_coef = PPO_ENTROPY_INITIAL
-        self.current_lr = PPO_LR_INITIAL
+        self.current_lr = self.ppo_lr_initial
         
         # ==================== PPO 7.1: 运行时回报归一化状态 ====================
         self.reward_history = []  # 历史回报滑动窗口
@@ -2260,6 +2962,992 @@ class LayerImportanceEvaluator(TrainerCallback):
         for d in range(2, 7):
             if softmax_map[d]:
                 self.reversible_handler.replace_layer_softmax(softmax_map[d], handler_layer_name, degree=d)
+
+    def validate_input_noise_scaling_factors(self, scaling_factors):
+        arr = np.asarray(scaling_factors, dtype=int)
+        if arr.shape != (self.total_layers,):
+            raise ValueError(
+                f"input_noise_scaling_factors must have shape ({self.total_layers},), "
+                f"but got {arr.shape}"
+            )
+        invalid = sorted(set(arr.tolist()) - set(INPUT_NOISE_ALLOWED_SCALING_FACTORS))
+        if invalid:
+            raise ValueError(
+                f"Unsupported input-noise scaling factors: {invalid}. "
+                f"Allowed values: {list(INPUT_NOISE_ALLOWED_SCALING_FACTORS)}"
+            )
+        return arr
+
+    def validate_weight_noise_scaling_factors(self, scaling_factors, noise_name):
+        arr = np.asarray(scaling_factors, dtype=int)
+        if arr.shape != (self.total_layers,):
+            raise ValueError(
+                f"{noise_name}_noise_scaling_factors must have shape ({self.total_layers},), "
+                f"but got {arr.shape}"
+            )
+        invalid = sorted(set(arr.tolist()) - set(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS))
+        if invalid:
+            raise ValueError(
+                f"Unsupported {noise_name}-noise scaling factors: {invalid}. "
+                f"Allowed values: {list(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)}"
+            )
+        return arr
+
+    def _apply_weight_noise_configuration(self, scaling_factors, noise_name, replace_method_name, state_attr):
+        arr = self.validate_weight_noise_scaling_factors(scaling_factors, noise_name)
+        handler_layer_name = "model." + self.layers_attribute
+        scaling_map = {sf: [] for sf in WEIGHT_NOISE_ALLOWED_SCALING_FACTORS}
+        for idx, scaling_factor in enumerate(arr):
+            scaling_map[int(scaling_factor)].append(idx)
+        replace_method = getattr(self.reversible_handler, replace_method_name)
+        for scaling_factor in WEIGHT_NOISE_ALLOWED_SCALING_FACTORS:
+            if scaling_map[scaling_factor]:
+                replace_method(
+                    scaling_map[scaling_factor],
+                    handler_layer_name,
+                    scaling_factor=scaling_factor,
+                    distribution="encoding",
+                )
+        setattr(self, state_attr, arr.copy())
+
+    def _clear_weight_noise_configuration(self, restore_method_name, state_attr):
+        handler_layer_name = "model." + self.layers_attribute
+        restore_method = getattr(self.reversible_handler, restore_method_name)
+        restore_method(
+            list(range(self.total_layers)),
+            handler_layer_name,
+        )
+        setattr(
+            self,
+            state_attr,
+            np.full(
+                self.total_layers,
+                WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+                dtype=int,
+            ),
+        )
+
+    def apply_input_noise_configuration(self, input_noise_scaling_factors):
+        """Apply layer-wise x-noise scaling factors for the active second-stage RL."""
+        arr = self.validate_input_noise_scaling_factors(input_noise_scaling_factors)
+        handler_layer_name = "model." + self.layers_attribute
+        scaling_map = {sf: [] for sf in INPUT_NOISE_ALLOWED_SCALING_FACTORS}
+        for idx, scaling_factor in enumerate(arr):
+            scaling_map[int(scaling_factor)].append(idx)
+        for scaling_factor in INPUT_NOISE_ALLOWED_SCALING_FACTORS:
+            if scaling_map[scaling_factor]:
+                self.reversible_handler.replace_layer_input_noise(
+                    scaling_map[scaling_factor],
+                    handler_layer_name,
+                    scaling_factor=scaling_factor,
+                    distribution="fresh",
+                )
+        self.current_input_noise_scaling_factors = arr.copy()
+
+    def clear_input_noise_configuration(self):
+        handler_layer_name = "model." + self.layers_attribute
+        self.reversible_handler.restore_layer_input_noise(
+            list(range(self.total_layers)),
+            handler_layer_name,
+        )
+        self.current_input_noise_scaling_factors = np.full(
+            self.total_layers,
+            INPUT_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
+
+    def apply_wq_noise_configuration(self, wq_noise_scaling_factors):
+        """Apply layer-wise Wq encoding-noise scaling factors."""
+        self._apply_weight_noise_configuration(
+            wq_noise_scaling_factors,
+            noise_name="wq",
+            replace_method_name="replace_layer_query_noise",
+            state_attr="current_wq_noise_scaling_factors",
+        )
+
+    def clear_wq_noise_configuration(self):
+        self._clear_weight_noise_configuration(
+            restore_method_name="restore_layer_query_noise",
+            state_attr="current_wq_noise_scaling_factors",
+        )
+
+    def apply_wk_noise_configuration(self, wk_noise_scaling_factors):
+        """Apply layer-wise Wk encoding-noise scaling factors."""
+        self._apply_weight_noise_configuration(
+            wk_noise_scaling_factors,
+            noise_name="wk",
+            replace_method_name="replace_layer_key_noise",
+            state_attr="current_wk_noise_scaling_factors",
+        )
+
+    def clear_wk_noise_configuration(self):
+        self._clear_weight_noise_configuration(
+            restore_method_name="restore_layer_key_noise",
+            state_attr="current_wk_noise_scaling_factors",
+        )
+
+    def apply_wv_noise_configuration(self, wv_noise_scaling_factors):
+        """Apply layer-wise Wv encoding-noise scaling factors."""
+        self._apply_weight_noise_configuration(
+            wv_noise_scaling_factors,
+            noise_name="wv",
+            replace_method_name="replace_layer_value_noise",
+            state_attr="current_wv_noise_scaling_factors",
+        )
+
+    def clear_wv_noise_configuration(self):
+        self._clear_weight_noise_configuration(
+            restore_method_name="restore_layer_value_noise",
+            state_attr="current_wv_noise_scaling_factors",
+        )
+
+    def apply_wo_noise_configuration(self, wo_noise_scaling_factors):
+        """Apply layer-wise Wo encoding-noise scaling factors."""
+        self._apply_weight_noise_configuration(
+            wo_noise_scaling_factors,
+            noise_name="wo",
+            replace_method_name="replace_layer_attention_output_noise",
+            state_attr="current_wo_noise_scaling_factors",
+        )
+
+    def clear_wo_noise_configuration(self):
+        self._clear_weight_noise_configuration(
+            restore_method_name="restore_layer_attention_output_noise",
+            state_attr="current_wo_noise_scaling_factors",
+        )
+
+    def apply_wffn1_noise_configuration(self, wffn1_noise_scaling_factors):
+        """Apply layer-wise Wffn1 encoding-noise scaling factors."""
+        self._apply_weight_noise_configuration(
+            wffn1_noise_scaling_factors,
+            noise_name="wffn1",
+            replace_method_name="replace_layer_ffn1_noise",
+            state_attr="current_wffn1_noise_scaling_factors",
+        )
+
+    def clear_wffn1_noise_configuration(self):
+        self._clear_weight_noise_configuration(
+            restore_method_name="restore_layer_ffn1_noise",
+            state_attr="current_wffn1_noise_scaling_factors",
+        )
+
+    def apply_wffn2_noise_configuration(self, wffn2_noise_scaling_factors):
+        """Apply layer-wise Wffn2 encoding-noise scaling factors."""
+        self._apply_weight_noise_configuration(
+            wffn2_noise_scaling_factors,
+            noise_name="wffn2",
+            replace_method_name="replace_layer_ffn2_noise",
+            state_attr="current_wffn2_noise_scaling_factors",
+        )
+
+    def clear_wffn2_noise_configuration(self):
+        self._clear_weight_noise_configuration(
+            restore_method_name="restore_layer_ffn2_noise",
+            state_attr="current_wffn2_noise_scaling_factors",
+        )
+
+    def apply_weight_noise_configuration(
+            self,
+            wq_noise_scaling_factors=None,
+            wk_noise_scaling_factors=None,
+            wv_noise_scaling_factors=None,
+            wo_noise_scaling_factors=None,
+            wffn1_noise_scaling_factors=None,
+            wffn2_noise_scaling_factors=None
+            ):
+        if wq_noise_scaling_factors is not None:
+            self.apply_wq_noise_configuration(wq_noise_scaling_factors)
+        if wk_noise_scaling_factors is not None:
+            self.apply_wk_noise_configuration(wk_noise_scaling_factors)
+        if wv_noise_scaling_factors is not None:
+            self.apply_wv_noise_configuration(wv_noise_scaling_factors)
+        if wo_noise_scaling_factors is not None:
+            self.apply_wo_noise_configuration(wo_noise_scaling_factors)
+        if wffn1_noise_scaling_factors is not None:
+            self.apply_wffn1_noise_configuration(wffn1_noise_scaling_factors)
+        if wffn2_noise_scaling_factors is not None:
+            self.apply_wffn2_noise_configuration(wffn2_noise_scaling_factors)
+
+    def clear_weight_noise_configuration(self):
+        self.clear_wq_noise_configuration()
+        self.clear_wk_noise_configuration()
+        self.clear_wv_noise_configuration()
+        self.clear_wo_noise_configuration()
+        self.clear_wffn1_noise_configuration()
+        self.clear_wffn2_noise_configuration()
+
+    def apply_qkv_noise_configuration(
+            self,
+            wq_noise_scaling_factors=None,
+            wk_noise_scaling_factors=None,
+            wv_noise_scaling_factors=None
+            ):
+        """Backward-compatible alias for the earlier QKV-only helper."""
+        self.apply_weight_noise_configuration(
+            wq_noise_scaling_factors=wq_noise_scaling_factors,
+            wk_noise_scaling_factors=wk_noise_scaling_factors,
+            wv_noise_scaling_factors=wv_noise_scaling_factors,
+        )
+
+    def clear_qkv_noise_configuration(self):
+        """Backward-compatible alias for the earlier QKV-only helper."""
+        self.clear_wq_noise_configuration()
+        self.clear_wk_noise_configuration()
+        self.clear_wv_noise_configuration()
+
+    def evaluate_model_with_input_noise(
+            self,
+            gelu_degrees,
+            softmax_degrees,
+            input_noise_scaling_factors,
+            use_train=True
+            ):
+        """Evaluate a fixed GELU/Softmax config with layer-wise x-noise enabled."""
+        self.apply_configuration(gelu_degrees, softmax_degrees)
+        self.apply_input_noise_configuration(input_noise_scaling_factors)
+        dataloader = self.dataloader_train if use_train else self.dataloader_test
+        try:
+            return self._run_evaluation(dataloader, use_train=use_train)
+        finally:
+            self.clear_input_noise_configuration()
+
+    def evaluate_model_with_attention_noise(
+            self,
+            gelu_degrees,
+            softmax_degrees,
+            input_noise_scaling_factors=None,
+            wq_noise_scaling_factors=None,
+            wk_noise_scaling_factors=None,
+            wv_noise_scaling_factors=None,
+            wo_noise_scaling_factors=None,
+            wffn1_noise_scaling_factors=None,
+            wffn2_noise_scaling_factors=None,
+            use_train=True
+            ):
+        """Evaluate a fixed GELU/Softmax config with second-stage noise enabled."""
+        self.apply_configuration(gelu_degrees, softmax_degrees)
+        input_noise_enabled = input_noise_scaling_factors is not None
+        weight_noise_enabled = any(
+            config is not None
+            for config in (
+                wq_noise_scaling_factors,
+                wk_noise_scaling_factors,
+                wv_noise_scaling_factors,
+                wo_noise_scaling_factors,
+                wffn1_noise_scaling_factors,
+                wffn2_noise_scaling_factors,
+            )
+        )
+        if input_noise_enabled:
+            self.apply_input_noise_configuration(input_noise_scaling_factors)
+        if weight_noise_enabled:
+            self.apply_weight_noise_configuration(
+                wq_noise_scaling_factors=wq_noise_scaling_factors,
+                wk_noise_scaling_factors=wk_noise_scaling_factors,
+                wv_noise_scaling_factors=wv_noise_scaling_factors,
+                wo_noise_scaling_factors=wo_noise_scaling_factors,
+                wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
+                wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
+            )
+        dataloader = self.dataloader_train if use_train else self.dataloader_test
+        try:
+            return self._run_evaluation(dataloader, use_train=use_train)
+        finally:
+            if weight_noise_enabled:
+                self.clear_weight_noise_configuration()
+            if input_noise_enabled:
+                self.clear_input_noise_configuration()
+
+    def get_noise_simulated_cost(
+            self,
+            input_noise_scaling_factors,
+            wq_noise_scaling_factors,
+            wk_noise_scaling_factors,
+            wv_noise_scaling_factors,
+            wo_noise_scaling_factors,
+            wffn1_noise_scaling_factors,
+            wffn2_noise_scaling_factors,
+            ):
+        breakdown = {
+            "x": float(sum(self.INPUT_NOISE_COST_MAP[int(v)] for v in np.asarray(input_noise_scaling_factors, dtype=int))),
+            "wq": float(sum(self.WEIGHT_NOISE_COST_MAP[int(v)] for v in np.asarray(wq_noise_scaling_factors, dtype=int))),
+            "wk": float(sum(self.WEIGHT_NOISE_COST_MAP[int(v)] for v in np.asarray(wk_noise_scaling_factors, dtype=int))),
+            "wv": float(sum(self.WEIGHT_NOISE_COST_MAP[int(v)] for v in np.asarray(wv_noise_scaling_factors, dtype=int))),
+            "wo": float(sum(self.WEIGHT_NOISE_COST_MAP[int(v)] for v in np.asarray(wo_noise_scaling_factors, dtype=int))),
+            "wffn1": float(sum(self.WEIGHT_NOISE_COST_MAP[int(v)] for v in np.asarray(wffn1_noise_scaling_factors, dtype=int))),
+            "wffn2": float(sum(self.WEIGHT_NOISE_COST_MAP[int(v)] for v in np.asarray(wffn2_noise_scaling_factors, dtype=int))),
+        }
+        return float(sum(breakdown.values())), breakdown
+
+    def _get_max_noise_configuration(self):
+        return {
+            "input_noise_scaling_factors": np.full(self.total_layers, max(INPUT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
+            "wq_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
+            "wk_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
+            "wv_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
+            "wo_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
+            "wffn1_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
+            "wffn2_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
+        }
+
+    def _reset_runtime_ppo_state(self):
+        self.current_episode = 0
+        self.current_entropy_coef = PPO_ENTROPY_INITIAL
+        self.current_lr = self.ppo_lr_initial
+        self.reward_history = []
+        self.reward_mean = 0.0
+        self.reward_std = 1.0
+        self.return_normalizer = RunningMeanStd()
+
+    def _write_noise_step_info(self, step_info, f):
+        f.write(f"  step_global: {step_info['step_global']}\n")
+        f.write(f"  episode_id: {step_info['episode_id']}\n")
+        f.write(f"  layer_index: {step_info['layer_index']}\n")
+        f.write(f"  state_vector: {step_info['state_vector']}\n")
+        f.write(f"  curr_input_noise_scaling_factor: {step_info['curr_input_noise_scaling_factor']}\n")
+        f.write(f"  curr_wq_noise_scaling_factor: {step_info['curr_wq_noise_scaling_factor']}\n")
+        f.write(f"  curr_wk_noise_scaling_factor: {step_info['curr_wk_noise_scaling_factor']}\n")
+        f.write(f"  curr_wv_noise_scaling_factor: {step_info['curr_wv_noise_scaling_factor']}\n")
+        f.write(f"  curr_wo_noise_scaling_factor: {step_info['curr_wo_noise_scaling_factor']}\n")
+        f.write(f"  curr_wffn1_noise_scaling_factor: {step_info['curr_wffn1_noise_scaling_factor']}\n")
+        f.write(f"  curr_wffn2_noise_scaling_factor: {step_info['curr_wffn2_noise_scaling_factor']}\n")
+        f.write(f"  x_prob_dist: {step_info['x_prob_dist']}\n")
+        f.write(f"  wq_prob_dist: {step_info['wq_prob_dist']}\n")
+        f.write(f"  wk_prob_dist: {step_info['wk_prob_dist']}\n")
+        f.write(f"  wv_prob_dist: {step_info['wv_prob_dist']}\n")
+        f.write(f"  wo_prob_dist: {step_info['wo_prob_dist']}\n")
+        f.write(f"  wffn1_prob_dist: {step_info['wffn1_prob_dist']}\n")
+        f.write(f"  wffn2_prob_dist: {step_info['wffn2_prob_dist']}\n")
+        f.write(f"  critic_value: {step_info['critic_value']}\n")
+        f.write(f"  accumulated_cost: {step_info['accumulated_cost']}\n")
+        f.write(f"  input_noise_config: {step_info['input_noise_config']}\n")
+        f.write(f"  wq_noise_config: {step_info['wq_noise_config']}\n")
+        f.write(f"  wk_noise_config: {step_info['wk_noise_config']}\n")
+        f.write(f"  wv_noise_config: {step_info['wv_noise_config']}\n")
+        f.write(f"  wo_noise_config: {step_info['wo_noise_config']}\n")
+        f.write(f"  wffn1_noise_config: {step_info['wffn1_noise_config']}\n")
+        f.write(f"  wffn2_noise_config: {step_info['wffn2_noise_config']}\n")
+        if "current_lr" in step_info:
+            f.write(f"  current_lr: {step_info['current_lr']:.6f}\n")
+        if "current_entropy_coef" in step_info:
+            f.write(f"  current_entropy_coef: {step_info['current_entropy_coef']:.6f}\n")
+
+    def ppo_update_noise_gtrxl(self, noise_net, optimizer, buffer, device,
+                               mini_batch_episodes=GTRXL_MINI_BATCH_EPISODES, entropy_coef=None,
+                               ppo_update_step=0):
+        if entropy_coef is None:
+            entropy_coef = self.get_current_entropy_coef()
+
+        if ppo_update_step < GTRXL_WARMUP_STEPS:
+            warmup_factor = (ppo_update_step + 1) / GTRXL_WARMUP_STEPS
+            current_lr = self.ppo_lr_initial * warmup_factor
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = current_lr
+
+        (cont_features, layer_indices, prev_actions, actions,
+         old_logprobs, rewards, values, dones) = buffer.get_batch(device)
+
+        n_eps = cont_features.size(0)
+        all_advantages = []
+        all_returns = []
+        for i in range(n_eps):
+            adv, ret = self.compute_gae(
+                rewards[i].cpu().numpy(),
+                values[i].cpu().numpy(),
+                dones[i].cpu().numpy(),
+            )
+            all_advantages.append(adv)
+            all_returns.append(ret)
+
+        advantages = torch.stack(all_advantages).to(device)
+        returns = torch.stack(all_returns).to(device)
+        adv_flat = advantages.reshape(-1)
+        advantages = (advantages - adv_flat.mean()) / (adv_flat.std() + 1e-8)
+
+        self.return_normalizer.update(returns)
+        returns_normalized = torch.tensor(
+            self.return_normalizer.normalize(returns.cpu().numpy()),
+            dtype=torch.float32
+        ).to(device)
+        values_normalized = torch.tensor(
+            self.return_normalizer.normalize(values.cpu().numpy()),
+            dtype=torch.float32
+        ).to(device)
+
+        last_policy_loss = 0.0
+        last_value_loss = 0.0
+        last_entropy = 0.0
+
+        for _ in range(PPO_K_EPOCHS):
+            ep_indices = torch.randperm(n_eps)
+            for start in range(0, n_eps, mini_batch_episodes):
+                end = min(start + mini_batch_episodes, n_eps)
+                mb_idx = ep_indices[start:end]
+
+                mb_cont = cont_features[mb_idx]
+                mb_layer = layer_indices[mb_idx]
+                mb_prev_actions = prev_actions[mb_idx]
+                mb_actions = actions[mb_idx]
+                mb_old_lp = old_logprobs[mb_idx]
+                mb_adv = advantages[mb_idx]
+                mb_ret = returns_normalized[mb_idx]
+                mb_old_val = values_normalized[mb_idx]
+
+                new_logprobs, entropy, new_values_raw = noise_net.evaluate_actions(
+                    mb_cont, mb_layer, mb_prev_actions, mb_actions
+                )
+
+                new_logprobs_flat = new_logprobs.reshape(-1)
+                entropy_flat = entropy.reshape(-1)
+                new_values_flat = new_values_raw.reshape(-1)
+                mb_old_lp_flat = mb_old_lp.reshape(-1)
+                mb_adv_flat = mb_adv.reshape(-1)
+                mb_ret_flat = mb_ret.reshape(-1)
+                mb_old_val_flat = mb_old_val.reshape(-1)
+
+                ratios = torch.exp(new_logprobs_flat - mb_old_lp_flat)
+                surr1 = ratios * mb_adv_flat
+                surr2 = torch.clamp(ratios, 1 - PPO_EPS_CLIP, 1 + PPO_EPS_CLIP) * mb_adv_flat
+                policy_loss = -torch.min(surr1, surr2).mean()
+
+                new_values_norm = (new_values_flat - self.return_normalizer.mean) / self.return_normalizer.std
+                value_clipped = mb_old_val_flat + torch.clamp(
+                    new_values_norm - mb_old_val_flat,
+                    -VALUE_CLIP_RANGE, VALUE_CLIP_RANGE
+                )
+                huber_loss_fn = nn.HuberLoss(reduction="none", delta=1.0)
+                vl_unclipped = huber_loss_fn(new_values_norm, mb_ret_flat)
+                vl_clipped = huber_loss_fn(value_clipped, mb_ret_flat)
+                value_loss = torch.max(vl_unclipped, vl_clipped).mean()
+
+                mean_entropy = entropy_flat.mean()
+                effective_entropy_coef = entropy_coef
+                if mean_entropy.item() < GTRXL_ENTROPY_LOWER_BOUND:
+                    entropy_deficit = GTRXL_ENTROPY_LOWER_BOUND - mean_entropy.item()
+                    effective_entropy_coef = entropy_coef + 10.0 * entropy_deficit
+
+                entropy_loss = -mean_entropy
+                loss = policy_loss + PPO_VALUE_COEF * value_loss + effective_entropy_coef * entropy_loss
+
+                optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(noise_net.parameters(), 0.5)
+                optimizer.step()
+
+                last_policy_loss = policy_loss.item()
+                last_value_loss = value_loss.item()
+                last_entropy = mean_entropy.item()
+
+        return last_policy_loss, last_value_loss, last_entropy
+
+    def _plot_noise_training_curves(
+            self,
+            episode_rewards,
+            episode_losses,
+            episode_metric1s,
+            episode_metric2s,
+            episode_entropies,
+            base_loss,
+            base_p,
+            base_s
+            ):
+        if len(episode_rewards) == 0:
+            return
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            episodes = np.arange(1, len(episode_rewards) + 1)
+            rewards = np.array(episode_rewards, dtype=np.float32)
+            losses = np.array(episode_losses, dtype=np.float32)
+            metric1s = np.array(episode_metric1s, dtype=np.float32)
+            metric2s = np.array(episode_metric2s, dtype=np.float32)
+            metric_names_tuple = self.get_metric_names()
+            _num_m = self.get_num_metrics()
+            _m1_name = metric_names_tuple[0]
+            _m2_name = metric_names_tuple[1] if _num_m > 1 else metric_names_tuple[0]
+            window = min(50, max(1, len(rewards) // 10))
+
+            def compute_ma(data):
+                if len(data) < window:
+                    return data
+                kernel = np.ones(window, dtype=np.float32) / window
+                return np.convolve(data, kernel, mode="valid")
+
+            rewards_ma = compute_ma(rewards)
+            losses_ma = compute_ma(losses)
+            metric1s_ma = compute_ma(metric1s)
+            metric2s_ma = compute_ma(metric2s) if _num_m > 1 else None
+            episodes_ma = episodes[window - 1:] if len(rewards) >= window else episodes
+
+            dataset_info = f" ({self.data_path})"
+            val_guided_info = " [Validation Guided]" if USE_VALIDATION_FOR_REWARD else ""
+
+            if _num_m == 1:
+                fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+                fig.suptitle(f"Noise PPO Training Curves{dataset_info}{val_guided_info}", fontsize=14, fontweight="bold")
+                ax1, ax2, ax3 = axes
+                ax4 = None
+            else:
+                fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+                fig.suptitle(f"Noise PPO Training Curves{dataset_info}{val_guided_info}", fontsize=14, fontweight="bold")
+                ax1, ax2, ax3, ax4 = axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]
+
+            ax1.plot(episodes, rewards, label="Episode Reward", alpha=0.6, color="blue")
+            ax1.plot(episodes_ma, rewards_ma, label=f"Moving Avg ({window})", linewidth=2, color="darkblue")
+            ax1.set_xlabel("Episode"); ax1.set_ylabel("Reward"); ax1.set_title("Episode Reward"); ax1.grid(True, alpha=0.3); ax1.legend()
+
+            ax2.plot(episodes, losses, label="Loss", alpha=0.6, color="red")
+            ax2.plot(episodes_ma, losses_ma, label=f"Moving Avg ({window})", linewidth=2, color="darkred")
+            ax2.set_xlabel("Episode"); ax2.set_ylabel("Loss"); ax2.set_title("Loss (lower is better)"); ax2.grid(True, alpha=0.3)
+            ax2.axhline(y=base_loss, color="gray", linestyle="--", linewidth=1, alpha=0.7, label="Baseline")
+            ax2.legend()
+
+            ax3.plot(episodes, metric1s, label=_m1_name, alpha=0.6, color="green")
+            ax3.plot(episodes_ma, metric1s_ma, label=f"Moving Avg ({window})", linewidth=2, color="darkgreen")
+            ax3.set_xlabel("Episode"); ax3.set_ylabel(_m1_name); ax3.set_title(f"{_m1_name} (higher is better)"); ax3.grid(True, alpha=0.3)
+            ax3.axhline(y=base_p, color="gray", linestyle="--", linewidth=1, alpha=0.7, label="Baseline")
+            ax3.legend()
+
+            if ax4 is not None:
+                ax4.plot(episodes, metric2s, label=_m2_name, alpha=0.6, color="purple")
+                ax4.plot(episodes_ma, metric2s_ma, label=f"Moving Avg ({window})", linewidth=2, color="darkviolet")
+                ax4.set_xlabel("Episode"); ax4.set_ylabel(_m2_name); ax4.set_title(f"{_m2_name} (higher is better)"); ax4.grid(True, alpha=0.3)
+                ax4.axhline(y=base_s, color="gray", linestyle="--", linewidth=1, alpha=0.7, label="Baseline")
+                ax4.legend()
+
+            plt.tight_layout()
+            plt.savefig(NOISE_STAGE_TRAINING_CURVE_PATH, dpi=150)
+            plt.close()
+            self.log(f"Noise PPO training curves saved to: {NOISE_STAGE_TRAINING_CURVE_PATH}")
+
+            if episode_entropies:
+                update_episodes = np.arange(PPO_UPDATE_INTERVAL, len(episode_rewards) + 1, PPO_UPDATE_INTERVAL)
+                entropies = np.array(episode_entropies, dtype=np.float32)
+                if len(update_episodes) == len(entropies):
+                    fig_ent, ax_ent = plt.subplots(1, 1, figsize=(10, 5))
+                    ax_ent.plot(update_episodes, entropies, label="Policy Entropy", alpha=0.8, color="teal", marker="o", markersize=3)
+                    window_ent = min(5, max(1, len(entropies) // 5))
+                    if len(entropies) >= window_ent:
+                        kernel_ent = np.ones(window_ent, dtype=np.float32) / window_ent
+                        ent_ma = np.convolve(entropies, kernel_ent, mode="valid")
+                        ax_ent.plot(update_episodes[window_ent - 1:], ent_ma, label=f"Moving Avg ({window_ent})", linewidth=2, color="darkgreen")
+                    ax_ent.set_xlabel("Episode (at PPO update)")
+                    ax_ent.set_ylabel("Entropy")
+                    ax_ent.set_title("Noise PPO Training: Policy Entropy over Episodes")
+                    ax_ent.grid(True, alpha=0.3)
+                    ax_ent.legend()
+                    plt.tight_layout()
+                    plt.savefig(NOISE_STAGE_ENTROPY_CURVE_PATH, dpi=150)
+                    plt.close()
+                    self.log(f"Noise PPO entropy curve saved to: {NOISE_STAGE_ENTROPY_CURVE_PATH}")
+        except Exception as e:
+            self.log(f"[Warning] Failed to plot Noise PPO training curves: {e}")
+
+    def run_noise_rl_stage(self, fixed_gelu, fixed_softmax, fixed_label, fixed_source):
+        self.log("\n" + "=" * 60)
+        self.log("PHASE 5: SECOND-STAGE NOISE RL")
+        self.log(f"Fixed GELU/Softmax source={fixed_source}, label={fixed_label}")
+        self.log(f"Fixed GELU   : {np.asarray(fixed_gelu, dtype=int).tolist()}")
+        self.log(f"Fixed Softmax: {np.asarray(fixed_softmax, dtype=int).tolist()}")
+        self.log("=" * 60)
+
+        fixed_gelu = np.asarray(fixed_gelu, dtype=int)
+        fixed_softmax = np.asarray(fixed_softmax, dtype=int)
+        baseline_noise_config = self._get_max_noise_configuration()
+
+        baseline_train = self.evaluate_model_with_attention_noise(
+            fixed_gelu, fixed_softmax, use_train=True, **baseline_noise_config
+        )
+        baseline_val = self.evaluate_model_with_attention_noise(
+            fixed_gelu, fixed_softmax, use_train=False, **baseline_noise_config
+        )
+        baseline_tot_c, baseline_breakdown = self.get_noise_simulated_cost(**baseline_noise_config)
+
+        self.log("Noise-Stage Baseline Metrics (Training Set):")
+        self.log(f"  {self._fmt_metrics(*baseline_train[:3])}")
+        self.log(f"  Noise Cost: {baseline_tot_c:.2f} | Breakdown={baseline_breakdown}")
+        self.log("Noise-Stage Baseline Metrics (Validation Set - used for reward):")
+        self.log(f"  {self._fmt_metrics(*baseline_val[:3])}")
+
+        if USE_VALIDATION_FOR_REWARD:
+            base_loss, base_p, base_s = baseline_val[:3]
+        else:
+            base_loss, base_p, base_s = baseline_train[:3]
+
+        limit_loss = base_loss + self.error_threshold
+        limit_p = base_p * (1.0 - self.correlation_drop_ratio)
+        limit_s = base_s * (1.0 - self.correlation_drop_ratio)
+        self.log(f"Noise-Stage Constraints (based on {'Validation' if USE_VALIDATION_FOR_REWARD else 'Training'} Set):")
+        self.log(f"  {self._fmt_constraints(limit_loss, limit_p, limit_s)}")
+
+        with open(self.noise_step_info_file, "w", encoding="utf-8") as f:
+            f.write("=== Noise PPO StepInfo 中间结果日志 ===\n")
+            f.write("每步包含: step_global, episode_id, layer_index, state_vector, 7个动作的scaling factor, 7个动作概率分布, critic_value, accumulated_cost, 各类noise配置\n\n")
+
+        self._reset_runtime_ppo_state()
+        noise_net = NoiseGTrXLStrategyNetwork(
+            num_layers=self.total_layers,
+            d_model=GTRXL_D_MODEL,
+            n_heads=GTRXL_N_HEADS,
+            n_gtrxl_layers=GTRXL_N_LAYERS,
+            d_ff=GTRXL_D_FF,
+            dropout=GTRXL_DROPOUT,
+        ).to(self.device)
+        optimizer = optim.Adam(noise_net.parameters(), lr=self.ppo_lr_initial)
+        noise_ppo_update_count = 0
+
+        class NoiseRLEvaluatorWrapper:
+            def __init__(wrapper_self, evaluator, fixed_gelu, fixed_softmax, use_train=True):
+                wrapper_self.evaluator = evaluator
+                wrapper_self.fixed_gelu = np.asarray(fixed_gelu, dtype=int)
+                wrapper_self.fixed_softmax = np.asarray(fixed_softmax, dtype=int)
+                wrapper_self.use_train = use_train
+
+            def evaluate_noise_model(wrapper_self, **noise_kwargs):
+                return wrapper_self.evaluator.evaluate_model_with_attention_noise(
+                    wrapper_self.fixed_gelu,
+                    wrapper_self.fixed_softmax,
+                    use_train=wrapper_self.use_train,
+                    **noise_kwargs,
+                )
+
+        rl_evaluator = NoiseRLEvaluatorWrapper(
+            self,
+            fixed_gelu=fixed_gelu,
+            fixed_softmax=fixed_softmax,
+            use_train=(not USE_VALIDATION_FOR_REWARD),
+        )
+        env = NoiseOptEnv(
+            self.total_layers,
+            baseline_tot_c,
+            (base_loss, base_p, base_s),
+            rl_evaluator,
+            fixed_gelu=fixed_gelu,
+            fixed_softmax=fixed_softmax,
+            num_metrics=self.get_num_metrics(),
+        )
+        buffer = NoiseRecurrentRolloutBuffer()
+
+        episode_rewards = []
+        episode_losses = []
+        episode_metric1s = []
+        episode_metric2s = []
+        episode_entropies = []
+        best_reward = float("-inf")
+        best_cost = float("inf")
+        best_noise_config = None
+
+        for episode in range(PPO_MAX_EPISODES):
+            current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
+            state = env.reset()
+            prev_actions = torch.full((1, 1, NOISE_STAGE_NUM_ACTIONS), NOISE_STAGE_SOS_TOKEN, dtype=torch.long, device=self.device)
+            seq_cont_feats = []
+            seq_layer_indices = []
+            seq_prev_actions = []
+            step_infos = []
+            episode_reward = 0.0
+            buffer.start_episode()
+
+            for step in range(self.total_layers):
+                layer_idx = env.current_layer
+                cont_feat_np = env.get_continuous_features()
+                cont_feat = torch.tensor(cont_feat_np, dtype=torch.float32, device=self.device).view(1, 1, -1)
+                layer_tensor = torch.tensor([[layer_idx]], dtype=torch.long, device=self.device)
+
+                seq_cont_feats.append(cont_feat)
+                seq_layer_indices.append(layer_tensor)
+                seq_prev_actions.append(prev_actions)
+
+                cont_seq = torch.cat(seq_cont_feats, dim=1)
+                layer_seq = torch.cat(seq_layer_indices, dim=1)
+                prev_action_seq = torch.cat(seq_prev_actions, dim=1)
+
+                actions, logprob, value, prob_list = noise_net.get_action_and_logprob(
+                    cont_seq, layer_seq, prev_action_seq, return_probs=True
+                )
+                next_state, reward, done, info = env.step(*[a.item() for a in actions])
+
+                step_info = {
+                    "step_global": episode * self.total_layers + step,
+                    "episode_id": episode,
+                    "layer_index": info["layer_index"],
+                    "state_vector": state.tolist(),
+                    "curr_input_noise_scaling_factor": info["curr_input_noise_scaling_factor"],
+                    "curr_wq_noise_scaling_factor": info["curr_wq_noise_scaling_factor"],
+                    "curr_wk_noise_scaling_factor": info["curr_wk_noise_scaling_factor"],
+                    "curr_wv_noise_scaling_factor": info["curr_wv_noise_scaling_factor"],
+                    "curr_wo_noise_scaling_factor": info["curr_wo_noise_scaling_factor"],
+                    "curr_wffn1_noise_scaling_factor": info["curr_wffn1_noise_scaling_factor"],
+                    "curr_wffn2_noise_scaling_factor": info["curr_wffn2_noise_scaling_factor"],
+                    "x_prob_dist": prob_list[0].detach().cpu().numpy().tolist(),
+                    "wq_prob_dist": prob_list[1].detach().cpu().numpy().tolist(),
+                    "wk_prob_dist": prob_list[2].detach().cpu().numpy().tolist(),
+                    "wv_prob_dist": prob_list[3].detach().cpu().numpy().tolist(),
+                    "wo_prob_dist": prob_list[4].detach().cpu().numpy().tolist(),
+                    "wffn1_prob_dist": prob_list[5].detach().cpu().numpy().tolist(),
+                    "wffn2_prob_dist": prob_list[6].detach().cpu().numpy().tolist(),
+                    "critic_value": value.item(),
+                    "accumulated_cost": info["accumulated_cost"],
+                    "input_noise_config": info["input_noise_config"],
+                    "wq_noise_config": info["wq_noise_config"],
+                    "wk_noise_config": info["wk_noise_config"],
+                    "wv_noise_config": info["wv_noise_config"],
+                    "wo_noise_config": info["wo_noise_config"],
+                    "wffn1_noise_config": info["wffn1_noise_config"],
+                    "wffn2_noise_config": info["wffn2_noise_config"],
+                    "current_lr": current_lr,
+                    "current_entropy_coef": current_entropy,
+                }
+                step_infos.append(step_info)
+
+                buffer.add_step(
+                    cont_feat=torch.tensor(cont_feat_np, dtype=torch.float32),
+                    layer_idx=layer_idx,
+                    prev_actions=prev_actions.squeeze(0).squeeze(0).detach().cpu(),
+                    actions=actions.detach().cpu(),
+                    logprob=logprob.detach().cpu(),
+                    reward=reward,
+                    value=value.detach().cpu(),
+                    done=float(done),
+                )
+
+                prev_actions = actions.view(1, 1, -1).to(self.device)
+                episode_reward += reward
+                state = next_state
+
+            buffer.end_episode()
+            episode_rewards.append(episode_reward)
+            if env.current_episode_metrics is not None:
+                episode_losses.append(env.current_episode_metrics["loss"])
+                episode_metric1s.append(env.current_episode_metrics["metric1"])
+                episode_metric2s.append(env.current_episode_metrics["metric2"])
+            else:
+                episode_losses.append(base_loss)
+                episode_metric1s.append(base_p)
+                episode_metric2s.append(base_s)
+
+            self.update_reward_statistics(episode_reward)
+            with open(self.noise_step_info_file, "a", encoding="utf-8") as f:
+                f.write(f"--- Episode {episode + 1} (Reward={episode_reward:.4f}) ---\n")
+                for si in step_infos:
+                    self._write_noise_step_info(si, f)
+                    f.write("\n")
+
+            final_noise_config = {
+                "input_noise_scaling_factors": np.array(env.input_noise_config, dtype=int),
+                "wq_noise_scaling_factors": np.array(env.wq_noise_config, dtype=int),
+                "wk_noise_scaling_factors": np.array(env.wk_noise_config, dtype=int),
+                "wv_noise_scaling_factors": np.array(env.wv_noise_config, dtype=int),
+                "wo_noise_scaling_factors": np.array(env.wo_noise_config, dtype=int),
+                "wffn1_noise_scaling_factors": np.array(env.wffn1_noise_config, dtype=int),
+                "wffn2_noise_scaling_factors": np.array(env.wffn2_noise_config, dtype=int),
+                "cost": env.accumulated_cost,
+                "reward": episode_reward,
+            }
+
+            if episode_reward > best_reward or (episode_reward == best_reward and env.accumulated_cost < best_cost):
+                best_reward = episode_reward
+                best_cost = env.accumulated_cost
+                best_noise_config = {
+                    key: value.copy() if isinstance(value, np.ndarray) else value
+                    for key, value in final_noise_config.items()
+                }
+                self.log(f"  Noise Episode {episode + 1}: New Best! Reward={episode_reward:.4f}, Cost={env.accumulated_cost:.2f}")
+                self.log(f"    x     : {env.input_noise_config}")
+                self.log(f"    wq    : {env.wq_noise_config}")
+                self.log(f"    wk    : {env.wk_noise_config}")
+                self.log(f"    wv    : {env.wv_noise_config}")
+                self.log(f"    wo    : {env.wo_noise_config}")
+                self.log(f"    wffn1 : {env.wffn1_noise_config}")
+                self.log(f"    wffn2 : {env.wffn2_noise_config}")
+
+            if (episode + 1) % PPO_UPDATE_INTERVAL == 0:
+                policy_loss, value_loss, entropy = self.ppo_update_noise_gtrxl(
+                    noise_net, optimizer, buffer, self.device,
+                    entropy_coef=current_entropy,
+                    ppo_update_step=noise_ppo_update_count,
+                )
+                noise_ppo_update_count += 1
+                buffer.clear()
+                episode_entropies.append(entropy)
+                avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
+                warmup_status = "warmup" if noise_ppo_update_count <= GTRXL_WARMUP_STEPS else "normal"
+                self.log(
+                    f"  Noise Episode {episode + 1}: Avg Reward={avg_reward:.4f}, "
+                    f"Policy Loss={policy_loss:.4f}, Value Loss={value_loss:.4f}, Entropy={entropy:.4f}"
+                )
+                self.log(
+                    f"    [Noise GTrXL Schedule] LR={optimizer.param_groups[0]['lr']:.6f}, "
+                    f"Entropy Coef={current_entropy:.6f}, Update#{noise_ppo_update_count} ({warmup_status})"
+                )
+
+        if best_noise_config is None or best_reward < -50:
+            self.log("\nNo feasible noise-stage solution found, using max-scaling baseline configuration.")
+            best_noise_config = {key: value.copy() for key, value in baseline_noise_config.items()}
+            best_noise_config["cost"] = baseline_tot_c
+            best_noise_config["reward"] = 0.0
+
+        self.log("\n--- Noise PPO Training Completed ---")
+        self.log("Best Noise Configuration Found:")
+        for key in (
+            "input_noise_scaling_factors",
+            "wq_noise_scaling_factors",
+            "wk_noise_scaling_factors",
+            "wv_noise_scaling_factors",
+            "wo_noise_scaling_factors",
+            "wffn1_noise_scaling_factors",
+            "wffn2_noise_scaling_factors",
+        ):
+            self.log(f"  {key}: {best_noise_config[key].tolist()}")
+        self.log(f"  Cost: {best_noise_config['cost']:.2f}, Reward: {best_noise_config['reward']:.4f}")
+
+        self._plot_noise_training_curves(
+            episode_rewards, episode_losses, episode_metric1s, episode_metric2s, episode_entropies,
+            base_loss=base_loss, base_p=base_p, base_s=base_s,
+        )
+
+        self.log("\n" + "=" * 60)
+        self.log("PHASE 5.5: NOISE RL FINAL EVALUATION (验证集)")
+        self.log("=" * 60)
+
+        eval_cache = {}
+
+        def eval_noise_result(name, family, noise_cfg):
+            sig = tuple(
+                tuple(np.asarray(noise_cfg[key], dtype=int).tolist())
+                for key in (
+                    "input_noise_scaling_factors",
+                    "wq_noise_scaling_factors",
+                    "wk_noise_scaling_factors",
+                    "wv_noise_scaling_factors",
+                    "wo_noise_scaling_factors",
+                    "wffn1_noise_scaling_factors",
+                    "wffn2_noise_scaling_factors",
+                )
+            )
+            if sig in eval_cache:
+                loss, p, s, t = eval_cache[sig]
+            else:
+                loss, p, s, t = self.evaluate_model_with_attention_noise(
+                    fixed_gelu, fixed_softmax, use_train=False, **noise_cfg
+                )
+                eval_cache[sig] = (loss, p, s, t)
+            tot_c, breakdown = self.get_noise_simulated_cost(**noise_cfg)
+            return {
+                "name": name,
+                "family": family,
+                "loss": float(loss),
+                "p": float(p),
+                "s": float(s),
+                "time_ms": float(t),
+                "tot_c": float(tot_c),
+                "tot_spd": float(baseline_tot_c / (tot_c + 1e-6)),
+                "breakdown": breakdown,
+                "feasible": bool(loss <= limit_loss and p >= limit_p and (self.get_num_metrics() == 1 or s >= limit_s)),
+            }
+
+        baseline_result = eval_noise_result("Baseline (Max Scaling)", "Baseline", baseline_noise_config)
+        selected_noise_cfg = {k: v for k, v in best_noise_config.items() if k.endswith("scaling_factors")}
+        optimized_result = eval_noise_result("Optimized (Noise PPO)", "Selected", selected_noise_cfg)
+
+        def generate_cost_equivalent_noise_config(target_cost, cost_map, allowed_values, length, rng):
+            degrees = list(allowed_values)
+            for _ in range(2000):
+                cfg = rng.choice(degrees, size=length)
+                for _ in range(500):
+                    curr = sum(cost_map[int(d)] for d in cfg)
+                    diff = curr - target_cost
+                    if abs(diff) < 1e-6:
+                        return cfg.astype(int)
+                    idx = int(rng.integers(0, length))
+                    old_v = int(cfg[idx])
+                    moves = [d for d in degrees if abs((curr - cost_map[old_v] + cost_map[int(d)]) - target_cost) < abs(diff)]
+                    cfg[idx] = int(rng.choice(moves if moves else degrees))
+            return np.asarray(cfg, dtype=int)
+
+        rng = np.random.default_rng(self.final_eval_random_seed)
+        random_results = []
+        for i in range(self.final_eval_permutation_trials):
+            perm_cfg = {
+                "input_noise_scaling_factors": rng.permutation(selected_noise_cfg["input_noise_scaling_factors"]),
+                "wq_noise_scaling_factors": rng.permutation(selected_noise_cfg["wq_noise_scaling_factors"]),
+                "wk_noise_scaling_factors": rng.permutation(selected_noise_cfg["wk_noise_scaling_factors"]),
+                "wv_noise_scaling_factors": rng.permutation(selected_noise_cfg["wv_noise_scaling_factors"]),
+                "wo_noise_scaling_factors": rng.permutation(selected_noise_cfg["wo_noise_scaling_factors"]),
+                "wffn1_noise_scaling_factors": rng.permutation(selected_noise_cfg["wffn1_noise_scaling_factors"]),
+                "wffn2_noise_scaling_factors": rng.permutation(selected_noise_cfg["wffn2_noise_scaling_factors"]),
+            }
+            random_results.append(eval_noise_result(f"NoisePerm_{i+1}", "Permutation", perm_cfg))
+
+        for i in range(self.final_eval_cost_equivalent_trials):
+            equiv_cfg = {
+                "input_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["x"], self.INPUT_NOISE_COST_MAP, INPUT_NOISE_ALLOWED_SCALING_FACTORS, self.total_layers, rng),
+                "wq_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wq"], self.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, self.total_layers, rng),
+                "wk_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wk"], self.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, self.total_layers, rng),
+                "wv_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wv"], self.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, self.total_layers, rng),
+                "wo_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wo"], self.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, self.total_layers, rng),
+                "wffn1_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wffn1"], self.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, self.total_layers, rng),
+                "wffn2_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wffn2"], self.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, self.total_layers, rng),
+            }
+            random_results.append(eval_noise_result(f"NoiseEquiv_{i+1}", "Cost-Equivalent", equiv_cfg))
+
+        self.log("\nNoise Performance Comparison Table:")
+        short_names = self.get_metric_short_names()
+        if self.get_num_metrics() == 1:
+            header = f"{'Method':<22} | {'Loss':<8} {short_names[0]:<8} | {'Loss Δ%':<9} {short_names[0] + ' Δ%':<11} | {'Noise C':<8} {'Speedup':<8} {'Feasible':<8}"
+        else:
+            header = f"{'Method':<22} | {'Loss':<8} {short_names[0]:<8} {short_names[1]:<8} | {'Loss Δ%':<9} {short_names[0] + ' Δ%':<11} {short_names[1] + ' Δ%':<11} | {'Noise C':<8} {'Speedup':<8} {'Feasible':<8}"
+        self.log("-" * len(header))
+        self.log(header)
+        self.log("-" * len(header))
+
+        def format_noise_row(result):
+            loss_delta_pct = ((result["loss"] - baseline_result["loss"]) / (baseline_result["loss"] + 1e-8)) * 100.0
+            m1_delta_pct = ((result["p"] - baseline_result["p"]) / (baseline_result["p"] + 1e-8)) * 100.0
+            feasible_text = "Yes" if result["feasible"] else "No"
+            if self.get_num_metrics() == 1:
+                return (
+                    f"{result['name']:<22} | {result['loss']:<8.4f} {result['p']:<8.4f} | "
+                    f"{loss_delta_pct:>8.2f}% {m1_delta_pct:>10.2f}% | {result['tot_c']:<8.2f} {result['tot_spd']:<8.2f} {feasible_text:<8}"
+                )
+            m2_delta_pct = ((result["s"] - baseline_result["s"]) / (baseline_result["s"] + 1e-8)) * 100.0
+            return (
+                f"{result['name']:<22} | {result['loss']:<8.4f} {result['p']:<8.4f} {result['s']:<8.4f} | "
+                f"{loss_delta_pct:>8.2f}% {m1_delta_pct:>10.2f}% {m2_delta_pct:>10.2f}% | {result['tot_c']:<8.2f} {result['tot_spd']:<8.2f} {feasible_text:<8}"
+            )
+
+        self.log(format_noise_row(baseline_result))
+        self.log(format_noise_row(optimized_result))
+        self.log("-" * len(header))
+        for res in random_results:
+            self.log(format_noise_row(res))
+        self.log("-" * len(header))
+
+        optimized_beats = sum(
+            1 for res in random_results
+            if optimized_result["loss"] <= res["loss"] and optimized_result["p"] >= res["p"] and (self.get_num_metrics() == 1 or optimized_result["s"] >= res["s"])
+        )
+        feasible_random = sum(1 for res in random_results if res["feasible"])
+        self.log(
+            f"Noise random summary: optimized dominates {optimized_beats}/{len(random_results)} random configs; "
+            f"feasible random configs = {feasible_random}/{len(random_results)}."
+        )
+
+        self.apply_configuration(fixed_gelu, fixed_softmax)
+        self.clear_input_noise_configuration()
+        self.clear_weight_noise_configuration()
+
+        return {
+            "fixed_gelu": fixed_gelu.copy(),
+            "fixed_softmax": fixed_softmax.copy(),
+            "baseline_noise_config": {k: v.copy() for k, v in baseline_noise_config.items()},
+            "best_noise_config": {k: v.copy() if isinstance(v, np.ndarray) else v for k, v in best_noise_config.items()},
+            "baseline_result": baseline_result,
+            "optimized_result": optimized_result,
+            "random_results": random_results,
+        }
 
     def _run_evaluation(self, dataloader, use_train=False):
         """在当前模型上运行评估循环（不修改配置），用于无近似对照组等。"""
@@ -2662,7 +4350,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         # 学习率 Warmup（PDF 4.3）
         if ppo_update_step < GTRXL_WARMUP_STEPS:
             warmup_factor = (ppo_update_step + 1) / GTRXL_WARMUP_STEPS
-            current_lr = PPO_LR_INITIAL * warmup_factor
+            current_lr = self.ppo_lr_initial * warmup_factor
             for param_group in optimizer.param_groups:
                 param_group['lr'] = current_lr
         
@@ -2874,7 +4562,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             ).to(self.device)
             
             # 使用初始学习率
-            optimizer = optim.Adam(gtrxl_net.parameters(), lr=PPO_LR_INITIAL)
+            optimizer = optim.Adam(gtrxl_net.parameters(), lr=self.ppo_lr_initial)
             gtrxl_ppo_update_count = 0  # GTrXL PPO更新计数（用于学习率Warmup）
             
             # 初始化环境
@@ -3664,6 +5352,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                 status = f"VIOLATED ({','.join(viol_tags)})" if is_viol else "SAFE"
                 d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
                 self.log(_format_sensitivity_msg(f"L{i} Smax {cd_s}->{cd_s-1}", status, l, p, s, d_l, d_p, d_s))
+
+        noise_stage_result = self.run_noise_rl_stage(
+            fixed_gelu=opt_gelu,
+            fixed_softmax=opt_softmax,
+            fixed_label=selected_label,
+            fixed_source=selected_source,
+        )
+        self.last_noise_stage_result = noise_stage_result
 
         self.log("\nConfiguration evaluation finished.")
         self.apply_configuration(opt_gelu, opt_softmax)

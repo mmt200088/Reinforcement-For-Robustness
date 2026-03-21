@@ -1,5 +1,27 @@
 #!/usr/bin/env bash
 
+# ----------------------------------------------------------------------
+# Stage-2 Noise RL (current behavior)
+# ----------------------------------------------------------------------
+# After the script finishes selecting the layer-wise GELU/Softmax config
+# (from search/json/manual), it automatically enters:
+#   PHASE 5: SECOND-STAGE NOISE RL
+#
+# Stage 2 keeps the selected GELU/Softmax config fixed and learns
+# layer-wise scaling factors for seven noise actions:
+#   x, wq, wk, wv, wo, wffn1, wffn2
+#
+# Useful stage-2 artifacts:
+#   noise_ppo_step_info.txt
+#   noise_ppo_training_curve.png
+#   noise_ppo_entropy_curve.png
+#
+# rl_lr compatibility:
+#   - if rl_lr < 1, it is used directly as the PPO learning rate
+#   - legacy values like 20 / 40 are interpreted as 20e-6 / 40e-6
+#   - the resolved PPO LR is shared by both stage-1 and stage-2 RL
+# ----------------------------------------------------------------------
+
 # ======================================================================
 # 用途说明
 # ----------------------------------------------------------------------
@@ -157,7 +179,8 @@ usage() {
     echo "  lora_r                LoRA rank, keep 32 in current experiments."
     echo "  lora_alpha            LoRA alpha, keep 64 in current experiments."
     echo "  logfile_path          Output log path for nohup."
-    echo "  rl_lr                 Reinforcement learning rate."
+    echo "  rl_lr                 PPO LR control. Use a direct LR if < 1."
+    echo "                        Legacy values like 20/40 map to 20e-6/40e-6."
     echo "  degree                Legacy debug argument, keep 2."
     echo
     echo "Optional final-evaluation arguments:"
@@ -170,10 +193,18 @@ usage() {
     echo "  --cost-trials N"
     echo "  --budget-trials N"
     echo
+    echo "Second-stage noise RL:"
+    echo "  Runs automatically after the final GELU/Softmax config is selected."
+    echo "  The fixed config source still follows --final-eval-source."
+    echo "  Learns layer-wise scaling factors for x/wq/wk/wv/wo/wffn1/wffn2."
+    echo "  Writes noise_ppo_step_info.txt, noise_ppo_training_curve.png,"
+    echo "  and noise_ppo_entropy_curve.png."
+    echo
     echo "Examples:"
     echo "  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2"
     echo "  bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json"
     echo "  bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --final-eval-source manual --manual-gelu \"[1,1,1,4,1,1,1,1,1,1,1,1]\" --manual-softmax \"[2,3,4,6,4,4,5,4,4,5,5,2]\""
+    echo "  bash llama_7B_LayerImportance.sh 32 64 output_stage2.log 20 2 --perm-trials 30 --cost-trials 30"
 }
 
 require_option_value() {
@@ -308,6 +339,7 @@ CMD=(
 )
 
 echo "Launching RL tune job with final evaluation source: $FINAL_EVAL_SOURCE"
+echo "Stage-2 noise RL will run automatically after the fixed GELU/Softmax config is selected."
 echo "Log file: $LOGFILE_PATH"
 
 nohup "${CMD[@]}" > "$LOGFILE_PATH" 2>&1 &

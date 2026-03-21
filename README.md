@@ -17,7 +17,7 @@ Please Ignore the LLM-Adapters, EzPC, and importance-aware-sparse-tuning-IST-pap
 lora_r: parameter for lora, ignore (we just use the Lora Framework to inference...), just set is to 32.  
 lora_alpha: parameter for lora, ignore, just set is to 64.  
 logfile_path: the log file output path, you can change it when the learning rate varies.  
-rl_lr: reinforcement learning rate used in importance score update, now 20-40 is acceptable.  
+rl_lr: PPO learning-rate control. If `rl_lr < 1`, it is used directly as the PPO optimizer LR. For backward compatibility, legacy values like `20` / `40` are interpreted as `20e-6` / `40e-6`.  
 degree: parameter for early debug, now deprecated. Just set it to 2.  
 
 example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
@@ -44,6 +44,33 @@ Optional named arguments supported by the shell script:
 - `--budget-trials N`
 
 When `--final-eval-source json` is used, the code will automatically read the configuration entry that matches the current dataset name, for example `mrpc` or `sst2`.
+
+#### Second-stage noise RL
+After the layer-wise GELU/Softmax configuration is finalized, the code automatically enters `PHASE 5: SECOND-STAGE NOISE RL`.
+
+What stage 2 does:
+- Keeps the selected GELU/Softmax configuration fixed.
+- Learns layer-wise scaling factors for `x`, `wq`, `wk`, `wv`, `wo`, `wffn1`, and `wffn2`.
+- Uses the same resolved PPO LR as stage 1.
+
+How the fixed GELU/Softmax config is chosen before stage 2:
+- `--final-eval-source search`: run stage-1 RL/greedy first, then run stage 2 on that selected config.
+- `--final-eval-source json`: skip stage-1 search, load the saved config from JSON, then run stage 2 on it.
+- `--final-eval-source manual`: skip stage-1 search, use the manually provided config, then run stage 2 on it.
+
+Useful stage-2 outputs:
+- `noise_ppo_step_info.txt`: per-step action/scaling-factor log.
+- `noise_ppo_training_curve.png`: reward/loss/metric curve for stage 2.
+- `noise_ppo_entropy_curve.png`: entropy curve for the stage-2 PPO policy.
+- The main run log: search for `PHASE 5: SECOND-STAGE NOISE RL` and `Best Noise Configuration Found`.
+
+Example commands:
+- Default full pipeline: stage-1 RL search + stage-2 noise RL  
+  `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
+- Skip stage-1 search and run stage 2 on a saved first-stage config  
+  `bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json`
+- Increase the number of stage-2 permutation / cost-equivalent random baselines  
+  `bash llama_7B_LayerImportance.sh 32 64 output_stage2.log 20 2 --perm-trials 30 --cost-trials 30`
 
 #### Note: Though we call the script "llama_7B_LayerImportance.sh", we just evaluate the Bert-base model for different tasks now, please check out the .sh for more detials!
 
