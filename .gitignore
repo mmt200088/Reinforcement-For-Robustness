@@ -1,1 +1,11 @@
 ppo_step_info.txt
+*.txt
+*.log
+*.csv
+*.json
+model_statistics/**/*.png
+gelu_analysis/**/*.png
+all_analysis/**/*.png
+all_analysis_new/**/*.png
+experiment_results/**/*.png
+!pruning_search_log.txt
