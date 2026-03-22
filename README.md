@@ -22,55 +22,79 @@ degree: parameter for early debug, now deprecated. Just set it to 2.
 
 example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
-#### Optional FINAL EVALUATION modes
-The original 5-argument command is still fully supported. You can now optionally append named arguments after the first 5 positional arguments.
+#### 全部可选命名参数
 
-Use RL-learned configuration for final evaluation (default behavior):
+旧版 5 参数命令完全兼容。可在 5 个位置参数之后追加以下可选命名参数：
+
+**第一阶段：最终评估配置来源**
+
+| 参数 | 说明 | 默认值 |
+| :--- | :--- | :--- |
+| `--final-eval-source search\|json\|manual` | 最终评估使用的 GELU/Softmax 配置来源：`search` 使用 RL 搜索结果；`json` 从 JSON 文件读取；`manual` 手动指定 | `search` |
+| `--final-eval-config PATH` | `json` 模式下指定的 JSON 配置文件路径。程序根据当前数据集名（如 `mrpc`）自动读取对应条目 | `glue_configs_best_ppo.json` |
+| `--manual-gelu "[1,1,1,4,...]"` | `manual` 模式下手动指定每层 GELU degree（JSON 数组），必须与 `--manual-softmax` 一起使用 | — |
+| `--manual-softmax "[2,3,4,6,...]"` | `manual` 模式下手动指定每层 Softmax degree（JSON 数组），必须与 `--manual-gelu` 一起使用 | — |
+
+**随机对照实验**
+
+| 参数 | 说明 | 默认值 |
+| :--- | :--- | :--- |
+| `--random-seed N` | 随机实验种子 | `42` |
+| `--perm-trials N` | Permutation 随机对照实验次数 | `10` |
+| `--cost-trials N` | 精确 cost-matched 随机对照实验次数 | `10` |
+| `--budget-trials N` | 同总预算随机对照实验次数 | `10` |
+
+**第二阶段：噪声 RL**
+
+| 参数 | 说明 | 默认值 |
+| :--- | :--- | :--- |
+| `--skip-noise-rl` | 跳过第二阶段噪声 RL，只运行第一阶段。默认自动运行第二阶段 | 不跳过 |
+
+第二阶段保持第一阶段选定的 GELU/Softmax 不变，用 PPO 学习每层 7 个噪声 scaling factor：
+
+| 噪声对象 | 模型路径 | 动作空间 |
+| :--- | :--- | :--- |
+| `x`（输入噪声） | 层输入 hidden_states | `{20, 22, 24, 26, 28, 30}` |
+| `wq`（Query 权重噪声） | attention.self.query | `{10, 12, 14, 16, 18, 20, 22}` |
+| `wk`（Key 权重噪声） | attention.self.key | `{10, 12, 14, 16, 18, 20, 22}` |
+| `wv`（Value 权重噪声） | attention.self.value | `{10, 12, 14, 16, 18, 20, 22}` |
+| `wo`（Attn 输出权重噪声） | attention.output.dense | `{10, 12, 14, 16, 18, 20, 22}` |
+| `wffn1`（FFN 第一层权重噪声） | intermediate.dense | `{10, 12, 14, 16, 18, 20, 22}` |
+| `wffn2`（FFN 第二层权重噪声） | output.dense | `{10, 12, 14, 16, 18, 20, 22}` |
+
+第二阶段的逻辑位于独立模块 `noise_rl_module.py` 中（与 `final_evaluation_module.py` 架构一致）。
+
+第二阶段产出文件：
+- `noise_ppo_step_info.txt` — 每步动作/概率日志
+- `noise_ppo_training_curve.png` — 训练曲线图
+- `noise_ppo_entropy_curve.png` — 策略熵曲线图
+- 主日志中搜索 `PHASE 5: SECOND-STAGE NOISE RL` 和 `Best Noise Configuration Found`
+
+**帮助**
+
+| 参数 | 说明 |
+| :--- | :--- |
+| `-h`, `--help` | 显示用法帮助信息并退出 |
+
+#### 使用示例
+
+默认完整流程（第一阶段 + 第二阶段噪声 RL）：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
-Use configuration from a JSON file for final evaluation:
+只跑第一阶段，跳过噪声 RL：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl`
+
+从 JSON 加载配置（仍运行第二阶段）：
 `bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json`
 
-Use manually specified layer-wise configuration for final evaluation:
+手动指定每层配置：
 `bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --final-eval-source manual --manual-gelu "[1,1,1,4,1,1,1,1,1,1,1,1]" --manual-softmax "[2,3,4,6,4,4,5,4,4,5,5,2]"`
 
-Optional named arguments supported by the shell script:
-- `--final-eval-source search|json|manual`
-- `--final-eval-config PATH`
-- `--manual-gelu "[...]"` and `--manual-softmax "[...]"`
-- `--random-seed N`
-- `--perm-trials N`
-- `--cost-trials N`
-- `--budget-trials N`
+提高随机对照次数：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --perm-trials 30 --cost-trials 30 --budget-trials 30`
 
-When `--final-eval-source json` is used, the code will automatically read the configuration entry that matches the current dataset name, for example `mrpc` or `sst2`.
-
-#### Second-stage noise RL
-After the layer-wise GELU/Softmax configuration is finalized, the code automatically enters `PHASE 5: SECOND-STAGE NOISE RL`.
-
-What stage 2 does:
-- Keeps the selected GELU/Softmax configuration fixed.
-- Learns layer-wise scaling factors for `x`, `wq`, `wk`, `wv`, `wo`, `wffn1`, and `wffn2`.
-- Uses the same resolved PPO LR as stage 1.
-
-How the fixed GELU/Softmax config is chosen before stage 2:
-- `--final-eval-source search`: run stage-1 RL/greedy first, then run stage 2 on that selected config.
-- `--final-eval-source json`: skip stage-1 search, load the saved config from JSON, then run stage 2 on it.
-- `--final-eval-source manual`: skip stage-1 search, use the manually provided config, then run stage 2 on it.
-
-Useful stage-2 outputs:
-- `noise_ppo_step_info.txt`: per-step action/scaling-factor log.
-- `noise_ppo_training_curve.png`: reward/loss/metric curve for stage 2.
-- `noise_ppo_entropy_curve.png`: entropy curve for the stage-2 PPO policy.
-- The main run log: search for `PHASE 5: SECOND-STAGE NOISE RL` and `Best Noise Configuration Found`.
-
-Example commands:
-- Default full pipeline: stage-1 RL search + stage-2 noise RL  
-  `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
-- Skip stage-1 search and run stage 2 on a saved first-stage config  
-  `bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json`
-- Increase the number of stage-2 permutation / cost-equivalent random baselines  
-  `bash llama_7B_LayerImportance.sh 32 64 output_stage2.log 20 2 --perm-trials 30 --cost-trials 30`
+从 JSON 加载 + 跳过噪声 RL：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-noise-rl`
 
 #### Note: Though we call the script "llama_7B_LayerImportance.sh", we just evaluate the Bert-base model for different tasks now, please check out the .sh for more detials!
 

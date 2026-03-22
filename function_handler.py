@@ -51,6 +51,9 @@ Exp_bound = {
 # Values are variances sigma^2 for N(0, sigma^2).
 # Current x-noise injection uses the "fresh" column.
 INPUT_NOISE_VARIANCE_TABLE = {
+    10: {"encoding": 6.510416e-04, "fresh": 1.310800e+03, "rescale": 5.333984e+00},
+    12: {"encoding": 4.069010e-05, "fresh": 8.192500e+01, "rescale": 3.333740e-01},
+    14: {"encoding": 2.543131e-06, "fresh": 5.120312e+00, "rescale": 2.083588e-02},
     16: {"encoding": 1.589457e-07, "fresh": 3.200195e-01, "rescale": 1.302242e-03},
     18: {"encoding": 9.934107e-09, "fresh": 2.000122e-02, "rescale": 8.139014e-05},
     20: {"encoding": 6.208817e-10, "fresh": 1.250076e-03, "rescale": 5.086884e-06},
@@ -70,10 +73,10 @@ INPUT_NOISE_VARIANCE_TABLE = {
     48: {"encoding": 8.616464e-27, "fresh": 1.734829e-20, "rescale": 7.059470e-23},
 }
 
-INPUT_NOISE_ALLOWED_SCALING_FACTORS = (24, 26, 28, 30, 32, 34, 36, 38, 40)
-INPUT_NOISE_DEFAULT_SCALING_FACTOR = 40
-WEIGHT_NOISE_ALLOWED_SCALING_FACTORS = (16, 18, 20, 22, 24, 26, 28, 30, 32)
-WEIGHT_NOISE_DEFAULT_SCALING_FACTOR = 32
+INPUT_NOISE_ALLOWED_SCALING_FACTORS = (20, 22, 24, 26, 28, 30)
+INPUT_NOISE_DEFAULT_SCALING_FACTOR = 30
+WEIGHT_NOISE_ALLOWED_SCALING_FACTORS = (10, 12, 14, 16, 18, 20, 22)
+WEIGHT_NOISE_DEFAULT_SCALING_FACTOR = 22
 
 
 def get_input_noise_variance(scaling_factor: int, distribution: str = "fresh") -> float:

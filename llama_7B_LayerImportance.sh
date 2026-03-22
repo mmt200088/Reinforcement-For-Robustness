@@ -1,174 +1,136 @@
 #!/usr/bin/env bash
 
-# ----------------------------------------------------------------------
-# Stage-2 Noise RL (current behavior)
-# ----------------------------------------------------------------------
-# After the script finishes selecting the layer-wise GELU/Softmax config
-# (from search/json/manual), it automatically enters:
-#   PHASE 5: SECOND-STAGE NOISE RL
-#
-# Stage 2 keeps the selected GELU/Softmax config fixed and learns
-# layer-wise scaling factors for seven noise actions:
-#   x, wq, wk, wv, wo, wffn1, wffn2
-#
-# Useful stage-2 artifacts:
-#   noise_ppo_step_info.txt
-#   noise_ppo_training_curve.png
-#   noise_ppo_entropy_curve.png
-#
-# rl_lr compatibility:
-#   - if rl_lr < 1, it is used directly as the PPO learning rate
-#   - legacy values like 20 / 40 are interpreted as 20e-6 / 40e-6
-#   - the resolved PPO LR is shared by both stage-1 and stage-2 RL
-# ----------------------------------------------------------------------
-
 # ======================================================================
 # 用途说明
-# ----------------------------------------------------------------------
-# 这个脚本是项目当前的主启动脚本，用来在服务器上后台启动 `rl_tune.py`，
-# 进行基于强化学习的层重要性搜索，并在最后执行 FINAL EVALUATION。
+# ======================================================================
+# 这个脚本是项目的主启动脚本，用来在服务器上后台启动 rl_tune.py，
+# 进行基于强化学习的层重要性搜索（第一阶段），以及可选的噪声 RL
+# 优化（第二阶段），最后执行 FINAL EVALUATION。
 #
-# 这个脚本现在同时支持两种使用方式：
-# 1. 兼容旧版的 5 个位置参数调用方式
-# 2. 在旧版命令后面继续追加可选命名参数，控制最终测试阶段的配置来源
+# ======================================================================
+# 命令格式
+# ======================================================================
+#   bash llama_7B_LayerImportance.sh <lora_r> <lora_alpha> <logfile> <rl_lr> <degree> [可选参数...]
 #
-# ----------------------------------------------------------------------
-# 一、最常用的旧版运行方式
-# ----------------------------------------------------------------------
-# 命令格式：
-#   bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [degree]
+# ======================================================================
+# 必填位置参数（共 5 个）
+# ======================================================================
+#   $1  lora_r        LoRA rank，当前实验固定写 32
+#   $2  lora_alpha    LoRA alpha，当前实验固定写 64
+#   $3  logfile_path  nohup 日志输出路径（训练/评估日志均写入此文件）
+#   $4  rl_lr         PPO 学习率控制：
+#                       - 若 < 1 则直接用作 PPO LR（如 3e-5）
+#                       - 旧版整数值如 20 / 40 会被解读为 20e-6 / 40e-6
+#                       - 第一阶段和第二阶段共用同一个 PPO LR
+#   $5  degree        旧版调试参数，已废弃，固定传 2
 #
-# 参数含义：
-#   $1 lora_r
-#      LoRA 的 rank。当前实验里通常固定写 32。
+# ======================================================================
+# 全部可选命名参数（跟在 5 个位置参数后面）
+# ======================================================================
 #
-#   $2 lora_alpha
-#      LoRA 的 alpha。当前实验里通常固定写 64。
-#
-#   $3 logfile_path
-#      nohup 的日志输出文件路径。训练日志和最终评估日志都会写到这里。
-#
-#   $4 rl_lr
-#      强化学习更新时的学习率。你目前常用 20、30、40 这一类设置。
-#
-#   $5 degree
-#      旧版调试参数，现在基本废弃，按原项目习惯继续传 2 即可。
-#
-# 典型命令：
-#   bash llama_7B_LayerImportance.sh 32 64 output.log 20 2
-#
-# 兼容性说明：
-#   上面这条旧命令仍然完全可用，不需要修改。
-#
-# ----------------------------------------------------------------------
-# 二、脚本当前默认行为
-# ----------------------------------------------------------------------
-# 如果你只传前 5 个参数，那么脚本会：
-# 1. 正常运行 RL 搜索
-# 2. 最终评估阶段默认使用本次 RL 搜索得到的配置
-# 3. 随机对照实验会一起运行
-#
-# 也就是说，默认等价于：
-#   --final-eval-source search
-#
-# ----------------------------------------------------------------------
-# 三、可选的 FINAL EVALUATION 扩展参数
-# ----------------------------------------------------------------------
-# 你现在可以在前 5 个位置参数之后，继续追加下面这些命名参数：
+# ---- 第一阶段：最终评估配置来源 ----
 #
 #   --final-eval-source search|json|manual
-#      指定最终评估配置的来源：
-#      - search：使用当前这次 RL/greedy 搜索得到的配置
-#      - json：从 JSON 文件读取当前数据集对应的配置
-#      - manual：手动输入每层 GELU / Softmax 配置
+#       最终评估使用的 GELU/Softmax 配置来源：
+#         search  （默认）使用本次 RL 搜索得到的最优配置
+#         json    从 JSON 文件读取历史保存的配置
+#         manual  使用手动指定的每层配置
 #
 #   --final-eval-config PATH
-#      当 --final-eval-source json 时使用，指定 JSON 配置文件路径。
-#      例如：glue_configs_best_ppo.json
+#       当 --final-eval-source json 时使用。
+#       指定 JSON 配置文件路径，默认为 glue_configs_best_ppo.json。
+#       程序会根据当前数据集名称（如 mrpc）自动读取对应条目。
 #
-#   --manual-gelu "[1,1,1,...]"
-#      当 --final-eval-source manual 时使用，手动指定每层 GELU degree。
+#   --manual-gelu "[1,1,1,4,...]"
+#       当 --final-eval-source manual 时使用。
+#       手动指定每层 GELU degree（JSON 数组格式）。
+#       必须与 --manual-softmax 一起使用。
 #
-#   --manual-softmax "[2,2,2,...]"
-#      当 --final-eval-source manual 时使用，手动指定每层 Softmax degree。
+#   --manual-softmax "[2,3,4,6,...]"
+#       当 --final-eval-source manual 时使用。
+#       手动指定每层 Softmax degree（JSON 数组格式）。
+#       必须与 --manual-gelu 一起使用。
+#
+# ---- 随机对照实验 ----
 #
 #   --random-seed N
-#      随机实验的随机种子。
+#       随机实验的种子值，默认 42。
 #
 #   --perm-trials N
-#      permutation 随机实验次数。
+#       Permutation 随机对照实验次数（在最优配置上做排列），默认 10。
 #
 #   --cost-trials N
-#      精确 cost-matched 随机实验次数。
+#       精确 cost-matched 随机对照实验次数，默认 10。
 #
 #   --budget-trials N
-#      同总预算随机实验次数。
+#       同总预算随机对照实验次数，默认 10。
 #
-# ----------------------------------------------------------------------
-# 四、三种最终评估模式怎么选
-# ----------------------------------------------------------------------
-# 1. search 模式
-#    这是默认模式，适合“先跑 RL，再测试 RL 学到的配置”。
+# ---- 第二阶段：噪声 RL（Noise RL）----
 #
-# 2. json 模式
-#    适合“跳过当前 RL 搜索，直接使用历史保存的配置文件做最终测试”。
-#    程序会根据当前任务的数据集名字自动读取 JSON 中对应条目。
-#    比如当前 data_path 是 mrpc，就会读取 JSON 里的 "mrpc" 配置。
+#   --skip-noise-rl
+#       跳过第二阶段噪声 RL，只运行第一阶段 GELU/Softmax 搜索。
+#       默认情况下，第二阶段会在第一阶段配置确定后自动运行。
+#       第二阶段保持第一阶段选定的 GELU/Softmax 不变，
+#       用 PPO 学习每层的 7 个噪声 scaling factor：
+#         x       输入噪声    动作空间 {20, 22, 24, 26, 28, 30}
+#         wq      Query 权重噪声
+#         wk      Key 权重噪声
+#         wv      Value 权重噪声     动作空间均为
+#         wo      Attn输出权重噪声   {10, 12, 14, 16, 18, 20, 22}
+#         wffn1   FFN第一层权重噪声
+#         wffn2   FFN第二层权重噪声
+#       第二阶段产出的文件：
+#         noise_ppo_step_info.txt        每步动作/概率日志
+#         noise_ppo_training_curve.png   训练曲线图
+#         noise_ppo_entropy_curve.png    策略熵曲线图
+#       第二阶段的逻辑位于独立模块 noise_rl_module.py 中。
 #
-# 3. manual 模式
-#    适合“跳过 RL，直接测试你手动指定的一组层级配置”。
-#    这种模式下必须同时提供：
-#    - --manual-gelu
-#    - --manual-softmax
+# ---- 帮助 ----
 #
-# ----------------------------------------------------------------------
-# 五、使用示例
-# ----------------------------------------------------------------------
-# 1. 默认方式：跑 RL，并用 RL 学到的配置做最终评估
+#   -h, --help
+#       显示用法帮助信息并退出。
+#
+# ======================================================================
+# 使用示例
+# ======================================================================
+#
+# 1. 默认完整流程（第一阶段 RL 搜索 + 第二阶段噪声 RL）
 #    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2
 #
-# 2. 使用 JSON 文件中的配置做最终评估
+# 2. 只跑第一阶段，跳过第二阶段噪声 RL
+#    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+#      --skip-noise-rl
+#
+# 3. 从 JSON 文件加载配置做最终评估（跳过第一阶段搜索，仍运行第二阶段）
 #    bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 \
 #      --final-eval-source json \
 #      --final-eval-config glue_configs_best_ppo.json
 #
-# 3. 使用手动输入的配置做最终评估
+# 4. 手动指定每层配置做最终评估
 #    bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 \
 #      --final-eval-source manual \
 #      --manual-gelu "[1,1,1,4,1,1,1,1,1,1,1,1]" \
 #      --manual-softmax "[2,3,4,6,4,4,5,4,4,5,5,2]"
 #
-# 4. 提高随机对照实验次数
-#    bash llama_7B_LayerImportance.sh 32 64 output_more_random.log 20 2 \
-#      --perm-trials 30 \
-#      --cost-trials 30 \
-#      --budget-trials 30
+# 5. 提高随机对照实验次数
+#    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+#      --perm-trials 30 --cost-trials 30 --budget-trials 30
 #
-# ----------------------------------------------------------------------
-# 六、与当前项目设置相关的说明
-# ----------------------------------------------------------------------
-# 1. 这个脚本目前仍然保持原来的数据集设置，没有在这里改动任务数据集。
-#    当前默认写的是：
-#      --base_model "textattack/bert-base-uncased-MRPC"
-#      --data_path "mrpc"
+# 6. 从 JSON 加载配置 + 跳过噪声 RL
+#    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+#      --final-eval-source json \
+#      --final-eval-config glue_configs_best_ppo.json \
+#      --skip-noise-rl
 #
-# 2. 这个脚本只负责把参数传给 `rl_tune.py`，不会改动你原来在项目里的
-#    训练/验证/测试划分逻辑。
-#
-# 3. 如果你在服务器上运行，记得把新增的 Python 文件一起同步过去：
-#      final_evaluation_module.py
-#    否则 FINAL EVALUATION 的新逻辑无法导入。
-#
-# 4. 这个脚本仍然是后台运行方式：
-#      nohup ... > logfile 2>&1 &
-#    所以提交命令后，日志需要查看你传入的 logfile_path。
-#
-# ----------------------------------------------------------------------
-# 七、如何停止任务
-# ----------------------------------------------------------------------
-# 可以先查看进程：
-#   ps aux | grep rl_tune.py
-# 然后再手动 kill 对应进程。
+# ======================================================================
+# 项目相关说明
+# ======================================================================
+# - 当前默认数据集：base_model=textattack/bert-base-uncased-MRPC, data_path=mrpc
+# - 脚本使用 nohup 后台运行，日志查看：tail -f <logfile_path>
+# - 停止任务：ps aux | grep rl_tune.py，然后 kill -9 <PID>
+# - 服务器部署时需同步的 Python 文件：
+#     final_evaluation_module.py    第一阶段最终评估模块
+#     noise_rl_module.py            第二阶段噪声 RL 模块
 # ======================================================================
 
 usage() {
@@ -194,9 +156,11 @@ usage() {
     echo "  --budget-trials N"
     echo
     echo "Second-stage noise RL:"
-    echo "  Runs automatically after the final GELU/Softmax config is selected."
+    echo "  --skip-noise-rl          Skip stage-2 noise RL entirely."
+    echo "  By default, stage-2 runs after the GELU/Softmax config is selected."
     echo "  The fixed config source still follows --final-eval-source."
-    echo "  Learns layer-wise scaling factors for x/wq/wk/wv/wo/wffn1/wffn2."
+    echo "  x action space: {20,22,24,26,28,30}"
+    echo "  Weight action space (wq/wk/wv/wo/wffn1/wffn2): {10,12,14,16,18,20,22}"
     echo "  Writes noise_ppo_step_info.txt, noise_ppo_training_curve.png,"
     echo "  and noise_ppo_entropy_curve.png."
     echo
@@ -205,6 +169,7 @@ usage() {
     echo "  bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json"
     echo "  bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --final-eval-source manual --manual-gelu \"[1,1,1,4,1,1,1,1,1,1,1,1]\" --manual-softmax \"[2,3,4,6,4,4,5,4,4,5,5,2]\""
     echo "  bash llama_7B_LayerImportance.sh 32 64 output_stage2.log 20 2 --perm-trials 30 --cost-trials 30"
+    echo "  bash llama_7B_LayerImportance.sh 32 64 output_no_noise.log 20 2 --skip-noise-rl"
 }
 
 require_option_value() {
@@ -234,6 +199,7 @@ FINAL_EVAL_RANDOM_SEED="42"
 FINAL_EVAL_PERMUTATION_TRIALS="10"
 FINAL_EVAL_COST_EQUIVALENT_TRIALS="10"
 FINAL_EVAL_BUDGET_EQUIVALENT_TRIALS="10"
+SKIP_NOISE_RL="false"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -276,6 +242,10 @@ while [ "$#" -gt 0 ]; do
             require_option_value "$@"
             FINAL_EVAL_BUDGET_EQUIVALENT_TRIALS="$2"
             shift 2
+            ;;
+        --skip-noise-rl)
+            SKIP_NOISE_RL="true"
+            shift 1
             ;;
         -h|--help)
             usage
@@ -336,10 +306,15 @@ CMD=(
     --final_eval_permutation_trials "$FINAL_EVAL_PERMUTATION_TRIALS"
     --final_eval_cost_equivalent_trials "$FINAL_EVAL_COST_EQUIVALENT_TRIALS"
     --final_eval_budget_equivalent_trials "$FINAL_EVAL_BUDGET_EQUIVALENT_TRIALS"
+    --skip_noise_rl "$SKIP_NOISE_RL"
 )
 
 echo "Launching RL tune job with final evaluation source: $FINAL_EVAL_SOURCE"
-echo "Stage-2 noise RL will run automatically after the fixed GELU/Softmax config is selected."
+if [ "$SKIP_NOISE_RL" = "true" ]; then
+    echo "Stage-2 noise RL: SKIPPED (--skip-noise-rl)"
+else
+    echo "Stage-2 noise RL will run automatically after the fixed GELU/Softmax config is selected."
+fi
 echo "Log file: $LOGFILE_PATH"
 
 nohup "${CMD[@]}" > "$LOGFILE_PATH" 2>&1 &

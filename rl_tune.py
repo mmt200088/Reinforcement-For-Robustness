@@ -90,6 +90,7 @@ def train(
         final_eval_permutation_trials: int = 10,
         final_eval_cost_equivalent_trials: int = 10,
         final_eval_budget_equivalent_trials: int = 10,
+        skip_noise_rl: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
         group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -130,6 +131,7 @@ def train(
         f"final_eval_config_path: {final_eval_config_path}\n"
         f"manual_final_gelu: {manual_final_gelu}\n"
         f"manual_final_softmax: {manual_final_softmax}\n"
+        f"skip_noise_rl: {skip_noise_rl}\n"
         f"group_by_length: {group_by_length}\n"
         f"wandb_project: {wandb_project}\n"
         f"wandb_run_name: {wandb_run_name}\n"
@@ -445,6 +447,7 @@ def train(
             final_eval_permutation_trials=final_eval_permutation_trials,
             final_eval_cost_equivalent_trials=final_eval_cost_equivalent_trials,
             final_eval_budget_equivalent_trials=final_eval_budget_equivalent_trials,
+            skip_noise_rl=skip_noise_rl,
             data_path=data_path,  # 传递数据集名称用于动态指标选择
             test_data_mm=val_data_mm  # MNLI mismatched 验证集（非MNLI时为None）
         )
