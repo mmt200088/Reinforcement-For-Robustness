@@ -1982,7 +1982,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                  final_eval_permutation_trials=10,
                  final_eval_cost_equivalent_trials=10,
                  final_eval_budget_equivalent_trials=10,
-                 skip_noise_rl=False):
+                 skip_noise_rl=False,
+                 noise_eval_config_source='search',
+                 noise_eval_config_path='glue_noise_configs_best_ppo.json',
+                 manual_noise_config=None,
+                 noise_eval_repeat_n=1,
+                 skip_stage1_final_eval=False):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -2127,6 +2132,18 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.final_eval_budget_equivalent_trials = max(0, int(final_eval_budget_equivalent_trials))
         self.skip_search_for_final_eval = self.final_eval_config_source in ('manual', 'json')
         self.skip_noise_rl = bool(skip_noise_rl)
+
+        self.noise_eval_config_source = (noise_eval_config_source or 'search').lower()
+        self.noise_eval_config_path = noise_eval_config_path or 'glue_noise_configs_best_ppo.json'
+        self.manual_noise_config = manual_noise_config
+        self.noise_eval_repeat_n = max(1, int(noise_eval_repeat_n))
+        self.skip_stage1_final_eval = bool(skip_stage1_final_eval)
+
+        if self.noise_eval_config_source not in ('search', 'json', 'manual'):
+            raise ValueError(
+                f"Unsupported noise_eval_config_source '{self.noise_eval_config_source}'. "
+                "Use one of: search, json, manual."
+            )
 
         if self.final_eval_config_source not in ('search', 'json', 'manual'):
             raise ValueError(
@@ -4082,117 +4099,144 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.log("-" * len(header))
 
         """
-        final_eval_runner = FinalEvaluationModule(
-            evaluator=self,
-            config_source=self.final_eval_config_source,
-            config_path=self.final_eval_config_path,
-            manual_gelu=self.manual_final_gelu,
-            manual_softmax=self.manual_final_softmax,
-            random_seed=self.final_eval_random_seed,
-            permutation_trials=self.final_eval_permutation_trials,
-            cost_equivalent_trials=self.final_eval_cost_equivalent_trials,
-            budget_equivalent_trials=self.final_eval_budget_equivalent_trials,
-        )
-        final_eval_result = final_eval_runner.run(
-            search_best_config=best_config,
-            base_gelu=base_gelu,
-            base_softmax=base_softmax,
-            base_tot_c=base_tot_c,
-            base_g_c=base_g_c,
-            base_s_c=base_s_c,
-            limit_loss=limit_loss,
-            limit_p=limit_p,
-            limit_s=limit_s,
-        )
 
-        selected_label = final_eval_result['selected_label']
-        selected_source = final_eval_result['selected_source']
-        opt_gelu = final_eval_result['selected_gelu']
-        opt_softmax = final_eval_result['selected_softmax']
-        opt_res = final_eval_result['selected_result']
-        eval_cache = final_eval_result['eval_cache']
+        if self.skip_stage1_final_eval:
+            # ---------------------------------------------------------
+            # 跳过第一阶段最终评估（Phase 3 + Phase 4），直接解析配置
+            # ---------------------------------------------------------
+            self.log("\n" + "=" * 60)
+            self.log("PHASE 3 + 4: SKIPPED (--skip-stage1-final-eval)")
+            self.log("=" * 60)
 
-        # ---------------------------------------------------------
-        # Phase 4: Sensitivity (Validation on Selected Config)
-        # ---------------------------------------------------------
-        self.log("\n" + "="*60)
-        self.log(f"PHASE 4: SENSITIVITY ANALYSIS (Validation on {selected_label})")
-        self.log(
-            f"Checking whether further single-layer downgrades from the selected config remain safe "
-            f"(source={selected_source})."
-        )
-        self.log("="*60)
-        
-        # Get metrics of the optimized state for delta calculation
-        opt_loss = opt_res['loss']
-        opt_p = opt_res['p']
-        opt_s = opt_res['s']
-        
-        # 根据数据集设置违规标签（使用短名称）
-        short_names = self.get_metric_short_names()
-        metric1_tag = short_names[0].upper().rstrip('.')
-        metric2_tag = short_names[1].upper().rstrip('.') if num_metrics > 1 else None
-        
-        def _check_violation(l, p, s):
-            """检查约束违反情况，返回 (is_viol, viol_tags)"""
-            is_viol = False
-            viol_tags = []
-            if l > limit_loss:
-                is_viol = True
-                viol_tags.append("LOSS")
-            if p < limit_p:
-                is_viol = True
-                viol_tags.append(metric1_tag)
-            if num_metrics > 1 and s < limit_s:
-                is_viol = True
-                viol_tags.append(metric2_tag)
-            return is_viol, viol_tags
-        
-        def _format_sensitivity_msg(prefix, status, l, p, s, d_l, d_p, d_s):
-            """格式化敏感性分析消息"""
-            msg = (f"{prefix}: {status} | "
-                   f"Loss: {l:.4f} ({d_l:+.4f}) | "
-                   f"{metric1_name}: {p:.4f} ({d_p:+.4f})")
-            if num_metrics > 1:
-                msg += f" | {metric2_name}: {s:.4f} ({d_s:+.4f})"
-            return msg
-        
-        for i in range(self.total_layers):
-            # GELU Check: downgrade path 4->2->1->0 (0 only if eligible)
-            cd = opt_gelu[i]
-            if cd == 4:
-                td = 2
-            elif cd == 2:
-                td = 1
-            elif cd == 1 and gelu_degree0_eligible[i]:
-                td = 0
-            else:
-                td = None
-            if td is not None:
-                tmp = opt_gelu.copy()
-                tmp[i] = td
-                sig = (tuple(tmp), tuple(opt_softmax))
-                if sig in eval_cache: l, p, s, t = eval_cache[sig]
-                else: l, p, s, t = self.evaluate_model(tmp, opt_softmax, use_train=False)
-                
-                is_viol, viol_tags = _check_violation(l, p, s)
-                status = f"VIOLATED ({','.join(viol_tags)})" if is_viol else "SAFE"
-                d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
-                self.log(_format_sensitivity_msg(f"L{i} GELU {cd}->{td}", status, l, p, s, d_l, d_p, d_s))
+            from final_evaluation_module import FinalEvaluationModule
+            _resolver = FinalEvaluationModule(
+                evaluator=self,
+                config_source=self.final_eval_config_source,
+                config_path=self.final_eval_config_path,
+                manual_gelu=self.manual_final_gelu,
+                manual_softmax=self.manual_final_softmax,
+            )
+            opt_gelu, opt_softmax, selected_label, selected_source = (
+                _resolver._resolve_selected_config(
+                    search_best_config=best_config,
+                    total_layers=self.total_layers,
+                )
+            )
+            self.log(
+                f"[Info] 跳过第一阶段最终评估，直接使用 {selected_label} "
+                f"(source={selected_source}) 配置进入第二阶段。"
+            )
+            self.log(f"  GELU   : {opt_gelu.tolist()}")
+            self.log(f"  Softmax: {opt_softmax.tolist()}")
+        else:
+            # ---------------------------------------------------------
+            # Phase 3: Final Report（第一阶段最终评估）
+            # ---------------------------------------------------------
+            final_eval_runner = FinalEvaluationModule(
+                evaluator=self,
+                config_source=self.final_eval_config_source,
+                config_path=self.final_eval_config_path,
+                manual_gelu=self.manual_final_gelu,
+                manual_softmax=self.manual_final_softmax,
+                random_seed=self.final_eval_random_seed,
+                permutation_trials=self.final_eval_permutation_trials,
+                cost_equivalent_trials=self.final_eval_cost_equivalent_trials,
+                budget_equivalent_trials=self.final_eval_budget_equivalent_trials,
+            )
+            final_eval_result = final_eval_runner.run(
+                search_best_config=best_config,
+                base_gelu=base_gelu,
+                base_softmax=base_softmax,
+                base_tot_c=base_tot_c,
+                base_g_c=base_g_c,
+                base_s_c=base_s_c,
+                limit_loss=limit_loss,
+                limit_p=limit_p,
+                limit_s=limit_s,
+            )
 
-            # Softmax Check
-            cd_s = opt_softmax[i]
-            if cd_s > 2:
-                tmp_s = opt_softmax.copy()
-                tmp_s[i] = cd_s - 1
-                sig = (tuple(opt_gelu), tuple(tmp_s))
-                if sig in eval_cache: l, p, s, t = eval_cache[sig]
-                else: l, p, s, t = self.evaluate_model(opt_gelu, tmp_s, use_train=False)
-                
-                is_viol, viol_tags = _check_violation(l, p, s)
-                status = f"VIOLATED ({','.join(viol_tags)})" if is_viol else "SAFE"
-                d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
-                self.log(_format_sensitivity_msg(f"L{i} Smax {cd_s}->{cd_s-1}", status, l, p, s, d_l, d_p, d_s))
+            selected_label = final_eval_result['selected_label']
+            selected_source = final_eval_result['selected_source']
+            opt_gelu = final_eval_result['selected_gelu']
+            opt_softmax = final_eval_result['selected_softmax']
+            opt_res = final_eval_result['selected_result']
+            eval_cache = final_eval_result['eval_cache']
+
+            # ---------------------------------------------------------
+            # Phase 4: Sensitivity (Validation on Selected Config)
+            # ---------------------------------------------------------
+            self.log("\n" + "="*60)
+            self.log(f"PHASE 4: SENSITIVITY ANALYSIS (Validation on {selected_label})")
+            self.log(
+                f"Checking whether further single-layer downgrades from the selected config remain safe "
+                f"(source={selected_source})."
+            )
+            self.log("="*60)
+
+            opt_loss = opt_res['loss']
+            opt_p = opt_res['p']
+            opt_s = opt_res['s']
+
+            short_names = self.get_metric_short_names()
+            metric1_tag = short_names[0].upper().rstrip('.')
+            metric2_tag = short_names[1].upper().rstrip('.') if num_metrics > 1 else None
+
+            def _check_violation(l, p, s):
+                is_viol = False
+                viol_tags = []
+                if l > limit_loss:
+                    is_viol = True
+                    viol_tags.append("LOSS")
+                if p < limit_p:
+                    is_viol = True
+                    viol_tags.append(metric1_tag)
+                if num_metrics > 1 and s < limit_s:
+                    is_viol = True
+                    viol_tags.append(metric2_tag)
+                return is_viol, viol_tags
+
+            def _format_sensitivity_msg(prefix, status, l, p, s, d_l, d_p, d_s):
+                msg = (f"{prefix}: {status} | "
+                       f"Loss: {l:.4f} ({d_l:+.4f}) | "
+                       f"{metric1_name}: {p:.4f} ({d_p:+.4f})")
+                if num_metrics > 1:
+                    msg += f" | {metric2_name}: {s:.4f} ({d_s:+.4f})"
+                return msg
+
+            for i in range(self.total_layers):
+                cd = opt_gelu[i]
+                if cd == 4:
+                    td = 2
+                elif cd == 2:
+                    td = 1
+                elif cd == 1 and gelu_degree0_eligible[i]:
+                    td = 0
+                else:
+                    td = None
+                if td is not None:
+                    tmp = opt_gelu.copy()
+                    tmp[i] = td
+                    sig = (tuple(tmp), tuple(opt_softmax))
+                    if sig in eval_cache: l, p, s, t = eval_cache[sig]
+                    else: l, p, s, t = self.evaluate_model(tmp, opt_softmax, use_train=False)
+
+                    is_viol, viol_tags = _check_violation(l, p, s)
+                    status = f"VIOLATED ({','.join(viol_tags)})" if is_viol else "SAFE"
+                    d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
+                    self.log(_format_sensitivity_msg(f"L{i} GELU {cd}->{td}", status, l, p, s, d_l, d_p, d_s))
+
+                cd_s = opt_softmax[i]
+                if cd_s > 2:
+                    tmp_s = opt_softmax.copy()
+                    tmp_s[i] = cd_s - 1
+                    sig = (tuple(opt_gelu), tuple(tmp_s))
+                    if sig in eval_cache: l, p, s, t = eval_cache[sig]
+                    else: l, p, s, t = self.evaluate_model(opt_gelu, tmp_s, use_train=False)
+
+                    is_viol, viol_tags = _check_violation(l, p, s)
+                    status = f"VIOLATED ({','.join(viol_tags)})" if is_viol else "SAFE"
+                    d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
+                    self.log(_format_sensitivity_msg(f"L{i} Smax {cd_s}->{cd_s-1}", status, l, p, s, d_l, d_p, d_s))
 
         if self.skip_noise_rl:
             self.log("\n[Info] Second-stage noise RL skipped (--skip-noise-rl).")

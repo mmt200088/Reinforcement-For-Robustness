@@ -70,6 +70,44 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 - `noise_ppo_entropy_curve.png` — 策略熵曲线图
 - 主日志中搜索 `PHASE 5: SECOND-STAGE NOISE RL` 和 `Best Noise Configuration Found`
 
+**第二阶段：噪声最终评估配置来源**
+
+| 参数 | 说明 | 默认值 |
+| :--- | :--- | :--- |
+| `--noise-eval-source search\|json\|manual` | 噪声最终评估使用的配置来源：`search` 使用噪声 RL 搜索结果；`json` 从 JSON 文件读取；`manual` 手动指定 | `search` |
+| `--noise-eval-config PATH` | `json` 模式下指定的噪声配置 JSON 文件路径。程序根据当前数据集名自动读取对应条目 | `glue_noise_configs_best_ppo.json` |
+| `--manual-noise-config '{"x":[...],...}'` | `manual` 模式下手动指定 7 种噪声 scaling factor 数组（JSON 对象格式），支持短名称 `x, wq, wk, wv, wo, wffn1, wffn2` | — |
+| `--noise-eval-repeat N` | 对选定配置执行 N 次重复评估，输出 N 次结果及均值/标准差统计 | `1` |
+
+噪声配置 JSON 文件格式：
+```json
+{
+  "mrpc": {
+    "x": [20, 22, 24, 26, 28, 30, 20, 22, 24, 26, 28, 30],
+    "wq": [10, 12, 14, 16, 18, 20, 22, 10, 12, 14, 16, 18],
+    "wk": [10, 12, 14, ...],
+    "wv": [10, 12, 14, ...],
+    "wo": [10, 12, 14, ...],
+    "wffn1": [10, 12, 14, ...],
+    "wffn2": [10, 12, 14, ...]
+  }
+}
+```
+
+噪声最终评估的逻辑位于独立模块 `noise_final_evaluation_module.py` 中，功能与第一阶段 `final_evaluation_module.py` 一致，并新增 N 次重复评估。
+
+噪声最终评估产出文件（位于 `experiment_results/noise_final_evaluation/` 目录）：
+- `noise_final_eval_results_<dataset>.json` — 结果 JSON
+- `noise_final_eval_comparison_<dataset>.png` — 对比图
+
+**跳过第一阶段最终评估**
+
+| 参数 | 说明 | 默认值 |
+| :--- | :--- | :--- |
+| `--skip-stage1-final-eval` | 跳过第一阶段的最终评估（Phase 3 + Phase 4），直接使用 `--final-eval-source` 指定来源的 GELU/Softmax 配置进入第二阶段噪声 RL | 不跳过 |
+
+该选项适用于只关注第二阶段噪声 RL、不需要重复运行第一阶段评估的场景。配合 `--final-eval-source` 可指定 GELU/Softmax 配置来源（search / json / manual）。
+
 **帮助**
 
 | 参数 | 说明 |
@@ -95,6 +133,18 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
 从 JSON 加载 + 跳过噪声 RL：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-noise-rl`
+
+跳过第一阶段最终评估，用 JSON 配置直接进入第二阶段噪声 RL：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval`
+
+手动指定噪声配置做第二阶段最终评估：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}'`
+
+第二阶段噪声评估重复 5 次：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-repeat 5`
+
+从 JSON 加载噪声配置：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`
 
 #### Note: Though we call the script "llama_7B_LayerImportance.sh", we just evaluate the Bert-base model for different tasks now, please check out the .sh for more detials!
 

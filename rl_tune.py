@@ -42,6 +42,17 @@ def parse_degree_config(raw_value):
     return [int(item.strip()) for item in text.split(",") if item.strip()]
 
 
+def parse_noise_config(raw_value):
+    if raw_value is None or raw_value == "":
+        return None
+    if isinstance(raw_value, dict):
+        return raw_value
+    text = str(raw_value).strip()
+    if not text:
+        return None
+    return json.loads(text)
+
+
 def train(
         # model/data params
         base_model: str = "",  # the only required argument
@@ -91,6 +102,11 @@ def train(
         final_eval_cost_equivalent_trials: int = 10,
         final_eval_budget_equivalent_trials: int = 10,
         skip_noise_rl: bool = False,
+        noise_eval_config_source: str = "search",
+        noise_eval_config_path: str = "glue_noise_configs_best_ppo.json",
+        manual_noise_config: str = "",
+        noise_eval_repeat_n: int = 1,
+        skip_stage1_final_eval: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
         group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -132,6 +148,11 @@ def train(
         f"manual_final_gelu: {manual_final_gelu}\n"
         f"manual_final_softmax: {manual_final_softmax}\n"
         f"skip_noise_rl: {skip_noise_rl}\n"
+        f"noise_eval_config_source: {noise_eval_config_source}\n"
+        f"noise_eval_config_path: {noise_eval_config_path}\n"
+        f"manual_noise_config: {manual_noise_config}\n"
+        f"noise_eval_repeat_n: {noise_eval_repeat_n}\n"
+        f"skip_stage1_final_eval: {skip_stage1_final_eval}\n"
         f"group_by_length: {group_by_length}\n"
         f"wandb_project: {wandb_project}\n"
         f"wandb_run_name: {wandb_run_name}\n"
@@ -426,6 +447,7 @@ def train(
     #     model.model_parallel = True
     parsed_manual_gelu = parse_degree_config(manual_final_gelu)
     parsed_manual_softmax = parse_degree_config(manual_final_softmax)
+    parsed_noise_config = parse_noise_config(manual_noise_config)
     trainer_callbacks = []
 
     if use_ist:
@@ -448,8 +470,13 @@ def train(
             final_eval_cost_equivalent_trials=final_eval_cost_equivalent_trials,
             final_eval_budget_equivalent_trials=final_eval_budget_equivalent_trials,
             skip_noise_rl=skip_noise_rl,
-            data_path=data_path,  # 传递数据集名称用于动态指标选择
-            test_data_mm=val_data_mm  # MNLI mismatched 验证集（非MNLI时为None）
+            noise_eval_config_source=noise_eval_config_source,
+            noise_eval_config_path=noise_eval_config_path,
+            manual_noise_config=parsed_noise_config,
+            noise_eval_repeat_n=noise_eval_repeat_n,
+            skip_stage1_final_eval=skip_stage1_final_eval,
+            data_path=data_path,
+            test_data_mm=val_data_mm
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

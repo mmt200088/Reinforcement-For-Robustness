@@ -370,145 +370,42 @@ class NoiseRLModule:
             use_validation=USE_VALIDATION_FOR_REWARD,
         )
 
-        ev.log("\n" + "=" * 60)
-        ev.log("PHASE 5.5: NOISE RL FINAL EVALUATION (验证集)")
-        ev.log("=" * 60)
+        from noise_final_evaluation_module import NoiseFinalEvaluationModule
 
-        eval_cache = {}
-
-        def eval_noise_result(name, family, noise_cfg):
-            sig = tuple(
-                tuple(np.asarray(noise_cfg[key], dtype=int).tolist())
-                for key in (
-                    "input_noise_scaling_factors",
-                    "wq_noise_scaling_factors",
-                    "wk_noise_scaling_factors",
-                    "wv_noise_scaling_factors",
-                    "wo_noise_scaling_factors",
-                    "wffn1_noise_scaling_factors",
-                    "wffn2_noise_scaling_factors",
-                )
-            )
-            if sig in eval_cache:
-                loss, p, s, t = eval_cache[sig]
-            else:
-                loss, p, s, t = ev.evaluate_model_with_attention_noise(
-                    fixed_gelu, fixed_softmax, use_train=False, **noise_cfg
-                )
-                eval_cache[sig] = (loss, p, s, t)
-            tot_c, breakdown = ev.get_noise_simulated_cost(**noise_cfg)
-            return {
-                "name": name,
-                "family": family,
-                "loss": float(loss),
-                "p": float(p),
-                "s": float(s),
-                "time_ms": float(t),
-                "tot_c": float(tot_c),
-                "tot_spd": float(baseline_tot_c / (tot_c + 1e-6)),
-                "breakdown": breakdown,
-                "feasible": bool(loss <= limit_loss and p >= limit_p and (ev.get_num_metrics() == 1 or s >= limit_s)),
-            }
-
-        baseline_result = eval_noise_result("Baseline (Max Scaling)", "Baseline", baseline_noise_config)
-        selected_noise_cfg = {k: v for k, v in best_noise_config.items() if k.endswith("scaling_factors")}
-        optimized_result = eval_noise_result("Optimized (Noise PPO)", "Selected", selected_noise_cfg)
-
-        def generate_cost_equivalent_noise_config(target_cost, cost_map, allowed_values, length, rng):
-            degrees = list(allowed_values)
-            for _ in range(2000):
-                cfg = rng.choice(degrees, size=length)
-                for _ in range(500):
-                    curr = sum(cost_map[int(d)] for d in cfg)
-                    diff = curr - target_cost
-                    if abs(diff) < 1e-6:
-                        return cfg.astype(int)
-                    idx = int(rng.integers(0, length))
-                    old_v = int(cfg[idx])
-                    moves = [d for d in degrees if abs((curr - cost_map[old_v] + cost_map[int(d)]) - target_cost) < abs(diff)]
-                    cfg[idx] = int(rng.choice(moves if moves else degrees))
-            return np.asarray(cfg, dtype=int)
-
-        rng = np.random.default_rng(ev.final_eval_random_seed)
-        random_results = []
-        for i in range(ev.final_eval_permutation_trials):
-            perm_cfg = {
-                "input_noise_scaling_factors": rng.permutation(selected_noise_cfg["input_noise_scaling_factors"]),
-                "wq_noise_scaling_factors": rng.permutation(selected_noise_cfg["wq_noise_scaling_factors"]),
-                "wk_noise_scaling_factors": rng.permutation(selected_noise_cfg["wk_noise_scaling_factors"]),
-                "wv_noise_scaling_factors": rng.permutation(selected_noise_cfg["wv_noise_scaling_factors"]),
-                "wo_noise_scaling_factors": rng.permutation(selected_noise_cfg["wo_noise_scaling_factors"]),
-                "wffn1_noise_scaling_factors": rng.permutation(selected_noise_cfg["wffn1_noise_scaling_factors"]),
-                "wffn2_noise_scaling_factors": rng.permutation(selected_noise_cfg["wffn2_noise_scaling_factors"]),
-            }
-            random_results.append(eval_noise_result(f"NoisePerm_{i+1}", "Permutation", perm_cfg))
-
-        for i in range(ev.final_eval_cost_equivalent_trials):
-            equiv_cfg = {
-                "input_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["x"], ev.INPUT_NOISE_COST_MAP, INPUT_NOISE_ALLOWED_SCALING_FACTORS, ev.total_layers, rng),
-                "wq_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wq"], ev.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, ev.total_layers, rng),
-                "wk_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wk"], ev.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, ev.total_layers, rng),
-                "wv_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wv"], ev.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, ev.total_layers, rng),
-                "wo_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wo"], ev.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, ev.total_layers, rng),
-                "wffn1_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wffn1"], ev.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, ev.total_layers, rng),
-                "wffn2_noise_scaling_factors": generate_cost_equivalent_noise_config(optimized_result["breakdown"]["wffn2"], ev.WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, ev.total_layers, rng),
-            }
-            random_results.append(eval_noise_result(f"NoiseEquiv_{i+1}", "Cost-Equivalent", equiv_cfg))
-
-        ev.log("\nNoise Performance Comparison Table:")
-        short_names = ev.get_metric_short_names()
-        if ev.get_num_metrics() == 1:
-            header = f"{'Method':<22} | {'Loss':<8} {short_names[0]:<8} | {'Loss Δ%':<9} {short_names[0] + ' Δ%':<11} | {'Noise C':<8} {'Speedup':<8} {'Feasible':<8}"
-        else:
-            header = f"{'Method':<22} | {'Loss':<8} {short_names[0]:<8} {short_names[1]:<8} | {'Loss Δ%':<9} {short_names[0] + ' Δ%':<11} {short_names[1] + ' Δ%':<11} | {'Noise C':<8} {'Speedup':<8} {'Feasible':<8}"
-        ev.log("-" * len(header))
-        ev.log(header)
-        ev.log("-" * len(header))
-
-        def format_noise_row(result):
-            loss_delta_pct = ((result["loss"] - baseline_result["loss"]) / (baseline_result["loss"] + 1e-8)) * 100.0
-            m1_delta_pct = ((result["p"] - baseline_result["p"]) / (baseline_result["p"] + 1e-8)) * 100.0
-            feasible_text = "Yes" if result["feasible"] else "No"
-            if ev.get_num_metrics() == 1:
-                return (
-                    f"{result['name']:<22} | {result['loss']:<8.4f} {result['p']:<8.4f} | "
-                    f"{loss_delta_pct:>8.2f}% {m1_delta_pct:>10.2f}% | {result['tot_c']:<8.2f} {result['tot_spd']:<8.2f} {feasible_text:<8}"
-                )
-            m2_delta_pct = ((result["s"] - baseline_result["s"]) / (baseline_result["s"] + 1e-8)) * 100.0
-            return (
-                f"{result['name']:<22} | {result['loss']:<8.4f} {result['p']:<8.4f} {result['s']:<8.4f} | "
-                f"{loss_delta_pct:>8.2f}% {m1_delta_pct:>10.2f}% {m2_delta_pct:>10.2f}% | {result['tot_c']:<8.2f} {result['tot_spd']:<8.2f} {feasible_text:<8}"
-            )
-
-        ev.log(format_noise_row(baseline_result))
-        ev.log(format_noise_row(optimized_result))
-        ev.log("-" * len(header))
-        for res in random_results:
-            ev.log(format_noise_row(res))
-        ev.log("-" * len(header))
-
-        optimized_beats = sum(
-            1 for res in random_results
-            if optimized_result["loss"] <= res["loss"] and optimized_result["p"] >= res["p"] and (ev.get_num_metrics() == 1 or optimized_result["s"] >= res["s"])
-        )
-        feasible_random = sum(1 for res in random_results if res["feasible"])
-        ev.log(
-            f"Noise random summary: optimized dominates {optimized_beats}/{len(random_results)} random configs; "
-            f"feasible random configs = {feasible_random}/{len(random_results)}."
+        noise_eval_runner = NoiseFinalEvaluationModule(
+            evaluator=ev,
+            config_source=getattr(ev, "noise_eval_config_source", "search"),
+            config_path=getattr(ev, "noise_eval_config_path", "glue_noise_configs_best_ppo.json"),
+            manual_noise_config=getattr(ev, "manual_noise_config", None),
+            random_seed=ev.final_eval_random_seed,
+            permutation_trials=ev.final_eval_permutation_trials,
+            cost_equivalent_trials=ev.final_eval_cost_equivalent_trials,
+            budget_equivalent_trials=ev.final_eval_budget_equivalent_trials,
+            repeat_n=getattr(ev, "noise_eval_repeat_n", 1),
         )
 
-        ev.apply_configuration(fixed_gelu, fixed_softmax)
-        ev.clear_input_noise_configuration()
-        ev.clear_weight_noise_configuration()
+        selected_noise_cfg = {
+            k: v for k, v in best_noise_config.items()
+            if k.endswith("scaling_factors")
+        }
+
+        noise_eval_result = noise_eval_runner.run(
+            search_best_noise_config=selected_noise_cfg,
+            fixed_gelu=fixed_gelu,
+            fixed_softmax=fixed_softmax,
+            baseline_noise_config=baseline_noise_config,
+            baseline_tot_c=baseline_tot_c,
+            limit_loss=limit_loss,
+            limit_p=limit_p,
+            limit_s=limit_s,
+        )
 
         return {
             "fixed_gelu": fixed_gelu.copy(),
             "fixed_softmax": fixed_softmax.copy(),
             "baseline_noise_config": {k: v.copy() for k, v in baseline_noise_config.items()},
             "best_noise_config": {k: v.copy() if isinstance(v, np.ndarray) else v for k, v in best_noise_config.items()},
-            "baseline_result": baseline_result,
-            "optimized_result": optimized_result,
-            "random_results": random_results,
+            "noise_eval_result": noise_eval_result,
         }
 
 
