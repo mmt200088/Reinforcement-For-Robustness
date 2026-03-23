@@ -26,14 +26,30 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
 旧版 5 参数命令完全兼容。可在 5 个位置参数之后追加以下可选命名参数：
 
-**第一阶段：最终评估配置来源**
+**第一阶段：GELU/Softmax 强化学习（PPO/贪心）与 第一阶段最终评估（两者独立可控）**
+
+与第二阶段类似，第一阶段 **搜索/RL** 与 **最终评估（Phase 3+4：完整报告与灵敏度）** 由不同开关控制；`--final-eval-source` 只表示「选用哪套 GELU/Softmax 参与最终评估/解析」，**不再**隐式跳过 RL。
+
+可自由组合示例：
+- 都运行（默认）
+- 只跑 RL 不做第一阶段最终评估：`--skip-stage1-final-eval`
+- 只做最终评估不跑 RL：`--skip-stage1-rl` + `--final-eval-source json` 或 `manual`（`search` 与 `--skip-stage1-rl` **互斥**，因无搜索结果）
+- 二者都跳过第一阶段侧较重步骤：`--skip-stage1-rl --skip-stage1-final-eval` 且配置来源为 `json`/`manual`（例如只关心第二阶段）
 
 | 参数 | 说明 | 默认值 |
 | :--- | :--- | :--- |
-| `--final-eval-source search\|json\|manual` | 最终评估使用的 GELU/Softmax 配置来源：`search` 使用 RL 搜索结果；`json` 从 JSON 文件读取；`manual` 手动指定 | `search` |
+| `--skip-stage1-rl` | 跳过第一阶段 PPO 与贪心搜索（Phase 2 + Phase 2.5）。不自动跳过第一阶段最终评估 | 不跳过 |
+
+**第一阶段：最终评估配置来源**（`--final-eval-source`）
+
+| 参数 | 说明 | 默认值 |
+| :--- | :--- | :--- |
+| `--final-eval-source search\|json\|manual` | 选用哪套 GELU/Softmax：`search` 使用本次第一阶段搜索得到的最优配置（需**未**使用 `--skip-stage1-rl`）；`json` / `manual` 从文件或命令行读取 | `search` |
 | `--final-eval-config PATH` | `json` 模式下指定的 JSON 配置文件路径。程序根据当前数据集名（如 `mrpc`）自动读取对应条目 | `glue_configs_best_ppo.json` |
 | `--manual-gelu "[1,1,1,4,...]"` | `manual` 模式下手动指定每层 GELU degree（JSON 数组），必须与 `--manual-softmax` 一起使用 | — |
 | `--manual-softmax "[2,3,4,6,...]"` | `manual` 模式下手动指定每层 Softmax degree（JSON 数组），必须与 `--manual-gelu` 一起使用 | — |
+
+说明：若同时运行 RL 且 `--final-eval-source json`（或 `manual`），最终评估模块会采用 **JSON/手动配置**，而不是 RL 跑出的最优解——便于「先跑 RL 做实验，再固定用某套存档配置做报告」。
 
 **随机对照实验**
 
@@ -111,9 +127,9 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
 | 参数 | 说明 | 默认值 |
 | :--- | :--- | :--- |
-| `--skip-stage1-final-eval` | 跳过第一阶段的最终评估（Phase 3 + Phase 4），直接使用 `--final-eval-source` 指定来源的 GELU/Softmax 配置进入第二阶段噪声 RL | 不跳过 |
+| `--skip-stage1-final-eval` | 跳过第一阶段的完整最终评估（Phase 3 + Phase 4：随机对照、灵敏度等），仍按 `--final-eval-source` 解析 GELU/Softmax 后进入第二阶段 | 不跳过 |
 
-该选项适用于只关注第二阶段噪声 RL、不需要重复运行第一阶段评估的场景。配合 `--final-eval-source` 可指定 GELU/Softmax 配置来源（search / json / manual）。
+适用于只关心第二阶段、或已确认配置、希望省时的场景。若未 `--skip-stage1-rl`，则 `search` 表示使用本次 RL/贪心得到的 `best_config`。
 
 **帮助**
 
@@ -128,6 +144,9 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
 跳过第二阶段的 RL 训练和最终评估，只运行第一阶段：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --skip-noise-final-eval`
+
+只从 JSON 读 GELU/Softmax、不跑第一阶段 RL，但仍做第一阶段最终评估（需显式跳过搜索）：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json`
 
 跳过噪声 RL 训练，但仍用 JSON 配置运行噪声最终评估：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`

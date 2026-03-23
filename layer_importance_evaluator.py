@@ -1987,6 +1987,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                  noise_eval_config_path='glue_noise_configs_best_ppo.json',
                  manual_noise_config=None,
                  noise_eval_repeat_n=1,
+                 skip_stage1_rl=False,
                  skip_stage1_final_eval=False,
                  skip_noise_final_eval=False):
         """
@@ -2131,7 +2132,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.final_eval_permutation_trials = max(0, int(final_eval_permutation_trials))
         self.final_eval_cost_equivalent_trials = max(0, int(final_eval_cost_equivalent_trials))
         self.final_eval_budget_equivalent_trials = max(0, int(final_eval_budget_equivalent_trials))
-        self.skip_search_for_final_eval = self.final_eval_config_source in ('manual', 'json')
+        self.skip_stage1_rl = bool(skip_stage1_rl)
         self.skip_noise_rl = bool(skip_noise_rl)
 
         self.noise_eval_config_source = (noise_eval_config_source or 'search').lower()
@@ -2151,6 +2152,13 @@ class LayerImportanceEvaluator(TrainerCallback):
             raise ValueError(
                 f"Unsupported final_eval_config_source '{self.final_eval_config_source}'. "
                 "Use one of: search, json, manual."
+            )
+
+        if self.skip_stage1_rl and self.final_eval_config_source == 'search':
+            raise ValueError(
+                "skip_stage1_rl=True 与 final_eval_config_source='search' 不能同时使用："
+                "跳过第一阶段搜索后没有 RL/贪心结果可供 search 使用。"
+                "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
             )
         
         # ==================== 敏锐度优化PDF：课程学习状态 ====================
@@ -3378,8 +3386,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.log("STARTING CONFIGURATION EVALUATION")
         self.log(f"SEARCH_MODE={SEARCH_MODE}" + (" (USE_GREEDY_SEARCH=" + str(USE_GREEDY_SEARCH) + ")" if SEARCH_MODE == "both" else ""))
         self.log(f"FINAL_EVAL_CONFIG_SOURCE={self.final_eval_config_source}")
-        if self.skip_search_for_final_eval:
-            self.log("[Info] External final-eval config selected, so RL/greedy search will be skipped.")
+        if self.skip_stage1_rl:
+            self.log("[Info] First-stage RL/greedy search skipped (--skip-stage1-rl).")
         self.log("="*60)
 
         # ---------------------------------------------------------
@@ -3454,7 +3462,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         # ---------------------------------------------------------
         # Phase 2: PPO Training（仅当 SEARCH_MODE 为 "rl" 或 "both" 时执行）
         # ---------------------------------------------------------
-        if (not self.skip_search_for_final_eval) and SEARCH_MODE in ("rl", "both"):
+        if (not self.skip_stage1_rl) and SEARCH_MODE in ("rl", "both"):
             self.log("\n--- Phase 2: PPO Reinforcement Learning Training ---")
         
             # 初始化 StepInfo 输出文件
@@ -3690,7 +3698,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         # ---------------------------------------------------------
         # 仅贪婪模式：从用户指定的初始配置开始
         # ---------------------------------------------------------
-        if (not self.skip_search_for_final_eval) and SEARCH_MODE == "greedy":
+        if (not self.skip_stage1_rl) and SEARCH_MODE == "greedy":
             # 将 GREEDY_INITIAL_* 转为数组并 pad/truncate 到 total_layers
             def _pad_or_truncate(arr, length, default_val):
                 a = np.asarray(arr, dtype=int)
@@ -3717,7 +3725,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         # ---------------------------------------------------------
         # Phase 2.5: Greedy Search（SEARCH_MODE=="both" 且 USE_GREEDY_SEARCH 时从 RL 结果出发；SEARCH_MODE=="greedy" 时从指定初始配置出发）
         # ---------------------------------------------------------
-        if (not self.skip_search_for_final_eval) and ((SEARCH_MODE == "both" and USE_GREEDY_SEARCH) or SEARCH_MODE == "greedy"):
+        if (not self.skip_stage1_rl) and ((SEARCH_MODE == "both" and USE_GREEDY_SEARCH) or SEARCH_MODE == "greedy"):
             self.log("\n" + "="*60)
             if SEARCH_MODE == "greedy":
                 self.log("PHASE 2.5: GREEDY SEARCH (Greedy-Only Mode, from user-specified initial config)")
@@ -3860,17 +3868,16 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.log("\n" + "="*60)
             self.log("PHASE 2.5: GREEDY SEARCH (SKIPPED)")
             self.log("="*60)
-            if self.skip_search_for_final_eval:
-                self.log(
-                    f"[Info] Final evaluation will use config_source={self.final_eval_config_source}, "
-                    "so optimization is skipped."
-                )
+            if self.skip_stage1_rl:
+                self.log("[Info] First-stage PPO/greedy skipped (--skip-stage1-rl).")
             elif SEARCH_MODE == "rl":
                 self.log("[Info] SEARCH_MODE=rl, greedy search not run.")
             elif SEARCH_MODE == "both":
                 self.log("[Info] USE_GREEDY_SEARCH=False, skipping greedy refinement.")
-            if self.skip_search_for_final_eval:
-                self.log("[Info] Final configuration will be resolved inside the standalone final-evaluation module.")
+            if self.skip_stage1_rl:
+                self.log(
+                    "[Info] GELU/Softmax 将根据 --final-eval-source 在最终评估模块中解析。"
+                )
             else:
                 self.log("[Info] Using current best_config as final configuration.")
             self.log("="*60)

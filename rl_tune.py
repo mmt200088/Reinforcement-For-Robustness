@@ -106,6 +106,7 @@ def train(
         noise_eval_config_path: str = "glue_noise_configs_best_ppo.json",
         manual_noise_config: str = "",
         noise_eval_repeat_n: int = 1,
+        skip_stage1_rl: bool = False,
         skip_stage1_final_eval: bool = False,
         skip_noise_final_eval: bool = False,
         # llm hyperparams
@@ -153,6 +154,7 @@ def train(
         f"noise_eval_config_path: {noise_eval_config_path}\n"
         f"manual_noise_config: {manual_noise_config}\n"
         f"noise_eval_repeat_n: {noise_eval_repeat_n}\n"
+        f"skip_stage1_rl: {skip_stage1_rl}\n"
         f"skip_stage1_final_eval: {skip_stage1_final_eval}\n"
         f"skip_noise_final_eval: {skip_noise_final_eval}\n"
         f"group_by_length: {group_by_length}\n"
@@ -476,6 +478,7 @@ def train(
             noise_eval_config_path=noise_eval_config_path,
             manual_noise_config=parsed_noise_config,
             noise_eval_repeat_n=noise_eval_repeat_n,
+            skip_stage1_rl=skip_stage1_rl,
             skip_stage1_final_eval=skip_stage1_final_eval,
             skip_noise_final_eval=skip_noise_final_eval,
             data_path=data_path,
