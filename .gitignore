@@ -2,7 +2,6 @@ ppo_step_info.txt
 *.txt
 *.log
 *.csv
-*.json
 model_statistics/**/*.png
 gelu_analysis/**/*.png
 all_analysis/**/*.png
