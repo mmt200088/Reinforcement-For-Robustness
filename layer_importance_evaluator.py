@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from transformers.trainer_callback import TrainerCallback
 from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
+from sklearn.model_selection import train_test_split
 from function_handler import (
     ReversibleLayerHandler,
     INPUT_NOISE_ALLOWED_SCALING_FACTORS,
@@ -327,6 +328,18 @@ USE_VALIDATION_FOR_REWARD = True  # True: 使用验证集计算奖励, False: �
 #   - "rl": 仅强化学习（Phase 2），不执行贪心
 #   - "greedy": 仅贪婪算法（从下方 GREEDY_INITIAL_* 指定的配置出发），不执行 RL
 #   - "both": 先 RL 再根据 USE_GREEDY_SEARCH 决定是否执行贪心
+USE_VALIDATION_SEARCH_PROTOCOL = True
+VALIDATION_SMALL_TASKS = {"mrpc", "rte", "cola", "wnli"}
+VALIDATION_HOLDOUT_RATIO_DEFAULT = 0.20
+VALIDATION_HOLDOUT_RATIO_SMALL = 0.30
+VALIDATION_PROXY_RATIO_DEFAULT = 0.15
+VALIDATION_PROXY_RATIO_SMALL = 0.50
+RL_DATASET_SPLIT_SEED = 42
+
+USE_TRAIN_ANCHOR = False
+TRAIN_ANCHOR_SIZE_DEFAULT = 256
+TRAIN_ANCHOR_SIZE_SMALL = 128
+
 SEARCH_MODE = "rl"  # "rl" | "greedy" | "both"
 
 # 仅当 SEARCH_MODE == "greedy" 时生效：贪婪算法的初始 GELU/Softmax 配置
@@ -2020,6 +2033,12 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.dataloader_test_mm = DataLoader(test_data_mm, batch_size=16, shuffle=False, collate_fn=data_collator)
         else:
             self.dataloader_test_mm = None
+
+        self._prepare_rl_datasets(
+            train_data=train_data,
+            validation_data=test_data,
+            validation_data_mm=test_data_mm,
+        )
         
         try:
             self.reversible_handler = ReversibleLayerHandler(self.model)
@@ -2266,6 +2285,343 @@ class LayerImportanceEvaluator(TrainerCallback):
     def get_num_metrics(self):
         """返回当前数据集的评估指标数量 (1 或 2)"""
         return len(self.dataset_config['metrics'])
+
+    def _is_small_validation_task(self):
+        return getattr(self, "dataset_key", None) in VALIDATION_SMALL_TASKS
+
+    def _get_validation_holdout_ratio(self):
+        if self._is_small_validation_task():
+            return VALIDATION_HOLDOUT_RATIO_SMALL
+        return VALIDATION_HOLDOUT_RATIO_DEFAULT
+
+    def _get_validation_proxy_ratio(self):
+        if self._is_small_validation_task():
+            return VALIDATION_PROXY_RATIO_SMALL
+        return VALIDATION_PROXY_RATIO_DEFAULT
+
+    def _get_train_anchor_size(self):
+        if self._is_small_validation_task():
+            return TRAIN_ANCHOR_SIZE_SMALL
+        return TRAIN_ANCHOR_SIZE_DEFAULT
+
+    def _make_dataloader(self, dataset):
+        if dataset is None:
+            return None
+        return DataLoader(dataset, batch_size=16, shuffle=False, collate_fn=self.data_collator)
+
+    def _register_dataset_split(self, split_name, dataset, dataset_mm=None):
+        if dataset is None:
+            self.dataset_splits.pop(split_name, None)
+            self.dataloaders.pop(split_name, None)
+            self.dataset_splits_mm.pop(split_name, None)
+            self.dataloaders_mm.pop(split_name, None)
+            return
+
+        self.dataset_splits[split_name] = dataset
+        self.dataloaders[split_name] = self._make_dataloader(dataset)
+
+        if dataset_mm is None:
+            self.dataset_splits_mm.pop(split_name, None)
+            self.dataloaders_mm.pop(split_name, None)
+        else:
+            self.dataset_splits_mm[split_name] = dataset_mm
+            self.dataloaders_mm[split_name] = self._make_dataloader(dataset_mm)
+
+    def has_dataset_split(self, split_name):
+        return self.dataloaders.get(split_name) is not None
+
+    def _extract_labels_for_stratify(self, dataset):
+        if dataset is None or self.is_regression:
+            return None
+
+        column_names = getattr(dataset, "column_names", [])
+        if "labels" in column_names:
+            label_column = "labels"
+        elif "label" in column_names:
+            label_column = "label"
+        else:
+            return None
+
+        try:
+            labels = dataset[label_column]
+        except Exception:
+            labels = [dataset[idx][label_column] for idx in range(len(dataset))]
+
+        normalized = []
+        for value in labels:
+            if torch.is_tensor(value):
+                value = value.item() if value.numel() == 1 else tuple(value.detach().cpu().tolist())
+            elif isinstance(value, np.ndarray):
+                value = value.item() if value.size == 1 else tuple(value.tolist())
+            normalized.append(value)
+        return normalized
+
+    def _safe_train_test_split(self, indices, seed, labels=None, train_size=None, test_size=None):
+        split_kwargs = {
+            "shuffle": True,
+            "random_state": int(seed),
+        }
+        if train_size is not None:
+            split_kwargs["train_size"] = train_size
+        if test_size is not None:
+            split_kwargs["test_size"] = test_size
+
+        if labels is not None:
+            try:
+                return train_test_split(indices, stratify=labels, **split_kwargs)
+            except ValueError:
+                pass
+
+        return train_test_split(indices, **split_kwargs)
+
+    def _sample_dataset_by_size(self, dataset, subset_size, seed):
+        if dataset is None:
+            return None
+
+        total_size = len(dataset)
+        if total_size == 0:
+            return dataset
+
+        subset_size = int(subset_size)
+        if subset_size >= total_size:
+            return dataset
+        if subset_size <= 0:
+            subset_size = 1
+
+        indices = np.arange(total_size)
+        labels = self._extract_labels_for_stratify(dataset)
+        selected_indices, _ = self._safe_train_test_split(
+            indices,
+            seed=seed,
+            labels=labels,
+            train_size=subset_size,
+        )
+        selected_indices = np.sort(np.asarray(selected_indices, dtype=int))
+        return dataset.select(selected_indices.tolist())
+
+    def _split_dataset_for_rl(self, dataset, holdout_ratio, seed):
+        if dataset is None:
+            return None, None
+
+        total_size = len(dataset)
+        if total_size < 2 or holdout_ratio <= 0.0:
+            return dataset, None
+
+        indices = np.arange(total_size)
+        labels = self._extract_labels_for_stratify(dataset)
+        search_indices, holdout_indices = self._safe_train_test_split(
+            indices,
+            seed=seed,
+            labels=labels,
+            test_size=holdout_ratio,
+        )
+        search_indices = np.sort(np.asarray(search_indices, dtype=int))
+        holdout_indices = np.sort(np.asarray(holdout_indices, dtype=int))
+
+        if len(search_indices) == 0 or len(holdout_indices) == 0:
+            return dataset, None
+
+        return (
+            dataset.select(search_indices.tolist()),
+            dataset.select(holdout_indices.tolist()),
+        )
+
+    def _prepare_rl_datasets(self, train_data, validation_data, validation_data_mm=None):
+        self.dataset_splits = {}
+        self.dataset_splits_mm = {}
+        self.dataloaders = {}
+        self.dataloaders_mm = {}
+        self.current_val_proxy_window = None
+        self.current_val_proxy_subset_id = None
+
+        self._register_dataset_split("train", train_data)
+
+        if USE_TRAIN_ANCHOR and train_data is not None:
+            anchor_size = min(len(train_data), self._get_train_anchor_size())
+            train_anchor = self._sample_dataset_by_size(
+                train_data,
+                subset_size=anchor_size,
+                seed=RL_DATASET_SPLIT_SEED + 11,
+            )
+            self._register_dataset_split("train_anchor", train_anchor)
+
+        if validation_data is not None:
+            self._register_dataset_split("validation_full", validation_data, validation_data_mm)
+
+            if USE_VALIDATION_SEARCH_PROTOCOL:
+                holdout_ratio = self._get_validation_holdout_ratio()
+                val_search_full, val_holdout = self._split_dataset_for_rl(
+                    validation_data,
+                    holdout_ratio=holdout_ratio,
+                    seed=RL_DATASET_SPLIT_SEED,
+                )
+                if validation_data_mm is not None:
+                    val_search_mm, val_holdout_mm = self._split_dataset_for_rl(
+                        validation_data_mm,
+                        holdout_ratio=holdout_ratio,
+                        seed=RL_DATASET_SPLIT_SEED + 1,
+                    )
+                else:
+                    val_search_mm, val_holdout_mm = None, None
+            else:
+                val_search_full = validation_data
+                val_holdout = None
+                val_search_mm = validation_data_mm
+                val_holdout_mm = None
+
+            self._register_dataset_split("val_search_full", val_search_full, val_search_mm)
+            self._register_dataset_split("val_holdout", val_holdout, val_holdout_mm)
+
+        self.dataloader_train = self.dataloaders.get("train")
+        self.dataloader_test = self.dataloaders.get("validation_full")
+        self.dataloader_test_mm = self.dataloaders_mm.get("validation_full")
+
+        if validation_data is not None:
+            search_size = len(self.dataset_splits.get("val_search_full", validation_data))
+            holdout_dataset = self.dataset_splits.get("val_holdout")
+            holdout_size = len(holdout_dataset) if holdout_dataset is not None else 0
+            print(
+                "[Dataset Protocol] "
+                f"validation_full={len(validation_data)}, "
+                f"val_search_full={search_size}, "
+                f"val_holdout={holdout_size}"
+            )
+            if self.dataset_splits_mm.get("val_search_full") is not None:
+                mm_search_size = len(self.dataset_splits_mm["val_search_full"])
+                mm_holdout_size = (
+                    len(self.dataset_splits_mm["val_holdout"])
+                    if self.dataset_splits_mm.get("val_holdout") is not None
+                    else 0
+                )
+                print(
+                    "[Dataset Protocol] "
+                    f"mnli_mismatched_search={mm_search_size}, "
+                    f"mnli_mismatched_holdout={mm_holdout_size}"
+                )
+        elif USE_VALIDATION_FOR_REWARD:
+            print("[Warning] Validation-guided reward is enabled, but no validation dataset was provided.")
+
+        if self.has_dataset_split("val_search_full"):
+            self.refresh_validation_proxy(window_index=0, stage_label="Initialization", quiet=True)
+
+    def refresh_validation_proxy(self, window_index, stage_label="RL", quiet=False):
+        if not self.has_dataset_split("val_search_full"):
+            self.current_val_proxy_window = None
+            self.current_val_proxy_subset_id = None
+            return None
+
+        search_dataset = self.dataset_splits["val_search_full"]
+        search_mm_dataset = self.dataset_splits_mm.get("val_search_full")
+        proxy_ratio = self._get_validation_proxy_ratio()
+        proxy_size = max(1, int(round(len(search_dataset) * proxy_ratio)))
+        proxy_dataset = self._sample_dataset_by_size(
+            search_dataset,
+            subset_size=proxy_size,
+            seed=RL_DATASET_SPLIT_SEED + 1000 + int(window_index),
+        )
+
+        proxy_mm_dataset = None
+        if search_mm_dataset is not None:
+            proxy_mm_size = max(1, int(round(len(search_mm_dataset) * proxy_ratio)))
+            proxy_mm_dataset = self._sample_dataset_by_size(
+                search_mm_dataset,
+                subset_size=proxy_mm_size,
+                seed=RL_DATASET_SPLIT_SEED + 2000 + int(window_index),
+            )
+
+        self._register_dataset_split("val_proxy", proxy_dataset, proxy_mm_dataset)
+        self.current_val_proxy_window = int(window_index)
+        self.current_val_proxy_subset_id = f"proxy_window_{int(window_index):04d}"
+
+        if not quiet:
+            msg = (
+                f"[Dataset Protocol] {stage_label}: "
+                f"val_proxy window={int(window_index) + 1}, "
+                f"size={len(proxy_dataset)}/{len(search_dataset)}"
+            )
+            if proxy_mm_dataset is not None:
+                msg += f", mnli_mismatched={len(proxy_mm_dataset)}/{len(search_mm_dataset)}"
+            print(msg)
+
+        return "val_proxy"
+
+    def get_reward_reference_split_name(self):
+        if USE_VALIDATION_FOR_REWARD:
+            if self.has_dataset_split("val_search_full"):
+                return "val_search_full"
+            if self.has_dataset_split("validation_full"):
+                return "validation_full"
+        return "train"
+
+    def get_online_reward_split_name(self):
+        if USE_VALIDATION_FOR_REWARD:
+            if self.has_dataset_split("val_proxy"):
+                return "val_proxy"
+            if self.has_dataset_split("val_search_full"):
+                return "val_search_full"
+            if self.has_dataset_split("validation_full"):
+                return "validation_full"
+        return "train"
+
+    def _resolve_eval_split(self, use_train=True, split=None):
+        if split is not None:
+            if not self.has_dataset_split(split):
+                raise ValueError(f"Unknown or unavailable dataset split: {split}")
+            return split
+
+        if use_train:
+            return "train"
+        if self.has_dataset_split("validation_full"):
+            return "validation_full"
+        if self.has_dataset_split("val_search_full"):
+            return "val_search_full"
+        return "train"
+
+    def _candidate_meets_constraints(self, loss, metric1, metric2, limit_loss, limit_p, limit_s):
+        if loss > limit_loss:
+            return False
+        if metric1 < limit_p:
+            return False
+        if self.get_num_metrics() > 1 and metric2 < limit_s:
+            return False
+        return True
+
+    def _is_better_confirmed_candidate(self, candidate, incumbent, metric_prefix):
+        if candidate is None:
+            return False
+        if incumbent is None:
+            return True
+
+        cand_cost = float(candidate["cost"])
+        inc_cost = float(incumbent["cost"])
+        if cand_cost < inc_cost - 1e-8:
+            return True
+        if cand_cost > inc_cost + 1e-8:
+            return False
+
+        cand_loss = float(candidate.get(f"{metric_prefix}_loss", float("inf")))
+        inc_loss = float(incumbent.get(f"{metric_prefix}_loss", float("inf")))
+        if cand_loss < inc_loss - 1e-8:
+            return True
+        if cand_loss > inc_loss + 1e-8:
+            return False
+
+        cand_metric_sum = (
+            float(candidate.get(f"{metric_prefix}_metric1", -float("inf"))) +
+            float(candidate.get(f"{metric_prefix}_metric2", -float("inf")))
+        )
+        inc_metric_sum = (
+            float(incumbent.get(f"{metric_prefix}_metric1", -float("inf"))) +
+            float(incumbent.get(f"{metric_prefix}_metric2", -float("inf")))
+        )
+        if cand_metric_sum > inc_metric_sum + 1e-8:
+            return True
+        if cand_metric_sum < inc_metric_sum - 1e-8:
+            return False
+
+        return float(candidate.get("proxy_reward", -float("inf"))) > float(
+            incumbent.get("proxy_reward", -float("inf"))
+        )
 
     def _fmt_metrics(self, loss, m1, m2, prefix=""):
         """格式化指标字符串，单指标数据集只显示一个指标"""
@@ -2770,14 +3126,20 @@ class LayerImportanceEvaluator(TrainerCallback):
             gelu_degrees,
             softmax_degrees,
             input_noise_scaling_factors,
-            use_train=True
+            use_train=True,
+            split=None
             ):
         """Evaluate a fixed GELU/Softmax config with layer-wise x-noise enabled."""
         self.apply_configuration(gelu_degrees, softmax_degrees)
         self.apply_input_noise_configuration(input_noise_scaling_factors)
-        dataloader = self.dataloader_train if use_train else self.dataloader_test
+        split_name = self._resolve_eval_split(use_train=use_train, split=split)
+        dataloader = self.dataloaders[split_name]
         try:
-            return self._run_evaluation(dataloader, use_train=use_train)
+            return self._run_evaluation(
+                dataloader,
+                use_train=(split_name == "train"),
+                split_name=split_name,
+            )
         finally:
             self.clear_input_noise_configuration()
 
@@ -2792,7 +3154,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             wo_noise_scaling_factors=None,
             wffn1_noise_scaling_factors=None,
             wffn2_noise_scaling_factors=None,
-            use_train=True
+            use_train=True,
+            split=None
             ):
         """Evaluate a fixed GELU/Softmax config with second-stage noise enabled."""
         self.apply_configuration(gelu_degrees, softmax_degrees)
@@ -2819,9 +3182,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                 wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
                 wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
             )
-        dataloader = self.dataloader_train if use_train else self.dataloader_test
+        split_name = self._resolve_eval_split(use_train=use_train, split=split)
+        dataloader = self.dataloaders[split_name]
         try:
-            return self._run_evaluation(dataloader, use_train=use_train)
+            return self._run_evaluation(
+                dataloader,
+                use_train=(split_name == "train"),
+                split_name=split_name,
+            )
         finally:
             if weight_noise_enabled:
                 self.clear_weight_noise_configuration()
@@ -2898,7 +3266,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             search_best = None
 
             baseline_metrics = self.evaluate_model_with_attention_noise(
-                fixed_gelu, fixed_softmax, use_train=(not USE_VALIDATION_FOR_REWARD),
+                fixed_gelu,
+                fixed_softmax,
+                split=self.get_reward_reference_split_name(),
                 **baseline_noise_config,
             )
             base_loss, base_p, base_s = baseline_metrics[:3]
@@ -2929,7 +3299,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             limit_s=limit_s,
         )
 
-    def _run_evaluation(self, dataloader, use_train=False):
+    def _run_evaluation(self, dataloader, use_train=False, split_name=None):
         """在当前模型上运行评估循环（不修改配置），用于无近似对照组等。"""
         self.model.eval()
         self.model.to(self.device)
@@ -2973,8 +3343,13 @@ class LayerImportanceEvaluator(TrainerCallback):
             elif ds == 'mnli':
                 pred_classes = self._logits_to_classes(all_preds)
                 metric1 = accuracy_score(all_labels, pred_classes)
-                if not use_train and self.dataloader_test_mm is not None:
-                    metric2 = self._evaluate_accuracy_on_dataloader(self.dataloader_test_mm)
+                mm_dataloader = None
+                if split_name is not None:
+                    mm_dataloader = self.dataloaders_mm.get(split_name)
+                elif not use_train:
+                    mm_dataloader = self.dataloader_test_mm
+                if not use_train and mm_dataloader is not None:
+                    metric2 = self._evaluate_accuracy_on_dataloader(mm_dataloader)
                 else:
                     metric2 = metric1
             else:
@@ -2986,11 +3361,16 @@ class LayerImportanceEvaluator(TrainerCallback):
             metric1, metric2 = 0.0, 0.0
         return avg_loss, metric1, metric2, avg_time
 
-    def evaluate_model(self, gelu_degrees, softmax_degrees, use_train=True):
+    def evaluate_model(self, gelu_degrees, softmax_degrees, use_train=True, split=None):
         """评估模型，use_train=True时使用训练集，否则使用验证集"""
         self.apply_configuration(gelu_degrees, softmax_degrees)
-        dataloader = self.dataloader_train if use_train else self.dataloader_test
-        return self._run_evaluation(dataloader, use_train=use_train)
+        split_name = self._resolve_eval_split(use_train=use_train, split=split)
+        dataloader = self.dataloaders[split_name]
+        return self._run_evaluation(
+            dataloader,
+            use_train=(split_name == "train"),
+            split_name=split_name,
+        )
 
     @staticmethod
     def _logits_to_classes(all_preds):
@@ -3454,6 +3834,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         base_loss = base_p = base_s = None
         base_loss_train = base_p_train = base_s_train = None
         gelu_degree0_eligible = np.zeros(self.total_layers, dtype=bool)
+        reward_reference_split = self.get_reward_reference_split_name()
 
         if self.skip_stage1_rl:
             self.log("\n--- Phase 1: SKIPPED (--skip-stage1-rl) ---")
@@ -3464,7 +3845,11 @@ class LayerImportanceEvaluator(TrainerCallback):
             if not self.skip_stage1_final_eval:
                 # Phase 3/4 仍需要约束阈值；仅在需要最终评估时静默计算。
                 if USE_VALIDATION_FOR_REWARD:
-                    base_loss, base_p, base_s, _ = self.evaluate_model(base_gelu, base_softmax, use_train=False)
+                    base_loss, base_p, base_s, _ = self.evaluate_model(
+                        base_gelu,
+                        base_softmax,
+                        split=reward_reference_split,
+                    )
                 else:
                     base_loss, base_p, base_s, _ = self.evaluate_model(base_gelu, base_softmax, use_train=True)
                 limit_loss = base_loss + self.error_threshold
@@ -3485,8 +3870,12 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             # ==================== 验证集引导（Validation Guided）：计算验证集baseline ====================
             if USE_VALIDATION_FOR_REWARD:
-                base_loss_val, base_p_val, base_s_val, base_time_val = self.evaluate_model(base_gelu, base_softmax, use_train=False)
-                self.log(f"Baseline Metrics (Validation Set - used for reward):")
+                base_loss_val, base_p_val, base_s_val, base_time_val = self.evaluate_model(
+                    base_gelu,
+                    base_softmax,
+                    split=reward_reference_split,
+                )
+                self.log(f"Baseline Metrics ({reward_reference_split} - used for reward):")
                 self.log(f"  {self._fmt_metrics(base_loss_val, base_p_val, base_s_val)}")
 
                 # 使用验证集的baseline作为约束基准
@@ -3530,6 +3919,126 @@ class LayerImportanceEvaluator(TrainerCallback):
         episode_metric2s = []
         episode_entropies = []
         best_config = None
+        search_best_config = None
+        global_best_config = None
+
+        def confirm_stage1_candidate(candidate_config, episode_idx, window_idx):
+            nonlocal search_best_config, global_best_config
+
+            if candidate_config is None or not self.has_dataset_split("val_search_full"):
+                return
+
+            gelu_arr = np.asarray(candidate_config["gelu"], dtype=int)
+            softmax_arr = np.asarray(candidate_config["softmax"], dtype=int)
+            proxy_reward = float(candidate_config.get("reward", 0.0))
+
+            search_loss, search_p, search_s, _ = self.evaluate_model(
+                gelu_arr,
+                softmax_arr,
+                split="val_search_full",
+            )
+            search_ok = self._candidate_meets_constraints(
+                search_loss,
+                search_p,
+                search_s,
+                limit_loss,
+                limit_p,
+                limit_s,
+            )
+
+            confirmed_candidate = {
+                "gelu": gelu_arr.copy(),
+                "softmax": softmax_arr.copy(),
+                "cost": float(candidate_config["cost"]),
+                "reward": proxy_reward,
+                "proxy_reward": proxy_reward,
+                "confirmed_episode": int(episode_idx) + 1,
+                "confirmed_window": int(window_idx) + 1,
+                "search_loss": float(search_loss),
+                "search_metric1": float(search_p),
+                "search_metric2": float(search_s),
+                "search_ok": bool(search_ok),
+            }
+
+            if self.has_dataset_split("val_holdout"):
+                holdout_loss, holdout_p, holdout_s, _ = self.evaluate_model(
+                    gelu_arr,
+                    softmax_arr,
+                    split="val_holdout",
+                )
+                holdout_ok = self._candidate_meets_constraints(
+                    holdout_loss,
+                    holdout_p,
+                    holdout_s,
+                    limit_loss,
+                    limit_p,
+                    limit_s,
+                )
+                confirmed_candidate.update({
+                    "holdout_loss": float(holdout_loss),
+                    "holdout_metric1": float(holdout_p),
+                    "holdout_metric2": float(holdout_s),
+                    "holdout_ok": bool(holdout_ok),
+                })
+            else:
+                confirmed_candidate.update({
+                    "holdout_loss": float(search_loss),
+                    "holdout_metric1": float(search_p),
+                    "holdout_metric2": float(search_s),
+                    "holdout_ok": bool(search_ok),
+                })
+
+            self.log(
+                f"  Window {window_idx + 1} candidate confirmation: "
+                f"proxy_reward={proxy_reward:.4f}, "
+                f"search={self._fmt_metrics(search_loss, search_p, search_s)}"
+            )
+            if self.has_dataset_split("val_holdout"):
+                self.log(
+                    "    Holdout: "
+                    f"{self._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}"
+                )
+
+            if USE_TRAIN_ANCHOR and self.has_dataset_split("train_anchor"):
+                anchor_loss, anchor_p, anchor_s, _ = self.evaluate_model(
+                    gelu_arr,
+                    softmax_arr,
+                    split="train_anchor",
+                )
+                confirmed_candidate.update({
+                    "train_anchor_loss": float(anchor_loss),
+                    "train_anchor_metric1": float(anchor_p),
+                    "train_anchor_metric2": float(anchor_s),
+                })
+                self.log(f"    TrainAnchor: {self._fmt_metrics(anchor_loss, anchor_p, anchor_s)}")
+
+            if search_ok and self._is_better_confirmed_candidate(
+                confirmed_candidate,
+                search_best_config,
+                metric_prefix="search",
+            ):
+                search_best_config = {
+                    k: (v.copy() if isinstance(v, np.ndarray) else v)
+                    for k, v in confirmed_candidate.items()
+                }
+                self.log(
+                    f"    Search-Best updated at episode {episode_idx + 1}: "
+                    f"cost={search_best_config['cost']:.2f}, proxy_reward={search_best_config['proxy_reward']:.4f}"
+                )
+
+            if confirmed_candidate["holdout_ok"] and self._is_better_confirmed_candidate(
+                confirmed_candidate,
+                global_best_config,
+                metric_prefix="holdout",
+            ):
+                global_best_config = {
+                    k: (v.copy() if isinstance(v, np.ndarray) else v)
+                    for k, v in confirmed_candidate.items()
+                }
+                self.log(
+                    f"    Global-Best updated at episode {episode_idx + 1}: "
+                    f"cost={global_best_config['cost']:.2f}, proxy_reward={global_best_config['proxy_reward']:.4f}"
+                )
 
         # ---------------------------------------------------------
         # Phase 2: PPO Training（仅当 SEARCH_MODE 为 "rl" 或 "both" 时执行）
@@ -3565,30 +4074,63 @@ class LayerImportanceEvaluator(TrainerCallback):
             
             # 创建用于RL的评估器包装
             class RLEvaluatorWrapper:
-                def __init__(wrapper_self, evaluator, use_train=True):
+                def __init__(wrapper_self, evaluator, split_name=None, use_train=None):
                     wrapper_self.evaluator = evaluator
-                    wrapper_self.use_train = use_train
+                    if split_name is not None:
+                        wrapper_self.split_name = split_name
+                    elif use_train is None:
+                        wrapper_self.split_name = "train"
+                    else:
+                        wrapper_self.split_name = "train" if use_train else "validation_full"
                 
                 def evaluate_model(wrapper_self, gelu_arr, softmax_arr):
-                    return wrapper_self.evaluator.evaluate_model(gelu_arr, softmax_arr, use_train=wrapper_self.use_train)
+                    return wrapper_self.evaluator.evaluate_model(
+                        gelu_arr,
+                        softmax_arr,
+                        split=wrapper_self.split_name,
+                    )
             
             # ==================== 验证集引导（Validation Guided）====================
             if USE_VALIDATION_FOR_REWARD:
-                self.log("[Info] Using VALIDATION set for reward calculation (Validation Guided RL)")
+                self.refresh_validation_proxy(window_index=0, stage_label="Stage-1 RL")
+                online_reward_split = self.get_online_reward_split_name()
+                proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.evaluate_model(
+                    base_gelu,
+                    base_softmax,
+                    split=online_reward_split,
+                )
+                self.log(
+                    f"[Info] Using {online_reward_split} for online reward calculation "
+                    f"(constraints stay on {reward_reference_split})"
+                )
                 rl_evaluator = RLEvaluatorWrapper(self, use_train=False)  # 使用验证集
             else:
                 self.log("[Info] Using TRAINING set for reward calculation")
                 rl_evaluator = RLEvaluatorWrapper(self, use_train=True)   # 使用训练集
             
+            if not USE_VALIDATION_FOR_REWARD:
+                proxy_base_loss, proxy_base_p, proxy_base_s = base_loss_train, base_p_train, base_s_train
+
             env = TransformerOptEnv(self.total_layers, base_tot_c, baseline_metrics, rl_evaluator,
                                    num_metrics=self.get_num_metrics(),
                                    gelu_degree0_eligible=gelu_degree0_eligible)
+            if USE_VALIDATION_FOR_REWARD:
+                rl_evaluator.split_name = online_reward_split
+            env.prev_episode_metrics = {
+                "loss": proxy_base_loss,
+                "metric1": proxy_base_p,
+                "metric2": proxy_base_s,
+                "cost": base_tot_c,
+            }
             
             buffer = RecurrentRolloutBuffer()  # GTrXL/LSTM 通用的 Episode Buffer
             
             # 记录最优解
             best_reward = float('-inf')
             best_cost = float('inf')
+            window_best_reward = float('-inf')
+            window_best_cost = float('inf')
+            window_best_config = None
             
             for episode in range(PPO_MAX_EPISODES):
                 # 动态超参数调度（学习率和熵系数）
@@ -3724,6 +4266,18 @@ class LayerImportanceEvaluator(TrainerCallback):
                     'cost': env.accumulated_cost,
                     'reward': episode_reward
                 }
+
+                if episode_reward > window_best_reward or (
+                    episode_reward == window_best_reward and env.accumulated_cost < window_best_cost
+                ):
+                    window_best_reward = episode_reward
+                    window_best_cost = env.accumulated_cost
+                    window_best_config = {
+                        'gelu': np.array(env.gelu_config),
+                        'softmax': np.array(env.softmax_config),
+                        'cost': env.accumulated_cost,
+                        'reward': episode_reward,
+                    }
                 
                 if episode_reward > best_reward or (episode_reward == best_reward and env.accumulated_cost < best_cost):
                     best_reward = episode_reward
@@ -3750,6 +4304,50 @@ class LayerImportanceEvaluator(TrainerCallback):
                             f"Policy Loss={policy_loss:.4f}, Value Loss={value_loss:.4f}, Entropy={entropy:.4f}")
                     self.log(f"    [GTrXL Schedule] LR={optimizer.param_groups[0]['lr']:.6f}, "
                             f"Entropy Coef={current_entropy:.6f}, Update#{gtrxl_ppo_update_count} ({warmup_status})")
+                    confirm_stage1_candidate(
+                        window_best_config,
+                        episode_idx=episode,
+                        window_idx=gtrxl_ppo_update_count - 1,
+                    )
+                    window_best_reward = float('-inf')
+                    window_best_cost = float('inf')
+                    window_best_config = None
+
+                    if USE_VALIDATION_FOR_REWARD and (episode + 1) < PPO_MAX_EPISODES:
+                        next_window_idx = gtrxl_ppo_update_count
+                        self.refresh_validation_proxy(
+                            window_index=next_window_idx,
+                            stage_label="Stage-1 RL",
+                        )
+                        online_reward_split = self.get_online_reward_split_name()
+                        rl_evaluator.split_name = online_reward_split
+                        proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.evaluate_model(
+                            base_gelu,
+                            base_softmax,
+                            split=online_reward_split,
+                        )
+                        env.prev_episode_metrics = {
+                            "loss": proxy_base_loss,
+                            "metric1": proxy_base_p,
+                            "metric2": proxy_base_s,
+                            "cost": base_tot_c,
+                        }
+                        env.current_episode_metrics = None
+
+            if window_best_config is not None:
+                confirm_stage1_candidate(
+                    window_best_config,
+                    episode_idx=PPO_MAX_EPISODES - 1,
+                    window_idx=gtrxl_ppo_update_count,
+                )
+
+            best_config = None
+            if global_best_config is not None:
+                best_config = global_best_config.copy()
+            elif search_best_config is not None:
+                best_config = search_best_config.copy()
+            if best_config is not None:
+                best_reward = max(best_reward, 0.0)
             
             # 如果没有找到满足约束的解，使用baseline
             if best_config is None or best_reward < -50:  # 如果最好的奖励也很差，说明没找到可行解

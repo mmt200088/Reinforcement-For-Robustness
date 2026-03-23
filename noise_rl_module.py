@@ -27,7 +27,7 @@ NOISE_STAGE_PPO_EPS_CLIP = 0.15
 NOISE_STAGE_PPO_K_EPOCHS = 10
 NOISE_STAGE_GTRXL_WARMUP_STEPS = 5000
 
-NOISE_STAGE_MC_SAMPLES = 5
+NOISE_STAGE_MC_SAMPLES = 1
 
 NOISE_REWARD_ESTIMATOR_HIDDEN_DIMS = (128, 64)
 NOISE_REWARD_ESTIMATOR_LR = 1e-3
@@ -107,18 +107,25 @@ class NoiseRLModule:
         fixed_softmax = np.asarray(fixed_softmax, dtype=int)
         baseline_noise_config = ev._get_max_noise_configuration()
 
+        reward_reference_split = ev.get_reward_reference_split_name()
         baseline_train = ev.evaluate_model_with_attention_noise(
-            fixed_gelu, fixed_softmax, use_train=True, **baseline_noise_config
+            fixed_gelu,
+            fixed_softmax,
+            use_train=True,
+            **baseline_noise_config,
         )
         baseline_val = ev.evaluate_model_with_attention_noise(
-            fixed_gelu, fixed_softmax, use_train=False, **baseline_noise_config
+            fixed_gelu,
+            fixed_softmax,
+            split=reward_reference_split,
+            **baseline_noise_config,
         )
         baseline_tot_c, baseline_breakdown = ev.get_noise_simulated_cost(**baseline_noise_config)
 
         ev.log("Noise-Stage Baseline Metrics (Training Set):")
         ev.log(f"  {ev._fmt_metrics(*baseline_train[:3])}")
         ev.log(f"  Noise Cost: {baseline_tot_c:.2f} | Breakdown={baseline_breakdown}")
-        ev.log("Noise-Stage Baseline Metrics (Validation Set - used for reward):")
+        ev.log(f"Noise-Stage Baseline Metrics ({reward_reference_split} - used for reward):")
         ev.log(f"  {ev._fmt_metrics(*baseline_val[:3])}")
 
         if USE_VALIDATION_FOR_REWARD:
@@ -129,7 +136,8 @@ class NoiseRLModule:
         limit_loss = base_loss + ev.error_threshold
         limit_p = base_p * (1.0 - ev.correlation_drop_ratio)
         limit_s = base_s * (1.0 - ev.correlation_drop_ratio)
-        ev.log(f"Noise-Stage Constraints (based on {'Validation' if USE_VALIDATION_FOR_REWARD else 'Training'} Set):")
+        constraint_split_label = reward_reference_split if USE_VALIDATION_FOR_REWARD else "train"
+        ev.log(f"Noise-Stage Constraints (based on {constraint_split_label}):")
         ev.log(f"  {ev._fmt_constraints(limit_loss, limit_p, limit_s)}")
         training_hparams = {
             "gtrxl_d_model": NOISE_STAGE_GTRXL_D_MODEL,
@@ -213,17 +221,22 @@ class NoiseRLModule:
         reward_estimator_last_loss = None
 
         class _NoiseRLEvaluatorWrapper:
-            def __init__(wrapper_self, evaluator, fixed_gelu, fixed_softmax, use_train=True):
+            def __init__(wrapper_self, evaluator, fixed_gelu, fixed_softmax, split_name=None, use_train=None):
                 wrapper_self.evaluator = evaluator
                 wrapper_self.fixed_gelu = np.asarray(fixed_gelu, dtype=int)
                 wrapper_self.fixed_softmax = np.asarray(fixed_softmax, dtype=int)
-                wrapper_self.use_train = use_train
+                if split_name is not None:
+                    wrapper_self.split_name = split_name
+                elif use_train is None:
+                    wrapper_self.split_name = "train"
+                else:
+                    wrapper_self.split_name = "train" if use_train else "validation_full"
 
             def evaluate_noise_model(wrapper_self, **noise_kwargs):
                 return wrapper_self.evaluator.evaluate_model_with_attention_noise(
                     wrapper_self.fixed_gelu,
                     wrapper_self.fixed_softmax,
-                    use_train=wrapper_self.use_train,
+                    split=wrapper_self.split_name,
                     **noise_kwargs,
                 )
 
@@ -233,6 +246,23 @@ class NoiseRLModule:
             fixed_softmax=fixed_softmax,
             use_train=(not USE_VALIDATION_FOR_REWARD),
         )
+        if USE_VALIDATION_FOR_REWARD:
+            ev.refresh_validation_proxy(window_index=0, stage_label="Stage-2 Noise RL")
+            online_reward_split = ev.get_online_reward_split_name()
+            rl_evaluator.split_name = online_reward_split
+            proxy_baseline = ev.evaluate_model_with_attention_noise(
+                fixed_gelu,
+                fixed_softmax,
+                split=online_reward_split,
+                **baseline_noise_config,
+            )
+            ev.log(
+                f"[Info] Noise-stage online reward uses {online_reward_split} "
+                f"(constraints stay on {reward_reference_split})"
+            )
+        else:
+            online_reward_split = "train"
+            proxy_baseline = baseline_train
         env = _NoiseOptEnv(
             ev.total_layers,
             baseline_tot_c,
@@ -272,6 +302,12 @@ class NoiseRLModule:
             log_barrier_satisfaction_scale=LOG_BARRIER_SATISFACTION_SCALE,
             mc_samples=NOISE_STAGE_MC_SAMPLES,
         )
+        env.prev_episode_metrics = {
+            "loss": float(proxy_baseline[0]),
+            "metric1": float(proxy_baseline[1]),
+            "metric2": float(proxy_baseline[2]),
+            "cost": float(baseline_tot_c),
+        }
         buffer = _NoiseRecurrentRolloutBuffer()
 
         episode_rewards = []
@@ -287,6 +323,121 @@ class NoiseRLModule:
         best_reward = float("-inf")
         best_cost = float("inf")
         best_noise_config = None
+        window_best_reward = float("-inf")
+        window_best_cost = float("inf")
+        window_best_noise_config = None
+        search_best_noise_config = None
+        global_best_noise_config = None
+
+        def confirm_noise_candidate(candidate_config, episode_idx, window_idx):
+            nonlocal search_best_noise_config, global_best_noise_config
+
+            if candidate_config is None or not ev.has_dataset_split("val_search_full"):
+                return
+
+            noise_kwargs = {
+                key: value.copy()
+                for key, value in candidate_config.items()
+                if key.endswith("scaling_factors")
+            }
+            search_loss, search_p, search_s, _ = ev.evaluate_model_with_attention_noise(
+                fixed_gelu,
+                fixed_softmax,
+                split="val_search_full",
+                **noise_kwargs,
+            )
+            search_ok = ev._candidate_meets_constraints(
+                search_loss,
+                search_p,
+                search_s,
+                limit_loss,
+                limit_p,
+                limit_s,
+            )
+
+            confirmed_candidate = {
+                key: (value.copy() if isinstance(value, np.ndarray) else value)
+                for key, value in candidate_config.items()
+            }
+            confirmed_candidate.update({
+                "proxy_reward": float(candidate_config.get("reward", 0.0)),
+                "search_loss": float(search_loss),
+                "search_metric1": float(search_p),
+                "search_metric2": float(search_s),
+                "search_ok": bool(search_ok),
+                "confirmed_episode": int(episode_idx) + 1,
+                "confirmed_window": int(window_idx) + 1,
+            })
+
+            if ev.has_dataset_split("val_holdout"):
+                holdout_loss, holdout_p, holdout_s, _ = ev.evaluate_model_with_attention_noise(
+                    fixed_gelu,
+                    fixed_softmax,
+                    split="val_holdout",
+                    **noise_kwargs,
+                )
+                holdout_ok = ev._candidate_meets_constraints(
+                    holdout_loss,
+                    holdout_p,
+                    holdout_s,
+                    limit_loss,
+                    limit_p,
+                    limit_s,
+                )
+                confirmed_candidate.update({
+                    "holdout_loss": float(holdout_loss),
+                    "holdout_metric1": float(holdout_p),
+                    "holdout_metric2": float(holdout_s),
+                    "holdout_ok": bool(holdout_ok),
+                })
+            else:
+                confirmed_candidate.update({
+                    "holdout_loss": float(search_loss),
+                    "holdout_metric1": float(search_p),
+                    "holdout_metric2": float(search_s),
+                    "holdout_ok": bool(search_ok),
+                })
+
+            ev.log(
+                f"  Noise window {window_idx + 1} candidate confirmation: "
+                f"proxy_reward={confirmed_candidate['proxy_reward']:.4f}, "
+                f"search={ev._fmt_metrics(search_loss, search_p, search_s)}"
+            )
+            if ev.has_dataset_split("val_holdout"):
+                ev.log(
+                    "    Holdout: "
+                    f"{ev._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}"
+                )
+
+            if search_ok and ev._is_better_confirmed_candidate(
+                confirmed_candidate,
+                search_best_noise_config,
+                metric_prefix="search",
+            ):
+                search_best_noise_config = {
+                    key: (value.copy() if isinstance(value, np.ndarray) else value)
+                    for key, value in confirmed_candidate.items()
+                }
+                ev.log(
+                    f"    Noise Search-Best updated at episode {episode_idx + 1}: "
+                    f"cost={search_best_noise_config['cost']:.2f}, "
+                    f"proxy_reward={search_best_noise_config['proxy_reward']:.4f}"
+                )
+
+            if confirmed_candidate["holdout_ok"] and ev._is_better_confirmed_candidate(
+                confirmed_candidate,
+                global_best_noise_config,
+                metric_prefix="holdout",
+            ):
+                global_best_noise_config = {
+                    key: (value.copy() if isinstance(value, np.ndarray) else value)
+                    for key, value in confirmed_candidate.items()
+                }
+                ev.log(
+                    f"    Noise Global-Best updated at episode {episode_idx + 1}: "
+                    f"cost={global_best_noise_config['cost']:.2f}, "
+                    f"proxy_reward={global_best_noise_config['proxy_reward']:.4f}"
+                )
 
         for episode in range(NOISE_STAGE_PPO_MAX_EPISODES):
             current_lr, current_entropy = ev.update_hyperparameters(optimizer, episode)
@@ -494,6 +645,22 @@ class NoiseRLModule:
                 ),
             }
 
+            if episode_reward_raw > window_best_reward or (
+                episode_reward_raw == window_best_reward and env.accumulated_cost < window_best_cost
+            ):
+                window_best_reward = episode_reward_raw
+                window_best_cost = env.accumulated_cost
+                window_best_noise_config = {
+                    key: (
+                        value.copy()
+                        if isinstance(value, np.ndarray)
+                        else dict(value)
+                        if isinstance(value, dict)
+                        else value
+                    )
+                    for key, value in final_noise_config.items()
+                }
+
             if episode_reward_raw > best_reward or (
                 episode_reward_raw == best_reward and env.accumulated_cost < best_cost
             ):
@@ -578,6 +745,58 @@ class NoiseRLModule:
                     f"Replay={len(reward_replay)}, Updates={reward_estimator_update_count}, "
                     f"LastLoss={reward_estimator_last_loss if reward_estimator_last_loss is not None else 'N/A'}"
                 )
+                confirm_noise_candidate(
+                    window_best_noise_config,
+                    episode_idx=episode,
+                    window_idx=noise_ppo_update_count - 1,
+                )
+                window_best_reward = float("-inf")
+                window_best_cost = float("inf")
+                window_best_noise_config = None
+
+                if USE_VALIDATION_FOR_REWARD and (episode + 1) < NOISE_STAGE_PPO_MAX_EPISODES:
+                    next_window_idx = noise_ppo_update_count
+                    ev.refresh_validation_proxy(
+                        window_index=next_window_idx,
+                        stage_label="Stage-2 Noise RL",
+                    )
+                    online_reward_split = ev.get_online_reward_split_name()
+                    rl_evaluator.split_name = online_reward_split
+                    proxy_baseline = ev.evaluate_model_with_attention_noise(
+                        fixed_gelu,
+                        fixed_softmax,
+                        split=online_reward_split,
+                        **baseline_noise_config,
+                    )
+                    env.prev_episode_metrics = {
+                        "loss": float(proxy_baseline[0]),
+                        "metric1": float(proxy_baseline[1]),
+                        "metric2": float(proxy_baseline[2]),
+                        "cost": float(baseline_tot_c),
+                    }
+                    env.current_episode_metrics = None
+
+        if window_best_noise_config is not None:
+            confirm_noise_candidate(
+                window_best_noise_config,
+                episode_idx=NOISE_STAGE_PPO_MAX_EPISODES - 1,
+                window_idx=noise_ppo_update_count,
+            )
+
+        best_noise_config = None
+        if global_best_noise_config is not None:
+            best_noise_config = {
+                key: (value.copy() if isinstance(value, np.ndarray) else value)
+                for key, value in global_best_noise_config.items()
+            }
+        elif search_best_noise_config is not None:
+            best_noise_config = {
+                key: (value.copy() if isinstance(value, np.ndarray) else value)
+                for key, value in search_best_noise_config.items()
+            }
+
+        if best_noise_config is not None:
+            best_reward = max(best_reward, 0.0)
 
         if best_noise_config is None or best_reward < -50:
             ev.log("\nNo feasible noise-stage solution found, using max-scaling baseline configuration.")

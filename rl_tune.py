@@ -437,7 +437,8 @@ def train(
             print(f"Loading dataset: {data['validation']}")
             train_data = data["train"].shuffle().map(tokenize_fn)
             val_data = data["validation"].shuffle().map(tokenize_fn)
-            test_data = data["test"].shuffle().map(tokenize_fn)
+            # 当前 RL 流程不使用官方 test 集，先直接关闭这一路读取。
+            # test_data = data["test"].shuffle().map(tokenize_fn)
             
             print(f"After tokenize: {val_data[0]}")
             # add label
@@ -488,6 +489,7 @@ def train(
         importance_evaluator = LayerImportanceEvaluator(
             model=model, 
             train_data=train_data, 
+            # 这里沿用 evaluator 的历史参数名，实际传入的是 validation 数据。
             test_data=val_data, 
             data_collator=data_collator, 
             rl_lr=rl_lr, 
