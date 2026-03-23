@@ -65,11 +65,13 @@
 #   --budget-trials N
 #       同总预算随机对照实验次数，默认 10。
 #
-# ---- 第二阶段：噪声 RL（Noise RL）----
+# ---- 第二阶段：噪声 RL 训练（Noise RL Training）----
 #
 #   --skip-noise-rl
-#       跳过第二阶段噪声 RL，只运行第一阶段 GELU/Softmax 搜索。
-#       默认情况下，第二阶段会在第一阶段配置确定后自动运行。
+#       跳过第二阶段噪声 RL 训练。
+#       注意：跳过 RL 训练 不会 跳过噪声最终评估。
+#       可以跳过 RL 训练但仍用 json/manual 配置运行噪声最终评估。
+#       默认情况下，第二阶段 RL 训练会在第一阶段配置确定后自动运行。
 #       第二阶段保持第一阶段选定的 GELU/Softmax 不变，
 #       用 PPO 学习每层的 7 个噪声 scaling factor：
 #         x       输入噪声    动作空间 {20, 22, 24, 26, 28, 30}
@@ -83,15 +85,27 @@
 #         noise_ppo_step_info.txt        每步动作/概率日志
 #         noise_ppo_training_curve.png   训练曲线图
 #         noise_ppo_entropy_curve.png    策略熵曲线图
-#       第二阶段的逻辑位于独立模块 noise_rl_module.py 中。
+#       第二阶段 RL 训练逻辑位于 noise_rl_module.py 中。
 #
-# ---- 第二阶段：噪声最终评估配置来源 ----
+# ---- 第二阶段：噪声最终评估（独立于 RL 训练）----
+#
+#   噪声 RL 训练和噪声最终评估是 两个独立的步骤，可自由组合：
+#     - 都运行（默认）
+#     - 只跑 RL 训练不做最终评估（--skip-noise-final-eval）
+#     - 只做最终评估不跑 RL 训练（--skip-noise-rl + --noise-eval-source json/manual）
+#     - 都跳过（--skip-noise-rl --skip-noise-final-eval）
+#
+#   --skip-noise-final-eval
+#       跳过第二阶段噪声最终评估。
+#       即使运行了噪声 RL 训练，也不执行 PHASE 5.5 的评估对比。
 #
 #   --noise-eval-source search|json|manual
-#       第二阶段噪声最终评估使用的噪声配置来源：
+#       噪声最终评估使用的噪声配置来源：
 #         search  （默认）使用本次噪声 RL 搜索得到的最优配置
 #         json    从 JSON 文件读取历史保存的噪声配置
 #         manual  使用手动指定的噪声配置
+#       当 --skip-noise-rl 时，search 不可用（无 RL 结果），
+#       需要指定 json 或 manual。
 #
 #   --noise-eval-config PATH
 #       当 --noise-eval-source json 时使用。
@@ -136,12 +150,12 @@
 # 使用示例
 # ======================================================================
 #
-# 1. 默认完整流程（第一阶段 RL 搜索 + 第二阶段噪声 RL）
+# 1. 默认完整流程（第一阶段 RL + 最终评估 + 第二阶段噪声 RL + 噪声最终评估）
 #    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2
 #
-# 2. 只跑第一阶段，跳过第二阶段噪声 RL
+# 2. 只跑第一阶段，跳过第二阶段噪声 RL 训练和噪声最终评估
 #    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-#      --skip-noise-rl
+#      --skip-noise-rl --skip-noise-final-eval
 #
 # 3. 从 JSON 文件加载配置做最终评估（跳过第一阶段搜索，仍运行第二阶段）
 #    bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 \
@@ -158,11 +172,11 @@
 #    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 #      --perm-trials 30 --cost-trials 30 --budget-trials 30
 #
-# 6. 从 JSON 加载配置 + 跳过噪声 RL
+# 6. 跳过噪声 RL 训练，但仍用 JSON 配置运行噪声最终评估
 #    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-#      --final-eval-source json \
-#      --final-eval-config glue_configs_best_ppo.json \
-#      --skip-noise-rl
+#      --skip-noise-rl \
+#      --noise-eval-source json \
+#      --noise-eval-config glue_noise_configs_best_ppo.json
 #
 # 7. 跳过第一阶段最终评估，直接用 JSON 配置进入第二阶段噪声 RL
 #    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
@@ -170,8 +184,9 @@
 #      --final-eval-config glue_configs_best_ppo.json \
 #      --skip-stage1-final-eval
 #
-# 8. 手动指定噪声配置做第二阶段最终评估
+# 8. 跳过 RL 训练 + 手动指定噪声配置，只做噪声最终评估
 #    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+#      --skip-noise-rl \
 #      --noise-eval-source manual \
 #      --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}'
 #
@@ -179,10 +194,19 @@
 #    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 #      --noise-eval-repeat 5
 #
-# 10. 从 JSON 加载噪声配置做最终评估
+# 10. 运行噪声 RL 训练但跳过噪声最终评估（只要 RL 结果，不做评估对比）
 #     bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-#       --noise-eval-source json \
-#       --noise-eval-config glue_noise_configs_best_ppo.json
+#       --skip-noise-final-eval
+#
+# 11. 完全跳过两个阶段的搜索/训练，直接手动指定所有配置做最终评估
+#     bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+#       --final-eval-source manual \
+#       --manual-gelu "[1,1,1,1,1,4,1,1,1,1,1,1]" \
+#       --manual-softmax "[2,2,5,5,5,2,5,2,5,5,6,2]" \
+#       --skip-stage1-final-eval \
+#       --skip-noise-rl \
+#       --noise-eval-source manual \
+#       --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}'
 #
 # ======================================================================
 # 项目相关说明
@@ -218,8 +242,11 @@ usage() {
     echo "  --cost-trials N"
     echo "  --budget-trials N"
     echo
-    echo "Second-stage noise RL:"
-    echo "  --skip-noise-rl          Skip stage-2 noise RL entirely."
+    echo "Second-stage noise RL training:"
+    echo "  --skip-noise-rl          跳过第二阶段噪声 RL 训练（不影响最终评估）。"
+    echo
+    echo "Second-stage noise final evaluation (独立于 RL 训练):"
+    echo "  --skip-noise-final-eval  跳过第二阶段噪声最终评估。"
     echo "  --noise-eval-source search|json|manual"
     echo "                           噪声最终评估配置来源（默认 search）。"
     echo "  --noise-eval-config PATH 噪声配置 JSON 文件路径。"
@@ -271,6 +298,7 @@ NOISE_EVAL_CONFIG_PATH="glue_noise_configs_best_ppo.json"
 MANUAL_NOISE_CONFIG=""
 NOISE_EVAL_REPEAT_N="1"
 SKIP_STAGE1_FINAL_EVAL="false"
+SKIP_NOISE_FINAL_EVAL="false"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -340,6 +368,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --skip-stage1-final-eval)
             SKIP_STAGE1_FINAL_EVAL="true"
+            shift 1
+            ;;
+        --skip-noise-final-eval)
+            SKIP_NOISE_FINAL_EVAL="true"
             shift 1
             ;;
         -h|--help)
@@ -424,6 +456,7 @@ CMD=(
     --manual_noise_config "$MANUAL_NOISE_CONFIG"
     --noise_eval_repeat_n "$NOISE_EVAL_REPEAT_N"
     --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL"
+    --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL"
 )
 
 echo "Launching RL tune job with final evaluation source: $FINAL_EVAL_SOURCE"
@@ -431,10 +464,14 @@ if [ "$SKIP_STAGE1_FINAL_EVAL" = "true" ]; then
     echo "Stage-1 final evaluation: SKIPPED (--skip-stage1-final-eval)"
 fi
 if [ "$SKIP_NOISE_RL" = "true" ]; then
-    echo "Stage-2 noise RL: SKIPPED (--skip-noise-rl)"
+    echo "Stage-2 noise RL training: SKIPPED (--skip-noise-rl)"
 else
-    echo "Stage-2 noise RL will run automatically after the fixed GELU/Softmax config is selected."
-    echo "Stage-2 noise eval source: $NOISE_EVAL_SOURCE, repeat=$NOISE_EVAL_REPEAT_N"
+    echo "Stage-2 noise RL training will run after the fixed GELU/Softmax config is selected."
+fi
+if [ "$SKIP_NOISE_FINAL_EVAL" = "true" ]; then
+    echo "Stage-2 noise final evaluation: SKIPPED (--skip-noise-final-eval)"
+else
+    echo "Stage-2 noise final evaluation: noise_eval_source=$NOISE_EVAL_SOURCE, repeat=$NOISE_EVAL_REPEAT_N"
 fi
 echo "Log file: $LOGFILE_PATH"
 

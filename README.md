@@ -44,13 +44,20 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 | `--cost-trials N` | 精确 cost-matched 随机对照实验次数 | `10` |
 | `--budget-trials N` | 同总预算随机对照实验次数 | `10` |
 
-**第二阶段：噪声 RL**
+**第二阶段：噪声 RL 训练 与 噪声最终评估（两者独立可控）**
+
+噪声 RL 训练和噪声最终评估是 **两个独立的步骤**，可自由组合：
+- 都运行（默认行为）
+- 只跑 RL 训练不做最终评估（`--skip-noise-final-eval`）
+- 只做最终评估不跑 RL 训练（`--skip-noise-rl` + `--noise-eval-source json/manual`）
+- 都跳过（`--skip-noise-rl --skip-noise-final-eval`）
 
 | 参数 | 说明 | 默认值 |
 | :--- | :--- | :--- |
-| `--skip-noise-rl` | 跳过第二阶段噪声 RL，只运行第一阶段。默认自动运行第二阶段 | 不跳过 |
+| `--skip-noise-rl` | 跳过第二阶段噪声 RL **训练**。不影响噪声最终评估 | 不跳过 |
+| `--skip-noise-final-eval` | 跳过第二阶段噪声**最终评估**。不影响噪声 RL 训练 | 不跳过 |
 
-第二阶段保持第一阶段选定的 GELU/Softmax 不变，用 PPO 学习每层 7 个噪声 scaling factor：
+第二阶段 RL 训练保持第一阶段选定的 GELU/Softmax 不变，用 PPO 学习每层 7 个噪声 scaling factor：
 
 | 噪声对象 | 模型路径 | 动作空间 |
 | :--- | :--- | :--- |
@@ -62,7 +69,7 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 | `wffn1`（FFN 第一层权重噪声） | intermediate.dense | `{10, 12, 14, 16, 18, 20, 22}` |
 | `wffn2`（FFN 第二层权重噪声） | output.dense | `{10, 12, 14, 16, 18, 20, 22}` |
 
-第二阶段的逻辑位于独立模块 `noise_rl_module.py` 中（与 `final_evaluation_module.py` 架构一致）。
+第二阶段 RL 训练逻辑位于 `noise_rl_module.py`，噪声最终评估逻辑位于 `noise_final_evaluation_module.py`（两者独立模块，互不依赖）。
 
 第二阶段产出文件：
 - `noise_ppo_step_info.txt` — 每步动作/概率日志
@@ -70,11 +77,11 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 - `noise_ppo_entropy_curve.png` — 策略熵曲线图
 - 主日志中搜索 `PHASE 5: SECOND-STAGE NOISE RL` 和 `Best Noise Configuration Found`
 
-**第二阶段：噪声最终评估配置来源**
+**噪声最终评估配置来源**（仅在未 `--skip-noise-final-eval` 时生效）
 
 | 参数 | 说明 | 默认值 |
 | :--- | :--- | :--- |
-| `--noise-eval-source search\|json\|manual` | 噪声最终评估使用的配置来源：`search` 使用噪声 RL 搜索结果；`json` 从 JSON 文件读取；`manual` 手动指定 | `search` |
+| `--noise-eval-source search\|json\|manual` | 噪声最终评估使用的配置来源：`search` 使用噪声 RL 搜索结果（需运行 RL 训练）；`json` 从 JSON 文件读取；`manual` 手动指定 | `search` |
 | `--noise-eval-config PATH` | `json` 模式下指定的噪声配置 JSON 文件路径。程序根据当前数据集名自动读取对应条目 | `glue_noise_configs_best_ppo.json` |
 | `--manual-noise-config '{"x":[...],...}'` | `manual` 模式下手动指定 7 种噪声 scaling factor 数组（JSON 对象格式），支持短名称 `x, wq, wk, wv, wo, wffn1, wffn2` | — |
 | `--noise-eval-repeat N` | 对选定配置执行 N 次重复评估，输出 N 次结果及均值/标准差统计 | `1` |
@@ -116,42 +123,36 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
 #### 使用示例
 
-默认完整流程（第一阶段 + 第二阶段噪声 RL）：
+默认完整流程（第一阶段 RL + 最终评估 + 第二阶段噪声 RL + 噪声最终评估）：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
-只跑第一阶段，跳过噪声 RL：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl`
+跳过第二阶段的 RL 训练和最终评估，只运行第一阶段：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --skip-noise-final-eval`
 
-从 JSON 加载配置（仍运行第二阶段）：
-`bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json`
+跳过噪声 RL 训练，但仍用 JSON 配置运行噪声最终评估：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`
 
-手动指定每层配置：
+运行噪声 RL 训练，但跳过噪声最终评估（只要 RL 结果）：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-final-eval`
+
+手动指定每层 GELU/Softmax 配置：
 `bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --final-eval-source manual --manual-gelu "[1,1,1,4,1,1,1,1,1,1,1,1]" --manual-softmax "[2,3,4,6,4,4,5,4,4,5,5,2]"`
 
-提高随机对照次数：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --perm-trials 30 --cost-trials 30 --budget-trials 30`
+完全跳过所有搜索/训练，手动指定所有配置只做噪声最终评估：
 
-从 JSON 加载 + 跳过噪声 RL：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-noise-rl`
-
-跳过第一阶段最终评估，用 JSON 配置直接进入第二阶段噪声 RL：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval`
-
-手动指定噪声配置做第二阶段最终评估：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}' --noise-eval-repeat 100`
-
-第二阶段噪声评估重复 5 次：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-repeat 5`
-
-手动指定第一、第二阶段的配置进行第二阶段的最终评估
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --final-eval-source manual \
   --manual-gelu "[1,1,1,1,1,4,1,1,1,1,1,1]" \
   --manual-softmax "[2,2,5,5,5,2,5,2,5,5,6,2]" \
   --skip-stage1-final-eval \
   --skip-noise-rl \
   --noise-eval-source manual \
-  --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}'`
+  --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}'
+```
+
+跳过噪声 RL 训练 + 手动指定噪声配置 + 重复评估 100 次：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}' --noise-eval-repeat 100`
 
 从 JSON 加载噪声配置：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`

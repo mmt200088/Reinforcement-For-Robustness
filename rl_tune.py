@@ -107,6 +107,7 @@ def train(
         manual_noise_config: str = "",
         noise_eval_repeat_n: int = 1,
         skip_stage1_final_eval: bool = False,
+        skip_noise_final_eval: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
         group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -153,6 +154,7 @@ def train(
         f"manual_noise_config: {manual_noise_config}\n"
         f"noise_eval_repeat_n: {noise_eval_repeat_n}\n"
         f"skip_stage1_final_eval: {skip_stage1_final_eval}\n"
+        f"skip_noise_final_eval: {skip_noise_final_eval}\n"
         f"group_by_length: {group_by_length}\n"
         f"wandb_project: {wandb_project}\n"
         f"wandb_run_name: {wandb_run_name}\n"
@@ -475,6 +477,7 @@ def train(
             manual_noise_config=parsed_noise_config,
             noise_eval_repeat_n=noise_eval_repeat_n,
             skip_stage1_final_eval=skip_stage1_final_eval,
+            skip_noise_final_eval=skip_noise_final_eval,
             data_path=data_path,
             test_data_mm=val_data_mm
         )

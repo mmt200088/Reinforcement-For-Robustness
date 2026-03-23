@@ -1987,7 +1987,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                  noise_eval_config_path='glue_noise_configs_best_ppo.json',
                  manual_noise_config=None,
                  noise_eval_repeat_n=1,
-                 skip_stage1_final_eval=False):
+                 skip_stage1_final_eval=False,
+                 skip_noise_final_eval=False):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -2138,6 +2139,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.manual_noise_config = manual_noise_config
         self.noise_eval_repeat_n = max(1, int(noise_eval_repeat_n))
         self.skip_stage1_final_eval = bool(skip_stage1_final_eval)
+        self.skip_noise_final_eval = bool(skip_noise_final_eval)
 
         if self.noise_eval_config_source not in ('search', 'json', 'manual'):
             raise ValueError(
@@ -2806,6 +2808,61 @@ class LayerImportanceEvaluator(TrainerCallback):
         from noise_rl_module import NoiseRLModule
         module = NoiseRLModule(self)
         return module.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source)
+
+    def run_noise_final_eval_stage(self, fixed_gelu, fixed_softmax, noise_stage_result=None):
+        from noise_final_evaluation_module import NoiseFinalEvaluationModule
+        import numpy as np
+
+        fixed_gelu = np.asarray(fixed_gelu, dtype=int)
+        fixed_softmax = np.asarray(fixed_softmax, dtype=int)
+
+        if noise_stage_result is not None:
+            baseline_noise_config = noise_stage_result["baseline_noise_config"]
+            baseline_tot_c = noise_stage_result["baseline_tot_c"]
+            best_noise_cfg = noise_stage_result["best_noise_config"]
+            search_best = {
+                k: v for k, v in best_noise_cfg.items()
+                if k.endswith("scaling_factors")
+            }
+            limit_loss = noise_stage_result["limit_loss"]
+            limit_p = noise_stage_result["limit_p"]
+            limit_s = noise_stage_result["limit_s"]
+        else:
+            baseline_noise_config = self._get_max_noise_configuration()
+            baseline_tot_c, _ = self.get_noise_simulated_cost(**baseline_noise_config)
+            search_best = None
+
+            baseline_metrics = self.evaluate_model_with_attention_noise(
+                fixed_gelu, fixed_softmax, use_train=(not USE_VALIDATION_FOR_REWARD),
+                **baseline_noise_config,
+            )
+            base_loss, base_p, base_s = baseline_metrics[:3]
+            limit_loss = base_loss + self.error_threshold
+            limit_p = base_p * (1.0 - self.correlation_drop_ratio)
+            limit_s = base_s * (1.0 - self.correlation_drop_ratio)
+
+        runner = NoiseFinalEvaluationModule(
+            evaluator=self,
+            config_source=self.noise_eval_config_source,
+            config_path=self.noise_eval_config_path,
+            manual_noise_config=self.manual_noise_config,
+            random_seed=self.final_eval_random_seed,
+            permutation_trials=self.final_eval_permutation_trials,
+            cost_equivalent_trials=self.final_eval_cost_equivalent_trials,
+            budget_equivalent_trials=self.final_eval_budget_equivalent_trials,
+            repeat_n=self.noise_eval_repeat_n,
+        )
+
+        return runner.run(
+            search_best_noise_config=search_best,
+            fixed_gelu=fixed_gelu,
+            fixed_softmax=fixed_softmax,
+            baseline_noise_config=baseline_noise_config,
+            baseline_tot_c=baseline_tot_c,
+            limit_loss=limit_loss,
+            limit_p=limit_p,
+            limit_s=limit_s,
+        )
 
     def _run_evaluation(self, dataloader, use_train=False):
         """在当前模型上运行评估循环（不修改配置），用于无近似对照组等。"""
@@ -4238,9 +4295,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                     d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
                     self.log(_format_sensitivity_msg(f"L{i} Smax {cd_s}->{cd_s-1}", status, l, p, s, d_l, d_p, d_s))
 
+        # ---------------------------------------------------------
+        # Phase 5: Second-stage noise RL training (独立可控)
+        # ---------------------------------------------------------
+        noise_stage_result = None
         if self.skip_noise_rl:
-            self.log("\n[Info] Second-stage noise RL skipped (--skip-noise-rl).")
-            noise_stage_result = None
+            self.log("\n[Info] Second-stage noise RL training skipped (--skip-noise-rl).")
         else:
             noise_stage_result = self.run_noise_rl_stage(
                 fixed_gelu=opt_gelu,
@@ -4248,7 +4308,22 @@ class LayerImportanceEvaluator(TrainerCallback):
                 fixed_label=selected_label,
                 fixed_source=selected_source,
             )
+
+        # ---------------------------------------------------------
+        # Phase 5.5: Noise final evaluation (独立可控)
+        # ---------------------------------------------------------
+        noise_eval_result = None
+        if self.skip_noise_final_eval:
+            self.log("\n[Info] Noise final evaluation skipped (--skip-noise-final-eval).")
+        else:
+            noise_eval_result = self.run_noise_final_eval_stage(
+                fixed_gelu=opt_gelu,
+                fixed_softmax=opt_softmax,
+                noise_stage_result=noise_stage_result,
+            )
+
         self.last_noise_stage_result = noise_stage_result
+        self.last_noise_eval_result = noise_eval_result
 
         self.log("\nConfiguration evaluation finished.")
         self.apply_configuration(opt_gelu, opt_softmax)

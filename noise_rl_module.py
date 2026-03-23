@@ -370,42 +370,19 @@ class NoiseRLModule:
             use_validation=USE_VALIDATION_FOR_REWARD,
         )
 
-        from noise_final_evaluation_module import NoiseFinalEvaluationModule
-
-        noise_eval_runner = NoiseFinalEvaluationModule(
-            evaluator=ev,
-            config_source=getattr(ev, "noise_eval_config_source", "search"),
-            config_path=getattr(ev, "noise_eval_config_path", "glue_noise_configs_best_ppo.json"),
-            manual_noise_config=getattr(ev, "manual_noise_config", None),
-            random_seed=ev.final_eval_random_seed,
-            permutation_trials=ev.final_eval_permutation_trials,
-            cost_equivalent_trials=ev.final_eval_cost_equivalent_trials,
-            budget_equivalent_trials=ev.final_eval_budget_equivalent_trials,
-            repeat_n=getattr(ev, "noise_eval_repeat_n", 1),
-        )
-
-        selected_noise_cfg = {
-            k: v for k, v in best_noise_config.items()
-            if k.endswith("scaling_factors")
-        }
-
-        noise_eval_result = noise_eval_runner.run(
-            search_best_noise_config=selected_noise_cfg,
-            fixed_gelu=fixed_gelu,
-            fixed_softmax=fixed_softmax,
-            baseline_noise_config=baseline_noise_config,
-            baseline_tot_c=baseline_tot_c,
-            limit_loss=limit_loss,
-            limit_p=limit_p,
-            limit_s=limit_s,
-        )
+        ev.apply_configuration(fixed_gelu, fixed_softmax)
+        ev.clear_input_noise_configuration()
+        ev.clear_weight_noise_configuration()
 
         return {
             "fixed_gelu": fixed_gelu.copy(),
             "fixed_softmax": fixed_softmax.copy(),
             "baseline_noise_config": {k: v.copy() for k, v in baseline_noise_config.items()},
+            "baseline_tot_c": float(baseline_tot_c),
             "best_noise_config": {k: v.copy() if isinstance(v, np.ndarray) else v for k, v in best_noise_config.items()},
-            "noise_eval_result": noise_eval_result,
+            "limit_loss": float(limit_loss),
+            "limit_p": float(limit_p),
+            "limit_s": float(limit_s),
         }
 
 
