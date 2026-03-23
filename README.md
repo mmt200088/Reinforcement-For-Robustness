@@ -138,7 +138,7 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval`
 
 手动指定噪声配置做第二阶段最终评估：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}'`
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}' --noise-eval-repeat 100`
 
 第二阶段噪声评估重复 5 次：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-repeat 5`
