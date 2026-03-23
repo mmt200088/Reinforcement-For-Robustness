@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 # ======================================================================
 # 用途说明
@@ -28,9 +29,11 @@
 # 全部可选命名参数（跟在 5 个位置参数后面）
 # ======================================================================
 #
-# ---- 第一阶段：GELU/Softmax 强化学习与最终评估（两者独立可控）----
+# ---- 第一阶段：GELU/Softmax 强化学习与最终评估 ----
 #
-#   第一阶段 PPO/贪心搜索 与 第一阶段最终评估（Phase 3+4）是独立步骤，可自由组合：
+#   第一阶段 PPO/贪心搜索 与 第一阶段最终评估（Phase 3+4）在执行开关上可独立控制，
+#   但为了避免流程混用，若执行了第一阶段 RL/贪心搜索，则后续配置来源只能是 search。
+#   可支持的安全组合如下：
 #     - 都运行（默认）
 #     - 只跑 RL/搜索不做第一阶段最终评估（--skip-stage1-final-eval）
 #     - 只做最终评估不跑 RL（--skip-stage1-rl + --final-eval-source json|manual）
@@ -38,15 +41,19 @@
 #       且 --final-eval-source 为 json 或 manual，用于只跑第二阶段等）
 #
 #   --skip-stage1-rl
-#       跳过第一阶段 PPO 与贪心搜索（Phase 2 + Phase 2.5）。
+#       跳过整个第一阶段搜索准备与搜索流程：
+#         Phase 1   baseline 建立
+#         Phase 1.5 GELU 输入分布分析
+#         Phase 2   PPO 搜索
+#         Phase 2.5 贪心搜索
 #       不会 自动跳过第一阶段最终评估；要跳过请另加 --skip-stage1-final-eval。
 #       若 --final-eval-source 为 search 则非法（无搜索结果），须配合 json 或 manual。
 #
 # ---- 第一阶段：最终评估配置来源 ----
 #
 #   --final-eval-source search|json|manual
-#       最终评估选用的 GELU/Softmax 配置来源（与是否执行 RL 无关）：
-#         search  （默认）使用本次第一阶段搜索得到的最优配置（需未使用 --skip-stage1-rl）
+#       最终评估/第二阶段入口选用的 GELU/Softmax 配置来源：
+#         search  （默认）使用本次第一阶段搜索得到的最优配置（执行第一阶段 RL 时只能选它）
 #         json    从 JSON 文件读取历史保存的配置
 #         manual  使用手动指定的每层配置
 #
@@ -101,9 +108,12 @@
 #         noise_ppo_entropy_curve.png    策略熵曲线图
 #       第二阶段 RL 训练逻辑位于 noise_rl_module.py 中。
 #
-# ---- 第二阶段：噪声最终评估（独立于 RL 训练）----
+# ---- 第二阶段：噪声最终评估 ----
 #
-#   噪声 RL 训练和噪声最终评估是 两个独立的步骤，可自由组合：
+#   噪声 RL 训练和噪声最终评估在执行开关上可独立控制，
+#   但为了避免流程混用，若执行了噪声 RL 且保留噪声最终评估，
+#   则噪声最终评估配置来源只能是 search。
+#   可支持的安全组合如下：
 #     - 都运行（默认）
 #     - 只跑 RL 训练不做最终评估（--skip-noise-final-eval）
 #     - 只做最终评估不跑 RL 训练（--skip-noise-rl + --noise-eval-source json/manual）
@@ -173,11 +183,6 @@
 #      --final-eval-source json \
 #      --final-eval-config glue_configs_best_ppo.json
 #
-# 3b. 仍跑第一阶段 RL，但最终评估报告采用 JSON 中的配置（不用 RL 最优解）
-#    bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 \
-#      --final-eval-source json \
-#      --final-eval-config glue_configs_best_ppo.json
-#
 # 4. 手动指定每层配置；若不跑 RL 需同时加 --skip-stage1-rl
 #    bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 \
 #      --skip-stage1-rl \
@@ -197,6 +202,7 @@
 #
 # 7. 跳过第一阶段最终评估，直接用 JSON 配置进入第二阶段噪声 RL
 #    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+#      --skip-stage1-rl \
 #      --final-eval-source json \
 #      --final-eval-config glue_configs_best_ppo.json \
 #      --skip-stage1-final-eval
@@ -221,6 +227,7 @@
 #
 # 11. 完全跳过两个阶段的搜索/训练，直接手动指定所有配置做最终评估
 #     bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+#       --skip-stage1-rl \
 #       --final-eval-source manual \
 #       --manual-gelu "[1,1,1,1,1,4,1,1,1,1,1,1]" \
 #       --manual-softmax "[2,2,5,5,5,2,5,2,5,5,6,2]" \
@@ -242,58 +249,79 @@
 # ======================================================================
 
 usage() {
-    echo "Usage:"
+    echo "用法："
     echo "  bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [degree] [options]"
     echo
-    echo "Required positional arguments:"
-    echo "  lora_r                LoRA rank, keep 32 in current experiments."
-    echo "  lora_alpha            LoRA alpha, keep 64 in current experiments."
-    echo "  logfile_path          Output log path for nohup."
-    echo "  rl_lr                 PPO LR control. Use a direct LR if < 1."
-    echo "                        Legacy values like 20/40 map to 20e-6/40e-6."
-    echo "  degree                Legacy debug argument, keep 2."
+    echo "必填位置参数："
+    echo "  lora_r                LoRA rank，当前实验固定传 32。"
+    echo "  lora_alpha            LoRA alpha，当前实验固定传 64。"
+    echo "  logfile_path          nohup 输出日志路径。"
+    echo "  rl_lr                 PPO 学习率控制。若 < 1 则直接作为 LR；"
+    echo "                        旧值 20/40 会解释为 20e-6/40e-6。"
+    echo "  degree                历史调试参数，固定传 2。"
     echo
-    echo "Stage-1 (GELU/Softmax RL vs final evaluation — independent):"
-    echo "  --skip-stage1-rl          跳过第一阶段 PPO/贪心搜索。"
-    echo "Optional final-evaluation arguments:"
+    echo "第一阶段：GELU/Softmax 搜索与评估："
+    echo "  --skip-stage1-rl          跳过整个第一阶段搜索准备与搜索流程。"
+    echo "                            包括 Phase 1 baseline、Phase 1.5 GELU 输入分布分析、"
+    echo "                            Phase 2 PPO、Phase 2.5 贪心搜索。"
     echo "  --final-eval-source search|json|manual"
-    echo "  --final-eval-config PATH"
+    echo "                            第一阶段配置来源。"
+    echo "                            安全约束：若执行第一阶段 RL，则只能为 search；"
+    echo "                            若使用 json/manual，则必须加 --skip-stage1-rl。"
+    echo "  --final-eval-config PATH  当 source=json 时使用。"
     echo "  --manual-gelu \"[1,1,...]\""
     echo "  --manual-softmax \"[2,2,...]\""
+    echo "                            当 source=manual 时必须同时提供。"
     echo "  --random-seed N"
     echo "  --perm-trials N"
     echo "  --cost-trials N"
     echo "  --budget-trials N"
     echo
-    echo "Second-stage noise RL training:"
-    echo "  --skip-noise-rl          跳过第二阶段噪声 RL 训练（不影响最终评估）。"
-    echo
-    echo "Second-stage noise final evaluation (独立于 RL 训练):"
+    echo "第二阶段：噪声 RL 与最终评估："
+    echo "  --skip-noise-rl          跳过第二阶段噪声 RL 训练。"
     echo "  --skip-noise-final-eval  跳过第二阶段噪声最终评估。"
     echo "  --noise-eval-source search|json|manual"
-    echo "                           噪声最终评估配置来源（默认 search）。"
-    echo "  --noise-eval-config PATH 噪声配置 JSON 文件路径。"
-    echo "  --manual-noise-config '{\"x\":[...],\"wq\":[...],..}'"
-    echo "                           手动指定 7 种噪声 scaling factor。"
-    echo "  --noise-eval-repeat N    对选定配置执行 N 次重复评估（默认 1）。"
+    echo "                            噪声最终评估配置来源。"
+    echo "                            安全约束：若执行噪声 RL 且保留噪声最终评估，"
+    echo "                            则只能为 search；若使用 json/manual，则必须加"
+    echo "                            --skip-noise-rl。"
+    echo "  --noise-eval-config PATH 当 source=json 时使用。"
+    echo "  --manual-noise-config '{\"x\":[...],\"wq\":[...],...}'"
+    echo "                            当 source=manual 时必须提供。"
+    echo "  --noise-eval-repeat N    噪声最终评估重复次数，默认 1。"
     echo
-    echo "Skip stage-1 final evaluation:"
-    echo "  --skip-stage1-final-eval 跳过第一阶段最终评估（Phase 3+4），仍解析配置进入第二阶段。"
+    echo "其他开关："
+    echo "  --skip-stage1-final-eval 跳过第一阶段最终评估（Phase 3+4），"
+    echo "                            仍根据第一阶段配置来源解析 GELU/Softmax 后进入第二阶段。"
     echo
-    echo "Examples:"
+    echo "示例："
     echo "  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2"
-    echo "  bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 --final-eval-source json --final-eval-config glue_configs_best_ppo.json"
-    echo "  bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --final-eval-source manual --manual-gelu \"[1,1,1,4,1,1,1,1,1,1,1,1]\" --manual-softmax \"[2,3,4,6,4,4,5,4,4,5,5,2]\""
-    echo "  bash llama_7B_LayerImportance.sh 32 64 output_stage2.log 20 2 --perm-trials 30 --cost-trials 30"
-    echo "  bash llama_7B_LayerImportance.sh 32 64 output_no_noise.log 20 2 --skip-noise-rl"
+    echo "  bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json"
+    echo "  bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --skip-stage1-rl --final-eval-source manual --manual-gelu \"[1,1,1,4,1,1,1,1,1,1,1,1]\" --manual-softmax \"[2,3,4,6,4,4,5,4,4,5,5,2]\""
+    echo "  bash llama_7B_LayerImportance.sh 32 64 output_noise.log 20 2 --skip-noise-rl --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json"
+    echo "  bash llama_7B_LayerImportance.sh 32 64 output_manual_all.log 20 2 --skip-stage1-rl --final-eval-source manual --manual-gelu \"[1,1,...]\" --manual-softmax \"[2,2,...]\" --skip-stage1-final-eval --skip-noise-rl --noise-eval-source manual --manual-noise-config '{\"x\":[...],...}'"
 }
 
 require_option_value() {
     if [ "$#" -lt 2 ]; then
-        echo "Option $1 requires a value."
+        echo "错误: 选项 $1 缺少取值。" >&2
         exit 1
     fi
 }
+
+error_exit() {
+    echo "错误: $1" >&2
+    exit 1
+}
+
+is_positive_integer() {
+    [[ "$1" =~ ^[1-9][0-9]*$ ]]
+}
+
+if [ "$#" -eq 1 ] && { [ "$1" = "-h" ] || [ "$1" = "--help" ]; }; then
+    usage
+    exit 0
+fi
 
 if [ "$#" -lt 5 ]; then
     usage
@@ -311,6 +339,9 @@ FINAL_EVAL_SOURCE="search"
 FINAL_EVAL_CONFIG_PATH="glue_configs_best_ppo.json"
 MANUAL_FINAL_GELU=""
 MANUAL_FINAL_SOFTMAX=""
+FINAL_EVAL_CONFIG_PATH_SPECIFIED="false"
+MANUAL_FINAL_GELU_SPECIFIED="false"
+MANUAL_FINAL_SOFTMAX_SPECIFIED="false"
 FINAL_EVAL_RANDOM_SEED="42"
 FINAL_EVAL_PERMUTATION_TRIALS="10"
 FINAL_EVAL_COST_EQUIVALENT_TRIALS="10"
@@ -319,6 +350,8 @@ SKIP_NOISE_RL="false"
 NOISE_EVAL_SOURCE="search"
 NOISE_EVAL_CONFIG_PATH="glue_noise_configs_best_ppo.json"
 MANUAL_NOISE_CONFIG=""
+NOISE_EVAL_CONFIG_PATH_SPECIFIED="false"
+MANUAL_NOISE_CONFIG_SPECIFIED="false"
 NOISE_EVAL_REPEAT_N="1"
 SKIP_STAGE1_RL="false"
 SKIP_STAGE1_FINAL_EVAL="false"
@@ -334,16 +367,19 @@ while [ "$#" -gt 0 ]; do
         --final-eval-config|--final-eval-config-path)
             require_option_value "$@"
             FINAL_EVAL_CONFIG_PATH="$2"
+            FINAL_EVAL_CONFIG_PATH_SPECIFIED="true"
             shift 2
             ;;
         --manual-gelu)
             require_option_value "$@"
             MANUAL_FINAL_GELU="$2"
+            MANUAL_FINAL_GELU_SPECIFIED="true"
             shift 2
             ;;
         --manual-softmax)
             require_option_value "$@"
             MANUAL_FINAL_SOFTMAX="$2"
+            MANUAL_FINAL_SOFTMAX_SPECIFIED="true"
             shift 2
             ;;
         --random-seed)
@@ -378,11 +414,13 @@ while [ "$#" -gt 0 ]; do
         --noise-eval-config|--noise-eval-config-path)
             require_option_value "$@"
             NOISE_EVAL_CONFIG_PATH="$2"
+            NOISE_EVAL_CONFIG_PATH_SPECIFIED="true"
             shift 2
             ;;
         --manual-noise-config)
             require_option_value "$@"
             MANUAL_NOISE_CONFIG="$2"
+            MANUAL_NOISE_CONFIG_SPECIFIED="true"
             shift 2
             ;;
         --noise-eval-repeat)
@@ -434,24 +472,52 @@ case "$NOISE_EVAL_SOURCE" in
         ;;
 esac
 
+if ! is_positive_integer "$NOISE_EVAL_REPEAT_N"; then
+    error_exit "--noise-eval-repeat 必须是正整数，当前值为 '$NOISE_EVAL_REPEAT_N'。"
+fi
+
 if [ "$NOISE_EVAL_SOURCE" = "manual" ]; then
     if [ -z "$MANUAL_NOISE_CONFIG" ]; then
-        echo "Manual noise evaluation requires --manual-noise-config."
-        exit 1
+        error_exit "当 --noise-eval-source=manual 时，必须提供 --manual-noise-config。"
     fi
+elif [ "$MANUAL_NOISE_CONFIG_SPECIFIED" = "true" ]; then
+    error_exit "只有在 --noise-eval-source=manual 时才能提供 --manual-noise-config。"
 fi
 
 if [ "$FINAL_EVAL_SOURCE" = "manual" ]; then
     if [ -z "$MANUAL_FINAL_GELU" ] || [ -z "$MANUAL_FINAL_SOFTMAX" ]; then
-        echo "Manual final evaluation requires both --manual-gelu and --manual-softmax."
-        exit 1
+        error_exit "当 --final-eval-source=manual 时，必须同时提供 --manual-gelu 和 --manual-softmax。"
     fi
+elif [ "$MANUAL_FINAL_GELU_SPECIFIED" = "true" ] || [ "$MANUAL_FINAL_SOFTMAX_SPECIFIED" = "true" ]; then
+    error_exit "只有在 --final-eval-source=manual 时才能提供 --manual-gelu / --manual-softmax。"
 fi
 
 if [ "$SKIP_STAGE1_RL" = "true" ] && [ "$FINAL_EVAL_SOURCE" = "search" ]; then
-    echo "错误: --skip-stage1-rl 与 --final-eval-source search 不能同时使用（无第一阶段搜索结果）。"
-    echo "请改用 --final-eval-source json 或 manual，或去掉 --skip-stage1-rl。"
-    exit 1
+    error_exit "--skip-stage1-rl 与 --final-eval-source search 不能同时使用：跳过第一阶段搜索后没有搜索结果可供评估。请改用 json/manual，或去掉 --skip-stage1-rl。"
+fi
+
+if [ "$SKIP_STAGE1_RL" = "false" ] && [ "$FINAL_EVAL_SOURCE" != "search" ]; then
+    error_exit "检测到第一阶段 RL/贪心搜索将执行，但 --final-eval-source=$FINAL_EVAL_SOURCE。为避免“前面跑 RL、后面却用手动/JSON 配置评估”的流程混用，执行第一阶段 RL 时只能使用 search。若要使用 json/manual，请添加 --skip-stage1-rl。"
+fi
+
+if [ "$FINAL_EVAL_SOURCE" = "json" ]; then
+    [ -f "$FINAL_EVAL_CONFIG_PATH" ] || error_exit "第一阶段 JSON 配置文件不存在：$FINAL_EVAL_CONFIG_PATH"
+elif [ "$FINAL_EVAL_CONFIG_PATH_SPECIFIED" = "true" ]; then
+    error_exit "只有在 --final-eval-source=json 时才能提供 --final-eval-config。"
+fi
+
+if [ "$SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$SKIP_NOISE_RL" = "true" ] && [ "$NOISE_EVAL_SOURCE" = "search" ]; then
+    error_exit "--skip-noise-rl 与 --noise-eval-source search 不能同时用于噪声最终评估：跳过噪声 RL 后没有搜索结果可供评估。请改用 json/manual，或去掉 --skip-noise-rl。"
+fi
+
+if [ "$SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$SKIP_NOISE_RL" = "false" ] && [ "$NOISE_EVAL_SOURCE" != "search" ]; then
+    error_exit "检测到第二阶段噪声 RL 将执行，且噪声最终评估未跳过，但 --noise-eval-source=$NOISE_EVAL_SOURCE。为避免“前面跑噪声 RL、后面却用手动/JSON 配置评估”的流程混用，此时只能使用 search。若要使用 json/manual，请添加 --skip-noise-rl。"
+fi
+
+if [ "$SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$NOISE_EVAL_SOURCE" = "json" ]; then
+    [ -f "$NOISE_EVAL_CONFIG_PATH" ] || error_exit "噪声 JSON 配置文件不存在：$NOISE_EVAL_CONFIG_PATH"
+elif [ "$NOISE_EVAL_CONFIG_PATH_SPECIFIED" = "true" ] && [ "$SKIP_NOISE_FINAL_EVAL" = "false" ]; then
+    error_exit "只有在 --noise-eval-source=json 时才能提供 --noise-eval-config。"
 fi
 
 export NCCL_DEBUG=INFO

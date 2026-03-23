@@ -2132,15 +2132,19 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.final_eval_permutation_trials = max(0, int(final_eval_permutation_trials))
         self.final_eval_cost_equivalent_trials = max(0, int(final_eval_cost_equivalent_trials))
         self.final_eval_budget_equivalent_trials = max(0, int(final_eval_budget_equivalent_trials))
-        self.skip_stage1_rl = bool(skip_stage1_rl)
-        self.skip_noise_rl = bool(skip_noise_rl)
+        self.skip_stage1_rl = self._coerce_bool_flag(skip_stage1_rl, 'skip_stage1_rl')
+        self.skip_noise_rl = self._coerce_bool_flag(skip_noise_rl, 'skip_noise_rl')
 
         self.noise_eval_config_source = (noise_eval_config_source or 'search').lower()
         self.noise_eval_config_path = noise_eval_config_path or 'glue_noise_configs_best_ppo.json'
         self.manual_noise_config = manual_noise_config
         self.noise_eval_repeat_n = max(1, int(noise_eval_repeat_n))
-        self.skip_stage1_final_eval = bool(skip_stage1_final_eval)
-        self.skip_noise_final_eval = bool(skip_noise_final_eval)
+        self.skip_stage1_final_eval = self._coerce_bool_flag(
+            skip_stage1_final_eval, 'skip_stage1_final_eval'
+        )
+        self.skip_noise_final_eval = self._coerce_bool_flag(
+            skip_noise_final_eval, 'skip_noise_final_eval'
+        )
 
         if self.noise_eval_config_source not in ('search', 'json', 'manual'):
             raise ValueError(
@@ -2160,10 +2164,63 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "跳过第一阶段搜索后没有 RL/贪心结果可供 search 使用。"
                 "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
             )
+
+        if (not self.skip_stage1_rl) and self.final_eval_config_source != 'search':
+            raise ValueError(
+                "检测到第一阶段 RL/贪心搜索将执行，但 final_eval_config_source 不是 'search'。"
+                "为避免“前面跑 RL、后面却用手动/JSON 配置评估”的流程混用，"
+                "执行第一阶段 RL 时只能使用 search。"
+                "若要使用 json/manual，请设置 skip_stage1_rl=True。"
+            )
+
+        if self.final_eval_config_source == 'manual':
+            if self.manual_final_gelu is None or self.manual_final_softmax is None:
+                raise ValueError(
+                    "final_eval_config_source='manual' 时必须同时提供 "
+                    "manual_final_gelu 和 manual_final_softmax。"
+                )
+
+        if self.skip_noise_rl and (not self.skip_noise_final_eval) and self.noise_eval_config_source == 'search':
+            raise ValueError(
+                "skip_noise_rl=True 与 noise_eval_config_source='search' 不能同时用于噪声最终评估："
+                "跳过噪声 RL 后没有搜索结果可供 search 使用。"
+                "请改用 json 或 manual，或设置 skip_noise_rl=False。"
+            )
+
+        if (not self.skip_noise_rl) and (not self.skip_noise_final_eval) and self.noise_eval_config_source != 'search':
+            raise ValueError(
+                "检测到第二阶段噪声 RL 将执行，且噪声最终评估未跳过，但 noise_eval_config_source 不是 'search'。"
+                "为避免“前面跑噪声 RL、后面却用手动/JSON 配置评估”的流程混用，"
+                "执行噪声 RL 且保留噪声最终评估时只能使用 search。"
+                "若要使用 json/manual，请设置 skip_noise_rl=True。"
+            )
+
+        if self.noise_eval_config_source == 'manual' and self.manual_noise_config is None:
+            raise ValueError(
+                "noise_eval_config_source='manual' 时必须提供 manual_noise_config。"
+            )
         
         # ==================== 敏锐度优化PDF：课程学习状态 ====================
         self.curriculum_phase = 1  # 1=探索, 2=收紧, 3=精调
         self.constraint_slack = CURRICULUM_INITIAL_SLACK  # 当前约束放宽系数
+
+    @staticmethod
+    def _coerce_bool_flag(raw_value, flag_name):
+        if isinstance(raw_value, bool):
+            return raw_value
+        if raw_value is None:
+            return False
+
+        text = str(raw_value).strip().lower()
+        if text in ('1', 'true', 't', 'yes', 'y', 'on'):
+            return True
+        if text in ('0', 'false', 'f', 'no', 'n', 'off', ''):
+            return False
+
+        raise ValueError(
+            f"Invalid boolean value for {flag_name}: {raw_value!r}. "
+            "Expected one of: true/false/1/0/yes/no."
+        )
     
     def _detect_task_type(self):
         """
@@ -3390,66 +3447,81 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.log("[Info] First-stage RL/greedy search skipped (--skip-stage1-rl).")
         self.log("="*60)
 
-        # ---------------------------------------------------------
-        # Phase 1: Baseline (使用训练集)
-        # ---------------------------------------------------------
-        self.log("\n--- Phase 1: Establishing Baseline (on Training Set) ---")
         base_gelu = np.full(self.total_layers, 4, dtype=int)
         base_softmax = np.full(self.total_layers, 6, dtype=int)
-        
-        # 使用训练集计算baseline
-        base_loss_train, base_p_train, base_s_train, base_time_train = self.evaluate_model(base_gelu, base_softmax, use_train=True)
         base_tot_c, base_g_c, base_s_c = self.get_simulated_cost(base_gelu, base_softmax)
-        
-        # 获取当前数据集对应的指标名称
-        metric_names = self.get_metric_names()
         num_metrics = self.get_num_metrics()
-        metric1_name = metric_names[0]
-        metric2_name = metric_names[1] if num_metrics > 1 else metric_names[0]
-        
-        self.log(f"Baseline Metrics (Training Set):")
-        self.log(f"  {self._fmt_metrics(base_loss_train, base_p_train, base_s_train)}")
-        self.log(f"  Sim Cost: {base_tot_c:.2f} (G={base_g_c:.2f}, S={base_s_c:.2f})")
-        
-        # ==================== 验证集引导（Validation Guided）：计算验证集baseline ====================
-        if USE_VALIDATION_FOR_REWARD:
-            base_loss_val, base_p_val, base_s_val, base_time_val = self.evaluate_model(base_gelu, base_softmax, use_train=False)
-            self.log(f"Baseline Metrics (Validation Set - used for reward):")
-            self.log(f"  {self._fmt_metrics(base_loss_val, base_p_val, base_s_val)}")
-            
-            # 使用验证集的baseline作为约束基准
-            base_loss = base_loss_val
-            base_p = base_p_val
-            base_s = base_s_val
-        else:
-            # 使用训练集的baseline
-            base_loss = base_loss_train
-            base_p = base_p_train
-            base_s = base_s_train
-        
-        # Constraints
-        limit_loss = base_loss + self.error_threshold
-        limit_p = base_p * (1.0 - self.correlation_drop_ratio)
-        limit_s = base_s * (1.0 - self.correlation_drop_ratio)
-        
-        self.log(f"Constraints (based on {'Validation' if USE_VALIDATION_FOR_REWARD else 'Training'} Set):")
-        self.log(f"  {self._fmt_constraints(limit_loss, limit_p, limit_s)}")
+        base_loss = base_p = base_s = None
+        base_loss_train = base_p_train = base_s_train = None
+        gelu_degree0_eligible = np.zeros(self.total_layers, dtype=bool)
 
-        # ---------------------------------------------------------
-        # Phase 1.5: GELU Distribution Analysis (判断 degree 0 资格)
-        # ---------------------------------------------------------
-        self.log("\n--- Phase 1.5: GELU Input Distribution Analysis ---")
-        self.log(f"Threshold: [-2.7, 0) interval >= {GELU_DEGREE0_THRESHOLD*100:.0f}% -> eligible for degree 0")
-        gelu_degree0_eligible, gelu_interval_counts = self.analyze_gelu_distribution()
-        for i in range(self.total_layers):
-            ic = gelu_interval_counts[i]
-            total = ic.sum()
-            if total > 0:
-                pcts = ic / total * 100
-                status = "ELIGIBLE" if gelu_degree0_eligible[i] else "NOT eligible"
-                self.log(f"  Layer {i}: [-2.7,0)={pcts[1]:.2f}% | <-2.7={pcts[0]:.2f}% | [0,2.7]={pcts[2]:.2f}% | >2.7={pcts[3]:.2f}% -> {status}")
-        eligible_count = gelu_degree0_eligible.sum()
-        self.log(f"Summary: {eligible_count}/{self.total_layers} layers eligible for GELU degree 0")
+        if self.skip_stage1_rl:
+            self.log("\n--- Phase 1: SKIPPED (--skip-stage1-rl) ---")
+            self.log("[Info] Baseline establishment is skipped because it is only used by first-stage RL/greedy search.")
+            self.log("\n--- Phase 1.5: SKIPPED (--skip-stage1-rl) ---")
+            self.log("[Info] GELU input distribution analysis is skipped because it is only used by first-stage RL/greedy search.")
+
+            if not self.skip_stage1_final_eval:
+                # Phase 3/4 仍需要约束阈值；仅在需要最终评估时静默计算。
+                if USE_VALIDATION_FOR_REWARD:
+                    base_loss, base_p, base_s, _ = self.evaluate_model(base_gelu, base_softmax, use_train=False)
+                else:
+                    base_loss, base_p, base_s, _ = self.evaluate_model(base_gelu, base_softmax, use_train=True)
+                limit_loss = base_loss + self.error_threshold
+                limit_p = base_p * (1.0 - self.correlation_drop_ratio)
+                limit_s = base_s * (1.0 - self.correlation_drop_ratio)
+        else:
+            # ---------------------------------------------------------
+            # Phase 1: Baseline (使用训练集)
+            # ---------------------------------------------------------
+            self.log("\n--- Phase 1: Establishing Baseline (on Training Set) ---")
+
+            # 使用训练集计算baseline
+            base_loss_train, base_p_train, base_s_train, base_time_train = self.evaluate_model(base_gelu, base_softmax, use_train=True)
+
+            self.log(f"Baseline Metrics (Training Set):")
+            self.log(f"  {self._fmt_metrics(base_loss_train, base_p_train, base_s_train)}")
+            self.log(f"  Sim Cost: {base_tot_c:.2f} (G={base_g_c:.2f}, S={base_s_c:.2f})")
+
+            # ==================== 验证集引导（Validation Guided）：计算验证集baseline ====================
+            if USE_VALIDATION_FOR_REWARD:
+                base_loss_val, base_p_val, base_s_val, base_time_val = self.evaluate_model(base_gelu, base_softmax, use_train=False)
+                self.log(f"Baseline Metrics (Validation Set - used for reward):")
+                self.log(f"  {self._fmt_metrics(base_loss_val, base_p_val, base_s_val)}")
+
+                # 使用验证集的baseline作为约束基准
+                base_loss = base_loss_val
+                base_p = base_p_val
+                base_s = base_s_val
+            else:
+                # 使用训练集的baseline
+                base_loss = base_loss_train
+                base_p = base_p_train
+                base_s = base_s_train
+
+            # Constraints
+            limit_loss = base_loss + self.error_threshold
+            limit_p = base_p * (1.0 - self.correlation_drop_ratio)
+            limit_s = base_s * (1.0 - self.correlation_drop_ratio)
+
+            self.log(f"Constraints (based on {'Validation' if USE_VALIDATION_FOR_REWARD else 'Training'} Set):")
+            self.log(f"  {self._fmt_constraints(limit_loss, limit_p, limit_s)}")
+
+            # ---------------------------------------------------------
+            # Phase 1.5: GELU Distribution Analysis (判断 degree 0 资格)
+            # ---------------------------------------------------------
+            self.log("\n--- Phase 1.5: GELU Input Distribution Analysis ---")
+            self.log(f"Threshold: [-2.7, 0) interval >= {GELU_DEGREE0_THRESHOLD*100:.0f}% -> eligible for degree 0")
+            gelu_degree0_eligible, gelu_interval_counts = self.analyze_gelu_distribution()
+            for i in range(self.total_layers):
+                ic = gelu_interval_counts[i]
+                total = ic.sum()
+                if total > 0:
+                    pcts = ic / total * 100
+                    status = "ELIGIBLE" if gelu_degree0_eligible[i] else "NOT eligible"
+                    self.log(f"  Layer {i}: [-2.7,0)={pcts[1]:.2f}% | <-2.7={pcts[0]:.2f}% | [0,2.7]={pcts[2]:.2f}% | >2.7={pcts[3]:.2f}% -> {status}")
+            eligible_count = gelu_degree0_eligible.sum()
+            self.log(f"Summary: {eligible_count}/{self.total_layers} layers eligible for GELU degree 0")
 
         # 供绘图使用：仅 RL 时会填充
         episode_rewards = []

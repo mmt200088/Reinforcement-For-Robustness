@@ -2,76 +2,75 @@ This is a Repository for Transformer robustness evaluation using Reinforcement L
 
 Please Ignore the LLM-Adapters, EzPC, and importance-aware-sparse-tuning-IST-paper in root directory. Sorry, but the code is DIRTY now!
 
-## How to Start
+## 使用说明
 
-### Allocate enough memory for Docker container
-    mount -o remount,size=64G /dev/shm
-### Activate python enviroment first
-    conda activate llm_ist
-### Go into the .sh located directory (/root/ppml/MoE-Privacy)
-    cd /root/ppml/MoE-Privacy 
-    cd /var/tmp/root-home/Reinforcement-For-Robustness
-### Execute the running scripts 
-    bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [degree]
+### 运行前准备
+```bash
+mount -o remount,size=64G /dev/shm
+conda activate llm_ist
+cd /var/tmp/root-home/Reinforcement-For-Robustness
+```
 
-lora_r: parameter for lora, ignore (we just use the Lora Framework to inference...), just set is to 32.  
-lora_alpha: parameter for lora, ignore, just set is to 64.  
-logfile_path: the log file output path, you can change it when the learning rate varies.  
-rl_lr: PPO learning-rate control. If `rl_lr < 1`, it is used directly as the PPO optimizer LR. For backward compatibility, legacy values like `20` / `40` are interpreted as `20e-6` / `40e-6`.  
-degree: parameter for early debug, now deprecated. Just set it to 2.  
+### 基础命令
+```bash
+bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [degree]
+```
 
-example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
+位置参数说明：
 
-#### 全部可选命名参数
+| 参数 | 说明 |
+| :--- | :--- |
+| `lora_r` | LoRA rank，当前固定传 `32` |
+| `lora_alpha` | LoRA alpha，当前固定传 `64` |
+| `logfile_path` | nohup 输出日志路径 |
+| `rl_lr` | PPO 学习率控制。若 `< 1` 则直接作为学习率；旧值如 `20` / `40` 会解释为 `20e-6` / `40e-6` |
+| `degree` | 历史调试参数，固定传 `2` |
 
-旧版 5 参数命令完全兼容。可在 5 个位置参数之后追加以下可选命名参数：
+基础示例：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
-**第一阶段：GELU/Softmax 强化学习（PPO/贪心）与 第一阶段最终评估（两者独立可控）**
+### 命名参数与安全约束
 
-与第二阶段类似，第一阶段 **搜索/RL** 与 **最终评估（Phase 3+4：完整报告与灵敏度）** 由不同开关控制；`--final-eval-source` 只表示「选用哪套 GELU/Softmax 参与最终评估/解析」，**不再**隐式跳过 RL。
+旧版 5 参数命令依然兼容，但新增了更严格的流程校验，避免“前面跑 RL，后面却拿手动/JSON 配置做评估”的混用。
 
-可自由组合示例：
-- 都运行（默认）
-- 只跑 RL 不做第一阶段最终评估：`--skip-stage1-final-eval`
-- 只做最终评估不跑 RL：`--skip-stage1-rl` + `--final-eval-source json` 或 `manual`（`search` 与 `--skip-stage1-rl` **互斥**，因无搜索结果）
-- 二者都跳过第一阶段侧较重步骤：`--skip-stage1-rl --skip-stage1-final-eval` 且配置来源为 `json`/`manual`（例如只关心第二阶段）
+**第一阶段：GELU/Softmax RL 与最终评估**
 
-| 参数 | 说明 | 默认值 |
-| :--- | :--- | :--- |
-| `--skip-stage1-rl` | 跳过第一阶段 PPO 与贪心搜索（Phase 2 + Phase 2.5）。不自动跳过第一阶段最终评估 | 不跳过 |
+第一阶段的“是否执行 RL”与“是否执行最终评估”仍可独立控制，但配置来源现在有安全约束：
 
-**第一阶段：最终评估配置来源**（`--final-eval-source`）
-
-| 参数 | 说明 | 默认值 |
-| :--- | :--- | :--- |
-| `--final-eval-source search\|json\|manual` | 选用哪套 GELU/Softmax：`search` 使用本次第一阶段搜索得到的最优配置（需**未**使用 `--skip-stage1-rl`）；`json` / `manual` 从文件或命令行读取 | `search` |
-| `--final-eval-config PATH` | `json` 模式下指定的 JSON 配置文件路径。程序根据当前数据集名（如 `mrpc`）自动读取对应条目 | `glue_configs_best_ppo.json` |
-| `--manual-gelu "[1,1,1,4,...]"` | `manual` 模式下手动指定每层 GELU degree（JSON 数组），必须与 `--manual-softmax` 一起使用 | — |
-| `--manual-softmax "[2,3,4,6,...]"` | `manual` 模式下手动指定每层 Softmax degree（JSON 数组），必须与 `--manual-gelu` 一起使用 | — |
-
-说明：若同时运行 RL 且 `--final-eval-source json`（或 `manual`），最终评估模块会采用 **JSON/手动配置**，而不是 RL 跑出的最优解——便于「先跑 RL 做实验，再固定用某套存档配置做报告」。
-
-**随机对照实验**
+- 若执行第一阶段 RL，则 `--final-eval-source` 只能为 `search`
+- 若使用 `json` 或 `manual`，则必须显式添加 `--skip-stage1-rl`
+- 若跳过第一阶段 RL，则不能再使用 `search`
+- `--skip-stage1-rl` 会一并跳过 Phase 1 baseline 建立、Phase 1.5 GELU 输入分布分析、Phase 2 PPO 和 Phase 2.5 贪心搜索
 
 | 参数 | 说明 | 默认值 |
 | :--- | :--- | :--- |
+| `--skip-stage1-rl` | 跳过整个第一阶段搜索准备与搜索流程：Phase 1 baseline、Phase 1.5 GELU 输入分布分析、Phase 2 PPO、Phase 2.5 贪心搜索 | 不跳过 |
+| `--skip-stage1-final-eval` | 跳过第一阶段最终评估（Phase 3 + Phase 4），但仍会先解析第一阶段配置，再进入第二阶段 | 不跳过 |
+| `--final-eval-source search\|json\|manual` | 第一阶段配置来源。执行第一阶段 RL 时只能为 `search`；使用 `json/manual` 时必须加 `--skip-stage1-rl` | `search` |
+| `--final-eval-config PATH` | `json` 模式下的配置文件路径 | `glue_configs_best_ppo.json` |
+| `--manual-gelu "[1,1,...]"` | `manual` 模式下的每层 GELU degree，必须与 `--manual-softmax` 同时提供 | — |
+| `--manual-softmax "[2,2,...]"` | `manual` 模式下的每层 Softmax degree，必须与 `--manual-gelu` 同时提供 | — |
 | `--random-seed N` | 随机实验种子 | `42` |
 | `--perm-trials N` | Permutation 随机对照实验次数 | `10` |
 | `--cost-trials N` | 精确 cost-matched 随机对照实验次数 | `10` |
 | `--budget-trials N` | 同总预算随机对照实验次数 | `10` |
 
-**第二阶段：噪声 RL 训练 与 噪声最终评估（两者独立可控）**
+**第二阶段：噪声 RL 与噪声最终评估**
 
-噪声 RL 训练和噪声最终评估是 **两个独立的步骤**，可自由组合：
-- 都运行（默认行为）
-- 只跑 RL 训练不做最终评估（`--skip-noise-final-eval`）
-- 只做最终评估不跑 RL 训练（`--skip-noise-rl` + `--noise-eval-source json/manual`）
-- 都跳过（`--skip-noise-rl --skip-noise-final-eval`）
+第二阶段同样增加了安全约束：
+
+- 若执行噪声 RL，且没有跳过噪声最终评估，则 `--noise-eval-source` 只能为 `search`
+- 若使用 `json` 或 `manual` 做噪声最终评估，则必须显式添加 `--skip-noise-rl`
+- 若跳过噪声 RL，则不能在噪声最终评估中再使用 `search`
 
 | 参数 | 说明 | 默认值 |
 | :--- | :--- | :--- |
-| `--skip-noise-rl` | 跳过第二阶段噪声 RL **训练**。不影响噪声最终评估 | 不跳过 |
-| `--skip-noise-final-eval` | 跳过第二阶段噪声**最终评估**。不影响噪声 RL 训练 | 不跳过 |
+| `--skip-noise-rl` | 跳过第二阶段噪声 RL 训练 | 不跳过 |
+| `--skip-noise-final-eval` | 跳过第二阶段噪声最终评估 | 不跳过 |
+| `--noise-eval-source search\|json\|manual` | 噪声最终评估配置来源。执行噪声 RL 且保留最终评估时只能为 `search`；使用 `json/manual` 时必须加 `--skip-noise-rl` | `search` |
+| `--noise-eval-config PATH` | `json` 模式下的噪声配置文件路径 | `glue_noise_configs_best_ppo.json` |
+| `--manual-noise-config '{"x":[...],...}'` | `manual` 模式下的噪声配置，需包含 7 类噪声数组 | — |
+| `--noise-eval-repeat N` | 噪声最终评估重复次数，必须为正整数 | `1` |
 
 第二阶段 RL 训练保持第一阶段选定的 GELU/Softmax 不变，用 PPO 学习每层 7 个噪声 scaling factor：
 
@@ -85,7 +84,7 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 | `wffn1`（FFN 第一层权重噪声） | intermediate.dense | `{10, 12, 14, 16, 18, 20, 22}` |
 | `wffn2`（FFN 第二层权重噪声） | output.dense | `{10, 12, 14, 16, 18, 20, 22}` |
 
-第二阶段 RL 训练逻辑位于 `noise_rl_module.py`，噪声最终评估逻辑位于 `noise_final_evaluation_module.py`（两者独立模块，互不依赖）。
+第二阶段 RL 训练逻辑位于 `noise_rl_module.py`，噪声最终评估逻辑位于 `noise_final_evaluation_module.py`。
 
 第二阶段产出文件：
 - `noise_ppo_step_info.txt` — 每步动作/概率日志
@@ -97,7 +96,7 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
 | 参数 | 说明 | 默认值 |
 | :--- | :--- | :--- |
-| `--noise-eval-source search\|json\|manual` | 噪声最终评估使用的配置来源：`search` 使用噪声 RL 搜索结果（需运行 RL 训练）；`json` 从 JSON 文件读取；`manual` 手动指定 | `search` |
+| `--noise-eval-source search\|json\|manual` | 噪声最终评估使用的配置来源：`search` 使用本次噪声 RL 搜索结果；`json` 从 JSON 文件读取；`manual` 手动指定。若执行噪声 RL 且保留最终评估，则只能为 `search` | `search` |
 | `--noise-eval-config PATH` | `json` 模式下指定的噪声配置 JSON 文件路径。程序根据当前数据集名自动读取对应条目 | `glue_noise_configs_best_ppo.json` |
 | `--manual-noise-config '{"x":[...],...}'` | `manual` 模式下手动指定 7 种噪声 scaling factor 数组（JSON 对象格式），支持短名称 `x, wq, wk, wv, wo, wffn1, wffn2` | — |
 | `--noise-eval-repeat N` | 对选定配置执行 N 次重复评估，输出 N 次结果及均值/标准差统计 | `1` |
@@ -123,44 +122,31 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 - `noise_final_eval_results_<dataset>.json` — 结果 JSON
 - `noise_final_eval_comparison_<dataset>.png` — 对比图
 
-**跳过第一阶段最终评估**
-
-| 参数 | 说明 | 默认值 |
-| :--- | :--- | :--- |
-| `--skip-stage1-final-eval` | 跳过第一阶段的完整最终评估（Phase 3 + Phase 4：随机对照、灵敏度等），仍按 `--final-eval-source` 解析 GELU/Softmax 后进入第二阶段 | 不跳过 |
-
-适用于只关心第二阶段、或已确认配置、希望省时的场景。若未 `--skip-stage1-rl`，则 `search` 表示使用本次 RL/贪心得到的 `best_config`。
-
-**帮助**
-
-| 参数 | 说明 |
-| :--- | :--- |
-| `-h`, `--help` | 显示用法帮助信息并退出 |
-
-#### 使用示例
+### 使用示例
 
 默认完整流程（第一阶段 RL + 最终评估 + 第二阶段噪声 RL + 噪声最终评估）：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
-跳过第二阶段的 RL 训练和最终评估，只运行第一阶段：
+只运行第一阶段，跳过第二阶段：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --skip-noise-final-eval`
 
-只从 JSON 读 GELU/Softmax、不跑第一阶段 RL，但仍做第一阶段最终评估（需显式跳过搜索）：
+不跑第一阶段 RL，直接从 JSON 读取第一阶段配置：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json`
 
-跳过噪声 RL 训练，但仍用 JSON 配置运行噪声最终评估：
+不跑第一阶段 RL，手动指定每层 GELU/Softmax：
+`bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --skip-stage1-rl --final-eval-source manual --manual-gelu "[1,1,1,4,1,1,1,1,1,1,1,1]" --manual-softmax "[2,3,4,6,4,4,5,4,4,5,5,2]"`
+
+跳过噪声 RL，直接从 JSON 做噪声最终评估：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`
 
-运行噪声 RL 训练，但跳过噪声最终评估（只要 RL 结果）：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-final-eval`
+跳过噪声 RL，手动指定噪声配置并重复评估 100 次：
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}' --noise-eval-repeat 100`
 
-手动指定每层 GELU/Softmax 配置：
-`bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --final-eval-source manual --manual-gelu "[1,1,1,4,1,1,1,1,1,1,1,1]" --manual-softmax "[2,3,4,6,4,4,5,4,4,5,5,2]"`
-
-完全跳过所有搜索/训练，手动指定所有配置只做噪声最终评估：
+完全跳过两个阶段的搜索/训练，手动指定所有配置只做后续评估：
 
 ```bash
 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --skip-stage1-rl \
   --final-eval-source manual \
   --manual-gelu "[1,1,1,1,1,4,1,1,1,1,1,1]" \
   --manual-softmax "[2,2,5,5,5,2,5,2,5,5,6,2]" \
@@ -170,11 +156,8 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}'
 ```
 
-跳过噪声 RL 训练 + 手动指定噪声配置 + 重复评估 100 次：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}' --noise-eval-repeat 100`
-
-从 JSON 加载噪声配置：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`
+帮助：
+`bash llama_7B_LayerImportance.sh --help`
 
 #### Note: Though we call the script "llama_7B_LayerImportance.sh", we just evaluate the Bert-base model for different tasks now, please check out the .sh for more detials!
 

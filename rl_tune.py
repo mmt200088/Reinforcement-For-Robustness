@@ -53,6 +53,24 @@ def parse_noise_config(raw_value):
     return json.loads(text)
 
 
+def parse_bool_flag(raw_value, flag_name):
+    if isinstance(raw_value, bool):
+        return raw_value
+    if raw_value is None:
+        return False
+
+    text = str(raw_value).strip().lower()
+    if text in ("1", "true", "t", "yes", "y", "on"):
+        return True
+    if text in ("0", "false", "f", "no", "n", "off", ""):
+        return False
+
+    raise ValueError(
+        f"Invalid boolean value for {flag_name}: {raw_value!r}. "
+        "Expected one of: true/false/1/0/yes/no."
+    )
+
+
 def train(
         # model/data params
         base_model: str = "",  # the only required argument
@@ -119,6 +137,15 @@ def train(
         wandb_log_model: str = "",  # options: false | true
         resume_from_checkpoint: str = None,  # either training checkpoint or final adapter
 ):
+    skip_noise_rl = parse_bool_flag(skip_noise_rl, "skip_noise_rl")
+    skip_stage1_rl = parse_bool_flag(skip_stage1_rl, "skip_stage1_rl")
+    skip_stage1_final_eval = parse_bool_flag(
+        skip_stage1_final_eval, "skip_stage1_final_eval"
+    )
+    skip_noise_final_eval = parse_bool_flag(
+        skip_noise_final_eval, "skip_noise_final_eval"
+    )
+
     print(
         f"Finetuning model with params:\n"
         f"base_model: {base_model}\n"
