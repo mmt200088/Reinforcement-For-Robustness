@@ -1041,8 +1041,8 @@ class _NoiseOptEnv:
             6 * self._weight_noise_cost_map[max(self._weight_noise_allowed)]
         )
         self.expected_cost_per_layer = (
-            self._input_noise_cost_map[int(np.mean(self._input_noise_allowed))] +
-            6 * self._weight_noise_cost_map[int(np.mean(self._weight_noise_allowed))]
+            np.mean([self._input_noise_cost_map[sf] for sf in self._input_noise_allowed]) +
+            6 * np.mean([self._weight_noise_cost_map[sf] for sf in self._weight_noise_allowed])
         )
         self.current_episode_metrics = None
         self.last_reward_components = None
