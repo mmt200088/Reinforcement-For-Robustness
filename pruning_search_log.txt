@@ -39,13 +39,133 @@ Fixed GELU   : [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1]
 Fixed Softmax: [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
 ============================================================
 Noise-Stage Baseline Metrics (Training Set):
-  Loss: 0.116164, Accuracy: 0.966739, F1: 0.966739
+  Loss: 0.116531, Accuracy: 0.966467, F1: 0.966463
   Noise Cost: 48.60 | Breakdown={'x': 9.0, 'wq': 6.599999999999999, 'wk': 6.599999999999999, 'wv': 6.599999999999999, 'wo': 6.599999999999999, 'wffn1': 6.599999999999999, 'wffn2': 6.599999999999999}
 Noise-Stage Baseline Metrics (Validation Set - used for reward):
-  Loss: 0.327167, Accuracy: 0.882353, F1: 0.880418
+  Loss: 0.329867, Accuracy: 0.882353, F1: 0.880418
 Noise-Stage Constraints (based on Validation Set):
-  Loss<=0.3422, Accuracy>=0.8691, F1>=0.8672
+  Loss<=0.3449, Accuracy>=0.8691, F1>=0.8672
 Noise-Stage Training Hyperparameters:
   GTrXL(d_model=256, heads=8, layers=4, d_ff=512, dropout=0.1)
   PPO(max_episodes=80000, eps_clip=0.15, k_epochs=10, warmup_steps=5000)
   MC samples=5 | RewardEstimator(hidden=(128, 64), lr=0.001, replay=4096, warmup=32, batch=64, epochs=4)
+  Noise Episode 1: New Best! RawReward=-4.8923, PPOReward=-4.8923, Cost=37.15
+    MC Eval: Loss=0.5845±0.0269, M1=0.6686±0.0293, M2=0.6757±0.0315
+    x     : [20, 28, 30, 24, 26, 30, 30, 30, 24, 24, 24, 22]
+    wq    : [12, 22, 20, 12, 20, 16, 18, 14, 20, 14, 20, 18]
+    wk    : [22, 18, 12, 22, 16, 20, 12, 12, 18, 20, 14, 16]
+    wv    : [14, 22, 10, 16, 20, 10, 16, 20, 14, 12, 16, 20]
+    wo    : [12, 16, 22, 20, 16, 20, 20, 14, 14, 20, 20, 16]
+    wffn1 : [10, 22, 18, 22, 22, 18, 14, 16, 10, 14, 12, 18]
+    wffn2 : [18, 10, 20, 12, 22, 14, 10, 12, 16, 14, 12, 10]
+  Noise Episode 2: New Best! RawReward=1.5543, PPOReward=1.5543, Cost=36.75
+    MC Eval: Loss=0.3409±0.0108, M1=0.8559±0.0117, M2=0.8522±0.0126
+    x     : [22, 20, 22, 20, 28, 26, 20, 20, 24, 24, 28, 26]
+    wq    : [14, 20, 16, 12, 20, 18, 20, 16, 16, 18, 12, 20]
+    wk    : [18, 18, 16, 20, 10, 22, 16, 20, 12, 12, 12, 22]
+    wv    : [10, 12, 20, 18, 22, 22, 18, 12, 20, 18, 14, 22]
+    wo    : [16, 22, 20, 16, 14, 22, 14, 20, 10, 20, 10, 20]
+    wffn1 : [14, 14, 22, 22, 18, 22, 12, 22, 18, 10, 12, 10]
+    wffn2 : [16, 14, 16, 16, 20, 12, 10, 22, 12, 16, 12, 16]
+  Noise Episode 16: New Best! RawReward=2.1519, PPOReward=2.1519, Cost=36.75
+    MC Eval: Loss=0.3405±0.0097, M1=0.8564±0.0077, M2=0.8556±0.0075
+    x     : [26, 22, 26, 22, 26, 28, 30, 20, 26, 24, 26, 20]
+    wq    : [12, 10, 20, 14, 18, 10, 12, 20, 14, 18, 22, 14]
+    wk    : [14, 20, 20, 18, 18, 12, 20, 10, 10, 22, 10, 20]
+    wv    : [22, 22, 16, 16, 10, 12, 22, 12, 12, 14, 16, 22]
+    wo    : [18, 16, 16, 14, 16, 10, 16, 22, 10, 22, 20, 22]
+    wffn1 : [22, 12, 20, 14, 16, 12, 22, 18, 18, 18, 22, 16]
+    wffn2 : [18, 12, 12, 14, 22, 20, 10, 22, 14, 16, 10, 18]
+  Noise Episode 84: New Best! RawReward=2.2526, PPOReward=2.2526, Cost=34.85
+    MC Eval: Loss=0.3805±0.0284, M1=0.8333±0.0256, M2=0.8359±0.0243
+    x     : [20, 28, 22, 28, 26, 30, 30, 24, 26, 20, 22, 24]
+    wq    : [10, 22, 16, 14, 12, 22, 12, 10, 10, 12, 12, 10]
+    wk    : [22, 14, 12, 10, 14, 14, 14, 16, 12, 16, 14, 12]
+    wv    : [22, 14, 12, 14, 20, 10, 16, 14, 14, 10, 22, 12]
+    wo    : [22, 22, 12, 10, 16, 22, 10, 12, 12, 16, 12, 18]
+    wffn1 : [20, 10, 14, 22, 12, 12, 16, 20, 18, 22, 12, 10]
+    wffn2 : [14, 16, 18, 22, 22, 14, 22, 10, 14, 18, 18, 22]
+  Noise Episode 170: Avg Raw Reward=-0.7598, Avg PPO Reward=-0.7598, Policy Loss=0.4515, Value Loss=0.7394, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.049896, Update#1 (warmup)
+    [Noise Reward Estimator] Replay=170, Updates=1, LastLoss=6.13932991027832
+  Noise Episode 340: Avg Raw Reward=-0.6582, Avg PPO Reward=-0.8523, Policy Loss=0.0507, Value Loss=0.3097, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.049792, Update#2 (warmup)
+    [Noise Reward Estimator] Replay=340, Updates=2, LastLoss=5.487120091915131
+  Noise Episode 510: Avg Raw Reward=-0.7535, Avg PPO Reward=-0.6030, Policy Loss=0.3713, Value Loss=0.5739, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.049688, Update#3 (warmup)
+    [Noise Reward Estimator] Replay=510, Updates=3, LastLoss=5.533339738845825
+  Noise Episode 680: Avg Raw Reward=-0.8486, Avg PPO Reward=-0.5810, Policy Loss=-0.4504, Value Loss=0.4110, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.049584, Update#4 (warmup)
+    [Noise Reward Estimator] Replay=680, Updates=4, LastLoss=5.393736720085144
+  Noise Episode 814: New Best! RawReward=2.2760, PPOReward=-0.0750, Cost=35.80
+    MC Eval: Loss=0.3425±0.0162, M1=0.8500±0.0100, M2=0.8470±0.0110
+    x     : [20, 26, 26, 28, 20, 22, 20, 26, 30, 22, 30, 28]
+    wq    : [22, 14, 12, 10, 12, 16, 22, 14, 18, 22, 18, 16]
+    wk    : [22, 12, 12, 22, 20, 10, 14, 10, 10, 22, 12, 14]
+    wv    : [14, 18, 14, 12, 22, 22, 12, 12, 16, 20, 12, 18]
+    wo    : [10, 16, 10, 12, 10, 10, 12, 18, 12, 22, 18, 18]
+    wffn1 : [18, 16, 14, 20, 22, 12, 20, 22, 14, 18, 10, 12]
+    wffn2 : [12, 12, 12, 22, 22, 20, 10, 20, 14, 14, 22, 20]
+  Noise Episode 850: Avg Raw Reward=-0.7217, Avg PPO Reward=-0.6775, Policy Loss=-0.9348, Value Loss=0.6643, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.049480, Update#5 (warmup)
+    [Noise Reward Estimator] Replay=850, Updates=5, LastLoss=5.07253623008728
+  Noise Episode 891: New Best! RawReward=2.3314, PPOReward=-0.0525, Cost=36.50
+    MC Eval: Loss=0.3866±0.0249, M1=0.8392±0.0108, M2=0.8410±0.0103
+    x     : [24, 28, 30, 22, 22, 30, 28, 24, 22, 22, 26, 30]
+    wq    : [22, 20, 18, 12, 14, 10, 20, 16, 14, 10, 18, 12]
+    wk    : [10, 18, 10, 10, 10, 10, 18, 12, 22, 12, 12, 22]
+    wv    : [10, 14, 10, 10, 18, 22, 12, 22, 10, 20, 18, 16]
+    wo    : [12, 18, 18, 16, 22, 18, 18, 12, 22, 16, 12, 10]
+    wffn1 : [10, 18, 12, 22, 18, 16, 18, 14, 20, 18, 20, 12]
+    wffn2 : [18, 16, 22, 22, 20, 18, 14, 20, 22, 20, 18, 16]
+  Noise Episode 1020: Avg Raw Reward=-0.7574, Avg PPO Reward=-0.6864, Policy Loss=-0.1955, Value Loss=0.6225, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.049376, Update#6 (warmup)
+    [Noise Reward Estimator] Replay=1020, Updates=6, LastLoss=5.32302451133728
+  Noise Episode 1190: Avg Raw Reward=-1.1041, Avg PPO Reward=-0.7597, Policy Loss=0.4419, Value Loss=1.0385, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.049272, Update#7 (warmup)
+    [Noise Reward Estimator] Replay=1190, Updates=7, LastLoss=5.653140425682068
+  Noise Episode 1360: Avg Raw Reward=-0.6931, Avg PPO Reward=-0.9932, Policy Loss=-0.0262, Value Loss=0.5499, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.049168, Update#8 (warmup)
+    [Noise Reward Estimator] Replay=1360, Updates=8, LastLoss=5.363764405250549
+  Noise Episode 1371: New Best! RawReward=2.5138, PPOReward=0.1627, Cost=36.30
+    MC Eval: Loss=0.3677±0.0185, M1=0.8338±0.0134, M2=0.8288±0.0148
+    x     : [26, 26, 30, 20, 22, 20, 24, 24, 28, 20, 30, 26]
+    wq    : [14, 10, 10, 22, 14, 10, 12, 10, 12, 16, 20, 16]
+    wk    : [10, 10, 16, 18, 20, 18, 18, 16, 14, 14, 22, 16]
+    wv    : [20, 22, 22, 18, 10, 10, 18, 22, 20, 20, 12, 22]
+    wo    : [18, 18, 10, 18, 20, 10, 12, 20, 10, 12, 12, 20]
+    wffn1 : [14, 12, 18, 20, 22, 18, 16, 14, 22, 22, 10, 16]
+    wffn2 : [22, 10, 12, 12, 20, 16, 18, 18, 22, 18, 10, 20]
+  Noise Episode 1530: Avg Raw Reward=-0.8495, Avg PPO Reward=-0.9790, Policy Loss=0.7354, Value Loss=1.3120, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.049063, Update#9 (warmup)
+    [Noise Reward Estimator] Replay=1530, Updates=9, LastLoss=4.930111408233643
+  Noise Episode 1700: Avg Raw Reward=-0.9022, Avg PPO Reward=-0.6809, Policy Loss=-0.1256, Value Loss=0.8675, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.048959, Update#10 (warmup)
+    [Noise Reward Estimator] Replay=1700, Updates=10, LastLoss=5.229835271835327
+  Noise Episode 1870: Avg Raw Reward=-0.5966, Avg PPO Reward=-0.5941, Policy Loss=-0.6909, Value Loss=0.8355, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.048855, Update#11 (warmup)
+    [Noise Reward Estimator] Replay=1870, Updates=11, LastLoss=4.955492734909058
+  Noise Episode 2040: Avg Raw Reward=-0.7449, Avg PPO Reward=-1.1543, Policy Loss=-0.4795, Value Loss=0.5739, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.048751, Update#12 (warmup)
+    [Noise Reward Estimator] Replay=2040, Updates=12, LastLoss=5.1138447523117065
+  Noise Episode 2210: Avg Raw Reward=-0.7224, Avg PPO Reward=-0.9819, Policy Loss=-0.2977, Value Loss=0.5838, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.048647, Update#13 (warmup)
+    [Noise Reward Estimator] Replay=2210, Updates=13, LastLoss=4.984505891799927
+  Noise Episode 2380: Avg Raw Reward=-0.7653, Avg PPO Reward=-0.7863, Policy Loss=0.3918, Value Loss=1.2389, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.048543, Update#14 (warmup)
+    [Noise Reward Estimator] Replay=2380, Updates=14, LastLoss=4.486635684967041
+  Noise Episode 2550: Avg Raw Reward=-0.9229, Avg PPO Reward=-0.7826, Policy Loss=-0.6330, Value Loss=0.7837, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.048439, Update#15 (warmup)
+    [Noise Reward Estimator] Replay=2550, Updates=15, LastLoss=4.76418673992157
+  Noise Episode 2720: Avg Raw Reward=-0.6703, Avg PPO Reward=-0.9223, Policy Loss=0.3885, Value Loss=1.5037, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.048335, Update#16 (warmup)
+    [Noise Reward Estimator] Replay=2720, Updates=16, LastLoss=4.877501606941223
+  Noise Episode 2890: Avg Raw Reward=-0.5579, Avg PPO Reward=-0.6425, Policy Loss=-1.4921, Value Loss=1.9290, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.048230, Update#17 (warmup)
+    [Noise Reward Estimator] Replay=2890, Updates=17, LastLoss=4.302641689777374
+  Noise Episode 3060: Avg Raw Reward=-0.5617, Avg PPO Reward=-0.3120, Policy Loss=-0.0219, Value Loss=0.3294, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.048126, Update#18 (warmup)
+    [Noise Reward Estimator] Replay=3060, Updates=18, LastLoss=4.491343021392822
+  Noise Episode 3230: Avg Raw Reward=-0.8238, Avg PPO Reward=-0.9972, Policy Loss=0.4638, Value Loss=0.8143, Entropy=13.4671
+    [Noise GTrXL Schedule] LR=0.000000, Entropy Coef=0.048022, Update#19 (warmup)
+    [Noise Reward Estimator] Replay=3230, Updates=19, LastLoss=4.266633152961731
