@@ -143,6 +143,16 @@ example: `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 第二阶段噪声评估重复 5 次：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-repeat 5`
 
+手动指定第一、第二阶段的配置进行第二阶段的最终评估
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --final-eval-source manual \
+  --manual-gelu "[1,1,1,1,1,4,1,1,1,1,1,1]" \
+  --manual-softmax "[2,2,5,5,5,2,5,2,5,5,6,2]" \
+  --skip-stage1-final-eval \
+  --skip-noise-rl \
+  --noise-eval-source manual \
+  --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}'`
+
 从 JSON 加载噪声配置：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`
 
