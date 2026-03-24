@@ -25,9 +25,14 @@ NOISE_STAGE_GTRXL_DROPOUT = 0.1
 NOISE_STAGE_PPO_MAX_EPISODES = 80000
 NOISE_STAGE_PPO_EPS_CLIP = 0.15
 NOISE_STAGE_PPO_K_EPOCHS = 10
-NOISE_STAGE_GTRXL_WARMUP_STEPS = 5000
+NOISE_STAGE_GTRXL_WARMUP_MODE = "constant"
+NOISE_STAGE_GTRXL_WARMUP_UPDATES = 0
+NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES = 20
 
-NOISE_STAGE_MC_SAMPLES = 1
+NOISE_STAGE_MC_SAMPLES = 3
+NOISE_STAGE_CONFIRM_REPEATS = 5
+NOISE_STAGE_PROGRESS_SAVE_INTERVAL = 10000
+NOISE_STAGE_PROGRESS_DIR = os.path.join("experiment_results", "noise_rl_progress")
 
 NOISE_REWARD_ESTIMATOR_HIDDEN_DIMS = (128, 64)
 NOISE_REWARD_ESTIMATOR_LR = 1e-3
@@ -150,9 +155,14 @@ class NoiseRLModule:
             "ppo_eps_clip": NOISE_STAGE_PPO_EPS_CLIP,
             "ppo_k_epochs": NOISE_STAGE_PPO_K_EPOCHS,
             "ppo_value_coef": PPO_VALUE_COEF,
-            "gtrxl_warmup_steps": NOISE_STAGE_GTRXL_WARMUP_STEPS,
+            "gtrxl_warmup_mode": NOISE_STAGE_GTRXL_WARMUP_MODE,
+            "gtrxl_warmup_updates": NOISE_STAGE_GTRXL_WARMUP_UPDATES,
+            "gtrxl_short_warmup_updates": NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES,
             "gtrxl_mini_batch_episodes": GTRXL_MINI_BATCH_EPISODES,
             "mc_samples": NOISE_STAGE_MC_SAMPLES,
+            "confirm_repeats": NOISE_STAGE_CONFIRM_REPEATS,
+            "progress_plot_interval": NOISE_STAGE_PROGRESS_SAVE_INTERVAL,
+            "progress_plot_dir": NOISE_STAGE_PROGRESS_DIR,
             "reward_estimator_hidden_dims": list(NOISE_REWARD_ESTIMATOR_HIDDEN_DIMS),
             "reward_estimator_lr": NOISE_REWARD_ESTIMATOR_LR,
             "reward_estimator_replay_capacity": NOISE_REWARD_ESTIMATOR_REPLAY_CAPACITY,
@@ -172,7 +182,9 @@ class NoiseRLModule:
         ev.log(
             "  "
             f"PPO(max_episodes={NOISE_STAGE_PPO_MAX_EPISODES}, eps_clip={NOISE_STAGE_PPO_EPS_CLIP}, "
-            f"k_epochs={NOISE_STAGE_PPO_K_EPOCHS}, warmup_steps={NOISE_STAGE_GTRXL_WARMUP_STEPS})"
+            f"k_epochs={NOISE_STAGE_PPO_K_EPOCHS}, warmup_mode={NOISE_STAGE_GTRXL_WARMUP_MODE}, "
+            f"warmup_updates={NOISE_STAGE_GTRXL_WARMUP_UPDATES}, "
+            f"short_warmup_updates={NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES})"
         )
         ev.log(
             "  "
@@ -181,6 +193,12 @@ class NoiseRLModule:
             f"warmup={NOISE_REWARD_ESTIMATOR_WARMUP_EPISODES}, batch={NOISE_REWARD_ESTIMATOR_BATCH_SIZE}, "
             f"epochs={NOISE_REWARD_ESTIMATOR_EPOCHS})"
         )
+        ev.log(
+            "  "
+            f"CandidateConfirm(repeats={NOISE_STAGE_CONFIRM_REPEATS}) | "
+            f"ProgressPlots(every={NOISE_STAGE_PROGRESS_SAVE_INTERVAL}, dir={NOISE_STAGE_PROGRESS_DIR})"
+        )
+        os.makedirs(NOISE_STAGE_PROGRESS_DIR, exist_ok=True)
 
         with open(ev.noise_step_info_file, "w", encoding="utf-8") as f:
             f.write("=== Noise PPO StepInfo 中间结果日志 ===\n")
@@ -246,9 +264,17 @@ class NoiseRLModule:
             fixed_softmax=fixed_softmax,
             use_train=(not USE_VALIDATION_FOR_REWARD),
         )
+        use_fixed_search_reward = (
+            USE_VALIDATION_FOR_REWARD
+            and getattr(ev, "dataset_key", None) == "mrpc"
+            and ev.has_dataset_split("val_search_full")
+        )
         if USE_VALIDATION_FOR_REWARD:
-            ev.refresh_validation_proxy(window_index=0, stage_label="Stage-2 Noise RL")
-            online_reward_split = ev.get_online_reward_split_name()
+            if use_fixed_search_reward:
+                online_reward_split = reward_reference_split
+            else:
+                ev.refresh_validation_proxy(window_index=0, stage_label="Stage-2 Noise RL")
+                online_reward_split = ev.get_online_reward_split_name()
             rl_evaluator.split_name = online_reward_split
             proxy_baseline = ev.evaluate_model_with_attention_noise(
                 fixed_gelu,
@@ -320,17 +346,123 @@ class NoiseRLModule:
         reward_prediction_abs_errors = []
         raw_final_rewards = []
         blended_final_rewards = []
-        best_reward = float("-inf")
+        best_selection_reward = float("-inf")
         best_cost = float("inf")
         best_noise_config = None
-        window_best_reward = float("-inf")
+        window_best_score = float("-inf")
         window_best_cost = float("inf")
         window_best_noise_config = None
         search_best_noise_config = None
-        global_best_noise_config = None
+        joint_best_noise_config = None
+
+        def _evaluate_candidate_split(split_name, noise_kwargs, metric_prefix, repeats):
+            losses = []
+            metric1s = []
+            metric2s = []
+            for _ in range(max(1, int(repeats))):
+                loss, metric1, metric2, _ = ev.evaluate_model_with_attention_noise(
+                    fixed_gelu,
+                    fixed_softmax,
+                    split=split_name,
+                    **noise_kwargs,
+                )
+                losses.append(float(loss))
+                metric1s.append(float(metric1))
+                metric2s.append(float(metric2))
+            return {
+                f"{metric_prefix}_loss": float(np.mean(losses)),
+                f"{metric_prefix}_loss_std": float(np.std(losses)),
+                f"{metric_prefix}_metric1": float(np.mean(metric1s)),
+                f"{metric_prefix}_metric1_std": float(np.std(metric1s)),
+                f"{metric_prefix}_metric2": float(np.mean(metric2s)),
+                f"{metric_prefix}_metric2_std": float(np.std(metric2s)),
+                f"{metric_prefix}_repeats": int(max(1, int(repeats))),
+            }
+
+        def _is_better_split_candidate(candidate, incumbent, metric_prefix):
+            if candidate is None:
+                return False
+            if incumbent is None:
+                return True
+
+            cand_cost = float(candidate["cost"])
+            inc_cost = float(incumbent["cost"])
+            if cand_cost < inc_cost - 1e-8:
+                return True
+            if cand_cost > inc_cost + 1e-8:
+                return False
+
+            cand_loss = float(candidate.get(f"{metric_prefix}_loss", float("inf")))
+            inc_loss = float(incumbent.get(f"{metric_prefix}_loss", float("inf")))
+            if cand_loss < inc_loss - 1e-8:
+                return True
+            if cand_loss > inc_loss + 1e-8:
+                return False
+
+            cand_metric_sum = (
+                float(candidate.get(f"{metric_prefix}_metric1", -float("inf")))
+                + float(candidate.get(f"{metric_prefix}_metric2", -float("inf")))
+            )
+            inc_metric_sum = (
+                float(incumbent.get(f"{metric_prefix}_metric1", -float("inf")))
+                + float(incumbent.get(f"{metric_prefix}_metric2", -float("inf")))
+            )
+            if cand_metric_sum > inc_metric_sum + 1e-8:
+                return True
+            if cand_metric_sum < inc_metric_sum - 1e-8:
+                return False
+
+            return float(candidate.get("selection_reward", -float("inf"))) > float(
+                incumbent.get("selection_reward", -float("inf"))
+            )
+
+        def _is_better_joint_candidate(candidate, incumbent):
+            if candidate is None:
+                return False
+            if incumbent is None:
+                return True
+
+            cand_cost = float(candidate["cost"])
+            inc_cost = float(incumbent["cost"])
+            if cand_cost < inc_cost - 1e-8:
+                return True
+            if cand_cost > inc_cost + 1e-8:
+                return False
+
+            cand_joint_loss = 0.5 * (
+                float(candidate["search_loss"]) + float(candidate["holdout_loss"])
+            )
+            inc_joint_loss = 0.5 * (
+                float(incumbent["search_loss"]) + float(incumbent["holdout_loss"])
+            )
+            if cand_joint_loss < inc_joint_loss - 1e-8:
+                return True
+            if cand_joint_loss > inc_joint_loss + 1e-8:
+                return False
+
+            cand_joint_metric_sum = 0.5 * (
+                float(candidate["search_metric1"])
+                + float(candidate["search_metric2"])
+                + float(candidate["holdout_metric1"])
+                + float(candidate["holdout_metric2"])
+            )
+            inc_joint_metric_sum = 0.5 * (
+                float(incumbent["search_metric1"])
+                + float(incumbent["search_metric2"])
+                + float(incumbent["holdout_metric1"])
+                + float(incumbent["holdout_metric2"])
+            )
+            if cand_joint_metric_sum > inc_joint_metric_sum + 1e-8:
+                return True
+            if cand_joint_metric_sum < inc_joint_metric_sum - 1e-8:
+                return False
+
+            return float(candidate.get("selection_reward", -float("inf"))) > float(
+                incumbent.get("selection_reward", -float("inf"))
+            )
 
         def confirm_noise_candidate(candidate_config, episode_idx, window_idx):
-            nonlocal search_best_noise_config, global_best_noise_config
+            nonlocal search_best_noise_config, joint_best_noise_config
 
             if candidate_config is None or not ev.has_dataset_split("val_search_full"):
                 return
@@ -340,16 +472,16 @@ class NoiseRLModule:
                 for key, value in candidate_config.items()
                 if key.endswith("scaling_factors")
             }
-            search_loss, search_p, search_s, _ = ev.evaluate_model_with_attention_noise(
-                fixed_gelu,
-                fixed_softmax,
-                split="val_search_full",
-                **noise_kwargs,
+            search_stats = _evaluate_candidate_split(
+                "val_search_full",
+                noise_kwargs,
+                metric_prefix="search",
+                repeats=NOISE_STAGE_CONFIRM_REPEATS,
             )
             search_ok = ev._candidate_meets_constraints(
-                search_loss,
-                search_p,
-                search_s,
+                search_stats["search_loss"],
+                search_stats["search_metric1"],
+                search_stats["search_metric2"],
                 limit_loss,
                 limit_p,
                 limit_s,
@@ -360,56 +492,68 @@ class NoiseRLModule:
                 for key, value in candidate_config.items()
             }
             confirmed_candidate.update({
-                "proxy_reward": float(candidate_config.get("reward", 0.0)),
-                "search_loss": float(search_loss),
-                "search_metric1": float(search_p),
-                "search_metric2": float(search_s),
+                "proxy_reward_raw": float(candidate_config.get("reward", 0.0)),
+                "selection_reward": float(
+                    candidate_config.get(
+                        "selection_reward",
+                        candidate_config.get("ppo_reward", candidate_config.get("reward", 0.0)),
+                    )
+                ),
                 "search_ok": bool(search_ok),
                 "confirmed_episode": int(episode_idx) + 1,
                 "confirmed_window": int(window_idx) + 1,
             })
+            confirmed_candidate.update(search_stats)
 
             if ev.has_dataset_split("val_holdout"):
-                holdout_loss, holdout_p, holdout_s, _ = ev.evaluate_model_with_attention_noise(
-                    fixed_gelu,
-                    fixed_softmax,
-                    split="val_holdout",
-                    **noise_kwargs,
+                holdout_stats = _evaluate_candidate_split(
+                    "val_holdout",
+                    noise_kwargs,
+                    metric_prefix="holdout",
+                    repeats=NOISE_STAGE_CONFIRM_REPEATS,
                 )
                 holdout_ok = ev._candidate_meets_constraints(
-                    holdout_loss,
-                    holdout_p,
-                    holdout_s,
+                    holdout_stats["holdout_loss"],
+                    holdout_stats["holdout_metric1"],
+                    holdout_stats["holdout_metric2"],
                     limit_loss,
                     limit_p,
                     limit_s,
                 )
-                confirmed_candidate.update({
-                    "holdout_loss": float(holdout_loss),
-                    "holdout_metric1": float(holdout_p),
-                    "holdout_metric2": float(holdout_s),
-                    "holdout_ok": bool(holdout_ok),
-                })
             else:
-                confirmed_candidate.update({
-                    "holdout_loss": float(search_loss),
-                    "holdout_metric1": float(search_p),
-                    "holdout_metric2": float(search_s),
-                    "holdout_ok": bool(search_ok),
-                })
+                holdout_stats = {
+                    "holdout_loss": float(search_stats["search_loss"]),
+                    "holdout_loss_std": float(search_stats["search_loss_std"]),
+                    "holdout_metric1": float(search_stats["search_metric1"]),
+                    "holdout_metric1_std": float(search_stats["search_metric1_std"]),
+                    "holdout_metric2": float(search_stats["search_metric2"]),
+                    "holdout_metric2_std": float(search_stats["search_metric2_std"]),
+                    "holdout_repeats": int(search_stats["search_repeats"]),
+                }
+                holdout_ok = bool(search_ok)
+            confirmed_candidate.update(holdout_stats)
+            confirmed_candidate["holdout_ok"] = bool(holdout_ok)
+            confirmed_candidate["joint_ok"] = bool(search_ok and holdout_ok)
 
             ev.log(
                 f"  Noise window {window_idx + 1} candidate confirmation: "
-                f"proxy_reward={confirmed_candidate['proxy_reward']:.4f}, "
-                f"search={ev._fmt_metrics(search_loss, search_p, search_s)}"
+                f"selection_reward={confirmed_candidate['selection_reward']:.4f}, "
+                f"raw_reward={confirmed_candidate['proxy_reward_raw']:.4f}, "
+                f"search={ev._fmt_metrics(confirmed_candidate['search_loss'], confirmed_candidate['search_metric1'], confirmed_candidate['search_metric2'])}, "
+                f"std=(Loss={confirmed_candidate['search_loss_std']:.4f}, "
+                f"M1={confirmed_candidate['search_metric1_std']:.4f}, "
+                f"M2={confirmed_candidate['search_metric2_std']:.4f})"
             )
             if ev.has_dataset_split("val_holdout"):
                 ev.log(
                     "    Holdout: "
-                    f"{ev._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}"
+                    f"{ev._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}, "
+                    f"std=(Loss={confirmed_candidate['holdout_loss_std']:.4f}, "
+                    f"M1={confirmed_candidate['holdout_metric1_std']:.4f}, "
+                    f"M2={confirmed_candidate['holdout_metric2_std']:.4f})"
                 )
 
-            if search_ok and ev._is_better_confirmed_candidate(
+            if search_ok and _is_better_split_candidate(
                 confirmed_candidate,
                 search_best_noise_config,
                 metric_prefix="search",
@@ -421,22 +565,21 @@ class NoiseRLModule:
                 ev.log(
                     f"    Noise Search-Best updated at episode {episode_idx + 1}: "
                     f"cost={search_best_noise_config['cost']:.2f}, "
-                    f"proxy_reward={search_best_noise_config['proxy_reward']:.4f}"
+                    f"selection_reward={search_best_noise_config['selection_reward']:.4f}"
                 )
 
-            if confirmed_candidate["holdout_ok"] and ev._is_better_confirmed_candidate(
+            if confirmed_candidate["joint_ok"] and _is_better_joint_candidate(
                 confirmed_candidate,
-                global_best_noise_config,
-                metric_prefix="holdout",
+                joint_best_noise_config,
             ):
-                global_best_noise_config = {
+                joint_best_noise_config = {
                     key: (value.copy() if isinstance(value, np.ndarray) else value)
                     for key, value in confirmed_candidate.items()
                 }
                 ev.log(
-                    f"    Noise Global-Best updated at episode {episode_idx + 1}: "
-                    f"cost={global_best_noise_config['cost']:.2f}, "
-                    f"proxy_reward={global_best_noise_config['proxy_reward']:.4f}"
+                    f"    Noise Joint-Best updated at episode {episode_idx + 1}: "
+                    f"cost={joint_best_noise_config['cost']:.2f}, "
+                    f"selection_reward={joint_best_noise_config['selection_reward']:.4f}"
                 )
 
         for episode in range(NOISE_STAGE_PPO_MAX_EPISODES):
@@ -507,7 +650,7 @@ class NoiseRLModule:
                             abs(reward_estimator_pred - raw_final_reward)
                         )
 
-                    reward_for_buffer = float(info["dense_reward"] + blended_final_reward)
+                    reward_for_buffer = float(reward - raw_final_reward + blended_final_reward)
                     info["raw_reward"] = raw_final_reward
                     info["blended_reward"] = blended_final_reward
                     info["reward_estimator_pred"] = reward_estimator_pred
@@ -611,7 +754,6 @@ class NoiseRLModule:
                     else episode_raw_final_reward
                 )
 
-            env.update_prev_metrics()
             ev.update_reward_statistics(episode_reward_raw)
             with open(ev.noise_step_info_file, "a", encoding="utf-8") as f:
                 f.write(
@@ -633,6 +775,7 @@ class NoiseRLModule:
                 "cost": env.accumulated_cost,
                 "reward": episode_reward_raw,
                 "ppo_reward": episode_reward_blended,
+                "selection_reward": episode_reward_blended,
                 "raw_final_reward": episode_raw_final_reward,
                 "blended_final_reward": episode_blended_final_reward,
                 "reward_estimator_pred": episode_reward_estimator_pred,
@@ -645,10 +788,10 @@ class NoiseRLModule:
                 ),
             }
 
-            if episode_reward_raw > window_best_reward or (
-                episode_reward_raw == window_best_reward and env.accumulated_cost < window_best_cost
+            if episode_reward_blended > window_best_score or (
+                episode_reward_blended == window_best_score and env.accumulated_cost < window_best_cost
             ):
-                window_best_reward = episode_reward_raw
+                window_best_score = episode_reward_blended
                 window_best_cost = env.accumulated_cost
                 window_best_noise_config = {
                     key: (
@@ -661,10 +804,10 @@ class NoiseRLModule:
                     for key, value in final_noise_config.items()
                 }
 
-            if episode_reward_raw > best_reward or (
-                episode_reward_raw == best_reward and env.accumulated_cost < best_cost
+            if episode_reward_blended > best_selection_reward or (
+                episode_reward_blended == best_selection_reward and env.accumulated_cost < best_cost
             ):
-                best_reward = episode_reward_raw
+                best_selection_reward = episode_reward_blended
                 best_cost = env.accumulated_cost
                 best_noise_config = {
                     key: (
@@ -678,7 +821,7 @@ class NoiseRLModule:
                 }
                 ev.log(
                     f"  Noise Episode {episode + 1}: New Best! "
-                    f"RawReward={episode_reward_raw:.4f}, PPOReward={episode_reward_blended:.4f}, "
+                    f"SelectionReward={episode_reward_blended:.4f}, RawReward={episode_reward_raw:.4f}, "
                     f"Cost={env.accumulated_cost:.2f}"
                 )
                 if episode_mc_eval is not None:
@@ -704,7 +847,9 @@ class NoiseRLModule:
                     ppo_eps_clip=NOISE_STAGE_PPO_EPS_CLIP,
                     ppo_k_epochs=NOISE_STAGE_PPO_K_EPOCHS,
                     ppo_value_coef=PPO_VALUE_COEF,
-                    gtrxl_warmup_steps=NOISE_STAGE_GTRXL_WARMUP_STEPS,
+                    gtrxl_warmup_mode=NOISE_STAGE_GTRXL_WARMUP_MODE,
+                    gtrxl_warmup_updates=NOISE_STAGE_GTRXL_WARMUP_UPDATES,
+                    gtrxl_short_warmup_updates=NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES,
                     gtrxl_entropy_lower_bound=GTRXL_ENTROPY_LOWER_BOUND,
                     gtrxl_mini_batch_episodes=GTRXL_MINI_BATCH_EPISODES,
                     value_clip_range=VALUE_CLIP_RANGE,
@@ -726,11 +871,13 @@ class NoiseRLModule:
                 episode_entropies.append(entropy)
                 avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
                 avg_blended_reward = np.mean(episode_blended_rewards[-PPO_UPDATE_INTERVAL:])
-                warmup_status = (
-                    "warmup"
-                    if noise_ppo_update_count <= NOISE_STAGE_GTRXL_WARMUP_STEPS
-                    else "normal"
-                )
+                warmup_status = "constant"
+                if NOISE_STAGE_GTRXL_WARMUP_MODE != "constant":
+                    warmup_status = (
+                        "warmup"
+                        if noise_ppo_update_count <= NOISE_STAGE_GTRXL_WARMUP_UPDATES
+                        else "normal"
+                    )
                 ev.log(
                     f"  Noise Episode {episode + 1}: Avg Raw Reward={avg_reward:.4f}, "
                     f"Avg PPO Reward={avg_blended_reward:.4f}, Policy Loss={policy_loss:.4f}, "
@@ -738,7 +885,8 @@ class NoiseRLModule:
                 )
                 ev.log(
                     f"    [Noise GTrXL Schedule] LR={optimizer.param_groups[0]['lr']:.6f}, "
-                    f"Entropy Coef={current_entropy:.6f}, Update#{noise_ppo_update_count} ({warmup_status})"
+                    f"Entropy Coef={current_entropy:.6f}, Update#{noise_ppo_update_count} "
+                    f"(mode={NOISE_STAGE_GTRXL_WARMUP_MODE}, status={warmup_status})"
                 )
                 ev.log(
                     "    [Noise Reward Estimator] "
@@ -750,11 +898,15 @@ class NoiseRLModule:
                     episode_idx=episode,
                     window_idx=noise_ppo_update_count - 1,
                 )
-                window_best_reward = float("-inf")
+                window_best_score = float("-inf")
                 window_best_cost = float("inf")
                 window_best_noise_config = None
 
-                if USE_VALIDATION_FOR_REWARD and (episode + 1) < NOISE_STAGE_PPO_MAX_EPISODES:
+                if (
+                    USE_VALIDATION_FOR_REWARD
+                    and (not use_fixed_search_reward)
+                    and (episode + 1) < NOISE_STAGE_PPO_MAX_EPISODES
+                ):
                     next_window_idx = noise_ppo_update_count
                     ev.refresh_validation_proxy(
                         window_index=next_window_idx,
@@ -776,6 +928,35 @@ class NoiseRLModule:
                     }
                     env.current_episode_metrics = None
 
+            if (episode + 1) % NOISE_STAGE_PROGRESS_SAVE_INTERVAL == 0:
+                progress_training_curve_path = os.path.join(
+                    NOISE_STAGE_PROGRESS_DIR,
+                    f"noise_ppo_training_curve_ep{episode + 1}.png",
+                )
+                progress_entropy_curve_path = os.path.join(
+                    NOISE_STAGE_PROGRESS_DIR,
+                    f"noise_ppo_entropy_curve_ep{episode + 1}.png",
+                )
+                _plot_noise_training_curves(
+                    ev,
+                    episode_rewards,
+                    episode_losses,
+                    episode_metric1s,
+                    episode_metric2s,
+                    episode_entropies,
+                    base_loss=base_loss,
+                    base_p=base_p,
+                    base_s=base_s,
+                    training_curve_path=progress_training_curve_path,
+                    entropy_curve_path=progress_entropy_curve_path,
+                    ppo_update_interval=PPO_UPDATE_INTERVAL,
+                    use_validation=USE_VALIDATION_FOR_REWARD,
+                )
+                ev.log(
+                    f"Noise PPO progress snapshot saved at episode {episode + 1}: "
+                    f"{progress_training_curve_path}"
+                )
+
         if window_best_noise_config is not None:
             confirm_noise_candidate(
                 window_best_noise_config,
@@ -784,26 +965,21 @@ class NoiseRLModule:
             )
 
         best_noise_config = None
-        if global_best_noise_config is not None:
+        if joint_best_noise_config is not None:
             best_noise_config = {
                 key: (value.copy() if isinstance(value, np.ndarray) else value)
-                for key, value in global_best_noise_config.items()
+                for key, value in joint_best_noise_config.items()
             }
-        elif search_best_noise_config is not None:
-            best_noise_config = {
-                key: (value.copy() if isinstance(value, np.ndarray) else value)
-                for key, value in search_best_noise_config.items()
-            }
-
-        if best_noise_config is not None:
-            best_reward = max(best_reward, 0.0)
-
-        if best_noise_config is None or best_reward < -50:
-            ev.log("\nNo feasible noise-stage solution found, using max-scaling baseline configuration.")
+        else:
+            ev.log(
+                "\nNo jointly feasible noise-stage solution found on val_search_full + val_holdout; "
+                "using max-scaling baseline configuration."
+            )
             best_noise_config = {key: value.copy() for key, value in baseline_noise_config.items()}
             best_noise_config["cost"] = baseline_tot_c
             best_noise_config["reward"] = 0.0
             best_noise_config["ppo_reward"] = 0.0
+            best_noise_config["selection_reward"] = 0.0
             best_noise_config["raw_final_reward"] = 0.0
             best_noise_config["blended_final_reward"] = 0.0
             best_noise_config["reward_estimator_pred"] = None
@@ -1444,7 +1620,7 @@ class _NoiseOptEnv:
             constraints_ok = (margin_loss >= 0) and (margin_m1 >= 0) and (margin_m2 >= 0)
 
         cost_saving = (self.baseline_cost - self.accumulated_cost) / (self.baseline_cost + 1e-8)
-        r_cost = cost_saving * self._reward_cost_weight
+        r_cost = cost_saving * self._reward_cost_weight if constraints_ok else 0.0
         r_safe = 0.0
         if constraints_ok:
             r_safe = self._reward_safety_bonus + self._log_barrier_sat_scale * float(np.mean(positive_margins))
@@ -1460,6 +1636,7 @@ class _NoiseOptEnv:
             "barrier": float(r_barrier),
             "safety": float(r_safe),
             "constraints_ok": bool(constraints_ok),
+            "cost_reward_active": bool(constraints_ok),
             "loss_limit": float(limits["loss"]),
             "metric1_limit": float(limits["metric1"]),
             "metric2_limit": float(limits["metric2"]),
@@ -1608,7 +1785,13 @@ class _NoiseOptEnv:
         info["mc_eval"] = final_reward["mc_eval"]
         info["reward_components"] = final_reward["reward_components"]
         info["accumulated_dense_reward"] = self.accumulated_dense_reward
-        return self._get_state(), final_reward["raw_final_reward"] + dense_reward, True, info
+        dense_reward_adjustment = 0.0
+        if not final_reward["reward_components"].get("constraints_ok", False):
+            dense_reward_adjustment = -self.accumulated_dense_reward
+        info["dense_reward_adjustment"] = dense_reward_adjustment
+        info["dense_reward_cancelled"] = bool(dense_reward_adjustment != 0.0)
+        terminal_reward = final_reward["raw_final_reward"] + dense_reward + dense_reward_adjustment
+        return self._get_state(), terminal_reward, True, info
 
     def _compute_final_reward(self):
         mc_eval = self._evaluate_noise_config_mc()
@@ -1736,18 +1919,30 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
                             ppo_update_step=0,
                             ppo_eps_clip=0.2, ppo_k_epochs=4,
                             ppo_value_coef=0.5,
-                            gtrxl_warmup_steps=500,
+                            gtrxl_warmup_mode="constant",
+                            gtrxl_warmup_updates=0,
+                            gtrxl_short_warmup_updates=20,
                             gtrxl_entropy_lower_bound=0.005,
                             gtrxl_mini_batch_episodes=8,
                             value_clip_range=0.2):
     if entropy_coef is None:
         entropy_coef = evaluator.get_current_entropy_coef()
 
-    if ppo_update_step < gtrxl_warmup_steps:
-        warmup_factor = (ppo_update_step + 1) / gtrxl_warmup_steps
-        current_lr = evaluator.ppo_lr_initial * warmup_factor
-        for param_group in optimizer.param_groups:
-            param_group["lr"] = current_lr
+    target_lr = float(evaluator.ppo_lr_initial)
+    warmup_updates = max(0, int(gtrxl_warmup_updates))
+    if gtrxl_warmup_mode == "short":
+        warmup_updates = max(1, int(gtrxl_short_warmup_updates))
+
+    if gtrxl_warmup_mode == "constant" or warmup_updates <= 0:
+        current_lr = target_lr
+    elif ppo_update_step < warmup_updates:
+        warmup_factor = float(ppo_update_step + 1) / float(warmup_updates)
+        current_lr = target_lr * warmup_factor
+    else:
+        current_lr = target_lr
+
+    for param_group in optimizer.param_groups:
+        param_group["lr"] = current_lr
 
     (cont_features, layer_indices, prev_actions, actions,
      old_logprobs, rewards, values, dones) = buffer.get_batch(device)
@@ -1922,6 +2117,9 @@ def _plot_noise_training_curves(
             ax4.legend()
 
         plt.tight_layout()
+        training_dir = os.path.dirname(training_curve_path)
+        if training_dir:
+            os.makedirs(training_dir, exist_ok=True)
         plt.savefig(training_curve_path, dpi=150)
         plt.close()
         evaluator.log(f"Noise PPO training curves saved to: {training_curve_path}")
@@ -1943,6 +2141,9 @@ def _plot_noise_training_curves(
                 ax_ent.grid(True, alpha=0.3)
                 ax_ent.legend()
                 plt.tight_layout()
+                entropy_dir = os.path.dirname(entropy_curve_path)
+                if entropy_dir:
+                    os.makedirs(entropy_dir, exist_ok=True)
                 plt.savefig(entropy_curve_path, dpi=150)
                 plt.close()
                 evaluator.log(f"Noise PPO entropy curve saved to: {entropy_curve_path}")

@@ -1120,20 +1120,23 @@ class NoiseFinalEvaluationModule:
         if arr.size < total_layers:
             pad = np.full(total_layers - arr.size, default_val, dtype=int)
             self.evaluator.log(
-                f"[Info] {label} 长度 {arr.size} < total_layers={total_layers}；"
-                f"用 {default_val} 填充。"
+                f"[Info] {label} length {arr.size} < total_layers={total_layers}; "
+                f"padding with {default_val}."
             )
             arr = np.concatenate([arr, pad])
         elif arr.size > total_layers:
             self.evaluator.log(
-                f"[Info] {label} 长度 {arr.size} > total_layers={total_layers}；"
-                f"截断到 {total_layers}。"
+                f"[Info] {label} length {arr.size} > total_layers={total_layers}; "
+                f"truncating to {total_layers}."
             )
             arr = arr[:total_layers].copy()
 
         invalid = sorted(set(arr.tolist()) - set(allowed))
         if invalid:
-            raise ValueError(f"{label} 包含不支持的值: {invalid}")
+            raise ValueError(
+                f"{label} contains unsupported scaling factors {invalid}. "
+                f"Allowed values: {list(allowed)}"
+            )
         return arr
 
     # ------------------------------------------------------------------
