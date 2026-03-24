@@ -161,6 +161,23 @@ set -euo pipefail
 #       仍根据 --final-eval-source 解析 GELU/Softmax 后进入第二阶段。
 #       若同时未使用 --skip-stage1-rl，则 search 表示使用本次 RL/贪心结果。
 #
+# ---- 数据集选择 ----
+#
+#   --model DATASET
+#       选择数据集及对应的预训练模型，自动设置 --base_model 和 --data_path。
+#       同时 rl_tune.py 会自动适配 tokenizer 输入列和 num_labels。
+#       支持的值：mrpc, sst2, stsb, cola, qnli, rte, wnli
+#       默认值：mrpc
+#       参数大小写不敏感（如 --model MRPC 与 --model mrpc 等价）。
+#       映射关系：
+#         mrpc → textattack/bert-base-uncased-MRPC
+#         sst2 → textattack/bert-base-uncased-SST-2
+#         stsb → textattack/bert-base-uncased-STS-B
+#         cola → textattack/bert-base-uncased-CoLA
+#         qnli → textattack/bert-base-uncased-QNLI
+#         rte  → textattack/bert-base-uncased-RTE
+#         wnli → textattack/bert-base-uncased-WNLI
+#
 # ---- 帮助 ----
 #
 #   -h, --help
@@ -170,8 +187,14 @@ set -euo pipefail
 # 使用示例
 # ======================================================================
 #
-# 1. 默认完整流程（第一阶段 RL + 最终评估 + 第二阶段噪声 RL + 噪声最终评估）
+# 1. 默认完整流程（使用 mrpc 数据集）
 #    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2
+#
+# 1b. 切换到 stsb 数据集运行完整流程
+#    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model stsb
+#
+# 1c. 切换到 sst2 数据集
+#    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model sst2
 #
 # 2. 只跑第一阶段，跳过第二阶段噪声 RL 训练和噪声最终评估
 #    bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
@@ -239,7 +262,7 @@ set -euo pipefail
 # ======================================================================
 # 项目相关说明
 # ======================================================================
-# - 当前默认数据集：base_model=textattack/bert-base-uncased-MRPC, data_path=mrpc
+# - 当前默认数据集：mrpc（可通过 --model 参数切换）
 # - 脚本使用 nohup 后台运行，日志查看：tail -f <logfile_path>
 # - 停止任务：ps aux | grep rl_tune.py，然后 kill -9 <PID>
 # - 服务器部署时需同步的 Python 文件：
@@ -289,6 +312,14 @@ usage() {
     echo "  --manual-noise-config '{\"x\":[...],\"wq\":[...],...}'"
     echo "                            当 source=manual 时必须提供。"
     echo "  --noise-eval-repeat N    噪声最终评估重复次数，默认 1。"
+    echo
+    echo "数据集选择："
+    echo "  --model DATASET          选择数据集及对应的预训练模型。"
+    echo "                            支持: mrpc, sst2, stsb, cola, qnli, rte, wnli"
+    echo "                            默认: mrpc"
+    echo "                            大小写不敏感: MRPC/stsb/QNLI 均可。"
+    echo "                            映射: mrpc->...-MRPC, sst2->...-SST-2, stsb->...-STS-B,"
+    echo "                                  cola->...-CoLA, qnli->...-QNLI, rte->...-RTE, wnli->...-WNLI"
     echo
     echo "其他开关："
     echo "  --skip-stage1-final-eval 跳过第一阶段最终评估（Phase 3+4），"
@@ -356,6 +387,7 @@ NOISE_EVAL_REPEAT_N="1"
 SKIP_STAGE1_RL="false"
 SKIP_STAGE1_FINAL_EVAL="false"
 SKIP_NOISE_FINAL_EVAL="false"
+DATASET="mrpc"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -440,6 +472,11 @@ while [ "$#" -gt 0 ]; do
             SKIP_NOISE_FINAL_EVAL="true"
             shift 1
             ;;
+        --model)
+            require_option_value "$@"
+            DATASET="$2"
+            shift 2
+            ;;
         -h|--help)
             usage
             exit 0
@@ -451,6 +488,8 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+DATASET="$(printf '%s' "$DATASET" | tr '[:upper:]' '[:lower:]')"
 
 case "$FINAL_EVAL_SOURCE" in
     search|json|manual)
@@ -520,13 +559,24 @@ elif [ "$NOISE_EVAL_CONFIG_PATH_SPECIFIED" = "true" ] && [ "$SKIP_NOISE_FINAL_EV
     error_exit "只有在 --noise-eval-source=json 时才能提供 --noise-eval-config。"
 fi
 
+case "$DATASET" in
+    wnli)  BASE_MODEL="textattack/bert-base-uncased-WNLI";  DATA_PATH="wnli"  ;;
+    rte)   BASE_MODEL="textattack/bert-base-uncased-RTE";   DATA_PATH="rte"   ;;
+    cola)  BASE_MODEL="textattack/bert-base-uncased-CoLA";  DATA_PATH="cola"  ;;
+    qnli)  BASE_MODEL="textattack/bert-base-uncased-QNLI";  DATA_PATH="qnli"  ;;
+    mrpc)  BASE_MODEL="textattack/bert-base-uncased-MRPC";  DATA_PATH="mrpc"  ;;
+    sst2)  BASE_MODEL="textattack/bert-base-uncased-SST-2"; DATA_PATH="sst2"  ;;
+    stsb)  BASE_MODEL="textattack/bert-base-uncased-STS-B"; DATA_PATH="stsb"  ;;
+    *)     error_exit "不支持的数据集: $DATASET。支持的选项: wnli, rte, cola, qnli, mrpc, sst2, stsb" ;;
+esac
+
 export NCCL_DEBUG=INFO
 export CUDA_VISIBLE_DEVICES=0
 
 CMD=(
     python rl_tune.py
-    --base_model "textattack/bert-base-uncased-MRPC"
-    --data_path "mrpc"
+    --base_model "$BASE_MODEL"
+    --data_path "$DATA_PATH"
     --output_dir "$LOGFILE_PATH"
     --batch_size 16
     --micro_batch_size 16
@@ -560,6 +610,7 @@ CMD=(
     --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL"
 )
 
+echo "Dataset: $DATASET (base_model=$BASE_MODEL, data_path=$DATA_PATH)"
 echo "Launching RL tune job with final evaluation source: $FINAL_EVAL_SOURCE"
 if [ "$SKIP_STAGE1_RL" = "true" ]; then
     echo "Stage-1 RL/greedy search: SKIPPED (--skip-stage1-rl)"

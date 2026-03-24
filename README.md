@@ -33,6 +33,51 @@ bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [d
 基础示例：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
+### --model 数据集+模型切换
+
+可以通过 `--model` 一次性切换数据集和对应 `base_model`，不需要再手动改
+`llama_7B_LayerImportance.sh` 里的 `--base_model` / `--data_path`，也不需要再手动改 `rl_tune.py`。
+
+支持值（大小写不敏感）：
+
+- `mrpc`
+- `stsb`
+- `sst2`
+- `wnli`
+- `rte`
+- `cola`
+- `qnli`
+
+映射关系：
+
+| `--model` 值 | 自动设置 `--base_model` |
+| --- | --- |
+| `mrpc` | `textattack/bert-base-uncased-MRPC` |
+| `stsb` | `textattack/bert-base-uncased-STS-B` |
+| `sst2` | `textattack/bert-base-uncased-SST-2` |
+| `wnli` | `textattack/bert-base-uncased-WNLI` |
+| `rte`  | `textattack/bert-base-uncased-RTE` |
+| `cola` | `textattack/bert-base-uncased-CoLA` |
+| `qnli` | `textattack/bert-base-uncased-QNLI` |
+
+同时自动设置 `--data_path` 为同名任务（如 `--model qnli` -> `--data_path qnli`）。
+
+示例：
+
+```bash
+# 默认 mrpc（不写 --model 也可以）
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
+
+# 切换到 STS-B（回归任务）
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model stsb
+
+# 切换到 QNLI（问句-句子对）
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model qnli
+```
+
+说明：`rl_tune.py` 已改为按 `data_path` 自动选择输入列与 `num_labels`，例如
+`stsb -> num_labels=1`，`qnli -> question+sentence`，`sst2/cola -> sentence`，`mrpc/rte/wnli/stsb -> sentence1+sentence2`。
+
 ### 命名参数与安全约束
 
 旧版 5 参数命令依然兼容，但新增了更严格的流程校验，避免“前面跑 RL，后面却拿手动/JSON 配置做评估”的混用。

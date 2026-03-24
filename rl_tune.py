@@ -240,10 +240,18 @@ def train(
     else:
         config = AutoConfig.from_pretrained(base_model)
         # config.use_causal_lm = False  # 关键！关闭因果掩码 for mrpc
+        _dp = data_path.lower()
+        if _dp == "stsb":
+            _num_labels = 1
+        elif _dp == "mnli":
+            _num_labels = 3
+        else:
+            _num_labels = 2
+        print(f"Auto-detected num_labels={_num_labels} for dataset '{data_path}'")
+
         model = AutoModelForSequenceClassification.from_pretrained(
             base_model,
-            # num_labels=1,  # stsb        
-            num_labels=2,  # sst2/mrpc/qnli/cola/rte/wnli
+            num_labels=_num_labels,
             # load_in_8bit=False,
             # torch_dtype=torch.float16,
             device_map={"": int(os.environ.get("LOCAL_RANK") or 0)},
@@ -285,21 +293,30 @@ def train(
 
     # Tokenize函数
     def tokenize_fn(examples):
-        # print(f"examples keys: {examples.keys()}")
-        
-        tokenized = tokenizer(
-            # examples["question"],  # qnli
-            # examples["sentence"],  # qnli
-            # examples["sentence"],   # sst2/cola
-            examples["sentence1"],  # stsb/mrpc/rte/wnli
-            examples["sentence2"],  # stsb/mrpc/rte/wnli
-            truncation=True,
-            padding=False,
-            max_length=128,
-            return_tensors= None
-        )
-        
-        # tokenized["labels"] = tokenized["input_ids"].copy()
+        _dp = data_path.lower()
+        if _dp in ("sst2", "cola"):
+            tokenized = tokenizer(
+                examples["sentence"],
+                truncation=True, padding=False, max_length=128, return_tensors=None,
+            )
+        elif _dp == "qnli":
+            tokenized = tokenizer(
+                examples["question"],
+                examples["sentence"],
+                truncation=True, padding=False, max_length=128, return_tensors=None,
+            )
+        elif _dp == "mnli":
+            tokenized = tokenizer(
+                examples["premise"],
+                examples["hypothesis"],
+                truncation=True, padding=False, max_length=128, return_tensors=None,
+            )
+        else:  # mrpc, stsb, rte, wnli
+            tokenized = tokenizer(
+                examples["sentence1"],
+                examples["sentence2"],
+                truncation=True, padding=False, max_length=128, return_tensors=None,
+            )
         return tokenized
 
     # def generate_and_tokenize_prompt(data_point):
