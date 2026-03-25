@@ -3209,7 +3209,7 @@ index	prediction
 3207	neutral
 3208	entailment
 3209	entailment
-3210	entailment
+3210	contradiction
 3211	entailment
 3212	entailment
 3213	entailment
@@ -8651,7 +8651,7 @@ index	prediction
 8649	entailment
 8650	entailment
 8651	entailment
-8652	entailment
+8652	neutral
 8653	entailment
 8654	neutral
 8655	neutral
