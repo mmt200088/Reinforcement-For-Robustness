@@ -31,8 +31,27 @@ NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES = 20
 
 NOISE_STAGE_MC_SAMPLES = 3
 NOISE_STAGE_CONFIRM_REPEATS = 5
+NOISE_STAGE_FINALIST_REPEATS = 15
+NOISE_STAGE_SHORTLIST_SIZE = 5
 NOISE_STAGE_PROGRESS_SAVE_INTERVAL = 10000
 NOISE_STAGE_PROGRESS_DIR = os.path.join("experiment_results", "noise_rl_progress")
+
+NOISE_STAGE_STABILITY_PROXY_STD_REF = 0.008
+NOISE_STAGE_STABILITY_PENALTY_SCALE = 0.10
+NOISE_STAGE_STATUS_OK = "ok"
+NOISE_STAGE_STATUS_NO_STABLE_FEASIBLE = "no_stable_feasible_candidate"
+NOISE_STAGE_STABILITY_THRESHOLDS = {
+    "search": {
+        "loss_std": 0.008,
+        "metric1_std": 0.008,
+        "metric2_std": 0.008,
+    },
+    "holdout": {
+        "loss_std": 0.010,
+        "metric1_std": 0.012,
+        "metric2_std": 0.012,
+    },
+}
 
 NOISE_REWARD_ESTIMATOR_HIDDEN_DIMS = (128, 64)
 NOISE_REWARD_ESTIMATOR_LR = 1e-3
@@ -161,8 +180,16 @@ class NoiseRLModule:
             "gtrxl_mini_batch_episodes": GTRXL_MINI_BATCH_EPISODES,
             "mc_samples": NOISE_STAGE_MC_SAMPLES,
             "confirm_repeats": NOISE_STAGE_CONFIRM_REPEATS,
+            "finalist_repeats": NOISE_STAGE_FINALIST_REPEATS,
+            "shortlist_size": NOISE_STAGE_SHORTLIST_SIZE,
             "progress_plot_interval": NOISE_STAGE_PROGRESS_SAVE_INTERVAL,
             "progress_plot_dir": NOISE_STAGE_PROGRESS_DIR,
+            "stability_thresholds": {
+                split: dict(values)
+                for split, values in NOISE_STAGE_STABILITY_THRESHOLDS.items()
+            },
+            "stability_proxy_std_ref": NOISE_STAGE_STABILITY_PROXY_STD_REF,
+            "stability_penalty_scale": NOISE_STAGE_STABILITY_PENALTY_SCALE,
             "reward_estimator_hidden_dims": list(NOISE_REWARD_ESTIMATOR_HIDDEN_DIMS),
             "reward_estimator_lr": NOISE_REWARD_ESTIMATOR_LR,
             "reward_estimator_replay_capacity": NOISE_REWARD_ESTIMATOR_REPLAY_CAPACITY,
@@ -196,7 +223,15 @@ class NoiseRLModule:
         ev.log(
             "  "
             f"CandidateConfirm(repeats={NOISE_STAGE_CONFIRM_REPEATS}) | "
+            f"FinalistConfirm(repeats={NOISE_STAGE_FINALIST_REPEATS}, shortlist={NOISE_STAGE_SHORTLIST_SIZE}) | "
             f"ProgressPlots(every={NOISE_STAGE_PROGRESS_SAVE_INTERVAL}, dir={NOISE_STAGE_PROGRESS_DIR})"
+        )
+        ev.log(
+            "  "
+            f"StabilityThresholds(search={NOISE_STAGE_STABILITY_THRESHOLDS['search']}, "
+            f"holdout={NOISE_STAGE_STABILITY_THRESHOLDS['holdout']}, "
+            f"proxy_ref={NOISE_STAGE_STABILITY_PROXY_STD_REF}, "
+            f"penalty_scale={NOISE_STAGE_STABILITY_PENALTY_SCALE})"
         )
         os.makedirs(NOISE_STAGE_PROGRESS_DIR, exist_ok=True)
 
@@ -346,16 +381,146 @@ class NoiseRLModule:
         reward_prediction_abs_errors = []
         raw_final_rewards = []
         blended_final_rewards = []
+        stability_proxies = []
+        stability_penalties = []
         best_selection_reward = float("-inf")
         best_cost = float("inf")
         best_noise_config = None
         window_best_score = float("-inf")
         window_best_cost = float("inf")
         window_best_noise_config = None
+        noise_scaling_keys = tuple(
+            key for key in baseline_noise_config.keys() if key.endswith("scaling_factors")
+        )
+        num_metrics = ev.get_num_metrics()
+        stability_thresholds = {
+            split: dict(values)
+            for split, values in NOISE_STAGE_STABILITY_THRESHOLDS.items()
+        }
         search_best_noise_config = None
         joint_best_noise_config = None
+        stable_search_best_noise_config = None
+        stable_joint_best_noise_config = None
+        shortlist_candidates = []
+        shortlist_update_count = 0
 
-        def _evaluate_candidate_split(split_name, noise_kwargs, metric_prefix, repeats):
+        def _clone_candidate(candidate):
+            if candidate is None:
+                return None
+            cloned = {}
+            for key, value in candidate.items():
+                if isinstance(value, np.ndarray):
+                    cloned[key] = value.copy()
+                elif isinstance(value, dict):
+                    cloned[key] = dict(value)
+                elif isinstance(value, list):
+                    cloned[key] = list(value)
+                else:
+                    cloned[key] = value
+            return cloned
+
+        def _candidate_signature(candidate):
+            return tuple(
+                tuple(np.asarray(candidate[key], dtype=int).tolist())
+                for key in noise_scaling_keys
+            )
+
+        def _get_split_metric_sum(candidate, metric_prefix):
+            metric_sum = float(candidate.get(f"{metric_prefix}_metric1", -float("inf")))
+            if num_metrics > 1:
+                metric_sum += float(candidate.get(f"{metric_prefix}_metric2", -float("inf")))
+            return metric_sum
+
+        def _split_sort_key(candidate, metric_prefix):
+            return (
+                float(candidate["cost"]),
+                float(candidate.get(f"{metric_prefix}_loss", float("inf"))),
+                -_get_split_metric_sum(candidate, metric_prefix),
+                -float(candidate.get("selection_reward", -float("inf"))),
+            )
+
+        def _stable_split_sort_key(candidate, metric_prefix):
+            return (
+                float(candidate["cost"]),
+                float(candidate.get(f"{metric_prefix}_stability_score", float("inf"))),
+                float(candidate.get(f"{metric_prefix}_loss", float("inf"))),
+                -_get_split_metric_sum(candidate, metric_prefix),
+                -float(candidate.get("selection_reward", -float("inf"))),
+            )
+
+        def _joint_metric_sum(candidate):
+            metric_sum = (
+                float(candidate.get("search_metric1", -float("inf")))
+                + float(candidate.get("holdout_metric1", -float("inf")))
+            )
+            if num_metrics > 1:
+                metric_sum += (
+                    float(candidate.get("search_metric2", -float("inf")))
+                    + float(candidate.get("holdout_metric2", -float("inf")))
+                )
+            return 0.5 * metric_sum
+
+        def _joint_sort_key(candidate):
+            return (
+                float(candidate["cost"]),
+                float(candidate.get("stability_score", float("inf"))),
+                float(candidate.get("joint_loss_mean", float("inf"))),
+                -float(candidate.get("joint_metric_sum", -float("inf"))),
+                -float(candidate.get("selection_reward", -float("inf"))),
+            )
+
+        def _is_better_split_candidate(candidate, incumbent, metric_prefix):
+            if candidate is None:
+                return False
+            if incumbent is None:
+                return True
+            return _split_sort_key(candidate, metric_prefix) < _split_sort_key(
+                incumbent, metric_prefix
+            )
+
+        def _is_better_stable_split_candidate(candidate, incumbent, metric_prefix):
+            if candidate is None:
+                return False
+            if incumbent is None:
+                return True
+            return _stable_split_sort_key(candidate, metric_prefix) < _stable_split_sort_key(
+                incumbent, metric_prefix
+            )
+
+        def _is_better_joint_candidate(candidate, incumbent):
+            if candidate is None:
+                return False
+            if incumbent is None:
+                return True
+            return _joint_sort_key(candidate) < _joint_sort_key(incumbent)
+
+        def _annotate_split_stability(stats, metric_prefix, threshold_cfg):
+            components = [
+                ("loss", "loss_std"),
+                ("metric1", "metric1_std"),
+            ]
+            if num_metrics > 1:
+                components.append(("metric2", "metric2_std"))
+
+            ratios = []
+            stability_ok = True
+            for metric_name, std_key in components:
+                stats_key = f"{metric_prefix}_{std_key}"
+                threshold = float(threshold_cfg[std_key])
+                std_value = float(stats[stats_key])
+                ratio = std_value / max(threshold, 1e-8)
+                stats[f"{metric_prefix}_{metric_name}_stability_ratio"] = float(ratio)
+                stats[f"{metric_prefix}_{metric_name}_stability_threshold"] = threshold
+                metric_ok = std_value <= threshold
+                stats[f"{metric_prefix}_{metric_name}_stability_ok"] = bool(metric_ok)
+                ratios.append(ratio)
+                stability_ok = stability_ok and metric_ok
+
+            stats[f"{metric_prefix}_stability_score"] = float(np.mean(ratios)) if ratios else 0.0
+            stats[f"{metric_prefix}_stability_ok"] = bool(stability_ok)
+            return stats
+
+        def _evaluate_candidate_split(split_name, noise_kwargs, metric_prefix, repeats, threshold_cfg):
             losses = []
             metric1s = []
             metric2s = []
@@ -369,103 +534,92 @@ class NoiseRLModule:
                 losses.append(float(loss))
                 metric1s.append(float(metric1))
                 metric2s.append(float(metric2))
-            return {
+
+            stats = {
                 f"{metric_prefix}_loss": float(np.mean(losses)),
                 f"{metric_prefix}_loss_std": float(np.std(losses)),
+                f"{metric_prefix}_loss_min": float(np.min(losses)),
+                f"{metric_prefix}_loss_max": float(np.max(losses)),
+                f"{metric_prefix}_loss_range": float(np.max(losses) - np.min(losses)),
                 f"{metric_prefix}_metric1": float(np.mean(metric1s)),
                 f"{metric_prefix}_metric1_std": float(np.std(metric1s)),
+                f"{metric_prefix}_metric1_min": float(np.min(metric1s)),
+                f"{metric_prefix}_metric1_max": float(np.max(metric1s)),
+                f"{metric_prefix}_metric1_range": float(np.max(metric1s) - np.min(metric1s)),
                 f"{metric_prefix}_metric2": float(np.mean(metric2s)),
                 f"{metric_prefix}_metric2_std": float(np.std(metric2s)),
+                f"{metric_prefix}_metric2_min": float(np.min(metric2s)),
+                f"{metric_prefix}_metric2_max": float(np.max(metric2s)),
+                f"{metric_prefix}_metric2_range": float(np.max(metric2s) - np.min(metric2s)),
                 f"{metric_prefix}_repeats": int(max(1, int(repeats))),
             }
+            return _annotate_split_stability(stats, metric_prefix, threshold_cfg)
 
-        def _is_better_split_candidate(candidate, incumbent, metric_prefix):
-            if candidate is None:
-                return False
-            if incumbent is None:
-                return True
-
-            cand_cost = float(candidate["cost"])
-            inc_cost = float(incumbent["cost"])
-            if cand_cost < inc_cost - 1e-8:
-                return True
-            if cand_cost > inc_cost + 1e-8:
-                return False
-
-            cand_loss = float(candidate.get(f"{metric_prefix}_loss", float("inf")))
-            inc_loss = float(incumbent.get(f"{metric_prefix}_loss", float("inf")))
-            if cand_loss < inc_loss - 1e-8:
-                return True
-            if cand_loss > inc_loss + 1e-8:
-                return False
-
-            cand_metric_sum = (
-                float(candidate.get(f"{metric_prefix}_metric1", -float("inf")))
-                + float(candidate.get(f"{metric_prefix}_metric2", -float("inf")))
-            )
-            inc_metric_sum = (
-                float(incumbent.get(f"{metric_prefix}_metric1", -float("inf")))
-                + float(incumbent.get(f"{metric_prefix}_metric2", -float("inf")))
-            )
-            if cand_metric_sum > inc_metric_sum + 1e-8:
-                return True
-            if cand_metric_sum < inc_metric_sum - 1e-8:
-                return False
-
-            return float(candidate.get("selection_reward", -float("inf"))) > float(
-                incumbent.get("selection_reward", -float("inf"))
-            )
-
-        def _is_better_joint_candidate(candidate, incumbent):
-            if candidate is None:
-                return False
-            if incumbent is None:
-                return True
-
-            cand_cost = float(candidate["cost"])
-            inc_cost = float(incumbent["cost"])
-            if cand_cost < inc_cost - 1e-8:
-                return True
-            if cand_cost > inc_cost + 1e-8:
-                return False
-
-            cand_joint_loss = 0.5 * (
+        def _finalize_candidate_annotations(candidate):
+            candidate["joint_loss_mean"] = 0.5 * (
                 float(candidate["search_loss"]) + float(candidate["holdout_loss"])
             )
-            inc_joint_loss = 0.5 * (
-                float(incumbent["search_loss"]) + float(incumbent["holdout_loss"])
+            candidate["joint_metric_sum"] = float(_joint_metric_sum(candidate))
+            candidate["stability_score"] = 0.5 * (
+                float(candidate.get("search_stability_score", float("inf")))
+                + float(candidate.get("holdout_stability_score", float("inf")))
             )
-            if cand_joint_loss < inc_joint_loss - 1e-8:
-                return True
-            if cand_joint_loss > inc_joint_loss + 1e-8:
-                return False
+            candidate["stable_search_feasible"] = bool(
+                candidate["search_ok"] and candidate.get("search_stability_ok", False)
+            )
+            candidate["stable_holdout_feasible"] = bool(
+                candidate["holdout_ok"] and candidate.get("holdout_stability_ok", False)
+            )
+            candidate["stable_joint_feasible"] = bool(
+                candidate["stable_search_feasible"] and candidate["stable_holdout_feasible"]
+            )
+            return candidate
 
-            cand_joint_metric_sum = 0.5 * (
-                float(candidate["search_metric1"])
-                + float(candidate["search_metric2"])
-                + float(candidate["holdout_metric1"])
-                + float(candidate["holdout_metric2"])
-            )
-            inc_joint_metric_sum = 0.5 * (
-                float(incumbent["search_metric1"])
-                + float(incumbent["search_metric2"])
-                + float(incumbent["holdout_metric1"])
-                + float(incumbent["holdout_metric2"])
-            )
-            if cand_joint_metric_sum > inc_joint_metric_sum + 1e-8:
-                return True
-            if cand_joint_metric_sum < inc_joint_metric_sum - 1e-8:
-                return False
+        def _upsert_shortlist_candidate(candidate):
+            nonlocal shortlist_update_count
+            shortlist_update_count += 1
+            signature = _candidate_signature(candidate)
+            action = "added"
+            existing_index = None
+            for idx, existing in enumerate(shortlist_candidates):
+                if _candidate_signature(existing) == signature:
+                    existing_index = idx
+                    break
 
-            return float(candidate.get("selection_reward", -float("inf"))) > float(
-                incumbent.get("selection_reward", -float("inf"))
-            )
+            if existing_index is not None:
+                if _is_better_joint_candidate(candidate, shortlist_candidates[existing_index]):
+                    shortlist_candidates[existing_index] = _clone_candidate(candidate)
+                    action = "updated"
+                else:
+                    action = "duplicate-kept"
+            else:
+                shortlist_candidates.append(_clone_candidate(candidate))
 
-        def confirm_noise_candidate(candidate_config, episode_idx, window_idx):
+            shortlist_candidates.sort(key=_joint_sort_key)
+            if len(shortlist_candidates) > NOISE_STAGE_SHORTLIST_SIZE:
+                del shortlist_candidates[NOISE_STAGE_SHORTLIST_SIZE:]
+
+            retained = any(
+                _candidate_signature(existing) == signature
+                for existing in shortlist_candidates
+            )
+            if not retained and action in {"added", "updated"}:
+                action = "trimmed"
+            return action
+
+        def confirm_noise_candidate(
+            candidate_config,
+            episode_idx,
+            window_idx,
+            repeats,
+            confirmation_label,
+            update_shortlist=False,
+        ):
             nonlocal search_best_noise_config, joint_best_noise_config
+            nonlocal stable_search_best_noise_config, stable_joint_best_noise_config
 
             if candidate_config is None or not ev.has_dataset_split("val_search_full"):
-                return
+                return None
 
             noise_kwargs = {
                 key: value.copy()
@@ -476,7 +630,8 @@ class NoiseRLModule:
                 "val_search_full",
                 noise_kwargs,
                 metric_prefix="search",
-                repeats=NOISE_STAGE_CONFIRM_REPEATS,
+                repeats=repeats,
+                threshold_cfg=stability_thresholds["search"],
             )
             search_ok = ev._candidate_meets_constraints(
                 search_stats["search_loss"],
@@ -499,6 +654,8 @@ class NoiseRLModule:
                         candidate_config.get("ppo_reward", candidate_config.get("reward", 0.0)),
                     )
                 ),
+                "confirmation_label": confirmation_label,
+                "confirmed_repeats": int(max(1, int(repeats))),
                 "search_ok": bool(search_ok),
                 "confirmed_episode": int(episode_idx) + 1,
                 "confirmed_window": int(window_idx) + 1,
@@ -510,7 +667,8 @@ class NoiseRLModule:
                     "val_holdout",
                     noise_kwargs,
                     metric_prefix="holdout",
-                    repeats=NOISE_STAGE_CONFIRM_REPEATS,
+                    repeats=repeats,
+                    threshold_cfg=stability_thresholds["holdout"],
                 )
                 holdout_ok = ev._candidate_meets_constraints(
                     holdout_stats["holdout_loss"],
@@ -524,25 +682,46 @@ class NoiseRLModule:
                 holdout_stats = {
                     "holdout_loss": float(search_stats["search_loss"]),
                     "holdout_loss_std": float(search_stats["search_loss_std"]),
+                    "holdout_loss_min": float(search_stats["search_loss_min"]),
+                    "holdout_loss_max": float(search_stats["search_loss_max"]),
+                    "holdout_loss_range": float(search_stats["search_loss_range"]),
                     "holdout_metric1": float(search_stats["search_metric1"]),
                     "holdout_metric1_std": float(search_stats["search_metric1_std"]),
+                    "holdout_metric1_min": float(search_stats["search_metric1_min"]),
+                    "holdout_metric1_max": float(search_stats["search_metric1_max"]),
+                    "holdout_metric1_range": float(search_stats["search_metric1_range"]),
                     "holdout_metric2": float(search_stats["search_metric2"]),
                     "holdout_metric2_std": float(search_stats["search_metric2_std"]),
+                    "holdout_metric2_min": float(search_stats["search_metric2_min"]),
+                    "holdout_metric2_max": float(search_stats["search_metric2_max"]),
+                    "holdout_metric2_range": float(search_stats["search_metric2_range"]),
                     "holdout_repeats": int(search_stats["search_repeats"]),
                 }
+                holdout_stats = _annotate_split_stability(
+                    holdout_stats,
+                    "holdout",
+                    stability_thresholds["holdout"],
+                )
                 holdout_ok = bool(search_ok)
+
             confirmed_candidate.update(holdout_stats)
             confirmed_candidate["holdout_ok"] = bool(holdout_ok)
             confirmed_candidate["joint_ok"] = bool(search_ok and holdout_ok)
+            confirmed_candidate = _finalize_candidate_annotations(confirmed_candidate)
 
             ev.log(
-                f"  Noise window {window_idx + 1} candidate confirmation: "
+                f"  Noise {confirmation_label} candidate confirmation: "
                 f"selection_reward={confirmed_candidate['selection_reward']:.4f}, "
                 f"raw_reward={confirmed_candidate['proxy_reward_raw']:.4f}, "
                 f"search={ev._fmt_metrics(confirmed_candidate['search_loss'], confirmed_candidate['search_metric1'], confirmed_candidate['search_metric2'])}, "
                 f"std=(Loss={confirmed_candidate['search_loss_std']:.4f}, "
                 f"M1={confirmed_candidate['search_metric1_std']:.4f}, "
-                f"M2={confirmed_candidate['search_metric2_std']:.4f})"
+                f"M2={confirmed_candidate['search_metric2_std']:.4f}), "
+                f"range=(Loss={confirmed_candidate['search_loss_range']:.4f}, "
+                f"M1={confirmed_candidate['search_metric1_range']:.4f}, "
+                f"M2={confirmed_candidate['search_metric2_range']:.4f}), "
+                f"stable={confirmed_candidate['search_stability_ok']}, "
+                f"score={confirmed_candidate['search_stability_score']:.4f}"
             )
             if ev.has_dataset_split("val_holdout"):
                 ev.log(
@@ -550,7 +729,12 @@ class NoiseRLModule:
                     f"{ev._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}, "
                     f"std=(Loss={confirmed_candidate['holdout_loss_std']:.4f}, "
                     f"M1={confirmed_candidate['holdout_metric1_std']:.4f}, "
-                    f"M2={confirmed_candidate['holdout_metric2_std']:.4f})"
+                    f"M2={confirmed_candidate['holdout_metric2_std']:.4f}), "
+                    f"range=(Loss={confirmed_candidate['holdout_loss_range']:.4f}, "
+                    f"M1={confirmed_candidate['holdout_metric1_range']:.4f}, "
+                    f"M2={confirmed_candidate['holdout_metric2_range']:.4f}), "
+                    f"stable={confirmed_candidate['holdout_stability_ok']}, "
+                    f"score={confirmed_candidate['holdout_stability_score']:.4f}"
                 )
 
             if search_ok and _is_better_split_candidate(
@@ -558,29 +742,80 @@ class NoiseRLModule:
                 search_best_noise_config,
                 metric_prefix="search",
             ):
-                search_best_noise_config = {
-                    key: (value.copy() if isinstance(value, np.ndarray) else value)
-                    for key, value in confirmed_candidate.items()
-                }
+                search_best_noise_config = _clone_candidate(confirmed_candidate)
                 ev.log(
                     f"    Noise Search-Best updated at episode {episode_idx + 1}: "
                     f"cost={search_best_noise_config['cost']:.2f}, "
                     f"selection_reward={search_best_noise_config['selection_reward']:.4f}"
                 )
 
+            if confirmed_candidate["stable_search_feasible"] and _is_better_stable_split_candidate(
+                confirmed_candidate,
+                stable_search_best_noise_config,
+                metric_prefix="search",
+            ):
+                stable_search_best_noise_config = _clone_candidate(confirmed_candidate)
+                ev.log(
+                    f"    Noise Stable Search-Best updated at episode {episode_idx + 1}: "
+                    f"cost={stable_search_best_noise_config['cost']:.2f}, "
+                    f"stability_score={stable_search_best_noise_config['search_stability_score']:.4f}"
+                )
+
             if confirmed_candidate["joint_ok"] and _is_better_joint_candidate(
                 confirmed_candidate,
                 joint_best_noise_config,
             ):
-                joint_best_noise_config = {
-                    key: (value.copy() if isinstance(value, np.ndarray) else value)
-                    for key, value in confirmed_candidate.items()
-                }
+                joint_best_noise_config = _clone_candidate(confirmed_candidate)
                 ev.log(
                     f"    Noise Joint-Best updated at episode {episode_idx + 1}: "
                     f"cost={joint_best_noise_config['cost']:.2f}, "
                     f"selection_reward={joint_best_noise_config['selection_reward']:.4f}"
                 )
+
+            if confirmed_candidate["stable_joint_feasible"] and _is_better_joint_candidate(
+                confirmed_candidate,
+                stable_joint_best_noise_config,
+            ):
+                stable_joint_best_noise_config = _clone_candidate(confirmed_candidate)
+                ev.log(
+                    f"    Noise Stable Joint-Best updated at episode {episode_idx + 1}: "
+                    f"cost={stable_joint_best_noise_config['cost']:.2f}, "
+                    f"stability_score={stable_joint_best_noise_config['stability_score']:.4f}"
+                )
+
+            shortlist_status = "not-eligible"
+            if update_shortlist and confirmed_candidate["stable_joint_feasible"]:
+                shortlist_status = _upsert_shortlist_candidate(confirmed_candidate)
+            confirmed_candidate["shortlist_status"] = shortlist_status
+            ev.log(
+                "    Stability verdict: "
+                f"search_ok={confirmed_candidate['search_ok']}, "
+                f"holdout_ok={confirmed_candidate['holdout_ok']}, "
+                f"stable_search={confirmed_candidate['stable_search_feasible']}, "
+                f"stable_holdout={confirmed_candidate['stable_holdout_feasible']}, "
+                f"stable_joint_feasible={confirmed_candidate['stable_joint_feasible']}, "
+                f"shortlist={shortlist_status}"
+            )
+            return confirmed_candidate
+
+        def _compute_training_stability_proxy(mc_eval):
+            if not mc_eval:
+                return 0.0, 0.0
+
+            components = [
+                float(mc_eval.get("loss_std", 0.0)) / NOISE_STAGE_STABILITY_PROXY_STD_REF,
+                float(mc_eval.get("metric1_std", 0.0)) / NOISE_STAGE_STABILITY_PROXY_STD_REF,
+            ]
+            if num_metrics > 1:
+                components.append(
+                    float(mc_eval.get("metric2_std", 0.0)) / NOISE_STAGE_STABILITY_PROXY_STD_REF
+                )
+
+            stability_proxy = float(np.mean(components)) if components else 0.0
+            stability_penalty = -NOISE_STAGE_STABILITY_PENALTY_SCALE * max(
+                0.0, stability_proxy - 1.0
+            )
+            return stability_proxy, stability_penalty
 
         for episode in range(NOISE_STAGE_PPO_MAX_EPISODES):
             current_lr, current_entropy = ev.update_hyperparameters(optimizer, episode)
@@ -599,6 +834,8 @@ class NoiseRLModule:
             episode_reward_estimator_pred = None
             episode_reward_blend_alpha = None
             episode_mc_eval = None
+            episode_stability_proxy = None
+            episode_stability_penalty = 0.0
             buffer.start_episode()
 
             for step in range(ev.total_layers):
@@ -650,11 +887,21 @@ class NoiseRLModule:
                             abs(reward_estimator_pred - raw_final_reward)
                         )
 
+                    mc_eval_for_penalty = info.get("mc_eval") or {}
+                    stability_proxy, stability_penalty = _compute_training_stability_proxy(
+                        mc_eval_for_penalty
+                    )
+                    blended_final_reward += stability_penalty
+                    stability_proxies.append(stability_proxy)
+                    stability_penalties.append(stability_penalty)
+
                     reward_for_buffer = float(reward - raw_final_reward + blended_final_reward)
                     info["raw_reward"] = raw_final_reward
                     info["blended_reward"] = blended_final_reward
                     info["reward_estimator_pred"] = reward_estimator_pred
                     info["reward_blend_alpha"] = reward_blend_alpha
+                    info["stability_proxy"] = stability_proxy
+                    info["stability_penalty"] = stability_penalty
                     info["reward_estimator_loss"] = reward_estimator_last_loss
                     info["buffer_step_reward"] = reward_for_buffer
 
@@ -662,12 +909,16 @@ class NoiseRLModule:
                     episode_blended_final_reward = blended_final_reward
                     episode_reward_estimator_pred = reward_estimator_pred
                     episode_reward_blend_alpha = reward_blend_alpha
-                    episode_mc_eval = info.get("mc_eval")
+                    episode_mc_eval = mc_eval_for_penalty
+                    episode_stability_proxy = stability_proxy
+                    episode_stability_penalty = stability_penalty
                 else:
                     info["raw_reward"] = None
                     info["blended_reward"] = None
                     info["reward_estimator_pred"] = None
                     info["reward_blend_alpha"] = None
+                    info["stability_proxy"] = None
+                    info["stability_penalty"] = 0.0
                     info["reward_estimator_loss"] = reward_estimator_last_loss
                     info["buffer_step_reward"] = reward_for_buffer
 
@@ -714,6 +965,8 @@ class NoiseRLModule:
                     "reward_estimator_pred": info.get("reward_estimator_pred"),
                     "reward_estimator_loss": info.get("reward_estimator_loss"),
                     "reward_blend_alpha": info.get("reward_blend_alpha"),
+                    "stability_proxy": info.get("stability_proxy"),
+                    "stability_penalty": info.get("stability_penalty"),
                     "buffer_step_reward": info.get("buffer_step_reward"),
                 }
                 step_infos.append(step_info)
@@ -780,6 +1033,8 @@ class NoiseRLModule:
                 "blended_final_reward": episode_blended_final_reward,
                 "reward_estimator_pred": episode_reward_estimator_pred,
                 "reward_blend_alpha": episode_reward_blend_alpha,
+                "stability_proxy": episode_stability_proxy,
+                "stability_penalty": episode_stability_penalty,
                 "mc_eval": dict(episode_mc_eval) if episode_mc_eval is not None else None,
                 "reward_components": (
                     dict(env.last_reward_components)
@@ -897,6 +1152,9 @@ class NoiseRLModule:
                     window_best_noise_config,
                     episode_idx=episode,
                     window_idx=noise_ppo_update_count - 1,
+                    repeats=NOISE_STAGE_CONFIRM_REPEATS,
+                    confirmation_label=f"window {noise_ppo_update_count}",
+                    update_shortlist=True,
                 )
                 window_best_score = float("-inf")
                 window_best_cost = float("inf")
@@ -962,47 +1220,72 @@ class NoiseRLModule:
                 window_best_noise_config,
                 episode_idx=NOISE_STAGE_PPO_MAX_EPISODES - 1,
                 window_idx=noise_ppo_update_count,
+                repeats=NOISE_STAGE_CONFIRM_REPEATS,
+                confirmation_label=f"window {noise_ppo_update_count + 1}",
+                update_shortlist=True,
             )
 
-        best_noise_config = None
-        if joint_best_noise_config is not None:
-            best_noise_config = {
-                key: (value.copy() if isinstance(value, np.ndarray) else value)
-                for key, value in joint_best_noise_config.items()
-            }
-        else:
+        initial_shortlist_snapshot = [_clone_candidate(candidate) for candidate in shortlist_candidates]
+        finalist_results = []
+        finalist_best_noise_config = None
+        if shortlist_candidates:
+            ev.log("\n--- Noise shortlist secondary confirmation ---")
+            for finalist_idx, shortlisted_candidate in enumerate(shortlist_candidates, start=1):
+                finalist_candidate = confirm_noise_candidate(
+                    shortlisted_candidate,
+                    episode_idx=NOISE_STAGE_PPO_MAX_EPISODES - 1,
+                    window_idx=finalist_idx - 1,
+                    repeats=NOISE_STAGE_FINALIST_REPEATS,
+                    confirmation_label=f"finalist #{finalist_idx}",
+                    update_shortlist=False,
+                )
+                if finalist_candidate is None:
+                    continue
+                finalist_results.append(_clone_candidate(finalist_candidate))
+                if finalist_candidate["stable_joint_feasible"] and _is_better_joint_candidate(
+                    finalist_candidate,
+                    finalist_best_noise_config,
+                ):
+                    finalist_best_noise_config = _clone_candidate(finalist_candidate)
+                    ev.log(
+                        f"    Final Stable Joint-Best updated from finalist #{finalist_idx}: "
+                        f"cost={finalist_best_noise_config['cost']:.2f}, "
+                        f"stability_score={finalist_best_noise_config['stability_score']:.4f}"
+                    )
+
+        status = NOISE_STAGE_STATUS_OK
+        best_noise_config = _clone_candidate(finalist_best_noise_config)
+        if best_noise_config is None:
+            status = NOISE_STAGE_STATUS_NO_STABLE_FEASIBLE
+            stable_joint_best_noise_config = None
             ev.log(
-                "\nNo jointly feasible noise-stage solution found on val_search_full + val_holdout; "
-                "using max-scaling baseline configuration."
+                "\nNo stable feasible noise-stage solution found on val_search_full + val_holdout "
+                "after shortlist secondary confirmation."
             )
-            best_noise_config = {key: value.copy() for key, value in baseline_noise_config.items()}
-            best_noise_config["cost"] = baseline_tot_c
-            best_noise_config["reward"] = 0.0
-            best_noise_config["ppo_reward"] = 0.0
-            best_noise_config["selection_reward"] = 0.0
-            best_noise_config["raw_final_reward"] = 0.0
-            best_noise_config["blended_final_reward"] = 0.0
-            best_noise_config["reward_estimator_pred"] = None
-            best_noise_config["reward_blend_alpha"] = None
-            best_noise_config["mc_eval"] = None
-            best_noise_config["reward_components"] = None
+        else:
+            stable_joint_best_noise_config = _clone_candidate(best_noise_config)
 
         ev.log("\n--- Noise PPO Training Completed ---")
-        ev.log("Best Noise Configuration Found:")
-        for key in (
-            "input_noise_scaling_factors",
-            "wq_noise_scaling_factors",
-            "wk_noise_scaling_factors",
-            "wv_noise_scaling_factors",
-            "wo_noise_scaling_factors",
-            "wffn1_noise_scaling_factors",
-            "wffn2_noise_scaling_factors",
-        ):
-            ev.log(f"  {key}: {best_noise_config[key].tolist()}")
-        ev.log(
-            f"  Cost: {best_noise_config['cost']:.2f}, Reward: {best_noise_config['reward']:.4f}, "
-            f"PPO Reward: {best_noise_config.get('ppo_reward', best_noise_config['reward']):.4f}"
-        )
+        ev.log(f"Noise Stage Status: {status}")
+        if best_noise_config is not None:
+            ev.log("Best Stable Noise Configuration Found:")
+            for key in (
+                "input_noise_scaling_factors",
+                "wq_noise_scaling_factors",
+                "wk_noise_scaling_factors",
+                "wv_noise_scaling_factors",
+                "wo_noise_scaling_factors",
+                "wffn1_noise_scaling_factors",
+                "wffn2_noise_scaling_factors",
+            ):
+                ev.log(f"  {key}: {best_noise_config[key].tolist()}")
+            ev.log(
+                f"  Cost: {best_noise_config['cost']:.2f}, Reward: {best_noise_config['reward']:.4f}, "
+                f"PPO Reward: {best_noise_config.get('ppo_reward', best_noise_config['reward']):.4f}, "
+                f"StabilityScore: {best_noise_config['stability_score']:.4f}"
+            )
+        else:
+            ev.log("No stable feasible noise configuration was selected in this run.")
 
         _plot_noise_training_curves(
             ev, episode_rewards, episode_losses, episode_metric1s, episode_metric2s, episode_entropies,
@@ -1047,6 +1330,25 @@ class NoiseRLModule:
                 if blended_final_rewards
                 else None
             ),
+            "stability_proxy_mean": (
+                float(np.mean(stability_proxies))
+                if stability_proxies
+                else None
+            ),
+            "stability_penalty_mean": (
+                float(np.mean(stability_penalties))
+                if stability_penalties
+                else None
+            ),
+        }
+
+        shortlist_diagnostics = {
+            "shortlist_size": NOISE_STAGE_SHORTLIST_SIZE,
+            "confirm_repeats": NOISE_STAGE_CONFIRM_REPEATS,
+            "finalist_repeats": NOISE_STAGE_FINALIST_REPEATS,
+            "shortlist_update_count": int(shortlist_update_count),
+            "initial_shortlist": [_clone_candidate(candidate) for candidate in initial_shortlist_snapshot],
+            "finalist_results": [_clone_candidate(candidate) for candidate in finalist_results],
         }
 
         return {
@@ -1054,7 +1356,15 @@ class NoiseRLModule:
             "fixed_softmax": fixed_softmax.copy(),
             "baseline_noise_config": {k: v.copy() for k, v in baseline_noise_config.items()},
             "baseline_tot_c": float(baseline_tot_c),
-            "best_noise_config": {k: v.copy() if isinstance(v, np.ndarray) else v for k, v in best_noise_config.items()},
+            "status": status,
+            "stability_thresholds": {
+                split: dict(values)
+                for split, values in stability_thresholds.items()
+            },
+            "best_noise_config": _clone_candidate(best_noise_config),
+            "stable_search_best_noise_config": _clone_candidate(stable_search_best_noise_config),
+            "stable_joint_best_noise_config": _clone_candidate(stable_joint_best_noise_config),
+            "shortlist_diagnostics": shortlist_diagnostics,
             "limit_loss": float(limit_loss),
             "limit_p": float(limit_p),
             "limit_s": float(limit_s),
@@ -1868,6 +2178,10 @@ def _write_noise_step_info(step_info, f):
         f.write(f"  reward_estimator_loss: {step_info['reward_estimator_loss']}\n")
     if step_info.get("reward_blend_alpha") is not None:
         f.write(f"  reward_blend_alpha: {step_info['reward_blend_alpha']}\n")
+    if step_info.get("stability_proxy") is not None:
+        f.write(f"  stability_proxy: {step_info['stability_proxy']}\n")
+    if step_info.get("stability_penalty") is not None:
+        f.write(f"  stability_penalty: {step_info['stability_penalty']}\n")
     if step_info.get("buffer_step_reward") is not None:
         f.write(f"  buffer_step_reward: {step_info['buffer_step_reward']}\n")
 
