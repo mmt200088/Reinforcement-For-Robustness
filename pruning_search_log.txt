@@ -467,3 +467,26 @@ Noise PPO progress snapshot saved at episode 40000: experiment_results/noise_rl_
     [Noise Reward Estimator] Replay=4096, Updates=247, LastLoss=0.01052932464517653
   Noise window 247 candidate confirmation: selection_reward=1.1817, raw_reward=1.2816, search=Loss: 0.336528, Accuracy: 0.878596, F1: 0.876411, std=(Loss=0.0096, M1=0.0072, M2=0.0072)
     Holdout: Loss: 0.305228, Accuracy: 0.873171, F1: 0.870014, std=(Loss=0.0030, M1=0.0122, M2=0.0129)
+  Noise Episode 42076: New Best! SelectionReward=1.2105, RawReward=1.3418, Cost=33.70
+    MC Eval: Loss=0.3316±0.0033, M1=0.8842±0.0029, M2=0.8822±0.0031
+    x     : [22, 22, 22, 22, 22, 22, 30, 22, 26, 26, 22, 24]
+    wq    : [14, 14, 14, 14, 14, 14, 14, 16, 14, 16, 14, 20]
+    wk    : [14, 14, 14, 14, 14, 16, 14, 14, 18, 14, 16, 16]
+    wv    : [14, 14, 14, 14, 14, 14, 14, 16, 20, 18, 22, 14]
+    wo    : [14, 14, 14, 14, 14, 14, 14, 14, 14, 16, 14, 18]
+    wffn1 : [14, 14, 14, 14, 14, 14, 14, 16, 14, 14, 14, 14]
+    wffn2 : [14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 18, 20]
+  Noise Episode 42160: Avg Raw Reward=1.0355, Avg PPO Reward=1.0391, Policy Loss=-0.8355, Value Loss=0.0120, Entropy=5.8282
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.024178, Update#248 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=248, LastLoss=0.008373380522243679
+  Noise window 248 candidate confirmation: selection_reward=1.2105, raw_reward=1.3418, search=Loss: 0.339145, Accuracy: 0.876491, F1: 0.874673, std=(Loss=0.0055, M1=0.0064, M2=0.0064)
+    Holdout: Loss: 0.304454, Accuracy: 0.879675, F1: 0.877607, std=(Loss=0.0055, M1=0.0061, M2=0.0062)
+  Noise Episode 42224: New Best! SelectionReward=1.2219, RawReward=1.3689, Cost=34.05
+    MC Eval: Loss=0.3301±0.0013, M1=0.8877±0.0076, M2=0.8861±0.0079
+    x     : [22, 22, 22, 22, 22, 26, 22, 24, 22, 22, 24, 22]
+    wq    : [14, 14, 14, 14, 14, 14, 14, 20, 14, 14, 14, 20]
+    wk    : [14, 14, 14, 14, 14, 22, 14, 14, 14, 22, 18, 22]
+    wv    : [14, 14, 14, 14, 14, 18, 14, 16, 14, 16, 14, 14]
+    wo    : [14, 14, 14, 14, 14, 14, 14, 20, 16, 14, 14, 14]
+    wffn1 : [14, 14, 14, 14, 14, 20, 14, 14, 14, 14, 14, 14]
+    wffn2 : [14, 14, 14, 14, 14, 16, 18, 16, 18, 18, 14, 18]

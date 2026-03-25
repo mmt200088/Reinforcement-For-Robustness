@@ -10,3 +10,11 @@ all_analysis_new/**/*.png
 !pruning_search_log.txt
 __pycache__/
 *.pyc
+
+# ---------------------------------------------------------------------------
+# Track all experiment artifacts for sharing via git.
+# Note: we still keep global ignores (e.g. *.log/*.txt) for other folders,
+# but explicitly un-ignore everything under experiment_results/.
+# ---------------------------------------------------------------------------
+!experiment_results/
+!experiment_results/**

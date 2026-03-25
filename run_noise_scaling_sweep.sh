@@ -2,6 +2,66 @@
 # ============================================================================
 # 噪声 Scaling Factor 扫描实验后台启动脚本
 # ============================================================================
+# 
+# 运行时可选项（重要：本脚本会“透传”大多数参数给 Python 脚本）
+# ----------------------------------------------------------------------------
+# 一、本脚本自身支持的参数
+# - --foreground
+#   - 含义：前台运行（不使用 nohup，不写 pid.txt），日志直接输出到当前终端。
+#   - 适用：调试/小规模试跑，想立刻看到报错与进度。
+#
+# - --output_dir <DIR>
+#   - 含义：指定输出目录；不传时默认 `experiment_results/noise_scaling_sweep`。
+#   - 影响：
+#     - 后台模式下写入：`<output_dir>/run.log` 与 `<output_dir>/pid.txt`
+#     - Python 脚本也会把图与 JSON 输出到该目录。
+#
+# 二、透传给 `experiment_noise_scaling_sweep.py` 的参数（与 Python 脚本一致）
+# - --tasks <task1> <task2> ...
+#   - 含义：选择要跑的 GLUE 任务子集；不传则默认全跑：
+#     mnli sst2 mrpc stsb qnli cola rte wnli
+#
+# - --device <cuda|cpu|...>
+#   - 含义：选择推理设备；默认 `cuda`。若机器无 CUDA 会自动回退到 CPU（会非常慢）。
+#   - 备注：本脚本还通过环境变量 `CUDA_VISIBLE_DEVICES` 控制可见 GPU（默认 0）。
+#
+# - --batch_size <INT>
+#   - 含义：评估 batch size；默认 16。增大可提速但更易 OOM。
+#
+# - --max_length <INT>
+#   - 含义：tokenizer 最大长度；默认 128。
+#
+# - --eval_split <SPLIT_NAME>
+#   - 含义：评估使用的数据切分；默认 `validation_full`。
+#
+# - --repeat_n <INT>
+#   - 含义：每个扫描点重复评估次数；默认 50（非常耗时）。
+#   - 建议：调试可用 `--repeat_n 2` 或 `--repeat_n 5`。
+#
+# - --max_eval_samples <INT>
+#   - 含义：限制每次评估最多用多少样本；默认 0 表示不限制（全量评估，极慢）。
+#   - 建议：调试可用 `--max_eval_samples 32/128` 快速出图/出 JSON。
+#
+# - --seed <INT>
+#   - 含义：随机种子；默认 42。
+#
+# - --noise_base_source <json|manual>
+#   - 含义：“当前噪声配置”（x 与 6 个 W 的基准）来源；默认 `json`。
+#
+# - --noise_base_config <PATH>
+#   - 含义：当 `--noise_base_source json` 时读取的噪声配置文件；
+#     默认 `glue_noise_configs_best_ppo.json`。
+#
+# - --manual_noise_config <JSON_STRING>
+#   - 含义：当 `--noise_base_source manual` 时使用的手动噪声配置（JSON 字符串）。
+#
+# - --approx_base_config <PATH>
+#   - 含义：固定的 GELU / Softmax 近似配置来源；默认 `glue_configs_best_ppo.json`。
+#
+# 三、后台模式输出文件
+# - `<output_dir>/run.log`：nohup 的 stdout/stderr（主要进度在这里）
+# - `<output_dir>/pid.txt`：后台进程 PID，用于停止任务
+# ============================================================================
 # 一、脚本用途
 # 本脚本用于以和现有 run_gelu_analysis.sh / run_all_experiments.sh 类似的方式，
 # 后台启动 experiment_noise_scaling_sweep.py。
