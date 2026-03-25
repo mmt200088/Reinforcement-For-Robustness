@@ -3253,13 +3253,16 @@ class LayerImportanceEvaluator(TrainerCallback):
             baseline_noise_config = noise_stage_result["baseline_noise_config"]
             baseline_tot_c = noise_stage_result["baseline_tot_c"]
             best_noise_cfg = noise_stage_result["best_noise_config"]
-            search_best = {
-                k: v for k, v in best_noise_cfg.items()
-                if k.endswith("scaling_factors")
-            }
+            search_best = None
+            if best_noise_cfg is not None:
+                search_best = {
+                    k: v for k, v in best_noise_cfg.items()
+                    if k.endswith("scaling_factors")
+                }
             limit_loss = noise_stage_result["limit_loss"]
             limit_p = noise_stage_result["limit_p"]
             limit_s = noise_stage_result["limit_s"]
+            search_status = noise_stage_result.get("status")
         else:
             baseline_noise_config = self._get_max_noise_configuration()
             baseline_tot_c, _ = self.get_noise_simulated_cost(**baseline_noise_config)
@@ -3275,6 +3278,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             limit_loss = base_loss + self.error_threshold
             limit_p = base_p * (1.0 - self.correlation_drop_ratio)
             limit_s = base_s * (1.0 - self.correlation_drop_ratio)
+            search_status = None
 
         runner = NoiseFinalEvaluationModule(
             evaluator=self,
@@ -3290,6 +3294,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         return runner.run(
             search_best_noise_config=search_best,
+            search_status=search_status,
             fixed_gelu=fixed_gelu,
             fixed_softmax=fixed_softmax,
             baseline_noise_config=baseline_noise_config,

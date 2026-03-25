@@ -78,6 +78,7 @@ class NoiseFinalEvaluationModule:
     def run(
         self,
         search_best_noise_config: Optional[dict],
+        search_status: Optional[str],
         fixed_gelu: np.ndarray,
         fixed_softmax: np.ndarray,
         baseline_noise_config: dict,
@@ -157,6 +158,49 @@ class NoiseFinalEvaluationModule:
             ),
         }
 
+        if self.config_source == "search" and search_best_noise_config is None:
+            status = search_status or "no_search_config_available"
+            message = (
+                "Noise final evaluation skipped search-source selected configuration "
+                "because stage-2 did not produce a stable feasible noise configuration."
+            )
+            ev.log(f"[Warning] {message}")
+            summary_path = self._save_results_json(
+                selected_source="search",
+                baseline_result=baseline_result,
+                no_noise_result=no_noise_result,
+                selected_result=None,
+                random_results=[],
+                repeat_results=None,
+                summary=None,
+                limit_loss=limit_loss,
+                limit_p=limit_p,
+                limit_s=limit_s,
+                status=status,
+                message=message,
+            )
+
+            ev.apply_configuration(fixed_gelu, fixed_softmax)
+            ev.clear_input_noise_configuration()
+            ev.clear_weight_noise_configuration()
+
+            return {
+                "status": status,
+                "message": message,
+                "selected_source": "search",
+                "selected_label": None,
+                "selected_noise_config": None,
+                "baseline_result": baseline_result,
+                "no_noise_result": no_noise_result,
+                "selected_result": None,
+                "random_results": [],
+                "repeat_results": None,
+                "random_summary": None,
+                "eval_cache": eval_cache,
+                "summary_path": summary_path,
+                "plot_path": None,
+            }
+
         # 3. 解析选中配置
         selected_noise_cfg, selected_name, selected_source = (
             self._resolve_selected_config(
@@ -212,6 +256,8 @@ class NoiseFinalEvaluationModule:
             limit_loss=limit_loss,
             limit_p=limit_p,
             limit_s=limit_s,
+            status="ok",
+            message=None,
         )
 
         # 9. 绘图
@@ -227,6 +273,8 @@ class NoiseFinalEvaluationModule:
         ev.clear_weight_noise_configuration()
 
         return {
+            "status": "ok",
+            "message": None,
             "selected_source": selected_source,
             "selected_label": selected_name,
             "selected_noise_config": selected_noise_cfg,
@@ -1048,9 +1096,13 @@ class NoiseFinalEvaluationModule:
         limit_loss,
         limit_p,
         limit_s,
+        status,
+        message,
     ):
         output = {
             "dataset": self.evaluator.dataset_key,
+            "status": status,
+            "message": message,
             "selected_source": selected_source,
             "constraints": {
                 "limit_loss": float(limit_loss),
@@ -1079,6 +1131,8 @@ class NoiseFinalEvaluationModule:
         return output_path
 
     def _json_ready(self, result):
+        if result is None:
+            return None
         out = {}
         for key, value in result.items():
             if isinstance(value, np.ndarray):
