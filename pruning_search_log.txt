@@ -78,3 +78,15 @@
   Noise window 176 candidate confirmation: selection_reward=1.1852, raw_reward=1.2876, search=Loss: 0.333964, Accuracy: 0.877895, F1: 0.875540, std=(Loss=0.0052, M1=0.0081, M2=0.0084)
     Holdout: Loss: 0.307170, Accuracy: 0.876423, F1: 0.873298, std=(Loss=0.0051, M1=0.0095, M2=0.0106)
 Noise PPO training curves saved to: experiment_results/noise_rl_progress/noise_ppo_training_curve_ep30000.png
+Noise PPO entropy curve saved to: experiment_results/noise_rl_progress/noise_ppo_entropy_curve_ep30000.png
+Noise PPO progress snapshot saved at episode 30000: experiment_results/noise_rl_progress/noise_ppo_training_curve_ep30000.png
+  Noise Episode 30090: Avg Raw Reward=1.0512, Avg PPO Reward=1.0302, Policy Loss=0.3869, Value Loss=0.0051, Entropy=6.2746
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031570, Update#177 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=177, LastLoss=0.010142715880647302
+  Noise window 177 candidate confirmation: selection_reward=1.1458, raw_reward=1.3160, search=Loss: 0.340970, Accuracy: 0.875088, F1: 0.873444, std=(Loss=0.0097, M1=0.0069, M2=0.0068)
+    Holdout: Loss: 0.304272, Accuracy: 0.887805, F1: 0.885347, std=(Loss=0.0094, M1=0.0061, M2=0.0066)
+  Noise Episode 30260: Avg Raw Reward=1.0490, Avg PPO Reward=1.0529, Policy Loss=-0.8551, Value Loss=0.0116, Entropy=5.9555
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031466, Update#178 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=178, LastLoss=0.012635708320885897
+  Noise window 178 candidate confirmation: selection_reward=1.1840, raw_reward=1.3153, search=Loss: 0.336666, Accuracy: 0.875088, F1: 0.872874, std=(Loss=0.0027, M1=0.0036, M2=0.0038)
+    Holdout: Loss: 0.302524, Accuracy: 0.871545, F1: 0.869169, std=(Loss=0.0137, M1=0.0140, M2=0.0142)
