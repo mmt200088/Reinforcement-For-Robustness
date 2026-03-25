@@ -328,3 +328,8 @@ Noise PPO progress snapshot saved at episode 30000: experiment_results/noise_rl_
     [Noise Reward Estimator] Replay=4096, Updates=222, LastLoss=0.009751406498253345
   Noise window 222 candidate confirmation: selection_reward=1.1869, raw_reward=1.3263, search=Loss: 0.339877, Accuracy: 0.870175, F1: 0.868213, std=(Loss=0.0044, M1=0.0038, M2=0.0041)
     Holdout: Loss: 0.305046, Accuracy: 0.882927, F1: 0.880918, std=(Loss=0.0059, M1=0.0065, M2=0.0065)
+  Noise Episode 37910: Avg Raw Reward=1.0321, Avg PPO Reward=1.0382, Policy Loss=0.4337, Value Loss=0.0051, Entropy=6.0702
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.026781, Update#223 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=223, LastLoss=0.01100523630157113
+  Noise window 223 candidate confirmation: selection_reward=1.1798, raw_reward=1.3141, search=Loss: 0.342405, Accuracy: 0.872281, F1: 0.870202, std=(Loss=0.0035, M1=0.0057, M2=0.0059)
+    Holdout: Loss: 0.306385, Accuracy: 0.882927, F1: 0.881144, std=(Loss=0.0071, M1=0.0098, M2=0.0094)
