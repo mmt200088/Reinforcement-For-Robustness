@@ -7,7 +7,6 @@ model_statistics/**/*.png
 gelu_analysis/**/*.png
 all_analysis/**/*.png
 all_analysis_new/**/*.png
-experiment_results/**/*.png
 !pruning_search_log.txt
 __pycache__/
 *.pyc
