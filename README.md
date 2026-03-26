@@ -33,24 +33,24 @@ bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [d
 基础示例：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
 
-### Concurrent-safe run layout
+### 并行安全运行（Concurrent-safe run layout）
 
-The command format does not change, but `logfile_path` now acts as a log filename hint.
-Each launch auto-creates a unique run directory:
+命令格式不变，但 `logfile_path` 现在只用于提示日志文件名（实际写入位置由 run 目录决定）。
+每次启动都会自动创建一个唯一的 run 目录：
 
 ```text
 experiment_results/layer_importance_runs/<dataset>/<YYYYmmdd_HHMMSS>_pid<PID>/
 ```
 
-The launcher writes:
+启动器会把各类输出写入不同子目录：
 
-- nohup log: `.../logs/<basename(logfile_path)>`
-- stage-1 search log / step info / curves: `.../stage1/`
-- stage-1 final-eval outputs: `.../stage1_final_eval/`
-- stage-2 noise RL outputs and progress snapshots: `.../stage2_noise/`
-- stage-2 noise final-eval outputs: `.../stage2_noise_final_eval/`
+- nohup 日志：`.../logs/<basename(logfile_path)>`
+- 第一阶段（stage-1）搜索日志 / step 信息 / 曲线：`.../stage1/`
+- 第一阶段（stage-1）最终评估输出：`.../stage1_final_eval/`
+- 第二阶段（stage-2）噪声 RL 输出与进度快照：`.../stage2_noise/`
+- 第二阶段（stage-2）噪声最终评估输出：`.../stage2_noise_final_eval/`
 
-This means the following commands can run at the same time even though both use `output.log`:
+因此，下面这些命令可以同时并行运行，即使它们都使用相同的 `output.log`：
 
 ```bash
 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc
@@ -58,13 +58,59 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-
 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model stsb
 ```
 
-The script also no longer forces `CUDA_VISIBLE_DEVICES=0`.
-If you want to pin different GPUs for concurrent runs, set it outside the script:
+脚本本身也不再强制设置 `CUDA_VISIBLE_DEVICES=0`。如果你想让并行运行时分别绑定不同 GPU，请在脚本外部设置：
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
 CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model stsb
 ```
+
+#### 如何在命令行并行跑多数据集
+
+实现并行的关键是：每个进程都会自动落到独立的 run 目录（包含 `<dataset>/<YYYYmmdd_HHMMSS>_pid<PID>/`），所以你可以在并行任务里重复使用同一个 `logfile_path`（例如都传 `output.log`），不会互相覆盖产出。
+
+并行常用做法：
+
+1. 最推荐：分别在不同终端窗口/会话里启动不同 `--model`（每条命令就是一个独立实验进程）。
+2. 需要在同一终端里同时跑：把每条命令放到后台执行（给命令后面加 `&`），例如 `bash ... &`。
+
+示例（并行跑 MRPC + STS-B；与上面“命令并行可运行”的示例一致）：
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc &
+
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval --noise-eval-repeat 200 --model stsb &
+```
+
+如果你有多张 GPU，建议再给每条命令绑定不同 GPU（避免显存互抢）：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc &
+CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model stsb &
+```
+
+#### 并行相关可选参数怎么用（对应上面的并行示例）
+
+下表只聚焦并行时最常用、也出现在上面示例里的参数；更完整的各阶段参数与安全约束见后文各表格。
+
+| 参数 | 作用 | 并行时该怎么配 |
+| --- | --- | --- |
+| `logfile_path` | `nohup` 日志名提示（会取 basename 作为日志文件名） | 多个并行进程可传相同文件名（产出仍在各自 run 目录下） |
+| `--model` | 选择数据集（并自动匹配对应 `base_model`） | 并行时让不同进程分别用不同 `--model` 值 |
+| `--skip-stage1-rl` | 跳过第一阶段 RL 搜索/训练 | 并行加速的常用开关：先有/后用已有配置或搜索结果时可加 |
+| `--final-eval-source json` | 第一阶段最终评估配置来源为 JSON | 当 `--final-eval-source` 取 `json`（或 `manual`）时，需要显式加 `--skip-stage1-rl` |
+| `--final-eval-config PATH` | 第一阶段最终评估用的 JSON 配置文件路径 | 一般并行时保持一致，避免同时改动多个配置来源 |
+| `--skip-stage1-final-eval` | 跳过第一阶段最终评估 | 只关心后续阶段（例如噪声阶段）时可加 |
+| `--noise-eval-repeat N` | 噪声最终评估重复次数 | 并行时想要统计更稳可调大；想缩短总耗时可调小 |
+| `--skip-noise-rl` | 跳过第二阶段噪声 RL 训练 | 只想跑噪声最终评估时加；当 `--noise-eval-source` 用 `json/manual` 时也需要显式加 |
+| `--skip-noise-final-eval` | 跳过第二阶段噪声最终评估 | 只关心噪声 RL 训练过程/中间产物时加 |
+| `--noise-eval-source` | 噪声最终评估配置来源（`search/json/manual`） | 并行时常用 `json`：配合 `--noise-eval-config` 直接读配置 |
+| `--noise-eval-config PATH` | `json` 模式下的噪声配置文件 | 例如默认的 `glue_noise_configs_best_ppo.json` |
+| `--manual-noise-config` | `manual` 模式下的噪声配置（JSON 字符串） | 配置很少且不想改文件时用 |
 
 ### --model 数据集+模型切换
 
