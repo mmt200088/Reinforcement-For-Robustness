@@ -58,7 +58,7 @@ class NoiseFinalEvaluationModule:
         self.permutation_trials = max(0, int(permutation_trials))
         self.cost_equivalent_trials = max(0, int(cost_equivalent_trials))
         self.budget_equivalent_trials = max(0, int(budget_equivalent_trials))
-        self.repeat_n = max(1, int(repeat_n))
+        self.repeat_n = max(5, int(repeat_n))
         self.results_dir = results_dir or os.path.join(
             "experiment_results", "noise_final_evaluation"
         )
@@ -94,46 +94,161 @@ class NoiseFinalEvaluationModule:
         num_metrics = ev.get_num_metrics()
         metric_short_names = ev.get_metric_short_names()
         eval_cache: Dict = {}
+        selection_constraints = {
+            "loss": float(limit_loss),
+            "metric1": float(limit_p),
+            "metric2": float(limit_s),
+        }
 
-        def eval_noise_result(name, family, noise_cfg):
+        def _get_noise_eval(noise_cfg):
             sig = self._noise_config_signature(noise_cfg)
             if sig in eval_cache:
-                loss, p, s, t = eval_cache[sig]
-            else:
-                loss, p, s, t = ev.evaluate_model_with_attention_noise(
-                    fixed_gelu, fixed_softmax, use_train=False, **noise_cfg
-                )
-                eval_cache[sig] = (loss, p, s, t)
+                return eval_cache[sig]
+
+            loss, p, s, t = ev.evaluate_model_with_attention_noise(
+                fixed_gelu, fixed_softmax, use_train=False, **noise_cfg
+            )
             tot_c, breakdown = ev.get_noise_simulated_cost(**noise_cfg)
-            return {
-                "name": name,
-                "family": family,
+            cached = {
                 "loss": float(loss),
                 "p": float(p),
                 "s": float(s),
                 "time_ms": float(t),
                 "tot_c": float(tot_c),
-                "tot_spd": float(baseline_tot_c / (tot_c + 1e-6)),
                 "breakdown": breakdown,
+            }
+            eval_cache[sig] = cached
+            return cached
+
+        def _build_noise_result(name, family, noise_cfg, constraints, repeat_results=None):
+            cached = _get_noise_eval(noise_cfg)
+            loss = float(
+                repeat_results["stats"]["loss_mean"]
+                if repeat_results is not None
+                else cached["loss"]
+            )
+            p = float(
+                repeat_results["stats"]["p_mean"]
+                if repeat_results is not None
+                else cached["p"]
+            )
+            s = float(
+                repeat_results["stats"]["s_mean"]
+                if repeat_results is not None
+                else cached["s"]
+            )
+            time_ms = float(
+                repeat_results["stats"]["time_mean_ms"]
+                if repeat_results is not None
+                else cached["time_ms"]
+            )
+            result = {
+                "name": name,
+                "family": family,
+                "loss": loss,
+                "p": p,
+                "s": s,
+                "time_ms": time_ms,
+                "tot_c": float(cached["tot_c"]),
+                "tot_spd": float(baseline_tot_c / (cached["tot_c"] + 1e-6)),
+                "breakdown": cached["breakdown"],
                 "noise_config": {
                     k: np.asarray(noise_cfg[k], dtype=int).copy()
                     for k in NOISE_SCALING_FACTOR_KEYS
                 },
                 "feasible": self._is_feasible(
-                    loss, p, s, limit_loss, limit_p, limit_s
+                    loss,
+                    p,
+                    s,
+                    constraints["loss"],
+                    constraints["metric1"],
+                    constraints["metric2"],
                 ),
             }
+            if repeat_results is not None:
+                stats = repeat_results["stats"]
+                result.update(
+                    {
+                        "evaluation_n": int(stats["n"]),
+                        "loss_std": float(stats["loss_std"]),
+                        "loss_min": float(stats["loss_min"]),
+                        "loss_max": float(stats["loss_max"]),
+                        "loss_range": float(stats["loss_range"]),
+                        "p_std": float(stats["p_std"]),
+                        "p_min": float(stats["p_min"]),
+                        "p_max": float(stats["p_max"]),
+                        "p_range": float(stats["p_range"]),
+                        "s_std": float(stats["s_std"]),
+                        "s_min": float(stats["s_min"]),
+                        "s_max": float(stats["s_max"]),
+                        "s_range": float(stats["s_range"]),
+                        "time_std_ms": float(stats["time_std_ms"]),
+                        "evaluation_protocol": f"repeated_mean_n={int(stats['n'])}",
+                    }
+                )
+            return result
 
         ev.log("\n" + "=" * 60)
         ev.log("PHASE 5.5: NOISE RL FINAL EVALUATION (验证集)")
         ev.log(f"NOISE_EVAL_CONFIG_SOURCE={self.config_source}")
         if self.repeat_n > 1:
             ev.log(f"NOISE_EVAL_REPEAT_N={self.repeat_n}")
+        ev.log(
+            "Selection constraints (from stage-2 search protocol): "
+            f"Loss<={selection_constraints['loss']:.4f}, "
+            f"{metric_short_names[0]}>={selection_constraints['metric1']:.4f}"
+            + (
+                f", {metric_short_names[1]}>={selection_constraints['metric2']:.4f}"
+                if num_metrics > 1
+                else ""
+            )
+        )
         ev.log("=" * 60)
 
         # 1. Baseline (Max Scaling)
-        baseline_result = eval_noise_result(
-            "Baseline (Max Scaling)", "Baseline", baseline_noise_config
+        baseline_repeat_results = None
+        if self.repeat_n > 1:
+            baseline_repeat_results = self._run_repeated_evaluation(
+                fixed_gelu,
+                fixed_softmax,
+                baseline_noise_config,
+                "Baseline (Max Scaling)",
+                repeats=self.repeat_n,
+                log_trials=False,
+            )
+        baseline_reference = (
+            baseline_repeat_results["stats"]
+            if baseline_repeat_results is not None
+            else _get_noise_eval(baseline_noise_config)
+        )
+        report_constraints = ev.build_constraint_limits_from_metrics(
+            baseline_reference["loss_mean"] if "loss_mean" in baseline_reference else baseline_reference["loss"],
+            baseline_reference["p_mean"] if "p_mean" in baseline_reference else baseline_reference["p"],
+            baseline_reference["s_mean"] if "s_mean" in baseline_reference else baseline_reference["s"],
+        )
+        ev.log(
+            "Final-eval report constraints (based on repeated baseline on validation_full): "
+            f"Loss<={report_constraints['loss']:.4f}, "
+            f"{metric_short_names[0]}>={report_constraints['metric1']:.4f}"
+            + (
+                f", {metric_short_names[1]}>={report_constraints['metric2']:.4f}"
+                if num_metrics > 1
+                else ""
+            )
+        )
+        baseline_single_result = _build_noise_result(
+            "Baseline (Max Scaling)",
+            "Baseline",
+            baseline_noise_config,
+            report_constraints,
+            repeat_results=None,
+        )
+        baseline_result = _build_noise_result(
+            "Baseline (Max Scaling)",
+            "Baseline",
+            baseline_noise_config,
+            report_constraints,
+            repeat_results=baseline_repeat_results,
         )
 
         # 2. No-Noise 对照组（仅 GELU/Softmax，不注入噪声）
@@ -156,7 +271,9 @@ class NoiseFinalEvaluationModule:
             "noise_config": None,
             "feasible": self._is_feasible(
                 no_noise_loss, no_noise_p, no_noise_s,
-                limit_loss, limit_p, limit_s,
+                report_constraints["loss"],
+                report_constraints["metric1"],
+                report_constraints["metric2"],
             ),
         }
 
@@ -170,14 +287,16 @@ class NoiseFinalEvaluationModule:
             summary_path = self._save_results_json(
                 selected_source="search",
                 baseline_result=baseline_result,
+                baseline_single_result=baseline_single_result,
                 no_noise_result=no_noise_result,
                 selected_result=None,
+                selected_single_result=None,
                 random_results=[],
                 repeat_results=None,
+                baseline_repeat_results=baseline_repeat_results,
                 summary=None,
-                limit_loss=limit_loss,
-                limit_p=limit_p,
-                limit_s=limit_s,
+                selection_constraints=selection_constraints,
+                report_constraints=report_constraints,
                 status=status,
                 message=message,
             )
@@ -195,6 +314,7 @@ class NoiseFinalEvaluationModule:
                 "baseline_result": baseline_result,
                 "no_noise_result": no_noise_result,
                 "selected_result": None,
+                "baseline_repeat_results": baseline_repeat_results,
                 "random_results": [],
                 "repeat_results": None,
                 "random_summary": None,
@@ -210,23 +330,40 @@ class NoiseFinalEvaluationModule:
                 total_layers=ev.total_layers,
             )
         )
-        selected_result = eval_noise_result(
-            selected_name, "Selected", selected_noise_cfg
+        selected_single_result = _build_noise_result(
+            selected_name, "Selected", selected_noise_cfg, report_constraints
         )
 
         # 4. N 次重复评估
         repeat_results = None
         if self.repeat_n > 1:
             repeat_results = self._run_repeated_evaluation(
-                fixed_gelu, fixed_softmax, selected_noise_cfg, selected_name
+                fixed_gelu,
+                fixed_softmax,
+                selected_noise_cfg,
+                selected_name,
+                repeats=self.repeat_n,
+                log_trials=True,
             )
+        selected_result = _build_noise_result(
+            selected_name,
+            "Selected",
+            selected_noise_cfg,
+            report_constraints,
+            repeat_results=repeat_results,
+        )
 
         # 5. 随机对照实验
         random_results = self._generate_random_results(
             selected_noise_cfg=selected_noise_cfg,
             selected_result=selected_result,
             baseline_tot_c=baseline_tot_c,
-            eval_noise_result=eval_noise_result,
+            eval_noise_result=lambda name, family, noise_cfg: _build_noise_result(
+                name,
+                family,
+                noise_cfg,
+                report_constraints,
+            ),
         )
 
         # 6. 随机对照统计汇总
@@ -242,7 +379,10 @@ class NoiseFinalEvaluationModule:
         )
         if repeat_results is not None:
             self._log_repeat_results(
-                repeat_results, metric_short_names, num_metrics
+                selected_name,
+                repeat_results,
+                metric_short_names,
+                num_metrics,
             )
         self._log_random_summary(metric_short_names, summary, selected_result)
 
@@ -250,14 +390,16 @@ class NoiseFinalEvaluationModule:
         summary_path = self._save_results_json(
             selected_source=selected_source,
             baseline_result=baseline_result,
+            baseline_single_result=baseline_single_result,
             no_noise_result=no_noise_result,
             selected_result=selected_result,
+            selected_single_result=selected_single_result,
             random_results=random_results,
             repeat_results=repeat_results,
+            baseline_repeat_results=baseline_repeat_results,
             summary=summary,
-            limit_loss=limit_loss,
-            limit_p=limit_p,
-            limit_s=limit_s,
+            selection_constraints=selection_constraints,
+            report_constraints=report_constraints,
             status="ok",
             message=None,
         )
@@ -281,8 +423,11 @@ class NoiseFinalEvaluationModule:
             "selected_label": selected_name,
             "selected_noise_config": selected_noise_cfg,
             "baseline_result": baseline_result,
+            "baseline_single_result": baseline_single_result,
+            "baseline_repeat_results": baseline_repeat_results,
             "no_noise_result": no_noise_result,
             "selected_result": selected_result,
+            "selected_single_result": selected_single_result,
             "random_results": random_results,
             "repeat_results": repeat_results,
             "random_summary": summary,
@@ -348,8 +493,14 @@ class NoiseFinalEvaluationModule:
     # N-times repeated evaluation
     # ------------------------------------------------------------------
 
-    def _run_repeated_evaluation(
-        self, fixed_gelu, fixed_softmax, noise_cfg, selected_name
+    def _run_repeated_evaluation_legacy(
+        self,
+        fixed_gelu,
+        fixed_softmax,
+        noise_cfg,
+        selected_name,
+        repeats=None,
+        log_trials=True,
     ):
         ev = self.evaluator
         short_names = ev.get_metric_short_names()
@@ -395,6 +546,84 @@ class NoiseFinalEvaluationModule:
             "s_std": float(np.std(ss)),
             "s_min": float(np.min(ss)),
             "s_max": float(np.max(ss)),
+        }
+        ev.log(
+            f"  统计: Loss={stats['loss_mean']:.4f}±{stats['loss_std']:.6f} "
+            f"[{stats['loss_min']:.4f}, {stats['loss_max']:.4f}]"
+        )
+        ev.log(
+            f"  统计: {short_names[0]}={stats['p_mean']:.4f}±{stats['p_std']:.6f} "
+            f"[{stats['p_min']:.4f}, {stats['p_max']:.4f}]"
+        )
+        if num_metrics > 1:
+            ev.log(
+                f"  统计: {short_names[1]}={stats['s_mean']:.4f}±{stats['s_std']:.6f} "
+                f"[{stats['s_min']:.4f}, {stats['s_max']:.4f}]"
+            )
+        return {"trials": trials, "stats": stats}
+
+    def _run_repeated_evaluation(
+        self,
+        fixed_gelu,
+        fixed_softmax,
+        noise_cfg,
+        selected_name,
+        repeats=None,
+        log_trials=True,
+    ):
+        ev = self.evaluator
+        short_names = ev.get_metric_short_names()
+        num_metrics = ev.get_num_metrics()
+        repeats = self.repeat_n if repeats is None else max(1, int(repeats))
+        ev.log(f"\n--- {selected_name} : N={repeats} 次重复评估 ---")
+        summary = ev.evaluate_model_with_attention_noise_repeated(
+            fixed_gelu,
+            fixed_softmax,
+            repeats=repeats,
+            use_train=False,
+            **noise_cfg,
+        )
+
+        trials: List[dict] = []
+        for idx, trial in enumerate(summary["trials"], start=1):
+            entry = {
+                "trial": idx,
+                "loss": float(trial["loss"]),
+                "p": float(trial["p"]),
+                "s": float(trial["s"]),
+                "time_ms": float(trial["time_ms"]),
+            }
+            trials.append(entry)
+            if log_trials:
+                msg = (
+                    f"  Trial {idx}/{repeats}: "
+                    f"Loss={entry['loss']:.4f}, {short_names[0]}={entry['p']:.4f}"
+                )
+                if num_metrics > 1:
+                    msg += f", {short_names[1]}={entry['s']:.4f}"
+                msg += f", Time={entry['time_ms']:.1f}ms"
+                ev.log(msg)
+
+        stats = {
+            "split_name": summary["split_name"],
+            "n": int(summary["n"]),
+            "loss_mean": float(summary["loss_mean"]),
+            "loss_std": float(summary["loss_std"]),
+            "loss_min": float(summary["loss_min"]),
+            "loss_max": float(summary["loss_max"]),
+            "loss_range": float(summary["loss_range"]),
+            "p_mean": float(summary["p_mean"]),
+            "p_std": float(summary["p_std"]),
+            "p_min": float(summary["p_min"]),
+            "p_max": float(summary["p_max"]),
+            "p_range": float(summary["p_range"]),
+            "s_mean": float(summary["s_mean"]),
+            "s_std": float(summary["s_std"]),
+            "s_min": float(summary["s_min"]),
+            "s_max": float(summary["s_max"]),
+            "s_range": float(summary["s_range"]),
+            "time_mean_ms": float(summary["time_mean_ms"]),
+            "time_std_ms": float(summary["time_std_ms"]),
         }
         ev.log(
             f"  统计: Loss={stats['loss_mean']:.4f}±{stats['loss_std']:.6f} "
@@ -733,10 +962,28 @@ class NoiseFinalEvaluationModule:
             ev.log(self._format_row(res, baseline_result, num_metrics))
         ev.log("-" * len(header))
 
-    def _log_repeat_results(self, repeat_results, metric_short_names, num_metrics):
+    def _log_repeat_results_legacy(self, label, repeat_results, metric_short_names, num_metrics):
         ev = self.evaluator
         stats = repeat_results["stats"]
         ev.log(f"\nN={stats['n']} 次重复评估汇总:")
+        ev.log(
+            f"  Loss : {stats['loss_mean']:.4f} ± {stats['loss_std']:.6f} "
+            f"[{stats['loss_min']:.4f}, {stats['loss_max']:.4f}]"
+        )
+        ev.log(
+            f"  {metric_short_names[0]} : {stats['p_mean']:.4f} ± {stats['p_std']:.6f} "
+            f"[{stats['p_min']:.4f}, {stats['p_max']:.4f}]"
+        )
+        if num_metrics > 1:
+            ev.log(
+                f"  {metric_short_names[1]} : {stats['s_mean']:.4f} ± {stats['s_std']:.6f} "
+                f"[{stats['s_min']:.4f}, {stats['s_max']:.4f}]"
+            )
+
+    def _log_repeat_results(self, label, repeat_results, metric_short_names, num_metrics):
+        ev = self.evaluator
+        stats = repeat_results["stats"]
+        ev.log(f"\n{label} repeated-eval summary (N={stats['n']}):")
         ev.log(
             f"  Loss : {stats['loss_mean']:.4f} ± {stats['loss_std']:.6f} "
             f"[{stats['loss_min']:.4f}, {stats['loss_max']:.4f}]"
@@ -1090,14 +1337,16 @@ class NoiseFinalEvaluationModule:
         self,
         selected_source,
         baseline_result,
+        baseline_single_result,
         no_noise_result,
         selected_result,
+        selected_single_result,
         random_results,
         repeat_results,
+        baseline_repeat_results,
         summary,
-        limit_loss,
-        limit_p,
-        limit_s,
+        selection_constraints,
+        report_constraints,
         status,
         message,
     ):
@@ -1107,13 +1356,25 @@ class NoiseFinalEvaluationModule:
             "message": message,
             "selected_source": selected_source,
             "constraints": {
-                "limit_loss": float(limit_loss),
-                "limit_primary_metric": float(limit_p),
-                "limit_secondary_metric": float(limit_s),
+                "selection": {
+                    "limit_loss": float(selection_constraints["loss"]),
+                    "limit_primary_metric": float(selection_constraints["metric1"]),
+                    "limit_secondary_metric": float(selection_constraints["metric2"]),
+                },
+                "report": {
+                    "limit_loss": float(report_constraints["loss"]),
+                    "limit_primary_metric": float(report_constraints["metric1"]),
+                    "limit_secondary_metric": float(report_constraints["metric2"]),
+                },
+                "limit_loss": float(selection_constraints["loss"]),
+                "limit_primary_metric": float(selection_constraints["metric1"]),
+                "limit_secondary_metric": float(selection_constraints["metric2"]),
             },
             "baseline": self._json_ready(baseline_result),
+            "baseline_single": self._json_ready(baseline_single_result),
             "no_noise": self._json_ready(no_noise_result),
             "selected": self._json_ready(selected_result),
+            "selected_single": self._json_ready(selected_single_result),
             "random_results": [self._json_ready(r) for r in random_results],
             "random_summary": summary,
         }
@@ -1121,6 +1382,11 @@ class NoiseFinalEvaluationModule:
             output["repeat_evaluation"] = {
                 "stats": repeat_results["stats"],
                 "trials": repeat_results["trials"],
+            }
+        if baseline_repeat_results is not None:
+            output["baseline_repeat_evaluation"] = {
+                "stats": baseline_repeat_results["stats"],
+                "trials": baseline_repeat_results["trials"],
             }
 
         output_path = os.path.join(

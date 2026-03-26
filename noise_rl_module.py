@@ -31,6 +31,8 @@ NOISE_STAGE_GTRXL_WARMUP_UPDATES = 0
 NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES = 20
 
 NOISE_STAGE_MC_SAMPLES = 3
+NOISE_STAGE_BASELINE_REPEATS = 5
+NOISE_STAGE_ONLINE_BASELINE_REPEATS = 3
 NOISE_STAGE_CONFIRM_REPEATS = 5
 NOISE_STAGE_FINALIST_REPEATS = 15
 NOISE_STAGE_SHORTLIST_SIZE = 5
@@ -46,11 +48,17 @@ NOISE_STAGE_STABILITY_THRESHOLDS = {
         "loss_std": 0.008,
         "metric1_std": 0.008,
         "metric2_std": 0.008,
+        "loss_sem_ratio": 0.00375,
+        "metric1_sem_ratio": 0.0025,
+        "metric2_sem_ratio": 0.0025,
     },
     "holdout": {
         "loss_std": 0.010,
         "metric1_std": 0.012,
         "metric2_std": 0.012,
+        "loss_sem_ratio": 0.0050,
+        "metric1_sem_ratio": 0.00375,
+        "metric2_sem_ratio": 0.00375,
     },
 }
 
@@ -132,41 +140,107 @@ class NoiseRLModule:
 
         fixed_gelu = np.asarray(fixed_gelu, dtype=int)
         fixed_softmax = np.asarray(fixed_softmax, dtype=int)
-        baseline_noise_config = ev._get_max_noise_configuration()
+        exact_baseline_gelu, exact_baseline_softmax = ev.get_stage1_exact_baseline_configuration()
+        exact_baseline_gelu = np.asarray(exact_baseline_gelu, dtype=int)
+        exact_baseline_softmax = np.asarray(exact_baseline_softmax, dtype=int)
+        cost_reference_noise_config = ev._get_max_noise_configuration()
 
         reward_reference_split = ev.get_reward_reference_split_name()
-        baseline_train = ev.evaluate_model_with_attention_noise(
-            fixed_gelu,
-            fixed_softmax,
-            use_train=True,
-            **baseline_noise_config,
-        )
-        baseline_val = ev.evaluate_model_with_attention_noise(
-            fixed_gelu,
-            fixed_softmax,
-            split=reward_reference_split,
-            **baseline_noise_config,
-        )
-        baseline_tot_c, baseline_breakdown = ev.get_noise_simulated_cost(**baseline_noise_config)
 
-        ev.log("Noise-Stage Baseline Metrics (Training Set):")
-        ev.log(f"  {ev._fmt_metrics(*baseline_train[:3])}")
-        ev.log(f"  Noise Cost: {baseline_tot_c:.2f} | Breakdown={baseline_breakdown}")
-        ev.log(f"Noise-Stage Baseline Metrics ({reward_reference_split} - used for reward):")
-        ev.log(f"  {ev._fmt_metrics(*baseline_val[:3])}")
+        def _copy_repeat_summary(summary):
+            return {
+                key: (
+                    [dict(item) for item in value]
+                    if key == "trials"
+                    else value
+                )
+                for key, value in summary.items()
+            }
+
+        def _log_repeat_baseline(label, stats):
+            ev.log(
+                f"{label} (repeated N={stats['n']} on {stats['split_name']}):"
+            )
+            ev.log(
+                "  "
+                f"{ev._fmt_metrics(stats['loss_mean'], stats['p_mean'], stats['s_mean'])}, "
+                f"std=(Loss={stats['loss_std']:.4f}, "
+                f"M1={stats['p_std']:.4f}, M2={stats['s_std']:.4f})"
+            )
+
+        baseline_train_stats = ev.evaluate_model_repeated(
+            exact_baseline_gelu,
+            exact_baseline_softmax,
+            repeats=NOISE_STAGE_BASELINE_REPEATS,
+            use_train=True,
+        )
+        baseline_reference_stats = ev.evaluate_model_repeated(
+            exact_baseline_gelu,
+            exact_baseline_softmax,
+            repeats=NOISE_STAGE_BASELINE_REPEATS,
+            split=reward_reference_split,
+        )
+        if ev.has_dataset_split("val_holdout"):
+            baseline_holdout_stats = ev.evaluate_model_repeated(
+                exact_baseline_gelu,
+                exact_baseline_softmax,
+                repeats=NOISE_STAGE_BASELINE_REPEATS,
+                split="val_holdout",
+            )
+        else:
+            baseline_holdout_stats = _copy_repeat_summary(baseline_reference_stats)
+            baseline_holdout_stats["split_name"] = "val_holdout"
+        cost_reference_tot_c, cost_reference_breakdown = ev.get_noise_simulated_cost(**cost_reference_noise_config)
+
+        ev.log("Noise-Stage Shared Performance Baseline (Stage-1 exact baseline: GELU all-4, Softmax all-6, no noise):")
+        ev.log("  GELU   : " + exact_baseline_gelu.tolist().__repr__())
+        ev.log("  Softmax: " + exact_baseline_softmax.tolist().__repr__())
+        ev.log("  Training Set:")
+        _log_repeat_baseline("  Baseline", baseline_train_stats)
+        ev.log(
+            f"  {reward_reference_split} (used for reward/search constraints):"
+        )
+        _log_repeat_baseline("  Baseline", baseline_reference_stats)
+        if ev.has_dataset_split("val_holdout"):
+            ev.log("  val_holdout (used for holdout constraints):")
+            _log_repeat_baseline("  Baseline", baseline_holdout_stats)
+        ev.log("Noise-Stage Cost Reference (max-noise configuration, used only for cost normalization):")
+        ev.log(f"  Noise Cost: {cost_reference_tot_c:.2f} | Breakdown={cost_reference_breakdown}")
 
         if USE_VALIDATION_FOR_REWARD:
-            base_loss, base_p, base_s = baseline_val[:3]
+            base_loss = baseline_reference_stats["loss_mean"]
+            base_p = baseline_reference_stats["p_mean"]
+            base_s = baseline_reference_stats["s_mean"]
         else:
-            base_loss, base_p, base_s = baseline_train[:3]
+            base_loss = baseline_train_stats["loss_mean"]
+            base_p = baseline_train_stats["p_mean"]
+            base_s = baseline_train_stats["s_mean"]
 
-        limit_loss = base_loss + ev.error_threshold
-        limit_p = base_p * (1.0 - ev.correlation_drop_ratio)
-        limit_s = base_s * (1.0 - ev.correlation_drop_ratio)
+        search_limits = ev.build_constraint_limits_from_metrics(base_loss, base_p, base_s)
+        holdout_limits = (
+            ev.build_constraint_limits_from_metrics(
+                baseline_holdout_stats["loss_mean"],
+                baseline_holdout_stats["p_mean"],
+                baseline_holdout_stats["s_mean"],
+            )
+            if ev.has_dataset_split("val_holdout")
+            else dict(search_limits)
+        )
+        limit_loss = float(search_limits["loss"])
+        limit_p = float(search_limits["metric1"])
+        limit_s = float(search_limits["metric2"])
         constraint_split_label = reward_reference_split if USE_VALIDATION_FOR_REWARD else "train"
-        ev.log(f"Noise-Stage Constraints (based on {constraint_split_label}):")
+        ev.log(f"Noise-Stage Search Constraints (based on repeated {constraint_split_label} baseline mean):")
         ev.log(f"  {ev._fmt_constraints(limit_loss, limit_p, limit_s)}")
+        if ev.has_dataset_split("val_holdout"):
+            ev.log("Noise-Stage Holdout Constraints (based on repeated val_holdout baseline mean):")
+            ev.log(
+                "  "
+                f"{ev._fmt_constraints(holdout_limits['loss'], holdout_limits['metric1'], holdout_limits['metric2'])}"
+            )
         training_hparams = {
+            "performance_baseline_source": "stage1_exact_no_noise",
+            "cost_reference_source": "max_noise_cost_reference",
             "gtrxl_d_model": NOISE_STAGE_GTRXL_D_MODEL,
             "gtrxl_n_heads": NOISE_STAGE_GTRXL_N_HEADS,
             "gtrxl_n_layers": NOISE_STAGE_GTRXL_N_LAYERS,
@@ -182,6 +256,8 @@ class NoiseRLModule:
             "gtrxl_short_warmup_updates": NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES,
             "gtrxl_mini_batch_episodes": GTRXL_MINI_BATCH_EPISODES,
             "mc_samples": NOISE_STAGE_MC_SAMPLES,
+            "baseline_repeats": NOISE_STAGE_BASELINE_REPEATS,
+            "online_baseline_repeats": NOISE_STAGE_ONLINE_BASELINE_REPEATS,
             "confirm_repeats": NOISE_STAGE_CONFIRM_REPEATS,
             "finalist_repeats": NOISE_STAGE_FINALIST_REPEATS,
             "shortlist_size": NOISE_STAGE_SHORTLIST_SIZE,
@@ -310,26 +386,27 @@ class NoiseRLModule:
         if USE_VALIDATION_FOR_REWARD:
             if use_fixed_search_reward:
                 online_reward_split = reward_reference_split
+                proxy_baseline_stats = _copy_repeat_summary(baseline_reference_stats)
             else:
                 ev.refresh_validation_proxy(window_index=0, stage_label="Stage-2 Noise RL")
                 online_reward_split = ev.get_online_reward_split_name()
+                proxy_baseline_stats = ev.evaluate_model_repeated(
+                    exact_baseline_gelu,
+                    exact_baseline_softmax,
+                    repeats=NOISE_STAGE_ONLINE_BASELINE_REPEATS,
+                    split=online_reward_split,
+                )
             rl_evaluator.split_name = online_reward_split
-            proxy_baseline = ev.evaluate_model_with_attention_noise(
-                fixed_gelu,
-                fixed_softmax,
-                split=online_reward_split,
-                **baseline_noise_config,
-            )
             ev.log(
                 f"[Info] Noise-stage online reward uses {online_reward_split} "
-                f"(constraints stay on {reward_reference_split})"
+                f"(performance baseline stays at Stage-1 exact baseline; cost reference stays max-noise)"
             )
         else:
             online_reward_split = "train"
-            proxy_baseline = baseline_train
+            proxy_baseline_stats = _copy_repeat_summary(baseline_train_stats)
         env = _NoiseOptEnv(
             ev.total_layers,
-            baseline_tot_c,
+            cost_reference_tot_c,
             (base_loss, base_p, base_s),
             rl_evaluator,
             fixed_gelu=fixed_gelu,
@@ -370,10 +447,10 @@ class NoiseRLModule:
             mc_samples=NOISE_STAGE_MC_SAMPLES,
         )
         env.prev_episode_metrics = {
-            "loss": float(proxy_baseline[0]),
-            "metric1": float(proxy_baseline[1]),
-            "metric2": float(proxy_baseline[2]),
-            "cost": float(baseline_tot_c),
+            "loss": float(proxy_baseline_stats["loss_mean"]),
+            "metric1": float(proxy_baseline_stats["p_mean"]),
+            "metric2": float(proxy_baseline_stats["s_mean"]),
+            "cost": float(cost_reference_tot_c),
         }
         buffer = _NoiseRecurrentRolloutBuffer()
 
@@ -396,12 +473,21 @@ class NoiseRLModule:
         window_best_cost = float("inf")
         window_best_noise_config = None
         noise_scaling_keys = tuple(
-            key for key in baseline_noise_config.keys() if key.endswith("scaling_factors")
+            key for key in cost_reference_noise_config.keys() if key.endswith("scaling_factors")
         )
         num_metrics = ev.get_num_metrics()
         stability_thresholds = {
             split: dict(values)
             for split, values in NOISE_STAGE_STABILITY_THRESHOLDS.items()
+        }
+        search_constraint_baseline_stats = (
+            baseline_reference_stats
+            if reward_reference_split != "train"
+            else baseline_train_stats
+        )
+        split_baseline_stats = {
+            "search": _copy_repeat_summary(search_constraint_baseline_stats),
+            "holdout": _copy_repeat_summary(baseline_holdout_stats),
         }
         search_best_noise_config = None
         joint_best_noise_config = None
@@ -500,17 +586,21 @@ class NoiseRLModule:
                 return True
             return _joint_sort_key(candidate) < _joint_sort_key(incumbent)
 
-        def _annotate_split_stability(stats, metric_prefix, threshold_cfg):
+        def _annotate_split_stability(stats, metric_prefix, threshold_cfg, baseline_stats):
+            repeats = max(1, int(stats[f"{metric_prefix}_repeats"]))
+            sqrt_repeats = float(np.sqrt(repeats))
             components = [
-                ("loss", "loss_std"),
-                ("metric1", "metric1_std"),
+                ("loss", "loss_std", "loss_sem_ratio", "loss_mean"),
+                ("metric1", "metric1_std", "metric1_sem_ratio", "p_mean"),
             ]
             if num_metrics > 1:
-                components.append(("metric2", "metric2_std"))
+                components.append(("metric2", "metric2_std", "metric2_sem_ratio", "s_mean"))
 
             ratios = []
+            precision_ratios = []
             stability_ok = True
-            for metric_name, std_key in components:
+            precision_ok = True
+            for metric_name, std_key, sem_ratio_key, baseline_key in components:
                 stats_key = f"{metric_prefix}_{std_key}"
                 threshold = float(threshold_cfg[std_key])
                 std_value = float(stats[stats_key])
@@ -520,46 +610,63 @@ class NoiseRLModule:
                 metric_ok = std_value <= threshold
                 stats[f"{metric_prefix}_{metric_name}_stability_ok"] = bool(metric_ok)
                 ratios.append(ratio)
-                stability_ok = stability_ok and metric_ok
+                sem_value = std_value / max(sqrt_repeats, 1.0)
+                stats[f"{metric_prefix}_{metric_name}_sem"] = float(sem_value)
+                sem_threshold = threshold_cfg.get(sem_ratio_key)
+                metric_precision_ok = True
+                if sem_threshold is not None:
+                    baseline_mean = abs(float(baseline_stats[baseline_key]))
+                    sem_ratio = sem_value / max(baseline_mean, 1e-8)
+                    precision_ratio = sem_ratio / max(float(sem_threshold), 1e-8)
+                    stats[f"{metric_prefix}_{metric_name}_sem_ratio"] = float(sem_ratio)
+                    stats[f"{metric_prefix}_{metric_name}_sem_threshold"] = float(sem_threshold)
+                    stats[f"{metric_prefix}_{metric_name}_precision_ratio"] = float(precision_ratio)
+                    metric_precision_ok = sem_ratio <= float(sem_threshold)
+                    stats[f"{metric_prefix}_{metric_name}_precision_ok"] = bool(metric_precision_ok)
+                    precision_ratios.append(precision_ratio)
+                stability_ok = stability_ok and metric_ok and metric_precision_ok
+                precision_ok = precision_ok and metric_precision_ok
 
             stats[f"{metric_prefix}_stability_score"] = float(np.mean(ratios)) if ratios else 0.0
+            stats[f"{metric_prefix}_estimate_precision_score"] = (
+                float(np.mean(precision_ratios)) if precision_ratios else 0.0
+            )
+            stats[f"{metric_prefix}_estimate_precision_ok"] = bool(precision_ok)
             stats[f"{metric_prefix}_stability_ok"] = bool(stability_ok)
             return stats
 
         def _evaluate_candidate_split(split_name, noise_kwargs, metric_prefix, repeats, threshold_cfg):
-            losses = []
-            metric1s = []
-            metric2s = []
-            for _ in range(max(1, int(repeats))):
-                loss, metric1, metric2, _ = ev.evaluate_model_with_attention_noise(
-                    fixed_gelu,
-                    fixed_softmax,
-                    split=split_name,
-                    **noise_kwargs,
-                )
-                losses.append(float(loss))
-                metric1s.append(float(metric1))
-                metric2s.append(float(metric2))
-
+            summary = ev.evaluate_model_with_attention_noise_repeated(
+                fixed_gelu,
+                fixed_softmax,
+                repeats=repeats,
+                split=split_name,
+                **noise_kwargs,
+            )
             stats = {
-                f"{metric_prefix}_loss": float(np.mean(losses)),
-                f"{metric_prefix}_loss_std": float(np.std(losses)),
-                f"{metric_prefix}_loss_min": float(np.min(losses)),
-                f"{metric_prefix}_loss_max": float(np.max(losses)),
-                f"{metric_prefix}_loss_range": float(np.max(losses) - np.min(losses)),
-                f"{metric_prefix}_metric1": float(np.mean(metric1s)),
-                f"{metric_prefix}_metric1_std": float(np.std(metric1s)),
-                f"{metric_prefix}_metric1_min": float(np.min(metric1s)),
-                f"{metric_prefix}_metric1_max": float(np.max(metric1s)),
-                f"{metric_prefix}_metric1_range": float(np.max(metric1s) - np.min(metric1s)),
-                f"{metric_prefix}_metric2": float(np.mean(metric2s)),
-                f"{metric_prefix}_metric2_std": float(np.std(metric2s)),
-                f"{metric_prefix}_metric2_min": float(np.min(metric2s)),
-                f"{metric_prefix}_metric2_max": float(np.max(metric2s)),
-                f"{metric_prefix}_metric2_range": float(np.max(metric2s) - np.min(metric2s)),
-                f"{metric_prefix}_repeats": int(max(1, int(repeats))),
+                f"{metric_prefix}_loss": float(summary["loss_mean"]),
+                f"{metric_prefix}_loss_std": float(summary["loss_std"]),
+                f"{metric_prefix}_loss_min": float(summary["loss_min"]),
+                f"{metric_prefix}_loss_max": float(summary["loss_max"]),
+                f"{metric_prefix}_loss_range": float(summary["loss_range"]),
+                f"{metric_prefix}_metric1": float(summary["p_mean"]),
+                f"{metric_prefix}_metric1_std": float(summary["p_std"]),
+                f"{metric_prefix}_metric1_min": float(summary["p_min"]),
+                f"{metric_prefix}_metric1_max": float(summary["p_max"]),
+                f"{metric_prefix}_metric1_range": float(summary["p_range"]),
+                f"{metric_prefix}_metric2": float(summary["s_mean"]),
+                f"{metric_prefix}_metric2_std": float(summary["s_std"]),
+                f"{metric_prefix}_metric2_min": float(summary["s_min"]),
+                f"{metric_prefix}_metric2_max": float(summary["s_max"]),
+                f"{metric_prefix}_metric2_range": float(summary["s_range"]),
+                f"{metric_prefix}_repeats": int(summary["n"]),
             }
-            return _annotate_split_stability(stats, metric_prefix, threshold_cfg)
+            return _annotate_split_stability(
+                stats,
+                metric_prefix,
+                threshold_cfg,
+                split_baseline_stats[metric_prefix],
+            )
 
         def _finalize_candidate_annotations(candidate):
             candidate["joint_loss_mean"] = 0.5 * (
@@ -643,9 +750,9 @@ class NoiseRLModule:
                 search_stats["search_loss"],
                 search_stats["search_metric1"],
                 search_stats["search_metric2"],
-                limit_loss,
-                limit_p,
-                limit_s,
+                search_limits["loss"],
+                search_limits["metric1"],
+                search_limits["metric2"],
             )
 
             confirmed_candidate = {
@@ -680,9 +787,9 @@ class NoiseRLModule:
                     holdout_stats["holdout_loss"],
                     holdout_stats["holdout_metric1"],
                     holdout_stats["holdout_metric2"],
-                    limit_loss,
-                    limit_p,
-                    limit_s,
+                    holdout_limits["loss"],
+                    holdout_limits["metric1"],
+                    holdout_limits["metric2"],
                 )
             else:
                 holdout_stats = {
@@ -707,6 +814,7 @@ class NoiseRLModule:
                     holdout_stats,
                     "holdout",
                     stability_thresholds["holdout"],
+                    split_baseline_stats["holdout"],
                 )
                 holdout_ok = bool(search_ok)
 
@@ -727,7 +835,8 @@ class NoiseRLModule:
                 f"M1={confirmed_candidate['search_metric1_range']:.4f}, "
                 f"M2={confirmed_candidate['search_metric2_range']:.4f}), "
                 f"stable={confirmed_candidate['search_stability_ok']}, "
-                f"score={confirmed_candidate['search_stability_score']:.4f}"
+                f"score={confirmed_candidate['search_stability_score']:.4f}, "
+                f"precision_ok={confirmed_candidate['search_estimate_precision_ok']}"
             )
             if ev.has_dataset_split("val_holdout"):
                 ev.log(
@@ -740,7 +849,8 @@ class NoiseRLModule:
                     f"M1={confirmed_candidate['holdout_metric1_range']:.4f}, "
                     f"M2={confirmed_candidate['holdout_metric2_range']:.4f}), "
                     f"stable={confirmed_candidate['holdout_stability_ok']}, "
-                    f"score={confirmed_candidate['holdout_stability_score']:.4f}"
+                    f"score={confirmed_candidate['holdout_stability_score']:.4f}, "
+                    f"precision_ok={confirmed_candidate['holdout_estimate_precision_ok']}"
                 )
 
             if search_ok and _is_better_split_candidate(
@@ -1178,17 +1288,17 @@ class NoiseRLModule:
                     )
                     online_reward_split = ev.get_online_reward_split_name()
                     rl_evaluator.split_name = online_reward_split
-                    proxy_baseline = ev.evaluate_model_with_attention_noise(
-                        fixed_gelu,
-                        fixed_softmax,
+                    proxy_baseline_stats = ev.evaluate_model_repeated(
+                        exact_baseline_gelu,
+                        exact_baseline_softmax,
+                        repeats=NOISE_STAGE_ONLINE_BASELINE_REPEATS,
                         split=online_reward_split,
-                        **baseline_noise_config,
                     )
                     env.prev_episode_metrics = {
-                        "loss": float(proxy_baseline[0]),
-                        "metric1": float(proxy_baseline[1]),
-                        "metric2": float(proxy_baseline[2]),
-                        "cost": float(baseline_tot_c),
+                        "loss": float(proxy_baseline_stats["loss_mean"]),
+                        "metric1": float(proxy_baseline_stats["p_mean"]),
+                        "metric2": float(proxy_baseline_stats["s_mean"]),
+                        "cost": float(cost_reference_tot_c),
                     }
                     env.current_episode_metrics = None
 
@@ -1360,8 +1470,19 @@ class NoiseRLModule:
         return {
             "fixed_gelu": fixed_gelu.copy(),
             "fixed_softmax": fixed_softmax.copy(),
-            "baseline_noise_config": {k: v.copy() for k, v in baseline_noise_config.items()},
-            "baseline_tot_c": float(baseline_tot_c),
+            "baseline_noise_config": {k: v.copy() for k, v in cost_reference_noise_config.items()},
+            "baseline_tot_c": float(cost_reference_tot_c),
+            "cost_reference_noise_config": {k: v.copy() for k, v in cost_reference_noise_config.items()},
+            "cost_reference_source": "max_noise_configuration",
+            "performance_baseline_gelu": exact_baseline_gelu.copy(),
+            "performance_baseline_softmax": exact_baseline_softmax.copy(),
+            "performance_baseline_source": "stage1_exact_no_noise",
+            "baseline_repeats": int(NOISE_STAGE_BASELINE_REPEATS),
+            "online_baseline_repeats": int(NOISE_STAGE_ONLINE_BASELINE_REPEATS),
+            "search_baseline_stats": _copy_repeat_summary(split_baseline_stats["search"]),
+            "holdout_baseline_stats": _copy_repeat_summary(split_baseline_stats["holdout"]),
+            "search_limits": {k: float(v) for k, v in search_limits.items()},
+            "holdout_limits": {k: float(v) for k, v in holdout_limits.items()},
             "status": status,
             "stability_thresholds": {
                 split: dict(values)

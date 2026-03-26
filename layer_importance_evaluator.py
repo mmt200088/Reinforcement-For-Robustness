@@ -2098,7 +2098,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                  noise_eval_config_source='search',
                  noise_eval_config_path='glue_noise_configs_best_ppo.json',
                  manual_noise_config=None,
-                 noise_eval_repeat_n=1,
+                 noise_eval_repeat_n=5,
                  skip_stage1_rl=False,
                  skip_stage1_final_eval=False,
                  skip_noise_final_eval=False):
@@ -2280,7 +2280,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.noise_eval_config_source = (noise_eval_config_source or 'search').lower()
         self.noise_eval_config_path = noise_eval_config_path or 'glue_noise_configs_best_ppo.json'
         self.manual_noise_config = manual_noise_config
-        self.noise_eval_repeat_n = max(1, int(noise_eval_repeat_n))
+        self.noise_eval_repeat_n = max(5, int(noise_eval_repeat_n))
         self.skip_stage1_final_eval = self._coerce_bool_flag(
             skip_stage1_final_eval, 'skip_stage1_final_eval'
         )
@@ -3349,6 +3349,158 @@ class LayerImportanceEvaluator(TrainerCallback):
             if input_noise_enabled:
                 self.clear_input_noise_configuration()
 
+    def build_constraint_limits_from_metrics(
+            self,
+            base_loss,
+            base_p,
+            base_s,
+            error_threshold=None,
+            correlation_drop_ratio=None,
+            ):
+        error_threshold = (
+            self.error_threshold
+            if error_threshold is None
+            else float(error_threshold)
+        )
+        correlation_drop_ratio = (
+            self.correlation_drop_ratio
+            if correlation_drop_ratio is None
+            else float(correlation_drop_ratio)
+        )
+        return {
+            "loss": float(base_loss + error_threshold),
+            "metric1": float(base_p * (1.0 - correlation_drop_ratio)),
+            "metric2": float(base_s * (1.0 - correlation_drop_ratio)),
+        }
+
+    def evaluate_model_with_attention_noise_repeated(
+            self,
+            gelu_degrees,
+            softmax_degrees,
+            input_noise_scaling_factors=None,
+            wq_noise_scaling_factors=None,
+            wk_noise_scaling_factors=None,
+            wv_noise_scaling_factors=None,
+            wo_noise_scaling_factors=None,
+            wffn1_noise_scaling_factors=None,
+            wffn2_noise_scaling_factors=None,
+            repeats=1,
+            use_train=True,
+            split=None,
+            ):
+        repeats = max(1, int(repeats))
+        split_name = self._resolve_eval_split(use_train=use_train, split=split)
+        trials = []
+        for _ in range(repeats):
+            loss, p, s, t = self.evaluate_model_with_attention_noise(
+                gelu_degrees,
+                softmax_degrees,
+                input_noise_scaling_factors=input_noise_scaling_factors,
+                wq_noise_scaling_factors=wq_noise_scaling_factors,
+                wk_noise_scaling_factors=wk_noise_scaling_factors,
+                wv_noise_scaling_factors=wv_noise_scaling_factors,
+                wo_noise_scaling_factors=wo_noise_scaling_factors,
+                wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
+                wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
+                use_train=(split_name == "train"),
+                split=split_name,
+            )
+            trials.append(
+                {
+                    "loss": float(loss),
+                    "p": float(p),
+                    "s": float(s),
+                    "time_ms": float(t),
+                }
+            )
+
+        losses = np.asarray([trial["loss"] for trial in trials], dtype=float)
+        ps = np.asarray([trial["p"] for trial in trials], dtype=float)
+        ss = np.asarray([trial["s"] for trial in trials], dtype=float)
+        times = np.asarray([trial["time_ms"] for trial in trials], dtype=float)
+        return {
+            "split_name": split_name,
+            "n": repeats,
+            "loss_mean": float(np.mean(losses)),
+            "loss_std": float(np.std(losses)),
+            "loss_min": float(np.min(losses)),
+            "loss_max": float(np.max(losses)),
+            "loss_range": float(np.max(losses) - np.min(losses)),
+            "p_mean": float(np.mean(ps)),
+            "p_std": float(np.std(ps)),
+            "p_min": float(np.min(ps)),
+            "p_max": float(np.max(ps)),
+            "p_range": float(np.max(ps) - np.min(ps)),
+            "s_mean": float(np.mean(ss)),
+            "s_std": float(np.std(ss)),
+            "s_min": float(np.min(ss)),
+            "s_max": float(np.max(ss)),
+            "s_range": float(np.max(ss) - np.min(ss)),
+            "time_mean_ms": float(np.mean(times)),
+            "time_std_ms": float(np.std(times)),
+            "trials": trials,
+        }
+
+    def get_stage1_exact_baseline_configuration(self):
+        return (
+            np.full(self.total_layers, 4, dtype=int),
+            np.full(self.total_layers, 6, dtype=int),
+        )
+
+    def evaluate_model_repeated(
+            self,
+            gelu_degrees,
+            softmax_degrees,
+            repeats=1,
+            use_train=True,
+            split=None,
+            ):
+        repeats = max(1, int(repeats))
+        split_name = self._resolve_eval_split(use_train=use_train, split=split)
+        trials = []
+        for _ in range(repeats):
+            loss, p, s, t = self.evaluate_model(
+                gelu_degrees,
+                softmax_degrees,
+                use_train=(split_name == "train"),
+                split=split_name,
+            )
+            trials.append(
+                {
+                    "loss": float(loss),
+                    "p": float(p),
+                    "s": float(s),
+                    "time_ms": float(t),
+                }
+            )
+
+        losses = np.asarray([trial["loss"] for trial in trials], dtype=float)
+        ps = np.asarray([trial["p"] for trial in trials], dtype=float)
+        ss = np.asarray([trial["s"] for trial in trials], dtype=float)
+        times = np.asarray([trial["time_ms"] for trial in trials], dtype=float)
+        return {
+            "split_name": split_name,
+            "n": repeats,
+            "loss_mean": float(np.mean(losses)),
+            "loss_std": float(np.std(losses)),
+            "loss_min": float(np.min(losses)),
+            "loss_max": float(np.max(losses)),
+            "loss_range": float(np.max(losses) - np.min(losses)),
+            "p_mean": float(np.mean(ps)),
+            "p_std": float(np.std(ps)),
+            "p_min": float(np.min(ps)),
+            "p_max": float(np.max(ps)),
+            "p_range": float(np.max(ps) - np.min(ps)),
+            "s_mean": float(np.mean(ss)),
+            "s_std": float(np.std(ss)),
+            "s_min": float(np.min(ss)),
+            "s_max": float(np.max(ss)),
+            "s_range": float(np.max(ss) - np.min(ss)),
+            "time_mean_ms": float(np.mean(times)),
+            "time_std_ms": float(np.std(times)),
+            "trials": trials,
+        }
+
     def get_noise_simulated_cost(
             self,
             input_noise_scaling_factors,
@@ -3421,16 +3573,26 @@ class LayerImportanceEvaluator(TrainerCallback):
             baseline_tot_c, _ = self.get_noise_simulated_cost(**baseline_noise_config)
             search_best = None
 
-            baseline_metrics = self.evaluate_model_with_attention_noise(
-                fixed_gelu,
-                fixed_softmax,
-                split=self.get_reward_reference_split_name(),
-                **baseline_noise_config,
+            exact_baseline_gelu, exact_baseline_softmax = (
+                self.get_stage1_exact_baseline_configuration()
             )
-            base_loss, base_p, base_s = baseline_metrics[:3]
-            limit_loss = base_loss + self.error_threshold
-            limit_p = base_p * (1.0 - self.correlation_drop_ratio)
-            limit_s = base_s * (1.0 - self.correlation_drop_ratio)
+            baseline_summary = self.evaluate_model_repeated(
+                exact_baseline_gelu,
+                exact_baseline_softmax,
+                repeats=self.noise_eval_repeat_n,
+                split=self.get_reward_reference_split_name(),
+            )
+            base_loss = baseline_summary["loss_mean"]
+            base_p = baseline_summary["p_mean"]
+            base_s = baseline_summary["s_mean"]
+            selection_limits = self.build_constraint_limits_from_metrics(
+                base_loss,
+                base_p,
+                base_s,
+            )
+            limit_loss = selection_limits["loss"]
+            limit_p = selection_limits["metric1"]
+            limit_s = selection_limits["metric2"]
             search_status = None
 
         runner = NoiseFinalEvaluationModule(
