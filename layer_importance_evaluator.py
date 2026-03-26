@@ -159,6 +159,7 @@ def resolve_run_output_layout(run_output_dir):
         return {
             "run_output_dir": "",
             "log_file": DEFAULT_STAGE1_SEARCH_LOG_FILE,
+            "noise_log_file": DEFAULT_STAGE1_SEARCH_LOG_FILE,
             "stage1_step_info_file": DEFAULT_STAGE1_STEP_INFO_FILE,
             "stage1_training_curve_path": DEFAULT_STAGE1_TRAINING_CURVE_FILE,
             "stage1_entropy_curve_path": DEFAULT_STAGE1_ENTROPY_CURVE_FILE,
@@ -191,6 +192,7 @@ def resolve_run_output_layout(run_output_dir):
     layout = {
         "run_output_dir": run_output_dir,
         "log_file": os.path.join(stage1_dir, DEFAULT_STAGE1_SEARCH_LOG_FILE),
+        "noise_log_file": os.path.join(stage2_noise_dir, DEFAULT_STAGE1_SEARCH_LOG_FILE),
         "stage1_step_info_file": os.path.join(stage1_dir, DEFAULT_STAGE1_STEP_INFO_FILE),
         "stage1_training_curve_path": os.path.join(
             stage1_dir, DEFAULT_STAGE1_TRAINING_CURVE_FILE
@@ -212,6 +214,7 @@ def resolve_run_output_layout(run_output_dir):
 
     for path_key in (
         "log_file",
+        "noise_log_file",
         "stage1_step_info_file",
         "stage1_training_curve_path",
         "stage1_entropy_curve_path",
@@ -2207,6 +2210,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         output_layout = resolve_run_output_layout(run_output_dir)
         self.run_output_dir = output_layout["run_output_dir"]
         self.log_file = output_layout["log_file"]
+        self.noise_log_file = output_layout["noise_log_file"]
+        self.active_log_file = self.log_file
         self.step_info_file = output_layout["stage1_step_info_file"]
         self.stage1_training_curve_path = output_layout["stage1_training_curve_path"]
         self.stage1_entropy_curve_path = output_layout["stage1_entropy_curve_path"]
@@ -2216,7 +2221,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.noise_stage_entropy_curve_path = output_layout["noise_entropy_curve_path"]
         self.noise_stage_progress_dir = output_layout["noise_progress_dir"]
         self.noise_final_eval_dir = output_layout["noise_final_eval_dir"]
-        with open(self.log_file, "w") as f:
+        with open(self.log_file, "w", encoding="utf-8") as f:
             f.write("=== PPO RL Optimization Log Started ===\n")
         with open(self.log_file, "a", encoding="utf-8") as f:
             f.write(
@@ -2225,6 +2230,16 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
             if self.run_output_dir:
                 f.write(f"[Info] Unified run output dir: {self.run_output_dir}\n")
+        if self.noise_log_file != self.log_file:
+            with open(self.noise_log_file, "w", encoding="utf-8") as f:
+                f.write("=== Stage-2 Noise RL Optimization Log Started ===\n")
+            with open(self.noise_log_file, "a", encoding="utf-8") as f:
+                f.write(
+                    f"[Info] PPO LR resolved from rl_lr={self.rl_lr_raw!r} -> "
+                    f"{self.ppo_lr_initial:.6g} ({self.ppo_lr_mode})\n"
+                )
+                if self.run_output_dir:
+                    f.write(f"[Info] Unified run output dir: {self.run_output_dir}\n")
         
         # ==================== 策略二：动态超参数调度状态 ====================
         self.current_episode = 0
@@ -2972,7 +2987,8 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     def log(self, message):
         print(message, flush=True)
-        with open(self.log_file, "a") as f:
+        target_log_file = getattr(self, "active_log_file", self.log_file)
+        with open(target_log_file, "a", encoding="utf-8") as f:
             f.write(message + "\n")
 
     def get_simulated_cost(self, gelu_degrees, softmax_degrees):
@@ -5121,28 +5137,33 @@ class LayerImportanceEvaluator(TrainerCallback):
         # Phase 5: Second-stage noise RL training (独立可控)
         # ---------------------------------------------------------
         noise_stage_result = None
-        if self.skip_noise_rl:
-            self.log("\n[Info] Second-stage noise RL training skipped (--skip-noise-rl).")
-        else:
-            noise_stage_result = self.run_noise_rl_stage(
-                fixed_gelu=opt_gelu,
-                fixed_softmax=opt_softmax,
-                fixed_label=selected_label,
-                fixed_source=selected_source,
-            )
-
-        # ---------------------------------------------------------
-        # Phase 5.5: Noise final evaluation (独立可控)
-        # ---------------------------------------------------------
         noise_eval_result = None
-        if self.skip_noise_final_eval:
-            self.log("\n[Info] Noise final evaluation skipped (--skip-noise-final-eval).")
-        else:
-            noise_eval_result = self.run_noise_final_eval_stage(
-                fixed_gelu=opt_gelu,
-                fixed_softmax=opt_softmax,
-                noise_stage_result=noise_stage_result,
-            )
+        previous_log_file = getattr(self, "active_log_file", self.log_file)
+        self.active_log_file = self.noise_log_file
+        try:
+            if self.skip_noise_rl:
+                self.log("\n[Info] Second-stage noise RL training skipped (--skip-noise-rl).")
+            else:
+                noise_stage_result = self.run_noise_rl_stage(
+                    fixed_gelu=opt_gelu,
+                    fixed_softmax=opt_softmax,
+                    fixed_label=selected_label,
+                    fixed_source=selected_source,
+                )
+
+            # ---------------------------------------------------------
+            # Phase 5.5: Noise final evaluation (独立可控)
+            # ---------------------------------------------------------
+            if self.skip_noise_final_eval:
+                self.log("\n[Info] Noise final evaluation skipped (--skip-noise-final-eval).")
+            else:
+                noise_eval_result = self.run_noise_final_eval_stage(
+                    fixed_gelu=opt_gelu,
+                    fixed_softmax=opt_softmax,
+                    noise_stage_result=noise_stage_result,
+                )
+        finally:
+            self.active_log_file = previous_log_file
 
         self.last_noise_stage_result = noise_stage_result
         self.last_noise_eval_result = noise_eval_result
