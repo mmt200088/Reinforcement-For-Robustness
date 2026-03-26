@@ -25,7 +25,7 @@ bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [d
 | -------------- | ----------------------------------------------------------------- |
 | `lora_r`       | LoRA rank，当前固定传 `32`                                              |
 | `lora_alpha`   | LoRA alpha，当前固定传 `64`                                             |
-| `logfile_path` | nohup 日志文件名提示；真实日志会自动写入当前 run 目录下的 `logs/` 子目录                      |
+| `logfile_path` | nohup 日志文件名提示；真实日志会自动写入当前 run 目录下的 `logs/` 子目录                    |
 | `rl_lr`        | PPO 学习率控制。若 `< 1` 则直接作为学习率；旧值如 `20` / `40` 会解释为 `20e-6` / `40e-6` |
 | `degree`       | 历史调试参数，固定传 `2`                                                    |
 
@@ -97,20 +97,22 @@ CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --
 
 下表只聚焦并行时最常用、也出现在上面示例里的参数；更完整的各阶段参数与安全约束见后文各表格。
 
-| 参数 | 作用 | 并行时该怎么配 |
-| --- | --- | --- |
-| `logfile_path` | `nohup` 日志名提示（会取 basename 作为日志文件名） | 多个并行进程可传相同文件名（产出仍在各自 run 目录下） |
-| `--model` | 选择数据集（并自动匹配对应 `base_model`） | 并行时让不同进程分别用不同 `--model` 值 |
-| `--skip-stage1-rl` | 跳过第一阶段 RL 搜索/训练 | 并行加速的常用开关：先有/后用已有配置或搜索结果时可加 |
-| `--final-eval-source json` | 第一阶段最终评估配置来源为 JSON | 当 `--final-eval-source` 取 `json`（或 `manual`）时，需要显式加 `--skip-stage1-rl` |
-| `--final-eval-config PATH` | 第一阶段最终评估用的 JSON 配置文件路径 | 一般并行时保持一致，避免同时改动多个配置来源 |
-| `--skip-stage1-final-eval` | 跳过第一阶段最终评估 | 只关心后续阶段（例如噪声阶段）时可加 |
-| `--noise-eval-repeat N` | 噪声最终评估重复次数 | 并行时想要统计更稳可调大；想缩短总耗时可调小 |
-| `--skip-noise-rl` | 跳过第二阶段噪声 RL 训练 | 只想跑噪声最终评估时加；当 `--noise-eval-source` 用 `json/manual` 时也需要显式加 |
-| `--skip-noise-final-eval` | 跳过第二阶段噪声最终评估 | 只关心噪声 RL 训练过程/中间产物时加 |
-| `--noise-eval-source` | 噪声最终评估配置来源（`search/json/manual`） | 并行时常用 `json`：配合 `--noise-eval-config` 直接读配置 |
-| `--noise-eval-config PATH` | `json` 模式下的噪声配置文件 | 例如默认的 `glue_noise_configs_best_ppo.json` |
-| `--manual-noise-config` | `manual` 模式下的噪声配置（JSON 字符串） | 配置很少且不想改文件时用 |
+
+| 参数                         | 作用                                 | 并行时该怎么配                                                                |
+| -------------------------- | ---------------------------------- | ---------------------------------------------------------------------- |
+| `logfile_path`             | `nohup` 日志名提示（会取 basename 作为日志文件名） | 多个并行进程可传相同文件名（产出仍在各自 run 目录下）                                          |
+| `--model`                  | 选择数据集（并自动匹配对应 `base_model`）        | 并行时让不同进程分别用不同 `--model` 值                                              |
+| `--skip-stage1-rl`         | 跳过第一阶段 RL 搜索/训练                    | 并行加速的常用开关：先有/后用已有配置或搜索结果时可加                                            |
+| `--final-eval-source json` | 第一阶段最终评估配置来源为 JSON                 | 当 `--final-eval-source` 取 `json`（或 `manual`）时，需要显式加 `--skip-stage1-rl` |
+| `--final-eval-config PATH` | 第一阶段最终评估用的 JSON 配置文件路径             | 一般并行时保持一致，避免同时改动多个配置来源                                                 |
+| `--skip-stage1-final-eval` | 跳过第一阶段最终评估                         | 只关心后续阶段（例如噪声阶段）时可加                                                     |
+| `--noise-eval-repeat N`    | 噪声最终评估重复次数                         | 并行时想要统计更稳可调大；想缩短总耗时可调小                                                 |
+| `--skip-noise-rl`          | 跳过第二阶段噪声 RL 训练                     | 只想跑噪声最终评估时加；当 `--noise-eval-source` 用 `json/manual` 时也需要显式加            |
+| `--skip-noise-final-eval`  | 跳过第二阶段噪声最终评估                       | 只关心噪声 RL 训练过程/中间产物时加                                                   |
+| `--noise-eval-source`      | 噪声最终评估配置来源（`search/json/manual`）   | 并行时常用 `json`：配合 `--noise-eval-config` 直接读配置                            |
+| `--noise-eval-config PATH` | `json` 模式下的噪声配置文件                  | 例如默认的 `glue_noise_configs_best_ppo.json`                               |
+| `--manual-noise-config`    | `manual` 模式下的噪声配置（JSON 字符串）        | 配置很少且不想改文件时用                                                           |
+
 
 ### --model 数据集+模型切换
 
@@ -209,15 +211,15 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model qnli
 第二阶段 RL 训练保持第一阶段选定的 GELU/Softmax 不变，用 PPO 学习每层 7 个噪声 scaling factor：
 
 
-| 噪声对象                 | 模型路径                   | 动作空间                           |
-| -------------------- | ---------------------- | ------------------------------ |
-| `x`（输入噪声）            | 层输入 hidden_states      | `{20, 22, 24, 26, 28, 30}`     |
-| `wq`（Query 权重噪声）     | attention.self.query   | `{14, 16, 18, 20, 22}` |
-| `wk`（Key 权重噪声）       | attention.self.key     | `{14, 16, 18, 20, 22}` |
-| `wv`（Value 权重噪声）     | attention.self.value   | `{14, 16, 18, 20, 22}` |
-| `wo`（Attn 输出权重噪声）    | attention.output.dense | `{14, 16, 18, 20, 22}` |
-| `wffn1`（FFN 第一层权重噪声） | intermediate.dense     | `{16, 18, 20, 22, 24}` |
-| `wffn2`（FFN 第二层权重噪声） | output.dense           | `{14, 16, 18, 20, 22}` |
+| 噪声对象                 | 模型路径                   | 动作空间                       |
+| -------------------- | ---------------------- | -------------------------- |
+| `x`（输入噪声）            | 层输入 hidden_states      | `{20, 22, 24, 26, 28, 30}` |
+| `wq`（Query 权重噪声）     | attention.self.query   | `{14, 16, 18, 20, 22}`     |
+| `wk`（Key 权重噪声）       | attention.self.key     | `{14, 16, 18, 20, 22}`     |
+| `wv`（Value 权重噪声）     | attention.self.value   | `{14, 16, 18, 20, 22}`     |
+| `wo`（Attn 输出权重噪声）    | attention.output.dense | `{14, 16, 18, 20, 22}`     |
+| `wffn1`（FFN 第一层权重噪声） | intermediate.dense     | `{16, 18, 20, 22, 24}`     |
+| `wffn2`（FFN 第二层权重噪声） | output.dense           | `{14, 16, 18, 20, 22}`     |
 
 
 第二阶段 RL 训练逻辑位于 `noise_rl_module.py`，噪声最终评估逻辑位于 `noise_final_evaluation_module.py`。
@@ -277,14 +279,14 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model qnli
 不跑第一阶段 RL，手动指定每层 GELU/Softmax：
 `bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --skip-stage1-rl --final-eval-source manual --manual-gelu "[1,1,1,4,1,1,1,1,1,1,1,1]" --manual-softmax "[2,3,4,6,4,4,5,4,4,5,5,2]"`
 
-跳过噪声 RL，直接从 JSON 做噪声最终评估：
+跳过噪声 RL，直接从 JSON 做噪声最终评估：  
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`
 
 跳过噪声 RL，手动指定噪声配置并重复评估 100 次：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[14,16,18,20,22,14,16,18,20,22,14,16],"wk":[14,16,18,20,22,14,16,18,20,22,14,16],"wv":[14,16,18,20,22,14,16,18,20,22,14,16],"wo":[14,16,18,20,22,14,16,18,20,22,14,16],"wffn1":[16,18,20,22,24,16,18,20,22,24,16,18],"wffn2":[14,16,18,20,22,14,16,18,20,22,14,16]}' --noise-eval-repeat 100`
 
 只进行第二阶段rl  
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc`
+`CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc`
 
 完全跳过两个阶段的搜索/训练，手动指定所有配置只做后续评估：
 

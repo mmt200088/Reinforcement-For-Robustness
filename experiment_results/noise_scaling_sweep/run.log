@@ -14184,3 +14184,411 @@ value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
 wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
 wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
 wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=20, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+    factor=20: loss=4.8831, M-Acc.=0.0776, MM-Acc.=0.0836
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+已替换 12 层的GELU函数
+已替换 12 层的Softmax函数
+Input noise enabled for 12 layers (scaling_factor=30, distribution=fresh)
+query noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+key noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+value noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wo noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn1 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
+wffn2 noise enabled for 12 layers (scaling_factor=22, distribution=encoding)
