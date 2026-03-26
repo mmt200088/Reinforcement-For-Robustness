@@ -25,13 +25,46 @@ bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [d
 | -------------- | ----------------------------------------------------------------- |
 | `lora_r`       | LoRA rank，当前固定传 `32`                                              |
 | `lora_alpha`   | LoRA alpha，当前固定传 `64`                                             |
-| `logfile_path` | nohup 输出日志路径                                                      |
+| `logfile_path` | nohup 日志文件名提示；真实日志会自动写入当前 run 目录下的 `logs/` 子目录                      |
 | `rl_lr`        | PPO 学习率控制。若 `< 1` 则直接作为学习率；旧值如 `20` / `40` 会解释为 `20e-6` / `40e-6` |
 | `degree`       | 历史调试参数，固定传 `2`                                                    |
 
 
 基础示例：
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
+
+### Concurrent-safe run layout
+
+The command format does not change, but `logfile_path` now acts as a log filename hint.
+Each launch auto-creates a unique run directory:
+
+```text
+experiment_results/layer_importance_runs/<dataset>/<YYYYmmdd_HHMMSS>_pid<PID>/
+```
+
+The launcher writes:
+
+- nohup log: `.../logs/<basename(logfile_path)>`
+- stage-1 search log / step info / curves: `.../stage1/`
+- stage-1 final-eval outputs: `.../stage1_final_eval/`
+- stage-2 noise RL outputs and progress snapshots: `.../stage2_noise/`
+- stage-2 noise final-eval outputs: `.../stage2_noise_final_eval/`
+
+This means the following commands can run at the same time even though both use `output.log`:
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc
+
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model stsb
+```
+
+The script also no longer forces `CUDA_VISIBLE_DEVICES=0`.
+If you want to pin different GPUs for concurrent runs, set it outside the script:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
+CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model stsb
+```
 
 ### --model 数据集+模型切换
 
@@ -133,12 +166,12 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model qnli
 | 噪声对象                 | 模型路径                   | 动作空间                           |
 | -------------------- | ---------------------- | ------------------------------ |
 | `x`（输入噪声）            | 层输入 hidden_states      | `{20, 22, 24, 26, 28, 30}`     |
-| `wq`（Query 权重噪声）     | attention.self.query   | `{10, 12, 14, 16, 18, 20, 22}` |
-| `wk`（Key 权重噪声）       | attention.self.key     | `{10, 12, 14, 16, 18, 20, 22}` |
-| `wv`（Value 权重噪声）     | attention.self.value   | `{10, 12, 14, 16, 18, 20, 22}` |
-| `wo`（Attn 输出权重噪声）    | attention.output.dense | `{10, 12, 14, 16, 18, 20, 22}` |
-| `wffn1`（FFN 第一层权重噪声） | intermediate.dense     | `{10, 12, 14, 16, 18, 20, 22}` |
-| `wffn2`（FFN 第二层权重噪声） | output.dense           | `{10, 12, 14, 16, 18, 20, 22}` |
+| `wq`（Query 权重噪声）     | attention.self.query   | `{14, 16, 18, 20, 22}` |
+| `wk`（Key 权重噪声）       | attention.self.key     | `{14, 16, 18, 20, 22}` |
+| `wv`（Value 权重噪声）     | attention.self.value   | `{14, 16, 18, 20, 22}` |
+| `wo`（Attn 输出权重噪声）    | attention.output.dense | `{14, 16, 18, 20, 22}` |
+| `wffn1`（FFN 第一层权重噪声） | intermediate.dense     | `{16, 18, 20, 22, 24}` |
+| `wffn2`（FFN 第二层权重噪声） | output.dense           | `{14, 16, 18, 20, 22}` |
 
 
 第二阶段 RL 训练逻辑位于 `noise_rl_module.py`，噪声最终评估逻辑位于 `noise_final_evaluation_module.py`。
@@ -167,19 +200,19 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model qnli
 {
   "mrpc": {
     "x": [20, 22, 24, 26, 28, 30, 20, 22, 24, 26, 28, 30],
-    "wq": [10, 12, 14, 16, 18, 20, 22, 10, 12, 14, 16, 18],
-    "wk": [10, 12, 14, ...],
-    "wv": [10, 12, 14, ...],
-    "wo": [10, 12, 14, ...],
-    "wffn1": [10, 12, 14, ...],
-    "wffn2": [10, 12, 14, ...]
+    "wq": [14, 16, 18, 20, 22, 14, 16, 18, 20, 22, 14, 16],
+    "wk": [14, 16, 18, ...],
+    "wv": [14, 16, 18, ...],
+    "wo": [14, 16, 18, ...],
+    "wffn1": [16, 18, 20, ...],
+    "wffn2": [14, 16, 18, ...]
   }
 }
 ```
 
 噪声最终评估的逻辑位于独立模块 `noise_final_evaluation_module.py` 中，功能与第一阶段 `final_evaluation_module.py` 一致，并新增 N 次重复评估。
 
-噪声最终评估产出文件（位于 `experiment_results/noise_final_evaluation/` 目录）：
+噪声最终评估产出文件（位于当前 run 目录下的 `stage2_noise_final_eval/` 目录）：
 
 - `noise_final_eval_results_<dataset>.json` — 结果 JSON
 - `noise_final_eval_comparison_<dataset>.png` — 对比图
@@ -202,7 +235,7 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model qnli
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`
 
 跳过噪声 RL，手动指定噪声配置并重复评估 100 次：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}' --noise-eval-repeat 100`
+`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[14,16,18,20,22,14,16,18,20,22,14,16],"wk":[14,16,18,20,22,14,16,18,20,22,14,16],"wv":[14,16,18,20,22,14,16,18,20,22,14,16],"wo":[14,16,18,20,22,14,16,18,20,22,14,16],"wffn1":[16,18,20,22,24,16,18,20,22,24,16,18],"wffn2":[14,16,18,20,22,14,16,18,20,22,14,16]}' --noise-eval-repeat 100`
 
 只进行第二阶段rl  
 `bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc`
@@ -218,7 +251,7 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --skip-stage1-final-eval \
   --skip-noise-rl \
   --noise-eval-source manual \
-  --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}'
+  --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[14,16,18,20,22,14,16,18,20,22,14,16],"wk":[14,16,18,20,22,14,16,18,20,22,14,16],"wv":[14,16,18,20,22,14,16,18,20,22,14,16],"wo":[14,16,18,20,22,14,16,18,20,22,14,16],"wffn1":[16,18,20,22,24,16,18,20,22,24,16,18],"wffn2":[14,16,18,20,22,14,16,18,20,22,14,16]}'
 ```
 
 帮助：

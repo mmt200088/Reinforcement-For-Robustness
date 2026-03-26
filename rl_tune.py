@@ -196,6 +196,14 @@ def train(
     ), "Please specify a --base_model, e.g. --base_model='decapoda-research/llama-7b-hf'"
     gradient_accumulation_steps = batch_size // micro_batch_size
 
+    run_output_dir = str(output_dir or "").strip()
+    trainer_output_dir = (
+        os.path.join(run_output_dir, "trainer_output")
+        if run_output_dir
+        else "./inference_output"
+    )
+    os.makedirs(trainer_output_dir, exist_ok=True)
+
     # device_map = "gpu"
     ddp = True  # Distributed Data Parallelism disabled
 
@@ -511,6 +519,7 @@ def train(
             data_collator=data_collator, 
             rl_lr=rl_lr, 
             degree=degree,
+            run_output_dir=run_output_dir,
             final_eval_config_source=final_eval_config_source,
             final_eval_config_path=final_eval_config_path,
             manual_final_gelu=parsed_manual_gelu,
@@ -544,7 +553,7 @@ def train(
         train_dataset=train_data,
         eval_dataset=val_data,
         args=transformers.TrainingArguments(
-            output_dir="./inference_output",
+            output_dir=trainer_output_dir,
             per_device_eval_batch_size=16,  # 推理批次大小
             disable_tqdm=False,  # 可选进度条控制
             # per_device_train_batch_size=micro_batch_size,

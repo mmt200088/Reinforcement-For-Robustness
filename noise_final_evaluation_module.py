@@ -66,10 +66,12 @@ class NoiseFinalEvaluationModule:
         from function_handler import (
             INPUT_NOISE_ALLOWED_SCALING_FACTORS,
             WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
+            WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
         )
 
         self.input_noise_allowed = list(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
         self.weight_noise_allowed = list(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        self.wffn1_noise_allowed = list(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -1200,17 +1202,23 @@ class NoiseFinalEvaluationModule:
     def _get_allowed(self, short_key):
         if short_key == "x":
             return self.input_noise_allowed
+        if short_key == "wffn1":
+            return self.wffn1_noise_allowed
         return self.weight_noise_allowed
 
     def _get_allowed_for_key(self, full_key):
         if "input" in full_key or full_key == "x":
             return self.input_noise_allowed
+        if full_key in ("wffn1", "wffn1_noise_scaling_factors"):
+            return self.wffn1_noise_allowed
         return self.weight_noise_allowed
 
     def _get_cost_map(self, short_key):
         ev = self.evaluator
         if short_key == "x":
             return ev.INPUT_NOISE_COST_MAP
+        if short_key == "wffn1":
+            return ev.WFFN1_NOISE_COST_MAP
         return ev.WEIGHT_NOISE_COST_MAP
 
     @staticmethod

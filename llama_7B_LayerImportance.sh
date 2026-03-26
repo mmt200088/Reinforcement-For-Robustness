@@ -18,7 +18,7 @@ set -euo pipefail
 # ======================================================================
 #   $1  lora_r        LoRA rank，当前实验固定写 32
 #   $2  lora_alpha    LoRA alpha，当前实验固定写 64
-#   $3  logfile_path  nohup 日志输出路径（训练/评估日志均写入此文件）
+#   $3  logfile_path  nohup 日志文件名提示；实际日志会写入自动生成的 run 目录
 #   $4  rl_lr         PPO 学习率控制：
 #                       - 若 < 1 则直接用作 PPO LR（如 3e-5）
 #                       - 旧版整数值如 20 / 40 会被解读为 20e-6 / 40e-6
@@ -263,7 +263,7 @@ set -euo pipefail
 # 项目相关说明
 # ======================================================================
 # - 当前默认数据集：mrpc（可通过 --model 参数切换）
-# - 脚本使用 nohup 后台运行，日志查看：tail -f <logfile_path>
+# - 脚本使用 nohup 后台运行；实际日志路径会在启动时打印出来
 # - 停止任务：ps aux | grep rl_tune.py，然后 kill -9 <PID>
 # - 服务器部署时需同步的 Python 文件：
 #     final_evaluation_module.py         第一阶段最终评估模块
@@ -278,7 +278,9 @@ usage() {
     echo "必填位置参数："
     echo "  lora_r                LoRA rank，当前实验固定传 32。"
     echo "  lora_alpha            LoRA alpha，当前实验固定传 64。"
-    echo "  logfile_path          nohup 输出日志路径。"
+    echo "  logfile_path          nohup 日志文件名提示。"
+    echo "                        实际日志路径会自动解析到"
+    echo "                        experiment_results/layer_importance_runs/<dataset>/<timestamp>_pid<PID>/logs/"
     echo "  rl_lr                 PPO 学习率控制。若 < 1 则直接作为 LR；"
     echo "                        旧值 20/40 会解释为 20e-6/40e-6。"
     echo "  degree                历史调试参数，固定传 2。"
@@ -331,6 +333,8 @@ usage() {
     echo "  bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --skip-stage1-rl --final-eval-source manual --manual-gelu \"[1,1,1,4,1,1,1,1,1,1,1,1]\" --manual-softmax \"[2,3,4,6,4,4,5,4,4,5,5,2]\""
     echo "  bash llama_7B_LayerImportance.sh 32 64 output_noise.log 20 2 --skip-noise-rl --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json"
     echo "  bash llama_7B_LayerImportance.sh 32 64 output_manual_all.log 20 2 --skip-stage1-rl --final-eval-source manual --manual-gelu \"[1,1,...]\" --manual-softmax \"[2,2,...]\" --skip-stage1-final-eval --skip-noise-rl --noise-eval-source manual --manual-noise-config '{\"x\":[...],...}'"
+    echo "  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc"
+    echo "  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model stsb"
 }
 
 require_option_value() {
@@ -361,7 +365,7 @@ fi
 
 LORA_R="$1"
 LORA_ALPHA="$2"
-LOGFILE_PATH="$3"
+RAW_LOGFILE_PATH="$3"
 RL_LR="$4"
 DEGREE="$5"
 shift 5
@@ -571,13 +575,22 @@ case "$DATASET" in
 esac
 
 export NCCL_DEBUG=INFO
-export CUDA_VISIBLE_DEVICES=0
+
+LOGFILE_BASENAME="$(basename "$RAW_LOGFILE_PATH")"
+if [ -z "$LOGFILE_BASENAME" ] || [ "$LOGFILE_BASENAME" = "." ] || [ "$LOGFILE_BASENAME" = "/" ] || [ "$LOGFILE_BASENAME" = "\\" ]; then
+    LOGFILE_BASENAME="output.log"
+fi
+RUN_TIMESTAMP="$(date +"%Y%m%d_%H%M%S")"
+RUN_ID="${RUN_TIMESTAMP}_pid$$"
+RUN_ROOT="experiment_results/layer_importance_runs/${DATASET}/${RUN_ID}"
+LOGFILE_PATH="${RUN_ROOT}/logs/${LOGFILE_BASENAME}"
+mkdir -p "${RUN_ROOT}/logs"
 
 CMD=(
     python rl_tune.py
     --base_model "$BASE_MODEL"
     --data_path "$DATA_PATH"
-    --output_dir "$LOGFILE_PATH"
+    --output_dir "$RUN_ROOT"
     --batch_size 16
     --micro_batch_size 16
     --num_epochs 1
@@ -630,9 +643,18 @@ if [ "$SKIP_NOISE_FINAL_EVAL" = "true" ]; then
 else
     echo "Stage-2 noise final evaluation: noise_eval_source=$NOISE_EVAL_SOURCE, repeat=$NOISE_EVAL_REPEAT_N"
 fi
-echo "Log file: $LOGFILE_PATH"
+echo "Requested log filename: $RAW_LOGFILE_PATH"
+echo "Resolved run root: $RUN_ROOT"
+echo "Resolved nohup log: $LOGFILE_PATH"
+if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
+    echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
+else
+    echo "CUDA_VISIBLE_DEVICES: <unset>"
+fi
 
 nohup "${CMD[@]}" > "$LOGFILE_PATH" 2>&1 &
+JOB_PID=$!
+echo "Background PID: $JOB_PID"
 
 # different data for base model
 # --base_model "textattack/bert-base-uncased-WNLI"
@@ -657,7 +679,7 @@ nohup "${CMD[@]}" > "$LOGFILE_PATH" 2>&1 &
 # extension. Kept here as a commented reference for server-side usage.
 # ----------------------------------------------------------------------
 # export NCCL_DEBUG=INFO
-# export CUDA_VISIBLE_DEVICES=0
+# CUDA selection is now caller-controlled via the environment.
 # nohup  python rl_tune.py \
 #     --base_model 'textattack/bert-base-uncased-MRPC' \
 #     --data_path 'mrpc' \

@@ -77,6 +77,8 @@ INPUT_NOISE_ALLOWED_SCALING_FACTORS = (22, 24, 26, 28, 30)
 INPUT_NOISE_DEFAULT_SCALING_FACTOR = 30
 WEIGHT_NOISE_ALLOWED_SCALING_FACTORS = (14, 16, 18, 20, 22)
 WEIGHT_NOISE_DEFAULT_SCALING_FACTOR = 22
+WFFN1_NOISE_ALLOWED_SCALING_FACTORS = (16, 18, 20, 22, 24)
+WFFN1_NOISE_DEFAULT_SCALING_FACTOR = 24
 
 
 def get_input_noise_variance(scaling_factor: int, distribution: str = "fresh") -> float:
@@ -718,7 +720,7 @@ class ReversibleLayerHandler:
             self,
             layer_indices=None,
             layer_name="model.model.layers",
-            scaling_factor=WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            scaling_factor=WFFN1_NOISE_DEFAULT_SCALING_FACTOR,
             distribution="encoding"
             ):
         self._replace_layer_linear_module_noise(

@@ -17,6 +17,8 @@ from function_handler import (
     INPUT_NOISE_DEFAULT_SCALING_FACTOR,
     WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
     WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+    WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
+    WFFN1_NOISE_DEFAULT_SCALING_FACTOR,
 )
 from final_evaluation_module import FinalEvaluationModule
 import os
@@ -62,6 +64,15 @@ WEIGHT_NOISE_SCALING_TO_NORM = {
     for idx, scaling_factor in enumerate(sorted(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS, reverse=True))
 }
 
+WFFN1_NOISE_COST_MAP = {
+    scaling_factor: scaling_factor * WEIGHT_NOISE_COST_SCALE
+    for scaling_factor in WFFN1_NOISE_ALLOWED_SCALING_FACTORS
+}
+WFFN1_NOISE_SCALING_TO_NORM = {
+    scaling_factor: idx / max(1, len(WFFN1_NOISE_ALLOWED_SCALING_FACTORS) - 1)
+    for idx, scaling_factor in enumerate(sorted(WFFN1_NOISE_ALLOWED_SCALING_FACTORS, reverse=True))
+}
+
 WQ_NOISE_SCALING_MAP = {
     idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
 }
@@ -95,7 +106,7 @@ WO_NOISE_SCALING_TO_ACTION = {
 WO_NOISE_ACTION_DIM = len(WO_NOISE_SCALING_MAP)
 
 WFFN1_NOISE_SCALING_MAP = {
-    idx: scaling_factor for idx, scaling_factor in enumerate(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+    idx: scaling_factor for idx, scaling_factor in enumerate(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
 }
 WFFN1_NOISE_SCALING_TO_ACTION = {
     scaling_factor: idx for idx, scaling_factor in WFFN1_NOISE_SCALING_MAP.items()
@@ -119,14 +130,98 @@ NOISE_STAGE_SOS_TOKENS = (
 NOISE_STAGE_MAX_SOS_TOKEN = max(INPUT_NOISE_SOS_TOKEN, WEIGHT_NOISE_SOS_TOKEN)
 NOISE_STAGE_ACTION_DIMS = (
     INPUT_NOISE_ACTION_DIM,
-    WEIGHT_NOISE_ACTION_DIM, WEIGHT_NOISE_ACTION_DIM, WEIGHT_NOISE_ACTION_DIM,
-    WEIGHT_NOISE_ACTION_DIM, WEIGHT_NOISE_ACTION_DIM, WEIGHT_NOISE_ACTION_DIM,
+    WQ_NOISE_ACTION_DIM, WK_NOISE_ACTION_DIM, WV_NOISE_ACTION_DIM,
+    WO_NOISE_ACTION_DIM, WFFN1_NOISE_ACTION_DIM, WFFN2_NOISE_ACTION_DIM,
 )
 NOISE_STAGE_CONT_DIM = 6
 NOISE_STAGE_PREV_ACTION_EMBED_DIM = 4
 NOISE_STAGE_STEP_INFO_FILE = "noise_ppo_step_info.txt"
 NOISE_STAGE_TRAINING_CURVE_PATH = "noise_ppo_training_curve.png"
 NOISE_STAGE_ENTROPY_CURVE_PATH = "noise_ppo_entropy_curve.png"
+DEFAULT_STAGE1_SEARCH_LOG_FILE = "pruning_search_log.txt"
+DEFAULT_STAGE1_STEP_INFO_FILE = "ppo_step_info.txt"
+DEFAULT_STAGE1_TRAINING_CURVE_FILE = "ppo_training_curve.png"
+DEFAULT_STAGE1_ENTROPY_CURVE_FILE = "ppo_entropy_curve.png"
+DEFAULT_STAGE1_FINAL_EVAL_DIR = os.path.join("experiment_results", "final_evaluation")
+DEFAULT_NOISE_PROGRESS_DIR = os.path.join("experiment_results", "noise_rl_progress")
+DEFAULT_NOISE_FINAL_EVAL_DIR = os.path.join("experiment_results", "noise_final_evaluation")
+
+
+def ensure_parent_dir(path):
+    parent_dir = os.path.dirname(path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+
+
+def resolve_run_output_layout(run_output_dir):
+    run_output_dir = str(run_output_dir or "").strip()
+    if not run_output_dir:
+        return {
+            "run_output_dir": "",
+            "log_file": DEFAULT_STAGE1_SEARCH_LOG_FILE,
+            "stage1_step_info_file": DEFAULT_STAGE1_STEP_INFO_FILE,
+            "stage1_training_curve_path": DEFAULT_STAGE1_TRAINING_CURVE_FILE,
+            "stage1_entropy_curve_path": DEFAULT_STAGE1_ENTROPY_CURVE_FILE,
+            "stage1_final_eval_dir": DEFAULT_STAGE1_FINAL_EVAL_DIR,
+            "noise_step_info_file": NOISE_STAGE_STEP_INFO_FILE,
+            "noise_training_curve_path": NOISE_STAGE_TRAINING_CURVE_PATH,
+            "noise_entropy_curve_path": NOISE_STAGE_ENTROPY_CURVE_PATH,
+            "noise_progress_dir": DEFAULT_NOISE_PROGRESS_DIR,
+            "noise_final_eval_dir": DEFAULT_NOISE_FINAL_EVAL_DIR,
+        }
+
+    run_output_dir = os.path.normpath(run_output_dir)
+    stage1_dir = os.path.join(run_output_dir, "stage1")
+    stage1_final_eval_dir = os.path.join(run_output_dir, "stage1_final_eval")
+    stage2_noise_dir = os.path.join(run_output_dir, "stage2_noise")
+    stage2_noise_progress_dir = os.path.join(stage2_noise_dir, "progress")
+    stage2_noise_final_eval_dir = os.path.join(run_output_dir, "stage2_noise_final_eval")
+
+    for dir_path in (
+        run_output_dir,
+        os.path.join(run_output_dir, "logs"),
+        stage1_dir,
+        stage1_final_eval_dir,
+        stage2_noise_dir,
+        stage2_noise_progress_dir,
+        stage2_noise_final_eval_dir,
+    ):
+        os.makedirs(dir_path, exist_ok=True)
+
+    layout = {
+        "run_output_dir": run_output_dir,
+        "log_file": os.path.join(stage1_dir, DEFAULT_STAGE1_SEARCH_LOG_FILE),
+        "stage1_step_info_file": os.path.join(stage1_dir, DEFAULT_STAGE1_STEP_INFO_FILE),
+        "stage1_training_curve_path": os.path.join(
+            stage1_dir, DEFAULT_STAGE1_TRAINING_CURVE_FILE
+        ),
+        "stage1_entropy_curve_path": os.path.join(
+            stage1_dir, DEFAULT_STAGE1_ENTROPY_CURVE_FILE
+        ),
+        "stage1_final_eval_dir": stage1_final_eval_dir,
+        "noise_step_info_file": os.path.join(stage2_noise_dir, NOISE_STAGE_STEP_INFO_FILE),
+        "noise_training_curve_path": os.path.join(
+            stage2_noise_dir, NOISE_STAGE_TRAINING_CURVE_PATH
+        ),
+        "noise_entropy_curve_path": os.path.join(
+            stage2_noise_dir, NOISE_STAGE_ENTROPY_CURVE_PATH
+        ),
+        "noise_progress_dir": stage2_noise_progress_dir,
+        "noise_final_eval_dir": stage2_noise_final_eval_dir,
+    }
+
+    for path_key in (
+        "log_file",
+        "stage1_step_info_file",
+        "stage1_training_curve_path",
+        "stage1_entropy_curve_path",
+        "noise_step_info_file",
+        "noise_training_curve_path",
+        "noise_entropy_curve_path",
+    ):
+        ensure_parent_dir(layout[path_key])
+
+    return layout
 
 # GELU degree 0 资格阈值：[-2.7, 0) 区间占比 >= 此阈值才能使用 degree 0
 GELU_DEGREE0_THRESHOLD = 2.0 # 设为 2.0（不可能达到）以完全禁用 degree 0 动作 一般设置为 0.80
@@ -1987,6 +2082,7 @@ class TransformerOptEnv:
 class LayerImportanceEvaluator(TrainerCallback):
     def __init__(self, model, train_data, test_data, data_collator, rl_lr=None, degree=None,
                  device='cuda', data_path='stsb', test_data_mm=None,
+                 run_output_dir='',
                  final_eval_config_source='search',
                  final_eval_config_path='glue_configs_best_ppo.json',
                  manual_final_gelu=None,
@@ -2054,6 +2150,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.SOFTMAX_COST_MAP = {6: 3.0, 5: 2.5, 4: 2.0, 3: 1.5, 2: 1.0}
         self.INPUT_NOISE_COST_MAP = INPUT_NOISE_COST_MAP.copy()
         self.WEIGHT_NOISE_COST_MAP = WEIGHT_NOISE_COST_MAP.copy()
+        self.WFFN1_NOISE_COST_MAP = WFFN1_NOISE_COST_MAP.copy()
 
         # 搜索状态初始化
         self.current_gelu_degrees = np.full(self.total_layers, 4, dtype=int)
@@ -2086,7 +2183,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
         self.current_wffn1_noise_scaling_factors = np.full(
             self.total_layers,
-            WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+            WFFN1_NOISE_DEFAULT_SCALING_FACTOR,
             dtype=int,
         )
         self.current_wffn2_noise_scaling_factors = np.full(
@@ -2098,7 +2195,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.wk_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
         self.wv_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
         self.wo_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
-        self.wffn1_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        self.wffn1_noise_action_space = tuple(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
         self.wffn2_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
         self.rl_lr_raw = rl_lr
         self.ppo_lr_initial, self.ppo_lr_mode = resolve_ppo_learning_rate(rl_lr)
@@ -2107,9 +2204,18 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.error_threshold = 0.015
         self.correlation_drop_ratio = 0.015
         
-        self.log_file = "pruning_search_log.txt"
-        self.step_info_file = "ppo_step_info.txt"  # StepInfo 中间结果输出文件
-        self.noise_step_info_file = NOISE_STAGE_STEP_INFO_FILE
+        output_layout = resolve_run_output_layout(run_output_dir)
+        self.run_output_dir = output_layout["run_output_dir"]
+        self.log_file = output_layout["log_file"]
+        self.step_info_file = output_layout["stage1_step_info_file"]
+        self.stage1_training_curve_path = output_layout["stage1_training_curve_path"]
+        self.stage1_entropy_curve_path = output_layout["stage1_entropy_curve_path"]
+        self.stage1_final_eval_dir = output_layout["stage1_final_eval_dir"]
+        self.noise_step_info_file = output_layout["noise_step_info_file"]
+        self.noise_stage_training_curve_path = output_layout["noise_training_curve_path"]
+        self.noise_stage_entropy_curve_path = output_layout["noise_entropy_curve_path"]
+        self.noise_stage_progress_dir = output_layout["noise_progress_dir"]
+        self.noise_final_eval_dir = output_layout["noise_final_eval_dir"]
         with open(self.log_file, "w") as f:
             f.write("=== PPO RL Optimization Log Started ===\n")
         with open(self.log_file, "a", encoding="utf-8") as f:
@@ -2117,6 +2223,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"[Info] PPO LR resolved from rl_lr={self.rl_lr_raw!r} -> "
                 f"{self.ppo_lr_initial:.6g} ({self.ppo_lr_mode})\n"
             )
+            if self.run_output_dir:
+                f.write(f"[Info] Unified run output dir: {self.run_output_dir}\n")
         
         # ==================== 策略二：动态超参数调度状态 ====================
         self.current_episode = 0
@@ -2904,29 +3012,47 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
         return arr
 
-    def validate_weight_noise_scaling_factors(self, scaling_factors, noise_name):
+    def validate_weight_noise_scaling_factors(
+            self,
+            scaling_factors,
+            noise_name,
+            allowed_values=None,
+    ):
         arr = np.asarray(scaling_factors, dtype=int)
         if arr.shape != (self.total_layers,):
             raise ValueError(
                 f"{noise_name}_noise_scaling_factors must have shape ({self.total_layers},), "
                 f"but got {arr.shape}"
             )
-        invalid = sorted(set(arr.tolist()) - set(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS))
+        allowed_values = tuple(allowed_values or WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        invalid = sorted(set(arr.tolist()) - set(allowed_values))
         if invalid:
             raise ValueError(
                 f"Unsupported {noise_name}-noise scaling factors: {invalid}. "
-                f"Allowed values: {list(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)}"
+                f"Allowed values: {list(allowed_values)}"
             )
         return arr
 
-    def _apply_weight_noise_configuration(self, scaling_factors, noise_name, replace_method_name, state_attr):
-        arr = self.validate_weight_noise_scaling_factors(scaling_factors, noise_name)
+    def _apply_weight_noise_configuration(
+            self,
+            scaling_factors,
+            noise_name,
+            replace_method_name,
+            state_attr,
+            allowed_values=None,
+    ):
+        allowed_values = tuple(allowed_values or WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        arr = self.validate_weight_noise_scaling_factors(
+            scaling_factors,
+            noise_name,
+            allowed_values=allowed_values,
+        )
         handler_layer_name = "model." + self.layers_attribute
-        scaling_map = {sf: [] for sf in WEIGHT_NOISE_ALLOWED_SCALING_FACTORS}
+        scaling_map = {sf: [] for sf in allowed_values}
         for idx, scaling_factor in enumerate(arr):
             scaling_map[int(scaling_factor)].append(idx)
         replace_method = getattr(self.reversible_handler, replace_method_name)
-        for scaling_factor in WEIGHT_NOISE_ALLOWED_SCALING_FACTORS:
+        for scaling_factor in allowed_values:
             if scaling_map[scaling_factor]:
                 replace_method(
                     scaling_map[scaling_factor],
@@ -2936,7 +3062,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                 )
         setattr(self, state_attr, arr.copy())
 
-    def _clear_weight_noise_configuration(self, restore_method_name, state_attr):
+    def _clear_weight_noise_configuration(
+            self,
+            restore_method_name,
+            state_attr,
+            default_value=None,
+    ):
         handler_layer_name = "model." + self.layers_attribute
         restore_method = getattr(self.reversible_handler, restore_method_name)
         restore_method(
@@ -2948,7 +3079,11 @@ class LayerImportanceEvaluator(TrainerCallback):
             state_attr,
             np.full(
                 self.total_layers,
-                WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+                (
+                    WEIGHT_NOISE_DEFAULT_SCALING_FACTOR
+                    if default_value is None
+                    else int(default_value)
+                ),
                 dtype=int,
             ),
         )
@@ -3049,12 +3184,14 @@ class LayerImportanceEvaluator(TrainerCallback):
             noise_name="wffn1",
             replace_method_name="replace_layer_ffn1_noise",
             state_attr="current_wffn1_noise_scaling_factors",
+            allowed_values=WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
         )
 
     def clear_wffn1_noise_configuration(self):
         self._clear_weight_noise_configuration(
             restore_method_name="restore_layer_ffn1_noise",
             state_attr="current_wffn1_noise_scaling_factors",
+            default_value=WFFN1_NOISE_DEFAULT_SCALING_FACTOR,
         )
 
     def apply_wffn2_noise_configuration(self, wffn2_noise_scaling_factors):
@@ -3212,7 +3349,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             "wk": float(sum(self.WEIGHT_NOISE_COST_MAP[int(v)] for v in np.asarray(wk_noise_scaling_factors, dtype=int))),
             "wv": float(sum(self.WEIGHT_NOISE_COST_MAP[int(v)] for v in np.asarray(wv_noise_scaling_factors, dtype=int))),
             "wo": float(sum(self.WEIGHT_NOISE_COST_MAP[int(v)] for v in np.asarray(wo_noise_scaling_factors, dtype=int))),
-            "wffn1": float(sum(self.WEIGHT_NOISE_COST_MAP[int(v)] for v in np.asarray(wffn1_noise_scaling_factors, dtype=int))),
+            "wffn1": float(sum(self.WFFN1_NOISE_COST_MAP[int(v)] for v in np.asarray(wffn1_noise_scaling_factors, dtype=int))),
             "wffn2": float(sum(self.WEIGHT_NOISE_COST_MAP[int(v)] for v in np.asarray(wffn2_noise_scaling_factors, dtype=int))),
         }
         return float(sum(breakdown.values())), breakdown
@@ -3224,7 +3361,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             "wk_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
             "wv_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
             "wo_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
-            "wffn1_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
+            "wffn1_noise_scaling_factors": np.full(self.total_layers, max(WFFN1_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
             "wffn2_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
         }
 
@@ -3290,6 +3427,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             cost_equivalent_trials=self.final_eval_cost_equivalent_trials,
             budget_equivalent_trials=self.final_eval_budget_equivalent_trials,
             repeat_n=self.noise_eval_repeat_n,
+            results_dir=self.noise_final_eval_dir,
         )
 
         return runner.run(
@@ -4659,7 +4797,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     ax4.axhline(y=base_s, color='gray', linestyle='--', linewidth=1, alpha=0.7, label='Baseline')
                     ax4.legend()
 
-                plot_path = "ppo_training_curve.png"
+                plot_path = self.stage1_training_curve_path
                 plt.tight_layout()
                 plt.savefig(plot_path, dpi=150)
                 plt.close()
@@ -4682,7 +4820,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         ax_ent.grid(True, alpha=0.3)
                         ax_ent.legend()
                         plt.tight_layout()
-                        entropy_plot_path = "ppo_entropy_curve.png"
+                        entropy_plot_path = self.stage1_entropy_curve_path
                         plt.savefig(entropy_plot_path, dpi=150)
                         plt.close()
                         self.log(f"PPO entropy curve saved to: {entropy_plot_path}")
@@ -4854,6 +4992,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 config_path=self.final_eval_config_path,
                 manual_gelu=self.manual_final_gelu,
                 manual_softmax=self.manual_final_softmax,
+                results_dir=self.stage1_final_eval_dir,
             )
             opt_gelu, opt_softmax, selected_label, selected_source = (
                 _resolver._resolve_selected_config(
@@ -4881,6 +5020,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 permutation_trials=self.final_eval_permutation_trials,
                 cost_equivalent_trials=self.final_eval_cost_equivalent_trials,
                 budget_equivalent_trials=self.final_eval_budget_equivalent_trials,
+                results_dir=self.stage1_final_eval_dir,
             )
             final_eval_result = final_eval_runner.run(
                 search_best_config=best_config,
