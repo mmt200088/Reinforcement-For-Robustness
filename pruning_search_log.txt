@@ -1,492 +1,562 @@
-  Noise Episode 27710: Avg Raw Reward=1.0533, Avg PPO Reward=1.0464, Policy Loss=-0.6867, Value Loss=0.0131, Entropy=6.0244
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.033028, Update#163 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=163, LastLoss=0.009043418685905635
-  Noise window 163 candidate confirmation: selection_reward=1.1326, raw_reward=1.2311, search=Loss: 0.341154, Accuracy: 0.873684, F1: 0.871920, std=(Loss=0.0056, M1=0.0031, M2=0.0033)
-    Holdout: Loss: 0.305857, Accuracy: 0.881301, F1: 0.878920, std=(Loss=0.0066, M1=0.0098, M2=0.0100)
-  Noise Episode 27880: Avg Raw Reward=1.0362, Avg PPO Reward=1.0510, Policy Loss=0.1277, Value Loss=0.0044, Entropy=6.2143
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.032924, Update#164 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=164, LastLoss=0.009640832198783755
-  Noise window 164 candidate confirmation: selection_reward=1.1574, raw_reward=1.2785, search=Loss: 0.338512, Accuracy: 0.879298, F1: 0.877409, std=(Loss=0.0033, M1=0.0053, M2=0.0058)
-    Holdout: Loss: 0.305275, Accuracy: 0.881301, F1: 0.878729, std=(Loss=0.0107, M1=0.0132, M2=0.0134)
-  Noise Episode 28050: Avg Raw Reward=1.0424, Avg PPO Reward=1.0430, Policy Loss=0.6913, Value Loss=0.0103, Entropy=6.1706
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.032820, Update#165 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=165, LastLoss=0.010762280551716685
-  Noise window 165 candidate confirmation: selection_reward=1.1660, raw_reward=1.3062, search=Loss: 0.341790, Accuracy: 0.870175, F1: 0.868151, std=(Loss=0.0054, M1=0.0106, M2=0.0104)
-    Holdout: Loss: 0.307377, Accuracy: 0.869919, F1: 0.866729, std=(Loss=0.0052, M1=0.0073, M2=0.0075)
-  Noise Episode 28220: Avg Raw Reward=1.0514, Avg PPO Reward=1.0534, Policy Loss=0.4631, Value Loss=0.0047, Entropy=5.9234
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.032716, Update#166 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=166, LastLoss=0.009469194104894996
-  Noise window 166 candidate confirmation: selection_reward=1.1673, raw_reward=1.2928, search=Loss: 0.336954, Accuracy: 0.871579, F1: 0.869455, std=(Loss=0.0038, M1=0.0079, M2=0.0079)
-    Holdout: Loss: 0.300525, Accuracy: 0.879675, F1: 0.877630, std=(Loss=0.0089, M1=0.0108, M2=0.0107)
-  Noise Episode 28390: Avg Raw Reward=1.0286, Avg PPO Reward=1.0539, Policy Loss=0.3420, Value Loss=0.0035, Entropy=6.2428
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.032612, Update#167 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=167, LastLoss=0.009814690100029111
-  Noise window 167 candidate confirmation: selection_reward=1.1742, raw_reward=1.2800, search=Loss: 0.337940, Accuracy: 0.873684, F1: 0.871987, std=(Loss=0.0064, M1=0.0059, M2=0.0063)
-    Holdout: Loss: 0.306747, Accuracy: 0.876423, F1: 0.873328, std=(Loss=0.0086, M1=0.0095, M2=0.0103)
-  Noise Episode 28560: Avg Raw Reward=1.0549, Avg PPO Reward=1.0575, Policy Loss=-0.5816, Value Loss=0.0117, Entropy=5.8908
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.032508, Update#168 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=168, LastLoss=0.00908318511210382
-  Noise window 168 candidate confirmation: selection_reward=1.1719, raw_reward=1.2822, search=Loss: 0.339934, Accuracy: 0.876491, F1: 0.874770, std=(Loss=0.0051, M1=0.0047, M2=0.0046)
-    Holdout: Loss: 0.305446, Accuracy: 0.876423, F1: 0.873579, std=(Loss=0.0039, M1=0.0061, M2=0.0067)
-  Noise Episode 28730: Avg Raw Reward=1.0465, Avg PPO Reward=1.0304, Policy Loss=0.2547, Value Loss=0.0018, Entropy=6.2202
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.032403, Update#169 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=169, LastLoss=0.009736695094034076
-  Noise window 169 candidate confirmation: selection_reward=1.1409, raw_reward=1.2821, search=Loss: 0.337662, Accuracy: 0.876491, F1: 0.874484, std=(Loss=0.0013, M1=0.0041, M2=0.0043)
-    Holdout: Loss: 0.300830, Accuracy: 0.878049, F1: 0.875157, std=(Loss=0.0051, M1=0.0073, M2=0.0077)
-  Noise Episode 28900: Avg Raw Reward=1.0632, Avg PPO Reward=1.0710, Policy Loss=1.3027, Value Loss=0.0213, Entropy=5.9905
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.032299, Update#170 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=170, LastLoss=0.011109034065157175
-  Noise window 170 candidate confirmation: selection_reward=1.1812, raw_reward=1.2958, search=Loss: 0.339145, Accuracy: 0.872281, F1: 0.870320, std=(Loss=0.0057, M1=0.0072, M2=0.0071)
-    Holdout: Loss: 0.308068, Accuracy: 0.868293, F1: 0.864663, std=(Loss=0.0081, M1=0.0061, M2=0.0064)
-  Noise Episode 29070: Avg Raw Reward=1.0544, Avg PPO Reward=1.0533, Policy Loss=-0.1803, Value Loss=0.0154, Entropy=6.3101
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.032195, Update#171 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=171, LastLoss=0.008554810076020658
-  Noise window 171 candidate confirmation: selection_reward=1.1455, raw_reward=1.2505, search=Loss: 0.342443, Accuracy: 0.874386, F1: 0.872488, std=(Loss=0.0036, M1=0.0034, M2=0.0037)
-    Holdout: Loss: 0.308019, Accuracy: 0.878049, F1: 0.875421, std=(Loss=0.0033, M1=0.0073, M2=0.0069)
-  Noise Episode 29240: Avg Raw Reward=1.0569, Avg PPO Reward=1.0283, Policy Loss=-0.2622, Value Loss=0.0028, Entropy=6.1042
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.032091, Update#172 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=172, LastLoss=0.012541885022073984
-  Noise window 172 candidate confirmation: selection_reward=1.1574, raw_reward=1.3293, search=Loss: 0.340372, Accuracy: 0.870877, F1: 0.868789, std=(Loss=0.0018, M1=0.0034, M2=0.0032)
-    Holdout: Loss: 0.298833, Accuracy: 0.881301, F1: 0.878878, std=(Loss=0.0084, M1=0.0065, M2=0.0072)
-  Noise Episode 29252: New Best! SelectionReward=1.1903, RawReward=1.2955, Cost=34.25
-    MC Eval: Loss=0.3278±0.0030, M1=0.8807±0.0057, M2=0.8787±0.0058
-    x     : [22, 22, 22, 22, 22, 22, 30, 22, 26, 24, 22, 22]
-    wq    : [14, 14, 14, 14, 14, 16, 16, 22, 22, 18, 14, 14]
-    wk    : [14, 14, 14, 14, 14, 14, 14, 16, 14, 16, 16, 16]
-    wv    : [14, 14, 14, 14, 14, 16, 14, 14, 16, 16, 14, 18]
-    wo    : [14, 14, 14, 14, 14, 14, 22, 16, 14, 16, 16, 14]
-    wffn1 : [14, 14, 14, 14, 14, 14, 18, 18, 14, 16, 14, 18]
-    wffn2 : [14, 14, 14, 14, 14, 14, 18, 18, 16, 14, 14, 18]
-  Noise Episode 29410: Avg Raw Reward=1.0418, Avg PPO Reward=1.0753, Policy Loss=-0.4505, Value Loss=0.0140, Entropy=6.0128
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031987, Update#173 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=173, LastLoss=0.012043878203257918
-  Noise window 173 candidate confirmation: selection_reward=1.1903, raw_reward=1.2955, search=Loss: 0.343243, Accuracy: 0.871579, F1: 0.869632, std=(Loss=0.0050, M1=0.0048, M2=0.0051)
-    Holdout: Loss: 0.307767, Accuracy: 0.873171, F1: 0.870017, std=(Loss=0.0074, M1=0.0065, M2=0.0073)
-  Noise Episode 29580: Avg Raw Reward=1.0521, Avg PPO Reward=1.0477, Policy Loss=-0.2995, Value Loss=0.0052, Entropy=6.2599
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031883, Update#174 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=174, LastLoss=0.011072034714743495
-  Noise window 174 candidate confirmation: selection_reward=1.1732, raw_reward=1.3031, search=Loss: 0.347149, Accuracy: 0.872281, F1: 0.870213, std=(Loss=0.0076, M1=0.0048, M2=0.0049)
-    Holdout: Loss: 0.301300, Accuracy: 0.878049, F1: 0.875177, std=(Loss=0.0060, M1=0.0115, M2=0.0117)
-  Noise Episode 29750: Avg Raw Reward=1.0588, Avg PPO Reward=1.0382, Policy Loss=0.5233, Value Loss=0.0114, Entropy=6.0798
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031779, Update#175 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=175, LastLoss=0.009266311768442392
-  Noise window 175 candidate confirmation: selection_reward=1.1553, raw_reward=1.3226, search=Loss: 0.344115, Accuracy: 0.872281, F1: 0.870593, std=(Loss=0.0062, M1=0.0042, M2=0.0041)
-    Holdout: Loss: 0.302546, Accuracy: 0.882927, F1: 0.880035, std=(Loss=0.0056, M1=0.0040, M2=0.0046)
-  Noise Episode 29920: Avg Raw Reward=1.0438, Avg PPO Reward=1.0720, Policy Loss=-0.3078, Value Loss=0.0017, Entropy=6.1881
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031675, Update#176 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=176, LastLoss=0.009874318726360798
-  Noise window 176 candidate confirmation: selection_reward=1.1852, raw_reward=1.2876, search=Loss: 0.333964, Accuracy: 0.877895, F1: 0.875540, std=(Loss=0.0052, M1=0.0081, M2=0.0084)
-    Holdout: Loss: 0.307170, Accuracy: 0.876423, F1: 0.873298, std=(Loss=0.0051, M1=0.0095, M2=0.0106)
-Noise PPO training curves saved to: experiment_results/noise_rl_progress/noise_ppo_training_curve_ep30000.png
-Noise PPO entropy curve saved to: experiment_results/noise_rl_progress/noise_ppo_entropy_curve_ep30000.png
-Noise PPO progress snapshot saved at episode 30000: experiment_results/noise_rl_progress/noise_ppo_training_curve_ep30000.png
-  Noise Episode 30090: Avg Raw Reward=1.0512, Avg PPO Reward=1.0302, Policy Loss=0.3869, Value Loss=0.0051, Entropy=6.2746
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031570, Update#177 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=177, LastLoss=0.010142715880647302
-  Noise window 177 candidate confirmation: selection_reward=1.1458, raw_reward=1.3160, search=Loss: 0.340970, Accuracy: 0.875088, F1: 0.873444, std=(Loss=0.0097, M1=0.0069, M2=0.0068)
-    Holdout: Loss: 0.304272, Accuracy: 0.887805, F1: 0.885347, std=(Loss=0.0094, M1=0.0061, M2=0.0066)
-  Noise Episode 30260: Avg Raw Reward=1.0490, Avg PPO Reward=1.0529, Policy Loss=-0.8551, Value Loss=0.0116, Entropy=5.9555
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031466, Update#178 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=178, LastLoss=0.012635708320885897
-  Noise window 178 candidate confirmation: selection_reward=1.1840, raw_reward=1.3153, search=Loss: 0.336666, Accuracy: 0.875088, F1: 0.872874, std=(Loss=0.0027, M1=0.0036, M2=0.0038)
-    Holdout: Loss: 0.302524, Accuracy: 0.871545, F1: 0.869169, std=(Loss=0.0137, M1=0.0140, M2=0.0142)
-  Noise Episode 30430: Avg Raw Reward=1.0386, Avg PPO Reward=1.0626, Policy Loss=0.0359, Value Loss=0.0004, Entropy=5.9902
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031362, Update#179 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=179, LastLoss=0.011786186136305332
-  Noise window 179 candidate confirmation: selection_reward=1.1869, raw_reward=1.3145, search=Loss: 0.344775, Accuracy: 0.873684, F1: 0.872016, std=(Loss=0.0068, M1=0.0059, M2=0.0058)
-    Holdout: Loss: 0.307783, Accuracy: 0.879675, F1: 0.877387, std=(Loss=0.0046, M1=0.0080, M2=0.0078)
-  Noise Episode 30600: Avg Raw Reward=1.0436, Avg PPO Reward=1.0136, Policy Loss=0.1130, Value Loss=0.0051, Entropy=6.2914
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031258, Update#180 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=180, LastLoss=0.011638424010016024
-  Noise window 180 candidate confirmation: selection_reward=1.1360, raw_reward=1.3124, search=Loss: 0.338498, Accuracy: 0.872281, F1: 0.869926, std=(Loss=0.0074, M1=0.0072, M2=0.0073)
-    Holdout: Loss: 0.309489, Accuracy: 0.878049, F1: 0.875379, std=(Loss=0.0065, M1=0.0089, M2=0.0089)
-  Noise Episode 30766: New Best! SelectionReward=1.1992, RawReward=1.2845, Cost=34.15
-    MC Eval: Loss=0.3374±0.0024, M1=0.8830±0.0066, M2=0.8809±0.0070
-    x     : [22, 22, 22, 22, 22, 22, 22, 22, 26, 22, 26, 22]
-    wq    : [14, 14, 14, 14, 14, 14, 16, 18, 14, 16, 16, 14]
-    wk    : [14, 14, 14, 14, 14, 14, 14, 16, 18, 18, 16, 16]
-    wv    : [14, 14, 14, 14, 18, 14, 14, 14, 18, 14, 18, 16]
-    wo    : [14, 14, 14, 14, 20, 14, 16, 18, 20, 14, 14, 14]
-    wffn1 : [14, 14, 14, 14, 14, 14, 14, 14, 14, 20, 18, 18]
-    wffn2 : [14, 14, 14, 14, 14, 16, 18, 20, 14, 18, 14, 14]
-  Noise Episode 30770: Avg Raw Reward=1.0369, Avg PPO Reward=1.0768, Policy Loss=0.6634, Value Loss=0.0060, Entropy=6.1999
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031154, Update#181 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=181, LastLoss=0.011819856241345406
-  Noise window 181 candidate confirmation: selection_reward=1.1992, raw_reward=1.2845, search=Loss: 0.337422, Accuracy: 0.875789, F1: 0.873837, std=(Loss=0.0091, M1=0.0088, M2=0.0087)
-    Holdout: Loss: 0.304145, Accuracy: 0.881301, F1: 0.878928, std=(Loss=0.0059, M1=0.0065, M2=0.0067)
-  Noise Episode 30940: Avg Raw Reward=1.0512, Avg PPO Reward=1.0414, Policy Loss=-0.6461, Value Loss=0.0227, Entropy=6.0232
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.031050, Update#182 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=182, LastLoss=0.009507860289886594
-  Noise window 182 candidate confirmation: selection_reward=1.1735, raw_reward=1.3353, search=Loss: 0.338547, Accuracy: 0.876491, F1: 0.874210, std=(Loss=0.0058, M1=0.0014, M2=0.0014)
-    Holdout: Loss: 0.301585, Accuracy: 0.884553, F1: 0.882456, std=(Loss=0.0049, M1=0.0095, M2=0.0097)
-  Noise Episode 31110: Avg Raw Reward=1.0443, Avg PPO Reward=1.0432, Policy Loss=-0.2825, Value Loss=0.0148, Entropy=6.0475
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.030946, Update#183 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=183, LastLoss=0.009547160705551505
-  Noise window 183 candidate confirmation: selection_reward=1.1546, raw_reward=1.2583, search=Loss: 0.335534, Accuracy: 0.879298, F1: 0.877255, std=(Loss=0.0032, M1=0.0057, M2=0.0058)
-    Holdout: Loss: 0.310891, Accuracy: 0.869919, F1: 0.866985, std=(Loss=0.0038, M1=0.0051, M2=0.0049)
-  Noise Episode 31280: Avg Raw Reward=1.0403, Avg PPO Reward=1.0541, Policy Loss=-1.0036, Value Loss=0.0243, Entropy=6.1381
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.030842, Update#184 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=184, LastLoss=0.009877803036943078
-  Noise window 184 candidate confirmation: selection_reward=1.1625, raw_reward=1.2627, search=Loss: 0.340718, Accuracy: 0.872982, F1: 0.871338, std=(Loss=0.0031, M1=0.0014, M2=0.0018)
-    Holdout: Loss: 0.305068, Accuracy: 0.881301, F1: 0.878714, std=(Loss=0.0042, M1=0.0040, M2=0.0043)
-  Noise Episode 31450: Avg Raw Reward=1.0388, Avg PPO Reward=1.0352, Policy Loss=0.0739, Value Loss=0.0085, Entropy=6.2245
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.030737, Update#185 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=185, LastLoss=0.010963288834318519
-  Noise window 185 candidate confirmation: selection_reward=1.1582, raw_reward=1.3085, search=Loss: 0.340540, Accuracy: 0.871579, F1: 0.869736, std=(Loss=0.0044, M1=0.0048, M2=0.0049)
-    Holdout: Loss: 0.312410, Accuracy: 0.873171, F1: 0.870277, std=(Loss=0.0057, M1=0.0065, M2=0.0072)
-  Noise Episode 31620: Avg Raw Reward=1.0501, Avg PPO Reward=1.0575, Policy Loss=0.0349, Value Loss=0.0027, Entropy=6.0584
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.030633, Update#186 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=186, LastLoss=0.010023028124123812
-  Noise window 186 candidate confirmation: selection_reward=1.1764, raw_reward=1.2953, search=Loss: 0.335166, Accuracy: 0.875789, F1: 0.874019, std=(Loss=0.0033, M1=0.0061, M2=0.0060)
-    Holdout: Loss: 0.310636, Accuracy: 0.879675, F1: 0.877304, std=(Loss=0.0060, M1=0.0061, M2=0.0068)
-  Noise Episode 31790: Avg Raw Reward=1.0405, Avg PPO Reward=1.0507, Policy Loss=-0.4700, Value Loss=0.0098, Entropy=5.9489
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.030529, Update#187 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=187, LastLoss=0.009882720420137048
-  Noise window 187 candidate confirmation: selection_reward=1.1689, raw_reward=1.2896, search=Loss: 0.342270, Accuracy: 0.874386, F1: 0.872212, std=(Loss=0.0055, M1=0.0034, M2=0.0035)
-    Holdout: Loss: 0.296393, Accuracy: 0.882927, F1: 0.880489, std=(Loss=0.0079, M1=0.0098, M2=0.0101)
-  Noise Episode 31960: Avg Raw Reward=1.0606, Avg PPO Reward=1.0425, Policy Loss=1.1083, Value Loss=0.0214, Entropy=6.2991
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.030425, Update#188 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=188, LastLoss=0.010601800866425037
-  Noise window 188 candidate confirmation: selection_reward=1.1655, raw_reward=1.3165, search=Loss: 0.336463, Accuracy: 0.877193, F1: 0.875165, std=(Loss=0.0041, M1=0.0044, M2=0.0044)
-    Holdout: Loss: 0.304576, Accuracy: 0.881301, F1: 0.878960, std=(Loss=0.0052, M1=0.0083, M2=0.0082)
-  Noise Episode 32130: Avg Raw Reward=1.0573, Avg PPO Reward=1.0631, Policy Loss=-0.3822, Value Loss=0.0043, Entropy=6.1260
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.030321, Update#189 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=189, LastLoss=0.01032505463808775
-  Noise window 189 candidate confirmation: selection_reward=1.1646, raw_reward=1.2778, search=Loss: 0.338195, Accuracy: 0.870877, F1: 0.868858, std=(Loss=0.0064, M1=0.0047, M2=0.0052)
-    Holdout: Loss: 0.308039, Accuracy: 0.876423, F1: 0.874311, std=(Loss=0.0028, M1=0.0061, M2=0.0056)
-  Noise Episode 32300: Avg Raw Reward=1.0349, Avg PPO Reward=1.0423, Policy Loss=0.0074, Value Loss=0.0015, Entropy=6.1591
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.030217, Update#190 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=190, LastLoss=0.009448159486055374
-  Noise window 190 candidate confirmation: selection_reward=1.1648, raw_reward=1.2909, search=Loss: 0.337949, Accuracy: 0.872281, F1: 0.870211, std=(Loss=0.0084, M1=0.0057, M2=0.0059)
-    Holdout: Loss: 0.307617, Accuracy: 0.881301, F1: 0.878934, std=(Loss=0.0030, M1=0.0083, M2=0.0085)
-  Noise Episode 32470: Avg Raw Reward=1.0476, Avg PPO Reward=1.0468, Policy Loss=0.7851, Value Loss=0.0083, Entropy=6.0241
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.030113, Update#191 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=191, LastLoss=0.010738081764429808
-  Noise window 191 candidate confirmation: selection_reward=1.1539, raw_reward=1.2839, search=Loss: 0.341075, Accuracy: 0.873684, F1: 0.871932, std=(Loss=0.0036, M1=0.0074, M2=0.0072)
-    Holdout: Loss: 0.305659, Accuracy: 0.881301, F1: 0.879360, std=(Loss=0.0035, M1=0.0040, M2=0.0042)
-  Noise Episode 32640: Avg Raw Reward=1.0512, Avg PPO Reward=1.0617, Policy Loss=-0.1257, Value Loss=0.0271, Entropy=6.0660
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.030009, Update#192 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=192, LastLoss=0.008640661835670471
-  Noise window 192 candidate confirmation: selection_reward=1.1851, raw_reward=1.2892, search=Loss: 0.336651, Accuracy: 0.877895, F1: 0.875930, std=(Loss=0.0077, M1=0.0072, M2=0.0070)
-    Holdout: Loss: 0.303599, Accuracy: 0.879675, F1: 0.876950, std=(Loss=0.0027, M1=0.0095, M2=0.0097)
-  Noise Episode 32810: Avg Raw Reward=1.0433, Avg PPO Reward=1.0236, Policy Loss=0.1160, Value Loss=0.0023, Entropy=5.8258
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.029904, Update#193 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=193, LastLoss=0.010603921953588724
-  Noise window 193 candidate confirmation: selection_reward=1.1545, raw_reward=1.3189, search=Loss: 0.340756, Accuracy: 0.876491, F1: 0.874665, std=(Loss=0.0051, M1=0.0041, M2=0.0044)
-    Holdout: Loss: 0.302789, Accuracy: 0.878049, F1: 0.875832, std=(Loss=0.0052, M1=0.0073, M2=0.0074)
-  Noise Episode 32980: Avg Raw Reward=1.0420, Avg PPO Reward=1.0576, Policy Loss=0.6096, Value Loss=0.0091, Entropy=6.0049
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.029800, Update#194 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=194, LastLoss=0.011947037419304252
-  Noise window 194 candidate confirmation: selection_reward=1.1630, raw_reward=1.2936, search=Loss: 0.335399, Accuracy: 0.876491, F1: 0.874482, std=(Loss=0.0049, M1=0.0060, M2=0.0063)
-    Holdout: Loss: 0.307064, Accuracy: 0.878049, F1: 0.875157, std=(Loss=0.0021, M1=0.0073, M2=0.0077)
-  Noise Episode 33150: Avg Raw Reward=1.0459, Avg PPO Reward=1.0543, Policy Loss=0.5490, Value Loss=0.0070, Entropy=5.9644
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.029696, Update#195 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=195, LastLoss=0.00928896083496511
-  Noise window 195 candidate confirmation: selection_reward=1.1845, raw_reward=1.3042, search=Loss: 0.335170, Accuracy: 0.874386, F1: 0.872276, std=(Loss=0.0046, M1=0.0072, M2=0.0076)
-    Holdout: Loss: 0.308836, Accuracy: 0.876423, F1: 0.873579, std=(Loss=0.0061, M1=0.0061, M2=0.0066)
-  Noise Episode 33320: Avg Raw Reward=1.0590, Avg PPO Reward=1.0473, Policy Loss=-0.6015, Value Loss=0.0097, Entropy=6.0784
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.029592, Update#196 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=196, LastLoss=0.010414240881800652
-  Noise window 196 candidate confirmation: selection_reward=1.1596, raw_reward=1.2809, search=Loss: 0.342492, Accuracy: 0.871579, F1: 0.869808, std=(Loss=0.0034, M1=0.0065, M2=0.0068)
-    Holdout: Loss: 0.308717, Accuracy: 0.881301, F1: 0.878725, std=(Loss=0.0055, M1=0.0083, M2=0.0086)
-  Noise Episode 33490: Avg Raw Reward=1.0456, Avg PPO Reward=1.0433, Policy Loss=0.0301, Value Loss=0.0017, Entropy=5.6228
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.029488, Update#197 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=197, LastLoss=0.01055071852169931
-  Noise window 197 candidate confirmation: selection_reward=1.1580, raw_reward=1.2753, search=Loss: 0.340129, Accuracy: 0.873684, F1: 0.871444, std=(Loss=0.0059, M1=0.0074, M2=0.0075)
-    Holdout: Loss: 0.308174, Accuracy: 0.878049, F1: 0.875381, std=(Loss=0.0128, M1=0.0115, M2=0.0120)
-  Noise Episode 33578: New Best! SelectionReward=1.2025, RawReward=1.3356, Cost=33.70
-    MC Eval: Loss=0.3318±0.0054, M1=0.8830±0.0044, M2=0.8815±0.0043
-    x     : [22, 22, 22, 22, 22, 22, 26, 22, 22, 24, 24, 22]
-    wq    : [14, 14, 14, 16, 14, 18, 18, 18, 14, 14, 18, 14]
-    wk    : [14, 14, 14, 14, 14, 14, 14, 18, 16, 14, 18, 14]
-    wv    : [14, 14, 14, 14, 14, 14, 18, 14, 16, 14, 16, 14]
-    wo    : [14, 14, 14, 14, 14, 20, 14, 14, 14, 14, 16, 16]
-    wffn1 : [14, 14, 14, 14, 18, 14, 16, 18, 16, 14, 14, 14]
-    wffn2 : [14, 14, 14, 14, 14, 14, 14, 16, 16, 18, 16, 14]
-  Noise Episode 33660: Avg Raw Reward=1.0473, Avg PPO Reward=1.0548, Policy Loss=-0.4033, Value Loss=0.0158, Entropy=6.4101
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.029384, Update#198 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=198, LastLoss=0.009864137042313814
-  Noise window 198 candidate confirmation: selection_reward=1.2025, raw_reward=1.3356, search=Loss: 0.338559, Accuracy: 0.872281, F1: 0.869910, std=(Loss=0.0080, M1=0.0053, M2=0.0055)
-    Holdout: Loss: 0.309368, Accuracy: 0.878049, F1: 0.875354, std=(Loss=0.0066, M1=0.0051, M2=0.0060)
-  Noise Episode 33830: Avg Raw Reward=1.0384, Avg PPO Reward=1.0518, Policy Loss=0.3949, Value Loss=0.0028, Entropy=6.1950
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.029280, Update#199 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=199, LastLoss=0.011556453304365277
-  Noise window 199 candidate confirmation: selection_reward=1.1578, raw_reward=1.2358, search=Loss: 0.341356, Accuracy: 0.873684, F1: 0.871531, std=(Loss=0.0044, M1=0.0050, M2=0.0052)
-    Holdout: Loss: 0.303428, Accuracy: 0.882927, F1: 0.880657, std=(Loss=0.0062, M1=0.0040, M2=0.0046)
-  Noise Episode 34000: Avg Raw Reward=1.0445, Avg PPO Reward=1.0276, Policy Loss=-0.3450, Value Loss=0.0137, Entropy=6.2078
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.029176, Update#200 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=200, LastLoss=0.010291425744071603
-  Noise window 200 candidate confirmation: selection_reward=1.1463, raw_reward=1.2866, search=Loss: 0.337411, Accuracy: 0.877193, F1: 0.875262, std=(Loss=0.0064, M1=0.0070, M2=0.0069)
-    Holdout: Loss: 0.307319, Accuracy: 0.879675, F1: 0.876702, std=(Loss=0.0054, M1=0.0061, M2=0.0066)
-  Noise Episode 34170: Avg Raw Reward=1.0584, Avg PPO Reward=1.0688, Policy Loss=-1.4111, Value Loss=0.0330, Entropy=6.0477
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.029071, Update#201 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=201, LastLoss=0.011234135366976261
-  Noise window 201 candidate confirmation: selection_reward=1.1846, raw_reward=1.2950, search=Loss: 0.340033, Accuracy: 0.874386, F1: 0.872758, std=(Loss=0.0033, M1=0.0064, M2=0.0066)
-    Holdout: Loss: 0.305586, Accuracy: 0.881301, F1: 0.878925, std=(Loss=0.0045, M1=0.0065, M2=0.0069)
-  Noise Episode 34340: Avg Raw Reward=1.0294, Avg PPO Reward=1.0433, Policy Loss=-0.7443, Value Loss=0.0099, Entropy=6.0283
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.028967, Update#202 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=202, LastLoss=0.009901699610054493
-  Noise window 202 candidate confirmation: selection_reward=1.1691, raw_reward=1.2865, search=Loss: 0.340636, Accuracy: 0.877895, F1: 0.876367, std=(Loss=0.0076, M1=0.0052, M2=0.0051)
-    Holdout: Loss: 0.305016, Accuracy: 0.879675, F1: 0.877130, std=(Loss=0.0033, M1=0.0149, M2=0.0156)
-  Noise Episode 34510: Avg Raw Reward=1.0449, Avg PPO Reward=1.0313, Policy Loss=0.2635, Value Loss=0.0068, Entropy=6.2273
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.028863, Update#203 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=203, LastLoss=0.011016335804015398
-  Noise window 203 candidate confirmation: selection_reward=1.1692, raw_reward=1.3182, search=Loss: 0.340157, Accuracy: 0.873684, F1: 0.871739, std=(Loss=0.0033, M1=0.0059, M2=0.0059)
-    Holdout: Loss: 0.306416, Accuracy: 0.884553, F1: 0.882239, std=(Loss=0.0032, M1=0.0061, M2=0.0063)
-  Noise Episode 34680: Avg Raw Reward=1.0422, Avg PPO Reward=1.0501, Policy Loss=0.3194, Value Loss=0.0039, Entropy=6.3117
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.028759, Update#204 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=204, LastLoss=0.009629845153540373
-  Noise window 204 candidate confirmation: selection_reward=1.1624, raw_reward=1.2866, search=Loss: 0.337685, Accuracy: 0.876491, F1: 0.874577, std=(Loss=0.0080, M1=0.0041, M2=0.0043)
-    Holdout: Loss: 0.306704, Accuracy: 0.879675, F1: 0.877388, std=(Loss=0.0047, M1=0.0095, M2=0.0097)
-  Noise Episode 34850: Avg Raw Reward=1.0402, Avg PPO Reward=1.0374, Policy Loss=0.1679, Value Loss=0.0073, Entropy=5.9816
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.028655, Update#205 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=205, LastLoss=0.008736295625567436
-  Noise window 205 candidate confirmation: selection_reward=1.1735, raw_reward=1.2904, search=Loss: 0.338100, Accuracy: 0.873684, F1: 0.871641, std=(Loss=0.0045, M1=0.0059, M2=0.0059)
-    Holdout: Loss: 0.306307, Accuracy: 0.868293, F1: 0.866134, std=(Loss=0.0050, M1=0.0080, M2=0.0080)
-  Noise Episode 35020: Avg Raw Reward=1.0509, Avg PPO Reward=1.0440, Policy Loss=-0.0766, Value Loss=0.0006, Entropy=5.8465
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.028551, Update#206 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=206, LastLoss=0.01016037561930716
-  Noise window 206 candidate confirmation: selection_reward=1.1533, raw_reward=1.2781, search=Loss: 0.341010, Accuracy: 0.875789, F1: 0.873927, std=(Loss=0.0028, M1=0.0048, M2=0.0045)
-    Holdout: Loss: 0.303682, Accuracy: 0.879675, F1: 0.877405, std=(Loss=0.0048, M1=0.0061, M2=0.0058)
-  Noise Episode 35190: Avg Raw Reward=1.0369, Avg PPO Reward=1.0434, Policy Loss=0.4978, Value Loss=0.0067, Entropy=6.0795
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.028447, Update#207 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=207, LastLoss=0.009515574900433421
-  Noise window 207 candidate confirmation: selection_reward=1.1432, raw_reward=1.2462, search=Loss: 0.341742, Accuracy: 0.872982, F1: 0.871168, std=(Loss=0.0034, M1=0.0075, M2=0.0075)
-    Holdout: Loss: 0.307765, Accuracy: 0.876423, F1: 0.873618, std=(Loss=0.0046, M1=0.0095, M2=0.0097)
-  Noise Episode 35360: Avg Raw Reward=1.0491, Avg PPO Reward=1.0369, Policy Loss=-0.8499, Value Loss=0.0236, Entropy=6.1816
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.028343, Update#208 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=208, LastLoss=0.009199594845995307
-  Noise window 208 candidate confirmation: selection_reward=1.1591, raw_reward=1.2766, search=Loss: 0.334874, Accuracy: 0.871579, F1: 0.869638, std=(Loss=0.0029, M1=0.0079, M2=0.0080)
-    Holdout: Loss: 0.311903, Accuracy: 0.879675, F1: 0.877171, std=(Loss=0.0073, M1=0.0061, M2=0.0061)
-  Noise Episode 35530: Avg Raw Reward=1.0414, Avg PPO Reward=1.0415, Policy Loss=0.2719, Value Loss=0.0111, Entropy=6.1469
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.028238, Update#209 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=209, LastLoss=0.010314936516806483
-  Noise window 209 candidate confirmation: selection_reward=1.1830, raw_reward=1.3227, search=Loss: 0.340791, Accuracy: 0.872281, F1: 0.869924, std=(Loss=0.0063, M1=0.0017, M2=0.0016)
-    Holdout: Loss: 0.301055, Accuracy: 0.876423, F1: 0.873161, std=(Loss=0.0071, M1=0.0033, M2=0.0032)
-  Noise Episode 35700: Avg Raw Reward=1.0382, Avg PPO Reward=1.0521, Policy Loss=0.2396, Value Loss=0.0012, Entropy=5.9840
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.028134, Update#210 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=210, LastLoss=0.010995756834745407
-  Noise window 210 candidate confirmation: selection_reward=1.1570, raw_reward=1.2425, search=Loss: 0.332880, Accuracy: 0.875789, F1: 0.873712, std=(Loss=0.0067, M1=0.0057, M2=0.0062)
-    Holdout: Loss: 0.311164, Accuracy: 0.874797, F1: 0.872479, std=(Loss=0.0032, M1=0.0083, M2=0.0090)
-  Noise Episode 35870: Avg Raw Reward=1.0314, Avg PPO Reward=1.0287, Policy Loss=0.4553, Value Loss=0.0055, Entropy=6.1154
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.028030, Update#211 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=211, LastLoss=0.010535080567933619
-  Noise window 211 candidate confirmation: selection_reward=1.1791, raw_reward=1.3214, search=Loss: 0.341487, Accuracy: 0.876491, F1: 0.874771, std=(Loss=0.0046, M1=0.0026, M2=0.0025)
-    Holdout: Loss: 0.302288, Accuracy: 0.881301, F1: 0.878745, std=(Loss=0.0083, M1=0.0110, M2=0.0108)
-  Noise Episode 36040: Avg Raw Reward=1.0526, Avg PPO Reward=1.0448, Policy Loss=-1.6325, Value Loss=0.0446, Entropy=6.0939
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.027926, Update#212 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=212, LastLoss=0.008696243166923523
-  Noise window 212 candidate confirmation: selection_reward=1.1745, raw_reward=1.3077, search=Loss: 0.339359, Accuracy: 0.872281, F1: 0.870406, std=(Loss=0.0050, M1=0.0028, M2=0.0029)
-    Holdout: Loss: 0.304724, Accuracy: 0.879675, F1: 0.876650, std=(Loss=0.0011, M1=0.0130, M2=0.0139)
-  Noise Episode 36210: Avg Raw Reward=1.0343, Avg PPO Reward=1.0253, Policy Loss=0.5070, Value Loss=0.0085, Entropy=6.2924
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.027822, Update#213 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=213, LastLoss=0.010949317598715425
-  Noise window 213 candidate confirmation: selection_reward=1.1452, raw_reward=1.2766, search=Loss: 0.337359, Accuracy: 0.875789, F1: 0.873723, std=(Loss=0.0049, M1=0.0036, M2=0.0038)
-    Holdout: Loss: 0.307386, Accuracy: 0.881301, F1: 0.878889, std=(Loss=0.0051, M1=0.0110, M2=0.0118)
-  Noise Episode 36380: Avg Raw Reward=1.0403, Avg PPO Reward=1.0482, Policy Loss=-0.1528, Value Loss=0.0280, Entropy=6.0066
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.027718, Update#214 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=214, LastLoss=0.00935767637565732
-  Noise window 214 candidate confirmation: selection_reward=1.1794, raw_reward=1.3083, search=Loss: 0.341475, Accuracy: 0.875789, F1: 0.873632, std=(Loss=0.0042, M1=0.0017, M2=0.0018)
-    Holdout: Loss: 0.309762, Accuracy: 0.871545, F1: 0.868716, std=(Loss=0.0083, M1=0.0080, M2=0.0084)
-  Noise Episode 36550: Avg Raw Reward=1.0459, Avg PPO Reward=1.0441, Policy Loss=-1.2580, Value Loss=0.0258, Entropy=6.0649
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.027614, Update#215 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=215, LastLoss=0.011252188123762608
-  Noise window 215 candidate confirmation: selection_reward=1.1566, raw_reward=1.2604, search=Loss: 0.338614, Accuracy: 0.879298, F1: 0.877616, std=(Loss=0.0030, M1=0.0048, M2=0.0046)
-    Holdout: Loss: 0.310772, Accuracy: 0.874797, F1: 0.871804, std=(Loss=0.0032, M1=0.0083, M2=0.0090)
-  Noise Episode 36720: Avg Raw Reward=1.0487, Avg PPO Reward=1.0382, Policy Loss=-0.8230, Value Loss=0.0310, Entropy=6.0431
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.027510, Update#216 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=216, LastLoss=0.011026889784261584
-  Noise window 216 candidate confirmation: selection_reward=1.1662, raw_reward=1.2989, search=Loss: 0.337730, Accuracy: 0.872982, F1: 0.870975, std=(Loss=0.0043, M1=0.0068, M2=0.0068)
-    Holdout: Loss: 0.302132, Accuracy: 0.879675, F1: 0.877382, std=(Loss=0.0100, M1=0.0061, M2=0.0058)
-  Noise Episode 36890: Avg Raw Reward=1.0250, Avg PPO Reward=1.0454, Policy Loss=-0.6221, Value Loss=0.0069, Entropy=6.0297
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.027405, Update#217 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=217, LastLoss=0.011193116661161184
-  Noise window 217 candidate confirmation: selection_reward=1.1811, raw_reward=1.2686, search=Loss: 0.335565, Accuracy: 0.877193, F1: 0.875160, std=(Loss=0.0029, M1=0.0038, M2=0.0038)
-    Holdout: Loss: 0.307113, Accuracy: 0.881301, F1: 0.878969, std=(Loss=0.0065, M1=0.0098, M2=0.0096)
-  Noise Episode 37060: Avg Raw Reward=1.0600, Avg PPO Reward=1.0428, Policy Loss=0.5590, Value Loss=0.0173, Entropy=5.9835
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.027301, Update#218 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=218, LastLoss=0.010151706635951996
-  Noise window 218 candidate confirmation: selection_reward=1.1859, raw_reward=1.3090, search=Loss: 0.332569, Accuracy: 0.873684, F1: 0.871738, std=(Loss=0.0054, M1=0.0031, M2=0.0030)
-    Holdout: Loss: 0.316344, Accuracy: 0.873171, F1: 0.871026, std=(Loss=0.0098, M1=0.0142, M2=0.0141)
-  Noise Episode 37230: Avg Raw Reward=1.0390, Avg PPO Reward=1.0417, Policy Loss=0.0647, Value Loss=0.0064, Entropy=6.0182
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.027197, Update#219 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=219, LastLoss=0.010161378886550665
-  Noise window 219 candidate confirmation: selection_reward=1.1764, raw_reward=1.2799, search=Loss: 0.338610, Accuracy: 0.872982, F1: 0.871070, std=(Loss=0.0065, M1=0.0047, M2=0.0047)
-    Holdout: Loss: 0.311008, Accuracy: 0.873171, F1: 0.870052, std=(Loss=0.0088, M1=0.0132, M2=0.0136)
-  Noise Episode 37400: Avg Raw Reward=1.0568, Avg PPO Reward=1.0535, Policy Loss=-0.2811, Value Loss=0.0079, Entropy=6.0776
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.027093, Update#220 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=220, LastLoss=0.009694855660200119
-  Noise window 220 candidate confirmation: selection_reward=1.1884, raw_reward=1.2863, search=Loss: 0.341998, Accuracy: 0.869474, F1: 0.867351, std=(Loss=0.0069, M1=0.0060, M2=0.0063)
-    Holdout: Loss: 0.306366, Accuracy: 0.881301, F1: 0.878945, std=(Loss=0.0092, M1=0.0110, M2=0.0113)
-  Noise Episode 37570: Avg Raw Reward=1.0509, Avg PPO Reward=1.0398, Policy Loss=1.2651, Value Loss=0.0369, Entropy=6.0050
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.026989, Update#221 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=221, LastLoss=0.009042906109243631
-  Noise window 221 candidate confirmation: selection_reward=1.1583, raw_reward=1.2782, search=Loss: 0.343717, Accuracy: 0.870877, F1: 0.868977, std=(Loss=0.0064, M1=0.0075, M2=0.0076)
-    Holdout: Loss: 0.311146, Accuracy: 0.876423, F1: 0.874050, std=(Loss=0.0115, M1=0.0080, M2=0.0085)
-  Noise Episode 37740: Avg Raw Reward=1.0505, Avg PPO Reward=1.0459, Policy Loss=0.0872, Value Loss=0.0071, Entropy=6.1132
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.026885, Update#222 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=222, LastLoss=0.009751406498253345
-  Noise window 222 candidate confirmation: selection_reward=1.1869, raw_reward=1.3263, search=Loss: 0.339877, Accuracy: 0.870175, F1: 0.868213, std=(Loss=0.0044, M1=0.0038, M2=0.0041)
-    Holdout: Loss: 0.305046, Accuracy: 0.882927, F1: 0.880918, std=(Loss=0.0059, M1=0.0065, M2=0.0065)
-  Noise Episode 37910: Avg Raw Reward=1.0321, Avg PPO Reward=1.0382, Policy Loss=0.4337, Value Loss=0.0051, Entropy=6.0702
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.026781, Update#223 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=223, LastLoss=0.01100523630157113
-  Noise window 223 candidate confirmation: selection_reward=1.1798, raw_reward=1.3141, search=Loss: 0.342405, Accuracy: 0.872281, F1: 0.870202, std=(Loss=0.0035, M1=0.0057, M2=0.0059)
-    Holdout: Loss: 0.306385, Accuracy: 0.882927, F1: 0.881144, std=(Loss=0.0071, M1=0.0098, M2=0.0094)
-  Noise Episode 38080: Avg Raw Reward=1.0310, Avg PPO Reward=1.0496, Policy Loss=0.7031, Value Loss=0.0131, Entropy=6.3535
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.026677, Update#224 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=224, LastLoss=0.01013654237613082
-  Noise window 224 candidate confirmation: selection_reward=1.1950, raw_reward=1.3090, search=Loss: 0.338437, Accuracy: 0.872281, F1: 0.870300, std=(Loss=0.0038, M1=0.0036, M2=0.0038)
-    Holdout: Loss: 0.311190, Accuracy: 0.879675, F1: 0.877161, std=(Loss=0.0017, M1=0.0095, M2=0.0095)
-  Noise Episode 38250: Avg Raw Reward=1.0376, Avg PPO Reward=1.0451, Policy Loss=0.2233, Value Loss=0.0084, Entropy=5.9311
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.026572, Update#225 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=225, LastLoss=0.008520021685399115
-  Noise window 225 candidate confirmation: selection_reward=1.1996, raw_reward=1.3253, search=Loss: 0.334323, Accuracy: 0.877193, F1: 0.875048, std=(Loss=0.0072, M1=0.0063, M2=0.0066)
-    Holdout: Loss: 0.303797, Accuracy: 0.879675, F1: 0.877370, std=(Loss=0.0057, M1=0.0033, M2=0.0036)
-  Noise Episode 38420: Avg Raw Reward=1.0325, Avg PPO Reward=1.0266, Policy Loss=0.0222, Value Loss=0.0208, Entropy=5.8378
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.026468, Update#226 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=226, LastLoss=0.009936123853549361
-  Noise window 226 candidate confirmation: selection_reward=1.1502, raw_reward=1.2739, search=Loss: 0.340143, Accuracy: 0.872281, F1: 0.870302, std=(Loss=0.0024, M1=0.0048, M2=0.0050)
-    Holdout: Loss: 0.307540, Accuracy: 0.886179, F1: 0.884190, std=(Loss=0.0041, M1=0.0089, M2=0.0093)
-  Noise Episode 38590: Avg Raw Reward=1.0421, Avg PPO Reward=1.0408, Policy Loss=-0.0447, Value Loss=0.0026, Entropy=6.1045
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.026364, Update#227 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=227, LastLoss=0.009426534874364734
-  Noise window 227 candidate confirmation: selection_reward=1.1815, raw_reward=1.3079, search=Loss: 0.342049, Accuracy: 0.873684, F1: 0.871637, std=(Loss=0.0045, M1=0.0050, M2=0.0048)
-    Holdout: Loss: 0.303166, Accuracy: 0.879675, F1: 0.876939, std=(Loss=0.0019, M1=0.0061, M2=0.0062)
-  Noise Episode 38760: Avg Raw Reward=1.0450, Avg PPO Reward=1.0560, Policy Loss=0.0222, Value Loss=0.0069, Entropy=6.0892
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.026260, Update#228 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=228, LastLoss=0.009471320547163486
-  Noise window 228 candidate confirmation: selection_reward=1.1972, raw_reward=1.3054, search=Loss: 0.341050, Accuracy: 0.873684, F1: 0.872014, std=(Loss=0.0060, M1=0.0031, M2=0.0031)
-    Holdout: Loss: 0.295974, Accuracy: 0.884553, F1: 0.882468, std=(Loss=0.0060, M1=0.0119, M2=0.0122)
-  Noise Episode 38930: Avg Raw Reward=1.0516, Avg PPO Reward=1.0434, Policy Loss=0.1179, Value Loss=0.0037, Entropy=5.9176
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.026156, Update#229 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=229, LastLoss=0.01027051592245698
-  Noise window 229 candidate confirmation: selection_reward=1.1829, raw_reward=1.3178, search=Loss: 0.339540, Accuracy: 0.871579, F1: 0.869646, std=(Loss=0.0077, M1=0.0061, M2=0.0062)
-    Holdout: Loss: 0.305878, Accuracy: 0.876423, F1: 0.874091, std=(Loss=0.0034, M1=0.0095, M2=0.0092)
-  Noise Episode 39100: Avg Raw Reward=1.0360, Avg PPO Reward=1.0412, Policy Loss=-0.6770, Value Loss=0.0077, Entropy=6.1458
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.026052, Update#230 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=230, LastLoss=0.011738575994968414
-  Noise window 230 candidate confirmation: selection_reward=1.1676, raw_reward=1.2807, search=Loss: 0.339130, Accuracy: 0.876491, F1: 0.874685, std=(Loss=0.0030, M1=0.0060, M2=0.0059)
-    Holdout: Loss: 0.306301, Accuracy: 0.881301, F1: 0.878925, std=(Loss=0.0059, M1=0.0065, M2=0.0069)
-  Noise Episode 39270: Avg Raw Reward=1.0422, Avg PPO Reward=1.0640, Policy Loss=-0.6154, Value Loss=0.0139, Entropy=6.0607
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.025948, Update#231 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=231, LastLoss=0.010764507343992591
-  Noise window 231 candidate confirmation: selection_reward=1.2004, raw_reward=1.2898, search=Loss: 0.340446, Accuracy: 0.872982, F1: 0.871164, std=(Loss=0.0087, M1=0.0047, M2=0.0047)
-    Holdout: Loss: 0.308163, Accuracy: 0.881301, F1: 0.879375, std=(Loss=0.0095, M1=0.0083, M2=0.0083)
-  Noise Episode 39440: Avg Raw Reward=1.0501, Avg PPO Reward=1.0313, Policy Loss=0.0014, Value Loss=0.0018, Entropy=5.7333
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.025844, Update#232 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=232, LastLoss=0.011463087983429432
-  Noise window 232 candidate confirmation: selection_reward=1.1568, raw_reward=1.2724, search=Loss: 0.335722, Accuracy: 0.875789, F1: 0.873911, std=(Loss=0.0063, M1=0.0065, M2=0.0068)
-    Holdout: Loss: 0.309758, Accuracy: 0.871545, F1: 0.868887, std=(Loss=0.0038, M1=0.0061, M2=0.0073)
-  Noise Episode 39610: Avg Raw Reward=1.0544, Avg PPO Reward=1.0588, Policy Loss=-1.2083, Value Loss=0.0312, Entropy=6.1363
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.025739, Update#233 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=233, LastLoss=0.009503211127594113
-  Noise window 233 candidate confirmation: selection_reward=1.1847, raw_reward=1.2916, search=Loss: 0.335243, Accuracy: 0.872281, F1: 0.870183, std=(Loss=0.0036, M1=0.0048, M2=0.0050)
-    Holdout: Loss: 0.308423, Accuracy: 0.884553, F1: 0.882471, std=(Loss=0.0071, M1=0.0061, M2=0.0060)
-  Noise Episode 39780: Avg Raw Reward=1.0461, Avg PPO Reward=1.0458, Policy Loss=0.1837, Value Loss=0.0012, Entropy=6.0135
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.025635, Update#234 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=234, LastLoss=0.010862387251108885
-  Noise window 234 candidate confirmation: selection_reward=1.1840, raw_reward=1.2849, search=Loss: 0.337979, Accuracy: 0.875789, F1: 0.873541, std=(Loss=0.0060, M1=0.0085, M2=0.0086)
-    Holdout: Loss: 0.304856, Accuracy: 0.881301, F1: 0.878705, std=(Loss=0.0090, M1=0.0098, M2=0.0102)
-  Noise Episode 39950: Avg Raw Reward=1.0480, Avg PPO Reward=1.0471, Policy Loss=0.8768, Value Loss=0.0239, Entropy=6.0895
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.025531, Update#235 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=235, LastLoss=0.010181603254750371
-  Noise window 235 candidate confirmation: selection_reward=1.1685, raw_reward=1.2660, search=Loss: 0.337275, Accuracy: 0.872982, F1: 0.870877, std=(Loss=0.0077, M1=0.0056, M2=0.0056)
-    Holdout: Loss: 0.301938, Accuracy: 0.876423, F1: 0.873398, std=(Loss=0.0087, M1=0.0061, M2=0.0062)
-Noise PPO training curves saved to: experiment_results/noise_rl_progress/noise_ppo_training_curve_ep40000.png
-Noise PPO entropy curve saved to: experiment_results/noise_rl_progress/noise_ppo_entropy_curve_ep40000.png
-Noise PPO progress snapshot saved at episode 40000: experiment_results/noise_rl_progress/noise_ppo_training_curve_ep40000.png
-  Noise Episode 40120: Avg Raw Reward=1.0314, Avg PPO Reward=1.0406, Policy Loss=1.3015, Value Loss=0.0329, Entropy=5.9099
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.025427, Update#236 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=236, LastLoss=0.010622955858707428
-  Noise window 236 candidate confirmation: selection_reward=1.1676, raw_reward=1.2661, search=Loss: 0.340045, Accuracy: 0.871579, F1: 0.869443, std=(Loss=0.0020, M1=0.0042, M2=0.0045)
-    Holdout: Loss: 0.307856, Accuracy: 0.881301, F1: 0.878728, std=(Loss=0.0052, M1=0.0083, M2=0.0083)
-  Noise Episode 40290: Avg Raw Reward=1.0376, Avg PPO Reward=1.0324, Policy Loss=-0.1111, Value Loss=0.0096, Entropy=6.1492
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.025323, Update#237 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=237, LastLoss=0.009833435527980328
-  Noise window 237 candidate confirmation: selection_reward=1.1587, raw_reward=1.2629, search=Loss: 0.337100, Accuracy: 0.880000, F1: 0.878372, std=(Loss=0.0065, M1=0.0081, M2=0.0082)
-    Holdout: Loss: 0.306699, Accuracy: 0.881301, F1: 0.878850, std=(Loss=0.0115, M1=0.0065, M2=0.0075)
-  Noise Episode 40460: Avg Raw Reward=1.0407, Avg PPO Reward=1.0426, Policy Loss=-0.5235, Value Loss=0.0494, Entropy=6.0115
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.025219, Update#238 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=238, LastLoss=0.010351050412282348
-  Noise window 238 candidate confirmation: selection_reward=1.1753, raw_reward=1.2898, search=Loss: 0.339196, Accuracy: 0.875789, F1: 0.873923, std=(Loss=0.0030, M1=0.0036, M2=0.0035)
-    Holdout: Loss: 0.304041, Accuracy: 0.879675, F1: 0.876947, std=(Loss=0.0067, M1=0.0095, M2=0.0098)
-  Noise Episode 40630: Avg Raw Reward=1.0360, Avg PPO Reward=1.0367, Policy Loss=-0.1220, Value Loss=0.0011, Entropy=5.5785
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.025115, Update#239 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=239, LastLoss=0.009838130325078964
-  Noise window 239 candidate confirmation: selection_reward=1.1630, raw_reward=1.2833, search=Loss: 0.340497, Accuracy: 0.875789, F1: 0.874016, std=(Loss=0.0055, M1=0.0053, M2=0.0052)
-    Holdout: Loss: 0.307151, Accuracy: 0.881301, F1: 0.878439, std=(Loss=0.0032, M1=0.0083, M2=0.0091)
-  Noise Episode 40800: Avg Raw Reward=1.0418, Avg PPO Reward=1.0524, Policy Loss=-1.5256, Value Loss=0.0384, Entropy=5.7980
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.025011, Update#240 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=240, LastLoss=0.009517245925962925
-  Noise window 240 candidate confirmation: selection_reward=1.1715, raw_reward=1.2571, search=Loss: 0.336223, Accuracy: 0.881404, F1: 0.879611, std=(Loss=0.0040, M1=0.0034, M2=0.0036)
-    Holdout: Loss: 0.310114, Accuracy: 0.878049, F1: 0.876281, std=(Loss=0.0061, M1=0.0089, M2=0.0088)
-  Noise Episode 40970: Avg Raw Reward=1.0366, Avg PPO Reward=1.0290, Policy Loss=-1.0871, Value Loss=0.0254, Entropy=5.8734
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.024906, Update#241 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=241, LastLoss=0.01110056508332491
-  Noise window 241 candidate confirmation: selection_reward=1.1596, raw_reward=1.2703, search=Loss: 0.339213, Accuracy: 0.880000, F1: 0.877830, std=(Loss=0.0021, M1=0.0041, M2=0.0042)
-    Holdout: Loss: 0.307583, Accuracy: 0.881301, F1: 0.878431, std=(Loss=0.0035, M1=0.0122, M2=0.0130)
-  Noise Episode 41140: Avg Raw Reward=1.0482, Avg PPO Reward=1.0511, Policy Loss=-0.2076, Value Loss=0.0446, Entropy=5.9549
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.024802, Update#242 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=242, LastLoss=0.010259567992761731
-  Noise window 242 candidate confirmation: selection_reward=1.1966, raw_reward=1.3142, search=Loss: 0.339495, Accuracy: 0.875789, F1: 0.873921, std=(Loss=0.0046, M1=0.0057, M2=0.0055)
-    Holdout: Loss: 0.311128, Accuracy: 0.866667, F1: 0.863644, std=(Loss=0.0102, M1=0.0065, M2=0.0068)
-  Noise Episode 41310: Avg Raw Reward=1.0543, Avg PPO Reward=1.0580, Policy Loss=-1.1629, Value Loss=0.0306, Entropy=6.0505
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.024698, Update#243 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=243, LastLoss=0.008983905310742557
-  Noise window 243 candidate confirmation: selection_reward=1.1779, raw_reward=1.2682, search=Loss: 0.340186, Accuracy: 0.877193, F1: 0.875231, std=(Loss=0.0051, M1=0.0044, M2=0.0047)
-    Holdout: Loss: 0.298556, Accuracy: 0.882927, F1: 0.880270, std=(Loss=0.0040, M1=0.0040, M2=0.0039)
-  Noise Episode 41375: New Best! SelectionReward=1.2047, RawReward=1.3214, Cost=33.00
-    MC Eval: Loss=0.3343±0.0017, M1=0.8807±0.0029, M2=0.8791±0.0026
-    x     : [22, 22, 22, 22, 22, 24, 22, 22, 22, 24, 24, 22]
-    wq    : [14, 14, 14, 14, 14, 14, 14, 14, 16, 14, 14, 14]
-    wk    : [14, 14, 14, 14, 16, 14, 14, 16, 16, 14, 14, 14]
-    wv    : [14, 14, 14, 14, 14, 14, 14, 14, 14, 18, 14, 18]
-    wo    : [14, 14, 14, 14, 14, 14, 14, 14, 14, 20, 18, 16]
-    wffn1 : [14, 14, 14, 14, 14, 18, 14, 14, 14, 16, 20, 14]
+=== PPO RL Optimization Log Started ===
+[Info] PPO LR resolved from rl_lr=20 -> 2e-05 (legacy-micro)
+
+============================================================
+STARTING CONFIGURATION EVALUATION
+SEARCH_MODE=rl
+FINAL_EVAL_CONFIG_SOURCE=json
+[Info] First-stage RL/greedy search skipped (--skip-stage1-rl).
+============================================================
+
+--- Phase 1: SKIPPED (--skip-stage1-rl) ---
+[Info] Baseline establishment is skipped because it is only used by first-stage RL/greedy search.
+
+--- Phase 1.5: SKIPPED (--skip-stage1-rl) ---
+[Info] GELU input distribution analysis is skipped because it is only used by first-stage RL/greedy search.
+
+============================================================
+PHASE 2.5: GREEDY SEARCH (SKIPPED)
+============================================================
+[Info] First-stage PPO/greedy skipped (--skip-stage1-rl).
+[Info] GELU/Softmax 将根据 --final-eval-source 在最终评估模块中解析。
+============================================================
+
+============================================================
+FINAL EVALUATION REPORT (验证集)
+============================================================
+
+============================================================
+PHASE 3 + 4: SKIPPED (--skip-stage1-final-eval)
+============================================================
+[Info] 跳过第一阶段最终评估，直接使用 Selected (Saved RL) (source=json) 配置进入第二阶段。
+  GELU   : [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1]
+  Softmax: [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
+
+============================================================
+PHASE 5: SECOND-STAGE NOISE RL
+Fixed GELU/Softmax source=json, label=Selected (Saved RL)
+Fixed GELU   : [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1]
+Fixed Softmax: [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
+============================================================
+Noise-Stage Baseline Metrics (Training Set):
+  Loss: 0.116118, Accuracy: 0.966467, F1: 0.966463
+  Noise Cost: 48.60 | Breakdown={'x': 9.0, 'wq': 6.599999999999999, 'wk': 6.599999999999999, 'wv': 6.599999999999999, 'wo': 6.599999999999999, 'wffn1': 6.599999999999999, 'wffn2': 6.599999999999999}
+Noise-Stage Baseline Metrics (val_search_full - used for reward):
+  Loss: 0.369124, Accuracy: 0.863158, F1: 0.860581
+Noise-Stage Constraints (based on val_search_full):
+  Loss<=0.3841, Accuracy>=0.8502, F1>=0.8477
+Noise-Stage Training Hyperparameters:
+  GTrXL(d_model=256, heads=8, layers=4, d_ff=512, dropout=0.1)
+  PPO(max_episodes=40000, eps_clip=0.15, k_epochs=10, warmup_mode=constant, warmup_updates=0, short_warmup_updates=20)
+  MC samples=3 | RewardEstimator(hidden=(128, 64), lr=0.001, replay=4096, warmup=32, batch=64, epochs=4)
+  CandidateConfirm(repeats=5) | FinalistConfirm(repeats=15, shortlist=5) | ProgressPlots(every=10000, dir=experiment_results/noise_rl_progress)
+  StabilityThresholds(search={'loss_std': 0.008, 'metric1_std': 0.008, 'metric2_std': 0.008}, holdout={'loss_std': 0.01, 'metric1_std': 0.012, 'metric2_std': 0.012}, proxy_ref=0.008, penalty_scale=0.1)
+[Info] Noise-stage online reward uses val_search_full (constraints stay on val_search_full)
+  Noise Episode 1: New Best! SelectionReward=0.2323, RawReward=0.2323, Cost=40.05
+    MC Eval: Loss=0.3645±0.0028, M1=0.8585±0.0017, M2=0.8556±0.0016
+    x     : [24, 26, 30, 22, 22, 28, 26, 26, 30, 22, 22, 30]
+    wq    : [14, 14, 22, 14, 18, 20, 18, 20, 18, 18, 14, 18]
+    wk    : [18, 22, 14, 18, 20, 14, 22, 22, 22, 22, 20, 14]
+    wv    : [22, 14, 20, 14, 22, 16, 22, 14, 14, 22, 14, 22]
+    wo    : [22, 14, 16, 18, 20, 18, 14, 18, 20, 16, 22, 16]
+    wffn1 : [20, 14, 22, 20, 22, 16, 14, 16, 20, 18, 16, 20]
+    wffn2 : [16, 16, 18, 16, 22, 22, 16, 20, 14, 22, 14, 14]
+  Noise Episode 3: New Best! SelectionReward=0.2707, RawReward=0.2707, Cost=40.70
+    MC Eval: Loss=0.3681±0.0015, M1=0.8632±0.0029, M2=0.8606±0.0027
+    x     : [28, 26, 28, 26, 30, 24, 28, 28, 26, 24, 30, 26]
+    wq    : [18, 18, 14, 22, 20, 22, 20, 22, 18, 22, 22, 18]
+    wk    : [20, 18, 16, 14, 16, 14, 18, 16, 14, 16, 20, 14]
+    wv    : [22, 20, 16, 16, 14, 14, 22, 14, 14, 22, 18, 22]
+    wo    : [22, 14, 14, 18, 20, 22, 18, 14, 20, 18, 22, 18]
+    wffn1 : [18, 20, 18, 14, 22, 16, 16, 20, 18, 18, 20, 14]
+    wffn2 : [18, 18, 20, 18, 22, 18, 20, 16, 16, 14, 22, 22]
+  Noise Episode 12: New Best! SelectionReward=0.2843, RawReward=0.2843, Cost=40.10
+    MC Eval: Loss=0.3665±0.0007, M1=0.8620±0.0017, M2=0.8593±0.0018
+    x     : [22, 30, 22, 22, 30, 30, 24, 30, 28, 22, 28, 30]
+    wq    : [14, 14, 14, 18, 20, 22, 14, 14, 14, 16, 22, 14]
+    wk    : [16, 14, 22, 18, 18, 20, 14, 22, 22, 14, 16, 20]
+    wv    : [20, 14, 18, 18, 20, 16, 18, 18, 20, 20, 20, 20]
+    wo    : [18, 20, 14, 22, 18, 22, 14, 18, 22, 22, 16, 18]
+    wffn1 : [18, 18, 16, 22, 20, 16, 18, 16, 16, 18, 16, 16]
+    wffn2 : [20, 14, 22, 14, 22, 18, 14, 16, 22, 18, 20, 18]
+  Noise Episode 17: New Best! SelectionReward=0.4162, RawReward=0.4162, Cost=39.45
+    MC Eval: Loss=0.3662±0.0008, M1=0.8643±0.0017, M2=0.8617±0.0016
+    x     : [28, 22, 28, 26, 26, 30, 24, 22, 30, 22, 28, 28]
+    wq    : [16, 16, 20, 20, 18, 20, 16, 14, 14, 16, 16, 16]
+    wk    : [18, 16, 14, 14, 20, 14, 16, 20, 22, 20, 16, 18]
+    wv    : [20, 20, 16, 14, 22, 22, 20, 20, 14, 22, 16, 14]
+    wo    : [18, 22, 16, 22, 14, 16, 18, 14, 18, 22, 16, 18]
+    wffn1 : [22, 16, 14, 14, 14, 22, 14, 18, 22, 22, 20, 16]
+    wffn2 : [20, 20, 20, 18, 14, 18, 18, 18, 14, 16, 16, 14]
+  Noise Episode 33: New Best! SelectionReward=0.4325, RawReward=0.4325, Cost=39.30
+    MC Eval: Loss=0.3672±0.0067, M1=0.8643±0.0033, M2=0.8617±0.0031
+    x     : [26, 24, 22, 24, 22, 30, 28, 24, 28, 22, 30, 30]
+    wq    : [14, 20, 20, 18, 14, 18, 20, 18, 18, 16, 22, 22]
+    wk    : [18, 22, 20, 14, 18, 20, 18, 18, 14, 14, 14, 14]
+    wv    : [14, 16, 14, 22, 22, 20, 14, 16, 14, 14, 14, 20]
+    wo    : [14, 16, 22, 14, 16, 14, 16, 14, 22, 14, 20, 22]
+    wffn1 : [22, 14, 22, 16, 22, 22, 22, 18, 20, 16, 18, 14]
+    wffn2 : [18, 20, 16, 20, 20, 16, 14, 14, 14, 20, 18, 18]
+  Noise Episode 66: New Best! SelectionReward=0.4444, RawReward=0.4444, Cost=39.35
+    MC Eval: Loss=0.3588±0.0024, M1=0.8632±0.0029, M2=0.8608±0.0025
+    x     : [28, 26, 22, 28, 22, 22, 26, 28, 24, 24, 24, 30]
+    wq    : [16, 16, 22, 16, 14, 18, 22, 14, 20, 16, 18, 20]
+    wk    : [16, 18, 22, 18, 14, 14, 16, 20, 18, 22, 14, 14]
+    wv    : [16, 16, 14, 20, 18, 20, 22, 14, 22, 16, 22, 18]
+    wo    : [14, 18, 18, 18, 18, 18, 22, 14, 14, 14, 22, 20]
+    wffn1 : [14, 22, 18, 18, 16, 18, 14, 14, 20, 22, 20, 18]
+    wffn2 : [14, 20, 16, 22, 16, 20, 14, 14, 16, 22, 22, 14]
+  Noise Episode 155: New Best! SelectionReward=0.4954, RawReward=0.4954, Cost=39.00
+    MC Eval: Loss=0.3638±0.0033, M1=0.8667±0.0029, M2=0.8641±0.0029
+    x     : [30, 30, 24, 26, 22, 28, 26, 22, 24, 28, 24, 30]
+    wq    : [18, 18, 16, 14, 22, 14, 16, 20, 16, 22, 14, 22]
+    wk    : [20, 14, 16, 14, 14, 16, 14, 18, 14, 20, 14, 14]
+    wv    : [18, 16, 22, 14, 14, 18, 18, 22, 18, 22, 20, 22]
+    wo    : [22, 16, 18, 20, 18, 18, 14, 18, 18, 16, 18, 18]
+    wffn1 : [22, 18, 20, 18, 16, 18, 14, 18, 16, 20, 14, 16]
+    wffn2 : [18, 18, 16, 20, 18, 14, 14, 14, 20, 14, 18, 14]
+  Noise Episode 170: Avg Raw Reward=0.2190, Avg PPO Reward=0.2190, Policy Loss=-0.0078, Value Loss=6.1581, Entropy=11.2641
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.049793, Update#1 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=170, Updates=1, LastLoss=0.14019822515547276
+  Noise window 1 candidate confirmation: selection_reward=0.4954, raw_reward=0.4954, search=Loss: 0.371713, Accuracy: 0.860351, F1: 0.857614, std=(Loss=0.0015, M1=0.0041, M2=0.0041), range=(Loss=0.0046, M1=0.0105, M2=0.0105), stable=True, score=0.4056
+    Holdout: Loss: 0.262017, Accuracy: 0.921951, F1: 0.920871, std=(Loss=0.0018, M1=0.0040, M2=0.0042), range=(Loss=0.0056, M1=0.0081, M2=0.0086), stable=True, score=0.2878
+    Noise Search-Best updated at episode 170: cost=39.00, selection_reward=0.4954
+    Noise Stable Search-Best updated at episode 170: cost=39.00, stability_score=0.4056
+    Noise Joint-Best updated at episode 170: cost=39.00, selection_reward=0.4954
+    Noise Stable Joint-Best updated at episode 170: cost=39.00, stability_score=0.3467
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 189: New Best! SelectionReward=0.5889, RawReward=0.1765, Cost=40.95
+    MC Eval: Loss=0.3666±0.0035, M1=0.8608±0.0017, M2=0.8580±0.0018
+    x     : [26, 26, 26, 28, 30, 22, 30, 22, 22, 30, 30, 26]
+    wq    : [20, 18, 22, 16, 22, 14, 16, 20, 22, 22, 16, 20]
+    wk    : [22, 20, 14, 20, 16, 14, 18, 22, 22, 18, 18, 16]
+    wv    : [20, 14, 18, 22, 18, 22, 18, 22, 20, 14, 14, 14]
+    wo    : [18, 20, 22, 16, 20, 22, 20, 20, 20, 14, 22, 14]
+    wffn1 : [14, 22, 16, 22, 22, 14, 16, 18, 14, 14, 22, 18]
+    wffn2 : [22, 22, 18, 14, 20, 16, 14, 18, 16, 14, 22, 20]
+  Noise Episode 193: New Best! SelectionReward=0.6767, RawReward=0.1824, Cost=40.65
+    MC Eval: Loss=0.3691±0.0037, M1=0.8608±0.0017, M2=0.8580±0.0018
+    x     : [24, 26, 26, 24, 30, 22, 28, 30, 30, 28, 24, 22]
+    wq    : [16, 20, 20, 16, 18, 20, 22, 22, 16, 20, 20, 20]
+    wk    : [22, 14, 20, 22, 14, 22, 14, 22, 22, 18, 20, 14]
+    wv    : [18, 18, 14, 18, 16, 20, 16, 16, 14, 16, 18, 20]
+    wo    : [16, 20, 20, 16, 18, 16, 14, 14, 22, 16, 14, 16]
+    wffn1 : [18, 14, 22, 22, 22, 18, 14, 14, 20, 22, 18, 20]
+    wffn2 : [16, 22, 14, 22, 16, 20, 16, 22, 20, 20, 18, 22]
+  Noise Episode 340: Avg Raw Reward=0.2171, Avg PPO Reward=0.1429, Policy Loss=-0.0726, Value Loss=1.6078, Entropy=11.2615
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.049585, Update#2 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=340, Updates=2, LastLoss=0.05636261496692896
+  Noise window 2 candidate confirmation: selection_reward=0.6767, raw_reward=0.1824, search=Loss: 0.369203, Accuracy: 0.859649, F1: 0.857170, std=(Loss=0.0015, M1=0.0031, M2=0.0028), range=(Loss=0.0038, M1=0.0070, M2=0.0066), stable=True, score=0.3127
+    Holdout: Loss: 0.262696, Accuracy: 0.921951, F1: 0.920854, std=(Loss=0.0014, M1=0.0065, M2=0.0069), range=(Loss=0.0033, M1=0.0163, M2=0.0172), stable=True, score=0.4190
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 510: Avg Raw Reward=0.2072, Avg PPO Reward=0.2647, Policy Loss=-0.0469, Value Loss=0.6115, Entropy=11.2529
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.049376, Update#3 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=510, Updates=3, LastLoss=0.02783544547855854
+  Noise window 3 candidate confirmation: selection_reward=0.6512, raw_reward=0.2969, search=Loss: 0.369578, Accuracy: 0.856842, F1: 0.854421, std=(Loss=0.0026, M1=0.0052, M2=0.0050), range=(Loss=0.0073, M1=0.0140, M2=0.0138), stable=True, score=0.5332
+    Holdout: Loss: 0.260499, Accuracy: 0.921951, F1: 0.920871, std=(Loss=0.0009, M1=0.0040, M2=0.0042), range=(Loss=0.0026, M1=0.0081, M2=0.0086), stable=True, score=0.2583
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 680: Avg Raw Reward=0.2329, Avg PPO Reward=0.1983, Policy Loss=0.2863, Value Loss=0.3860, Entropy=11.2476
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.049168, Update#4 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=680, Updates=4, LastLoss=0.017528358846902847
+  Noise window 4 candidate confirmation: selection_reward=0.6338, raw_reward=0.2351, search=Loss: 0.368585, Accuracy: 0.864561, F1: 0.861798, std=(Loss=0.0012, M1=0.0048, M2=0.0048), range=(Loss=0.0032, M1=0.0140, M2=0.0143), stable=True, score=0.4492
+    Holdout: Loss: 0.261458, Accuracy: 0.923577, F1: 0.922584, std=(Loss=0.0029, M1=0.0040, M2=0.0042), range=(Loss=0.0081, M1=0.0081, M2=0.0086), stable=True, score=0.3242
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 850: Avg Raw Reward=0.2312, Avg PPO Reward=0.2503, Policy Loss=-0.4759, Value Loss=0.4522, Entropy=11.2397
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.048960, Update#5 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=850, Updates=5, LastLoss=0.012947483453899622
+  Noise window 5 candidate confirmation: selection_reward=0.4955, raw_reward=0.2354, search=Loss: 0.365484, Accuracy: 0.863158, F1: 0.860689, std=(Loss=0.0029, M1=0.0038, M2=0.0037), range=(Loss=0.0080, M1=0.0105, M2=0.0104), stable=True, score=0.4355
+    Holdout: Loss: 0.261365, Accuracy: 0.921951, F1: 0.920984, std=(Loss=0.0039, M1=0.0040, M2=0.0043), range=(Loss=0.0109, M1=0.0081, M2=0.0091), stable=True, score=0.3613
+    Noise Search-Best updated at episode 850: cost=38.65, selection_reward=0.4955
+    Noise Stable Search-Best updated at episode 850: cost=38.65, stability_score=0.4355
+    Noise Joint-Best updated at episode 850: cost=38.65, selection_reward=0.4955
+    Noise Stable Joint-Best updated at episode 850: cost=38.65, stability_score=0.3984
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 1020: Avg Raw Reward=0.2309, Avg PPO Reward=0.2409, Policy Loss=-0.2654, Value Loss=0.0817, Entropy=11.2237
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.048752, Update#6 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=1020, Updates=6, LastLoss=0.0099902399815619
+  Noise window 6 candidate confirmation: selection_reward=0.4444, raw_reward=0.4594, search=Loss: 0.366422, Accuracy: 0.863860, F1: 0.861349, std=(Loss=0.0023, M1=0.0026, M2=0.0026), range=(Loss=0.0054, M1=0.0070, M2=0.0071), stable=True, score=0.3145
+    Holdout: Loss: 0.259844, Accuracy: 0.920325, F1: 0.919295, std=(Loss=0.0041, M1=0.0061, M2=0.0062), range=(Loss=0.0116, M1=0.0163, M2=0.0164), stable=True, score=0.4763
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 1190: Avg Raw Reward=0.2344, Avg PPO Reward=0.2262, Policy Loss=-0.0416, Value Loss=0.1290, Entropy=11.1960
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.048543, Update#7 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=1190, Updates=7, LastLoss=0.008081052335910499
+  Noise window 7 candidate confirmation: selection_reward=0.3953, raw_reward=0.3116, search=Loss: 0.369125, Accuracy: 0.859649, F1: 0.857062, std=(Loss=0.0038, M1=0.0038, M2=0.0037), range=(Loss=0.0110, M1=0.0105, M2=0.0105), stable=True, score=0.4758
+    Holdout: Loss: 0.264299, Accuracy: 0.920325, F1: 0.919142, std=(Loss=0.0049, M1=0.0061, M2=0.0064), range=(Loss=0.0138, M1=0.0163, M2=0.0172), stable=True, score=0.5095
+    Noise Search-Best updated at episode 1190: cost=38.30, selection_reward=0.3953
+    Noise Stable Search-Best updated at episode 1190: cost=38.30, stability_score=0.4758
+    Noise Joint-Best updated at episode 1190: cost=38.30, selection_reward=0.3953
+    Noise Stable Joint-Best updated at episode 1190: cost=38.30, stability_score=0.4927
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 1360: Avg Raw Reward=0.2509, Avg PPO Reward=0.2545, Policy Loss=0.0011, Value Loss=0.0897, Entropy=11.1647
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.048335, Update#8 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=1360, Updates=8, LastLoss=0.007698861416429281
+  Noise window 8 candidate confirmation: selection_reward=0.4037, raw_reward=0.2415, search=Loss: 0.368157, Accuracy: 0.856140, F1: 0.853654, std=(Loss=0.0021, M1=0.0038, M2=0.0035), range=(Loss=0.0057, M1=0.0105, M2=0.0099), stable=True, score=0.3939
+    Holdout: Loss: 0.257757, Accuracy: 0.923577, F1: 0.922567, std=(Loss=0.0034, M1=0.0065, M2=0.0068), range=(Loss=0.0094, M1=0.0163, M2=0.0170), stable=True, score=0.4824
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 1530: Avg Raw Reward=0.2678, Avg PPO Reward=0.2421, Policy Loss=-0.1142, Value Loss=0.0503, Entropy=11.1163
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.048127, Update#9 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=1530, Updates=9, LastLoss=0.008439124329015613
+  Noise window 9 candidate confirmation: selection_reward=0.3964, raw_reward=0.3452, search=Loss: 0.367334, Accuracy: 0.858947, F1: 0.855845, std=(Loss=0.0019, M1=0.0026, M2=0.0027), range=(Loss=0.0052, M1=0.0070, M2=0.0072), stable=True, score=0.3025
+    Holdout: Loss: 0.263319, Accuracy: 0.918699, F1: 0.917535, std=(Loss=0.0042, M1=0.0115, M2=0.0119), range=(Loss=0.0128, M1=0.0325, M2=0.0335), stable=True, score=0.7895
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 1700: Avg Raw Reward=0.2855, Avg PPO Reward=0.2896, Policy Loss=0.4730, Value Loss=0.4291, Entropy=11.0550
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.047919, Update#10 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=1700, Updates=10, LastLoss=0.00746306125074625
+  Noise window 10 candidate confirmation: selection_reward=0.3875, raw_reward=0.3594, search=Loss: 0.368141, Accuracy: 0.858947, F1: 0.856176, std=(Loss=0.0048, M1=0.0026, M2=0.0028), range=(Loss=0.0122, M1=0.0070, M2=0.0077), stable=True, score=0.4249
+    Holdout: Loss: 0.259614, Accuracy: 0.918699, F1: 0.917412, std=(Loss=0.0034, M1=0.0073, M2=0.0077), range=(Loss=0.0087, M1=0.0163, M2=0.0172), stable=True, score=0.5278
+    Noise Search-Best updated at episode 1700: cost=37.65, selection_reward=0.3875
+    Noise Stable Search-Best updated at episode 1700: cost=37.65, stability_score=0.4249
+    Noise Joint-Best updated at episode 1700: cost=37.65, selection_reward=0.3875
+    Noise Stable Joint-Best updated at episode 1700: cost=37.65, stability_score=0.4763
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 1870: Avg Raw Reward=0.2921, Avg PPO Reward=0.2859, Policy Loss=0.0626, Value Loss=0.0189, Entropy=10.9850
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.047710, Update#11 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=1870, Updates=11, LastLoss=0.0070425685262307525
+  Noise window 11 candidate confirmation: selection_reward=0.4069, raw_reward=0.5829, search=Loss: 0.369785, Accuracy: 0.854737, F1: 0.852111, std=(Loss=0.0042, M1=0.0028, M2=0.0029), range=(Loss=0.0100, M1=0.0070, M2=0.0077), stable=True, score=0.4137
+    Holdout: Loss: 0.261111, Accuracy: 0.917073, F1: 0.915682, std=(Loss=0.0037, M1=0.0080, M2=0.0084), range=(Loss=0.0100, M1=0.0163, M2=0.0172), stable=True, score=0.5799
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 2040: Avg Raw Reward=0.3056, Avg PPO Reward=0.2828, Policy Loss=-0.3627, Value Loss=0.1292, Entropy=10.9029
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.047502, Update#12 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=2040, Updates=12, LastLoss=0.007239303784444928
+  Noise window 12 candidate confirmation: selection_reward=0.4554, raw_reward=0.4722, search=Loss: 0.365129, Accuracy: 0.863158, F1: 0.860476, std=(Loss=0.0047, M1=0.0070, M2=0.0071), range=(Loss=0.0126, M1=0.0211, M2=0.0215), stable=True, score=0.7837
+    Holdout: Loss: 0.260561, Accuracy: 0.918699, F1: 0.917583, std=(Loss=0.0070, M1=0.0051, M2=0.0052), range=(Loss=0.0207, M1=0.0163, M2=0.0164), stable=True, score=0.5212
+    Noise Search-Best updated at episode 2040: cost=36.85, selection_reward=0.4554
+    Noise Stable Search-Best updated at episode 2040: cost=36.85, stability_score=0.7837
+    Noise Joint-Best updated at episode 2040: cost=36.85, selection_reward=0.4554
+    Noise Stable Joint-Best updated at episode 2040: cost=36.85, stability_score=0.6524
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 2210: Avg Raw Reward=0.3199, Avg PPO Reward=0.3353, Policy Loss=-0.0707, Value Loss=0.0352, Entropy=10.8199
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.047294, Update#13 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=2210, Updates=13, LastLoss=0.0072167073376476765
+  Noise window 13 candidate confirmation: selection_reward=0.4600, raw_reward=0.4080, search=Loss: 0.367940, Accuracy: 0.858947, F1: 0.856615, std=(Loss=0.0026, M1=0.0041, M2=0.0041), range=(Loss=0.0075, M1=0.0105, M2=0.0110), stable=True, score=0.4513
+    Holdout: Loss: 0.262088, Accuracy: 0.925203, F1: 0.924411, std=(Loss=0.0026, M1=0.0061, M2=0.0062), range=(Loss=0.0076, M1=0.0163, M2=0.0170), stable=True, score=0.4300
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 2380: Avg Raw Reward=0.3423, Avg PPO Reward=0.3157, Policy Loss=0.1371, Value Loss=0.0378, Entropy=10.7227
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.047086, Update#14 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=2380, Updates=14, LastLoss=0.006617888109758496
+  Noise window 14 candidate confirmation: selection_reward=0.5565, raw_reward=0.6075, search=Loss: 0.369589, Accuracy: 0.854737, F1: 0.851893, std=(Loss=0.0041, M1=0.0048, M2=0.0044), range=(Loss=0.0120, M1=0.0140, M2=0.0132), stable=True, score=0.5511
+    Holdout: Loss: 0.263215, Accuracy: 0.917073, F1: 0.915853, std=(Loss=0.0042, M1=0.0061, M2=0.0063), range=(Loss=0.0121, M1=0.0163, M2=0.0172), stable=True, score=0.4850
+    Noise Search-Best updated at episode 2380: cost=36.80, selection_reward=0.5565
+    Noise Stable Search-Best updated at episode 2380: cost=36.80, stability_score=0.5511
+    Noise Joint-Best updated at episode 2380: cost=36.80, selection_reward=0.5565
+    Noise Stable Joint-Best updated at episode 2380: cost=36.80, stability_score=0.5181
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 2550: Avg Raw Reward=0.3655, Avg PPO Reward=0.3456, Policy Loss=0.3231, Value Loss=0.0168, Entropy=10.6034
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.046877, Update#15 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=2550, Updates=15, LastLoss=0.006196976988576353
+  Noise window 15 candidate confirmation: selection_reward=0.5631, raw_reward=0.5916, search=Loss: 0.367779, Accuracy: 0.856842, F1: 0.853986, std=(Loss=0.0036, M1=0.0072, M2=0.0070), range=(Loss=0.0102, M1=0.0175, M2=0.0176), stable=True, score=0.7427
+    Holdout: Loss: 0.265238, Accuracy: 0.915447, F1: 0.913951, std=(Loss=0.0044, M1=0.0083, M2=0.0088), range=(Loss=0.0120, M1=0.0244, M2=0.0260), stable=True, score=0.6215
+    Noise Search-Best updated at episode 2550: cost=36.30, selection_reward=0.5631
+    Noise Stable Search-Best updated at episode 2550: cost=36.30, stability_score=0.7427
+    Noise Joint-Best updated at episode 2550: cost=36.30, selection_reward=0.5631
+    Noise Stable Joint-Best updated at episode 2550: cost=36.30, stability_score=0.6821
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 2720: Avg Raw Reward=0.3916, Avg PPO Reward=0.3881, Policy Loss=0.0969, Value Loss=0.0921, Entropy=10.4785
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.046669, Update#16 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=2720, Updates=16, LastLoss=0.005558752221986651
+  Noise window 16 candidate confirmation: selection_reward=0.5985, raw_reward=0.6656, search=Loss: 0.370653, Accuracy: 0.858246, F1: 0.855626, std=(Loss=0.0022, M1=0.0036, M2=0.0038), range=(Loss=0.0060, M1=0.0105, M2=0.0110), stable=True, score=0.3999
+    Holdout: Loss: 0.259553, Accuracy: 0.923577, F1: 0.922584, std=(Loss=0.0030, M1=0.0040, M2=0.0042), range=(Loss=0.0090, M1=0.0081, M2=0.0086), stable=True, score=0.3273
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 2890: Avg Raw Reward=0.4034, Avg PPO Reward=0.3635, Policy Loss=-1.0112, Value Loss=0.3871, Entropy=10.3461
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.046461, Update#17 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=2890, Updates=17, LastLoss=0.005814563948661089
+  Noise window 17 candidate confirmation: selection_reward=0.6102, raw_reward=0.6502, search=Loss: 0.369523, Accuracy: 0.855439, F1: 0.852315, std=(Loss=0.0018, M1=0.0041, M2=0.0042), range=(Loss=0.0044, M1=0.0105, M2=0.0111), stable=True, score=0.4207
+    Holdout: Loss: 0.260143, Accuracy: 0.918699, F1: 0.917537, std=(Loss=0.0028, M1=0.0126, M2=0.0131), range=(Loss=0.0081, M1=0.0325, M2=0.0338), stable=False, score=0.8063
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=False, stable_joint_feasible=False, shortlist=not-eligible
+  Noise Episode 2951: New Best! SelectionReward=0.7095, RawReward=0.7384, Cost=36.20
+    MC Eval: Loss=0.3608±0.0014, M1=0.8573±0.0044, M2=0.8547±0.0041
+    x     : [22, 24, 22, 22, 22, 30, 22, 22, 30, 24, 22, 22]
+    wq    : [16, 14, 16, 14, 14, 20, 22, 16, 14, 20, 14, 22]
+    wk    : [18, 16, 16, 16, 14, 14, 16, 14, 14, 16, 18, 16]
+    wv    : [14, 20, 18, 16, 20, 14, 16, 14, 14, 18, 16, 22]
+    wo    : [18, 14, 14, 14, 14, 14, 14, 18, 16, 14, 18, 14]
+    wffn1 : [18, 14, 14, 14, 20, 16, 18, 16, 18, 14, 20, 16]
+    wffn2 : [14, 14, 16, 14, 18, 20, 14, 14, 16, 14, 16, 22]
+  Noise Episode 2968: New Best! SelectionReward=0.7213, RawReward=0.7079, Cost=36.05
+    MC Eval: Loss=0.3670±0.0028, M1=0.8573±0.0033, M2=0.8551±0.0031
+    x     : [28, 22, 24, 30, 22, 28, 22, 22, 22, 22, 22, 30]
+    wq    : [14, 20, 16, 14, 14, 16, 22, 16, 14, 22, 14, 14]
+    wk    : [14, 16, 16, 14, 14, 14, 14, 16, 16, 18, 16, 14]
+    wv    : [16, 14, 14, 14, 14, 14, 18, 16, 20, 16, 18, 16]
+    wo    : [20, 16, 14, 16, 14, 14, 14, 22, 22, 20, 14, 16]
+    wffn1 : [14, 16, 18, 14, 14, 20, 14, 18, 18, 14, 16, 16]
+    wffn2 : [14, 18, 16, 14, 16, 14, 14, 14, 16, 18, 18, 14]
+  Noise Episode 3060: Avg Raw Reward=0.4459, Avg PPO Reward=0.4413, Policy Loss=0.1020, Value Loss=0.0862, Entropy=10.2093
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.046253, Update#18 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=3060, Updates=18, LastLoss=0.006380840786732733
+  Noise window 18 candidate confirmation: selection_reward=0.7213, raw_reward=0.7079, search=Loss: 0.369693, Accuracy: 0.856842, F1: 0.854310, std=(Loss=0.0055, M1=0.0047, M2=0.0047), range=(Loss=0.0149, M1=0.0140, M2=0.0143), stable=True, score=0.6196
+    Holdout: Loss: 0.262486, Accuracy: 0.913821, F1: 0.912496, std=(Loss=0.0048, M1=0.0110, M2=0.0116), range=(Loss=0.0136, M1=0.0325, M2=0.0344), stable=True, score=0.7879
+    Noise Search-Best updated at episode 3060: cost=36.05, selection_reward=0.7213
+    Noise Stable Search-Best updated at episode 3060: cost=36.05, stability_score=0.6196
+    Noise Joint-Best updated at episode 3060: cost=36.05, selection_reward=0.7213
+    Noise Stable Joint-Best updated at episode 3060: cost=36.05, stability_score=0.7037
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 3106: New Best! SelectionReward=0.7555, RawReward=0.8513, Cost=35.55
+    MC Eval: Loss=0.3654±0.0067, M1=0.8620±0.0044, M2=0.8586±0.0042
+    x     : [22, 26, 30, 28, 22, 22, 24, 22, 26, 24, 26, 24]
+    wq    : [16, 18, 14, 14, 14, 16, 18, 16, 14, 18, 16, 22]
+    wk    : [14, 14, 14, 14, 16, 14, 14, 18, 14, 14, 18, 16]
+    wv    : [22, 16, 16, 20, 16, 16, 14, 14, 22, 14, 14, 18]
+    wo    : [14, 16, 14, 14, 14, 14, 16, 14, 14, 16, 20, 16]
+    wffn1 : [14, 16, 14, 14, 16, 14, 16, 16, 18, 14, 14, 14]
+    wffn2 : [18, 14, 14, 18, 14, 14, 16, 16, 14, 14, 14, 20]
+  Noise Episode 3230: Avg Raw Reward=0.4627, Avg PPO Reward=0.4362, Policy Loss=0.7419, Value Loss=0.1520, Entropy=10.0495
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.046044, Update#19 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=3230, Updates=19, LastLoss=0.007236273493617773
+  Noise window 19 candidate confirmation: selection_reward=0.7555, raw_reward=0.8513, search=Loss: 0.364669, Accuracy: 0.857544, F1: 0.854749, std=(Loss=0.0041, M1=0.0057, M2=0.0058), range=(Loss=0.0120, M1=0.0140, M2=0.0143), stable=True, score=0.6488
+    Holdout: Loss: 0.259541, Accuracy: 0.920325, F1: 0.919291, std=(Loss=0.0067, M1=0.0033, M2=0.0034), range=(Loss=0.0187, M1=0.0081, M2=0.0086), stable=True, score=0.4067
+    Noise Search-Best updated at episode 3230: cost=35.55, selection_reward=0.7555
+    Noise Stable Search-Best updated at episode 3230: cost=35.55, stability_score=0.6488
+    Noise Joint-Best updated at episode 3230: cost=35.55, selection_reward=0.7555
+    Noise Stable Joint-Best updated at episode 3230: cost=35.55, stability_score=0.5278
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 3400: Avg Raw Reward=0.4988, Avg PPO Reward=0.4835, Policy Loss=-0.6786, Value Loss=0.3181, Entropy=9.8939
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.045836, Update#20 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=3400, Updates=20, LastLoss=0.0058149301912635565
+  Noise window 20 candidate confirmation: selection_reward=0.7447, raw_reward=0.7818, search=Loss: 0.369508, Accuracy: 0.858947, F1: 0.855951, std=(Loss=0.0063, M1=0.0041, M2=0.0043), range=(Loss=0.0197, M1=0.0105, M2=0.0116), stable=True, score=0.6149
+    Holdout: Loss: 0.262471, Accuracy: 0.920325, F1: 0.919124, std=(Loss=0.0051, M1=0.0080, M2=0.0084), range=(Loss=0.0142, M1=0.0163, M2=0.0172), stable=True, score=0.6260
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 3526: New Best! SelectionReward=0.7791, RawReward=0.7886, Cost=35.40
+    MC Eval: Loss=0.3649±0.0024, M1=0.8550±0.0017, M2=0.8523±0.0016
+    x     : [22, 22, 26, 28, 22, 22, 22, 24, 22, 28, 22, 24]
+    wq    : [14, 16, 14, 14, 14, 14, 14, 18, 14, 14, 22, 14]
+    wk    : [14, 14, 14, 18, 14, 16, 16, 20, 14, 18, 14, 14]
+    wv    : [16, 14, 14, 14, 22, 18, 14, 20, 16, 14, 20, 16]
+    wo    : [16, 14, 16, 18, 20, 16, 18, 16, 16, 16, 16, 14]
+    wffn1 : [16, 14, 14, 14, 20, 18, 14, 14, 16, 16, 16, 16]
+    wffn2 : [16, 16, 16, 14, 16, 16, 16, 14, 14, 14, 16, 14]
+  Noise Episode 3570: Avg Raw Reward=0.5258, Avg PPO Reward=0.5120, Policy Loss=1.2354, Value Loss=0.1637, Entropy=9.7071
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.045628, Update#21 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=3570, Updates=21, LastLoss=0.006809686776250601
+  Noise window 21 candidate confirmation: selection_reward=0.7791, raw_reward=0.7886, search=Loss: 0.369176, Accuracy: 0.858246, F1: 0.855869, std=(Loss=0.0017, M1=0.0101, M2=0.0098), range=(Loss=0.0042, M1=0.0281, M2=0.0274), stable=False, score=0.8993
+    Holdout: Loss: 0.259774, Accuracy: 0.923577, F1: 0.922584, std=(Loss=0.0031, M1=0.0040, M2=0.0042), range=(Loss=0.0087, M1=0.0081, M2=0.0086), stable=True, score=0.3300
+    Noise Search-Best updated at episode 3570: cost=35.40, selection_reward=0.7791
+    Noise Joint-Best updated at episode 3570: cost=35.40, selection_reward=0.7791
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=False, stable_holdout=True, stable_joint_feasible=False, shortlist=not-eligible
+  Noise Episode 3740: Avg Raw Reward=0.5845, Avg PPO Reward=0.5552, Policy Loss=-0.2723, Value Loss=0.3002, Entropy=9.5303
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.045420, Update#22 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=3740, Updates=22, LastLoss=0.007468800409696996
+  Noise window 22 candidate confirmation: selection_reward=0.7507, raw_reward=0.7151, search=Loss: 0.365008, Accuracy: 0.854035, F1: 0.851898, std=(Loss=0.0043, M1=0.0048, M2=0.0046), range=(Loss=0.0123, M1=0.0105, M2=0.0104), stable=True, score=0.5687
+    Holdout: Loss: 0.263411, Accuracy: 0.912195, F1: 0.910471, std=(Loss=0.0054, M1=0.0095, M2=0.0102), range=(Loss=0.0142, M1=0.0244, M2=0.0262), stable=True, score=0.7272
+    Noise Search-Best updated at episode 3740: cost=35.20, selection_reward=0.7507
+    Noise Stable Search-Best updated at episode 3740: cost=35.20, stability_score=0.5687
+    Noise Joint-Best updated at episode 3740: cost=35.20, selection_reward=0.7507
+    Noise Stable Joint-Best updated at episode 3740: cost=35.20, stability_score=0.6480
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 3800: New Best! SelectionReward=0.7991, RawReward=0.8109, Cost=35.00
+    MC Eval: Loss=0.3662±0.0059, M1=0.8573±0.0060, M2=0.8545±0.0056
+    x     : [22, 22, 26, 22, 26, 24, 22, 22, 22, 22, 24, 30]
+    wq    : [14, 14, 14, 18, 14, 14, 14, 16, 14, 14, 16, 14]
+    wk    : [22, 16, 14, 16, 14, 16, 14, 14, 14, 14, 16, 16]
+    wv    : [16, 14, 14, 16, 14, 14, 14, 14, 18, 14, 18, 16]
+    wo    : [14, 14, 14, 16, 16, 16, 14, 16, 14, 14, 14, 14]
+    wffn1 : [14, 16, 22, 16, 14, 16, 16, 20, 18, 18, 16, 14]
+    wffn2 : [16, 16, 16, 18, 16, 16, 14, 14, 16, 20, 14, 20]
+  Noise Episode 3855: New Best! SelectionReward=0.8103, RawReward=0.8171, Cost=34.95
+    MC Eval: Loss=0.3658±0.0044, M1=0.8561±0.0050, M2=0.8534±0.0047
+    x     : [24, 26, 22, 22, 22, 30, 30, 22, 22, 24, 24, 22]
+    wq    : [14, 14, 14, 14, 14, 16, 14, 14, 14, 14, 14, 14]
+    wk    : [14, 14, 18, 16, 14, 16, 14, 18, 18, 16, 16, 14]
+    wv    : [16, 14, 14, 20, 14, 18, 14, 14, 16, 16, 14, 16]
+    wo    : [16, 14, 14, 14, 18, 14, 18, 14, 14, 14, 14, 16]
+    wffn1 : [14, 14, 14, 14, 16, 20, 18, 16, 20, 18, 16, 16]
+    wffn2 : [14, 16, 16, 14, 18, 14, 14, 14, 16, 16, 18, 18]
+  Noise Episode 3905: New Best! SelectionReward=0.8180, RawReward=0.7949, Cost=35.20
+    MC Eval: Loss=0.3666±0.0049, M1=0.8515±0.0033, M2=0.8485±0.0031
+    x     : [24, 28, 24, 24, 22, 22, 24, 22, 22, 22, 24, 24]
+    wq    : [16, 14, 14, 18, 16, 14, 16, 16, 14, 14, 18, 14]
+    wk    : [14, 14, 14, 16, 14, 14, 14, 22, 16, 14, 14, 14]
+    wv    : [14, 14, 16, 18, 18, 16, 14, 22, 18, 18, 18, 18]
+    wo    : [16, 14, 14, 16, 14, 14, 16, 14, 18, 16, 14, 14]
+    wffn1 : [18, 14, 16, 14, 14, 14, 20, 14, 14, 14, 16, 16]
+    wffn2 : [18, 16, 22, 14, 16, 14, 16, 16, 18, 14, 16, 14]
+  Noise Episode 3910: Avg Raw Reward=0.6291, Avg PPO Reward=0.6275, Policy Loss=-0.8171, Value Loss=0.6025, Entropy=9.3398
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.045211, Update#23 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=3910, Updates=23, LastLoss=0.006502341129817069
+  Noise window 23 candidate confirmation: selection_reward=0.8180, raw_reward=0.7949, search=Loss: 0.367266, Accuracy: 0.856842, F1: 0.854205, std=(Loss=0.0046, M1=0.0041, M2=0.0040), range=(Loss=0.0137, M1=0.0105, M2=0.0104), stable=True, score=0.5298
+    Holdout: Loss: 0.261975, Accuracy: 0.912195, F1: 0.910973, std=(Loss=0.0035, M1=0.0033, M2=0.0033), range=(Loss=0.0100, M1=0.0081, M2=0.0086), stable=True, score=0.2988
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 4038: New Best! SelectionReward=0.8301, RawReward=1.0643, Cost=34.75
+    MC Eval: Loss=0.3570±0.0067, M1=0.8655±0.0044, M2=0.8624±0.0046
+    x     : [26, 22, 22, 22, 22, 26, 22, 22, 22, 22, 22, 22]
+    wq    : [14, 16, 18, 14, 14, 14, 14, 18, 14, 16, 14, 14]
+    wk    : [14, 14, 14, 14, 18, 14, 18, 16, 14, 18, 16, 16]
+    wv    : [18, 16, 16, 14, 14, 16, 16, 14, 16, 14, 22, 14]
+    wo    : [18, 16, 16, 14, 16, 16, 14, 14, 14, 16, 16, 14]
+    wffn1 : [18, 14, 14, 14, 14, 14, 14, 18, 20, 18, 18, 14]
+    wffn2 : [20, 16, 20, 14, 14, 16, 14, 14, 16, 14, 16, 14]
+  Noise Episode 4080: Avg Raw Reward=0.6529, Avg PPO Reward=0.6086, Policy Loss=0.3304, Value Loss=0.0422, Entropy=9.1496
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.045003, Update#24 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4080, Updates=24, LastLoss=0.007613442023284733
+  Noise window 24 candidate confirmation: selection_reward=0.8301, raw_reward=1.0643, search=Loss: 0.366311, Accuracy: 0.860351, F1: 0.857921, std=(Loss=0.0073, M1=0.0041, M2=0.0043), range=(Loss=0.0203, M1=0.0105, M2=0.0116), stable=True, score=0.6545
+    Holdout: Loss: 0.262300, Accuracy: 0.920325, F1: 0.919159, std=(Loss=0.0029, M1=0.0033, M2=0.0034), range=(Loss=0.0074, M1=0.0081, M2=0.0086), stable=True, score=0.2809
+    Noise Search-Best updated at episode 4080: cost=34.75, selection_reward=0.8301
+    Noise Stable Search-Best updated at episode 4080: cost=34.75, stability_score=0.6545
+    Noise Joint-Best updated at episode 4080: cost=34.75, selection_reward=0.8301
+    Noise Stable Joint-Best updated at episode 4080: cost=34.75, stability_score=0.4677
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 4107: New Best! SelectionReward=0.8633, RawReward=1.0115, Cost=35.00
+    MC Eval: Loss=0.3644±0.0049, M1=0.8643±0.0017, M2=0.8619±0.0018
+    x     : [24, 26, 28, 22, 24, 24, 22, 22, 30, 24, 22, 22]
+    wq    : [14, 16, 14, 14, 14, 16, 16, 14, 14, 14, 14, 14]
+    wk    : [14, 16, 18, 14, 14, 16, 14, 14, 16, 16, 14, 14]
+    wv    : [16, 20, 14, 16, 14, 14, 14, 14, 14, 14, 16, 18]
+    wo    : [14, 14, 14, 18, 14, 14, 14, 16, 16, 20, 18, 18]
+    wffn1 : [20, 14, 14, 14, 16, 14, 16, 16, 22, 20, 14, 14]
+    wffn2 : [14, 14, 16, 14, 18, 14, 16, 18, 18, 16, 16, 14]
+  Noise Episode 4220: New Best! SelectionReward=0.8944, RawReward=0.9409, Cost=34.50
+    MC Eval: Loss=0.3628±0.0037, M1=0.8596±0.0057, M2=0.8569±0.0059
+    x     : [22, 22, 22, 22, 28, 22, 26, 24, 24, 26, 22, 22]
+    wq    : [16, 14, 18, 14, 14, 14, 14, 14, 14, 14, 14, 14]
+    wk    : [14, 18, 14, 14, 14, 14, 14, 14, 14, 14, 16, 14]
+    wv    : [16, 20, 14, 14, 20, 20, 14, 14, 14, 16, 14, 18]
+    wo    : [14, 14, 18, 16, 18, 14, 22, 14, 14, 16, 16, 16]
+    wffn1 : [16, 16, 14, 14, 14, 14, 18, 16, 18, 16, 20, 14]
+    wffn2 : [14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 18, 16]
+  Noise Episode 4250: Avg Raw Reward=0.6942, Avg PPO Reward=0.6841, Policy Loss=-0.1784, Value Loss=0.1465, Entropy=8.9639
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.044795, Update#25 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=25, LastLoss=0.005739491665735841
+  Noise window 25 candidate confirmation: selection_reward=0.8944, raw_reward=0.9409, search=Loss: 0.366022, Accuracy: 0.856140, F1: 0.853322, std=(Loss=0.0033, M1=0.0038, M2=0.0036), range=(Loss=0.0094, M1=0.0105, M2=0.0099), stable=True, score=0.4490
+    Holdout: Loss: 0.260390, Accuracy: 0.921951, F1: 0.920945, std=(Loss=0.0024, M1=0.0142, M2=0.0147), range=(Loss=0.0067, M1=0.0407, M2=0.0423), stable=False, score=0.8839
+    Noise Search-Best updated at episode 4250: cost=34.50, selection_reward=0.8944
+    Noise Stable Search-Best updated at episode 4250: cost=34.50, stability_score=0.4490
+    Noise Joint-Best updated at episode 4250: cost=34.50, selection_reward=0.8944
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=False, stable_joint_feasible=False, shortlist=not-eligible
+  Noise Episode 4420: Avg Raw Reward=0.7293, Avg PPO Reward=0.6916, Policy Loss=0.2482, Value Loss=0.0196, Entropy=8.7775
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.044587, Update#26 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=26, LastLoss=0.006246420438401401
+  Noise window 26 candidate confirmation: selection_reward=0.8779, raw_reward=1.0198, search=Loss: 0.363598, Accuracy: 0.859649, F1: 0.856957, std=(Loss=0.0072, M1=0.0054, M2=0.0053), range=(Loss=0.0169, M1=0.0140, M2=0.0137), stable=True, score=0.7450
+    Holdout: Loss: 0.256956, Accuracy: 0.920325, F1: 0.919279, std=(Loss=0.0049, M1=0.0080, M2=0.0082), range=(Loss=0.0138, M1=0.0244, M2=0.0249), stable=True, score=0.6138
+    Noise Search-Best updated at episode 4420: cost=34.40, selection_reward=0.8779
+    Noise Stable Search-Best updated at episode 4420: cost=34.40, stability_score=0.7450
+    Noise Joint-Best updated at episode 4420: cost=34.40, selection_reward=0.8779
+    Noise Stable Joint-Best updated at episode 4420: cost=34.40, stability_score=0.6794
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 4590: Avg Raw Reward=0.7424, Avg PPO Reward=0.7197, Policy Loss=0.0453, Value Loss=0.0337, Entropy=8.5723
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.044378, Update#27 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=27, LastLoss=0.006030071643181145
+  Noise window 27 candidate confirmation: selection_reward=0.8819, raw_reward=0.9611, search=Loss: 0.365613, Accuracy: 0.856842, F1: 0.854204, std=(Loss=0.0059, M1=0.0034, M2=0.0032), range=(Loss=0.0147, M1=0.0105, M2=0.0099), stable=True, score=0.5248
+    Holdout: Loss: 0.261168, Accuracy: 0.915447, F1: 0.914293, std=(Loss=0.0029, M1=0.0122, M2=0.0131), range=(Loss=0.0077, M1=0.0325, M2=0.0354), stable=False, score=0.8000
+    Noise Search-Best updated at episode 4590: cost=34.30, selection_reward=0.8819
+    Noise Stable Search-Best updated at episode 4590: cost=34.30, stability_score=0.5248
+    Noise Joint-Best updated at episode 4590: cost=34.30, selection_reward=0.8819
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=False, stable_joint_feasible=False, shortlist=not-eligible
+  Noise Episode 4647: New Best! SelectionReward=0.9302, RawReward=0.9862, Cost=34.75
+    MC Eval: Loss=0.3654±0.0086, M1=0.8608±0.0033, M2=0.8578±0.0031
+    x     : [24, 24, 22, 24, 24, 22, 22, 24, 24, 26, 24, 24]
+    wq    : [14, 14, 14, 16, 14, 18, 16, 16, 16, 20, 14, 16]
+    wk    : [14, 14, 14, 14, 16, 18, 18, 16, 18, 16, 14, 14]
+    wv    : [14, 14, 14, 14, 16, 16, 16, 18, 16, 18, 16, 14]
+    wo    : [14, 16, 14, 14, 14, 14, 18, 14, 14, 14, 16, 18]
+    wffn1 : [20, 14, 18, 14, 14, 18, 16, 16, 20, 14, 16, 14]
+    wffn2 : [14, 14, 14, 14, 14, 16, 14, 14, 14, 14, 16, 14]
+  Noise Episode 4760: Avg Raw Reward=0.7831, Avg PPO Reward=0.7561, Policy Loss=0.6009, Value Loss=0.0413, Entropy=8.3670
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.044170, Update#28 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=28, LastLoss=0.007013178779743612
+  Noise window 28 candidate confirmation: selection_reward=0.9302, raw_reward=0.9862, search=Loss: 0.364817, Accuracy: 0.860351, F1: 0.857835, std=(Loss=0.0069, M1=0.0052, M2=0.0049), range=(Loss=0.0195, M1=0.0140, M2=0.0132), stable=True, score=0.7075
+    Holdout: Loss: 0.259770, Accuracy: 0.921951, F1: 0.920871, std=(Loss=0.0038, M1=0.0040, M2=0.0042), range=(Loss=0.0094, M1=0.0081, M2=0.0086), stable=True, score=0.3552
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 4897: New Best! SelectionReward=0.9304, RawReward=0.9771, Cost=33.65
+    MC Eval: Loss=0.3620±0.0093, M1=0.8550±0.0072, M2=0.8520±0.0070
+    x     : [24, 22, 22, 22, 22, 22, 24, 24, 24, 22, 22, 22]
+    wq    : [16, 14, 14, 14, 14, 16, 14, 14, 14, 14, 14, 14]
+    wk    : [14, 14, 14, 14, 14, 16, 14, 14, 16, 14, 14, 16]
+    wv    : [14, 18, 14, 16, 14, 14, 14, 16, 18, 14, 14, 14]
+    wo    : [16, 14, 14, 14, 16, 14, 16, 16, 14, 16, 14, 20]
+    wffn1 : [16, 14, 14, 16, 16, 14, 14, 14, 14, 14, 18, 14]
+    wffn2 : [16, 20, 14, 14, 14, 14, 16, 16, 16, 16, 16, 14]
+  Noise Episode 4930: Avg Raw Reward=0.7907, Avg PPO Reward=0.7634, Policy Loss=-0.8307, Value Loss=0.0382, Entropy=8.1624
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.043962, Update#29 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=29, LastLoss=0.005291333771310747
+  Noise window 29 candidate confirmation: selection_reward=0.9304, raw_reward=0.9771, search=Loss: 0.365429, Accuracy: 0.860351, F1: 0.857936, std=(Loss=0.0048, M1=0.0060, M2=0.0061), range=(Loss=0.0140, M1=0.0175, M2=0.0176), stable=True, score=0.7060
+    Holdout: Loss: 0.261420, Accuracy: 0.912195, F1: 0.910835, std=(Loss=0.0028, M1=0.0108, M2=0.0109), range=(Loss=0.0079, M1=0.0325, M2=0.0329), stable=True, score=0.6974
+    Noise Search-Best updated at episode 4930: cost=33.65, selection_reward=0.9304
+    Noise Stable Search-Best updated at episode 4930: cost=33.65, stability_score=0.7060
+    Noise Joint-Best updated at episode 4930: cost=33.65, selection_reward=0.9304
+    Noise Stable Joint-Best updated at episode 4930: cost=33.65, stability_score=0.7017
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 5049: New Best! SelectionReward=0.9442, RawReward=0.9717, Cost=34.35
+    MC Eval: Loss=0.3596±0.0019, M1=0.8550±0.0044, M2=0.8521±0.0045
+    x     : [22, 22, 22, 22, 22, 26, 22, 24, 24, 26, 24, 28]
+    wq    : [14, 14, 14, 14, 14, 14, 14, 16, 14, 14, 14, 14]
+    wk    : [14, 16, 16, 14, 20, 16, 14, 14, 14, 14, 14, 16]
+    wv    : [14, 16, 14, 18, 14, 16, 14, 16, 14, 16, 18, 14]
+    wo    : [16, 14, 14, 14, 16, 16, 16, 16, 16, 22, 14, 16]
+    wffn1 : [14, 14, 14, 16, 16, 14, 16, 16, 14, 20, 16, 14]
+    wffn2 : [14, 14, 14, 14, 14, 16, 20, 16, 14, 14, 14, 16]
+  Noise Episode 5100: Avg Raw Reward=0.8199, Avg PPO Reward=0.7963, Policy Loss=-0.2606, Value Loss=0.0259, Entropy=7.9709
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.043754, Update#30 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=30, LastLoss=0.0066597400000318885
+  Noise window 30 candidate confirmation: selection_reward=0.9442, raw_reward=0.9717, search=Loss: 0.361700, Accuracy: 0.859649, F1: 0.856955, std=(Loss=0.0035, M1=0.0044, M2=0.0042), range=(Loss=0.0103, M1=0.0140, M2=0.0132), stable=True, score=0.5042
+    Holdout: Loss: 0.258868, Accuracy: 0.917073, F1: 0.915985, std=(Loss=0.0040, M1=0.0061, M2=0.0063), range=(Loss=0.0116, M1=0.0163, M2=0.0172), stable=True, score=0.4766
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 5118: New Best! SelectionReward=0.9458, RawReward=1.0425, Cost=34.20
+    MC Eval: Loss=0.3650±0.0036, M1=0.8620±0.0017, M2=0.8595±0.0016
+    x     : [22, 22, 22, 22, 22, 22, 22, 26, 24, 28, 22, 22]
+    wq    : [14, 16, 14, 14, 14, 14, 14, 14, 16, 14, 14, 14]
+    wk    : [14, 16, 16, 14, 14, 18, 14, 16, 14, 18, 16, 14]
+    wv    : [14, 22, 14, 16, 14, 16, 14, 16, 14, 14, 14, 16]
+    wo    : [14, 14, 14, 14, 14, 14, 22, 16, 14, 14, 14, 14]
+    wffn1 : [14, 14, 20, 18, 14, 14, 22, 14, 14, 16, 14, 16]
+    wffn2 : [14, 14, 14, 16, 14, 14, 22, 14, 14, 18, 16, 14]
+  Noise Episode 5270: Avg Raw Reward=0.8347, Avg PPO Reward=0.8045, Policy Loss=-0.6756, Value Loss=0.0401, Entropy=7.7689
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.043545, Update#31 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=31, LastLoss=0.006527646677568555
+  Noise window 31 candidate confirmation: selection_reward=0.9458, raw_reward=1.0425, search=Loss: 0.362731, Accuracy: 0.861754, F1: 0.859255, std=(Loss=0.0055, M1=0.0048, M2=0.0047), range=(Loss=0.0152, M1=0.0140, M2=0.0138), stable=True, score=0.6230
+    Holdout: Loss: 0.260449, Accuracy: 0.915447, F1: 0.913970, std=(Loss=0.0070, M1=0.0065, M2=0.0069), range=(Loss=0.0173, M1=0.0163, M2=0.0172), stable=True, score=0.6044
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 5350: New Best! SelectionReward=1.0004, RawReward=1.1761, Cost=34.10
+    MC Eval: Loss=0.3622±0.0056, M1=0.8643±0.0060, M2=0.8617±0.0057
+    x     : [24, 24, 24, 26, 24, 22, 30, 24, 22, 24, 22, 28]
+    wq    : [14, 14, 16, 14, 14, 14, 14, 14, 16, 14, 14, 14]
+    wk    : [14, 14, 14, 16, 14, 14, 14, 16, 14, 16, 14, 14]
+    wv    : [14, 14, 14, 20, 14, 20, 16, 18, 14, 18, 16, 16]
+    wo    : [14, 14, 14, 14, 14, 16, 14, 14, 14, 14, 16, 14]
+    wffn1 : [14, 16, 16, 14, 14, 14, 14, 16, 16, 14, 18, 14]
+    wffn2 : [14, 14, 14, 16, 14, 14, 16, 18, 14, 14, 16, 14]
+  Noise Episode 5440: Avg Raw Reward=0.8439, Avg PPO Reward=0.8182, Policy Loss=-0.3231, Value Loss=0.0109, Entropy=7.5868
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.043337, Update#32 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=32, LastLoss=0.00648933369666338
+  Noise window 32 candidate confirmation: selection_reward=1.0004, raw_reward=1.1761, search=Loss: 0.364857, Accuracy: 0.858947, F1: 0.856283, std=(Loss=0.0055, M1=0.0041, M2=0.0043), range=(Loss=0.0165, M1=0.0105, M2=0.0110), stable=True, score=0.5764
+    Holdout: Loss: 0.261822, Accuracy: 0.925203, F1: 0.924374, std=(Loss=0.0052, M1=0.0080, M2=0.0084), range=(Loss=0.0145, M1=0.0244, M2=0.0257), stable=True, score=0.6301
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 5565: New Best! SelectionReward=1.0025, RawReward=1.1026, Cost=33.20
+    MC Eval: Loss=0.3612±0.0015, M1=0.8620±0.0044, M2=0.8591±0.0042
+    x     : [22, 22, 22, 22, 22, 24, 22, 22, 22, 24, 26, 22]
+    wq    : [14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14]
+    wk    : [14, 14, 14, 14, 16, 14, 14, 14, 14, 16, 16, 14]
+    wv    : [14, 14, 14, 16, 16, 14, 14, 14, 14, 14, 14, 14]
+    wo    : [14, 14, 14, 14, 16, 14, 14, 16, 14, 20, 18, 14]
+    wffn1 : [18, 16, 14, 14, 16, 16, 14, 14, 18, 20, 14, 16]
     wffn2 : [14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 16, 14]
-  Noise Episode 41480: Avg Raw Reward=1.0584, Avg PPO Reward=1.0461, Policy Loss=0.0846, Value Loss=0.0022, Entropy=5.8713
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.024594, Update#244 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=244, LastLoss=0.011044175364077091
-  Noise window 244 candidate confirmation: selection_reward=1.2047, raw_reward=1.3214, search=Loss: 0.336419, Accuracy: 0.877895, F1: 0.876282, std=(Loss=0.0062, M1=0.0068, M2=0.0068)
-    Holdout: Loss: 0.307479, Accuracy: 0.869919, F1: 0.867142, std=(Loss=0.0070, M1=0.0192, M2=0.0200)
-    Noise Search-Best updated at episode 41480: cost=33.00, selection_reward=1.2047
-    Noise Joint-Best updated at episode 41480: cost=33.00, selection_reward=1.2047
-  Noise Episode 41650: Avg Raw Reward=1.0413, Avg PPO Reward=1.0489, Policy Loss=0.9136, Value Loss=0.0197, Entropy=5.7519
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.024490, Update#245 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=245, LastLoss=0.009771242970600724
-  Noise window 245 candidate confirmation: selection_reward=1.1703, raw_reward=1.2715, search=Loss: 0.335615, Accuracy: 0.878596, F1: 0.876591, std=(Loss=0.0071, M1=0.0069, M2=0.0069)
-    Holdout: Loss: 0.304394, Accuracy: 0.878049, F1: 0.875572, std=(Loss=0.0059, M1=0.0089, M2=0.0097)
-  Noise Episode 41820: Avg Raw Reward=1.0573, Avg PPO Reward=1.0571, Policy Loss=-0.8712, Value Loss=0.0282, Entropy=5.8461
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.024386, Update#246 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=246, LastLoss=0.008097873767837882
-  Noise window 246 candidate confirmation: selection_reward=1.1853, raw_reward=1.2814, search=Loss: 0.339073, Accuracy: 0.872982, F1: 0.870584, std=(Loss=0.0048, M1=0.0014, M2=0.0017)
-    Holdout: Loss: 0.302876, Accuracy: 0.881301, F1: 0.878719, std=(Loss=0.0076, M1=0.0065, M2=0.0068)
-  Noise Episode 41990: Avg Raw Reward=1.0485, Avg PPO Reward=1.0458, Policy Loss=-0.8306, Value Loss=0.0333, Entropy=5.7384
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.024282, Update#247 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=247, LastLoss=0.01052932464517653
-  Noise window 247 candidate confirmation: selection_reward=1.1817, raw_reward=1.2816, search=Loss: 0.336528, Accuracy: 0.878596, F1: 0.876411, std=(Loss=0.0096, M1=0.0072, M2=0.0072)
-    Holdout: Loss: 0.305228, Accuracy: 0.873171, F1: 0.870014, std=(Loss=0.0030, M1=0.0122, M2=0.0129)
-  Noise Episode 42076: New Best! SelectionReward=1.2105, RawReward=1.3418, Cost=33.70
-    MC Eval: Loss=0.3316±0.0033, M1=0.8842±0.0029, M2=0.8822±0.0031
-    x     : [22, 22, 22, 22, 22, 22, 30, 22, 26, 26, 22, 24]
-    wq    : [14, 14, 14, 14, 14, 14, 14, 16, 14, 16, 14, 20]
-    wk    : [14, 14, 14, 14, 14, 16, 14, 14, 18, 14, 16, 16]
-    wv    : [14, 14, 14, 14, 14, 14, 14, 16, 20, 18, 22, 14]
-    wo    : [14, 14, 14, 14, 14, 14, 14, 14, 14, 16, 14, 18]
-    wffn1 : [14, 14, 14, 14, 14, 14, 14, 16, 14, 14, 14, 14]
-    wffn2 : [14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 18, 20]
-  Noise Episode 42160: Avg Raw Reward=1.0355, Avg PPO Reward=1.0391, Policy Loss=-0.8355, Value Loss=0.0120, Entropy=5.8282
-    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.024178, Update#248 (mode=constant, status=constant)
-    [Noise Reward Estimator] Replay=4096, Updates=248, LastLoss=0.008373380522243679
-  Noise window 248 candidate confirmation: selection_reward=1.2105, raw_reward=1.3418, search=Loss: 0.339145, Accuracy: 0.876491, F1: 0.874673, std=(Loss=0.0055, M1=0.0064, M2=0.0064)
-    Holdout: Loss: 0.304454, Accuracy: 0.879675, F1: 0.877607, std=(Loss=0.0055, M1=0.0061, M2=0.0062)
-  Noise Episode 42224: New Best! SelectionReward=1.2219, RawReward=1.3689, Cost=34.05
-    MC Eval: Loss=0.3301±0.0013, M1=0.8877±0.0076, M2=0.8861±0.0079
-    x     : [22, 22, 22, 22, 22, 26, 22, 24, 22, 22, 24, 22]
-    wq    : [14, 14, 14, 14, 14, 14, 14, 20, 14, 14, 14, 20]
-    wk    : [14, 14, 14, 14, 14, 22, 14, 14, 14, 22, 18, 22]
-    wv    : [14, 14, 14, 14, 14, 18, 14, 16, 14, 16, 14, 14]
-    wo    : [14, 14, 14, 14, 14, 14, 14, 20, 16, 14, 14, 14]
-    wffn1 : [14, 14, 14, 14, 14, 20, 14, 14, 14, 14, 14, 14]
-    wffn2 : [14, 14, 14, 14, 14, 16, 18, 16, 18, 18, 14, 18]
+  Noise Episode 5610: Avg Raw Reward=0.8683, Avg PPO Reward=0.8443, Policy Loss=-0.5831, Value Loss=0.0175, Entropy=7.4246
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.043129, Update#33 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=33, LastLoss=0.0067496143747121096
+  Noise window 33 candidate confirmation: selection_reward=1.0025, raw_reward=1.1026, search=Loss: 0.364004, Accuracy: 0.861754, F1: 0.859046, std=(Loss=0.0069, M1=0.0042, M2=0.0040), range=(Loss=0.0175, M1=0.0105, M2=0.0105), stable=True, score=0.6295
+    Holdout: Loss: 0.261983, Accuracy: 0.913821, F1: 0.912537, std=(Loss=0.0063, M1=0.0098, M2=0.0100), range=(Loss=0.0147, M1=0.0244, M2=0.0260), stable=True, score=0.7608
+    Noise Search-Best updated at episode 5610: cost=33.20, selection_reward=1.0025
+    Noise Stable Search-Best updated at episode 5610: cost=33.20, stability_score=0.6295
+    Noise Joint-Best updated at episode 5610: cost=33.20, selection_reward=1.0025
+    Noise Stable Joint-Best updated at episode 5610: cost=33.20, stability_score=0.6952
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 5672: New Best! SelectionReward=1.0118, RawReward=1.2194, Cost=33.95
+    MC Eval: Loss=0.3652±0.0066, M1=0.8678±0.0060, M2=0.8652±0.0061
+    x     : [24, 22, 22, 22, 22, 26, 22, 22, 24, 24, 22, 22]
+    wq    : [14, 16, 14, 14, 14, 14, 16, 16, 16, 14, 14, 14]
+    wk    : [14, 14, 14, 14, 14, 16, 20, 14, 20, 16, 14, 16]
+    wv    : [14, 18, 18, 14, 20, 14, 16, 16, 14, 16, 14, 14]
+    wo    : [14, 14, 14, 14, 16, 14, 14, 14, 14, 14, 14, 14]
+    wffn1 : [16, 14, 16, 14, 14, 14, 14, 14, 18, 20, 14, 16]
+    wffn2 : [16, 14, 14, 14, 14, 14, 14, 16, 14, 14, 22, 14]
+  Noise Episode 5780: Avg Raw Reward=0.8780, Avg PPO Reward=0.8559, Policy Loss=-0.3824, Value Loss=0.0183, Entropy=7.3056
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.042921, Update#34 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=34, LastLoss=0.007199811516329646
+  Noise window 34 candidate confirmation: selection_reward=1.0118, raw_reward=1.2194, search=Loss: 0.370331, Accuracy: 0.860351, F1: 0.857396, std=(Loss=0.0060, M1=0.0034, M2=0.0032), range=(Loss=0.0171, M1=0.0105, M2=0.0099), stable=True, score=0.5303
+    Holdout: Loss: 0.260093, Accuracy: 0.921951, F1: 0.921116, std=(Loss=0.0068, M1=0.0040, M2=0.0042), range=(Loss=0.0193, M1=0.0081, M2=0.0091), stable=True, score=0.4539
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
+  Noise Episode 5950: Avg Raw Reward=0.8872, Avg PPO Reward=0.8617, Policy Loss=-0.5448, Value Loss=0.0200, Entropy=7.1680
+    [Noise GTrXL Schedule] LR=0.000020, Entropy Coef=0.042712, Update#35 (mode=constant, status=constant)
+    [Noise Reward Estimator] Replay=4096, Updates=35, LastLoss=0.007437096908688545
+  Noise window 35 candidate confirmation: selection_reward=0.9845, raw_reward=1.0837, search=Loss: 0.365849, Accuracy: 0.859649, F1: 0.857168, std=(Loss=0.0026, M1=0.0022, M2=0.0021), range=(Loss=0.0066, M1=0.0070, M2=0.0066), stable=True, score=0.2892
+    Holdout: Loss: 0.262179, Accuracy: 0.918699, F1: 0.917412, std=(Loss=0.0065, M1=0.0073, M2=0.0077), range=(Loss=0.0187, M1=0.0163, M2=0.0172), stable=True, score=0.6320
+    Stability verdict: search_ok=True, holdout_ok=True, stable_search=True, stable_holdout=True, stable_joint_feasible=True, shortlist=added
