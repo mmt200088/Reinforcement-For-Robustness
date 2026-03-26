@@ -1,0 +1,24 @@
+=== Stage-2 Noise RL Optimization Log Started ===
+[Info] PPO LR resolved from rl_lr=20 -> 2e-05 (legacy-micro)
+[Info] Unified run output dir: experiment_results/layer_importance_runs/mrpc/20260326_185440_pid512982
+
+============================================================
+PHASE 5: SECOND-STAGE NOISE RL
+Fixed GELU/Softmax source=json, label=Selected (Saved RL)
+Fixed GELU   : [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1]
+Fixed Softmax: [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
+============================================================
+Noise-Stage Baseline Metrics (Training Set):
+  Loss: 0.116030, Accuracy: 0.966467, F1: 0.966463
+  Noise Cost: 49.20 | Breakdown={'x': 9.0, 'wq': 6.599999999999999, 'wk': 6.599999999999999, 'wv': 6.599999999999999, 'wo': 6.599999999999999, 'wffn1': 7.199999999999999, 'wffn2': 6.599999999999999}
+Noise-Stage Baseline Metrics (val_search_full - used for reward):
+  Loss: 0.339887, Accuracy: 0.884211, F1: 0.882030
+Noise-Stage Constraints (based on val_search_full):
+  Loss<=0.3549, Accuracy>=0.8709, F1>=0.8688
+Noise-Stage Training Hyperparameters:
+  GTrXL(d_model=256, heads=8, layers=4, d_ff=512, dropout=0.1)
+  PPO(max_episodes=40000, eps_clip=0.15, k_epochs=10, warmup_mode=constant, warmup_updates=0, short_warmup_updates=20)
+  MC samples=3 | RewardEstimator(hidden=(128, 64), lr=0.001, replay=4096, warmup=32, batch=64, epochs=4)
+  CandidateConfirm(repeats=5) | FinalistConfirm(repeats=15, shortlist=5) | ProgressPlots(every=10000, dir=experiment_results/noise_rl_progress)
+  StabilityThresholds(search={'loss_std': 0.008, 'metric1_std': 0.008, 'metric2_std': 0.008}, holdout={'loss_std': 0.01, 'metric1_std': 0.012, 'metric2_std': 0.012}, proxy_ref=0.008, penalty_scale=0.1)
+[Info] Noise-stage online reward uses val_search_full (constraints stay on val_search_full)

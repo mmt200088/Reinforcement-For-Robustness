@@ -1,0 +1,3 @@
+=== Noise PPO StepInfo 中间结果日志 ===
+每步包含: step_global, episode_id, layer_index, state_vector, 7个动作的scaling factor, 7个动作概率分布, critic_value, accumulated_cost, 各类noise配置
+

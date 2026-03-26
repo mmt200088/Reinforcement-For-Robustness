@@ -22,7 +22,7 @@ NOISE_STAGE_GTRXL_N_LAYERS = 4
 NOISE_STAGE_GTRXL_D_FF = 512
 NOISE_STAGE_GTRXL_DROPOUT = 0.1
 
-NOISE_STAGE_PPO_MAX_EPISODES = 20000
+NOISE_STAGE_PPO_MAX_EPISODES = 40000
 NOISE_STAGE_PPO_EPS_CLIP = 0.15
 NOISE_STAGE_PPO_K_EPOCHS = 10
 NOISE_STAGE_GTRXL_WARMUP_MODE = "constant"
@@ -81,9 +81,6 @@ class NoiseRLModule:
             INPUT_NOISE_SCALING_TO_NORM,
             WEIGHT_NOISE_COST_MAP,
             WEIGHT_NOISE_SCALING_TO_NORM,
-            WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
-            WFFN1_NOISE_COST_MAP,
-            WFFN1_NOISE_SCALING_TO_NORM,
             WQ_NOISE_SCALING_MAP,
             WK_NOISE_SCALING_MAP,
             WV_NOISE_SCALING_MAP,
@@ -123,17 +120,6 @@ class NoiseRLModule:
         )
 
         ev = self.evaluator
-        noise_progress_dir = getattr(ev, "noise_stage_progress_dir", NOISE_STAGE_PROGRESS_DIR)
-        noise_training_curve_path = getattr(
-            ev,
-            "noise_stage_training_curve_path",
-            NOISE_STAGE_TRAINING_CURVE_PATH,
-        )
-        noise_entropy_curve_path = getattr(
-            ev,
-            "noise_stage_entropy_curve_path",
-            NOISE_STAGE_ENTROPY_CURVE_PATH,
-        )
         ev.log("\n" + "=" * 60)
         ev.log("PHASE 5: SECOND-STAGE NOISE RL")
         ev.log(f"Fixed GELU/Softmax source={fixed_source}, label={fixed_label}")
@@ -197,7 +183,7 @@ class NoiseRLModule:
             "finalist_repeats": NOISE_STAGE_FINALIST_REPEATS,
             "shortlist_size": NOISE_STAGE_SHORTLIST_SIZE,
             "progress_plot_interval": NOISE_STAGE_PROGRESS_SAVE_INTERVAL,
-            "progress_plot_dir": noise_progress_dir,
+            "progress_plot_dir": NOISE_STAGE_PROGRESS_DIR,
             "stability_thresholds": {
                 split: dict(values)
                 for split, values in NOISE_STAGE_STABILITY_THRESHOLDS.items()
@@ -238,7 +224,7 @@ class NoiseRLModule:
             "  "
             f"CandidateConfirm(repeats={NOISE_STAGE_CONFIRM_REPEATS}) | "
             f"FinalistConfirm(repeats={NOISE_STAGE_FINALIST_REPEATS}, shortlist={NOISE_STAGE_SHORTLIST_SIZE}) | "
-            f"ProgressPlots(every={NOISE_STAGE_PROGRESS_SAVE_INTERVAL}, dir={noise_progress_dir})"
+            f"ProgressPlots(every={NOISE_STAGE_PROGRESS_SAVE_INTERVAL}, dir={NOISE_STAGE_PROGRESS_DIR})"
         )
         ev.log(
             "  "
@@ -247,7 +233,7 @@ class NoiseRLModule:
             f"proxy_ref={NOISE_STAGE_STABILITY_PROXY_STD_REF}, "
             f"penalty_scale={NOISE_STAGE_STABILITY_PENALTY_SCALE})"
         )
-        os.makedirs(noise_progress_dir, exist_ok=True)
+        os.makedirs(NOISE_STAGE_PROGRESS_DIR, exist_ok=True)
 
         with open(ev.noise_step_info_file, "w", encoding="utf-8") as f:
             f.write("=== Noise PPO StepInfo 中间结果日志 ===\n")
@@ -348,10 +334,8 @@ class NoiseRLModule:
             num_metrics=ev.get_num_metrics(),
             input_noise_allowed=INPUT_NOISE_ALLOWED_SCALING_FACTORS,
             weight_noise_allowed=WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
-            wffn1_noise_allowed=WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
             input_noise_cost_map=INPUT_NOISE_COST_MAP,
             weight_noise_cost_map=WEIGHT_NOISE_COST_MAP,
-            wffn1_noise_cost_map=WFFN1_NOISE_COST_MAP,
             input_noise_scaling_map=INPUT_NOISE_SCALING_MAP,
             wq_noise_scaling_map=WQ_NOISE_SCALING_MAP,
             wk_noise_scaling_map=WK_NOISE_SCALING_MAP,
@@ -361,7 +345,6 @@ class NoiseRLModule:
             wffn2_noise_scaling_map=WFFN2_NOISE_SCALING_MAP,
             input_noise_scaling_to_norm=INPUT_NOISE_SCALING_TO_NORM,
             weight_noise_scaling_to_norm=WEIGHT_NOISE_SCALING_TO_NORM,
-            wffn1_noise_scaling_to_norm=WFFN1_NOISE_SCALING_TO_NORM,
             noise_stage_sos_tokens=NOISE_STAGE_SOS_TOKENS,
             noise_stage_num_actions=NOISE_STAGE_NUM_ACTIONS,
             history_mask_value=HISTORY_MASK_VALUE,
@@ -1205,11 +1188,11 @@ class NoiseRLModule:
 
             if (episode + 1) % NOISE_STAGE_PROGRESS_SAVE_INTERVAL == 0:
                 progress_training_curve_path = os.path.join(
-                    noise_progress_dir,
+                    NOISE_STAGE_PROGRESS_DIR,
                     f"noise_ppo_training_curve_ep{episode + 1}.png",
                 )
                 progress_entropy_curve_path = os.path.join(
-                    noise_progress_dir,
+                    NOISE_STAGE_PROGRESS_DIR,
                     f"noise_ppo_entropy_curve_ep{episode + 1}.png",
                 )
                 _plot_noise_training_curves(
@@ -1307,8 +1290,8 @@ class NoiseRLModule:
         _plot_noise_training_curves(
             ev, episode_rewards, episode_losses, episode_metric1s, episode_metric2s, episode_entropies,
             base_loss=base_loss, base_p=base_p, base_s=base_s,
-            training_curve_path=noise_training_curve_path,
-            entropy_curve_path=noise_entropy_curve_path,
+            training_curve_path=NOISE_STAGE_TRAINING_CURVE_PATH,
+            entropy_curve_path=NOISE_STAGE_ENTROPY_CURVE_PATH,
             ppo_update_interval=PPO_UPDATE_INTERVAL,
             use_validation=USE_VALIDATION_FOR_REWARD,
         )
@@ -1681,14 +1664,13 @@ class _NoiseOptEnv:
 
     def __init__(self, total_layers, baseline_cost, baseline_metrics, evaluator,
                  fixed_gelu, fixed_softmax, constraint_limits=None, prev_metrics=None, num_metrics=2,
-                 input_noise_allowed=None, weight_noise_allowed=None, wffn1_noise_allowed=None,
-                 input_noise_cost_map=None, weight_noise_cost_map=None, wffn1_noise_cost_map=None,
+                 input_noise_allowed=None, weight_noise_allowed=None,
+                 input_noise_cost_map=None, weight_noise_cost_map=None,
                  input_noise_scaling_map=None,
                  wq_noise_scaling_map=None, wk_noise_scaling_map=None,
                  wv_noise_scaling_map=None, wo_noise_scaling_map=None,
                  wffn1_noise_scaling_map=None, wffn2_noise_scaling_map=None,
                  input_noise_scaling_to_norm=None, weight_noise_scaling_to_norm=None,
-                 wffn1_noise_scaling_to_norm=None,
                  noise_stage_sos_tokens=None, noise_stage_num_actions=7,
                  history_mask_value=0.0,
                  reward_threshold=0.01, reward_dense_scale=0.1,
@@ -1711,10 +1693,8 @@ class _NoiseOptEnv:
 
         self._input_noise_allowed = input_noise_allowed
         self._weight_noise_allowed = weight_noise_allowed
-        self._wffn1_allowed = wffn1_noise_allowed or weight_noise_allowed
         self._input_noise_cost_map = input_noise_cost_map
         self._weight_noise_cost_map = weight_noise_cost_map
-        self._wffn1_cost_map = wffn1_noise_cost_map or weight_noise_cost_map
         self._input_noise_scaling_map = input_noise_scaling_map
         self._wq_map = wq_noise_scaling_map
         self._wk_map = wk_noise_scaling_map
@@ -1724,7 +1704,6 @@ class _NoiseOptEnv:
         self._wffn2_map = wffn2_noise_scaling_map
         self._input_noise_to_norm = input_noise_scaling_to_norm
         self._weight_noise_to_norm = weight_noise_scaling_to_norm
-        self._wffn1_to_norm = wffn1_noise_scaling_to_norm or weight_noise_scaling_to_norm
         self._sos_tokens = noise_stage_sos_tokens
         self._num_actions = noise_stage_num_actions
         self._history_mask = history_mask_value
@@ -1764,13 +1743,11 @@ class _NoiseOptEnv:
 
         self.max_cost_per_layer = (
             self._input_noise_cost_map[max(self._input_noise_allowed)] +
-            5 * self._weight_noise_cost_map[max(self._weight_noise_allowed)] +
-            self._wffn1_cost_map[max(self._wffn1_allowed)]
+            6 * self._weight_noise_cost_map[max(self._weight_noise_allowed)]
         )
         self.expected_cost_per_layer = (
             np.mean([self._input_noise_cost_map[sf] for sf in self._input_noise_allowed]) +
-            5 * np.mean([self._weight_noise_cost_map[sf] for sf in self._weight_noise_allowed]) +
-            np.mean([self._wffn1_cost_map[sf] for sf in self._wffn1_allowed])
+            6 * np.mean([self._weight_noise_cost_map[sf] for sf in self._weight_noise_allowed])
         )
         self.current_episode_metrics = None
         self.last_reward_components = None
@@ -1798,7 +1775,7 @@ class _NoiseOptEnv:
             "wk": max(self._weight_noise_allowed),
             "wv": max(self._weight_noise_allowed),
             "wo": max(self._weight_noise_allowed),
-            "wffn1": max(self._wffn1_allowed),
+            "wffn1": max(self._weight_noise_allowed),
             "wffn2": max(self._weight_noise_allowed),
         }
 
@@ -1994,7 +1971,7 @@ class _NoiseOptEnv:
             self._weight_noise_to_norm[self.prev_scalings["wk"]],
             self._weight_noise_to_norm[self.prev_scalings["wv"]],
             self._weight_noise_to_norm[self.prev_scalings["wo"]],
-            self._wffn1_to_norm[self.prev_scalings["wffn1"]],
+            self._weight_noise_to_norm[self.prev_scalings["wffn1"]],
             self._weight_noise_to_norm[self.prev_scalings["wffn2"]],
         ], dtype=np.float32)
 
@@ -2058,7 +2035,7 @@ class _NoiseOptEnv:
             self._weight_noise_cost_map[wk_sf] +
             self._weight_noise_cost_map[wv_sf] +
             self._weight_noise_cost_map[wo_sf] +
-            self._wffn1_cost_map[wffn1_sf] +
+            self._weight_noise_cost_map[wffn1_sf] +
             self._weight_noise_cost_map[wffn2_sf]
         )
         self.accumulated_cost += step_cost
@@ -2082,7 +2059,7 @@ class _NoiseOptEnv:
         self.wk_history[self.current_layer] = self._weight_noise_to_norm[wk_sf]
         self.wv_history[self.current_layer] = self._weight_noise_to_norm[wv_sf]
         self.wo_history[self.current_layer] = self._weight_noise_to_norm[wo_sf]
-        self.wffn1_history[self.current_layer] = self._wffn1_to_norm[wffn1_sf]
+        self.wffn1_history[self.current_layer] = self._weight_noise_to_norm[wffn1_sf]
         self.wffn2_history[self.current_layer] = self._weight_noise_to_norm[wffn2_sf]
 
         dense_reward = self._compute_dense_step_reward(step_cost)
