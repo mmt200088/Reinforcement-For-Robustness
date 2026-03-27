@@ -353,6 +353,55 @@ is_positive_integer() {
     [[ "$1" =~ ^[1-9][0-9]*$ ]]
 }
 
+usage() {
+    cat <<'EOF'
+Usage:
+  bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [degree] [options]
+
+Required positional args:
+  lora_r
+  lora_alpha
+  logfile_path
+  rl_lr
+  degree
+
+Common options:
+  --batch_size N
+      Sets both --batch_size and --micro_batch_size to N.
+      Also propagates the same batch size into rl_tune.py evaluation
+      and layer_importance_evaluator.py dataloaders.
+      Default: 16
+
+  --stage1-rl-episodes N
+      Sets the Stage-1 RL episode count. Default: 51000
+      Must be >= 170 when Stage-1 RL is enabled.
+
+  --stage2-rl-episodes N
+      Sets the Stage-2 noise RL episode count. Default: 40000
+      Must be >= 170 when Stage-2 RL is enabled.
+
+  --model DATASET
+      Supported: mrpc, sst2, stsb, cola, qnli, rte, wnli
+
+  --skip-stage1-rl
+  --skip-stage1-final-eval
+  --skip-noise-rl
+  --skip-noise-final-eval
+  --final-eval-source search|json|manual
+  --final-eval-config PATH
+  --noise-eval-source search|json|manual
+  --noise-eval-config PATH
+  --noise-eval-repeat N
+  -h, --help
+
+Examples:
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --batch_size 8 --model mrpc
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --stage1-rl-episodes 1020 --stage2-rl-episodes 3400 --model mrpc
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc
+EOF
+}
+
 if [ "$#" -eq 1 ] && { [ "$1" = "-h" ] || [ "$1" = "--help" ]; }; then
     usage
     exit 0
@@ -392,6 +441,12 @@ SKIP_STAGE1_RL="false"
 SKIP_STAGE1_FINAL_EVAL="false"
 SKIP_NOISE_FINAL_EVAL="false"
 DATASET="mrpc"
+BATCH_SIZE="16"
+STAGE1_RL_EPISODES="51000"
+STAGE2_RL_EPISODES="40000"
+STAGE1_RL_EPISODES_SPECIFIED="false"
+STAGE2_RL_EPISODES_SPECIFIED="false"
+MIN_RL_EPISODES="170"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -464,6 +519,23 @@ while [ "$#" -gt 0 ]; do
             NOISE_EVAL_REPEAT_N="$2"
             shift 2
             ;;
+        --batch_size|--batch-size)
+            require_option_value "$@"
+            BATCH_SIZE="$2"
+            shift 2
+            ;;
+        --stage1-rl-episodes)
+            require_option_value "$@"
+            STAGE1_RL_EPISODES="$2"
+            STAGE1_RL_EPISODES_SPECIFIED="true"
+            shift 2
+            ;;
+        --stage2-rl-episodes)
+            require_option_value "$@"
+            STAGE2_RL_EPISODES="$2"
+            STAGE2_RL_EPISODES_SPECIFIED="true"
+            shift 2
+            ;;
         --skip-stage1-rl)
             SKIP_STAGE1_RL="true"
             shift 1
@@ -517,6 +589,34 @@ esac
 
 if ! is_positive_integer "$NOISE_EVAL_REPEAT_N"; then
     error_exit "--noise-eval-repeat 必须是正整数，当前值为 '$NOISE_EVAL_REPEAT_N'。"
+fi
+
+if ! is_positive_integer "$BATCH_SIZE"; then
+    error_exit "--batch_size must be a positive integer, got '$BATCH_SIZE'."
+fi
+
+if ! is_positive_integer "$STAGE1_RL_EPISODES"; then
+    error_exit "--stage1-rl-episodes must be a positive integer, got '$STAGE1_RL_EPISODES'."
+fi
+
+if ! is_positive_integer "$STAGE2_RL_EPISODES"; then
+    error_exit "--stage2-rl-episodes must be a positive integer, got '$STAGE2_RL_EPISODES'."
+fi
+
+if [ "$SKIP_STAGE1_RL" = "true" ] && [ "$STAGE1_RL_EPISODES_SPECIFIED" = "true" ]; then
+    error_exit "--stage1-rl-episodes cannot be used together with --skip-stage1-rl."
+fi
+
+if [ "$SKIP_NOISE_RL" = "true" ] && [ "$STAGE2_RL_EPISODES_SPECIFIED" = "true" ]; then
+    error_exit "--stage2-rl-episodes cannot be used together with --skip-noise-rl."
+fi
+
+if [ "$SKIP_STAGE1_RL" = "false" ] && [ "$STAGE1_RL_EPISODES" -lt "$MIN_RL_EPISODES" ]; then
+    error_exit "--stage1-rl-episodes must be >= $MIN_RL_EPISODES so Stage-1 PPO can update at least once."
+fi
+
+if [ "$SKIP_NOISE_RL" = "false" ] && [ "$STAGE2_RL_EPISODES" -lt "$MIN_RL_EPISODES" ]; then
+    error_exit "--stage2-rl-episodes must be >= $MIN_RL_EPISODES so Stage-2 PPO can update at least once."
 fi
 
 if [ "$NOISE_EVAL_SOURCE" = "manual" ]; then
@@ -591,8 +691,8 @@ CMD=(
     --base_model "$BASE_MODEL"
     --data_path "$DATA_PATH"
     --output_dir "$RUN_ROOT"
-    --batch_size 16
-    --micro_batch_size 16
+    --batch_size "$BATCH_SIZE"
+    --micro_batch_size "$BATCH_SIZE"
     --num_epochs 1
     --learning_rate 2e-4
     --cutoff_len 256
@@ -604,6 +704,10 @@ CMD=(
     --lora_alpha "$LORA_ALPHA"
     --rl_lr "$RL_LR"
     --degree "$DEGREE"
+    --stage1_rl_episodes "$STAGE1_RL_EPISODES"
+    --stage2_rl_episodes "$STAGE2_RL_EPISODES"
+    --stage1_rl_episodes_specified "$STAGE1_RL_EPISODES_SPECIFIED"
+    --stage2_rl_episodes_specified "$STAGE2_RL_EPISODES_SPECIFIED"
     --use_ist
     --final_eval_config_source "$FINAL_EVAL_SOURCE"
     --final_eval_config_path "$FINAL_EVAL_CONFIG_PATH"
@@ -646,6 +750,9 @@ fi
 echo "Requested log filename: $RAW_LOGFILE_PATH"
 echo "Resolved run root: $RUN_ROOT"
 echo "Resolved nohup log: $LOGFILE_PATH"
+echo "Batch size: $BATCH_SIZE (syncs --batch_size and --micro_batch_size)"
+echo "Stage-1 RL episodes: $STAGE1_RL_EPISODES"
+echo "Stage-2 RL episodes: $STAGE2_RL_EPISODES"
 if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
     echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 else
