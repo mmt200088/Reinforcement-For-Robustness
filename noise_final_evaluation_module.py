@@ -59,9 +59,12 @@ class NoiseFinalEvaluationModule:
         self.cost_equivalent_trials = max(0, int(cost_equivalent_trials))
         self.budget_equivalent_trials = max(0, int(budget_equivalent_trials))
         self.repeat_n = max(5, int(repeat_n))
-        self.results_dir = results_dir or os.path.join(
-            "experiment_results", "noise_final_evaluation"
+        default_results_dir = getattr(
+            evaluator,
+            "noise_final_eval_dir",
+            os.path.join("experiment_results", "noise_final_evaluation"),
         )
+        self.results_dir = results_dir or default_results_dir
 
         from function_handler import (
             INPUT_NOISE_ALLOWED_SCALING_FACTORS,

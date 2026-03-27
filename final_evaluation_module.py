@@ -30,7 +30,12 @@ class FinalEvaluationModule:
         self.permutation_trials = max(0, int(permutation_trials))
         self.cost_equivalent_trials = max(0, int(cost_equivalent_trials))
         self.budget_equivalent_trials = max(0, int(budget_equivalent_trials))
-        self.results_dir = results_dir or os.path.join("experiment_results", "final_evaluation")
+        default_results_dir = getattr(
+            evaluator,
+            "stage1_final_eval_dir",
+            os.path.join("experiment_results", "final_evaluation"),
+        )
+        self.results_dir = results_dir or default_results_dir
 
         self.allowed_gelu_selected = [0, 1, 2, 4]
         self.allowed_gelu_random = [1, 2, 4]

@@ -131,6 +131,21 @@ class NoiseRLModule:
         )
 
         ev = self.evaluator
+        noise_progress_dir = getattr(
+            ev,
+            "noise_stage_progress_dir",
+            NOISE_STAGE_PROGRESS_DIR,
+        )
+        noise_training_curve_path = getattr(
+            ev,
+            "noise_stage_training_curve_path",
+            NOISE_STAGE_TRAINING_CURVE_PATH,
+        )
+        noise_entropy_curve_path = getattr(
+            ev,
+            "noise_stage_entropy_curve_path",
+            NOISE_STAGE_ENTROPY_CURVE_PATH,
+        )
         ev.log("\n" + "=" * 60)
         ev.log("PHASE 5: SECOND-STAGE NOISE RL")
         ev.log(f"Fixed GELU/Softmax source={fixed_source}, label={fixed_label}")
@@ -262,7 +277,7 @@ class NoiseRLModule:
             "finalist_repeats": NOISE_STAGE_FINALIST_REPEATS,
             "shortlist_size": NOISE_STAGE_SHORTLIST_SIZE,
             "progress_plot_interval": NOISE_STAGE_PROGRESS_SAVE_INTERVAL,
-            "progress_plot_dir": NOISE_STAGE_PROGRESS_DIR,
+            "progress_plot_dir": noise_progress_dir,
             "stability_thresholds": {
                 split: dict(values)
                 for split, values in NOISE_STAGE_STABILITY_THRESHOLDS.items()
@@ -303,7 +318,7 @@ class NoiseRLModule:
             "  "
             f"CandidateConfirm(repeats={NOISE_STAGE_CONFIRM_REPEATS}) | "
             f"FinalistConfirm(repeats={NOISE_STAGE_FINALIST_REPEATS}, shortlist={NOISE_STAGE_SHORTLIST_SIZE}) | "
-            f"ProgressPlots(every={NOISE_STAGE_PROGRESS_SAVE_INTERVAL}, dir={NOISE_STAGE_PROGRESS_DIR})"
+            f"ProgressPlots(every={NOISE_STAGE_PROGRESS_SAVE_INTERVAL}, dir={noise_progress_dir})"
         )
         ev.log(
             "  "
@@ -312,7 +327,7 @@ class NoiseRLModule:
             f"proxy_ref={NOISE_STAGE_STABILITY_PROXY_STD_REF}, "
             f"penalty_scale={NOISE_STAGE_STABILITY_PENALTY_SCALE})"
         )
-        os.makedirs(NOISE_STAGE_PROGRESS_DIR, exist_ok=True)
+        os.makedirs(noise_progress_dir, exist_ok=True)
 
         with open(ev.noise_step_info_file, "w", encoding="utf-8") as f:
             f.write("=== Noise PPO StepInfo 中间结果日志 ===\n")
@@ -1304,11 +1319,11 @@ class NoiseRLModule:
 
             if (episode + 1) % NOISE_STAGE_PROGRESS_SAVE_INTERVAL == 0:
                 progress_training_curve_path = os.path.join(
-                    NOISE_STAGE_PROGRESS_DIR,
+                    noise_progress_dir,
                     f"noise_ppo_training_curve_ep{episode + 1}.png",
                 )
                 progress_entropy_curve_path = os.path.join(
-                    NOISE_STAGE_PROGRESS_DIR,
+                    noise_progress_dir,
                     f"noise_ppo_entropy_curve_ep{episode + 1}.png",
                 )
                 _plot_noise_training_curves(
@@ -1406,8 +1421,8 @@ class NoiseRLModule:
         _plot_noise_training_curves(
             ev, episode_rewards, episode_losses, episode_metric1s, episode_metric2s, episode_entropies,
             base_loss=base_loss, base_p=base_p, base_s=base_s,
-            training_curve_path=NOISE_STAGE_TRAINING_CURVE_PATH,
-            entropy_curve_path=NOISE_STAGE_ENTROPY_CURVE_PATH,
+            training_curve_path=noise_training_curve_path,
+            entropy_curve_path=noise_entropy_curve_path,
             ppo_update_interval=PPO_UPDATE_INTERVAL,
             use_validation=USE_VALIDATION_FOR_REWARD,
         )
