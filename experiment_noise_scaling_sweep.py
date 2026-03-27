@@ -31,8 +31,10 @@
 三、默认 scaling factor 扫描范围
 1. x 使用：
    {22, 24, 26, 28, 30}
-2. wq / wk / wv / wo / wffn1 / wffn2 使用：
+2. wq / wk / wv / wo / wffn2 使用：
    {14, 16, 18, 20, 22}
+3. wffn1 使用：
+   {16, 18, 20, 22, 24}
 
 四、图像含义
 每个数据集输出一张总图，图中每条曲线对应一个噪声对象（x / wq / wk / ...）。
@@ -117,6 +119,7 @@ from transformers import (
 from function_handler import (
     INPUT_NOISE_ALLOWED_SCALING_FACTORS,
     WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
+    WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
     get_input_noise_variance,
 )
 from layer_importance_evaluator import LayerImportanceEvaluator
@@ -225,7 +228,7 @@ NOISE_TARGETS = {
     "wffn1": {
         "full_key": "wffn1_noise_scaling_factors",
         "display_name": "Wffn1",
-        "allowed_values": tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+        "allowed_values": tuple(WFFN1_NOISE_ALLOWED_SCALING_FACTORS),
         "distribution": "encoding",
     },
     "wffn2": {
@@ -845,7 +848,8 @@ def build_reference_text(
             "",
             "Factor ranges:",
             f"x: {list(INPUT_NOISE_ALLOWED_SCALING_FACTORS)}",
-            f"W: {list(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)}",
+            f"W (wq/wk/wv/wo/wffn2): {list(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)}",
+            f"Wffn1: {list(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)}",
         ]
     )
     return "\n".join(lines)

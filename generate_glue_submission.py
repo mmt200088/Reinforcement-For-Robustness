@@ -56,7 +56,8 @@ GLUE 基准测试提交文件生成器
 
 ▶ 噪声 Scaling Factor 配置 (--noise_config):
   每个任务包含 7 个数组 (x, wq, wk, wv, wo, wffn1, wffn2)，长度 = 模型层数。
-  x 取值 {20, 22, 24, 26, 28, 30}；wq/wk/wv/wo/wffn1/wffn2 取值 {10, 12, 14, 16, 18, 20, 22}。
+  x 取值 {22, 24, 26, 28, 30}；wq/wk/wv/wo/wffn2 取值 {14, 16, 18, 20, 22}；
+  wffn1 取值 {16, 18, 20, 22, 24}。
   数值越大 → 噪声越大 → 隐私保护越强。
 
   示例 (glue_noise_configs_best_ppo.json):
@@ -128,6 +129,7 @@ from function_handler import (
     ReversibleLayerHandler,
     INPUT_NOISE_ALLOWED_SCALING_FACTORS,
     WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
+    WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
 )
 
 sys.setrecursionlimit(50000)
@@ -142,6 +144,15 @@ NOISE_HANDLER_MAP = {
     'wo':    ('replace_layer_attention_output_noise',   'encoding'),
     'wffn1': ('replace_layer_ffn1_noise',              'encoding'),
     'wffn2': ('replace_layer_ffn2_noise',              'encoding'),
+}
+NOISE_ALLOWED_SCALING_FACTORS = {
+    'x': tuple(INPUT_NOISE_ALLOWED_SCALING_FACTORS),
+    'wq': tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+    'wk': tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+    'wv': tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+    'wo': tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+    'wffn1': tuple(WFFN1_NOISE_ALLOWED_SCALING_FACTORS),
+    'wffn2': tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
 }
 
 # ==================== GLUE Task Registry ====================
@@ -282,9 +293,7 @@ def apply_noise_configuration(handler, layers_attribute, noise_config):
     for noise_key in NOISE_KEYS:
         method_name, distribution = NOISE_HANDLER_MAP[noise_key]
         factors = noise_config[noise_key]
-
-        allowed = (INPUT_NOISE_ALLOWED_SCALING_FACTORS if noise_key == 'x'
-                   else WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        allowed = NOISE_ALLOWED_SCALING_FACTORS[noise_key]
 
         sf_map = {sf: [] for sf in allowed}
         for idx, sf in enumerate(factors):
