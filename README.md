@@ -288,6 +288,10 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model qnli
 只进行第二阶段rl  
 `CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc`
 
+只进行第二阶段最终评估
+
+`CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --skip-noise-rl --noise-eval-repeat 200 --model mrpc`
+
 完全跳过两个阶段的搜索/训练，手动指定所有配置只做后续评估：
 
 ```bash
