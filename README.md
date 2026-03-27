@@ -360,3 +360,73 @@ bash run_all_experiments.sh --quick
 单独运行某个版块
 python experiment_single_layer_degradation.py --tasks sst2 mrpc --device cuda
 python experiment_block1_monotonicity.py --tasks sst2 --n_bootstrap 100 --device cuda
+
+### `--batch_size` 可选项
+
+可以通过命令行额外传入 `--batch_size N` 来覆盖当前脚本默认的批大小设置。
+
+| 参数 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--batch_size N` | 统一设置 `llama_7B_LayerImportance.sh` 启动后强化学习与评估阶段使用的批大小。脚本会同步把 `--batch_size` 和 `--micro_batch_size` 都设为 `N`，并继续传递给 `rl_tune.py` 和 `layer_importance_evaluator.py`。 | `16` |
+
+使用说明：
+
+- `N` 必须是正整数，例如 `4`、`8`、`16`、`32`。
+- 这个参数会影响 `Trainer` 的评估批大小，以及 `layer_importance_evaluator.py` 内部各个 dataloader 的 batch size。
+- 数值调大后通常吞吐会更高，但显存占用也会更高；如果出现 OOM，建议先降到 `8` 或 `4`。
+- 当前脚本为了保持原有行为一致，会把 `micro_batch_size` 一并设置成和 `batch_size` 相同的值。
+
+示例：
+
+```bash
+# 使用 batch size = 8 运行 MRPC
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --batch_size 8 --model mrpc
+
+# 使用 batch size = 4，只运行第二阶段 noise RL
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --batch_size 4 \
+  --skip-stage1-rl \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval \
+  --noise-eval-repeat 200 \
+  --model mrpc
+```
+
+### `--stage1-rl-episodes` / `--stage2-rl-episodes` 可选项
+
+可以通过命令行额外传入第一阶段和第二阶段强化学习轮数，分别控制 Stage-1 GELU/Softmax RL 和 Stage-2 noise RL 的 episode 数。
+
+| 参数 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--stage1-rl-episodes N` | 设置第一阶段强化学习轮数，对应 `layer_importance_evaluator.py` 中的 Stage-1 PPO 搜索轮数。 | `51000` |
+| `--stage2-rl-episodes N` | 设置第二阶段强化学习轮数，对应 `noise_rl_module.py` 中的 Stage-2 noise PPO 搜索轮数。 | `40000` |
+
+使用说明：
+
+- `N` 必须是正整数。
+- 当对应阶段没有被跳过时，`N` 必须大于等于 `170`。
+  这是因为当前 `PPO_UPDATE_INTERVAL=170`，如果轮数小于 `170`，PPO 将无法完成一次真正的策略更新。
+- 如果使用了 `--skip-stage1-rl`，就不能再同时显式传入 `--stage1-rl-episodes`。
+- 如果使用了 `--skip-noise-rl`，就不能再同时显式传入 `--stage2-rl-episodes`。
+- 这两个参数只控制强化学习搜索轮数，不影响最终评估重复次数；最终评估重复次数仍然由 `--noise-eval-repeat` 等参数控制。
+
+示例：
+
+```bash
+# 同时自定义第一阶段和第二阶段 RL 轮数
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --stage1-rl-episodes 1020 \
+  --stage2-rl-episodes 3400 \
+  --model mrpc
+
+# 跳过第一阶段，只运行第二阶段 noise RL，并把第二阶段轮数改成 680
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --skip-stage1-rl \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval \
+  --stage2-rl-episodes 680 \
+  --noise-eval-repeat 200 \
+  --model mrpc
+```

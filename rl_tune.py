@@ -71,6 +71,21 @@ def parse_bool_flag(raw_value, flag_name):
     )
 
 
+def parse_positive_int(raw_value, flag_name):
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"Invalid positive integer for {flag_name}: {raw_value!r}."
+        ) from None
+
+    if value <= 0:
+        raise ValueError(
+            f"Invalid positive integer for {flag_name}: {raw_value!r}."
+        )
+    return value
+
+
 def train(
         # model/data params
         base_model: str = "",  # the only required argument
@@ -111,6 +126,10 @@ def train(
         use_rst: bool = False,
         rl_lr: float = 1e-4, 
         degree: int = 4,  # degree of polynomial for approximation
+        stage1_rl_episodes: int = 51000,
+        stage2_rl_episodes: int = 40000,
+        stage1_rl_episodes_specified: bool = False,
+        stage2_rl_episodes_specified: bool = False,
         final_eval_config_source: str = "search",  # search | json | manual
         final_eval_config_path: str = "glue_configs_best_ppo.json",
         manual_final_gelu: str = "",
@@ -145,6 +164,20 @@ def train(
     skip_noise_final_eval = parse_bool_flag(
         skip_noise_final_eval, "skip_noise_final_eval"
     )
+    stage1_rl_episodes_specified = parse_bool_flag(
+        stage1_rl_episodes_specified, "stage1_rl_episodes_specified"
+    )
+    stage2_rl_episodes_specified = parse_bool_flag(
+        stage2_rl_episodes_specified, "stage2_rl_episodes_specified"
+    )
+    batch_size = parse_positive_int(batch_size, "batch_size")
+    micro_batch_size = parse_positive_int(micro_batch_size, "micro_batch_size")
+    stage1_rl_episodes = parse_positive_int(
+        stage1_rl_episodes, "stage1_rl_episodes"
+    )
+    stage2_rl_episodes = parse_positive_int(
+        stage2_rl_episodes, "stage2_rl_episodes"
+    )
 
     print(
         f"Finetuning model with params:\n"
@@ -176,6 +209,10 @@ def train(
         f"final_eval_config_path: {final_eval_config_path}\n"
         f"manual_final_gelu: {manual_final_gelu}\n"
         f"manual_final_softmax: {manual_final_softmax}\n"
+        f"stage1_rl_episodes: {stage1_rl_episodes}\n"
+        f"stage2_rl_episodes: {stage2_rl_episodes}\n"
+        f"stage1_rl_episodes_specified: {stage1_rl_episodes_specified}\n"
+        f"stage2_rl_episodes_specified: {stage2_rl_episodes_specified}\n"
         f"skip_noise_rl: {skip_noise_rl}\n"
         f"noise_eval_config_source: {noise_eval_config_source}\n"
         f"noise_eval_config_path: {noise_eval_config_path}\n"
@@ -247,7 +284,7 @@ def train(
         )
     else:
         config = AutoConfig.from_pretrained(base_model)
-        # config.use_causal_lm = False  # 关键！关闭因果掩码 for mrpc
+        # config.use_causal_lm = False  # Key: disable causal mask for MRPC.
         _dp = data_path.lower()
         if _dp == "stsb":
             _num_labels = 1
@@ -299,7 +336,7 @@ def train(
         else:
             return result
 
-    # Tokenize函数
+    # Tokenize helper.
     def tokenize_fn(examples):
         _dp = data_path.lower()
         if _dp in ("sst2", "cola"):
@@ -433,8 +470,8 @@ def train(
     #     train_data = data["train"].shuffle().map(generate_and_tokenize_prompt)
     #     val_data = None
     
-    # MNLI 需要特殊处理：有 validation_matched 和 validation_mismatched 两个验证集
-    val_data_mm = None  # MNLI mismatched 验证集
+    # MNLI needs special handling: matched and mismatched validation splits.
+    val_data_mm = None  # MNLI mismatched validation split.
     
     if val_set_size > 0:
         is_mnli = data_path.lower() == 'mnli'
@@ -462,7 +499,7 @@ def train(
             print(f"Loading dataset: {data['validation']}")
             train_data = data["train"].shuffle().map(tokenize_fn)
             val_data = data["validation"].shuffle().map(tokenize_fn)
-            # 当前 RL 流程不使用官方 test 集，先直接关闭这一路读取。
+            # The current RL flow does not use the official test split.
             # test_data = data["test"].shuffle().map(tokenize_fn)
             
             print(f"After tokenize: {val_data[0]}")
@@ -472,7 +509,7 @@ def train(
             
             print(f"After add label: {val_data[0]}")
             
-            # 设置PyTorch格式
+            # Set PyTorch tensor format.
             columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
             train_data.set_format(type="torch", columns=columns)
             val_data.set_format(type="torch", columns=columns)
@@ -493,9 +530,9 @@ def train(
     data_collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
         padding= "max_length",
-        max_length=128,     # 当padding="max_length"时生效
-        return_tensors="pt", # 返回PyTorch张量
-        pad_to_multiple_of=8   # 返回注意力掩码
+        max_length=128,     # Effective when padding="max_length"
+        return_tensors="pt", # Return PyTorch tensors
+        pad_to_multiple_of=8   # Return attention masks
     )
     
     # if not ddp and torch.cuda.device_count() > 1:
@@ -510,15 +547,20 @@ def train(
     if use_ist:
         from layer_importance_evaluator import LayerImportanceEvaluator
         print('Reinforcement Learning to evaluate layer sensitivity to approximation')
-        # 敏锐度优化PDF：传递 data_path 用于数据集检测和指标选择
+        # Pass data_path so evaluator can detect dataset type and metrics.
         importance_evaluator = LayerImportanceEvaluator(
             model=model, 
             train_data=train_data, 
-            # 这里沿用 evaluator 的历史参数名，实际传入的是 validation 数据。
+            # Keep the historical argument name; we pass validation data here.
             test_data=val_data, 
             data_collator=data_collator, 
+            batch_size=batch_size,
             rl_lr=rl_lr, 
             degree=degree,
+            stage1_rl_episodes=stage1_rl_episodes,
+            stage2_rl_episodes=stage2_rl_episodes,
+            stage1_rl_episodes_specified=stage1_rl_episodes_specified,
+            stage2_rl_episodes_specified=stage2_rl_episodes_specified,
             run_output_dir=run_output_dir,
             final_eval_config_source=final_eval_config_source,
             final_eval_config_path=final_eval_config_path,
@@ -554,8 +596,8 @@ def train(
         eval_dataset=val_data,
         args=transformers.TrainingArguments(
             output_dir=trainer_output_dir,
-            per_device_eval_batch_size=16,  # 推理批次大小
-            disable_tqdm=False,  # 可选进度条控制
+            per_device_eval_batch_size=batch_size,  # 推理批次大小
+            disable_tqdm=False,  # Optional progress bar control
             # per_device_train_batch_size=micro_batch_size,
             # gradient_accumulation_steps=gradient_accumulation_steps,
             # warmup_steps=100,
@@ -610,8 +652,8 @@ def train(
     for _ in range(1):
         print(f"Round {_} of evaluation")
         
-        print(val_data[0])  # 应为list[int]
-        print(val_data[0])   # 应一致
+        print(val_data[0])  # Should be list[int]
+        print(val_data[0])   # Should be consistent
 
         eval_results = trainer.evaluate(eval_dataset=val_data)
         final_loss = eval_results["eval_loss"] if "eval_loss" in eval_results else None
@@ -648,3 +690,4 @@ def generate_prompt(data_point):
 
 if __name__ == "__main__":
     fire.Fire(train)
+

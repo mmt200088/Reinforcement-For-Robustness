@@ -2084,6 +2084,11 @@ class TransformerOptEnv:
 
 class LayerImportanceEvaluator(TrainerCallback):
     def __init__(self, model, train_data, test_data, data_collator, rl_lr=None, degree=None,
+                 batch_size=16,
+                 stage1_rl_episodes=PPO_MAX_EPISODES,
+                 stage2_rl_episodes=40000,
+                 stage1_rl_episodes_specified=False,
+                 stage2_rl_episodes_specified=False,
                  device='cuda', data_path='stsb', test_data_mm=None,
                  run_output_dir='',
                  final_eval_config_source='search',
@@ -2117,6 +2122,19 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.model = model
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.data_collator = data_collator
+        self.batch_size = max(1, int(batch_size))
+        self.stage1_rl_episodes = self._coerce_positive_int(
+            stage1_rl_episodes, 'stage1_rl_episodes'
+        )
+        self.stage2_rl_episodes = self._coerce_positive_int(
+            stage2_rl_episodes, 'stage2_rl_episodes'
+        )
+        self.stage1_rl_episodes_specified = self._coerce_bool_flag(
+            stage1_rl_episodes_specified, 'stage1_rl_episodes_specified'
+        )
+        self.stage2_rl_episodes_specified = self._coerce_bool_flag(
+            stage2_rl_episodes_specified, 'stage2_rl_episodes_specified'
+        )
         
         # ==================== 敏锐度优化PDF：数据集检测与指标选择 ====================
         self.data_path = data_path
@@ -2124,12 +2142,27 @@ class LayerImportanceEvaluator(TrainerCallback):
         self._log_task_type()
         
         # 训练集用于RL训练，验证集用于最终评估
-        self.dataloader_train = DataLoader(train_data, batch_size=16, shuffle=False, collate_fn=data_collator)
-        self.dataloader_test = DataLoader(test_data, batch_size=16, shuffle=False, collate_fn=data_collator)
+        self.dataloader_train = DataLoader(
+            train_data,
+            batch_size=self.batch_size,
+            shuffle=False,
+            collate_fn=data_collator,
+        )
+        self.dataloader_test = DataLoader(
+            test_data,
+            batch_size=self.batch_size,
+            shuffle=False,
+            collate_fn=data_collator,
+        )
         
         # MNLI mismatched 验证集（仅 MNLI 需要）
         if test_data_mm is not None:
-            self.dataloader_test_mm = DataLoader(test_data_mm, batch_size=16, shuffle=False, collate_fn=data_collator)
+            self.dataloader_test_mm = DataLoader(
+                test_data_mm,
+                batch_size=self.batch_size,
+                shuffle=False,
+                collate_fn=data_collator,
+            )
         else:
             self.dataloader_test_mm = None
 
@@ -2228,6 +2261,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"[Info] PPO LR resolved from rl_lr={self.rl_lr_raw!r} -> "
                 f"{self.ppo_lr_initial:.6g} ({self.ppo_lr_mode})\n"
             )
+            f.write(
+                f"[Info] Stage-1 RL episodes: {self.stage1_rl_episodes} | "
+                f"Stage-2 RL episodes: {self.stage2_rl_episodes}\n"
+            )
             if self.run_output_dir:
                 f.write(f"[Info] Unified run output dir: {self.run_output_dir}\n")
         if self.noise_log_file != self.log_file:
@@ -2238,12 +2275,16 @@ class LayerImportanceEvaluator(TrainerCallback):
                     f"[Info] PPO LR resolved from rl_lr={self.rl_lr_raw!r} -> "
                     f"{self.ppo_lr_initial:.6g} ({self.ppo_lr_mode})\n"
                 )
+                f.write(
+                    f"[Info] Stage-1 RL episodes: {self.stage1_rl_episodes} | "
+                    f"Stage-2 RL episodes: {self.stage2_rl_episodes}\n"
+                )
                 if self.run_output_dir:
                     f.write(f"[Info] Unified run output dir: {self.run_output_dir}\n")
         
         # ==================== 策略二：动态超参数调度状态 ====================
         self.current_episode = 0
-        self.total_episodes = PPO_MAX_EPISODES
+        self.total_episodes = self.stage1_rl_episodes
         self.current_entropy_coef = PPO_ENTROPY_INITIAL
         self.current_lr = self.ppo_lr_initial
         
@@ -2307,12 +2348,27 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
             )
 
+        if self.skip_stage1_rl and (
+            self.stage1_rl_episodes_specified
+            or self.stage1_rl_episodes != PPO_MAX_EPISODES
+        ):
+            raise ValueError(
+                "stage1_rl_episodes was explicitly set, but skip_stage1_rl=True. "
+                "Remove --stage1-rl-episodes or disable --skip-stage1-rl."
+            )
+
         if (not self.skip_stage1_rl) and self.final_eval_config_source != 'search':
             raise ValueError(
                 "检测到第一阶段 RL/贪心搜索将执行，但 final_eval_config_source 不是 'search'。"
                 "为避免“前面跑 RL、后面却用手动/JSON 配置评估”的流程混用，"
                 "执行第一阶段 RL 时只能使用 search。"
                 "若要使用 json/manual，请设置 skip_stage1_rl=True。"
+            )
+
+        if (not self.skip_stage1_rl) and self.stage1_rl_episodes < PPO_UPDATE_INTERVAL:
+            raise ValueError(
+                f"stage1_rl_episodes={self.stage1_rl_episodes} is too small. "
+                f"It must be >= PPO_UPDATE_INTERVAL ({PPO_UPDATE_INTERVAL}) so Stage-1 PPO can update at least once."
             )
 
         if self.final_eval_config_source == 'manual':
@@ -2329,12 +2385,27 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "请改用 json 或 manual，或设置 skip_noise_rl=False。"
             )
 
+        if self.skip_noise_rl and (
+            self.stage2_rl_episodes_specified
+            or self.stage2_rl_episodes != 40000
+        ):
+            raise ValueError(
+                "stage2_rl_episodes was explicitly set, but skip_noise_rl=True. "
+                "Remove --stage2-rl-episodes or disable --skip-noise-rl."
+            )
+
         if (not self.skip_noise_rl) and (not self.skip_noise_final_eval) and self.noise_eval_config_source != 'search':
             raise ValueError(
                 "检测到第二阶段噪声 RL 将执行，且噪声最终评估未跳过，但 noise_eval_config_source 不是 'search'。"
                 "为避免“前面跑噪声 RL、后面却用手动/JSON 配置评估”的流程混用，"
                 "执行噪声 RL 且保留噪声最终评估时只能使用 search。"
                 "若要使用 json/manual，请设置 skip_noise_rl=True。"
+            )
+
+        if (not self.skip_noise_rl) and self.stage2_rl_episodes < PPO_UPDATE_INTERVAL:
+            raise ValueError(
+                f"stage2_rl_episodes={self.stage2_rl_episodes} is too small. "
+                f"It must be >= PPO_UPDATE_INTERVAL ({PPO_UPDATE_INTERVAL}) so Stage-2 PPO can update at least once."
             )
 
         if self.noise_eval_config_source == 'manual' and self.manual_noise_config is None:
@@ -2363,6 +2434,21 @@ class LayerImportanceEvaluator(TrainerCallback):
             f"Invalid boolean value for {flag_name}: {raw_value!r}. "
             "Expected one of: true/false/1/0/yes/no."
         )
+
+    @staticmethod
+    def _coerce_positive_int(raw_value, flag_name):
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Invalid positive integer for {flag_name}: {raw_value!r}."
+            ) from None
+
+        if value <= 0:
+            raise ValueError(
+                f"Invalid positive integer for {flag_name}: {raw_value!r}."
+            )
+        return value
     
     def _detect_task_type(self):
         """
@@ -2430,7 +2516,12 @@ class LayerImportanceEvaluator(TrainerCallback):
     def _make_dataloader(self, dataset):
         if dataset is None:
             return None
-        return DataLoader(dataset, batch_size=16, shuffle=False, collate_fn=self.data_collator)
+        return DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            collate_fn=self.data_collator,
+        )
 
     def _register_dataset_split(self, split_name, dataset, dataset_mm=None):
         if dataset is None:
@@ -4453,7 +4544,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             window_best_cost = float('inf')
             window_best_config = None
             
-            for episode in range(PPO_MAX_EPISODES):
+            self.total_episodes = self.stage1_rl_episodes
+            self._reset_runtime_ppo_state()
+
+            for episode in range(self.stage1_rl_episodes):
                 # 动态超参数调度（学习率和熵系数）
                 current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
                 
@@ -4634,7 +4728,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     window_best_cost = float('inf')
                     window_best_config = None
 
-                    if USE_VALIDATION_FOR_REWARD and (episode + 1) < PPO_MAX_EPISODES:
+                    if USE_VALIDATION_FOR_REWARD and (episode + 1) < self.stage1_rl_episodes:
                         next_window_idx = gtrxl_ppo_update_count
                         self.refresh_validation_proxy(
                             window_index=next_window_idx,
@@ -4658,7 +4752,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             if window_best_config is not None:
                 confirm_stage1_candidate(
                     window_best_config,
-                    episode_idx=PPO_MAX_EPISODES - 1,
+                    episode_idx=self.stage1_rl_episodes - 1,
                     window_idx=gtrxl_ppo_update_count,
                 )
 

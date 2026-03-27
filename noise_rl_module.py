@@ -146,6 +146,9 @@ class NoiseRLModule:
             "noise_stage_entropy_curve_path",
             NOISE_STAGE_ENTROPY_CURVE_PATH,
         )
+        stage2_total_episodes = int(
+            getattr(ev, "stage2_rl_episodes", NOISE_STAGE_PPO_MAX_EPISODES)
+        )
         ev.log("\n" + "=" * 60)
         ev.log("PHASE 5: SECOND-STAGE NOISE RL")
         ev.log(f"Fixed GELU/Softmax source={fixed_source}, label={fixed_label}")
@@ -261,7 +264,7 @@ class NoiseRLModule:
             "gtrxl_n_layers": NOISE_STAGE_GTRXL_N_LAYERS,
             "gtrxl_d_ff": NOISE_STAGE_GTRXL_D_FF,
             "gtrxl_dropout": NOISE_STAGE_GTRXL_DROPOUT,
-            "ppo_max_episodes": NOISE_STAGE_PPO_MAX_EPISODES,
+            "ppo_max_episodes": stage2_total_episodes,
             "ppo_update_interval": PPO_UPDATE_INTERVAL,
             "ppo_eps_clip": NOISE_STAGE_PPO_EPS_CLIP,
             "ppo_k_epochs": NOISE_STAGE_PPO_K_EPOCHS,
@@ -302,7 +305,7 @@ class NoiseRLModule:
         )
         ev.log(
             "  "
-            f"PPO(max_episodes={NOISE_STAGE_PPO_MAX_EPISODES}, eps_clip={NOISE_STAGE_PPO_EPS_CLIP}, "
+            f"PPO(max_episodes={stage2_total_episodes}, eps_clip={NOISE_STAGE_PPO_EPS_CLIP}, "
             f"k_epochs={NOISE_STAGE_PPO_K_EPOCHS}, warmup_mode={NOISE_STAGE_GTRXL_WARMUP_MODE}, "
             f"warmup_updates={NOISE_STAGE_GTRXL_WARMUP_UPDATES}, "
             f"short_warmup_updates={NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES})"
@@ -333,8 +336,8 @@ class NoiseRLModule:
             f.write("=== Noise PPO StepInfo 中间结果日志 ===\n")
             f.write("每步包含: step_global, episode_id, layer_index, state_vector, 7个动作的scaling factor, 7个动作概率分布, critic_value, accumulated_cost, 各类noise配置\n\n")
 
-        original_total_episodes = getattr(ev, "total_episodes", NOISE_STAGE_PPO_MAX_EPISODES)
-        ev.total_episodes = NOISE_STAGE_PPO_MAX_EPISODES
+        original_total_episodes = getattr(ev, "total_episodes", stage2_total_episodes)
+        ev.total_episodes = stage2_total_episodes
         ev._reset_runtime_ppo_state()
         noise_net = _NoiseGTrXLStrategyNetwork(
             num_layers=ev.total_layers,
@@ -948,7 +951,7 @@ class NoiseRLModule:
             )
             return stability_proxy, stability_penalty
 
-        for episode in range(NOISE_STAGE_PPO_MAX_EPISODES):
+        for episode in range(stage2_total_episodes):
             current_lr, current_entropy = ev.update_hyperparameters(optimizer, episode)
             state = env.reset()
             prev_actions = torch.tensor(
@@ -1005,7 +1008,7 @@ class NoiseRLModule:
                         )
                         reward_blend_alpha = _compute_noise_reward_blend_alpha(
                             episode,
-                            NOISE_STAGE_PPO_MAX_EPISODES,
+                            stage2_total_episodes,
                             start_alpha=NOISE_REWARD_BLEND_ALPHA_START,
                             end_alpha=NOISE_REWARD_BLEND_ALPHA_END,
                         )
@@ -1294,7 +1297,7 @@ class NoiseRLModule:
                 if (
                     USE_VALIDATION_FOR_REWARD
                     and (not use_fixed_search_reward)
-                    and (episode + 1) < NOISE_STAGE_PPO_MAX_EPISODES
+                    and (episode + 1) < stage2_total_episodes
                 ):
                     next_window_idx = noise_ppo_update_count
                     ev.refresh_validation_proxy(
@@ -1349,7 +1352,7 @@ class NoiseRLModule:
         if window_best_noise_config is not None:
             confirm_noise_candidate(
                 window_best_noise_config,
-                episode_idx=NOISE_STAGE_PPO_MAX_EPISODES - 1,
+                episode_idx=stage2_total_episodes - 1,
                 window_idx=noise_ppo_update_count,
                 repeats=NOISE_STAGE_CONFIRM_REPEATS,
                 confirmation_label=f"window {noise_ppo_update_count + 1}",
@@ -1364,7 +1367,7 @@ class NoiseRLModule:
             for finalist_idx, shortlisted_candidate in enumerate(shortlist_candidates, start=1):
                 finalist_candidate = confirm_noise_candidate(
                     shortlisted_candidate,
-                    episode_idx=NOISE_STAGE_PPO_MAX_EPISODES - 1,
+                    episode_idx=stage2_total_episodes - 1,
                     window_idx=finalist_idx - 1,
                     repeats=NOISE_STAGE_FINALIST_REPEATS,
                     confirmation_label=f"finalist #{finalist_idx}",
