@@ -37,7 +37,12 @@ NOISE_STAGE_CONFIRM_REPEATS = 5
 NOISE_STAGE_FINALIST_REPEATS = 15
 NOISE_STAGE_SHORTLIST_SIZE = 5
 NOISE_STAGE_PROGRESS_SAVE_INTERVAL = 10000
-NOISE_STAGE_PROGRESS_DIR = os.path.join("experiment_results", "noise_rl_progress")
+NOISE_STAGE_PROGRESS_DIR = os.path.join("rl_results", "noise_rl_progress")
+
+# Reward priority for stage-2 noise RL.
+# These are normalized internally, so 8:2 and 4:1 are equivalent.
+NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE = 8.0
+NOISE_STAGE_REWARD_PRIORITY_COST = 2.0
 
 NOISE_STAGE_STABILITY_PROXY_STD_REF = 0.008
 NOISE_STAGE_STABILITY_PENALTY_SCALE = 0.10
@@ -287,6 +292,9 @@ class NoiseRLModule:
             },
             "stability_proxy_std_ref": NOISE_STAGE_STABILITY_PROXY_STD_REF,
             "stability_penalty_scale": NOISE_STAGE_STABILITY_PENALTY_SCALE,
+            "reward_diff_enabled": False,
+            "keep_cost_reward_when_violating": True,
+            "cancel_dense_reward_on_violation": False,
             "reward_estimator_hidden_dims": list(NOISE_REWARD_ESTIMATOR_HIDDEN_DIMS),
             "reward_estimator_lr": NOISE_REWARD_ESTIMATOR_LR,
             "reward_estimator_replay_capacity": NOISE_REWARD_ESTIMATOR_REPLAY_CAPACITY,
@@ -295,6 +303,8 @@ class NoiseRLModule:
             "reward_estimator_epochs": NOISE_REWARD_ESTIMATOR_EPOCHS,
             "reward_blend_alpha_start": NOISE_REWARD_BLEND_ALPHA_START,
             "reward_blend_alpha_end": NOISE_REWARD_BLEND_ALPHA_END,
+            "reward_priority_performance": NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE,
+            "reward_priority_cost": NOISE_STAGE_REWARD_PRIORITY_COST,
         }
         ev.log("Noise-Stage Training Hyperparameters:")
         ev.log(
@@ -316,6 +326,15 @@ class NoiseRLModule:
             f"lr={NOISE_REWARD_ESTIMATOR_LR}, replay={NOISE_REWARD_ESTIMATOR_REPLAY_CAPACITY}, "
             f"warmup={NOISE_REWARD_ESTIMATOR_WARMUP_EPISODES}, batch={NOISE_REWARD_ESTIMATOR_BATCH_SIZE}, "
             f"epochs={NOISE_REWARD_ESTIMATOR_EPOCHS})"
+        )
+        ev.log(
+            "  "
+            f"RewardPriority(performance={NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE}, "
+            f"cost={NOISE_STAGE_REWARD_PRIORITY_COST})"
+        )
+        ev.log(
+            "  RewardShape(diff=disabled, keep_cost_reward_on_violation=True, "
+            "cancel_dense_reward_on_violation=False)"
         )
         ev.log(
             "  "
@@ -462,6 +481,8 @@ class NoiseRLModule:
             log_barrier_violation_scale=LOG_BARRIER_VIOLATION_SCALE,
             log_barrier_violation_steepness=LOG_BARRIER_VIOLATION_STEEPNESS,
             log_barrier_satisfaction_scale=LOG_BARRIER_SATISFACTION_SCALE,
+            reward_priority_performance=NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE,
+            reward_priority_cost=NOISE_STAGE_REWARD_PRIORITY_COST,
             mc_samples=NOISE_STAGE_MC_SAMPLES,
         )
         env.prev_episode_metrics = {
@@ -1828,6 +1849,8 @@ class _NoiseOptEnv:
                  log_barrier_violation_scale=10.0,
                  log_barrier_violation_steepness=20.0,
                  log_barrier_satisfaction_scale=0.5,
+                 reward_priority_performance=8.0,
+                 reward_priority_cost=2.0,
                  mc_samples=5):
         self.total_layers = total_layers
         self.baseline_cost = baseline_cost
@@ -1881,6 +1904,14 @@ class _NoiseOptEnv:
         self._log_barrier_viol_scale = log_barrier_violation_scale
         self._log_barrier_viol_steep = log_barrier_violation_steepness
         self._log_barrier_sat_scale = log_barrier_satisfaction_scale
+        total_priority = max(
+            1e-8,
+            float(reward_priority_performance) + float(reward_priority_cost),
+        )
+        self._reward_priority_performance = (
+            float(reward_priority_performance) / total_priority
+        )
+        self._reward_priority_cost = float(reward_priority_cost) / total_priority
         self._mc_samples = max(1, int(mc_samples))
 
         if constraint_limits is None:
@@ -2065,22 +2096,7 @@ class _NoiseOptEnv:
 
     def _assemble_final_reward(self, loss, m1, m2):
         limits = self._get_current_constraint_limits()
-
-        delta_loss = self.prev_episode_metrics["loss"] - loss
-        delta_m1 = m1 - self.prev_episode_metrics["metric1"]
-        delta_m2 = m2 - self.prev_episode_metrics["metric2"]
-
-        def amplify_signal(delta):
-            sign = 1.0 if delta >= 0 else -1.0
-            return sign * (abs(delta) ** self._diff_reward_power) * self._diff_reward_scale_acc
-
-        r_loss_diff = amplify_signal(delta_loss)
-        r_m1_diff = amplify_signal(delta_m1)
-        r_m2_diff = amplify_signal(delta_m2)
-        if self.num_metrics == 1:
-            r_diff = (r_loss_diff + r_m1_diff) / 2.0
-        else:
-            r_diff = (r_loss_diff + r_m1_diff + r_m2_diff) / 3.0
+        r_diff = 0.0
 
         def violation_penalty(curr_value, limit_value, is_upper_bound=True):
             margin = (limit_value - curr_value) if is_upper_bound else (curr_value - limit_value)
@@ -2103,13 +2119,17 @@ class _NoiseOptEnv:
             constraints_ok = (margin_loss >= 0) and (margin_m1 >= 0) and (margin_m2 >= 0)
 
         cost_saving = (self.baseline_cost - self.accumulated_cost) / (self.baseline_cost + 1e-8)
-        r_cost = cost_saving * self._reward_cost_weight if constraints_ok else 0.0
+        r_cost = cost_saving * self._reward_cost_weight
         r_safe = 0.0
         if constraints_ok:
             r_safe = self._reward_safety_bonus + self._log_barrier_sat_scale * float(np.mean(positive_margins))
 
+        performance_term = r_barrier + r_safe
+        weighted_performance = self._reward_priority_performance * performance_term
+        weighted_cost = self._reward_priority_cost * r_cost
+
         raw_reward = np.clip(
-            (r_cost + r_diff + r_barrier + r_safe) / self._reward_norm_scale,
+            (weighted_cost + weighted_performance) / self._reward_norm_scale,
             self._reward_clip_min,
             self._reward_clip_max,
         )
@@ -2118,8 +2138,13 @@ class _NoiseOptEnv:
             "diff": float(r_diff),
             "barrier": float(r_barrier),
             "safety": float(r_safe),
+            "performance_term": float(performance_term),
+            "weighted_performance": float(weighted_performance),
+            "weighted_cost": float(weighted_cost),
+            "reward_priority_performance": float(self._reward_priority_performance),
+            "reward_priority_cost": float(self._reward_priority_cost),
             "constraints_ok": bool(constraints_ok),
-            "cost_reward_active": bool(constraints_ok),
+            "cost_reward_active": True,
             "loss_limit": float(limits["loss"]),
             "metric1_limit": float(limits["metric1"]),
             "metric2_limit": float(limits["metric2"]),
@@ -2128,8 +2153,8 @@ class _NoiseOptEnv:
             "margin_metric2": float(margin_m2),
             "raw_final_reward": float(raw_reward),
         }
-        self.last_cost_reward = float(r_cost / self._reward_norm_scale)
-        self.last_acc_reward = float((r_diff + r_barrier + r_safe) / self._reward_norm_scale)
+        self.last_cost_reward = float(weighted_cost / self._reward_norm_scale)
+        self.last_acc_reward = float(weighted_performance / self._reward_norm_scale)
         self.last_reward_components = reward_components
         return float(raw_reward), reward_components
 
@@ -2269,10 +2294,8 @@ class _NoiseOptEnv:
         info["reward_components"] = final_reward["reward_components"]
         info["accumulated_dense_reward"] = self.accumulated_dense_reward
         dense_reward_adjustment = 0.0
-        if not final_reward["reward_components"].get("constraints_ok", False):
-            dense_reward_adjustment = -self.accumulated_dense_reward
         info["dense_reward_adjustment"] = dense_reward_adjustment
-        info["dense_reward_cancelled"] = bool(dense_reward_adjustment != 0.0)
+        info["dense_reward_cancelled"] = False
         terminal_reward = final_reward["raw_final_reward"] + dense_reward + dense_reward_adjustment
         return self._get_state(), terminal_reward, True, info
 

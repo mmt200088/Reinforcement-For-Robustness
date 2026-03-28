@@ -280,7 +280,7 @@ usage() {
     echo "  lora_alpha            LoRA alpha，当前实验固定传 64。"
     echo "  logfile_path          nohup 日志文件名提示。"
     echo "                        实际日志路径会自动解析到"
-    echo "                        experiment_results/layer_importance_runs/<dataset>/<timestamp>_pid<PID>/logs/"
+    echo "                        rl_results/layer_importance_runs/<dataset>/<timestamp>_pid<PID>/logs/"
     echo "  rl_lr                 PPO 学习率控制。若 < 1 则直接作为 LR；"
     echo "                        旧值 20/40 会解释为 20e-6/40e-6。"
     echo "  degree                历史调试参数，固定传 2。"
@@ -682,7 +682,7 @@ if [ -z "$LOGFILE_BASENAME" ] || [ "$LOGFILE_BASENAME" = "." ] || [ "$LOGFILE_BA
 fi
 RUN_TIMESTAMP="$(date +"%Y%m%d_%H%M%S")"
 RUN_ID="${RUN_TIMESTAMP}_pid$$"
-RUN_ROOT="experiment_results/layer_importance_runs/${DATASET}/${RUN_ID}"
+RUN_ROOT="rl_results/layer_importance_runs/${DATASET}/${RUN_ID}"
 LOGFILE_PATH="${RUN_ROOT}/logs/${LOGFILE_BASENAME}"
 mkdir -p "${RUN_ROOT}/logs"
 
