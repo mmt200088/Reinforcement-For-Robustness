@@ -62,7 +62,7 @@ class NoiseFinalEvaluationModule:
         default_results_dir = getattr(
             evaluator,
             "noise_final_eval_dir",
-            os.path.join("experiment_results", "noise_final_evaluation"),
+            os.path.join("rl_results", "noise_final_evaluation"),
         )
         self.results_dir = results_dir or default_results_dir
 

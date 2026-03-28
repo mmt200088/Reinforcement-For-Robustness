@@ -33,7 +33,7 @@ class FinalEvaluationModule:
         default_results_dir = getattr(
             evaluator,
             "stage1_final_eval_dir",
-            os.path.join("experiment_results", "final_evaluation"),
+            os.path.join("rl_results", "final_evaluation"),
         )
         self.results_dir = results_dir or default_results_dir
 

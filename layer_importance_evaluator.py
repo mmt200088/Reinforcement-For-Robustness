@@ -142,9 +142,9 @@ DEFAULT_STAGE1_SEARCH_LOG_FILE = "pruning_search_log.txt"
 DEFAULT_STAGE1_STEP_INFO_FILE = "ppo_step_info.txt"
 DEFAULT_STAGE1_TRAINING_CURVE_FILE = "ppo_training_curve.png"
 DEFAULT_STAGE1_ENTROPY_CURVE_FILE = "ppo_entropy_curve.png"
-DEFAULT_STAGE1_FINAL_EVAL_DIR = os.path.join("experiment_results", "final_evaluation")
-DEFAULT_NOISE_PROGRESS_DIR = os.path.join("experiment_results", "noise_rl_progress")
-DEFAULT_NOISE_FINAL_EVAL_DIR = os.path.join("experiment_results", "noise_final_evaluation")
+DEFAULT_STAGE1_FINAL_EVAL_DIR = os.path.join("rl_results", "final_evaluation")
+DEFAULT_NOISE_PROGRESS_DIR = os.path.join("rl_results", "noise_rl_progress")
+DEFAULT_NOISE_FINAL_EVAL_DIR = os.path.join("rl_results", "noise_final_evaluation")
 
 
 def ensure_parent_dir(path):
