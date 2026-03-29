@@ -2120,7 +2120,7 @@ index	prediction
 2118	contradiction
 2119	contradiction
 2120	contradiction
-2121	entailment
+2121	contradiction
 2122	entailment
 2123	entailment
 2124	entailment
@@ -6269,7 +6269,7 @@ index	prediction
 6267	contradiction
 6268	entailment
 6269	entailment
-6270	neutral
+6270	entailment
 6271	entailment
 6272	contradiction
 6273	entailment
