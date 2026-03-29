@@ -1,5 +1,4 @@
 import os
-from collections import deque
 import numpy as np
 import torch
 import torch.nn as nn
@@ -31,6 +30,10 @@ NOISE_STAGE_GTRXL_WARMUP_UPDATES = 0
 NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES = 20
 
 NOISE_STAGE_MC_SAMPLES = 3
+NOISE_STAGE_MC_BASE_SAMPLES = 3
+NOISE_STAGE_MC_EXTRA_SAMPLES = 4       # max additional samples near constraint boundary
+NOISE_STAGE_MC_MARGIN_THRESHOLD = 0.02  # margin below which extra MC samples kick in
+NOISE_STAGE_BUDGET_DECAY_FRACTION = 0.5  # budget reward fully decays to 0 at this fraction of training
 NOISE_STAGE_BASELINE_REPEATS = 5
 NOISE_STAGE_ONLINE_BASELINE_REPEATS = 3
 NOISE_STAGE_CONFIRM_REPEATS = 5
@@ -66,17 +69,6 @@ NOISE_STAGE_STABILITY_THRESHOLDS = {
         "metric2_sem_ratio": 0.00375,
     },
 }
-
-NOISE_REWARD_ESTIMATOR_HIDDEN_DIMS = (128, 64)
-NOISE_REWARD_ESTIMATOR_LR = 1e-3
-NOISE_REWARD_ESTIMATOR_REPLAY_CAPACITY = 4096
-NOISE_REWARD_ESTIMATOR_WARMUP_EPISODES = 32
-NOISE_REWARD_ESTIMATOR_BATCH_SIZE = 64
-NOISE_REWARD_ESTIMATOR_EPOCHS = 4
-
-NOISE_REWARD_BLEND_ALPHA_START = 0.2
-NOISE_REWARD_BLEND_ALPHA_END = 0.8
-
 
 class NoiseRLModule:
     """Standalone second-stage noise RL module.
@@ -295,16 +287,13 @@ class NoiseRLModule:
             "reward_diff_enabled": False,
             "keep_cost_reward_when_violating": True,
             "cancel_dense_reward_on_violation": False,
-            "reward_estimator_hidden_dims": list(NOISE_REWARD_ESTIMATOR_HIDDEN_DIMS),
-            "reward_estimator_lr": NOISE_REWARD_ESTIMATOR_LR,
-            "reward_estimator_replay_capacity": NOISE_REWARD_ESTIMATOR_REPLAY_CAPACITY,
-            "reward_estimator_warmup_episodes": NOISE_REWARD_ESTIMATOR_WARMUP_EPISODES,
-            "reward_estimator_batch_size": NOISE_REWARD_ESTIMATOR_BATCH_SIZE,
-            "reward_estimator_epochs": NOISE_REWARD_ESTIMATOR_EPOCHS,
-            "reward_blend_alpha_start": NOISE_REWARD_BLEND_ALPHA_START,
-            "reward_blend_alpha_end": NOISE_REWARD_BLEND_ALPHA_END,
             "reward_priority_performance": NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE,
             "reward_priority_cost": NOISE_STAGE_REWARD_PRIORITY_COST,
+            "stability_weight": NOISE_STAGE_STABILITY_PENALTY_SCALE,
+            "budget_decay_fraction": NOISE_STAGE_BUDGET_DECAY_FRACTION,
+            "mc_base_samples": NOISE_STAGE_MC_BASE_SAMPLES,
+            "mc_extra_samples": NOISE_STAGE_MC_EXTRA_SAMPLES,
+            "mc_margin_threshold": NOISE_STAGE_MC_MARGIN_THRESHOLD,
         }
         ev.log("Noise-Stage Training Hyperparameters:")
         ev.log(
@@ -322,10 +311,9 @@ class NoiseRLModule:
         )
         ev.log(
             "  "
-            f"MC samples={NOISE_STAGE_MC_SAMPLES} | RewardEstimator(hidden={NOISE_REWARD_ESTIMATOR_HIDDEN_DIMS}, "
-            f"lr={NOISE_REWARD_ESTIMATOR_LR}, replay={NOISE_REWARD_ESTIMATOR_REPLAY_CAPACITY}, "
-            f"warmup={NOISE_REWARD_ESTIMATOR_WARMUP_EPISODES}, batch={NOISE_REWARD_ESTIMATOR_BATCH_SIZE}, "
-            f"epochs={NOISE_REWARD_ESTIMATOR_EPOCHS})"
+            f"MC samples={NOISE_STAGE_MC_BASE_SAMPLES} "
+            f"(adaptive: +{NOISE_STAGE_MC_EXTRA_SAMPLES} near boundary, threshold={NOISE_STAGE_MC_MARGIN_THRESHOLD}) | "
+            f"BudgetDecay(fraction={NOISE_STAGE_BUDGET_DECAY_FRACTION})"
         )
         ev.log(
             "  "
@@ -375,19 +363,7 @@ class NoiseRLModule:
             noise_stage_action_dims=NOISE_STAGE_ACTION_DIMS,
         ).to(ev.device)
         optimizer = optim.Adam(noise_net.parameters(), lr=ev.ppo_lr_initial)
-        reward_estimator = _NoiseRewardEstimator(
-            input_dim=NOISE_STAGE_NUM_ACTIONS * ev.total_layers + 1,
-            hidden_dims=NOISE_REWARD_ESTIMATOR_HIDDEN_DIMS,
-        ).to(ev.device)
-        reward_estimator_optimizer = optim.Adam(
-            reward_estimator.parameters(), lr=NOISE_REWARD_ESTIMATOR_LR
-        )
-        reward_replay = _NoiseRewardReplayBuffer(
-            capacity=NOISE_REWARD_ESTIMATOR_REPLAY_CAPACITY
-        )
         noise_ppo_update_count = 0
-        reward_estimator_update_count = 0
-        reward_estimator_last_loss = None
 
         class _NoiseRLEvaluatorWrapper:
             def __init__(wrapper_self, evaluator, fixed_gelu, fixed_softmax, split_name=None, use_train=None):
@@ -484,6 +460,11 @@ class NoiseRLModule:
             reward_priority_performance=NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE,
             reward_priority_cost=NOISE_STAGE_REWARD_PRIORITY_COST,
             mc_samples=NOISE_STAGE_MC_SAMPLES,
+            stability_weight=NOISE_STAGE_STABILITY_PENALTY_SCALE,
+            stability_proxy_std_ref=NOISE_STAGE_STABILITY_PROXY_STD_REF,
+            budget_decay_fraction=NOISE_STAGE_BUDGET_DECAY_FRACTION,
+            mc_extra_samples=NOISE_STAGE_MC_EXTRA_SAMPLES,
+            mc_margin_threshold=NOISE_STAGE_MC_MARGIN_THRESHOLD,
         )
         env.prev_episode_metrics = {
             "loss": float(proxy_baseline_stats["loss_mean"]),
@@ -494,15 +475,10 @@ class NoiseRLModule:
         buffer = _NoiseRecurrentRolloutBuffer()
 
         episode_rewards = []
-        episode_blended_rewards = []
         episode_losses = []
         episode_metric1s = []
         episode_metric2s = []
         episode_entropies = []
-        reward_blend_alphas = []
-        reward_prediction_abs_errors = []
-        raw_final_rewards = []
-        blended_final_rewards = []
         stability_proxies = []
         stability_penalties = []
         best_selection_reward = float("-inf")
@@ -801,10 +777,7 @@ class NoiseRLModule:
             confirmed_candidate.update({
                 "proxy_reward_raw": float(candidate_config.get("reward", 0.0)),
                 "selection_reward": float(
-                    candidate_config.get(
-                        "selection_reward",
-                        candidate_config.get("ppo_reward", candidate_config.get("reward", 0.0)),
-                    )
+                    candidate_config.get("selection_reward", candidate_config.get("reward", 0.0))
                 ),
                 "confirmation_label": confirmation_label,
                 "confirmed_repeats": int(max(1, int(repeats))),
@@ -974,6 +947,7 @@ class NoiseRLModule:
 
         for episode in range(stage2_total_episodes):
             current_lr, current_entropy = ev.update_hyperparameters(optimizer, episode)
+            env.set_episode_progress(episode, stage2_total_episodes)
             state = env.reset()
             prev_actions = torch.tensor(
                 [list(NOISE_STAGE_SOS_TOKENS)], dtype=torch.long, device=ev.device
@@ -983,11 +957,7 @@ class NoiseRLModule:
             seq_prev_actions = []
             step_infos = []
             episode_reward_raw = 0.0
-            episode_reward_blended = 0.0
             episode_raw_final_reward = None
-            episode_blended_final_reward = None
-            episode_reward_estimator_pred = None
-            episode_reward_blend_alpha = None
             episode_mc_eval = None
             episode_stability_proxy = None
             episode_stability_penalty = 0.0
@@ -1014,68 +984,26 @@ class NoiseRLModule:
                 reward_for_buffer = reward
                 if done:
                     raw_final_reward = float(info.get("raw_final_reward", 0.0))
-                    reward_feature = env.get_reward_estimator_features()
-                    reward_replay.add(reward_feature, raw_final_reward)
-
-                    reward_estimator_pred = None
-                    reward_blend_alpha = 1.0
-                    blended_final_reward = raw_final_reward
-                    if (
-                        reward_estimator_update_count > 0
-                        and len(reward_replay) >= NOISE_REWARD_ESTIMATOR_WARMUP_EPISODES
-                    ):
-                        reward_estimator_pred = _predict_noise_reward_estimator(
-                            reward_estimator, reward_feature, ev.device
-                        )
-                        reward_blend_alpha = _compute_noise_reward_blend_alpha(
-                            episode,
-                            stage2_total_episodes,
-                            start_alpha=NOISE_REWARD_BLEND_ALPHA_START,
-                            end_alpha=NOISE_REWARD_BLEND_ALPHA_END,
-                        )
-                        blended_final_reward = (
-                            reward_blend_alpha * raw_final_reward
-                            + (1.0 - reward_blend_alpha) * reward_estimator_pred
-                        )
-                        reward_blend_alphas.append(reward_blend_alpha)
-                        reward_prediction_abs_errors.append(
-                            abs(reward_estimator_pred - raw_final_reward)
-                        )
 
                     mc_eval_for_penalty = info.get("mc_eval") or {}
                     stability_proxy, stability_penalty = _compute_training_stability_proxy(
                         mc_eval_for_penalty
                     )
-                    blended_final_reward += stability_penalty
                     stability_proxies.append(stability_proxy)
                     stability_penalties.append(stability_penalty)
 
-                    reward_for_buffer = float(reward - raw_final_reward + blended_final_reward)
-                    info["raw_reward"] = raw_final_reward
-                    info["blended_reward"] = blended_final_reward
-                    info["reward_estimator_pred"] = reward_estimator_pred
-                    info["reward_blend_alpha"] = reward_blend_alpha
+                    info["reward"] = raw_final_reward
                     info["stability_proxy"] = stability_proxy
                     info["stability_penalty"] = stability_penalty
-                    info["reward_estimator_loss"] = reward_estimator_last_loss
-                    info["buffer_step_reward"] = reward_for_buffer
 
                     episode_raw_final_reward = raw_final_reward
-                    episode_blended_final_reward = blended_final_reward
-                    episode_reward_estimator_pred = reward_estimator_pred
-                    episode_reward_blend_alpha = reward_blend_alpha
                     episode_mc_eval = mc_eval_for_penalty
                     episode_stability_proxy = stability_proxy
                     episode_stability_penalty = stability_penalty
                 else:
-                    info["raw_reward"] = None
-                    info["blended_reward"] = None
-                    info["reward_estimator_pred"] = None
-                    info["reward_blend_alpha"] = None
+                    info["reward"] = None
                     info["stability_proxy"] = None
                     info["stability_penalty"] = 0.0
-                    info["reward_estimator_loss"] = reward_estimator_last_loss
-                    info["buffer_step_reward"] = reward_for_buffer
 
                 mc_eval = info.get("mc_eval") or {}
                 step_info = {
@@ -1115,14 +1043,9 @@ class NoiseRLModule:
                     "mc_metric1_std": mc_eval.get("metric1_std"),
                     "mc_metric2_mean": mc_eval.get("metric2_mean"),
                     "mc_metric2_std": mc_eval.get("metric2_std"),
-                    "raw_reward": info.get("raw_reward"),
-                    "blended_reward": info.get("blended_reward"),
-                    "reward_estimator_pred": info.get("reward_estimator_pred"),
-                    "reward_estimator_loss": info.get("reward_estimator_loss"),
-                    "reward_blend_alpha": info.get("reward_blend_alpha"),
+                    "reward": info.get("reward"),
                     "stability_proxy": info.get("stability_proxy"),
                     "stability_penalty": info.get("stability_penalty"),
-                    "buffer_step_reward": info.get("buffer_step_reward"),
                 }
                 step_infos.append(step_info)
 
@@ -1139,12 +1062,10 @@ class NoiseRLModule:
 
                 prev_actions = actions.view(1, 1, -1).to(ev.device)
                 episode_reward_raw += reward
-                episode_reward_blended += reward_for_buffer
                 state = next_state
 
             buffer.end_episode()
             episode_rewards.append(episode_reward_raw)
-            episode_blended_rewards.append(episode_reward_blended)
             if env.current_episode_metrics is not None:
                 episode_losses.append(env.current_episode_metrics["loss"])
                 episode_metric1s.append(env.current_episode_metrics["metric1"])
@@ -1154,19 +1075,11 @@ class NoiseRLModule:
                 episode_metric1s.append(base_p)
                 episode_metric2s.append(base_s)
 
-            if episode_raw_final_reward is not None:
-                raw_final_rewards.append(episode_raw_final_reward)
-                blended_final_rewards.append(
-                    episode_blended_final_reward
-                    if episode_blended_final_reward is not None
-                    else episode_raw_final_reward
-                )
-
             ev.update_reward_statistics(episode_reward_raw)
             with open(ev.noise_step_info_file, "a", encoding="utf-8") as f:
                 f.write(
                     f"--- Episode {episode + 1} "
-                    f"(RawReward={episode_reward_raw:.4f}, PPOReward={episode_reward_blended:.4f}) ---\n"
+                    f"(Reward={episode_reward_raw:.4f}) ---\n"
                 )
                 for si in step_infos:
                     _write_noise_step_info(si, f)
@@ -1182,12 +1095,7 @@ class NoiseRLModule:
                 "wffn2_noise_scaling_factors": np.array(env.wffn2_noise_config, dtype=int),
                 "cost": env.accumulated_cost,
                 "reward": episode_reward_raw,
-                "ppo_reward": episode_reward_blended,
-                "selection_reward": episode_reward_blended,
-                "raw_final_reward": episode_raw_final_reward,
-                "blended_final_reward": episode_blended_final_reward,
-                "reward_estimator_pred": episode_reward_estimator_pred,
-                "reward_blend_alpha": episode_reward_blend_alpha,
+                "selection_reward": episode_reward_raw,
                 "stability_proxy": episode_stability_proxy,
                 "stability_penalty": episode_stability_penalty,
                 "mc_eval": dict(episode_mc_eval) if episode_mc_eval is not None else None,
@@ -1198,10 +1106,10 @@ class NoiseRLModule:
                 ),
             }
 
-            if episode_reward_blended > window_best_score or (
-                episode_reward_blended == window_best_score and env.accumulated_cost < window_best_cost
+            if episode_reward_raw > window_best_score or (
+                episode_reward_raw == window_best_score and env.accumulated_cost < window_best_cost
             ):
-                window_best_score = episode_reward_blended
+                window_best_score = episode_reward_raw
                 window_best_cost = env.accumulated_cost
                 window_best_noise_config = {
                     key: (
@@ -1214,10 +1122,10 @@ class NoiseRLModule:
                     for key, value in final_noise_config.items()
                 }
 
-            if episode_reward_blended > best_selection_reward or (
-                episode_reward_blended == best_selection_reward and env.accumulated_cost < best_cost
+            if episode_reward_raw > best_selection_reward or (
+                episode_reward_raw == best_selection_reward and env.accumulated_cost < best_cost
             ):
-                best_selection_reward = episode_reward_blended
+                best_selection_reward = episode_reward_raw
                 best_cost = env.accumulated_cost
                 best_noise_config = {
                     key: (
@@ -1231,7 +1139,7 @@ class NoiseRLModule:
                 }
                 ev.log(
                     f"  Noise Episode {episode + 1}: New Best! "
-                    f"SelectionReward={episode_reward_blended:.4f}, RawReward={episode_reward_raw:.4f}, "
+                    f"Reward={episode_reward_raw:.4f}, "
                     f"Cost={env.accumulated_cost:.2f}"
                 )
                 if episode_mc_eval is not None:
@@ -1265,22 +1173,9 @@ class NoiseRLModule:
                     value_clip_range=VALUE_CLIP_RANGE,
                 )
                 noise_ppo_update_count += 1
-                reward_estimator_loss = _train_noise_reward_estimator(
-                    reward_estimator,
-                    reward_estimator_optimizer,
-                    reward_replay,
-                    ev.device,
-                    warmup_episodes=NOISE_REWARD_ESTIMATOR_WARMUP_EPISODES,
-                    batch_size=NOISE_REWARD_ESTIMATOR_BATCH_SIZE,
-                    epochs=NOISE_REWARD_ESTIMATOR_EPOCHS,
-                )
-                if reward_estimator_loss is not None:
-                    reward_estimator_last_loss = reward_estimator_loss
-                    reward_estimator_update_count += 1
                 buffer.clear()
                 episode_entropies.append(entropy)
                 avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
-                avg_blended_reward = np.mean(episode_blended_rewards[-PPO_UPDATE_INTERVAL:])
                 warmup_status = "constant"
                 if NOISE_STAGE_GTRXL_WARMUP_MODE != "constant":
                     warmup_status = (
@@ -1289,19 +1184,14 @@ class NoiseRLModule:
                         else "normal"
                     )
                 ev.log(
-                    f"  Noise Episode {episode + 1}: Avg Raw Reward={avg_reward:.4f}, "
-                    f"Avg PPO Reward={avg_blended_reward:.4f}, Policy Loss={policy_loss:.4f}, "
+                    f"  Noise Episode {episode + 1}: Avg Reward={avg_reward:.4f}, "
+                    f"Policy Loss={policy_loss:.4f}, "
                     f"Value Loss={value_loss:.4f}, Entropy={entropy:.4f}"
                 )
                 ev.log(
                     f"    [Noise GTrXL Schedule] LR={optimizer.param_groups[0]['lr']:.6f}, "
                     f"Entropy Coef={current_entropy:.6f}, Update#{noise_ppo_update_count} "
                     f"(mode={NOISE_STAGE_GTRXL_WARMUP_MODE}, status={warmup_status})"
-                )
-                ev.log(
-                    "    [Noise Reward Estimator] "
-                    f"Replay={len(reward_replay)}, Updates={reward_estimator_update_count}, "
-                    f"LastLoss={reward_estimator_last_loss if reward_estimator_last_loss is not None else 'N/A'}"
                 )
                 confirm_noise_candidate(
                     window_best_noise_config,
@@ -1436,7 +1326,6 @@ class NoiseRLModule:
                 ev.log(f"  {key}: {best_noise_config[key].tolist()}")
             ev.log(
                 f"  Cost: {best_noise_config['cost']:.2f}, Reward: {best_noise_config['reward']:.4f}, "
-                f"PPO Reward: {best_noise_config.get('ppo_reward', best_noise_config['reward']):.4f}, "
                 f"StabilityScore: {best_noise_config['stability_score']:.4f}"
             )
         else:
@@ -1457,32 +1346,13 @@ class NoiseRLModule:
         ev.clear_weight_noise_configuration()
 
         reward_diagnostics = {
-            "mc_samples": NOISE_STAGE_MC_SAMPLES,
-            "reward_estimator_replay_size": len(reward_replay),
-            "reward_estimator_updates": reward_estimator_update_count,
-            "reward_estimator_last_loss": (
-                float(reward_estimator_last_loss)
-                if reward_estimator_last_loss is not None
-                else None
-            ),
-            "blend_alpha_mean": (
-                float(np.mean(reward_blend_alphas))
-                if reward_blend_alphas
-                else None
-            ),
-            "prediction_abs_error_mean": (
-                float(np.mean(reward_prediction_abs_errors))
-                if reward_prediction_abs_errors
-                else None
-            ),
-            "raw_final_reward_mean": (
-                float(np.mean(raw_final_rewards))
-                if raw_final_rewards
-                else None
-            ),
-            "blended_final_reward_mean": (
-                float(np.mean(blended_final_rewards))
-                if blended_final_rewards
+            "mc_base_samples": NOISE_STAGE_MC_BASE_SAMPLES,
+            "mc_extra_samples": NOISE_STAGE_MC_EXTRA_SAMPLES,
+            "mc_margin_threshold": NOISE_STAGE_MC_MARGIN_THRESHOLD,
+            "budget_decay_fraction": NOISE_STAGE_BUDGET_DECAY_FRACTION,
+            "reward_mean": (
+                float(np.mean(episode_rewards))
+                if episode_rewards
                 else None
             ),
             "stability_proxy_mean": (
@@ -1617,59 +1487,6 @@ class _NoiseRecurrentRolloutBuffer:
         ], dtype=torch.float32).to(device)
 
         return cont_features, layer_indices, prev_actions, actions, logprobs, rewards, values, dones
-
-
-class _NoiseRewardReplayBuffer:
-    """Replay of episode-level terminal rewards for reward-estimator training."""
-
-    def __init__(self, capacity=4096):
-        self.capacity = int(capacity)
-        self.features = deque(maxlen=self.capacity)
-        self.targets = deque(maxlen=self.capacity)
-
-    def add(self, feature, target):
-        self.features.append(np.asarray(feature, dtype=np.float32).copy())
-        self.targets.append(float(target))
-
-    def sample(self, batch_size):
-        batch_size = min(int(batch_size), len(self.targets))
-        indices = np.random.choice(len(self.targets), size=batch_size, replace=False)
-        features = np.stack([self.features[idx] for idx in indices]).astype(np.float32)
-        targets = np.array([self.targets[idx] for idx in indices], dtype=np.float32)
-        return features, targets
-
-    def __len__(self):
-        return len(self.targets)
-
-
-class _NoiseRewardEstimator(nn.Module):
-    """Small MLP that smooths the terminal reward under noisy evaluation."""
-
-    def __init__(self, input_dim, hidden_dims=(128, 64)):
-        super().__init__()
-        layers = []
-        prev_dim = int(input_dim)
-        for hidden_dim in hidden_dims:
-            layers.extend([
-                nn.Linear(prev_dim, hidden_dim),
-                nn.LayerNorm(hidden_dim),
-                nn.SiLU(),
-            ])
-            prev_dim = hidden_dim
-        layers.append(nn.Linear(prev_dim, 1))
-        self.net = nn.Sequential(*layers)
-        self._initialize_weights()
-
-    def _initialize_weights(self):
-        for module in self.net:
-            if isinstance(module, nn.Linear):
-                gain = np.sqrt(2) if module.out_features != 1 else 1.0
-                nn.init.orthogonal_(module.weight, gain=gain)
-                if module.bias is not None:
-                    nn.init.constant_(module.bias, 0.0)
-
-    def forward(self, x):
-        return self.net(x).squeeze(-1)
 
 
 class _NoiseGTrXLStrategyNetwork(nn.Module):
@@ -1851,7 +1668,12 @@ class _NoiseOptEnv:
                  log_barrier_satisfaction_scale=0.5,
                  reward_priority_performance=8.0,
                  reward_priority_cost=2.0,
-                 mc_samples=5):
+                 mc_samples=5,
+                 stability_weight=0.15,
+                 stability_proxy_std_ref=0.008,
+                 budget_decay_fraction=0.5,
+                 mc_extra_samples=4,
+                 mc_margin_threshold=0.02):
         self.total_layers = total_layers
         self.baseline_cost = baseline_cost
         self.baseline_loss, self.baseline_p, self.baseline_s = baseline_metrics
@@ -1913,6 +1735,12 @@ class _NoiseOptEnv:
         )
         self._reward_priority_cost = float(reward_priority_cost) / total_priority
         self._mc_samples = max(1, int(mc_samples))
+        self._stability_weight = float(stability_weight)
+        self._stability_proxy_std_ref = float(stability_proxy_std_ref)
+        self._budget_decay_fraction = max(0.01, float(budget_decay_fraction))
+        self._episode_progress = 0.0
+        self._mc_extra_samples = max(0, int(mc_extra_samples))
+        self._mc_margin_threshold = float(mc_margin_threshold)
 
         if constraint_limits is None:
             self.constraint_limits = {
@@ -2038,18 +1866,8 @@ class _NoiseOptEnv:
         if self.current_episode_metrics is not None:
             self.prev_episode_metrics = self.current_episode_metrics.copy()
 
-    def get_reward_estimator_features(self):
-        cost_ratio = self.accumulated_cost / (self.baseline_cost + 1e-8)
-        return np.concatenate([
-            self.input_history,
-            self.wq_history,
-            self.wk_history,
-            self.wv_history,
-            self.wo_history,
-            self.wffn1_history,
-            self.wffn2_history,
-            np.array([cost_ratio], dtype=np.float32),
-        ]).astype(np.float32)
+    def set_episode_progress(self, episode, total_episodes):
+        self._episode_progress = float(episode) / max(1, int(total_episodes))
 
     def _get_current_constraint_limits(self):
         base_limits = {
@@ -2076,14 +1894,46 @@ class _NoiseOptEnv:
             "wffn1_noise_scaling_factors": np.array(self.wffn1_noise_config, dtype=int),
             "wffn2_noise_scaling_factors": np.array(self.wffn2_noise_config, dtype=int),
         }
+
+        # Phase 1: base MC samples
         for _ in range(self._mc_samples):
             loss, metric1, metric2, eval_time = self.evaluator.evaluate_noise_model(**noise_kwargs)
             losses.append(float(loss))
             metric1s.append(float(metric1))
             metric2s.append(float(metric2))
             times.append(float(eval_time))
+
+        # Phase 2: adaptive extra samples when near constraint boundary
+        extra_samples_used = 0
+        if self._mc_extra_samples > 0 and self._mc_margin_threshold > 0:
+            limits = self._get_current_constraint_limits()
+            base_loss_mean = float(np.mean(losses))
+            base_m1_mean = float(np.mean(metric1s))
+            base_m2_mean = float(np.mean(metric2s))
+
+            margin_loss = limits["loss"] - base_loss_mean
+            margin_m1 = base_m1_mean - limits["metric1"]
+            abs_margins = [abs(margin_loss), abs(margin_m1)]
+            if self.num_metrics > 1:
+                margin_m2 = base_m2_mean - limits["metric2"]
+                abs_margins.append(abs(margin_m2))
+
+            min_margin = min(abs_margins)
+            if min_margin < self._mc_margin_threshold:
+                proximity_factor = 1.0 - min_margin / self._mc_margin_threshold
+                extra_samples_used = max(1, int(round(self._mc_extra_samples * proximity_factor)))
+                for _ in range(extra_samples_used):
+                    loss, metric1, metric2, eval_time = self.evaluator.evaluate_noise_model(**noise_kwargs)
+                    losses.append(float(loss))
+                    metric1s.append(float(metric1))
+                    metric2s.append(float(metric2))
+                    times.append(float(eval_time))
+
+        total_samples = self._mc_samples + extra_samples_used
         return {
-            "num_samples": self._mc_samples,
+            "num_samples": total_samples,
+            "base_samples": self._mc_samples,
+            "extra_samples": extra_samples_used,
             "loss_mean": float(np.mean(losses)),
             "loss_std": float(np.std(losses)),
             "metric1_mean": float(np.mean(metric1s)),
@@ -2094,7 +1944,7 @@ class _NoiseOptEnv:
             "time_std_ms": float(np.std(times)),
         }
 
-    def _assemble_final_reward(self, loss, m1, m2):
+    def _assemble_final_reward(self, loss, m1, m2, mc_eval=None):
         limits = self._get_current_constraint_limits()
         r_diff = 0.0
 
@@ -2128,8 +1978,25 @@ class _NoiseOptEnv:
         weighted_performance = self._reward_priority_performance * performance_term
         weighted_cost = self._reward_priority_cost * r_cost
 
-        raw_reward = np.clip(
-            (weighted_cost + weighted_performance) / self._reward_norm_scale,
+        base_reward = (weighted_cost + weighted_performance) / self._reward_norm_scale
+
+        # Stability penalty: lightweight linear penalty from MC evaluation variance
+        stability_proxy = 0.0
+        stability_penalty = 0.0
+        if mc_eval is not None:
+            std_components = [
+                float(mc_eval.get("loss_std", 0.0)) / self._stability_proxy_std_ref,
+                float(mc_eval.get("metric1_std", 0.0)) / self._stability_proxy_std_ref,
+            ]
+            if self.num_metrics > 1:
+                std_components.append(
+                    float(mc_eval.get("metric2_std", 0.0)) / self._stability_proxy_std_ref
+                )
+            stability_proxy = float(np.mean(std_components)) if std_components else 0.0
+            stability_penalty = -self._stability_weight * max(0.0, stability_proxy - 1.0)
+
+        reward = np.clip(
+            base_reward + stability_penalty,
             self._reward_clip_min,
             self._reward_clip_max,
         )
@@ -2151,12 +2018,15 @@ class _NoiseOptEnv:
             "margin_loss": float(margin_loss),
             "margin_metric1": float(margin_m1),
             "margin_metric2": float(margin_m2),
-            "raw_final_reward": float(raw_reward),
+            "stability_proxy": float(stability_proxy),
+            "stability_penalty": float(stability_penalty),
+            "stability_weight": float(self._stability_weight),
+            "raw_final_reward": float(reward),
         }
         self.last_cost_reward = float(weighted_cost / self._reward_norm_scale)
         self.last_acc_reward = float(weighted_performance / self._reward_norm_scale)
         self.last_reward_components = reward_components
-        return float(raw_reward), reward_components
+        return float(reward), reward_components
 
     def _get_state(self):
         position = np.zeros(self.total_layers, dtype=np.float32)
@@ -2203,10 +2073,14 @@ class _NoiseOptEnv:
         else:
             budget_deviation = 0.0
 
+        # Budget reward decays linearly to 0 by budget_decay_fraction of training
+        budget_decay = max(0.0, 1.0 - self._episode_progress / self._budget_decay_fraction)
+        effective_budget_scale = self._budget_dev_scale * budget_decay
+
         if budget_deviation <= 0:
-            budget_reward = self._budget_dev_scale * (1.0 - abs(budget_deviation) * 0.5)
+            budget_reward = effective_budget_scale * (1.0 - abs(budget_deviation) * 0.5)
         else:
-            budget_reward = -self._budget_dev_scale * budget_deviation
+            budget_reward = -effective_budget_scale * budget_deviation
         return cost_reward + budget_reward
 
     def step(self, input_action_idx, wq_action_idx, wk_action_idx, wv_action_idx,
@@ -2311,7 +2185,7 @@ class _NoiseOptEnv:
             "metric2": m2,
             "cost": self.accumulated_cost,
         }
-        raw_final_reward, reward_components = self._assemble_final_reward(loss, m1, m2)
+        raw_final_reward, reward_components = self._assemble_final_reward(loss, m1, m2, mc_eval=mc_eval)
         self.last_mc_eval = mc_eval
         return {
             "raw_final_reward": raw_final_reward,
@@ -2364,64 +2238,12 @@ def _write_noise_step_info(step_info, f):
         f.write(f"  mc_metric1_std: {step_info['mc_metric1_std']}\n")
         f.write(f"  mc_metric2_mean: {step_info['mc_metric2_mean']}\n")
         f.write(f"  mc_metric2_std: {step_info['mc_metric2_std']}\n")
-    if step_info.get("raw_reward") is not None:
-        f.write(f"  raw_reward: {step_info['raw_reward']}\n")
-    if step_info.get("blended_reward") is not None:
-        f.write(f"  blended_reward: {step_info['blended_reward']}\n")
-    if step_info.get("reward_estimator_pred") is not None:
-        f.write(f"  reward_estimator_pred: {step_info['reward_estimator_pred']}\n")
-    if step_info.get("reward_estimator_loss") is not None:
-        f.write(f"  reward_estimator_loss: {step_info['reward_estimator_loss']}\n")
-    if step_info.get("reward_blend_alpha") is not None:
-        f.write(f"  reward_blend_alpha: {step_info['reward_blend_alpha']}\n")
+    if step_info.get("reward") is not None:
+        f.write(f"  reward: {step_info['reward']}\n")
     if step_info.get("stability_proxy") is not None:
         f.write(f"  stability_proxy: {step_info['stability_proxy']}\n")
     if step_info.get("stability_penalty") is not None:
         f.write(f"  stability_penalty: {step_info['stability_penalty']}\n")
-    if step_info.get("buffer_step_reward") is not None:
-        f.write(f"  buffer_step_reward: {step_info['buffer_step_reward']}\n")
-
-
-def _predict_noise_reward_estimator(model, feature, device):
-    model.eval()
-    with torch.no_grad():
-        feature_tensor = torch.tensor(feature, dtype=torch.float32, device=device).view(1, -1)
-        prediction = model(feature_tensor).squeeze(0)
-    return float(prediction.item())
-
-
-def _train_noise_reward_estimator(
-        model, optimizer, replay, device,
-        warmup_episodes=32,
-        batch_size=64,
-        epochs=4):
-    if len(replay) < max(1, int(warmup_episodes)):
-        return None
-
-    model.train()
-    loss_fn = nn.MSELoss()
-    losses = []
-    for _ in range(int(max(1, epochs))):
-        features, targets = replay.sample(batch_size)
-        feature_tensor = torch.tensor(features, dtype=torch.float32, device=device)
-        target_tensor = torch.tensor(targets, dtype=torch.float32, device=device)
-        prediction = model(feature_tensor)
-        loss = loss_fn(prediction, target_tensor)
-        optimizer.zero_grad()
-        loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
-        losses.append(loss.item())
-    model.eval()
-    return float(np.mean(losses)) if losses else None
-
-
-def _compute_noise_reward_blend_alpha(
-        episode_idx, total_episodes,
-        start_alpha=0.2, end_alpha=0.8):
-    progress = float(episode_idx) / max(1, int(total_episodes) - 1)
-    progress = np.clip(progress, 0.0, 1.0)
-    return float(start_alpha + (end_alpha - start_alpha) * progress)
 
 
 def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
