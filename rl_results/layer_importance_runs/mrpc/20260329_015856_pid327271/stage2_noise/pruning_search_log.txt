@@ -1009,3 +1009,317 @@ Noise cost reference (max-noise, for cost normalization only): 49.20
 ============================================================
 
 --- Baseline (Stage-1 Exact) : N=200 次重复评估 ---
+  统计: Loss=0.2989±0.000000 [0.2989, 0.2989]
+  统计: Acc.=0.8799±0.000000 [0.8799, 0.8799]
+  统计: F1=0.8774±0.000000 [0.8774, 0.8774]
+Final-eval report constraints (based on repeated baseline on validation_full): Loss<=0.3139, Acc.>=0.8667, F1>=0.8643
+Evaluating no-noise control for the fixed stage-1 configuration...
+
+--- No-Noise (Fixed Stage-1) : N=200 次重复评估 ---
+  统计: Loss=0.2877±0.000000 [0.2877, 0.2877]
+  统计: Acc.=0.8824±0.000000 [0.8824, 0.8824]
+  统计: F1=0.8804±0.000000 [0.8804, 0.8804]
+
+--- Optimized (Noise PPO) : N=200 次重复评估 ---
+  Trial 1/200: Loss=0.2840, Acc.=0.8750, F1=0.8728, Time=238.8ms
+  Trial 2/200: Loss=0.2865, Acc.=0.8824, F1=0.8801, Time=238.7ms
+  Trial 3/200: Loss=0.2838, Acc.=0.8750, F1=0.8728, Time=238.7ms
+  Trial 4/200: Loss=0.2845, Acc.=0.8824, F1=0.8804, Time=237.8ms
+  Trial 5/200: Loss=0.2843, Acc.=0.8824, F1=0.8804, Time=238.8ms
+  Trial 6/200: Loss=0.2894, Acc.=0.8750, F1=0.8728, Time=238.8ms
+  Trial 7/200: Loss=0.2894, Acc.=0.8824, F1=0.8804, Time=238.8ms
+  Trial 8/200: Loss=0.2896, Acc.=0.8725, F1=0.8708, Time=237.5ms
+  Trial 9/200: Loss=0.2893, Acc.=0.8750, F1=0.8731, Time=238.7ms
+  Trial 10/200: Loss=0.2893, Acc.=0.8775, F1=0.8754, Time=238.8ms
+  Trial 11/200: Loss=0.2872, Acc.=0.8824, F1=0.8801, Time=238.5ms
+  Trial 12/200: Loss=0.2869, Acc.=0.8750, F1=0.8731, Time=237.5ms
+  Trial 13/200: Loss=0.2853, Acc.=0.8799, F1=0.8778, Time=238.8ms
+  Trial 14/200: Loss=0.2888, Acc.=0.8775, F1=0.8754, Time=238.8ms
+  Trial 15/200: Loss=0.2891, Acc.=0.8750, F1=0.8737, Time=238.3ms
+  Trial 16/200: Loss=0.2884, Acc.=0.8775, F1=0.8748, Time=237.5ms
+  Trial 17/200: Loss=0.2876, Acc.=0.8824, F1=0.8801, Time=238.9ms
+  Trial 18/200: Loss=0.2869, Acc.=0.8750, F1=0.8731, Time=238.7ms
+  Trial 19/200: Loss=0.2836, Acc.=0.8897, F1=0.8880, Time=238.4ms
+  Trial 20/200: Loss=0.2803, Acc.=0.8824, F1=0.8804, Time=238.4ms
+  Trial 21/200: Loss=0.2868, Acc.=0.8750, F1=0.8734, Time=238.7ms
+  Trial 22/200: Loss=0.2920, Acc.=0.8775, F1=0.8754, Time=238.6ms
+  Trial 23/200: Loss=0.2879, Acc.=0.8799, F1=0.8781, Time=238.8ms
+  Trial 24/200: Loss=0.2877, Acc.=0.8799, F1=0.8774, Time=237.6ms
+  Trial 25/200: Loss=0.2876, Acc.=0.8750, F1=0.8724, Time=238.8ms
+  Trial 26/200: Loss=0.2868, Acc.=0.8725, F1=0.8705, Time=238.6ms
+  Trial 27/200: Loss=0.2865, Acc.=0.8775, F1=0.8754, Time=238.2ms
+  Trial 28/200: Loss=0.2848, Acc.=0.8848, F1=0.8831, Time=232.3ms
+  Trial 29/200: Loss=0.2842, Acc.=0.8725, F1=0.8708, Time=238.1ms
+  Trial 30/200: Loss=0.2886, Acc.=0.8701, F1=0.8678, Time=238.9ms
+  Trial 31/200: Loss=0.2863, Acc.=0.8750, F1=0.8731, Time=238.8ms
+  Trial 32/200: Loss=0.2879, Acc.=0.8750, F1=0.8728, Time=238.5ms
+  Trial 33/200: Loss=0.2903, Acc.=0.8725, F1=0.8708, Time=238.4ms
+  Trial 34/200: Loss=0.2915, Acc.=0.8750, F1=0.8724, Time=238.8ms
+  Trial 35/200: Loss=0.2891, Acc.=0.8799, F1=0.8781, Time=238.9ms
+  Trial 36/200: Loss=0.2847, Acc.=0.8799, F1=0.8781, Time=238.7ms
+  Trial 37/200: Loss=0.2922, Acc.=0.8701, F1=0.8674, Time=238.4ms
+  Trial 38/200: Loss=0.2877, Acc.=0.8750, F1=0.8731, Time=237.7ms
+  Trial 39/200: Loss=0.2897, Acc.=0.8799, F1=0.8774, Time=238.8ms
+  Trial 40/200: Loss=0.2837, Acc.=0.8775, F1=0.8758, Time=238.8ms
+  Trial 41/200: Loss=0.2862, Acc.=0.8824, F1=0.8794, Time=238.2ms
+  Trial 42/200: Loss=0.2881, Acc.=0.8848, F1=0.8831, Time=239.0ms
+  Trial 43/200: Loss=0.2902, Acc.=0.8750, F1=0.8724, Time=238.6ms
+  Trial 44/200: Loss=0.2886, Acc.=0.8775, F1=0.8751, Time=238.7ms
+  Trial 45/200: Loss=0.2861, Acc.=0.8775, F1=0.8754, Time=238.8ms
+  Trial 46/200: Loss=0.2852, Acc.=0.8775, F1=0.8754, Time=237.4ms
+  Trial 47/200: Loss=0.2883, Acc.=0.8775, F1=0.8751, Time=238.8ms
+  Trial 48/200: Loss=0.2828, Acc.=0.8824, F1=0.8807, Time=238.5ms
+  Trial 49/200: Loss=0.2900, Acc.=0.8775, F1=0.8758, Time=238.4ms
+  Trial 50/200: Loss=0.2847, Acc.=0.8799, F1=0.8774, Time=237.5ms
+  Trial 51/200: Loss=0.2889, Acc.=0.8750, F1=0.8724, Time=238.7ms
+  Trial 52/200: Loss=0.2881, Acc.=0.8750, F1=0.8728, Time=238.7ms
+  Trial 53/200: Loss=0.2886, Acc.=0.8750, F1=0.8731, Time=238.2ms
+  Trial 54/200: Loss=0.2868, Acc.=0.8848, F1=0.8824, Time=239.0ms
+  Trial 55/200: Loss=0.2920, Acc.=0.8701, F1=0.8674, Time=238.7ms
+  Trial 56/200: Loss=0.2893, Acc.=0.8775, F1=0.8754, Time=238.7ms
+  Trial 57/200: Loss=0.2863, Acc.=0.8750, F1=0.8728, Time=238.6ms
+  Trial 58/200: Loss=0.2845, Acc.=0.8824, F1=0.8804, Time=237.8ms
+  Trial 59/200: Loss=0.2852, Acc.=0.8799, F1=0.8781, Time=238.8ms
+  Trial 60/200: Loss=0.2896, Acc.=0.8750, F1=0.8724, Time=238.8ms
+  Trial 61/200: Loss=0.2916, Acc.=0.8799, F1=0.8778, Time=238.7ms
+  Trial 62/200: Loss=0.2862, Acc.=0.8799, F1=0.8784, Time=237.4ms
+  Trial 63/200: Loss=0.2908, Acc.=0.8775, F1=0.8758, Time=238.7ms
+  Trial 64/200: Loss=0.2892, Acc.=0.8775, F1=0.8754, Time=238.7ms
+  Trial 65/200: Loss=0.2867, Acc.=0.8750, F1=0.8731, Time=238.5ms
+  Trial 66/200: Loss=0.2863, Acc.=0.8799, F1=0.8781, Time=238.9ms
+  Trial 67/200: Loss=0.2847, Acc.=0.8824, F1=0.8804, Time=238.7ms
+  Trial 68/200: Loss=0.2886, Acc.=0.8799, F1=0.8774, Time=238.7ms
+  Trial 69/200: Loss=0.2887, Acc.=0.8824, F1=0.8804, Time=238.6ms
+  Trial 70/200: Loss=0.2893, Acc.=0.8848, F1=0.8831, Time=237.4ms
+  Trial 71/200: Loss=0.2876, Acc.=0.8848, F1=0.8824, Time=238.8ms
+  Trial 72/200: Loss=0.2919, Acc.=0.8799, F1=0.8778, Time=238.4ms
+  Trial 73/200: Loss=0.2876, Acc.=0.8775, F1=0.8748, Time=238.3ms
+  Trial 74/200: Loss=0.2852, Acc.=0.8848, F1=0.8824, Time=239.1ms
+  Trial 75/200: Loss=0.2834, Acc.=0.8725, F1=0.8698, Time=238.7ms
+  Trial 76/200: Loss=0.2857, Acc.=0.8799, F1=0.8781, Time=238.7ms
+  Trial 77/200: Loss=0.2874, Acc.=0.8750, F1=0.8724, Time=238.3ms
+  Trial 78/200: Loss=0.2849, Acc.=0.8775, F1=0.8758, Time=238.8ms
+  Trial 79/200: Loss=0.2856, Acc.=0.8824, F1=0.8804, Time=238.7ms
+  Trial 80/200: Loss=0.2932, Acc.=0.8750, F1=0.8721, Time=238.6ms
+  Trial 81/200: Loss=0.2897, Acc.=0.8799, F1=0.8771, Time=238.2ms
+  Trial 82/200: Loss=0.2836, Acc.=0.8873, F1=0.8860, Time=238.6ms
+  Trial 83/200: Loss=0.2842, Acc.=0.8775, F1=0.8751, Time=239.0ms
+  Trial 84/200: Loss=0.2886, Acc.=0.8824, F1=0.8804, Time=238.6ms
+  Trial 85/200: Loss=0.2922, Acc.=0.8799, F1=0.8778, Time=237.9ms
+  Trial 86/200: Loss=0.2866, Acc.=0.8750, F1=0.8724, Time=238.8ms
+  Trial 87/200: Loss=0.2887, Acc.=0.8775, F1=0.8758, Time=238.7ms
+  Trial 88/200: Loss=0.2821, Acc.=0.8750, F1=0.8731, Time=238.6ms
+  Trial 89/200: Loss=0.2915, Acc.=0.8775, F1=0.8754, Time=237.6ms
+  Trial 90/200: Loss=0.2852, Acc.=0.8873, F1=0.8854, Time=238.9ms
+  Trial 91/200: Loss=0.2872, Acc.=0.8848, F1=0.8828, Time=238.8ms
+  Trial 92/200: Loss=0.2834, Acc.=0.8799, F1=0.8781, Time=238.6ms
+  Trial 93/200: Loss=0.2852, Acc.=0.8824, F1=0.8801, Time=238.1ms
+  Trial 94/200: Loss=0.2911, Acc.=0.8799, F1=0.8774, Time=238.8ms
+  Trial 95/200: Loss=0.2868, Acc.=0.8775, F1=0.8751, Time=238.5ms
+  Trial 96/200: Loss=0.2896, Acc.=0.8848, F1=0.8831, Time=238.5ms
+  Trial 97/200: Loss=0.2861, Acc.=0.8799, F1=0.8778, Time=237.7ms
+  Trial 98/200: Loss=0.2879, Acc.=0.8799, F1=0.8781, Time=238.9ms
+  Trial 99/200: Loss=0.2875, Acc.=0.8775, F1=0.8751, Time=238.7ms
+  Trial 100/200: Loss=0.2872, Acc.=0.8824, F1=0.8801, Time=238.6ms
+  Trial 101/200: Loss=0.2920, Acc.=0.8750, F1=0.8728, Time=237.5ms
+  Trial 102/200: Loss=0.2893, Acc.=0.8824, F1=0.8807, Time=238.6ms
+  Trial 103/200: Loss=0.2870, Acc.=0.8775, F1=0.8754, Time=238.6ms
+  Trial 104/200: Loss=0.2847, Acc.=0.8799, F1=0.8784, Time=238.4ms
+  Trial 105/200: Loss=0.2840, Acc.=0.8750, F1=0.8731, Time=237.5ms
+  Trial 106/200: Loss=0.2880, Acc.=0.8775, F1=0.8751, Time=238.7ms
+  Trial 107/200: Loss=0.2883, Acc.=0.8824, F1=0.8804, Time=238.8ms
+  Trial 108/200: Loss=0.2853, Acc.=0.8799, F1=0.8781, Time=238.4ms
+  Trial 109/200: Loss=0.2849, Acc.=0.8799, F1=0.8778, Time=238.3ms
+  Trial 110/200: Loss=0.2882, Acc.=0.8775, F1=0.8758, Time=238.9ms
+  Trial 111/200: Loss=0.2881, Acc.=0.8799, F1=0.8778, Time=238.7ms
+  Trial 112/200: Loss=0.2858, Acc.=0.8799, F1=0.8784, Time=238.3ms
+  Trial 113/200: Loss=0.2904, Acc.=0.8775, F1=0.8751, Time=238.3ms
+  Trial 114/200: Loss=0.2913, Acc.=0.8725, F1=0.8701, Time=238.7ms
+  Trial 115/200: Loss=0.2802, Acc.=0.8799, F1=0.8781, Time=238.7ms
+  Trial 116/200: Loss=0.2956, Acc.=0.8775, F1=0.8754, Time=238.3ms
+  Trial 117/200: Loss=0.2885, Acc.=0.8824, F1=0.8801, Time=238.9ms
+  Trial 118/200: Loss=0.2890, Acc.=0.8775, F1=0.8754, Time=238.9ms
+  Trial 119/200: Loss=0.2889, Acc.=0.8775, F1=0.8754, Time=238.7ms
+  Trial 120/200: Loss=0.2892, Acc.=0.8775, F1=0.8758, Time=238.6ms
+  Trial 121/200: Loss=0.2878, Acc.=0.8775, F1=0.8751, Time=237.4ms
+  Trial 122/200: Loss=0.2921, Acc.=0.8775, F1=0.8758, Time=238.7ms
+  Trial 123/200: Loss=0.2866, Acc.=0.8799, F1=0.8781, Time=238.7ms
+  Trial 124/200: Loss=0.2851, Acc.=0.8775, F1=0.8758, Time=238.1ms
+  Trial 125/200: Loss=0.2871, Acc.=0.8701, F1=0.8674, Time=238.9ms
+  Trial 126/200: Loss=0.2869, Acc.=0.8824, F1=0.8804, Time=238.6ms
+  Trial 127/200: Loss=0.2842, Acc.=0.8750, F1=0.8728, Time=238.7ms
+  Trial 128/200: Loss=0.2884, Acc.=0.8750, F1=0.8731, Time=238.4ms
+  Trial 129/200: Loss=0.2874, Acc.=0.8848, F1=0.8828, Time=238.4ms
+  Trial 130/200: Loss=0.2900, Acc.=0.8799, F1=0.8787, Time=238.8ms
+  Trial 131/200: Loss=0.2896, Acc.=0.8725, F1=0.8708, Time=238.6ms
+  Trial 132/200: Loss=0.2866, Acc.=0.8799, F1=0.8778, Time=238.3ms
+  Trial 133/200: Loss=0.2848, Acc.=0.8775, F1=0.8758, Time=237.5ms
+  Trial 134/200: Loss=0.2906, Acc.=0.8775, F1=0.8751, Time=238.8ms
+  Trial 135/200: Loss=0.2867, Acc.=0.8848, F1=0.8828, Time=238.7ms
+  Trial 136/200: Loss=0.2887, Acc.=0.8824, F1=0.8798, Time=238.3ms
+  Trial 137/200: Loss=0.2853, Acc.=0.8775, F1=0.8751, Time=238.9ms
+  Trial 138/200: Loss=0.2891, Acc.=0.8725, F1=0.8708, Time=238.8ms
+  Trial 139/200: Loss=0.2894, Acc.=0.8775, F1=0.8758, Time=238.6ms
+  Trial 140/200: Loss=0.2931, Acc.=0.8775, F1=0.8754, Time=238.2ms
+  Trial 141/200: Loss=0.2900, Acc.=0.8750, F1=0.8731, Time=239.0ms
+  Trial 142/200: Loss=0.2865, Acc.=0.8848, F1=0.8828, Time=238.8ms
+  Trial 143/200: Loss=0.2865, Acc.=0.8799, F1=0.8781, Time=238.7ms
+  Trial 144/200: Loss=0.2856, Acc.=0.8799, F1=0.8784, Time=238.8ms
+  Trial 145/200: Loss=0.2888, Acc.=0.8799, F1=0.8781, Time=237.7ms
+  Trial 146/200: Loss=0.2922, Acc.=0.8750, F1=0.8731, Time=238.8ms
+  Trial 147/200: Loss=0.2870, Acc.=0.8799, F1=0.8781, Time=238.7ms
+  Trial 148/200: Loss=0.2906, Acc.=0.8775, F1=0.8751, Time=238.4ms
+  Trial 149/200: Loss=0.2903, Acc.=0.8725, F1=0.8708, Time=238.3ms
+  Trial 150/200: Loss=0.2907, Acc.=0.8824, F1=0.8807, Time=238.8ms
+  Trial 151/200: Loss=0.2866, Acc.=0.8775, F1=0.8754, Time=238.6ms
+  Trial 152/200: Loss=0.2863, Acc.=0.8824, F1=0.8804, Time=238.3ms
+  Trial 153/200: Loss=0.2887, Acc.=0.8824, F1=0.8807, Time=238.9ms
+  Trial 154/200: Loss=0.2871, Acc.=0.8848, F1=0.8828, Time=238.7ms
+  Trial 155/200: Loss=0.2859, Acc.=0.8848, F1=0.8831, Time=238.8ms
+  Trial 156/200: Loss=0.2864, Acc.=0.8750, F1=0.8724, Time=238.5ms
+  Trial 157/200: Loss=0.2891, Acc.=0.8775, F1=0.8754, Time=237.8ms
+  Trial 158/200: Loss=0.2841, Acc.=0.8799, F1=0.8784, Time=238.9ms
+  Trial 159/200: Loss=0.2900, Acc.=0.8701, F1=0.8674, Time=238.8ms
+  Trial 160/200: Loss=0.2876, Acc.=0.8775, F1=0.8754, Time=234.7ms
+  Trial 161/200: Loss=0.2852, Acc.=0.8799, F1=0.8774, Time=238.7ms
+  Trial 162/200: Loss=0.2918, Acc.=0.8725, F1=0.8705, Time=238.4ms
+  Trial 163/200: Loss=0.2880, Acc.=0.8848, F1=0.8824, Time=238.9ms
+  Trial 164/200: Loss=0.2903, Acc.=0.8676, F1=0.8661, Time=238.9ms
+  Trial 165/200: Loss=0.2846, Acc.=0.8750, F1=0.8734, Time=238.5ms
+  Trial 166/200: Loss=0.2913, Acc.=0.8750, F1=0.8724, Time=238.7ms
+  Trial 167/200: Loss=0.2901, Acc.=0.8799, F1=0.8781, Time=237.3ms
+  Trial 168/200: Loss=0.2857, Acc.=0.8775, F1=0.8751, Time=238.7ms
+  Trial 169/200: Loss=0.2888, Acc.=0.8750, F1=0.8734, Time=238.7ms
+  Trial 170/200: Loss=0.2858, Acc.=0.8750, F1=0.8728, Time=238.4ms
+  Trial 171/200: Loss=0.2851, Acc.=0.8799, F1=0.8778, Time=239.0ms
+  Trial 172/200: Loss=0.2850, Acc.=0.8799, F1=0.8784, Time=238.7ms
+  Trial 173/200: Loss=0.2834, Acc.=0.8701, F1=0.8674, Time=238.6ms
+  Trial 174/200: Loss=0.2872, Acc.=0.8799, F1=0.8778, Time=238.6ms
+  Trial 175/200: Loss=0.2891, Acc.=0.8750, F1=0.8731, Time=237.2ms
+  Trial 176/200: Loss=0.2891, Acc.=0.8799, F1=0.8778, Time=238.8ms
+  Trial 177/200: Loss=0.2893, Acc.=0.8799, F1=0.8781, Time=238.8ms
+  Trial 178/200: Loss=0.2887, Acc.=0.8750, F1=0.8728, Time=238.3ms
+  Trial 179/200: Loss=0.2832, Acc.=0.8799, F1=0.8781, Time=237.7ms
+  Trial 180/200: Loss=0.2899, Acc.=0.8775, F1=0.8748, Time=238.8ms
+  Trial 181/200: Loss=0.2851, Acc.=0.8799, F1=0.8778, Time=238.6ms
+  Trial 182/200: Loss=0.2887, Acc.=0.8824, F1=0.8804, Time=238.4ms
+  Trial 183/200: Loss=0.2892, Acc.=0.8775, F1=0.8751, Time=238.9ms
+  Trial 184/200: Loss=0.2874, Acc.=0.8775, F1=0.8754, Time=238.7ms
+  Trial 185/200: Loss=0.2863, Acc.=0.8824, F1=0.8804, Time=238.7ms
+  Trial 186/200: Loss=0.2867, Acc.=0.8750, F1=0.8734, Time=238.6ms
+  Trial 187/200: Loss=0.2890, Acc.=0.8750, F1=0.8724, Time=237.4ms
+  Trial 188/200: Loss=0.2895, Acc.=0.8848, F1=0.8828, Time=238.8ms
+  Trial 189/200: Loss=0.2819, Acc.=0.8848, F1=0.8828, Time=238.9ms
+  Trial 190/200: Loss=0.2918, Acc.=0.8725, F1=0.8711, Time=238.1ms
+  Trial 191/200: Loss=0.2922, Acc.=0.8676, F1=0.8655, Time=237.9ms
+  Trial 192/200: Loss=0.2896, Acc.=0.8824, F1=0.8807, Time=238.7ms
+  Trial 193/200: Loss=0.2849, Acc.=0.8725, F1=0.8711, Time=238.6ms
+  Trial 194/200: Loss=0.2868, Acc.=0.8799, F1=0.8781, Time=238.4ms
+  Trial 195/200: Loss=0.2871, Acc.=0.8824, F1=0.8807, Time=238.6ms
+  Trial 196/200: Loss=0.2886, Acc.=0.8824, F1=0.8801, Time=238.7ms
+  Trial 197/200: Loss=0.2843, Acc.=0.8775, F1=0.8754, Time=238.7ms
+  Trial 198/200: Loss=0.2852, Acc.=0.8799, F1=0.8778, Time=238.8ms
+  Trial 199/200: Loss=0.2867, Acc.=0.8873, F1=0.8851, Time=237.5ms
+  Trial 200/200: Loss=0.2851, Acc.=0.8848, F1=0.8831, Time=238.8ms
+  统计: Loss=0.2876±0.002568 [0.2802, 0.2956]
+  统计: Acc.=0.8785±0.003976 [0.8676, 0.8897]
+  统计: F1=0.8764±0.004054 [0.8655, 0.8880]
+Generating 10 permutation noise random configs...
+Generating 10 cost-equivalent noise random configs...
+Generating 10 budget-equivalent noise random configs...
+
+Noise Final Configurations Details:
+[Optimized (Noise PPO)] input_noise_scaling_factors: [22, 26, 22, 28, 24, 22, 26, 22, 22, 22, 22, 24]
+[Optimized (Noise PPO)] wq_noise_scaling_factors: [20, 14, 16, 14, 14, 14, 14, 16, 14, 14, 14, 14]
+[Optimized (Noise PPO)] wk_noise_scaling_factors: [14, 14, 20, 16, 20, 22, 20, 16, 22, 20, 16, 16]
+[Optimized (Noise PPO)] wv_noise_scaling_factors: [16, 16, 16, 18, 14, 16, 14, 16, 14, 16, 14, 20]
+[Optimized (Noise PPO)] wo_noise_scaling_factors: [16, 16, 14, 14, 14, 18, 14, 18, 18, 18, 14, 16]
+[Optimized (Noise PPO)] wffn1_noise_scaling_factors: [22, 16, 18, 16, 16, 16, 16, 16, 16, 22, 16, 16]
+[Optimized (Noise PPO)] wffn2_noise_scaling_factors: [14, 14, 18, 16, 16, 18, 14, 20, 14, 16, 22, 16]
+
+Noise Random Configurations Details:
+[NoisePerm_1] x: [22, 22, 26, 22, 24, 28, 22, 22, 24, 22, 26, 22]
+[NoisePerm_2] x: [24, 24, 22, 22, 22, 26, 22, 22, 22, 26, 28, 22]
+[NoisePerm_3] x: [26, 22, 26, 24, 22, 22, 22, 28, 22, 24, 22, 22]
+[NoisePerm_4] x: [28, 22, 22, 22, 22, 24, 22, 22, 24, 26, 26, 22]
+[NoisePerm_5] x: [26, 22, 22, 22, 28, 22, 22, 22, 24, 26, 22, 24]
+[NoisePerm_6] x: [22, 22, 22, 24, 24, 26, 22, 28, 22, 22, 26, 22]
+[NoisePerm_7] x: [22, 26, 24, 28, 26, 22, 24, 22, 22, 22, 22, 22]
+[NoisePerm_8] x: [22, 22, 22, 28, 22, 22, 24, 22, 22, 26, 24, 26]
+[NoisePerm_9] x: [26, 22, 28, 26, 24, 22, 22, 24, 22, 22, 22, 22]
+[NoisePerm_10] x: [22, 22, 22, 22, 22, 26, 22, 24, 28, 26, 22, 24]
+[NoiseEquiv_1] x: [22, 26, 26, 22, 22, 24, 22, 22, 22, 22, 22, 30]
+[NoiseEquiv_2] x: [22, 26, 22, 22, 22, 24, 24, 22, 24, 22, 24, 28]
+[NoiseEquiv_3] x: [22, 22, 26, 22, 24, 22, 28, 24, 24, 22, 22, 24]
+[NoiseEquiv_4] x: [24, 28, 22, 22, 22, 24, 22, 22, 30, 22, 22, 22]
+[NoiseEquiv_5] x: [28, 22, 22, 22, 24, 26, 24, 22, 22, 24, 24, 22]
+[NoiseEquiv_6] x: [22, 22, 26, 22, 24, 24, 24, 24, 22, 22, 22, 28]
+[NoiseEquiv_7] x: [24, 28, 22, 24, 22, 26, 22, 22, 22, 26, 22, 22]
+[NoiseEquiv_8] x: [22, 26, 22, 22, 22, 26, 26, 22, 24, 24, 24, 22]
+[NoiseEquiv_9] x: [22, 22, 24, 24, 24, 22, 22, 24, 24, 28, 24, 22]
+[NoiseEquiv_10] x: [22, 30, 22, 28, 24, 22, 22, 22, 22, 22, 22, 24]
+[NoiseBudget_1] x: [22, 22, 22, 28, 22, 22, 26, 24, 22, 30, 22, 22]
+[NoiseBudget_2] x: [22, 24, 22, 28, 22, 26, 28, 28, 22, 22, 22, 28]
+[NoiseBudget_3] x: [22, 22, 22, 24, 28, 24, 22, 28, 28, 24, 30, 24]
+[NoiseBudget_4] x: [22, 22, 22, 22, 22, 22, 22, 22, 30, 28, 30, 22]
+[NoiseBudget_5] x: [22, 22, 22, 22, 22, 22, 26, 28, 22, 24, 22, 24]
+[NoiseBudget_6] x: [22, 26, 22, 22, 22, 28, 22, 22, 28, 22, 22, 30]
+[NoiseBudget_7] x: [22, 30, 22, 22, 22, 22, 26, 22, 22, 22, 22, 28]
+[NoiseBudget_8] x: [28, 22, 22, 22, 22, 22, 28, 22, 22, 22, 24, 24]
+[NoiseBudget_9] x: [22, 26, 24, 28, 22, 22, 22, 26, 22, 26, 26, 26]
+[NoiseBudget_10] x: [22, 22, 30, 22, 22, 22, 22, 22, 22, 22, 26, 22]
+
+Noise Performance Comparison Table:
+--------------------------------------------------------------------------------------------------------------------
+Method                    | OK  | Loss     Acc.     F1       | dLoss%    dAcc.%      dF1%        | Noise C  Speedup 
+--------------------------------------------------------------------------------------------------------------------
+Baseline (Stage-1 Exact)  | Y   | 0.2989   0.8799   0.8774   |     0.00%       0.00%       0.00% | N/A      N/A     
+No-Noise (Fixed Stage-1)  | Y   | 0.2877   0.8824   0.8804   |    -3.76%       0.28%       0.34% | N/A      N/A     
+Optimized (Noise PPO)     | Y   | 0.2876   0.8785   0.8764   |    -3.80%      -0.16%      -0.12% | 36.50    1.35    
+--------------------------------------------------------------------------------------------------------------------
+NoisePerm_1               | Y   | 0.2874   0.8701   0.8678   |    -3.86%      -1.11%      -1.10% | 36.50    1.35    
+NoisePerm_2               | Y   | 0.2883   0.8848   0.8831   |    -3.58%       0.56%       0.64% | 36.50    1.35    
+NoisePerm_3               | Y   | 0.2879   0.8775   0.8758   |    -3.71%      -0.28%      -0.19% | 36.50    1.35    
+NoisePerm_4               | Y   | 0.2854   0.8775   0.8754   |    -4.53%      -0.28%      -0.23% | 36.50    1.35    
+NoisePerm_5               | Y   | 0.2903   0.8725   0.8705   |    -2.90%      -0.84%      -0.80% | 36.50    1.35    
+NoisePerm_6               | Y   | 0.2848   0.8799   0.8778   |    -4.74%       0.00%       0.04% | 36.50    1.35    
+NoisePerm_7               | Y   | 0.2899   0.8750   0.8728   |    -3.02%      -0.56%      -0.53% | 36.50    1.35    
+NoisePerm_8               | Y   | 0.2906   0.8799   0.8778   |    -2.78%       0.00%       0.04% | 36.50    1.35    
+NoisePerm_9               | Y   | 0.2923   0.8799   0.8784   |    -2.24%       0.00%       0.11% | 36.50    1.35    
+NoisePerm_10              | Y   | 0.2881   0.8750   0.8734   |    -3.62%      -0.56%      -0.46% | 36.50    1.35    
+NoiseEquiv_1              | Y   | 0.2896   0.8775   0.8751   |    -3.13%      -0.28%      -0.27% | 36.50    1.35    
+NoiseEquiv_2              | Y   | 0.2875   0.8775   0.8754   |    -3.82%      -0.28%      -0.23% | 36.50    1.35    
+NoiseEquiv_3              | Y   | 0.2908   0.8750   0.8728   |    -2.72%      -0.56%      -0.53% | 36.50    1.35    
+NoiseEquiv_4              | Y   | 0.2860   0.8775   0.8754   |    -4.35%      -0.28%      -0.23% | 36.50    1.35    
+NoiseEquiv_5              | Y   | 0.2870   0.8799   0.8778   |    -4.00%       0.00%       0.04% | 36.50    1.35    
+NoiseEquiv_6              | Y   | 0.2876   0.8725   0.8708   |    -3.81%      -0.84%      -0.76% | 36.50    1.35    
+NoiseEquiv_7              | Y   | 0.2873   0.8799   0.8781   |    -3.89%       0.00%       0.07% | 36.50    1.35    
+NoiseEquiv_8              | Y   | 0.2832   0.8848   0.8828   |    -5.26%       0.56%       0.61% | 36.50    1.35    
+NoiseEquiv_9              | Y   | 0.2885   0.8725   0.8701   |    -3.49%      -0.84%      -0.84% | 36.50    1.35    
+NoiseEquiv_10             | Y   | 0.2865   0.8701   0.8674   |    -4.15%      -1.11%      -1.14% | 36.50    1.35    
+NoiseBudget_1             | Y   | 0.2890   0.8775   0.8751   |    -3.34%      -0.28%      -0.27% | 36.95    1.33    
+NoiseBudget_2             | Y   | 0.2875   0.8750   0.8731   |    -3.81%      -0.56%      -0.49% | 36.85    1.34    
+NoiseBudget_3             | Y   | 0.2878   0.8750   0.8731   |    -3.72%      -0.56%      -0.49% | 36.95    1.33    
+NoiseBudget_4             | Y   | 0.2869   0.8725   0.8705   |    -4.05%      -0.84%      -0.80% | 36.95    1.33    
+NoiseBudget_5             | Y   | 0.2870   0.8824   0.8807   |    -3.99%       0.28%       0.37% | 36.95    1.33    
+NoiseBudget_6             | Y   | 0.2881   0.8848   0.8831   |    -3.65%       0.56%       0.64% | 36.95    1.33    
+NoiseBudget_7             | Y   | 0.2891   0.8725   0.8701   |    -3.30%      -0.84%      -0.84% | 36.80    1.34    
+NoiseBudget_8             | Y   | 0.2865   0.8750   0.8728   |    -4.17%      -0.56%      -0.53% | 36.95    1.33    
+NoiseBudget_9             | Y   | 0.2866   0.8750   0.8728   |    -4.13%      -0.56%      -0.53% | 36.90    1.33    
+NoiseBudget_10            | Y   | 0.2880   0.8725   0.8708   |    -3.67%      -0.84%      -0.76% | 36.85    1.34    
+--------------------------------------------------------------------------------------------------------------------
+
+Optimized (Noise PPO) repeated-eval summary (N=200):
+  Loss : 0.2876 ± 0.002568 [0.2802, 0.2956]
+  Acc. : 0.8785 ± 0.003976 [0.8676, 0.8897]
+  F1 : 0.8764 ± 0.004054 [0.8655, 0.8880]
+
+Noise Random Baseline Summary:
+  Overall: samples=30, constraint_ok=100.00%, selected_better_loss=50.00%, selected_better_Acc.=70.00%, selected_dominates=20.00%
+  Overall selected_better_F1=70.00%
+  Perm    samples=10  constraint_ok=100.00% selected_better_loss=70.00% selected_better_Acc.=60.00% selected_dominates=10.00% selected_better_F1=60.00%
+  Equiv   samples=10  constraint_ok=100.00% selected_better_loss=30.00% selected_better_Acc.=70.00% selected_dominates=10.00% selected_better_F1=70.00%
+  Budget  samples=10  constraint_ok=100.00% selected_better_loss=50.00% selected_better_Acc.=80.00% selected_dominates=40.00% selected_better_F1=80.00%
+  Selected config: Loss=0.2876, Acc.=0.8785, F1=0.8764, NoiseCost=36.50
+Noise final evaluation summary saved to: rl_results/layer_importance_runs/mrpc/20260329_015856_pid327271/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Noise final evaluation plot saved to: rl_results/layer_importance_runs/mrpc/20260329_015856_pid327271/stage2_noise_final_eval/noise_final_eval_comparison_mrpc.png
