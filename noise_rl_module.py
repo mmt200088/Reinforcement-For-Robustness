@@ -42,13 +42,19 @@ NOISE_STAGE_SHORTLIST_SIZE = 5
 NOISE_STAGE_PROGRESS_SAVE_INTERVAL = 10000
 NOISE_STAGE_PROGRESS_DIR = os.path.join("rl_results", "noise_rl_progress")
 
-# Reward priority for stage-2 noise RL.
-# These are normalized internally, so 8:2 and 4:1 are equivalent.
-NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE = 8.0
-NOISE_STAGE_REWARD_PRIORITY_COST = 2.0
+NOISE_STAGE_FINAL_REWARD_ALPHA_PERF = 0.75
+NOISE_STAGE_FINAL_REWARD_ALPHA_COST = 0.25
+NOISE_STAGE_PERF_WEIGHT_LOSS = 0.15
+NOISE_STAGE_PERF_WEIGHT_M1 = 0.425
+NOISE_STAGE_PERF_WEIGHT_M2 = 0.425
+NOISE_STAGE_BARRIER_WEIGHT_LOSS = 0.10
+NOISE_STAGE_BARRIER_WEIGHT_M1 = 0.45
+NOISE_STAGE_BARRIER_WEIGHT_M2 = 0.45
+NOISE_STAGE_DENSE_REWARD_SHAPING_SCALE = 0.25
 
 NOISE_STAGE_STABILITY_PROXY_STD_REF = 0.008
 NOISE_STAGE_STABILITY_PENALTY_SCALE = 0.10
+NOISE_STAGE_WEIGHT_TOL = 1e-6
 NOISE_STAGE_STATUS_OK = "ok"
 NOISE_STAGE_STATUS_NO_STABLE_FEASIBLE = "no_stable_feasible_candidate"
 NOISE_STAGE_STABILITY_THRESHOLDS = {
@@ -287,9 +293,16 @@ class NoiseRLModule:
             "reward_diff_enabled": False,
             "keep_cost_reward_when_violating": True,
             "cancel_dense_reward_on_violation": False,
-            "reward_priority_performance": NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE,
-            "reward_priority_cost": NOISE_STAGE_REWARD_PRIORITY_COST,
+            "final_reward_alpha_perf": NOISE_STAGE_FINAL_REWARD_ALPHA_PERF,
+            "final_reward_alpha_cost": NOISE_STAGE_FINAL_REWARD_ALPHA_COST,
+            "perf_weight_loss": NOISE_STAGE_PERF_WEIGHT_LOSS,
+            "perf_weight_metric1": NOISE_STAGE_PERF_WEIGHT_M1,
+            "perf_weight_metric2": NOISE_STAGE_PERF_WEIGHT_M2,
+            "barrier_weight_loss": NOISE_STAGE_BARRIER_WEIGHT_LOSS,
+            "barrier_weight_metric1": NOISE_STAGE_BARRIER_WEIGHT_M1,
+            "barrier_weight_metric2": NOISE_STAGE_BARRIER_WEIGHT_M2,
             "stability_weight": NOISE_STAGE_STABILITY_PENALTY_SCALE,
+            "dense_reward_shaping_scale": NOISE_STAGE_DENSE_REWARD_SHAPING_SCALE,
             "budget_decay_fraction": NOISE_STAGE_BUDGET_DECAY_FRACTION,
             "mc_base_samples": NOISE_STAGE_MC_BASE_SAMPLES,
             "mc_extra_samples": NOISE_STAGE_MC_EXTRA_SAMPLES,
@@ -317,12 +330,19 @@ class NoiseRLModule:
         )
         ev.log(
             "  "
-            f"RewardPriority(performance={NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE}, "
-            f"cost={NOISE_STAGE_REWARD_PRIORITY_COST})"
+            f"FinalReward(alpha_perf={NOISE_STAGE_FINAL_REWARD_ALPHA_PERF}, "
+            f"alpha_cost={NOISE_STAGE_FINAL_REWARD_ALPHA_COST})"
+        )
+        ev.log(
+            "  "
+            f"PerfWeights(loss={NOISE_STAGE_PERF_WEIGHT_LOSS}, "
+            f"m1={NOISE_STAGE_PERF_WEIGHT_M1}, m2={NOISE_STAGE_PERF_WEIGHT_M2}) | "
+            f"BarrierWeights(loss={NOISE_STAGE_BARRIER_WEIGHT_LOSS}, "
+            f"m1={NOISE_STAGE_BARRIER_WEIGHT_M1}, m2={NOISE_STAGE_BARRIER_WEIGHT_M2})"
         )
         ev.log(
             "  RewardShape(diff=disabled, keep_cost_reward_on_violation=True, "
-            "cancel_dense_reward_on_violation=False)"
+            f"cancel_dense_reward_on_violation=False, dense_shaping_scale={NOISE_STAGE_DENSE_REWARD_SHAPING_SCALE})"
         )
         ev.log(
             "  "
@@ -457,14 +477,21 @@ class NoiseRLModule:
             log_barrier_violation_scale=LOG_BARRIER_VIOLATION_SCALE,
             log_barrier_violation_steepness=LOG_BARRIER_VIOLATION_STEEPNESS,
             log_barrier_satisfaction_scale=LOG_BARRIER_SATISFACTION_SCALE,
-            reward_priority_performance=NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE,
-            reward_priority_cost=NOISE_STAGE_REWARD_PRIORITY_COST,
+            final_reward_alpha_perf=NOISE_STAGE_FINAL_REWARD_ALPHA_PERF,
+            final_reward_alpha_cost=NOISE_STAGE_FINAL_REWARD_ALPHA_COST,
+            perf_weight_loss=NOISE_STAGE_PERF_WEIGHT_LOSS,
+            perf_weight_m1=NOISE_STAGE_PERF_WEIGHT_M1,
+            perf_weight_m2=NOISE_STAGE_PERF_WEIGHT_M2,
+            barrier_weight_loss=NOISE_STAGE_BARRIER_WEIGHT_LOSS,
+            barrier_weight_m1=NOISE_STAGE_BARRIER_WEIGHT_M1,
+            barrier_weight_m2=NOISE_STAGE_BARRIER_WEIGHT_M2,
             mc_samples=NOISE_STAGE_MC_SAMPLES,
             stability_weight=NOISE_STAGE_STABILITY_PENALTY_SCALE,
             stability_proxy_std_ref=NOISE_STAGE_STABILITY_PROXY_STD_REF,
             budget_decay_fraction=NOISE_STAGE_BUDGET_DECAY_FRACTION,
             mc_extra_samples=NOISE_STAGE_MC_EXTRA_SAMPLES,
             mc_margin_threshold=NOISE_STAGE_MC_MARGIN_THRESHOLD,
+            dense_reward_shaping_scale=NOISE_STAGE_DENSE_REWARD_SHAPING_SCALE,
         )
         env.prev_episode_metrics = {
             "loss": float(proxy_baseline_stats["loss_mean"]),
@@ -473,23 +500,24 @@ class NoiseRLModule:
             "cost": float(cost_reference_tot_c),
         }
         ev.log(
-            f"Noise-Stage Reward Scale Alignment: "
-            f"reference_cost_saving={env._reference_cost_saving:.4f}, "
-            f"cost_perf_align_scale={env._cost_perf_align_scale:.4f}, "
-            f"safety_bonus={REWARD_SAFETY_BONUS:.2f}, "
-            f"priority_perf={NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE}, "
-            f"priority_cost={NOISE_STAGE_REWARD_PRIORITY_COST}"
+            f"Noise-Stage Reward Scoring: "
+            f"cost_bounds=({env._cost_lower_bound:.2f}, {env._cost_upper_bound:.2f}), "
+            f"alpha_perf={env._final_reward_alpha_perf:.2f}, "
+            f"alpha_cost={env._final_reward_alpha_cost:.2f}, "
+            f"dense_shaping_scale={env._dense_reward_shaping_scale:.2f}"
         )
         buffer = _NoiseRecurrentRolloutBuffer()
 
-        episode_rewards = []
+        episode_returns = []
+        episode_raw_final_rewards = []
+        episode_dense_reward_totals = []
         episode_losses = []
         episode_metric1s = []
         episode_metric2s = []
         episode_entropies = []
         stability_proxies = []
         stability_penalties = []
-        best_selection_reward = float("-inf")
+        best_final_selection_score = float("-inf")
         best_cost = float("inf")
         best_noise_config = None
         window_best_score = float("-inf")
@@ -552,7 +580,7 @@ class NoiseRLModule:
                 -_get_split_metric_sum(candidate, metric_prefix),
                 float(candidate.get(f"{metric_prefix}_loss", float("inf"))),
                 float(candidate["cost"]),
-                -float(candidate.get("selection_reward", -float("inf"))),
+                -float(candidate.get("final_selection_score", -float("inf"))),
             )
 
         def _stable_split_sort_key(candidate, metric_prefix):
@@ -562,7 +590,7 @@ class NoiseRLModule:
                 float(candidate.get(f"{metric_prefix}_stability_score", float("inf"))),
                 float(candidate.get(f"{metric_prefix}_loss", float("inf"))),
                 float(candidate["cost"]),
-                -float(candidate.get("selection_reward", -float("inf"))),
+                -float(candidate.get("final_selection_score", -float("inf"))),
             )
 
         def _joint_metric_sum(candidate):
@@ -584,7 +612,34 @@ class NoiseRLModule:
                 float(candidate.get("stability_score", float("inf"))),
                 float(candidate.get("joint_loss_mean", float("inf"))),
                 float(candidate["cost"]),
-                -float(candidate.get("selection_reward", -float("inf"))),
+                -float(candidate.get("final_selection_score", -float("inf"))),
+            )
+
+        def _split_sort_key_legacy(candidate, metric_prefix):
+            return _build_candidate_score_sort_key(
+                candidate.get("final_selection_score", -float("inf")),
+                candidate.get(f"{metric_prefix}_stability_score", float("inf")),
+                candidate.get("cost", float("inf")),
+                candidate.get(f"{metric_prefix}_loss", float("inf")),
+                _get_split_metric_sum(candidate, metric_prefix),
+            )
+
+        def _stable_split_sort_key_legacy(candidate, metric_prefix):
+            return _build_candidate_score_sort_key(
+                candidate.get("final_selection_score", -float("inf")),
+                candidate.get(f"{metric_prefix}_stability_score", float("inf")),
+                candidate.get("cost", float("inf")),
+                candidate.get(f"{metric_prefix}_loss", float("inf")),
+                _get_split_metric_sum(candidate, metric_prefix),
+            )
+
+        def _joint_sort_key_legacy(candidate):
+            return _build_candidate_score_sort_key(
+                candidate.get("final_selection_score", -float("inf")),
+                candidate.get("stability_score", float("inf")),
+                candidate.get("cost", float("inf")),
+                candidate.get("joint_loss_mean", float("inf")),
+                candidate.get("joint_metric_sum", -float("inf")),
             )
 
         def _is_better_split_candidate(candidate, incumbent, metric_prefix):
@@ -780,16 +835,34 @@ class NoiseRLModule:
                 search_limits["metric1"],
                 search_limits["metric2"],
             )
+            search_mc_eval = {
+                "loss_std": float(search_stats["search_loss_std"]),
+                "metric1_std": float(search_stats["search_metric1_std"]),
+                "metric2_std": float(search_stats["search_metric2_std"]),
+            }
+            confirmed_raw_final_reward, confirmed_reward_components = env.score_reward_components(
+                search_stats["search_loss"],
+                search_stats["search_metric1"],
+                search_stats["search_metric2"],
+                float(candidate_config["cost"]),
+                mc_eval=search_mc_eval,
+                constraint_limits=search_limits,
+            )
 
             confirmed_candidate = {
                 key: (value.copy() if isinstance(value, np.ndarray) else value)
                 for key, value in candidate_config.items()
             }
             confirmed_candidate.update({
-                "proxy_reward_raw": float(candidate_config.get("reward", 0.0)),
-                "selection_reward": float(
-                    candidate_config.get("selection_reward", candidate_config.get("reward", 0.0))
-                ),
+                "reward": float(confirmed_raw_final_reward),
+                "raw_final_reward": float(confirmed_raw_final_reward),
+                "final_selection_score": float(confirmed_reward_components["final_selection_score"]),
+                "perf_score": float(confirmed_reward_components["perf_score"]),
+                "cost_score": float(confirmed_reward_components["cost_score"]),
+                "barrier_penalty": float(confirmed_reward_components["barrier_penalty"]),
+                "stability_proxy": float(confirmed_reward_components["stability_proxy"]),
+                "stability_penalty": float(confirmed_reward_components["stability_penalty"]),
+                "reward_components": dict(confirmed_reward_components),
                 "confirmation_label": confirmation_label,
                 "confirmed_repeats": int(max(1, int(repeats))),
                 "search_ok": bool(search_ok),
@@ -848,8 +921,12 @@ class NoiseRLModule:
 
             ev.log(
                 f"  Noise {confirmation_label} candidate confirmation: "
-                f"selection_reward={confirmed_candidate['selection_reward']:.4f}, "
-                f"raw_reward={confirmed_candidate['proxy_reward_raw']:.4f}, "
+                f"final_selection_score={confirmed_candidate['final_selection_score']:.4f}, "
+                f"raw_final_reward={confirmed_candidate['raw_final_reward']:.4f}, "
+                f"perf_score={confirmed_candidate['perf_score']:.4f}, "
+                f"cost_score={confirmed_candidate['cost_score']:.4f}, "
+                f"barrier_penalty={confirmed_candidate['barrier_penalty']:.4f}, "
+                f"stability_penalty={confirmed_candidate['stability_penalty']:.4f}, "
                 f"search={ev._fmt_metrics(confirmed_candidate['search_loss'], confirmed_candidate['search_metric1'], confirmed_candidate['search_metric2'])}, "
                 f"std=(Loss={confirmed_candidate['search_loss_std']:.4f}, "
                 f"M1={confirmed_candidate['search_metric1_std']:.4f}, "
@@ -885,7 +962,7 @@ class NoiseRLModule:
                 ev.log(
                     f"    Noise Search-Best updated at episode {episode_idx + 1}: "
                     f"cost={search_best_noise_config['cost']:.2f}, "
-                    f"selection_reward={search_best_noise_config['selection_reward']:.4f}"
+                    f"final_selection_score={search_best_noise_config['final_selection_score']:.4f}"
                 )
 
             if confirmed_candidate["stable_search_feasible"] and _is_better_stable_split_candidate(
@@ -897,6 +974,7 @@ class NoiseRLModule:
                 ev.log(
                     f"    Noise Stable Search-Best updated at episode {episode_idx + 1}: "
                     f"cost={stable_search_best_noise_config['cost']:.2f}, "
+                    f"final_selection_score={stable_search_best_noise_config['final_selection_score']:.4f}, "
                     f"stability_score={stable_search_best_noise_config['search_stability_score']:.4f}"
                 )
 
@@ -908,7 +986,7 @@ class NoiseRLModule:
                 ev.log(
                     f"    Noise Joint-Best updated at episode {episode_idx + 1}: "
                     f"cost={joint_best_noise_config['cost']:.2f}, "
-                    f"selection_reward={joint_best_noise_config['selection_reward']:.4f}"
+                    f"final_selection_score={joint_best_noise_config['final_selection_score']:.4f}"
                 )
 
             if confirmed_candidate["stable_joint_feasible"] and _is_better_joint_candidate(
@@ -919,6 +997,7 @@ class NoiseRLModule:
                 ev.log(
                     f"    Noise Stable Joint-Best updated at episode {episode_idx + 1}: "
                     f"cost={stable_joint_best_noise_config['cost']:.2f}, "
+                    f"final_selection_score={stable_joint_best_noise_config['final_selection_score']:.4f}, "
                     f"stability_score={stable_joint_best_noise_config['stability_score']:.4f}"
                 )
 
@@ -938,23 +1017,12 @@ class NoiseRLModule:
             return confirmed_candidate
 
         def _compute_training_stability_proxy(mc_eval):
-            if not mc_eval:
-                return 0.0, 0.0
-
-            components = [
-                float(mc_eval.get("loss_std", 0.0)) / NOISE_STAGE_STABILITY_PROXY_STD_REF,
-                float(mc_eval.get("metric1_std", 0.0)) / NOISE_STAGE_STABILITY_PROXY_STD_REF,
-            ]
-            if num_metrics > 1:
-                components.append(
-                    float(mc_eval.get("metric2_std", 0.0)) / NOISE_STAGE_STABILITY_PROXY_STD_REF
-                )
-
-            stability_proxy = float(np.mean(components)) if components else 0.0
-            stability_penalty = -NOISE_STAGE_STABILITY_PENALTY_SCALE * max(
-                0.0, stability_proxy - 1.0
+            return _compute_stage2_stability_terms(
+                mc_eval,
+                NOISE_STAGE_STABILITY_PROXY_STD_REF,
+                NOISE_STAGE_STABILITY_PENALTY_SCALE,
+                num_metrics,
             )
-            return stability_proxy, stability_penalty
 
         for episode in range(stage2_total_episodes):
             current_lr, current_entropy = ev.update_hyperparameters(optimizer, episode)
@@ -969,6 +1037,7 @@ class NoiseRLModule:
             step_infos = []
             episode_reward_raw = 0.0
             episode_raw_final_reward = None
+            episode_final_selection_score = None
             episode_mc_eval = None
             episode_stability_proxy = None
             episode_stability_penalty = 0.0
@@ -995,6 +1064,9 @@ class NoiseRLModule:
                 reward_for_buffer = reward
                 if done:
                     raw_final_reward = float(info.get("raw_final_reward", 0.0))
+                    final_selection_score = float(
+                        info.get("final_selection_score", raw_final_reward)
+                    )
 
                     mc_eval_for_penalty = info.get("mc_eval") or {}
                     stability_proxy, stability_penalty = _compute_training_stability_proxy(
@@ -1003,16 +1075,19 @@ class NoiseRLModule:
                     stability_proxies.append(stability_proxy)
                     stability_penalties.append(stability_penalty)
 
-                    info["reward"] = raw_final_reward
+                    info["step_reward"] = reward
+                    info["final_selection_score"] = final_selection_score
                     info["stability_proxy"] = stability_proxy
                     info["stability_penalty"] = stability_penalty
 
                     episode_raw_final_reward = raw_final_reward
+                    episode_final_selection_score = final_selection_score
                     episode_mc_eval = mc_eval_for_penalty
                     episode_stability_proxy = stability_proxy
                     episode_stability_penalty = stability_penalty
                 else:
-                    info["reward"] = None
+                    info["step_reward"] = reward
+                    info["final_selection_score"] = None
                     info["stability_proxy"] = None
                     info["stability_penalty"] = 0.0
 
@@ -1054,7 +1129,11 @@ class NoiseRLModule:
                     "mc_metric1_std": mc_eval.get("metric1_std"),
                     "mc_metric2_mean": mc_eval.get("metric2_mean"),
                     "mc_metric2_std": mc_eval.get("metric2_std"),
-                    "reward": info.get("reward"),
+                    "step_reward": info.get("step_reward"),
+                    "dense_reward_step": info.get("dense_reward"),
+                    "raw_final_reward": info.get("raw_final_reward"),
+                    "final_selection_score": info.get("final_selection_score"),
+                    "accumulated_dense_reward": info.get("accumulated_dense_reward"),
                     "stability_proxy": info.get("stability_proxy"),
                     "stability_penalty": info.get("stability_penalty"),
                 }
@@ -1076,7 +1155,11 @@ class NoiseRLModule:
                 state = next_state
 
             buffer.end_episode()
-            episode_rewards.append(episode_reward_raw)
+            episode_returns.append(episode_reward_raw)
+            episode_raw_final_rewards.append(
+                episode_raw_final_reward if episode_raw_final_reward is not None else 0.0
+            )
+            episode_dense_reward_totals.append(float(env.accumulated_dense_reward))
             if env.current_episode_metrics is not None:
                 episode_losses.append(env.current_episode_metrics["loss"])
                 episode_metric1s.append(env.current_episode_metrics["metric1"])
@@ -1090,12 +1173,19 @@ class NoiseRLModule:
             with open(ev.noise_step_info_file, "a", encoding="utf-8") as f:
                 f.write(
                     f"--- Episode {episode + 1} "
-                    f"(Reward={episode_reward_raw:.4f}) ---\n"
+                    f"(EpisodeReturn={episode_reward_raw:.4f}, "
+                    f"RawFinalReward={(episode_raw_final_reward if episode_raw_final_reward is not None else 0.0):.4f}, "
+                    f"DenseRewardTotal={env.accumulated_dense_reward:.4f}) ---\n"
                 )
                 for si in step_infos:
                     _write_noise_step_info(si, f)
                     f.write("\n")
 
+            reward_components = (
+                dict(env.last_reward_components)
+                if getattr(env, "last_reward_components", None) is not None
+                else None
+            )
             final_noise_config = {
                 "input_noise_scaling_factors": np.array(env.input_noise_config, dtype=int),
                 "wq_noise_scaling_factors": np.array(env.wq_noise_config, dtype=int),
@@ -1106,23 +1196,31 @@ class NoiseRLModule:
                 "wffn2_noise_scaling_factors": np.array(env.wffn2_noise_config, dtype=int),
                 "cost": env.accumulated_cost,
                 "reward": episode_raw_final_reward if episode_raw_final_reward is not None else 0.0,
-                "selection_reward": episode_raw_final_reward if episode_raw_final_reward is not None else 0.0,
+                "raw_final_reward": episode_raw_final_reward if episode_raw_final_reward is not None else 0.0,
+                "final_selection_score": (
+                    episode_final_selection_score
+                    if episode_final_selection_score is not None
+                    else (episode_raw_final_reward if episode_raw_final_reward is not None else episode_reward_raw)
+                ),
                 "episode_return": episode_reward_raw,
+                "dense_reward_total": float(env.accumulated_dense_reward),
                 "stability_proxy": episode_stability_proxy,
                 "stability_penalty": episode_stability_penalty,
                 "mc_eval": dict(episode_mc_eval) if episode_mc_eval is not None else None,
-                "reward_components": (
-                    dict(env.last_reward_components)
-                    if getattr(env, "last_reward_components", None) is not None
-                    else None
-                ),
+                "reward_components": reward_components,
             }
+            if reward_components is not None:
+                final_noise_config.update({
+                    "perf_score": float(reward_components["perf_score"]),
+                    "cost_score": float(reward_components["cost_score"]),
+                    "barrier_penalty": float(reward_components["barrier_penalty"]),
+                })
 
-            episode_selection_score = episode_raw_final_reward if episode_raw_final_reward is not None else episode_reward_raw
-            if episode_selection_score > window_best_score or (
-                episode_selection_score == window_best_score and env.accumulated_cost < window_best_cost
+            episode_final_selection_score = float(final_noise_config["final_selection_score"])
+            if episode_final_selection_score > window_best_score or (
+                episode_final_selection_score == window_best_score and env.accumulated_cost < window_best_cost
             ):
-                window_best_score = episode_selection_score
+                window_best_score = episode_final_selection_score
                 window_best_cost = env.accumulated_cost
                 window_best_noise_config = {
                     key: (
@@ -1135,10 +1233,10 @@ class NoiseRLModule:
                     for key, value in final_noise_config.items()
                 }
 
-            if episode_selection_score > best_selection_reward or (
-                episode_selection_score == best_selection_reward and env.accumulated_cost < best_cost
+            if episode_final_selection_score > best_final_selection_score or (
+                episode_final_selection_score == best_final_selection_score and env.accumulated_cost < best_cost
             ):
-                best_selection_reward = episode_selection_score
+                best_final_selection_score = episode_final_selection_score
                 best_cost = env.accumulated_cost
                 best_noise_config = {
                     key: (
@@ -1152,7 +1250,8 @@ class NoiseRLModule:
                 }
                 ev.log(
                     f"  Noise Episode {episode + 1}: New Best! "
-                    f"RawFinalReward={episode_selection_score:.4f}, "
+                    f"FinalSelectionScore={episode_final_selection_score:.4f}, "
+                    f"RawFinalReward={(episode_raw_final_reward if episode_raw_final_reward is not None else 0.0):.4f}, "
                     f"EpisodeReturn={episode_reward_raw:.4f}, "
                     f"Cost={env.accumulated_cost:.2f}"
                 )
@@ -1189,7 +1288,10 @@ class NoiseRLModule:
                 noise_ppo_update_count += 1
                 buffer.clear()
                 episode_entropies.append(entropy)
-                avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
+                avg_episode_return = np.mean(episode_returns[-PPO_UPDATE_INTERVAL:])
+                avg_raw_final_reward = np.mean(
+                    episode_raw_final_rewards[-PPO_UPDATE_INTERVAL:]
+                )
                 warmup_status = "constant"
                 if NOISE_STAGE_GTRXL_WARMUP_MODE != "constant":
                     warmup_status = (
@@ -1198,7 +1300,8 @@ class NoiseRLModule:
                         else "normal"
                     )
                 ev.log(
-                    f"  Noise Episode {episode + 1}: Avg Reward={avg_reward:.4f}, "
+                    f"  Noise Episode {episode + 1}: Avg EpisodeReturn={avg_episode_return:.4f}, "
+                    f"Avg RawFinalReward={avg_raw_final_reward:.4f}, "
                     f"Policy Loss={policy_loss:.4f}, "
                     f"Value Loss={value_loss:.4f}, Entropy={entropy:.4f}"
                 )
@@ -1256,7 +1359,8 @@ class NoiseRLModule:
                 )
                 _plot_noise_training_curves(
                     ev,
-                    episode_rewards,
+                    episode_returns,
+                    episode_raw_final_rewards,
                     episode_losses,
                     episode_metric1s,
                     episode_metric2s,
@@ -1309,6 +1413,7 @@ class NoiseRLModule:
                     ev.log(
                         f"    Final Stable Joint-Best updated from finalist #{finalist_idx}: "
                         f"cost={finalist_best_noise_config['cost']:.2f}, "
+                        f"final_selection_score={finalist_best_noise_config['final_selection_score']:.4f}, "
                         f"stability_score={finalist_best_noise_config['stability_score']:.4f}"
                     )
 
@@ -1339,14 +1444,16 @@ class NoiseRLModule:
             ):
                 ev.log(f"  {key}: {best_noise_config[key].tolist()}")
             ev.log(
-                f"  Cost: {best_noise_config['cost']:.2f}, Reward: {best_noise_config['reward']:.4f}, "
+                f"  Cost: {best_noise_config['cost']:.2f}, "
+                f"FinalSelectionScore: {best_noise_config['final_selection_score']:.4f}, "
+                f"RawFinalReward: {best_noise_config['raw_final_reward']:.4f}, "
                 f"StabilityScore: {best_noise_config['stability_score']:.4f}"
             )
         else:
             ev.log("No stable feasible noise configuration was selected in this run.")
 
         _plot_noise_training_curves(
-            ev, episode_rewards, episode_losses, episode_metric1s, episode_metric2s, episode_entropies,
+            ev, episode_returns, episode_raw_final_rewards, episode_losses, episode_metric1s, episode_metric2s, episode_entropies,
             base_loss=base_loss, base_p=base_p, base_s=base_s,
             training_curve_path=noise_training_curve_path,
             entropy_curve_path=noise_entropy_curve_path,
@@ -1364,11 +1471,27 @@ class NoiseRLModule:
             "mc_extra_samples": NOISE_STAGE_MC_EXTRA_SAMPLES,
             "mc_margin_threshold": NOISE_STAGE_MC_MARGIN_THRESHOLD,
             "budget_decay_fraction": NOISE_STAGE_BUDGET_DECAY_FRACTION,
-            "reward_mean": (
-                float(np.mean(episode_rewards))
-                if episode_rewards
+            "episode_return_mean": (
+                float(np.mean(episode_returns))
+                if episode_returns
                 else None
             ),
+            "final_selection_score_mean": (
+                float(np.mean(episode_raw_final_rewards))
+                if episode_raw_final_rewards
+                else None
+            ),
+            "raw_final_reward_mean": (
+                float(np.mean(episode_raw_final_rewards))
+                if episode_raw_final_rewards
+                else None
+            ),
+            "dense_reward_total_mean": (
+                float(np.mean(episode_dense_reward_totals))
+                if episode_dense_reward_totals
+                else None
+            ),
+            "dense_reward_shaping_scale": float(NOISE_STAGE_DENSE_REWARD_SHAPING_SCALE),
             "stability_proxy_mean": (
                 float(np.mean(stability_proxies))
                 if stability_proxies
@@ -1680,14 +1803,21 @@ class _NoiseOptEnv:
                  log_barrier_violation_scale=10.0,
                  log_barrier_violation_steepness=20.0,
                  log_barrier_satisfaction_scale=0.5,
-                 reward_priority_performance=8.0,
-                 reward_priority_cost=2.0,
+                 final_reward_alpha_perf=0.75,
+                 final_reward_alpha_cost=0.25,
+                 perf_weight_loss=0.15,
+                 perf_weight_m1=0.425,
+                 perf_weight_m2=0.425,
+                 barrier_weight_loss=0.10,
+                 barrier_weight_m1=0.45,
+                 barrier_weight_m2=0.45,
                  mc_samples=5,
                  stability_weight=0.15,
                  stability_proxy_std_ref=0.008,
                  budget_decay_fraction=0.5,
                  mc_extra_samples=4,
-                 mc_margin_threshold=0.02):
+                 mc_margin_threshold=0.02,
+                 dense_reward_shaping_scale=0.25):
         self.total_layers = total_layers
         self.baseline_cost = baseline_cost
         self.baseline_loss, self.baseline_p, self.baseline_s = baseline_metrics
@@ -1740,14 +1870,30 @@ class _NoiseOptEnv:
         self._log_barrier_viol_scale = log_barrier_violation_scale
         self._log_barrier_viol_steep = log_barrier_violation_steepness
         self._log_barrier_sat_scale = log_barrier_satisfaction_scale
-        total_priority = max(
-            1e-8,
-            float(reward_priority_performance) + float(reward_priority_cost),
+        self._final_reward_alpha_perf, self._final_reward_alpha_cost = (
+            _validate_stage2_alpha_weights(
+                final_reward_alpha_perf,
+                final_reward_alpha_cost,
+            )
         )
-        self._reward_priority_performance = (
-            float(reward_priority_performance) / total_priority
+        self._perf_weights = _resolve_stage2_metric_weights(
+            num_metrics,
+            {
+                "loss": perf_weight_loss,
+                "metric1": perf_weight_m1,
+                "metric2": perf_weight_m2,
+            },
+            label="perf_weights",
         )
-        self._reward_priority_cost = float(reward_priority_cost) / total_priority
+        self._barrier_weights = _resolve_stage2_metric_weights(
+            num_metrics,
+            {
+                "loss": barrier_weight_loss,
+                "metric1": barrier_weight_m1,
+                "metric2": barrier_weight_m2,
+            },
+            label="barrier_weights",
+        )
         self._mc_samples = max(1, int(mc_samples))
         self._stability_weight = float(stability_weight)
         self._stability_proxy_std_ref = float(stability_proxy_std_ref)
@@ -1755,6 +1901,7 @@ class _NoiseOptEnv:
         self._episode_progress = 0.0
         self._mc_extra_samples = max(0, int(mc_extra_samples))
         self._mc_margin_threshold = float(mc_margin_threshold)
+        self._dense_reward_shaping_scale = float(dense_reward_shaping_scale)
 
         if constraint_limits is None:
             self.constraint_limits = {
@@ -1775,8 +1922,11 @@ class _NoiseOptEnv:
         else:
             self.prev_episode_metrics = prev_metrics
 
+        min_input_cost = self._input_noise_cost_map[min(self._input_noise_allowed)]
         max_input_cost = self._input_noise_cost_map[max(self._input_noise_allowed)]
+        min_generic_weight_cost = self._weight_noise_cost_map[min(self._weight_noise_allowed)]
         max_generic_weight_cost = self._weight_noise_cost_map[max(self._weight_noise_allowed)]
+        min_wffn1_cost = self._wffn1_noise_cost_map[min(self._wffn1_noise_allowed)]
         max_wffn1_cost = self._wffn1_noise_cost_map[max(self._wffn1_noise_allowed)]
         mean_input_cost = np.mean([self._input_noise_cost_map[sf] for sf in self._input_noise_allowed])
         mean_generic_weight_cost = np.mean(
@@ -1784,6 +1934,11 @@ class _NoiseOptEnv:
         )
         mean_wffn1_cost = np.mean(
             [self._wffn1_noise_cost_map[sf] for sf in self._wffn1_noise_allowed]
+        )
+        self.min_cost_per_layer = (
+            min_input_cost
+            + 5 * min_generic_weight_cost
+            + min_wffn1_cost
         )
         self.max_cost_per_layer = (
             max_input_cost
@@ -1795,18 +1950,8 @@ class _NoiseOptEnv:
             + 5 * mean_generic_weight_cost
             + mean_wffn1_cost
         )
-
-        # Auto-calibrate cost-to-performance scale alignment.
-        # At the expected operating point (cost_saving = reference_cost_saving),
-        # r_cost will equal reward_safety_bonus, so both terms have the same
-        # magnitude and the priority weights directly control their ratio.
-        expected_total_cost = self.expected_cost_per_layer * total_layers
-        reference_cost_saving = max(
-            (self.baseline_cost - expected_total_cost) / (self.baseline_cost + 1e-8),
-            0.01,
-        )
-        self._cost_perf_align_scale = self._reward_safety_bonus / reference_cost_saving
-        self._reference_cost_saving = reference_cost_saving
+        self._cost_lower_bound = self.min_cost_per_layer * total_layers
+        self._cost_upper_bound = float(self.baseline_cost)
 
         self.current_episode_metrics = None
         self.last_reward_components = None
@@ -1971,7 +2116,7 @@ class _NoiseOptEnv:
             "time_std_ms": float(np.std(times)),
         }
 
-    def _assemble_final_reward(self, loss, m1, m2, mc_eval=None):
+    def _assemble_final_reward_legacy(self, loss, m1, m2, mc_eval=None):
         limits = self._get_current_constraint_limits()
         r_diff = 0.0
 
@@ -2070,6 +2215,48 @@ class _NoiseOptEnv:
         self.last_reward_components = reward_components
         return float(reward), reward_components
 
+    def score_reward_components(self, loss, m1, m2, cost, mc_eval=None, constraint_limits=None):
+        limits = (
+            constraint_limits
+            if constraint_limits is not None
+            else self._get_current_constraint_limits()
+        )
+        return _compute_stage2_reward_components(
+            loss=loss,
+            metric1=m1,
+            metric2=m2,
+            baseline_metrics=(self.baseline_loss, self.baseline_p, self.baseline_s),
+            constraint_limits=limits,
+            cost_value=cost,
+            cost_lower_bound=self._cost_lower_bound,
+            cost_upper_bound=self._cost_upper_bound,
+            final_reward_alpha_perf=self._final_reward_alpha_perf,
+            final_reward_alpha_cost=self._final_reward_alpha_cost,
+            perf_weights=self._perf_weights,
+            barrier_weights=self._barrier_weights,
+            stability_proxy_std_ref=self._stability_proxy_std_ref,
+            stability_weight=self._stability_weight,
+            num_metrics=self.num_metrics,
+            mc_eval=mc_eval,
+        )
+
+    def _assemble_final_reward(self, loss, m1, m2, mc_eval=None):
+        reward, reward_components = self.score_reward_components(
+            loss,
+            m1,
+            m2,
+            self.accumulated_cost,
+            mc_eval=mc_eval,
+        )
+        self.last_cost_reward = float(
+            self._final_reward_alpha_cost * reward_components["cost_score"]
+        )
+        self.last_acc_reward = float(
+            self._final_reward_alpha_perf * reward_components["perf_score"]
+        )
+        self.last_reward_components = dict(reward_components)
+        return float(reward), reward_components
+
     def _get_state(self):
         position = np.zeros(self.total_layers, dtype=np.float32)
         if self.current_layer < self.total_layers:
@@ -2123,7 +2310,8 @@ class _NoiseOptEnv:
             budget_reward = effective_budget_scale * (1.0 - abs(budget_deviation) * 0.5)
         else:
             budget_reward = -effective_budget_scale * budget_deviation
-        return cost_reward + budget_reward
+        dense_reward = cost_reward + budget_reward
+        return self._dense_reward_shaping_scale * dense_reward
 
     def step(self, input_action_idx, wq_action_idx, wk_action_idx, wv_action_idx,
              wo_action_idx, wffn1_action_idx, wffn2_action_idx):
@@ -2206,6 +2394,7 @@ class _NoiseOptEnv:
         final_reward = self._compute_final_reward()
         info["final_reward"] = final_reward["raw_final_reward"]
         info["raw_final_reward"] = final_reward["raw_final_reward"]
+        info["final_selection_score"] = final_reward["reward_components"]["final_selection_score"]
         info["mc_eval"] = final_reward["mc_eval"]
         info["reward_components"] = final_reward["reward_components"]
         info["accumulated_dense_reward"] = self.accumulated_dense_reward
@@ -2239,6 +2428,189 @@ class _NoiseOptEnv:
 # ---------------------------------------------------------------------------
 # Module-private helper functions
 # ---------------------------------------------------------------------------
+
+def _validate_stage2_alpha_weights(alpha_perf, alpha_cost, tol=NOISE_STAGE_WEIGHT_TOL):
+    alpha_perf = float(alpha_perf)
+    alpha_cost = float(alpha_cost)
+    if not np.isclose(alpha_perf + alpha_cost, 1.0, atol=tol):
+        raise ValueError(
+            "Stage-2 final reward alpha weights must sum to 1.0: "
+            f"perf={alpha_perf}, cost={alpha_cost}"
+        )
+    return alpha_perf, alpha_cost
+
+
+def _resolve_stage2_metric_weights(num_metrics, weight_map, label):
+    active_keys = ["loss", "metric1"]
+    if num_metrics > 1:
+        active_keys.append("metric2")
+        total = sum(float(weight_map[key]) for key in active_keys)
+        if not np.isclose(total, 1.0, atol=NOISE_STAGE_WEIGHT_TOL):
+            raise ValueError(
+                f"{label} must sum to 1.0 for multi-metric tasks, got {total:.6f}"
+            )
+        return {key: float(weight_map[key]) for key in active_keys}
+
+    active_total = sum(float(weight_map[key]) for key in active_keys)
+    if active_total <= 0:
+        raise ValueError(f"{label} active weights must sum to a positive value")
+    return {
+        key: float(weight_map[key]) / active_total
+        for key in active_keys
+    }
+
+
+def _compute_stage2_stability_terms(mc_eval, stability_proxy_std_ref, stability_weight, num_metrics):
+    stability_proxy = 0.0
+    stability_penalty = 0.0
+    if mc_eval is None:
+        return stability_proxy, stability_penalty
+
+    std_components = [
+        float(mc_eval.get("loss_std", 0.0)) / max(float(stability_proxy_std_ref), 1e-8),
+        float(mc_eval.get("metric1_std", 0.0)) / max(float(stability_proxy_std_ref), 1e-8),
+    ]
+    if num_metrics > 1:
+        std_components.append(
+            float(mc_eval.get("metric2_std", 0.0)) / max(float(stability_proxy_std_ref), 1e-8)
+        )
+    stability_proxy = float(np.mean(std_components)) if std_components else 0.0
+    stability_penalty = -float(stability_weight) * max(0.0, stability_proxy - 1.0)
+    return stability_proxy, stability_penalty
+
+
+def _compute_stage2_reward_components(
+    *,
+    loss,
+    metric1,
+    metric2,
+    baseline_metrics,
+    constraint_limits,
+    cost_value,
+    cost_lower_bound,
+    cost_upper_bound,
+    final_reward_alpha_perf,
+    final_reward_alpha_cost,
+    perf_weights,
+    barrier_weights,
+    stability_proxy_std_ref,
+    stability_weight,
+    num_metrics,
+    mc_eval=None,
+):
+    baseline_loss, baseline_metric1, baseline_metric2 = baseline_metrics
+    loss_limit = float(constraint_limits["loss"])
+    metric1_limit = float(constraint_limits["metric1"])
+    metric2_limit = float(constraint_limits["metric2"])
+
+    loss_ratio = (loss_limit - float(loss)) / max(loss_limit - float(baseline_loss), 1e-8)
+    metric1_ratio = (float(metric1) - metric1_limit) / max(float(baseline_metric1) - metric1_limit, 1e-8)
+    if num_metrics > 1:
+        metric2_ratio = (float(metric2) - metric2_limit) / max(float(baseline_metric2) - metric2_limit, 1e-8)
+    else:
+        metric2_ratio = 0.0
+
+    loss_score = float(np.clip(loss_ratio, 0.0, 1.0))
+    metric1_score = float(np.clip(metric1_ratio, 0.0, 1.0))
+    metric2_score = float(np.clip(metric2_ratio, 0.0, 1.0)) if num_metrics > 1 else 0.0
+
+    loss_violation = float(max(0.0, -loss_ratio))
+    metric1_violation = float(max(0.0, -metric1_ratio))
+    metric2_violation = float(max(0.0, -metric2_ratio)) if num_metrics > 1 else 0.0
+
+    perf_score = (
+        float(perf_weights["loss"]) * loss_score
+        + float(perf_weights["metric1"]) * metric1_score
+    )
+    barrier_penalty = (
+        float(barrier_weights["loss"]) * loss_violation
+        + float(barrier_weights["metric1"]) * metric1_violation
+    )
+    if num_metrics > 1:
+        perf_score += float(perf_weights["metric2"]) * metric2_score
+        barrier_penalty += float(barrier_weights["metric2"]) * metric2_violation
+
+    cost_score = float(
+        np.clip(
+            (float(cost_upper_bound) - float(cost_value))
+            / max(float(cost_upper_bound) - float(cost_lower_bound), 1e-8),
+            0.0,
+            1.0,
+        )
+    )
+    stability_proxy, stability_penalty = _compute_stage2_stability_terms(
+        mc_eval,
+        stability_proxy_std_ref,
+        stability_weight,
+        num_metrics,
+    )
+    raw_final_reward = (
+        float(final_reward_alpha_perf) * perf_score
+        + float(final_reward_alpha_cost) * cost_score
+        - barrier_penalty
+        + stability_penalty
+    )
+    constraints_ok = (
+        (loss_ratio >= 0.0)
+        and (metric1_ratio >= 0.0)
+        and (num_metrics == 1 or metric2_ratio >= 0.0)
+    )
+    cost_saving = (float(cost_upper_bound) - float(cost_value)) / max(float(cost_upper_bound), 1e-8)
+
+    reward_components = {
+        "loss_limit": float(loss_limit),
+        "metric1_limit": float(metric1_limit),
+        "metric2_limit": float(metric2_limit),
+        "loss_ratio": float(loss_ratio),
+        "metric1_ratio": float(metric1_ratio),
+        "metric2_ratio": float(metric2_ratio),
+        "loss_score": float(loss_score),
+        "metric1_score": float(metric1_score),
+        "metric2_score": float(metric2_score),
+        "loss_violation": float(loss_violation),
+        "metric1_violation": float(metric1_violation),
+        "metric2_violation": float(metric2_violation),
+        "perf_score": float(perf_score),
+        "cost_score": float(cost_score),
+        "barrier_penalty": float(barrier_penalty),
+        "stability_proxy": float(stability_proxy),
+        "stability_penalty": float(stability_penalty),
+        "constraints_ok": bool(constraints_ok),
+        "cost_lower_bound": float(cost_lower_bound),
+        "cost_upper_bound": float(cost_upper_bound),
+        "current_cost": float(cost_value),
+        "cost_saving": float(cost_saving),
+        "final_reward_alpha_perf": float(final_reward_alpha_perf),
+        "final_reward_alpha_cost": float(final_reward_alpha_cost),
+        "perf_weight_loss": float(perf_weights["loss"]),
+        "perf_weight_metric1": float(perf_weights["metric1"]),
+        "perf_weight_metric2": float(perf_weights.get("metric2", 0.0)),
+        "barrier_weight_loss": float(barrier_weights["loss"]),
+        "barrier_weight_metric1": float(barrier_weights["metric1"]),
+        "barrier_weight_metric2": float(barrier_weights.get("metric2", 0.0)),
+        "stability_weight": float(stability_weight),
+        "metric2_active": bool(num_metrics > 1),
+        "raw_final_reward": float(raw_final_reward),
+        "final_selection_score": float(raw_final_reward),
+    }
+    return float(raw_final_reward), reward_components
+
+
+def _build_candidate_score_sort_key(
+    final_selection_score,
+    stability_score,
+    cost_value,
+    loss_value,
+    metric_sum,
+):
+    return (
+        -float(final_selection_score),
+        float(stability_score),
+        float(cost_value),
+        float(loss_value),
+        -float(metric_sum),
+    )
+
 
 def _write_noise_step_info(step_info, f):
     f.write(f"  step_global: {step_info['step_global']}\n")
@@ -2280,8 +2652,16 @@ def _write_noise_step_info(step_info, f):
         f.write(f"  mc_metric1_std: {step_info['mc_metric1_std']}\n")
         f.write(f"  mc_metric2_mean: {step_info['mc_metric2_mean']}\n")
         f.write(f"  mc_metric2_std: {step_info['mc_metric2_std']}\n")
-    if step_info.get("reward") is not None:
-        f.write(f"  reward: {step_info['reward']}\n")
+    if step_info.get("step_reward") is not None:
+        f.write(f"  step_reward: {step_info['step_reward']}\n")
+    if step_info.get("dense_reward_step") is not None:
+        f.write(f"  dense_reward_step: {step_info['dense_reward_step']}\n")
+    if step_info.get("raw_final_reward") is not None:
+        f.write(f"  raw_final_reward: {step_info['raw_final_reward']}\n")
+    if step_info.get("final_selection_score") is not None:
+        f.write(f"  final_selection_score: {step_info['final_selection_score']}\n")
+    if step_info.get("accumulated_dense_reward") is not None:
+        f.write(f"  accumulated_dense_reward: {step_info['accumulated_dense_reward']}\n")
     if step_info.get("stability_proxy") is not None:
         f.write(f"  stability_proxy: {step_info['stability_proxy']}\n")
     if step_info.get("stability_penalty") is not None:
@@ -2417,22 +2797,23 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
 
 def _plot_noise_training_curves(
         evaluator,
-        episode_rewards, episode_losses, episode_metric1s, episode_metric2s,
+        episode_returns, episode_raw_final_rewards, episode_losses, episode_metric1s, episode_metric2s,
         episode_entropies,
         base_loss, base_p, base_s,
         training_curve_path="noise_ppo_training_curve.png",
         entropy_curve_path="noise_ppo_entropy_curve.png",
         ppo_update_interval=170,
         use_validation=True):
-    if len(episode_rewards) == 0:
+    if len(episode_returns) == 0:
         return
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
-        episodes = np.arange(1, len(episode_rewards) + 1)
-        rewards = np.array(episode_rewards, dtype=np.float32)
+        episodes = np.arange(1, len(episode_returns) + 1)
+        episode_returns_arr = np.array(episode_returns, dtype=np.float32)
+        raw_final_rewards = np.array(episode_raw_final_rewards, dtype=np.float32)
         losses = np.array(episode_losses, dtype=np.float32)
         metric1s = np.array(episode_metric1s, dtype=np.float32)
         metric2s = np.array(episode_metric2s, dtype=np.float32)
@@ -2440,7 +2821,7 @@ def _plot_noise_training_curves(
         _num_m = evaluator.get_num_metrics()
         _m1_name = metric_names_tuple[0]
         _m2_name = metric_names_tuple[1] if _num_m > 1 else metric_names_tuple[0]
-        window = min(50, max(1, len(rewards) // 10))
+        window = min(50, max(1, len(episode_returns_arr) // 10))
 
         def compute_ma(data):
             if len(data) < window:
@@ -2448,11 +2829,12 @@ def _plot_noise_training_curves(
             kernel = np.ones(window, dtype=np.float32) / window
             return np.convolve(data, kernel, mode="valid")
 
-        rewards_ma = compute_ma(rewards)
+        episode_returns_ma = compute_ma(episode_returns_arr)
+        raw_final_rewards_ma = compute_ma(raw_final_rewards)
         losses_ma = compute_ma(losses)
         metric1s_ma = compute_ma(metric1s)
         metric2s_ma = compute_ma(metric2s) if _num_m > 1 else None
-        episodes_ma = episodes[window - 1:] if len(rewards) >= window else episodes
+        episodes_ma = episodes[window - 1:] if len(episode_returns_arr) >= window else episodes
 
         dataset_info = f" ({evaluator.data_path})"
         val_guided_info = " [Validation Guided]" if use_validation else ""
@@ -2467,9 +2849,11 @@ def _plot_noise_training_curves(
             fig.suptitle(f"Noise PPO Training Curves{dataset_info}{val_guided_info}", fontsize=14, fontweight="bold")
             ax1, ax2, ax3, ax4 = axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]
 
-        ax1.plot(episodes, rewards, label="Episode Reward", alpha=0.6, color="blue")
-        ax1.plot(episodes_ma, rewards_ma, label=f"Moving Avg ({window})", linewidth=2, color="darkblue")
-        ax1.set_xlabel("Episode"); ax1.set_ylabel("Reward"); ax1.set_title("Episode Reward"); ax1.grid(True, alpha=0.3); ax1.legend()
+        ax1.plot(episodes, episode_returns_arr, label="Episode Return", alpha=0.45, color="steelblue")
+        ax1.plot(episodes_ma, episode_returns_ma, label=f"Episode Return MA ({window})", linewidth=2, color="navy")
+        ax1.plot(episodes, raw_final_rewards, label="Raw Final Reward", alpha=0.45, color="darkorange")
+        ax1.plot(episodes_ma, raw_final_rewards_ma, label=f"Raw Final Reward MA ({window})", linewidth=2, color="orangered")
+        ax1.set_xlabel("Episode"); ax1.set_ylabel("Reward"); ax1.set_title("Episode Return vs Raw Final Reward"); ax1.grid(True, alpha=0.3); ax1.legend()
 
         ax2.plot(episodes, losses, label="Loss", alpha=0.6, color="red")
         ax2.plot(episodes_ma, losses_ma, label=f"Moving Avg ({window})", linewidth=2, color="darkred")
@@ -2499,7 +2883,7 @@ def _plot_noise_training_curves(
         evaluator.log(f"Noise PPO training curves saved to: {training_curve_path}")
 
         if episode_entropies:
-            update_episodes = np.arange(ppo_update_interval, len(episode_rewards) + 1, ppo_update_interval)
+            update_episodes = np.arange(ppo_update_interval, len(episode_returns) + 1, ppo_update_interval)
             entropies = np.array(episode_entropies, dtype=np.float32)
             if len(update_episodes) == len(entropies):
                 fig_ent, ax_ent = plt.subplots(1, 1, figsize=(10, 5))
