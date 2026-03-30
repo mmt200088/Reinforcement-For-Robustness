@@ -472,6 +472,14 @@ class NoiseRLModule:
             "metric2": float(proxy_baseline_stats["s_mean"]),
             "cost": float(cost_reference_tot_c),
         }
+        ev.log(
+            f"Noise-Stage Reward Scale Alignment: "
+            f"reference_cost_saving={env._reference_cost_saving:.4f}, "
+            f"cost_perf_align_scale={env._cost_perf_align_scale:.4f}, "
+            f"safety_bonus={REWARD_SAFETY_BONUS:.2f}, "
+            f"priority_perf={NOISE_STAGE_REWARD_PRIORITY_PERFORMANCE}, "
+            f"priority_cost={NOISE_STAGE_REWARD_PRIORITY_COST}"
+        )
         buffer = _NoiseRecurrentRolloutBuffer()
 
         episode_rewards = []
@@ -539,19 +547,21 @@ class NoiseRLModule:
             return metric_sum
 
         def _split_sort_key(candidate, metric_prefix):
+            # Priority: metrics (higher=better) → loss (lower=better) → cost → reward
             return (
-                float(candidate["cost"]),
-                float(candidate.get(f"{metric_prefix}_loss", float("inf"))),
                 -_get_split_metric_sum(candidate, metric_prefix),
+                float(candidate.get(f"{metric_prefix}_loss", float("inf"))),
+                float(candidate["cost"]),
                 -float(candidate.get("selection_reward", -float("inf"))),
             )
 
         def _stable_split_sort_key(candidate, metric_prefix):
+            # Priority: metrics → stability → loss → cost → reward
             return (
-                float(candidate["cost"]),
+                -_get_split_metric_sum(candidate, metric_prefix),
                 float(candidate.get(f"{metric_prefix}_stability_score", float("inf"))),
                 float(candidate.get(f"{metric_prefix}_loss", float("inf"))),
-                -_get_split_metric_sum(candidate, metric_prefix),
+                float(candidate["cost"]),
                 -float(candidate.get("selection_reward", -float("inf"))),
             )
 
@@ -568,11 +578,12 @@ class NoiseRLModule:
             return 0.5 * metric_sum
 
         def _joint_sort_key(candidate):
+            # Priority: metrics → stability → loss → cost → reward
             return (
-                float(candidate["cost"]),
+                -float(candidate.get("joint_metric_sum", -float("inf"))),
                 float(candidate.get("stability_score", float("inf"))),
                 float(candidate.get("joint_loss_mean", float("inf"))),
-                -float(candidate.get("joint_metric_sum", -float("inf"))),
+                float(candidate["cost"]),
                 -float(candidate.get("selection_reward", -float("inf"))),
             )
 
@@ -1094,8 +1105,9 @@ class NoiseRLModule:
                 "wffn1_noise_scaling_factors": np.array(env.wffn1_noise_config, dtype=int),
                 "wffn2_noise_scaling_factors": np.array(env.wffn2_noise_config, dtype=int),
                 "cost": env.accumulated_cost,
-                "reward": episode_reward_raw,
-                "selection_reward": episode_reward_raw,
+                "reward": episode_raw_final_reward if episode_raw_final_reward is not None else 0.0,
+                "selection_reward": episode_raw_final_reward if episode_raw_final_reward is not None else 0.0,
+                "episode_return": episode_reward_raw,
                 "stability_proxy": episode_stability_proxy,
                 "stability_penalty": episode_stability_penalty,
                 "mc_eval": dict(episode_mc_eval) if episode_mc_eval is not None else None,
@@ -1106,10 +1118,11 @@ class NoiseRLModule:
                 ),
             }
 
-            if episode_reward_raw > window_best_score or (
-                episode_reward_raw == window_best_score and env.accumulated_cost < window_best_cost
+            episode_selection_score = episode_raw_final_reward if episode_raw_final_reward is not None else episode_reward_raw
+            if episode_selection_score > window_best_score or (
+                episode_selection_score == window_best_score and env.accumulated_cost < window_best_cost
             ):
-                window_best_score = episode_reward_raw
+                window_best_score = episode_selection_score
                 window_best_cost = env.accumulated_cost
                 window_best_noise_config = {
                     key: (
@@ -1122,10 +1135,10 @@ class NoiseRLModule:
                     for key, value in final_noise_config.items()
                 }
 
-            if episode_reward_raw > best_selection_reward or (
-                episode_reward_raw == best_selection_reward and env.accumulated_cost < best_cost
+            if episode_selection_score > best_selection_reward or (
+                episode_selection_score == best_selection_reward and env.accumulated_cost < best_cost
             ):
-                best_selection_reward = episode_reward_raw
+                best_selection_reward = episode_selection_score
                 best_cost = env.accumulated_cost
                 best_noise_config = {
                     key: (
@@ -1139,7 +1152,8 @@ class NoiseRLModule:
                 }
                 ev.log(
                     f"  Noise Episode {episode + 1}: New Best! "
-                    f"Reward={episode_reward_raw:.4f}, "
+                    f"RawFinalReward={episode_selection_score:.4f}, "
+                    f"EpisodeReturn={episode_reward_raw:.4f}, "
                     f"Cost={env.accumulated_cost:.2f}"
                 )
                 if episode_mc_eval is not None:
@@ -1781,6 +1795,19 @@ class _NoiseOptEnv:
             + 5 * mean_generic_weight_cost
             + mean_wffn1_cost
         )
+
+        # Auto-calibrate cost-to-performance scale alignment.
+        # At the expected operating point (cost_saving = reference_cost_saving),
+        # r_cost will equal reward_safety_bonus, so both terms have the same
+        # magnitude and the priority weights directly control their ratio.
+        expected_total_cost = self.expected_cost_per_layer * total_layers
+        reference_cost_saving = max(
+            (self.baseline_cost - expected_total_cost) / (self.baseline_cost + 1e-8),
+            0.01,
+        )
+        self._cost_perf_align_scale = self._reward_safety_bonus / reference_cost_saving
+        self._reference_cost_saving = reference_cost_saving
+
         self.current_episode_metrics = None
         self.last_reward_components = None
         self.last_mc_eval = None
@@ -1959,20 +1986,30 @@ class _NoiseOptEnv:
         r_loss_barrier, margin_loss = violation_penalty(loss, limits["loss"], is_upper_bound=True)
         r_m1_barrier, margin_m1 = violation_penalty(m1, limits["metric1"], is_upper_bound=False)
         r_m2_barrier, margin_m2 = violation_penalty(m2, limits["metric2"], is_upper_bound=False)
+
+        # Normalize margins by their respective constraint limits so that
+        # loss, metric1, metric2 contribute equally to r_safe regardless of
+        # their natural magnitude differences.
+        norm_margin_loss = max(0.0, margin_loss) / max(abs(limits["loss"]), 1e-8)
+        norm_margin_m1 = max(0.0, margin_m1) / max(abs(limits["metric1"]), 1e-8)
+        norm_margin_m2 = max(0.0, margin_m2) / max(abs(limits["metric2"]), 1e-8)
+
         if self.num_metrics == 1:
             r_barrier = (r_loss_barrier + r_m1_barrier) / 2.0
-            positive_margins = [max(0.0, margin_loss), max(0.0, margin_m1)]
+            normalized_positive_margins = [norm_margin_loss, norm_margin_m1]
             constraints_ok = (margin_loss >= 0) and (margin_m1 >= 0)
         else:
             r_barrier = (r_loss_barrier + r_m1_barrier + r_m2_barrier) / 3.0
-            positive_margins = [max(0.0, margin_loss), max(0.0, margin_m1), max(0.0, margin_m2)]
+            normalized_positive_margins = [norm_margin_loss, norm_margin_m1, norm_margin_m2]
             constraints_ok = (margin_loss >= 0) and (margin_m1 >= 0) and (margin_m2 >= 0)
 
         cost_saving = (self.baseline_cost - self.accumulated_cost) / (self.baseline_cost + 1e-8)
-        r_cost = cost_saving * self._reward_cost_weight
+        # Use auto-calibrated scale so r_cost ≈ safety_bonus at reference cost saving.
+        # This ensures priority weights directly control the performance:cost ratio.
+        r_cost = cost_saving * self._cost_perf_align_scale
         r_safe = 0.0
         if constraints_ok:
-            r_safe = self._reward_safety_bonus + self._log_barrier_sat_scale * float(np.mean(positive_margins))
+            r_safe = self._reward_safety_bonus + self._log_barrier_sat_scale * float(np.mean(normalized_positive_margins))
 
         performance_term = r_barrier + r_safe
         weighted_performance = self._reward_priority_performance * performance_term
@@ -2001,13 +2038,18 @@ class _NoiseOptEnv:
             self._reward_clip_max,
         )
         reward_components = {
+            "cost_saving": float(cost_saving),
             "cost": float(r_cost),
+            "cost_perf_align_scale": float(self._cost_perf_align_scale),
             "diff": float(r_diff),
             "barrier": float(r_barrier),
             "safety": float(r_safe),
             "performance_term": float(performance_term),
             "weighted_performance": float(weighted_performance),
             "weighted_cost": float(weighted_cost),
+            "perf_cost_contribution_ratio": (
+                float(weighted_performance / weighted_cost) if abs(weighted_cost) > 1e-8 else float("inf")
+            ),
             "reward_priority_performance": float(self._reward_priority_performance),
             "reward_priority_cost": float(self._reward_priority_cost),
             "constraints_ok": bool(constraints_ok),
