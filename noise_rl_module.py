@@ -165,6 +165,7 @@ class NoiseRLModule:
         exact_baseline_gelu = np.asarray(exact_baseline_gelu, dtype=int)
         exact_baseline_softmax = np.asarray(exact_baseline_softmax, dtype=int)
         cost_reference_noise_config = ev._get_max_noise_configuration()
+        baseline_noise_config = ev._get_max_noise_configuration()
 
         reward_reference_split = ev.get_reward_reference_split_name()
 
@@ -189,22 +190,25 @@ class NoiseRLModule:
                 f"指标1（M1）={stats['p_std']:.4f}, 指标2（M2）={stats['s_std']:.4f})"
             )
 
-        baseline_train_stats = ev.evaluate_model_repeated(
+        baseline_train_stats = ev.evaluate_model_with_attention_noise_repeated(
             exact_baseline_gelu,
             exact_baseline_softmax,
+            **baseline_noise_config,
             repeats=NOISE_STAGE_BASELINE_REPEATS,
             use_train=True,
         )
-        baseline_reference_stats = ev.evaluate_model_repeated(
+        baseline_reference_stats = ev.evaluate_model_with_attention_noise_repeated(
             exact_baseline_gelu,
             exact_baseline_softmax,
+            **baseline_noise_config,
             repeats=NOISE_STAGE_BASELINE_REPEATS,
             split=reward_reference_split,
         )
         if ev.has_dataset_split("val_holdout"):
-            baseline_holdout_stats = ev.evaluate_model_repeated(
+            baseline_holdout_stats = ev.evaluate_model_with_attention_noise_repeated(
                 exact_baseline_gelu,
                 exact_baseline_softmax,
+                **baseline_noise_config,
                 repeats=NOISE_STAGE_BASELINE_REPEATS,
                 split="val_holdout",
             )
@@ -213,7 +217,7 @@ class NoiseRLModule:
             baseline_holdout_stats["split_name"] = "val_holdout"
         cost_reference_tot_c, cost_reference_breakdown = ev.get_noise_simulated_cost(**cost_reference_noise_config)
 
-        ev.log("噪声阶段共享性能基线（Noise-Stage Shared Performance Baseline）（第一阶段精确基线：GELU全4, Softmax全6, 无噪声）：")
+        ev.log("噪声阶段共享性能基线（Noise-Stage Shared Performance Baseline）（GELU全4, Softmax全6, 噪声全最大值）：")
         ev.log("  GELU   : " + exact_baseline_gelu.tolist().__repr__())
         ev.log("  Softmax: " + exact_baseline_softmax.tolist().__repr__())
         ev.log("  训练集（Training Set）：")
@@ -260,7 +264,7 @@ class NoiseRLModule:
                 f"{ev._fmt_constraints(holdout_limits['loss'], holdout_limits['metric1'], holdout_limits['metric2'])}"
             )
         training_hparams = {
-            "performance_baseline_source": "stage1_exact_no_noise",
+            "performance_baseline_source": "stage1_exact_max_noise",
             "cost_reference_source": "max_noise_cost_reference",
             "gtrxl_d_model": NOISE_STAGE_GTRXL_D_MODEL,
             "gtrxl_n_heads": NOISE_STAGE_GTRXL_N_HEADS,
@@ -423,16 +427,17 @@ class NoiseRLModule:
             else:
                 ev.refresh_validation_proxy(window_index=0, stage_label="Stage-2 Noise RL")
                 online_reward_split = ev.get_online_reward_split_name()
-                proxy_baseline_stats = ev.evaluate_model_repeated(
+                proxy_baseline_stats = ev.evaluate_model_with_attention_noise_repeated(
                     exact_baseline_gelu,
                     exact_baseline_softmax,
+                    **baseline_noise_config,
                     repeats=NOISE_STAGE_ONLINE_BASELINE_REPEATS,
                     split=online_reward_split,
                 )
             rl_evaluator.split_name = online_reward_split
             ev.log(
                 f"[信息] 噪声阶段在线奖励使用 {online_reward_split} "
-                f"（性能基线保持第一阶段精确基线；成本参考保持最大噪声）"
+                f"（性能基线：GELU全4+Softmax全6+噪声全最大值；成本参考：最大噪声配置）"
             )
         else:
             online_reward_split = "train"
@@ -575,22 +580,22 @@ class NoiseRLModule:
             return metric_sum
 
         def _split_sort_key(candidate, metric_prefix):
-            # Priority: metrics (higher=better) → loss (lower=better) → cost → reward
+            # Priority: final_selection_score (higher=better) → cost (lower=better) → loss → metrics
             return (
-                -_get_split_metric_sum(candidate, metric_prefix),
-                float(candidate.get(f"{metric_prefix}_loss", float("inf"))),
-                float(candidate["cost"]),
                 -float(candidate.get("final_selection_score", -float("inf"))),
+                float(candidate["cost"]),
+                float(candidate.get(f"{metric_prefix}_loss", float("inf"))),
+                -_get_split_metric_sum(candidate, metric_prefix),
             )
 
         def _stable_split_sort_key(candidate, metric_prefix):
-            # Priority: metrics → stability → loss → cost → reward
+            # Priority: final_selection_score → stability → cost → loss → metrics
             return (
-                -_get_split_metric_sum(candidate, metric_prefix),
-                float(candidate.get(f"{metric_prefix}_stability_score", float("inf"))),
-                float(candidate.get(f"{metric_prefix}_loss", float("inf"))),
-                float(candidate["cost"]),
                 -float(candidate.get("final_selection_score", -float("inf"))),
+                float(candidate.get(f"{metric_prefix}_stability_score", float("inf"))),
+                float(candidate["cost"]),
+                float(candidate.get(f"{metric_prefix}_loss", float("inf"))),
+                -_get_split_metric_sum(candidate, metric_prefix),
             )
 
         def _joint_metric_sum(candidate):
@@ -606,13 +611,13 @@ class NoiseRLModule:
             return 0.5 * metric_sum
 
         def _joint_sort_key(candidate):
-            # Priority: metrics → stability → loss → cost → reward
+            # Priority: final_selection_score → stability → cost → loss → metrics
             return (
-                -float(candidate.get("joint_metric_sum", -float("inf"))),
-                float(candidate.get("stability_score", float("inf"))),
-                float(candidate.get("joint_loss_mean", float("inf"))),
-                float(candidate["cost"]),
                 -float(candidate.get("final_selection_score", -float("inf"))),
+                float(candidate.get("stability_score", float("inf"))),
+                float(candidate["cost"]),
+                float(candidate.get("joint_loss_mean", float("inf"))),
+                -float(candidate.get("joint_metric_sum", -float("inf"))),
             )
 
         def _split_sort_key_legacy(candidate, metric_prefix):
@@ -1334,9 +1339,10 @@ class NoiseRLModule:
                     )
                     online_reward_split = ev.get_online_reward_split_name()
                     rl_evaluator.split_name = online_reward_split
-                    proxy_baseline_stats = ev.evaluate_model_repeated(
+                    proxy_baseline_stats = ev.evaluate_model_with_attention_noise_repeated(
                         exact_baseline_gelu,
                         exact_baseline_softmax,
+                        **baseline_noise_config,
                         repeats=NOISE_STAGE_ONLINE_BASELINE_REPEATS,
                         split=online_reward_split,
                     )
@@ -1522,7 +1528,7 @@ class NoiseRLModule:
             "cost_reference_source": "max_noise_configuration",
             "performance_baseline_gelu": exact_baseline_gelu.copy(),
             "performance_baseline_softmax": exact_baseline_softmax.copy(),
-            "performance_baseline_source": "stage1_exact_no_noise",
+            "performance_baseline_source": "stage1_exact_max_noise",
             "baseline_repeats": int(NOISE_STAGE_BASELINE_REPEATS),
             "online_baseline_repeats": int(NOISE_STAGE_ONLINE_BASELINE_REPEATS),
             "search_baseline_stats": _copy_repeat_summary(split_baseline_stats["search"]),
@@ -2389,7 +2395,7 @@ class _NoiseOptEnv:
 
         self.current_layer += 1
         if self.current_layer < self.total_layers:
-            return self._get_state(), dense_reward, False, info
+            return self._get_state(), 0.0, False, info
 
         final_reward = self._compute_final_reward()
         info["final_reward"] = final_reward["raw_final_reward"]
@@ -2398,10 +2404,9 @@ class _NoiseOptEnv:
         info["mc_eval"] = final_reward["mc_eval"]
         info["reward_components"] = final_reward["reward_components"]
         info["accumulated_dense_reward"] = self.accumulated_dense_reward
-        dense_reward_adjustment = 0.0
-        info["dense_reward_adjustment"] = dense_reward_adjustment
-        info["dense_reward_cancelled"] = False
-        terminal_reward = final_reward["raw_final_reward"] + dense_reward + dense_reward_adjustment
+        info["dense_reward_adjustment"] = 0.0
+        info["dense_reward_cancelled"] = True
+        terminal_reward = final_reward["raw_final_reward"]
         return self._get_state(), terminal_reward, True, info
 
     def _compute_final_reward(self):
