@@ -2175,7 +2175,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         try:
             self.reversible_handler = ReversibleLayerHandler(self.model)
         except Exception as e:
-            print(f"[Warning] Deepcopy failed in handler init: {e}. 'restore_all' might fail.")
+            print(f"[警告] 深拷贝（Deepcopy）在处理器初始化时失败: {e}。'restore_all' 可能会失败。")
             self.reversible_handler = ReversibleLayerHandler(self.model)
 
         self.layers_attribute = self._detect_layer_attribute()
@@ -2255,32 +2255,32 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.noise_stage_progress_dir = output_layout["noise_progress_dir"]
         self.noise_final_eval_dir = output_layout["noise_final_eval_dir"]
         with open(self.log_file, "w", encoding="utf-8") as f:
-            f.write("=== PPO RL Optimization Log Started ===\n")
+            f.write("=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===\n")
         with open(self.log_file, "a", encoding="utf-8") as f:
             f.write(
-                f"[Info] PPO LR resolved from rl_lr={self.rl_lr_raw!r} -> "
+                f"[信息] PPO学习率（LR）从 rl_lr={self.rl_lr_raw!r} 解析为 -> "
                 f"{self.ppo_lr_initial:.6g} ({self.ppo_lr_mode})\n"
             )
             f.write(
-                f"[Info] Stage-1 RL episodes: {self.stage1_rl_episodes} | "
-                f"Stage-2 RL episodes: {self.stage2_rl_episodes}\n"
+                f"[信息] 第一阶段RL回合数（Stage-1 RL episodes）: {self.stage1_rl_episodes} | "
+                f"第二阶段RL回合数（Stage-2 RL episodes）: {self.stage2_rl_episodes}\n"
             )
             if self.run_output_dir:
-                f.write(f"[Info] Unified run output dir: {self.run_output_dir}\n")
+                f.write(f"[信息] 统一运行输出目录（Unified run output dir）: {self.run_output_dir}\n")
         if self.noise_log_file != self.log_file:
             with open(self.noise_log_file, "w", encoding="utf-8") as f:
-                f.write("=== Stage-2 Noise RL Optimization Log Started ===\n")
+                f.write("=== 第二阶段噪声RL优化日志已启动（Stage-2 Noise RL Optimization Log Started） ===\n")
             with open(self.noise_log_file, "a", encoding="utf-8") as f:
                 f.write(
-                    f"[Info] PPO LR resolved from rl_lr={self.rl_lr_raw!r} -> "
+                    f"[信息] PPO学习率（LR）从 rl_lr={self.rl_lr_raw!r} 解析为 -> "
                     f"{self.ppo_lr_initial:.6g} ({self.ppo_lr_mode})\n"
                 )
                 f.write(
-                    f"[Info] Stage-1 RL episodes: {self.stage1_rl_episodes} | "
-                    f"Stage-2 RL episodes: {self.stage2_rl_episodes}\n"
+                    f"[信息] 第一阶段RL回合数（Stage-1 RL episodes）: {self.stage1_rl_episodes} | "
+                    f"第二阶段RL回合数（Stage-2 RL episodes）: {self.stage2_rl_episodes}\n"
                 )
                 if self.run_output_dir:
-                    f.write(f"[Info] Unified run output dir: {self.run_output_dir}\n")
+                    f.write(f"[信息] 统一运行输出目录（Unified run output dir）: {self.run_output_dir}\n")
         
         # ==================== 策略二：动态超参数调度状态 ====================
         self.current_episode = 0
@@ -2465,7 +2465,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 return ds_cfg['type'] == 'regression'
         
         # 默认假设为回归任务 (stsb 行为)
-        print(f"[Warning] Unknown dataset '{data_name}', assuming regression task (pearson + spearman)")
+        print(f"[警告] 未知数据集（Unknown dataset）'{data_name}'，假定为回归任务（pearson + spearman）")
         self.dataset_key = 'stsb'
         self.dataset_config = DATASET_METRICS_CONFIG['stsb']
         return True
@@ -2474,8 +2474,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         """记录任务类型信息"""
         full_names = self.dataset_config['metric_full_names']
         task_type = 'REGRESSION' if self.is_regression else 'CLASSIFICATION'
-        print(f"[Info] Dataset '{self.data_path}' detected as {task_type} task")
-        print(f"[Info] Using metrics: {', '.join(full_names)}")
+        print(f"[信息] 数据集（Dataset）'{self.data_path}' 检测为 {task_type} 任务")
+        print(f"[信息] 使用指标（Using metrics）: {', '.join(full_names)}")
     
     def get_metric_names(self):
         """
@@ -2695,10 +2695,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             holdout_dataset = self.dataset_splits.get("val_holdout")
             holdout_size = len(holdout_dataset) if holdout_dataset is not None else 0
             print(
-                "[Dataset Protocol] "
-                f"validation_full={len(validation_data)}, "
-                f"val_search_full={search_size}, "
-                f"val_holdout={holdout_size}"
+                "[数据集协议（Dataset Protocol）] "
+                f"完整验证集（validation_full）={len(validation_data)}, "
+                f"搜索验证集（val_search_full）={search_size}, "
+                f"留出验证集（val_holdout）={holdout_size}"
             )
             if self.dataset_splits_mm.get("val_search_full") is not None:
                 mm_search_size = len(self.dataset_splits_mm["val_search_full"])
@@ -2708,12 +2708,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                     else 0
                 )
                 print(
-                    "[Dataset Protocol] "
-                    f"mnli_mismatched_search={mm_search_size}, "
-                    f"mnli_mismatched_holdout={mm_holdout_size}"
+                    "[数据集协议（Dataset Protocol）] "
+                    f"MNLI不匹配搜索集（mnli_mismatched_search）={mm_search_size}, "
+                    f"MNLI不匹配留出集（mnli_mismatched_holdout）={mm_holdout_size}"
                 )
         elif USE_VALIDATION_FOR_REWARD:
-            print("[Warning] Validation-guided reward is enabled, but no validation dataset was provided.")
+            print("[警告] 验证集引导的奖励已启用，但未提供验证数据集。")
 
         if self.has_dataset_split("val_search_full"):
             self.refresh_validation_proxy(window_index=0, stage_label="Initialization", quiet=True)
@@ -2749,12 +2749,12 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         if not quiet:
             msg = (
-                f"[Dataset Protocol] {stage_label}: "
-                f"val_proxy window={int(window_index) + 1}, "
-                f"size={len(proxy_dataset)}/{len(search_dataset)}"
+                f"[数据集协议（Dataset Protocol）] {stage_label}: "
+                f"验证代理窗口（val_proxy window）={int(window_index) + 1}, "
+                f"大小（size）={len(proxy_dataset)}/{len(search_dataset)}"
             )
             if proxy_mm_dataset is not None:
-                msg += f", mnli_mismatched={len(proxy_mm_dataset)}/{len(search_mm_dataset)}"
+                msg += f", MNLI不匹配（mnli_mismatched）={len(proxy_mm_dataset)}/{len(search_mm_dataset)}"
             print(msg)
 
         return "val_proxy"
@@ -2842,35 +2842,35 @@ class LayerImportanceEvaluator(TrainerCallback):
         names = self.get_metric_names()
         p = f"{prefix}" if prefix else ""
         if self.get_num_metrics() == 1:
-            return f"{p}Loss: {loss:.6f}, {names[0]}: {m1:.6f}"
-        return f"{p}Loss: {loss:.6f}, {names[0]}: {m1:.6f}, {names[1]}: {m2:.6f}"
+            return f"{p}损失（Loss）: {loss:.6f}, {names[0]}: {m1:.6f}"
+        return f"{p}损失（Loss）: {loss:.6f}, {names[0]}: {m1:.6f}, {names[1]}: {m2:.6f}"
 
     def _fmt_constraints(self, limit_loss, limit_p, limit_s):
         """格式化约束字符串"""
         names = self.get_metric_names()
         if self.get_num_metrics() == 1:
-            return f"Loss<={limit_loss:.4f}, {names[0]}>={limit_p:.4f}"
-        return f"Loss<={limit_loss:.4f}, {names[0]}>={limit_p:.4f}, {names[1]}>={limit_s:.4f}"
+            return f"损失（Loss）<={limit_loss:.4f}, {names[0]}>={limit_p:.4f}"
+        return f"损失（Loss）<={limit_loss:.4f}, {names[0]}>={limit_p:.4f}, {names[1]}>={limit_s:.4f}"
 
     def _write_step_info(self, step_info, f):
         """将单步 StepInfo 写入文件"""
-        f.write(f"  step_global: {step_info['step_global']}\n")
-        f.write(f"  episode_id: {step_info['episode_id']}\n")
-        f.write(f"  layer_index: {step_info['layer_index']}\n")
-        f.write(f"  state_vector: {step_info['state_vector']}\n")
-        f.write(f"  curr_gelu_degree: {step_info['curr_gelu_degree']}\n")
-        f.write(f"  curr_softmax_degree: {step_info['curr_softmax_degree']}\n")
-        f.write(f"  gelu_prob_dist: {step_info['gelu_prob_dist']}\n")
-        f.write(f"  softmax_prob_dist: {step_info['softmax_prob_dist']}\n")
-        f.write(f"  critic_value: {step_info['critic_value']}\n")
-        f.write(f"  accumulated_cost: {step_info['accumulated_cost']}\n")
-        f.write(f"  gelu_config: {step_info['gelu_config']}\n")
-        f.write(f"  softmax_config: {step_info['softmax_config']}\n")
+        f.write(f"  全局步数（step_global）: {step_info['step_global']}\n")
+        f.write(f"  回合编号（episode_id）: {step_info['episode_id']}\n")
+        f.write(f"  层索引（layer_index）: {step_info['layer_index']}\n")
+        f.write(f"  状态向量（state_vector）: {step_info['state_vector']}\n")
+        f.write(f"  当前GELU阶数（curr_gelu_degree）: {step_info['curr_gelu_degree']}\n")
+        f.write(f"  当前Softmax阶数（curr_softmax_degree）: {step_info['curr_softmax_degree']}\n")
+        f.write(f"  GELU概率分布（gelu_prob_dist）: {step_info['gelu_prob_dist']}\n")
+        f.write(f"  Softmax概率分布（softmax_prob_dist）: {step_info['softmax_prob_dist']}\n")
+        f.write(f"  评论家值（critic_value）: {step_info['critic_value']}\n")
+        f.write(f"  累计成本（accumulated_cost）: {step_info['accumulated_cost']}\n")
+        f.write(f"  GELU配置（gelu_config）: {step_info['gelu_config']}\n")
+        f.write(f"  Softmax配置（softmax_config）: {step_info['softmax_config']}\n")
         # 策略二：输出动态超参数调度信息
         if 'current_lr' in step_info:
-            f.write(f"  current_lr: {step_info['current_lr']:.6f}\n")
+            f.write(f"  当前学习率（current_lr）: {step_info['current_lr']:.6f}\n")
         if 'current_entropy_coef' in step_info:
-            f.write(f"  current_entropy_coef: {step_info['current_entropy_coef']:.6f}\n")
+            f.write(f"  当前熵系数（current_entropy_coef）: {step_info['current_entropy_coef']:.6f}\n")
     
     def update_hyperparameters(self, optimizer, episode):
         """
@@ -3769,7 +3769,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 metric1 = accuracy_score(all_labels, pred_classes)
                 metric2 = metric1
         except Exception as e:
-            print(f"[Warning] Failed to compute metrics for dataset '{ds}': {e}")
+            print(f"[警告] 为数据集（dataset）'{ds}' 计算指标失败: {e}")
             metric1, metric2 = 0.0, 0.0
         return avg_loss, metric1, metric2, avg_time
 
@@ -4232,11 +4232,11 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     def on_evaluate(self, args, state, control, **kwargs):
         self.log("\n" + "="*60)
-        self.log("STARTING CONFIGURATION EVALUATION")
-        self.log(f"SEARCH_MODE={SEARCH_MODE}" + (" (USE_GREEDY_SEARCH=" + str(USE_GREEDY_SEARCH) + ")" if SEARCH_MODE == "both" else ""))
-        self.log(f"FINAL_EVAL_CONFIG_SOURCE={self.final_eval_config_source}")
+        self.log("开始配置评估（STARTING CONFIGURATION EVALUATION）")
+        self.log(f"搜索模式（SEARCH_MODE）={SEARCH_MODE}" + (" (使用贪心搜索USE_GREEDY_SEARCH=" + str(USE_GREEDY_SEARCH) + ")" if SEARCH_MODE == "both" else ""))
+        self.log(f"最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）={self.final_eval_config_source}")
         if self.skip_stage1_rl:
-            self.log("[Info] First-stage RL/greedy search skipped (--skip-stage1-rl).")
+            self.log("[信息] 第一阶段RL/贪心搜索已跳过（--skip-stage1-rl）。")
         self.log("="*60)
 
         base_gelu = np.full(self.total_layers, 4, dtype=int)
@@ -4249,10 +4249,10 @@ class LayerImportanceEvaluator(TrainerCallback):
         reward_reference_split = self.get_reward_reference_split_name()
 
         if self.skip_stage1_rl:
-            self.log("\n--- Phase 1: SKIPPED (--skip-stage1-rl) ---")
-            self.log("[Info] Baseline establishment is skipped because it is only used by first-stage RL/greedy search.")
-            self.log("\n--- Phase 1.5: SKIPPED (--skip-stage1-rl) ---")
-            self.log("[Info] GELU input distribution analysis is skipped because it is only used by first-stage RL/greedy search.")
+            self.log("\n--- 阶段1（Phase 1）: 已跳过（SKIPPED）（--skip-stage1-rl） ---")
+            self.log("[信息] 基线建立已跳过，因其仅用于第一阶段RL/贪心搜索。")
+            self.log("\n--- 阶段1.5（Phase 1.5）: 已跳过（SKIPPED）（--skip-stage1-rl） ---")
+            self.log("[信息] GELU输入分布分析已跳过，因其仅用于第一阶段RL/贪心搜索。")
 
             if not self.skip_stage1_final_eval:
                 # Phase 3/4 仍需要约束阈值；仅在需要最终评估时静默计算。
@@ -4271,14 +4271,14 @@ class LayerImportanceEvaluator(TrainerCallback):
             # ---------------------------------------------------------
             # Phase 1: Baseline (使用训练集)
             # ---------------------------------------------------------
-            self.log("\n--- Phase 1: Establishing Baseline (on Training Set) ---")
+            self.log("\n--- 阶段1（Phase 1）: 建立基线（在训练集上）（Establishing Baseline on Training Set） ---")
 
             # 使用训练集计算baseline
             base_loss_train, base_p_train, base_s_train, base_time_train = self.evaluate_model(base_gelu, base_softmax, use_train=True)
 
-            self.log(f"Baseline Metrics (Training Set):")
+            self.log(f"基线指标（Baseline Metrics）（训练集Training Set）：")
             self.log(f"  {self._fmt_metrics(base_loss_train, base_p_train, base_s_train)}")
-            self.log(f"  Sim Cost: {base_tot_c:.2f} (G={base_g_c:.2f}, S={base_s_c:.2f})")
+            self.log(f"  仿真成本（Sim Cost）: {base_tot_c:.2f} (GELU成本G={base_g_c:.2f}, Softmax成本S={base_s_c:.2f})")
 
             # ==================== 验证集引导（Validation Guided）：计算验证集baseline ====================
             if USE_VALIDATION_FOR_REWARD:
@@ -4287,7 +4287,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     base_softmax,
                     split=reward_reference_split,
                 )
-                self.log(f"Baseline Metrics ({reward_reference_split} - used for reward):")
+                self.log(f"基线指标（Baseline Metrics）（{reward_reference_split} - 用于奖励计算）：")
                 self.log(f"  {self._fmt_metrics(base_loss_val, base_p_val, base_s_val)}")
 
                 # 使用验证集的baseline作为约束基准
@@ -4305,24 +4305,24 @@ class LayerImportanceEvaluator(TrainerCallback):
             limit_p = base_p * (1.0 - self.correlation_drop_ratio)
             limit_s = base_s * (1.0 - self.correlation_drop_ratio)
 
-            self.log(f"Constraints (based on {'Validation' if USE_VALIDATION_FOR_REWARD else 'Training'} Set):")
+            self.log(f"约束条件（Constraints）（基于{'验证集（Validation）' if USE_VALIDATION_FOR_REWARD else '训练集（Training）'}）：")
             self.log(f"  {self._fmt_constraints(limit_loss, limit_p, limit_s)}")
 
             # ---------------------------------------------------------
             # Phase 1.5: GELU Distribution Analysis (判断 degree 0 资格)
             # ---------------------------------------------------------
-            self.log("\n--- Phase 1.5: GELU Input Distribution Analysis ---")
-            self.log(f"Threshold: [-2.7, 0) interval >= {GELU_DEGREE0_THRESHOLD*100:.0f}% -> eligible for degree 0")
+            self.log("\n--- 阶段1.5（Phase 1.5）: GELU输入分布分析（GELU Input Distribution Analysis） ---")
+            self.log(f"阈值（Threshold）: [-2.7, 0) 区间 >= {GELU_DEGREE0_THRESHOLD*100:.0f}% -> 符合0阶资格（eligible for degree 0）")
             gelu_degree0_eligible, gelu_interval_counts = self.analyze_gelu_distribution()
             for i in range(self.total_layers):
                 ic = gelu_interval_counts[i]
                 total = ic.sum()
                 if total > 0:
                     pcts = ic / total * 100
-                    status = "ELIGIBLE" if gelu_degree0_eligible[i] else "NOT eligible"
-                    self.log(f"  Layer {i}: [-2.7,0)={pcts[1]:.2f}% | <-2.7={pcts[0]:.2f}% | [0,2.7]={pcts[2]:.2f}% | >2.7={pcts[3]:.2f}% -> {status}")
+                    status = "符合资格（ELIGIBLE）" if gelu_degree0_eligible[i] else "不符合资格（NOT eligible）"
+                    self.log(f"  第{i}层（Layer {i}）: [-2.7,0)={pcts[1]:.2f}% | <-2.7={pcts[0]:.2f}% | [0,2.7]={pcts[2]:.2f}% | >2.7={pcts[3]:.2f}% -> {status}")
             eligible_count = gelu_degree0_eligible.sum()
-            self.log(f"Summary: {eligible_count}/{self.total_layers} layers eligible for GELU degree 0")
+            self.log(f"总结（Summary）: {eligible_count}/{self.total_layers} 层符合GELU 0阶资格")
 
         # 供绘图使用：仅 RL 时会填充
         episode_rewards = []
@@ -4401,13 +4401,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                 })
 
             self.log(
-                f"  Window {window_idx + 1} candidate confirmation: "
-                f"proxy_reward={proxy_reward:.4f}, "
-                f"search={self._fmt_metrics(search_loss, search_p, search_s)}"
+                f"  窗口（Window） {window_idx + 1} 候选确认（candidate confirmation）: "
+                f"代理奖励（proxy_reward）={proxy_reward:.4f}, "
+                f"搜索集（search）={self._fmt_metrics(search_loss, search_p, search_s)}"
             )
             if self.has_dataset_split("val_holdout"):
                 self.log(
-                    "    Holdout: "
+                    "    留出集（Holdout）: "
                     f"{self._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}"
                 )
 
@@ -4422,7 +4422,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     "train_anchor_metric1": float(anchor_p),
                     "train_anchor_metric2": float(anchor_s),
                 })
-                self.log(f"    TrainAnchor: {self._fmt_metrics(anchor_loss, anchor_p, anchor_s)}")
+                self.log(f"    训练锚点（TrainAnchor）: {self._fmt_metrics(anchor_loss, anchor_p, anchor_s)}")
 
             if search_ok and self._is_better_confirmed_candidate(
                 confirmed_candidate,
@@ -4434,8 +4434,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                     for k, v in confirmed_candidate.items()
                 }
                 self.log(
-                    f"    Search-Best updated at episode {episode_idx + 1}: "
-                    f"cost={search_best_config['cost']:.2f}, proxy_reward={search_best_config['proxy_reward']:.4f}"
+                    f"    搜索最优（Search-Best）在回合（episode） {episode_idx + 1} 更新: "
+                    f"成本（cost）={search_best_config['cost']:.2f}, 代理奖励（proxy_reward）={search_best_config['proxy_reward']:.4f}"
                 )
 
             if confirmed_candidate["holdout_ok"] and self._is_better_confirmed_candidate(
@@ -4448,20 +4448,20 @@ class LayerImportanceEvaluator(TrainerCallback):
                     for k, v in confirmed_candidate.items()
                 }
                 self.log(
-                    f"    Global-Best updated at episode {episode_idx + 1}: "
-                    f"cost={global_best_config['cost']:.2f}, proxy_reward={global_best_config['proxy_reward']:.4f}"
+                    f"    全局最优（Global-Best）在回合（episode） {episode_idx + 1} 更新: "
+                    f"成本（cost）={global_best_config['cost']:.2f}, 代理奖励（proxy_reward）={global_best_config['proxy_reward']:.4f}"
                 )
 
         # ---------------------------------------------------------
         # Phase 2: PPO Training（仅当 SEARCH_MODE 为 "rl" 或 "both" 时执行）
         # ---------------------------------------------------------
         if (not self.skip_stage1_rl) and SEARCH_MODE in ("rl", "both"):
-            self.log("\n--- Phase 2: PPO Reinforcement Learning Training ---")
+            self.log("\n--- 阶段2（Phase 2）: PPO强化学习训练（PPO Reinforcement Learning Training） ---")
         
             # 初始化 StepInfo 输出文件
             with open(self.step_info_file, "w", encoding="utf-8") as f:
-                f.write("=== PPO StepInfo 中间结果日志 ===\n")
-                f.write("每步包含: step_global, episode_id, layer_index, state_vector, curr_gelu_degree, curr_softmax_degree, gelu_prob_dist, softmax_prob_dist, critic_value, accumulated_cost, gelu_config, softmax_config\n\n")
+                f.write("=== PPO每步信息（StepInfo）中间结果日志 ===\n")
+                f.write("每步包含: 全局步数（step_global）, 回合编号（episode_id）, 层索引（layer_index）, 状态向量（state_vector）, 当前GELU阶数（curr_gelu_degree）, 当前Softmax阶数（curr_softmax_degree）, GELU概率分布（gelu_prob_dist）, Softmax概率分布（softmax_prob_dist）, 评论家值（critic_value）, 累计成本（accumulated_cost）, GELU配置（gelu_config）, Softmax配置（softmax_config）\n\n")
         
             # 初始化GTrXL策略价值网络（Transformer PDF优化方案）
             # GTrXL骨干 + 独立Actor/Critic头
@@ -4512,12 +4512,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                     split=online_reward_split,
                 )
                 self.log(
-                    f"[Info] Using {online_reward_split} for online reward calculation "
-                    f"(constraints stay on {reward_reference_split})"
+                    f"[信息] 使用 {online_reward_split} 进行在线奖励计算 "
+                    f"（约束保持在 {reward_reference_split} 上）"
                 )
                 rl_evaluator = RLEvaluatorWrapper(self, use_train=False)  # 使用验证集
             else:
-                self.log("[Info] Using TRAINING set for reward calculation")
+                self.log("[信息] 使用训练集（TRAINING set）进行奖励计算")
                 rl_evaluator = RLEvaluatorWrapper(self, use_train=True)   # 使用训练集
             
             if not USE_VALIDATION_FOR_REWARD:
@@ -4669,7 +4669,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 
                 # 将 StepInfo 中间结果输出到文件
                 with open(self.step_info_file, "a", encoding="utf-8") as f:
-                    f.write(f"--- Episode {episode + 1} (Reward={episode_reward:.4f}) ---\n")
+                    f.write(f"--- 回合（Episode） {episode + 1} (奖励Reward={episode_reward:.4f}) ---\n")
                     for si in step_infos:
                         self._write_step_info(si, f)
                         f.write("\n")
@@ -4698,9 +4698,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                     best_reward = episode_reward
                     best_cost = env.accumulated_cost
                     best_config = final_config.copy()
-                    self.log(f"  Episode {episode+1}: New Best! Reward={episode_reward:.4f}, Cost={env.accumulated_cost:.2f}")
-                    self.log(f"    GELU: {env.gelu_config}")
-                    self.log(f"    Softmax: {env.softmax_config}")
+                    self.log(f"  回合（Episode） {episode+1}: 新最优！（New Best!） 奖励（Reward）={episode_reward:.4f}, 成本（Cost）={env.accumulated_cost:.2f}")
+                    self.log(f"    GELU配置: {env.gelu_config}")
+                    self.log(f"    Softmax配置: {env.softmax_config}")
                 
                 # GTrXL PPO更新（因果自注意力 + GRU门控）
                 if (episode + 1) % PPO_UPDATE_INTERVAL == 0:
@@ -4715,10 +4715,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                     
                     avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
                     warmup_status = "warmup" if gtrxl_ppo_update_count <= GTRXL_WARMUP_STEPS else "normal"
-                    self.log(f"  Episode {episode+1}: Avg Reward={avg_reward:.4f}, "
-                            f"Policy Loss={policy_loss:.4f}, Value Loss={value_loss:.4f}, Entropy={entropy:.4f}")
-                    self.log(f"    [GTrXL Schedule] LR={optimizer.param_groups[0]['lr']:.6f}, "
-                            f"Entropy Coef={current_entropy:.6f}, Update#{gtrxl_ppo_update_count} ({warmup_status})")
+                    self.log(f"  回合（Episode） {episode+1}: 平均奖励（Avg Reward）={avg_reward:.4f}, "
+                            f"策略损失（Policy Loss）={policy_loss:.4f}, 价值损失（Value Loss）={value_loss:.4f}, 熵（Entropy）={entropy:.4f}")
+                    self.log(f"    [GTrXL调度（Schedule）] 学习率（LR）={optimizer.param_groups[0]['lr']:.6f}, "
+                            f"熵系数（Entropy Coef）={current_entropy:.6f}, 更新次数（Update）#{gtrxl_ppo_update_count} ({warmup_status})")
                     confirm_stage1_candidate(
                         window_best_config,
                         episode_idx=episode,
@@ -4766,7 +4766,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             
             # 如果没有找到满足约束的解，使用baseline
             if best_config is None or best_reward < -50:  # 如果最好的奖励也很差，说明没找到可行解
-                self.log("\nNo feasible solution found, using baseline configuration.")
+                self.log("\n未找到可行解，使用基线配置。")
                 best_config = {
                     'gelu': base_gelu.copy(),
                     'softmax': base_softmax.copy(),
@@ -4774,11 +4774,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                     'reward': 0
                 }
             
-            self.log(f"\n--- PPO Training Completed ---")
-            self.log(f"Best Configuration Found (by RL):")
-            self.log(f"  GELU: {best_config['gelu'].tolist()}")
-            self.log(f"  Softmax: {best_config['softmax'].tolist()}")
-            self.log(f"  Cost: {best_config['cost']:.2f}, Reward: {best_config['reward']:.4f}")
+            self.log(f"\n--- PPO训练完成（PPO Training Completed） ---")
+            self.log(f"已找到最优配置（通过RL）（Best Configuration Found by RL）：")
+            self.log(f"  GELU配置: {best_config['gelu'].tolist()}")
+            self.log(f"  Softmax配置: {best_config['softmax'].tolist()}")
+            self.log(f"  成本（Cost）: {best_config['cost']:.2f}, 奖励（Reward）: {best_config['reward']:.4f}")
 
         # ---------------------------------------------------------
         # 仅贪婪模式：从用户指定的初始配置开始
@@ -4795,7 +4795,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             init_gelu = _pad_or_truncate(GREEDY_INITIAL_GELU, self.total_layers, 4)
             init_softmax = _pad_or_truncate(GREEDY_INITIAL_SOFTMAX, self.total_layers, 6)
             if len(GREEDY_INITIAL_GELU) != self.total_layers or len(GREEDY_INITIAL_SOFTMAX) != self.total_layers:
-                self.log(f"[Info] GREEDY_INITIAL_* length adjusted to total_layers={self.total_layers} (pad/truncate).")
+                self.log(f"[信息] GREEDY_INITIAL_* 长度已调整至 total_layers={self.total_layers}（填充/截断pad/truncate）。")
             init_cost = self.get_simulated_cost(init_gelu, init_softmax)[0]
             best_config = {
                 'gelu': init_gelu,
@@ -4803,9 +4803,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                 'cost': init_cost,
                 'reward': 0
             }
-            self.log("\n--- Greedy-Only Mode: Using user-specified initial configuration ---")
-            self.log(f"  GELU: {best_config['gelu'].tolist()}")
-            self.log(f"  Softmax: {best_config['softmax'].tolist()}")
+            self.log("\n--- 仅贪心模式（Greedy-Only Mode）: 使用用户指定的初始配置 ---")
+            self.log(f"  GELU配置: {best_config['gelu'].tolist()}")
+            self.log(f"  Softmax配置: {best_config['softmax'].tolist()}")
 
         # ---------------------------------------------------------
         # Phase 2.5: Greedy Search（SEARCH_MODE=="both" 且 USE_GREEDY_SEARCH 时从 RL 结果出发；SEARCH_MODE=="greedy" 时从指定初始配置出发）
@@ -4813,10 +4813,10 @@ class LayerImportanceEvaluator(TrainerCallback):
         if (not self.skip_stage1_rl) and ((SEARCH_MODE == "both" and USE_GREEDY_SEARCH) or SEARCH_MODE == "greedy"):
             self.log("\n" + "="*60)
             if SEARCH_MODE == "greedy":
-                self.log("PHASE 2.5: GREEDY SEARCH (Greedy-Only Mode, from user-specified initial config)")
+                self.log("阶段2.5（PHASE 2.5）：贪心搜索（GREEDY SEARCH）（仅贪心模式，从用户指定初始配置开始）")
             else:
-                self.log("PHASE 2.5: GREEDY SEARCH (Post-RL Refinement)")
-            self.log("Greedily reduce cost while maintaining 0.5% constraint")
+                self.log("阶段2.5（PHASE 2.5）：贪心搜索（GREEDY SEARCH）（RL后精炼Post-RL Refinement）")
+            self.log("贪心地降低成本，同时维持0.5%约束（Greedily reduce cost while maintaining 0.5% constraint）")
             self.log("="*60)
             
             greedy_gelu = best_config['gelu'].copy()
@@ -4826,8 +4826,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             init_loss, init_p, init_s, _ = self.evaluate_model(greedy_gelu, greedy_softmax, use_train=True)
             init_cost = best_config['cost']
             
-            self.log(f"Initial (evaluated on Training Set):")
-            self.log(f"  {self._fmt_metrics(init_loss, init_p, init_s)}, Cost: {init_cost:.2f}")
+            self.log(f"初始配置（在训练集上评估）（Initial, evaluated on Training Set）：")
+            self.log(f"  {self._fmt_metrics(init_loss, init_p, init_s)}, 成本（Cost）: {init_cost:.2f}")
             
             # 设定 0.5% 的严格约束（贪心在训练集上做，故 baseline 用训练集）
             GREEDY_CONSTRAINT_RATIO = 0.005
@@ -4835,9 +4835,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             greedy_limit_p = base_p_train * (1 - GREEDY_CONSTRAINT_RATIO)
             greedy_limit_s = base_s_train * (1 - GREEDY_CONSTRAINT_RATIO)
             
-            self.log(f"Greedy Constraints (0.5% tolerance, baseline on Training Set):")
-            self.log(f"  Baseline (Train): {self._fmt_metrics(base_loss_train, base_p_train, base_s_train)}")
-            self.log(f"  Limits: {self._fmt_constraints(greedy_limit_loss, greedy_limit_p, greedy_limit_s)}")
+            self.log(f"贪心约束（Greedy Constraints）（0.5%容忍度，基线在训练集上）：")
+            self.log(f"  基线（训练集Baseline Train）: {self._fmt_metrics(base_loss_train, base_p_train, base_s_train)}")
+            self.log(f"  约束限制（Limits）: {self._fmt_constraints(greedy_limit_loss, greedy_limit_p, greedy_limit_s)}")
             
             # Best-First 贪心搜索：每轮枚举所有可行的单步降精度，选择成本节省最大的接受
             # （避免 first-fit 策略中因层序固定导致约束预算被低价值修改抢占的问题）
@@ -4908,7 +4908,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 
                 # 如果没有任何可行候选，搜索结束
                 if not candidates:
-                    self.log(f"  [Iter {iteration}] No feasible single-step change found. Search complete.")
+                    self.log(f"  [迭代（Iter） {iteration}] 未找到可行的单步修改。搜索完成。")
                     break
                 
                 # 选择成本节省最大的候选
@@ -4916,7 +4916,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 
                 # 如果最大成本节省 <= 0，说明无法进一步降低成本，结束
                 if best_cand['cost_saving'] <= 0:
-                    self.log(f"  [Iter {iteration}] No cost-saving candidate found. Search complete.")
+                    self.log(f"  [迭代（Iter） {iteration}] 未找到可节省成本的候选。搜索完成。")
                     break
                 
                 # 接受最佳候选
@@ -4924,22 +4924,22 @@ class LayerImportanceEvaluator(TrainerCallback):
                 greedy_softmax = best_cand['test_softmax']
                 current_cost = best_cand['new_cost']
                 
-                self.log(f"  [Iter {iteration}] Layer {best_cand['layer']} {best_cand['type']} "
+                self.log(f"  [迭代（Iter） {iteration}] 第{best_cand['layer']}层（Layer） {best_cand['type']} "
                         f"{best_cand['old_deg']}->{best_cand['new_deg']}: "
                         f"{self._fmt_metrics(best_cand['loss'], best_cand['p'], best_cand['s'])}, "
-                        f"Cost={current_cost:.2f}, Saved={best_cand['cost_saving']:.2f} ✓")
+                        f"成本（Cost）={current_cost:.2f}, 节省（Saved）={best_cand['cost_saving']:.2f} ✓")
             
             # 最终的贪心搜索结果（在验证集上评估）
             final_loss, final_p, final_s, _ = self.evaluate_model(greedy_gelu, greedy_softmax, use_train=False)
             final_cost = self.get_simulated_cost(greedy_gelu, greedy_softmax)[0]
             
-            self.log(f"\n--- Greedy Search Completed (Iterations: {iteration}) ---")
-            self.log(f"Final Configuration (after Greedy, evaluated on Validation Set):")
-            self.log(f"  GELU: {greedy_gelu.tolist()}")
-            self.log(f"  Softmax: {greedy_softmax.tolist()}")
+            self.log(f"\n--- 贪心搜索完成（Greedy Search Completed）（迭代次数Iterations: {iteration}） ---")
+            self.log(f"最终配置（贪心后，在验证集上评估）（Final Configuration after Greedy, evaluated on Validation Set）：")
+            self.log(f"  GELU配置: {greedy_gelu.tolist()}")
+            self.log(f"  Softmax配置: {greedy_softmax.tolist()}")
             self.log(f"  {self._fmt_metrics(final_loss, final_p, final_s)}")
-            self.log(f"  Cost: {final_cost:.2f}")
-            self.log(f"Cost Reduction: RL={init_cost:.2f} -> Greedy={final_cost:.2f} (Δ={init_cost - final_cost:.2f})")
+            self.log(f"  成本（Cost）: {final_cost:.2f}")
+            self.log(f"成本降低（Cost Reduction）: RL={init_cost:.2f} -> 贪心（Greedy）={final_cost:.2f} (Δ={init_cost - final_cost:.2f})")
             
             # 更新 best_config 为贪心搜索的结果
             best_config = {
@@ -4951,20 +4951,20 @@ class LayerImportanceEvaluator(TrainerCallback):
         else:
             # 跳过贪心搜索
             self.log("\n" + "="*60)
-            self.log("PHASE 2.5: GREEDY SEARCH (SKIPPED)")
+            self.log("阶段2.5（PHASE 2.5）：贪心搜索（GREEDY SEARCH）（已跳过SKIPPED）")
             self.log("="*60)
             if self.skip_stage1_rl:
-                self.log("[Info] First-stage PPO/greedy skipped (--skip-stage1-rl).")
+                self.log("[信息] 第一阶段PPO/贪心已跳过（--skip-stage1-rl）。")
             elif SEARCH_MODE == "rl":
-                self.log("[Info] SEARCH_MODE=rl, greedy search not run.")
+                self.log("[信息] 搜索模式SEARCH_MODE=rl，贪心搜索未执行。")
             elif SEARCH_MODE == "both":
-                self.log("[Info] USE_GREEDY_SEARCH=False, skipping greedy refinement.")
+                self.log("[信息] USE_GREEDY_SEARCH=False，跳过贪心精炼。")
             if self.skip_stage1_rl:
                 self.log(
                     "[Info] GELU/Softmax 将根据 --final-eval-source 在最终评估模块中解析。"
                 )
             else:
-                self.log("[Info] Using current best_config as final configuration.")
+                self.log("[信息] 使用当前最优配置（best_config）作为最终配置。")
             self.log("="*60)
 
         # ---------------------------------------------------------
@@ -5073,7 +5073,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 plt.tight_layout()
                 plt.savefig(plot_path, dpi=150)
                 plt.close()
-                self.log(f"PPO training curves saved to: {plot_path}")
+                self.log(f"PPO训练曲线已保存至（PPO training curves saved to）: {plot_path}")
 
                 if episode_entropies:
                     update_episodes = np.arange(PPO_UPDATE_INTERVAL, len(episode_rewards) + 1, PPO_UPDATE_INTERVAL)
@@ -5095,17 +5095,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                         entropy_plot_path = self.stage1_entropy_curve_path
                         plt.savefig(entropy_plot_path, dpi=150)
                         plt.close()
-                        self.log(f"PPO entropy curve saved to: {entropy_plot_path}")
+                        self.log(f"PPO熵曲线已保存至（PPO entropy curve saved to）: {entropy_plot_path}")
                     else:
-                        self.log(f"[Warning] Entropy curve not plotted: update_episodes len={len(update_episodes)}, entropies len={len(entropies)}")
+                        self.log(f"[警告] 熵曲线未绘制（Entropy curve not plotted）: update_episodes长度={len(update_episodes)}, entropies长度={len(entropies)}")
             except Exception as e:
-                self.log(f"[Warning] Failed to plot PPO training curves: {e}")
+                self.log(f"[警告] PPO训练曲线绘制失败（Failed to plot PPO training curves）: {e}")
 
         # ---------------------------------------------------------
         # Phase 3: Final Report (使用验证集进行最终评估)
         # ---------------------------------------------------------
         self.log("\n" + "="*60)
-        self.log("FINAL EVALUATION REPORT (验证集)")
+        self.log("最终评估报告（FINAL EVALUATION REPORT）（验证集）")
         self.log("="*60)
         
         # 重新计算验证集上的baseline
@@ -5254,7 +5254,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             # 跳过第一阶段最终评估（Phase 3 + Phase 4），直接解析配置
             # ---------------------------------------------------------
             self.log("\n" + "=" * 60)
-            self.log("PHASE 3 + 4: SKIPPED (--skip-stage1-final-eval)")
+            self.log("阶段3+4（PHASE 3+4）：已跳过（SKIPPED）（--skip-stage1-final-eval）")
             self.log("=" * 60)
 
             from final_evaluation_module import FinalEvaluationModule
@@ -5317,10 +5317,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             # Phase 4: Sensitivity (Validation on Selected Config)
             # ---------------------------------------------------------
             self.log("\n" + "="*60)
-            self.log(f"PHASE 4: SENSITIVITY ANALYSIS (Validation on {selected_label})")
+            self.log(f"阶段4（PHASE 4）：敏感性分析（SENSITIVITY ANALYSIS）（在 {selected_label} 上验证）")
             self.log(
-                f"Checking whether further single-layer downgrades from the selected config remain safe "
-                f"(source={selected_source})."
+                f"检查从所选配置进一步单层降阶是否仍然安全 "
+                f"（来源source={selected_source}）。"
             )
             self.log("="*60)
 
@@ -5348,7 +5348,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             def _format_sensitivity_msg(prefix, status, l, p, s, d_l, d_p, d_s):
                 msg = (f"{prefix}: {status} | "
-                       f"Loss: {l:.4f} ({d_l:+.4f}) | "
+                       f"损失（Loss）: {l:.4f} ({d_l:+.4f}) | "
                        f"{metric1_name}: {p:.4f} ({d_p:+.4f})")
                 if num_metrics > 1:
                     msg += f" | {metric2_name}: {s:.4f} ({d_s:+.4f})"
@@ -5372,9 +5372,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                     else: l, p, s, t = self.evaluate_model(tmp, opt_softmax, use_train=False)
 
                     is_viol, viol_tags = _check_violation(l, p, s)
-                    status = f"VIOLATED ({','.join(viol_tags)})" if is_viol else "SAFE"
+                    status = f"违约（VIOLATED）({','.join(viol_tags)})" if is_viol else "安全（SAFE）"
                     d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
-                    self.log(_format_sensitivity_msg(f"L{i} GELU {cd}->{td}", status, l, p, s, d_l, d_p, d_s))
+                    self.log(_format_sensitivity_msg(f"第{i}层（L{i}） GELU {cd}->{td}", status, l, p, s, d_l, d_p, d_s))
 
                 cd_s = opt_softmax[i]
                 if cd_s > 2:
@@ -5385,9 +5385,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                     else: l, p, s, t = self.evaluate_model(opt_gelu, tmp_s, use_train=False)
 
                     is_viol, viol_tags = _check_violation(l, p, s)
-                    status = f"VIOLATED ({','.join(viol_tags)})" if is_viol else "SAFE"
+                    status = f"违约（VIOLATED）({','.join(viol_tags)})" if is_viol else "安全（SAFE）"
                     d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
-                    self.log(_format_sensitivity_msg(f"L{i} Smax {cd_s}->{cd_s-1}", status, l, p, s, d_l, d_p, d_s))
+                    self.log(_format_sensitivity_msg(f"第{i}层（L{i}） Smax {cd_s}->{cd_s-1}", status, l, p, s, d_l, d_p, d_s))
 
         # ---------------------------------------------------------
         # Phase 5: Second-stage noise RL training (独立可控)
@@ -5398,7 +5398,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.active_log_file = self.noise_log_file
         try:
             if self.skip_noise_rl:
-                self.log("\n[Info] Second-stage noise RL training skipped (--skip-noise-rl).")
+                self.log("\n[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。")
             else:
                 noise_stage_result = self.run_noise_rl_stage(
                     fixed_gelu=opt_gelu,
@@ -5411,7 +5411,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             # Phase 5.5: Noise final evaluation (独立可控)
             # ---------------------------------------------------------
             if self.skip_noise_final_eval:
-                self.log("\n[Info] Noise final evaluation skipped (--skip-noise-final-eval).")
+                self.log("\n[信息] 噪声最终评估已跳过（--skip-noise-final-eval）。")
             else:
                 noise_eval_result = self.run_noise_final_eval_stage(
                     fixed_gelu=opt_gelu,
@@ -5424,5 +5424,5 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.last_noise_stage_result = noise_stage_result
         self.last_noise_eval_result = noise_eval_result
 
-        self.log("\nConfiguration evaluation finished.")
+        self.log("\n配置评估完成（Configuration evaluation finished）。")
         self.apply_configuration(opt_gelu, opt_softmax)
