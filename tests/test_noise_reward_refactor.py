@@ -1,8 +1,11 @@
+"""尾部安全（tail-safe）重构后的 reward 和 tail 指标单元测试。"""
 import math
 
 from noise_rl_module import (
-    _build_candidate_score_sort_key,
     _compute_stage2_reward_components,
+    _compute_tail_metrics_from_trials,
+    _compute_wilson_lower_bound,
+    _bootstrap_cvar_ucb,
     _resolve_stage2_metric_weights,
 )
 
@@ -23,6 +26,13 @@ BARRIER_WEIGHTS = {
     "metric1": 0.45,
     "metric2": 0.45,
 }
+
+
+def _make_trials(loss_list, m1_list, m2_list):
+    return [
+        {"loss": l, "metric1": m1, "metric2": m2}
+        for l, m1, m2 in zip(loss_list, m1_list, m2_list)
+    ]
 
 
 def _compute_reward(loss, metric1, metric2, *, num_metrics=2, cost_value=40.0, mc_eval=None):
@@ -46,12 +56,62 @@ def _compute_reward(loss, metric1, metric2, *, num_metrics=2, cost_value=40.0, m
     )
 
 
-def test_baseline_quality_at_max_cost_hits_perf_not_cost():
-    raw_reward, components = _compute_reward(0.30, 0.90, 0.88, cost_value=40.0)
-    assert math.isclose(components["perf_score"], 1.0, rel_tol=0.0, abs_tol=1e-8)
-    assert math.isclose(components["barrier_penalty"], 0.0, rel_tol=0.0, abs_tol=1e-8)
-    assert math.isclose(components["cost_score"], 0.0, rel_tol=0.0, abs_tol=1e-8)
-    assert math.isclose(raw_reward, 0.75, rel_tol=0.0, abs_tol=1e-8)
+def test_tail_metrics_all_safe_trials():
+    """所有试验都安全通过时，violation=0, safe_rate=1。"""
+    trials = _make_trials(
+        [0.30, 0.31, 0.30, 0.30, 0.30],
+        [0.90, 0.89, 0.90, 0.90, 0.90],
+        [0.88, 0.87, 0.88, 0.88, 0.88],
+    )
+    perf_w = _resolve_stage2_metric_weights(2, PERF_WEIGHTS, "perf")
+    bar_w = _resolve_stage2_metric_weights(2, BARRIER_WEIGHTS, "barrier")
+    tail = _compute_tail_metrics_from_trials(
+        trials, CONSTRAINT_LIMITS, BASELINE_METRICS, perf_w, bar_w, 2,
+    )
+    assert tail["safe_rate"] == 1.0
+    assert tail["unsafe_count"] == 0
+    assert tail["tail_violation_cvar"] == 0.0
+    assert tail["tail_margin_score"] >= 0.0
+
+
+def test_tail_metrics_mixed_safe_unsafe():
+    """部分试验违约时，safe_rate < 1，violation > 0。"""
+    trials = _make_trials(
+        [0.30, 0.35, 0.30, 0.36, 0.30],
+        [0.90, 0.85, 0.90, 0.84, 0.90],
+        [0.88, 0.83, 0.88, 0.82, 0.88],
+    )
+    perf_w = _resolve_stage2_metric_weights(2, PERF_WEIGHTS, "perf")
+    bar_w = _resolve_stage2_metric_weights(2, BARRIER_WEIGHTS, "barrier")
+    tail = _compute_tail_metrics_from_trials(
+        trials, CONSTRAINT_LIMITS, BASELINE_METRICS, perf_w, bar_w, 2,
+    )
+    assert tail["safe_rate"] < 1.0
+    assert tail["unsafe_count"] > 0
+    assert tail["tail_violation_cvar"] > 0.0
+
+
+def test_reward_with_trials_returns_tail_fields():
+    """带 trials 的 mc_eval 应返回 tail 风险字段。"""
+    trials = _make_trials(
+        [0.30, 0.31, 0.32, 0.30, 0.30],
+        [0.90, 0.89, 0.88, 0.90, 0.90],
+        [0.88, 0.87, 0.86, 0.88, 0.88],
+    )
+    mc_eval = {
+        "trials": trials,
+        "loss_mean": 0.306,
+        "loss_std": 0.008,
+        "metric1_mean": 0.894,
+        "metric1_std": 0.008,
+        "metric2_mean": 0.874,
+        "metric2_std": 0.008,
+    }
+    raw_reward, components = _compute_reward(0.306, 0.894, 0.874, mc_eval=mc_eval)
+    assert "safe_rate" in components
+    assert "tail_violation_cvar" in components
+    assert "tail_margin_score" in components
+    assert "raw_tail_reward" in components
     assert math.isclose(
         components["final_selection_score"],
         components["raw_final_reward"],
@@ -60,52 +120,34 @@ def test_baseline_quality_at_max_cost_hits_perf_not_cost():
     )
 
 
-def test_threshold_quality_at_min_cost_hits_cost_not_perf():
-    raw_reward, components = _compute_reward(0.33, 0.87, 0.85, cost_value=30.0)
-    assert math.isclose(components["perf_score"], 0.0, rel_tol=0.0, abs_tol=1e-8)
-    assert math.isclose(components["barrier_penalty"], 0.0, rel_tol=0.0, abs_tol=1e-8)
-    assert math.isclose(components["cost_score"], 1.0, rel_tol=0.0, abs_tol=1e-8)
-    assert math.isclose(raw_reward, 0.25, rel_tol=0.0, abs_tol=1e-8)
-
-
-def test_metric_violations_are_penalized_more_than_loss_violations():
-    _, loss_components = _compute_reward(0.345, 0.90, 0.88, cost_value=35.0)
-    _, metric1_components = _compute_reward(0.30, 0.855, 0.88, cost_value=35.0)
-    _, metric2_components = _compute_reward(0.30, 0.90, 0.835, cost_value=35.0)
-
-    assert math.isclose(loss_components["loss_violation"], 0.5, rel_tol=0.0, abs_tol=1e-8)
-    assert math.isclose(metric1_components["metric1_violation"], 0.5, rel_tol=0.0, abs_tol=1e-8)
-    assert math.isclose(metric2_components["metric2_violation"], 0.5, rel_tol=0.0, abs_tol=1e-8)
-    assert metric1_components["barrier_penalty"] > loss_components["barrier_penalty"]
-    assert metric2_components["barrier_penalty"] > loss_components["barrier_penalty"]
+def test_reward_without_trials_falls_back():
+    """无 trials 时回退到均值方式（兼容旧调用）。"""
+    raw_reward, components = _compute_reward(0.30, 0.90, 0.88, cost_value=40.0)
+    assert "safe_rate" in components
+    assert components["safe_rate"] == 1.0
+    assert components["tail_violation_cvar"] == 0.0
 
 
 def test_single_metric_mode_renormalizes_active_weights():
     perf_weights = _resolve_stage2_metric_weights(1, PERF_WEIGHTS, "perf")
     barrier_weights = _resolve_stage2_metric_weights(1, BARRIER_WEIGHTS, "barrier")
-
     assert set(perf_weights.keys()) == {"loss", "metric1"}
     assert set(barrier_weights.keys()) == {"loss", "metric1"}
     assert math.isclose(sum(perf_weights.values()), 1.0, rel_tol=0.0, abs_tol=1e-8)
     assert math.isclose(sum(barrier_weights.values()), 1.0, rel_tol=0.0, abs_tol=1e-8)
 
-    raw_reward, components = _compute_reward(
-        0.30,
-        0.90,
-        0.88,
-        num_metrics=1,
-        cost_value=40.0,
-    )
-    assert math.isclose(components["perf_score"], 1.0, rel_tol=0.0, abs_tol=1e-8)
-    assert math.isclose(components["barrier_penalty"], 0.0, rel_tol=0.0, abs_tol=1e-8)
-    assert math.isclose(raw_reward, 0.75, rel_tol=0.0, abs_tol=1e-8)
+
+def test_wilson_lower_bound_reasonable():
+    """Wilson 下界应在合理范围内。"""
+    lb = _compute_wilson_lower_bound(61, 64)
+    assert 0.85 <= lb <= 0.98
+    lb_perfect = _compute_wilson_lower_bound(64, 64)
+    assert lb_perfect > 0.93
 
 
-def test_candidate_sort_key_is_score_first_then_tiebreakers():
-    better_score = _build_candidate_score_sort_key(0.80, 9.0, 40.0, 0.40, 1.0)
-    worse_score = _build_candidate_score_sort_key(0.70, 0.1, 30.0, 0.20, 2.0)
-    assert better_score < worse_score
-
-    equal_score_better_stability = _build_candidate_score_sort_key(0.80, 0.2, 40.0, 0.40, 1.0)
-    equal_score_worse_stability = _build_candidate_score_sort_key(0.80, 0.3, 30.0, 0.20, 2.0)
-    assert equal_score_better_stability < equal_score_worse_stability
+def test_bootstrap_cvar_ucb_reasonable():
+    """Bootstrap CVaR UCB 应 >= 均值。"""
+    costs = [0.0, 0.0, 0.0, 0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 0.0]
+    cvar_mean, cvar_ucb = _bootstrap_cvar_ucb(costs, tail_k=2, n_bootstrap=100)
+    assert cvar_ucb >= cvar_mean
+    assert cvar_mean > 0.0
