@@ -135,6 +135,37 @@ def _get_low_risk_noise_configuration(evaluator):
     }
 
 
+def _get_worst_case_noise_configuration(evaluator):
+    """构建最差噪声配置：每类噪声取允许集合中的最小 scaling factor（噪声最大）。"""
+    total_layers = evaluator.total_layers
+    min_input_sf = min(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
+    min_weight_sf = min(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+    min_wffn1_sf = min(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
+    return {
+        "input_noise_scaling_factors": np.full(total_layers, min_input_sf, dtype=int),
+        "wq_noise_scaling_factors": np.full(total_layers, min_weight_sf, dtype=int),
+        "wk_noise_scaling_factors": np.full(total_layers, min_weight_sf, dtype=int),
+        "wv_noise_scaling_factors": np.full(total_layers, min_weight_sf, dtype=int),
+        "wo_noise_scaling_factors": np.full(total_layers, min_weight_sf, dtype=int),
+        "wffn1_noise_scaling_factors": np.full(total_layers, min_wffn1_sf, dtype=int),
+        "wffn2_noise_scaling_factors": np.full(total_layers, min_weight_sf, dtype=int),
+    }
+
+
+def _compute_dynamic_limits(base_loss, base_p, base_s, worst_loss, worst_p, worst_s, quartile=0.25):
+    """根据 baseline 和 worst-case 指标动态计算约束上下限。
+
+    limit = baseline + quartile * (worst - baseline)，即取 baseline 到 worst 之间的 1/4 分位。
+    对于 loss（越小越好）：worst_loss > base_loss，limit_loss > base_loss。
+    对于 metric1/metric2（越大越好）：worst_m < base_m，limit_m < base_m。
+    """
+    return {
+        "loss": float(base_loss + quartile * (worst_loss - base_loss)),
+        "metric1": float(base_p + quartile * (worst_p - base_p)),
+        "metric2": float(base_s + quartile * (worst_s - base_s)),
+    }
+
+
 def _compute_tail_metrics_from_trials(
     trials, constraint_limits, baseline_metrics, perf_weights, barrier_weights,
     num_metrics, alpha=NOISE_STAGE_TAIL_ALPHA_EVAL, k_min=NOISE_STAGE_TAIL_TRAIN_K_MIN,
@@ -368,8 +399,10 @@ class NoiseRLModule:
         exact_baseline_softmax = np.asarray(exact_baseline_softmax, dtype=int)
         cost_reference_noise_config = ev._get_max_noise_configuration()
 
-        # 性能 baseline 使用低风险噪声配置（每类噪声取最小 scaling factor）
+        # 性能 baseline 使用低风险噪声配置（每类噪声取最大 scaling factor = 噪声最小）
         baseline_noise_config = _get_low_risk_noise_configuration(ev)
+        # worst-case 使用最大噪声配置（每类噪声取最小 scaling factor = 噪声最大）
+        worst_case_noise_config = _get_worst_case_noise_configuration(ev)
 
         reward_reference_split = ev.get_reward_reference_split_name()
 
@@ -413,6 +446,27 @@ class NoiseRLModule:
         else:
             baseline_holdout_stats = _copy_repeat_summary(baseline_reference_stats)
             baseline_holdout_stats["split_name"] = "val_holdout"
+
+        # Worst-case 评估：使用固定 Stage-1 配置 + 最大噪声配置（所有 scaling factor 取最小值）
+        worst_reference_stats = ev.evaluate_model_with_attention_noise_repeated(
+            fixed_gelu,
+            fixed_softmax,
+            **worst_case_noise_config,
+            repeats=NOISE_STAGE_BASELINE_REPEATS,
+            split=reward_reference_split,
+        )
+        if ev.has_dataset_split("val_holdout"):
+            worst_holdout_stats = ev.evaluate_model_with_attention_noise_repeated(
+                fixed_gelu,
+                fixed_softmax,
+                **worst_case_noise_config,
+                repeats=NOISE_STAGE_BASELINE_REPEATS,
+                split="val_holdout",
+            )
+        else:
+            worst_holdout_stats = _copy_repeat_summary(worst_reference_stats)
+            worst_holdout_stats["split_name"] = "val_holdout"
+
         cost_reference_tot_c, cost_reference_breakdown = ev.get_noise_simulated_cost(**cost_reference_noise_config)
 
         ev.log("噪声阶段性能基线（Noise-Stage Performance Baseline）（固定Stage-1配置 + 低风险参考噪声）：")
@@ -428,19 +482,39 @@ class NoiseRLModule:
         if ev.has_dataset_split("val_holdout"):
             ev.log("  val_holdout（用于留出集约束）：")
             _log_repeat_baseline("  Baseline", baseline_holdout_stats)
+
+        ev.log("噪声阶段最差情况（Noise-Stage Worst Case）（固定Stage-1配置 + 最大噪声，所有SF取最小值）：")
+        ev.log("  最差噪声配置（Worst-Case Noise Config）：")
+        for _bk, _bv in worst_case_noise_config.items():
+            ev.log(f"    {_bk}: {np.asarray(_bv, dtype=int).tolist()}")
+        ev.log(
+            f"  {reward_reference_split}（用于奖励/搜索约束）："
+        )
+        _log_repeat_baseline("  Worst", worst_reference_stats)
+        if ev.has_dataset_split("val_holdout"):
+            ev.log("  val_holdout（用于留出集约束）：")
+            _log_repeat_baseline("  Worst", worst_holdout_stats)
+
         ev.log("噪声阶段成本参考（Noise-Stage Cost Reference）（最大噪声配置，仅用于成本归一化）：")
         ev.log(f"  噪声成本（Noise Cost）: {cost_reference_tot_c:.2f} | 分项明细（Breakdown）={cost_reference_breakdown}")
 
         base_loss = baseline_reference_stats["loss_mean"]
         base_p = baseline_reference_stats["p_mean"]
         base_s = baseline_reference_stats["s_mean"]
+        worst_loss = worst_reference_stats["loss_mean"]
+        worst_p = worst_reference_stats["p_mean"]
+        worst_s = worst_reference_stats["s_mean"]
 
-        search_limits = ev.build_constraint_limits_from_metrics(base_loss, base_p, base_s)
+        # 动态计算约束：limit = baseline + 0.25 * (worst - baseline)，即 baseline 到 worst 的 1/4 分位
+        search_limits = _compute_dynamic_limits(base_loss, base_p, base_s, worst_loss, worst_p, worst_s)
         holdout_limits = (
-            ev.build_constraint_limits_from_metrics(
+            _compute_dynamic_limits(
                 baseline_holdout_stats["loss_mean"],
                 baseline_holdout_stats["p_mean"],
                 baseline_holdout_stats["s_mean"],
+                worst_holdout_stats["loss_mean"],
+                worst_holdout_stats["p_mean"],
+                worst_holdout_stats["s_mean"],
             )
             if ev.has_dataset_split("val_holdout")
             else dict(search_limits)
@@ -448,12 +522,20 @@ class NoiseRLModule:
         limit_loss = float(search_limits["loss"])
         limit_p = float(search_limits["metric1"])
         limit_s = float(search_limits["metric2"])
-        ev.log(f"噪声阶段搜索约束（Noise-Stage Search Constraints）（基于{reward_reference_split}低风险基线均值）：")
-        ev.log(f"  {ev._fmt_constraints(limit_loss, limit_p, limit_s)}")
+        ev.log(f"噪声阶段搜索约束（Noise-Stage Search Constraints）（动态计算：baseline到worst的1/4分位，基于{reward_reference_split}）：")
+        ev.log(f"  Baseline: {ev._fmt_metrics(base_loss, base_p, base_s)}")
+        ev.log(f"  Worst:    {ev._fmt_metrics(worst_loss, worst_p, worst_s)}")
+        ev.log(f"  Limit:    {ev._fmt_constraints(limit_loss, limit_p, limit_s)}")
         if ev.has_dataset_split("val_holdout"):
-            ev.log("噪声阶段留出集约束（Noise-Stage Holdout Constraints）（基于val_holdout低风险基线均值）：")
+            ev.log("噪声阶段留出集约束（Noise-Stage Holdout Constraints）（动态计算：baseline到worst的1/4分位，基于val_holdout）：")
             ev.log(
-                "  "
+                f"  Baseline: {ev._fmt_metrics(baseline_holdout_stats['loss_mean'], baseline_holdout_stats['p_mean'], baseline_holdout_stats['s_mean'])}"
+            )
+            ev.log(
+                f"  Worst:    {ev._fmt_metrics(worst_holdout_stats['loss_mean'], worst_holdout_stats['p_mean'], worst_holdout_stats['s_mean'])}"
+            )
+            ev.log(
+                f"  Limit:    "
                 f"{ev._fmt_constraints(holdout_limits['loss'], holdout_limits['metric1'], holdout_limits['metric2'])}"
             )
         training_hparams = {
@@ -1904,6 +1986,11 @@ class NoiseRLModule:
             "online_baseline_repeats": int(NOISE_STAGE_ONLINE_BASELINE_REPEATS),
             "search_baseline_stats": _copy_repeat_summary(split_baseline_stats["search"]),
             "holdout_baseline_stats": _copy_repeat_summary(split_baseline_stats["holdout"]),
+            "worst_reference_stats": _copy_repeat_summary(worst_reference_stats),
+            "worst_holdout_stats": _copy_repeat_summary(worst_holdout_stats),
+            "worst_case_noise_config": {k: v.copy() for k, v in worst_case_noise_config.items()},
+            "limit_computation_method": "dynamic_quartile",
+            "limit_quartile": 0.25,
             "search_limits": {k: float(v) for k, v in search_limits.items()},
             "holdout_limits": {k: float(v) for k, v in holdout_limits.items()},
             "status": status,
