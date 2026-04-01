@@ -1,0 +1,711 @@
+=== 第二阶段噪声RL优化日志已启动（Stage-2 Noise RL Optimization Log Started） ===
+[信息] PPO学习率（LR）从 rl_lr=20 解析为 -> 2e-05 (legacy-micro)
+[信息] 第一阶段RL回合数（Stage-1 RL episodes）: 51000 | 第二阶段RL回合数（Stage-2 RL episodes）: 15000
+[信息] 统一运行输出目录（Unified run output dir）: rl_results/layer_importance_runs/mrpc/20260401_021235_pid536894
+
+============================================================
+阶段5（PHASE 5）：第二阶段噪声强化学习（SECOND-STAGE NOISE RL）
+固定GELU/Softmax 来源（source）=json, 标签（label）=Selected (Saved RL)
+固定GELU   : [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1]
+固定Softmax: [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
+============================================================
+噪声阶段共享性能基线（Noise-Stage Shared Performance Baseline）（GELU全4, Softmax全6, 噪声全最大值）：
+  GELU   : [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+  Softmax: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  训练集（Training Set）：
+  Baseline（重复N=5次，数据集=train）：
+  损失（Loss）: 0.116917, Accuracy: 0.965812, F1: 0.965792, 标准差（std）=(损失Loss=0.0000, 指标1（M1）=0.0001, 指标2（M2）=0.0001)
+  val_search_full（用于奖励/搜索约束）：
+  Baseline（重复N=5次，数据集=val_search_full）：
+  损失（Loss）: 0.357335, Accuracy: 0.866667, F1: 0.864412, 标准差（std）=(损失Loss=0.0000, 指标1（M1）=0.0000, 指标2（M2）=0.0000)
+  val_holdout（用于留出集约束）：
+  Baseline（重复N=5次，数据集=val_holdout）：
+  损失（Loss）: 0.278038, Accuracy: 0.910569, F1: 0.907949, 标准差（std）=(损失Loss=0.0000, 指标1（M1）=0.0000, 指标2（M2）=0.0000)
+噪声阶段成本参考（Noise-Stage Cost Reference）（最大噪声配置，仅用于成本归一化）：
+  噪声成本（Noise Cost）: 49.20 | 分项明细（Breakdown）={'x': 9.0, 'wq': 6.599999999999999, 'wk': 6.599999999999999, 'wv': 6.599999999999999, 'wo': 6.599999999999999, 'wffn1': 7.199999999999999, 'wffn2': 6.599999999999999}
+噪声阶段搜索约束（Noise-Stage Search Constraints）（基于val_search_full重复基线均值）：
+  损失（Loss）<=0.3723, Accuracy>=0.8537, F1>=0.8514
+噪声阶段留出集约束（Noise-Stage Holdout Constraints）（基于val_holdout重复基线均值）：
+  损失（Loss）<=0.2930, Accuracy>=0.8969, F1>=0.8943
+噪声阶段训练超参数（Noise-Stage Training Hyperparameters）：
+  GTrXL(d_model=256, heads=8, layers=4, d_ff=512, dropout=0.1)
+  PPO(max_episodes=15000, eps_clip=0.15, k_epochs=10, warmup_mode=constant, warmup_updates=0, short_warmup_updates=20)
+  蒙特卡洛采样数（MC samples）=3 (自适应（adaptive）: 边界附近+4, 阈值（threshold）=0.02) | 预算衰减（BudgetDecay）(比例fraction=0.5)
+  最终奖励（FinalReward）(性能权重alpha_perf=0.75, 成本权重alpha_cost=0.25)
+  性能权重（PerfWeights）(损失loss=0.15, 指标1（m1）=0.425, 指标2（m2）=0.425) | 屏障权重（BarrierWeights）(损失loss=0.1, 指标1（m1）=0.45, 指标2（m2）=0.45)
+  奖励塑形（RewardShape）(差分diff=禁用disabled, 违约时保留成本奖励keep_cost_reward_on_violation=True, 违约时取消稠密奖励cancel_dense_reward_on_violation=False, 稠密塑形比例dense_shaping_scale=0.25)
+  候选确认（CandidateConfirm）(重复次数repeats=5) | 决赛确认（FinalistConfirm）(重复次数repeats=15, 候选列表shortlist=5) | 进度绘图（ProgressPlots）(间隔every=10000, 目录dir=rl_results/layer_importance_runs/mrpc/20260401_021235_pid536894/stage2_noise/progress)
+  稳定性阈值（StabilityThresholds）(搜索search={'loss_std': 0.008, 'metric1_std': 0.008, 'metric2_std': 0.008, 'loss_sem_ratio': 0.00375, 'metric1_sem_ratio': 0.0025, 'metric2_sem_ratio': 0.0025}, 留出集holdout={'loss_std': 0.01, 'metric1_std': 0.012, 'metric2_std': 0.012, 'loss_sem_ratio': 0.005, 'metric1_sem_ratio': 0.00375, 'metric2_sem_ratio': 0.00375}, 代理参考proxy_ref=0.008, 惩罚比例penalty_scale=0.1)
+[信息] 噪声阶段在线奖励使用 val_search_full （性能基线：GELU全4+Softmax全6+噪声全最大值；成本参考：最大噪声配置）
+噪声阶段奖励评分（Noise-Stage Reward Scoring）: 成本范围（cost_bounds）=(32.40, 49.20), 性能权重（alpha_perf）=0.75, 成本权重（alpha_cost）=0.25, 稠密塑形比例（dense_shaping_scale）=0.25
+  噪声回合（Noise Episode） 1: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.8745, 原始最终奖励（RawFinalReward）=0.8745, 回合回报（EpisodeReturn）=0.8745, 成本（Cost）=39.50
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3472±0.0017, 指标1（M1）=0.8620±0.0017, 指标2（M2）=0.8596±0.0021
+    x     : [22, 22, 26, 30, 22, 28, 22, 22, 24, 26, 24, 30]
+    wq    : [16, 14, 18, 14, 22, 14, 22, 20, 16, 20, 16, 20]
+    wk    : [14, 20, 14, 20, 22, 16, 20, 22, 14, 20, 14, 16]
+    wv    : [16, 18, 18, 14, 20, 18, 16, 18, 20, 18, 16, 14]
+    wo    : [18, 20, 20, 20, 22, 20, 16, 16, 16, 16, 20, 14]
+    wffn1 : [18, 18, 18, 20, 18, 22, 20, 22, 16, 18, 18, 20]
+    wffn2 : [18, 18, 18, 14, 18, 18, 16, 14, 16, 16, 18, 22]
+  噪声回合（Noise Episode） 4: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.8929, 原始最终奖励（RawFinalReward）=0.8929, 回合回报（EpisodeReturn）=0.8929, 成本（Cost）=39.60
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3455±0.0029, 指标1（M1）=0.8690±0.0044, 指标2（M2）=0.8671±0.0041
+    x     : [22, 24, 28, 26, 30, 22, 24, 30, 24, 24, 22, 30]
+    wq    : [20, 22, 16, 20, 14, 16, 20, 16, 22, 14, 14, 14]
+    wk    : [18, 14, 14, 14, 14, 14, 16, 18, 22, 22, 18, 22]
+    wv    : [22, 20, 16, 14, 18, 14, 18, 16, 18, 16, 20, 16]
+    wo    : [20, 20, 18, 16, 14, 22, 14, 16, 18, 18, 20, 22]
+    wffn1 : [16, 18, 18, 18, 18, 16, 22, 18, 20, 22, 16, 22]
+    wffn2 : [18, 14, 22, 14, 18, 22, 20, 14, 18, 22, 18, 14]
+  噪声回合（Noise Episode） 8: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.8973, 原始最终奖励（RawFinalReward）=0.8973, 回合回报（EpisodeReturn）=0.8973, 成本（Cost）=39.30
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3452±0.0014, 指标1（M1）=0.8667±0.0029, 指标2（M2）=0.8647±0.0029
+    x     : [28, 22, 24, 24, 26, 24, 24, 22, 24, 22, 22, 26]
+    wq    : [18, 14, 14, 16, 14, 22, 22, 22, 14, 16, 18, 14]
+    wk    : [20, 16, 18, 20, 16, 14, 22, 14, 14, 20, 14, 22]
+    wv    : [16, 22, 20, 16, 20, 18, 14, 14, 20, 22, 22, 20]
+    wo    : [22, 14, 16, 22, 16, 20, 18, 18, 16, 18, 20, 14]
+    wffn1 : [22, 20, 18, 16, 16, 16, 16, 16, 20, 22, 18, 18]
+    wffn2 : [22, 22, 18, 16, 14, 22, 16, 14, 22, 14, 16, 18]
+  噪声回合（Noise Episode） 170: 平均回合回报（Avg EpisodeReturn）=0.8753, 平均原始最终奖励（Avg RawFinalReward）=0.8753, 策略损失（Policy Loss）=-0.0364, 价值损失（Value Loss）=6.1749, 熵（Entropy）=11.2635
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.049448, 更新次数（Update）#1 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 1 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.8973, 原始最终奖励（raw_final_reward）=0.8973, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.5893, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.345851, Accuracy: 0.868772, F1: 0.866799, 标准差（std）=(损失Loss=0.0025, 指标1（M1）=0.0028, 指标2（M2）=0.0027), 极差（range）=(损失Loss=0.0065, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=True, 分数（score）=0.3361, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.250645, Accuracy: 0.908943, F1: 0.907380, 标准差（std）=(损失Loss=0.0080, 指标1（M1）=0.0108, 指标2（M2）=0.0110), 极差（range）=(损失Loss=0.0232, 指标1（M1）=0.0325, 指标2（M2）=0.0332), 稳定（stable）=False, 分数（score）=0.8727, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 170 更新: 成本（cost）=39.30, 最终选择分数（final_selection_score）=0.8973
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 170 更新: 成本（cost）=39.30, 最终选择分数（final_selection_score）=0.8973, 稳定性分数（stability_score）=0.3361
+    噪声联合最优（Noise Joint-Best）在回合（episode） 170 更新: 成本（cost）=39.30, 最终选择分数（final_selection_score）=0.8973
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 340: 平均回合回报（Avg EpisodeReturn）=0.8747, 平均原始最终奖励（Avg RawFinalReward）=0.8747, 策略损失（Policy Loss）=-0.1362, 价值损失（Value Loss）=2.2247, 熵（Entropy）=11.2621
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.048893, 更新次数（Update）#2 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 2 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.8958, 原始最终奖励（raw_final_reward）=0.8958, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.5833, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.347593, Accuracy: 0.870175, F1: 0.868320, 标准差（std）=(损失Loss=0.0016, 指标1（M1）=0.0031, 指标2（M2）=0.0031), 极差（range）=(损失Loss=0.0048, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=True, 分数（score）=0.3264, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.254161, Accuracy: 0.904065, F1: 0.902326, 标准差（std）=(损失Loss=0.0033, 指标1（M1）=0.0061, 指标2（M2）=0.0060), 极差（range）=(损失Loss=0.0091, 指标1（M1）=0.0163, 指标2（M2）=0.0166), 稳定（stable）=False, 分数（score）=0.4449, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 510: 平均回合回报（Avg EpisodeReturn）=0.8751, 平均原始最终奖励（Avg RawFinalReward）=0.8751, 策略损失（Policy Loss）=0.1211, 价值损失（Value Loss）=0.8092, 熵（Entropy）=11.2597
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.048337, 更新次数（Update）#3 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 3 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9040, 原始最终奖励（raw_final_reward）=0.9040, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6161, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344753, Accuracy: 0.870877, F1: 0.868884, 标准差（std）=(损失Loss=0.0043, 指标1（M1）=0.0026, 指标2（M2）=0.0027), 极差（range）=(损失Loss=0.0104, 指标1（M1）=0.0070, 指标2（M2）=0.0076), 稳定（stable）=False, 分数（score）=0.4018, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.254791, Accuracy: 0.902439, F1: 0.900595, 标准差（std）=(损失Loss=0.0037, 指标1（M1）=0.0051, 指标2（M2）=0.0050), 极差（range）=(损失Loss=0.0102, 指标1（M1）=0.0163, 指标2（M2）=0.0157), 稳定（stable）=False, 分数（score）=0.4041, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 510 更新: 成本（cost）=38.85, 最终选择分数（final_selection_score）=0.9040
+    噪声联合最优（Noise Joint-Best）在回合（episode） 510 更新: 成本（cost）=38.85, 最终选择分数（final_selection_score）=0.9040
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 629: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9007, 原始最终奖励（RawFinalReward）=0.9007, 回合回报（EpisodeReturn）=0.9007, 成本（Cost）=39.05
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3469±0.0007, 指标1（M1）=0.8667±0.0000, 指标2（M2）=0.8642±0.0002
+    x     : [30, 22, 28, 22, 26, 24, 22, 26, 28, 24, 22, 26]
+    wq    : [20, 16, 16, 16, 16, 14, 14, 22, 18, 22, 14, 20]
+    wk    : [20, 22, 16, 20, 20, 16, 16, 14, 20, 18, 20, 18]
+    wv    : [16, 16, 18, 16, 14, 14, 22, 20, 20, 20, 22, 18]
+    wo    : [18, 14, 16, 14, 22, 18, 14, 16, 18, 20, 20, 16]
+    wffn1 : [16, 20, 16, 20, 18, 20, 16, 16, 24, 20, 18, 16]
+    wffn2 : [16, 14, 14, 16, 16, 14, 14, 14, 18, 16, 22, 18]
+  噪声回合（Noise Episode） 680: 平均回合回报（Avg EpisodeReturn）=0.8738, 平均原始最终奖励（Avg RawFinalReward）=0.8738, 策略损失（Policy Loss）=0.1345, 价值损失（Value Loss）=0.3872, 熵（Entropy）=11.2564
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.047782, 更新次数（Update）#4 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 4 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9010, 原始最终奖励（raw_final_reward）=0.9010, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6042, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.346572, Accuracy: 0.869474, F1: 0.867651, 标准差（std）=(损失Loss=0.0038, 指标1（M1）=0.0034, 指标2（M2）=0.0036), 极差（range）=(损失Loss=0.0114, 指标1（M1）=0.0105, 指标2（M2）=0.0109), 稳定（stable）=False, 分数（score）=0.4487, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.257928, Accuracy: 0.897561, F1: 0.895529, 标准差（std）=(损失Loss=0.0047, 指标1（M1）=0.0040, 指标2（M2）=0.0041), 极差（range）=(损失Loss=0.0143, 指标1（M1）=0.0081, 指标2（M2）=0.0087), 稳定（stable）=False, 分数（score）=0.3814, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 756: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9040, 原始最终奖励（RawFinalReward）=0.9040, 回合回报（EpisodeReturn）=0.9040, 成本（Cost）=38.85
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3441±0.0007, 指标1（M1）=0.8690±0.0017, 指标2（M2）=0.8671±0.0016
+    x     : [22, 26, 22, 28, 28, 22, 22, 22, 26, 22, 26, 22]
+    wq    : [22, 14, 14, 22, 18, 20, 16, 16, 20, 16, 14, 14]
+    wk    : [16, 16, 18, 18, 14, 16, 14, 22, 14, 14, 16, 16]
+    wv    : [16, 18, 22, 22, 20, 22, 18, 14, 14, 20, 14, 16]
+    wo    : [14, 18, 16, 18, 22, 22, 16, 18, 18, 16, 14, 22]
+    wffn1 : [24, 18, 24, 18, 20, 16, 22, 16, 16, 18, 24, 18]
+    wffn2 : [14, 20, 16, 20, 16, 14, 16, 22, 16, 16, 14, 18]
+  噪声回合（Noise Episode） 850: 平均回合回报（Avg EpisodeReturn）=0.8756, 平均原始最终奖励（Avg RawFinalReward）=0.8756, 策略损失（Policy Loss）=0.1085, 价值损失（Value Loss）=0.1335, 熵（Entropy）=11.2522
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.047227, 更新次数（Update）#5 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 5 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9040, 原始最终奖励（raw_final_reward）=0.9040, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6161, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.345850, Accuracy: 0.868070, F1: 0.866033, 标准差（std）=(损失Loss=0.0032, 指标1（M1）=0.0036, 指标2（M2）=0.0037), 极差（range）=(损失Loss=0.0086, 指标1（M1）=0.0105, 指标2（M2）=0.0109), 稳定（stable）=False, 分数（score）=0.4376, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.247164, Accuracy: 0.904065, F1: 0.901981, 标准差（std）=(损失Loss=0.0069, 指标1（M1）=0.0033, 指标2（M2）=0.0034), 极差（range）=(损失Loss=0.0196, 指标1（M1）=0.0081, 指标2（M2）=0.0087), 稳定（stable）=False, 分数（score）=0.4164, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 870: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9092, 原始最终奖励（RawFinalReward）=0.9092, 回合回报（EpisodeReturn）=0.9092, 成本（Cost）=38.50
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3468±0.0025, 指标1（M1）=0.8678±0.0017, 指标2（M2）=0.8658±0.0017
+    x     : [26, 22, 28, 22, 30, 22, 26, 22, 26, 24, 22, 24]
+    wq    : [14, 22, 16, 14, 16, 18, 16, 20, 16, 20, 18, 14]
+    wk    : [14, 22, 22, 14, 16, 14, 16, 14, 22, 14, 18, 20]
+    wv    : [14, 18, 20, 20, 16, 16, 14, 20, 18, 20, 14, 14]
+    wo    : [14, 20, 18, 16, 16, 18, 18, 14, 22, 18, 16, 18]
+    wffn1 : [20, 20, 16, 20, 16, 16, 20, 22, 20, 24, 16, 16]
+    wffn2 : [18, 14, 16, 20, 16, 18, 20, 14, 14, 14, 20, 14]
+  噪声回合（Noise Episode） 1020: 平均回合回报（Avg EpisodeReturn）=0.8754, 平均原始最终奖励（Avg RawFinalReward）=0.8754, 策略损失（Policy Loss）=0.0656, 价值损失（Value Loss）=0.1149, 熵（Entropy）=11.2407
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.046671, 更新次数（Update）#6 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 6 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9092, 原始最终奖励（raw_final_reward）=0.9092, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6369, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.345415, Accuracy: 0.866667, F1: 0.864502, 标准差（std）=(损失Loss=0.0034, 指标1（M1）=0.0050, 指标2（M2）=0.0053), 极差（range）=(损失Loss=0.0103, 指标1（M1）=0.0140, 指标2（M2）=0.0147), 稳定（stable）=False, 分数（score）=0.5663, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.258094, Accuracy: 0.897561, F1: 0.895891, 标准差（std）=(损失Loss=0.0070, 指标1（M1）=0.0065, 指标2（M2）=0.0067), 极差（range）=(损失Loss=0.0177, 指标1（M1）=0.0163, 指标2（M2）=0.0165), 稳定（stable）=False, 分数（score）=0.5987, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 1020 更新: 成本（cost）=38.50, 最终选择分数（final_selection_score）=0.9092
+    噪声联合最优（Noise Joint-Best）在回合（episode） 1020 更新: 成本（cost）=38.50, 最终选择分数（final_selection_score）=0.9092
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 1190: 平均回合回报（Avg EpisodeReturn）=0.8785, 平均原始最终奖励（Avg RawFinalReward）=0.8785, 策略损失（Policy Loss）=0.0667, 价值损失（Value Loss）=0.0512, 熵（Entropy）=11.2311
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.046116, 更新次数（Update）#7 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 7 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9048, 原始最终奖励（raw_final_reward）=0.9048, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6190, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.345419, Accuracy: 0.869474, F1: 0.867461, 标准差（std）=(损失Loss=0.0014, 指标1（M1）=0.0014, 指标2（M2）=0.0015), 极差（range）=(损失Loss=0.0037, 指标1（M1）=0.0035, 指标2（M2）=0.0038), 稳定（stable）=True, 分数（score）=0.1791, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.252888, Accuracy: 0.912195, F1: 0.910222, 标准差（std）=(损失Loss=0.0050, 指标1（M1）=0.0061, 指标2（M2）=0.0060), 极差（range）=(损失Loss=0.0115, 指标1（M1）=0.0163, 指标2（M2）=0.0158), 稳定（stable）=False, 分数（score）=0.5011, 精度通过（precision_ok）=False
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 1190 更新: 成本（cost）=38.80, 最终选择分数（final_selection_score）=0.9048, 稳定性分数（stability_score）=0.1791
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 1360: 平均回合回报（Avg EpisodeReturn）=0.8789, 平均原始最终奖励（Avg RawFinalReward）=0.8789, 策略损失（Policy Loss）=-0.0320, 价值损失（Value Loss）=0.0355, 熵（Entropy）=11.2177
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.045561, 更新次数（Update）#8 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 8 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9070, 原始最终奖励（raw_final_reward）=0.9070, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6280, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.345686, Accuracy: 0.870175, F1: 0.868223, 标准差（std）=(损失Loss=0.0019, 指标1（M1）=0.0000, 指标2（M2）=0.0000), 极差（range）=(损失Loss=0.0059, 指标1（M1）=0.0000, 指标2（M2）=0.0000), 稳定（stable）=True, 分数（score）=0.0809, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.249435, Accuracy: 0.907317, F1: 0.905654, 标准差（std）=(损失Loss=0.0042, 指标1（M1）=0.0040, 指标2（M2）=0.0039), 极差（range）=(损失Loss=0.0112, 指标1（M1）=0.0081, 指标2（M2）=0.0079), 稳定（stable）=False, 分数（score）=0.3560, 精度通过（precision_ok）=False
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 1360 更新: 成本（cost）=38.65, 最终选择分数（final_selection_score）=0.9070, 稳定性分数（stability_score）=0.0809
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 1452: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9144, 原始最终奖励（RawFinalReward）=0.9144, 回合回报（EpisodeReturn）=0.9144, 成本（Cost）=38.15
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3448±0.0008, 指标1（M1）=0.8713±0.0017, 指标2（M2）=0.8695±0.0015
+    x     : [30, 30, 22, 24, 28, 24, 22, 24, 28, 22, 26, 24]
+    wq    : [20, 14, 22, 16, 20, 20, 20, 14, 14, 14, 18, 22]
+    wk    : [20, 14, 20, 14, 16, 14, 14, 18, 22, 14, 18, 14]
+    wv    : [14, 14, 20, 14, 18, 20, 16, 18, 14, 14, 14, 16]
+    wo    : [16, 14, 18, 20, 16, 16, 18, 18, 18, 20, 14, 14]
+    wffn1 : [20, 20, 18, 22, 16, 18, 20, 16, 16, 16, 20, 16]
+    wffn2 : [14, 18, 14, 22, 16, 14, 18, 14, 14, 18, 20, 16]
+  噪声回合（Noise Episode） 1530: 平均回合回报（Avg EpisodeReturn）=0.8820, 平均原始最终奖励（Avg RawFinalReward）=0.8820, 策略损失（Policy Loss）=0.1216, 价值损失（Value Loss）=0.0514, 熵（Entropy）=11.1939
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.045005, 更新次数（Update）#9 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 9 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9144, 原始最终奖励（raw_final_reward）=0.9144, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6577, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.343603, Accuracy: 0.870877, F1: 0.868790, 标准差（std）=(损失Loss=0.0021, 指标1（M1）=0.0014, 指标2（M2）=0.0014), 极差（range）=(损失Loss=0.0057, 指标1（M1）=0.0035, 指标2（M2）=0.0038), 稳定（stable）=True, 分数（score）=0.2051, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.254531, Accuracy: 0.904065, F1: 0.902176, 标准差（std）=(损失Loss=0.0077, 指标1（M1）=0.0095, 指标2（M2）=0.0095), 极差（range）=(损失Loss=0.0208, 指标1（M1）=0.0244, 指标2（M2）=0.0245), 稳定（stable）=False, 分数（score）=0.7863, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 1530 更新: 成本（cost）=38.15, 最终选择分数（final_selection_score）=0.9144
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 1530 更新: 成本（cost）=38.15, 最终选择分数（final_selection_score）=0.9144, 稳定性分数（stability_score）=0.2051
+    噪声联合最优（Noise Joint-Best）在回合（episode） 1530 更新: 成本（cost）=38.15, 最终选择分数（final_selection_score）=0.9144
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 1700: 平均回合回报（Avg EpisodeReturn）=0.8840, 平均原始最终奖励（Avg RawFinalReward）=0.8840, 策略损失（Policy Loss）=-0.0035, 价值损失（Value Loss）=0.0355, 熵（Entropy）=11.1684
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.044450, 更新次数（Update）#10 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 10 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9085, 原始最终奖励（raw_final_reward）=0.9085, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6339, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344179, Accuracy: 0.869474, F1: 0.867560, 标准差（std）=(损失Loss=0.0025, 指标1（M1）=0.0014, 指标2（M2）=0.0013), 极差（range）=(损失Loss=0.0059, 指标1（M1）=0.0035, 指标2（M2）=0.0033), 稳定（stable）=True, 分数（score）=0.2165, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.257767, Accuracy: 0.905691, F1: 0.903920, 标准差（std）=(损失Loss=0.0052, 指标1（M1）=0.0083, 指标2（M2）=0.0083), 极差（range）=(损失Loss=0.0140, 指标1（M1）=0.0244, 指标2（M2）=0.0245), 稳定（stable）=False, 分数（score）=0.6350, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 1870: 平均回合回报（Avg EpisodeReturn）=0.8864, 平均原始最终奖励（Avg RawFinalReward）=0.8864, 策略损失（Policy Loss）=0.3140, 价值损失（Value Loss）=0.0165, 熵（Entropy）=11.1394
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.043895, 更新次数（Update）#11 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 11 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9100, 原始最终奖励（raw_final_reward）=0.9100, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6399, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.346006, Accuracy: 0.871579, F1: 0.869553, 标准差（std）=(损失Loss=0.0036, 指标1（M1）=0.0017, 指标2（M2）=0.0016), 极差（range）=(损失Loss=0.0088, 指标1（M1）=0.0035, 指标2（M2）=0.0033), 稳定（stable）=False, 分数（score）=0.2915, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.253515, Accuracy: 0.902439, F1: 0.900399, 标准差（std）=(损失Loss=0.0056, 指标1（M1）=0.0051, 指标2（M2）=0.0050), 极差（range）=(损失Loss=0.0137, 指标1（M1）=0.0163, 指标2（M2）=0.0157), 稳定（stable）=False, 分数（score）=0.4699, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 1912: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9271, 原始最终奖励（RawFinalReward）=0.9271, 回合回报（EpisodeReturn）=0.9271, 成本（Cost）=37.30
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3493±0.0045, 指标1（M1）=0.8713±0.0017, 指标2（M2）=0.8693±0.0016
+    x     : [24, 24, 28, 26, 28, 26, 30, 22, 28, 22, 26, 24]
+    wq    : [14, 16, 18, 16, 14, 20, 16, 22, 16, 16, 16, 18]
+    wk    : [18, 16, 20, 14, 14, 16, 14, 16, 14, 14, 14, 14]
+    wv    : [16, 16, 20, 16, 14, 14, 14, 16, 18, 14, 20, 16]
+    wo    : [18, 20, 18, 18, 16, 14, 20, 14, 14, 20, 14, 18]
+    wffn1 : [16, 18, 16, 18, 16, 18, 18, 18, 18, 16, 16, 22]
+    wffn2 : [14, 14, 16, 16, 16, 16, 14, 16, 16, 20, 18, 14]
+  噪声回合（Noise Episode） 2040: 平均回合回报（Avg EpisodeReturn）=0.8885, 平均原始最终奖励（Avg RawFinalReward）=0.8885, 策略损失（Policy Loss）=-0.3418, 价值损失（Value Loss）=0.0249, 熵（Entropy）=11.1008
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.043339, 更新次数（Update）#12 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 12 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.8622, 原始最终奖励（raw_final_reward）=0.8622, 性能分数（perf_score）=0.9135, 成本分数（cost_score）=0.7083, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.347302, Accuracy: 0.865263, F1: 0.863173, 标准差（std）=(损失Loss=0.0006, 指标1（M1）=0.0028, 指标2（M2）=0.0030), 极差（range）=(损失Loss=0.0013, 指标1（M1）=0.0070, 指标2（M2）=0.0081), 稳定（stable）=True, 分数（score）=0.2656, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.257832, Accuracy: 0.902439, F1: 0.900765, 标准差（std）=(损失Loss=0.0074, 指标1（M1）=0.0051, 指标2（M2）=0.0052), 极差（range）=(损失Loss=0.0205, 指标1（M1）=0.0163, 指标2（M2）=0.0166), 稳定（stable）=False, 分数（score）=0.5367, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 2210: 平均回合回报（Avg EpisodeReturn）=0.8910, 平均原始最终奖励（Avg RawFinalReward）=0.8910, 策略损失（Policy Loss）=0.1707, 价值损失（Value Loss）=0.0125, 熵（Entropy）=11.0519
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.042784, 更新次数（Update）#13 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 13 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9249, 原始最终奖励（raw_final_reward）=0.9249, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6994, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.343643, Accuracy: 0.866667, F1: 0.864614, 标准差（std）=(损失Loss=0.0046, 指标1（M1）=0.0044, 指标2（M2）=0.0044), 极差（range）=(损失Loss=0.0114, 指标1（M1）=0.0105, 指标2（M2）=0.0104), 稳定（stable）=False, 分数（score）=0.5598, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.253075, Accuracy: 0.894309, F1: 0.891970, 标准差（std）=(损失Loss=0.0075, 指标1（M1）=0.0051, 指标2（M2）=0.0059), 极差（range）=(损失Loss=0.0222, 指标1（M1）=0.0163, 指标2（M2）=0.0187), 稳定（stable）=False, 分数（score）=0.5562, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 2210 更新: 成本（cost）=37.45, 最终选择分数（final_selection_score）=0.9249
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=False, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 2380: 平均回合回报（Avg EpisodeReturn）=0.8946, 平均原始最终奖励（Avg RawFinalReward）=0.8946, 策略损失（Policy Loss）=-0.5018, 价值损失（Value Loss）=0.0182, 熵（Entropy）=10.9960
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.042229, 更新次数（Update）#14 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 14 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9219, 原始最终奖励（raw_final_reward）=0.9219, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6875, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.347802, Accuracy: 0.868070, F1: 0.866134, 标准差（std）=(损失Loss=0.0033, 指标1（M1）=0.0017, 指标2（M2）=0.0017), 极差（range）=(损失Loss=0.0094, 指标1（M1）=0.0035, 指标2（M2）=0.0038), 稳定（stable）=False, 分数（score）=0.2793, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.256484, Accuracy: 0.899187, F1: 0.897990, 标准差（std）=(损失Loss=0.0045, 指标1（M1）=0.0132, 指标2（M2）=0.0130), 极差（range）=(损失Loss=0.0121, 指标1（M1）=0.0407, 指标2（M2）=0.0398), 稳定（stable）=False, 分数（score）=0.8806, 精度通过（precision_ok）=False
+    噪声联合最优（Noise Joint-Best）在回合（episode） 2380 更新: 成本（cost）=37.65, 最终选择分数（final_selection_score）=0.9219
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 2550: 平均回合回报（Avg EpisodeReturn）=0.8972, 平均原始最终奖励（Avg RawFinalReward）=0.8972, 策略损失（Policy Loss）=-0.5680, 价值损失（Value Loss）=0.0303, 熵（Entropy）=10.9358
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.041673, 更新次数（Update）#15 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 15 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9226, 原始最终奖励（raw_final_reward）=0.9226, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.6905, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.347626, Accuracy: 0.868070, F1: 0.866135, 标准差（std）=(损失Loss=0.0019, 指标1（M1）=0.0028, 指标2（M2）=0.0028), 极差（range）=(损失Loss=0.0054, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=True, 分数（score）=0.3126, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.255259, Accuracy: 0.902439, F1: 0.900228, 标准差（std）=(损失Loss=0.0040, 指标1（M1）=0.0089, 指标2（M2）=0.0091), 极差（range）=(损失Loss=0.0118, 指标1（M1）=0.0244, 指标2（M2）=0.0254), 稳定（stable）=False, 分数（score）=0.6328, 精度通过（precision_ok）=False
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 2550 更新: 成本（cost）=37.60, 最终选择分数（final_selection_score）=0.9226, 稳定性分数（stability_score）=0.3126
+    噪声联合最优（Noise Joint-Best）在回合（episode） 2550 更新: 成本（cost）=37.60, 最终选择分数（final_selection_score）=0.9226
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 2720: 平均回合回报（Avg EpisodeReturn）=0.8991, 平均原始最终奖励（Avg RawFinalReward）=0.8991, 策略损失（Policy Loss）=-0.3830, 价值损失（Value Loss）=0.0104, 熵（Entropy）=10.8594
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.041118, 更新次数（Update）#16 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 16 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.8928, 原始最终奖励（raw_final_reward）=0.8928, 性能分数（perf_score）=0.9552, 成本分数（cost_score）=0.7054, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.349424, Accuracy: 0.865965, F1: 0.863746, 标准差（std）=(损失Loss=0.0029, 指标1（M1）=0.0026, 指标2（M2）=0.0028), 极差（range）=(损失Loss=0.0090, 指标1（M1）=0.0070, 指标2（M2）=0.0076), 稳定（stable）=True, 分数（score）=0.3436, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.255835, Accuracy: 0.902439, F1: 0.900457, 标准差（std）=(损失Loss=0.0038, 指标1（M1）=0.0136, 指标2（M2）=0.0136), 极差（range）=(损失Loss=0.0107, 指标1（M1）=0.0325, 指标2（M2）=0.0323), 稳定（stable）=False, 分数（score）=0.8822, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 2890: 平均回合回报（Avg EpisodeReturn）=0.9022, 平均原始最终奖励（Avg RawFinalReward）=0.9022, 策略损失（Policy Loss）=0.5282, 价值损失（Value Loss）=0.0081, 熵（Entropy）=10.7789
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.040563, 更新次数（Update）#17 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 17 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9256, 原始最终奖励（raw_final_reward）=0.9256, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.7024, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.346415, Accuracy: 0.867368, F1: 0.865564, 标准差（std）=(损失Loss=0.0008, 指标1（M1）=0.0041, 指标2（M2）=0.0042), 极差（range）=(损失Loss=0.0023, 指标1（M1）=0.0105, 指标2（M2）=0.0109), 稳定（stable）=True, 分数（score）=0.3803, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.253749, Accuracy: 0.897561, F1: 0.895529, 标准差（std）=(损失Loss=0.0022, 指标1（M1）=0.0040, 指标2（M2）=0.0041), 极差（range）=(损失Loss=0.0058, 指标1（M1）=0.0081, 指标2（M2）=0.0087), 稳定（stable）=True, 分数（score）=0.2972, 精度通过（precision_ok）=True
+    噪声搜索最优（Noise Search-Best）在回合（episode） 2890 更新: 成本（cost）=37.40, 最终选择分数（final_selection_score）=0.9256
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 2890 更新: 成本（cost）=37.40, 最终选择分数（final_selection_score）=0.9256, 稳定性分数（stability_score）=0.3803
+    噪声联合最优（Noise Joint-Best）在回合（episode） 2890 更新: 成本（cost）=37.40, 最终选择分数（final_selection_score）=0.9256
+    噪声稳定联合最优（Noise Stable Joint-Best）在回合（episode） 2890 更新: 成本（cost）=37.40, 最终选择分数（final_selection_score）=0.9256, 稳定性分数（stability_score）=0.3387
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=True, 稳定联合可行（stable_joint_feasible）=True, 候选列表（shortlist）=added
+  噪声回合（Noise Episode） 3036: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9368, 原始最终奖励（RawFinalReward）=0.9368, 回合回报（EpisodeReturn）=0.9368, 成本（Cost）=36.65
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3425±0.0003, 指标1（M1）=0.8690±0.0017, 指标2（M2）=0.8671±0.0016
+    x     : [28, 30, 22, 22, 24, 24, 30, 22, 22, 24, 22, 22]
+    wq    : [16, 14, 14, 16, 14, 14, 14, 16, 16, 14, 14, 14]
+    wk    : [18, 18, 14, 20, 14, 14, 20, 14, 14, 16, 14, 14]
+    wv    : [18, 16, 14, 16, 22, 14, 20, 16, 18, 16, 16, 16]
+    wo    : [16, 14, 16, 20, 16, 16, 14, 14, 14, 20, 18, 14]
+    wffn1 : [18, 16, 16, 20, 18, 20, 16, 18, 16, 18, 18, 18]
+    wffn2 : [20, 16, 14, 18, 14, 16, 16, 20, 20, 14, 18, 16]
+  噪声回合（Noise Episode） 3060: 平均回合回报（Avg EpisodeReturn）=0.9055, 平均原始最终奖励（Avg RawFinalReward）=0.9055, 策略损失（Policy Loss）=-0.0993, 价值损失（Value Loss）=0.0079, 熵（Entropy）=10.6880
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.040007, 更新次数（Update）#18 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 18 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9368, 原始最终奖励（raw_final_reward）=0.9368, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.7470, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.349315, Accuracy: 0.868772, F1: 0.866799, 标准差（std）=(损失Loss=0.0022, 指标1（M1）=0.0028, 指标2（M2）=0.0027), 极差（range）=(损失Loss=0.0052, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=True, 分数（score）=0.3208, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.252690, Accuracy: 0.905691, F1: 0.903749, 标准差（std）=(损失Loss=0.0061, 指标1（M1）=0.0098, 指标2（M2）=0.0098), 极差（range）=(损失Loss=0.0152, 指标1（M1）=0.0244, 指标2（M2）=0.0245), 稳定（stable）=False, 分数（score）=0.7487, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 3060 更新: 成本（cost）=36.65, 最终选择分数（final_selection_score）=0.9368
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 3060 更新: 成本（cost）=36.65, 最终选择分数（final_selection_score）=0.9368, 稳定性分数（stability_score）=0.3208
+    噪声联合最优（Noise Joint-Best）在回合（episode） 3060 更新: 成本（cost）=36.65, 最终选择分数（final_selection_score）=0.9368
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 3230: 平均回合回报（Avg EpisodeReturn）=0.9095, 平均原始最终奖励（Avg RawFinalReward）=0.9095, 策略损失（Policy Loss）=-0.1633, 价值损失（Value Loss）=0.0079, 熵（Entropy）=10.5991
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.039452, 更新次数（Update）#19 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 19 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9308, 原始最终奖励（raw_final_reward）=0.9308, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.7232, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.343784, Accuracy: 0.871579, F1: 0.869553, 标准差（std）=(损失Loss=0.0019, 指标1（M1）=0.0017, 指标2（M2）=0.0016), 极差（range）=(损失Loss=0.0055, 指标1（M1）=0.0035, 指标2（M2）=0.0033), 稳定（stable）=True, 分数（score）=0.2175, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.255240, Accuracy: 0.905691, F1: 0.903915, 标准差（std）=(损失Loss=0.0067, 指标1（M1）=0.0065, 指标2（M2）=0.0064), 极差（range）=(损失Loss=0.0160, 指标1（M1）=0.0163, 指标2（M2）=0.0157), 稳定（stable）=False, 分数（score）=0.5805, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 3400: 平均回合回报（Avg EpisodeReturn）=0.9094, 平均原始最终奖励（Avg RawFinalReward）=0.9094, 策略损失（Policy Loss）=0.0676, 价值损失（Value Loss）=0.0079, 熵（Entropy）=10.5026
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.038897, 更新次数（Update）#20 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 20 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9435, 原始最终奖励（raw_final_reward）=0.9435, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.7738, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344333, Accuracy: 0.866667, F1: 0.864810, 标准差（std）=(损失Loss=0.0022, 指标1（M1）=0.0031, 指标2（M2）=0.0031), 极差（range）=(损失Loss=0.0060, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=True, 分数（score）=0.3519, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.253504, Accuracy: 0.904065, F1: 0.901991, 标准差（std）=(损失Loss=0.0053, 指标1（M1）=0.0061, 指标2（M2）=0.0060), 极差（range）=(损失Loss=0.0150, 指标1（M1）=0.0163, 指标2（M2）=0.0166), 稳定（stable）=False, 分数（score）=0.5135, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 3400 更新: 成本（cost）=36.20, 最终选择分数（final_selection_score）=0.9435
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 3400 更新: 成本（cost）=36.20, 最终选择分数（final_selection_score）=0.9435, 稳定性分数（stability_score）=0.3519
+    噪声联合最优（Noise Joint-Best）在回合（episode） 3400 更新: 成本（cost）=36.20, 最终选择分数（final_selection_score）=0.9435
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 3570: 平均回合回报（Avg EpisodeReturn）=0.9122, 平均原始最终奖励（Avg RawFinalReward）=0.9122, 策略损失（Policy Loss）=-0.0300, 价值损失（Value Loss）=0.0142, 熵（Entropy）=10.3752
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.038341, 更新次数（Update）#21 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 21 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9353, 原始最终奖励（raw_final_reward）=0.9353, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.7411, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.345496, Accuracy: 0.868070, F1: 0.866036, 标准差（std）=(损失Loss=0.0026, 指标1（M1）=0.0028, 指标2（M2）=0.0029), 极差（range）=(损失Loss=0.0065, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=True, 分数（score）=0.3444, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.252292, Accuracy: 0.910569, F1: 0.908967, 标准差（std）=(损失Loss=0.0043, 指标1（M1）=0.0073, 指标2（M2）=0.0072), 极差（range）=(损失Loss=0.0109, 指标1（M1）=0.0163, 指标2（M2）=0.0165), 稳定（stable）=False, 分数（score）=0.5477, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 3654: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9397, 原始最终奖励（RawFinalReward）=0.9397, 回合回报（EpisodeReturn）=0.9397, 成本（Cost）=36.45
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3446±0.0040, 指标1（M1）=0.8690±0.0017, 指标2（M2）=0.8670±0.0018
+    x     : [22, 24, 22, 24, 26, 24, 22, 22, 22, 22, 26, 22]
+    wq    : [14, 20, 16, 18, 18, 18, 20, 16, 16, 14, 18, 14]
+    wk    : [14, 14, 14, 18, 14, 16, 16, 14, 16, 14, 18, 14]
+    wv    : [14, 14, 18, 18, 16, 16, 22, 14, 18, 14, 16, 14]
+    wo    : [14, 16, 14, 14, 14, 16, 14, 14, 14, 14, 16, 16]
+    wffn1 : [22, 18, 18, 16, 20, 22, 24, 18, 18, 22, 16, 16]
+    wffn2 : [16, 14, 16, 18, 16, 16, 14, 16, 16, 16, 16, 22]
+  噪声回合（Noise Episode） 3740: 平均回合回报（Avg EpisodeReturn）=0.9166, 平均原始最终奖励（Avg RawFinalReward）=0.9166, 策略损失（Policy Loss）=-0.0893, 价值损失（Value Loss）=0.0083, 熵（Entropy）=10.2516
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.037786, 更新次数（Update）#22 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 22 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9397, 原始最终奖励（raw_final_reward）=0.9397, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.7589, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344918, Accuracy: 0.868772, F1: 0.866602, 标准差（std）=(损失Loss=0.0053, 指标1（M1）=0.0028, 指标2（M2）=0.0028), 极差（range）=(损失Loss=0.0154, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=False, 分数（score）=0.4539, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.250356, Accuracy: 0.908943, F1: 0.906851, 标准差（std）=(损失Loss=0.0052, 指标1（M1）=0.0095, 指标2（M2）=0.0099), 极差（range）=(损失Loss=0.0157, 指标1（M1）=0.0244, 指标2（M2）=0.0263), 稳定（stable）=False, 分数（score）=0.7103, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 3910: 平均回合回报（Avg EpisodeReturn）=0.9200, 平均原始最终奖励（Avg RawFinalReward）=0.9200, 策略损失（Policy Loss）=-0.1268, 价值损失（Value Loss）=0.0082, 熵（Entropy）=10.1335
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.037231, 更新次数（Update）#23 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 23 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9112, 原始最终奖励（raw_final_reward）=0.9112, 性能分数（perf_score）=0.9619, 成本分数（cost_score）=0.7589, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.345733, Accuracy: 0.865965, F1: 0.863949, 标准差（std）=(损失Loss=0.0054, 指标1（M1）=0.0034, 指标2（M2）=0.0035), 极差（range）=(损失Loss=0.0148, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=False, 分数（score）=0.5134, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.255989, Accuracy: 0.899187, F1: 0.897669, 标准差（std）=(损失Loss=0.0063, 指标1（M1）=0.0098, 指标2（M2）=0.0092), 极差（range）=(损失Loss=0.0161, 指标1（M1）=0.0244, 指标2（M2）=0.0234), 稳定（stable）=False, 分数（score）=0.7376, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 3969: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9405, 原始最终奖励（RawFinalReward）=0.9405, 回合回报（EpisodeReturn）=0.9405, 成本（Cost）=36.40
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3439±0.0032, 指标1（M1）=0.8667±0.0029, 指标2（M2）=0.8649±0.0031
+    x     : [22, 22, 30, 22, 22, 26, 22, 24, 28, 24, 22, 22]
+    wq    : [16, 16, 16, 20, 20, 16, 14, 14, 18, 16, 20, 14]
+    wk    : [14, 14, 16, 14, 22, 18, 16, 16, 14, 14, 14, 16]
+    wv    : [14, 18, 14, 18, 16, 16, 16, 16, 14, 16, 16, 14]
+    wo    : [16, 14, 14, 16, 14, 14, 16, 20, 14, 14, 16, 14]
+    wffn1 : [16, 16, 16, 18, 16, 16, 16, 20, 16, 22, 18, 16]
+    wffn2 : [16, 16, 18, 20, 16, 16, 22, 18, 14, 14, 14, 22]
+  噪声回合（Noise Episode） 4033: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9531, 原始最终奖励（RawFinalReward）=0.9531, 回合回报（EpisodeReturn）=0.9531, 成本（Cost）=35.55
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3444±0.0055, 指标1（M1）=0.8702±0.0029, 指标2（M2）=0.8684±0.0031
+    x     : [22, 24, 22, 22, 22, 28, 22, 24, 22, 22, 22, 22]
+    wq    : [14, 14, 14, 14, 16, 14, 18, 22, 16, 14, 16, 14]
+    wk    : [14, 14, 14, 14, 14, 18, 14, 14, 18, 14, 14, 16]
+    wv    : [14, 16, 16, 18, 16, 16, 14, 16, 14, 14, 14, 18]
+    wo    : [14, 14, 14, 18, 22, 14, 14, 16, 16, 18, 18, 14]
+    wffn1 : [16, 24, 16, 18, 18, 20, 16, 18, 18, 16, 18, 16]
+    wffn2 : [20, 14, 20, 16, 16, 16, 14, 14, 16, 16, 16, 14]
+  噪声回合（Noise Episode） 4080: 平均回合回报（Avg EpisodeReturn）=0.9219, 平均原始最终奖励（Avg RawFinalReward）=0.9219, 策略损失（Policy Loss）=0.3919, 价值损失（Value Loss）=0.0089, 熵（Entropy）=9.9873
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.036675, 更新次数（Update）#24 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 24 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9531, 原始最终奖励（raw_final_reward）=0.9531, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8125, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.348667, Accuracy: 0.867368, F1: 0.865266, 标准差（std）=(损失Loss=0.0039, 指标1（M1）=0.0034, 指标2（M2）=0.0036), 极差（range）=(损失Loss=0.0109, 指标1（M1）=0.0070, 指标2（M2）=0.0081), 稳定（stable）=False, 分数（score）=0.4563, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.255318, Accuracy: 0.899187, F1: 0.896404, 标准差（std）=(损失Loss=0.0082, 指标1（M1）=0.0065, 指标2（M2）=0.0077), 极差（range）=(损失Loss=0.0194, 指标1（M1）=0.0163, 指标2（M2）=0.0199), 稳定（stable）=False, 分数（score）=0.6677, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 4080 更新: 成本（cost）=35.55, 最终选择分数（final_selection_score）=0.9531
+    噪声联合最优（Noise Joint-Best）在回合（episode） 4080 更新: 成本（cost）=35.55, 最终选择分数（final_selection_score）=0.9531
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 4250: 平均回合回报（Avg EpisodeReturn）=0.9250, 平均原始最终奖励（Avg RawFinalReward）=0.9250, 策略损失（Policy Loss）=-0.1054, 价值损失（Value Loss）=0.0048, 熵（Entropy）=9.8546
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.036120, 更新次数（Update）#25 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 25 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9457, 原始最终奖励（raw_final_reward）=0.9457, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.7827, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.346590, Accuracy: 0.868772, F1: 0.866497, 标准差（std）=(损失Loss=0.0023, 指标1（M1）=0.0017, 指标2（M2）=0.0019), 极差（range）=(损失Loss=0.0061, 指标1（M1）=0.0035, 指标2（M2）=0.0043), 稳定（stable）=True, 分数（score）=0.2483, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.251902, Accuracy: 0.902439, F1: 0.900762, 标准差（std）=(损失Loss=0.0070, 指标1（M1）=0.0089, 指标2（M2）=0.0089), 极差（range）=(损失Loss=0.0166, 指标1（M1）=0.0244, 指标2（M2）=0.0244), 稳定（stable）=False, 分数（score）=0.7290, 精度通过（precision_ok）=False
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 4250 更新: 成本（cost）=36.05, 最终选择分数（final_selection_score）=0.9457, 稳定性分数（stability_score）=0.2483
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 4420: 平均回合回报（Avg EpisodeReturn）=0.9282, 平均原始最终奖励（Avg RawFinalReward）=0.9282, 策略损失（Policy Loss）=-0.6214, 价值损失（Value Loss）=0.0052, 熵（Entropy）=9.7117
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.035565, 更新次数（Update）#26 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 26 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9509, 原始最终奖励（raw_final_reward）=0.9509, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8036, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.346322, Accuracy: 0.870877, F1: 0.868977, 标准差（std）=(损失Loss=0.0047, 指标1（M1）=0.0014, 指标2（M2）=0.0015), 极差（range）=(损失Loss=0.0132, 指标1（M1）=0.0035, 指标2（M2）=0.0043), 稳定（stable）=False, 分数（score）=0.3176, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.249052, Accuracy: 0.895935, F1: 0.893522, 标准差（std）=(损失Loss=0.0057, 指标1（M1）=0.0080, 指标2（M2）=0.0086), 极差（range）=(损失Loss=0.0149, 指标1（M1）=0.0244, 指标2（M2）=0.0265), 稳定（stable）=False, 分数（score）=0.6499, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=False, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 4590: 平均回合回报（Avg EpisodeReturn）=0.9303, 平均原始最终奖励（Avg RawFinalReward）=0.9303, 策略损失（Policy Loss）=0.3943, 价值损失（Value Loss）=0.0109, 熵（Entropy）=9.5578
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.035009, 更新次数（Update）#27 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 27 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9524, 原始最终奖励（raw_final_reward）=0.9524, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8095, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.347623, Accuracy: 0.870175, F1: 0.868314, 标准差（std）=(损失Loss=0.0029, 指标1（M1）=0.0022, 指标2（M2）=0.0023), 极差（range）=(损失Loss=0.0085, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=True, 分数（score）=0.3097, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.257495, Accuracy: 0.908943, F1: 0.907367, 标准差（std）=(损失Loss=0.0068, 指标1（M1）=0.0061, 指标2（M2）=0.0062), 极差（range）=(损失Loss=0.0182, 指标1（M1）=0.0163, 指标2（M2）=0.0167), 稳定（stable）=False, 分数（score）=0.5680, 精度通过（precision_ok）=False
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 4590 更新: 成本（cost）=35.60, 最终选择分数（final_selection_score）=0.9524, 稳定性分数（stability_score）=0.3097
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 4760: 平均回合回报（Avg EpisodeReturn）=0.9317, 平均原始最终奖励（Avg RawFinalReward）=0.9317, 策略损失（Policy Loss）=-0.0822, 价值损失（Value Loss）=0.0043, 熵（Entropy）=9.3856
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.034454, 更新次数（Update）#28 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 28 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9524, 原始最终奖励（raw_final_reward）=0.9524, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8095, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.341165, Accuracy: 0.872982, F1: 0.870879, 标准差（std）=(损失Loss=0.0051, 指标1（M1）=0.0026, 指标2（M2）=0.0028), 极差（range）=(损失Loss=0.0138, 指标1（M1）=0.0070, 指标2（M2）=0.0076), 稳定（stable）=False, 分数（score）=0.4368, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.252202, Accuracy: 0.905691, F1: 0.903544, 标准差（std）=(损失Loss=0.0094, 指标1（M1）=0.0083, 指标2（M2）=0.0086), 极差（range）=(损失Loss=0.0230, 指标1（M1）=0.0244, 指标2（M2）=0.0255), 稳定（stable）=False, 分数（score）=0.7836, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 4826: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9554, 原始最终奖励（RawFinalReward）=0.9554, 回合回报（EpisodeReturn）=0.9554, 成本（Cost）=35.40
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3451±0.0044, 指标1（M1）=0.8713±0.0017, 指标2（M2）=0.8693±0.0016
+    x     : [26, 22, 24, 22, 28, 24, 22, 22, 24, 22, 22, 24]
+    wq    : [14, 16, 14, 20, 14, 16, 14, 18, 14, 14, 14, 14]
+    wk    : [14, 14, 14, 14, 14, 16, 14, 14, 16, 18, 18, 14]
+    wv    : [14, 14, 14, 16, 14, 14, 18, 14, 16, 14, 16, 16]
+    wo    : [14, 16, 14, 14, 14, 14, 14, 16, 18, 14, 18, 14]
+    wffn1 : [16, 16, 16, 16, 16, 20, 16, 18, 18, 22, 16, 16]
+    wffn2 : [20, 16, 16, 16, 20, 18, 14, 18, 16, 16, 16, 20]
+  噪声回合（Noise Episode） 4930: 平均回合回报（Avg EpisodeReturn）=0.9348, 平均原始最终奖励（Avg RawFinalReward）=0.9348, 策略损失（Policy Loss）=-0.6231, 价值损失（Value Loss）=0.0091, 熵（Entropy）=9.2191
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.033899, 更新次数（Update）#29 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 29 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9554, 原始最终奖励（raw_final_reward）=0.9554, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8214, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344202, Accuracy: 0.868772, F1: 0.866592, 标准差（std）=(损失Loss=0.0041, 指标1（M1）=0.0028, 指标2（M2）=0.0030), 极差（range）=(损失Loss=0.0106, 指标1（M1）=0.0070, 指标2（M2）=0.0081), 稳定（stable）=False, 分数（score）=0.4121, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.250563, Accuracy: 0.904065, F1: 0.902338, 标准差（std）=(损失Loss=0.0093, 指标1（M1）=0.0061, 指标2（M2）=0.0062), 极差（range）=(损失Loss=0.0258, 指标1（M1）=0.0163, 指标2（M2）=0.0166), 稳定（stable）=False, 分数（score）=0.6486, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 4930 更新: 成本（cost）=35.40, 最终选择分数（final_selection_score）=0.9554
+    噪声联合最优（Noise Joint-Best）在回合（episode） 4930 更新: 成本（cost）=35.40, 最终选择分数（final_selection_score）=0.9554
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 4984: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9558, 原始最终奖励（RawFinalReward）=0.9558, 回合回报（EpisodeReturn）=0.9558, 成本（Cost）=35.00
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3507±0.0052, 指标1（M1）=0.8655±0.0044, 指标2（M2）=0.8631±0.0044
+    x     : [22, 28, 28, 26, 22, 22, 22, 24, 22, 24, 22, 22]
+    wq    : [16, 14, 14, 14, 14, 16, 20, 14, 16, 20, 16, 14]
+    wk    : [14, 16, 18, 14, 14, 14, 14, 16, 20, 16, 16, 14]
+    wv    : [18, 14, 14, 14, 14, 14, 16, 14, 20, 16, 14, 16]
+    wo    : [14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 18]
+    wffn1 : [18, 18, 16, 16, 20, 16, 24, 16, 16, 18, 16, 16]
+    wffn2 : [14, 16, 14, 14, 14, 14, 14, 16, 14, 14, 16, 16]
+  噪声回合（Noise Episode） 5009: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9576, 原始最终奖励（RawFinalReward）=0.9576, 回合回报（EpisodeReturn）=0.9576, 成本（Cost）=35.25
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3485±0.0060, 指标1（M1）=0.8690±0.0033, 指标2（M2）=0.8669±0.0036
+    x     : [22, 22, 22, 22, 24, 22, 22, 24, 22, 22, 26, 22]
+    wq    : [18, 14, 14, 18, 14, 14, 22, 14, 16, 14, 16, 14]
+    wk    : [14, 14, 16, 14, 22, 14, 14, 14, 14, 14, 16, 14]
+    wv    : [14, 16, 14, 14, 18, 14, 14, 16, 16, 18, 18, 18]
+    wo    : [14, 14, 16, 14, 14, 20, 14, 16, 14, 16, 14, 18]
+    wffn1 : [16, 16, 16, 18, 22, 16, 16, 18, 20, 16, 18, 16]
+    wffn2 : [14, 16, 16, 16, 14, 14, 18, 14, 14, 18, 18, 16]
+  噪声回合（Noise Episode） 5100: 平均回合回报（Avg EpisodeReturn）=0.9371, 平均原始最终奖励（Avg RawFinalReward）=0.9371, 策略损失（Policy Loss）=-0.8266, 价值损失（Value Loss）=0.0174, 熵（Entropy）=9.0461
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.033343, 更新次数（Update）#30 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 30 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9576, 原始最终奖励（raw_final_reward）=0.9576, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8304, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.343613, Accuracy: 0.869474, F1: 0.867265, 标准差（std）=(损失Loss=0.0035, 指标1（M1）=0.0068, 指标2（M2）=0.0069), 极差（range）=(损失Loss=0.0107, 指标1（M1）=0.0211, 指标2（M2）=0.0214), 稳定（stable）=False, 分数（score）=0.7184, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.250741, Accuracy: 0.902439, F1: 0.900196, 标准差（std）=(损失Loss=0.0055, 指标1（M1）=0.0136, 指标2（M2）=0.0142), 极差（range）=(损失Loss=0.0146, 指标1（M1）=0.0407, 指标2（M2）=0.0422), 稳定（stable）=False, 分数（score）=0.9561, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 5100 更新: 成本（cost）=35.25, 最终选择分数（final_selection_score）=0.9576
+    噪声联合最优（Noise Joint-Best）在回合（episode） 5100 更新: 成本（cost）=35.25, 最终选择分数（final_selection_score）=0.9576
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 5270: 平均回合回报（Avg EpisodeReturn）=0.9401, 平均原始最终奖励（Avg RawFinalReward）=0.9401, 策略损失（Policy Loss）=0.0405, 价值损失（Value Loss）=0.0036, 熵（Entropy）=8.8719
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.032788, 更新次数（Update）#31 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 31 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9568, 原始最终奖励（raw_final_reward）=0.9568, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8274, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.343042, Accuracy: 0.869474, F1: 0.867359, 标准差（std）=(损失Loss=0.0078, 指标1（M1）=0.0026, 指标2（M2）=0.0027), 极差（range）=(损失Loss=0.0235, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=False, 分数（score）=0.5486, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.255285, Accuracy: 0.902439, F1: 0.900987, 标准差（std）=(损失Loss=0.0085, 指标1（M1）=0.0145, 指标2（M2）=0.0141), 极差（range）=(损失Loss=0.0244, 指标1（M1）=0.0407, 指标2（M2）=0.0398), 稳定（stable）=False, 分数（score）=1.0775, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 5407: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9621, 原始最终奖励（RawFinalReward）=0.9621, 回合回报（EpisodeReturn）=0.9621, 成本（Cost）=34.95
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3437±0.0011, 指标1（M1）=0.8667±0.0050, 指标2（M2）=0.8647±0.0053
+    x     : [22, 22, 22, 24, 22, 24, 22, 26, 24, 30, 22, 22]
+    wq    : [14, 18, 16, 16, 16, 14, 14, 14, 16, 14, 14, 18]
+    wk    : [14, 14, 14, 14, 16, 16, 16, 16, 16, 14, 14, 14]
+    wv    : [14, 14, 16, 14, 16, 14, 22, 16, 14, 16, 14, 16]
+    wo    : [16, 18, 14, 16, 14, 14, 14, 14, 14, 14, 14, 16]
+    wffn1 : [16, 16, 18, 16, 18, 16, 16, 18, 18, 18, 18, 16]
+    wffn2 : [16, 14, 16, 14, 14, 16, 16, 16, 14, 20, 14, 16]
+  噪声回合（Noise Episode） 5416: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9621, 原始最终奖励（RawFinalReward）=0.9621, 回合回报（EpisodeReturn）=0.9621, 成本（Cost）=34.95
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3451±0.0045, 指标1（M1）=0.8690±0.0017, 指标2（M2）=0.8670±0.0015
+    x     : [22, 24, 28, 22, 22, 22, 24, 22, 28, 22, 22, 24]
+    wq    : [14, 16, 16, 18, 14, 18, 14, 14, 16, 14, 18, 16]
+    wk    : [14, 14, 14, 16, 14, 20, 14, 14, 14, 16, 18, 14]
+    wv    : [14, 14, 16, 14, 16, 18, 14, 14, 16, 14, 14, 14]
+    wo    : [18, 14, 18, 14, 14, 16, 22, 16, 14, 14, 14, 14]
+    wffn1 : [16, 16, 18, 18, 16, 18, 20, 16, 16, 16, 16, 16]
+    wffn2 : [14, 14, 16, 14, 16, 16, 14, 14, 16, 16, 14, 14]
+  噪声回合（Noise Episode） 5440: 平均回合回报（Avg EpisodeReturn）=0.9419, 平均原始最终奖励（Avg RawFinalReward）=0.9419, 策略损失（Policy Loss）=0.2365, 价值损失（Value Loss）=0.0029, 熵（Entropy）=8.7012
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.032233, 更新次数（Update）#32 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 32 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9621, 原始最终奖励（raw_final_reward）=0.9621, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8482, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.343669, Accuracy: 0.869474, F1: 0.867556, 标准差（std）=(损失Loss=0.0045, 指标1（M1）=0.0026, 指标2（M2）=0.0026), 极差（range）=(损失Loss=0.0109, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=False, 分数（score）=0.4058, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.250402, Accuracy: 0.897561, F1: 0.895544, 标准差（std）=(损失Loss=0.0063, 指标1（M1）=0.0065, 指标2（M2）=0.0062), 极差（range）=(损失Loss=0.0190, 指标1（M1）=0.0163, 指标2（M2）=0.0157), 稳定（stable）=False, 分数（score）=0.5642, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 5440 更新: 成本（cost）=34.95, 最终选择分数（final_selection_score）=0.9621
+    噪声联合最优（Noise Joint-Best）在回合（episode） 5440 更新: 成本（cost）=34.95, 最终选择分数（final_selection_score）=0.9621
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 5448: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9635, 原始最终奖励（RawFinalReward）=0.9635, 回合回报（EpisodeReturn）=0.9635, 成本（Cost）=34.85
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3425±0.0056, 指标1（M1）=0.8678±0.0017, 指标2（M2）=0.8657±0.0018
+    x     : [22, 22, 24, 24, 22, 22, 22, 24, 24, 22, 22, 22]
+    wq    : [14, 16, 14, 14, 20, 14, 14, 16, 14, 16, 16, 14]
+    wk    : [16, 14, 14, 18, 14, 16, 18, 14, 16, 14, 14, 14]
+    wv    : [14, 18, 20, 14, 16, 16, 14, 14, 16, 20, 18, 14]
+    wo    : [18, 16, 14, 14, 14, 14, 16, 14, 18, 14, 14, 14]
+    wffn1 : [16, 16, 16, 24, 16, 16, 16, 16, 18, 16, 16, 16]
+    wffn2 : [18, 14, 14, 16, 14, 16, 16, 14, 16, 14, 14, 16]
+  噪声回合（Noise Episode） 5610: 平均回合回报（Avg EpisodeReturn）=0.9437, 平均原始最终奖励（Avg RawFinalReward）=0.9437, 策略损失（Policy Loss）=0.0778, 价值损失（Value Loss）=0.0017, 熵（Entropy）=8.5084
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.031677, 更新次数（Update）#33 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 33 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9322, 原始最终奖励（raw_final_reward）=0.9322, 性能分数（perf_score）=0.9583, 成本分数（cost_score）=0.8542, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.345305, Accuracy: 0.865965, F1: 0.863838, 标准差（std）=(损失Loss=0.0042, 指标1（M1）=0.0064, 指标2（M2）=0.0066), 极差（range）=(损失Loss=0.0108, 指标1（M1）=0.0175, 指标2（M2）=0.0186), 稳定（stable）=False, 分数（score）=0.7200, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.252686, Accuracy: 0.900813, F1: 0.899031, 标准差（std）=(损失Loss=0.0041, 指标1（M1）=0.0080, 指标2（M2）=0.0080), 极差（range）=(损失Loss=0.0112, 指标1（M1）=0.0244, 指标2（M2）=0.0244), 稳定（stable）=False, 分数（score）=0.5783, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 5619: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9650, 原始最终奖励（RawFinalReward）=0.9650, 回合回报（EpisodeReturn）=0.9650, 成本（Cost）=34.75
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3446±0.0023, 指标1（M1）=0.8667±0.0029, 指标2（M2）=0.8646±0.0027
+    x     : [22, 22, 22, 24, 22, 24, 24, 24, 22, 22, 24, 24]
+    wq    : [14, 16, 14, 18, 16, 16, 14, 14, 14, 14, 14, 16]
+    wk    : [14, 16, 14, 16, 14, 14, 14, 14, 16, 16, 14, 14]
+    wv    : [14, 14, 20, 16, 14, 14, 14, 18, 14, 14, 16, 16]
+    wo    : [14, 14, 14, 16, 18, 14, 20, 14, 22, 14, 14, 14]
+    wffn1 : [16, 18, 16, 16, 18, 16, 16, 16, 16, 16, 16, 18]
+    wffn2 : [16, 16, 16, 16, 14, 16, 14, 18, 18, 16, 14, 14]
+  噪声回合（Noise Episode） 5671: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9650, 原始最终奖励（RawFinalReward）=0.9650, 回合回报（EpisodeReturn）=0.9650, 成本（Cost）=34.75
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3445±0.0046, 指标1（M1）=0.8690±0.0017, 指标2（M2）=0.8666±0.0023
+    x     : [22, 26, 24, 22, 24, 24, 22, 22, 22, 22, 24, 22]
+    wq    : [14, 14, 14, 14, 14, 16, 20, 14, 14, 14, 14, 14]
+    wk    : [14, 14, 14, 14, 18, 16, 18, 20, 16, 16, 14, 14]
+    wv    : [14, 14, 14, 14, 14, 16, 14, 14, 22, 18, 16, 14]
+    wo    : [14, 14, 16, 14, 14, 14, 14, 14, 20, 18, 14, 14]
+    wffn1 : [16, 16, 16, 18, 16, 18, 16, 16, 16, 16, 16, 16]
+    wffn2 : [18, 14, 14, 16, 14, 16, 14, 14, 20, 16, 18, 16]
+  噪声回合（Noise Episode） 5780: 平均回合回报（Avg EpisodeReturn）=0.9457, 平均原始最终奖励（Avg RawFinalReward）=0.9457, 策略损失（Policy Loss）=0.7727, 价值损失（Value Loss）=0.0148, 熵（Entropy）=8.3400
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.031122, 更新次数（Update）#34 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 34 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.8618, 原始最终奖励（raw_final_reward）=0.8618, 性能分数（perf_score）=0.8623, 成本分数（cost_score）=0.8601, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.349133, Accuracy: 0.864561, F1: 0.862312, 标准差（std）=(损失Loss=0.0053, 指标1（M1）=0.0053, 指标2（M2）=0.0055), 极差（range）=(损失Loss=0.0148, 指标1（M1）=0.0140, 指标2（M2）=0.0148), 稳定（stable）=False, 分数（score）=0.6721, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.254773, Accuracy: 0.892683, F1: 0.890757, 标准差（std）=(损失Loss=0.0114, 指标1（M1）=0.0095, 指标2（M2）=0.0103), 极差（range）=(损失Loss=0.0289, 指标1（M1）=0.0244, 指标2（M2）=0.0273), 稳定（stable）=False, 分数（score）=0.9301, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=False, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 5902: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9688, 原始最终奖励（RawFinalReward）=0.9688, 回合回报（EpisodeReturn）=0.9688, 成本（Cost）=34.50
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3412±0.0016, 指标1（M1）=0.8713±0.0017, 指标2（M2）=0.8692±0.0017
+    x     : [22, 26, 22, 22, 24, 24, 24, 22, 22, 30, 22, 26]
+    wq    : [14, 14, 20, 16, 14, 14, 16, 14, 14, 14, 16, 14]
+    wk    : [14, 14, 14, 14, 14, 16, 14, 14, 16, 14, 14, 20]
+    wv    : [14, 20, 20, 14, 14, 14, 16, 14, 14, 16, 16, 16]
+    wo    : [14, 14, 14, 16, 14, 14, 14, 14, 14, 16, 14, 14]
+    wffn1 : [18, 16, 16, 16, 16, 18, 16, 16, 16, 18, 16, 16]
+    wffn2 : [14, 16, 16, 16, 14, 14, 14, 14, 14, 18, 14, 14]
+  噪声回合（Noise Episode） 5950: 平均回合回报（Avg EpisodeReturn）=0.9465, 平均原始最终奖励（Avg RawFinalReward）=0.9465, 策略损失（Policy Loss）=-0.2507, 价值损失（Value Loss）=0.0008, 熵（Entropy）=8.1633
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.030567, 更新次数（Update）#35 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 35 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9688, 原始最终奖励（raw_final_reward）=0.9688, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8750, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.346741, Accuracy: 0.869474, F1: 0.867357, 标准差（std）=(损失Loss=0.0041, 指标1（M1）=0.0047, 指标2（M2）=0.0049), 极差（range）=(损失Loss=0.0126, 指标1（M1）=0.0140, 指标2（M2）=0.0148), 稳定（stable）=False, 分数（score）=0.5703, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.253720, Accuracy: 0.895935, F1: 0.894145, 标准差（std）=(损失Loss=0.0060, 指标1（M1）=0.0095, 指标2（M2）=0.0094), 极差（range）=(损失Loss=0.0176, 指标1（M1）=0.0244, 指标2（M2）=0.0244), 稳定（stable）=False, 分数（score）=0.7250, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 5950 更新: 成本（cost）=34.50, 最终选择分数（final_selection_score）=0.9688
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=False, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 6114: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9702, 原始最终奖励（RawFinalReward）=0.9702, 回合回报（EpisodeReturn）=0.9702, 成本（Cost）=34.40
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3438±0.0022, 指标1（M1）=0.8678±0.0060, 指标2（M2）=0.8657±0.0062
+    x     : [22, 24, 24, 22, 22, 26, 22, 22, 22, 24, 22, 22]
+    wq    : [14, 18, 14, 14, 16, 14, 20, 14, 14, 16, 14, 16]
+    wk    : [14, 14, 14, 16, 14, 14, 20, 18, 14, 14, 14, 16]
+    wv    : [14, 14, 18, 14, 14, 14, 14, 14, 16, 14, 14, 14]
+    wo    : [14, 14, 14, 16, 14, 14, 18, 14, 16, 14, 14, 18]
+    wffn1 : [16, 16, 16, 20, 16, 18, 16, 16, 22, 16, 16, 16]
+    wffn2 : [14, 16, 14, 14, 18, 14, 14, 16, 14, 14, 14, 16]
+  噪声回合（Noise Episode） 6120: 平均回合回报（Avg EpisodeReturn）=0.9502, 平均原始最终奖励（Avg RawFinalReward）=0.9502, 策略损失（Policy Loss）=-1.1084, 价值损失（Value Loss）=0.0043, 熵（Entropy）=8.0068
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.030011, 更新次数（Update）#36 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 36 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9702, 原始最终奖励（raw_final_reward）=0.9702, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8810, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.347193, Accuracy: 0.869474, F1: 0.867254, 标准差（std）=(损失Loss=0.0022, 指标1（M1）=0.0060, 指标2（M2）=0.0062), 极差（range）=(损失Loss=0.0063, 指标1（M1）=0.0175, 指标2（M2）=0.0176), 稳定（stable）=False, 分数（score）=0.5994, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.255310, Accuracy: 0.902439, F1: 0.900192, 标准差（std）=(损失Loss=0.0044, 指标1（M1）=0.0073, 指标2（M2）=0.0079), 极差（range）=(损失Loss=0.0099, 指标1（M1）=0.0163, 指标2（M2）=0.0176), 稳定（stable）=False, 分数（score）=0.5690, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 6120 更新: 成本（cost）=34.40, 最终选择分数（final_selection_score）=0.9702
+    噪声联合最优（Noise Joint-Best）在回合（episode） 6120 更新: 成本（cost）=34.40, 最终选择分数（final_selection_score）=0.9702
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 6135: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9710, 原始最终奖励（RawFinalReward）=0.9710, 回合回报（EpisodeReturn）=0.9710, 成本（Cost）=34.35
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3446±0.0039, 指标1（M1）=0.8667±0.0000, 指标2（M2）=0.8644±0.0000
+    x     : [22, 22, 24, 22, 22, 22, 24, 24, 22, 26, 22, 22]
+    wq    : [14, 14, 14, 14, 14, 14, 16, 14, 14, 20, 14, 18]
+    wk    : [14, 20, 16, 14, 18, 14, 14, 16, 14, 14, 14, 14]
+    wv    : [14, 14, 14, 14, 16, 20, 14, 14, 14, 14, 14, 16]
+    wo    : [16, 14, 14, 14, 14, 16, 14, 14, 14, 16, 14, 14]
+    wffn1 : [16, 16, 18, 22, 16, 16, 16, 16, 16, 16, 18, 16]
+    wffn2 : [14, 16, 18, 14, 14, 16, 14, 16, 18, 14, 16, 14]
+  噪声回合（Noise Episode） 6290: 平均回合回报（Avg EpisodeReturn）=0.9505, 平均原始最终奖励（Avg RawFinalReward）=0.9505, 策略损失（Policy Loss）=0.4474, 价值损失（Value Loss）=0.0162, 熵（Entropy）=7.8497
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.029456, 更新次数（Update）#37 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 37 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.8728, 原始最终奖励（raw_final_reward）=0.8728, 性能分数（perf_score）=0.8690, 成本分数（cost_score）=0.8839, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344330, Accuracy: 0.864561, F1: 0.862516, 标准差（std）=(损失Loss=0.0075, 指标1（M1）=0.0036, 指标2（M2）=0.0038), 极差（range）=(损失Loss=0.0204, 指标1（M1）=0.0105, 指标2（M2）=0.0109), 稳定（stable）=False, 分数（score）=0.6190, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.252654, Accuracy: 0.899187, F1: 0.896784, 标准差（std）=(损失Loss=0.0050, 指标1（M1）=0.0083, 指标2（M2）=0.0093), 极差（range）=(损失Loss=0.0154, 指标1（M1）=0.0244, 指标2（M2）=0.0278), 稳定（stable）=False, 分数（score）=0.6549, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 6370: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9740, 原始最终奖励（RawFinalReward）=0.9740, 回合回报（EpisodeReturn）=0.9740, 成本（Cost）=34.15
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3456±0.0025, 指标1（M1）=0.8678±0.0060, 指标2（M2）=0.8658±0.0062
+    x     : [22, 24, 22, 22, 22, 22, 22, 24, 26, 22, 22, 22]
+    wq    : [22, 14, 14, 14, 14, 14, 14, 14, 14, 16, 14, 14]
+    wk    : [16, 14, 14, 14, 14, 18, 14, 14, 14, 14, 14, 14]
+    wv    : [16, 14, 14, 14, 14, 14, 14, 14, 16, 16, 20, 14]
+    wo    : [14, 18, 14, 14, 14, 14, 14, 18, 14, 14, 14, 14]
+    wffn1 : [18, 16, 18, 16, 16, 16, 16, 16, 16, 16, 16, 16]
+    wffn2 : [14, 16, 16, 16, 14, 14, 14, 16, 14, 22, 18, 16]
+  噪声回合（Noise Episode） 6460: 平均回合回报（Avg EpisodeReturn）=0.9537, 平均原始最终奖励（Avg RawFinalReward）=0.9537, 策略损失（Policy Loss）=1.9014, 价值损失（Value Loss）=0.0354, 熵（Entropy）=7.6470
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.028901, 更新次数（Update）#38 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 38 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9740, 原始最终奖励（raw_final_reward）=0.9740, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8958, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.348558, Accuracy: 0.866667, F1: 0.864709, 标准差（std）=(损失Loss=0.0040, 指标1（M1）=0.0022, 指标2（M2）=0.0023), 极差（range）=(损失Loss=0.0104, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=False, 分数（score）=0.3551, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.244007, Accuracy: 0.902439, F1: 0.900433, 标准差（std）=(损失Loss=0.0054, 指标1（M1）=0.0089, 指标2（M2）=0.0088), 极差（range）=(损失Loss=0.0139, 指标1（M1）=0.0244, 指标2（M2）=0.0244), 稳定（stable）=False, 分数（score）=0.6702, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 6460 更新: 成本（cost）=34.15, 最终选择分数（final_selection_score）=0.9740
+    噪声联合最优（Noise Joint-Best）在回合（episode） 6460 更新: 成本（cost）=34.15, 最终选择分数（final_selection_score）=0.9740
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 6630: 平均回合回报（Avg EpisodeReturn）=0.9560, 平均原始最终奖励（Avg RawFinalReward）=0.9560, 策略损失（Policy Loss）=0.7692, 价值损失（Value Loss）=0.0118, 熵（Entropy）=7.4955
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.028345, 更新次数（Update）#39 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 39 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.8013, 原始最终奖励（raw_final_reward）=0.8013, 性能分数（perf_score）=0.7728, 成本分数（cost_score）=0.8869, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.346983, Accuracy: 0.863158, F1: 0.860981, 标准差（std）=(损失Loss=0.0031, 指标1（M1）=0.0059, 指标2（M2）=0.0061), 极差（range）=(损失Loss=0.0077, 指标1（M1）=0.0175, 指标2（M2）=0.0180), 稳定（stable）=False, 分数（score）=0.6284, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.253075, Accuracy: 0.908943, F1: 0.907572, 标准差（std）=(损失Loss=0.0082, 指标1（M1）=0.0140, 指标2（M2）=0.0136), 极差（range）=(损失Loss=0.0215, 指标1（M1）=0.0407, 指标2（M2）=0.0392), 稳定（stable）=False, 分数（score）=1.0406, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 6632: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9762, 原始最终奖励（RawFinalReward）=0.9762, 回合回报（EpisodeReturn）=0.9762, 成本（Cost）=34.00
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3440±0.0054, 指标1（M1）=0.8725±0.0044, 指标2（M2）=0.8704±0.0044
+    x     : [22, 24, 22, 22, 22, 24, 22, 22, 24, 22, 22, 24]
+    wq    : [16, 14, 14, 14, 20, 14, 14, 16, 14, 18, 14, 14]
+    wk    : [14, 14, 14, 16, 14, 14, 14, 14, 14, 14, 14, 22]
+    wv    : [14, 14, 14, 14, 14, 14, 18, 14, 14, 14, 14, 16]
+    wo    : [14, 14, 18, 14, 14, 16, 14, 14, 14, 18, 14, 16]
+    wffn1 : [16, 16, 16, 18, 16, 16, 18, 16, 16, 16, 18, 16]
+    wffn2 : [16, 14, 14, 14, 16, 14, 16, 14, 16, 14, 14, 14]
+  噪声回合（Noise Episode） 6669: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9777, 原始最终奖励（RawFinalReward）=0.9777, 回合回报（EpisodeReturn）=0.9777, 成本（Cost）=33.90
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3459±0.0032, 指标1（M1）=0.8690±0.0017, 指标2（M2）=0.8671±0.0023
+    x     : [22, 24, 22, 24, 22, 22, 24, 22, 22, 22, 22, 24]
+    wq    : [16, 14, 14, 14, 16, 16, 14, 16, 14, 14, 14, 16]
+    wk    : [14, 14, 16, 16, 16, 14, 14, 14, 14, 14, 14, 16]
+    wv    : [14, 14, 16, 14, 18, 16, 14, 14, 14, 14, 16, 18]
+    wo    : [18, 14, 14, 16, 14, 14, 14, 18, 14, 14, 14, 14]
+    wffn1 : [16, 18, 16, 16, 16, 20, 16, 16, 16, 16, 16, 16]
+    wffn2 : [14, 14, 14, 14, 14, 16, 14, 16, 14, 14, 14, 14]
+  噪声回合（Noise Episode） 6800: 平均回合回报（Avg EpisodeReturn）=0.9546, 平均原始最终奖励（Avg RawFinalReward）=0.9546, 策略损失（Policy Loss）=-0.1621, 价值损失（Value Loss）=0.0055, 熵（Entropy）=7.3225
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.027790, 更新次数（Update）#40 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 40 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9057, 原始最终奖励（raw_final_reward）=0.9057, 性能分数（perf_score）=0.9040, 成本分数（cost_score）=0.9107, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.348525, Accuracy: 0.865263, F1: 0.862883, 标准差（std）=(损失Loss=0.0067, 指标1（M1）=0.0036, 指标2（M2）=0.0034), 极差（range）=(损失Loss=0.0170, 指标1（M1）=0.0105, 指标2（M2）=0.0099), 稳定（stable）=False, 分数（score）=0.5708, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.252942, Accuracy: 0.899187, F1: 0.897433, 标准差（std）=(损失Loss=0.0122, 指标1（M1）=0.0110, 指标2（M2）=0.0112), 极差（range）=(损失Loss=0.0354, 指标1（M1）=0.0325, 指标2（M2）=0.0321), 稳定（stable）=False, 分数（score）=1.0251, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 6970: 平均回合回报（Avg EpisodeReturn）=0.9569, 平均原始最终奖励（Avg RawFinalReward）=0.9569, 策略损失（Policy Loss）=0.0167, 价值损失（Value Loss）=0.0108, 熵（Entropy）=7.1548
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.027235, 更新次数（Update）#41 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 41 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9105, 原始最终奖励（raw_final_reward）=0.9105, 性能分数（perf_score）=0.9104, 成本分数（cost_score）=0.9107, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344831, Accuracy: 0.865263, F1: 0.863077, 标准差（std）=(损失Loss=0.0045, 指标1（M1）=0.0017, 指标2（M2）=0.0020), 极差（range）=(损失Loss=0.0122, 指标1（M1）=0.0035, 指标2（M2）=0.0043), 稳定（stable）=False, 分数（score）=0.3455, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.248549, Accuracy: 0.899187, F1: 0.897458, 标准差（std）=(损失Loss=0.0058, 指标1（M1）=0.0065, 指标2（M2）=0.0065), 极差（range）=(损失Loss=0.0178, 指标1（M1）=0.0163, 指标2（M2）=0.0166), 稳定（stable）=False, 分数（score）=0.5568, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 7140: 平均回合回报（Avg EpisodeReturn）=0.9574, 平均原始最终奖励（Avg RawFinalReward）=0.9574, 策略损失（Policy Loss）=0.4507, 价值损失（Value Loss）=0.0068, 熵（Entropy）=7.0377
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.026679, 更新次数（Update）#42 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 42 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9754, 原始最终奖励（raw_final_reward）=0.9754, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9018, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.343798, Accuracy: 0.867368, F1: 0.865479, 标准差（std）=(损失Loss=0.0042, 指标1（M1）=0.0072, 指标2（M2）=0.0070), 极差（range）=(损失Loss=0.0122, 指标1（M1）=0.0211, 指标2（M2）=0.0204), 稳定（stable）=False, 分数（score）=0.7658, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.257394, Accuracy: 0.897561, F1: 0.895313, 标准差（std）=(损失Loss=0.0094, 指标1（M1）=0.0083, 指标2（M2）=0.0087), 极差（range）=(损失Loss=0.0255, 指标1（M1）=0.0244, 指标2（M2）=0.0254), 稳定（stable）=False, 分数（score）=0.7878, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 7140 更新: 成本（cost）=34.05, 最终选择分数（final_selection_score）=0.9754
+    噪声联合最优（Noise Joint-Best）在回合（episode） 7140 更新: 成本（cost）=34.05, 最终选择分数（final_selection_score）=0.9754
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 7310: 平均回合回报（Avg EpisodeReturn）=0.9586, 平均原始最终奖励（Avg RawFinalReward）=0.9586, 策略损失（Policy Loss）=0.4420, 价值损失（Value Loss）=0.0103, 熵（Entropy）=6.8787
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.026124, 更新次数（Update）#43 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 43 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9769, 原始最终奖励（raw_final_reward）=0.9769, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9077, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344515, Accuracy: 0.866667, F1: 0.864904, 标准差（std）=(损失Loss=0.0042, 指标1（M1）=0.0031, 指标2（M2）=0.0032), 极差（range）=(损失Loss=0.0127, 指标1（M1）=0.0070, 指标2（M2）=0.0076), 稳定（stable）=False, 分数（score）=0.4392, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.250611, Accuracy: 0.905691, F1: 0.904325, 标准差（std）=(损失Loss=0.0106, 指标1（M1）=0.0083, 指标2（M2）=0.0085), 极差（range）=(损失Loss=0.0307, 指标1（M1）=0.0244, 指标2（M2）=0.0242), 稳定（stable）=False, 分数（score）=0.8217, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 7310 更新: 成本（cost）=33.95, 最终选择分数（final_selection_score）=0.9769
+    噪声联合最优（Noise Joint-Best）在回合（episode） 7310 更新: 成本（cost）=33.95, 最终选择分数（final_selection_score）=0.9769
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 7349: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9799, 原始最终奖励（RawFinalReward）=0.9799, 回合回报（EpisodeReturn）=0.9799, 成本（Cost）=33.75
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3464±0.0060, 指标1（M1）=0.8667±0.0000, 指标2（M2）=0.8644±0.0004
+    x     : [22, 24, 22, 22, 22, 22, 22, 22, 22, 22, 26, 24]
+    wq    : [14, 14, 16, 14, 16, 14, 16, 14, 14, 14, 14, 14]
+    wk    : [14, 14, 14, 18, 14, 14, 14, 14, 16, 14, 16, 14]
+    wv    : [14, 14, 14, 14, 14, 14, 16, 16, 14, 14, 20, 14]
+    wo    : [14, 14, 14, 14, 14, 14, 14, 16, 14, 18, 14, 14]
+    wffn1 : [16, 18, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16]
+    wffn2 : [14, 14, 20, 14, 14, 14, 16, 16, 14, 16, 16, 14]
+  噪声回合（Noise Episode） 7436: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9799, 原始最终奖励（RawFinalReward）=0.9799, 回合回报（EpisodeReturn）=0.9799, 成本（Cost）=33.75
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3453±0.0032, 指标1（M1）=0.8667±0.0050, 指标2（M2）=0.8647±0.0049
+    x     : [22, 24, 22, 22, 22, 22, 24, 22, 22, 24, 22, 22]
+    wq    : [14, 14, 16, 14, 16, 18, 14, 14, 14, 14, 14, 18]
+    wk    : [14, 14, 14, 14, 16, 14, 14, 14, 14, 16, 14, 14]
+    wv    : [14, 14, 14, 16, 14, 14, 14, 14, 14, 14, 16, 16]
+    wo    : [14, 14, 14, 14, 14, 16, 14, 14, 18, 20, 14, 14]
+    wffn1 : [18, 16, 18, 18, 16, 16, 16, 16, 18, 16, 16, 16]
+    wffn2 : [16, 14, 14, 14, 14, 14, 14, 16, 14, 14, 14, 16]
+  噪声回合（Noise Episode） 7480: 平均回合回报（Avg EpisodeReturn）=0.9590, 平均原始最终奖励（Avg RawFinalReward）=0.9590, 策略损失（Policy Loss）=0.9600, 价值损失（Value Loss）=0.0324, 熵（Entropy）=6.7299
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.025569, 更新次数（Update）#44 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 44 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9127, 原始最终奖励（raw_final_reward）=0.9127, 性能分数（perf_score）=0.9104, 成本分数（cost_score）=0.9196, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.347729, Accuracy: 0.865263, F1: 0.863079, 标准差（std）=(损失Loss=0.0044, 指标1（M1）=0.0028, 指标2（M2）=0.0029), 极差（range）=(损失Loss=0.0122, 指标1（M1）=0.0070, 指标2（M2）=0.0076), 稳定（stable）=False, 分数（score）=0.4216, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.255057, Accuracy: 0.899187, F1: 0.897107, 标准差（std）=(损失Loss=0.0041, 指标1（M1）=0.0065, 指标2（M2）=0.0064), 极差（range）=(损失Loss=0.0115, 指标1（M1）=0.0163, 指标2（M2）=0.0157), 稳定（stable）=False, 分数（score）=0.4954, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 7650: 平均回合回报（Avg EpisodeReturn）=0.9602, 平均原始最终奖励（Avg RawFinalReward）=0.9602, 策略损失（Policy Loss）=-0.3604, 价值损失（Value Loss）=0.0065, 熵（Entropy）=6.6238
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.025013, 更新次数（Update）#45 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 45 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9447, 原始最终奖励（raw_final_reward）=0.9447, 性能分数（perf_score）=0.9551, 成本分数（cost_score）=0.9137, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.347810, Accuracy: 0.865965, F1: 0.863742, 标准差（std）=(损失Loss=0.0013, 指标1（M1）=0.0034, 指标2（M2）=0.0037), 极差（range）=(损失Loss=0.0035, 指标1（M1）=0.0070, 指标2（M2）=0.0076), 稳定（stable）=True, 分数（score）=0.3493, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.255115, Accuracy: 0.899187, F1: 0.897506, 标准差（std）=(损失Loss=0.0025, 指标1（M1）=0.0142, 指标2（M2）=0.0140), 极差（range）=(损失Loss=0.0071, 指标1（M1）=0.0407, 指标2（M2）=0.0400), 稳定（stable）=False, 分数（score）=0.8643, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 7820: 平均回合回报（Avg EpisodeReturn）=0.9609, 平均原始最终奖励（Avg RawFinalReward）=0.9609, 策略损失（Policy Loss）=-0.6449, 价值损失（Value Loss）=0.0024, 熵（Entropy）=6.4794
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.024458, 更新次数（Update）#46 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 46 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9792, 原始最终奖励（raw_final_reward）=0.9792, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9167, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.347754, Accuracy: 0.867368, F1: 0.865273, 标准差（std）=(损失Loss=0.0025, 指标1（M1）=0.0047, 指标2（M2）=0.0048), 极差（range）=(损失Loss=0.0076, 指标1（M1）=0.0140, 指标2（M2）=0.0143), 稳定（stable）=True, 分数（score）=0.4963, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.254911, Accuracy: 0.905691, F1: 0.903720, 标准差（std）=(损失Loss=0.0117, 指标1（M1）=0.0132, 指标2（M2）=0.0135), 极差（range）=(损失Loss=0.0335, 指标1（M1）=0.0325, 指标2（M2）=0.0330), 稳定（stable）=False, 分数（score）=1.1324, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 7820 更新: 成本（cost）=33.80, 最终选择分数（final_selection_score）=0.9792
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 7820 更新: 成本（cost）=33.80, 最终选择分数（final_selection_score）=0.9792, 稳定性分数（stability_score）=0.4963
+    噪声联合最优（Noise Joint-Best）在回合（episode） 7820 更新: 成本（cost）=33.80, 最终选择分数（final_selection_score）=0.9792
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 7990: 平均回合回报（Avg EpisodeReturn）=0.9630, 平均原始最终奖励（Avg RawFinalReward）=0.9630, 策略损失（Policy Loss）=-0.5652, 价值损失（Value Loss）=0.0093, 熵（Entropy）=6.3687
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.023903, 更新次数（Update）#47 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 47 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9792, 原始最终奖励（raw_final_reward）=0.9792, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9167, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344135, Accuracy: 0.868070, F1: 0.866037, 标准差（std）=(损失Loss=0.0027, 指标1（M1）=0.0053, 指标2（M2）=0.0052), 极差（range）=(损失Loss=0.0072, 指标1（M1）=0.0140, 指标2（M2）=0.0142), 稳定（stable）=False, 分数（score）=0.5472, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.252600, Accuracy: 0.891057, F1: 0.888489, 标准差（std）=(损失Loss=0.0072, 指标1（M1）=0.0110, 指标2（M2）=0.0113), 极差（range）=(损失Loss=0.0181, 指标1（M1）=0.0325, 指标2（M2）=0.0333), 稳定（stable）=False, 分数（score）=0.8598, 精度通过（precision_ok）=False
+    噪声搜索最优（Noise Search-Best）在回合（episode） 7990 更新: 成本（cost）=33.80, 最终选择分数（final_selection_score）=0.9792
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=False, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 8075: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9807, 原始最终奖励（RawFinalReward）=0.9807, 回合回报（EpisodeReturn）=0.9807, 成本（Cost）=33.70
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3474±0.0056, 指标1（M1）=0.8713±0.0060, 指标2（M2）=0.8693±0.0060
+    x     : [24, 22, 22, 22, 28, 24, 22, 22, 22, 22, 22, 24]
+    wq    : [14, 14, 14, 14, 14, 14, 14, 14, 16, 14, 20, 14]
+    wk    : [14, 14, 14, 16, 14, 14, 22, 14, 14, 14, 16, 16]
+    wv    : [14, 14, 14, 14, 14, 14, 16, 14, 14, 14, 16, 14]
+    wo    : [14, 14, 14, 14, 14, 14, 14, 14, 16, 14, 14, 14]
+    wffn1 : [16, 16, 18, 16, 16, 16, 16, 16, 16, 16, 16, 16]
+    wffn2 : [18, 14, 14, 14, 18, 14, 14, 14, 16, 14, 14, 14]
+  噪声回合（Noise Episode） 8160: 平均回合回报（Avg EpisodeReturn）=0.9632, 平均原始最终奖励（Avg RawFinalReward）=0.9632, 策略损失（Policy Loss）=-0.7560, 价值损失（Value Loss）=0.0138, 熵（Entropy）=6.3353
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.023347, 更新次数（Update）#48 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 48 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9162, 原始最终奖励（raw_final_reward）=0.9162, 性能分数（perf_score）=0.9141, 成本分数（cost_score）=0.9226, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.342595, Accuracy: 0.865263, F1: 0.863191, 标准差（std）=(损失Loss=0.0029, 指标1（M1）=0.0048, 指标2（M2）=0.0046), 极差（range）=(损失Loss=0.0078, 指标1（M1）=0.0105, 指标2（M2）=0.0104), 稳定（stable）=True, 分数（score）=0.5108, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.252933, Accuracy: 0.889431, F1: 0.887342, 标准差（std）=(损失Loss=0.0130, 指标1（M1）=0.0122, 指标2（M2）=0.0124), 极差（range）=(损失Loss=0.0408, 指标1（M1）=0.0325, 指标2（M2）=0.0332), 稳定（stable）=False, 分数（score）=1.1150, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=False, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 8330: 平均回合回报（Avg EpisodeReturn）=0.9620, 平均原始最终奖励（Avg RawFinalReward）=0.9620, 策略损失（Policy Loss）=-0.9613, 价值损失（Value Loss）=0.0072, 熵（Entropy）=6.2559
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.022792, 更新次数（Update）#49 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 49 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.6667, 原始最终奖励（raw_final_reward）=0.6667, 性能分数（perf_score）=0.5813, 成本分数（cost_score）=0.9226, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.346189, Accuracy: 0.860351, F1: 0.857938, 标准差（std）=(损失Loss=0.0037, 指标1（M1）=0.0052, 指标2（M2）=0.0051), 极差（range）=(损失Loss=0.0090, 指标1（M1）=0.0140, 指标2（M2）=0.0137), 稳定（stable）=False, 分数（score）=0.5824, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.254400, Accuracy: 0.902439, F1: 0.900438, 标准差（std）=(损失Loss=0.0096, 指标1（M1）=0.0103, 指标2（M2）=0.0102), 极差（range）=(损失Loss=0.0291, 指标1（M1）=0.0325, 指标2（M2）=0.0323), 稳定（stable）=False, 分数（score）=0.8887, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 8333: 新最优！（New Best!） 最终选择分数（FinalSelectionScore）=0.9888, 原始最终奖励（RawFinalReward）=0.9888, 回合回报（EpisodeReturn）=0.9888, 成本（Cost）=33.15
+    蒙特卡洛评估（MC Eval）: 损失（Loss）=0.3479±0.0025, 指标1（M1）=0.8713±0.0033, 指标2（M2）=0.8693±0.0035
+    x     : [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 24, 22]
+    wq    : [14, 14, 14, 18, 14, 14, 14, 14, 16, 14, 14, 16]
+    wk    : [14, 14, 14, 16, 14, 14, 14, 14, 14, 14, 14, 14]
+    wv    : [14, 16, 14, 14, 16, 14, 14, 14, 14, 14, 16, 16]
+    wo    : [14, 14, 14, 16, 14, 14, 14, 14, 14, 14, 14, 14]
+    wffn1 : [16, 16, 18, 16, 16, 16, 16, 16, 16, 16, 16, 16]
+    wffn2 : [14, 14, 14, 14, 16, 14, 16, 14, 14, 16, 14, 14]
+  噪声回合（Noise Episode） 8500: 平均回合回报（Avg EpisodeReturn）=0.9620, 平均原始最终奖励（Avg RawFinalReward）=0.9620, 策略损失（Policy Loss）=0.6062, 价值损失（Value Loss）=0.0326, 熵（Entropy）=6.2033
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.022237, 更新次数（Update）#50 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 50 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9888, 原始最终奖励（raw_final_reward）=0.9888, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9554, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.343859, Accuracy: 0.868070, F1: 0.865933, 标准差（std）=(损失Loss=0.0029, 指标1（M1）=0.0028, 指标2（M2）=0.0029), 极差（range）=(损失Loss=0.0085, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=True, 分数（score）=0.3609, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.248846, Accuracy: 0.897561, F1: 0.895525, 标准差（std）=(损失Loss=0.0030, 指标1（M1）=0.0065, 指标2（M2）=0.0063), 极差（range）=(损失Loss=0.0078, 指标1（M1）=0.0163, 指标2（M2）=0.0167), 稳定（stable）=True, 分数（score）=0.4534, 精度通过（precision_ok）=True
+    噪声搜索最优（Noise Search-Best）在回合（episode） 8500 更新: 成本（cost）=33.15, 最终选择分数（final_selection_score）=0.9888
+    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） 8500 更新: 成本（cost）=33.15, 最终选择分数（final_selection_score）=0.9888, 稳定性分数（stability_score）=0.3609
+    噪声联合最优（Noise Joint-Best）在回合（episode） 8500 更新: 成本（cost）=33.15, 最终选择分数（final_selection_score）=0.9888
+    噪声稳定联合最优（Noise Stable Joint-Best）在回合（episode） 8500 更新: 成本（cost）=33.15, 最终选择分数（final_selection_score）=0.9888, 稳定性分数（stability_score）=0.4072
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=True, 稳定联合可行（stable_joint_feasible）=True, 候选列表（shortlist）=added
+  噪声回合（Noise Episode） 8670: 平均回合回报（Avg EpisodeReturn）=0.9601, 平均原始最终奖励（Avg RawFinalReward）=0.9601, 策略损失（Policy Loss）=0.0514, 价值损失（Value Loss）=0.0037, 熵（Entropy）=6.1792
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.021681, 更新次数（Update）#51 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 51 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.7716, 原始最终奖励（raw_final_reward）=0.7716, 性能分数（perf_score）=0.7183, 成本分数（cost_score）=0.9315, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.346301, Accuracy: 0.862456, F1: 0.860017, 标准差（std）=(损失Loss=0.0033, 指标1（M1）=0.0060, 指标2（M2）=0.0063), 极差（range）=(损失Loss=0.0085, 指标1（M1）=0.0175, 指标2（M2）=0.0181), 稳定（stable）=False, 分数（score）=0.6501, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.254976, Accuracy: 0.899187, F1: 0.897096, 标准差（std）=(损失Loss=0.0090, 指标1（M1）=0.0110, 指标2（M2）=0.0112), 极差（range）=(损失Loss=0.0230, 指标1（M1）=0.0244, 指标2（M2）=0.0254), 稳定（stable）=False, 分数（score）=0.9200, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 8840: 平均回合回报（Avg EpisodeReturn）=0.9614, 平均原始最终奖励（Avg RawFinalReward）=0.9614, 策略损失（Policy Loss）=-0.5835, 价值损失（Value Loss）=0.0179, 熵（Entropy）=6.0772
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.021126, 更新次数（Update）#52 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 52 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.6710, 原始最终奖励（raw_final_reward）=0.6710, 性能分数（perf_score）=0.5812, 成本分数（cost_score）=0.9405, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.349013, Accuracy: 0.860351, F1: 0.857934, 标准差（std）=(损失Loss=0.0024, 指标1（M1）=0.0056, 指标2（M2）=0.0057), 极差（range）=(损失Loss=0.0064, 指标1（M1）=0.0140, 指标2（M2）=0.0143), 稳定（stable）=False, 分数（score）=0.5717, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.250498, Accuracy: 0.899187, F1: 0.897081, 标准差（std）=(损失Loss=0.0114, 指标1（M1）=0.0083, 指标2（M2）=0.0086), 极差（range）=(损失Loss=0.0319, 指标1（M1）=0.0244, 指标2（M2）=0.0254), 稳定（stable）=False, 分数（score）=0.8513, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 9010: 平均回合回报（Avg EpisodeReturn）=0.9600, 平均原始最终奖励（Avg RawFinalReward）=0.9600, 策略损失（Policy Loss）=-0.3020, 价值损失（Value Loss）=0.0040, 熵（Entropy）=6.0747
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.020571, 更新次数（Update）#53 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 53 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9859, 原始最终奖励（raw_final_reward）=0.9859, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9435, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.346638, Accuracy: 0.869474, F1: 0.867362, 标准差（std）=(损失Loss=0.0042, 指标1（M1）=0.0047, 指标2（M2）=0.0047), 极差（range）=(损失Loss=0.0112, 指标1（M1）=0.0140, 指标2（M2）=0.0142), 稳定（stable）=False, 分数（score）=0.5657, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.256842, Accuracy: 0.897561, F1: 0.895342, 标准差（std）=(损失Loss=0.0052, 指标1（M1）=0.0083, 指标2（M2）=0.0084), 极差（range）=(损失Loss=0.0138, 指标1（M1）=0.0244, 指标2（M2）=0.0244), 稳定（stable）=False, 分数（score）=0.6360, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 9180: 平均回合回报（Avg EpisodeReturn）=0.9594, 平均原始最终奖励（Avg RawFinalReward）=0.9594, 策略损失（Policy Loss）=0.8039, 价值损失（Value Loss）=0.0124, 熵（Entropy）=5.9450
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.020015, 更新次数（Update）#54 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 54 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9569, 原始最终奖励（raw_final_reward）=0.9569, 性能分数（perf_score）=0.9585, 成本分数（cost_score）=0.9524, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.348560, Accuracy: 0.865965, F1: 0.863845, 标准差（std）=(损失Loss=0.0022, 指标1（M1）=0.0068, 指标2（M2）=0.0070), 极差（range）=(损失Loss=0.0061, 指标1（M1）=0.0175, 指标2（M2）=0.0180), 稳定（stable）=False, 分数（score）=0.6629, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.253167, Accuracy: 0.902439, F1: 0.900571, 标准差（std）=(损失Loss=0.0074, 指标1（M1）=0.0115, 指标2（M2）=0.0117), 极差（range）=(损失Loss=0.0175, 指标1（M1）=0.0325, 指标2（M2）=0.0340), 稳定（stable）=False, 分数（score）=0.8931, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 9350: 平均回合回报（Avg EpisodeReturn）=0.9590, 平均原始最终奖励（Avg RawFinalReward）=0.9590, 策略损失（Policy Loss）=0.1458, 价值损失（Value Loss）=0.0150, 熵（Entropy）=5.9141
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.019460, 更新次数（Update）#55 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 55 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9874, 原始最终奖励（raw_final_reward）=0.9874, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9494, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.345991, Accuracy: 0.866667, F1: 0.864505, 标准差（std）=(损失Loss=0.0024, 指标1（M1）=0.0044, 指标2（M2）=0.0047), 极差（range）=(损失Loss=0.0066, 指标1（M1）=0.0105, 指标2（M2）=0.0109), 稳定（stable）=True, 分数（score）=0.4814, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.246959, Accuracy: 0.904065, F1: 0.902547, 标准差（std）=(损失Loss=0.0134, 指标1（M1）=0.0080, 指标2（M2）=0.0089), 极差（range）=(损失Loss=0.0313, 指标1（M1）=0.0163, 指标2（M2）=0.0190), 稳定（stable）=False, 分数（score）=0.9128, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 9520: 平均回合回报（Avg EpisodeReturn）=0.9565, 平均原始最终奖励（Avg RawFinalReward）=0.9565, 策略损失（Policy Loss）=-0.3103, 价值损失（Value Loss）=0.0051, 熵（Entropy）=5.9371
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.018905, 更新次数（Update）#56 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 56 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9881, 原始最终奖励（raw_final_reward）=0.9881, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9524, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344429, Accuracy: 0.868772, F1: 0.866701, 标准差（std）=(损失Loss=0.0039, 指标1（M1）=0.0036, 指标2（M2）=0.0036), 极差（range）=(损失Loss=0.0097, 指标1（M1）=0.0105, 指标2（M2）=0.0104), 稳定（stable）=False, 分数（score）=0.4631, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.259609, Accuracy: 0.891057, F1: 0.888880, 标准差（std）=(损失Loss=0.0093, 指标1（M1）=0.0167, 指标2（M2）=0.0172), 极差（range）=(损失Loss=0.0256, 指标1（M1）=0.0407, 指标2（M2）=0.0421), 稳定（stable）=False, 分数（score）=1.2537, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=False, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 9690: 平均回合回报（Avg EpisodeReturn）=0.9581, 平均原始最终奖励（Avg RawFinalReward）=0.9581, 策略损失（Policy Loss）=1.3612, 价值损失（Value Loss）=0.2212, 熵（Entropy）=6.0225
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.018349, 更新次数（Update）#57 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 57 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9851, 原始最终奖励（raw_final_reward）=0.9851, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9405, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.342962, Accuracy: 0.868772, F1: 0.866588, 标准差（std）=(损失Loss=0.0050, 指标1（M1）=0.0036, 指标2（M2）=0.0039), 极差（range）=(损失Loss=0.0142, 指标1（M1）=0.0105, 指标2（M2）=0.0110), 稳定（stable）=False, 分数（score）=0.5178, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.253438, Accuracy: 0.897561, F1: 0.895333, 标准差（std）=(损失Loss=0.0079, 指标1（M1）=0.0065, 指标2（M2）=0.0068), 极差（range）=(损失Loss=0.0232, 指标1（M1）=0.0163, 指标2（M2）=0.0175), 稳定（stable）=False, 分数（score）=0.6308, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 9860: 平均回合回报（Avg EpisodeReturn）=0.9550, 平均原始最终奖励（Avg RawFinalReward）=0.9550, 策略损失（Policy Loss）=-0.6228, 价值损失（Value Loss）=0.0329, 熵（Entropy）=6.0128
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.017794, 更新次数（Update）#58 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 58 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9779, 原始最终奖励（raw_final_reward）=0.9779, 性能分数（perf_score）=0.9933, 成本分数（cost_score）=0.9315, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344564, Accuracy: 0.866667, F1: 0.864207, 标准差（std）=(损失Loss=0.0041, 指标1（M1）=0.0031, 指标2（M2）=0.0032), 极差（range）=(损失Loss=0.0125, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=False, 分数（score）=0.4350, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.258123, Accuracy: 0.894309, F1: 0.892638, 标准差（std）=(损失Loss=0.0114, 指标1（M1）=0.0115, 指标2（M2）=0.0107), 极差（range）=(损失Loss=0.0324, 指标1（M1）=0.0325, 指标2（M2）=0.0303), 稳定（stable）=False, 分数（score）=0.9966, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=False, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+Noise PPO training curves saved to: rl_results/layer_importance_runs/mrpc/20260401_021235_pid536894/stage2_noise/progress/noise_ppo_training_curve_ep10000.png
+Noise PPO entropy curve saved to: rl_results/layer_importance_runs/mrpc/20260401_021235_pid536894/stage2_noise/progress/noise_ppo_entropy_curve_ep10000.png
+噪声PPO进度快照已保存于回合（episode） 10000: rl_results/layer_importance_runs/mrpc/20260401_021235_pid536894/stage2_noise/progress/noise_ppo_training_curve_ep10000.png
+  噪声回合（Noise Episode） 10030: 平均回合回报（Avg EpisodeReturn）=0.9520, 平均原始最终奖励（Avg RawFinalReward）=0.9520, 策略损失（Policy Loss）=0.6413, 价值损失（Value Loss）=0.0465, 熵（Entropy）=5.9766
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.017239, 更新次数（Update）#59 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 59 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9874, 原始最终奖励（raw_final_reward）=0.9874, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9494, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.348122, Accuracy: 0.869474, F1: 0.867561, 标准差（std）=(损失Loss=0.0040, 指标1（M1）=0.0052, 指标2（M2）=0.0051), 极差（range）=(损失Loss=0.0118, 指标1（M1）=0.0140, 指标2（M2）=0.0142), 稳定（stable）=False, 分数（score）=0.5965, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.256358, Accuracy: 0.899187, F1: 0.897492, 标准差（std）=(损失Loss=0.0099, 指标1（M1）=0.0110, 指标2（M2）=0.0107), 极差（range）=(损失Loss=0.0301, 指标1（M1）=0.0325, 指标2（M2）=0.0314), 稳定（stable）=False, 分数（score）=0.9338, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 10200: 平均回合回报（Avg EpisodeReturn）=0.9438, 平均原始最终奖励（Avg RawFinalReward）=0.9438, 策略损失（Policy Loss）=-0.5605, 价值损失（Value Loss）=0.0715, 熵（Entropy）=6.0586
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.016683, 更新次数（Update）#60 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 60 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9874, 原始最终奖励（raw_final_reward）=0.9874, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9494, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.349806, Accuracy: 0.868070, F1: 0.866036, 标准差（std）=(损失Loss=0.0052, 指标1（M1）=0.0017, 指标2（M2）=0.0016), 极差（range）=(损失Loss=0.0130, 指标1（M1）=0.0035, 指标2（M2）=0.0038), 稳定（stable）=False, 分数（score）=0.3566, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.254724, Accuracy: 0.895935, F1: 0.893732, 标准差（std）=(损失Loss=0.0048, 指标1（M1）=0.0119, 指标2（M2）=0.0122), 极差（range）=(损失Loss=0.0133, 指标1（M1）=0.0325, 指标2（M2）=0.0333), 稳定（stable）=False, 分数（score）=0.8322, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=False, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 10370: 平均回合回报（Avg EpisodeReturn）=0.9390, 平均原始最终奖励（Avg RawFinalReward）=0.9390, 策略损失（Policy Loss）=-0.6353, 价值损失（Value Loss）=0.0856, 熵（Entropy）=6.0365
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.016128, 更新次数（Update）#61 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 61 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9610, 原始最终奖励（raw_final_reward）=0.9610, 性能分数（perf_score）=0.9678, 成本分数（cost_score）=0.9405, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.348778, Accuracy: 0.865965, F1: 0.864130, 标准差（std）=(损失Loss=0.0021, 指标1（M1）=0.0041, 指标2（M2）=0.0044), 极差（range）=(损失Loss=0.0060, 指标1（M1）=0.0105, 指标2（M2）=0.0119), 稳定（stable）=True, 分数（score）=0.4419, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.247812, Accuracy: 0.899187, F1: 0.897430, 标准差（std）=(损失Loss=0.0084, 指标1（M1）=0.0122, 指标2（M2）=0.0126), 极差（range）=(损失Loss=0.0239, 指标1（M1）=0.0325, 指标2（M2）=0.0339), 稳定（stable）=False, 分数（score）=0.9665, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 10540: 平均回合回报（Avg EpisodeReturn）=-789557.5067, 平均原始最终奖励（Avg RawFinalReward）=-789557.5067, 策略损失（Policy Loss）=-0.5379, 价值损失（Value Loss）=0.0000, 熵（Entropy）=6.0653
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.015573, 更新次数（Update）#62 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 62 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9836, 原始最终奖励（raw_final_reward）=0.9836, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9345, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.348122, Accuracy: 0.868070, F1: 0.865724, 标准差（std）=(损失Loss=0.0026, 指标1（M1）=0.0048, 指标2（M2）=0.0051), 极差（range）=(损失Loss=0.0071, 指标1（M1）=0.0140, 指标2（M2）=0.0153), 稳定（stable）=False, 分数（score）=0.5172, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.257382, Accuracy: 0.897561, F1: 0.895351, 标准差（std）=(损失Loss=0.0092, 指标1（M1）=0.0132, 指标2（M2）=0.0132), 极差（range）=(损失Loss=0.0247, 指标1（M1）=0.0325, 指标2（M2）=0.0321), 稳定（stable）=False, 分数（score）=1.0391, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 10710: 平均回合回报（Avg EpisodeReturn）=-3286996.7842, 平均原始最终奖励（Avg RawFinalReward）=-3286996.7842, 策略损失（Policy Loss）=0.0257, 价值损失（Value Loss）=6.5807, 熵（Entropy）=6.1515
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.015017, 更新次数（Update）#63 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 63 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9725, 原始最终奖励（raw_final_reward）=0.9725, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8899, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.348243, Accuracy: 0.866667, F1: 0.864811, 标准差（std）=(损失Loss=0.0022, 指标1（M1）=0.0059, 指标2（M2）=0.0058), 极差（range）=(损失Loss=0.0058, 指标1（M1）=0.0140, 指标2（M2）=0.0142), 稳定（stable）=False, 分数（score）=0.5781, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.253244, Accuracy: 0.897561, F1: 0.895544, 标准差（std）=(损失Loss=0.0039, 指标1（M1）=0.0132, 指标2（M2）=0.0134), 极差（range）=(损失Loss=0.0113, 指标1（M1）=0.0407, 指标2（M2）=0.0411), 稳定（stable）=False, 分数（score）=0.8684, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 10880: 平均回合回报（Avg EpisodeReturn）=-3291491.2780, 平均原始最终奖励（Avg RawFinalReward）=-3291491.2780, 策略损失（Policy Loss）=-0.0438, 价值损失（Value Loss）=4.7405, 熵（Entropy）=6.2475
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.014462, 更新次数（Update）#64 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 64 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9725, 原始最终奖励（raw_final_reward）=0.9725, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.8899, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.343813, Accuracy: 0.869474, F1: 0.867462, 标准差（std）=(损失Loss=0.0044, 指标1（M1）=0.0026, 指标2（M2）=0.0026), 极差（range）=(损失Loss=0.0124, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=False, 分数（score）=0.3991, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.252068, Accuracy: 0.904065, F1: 0.902491, 标准差（std）=(损失Loss=0.0116, 指标1（M1）=0.0061, 指标2（M2）=0.0063), 极差（range）=(损失Loss=0.0362, 指标1（M1）=0.0163, 指标2（M2）=0.0173), 稳定（stable）=False, 分数（score）=0.7328, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 11050: 平均回合回报（Avg EpisodeReturn）=-3303773.1559, 平均原始最终奖励（Avg RawFinalReward）=-3303773.1559, 策略损失（Policy Loss）=0.1229, 价值损失（Value Loss）=4.1166, 熵（Entropy）=6.2900
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.013907, 更新次数（Update）#65 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 65 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9754, 原始最终奖励（raw_final_reward）=0.9754, 性能分数（perf_score）=1.0000, 成本分数（cost_score）=0.9018, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.344463, Accuracy: 0.869474, F1: 0.867462, 标准差（std）=(损失Loss=0.0042, 指标1（M1）=0.0026, 指标2（M2）=0.0026), 极差（range）=(损失Loss=0.0112, 指标1（M1）=0.0070, 指标2（M2）=0.0071), 稳定（stable）=False, 分数（score）=0.3941, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.251622, Accuracy: 0.907317, F1: 0.905481, 标准差（std）=(损失Loss=0.0109, 指标1（M1）=0.0083, 指标2（M2）=0.0081), 极差（range）=(损失Loss=0.0325, 指标1（M1）=0.0244, 指标2（M2）=0.0243), 稳定（stable）=False, 分数（score）=0.8184, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 11220: 平均回合回报（Avg EpisodeReturn）=-3276945.6597, 平均原始最终奖励（Avg RawFinalReward）=-3276945.6597, 策略损失（Policy Loss）=-0.0864, 价值损失（Value Loss）=3.3941, 熵（Entropy）=6.3569
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.013351, 更新次数（Update）#66 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 66 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9441, 原始最终奖励（raw_final_reward）=0.9441, 性能分数（perf_score）=0.9552, 成本分数（cost_score）=0.9107, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.347407, Accuracy: 0.865965, F1: 0.863745, 标准差（std）=(损失Loss=0.0041, 指标1（M1）=0.0047, 指标2（M2）=0.0048), 极差（range）=(损失Loss=0.0107, 指标1（M1）=0.0140, 指标2（M2）=0.0143), 稳定（stable）=False, 分数（score）=0.5636, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.252661, Accuracy: 0.899187, F1: 0.897088, 标准差（std）=(损失Loss=0.0039, 指标1（M1）=0.0040, 指标2（M2）=0.0033), 极差（range）=(损失Loss=0.0110, 指标1（M1）=0.0081, 指标2（M2）=0.0069), 稳定（stable）=False, 分数（score）=0.3304, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 11390: 平均回合回报（Avg EpisodeReturn）=-3296029.8932, 平均原始最终奖励（Avg RawFinalReward）=-3296029.8932, 策略损失（Policy Loss）=0.1110, 价值损失（Value Loss）=3.2197, 熵（Entropy）=6.5497
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.012796, 更新次数（Update）#67 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 67 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9079, 原始最终奖励（raw_final_reward）=0.9079, 性能分数（perf_score）=0.9139, 成本分数（cost_score）=0.8899, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.346048, Accuracy: 0.865263, F1: 0.863186, 标准差（std）=(损失Loss=0.0019, 指标1（M1）=0.0048, 指标2（M2）=0.0048), 极差（range）=(损失Loss=0.0053, 指标1（M1）=0.0140, 指标2（M2）=0.0142), 稳定（stable）=True, 分数（score）=0.4770, 精度通过（precision_ok）=True
+    留出集（Holdout）: 损失（Loss）: 0.246896, Accuracy: 0.908943, F1: 0.907018, 标准差（std）=(损失Loss=0.0045, 指标1（M1）=0.0080, 指标2（M2）=0.0084), 极差（range）=(损失Loss=0.0131, 指标1（M1）=0.0244, 指标2（M2）=0.0255), 稳定（stable）=False, 分数（score）=0.6062, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=True, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 11560: 平均回合回报（Avg EpisodeReturn）=-3262746.1589, 平均原始最终奖励（Avg RawFinalReward）=-3262746.1589, 策略损失（Policy Loss）=-0.3141, 价值损失（Value Loss）=2.6622, 熵（Entropy）=6.4930
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.012241, 更新次数（Update）#68 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 68 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.8394, 原始最终奖励（raw_final_reward）=0.8394, 性能分数（perf_score）=0.8245, 成本分数（cost_score）=0.8839, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.348204, Accuracy: 0.863860, F1: 0.861858, 标准差（std）=(损失Loss=0.0023, 指标1（M1）=0.0052, 指标2（M2）=0.0053), 极差（range）=(损失Loss=0.0066, 指标1（M1）=0.0140, 指标2（M2）=0.0142), 稳定（stable）=False, 分数（score）=0.5348, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.249291, Accuracy: 0.902439, F1: 0.899995, 标准差（std）=(损失Loss=0.0086, 指标1（M1）=0.0073, 指标2（M2）=0.0079), 极差（range）=(损失Loss=0.0240, 指标1（M1）=0.0163, 指标2（M2）=0.0187), 稳定（stable）=False, 分数（score）=0.7078, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
+  噪声回合（Noise Episode） 11730: 平均回合回报（Avg EpisodeReturn）=-3296013.0691, 平均原始最终奖励（Avg RawFinalReward）=-3296013.0691, 策略损失（Policy Loss）=-0.1097, 价值损失（Value Loss）=2.6216, 熵（Entropy）=7.2383
+    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）=0.000020, 熵系数（Entropy Coef）=0.011685, 更新次数（Update）#69 (模式mode=constant, 状态status=constant)
+  噪声（Noise） window 69 候选确认（candidate confirmation）: 最终选择分数（final_selection_score）=0.9299, 原始最终奖励（raw_final_reward）=0.9299, 性能分数（perf_score）=0.9581, 成本分数（cost_score）=0.8452, 屏障惩罚（barrier_penalty）=0.0000, 稳定性惩罚（stability_penalty）=-0.0000, 搜索集（search）=损失（Loss）: 0.347218, Accuracy: 0.865965, F1: 0.863834, 标准差（std）=(损失Loss=0.0041, 指标1（M1）=0.0068, 指标2（M2）=0.0072), 极差（range）=(损失Loss=0.0125, 指标1（M1）=0.0175, 指标2（M2）=0.0186), 稳定（stable）=False, 分数（score）=0.7525, 精度通过（precision_ok）=False
+    留出集（Holdout）: 损失（Loss）: 0.254541, Accuracy: 0.897561, F1: 0.896038, 标准差（std）=(损失Loss=0.0062, 指标1（M1）=0.0122, 指标2（M2）=0.0122), 极差（range）=(损失Loss=0.0177, 指标1（M1）=0.0325, 指标2（M2）=0.0329), 稳定（stable）=False, 分数（score）=0.8841, 精度通过（precision_ok）=False
+    稳定性判定（Stability verdict）: 搜索通过（search_ok）=True, 留出集通过（holdout_ok）=True, 稳定搜索（stable_search）=False, 稳定留出集（stable_holdout）=False, 稳定联合可行（stable_joint_feasible）=False, 候选列表（shortlist）=not-eligible
