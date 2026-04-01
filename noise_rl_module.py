@@ -1203,40 +1203,48 @@ class NoiseRLModule:
             confirmed_candidate["joint_ok"] = bool(search_ok and holdout_ok)
             confirmed_candidate = _finalize_candidate_annotations(confirmed_candidate)
 
+            ev.log(f"  ╭── 噪声（Noise） {confirmation_label} 候选确认（candidate confirmation） ──╮")
+            ev.log(f"  │ [搜索集 Search]")
             ev.log(
-                f"  噪声（Noise） {confirmation_label} 候选确认（candidate confirmation）: "
-                f"搜索集（search）={ev._fmt_metrics(confirmed_candidate['search_loss'], confirmed_candidate['search_metric1'], confirmed_candidate['search_metric2'])}, "
-                f"安全率（safe_rate）={confirmed_candidate.get('search_safe_rate', 0):.3f}, "
-                f"尾部违约CVaR={confirmed_candidate.get('search_tail_violation_cvar', 0):.4f}, "
-                f"尾部余量（tail_margin）={confirmed_candidate.get('search_tail_margin_score', 0):.4f}, "
-                f"均值性能（mean_perf）={confirmed_candidate.get('search_mean_perf_score', 0):.4f}, "
-                f"风险可行（risk_feasible）={confirmed_candidate.get('search_risk_feasible', False)}, "
-                f"成本（cost）={confirmed_candidate['cost']:.2f}"
+                f"  │   指标: {ev._fmt_metrics(confirmed_candidate['search_loss'], confirmed_candidate['search_metric1'], confirmed_candidate['search_metric2'])}"
+            )
+            ev.log(
+                f"  │   风险: 安全率={confirmed_candidate.get('search_safe_rate', 0):.3f}, "
+                f"CVaR={confirmed_candidate.get('search_tail_violation_cvar', 0):.4f}, "
+                f"尾部余量={confirmed_candidate.get('search_tail_margin_score', 0):.4f}, "
+                f"风险可行={confirmed_candidate.get('search_risk_feasible', False)}"
+            )
+            ev.log(
+                f"  │   性能: 均值性能={confirmed_candidate.get('search_mean_perf_score', 0):.4f}, "
+                f"成本={confirmed_candidate['cost']:.2f}"
             )
             sr_lb = confirmed_candidate.get('search_safe_rate_lb95')
             cvar_ucb = confirmed_candidate.get('search_tail_violation_cvar_ucb95')
             if sr_lb is not None:
-                ev.log(f"    Wilson下界（safe_rate_lb95）={sr_lb:.4f}, CVaR上置信界（UCB95）={cvar_ucb:.4f}")
+                ev.log(f"  │   下界: Wilson下界={sr_lb:.4f}, CVaR上置信界={cvar_ucb:.4f}")
             ev.log(
-                f"    标准差（std）=(损失Loss={confirmed_candidate['search_loss_std']:.4f}, "
-                f"指标1（M1）={confirmed_candidate['search_metric1_std']:.4f}, "
-                f"指标2（M2）={confirmed_candidate['search_metric2_std']:.4f}), "
-                f"稳定（stable）={confirmed_candidate['search_stability_ok']}, "
-                f"精度通过（precision_ok）={confirmed_candidate['search_estimate_precision_ok']}"
+                f"  │   统计: std=(Loss={confirmed_candidate['search_loss_std']:.4f}, "
+                f"M1={confirmed_candidate['search_metric1_std']:.4f}, "
+                f"M2={confirmed_candidate['search_metric2_std']:.4f}), "
+                f"稳定={confirmed_candidate['search_stability_ok']}, "
+                f"精度通过={confirmed_candidate['search_estimate_precision_ok']}"
             )
             if ev.has_dataset_split("val_holdout"):
+                ev.log(f"  │ [留出集 Holdout]")
                 ev.log(
-                    "    留出集（Holdout）: "
-                    f"{ev._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}, "
-                    f"安全率（safe_rate）={confirmed_candidate.get('holdout_safe_rate', 0):.3f}, "
-                    f"尾部违约CVaR={confirmed_candidate.get('holdout_tail_violation_cvar', 0):.4f}, "
-                    f"尾部余量（tail_margin）={confirmed_candidate.get('holdout_tail_margin_score', 0):.4f}, "
-                    f"风险可行（risk_feasible）={confirmed_candidate.get('holdout_risk_feasible', False)}"
+                    f"  │   指标: {ev._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}"
+                )
+                ev.log(
+                    f"  │   风险: 安全率={confirmed_candidate.get('holdout_safe_rate', 0):.3f}, "
+                    f"CVaR={confirmed_candidate.get('holdout_tail_violation_cvar', 0):.4f}, "
+                    f"尾部余量={confirmed_candidate.get('holdout_tail_margin_score', 0):.4f}, "
+                    f"风险可行={confirmed_candidate.get('holdout_risk_feasible', False)}"
                 )
                 h_lb = confirmed_candidate.get('holdout_safe_rate_lb95')
                 h_ucb = confirmed_candidate.get('holdout_tail_violation_cvar_ucb95')
                 if h_lb is not None:
-                    ev.log(f"    Wilson下界（safe_rate_lb95）={h_lb:.4f}, CVaR上置信界（UCB95）={h_ucb:.4f}")
+                    ev.log(f"  │   下界: Wilson下界={h_lb:.4f}, CVaR上置信界={h_ucb:.4f}")
+            ev.log(f"  ╰──────────────────────────────────────────────────────────────╯")
 
             if search_ok and _is_better_split_candidate(
                 confirmed_candidate,
@@ -1244,11 +1252,7 @@ class NoiseRLModule:
                 metric_prefix="search",
             ):
                 search_best_noise_config = _clone_candidate(confirmed_candidate)
-                ev.log(
-                    f"    噪声搜索最优（Noise Search-Best）在回合（episode） {episode_idx + 1} 更新: "
-                    f"成本（cost）={search_best_noise_config['cost']:.2f}, "
-                    f"最终选择分数（final_selection_score）={search_best_noise_config['final_selection_score']:.4f}"
-                )
+                ev.log(f"  ★ 噪声搜索最优 (Noise Search-Best) 更新 (回合 {episode_idx + 1}): 成本={search_best_noise_config['cost']:.2f}, 最终选择分数={search_best_noise_config['final_selection_score']:.4f}")
 
             if confirmed_candidate["stable_search_feasible"] and _is_better_stable_split_candidate(
                 confirmed_candidate,
@@ -1256,48 +1260,34 @@ class NoiseRLModule:
                 metric_prefix="search",
             ):
                 stable_search_best_noise_config = _clone_candidate(confirmed_candidate)
-                ev.log(
-                    f"    噪声稳定搜索最优（Noise Stable Search-Best）在回合（episode） {episode_idx + 1} 更新: "
-                    f"成本（cost）={stable_search_best_noise_config['cost']:.2f}, "
-                    f"最终选择分数（final_selection_score）={stable_search_best_noise_config['final_selection_score']:.4f}, "
-                    f"稳定性分数（stability_score）={stable_search_best_noise_config['search_stability_score']:.4f}"
-                )
+                ev.log(f"  ★ 噪声稳定搜索最优 (Noise Stable Search-Best) 更新 (回合 {episode_idx + 1}): 成本={stable_search_best_noise_config['cost']:.2f}, 最终选择分数={stable_search_best_noise_config['final_selection_score']:.4f}, 稳定性分数={stable_search_best_noise_config['search_stability_score']:.4f}")
 
             if confirmed_candidate["joint_ok"] and _is_better_joint_candidate(
                 confirmed_candidate,
                 joint_best_noise_config,
             ):
                 joint_best_noise_config = _clone_candidate(confirmed_candidate)
-                ev.log(
-                    f"    噪声联合最优（Noise Joint-Best）在回合（episode） {episode_idx + 1} 更新: "
-                    f"成本（cost）={joint_best_noise_config['cost']:.2f}, "
-                    f"最终选择分数（final_selection_score）={joint_best_noise_config['final_selection_score']:.4f}"
-                )
+                ev.log(f"  ★ 噪声联合最优 (Noise Joint-Best) 更新 (回合 {episode_idx + 1}): 成本={joint_best_noise_config['cost']:.2f}, 最终选择分数={joint_best_noise_config['final_selection_score']:.4f}")
 
             if confirmed_candidate["stable_joint_feasible"] and _is_better_joint_candidate(
                 confirmed_candidate,
                 stable_joint_best_noise_config,
             ):
                 stable_joint_best_noise_config = _clone_candidate(confirmed_candidate)
-                ev.log(
-                    f"    噪声稳定联合最优（Noise Stable Joint-Best）在回合（episode） {episode_idx + 1} 更新: "
-                    f"成本（cost）={stable_joint_best_noise_config['cost']:.2f}, "
-                    f"最终选择分数（final_selection_score）={stable_joint_best_noise_config['final_selection_score']:.4f}, "
-                    f"稳定性分数（stability_score）={stable_joint_best_noise_config['stability_score']:.4f}"
-                )
+                ev.log(f"  ★ 噪声稳定联合最优 (Noise Stable Joint-Best) 更新 (回合 {episode_idx + 1}): 成本={stable_joint_best_noise_config['cost']:.2f}, 最终选择分数={stable_joint_best_noise_config['final_selection_score']:.4f}, 稳定性分数={stable_joint_best_noise_config['stability_score']:.4f}")
 
             shortlist_status = "not-eligible"
             if update_shortlist and confirmed_candidate["stable_joint_feasible"]:
                 shortlist_status = _upsert_shortlist_candidate(confirmed_candidate)
             confirmed_candidate["shortlist_status"] = shortlist_status
+            ev.log(f"  ▶ 稳定性判定（Stability verdict）:")
             ev.log(
-                "    稳定性判定（Stability verdict）: "
-                f"搜索通过（search_ok）={confirmed_candidate['search_ok']}, "
-                f"留出集通过（holdout_ok）={confirmed_candidate['holdout_ok']}, "
-                f"稳定搜索（stable_search）={confirmed_candidate['stable_search_feasible']}, "
-                f"稳定留出集（stable_holdout）={confirmed_candidate['stable_holdout_feasible']}, "
-                f"稳定联合可行（stable_joint_feasible）={confirmed_candidate['stable_joint_feasible']}, "
-                f"候选列表（shortlist）={shortlist_status}"
+                f"      搜索通过={confirmed_candidate['search_ok']}, "
+                f"留出集通过={confirmed_candidate['holdout_ok']}, "
+                f"稳定搜索={confirmed_candidate['stable_search_feasible']}, "
+                f"稳定留出集={confirmed_candidate['stable_holdout_feasible']}, "
+                f"稳定联合可行={confirmed_candidate['stable_joint_feasible']}, "
+                f"候选列表={shortlist_status}"
             )
             return confirmed_candidate
 
@@ -1598,15 +1588,11 @@ class NoiseRLModule:
                         else "normal"
                     )
                 ev.log(
-                    f"  噪声回合（Noise Episode） {episode + 1}: 平均回合回报（Avg EpisodeReturn）={avg_episode_return:.4f}, "
-                    f"平均原始最终奖励（Avg RawFinalReward）={avg_raw_final_reward:.4f}, "
-                    f"策略损失（Policy Loss）={policy_loss:.4f}, "
-                    f"价值损失（Value Loss）={value_loss:.4f}, 熵（Entropy）={entropy:.4f}"
-                )
-                ev.log(
-                    f"    [噪声GTrXL调度（Noise GTrXL Schedule）] 学习率（LR）={optimizer.param_groups[0]['lr']:.6f}, "
-                    f"熵系数（Entropy Coef）={current_entropy:.6f}, 更新次数（Update）#{noise_ppo_update_count} "
-                    f"(模式mode={NOISE_STAGE_GTRXL_WARMUP_MODE}, 状态status={warmup_status})"
+                    f"  ╭── 噪声回合（Noise Episode） {episode + 1} ──╮\n"
+                    f"  │ 平均回合回报: {avg_episode_return:.4f}, 平均原始最终奖励: {avg_raw_final_reward:.4f}\n"
+                    f"  │ 策略损失: {policy_loss:.4f}, 价值损失: {value_loss:.4f}, 熵: {entropy:.4f}\n"
+                    f"  │ [GTrXL调度] LR: {optimizer.param_groups[0]['lr']:.6f}, 熵系数: {current_entropy:.6f}, 更新次数: #{noise_ppo_update_count} (模式: {NOISE_STAGE_GTRXL_WARMUP_MODE}, 状态: {warmup_status})\n"
+                    f"  ╰────────────────────────────────────────╯"
                 )
                 # 确认窗口内 top-k 候选（文档 7.4）
                 for _wti, _wtc in enumerate(window_top_candidates):
