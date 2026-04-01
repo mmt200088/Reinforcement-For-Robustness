@@ -30,17 +30,30 @@ NOISE_STAGE_GTRXL_WARMUP_MODE = "constant"
 NOISE_STAGE_GTRXL_WARMUP_UPDATES = 0
 NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES = 20
 
-# 训练期 MC 采样（固定 5 次，不做自适应加样本）
+# ---------------------------------------------------------------------------
+# 训练期 / 评估期 评估次数分离（文档修改方案 第1步）
+# ---------------------------------------------------------------------------
+# 训练期：动作选择相关，只做 1 次评估
+NOISE_STAGE_TRAIN_DENSE_EVAL_REPEATS = 1       # 中间步 dense probe 评估次数
+NOISE_STAGE_TRAIN_TERMINAL_EVAL_REPEATS = 1     # 终止步 terminal 评估次数
+# 评估期：baseline / confirm / finalist 仍做多次评估
+NOISE_STAGE_BASELINE_REPEATS = 5
+NOISE_STAGE_ONLINE_BASELINE_REPEATS = 3
+NOISE_STAGE_CONFIRM_REPEATS = 16
+NOISE_STAGE_FINALIST_REPEATS = 64
+NOISE_STAGE_SHORTLIST_SIZE = 10                 # 稍微增大（原8），降低单次训练 reward 偶然性影响
+
+# 训练期 reward 模式配置（文档修改方案 第1步）
+NOISE_STAGE_DENSE_REWARD_MODE = "prefix_completion_delta"       # 中间步 dense reward 模式
+NOISE_STAGE_TRAIN_TERMINAL_REWARD_MODE = "single_shot_margin"   # 终止步训练期 reward 模式
+NOISE_STAGE_DENSE_COMPLETION_POLICY = "max_suffix"              # 未来层补全策略
+
+# 旧兼容项（不再用于训练期，仅保留给 confirm/finalist）
 NOISE_STAGE_MC_SAMPLES = 5
 NOISE_STAGE_MC_BASE_SAMPLES = 5
 NOISE_STAGE_MC_EXTRA_SAMPLES = 0
 NOISE_STAGE_MC_MARGIN_THRESHOLD = 0.02
 NOISE_STAGE_BUDGET_DECAY_FRACTION = 0.5
-NOISE_STAGE_BASELINE_REPEATS = 5
-NOISE_STAGE_ONLINE_BASELINE_REPEATS = 3
-NOISE_STAGE_CONFIRM_REPEATS = 16
-NOISE_STAGE_FINALIST_REPEATS = 64
-NOISE_STAGE_SHORTLIST_SIZE = 8
 NOISE_STAGE_PROGRESS_SAVE_INTERVAL = 10000
 NOISE_STAGE_PROGRESS_DIR = os.path.join("rl_results", "noise_rl_progress")
 
@@ -108,8 +121,8 @@ NOISE_STAGE_FINALIST_SAFE_RATE_MIN = 0.95
 NOISE_STAGE_FINALIST_CVAR_MAX = 0.20
 NOISE_STAGE_FINALIST_SAFE_RATE_LB95_MIN = 0.90
 
-# 窗口候选 top-k
-NOISE_STAGE_WINDOW_TOPK = 3
+# 窗口候选 top-k（稍微增大，降低单次训练 reward 偶然性影响）
+NOISE_STAGE_WINDOW_TOPK = 5
 
 # 双头 critic：mean auxiliary head 的 loss 权重
 NOISE_STAGE_MEAN_AUX_LOSS_COEF = 0.25
@@ -555,7 +568,13 @@ class NoiseRLModule:
             "gtrxl_warmup_updates": NOISE_STAGE_GTRXL_WARMUP_UPDATES,
             "gtrxl_short_warmup_updates": NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES,
             "gtrxl_mini_batch_episodes": GTRXL_MINI_BATCH_EPISODES,
-            "mc_samples": NOISE_STAGE_MC_SAMPLES,
+            # 训练期/评估期评估次数分离
+            "train_dense_eval_repeats": NOISE_STAGE_TRAIN_DENSE_EVAL_REPEATS,
+            "train_terminal_eval_repeats": NOISE_STAGE_TRAIN_TERMINAL_EVAL_REPEATS,
+            "dense_reward_mode": NOISE_STAGE_DENSE_REWARD_MODE,
+            "train_terminal_reward_mode": NOISE_STAGE_TRAIN_TERMINAL_REWARD_MODE,
+            "dense_completion_policy": NOISE_STAGE_DENSE_COMPLETION_POLICY,
+            "mc_samples_legacy": NOISE_STAGE_MC_SAMPLES,
             "baseline_repeats": NOISE_STAGE_BASELINE_REPEATS,
             "online_baseline_repeats": NOISE_STAGE_ONLINE_BASELINE_REPEATS,
             "confirm_repeats": NOISE_STAGE_CONFIRM_REPEATS,
@@ -613,8 +632,11 @@ class NoiseRLModule:
         )
         ev.log(
             "  "
-            f"蒙特卡洛采样数（MC samples）={NOISE_STAGE_MC_BASE_SAMPLES} "
-            f"(自适应（adaptive）: 边界附近+{NOISE_STAGE_MC_EXTRA_SAMPLES}, 阈值（threshold）={NOISE_STAGE_MC_MARGIN_THRESHOLD}) | "
+            f"训练期评估（TrainEval）: 中间步dense_repeats={NOISE_STAGE_TRAIN_DENSE_EVAL_REPEATS}, "
+            f"终止步terminal_repeats={NOISE_STAGE_TRAIN_TERMINAL_EVAL_REPEATS}, "
+            f"dense模式={NOISE_STAGE_DENSE_REWARD_MODE}, "
+            f"terminal模式={NOISE_STAGE_TRAIN_TERMINAL_REWARD_MODE}, "
+            f"补全策略={NOISE_STAGE_DENSE_COMPLETION_POLICY} | "
             f"预算衰减（BudgetDecay）(比例fraction={NOISE_STAGE_BUDGET_DECAY_FRACTION})"
         )
         ev.log(
@@ -811,6 +833,11 @@ class NoiseRLModule:
             mc_extra_samples=NOISE_STAGE_MC_EXTRA_SAMPLES,
             mc_margin_threshold=NOISE_STAGE_MC_MARGIN_THRESHOLD,
             dense_reward_shaping_scale=NOISE_STAGE_DENSE_REWARD_SHAPING_SCALE,
+            train_dense_eval_repeats=NOISE_STAGE_TRAIN_DENSE_EVAL_REPEATS,
+            train_terminal_eval_repeats=NOISE_STAGE_TRAIN_TERMINAL_EVAL_REPEATS,
+            dense_reward_mode=NOISE_STAGE_DENSE_REWARD_MODE,
+            train_terminal_reward_mode=NOISE_STAGE_TRAIN_TERMINAL_REWARD_MODE,
+            dense_completion_policy=NOISE_STAGE_DENSE_COMPLETION_POLICY,
         )
         env.prev_episode_metrics = {
             "loss": float(proxy_baseline_stats["loss_mean"]),
@@ -1524,6 +1551,17 @@ class NoiseRLModule:
                     "accumulated_dense_reward": info.get("accumulated_dense_reward"),
                     "stability_proxy": info.get("stability_proxy"),
                     "stability_penalty": info.get("stability_penalty"),
+                    # dense probe 详情（文档修改方案 第8步）
+                    "partial_probe_loss": info.get("partial_probe_loss"),
+                    "partial_probe_metric1": info.get("partial_probe_metric1"),
+                    "partial_probe_metric2": info.get("partial_probe_metric2"),
+                    "partial_margin_loss": info.get("partial_margin_loss"),
+                    "partial_margin_metric1": info.get("partial_margin_metric1"),
+                    "partial_margin_metric2": info.get("partial_margin_metric2"),
+                    "partial_completion_score": info.get("partial_completion_score"),
+                    "partial_violation_penalty": info.get("partial_violation_penalty"),
+                    "remaining_budget_ratio": info.get("remaining_budget_ratio"),
+                    "completion_policy": info.get("completion_policy"),
                 }
                 step_infos.append(step_info)
 
@@ -1926,8 +1964,13 @@ class NoiseRLModule:
         ev.clear_weight_noise_configuration()
 
         reward_diagnostics = {
-            "mc_base_samples": NOISE_STAGE_MC_BASE_SAMPLES,
-            "mc_extra_samples": NOISE_STAGE_MC_EXTRA_SAMPLES,
+            "train_dense_eval_repeats": NOISE_STAGE_TRAIN_DENSE_EVAL_REPEATS,
+            "train_terminal_eval_repeats": NOISE_STAGE_TRAIN_TERMINAL_EVAL_REPEATS,
+            "dense_reward_mode": NOISE_STAGE_DENSE_REWARD_MODE,
+            "train_terminal_reward_mode": NOISE_STAGE_TRAIN_TERMINAL_REWARD_MODE,
+            "dense_completion_policy": NOISE_STAGE_DENSE_COMPLETION_POLICY,
+            "mc_base_samples_legacy": NOISE_STAGE_MC_BASE_SAMPLES,
+            "mc_extra_samples_legacy": NOISE_STAGE_MC_EXTRA_SAMPLES,
             "mc_margin_threshold": NOISE_STAGE_MC_MARGIN_THRESHOLD,
             "budget_decay_fraction": NOISE_STAGE_BUDGET_DECAY_FRACTION,
             "episode_return_mean": (
@@ -2015,7 +2058,11 @@ class NoiseRLModule:
 # ---------------------------------------------------------------------------
 
 class _NoiseRecurrentRolloutBuffer:
-    """Rollout buffer for the second-stage 7-action noise RL（支持双头 critic）。"""
+    """Rollout buffer for the second-stage 7-action noise RL（支持双头 critic）。
+
+    辅助 critic target 已从"终点 mean_perf"改为"每一步的 partial probe score"
+    （文档修改方案 第6/7步）。字段名保持 mean_perf_targets 以兼容 PPO 接口。
+    """
 
     def __init__(self):
         self.episodes = []
@@ -2031,7 +2078,7 @@ class _NoiseRecurrentRolloutBuffer:
             "rewards": [],
             "values": [],
             "dones": [],
-            "mean_perf_targets": [],
+            "mean_perf_targets": [],  # 实际语义：每步 partial probe score（文档第6步）
         }
 
     def add_step(self, cont_feat, layer_idx, prev_actions, actions, logprob, reward, value, done,
@@ -2044,6 +2091,7 @@ class _NoiseRecurrentRolloutBuffer:
         self._current["rewards"].append(reward)
         self._current["values"].append(value)
         self._current["dones"].append(done)
+        # 语义变更：从"最后才冒出来的 mean_perf"改为"当前前缀 completion quality"（文档第6步）
         self._current["mean_perf_targets"].append(float(mean_perf_target))
 
     def end_episode(self):
@@ -2111,7 +2159,7 @@ class _NoiseGTrXLStrategyNetwork(nn.Module):
                  noise_stage_num_actions=7,
                  noise_stage_sos_tokens=None,
                  noise_stage_prev_action_embed_dim=4,
-                 noise_stage_cont_dim=6,
+                 noise_stage_cont_dim=12,
                  noise_stage_action_dims=None):
         super().__init__()
         self.num_layers = num_layers
@@ -2296,7 +2344,12 @@ class _NoiseOptEnv:
                  budget_decay_fraction=0.5,
                  mc_extra_samples=4,
                  mc_margin_threshold=0.02,
-                 dense_reward_shaping_scale=0.25):
+                 dense_reward_shaping_scale=0.25,
+                 train_dense_eval_repeats=1,
+                 train_terminal_eval_repeats=1,
+                 dense_reward_mode="prefix_completion_delta",
+                 train_terminal_reward_mode="single_shot_margin",
+                 dense_completion_policy="max_suffix"):
         self.total_layers = total_layers
         self.baseline_cost = baseline_cost
         self.baseline_loss, self.baseline_p, self.baseline_s = baseline_metrics
@@ -2381,6 +2434,25 @@ class _NoiseOptEnv:
         self._mc_extra_samples = max(0, int(mc_extra_samples))
         self._mc_margin_threshold = float(mc_margin_threshold)
         self._dense_reward_shaping_scale = float(dense_reward_shaping_scale)
+
+        # 训练期评估次数分离（文档修改方案 第1步）
+        self._train_dense_eval_repeats = max(1, int(train_dense_eval_repeats))
+        self._train_terminal_eval_repeats = max(1, int(train_terminal_eval_repeats))
+        self._dense_reward_mode = str(dense_reward_mode)
+        self._train_terminal_reward_mode = str(train_terminal_reward_mode)
+        self._dense_completion_policy = str(dense_completion_policy)
+
+        # dense probe 状态（文档修改方案 第2/3/5步）
+        self._prev_completion_score = 0.0       # 上一步的 completion score，用于增量计算
+        self._partial_probe_loss = 0.0
+        self._partial_probe_metric1 = 0.0
+        self._partial_probe_metric2 = 0.0
+        self._partial_margin_loss = 0.0
+        self._partial_margin_metric1 = 0.0
+        self._partial_margin_metric2 = 0.0
+        self._partial_completion_score = 0.0
+        self._partial_violation_penalty = 0.0
+        self._last_probe_info = None
 
         # 尾部风险状态（用于 continuous features 的后 3 维）
         self._prev_safe_rate = 1.0
@@ -2468,6 +2540,18 @@ class _NoiseOptEnv:
             "wffn2": max(self._weight_noise_allowed),
         }
 
+        # 重置 dense probe 状态（文档修改方案 第2/3步）
+        self._prev_completion_score = 0.0
+        self._partial_probe_loss = 0.0
+        self._partial_probe_metric1 = 0.0
+        self._partial_probe_metric2 = 0.0
+        self._partial_margin_loss = 0.0
+        self._partial_margin_metric1 = 0.0
+        self._partial_margin_metric2 = 0.0
+        self._partial_completion_score = 0.0
+        self._partial_violation_penalty = 0.0
+        self._last_probe_info = None
+
         self.accumulated_dense_reward = 0.0
         self.input_history = np.full(self.total_layers, self._history_mask, dtype=np.float32)
         self.wq_history = np.full(self.total_layers, self._history_mask, dtype=np.float32)
@@ -2504,8 +2588,29 @@ class _NoiseOptEnv:
 
         progress = self.current_layer / self.total_layers
         safe_rate_gap, tail_violation, tail_margin = self._get_risk_features()
+
+        # 当前 episode 的 partial probe 结果（文档修改方案 第5步）
+        partial_completion_score = float(np.clip(self._partial_completion_score, -2.0, 2.0))
+        partial_worst_margin = float(np.clip(
+            min(self._partial_margin_loss, self._partial_margin_metric1,
+                self._partial_margin_metric2 if self.num_metrics > 1 else self._partial_margin_metric1),
+            -2.0, 2.0
+        ))
+        remaining_budget_ratio = float(np.clip(
+            (float(self._cost_upper_bound) - float(self.accumulated_cost))
+            / max(float(self._cost_upper_bound) - float(self._cost_lower_bound), 1e-8),
+            0.0, 1.0,
+        ))
+        partial_margin_loss = float(np.clip(self._partial_margin_loss, -2.0, 2.0))
+        partial_margin_metric1 = float(np.clip(self._partial_margin_metric1, -2.0, 2.0))
+        partial_margin_metric2 = float(np.clip(self._partial_margin_metric2, -2.0, 2.0))
+
         return np.array(
-            [cost_deviation, complexity_debt, progress, safe_rate_gap, tail_violation, tail_margin],
+            [cost_deviation, complexity_debt, progress,
+             safe_rate_gap, tail_violation, tail_margin,
+             # 以下 6 维为 partial probe 特征（文档修改方案 第5步）
+             partial_completion_score, partial_worst_margin, remaining_budget_ratio,
+             partial_margin_loss, partial_margin_metric1, partial_margin_metric2],
             dtype=np.float32,
         )
 
@@ -2527,6 +2632,176 @@ class _NoiseOptEnv:
         if base_evaluator is not None and hasattr(base_evaluator, "get_curriculum_constraints"):
             return base_evaluator.get_curriculum_constraints(base_limits)
         return base_limits
+
+    # -------------------------------------------------------------------
+    # 第一类：训练期单次评估 helper（文档修改方案 第2步）
+    # -------------------------------------------------------------------
+
+    def _evaluate_noise_config_single(self, noise_kwargs=None):
+        """训练期单次评估：返回一条 trial 风格结果 + n=1 的 summary，方便日志兼容。"""
+        if noise_kwargs is None:
+            noise_kwargs = {
+                "input_noise_scaling_factors": np.array(self.input_noise_config, dtype=int),
+                "wq_noise_scaling_factors": np.array(self.wq_noise_config, dtype=int),
+                "wk_noise_scaling_factors": np.array(self.wk_noise_config, dtype=int),
+                "wv_noise_scaling_factors": np.array(self.wv_noise_config, dtype=int),
+                "wo_noise_scaling_factors": np.array(self.wo_noise_config, dtype=int),
+                "wffn1_noise_scaling_factors": np.array(self.wffn1_noise_config, dtype=int),
+                "wffn2_noise_scaling_factors": np.array(self.wffn2_noise_config, dtype=int),
+            }
+        loss, metric1, metric2, eval_time = self.evaluator.evaluate_noise_model(**noise_kwargs)
+        trial = {
+            "loss": float(loss),
+            "metric1": float(metric1),
+            "metric2": float(metric2),
+            "time_ms": float(eval_time),
+        }
+        summary = {
+            "num_samples": 1,
+            "base_samples": 1,
+            "extra_samples": 0,
+            "trials": [trial],
+            "loss_mean": float(loss),
+            "loss_std": 0.0,
+            "metric1_mean": float(metric1),
+            "metric1_std": 0.0,
+            "metric2_mean": float(metric2),
+            "metric2_std": 0.0,
+            "time_mean_ms": float(eval_time),
+            "time_std_ms": 0.0,
+        }
+        return trial, summary
+
+    # -------------------------------------------------------------------
+    # 第二类：中间步 dense probe helper（文档修改方案 第2步）
+    # -------------------------------------------------------------------
+
+    def _compose_dense_probe_noise_kwargs(self):
+        """把当前 episode 的前缀配置拼成完整 noise config（前缀部分已选，后缀用 completion 补齐）。"""
+        prefix_kwargs = {
+            "input_noise_scaling_factors": list(self.input_noise_config),
+            "wq_noise_scaling_factors": list(self.wq_noise_config),
+            "wk_noise_scaling_factors": list(self.wk_noise_config),
+            "wv_noise_scaling_factors": list(self.wv_noise_config),
+            "wo_noise_scaling_factors": list(self.wo_noise_config),
+            "wffn1_noise_scaling_factors": list(self.wffn1_noise_config),
+            "wffn2_noise_scaling_factors": list(self.wffn2_noise_config),
+        }
+        # 用 completion policy 补齐未来层
+        suffix = self._build_dense_completion_suffix(len(self.input_noise_config))
+        for key in prefix_kwargs:
+            prefix_kwargs[key] = np.array(
+                prefix_kwargs[key] + suffix[key], dtype=int
+            )
+        return prefix_kwargs
+
+    def _build_dense_completion_suffix(self, start_layer):
+        """给尚未选择的未来层补上 completion 配置。
+
+        当前策略: max_suffix — 未来层全部使用最大 scaling factor（最低噪声/最保守）。
+        """
+        remaining = self.total_layers - start_layer
+        if remaining <= 0:
+            return {
+                "input_noise_scaling_factors": [],
+                "wq_noise_scaling_factors": [],
+                "wk_noise_scaling_factors": [],
+                "wv_noise_scaling_factors": [],
+                "wo_noise_scaling_factors": [],
+                "wffn1_noise_scaling_factors": [],
+                "wffn2_noise_scaling_factors": [],
+            }
+        max_input = max(self._input_noise_allowed)
+        max_weight = max(self._weight_noise_allowed)
+        max_wffn1 = max(self._wffn1_noise_allowed)
+        return {
+            "input_noise_scaling_factors": [max_input] * remaining,
+            "wq_noise_scaling_factors": [max_weight] * remaining,
+            "wk_noise_scaling_factors": [max_weight] * remaining,
+            "wv_noise_scaling_factors": [max_weight] * remaining,
+            "wo_noise_scaling_factors": [max_weight] * remaining,
+            "wffn1_noise_scaling_factors": [max_wffn1] * remaining,
+            "wffn2_noise_scaling_factors": [max_weight] * remaining,
+        }
+
+    def _evaluate_dense_probe_once(self):
+        """对"前缀 + completion 后的完整 config"做 1 次 evaluator 调用，返回 trial 和 probe score。"""
+        probe_kwargs = self._compose_dense_probe_noise_kwargs()
+        loss, metric1, metric2, eval_time = self.evaluator.evaluate_noise_model(**probe_kwargs)
+        trial = {
+            "loss": float(loss),
+            "metric1": float(metric1),
+            "metric2": float(metric2),
+            "time_ms": float(eval_time),
+        }
+
+        # 计算约束归一化后的 margin（文档修改方案 第3步 S(complete(prefix_t)) 里的内容）
+        limits = self._get_current_constraint_limits()
+        margin_loss = (float(limits["loss"]) - float(loss)) / max(
+            float(limits["loss"]) - float(self.baseline_loss), 1e-8
+        )
+        margin_m1 = (float(metric1) - float(limits["metric1"])) / max(
+            float(self.baseline_p) - float(limits["metric1"]), 1e-8
+        )
+        if self.num_metrics > 1:
+            margin_m2 = (float(metric2) - float(limits["metric2"])) / max(
+                float(self.baseline_s) - float(limits["metric2"]), 1e-8
+            )
+        else:
+            margin_m2 = 0.0
+
+        # violation penalty（加权违约量）
+        viol_loss = max(0.0, -margin_loss)
+        viol_m1 = max(0.0, -margin_m1)
+        viol_m2 = max(0.0, -margin_m2) if self.num_metrics > 1 else 0.0
+        violation_penalty = (
+            float(self._barrier_weights["loss"]) * viol_loss
+            + float(self._barrier_weights["metric1"]) * viol_m1
+        )
+        if self.num_metrics > 1:
+            violation_penalty += float(self._barrier_weights.get("metric2", 0.0)) * viol_m2
+
+        # completion score = 加权 margin utility - violation penalty + 轻量 cost 项
+        util_loss = max(0.0, margin_loss)
+        util_m1 = max(0.0, margin_m1)
+        util_m2 = max(0.0, margin_m2) if self.num_metrics > 1 else 0.0
+        margin_utility = (
+            float(self._perf_weights["loss"]) * util_loss
+            + float(self._perf_weights["metric1"]) * util_m1
+        )
+        if self.num_metrics > 1:
+            margin_utility += float(self._perf_weights.get("metric2", 0.0)) * util_m2
+
+        # 轻量 cost 项
+        cost_score = float(np.clip(
+            (float(self._cost_upper_bound) - float(self.accumulated_cost))
+            / max(float(self._cost_upper_bound) - float(self._cost_lower_bound), 1e-8),
+            0.0, 1.0,
+        ))
+        completion_score = margin_utility - violation_penalty + NOISE_STAGE_COST_WEIGHT * cost_score
+
+        # 更新 partial probe 状态（文档修改方案 第5步：喂回 state）
+        self._partial_probe_loss = float(loss)
+        self._partial_probe_metric1 = float(metric1)
+        self._partial_probe_metric2 = float(metric2)
+        self._partial_margin_loss = float(margin_loss)
+        self._partial_margin_metric1 = float(margin_m1)
+        self._partial_margin_metric2 = float(margin_m2)
+        self._partial_completion_score = float(completion_score)
+        self._partial_violation_penalty = float(violation_penalty)
+
+        probe_info = {
+            "probe_trial": trial,
+            "margin_loss": float(margin_loss),
+            "margin_metric1": float(margin_m1),
+            "margin_metric2": float(margin_m2),
+            "violation_penalty": float(violation_penalty),
+            "margin_utility": float(margin_utility),
+            "cost_score": float(cost_score),
+            "completion_score": float(completion_score),
+            "completion_policy": self._dense_completion_policy,
+        }
+        return trial, float(completion_score), probe_info
 
     def _evaluate_noise_config_mc(self):
         """MC 采样评估：返回 trial 级数组 + summary stats，支持后续 tail 指标计算。"""
@@ -2745,27 +3020,22 @@ class _NoiseOptEnv:
         return state.astype(np.float32)
 
     def _compute_dense_step_reward(self, step_cost):
-        cost_saving = (self.max_cost_per_layer - step_cost) / self.max_cost_per_layer
-        cost_reward = self._reward_dense_scale * cost_saving
+        """prefix-completion 增量 dense reward（文档修改方案 第3步）。
 
-        layers_completed = self.current_layer + 1
-        expected_cost_so_far = layers_completed * self.expected_cost_per_layer
-        actual_cost_so_far = self.accumulated_cost + step_cost
-        if expected_cost_so_far > 0:
-            budget_deviation = (actual_cost_so_far - expected_cost_so_far) / expected_cost_so_far
-        else:
-            budget_deviation = 0.0
+        r_t^dense = S(complete(prefix_t)) - S(complete(prefix_{t-1}))
+        当前层只为自己"让完成态变好/变坏了多少"负责，credit 更干净。
+        """
+        # 执行 dense probe 评估
+        _trial, current_score, probe_info = self._evaluate_dense_probe_once()
 
-        # Budget reward decays linearly to 0 by budget_decay_fraction of training
-        budget_decay = max(0.0, 1.0 - self._episode_progress / self._budget_decay_fraction)
-        effective_budget_scale = self._budget_dev_scale * budget_decay
+        # 增量形式
+        delta = current_score - self._prev_completion_score
+        self._prev_completion_score = current_score
 
-        if budget_deviation <= 0:
-            budget_reward = effective_budget_scale * (1.0 - abs(budget_deviation) * 0.5)
-        else:
-            budget_reward = -effective_budget_scale * budget_deviation
-        dense_reward = cost_reward + budget_reward
-        return self._dense_reward_shaping_scale * dense_reward
+        dense_reward = self._dense_reward_shaping_scale * delta
+        # 将 probe_info 暂存，供 step() 回传 info
+        self._last_probe_info = probe_info
+        return dense_reward
 
     def step(self, input_action_idx, wq_action_idx, wk_action_idx, wv_action_idx,
              wo_action_idx, wffn1_action_idx, wffn2_action_idx):
@@ -2818,9 +3088,6 @@ class _NoiseOptEnv:
         self.wffn1_history[self.current_layer] = self._wffn1_noise_to_norm[wffn1_sf]
         self.wffn2_history[self.current_layer] = self._weight_noise_to_norm[wffn2_sf]
 
-        dense_reward = self._compute_dense_step_reward(step_cost)
-        self.accumulated_dense_reward += dense_reward
-
         info = {
             "layer_index": self.current_layer,
             "curr_input_noise_scaling_factor": input_sf,
@@ -2838,16 +3105,40 @@ class _NoiseOptEnv:
             "wo_noise_config": self.wo_noise_config.copy(),
             "wffn1_noise_config": self.wffn1_noise_config.copy(),
             "wffn2_noise_config": self.wffn2_noise_config.copy(),
-            "dense_reward": dense_reward,
         }
 
         self.current_layer += 1
         if self.current_layer < self.total_layers:
+            # 非终止步：返回 prefix-completion 增量 dense reward（文档修改方案 第3步）
+            dense_reward = self._compute_dense_step_reward(step_cost)
+            self.accumulated_dense_reward += dense_reward
+            info["dense_reward"] = dense_reward
             info["accumulated_dense_reward"] = self.accumulated_dense_reward
             info["dense_reward_adjustment"] = dense_reward
             info["dense_reward_cancelled"] = False
+            # dense probe 详情（文档修改方案 第8步：日志扩展）
+            probe_info = getattr(self, "_last_probe_info", None) or {}
+            info["partial_probe_loss"] = probe_info.get("probe_trial", {}).get("loss")
+            info["partial_probe_metric1"] = probe_info.get("probe_trial", {}).get("metric1")
+            info["partial_probe_metric2"] = probe_info.get("probe_trial", {}).get("metric2")
+            info["partial_margin_loss"] = probe_info.get("margin_loss")
+            info["partial_margin_metric1"] = probe_info.get("margin_metric1")
+            info["partial_margin_metric2"] = probe_info.get("margin_metric2")
+            info["partial_completion_score"] = probe_info.get("completion_score")
+            info["partial_violation_penalty"] = probe_info.get("violation_penalty")
+            info["remaining_budget_ratio"] = float(np.clip(
+                (float(self._cost_upper_bound) - float(self.accumulated_cost))
+                / max(float(self._cost_upper_bound) - float(self._cost_lower_bound), 1e-8),
+                0.0, 1.0,
+            ))
+            info["completion_policy"] = self._dense_completion_policy
+            # 辅助 critic target：每一步的 partial probe score（文档修改方案 第6步）
+            info["mean_perf_value"] = float(self._partial_completion_score)
             return self._get_state(), dense_reward, False, info
 
+        # 终止步：只返回 terminal sparse reward，不再叠加 dense delta（文档修改方案 第3步 大坑修正）
+        dense_reward = 0.0  # 最后一步不叠加 dense delta
+        info["dense_reward"] = dense_reward
         final_reward = self._compute_final_reward()
         rc = final_reward["reward_components"]
         info["final_reward"] = final_reward["raw_final_reward"]
@@ -2867,17 +3158,24 @@ class _NoiseOptEnv:
         info["train_cost_score"] = rc.get("cost_score", 0.0)
         info["raw_tail_reward"] = rc.get("raw_tail_reward", 0.0)
         info["unsafe_sample_count"] = rc.get("unsafe_count", 0)
-        # mean_perf 值用于 critic 辅助头的 target
-        info["mean_perf_value"] = rc.get("mean_perf_score", 0.0)
-        terminal_reward = final_reward["raw_final_reward"] + dense_reward
+        # 辅助 critic target：终点用 completion score（文档修改方案 第6步）
+        info["mean_perf_value"] = float(self._partial_completion_score)
+        # 终止步只返回 terminal sparse reward
+        terminal_reward = final_reward["raw_final_reward"]
         info["total_reward"] = terminal_reward
         return self._get_state(), terminal_reward, True, info
 
     def _compute_final_reward(self):
-        mc_eval = self._evaluate_noise_config_mc()
-        loss = mc_eval["loss_mean"]
-        m1 = mc_eval["metric1_mean"]
-        m2 = mc_eval["metric2_mean"]
+        """训练期 terminal reward：使用单次评估 + single_shot_margin（文档修改方案 第4步）。
+
+        训练时学一个"单样本可学习"的 terminal objective，
+        评估/筛选时仍然用 repeated tail-safe objective（在 confirm/finalist 流程中）。
+        """
+        # 训练期使用单次评估（文档修改方案 第1/4步）
+        trial, mc_eval = self._evaluate_noise_config_single()
+        loss = trial["loss"]
+        m1 = trial["metric1"]
+        m2 = trial["metric2"]
 
         self.current_episode_metrics = {
             "loss": loss,
@@ -2885,7 +3183,12 @@ class _NoiseOptEnv:
             "metric2": m2,
             "cost": self.accumulated_cost,
         }
-        raw_final_reward, reward_components = self._assemble_final_reward(loss, m1, m2, mc_eval=mc_eval)
+
+        # 使用 single_shot_margin 模式计算 terminal reward（文档修改方案 第4步）
+        raw_final_reward, reward_components = self._compute_single_shot_terminal_reward(
+            loss, m1, m2, mc_eval=mc_eval,
+        )
+        self.last_reward_components = dict(reward_components)
         self.last_mc_eval = mc_eval
 
         # 更新尾部风险状态（供下一 episode 的 continuous features 使用）
@@ -2898,6 +3201,122 @@ class _NoiseOptEnv:
             "mc_eval": mc_eval,
             "reward_components": reward_components,
         }
+
+    def _compute_single_shot_terminal_reward(self, loss, m1, m2, mc_eval=None):
+        """训练期 single-shot terminal reward：基于单次评估的归一化 margin + violation penalty + 轻量 cost score。
+
+        不再使用 tail-safe 多试验 reward，因为 n=1 时 tail 概念不成立（文档修改方案 第4步）。
+        """
+        limits = self._get_current_constraint_limits()
+
+        # 归一化 margin
+        margin_loss = (float(limits["loss"]) - float(loss)) / max(
+            float(limits["loss"]) - float(self.baseline_loss), 1e-8
+        )
+        margin_m1 = (float(m1) - float(limits["metric1"])) / max(
+            float(self.baseline_p) - float(limits["metric1"]), 1e-8
+        )
+        if self.num_metrics > 1:
+            margin_m2 = (float(m2) - float(limits["metric2"])) / max(
+                float(self.baseline_s) - float(limits["metric2"]), 1e-8
+            )
+        else:
+            margin_m2 = 0.0
+
+        # violation penalty
+        viol_loss = max(0.0, -margin_loss)
+        viol_m1 = max(0.0, -margin_m1)
+        viol_m2 = max(0.0, -margin_m2) if self.num_metrics > 1 else 0.0
+        violation_penalty = (
+            float(self._barrier_weights["loss"]) * viol_loss
+            + float(self._barrier_weights["metric1"]) * viol_m1
+        )
+        if self.num_metrics > 1:
+            violation_penalty += float(self._barrier_weights.get("metric2", 0.0)) * viol_m2
+
+        # margin utility
+        util_loss = max(0.0, margin_loss)
+        util_m1 = max(0.0, margin_m1)
+        util_m2 = max(0.0, margin_m2) if self.num_metrics > 1 else 0.0
+        margin_utility = (
+            float(self._perf_weights["loss"]) * util_loss
+            + float(self._perf_weights["metric1"]) * util_m1
+        )
+        if self.num_metrics > 1:
+            margin_utility += float(self._perf_weights.get("metric2", 0.0)) * util_m2
+
+        # 轻量 cost score
+        cost_score = float(np.clip(
+            (float(self._cost_upper_bound) - float(self.accumulated_cost))
+            / max(float(self._cost_upper_bound) - float(self._cost_lower_bound), 1e-8),
+            0.0, 1.0,
+        ))
+        cost_saving = (float(self._cost_upper_bound) - float(self.accumulated_cost)) / max(
+            float(self._cost_upper_bound), 1e-8
+        )
+
+        # 约束通过判定
+        constraints_ok = (margin_loss >= 0.0) and (margin_m1 >= 0.0)
+        if self.num_metrics > 1:
+            constraints_ok = constraints_ok and (margin_m2 >= 0.0)
+
+        # safe_rate / safe_rate_gap 的单样本近似
+        safe_rate = 1.0 if constraints_ok else 0.0
+        safe_rate_gap = max(0.0, float(self._safe_rate_target) - safe_rate)
+
+        # single-shot terminal reward（与 R_tail-train 结构对齐，但基于单样本）
+        raw_reward = (
+            float(NOISE_STAGE_TAIL_MARGIN_WEIGHT) * margin_utility
+            - float(NOISE_STAGE_TAIL_VIOLATION_WEIGHT) * violation_penalty
+            - float(NOISE_STAGE_SAFE_RATE_GAP_WEIGHT) * safe_rate_gap
+            + float(NOISE_STAGE_MEAN_PERF_WEIGHT) * margin_utility  # mean_perf 退化为 margin_utility
+            + float(NOISE_STAGE_COST_WEIGHT) * cost_score
+        )
+
+        reward_components = {
+            "loss_limit": float(limits["loss"]),
+            "metric1_limit": float(limits["metric1"]),
+            "metric2_limit": float(limits.get("metric2", limits["metric1"])),
+            "loss_ratio": float(margin_loss),
+            "metric1_ratio": float(margin_m1),
+            "metric2_ratio": float(margin_m2),
+            "perf_score": float(margin_utility),
+            "cost_score": float(cost_score),
+            "barrier_penalty": float(violation_penalty),
+            "stability_proxy": 0.0,
+            "stability_penalty": 0.0,
+            "constraints_ok": bool(constraints_ok),
+            "cost_lower_bound": float(self._cost_lower_bound),
+            "cost_upper_bound": float(self._cost_upper_bound),
+            "current_cost": float(self.accumulated_cost),
+            "cost_saving": float(cost_saving),
+            "metric2_active": bool(self.num_metrics > 1),
+            # 单样本风险指标
+            "safe_rate": float(safe_rate),
+            "safe_rate_gap": float(safe_rate_gap),
+            "tail_k": 1,
+            "tail_violation_cvar": float(violation_penalty),
+            "tail_margin_score": float(margin_utility),
+            "mean_perf_score": float(margin_utility),
+            "unsafe_count": 0 if constraints_ok else 1,
+            "tail_loss_mean": float(loss),
+            "tail_acc_mean": float(m1),
+            "tail_f1_mean": float(m2) if self.num_metrics > 1 else float(m1),
+            # reward 权重
+            "tail_margin_weight": float(NOISE_STAGE_TAIL_MARGIN_WEIGHT),
+            "tail_violation_weight": float(NOISE_STAGE_TAIL_VIOLATION_WEIGHT),
+            "safe_rate_gap_weight": float(NOISE_STAGE_SAFE_RATE_GAP_WEIGHT),
+            "mean_perf_weight_coef": float(NOISE_STAGE_MEAN_PERF_WEIGHT),
+            "cost_weight_coef": float(NOISE_STAGE_COST_WEIGHT),
+            "safe_rate_target": float(self._safe_rate_target),
+            "raw_tail_reward": float(raw_reward),
+            "raw_final_reward": float(raw_reward),
+            "final_selection_score": float(raw_reward),
+            "terminal_reward_mode": "single_shot_margin",
+        }
+        self.last_cost_reward = float(self._final_reward_alpha_cost * cost_score)
+        self.last_acc_reward = float(self._final_reward_alpha_perf * margin_utility)
+        return float(raw_reward), reward_components
 
 
 # ---------------------------------------------------------------------------
@@ -3178,6 +3597,27 @@ def _write_noise_step_info(step_info, f):
         f.write(f"  稳定性代理（stability_proxy）: {step_info['stability_proxy']}\n")
     if step_info.get("stability_penalty") is not None:
         f.write(f"  稳定性惩罚（stability_penalty）: {step_info['stability_penalty']}\n")
+    # dense probe 详情（文档修改方案 第8步）
+    if step_info.get("partial_probe_loss") is not None:
+        f.write(f"  部分探测损失（partial_probe_loss）: {step_info['partial_probe_loss']}\n")
+    if step_info.get("partial_probe_metric1") is not None:
+        f.write(f"  部分探测指标1（partial_probe_metric1）: {step_info['partial_probe_metric1']}\n")
+    if step_info.get("partial_probe_metric2") is not None:
+        f.write(f"  部分探测指标2（partial_probe_metric2）: {step_info['partial_probe_metric2']}\n")
+    if step_info.get("partial_margin_loss") is not None:
+        f.write(f"  部分余量损失（partial_margin_loss）: {step_info['partial_margin_loss']}\n")
+    if step_info.get("partial_margin_metric1") is not None:
+        f.write(f"  部分余量指标1（partial_margin_metric1）: {step_info['partial_margin_metric1']}\n")
+    if step_info.get("partial_margin_metric2") is not None:
+        f.write(f"  部分余量指标2（partial_margin_metric2）: {step_info['partial_margin_metric2']}\n")
+    if step_info.get("partial_completion_score") is not None:
+        f.write(f"  部分补全分数（partial_completion_score）: {step_info['partial_completion_score']}\n")
+    if step_info.get("partial_violation_penalty") is not None:
+        f.write(f"  部分违约惩罚（partial_violation_penalty）: {step_info['partial_violation_penalty']}\n")
+    if step_info.get("remaining_budget_ratio") is not None:
+        f.write(f"  剩余预算比例（remaining_budget_ratio）: {step_info['remaining_budget_ratio']}\n")
+    if step_info.get("completion_policy") is not None:
+        f.write(f"  补全策略（completion_policy）: {step_info['completion_policy']}\n")
 
 
 def _write_warning_report(warning_file, warnings, stage_label=""):
@@ -3226,7 +3666,13 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
                             gtrxl_mini_batch_episodes=8,
                             value_clip_range=0.2,
                             mean_aux_loss_coef=NOISE_STAGE_MEAN_AUX_LOSS_COEF):
-    """双头 critic PPO 更新：advantage 仅用 tail head，value loss 包含 tail + mean aux。"""
+    """双头 critic PPO 更新（文档修改方案 第7步）。
+
+    rewards = 新的 dense delta reward + terminal single-shot reward。
+    mean_perf_targets = 每步 partial probe score（不再是终点 mean_perf）。
+    actor 仍然学最大化累积回报；主 critic 仍然学回报值函数；
+    辅助 critic 不再学"最后才冒出来的 mean_perf"，而学"当前前缀 completion quality"。
+    """
     if entropy_coef is None:
         entropy_coef = evaluator.get_current_entropy_coef()
 

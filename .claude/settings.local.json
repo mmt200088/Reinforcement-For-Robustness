@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(find d:Desktop1隐私计算LLMLocal_programrl_resultslayer_importance_runsmrpc20260329_015856_pid327271stage2_noise -type f -name *.txt -o -name *.json -o -name *.csv)",
-      "Bash(grep -n \"NOISE_SCALING_FACTOR_KEYS\" \"d:\\\\Desktop\\\\1隐私计算LLM\\\\Local_program\"/*.py)"
+      "Bash(grep -n \"NOISE_SCALING_FACTOR_KEYS\" \"d:\\\\Desktop\\\\1隐私计算LLM\\\\Local_program\"/*.py)",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('noise_rl_module.py', doraise=True\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('layer_importance_evaluator.py', doraise=True\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('noise_rl_module.py', doraise=True\\); py_compile.compile\\('layer_importance_evaluator.py', doraise=True\\); print\\('OK'\\)\")"
     ]
   }
 }
