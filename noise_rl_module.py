@@ -1509,7 +1509,7 @@ class NoiseRLModule:
                 "wffn1_noise_scaling_factors": np.array(env.wffn1_noise_config, dtype=int),
                 "wffn2_noise_scaling_factors": np.array(env.wffn2_noise_config, dtype=int),
                 "cost": env.accumulated_cost,
-                "reward": episode_raw_final_reward if episode_raw_final_reward is not None else 0.0,
+                "reward": episode_reward_raw,
                 "raw_final_reward": episode_raw_final_reward if episode_raw_final_reward is not None else 0.0,
                 "final_selection_score": (
                     episode_final_selection_score
@@ -2756,7 +2756,10 @@ class _NoiseOptEnv:
 
         self.current_layer += 1
         if self.current_layer < self.total_layers:
-            return self._get_state(), 0.0, False, info
+            info["accumulated_dense_reward"] = self.accumulated_dense_reward
+            info["dense_reward_adjustment"] = dense_reward
+            info["dense_reward_cancelled"] = False
+            return self._get_state(), dense_reward, False, info
 
         final_reward = self._compute_final_reward()
         rc = final_reward["reward_components"]
@@ -2766,8 +2769,8 @@ class _NoiseOptEnv:
         info["mc_eval"] = final_reward["mc_eval"]
         info["reward_components"] = rc
         info["accumulated_dense_reward"] = self.accumulated_dense_reward
-        info["dense_reward_adjustment"] = 0.0
-        info["dense_reward_cancelled"] = True
+        info["dense_reward_adjustment"] = dense_reward
+        info["dense_reward_cancelled"] = False
         # 尾部安全指标
         info["train_safe_rate"] = rc.get("safe_rate", 0.0)
         info["train_tail_k"] = rc.get("tail_k", 0)
@@ -2779,7 +2782,8 @@ class _NoiseOptEnv:
         info["unsafe_sample_count"] = rc.get("unsafe_count", 0)
         # mean_perf 值用于 critic 辅助头的 target
         info["mean_perf_value"] = rc.get("mean_perf_score", 0.0)
-        terminal_reward = final_reward["raw_final_reward"]
+        terminal_reward = final_reward["raw_final_reward"] + dense_reward
+        info["total_reward"] = terminal_reward
         return self._get_state(), terminal_reward, True, info
 
     def _compute_final_reward(self):
