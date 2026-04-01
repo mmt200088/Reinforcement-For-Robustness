@@ -246,6 +246,9 @@ PPO_MAX_EPISODES = 51000
 PPO_UPDATE_INTERVAL = 170  # 每170个episode更新一次
 PPO_BATCH_SIZE = 12 * 170  # 170 episodes per update
 
+STEP_INFO_CHUNK_SIZE = 510
+REWARD_DROP_WARNING_THRESHOLD = 0.2
+
 # ==================== 策略二：超参数配置（PDF 6.4 稳定性修复） ====================
 # PDF 6.4：降低学习率，使用恒定学习率先跑通基线
 PPO_LR_INITIAL = 5e-5       # 初始学习率（PDF 6.4：降至5e-5）
@@ -4460,11 +4463,37 @@ class LayerImportanceEvaluator(TrainerCallback):
         if (not self.skip_stage1_rl) and SEARCH_MODE in ("rl", "both"):
             self.log("\n--- 阶段2（Phase 2）: PPO强化学习训练（PPO Reinforcement Learning Training） ---")
         
-            # 初始化 StepInfo 输出文件
-            with open(self.step_info_file, "w", encoding="utf-8") as f:
-                f.write("=== PPO每步信息（StepInfo）中间结果日志 ===\n")
-                f.write("每步包含: 全局步数（step_global）, 回合编号（episode_id）, 层索引（layer_index）, 状态向量（state_vector）, 当前GELU阶数（curr_gelu_degree）, 当前Softmax阶数（curr_softmax_degree）, GELU概率分布（gelu_prob_dist）, Softmax概率分布（softmax_prob_dist）, 评论家值（critic_value）, 累计成本（accumulated_cost）, GELU配置（gelu_config）, Softmax配置（softmax_config）\n\n")
-        
+            step_info_details_dir = os.path.join(os.path.dirname(self.step_info_file), "details")
+            os.makedirs(step_info_details_dir, exist_ok=True)
+            step_info_chunk_file = [None]
+            step_info_chunk_idx = [0]
+            stage1_warning_file = os.path.join(os.path.dirname(self.step_info_file), "warning.txt")
+            stage1_prev_avg_reward = [None]
+            stage1_warnings = []
+
+            def _get_stage1_chunk_filename(episode_1based):
+                chunk_start = ((episode_1based - 1) // STEP_INFO_CHUNK_SIZE) * STEP_INFO_CHUNK_SIZE + 1
+                chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
+                return os.path.join(
+                    step_info_details_dir,
+                    f"ppo_step_info_{chunk_start}-{chunk_end}.txt",
+                )
+
+            def _open_stage1_chunk(episode_1based):
+                target = _get_stage1_chunk_filename(episode_1based)
+                new_idx = (episode_1based - 1) // STEP_INFO_CHUNK_SIZE
+                if step_info_chunk_file[0] is not None and step_info_chunk_idx[0] == new_idx:
+                    return step_info_chunk_file[0]
+                if step_info_chunk_file[0] is not None:
+                    step_info_chunk_file[0].close()
+                chunk_start = new_idx * STEP_INFO_CHUNK_SIZE + 1
+                chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
+                f = open(target, "w", encoding="utf-8")
+                f.write(f"=== PPO每步信息（StepInfo）回合 {chunk_start}-{chunk_end} ===\n\n")
+                step_info_chunk_file[0] = f
+                step_info_chunk_idx[0] = new_idx
+                return f
+
             # 初始化GTrXL策略价值网络（Transformer PDF优化方案）
             # GTrXL骨干 + 独立Actor/Critic头
             # - 3层GTrXL Block (d_model=64, n_heads=4, GRU门控)
@@ -4669,12 +4698,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                 # 更新运行时回报统计量
                 self.update_reward_statistics(episode_reward)
                 
-                # 将 StepInfo 中间结果输出到文件
-                with open(self.step_info_file, "a", encoding="utf-8") as f:
-                    f.write(f"--- 回合（Episode） {episode + 1} (奖励Reward={episode_reward:.4f}) ---\n")
-                    for si in step_infos:
-                        self._write_step_info(si, f)
-                        f.write("\n")
+                chunk_f = _open_stage1_chunk(episode + 1)
+                chunk_f.write(f"--- 回合（Episode） {episode + 1} (奖励Reward={episode_reward:.4f}) ---\n")
+                for si in step_infos:
+                    self._write_step_info(si, chunk_f)
+                    chunk_f.write("\n")
+                chunk_f.flush()
                 
                 # 检查是否为最优解
                 final_config = {
@@ -4723,6 +4752,35 @@ class LayerImportanceEvaluator(TrainerCallback):
                         f"  │ [GTrXL调度] LR: {optimizer.param_groups[0]['lr']:.6f}, 熵系数: {current_entropy:.6f}, 更新次数: #{gtrxl_ppo_update_count} ({warmup_status})\n"
                         f"  ╰──────────────────────────────╯"
                     )
+
+                    if stage1_prev_avg_reward[0] is not None:
+                        reward_drop = stage1_prev_avg_reward[0] - avg_reward
+                        if reward_drop > REWARD_DROP_WARNING_THRESHOLD:
+                            window_start_ep = episode + 1 - PPO_UPDATE_INTERVAL + 1
+                            window_end_ep = episode + 1
+                            involved_files = sorted(set(
+                                _get_stage1_chunk_filename(e)
+                                for e in range(window_start_ep, window_end_ep + 1)
+                            ))
+                            involved_basenames = [os.path.basename(fp) for fp in involved_files]
+                            warn_msg = {
+                                "type": "阶段1奖励骤降",
+                                "window": gtrxl_ppo_update_count,
+                                "prev_avg": float(stage1_prev_avg_reward[0]),
+                                "curr_avg": float(avg_reward),
+                                "drop": float(reward_drop),
+                                "threshold": float(REWARD_DROP_WARNING_THRESHOLD),
+                                "episode_range": (window_start_ep, window_end_ep),
+                                "detail_files": involved_basenames,
+                            }
+                            stage1_warnings.append(warn_msg)
+                            self.log(
+                                f"  ⚠ 警告: 平均奖励下降 {reward_drop:.4f} "
+                                f"(阈值={REWARD_DROP_WARNING_THRESHOLD}), "
+                                f"涉及回合 {window_start_ep}-{window_end_ep}"
+                            )
+                    stage1_prev_avg_reward[0] = avg_reward
+
                     confirm_stage1_candidate(
                         window_best_config,
                         episode_idx=episode,
@@ -4759,6 +4817,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                     episode_idx=self.stage1_rl_episodes - 1,
                     window_idx=gtrxl_ppo_update_count,
                 )
+
+            if step_info_chunk_file[0] is not None:
+                step_info_chunk_file[0].close()
+                step_info_chunk_file[0] = None
+
+            if stage1_warnings:
+                from noise_rl_module import _write_warning_report
+                _write_warning_report(stage1_warning_file, stage1_warnings, stage_label="阶段1（Stage-1 RL）")
+                self.log(f"  ⚠ 共检测到 {len(stage1_warnings)} 次奖励骤降警告，详见: {stage1_warning_file}")
 
             best_config = None
             if global_best_config is not None:
