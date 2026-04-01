@@ -146,7 +146,7 @@ def _compute_tail_metrics_from_trials(
     baseline_loss, baseline_metric1, baseline_metric2 = baseline_metrics
     loss_limit = float(constraint_limits["loss"])
     m1_limit = float(constraint_limits["metric1"])
-    m2_limit = float(constraint_limits["metric2"])
+    m2_limit = float(constraint_limits.get("metric2", m1_limit)) if num_metrics > 1 else m1_limit
 
     n = len(trials)
     tail_k = max(k_min, math.ceil(alpha * n))
@@ -161,7 +161,7 @@ def _compute_tail_metrics_from_trials(
     for trial in trials:
         t_loss = float(trial["loss"])
         t_m1 = float(trial["metric1"])
-        t_m2 = float(trial["metric2"])
+        t_m2 = float(trial.get("metric2", t_m1)) if num_metrics > 1 else t_m1
 
         # 归一化 margin：正值=安全，负值=违约
         margin_loss = (loss_limit - t_loss) / max(loss_limit - float(baseline_loss), 1e-8)
@@ -223,7 +223,10 @@ def _compute_tail_metrics_from_trials(
     violation_indices = sorted(range(n), key=lambda i: per_trial_violation_costs[i], reverse=True)[:tail_k]
     tail_loss_mean = float(np.mean([trials[i]["loss"] for i in violation_indices]))
     tail_m1_mean = float(np.mean([trials[i]["metric1"] for i in violation_indices]))
-    tail_m2_mean = float(np.mean([trials[i]["metric2"] for i in violation_indices]))
+    tail_m2_mean = (
+        float(np.mean([trials[i].get("metric2", trials[i]["metric1"]) for i in violation_indices]))
+        if num_metrics > 1 else tail_m1_mean
+    )
 
     return {
         "n": n,
@@ -957,8 +960,14 @@ class NoiseRLModule:
             }
             # 尾部风险指标
             if constraint_lims is not None:
-                trials = summary.get("trials")
-                if trials is None:
+                raw_trials = summary.get("trials")
+                if raw_trials is not None:
+                    # 重映射键名：评估器返回 "p"/"s"，tail 指标计算需要 "metric1"/"metric2"
+                    trials = [
+                        {"loss": t["loss"], "metric1": t["p"], "metric2": t["s"]}
+                        for t in raw_trials
+                    ]
+                else:
                     trials = [
                         {"loss": summary["loss_mean"], "metric1": summary["p_mean"], "metric2": summary["s_mean"]}
                     ] * int(summary["n"])
@@ -2366,10 +2375,11 @@ class _NoiseOptEnv:
         self._episode_progress = float(episode) / max(1, int(total_episodes))
 
     def _get_current_constraint_limits(self):
+        m1_limit = float(self.constraint_limits["metric1"])
         base_limits = {
             "loss": float(self.constraint_limits["loss"]),
-            "metric1": float(self.constraint_limits["metric1"]),
-            "metric2": float(self.constraint_limits["metric2"]),
+            "metric1": m1_limit,
+            "metric2": float(self.constraint_limits.get("metric2", m1_limit)),
         }
         base_evaluator = getattr(self.evaluator, "evaluator", None)
         if base_evaluator is not None and hasattr(base_evaluator, "get_curriculum_constraints"):
@@ -2831,7 +2841,7 @@ def _compute_stage2_reward_components(
     baseline_loss, baseline_metric1, baseline_metric2 = baseline_metrics
     loss_limit = float(constraint_limits["loss"])
     metric1_limit = float(constraint_limits["metric1"])
-    metric2_limit = float(constraint_limits["metric2"])
+    metric2_limit = float(constraint_limits.get("metric2", metric1_limit)) if num_metrics > 1 else metric1_limit
 
     # 均值 ratio 用于兼容字段
     loss_ratio = (loss_limit - float(loss)) / max(loss_limit - float(baseline_loss), 1e-8)
@@ -2891,7 +2901,7 @@ def _compute_stage2_reward_components(
         unsafe_count = 0 if constraints_ok else 1
         tail_loss_mean = float(loss)
         tail_acc_mean = float(metric1)
-        tail_f1_mean = float(metric2)
+        tail_f1_mean = float(metric2) if num_metrics > 1 else float(metric1)
 
     # R_tail-train（文档 3.4）
     safe_rate_gap = max(0.0, float(safe_rate_target) - safe_rate)
@@ -3252,7 +3262,7 @@ def _plot_noise_training_curves(
             os.makedirs(training_dir, exist_ok=True)
         plt.savefig(training_curve_path, dpi=150)
         plt.close()
-        evaluator.log(f"Noise PPO training curves saved to: {training_curve_path}")
+        evaluator.log(f"噪声PPO训练曲线已保存至（saved to）: {training_curve_path}")
 
         if episode_entropies:
             update_episodes = np.arange(ppo_update_interval, len(episode_returns) + 1, ppo_update_interval)
@@ -3276,9 +3286,9 @@ def _plot_noise_training_curves(
                     os.makedirs(entropy_dir, exist_ok=True)
                 plt.savefig(entropy_curve_path, dpi=150)
                 plt.close()
-                evaluator.log(f"Noise PPO entropy curve saved to: {entropy_curve_path}")
+                evaluator.log(f"噪声PPO熵曲线已保存至（saved to）: {entropy_curve_path}")
     except Exception as e:
-        evaluator.log(f"[Warning] Failed to plot Noise PPO training curves: {e}")
+        evaluator.log(f"[警告] 绘制噪声PPO训练曲线失败（Failed to plot Noise PPO training curves）: {e}")
 
 
 def _plot_noise_risk_curves(
