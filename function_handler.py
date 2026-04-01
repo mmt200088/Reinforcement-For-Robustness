@@ -109,6 +109,42 @@ def add_gaussian_input_noise(
     return hidden_states + noise
 
 
+def _format_noise_distribution_label(distribution: str) -> str:
+    distribution_key = str(distribution).lower()
+    distribution_labels = {
+        "fresh": "新采样（fresh）",
+        "encoding": "编码分布（encoding）",
+        "rescale": "重缩放（rescale）",
+    }
+    return distribution_labels.get(distribution_key, str(distribution))
+
+
+def _format_noise_target_label(target_key: str) -> str:
+    target_labels = {
+        "input": "输入噪声（Input noise）",
+        "query": "查询投影噪声（query noise）",
+        "key": "键投影噪声（key noise）",
+        "value": "值投影噪声（value noise）",
+        "wo": "注意力输出投影噪声（wo noise）",
+        "wffn1": "前馈网络第一层噪声（wffn1 noise）",
+        "wffn2": "前馈网络第二层噪声（wffn2 noise）",
+    }
+    return target_labels.get(str(target_key).lower(), f"{target_key} 噪声")
+
+
+def _format_noise_enable_message(
+        target_key: str,
+        layer_count: int,
+        scaling_factor: int,
+        distribution: str
+        ) -> str:
+    return (
+        f"已为 {int(layer_count)} 层启用{_format_noise_target_label(target_key)}，"
+        f"缩放因子（scaling_factor）={int(scaling_factor)}，"
+        f"分布（distribution）={_format_noise_distribution_label(distribution)}"
+    )
+
+
 def _make_input_noise_forward(original_forward, scaling_factor: int, distribution: str = "fresh"):
     def noisy_forward(hidden_states, *args, **kwargs):
         if hidden_states is None:
@@ -469,7 +505,7 @@ class ReversibleLayerHandler:
                 layer.intermediate.intermediate_act_fn = PolynomialGELU(degree=degree)
                 # layer.output.activation = PolynomialGELU(degree=degree)
         
-        print(f"已替换 {len(layer_indices)} 层的GELU函数")
+        print(f"已替换 {len(layer_indices)} 层的GELU函数（GELU function）")
     
     def replace_layer_norm(self, layer_indices=None, layer_name="model.model.layers", degree=1):
         """替换指定层的LayerNorm函数"""
@@ -522,7 +558,7 @@ class ReversibleLayerHandler:
                 new_attn.load_state_dict(orig_sd, strict=False)
                 layer.attention.self = new_attn
         
-        print(f"已替换 {len(layer_indices)} 层的Softmax函数")
+        print(f"已替换 {len(layer_indices)} 层的Softmax函数（Softmax function）")
     
     def replace_layer_input_noise(
             self,
@@ -561,10 +597,7 @@ class ReversibleLayerHandler:
             self.original_input_noise[i]["scaling_factor"] = int(scaling_factor)
             self.original_input_noise[i]["distribution"] = str(distribution).lower()
 
-        print(
-            f"Input noise enabled for {len(selected)} layers "
-            f"(scaling_factor={int(scaling_factor)}, distribution={distribution})"
-        )
+        print(_format_noise_enable_message("input", len(selected), scaling_factor, distribution))
 
     def _replace_attention_projection_noise(
             self,
@@ -605,10 +638,7 @@ class ReversibleLayerHandler:
             projection_store[i]["scaling_factor"] = int(scaling_factor)
             projection_store[i]["distribution"] = str(distribution).lower()
 
-        print(
-            f"{projection_name} noise enabled for {len(selected)} layers "
-            f"(scaling_factor={int(scaling_factor)}, distribution={distribution})"
-        )
+        print(_format_noise_enable_message(projection_name, len(selected), scaling_factor, distribution))
 
     def _replace_layer_linear_module_noise(
             self,
@@ -650,10 +680,7 @@ class ReversibleLayerHandler:
             projection_store[i]["scaling_factor"] = int(scaling_factor)
             projection_store[i]["distribution"] = str(distribution).lower()
 
-        print(
-            f"{store_key} noise enabled for {len(selected)} layers "
-            f"(scaling_factor={int(scaling_factor)}, distribution={distribution})"
-        )
+        print(_format_noise_enable_message(store_key, len(selected), scaling_factor, distribution))
 
     def replace_layer_query_noise(
             self,
@@ -756,7 +783,7 @@ class ReversibleLayerHandler:
                 layer.intermediate.intermediate_act_fn = self.original_gelu[i]['act_fn']
                 # layer.output.activation = self.original_gelu[i]['output']
         
-        print(f"已恢复 {len(layer_indices)} 层的原始GELU函数")
+        print(f"已恢复 {len(layer_indices)} 层的原始GELU函数（original GELU function）")
     
     def restore_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention"):
         """恢复指定层的原始Softmax函数"""
