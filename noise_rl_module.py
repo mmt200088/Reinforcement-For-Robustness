@@ -331,6 +331,8 @@ class NoiseRLModule:
             USE_VALIDATION_FOR_REWARD,
             VALUE_CLIP_RANGE,
             GTrXLBlock,
+            STEP_INFO_CHUNK_SIZE,
+            REWARD_DROP_WARNING_THRESHOLD,
         )
 
         ev = self.evaluator
@@ -564,9 +566,38 @@ class NoiseRLModule:
         )
         os.makedirs(noise_progress_dir, exist_ok=True)
 
-        with open(ev.noise_step_info_file, "w", encoding="utf-8") as f:
-            f.write("=== 噪声PPO每步信息（Noise PPO StepInfo）中间结果日志 ===\n")
-            f.write("每步包含: 全局步数（step_global）, 回合编号（episode_id）, 层索引（layer_index）, 状态向量（state_vector）, 7个动作的缩放因子（scaling factor）, 7个动作概率分布, 评论家值（critic_value）, 累计成本（accumulated_cost）, 各类噪声（noise）配置\n\n")
+        noise_step_info_details_dir = os.path.join(os.path.dirname(ev.noise_step_info_file), "details")
+        os.makedirs(noise_step_info_details_dir, exist_ok=True)
+        noise_step_info_chunk_file = [None]
+        noise_step_info_chunk_idx = [0]
+        noise_warning_file = os.path.join(os.path.dirname(ev.noise_step_info_file), "warning.txt")
+        noise_prev_avg_reward = [None]
+        noise_warnings = []
+
+        def _get_noise_chunk_filename(episode_1based):
+            """根据回合号返回所属分片文件路径"""
+            chunk_start = ((episode_1based - 1) // STEP_INFO_CHUNK_SIZE) * STEP_INFO_CHUNK_SIZE + 1
+            chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
+            return os.path.join(
+                noise_step_info_details_dir,
+                f"noise_ppo_step_info_{chunk_start}-{chunk_end}.txt",
+            )
+
+        def _open_noise_chunk(episode_1based):
+            """打开当前回合所属的分片文件（如需切换则关闭旧文件并打开新文件）"""
+            target = _get_noise_chunk_filename(episode_1based)
+            new_idx = (episode_1based - 1) // STEP_INFO_CHUNK_SIZE
+            if noise_step_info_chunk_file[0] is not None and noise_step_info_chunk_idx[0] == new_idx:
+                return noise_step_info_chunk_file[0]
+            if noise_step_info_chunk_file[0] is not None:
+                noise_step_info_chunk_file[0].close()
+            chunk_start = new_idx * STEP_INFO_CHUNK_SIZE + 1
+            chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
+            f = open(target, "w", encoding="utf-8")
+            f.write(f"=== 噪声PPO每步信息（Noise PPO StepInfo）回合 {chunk_start}-{chunk_end} ===\n\n")
+            noise_step_info_chunk_file[0] = f
+            noise_step_info_chunk_idx[0] = new_idx
+            return f
 
         original_total_episodes = getattr(ev, "total_episodes", stage2_total_episodes)
         ev.total_episodes = stage2_total_episodes
@@ -1452,16 +1483,17 @@ class NoiseRLModule:
             episode_tail_margin_scores.append(float(_rc.get("tail_margin_score", 0.0)))
 
             ev.update_reward_statistics(episode_reward_raw)
-            with open(ev.noise_step_info_file, "a", encoding="utf-8") as f:
-                f.write(
-                    f"--- 回合（Episode） {episode + 1} "
-                    f"(回合回报（EpisodeReturn）={episode_reward_raw:.4f}, "
-                    f"原始最终奖励（RawFinalReward）={(episode_raw_final_reward if episode_raw_final_reward is not None else 0.0):.4f}, "
-                    f"稠密奖励合计（DenseRewardTotal）={env.accumulated_dense_reward:.4f}) ---\n"
-                )
-                for si in step_infos:
-                    _write_noise_step_info(si, f)
-                    f.write("\n")
+            chunk_f = _open_noise_chunk(episode + 1)
+            chunk_f.write(
+                f"--- 回合（Episode） {episode + 1} "
+                f"(回合回报（EpisodeReturn）={episode_reward_raw:.4f}, "
+                f"原始最终奖励（RawFinalReward）={(episode_raw_final_reward if episode_raw_final_reward is not None else 0.0):.4f}, "
+                f"稠密奖励合计（DenseRewardTotal）={env.accumulated_dense_reward:.4f}) ---\n"
+            )
+            for si in step_infos:
+                _write_noise_step_info(si, chunk_f)
+                chunk_f.write("\n")
+            chunk_f.flush()
 
             reward_components = (
                 dict(env.last_reward_components)
@@ -1594,6 +1626,35 @@ class NoiseRLModule:
                     f"  │ [GTrXL调度] LR: {optimizer.param_groups[0]['lr']:.6f}, 熵系数: {current_entropy:.6f}, 更新次数: #{noise_ppo_update_count} (模式: {NOISE_STAGE_GTRXL_WARMUP_MODE}, 状态: {warmup_status})\n"
                     f"  ╰────────────────────────────────────────╯"
                 )
+
+                if noise_prev_avg_reward[0] is not None:
+                    reward_drop = noise_prev_avg_reward[0] - avg_raw_final_reward
+                    if reward_drop > REWARD_DROP_WARNING_THRESHOLD:
+                        window_start_ep = episode + 1 - PPO_UPDATE_INTERVAL + 1
+                        window_end_ep = episode + 1
+                        involved_files = sorted(set(
+                            _get_noise_chunk_filename(e)
+                            for e in range(window_start_ep, window_end_ep + 1)
+                        ))
+                        involved_basenames = [os.path.basename(fp) for fp in involved_files]
+                        warn_msg = {
+                            "type": "噪声阶段奖励骤降",
+                            "window": noise_ppo_update_count,
+                            "prev_avg": float(noise_prev_avg_reward[0]),
+                            "curr_avg": float(avg_raw_final_reward),
+                            "drop": float(reward_drop),
+                            "threshold": float(REWARD_DROP_WARNING_THRESHOLD),
+                            "episode_range": (window_start_ep, window_end_ep),
+                            "detail_files": involved_basenames,
+                        }
+                        noise_warnings.append(warn_msg)
+                        ev.log(
+                            f"  ⚠ 警告: 平均奖励下降 {reward_drop:.4f} "
+                            f"(阈值={REWARD_DROP_WARNING_THRESHOLD}), "
+                            f"涉及回合 {window_start_ep}-{window_end_ep}"
+                        )
+                noise_prev_avg_reward[0] = avg_raw_final_reward
+
                 # 确认窗口内 top-k 候选（文档 7.4）
                 for _wti, _wtc in enumerate(window_top_candidates):
                     confirm_noise_candidate(
@@ -1768,6 +1829,14 @@ class NoiseRLModule:
             risk_curve_path=noise_risk_curve_path,
             confirm_curve_path=noise_confirm_curve_path,
         )
+
+        if noise_step_info_chunk_file[0] is not None:
+            noise_step_info_chunk_file[0].close()
+            noise_step_info_chunk_file[0] = None
+
+        if noise_warnings:
+            _write_warning_report(noise_warning_file, noise_warnings, stage_label="噪声阶段（Stage-2 Noise）")
+            ev.log(f"  ⚠ 共检测到 {len(noise_warnings)} 次奖励骤降警告，详见: {noise_warning_file}")
 
         ev.total_episodes = original_total_episodes
         ev.apply_configuration(fixed_gelu, fixed_softmax)
@@ -3018,6 +3087,40 @@ def _write_noise_step_info(step_info, f):
         f.write(f"  稳定性代理（stability_proxy）: {step_info['stability_proxy']}\n")
     if step_info.get("stability_penalty") is not None:
         f.write(f"  稳定性惩罚（stability_penalty）: {step_info['stability_penalty']}\n")
+
+
+def _write_warning_report(warning_file, warnings, stage_label=""):
+    """将奖励骤降警告写入美观的中文报告"""
+    import datetime
+    with open(warning_file, "w", encoding="utf-8") as f:
+        f.write("╔══════════════════════════════════════════════════════════════╗\n")
+        f.write("║              强化学习奖励骤降警告报告                        ║\n")
+        f.write("╠══════════════════════════════════════════════════════════════╣\n")
+        f.write(f"║  阶段: {stage_label:<52} ║\n")
+        f.write(f"║  生成时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'):<48} ║\n")
+        f.write(f"║  警告总数: {len(warnings):<48} ║\n")
+        f.write("╚══════════════════════════════════════════════════════════════╝\n\n")
+
+        for i, w in enumerate(warnings, 1):
+            ep_start, ep_end = w["episode_range"]
+            f.write(f"┌─────────────── 警告 #{i} ───────────────┐\n")
+            f.write(f"│ 类型:       {w['type']}\n")
+            f.write(f"│ 窗口编号:   第 {w['window']} 个更新窗口\n")
+            f.write(f"│ 上次平均奖励: {w['prev_avg']:.4f}\n")
+            f.write(f"│ 本次平均奖励: {w['curr_avg']:.4f}\n")
+            f.write(f"│ 下降幅度:     {w['drop']:.4f}（阈值: {w['threshold']:.2f}）\n")
+            f.write(f"│\n")
+            f.write(f"│ 涉及回合范围: 第 {ep_start} 轮 ~ 第 {ep_end} 轮\n")
+            f.write(f"│ 涉及详情文件:\n")
+            for df in w["detail_files"]:
+                f.write(f"│   → details/{df}\n")
+            f.write(f"│\n")
+            f.write(f"│ 建议: 请检查上述回合的详细步信息，排查策略是否\n")
+            f.write(f"│       发生了灾难性遗忘或探索过度。\n")
+            f.write(f"└───────────────────────────────────────┘\n\n")
+
+        f.write("═" * 62 + "\n")
+        f.write("报告结束\n")
 
 
 def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
