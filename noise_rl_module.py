@@ -119,19 +119,19 @@ NOISE_STAGE_BOOTSTRAP_ITERATIONS = 200
 
 
 def _get_low_risk_noise_configuration(evaluator):
-    """构建低风险参考噪声配置：每类噪声取允许集合中的最小 scaling factor。"""
+    """构建低风险参考噪声配置：每类噪声取允许集合中的最大 scaling factor。"""
     total_layers = evaluator.total_layers
-    min_input_sf = min(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
-    min_weight_sf = min(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
-    min_wffn1_sf = min(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
+    max_input_sf = max(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
+    max_weight_sf = max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+    max_wffn1_sf = max(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
     return {
-        "input_noise_scaling_factors": np.full(total_layers, min_input_sf, dtype=int),
-        "wq_noise_scaling_factors": np.full(total_layers, min_weight_sf, dtype=int),
-        "wk_noise_scaling_factors": np.full(total_layers, min_weight_sf, dtype=int),
-        "wv_noise_scaling_factors": np.full(total_layers, min_weight_sf, dtype=int),
-        "wo_noise_scaling_factors": np.full(total_layers, min_weight_sf, dtype=int),
-        "wffn1_noise_scaling_factors": np.full(total_layers, min_wffn1_sf, dtype=int),
-        "wffn2_noise_scaling_factors": np.full(total_layers, min_weight_sf, dtype=int),
+        "input_noise_scaling_factors": np.full(total_layers, max_input_sf, dtype=int),
+        "wq_noise_scaling_factors": np.full(total_layers, max_weight_sf, dtype=int),
+        "wk_noise_scaling_factors": np.full(total_layers, max_weight_sf, dtype=int),
+        "wv_noise_scaling_factors": np.full(total_layers, max_weight_sf, dtype=int),
+        "wo_noise_scaling_factors": np.full(total_layers, max_weight_sf, dtype=int),
+        "wffn1_noise_scaling_factors": np.full(total_layers, max_wffn1_sf, dtype=int),
+        "wffn2_noise_scaling_factors": np.full(total_layers, max_weight_sf, dtype=int),
     }
 
 
