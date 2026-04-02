@@ -1,0 +1,12 @@
+=== 第二阶段噪声RL优化日志已启动（Stage-2 Noise RL Optimization Log Started） ===
+[信息] PPO学习率（LR）从 rl_lr=20 解析为 -> 2e-05 (legacy-micro)
+[信息] 第一阶段RL回合数（Stage-1 RL episodes）: 51000 | 第二阶段RL回合数（Stage-2 RL episodes）: 15000
+[信息] 统一运行输出目录（Unified run output dir）: rl_results/layer_importance_runs/mrpc/20260402_204337_pid598198
+
+============================================================
+阶段5（PHASE 5）：第二阶段噪声强化学习（SECOND-STAGE NOISE RL）
+固定GELU/Softmax 来源（source）=json, 标签（label）=Selected (Saved RL)
+固定GELU   : [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1]
+固定Softmax: [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
+评估指标模式（Metric Mode）: num_metrics=2, 名称=('Accuracy', 'F1')
+============================================================
