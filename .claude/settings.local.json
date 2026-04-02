@@ -5,7 +5,8 @@
       "Bash(grep -n \"NOISE_SCALING_FACTOR_KEYS\" \"d:\\\\Desktop\\\\1隐私计算LLM\\\\Local_program\"/*.py)",
       "Bash(python -c \"import py_compile; py_compile.compile\\('noise_rl_module.py', doraise=True\\)\")",
       "Bash(python -c \"import py_compile; py_compile.compile\\('layer_importance_evaluator.py', doraise=True\\)\")",
-      "Bash(python -c \"import py_compile; py_compile.compile\\('noise_rl_module.py', doraise=True\\); py_compile.compile\\('layer_importance_evaluator.py', doraise=True\\); print\\('OK'\\)\")"
+      "Bash(python -c \"import py_compile; py_compile.compile\\('noise_rl_module.py', doraise=True\\); py_compile.compile\\('layer_importance_evaluator.py', doraise=True\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('noise_rl_module.py', doraise=True\\); print\\('OK'\\)\")"
     ]
   }
 }

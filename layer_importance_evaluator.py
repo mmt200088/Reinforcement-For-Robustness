@@ -21,6 +21,7 @@ from function_handler import (
     WFFN1_NOISE_DEFAULT_SCALING_FACTOR,
 )
 from final_evaluation_module import FinalEvaluationModule
+from noise_rl_module import _log_rounded_box
 import os
 import hashlib
 
@@ -4403,16 +4404,18 @@ class LayerImportanceEvaluator(TrainerCallback):
                     "holdout_ok": bool(search_ok),
                 })
 
-            self.log(f"  ╭── 窗口（Window） {window_idx + 1} 候选确认（candidate confirmation） ──╮")
-            self.log(f"  │ [搜索集 Search]")
-            self.log(f"  │   代理奖励: {proxy_reward:.4f}")
-            self.log(f"  │   指标: {self._fmt_metrics(search_loss, search_p, search_s)}")
+            _stage1_confirm_lines = [
+                f"窗口（Window） {window_idx + 1} 候选确认（candidate confirmation）",
+                "[搜索集 Search]",
+                f"  代理奖励: {proxy_reward:.4f}",
+                f"  指标: {self._fmt_metrics(search_loss, search_p, search_s)}",
+            ]
             if self.has_dataset_split("val_holdout"):
-                self.log(f"  │ [留出集 Holdout]")
-                self.log(
-                    f"  │   指标: {self._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}"
+                _stage1_confirm_lines.append("[留出集 Holdout]")
+                _stage1_confirm_lines.append(
+                    f"  指标: {self._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}"
                 )
-            
+
             if USE_TRAIN_ANCHOR and self.has_dataset_split("train_anchor"):
                 anchor_loss, anchor_p, anchor_s, _ = self.evaluate_model(
                     gelu_arr,
@@ -4424,10 +4427,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                     "train_anchor_metric1": float(anchor_p),
                     "train_anchor_metric2": float(anchor_s),
                 })
-                self.log(f"  │ [训练锚点 TrainAnchor]")
-                self.log(f"  │   指标: {self._fmt_metrics(anchor_loss, anchor_p, anchor_s)}")
+                _stage1_confirm_lines.append("[训练锚点 TrainAnchor]")
+                _stage1_confirm_lines.append(
+                    f"  指标: {self._fmt_metrics(anchor_loss, anchor_p, anchor_s)}"
+                )
 
-            self.log(f"  ╰──────────────────────────────────────────────────────────────╯")
+            _log_rounded_box(self.log, _stage1_confirm_lines)
 
             if search_ok and self._is_better_confirmed_candidate(
                 confirmed_candidate,
@@ -4746,11 +4751,16 @@ class LayerImportanceEvaluator(TrainerCallback):
                     
                     avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
                     warmup_status = "warmup" if gtrxl_ppo_update_count <= GTRXL_WARMUP_STEPS else "normal"
-                    self.log(
-                        f"  ╭── 回合（Episode） {episode+1} ──╮\n"
-                        f"  │ 平均奖励: {avg_reward:.4f}, 策略损失: {policy_loss:.4f}, 价值损失: {value_loss:.4f}, 熵: {entropy:.4f}\n"
-                        f"  │ [GTrXL调度] LR: {optimizer.param_groups[0]['lr']:.6f}, 熵系数: {current_entropy:.6f}, 更新次数: #{gtrxl_ppo_update_count} ({warmup_status})\n"
-                        f"  ╰──────────────────────────────╯"
+                    _log_rounded_box(
+                        self.log,
+                        [
+                            f"回合（Episode） {episode + 1}",
+                            f"平均奖励: {avg_reward:.4f}, 策略损失: {policy_loss:.4f}, 价值损失: {value_loss:.4f}, 熵: {entropy:.4f}",
+                            (
+                                f"[GTrXL调度] LR: {optimizer.param_groups[0]['lr']:.6f}, "
+                                f"熵系数: {current_entropy:.6f}, 更新次数: #{gtrxl_ppo_update_count} ({warmup_status})"
+                            ),
+                        ],
                     )
 
                     if stage1_prev_avg_reward[0] is not None:
