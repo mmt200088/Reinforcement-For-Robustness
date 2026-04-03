@@ -8,6 +8,8 @@ gelu_analysis/**/*.png
 all_analysis/**/*.png
 all_analysis_new/**/*.png
 !pruning_search_log.txt
+# Stage-2 noise RL: step-info shards (global *.txt would hide them without -f)
+!rl_results/layer_importance_runs/**/stage2_noise/details/*.txt
 __pycache__/
 *.pyc
 
