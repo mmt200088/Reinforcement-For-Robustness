@@ -4833,3 +4833,300 @@
       score_mean=6564.4482, score_std=52056.7812, safe_rate=0.433, CVaR=65344.3384, stable=True
     entry_score=1.2243, gap=0.5128, tol=14.2703, entry_ok=True
     verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 523 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360153, Accuracy: 0.878246, F1: 0.875606
+      score_mean=0.7255, score_std=8.4788, safe_rate=0.333, CVaR=10.8394, stable=True
+    [Holdout]
+      损失（Loss）: 0.308331, Accuracy: 0.885095, F1: 0.884320
+      score_mean=22858.1641, score_std=67013.4375, safe_rate=0.367, CVaR=55972.4116, stable=True
+    entry_score=1.2029, gap=0.4774, tol=16.9575, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 524 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360237, Accuracy: 0.877544, F1: 0.875018
+      score_mean=-0.0570, score_std=8.2860, safe_rate=0.167, CVaR=11.6724, stable=True
+    [Holdout]
+      损失（Loss）: 0.309230, Accuracy: 0.883740, F1: 0.882998
+      score_mean=7639.3267, score_std=57738.2812, safe_rate=0.367, CVaR=79602.6435, stable=True
+    entry_score=1.1968, gap=1.2538, tol=16.5720, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 525 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359893, Accuracy: 0.877076, F1: 0.874428
+      score_mean=0.7446, score_std=9.3535, safe_rate=0.233, CVaR=11.1533, stable=True
+    [Holdout]
+      损失（Loss）: 0.308887, Accuracy: 0.884824, F1: 0.884089
+      score_mean=11365.3643, score_std=47688.7773, safe_rate=0.367, CVaR=54289.0126, stable=True
+    entry_score=1.1808, gap=0.4362, tol=18.7071, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 526 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359832, Accuracy: 0.878596, F1: 0.876073
+      score_mean=1.5634, score_std=7.3144, safe_rate=0.267, CVaR=7.8834, stable=True
+    [Holdout]
+      损失（Loss）: 0.309626, Accuracy: 0.884282, F1: 0.883550
+      score_mean=-1109.3225, score_std=37855.4727, safe_rate=0.300, CVaR=57844.7425, stable=True
+    entry_score=1.1843, gap=-0.3791, tol=14.6288, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 527 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360953, Accuracy: 0.878012, F1: 0.875433
+      score_mean=-2.1084, score_std=6.3399, safe_rate=0.167, CVaR=12.6030, stable=True
+    [Holdout]
+      损失（Loss）: 0.307926, Accuracy: 0.882656, F1: 0.881968
+      score_mean=27723.9023, score_std=60499.3438, safe_rate=0.433, CVaR=79819.1869, stable=True
+    entry_score=1.2207, gap=3.3291, tol=12.6799, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 528 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360671, Accuracy: 0.877778, F1: 0.875163
+      score_mean=-1.2132, score_std=7.3257, safe_rate=0.167, CVaR=10.6919, stable=True
+    [Holdout]
+      损失（Loss）: 0.309062, Accuracy: 0.882656, F1: 0.882024
+      score_mean=9527.1855, score_std=51637.4023, safe_rate=0.367, CVaR=42872.0262, stable=True
+    entry_score=1.2629, gap=2.4761, tol=14.6515, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 529 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360557, Accuracy: 0.877310, F1: 0.874685
+      score_mean=-0.9813, score_std=9.5264, safe_rate=0.167, CVaR=13.5430, stable=True
+    [Holdout]
+      损失（Loss）: 0.308506, Accuracy: 0.885908, F1: 0.885182
+      score_mean=18443.7070, score_std=56747.1133, safe_rate=0.367, CVaR=54591.3815, stable=True
+    entry_score=1.2014, gap=2.1828, tol=19.0529, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 530 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360565, Accuracy: 0.877778, F1: 0.875194
+      score_mean=-1.2501, score_std=5.0028, safe_rate=0.167, CVaR=7.7484, stable=True
+    [Holdout]
+      损失（Loss）: 0.308686, Accuracy: 0.884824, F1: 0.884059
+      score_mean=15951.2842, score_std=60294.6680, safe_rate=0.367, CVaR=60944.0350, stable=True
+    entry_score=1.2200, gap=2.4701, tol=10.0055, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 531 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359966, Accuracy: 0.879298, F1: 0.876694
+      score_mean=1.5376, score_std=7.7393, safe_rate=0.367, CVaR=8.3377, stable=True
+    [Holdout]
+      损失（Loss）: 0.309448, Accuracy: 0.882927, F1: 0.882256
+      score_mean=3036.8628, score_std=46528.4258, safe_rate=0.300, CVaR=57039.9040, stable=True
+    entry_score=1.1902, gap=-0.3474, tol=15.4787, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 532 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359397, Accuracy: 0.880117, F1: 0.877504
+      score_mean=4.0195, score_std=10.4392, safe_rate=0.500, CVaR=11.0346, stable=True
+    [Holdout]
+      损失（Loss）: 0.308524, Accuracy: 0.884824, F1: 0.884203
+      score_mean=16972.6055, score_std=49098.9648, safe_rate=0.433, CVaR=46979.4118, stable=True
+    entry_score=1.2357, gap=-2.7838, tol=20.8784, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 533 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359952, Accuracy: 0.878830, F1: 0.876327
+      score_mean=1.2359, score_std=6.3472, safe_rate=0.233, CVaR=6.4283, stable=True
+    [Holdout]
+      损失（Loss）: 0.309284, Accuracy: 0.882656, F1: 0.882000
+      score_mean=3506.9670, score_std=33460.7969, safe_rate=0.267, CVaR=36102.7562, stable=True
+    entry_score=1.2232, gap=-0.0127, tol=12.6945, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 534 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360420, Accuracy: 0.878947, F1: 0.876372
+      score_mean=0.1493, score_std=9.0663, safe_rate=0.267, CVaR=10.7765, stable=True
+    [Holdout]
+      损失（Loss）: 0.308710, Accuracy: 0.883198, F1: 0.882628
+      score_mean=15057.8906, score_std=53274.6758, safe_rate=0.333, CVaR=44343.0984, stable=True
+    entry_score=1.1786, gap=1.0293, tol=18.1325, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 535 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359754, Accuracy: 0.878480, F1: 0.875942
+      score_mean=2.2344, score_std=10.1201, safe_rate=0.300, CVaR=13.4810, stable=True
+    [Holdout]
+      损失（Loss）: 0.307165, Accuracy: 0.884282, F1: 0.883537
+      score_mean=39636.6914, score_std=57486.3633, safe_rate=0.500, CVaR=36786.2576, stable=True
+    entry_score=1.2538, gap=-0.9806, tol=20.2402, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 536 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360078, Accuracy: 0.879181, F1: 0.876645
+      score_mean=1.2899, score_std=8.3972, safe_rate=0.300, CVaR=9.3285, stable=True
+    [Holdout]
+      损失（Loss）: 0.308285, Accuracy: 0.884282, F1: 0.883566
+      score_mean=20096.8809, score_std=47110.4844, safe_rate=0.300, CVaR=36296.6203, stable=True
+    entry_score=1.2202, gap=-0.0697, tol=16.7944, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 537 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359804, Accuracy: 0.880234, F1: 0.877745
+      score_mean=2.2012, score_std=5.5106, safe_rate=0.567, CVaR=3.6988, stable=True
+    [Holdout]
+      损失（Loss）: 0.309354, Accuracy: 0.882927, F1: 0.882258
+      score_mean=993.6380, score_std=25143.2266, safe_rate=0.400, CVaR=39122.0200, stable=True
+    entry_score=1.1913, gap=-1.0099, tol=11.0212, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 538 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359781, Accuracy: 0.878012, F1: 0.875354
+      score_mean=1.8415, score_std=10.7237, safe_rate=0.233, CVaR=13.9811, stable=True
+    [Holdout]
+      损失（Loss）: 0.308193, Accuracy: 0.882114, F1: 0.881419
+      score_mean=23232.4414, score_std=63535.2500, safe_rate=0.233, CVaR=61597.7490, stable=True
+    entry_score=1.1914, gap=-0.6501, tol=21.4474, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 539 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360338, Accuracy: 0.877661, F1: 0.875099
+      score_mean=-0.2769, score_std=7.5580, safe_rate=0.233, CVaR=9.6815, stable=True
+    [Holdout]
+      损失（Loss）: 0.308232, Accuracy: 0.882114, F1: 0.881421
+      score_mean=22466.0840, score_std=58441.3359, safe_rate=0.400, CVaR=84765.4584, stable=True
+    entry_score=1.1991, gap=1.4759, tol=15.1160, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 540 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360791, Accuracy: 0.876842, F1: 0.874203
+      score_mean=-1.8887, score_std=9.0247, safe_rate=0.200, CVaR=11.6080, stable=True
+    [Holdout]
+      损失（Loss）: 0.308202, Accuracy: 0.884282, F1: 0.883479
+      score_mean=25050.0996, score_std=68307.3281, safe_rate=0.433, CVaR=66786.7708, stable=True
+    entry_score=1.2286, gap=3.1173, tol=18.0495, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 541 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360297, Accuracy: 0.876959, F1: 0.874315
+      score_mean=-0.4072, score_std=8.8676, safe_rate=0.233, CVaR=13.4495, stable=True
+    [Holdout]
+      损失（Loss）: 0.308230, Accuracy: 0.884553, F1: 0.883946
+      score_mean=22668.5684, score_std=56974.3047, safe_rate=0.567, CVaR=59877.2513, stable=True
+    entry_score=1.1782, gap=1.5854, tol=17.7352, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 542 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359692, Accuracy: 0.878012, F1: 0.875434
+      score_mean=1.9239, score_std=9.9027, safe_rate=0.233, CVaR=10.4215, stable=True
+    [Holdout]
+      损失（Loss）: 0.308146, Accuracy: 0.883740, F1: 0.883114
+      score_mean=24983.1133, score_std=67414.8750, safe_rate=0.433, CVaR=62289.3214, stable=True
+    entry_score=1.1874, gap=-0.7366, tol=19.8055, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 543 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360000, Accuracy: 0.878713, F1: 0.876165
+      score_mean=1.0960, score_std=8.5017, safe_rate=0.267, CVaR=11.0778, stable=True
+    [Holdout]
+      损失（Loss）: 0.307586, Accuracy: 0.884824, F1: 0.884061
+      score_mean=31723.0859, score_std=48427.5078, safe_rate=0.533, CVaR=34994.1045, stable=True
+    entry_score=1.2248, gap=0.1288, tol=17.0034, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 544 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359968, Accuracy: 0.878363, F1: 0.875849
+      score_mean=0.9297, score_std=7.3997, safe_rate=0.233, CVaR=7.3686, stable=True
+    [Holdout]
+      损失（Loss）: 0.308843, Accuracy: 0.884282, F1: 0.883568
+      score_mean=12566.4463, score_std=48832.4180, safe_rate=0.433, CVaR=44610.2666, stable=True
+    entry_score=1.1956, gap=0.2659, tol=14.7994, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 545 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359907, Accuracy: 0.878129, F1: 0.875511
+      score_mean=1.3052, score_std=9.9371, safe_rate=0.267, CVaR=10.7011, stable=True
+    [Holdout]
+      损失（Loss）: 0.308978, Accuracy: 0.884011, F1: 0.883308
+      score_mean=10447.4414, score_std=48391.6836, safe_rate=0.433, CVaR=59267.5054, stable=True
+    entry_score=1.2110, gap=-0.0942, tol=19.8742, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 546 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359183, Accuracy: 0.877661, F1: 0.875101
+      score_mean=3.0921, score_std=8.1790, safe_rate=0.333, CVaR=8.8085, stable=True
+    [Holdout]
+      损失（Loss）: 0.307957, Accuracy: 0.883198, F1: 0.882508
+      score_mean=26503.2617, score_std=52018.1719, safe_rate=0.367, CVaR=59561.9523, stable=True
+    entry_score=1.2306, gap=-1.8615, tol=16.3581, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 547 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360854, Accuracy: 0.877544, F1: 0.874857
+      score_mean=-1.8275, score_std=7.7696, safe_rate=0.167, CVaR=15.5775, stable=True
+    [Holdout]
+      损失（Loss）: 0.307843, Accuracy: 0.885637, F1: 0.884917
+      score_mean=29262.0508, score_std=61379.5703, safe_rate=0.433, CVaR=66335.5636, stable=True
+    entry_score=1.2271, gap=3.0546, tol=15.5392, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 548 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360320, Accuracy: 0.877076, F1: 0.874525
+      score_mean=-0.6113, score_std=7.8119, safe_rate=0.133, CVaR=9.4286, stable=True
+    [Holdout]
+      损失（Loss）: 0.309229, Accuracy: 0.883198, F1: 0.882538
+      score_mean=6958.8540, score_std=51812.5508, safe_rate=0.300, CVaR=64058.5363, stable=True
+    entry_score=1.1988, gap=1.8101, tol=15.6237, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 549 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.361179, Accuracy: 0.877310, F1: 0.874698
+      score_mean=-2.3904, score_std=11.6247, safe_rate=0.233, CVaR=17.4864, stable=True
+    [Holdout]
+      损失（Loss）: 0.309024, Accuracy: 0.883469, F1: 0.882764
+      score_mean=9996.1631, score_std=53922.5000, safe_rate=0.333, CVaR=47692.8595, stable=True
+    entry_score=1.2244, gap=3.6147, tol=23.2495, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 550 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359784, Accuracy: 0.879181, F1: 0.876597
+      score_mean=1.7851, score_std=5.2362, safe_rate=0.467, CVaR=6.4188, stable=True
+    [Holdout]
+      损失（Loss）: 0.309282, Accuracy: 0.882385, F1: 0.881681
+      score_mean=4792.5186, score_std=43821.6367, safe_rate=0.367, CVaR=56551.6049, stable=True
+    entry_score=1.2245, gap=-0.5606, tol=10.4724, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 551 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360076, Accuracy: 0.877544, F1: 0.874930
+      score_mean=0.4332, score_std=9.1734, safe_rate=0.333, CVaR=11.1572, stable=True
+    [Holdout]
+      损失（Loss）: 0.308786, Accuracy: 0.884011, F1: 0.883346
+      score_mean=12870.3477, score_std=45917.2891, safe_rate=0.333, CVaR=51451.1013, stable=True
+    entry_score=1.2104, gap=0.7772, tol=18.3468, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 552 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.358661, Accuracy: 0.879649, F1: 0.877138
+      score_mean=5.7299, score_std=7.4788, safe_rate=0.433, CVaR=7.4366, stable=True
+    [Holdout]
+      损失（Loss）: 0.308169, Accuracy: 0.884553, F1: 0.883779
+      score_mean=22345.1680, score_std=49853.8672, safe_rate=0.533, CVaR=50413.9605, stable=True
+    entry_score=1.1932, gap=-4.5368, tol=14.9576, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 553 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360654, Accuracy: 0.878363, F1: 0.875717
+      score_mean=-0.6973, score_std=9.3510, safe_rate=0.200, CVaR=16.0357, stable=True
+    [Holdout]
+      损失（Loss）: 0.308632, Accuracy: 0.885095, F1: 0.884322
+      score_mean=18962.1250, score_std=70886.5312, safe_rate=0.333, CVaR=67104.1846, stable=True
+    entry_score=1.1458, gap=1.8431, tol=18.7021, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 554 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.359855, Accuracy: 0.879883, F1: 0.877377
+      score_mean=1.9292, score_std=5.2060, safe_rate=0.433, CVaR=5.3646, stable=True
+    [Holdout]
+      损失（Loss）: 0.307680, Accuracy: 0.884282, F1: 0.883602
+      score_mean=30936.5625, score_std=51357.9531, safe_rate=0.500, CVaR=46607.3150, stable=True
+    entry_score=1.1896, gap=-0.7396, tol=10.4120, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
+  [BestTest:fresh-eval] episode 555 challenger
+    [Search:val_search_full]
+      损失（Loss）: 0.360135, Accuracy: 0.878363, F1: 0.875798
+      score_mean=0.5060, score_std=7.6916, safe_rate=0.167, CVaR=8.4196, stable=True
+    [Holdout]
+      损失（Loss）: 0.309121, Accuracy: 0.883740, F1: 0.883087
+      score_mean=8076.2095, score_std=51288.0312, safe_rate=0.333, CVaR=68235.9183, stable=True
+    entry_score=1.1701, gap=0.6641, tol=15.3833, entry_ok=True
+    verdict: base_passed=False, qualification_passed=False
