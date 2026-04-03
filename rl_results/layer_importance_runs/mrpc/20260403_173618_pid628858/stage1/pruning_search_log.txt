@@ -1,7 +1,7 @@
 === PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===
 [信息] PPO学习率（LR）从 rl_lr=20 解析为 -> 2e-05 (legacy-micro)
 [信息] 第一阶段RL回合数（Stage-1 RL episodes）: 51000 | 第二阶段RL回合数（Stage-2 RL episodes）: 15000
-[信息] 统一运行输出目录（Unified run output dir）: rl_results/layer_importance_runs/mrpc/20260402_204337_pid598198
+[信息] 统一运行输出目录（Unified run output dir）: rl_results/layer_importance_runs/mrpc/20260403_173618_pid628858
 
 ============================================================
 开始配置评估（STARTING CONFIGURATION EVALUATION）

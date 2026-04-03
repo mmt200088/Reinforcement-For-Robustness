@@ -68,7 +68,7 @@ NOISE_STAGE_PROGRESS_DIR = os.path.join("rl_results", "noise_rl_progress")
 # - Loss：worst 通常更高；该系数越小，limit 越靠近 baseline（损失上限越低 → 更严）；越大越靠近 worst（越松）。
 # - 指标（如 Acc / F1）：worst 通常更低；系数越小，limit 越靠近 baseline（准确率下限等越高 → 更严）；越大越松。
 # 建议取值区间 [0, 1]；0 等价于完全贴合 baseline，1 等价于完全贴合 worst。
-NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE = 0.25
+NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE = 0.2
 
 # 兼容项：旧均值 reward 权重（不再主导，仅用于辅助/兼容）
 NOISE_STAGE_FINAL_REWARD_ALPHA_PERF = 0.75
