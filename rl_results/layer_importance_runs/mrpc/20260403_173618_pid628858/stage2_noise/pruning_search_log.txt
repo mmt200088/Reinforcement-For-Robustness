@@ -1990,3 +1990,295 @@
 │ ── 训练入围分（entry score）──  entry_score=1.2444, gap=1.5994, tol=1.1345, entry_ok=False                                 │
 │ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
 ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 169 回合挑战者（episode 169 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.372094, Accuracy: 0.884912, F1: 0.882963                                                              │
+│   得分均值 score_mean=-0.3916  ;  标准差 score_std=0.4819  ;  安全率 safe_rate=0.233  ;  尾部 CVaR=0.6830  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365358, Accuracy: 0.870190, F1: 0.868058                                                              │
+│   得分均值 score_mean=-0.0592  ;  标准差 score_std=0.5591  ;  安全率 safe_rate=0.500  ;  尾部 CVaR=0.7309  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2373, gap=1.6289, tol=0.9638, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 170 回合挑战者（episode 170 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.371526, Accuracy: 0.885263, F1: 0.883474                                                              │
+│   得分均值 score_mean=-0.3669  ;  标准差 score_std=0.3770  ;  安全率 safe_rate=0.167  ;  尾部 CVaR=0.4671  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365148, Accuracy: 0.870190, F1: 0.868135                                                              │
+│   得分均值 score_mean=-0.0762  ;  标准差 score_std=0.3738  ;  安全率 safe_rate=0.433  ;  尾部 CVaR=0.3571  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.1745, gap=1.5414, tol=0.7540, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ PPO 窗口摘要 · 截至回合（through episode） 170                                                                               │
+  │ 平均回报 mean episode return=1.4607  ;  平均原始终局奖励 mean raw final=1.2061                                                 │
+  │ 策略损失 policy_loss=0.1717  ;  价值损失 value_loss=6.5896  ;  熵 entropy=11.2653                                           │
+  │ GTrXL 调度（schedule）: LR=0.000020, 熵系数 entropy_coef=0.049448, 更新序号 update#1, 模式 mode=constant, 状态 state=恒定（constant） │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 171 回合挑战者（episode 171 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.372033, Accuracy: 0.883041, F1: 0.881131                                                              │
+│   得分均值 score_mean=-0.6065  ;  标准差 score_std=0.6120  ;  安全率 safe_rate=0.200  ;  尾部 CVaR=1.1495  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.366001, Accuracy: 0.868564, F1: 0.866519                                                              │
+│   得分均值 score_mean=-0.2732  ;  标准差 score_std=0.5510  ;  安全率 safe_rate=0.400  ;  尾部 CVaR=0.7185  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.1801, gap=1.7865, tol=1.2239, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 172 回合挑战者（episode 172 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.372715, Accuracy: 0.883977, F1: 0.882100                                                              │
+│   得分均值 score_mean=-0.5249  ;  标准差 score_std=0.5306  ;  安全率 safe_rate=0.167  ;  尾部 CVaR=1.0095  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365570, Accuracy: 0.869919, F1: 0.867801                                                              │
+│   得分均值 score_mean=-0.0999  ;  标准差 score_std=0.5090  ;  安全率 safe_rate=0.467  ;  尾部 CVaR=0.7002  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2043, gap=1.7292, tol=1.0612, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 173 回合挑战者（episode 173 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.371154, Accuracy: 0.883860, F1: 0.881897                                                              │
+│   得分均值 score_mean=-0.4784  ;  标准差 score_std=0.5831  ;  安全率 safe_rate=0.267  ;  尾部 CVaR=0.8224  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365435, Accuracy: 0.868022, F1: 0.865812                                                              │
+│   得分均值 score_mean=-0.3624  ;  标准差 score_std=0.7001  ;  安全率 safe_rate=0.333  ;  尾部 CVaR=1.0837  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.1943, gap=1.6727, tol=1.1662, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 174 回合挑战者（episode 174 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.370567, Accuracy: 0.885029, F1: 0.883135                                                              │
+│   得分均值 score_mean=-0.2998  ;  标准差 score_std=0.6277  ;  安全率 safe_rate=0.367  ;  尾部 CVaR=0.8261  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.364457, Accuracy: 0.868293, F1: 0.866145                                                              │
+│   得分均值 score_mean=-0.2220  ;  标准差 score_std=0.6574  ;  安全率 safe_rate=0.567  ;  尾部 CVaR=1.0752  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.1591, gap=1.4589, tol=1.2555, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 175 回合挑战者（episode 175 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.369926, Accuracy: 0.885263, F1: 0.883402                                                              │
+│   得分均值 score_mean=-0.2353  ;  标准差 score_std=0.6096  ;  安全率 safe_rate=0.433  ;  尾部 CVaR=0.8063  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.364859, Accuracy: 0.869919, F1: 0.867645                                                              │
+│   得分均值 score_mean=-0.1077  ;  标准差 score_std=0.5479  ;  安全率 safe_rate=0.433  ;  尾部 CVaR=0.7102  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2659, gap=1.5012, tol=1.2192, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 176 回合挑战者（episode 176 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.371361, Accuracy: 0.884678, F1: 0.882662                                                              │
+│   得分均值 score_mean=-0.3819  ;  标准差 score_std=0.5789  ;  安全率 safe_rate=0.300  ;  尾部 CVaR=0.8746  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.363905, Accuracy: 0.868293, F1: 0.866147                                                              │
+│   得分均值 score_mean=-0.2410  ;  标准差 score_std=0.6853  ;  安全率 safe_rate=0.500  ;  尾部 CVaR=1.0723  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2132, gap=1.5951, tol=1.1578, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 177 回合挑战者（episode 177 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.373918, Accuracy: 0.883977, F1: 0.882176                                                              │
+│   得分均值 score_mean=-0.5718  ;  标准差 score_std=0.6411  ;  安全率 safe_rate=0.100  ;  尾部 CVaR=0.8313  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365486, Accuracy: 0.869377, F1: 0.867172                                                              │
+│   得分均值 score_mean=-0.1639  ;  标准差 score_std=0.6441  ;  安全率 safe_rate=0.467  ;  尾部 CVaR=0.7423  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2150, gap=1.7868, tol=1.2821, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 178 回合挑战者（episode 178 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.370827, Accuracy: 0.884327, F1: 0.882357                                                              │
+│   得分均值 score_mean=-0.4214  ;  标准差 score_std=0.5673  ;  安全率 safe_rate=0.267  ;  尾部 CVaR=0.8653  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365444, Accuracy: 0.869648, F1: 0.867548                                                              │
+│   得分均值 score_mean=-0.0860  ;  标准差 score_std=0.6691  ;  安全率 safe_rate=0.567  ;  尾部 CVaR=1.0880  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2153, gap=1.6367, tol=1.1345, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 179 回合挑战者（episode 179 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.372711, Accuracy: 0.883743, F1: 0.881774                                                              │
+│   得分均值 score_mean=-0.5640  ;  标准差 score_std=0.5211  ;  安全率 safe_rate=0.133  ;  尾部 CVaR=0.9998  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365270, Accuracy: 0.868835, F1: 0.866576                                                              │
+│   得分均值 score_mean=-0.2575  ;  标准差 score_std=0.6225  ;  安全率 safe_rate=0.367  ;  尾部 CVaR=1.0959  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.1921, gap=1.7561, tol=1.0422, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 180 回合挑战者（episode 180 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.371937, Accuracy: 0.883509, F1: 0.881697                                                              │
+│   得分均值 score_mean=-0.5716  ;  标准差 score_std=0.5729  ;  安全率 safe_rate=0.133  ;  尾部 CVaR=1.1838  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.364366, Accuracy: 0.869377, F1: 0.867211                                                              │
+│   得分均值 score_mean=-0.1396  ;  标准差 score_std=0.6009  ;  安全率 safe_rate=0.467  ;  尾部 CVaR=0.6833  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.1622, gap=1.7339, tol=1.1458, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 181 回合挑战者（episode 181 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.370706, Accuracy: 0.884444, F1: 0.882573                                                              │
+│   得分均值 score_mean=-0.4081  ;  标准差 score_std=0.6133  ;  安全率 safe_rate=0.267  ;  尾部 CVaR=0.8171  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.364196, Accuracy: 0.869919, F1: 0.867725                                                              │
+│   得分均值 score_mean=-0.0077  ;  标准差 score_std=0.6637  ;  安全率 safe_rate=0.667  ;  尾部 CVaR=0.7017  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.1466, gap=1.5547, tol=1.2266, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 182 回合挑战者（episode 182 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.372844, Accuracy: 0.882807, F1: 0.880853                                                              │
+│   得分均值 score_mean=-0.6881  ;  标准差 score_std=0.5424  ;  安全率 safe_rate=0.100  ;  尾部 CVaR=0.9743  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.364694, Accuracy: 0.870461, F1: 0.868356                                                              │
+│   得分均值 score_mean=-0.0442  ;  标准差 score_std=0.5338  ;  安全率 safe_rate=0.433  ;  尾部 CVaR=0.6703  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2304, gap=1.9185, tol=1.0847, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 183 回合挑战者（episode 183 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.370582, Accuracy: 0.882573, F1: 0.880508                                                              │
+│   得分均值 score_mean=-0.6811  ;  标准差 score_std=0.4791  ;  安全率 safe_rate=0.100  ;  尾部 CVaR=0.9771  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365024, Accuracy: 0.871274, F1: 0.869126                                                              │
+│   得分均值 score_mean=0.0654  ;  标准差 score_std=0.5949  ;  安全率 safe_rate=0.500  ;  尾部 CVaR=0.6811  ;  稳定项通过 stable=True  │
+│ ── 训练入围分（entry score）──  entry_score=1.2479, gap=1.9291, tol=0.9582, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 184 回合挑战者（episode 184 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.371289, Accuracy: 0.885263, F1: 0.883343                                                              │
+│   得分均值 score_mean=-0.2896  ;  标准差 score_std=0.5622  ;  安全率 safe_rate=0.367  ;  尾部 CVaR=0.5206  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.364892, Accuracy: 0.869919, F1: 0.867880                                                              │
+│   得分均值 score_mean=-0.0613  ;  标准差 score_std=0.5323  ;  安全率 safe_rate=0.533  ;  尾部 CVaR=0.6635  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2175, gap=1.5071, tol=1.1245, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 185 回合挑战者（episode 185 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.372477, Accuracy: 0.884561, F1: 0.882687                                                              │
+│   得分均值 score_mean=-0.4584  ;  标准差 score_std=0.5084  ;  安全率 safe_rate=0.167  ;  尾部 CVaR=0.8140  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.364704, Accuracy: 0.871003, F1: 0.868754                                                              │
+│   得分均值 score_mean=0.0016  ;  标准差 score_std=0.7002  ;  安全率 safe_rate=0.433  ;  尾部 CVaR=0.7012  ;  稳定项通过 stable=True  │
+│ ── 训练入围分（entry score）──  entry_score=1.2492, gap=1.7077, tol=1.0168, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 186 回合挑战者（episode 186 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.370974, Accuracy: 0.882456, F1: 0.880487                                                              │
+│   得分均值 score_mean=-0.7036  ;  标准差 score_std=0.5996  ;  安全率 safe_rate=0.100  ;  尾部 CVaR=0.9776  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.364132, Accuracy: 0.869919, F1: 0.867725                                                              │
+│   得分均值 score_mean=-0.0329  ;  标准差 score_std=0.6230  ;  安全率 safe_rate=0.600  ;  尾部 CVaR=1.0365  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.1937, gap=1.8973, tol=1.1991, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 187 回合挑战者（episode 187 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.372347, Accuracy: 0.882339, F1: 0.880294                                                              │
+│   得分均值 score_mean=-0.6954  ;  标准差 score_std=0.6467  ;  安全率 safe_rate=0.200  ;  尾部 CVaR=1.2221  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365835, Accuracy: 0.867751, F1: 0.865556                                                              │
+│   得分均值 score_mean=-0.4129  ;  标准差 score_std=0.6707  ;  安全率 safe_rate=0.300  ;  尾部 CVaR=0.7213  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.1465, gap=1.8420, tol=1.2934, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 188 回合挑战者（episode 188 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.372250, Accuracy: 0.883392, F1: 0.881525                                                              │
+│   得分均值 score_mean=-0.6058  ;  标准差 score_std=0.5123  ;  安全率 safe_rate=0.100  ;  尾部 CVaR=0.8309  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.363746, Accuracy: 0.870732, F1: 0.868574                                                              │
+│   得分均值 score_mean=0.0917  ;  标准差 score_std=0.6838  ;  安全率 safe_rate=0.667  ;  尾部 CVaR=0.7047  ;  稳定项通过 stable=True  │
+│ ── 训练入围分（entry score）──  entry_score=1.2231, gap=1.8290, tol=1.0247, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 189 回合挑战者（episode 189 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.371400, Accuracy: 0.885614, F1: 0.883677                                                              │
+│   得分均值 score_mean=-0.2388  ;  标准差 score_std=0.6441  ;  安全率 safe_rate=0.400  ;  尾部 CVaR=1.1250  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365457, Accuracy: 0.869377, F1: 0.867209                                                              │
+│   得分均值 score_mean=-0.1554  ;  标准差 score_std=0.4375  ;  安全率 safe_rate=0.467  ;  尾部 CVaR=0.7055  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2298, gap=1.4687, tol=1.2883, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 190 回合挑战者（episode 190 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.371216, Accuracy: 0.884561, F1: 0.882630                                                              │
+│   得分均值 score_mean=-0.3886  ;  标准差 score_std=0.6174  ;  安全率 safe_rate=0.300  ;  尾部 CVaR=0.9884  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.364712, Accuracy: 0.870190, F1: 0.868060                                                              │
+│   得分均值 score_mean=-0.0068  ;  标准差 score_std=0.6114  ;  安全率 safe_rate=0.600  ;  尾部 CVaR=0.7230  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2311, gap=1.6197, tol=1.2349, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 191 回合挑战者（episode 191 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.370631, Accuracy: 0.884678, F1: 0.882664                                                              │
+│   得分均值 score_mean=-0.3981  ;  标准差 score_std=0.5939  ;  安全率 safe_rate=0.233  ;  尾部 CVaR=0.9710  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.364399, Accuracy: 0.868564, F1: 0.866402                                                              │
+│   得分均值 score_mean=-0.2166  ;  标准差 score_std=0.6417  ;  安全率 safe_rate=0.500  ;  尾部 CVaR=0.7179  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.1903, gap=1.5884, tol=1.1878, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 192 回合挑战者（episode 192 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.369873, Accuracy: 0.885263, F1: 0.883292                                                              │
+│   得分均值 score_mean=-0.2673  ;  标准差 score_std=0.6411  ;  安全率 safe_rate=0.367  ;  尾部 CVaR=0.9824  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.364504, Accuracy: 0.868835, F1: 0.866659                                                              │
+│   得分均值 score_mean=-0.2200  ;  标准差 score_std=0.6584  ;  安全率 safe_rate=0.433  ;  尾部 CVaR=0.7017  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2124, gap=1.4797, tol=1.2822, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 193 回合挑战者（episode 193 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.370213, Accuracy: 0.884327, F1: 0.882467                                                              │
+│   得分均值 score_mean=-0.3838  ;  标准差 score_std=0.5692  ;  安全率 safe_rate=0.333  ;  尾部 CVaR=0.7852  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365030, Accuracy: 0.870461, F1: 0.868355                                                              │
+│   得分均值 score_mean=-0.0366  ;  标准差 score_std=0.5035  ;  安全率 safe_rate=0.467  ;  尾部 CVaR=0.6801  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.2219, gap=1.6057, tol=1.1384, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 最优复试（BestTest） · 全新评估（fresh-eval） · 第 194 回合挑战者（episode 194 challenger）                                             │
+│ ── 搜索子集（Search）: val_search_full ──                                                                                 │
+│   损失（Loss）: 0.371869, Accuracy: 0.883158, F1: 0.881197                                                              │
+│   得分均值 score_mean=-0.5654  ;  标准差 score_std=0.7661  ;  安全率 safe_rate=0.267  ;  尾部 CVaR=1.3258  ;  稳定项通过 stable=True │
+│ ── 留出集（Holdout）──                                                                                                   │
+│   损失（Loss）: 0.365377, Accuracy: 0.867480, F1: 0.865296                                                              │
+│   得分均值 score_mean=-0.3997  ;  标准差 score_std=0.5724  ;  安全率 safe_rate=0.367  ;  尾部 CVaR=0.7390  ;  稳定项通过 stable=True │
+│ ── 训练入围分（entry score）──  entry_score=1.1884, gap=1.7538, tol=1.5322, entry_ok=False                                 │
+│ ── 裁定（verdict）──  基础合格 base_passed=False  ;  总合格 qualification_passed=False                                         │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
