@@ -2273,18 +2273,24 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f.write(f"[信息] 统一运行输出目录（Unified run output dir）: {self.run_output_dir}\n")
         if self.noise_log_file != self.log_file:
             with open(self.noise_log_file, "w", encoding="utf-8") as f:
-                f.write("=== 第二阶段噪声RL优化日志已启动（Stage-2 Noise RL Optimization Log Started） ===\n")
+                f.write(
+                    "══════════════════════════════════════════════════════════════════════\n"
+                    "  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）\n"
+                    "══════════════════════════════════════════════════════════════════════\n"
+                )
             with open(self.noise_log_file, "a", encoding="utf-8") as f:
                 f.write(
-                    f"[信息] PPO学习率（LR）从 rl_lr={self.rl_lr_raw!r} 解析为 -> "
-                    f"{self.ppo_lr_initial:.6g} ({self.ppo_lr_mode})\n"
+                    f"  [信息] PPO 学习率 learning rate：由 rl_lr={self.rl_lr_raw!r} 解析为 "
+                    f"{self.ppo_lr_initial:.6g}（模式 mode={self.ppo_lr_mode}）\n"
                 )
                 f.write(
-                    f"[信息] 第一阶段RL回合数（Stage-1 RL episodes）: {self.stage1_rl_episodes} | "
-                    f"第二阶段RL回合数（Stage-2 RL episodes）: {self.stage2_rl_episodes}\n"
+                    f"  [信息] 一阶段 RL 回合 stage-1 episodes={self.stage1_rl_episodes}  ·  "
+                    f"二阶段噪声 RL 回合 stage-2 episodes={self.stage2_rl_episodes}\n"
                 )
                 if self.run_output_dir:
-                    f.write(f"[信息] 统一运行输出目录（Unified run output dir）: {self.run_output_dir}\n")
+                    f.write(
+                        f"  [信息] 本次运行根目录 run_output_dir={self.run_output_dir}\n"
+                    )
         
         # ==================== 策略二：动态超参数调度状态 ====================
         self.current_episode = 0

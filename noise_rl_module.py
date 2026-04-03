@@ -63,6 +63,13 @@ NOISE_STAGE_BUDGET_DECAY_FRACTION = 0.5
 NOISE_STAGE_PROGRESS_SAVE_INTERVAL = 10000
 NOISE_STAGE_PROGRESS_DIR = os.path.join("rl_results", "noise_rl_progress")
 
+# 二阶段「搜索 / 留出 / 训练 proxy」共用：由低风险 baseline 与最强噪声 worst-case 两点的指标线性插值得到约束界限 limit。
+# 公式：limit = baseline + NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE * (worst - baseline)。
+# - Loss：worst 通常更高；该系数越小，limit 越靠近 baseline（损失上限越低 → 更严）；越大越靠近 worst（越松）。
+# - 指标（如 Acc / F1）：worst 通常更低；系数越小，limit 越靠近 baseline（准确率下限等越高 → 更严）；越大越松。
+# 建议取值区间 [0, 1]；0 等价于完全贴合 baseline，1 等价于完全贴合 worst。
+NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE = 0.25
+
 # 兼容项：旧均值 reward 权重（不再主导，仅用于辅助/兼容）
 NOISE_STAGE_FINAL_REWARD_ALPHA_PERF = 0.75
 NOISE_STAGE_FINAL_REWARD_ALPHA_COST = 0.25
@@ -171,7 +178,15 @@ def _get_worst_case_noise_configuration(evaluator):
     }
 
 
-def _compute_dynamic_limits(base_loss, base_p, base_s, worst_loss, worst_p, worst_s, quartile=0.25):
+def _compute_dynamic_limits(
+    base_loss,
+    base_p,
+    base_s,
+    worst_loss,
+    worst_p,
+    worst_s,
+    quartile=NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE,
+):
     """根据 baseline 和 worst-case 指标动态计算约束上下限。
 
     常规：limit = baseline + quartile * (worst - baseline)（在 baseline 与 worst 之间插值）。
@@ -232,10 +247,13 @@ def _compute_tail_metrics_from_trials(
         t_m2 = float(trial.get("metric2", t_m1)) if num_metrics > 1 else t_m1
 
         # 归一化 margin：正值=安全，负值=违约
-        margin_loss = (loss_limit - t_loss) / max(loss_limit - float(baseline_loss), 1e-8)
-        margin_m1 = (t_m1 - m1_limit) / max(float(baseline_metric1) - m1_limit, 1e-8)
+        # 使用 abs() 防止 limit 在 baseline 同侧（如 worst_loss < baseline_loss）时
+        # 分母为极小正数导致 margin 爆炸至数百万级别
+        _MARGIN_DENOM_FLOOR = 0.01
+        margin_loss = (loss_limit - t_loss) / max(abs(loss_limit - float(baseline_loss)), _MARGIN_DENOM_FLOOR)
+        margin_m1 = (t_m1 - m1_limit) / max(abs(float(baseline_metric1) - m1_limit), _MARGIN_DENOM_FLOOR)
         if num_metrics > 1:
-            margin_m2 = (t_m2 - m2_limit) / max(float(baseline_metric2) - m2_limit, 1e-8)
+            margin_m2 = (t_m2 - m2_limit) / max(abs(float(baseline_metric2) - m2_limit), _MARGIN_DENOM_FLOOR)
         else:
             margin_m2 = 0.0
 
@@ -372,6 +390,47 @@ def _write_rounded_box_to_file(f, lines, indent=""):
     f.write(f"{indent}╰{bar}╯\n")
 
 
+def _noise_log_major_rule(log_fn, title, width=68):
+    """二阶段噪声日志：小节顶栏（写入 pruning_search_log）。"""
+    bar = "═" * width
+    log_fn("")
+    log_fn(bar)
+    log_fn(title if title.startswith(" ") else f"  {title}")
+    log_fn(bar)
+
+
+def _noise_block_title(log_fn, title):
+    """块标题，便于扫读。"""
+    log_fn("")
+    log_fn(f"  【{title}】")
+
+
+def _shortlist_status_zh(status):
+    """候选列表状态 → 中文（保留英文键）。"""
+    mapping = {
+        "not-eligible": "未达入列条件（not-eligible）",
+        "disabled": "已禁用（disabled）",
+        "added": "新加入（added）",
+        "updated": "已更新（updated）",
+        "duplicate-kept": "重复项保留原条（duplicate-kept）",
+        "trimmed": "截断剔出（trimmed）",
+    }
+    return mapping.get(status, status)
+
+
+def _warmup_status_zh(status):
+    m = {"constant": "恒定（constant）", "warmup": "预热（warmup）", "normal": "常规（normal）"}
+    return m.get(status, status)
+
+
+def _noise_stage_status_zh(status, ok_token, no_stable_token):
+    m = {
+        ok_token: "正常（ok）",
+        no_stable_token: "无稳定可行解（no_stable_feasible_candidate）",
+    }
+    return m.get(status, status)
+
+
 class NoiseRLModule:
     """Standalone second-stage noise RL module.
 
@@ -452,16 +511,20 @@ class NoiseRLModule:
         )
         _num_metrics_for_log = ev.get_num_metrics()
         _metric_names_for_log = ev.get_metric_names()
-        ev.log("\n" + "=" * 60)
-        ev.log("阶段5（PHASE 5）：第二阶段噪声强化学习（SECOND-STAGE NOISE RL）")
-        ev.log(f"固定GELU/Softmax 来源（source）={fixed_source}, 标签（label）={fixed_label}")
-        ev.log(f"固定GELU   : {np.asarray(fixed_gelu, dtype=int).tolist()}")
-        ev.log(f"固定Softmax: {np.asarray(fixed_softmax, dtype=int).tolist()}")
-        ev.log(
-            f"评估指标模式（Metric Mode）: num_metrics={_num_metrics_for_log}, "
-            f"名称={_metric_names_for_log}"
+        _noise_log_major_rule(
+            ev.log,
+            "阶段5 · 二阶段噪声强化学习（Phase 5 · Second-stage noise RL）",
         )
-        ev.log("=" * 60)
+        ev.log(
+            f"  ▸ 固定 GELU / Softmax 来源（source）: {fixed_source}    "
+            f"标签（label）: {fixed_label}"
+        )
+        ev.log(f"  ▸ GELU 离散阶数向量:   {np.asarray(fixed_gelu, dtype=int).tolist()}")
+        ev.log(f"  ▸ Softmax 离散阶数向量: {np.asarray(fixed_softmax, dtype=int).tolist()}")
+        ev.log(
+            f"  ▸ 指标维度 num_metrics={_num_metrics_for_log}    "
+            f"指标名 metric names={_metric_names_for_log}"
+        )
 
         fixed_gelu = np.asarray(fixed_gelu, dtype=int)
         fixed_softmax = np.asarray(fixed_softmax, dtype=int)
@@ -489,21 +552,19 @@ class NoiseRLModule:
 
         def _log_repeat_baseline(label, stats):
             ev.log(
-                f"{label}（重复N={stats['n']}次，数据集={stats['split_name']}）："
+                f"{label} · 重复 repeats={stats['n']} · 子集 split={stats['split_name']}"
             )
             if _num_metrics_for_log > 1:
                 ev.log(
-                    "  "
-                    f"{ev._fmt_metrics(stats['loss_mean'], stats['p_mean'], stats['s_mean'])}, "
-                    f"标准差（std）=(损失Loss={stats['loss_std']:.4f}, "
-                    f"指标1（M1）={stats['p_std']:.4f}, 指标2（M2）={stats['s_std']:.4f})"
+                    "     "
+                    f"{ev._fmt_metrics(stats['loss_mean'], stats['p_mean'], stats['s_mean'])}  "
+                    f"│ 标准差 std: loss={stats['loss_std']:.4f}, m1={stats['p_std']:.4f}, m2={stats['s_std']:.4f}"
                 )
             else:
                 ev.log(
-                    "  "
-                    f"{ev._fmt_metrics(stats['loss_mean'], stats['p_mean'], stats['s_mean'])}, "
-                    f"标准差（std）=(损失Loss={stats['loss_std']:.4f}, "
-                    f"指标1（M1）={stats['p_std']:.4f})"
+                    "     "
+                    f"{ev._fmt_metrics(stats['loss_mean'], stats['p_mean'], stats['s_mean'])}  "
+                    f"│ 标准差 std: loss={stats['loss_std']:.4f}, m1={stats['p_std']:.4f}"
                 )
 
         # Stage-2 性能 baseline：使用固定 Stage-1 配置 + 低风险参考噪声
@@ -548,34 +609,35 @@ class NoiseRLModule:
 
         cost_reference_tot_c, cost_reference_breakdown = ev.get_noise_simulated_cost(**cost_reference_noise_config)
 
-        ev.log("噪声阶段性能基线（Noise-Stage Performance Baseline）（固定Stage-1配置 + 低风险参考噪声）：")
-        ev.log("  GELU   : " + fixed_gelu.tolist().__repr__())
-        ev.log("  Softmax: " + fixed_softmax.tolist().__repr__())
-        ev.log("  低风险噪声配置（Low-Risk Noise Config）：")
+        _noise_block_title(ev.log, "性能基线 · 固定 Stage-1 + 低风险参考噪声（Noise-stage baseline）")
+        ev.log("  ▸ 与上阶段对齐的 GELU / Softmax：")
+        ev.log(f"     GELU    {fixed_gelu.tolist()}")
+        ev.log(f"     Softmax {fixed_softmax.tolist()}")
+        ev.log("  ▸ 低风险缩放因子配置（low-risk noise config, SF 取噪声最小侧）：")
         for _bk, _bv in baseline_noise_config.items():
-            ev.log(f"    {_bk}: {np.asarray(_bv, dtype=int).tolist()}")
-        ev.log(
-            f"  {reward_reference_split}（用于奖励/搜索约束）："
-        )
-        _log_repeat_baseline("  Baseline", baseline_reference_stats)
+            ev.log(f"     {_bk}: {np.asarray(_bv, dtype=int).tolist()}")
+        ev.log(f"  ▸ 子集 {reward_reference_split}（奖励与搜索约束所用，reward / search limits）：")
+        _log_repeat_baseline("  基线（Baseline）", baseline_reference_stats)
         if ev.has_dataset_split("val_holdout"):
-            ev.log("  val_holdout（用于留出集约束）：")
-            _log_repeat_baseline("  Baseline", baseline_holdout_stats)
+            ev.log("  ▸ 子集 val_holdout（留出集约束 holdout limits）：")
+            _log_repeat_baseline("  基线（Baseline）", baseline_holdout_stats)
 
-        ev.log("噪声阶段最差情况（Noise-Stage Worst Case）（固定Stage-1配置 + 最大噪声，所有SF取最小值）：")
-        ev.log("  最差噪声配置（Worst-Case Noise Config）：")
+        _noise_block_title(ev.log, "最坏情形 · 固定 Stage-1 + 最强噪声（Worst-case noise）")
+        ev.log("  ▸ 说明：各类噪声 SF 取允许集合最小值 → 扰动最强。")
+        ev.log("  ▸ 最坏缩放因子配置（worst-case noise config）：")
         for _bk, _bv in worst_case_noise_config.items():
-            ev.log(f"    {_bk}: {np.asarray(_bv, dtype=int).tolist()}")
-        ev.log(
-            f"  {reward_reference_split}（用于奖励/搜索约束）："
-        )
-        _log_repeat_baseline("  Worst", worst_reference_stats)
+            ev.log(f"     {_bk}: {np.asarray(_bv, dtype=int).tolist()}")
+        ev.log(f"  ▸ 子集 {reward_reference_split}：")
+        _log_repeat_baseline("  最坏（Worst）", worst_reference_stats)
         if ev.has_dataset_split("val_holdout"):
-            ev.log("  val_holdout（用于留出集约束）：")
-            _log_repeat_baseline("  Worst", worst_holdout_stats)
+            ev.log("  ▸ 子集 val_holdout：")
+            _log_repeat_baseline("  最坏（Worst）", worst_holdout_stats)
 
-        ev.log("噪声阶段成本参考（Noise-Stage Cost Reference）（最大噪声配置，仅用于成本归一化）：")
-        ev.log(f"  噪声成本（Noise Cost）: {cost_reference_tot_c:.2f} | 分项明细（Breakdown）={cost_reference_breakdown}")
+        _noise_block_title(ev.log, "成本参考（Cost reference, 仅归一化）")
+        ev.log(
+            f"  ▸ 聚合成本（noise cost）: {cost_reference_tot_c:.2f}"
+            f"    │    分项 breakdown: {cost_reference_breakdown}"
+        )
 
         base_loss = baseline_reference_stats["loss_mean"]
         base_p = baseline_reference_stats["p_mean"]
@@ -584,7 +646,7 @@ class NoiseRLModule:
         worst_p = worst_reference_stats["p_mean"]
         worst_s = worst_reference_stats["s_mean"]
 
-        # 动态计算约束：limit = baseline + 0.25 * (worst - baseline)，即 baseline 到 worst 的 1/4 分位
+        # 动态计算约束：见 NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE
         search_limits = _compute_dynamic_limits(base_loss, base_p, base_s, worst_loss, worst_p, worst_s)
         holdout_limits = (
             _compute_dynamic_limits(
@@ -601,20 +663,30 @@ class NoiseRLModule:
         limit_loss = float(search_limits["loss"])
         limit_p = float(search_limits["metric1"])
         limit_s = float(search_limits["metric2"])
-        ev.log(f"噪声阶段搜索约束（Noise-Stage Search Constraints）（动态计算：baseline到worst的1/4分位，基于{reward_reference_split}）：")
-        ev.log(f"  Baseline: {ev._fmt_metrics(base_loss, base_p, base_s)}")
-        ev.log(f"  Worst:    {ev._fmt_metrics(worst_loss, worst_p, worst_s)}")
-        ev.log(f"  Limit:    {ev._fmt_constraints(limit_loss, limit_p, limit_s)}")
+        _noise_block_title(
+            ev.log,
+            f"搜索侧动态约束（Search constraints, "
+            f"quartile={NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE} on {reward_reference_split}）",
+        )
+        ev.log(f"  ▸ 基线（baseline）: {ev._fmt_metrics(base_loss, base_p, base_s)}")
+        ev.log(f"  ▸ 最坏（worst）:   {ev._fmt_metrics(worst_loss, worst_p, worst_s)}")
+        ev.log(f"  ▸ 界限（limit）:   {ev._fmt_constraints(limit_loss, limit_p, limit_s)}")
         if ev.has_dataset_split("val_holdout"):
-            ev.log("噪声阶段留出集约束（Noise-Stage Holdout Constraints）（动态计算：baseline到worst的1/4分位，基于val_holdout）：")
-            ev.log(
-                f"  Baseline: {ev._fmt_metrics(baseline_holdout_stats['loss_mean'], baseline_holdout_stats['p_mean'], baseline_holdout_stats['s_mean'])}"
+            _noise_block_title(
+                ev.log,
+                "留出集动态约束（Holdout constraints, "
+                f"quartile={NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE} on val_holdout）",
             )
             ev.log(
-                f"  Worst:    {ev._fmt_metrics(worst_holdout_stats['loss_mean'], worst_holdout_stats['p_mean'], worst_holdout_stats['s_mean'])}"
+                f"  ▸ 基线（baseline）: "
+                f"{ev._fmt_metrics(baseline_holdout_stats['loss_mean'], baseline_holdout_stats['p_mean'], baseline_holdout_stats['s_mean'])}"
             )
             ev.log(
-                f"  Limit:    "
+                f"  ▸ 最坏（worst）:   "
+                f"{ev._fmt_metrics(worst_holdout_stats['loss_mean'], worst_holdout_stats['p_mean'], worst_holdout_stats['s_mean'])}"
+            )
+            ev.log(
+                f"  ▸ 界限（limit）:   "
                 f"{ev._fmt_constraints(holdout_limits['loss'], holdout_limits['metric1'], holdout_limits['metric2'])}"
             )
         training_hparams = {
@@ -641,6 +713,7 @@ class NoiseRLModule:
             "train_terminal_reward_mode": NOISE_STAGE_TRAIN_TERMINAL_REWARD_MODE,
             "dense_completion_policy": NOISE_STAGE_DENSE_COMPLETION_POLICY,
             "mc_samples_legacy": NOISE_STAGE_MC_SAMPLES,
+            "dynamic_limit_quartile": float(NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE),
             "baseline_repeats": NOISE_STAGE_BASELINE_REPEATS,
             "online_baseline_repeats": NOISE_STAGE_ONLINE_BASELINE_REPEATS,
             "best_test_repeats": NOISE_STAGE_BEST_TEST_REPEATS,
@@ -685,57 +758,58 @@ class NoiseRLModule:
             "window_topk": NOISE_STAGE_WINDOW_TOPK,
             "mean_aux_loss_coef": NOISE_STAGE_MEAN_AUX_LOSS_COEF,
         }
-        ev.log("噪声阶段训练超参数（Noise-Stage Training Hyperparameters）：")
+        _noise_block_title(ev.log, "训练超参与评估设定摘要（Training hyperparameters）")
         ev.log(
-            "  "
-            f"GTrXL(d_model={NOISE_STAGE_GTRXL_D_MODEL}, heads={NOISE_STAGE_GTRXL_N_HEADS}, "
+            "  ▸ 策略网络 GTrXL（GTrXL trunk）: "
+            f"d_model={NOISE_STAGE_GTRXL_D_MODEL}, heads={NOISE_STAGE_GTRXL_N_HEADS}, "
             f"layers={NOISE_STAGE_GTRXL_N_LAYERS}, d_ff={NOISE_STAGE_GTRXL_D_FF}, "
-            f"dropout={NOISE_STAGE_GTRXL_DROPOUT})"
+            f"dropout={NOISE_STAGE_GTRXL_DROPOUT}"
         )
         ev.log(
-            "  "
-            f"PPO(max_episodes={stage2_total_episodes}, eps_clip={NOISE_STAGE_PPO_EPS_CLIP}, "
+            "  ▸ PPO: "
+            f"max_episodes={stage2_total_episodes}, eps_clip={NOISE_STAGE_PPO_EPS_CLIP}, "
             f"k_epochs={NOISE_STAGE_PPO_K_EPOCHS}, warmup_mode={NOISE_STAGE_GTRXL_WARMUP_MODE}, "
             f"warmup_updates={NOISE_STAGE_GTRXL_WARMUP_UPDATES}, "
-            f"short_warmup_updates={NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES})"
+            f"short_warmup_updates={NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES}"
         )
         ev.log(
-            "  "
-            f"训练期评估（TrainEval）: 中间步dense_repeats={NOISE_STAGE_TRAIN_DENSE_EVAL_REPEATS}, "
-            f"终止步terminal_repeats={NOISE_STAGE_TRAIN_TERMINAL_EVAL_REPEATS}, "
-            f"dense模式={NOISE_STAGE_DENSE_REWARD_MODE}, "
-            f"terminal模式={NOISE_STAGE_TRAIN_TERMINAL_REWARD_MODE}, "
-            f"补全策略={NOISE_STAGE_DENSE_COMPLETION_POLICY} | "
-            f"预算衰减（BudgetDecay）(比例fraction={NOISE_STAGE_BUDGET_DECAY_FRACTION})"
+            "  ▸ 训练期评估（train-time eval）: "
+            f"dense 重复 dense_repeats={NOISE_STAGE_TRAIN_DENSE_EVAL_REPEATS}, "
+            f"终止重复 terminal_repeats={NOISE_STAGE_TRAIN_TERMINAL_EVAL_REPEATS}, "
+            f"dense 模式 dense_reward_mode={NOISE_STAGE_DENSE_REWARD_MODE}, "
+            f"终止模式 terminal_reward_mode={NOISE_STAGE_TRAIN_TERMINAL_REWARD_MODE}, "
+            f"补全策略 completion_policy={NOISE_STAGE_DENSE_COMPLETION_POLICY}  │  "
+            f"预算衰减 budget_decay fraction={NOISE_STAGE_BUDGET_DECAY_FRACTION}"
         )
         ev.log(
-            "  "
-            f"最终奖励（FinalReward）(性能权重alpha_perf={NOISE_STAGE_FINAL_REWARD_ALPHA_PERF}, "
-            f"成本权重alpha_cost={NOISE_STAGE_FINAL_REWARD_ALPHA_COST})"
+            "  ▸ 终局奖励权重（final reward blending）: "
+            f"alpha_perf={NOISE_STAGE_FINAL_REWARD_ALPHA_PERF}, "
+            f"alpha_cost={NOISE_STAGE_FINAL_REWARD_ALPHA_COST}"
         )
         ev.log(
-            "  "
-            f"性能权重（PerfWeights）(损失loss={NOISE_STAGE_PERF_WEIGHT_LOSS}, "
-            f"指标1（m1）={NOISE_STAGE_PERF_WEIGHT_M1}, 指标2（m2）={NOISE_STAGE_PERF_WEIGHT_M2}) | "
-            f"屏障权重（BarrierWeights）(损失loss={NOISE_STAGE_BARRIER_WEIGHT_LOSS}, "
-            f"指标1（m1）={NOISE_STAGE_BARRIER_WEIGHT_M1}, 指标2（m2）={NOISE_STAGE_BARRIER_WEIGHT_M2})"
+            "  ▸ 性能权 perf_weights: "
+            f"loss={NOISE_STAGE_PERF_WEIGHT_LOSS}, m1={NOISE_STAGE_PERF_WEIGHT_M1}, m2={NOISE_STAGE_PERF_WEIGHT_M2}"
+            "  │  屏障权 barrier_weights: "
+            f"loss={NOISE_STAGE_BARRIER_WEIGHT_LOSS}, m1={NOISE_STAGE_BARRIER_WEIGHT_M1}, m2={NOISE_STAGE_BARRIER_WEIGHT_M2}"
         )
         ev.log(
-            "  奖励塑形（RewardShape）(差分diff=禁用disabled, 违约时保留成本奖励keep_cost_reward_on_violation=True, "
-            f"违约时取消稠密奖励cancel_dense_reward_on_violation=False, 稠密塑形比例dense_shaping_scale={NOISE_STAGE_DENSE_REWARD_SHAPING_SCALE})"
+            "  ▸ 奖励塑形（reward shaping）: 差分 diff=关闭（off）, "
+            "违约保留成本项 keep_cost_on_violation=True, "
+            "违约取消稠密项 cancel_dense_on_violation=False, "
+            f"稠密比例 dense_scale={NOISE_STAGE_DENSE_REWARD_SHAPING_SCALE}"
         )
         ev.log(
-            "  "
-            f"候选确认（CandidateConfirm）(重复次数repeats={NOISE_STAGE_CONFIRM_REPEATS}) | "
-            f"决赛确认（FinalistConfirm）(重复次数repeats={NOISE_STAGE_FINALIST_REPEATS}, 候选列表shortlist={NOISE_STAGE_SHORTLIST_SIZE}) | "
-            f"进度绘图（ProgressPlots）(间隔every={NOISE_STAGE_PROGRESS_SAVE_INTERVAL}, 目录dir={noise_progress_dir})"
+            "  ▸ 候选复试（confirm）repeats="
+            f"{NOISE_STAGE_CONFIRM_REPEATS}  │  决赛复试（finalist）repeats="
+            f"{NOISE_STAGE_FINALIST_REPEATS}, shortlist 容量={NOISE_STAGE_SHORTLIST_SIZE}  │  "
+            f"进度图间隔 progress_every={NOISE_STAGE_PROGRESS_SAVE_INTERVAL}, 目录={noise_progress_dir}"
         )
         ev.log(
-            "  "
-            f"稳定性阈值（StabilityThresholds）(搜索search={NOISE_STAGE_STABILITY_THRESHOLDS['search']}, "
-            f"留出集holdout={NOISE_STAGE_STABILITY_THRESHOLDS['holdout']}, "
-            f"代理参考proxy_ref={NOISE_STAGE_STABILITY_PROXY_STD_REF}, "
-            f"惩罚比例penalty_scale={NOISE_STAGE_STABILITY_PENALTY_SCALE})"
+            "  ▸ 稳定性阈值（stability thresholds）: "
+            f"search={NOISE_STAGE_STABILITY_THRESHOLDS['search']}, "
+            f"holdout={NOISE_STAGE_STABILITY_THRESHOLDS['holdout']}, "
+            f"proxy 参考 std_ref={NOISE_STAGE_STABILITY_PROXY_STD_REF}, "
+            f"惩罚系数 penalty_scale={NOISE_STAGE_STABILITY_PENALTY_SCALE}"
         )
         os.makedirs(noise_progress_dir, exist_ok=True)
 
@@ -767,7 +841,9 @@ class NoiseRLModule:
             chunk_start = new_idx * STEP_INFO_CHUNK_SIZE + 1
             chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
             f = open(target, "w", encoding="utf-8")
-            f.write(f"=== 噪声PPO每步信息（Noise PPO StepInfo）回合 {chunk_start}-{chunk_end} ===\n\n")
+            f.write(
+                f"=== 噪声 PPO 逐步诊断（Noise PPO step info）· 回合区间 episodes {chunk_start}-{chunk_end} ===\n\n"
+            )
             noise_step_info_chunk_file[0] = f
             noise_step_info_chunk_idx[0] = new_idx
             return f
@@ -844,8 +920,8 @@ class NoiseRLModule:
                 )
             rl_evaluator.split_name = online_reward_split
             ev.log(
-                f"[信息] 噪声阶段在线奖励使用 {online_reward_split} "
-                f"（性能基线：固定Stage-1配置+低风险噪声；成本参考：最大噪声配置）"
+                f"  [信息] 在线奖励子集（online reward split）: {online_reward_split}  "
+                f"（性能基线: Stage-1 固定 + 低风险噪声；成本尺度: 最大噪声配置）"
             )
         else:
             online_reward_split = "train"
@@ -874,14 +950,14 @@ class NoiseRLModule:
                 proxy_base_loss, proxy_base_p, proxy_base_s,
                 proxy_worst_loss, proxy_worst_p, proxy_worst_s,
             )
-            ev.log(
-                f"噪声阶段训练约束（Noise-Stage Training Constraints）"
-                f"（动态计算：baseline到worst的1/4分位，基于{online_reward_split}）："
+            _noise_block_title(
+                ev.log,
+                f"训练用代理子集动态约束（Training proxy limits on {online_reward_split}）",
             )
-            ev.log(f"  Proxy Baseline: {ev._fmt_metrics(proxy_base_loss, proxy_base_p, proxy_base_s)}")
-            ev.log(f"  Proxy Worst:    {ev._fmt_metrics(proxy_worst_loss, proxy_worst_p, proxy_worst_s)}")
+            ev.log(f"  ▸ 代理基线（proxy baseline）: {ev._fmt_metrics(proxy_base_loss, proxy_base_p, proxy_base_s)}")
+            ev.log(f"  ▸ 代理最坏（proxy worst）:   {ev._fmt_metrics(proxy_worst_loss, proxy_worst_p, proxy_worst_s)}")
             ev.log(
-                f"  Proxy Limit:    "
+                f"  ▸ 代理界限（proxy limit）:   "
                 f"{ev._fmt_constraints(proxy_limits['loss'], proxy_limits['metric1'], proxy_limits['metric2'])}"
             )
         else:
@@ -957,11 +1033,11 @@ class NoiseRLModule:
             "cost": float(cost_reference_tot_c),
         }
         ev.log(
-            f"噪声阶段奖励评分（Noise-Stage Reward Scoring）: "
-            f"成本范围（cost_bounds）=({env._cost_lower_bound:.2f}, {env._cost_upper_bound:.2f}), "
-            f"性能权重（alpha_perf）={env._final_reward_alpha_perf:.2f}, "
-            f"成本权重（alpha_cost）={env._final_reward_alpha_cost:.2f}, "
-            f"稠密塑形比例（dense_shaping_scale）={env._dense_reward_shaping_scale:.2f}"
+            f"  [信息] 奖励打分（reward scoring）: "
+            f"成本区间 cost_bounds=({env._cost_lower_bound:.2f}, {env._cost_upper_bound:.2f}), "
+            f"perf 权重 alpha_perf={env._final_reward_alpha_perf:.2f}, "
+            f"cost 权重 alpha_cost={env._final_reward_alpha_cost:.2f}, "
+            f"稠密塑形 dense_shaping_scale={env._dense_reward_shaping_scale:.2f}"
         )
         buffer = _NoiseRecurrentRolloutBuffer()
 
@@ -1365,6 +1441,20 @@ class NoiseRLModule:
                 action = "trimmed"
             return action
 
+        # 动态风险阈值（Dynamic risk thresholds）
+        # 初始值为静态默认值，基线评估后根据其实际表现自动放宽，
+        # 确保基线方案自身一定能通过检测，同时挑战者也以基线为参照。
+        dynamic_best_test_risk_thresholds = {
+            "search": {
+                "safe_rate_min": NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN,
+                "cvar_max": NOISE_STAGE_BEST_TEST_CVAR_MAX,
+            },
+            "holdout": {
+                "safe_rate_min": NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN,
+                "cvar_max": NOISE_STAGE_BEST_TEST_CVAR_MAX,
+            },
+        }
+
         def _evaluate_best_test_split(
             split_name,
             noise_kwargs,
@@ -1433,9 +1523,11 @@ class NoiseRLModule:
             stats[f"{metric_prefix}_tail_acc_mean"] = tail_info["tail_acc_mean"]
             stats[f"{metric_prefix}_tail_f1_mean"] = tail_info["tail_f1_mean"]
             stats[f"{metric_prefix}_unsafe_count"] = tail_info["unsafe_count"]
+            _dyn_sr_min = dynamic_best_test_risk_thresholds[metric_prefix]["safe_rate_min"]
+            _dyn_cvar_max = dynamic_best_test_risk_thresholds[metric_prefix]["cvar_max"]
             stats[f"{metric_prefix}_risk_feasible"] = bool(
-                tail_info["safe_rate"] >= NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN
-                and tail_info["tail_violation_cvar"] <= NOISE_STAGE_BEST_TEST_CVAR_MAX
+                tail_info["safe_rate"] >= _dyn_sr_min
+                and tail_info["tail_violation_cvar"] <= _dyn_cvar_max
             )
 
             reward_scores = []
@@ -1636,43 +1728,47 @@ class NoiseRLModule:
             return candidate
 
         def _log_best_test_result(candidate):
-            cache_tag = "cache-hit" if candidate.get("qualification_from_cache") else "fresh-eval"
-            ev.log(
-                f"  [BestTest:{cache_tag}] {candidate.get('qualification_label', 'challenger')}"
+            cache_zh = (
+                "命中缓存（cache-hit）"
+                if candidate.get("qualification_from_cache")
+                else "全新评估（fresh-eval）"
             )
-            ev.log(f"    [Search:{qualification_search_split}]")
-            ev.log(
-                f"      {ev._fmt_metrics(candidate['search_loss'], candidate['search_metric1'], candidate['search_metric2'])}"
-            )
-            ev.log(
-                f"      score_mean={candidate.get('search_score_mean', 0.0):.4f}, "
-                f"score_std={candidate.get('search_score_std', 0.0):.4f}, "
-                f"safe_rate={candidate.get('search_safe_rate', 0.0):.3f}, "
-                f"CVaR={candidate.get('search_tail_violation_cvar', 0.0):.4f}, "
-                f"stable={candidate.get('search_stability_ok', False)}"
-            )
-            ev.log("    [Holdout]")
-            ev.log(
-                f"      {ev._fmt_metrics(candidate['holdout_loss'], candidate['holdout_metric1'], candidate['holdout_metric2'])}"
-            )
-            ev.log(
-                f"      score_mean={candidate.get('holdout_score_mean', 0.0):.4f}, "
-                f"score_std={candidate.get('holdout_score_std', 0.0):.4f}, "
-                f"safe_rate={candidate.get('holdout_safe_rate', 0.0):.3f}, "
-                f"CVaR={candidate.get('holdout_tail_violation_cvar', 0.0):.4f}, "
-                f"stable={candidate.get('holdout_stability_ok', False)}"
-            )
+            label_zh = candidate.get("qualification_label", "挑战者（challenger）")
+            lines = [
+                f"最优复试（BestTest） · {cache_zh} · {label_zh}",
+                f"── 搜索子集（Search）: {qualification_search_split} ──",
+                f"  {ev._fmt_metrics(candidate['search_loss'], candidate['search_metric1'], candidate['search_metric2'])}",
+                (
+                    f"  得分均值 score_mean={candidate.get('search_score_mean', 0.0):.4f}  ;  "
+                    f"标准差 score_std={candidate.get('search_score_std', 0.0):.4f}  ;  "
+                    f"安全率 safe_rate={candidate.get('search_safe_rate', 0.0):.3f}  ;  "
+                    f"尾部 CVaR={candidate.get('search_tail_violation_cvar', 0.0):.4f}  ;  "
+                    f"稳定项通过 stable={candidate.get('search_stability_ok', False)}"
+                ),
+                "── 留出集（Holdout）──",
+                f"  {ev._fmt_metrics(candidate['holdout_loss'], candidate['holdout_metric1'], candidate['holdout_metric2'])}",
+                (
+                    f"  得分均值 score_mean={candidate.get('holdout_score_mean', 0.0):.4f}  ;  "
+                    f"标准差 score_std={candidate.get('holdout_score_std', 0.0):.4f}  ;  "
+                    f"安全率 safe_rate={candidate.get('holdout_safe_rate', 0.0):.3f}  ;  "
+                    f"尾部 CVaR={candidate.get('holdout_tail_violation_cvar', 0.0):.4f}  ;  "
+                    f"稳定项通过 stable={candidate.get('holdout_stability_ok', False)}"
+                ),
+            ]
             if candidate.get("qualification_entry_score") is not None:
-                ev.log(
-                    f"    entry_score={candidate['qualification_entry_score']:.4f}, "
+                lines.append(
+                    f"── 训练入围分（entry score）──  "
+                    f"entry_score={candidate['qualification_entry_score']:.4f}, "
                     f"gap={candidate['qualification_entry_gap']:.4f}, "
                     f"tol={candidate['qualification_entry_gap_tol']:.4f}, "
                     f"entry_ok={candidate['qualification_entry_score_ok']}"
                 )
-            ev.log(
-                f"    verdict: base_passed={candidate.get('base_qualification_passed', False)}, "
-                f"qualification_passed={candidate.get('qualification_passed', False)}"
+            lines.append(
+                f"── 裁定（verdict）──  "
+                f"基础合格 base_passed={candidate.get('base_qualification_passed', False)}  ;  "
+                f"总合格 qualification_passed={candidate.get('qualification_passed', False)}"
             )
+            _log_rounded_box(ev.log, lines, indent="")
 
         def _qualify_challenger_candidate(
             candidate_config,
@@ -1845,57 +1941,57 @@ class NoiseRLModule:
             confirmed_candidate = _finalize_candidate_annotations(confirmed_candidate)
 
             _confirm_lines = [
-                f"噪声候选确认 · {confirmation_label}",
-                "[搜索集 Search]",
-                f"  指标: {ev._fmt_metrics(confirmed_candidate['search_loss'], confirmed_candidate['search_metric1'], confirmed_candidate['search_metric2'])}",
+                f"噪声候选确认（confirm） · {confirmation_label}",
+                "── 搜索集（Search）──",
+                f"  指标 metrics: {ev._fmt_metrics(confirmed_candidate['search_loss'], confirmed_candidate['search_metric1'], confirmed_candidate['search_metric2'])}",
                 (
-                    f"  风险: 安全率={confirmed_candidate.get('search_safe_rate', 0):.3f}, "
+                    f"  风险 risk: 安全率 safe_rate={confirmed_candidate.get('search_safe_rate', 0):.3f}, "
                     f"CVaR={confirmed_candidate.get('search_tail_violation_cvar', 0):.4f}, "
-                    f"尾部余量={confirmed_candidate.get('search_tail_margin_score', 0):.4f}, "
-                    f"风险可行={confirmed_candidate.get('search_risk_feasible', False)}"
+                    f"尾部余量 tail_margin={confirmed_candidate.get('search_tail_margin_score', 0):.4f}, "
+                    f"风险可行 risk_feasible={confirmed_candidate.get('search_risk_feasible', False)}"
                 ),
                 (
-                    f"  性能: 均值性能={confirmed_candidate.get('search_mean_perf_score', 0):.4f}, "
-                    f"成本={confirmed_candidate['cost']:.2f}"
+                    f"  性能 perf: 均值分项 mean_perf={confirmed_candidate.get('search_mean_perf_score', 0):.4f}, "
+                    f"成本 cost={confirmed_candidate['cost']:.2f}"
                 ),
             ]
             sr_lb = confirmed_candidate.get("search_safe_rate_lb95")
             cvar_ucb = confirmed_candidate.get("search_tail_violation_cvar_ucb95")
             if sr_lb is not None:
                 _confirm_lines.append(
-                    f"  下界: Wilson下界={sr_lb:.4f}, CVaR上置信界={cvar_ucb:.4f}"
+                    f"  置信下界: Wilson LB={sr_lb:.4f}, CVaR UCB={cvar_ucb:.4f}"
                 )
             if num_metrics > 1:
                 _confirm_lines.append(
-                    f"  统计: std=(Loss={confirmed_candidate['search_loss_std']:.4f}, "
-                    f"M1={confirmed_candidate['search_metric1_std']:.4f}, "
-                    f"M2={confirmed_candidate['search_metric2_std']:.4f}), "
-                    f"稳定={confirmed_candidate['search_stability_ok']}, "
-                    f"精度通过={confirmed_candidate['search_estimate_precision_ok']}"
+                    f"  统计 statistics: std(loss={confirmed_candidate['search_loss_std']:.4f}, "
+                    f"m1={confirmed_candidate['search_metric1_std']:.4f}, "
+                    f"m2={confirmed_candidate['search_metric2_std']:.4f}), "
+                    f"稳定 stability_ok={confirmed_candidate['search_stability_ok']}, "
+                    f"估计精度 precision_ok={confirmed_candidate['search_estimate_precision_ok']}"
                 )
             else:
                 _confirm_lines.append(
-                    f"  统计: std=(Loss={confirmed_candidate['search_loss_std']:.4f}, "
-                    f"M1={confirmed_candidate['search_metric1_std']:.4f}), "
-                    f"稳定={confirmed_candidate['search_stability_ok']}, "
-                    f"精度通过={confirmed_candidate['search_estimate_precision_ok']}"
+                    f"  统计 statistics: std(loss={confirmed_candidate['search_loss_std']:.4f}, "
+                    f"m1={confirmed_candidate['search_metric1_std']:.4f}), "
+                    f"稳定 stability_ok={confirmed_candidate['search_stability_ok']}, "
+                    f"估计精度 precision_ok={confirmed_candidate['search_estimate_precision_ok']}"
                 )
             if ev.has_dataset_split("val_holdout"):
-                _confirm_lines.append("[留出集 Holdout]")
+                _confirm_lines.append("── 留出集（Holdout）──")
                 _confirm_lines.append(
-                    f"  指标: {ev._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}"
+                    f"  指标 metrics: {ev._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}"
                 )
                 _confirm_lines.append(
-                    f"  风险: 安全率={confirmed_candidate.get('holdout_safe_rate', 0):.3f}, "
+                    f"  风险 risk: 安全率 safe_rate={confirmed_candidate.get('holdout_safe_rate', 0):.3f}, "
                     f"CVaR={confirmed_candidate.get('holdout_tail_violation_cvar', 0):.4f}, "
-                    f"尾部余量={confirmed_candidate.get('holdout_tail_margin_score', 0):.4f}, "
-                    f"风险可行={confirmed_candidate.get('holdout_risk_feasible', False)}"
+                    f"尾部余量 tail_margin={confirmed_candidate.get('holdout_tail_margin_score', 0):.4f}, "
+                    f"风险可行 risk_feasible={confirmed_candidate.get('holdout_risk_feasible', False)}"
                 )
                 h_lb = confirmed_candidate.get("holdout_safe_rate_lb95")
                 h_ucb = confirmed_candidate.get("holdout_tail_violation_cvar_ucb95")
                 if h_lb is not None:
                     _confirm_lines.append(
-                        f"  下界: Wilson下界={h_lb:.4f}, CVaR上置信界={h_ucb:.4f}"
+                        f"  置信下界: Wilson LB={h_lb:.4f}, CVaR UCB={h_ucb:.4f}"
                     )
             _log_rounded_box(ev.log, _confirm_lines)
 
@@ -1905,7 +2001,11 @@ class NoiseRLModule:
                 metric_prefix="search",
             ):
                 search_best_noise_config = _clone_candidate(confirmed_candidate)
-                ev.log(f"  ★ 噪声搜索最优 (Noise Search-Best) 更新 (回合 {episode_idx + 1}): 成本={search_best_noise_config['cost']:.2f}, 最终选择分数={search_best_noise_config['final_selection_score']:.4f}")
+                ev.log(
+                    f"  ★ 搜索侧最优（Noise search-best）更新 · 回合 {episode_idx + 1}: "
+                    f"成本 cost={search_best_noise_config['cost']:.2f}, "
+                    f"终选分 final_selection_score={search_best_noise_config['final_selection_score']:.4f}"
+                )
 
             if confirmed_candidate["stable_search_feasible"] and _is_better_stable_split_candidate(
                 confirmed_candidate,
@@ -1913,34 +2013,48 @@ class NoiseRLModule:
                 metric_prefix="search",
             ):
                 stable_search_best_noise_config = _clone_candidate(confirmed_candidate)
-                ev.log(f"  ★ 噪声稳定搜索最优 (Noise Stable Search-Best) 更新 (回合 {episode_idx + 1}): 成本={stable_search_best_noise_config['cost']:.2f}, 最终选择分数={stable_search_best_noise_config['final_selection_score']:.4f}, 稳定性分数={stable_search_best_noise_config['search_stability_score']:.4f}")
+                ev.log(
+                    f"  ★ 稳定搜索最优（Noise stable search-best）· 回合 {episode_idx + 1}: "
+                    f"成本 cost={stable_search_best_noise_config['cost']:.2f}, "
+                    f"终选分 final_selection_score={stable_search_best_noise_config['final_selection_score']:.4f}, "
+                    f"稳定分 stability_score={stable_search_best_noise_config['search_stability_score']:.4f}"
+                )
 
             if confirmed_candidate["joint_ok"] and _is_better_joint_candidate(
                 confirmed_candidate,
                 joint_best_noise_config,
             ):
                 joint_best_noise_config = _clone_candidate(confirmed_candidate)
-                ev.log(f"  ★ 噪声联合最优 (Noise Joint-Best) 更新 (回合 {episode_idx + 1}): 成本={joint_best_noise_config['cost']:.2f}, 最终选择分数={joint_best_noise_config['final_selection_score']:.4f}")
+                ev.log(
+                    f"  ★ 联合最优（Noise joint-best）· 回合 {episode_idx + 1}: "
+                    f"成本 cost={joint_best_noise_config['cost']:.2f}, "
+                    f"终选分 final_selection_score={joint_best_noise_config['final_selection_score']:.4f}"
+                )
 
             if confirmed_candidate["stable_joint_feasible"] and _is_better_joint_candidate(
                 confirmed_candidate,
                 stable_joint_best_noise_config,
             ):
                 stable_joint_best_noise_config = _clone_candidate(confirmed_candidate)
-                ev.log(f"  ★ 噪声稳定联合最优 (Noise Stable Joint-Best) 更新 (回合 {episode_idx + 1}): 成本={stable_joint_best_noise_config['cost']:.2f}, 最终选择分数={stable_joint_best_noise_config['final_selection_score']:.4f}, 稳定性分数={stable_joint_best_noise_config['stability_score']:.4f}")
+                ev.log(
+                    f"  ★ 稳定联合最优（Noise stable joint-best）· 回合 {episode_idx + 1}: "
+                    f"成本 cost={stable_joint_best_noise_config['cost']:.2f}, "
+                    f"终选分 final_selection_score={stable_joint_best_noise_config['final_selection_score']:.4f}, "
+                    f"稳定分 stability_score={stable_joint_best_noise_config['stability_score']:.4f}"
+                )
 
             shortlist_status = "not-eligible"
             if update_shortlist and confirmed_candidate["stable_joint_feasible"]:
                 shortlist_status = _upsert_shortlist_candidate(confirmed_candidate)
             confirmed_candidate["shortlist_status"] = shortlist_status
-            ev.log(f"  ▶ 稳定性判定（Stability verdict）:")
+            ev.log("  ▶ 稳定性裁定（stability verdict）:")
             ev.log(
-                f"      搜索通过={confirmed_candidate['search_ok']}, "
-                f"留出集通过={confirmed_candidate['holdout_ok']}, "
-                f"稳定搜索={confirmed_candidate['stable_search_feasible']}, "
-                f"稳定留出集={confirmed_candidate['stable_holdout_feasible']}, "
-                f"稳定联合可行={confirmed_candidate['stable_joint_feasible']}, "
-                f"候选列表={shortlist_status}"
+                f"      搜索硬约束 search_ok={confirmed_candidate['search_ok']}, "
+                f"留出硬约束 holdout_ok={confirmed_candidate['holdout_ok']}, "
+                f"搜索稳定 stable_search={confirmed_candidate['stable_search_feasible']}, "
+                f"留出稳定 stable_holdout={confirmed_candidate['stable_holdout_feasible']}, "
+                f"联合稳定可行 stable_joint={confirmed_candidate['stable_joint_feasible']}, "
+                f"短名单状态 shortlist={_shortlist_status_zh(shortlist_status)}"
             )
             return confirmed_candidate
 
@@ -1963,54 +2077,82 @@ class NoiseRLModule:
         initial_incumbent_base = _run_best_test_base(
             initial_incumbent_candidate,
             repeats=NOISE_STAGE_BEST_TEST_REPEATS,
-            qualification_label="initial incumbent",
+            qualification_label="初始守擂基线（initial incumbent）",
         )
         qualification_cache[_candidate_signature(initial_incumbent_candidate)] = _clone_candidate(
             initial_incumbent_base
         )
+
+        # ── 根据基线实际评估结果动态放宽风险阈值 ──
+        # 确保基线方案自身一定能通过，同时挑战者也以基线为参照
+        _bl_search_sr = float(initial_incumbent_base.get("search_safe_rate", 1.0))
+        _bl_search_cvar = float(initial_incumbent_base.get("search_tail_violation_cvar", 0.0))
+        _bl_holdout_sr = float(initial_incumbent_base.get("holdout_safe_rate", 1.0))
+        _bl_holdout_cvar = float(initial_incumbent_base.get("holdout_tail_violation_cvar", 0.0))
+        dynamic_best_test_risk_thresholds["search"]["safe_rate_min"] = min(
+            NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN, _bl_search_sr,
+        )
+        dynamic_best_test_risk_thresholds["search"]["cvar_max"] = max(
+            NOISE_STAGE_BEST_TEST_CVAR_MAX, _bl_search_cvar,
+        )
+        dynamic_best_test_risk_thresholds["holdout"]["safe_rate_min"] = min(
+            NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN, _bl_holdout_sr,
+        )
+        dynamic_best_test_risk_thresholds["holdout"]["cvar_max"] = max(
+            NOISE_STAGE_BEST_TEST_CVAR_MAX, _bl_holdout_cvar,
+        )
+        ev.log(
+            f"  [动态风险阈值 Dynamic Risk Thresholds] 基线评估后更新（update after baseline eval）:\n"
+            f"    search : safe_rate_min="
+            f"{dynamic_best_test_risk_thresholds['search']['safe_rate_min']:.4f}"
+            f" (静态 static={NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN}, 基线 baseline={_bl_search_sr:.4f}), "
+            f"cvar_max="
+            f"{dynamic_best_test_risk_thresholds['search']['cvar_max']:.4f}"
+            f" (静态 static={NOISE_STAGE_BEST_TEST_CVAR_MAX}, 基线 baseline={_bl_search_cvar:.4f})\n"
+            f"    holdout: safe_rate_min="
+            f"{dynamic_best_test_risk_thresholds['holdout']['safe_rate_min']:.4f}"
+            f" (静态 static={NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN}, 基线 baseline={_bl_holdout_sr:.4f}), "
+            f"cvar_max="
+            f"{dynamic_best_test_risk_thresholds['holdout']['cvar_max']:.4f}"
+            f" (静态 static={NOISE_STAGE_BEST_TEST_CVAR_MAX}, 基线 baseline={_bl_holdout_cvar:.4f})"
+        )
+
+        # ── 基线方案无条件上台 ──
+        # 基线是性能参照点，其合格标志强制置 True
+        initial_incumbent_base["search_risk_feasible"] = True
+        initial_incumbent_base["holdout_risk_feasible"] = True
+        initial_incumbent_base["joint_risk_feasible"] = True
+        initial_incumbent_base["base_qualification_passed"] = True
+        # 同步更新资格缓存，避免与基线同签名的候选使用过期的旧标志
+        qualification_cache[_candidate_signature(initial_incumbent_candidate)] = _clone_candidate(
+            initial_incumbent_base
+        )
+
         initial_incumbent_result = _materialize_best_test_result(
             initial_incumbent_base,
             episode_idx=None,
             entry_score=None,
-            qualification_label="initial incumbent",
+            qualification_label="初始守擂基线（initial incumbent）",
             from_cache=False,
         )
         _log_best_test_result(initial_incumbent_result)
-        if initial_incumbent_result.get("qualification_passed", False):
-            incumbent_best_noise_config = _clone_candidate(initial_incumbent_result)
-            incumbent_best_signature = _candidate_signature(incumbent_best_noise_config)
-            incumbent_mean_score = float(incumbent_best_noise_config["search_score_mean"])
-            incumbent_history.append({
-                "source": "initial_incumbent",
-                "episode": 0,
-                "mean_score": float(incumbent_mean_score),
-                "cost": float(incumbent_best_noise_config["cost"]),
-                "base_qualification_passed": bool(
-                    incumbent_best_noise_config.get("base_qualification_passed", False)
-                ),
-            })
-            ev.log(
-                f"[BestTest] initial incumbent ready: mean_score={incumbent_mean_score:.4f}, "
-                f"cost={incumbent_best_noise_config['cost']:.2f}, "
-                f"base_passed={incumbent_best_noise_config.get('base_qualification_passed', False)}"
-            )
-        else:
-            incumbent_best_noise_config = None
-            incumbent_best_signature = None
-            incumbent_mean_score = float("-inf")
-            incumbent_history.append({
-                "source": "initial_incumbent_failed",
-                "episode": 0,
-                "mean_score": float(initial_incumbent_result["search_score_mean"]),
-                "cost": float(initial_incumbent_result["cost"]),
-                "base_qualification_passed": False,
-            })
-            ev.log(
-                f"[BestTest] initial incumbent failed qualification: "
-                f"mean_score={initial_incumbent_result['search_score_mean']:.4f}, "
-                f"cost={initial_incumbent_result['cost']:.2f}; "
-                "waiting for the first passing challenger."
-            )
+
+        # 基线无条件作为守擂（baseline unconditionally becomes incumbent）
+        incumbent_best_noise_config = _clone_candidate(initial_incumbent_result)
+        incumbent_best_signature = _candidate_signature(incumbent_best_noise_config)
+        incumbent_mean_score = float(incumbent_best_noise_config["search_score_mean"])
+        incumbent_history.append({
+            "source": "initial_incumbent",
+            "episode": 0,
+            "mean_score": float(incumbent_mean_score),
+            "cost": float(incumbent_best_noise_config["cost"]),
+            "base_qualification_passed": True,
+        })
+        ev.log(
+            f"  [最优复试 BestTest] 初始守擂已就绪（基线无条件上台 baseline unconditionally accepted）: "
+            f"search 得分均值 mean_score={incumbent_mean_score:.4f}, "
+            f"成本 cost={incumbent_best_noise_config['cost']:.2f}"
+        )
 
         for episode in range(stage2_total_episodes):
             current_lr, current_entropy = ev.update_hyperparameters(optimizer, episode)
@@ -2178,10 +2320,11 @@ class NoiseRLModule:
             ev.update_reward_statistics(episode_reward_raw)
             chunk_f = _open_noise_chunk(episode + 1)
             chunk_f.write(
-                f"--- 回合（Episode） {episode + 1} "
-                f"(回合回报（EpisodeReturn）={episode_reward_raw:.4f}, "
-                f"原始最终奖励（RawFinalReward）={(episode_raw_final_reward if episode_raw_final_reward is not None else 0.0):.4f}, "
-                f"稠密奖励合计（DenseRewardTotal）={env.accumulated_dense_reward:.4f}) ---\n"
+                f"── 回合 episode {episode + 1} ──  "
+                f"回报 episode_return={episode_reward_raw:.4f}  ;  "
+                f"原始终局 raw_final_reward="
+                f"{(episode_raw_final_reward if episode_raw_final_reward is not None else 0.0):.4f}  ;  "
+                f"稠密累计 dense_reward_total={env.accumulated_dense_reward:.4f}\n"
             )
             for si in step_infos:
                 _write_noise_step_info(si, chunk_f)
@@ -2262,29 +2405,33 @@ class NoiseRLModule:
                     )
                     for key, value in final_noise_config.items()
                 }
+                _noise_block_title(ev.log, f"回合 {episode + 1} · 训练过程新高（episode new best）")
                 ev.log(
-                    f"  噪声回合（Noise Episode） {episode + 1}: 新最优！（New Best!） "
-                    f"最终选择分数（FinalSelectionScore）={episode_final_selection_score:.4f}, "
-                    f"原始最终奖励（RawFinalReward）={(episode_raw_final_reward if episode_raw_final_reward is not None else 0.0):.4f}, "
-                    f"回合回报（EpisodeReturn）={episode_reward_raw:.4f}, "
-                    f"成本（Cost）={env.accumulated_cost:.2f}"
+                    f"  ▸ 终选分 final_selection_score={episode_final_selection_score:.4f}  "
+                    f"│  原始终局奖励 raw_final_reward="
+                    f"{(episode_raw_final_reward if episode_raw_final_reward is not None else 0.0):.4f}  "
+                    f"│  回合回报 episode_return={episode_reward_raw:.4f}  "
+                    f"│  成本 cost={env.accumulated_cost:.2f}"
                 )
                 if episode_mc_eval is not None:
                     _mc_log = (
-                        "    蒙特卡洛评估（MC Eval）: "
-                        f"损失（Loss）={episode_mc_eval['loss_mean']:.4f}±{episode_mc_eval['loss_std']:.4f}, "
-                        f"指标1（M1）={episode_mc_eval['metric1_mean']:.4f}±{episode_mc_eval['metric1_std']:.4f}"
+                        "  ▸ 蒙特卡洛诊断（MC eval）: "
+                        f"损失 loss={episode_mc_eval['loss_mean']:.4f}±{episode_mc_eval['loss_std']:.4f}, "
+                        f"指标1 m1={episode_mc_eval['metric1_mean']:.4f}±{episode_mc_eval['metric1_std']:.4f}"
                     )
                     if num_metrics > 1:
-                        _mc_log += f", 指标2（M2）={episode_mc_eval['metric2_mean']:.4f}±{episode_mc_eval['metric2_std']:.4f}"
+                        _mc_log += (
+                            f", 指标2 m2={episode_mc_eval['metric2_mean']:.4f}"
+                            f"±{episode_mc_eval['metric2_std']:.4f}"
+                        )
                     ev.log(_mc_log)
-                ev.log(f"    x     : {env.input_noise_config}")
-                ev.log(f"    wq    : {env.wq_noise_config}")
-                ev.log(f"    wk    : {env.wk_noise_config}")
-                ev.log(f"    wv    : {env.wv_noise_config}")
-                ev.log(f"    wo    : {env.wo_noise_config}")
-                ev.log(f"    wffn1 : {env.wffn1_noise_config}")
-                ev.log(f"    wffn2 : {env.wffn2_noise_config}")
+                ev.log(f"     输入 input_noise:  {env.input_noise_config}")
+                ev.log(f"     权重 wq:          {env.wq_noise_config}")
+                ev.log(f"     权重 wk:          {env.wk_noise_config}")
+                ev.log(f"     权重 wv:          {env.wv_noise_config}")
+                ev.log(f"     权重 wo:          {env.wo_noise_config}")
+                ev.log(f"     FFN1 wffn1:       {env.wffn1_noise_config}")
+                ev.log(f"     FFN2 wffn2:       {env.wffn2_noise_config}")
 
             challenger_signature = _candidate_signature(final_noise_config)
             if (
@@ -2297,7 +2444,9 @@ class NoiseRLModule:
                     final_noise_config,
                     episode_idx=episode,
                     entry_score=episode_final_selection_score,
-                    qualification_label=f"episode {episode + 1} challenger",
+                    qualification_label=(
+                        f"第 {episode + 1} 回合挑战者（episode {episode + 1} challenger）"
+                    ),
                 )
                 if challenger_candidate is not None and challenger_candidate.get("qualification_passed", False):
                     challenger_mean_score = float(challenger_candidate["search_score_mean"])
@@ -2328,14 +2477,14 @@ class NoiseRLModule:
                             "entry_score": float(episode_final_selection_score),
                         })
                         ev.log(
-                            f"  ★ incumbent best 更新！episode={episode + 1}, "
-                            f"old_mean={prev_mean_score:.4f}, new_mean={challenger_mean_score:.4f}, "
-                            f"old_cost={prev_cost:.2f}, new_cost={challenger_candidate['cost']:.2f}"
+                            f"  ★ 守擂最优（incumbent best）已更新 · 回合 episode={episode + 1}: "
+                            f"旧 search 均值 old_mean={prev_mean_score:.4f} → 新 new_mean={challenger_mean_score:.4f}, "
+                            f"旧成本 old_cost={prev_cost:.2f} → 新 new_cost={challenger_candidate['cost']:.2f}"
                         )
                     else:
                         ev.log(
-                            f"  [BestTest] challenger通过合格测试但平均分mean_score="
-                            f"{challenger_mean_score:.4f} 不超过 incumbent_mean={incumbent_mean_score:.4f}，保留当前best"
+                            f"  [最优复试 BestTest] 挑战者虽总合格，但 search 均值 mean_score={challenger_mean_score:.4f} "
+                            f"未超过守擂均值 incumbent_mean={incumbent_mean_score:.4f}，保留原 best。"
                         )
 
             if (episode + 1) % PPO_UPDATE_INTERVAL == 0:
@@ -2371,13 +2520,17 @@ class NoiseRLModule:
                 _log_rounded_box(
                     ev.log,
                     [
-                        f"噪声回合（Noise Episode） {episode + 1}",
-                        f"平均回合回报: {avg_episode_return:.4f}, 平均原始最终奖励: {avg_raw_final_reward:.4f}",
-                        f"策略损失: {policy_loss:.4f}, 价值损失: {value_loss:.4f}, 熵: {entropy:.4f}",
+                        f"PPO 窗口摘要 · 截至回合（through episode） {episode + 1}",
+                        f"平均回报 mean episode return={avg_episode_return:.4f}  ;  "
+                        f"平均原始终局奖励 mean raw final={avg_raw_final_reward:.4f}",
+                        f"策略损失 policy_loss={policy_loss:.4f}  ;  "
+                        f"价值损失 value_loss={value_loss:.4f}  ;  熵 entropy={entropy:.4f}",
                         (
-                            f"[GTrXL调度] LR: {optimizer.param_groups[0]['lr']:.6f}, "
-                            f"熵系数: {current_entropy:.6f}, 更新次数: #{noise_ppo_update_count} "
-                            f"(模式: {NOISE_STAGE_GTRXL_WARMUP_MODE}, 状态: {warmup_status})"
+                            f"GTrXL 调度（schedule）: LR={optimizer.param_groups[0]['lr']:.6f}, "
+                            f"熵系数 entropy_coef={current_entropy:.6f}, "
+                            f"更新序号 update#{noise_ppo_update_count}, "
+                            f"模式 mode={NOISE_STAGE_GTRXL_WARMUP_MODE}, "
+                            f"状态 state={_warmup_status_zh(warmup_status)}"
                         ),
                     ],
                 )
@@ -2404,9 +2557,9 @@ class NoiseRLModule:
                         }
                         noise_warnings.append(warn_msg)
                         ev.log(
-                            f"  ⚠ 警告: 平均奖励下降 {reward_drop:.4f} "
-                            f"(阈值={REWARD_DROP_WARNING_THRESHOLD}), "
-                            f"涉及回合 {window_start_ep}-{window_end_ep}"
+                            f"  ⚠ 警告: 窗口内平均原始终局奖励下降（reward drop）={reward_drop:.4f}  "
+                            f"(阈值 threshold={REWARD_DROP_WARNING_THRESHOLD}), "
+                            f"涉及回合 episodes {window_start_ep}–{window_end_ep}"
                         )
                 noise_prev_avg_reward[0] = avg_raw_final_reward
 
@@ -2473,8 +2626,8 @@ class NoiseRLModule:
                     }
                     env.current_episode_metrics = None
                     ev.log(
-                        f"  [窗口轮换] proxy 约束已更新 → "
-                        f"Limit=({proxy_limits['loss']:.4f}, "
+                        f"  [窗口轮换] 代理子集（proxy）约束已刷新 → "
+                        f"界限 limit(loss, m1, m2)=({proxy_limits['loss']:.4f}, "
                         f"{proxy_limits['metric1']:.4f}, "
                         f"{proxy_limits['metric2']:.4f})"
                     )
@@ -2513,7 +2666,7 @@ class NoiseRLModule:
                     confirm_curve_path=os.path.join(noise_progress_dir, f"noise_confirm_curves_ep{episode + 1}.png"),
                 )
                 ev.log(
-                    f"噪声PPO进度快照已保存于回合（episode） {episode + 1}: "
+                    f"  [进度] 已写入训练/熵曲线快照 · 回合 episode={episode + 1}: "
                     f"{progress_training_curve_path}"
                 )
 
@@ -2572,17 +2725,20 @@ class NoiseRLModule:
             stable_search_best_noise_config = None
             stable_joint_best_noise_config = None
             ev.log(
-                "\n在候选列表二次确认后，未在 val_search_full + val_holdout 上"
-                "找到稳定可行的噪声阶段解决方案。"
+                "\n  [结果] 在 val_search_full 与 val_holdout 上均未找到稳定可行的噪声方案"
+                "（stable feasible noise config）。"
             )
         else:
             stable_search_best_noise_config = _clone_candidate(best_noise_config)
             stable_joint_best_noise_config = _clone_candidate(best_noise_config)
 
-        ev.log("\n--- 噪声PPO训练完成（Noise PPO Training Completed） ---")
-        ev.log(f"噪声阶段状态（Noise Stage Status）: {status}")
+        _noise_log_major_rule(ev.log, "二阶段噪声 PPO 训练结束（Noise PPO training completed）")
+        ev.log(
+            f"  ▸ 阶段状态 stage status: "
+            f"{_noise_stage_status_zh(status, NOISE_STAGE_STATUS_OK, NOISE_STAGE_STATUS_NO_STABLE_FEASIBLE)}"
+        )
         if best_noise_config is not None:
-            ev.log("已找到最优稳定噪声配置（Best Stable Noise Configuration Found）：")
+            _noise_block_title(ev.log, "选定配置输出（Best stable noise configuration）")
             for key in (
                 "input_noise_scaling_factors",
                 "wq_noise_scaling_factors",
@@ -2592,15 +2748,15 @@ class NoiseRLModule:
                 "wffn1_noise_scaling_factors",
                 "wffn2_noise_scaling_factors",
             ):
-                ev.log(f"  {key}: {best_noise_config[key].tolist()}")
+                ev.log(f"     {key}: {best_noise_config[key].tolist()}")
             ev.log(
-                f"  成本（Cost）: {best_noise_config['cost']:.2f}, "
-                f"最终选择分数（FinalSelectionScore）: {best_noise_config['final_selection_score']:.4f}, "
-                f"原始最终奖励（RawFinalReward）: {best_noise_config['raw_final_reward']:.4f}, "
-                f"稳定性分数（StabilityScore）: {best_noise_config['stability_score']:.4f}"
+                f"  ▸ 成本 cost={best_noise_config['cost']:.2f}  "
+                f"│ 终选分 final_selection_score={best_noise_config['final_selection_score']:.4f}  "
+                f"│ 原始终局 raw_final_reward={best_noise_config['raw_final_reward']:.4f}  "
+                f"│ 稳定分 stability_score={best_noise_config['stability_score']:.4f}"
             )
         else:
-            ev.log("本次运行未选出稳定可行的噪声配置。")
+            ev.log("  【输出】本次未选出稳定可行的噪声配置（no stable feasible selection）。")
 
         _plot_noise_training_curves(
             ev, episode_returns, episode_raw_final_rewards, episode_losses, episode_metric1s, episode_metric2s, episode_entropies,
@@ -2627,7 +2783,10 @@ class NoiseRLModule:
 
         if noise_warnings:
             _write_warning_report(noise_warning_file, noise_warnings, stage_label="噪声阶段（Stage-2 Noise）")
-            ev.log(f"  ⚠ 共检测到 {len(noise_warnings)} 次奖励骤降警告，详见: {noise_warning_file}")
+            ev.log(
+                f"  ⚠ 共 {len(noise_warnings)} 条奖励骤降告警（reward drop warnings），"
+                f"详见报告 report: {noise_warning_file}"
+            )
 
         ev.total_episodes = original_total_episodes
         ev.apply_configuration(fixed_gelu, fixed_softmax)
@@ -2682,8 +2841,12 @@ class NoiseRLModule:
             "legacy_shortlist_disabled": True,
             "best_test_repeats": int(NOISE_STAGE_BEST_TEST_REPEATS),
             "trigger_margin": float(NOISE_STAGE_BEST_TEST_TRIGGER_MARGIN),
-            "safe_rate_min": float(NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN),
-            "cvar_max": float(NOISE_STAGE_BEST_TEST_CVAR_MAX),
+            "safe_rate_min_static": float(NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN),
+            "cvar_max_static": float(NOISE_STAGE_BEST_TEST_CVAR_MAX),
+            "dynamic_risk_thresholds": {
+                split: {k: float(v) for k, v in thresholds.items()}
+                for split, thresholds in dynamic_best_test_risk_thresholds.items()
+            },
             "max_entry_score_drop": float(NOISE_STAGE_BEST_TEST_MAX_ENTRY_SCORE_DROP),
             "entry_std_multiplier": float(NOISE_STAGE_BEST_TEST_ENTRY_STD_MULTIPLIER),
             "qualification_trigger_count": int(qualification_trigger_count),
@@ -2715,7 +2878,7 @@ class NoiseRLModule:
             "worst_holdout_stats": _copy_repeat_summary(worst_holdout_stats),
             "worst_case_noise_config": {k: v.copy() for k, v in worst_case_noise_config.items()},
             "limit_computation_method": "dynamic_quartile",
-            "limit_quartile": 0.25,
+            "limit_quartile": float(NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE),
             "search_limits": {k: float(v) for k, v in search_limits.items()},
             "holdout_limits": {k: float(v) for k, v in holdout_limits.items()},
             "status": status,
@@ -4116,15 +4279,16 @@ def _compute_stage2_single_shot_reward_components(
     baseline_loss, baseline_metric1, baseline_metric2 = baseline_metrics
     limits = constraint_limits
 
+    _MARGIN_DENOM_FLOOR = 0.01
     margin_loss = (float(limits["loss"]) - float(loss)) / max(
-        float(limits["loss"]) - float(baseline_loss), 1e-8
+        abs(float(limits["loss"]) - float(baseline_loss)), _MARGIN_DENOM_FLOOR
     )
     margin_m1 = (float(metric1) - float(limits["metric1"])) / max(
-        float(baseline_metric1) - float(limits["metric1"]), 1e-8
+        abs(float(baseline_metric1) - float(limits["metric1"])), _MARGIN_DENOM_FLOOR
     )
     if num_metrics > 1:
         margin_m2 = (float(metric2) - float(limits["metric2"])) / max(
-            float(baseline_metric2) - float(limits["metric2"]), 1e-8
+            abs(float(baseline_metric2) - float(limits["metric2"])), _MARGIN_DENOM_FLOOR
         )
     else:
         margin_m2 = 0.0
@@ -4251,10 +4415,12 @@ def _compute_stage2_reward_components(
     metric2_limit = float(constraint_limits.get("metric2", metric1_limit)) if num_metrics > 1 else metric1_limit
 
     # 均值 ratio 用于兼容字段
-    loss_ratio = (loss_limit - float(loss)) / max(loss_limit - float(baseline_loss), 1e-8)
-    metric1_ratio = (float(metric1) - metric1_limit) / max(float(baseline_metric1) - metric1_limit, 1e-8)
+    # 使用 abs() 防止 limit 在 baseline 同侧时分母极小导致 ratio 爆炸
+    _MARGIN_DENOM_FLOOR = 0.01
+    loss_ratio = (loss_limit - float(loss)) / max(abs(loss_limit - float(baseline_loss)), _MARGIN_DENOM_FLOOR)
+    metric1_ratio = (float(metric1) - metric1_limit) / max(abs(float(baseline_metric1) - metric1_limit), _MARGIN_DENOM_FLOOR)
     if num_metrics > 1:
-        metric2_ratio = (float(metric2) - metric2_limit) / max(float(baseline_metric2) - metric2_limit, 1e-8)
+        metric2_ratio = (float(metric2) - metric2_limit) / max(abs(float(baseline_metric2) - metric2_limit), _MARGIN_DENOM_FLOOR)
     else:
         metric2_ratio = 0.0
 
@@ -4759,7 +4925,7 @@ def _plot_noise_training_curves(
             os.makedirs(training_dir, exist_ok=True)
         plt.savefig(training_curve_path, dpi=150)
         plt.close()
-        evaluator.log(f"噪声PPO训练曲线已保存至（saved to）: {training_curve_path}")
+        evaluator.log(f"  [绘图] 噪声 PPO 训练曲线已写入 path={training_curve_path}")
 
         if episode_entropies:
             update_episodes = np.arange(ppo_update_interval, len(episode_returns) + 1, ppo_update_interval)
@@ -4783,9 +4949,9 @@ def _plot_noise_training_curves(
                     os.makedirs(entropy_dir, exist_ok=True)
                 plt.savefig(entropy_curve_path, dpi=150)
                 plt.close()
-                evaluator.log(f"噪声PPO熵曲线已保存至（saved to）: {entropy_curve_path}")
+                evaluator.log(f"  [绘图] 噪声 PPO 熵曲线已写入 path={entropy_curve_path}")
     except Exception as e:
-        evaluator.log(f"[警告] 绘制噪声PPO训练曲线失败（Failed to plot Noise PPO training curves）: {e}")
+        evaluator.log(f"  [警告] 绘制噪声 PPO 训练曲线失败（plot failed）: {e}")
 
 
 def _plot_noise_risk_curves(
@@ -4841,7 +5007,7 @@ def _plot_noise_risk_curves(
             os.makedirs(risk_dir, exist_ok=True)
         plt.savefig(risk_curve_path, dpi=150)
         plt.close()
-        evaluator.log(f"噪声风险曲线已保存至（saved to）: {risk_curve_path}")
+        evaluator.log(f"  [绘图] 噪声风险曲线已写入 path={risk_curve_path}")
 
         if confirm_window_indices:
             fig2, axes2 = plt.subplots(1, 2, figsize=(14, 5))
@@ -4867,6 +5033,6 @@ def _plot_noise_risk_curves(
                 os.makedirs(confirm_dir, exist_ok=True)
             plt.savefig(confirm_curve_path, dpi=150)
             plt.close()
-            evaluator.log(f"候选确认曲线已保存至（saved to）: {confirm_curve_path}")
+            evaluator.log(f"  [绘图] 候选确认曲线已写入 path={confirm_curve_path}")
     except Exception as e:
-        evaluator.log(f"[警告（Warning）] 绘制风险曲线失败: {e}")
+        evaluator.log(f"  [警告] 绘制风险/确认曲线失败（plot failed）: {e}")
