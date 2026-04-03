@@ -3598,16 +3598,18 @@ class _NoiseOptEnv:
         }
 
         # 计算约束归一化后的 margin（文档修改方案 第3步 S(complete(prefix_t)) 里的内容）
+        # 使用 abs() + 合理下限防止 limit 在 baseline 同侧时分母极小导致 margin 爆炸
         limits = self._get_current_constraint_limits()
+        _MARGIN_DENOM_FLOOR = 0.01
         margin_loss = (float(limits["loss"]) - float(loss)) / max(
-            float(limits["loss"]) - float(self.baseline_loss), 1e-8
+            abs(float(limits["loss"]) - float(self.baseline_loss)), _MARGIN_DENOM_FLOOR
         )
         margin_m1 = (float(metric1) - float(limits["metric1"])) / max(
-            float(self.baseline_p) - float(limits["metric1"]), 1e-8
+            abs(float(self.baseline_p) - float(limits["metric1"])), _MARGIN_DENOM_FLOOR
         )
         if self.num_metrics > 1:
             margin_m2 = (float(metric2) - float(limits["metric2"])) / max(
-                float(self.baseline_s) - float(limits["metric2"]), 1e-8
+                abs(float(self.baseline_s) - float(limits["metric2"])), _MARGIN_DENOM_FLOOR
             )
         else:
             margin_m2 = 0.0
@@ -4084,13 +4086,20 @@ class _NoiseOptEnv:
             num_metrics=self.num_metrics,
             safe_rate_target=self._safe_rate_target,
         )
+        # 安全裁剪：防止极端 reward 摧毁策略网络（与 legacy 路径对齐）
+        clipped_reward = float(np.clip(
+            raw_reward, self._reward_clip_min, self._reward_clip_max
+        ))
+        if clipped_reward != raw_reward:
+            reward_components["reward_clipped"] = True
+            reward_components["raw_reward_before_clip"] = float(raw_reward)
         self.last_cost_reward = float(
             self._final_reward_alpha_cost * reward_components["cost_score"]
         )
         self.last_acc_reward = float(
             self._final_reward_alpha_perf * reward_components["perf_score"]
         )
-        return float(raw_reward), reward_components
+        return clipped_reward, reward_components
 
         # ===================================================================
         # [LEGACY] 以下为旧版内联 single-shot terminal reward 实现。
