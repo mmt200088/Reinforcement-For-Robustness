@@ -21,7 +21,7 @@ from function_handler import (
     WFFN1_NOISE_DEFAULT_SCALING_FACTOR,
 )
 from final_evaluation_module import FinalEvaluationModule
-from noise_rl_module import _log_rounded_box
+from noise_rl_module_v2 import _log_rounded_box
 import os
 import hashlib
 
@@ -3492,7 +3492,14 @@ class LayerImportanceEvaluator(TrainerCallback):
         repeats = max(1, int(repeats))
         split_name = self._resolve_eval_split(use_train=use_train, split=split)
         trials = []
-        for _ in range(repeats):
+        base_seed = int(getattr(self, "final_eval_random_seed", 42))
+        for trial_idx in range(repeats):
+            # 每次重复独立可复现的噪声流（torch.randn / numpy），避免上游固定种子导致 MC 方差恒为 0
+            trial_seed = base_seed + trial_idx * 1_000_003
+            torch.manual_seed(trial_seed)
+            np.random.seed(trial_seed % (2**32))
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(trial_seed)
             loss, p, s, t = self.evaluate_model_with_attention_noise(
                 gelu_degrees,
                 softmax_degrees,
@@ -3644,8 +3651,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.return_normalizer = RunningMeanStd()
 
     def run_noise_rl_stage(self, fixed_gelu, fixed_softmax, fixed_label, fixed_source):
-        from noise_rl_module import NoiseRLModule
-        module = NoiseRLModule(self)
+        from noise_rl_module_v2 import NoiseRLModuleV2
+        module = NoiseRLModuleV2(self)
         return module.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source)
 
     def run_noise_final_eval_stage(self, fixed_gelu, fixed_softmax, noise_stage_result=None):
