@@ -2083,38 +2083,69 @@ class NoiseRLModule:
             initial_incumbent_base
         )
 
-        # ── 根据基线实际评估结果动态放宽风险阈值 ──
-        # 确保基线方案自身一定能通过，同时挑战者也以基线为参照
+        # ── 根据基线 + 最坏情形的实际评估结果动态放宽风险阈值 ──
+        # safe_rate_min: 取 min(static, baseline) — 确保基线自身能通过
+        # cvar_max: 取 max(static, baseline, worst) — 确保实际噪声配置有机会通过
+        #   最坏情形是"所有噪声拉满"的极端参照，其 CVaR 代表可达的上限级别，
+        #   挑战者只要优于最坏情形就应该有资格竞争。
         _bl_search_sr = float(initial_incumbent_base.get("search_safe_rate", 1.0))
         _bl_search_cvar = float(initial_incumbent_base.get("search_tail_violation_cvar", 0.0))
         _bl_holdout_sr = float(initial_incumbent_base.get("holdout_safe_rate", 1.0))
         _bl_holdout_cvar = float(initial_incumbent_base.get("holdout_tail_violation_cvar", 0.0))
+
+        # 从最坏情形的重复评估数据中计算 tail CVaR（无需额外评估）
+        def _compute_worst_case_cvar(worst_stats, constraint_lims, baseline_tuple):
+            raw_trials = worst_stats.get("trials")
+            if not raw_trials:
+                return 0.0
+            trials = [
+                {"loss": t["loss"], "metric1": t["p"], "metric2": t["s"]}
+                for t in raw_trials
+            ]
+            tail_info = _compute_tail_metrics_from_trials(
+                trials, constraint_lims, baseline_tuple,
+                ev_perf_weights, ev_barrier_weights, num_metrics,
+                k_min=NOISE_STAGE_TAIL_CONFIRM_K_MIN,
+            )
+            return float(tail_info["tail_violation_cvar"])
+
+        _worst_search_cvar = _compute_worst_case_cvar(
+            worst_reference_stats, search_limits,
+            _get_split_baseline_tuple("search"),
+        )
+        _worst_holdout_cvar = _compute_worst_case_cvar(
+            worst_holdout_stats, holdout_limits,
+            _get_split_baseline_tuple("holdout"),
+        )
+
         dynamic_best_test_risk_thresholds["search"]["safe_rate_min"] = min(
             NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN, _bl_search_sr,
         )
         dynamic_best_test_risk_thresholds["search"]["cvar_max"] = max(
-            NOISE_STAGE_BEST_TEST_CVAR_MAX, _bl_search_cvar,
+            NOISE_STAGE_BEST_TEST_CVAR_MAX, _bl_search_cvar, _worst_search_cvar,
         )
         dynamic_best_test_risk_thresholds["holdout"]["safe_rate_min"] = min(
             NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN, _bl_holdout_sr,
         )
         dynamic_best_test_risk_thresholds["holdout"]["cvar_max"] = max(
-            NOISE_STAGE_BEST_TEST_CVAR_MAX, _bl_holdout_cvar,
+            NOISE_STAGE_BEST_TEST_CVAR_MAX, _bl_holdout_cvar, _worst_holdout_cvar,
         )
         ev.log(
-            f"  [动态风险阈值 Dynamic Risk Thresholds] 基线评估后更新（update after baseline eval）:\n"
+            f"  [动态风险阈值 Dynamic Risk Thresholds] 基线+最坏情形评估后更新（update after baseline & worst eval）:\n"
             f"    search : safe_rate_min="
             f"{dynamic_best_test_risk_thresholds['search']['safe_rate_min']:.4f}"
             f" (静态 static={NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN}, 基线 baseline={_bl_search_sr:.4f}), "
             f"cvar_max="
             f"{dynamic_best_test_risk_thresholds['search']['cvar_max']:.4f}"
-            f" (静态 static={NOISE_STAGE_BEST_TEST_CVAR_MAX}, 基线 baseline={_bl_search_cvar:.4f})\n"
+            f" (静态 static={NOISE_STAGE_BEST_TEST_CVAR_MAX}, 基线 baseline={_bl_search_cvar:.4f}"
+            f", 最坏 worst={_worst_search_cvar:.4f})\n"
             f"    holdout: safe_rate_min="
             f"{dynamic_best_test_risk_thresholds['holdout']['safe_rate_min']:.4f}"
             f" (静态 static={NOISE_STAGE_BEST_TEST_SAFE_RATE_MIN}, 基线 baseline={_bl_holdout_sr:.4f}), "
             f"cvar_max="
             f"{dynamic_best_test_risk_thresholds['holdout']['cvar_max']:.4f}"
-            f" (静态 static={NOISE_STAGE_BEST_TEST_CVAR_MAX}, 基线 baseline={_bl_holdout_cvar:.4f})"
+            f" (静态 static={NOISE_STAGE_BEST_TEST_CVAR_MAX}, 基线 baseline={_bl_holdout_cvar:.4f}"
+            f", 最坏 worst={_worst_holdout_cvar:.4f})"
         )
 
         # ── 基线方案无条件上台 ──
@@ -2556,10 +2587,31 @@ class NoiseRLModule:
                             "detail_files": involved_basenames,
                         }
                         noise_warnings.append(warn_msg)
-                        ev.log(
-                            f"  ⚠ 警告: 窗口内平均原始终局奖励下降（reward drop）={reward_drop:.4f}  "
-                            f"(阈值 threshold={REWARD_DROP_WARNING_THRESHOLD}), "
-                            f"涉及回合 episodes {window_start_ep}–{window_end_ep}"
+                        # ── 立即输出完整警告（immediate detailed warning） ──
+                        _warn_lines = [
+                            f"⚠ 奖励骤降警告 · 第 {len(noise_warnings)} 条",
+                            f"",
+                            f"检测窗口:  第 {noise_ppo_update_count} 个 PPO 更新窗口",
+                            f"涉及回合:  第 {window_start_ep} 轮 ~ 第 {window_end_ep} 轮",
+                            f"上次窗口平均奖励:  {noise_prev_avg_reward[0]:.4f}",
+                            f"本次窗口平均奖励:  {avg_raw_final_reward:.4f}",
+                            f"下降幅度:  {reward_drop:.4f}  （告警阈值: {REWARD_DROP_WARNING_THRESHOLD:.2f}）",
+                            f"",
+                            f"请查看以下详情文件定位具体回合信息:",
+                        ]
+                        for _df in involved_basenames:
+                            _warn_lines.append(f"  → details/{_df}")
+                        _warn_lines.extend([
+                            f"",
+                            f"建议: 检查上述回合的终局奖励、约束余量和成本变化，",
+                            f"      排查策略是否出现灾难性遗忘或探索越界。",
+                        ])
+                        _log_rounded_box(ev.log, _warn_lines)
+                        # 同时立即追加写入警告报告文件
+                        _write_warning_report(
+                            noise_warning_file,
+                            noise_warnings,
+                            stage_label="噪声阶段（Stage-2 Noise）",
                         )
                 noise_prev_avg_reward[0] = avg_raw_final_reward
 
@@ -2782,10 +2834,10 @@ class NoiseRLModule:
             noise_step_info_chunk_file[0] = None
 
         if noise_warnings:
-            _write_warning_report(noise_warning_file, noise_warnings, stage_label="噪声阶段（Stage-2 Noise）")
+            # 最终报告已在每次警告触发时增量写入，此处仅做收尾提示
             ev.log(
-                f"  ⚠ 共 {len(noise_warnings)} 条奖励骤降告警（reward drop warnings），"
-                f"详见报告 report: {noise_warning_file}"
+                f"  ⚠ 训练期间共触发 {len(noise_warnings)} 条奖励骤降告警，"
+                f"完整报告已保存至: {noise_warning_file}"
             )
 
         ev.total_episodes = original_total_episodes
@@ -4638,51 +4690,57 @@ def _write_noise_step_info(step_info, f):
 
 
 def _write_warning_report(warning_file, warnings, stage_label=""):
-    """将奖励骤降警告写入报告；页眉为双框线自适应宽度，条目为圆角框自适应宽度。"""
+    """将奖励骤降警告写入报告；每次调用覆盖式重写全部已有警告。"""
     import datetime
     dt_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     title = "强化学习奖励骤降警告报告"
     meta_lines = [
-        f"阶段: {stage_label}",
-        f"生成时间: {dt_str}",
-        f"警告总数: {len(warnings)}",
+        f"阶段:     {stage_label}",
+        f"更新时间: {dt_str}",
+        f"累计警告: {len(warnings)} 条",
     ]
-    inner_w = max(len(title), max((len(s) for s in meta_lines), default=0), 36)
+    inner_w = max(len(title), max((len(s) for s in meta_lines), default=0), 60)
     header_bar = "═" * (inner_w + 4)
     with open(warning_file, "w", encoding="utf-8") as f:
         f.write(f"╔{header_bar}╗\n")
-        f.write(f"║ {title.center(inner_w)} ║\n")
+        f.write(f"║  {title.center(inner_w)}║\n")
         f.write(f"╠{header_bar}╣\n")
         for line in meta_lines:
-            f.write(f"║ {line.ljust(inner_w)} ║\n")
+            f.write(f"║  {line.ljust(inner_w)}║\n")
         f.write(f"╚{header_bar}╝\n\n")
 
         for i, w in enumerate(warnings, 1):
             ep_start, ep_end = w["episode_range"]
+            drop_pct = (
+                abs(w["drop"] / w["prev_avg"]) * 100
+                if abs(w["prev_avg"]) > 1e-8 else float("inf")
+            )
             block_lines = [
-                f"警告 #{i}",
-                f"类型: {w['type']}",
-                f"窗口编号: 第 {w['window']} 个更新窗口",
-                f"上次平均奖励: {w['prev_avg']:.4f}",
-                f"本次平均奖励: {w['curr_avg']:.4f}",
-                f"下降幅度: {w['drop']:.4f}（阈值: {w['threshold']:.2f}）",
-                "",
-                f"涉及回合范围: 第 {ep_start} 轮 ~ 第 {ep_end} 轮",
-                "涉及详情文件:",
+                f"⚠ 警告 #{i}  ·  {w['type']}",
+                f"",
+                f"  检测窗口:          第 {w['window']} 个 PPO 更新窗口",
+                f"  涉及回合:          第 {ep_start} 轮 ~ 第 {ep_end} 轮",
+                f"  上次窗口平均奖励:  {w['prev_avg']:.4f}",
+                f"  本次窗口平均奖励:  {w['curr_avg']:.4f}",
+                f"  下降幅度:          {w['drop']:.4f}  ({drop_pct:.1f}%)  （告警阈值: {w['threshold']:.2f}）",
+                f"",
+                f"  请查看以下详情文件定位具体回合信息:",
             ]
             for df in w["detail_files"]:
-                block_lines.append(f"  → details/{df}")
-            block_lines.extend(
-                [
-                    "",
-                    "建议: 请检查上述回合的详细步信息，排查策略是否发生灾难性遗忘或探索过度。",
-                ]
-            )
+                block_lines.append(f"    → details/{df}")
+            block_lines.extend([
+                f"",
+                f"  排查建议:",
+                f"    1. 打开上述详情文件，搜索 raw_final_reward 查找异常回合",
+                f"    2. 检查该回合的约束余量（margin）是否出现极端值",
+                f"    3. 检查成本（cost）是否急剧变化",
+                f"    4. 对比前后窗口的动作概率分布是否发生突变",
+            ])
             _write_rounded_box_to_file(f, block_lines)
             f.write("\n")
 
         f.write("═" * (inner_w + 4) + "\n")
-        f.write("报告结束\n")
+        f.write(f"报告更新于 {dt_str}  ·  共 {len(warnings)} 条警告\n")
 
 
 def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
