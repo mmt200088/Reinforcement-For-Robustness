@@ -48,12 +48,13 @@ NOISE_STAGE_GTRXL_WARMUP_UPDATES = 0
 NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES = 20
 
 # 评估重复次数
-NOISE_STAGE_BASELINE_REPEATS = 50
-NOISE_STAGE_BEST_TEST_REPEATS = 30
+# baseline / worst 参考曲线重复次数（每次为整份 split 上完整前向，非子 batch）
+NOISE_STAGE_BASELINE_REPEATS = 20
+NOISE_STAGE_BEST_TEST_REPEATS = 20
 
 # MC 采样
 NOISE_STAGE_MC_TRAIN_SAMPLES = 5          # 训练期终止步 MC 采样次数
-NOISE_STAGE_MC_CONFIRM_SAMPLES = 50       # 确认阶段 MC 采样次数
+NOISE_STAGE_MC_CONFIRM_SAMPLES = 20       # 确认阶段分段数（分段测试）
 
 # 方差惩罚（Stability Penalty）
 NOISE_STAGE_STABILITY_LAMBDA = 5.0        # lambda_stab 方差惩罚权重
@@ -173,6 +174,19 @@ def _compute_dynamic_limits(
         "metric1": limit_p,
         "metric2": limit_s,
     }
+
+
+def _compute_dynamic_std_upper_bound(
+    baseline_std, worst_std, quartile=NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE,
+):
+    """与 `_compute_dynamic_limits` 中 loss 维同构：std 越大越不利。
+
+    - 正常：上界 = baseline_std + quartile * (worst_std - baseline_std)
+    - 若 worst_std < baseline_std（最坏情形反而更稳），不外推放宽，取 baseline_std。
+    """
+    if baseline_std > worst_std:
+        return float(baseline_std)
+    return float(baseline_std + quartile * (worst_std - baseline_std))
 
 
 def _log_rounded_box(log_fn, lines, indent="  ", min_inner_width=8):
@@ -618,6 +632,9 @@ class _NoiseOptEnv:
                  stability_base_std_tolerance=1.2,
                  baseline_loss_std=0.0,
                  baseline_m1_std=0.0,
+                 dynamic_loss_std_cap=0.0,
+                 dynamic_m1_std_cap=0.0,
+                 dynamic_m2_std_cap=0.0,
                  noise_debt_log_alpha=1.0):
         self.total_layers = total_layers
         self.baseline_cost = baseline_cost
@@ -674,6 +691,9 @@ class _NoiseOptEnv:
         self._stability_base_std_tolerance = float(stability_base_std_tolerance)
         self._baseline_loss_std = float(baseline_loss_std)
         self._baseline_m1_std = float(baseline_m1_std)
+        self._dynamic_loss_std_cap = float(dynamic_loss_std_cap)
+        self._dynamic_m1_std_cap = float(dynamic_m1_std_cap)
+        self._dynamic_m2_std_cap = float(dynamic_m2_std_cap)
         self._noise_debt_log_alpha = float(noise_debt_log_alpha)
         self._episode_progress = 0.0
 
@@ -948,12 +968,7 @@ class _NoiseOptEnv:
         return self._get_state(), terminal_reward, True, info
 
     def _compute_terminal_reward_mc(self):
-        """MC \u7ec8\u7aef\u5956\u52b1\uff1a\u91cd\u590d\u8bc4\u4f30 N \u6b21\uff0c\u8ba1\u7b97\u6027\u80fd + \u6210\u672c + \u65b9\u5dee\u60e9\u7f5a\u3002
-
-        \u6bcf\u6b21 evaluate \u91c7\u7528\u76f8\u540c\u7684\u5b8c\u6574\u9a8c\u8bc1\u96c6\u4f46\u72ec\u7acb\u7684\u566a\u58f0\u91c7\u6837\uff0c
-        \u65b9\u5dee\u6765\u6e90\u4e8e CKKS \u566a\u58f0\u7684\u968f\u673a\u6027\u3002
-        \u82e5\u8bc4\u4f30\u5668\u540e\u7eed\u652f\u6301\u5206\u6bb5\u5207\u5206\uff08segment split\uff09\uff0c\u53ef\u66ff\u6362\u4e3a\u5206\u6bb5\u7b56\u7565\u3002
-        """
+        """MC 终端奖励：将验证集切成 N 段、每段独立噪声采样评测，总计只遍历 1 遍数据。"""
         noise_kwargs = {
             "input_noise_scaling_factors": np.array(self.input_noise_config, dtype=int),
             "wq_noise_scaling_factors": np.array(self.wq_noise_config, dtype=int),
@@ -964,8 +979,8 @@ class _NoiseOptEnv:
             "wffn2_noise_scaling_factors": np.array(self.wffn2_noise_config, dtype=int),
         }
 
-        mc_eval = self.evaluator.evaluate_noise_model_repeated(
-            repeats=self._mc_train_samples,
+        mc_eval = self.evaluator.evaluate_noise_model_segmented(
+            segments=self._mc_train_samples,
             **noise_kwargs,
         )
 
@@ -1031,10 +1046,14 @@ class _NoiseOptEnv:
         sigma_base_components = [self._baseline_loss_std, self._baseline_m1_std]
         sigma_base = float(np.mean(sigma_base_components))
 
-        stability_penalty = -self._stability_lambda * max(
-            0.0,
-            sigma_cand - sigma_base * self._stability_base_std_tolerance,
-        )
+        # 超出「baseline–worst 动态 std 上界」的部分才惩罚（与 confirm 口径一致）
+        _excess = [
+            max(0.0, float(loss_std) - self._dynamic_loss_std_cap),
+            max(0.0, float(m1_std) - self._dynamic_m1_std_cap),
+        ]
+        if self.num_metrics > 1:
+            _excess.append(max(0.0, float(m2_std) - self._dynamic_m2_std_cap))
+        stability_penalty = -self._stability_lambda * float(np.mean(_excess))
 
         # -- \u7ec8\u7aef\u5956\u52b1 --
         terminal_reward = (
@@ -1411,7 +1430,19 @@ class NoiseRLModuleV2:
         baseline_noise_config = _get_low_risk_noise_configuration(ev)
         worst_case_noise_config = _get_worst_case_noise_configuration(ev)
 
-        reward_reference_split = ev.get_reward_reference_split_name()
+        # \u4e8c\u9636\u6bb5\u566a\u58f0 RL \u7edf\u4e00\u5728\u5b8c\u6574\u9a8c\u8bc1\u96c6\u4e0a\u8bc4\u6d4b\uff0c\u4e0d\u4f7f\u7528 val_search_full / val_holdout \u5212\u5206\u3002
+        if ev.has_dataset_split("validation_full"):
+            reward_reference_split = "validation_full"
+        else:
+            reward_reference_split = ev.get_reward_reference_split_name()
+        ev.log(
+            f"  \u25b8 Noise RL \u8bc4\u6d4b\u5b50\u96c6 split=\u300c{reward_reference_split}\u300d"
+            + (
+                "\uff08\u5b8c\u6574\u9a8c\u8bc1\u96c6 validation_full\uff09"
+                if reward_reference_split == "validation_full"
+                else "\uff08\u56de\u9000\uff1a\u672a\u6ce8\u518c validation_full\uff0c\u4f7f\u7528 get_reward_reference_split_name\uff09"
+            )
+        )
 
         def _copy_repeat_summary(summary):
             return {
@@ -1478,9 +1509,22 @@ class NoiseRLModuleV2:
         ev.log(f"  \u25b8 \u6700\u574f\uff08worst\uff09:   {ev._fmt_metrics(worst_loss, worst_p, worst_s)}")
         ev.log(f"  \u25b8 \u754c\u9650\uff08limit\uff09:   {ev._fmt_constraints(limit_loss, limit_p, limit_s)}")
 
-        # baseline \u7684\u6807\u51c6\u5dee\uff08\u7528\u4e8e stability penalty \u7684 sigma_base\uff09
+        # baseline / worst \u7684\u6807\u51c6\u5dee\uff1a\u7528\u4e8e\u52a8\u6001 std \u4e0a\u754c\uff08\u4e0e limit \u540c quartile\uff09
         baseline_loss_std = float(baseline_reference_stats["loss_std"])
         baseline_m1_std = float(baseline_reference_stats["p_std"])
+        baseline_m2_std = float(baseline_reference_stats["s_std"])
+        worst_loss_std = float(worst_reference_stats["loss_std"])
+        worst_m1_std = float(worst_reference_stats["p_std"])
+        worst_m2_std = float(worst_reference_stats["s_std"])
+        dynamic_loss_std_cap = _compute_dynamic_std_upper_bound(
+            baseline_loss_std, worst_loss_std,
+        )
+        dynamic_m1_std_cap = _compute_dynamic_std_upper_bound(
+            baseline_m1_std, worst_m1_std,
+        )
+        dynamic_m2_std_cap = _compute_dynamic_std_upper_bound(
+            baseline_m2_std, worst_m2_std,
+        )
 
         _noise_block_title(ev.log, "\u8bad\u7ec3\u8d85\u53c2\u4e0e\u8bbe\u5b9a\u6458\u8981\uff08Training hyperparameters V2\uff09")
         ev.log(
@@ -1495,14 +1539,23 @@ class NoiseRLModuleV2:
             f"  \u25b8 MC: train_samples={NOISE_STAGE_MC_TRAIN_SAMPLES}, confirm_samples={NOISE_STAGE_MC_CONFIRM_SAMPLES}"
         )
         ev.log(
-            f"  \u25b8 \u65b9\u5dee\u60e9\u7f5a: lambda={NOISE_STAGE_STABILITY_LAMBDA}, tolerance={NOISE_STAGE_STABILITY_BASE_STD_TOLERANCE}"
+            f"  \u25b8 \u65b9\u5dee\u60e9\u7f5a: lambda={NOISE_STAGE_STABILITY_LAMBDA}  "
+            f"\u00b7 \u52a8\u6001 loss_std \u4e0a\u754c={dynamic_loss_std_cap:.6f}  "
+            f"(baseline {baseline_loss_std:.6f} \u2192 worst {worst_loss_std:.6f}, q={NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE})"
+        )
+        ev.log(
+            f"  \u25b8 \u52a8\u6001 m1_std \u4e0a\u754c={dynamic_m1_std_cap:.6f}  "
+            f"(baseline {baseline_m1_std:.6f} \u2192 worst {worst_m1_std:.6f})  "
+            f"\u00b7 m2_std \u4e0a\u754c={dynamic_m2_std_cap:.6f}  "
+            f"({baseline_m2_std:.6f} \u2192 {worst_m2_std:.6f})"
         )
         ev.log(
             f"  \u25b8 \u5956\u52b1\u6743\u91cd: margin={NOISE_STAGE_TAIL_MARGIN_WEIGHT}, "
             f"violation={NOISE_STAGE_TAIL_VIOLATION_WEIGHT}, cost={NOISE_STAGE_COST_WEIGHT}"
         )
         ev.log(
-            f"  \u25b8 \u57fa\u7ebf\u6807\u51c6\u5dee: loss_std={baseline_loss_std:.6f}, m1_std={baseline_m1_std:.6f}"
+            f"  \u25b8 \u57fa\u7ebf\u6807\u51c6\u5dee: loss_std={baseline_loss_std:.6f}, "
+            f"m1_std={baseline_m1_std:.6f}, m2_std={baseline_m2_std:.6f}"
         )
         os.makedirs(noise_progress_dir, exist_ok=True)
 
@@ -1589,6 +1642,15 @@ class NoiseRLModuleV2:
                     **noise_kwargs,
                 )
 
+            def evaluate_noise_model_segmented(wrapper_self, segments, **noise_kwargs):
+                return wrapper_self.evaluator.evaluate_model_with_attention_noise_segmented(
+                    wrapper_self.fixed_gelu,
+                    wrapper_self.fixed_softmax,
+                    segments=segments,
+                    split=wrapper_self.split_name,
+                    **noise_kwargs,
+                )
+
         rl_evaluator = _NoiseRLEvaluatorWrapper(
             ev,
             fixed_gelu=fixed_gelu,
@@ -1639,6 +1701,9 @@ class NoiseRLModuleV2:
             stability_base_std_tolerance=NOISE_STAGE_STABILITY_BASE_STD_TOLERANCE,
             baseline_loss_std=baseline_loss_std,
             baseline_m1_std=baseline_m1_std,
+            dynamic_loss_std_cap=dynamic_loss_std_cap,
+            dynamic_m1_std_cap=dynamic_m1_std_cap,
+            dynamic_m2_std_cap=dynamic_m2_std_cap,
             noise_debt_log_alpha=NOISE_STAGE_NOISE_DEBT_LOG_ALPHA,
         )
 
@@ -1694,11 +1759,11 @@ class NoiseRLModuleV2:
         }
         initial_incumbent_config["cost"] = float(incumbent_cost_value)
 
-        # N=50 \u786e\u8ba4\u57fa\u7ebf
-        baseline_confirm_stats = ev.evaluate_model_with_attention_noise_repeated(
+        # \u521d\u59cb\u5b88\u64c2\u7edf\u8ba1\uff08\u5206\u6bb5\u8bc4\u6d4b\uff0c\u6574\u4efd\u9a8c\u8bc1\u96c6\u5207 N \u6bb5\uff0c\u53ea\u8dd1 1 \u904d\uff09
+        baseline_confirm_stats = ev.evaluate_model_with_attention_noise_segmented(
             fixed_gelu, fixed_softmax,
             **baseline_noise_config,
-            repeats=NOISE_STAGE_BEST_TEST_REPEATS,
+            segments=NOISE_STAGE_BEST_TEST_REPEATS,
             split=reward_reference_split,
         )
         incumbent_best_noise_config = _clone_candidate(initial_incumbent_config)
@@ -1916,20 +1981,25 @@ class NoiseRLModuleV2:
                     for key, value in final_noise_config.items()
                     if key.endswith("scaling_factors")
                 }
-                confirm_stats = ev.evaluate_model_with_attention_noise_repeated(
+                confirm_stats = ev.evaluate_model_with_attention_noise_segmented(
                     fixed_gelu, fixed_softmax,
-                    repeats=NOISE_STAGE_MC_CONFIRM_SAMPLES,
+                    segments=NOISE_STAGE_MC_CONFIRM_SAMPLES,
                     split=reward_reference_split,
                     **confirm_noise_kwargs,
                 )
                 confirm_loss_std = float(confirm_stats["loss_std"])
                 confirm_m1_std = float(confirm_stats.get("p_std", 0.0))
+                confirm_m2_std = float(confirm_stats.get("s_std", 0.0))
 
-                # \u4e0e\u8bad\u7ec3\u671f stability \u5fcd\u5bb9\u500d\u6570\u4e00\u81f4\uff08\u907f\u514d\u8fb9\u7f18\u7b56\u7565\u5728 1.15x \u5904\u8bad\u7ec3\u5403\u5956\u3001\u786e\u8ba4\u88ab\u6253\u56de\uff09
-                _std_tol = float(NOISE_STAGE_STABILITY_BASE_STD_TOLERANCE)
+                # \u4e0e limit \u540c\u6784\u7684\u52a8\u6001 std \u4e0a\u754c\uff08baseline\u2192worst \u63d2\u503c + \u53cd\u5e38\u4e0d\u5916\u63a8\uff09
                 std_check_pass = (
-                    confirm_loss_std <= baseline_loss_std * _std_tol + 1e-8
+                    confirm_loss_std <= dynamic_loss_std_cap + 1e-8
+                    and confirm_m1_std <= dynamic_m1_std_cap + 1e-8
                 )
+                if num_metrics > 1:
+                    std_check_pass = std_check_pass and (
+                        confirm_m2_std <= dynamic_m2_std_cap + 1e-8
+                    )
                 # \u68c0\u67e5\u7ea6\u675f\u6761\u4ef6
                 constraint_pass = ev._candidate_meets_constraints(
                     confirm_stats["loss_mean"],
@@ -1943,13 +2013,21 @@ class NoiseRLModuleV2:
                 passed = std_check_pass and constraint_pass
                 confirm_mean_score = episode_final_selection_score_val
 
+                _std_lines = [
+                    f"  \u65b9\u5dee\u68c0\u67e5 std_check={std_check_pass}  "
+                    f"(loss_std {confirm_loss_std:.6f} vs cap {dynamic_loss_std_cap:.6f})",
+                    f"  m1_std {confirm_m1_std:.6f} vs cap {dynamic_m1_std_cap:.6f}",
+                ]
+                if num_metrics > 1:
+                    _std_lines.append(
+                        f"  m2_std {confirm_m2_std:.6f} vs cap {dynamic_m2_std_cap:.6f}"
+                    )
                 _log_rounded_box(ev.log, [
                     f"\u6311\u6218\u8005\u786e\u8ba4\uff08Challenger Confirmation\uff09\u00b7 \u56de\u5408 {episode + 1}",
                     f"  N={NOISE_STAGE_MC_CONFIRM_SAMPLES} \u91cd\u590d\u8bc4\u4f30",
                     f"  loss={confirm_stats['loss_mean']:.4f}+/-{confirm_loss_std:.4f}, "
                     f"m1={confirm_stats['p_mean']:.4f}+/-{confirm_m1_std:.4f}",
-                    f"  \u65b9\u5dee\u68c0\u67e5 std_check={std_check_pass} "
-                    f"(loss_std={confirm_loss_std:.6f} vs {baseline_loss_std * _std_tol:.6f})",
+                    *_std_lines,
                     f"  \u7ea6\u675f\u68c0\u67e5 constraint={constraint_pass}",
                     f"  \u88c1\u5b9a\uff08verdict\uff09: {'PASS' if passed else 'FAIL'}",
                 ])
@@ -2173,6 +2251,9 @@ class NoiseRLModuleV2:
                 "ppo_gamma": float(NOISE_STAGE_PPO_GAMMA),
                 "value_clip_range": float(NOISE_STAGE_VALUE_CLIP_RANGE),
                 "trigger_margin": float(NOISE_STAGE_BEST_TEST_TRIGGER_MARGIN),
+                "dynamic_loss_std_cap": float(dynamic_loss_std_cap),
+                "dynamic_m1_std_cap": float(dynamic_m1_std_cap),
+                "dynamic_m2_std_cap": float(dynamic_m2_std_cap),
                 "incumbent_history": [dict(item) for item in incumbent_history],
                 "final_incumbent": _clone_candidate(incumbent_best_noise_config),
             },
@@ -2200,6 +2281,9 @@ class NoiseRLModuleV2:
                 "mc_confirm_samples": NOISE_STAGE_MC_CONFIRM_SAMPLES,
                 "stability_lambda": NOISE_STAGE_STABILITY_LAMBDA,
                 "stability_base_std_tolerance": NOISE_STAGE_STABILITY_BASE_STD_TOLERANCE,
+                "dynamic_loss_std_cap": float(dynamic_loss_std_cap),
+                "dynamic_m1_std_cap": float(dynamic_m1_std_cap),
+                "dynamic_m2_std_cap": float(dynamic_m2_std_cap),
                 "cost_weight": NOISE_STAGE_COST_WEIGHT,
                 "tail_margin_weight": NOISE_STAGE_TAIL_MARGIN_WEIGHT,
                 "tail_violation_weight": NOISE_STAGE_TAIL_VIOLATION_WEIGHT,
