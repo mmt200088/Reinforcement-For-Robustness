@@ -1883,6 +1883,24 @@ class NoiseRLModuleV2:
                     f"  \u25b8 \u7ec8\u9009\u5206={episode_final_selection_score_val:.4f}  "
                     f"\u2502  \u6210\u672c cost={env.accumulated_cost:.2f}"
                 )
+                ev.log(
+                    "  \u25b8 \u8bad\u7ec3\u671f\u6700\u4f18\u56de\u5408\u00b7\u566a\u58f0 scaling \u5e8f\u5217\uff08\u6309\u5c42\uff0c"
+                    "\u4e0e Stage-2 \u52a8\u4f5c\u6620\u5c04\u540e\u7684 SF\uff09:"
+                )
+                for _bk in (
+                    "input_noise_scaling_factors",
+                    "wq_noise_scaling_factors",
+                    "wk_noise_scaling_factors",
+                    "wv_noise_scaling_factors",
+                    "wo_noise_scaling_factors",
+                    "wffn1_noise_scaling_factors",
+                    "wffn2_noise_scaling_factors",
+                ):
+                    if _bk in best_noise_config:
+                        ev.log(
+                            f"     {_bk}: "
+                            f"{np.asarray(best_noise_config[_bk], dtype=int).tolist()}"
+                        )
 
             # \u6311\u6218\u8005\u786e\u8ba4\u673a\u5236
             challenger_signature = _candidate_signature(final_noise_config)
