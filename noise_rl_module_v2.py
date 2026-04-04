@@ -47,14 +47,12 @@ NOISE_STAGE_GTRXL_WARMUP_MODE = "constant"
 NOISE_STAGE_GTRXL_WARMUP_UPDATES = 0
 NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES = 20
 
-# 评估重复次数
-# baseline / worst 参考曲线重复次数（每次为整份 split 上完整前向，非子 batch）
-NOISE_STAGE_BASELINE_REPEATS = 20
-NOISE_STAGE_BEST_TEST_REPEATS = 20
-
-# MC 采样
-NOISE_STAGE_MC_TRAIN_SAMPLES = 5          # 训练期终止步 MC 采样次数
-NOISE_STAGE_MC_CONFIRM_SAMPLES = 20       # 确认阶段分段数（分段测试）
+# 分段评测段数（所有评测环节统一使用分段法；实际段数受 MIN_SAMPLES_PER_SEGMENT 自动下调保护）
+NOISE_STAGE_BASELINE_SEGMENTS = 5         # baseline / worst 参考曲线
+NOISE_STAGE_BEST_TEST_SEGMENTS = 5        # 初始守擂（initial incumbent）
+NOISE_STAGE_MC_TRAIN_SAMPLES = 5          # 训练期终止步 MC 分段数
+NOISE_STAGE_MC_CONFIRM_SEGMENTS = 5       # 挑战者确认（challenger confirmation）
+NOISE_STAGE_MIN_SAMPLES_PER_SEGMENT = 80  # 每段最少样本数，段数超限时自动缩减
 
 # 方差惩罚（Stability Penalty）
 NOISE_STAGE_STABILITY_LAMBDA = 5.0        # lambda_stab 方差惩罚权重
@@ -187,6 +185,28 @@ def _compute_dynamic_std_upper_bound(
     if baseline_std > worst_std:
         return float(baseline_std)
     return float(baseline_std + quartile * (worst_std - baseline_std))
+
+
+def _auto_adjust_segments(dataset_size, requested_segments, log_fn=None,
+                          min_samples=NOISE_STAGE_MIN_SAMPLES_PER_SEGMENT):
+    """根据数据集大小自动缩减分段数，保证每段样本数 >= min_samples。
+
+    返回实际使用的段数（>= 1）。
+    """
+    requested_segments = max(1, int(requested_segments))
+    if dataset_size <= 0:
+        return 1
+    max_n = max(1, dataset_size // min_samples)
+    if requested_segments <= max_n:
+        return requested_segments
+    adjusted = max_n
+    if log_fn is not None:
+        log_fn(
+            f"  [自动调整] 指定分段数 N={requested_segments} 导致每段仅 "
+            f"{dataset_size // requested_segments} 个样本（< {min_samples}），"
+            f"已自动缩减为 N={adjusted}（每段约 {dataset_size // adjusted} 个样本）"
+        )
+    return adjusted
 
 
 def _log_rounded_box(log_fn, lines, indent="  ", min_inner_width=8):
@@ -1452,7 +1472,7 @@ class NoiseRLModuleV2:
 
         def _log_repeat_baseline(label, stats):
             ev.log(
-                f"{label} \u00b7 \u91cd\u590d repeats={stats['n']} \u00b7 \u5b50\u96c6 split={stats['split_name']}"
+                f"{label} \u00b7 \u5206\u6bb5 segments={stats['n']} \u00b7 \u5b50\u96c6 split={stats['split_name']}"
             )
             ev.log(
                 "     "
@@ -1460,18 +1480,23 @@ class NoiseRLModuleV2:
                 f"\u2502 \u6807\u51c6\u5dee std: loss={stats['loss_std']:.4f}, m1={stats['p_std']:.4f}, m2={stats['s_std']:.4f}"
             )
 
-        # Baseline N=50 \u8bc4\u4f30
-        baseline_reference_stats = ev.evaluate_model_with_attention_noise_repeated(
+        _eval_dataset = ev.dataset_splits.get(reward_reference_split)
+        _eval_dataset_size = len(_eval_dataset) if _eval_dataset is not None else 0
+        baseline_segments = _auto_adjust_segments(
+            _eval_dataset_size, NOISE_STAGE_BASELINE_SEGMENTS, log_fn=ev.log,
+        )
+
+        baseline_reference_stats = ev.evaluate_model_with_attention_noise_segmented(
             fixed_gelu, fixed_softmax,
             **baseline_noise_config,
-            repeats=NOISE_STAGE_BASELINE_REPEATS,
+            segments=baseline_segments,
             split=reward_reference_split,
         )
-        # Worst-case N=50 \u8bc4\u4f30
-        worst_reference_stats = ev.evaluate_model_with_attention_noise_repeated(
+        # Worst-case \u8bc4\u4f30
+        worst_reference_stats = ev.evaluate_model_with_attention_noise_segmented(
             fixed_gelu, fixed_softmax,
             **worst_case_noise_config,
-            repeats=NOISE_STAGE_BASELINE_REPEATS,
+            segments=baseline_segments,
             split=reward_reference_split,
         )
         cost_reference_tot_c, cost_reference_breakdown = ev.get_noise_simulated_cost(**cost_reference_noise_config)
@@ -1536,7 +1561,8 @@ class NoiseRLModuleV2:
             f"k_epochs={NOISE_STAGE_PPO_K_EPOCHS}, warmup={NOISE_STAGE_GTRXL_WARMUP_MODE}"
         )
         ev.log(
-            f"  \u25b8 MC: train_samples={NOISE_STAGE_MC_TRAIN_SAMPLES}, confirm_samples={NOISE_STAGE_MC_CONFIRM_SAMPLES}"
+            f"  \u25b8 MC: train_samples={NOISE_STAGE_MC_TRAIN_SAMPLES}, confirm_samples={NOISE_STAGE_MC_CONFIRM_SEGMENTS}"
+            f"  (baseline_segments={baseline_segments}, min_per_seg={NOISE_STAGE_MIN_SAMPLES_PER_SEGMENT})"
         )
         ev.log(
             f"  \u25b8 \u65b9\u5dee\u60e9\u7f5a: lambda={NOISE_STAGE_STABILITY_LAMBDA}  "
@@ -1696,7 +1722,9 @@ class NoiseRLModuleV2:
             barrier_weight_loss=NOISE_STAGE_BARRIER_WEIGHT_LOSS,
             barrier_weight_m1=NOISE_STAGE_BARRIER_WEIGHT_M1,
             barrier_weight_m2=NOISE_STAGE_BARRIER_WEIGHT_M2,
-            mc_train_samples=NOISE_STAGE_MC_TRAIN_SAMPLES,
+            mc_train_samples=_auto_adjust_segments(
+                _eval_dataset_size, NOISE_STAGE_MC_TRAIN_SAMPLES, log_fn=ev.log,
+            ),
             stability_lambda=NOISE_STAGE_STABILITY_LAMBDA,
             stability_base_std_tolerance=NOISE_STAGE_STABILITY_BASE_STD_TOLERANCE,
             baseline_loss_std=baseline_loss_std,
@@ -1760,10 +1788,13 @@ class NoiseRLModuleV2:
         initial_incumbent_config["cost"] = float(incumbent_cost_value)
 
         # \u521d\u59cb\u5b88\u64c2\u7edf\u8ba1\uff08\u5206\u6bb5\u8bc4\u6d4b\uff0c\u6574\u4efd\u9a8c\u8bc1\u96c6\u5207 N \u6bb5\uff0c\u53ea\u8dd1 1 \u904d\uff09
+        best_test_segments = _auto_adjust_segments(
+            _eval_dataset_size, NOISE_STAGE_BEST_TEST_SEGMENTS, log_fn=ev.log,
+        )
         baseline_confirm_stats = ev.evaluate_model_with_attention_noise_segmented(
             fixed_gelu, fixed_softmax,
             **baseline_noise_config,
-            segments=NOISE_STAGE_BEST_TEST_REPEATS,
+            segments=best_test_segments,
             split=reward_reference_split,
         )
         incumbent_best_noise_config = _clone_candidate(initial_incumbent_config)
@@ -1975,15 +2006,17 @@ class NoiseRLModuleV2:
                     incumbent_mean_score + float(NOISE_STAGE_BEST_TEST_TRIGGER_MARGIN)
                 )
             ):
-                # N=50 \u786e\u8ba4\u8bc4\u4f30
                 confirm_noise_kwargs = {
                     key: value.copy()
                     for key, value in final_noise_config.items()
                     if key.endswith("scaling_factors")
                 }
+                confirm_segments = _auto_adjust_segments(
+                    _eval_dataset_size, NOISE_STAGE_MC_CONFIRM_SEGMENTS,
+                )
                 confirm_stats = ev.evaluate_model_with_attention_noise_segmented(
                     fixed_gelu, fixed_softmax,
-                    segments=NOISE_STAGE_MC_CONFIRM_SAMPLES,
+                    segments=confirm_segments,
                     split=reward_reference_split,
                     **confirm_noise_kwargs,
                 )
@@ -2024,7 +2057,7 @@ class NoiseRLModuleV2:
                     )
                 _log_rounded_box(ev.log, [
                     f"\u6311\u6218\u8005\u786e\u8ba4\uff08Challenger Confirmation\uff09\u00b7 \u56de\u5408 {episode + 1}",
-                    f"  N={NOISE_STAGE_MC_CONFIRM_SAMPLES} \u91cd\u590d\u8bc4\u4f30",
+                    f"  N={confirm_segments} \u5206\u6bb5\u8bc4\u6d4b",
                     f"  loss={confirm_stats['loss_mean']:.4f}+/-{confirm_loss_std:.4f}, "
                     f"m1={confirm_stats['p_mean']:.4f}+/-{confirm_m1_std:.4f}",
                     *_std_lines,
@@ -2229,7 +2262,7 @@ class NoiseRLModuleV2:
             "performance_baseline_gelu": fixed_gelu.copy(),
             "performance_baseline_softmax": fixed_softmax.copy(),
             "performance_baseline_source": "stage1_fixed_low_risk_noise",
-            "baseline_repeats": int(NOISE_STAGE_BASELINE_REPEATS),
+            "baseline_segments": int(baseline_segments),
             "search_baseline_stats": _copy_repeat_summary(baseline_reference_stats),
             "worst_reference_stats": _copy_repeat_summary(worst_reference_stats),
             "worst_case_noise_config": {k: v.copy() for k, v in worst_case_noise_config.items()},
@@ -2243,7 +2276,7 @@ class NoiseRLModuleV2:
             "selection_diagnostics": {
                 "selection_mode": "incumbent_best_test_v2",
                 "mc_train_samples": int(NOISE_STAGE_MC_TRAIN_SAMPLES),
-                "mc_confirm_samples": int(NOISE_STAGE_MC_CONFIRM_SAMPLES),
+                "mc_confirm_segments": int(NOISE_STAGE_MC_CONFIRM_SEGMENTS),
                 "stability_lambda": float(NOISE_STAGE_STABILITY_LAMBDA),
                 "confirm_fail_penalty": float(NOISE_STAGE_CONFIRM_FAIL_PENALTY),
                 "noise_debt_log_alpha": float(NOISE_STAGE_NOISE_DEBT_LOG_ALPHA),
@@ -2278,7 +2311,7 @@ class NoiseRLModuleV2:
                 "ppo_eps_clip": NOISE_STAGE_PPO_EPS_CLIP,
                 "ppo_k_epochs": NOISE_STAGE_PPO_K_EPOCHS,
                 "mc_train_samples": NOISE_STAGE_MC_TRAIN_SAMPLES,
-                "mc_confirm_samples": NOISE_STAGE_MC_CONFIRM_SAMPLES,
+                "mc_confirm_segments": NOISE_STAGE_MC_CONFIRM_SEGMENTS,
                 "stability_lambda": NOISE_STAGE_STABILITY_LAMBDA,
                 "stability_base_std_tolerance": NOISE_STAGE_STABILITY_BASE_STD_TOLERANCE,
                 "dynamic_loss_std_cap": float(dynamic_loss_std_cap),
