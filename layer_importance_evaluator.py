@@ -23,6 +23,7 @@ from function_handler import (
 from final_evaluation_module import FinalEvaluationModule
 from noise_rl_module_v2 import _log_rounded_box
 import os
+import random
 import hashlib
 
 # ==================== PPO 常量与配置定义 ====================
@@ -430,12 +431,13 @@ USE_VALIDATION_FOR_REWARD = True  # True: 使用验证集计算奖励, False: �
 #   - "rl": 仅强化学习（Phase 2），不执行贪心
 #   - "greedy": 仅贪婪算法（从下方 GREEDY_INITIAL_* 指定的配置出发），不执行 RL
 #   - "both": 先 RL 再根据 USE_GREEDY_SEARCH 决定是否执行贪心
-USE_VALIDATION_SEARCH_PROTOCOL = True
+# [已禁用] 不再将验证集拆分为 val_search_full / val_holdout / val_proxy，统一使用 validation_full。
+USE_VALIDATION_SEARCH_PROTOCOL = False
 VALIDATION_SMALL_TASKS = {"mrpc", "rte", "cola", "wnli"}
-VALIDATION_HOLDOUT_RATIO_DEFAULT = 0.20
-VALIDATION_HOLDOUT_RATIO_SMALL = 0.30
-VALIDATION_PROXY_RATIO_DEFAULT = 0.15
-VALIDATION_PROXY_RATIO_SMALL = 0.50
+# VALIDATION_HOLDOUT_RATIO_DEFAULT = 0.20   # [已禁用]
+# VALIDATION_HOLDOUT_RATIO_SMALL = 0.30     # [已禁用]
+# VALIDATION_PROXY_RATIO_DEFAULT = 0.15     # [已禁用]
+# VALIDATION_PROXY_RATIO_SMALL = 0.50       # [已禁用]
 RL_DATASET_SPLIT_SEED = 42
 
 USE_TRAIN_ANCHOR = False
@@ -2508,15 +2510,16 @@ class LayerImportanceEvaluator(TrainerCallback):
     def _is_small_validation_task(self):
         return getattr(self, "dataset_key", None) in VALIDATION_SMALL_TASKS
 
-    def _get_validation_holdout_ratio(self):
-        if self._is_small_validation_task():
-            return VALIDATION_HOLDOUT_RATIO_SMALL
-        return VALIDATION_HOLDOUT_RATIO_DEFAULT
+    # [已禁用] 不再使用 val_search / val_holdout / val_proxy 划分。
+    # def _get_validation_holdout_ratio(self):
+    #     if self._is_small_validation_task():
+    #         return VALIDATION_HOLDOUT_RATIO_SMALL
+    #     return VALIDATION_HOLDOUT_RATIO_DEFAULT
 
-    def _get_validation_proxy_ratio(self):
-        if self._is_small_validation_task():
-            return VALIDATION_PROXY_RATIO_SMALL
-        return VALIDATION_PROXY_RATIO_DEFAULT
+    # def _get_validation_proxy_ratio(self):
+    #     if self._is_small_validation_task():
+    #         return VALIDATION_PROXY_RATIO_SMALL
+    #     return VALIDATION_PROXY_RATIO_DEFAULT
 
     def _get_train_anchor_size(self):
         if self._is_small_validation_task():
@@ -2671,64 +2674,33 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         if validation_data is not None:
             self._register_dataset_split("validation_full", validation_data, validation_data_mm)
-
-            if USE_VALIDATION_SEARCH_PROTOCOL:
-                holdout_ratio = self._get_validation_holdout_ratio()
-                val_search_full, val_holdout = self._split_dataset_for_rl(
-                    validation_data,
-                    holdout_ratio=holdout_ratio,
-                    seed=RL_DATASET_SPLIT_SEED,
+            print(
+                "[数据集协议（Dataset Protocol）] "
+                f"完整验证集（validation_full）={len(validation_data)}  "
+                f"（统一使用 validation_full，不再拆分 search/holdout/proxy）"
+            )
+            if validation_data_mm is not None:
+                print(
+                    "[数据集协议（Dataset Protocol）] "
+                    f"MNLI不匹配验证集（mnli_mismatched）={len(validation_data_mm)}"
                 )
-                if validation_data_mm is not None:
-                    val_search_mm, val_holdout_mm = self._split_dataset_for_rl(
-                        validation_data_mm,
-                        holdout_ratio=holdout_ratio,
-                        seed=RL_DATASET_SPLIT_SEED + 1,
-                    )
-                else:
-                    val_search_mm, val_holdout_mm = None, None
-            else:
-                val_search_full = validation_data
-                val_holdout = None
-                val_search_mm = validation_data_mm
-                val_holdout_mm = None
-
-            self._register_dataset_split("val_search_full", val_search_full, val_search_mm)
-            self._register_dataset_split("val_holdout", val_holdout, val_holdout_mm)
+        elif USE_VALIDATION_FOR_REWARD:
+            print("[警告] 验证集引导的奖励已启用，但未提供验证数据集。")
 
         self.dataloader_train = self.dataloaders.get("train")
         self.dataloader_test = self.dataloaders.get("validation_full")
         self.dataloader_test_mm = self.dataloaders_mm.get("validation_full")
 
-        if validation_data is not None:
-            search_size = len(self.dataset_splits.get("val_search_full", validation_data))
-            holdout_dataset = self.dataset_splits.get("val_holdout")
-            holdout_size = len(holdout_dataset) if holdout_dataset is not None else 0
-            print(
-                "[数据集协议（Dataset Protocol）] "
-                f"完整验证集（validation_full）={len(validation_data)}, "
-                f"搜索验证集（val_search_full）={search_size}, "
-                f"留出验证集（val_holdout）={holdout_size}"
-            )
-            if self.dataset_splits_mm.get("val_search_full") is not None:
-                mm_search_size = len(self.dataset_splits_mm["val_search_full"])
-                mm_holdout_size = (
-                    len(self.dataset_splits_mm["val_holdout"])
-                    if self.dataset_splits_mm.get("val_holdout") is not None
-                    else 0
-                )
-                print(
-                    "[数据集协议（Dataset Protocol）] "
-                    f"MNLI不匹配搜索集（mnli_mismatched_search）={mm_search_size}, "
-                    f"MNLI不匹配留出集（mnli_mismatched_holdout）={mm_holdout_size}"
-                )
-        elif USE_VALIDATION_FOR_REWARD:
-            print("[警告] 验证集引导的奖励已启用，但未提供验证数据集。")
-
-        if self.has_dataset_split("val_search_full"):
-            self.refresh_validation_proxy(window_index=0, stage_label="Initialization", quiet=True)
-
     def refresh_validation_proxy(self, window_index, stage_label="RL", quiet=False):
+        """[已简化] 不再从 val_search_full 抽 proxy，直接返回 validation_full。"""
+        self.current_val_proxy_window = int(window_index)
+        self.current_val_proxy_subset_id = f"proxy_window_{int(window_index):04d}"
+        if self.has_dataset_split("validation_full"):
+            return "validation_full"
+        return "train"
+
+    def _refresh_validation_proxy_legacy(self, window_index, stage_label="RL", quiet=False):
+        """[已禁用] 旧版 val_proxy 切分逻辑，仅保留供参考。"""
         if not self.has_dataset_split("val_search_full"):
             self.current_val_proxy_window = None
             self.current_val_proxy_subset_id = None
@@ -2771,18 +2743,13 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     def get_reward_reference_split_name(self):
         if USE_VALIDATION_FOR_REWARD:
-            if self.has_dataset_split("val_search_full"):
-                return "val_search_full"
             if self.has_dataset_split("validation_full"):
                 return "validation_full"
         return "train"
 
     def get_online_reward_split_name(self):
+        """Stage-1 在线奖励也统一使用 validation_full（不再切 proxy）。"""
         if USE_VALIDATION_FOR_REWARD:
-            if self.has_dataset_split("val_proxy"):
-                return "val_proxy"
-            if self.has_dataset_split("val_search_full"):
-                return "val_search_full"
             if self.has_dataset_split("validation_full"):
                 return "validation_full"
         return "train"
@@ -2797,8 +2764,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             return "train"
         if self.has_dataset_split("validation_full"):
             return "validation_full"
-        if self.has_dataset_split("val_search_full"):
-            return "val_search_full"
         return "train"
 
     def _candidate_meets_constraints(self, loss, metric1, metric2, limit_loss, limit_p, limit_s):
@@ -3491,36 +3456,51 @@ class LayerImportanceEvaluator(TrainerCallback):
             ):
         repeats = max(1, int(repeats))
         split_name = self._resolve_eval_split(use_train=use_train, split=split)
+
+        _cpu_rng_state = torch.get_rng_state()
+        _cuda_rng_state_all = (
+            torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+        )
+        _np_rng_state = np.random.get_state()
+        _py_rng_state = random.getstate()
+
         trials = []
-        base_seed = int(getattr(self, "final_eval_random_seed", 42))
-        for trial_idx in range(repeats):
-            # 每次重复独立可复现的噪声流（torch.randn / numpy），避免上游固定种子导致 MC 方差恒为 0
-            trial_seed = base_seed + trial_idx * 1_000_003
-            torch.manual_seed(trial_seed)
-            np.random.seed(trial_seed % (2**32))
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed_all(trial_seed)
-            loss, p, s, t = self.evaluate_model_with_attention_noise(
-                gelu_degrees,
-                softmax_degrees,
-                input_noise_scaling_factors=input_noise_scaling_factors,
-                wq_noise_scaling_factors=wq_noise_scaling_factors,
-                wk_noise_scaling_factors=wk_noise_scaling_factors,
-                wv_noise_scaling_factors=wv_noise_scaling_factors,
-                wo_noise_scaling_factors=wo_noise_scaling_factors,
-                wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
-                wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
-                use_train=(split_name == "train"),
-                split=split_name,
-            )
-            trials.append(
-                {
-                    "loss": float(loss),
-                    "p": float(p),
-                    "s": float(s),
-                    "time_ms": float(t),
-                }
-            )
+        try:
+            base_seed = int(getattr(self, "final_eval_random_seed", 42))
+            for trial_idx in range(repeats):
+                # 每次重复独立可复现的噪声流（torch.randn / numpy），避免上游固定种子导致 MC 方差恒为 0
+                trial_seed = base_seed + trial_idx * 1_000_003
+                torch.manual_seed(trial_seed)
+                np.random.seed(trial_seed % (2**32))
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(trial_seed)
+                loss, p, s, t = self.evaluate_model_with_attention_noise(
+                    gelu_degrees,
+                    softmax_degrees,
+                    input_noise_scaling_factors=input_noise_scaling_factors,
+                    wq_noise_scaling_factors=wq_noise_scaling_factors,
+                    wk_noise_scaling_factors=wk_noise_scaling_factors,
+                    wv_noise_scaling_factors=wv_noise_scaling_factors,
+                    wo_noise_scaling_factors=wo_noise_scaling_factors,
+                    wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
+                    wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
+                    use_train=(split_name == "train"),
+                    split=split_name,
+                )
+                trials.append(
+                    {
+                        "loss": float(loss),
+                        "p": float(p),
+                        "s": float(s),
+                        "time_ms": float(t),
+                    }
+                )
+        finally:
+            torch.set_rng_state(_cpu_rng_state)
+            if _cuda_rng_state_all is not None:
+                torch.cuda.set_rng_state_all(_cuda_rng_state_all)
+            np.random.set_state(_np_rng_state)
+            random.setstate(_py_rng_state)
 
         losses = np.asarray([trial["loss"] for trial in trials], dtype=float)
         ps = np.asarray([trial["p"] for trial in trials], dtype=float)
@@ -3529,6 +3509,136 @@ class LayerImportanceEvaluator(TrainerCallback):
         return {
             "split_name": split_name,
             "n": repeats,
+            "loss_mean": float(np.mean(losses)),
+            "loss_std": float(np.std(losses)),
+            "loss_min": float(np.min(losses)),
+            "loss_max": float(np.max(losses)),
+            "loss_range": float(np.max(losses) - np.min(losses)),
+            "p_mean": float(np.mean(ps)),
+            "p_std": float(np.std(ps)),
+            "p_min": float(np.min(ps)),
+            "p_max": float(np.max(ps)),
+            "p_range": float(np.max(ps) - np.min(ps)),
+            "s_mean": float(np.mean(ss)),
+            "s_std": float(np.std(ss)),
+            "s_min": float(np.min(ss)),
+            "s_max": float(np.max(ss)),
+            "s_range": float(np.max(ss) - np.min(ss)),
+            "time_mean_ms": float(np.mean(times)),
+            "time_std_ms": float(np.std(times)),
+            "trials": trials,
+        }
+
+    def evaluate_model_with_attention_noise_segmented(
+            self,
+            gelu_degrees,
+            softmax_degrees,
+            input_noise_scaling_factors=None,
+            wq_noise_scaling_factors=None,
+            wk_noise_scaling_factors=None,
+            wv_noise_scaling_factors=None,
+            wo_noise_scaling_factors=None,
+            wffn1_noise_scaling_factors=None,
+            wffn2_noise_scaling_factors=None,
+            segments=5,
+            use_train=True,
+            split=None,
+            ):
+        """将数据集切为 N 段、每段独立噪声采样评测 1 次，总计只遍历数据集 1 遍。
+
+        返回格式与 evaluate_model_with_attention_noise_repeated 一致（n / loss_mean / loss_std / …）。
+        """
+        segments = max(1, int(segments))
+        split_name = self._resolve_eval_split(use_train=use_train, split=split)
+        dataset = self.dataset_splits.get(split_name)
+        dataset_mm = self.dataset_splits_mm.get(split_name)
+
+        if dataset is None or len(dataset) < segments:
+            return self.evaluate_model_with_attention_noise_repeated(
+                gelu_degrees, softmax_degrees,
+                input_noise_scaling_factors=input_noise_scaling_factors,
+                wq_noise_scaling_factors=wq_noise_scaling_factors,
+                wk_noise_scaling_factors=wk_noise_scaling_factors,
+                wv_noise_scaling_factors=wv_noise_scaling_factors,
+                wo_noise_scaling_factors=wo_noise_scaling_factors,
+                wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
+                wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
+                repeats=segments,
+                use_train=use_train,
+                split=split,
+            )
+
+        rng = np.random.RandomState(42)
+        perm = rng.permutation(len(dataset))
+        seg_index_lists = np.array_split(perm, segments)
+        if dataset_mm is not None and len(dataset_mm) >= segments:
+            perm_mm = rng.permutation(len(dataset_mm))
+            seg_mm_lists = np.array_split(perm_mm, segments)
+        else:
+            seg_mm_lists = None
+
+        _cpu_rng_state = torch.get_rng_state()
+        _cuda_rng_state_all = (
+            torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+        )
+        _np_rng_state = np.random.get_state()
+        _py_rng_state = random.getstate()
+
+        _tmp_split = "__noise_segment_tmp__"
+        trials = []
+        try:
+            base_seed = int(getattr(self, "final_eval_random_seed", 42))
+            for seg_idx, seg_indices in enumerate(seg_index_lists):
+                trial_seed = base_seed + seg_idx * 1_000_003
+                torch.manual_seed(trial_seed)
+                np.random.seed(trial_seed % (2**32))
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(trial_seed)
+
+                subset = dataset.select(np.sort(seg_indices).tolist())
+                subset_mm = None
+                if seg_mm_lists is not None:
+                    subset_mm = dataset_mm.select(
+                        np.sort(seg_mm_lists[seg_idx]).tolist()
+                    )
+
+                self._register_dataset_split(_tmp_split, subset, subset_mm)
+
+                loss, p, s, t = self.evaluate_model_with_attention_noise(
+                    gelu_degrees, softmax_degrees,
+                    input_noise_scaling_factors=input_noise_scaling_factors,
+                    wq_noise_scaling_factors=wq_noise_scaling_factors,
+                    wk_noise_scaling_factors=wk_noise_scaling_factors,
+                    wv_noise_scaling_factors=wv_noise_scaling_factors,
+                    wo_noise_scaling_factors=wo_noise_scaling_factors,
+                    wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
+                    wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
+                    split=_tmp_split,
+                )
+                trials.append({
+                    "loss": float(loss),
+                    "p": float(p),
+                    "s": float(s),
+                    "time_ms": float(t),
+                })
+        finally:
+            self.dataset_splits.pop(_tmp_split, None)
+            self.dataloaders.pop(_tmp_split, None)
+            self.dataset_splits_mm.pop(_tmp_split, None)
+            self.dataloaders_mm.pop(_tmp_split, None)
+            torch.set_rng_state(_cpu_rng_state)
+            if _cuda_rng_state_all is not None:
+                torch.cuda.set_rng_state_all(_cuda_rng_state_all)
+            np.random.set_state(_np_rng_state)
+            random.setstate(_py_rng_state)
+
+        losses = np.asarray([trial["loss"] for trial in trials], dtype=float)
+        ps = np.asarray([trial["p"] for trial in trials], dtype=float)
+        ss = np.asarray([trial["s"] for trial in trials], dtype=float)
+        times = np.asarray([trial["time_ms"] for trial in trials], dtype=float)
+        return {
+            "split_name": split_name,
+            "n": segments,
             "loss_mean": float(np.mean(losses)),
             "loss_std": float(np.std(losses)),
             "loss_min": float(np.min(losses)),
@@ -4354,25 +4464,21 @@ class LayerImportanceEvaluator(TrainerCallback):
         def confirm_stage1_candidate(candidate_config, episode_idx, window_idx):
             nonlocal search_best_config, global_best_config
 
-            if candidate_config is None or not self.has_dataset_split("val_search_full"):
+            if candidate_config is None or not self.has_dataset_split("validation_full"):
                 return
 
             gelu_arr = np.asarray(candidate_config["gelu"], dtype=int)
             softmax_arr = np.asarray(candidate_config["softmax"], dtype=int)
             proxy_reward = float(candidate_config.get("reward", 0.0))
 
-            search_loss, search_p, search_s, _ = self.evaluate_model(
+            val_loss, val_p, val_s, _ = self.evaluate_model(
                 gelu_arr,
                 softmax_arr,
-                split="val_search_full",
+                split="validation_full",
             )
-            search_ok = self._candidate_meets_constraints(
-                search_loss,
-                search_p,
-                search_s,
-                limit_loss,
-                limit_p,
-                limit_s,
+            val_ok = self._candidate_meets_constraints(
+                val_loss, val_p, val_s,
+                limit_loss, limit_p, limit_s,
             )
 
             confirmed_candidate = {
@@ -4383,51 +4489,23 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "proxy_reward": proxy_reward,
                 "confirmed_episode": int(episode_idx) + 1,
                 "confirmed_window": int(window_idx) + 1,
-                "search_loss": float(search_loss),
-                "search_metric1": float(search_p),
-                "search_metric2": float(search_s),
-                "search_ok": bool(search_ok),
+                "search_loss": float(val_loss),
+                "search_metric1": float(val_p),
+                "search_metric2": float(val_s),
+                "search_ok": bool(val_ok),
+                "holdout_loss": float(val_loss),
+                "holdout_metric1": float(val_p),
+                "holdout_metric2": float(val_s),
+                "holdout_ok": bool(val_ok),
             }
-
-            if self.has_dataset_split("val_holdout"):
-                holdout_loss, holdout_p, holdout_s, _ = self.evaluate_model(
-                    gelu_arr,
-                    softmax_arr,
-                    split="val_holdout",
-                )
-                holdout_ok = self._candidate_meets_constraints(
-                    holdout_loss,
-                    holdout_p,
-                    holdout_s,
-                    limit_loss,
-                    limit_p,
-                    limit_s,
-                )
-                confirmed_candidate.update({
-                    "holdout_loss": float(holdout_loss),
-                    "holdout_metric1": float(holdout_p),
-                    "holdout_metric2": float(holdout_s),
-                    "holdout_ok": bool(holdout_ok),
-                })
-            else:
-                confirmed_candidate.update({
-                    "holdout_loss": float(search_loss),
-                    "holdout_metric1": float(search_p),
-                    "holdout_metric2": float(search_s),
-                    "holdout_ok": bool(search_ok),
-                })
 
             _stage1_confirm_lines = [
                 f"窗口（Window） {window_idx + 1} 候选确认（candidate confirmation）",
-                "[搜索集 Search]",
+                "[验证集全集 validation_full]",
                 f"  代理奖励: {proxy_reward:.4f}",
-                f"  指标: {self._fmt_metrics(search_loss, search_p, search_s)}",
+                f"  指标: {self._fmt_metrics(val_loss, val_p, val_s)}",
+                f"  约束通过: {val_ok}",
             ]
-            if self.has_dataset_split("val_holdout"):
-                _stage1_confirm_lines.append("[留出集 Holdout]")
-                _stage1_confirm_lines.append(
-                    f"  指标: {self._fmt_metrics(confirmed_candidate['holdout_loss'], confirmed_candidate['holdout_metric1'], confirmed_candidate['holdout_metric2'])}"
-                )
 
             if USE_TRAIN_ANCHOR and self.has_dataset_split("train_anchor"):
                 anchor_loss, anchor_p, anchor_s, _ = self.evaluate_model(
@@ -4447,7 +4525,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             _log_rounded_box(self.log, _stage1_confirm_lines)
 
-            if search_ok and self._is_better_confirmed_candidate(
+            if val_ok and self._is_better_confirmed_candidate(
                 confirmed_candidate,
                 search_best_config,
                 metric_prefix="search",
@@ -4461,10 +4539,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                     f"成本（cost）={search_best_config['cost']:.2f}, 代理奖励（proxy_reward）={search_best_config['proxy_reward']:.4f}"
                 )
 
-            if confirmed_candidate["holdout_ok"] and self._is_better_confirmed_candidate(
+            if val_ok and self._is_better_confirmed_candidate(
                 confirmed_candidate,
                 global_best_config,
-                metric_prefix="holdout",
+                metric_prefix="search",
             ):
                 global_best_config = {
                     k: (v.copy() if isinstance(v, np.ndarray) else v)
