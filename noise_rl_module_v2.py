@@ -103,6 +103,10 @@ NOISE_STAGE_STATUS_NO_STABLE_FEASIBLE = "no_stable_feasible_candidate"
 NOISE_STAGE_REWARD_CLIP_MIN = -5.0
 NOISE_STAGE_REWARD_CLIP_MAX = 5.0
 
+# checkpoint 文件名
+NOISE_STAGE_CHECKPOINT_FILENAME = "noise_rl_checkpoint.pt"
+STAGE1_CHECKPOINT_FILENAME = "stage1_rl_checkpoint.pt"
+
 
 # ===========================================================================
 # Helper functions（辅助函数）
@@ -373,6 +377,174 @@ def _write_warning_report(warning_file, warnings, stage_label=""):
             for df in w.get("detail_files", []):
                 f.write(f"    -> details/{df}\n")
             f.write("\n")
+
+
+# ===========================================================================
+# Checkpoint save / load helpers（断点续训辅助函数）
+# ===========================================================================
+
+def _serialize_numpy(obj):
+    """递归将 numpy 数组转为 list，方便 torch.save 序列化。"""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: _serialize_numpy(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        converted = [_serialize_numpy(item) for item in obj]
+        return type(obj)(converted) if isinstance(obj, tuple) else converted
+    return obj
+
+
+def _deserialize_numpy_keys(obj, keys_to_convert):
+    """将指定 key 下的 list 恢复为 numpy int 数组。"""
+    if not isinstance(obj, dict):
+        return obj
+    for key in keys_to_convert:
+        if key in obj and obj[key] is not None:
+            if isinstance(obj[key], list):
+                obj[key] = np.array(obj[key], dtype=int)
+    return obj
+
+
+def save_noise_rl_checkpoint(
+    path,
+    noise_net,
+    optimizer,
+    episode,
+    noise_ppo_update_count,
+    episode_returns,
+    episode_raw_final_rewards,
+    episode_final_selection_scores,
+    episode_losses,
+    episode_metric1s,
+    episode_metric2s,
+    episode_entropies,
+    best_final_selection_score,
+    best_cost,
+    best_noise_config,
+    incumbent_best_noise_config,
+    incumbent_best_signature,
+    incumbent_mean_score,
+    incumbent_history,
+    ev_runtime_state,
+    noise_prev_avg_reward,
+    noise_warnings,
+):
+    """保存 Stage-2 噪声 RL 的完整训练状态（checkpoint）。"""
+    checkpoint = {
+        "version": 2,
+        "completed_episodes": episode + 1,
+        "noise_net_state_dict": noise_net.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "noise_ppo_update_count": noise_ppo_update_count,
+        "episode_returns": list(episode_returns),
+        "episode_raw_final_rewards": list(episode_raw_final_rewards),
+        "episode_final_selection_scores": list(episode_final_selection_scores),
+        "episode_losses": list(episode_losses),
+        "episode_metric1s": list(episode_metric1s),
+        "episode_metric2s": list(episode_metric2s),
+        "episode_entropies": list(episode_entropies),
+        "best_final_selection_score": best_final_selection_score,
+        "best_cost": best_cost,
+        "best_noise_config": _serialize_numpy(best_noise_config),
+        "incumbent_best_noise_config": _serialize_numpy(incumbent_best_noise_config),
+        "incumbent_best_signature": incumbent_best_signature,
+        "incumbent_mean_score": incumbent_mean_score,
+        "incumbent_history": _serialize_numpy(incumbent_history),
+        "ev_runtime_state": ev_runtime_state,
+        "noise_prev_avg_reward": noise_prev_avg_reward,
+        "noise_warnings": _serialize_numpy(noise_warnings),
+    }
+    os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
+    torch.save(checkpoint, path)
+
+
+def load_noise_rl_checkpoint(path, noise_net, optimizer, device="cuda"):
+    """加载 Stage-2 噪声 RL checkpoint，恢复训练状态。返回 checkpoint dict。"""
+    checkpoint = torch.load(path, map_location=device, weights_only=False)
+    noise_net.load_state_dict(checkpoint["noise_net_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    # 恢复 numpy 数组
+    _np_keys = [
+        "input_noise_scaling_factors", "wq_noise_scaling_factors",
+        "wk_noise_scaling_factors", "wv_noise_scaling_factors",
+        "wo_noise_scaling_factors", "wffn1_noise_scaling_factors",
+        "wffn2_noise_scaling_factors",
+    ]
+    if checkpoint.get("best_noise_config") is not None:
+        checkpoint["best_noise_config"] = _deserialize_numpy_keys(
+            checkpoint["best_noise_config"], _np_keys,
+        )
+    if checkpoint.get("incumbent_best_noise_config") is not None:
+        checkpoint["incumbent_best_noise_config"] = _deserialize_numpy_keys(
+            checkpoint["incumbent_best_noise_config"], _np_keys,
+        )
+    return checkpoint
+
+
+def save_stage1_rl_checkpoint(
+    path,
+    gtrxl_net,
+    optimizer,
+    episode,
+    gtrxl_ppo_update_count,
+    episode_rewards,
+    episode_losses,
+    episode_metric1s,
+    episode_metric2s,
+    episode_entropies,
+    best_reward,
+    best_cost,
+    best_config,
+    search_best_config,
+    global_best_config,
+    window_best_reward,
+    window_best_cost,
+    window_best_config,
+    ev_runtime_state,
+    stage1_prev_avg_reward,
+    stage1_warnings,
+):
+    """保存 Stage-1 RL 的完整训练状态（checkpoint）。"""
+    checkpoint = {
+        "version": 1,
+        "completed_episodes": episode + 1,
+        "gtrxl_net_state_dict": gtrxl_net.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "gtrxl_ppo_update_count": gtrxl_ppo_update_count,
+        "episode_rewards": list(episode_rewards),
+        "episode_losses": list(episode_losses),
+        "episode_metric1s": list(episode_metric1s),
+        "episode_metric2s": list(episode_metric2s),
+        "episode_entropies": list(episode_entropies),
+        "best_reward": best_reward,
+        "best_cost": best_cost,
+        "best_config": _serialize_numpy(best_config),
+        "search_best_config": _serialize_numpy(search_best_config),
+        "global_best_config": _serialize_numpy(global_best_config),
+        "window_best_reward": window_best_reward,
+        "window_best_cost": window_best_cost,
+        "window_best_config": _serialize_numpy(window_best_config),
+        "ev_runtime_state": ev_runtime_state,
+        "stage1_prev_avg_reward": stage1_prev_avg_reward,
+        "stage1_warnings": _serialize_numpy(stage1_warnings),
+    }
+    os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
+    torch.save(checkpoint, path)
+
+
+def load_stage1_rl_checkpoint(path, gtrxl_net, optimizer, device="cuda"):
+    """加载 Stage-1 RL checkpoint，恢复训练状态。返回 checkpoint dict。"""
+    checkpoint = torch.load(path, map_location=device, weights_only=False)
+    gtrxl_net.load_state_dict(checkpoint["gtrxl_net_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    _np_keys = ["gelu", "softmax"]
+    for cfg_key in ("best_config", "search_best_config", "global_best_config", "window_best_config"):
+        if checkpoint.get(cfg_key) is not None:
+            checkpoint[cfg_key] = _deserialize_numpy_keys(
+                checkpoint[cfg_key], _np_keys,
+            )
+    return checkpoint
 
 
 # ===========================================================================
@@ -1385,7 +1557,8 @@ class NoiseRLModuleV2:
     def __init__(self, evaluator):
         self.evaluator = evaluator
 
-    def run(self, fixed_gelu, fixed_softmax, fixed_label, fixed_source):
+    def run(self, fixed_gelu, fixed_softmax, fixed_label, fixed_source,
+             resume_checkpoint_path=None):
         from layer_importance_evaluator import (
             INPUT_NOISE_SCALING_MAP,
             INPUT_NOISE_COST_MAP,
@@ -1817,9 +1990,56 @@ class NoiseRLModuleV2:
         )
 
         # ============================
-        # \u4e3b\u8bad\u7ec3\u5faa\u73af
+        # 断点续训：加载 checkpoint
         # ============================
-        for episode in range(stage2_total_episodes):
+        resume_start_episode = 0
+        noise_rl_checkpoint_path = os.path.join(
+            noise_progress_dir, NOISE_STAGE_CHECKPOINT_FILENAME,
+        )
+        if resume_checkpoint_path and os.path.isfile(resume_checkpoint_path):
+            _noise_block_title(ev.log, "断点续训（Resume from checkpoint）")
+            ev.log(f"  ▸ 加载 checkpoint: {resume_checkpoint_path}")
+            ckpt = load_noise_rl_checkpoint(
+                resume_checkpoint_path, noise_net, optimizer, device=ev.device,
+            )
+            resume_start_episode = int(ckpt["completed_episodes"])
+            noise_ppo_update_count = int(ckpt["noise_ppo_update_count"])
+            episode_returns = list(ckpt["episode_returns"])
+            episode_raw_final_rewards = list(ckpt["episode_raw_final_rewards"])
+            episode_final_selection_scores = list(ckpt["episode_final_selection_scores"])
+            episode_losses = list(ckpt["episode_losses"])
+            episode_metric1s = list(ckpt["episode_metric1s"])
+            episode_metric2s = list(ckpt["episode_metric2s"])
+            episode_entropies = list(ckpt["episode_entropies"])
+            best_final_selection_score = float(ckpt["best_final_selection_score"])
+            best_cost = float(ckpt["best_cost"])
+            best_noise_config = _clone_candidate(ckpt["best_noise_config"])
+            if ckpt.get("incumbent_best_noise_config") is not None:
+                incumbent_best_noise_config = _clone_candidate(ckpt["incumbent_best_noise_config"])
+            incumbent_best_signature = ckpt.get("incumbent_best_signature")
+            incumbent_mean_score = float(ckpt.get("incumbent_mean_score", float("-inf")))
+            incumbent_history = list(ckpt.get("incumbent_history", []))
+            noise_prev_avg_reward[0] = ckpt.get("noise_prev_avg_reward")
+            noise_warnings = list(ckpt.get("noise_warnings", []))
+            _ev_rt = ckpt.get("ev_runtime_state", {})
+            ev.reward_history = list(_ev_rt.get("reward_history", []))
+            ev.reward_mean = float(_ev_rt.get("reward_mean", 0.0))
+            ev.reward_std = float(_ev_rt.get("reward_std", 1.0))
+            ev.current_episode = int(_ev_rt.get("current_episode", resume_start_episode))
+            ev.log(
+                f"  ▸ 已恢复至回合 {resume_start_episode}，"
+                f"将从回合 {resume_start_episode + 1} 继续训练至 {stage2_total_episodes}"
+            )
+            if resume_start_episode >= stage2_total_episodes:
+                ev.log(
+                    f"  ⚠ checkpoint 已完成 {resume_start_episode} 回合，"
+                    f"目标回合数 {stage2_total_episodes} 无需追加训练。"
+                )
+
+        # ============================
+        # 主训练循环
+        # ============================
+        for episode in range(resume_start_episode, stage2_total_episodes):
             current_lr, current_entropy = ev.update_hyperparameters(optimizer, episode)
             env.set_episode_progress(episode, stage2_total_episodes)
             state = env.reset()
@@ -2190,6 +2410,39 @@ class NoiseRLModuleV2:
                 ev.log(
                     f"  [\u8fdb\u5ea6] \u5df2\u5199\u5165\u8bad\u7ec3\u66f2\u7ebf\u5feb\u7167 \u00b7 \u56de\u5408 {episode + 1}"
                 )
+                # 保存 checkpoint（断点续训用）
+                save_noise_rl_checkpoint(
+                    path=noise_rl_checkpoint_path,
+                    noise_net=noise_net,
+                    optimizer=optimizer,
+                    episode=episode,
+                    noise_ppo_update_count=noise_ppo_update_count,
+                    episode_returns=episode_returns,
+                    episode_raw_final_rewards=episode_raw_final_rewards,
+                    episode_final_selection_scores=episode_final_selection_scores,
+                    episode_losses=episode_losses,
+                    episode_metric1s=episode_metric1s,
+                    episode_metric2s=episode_metric2s,
+                    episode_entropies=episode_entropies,
+                    best_final_selection_score=best_final_selection_score,
+                    best_cost=best_cost,
+                    best_noise_config=best_noise_config,
+                    incumbent_best_noise_config=incumbent_best_noise_config,
+                    incumbent_best_signature=incumbent_best_signature,
+                    incumbent_mean_score=incumbent_mean_score,
+                    incumbent_history=incumbent_history,
+                    ev_runtime_state={
+                        "reward_history": list(ev.reward_history),
+                        "reward_mean": float(ev.reward_mean),
+                        "reward_std": float(ev.reward_std),
+                        "current_episode": int(ev.current_episode),
+                    },
+                    noise_prev_avg_reward=noise_prev_avg_reward[0],
+                    noise_warnings=noise_warnings,
+                )
+                ev.log(
+                    f"  [进度] 已保存 checkpoint · 回合 {episode + 1} → {noise_rl_checkpoint_path}"
+                )
 
         # ============================
         # \u8bad\u7ec3\u7ed3\u675f
@@ -2246,12 +2499,46 @@ class NoiseRLModuleV2:
                 f"  \u26a0 \u8bad\u7ec3\u671f\u95f4\u5171\u89e6\u53d1 {len(noise_warnings)} \u6761\u5956\u52b1\u9a9f\u964d\u544a\u8b66"
             )
 
+        # 训练结束保存最终 checkpoint（断点续训用）
+        _final_ep = stage2_total_episodes - 1
+        if stage2_total_episodes > resume_start_episode:
+            save_noise_rl_checkpoint(
+                path=noise_rl_checkpoint_path,
+                noise_net=noise_net,
+                optimizer=optimizer,
+                episode=_final_ep,
+                noise_ppo_update_count=noise_ppo_update_count,
+                episode_returns=episode_returns,
+                episode_raw_final_rewards=episode_raw_final_rewards,
+                episode_final_selection_scores=episode_final_selection_scores,
+                episode_losses=episode_losses,
+                episode_metric1s=episode_metric1s,
+                episode_metric2s=episode_metric2s,
+                episode_entropies=episode_entropies,
+                best_final_selection_score=best_final_selection_score,
+                best_cost=best_cost,
+                best_noise_config=best_noise_config,
+                incumbent_best_noise_config=incumbent_best_noise_config,
+                incumbent_best_signature=incumbent_best_signature,
+                incumbent_mean_score=incumbent_mean_score,
+                incumbent_history=incumbent_history,
+                ev_runtime_state={
+                    "reward_history": list(ev.reward_history),
+                    "reward_mean": float(ev.reward_mean),
+                    "reward_std": float(ev.reward_std),
+                    "current_episode": int(ev.current_episode),
+                },
+                noise_prev_avg_reward=noise_prev_avg_reward[0],
+                noise_warnings=noise_warnings,
+            )
+            ev.log(f"  [完成] 最终 checkpoint 已保存 → {noise_rl_checkpoint_path}")
+
         ev.total_episodes = original_total_episodes
         ev.apply_configuration(fixed_gelu, fixed_softmax)
         ev.clear_input_noise_configuration()
         ev.clear_weight_noise_configuration()
 
-        # \u8fd4\u56de\u7ed3\u679c\u5b57\u5178\uff08\u517c\u5bb9\u4e0b\u6e38 noise_final_evaluation_module\uff09
+        # 返回结果字典（兼容下游 noise_final_evaluation_module）
         return {
             "fixed_gelu": fixed_gelu.copy(),
             "fixed_softmax": fixed_softmax.copy(),

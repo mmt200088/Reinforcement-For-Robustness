@@ -438,3 +438,66 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --model mrpc
 ```
 
+### `--resume-from` 断点续训可选项
+
+当一次强化学习训练完成后，如果发现轮数不够，可以通过 `--resume-from` 指定之前的 run 目录，在之前训练的基础上继续训练更多轮次。效果等价于一次性训练更多轮（例如先训 30000 轮，再续训 10000 轮，等价于一次性训练 40000 轮）。
+
+训练过程中会自动在 run 目录下保存 checkpoint 文件（每次 PPO 更新窗口结束时保存）：
+
+- Stage-1 checkpoint: `<run_dir>/stage1/stage1_rl_checkpoint.pt`
+- Stage-2 checkpoint: `<run_dir>/stage2_noise/progress/noise_rl_checkpoint.pt`
+
+
+| 参数                    | 说明                                                                                                                                         | 默认值 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --- |
+| `--resume-from PATH`  | 指定之前的 run 目录路径，从该目录的 checkpoint 恢复训练。程序会自动在 `<PATH>/stage1/` 和 `<PATH>/stage2_noise/progress/` 下查找 checkpoint 文件。如果 checkpoint 不存在，则从头开始训练。 | 空   |
+
+
+使用说明：
+
+- `PATH` 必须是一个已存在的 run 目录（例如 `rl_results/layer_importance_runs/mrpc/20260404_151155_pid711833`）。
+- 续训时，`--stage1-rl-episodes` / `--stage2-rl-episodes` 表示的是**总轮数**（而非追加轮数）。例如之前训了 30000 轮，想再加 10000 轮，则设置 `--stage2-rl-episodes 40000`。
+- 如果指定的总轮数小于等于 checkpoint 中已完成的轮数，则该阶段不会追加训练。
+- `--resume-from` 可以与 `--skip-stage1-rl`、`--skip-noise-rl` 等跳过选项组合使用：只有未被跳过的阶段才会尝试加载对应的 checkpoint。
+- 续训产出的新日志和文件会写入新生成的 run 目录（不会覆盖原目录），但模型状态和训练统计会从旧 checkpoint 恢复。
+- checkpoint 会在每次进度快照时自动保存，因此即使训练中途被中断，也可以从最近的 checkpoint 恢复。
+
+示例：
+
+```bash
+# 第一次训练：Stage-2 训练 15000 轮
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --skip-stage1-rl \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval \
+  --noise-eval-repeat 200 \
+  --model mrpc \
+  --stage2-rl-episodes 15000
+
+# 发现轮数不够，续训到 30000 轮（在之前 15000 轮的基础上再训 15000 轮）
+# 这里的 PATH 填第一次训练生成的 run 目录
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --skip-stage1-rl \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval \
+  --noise-eval-repeat 200 \
+  --model mrpc \
+  --stage2-rl-episodes 30000 \
+  --resume-from rl_results/layer_importance_runs/mrpc/20260404_151155_pid711833
+
+# Stage-1 续训示例：先训 10000 轮，再续训到 20000 轮
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --model mrpc \
+  --stage1-rl-episodes 10000 \
+  --skip-noise-rl --skip-noise-final-eval
+
+# 续训 Stage-1 到 20000 轮
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --model mrpc \
+  --stage1-rl-episodes 20000 \
+  --skip-noise-rl --skip-noise-final-eval \
+  --resume-from rl_results/layer_importance_runs/mrpc/<之前的run目录>
+```
+

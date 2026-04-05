@@ -146,6 +146,7 @@ def train(
         skip_stage1_rl: bool = False,
         skip_stage1_final_eval: bool = False,
         skip_noise_final_eval: bool = False,
+        resume_run_dir: str = "",
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
         group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -227,6 +228,7 @@ def train(
         f"wandb_watch: {wandb_watch}\n"
         f"wandb_log_model: {wandb_log_model}\n"
         f"resume_from_checkpoint: {resume_from_checkpoint}\n"
+        f"resume_run_dir: {resume_run_dir}\n"
     )
     assert (
         base_model
@@ -578,6 +580,7 @@ def train(
             skip_stage1_rl=skip_stage1_rl,
             skip_stage1_final_eval=skip_stage1_final_eval,
             skip_noise_final_eval=skip_noise_final_eval,
+            resume_run_dir=resume_run_dir,
             data_path=data_path,
             test_data_mm=val_data_mm
         )
