@@ -327,6 +327,13 @@ usage() {
     echo "  --skip-stage1-final-eval 跳过第一阶段最终评估（Phase 3+4），"
     echo "                            仍根据第一阶段配置来源解析 GELU/Softmax 后进入第二阶段。"
     echo
+    echo "断点续训："
+    echo "  --resume-from PATH       从之前的 run 目录恢复 RL 训练。"
+    echo "                            PATH 为之前的 run 目录路径，例如："
+    echo "                            rl_results/layer_importance_runs/mrpc/20260404_151155_pid711833"
+    echo "                            程序会自动在该目录下查找 checkpoint 文件。"
+    echo "                            续训时 --stage1/2-rl-episodes 表示总轮数（非追加轮数）。"
+    echo
     echo "示例："
     echo "  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2"
     echo "  bash llama_7B_LayerImportance.sh 32 64 output_json.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json"
@@ -392,6 +399,15 @@ Common options:
   --noise-eval-source search|json|manual
   --noise-eval-config PATH
   --noise-eval-repeat N
+
+  --resume-from PATH
+      Resume RL training from a previous run directory.
+      PATH should be a previous run directory, e.g.:
+        rl_results/layer_importance_runs/mrpc/20260404_151155_pid711833
+      The system will look for checkpoint files in:
+        <PATH>/stage1/stage1_rl_checkpoint.pt  (Stage-1)
+        <PATH>/stage2_noise/progress/noise_rl_checkpoint.pt  (Stage-2)
+
   -h, --help
 
 Examples:
@@ -447,6 +463,7 @@ STAGE2_RL_EPISODES="40000"
 STAGE1_RL_EPISODES_SPECIFIED="false"
 STAGE2_RL_EPISODES_SPECIFIED="false"
 MIN_RL_EPISODES="170"
+RESUME_RUN_DIR=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -553,6 +570,11 @@ while [ "$#" -gt 0 ]; do
             DATASET="$2"
             shift 2
             ;;
+        --resume-from)
+            require_option_value "$@"
+            RESUME_RUN_DIR="$2"
+            shift 2
+            ;;
         -h|--help)
             usage
             exit 0
@@ -617,6 +639,10 @@ fi
 
 if [ "$SKIP_NOISE_RL" = "false" ] && [ "$STAGE2_RL_EPISODES" -lt "$MIN_RL_EPISODES" ]; then
     error_exit "--stage2-rl-episodes must be >= $MIN_RL_EPISODES so Stage-2 PPO can update at least once."
+fi
+
+if [ -n "$RESUME_RUN_DIR" ] && [ ! -d "$RESUME_RUN_DIR" ]; then
+    error_exit "--resume-from 指定的目录不存在: $RESUME_RUN_DIR"
 fi
 
 if [ "$NOISE_EVAL_SOURCE" = "manual" ]; then
@@ -725,6 +751,7 @@ CMD=(
     --skip_stage1_rl "$SKIP_STAGE1_RL"
     --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL"
     --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL"
+    --resume_run_dir "$RESUME_RUN_DIR"
 )
 
 echo "Dataset: $DATASET (base_model=$BASE_MODEL, data_path=$DATA_PATH)"
@@ -753,6 +780,9 @@ echo "Resolved nohup log: $LOGFILE_PATH"
 echo "Batch size: $BATCH_SIZE (syncs --batch_size and --micro_batch_size)"
 echo "Stage-1 RL episodes: $STAGE1_RL_EPISODES"
 echo "Stage-2 RL episodes: $STAGE2_RL_EPISODES"
+if [ -n "$RESUME_RUN_DIR" ]; then
+    echo "Resume from: $RESUME_RUN_DIR"
+fi
 if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
     echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 else

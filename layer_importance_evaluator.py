@@ -2112,7 +2112,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                  noise_eval_repeat_n=5,
                  skip_stage1_rl=False,
                  skip_stage1_final_eval=False,
-                 skip_noise_final_eval=False):
+                 skip_noise_final_eval=False,
+                 resume_run_dir=''):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -2340,6 +2341,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.skip_noise_final_eval = self._coerce_bool_flag(
             skip_noise_final_eval, 'skip_noise_final_eval'
         )
+        self.resume_run_dir = str(resume_run_dir or '').strip()
 
         if self.noise_eval_config_source not in ('search', 'json', 'manual'):
             raise ValueError(
@@ -3760,10 +3762,31 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.reward_std = 1.0
         self.return_normalizer = RunningMeanStd()
 
-    def run_noise_rl_stage(self, fixed_gelu, fixed_softmax, fixed_label, fixed_source):
+    def _get_stage1_resume_checkpoint_path(self):
+        """如果设置了 resume_run_dir，返回 Stage-1 checkpoint 路径；否则返回 None。"""
+        from noise_rl_module_v2 import STAGE1_CHECKPOINT_FILENAME
+        if not self.resume_run_dir:
+            return None
+        path = os.path.join(self.resume_run_dir, "stage1", STAGE1_CHECKPOINT_FILENAME)
+        return path if os.path.isfile(path) else None
+
+    def _get_stage2_resume_checkpoint_path(self):
+        """如果设置了 resume_run_dir，返回 Stage-2 checkpoint 路径；否则返回 None。"""
+        from noise_rl_module_v2 import NOISE_STAGE_CHECKPOINT_FILENAME
+        if not self.resume_run_dir:
+            return None
+        path = os.path.join(
+            self.resume_run_dir, "stage2_noise", "progress",
+            NOISE_STAGE_CHECKPOINT_FILENAME,
+        )
+        return path if os.path.isfile(path) else None
+
+    def run_noise_rl_stage(self, fixed_gelu, fixed_softmax, fixed_label, fixed_source,
+                           resume_checkpoint_path=None):
         from noise_rl_module_v2 import NoiseRLModuleV2
         module = NoiseRLModuleV2(self)
-        return module.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source)
+        return module.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source,
+                          resume_checkpoint_path=resume_checkpoint_path)
 
     def run_noise_final_eval_stage(self, fixed_gelu, fixed_softmax, noise_stage_result=None):
         from noise_final_evaluation_module import NoiseFinalEvaluationModule
@@ -4674,7 +4697,64 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.total_episodes = self.stage1_rl_episodes
             self._reset_runtime_ppo_state()
 
-            for episode in range(self.stage1_rl_episodes):
+            # ============================
+            # 断点续训：加载 Stage-1 checkpoint
+            # ============================
+            from noise_rl_module_v2 import (
+                save_stage1_rl_checkpoint,
+                load_stage1_rl_checkpoint,
+                STAGE1_CHECKPOINT_FILENAME,
+            )
+            stage1_checkpoint_path = os.path.join(
+                os.path.dirname(self.stage1_step_info_file),
+                STAGE1_CHECKPOINT_FILENAME,
+            )
+            stage1_resume_start_episode = 0
+            _stage1_resume_ckpt_path = self._get_stage1_resume_checkpoint_path()
+            if _stage1_resume_ckpt_path:
+                _log_rounded_box(
+                    self.log,
+                    [
+                        "断点续训（Resume Stage-1 from checkpoint）",
+                        f"加载: {_stage1_resume_ckpt_path}",
+                    ],
+                )
+                ckpt = load_stage1_rl_checkpoint(
+                    _stage1_resume_ckpt_path, gtrxl_net, optimizer, device=self.device,
+                )
+                stage1_resume_start_episode = int(ckpt["completed_episodes"])
+                gtrxl_ppo_update_count = int(ckpt["gtrxl_ppo_update_count"])
+                episode_rewards = list(ckpt["episode_rewards"])
+                episode_losses = list(ckpt["episode_losses"])
+                episode_metric1s = list(ckpt["episode_metric1s"])
+                episode_metric2s = list(ckpt["episode_metric2s"])
+                episode_entropies = list(ckpt["episode_entropies"])
+                best_reward = float(ckpt["best_reward"])
+                best_cost = float(ckpt["best_cost"])
+                best_config = ckpt.get("best_config")
+                search_best_config = ckpt.get("search_best_config")
+                global_best_config = ckpt.get("global_best_config")
+                window_best_reward = float(ckpt.get("window_best_reward", float('-inf')))
+                window_best_cost = float(ckpt.get("window_best_cost", float('inf')))
+                window_best_config = ckpt.get("window_best_config")
+                stage1_prev_avg_reward[0] = ckpt.get("stage1_prev_avg_reward")
+                stage1_warnings = list(ckpt.get("stage1_warnings", []))
+                _ev_rt = ckpt.get("ev_runtime_state", {})
+                self.reward_history = list(_ev_rt.get("reward_history", []))
+                self.reward_mean = float(_ev_rt.get("reward_mean", 0.0))
+                self.reward_std = float(_ev_rt.get("reward_std", 1.0))
+                self.current_episode = int(_ev_rt.get("current_episode", stage1_resume_start_episode))
+                self.log(
+                    f"  已恢复至回合 {stage1_resume_start_episode}，"
+                    f"将从回合 {stage1_resume_start_episode + 1} 继续训练至 {self.stage1_rl_episodes}"
+                )
+                if stage1_resume_start_episode >= self.stage1_rl_episodes:
+                    self.log(
+                        f"  ⚠ checkpoint 已完成 {stage1_resume_start_episode} 回合，"
+                        f"目标回合数 {self.stage1_rl_episodes} 无需追加训练。"
+                    )
+
+            for episode in range(stage1_resume_start_episode, self.stage1_rl_episodes):
                 # 动态超参数调度（学习率和熵系数）
                 current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
                 
@@ -4912,6 +4992,36 @@ class LayerImportanceEvaluator(TrainerCallback):
                         }
                         env.current_episode_metrics = None
 
+                    # 保存 Stage-1 checkpoint（断点续训用）
+                    save_stage1_rl_checkpoint(
+                        path=stage1_checkpoint_path,
+                        gtrxl_net=gtrxl_net,
+                        optimizer=optimizer,
+                        episode=episode,
+                        gtrxl_ppo_update_count=gtrxl_ppo_update_count,
+                        episode_rewards=episode_rewards,
+                        episode_losses=episode_losses,
+                        episode_metric1s=episode_metric1s,
+                        episode_metric2s=episode_metric2s,
+                        episode_entropies=episode_entropies,
+                        best_reward=best_reward,
+                        best_cost=best_cost,
+                        best_config=best_config,
+                        search_best_config=search_best_config,
+                        global_best_config=global_best_config,
+                        window_best_reward=window_best_reward,
+                        window_best_cost=window_best_cost,
+                        window_best_config=window_best_config,
+                        ev_runtime_state={
+                            "reward_history": list(self.reward_history),
+                            "reward_mean": float(self.reward_mean),
+                            "reward_std": float(self.reward_std),
+                            "current_episode": int(self.current_episode),
+                        },
+                        stage1_prev_avg_reward=stage1_prev_avg_reward[0],
+                        stage1_warnings=stage1_warnings,
+                    )
+
             if window_best_config is not None:
                 confirm_stage1_candidate(
                     window_best_config,
@@ -4927,6 +5037,39 @@ class LayerImportanceEvaluator(TrainerCallback):
                 from noise_rl_module import _write_warning_report
                 _write_warning_report(stage1_warning_file, stage1_warnings, stage_label="阶段1（Stage-1 RL）")
                 self.log(f"  ⚠ 共检测到 {len(stage1_warnings)} 次奖励骤降警告，详见: {stage1_warning_file}")
+
+            # 训练结束保存最终 Stage-1 checkpoint
+            _s1_final_ep = self.stage1_rl_episodes - 1
+            if self.stage1_rl_episodes > stage1_resume_start_episode:
+                save_stage1_rl_checkpoint(
+                    path=stage1_checkpoint_path,
+                    gtrxl_net=gtrxl_net,
+                    optimizer=optimizer,
+                    episode=_s1_final_ep,
+                    gtrxl_ppo_update_count=gtrxl_ppo_update_count,
+                    episode_rewards=episode_rewards,
+                    episode_losses=episode_losses,
+                    episode_metric1s=episode_metric1s,
+                    episode_metric2s=episode_metric2s,
+                    episode_entropies=episode_entropies,
+                    best_reward=best_reward,
+                    best_cost=best_cost,
+                    best_config=best_config,
+                    search_best_config=search_best_config,
+                    global_best_config=global_best_config,
+                    window_best_reward=window_best_reward,
+                    window_best_cost=window_best_cost,
+                    window_best_config=window_best_config,
+                    ev_runtime_state={
+                        "reward_history": list(self.reward_history),
+                        "reward_mean": float(self.reward_mean),
+                        "reward_std": float(self.reward_std),
+                        "current_episode": int(self.current_episode),
+                    },
+                    stage1_prev_avg_reward=stage1_prev_avg_reward[0],
+                    stage1_warnings=stage1_warnings,
+                )
+                self.log(f"  [完成] Stage-1 最终 checkpoint 已保存 → {stage1_checkpoint_path}")
 
             best_config = None
             if global_best_config is not None:
@@ -5577,6 +5720,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     fixed_softmax=opt_softmax,
                     fixed_label=selected_label,
                     fixed_source=selected_source,
+                    resume_checkpoint_path=self._get_stage2_resume_checkpoint_path(),
                 )
 
             # ---------------------------------------------------------
