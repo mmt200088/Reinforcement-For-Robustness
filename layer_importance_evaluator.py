@@ -4744,6 +4744,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.reward_mean = float(_ev_rt.get("reward_mean", 0.0))
                 self.reward_std = float(_ev_rt.get("reward_std", 1.0))
                 self.current_episode = int(_ev_rt.get("current_episode", stage1_resume_start_episode))
+                # 恢复 return_normalizer（RunningMeanStd）状态，保证 value critic 归一化连续
+                if "return_normalizer_mean" in _ev_rt:
+                    self.return_normalizer.mean = float(_ev_rt["return_normalizer_mean"])
+                    self.return_normalizer.var = float(_ev_rt["return_normalizer_var"])
+                    self.return_normalizer.count = float(_ev_rt["return_normalizer_count"])
                 self.log(
                     f"  已恢复至回合 {stage1_resume_start_episode}，"
                     f"将从回合 {stage1_resume_start_episode + 1} 继续训练至 {self.stage1_rl_episodes}"
@@ -5017,6 +5022,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                             "reward_mean": float(self.reward_mean),
                             "reward_std": float(self.reward_std),
                             "current_episode": int(self.current_episode),
+                            "return_normalizer_mean": float(self.return_normalizer.mean),
+                            "return_normalizer_var": float(self.return_normalizer.var),
+                            "return_normalizer_count": float(self.return_normalizer.count),
                         },
                         stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                         stage1_warnings=stage1_warnings,
@@ -5065,6 +5073,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                         "reward_mean": float(self.reward_mean),
                         "reward_std": float(self.reward_std),
                         "current_episode": int(self.current_episode),
+                        "return_normalizer_mean": float(self.return_normalizer.mean),
+                        "return_normalizer_var": float(self.return_normalizer.var),
+                        "return_normalizer_count": float(self.return_normalizer.count),
                     },
                     stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                     stage1_warnings=stage1_warnings,
