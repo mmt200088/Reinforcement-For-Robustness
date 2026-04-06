@@ -92,6 +92,9 @@ NOISE_STAGE_V2_CONT_DIM = 5
 
 # 进度保存
 NOISE_STAGE_PROGRESS_SAVE_INTERVAL = 10000
+# checkpoint 保存间隔（以 PPO 更新次数计），确保始终在 PPO 边界保存
+# 默认值 ≈ NOISE_STAGE_PROGRESS_SAVE_INTERVAL / PPO_UPDATE_INTERVAL
+NOISE_STAGE_CHECKPOINT_PPO_INTERVAL = 59
 NOISE_STAGE_PROGRESS_DIR = os.path.join("rl_results", "noise_rl_progress")
 
 # 状态常量
@@ -1762,6 +1765,7 @@ class NoiseRLModuleV2:
         os.makedirs(noise_step_info_details_dir, exist_ok=True)
         noise_step_info_chunk_file = [None]
         noise_step_info_chunk_idx = [0]
+        noise_step_info_is_resuming = [bool(resume_checkpoint_path and os.path.isfile(resume_checkpoint_path))]
         noise_warning_file = os.path.join(os.path.dirname(ev.noise_step_info_file), "warning.txt")
         noise_prev_avg_reward = [None]
         noise_warnings = []
@@ -1783,10 +1787,19 @@ class NoiseRLModuleV2:
                 noise_step_info_chunk_file[0].close()
             chunk_start = new_idx * STEP_INFO_CHUNK_SIZE + 1
             chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
-            f = open(target, "w", encoding="utf-8")
-            f.write(
-                f"=== \u566a\u58f0 PPO V2 \u9010\u6b65\u8bca\u65ad \u00b7 \u56de\u5408\u533a\u95f4 {chunk_start}-{chunk_end} ===\n\n"
-            )
+            # 续训时首个 chunk 文件可能已有内容，用 "a" 追加；后续新 chunk 用 "w"
+            if noise_step_info_is_resuming[0] and os.path.isfile(target):
+                f = open(target, "a", encoding="utf-8")
+                f.write(
+                    f"\n=== [续训 Resume] 噪声 PPO V2 · 回合区间 {chunk_start}-{chunk_end} ===\n\n"
+                )
+                noise_step_info_is_resuming[0] = False
+            else:
+                f = open(target, "w", encoding="utf-8")
+                f.write(
+                    f"=== \u566a\u58f0 PPO V2 \u9010\u6b65\u8bca\u65ad \u00b7 \u56de\u5408\u533a\u95f4 {chunk_start}-{chunk_end} ===\n\n"
+                )
+                noise_step_info_is_resuming[0] = False
             noise_step_info_chunk_file[0] = f
             noise_step_info_chunk_idx[0] = new_idx
             return f
@@ -1953,41 +1966,44 @@ class NoiseRLModuleV2:
         incumbent_history = []
 
         # \u521d\u59cb\u5b88\u64c2\u65b9\u6848\uff1a\u4f4e\u98ce\u9669\u57fa\u7ebf
-        incumbent_cost_value, _ = ev.get_noise_simulated_cost(**baseline_noise_config)
-        initial_incumbent_config = {
-            key: np.asarray(value, dtype=int).copy()
-            for key, value in baseline_noise_config.items()
-        }
-        initial_incumbent_config["cost"] = float(incumbent_cost_value)
+        # 续训时跳过基线评估（checkpoint 会恢复所有 incumbent 状态）
+        _will_resume = bool(resume_checkpoint_path and os.path.isfile(resume_checkpoint_path))
+        if not _will_resume:
+            incumbent_cost_value, _ = ev.get_noise_simulated_cost(**baseline_noise_config)
+            initial_incumbent_config = {
+                key: np.asarray(value, dtype=int).copy()
+                for key, value in baseline_noise_config.items()
+            }
+            initial_incumbent_config["cost"] = float(incumbent_cost_value)
 
-        # \u521d\u59cb\u5b88\u64c2\u7edf\u8ba1\uff08\u5206\u6bb5\u8bc4\u6d4b\uff0c\u6574\u4efd\u9a8c\u8bc1\u96c6\u5207 N \u6bb5\uff0c\u53ea\u8dd1 1 \u904d\uff09
-        best_test_segments = _auto_adjust_segments(
-            _eval_dataset_size, NOISE_STAGE_BEST_TEST_SEGMENTS, log_fn=ev.log,
-        )
-        baseline_confirm_stats = ev.evaluate_model_with_attention_noise_segmented(
-            fixed_gelu, fixed_softmax,
-            **baseline_noise_config,
-            segments=best_test_segments,
-            split=reward_reference_split,
-        )
-        incumbent_best_noise_config = _clone_candidate(initial_incumbent_config)
-        incumbent_best_noise_config["search_score_mean"] = float(baseline_confirm_stats["loss_mean"])
-        incumbent_best_noise_config["search_score_std"] = float(baseline_confirm_stats["loss_std"])
-        incumbent_best_noise_config["qualification_passed"] = True
-        incumbent_best_noise_config["raw_final_reward"] = 0.0
-        incumbent_best_noise_config["final_selection_score"] = 0.0
-        incumbent_best_signature = _candidate_signature(initial_incumbent_config)
-        incumbent_mean_score = 0.0  # \u57fa\u7ebf\u5206\u6570\u53c2\u8003
-        incumbent_history.append({
-            "source": "initial_incumbent",
-            "episode": 0,
-            "mean_score": 0.0,
-            "cost": float(incumbent_cost_value),
-        })
-        ev.log(
-            f"  [\u6700\u4f18\u590d\u8bd5 BestTest] \u521d\u59cb\u5b88\u64c2\u5df2\u5c31\u7eea\uff08\u57fa\u7ebf\u65e0\u6761\u4ef6\u4e0a\u53f0\uff09: "
-            f"\u6210\u672c cost={incumbent_cost_value:.2f}"
-        )
+            # \u521d\u59cb\u5b88\u64c2\u7edf\u8ba1\uff08\u5206\u6bb5\u8bc4\u6d4b\uff0c\u6574\u4efd\u9a8c\u8bc1\u96c6\u5207 N \u6bb5\uff0c\u53ea\u8dd1 1 \u904d\uff09
+            best_test_segments = _auto_adjust_segments(
+                _eval_dataset_size, NOISE_STAGE_BEST_TEST_SEGMENTS, log_fn=ev.log,
+            )
+            baseline_confirm_stats = ev.evaluate_model_with_attention_noise_segmented(
+                fixed_gelu, fixed_softmax,
+                **baseline_noise_config,
+                segments=best_test_segments,
+                split=reward_reference_split,
+            )
+            incumbent_best_noise_config = _clone_candidate(initial_incumbent_config)
+            incumbent_best_noise_config["search_score_mean"] = float(baseline_confirm_stats["loss_mean"])
+            incumbent_best_noise_config["search_score_std"] = float(baseline_confirm_stats["loss_std"])
+            incumbent_best_noise_config["qualification_passed"] = True
+            incumbent_best_noise_config["raw_final_reward"] = 0.0
+            incumbent_best_noise_config["final_selection_score"] = 0.0
+            incumbent_best_signature = _candidate_signature(initial_incumbent_config)
+            incumbent_mean_score = 0.0  # \u57fa\u7ebf\u5206\u6570\u53c2\u8003
+            incumbent_history.append({
+                "source": "initial_incumbent",
+                "episode": 0,
+                "mean_score": 0.0,
+                "cost": float(incumbent_cost_value),
+            })
+            ev.log(
+                f"  [\u6700\u4f18\u590d\u8bd5 BestTest] \u521d\u59cb\u5b88\u64c2\u5df2\u5c31\u7eea\uff08\u57fa\u7ebf\u65e0\u6761\u4ef6\u4e0a\u53f0\uff09: "
+                f"\u6210\u672c cost={incumbent_cost_value:.2f}"
+            )
 
         # ============================
         # 断点续训：加载 checkpoint
@@ -2392,6 +2408,45 @@ class NoiseRLModuleV2:
                                               stage_label="\u566a\u58f0\u9636\u6bb5 V2\uff08Stage-2 Noise V2\uff09")
                 noise_prev_avg_reward[0] = avg_raw_final_reward
 
+                # 保存 checkpoint（断点续训用）—— 在 PPO 边界保存，确保 buffer 完整性
+                if noise_ppo_update_count % NOISE_STAGE_CHECKPOINT_PPO_INTERVAL == 0:
+                    save_noise_rl_checkpoint(
+                        path=noise_rl_checkpoint_path,
+                        noise_net=noise_net,
+                        optimizer=optimizer,
+                        episode=episode,
+                        noise_ppo_update_count=noise_ppo_update_count,
+                        episode_returns=episode_returns,
+                        episode_raw_final_rewards=episode_raw_final_rewards,
+                        episode_final_selection_scores=episode_final_selection_scores,
+                        episode_losses=episode_losses,
+                        episode_metric1s=episode_metric1s,
+                        episode_metric2s=episode_metric2s,
+                        episode_entropies=episode_entropies,
+                        best_final_selection_score=best_final_selection_score,
+                        best_cost=best_cost,
+                        best_noise_config=best_noise_config,
+                        incumbent_best_noise_config=incumbent_best_noise_config,
+                        incumbent_best_signature=incumbent_best_signature,
+                        incumbent_mean_score=incumbent_mean_score,
+                        incumbent_history=incumbent_history,
+                        ev_runtime_state={
+                            "reward_history": list(ev.reward_history),
+                            "reward_mean": float(ev.reward_mean),
+                            "reward_std": float(ev.reward_std),
+                            "current_episode": int(ev.current_episode),
+                            "return_normalizer_mean": float(ev.return_normalizer.mean),
+                            "return_normalizer_var": float(ev.return_normalizer.var),
+                            "return_normalizer_count": float(ev.return_normalizer.count),
+                        },
+                        noise_prev_avg_reward=noise_prev_avg_reward[0],
+                        noise_warnings=noise_warnings,
+                    )
+                    ev.log(
+                        f"  [checkpoint] 已保存 · PPO 更新 #{noise_ppo_update_count}, "
+                        f"回合 {episode + 1} → {noise_rl_checkpoint_path}"
+                    )
+
             # \u8fdb\u5ea6\u5feb\u7167
             if (episode + 1) % NOISE_STAGE_PROGRESS_SAVE_INTERVAL == 0:
                 progress_training_curve_path = os.path.join(
@@ -2415,42 +2470,7 @@ class NoiseRLModuleV2:
                 ev.log(
                     f"  [\u8fdb\u5ea6] \u5df2\u5199\u5165\u8bad\u7ec3\u66f2\u7ebf\u5feb\u7167 \u00b7 \u56de\u5408 {episode + 1}"
                 )
-                # 保存 checkpoint（断点续训用）
-                save_noise_rl_checkpoint(
-                    path=noise_rl_checkpoint_path,
-                    noise_net=noise_net,
-                    optimizer=optimizer,
-                    episode=episode,
-                    noise_ppo_update_count=noise_ppo_update_count,
-                    episode_returns=episode_returns,
-                    episode_raw_final_rewards=episode_raw_final_rewards,
-                    episode_final_selection_scores=episode_final_selection_scores,
-                    episode_losses=episode_losses,
-                    episode_metric1s=episode_metric1s,
-                    episode_metric2s=episode_metric2s,
-                    episode_entropies=episode_entropies,
-                    best_final_selection_score=best_final_selection_score,
-                    best_cost=best_cost,
-                    best_noise_config=best_noise_config,
-                    incumbent_best_noise_config=incumbent_best_noise_config,
-                    incumbent_best_signature=incumbent_best_signature,
-                    incumbent_mean_score=incumbent_mean_score,
-                    incumbent_history=incumbent_history,
-                    ev_runtime_state={
-                        "reward_history": list(ev.reward_history),
-                        "reward_mean": float(ev.reward_mean),
-                        "reward_std": float(ev.reward_std),
-                        "current_episode": int(ev.current_episode),
-                        "return_normalizer_mean": float(ev.return_normalizer.mean),
-                        "return_normalizer_var": float(ev.return_normalizer.var),
-                        "return_normalizer_count": float(ev.return_normalizer.count),
-                    },
-                    noise_prev_avg_reward=noise_prev_avg_reward[0],
-                    noise_warnings=noise_warnings,
-                )
-                ev.log(
-                    f"  [进度] 已保存 checkpoint · 回合 {episode + 1} → {noise_rl_checkpoint_path}"
-                )
+                # （checkpoint 已移至 PPO 更新边界保存，见下方）
 
         # ============================
         # \u8bad\u7ec3\u7ed3\u675f

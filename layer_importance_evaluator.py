@@ -4586,6 +4586,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             os.makedirs(step_info_details_dir, exist_ok=True)
             step_info_chunk_file = [None]
             step_info_chunk_idx = [0]
+            step_info_is_resuming = [False]  # 续训标记，在 checkpoint 加载后设置
             stage1_warning_file = os.path.join(os.path.dirname(self.step_info_file), "warning.txt")
             stage1_prev_avg_reward = [None]
             stage1_warnings = []
@@ -4607,8 +4608,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                     step_info_chunk_file[0].close()
                 chunk_start = new_idx * STEP_INFO_CHUNK_SIZE + 1
                 chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
-                f = open(target, "w", encoding="utf-8")
-                f.write(f"=== PPO每步信息（StepInfo）回合 {chunk_start}-{chunk_end} ===\n\n")
+                # 续训时首个 chunk 文件可能已有内容，用 "a" 追加；后续新 chunk 用 "w"
+                if step_info_is_resuming[0] and os.path.isfile(target):
+                    f = open(target, "a", encoding="utf-8")
+                    f.write(f"\n=== [续训 Resume] PPO StepInfo · 回合 {chunk_start}-{chunk_end} ===\n\n")
+                    step_info_is_resuming[0] = False
+                else:
+                    f = open(target, "w", encoding="utf-8")
+                    f.write(f"=== PPO每步信息（StepInfo）回合 {chunk_start}-{chunk_end} ===\n\n")
+                    step_info_is_resuming[0] = False
                 step_info_chunk_file[0] = f
                 step_info_chunk_idx[0] = new_idx
                 return f
@@ -4749,6 +4757,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     self.return_normalizer.mean = float(_ev_rt["return_normalizer_mean"])
                     self.return_normalizer.var = float(_ev_rt["return_normalizer_var"])
                     self.return_normalizer.count = float(_ev_rt["return_normalizer_count"])
+                step_info_is_resuming[0] = True
                 self.log(
                     f"  已恢复至回合 {stage1_resume_start_episode}，"
                     f"将从回合 {stage1_resume_start_episode + 1} 继续训练至 {self.stage1_rl_episodes}"
