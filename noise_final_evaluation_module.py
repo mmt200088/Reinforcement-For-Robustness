@@ -1583,12 +1583,31 @@ class NoiseFinalEvaluationModule:
         with open(self.config_path, "r", encoding="utf-8") as fh:
             config_map = json.load(fh)
         config_map.pop("_comment", None)
-        ds_key = self.evaluator.dataset_key
-        if ds_key not in config_map:
+
+        total_layers = int(getattr(self.evaluator, "total_layers", 12) or 12)
+        variant_key = "bert-large" if total_layers >= 24 else "bert-base"
+
+        if variant_key in config_map and isinstance(config_map[variant_key], dict):
+            section = config_map[variant_key]
+        elif "bert-base" in config_map or "bert-large" in config_map:
             raise KeyError(
-                f"数据集 '{ds_key}' 在噪声配置文件 '{self.config_path}' 中未找到。"
+                f"模型变体 '{variant_key}' (total_layers={total_layers}) "
+                f"在噪声配置文件 '{self.config_path}' 中未找到。"
             )
-        return config_map[ds_key]
+        else:
+            if variant_key != "bert-base":
+                raise KeyError(
+                    f"噪声配置文件 '{self.config_path}' 使用的是旧版扁平 schema，"
+                    f"仅支持 bert-base；请为 total_layers={total_layers} 添加 'bert-large' 段。"
+                )
+            section = config_map
+
+        ds_key = self.evaluator.dataset_key
+        if ds_key not in section:
+            raise KeyError(
+                f"数据集 '{ds_key}' 在噪声配置文件 '{self.config_path}' 的 '{variant_key}' 段中未找到。"
+            )
+        return section[ds_key]
 
     # ------------------------------------------------------------------
     # Array normalisation

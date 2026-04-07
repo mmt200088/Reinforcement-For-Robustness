@@ -161,6 +161,75 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model qnli
 说明：`rl_tune.py` 已改为按 `data_path` 自动选择输入列与 `num_labels`，例如
 `stsb -> num_labels=1`，`qnli -> question+sentence`，`sst2/cola -> sentence`，`mrpc/rte/wnli/stsb -> sentence1+sentence2`。
 
+### --model-type 预训练骨干切换（bert-base / bert-large）
+
+通过 `--model-type` 可以在不修改任何 Python 代码的前提下，把整条流程
+（第一阶段 GELU/Softmax 搜索、第二阶段噪声 RL、最终评估）从 12 层的
+bert-base 切换到 24 层的 bert-large。`total_layers` 由
+`layer_importance_evaluator.py` 在加载模型后从 `model.bert.encoder.layer`
+自动检测，下游 PPO 状态向量、动作序列长度、GTrXL 位置嵌入、噪声 RL 等
+都会按层数自适应，无需额外参数。
+
+支持值（大小写不敏感）：
+
+- `bert-base`（默认）
+- `bert-large`
+
+映射关系：
+
+| `--model-type` 值 | 预训练 checkpoint 系列                                | 层数 |
+| ---------------- | --------------------------------------------------- | ---- |
+| `bert-base`      | `textattack/bert-base-uncased-*`                    | 12   |
+| `bert-large`     | `yoshitomo-matsubara/bert-large-uncased-*`          | 24   |
+
+`--model-type` 与 `--model` 组合后会按 `(model-type, dataset)` 解析最终
+`--base_model`。`bert-base` 兼容此前所有 7 个 GLUE 任务；`bert-large`
+当前仅支持以下任务（其余任务暂时跳过，运行时会以
+“bert-large 当前不支持数据集: …” 错误退出）：
+
+- `mrpc`
+- `cola`
+- `stsb`
+- `rte`
+- `sst2`
+- `qnli`
+
+不支持的组合（例如 `--model-type bert-large --model wnli`）会在脚本
+启动阶段立即报错并提示当前支持列表，避免到 HuggingFace 下载阶段才
+失败。如果未来需要新增 bert-large checkpoint，可在
+`llama_7B_LayerImportance.sh` 的 `MODEL_TYPE=bert-large` 分支里
+扩展 `case "$DATASET"` 列表。
+
+示例：
+
+```bash
+# 在 mrpc 上用 bert-large 跑完整两阶段流程（搜索 + 评估）
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc --model-type bert-large
+
+# 在 cola 上用 bert-large 跳过第一阶段 RL，仅做最终评估
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --model cola --model-type bert-large \
+  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json
+
+# 不写 --model-type 时等价于历史行为（bert-base）
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
+```
+
+注意事项：
+
+1. bert-large 第一阶段每个 episode 需要在所有 24 层上各做一步决策，
+   单次 PPO update 的 token 数也按 `total_layers` 自动翻倍，因此显存
+   占用、单 episode 耗时大约是 bert-base 的 2 倍，建议在 24GB 及以上
+   显存上运行，必要时通过 `--batch_size` 适当调小。
+2. 第二阶段噪声 RL 的状态/动作序列同样按 24 层展开，`noise_rl_module_v2.py`
+   已读取 `evaluator.total_layers` 自适应，无需额外配置。
+3. 第一阶段最终评估、噪声最终评估、随机对照实验都会按 `total_layers`
+   自动扩展数组长度，原有的 `glue_configs_best_ppo.json` /
+   `glue_noise_configs_best_ppo.json` 等历史配置文件如果是按 12 层
+   保存的，会被 `final_evaluation_module.py` 自动按"最后一个值填充
+   或截断"补齐到 24 层并打印 `[Info]` 提示；为了 bert-large 的
+   实验复现，建议为 bert-large 单独维护一份按 24 层书写的配置文件。
+
 ### 命名参数与安全约束
 
 旧版 5 参数命令依然兼容，但新增了更严格的流程校验，避免“前面跑 RL，后面却拿手动/JSON 配置做评估”的混用。
