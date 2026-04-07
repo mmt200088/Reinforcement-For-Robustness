@@ -237,6 +237,19 @@ TASK_REGISTRY = {
         'task_type': 'classification',
         'test_split': 'test',
     },
+    # QQP disabled: test set is ~390k examples; fall back to placeholder.
+    # AX is the GLUE diagnostic set for NLI; predictions are produced by the
+    # MNLI model on the dedicated `ax` dataset (test split only).
+    'ax': {
+        'model_name': 'textattack/bert-base-uncased-MNLI',
+        'glue_name': 'ax',
+        'num_labels': 3,
+        'input_cols': ('premise', 'hypothesis'),
+        'output_file': 'AX.tsv',
+        'label_map': {0: 'entailment', 1: 'neutral', 2: 'contradiction'},
+        'task_type': 'classification',
+        'test_split': 'test',
+    },
 }
 
 EXPECTED_LINES = {
@@ -445,6 +458,29 @@ def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
                 assert len(noise_config[nk]) == num_layers, \
                     f"Noise '{nk}' config length ({len(noise_config[nk])}) != model layers ({num_layers})"
             apply_noise_configuration(handler, layers_attr, noise_config)
+
+        # Critical: replace_layer_softmax instantiates a *new* attention
+        # module (BertSelfAttentionWithAproximation) on CPU. Without re-
+        # moving the model to the target device, inference would fail with
+        # a CPU/CUDA device mismatch. Also re-asserts dtype/device for any
+        # buffers added by noise wrappers.
+        model.to(device)
+        model.eval()
+        # Sanity check: confirm every parameter is on the requested device.
+        bad = [n for n, p in model.named_parameters() if str(p.device) != str(torch.device(device))]
+        if bad:
+            print(f"  [Warning] {len(bad)} params not on {device}, re-moving. First: {bad[0]}")
+            model.to(device)
+        # Verify the configuration actually took effect on the live model.
+        if not no_approx:
+            from function_handler import PolynomialGELU, BertSelfAttentionWithAproximation
+            layers_obj = eval('model.' + layers_attr)
+            applied_gelu = sum(1 for L in layers_obj
+                               if isinstance(L.intermediate.intermediate_act_fn, PolynomialGELU))
+            applied_sm = sum(1 for L in layers_obj
+                             if isinstance(L.attention.self, BertSelfAttentionWithAproximation))
+            print(f"  [Verify] PolynomialGELU layers: {applied_gelu}/{len(layers_obj)}, "
+                  f"ApproxSoftmax layers: {applied_sm}/{len(layers_obj)}")
     else:
         handler = None
         print(f"  Using original model (no approximation, no noise)")
@@ -536,8 +572,9 @@ def main():
                         help="Path to JSON config with GELU/Softmax configurations per task")
     parser.add_argument("--noise_config", type=str, default=None,
                         help="Path to JSON config with noise scaling factor configurations per task")
-    parser.add_argument("--output_dir", type=str, default="glue_submission",
-                        help="Output directory for TSV files (default: glue_submission)")
+    parser.add_argument("--output_dir", type=str, default="run",
+                        help="Output sub-directory name; final path will be "
+                             "glue_submission/<output_dir> (default: run)")
     parser.add_argument("--tasks", type=str, nargs='+', default=None,
                         help="Specific tasks to run (default: all tasks in config)")
     parser.add_argument("--no_approx", action="store_true",
@@ -577,6 +614,12 @@ def main():
             noise_configs = json.load(f)
         noise_configs.pop("_comment", None)
 
+    # All outputs are rooted under ./glue_submission/<sub>
+    if os.path.isabs(args.output_dir) or args.output_dir.startswith("glue_submission"):
+        final_output_dir = args.output_dir
+    else:
+        final_output_dir = os.path.join("glue_submission", args.output_dir)
+    args.output_dir = final_output_dir
     os.makedirs(args.output_dir, exist_ok=True)
 
     if args.tasks:
