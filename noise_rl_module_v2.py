@@ -48,10 +48,10 @@ NOISE_STAGE_GTRXL_WARMUP_UPDATES = 0
 NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES = 20
 
 # 分段评测段数（所有评测环节统一使用分段法；实际段数受 MIN_SAMPLES_PER_SEGMENT 自动下调保护）
-NOISE_STAGE_BASELINE_SEGMENTS = 5         # baseline / worst 参考曲线
-NOISE_STAGE_BEST_TEST_SEGMENTS = 5        # 初始守擂（initial incumbent）
-NOISE_STAGE_MC_TRAIN_SAMPLES = 5          # 训练期终止步 MC 分段数
-NOISE_STAGE_MC_CONFIRM_SEGMENTS = 5       # 挑战者确认（challenger confirmation）
+NOISE_STAGE_BASELINE_SEGMENTS = 10         # baseline / worst 参考曲线
+NOISE_STAGE_BEST_TEST_SEGMENTS = 10        # 初始守擂（initial incumbent）
+NOISE_STAGE_MC_TRAIN_SAMPLES = 10          # 训练期终止步 MC 分段数
+NOISE_STAGE_MC_CONFIRM_SEGMENTS = 10       # 挑战者确认（challenger confirmation）
 NOISE_STAGE_MIN_SAMPLES_PER_SEGMENT = 80  # 每段最少样本数，段数超限时自动缩减
 
 # 方差惩罚（Stability Penalty）
