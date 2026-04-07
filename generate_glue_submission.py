@@ -252,6 +252,52 @@ TASK_REGISTRY = {
     },
 }
 
+# ---- bert-large model name overrides (yoshitomo-matsubara family) ----
+# GLUE tasks without a reliable bert-large checkpoint are omitted on purpose
+# (mnli/ax/wnli/qqp). Unsupported tasks are skipped with a warning at runtime.
+BERT_LARGE_MODEL_NAMES = {
+    'cola': 'yoshitomo-matsubara/bert-large-uncased-cola',
+    'sst2': 'yoshitomo-matsubara/bert-large-uncased-sst2',
+    'mrpc': 'yoshitomo-matsubara/bert-large-uncased-mrpc',
+    'stsb': 'yoshitomo-matsubara/bert-large-uncased-stsb',
+    'qnli': 'yoshitomo-matsubara/bert-large-uncased-qnli',
+    'rte':  'yoshitomo-matsubara/bert-large-uncased-rte',
+}
+
+
+def _unwrap_variant_config(cfg_map, model_type, cfg_path):
+    """
+    Accept both the new nested schema
+        {"bert-base": {task: {...}}, "bert-large": {task: {...}}}
+    and the legacy flat schema
+        {task: {...}}  (implicitly bert-base only)
+    and return the task-level dict for the selected `model_type`.
+    """
+    if not isinstance(cfg_map, dict):
+        raise ValueError(f"Config file '{cfg_path}' is not a JSON object.")
+    has_variant_keys = ('bert-base' in cfg_map) or ('bert-large' in cfg_map)
+    if has_variant_keys:
+        if model_type not in cfg_map:
+            raise KeyError(
+                f"Config file '{cfg_path}' has no '{model_type}' section "
+                f"(found keys: {sorted(cfg_map.keys())})."
+            )
+        section = cfg_map[model_type]
+        if not isinstance(section, dict):
+            raise ValueError(
+                f"Config file '{cfg_path}' section '{model_type}' is not a dict."
+            )
+        return section
+    # Legacy flat schema — only valid for bert-base.
+    if model_type != 'bert-base':
+        raise KeyError(
+            f"Config file '{cfg_path}' uses the legacy flat schema which only "
+            f"supports bert-base; add a '{model_type}' section to use it with "
+            f"--model_type {model_type}."
+        )
+    return cfg_map
+
+
 EXPECTED_LINES = {
     'AX.tsv': 1105,
     'CoLA.tsv': 1064,
@@ -657,6 +703,13 @@ def main():
                         help="Max sequence length (default: 128)")
     parser.add_argument("--batch_size", type=int, default=16,
                         help="Inference batch size (default: 16)")
+    parser.add_argument("--model_type", type=str, default="bert-base",
+                        choices=["bert-base", "bert-large"],
+                        help="Pretrained backbone to use for submission: "
+                             "bert-base (textattack/bert-base-uncased-*, all GLUE tasks) "
+                             "or bert-large (yoshitomo-matsubara/bert-large-uncased-*, "
+                             "supports cola/sst2/mrpc/stsb/qnli/rte only; mnli/wnli/ax/qqp "
+                             "will be skipped or filled with placeholders).")
     args = parser.parse_args()
 
     if not args.no_approx and args.config is None:
@@ -701,16 +754,22 @@ def main():
         device = requested
         print(f"[Device] using {device}")
 
+    model_type = args.model_type
+
     approx_configs = {}
     if args.config is not None:
         with open(args.config, 'r') as f:
-            approx_configs = json.load(f)
+            raw = json.load(f)
+        raw.pop("_comment", None)
+        approx_configs = _unwrap_variant_config(raw, model_type, args.config)
         approx_configs.pop("_comment", None)
 
     noise_configs = {}
     if use_noise:
         with open(args.noise_config, 'r') as f:
-            noise_configs = json.load(f)
+            raw = json.load(f)
+        raw.pop("_comment", None)
+        noise_configs = _unwrap_variant_config(raw, model_type, args.noise_config)
         noise_configs.pop("_comment", None)
 
     # All outputs are rooted under ./glue_submission/<sub>
@@ -737,6 +796,7 @@ def main():
     approx_str = "OFF (baseline)" if args.no_approx else f"ON (config: {args.config})"
     noise_str = f"ON (config: {args.noise_config})" if use_noise else "OFF"
 
+    print(f"Model type:        {model_type}")
     print(f"Approximation:     {approx_str}")
     print(f"Noise injection:   {noise_str}")
     print(f"Tasks to process:  {tasks_to_run}")
@@ -749,6 +809,17 @@ def main():
             continue
 
         task_cfg = TASK_REGISTRY[task_name]
+
+        # Swap in the bert-large checkpoint when requested; skip tasks without
+        # a reliable bert-large checkpoint (mnli/wnli/ax — AX is generated from
+        # the MNLI model which is unavailable for bert-large).
+        if model_type == "bert-large":
+            if task_name not in BERT_LARGE_MODEL_NAMES:
+                print(f"\n[Warning] Task '{task_name}' has no bert-large checkpoint, "
+                      f"skipping (will fall back to placeholder if applicable).")
+                continue
+            task_cfg = dict(task_cfg)
+            task_cfg['model_name'] = BERT_LARGE_MODEL_NAMES[task_name]
 
         if args.no_approx:
             gelu = None

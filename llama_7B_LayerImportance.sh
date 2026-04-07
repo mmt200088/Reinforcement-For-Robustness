@@ -390,6 +390,15 @@ Common options:
   --model DATASET
       Supported: mrpc, sst2, stsb, cola, qnli, rte, wnli
 
+  --model-type {bert-base|bert-large}
+      Select the underlying pretrained backbone. Default: bert-base.
+      bert-base  uses textattack/bert-base-uncased-* (12 layers).
+      bert-large uses yoshitomo-matsubara/bert-large-uncased-* (24 layers).
+      Note: bert-large currently supports the following GLUE tasks only:
+        mrpc, cola, stsb, rte, sst2, qnli
+      Picking an unsupported task with --model-type bert-large will exit
+      with a clear "current not supported" error.
+
   --skip-stage1-rl
   --skip-stage1-final-eval
   --skip-noise-rl
@@ -457,6 +466,7 @@ SKIP_STAGE1_RL="false"
 SKIP_STAGE1_FINAL_EVAL="false"
 SKIP_NOISE_FINAL_EVAL="false"
 DATASET="mrpc"
+MODEL_TYPE="bert-base"
 BATCH_SIZE="16"
 STAGE1_RL_EPISODES="51000"
 STAGE2_RL_EPISODES="40000"
@@ -568,6 +578,11 @@ while [ "$#" -gt 0 ]; do
         --model)
             require_option_value "$@"
             DATASET="$2"
+            shift 2
+            ;;
+        --model-type|--model_type)
+            require_option_value "$@"
+            MODEL_TYPE="$2"
             shift 2
             ;;
         --resume-from)
@@ -689,16 +704,50 @@ elif [ "$NOISE_EVAL_CONFIG_PATH_SPECIFIED" = "true" ] && [ "$SKIP_NOISE_FINAL_EV
     error_exit "只有在 --noise-eval-source=json 时才能提供 --noise-eval-config。"
 fi
 
-case "$DATASET" in
-    wnli)  BASE_MODEL="textattack/bert-base-uncased-WNLI";  DATA_PATH="wnli"  ;;
-    rte)   BASE_MODEL="textattack/bert-base-uncased-RTE";   DATA_PATH="rte"   ;;
-    cola)  BASE_MODEL="textattack/bert-base-uncased-CoLA";  DATA_PATH="cola"  ;;
-    qnli)  BASE_MODEL="textattack/bert-base-uncased-QNLI";  DATA_PATH="qnli"  ;;
-    mrpc)  BASE_MODEL="textattack/bert-base-uncased-MRPC";  DATA_PATH="mrpc"  ;;
-    sst2)  BASE_MODEL="textattack/bert-base-uncased-SST-2"; DATA_PATH="sst2"  ;;
-    stsb)  BASE_MODEL="textattack/bert-base-uncased-STS-B"; DATA_PATH="stsb"  ;;
-    *)     error_exit "不支持的数据集: $DATASET。支持的选项: wnli, rte, cola, qnli, mrpc, sst2, stsb" ;;
+MODEL_TYPE="$(printf '%s' "$MODEL_TYPE" | tr '[:upper:]' '[:lower:]')"
+case "$MODEL_TYPE" in
+    bert-base|bert_base|bertbase)   MODEL_TYPE="bert-base"  ;;
+    bert-large|bert_large|bertlarge) MODEL_TYPE="bert-large" ;;
+    *) error_exit "不支持的 --model-type: $MODEL_TYPE。支持的选项: bert-base, bert-large" ;;
 esac
+
+# 数据集 → DATA_PATH
+case "$DATASET" in
+    wnli|rte|cola|qnli|mrpc|sst2|stsb) DATA_PATH="$DATASET" ;;
+    *) error_exit "不支持的数据集: $DATASET。支持的选项: wnli, rte, cola, qnli, mrpc, sst2, stsb" ;;
+esac
+
+# (model_type, dataset) → 预训练 checkpoint
+# bert-base 使用 textattack 系列，与历史实验保持一致；
+# bert-large 使用 yoshitomo-matsubara/bert-large-uncased-* 系列。
+# 若该 checkpoint 在 HuggingFace 上不存在，需要在下表中显式标记不支持，
+# 并在运行时给出明确的“当前不支持”提示，避免下载阶段才报 404。
+if [ "$MODEL_TYPE" = "bert-base" ]; then
+    case "$DATASET" in
+        wnli)  BASE_MODEL="textattack/bert-base-uncased-WNLI"  ;;
+        rte)   BASE_MODEL="textattack/bert-base-uncased-RTE"   ;;
+        cola)  BASE_MODEL="textattack/bert-base-uncased-CoLA"  ;;
+        qnli)  BASE_MODEL="textattack/bert-base-uncased-QNLI"  ;;
+        mrpc)  BASE_MODEL="textattack/bert-base-uncased-MRPC"  ;;
+        sst2)  BASE_MODEL="textattack/bert-base-uncased-SST-2" ;;
+        stsb)  BASE_MODEL="textattack/bert-base-uncased-STS-B" ;;
+    esac
+else
+    # bert-large：yoshitomo-matsubara 系列覆盖大部分 GLUE 任务，但并非全部。
+    # 暂未确认存在 fine-tuned bert-large checkpoint 的任务在此显式拒绝，
+    # 提示用户先暂时跳过这些任务。
+    case "$DATASET" in
+        mrpc)  BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-mrpc" ;;
+        cola)  BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-cola" ;;
+        stsb)  BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-stsb" ;;
+        rte)   BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-rte"  ;;
+        sst2)  BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-sst2" ;;
+        qnli)  BASE_MODEL="yoshitomo-matsubara/bert-large-uncased-qnli" ;;
+        wnli)
+            error_exit "bert-large 当前不支持数据集: $DATASET。已支持的 bert-large 任务: mrpc, cola, stsb, rte, sst2, qnli。请暂时跳过该任务，或改用 --model-type bert-base。"
+            ;;
+    esac
+fi
 
 export NCCL_DEBUG=INFO
 
@@ -754,6 +803,7 @@ CMD=(
     --resume_run_dir "$RESUME_RUN_DIR"
 )
 
+echo "Model type: $MODEL_TYPE"
 echo "Dataset: $DATASET (base_model=$BASE_MODEL, data_path=$DATA_PATH)"
 echo "Launching RL tune job with final evaluation source: $FINAL_EVAL_SOURCE"
 if [ "$SKIP_STAGE1_RL" = "true" ]; then

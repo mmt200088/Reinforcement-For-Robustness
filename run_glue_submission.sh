@@ -48,6 +48,16 @@ set -euo pipefail
 #   --device DEV          推理设备（默认 cuda）
 #   --max_length N        最大序列长度（默认 128）
 #   --batch_size N        推理 batch size（默认 16）
+#   --model_type TYPE     预训练骨干切换，二选一：
+#                           bert-base   （默认）使用 textattack/bert-base-uncased-*
+#                                       覆盖所有 11 个 GLUE 任务
+#                           bert-large  使用 yoshitomo-matsubara/bert-large-uncased-*
+#                                       仅支持 cola / sst2 / mrpc / stsb / qnli / rte
+#                                       其余任务（mnli / wnli / ax / qqp）会自动跳过
+#                                       或填充为占位结果
+#                         脚本会把该参数透传给 generate_glue_submission.py，并且
+#                         根据选择从同一 JSON 文件中读取对应层数的 bert-base / bert-large
+#                         子段（新版 JSON schema 已按变体分段，详见 README）。
 #
 # ======================================================================
 # 示例
@@ -67,6 +77,13 @@ set -euo pipefail
 #
 #   # 5) 只跑 mrpc + qnli
 #   bash run_glue_submission.sh full quick_test output.log --tasks mrpc qnli
+#
+#   # 6) bert-large 的近似+噪声完整提交（自动跳过 mnli/wnli/ax/qqp）
+#   bash run_glue_submission.sh full large_ppo output.log --model_type bert-large
+#
+#   # 7) bert-large 仅跑 mrpc 的近似提交
+#   bash run_glue_submission.sh approx large_mrpc output.log \
+#        --model_type bert-large --tasks mrpc
 #
 # ======================================================================
 # 输出

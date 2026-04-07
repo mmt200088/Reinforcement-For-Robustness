@@ -669,19 +669,26 @@ class StateEncoder(nn.Module):
         
         batch_size = state_vector.size(0)
         
-        # A. 解析 Layer Index (Index 0-11) - 将 one-hot 转为索引
-        layer_indices = torch.argmax(state_vector[:, 0:12], dim=1)
+        # 状态布局（与 TransformerOptEnv._get_state 严格对齐，N = self.num_layers）：
+        #   [0:N]                position one-hot
+        #   [N:N+5]              5 维 metrics (cost_dev, gelu_norm, softmax_norm,
+        #                                       complexity_debt, progress)
+        #   [N+5 : 2N+5]         GELU history
+        #   [2N+5 : 3N+5]        Softmax history
+        #   [3N+5 : 3N+8]        budget (loss / m1 / m2)
+        N = self.num_layers
+        # A. 解析 Layer Index (one-hot → index)
+        layer_indices = torch.argmax(state_vector[:, 0:N], dim=1)
         l_emb = self.layer_embed(layer_indices)  # (Batch, 32)
-        
-        # B. 解析 Metrics (Index 12-16)
-        metrics = state_vector[:, 12:17]
+
+        # B. 解析 Metrics
+        metrics = state_vector[:, N:N + 5]
         m_emb = self.metric_proj(metrics)  # (Batch, 32)
-        
-        # C. 解析 History (Index 17-40)
-        # 拆分为 (Batch, 12) 的 GELU 和 Softmax 历史
-        hist_gelu = state_vector[:, 17:29].unsqueeze(-1)  # (Batch, 12, 1)
-        hist_softmax = state_vector[:, 29:41].unsqueeze(-1)  # (Batch, 12, 1)
-        hist_seq = torch.cat([hist_gelu, hist_softmax], dim=-1)  # (Batch, 12, 2)
+
+        # C. 解析 History — 拆分为 (Batch, N) 的 GELU 和 Softmax 历史
+        hist_gelu = state_vector[:, N + 5 : 2 * N + 5].unsqueeze(-1)        # (Batch, N, 1)
+        hist_softmax = state_vector[:, 2 * N + 5 : 3 * N + 5].unsqueeze(-1)  # (Batch, N, 1)
+        hist_seq = torch.cat([hist_gelu, hist_softmax], dim=-1)              # (Batch, N, 2)
         
         # PDF 6.2：使用零值填充后，需要用当前层索引来判断有效历史
         # 生成 Padding Mask: 根据当前层索引判断哪些历史位置是有效的
@@ -708,10 +715,10 @@ class StateEncoder(nn.Module):
         valid_count = mask_float.sum(dim=1).clamp(min=1e-6)  # (Batch, 1) 避免除以0
         h_pooled = (h_out * mask_float).sum(dim=1) / valid_count  # (Batch, 32)
         
-        # D. 敏锐度优化PDF 3.3：解析 Budget (Index 41-43)
-        # 处理状态向量可能是41维或44维的情况（向后兼容）
-        if state_vector.size(1) >= 44:
-            budget = state_vector[:, 41:44]
+        # D. 敏锐度优化PDF 3.3：解析 Budget (last 3 dims = [3N+5 : 3N+8])
+        expected_dim = 3 * N + 8
+        if state_vector.size(1) >= expected_dim:
+            budget = state_vector[:, 3 * N + 5 : 3 * N + 8]
         else:
             # 向后兼容：如果状态向量不包含预算维度，使用零填充
             budget = torch.zeros(batch_size, 3, device=state_vector.device)
@@ -4773,7 +4780,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
                 
                 # GTrXL Rollout：环境重置 + SOS标记 + 空token序列
-                state = env.reset()  # 44-dim numpy array
+                state = env.reset()  # (3*N + 8)-dim numpy array, N=self.total_layers
                 prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long).to(self.device)
                 prev_s = torch.tensor([[SOS_TOKEN_SOFTMAX]], dtype=torch.long).to(self.device)
                 
@@ -4789,15 +4796,31 @@ class LayerImportanceEvaluator(TrainerCallback):
                 buffer.start_episode()
                 
                 for step in range(self.total_layers):
-                    # 从44维状态中提取输入特征
-                    layer_idx = int(np.argmax(state[0:12]))
+                    # 从 (3*N + 8) 维状态中提取输入特征（N = self.total_layers）
+                    # 状态布局（由 TransformerOptEnv._get_state 构造，与 N 严格对齐）：
+                    #   [0     : N     ]  position one-hot
+                    #   [N + 0]           cost_deviation
+                    #   [N + 1]           gelu_norm
+                    #   [N + 2]           softmax_norm
+                    #   [N + 3]           complexity_debt
+                    #   [N + 4]           progress
+                    #   [N+5   : 2N+5]    gelu_history
+                    #   [2N+5  : 3N+5]    softmax_history
+                    #   [3N + 5]          loss_budget
+                    #   [3N + 6]          m1_budget
+                    #   [3N + 7]          m2_budget
+                    N = self.total_layers
+                    layer_idx = int(np.argmax(state[0:N]))
+                    _loss_budget_idx = 3 * N + 5
+                    _m1_budget_idx = 3 * N + 6
+                    _m2_budget_idx = 3 * N + 7
                     cont_feat_np = np.array([
-                        state[12],  # cost_deviation
-                        state[15],  # complexity_debt
-                        state[16],  # progress
-                        state[41] if len(state) > 41 else 0.0,  # loss_budget
-                        state[42] if len(state) > 42 else 0.0,  # m1_budget
-                        state[43] if len(state) > 43 else 0.0,  # m2_budget
+                        state[N + 0],  # cost_deviation
+                        state[N + 3],  # complexity_debt
+                        state[N + 4],  # progress
+                        state[_loss_budget_idx] if len(state) > _loss_budget_idx else 0.0,  # loss_budget
+                        state[_m1_budget_idx]   if len(state) > _m1_budget_idx   else 0.0,  # m1_budget
+                        state[_m2_budget_idx]   if len(state) > _m2_budget_idx   else 0.0,  # m2_budget
                     ], dtype=np.float32)
                     
                     cont_feat_t = torch.tensor(cont_feat_np, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device)  # (1,1,6)
