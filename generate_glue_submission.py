@@ -330,36 +330,89 @@ def run_inference(model, dataloader, device):
     model.to(device)
     all_logits = []
 
-    if torch.cuda.is_available():
-        dummy = next(iter(dataloader))
-        dummy = {k: v.to(device) for k, v in dummy.items()}
-        with torch.no_grad():
-            _ = model(**dummy)
-        torch.cuda.synchronize()
+    use_cuda = torch.cuda.is_available() and 'cuda' in str(device)
+    if use_cuda:
+        try:
+            dummy = next(iter(dataloader))
+            dummy = {k: v.to(device, non_blocking=True) for k, v in dummy.items()}
+            with torch.no_grad():
+                _ = model(**dummy)
+            torch.cuda.synchronize()
+        except StopIteration:
+            pass
 
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="  Inference"):
-            batch = {k: v.to(device) for k, v in batch.items()}
+            batch = {k: v.to(device, non_blocking=use_cuda) for k, v in batch.items()}
             outputs = model(**batch)
-            logits = outputs.logits.detach().cpu().numpy()
+            logits = outputs.logits.detach().float().cpu().numpy()
             all_logits.append(logits)
 
+    if not all_logits:
+        return np.zeros((0, 0), dtype=np.float32)
     return np.concatenate(all_logits, axis=0)
 
 
-def logits_to_predictions(logits, task_config):
+def _normalize_glue_label(task_name, raw_label):
+    """Map a model-specific label string to the GLUE-submission label string.
+
+    Different textattack BERT checkpoints use different id2label conventions
+    (e.g. MNLI uses {0:contradiction,1:entailment,2:neutral} on some forks
+    but the opposite ordering on others). To stay robust we always read
+    `model.config.id2label`, then normalize the *string* to the GLUE format.
+    """
+    s = str(raw_label).strip().lower().replace('-', '_').replace(' ', '_')
+    # NLI-style tasks
+    if task_name in ('mnli', 'ax'):
+        if 'contradict' in s:
+            return 'contradiction'
+        if 'neutral' in s:
+            return 'neutral'
+        if 'entail' in s:
+            return 'entailment'
+        # numeric fallback (some checkpoints keep id strings)
+        return {'0': 'contradiction', '1': 'entailment', '2': 'neutral'}.get(s, s)
+    if task_name in ('qnli', 'rte'):
+        if 'not' in s and 'entail' in s:
+            return 'not_entailment'
+        if 'entail' in s:
+            return 'entailment'
+        return {'0': 'entailment', '1': 'not_entailment'}.get(s, s)
+    # Binary 0/1 tasks (cola, sst2, mrpc, wnli)
+    positive_markers = ('1', 'positive', 'acceptable', 'equivalent',
+                        'duplicate', 'entailment', 'true', 'pos')
+    negative_markers = ('0', 'negative', 'unacceptable', 'not_equivalent',
+                        'not_duplicate', 'not_entailment', 'false', 'neg')
+    if s in positive_markers or any(m in s for m in ('acceptable', 'positive', 'equivalent', 'duplicate')) and 'un' not in s and 'not' not in s:
+        return '1'
+    if s in negative_markers:
+        return '0'
+    # Last resort: trust the original character
+    if s.startswith('1'):
+        return '1'
+    if s.startswith('0'):
+        return '0'
+    return s
+
+
+def logits_to_predictions(logits, task_config, task_name, id2label):
     if task_config['task_type'] == 'regression':
         preds = logits.squeeze()
         if np.ndim(preds) == 0:
             preds = np.array([preds])
         return [f"{np.clip(p, 0.0, 5.0):.3f}" for p in preds]
+
+    if len(logits.shape) == 1:
+        pred_classes = (logits > 0.5).astype(int)
     else:
-        if len(logits.shape) == 1:
-            pred_classes = (logits > 0.5).astype(int)
-        else:
-            pred_classes = np.argmax(logits, axis=1)
+        pred_classes = np.argmax(logits, axis=1)
+
+    if id2label is None:
+        # Fallback to the static registry map (legacy path).
         label_map = task_config['label_map']
         return [str(label_map[int(c)]) for c in pred_classes]
+
+    return [_normalize_glue_label(task_name, id2label[int(c)]) for c in pred_classes]
 
 
 def write_tsv(filepath, predictions):
@@ -435,8 +488,12 @@ def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
     )
     model.to(device)
 
-    if hasattr(model.config, 'id2label'):
-        print(f"  Model label mapping: {model.config.id2label}")
+    model_id2label = None
+    if hasattr(model.config, 'id2label') and model.config.id2label:
+        model_id2label = {int(k): str(v) for k, v in model.config.id2label.items()}
+        print(f"  Model label mapping (used for predictions): {model_id2label}")
+    else:
+        print(f"  [Warning] model.config.id2label missing; falling back to TASK_REGISTRY label_map")
 
     need_handler = (not no_approx) or (not no_noise)
 
@@ -509,7 +566,7 @@ def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
                 test_data, batch_size=batch_size, shuffle=False, collate_fn=data_collator
             )
             logits = run_inference(model, dataloader, device)
-            predictions = logits_to_predictions(logits, task_config)
+            predictions = logits_to_predictions(logits, task_config, task_name, model_id2label)
             write_tsv(os.path.join(output_dir, out_file), predictions)
     else:
         test_data = tokenize_and_prepare(
@@ -522,9 +579,17 @@ def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
         predictions = logits_to_predictions(logits, task_config)
         write_tsv(os.path.join(output_dir, output_files), predictions)
 
-    del model
+    # Aggressive cleanup: handler holds a deepcopy backup_model that doubles VRAM.
     if handler is not None:
+        try:
+            handler.backup_model = None
+        except Exception:
+            pass
         del handler
+    model.to('cpu')
+    del model
+    import gc
+    gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
@@ -581,8 +646,13 @@ def main():
                         help="Skip GELU/Softmax approximation, use original functions (baseline)")
     parser.add_argument("--no_noise", action="store_true",
                         help="Explicitly disable noise injection (default if --noise_config not given)")
-    parser.add_argument("--device", type=str, default="cuda",
-                        help="Device for inference (default: cuda)")
+    parser.add_argument("--device", type=str, default="auto",
+                        help="Device for inference: auto (default, prefers cuda), "
+                             "cuda, cuda:N, or cpu. CPU fallback only if no GPU.")
+    parser.add_argument("--allow_cpu", action="store_true",
+                        help="Permit silent fallback to CPU when CUDA is unavailable. "
+                             "Without this flag the script aborts if --device is cuda* "
+                             "and no GPU is visible (recommended for GLUE inference).")
     parser.add_argument("--max_length", type=int, default=128,
                         help="Max sequence length (default: 128)")
     parser.add_argument("--batch_size", type=int, default=16,
@@ -597,10 +667,39 @@ def main():
 
     use_noise = args.noise_config is not None and not args.no_noise
 
-    device = args.device
-    if device == "cuda" and not torch.cuda.is_available():
-        print("[Warning] CUDA not available, falling back to CPU")
-        device = "cpu"
+    # GPU-first device resolution.
+    requested = args.device.lower()
+    if requested == "auto":
+        if torch.cuda.is_available():
+            device = "cuda"
+            print(f"[Device] auto -> cuda ({torch.cuda.get_device_name(0)})")
+        elif args.allow_cpu:
+            device = "cpu"
+            print("[Device] auto -> cpu (CUDA unavailable, --allow_cpu set)")
+        else:
+            print("[Error] CUDA is not available and --allow_cpu was not set. "
+                  "GLUE inference on CPU is extremely slow; aborting. "
+                  "Re-run with --allow_cpu to override.")
+            sys.exit(1)
+    elif requested.startswith("cuda"):
+        if not torch.cuda.is_available():
+            if args.allow_cpu:
+                print(f"[Warning] {requested} requested but CUDA unavailable; "
+                      f"falling back to CPU (--allow_cpu).")
+                device = "cpu"
+            else:
+                print(f"[Error] {requested} requested but CUDA unavailable. "
+                      f"Re-run with --allow_cpu to fall back to CPU.")
+                sys.exit(1)
+        else:
+            device = requested
+            try:
+                print(f"[Device] using {device} ({torch.cuda.get_device_name(device)})")
+            except Exception:
+                print(f"[Device] using {device}")
+    else:
+        device = requested
+        print(f"[Device] using {device}")
 
     approx_configs = {}
     if args.config is not None:
