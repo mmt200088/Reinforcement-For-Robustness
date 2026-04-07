@@ -656,7 +656,7 @@ index	prediction
 654	contradiction
 655	contradiction
 656	entailment
-657	contradiction
+657	entailment
 658	contradiction
 659	entailment
 660	entailment
@@ -2120,7 +2120,7 @@ index	prediction
 2118	contradiction
 2119	contradiction
 2120	contradiction
-2121	contradiction
+2121	entailment
 2122	entailment
 2123	entailment
 2124	entailment
@@ -9010,7 +9010,7 @@ index	prediction
 9008	neutral
 9009	neutral
 9010	neutral
-9011	contradiction
+9011	entailment
 9012	neutral
 9013	contradiction
 9014	neutral
