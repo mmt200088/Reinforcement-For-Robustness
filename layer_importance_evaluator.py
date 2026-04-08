@@ -4740,10 +4740,28 @@ class LayerImportanceEvaluator(TrainerCallback):
                 save_stage1_rl_checkpoint,
                 load_stage1_rl_checkpoint,
                 STAGE1_CHECKPOINT_FILENAME,
+                NOISE_STAGE_STOP_FLAG_FILENAME,
+                install_graceful_stop_handler,
+                reset_graceful_stop_state,
+                is_graceful_stop_requested,
+                uninstall_graceful_stop_handler,
+                consume_stop_flag_file,
             )
             stage1_checkpoint_path = os.path.join(
                 os.path.dirname(self.stage1_step_info_file),
                 STAGE1_CHECKPOINT_FILENAME,
+            )
+            # 优雅停止：在 Stage-1 目录下监听停止标志文件 / 安装 Ctrl+C 处理器
+            stage1_stop_flag_path = os.path.join(
+                os.path.dirname(self.stage1_step_info_file),
+                NOISE_STAGE_STOP_FLAG_FILENAME,
+            )
+            reset_graceful_stop_state()
+            consume_stop_flag_file(stage1_stop_flag_path)
+            install_graceful_stop_handler(log_fn=self.log)
+            self.log(
+                f"  [优雅停止] 训练期间可按 Ctrl+C 或创建 {stage1_stop_flag_path} "
+                f"触发安全停止（在下一回合边界保存 checkpoint 后退出）。"
             )
             stage1_resume_start_episode = 0
             _stage1_resume_ckpt_path = self._get_stage1_resume_checkpoint_path()
@@ -5082,6 +5100,51 @@ class LayerImportanceEvaluator(TrainerCallback):
                         stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                         stage1_warnings=stage1_warnings,
                     )
+
+                # 优雅停止检查：在当前回合结束后强制保存 checkpoint 并退出
+                if is_graceful_stop_requested(stage1_stop_flag_path):
+                    self.log(
+                        f"\n  [优雅停止] 已检测到停止请求，正在保存 Stage-1 checkpoint "
+                        f"(episode={episode + 1}) ..."
+                    )
+                    save_stage1_rl_checkpoint(
+                        path=stage1_checkpoint_path,
+                        gtrxl_net=gtrxl_net,
+                        optimizer=optimizer,
+                        episode=episode,
+                        gtrxl_ppo_update_count=gtrxl_ppo_update_count,
+                        episode_rewards=episode_rewards,
+                        episode_losses=episode_losses,
+                        episode_metric1s=episode_metric1s,
+                        episode_metric2s=episode_metric2s,
+                        episode_entropies=episode_entropies,
+                        best_reward=best_reward,
+                        best_cost=best_cost,
+                        best_config=best_config,
+                        search_best_config=search_best_config,
+                        global_best_config=global_best_config,
+                        window_best_reward=window_best_reward,
+                        window_best_cost=window_best_cost,
+                        window_best_config=window_best_config,
+                        ev_runtime_state={
+                            "reward_history": list(self.reward_history),
+                            "reward_mean": float(self.reward_mean),
+                            "reward_std": float(self.reward_std),
+                            "current_episode": int(self.current_episode),
+                            "return_normalizer_mean": float(self.return_normalizer.mean),
+                            "return_normalizer_var": float(self.return_normalizer.var),
+                            "return_normalizer_count": float(self.return_normalizer.count),
+                        },
+                        stage1_prev_avg_reward=stage1_prev_avg_reward[0],
+                        stage1_warnings=stage1_warnings,
+                    )
+                    consume_stop_flag_file(stage1_stop_flag_path)
+                    self.log(
+                        f"  [优雅停止] checkpoint 已写入 → {stage1_checkpoint_path}\n"
+                        f"  下次启动请使用 --resume-run-dir 指向本 run 目录以续训。"
+                    )
+                    uninstall_graceful_stop_handler()
+                    raise SystemExit(0)
 
             if window_best_config is not None:
                 confirm_stage1_candidate(

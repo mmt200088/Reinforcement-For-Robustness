@@ -858,6 +858,34 @@ nohup "${CMD[@]}" > "$LOGFILE_PATH" 2>&1 &
 JOB_PID=$!
 echo "Background PID: $JOB_PID"
 
+# ---------------------------------------------------------------
+# 记录 PID / run 目录，便于后续优雅停止（Graceful Stop）
+# ---------------------------------------------------------------
+RL_PID_FILE="${RUN_ROOT}/rl.pid"
+echo "$JOB_PID" > "$RL_PID_FILE"
+# 同时维护一个数据集级 LATEST 指针，方便“停上一个运行”场景
+LATEST_POINTER_DIR="rl_results/layer_importance_runs/${DATASET}"
+echo "$RUN_ROOT" > "${LATEST_POINTER_DIR}/LATEST_RUN_DIR"
+echo "$JOB_PID" > "${LATEST_POINTER_DIR}/LATEST_PID"
+
+echo ""
+echo "========================================================================"
+echo "  优雅停止 (Graceful Stop) — 任选其一即可安全中断训练并保存 checkpoint"
+echo "========================================================================"
+echo "  方式 A (推荐，最简单)：直接发送 SIGINT 到当前进程"
+echo "      kill -INT $JOB_PID"
+echo ""
+echo "  方式 B：通过数据集级 LATEST 指针（无需记住 PID / run 目录）"
+echo "      kill -INT \$(cat ${LATEST_POINTER_DIR}/LATEST_PID)"
+echo ""
+echo "  方式 C：创建停止标志文件（不依赖信号，适合脚本化批量停止）"
+echo "      touch ${RUN_ROOT}/stage1/STOP_RL              # 停 Stage-1 RL"
+echo "      touch ${RUN_ROOT}/stage2_noise/progress/STOP_RL  # 停 Stage-2 噪声 RL"
+echo ""
+echo "  停止后续训：下次启动时加上 --resume-from ${RUN_ROOT}"
+echo "  ⚠ 切勿使用 kill -9（SIGKILL），它会绕过 checkpoint 保存导致续训断层！"
+echo "========================================================================"
+
 # different data for base model
 # --base_model "textattack/bert-base-uncased-WNLI"
 # --base_model "textattack/bert-base-uncased-RTE"
