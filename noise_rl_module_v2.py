@@ -11,11 +11,103 @@
 
 import os
 import math
+import signal
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Categorical
+
+
+# ===========================================================================
+# 优雅停止（Graceful Stop）—— 支持在强化学习过程中随时安全中断
+# ===========================================================================
+#
+# 使用方式：
+#   1. 训练过程中按一次 Ctrl+C：设置停止标志，在当前回合结束后保存 checkpoint 并退出。
+#      再按一次 Ctrl+C：立即强制退出（丢弃未保存数据）。
+#   2. 在进度目录下创建名为 STOP_RL 的文件（例如 `touch STOP_RL` 或新建同名空文件），
+#      训练循环在下一次回合边界检测到该文件后，同样会保存 checkpoint 并退出。
+#
+# 下次启动时通过 --resume-run-dir 指向原 run 目录即可从 checkpoint 续训。
+#
+NOISE_STAGE_STOP_FLAG_FILENAME = "STOP_RL"
+
+_RL_GRACEFUL_STOP = {"requested": False, "installed": False, "prev_handler": None}
+
+
+def request_graceful_stop():
+    """以编程方式触发优雅停止。"""
+    _RL_GRACEFUL_STOP["requested"] = True
+
+
+def reset_graceful_stop_state():
+    """重置优雅停止标志（一般在启动一个新训练阶段前调用）。"""
+    _RL_GRACEFUL_STOP["requested"] = False
+
+
+def is_graceful_stop_requested(stop_flag_path=None):
+    """返回是否已请求优雅停止；若提供 stop_flag_path，会同时检查该文件是否存在。"""
+    if stop_flag_path:
+        try:
+            if os.path.isfile(stop_flag_path):
+                _RL_GRACEFUL_STOP["requested"] = True
+        except Exception:
+            pass
+    return bool(_RL_GRACEFUL_STOP["requested"])
+
+
+def install_graceful_stop_handler(log_fn=None):
+    """安装 SIGINT (Ctrl+C) 优雅停止处理器。重复调用安全。"""
+    if _RL_GRACEFUL_STOP["installed"]:
+        return
+
+    def _handler(signum, frame):
+        if not _RL_GRACEFUL_STOP["requested"]:
+            _RL_GRACEFUL_STOP["requested"] = True
+            if log_fn is not None:
+                try:
+                    log_fn(
+                        "\n  [优雅停止] 收到中断信号 (Ctrl+C)，将在当前回合结束后"
+                        "保存 checkpoint 并退出；再按一次 Ctrl+C 立即强退。"
+                    )
+                except Exception:
+                    pass
+        else:
+            # 二次 Ctrl+C：恢复默认处理并抛出 KeyboardInterrupt
+            try:
+                signal.signal(signal.SIGINT, signal.SIG_DFL)
+            except Exception:
+                pass
+            raise KeyboardInterrupt
+
+    try:
+        _RL_GRACEFUL_STOP["prev_handler"] = signal.signal(signal.SIGINT, _handler)
+        _RL_GRACEFUL_STOP["installed"] = True
+    except (ValueError, OSError):
+        # 非主线程或系统不支持时安静降级（仍可用 stop 文件停止）
+        pass
+
+
+def uninstall_graceful_stop_handler():
+    """恢复原始 SIGINT 处理器。"""
+    if not _RL_GRACEFUL_STOP["installed"]:
+        return
+    try:
+        prev = _RL_GRACEFUL_STOP.get("prev_handler")
+        signal.signal(signal.SIGINT, prev if prev is not None else signal.SIG_DFL)
+    except (ValueError, OSError):
+        pass
+    _RL_GRACEFUL_STOP["installed"] = False
+
+
+def consume_stop_flag_file(stop_flag_path):
+    """若 stop 文件存在则删除它，避免下次启动仍被误触发。"""
+    try:
+        if stop_flag_path and os.path.isfile(stop_flag_path):
+            os.remove(stop_flag_path)
+    except Exception:
+        pass
 
 from function_handler import (
     INPUT_NOISE_ALLOWED_SCALING_FACTORS,
@@ -2012,6 +2104,17 @@ class NoiseRLModuleV2:
         noise_rl_checkpoint_path = os.path.join(
             noise_progress_dir, NOISE_STAGE_CHECKPOINT_FILENAME,
         )
+        # 优雅停止支持：安装 Ctrl+C 处理器 + 停止标志文件监听
+        noise_stop_flag_path = os.path.join(
+            noise_progress_dir, NOISE_STAGE_STOP_FLAG_FILENAME,
+        )
+        reset_graceful_stop_state()
+        consume_stop_flag_file(noise_stop_flag_path)
+        install_graceful_stop_handler(log_fn=ev.log)
+        ev.log(
+            f"  [优雅停止] 训练期间可按 Ctrl+C 或创建 {noise_stop_flag_path} "
+            f"触发安全停止（在下一回合边界保存 checkpoint 后退出）。"
+        )
         if resume_checkpoint_path and os.path.isfile(resume_checkpoint_path):
             _noise_block_title(ev.log, "断点续训（Resume from checkpoint）")
             ev.log(f"  ▸ 加载 checkpoint: {resume_checkpoint_path}")
@@ -2446,6 +2549,54 @@ class NoiseRLModuleV2:
                         f"  [checkpoint] 已保存 · PPO 更新 #{noise_ppo_update_count}, "
                         f"回合 {episode + 1} → {noise_rl_checkpoint_path}"
                     )
+
+                # 优雅停止：仅在 PPO 边界检查并强制保存 checkpoint，确保续训严丝合缝
+                # （此时 buffer 已 clear、noise_ppo_update_count 已递增，episode+1 是 PPO 窗口边界）
+                if is_graceful_stop_requested(noise_stop_flag_path):
+                    ev.log(
+                        f"\n  [优雅停止] 已检测到停止请求，正在于 PPO 边界保存 "
+                        f"Stage-2 checkpoint (episode={episode + 1}, "
+                        f"update#{noise_ppo_update_count}) ..."
+                    )
+                    save_noise_rl_checkpoint(
+                        path=noise_rl_checkpoint_path,
+                        noise_net=noise_net,
+                        optimizer=optimizer,
+                        episode=episode,
+                        noise_ppo_update_count=noise_ppo_update_count,
+                        episode_returns=episode_returns,
+                        episode_raw_final_rewards=episode_raw_final_rewards,
+                        episode_final_selection_scores=episode_final_selection_scores,
+                        episode_losses=episode_losses,
+                        episode_metric1s=episode_metric1s,
+                        episode_metric2s=episode_metric2s,
+                        episode_entropies=episode_entropies,
+                        best_final_selection_score=best_final_selection_score,
+                        best_cost=best_cost,
+                        best_noise_config=best_noise_config,
+                        incumbent_best_noise_config=incumbent_best_noise_config,
+                        incumbent_best_signature=incumbent_best_signature,
+                        incumbent_mean_score=incumbent_mean_score,
+                        incumbent_history=incumbent_history,
+                        ev_runtime_state={
+                            "reward_history": list(ev.reward_history),
+                            "reward_mean": float(ev.reward_mean),
+                            "reward_std": float(ev.reward_std),
+                            "current_episode": int(ev.current_episode),
+                            "return_normalizer_mean": float(ev.return_normalizer.mean),
+                            "return_normalizer_var": float(ev.return_normalizer.var),
+                            "return_normalizer_count": float(ev.return_normalizer.count),
+                        },
+                        noise_prev_avg_reward=noise_prev_avg_reward[0],
+                        noise_warnings=noise_warnings,
+                    )
+                    consume_stop_flag_file(noise_stop_flag_path)
+                    ev.log(
+                        f"  [优雅停止] checkpoint 已写入 → {noise_rl_checkpoint_path}\n"
+                        f"  下次启动请使用 --resume-from 指向本 run 目录以严丝合缝续训。"
+                    )
+                    uninstall_graceful_stop_handler()
+                    raise SystemExit(0)
 
             # \u8fdb\u5ea6\u5feb\u7167
             if (episode + 1) % NOISE_STAGE_PROGRESS_SAVE_INTERVAL == 0:

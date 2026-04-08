@@ -694,3 +694,138 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --resume-from rl_results/layer_importance_runs/mrpc/<之前的run目录>
 ```
 
+### 优雅停止与断点续训（Graceful Stop / Resume）
+
+由于 `llama_7B_LayerImportance.sh` 内部以 `nohup ... &` 的方式把实际的 Python
+训练进程放到后台运行，因此**请不要再使用 `kill -9 <PID>`（SIGKILL）**，否则会
+绕过 checkpoint 保存逻辑、导致下次续训时训练曲线出现明显断层。正确的做法是
+**发送 SIGINT 触发优雅停止**，程序会在下一次 PPO 更新边界保存 checkpoint，
+然后安全退出；之后用 `--resume-from` 指向同一个 run 目录即可**严丝合缝**地
+继续训练。
+
+#### 启动脚本会提示什么
+
+每次执行 `bash llama_7B_LayerImportance.sh ...` 启动一个新任务后，脚本会在终端
+打印类似下面的块（同一份内容也会写入 `logs/*.log`），复制粘贴即可停止训练：
+
+```
+========================================================================
+  优雅停止 (Graceful Stop) — 任选其一即可安全中断训练并保存 checkpoint
+========================================================================
+  方式 A (推荐，最简单)：直接发送 SIGINT 到当前进程
+      kill -INT 712345
+
+  方式 B：通过数据集级 LATEST 指针（无需记住 PID / run 目录）
+      kill -INT $(cat rl_results/layer_importance_runs/mrpc/LATEST_PID)
+
+  方式 C：创建停止标志文件（不依赖信号，适合脚本化批量停止）
+      touch rl_results/.../20260408_.../stage1/STOP_RL              # 停 Stage-1 RL
+      touch rl_results/.../20260408_.../stage2_noise/progress/STOP_RL  # 停 Stage-2 噪声 RL
+
+  停止后续训：下次启动时加上 --resume-from rl_results/.../20260408_...
+  ⚠ 切勿使用 kill -9（SIGKILL），它会绕过 checkpoint 保存导致续训断层！
+========================================================================
+```
+
+脚本同时在以下位置持久化了 PID / run 目录信息：
+
+- `<run_dir>/rl.pid`：当前任务的 Python 进程 PID
+- `rl_results/layer_importance_runs/<dataset>/LATEST_PID`：该数据集最近一次启动的 PID
+- `rl_results/layer_importance_runs/<dataset>/LATEST_RUN_DIR`：该数据集最近一次启动的 run 目录
+
+#### 完整示例：启动 → 优雅停止 → 续训
+
+以你给出的命令为例：
+
+```bash
+# 1) 启动训练（脚本内部会 nohup 后台运行并打印 PID / 停止命令）
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+    --skip-stage1-rl \
+    --final-eval-source json \
+    --final-eval-config glue_configs_best_ppo.json \
+    --skip-stage1-final-eval \
+    --noise-eval-repeat 200 \
+    --model mrpc \
+    --stage2-rl-episodes 15000 \
+    --batch_size 128
+# -> 终端会打印 Background PID: 712345 以及 Resolved run root: rl_results/.../20260408_.../
+```
+
+```bash
+# 2) 想停的时候，任选一条（同一条命令可多次执行，首次触发后即会进入保存流程）：
+
+# 方式 A：直接用启动时打印的 PID
+kill -INT 712345
+
+# 方式 B：用 LATEST 指针（最省事，不必记 PID）
+kill -INT $(cat rl_results/layer_importance_runs/mrpc/LATEST_PID)
+
+# 方式 C：创建停止标志文件（Stage-2 训练时）
+touch "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)/stage2_noise/progress/STOP_RL"
+```
+
+收到信号后，你会在日志里看到：
+
+（这里ctrl+c等价于命令行再用一次kill -INT pid）
+
+```
+  [优雅停止] 收到中断信号 (Ctrl+C)，将在当前回合结束后保存 checkpoint 并退出；再按一次 Ctrl+C 立即强退。
+  [优雅停止] 已检测到停止请求，正在于 PPO 边界保存 Stage-2 checkpoint (episode=..., update#...) ...
+  [优雅停止] checkpoint 已写入 → rl_results/.../20260408_.../stage2_noise/progress/noise_rl_checkpoint.pt
+  下次启动请使用 --resume-from 指向本 run 目录以严丝合缝续训。
+```
+
+```bash
+# 3) 续训：只需把原命令加上 --resume-from 指向上次的 run 目录即可
+#    （建议同时把 --stage2-rl-episodes 调到你想要的“总轮数”）
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+    --skip-stage1-rl \
+    --final-eval-source json \
+    --final-eval-config glue_configs_best_ppo.json \
+    --skip-stage1-final-eval \
+    --noise-eval-repeat 200 \
+    --model mrpc \
+    --stage2-rl-episodes 30000 \
+    --batch_size 128 \
+    --resume-from "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)"
+```
+
+续训会加载上次保存的 GTrXL 网络权重、优化器状态、PPO 更新计数、`reward_history`
+/ `reward_mean` / `reward_std`、`return_normalizer`（值函数归一化统计量）、
+incumbent / best_config / window_best、以及所有 episode 级统计列表，因此
+training-curve 曲线与 PPO 训练曲线在续训前后能**严丝合缝地接上**。
+
+#### 严丝合缝续训的关键机制
+
+为了让“停→续”与“一次性训练到底”等效，代码强制在 **PPO 更新边界**保存 checkpoint：
+
+- **Stage-1**：每个 PPO 更新窗口结束（即 `(episode+1) % PPO_UPDATE_INTERVAL == 0`）
+后会写一次 checkpoint；优雅停止检查紧跟其后，因此保存时 buffer 刚刚清空、
+`gtrxl_ppo_update_count` 和 `episode+1` 恰好对齐，resume 时直接从下一个 PPO 窗口
+开始，不会出现“窗口长度不足”的短窗现象。
+- **Stage-2**：同样在 PPO 更新 + buffer clear + `noise_ppo_update_count` 递增之后
+才检查停止请求并强制保存，保证 `completed_episodes` 正好是 `PPO_UPDATE_INTERVAL`
+的整数倍。原本的周期性 checkpoint（每 `NOISE_STAGE_CHECKPOINT_PPO_INTERVAL`
+次 PPO 更新一次）继续保留，作为“就算没人触发优雅停止、机器异常断电也能续上”的兜底。
+
+由于停止点必然落在 PPO 边界上，resume 后的第一次 PPO 更新仍然会收集整整一个
+`PPO_UPDATE_INTERVAL` 的新 rollout 再做更新，策略/价值网络的梯度步数与回合计数
+与“一次性训练到底”完全一致。
+
+#### 注意事项
+
+- **必须用 `kill -INT`（SIGINT）或停止标志文件，禁用 `kill -9`（SIGKILL）。** SIGKILL
+不会被 Python 捕获，无法触发 checkpoint 保存，续训会丢失最近一段窗口的训练成果。
+- 停止请求是在“下一次 PPO 更新边界”生效，最多延迟 `PPO_UPDATE_INTERVAL` 个
+episode。只要耐心等一下，日志里出现 `[优雅停止] checkpoint 已写入` 就说明
+安全退出完成。
+- 若再按一次 `Ctrl+C`（或再次 `kill -INT`），程序会抛出 `KeyboardInterrupt`
+立刻强退——此时已保存的 checkpoint 仍然有效，只是最新窗口内未保存的 rollout 会丢失。
+- 若停止时恰好处于 RL 训练之外（例如 Stage-1/2 的最终评估阶段），停止标志不会生效；
+请等 RL 训练进入下一个 PPO 窗口时再观察日志。
+- 续训时 `--stage1-rl-episodes` / `--stage2-rl-episodes` 指的是**总轮数**（不是追加
+轮数）。若总轮数小于等于 checkpoint 中已完成的轮数，该阶段不会再追加训练。
+- 成功停止后，脚本会自动删除已消费的 `STOP_RL` 文件，避免下次启动被误触发。
+- Windows 下同样可用：`Ctrl+C` 会走 SIGINT 分支；停止标志文件用资源管理器或
+`type NUL > STOP_RL` 手动创建即可。
+
