@@ -179,11 +179,13 @@ bert-base 切换到 24 层的 bert-large，或切换到 12 层的 gpt-2。
 
 映射关系：
 
-| `--model-type` 值 | 预训练 checkpoint 系列                                | 层数 |
-| ---------------- | --------------------------------------------------- | ---- |
-| `bert-base`      | `textattack/bert-base-uncased-*`                    | 12   |
-| `bert-large`     | `yoshitomo-matsubara/bert-large-uncased-*`          | 24   |
-| `gpt-2`          | `openai-community/gpt2`（所有任务共用同一个基座）      | 12   |
+
+| `--model-type` 值 | 预训练 checkpoint 系列                          | 层数  |
+| ---------------- | ------------------------------------------ | --- |
+| `bert-base`      | `textattack/bert-base-uncased-*`           | 12  |
+| `bert-large`     | `yoshitomo-matsubara/bert-large-uncased-*` | 24  |
+| `gpt-2`          | `openai-community/gpt2`（所有任务共用同一个基座）       | 12  |
+
 
 `--model-type` 与 `--model` 组合后会按 `(model-type, dataset)` 解析最终
 `--base_model`。`bert-base` 兼容此前所有 7 个 GLUE 任务；`bert-large`
@@ -221,13 +223,13 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
 注意事项：
 
 1. bert-large 第一阶段每个 episode 需要在所有 24 层上各做一步决策，
-   单次 PPO update 的 token 数也按 `total_layers` 自动翻倍，因此显存
+  单次 PPO update 的 token 数也按 `total_layers` 自动翻倍，因此显存
    占用、单 episode 耗时大约是 bert-base 的 2 倍，建议在 24GB 及以上
    显存上运行，必要时通过 `--batch_size` 适当调小。
 2. 第二阶段噪声 RL 的状态/动作序列同样按 24 层展开，`noise_rl_module_v2.py`
-   已读取 `evaluator.total_layers` 自适应，无需额外配置。
+  已读取 `evaluator.total_layers` 自适应，无需额外配置。
 3. 第一阶段最终评估、噪声最终评估、随机对照实验都会按 `total_layers`
-   自动扩展数组长度，原有的 `glue_configs_best_ppo.json` /
+  自动扩展数组长度，原有的 `glue_configs_best_ppo.json` /
    `glue_noise_configs_best_ppo.json` 等历史配置文件如果是按 12 层
    保存的，会被 `final_evaluation_module.py` 自动按"最后一个值填充
    或截断"补齐到 24 层并打印 `[Info]` 提示；为了 bert-large 的
@@ -245,28 +247,30 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
 基座与 checkpoint 来源：
 
 - GPT-2 在 HuggingFace 上没有覆盖全部 GLUE 任务的权威微调系列（不像
-  `textattack/bert-base-uncased-*`），因此此处**所有任务共用同一个
-  预训练基座 `openai-community/gpt2`**；`AutoModelForSequenceClassification`
-  会给每个任务随机初始化一个分类 head，并由 `rl_tune.py` 的训练循环
-  自行完成 head 微调。首次在某个 GLUE 任务上使用前，建议让脚本自然走
-  完 fine-tune 阶段（不要带 `--skip-stage1-rl`/`--skip-noise-rl`），否则
-  评估得到的是"随机分类 head"的结果。
+`textattack/bert-base-uncased-*`），因此此处**所有任务共用同一个
+预训练基座 `openai-community/gpt2`**；`AutoModelForSequenceClassification`
+会给每个任务随机初始化一个分类 head，并由 `rl_tune.py` 的训练循环
+自行完成 head 微调。首次在某个 GLUE 任务上使用前，建议让脚本自然走
+完 fine-tune 阶段（不要带 `--skip-stage1-rl`/`--skip-noise-rl`），否则
+评估得到的是"随机分类 head"的结果。
 - Tokenizer 在 `rl_tune.py` 中已统一执行
-  `tokenizer.pad_token = tokenizer.eos_token`，并在加载模型时传入
-  `pad_token_id=tokenizer.pad_token_id`，满足 GPT-2
-  `GPT2ForSequenceClassification` 要求的"末 token pooling + 必须有
-  pad token"约束。
+`tokenizer.pad_token = tokenizer.eos_token`，并在加载模型时传入
+`pad_token_id=tokenizer.pad_token_id`，满足 GPT-2
+`GPT2ForSequenceClassification` 要求的"末 token pooling + 必须有
+pad token"约束。
 
 功能兼容范围：
 
-| 阶段 / 功能                         | bert-base | bert-large | gpt-2 |
-| ----------------------------------- | :-------: | :--------: | :---: |
-| Stage 1 GELU 多项式近似             | ✅        | ✅         | ✅    |
-| Stage 1 Softmax 指数近似            | ✅        | ✅         | ❌ (自动跳过) |
-| Stage 2 x / Wo / Wffn1 / Wffn2 噪声 | ✅        | ✅         | ✅    |
-| Stage 2 Wq / Wk / Wv 噪声           | ✅        | ✅         | ✅（通过融合 c_attn 的按槽位加噪实现） |
-| 最终评估 (`final_evaluation_module`) | ✅        | ✅         | ✅    |
-| GLUE 提交文件生成                   | ✅        | ✅         | ✅（分类 head 需先微调） |
+
+| 阶段 / 功能                           | bert-base | bert-large | gpt-2                   |
+| --------------------------------- | --------- | ---------- | ----------------------- |
+| Stage 1 GELU 多项式近似                | ✅         | ✅          | ✅                       |
+| Stage 1 Softmax 指数近似              | ✅         | ✅          | ❌ (自动跳过)                |
+| Stage 2 x / Wo / Wffn1 / Wffn2 噪声 | ✅         | ✅          | ✅                       |
+| Stage 2 Wq / Wk / Wv 噪声           | ✅         | ✅          | ✅（通过融合 c_attn 的按槽位加噪实现） |
+| 最终评估 (`final_evaluation_module`)  | ✅         | ✅          | ✅                       |
+| GLUE 提交文件生成                       | ✅         | ✅          | ✅（分类 head 需先微调）         |
+
 
 **为什么 GPT-2 不支持 Softmax 近似？** BERT 的 `BertSelfAttention` 模块
 能够被整体替换为 `BertSelfAttentionWithAproximation`，从而在 forward
@@ -384,13 +388,52 @@ python generate_glue_submission.py \
 **噪声最终评估配置来源**（仅在未 `--skip-noise-final-eval` 时生效）
 
 
-| 参数                                        | 说明                                                                                                    | 默认值                                |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `--noise-eval-source search/json/manual`  | 噪声最终评估使用的配置来源：`search` 使用本次噪声 RL 搜索结果；`json` 从 JSON 文件读取；`manual` 手动指定。若执行噪声 RL 且保留最终评估，则只能为 `search` | `search`                           |
-| `--noise-eval-config PATH`                | `json` 模式下指定的噪声配置 JSON 文件路径。程序根据当前数据集名自动读取对应条目                                                        | `glue_noise_configs_best_ppo.json` |
-| `--manual-noise-config '{"x":[...],...}'` | `manual` 模式下手动指定 7 种噪声 scaling factor 数组（JSON 对象格式），支持短名称 `x, wq, wk, wv, wo, wffn1, wffn2`           | —                                  |
-| `--noise-eval-repeat N`                   | 对选定配置执行 N 次重复评估，输出 N 次结果及均值/标准差统计                                                                     | `1`                                |
+| 参数                                                | 说明                                                                                                    | 默认值                                |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `--noise-eval-source search/json/manual`          | 噪声最终评估使用的配置来源：`search` 使用本次噪声 RL 搜索结果；`json` 从 JSON 文件读取；`manual` 手动指定。若执行噪声 RL 且保留最终评估，则只能为 `search` | `search`                           |
+| `--noise-eval-config PATH`                        | `json` 模式下指定的噪声配置 JSON 文件路径。程序根据当前数据集名自动读取对应条目                                                        | `glue_noise_configs_best_ppo.json` |
+| `--manual-noise-config '{"x":[...],...}'`         | `manual` 模式下手动指定 7 种噪声 scaling factor 数组（JSON 对象格式），支持短名称 `x, wq, wk, wv, wo, wffn1, wffn2`           | —                                  |
+| `--noise-eval-repeat N`                           | 对选定配置执行 N 次重复评估，输出 N 次结果及均值/标准差统计                                                                     | `1`                                |
+| 环境变量 `NOISE_RANDOM_MODE=x_only/x_w/x_w_nonlinear` | 噪声随机消融实验模式，控制 `Full Random` 对照组中随机化的范围（详见下一节）                                                         | `x_w`                              |
 
+
+#### 噪声随机消融实验模式（`NOISE_RANDOM_MODE`）
+
+噪声最终评估会针对选定配置生成一组 `Full Random` 随机对照实验，用于检验所选配置相对随机基线的优势。该随机对照支持三种消融模式，便于分别考察不同噪声因子的影响：
+
+
+| 模式              | 含义                                                                                             |
+| --------------- | ---------------------------------------------------------------------------------------------- |
+| `x_only`        | **只随机 X**：每次只对输入噪声 `x` 重新采样，6 类权重噪声 `wq/wk/wv/wo/wffn1/wffn2` 与非线性层（GELU/Softmax）保持为选定配置的值     |
+| `x_w`           | **随机 X + 所有 W**（默认，即原始行为）：对 `x` 与全部 6 类权重噪声独立随机采样，非线性层固定                                       |
+| `x_w_nonlinear` | **随机 X + 所有 W + 非线性层**：在 `x_w` 基础上，再对每层的 GELU 阶数（`{0,1,2,4}`）和 Softmax 阶数（`{2,3,4,5,6}`）独立随机采样 |
+
+
+**手动选择方式**：通过环境变量 `NOISE_RANDOM_MODE` 在执行命令前指定，例如：
+
+```bash
+# 1) 仅随机 X
+NOISE_RANDOM_MODE=x_only bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval --skip-noise-rl --noise-eval-source json \
+  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200 --model mrpc
+
+# 2) 随机 X + 所有 W （默认，可省略环境变量）
+NOISE_RANDOM_MODE=x_w bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval --skip-noise-rl --noise-eval-source json \
+  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200 --model mrpc
+
+# 3) 随机 X + 所有 W + 非线性层（GELU/Softmax）
+NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval --skip-noise-rl --noise-eval-source json \
+  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200 --model mrpc
+```
+
+> Windows PowerShell 下设置环境变量请用 `$env:NOISE_RANDOM_MODE="x_only"; bash ...`；CMD 下用 `set NOISE_RANDOM_MODE=x_only && bash ...`。
+>
+> 选择的模式会在主日志开头以 `NOISE_RANDOM_MODE=...` 的形式打印，便于结果归档对照。
 
 噪声配置 JSON 文件格式：
 
@@ -444,7 +487,7 @@ python generate_glue_submission.py \
 
 只进行第二阶段最终评估
 
-`CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --skip-noise-rl --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200 --model mrpc --batch_size 128`
+`CUDA_VISIBLE_DEVICES=0 NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --skip-noise-rl --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200 --model mrpc --batch_size 128`
 
 完全跳过两个阶段的搜索/训练，手动指定所有配置只做后续评估：
 
@@ -598,9 +641,9 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 - Stage-2 checkpoint: `<run_dir>/stage2_noise/progress/noise_rl_checkpoint.pt`
 
 
-| 参数                    | 说明                                                                                                                                         | 默认值 |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --- |
-| `--resume-from PATH`  | 指定之前的 run 目录路径，从该目录的 checkpoint 恢复训练。程序会自动在 `<PATH>/stage1/` 和 `<PATH>/stage2_noise/progress/` 下查找 checkpoint 文件。如果 checkpoint 不存在，则从头开始训练。 | 空   |
+| 参数                   | 说明                                                                                                                                          | 默认值 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| `--resume-from PATH` | 指定之前的 run 目录路径，从该目录的 checkpoint 恢复训练。程序会自动在 `<PATH>/stage1/` 和 `<PATH>/stage2_noise/progress/` 下查找 checkpoint 文件。如果 checkpoint 不存在，则从头开始训练。 | 空   |
 
 
 使用说明：

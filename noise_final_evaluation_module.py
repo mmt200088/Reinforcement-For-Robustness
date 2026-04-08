@@ -25,6 +25,21 @@ SHORT_KEY_TO_FULL = {
 }
 
 BREAKDOWN_KEYS = ("x", "wq", "wk", "wv", "wo", "wffn1", "wffn2")
+WEIGHT_BREAKDOWN_KEYS = ("wq", "wk", "wv", "wo", "wffn1", "wffn2")
+
+# 噪声随机消融实验支持的三种模式
+RANDOM_MODE_X_ONLY = "x_only"               # 仅随机 X，W 与非线性层固定
+RANDOM_MODE_X_W = "x_w"                     # 随机 X + 所有 W（默认，原始行为）
+RANDOM_MODE_X_W_NONLINEAR = "x_w_nonlinear" # 随机 X + 所有 W + 非线性层（GELU/Softmax）
+VALID_RANDOM_MODES = (
+    RANDOM_MODE_X_ONLY,
+    RANDOM_MODE_X_W,
+    RANDOM_MODE_X_W_NONLINEAR,
+)
+
+# 非线性层（GELU/Softmax）允许的多项式阶数
+GELU_DEGREE_CHOICES = (0, 1, 2, 4)
+SOFTMAX_DEGREE_CHOICES = (2, 3, 4, 5, 6)
 
 
 class NoiseFinalEvaluationModule:
@@ -50,6 +65,7 @@ class NoiseFinalEvaluationModule:
         full_random_trials: int = 50,
         repeat_n: int = 1,
         results_dir: Optional[str] = None,
+        random_mode: Optional[str] = None,
     ):
         self.evaluator = evaluator
         self.config_source = (config_source or "search").lower()
@@ -77,6 +93,18 @@ class NoiseFinalEvaluationModule:
         self.input_noise_allowed = list(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
         self.weight_noise_allowed = list(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
         self.wffn1_noise_allowed = list(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
+
+        # 噪声随机消融模式：参数 > 环境变量 NOISE_RANDOM_MODE > 默认 x_w
+        mode = random_mode if random_mode is not None else os.environ.get(
+            "NOISE_RANDOM_MODE", RANDOM_MODE_X_W
+        )
+        mode = (mode or RANDOM_MODE_X_W).strip().lower()
+        if mode not in VALID_RANDOM_MODES:
+            raise ValueError(
+                f"Unsupported random_mode '{mode}'. "
+                f"Valid: {VALID_RANDOM_MODES}"
+            )
+        self.random_mode = mode
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -109,12 +137,17 @@ class NoiseFinalEvaluationModule:
         }
 
         def _get_noise_eval(noise_cfg):
-            sig = self._noise_config_signature(noise_cfg)
+            # 允许 cfg 内携带非线性层覆盖（仅 nonlinear 消融模式使用）
+            gelu_override = noise_cfg.pop("_gelu_override", None) if isinstance(noise_cfg, dict) else None
+            softmax_override = noise_cfg.pop("_softmax_override", None) if isinstance(noise_cfg, dict) else None
+            use_gelu = fixed_gelu if gelu_override is None else np.asarray(gelu_override, dtype=int)
+            use_softmax = fixed_softmax if softmax_override is None else np.asarray(softmax_override, dtype=int)
+            sig = self._noise_config_signature(noise_cfg, use_gelu, use_softmax)
             if sig in eval_cache:
                 return eval_cache[sig]
 
             loss, p, s, t = ev.evaluate_model_with_attention_noise(
-                fixed_gelu, fixed_softmax, use_train=False, **noise_cfg
+                use_gelu, use_softmax, use_train=False, **noise_cfg
             )
             tot_c, breakdown = ev.get_noise_simulated_cost(**noise_cfg)
             cached = {
@@ -337,6 +370,7 @@ class NoiseFinalEvaluationModule:
         ev.log("\n" + "=" * 60)
         ev.log("PHASE 5.5: NOISE RL FINAL EVALUATION (验证集)")
         ev.log(f"NOISE_EVAL_CONFIG_SOURCE={self.config_source}")
+        ev.log(f"NOISE_RANDOM_MODE={self.random_mode}")
         if self.repeat_n > 1:
             ev.log(f"NOISE_EVAL_REPEAT_N={self.repeat_n}")
         ev.log(
@@ -858,16 +892,27 @@ class NoiseFinalEvaluationModule:
                 eval_noise_result(f"NoiseBudget_{idx + 1}", "Budget", budget_cfg)
             )
 
-        # --- Full Random (x 与各 w 全部独立随机, 不受 cost / budget 约束) ---
+        # --- Full Random (按 random_mode 决定随机的范围) ---
+        mode_desc = {
+            RANDOM_MODE_X_ONLY: "仅 X 随机, W 与非线性层固定",
+            RANDOM_MODE_X_W: "X 与所有 W 随机, 非线性层固定",
+            RANDOM_MODE_X_W_NONLINEAR: "X + 所有 W + 非线性层(GELU/Softmax) 全部随机",
+        }[self.random_mode]
         ev.log(
             f"Generating {self.full_random_trials} fully random noise configs "
-            f"(x and each w independently sampled)..."
+            f"[mode={self.random_mode}: {mode_desc}]..."
         )
         for idx in range(self.full_random_trials):
-            full_cfg = self._sample_full_random(rng, ev.total_layers, seen)
+            full_cfg = self._sample_full_random(
+                rng, ev.total_layers, seen, selected_noise_cfg
+            )
             if full_cfg is None:
                 continue
-            sig = self._noise_config_signature(full_cfg)
+            # 拆出可能存在的非线性层覆盖, 用于 signature
+            gelu_ov = full_cfg.get("_gelu_override")
+            softmax_ov = full_cfg.get("_softmax_override")
+            sig_cfg = {k: full_cfg[k] for k in NOISE_SCALING_FACTOR_KEYS}
+            sig = self._noise_config_signature(sig_cfg, gelu_ov, softmax_ov)
             seen.add(sig)
             random_results.append(
                 eval_noise_result(f"NoiseFullRand_{idx + 1}", "FullRand", full_cfg)
@@ -875,16 +920,45 @@ class NoiseFinalEvaluationModule:
 
         return random_results
 
-    def _sample_full_random(self, rng, total_layers, seen):
+    def _sample_full_random(self, rng, total_layers, seen, selected_noise_cfg=None):
+        """根据 self.random_mode 采样一组随机噪声配置。
+
+        - x_only:        仅随机 X, 其余 W 沿用 selected_noise_cfg, 非线性层固定
+        - x_w:           随机 X + 所有 W, 非线性层固定（默认行为）
+        - x_w_nonlinear: 随机 X + 所有 W + GELU/Softmax 阶数
+        """
+        ev = self.evaluator
         for _ in range(20):
             cfg = {}
             for short_key in BREAKDOWN_KEYS:
                 full_key = SHORT_KEY_TO_FULL[short_key]
-                allowed = self._get_allowed(short_key)
-                cfg[full_key] = np.array(
-                    rng.choice(allowed, size=total_layers), dtype=int
+                if self.random_mode == RANDOM_MODE_X_ONLY and short_key != "x":
+                    # 沿用 selected 配置中对应 W 的值
+                    if selected_noise_cfg is None:
+                        return None
+                    cfg[full_key] = np.asarray(
+                        selected_noise_cfg[full_key], dtype=int
+                    ).copy()
+                else:
+                    allowed = self._get_allowed(short_key)
+                    cfg[full_key] = np.array(
+                        rng.choice(allowed, size=total_layers), dtype=int
+                    )
+
+            gelu_ov = None
+            softmax_ov = None
+            if self.random_mode == RANDOM_MODE_X_W_NONLINEAR:
+                gelu_ov = np.array(
+                    rng.choice(GELU_DEGREE_CHOICES, size=total_layers), dtype=int
                 )
-            sig = self._noise_config_signature(cfg)
+                softmax_ov = np.array(
+                    rng.choice(SOFTMAX_DEGREE_CHOICES, size=total_layers), dtype=int
+                )
+                cfg["_gelu_override"] = gelu_ov
+                cfg["_softmax_override"] = softmax_ov
+
+            sig_cfg = {k: cfg[k] for k in NOISE_SCALING_FACTOR_KEYS}
+            sig = self._noise_config_signature(sig_cfg, gelu_ov, softmax_ov)
             if sig not in seen:
                 return cfg
         return None
@@ -1826,11 +1900,16 @@ class NoiseFinalEvaluationModule:
         return full_key
 
     @staticmethod
-    def _noise_config_signature(noise_cfg):
-        return tuple(
+    def _noise_config_signature(noise_cfg, gelu_override=None, softmax_override=None):
+        base = tuple(
             tuple(np.asarray(noise_cfg[key], dtype=int).tolist())
             for key in NOISE_SCALING_FACTOR_KEYS
         )
+        if gelu_override is None and softmax_override is None:
+            return base
+        gelu_t = tuple(np.asarray(gelu_override, dtype=int).tolist()) if gelu_override is not None else ()
+        softmax_t = tuple(np.asarray(softmax_override, dtype=int).tolist()) if softmax_override is not None else ()
+        return (base, gelu_t, softmax_t)
 
     def _is_feasible(self, loss, p, s, limit_loss, limit_p, limit_s):
         if loss > limit_loss:
