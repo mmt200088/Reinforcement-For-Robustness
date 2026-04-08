@@ -265,23 +265,21 @@ BERT_LARGE_MODEL_NAMES = {
 }
 
 # ---- gpt-2 model name overrides ----
-# openai-community/gpt2 is the raw pretrained backbone with 12 transformer
-# blocks. There is no task-specific fine-tuned GPT-2 family that covers all
-# GLUE tasks the way textattack does for bert-base, so the same base
-# checkpoint is used for every supported task; the classification head is
-# freshly initialized by AutoModelForSequenceClassification. Users are
-# expected to have already fine-tuned this head (e.g. via rl_tune.py's
-# training loop) before generating a submission.
+# PavanNeerudu/gpt2-finetuned-<task> is a family of GPT2ForSequenceClassification
+# checkpoints already fine-tuned on each GLUE training set (correct head shape,
+# backbone converged). We use these directly so RL only needs to optimize the
+# approximation / noise schedule on top of a frozen, task-competent backbone.
+# AX uses the MNLI checkpoint per GLUE convention (AX is the diagnostic set for NLI).
 GPT2_MODEL_NAMES = {
-    'cola': 'openai-community/gpt2',
-    'sst2': 'openai-community/gpt2',
-    'mrpc': 'openai-community/gpt2',
-    'stsb': 'openai-community/gpt2',
-    'qnli': 'openai-community/gpt2',
-    'rte':  'openai-community/gpt2',
-    'wnli': 'openai-community/gpt2',
-    'mnli': 'openai-community/gpt2',
-    'ax':   'openai-community/gpt2',
+    'cola': 'PavanNeerudu/gpt2-finetuned-cola',
+    'sst2': 'PavanNeerudu/gpt2-finetuned-sst2',
+    'mrpc': 'PavanNeerudu/gpt2-finetuned-mrpc',
+    'stsb': 'PavanNeerudu/gpt2-finetuned-stsb',
+    'qnli': 'PavanNeerudu/gpt2-finetuned-qnli',
+    'rte':  'PavanNeerudu/gpt2-finetuned-rte',
+    'wnli': 'PavanNeerudu/gpt2-finetuned-wnli',
+    'mnli': 'PavanNeerudu/gpt2-finetuned-mnli',
+    'ax':   'PavanNeerudu/gpt2-finetuned-mnli',
 }
 
 

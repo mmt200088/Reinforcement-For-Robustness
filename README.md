@@ -184,7 +184,7 @@ bert-base 切换到 24 层的 bert-large，或切换到 12 层的 gpt-2。
 | ---------------- | ------------------------------------------ | --- |
 | `bert-base`      | `textattack/bert-base-uncased-*`           | 12  |
 | `bert-large`     | `yoshitomo-matsubara/bert-large-uncased-*` | 24  |
-| `gpt-2`          | `openai-community/gpt2`（所有任务共用同一个基座）       | 12  |
+| `gpt-2`          | `PavanNeerudu/gpt2-finetuned-<task>`（每任务独立微调） | 12  |
 
 
 `--model-type` 与 `--model` 组合后会按 `(model-type, dataset)` 解析最终
@@ -238,26 +238,41 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
 #### gpt-2 分支使用说明
 
 `gpt-2` 分支把整条 RL / 噪声评估流水线迁移到 HuggingFace 的
-`openai-community/gpt2` 骨干（12 层 transformer，768 hidden size）。
-该分支在模块路径、QKV 融合、激活函数替换等层面与 BERT 做了专门适配，
+GPT-2 骨干（12 层 transformer，768 hidden size）。该分支在模块路径、
+QKV 融合、激活函数替换等层面与 BERT 做了专门适配，
 `rl_tune.py` / `layer_importance_evaluator.py` / `noise_rl_module_v2.py`
 / `final_evaluation_module.py` / `generate_glue_submission.py` 无需手动
 切换，按 `--model-type gpt-2` 一处开关即可。
 
 基座与 checkpoint 来源：
 
-- GPT-2 在 HuggingFace 上没有覆盖全部 GLUE 任务的权威微调系列（不像
-`textattack/bert-base-uncased-*`），因此此处**所有任务共用同一个
-预训练基座 `openai-community/gpt2`**；`AutoModelForSequenceClassification`
-会给每个任务随机初始化一个分类 head，并由 `rl_tune.py` 的训练循环
-自行完成 head 微调。首次在某个 GLUE 任务上使用前，建议让脚本自然走
-完 fine-tune 阶段（不要带 `--skip-stage1-rl`/`--skip-noise-rl`），否则
-评估得到的是"随机分类 head"的结果。
+- 采用 **PavanNeerudu 的 `gpt2-finetuned-<task>` 系列**
+  (<https://huggingface.co/PavanNeerudu>)，每个 GLUE 任务都有一份已经
+  在对应训练集上微调好的 `GPT2ForSequenceClassification` 权重
+  （cola / sst2 / mrpc / stsb / qnli / rte / wnli / mnli 均覆盖；stsb
+  自动使用回归 head `num_labels=1`，mnli 使用 `num_labels=3`，其余为
+  `num_labels=2`）。`llama_7B_LayerImportance.sh` 的 `gpt-2` 分支会按
+  `(dataset)` 直接解析到对应 checkpoint，RL 无需从头微调 head，直接
+  在一个"已经具备任务能力的骨干"上优化近似/噪声 schedule。
+- **Backbone 在 RL 全过程冻结**。`rl_tune.py` 在 `from_pretrained`
+  之后会立即执行：
+  ```python
+  for p in model.parameters():
+      p.requires_grad_(False)
+  model.eval()
+  ```
+  PPO 的 `.backward()` 只作用在 policy_net / value_net 上（详见
+  `layer_importance_evaluator.py` 内所有 `loss.backward()` 调用），
+  所有对 HF 模型的 `forward` 都包在 `torch.no_grad()` 内。因此无论
+  近似函数替换、噪声注入还是 GELU 分布分析 hook，都不会把梯度写回
+  预训练权重，也不会触发 dropout/LayerNorm 的 train-mode 行为 ——
+  这避免了"RL 白训"（即 RL 以为自己在优化噪声 schedule，实际却在
+  偷偷微调 backbone 导致最终评估奖励被稀释）。
 - Tokenizer 在 `rl_tune.py` 中已统一执行
-`tokenizer.pad_token = tokenizer.eos_token`，并在加载模型时传入
-`pad_token_id=tokenizer.pad_token_id`，满足 GPT-2
-`GPT2ForSequenceClassification` 要求的"末 token pooling + 必须有
-pad token"约束。
+  `tokenizer.pad_token = tokenizer.eos_token`，并在加载模型时传入
+  `pad_token_id=tokenizer.pad_token_id`，满足
+  `GPT2ForSequenceClassification` 要求的"末 token pooling + 必须有
+  pad token"约束。
 
 功能兼容范围：
 
@@ -269,7 +284,7 @@ pad token"约束。
 | Stage 2 x / Wo / Wffn1 / Wffn2 噪声 | ✅         | ✅          | ✅                       |
 | Stage 2 Wq / Wk / Wv 噪声           | ✅         | ✅          | ✅（通过融合 c_attn 的按槽位加噪实现） |
 | 最终评估 (`final_evaluation_module`)  | ✅         | ✅          | ✅                       |
-| GLUE 提交文件生成                       | ✅         | ✅          | ✅（分类 head 需先微调）         |
+| GLUE 提交文件生成                       | ✅         | ✅          | ✅（直接复用 PavanNeerudu 微调权重） |
 
 
 **为什么 GPT-2 不支持 Softmax 近似？** BERT 的 `BertSelfAttention` 模块

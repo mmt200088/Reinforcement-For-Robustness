@@ -305,9 +305,24 @@ def train(
             # device_map ="cpu",
             trust_remote_code=True,
             # pad_token_id=tokenizer.eos_token_id
-            pad_token_id=tokenizer.pad_token_id  
+            pad_token_id=tokenizer.pad_token_id,
         )
-    
+
+    # ---------------------------------------------------------------
+    # Freeze the backbone. The downstream pipeline (layer_importance_
+    # evaluator.py + noise_rl_module_v2.py) only uses this HF model for
+    # **inference** to compute rewards — the PPO policy/value networks
+    # are the only thing being trained. Explicitly disabling grads on
+    # every parameter and pinning the model to eval() makes that
+    # contract bulletproof: no amount of noise-wrapping, function-
+    # replacement or stray autograd call can push an update into the
+    # pretrained weights, and dropout/train-mode side-effects cannot
+    # add variance to the reward signal mid-episode.
+    # ---------------------------------------------------------------
+    for _param in model.parameters():
+        _param.requires_grad_(False)
+    model.eval()
+
     model.to("cuda")
 
 
