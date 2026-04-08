@@ -755,12 +755,19 @@ elif [ "$MODEL_TYPE" = "bert-large" ]; then
             ;;
     esac
 else
-    # gpt-2：openai-community/gpt2 是原始预训练权重 (12 层, 768 hidden),
-    # SequenceClassification head 由 rl_tune.py 在训练阶段自行初始化并微调.
-    # 所有 GLUE 任务共用同一个基座, 但 head 会针对每个任务独立训练/保存.
+    # gpt-2：使用 PavanNeerudu/gpt2-finetuned-<task> 系列 (每个 GLUE 任务都有
+    # 已经在 GLUE 训练集上微调好的 GPT2ForSequenceClassification 权重, 分类
+    # head 和 backbone 均已收敛). RL 训练过程中这些权重保持固定 (参见
+    # rl_tune.py 里对 model.parameters() 的 requires_grad_(False) 冻结),
+    # 只有 PPO policy/value 网络在更新.
     case "$DATASET" in
-        mrpc|sst2|stsb|cola|qnli|rte|wnli)
-            BASE_MODEL="openai-community/gpt2" ;;
+        cola)  BASE_MODEL="PavanNeerudu/gpt2-finetuned-cola" ;;
+        sst2)  BASE_MODEL="PavanNeerudu/gpt2-finetuned-sst2" ;;
+        mrpc)  BASE_MODEL="PavanNeerudu/gpt2-finetuned-mrpc" ;;
+        stsb)  BASE_MODEL="PavanNeerudu/gpt2-finetuned-stsb" ;;
+        qnli)  BASE_MODEL="PavanNeerudu/gpt2-finetuned-qnli" ;;
+        rte)   BASE_MODEL="PavanNeerudu/gpt2-finetuned-rte"  ;;
+        wnli)  BASE_MODEL="PavanNeerudu/gpt2-finetuned-wnli" ;;
     esac
 fi
 
