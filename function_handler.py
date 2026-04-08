@@ -3,9 +3,35 @@ import torch
 import torch.nn as nn
 from transformers import AutoModel
 from transformers.models.bert.modeling_bert import BertSelfAttention, BertAttention
+try:
+    from transformers.models.gpt2.modeling_gpt2 import Conv1D as _GPT2Conv1D
+except Exception:  # pragma: no cover - transformers always ships this, but be defensive
+    _GPT2Conv1D = None
 import copy
 from torch import Tensor
 from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by BERT and GPT-2 code paths.
+# ---------------------------------------------------------------------------
+def _get_attr_path(obj, path):
+    """Resolve a dotted attribute path starting from ``obj``."""
+    for part in path.split("."):
+        obj = getattr(obj, part)
+    return obj
+
+
+def _set_attr_path(obj, path, value):
+    """Set a dotted attribute path starting from ``obj``."""
+    parts = path.split(".")
+    for part in parts[:-1]:
+        obj = getattr(obj, part)
+    setattr(obj, parts[-1], value)
+
+
+def _is_gpt2_conv1d(module) -> bool:
+    return _GPT2Conv1D is not None and isinstance(module, _GPT2Conv1D)
 
 
 # GELU approximation coeff
@@ -182,6 +208,33 @@ def _make_noisy_linear_forward(linear_module: nn.Linear, scaling_factor: int, di
         )
         return nn.functional.linear(hidden_states, noisy_weight, linear_module.bias)
     return noisy_forward
+
+
+def _make_noisy_conv1d_forward(conv1d, scaling_factor: int, distribution: str = "encoding"):
+    """Weight-noise forward for HuggingFace GPT-2 ``Conv1D`` (weight shape ``[in, out]``)."""
+    def noisy_forward(hidden_states):
+        if hidden_states is None:
+            return hidden_states
+        noisy_weight = add_gaussian_weight_noise(
+            conv1d.weight,
+            scaling_factor=scaling_factor,
+            distribution=distribution,
+        )
+        size_out = hidden_states.size()[:-1] + (conv1d.nf,)
+        out = torch.addmm(
+            conv1d.bias,
+            hidden_states.view(-1, hidden_states.size(-1)),
+            noisy_weight,
+        )
+        return out.view(size_out)
+    return noisy_forward
+
+
+def _make_noisy_projection_forward(module, scaling_factor: int, distribution: str = "encoding"):
+    """Dispatch to the right noisy-forward builder depending on module type."""
+    if _is_gpt2_conv1d(module):
+        return _make_noisy_conv1d_forward(module, scaling_factor, distribution)
+    return _make_noisy_linear_forward(module, scaling_factor, distribution)
 
 # Tanh approximation coeff
 Tanh_COEEF = {
@@ -473,9 +526,61 @@ class PerturbedLiner(nn.Module):
         return out
     
 class ReversibleLayerHandler:
-    """管理GELU函数替换/恢复的工具类"""
+    """管理GELU/Softmax/噪声替换与恢复的工具类.
+
+    支持两类 backbone:
+      * BERT 家族 (bert-base / bert-large, roberta): 依赖 ``attention.self.{query,key,value}``
+        / ``attention.output.dense`` / ``intermediate.dense`` / ``output.dense``
+        / ``intermediate.intermediate_act_fn`` 的模块路径.
+      * GPT-2 家族 (openai-community/gpt2): 使用融合的 ``attn.c_attn`` (Conv1D) +
+        ``attn.c_proj`` / ``mlp.c_fc`` / ``mlp.c_proj`` / ``mlp.act``.
+        由于 c_attn 把 Q/K/V 融合成一个 Conv1D, 这里通过一次性包装 c_attn.forward,
+        在单层上按需累加 q/k/v 各自的权重噪声.
+    """
+
+    # Layer-local path tables (relative to a single transformer block).
+    _BERT_PATHS = {
+        "gelu_act": "intermediate.intermediate_act_fn",
+        "wo_dense": "attention.output.dense",
+        "wffn1_dense": "intermediate.dense",
+        "wffn2_dense": "output.dense",
+    }
+    _GPT2_PATHS = {
+        "gelu_act": "mlp.act",
+        "wo_dense": "attn.c_proj",
+        "wffn1_dense": "mlp.c_fc",
+        "wffn2_dense": "mlp.c_proj",
+    }
+
+    @staticmethod
+    def _detect_arch(model) -> str:
+        """Return ``'gpt2'`` or ``'bert'`` based on top-level module layout."""
+        # GPT-2 style: has .transformer.h (list of GPT2Block)
+        transformer = getattr(model, "transformer", None)
+        if transformer is not None and hasattr(transformer, "h"):
+            return "gpt2"
+        # BERT / RoBERTa style
+        if hasattr(model, "bert") or hasattr(model, "roberta"):
+            return "bert"
+        # Fallback: inspect first layer attributes
+        for attr in ("bert", "roberta", "transformer"):
+            sub = getattr(model, attr, None)
+            if sub is None:
+                continue
+            layers = getattr(sub, "h", None) or getattr(getattr(sub, "encoder", None), "layer", None)
+            if layers is None or len(layers) == 0:
+                continue
+            first = layers[0]
+            if hasattr(first, "attn") and hasattr(first.attn, "c_attn"):
+                return "gpt2"
+            if hasattr(first, "attention") and hasattr(first.attention, "self"):
+                return "bert"
+        return "bert"
+
     def __init__(self, model):
         self.model = model
+        self._arch = self._detect_arch(model)
+        self._paths = self._GPT2_PATHS if self._arch == "gpt2" else self._BERT_PATHS
         self.original_gelu = {}
         self.original_attention = {}
         self.original_input_noise = {}
@@ -487,24 +592,23 @@ class ReversibleLayerHandler:
             "wffn1": {},
             "wffn2": {},
         }
+        # GPT-2 fused Q/K/V state: {layer_idx: {"query"/"key"/"value": (sf, distribution)}}
+        self._gpt2_qkv_state = {}
+        # Wrapped c_attn registry so we install the proxy forward only once per layer.
+        self._gpt2_qkv_wrapped = {}
         self.backup_model = copy.deepcopy(model)  # 完整模型备份
     
     def replace_layer_gelu(self, layer_indices=None, layer_name="model.model.layers", degree=1):
-        """替换指定层的GELU函数"""
+        """替换指定层的GELU函数 (BERT: intermediate.intermediate_act_fn; GPT-2: mlp.act)"""
+        act_path = self._paths["gelu_act"]
         for i, layer in enumerate(eval("self." + layer_name)):
             if i in layer_indices:
-                # 保存原始函数引用
                 if i not in self.original_gelu:
                     self.original_gelu[i] = {
-                        # 'act_fn': layer.mlp.act_fn
-                        'act_fn': layer.intermediate.intermediate_act_fn
+                        "act_fn": _get_attr_path(layer, act_path),
                     }
-                
-                # 应用新函数
-                # layer.mlp.act_fn = PolynomialGELU(degree=degree)
-                layer.intermediate.intermediate_act_fn = PolynomialGELU(degree=degree)
-                # layer.output.activation = PolynomialGELU(degree=degree)
-        
+                _set_attr_path(layer, act_path, PolynomialGELU(degree=degree))
+
         print(f"已替换 {len(layer_indices)} 层的GELU函数（GELU function）")
     
     def replace_layer_norm(self, layer_indices=None, layer_name="model.model.layers", degree=1):
@@ -544,6 +648,16 @@ class ReversibleLayerHandler:
 
     def replace_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention", degree=1):
         """替换指定层的Softmax函数"""
+        if self._arch == "gpt2":
+            # GPT-2 的 self-attention 是融合 c_attn + 内联 softmax 的单体模块,
+            # 未提供 BERT 那样的可插拔 BertSelfAttention 结构. 当前实现不支持
+            # 在 GPT-2 上做 softmax 近似 (Stage 1), 只支持 Stage 2 的 GELU + 噪声.
+            if layer_indices:
+                print(
+                    "[ReversibleLayerHandler] 警告: GPT-2 当前不支持 softmax 近似,"
+                    f" 忽略 {len(layer_indices)} 层的 replace_layer_softmax 调用."
+                )
+            return
         for i, layer in enumerate(eval("self." + layer_name)):
             if i in layer_indices:
                 # 保存原始函数引用
@@ -599,6 +713,54 @@ class ReversibleLayerHandler:
 
         print(_format_noise_enable_message("input", len(selected), scaling_factor, distribution))
 
+    def _ensure_gpt2_qkv_wrapper(self, layer_idx, layer):
+        """Install a single proxy forward on this layer's ``attn.c_attn``.
+
+        The proxy reads ``self._gpt2_qkv_state[layer_idx]`` each forward pass and
+        adds per-slice weight noise (query / key / value) on top of the untouched
+        base Conv1D output. This keeps the three projection noises independent
+        even though GPT-2 stores them as a single fused Conv1D.
+        """
+        if layer_idx in self._gpt2_qkv_wrapped:
+            return
+        c_attn = layer.attn.c_attn  # HuggingFace Conv1D
+        original_forward = c_attn.forward
+        handler = self
+        hidden_size = c_attn.nf // 3
+
+        def proxy_forward(hidden_states, *args, **kwargs):
+            base = original_forward(hidden_states, *args, **kwargs)
+            state = handler._gpt2_qkv_state.get(layer_idx)
+            if not state:
+                return base
+            result = base.clone()
+            in_dim = hidden_states.size(-1)
+            for slot_name, slot_idx in (("query", 0), ("key", 1), ("value", 2)):
+                params = state.get(slot_name)
+                if params is None:
+                    continue
+                sf, dist = params
+                variance = get_input_noise_variance(int(sf), distribution=dist)
+                if variance <= 0.0:
+                    continue
+                std = math.sqrt(variance)
+                noise_w = torch.randn(
+                    in_dim, hidden_size,
+                    device=hidden_states.device,
+                    dtype=hidden_states.dtype,
+                ) * std
+                noise_out = torch.matmul(hidden_states, noise_w)
+                start = slot_idx * hidden_size
+                end = start + hidden_size
+                result[..., start:end] = result[..., start:end] + noise_out
+            return result
+
+        c_attn.forward = proxy_forward
+        self._gpt2_qkv_wrapped[layer_idx] = {
+            "c_attn": c_attn,
+            "forward": original_forward,
+        }
+
     def _replace_attention_projection_noise(
             self,
             projection_name,
@@ -617,6 +779,17 @@ class ReversibleLayerHandler:
             selected = set(layer_indices)
             if not selected:
                 return
+
+        # GPT-2 fused c_attn path: use a per-layer proxy and accumulate state.
+        if self._arch == "gpt2":
+            for i, layer in enumerate(layers):
+                if i not in selected:
+                    continue
+                self._ensure_gpt2_qkv_wrapper(i, layer)
+                state = self._gpt2_qkv_state.setdefault(i, {})
+                state[projection_name] = (int(scaling_factor), str(distribution).lower())
+            print(_format_noise_enable_message(projection_name, len(selected), scaling_factor, distribution))
+            return
 
         projection_store = self.original_projection_noise.setdefault(projection_name, {})
         for i, layer in enumerate(layers):
@@ -672,7 +845,7 @@ class ReversibleLayerHandler:
                     "forward": linear_module.forward,
                 }
 
-            linear_module.forward = _make_noisy_linear_forward(
+            linear_module.forward = _make_noisy_projection_forward(
                 linear_module,
                 scaling_factor=int(scaling_factor),
                 distribution=distribution,
@@ -736,7 +909,7 @@ class ReversibleLayerHandler:
             ):
         self._replace_layer_linear_module_noise(
             "wo",
-            "attention.output.dense",
+            self._paths["wo_dense"],
             layer_indices=layer_indices,
             layer_name=layer_name,
             scaling_factor=scaling_factor,
@@ -752,7 +925,7 @@ class ReversibleLayerHandler:
             ):
         self._replace_layer_linear_module_noise(
             "wffn1",
-            "intermediate.dense",
+            self._paths["wffn1_dense"],
             layer_indices=layer_indices,
             layer_name=layer_name,
             scaling_factor=scaling_factor,
@@ -768,7 +941,7 @@ class ReversibleLayerHandler:
             ):
         self._replace_layer_linear_module_noise(
             "wffn2",
-            "output.dense",
+            self._paths["wffn2_dense"],
             layer_indices=layer_indices,
             layer_name=layer_name,
             scaling_factor=scaling_factor,
@@ -777,19 +950,19 @@ class ReversibleLayerHandler:
 
     def restore_layer_gelu(self, layer_indices=None, layer_name="model.model.layers"):
         """恢复指定层的原始GELU函数"""
+        act_path = self._paths["gelu_act"]
         for i, layer in enumerate(eval("self." + layer_name)):
             if i in layer_indices and i in self.original_gelu:
-                # layer.mlp.act_fn = self.original_gelu[i]['act_fn']
-                layer.intermediate.intermediate_act_fn = self.original_gelu[i]['act_fn']
-                # layer.output.activation = self.original_gelu[i]['output']
-        
+                _set_attr_path(layer, act_path, self.original_gelu[i]["act_fn"])
+
         print(f"已恢复 {len(layer_indices)} 层的原始GELU函数（original GELU function）")
     
     def restore_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention"):
         """恢复指定层的原始Softmax函数"""
+        if self._arch == "gpt2":
+            return  # 无可恢复状态 (GPT-2 不支持 softmax 近似)
         for i, layer in enumerate(eval("self." + layer_name)):
             if i in layer_indices and i in self.original_attention:
-                # eval("layer."+ attention_name) = self.original_attention[i]['attention']
                 layer.attention.self = self.original_attention[i]['attention']
 
    
@@ -823,6 +996,20 @@ class ReversibleLayerHandler:
             selected = set(layer_indices)
             if not selected:
                 return
+
+        if self._arch == "gpt2":
+            for i in list(selected):
+                state = self._gpt2_qkv_state.get(i)
+                if state is None:
+                    continue
+                state.pop(projection_name, None)
+                if not state:
+                    self._gpt2_qkv_state.pop(i, None)
+                    # All three slots cleared — restore the base Conv1D forward
+                    wrapped = self._gpt2_qkv_wrapped.pop(i, None)
+                    if wrapped is not None:
+                        wrapped["c_attn"].forward = wrapped["forward"]
+            return
 
         projection_store = self.original_projection_noise.get(projection_name, {})
         for i, layer in enumerate(layers):
@@ -881,7 +1068,7 @@ class ReversibleLayerHandler:
     def restore_layer_attention_output_noise(self, layer_indices=None, layer_name="model.model.layers"):
         self._restore_layer_linear_module_noise(
             "wo",
-            "attention.output.dense",
+            self._paths["wo_dense"],
             layer_indices=layer_indices,
             layer_name=layer_name,
         )
@@ -889,7 +1076,7 @@ class ReversibleLayerHandler:
     def restore_layer_ffn1_noise(self, layer_indices=None, layer_name="model.model.layers"):
         self._restore_layer_linear_module_noise(
             "wffn1",
-            "intermediate.dense",
+            self._paths["wffn1_dense"],
             layer_indices=layer_indices,
             layer_name=layer_name,
         )
@@ -897,7 +1084,7 @@ class ReversibleLayerHandler:
     def restore_layer_ffn2_noise(self, layer_indices=None, layer_name="model.model.layers"):
         self._restore_layer_linear_module_noise(
             "wffn2",
-            "output.dense",
+            self._paths["wffn2_dense"],
             layer_indices=layer_indices,
             layer_name=layer_name,
         )
@@ -916,4 +1103,6 @@ class ReversibleLayerHandler:
             "wffn1": {},
             "wffn2": {},
         }
+        self._gpt2_qkv_state = {}
+        self._gpt2_qkv_wrapped = {}
         print("已完全恢复原始模型状态")

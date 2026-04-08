@@ -2996,12 +2996,31 @@ class LayerImportanceEvaluator(TrainerCallback):
         return [(r - self.reward_mean) / self.reward_std for r in rewards]
 
     def _detect_layer_attribute(self):
-        candidates = ['bert.encoder.layer', 'model.layers', 'transformer.h', 'roberta.encoder.layer']
+        candidates = ['bert.encoder.layer', 'transformer.h', 'model.layers', 'roberta.encoder.layer']
         for path in candidates:
             try:
                 if len(eval('self.model.' + path)) > 0: return path
             except: continue
         return 'bert.encoder.layer'
+
+    def _get_layer_act_module(self, layer):
+        """Return the activation Module inside a single transformer block.
+
+        BERT: ``layer.intermediate.intermediate_act_fn``.
+        GPT-2: ``layer.mlp.act``.
+        Returns ``None`` if the activation is a plain function instead of nn.Module.
+        """
+        # Prefer BERT path
+        inter = getattr(layer, "intermediate", None)
+        if inter is not None and hasattr(inter, "intermediate_act_fn"):
+            act = inter.intermediate_act_fn
+            return act if isinstance(act, nn.Module) else None
+        # GPT-2 path
+        mlp = getattr(layer, "mlp", None)
+        if mlp is not None and hasattr(mlp, "act"):
+            act = mlp.act
+            return act if isinstance(act, nn.Module) else None
+        return None
 
     def analyze_gelu_distribution(self):
         """
@@ -3029,16 +3048,18 @@ class LayerImportanceEvaluator(TrainerCallback):
             return hook_fn
 
         for i, layer in enumerate(layers):
-            act_fn = layer.intermediate.intermediate_act_fn
-            h = act_fn.register_forward_hook(_make_hook(i)) if isinstance(act_fn, nn.Module) else None
-            if h is not None:
-                hooks.append(h)
+            act_fn = self._get_layer_act_module(layer)
+            if act_fn is not None:
+                hooks.append(act_fn.register_forward_hook(_make_hook(i)))
             else:
-                hooks.append(
-                    layer.intermediate.register_forward_hook(
-                        lambda mod, inp, out, idx=i: _make_hook(idx)(mod, inp, out)
+                # Fallback: register on the enclosing FFN submodule (BERT: intermediate; GPT-2: mlp).
+                host = getattr(layer, "intermediate", None) or getattr(layer, "mlp", None)
+                if host is not None:
+                    hooks.append(
+                        host.register_forward_hook(
+                            lambda mod, inp, out, idx=i: _make_hook(idx)(mod, inp, out)
+                        )
                     )
-                )
 
         self.model.eval()
         self.model.to(self.device)

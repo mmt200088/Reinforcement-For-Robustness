@@ -264,6 +264,26 @@ BERT_LARGE_MODEL_NAMES = {
     'rte':  'yoshitomo-matsubara/bert-large-uncased-rte',
 }
 
+# ---- gpt-2 model name overrides ----
+# openai-community/gpt2 is the raw pretrained backbone with 12 transformer
+# blocks. There is no task-specific fine-tuned GPT-2 family that covers all
+# GLUE tasks the way textattack does for bert-base, so the same base
+# checkpoint is used for every supported task; the classification head is
+# freshly initialized by AutoModelForSequenceClassification. Users are
+# expected to have already fine-tuned this head (e.g. via rl_tune.py's
+# training loop) before generating a submission.
+GPT2_MODEL_NAMES = {
+    'cola': 'openai-community/gpt2',
+    'sst2': 'openai-community/gpt2',
+    'mrpc': 'openai-community/gpt2',
+    'stsb': 'openai-community/gpt2',
+    'qnli': 'openai-community/gpt2',
+    'rte':  'openai-community/gpt2',
+    'wnli': 'openai-community/gpt2',
+    'mnli': 'openai-community/gpt2',
+    'ax':   'openai-community/gpt2',
+}
+
 
 def _unwrap_variant_config(cfg_map, model_type, cfg_path):
     """
@@ -275,7 +295,7 @@ def _unwrap_variant_config(cfg_map, model_type, cfg_path):
     """
     if not isinstance(cfg_map, dict):
         raise ValueError(f"Config file '{cfg_path}' is not a JSON object.")
-    has_variant_keys = ('bert-base' in cfg_map) or ('bert-large' in cfg_map)
+    has_variant_keys = any(k in cfg_map for k in ('bert-base', 'bert-large', 'gpt-2'))
     if has_variant_keys:
         if model_type not in cfg_map:
             raise KeyError(
@@ -578,12 +598,26 @@ def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
         if not no_approx:
             from function_handler import PolynomialGELU, BertSelfAttentionWithAproximation
             layers_obj = eval('model.' + layers_attr)
-            applied_gelu = sum(1 for L in layers_obj
-                               if isinstance(L.intermediate.intermediate_act_fn, PolynomialGELU))
-            applied_sm = sum(1 for L in layers_obj
-                             if isinstance(L.attention.self, BertSelfAttentionWithAproximation))
-            print(f"  [Verify] PolynomialGELU layers: {applied_gelu}/{len(layers_obj)}, "
-                  f"ApproxSoftmax layers: {applied_sm}/{len(layers_obj)}")
+            is_gpt2_layers = (layers_attr == 'transformer.h')
+            if is_gpt2_layers:
+                applied_gelu = sum(
+                    1 for L in layers_obj
+                    if isinstance(getattr(getattr(L, 'mlp', None), 'act', None), PolynomialGELU)
+                )
+                applied_sm = 0  # softmax approximation not supported on GPT-2
+                print(f"  [Verify] PolynomialGELU layers: {applied_gelu}/{len(layers_obj)}, "
+                      f"ApproxSoftmax layers: N/A (GPT-2, Stage 1 disabled)")
+            else:
+                applied_gelu = sum(
+                    1 for L in layers_obj
+                    if isinstance(L.intermediate.intermediate_act_fn, PolynomialGELU)
+                )
+                applied_sm = sum(
+                    1 for L in layers_obj
+                    if isinstance(L.attention.self, BertSelfAttentionWithAproximation)
+                )
+                print(f"  [Verify] PolynomialGELU layers: {applied_gelu}/{len(layers_obj)}, "
+                      f"ApproxSoftmax layers: {applied_sm}/{len(layers_obj)}")
     else:
         handler = None
         print(f"  Using original model (no approximation, no noise)")
@@ -704,12 +738,14 @@ def main():
     parser.add_argument("--batch_size", type=int, default=16,
                         help="Inference batch size (default: 16)")
     parser.add_argument("--model_type", type=str, default="bert-base",
-                        choices=["bert-base", "bert-large"],
+                        choices=["bert-base", "bert-large", "gpt-2"],
                         help="Pretrained backbone to use for submission: "
-                             "bert-base (textattack/bert-base-uncased-*, all GLUE tasks) "
-                             "or bert-large (yoshitomo-matsubara/bert-large-uncased-*, "
+                             "bert-base (textattack/bert-base-uncased-*, all GLUE tasks); "
+                             "bert-large (yoshitomo-matsubara/bert-large-uncased-*, "
                              "supports cola/sst2/mrpc/stsb/qnli/rte only; mnli/wnli/ax/qqp "
-                             "will be skipped or filled with placeholders).")
+                             "will be skipped or filled with placeholders); "
+                             "gpt-2 (openai-community/gpt2, 12 layers, uses freshly "
+                             "initialized classification head — fine-tune before use).")
     args = parser.parse_args()
 
     if not args.no_approx and args.config is None:
@@ -820,6 +856,12 @@ def main():
                 continue
             task_cfg = dict(task_cfg)
             task_cfg['model_name'] = BERT_LARGE_MODEL_NAMES[task_name]
+        elif model_type == "gpt-2":
+            if task_name not in GPT2_MODEL_NAMES:
+                print(f"\n[Warning] Task '{task_name}' has no gpt-2 checkpoint, skipping.")
+                continue
+            task_cfg = dict(task_cfg)
+            task_cfg['model_name'] = GPT2_MODEL_NAMES[task_name]
 
         if args.no_approx:
             gelu = None

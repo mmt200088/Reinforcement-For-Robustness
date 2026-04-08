@@ -161,19 +161,21 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model qnli
 说明：`rl_tune.py` 已改为按 `data_path` 自动选择输入列与 `num_labels`，例如
 `stsb -> num_labels=1`，`qnli -> question+sentence`，`sst2/cola -> sentence`，`mrpc/rte/wnli/stsb -> sentence1+sentence2`。
 
-### --model-type 预训练骨干切换（bert-base / bert-large）
+### --model-type 预训练骨干切换（bert-base / bert-large / gpt-2）
 
 通过 `--model-type` 可以在不修改任何 Python 代码的前提下，把整条流程
 （第一阶段 GELU/Softmax 搜索、第二阶段噪声 RL、最终评估）从 12 层的
-bert-base 切换到 24 层的 bert-large。`total_layers` 由
-`layer_importance_evaluator.py` 在加载模型后从 `model.bert.encoder.layer`
-自动检测，下游 PPO 状态向量、动作序列长度、GTrXL 位置嵌入、噪声 RL 等
-都会按层数自适应，无需额外参数。
+bert-base 切换到 24 层的 bert-large，或切换到 12 层的 gpt-2。
+`total_layers` 由 `layer_importance_evaluator.py` 在加载模型后从
+`model.bert.encoder.layer` / `model.transformer.h` 等路径自动检测，
+下游 PPO 状态向量、动作序列长度、GTrXL 位置嵌入、噪声 RL 等都会按层数
+自适应，无需额外参数。
 
 支持值（大小写不敏感）：
 
 - `bert-base`（默认）
 - `bert-large`
+- `gpt-2`（别名：`gpt2`, `gpt_2`）
 
 映射关系：
 
@@ -181,6 +183,7 @@ bert-base 切换到 24 层的 bert-large。`total_layers` 由
 | ---------------- | --------------------------------------------------- | ---- |
 | `bert-base`      | `textattack/bert-base-uncased-*`                    | 12   |
 | `bert-large`     | `yoshitomo-matsubara/bert-large-uncased-*`          | 24   |
+| `gpt-2`          | `openai-community/gpt2`（所有任务共用同一个基座）      | 12   |
 
 `--model-type` 与 `--model` 组合后会按 `(model-type, dataset)` 解析最终
 `--base_model`。`bert-base` 兼容此前所有 7 个 GLUE 任务；`bert-large`
@@ -229,6 +232,84 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
    保存的，会被 `final_evaluation_module.py` 自动按"最后一个值填充
    或截断"补齐到 24 层并打印 `[Info]` 提示；为了 bert-large 的
    实验复现，建议为 bert-large 单独维护一份按 24 层书写的配置文件。
+
+#### gpt-2 分支使用说明
+
+`gpt-2` 分支把整条 RL / 噪声评估流水线迁移到 HuggingFace 的
+`openai-community/gpt2` 骨干（12 层 transformer，768 hidden size）。
+该分支在模块路径、QKV 融合、激活函数替换等层面与 BERT 做了专门适配，
+`rl_tune.py` / `layer_importance_evaluator.py` / `noise_rl_module_v2.py`
+/ `final_evaluation_module.py` / `generate_glue_submission.py` 无需手动
+切换，按 `--model-type gpt-2` 一处开关即可。
+
+基座与 checkpoint 来源：
+
+- GPT-2 在 HuggingFace 上没有覆盖全部 GLUE 任务的权威微调系列（不像
+  `textattack/bert-base-uncased-*`），因此此处**所有任务共用同一个
+  预训练基座 `openai-community/gpt2`**；`AutoModelForSequenceClassification`
+  会给每个任务随机初始化一个分类 head，并由 `rl_tune.py` 的训练循环
+  自行完成 head 微调。首次在某个 GLUE 任务上使用前，建议让脚本自然走
+  完 fine-tune 阶段（不要带 `--skip-stage1-rl`/`--skip-noise-rl`），否则
+  评估得到的是"随机分类 head"的结果。
+- Tokenizer 在 `rl_tune.py` 中已统一执行
+  `tokenizer.pad_token = tokenizer.eos_token`，并在加载模型时传入
+  `pad_token_id=tokenizer.pad_token_id`，满足 GPT-2
+  `GPT2ForSequenceClassification` 要求的"末 token pooling + 必须有
+  pad token"约束。
+
+功能兼容范围：
+
+| 阶段 / 功能                         | bert-base | bert-large | gpt-2 |
+| ----------------------------------- | :-------: | :--------: | :---: |
+| Stage 1 GELU 多项式近似             | ✅        | ✅         | ✅    |
+| Stage 1 Softmax 指数近似            | ✅        | ✅         | ❌ (自动跳过) |
+| Stage 2 x / Wo / Wffn1 / Wffn2 噪声 | ✅        | ✅         | ✅    |
+| Stage 2 Wq / Wk / Wv 噪声           | ✅        | ✅         | ✅（通过融合 c_attn 的按槽位加噪实现） |
+| 最终评估 (`final_evaluation_module`) | ✅        | ✅         | ✅    |
+| GLUE 提交文件生成                   | ✅        | ✅         | ✅（分类 head 需先微调） |
+
+**为什么 GPT-2 不支持 Softmax 近似？** BERT 的 `BertSelfAttention` 模块
+能够被整体替换为 `BertSelfAttentionWithAproximation`，从而在 forward
+里用指数近似替换 softmax；而 HuggingFace 的 `GPT2Attention` 将 Q/K/V
+融合到单个 Conv1D (`c_attn`)，并把因果 mask + scale + softmax + c_proj
+绑死在同一个 forward 里，没有提供同等的可分离入口。本 repo 当前选择
+在 GPT-2 上**自动跳过 Stage 1 的 softmax 近似**（`replace_layer_softmax`
+会在 GPT-2 上打印警告并直接返回），Stage 1 仍可启用 GELU 近似，
+Stage 2 七种噪声全部可用。如果后续需要完整复现 BERT 的 Stage 1 行为，
+可以在 `function_handler.py` 里新增 `GPT2AttentionWithApproximation`
+包装类对齐 HF 的 `GPT2Attention.forward` 逻辑。
+
+**Q/K/V 噪声在 GPT-2 上的实现细节**：`ReversibleLayerHandler` 会在首次
+为某一层调用 `replace_layer_{query,key,value}_noise` 时，包装该层的
+`attn.c_attn.forward`。被包装后的 forward 在原有 `W @ x + b` 输出的
+基础上，额外计算 `We @ x` 并只写入 `[0, d)` / `[d, 2d)` / `[2d, 3d)`
+这三个槽位中被激活的那些，从而让 q/k/v 三路噪声相互独立。当
+`restore_layer_{query,key,value}_noise` 把所有槽位都清空后，c_attn
+的原始 forward 会被恢复。
+
+`glue_configs_best_ppo.json` 与 `glue_noise_configs_best_ppo.json` 中
+都已新增 `"gpt-2"` 顶层段（12 层占位配置，GELU 全部 4、噪声全部保守
+值），用于在未跑完 RL 之前也能走通最终评估与 GLUE 提交生成流程。跑完
+RL 后请把 PPO 输出的最优配置覆写到这两个文件的 `"gpt-2"` 段。
+
+示例：
+
+```bash
+# 在 sst2 上用 gpt-2 跑完整两阶段 RL + 最终评估
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model sst2 --model-type gpt-2
+
+# 在 mrpc 上跳过第一阶段 RL，直接用 JSON 中的 gpt-2 段做最终评估
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --model mrpc --model-type gpt-2 \
+  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json
+
+# 用 gpt-2 基座生成 GLUE 官网提交文件（前提：已在训练阶段完成 head 微调）
+python generate_glue_submission.py \
+  --config glue_configs_best_ppo.json \
+  --noise_config glue_noise_configs_best_ppo.json \
+  --model_type gpt-2 \
+  --output_dir gpt2_run
+```
 
 ### 命名参数与安全约束
 

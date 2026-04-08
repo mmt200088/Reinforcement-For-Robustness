@@ -1,5 +1,5 @@
 {
-    "_comment": "GLUE task optimization configs. Top-level keys are model variants ('bert-base'=12 layers, 'bert-large'=24 layers). bert-large entries are baseline placeholders (GELU=4, Softmax=6); replace with RL-optimized values once available. The loader dispatches by evaluator.total_layers.",
+    "_comment": "GLUE task optimization configs. Top-level keys are model variants ('bert-base'=12 layers, 'bert-large'=24 layers, 'gpt-2'=12 layers). bert-large and gpt-2 entries are baseline placeholders; replace with RL-optimized values once available. Note: gpt-2 softmax values are ignored at runtime because GPT-2 does not support softmax approximation (Stage 1 is skipped); only the gelu array is used. The loader dispatches by evaluator.model_type / architecture.",
     "bert-base": {
         "qnli": {
             "gelu":    [1, 1, 1, 1, 2, 4, 4, 4, 4, 1, 1, 1],
@@ -58,6 +58,40 @@
         "rte": {
             "gelu":    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
             "softmax": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+        }
+    },
+    "gpt-2": {
+        "qnli": {
+            "gelu":    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+            "softmax": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+        },
+        "sst2": {
+            "gelu":    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+            "softmax": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+        },
+        "mrpc": {
+            "gelu":    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+            "softmax": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+        },
+        "stsb": {
+            "gelu":    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+            "softmax": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+        },
+        "cola": {
+            "gelu":    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+            "softmax": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+        },
+        "rte": {
+            "gelu":    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+            "softmax": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+        },
+        "wnli": {
+            "gelu":    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+            "softmax": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+        },
+        "mnli": {
+            "gelu":    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+            "softmax": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
         }
     }
 }

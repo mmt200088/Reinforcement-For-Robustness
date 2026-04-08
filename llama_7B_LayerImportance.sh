@@ -390,10 +390,16 @@ Common options:
   --model DATASET
       Supported: mrpc, sst2, stsb, cola, qnli, rte, wnli
 
-  --model-type {bert-base|bert-large}
+  --model-type {bert-base|bert-large|gpt-2}
       Select the underlying pretrained backbone. Default: bert-base.
       bert-base  uses textattack/bert-base-uncased-* (12 layers).
       bert-large uses yoshitomo-matsubara/bert-large-uncased-* (24 layers).
+      gpt-2      uses openai-community/gpt2 (12 layers) for all tasks.
+                 Note: GPT-2 的 SequenceClassification head 在 HuggingFace 上
+                 没有覆盖 GLUE 全任务的公开微调权重, 此处所有任务共用同一个
+                 基座权重, 分类 head 由 rl_tune.py 的训练流水线自行初始化并
+                 微调. 另外, GPT-2 路径当前不支持 softmax 近似 (Stage 1 的
+                 softmax 部分自动跳过), 只启用 GELU 近似与 Stage 2 噪声注入.
       Note: bert-large currently supports the following GLUE tasks only:
         mrpc, cola, stsb, rte, sst2, qnli
       Picking an unsupported task with --model-type bert-large will exit
@@ -708,7 +714,8 @@ MODEL_TYPE="$(printf '%s' "$MODEL_TYPE" | tr '[:upper:]' '[:lower:]')"
 case "$MODEL_TYPE" in
     bert-base|bert_base|bertbase)   MODEL_TYPE="bert-base"  ;;
     bert-large|bert_large|bertlarge) MODEL_TYPE="bert-large" ;;
-    *) error_exit "不支持的 --model-type: $MODEL_TYPE。支持的选项: bert-base, bert-large" ;;
+    gpt-2|gpt2|gpt_2)                MODEL_TYPE="gpt-2"      ;;
+    *) error_exit "不支持的 --model-type: $MODEL_TYPE。支持的选项: bert-base, bert-large, gpt-2" ;;
 esac
 
 # 数据集 → DATA_PATH
@@ -732,7 +739,7 @@ if [ "$MODEL_TYPE" = "bert-base" ]; then
         sst2)  BASE_MODEL="textattack/bert-base-uncased-SST-2" ;;
         stsb)  BASE_MODEL="textattack/bert-base-uncased-STS-B" ;;
     esac
-else
+elif [ "$MODEL_TYPE" = "bert-large" ]; then
     # bert-large：yoshitomo-matsubara 系列覆盖大部分 GLUE 任务，但并非全部。
     # 暂未确认存在 fine-tuned bert-large checkpoint 的任务在此显式拒绝，
     # 提示用户先暂时跳过这些任务。
@@ -746,6 +753,14 @@ else
         wnli)
             error_exit "bert-large 当前不支持数据集: $DATASET。已支持的 bert-large 任务: mrpc, cola, stsb, rte, sst2, qnli。请暂时跳过该任务，或改用 --model-type bert-base。"
             ;;
+    esac
+else
+    # gpt-2：openai-community/gpt2 是原始预训练权重 (12 层, 768 hidden),
+    # SequenceClassification head 由 rl_tune.py 在训练阶段自行初始化并微调.
+    # 所有 GLUE 任务共用同一个基座, 但 head 会针对每个任务独立训练/保存.
+    case "$DATASET" in
+        mrpc|sst2|stsb|cola|qnli|rte|wnli)
+            BASE_MODEL="openai-community/gpt2" ;;
     esac
 fi
 

@@ -47,6 +47,7 @@ class NoiseFinalEvaluationModule:
         permutation_trials: int = 10,
         cost_equivalent_trials: int = 10,
         budget_equivalent_trials: int = 10,
+        full_random_trials: int = 50,
         repeat_n: int = 1,
         results_dir: Optional[str] = None,
     ):
@@ -58,6 +59,7 @@ class NoiseFinalEvaluationModule:
         self.permutation_trials = max(0, int(permutation_trials))
         self.cost_equivalent_trials = max(0, int(cost_equivalent_trials))
         self.budget_equivalent_trials = max(0, int(budget_equivalent_trials))
+        self.full_random_trials = max(0, int(full_random_trials))
         self.repeat_n = max(5, int(repeat_n))
         default_results_dir = getattr(
             evaluator,
@@ -561,6 +563,11 @@ class NoiseFinalEvaluationModule:
             baseline_result, no_noise_result, selected_result,
             random_results, summary,
         )
+        self._plot_full_random_distribution(
+            metric_short_names, num_metrics,
+            baseline_result, no_noise_result, selected_result,
+            random_results,
+        )
 
         # 10. 清理
         ev.apply_configuration(fixed_gelu, fixed_softmax)
@@ -851,7 +858,36 @@ class NoiseFinalEvaluationModule:
                 eval_noise_result(f"NoiseBudget_{idx + 1}", "Budget", budget_cfg)
             )
 
+        # --- Full Random (x 与各 w 全部独立随机, 不受 cost / budget 约束) ---
+        ev.log(
+            f"Generating {self.full_random_trials} fully random noise configs "
+            f"(x and each w independently sampled)..."
+        )
+        for idx in range(self.full_random_trials):
+            full_cfg = self._sample_full_random(rng, ev.total_layers, seen)
+            if full_cfg is None:
+                continue
+            sig = self._noise_config_signature(full_cfg)
+            seen.add(sig)
+            random_results.append(
+                eval_noise_result(f"NoiseFullRand_{idx + 1}", "FullRand", full_cfg)
+            )
+
         return random_results
+
+    def _sample_full_random(self, rng, total_layers, seen):
+        for _ in range(20):
+            cfg = {}
+            for short_key in BREAKDOWN_KEYS:
+                full_key = SHORT_KEY_TO_FULL[short_key]
+                allowed = self._get_allowed(short_key)
+                cfg[full_key] = np.array(
+                    rng.choice(allowed, size=total_layers), dtype=int
+                )
+            sig = self._noise_config_signature(cfg)
+            if sig not in seen:
+                return cfg
+        return None
 
     def _sample_cost_equivalent(self, rng, breakdown, total_layers, seen):
         cfg = {}
@@ -1292,6 +1328,7 @@ class NoiseFinalEvaluationModule:
                 "Perm": "#4C78A8",
                 "Equiv": "#F58518",
                 "Budget": "#54A24B",
+                "FullRand": "#9D4EDD",
             }
 
             grouped: Dict[str, list] = {}
@@ -1485,6 +1522,122 @@ class NoiseFinalEvaluationModule:
         except Exception as exc:
             self.evaluator.log(
                 f"[Warning] Failed to plot noise final evaluation: {exc}"
+            )
+            return None
+
+    def _plot_full_random_distribution(
+        self,
+        metric_short_names,
+        num_metrics,
+        baseline_result,
+        no_noise_result,
+        selected_result,
+        random_results,
+    ):
+        try:
+            full_rand = [r for r in random_results if r["family"] == "FullRand"]
+            if not full_rand:
+                return None
+
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            losses = np.array([r["loss"] for r in full_rand], dtype=float)
+            ps = np.array([r["p"] for r in full_rand], dtype=float)
+            ss = np.array([r["s"] for r in full_rand], dtype=float)
+            costs = np.array([r["tot_c"] for r in full_rand], dtype=float)
+            n = len(full_rand)
+
+            ncols = 2
+            nrows = 2 if num_metrics > 1 else 2
+            fig, axes = plt.subplots(nrows, ncols, figsize=(14, 9))
+            fig.suptitle(
+                f"Full-Random Noise Comparison (x & each w randomized, n={n}) "
+                f"- {self.evaluator.dataset_key.upper()}",
+                fontsize=14,
+                fontweight="bold",
+            )
+
+            def _hist(ax, data, title, xlabel, sel_val, base_val, no_noise_val):
+                ax.hist(data, bins=20, color="#9D4EDD", alpha=0.75,
+                        edgecolor="white")
+                ax.axvline(sel_val, color="#E45756", linestyle="-",
+                           linewidth=2, label=f"Selected ({sel_val:.4f})")
+                ax.axvline(base_val, color="black", linestyle="--",
+                           linewidth=1.5, label=f"Baseline ({base_val:.4f})")
+                if no_noise_val is not None:
+                    ax.axvline(no_noise_val, color="#54A24B", linestyle=":",
+                               linewidth=1.5,
+                               label=f"No-Noise ({no_noise_val:.4f})")
+                mean_v = float(np.mean(data))
+                ax.axvline(mean_v, color="#4C78A8", linestyle="-.",
+                           linewidth=1.2, label=f"Rand mean ({mean_v:.4f})")
+                ax.set_title(title)
+                ax.set_xlabel(xlabel)
+                ax.set_ylabel("Count")
+                ax.grid(True, axis="y", alpha=0.3)
+                ax.legend(loc="best", fontsize=8)
+
+            _hist(axes[0, 0], losses, "Loss distribution", "Loss",
+                  selected_result["loss"], baseline_result["loss"],
+                  no_noise_result["loss"] if no_noise_result else None)
+            _hist(axes[0, 1], ps,
+                  f"{metric_short_names[0]} distribution",
+                  metric_short_names[0],
+                  selected_result["p"], baseline_result["p"],
+                  no_noise_result["p"] if no_noise_result else None)
+
+            ax = axes[1, 0]
+            ax.scatter(costs, losses, s=42, alpha=0.75, color="#9D4EDD",
+                       label=f"FullRand (n={n})")
+            ax.scatter(selected_result["tot_c"], selected_result["loss"],
+                       marker="*", s=200, color="#E45756",
+                       label=selected_result["name"])
+            ax.scatter(baseline_result["tot_c"], baseline_result["loss"],
+                       marker="s", s=90, color="black", label="Baseline")
+            ax.set_title("Loss vs Noise Cost")
+            ax.set_xlabel("Noise Cost")
+            ax.set_ylabel("Loss")
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc="best", fontsize=8)
+
+            ax = axes[1, 1]
+            if num_metrics > 1:
+                _hist(ax, ss,
+                      f"{metric_short_names[1]} distribution",
+                      metric_short_names[1],
+                      selected_result["s"], baseline_result["s"],
+                      no_noise_result["s"] if no_noise_result else None)
+            else:
+                ax.scatter(costs, ps, s=42, alpha=0.75, color="#9D4EDD",
+                           label=f"FullRand (n={n})")
+                ax.scatter(selected_result["tot_c"], selected_result["p"],
+                           marker="*", s=200, color="#E45756",
+                           label=selected_result["name"])
+                ax.scatter(baseline_result["tot_c"], baseline_result["p"],
+                           marker="s", s=90, color="black", label="Baseline")
+                ax.set_title(f"{metric_short_names[0]} vs Noise Cost")
+                ax.set_xlabel("Noise Cost")
+                ax.set_ylabel(metric_short_names[0])
+                ax.grid(True, alpha=0.3)
+                ax.legend(loc="best", fontsize=8)
+
+            plt.tight_layout()
+            plot_path = os.path.join(
+                self.results_dir,
+                f"noise_final_eval_full_random_{self.evaluator.dataset_key}.png",
+            )
+            plt.savefig(plot_path, dpi=180)
+            plt.close(fig)
+            self.evaluator.log(
+                f"Full-random noise distribution plot saved to: {plot_path}"
+            )
+            return plot_path
+        except Exception as exc:
+            self.evaluator.log(
+                f"[Warning] Failed to plot full-random noise distribution: {exc}"
             )
             return None
 
