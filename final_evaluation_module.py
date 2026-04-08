@@ -944,12 +944,30 @@ class FinalEvaluationModule:
         config_map.pop("_comment", None)
 
         total_layers = int(getattr(self.evaluator, "total_layers", 12) or 12)
-        variant_key = "bert-large" if total_layers >= 24 else "bert-base"
+        # Prefer an explicit model_type if the evaluator carries one, otherwise
+        # infer from the attached model: GPT-2 is detected via .transformer.h,
+        # BERT-large via 24-layer depth, default to bert-base.
+        explicit_variant = getattr(self.evaluator, "model_type", None)
+        if explicit_variant in ("bert-base", "bert-large", "gpt-2"):
+            variant_key = explicit_variant
+        else:
+            model = getattr(self.evaluator, "model", None)
+            is_gpt2 = bool(
+                model is not None
+                and getattr(model, "transformer", None) is not None
+                and hasattr(model.transformer, "h")
+            )
+            if is_gpt2:
+                variant_key = "gpt-2"
+            elif total_layers >= 24:
+                variant_key = "bert-large"
+            else:
+                variant_key = "bert-base"
 
-        # New schema: {"bert-base": {task: {...}}, "bert-large": {task: {...}}}
+        # New schema: {"bert-base": {...}, "bert-large": {...}, "gpt-2": {...}}
         if variant_key in config_map and isinstance(config_map[variant_key], dict):
             section = config_map[variant_key]
-        elif "bert-base" in config_map or "bert-large" in config_map:
+        elif any(k in config_map for k in ("bert-base", "bert-large", "gpt-2")):
             raise KeyError(
                 f"Model variant '{variant_key}' (total_layers={total_layers}) "
                 f"not found in config file '{self.config_path}'."
@@ -959,7 +977,7 @@ class FinalEvaluationModule:
             if variant_key != "bert-base":
                 raise KeyError(
                     f"Config file '{self.config_path}' uses the legacy flat schema "
-                    f"which only supports bert-base; add a 'bert-large' section for "
+                    f"which only supports bert-base; add a '{variant_key}' section for "
                     f"total_layers={total_layers}."
                 )
             section = config_map
