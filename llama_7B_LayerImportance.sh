@@ -360,6 +360,106 @@ is_positive_integer() {
     [[ "$1" =~ ^[1-9][0-9]*$ ]]
 }
 
+infer_config_algorithm_family() {
+    local lowered
+    lowered="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$lowered" == *genetic* ]] || [[ "$lowered" == *_ga.* ]] || [[ "$lowered" == *-ga.* ]] || [[ "$lowered" == ga_* ]]; then
+        echo "ga"
+    elif [[ "$lowered" == *ppo* ]]; then
+        echo "rl"
+    else
+        echo "unknown"
+    fi
+}
+
+usage() {
+    cat <<'EOF'
+用法:
+  bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [degree] [options]
+
+必填位置参数:
+  lora_r                LoRA rank，当前实验固定传 32
+  lora_alpha            LoRA alpha，当前实验固定传 64
+  logfile_path          nohup 日志文件名提示；实际日志位于当前 run 目录下的 logs/
+  rl_lr                 兼容历史命令而保留。RL 模式下作为 PPO 学习率；GA 模式下保留但不参与遗传搜索决策
+  degree                历史调试参数，固定传 2
+
+搜索算法选择:
+  --search-algorithm rl|ga
+                        rl: 现有强化学习 / PPO 流程，入口为 rl_tune.py
+                        ga: 新增遗传算法流程，入口为 rl_tune_genetic.py
+                        默认值: rl
+
+第一阶段: GELU / Softmax 搜索与最终评估
+  --skip-stage1-search
+                        推荐的算法无关写法。跳过整个第一阶段搜索流程
+  --skip-stage1-rl
+                        RL 兼容别名。仅在 --search-algorithm=rl 时允许使用
+  --stage1-search-episodes N
+                        推荐的算法无关写法。设置第一阶段搜索预算
+  --stage1-rl-episodes N
+                        RL 兼容别名。仅在 --search-algorithm=rl 时允许使用
+  --final-eval-source search|json|manual
+                        第一阶段最终评估配置来源
+                        若执行第一阶段搜索，则只能为 search
+                        若使用 json/manual，则必须跳过第一阶段搜索
+  --final-eval-config PATH
+                        仅在 --final-eval-source=json 时使用
+                        rl 默认: glue_configs_best_ppo.json
+                        ga 默认: glue_configs_best_genetic.json
+  --manual-gelu "[1,1,...]"
+  --manual-softmax "[2,2,...]"
+                        仅在 --final-eval-source=manual 时同时提供
+  --skip-stage1-final-eval
+                        跳过第一阶段最终评估，但仍会解析进入第二阶段所需的固定配置
+
+第二阶段: 噪声搜索与最终评估
+  --skip-noise-search
+                        推荐的算法无关写法。跳过第二阶段噪声搜索
+  --skip-noise-rl
+                        RL 兼容别名。仅在 --search-algorithm=rl 时允许使用
+  --stage2-search-episodes N
+                        推荐的算法无关写法。设置第二阶段搜索预算
+  --stage2-rl-episodes N
+                        RL 兼容别名。仅在 --search-algorithm=rl 时允许使用
+  --skip-noise-final-eval
+                        跳过第二阶段噪声最终评估
+  --noise-eval-source search|json|manual
+                        第二阶段噪声最终评估配置来源
+                        若执行第二阶段搜索且保留最终评估，则只能为 search
+                        若使用 json/manual，则必须跳过第二阶段搜索
+  --noise-eval-config PATH
+                        仅在 --noise-eval-source=json 时使用
+                        rl 默认: glue_noise_configs_best_ppo.json
+                        ga 默认: glue_noise_configs_best_genetic.json
+  --manual-noise-config '{"x":[...],"wq":[...],...}'
+                        仅在 --noise-eval-source=manual 时提供
+  --noise-eval-repeat N
+                        噪声最终评估重复次数，默认 1
+
+一致性检查:
+  1. 选择 --search-algorithm=ga 后，不允许再使用 RL 命名的兼容别名
+     例如 --skip-stage1-rl、--skip-noise-rl、--stage1-rl-episodes、--stage2-rl-episodes
+  2. 选择 --search-algorithm=ga 且使用 json 配置时，不允许继续使用 PPO/RL 家族配置文件
+     例如 glue_configs_best_ppo.json、glue_noise_configs_best_ppo.json
+  3. 选择 --search-algorithm=rl 且使用 json 配置时，不允许使用 genetic/ga 家族配置文件
+     例如 glue_configs_best_genetic.json、glue_noise_configs_best_genetic.json
+  4. 自定义 JSON 文件名若不包含 ppo / genetic / _ga 等算法标识，则按自定义路径处理，不额外拦截
+
+其他:
+  --model DATASET          支持: mrpc, sst2, stsb, cola, qnli, rte, wnli
+  --model-type TYPE        支持: bert-base, bert-large, gpt-2
+  --resume-from PATH       从历史 run 目录恢复未跳过阶段的搜索进度
+
+示例:
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm ga
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm rl --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm ga --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_genetic.json
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm ga --skip-noise-search --noise-eval-source manual --manual-noise-config '{"x":[...],"wq":[...],...}'
+EOF
+}
+
 usage() {
     cat <<'EOF'
 Usage:
@@ -450,8 +550,9 @@ RL_LR="$4"
 DEGREE="$5"
 shift 5
 
+SEARCH_ALGORITHM="rl"
 FINAL_EVAL_SOURCE="search"
-FINAL_EVAL_CONFIG_PATH="glue_configs_best_ppo.json"
+FINAL_EVAL_CONFIG_PATH=""
 MANUAL_FINAL_GELU=""
 MANUAL_FINAL_SOFTMAX=""
 FINAL_EVAL_CONFIG_PATH_SPECIFIED="false"
@@ -463,7 +564,7 @@ FINAL_EVAL_COST_EQUIVALENT_TRIALS="10"
 FINAL_EVAL_BUDGET_EQUIVALENT_TRIALS="10"
 SKIP_NOISE_RL="false"
 NOISE_EVAL_SOURCE="search"
-NOISE_EVAL_CONFIG_PATH="glue_noise_configs_best_ppo.json"
+NOISE_EVAL_CONFIG_PATH=""
 MANUAL_NOISE_CONFIG=""
 NOISE_EVAL_CONFIG_PATH_SPECIFIED="false"
 MANUAL_NOISE_CONFIG_SPECIFIED="false"
@@ -478,11 +579,22 @@ STAGE1_RL_EPISODES="51000"
 STAGE2_RL_EPISODES="40000"
 STAGE1_RL_EPISODES_SPECIFIED="false"
 STAGE2_RL_EPISODES_SPECIFIED="false"
+SEARCH_ALGORITHM_SPECIFIED="false"
+LEGACY_STAGE1_SKIP_ALIAS_USED="false"
+LEGACY_STAGE2_SKIP_ALIAS_USED="false"
+LEGACY_STAGE1_EPISODES_ALIAS_USED="false"
+LEGACY_STAGE2_EPISODES_ALIAS_USED="false"
 MIN_RL_EPISODES="170"
 RESUME_RUN_DIR=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --search-algorithm|--search_algorithm|--algorithm)
+            require_option_value "$@"
+            SEARCH_ALGORITHM="$2"
+            SEARCH_ALGORITHM_SPECIFIED="true"
+            shift 2
+            ;;
         --final-eval-source)
             require_option_value "$@"
             FINAL_EVAL_SOURCE="$2"
@@ -526,8 +638,13 @@ while [ "$#" -gt 0 ]; do
             FINAL_EVAL_BUDGET_EQUIVALENT_TRIALS="$2"
             shift 2
             ;;
+        --skip-noise-search|--skip-stage2-search)
+            SKIP_NOISE_RL="true"
+            shift 1
+            ;;
         --skip-noise-rl)
             SKIP_NOISE_RL="true"
+            LEGACY_STAGE2_SKIP_ALIAS_USED="true"
             shift 1
             ;;
         --noise-eval-source)
@@ -557,20 +674,39 @@ while [ "$#" -gt 0 ]; do
             BATCH_SIZE="$2"
             shift 2
             ;;
+        --stage1-search-episodes)
+            require_option_value "$@"
+            STAGE1_RL_EPISODES="$2"
+            STAGE1_RL_EPISODES_SPECIFIED="true"
+            shift 2
+            ;;
         --stage1-rl-episodes)
             require_option_value "$@"
             STAGE1_RL_EPISODES="$2"
             STAGE1_RL_EPISODES_SPECIFIED="true"
+            LEGACY_STAGE1_EPISODES_ALIAS_USED="true"
+            shift 2
+            ;;
+        --stage2-search-episodes|--noise-search-episodes)
+            require_option_value "$@"
+            STAGE2_RL_EPISODES="$2"
+            STAGE2_RL_EPISODES_SPECIFIED="true"
             shift 2
             ;;
         --stage2-rl-episodes)
             require_option_value "$@"
             STAGE2_RL_EPISODES="$2"
             STAGE2_RL_EPISODES_SPECIFIED="true"
+            LEGACY_STAGE2_EPISODES_ALIAS_USED="true"
             shift 2
+            ;;
+        --skip-stage1-search)
+            SKIP_STAGE1_RL="true"
+            shift 1
             ;;
         --skip-stage1-rl)
             SKIP_STAGE1_RL="true"
+            LEGACY_STAGE1_SKIP_ALIAS_USED="true"
             shift 1
             ;;
         --skip-stage1-final-eval)
@@ -610,6 +746,35 @@ done
 
 DATASET="$(printf '%s' "$DATASET" | tr '[:upper:]' '[:lower:]')"
 
+SEARCH_ALGORITHM="$(printf '%s' "$SEARCH_ALGORITHM" | tr '[:upper:]' '[:lower:]')"
+case "$SEARCH_ALGORITHM" in
+    rl|ppo)
+        SEARCH_ALGORITHM="rl"
+        ;;
+    ga|genetic)
+        SEARCH_ALGORITHM="ga"
+        ;;
+    *)
+        error_exit "不支持的 --search-algorithm: $SEARCH_ALGORITHM。支持的选项: rl, ga"
+        ;;
+esac
+
+if [ "$FINAL_EVAL_CONFIG_PATH_SPECIFIED" = "false" ]; then
+    if [ "$SEARCH_ALGORITHM" = "ga" ]; then
+        FINAL_EVAL_CONFIG_PATH="glue_configs_best_genetic.json"
+    else
+        FINAL_EVAL_CONFIG_PATH="glue_configs_best_ppo.json"
+    fi
+fi
+
+if [ "$NOISE_EVAL_CONFIG_PATH_SPECIFIED" = "false" ]; then
+    if [ "$SEARCH_ALGORITHM" = "ga" ]; then
+        NOISE_EVAL_CONFIG_PATH="glue_noise_configs_best_genetic.json"
+    else
+        NOISE_EVAL_CONFIG_PATH="glue_noise_configs_best_ppo.json"
+    fi
+fi
+
 case "$FINAL_EVAL_SOURCE" in
     search|json|manual)
         ;;
@@ -630,6 +795,15 @@ case "$NOISE_EVAL_SOURCE" in
         ;;
 esac
 
+if [ "$SEARCH_ALGORITHM" = "ga" ] && {
+    [ "$LEGACY_STAGE1_SKIP_ALIAS_USED" = "true" ] ||
+    [ "$LEGACY_STAGE2_SKIP_ALIAS_USED" = "true" ] ||
+    [ "$LEGACY_STAGE1_EPISODES_ALIAS_USED" = "true" ] ||
+    [ "$LEGACY_STAGE2_EPISODES_ALIAS_USED" = "true" ]
+}; then
+    error_exit "已选择 --search-algorithm=ga，但仍使用了 RL 命名的兼容选项。请改用算法无关写法：--skip-stage1-search / --skip-noise-search / --stage1-search-episodes / --stage2-search-episodes。"
+fi
+
 if ! is_positive_integer "$NOISE_EVAL_REPEAT_N"; then
     error_exit "--noise-eval-repeat 必须是正整数，当前值为 '$NOISE_EVAL_REPEAT_N'。"
 fi
@@ -647,19 +821,19 @@ if ! is_positive_integer "$STAGE2_RL_EPISODES"; then
 fi
 
 if [ "$SKIP_STAGE1_RL" = "true" ] && [ "$STAGE1_RL_EPISODES_SPECIFIED" = "true" ]; then
-    error_exit "--stage1-rl-episodes cannot be used together with --skip-stage1-rl."
+    error_exit "--stage1-search-episodes / --stage1-rl-episodes cannot be used together with --skip-stage1-search / --skip-stage1-rl."
 fi
 
 if [ "$SKIP_NOISE_RL" = "true" ] && [ "$STAGE2_RL_EPISODES_SPECIFIED" = "true" ]; then
-    error_exit "--stage2-rl-episodes cannot be used together with --skip-noise-rl."
+    error_exit "--stage2-search-episodes / --stage2-rl-episodes cannot be used together with --skip-noise-search / --skip-noise-rl."
 fi
 
-if [ "$SKIP_STAGE1_RL" = "false" ] && [ "$STAGE1_RL_EPISODES" -lt "$MIN_RL_EPISODES" ]; then
-    error_exit "--stage1-rl-episodes must be >= $MIN_RL_EPISODES so Stage-1 PPO can update at least once."
+if [ "$SEARCH_ALGORITHM" = "rl" ] && [ "$SKIP_STAGE1_RL" = "false" ] && [ "$STAGE1_RL_EPISODES" -lt "$MIN_RL_EPISODES" ]; then
+    error_exit "--stage1-search-episodes / --stage1-rl-episodes must be >= $MIN_RL_EPISODES in RL mode so Stage-1 PPO can update at least once."
 fi
 
-if [ "$SKIP_NOISE_RL" = "false" ] && [ "$STAGE2_RL_EPISODES" -lt "$MIN_RL_EPISODES" ]; then
-    error_exit "--stage2-rl-episodes must be >= $MIN_RL_EPISODES so Stage-2 PPO can update at least once."
+if [ "$SEARCH_ALGORITHM" = "rl" ] && [ "$SKIP_NOISE_RL" = "false" ] && [ "$STAGE2_RL_EPISODES" -lt "$MIN_RL_EPISODES" ]; then
+    error_exit "--stage2-search-episodes / --stage2-rl-episodes must be >= $MIN_RL_EPISODES in RL mode so Stage-2 PPO can update at least once."
 fi
 
 if [ -n "$RESUME_RUN_DIR" ] && [ ! -d "$RESUME_RUN_DIR" ]; then
@@ -682,6 +856,24 @@ elif [ "$MANUAL_FINAL_GELU_SPECIFIED" = "true" ] || [ "$MANUAL_FINAL_SOFTMAX_SPE
     error_exit "只有在 --final-eval-source=manual 时才能提供 --manual-gelu / --manual-softmax。"
 fi
 
+if [ "$FINAL_EVAL_SOURCE" = "json" ]; then
+    FINAL_CONFIG_FAMILY="$(infer_config_algorithm_family "$FINAL_EVAL_CONFIG_PATH")"
+    if [ "$SEARCH_ALGORITHM" = "ga" ] && [ "$FINAL_CONFIG_FAMILY" = "rl" ]; then
+        error_exit "已选择 --search-algorithm=ga，但第一阶段 JSON 配置仍指向 RL/PPO 家族文件：$FINAL_EVAL_CONFIG_PATH。请改用 genetic/ga 家族配置，例如 glue_configs_best_genetic.json。"
+    fi
+    if [ "$SEARCH_ALGORITHM" = "rl" ] && [ "$FINAL_CONFIG_FAMILY" = "ga" ]; then
+        error_exit "已选择 --search-algorithm=rl，但第一阶段 JSON 配置仍指向遗传算法家族文件：$FINAL_EVAL_CONFIG_PATH。请改用 RL/PPO 家族配置，例如 glue_configs_best_ppo.json。"
+    fi
+fi
+
+if [ "$SKIP_STAGE1_RL" = "true" ] && [ "$FINAL_EVAL_SOURCE" = "search" ]; then
+    error_exit "--skip-stage1-search / --skip-stage1-rl 与 --final-eval-source search 不能同时使用：跳过第一阶段搜索后没有搜索结果可供评估。请改用 json/manual，或去掉跳过选项。"
+fi
+
+if [ "$SKIP_STAGE1_RL" = "false" ] && [ "$FINAL_EVAL_SOURCE" != "search" ]; then
+    error_exit "检测到第一阶段搜索算法将执行（--search-algorithm=$SEARCH_ALGORITHM），但 --final-eval-source=$FINAL_EVAL_SOURCE。为避免流程混用，执行第一阶段搜索时只能使用 search。若要使用 json/manual，请添加 --skip-stage1-search。"
+fi
+
 if [ "$SKIP_STAGE1_RL" = "true" ] && [ "$FINAL_EVAL_SOURCE" = "search" ]; then
     error_exit "--skip-stage1-rl 与 --final-eval-source search 不能同时使用：跳过第一阶段搜索后没有搜索结果可供评估。请改用 json/manual，或去掉 --skip-stage1-rl。"
 fi
@@ -694,6 +886,24 @@ if [ "$FINAL_EVAL_SOURCE" = "json" ]; then
     [ -f "$FINAL_EVAL_CONFIG_PATH" ] || error_exit "第一阶段 JSON 配置文件不存在：$FINAL_EVAL_CONFIG_PATH"
 elif [ "$FINAL_EVAL_CONFIG_PATH_SPECIFIED" = "true" ]; then
     error_exit "只有在 --final-eval-source=json 时才能提供 --final-eval-config。"
+fi
+
+if [ "$SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$NOISE_EVAL_SOURCE" = "json" ]; then
+    NOISE_CONFIG_FAMILY="$(infer_config_algorithm_family "$NOISE_EVAL_CONFIG_PATH")"
+    if [ "$SEARCH_ALGORITHM" = "ga" ] && [ "$NOISE_CONFIG_FAMILY" = "rl" ]; then
+        error_exit "已选择 --search-algorithm=ga，但第二阶段噪声 JSON 配置仍指向 RL/PPO 家族文件：$NOISE_EVAL_CONFIG_PATH。请改用 genetic/ga 家族配置，例如 glue_noise_configs_best_genetic.json。"
+    fi
+    if [ "$SEARCH_ALGORITHM" = "rl" ] && [ "$NOISE_CONFIG_FAMILY" = "ga" ]; then
+        error_exit "已选择 --search-algorithm=rl，但第二阶段噪声 JSON 配置仍指向遗传算法家族文件：$NOISE_EVAL_CONFIG_PATH。请改用 RL/PPO 家族配置，例如 glue_noise_configs_best_ppo.json。"
+    fi
+fi
+
+if [ "$SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$SKIP_NOISE_RL" = "true" ] && [ "$NOISE_EVAL_SOURCE" = "search" ]; then
+    error_exit "--skip-noise-search / --skip-noise-rl 与 --noise-eval-source search 不能同时用于噪声最终评估：跳过第二阶段搜索后没有搜索结果可供评估。请改用 json/manual，或去掉跳过选项。"
+fi
+
+if [ "$SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$SKIP_NOISE_RL" = "false" ] && [ "$NOISE_EVAL_SOURCE" != "search" ]; then
+    error_exit "检测到第二阶段搜索算法将执行（--search-algorithm=$SEARCH_ALGORITHM），且噪声最终评估未跳过，但 --noise-eval-source=$NOISE_EVAL_SOURCE。为避免流程混用，此时只能使用 search。若要使用 json/manual，请添加 --skip-noise-search。"
 fi
 
 if [ "$SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$SKIP_NOISE_RL" = "true" ] && [ "$NOISE_EVAL_SOURCE" = "search" ]; then
@@ -783,8 +993,14 @@ RUN_ROOT="rl_results/layer_importance_runs/${DATASET}/${RUN_ID}"
 LOGFILE_PATH="${RUN_ROOT}/logs/${LOGFILE_BASENAME}"
 mkdir -p "${RUN_ROOT}/logs"
 
+if [ "$SEARCH_ALGORITHM" = "ga" ]; then
+    SEARCH_ENTRYPOINT="rl_tune_genetic.py"
+else
+    SEARCH_ENTRYPOINT="rl_tune.py"
+fi
+
 CMD=(
-    python rl_tune.py
+    python "$SEARCH_ENTRYPOINT"
     --base_model "$BASE_MODEL"
     --data_path "$DATA_PATH"
     --output_dir "$RUN_ROOT"
@@ -825,21 +1041,22 @@ CMD=(
     --resume_run_dir "$RESUME_RUN_DIR"
 )
 
+echo "Search algorithm: $SEARCH_ALGORITHM (entrypoint=$SEARCH_ENTRYPOINT)"
 echo "Model type: $MODEL_TYPE"
 echo "Dataset: $DATASET (base_model=$BASE_MODEL, data_path=$DATA_PATH)"
-echo "Launching RL tune job with final evaluation source: $FINAL_EVAL_SOURCE"
+echo "Launching search job with final evaluation source: $FINAL_EVAL_SOURCE"
 if [ "$SKIP_STAGE1_RL" = "true" ]; then
-    echo "Stage-1 RL/greedy search: SKIPPED (--skip-stage1-rl)"
+    echo "Stage-1 search: SKIPPED"
 else
-    echo "Stage-1 RL/greedy search: will run (unless SEARCH_MODE in code disables it)."
+    echo "Stage-1 search: will run with algorithm=$SEARCH_ALGORITHM"
 fi
 if [ "$SKIP_STAGE1_FINAL_EVAL" = "true" ]; then
     echo "Stage-1 final evaluation: SKIPPED (--skip-stage1-final-eval)"
 fi
 if [ "$SKIP_NOISE_RL" = "true" ]; then
-    echo "Stage-2 noise RL training: SKIPPED (--skip-noise-rl)"
+    echo "Stage-2 noise search: SKIPPED"
 else
-    echo "Stage-2 noise RL training will run after the fixed GELU/Softmax config is selected."
+    echo "Stage-2 noise search will run after the fixed GELU/Softmax config is selected."
 fi
 if [ "$SKIP_NOISE_FINAL_EVAL" = "true" ]; then
     echo "Stage-2 noise final evaluation: SKIPPED (--skip-noise-final-eval)"
@@ -850,8 +1067,8 @@ echo "Requested log filename: $RAW_LOGFILE_PATH"
 echo "Resolved run root: $RUN_ROOT"
 echo "Resolved nohup log: $LOGFILE_PATH"
 echo "Batch size: $BATCH_SIZE (syncs --batch_size and --micro_batch_size)"
-echo "Stage-1 RL episodes: $STAGE1_RL_EPISODES"
-echo "Stage-2 RL episodes: $STAGE2_RL_EPISODES"
+echo "Stage-1 search budget: $STAGE1_RL_EPISODES"
+echo "Stage-2 search budget: $STAGE2_RL_EPISODES"
 if [ -n "$RESUME_RUN_DIR" ]; then
     echo "Resume from: $RESUME_RUN_DIR"
 fi

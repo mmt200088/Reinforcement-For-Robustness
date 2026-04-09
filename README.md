@@ -1,3 +1,159 @@
+## 搜索算法可选项说明（强化学习 / 遗传算法）
+
+现在统一通过主脚本选择搜索算法，不再区分单独的 GA 启动脚本：
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm rl
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm ga
+```
+
+### 1. 选项定义
+
+| 选项 | 可选值 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `--search-algorithm` | `rl` / `ga` | `rl` | 统一控制两阶段搜索使用强化学习还是遗传算法 |
+
+对应关系如下：
+
+| 选项值 | 含义 | 实际入口 |
+| --- | --- | --- |
+| `rl` | 使用现有两阶段强化学习 / PPO 搜索流程 | `rl_tune.py` |
+| `ga` | 使用新的两阶段遗传算法搜索流程 | `rl_tune_genetic.py` |
+
+不写 `--search-algorithm` 时，行为与之前保持一致，仍然默认走 RL。
+
+### 2. 与现有流程的关系
+
+- `rl` 模式下，保持原有项目逻辑：Stage-1 搜索 `GELU/Softmax`，Stage-2 搜索 7 类噪声 scaling factor。
+- `ga` 模式下，模型、数据集、评估约束、最终评估模块、结果目录结构都与原流程保持一致，只把“搜索算法本体”替换为遗传算法。
+- 两种模式都复用相同的阶段跳过逻辑、最终评估逻辑、JSON/manual 配置读取逻辑和结果输出逻辑，因此对比更公平。
+
+### 3. 推荐写法与兼容写法
+
+为了避免“选了 GA，但后面的参数仍然沿用 RL 命名”的混用，主脚本新增了算法无关写法，并保留了 RL 兼容别名：
+
+| 推荐写法 | 旧兼容别名 | 说明 |
+| --- | --- | --- |
+| `--skip-stage1-search` | `--skip-stage1-rl` | 跳过第一阶段搜索 |
+| `--skip-noise-search` | `--skip-noise-rl` | 跳过第二阶段噪声搜索 |
+| `--stage1-search-episodes N` | `--stage1-rl-episodes N` | 设置第一阶段搜索预算 |
+| `--stage2-search-episodes N` | `--stage2-rl-episodes N` | 设置第二阶段搜索预算 |
+
+使用规则：
+
+- 选择 `--search-algorithm=rl` 时，推荐写法和旧兼容别名都可以使用。
+- 选择 `--search-algorithm=ga` 时，必须使用推荐写法；如果还使用 `--skip-stage1-rl`、`--skip-noise-rl`、`--stage1-rl-episodes`、`--stage2-rl-episodes`，脚本会直接报错。
+
+### 4. JSON 配置文件的算法家族约束
+
+当第一阶段或第二阶段最终评估使用 `json` 配置来源时，脚本会检查配置文件名是否和算法家族一致。
+
+默认配置文件如下：
+
+| 算法 | 第一阶段 JSON 默认值 | 第二阶段 JSON 默认值 |
+| --- | --- | --- |
+| `rl` | `glue_configs_best_ppo.json` | `glue_noise_configs_best_ppo.json` |
+| `ga` | `glue_configs_best_genetic.json` | `glue_noise_configs_best_genetic.json` |
+
+一致性校验规则如下：
+
+- 如果选择 `--search-algorithm=ga`，但第一阶段 JSON 仍使用 `glue_configs_best_ppo.json` 这类 PPO/RL 家族文件，脚本会报错。
+- 如果选择 `--search-algorithm=ga`，但第二阶段 JSON 仍使用 `glue_noise_configs_best_ppo.json` 这类 PPO/RL 家族文件，脚本会报错。
+- 如果选择 `--search-algorithm=rl`，但 JSON 文件名明显属于 genetic/ga 家族，脚本也会报错。
+- 如果你使用的是自定义文件名，只要文件名里不带明显的 `ppo` / `genetic` / `_ga` 等家族标识，脚本会按“自定义配置文件”处理，不会额外阻止。
+
+### 5. 与已有阶段约束的组合规则
+
+这部分规则没有变，但现在会带上算法选择一起检查：
+
+- 若第一阶段搜索会执行，则 `--final-eval-source` 只能为 `search`。
+- 若使用 `--final-eval-source json|manual`，则必须跳过第一阶段搜索。
+- 若第二阶段搜索会执行，且没有跳过噪声最终评估，则 `--noise-eval-source` 只能为 `search`。
+- 若使用 `--noise-eval-source json|manual`，则必须跳过第二阶段搜索。
+
+也就是说，算法选择只是决定“搜索器是 RL 还是 GA”，但不会放宽已有的流程一致性约束。
+
+### 6. 推荐命令示例
+
+#### 6.1 默认强化学习流程
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2
+```
+
+等价于：
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm rl
+```
+
+#### 6.2 完整遗传算法流程
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm ga
+```
+
+#### 6.3 遗传算法模式下跳过第一阶段搜索，直接读取第一阶段 JSON 配置
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm ga \
+  --skip-stage1-search \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_genetic.json
+```
+
+#### 6.4 遗传算法模式下跳过第二阶段搜索，直接读取噪声 JSON 配置
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm ga \
+  --skip-noise-search \
+  --noise-eval-source json \
+  --noise-eval-config glue_noise_configs_best_genetic.json
+```
+
+#### 6.5 强化学习模式下沿用旧参数名
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm rl \
+  --skip-stage1-rl \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_ppo.json
+```
+
+### 7. 常见错误示例
+
+下面这些组合现在会被脚本直接拦下：
+
+```bash
+# 错误：GA 模式却继续使用 RL 家族 JSON
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm ga \
+  --skip-stage1-search \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_ppo.json
+
+# 错误：GA 模式却继续使用 RL 命名兼容别名
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm ga \
+  --skip-stage1-rl
+
+# 错误：RL 模式却读取 genetic 家族 JSON
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm rl \
+  --skip-noise-search \
+  --noise-eval-source json \
+  --noise-eval-config glue_noise_configs_best_genetic.json
+```
+
+### 8. 迁移建议
+
+- 老命令如果不加 `--search-algorithm`，默认仍走 RL，不会影响已有实验。
+- 新做 GA 对比实验时，建议显式加 `--search-algorithm ga`，并统一使用 `--skip-stage1-search` / `--skip-noise-search` / `--stage1-search-episodes` / `--stage2-search-episodes` 这组算法无关参数。
+- 如果准备长期保留 GA 的 JSON 配置，建议按默认命名方式保存为 `glue_configs_best_genetic.json` 和 `glue_noise_configs_best_genetic.json`，这样脚本能自动做家族一致性检查。
+
 This is a Repository for Transformer robustness evaluation using Reinforcement Learning.
 
 Please Ignore the LLM-Adapters, EzPC, and importance-aware-sparse-tuning-IST-paper in root directory. Sorry, but the code is DIRTY now!
@@ -971,4 +1127,3 @@ NOISE_RL_OPT_FLAGS["pretrained_policy_path"]  = None   # 不加载预训练 nois
    确认权重加载覆盖率符合预期。
 5. **配合局部最优检测**：训练结束后查看 `<run_dir>/stage{1,2}/pruning_search_log.txt`，
    若报告 `LIKELY LOCAL-OPTIMUM`，可考虑换一个更"远"的 base policy 重新迁移。
-
