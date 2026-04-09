@@ -1,5 +1,6 @@
 import time
 import copy
+import math
 import sys
 import numpy as np
 import torch
@@ -411,6 +412,229 @@ PPO_ENTROPY_START = 0.05          # 熵系数起始值（高探索）
 PPO_ENTROPY_END = 0.001           # 熵系数结束值（强制收敛）
 PPO_LR_ACTOR = 3e-5               # Actor学习率
 PPO_LR_CRITIC = 3e-4              # Critic学习率（Actor的10倍）
+
+# ==================================================================
+# RL_OPT_FLAGS — 强化学习算法优化开关（消融实验 / 一键回滚）
+# ------------------------------------------------------------------
+# 用法：
+#   - 把任意 key 设为 False 即可完全回退到优化前的旧行为；
+#   - 全部置 False 等价于优化前的代码（保证可回滚）；
+#   - 各项独立可控，便于做消融实验。
+#
+# 优化目标：缓解 PPO 训练时陷入局部最优 / “选错峰” 的问题，
+#          同时不破坏原有训练稳定性。
+# ==================================================================
+RL_OPT_FLAGS = {
+    # 1) 用 cosine + 高 plateau 的熵调度替代线性衰减：
+    #    前 25% episode 维持初始熵不衰减（充分探索），
+    #    之后 cosine 衰减至 PPO_ENTROPY_END。
+    "use_cosine_entropy_schedule": True,
+    "entropy_plateau_ratio": 0.25,
+
+    # 2) 抬高熵下界，缓解 mode collapse 选错峰
+    "raise_entropy_lower_bound": True,
+    "entropy_lower_bound_override": 0.012,  # 原 0.005
+
+    # 3) 熵塌缩时自适应 boost 倍率（原硬编码 10.0）
+    "stronger_entropy_recovery": True,
+    "entropy_recovery_multiplier": 25.0,
+
+    # 4) PPO K-epoch 中加入近似 KL early-stop，避免破坏性更新
+    "use_kl_early_stop": True,
+    "kl_target": 0.02,
+
+    # 5) Stage-1 RL 使用 “全部最大 scaling factor” 的噪声环境（而非无噪环境）
+    #    与 Stage-2 噪声搜索的低噪声基线保持一致，避免 Stage-1 学到的配置在
+    #    切到带噪环境后偏离过大。关闭即恢复原本无噪声环境。
+    "stage1_use_max_scaling_noise_env": True,
+
+    # 6) Stage-1 Phase-2.5 / Phase-3/4 最终评估同样使用最大 scaling factor 噪声环境，
+    #    保持训练-评估环境一致。独立开关，可与 (5) 单独消融。
+    "stage1_final_eval_use_max_scaling_noise_env": True,
+
+    # 7) Stage-1 训练结束后写入局部最优检测报告（pruning_search_log.txt）
+    "stage1_write_local_optimum_report": True,
+
+    # 8) Stage-1 可迁移 policy/critic：
+    #    - save_portable_policy=True 时，训练结束在 run dir 写出 stage1_policy.pt
+    #      （仅含 net state_dict + 架构超参 + metadata，便于跨任务/跨数据集迁移）；
+    #    - pretrained_policy_path=None 表示不加载；设为某个 stage1_policy.pt 路径
+    #      则训练开始时把权重加载到新建的 GTrXL 网络作为 base policy（critic 一并加载）。
+    "stage1_save_portable_policy": True,
+    "stage1_pretrained_policy_path": None,
+}
+
+
+def _rl_opt_entropy_lower_bound():
+    if RL_OPT_FLAGS.get("raise_entropy_lower_bound", False):
+        return float(RL_OPT_FLAGS.get("entropy_lower_bound_override", GTRXL_ENTROPY_LOWER_BOUND))
+    return GTRXL_ENTROPY_LOWER_BOUND
+
+
+def _rl_opt_entropy_recovery_mul():
+    if RL_OPT_FLAGS.get("stronger_entropy_recovery", False):
+        return float(RL_OPT_FLAGS.get("entropy_recovery_multiplier", 10.0))
+    return 10.0
+
+
+# ==================================================================
+# 局部最优检测器（Local-Optimum Detector）
+# ------------------------------------------------------------------
+# 给定一段训练历史（episode 级别的 reward / entropy / 选中的最佳配置序列），
+# 输出若干"是否陷入局部最优"的判据指标 + 综合判定。
+#
+# 判定的依据（多信号综合，避免单一指标误报）：
+#   A. 策略熵塌缩 (entropy collapse)
+#       - 最近窗口熵均值 < entropy_collapse_threshold；
+#       - 经验上，多分类 PPO 当 mean entropy < 0.05 通常已强收敛。
+#   B. reward 长期平台期 (reward plateau)
+#       - 最近窗口的 reward 标准差 / |均值| 比值 < plateau_cv_threshold；
+#       - 即 reward 几乎不再改变。
+#   C. best 配置长期不更新 (best stuck)
+#       - 最近 best_stuck_window episode 内 best_score 没有任何提升。
+#   D. 动作多样性塌缩 (action diversity collapse, 可选)
+#       - 若提供 action_history，则计算最近窗口动作分布与早期动作分布的 KL；
+#         KL 极大但熵又极小 => 已经死锁在某一组动作上。
+#
+# 当 A、B、C 三条中至少 2 条成立 → 判定 "likely local optimum"。
+#
+# 用法（最小示例）：
+#   diag = detect_rl_local_optimum(
+#       episode_returns=evaluator.episode_rewards_history,
+#       episode_entropies=evaluator.episode_entropies_history,
+#       best_score_history=evaluator.best_reward_history,
+#       window=200,
+#   )
+#   if diag["likely_local_optimum"]:
+#       evaluator.log("[LocalOpt] " + diag["summary"])
+# ==================================================================
+def detect_rl_local_optimum(
+    episode_returns,
+    episode_entropies=None,
+    best_score_history=None,
+    action_history=None,
+    window=200,
+    entropy_collapse_threshold=0.05,
+    plateau_cv_threshold=0.02,
+    best_stuck_window=None,
+    action_kl_threshold=0.5,
+):
+    """检测 RL 是否陷入局部最优；返回包含逐项判据 + 综合结论的 dict。
+
+    Parameters
+    ----------
+    episode_returns : Sequence[float]
+        每回合的 return / reward。必填。
+    episode_entropies : Sequence[float], optional
+        每回合（或每次 PPO 更新）的策略熵。强烈建议提供。
+    best_score_history : Sequence[float], optional
+        全局最优分数随回合的演进序列；若为 None，则用 cummax(episode_returns) 近似。
+    action_history : Sequence[Sequence[int]], optional
+        每回合的动作序列；若提供则计算多样性塌缩信号。
+    window : int
+        判定使用的滑窗大小（episode）。
+    entropy_collapse_threshold : float
+        熵塌缩阈值。低于该值视作熵塌缩。
+    plateau_cv_threshold : float
+        变异系数 (std/|mean|) 阈值；越小说明 reward 越平。
+    best_stuck_window : int, optional
+        best 不更新的窗口；默认 = 2 * window。
+    action_kl_threshold : float
+        动作分布 KL 阈值。
+
+    Returns
+    -------
+    dict
+        包含 keys:
+          - signals: 各判据 bool
+          - metrics: 各判据数值指标
+          - likely_local_optimum: 综合判定
+          - summary: 一行人类可读总结
+    """
+    returns = np.asarray(list(episode_returns), dtype=float)
+    n = returns.size
+    out = {"signals": {}, "metrics": {}, "likely_local_optimum": False, "summary": ""}
+    if n < max(20, window // 4):
+        out["summary"] = f"样本不足（n={n}），无法判定。"
+        return out
+
+    w = int(min(window, n))
+    recent_returns = returns[-w:]
+
+    # ---- A. entropy collapse ----
+    entropy_collapsed = False
+    recent_entropy_mean = None
+    if episode_entropies is not None and len(episode_entropies) > 0:
+        ent_arr = np.asarray(list(episode_entropies), dtype=float)
+        ew = int(min(w, ent_arr.size))
+        recent_entropy_mean = float(np.mean(ent_arr[-ew:]))
+        entropy_collapsed = recent_entropy_mean < entropy_collapse_threshold
+    out["metrics"]["recent_entropy_mean"] = recent_entropy_mean
+    out["signals"]["entropy_collapsed"] = bool(entropy_collapsed)
+
+    # ---- B. reward plateau ----
+    mean_r = float(np.mean(recent_returns))
+    std_r = float(np.std(recent_returns))
+    cv = std_r / (abs(mean_r) + 1e-8)
+    reward_plateau = cv < plateau_cv_threshold
+    out["metrics"]["recent_reward_mean"] = mean_r
+    out["metrics"]["recent_reward_std"] = std_r
+    out["metrics"]["recent_reward_cv"] = cv
+    out["signals"]["reward_plateau"] = bool(reward_plateau)
+
+    # ---- C. best stuck ----
+    if best_score_history is None:
+        best_curve = np.maximum.accumulate(returns)
+    else:
+        best_curve = np.asarray(list(best_score_history), dtype=float)
+    bw = int(best_stuck_window if best_stuck_window is not None else 2 * w)
+    bw = min(bw, best_curve.size)
+    best_stuck = False
+    last_improve_gap = None
+    if bw >= 2:
+        recent_best = best_curve[-bw:]
+        last_improve_gap = int(bw - 1 - int(np.argmax(recent_best)))
+        best_stuck = (recent_best[-1] - recent_best[0]) <= 1e-9
+    out["metrics"]["best_stuck_window"] = bw
+    out["metrics"]["episodes_since_last_best_improve"] = last_improve_gap
+    out["signals"]["best_stuck"] = bool(best_stuck)
+
+    # ---- D. action diversity collapse (optional) ----
+    diversity_collapsed = False
+    action_kl = None
+    if action_history is not None and len(action_history) >= 2 * w:
+        try:
+            recent = np.asarray(list(action_history)[-w:]).reshape(-1)
+            early = np.asarray(list(action_history)[:w]).reshape(-1)
+            vals = np.unique(np.concatenate([recent, early]))
+            def _hist(x):
+                h = np.array([(x == v).sum() for v in vals], dtype=float)
+                h = h / max(h.sum(), 1.0)
+                return h + 1e-8
+            p_recent = _hist(recent)
+            p_early = _hist(early)
+            action_kl = float(np.sum(p_recent * np.log(p_recent / p_early)))
+            diversity_collapsed = (action_kl > action_kl_threshold and
+                                   (recent_entropy_mean is not None and
+                                    recent_entropy_mean < entropy_collapse_threshold * 2))
+        except Exception:
+            action_kl = None
+    out["metrics"]["action_kl_recent_vs_early"] = action_kl
+    out["signals"]["action_diversity_collapsed"] = bool(diversity_collapsed)
+
+    # ---- 综合判定：A/B/C 中 ≥2 条成立 ----
+    score = int(entropy_collapsed) + int(reward_plateau) + int(best_stuck)
+    out["likely_local_optimum"] = score >= 2 or diversity_collapsed
+    flags = []
+    if entropy_collapsed: flags.append(f"entropy_collapse(H={recent_entropy_mean:.4f})")
+    if reward_plateau:    flags.append(f"reward_plateau(cv={cv:.4f})")
+    if best_stuck:        flags.append(f"best_stuck({last_improve_gap}ep_no_improve)")
+    if diversity_collapsed: flags.append(f"action_kl={action_kl:.3f}")
+    out["summary"] = (
+        ("[LIKELY LOCAL-OPTIMUM] " if out["likely_local_optimum"] else "[OK] ")
+        + (", ".join(flags) if flags else "no warning signals")
+    )
+    return out
 
 # ==================== 验证集引导（Validation Guided）配置 ====================
 # 在计算奖励时使用验证集而非训练集，防止过拟合，提高泛化能力
@@ -2868,9 +3092,20 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.current_episode = episode
         progress = episode / self.total_episodes
         
-        # 熵系数线性衰减，但不低于最小熵约束下界（PDF 4.3）
-        new_entropy = PPO_ENTROPY_START - (PPO_ENTROPY_START - PPO_ENTROPY_END) * progress
-        new_entropy = max(new_entropy, GTRXL_ENTROPY_LOWER_BOUND)
+        # 熵系数调度：默认线性衰减；启用 RL_OPT_FLAGS 时改为 cosine + 高 plateau，
+        # 早期保持高熵以鼓励充分探索，避免过早陷入局部最优。
+        if RL_OPT_FLAGS.get("use_cosine_entropy_schedule", False):
+            plateau = float(RL_OPT_FLAGS.get("entropy_plateau_ratio", 0.25))
+            if progress <= plateau:
+                new_entropy = PPO_ENTROPY_START
+            else:
+                tail = (progress - plateau) / max(1.0 - plateau, 1e-8)
+                tail = min(max(tail, 0.0), 1.0)
+                cosine_factor = 0.5 * (1.0 + math.cos(math.pi * tail))  # 1->0
+                new_entropy = PPO_ENTROPY_END + (PPO_ENTROPY_START - PPO_ENTROPY_END) * cosine_factor
+        else:
+            new_entropy = PPO_ENTROPY_START - (PPO_ENTROPY_START - PPO_ENTROPY_END) * progress
+        new_entropy = max(new_entropy, _rl_opt_entropy_lower_bound())
         self.current_entropy_coef = new_entropy
         
         # 学习率：GTrXL 的 Warmup 由 ppo_update_gtrxl 在每次 PPO 更新时设置，
@@ -3444,6 +3679,68 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.clear_weight_noise_configuration()
             if input_noise_enabled:
                 self.clear_input_noise_configuration()
+
+    # ---------------------------------------------------------------------
+    # Stage-1 RL 评估包装：可选使用 “全部最大 scaling factor” 的噪声环境。
+    # 由 RL_OPT_FLAGS["stage1_use_max_scaling_noise_env"] 控制；
+    # 关闭则等价于直接调用 evaluate_model（旧无噪声行为）。
+    # ---------------------------------------------------------------------
+    def _stage1_max_scaling_noise_arrays(self):
+        max_in = max(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
+        max_w = max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        max_ffn1 = max(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
+        n = self.total_layers
+        return {
+            "input_noise_scaling_factors": np.full(n, max_in, dtype=int),
+            "wq_noise_scaling_factors": np.full(n, max_w, dtype=int),
+            "wk_noise_scaling_factors": np.full(n, max_w, dtype=int),
+            "wv_noise_scaling_factors": np.full(n, max_w, dtype=int),
+            "wo_noise_scaling_factors": np.full(n, max_w, dtype=int),
+            "wffn1_noise_scaling_factors": np.full(n, max_ffn1, dtype=int),
+            "wffn2_noise_scaling_factors": np.full(n, max_w, dtype=int),
+        }
+
+    def stage1_evaluate(self, gelu_degrees, softmax_degrees, use_train=True, split=None):
+        """Stage-1 统一评估入口；按 flag 决定是否带最大 scaling factor 噪声环境。"""
+        if RL_OPT_FLAGS.get("stage1_use_max_scaling_noise_env", False):
+            sf = self._stage1_max_scaling_noise_arrays()
+            return self.evaluate_model_with_attention_noise(
+                gelu_degrees,
+                softmax_degrees,
+                input_noise_scaling_factors=sf["input_noise_scaling_factors"],
+                wq_noise_scaling_factors=sf["wq_noise_scaling_factors"],
+                wk_noise_scaling_factors=sf["wk_noise_scaling_factors"],
+                wv_noise_scaling_factors=sf["wv_noise_scaling_factors"],
+                wo_noise_scaling_factors=sf["wo_noise_scaling_factors"],
+                wffn1_noise_scaling_factors=sf["wffn1_noise_scaling_factors"],
+                wffn2_noise_scaling_factors=sf["wffn2_noise_scaling_factors"],
+                use_train=use_train,
+                split=split,
+            )
+        return self.evaluate_model(
+            gelu_degrees, softmax_degrees, use_train=use_train, split=split,
+        )
+
+    def stage1_final_evaluate(self, gelu_degrees, softmax_degrees, use_train=False, split=None):
+        """Phase-2.5/Phase-3/4 最终评估的统一入口；按独立 flag 决定是否带最大 sf 噪声环境。"""
+        if RL_OPT_FLAGS.get("stage1_final_eval_use_max_scaling_noise_env", False):
+            sf = self._stage1_max_scaling_noise_arrays()
+            return self.evaluate_model_with_attention_noise(
+                gelu_degrees,
+                softmax_degrees,
+                input_noise_scaling_factors=sf["input_noise_scaling_factors"],
+                wq_noise_scaling_factors=sf["wq_noise_scaling_factors"],
+                wk_noise_scaling_factors=sf["wk_noise_scaling_factors"],
+                wv_noise_scaling_factors=sf["wv_noise_scaling_factors"],
+                wo_noise_scaling_factors=sf["wo_noise_scaling_factors"],
+                wffn1_noise_scaling_factors=sf["wffn1_noise_scaling_factors"],
+                wffn2_noise_scaling_factors=sf["wffn2_noise_scaling_factors"],
+                use_train=use_train,
+                split=split,
+            )
+        return self.evaluate_model(
+            gelu_degrees, softmax_degrees, use_train=use_train, split=split,
+        )
 
     def build_constraint_limits_from_metrics(
             self,
@@ -4339,13 +4636,18 @@ class LayerImportanceEvaluator(TrainerCallback):
         last_value_loss = 0.0
         last_entropy = 0.0
         
+        kl_early_stop = False
         for epoch in range(PPO_K_EPOCHS):
+            if kl_early_stop:
+                break
             ep_indices = torch.randperm(n_eps)
-            
+            epoch_kl_acc = 0.0
+            epoch_kl_count = 0
+
             for start in range(0, n_eps, mini_batch_episodes):
                 end = min(start + mini_batch_episodes, n_eps)
                 mb_idx = ep_indices[start:end]
-                
+
                 mb_cont = cont_features[mb_idx]
                 mb_layer = layer_indices[mb_idx]
                 mb_prev_g = prev_g_actions[mb_idx]
@@ -4357,7 +4659,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 mb_ret = returns_normalized[mb_idx]
                 mb_old_val = values_normalized[mb_idx]
                 mb_gelu_mask = gelu_masks[mb_idx] if gelu_masks is not None else None
-                
+
                 new_logprobs, entropy, new_values_raw = gtrxl_net.evaluate_actions(
                     mb_cont, mb_layer, mb_prev_g, mb_prev_s, mb_act_g, mb_act_s,
                     gelu_mask=mb_gelu_mask
@@ -4389,23 +4691,38 @@ class LayerImportanceEvaluator(TrainerCallback):
                 # 最小熵约束（PDF 4.3）：当策略熵低于下界时提升熵正则化
                 mean_entropy = entropy_flat.mean()
                 effective_entropy_coef = entropy_coef
-                if mean_entropy.item() < GTRXL_ENTROPY_LOWER_BOUND:
-                    entropy_deficit = GTRXL_ENTROPY_LOWER_BOUND - mean_entropy.item()
-                    effective_entropy_coef = entropy_coef + 10.0 * entropy_deficit
-                
+                _entropy_lb = _rl_opt_entropy_lower_bound()
+                if mean_entropy.item() < _entropy_lb:
+                    entropy_deficit = _entropy_lb - mean_entropy.item()
+                    effective_entropy_coef = entropy_coef + _rl_opt_entropy_recovery_mul() * entropy_deficit
+
                 entropy_loss = -mean_entropy
-                
+
                 loss = policy_loss + PPO_VALUE_COEF * value_loss + effective_entropy_coef * entropy_loss
-                
+
                 optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(gtrxl_net.parameters(), 0.5)
                 optimizer.step()
-                
+
+                # 近似 KL early-stop（PPO 标准技巧）：避免单次更新偏离过远导致策略崩坏。
+                # 仅作为安全阀；若关闭 use_kl_early_stop 则与原行为一致。
+                if RL_OPT_FLAGS.get("use_kl_early_stop", False):
+                    with torch.no_grad():
+                        approx_kl = (mb_old_lp_flat - new_logprobs_flat).mean().item()
+                    epoch_kl_acc += approx_kl
+                    epoch_kl_count += 1
+
                 last_policy_loss = policy_loss.item()
                 last_value_loss = value_loss.item()
                 last_entropy = mean_entropy.item()
-        
+
+            if (RL_OPT_FLAGS.get("use_kl_early_stop", False)
+                    and epoch_kl_count > 0):
+                avg_kl = epoch_kl_acc / epoch_kl_count
+                if avg_kl > 1.5 * float(RL_OPT_FLAGS.get("kl_target", 0.02)):
+                    kl_early_stop = True
+
         return last_policy_loss, last_value_loss, last_entropy
 
     def on_evaluate(self, args, state, control, **kwargs):
@@ -4435,13 +4752,13 @@ class LayerImportanceEvaluator(TrainerCallback):
             if not self.skip_stage1_final_eval:
                 # Phase 3/4 仍需要约束阈值；仅在需要最终评估时静默计算。
                 if USE_VALIDATION_FOR_REWARD:
-                    base_loss, base_p, base_s, _ = self.evaluate_model(
+                    base_loss, base_p, base_s, _ = self.stage1_final_evaluate(
                         base_gelu,
                         base_softmax,
                         split=reward_reference_split,
                     )
                 else:
-                    base_loss, base_p, base_s, _ = self.evaluate_model(base_gelu, base_softmax, use_train=True)
+                    base_loss, base_p, base_s, _ = self.stage1_final_evaluate(base_gelu, base_softmax, use_train=True)
                 limit_loss = base_loss + self.error_threshold
                 limit_p = base_p * (1.0 - self.correlation_drop_ratio)
                 limit_s = base_s * (1.0 - self.correlation_drop_ratio)
@@ -4451,8 +4768,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             # ---------------------------------------------------------
             self.log("\n--- 阶段1（Phase 1）: 建立基线（在训练集上）（Establishing Baseline on Training Set） ---")
 
-            # 使用训练集计算baseline
-            base_loss_train, base_p_train, base_s_train, base_time_train = self.evaluate_model(base_gelu, base_softmax, use_train=True)
+            # 使用训练集计算baseline（与 Stage-1 RL 环境保持一致：可选最大 scaling factor 噪声）
+            base_loss_train, base_p_train, base_s_train, base_time_train = self.stage1_evaluate(base_gelu, base_softmax, use_train=True)
 
             self.log(f"基线指标（Baseline Metrics）（训练集Training Set）：")
             self.log(f"  {self._fmt_metrics(base_loss_train, base_p_train, base_s_train)}")
@@ -4460,7 +4777,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             # ==================== 验证集引导（Validation Guided）：计算验证集baseline ====================
             if USE_VALIDATION_FOR_REWARD:
-                base_loss_val, base_p_val, base_s_val, base_time_val = self.evaluate_model(
+                base_loss_val, base_p_val, base_s_val, base_time_val = self.stage1_evaluate(
                     base_gelu,
                     base_softmax,
                     split=reward_reference_split,
@@ -4522,7 +4839,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             softmax_arr = np.asarray(candidate_config["softmax"], dtype=int)
             proxy_reward = float(candidate_config.get("reward", 0.0))
 
-            val_loss, val_p, val_s, _ = self.evaluate_model(
+            val_loss, val_p, val_s, _ = self.stage1_evaluate(
                 gelu_arr,
                 softmax_arr,
                 split="validation_full",
@@ -4663,6 +4980,26 @@ class LayerImportanceEvaluator(TrainerCallback):
                 dropout=GTRXL_DROPOUT
             ).to(self.device)
             
+            # （可迁移）若指定了 stage1_pretrained_policy_path，则把权重加载到新建的 GTrXL 网络
+            #  作为 base policy；不影响 episode 计数 / best 配置 / optimizer 状态。
+            _pretrained_path = RL_OPT_FLAGS.get("stage1_pretrained_policy_path", None)
+            if _pretrained_path:
+                try:
+                    _ckpt = torch.load(_pretrained_path, map_location=self.device, weights_only=False)
+                    _state = _ckpt.get("net_state_dict", _ckpt) if isinstance(_ckpt, dict) else _ckpt
+                    _missing, _unexpected = gtrxl_net.load_state_dict(_state, strict=False)
+                    self.log(
+                        f"  [迁移] 已加载预训练 policy/critic ← {_pretrained_path} "
+                        f"(missing={len(_missing)}, unexpected={len(_unexpected)})"
+                    )
+                    if _missing or _unexpected:
+                        self.log(
+                            "  [迁移][提示] 部分权重 shape 不匹配（多见于 total_layers/动作空间不同的迁移），"
+                            "已使用 strict=False 跳过；这些层将以新初始化继续训练。"
+                        )
+                except Exception as _e:
+                    self.log(f"  [迁移][警告] 预训练 policy 加载失败：{_e}（将使用随机初始化）")
+
             # 使用初始学习率
             optimizer = optim.Adam(gtrxl_net.parameters(), lr=self.ppo_lr_initial)
             gtrxl_ppo_update_count = 0  # GTrXL PPO更新计数（用于学习率Warmup）
@@ -4682,7 +5019,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         wrapper_self.split_name = "train" if use_train else "validation_full"
                 
                 def evaluate_model(wrapper_self, gelu_arr, softmax_arr):
-                    return wrapper_self.evaluator.evaluate_model(
+                    return wrapper_self.evaluator.stage1_evaluate(
                         gelu_arr,
                         softmax_arr,
                         split=wrapper_self.split_name,
@@ -4692,7 +5029,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             if USE_VALIDATION_FOR_REWARD:
                 self.refresh_validation_proxy(window_index=0, stage_label="Stage-1 RL")
                 online_reward_split = self.get_online_reward_split_name()
-                proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.evaluate_model(
+                proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.stage1_evaluate(
                     base_gelu,
                     base_softmax,
                     split=online_reward_split,
@@ -5055,7 +5392,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         )
                         online_reward_split = self.get_online_reward_split_name()
                         rl_evaluator.split_name = online_reward_split
-                        proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.evaluate_model(
+                        proxy_base_loss, proxy_base_p, proxy_base_s, _ = self.stage1_evaluate(
                             base_gelu,
                             base_softmax,
                             split=online_reward_split,
@@ -5198,6 +5535,78 @@ class LayerImportanceEvaluator(TrainerCallback):
                 )
                 self.log(f"  [完成] Stage-1 最终 checkpoint 已保存 → {stage1_checkpoint_path}")
 
+            # ---- (可迁移) 保存独立的 portable policy 文件，仅含权重 + 元数据 ----
+            if RL_OPT_FLAGS.get("stage1_save_portable_policy", False):
+                try:
+                    _portable_path = os.path.join(
+                        os.path.dirname(self.stage1_step_info_file),
+                        "stage1_policy.pt",
+                    )
+                    torch.save(
+                        {
+                            "version": 1,
+                            "kind": "stage1_gtrxl_policy",
+                            "net_state_dict": gtrxl_net.state_dict(),
+                            "arch": {
+                                "num_layers": int(self.total_layers),
+                                "d_model": int(GTRXL_D_MODEL),
+                                "n_heads": int(GTRXL_N_HEADS),
+                                "n_gtrxl_layers": int(GTRXL_N_LAYERS),
+                                "d_ff": int(GTRXL_D_FF),
+                                "dropout": float(GTRXL_DROPOUT),
+                            },
+                            "metadata": {
+                                "trained_episodes": int(self.stage1_rl_episodes),
+                                "best_reward": float(best_reward),
+                                "best_cost": float(best_cost),
+                                "error_threshold": float(self.error_threshold),
+                                "correlation_drop_ratio": float(self.correlation_drop_ratio),
+                            },
+                        },
+                        _portable_path,
+                    )
+                    self.log(
+                        f"  [迁移] 可迁移 policy/critic 已保存 → {_portable_path}\n"
+                        f"  [迁移] 用法：在新任务/新约束下，将 RL_OPT_FLAGS['stage1_pretrained_policy_path'] "
+                        f"设为该路径即可作为 base policy 继续训练。"
+                    )
+                except Exception as _e:
+                    self.log(f"  [迁移][警告] portable policy 保存失败：{_e}")
+
+            # ---- 局部最优检测：写入 pruning_search_log.txt ----
+            if RL_OPT_FLAGS.get("stage1_write_local_optimum_report", False):
+                try:
+                    _diag = detect_rl_local_optimum(
+                        episode_returns=episode_rewards,
+                        episode_entropies=episode_entropies,
+                        best_score_history=None,
+                        action_history=None,
+                        window=max(50, int(self.stage1_rl_episodes * 0.1)),
+                    )
+                    _report_path = os.path.join(
+                        os.path.dirname(self.stage1_step_info_file),
+                        "pruning_search_log.txt",
+                    )
+                    with open(_report_path, "w", encoding="utf-8") as _f:
+                        _f.write("=== Stage-1 RL 局部最优检测报告 ===\n")
+                        _f.write(f"完成回合数: {len(episode_rewards)}\n")
+                        _f.write(f"判定: {_diag['summary']}\n\n")
+                        _f.write("--- 各项判据信号 ---\n")
+                        for k, v in _diag["signals"].items():
+                            _f.write(f"  {k}: {v}\n")
+                        _f.write("\n--- 数值指标 ---\n")
+                        for k, v in _diag["metrics"].items():
+                            _f.write(f"  {k}: {v}\n")
+                        _f.write("\n--- 说明 ---\n")
+                        _f.write(
+                            "判定规则：A.熵塌缩 / B.reward 平台 / C.best 长期不更新 三条中\n"
+                            "≥2 条成立 → likely_local_optimum=True；或 D.动作分布塌缩单独成立。\n"
+                        )
+                    self.log(f"  [检测] 局部最优检测报告 → {_report_path}")
+                    self.log(f"  [检测] {_diag['summary']}")
+                except Exception as _e:
+                    self.log(f"  [检测][警告] 局部最优检测失败：{_e}")
+
             best_config = None
             if global_best_config is not None:
                 best_config = global_best_config.copy()
@@ -5265,7 +5674,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             greedy_softmax = best_config['softmax'].copy()
             
             # 在训练集上评估初始配置（用于记录）
-            init_loss, init_p, init_s, _ = self.evaluate_model(greedy_gelu, greedy_softmax, use_train=True)
+            init_loss, init_p, init_s, _ = self.stage1_final_evaluate(greedy_gelu, greedy_softmax, use_train=True)
             init_cost = best_config['cost']
             
             self.log(f"初始配置（在训练集上评估）（Initial, evaluated on Training Set）：")
@@ -5307,7 +5716,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     
                     test_gelu = greedy_gelu.copy()
                     test_gelu[layer_idx] = cand_deg
-                    test_loss, test_p, test_s, _ = self.evaluate_model(test_gelu, greedy_softmax, use_train=True)
+                    test_loss, test_p, test_s, _ = self.stage1_final_evaluate(test_gelu, greedy_softmax, use_train=True)
                     
                     # 检查约束
                     if (test_loss <= greedy_limit_loss and 
@@ -5332,7 +5741,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     
                     test_softmax = greedy_softmax.copy()
                     test_softmax[layer_idx] = cand_deg
-                    test_loss, test_p, test_s, _ = self.evaluate_model(greedy_gelu, test_softmax, use_train=True)
+                    test_loss, test_p, test_s, _ = self.stage1_final_evaluate(greedy_gelu, test_softmax, use_train=True)
                     
                     # 检查约束
                     if (test_loss <= greedy_limit_loss and 
@@ -5372,7 +5781,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         f"成本（Cost）={current_cost:.2f}, 节省（Saved）={best_cand['cost_saving']:.2f} ✓")
             
             # 最终的贪心搜索结果（在验证集上评估）
-            final_loss, final_p, final_s, _ = self.evaluate_model(greedy_gelu, greedy_softmax, use_train=False)
+            final_loss, final_p, final_s, _ = self.stage1_final_evaluate(greedy_gelu, greedy_softmax, use_train=False)
             final_cost = self.get_simulated_cost(greedy_gelu, greedy_softmax)[0]
             
             self.log(f"\n--- 贪心搜索完成（Greedy Search Completed）（迭代次数Iterations: {iteration}） ---")

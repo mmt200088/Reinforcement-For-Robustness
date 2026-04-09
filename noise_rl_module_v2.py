@@ -198,6 +198,46 @@ NOISE_STAGE_STATUS_NO_STABLE_FEASIBLE = "no_stable_feasible_candidate"
 NOISE_STAGE_REWARD_CLIP_MIN = -5.0
 NOISE_STAGE_REWARD_CLIP_MAX = 5.0
 
+# ==================================================================
+# NOISE_RL_OPT_FLAGS — Stage-2 噪声 RL 算法优化开关（消融 / 一键回滚）
+# ------------------------------------------------------------------
+# 用法：将任意 key 改为 False 即可回退到旧行为；
+#       全部置 False 等价于优化前代码。
+#
+# 优化目标：缓解 Stage-2 PPO 在噪声搜索中陷入局部最优 / “选错峰”
+#          的问题（policy 过早收敛 / 单次 lucky 评测被采为 best）。
+# ==================================================================
+NOISE_RL_OPT_FLAGS = {
+    # 1) 抬高熵下界（原 0.005），增强自适应熵恢复力度
+    "raise_entropy_lower_bound": True,
+    "entropy_lower_bound_override": 0.012,
+    "stronger_entropy_recovery": True,
+    "entropy_recovery_multiplier": 25.0,
+
+    # 2) PPO K-epoch 中的近似 KL early-stop，避免破坏性更新
+    "use_kl_early_stop": True,
+    "kl_target": 0.02,
+
+    # 3) 可迁移 policy/critic：保存 portable artifact + 可选预加载
+    "save_portable_policy": True,
+    "pretrained_policy_path": None,
+
+    # 4) 训练结束写入局部最优检测报告
+    "write_local_optimum_report": True,
+}
+
+
+def _noise_rl_entropy_lower_bound(default_lb):
+    if NOISE_RL_OPT_FLAGS.get("raise_entropy_lower_bound", False):
+        return float(NOISE_RL_OPT_FLAGS.get("entropy_lower_bound_override", default_lb))
+    return float(default_lb)
+
+
+def _noise_rl_entropy_recovery_mul():
+    if NOISE_RL_OPT_FLAGS.get("stronger_entropy_recovery", False):
+        return float(NOISE_RL_OPT_FLAGS.get("entropy_recovery_multiplier", 10.0))
+    return 10.0
+
 # checkpoint 文件名
 NOISE_STAGE_CHECKPOINT_FILENAME = "noise_rl_checkpoint.pt"
 STAGE1_CHECKPOINT_FILENAME = "stage1_rl_checkpoint.pt"
@@ -1462,8 +1502,13 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
     last_value_loss = 0.0
     last_entropy = 0.0
 
+    kl_early_stop = False
     for _ in range(ppo_k_epochs):
+        if kl_early_stop:
+            break
         ep_indices = torch.randperm(n_eps)
+        epoch_kl_acc = 0.0
+        epoch_kl_count = 0
         for start in range(0, n_eps, gtrxl_mini_batch_episodes):
             end = min(start + gtrxl_mini_batch_episodes, n_eps)
             mb_idx = ep_indices[start:end]
@@ -1511,9 +1556,10 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
 
             mean_entropy = entropy_flat.mean()
             effective_entropy_coef = entropy_coef
-            if mean_entropy.item() < gtrxl_entropy_lower_bound:
-                entropy_deficit = gtrxl_entropy_lower_bound - mean_entropy.item()
-                effective_entropy_coef = entropy_coef + 10.0 * entropy_deficit
+            _entropy_lb = _noise_rl_entropy_lower_bound(gtrxl_entropy_lower_bound)
+            if mean_entropy.item() < _entropy_lb:
+                entropy_deficit = _entropy_lb - mean_entropy.item()
+                effective_entropy_coef = entropy_coef + _noise_rl_entropy_recovery_mul() * entropy_deficit
 
             entropy_loss = -mean_entropy
             loss = (
@@ -1530,6 +1576,18 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
             last_policy_loss = policy_loss.item()
             last_value_loss = value_loss.item()
             last_entropy = mean_entropy.item()
+
+            if NOISE_RL_OPT_FLAGS.get("use_kl_early_stop", False):
+                with torch.no_grad():
+                    approx_kl = (mb_old_lp_flat - new_logprobs_flat).mean().item()
+                epoch_kl_acc += approx_kl
+                epoch_kl_count += 1
+
+        if (NOISE_RL_OPT_FLAGS.get("use_kl_early_stop", False)
+                and epoch_kl_count > 0):
+            avg_kl = epoch_kl_acc / epoch_kl_count
+            if avg_kl > 1.5 * float(NOISE_RL_OPT_FLAGS.get("kl_target", 0.02)):
+                kl_early_stop = True
 
     return last_policy_loss, last_value_loss, last_entropy
 
@@ -1918,6 +1976,21 @@ class NoiseRLModuleV2:
             noise_stage_cont_dim=NOISE_STAGE_V2_CONT_DIM,
             noise_stage_action_dims=NOISE_STAGE_ACTION_DIMS,
         ).to(ev.device)
+
+        # （可迁移）若指定 pretrained_policy_path，则把权重加载到新建的噪声网络作为 base policy
+        _noise_pretrained = NOISE_RL_OPT_FLAGS.get("pretrained_policy_path", None)
+        if _noise_pretrained:
+            try:
+                _ckpt = torch.load(_noise_pretrained, map_location=ev.device, weights_only=False)
+                _state = _ckpt.get("net_state_dict", _ckpt) if isinstance(_ckpt, dict) else _ckpt
+                _missing, _unexpected = noise_net.load_state_dict(_state, strict=False)
+                ev.log(
+                    f"  [迁移] Stage-2 已加载预训练 noise policy ← {_noise_pretrained} "
+                    f"(missing={len(_missing)}, unexpected={len(_unexpected)})"
+                )
+            except Exception as _e:
+                ev.log(f"  [迁移][警告] Stage-2 预训练 policy 加载失败：{_e}")
+
         optimizer = optim.Adam(noise_net.parameters(), lr=ev.ppo_lr_initial)
         noise_ppo_update_count = 0
 
@@ -2714,6 +2787,76 @@ class NoiseRLModuleV2:
                 noise_warnings=noise_warnings,
             )
             ev.log(f"  [完成] 最终 checkpoint 已保存 → {noise_rl_checkpoint_path}")
+
+        # ---- (可迁移) Stage-2 portable policy 文件 ----
+        if NOISE_RL_OPT_FLAGS.get("save_portable_policy", False):
+            try:
+                _portable_path = os.path.join(
+                    os.path.dirname(noise_rl_checkpoint_path),
+                    "stage2_noise_policy.pt",
+                )
+                torch.save(
+                    {
+                        "version": 1,
+                        "kind": "stage2_noise_gtrxl_policy",
+                        "net_state_dict": noise_net.state_dict(),
+                        "arch": {
+                            "num_layers": int(ev.total_layers),
+                            "d_model": int(NOISE_STAGE_GTRXL_D_MODEL),
+                            "n_heads": int(NOISE_STAGE_GTRXL_N_HEADS),
+                            "n_gtrxl_layers": int(NOISE_STAGE_GTRXL_N_LAYERS),
+                            "d_ff": int(NOISE_STAGE_GTRXL_D_FF),
+                            "dropout": float(NOISE_STAGE_GTRXL_DROPOUT),
+                        },
+                        "metadata": {
+                            "trained_episodes": int(stage2_total_episodes),
+                            "best_final_selection_score": float(best_final_selection_score),
+                            "best_cost": float(best_cost) if best_cost is not None else None,
+                        },
+                    },
+                    _portable_path,
+                )
+                ev.log(
+                    f"  [迁移] Stage-2 可迁移 noise policy 已保存 → {_portable_path}\n"
+                    f"  [迁移] 用法：将 NOISE_RL_OPT_FLAGS['pretrained_policy_path'] 设为该路径即可作为 base policy。"
+                )
+            except Exception as _e:
+                ev.log(f"  [迁移][警告] Stage-2 portable policy 保存失败：{_e}")
+
+        # ---- 局部最优检测：写 pruning_search_log.txt ----
+        if NOISE_RL_OPT_FLAGS.get("write_local_optimum_report", False):
+            try:
+                from layer_importance_evaluator import detect_rl_local_optimum
+                _diag = detect_rl_local_optimum(
+                    episode_returns=episode_returns,
+                    episode_entropies=episode_entropies,
+                    best_score_history=None,
+                    action_history=None,
+                    window=max(50, int(stage2_total_episodes * 0.1)),
+                )
+                _report_path = os.path.join(
+                    os.path.dirname(noise_rl_checkpoint_path),
+                    "pruning_search_log.txt",
+                )
+                with open(_report_path, "w", encoding="utf-8") as _f:
+                    _f.write("=== Stage-2 Noise RL 局部最优检测报告 ===\n")
+                    _f.write(f"完成回合数: {len(episode_returns)}\n")
+                    _f.write(f"判定: {_diag['summary']}\n\n")
+                    _f.write("--- 各项判据信号 ---\n")
+                    for k, v in _diag["signals"].items():
+                        _f.write(f"  {k}: {v}\n")
+                    _f.write("\n--- 数值指标 ---\n")
+                    for k, v in _diag["metrics"].items():
+                        _f.write(f"  {k}: {v}\n")
+                    _f.write("\n--- 说明 ---\n")
+                    _f.write(
+                        "判定规则：A.熵塌缩 / B.reward 平台 / C.best 长期不更新 三条中\n"
+                        "≥2 条成立 → likely_local_optimum=True；或 D.动作分布塌缩单独成立。\n"
+                    )
+                ev.log(f"  [检测] 局部最优检测报告 → {_report_path}")
+                ev.log(f"  [检测] {_diag['summary']}")
+            except Exception as _e:
+                ev.log(f"  [检测][警告] 局部最优检测失败：{_e}")
 
         ev.total_episodes = original_total_episodes
         ev.apply_configuration(fixed_gelu, fixed_softmax)
