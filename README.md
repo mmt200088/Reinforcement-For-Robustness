@@ -844,3 +844,131 @@ episode。只要耐心等一下，日志里出现 `[优雅停止] checkpoint 已
 - Windows 下同样可用：`Ctrl+C` 会走 SIGINT 分支；停止标志文件用资源管理器或
 `type NUL > STOP_RL` 手动创建即可。
 
+### 可迁移 Policy / Critic（Portable Policy & Critic Transfer）
+
+第一阶段（Stage-1，层重要度 PPO）和第二阶段（Stage-2，噪声 PPO）训练结束后，
+除了常规的"续训用" checkpoint 之外，还会额外写出一份**便携 policy 文件**，
+仅包含网络权重 + 架构超参 + 元数据，与训练状态彻底解耦，可作为 base policy
+迁移到**不同的准确度约束**或**不同的数据集**上。
+
+#### 1. 与"续训"的区别
+
+| 机制 | 文件 | 内容 | 作用 |
+| --- | --- | --- | --- |
+| 续训 (resume) | `stage1_rl_checkpoint.pt` / `noise_rl_checkpoint.pt` | net + optimizer + episode counter + best 配置 + 训练统计 | 在**同一个** run 中接着训练 |
+| 迁移 (transfer) | `stage1_policy.pt` / `stage2_noise_policy.pt` | 仅 `net_state_dict` + `arch` + `metadata` | 把权重作为 base policy 用于**新 run / 新任务** |
+
+迁移启动时是一个全新训练：episode 从 0 开始、optimizer 全新、best 配置清空，
+**只有 policy 与 critic 网络的权重**继承自预训练 artifact。两套机制互不干扰，
+你既可以 `--resume-run-dir` 续训，也可以从另一个任务的 portable policy 启动一个全新 run。
+
+#### 2. 自动保存路径
+
+只要保持默认开关（见下文 §5），训练正常结束时会自动写出：
+
+```text
+<run_dir>/stage1/stage1_policy.pt              # 第一阶段便携 policy
+<run_dir>/stage2_noise/stage2_noise_policy.pt  # 第二阶段便携 noise policy
+```
+
+文件格式（`torch.save` 的 dict）：
+
+```python
+{
+    "version": 1,
+    "kind": "stage1_gtrxl_policy" | "stage2_noise_gtrxl_policy",
+    "net_state_dict": <state_dict>,           # actor + critic 一并包含
+    "arch": {
+        "num_layers": 12, "d_model": ..., "n_heads": ...,
+        "n_gtrxl_layers": ..., "d_ff": ..., "dropout": ...,
+    },
+    "metadata": {
+        "trained_episodes": ...,
+        "best_reward": ...,                    # 仅 stage1
+        "best_final_selection_score": ...,     # 仅 stage2
+        "best_cost": ...,
+        "error_threshold": ...,                # 仅 stage1：来源任务的准确度约束
+        "correlation_drop_ratio": ...,         # 仅 stage1：来源任务的指标下降容忍
+    },
+}
+```
+
+`metadata` 里写入了"来源任务的约束"，方便你在迁移时核对来源。
+
+#### 3. 启用迁移：作为 base policy 加载
+
+迁移不通过命令行参数，而是通过文件顶部的 `RL_OPT_FLAGS` /
+`NOISE_RL_OPT_FLAGS` 字典控制，便于做消融实验。**改完之后正常启动训练命令即可。**
+
+**第一阶段（Stage-1）迁移**——编辑 `layer_importance_evaluator.py` 顶部：
+
+```python
+RL_OPT_FLAGS = {
+    ...
+    # 把这一项从 None 改成你要迁移的 stage1_policy.pt 的绝对路径
+    "stage1_pretrained_policy_path": "/abs/path/to/old_run/stage1/stage1_policy.pt",
+    ...
+}
+```
+
+**第二阶段（Stage-2）迁移**——编辑 `noise_rl_module_v2.py` 顶部：
+
+```python
+NOISE_RL_OPT_FLAGS = {
+    ...
+    "pretrained_policy_path": "/abs/path/to/old_run/stage2_noise/stage2_noise_policy.pt",
+    ...
+}
+```
+
+设好之后正常 `bash llama_7B_LayerImportance.sh ...` 启动即可。新 run 启动日志中
+会出现一行：
+
+```
+[迁移] 已加载预训练 policy/critic ← /abs/path/.../stage1_policy.pt (missing=0, unexpected=0)
+```
+
+`missing` / `unexpected` 表示 strict=False 加载时不匹配的层数，理想情况下都为 0。
+
+#### 4. 支持的迁移场景
+
+| 迁移场景 | 兼容性 | 备注 |
+| --- | --- | --- |
+| **同数据集 + 不同准确度约束**（例如 1.5% → 1.0%） | ✅ 100% 命中 | 架构完全一致，权重全量迁移；新约束下 reward 函数变了，policy 在已学到的"层敏感度先验"基础上继续微调即可。 |
+| **同架构 + 不同数据集**（例如 BERT-base 12 层 MRPC → STSB） | ✅ 100% 命中 | `total_layers` 不变 ⇒ layer-index embedding 与所有 GTrXL 层 shape 一致，可全部继承。 |
+| **不同模型规模**（BERT-large 24 层 → BERT-base 12 层） | ⚠️ 部分迁移 | `total_layers` 不同 ⇒ layer embedding / 位置相关层 shape 不匹配，被 `strict=False` 跳过；GTrXL 主干、actor / critic head 仍可继承。日志会报 `missing=X, unexpected=Y`。 |
+| **跨阶段迁移**（Stage-1 ↔ Stage-2） | ❌ 不支持 | 两个阶段动作空间维度完全不同（GELU/Softmax vs 7 类噪声 scaling factor），actor head 不兼容；必须分别迁移。 |
+
+> ⚠️ 加载失败 / shape 不匹配的层会以**新随机初始化**继续训练，而不是报错中断；
+> 因此即使是部分迁移也是安全的，但你应当读一下日志里的 missing / unexpected 数量，
+> 确认迁移的"覆盖率"符合预期。
+
+#### 5. 一键关闭 / 一键回滚
+
+所有迁移功能都由 flag 控制，关闭后等价于优化前的旧行为：
+
+```python
+# layer_importance_evaluator.py
+RL_OPT_FLAGS["stage1_save_portable_policy"]   = False  # 不再写出 stage1_policy.pt
+RL_OPT_FLAGS["stage1_pretrained_policy_path"] = None   # 不加载预训练 policy
+
+# noise_rl_module_v2.py
+NOISE_RL_OPT_FLAGS["save_portable_policy"]    = False  # 不再写出 stage2_noise_policy.pt
+NOISE_RL_OPT_FLAGS["pretrained_policy_path"]  = None   # 不加载预训练 noise policy
+```
+
+#### 6. 推荐工作流
+
+1. **第一次训练**（来源任务）：保持默认开关跑完一轮 Stage-1 / Stage-2，
+   会在 `<run_dir>/stage1/stage1_policy.pt` 与
+   `<run_dir>/stage2_noise/stage2_noise_policy.pt` 拿到便携 artifact。
+2. **复制 / 备份**：把这两个文件挪到一个长期保存的目录（例如
+   `experiment_results/portable_policies/mrpc_strict15/`），便于后续引用。
+3. **新任务迁移训练**：把对应路径填进 `RL_OPT_FLAGS` /
+   `NOISE_RL_OPT_FLAGS`，正常启动训练命令；新 run 会从迁移权重开始，
+   通常能显著缩短到达高 reward 平台的回合数。
+4. **核对日志**：训练开头务必检查 `[迁移] ... missing=? unexpected=?` 的输出，
+   确认权重加载覆盖率符合预期。
+5. **配合局部最优检测**：训练结束后查看 `<run_dir>/stage{1,2}/pruning_search_log.txt`，
+   若报告 `LIKELY LOCAL-OPTIMUM`，可考虑换一个更"远"的 base policy 重新迁移。
+
