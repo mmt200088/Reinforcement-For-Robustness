@@ -42,6 +42,25 @@
   # -------- 或者：作为 base policy 微调（利用已有的 online RL）--------
   # 只需设置 RL_OPT_FLAGS["stage1_pretrained_policy_path"] = "general_stage1_policy.pt"
   # 然后正常运行 bash llama_7B_LayerImportance.sh ...
+
+使用流程（Stage-2 示例）：
+
+  # -------- Phase A: 多任务训练（一次性） --------
+  from general_policy_module import (
+      prepare_stage2_task, multi_task_train_stage2,
+  )
+  tasks = {}
+  for name in ["mrpc", "stsb", "cola", "rte"]:
+      ev = create_evaluator(name)
+      fixed_gelu, fixed_softmax = get_stage1_config(name)
+      tasks[name] = prepare_stage2_task(ev, fixed_gelu, fixed_softmax)
+  multi_task_train_stage2(tasks, output_path="general_stage2_noise_policy.pt")
+
+  # -------- Phase B: 离线部署 --------
+  from general_policy_module import offline_find_best_config_stage2
+  result = offline_find_best_config_stage2(ev_new, "general_stage2_noise_policy.pt",
+                                            fixed_gelu, fixed_softmax, noise_env)
+  print(result["best_noise_config"])
 """
 
 import os
@@ -1059,6 +1078,714 @@ def critic_quick_rank_stage1(
         with torch.no_grad():
             _, _, vals = net.forward(cf_t, li_t, pg_t, ps_t)
             score = vals[0, -1].item()  # 最后一步的 V(s) 作为配置评分
+
+        scored.append((score, cfg))
+
+    net.set_task_context(None)
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return scored
+
+
+# ===========================================================================
+# Stage-2 通用 Rollout Buffer（NoiseRecurrentRolloutBuffer + per-episode task_context）
+# ===========================================================================
+
+class _GeneralStage2Buffer(_NoiseBuffer):
+    """在 _NoiseRecurrentRolloutBuffer 基础上增加 per-episode task_context 存储。"""
+
+    def start_episode(self, task_context=None):
+        super().start_episode()
+        self._current['task_context'] = task_context  # np.ndarray (5,)
+
+    def get_batch(self, device):
+        parent_batch = super().get_batch(device)
+        task_contexts = torch.stack([
+            torch.tensor(ep['task_context'], dtype=torch.float32)
+            for ep in self.episodes
+        ]).to(device)   # (N_eps, 5)
+        return (*parent_batch, task_contexts)
+
+
+# ===========================================================================
+# Stage-2 通用 PPO 更新（独立于 evaluator 实例）
+# ===========================================================================
+
+def _general_ppo_update_stage2(
+    net, optimizer, buffer, device,
+    return_normalizer,
+    entropy_coef=0.02,
+    ppo_update_step=0,
+    ppo_eps_clip=None,
+    ppo_k_epochs=None,
+    ppo_value_coef=None,
+    value_clip_range=None,
+    warmup_steps=20,
+):
+    """独立的 Stage-2 PPO 更新，支持 per-episode task_context。"""
+    if ppo_eps_clip is None:
+        ppo_eps_clip = _s2.NOISE_STAGE_PPO_EPS_CLIP
+    if ppo_k_epochs is None:
+        ppo_k_epochs = _s2.NOISE_STAGE_PPO_K_EPOCHS
+    if ppo_value_coef is None:
+        ppo_value_coef = _s1.PPO_VALUE_COEF
+    if value_clip_range is None:
+        value_clip_range = _s2.NOISE_STAGE_VALUE_CLIP_RANGE
+    mini_batch_eps = _s1.GTRXL_MINI_BATCH_EPISODES
+
+    target_lr = optimizer.defaults['lr']
+    if ppo_update_step < warmup_steps:
+        factor = (ppo_update_step + 1) / warmup_steps
+        for pg in optimizer.param_groups:
+            pg['lr'] = target_lr * factor
+
+    (cont_features, layer_indices, prev_actions, actions,
+     old_logprobs, rewards, values, dones, task_contexts) = buffer.get_batch(device)
+
+    n_eps = cont_features.size(0)
+    all_adv, all_ret = [], []
+    for i in range(n_eps):
+        a, r = _compute_gae(
+            rewards[i].cpu().numpy(), values[i].cpu().numpy(),
+            dones[i].cpu().numpy(), gamma=_s2.NOISE_STAGE_PPO_GAMMA, lam=0.95,
+        )
+        all_adv.append(a)
+        all_ret.append(r)
+    advantages = torch.stack(all_adv).to(device)
+    returns = torch.stack(all_ret).to(device)
+    adv_flat = advantages.reshape(-1)
+    advantages = (advantages - adv_flat.mean()) / (adv_flat.std() + 1e-8)
+
+    return_normalizer.update(returns)
+    ret_norm = torch.tensor(return_normalizer.normalize(returns.cpu().numpy()),
+                            dtype=torch.float32).to(device)
+    val_norm = torch.tensor(return_normalizer.normalize(values.cpu().numpy()),
+                            dtype=torch.float32).to(device)
+
+    last_pl, last_vl, last_ent = 0.0, 0.0, 0.0
+    kl_stop = False
+
+    for _epoch in range(ppo_k_epochs):
+        if kl_stop:
+            break
+        ep_idx = torch.randperm(n_eps)
+        kl_acc, kl_cnt = 0.0, 0
+
+        for start in range(0, n_eps, mini_batch_eps):
+            end = min(start + mini_batch_eps, n_eps)
+            mb = ep_idx[start:end]
+
+            # 每个 mini-batch 设定 task context（混合任务）
+            net.set_task_context(task_contexts[mb])
+
+            lp_new, ent, v_new = net.evaluate_actions(
+                cont_features[mb], layer_indices[mb],
+                prev_actions[mb], actions[mb],
+            )
+            lp_f = lp_new.reshape(-1)
+            ent_f = ent.reshape(-1)
+            v_f = v_new.reshape(-1)
+            olp_f = old_logprobs[mb].reshape(-1)
+            adv_f = advantages[mb].reshape(-1)
+            ret_f = ret_norm[mb].reshape(-1)
+            ov_f = val_norm[mb].reshape(-1)
+
+            ratios = torch.exp(lp_f - olp_f)
+            s1 = ratios * adv_f
+            s2 = torch.clamp(ratios, 1 - ppo_eps_clip, 1 + ppo_eps_clip) * adv_f
+            p_loss = -torch.min(s1, s2).mean()
+
+            vn = (v_f - return_normalizer.mean) / return_normalizer.std
+            vc = ov_f + torch.clamp(vn - ov_f, -value_clip_range, value_clip_range)
+            huber = nn.HuberLoss(reduction='none', delta=1.0)
+            v_loss = torch.max(huber(vn, ret_f), huber(vc, ret_f)).mean()
+
+            me = ent_f.mean()
+            eff_ec = entropy_coef
+            lb = _s2._noise_rl_entropy_lower_bound(0.005)
+            if me.item() < lb:
+                eff_ec = entropy_coef + _s2._noise_rl_entropy_recovery_mul() * (lb - me.item())
+
+            loss = p_loss + ppo_value_coef * v_loss + eff_ec * (-me)
+            optimizer.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(net.parameters(), 0.5)
+            optimizer.step()
+
+            last_pl, last_vl, last_ent = p_loss.item(), v_loss.item(), me.item()
+
+            if _s2.NOISE_RL_OPT_FLAGS.get("use_kl_early_stop", False):
+                with torch.no_grad():
+                    kl_acc += (olp_f - lp_f).mean().item()
+                kl_cnt += 1
+
+        if (_s2.NOISE_RL_OPT_FLAGS.get("use_kl_early_stop", False)
+                and kl_cnt > 0
+                and kl_acc / kl_cnt > 1.5 * _s2.NOISE_RL_OPT_FLAGS.get("kl_target", 0.02)):
+            kl_stop = True
+
+    net.set_task_context(None)
+    return last_pl, last_vl, last_ent
+
+
+# ===========================================================================
+# Stage-2 任务准备
+# ===========================================================================
+
+def prepare_stage2_task(evaluator, fixed_gelu, fixed_softmax, split_name=None):
+    """从 evaluator 准备一个 task config dict，用于 multi_task_train_stage2 或 offline 推断。
+
+    Args:
+        evaluator: LayerImportanceEvaluator 实例
+        fixed_gelu: np.ndarray, Stage-1 确定的 GELU 配置
+        fixed_softmax: np.ndarray, Stage-1 确定的 Softmax 配置
+        split_name: str or None, 评测子集名称（默认使用 validation_full 或 reward_reference_split）
+
+    Returns:
+        dict，包含多任务训练 / 离线推断所需的全部信息
+    """
+    from layer_importance_evaluator import (
+        INPUT_NOISE_SCALING_MAP, INPUT_NOISE_COST_MAP, INPUT_NOISE_SCALING_TO_NORM,
+        WEIGHT_NOISE_COST_MAP, WEIGHT_NOISE_SCALING_TO_NORM,
+        WFFN1_NOISE_COST_MAP, WFFN1_NOISE_SCALING_TO_NORM,
+        WQ_NOISE_SCALING_MAP, WK_NOISE_SCALING_MAP,
+        WV_NOISE_SCALING_MAP, WO_NOISE_SCALING_MAP,
+        WFFN1_NOISE_SCALING_MAP, WFFN2_NOISE_SCALING_MAP,
+        NOISE_STAGE_NUM_ACTIONS, NOISE_STAGE_SOS_TOKENS,
+        NOISE_STAGE_PREV_ACTION_EMBED_DIM, NOISE_STAGE_ACTION_DIMS,
+        REWARD_CLIP_MIN, REWARD_CLIP_MAX, HISTORY_MASK_VALUE,
+        LSTM_POS_DIM, LSTM_PROJ_DIM, GTrXLBlock,
+    )
+    from function_handler import (
+        INPUT_NOISE_ALLOWED_SCALING_FACTORS,
+        WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
+        WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
+    )
+
+    ev = evaluator
+    total_layers = ev.total_layers
+    fixed_gelu = np.asarray(fixed_gelu, dtype=int)
+    fixed_softmax = np.asarray(fixed_softmax, dtype=int)
+
+    # 确定评测子集
+    if split_name is None:
+        if ev.has_dataset_split("validation_full"):
+            split_name = "validation_full"
+        else:
+            split_name = ev.get_reward_reference_split_name()
+
+    # 低风险基线 / 最差基线
+    baseline_noise_config = _s2._get_low_risk_noise_configuration(ev)
+    worst_case_noise_config = _s2._get_worst_case_noise_configuration(ev)
+    cost_reference_noise_config = ev._get_max_noise_configuration()
+
+    _eval_dataset = ev.dataset_splits.get(split_name)
+    _eval_dataset_size = len(_eval_dataset) if _eval_dataset is not None else 0
+    baseline_segments = _s2._auto_adjust_segments(_eval_dataset_size, 10)
+
+    baseline_stats = ev.evaluate_model_with_attention_noise_segmented(
+        fixed_gelu, fixed_softmax,
+        **baseline_noise_config,
+        segments=baseline_segments,
+        split=split_name,
+    )
+    worst_stats = ev.evaluate_model_with_attention_noise_segmented(
+        fixed_gelu, fixed_softmax,
+        **worst_case_noise_config,
+        segments=baseline_segments,
+        split=split_name,
+    )
+    cost_reference_tot_c, _ = ev.get_noise_simulated_cost(**cost_reference_noise_config)
+
+    base_loss = baseline_stats["loss_mean"]
+    base_p = baseline_stats["p_mean"]
+    base_s = baseline_stats["s_mean"]
+    worst_loss = worst_stats["loss_mean"]
+    worst_p = worst_stats["p_mean"]
+    worst_s = worst_stats["s_mean"]
+
+    search_limits = _s2._compute_dynamic_limits(base_loss, base_p, base_s, worst_loss, worst_p, worst_s)
+
+    baseline_loss_std = float(baseline_stats["loss_std"])
+    baseline_m1_std = float(baseline_stats["p_std"])
+    dynamic_loss_std_cap = _s2._compute_dynamic_std_upper_bound(
+        baseline_loss_std, float(worst_stats["loss_std"]),
+    )
+    dynamic_m1_std_cap = _s2._compute_dynamic_std_upper_bound(
+        float(baseline_stats["p_std"]), float(worst_stats["p_std"]),
+    )
+    dynamic_m2_std_cap = _s2._compute_dynamic_std_upper_bound(
+        float(baseline_stats["s_std"]), float(worst_stats["s_std"]),
+    )
+
+    # 评估器包装器
+    class _NoiseRLEvaluatorWrapper:
+        def __init__(ws, evaluator_, fg, fs, sn):
+            ws.evaluator = evaluator_
+            ws.fixed_gelu = np.asarray(fg, dtype=int)
+            ws.fixed_softmax = np.asarray(fs, dtype=int)
+            ws.split_name = sn
+
+        def evaluate_noise_model(ws, **noise_kwargs):
+            return ws.evaluator.evaluate_model_with_attention_noise(
+                ws.fixed_gelu, ws.fixed_softmax, split=ws.split_name, **noise_kwargs,
+            )
+
+        def evaluate_noise_model_repeated(ws, repeats, **noise_kwargs):
+            return ws.evaluator.evaluate_model_with_attention_noise_repeated(
+                ws.fixed_gelu, ws.fixed_softmax, repeats=repeats,
+                split=ws.split_name, **noise_kwargs,
+            )
+
+        def evaluate_noise_model_segmented(ws, segments, **noise_kwargs):
+            return ws.evaluator.evaluate_model_with_attention_noise_segmented(
+                ws.fixed_gelu, ws.fixed_softmax, segments=segments,
+                split=ws.split_name, **noise_kwargs,
+            )
+
+    rl_evaluator = _NoiseRLEvaluatorWrapper(ev, fixed_gelu, fixed_softmax, split_name)
+
+    mc_train_samples = _s2._auto_adjust_segments(_eval_dataset_size, 10)
+
+    # task context
+    base_gelu = np.full(total_layers, 4, dtype=int)
+    base_softmax = np.full(total_layers, 6, dtype=int)
+    base_loss_s1, base_m1_s1, base_m2_s1, _ = ev.stage1_evaluate(
+        base_gelu, base_softmax, use_train=True,
+    )
+    task_ctx = compute_task_context(
+        base_loss_s1, base_m1_s1, base_m2_s1,
+        ev.error_threshold, ev.correlation_drop_ratio,
+    )
+
+    num_metrics = ev.get_num_metrics()
+
+    return {
+        "evaluator": evaluator,
+        "fixed_gelu": fixed_gelu,
+        "fixed_softmax": fixed_softmax,
+        "split_name": split_name,
+        "baseline_metrics": (float(base_loss), float(base_p), float(base_s)),
+        "cost_reference": float(cost_reference_tot_c),
+        "search_limits": search_limits,
+        "num_metrics": num_metrics,
+        "task_context": task_ctx,
+        "rl_evaluator": rl_evaluator,
+        # env 构造所需的全部参数
+        "env_kwargs": {
+            "total_layers": total_layers,
+            "baseline_cost": float(cost_reference_tot_c),
+            "baseline_metrics": (float(base_loss), float(base_p), float(base_s)),
+            "evaluator": rl_evaluator,
+            "fixed_gelu": fixed_gelu,
+            "fixed_softmax": fixed_softmax,
+            "constraint_limits": search_limits,
+            "num_metrics": num_metrics,
+            "input_noise_allowed": INPUT_NOISE_ALLOWED_SCALING_FACTORS,
+            "weight_noise_allowed": WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
+            "wffn1_noise_allowed": WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
+            "input_noise_cost_map": INPUT_NOISE_COST_MAP,
+            "weight_noise_cost_map": WEIGHT_NOISE_COST_MAP,
+            "wffn1_noise_cost_map": WFFN1_NOISE_COST_MAP,
+            "input_noise_scaling_map": INPUT_NOISE_SCALING_MAP,
+            "wq_noise_scaling_map": WQ_NOISE_SCALING_MAP,
+            "wk_noise_scaling_map": WK_NOISE_SCALING_MAP,
+            "wv_noise_scaling_map": WV_NOISE_SCALING_MAP,
+            "wo_noise_scaling_map": WO_NOISE_SCALING_MAP,
+            "wffn1_noise_scaling_map": WFFN1_NOISE_SCALING_MAP,
+            "wffn2_noise_scaling_map": WFFN2_NOISE_SCALING_MAP,
+            "input_noise_scaling_to_norm": INPUT_NOISE_SCALING_TO_NORM,
+            "weight_noise_scaling_to_norm": WEIGHT_NOISE_SCALING_TO_NORM,
+            "wffn1_noise_scaling_to_norm": WFFN1_NOISE_SCALING_TO_NORM,
+            "noise_stage_sos_tokens": NOISE_STAGE_SOS_TOKENS,
+            "noise_stage_num_actions": NOISE_STAGE_NUM_ACTIONS,
+            "history_mask_value": HISTORY_MASK_VALUE,
+            "reward_clip_min": REWARD_CLIP_MIN,
+            "reward_clip_max": REWARD_CLIP_MAX,
+            "perf_weight_loss": _s2.NOISE_STAGE_PERF_WEIGHT_LOSS,
+            "perf_weight_m1": _s2.NOISE_STAGE_PERF_WEIGHT_M1,
+            "perf_weight_m2": _s2.NOISE_STAGE_PERF_WEIGHT_M2,
+            "barrier_weight_loss": _s2.NOISE_STAGE_BARRIER_WEIGHT_LOSS,
+            "barrier_weight_m1": _s2.NOISE_STAGE_BARRIER_WEIGHT_M1,
+            "barrier_weight_m2": _s2.NOISE_STAGE_BARRIER_WEIGHT_M2,
+            "mc_train_samples": mc_train_samples,
+            "stability_lambda": _s2.NOISE_STAGE_STABILITY_LAMBDA,
+            "stability_base_std_tolerance": _s2.NOISE_STAGE_STABILITY_BASE_STD_TOLERANCE,
+            "baseline_loss_std": baseline_loss_std,
+            "baseline_m1_std": baseline_m1_std,
+            "dynamic_loss_std_cap": dynamic_loss_std_cap,
+            "dynamic_m1_std_cap": dynamic_m1_std_cap,
+            "dynamic_m2_std_cap": dynamic_m2_std_cap,
+            "noise_debt_log_alpha": _s2.NOISE_STAGE_NOISE_DEBT_LOG_ALPHA,
+        },
+        # 网络构造所需参数
+        "net_kwargs": {
+            "noise_stage_num_actions": NOISE_STAGE_NUM_ACTIONS,
+            "noise_stage_sos_tokens": NOISE_STAGE_SOS_TOKENS,
+            "noise_stage_prev_action_embed_dim": NOISE_STAGE_PREV_ACTION_EMBED_DIM,
+            "noise_stage_cont_dim": _s2.NOISE_STAGE_V2_CONT_DIM,
+            "noise_stage_action_dims": NOISE_STAGE_ACTION_DIMS,
+            "gtrxl_block_cls": GTrXLBlock,
+            "lstm_pos_dim": LSTM_POS_DIM,
+            "lstm_proj_dim": LSTM_PROJ_DIM,
+        },
+    }
+
+
+# ===========================================================================
+# Stage-2 Rollout 辅助函数（训练和离线共用）
+# ===========================================================================
+
+def _stage2_rollout_one_episode(net, env, device, total_layers, greedy=False):
+    """执行一个 Stage-2 episode 的 rollout（无梯度）。
+
+    Returns:
+        episode_reward: float
+        noise_config: dict with per-component noise scaling factors + reward
+        steps: list of step tuples for buffer
+    """
+    sos_tokens = list(_s1.NOISE_STAGE_SOS_TOKENS)
+
+    state = env.reset()
+    prev_actions = torch.tensor(
+        [sos_tokens], dtype=torch.long, device=device,
+    ).unsqueeze(0)   # (1, 1, 7)
+
+    seq_cf, seq_li, seq_pa = [], [], []
+    episode_reward = 0.0
+    steps = []
+
+    for step in range(total_layers):
+        layer_idx = env.current_layer
+        cf_np = env.get_continuous_features()
+        cf = torch.tensor(cf_np, dtype=torch.float32, device=device).view(1, 1, -1)
+        li = torch.tensor([[layer_idx]], dtype=torch.long, device=device)
+
+        seq_cf.append(cf)
+        seq_li.append(li)
+        seq_pa.append(prev_actions)
+
+        cf_seq = torch.cat(seq_cf, dim=1)
+        li_seq = torch.cat(seq_li, dim=1)
+        pa_seq = torch.cat(seq_pa, dim=1)
+
+        with torch.no_grad():
+            if greedy:
+                logits_dict, values = net.forward(cf_seq, li_seq, pa_seq)
+                actions = torch.stack([
+                    logits_dict[name][:, -1, :].argmax(-1).squeeze(0)
+                    for name in net.action_names
+                ])
+                logprob = torch.tensor(0.0)
+                value = values[:, -1].squeeze(0)
+            else:
+                actions, logprob, value = net.get_action_and_logprob(
+                    cf_seq, li_seq, pa_seq,
+                )
+
+        next_state, reward, done, info = env.step(*[a.item() for a in actions])
+
+        steps.append((
+            torch.tensor(cf_np, dtype=torch.float32),
+            layer_idx,
+            prev_actions.squeeze(0).squeeze(0).clone(),  # (7,)
+            actions.clone(),                               # (7,)
+            logprob.cpu(),
+            reward,
+            value.cpu(),
+            float(done),
+        ))
+
+        if done:
+            episode_reward = float(info.get("final_selection_score",
+                                            info.get("raw_final_reward", reward)))
+        else:
+            episode_reward += reward
+
+        prev_actions = actions.unsqueeze(0).unsqueeze(0).to(device)
+        state = next_state
+
+    noise_config = {
+        "input_noise_scaling_factors": np.array(env.input_noise_config),
+        "wq_noise_scaling_factors": np.array(env.wq_noise_config),
+        "wk_noise_scaling_factors": np.array(env.wk_noise_config),
+        "wv_noise_scaling_factors": np.array(env.wv_noise_config),
+        "wo_noise_scaling_factors": np.array(env.wo_noise_config),
+        "wffn1_noise_scaling_factors": np.array(env.wffn1_noise_config),
+        "wffn2_noise_scaling_factors": np.array(env.wffn2_noise_config),
+        "reward": episode_reward,
+    }
+    return episode_reward, noise_config, steps
+
+
+# ===========================================================================
+# Stage-2 多任务 Round-Robin 训练
+# ===========================================================================
+
+def multi_task_train_stage2(
+    tasks,
+    output_path,
+    total_rounds=50,
+    episodes_per_task_per_round=170,
+    lr=3e-5,
+    log_fn=None,
+    device="cuda",
+):
+    """多任务 round-robin 训练 Stage-2 通用噪声策略 + 通用 Critic。
+
+    Args:
+        tasks: dict {task_name: task_config}  （每项由 prepare_stage2_task 产出）
+        output_path: str, 保存 general_stage2_noise_policy.pt 的路径
+        total_rounds: int, round-robin 轮数
+        episodes_per_task_per_round: int, 每轮每任务的 episode 数
+        lr: float, 学习率
+        log_fn: callable（默认 print）
+        device: str
+
+    Returns:
+        dict 包含训练结果及保存路径
+    """
+    if log_fn is None:
+        log_fn = print
+    task_names = list(tasks.keys())
+    num_tasks = len(task_names)
+    total_layers = tasks[task_names[0]]["evaluator"].total_layers
+
+    # 从第一个任务获取网络构造参数
+    net_kwargs = tasks[task_names[0]]["net_kwargs"]
+
+    # ---- 创建网络 ----
+    net = GeneralStage2NoisePolicyNetwork(
+        num_layers=total_layers,
+        d_model=_s2.NOISE_STAGE_GTRXL_D_MODEL,
+        n_heads=_s2.NOISE_STAGE_GTRXL_N_HEADS,
+        n_gtrxl_layers=_s2.NOISE_STAGE_GTRXL_N_LAYERS,
+        d_ff=_s2.NOISE_STAGE_GTRXL_D_FF,
+        dropout=_s2.NOISE_STAGE_GTRXL_DROPOUT,
+        gtrxl_block_cls=net_kwargs["gtrxl_block_cls"],
+        lstm_pos_dim=net_kwargs["lstm_pos_dim"],
+        lstm_proj_dim=net_kwargs["lstm_proj_dim"],
+        noise_stage_num_actions=net_kwargs["noise_stage_num_actions"],
+        noise_stage_sos_tokens=net_kwargs["noise_stage_sos_tokens"],
+        noise_stage_prev_action_embed_dim=net_kwargs["noise_stage_prev_action_embed_dim"],
+        noise_stage_cont_dim=net_kwargs["noise_stage_cont_dim"],
+        noise_stage_action_dims=net_kwargs["noise_stage_action_dims"],
+    ).to(device)
+    optimizer = optim.Adam(net.parameters(), lr=lr)
+
+    # ---- 为每个任务创建 env ----
+    envs = {}
+    for name in task_names:
+        tc = tasks[name]
+        envs[name] = _NoiseOptEnv(**tc["env_kwargs"])
+
+    buffer = _GeneralStage2Buffer()
+    return_norm = _RunningMeanStd()
+    ppo_cnt = 0
+    ppo_interval = _s1.PPO_UPDATE_INTERVAL
+    total_episodes = total_rounds * num_tasks * episodes_per_task_per_round
+    global_ep = 0
+
+    best_configs = {n: None for n in task_names}
+    best_rewards = {n: float('-inf') for n in task_names}
+    all_rewards = {n: [] for n in task_names}
+    all_entropies = []
+
+    log_fn(f"[通用噪声策略] 开始多任务训练: {num_tasks} 个任务, {total_rounds} 轮, "
+           f"每轮每任务 {episodes_per_task_per_round} 回合, 总 {total_episodes} 回合")
+    log_fn(f"[通用噪声策略] 任务列表: {task_names}")
+
+    for rnd in range(total_rounds):
+        for task_name in task_names:
+            tc = tasks[task_name]
+            env = envs[task_name]
+            net.set_task_context(
+                torch.tensor(tc["task_context"], dtype=torch.float32).to(device)
+            )
+
+            for _ in range(episodes_per_task_per_round):
+                # 熵调度
+                progress = global_ep / max(total_episodes, 1)
+                ec_start = _s2.NOISE_STAGE_PPO_EPS_CLIP  # 用 entropy start/end 替代
+                # 使用与 Stage-1 类似的熵衰减策略
+                ec = max(0.02 * (1.0 - 0.5 * progress), 0.005)
+
+                # 设置 env episode 进度
+                env.set_episode_progress(global_ep, total_episodes)
+
+                # Rollout
+                ep_reward, noise_config, steps = _stage2_rollout_one_episode(
+                    net, env, device, total_layers,
+                )
+
+                # 填充 buffer
+                buffer.start_episode(task_context=tc["task_context"])
+                for (cf, li, pa, act, lp, r, v, d) in steps:
+                    buffer.add_step(cf, li, pa, act, lp, r, v, d)
+                buffer.end_episode()
+
+                all_rewards[task_name].append(ep_reward)
+                global_ep += 1
+
+                if ep_reward > best_rewards[task_name]:
+                    best_rewards[task_name] = ep_reward
+                    best_configs[task_name] = noise_config
+
+                # PPO 更新
+                if buffer.num_episodes >= ppo_interval:
+                    pl, vl, ent = _general_ppo_update_stage2(
+                        net, optimizer, buffer, device,
+                        return_normalizer=return_norm,
+                        entropy_coef=ec, ppo_update_step=ppo_cnt,
+                    )
+                    ppo_cnt += 1
+                    buffer.clear()
+                    all_entropies.append(ent)
+
+                    if ppo_cnt % 10 == 0:
+                        avg_str = ", ".join(
+                            f"{n}={np.mean(all_rewards[n][-episodes_per_task_per_round:]):.3f}"
+                            for n in task_names if all_rewards[n]
+                        )
+                        log_fn(f"  [PPO #{ppo_cnt}] 轮 {rnd+1}/{total_rounds} 任务 {task_name} | "
+                               f"熵={ent:.4f} | {avg_str}")
+
+        best_str = ", ".join(f"{n}={best_rewards[n]:.3f}" for n in task_names)
+        log_fn(f"[通用噪声策略] 轮 {rnd+1}/{total_rounds} 完成 | 各任务最优: {best_str}")
+
+    # ---- 保存 general noise policy ----
+    os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
+    torch.save({
+        "version": GENERAL_POLICY_VERSION,
+        "kind": "general_stage2_gtrxl_noise_policy",
+        "net_state_dict": net.state_dict(),
+        "arch": {
+            "num_layers": total_layers,
+            "d_model": _s2.NOISE_STAGE_GTRXL_D_MODEL,
+            "n_heads": _s2.NOISE_STAGE_GTRXL_N_HEADS,
+            "n_gtrxl_layers": _s2.NOISE_STAGE_GTRXL_N_LAYERS,
+            "d_ff": _s2.NOISE_STAGE_GTRXL_D_FF,
+            "dropout": _s2.NOISE_STAGE_GTRXL_DROPOUT,
+            "task_context_dim": TASK_CONTEXT_DIM,
+        },
+        "metadata": {
+            "task_names": task_names,
+            "total_rounds": total_rounds,
+            "episodes_per_task_per_round": episodes_per_task_per_round,
+            "total_episodes": global_ep,
+            "ppo_updates": ppo_cnt,
+            "best_rewards": {n: float(best_rewards[n]) for n in task_names},
+        },
+    }, output_path)
+    log_fn(f"[通用噪声策略] 已保存 → {output_path}")
+
+    net.set_task_context(None)
+    return {
+        "output_path": output_path,
+        "best_configs": best_configs,
+        "best_rewards": {n: float(best_rewards[n]) for n in task_names},
+        "ppo_updates": ppo_cnt,
+    }
+
+
+# ===========================================================================
+# Stage-2 Critic 快速评分
+# ===========================================================================
+
+def critic_quick_rank_stage2(
+    evaluator,
+    general_policy_path,
+    candidate_noise_configs,
+    fixed_gelu,
+    fixed_softmax,
+    device="cuda",
+):
+    """使用通用 Stage-2 Critic 的 V(s) 对一组噪声候选配置快速评分。
+
+    与 offline_find_best_config_stage2 的区别：
+      - 不做真实模型评测，只用 Critic 网络估值
+      - 速度极快（纯 GPU 推理），适合预筛选大量候选
+      - 精度取决于 Critic 训练质量
+
+    Args:
+        evaluator: LayerImportanceEvaluator 实例
+        general_policy_path: str
+        candidate_noise_configs: list of dicts, 每个 dict 包含 7 类 noise scaling factor arrays
+        fixed_gelu: np.ndarray
+        fixed_softmax: np.ndarray
+        device: str
+
+    Returns:
+        list of (score, config) 按 score 降序排列
+    """
+    from layer_importance_evaluator import (
+        NOISE_STAGE_NUM_ACTIONS, NOISE_STAGE_SOS_TOKENS,
+        NOISE_STAGE_PREV_ACTION_EMBED_DIM, NOISE_STAGE_ACTION_DIMS,
+        LSTM_POS_DIM, LSTM_PROJ_DIM, GTrXLBlock,
+    )
+
+    ckpt = torch.load(general_policy_path, map_location=device, weights_only=False)
+    arch = ckpt.get("arch", {})
+    total_layers = evaluator.total_layers
+
+    net = GeneralStage2NoisePolicyNetwork(
+        num_layers=total_layers,
+        d_model=arch.get("d_model", _s2.NOISE_STAGE_GTRXL_D_MODEL),
+        n_heads=arch.get("n_heads", _s2.NOISE_STAGE_GTRXL_N_HEADS),
+        n_gtrxl_layers=arch.get("n_gtrxl_layers", _s2.NOISE_STAGE_GTRXL_N_LAYERS),
+        d_ff=arch.get("d_ff", _s2.NOISE_STAGE_GTRXL_D_FF),
+        dropout=arch.get("dropout", _s2.NOISE_STAGE_GTRXL_DROPOUT),
+        gtrxl_block_cls=GTrXLBlock,
+        lstm_pos_dim=LSTM_POS_DIM,
+        lstm_proj_dim=LSTM_PROJ_DIM,
+        noise_stage_num_actions=NOISE_STAGE_NUM_ACTIONS,
+        noise_stage_sos_tokens=NOISE_STAGE_SOS_TOKENS,
+        noise_stage_prev_action_embed_dim=NOISE_STAGE_PREV_ACTION_EMBED_DIM,
+        noise_stage_cont_dim=_s2.NOISE_STAGE_V2_CONT_DIM,
+        noise_stage_action_dims=NOISE_STAGE_ACTION_DIMS,
+    ).to(device)
+    net.load_state_dict(ckpt["net_state_dict"], strict=False)
+    net.eval()
+
+    # 构造 task context
+    base_gelu = np.full(total_layers, 4, dtype=int)
+    base_softmax = np.full(total_layers, 6, dtype=int)
+    base_loss, base_m1, base_m2, _ = evaluator.stage1_evaluate(
+        base_gelu, base_softmax, use_train=True,
+    )
+    tc = torch.tensor(compute_task_context(
+        base_loss, base_m1, base_m2,
+        evaluator.error_threshold, evaluator.correlation_drop_ratio,
+    ), dtype=torch.float32).to(device)
+    net.set_task_context(tc)
+
+    sos_tokens = list(NOISE_STAGE_SOS_TOKENS)
+    N = total_layers
+    action_names = ("x", "wq", "wk", "wv", "wo", "wffn1", "wffn2")
+
+    scored = []
+    for cfg in candidate_noise_configs:
+        # 模拟完整 episode 的 token 序列
+        cf_list, li_list, pa_list = [], [], []
+        prev_act = sos_tokens[:]
+
+        for layer in range(N):
+            progress = (layer + 1) / N
+            cf = np.array([0.0, 0.0, progress, 0.0, 0.0], dtype=np.float32)
+            cf_list.append(torch.tensor(cf, dtype=torch.float32))
+            li_list.append(layer)
+            pa_list.append(torch.tensor(prev_act, dtype=torch.long))
+
+            # 从配置中提取 action index（这里近似取值，精确的映射需要 action_dims）
+            # 简单做法：使用 SOS tokens 值作为占位
+            prev_act = sos_tokens[:]
+
+        cf_t = torch.stack(cf_list).unsqueeze(0).to(device)       # (1, N, 5)
+        li_t = torch.tensor([li_list], dtype=torch.long).to(device)
+        pa_t = torch.stack(pa_list).unsqueeze(0).to(device)       # (1, N, 7)
+
+        with torch.no_grad():
+            _, vals = net.forward(cf_t, li_t, pa_t)
+            score = vals[0, -1].item()
 
         scored.append((score, cfg))
 

@@ -37,8 +37,9 @@ from noise_rl_module_v2 import (
 EPS = 1e-8
 SCORE_EXP_BASE = 4.0
 STAGE1_DEFAULT_POPULATION = 32
-STAGE2_DEFAULT_POPULATION = 16
-STAGNATION_TOLERANCE = 5
+STAGE2_DEFAULT_POPULATION = 32
+STAGNATION_TOLERANCE_BASE = 10
+DIVERSITY_INJECTION_RATIO = 0.5
 
 
 @dataclass
@@ -678,9 +679,24 @@ class Stage1GeneticSearcher:
             )
 
         population = self._make_initial_population()
+
+        # Dynamic stagnation tolerance: ensure at least 1/3 of budget is used
+        # before early stop. COINN does not use aggressive early stopping.
+        effective_stagnation_tolerance = max(
+            STAGNATION_TOLERANCE_BASE,
+            self.max_generations // 3,
+        )
+        # Diversity injection threshold: inject random immigrants at halfway
+        diversity_injection_threshold = max(
+            STAGNATION_TOLERANCE_BASE // 2,
+            effective_stagnation_tolerance // 2,
+        )
+
         self._log(
             f"Initial population size={len(population)}  "
-            f"max_generations={self.max_generations}"
+            f"max_generations={self.max_generations}  "
+            f"stagnation_tolerance={effective_stagnation_tolerance}  "
+            f"diversity_injection_at={diversity_injection_threshold}"
         )
 
         best_candidate = self._evaluate(
@@ -741,12 +757,12 @@ class Stage1GeneticSearcher:
                 f"global_best_score={best_candidate['score']:.6f}  "
                 f"global_best_cost={best_candidate['cost']:.2f}  "
                 f"feasible_ratio={feasible_ratio:.2%}  "
-                f"stagnation={stagnation}/{STAGNATION_TOLERANCE}"
+                f"stagnation={stagnation}/{effective_stagnation_tolerance}"
             )
-            if stagnation > STAGNATION_TOLERANCE:
+            if stagnation > effective_stagnation_tolerance:
                 self._log(
                     f"Early stop: best feasible score has not improved for more than "
-                    f"{STAGNATION_TOLERANCE} generations."
+                    f"{effective_stagnation_tolerance} generations."
                 )
                 break
 
@@ -771,24 +787,62 @@ class Stage1GeneticSearcher:
                 next_seen.add(key)
 
             _add_next(best_candidate["gelu"], best_candidate["softmax"])
-            elite_count = min(max(2, self.population_size // 8), len(results))
-            for idx in ranked_indices[:elite_count]:
-                _add_next(results[idx]["gelu"], results[idx]["softmax"])
 
-            parent_indices = _weighted_choice_indices(
-                self.rng,
-                scores,
-                max(self.population_size * 2, 1),
+            # Diversity injection: when stagnating, replace bottom portion of
+            # population with fresh random immigrants to escape local optima.
+            # This follows the COINN principle of maintaining population
+            # diversity through random immigrant injection.
+            inject_diversity = (
+                stagnation > 0
+                and stagnation % diversity_injection_threshold == 0
             )
-            for parent_idx in parent_indices:
-                parent = results[int(parent_idx)]
-                child_gelu, child_softmax = self._mutate(
-                    parent["gelu"],
-                    parent["softmax"],
+
+            if inject_diversity:
+                # Keep only top elite, fill rest with random immigrants
+                elite_count = min(max(2, self.population_size // 4), len(results))
+                for idx in ranked_indices[:elite_count]:
+                    _add_next(results[idx]["gelu"], results[idx]["softmax"])
+                inject_target = self.population_size - len(next_population)
+                inject_attempts = 0
+                inject_cap = max(200, inject_target * 30)
+                while len(next_population) < self.population_size and inject_attempts < inject_cap:
+                    inject_attempts += 1
+                    immigrant_gelu = self.context.base_gelu.copy()
+                    immigrant_softmax = self.context.base_softmax.copy()
+                    rounds = int(
+                        self.rng.integers(
+                            1,
+                            max(2, math.ceil(self.evaluator.total_layers / 2)) + 1,
+                        )
+                    )
+                    for _ in range(rounds):
+                        immigrant_gelu, immigrant_softmax = self._mutate(
+                            immigrant_gelu, immigrant_softmax,
+                        )
+                    _add_next(immigrant_gelu, immigrant_softmax)
+                self._log(
+                    f"[Stage1][Gen {generation:04d}] diversity injection: "
+                    f"injected {len(next_population) - elite_count - 1} random immigrants"
                 )
-                _add_next(child_gelu, child_softmax)
-                if len(next_population) >= self.population_size:
-                    break
+            else:
+                elite_count = min(max(2, self.population_size // 8), len(results))
+                for idx in ranked_indices[:elite_count]:
+                    _add_next(results[idx]["gelu"], results[idx]["softmax"])
+
+                parent_indices = _weighted_choice_indices(
+                    self.rng,
+                    scores,
+                    max(self.population_size * 2, 1),
+                )
+                for parent_idx in parent_indices:
+                    parent = results[int(parent_idx)]
+                    child_gelu, child_softmax = self._mutate(
+                        parent["gelu"],
+                        parent["softmax"],
+                    )
+                    _add_next(child_gelu, child_softmax)
+                    if len(next_population) >= self.population_size:
+                        break
 
             refill_attempts = 0
             refill_cap = max(200, self.population_size * 20)
