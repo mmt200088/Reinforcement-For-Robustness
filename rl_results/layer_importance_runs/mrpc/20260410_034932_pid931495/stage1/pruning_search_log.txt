@@ -1,0 +1,25 @@
+=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===
+[信息] PPO学习率（LR）从 rl_lr=20 解析为 -> 2e-05 (legacy-micro)
+[信息] 第一阶段RL回合数（Stage-1 RL episodes）: 15000 | 第二阶段RL回合数（Stage-2 RL episodes）: 30000
+[信息] 统一运行输出目录（Unified run output dir）: rl_results/layer_importance_runs/mrpc/20260410_034932_pid931495
+
+Stage-1 GELU distribution screening for degree-0 eligibility:
+  layer=00  <-2.7= 39.58%  [-2.7,0)= 54.03%  [0,2.7]=  6.02%  >2.7=  0.38%  status=not_eligible
+  layer=01  <-2.7= 28.00%  [-2.7,0)= 66.77%  [0,2.7]=  5.11%  >2.7=  0.11%  status=not_eligible
+  layer=02  <-2.7= 32.84%  [-2.7,0)= 63.27%  [0,2.7]=  3.83%  >2.7=  0.05%  status=not_eligible
+  layer=03  <-2.7= 27.34%  [-2.7,0)= 67.74%  [0,2.7]=  4.88%  >2.7=  0.04%  status=not_eligible
+  layer=04  <-2.7= 24.89%  [-2.7,0)= 69.97%  [0,2.7]=  5.08%  >2.7=  0.06%  status=not_eligible
+  layer=05  <-2.7= 21.53%  [-2.7,0)= 72.96%  [0,2.7]=  5.46%  >2.7=  0.05%  status=not_eligible
+  layer=06  <-2.7= 23.04%  [-2.7,0)= 72.29%  [0,2.7]=  4.62%  >2.7=  0.05%  status=not_eligible
+  layer=07  <-2.7= 17.62%  [-2.7,0)= 77.91%  [0,2.7]=  4.42%  >2.7=  0.04%  status=not_eligible
+  layer=08  <-2.7= 13.84%  [-2.7,0)= 81.25%  [0,2.7]=  4.88%  >2.7=  0.04%  status=not_eligible
+  layer=09  <-2.7= 11.70%  [-2.7,0)= 84.88%  [0,2.7]=  3.39%  >2.7=  0.02%  status=not_eligible
+  layer=10  <-2.7=  7.71%  [-2.7,0)= 88.63%  [0,2.7]=  3.65%  >2.7=  0.01%  status=not_eligible
+  layer=11  <-2.7=  3.39%  [-2.7,0)= 91.03%  [0,2.7]=  5.54%  >2.7=  0.05%  status=not_eligible
+
+Stage-1 baseline and constraints:
+  baseline metrics on validation_full: 损失（Loss）: 0.341358, Accuracy: 0.879902, F1: 0.877442
+  simulated cost: total=72.00, gelu=36.00, softmax=36.00
+  constraints: 损失（Loss）<=0.3564, Accuracy>=0.8667, F1>=0.8643
+
+Stage-1 Genetic Search follows COINN: score-guided random selection and adjacent-mesh mutation, without PPO and without crossover.
