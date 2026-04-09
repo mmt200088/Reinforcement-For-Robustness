@@ -1603,11 +1603,18 @@ def multi_task_train_stage2(
             )
 
             for _ in range(episodes_per_task_per_round):
-                # 熵调度
+                # 熵调度 — 与 Stage-1 通用策略、per-task RL 保持一致
                 progress = global_ep / max(total_episodes, 1)
-                ec_start = _s2.NOISE_STAGE_PPO_EPS_CLIP  # 用 entropy start/end 替代
-                # 使用与 Stage-1 类似的熵衰减策略
-                ec = max(0.02 * (1.0 - 0.5 * progress), 0.005)
+                if _s1.RL_OPT_FLAGS.get("use_cosine_entropy_schedule", False):
+                    plateau = float(_s1.RL_OPT_FLAGS.get("entropy_plateau_ratio", 0.25))
+                    if progress <= plateau:
+                        ec = _s1.PPO_ENTROPY_START
+                    else:
+                        tail = min(max((progress - plateau) / max(1.0 - plateau, 1e-8), 0.0), 1.0)
+                        ec = _s1.PPO_ENTROPY_END + (_s1.PPO_ENTROPY_START - _s1.PPO_ENTROPY_END) * 0.5 * (1 + math.cos(math.pi * tail))
+                else:
+                    ec = _s1.PPO_ENTROPY_START - (_s1.PPO_ENTROPY_START - _s1.PPO_ENTROPY_END) * progress
+                ec = max(ec, _s2._noise_rl_entropy_lower_bound(0.005))
 
                 # 设置 env episode 进度
                 env.set_episode_progress(global_ep, total_episodes)

@@ -1,0 +1,620 @@
+"""
+rl_tune_general.py — 通用 RL 策略的命令行入口脚本
+=================================================
+支持两种运行模式:
+  train  多任务 round-robin 训练通用策略 + Critic
+  infer  利用已训练的通用策略做离线 rollout 搜索最优配置
+
+用法:
+  python rl_tune_general.py train --base_model ... --data_path mrpc,cola,rte ...
+  python rl_tune_general.py infer --base_model ... --data_path mrpc ...
+"""
+
+import os
+import sys
+import json
+import numpy as np
+from typing import List, Optional, Union
+
+import fire
+import torch
+import transformers
+from datasets import load_dataset
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    LlamaTokenizer,
+    DataCollatorWithPadding,
+)
+
+sys.path.append(os.path.join(os.getcwd(), "./importance-aware-sparse-tuning-IST-paper/peft/src/"))
+
+
+# ---------------------------------------------------------------------------
+# Helpers (shared with rl_tune_genetic.py)
+# ---------------------------------------------------------------------------
+
+def parse_degree_config(raw_value):
+    if raw_value is None or raw_value == "":
+        return None
+    if isinstance(raw_value, (list, tuple)):
+        return [int(item) for item in raw_value]
+    text = str(raw_value).strip()
+    if not text:
+        return None
+    if text.startswith("["):
+        return [int(item) for item in json.loads(text)]
+    return [int(item.strip()) for item in text.split(",") if item.strip()]
+
+
+def parse_noise_config(raw_value):
+    if raw_value is None or raw_value == "":
+        return None
+    if isinstance(raw_value, dict):
+        return raw_value
+    text = str(raw_value).strip()
+    if not text:
+        return None
+    return json.loads(text)
+
+
+def parse_bool_flag(raw_value, flag_name):
+    if isinstance(raw_value, bool):
+        return raw_value
+    if raw_value is None:
+        return False
+    text = str(raw_value).strip().lower()
+    if text in ("1", "true", "t", "yes", "y", "on"):
+        return True
+    if text in ("0", "false", "f", "no", "n", "off", ""):
+        return False
+    raise ValueError(
+        f"Invalid boolean value for {flag_name}: {raw_value!r}. "
+        "Expected one of: true/false/1/0/yes/no."
+    )
+
+
+def parse_positive_int(raw_value, flag_name):
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"Invalid positive integer for {flag_name}: {raw_value!r}."
+        ) from None
+    if value <= 0:
+        raise ValueError(
+            f"Invalid positive integer for {flag_name}: {raw_value!r}."
+        )
+    return value
+
+
+# ---------------------------------------------------------------------------
+# Dataset → BASE_MODEL mapping (mirrors llama_7B_LayerImportance.sh)
+# ---------------------------------------------------------------------------
+_BERT_BASE_MAP = {
+    "wnli": "textattack/bert-base-uncased-WNLI",
+    "rte":  "textattack/bert-base-uncased-RTE",
+    "cola": "textattack/bert-base-uncased-CoLA",
+    "qnli": "textattack/bert-base-uncased-QNLI",
+    "mrpc": "textattack/bert-base-uncased-MRPC",
+    "sst2": "textattack/bert-base-uncased-SST-2",
+    "stsb": "textattack/bert-base-uncased-STS-B",
+}
+_BERT_LARGE_MAP = {
+    "mrpc": "yoshitomo-matsubara/bert-large-uncased-mrpc",
+    "cola": "yoshitomo-matsubara/bert-large-uncased-cola",
+    "stsb": "yoshitomo-matsubara/bert-large-uncased-stsb",
+    "rte":  "yoshitomo-matsubara/bert-large-uncased-rte",
+    "sst2": "yoshitomo-matsubara/bert-large-uncased-sst2",
+    "qnli": "yoshitomo-matsubara/bert-large-uncased-qnli",
+}
+_GPT2_MAP = {
+    "cola": "PavanNeerudu/gpt2-finetuned-cola",
+    "sst2": "PavanNeerudu/gpt2-finetuned-sst2",
+    "mrpc": "PavanNeerudu/gpt2-finetuned-mrpc",
+    "stsb": "PavanNeerudu/gpt2-finetuned-stsb",
+    "qnli": "PavanNeerudu/gpt2-finetuned-qnli",
+    "rte":  "PavanNeerudu/gpt2-finetuned-rte",
+    "wnli": "PavanNeerudu/gpt2-finetuned-wnli",
+}
+
+
+def resolve_base_model(model_type: str, dataset: str) -> str:
+    """Resolve (model_type, dataset) → HuggingFace checkpoint name."""
+    mt = model_type.lower().replace("_", "-")
+    ds = dataset.lower()
+    if mt in ("bert-base", "bertbase"):
+        m = _BERT_BASE_MAP.get(ds)
+    elif mt in ("bert-large", "bertlarge"):
+        m = _BERT_LARGE_MAP.get(ds)
+    elif mt in ("gpt-2", "gpt2"):
+        m = _GPT2_MAP.get(ds)
+    else:
+        raise ValueError(f"Unsupported model-type: {model_type}")
+    if m is None:
+        raise ValueError(
+            f"model-type={model_type} 不支持数据集 {dataset}."
+        )
+    return m
+
+
+# ---------------------------------------------------------------------------
+# 创建 evaluator 的辅助函数
+# ---------------------------------------------------------------------------
+
+def _build_evaluator(
+    base_model: str,
+    data_path: str,
+    batch_size: int,
+    rl_lr: float,
+    degree: int,
+    run_output_dir: str,
+    stage1_rl_episodes: int = 51000,
+    stage2_rl_episodes: int = 40000,
+    val_set_size: int = 120,
+    cutoff_len: int = 256,
+    lora_r: int = 32,
+    lora_alpha: int = 64,
+    load_8bit: bool = False,
+):
+    """创建并返回 (model, evaluator, data_collator)。"""
+    if 'llama' in base_model and 'llama3' not in base_model:
+        tokenizer = LlamaTokenizer.from_pretrained(base_model)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
+
+    tokenizer.pad_token = tokenizer.eos_token if tokenizer.eos_token else "[PAD]"
+
+    config = AutoConfig.from_pretrained(base_model)
+    _dp = data_path.lower()
+    if _dp == "stsb":
+        _num_labels = 1
+    elif _dp == "mnli":
+        _num_labels = 3
+    else:
+        _num_labels = 2
+
+    device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)}
+    model = AutoModelForSequenceClassification.from_pretrained(
+        base_model,
+        num_labels=_num_labels,
+        device_map=device_map,
+        trust_remote_code=True,
+        pad_token_id=tokenizer.pad_token_id,
+    )
+
+    for _param in model.parameters():
+        _param.requires_grad_(False)
+    model.eval()
+    model.to("cuda")
+
+    # Tokenize
+    def tokenize_fn(examples):
+        dp_lower = data_path.lower()
+        if dp_lower in ("sst2", "cola"):
+            return tokenizer(
+                examples["sentence"],
+                truncation=True, padding=False, max_length=128, return_tensors=None,
+            )
+        elif dp_lower == "qnli":
+            return tokenizer(
+                examples["question"], examples["sentence"],
+                truncation=True, padding=False, max_length=128, return_tensors=None,
+            )
+        elif dp_lower == "mnli":
+            return tokenizer(
+                examples["premise"], examples["hypothesis"],
+                truncation=True, padding=False, max_length=128, return_tensors=None,
+            )
+        else:
+            return tokenizer(
+                examples["sentence1"], examples["sentence2"],
+                truncation=True, padding=False, max_length=128, return_tensors=None,
+            )
+
+    data = load_dataset("nyu-mll/glue", data_path)
+
+    val_data_mm = None
+    is_mnli = data_path.lower() == "mnli"
+    if is_mnli:
+        train_data = data["train"].shuffle().map(tokenize_fn)
+        val_data = data["validation_matched"].shuffle().map(tokenize_fn)
+        val_data_mm = data["validation_mismatched"].shuffle().map(tokenize_fn)
+        train_data = train_data.rename_column("label", "labels")
+        val_data = val_data.rename_column("label", "labels")
+        val_data_mm = val_data_mm.rename_column("label", "labels")
+        columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
+        train_data.set_format(type="torch", columns=columns)
+        val_data.set_format(type="torch", columns=columns)
+        val_data_mm.set_format(type="torch", columns=columns)
+    else:
+        train_data = data["train"].shuffle().map(tokenize_fn)
+        val_data = data["validation"].shuffle().map(tokenize_fn)
+        train_data = train_data.rename_column("label", "labels")
+        val_data = val_data.rename_column("label", "labels")
+        columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
+        train_data.set_format(type="torch", columns=columns)
+        val_data.set_format(type="torch", columns=columns)
+
+    data_collator = DataCollatorWithPadding(
+        tokenizer=tokenizer,
+        padding="max_length",
+        max_length=128,
+        return_tensors="pt",
+        pad_to_multiple_of=8,
+    )
+
+    from layer_importance_evaluator import LayerImportanceEvaluator
+
+    evaluator = LayerImportanceEvaluator(
+        model=model,
+        train_data=train_data,
+        test_data=val_data,
+        data_collator=data_collator,
+        batch_size=batch_size,
+        rl_lr=rl_lr,
+        degree=degree,
+        stage1_rl_episodes=stage1_rl_episodes,
+        stage2_rl_episodes=stage2_rl_episodes,
+        run_output_dir=run_output_dir,
+        final_eval_config_source="search",
+        final_eval_config_path="",
+        skip_noise_rl=False,
+        noise_eval_config_source="search",
+        noise_eval_config_path="",
+        skip_stage1_rl=False,
+        skip_stage1_final_eval=True,
+        skip_noise_final_eval=True,
+        data_path=data_path,
+        test_data_mm=val_data_mm,
+    )
+    model.config.use_cache = False
+    model.config.is_decoder = False
+
+    return model, evaluator, data_collator
+
+
+# ===========================================================================
+# 子命令: train — 多任务 round-robin 训练
+# ===========================================================================
+
+def train(
+    # 基础参数
+    base_model: str = "",
+    data_path: str = "mrpc,cola,rte,stsb",
+    model_type: str = "bert-base",
+    output_dir: str = "./general_rl_output",
+    batch_size: int = 16,
+    rl_lr: float = 1e-4,
+    degree: int = 4,
+    lora_r: int = 32,
+    lora_alpha: int = 64,
+    # 通用策略训练参数
+    total_rounds: int = 50,
+    episodes_per_task_per_round: int = 170,
+    general_lr: float = 3e-5,
+    # Stage-1/Stage-2 选项
+    skip_stage2: bool = False,
+    stage1_output: str = "",
+    stage2_output: str = "",
+    # Stage-1 固定配置（用于 Stage-2 训练）
+    stage1_config_json: str = "",
+    # 设备
+    device: str = "cuda",
+):
+    """多任务 round-robin 训练通用策略 + Critic。
+
+    必须提供多个数据集用逗号分隔: --data_path mrpc,cola,rte,stsb
+    """
+    skip_stage2 = parse_bool_flag(skip_stage2, "skip_stage2")
+    batch_size = parse_positive_int(batch_size, "batch_size")
+    total_rounds = parse_positive_int(total_rounds, "total_rounds")
+    episodes_per_task_per_round = parse_positive_int(
+        episodes_per_task_per_round, "episodes_per_task_per_round"
+    )
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    task_names = [t.strip().lower() for t in data_path.split(",") if t.strip()]
+    if len(task_names) < 1:
+        raise ValueError("--data_path 至少需要提供一个数据集名称。")
+
+    print(f"[通用RL训练] 任务列表: {task_names}")
+    print(f"[通用RL训练] 训练轮数: {total_rounds}, 每轮每任务回合数: {episodes_per_task_per_round}")
+    print(f"[通用RL训练] 学习率: {general_lr}, 设备: {device}")
+
+    from general_policy_module import (
+        prepare_stage1_task,
+        multi_task_train_stage1,
+        prepare_stage2_task,
+        multi_task_train_stage2,
+    )
+
+    # ---- Stage-1 训练 ----
+    s1_output = stage1_output or os.path.join(output_dir, "general_stage1_policy.pt")
+    print(f"\n{'='*60}")
+    print(f"[Stage-1] 准备多任务训练...")
+    print(f"[Stage-1] 输出路径: {s1_output}")
+    print(f"{'='*60}")
+
+    s1_tasks = {}
+    evaluators = {}
+    for name in task_names:
+        bm = base_model if base_model else resolve_base_model(model_type, name)
+        print(f"  准备任务 {name} (base_model={bm}) ...")
+        _, ev, _ = _build_evaluator(
+            base_model=bm,
+            data_path=name,
+            batch_size=batch_size,
+            rl_lr=rl_lr,
+            degree=degree,
+            run_output_dir=os.path.join(output_dir, f"task_{name}"),
+            lora_r=lora_r,
+            lora_alpha=lora_alpha,
+        )
+        evaluators[name] = ev
+        s1_tasks[name] = prepare_stage1_task(ev, use_train=True)
+        print(f"  任务 {name} 准备完毕. task_context={s1_tasks[name]['task_context']}")
+
+    multi_task_train_stage1(
+        tasks=s1_tasks,
+        output_path=s1_output,
+        total_rounds=total_rounds,
+        episodes_per_task_per_round=episodes_per_task_per_round,
+        lr=general_lr,
+        log_fn=print,
+        device=device,
+    )
+    print(f"\n[Stage-1] 训练完成, 策略已保存至: {s1_output}")
+
+    # ---- Stage-2 训练 ----
+    if skip_stage2:
+        print("[Stage-2] 已跳过 (--skip_stage2)")
+        return {"stage1_policy_path": s1_output}
+
+    s2_output = stage2_output or os.path.join(output_dir, "general_stage2_noise_policy.pt")
+    print(f"\n{'='*60}")
+    print(f"[Stage-2] 准备多任务噪声策略训练...")
+    print(f"[Stage-2] 输出路径: {s2_output}")
+    print(f"{'='*60}")
+
+    # 加载 Stage-1 配置（每个任务的 fixed_gelu / fixed_softmax）
+    stage1_configs = {}
+    if stage1_config_json:
+        with open(stage1_config_json, "r") as f:
+            stage1_configs = json.load(f)
+        print(f"[Stage-2] 从 JSON 加载 Stage-1 配置: {stage1_config_json}")
+    else:
+        # 用通用策略 offline 推断每个任务的 Stage-1 配置
+        from general_policy_module import offline_find_best_config_stage1
+        print(f"[Stage-2] 使用 Stage-1 通用策略离线推断各任务的 GELU/Softmax 配置...")
+        for name in task_names:
+            result = offline_find_best_config_stage1(
+                evaluator=evaluators[name],
+                general_policy_path=s1_output,
+                num_rollouts=500,
+                greedy=False,
+                device=device,
+                log_fn=print,
+            )
+            stage1_configs[name] = {
+                "gelu": result["best_config"]["gelu"].tolist(),
+                "softmax": result["best_config"]["softmax"].tolist(),
+            }
+            print(f"  任务 {name}: best_reward={result['best_reward']:.4f}")
+
+        # 保存推断结果
+        s1_config_path = os.path.join(output_dir, "stage1_configs_from_general.json")
+        with open(s1_config_path, "w") as f:
+            json.dump(stage1_configs, f, indent=2)
+        print(f"[Stage-2] Stage-1 配置已保存至: {s1_config_path}")
+
+    s2_tasks = {}
+    for name in task_names:
+        cfg = stage1_configs[name]
+        fixed_gelu = np.array(cfg["gelu"], dtype=int)
+        fixed_softmax = np.array(cfg["softmax"], dtype=int)
+        s2_tasks[name] = prepare_stage2_task(
+            evaluators[name], fixed_gelu, fixed_softmax,
+        )
+        print(f"  任务 {name} Stage-2 准备完毕.")
+
+    multi_task_train_stage2(
+        tasks=s2_tasks,
+        output_path=s2_output,
+        total_rounds=total_rounds,
+        episodes_per_task_per_round=episodes_per_task_per_round,
+        lr=general_lr,
+        log_fn=print,
+        device=device,
+    )
+    print(f"\n[Stage-2] 训练完成, 噪声策略已保存至: {s2_output}")
+
+    return {
+        "stage1_policy_path": s1_output,
+        "stage2_policy_path": s2_output,
+    }
+
+
+# ===========================================================================
+# 子命令: infer — 离线 rollout 推断
+# ===========================================================================
+
+def infer(
+    # 基础参数
+    base_model: str = "",
+    data_path: str = "mrpc",
+    model_type: str = "bert-base",
+    output_dir: str = "./general_rl_infer_output",
+    batch_size: int = 16,
+    rl_lr: float = 1e-4,
+    degree: int = 4,
+    lora_r: int = 32,
+    lora_alpha: int = 64,
+    # 通用策略路径
+    general_stage1_policy: str = "general_stage1_policy.pt",
+    general_stage2_policy: str = "",
+    # 推断参数
+    num_rollouts: int = 500,
+    greedy: bool = False,
+    # Stage-1 固定配置（用于 Stage-2 推断，可选）
+    fixed_gelu: str = "",
+    fixed_softmax: str = "",
+    # 控制
+    skip_stage2: bool = False,
+    # 最终评估
+    skip_final_eval: bool = False,
+    final_eval_random_seed: int = 42,
+    final_eval_permutation_trials: int = 10,
+    final_eval_cost_equivalent_trials: int = 10,
+    final_eval_budget_equivalent_trials: int = 10,
+    noise_eval_repeat_n: int = 1,
+    # 设备
+    device: str = "cuda",
+):
+    """使用已训练的通用策略对单个任务做离线 rollout，找到最优配置。
+
+    --data_path 只需提供单个数据集名称。
+    """
+    skip_stage2 = parse_bool_flag(skip_stage2, "skip_stage2")
+    skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
+    greedy = parse_bool_flag(greedy, "greedy")
+    batch_size = parse_positive_int(batch_size, "batch_size")
+    num_rollouts = parse_positive_int(num_rollouts, "num_rollouts")
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    task_name = data_path.strip().lower()
+    if "," in task_name:
+        raise ValueError("--data_path 离线推断模式只支持单个数据集名称。")
+
+    bm = base_model if base_model else resolve_base_model(model_type, task_name)
+    print(f"[通用RL推断] 任务: {task_name}, base_model={bm}")
+    print(f"[通用RL推断] rollouts={num_rollouts}, greedy={greedy}")
+
+    _, evaluator, _ = _build_evaluator(
+        base_model=bm,
+        data_path=task_name,
+        batch_size=batch_size,
+        rl_lr=rl_lr,
+        degree=degree,
+        run_output_dir=output_dir,
+        lora_r=lora_r,
+        lora_alpha=lora_alpha,
+    )
+
+    from general_policy_module import (
+        offline_find_best_config_stage1,
+        offline_find_best_config_stage2,
+        prepare_stage2_task,
+    )
+    import noise_rl_module_v2 as _s2
+
+    # ---- Stage-1 离线推断 ----
+    print(f"\n{'='*60}")
+    print(f"[Stage-1] 离线 rollout: policy={general_stage1_policy}")
+    print(f"{'='*60}")
+
+    s1_result = offline_find_best_config_stage1(
+        evaluator=evaluator,
+        general_policy_path=general_stage1_policy,
+        num_rollouts=num_rollouts,
+        greedy=greedy,
+        device=device,
+        log_fn=print,
+    )
+    best_gelu = s1_result["best_config"]["gelu"]
+    best_softmax = s1_result["best_config"]["softmax"]
+    print(f"[Stage-1] 最优 reward={s1_result['best_reward']:.4f}")
+    print(f"[Stage-1] GELU={best_gelu.tolist()}")
+    print(f"[Stage-1] Softmax={best_softmax.tolist()}")
+
+    # 保存 Stage-1 结果
+    s1_result_path = os.path.join(output_dir, "stage1_infer_result.json")
+    with open(s1_result_path, "w") as f:
+        json.dump({
+            "task": task_name,
+            "best_reward": float(s1_result["best_reward"]),
+            "best_gelu": best_gelu.tolist(),
+            "best_softmax": best_softmax.tolist(),
+            "num_rollouts": num_rollouts,
+            "greedy": greedy,
+        }, f, indent=2)
+    print(f"[Stage-1] 结果已保存至: {s1_result_path}")
+
+    result = {"stage1_result": s1_result_path}
+
+    # ---- Stage-2 离线推断 ----
+    if skip_stage2 or not general_stage2_policy:
+        if not general_stage2_policy:
+            print("[Stage-2] 未指定 --general_stage2_policy, 跳过 Stage-2 推断.")
+        else:
+            print("[Stage-2] 已跳过 (--skip_stage2)")
+        return result
+
+    # 使用 Stage-1 结果或手动指定的 fixed config
+    fg = parse_degree_config(fixed_gelu) if fixed_gelu else best_gelu
+    fs = parse_degree_config(fixed_softmax) if fixed_softmax else best_softmax
+    fg = np.asarray(fg, dtype=int)
+    fs = np.asarray(fs, dtype=int)
+
+    print(f"\n{'='*60}")
+    print(f"[Stage-2] 离线 rollout: policy={general_stage2_policy}")
+    print(f"[Stage-2] fixed_gelu={fg.tolist()}")
+    print(f"[Stage-2] fixed_softmax={fs.tolist()}")
+    print(f"{'='*60}")
+
+    s2_task = prepare_stage2_task(evaluator, fg, fs)
+    noise_env = _s2._NoiseOptEnv(**s2_task["env_kwargs"])
+
+    s2_result = offline_find_best_config_stage2(
+        evaluator=evaluator,
+        general_policy_path=general_stage2_policy,
+        fixed_gelu=fg,
+        fixed_softmax=fs,
+        noise_env=noise_env,
+        num_rollouts=num_rollouts,
+        greedy=greedy,
+        device=device,
+        log_fn=print,
+    )
+    print(f"[Stage-2] 最优 noise reward={s2_result['best_reward']:.4f}")
+
+    # 保存 Stage-2 结果
+    s2_result_path = os.path.join(output_dir, "stage2_infer_result.json")
+    best_nc = s2_result.get("best_noise_config", {})
+    serializable_nc = {}
+    for k, v in best_nc.items():
+        if isinstance(v, np.ndarray):
+            serializable_nc[k] = v.tolist()
+        elif isinstance(v, (np.integer, np.floating)):
+            serializable_nc[k] = v.item()
+        else:
+            serializable_nc[k] = v
+    with open(s2_result_path, "w") as f:
+        json.dump({
+            "task": task_name,
+            "best_reward": float(s2_result["best_reward"]),
+            "best_noise_config": serializable_nc,
+            "fixed_gelu": fg.tolist(),
+            "fixed_softmax": fs.tolist(),
+            "num_rollouts": num_rollouts,
+            "greedy": greedy,
+        }, f, indent=2)
+    print(f"[Stage-2] 结果已保存至: {s2_result_path}")
+    result["stage2_result"] = s2_result_path
+
+    return result
+
+
+# ===========================================================================
+# 入口
+# ===========================================================================
+
+if __name__ == "__main__":
+    fire.Fire({
+        "train": train,
+        "infer": infer,
+    })

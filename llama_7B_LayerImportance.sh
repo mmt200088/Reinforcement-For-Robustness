@@ -523,13 +523,66 @@ Common options:
         <PATH>/stage1/stage1_rl_checkpoint.pt  (Stage-1)
         <PATH>/stage2_noise/progress/noise_rl_checkpoint.pt  (Stage-2)
 
+  --search-algorithm rl|ga|general-rl
+      Select the search algorithm. Default: rl.
+      rl          Per-task PPO reinforcement learning (rl_tune.py)
+      ga          COINN-style genetic algorithm (rl_tune_genetic.py)
+      general-rl  Multi-task general policy (rl_tune_general.py)
+
+General-RL options (only valid with --search-algorithm general-rl):
+  --general-rl-mode train|infer
+      train: multi-task round-robin training of general policy+critic
+      infer: offline rollout with frozen general policy on a single task
+      Default: infer
+
+  --general-rl-tasks TASK1,TASK2,...
+      Comma-separated task list for train mode. Default: uses --model value.
+      Example: --general-rl-tasks mrpc,cola,rte,stsb
+
+  --general-rl-rounds N
+      Number of round-robin training rounds (train mode). Default: 50
+
+  --general-rl-episodes-per-round N
+      Episodes per task per round (train mode). Default: 170
+
+  --general-rl-lr FLOAT
+      Learning rate for general policy training. Default: 3e-5
+
+  --general-rl-num-rollouts N
+      Number of offline rollouts (infer mode). Default: 500
+
+  --general-rl-greedy
+      Use greedy (argmax) rollout instead of sampling (infer mode).
+
+  --general-stage1-policy PATH
+      Path to trained general Stage-1 policy file (required for infer mode).
+
+  --general-stage2-policy PATH
+      Path to trained general Stage-2 noise policy file (infer mode, optional).
+
+  --general-rl-skip-stage2
+      Skip Stage-2 training/inference.
+
+  --general-rl-stage1-config-json PATH
+      JSON file with per-task Stage-1 configs for Stage-2 training.
+      Format: {"task_name": {"gelu": [...], "softmax": [...]}, ...}
+
   -h, --help
 
 Examples:
+  # Per-task RL (default)
   bash llama_7B_LayerImportance.sh 32 64 output.log 20 2
   bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --batch_size 8 --model mrpc
   bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --stage1-rl-episodes 1020 --stage2-rl-episodes 3400 --model mrpc
-  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc
+
+  # Genetic algorithm
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm ga --model mrpc
+
+  # General RL - train mode (multi-task training)
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm general-rl --general-rl-mode train --general-rl-tasks mrpc,cola,rte,stsb --general-rl-rounds 50 --model mrpc
+
+  # General RL - infer mode (offline rollout)
+  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm general-rl --general-rl-mode infer --general-stage1-policy general_stage1_policy.pt --general-stage2-policy general_stage2_noise_policy.pt --general-rl-num-rollouts 500 --model mrpc
 EOF
 }
 
@@ -586,6 +639,19 @@ LEGACY_STAGE1_EPISODES_ALIAS_USED="false"
 LEGACY_STAGE2_EPISODES_ALIAS_USED="false"
 MIN_RL_EPISODES="170"
 RESUME_RUN_DIR=""
+
+# general-rl 专用默认值
+GENERAL_RL_MODE="infer"
+GENERAL_RL_TASKS=""
+GENERAL_RL_ROUNDS="50"
+GENERAL_RL_EPISODES_PER_ROUND="170"
+GENERAL_RL_LR="3e-5"
+GENERAL_RL_NUM_ROLLOUTS="500"
+GENERAL_RL_GREEDY="false"
+GENERAL_STAGE1_POLICY=""
+GENERAL_STAGE2_POLICY=""
+GENERAL_RL_SKIP_STAGE2="false"
+GENERAL_RL_STAGE1_CONFIG_JSON=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -732,6 +798,60 @@ while [ "$#" -gt 0 ]; do
             RESUME_RUN_DIR="$2"
             shift 2
             ;;
+        # ---- general-rl 专用参数 ----
+        --general-rl-mode)
+            require_option_value "$@"
+            GENERAL_RL_MODE="$2"
+            shift 2
+            ;;
+        --general-rl-tasks)
+            require_option_value "$@"
+            GENERAL_RL_TASKS="$2"
+            shift 2
+            ;;
+        --general-rl-rounds)
+            require_option_value "$@"
+            GENERAL_RL_ROUNDS="$2"
+            shift 2
+            ;;
+        --general-rl-episodes-per-round)
+            require_option_value "$@"
+            GENERAL_RL_EPISODES_PER_ROUND="$2"
+            shift 2
+            ;;
+        --general-rl-lr)
+            require_option_value "$@"
+            GENERAL_RL_LR="$2"
+            shift 2
+            ;;
+        --general-rl-num-rollouts)
+            require_option_value "$@"
+            GENERAL_RL_NUM_ROLLOUTS="$2"
+            shift 2
+            ;;
+        --general-rl-greedy)
+            GENERAL_RL_GREEDY="true"
+            shift 1
+            ;;
+        --general-stage1-policy)
+            require_option_value "$@"
+            GENERAL_STAGE1_POLICY="$2"
+            shift 2
+            ;;
+        --general-stage2-policy)
+            require_option_value "$@"
+            GENERAL_STAGE2_POLICY="$2"
+            shift 2
+            ;;
+        --general-rl-skip-stage2)
+            GENERAL_RL_SKIP_STAGE2="true"
+            shift 1
+            ;;
+        --general-rl-stage1-config-json)
+            require_option_value "$@"
+            GENERAL_RL_STAGE1_CONFIG_JSON="$2"
+            shift 2
+            ;;
         -h|--help)
             usage
             exit 0
@@ -754,24 +874,29 @@ case "$SEARCH_ALGORITHM" in
     ga|genetic)
         SEARCH_ALGORITHM="ga"
         ;;
+    general-rl|general_rl|generalrl)
+        SEARCH_ALGORITHM="general-rl"
+        ;;
     *)
-        error_exit "不支持的 --search-algorithm: $SEARCH_ALGORITHM。支持的选项: rl, ga"
+        error_exit "不支持的 --search-algorithm: $SEARCH_ALGORITHM。支持的选项: rl, ga, general-rl"
         ;;
 esac
 
-if [ "$FINAL_EVAL_CONFIG_PATH_SPECIFIED" = "false" ]; then
-    if [ "$SEARCH_ALGORITHM" = "ga" ]; then
-        FINAL_EVAL_CONFIG_PATH="glue_configs_best_genetic.json"
-    else
-        FINAL_EVAL_CONFIG_PATH="glue_configs_best_ppo.json"
+if [ "$SEARCH_ALGORITHM" != "general-rl" ]; then
+    if [ "$FINAL_EVAL_CONFIG_PATH_SPECIFIED" = "false" ]; then
+        if [ "$SEARCH_ALGORITHM" = "ga" ]; then
+            FINAL_EVAL_CONFIG_PATH="glue_configs_best_genetic.json"
+        else
+            FINAL_EVAL_CONFIG_PATH="glue_configs_best_ppo.json"
+        fi
     fi
-fi
 
-if [ "$NOISE_EVAL_CONFIG_PATH_SPECIFIED" = "false" ]; then
-    if [ "$SEARCH_ALGORITHM" = "ga" ]; then
-        NOISE_EVAL_CONFIG_PATH="glue_noise_configs_best_genetic.json"
-    else
-        NOISE_EVAL_CONFIG_PATH="glue_noise_configs_best_ppo.json"
+    if [ "$NOISE_EVAL_CONFIG_PATH_SPECIFIED" = "false" ]; then
+        if [ "$SEARCH_ALGORITHM" = "ga" ]; then
+            NOISE_EVAL_CONFIG_PATH="glue_noise_configs_best_genetic.json"
+        else
+            NOISE_EVAL_CONFIG_PATH="glue_noise_configs_best_ppo.json"
+        fi
     fi
 fi
 
@@ -804,6 +929,77 @@ if [ "$SEARCH_ALGORITHM" = "ga" ] && {
     error_exit "已选择 --search-algorithm=ga，但仍使用了 RL 命名的兼容选项。请改用算法无关写法：--skip-stage1-search / --skip-noise-search / --stage1-search-episodes / --stage2-search-episodes。"
 fi
 
+# ---- general-rl 安全性检查 ----
+if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
+    # general-rl 模式下不得使用 rl/ga 独有的参数
+    if [ "$LEGACY_STAGE1_SKIP_ALIAS_USED" = "true" ] ||
+       [ "$LEGACY_STAGE2_SKIP_ALIAS_USED" = "true" ] ||
+       [ "$LEGACY_STAGE1_EPISODES_ALIAS_USED" = "true" ] ||
+       [ "$LEGACY_STAGE2_EPISODES_ALIAS_USED" = "true" ]; then
+        error_exit "已选择 --search-algorithm=general-rl，但使用了 RL 专用参数（--skip-stage1-rl / --skip-noise-rl / --stage1-rl-episodes / --stage2-rl-episodes）。general-rl 模式请使用 --general-rl-* 系列参数。"
+    fi
+    if [ "$SKIP_STAGE1_RL" = "true" ] || [ "$SKIP_NOISE_RL" = "true" ]; then
+        error_exit "已选择 --search-algorithm=general-rl，但使用了 --skip-stage1-search / --skip-noise-search。general-rl 模式请使用 --general-rl-skip-stage2 控制是否跳过 Stage-2。"
+    fi
+    if [ "$STAGE1_RL_EPISODES_SPECIFIED" = "true" ] || [ "$STAGE2_RL_EPISODES_SPECIFIED" = "true" ]; then
+        error_exit "已选择 --search-algorithm=general-rl，但使用了 --stage1-search-episodes / --stage2-search-episodes。general-rl 模式请使用 --general-rl-rounds 和 --general-rl-episodes-per-round 控制训练量。"
+    fi
+    if [ "$FINAL_EVAL_CONFIG_PATH_SPECIFIED" = "true" ] || [ "$NOISE_EVAL_CONFIG_PATH_SPECIFIED" = "true" ]; then
+        error_exit "已选择 --search-algorithm=general-rl，但使用了 --final-eval-config / --noise-eval-config。general-rl 模式下 Stage-1/Stage-2 配置由通用策略自动生成。"
+    fi
+    if [ "$MANUAL_FINAL_GELU_SPECIFIED" = "true" ] || [ "$MANUAL_FINAL_SOFTMAX_SPECIFIED" = "true" ] || [ "$MANUAL_NOISE_CONFIG_SPECIFIED" = "true" ]; then
+        error_exit "已选择 --search-algorithm=general-rl，但使用了 --manual-gelu / --manual-softmax / --manual-noise-config。general-rl 模式下配置由通用策略自动生成。"
+    fi
+
+    # 模式检查
+    GENERAL_RL_MODE="$(printf '%s' "$GENERAL_RL_MODE" | tr '[:upper:]' '[:lower:]')"
+    case "$GENERAL_RL_MODE" in
+        train|infer) ;;
+        *) error_exit "--general-rl-mode 必须为 train 或 infer，当前值: $GENERAL_RL_MODE" ;;
+    esac
+
+    # train 模式检查
+    if [ "$GENERAL_RL_MODE" = "train" ]; then
+        if [ -n "$GENERAL_STAGE1_POLICY" ]; then
+            error_exit "train 模式不需要 --general-stage1-policy（该参数用于 infer 模式）。"
+        fi
+        if ! is_positive_integer "$GENERAL_RL_ROUNDS"; then
+            error_exit "--general-rl-rounds 必须是正整数，当前值: $GENERAL_RL_ROUNDS"
+        fi
+        if ! is_positive_integer "$GENERAL_RL_EPISODES_PER_ROUND"; then
+            error_exit "--general-rl-episodes-per-round 必须是正整数，当前值: $GENERAL_RL_EPISODES_PER_ROUND"
+        fi
+    fi
+
+    # infer 模式检查
+    if [ "$GENERAL_RL_MODE" = "infer" ]; then
+        if [ -z "$GENERAL_STAGE1_POLICY" ]; then
+            error_exit "infer 模式必须指定 --general-stage1-policy 指向已训练的通用 Stage-1 策略文件。"
+        fi
+        if [ ! -f "$GENERAL_STAGE1_POLICY" ]; then
+            error_exit "--general-stage1-policy 指定的文件不存在: $GENERAL_STAGE1_POLICY"
+        fi
+        if [ -n "$GENERAL_STAGE2_POLICY" ] && [ ! -f "$GENERAL_STAGE2_POLICY" ]; then
+            error_exit "--general-stage2-policy 指定的文件不存在: $GENERAL_STAGE2_POLICY"
+        fi
+        if ! is_positive_integer "$GENERAL_RL_NUM_ROLLOUTS"; then
+            error_exit "--general-rl-num-rollouts 必须是正整数，当前值: $GENERAL_RL_NUM_ROLLOUTS"
+        fi
+        if [ -n "$GENERAL_RL_STAGE1_CONFIG_JSON" ]; then
+            error_exit "infer 模式不需要 --general-rl-stage1-config-json（该参数用于 train 模式的 Stage-2 训练）。"
+        fi
+    fi
+fi
+
+# ---- rl/ga 模式下不得使用 general-rl 专用参数 ----
+if [ "$SEARCH_ALGORITHM" != "general-rl" ]; then
+    if [ -n "$GENERAL_STAGE1_POLICY" ] || [ -n "$GENERAL_STAGE2_POLICY" ] ||
+       [ "$GENERAL_RL_GREEDY" = "true" ] || [ -n "$GENERAL_RL_TASKS" ] ||
+       [ -n "$GENERAL_RL_STAGE1_CONFIG_JSON" ] || [ "$GENERAL_RL_SKIP_STAGE2" = "true" ]; then
+        error_exit "当前使用 --search-algorithm=$SEARCH_ALGORITHM，但指定了 general-rl 专用参数。请使用 --search-algorithm=general-rl 或移除这些参数。"
+    fi
+fi
+
 if ! is_positive_integer "$NOISE_EVAL_REPEAT_N"; then
     error_exit "--noise-eval-repeat 必须是正整数，当前值为 '$NOISE_EVAL_REPEAT_N'。"
 fi
@@ -811,6 +1007,9 @@ fi
 if ! is_positive_integer "$BATCH_SIZE"; then
     error_exit "--batch_size must be a positive integer, got '$BATCH_SIZE'."
 fi
+
+# ---- 以下检查仅适用于 rl / ga 模式 ----
+if [ "$SEARCH_ALGORITHM" != "general-rl" ]; then
 
 if ! is_positive_integer "$STAGE1_RL_EPISODES"; then
     error_exit "--stage1-rl-episodes must be a positive integer, got '$STAGE1_RL_EPISODES'."
@@ -920,6 +1119,8 @@ elif [ "$NOISE_EVAL_CONFIG_PATH_SPECIFIED" = "true" ] && [ "$SKIP_NOISE_FINAL_EV
     error_exit "只有在 --noise-eval-source=json 时才能提供 --noise-eval-config。"
 fi
 
+fi  # end of rl/ga-only validation
+
 MODEL_TYPE="$(printf '%s' "$MODEL_TYPE" | tr '[:upper:]' '[:lower:]')"
 case "$MODEL_TYPE" in
     bert-base|bert_base|bertbase)   MODEL_TYPE="bert-base"  ;;
@@ -995,51 +1196,95 @@ mkdir -p "${RUN_ROOT}/logs"
 
 if [ "$SEARCH_ALGORITHM" = "ga" ]; then
     SEARCH_ENTRYPOINT="rl_tune_genetic.py"
+elif [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
+    SEARCH_ENTRYPOINT="rl_tune_general.py"
 else
     SEARCH_ENTRYPOINT="rl_tune.py"
 fi
 
-CMD=(
-    python "$SEARCH_ENTRYPOINT"
-    --base_model "$BASE_MODEL"
-    --data_path "$DATA_PATH"
-    --output_dir "$RUN_ROOT"
-    --batch_size "$BATCH_SIZE"
-    --micro_batch_size "$BATCH_SIZE"
-    --num_epochs 1
-    --learning_rate 2e-4
-    --cutoff_len 256
-    --val_set_size 120
-    --eval_step 80
-    --adapter_name lora
-    --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]"
-    --lora_r "$LORA_R"
-    --lora_alpha "$LORA_ALPHA"
-    --rl_lr "$RL_LR"
-    --degree "$DEGREE"
-    --stage1_rl_episodes "$STAGE1_RL_EPISODES"
-    --stage2_rl_episodes "$STAGE2_RL_EPISODES"
-    --stage1_rl_episodes_specified "$STAGE1_RL_EPISODES_SPECIFIED"
-    --stage2_rl_episodes_specified "$STAGE2_RL_EPISODES_SPECIFIED"
-    --use_ist
-    --final_eval_config_source "$FINAL_EVAL_SOURCE"
-    --final_eval_config_path "$FINAL_EVAL_CONFIG_PATH"
-    --manual_final_gelu "$MANUAL_FINAL_GELU"
-    --manual_final_softmax "$MANUAL_FINAL_SOFTMAX"
-    --final_eval_random_seed "$FINAL_EVAL_RANDOM_SEED"
-    --final_eval_permutation_trials "$FINAL_EVAL_PERMUTATION_TRIALS"
-    --final_eval_cost_equivalent_trials "$FINAL_EVAL_COST_EQUIVALENT_TRIALS"
-    --final_eval_budget_equivalent_trials "$FINAL_EVAL_BUDGET_EQUIVALENT_TRIALS"
-    --skip_noise_rl "$SKIP_NOISE_RL"
-    --noise_eval_config_source "$NOISE_EVAL_SOURCE"
-    --noise_eval_config_path "$NOISE_EVAL_CONFIG_PATH"
-    --manual_noise_config "$MANUAL_NOISE_CONFIG"
-    --noise_eval_repeat_n "$NOISE_EVAL_REPEAT_N"
-    --skip_stage1_rl "$SKIP_STAGE1_RL"
-    --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL"
-    --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL"
-    --resume_run_dir "$RESUME_RUN_DIR"
-)
+if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
+    # general-rl 使用独立的 CMD 构造
+    GENERAL_DATA_PATH="$DATA_PATH"
+    if [ "$GENERAL_RL_MODE" = "train" ] && [ -n "$GENERAL_RL_TASKS" ]; then
+        GENERAL_DATA_PATH="$GENERAL_RL_TASKS"
+    fi
+    CMD=(
+        python "$SEARCH_ENTRYPOINT" "$GENERAL_RL_MODE"
+        --model_type "$MODEL_TYPE"
+        --data_path "$GENERAL_DATA_PATH"
+        --output_dir "$RUN_ROOT"
+        --batch_size "$BATCH_SIZE"
+        --rl_lr "$RL_LR"
+        --degree "$DEGREE"
+        --lora_r "$LORA_R"
+        --lora_alpha "$LORA_ALPHA"
+        --device "cuda"
+    )
+    if [ "$GENERAL_RL_MODE" = "train" ]; then
+        CMD+=(
+            --total_rounds "$GENERAL_RL_ROUNDS"
+            --episodes_per_task_per_round "$GENERAL_RL_EPISODES_PER_ROUND"
+            --general_lr "$GENERAL_RL_LR"
+            --skip_stage2 "$GENERAL_RL_SKIP_STAGE2"
+        )
+        if [ -n "$GENERAL_RL_STAGE1_CONFIG_JSON" ]; then
+            CMD+=(--stage1_config_json "$GENERAL_RL_STAGE1_CONFIG_JSON")
+        fi
+    else
+        # infer mode
+        CMD+=(
+            --general_stage1_policy "$GENERAL_STAGE1_POLICY"
+            --num_rollouts "$GENERAL_RL_NUM_ROLLOUTS"
+            --greedy "$GENERAL_RL_GREEDY"
+            --skip_stage2 "$GENERAL_RL_SKIP_STAGE2"
+        )
+        if [ -n "$GENERAL_STAGE2_POLICY" ]; then
+            CMD+=(--general_stage2_policy "$GENERAL_STAGE2_POLICY")
+        fi
+    fi
+else
+    CMD=(
+        python "$SEARCH_ENTRYPOINT"
+        --base_model "$BASE_MODEL"
+        --data_path "$DATA_PATH"
+        --output_dir "$RUN_ROOT"
+        --batch_size "$BATCH_SIZE"
+        --micro_batch_size "$BATCH_SIZE"
+        --num_epochs 1
+        --learning_rate 2e-4
+        --cutoff_len 256
+        --val_set_size 120
+        --eval_step 80
+        --adapter_name lora
+        --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]"
+        --lora_r "$LORA_R"
+        --lora_alpha "$LORA_ALPHA"
+        --rl_lr "$RL_LR"
+        --degree "$DEGREE"
+        --stage1_rl_episodes "$STAGE1_RL_EPISODES"
+        --stage2_rl_episodes "$STAGE2_RL_EPISODES"
+        --stage1_rl_episodes_specified "$STAGE1_RL_EPISODES_SPECIFIED"
+        --stage2_rl_episodes_specified "$STAGE2_RL_EPISODES_SPECIFIED"
+        --use_ist
+        --final_eval_config_source "$FINAL_EVAL_SOURCE"
+        --final_eval_config_path "$FINAL_EVAL_CONFIG_PATH"
+        --manual_final_gelu "$MANUAL_FINAL_GELU"
+        --manual_final_softmax "$MANUAL_FINAL_SOFTMAX"
+        --final_eval_random_seed "$FINAL_EVAL_RANDOM_SEED"
+        --final_eval_permutation_trials "$FINAL_EVAL_PERMUTATION_TRIALS"
+        --final_eval_cost_equivalent_trials "$FINAL_EVAL_COST_EQUIVALENT_TRIALS"
+        --final_eval_budget_equivalent_trials "$FINAL_EVAL_BUDGET_EQUIVALENT_TRIALS"
+        --skip_noise_rl "$SKIP_NOISE_RL"
+        --noise_eval_config_source "$NOISE_EVAL_SOURCE"
+        --noise_eval_config_path "$NOISE_EVAL_CONFIG_PATH"
+        --manual_noise_config "$MANUAL_NOISE_CONFIG"
+        --noise_eval_repeat_n "$NOISE_EVAL_REPEAT_N"
+        --skip_stage1_rl "$SKIP_STAGE1_RL"
+        --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL"
+        --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL"
+        --resume_run_dir "$RESUME_RUN_DIR"
+    )
+fi
 
 echo "Search algorithm: $SEARCH_ALGORITHM (entrypoint=$SEARCH_ENTRYPOINT)"
 echo "Model type: $MODEL_TYPE"

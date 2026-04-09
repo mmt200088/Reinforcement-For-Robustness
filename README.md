@@ -1,32 +1,108 @@
-## 搜索算法可选项说明（强化学习 / 遗传算法）
+## 命令行参数总表
 
-现在统一通过主脚本选择搜索算法，不再区分单独的 GA 启动脚本：
+```bash
+bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [degree] [options]
+```
+
+### 位置参数
+
+| 参数 | 说明 |
+| --- | --- |
+| `lora_r` | LoRA rank，当前固定传 `32` |
+| `lora_alpha` | LoRA alpha，当前固定传 `64` |
+| `logfile_path` | nohup 日志文件名提示；真实日志自动写入 run 目录下 `logs/` |
+| `rl_lr` | PPO 学习率控制。若 `< 1` 则直接作为学习率；旧值 `20`/`40` 解释为 `20e-6`/`40e-6` |
+| `degree` | 历史调试参数，固定传 `2` |
+
+### 可选参数一览
+
+| 参数 | 适用模式 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| **算法选择** | | | |
+| `--search-algorithm` | 全局 | `rl` | 搜索算法：`rl`（PPO）/ `ga`（遗传）/ `general-rl`（通用策略） |
+| **模型与数据集** | | | |
+| `--model DATASET` | 全局 | `mrpc` | 数据集：mrpc, sst2, stsb, cola, qnli, rte, wnli |
+| `--model-type TYPE` | 全局 | `bert-base` | 骨干模型：bert-base, bert-large, gpt-2 |
+| `--batch_size N` | 全局 | `16` | 推理批次大小（同步设 batch_size 和 micro_batch_size） |
+| **rl / ga 共享参数** | | | |
+| `--stage1-search-episodes N` | rl, ga | `51000` | Stage-1 搜索回合数 |
+| `--stage2-search-episodes N` | rl, ga | `40000` | Stage-2 噪声搜索回合数 |
+| `--skip-stage1-search` | rl, ga | — | 跳过 Stage-1 搜索（GA 推荐写法） |
+| `--skip-noise-search` | rl, ga | — | 跳过 Stage-2 噪声搜索（GA 推荐写法） |
+| `--skip-stage1-final-eval` | rl, ga | — | 跳过 Stage-1 最终评估 |
+| `--skip-noise-final-eval` | rl, ga | — | 跳过 Stage-2 噪声最终评估 |
+| `--final-eval-source` | rl, ga | `search` | Stage-1 评估配置来源：search / json / manual |
+| `--final-eval-config PATH` | rl, ga | 自动 | Stage-1 JSON 配置文件路径 |
+| `--noise-eval-source` | rl, ga | `search` | Stage-2 评估配置来源：search / json / manual |
+| `--noise-eval-config PATH` | rl, ga | 自动 | Stage-2 噪声 JSON 配置文件路径 |
+| `--noise-eval-repeat N` | rl, ga | `1` | 噪声最终评估重复次数 |
+| `--manual-gelu` | rl, ga | — | Stage-1 手动 GELU 配置 |
+| `--manual-softmax` | rl, ga | — | Stage-1 手动 Softmax 配置 |
+| `--manual-noise-config` | rl, ga | — | Stage-2 手动噪声配置（JSON 字符串） |
+| `--random-seed` | rl, ga | `42` | 最终评估随机种子 |
+| `--perm-trials N` | rl, ga | `10` | 置换试验次数 |
+| `--cost-trials N` | rl, ga | `10` | 等价成本试验次数 |
+| `--budget-trials N` | rl, ga | `10` | 等价预算试验次数 |
+| `--resume-from PATH` | rl, ga | — | 从之前的 run 目录恢复训练 |
+| **rl 兼容别名**（GA 模式下禁用） | | | |
+| `--stage1-rl-episodes N` | rl | `51000` | 等价于 --stage1-search-episodes |
+| `--stage2-rl-episodes N` | rl | `40000` | 等价于 --stage2-search-episodes |
+| `--skip-stage1-rl` | rl | — | 等价于 --skip-stage1-search |
+| `--skip-noise-rl` | rl | — | 等价于 --skip-noise-search |
+| **general-rl 专用参数**（仅 general-rl 模式可用） | | | |
+| `--general-rl-mode` | general-rl | `infer` | 运行模式：`train`（多任务训练）/ `infer`（离线推断） |
+| `--general-rl-tasks T1,T2,...` | general-rl (train) | 同 --model | 逗号分隔的训练任务列表 |
+| `--general-rl-rounds N` | general-rl (train) | `50` | Round-robin 训练轮数 |
+| `--general-rl-episodes-per-round N` | general-rl (train) | `170` | 每轮每任务的回合数 |
+| `--general-rl-lr FLOAT` | general-rl (train) | `3e-5` | 通用策略训练学习率 |
+| `--general-rl-num-rollouts N` | general-rl (infer) | `500` | 离线 rollout 次数 |
+| `--general-rl-greedy` | general-rl (infer) | — | 使用贪心（argmax）rollout |
+| `--general-stage1-policy PATH` | general-rl (infer) | — | 已训练的通用 Stage-1 策略文件路径（**必需**） |
+| `--general-stage2-policy PATH` | general-rl (infer) | — | 已训练的通用 Stage-2 噪声策略文件路径（可选） |
+| `--general-rl-skip-stage2` | general-rl | — | 跳过 Stage-2 训练/推断 |
+| `--general-rl-stage1-config-json PATH` | general-rl (train) | — | Stage-2 训练时各任务的 Stage-1 配置 JSON |
+
+### 模式互斥规则
+
+- 选择 `--search-algorithm=general-rl` 后，**不能**使用 rl/ga 专用参数（如 `--stage1-rl-episodes`、`--skip-stage1-rl`、`--final-eval-config`、`--manual-gelu` 等），否则脚本报错。
+- 选择 `--search-algorithm=rl` 或 `ga` 后，**不能**使用 general-rl 专用参数（如 `--general-stage1-policy`、`--general-rl-tasks` 等），否则脚本报错。
+- 选择 `--search-algorithm=ga` 后，**不能**使用 RL 兼容别名（如 `--skip-stage1-rl`、`--stage1-rl-episodes`），必须使用算法无关写法。
+
+---
+
+## 搜索算法可选项说明（强化学习 / 遗传算法 / 通用RL）
+
+统一通过主脚本选择搜索算法：
 
 ```bash
 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm rl
 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm ga
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm general-rl --general-rl-mode train --general-rl-tasks mrpc,cola,rte,stsb
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm general-rl --general-rl-mode infer --general-stage1-policy general_stage1_policy.pt --model mrpc
 ```
 
 ### 1. 选项定义
 
 | 选项 | 可选值 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `--search-algorithm` | `rl` / `ga` | `rl` | 统一控制两阶段搜索使用强化学习还是遗传算法 |
+| `--search-algorithm` | `rl` / `ga` / `general-rl` | `rl` | 统一控制搜索使用哪种算法 |
 
 对应关系如下：
 
 | 选项值 | 含义 | 实际入口 |
 | --- | --- | --- |
-| `rl` | 使用现有两阶段强化学习 / PPO 搜索流程 | `rl_tune.py` |
-| `ga` | 使用新的两阶段遗传算法搜索流程 | `rl_tune_genetic.py` |
+| `rl` | Per-task 两阶段 PPO 搜索 | `rl_tune.py` |
+| `ga` | COINN 风格两阶段遗传算法搜索 | `rl_tune_genetic.py` |
+| `general-rl` | 多任务通用策略训练 / 离线推断 | `rl_tune_general.py` |
 
-不写 `--search-algorithm` 时，行为与之前保持一致，仍然默认走 RL。
+不写 `--search-algorithm` 时，默认走 RL。
 
 ### 2. 与现有流程的关系
 
 - `rl` 模式下，保持原有项目逻辑：Stage-1 搜索 `GELU/Softmax`，Stage-2 搜索 7 类噪声 scaling factor。
-- `ga` 模式下，模型、数据集、评估约束、最终评估模块、结果目录结构都与原流程保持一致，只把“搜索算法本体”替换为遗传算法。
-- 两种模式都复用相同的阶段跳过逻辑、最终评估逻辑、JSON/manual 配置读取逻辑和结果输出逻辑，因此对比更公平。
+- `ga` 模式下，模型、数据集、评估约束、最终评估模块、结果目录结构都与原流程保持一致，只把”搜索算法本体”替换为遗传算法。
+- `general-rl` 模式下，使用多任务 round-robin 训练通用策略（含 Critic），部署时只需冻结策略做离线 rollout，无需为每个新任务重新训练数万回合。
+- `rl` 和 `ga` 共用相同的阶段跳过逻辑、最终评估逻辑、JSON/manual 配置读取逻辑和结果输出逻辑，因此对比更公平。`general-rl` 使用独立的参数体系。
 
 ### 3. 推荐写法与兼容写法
 
@@ -71,7 +147,7 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm ga
 - 若第二阶段搜索会执行，且没有跳过噪声最终评估，则 `--noise-eval-source` 只能为 `search`。
 - 若使用 `--noise-eval-source json|manual`，则必须跳过第二阶段搜索。
 
-也就是说，算法选择只是决定“搜索器是 RL 还是 GA”，但不会放宽已有的流程一致性约束。
+也就是说，算法选择只是决定”搜索器是 RL 还是 GA”，但不会放宽已有的流程一致性约束。`general-rl` 模式下这些 rl/ga 阶段约束不适用。
 
 ### 6. 推荐命令示例
 
@@ -123,6 +199,55 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --final-eval-config glue_configs_best_ppo.json
 ```
 
+#### 6.6 通用 RL — 多任务训练（Phase A: 一次性训练通用策略）
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm general-rl \
+  --general-rl-mode train \
+  --general-rl-tasks mrpc,cola,rte,stsb \
+  --general-rl-rounds 50 \
+  --general-rl-episodes-per-round 170 \
+  --general-rl-lr 3e-5 \
+  --model mrpc
+```
+
+训练完成后会在 run 目录下生成 `general_stage1_policy.pt` 和 `general_stage2_noise_policy.pt`。
+
+#### 6.7 通用 RL — 离线推断（Phase B: 快速部署到新任务）
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm general-rl \
+  --general-rl-mode infer \
+  --general-stage1-policy general_stage1_policy.pt \
+  --general-stage2-policy general_stage2_noise_policy.pt \
+  --general-rl-num-rollouts 500 \
+  --model qnli
+```
+
+只做 Stage-1 推断（跳过 Stage-2）：
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm general-rl \
+  --general-rl-mode infer \
+  --general-stage1-policy general_stage1_policy.pt \
+  --general-rl-skip-stage2 \
+  --model mrpc
+```
+
+贪心 rollout（确定性推断，rollout 次数自动置 1）：
+
+```bash
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm general-rl \
+  --general-rl-mode infer \
+  --general-stage1-policy general_stage1_policy.pt \
+  --general-rl-greedy \
+  --model mrpc
+```
+
 ### 7. 常见错误示例
 
 下面这些组合现在会被脚本直接拦下：
@@ -146,6 +271,18 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --skip-noise-search \
   --noise-eval-source json \
   --noise-eval-config glue_noise_configs_best_genetic.json
+
+# 错误：general-rl 模式下使用了 rl/ga 专用参数
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm general-rl \
+  --general-rl-mode infer \
+  --general-stage1-policy general_stage1_policy.pt \
+  --stage1-rl-episodes 51000    # 不允许！
+
+# 错误：rl 模式下使用了 general-rl 专用参数
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm rl \
+  --general-stage1-policy general_stage1_policy.pt    # 不允许！
 ```
 
 ### 8. 迁移建议
@@ -153,6 +290,7 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 - 老命令如果不加 `--search-algorithm`，默认仍走 RL，不会影响已有实验。
 - 新做 GA 对比实验时，建议显式加 `--search-algorithm ga`，并统一使用 `--skip-stage1-search` / `--skip-noise-search` / `--stage1-search-episodes` / `--stage2-search-episodes` 这组算法无关参数。
 - 如果准备长期保留 GA 的 JSON 配置，建议按默认命名方式保存为 `glue_configs_best_genetic.json` 和 `glue_noise_configs_best_genetic.json`，这样脚本能自动做家族一致性检查。
+- 使用通用 RL 时，建议先在少量任务上 `train` 训练策略，然后用 `infer` 部署到新任务。通用策略做 500 次 rollout 的耗时约为 per-task RL 的 1/100。
 
 This is a Repository for Transformer robustness evaluation using Reinforcement Learning.
 
