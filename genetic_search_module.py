@@ -39,7 +39,6 @@ SCORE_EXP_BASE = 4.0
 STAGE1_DEFAULT_POPULATION = 32
 STAGE2_DEFAULT_POPULATION = 32
 STAGNATION_TOLERANCE_BASE = 10
-DIVERSITY_INJECTION_RATIO = 0.5
 
 
 @dataclass
@@ -1131,9 +1130,22 @@ class Stage2NoiseGeneticSearcher:
         best_generation = 0
         stagnation = 0
 
+        # Dynamic stagnation tolerance: ensure at least 1/3 of budget is used
+        # before early stop. COINN does not use aggressive early stopping.
+        effective_stagnation_tolerance = max(
+            STAGNATION_TOLERANCE_BASE,
+            self.max_generations // 3,
+        )
+        diversity_injection_threshold = max(
+            STAGNATION_TOLERANCE_BASE // 2,
+            effective_stagnation_tolerance // 2,
+        )
+
         self._log(
             f"Initial population size={len(population)}  "
             f"max_generations={self.max_generations}  "
+            f"stagnation_tolerance={effective_stagnation_tolerance}  "
+            f"diversity_injection_at={diversity_injection_threshold}  "
             f"initial_incumbent_cost={incumbent['cost']:.2f}  "
             f"initial_incumbent_score={incumbent['score']:.6f}"
         )
@@ -1206,12 +1218,12 @@ class Stage2NoiseGeneticSearcher:
                 f"incumbent_score={incumbent['score']:.6f}  "
                 f"incumbent_cost={incumbent['cost']:.2f}  "
                 f"qualified_ratio={qualified_ratio:.2%}  "
-                f"stagnation={stagnation}/{STAGNATION_TOLERANCE}"
+                f"stagnation={stagnation}/{effective_stagnation_tolerance}"
             )
-            if stagnation > STAGNATION_TOLERANCE:
+            if stagnation > effective_stagnation_tolerance:
                 self._log(
                     f"Early stop: confirmed incumbent has not improved for more than "
-                    f"{STAGNATION_TOLERANCE} generations."
+                    f"{effective_stagnation_tolerance} generations."
                 )
                 break
 
@@ -1226,21 +1238,52 @@ class Stage2NoiseGeneticSearcher:
                 next_seen.add(signature)
 
             _add_next(incumbent)
-            elite_count = min(max(2, self.population_size // 6), len(ranked_candidates))
-            for candidate in ranked_candidates[:elite_count]:
-                _add_next(candidate)
 
-            parent_indices = _weighted_choice_indices(
-                self.rng,
-                scores,
-                max(self.population_size * 3, 1),
+            # Diversity injection: when stagnating, replace bottom portion of
+            # population with fresh random immigrants to escape local optima.
+            inject_diversity = (
+                stagnation > 0
+                and stagnation % diversity_injection_threshold == 0
             )
-            for parent_idx in parent_indices:
-                parent = results[int(parent_idx)]
-                child = self._mutate(parent)
-                _add_next(child)
-                if len(next_population) >= self.population_size:
-                    break
+
+            if inject_diversity:
+                elite_count = min(max(2, self.population_size // 4), len(ranked_candidates))
+                for candidate in ranked_candidates[:elite_count]:
+                    _add_next(candidate)
+                inject_attempts = 0
+                inject_cap = max(200, self.population_size * 30)
+                while len(next_population) < self.population_size and inject_attempts < inject_cap:
+                    inject_attempts += 1
+                    immigrant = _clone_noise_config(self.context.baseline_low_risk_config)
+                    rounds = int(
+                        self.rng.integers(
+                            1,
+                            max(2, self.evaluator.total_layers // 2) + 1,
+                        )
+                    )
+                    for _ in range(rounds):
+                        immigrant = self._mutate(immigrant)
+                    _add_next(immigrant)
+                self._log(
+                    f"[Stage2][Gen {generation:04d}] diversity injection: "
+                    f"injected {len(next_population) - elite_count - 1} random immigrants"
+                )
+            else:
+                elite_count = min(max(2, self.population_size // 6), len(ranked_candidates))
+                for candidate in ranked_candidates[:elite_count]:
+                    _add_next(candidate)
+
+                parent_indices = _weighted_choice_indices(
+                    self.rng,
+                    scores,
+                    max(self.population_size * 3, 1),
+                )
+                for parent_idx in parent_indices:
+                    parent = results[int(parent_idx)]
+                    child = self._mutate(parent)
+                    _add_next(child)
+                    if len(next_population) >= self.population_size:
+                        break
 
             refill_attempts = 0
             refill_cap = max(200, self.population_size * 20)
@@ -1326,7 +1369,7 @@ class Stage2NoiseGeneticSearcher:
             "training_hparams": {
                 "population_size": int(self.population_size),
                 "max_generations": int(self.max_generations),
-                "stagnation_tolerance": int(STAGNATION_TOLERANCE),
+                "stagnation_tolerance": int(effective_stagnation_tolerance),
                 "train_segments": int(self.context.train_segments),
                 "confirm_segments": int(self.context.confirm_segments),
                 "best_test_segments": int(self.context.best_test_segments),
