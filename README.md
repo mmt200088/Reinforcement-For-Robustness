@@ -1127,3 +1127,235 @@ NOISE_RL_OPT_FLAGS["pretrained_policy_path"]  = None   # 不加载预训练 nois
    确认权重加载覆盖率符合预期。
 5. **配合局部最优检测**：训练结束后查看 `<run_dir>/stage{1,2}/pruning_search_log.txt`，
    若报告 `LIKELY LOCAL-OPTIMUM`，可考虑换一个更"远"的 base policy 重新迁移。
+
+### 通用策略 / 通用 Critic（General Policy & General Critic）
+
+`general_policy_module.py` 提供了**跨任务通用策略（General Policy）**和**通用 Critic（General Critic）**的训练与离线部署能力，是对现有 per-task online RL 的补充。
+
+#### 核心思想
+
+1. **多任务轮训（Multi-Task Round-Robin Training）**：在多个数据集 / 约束设定上轮流采集 rollout，共同更新同一个 policy + critic 网络，使 policy 学到"哪些层对精度更敏感"的通用先验，critic 学到跨任务的状态价值模式。
+2. **离线推断（Offline Inference）**：加载训练好的 general policy，在新任务上**只做前向推理（不训练）**，通过 best-of-K rollout 找到该任务的最优配置。
+3. **通用 Critic 快速评分**：Policy 和 Critic 共享 GTrXL 骨干网络。通用 Critic 可以用 V(s) 对候选配置快速评分（不做模型评测），适合预筛选大量候选。
+4. **与现有 online RL 完全并存**：现有的 per-task online RL（`layer_importance_evaluator.py` 的 Stage-1 PPO、`noise_rl_module_v2.py` 的 Stage-2 噪声 PPO）完全不受影响。
+
+#### 网络架构
+
+通用策略网络在原有 `GTrXLStrategyNetwork` 基础上添加了**任务上下文嵌入（task_context_proj）**分支：
+
+- 输入：5 维任务上下文向量 `[baseline_loss, baseline_m1, baseline_m2, error_threshold, correlation_drop_ratio]`
+- 投影：`Linear → LayerNorm → SiLU → Linear → (d_model)`
+- 注入方式：作为可加偏置注入每个 token，不改变基础 GTrXL 架构
+- **零初始化**：最后一层线性层零初始化，加载 per-task 权重时 `task_context_proj` 输出全零，等价于无任务上下文，保证前向兼容
+
+Stage-1 和 Stage-2 分别对应两个网络类：
+
+| 网络类 | 基类 | 用途 |
+| --- | --- | --- |
+| `GeneralStage1PolicyNetwork` | `GTrXLStrategyNetwork` | Stage-1 GELU/Softmax 通用策略 + Critic |
+| `GeneralStage2NoisePolicyNetwork` | `_NoiseGTrXLStrategyNetwork` | Stage-2 噪声 scaling factor 通用策略 + Critic |
+
+#### 使用流程
+
+##### Phase A：多任务训练（一次性，生成通用策略文件）
+
+**Stage-1 通用策略训练**
+
+```python
+from general_policy_module import (
+    prepare_stage1_task, multi_task_train_stage1,
+)
+
+# 为每个任务准备 task config
+tasks = {}
+for name in ["mrpc", "stsb", "cola", "rte"]:
+    ev = create_evaluator(name)  # 你自己的 evaluator 创建逻辑
+    tasks[name] = prepare_stage1_task(ev)
+
+# 多任务 round-robin 训练
+result = multi_task_train_stage1(
+    tasks,
+    output_path="general_stage1_policy.pt",
+    total_rounds=50,                    # round-robin 轮数
+    episodes_per_task_per_round=170,    # 每轮每任务的 episode 数
+    lr=3e-5,                            # 学习率
+    device="cuda",
+)
+# 产出：general_stage1_policy.pt
+```
+
+**Stage-2 通用噪声策略训练**
+
+```python
+from general_policy_module import (
+    prepare_stage2_task, multi_task_train_stage2,
+)
+
+tasks = {}
+for name in ["mrpc", "stsb", "cola", "rte"]:
+    ev = create_evaluator(name)
+    fixed_gelu, fixed_softmax = get_stage1_config(name)  # 该任务的 Stage-1 确定配置
+    tasks[name] = prepare_stage2_task(ev, fixed_gelu, fixed_softmax)
+
+result = multi_task_train_stage2(
+    tasks,
+    output_path="general_stage2_noise_policy.pt",
+    total_rounds=50,
+    episodes_per_task_per_round=170,
+    lr=3e-5,
+    device="cuda",
+)
+# 产出：general_stage2_noise_policy.pt
+```
+
+`multi_task_train_stage1` / `multi_task_train_stage2` 的关键参数：
+
+| 参数 | 说明 | 默认值 |
+| --- | --- | --- |
+| `tasks` | dict，键为任务名，值由 `prepare_stage1_task` / `prepare_stage2_task` 产出 | — |
+| `output_path` | 保存通用策略文件的路径 | — |
+| `total_rounds` | round-robin 总轮数 | `50` |
+| `episodes_per_task_per_round` | 每轮每任务采集的 episode 数 | `170` |
+| `lr` | Adam 优化器学习率 | `3e-5` |
+| `device` | PyTorch 设备 | `"cuda"` |
+
+##### Phase B：离线部署（在新 / 旧任务上做推断，不训练）
+
+**Stage-1 离线 rollout 找最优配置**
+
+```python
+from general_policy_module import offline_find_best_config_stage1
+
+ev_new = create_evaluator("qqp")
+result = offline_find_best_config_stage1(
+    ev_new,
+    general_policy_path="general_stage1_policy.pt",
+    num_rollouts=500,    # rollout 次数（greedy=True 时自动置 1）
+    greedy=False,        # 是否使用 argmax 而非采样
+    device="cuda",
+)
+print(result["best_config"])     # {"gelu": [...], "softmax": [...], "cost": ...}
+print(result["best_reward"])
+```
+
+**Stage-2 离线 rollout 找最优噪声配置**
+
+```python
+from general_policy_module import offline_find_best_config_stage2
+
+result = offline_find_best_config_stage2(
+    ev_new,
+    general_policy_path="general_stage2_noise_policy.pt",
+    fixed_gelu=fixed_gelu,
+    fixed_softmax=fixed_softmax,
+    noise_env=noise_env,             # 已创建的 _NoiseOptEnv 实例
+    num_rollouts=500,
+    greedy=False,
+    device="cuda",
+)
+print(result["best_noise_config"])
+```
+
+离线推断关键参数：
+
+| 参数 | 说明 | 默认值 |
+| --- | --- | --- |
+| `general_policy_path` | 通用策略文件路径 | — |
+| `num_rollouts` | rollout 次数 | `500` |
+| `greedy` | 是否贪心（argmax），`True` 时只做 1 次 rollout | `False` |
+| `device` | PyTorch 设备 | `"cuda"` |
+
+##### Phase C：作为 base policy 微调（利用已有的 online RL）
+
+通用策略文件与 per-task 便携 policy 文件格式兼容，因此也可以直接作为 base policy 加载到现有 online RL 流程中微调：
+
+```python
+# 编辑 layer_importance_evaluator.py 顶部
+RL_OPT_FLAGS = {
+    ...
+    "stage1_pretrained_policy_path": "general_stage1_policy.pt",
+    ...
+}
+
+# 编辑 noise_rl_module_v2.py 顶部
+NOISE_RL_OPT_FLAGS = {
+    ...
+    "pretrained_policy_path": "general_stage2_noise_policy.pt",
+    ...
+}
+```
+
+然后正常运行 `bash llama_7B_LayerImportance.sh ...` 即可。新 run 会从通用策略的权重开始微调，通常能显著缩短到达高 reward 平台的回合数。
+
+> **注意**：加载时使用 `strict=False`，`task_context_proj` 层在 per-task 网络中会被跳过（`unexpected`），不影响推理与后续训练。
+
+#### 通用 Critic 快速评分
+
+通用 Critic 可以在不做真实模型评测的前提下，仅用 V(s) 对一组候选配置快速评分、排序：
+
+```python
+from general_policy_module import critic_quick_rank_stage1
+
+candidates = [
+    {"gelu": [1,1,1,4,1,1,1,1,1,1,1,1], "softmax": [2,3,4,6,4,4,5,4,4,5,5,2]},
+    {"gelu": [4,4,4,4,4,4,4,4,4,4,4,4], "softmax": [6,6,6,6,6,6,6,6,6,6,6,6]},
+    # ... 更多候选
+]
+
+# 返回 [(score, config), ...] 按 score 降序
+ranked = critic_quick_rank_stage1(
+    evaluator,
+    general_policy_path="general_stage1_policy.pt",
+    candidate_configs=candidates,
+    device="cuda",
+)
+for score, cfg in ranked[:5]:
+    print(f"  score={score:.4f}  gelu={cfg['gelu']}  softmax={cfg['softmax']}")
+```
+
+适用场景：
+
+- 预筛选大量候选配置（例如 1000+ 个），再对 top-K 做真实评测
+- 纯 GPU 推理，速度比真实评测快两个数量级
+- 精度取决于 Critic 训练质量，建议与真实评测配合使用
+
+#### 保存文件格式
+
+通用策略文件（`torch.save` 的 dict）：
+
+```python
+{
+    "version": 1,
+    "kind": "general_stage1_gtrxl_policy" | "general_stage2_noise_gtrxl_policy",
+    "net_state_dict": <state_dict>,               # actor + critic 权重
+    "arch": {
+        "num_layers": 12, "d_model": ..., "n_heads": ...,
+        "n_gtrxl_layers": ..., "d_ff": ..., "dropout": ...,
+        "task_context_dim": 5,
+    },
+    "metadata": {
+        "task_names": ["mrpc", "stsb", "cola", "rte"],
+        "total_rounds": 50,
+        "episodes_per_task_per_round": 170,
+        "total_episodes": 34000,
+        "ppo_updates": 200,
+        "best_rewards": {"mrpc": 1.23, "stsb": 0.98, ...},
+    },
+}
+```
+
+#### 与 per-task 便携 policy 的兼容性
+
+| 场景 | 兼容性 | 备注 |
+| --- | --- | --- |
+| 通用策略 → per-task online RL（作为 base policy） | ✅ | `task_context_proj` 层被 `strict=False` 跳过，不影响运行 |
+| per-task 便携 policy → 通用策略离线推断 | ✅ | 缺失的 `task_context_proj` 保持零初始化 |
+| 不同 `total_layers`（如 12 层 → 24 层） | ⚠️ 部分迁移 | layer embedding 不匹配的层会被跳过 |
+| Stage-1 ↔ Stage-2 | ❌ | 动作空间不同，必须分别训练 |
+
+#### 推荐工作流
+
+1. **多任务训练**：选 4-7 个 GLUE 任务，用 `multi_task_train_stage1` / `multi_task_train_stage2` 分别训练通用 Stage-1 和 Stage-2 策略。
+2. **离线快速部署**：新任务到来时，用 `offline_find_best_config_stage1` / `offline_find_best_config_stage2` 做 500 次 rollout 快速找到最优配置，无需数万回合 online RL。
+3. **精细化微调**：如果离线结果不够理想，可将通用策略作为 base policy 加载到 online RL 中继续微调，通常只需原来 1/5 ~ 1/3 的回合数即可收敛。
+4. **Critic 预筛选**：如果有大量候选配置需要评估，先用 `critic_quick_rank_stage1` 快速排序，再对 top-K 做真实评测。
