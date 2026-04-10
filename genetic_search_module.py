@@ -50,6 +50,7 @@ STAGE1_DEFAULT_POPULATION = 32
 STAGE2_DEFAULT_POPULATION = 32
 STAGNATION_TOLERANCE_BASE = 10
 GA_PROGRESS_BOX_INTERVAL = 5
+STAGE1_GA_CONSTRAINT_RATIO = 0.005
 
 
 def _progress_bar(current, total, width=30):
@@ -188,7 +189,11 @@ def build_stage1_context(evaluator, log_fn=None, include_distribution=True) -> S
             use_train=True,
         )
 
-    limits = evaluator.build_constraint_limits_from_metrics(base_loss, base_p, base_s)
+    limits = {
+        "loss": float(base_loss * (1.0 + STAGE1_GA_CONSTRAINT_RATIO)),
+        "metric1": float(base_p * (1.0 - STAGE1_GA_CONSTRAINT_RATIO)),
+        "metric2": float(base_s * (1.0 - STAGE1_GA_CONSTRAINT_RATIO)),
+    }
 
     gelu_degree0_eligible = np.zeros(evaluator.total_layers, dtype=bool)
     if include_distribution:
@@ -219,6 +224,7 @@ def build_stage1_context(evaluator, log_fn=None, include_distribution=True) -> S
         log_fn(
             f"  simulated cost: total={base_tot_c:.2f}, gelu={base_g_c:.2f}, softmax={base_s_c:.2f}"
         )
+        log_fn(f"  constraint ratio: {STAGE1_GA_CONSTRAINT_RATIO:.2%}")
         log_fn(
             "  constraints: "
             + evaluator._fmt_constraints(

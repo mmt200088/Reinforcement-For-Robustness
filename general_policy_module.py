@@ -192,15 +192,15 @@ def _compute_gae(rewards, values, dones, gamma=0.99, lam=0.95):
 
 
 def compute_task_context(baseline_loss, baseline_m1, baseline_m2,
-                         error_threshold=0.015, correlation_drop_ratio=0.015):
+                         error_threshold=0.005, correlation_drop_ratio=0.005):
     """构造 5 维任务上下文特征向量。
 
     维度含义：
       [0] baseline_loss      — 基线 loss
       [1] baseline_m1        — 基线 metric1（acc / pearson 等）
       [2] baseline_m2        — 基线 metric2（f1 / spearman 等）
-      [3] error_threshold    — 约束阈值（如 0.015）
-      [4] correlation_drop   — 指标下降容忍（如 0.015）
+      [3] error_threshold    — loss 上浮比例（如 0.005 表示 0.5%）
+      [4] correlation_drop   — 指标下降容忍比例（如 0.005 表示 0.5%）
     """
     return np.array([
         float(baseline_loss), float(baseline_m1), float(baseline_m2),
@@ -511,7 +511,7 @@ def prepare_stage1_task(evaluator, use_train=True):
         "baseline_metrics": (float(base_loss), float(base_m1), float(base_m2)),
         "baseline_cost": float(base_cost),
         "constraint_limits": {
-            "loss": float(base_loss + evaluator.error_threshold),
+            "loss": float(base_loss * (1.0 + evaluator.error_threshold)),
             "metric1": float(base_m1 * (1.0 - evaluator.correlation_drop_ratio)),
             "metric2": float(base_m2 * (1.0 - evaluator.correlation_drop_ratio)),
         },
@@ -660,7 +660,8 @@ def multi_task_train_stage1(
 
         envs[name] = _TransformerOptEnv(
             total_layers, tc["baseline_cost"], tc["baseline_metrics"],
-            _W(ev), num_metrics=tc["num_metrics"],
+            _W(ev), constraint_limits=tc["constraint_limits"],
+            num_metrics=tc["num_metrics"],
             gelu_degree0_eligible=tc["gelu0_eligible"],
         )
         bl, bm1, bm2 = tc["baseline_metrics"]
@@ -945,7 +946,8 @@ def offline_find_best_config_stage1(
 
     env = _TransformerOptEnv(
         total_layers, task_info["baseline_cost"], task_info["baseline_metrics"],
-        _W(evaluator), num_metrics=task_info["num_metrics"],
+        _W(evaluator), constraint_limits=task_info["constraint_limits"],
+        num_metrics=task_info["num_metrics"],
         gelu_degree0_eligible=task_info["gelu0_eligible"],
     )
     bl, bm1, bm2 = task_info["baseline_metrics"]
