@@ -2341,6 +2341,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage2_rl_episodes=40000,
                  stage1_rl_episodes_specified=False,
                  stage2_rl_episodes_specified=False,
+                 stage1_rl_lr=None,
+                 stage2_rl_lr=None,
                  device='cuda', data_path='stsb', test_data_mm=None,
                  run_output_dir='',
                  final_eval_config_source='search',
@@ -2488,7 +2490,17 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.wffn1_noise_action_space = tuple(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
         self.wffn2_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
         self.rl_lr_raw = rl_lr
-        self.ppo_lr_initial, self.ppo_lr_mode = resolve_ppo_learning_rate(rl_lr)
+        self.stage1_rl_lr_raw = stage1_rl_lr if stage1_rl_lr not in (None, "") else rl_lr
+        self.stage2_rl_lr_raw = stage2_rl_lr if stage2_rl_lr not in (None, "") else self.stage1_rl_lr_raw
+        self.stage1_ppo_lr_initial, self.stage1_ppo_lr_mode = resolve_ppo_learning_rate(
+            self.stage1_rl_lr_raw
+        )
+        self.stage2_ppo_lr_initial, self.stage2_ppo_lr_mode = resolve_ppo_learning_rate(
+            self.stage2_rl_lr_raw,
+            default_lr=self.stage1_ppo_lr_initial,
+        )
+        self.ppo_lr_initial = self.stage1_ppo_lr_initial
+        self.ppo_lr_mode = self.stage1_ppo_lr_mode
         
         # --- 用户阈值配置（统一采用百分比形式；当前为 0.5%） ---
         # 保留既有字段名以兼容旧调用方，但这里的 error_threshold
@@ -2519,8 +2531,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             f.write(_log_header + "\n")
         with open(self.log_file, "a", encoding="utf-8") as f:
             f.write(
-                f"[信息] PPO学习率（LR）从 rl_lr={self.rl_lr_raw!r} 解析为 -> "
-                f"{self.ppo_lr_initial:.6g} ({self.ppo_lr_mode})\n"
+                f"[信息] Stage-1 PPO学习率（LR）从 stage1_rl_lr={self.stage1_rl_lr_raw!r} 解析为 -> "
+                f"{self.stage1_ppo_lr_initial:.6g} ({self.stage1_ppo_lr_mode}) | "
+                f"Stage-2 PPO学习率（LR）从 stage2_rl_lr={self.stage2_rl_lr_raw!r} 解析为 -> "
+                f"{self.stage2_ppo_lr_initial:.6g} ({self.stage2_ppo_lr_mode})\n"
             )
             f.write(
                 f"[信息] 第一阶段RL回合数（Stage-1 RL episodes）: {self.stage1_rl_episodes} | "
@@ -2537,8 +2551,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 )
             with open(self.noise_log_file, "a", encoding="utf-8") as f:
                 f.write(
-                    f"  [信息] PPO 学习率 learning rate：由 rl_lr={self.rl_lr_raw!r} 解析为 "
-                    f"{self.ppo_lr_initial:.6g}（模式 mode={self.ppo_lr_mode}）\n"
+                    f"  [信息] Stage-1 PPO学习率（LR）: raw={self.stage1_rl_lr_raw!r} -> "
+                    f"{self.stage1_ppo_lr_initial:.6g} ({self.stage1_ppo_lr_mode}) | "
+                    f"Stage-2 PPO学习率（LR）: raw={self.stage2_rl_lr_raw!r} -> "
+                    f"{self.stage2_ppo_lr_initial:.6g} ({self.stage2_ppo_lr_mode})\n"
                 )
                 f.write(
                     f"  [信息] 一阶段 RL 回合 stage-1 episodes={self.stage1_rl_episodes}  ·  "
@@ -2553,7 +2569,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.current_episode = 0
         self.total_episodes = self.stage1_rl_episodes
         self.current_entropy_coef = PPO_ENTROPY_INITIAL
-        self.current_lr = self.ppo_lr_initial
+        self.current_lr = self.stage1_ppo_lr_initial
         
         # ==================== PPO 7.1: 运行时回报归一化状态 ====================
         self.reward_history = []  # 历史回报滑动窗口
@@ -4101,10 +4117,13 @@ class LayerImportanceEvaluator(TrainerCallback):
             "wffn2_noise_scaling_factors": np.full(self.total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int),
         }
 
-    def _reset_runtime_ppo_state(self):
+    def _reset_runtime_ppo_state(self, stage_label='stage1'):
         self.current_episode = 0
         self.current_entropy_coef = PPO_ENTROPY_INITIAL
-        self.current_lr = self.ppo_lr_initial
+        if stage_label == 'stage2':
+            self.current_lr = self.stage2_ppo_lr_initial
+        else:
+            self.current_lr = self.stage1_ppo_lr_initial
         self.reward_history = []
         self.reward_mean = 0.0
         self.reward_std = 1.0
@@ -5024,7 +5043,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     self.log(f"  [迁移][警告] 预训练 policy 加载失败：{_e}（将使用随机初始化）")
 
             # 使用初始学习率
-            optimizer = optim.Adam(gtrxl_net.parameters(), lr=self.ppo_lr_initial)
+            optimizer = optim.Adam(gtrxl_net.parameters(), lr=self.stage1_ppo_lr_initial)
             gtrxl_ppo_update_count = 0  # GTrXL PPO更新计数（用于学习率Warmup）
             
             # 初始化环境

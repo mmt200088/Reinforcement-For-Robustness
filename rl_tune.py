@@ -125,6 +125,8 @@ def train(
         use_ist: bool = False,
         use_rst: bool = False,
         rl_lr: float = 1e-4, 
+        stage1_rl_lr: float = None,
+        stage2_rl_lr: float = None,
         degree: int = 4,  # degree of polynomial for approximation
         stage1_rl_episodes: int = 51000,
         stage2_rl_episodes: int = 40000,
@@ -189,6 +191,9 @@ def train(
         f"micro_batch_size: {micro_batch_size}\n"
         f"num_epochs: {num_epochs}\n"
         f"learning_rate: {learning_rate}\n"
+        f"rl_lr: {rl_lr}\n"
+        f"stage1_rl_lr: {stage1_rl_lr}\n"
+        f"stage2_rl_lr: {stage2_rl_lr}\n"
         f"cutoff_len: {cutoff_len}\n"
         f"val_set_size: {val_set_size}\n"
         f"use_gradient_checkpointing: {use_gradient_checkpointing}\n"
@@ -573,6 +578,8 @@ def train(
             data_collator=data_collator, 
             batch_size=batch_size,
             rl_lr=rl_lr, 
+            stage1_rl_lr=stage1_rl_lr,
+            stage2_rl_lr=stage2_rl_lr,
             degree=degree,
             stage1_rl_episodes=stage1_rl_episodes,
             stage2_rl_episodes=stage2_rl_episodes,

@@ -251,7 +251,16 @@ TASK_REGISTRY = {
         'task_type': 'classification',
         'test_split': 'test',
     },
-    # QQP disabled: test set is ~390k examples; fall back to placeholder.
+    'qqp': {
+        'model_name': 'textattack/bert-base-uncased-QQP',
+        'glue_name': 'qqp',
+        'num_labels': 2,
+        'input_cols': ('question1', 'question2'),
+        'output_file': 'QQP.tsv',
+        'label_map': {0: '0', 1: '1'},
+        'task_type': 'classification',
+        'test_split': 'test',
+    },
     # AX is the GLUE diagnostic set for NLI; predictions are produced by the
     # MNLI model on the dedicated `ax` dataset (test split only).
     'ax': {
@@ -274,6 +283,7 @@ BERT_LARGE_MODEL_NAMES = {
     'sst2': 'yoshitomo-matsubara/bert-large-uncased-sst2',
     'mrpc': 'yoshitomo-matsubara/bert-large-uncased-mrpc',
     'stsb': 'yoshitomo-matsubara/bert-large-uncased-stsb',
+    'qqp': 'yoshitomo-matsubara/bert-large-uncased-qqp',
     'qnli': 'yoshitomo-matsubara/bert-large-uncased-qnli',
     'rte':  'yoshitomo-matsubara/bert-large-uncased-rte',
 }
@@ -289,6 +299,7 @@ GPT2_MODEL_NAMES = {
     'sst2': 'PavanNeerudu/gpt2-finetuned-sst2',
     'mrpc': 'PavanNeerudu/gpt2-finetuned-mrpc',
     'stsb': 'PavanNeerudu/gpt2-finetuned-stsb',
+    'qqp':  'PavanNeerudu/gpt2-finetuned-qqp',
     'qnli': 'PavanNeerudu/gpt2-finetuned-qnli',
     'rte':  'PavanNeerudu/gpt2-finetuned-rte',
     'wnli': 'PavanNeerudu/gpt2-finetuned-wnli',
@@ -415,6 +426,85 @@ def apply_noise_configuration(handler, layers_attribute, noise_config):
             if sf_map[sf]:
                 replace_fn(sf_map[sf], handler_layer_name,
                            scaling_factor=sf, distribution=distribution)
+
+
+def _extract_applied_noise_state(handler, noise_key, num_layers):
+    scaling_factors = [None] * num_layers
+    distributions = [None] * num_layers
+
+    if noise_key == 'x':
+        source = getattr(handler, "original_input_noise", {})
+        for idx, meta in source.items():
+            layer_idx = int(idx)
+            scaling_factors[layer_idx] = int(meta.get("scaling_factor"))
+            distributions[layer_idx] = str(meta.get("distribution"))
+        return scaling_factors, distributions
+
+    gpt2_slot_map = {
+        'wq': 'query',
+        'wk': 'key',
+        'wv': 'value',
+    }
+    if getattr(handler, "_arch", None) == "gpt2" and noise_key in gpt2_slot_map:
+        qkv_state = getattr(handler, "_gpt2_qkv_state", {})
+        for idx, per_layer in qkv_state.items():
+            slot = gpt2_slot_map[noise_key]
+            if slot not in per_layer:
+                continue
+            scaling_factor, distribution = per_layer[slot]
+            layer_idx = int(idx)
+            scaling_factors[layer_idx] = int(scaling_factor)
+            distributions[layer_idx] = str(distribution)
+        return scaling_factors, distributions
+
+    projection_key_map = {
+        'wq': 'query',
+        'wk': 'key',
+        'wv': 'value',
+        'wo': 'wo',
+        'wffn1': 'wffn1',
+        'wffn2': 'wffn2',
+    }
+    projection_store = getattr(handler, "original_projection_noise", {})
+    source = projection_store.get(projection_key_map[noise_key], {})
+    for idx, meta in source.items():
+        layer_idx = int(idx)
+        scaling_factors[layer_idx] = int(meta.get("scaling_factor"))
+        distributions[layer_idx] = str(meta.get("distribution"))
+    return scaling_factors, distributions
+
+
+def verify_noise_configuration(handler, noise_config, num_layers):
+    for noise_key in NOISE_KEYS:
+        expected_factors = [int(v) for v in noise_config[noise_key]]
+        expected_distribution = NOISE_HANDLER_MAP[noise_key][1]
+        actual_factors, actual_distributions = _extract_applied_noise_state(
+            handler, noise_key, num_layers
+        )
+
+        mismatches = []
+        for idx, expected_factor in enumerate(expected_factors):
+            if actual_factors[idx] != expected_factor:
+                mismatches.append(
+                    f"layer {idx}: expected sf={expected_factor}, got {actual_factors[idx]}"
+                )
+                continue
+            if actual_distributions[idx] != expected_distribution:
+                mismatches.append(
+                    f"layer {idx}: expected dist={expected_distribution}, got {actual_distributions[idx]}"
+                )
+
+        if mismatches:
+            raise RuntimeError(
+                f"Noise verification failed for '{noise_key}': "
+                + "; ".join(mismatches[:5])
+            )
+
+        unique_factors = sorted(set(expected_factors))
+        print(
+            f"  [Verify] Noise {noise_key:5s}: {num_layers}/{num_layers} layers, "
+            f"scaling={unique_factors}, distribution={expected_distribution}"
+        )
 
 
 def run_inference(model, dataloader, device):
@@ -655,6 +745,8 @@ def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
                 )
                 print(f"  [Verify] PolynomialGELU layers: {applied_gelu}/{len(layers_obj)}, "
                       f"ApproxSoftmax layers: {applied_sm}/{len(layers_obj)}")
+        if not no_noise:
+            verify_noise_configuration(handler, noise_config, num_layers)
     else:
         handler = None
         print(f"  Using original model (no approximation, no noise)")
@@ -750,12 +842,15 @@ def fill_missing_submission_files(output_dir):
     print(f"\n{'=' * 60}")
     print("Filling missing submission files with placeholders")
     print(f"{'=' * 60}")
+    created_files = []
     for filename, expected in sorted(EXPECTED_LINES.items()):
         filepath = os.path.join(output_dir, filename)
         if os.path.exists(filepath):
             continue
         default_label = PLACEHOLDER_DEFAULTS.get(filename, "0")
         generate_placeholder(filepath, expected - 1, default_label=default_label)
+        created_files.append(filename)
+    return created_files
 
 
 def main():
@@ -878,6 +973,8 @@ def main():
             candidate_tasks.update(t for t in approx_configs if t in TASK_REGISTRY)
         if noise_configs:
             candidate_tasks.update(t for t in noise_configs if t in TASK_REGISTRY)
+        if 'mnli' in candidate_tasks:
+            candidate_tasks.add('ax')
         if candidate_tasks:
             tasks_to_run = sorted(candidate_tasks)
         else:
@@ -894,10 +991,12 @@ def main():
     print(f"Device:            {device}")
 
     task_failures = []
+    task_skips = []
 
     for task_name in tasks_to_run:
         if task_name not in TASK_REGISTRY:
             print(f"\n[Warning] Unknown task '{task_name}', skipping")
+            task_skips.append((task_name, "unknown_task"))
             continue
 
         task_cfg = TASK_REGISTRY[task_name]
@@ -909,12 +1008,14 @@ def main():
             if task_name not in BERT_LARGE_MODEL_NAMES:
                 print(f"\n[Warning] Task '{task_name}' has no bert-large checkpoint, "
                       f"skipping (will fall back to placeholder if applicable).")
+                task_skips.append((task_name, "unsupported_model_checkpoint"))
                 continue
             task_cfg = dict(task_cfg)
             task_cfg['model_name'] = BERT_LARGE_MODEL_NAMES[task_name]
         elif model_type == "gpt-2":
             if task_name not in GPT2_MODEL_NAMES:
                 print(f"\n[Warning] Task '{task_name}' has no gpt-2 checkpoint, skipping.")
+                task_skips.append((task_name, "unsupported_model_checkpoint"))
                 continue
             task_cfg = dict(task_cfg)
             task_cfg['model_name'] = GPT2_MODEL_NAMES[task_name]
@@ -923,20 +1024,29 @@ def main():
             gelu = None
             softmax = None
         else:
-            if task_name not in approx_configs:
+            approx_task_name = task_name
+            if approx_task_name == 'ax' and approx_task_name not in approx_configs and 'mnli' in approx_configs:
+                approx_task_name = 'mnli'
+            if approx_task_name not in approx_configs:
                 print(f"\n[Warning] No approx config for task '{task_name}' in {args.config}, skipping")
+                task_skips.append((task_name, "missing_approx_config"))
                 continue
-            gelu = approx_configs[task_name]['gelu']
-            softmax = approx_configs[task_name]['softmax']
+            gelu = approx_configs[approx_task_name]['gelu']
+            softmax = approx_configs[approx_task_name]['softmax']
 
         if use_noise:
-            if task_name not in noise_configs:
+            noise_task_name = task_name
+            if noise_task_name == 'ax' and noise_task_name not in noise_configs and 'mnli' in noise_configs:
+                noise_task_name = 'mnli'
+            if noise_task_name not in noise_configs:
                 print(f"\n[Warning] No noise config for task '{task_name}' in {args.noise_config}, skipping")
+                task_skips.append((task_name, "missing_noise_config"))
                 continue
-            task_noise = noise_configs[task_name]
+            task_noise = noise_configs[noise_task_name]
             missing_keys = [k for k in NOISE_KEYS if k not in task_noise]
             if missing_keys:
                 print(f"\n[Error] Noise config for '{task_name}' missing keys: {missing_keys}")
+                task_skips.append((task_name, f"missing_noise_keys:{','.join(missing_keys)}"))
                 continue
         else:
             task_noise = None
@@ -957,10 +1067,22 @@ def main():
     print(f"\n{'=' * 60}")
     print("Generating placeholder files")
     print(f"{'=' * 60}")
-    fill_missing_submission_files(args.output_dir)
+    placeholder_files = fill_missing_submission_files(args.output_dir)
 
     all_ok = verify_outputs(args.output_dir)
     create_submission_zip(args.output_dir)
+
+    if placeholder_files:
+        print("\nPlaceholder files created:")
+        for filename in sorted(placeholder_files):
+            print(f"  - {filename}")
+        all_ok = False
+
+    if task_skips:
+        print("\nTasks skipped before inference:")
+        for task_name, reason in task_skips:
+            print(f"  - {task_name}: {reason}")
+        all_ok = False
 
     if task_failures:
         print("\nTask failures encountered during generation:")
@@ -971,7 +1093,7 @@ def main():
     if all_ok:
         print("\nAll checks passed. Ready to submit to https://gluebenchmark.com/")
     else:
-        print("\nSome checks failed or placeholders were used after task errors. "
+        print("\nSome checks failed or placeholders were used. "
               "Please verify the output files before submitting.")
 
 

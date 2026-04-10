@@ -1451,7 +1451,7 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
     if entropy_coef is None:
         entropy_coef = evaluator.get_current_entropy_coef()
 
-    target_lr = float(evaluator.ppo_lr_initial)
+    target_lr = float(getattr(evaluator, "stage2_ppo_lr_initial", evaluator.ppo_lr_initial))
     warmup_updates = max(0, int(gtrxl_warmup_updates))
     if gtrxl_warmup_mode == "short":
         warmup_updates = max(1, int(gtrxl_short_warmup_updates))
@@ -1957,7 +1957,7 @@ class NoiseRLModuleV2:
         # \u4fdd\u5b58\u539f\u59cb total_episodes\uff0c\u8bad\u7ec3\u7ed3\u675f\u540e\u6062\u590d
         original_total_episodes = getattr(ev, "total_episodes", stage2_total_episodes)
         ev.total_episodes = stage2_total_episodes
-        ev._reset_runtime_ppo_state()
+        ev._reset_runtime_ppo_state(stage_label='stage2')
 
         # \u521b\u5efa\u7b56\u7565\u7f51\u7edc
         noise_net = _NoiseGTrXLStrategyNetwork(
@@ -1991,7 +1991,10 @@ class NoiseRLModuleV2:
             except Exception as _e:
                 ev.log(f"  [迁移][警告] Stage-2 预训练 policy 加载失败：{_e}")
 
-        optimizer = optim.Adam(noise_net.parameters(), lr=ev.ppo_lr_initial)
+        optimizer = optim.Adam(
+            noise_net.parameters(),
+            lr=getattr(ev, "stage2_ppo_lr_initial", ev.ppo_lr_initial),
+        )
         noise_ppo_update_count = 0
 
         # \u8bc4\u4f30\u5668\u5305\u88c5\u5668

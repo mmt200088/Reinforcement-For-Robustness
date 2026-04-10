@@ -1,251 +1,191 @@
 ## 命令行参数总表
 
 ```bash
-bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [degree] [options]
+bash llama_7B_LayerImportance.sh [可选参数]
 ```
 
-### 位置参数
+### 说明
 
-| 参数 | 说明 |
-| --- | --- |
-| `lora_r` | LoRA rank，当前固定传 `32` |
-| `lora_alpha` | LoRA alpha，当前固定传 `64` |
-| `logfile_path` | nohup 日志文件名提示；真实日志自动写入 run 目录下 `logs/` |
-| `rl_lr` | PPO 学习率控制。若 `< 1` 则直接作为学习率；旧值 `20`/`40` 解释为 `20e-6`/`40e-6` |
-| `degree` | 历史调试参数，固定传 `2` |
+- 现在**不再支持位置参数**，统一改为可选参数。
+- `--model` 已废弃，请改用 `--dataset`。
+- `lora_r`、`lora_alpha`、`degree` 已从命令行入口移除，因为当前流程不会实际读取它们。
+- 本节是当前命令行入口的**最新说明**。如果下文个别历史实验片段与本节不一致，以本节为准。
 
-### 可选参数一览
+### 可选参数总表
 
 | 参数 | 适用模式 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| **算法选择** | | | |
-| `--search-algorithm` | 全局 | `rl` | 搜索算法：`rl`（PPO）/ `ga`（遗传）/ `general-rl`（通用策略） |
-| **模型与数据集** | | | |
-| `--model DATASET` | 全局 | `mrpc` | 数据集：mrpc, sst2, stsb, cola, qnli, rte, wnli |
-| `--model-type TYPE` | 全局 | `bert-base` | 骨干模型：bert-base, bert-large, gpt-2 |
-| `--batch_size N` | 全局 | `16` | 推理批次大小（同步设 batch_size 和 micro_batch_size） |
-| **rl / ga 共享参数** | | | |
-| `--stage1-search-episodes N` | rl, ga | `51000` | Stage-1 搜索回合数 |
-| `--stage2-search-episodes N` | rl, ga | `40000` | Stage-2 噪声搜索回合数 |
-| `--skip-stage1-search` | rl, ga | — | 跳过 Stage-1 搜索（GA 推荐写法） |
-| `--skip-noise-search` | rl, ga | — | 跳过 Stage-2 噪声搜索（GA 推荐写法） |
-| `--skip-stage1-final-eval` | rl, ga | — | 跳过 Stage-1 最终评估 |
-| `--skip-noise-final-eval` | rl, ga | — | 跳过 Stage-2 噪声最终评估 |
-| `--final-eval-source` | rl, ga | `search` | Stage-1 评估配置来源：search / json / manual |
-| `--final-eval-config PATH` | rl, ga | 自动 | Stage-1 JSON 配置文件路径 |
-| `--noise-eval-source` | rl, ga | `search` | Stage-2 评估配置来源：search / json / manual |
-| `--noise-eval-config PATH` | rl, ga | 自动 | Stage-2 噪声 JSON 配置文件路径 |
-| `--noise-eval-repeat N` | rl, ga | `1` | 噪声最终评估重复次数 |
-| `--manual-gelu` | rl, ga | — | Stage-1 手动 GELU 配置 |
-| `--manual-softmax` | rl, ga | — | Stage-1 手动 Softmax 配置 |
-| `--manual-noise-config` | rl, ga | — | Stage-2 手动噪声配置（JSON 字符串） |
-| `--random-seed` | rl, ga | `42` | 最终评估随机种子 |
-| `--perm-trials N` | rl, ga | `10` | 置换试验次数 |
-| `--cost-trials N` | rl, ga | `10` | 等价成本试验次数 |
-| `--budget-trials N` | rl, ga | `10` | 等价预算试验次数 |
-| `--resume-from PATH` | rl, ga, general-rl | — | 从之前的 run 目录恢复训练（rl/ga/general-rl 均支持） |
-| **rl 兼容别名**（GA 模式下禁用） | | | |
-| `--stage1-rl-episodes N` | rl | `51000` | 等价于 --stage1-search-episodes |
-| `--stage2-rl-episodes N` | rl | `40000` | 等价于 --stage2-search-episodes |
-| `--skip-stage1-rl` | rl | — | 等价于 --skip-stage1-search |
-| `--skip-noise-rl` | rl | — | 等价于 --skip-noise-search |
-| **general-rl 专用参数**（仅 general-rl 模式可用） | | | |
-| `--general-rl-mode` | general-rl | `infer` | 运行模式：`train`（多任务训练）/ `infer`（离线推断） |
-| `--general-rl-tasks T1,T2,...` | general-rl (train) | 同 --model | 逗号分隔的训练任务列表 |
-| `--general-rl-rounds N` | general-rl (train) | `50` | Round-robin 训练轮数 |
-| `--general-rl-episodes-per-round N` | general-rl (train) | `170` | 每轮每任务的回合数 |
-| `--general-rl-lr FLOAT` | general-rl (train) | `3e-5` | 通用策略训练学习率 |
-| `--general-rl-num-rollouts N` | general-rl (infer) | `500` | 离线 rollout 次数 |
-| `--general-rl-greedy` | general-rl (infer) | — | 使用贪心（argmax）rollout |
-| `--general-stage1-policy PATH` | general-rl (infer) | — | 已训练的通用 Stage-1 策略文件路径（**必需**） |
-| `--general-stage2-policy PATH` | general-rl (infer) | — | 已训练的通用 Stage-2 噪声策略文件路径（可选） |
-| `--general-rl-skip-stage2` | general-rl | — | 跳过 Stage-2 训练/推断 |
-| `--general-rl-stage1-config-json PATH` | general-rl (train) | — | Stage-2 训练时各任务的 Stage-1 配置 JSON |
+| **全局参数** | | | |
+| `--dataset DATASET` | 全局 | `mrpc` | 数据集名称：`mrpc`、`sst2`、`stsb`、`cola`、`qnli`、`rte`、`wnli` |
+| `--search-algorithm ALG` | 全局 | `rl` | 搜索算法：`rl` / `ga` / `general-rl` / `rl-and-ga-compare` |
+| `--logfile FILE` | 全局 | `output.log` | launcher 的 nohup 日志文件名；真实运行目录下也会自动生成阶段日志 |
+| `--model-type TYPE` | 全局 | `bert-base` | 骨干模型类型：`bert-base` / `bert-large` / `gpt-2` |
+| `--batch-size N` | 全局 | `16` | 统一设置 `batch_size` 与 `micro_batch_size` |
+| `--resume-from PATH` | `rl`、`ga`、`general-rl` | — | 从已有 run 目录恢复；当前不支持 `rl-and-ga-compare` |
+| **普通 RL / GA 共用** | | | |
+| `--stage1-search-episodes N` | `rl`、`ga`、`rl-and-ga-compare` | `51000` | Stage-1 搜索回合数 |
+| `--stage2-search-episodes N` | `rl`、`ga`、`rl-and-ga-compare` | `40000` | Stage-2 噪声搜索回合数 |
+| `--skip-stage1-search` | `rl`、`ga` | — | 跳过 Stage-1 搜索 |
+| `--skip-noise-search` | `rl`、`ga` | — | 跳过 Stage-2 搜索 |
+| `--skip-stage1-final-eval` | `rl`、`ga` | — | 跳过 Stage-1 最终评估 |
+| `--skip-noise-final-eval` | `rl`、`ga` | — | 跳过 Stage-2 最终评估 |
+| `--final-eval-source search/json/manual` | `rl`、`ga` | `search` | Stage-1 最终评估配置来源 |
+| `--final-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的 Stage-1 配置文件路径 |
+| `--manual-gelu JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 GELU 配置 |
+| `--manual-softmax JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Softmax 配置 |
+| `--noise-eval-source search/json/manual` | `rl`、`ga` | `search` | Stage-2 最终评估配置来源 |
+| `--noise-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的 Stage-2 噪声配置文件路径 |
+| `--manual-noise-config JSON_OBJECT` | `rl`、`ga` | — | `manual` 模式下的 7 类噪声配置 |
+| `--noise-eval-repeat N` | `rl`、`ga`、`rl-and-ga-compare` | `1` | Stage-2 最终评估重复次数 |
+| `--random-seed N` | `rl`、`ga`、`rl-and-ga-compare` | `42` | 随机种子 |
+| `--perm-trials N` | `rl`、`ga`、`rl-and-ga-compare` | `10` | 随机置换对照次数 |
+| `--cost-trials N` | `rl`、`ga`、`rl-and-ga-compare` | `10` | 等价成本对照次数 |
+| `--budget-trials N` | `rl`、`ga`、`rl-and-ga-compare` | `10` | 等价预算对照次数 |
+| **普通 RL 专用** | | | |
+| `--stage1-search-lr FLOAT` | `rl`、`rl-and-ga-compare` | `1e-4` | 普通 RL 的 Stage-1 学习率 |
+| `--stage2-search-lr FLOAT` | `rl`、`rl-and-ga-compare` | `1e-4` | 普通 RL 的 Stage-2 学习率 |
+| **通用 RL 专用** | | | |
+| `--general-rl-mode train/infer` | `general-rl` | `infer` | 通用 RL 的运行模式 |
+| `--general-rl-tasks T1,T2,...` | `general-rl` 训练 | 同 `--dataset` | 逗号分隔的训练任务列表 |
+| `--general-rl-rounds N` | `general-rl` 训练 | `50` | Round-robin 训练轮数 |
+| `--general-rl-episodes-per-round N` | `general-rl` 训练 | `170` | 每轮每任务的回合数 |
+| `--general-rl-lr FLOAT` | `general-rl` 训练 | `3e-5` | 通用策略训练学习率 |
+| `--general-rl-num-rollouts N` | `general-rl` 推断 | `500` | 离线 rollout 次数 |
+| `--general-rl-greedy` | `general-rl` 推断 | — | 使用贪心 rollout |
+| `--general-stage1-policy PATH` | `general-rl` 推断 | — | Stage-1 通用策略文件，必需 |
+| `--general-stage2-policy PATH` | `general-rl` 推断 | — | Stage-2 通用噪声策略文件，可选 |
+| `--general-rl-skip-stage2` | `general-rl` | — | 跳过 Stage-2 训练或推断 |
+| `--general-rl-stage1-config-json PATH` | `general-rl` 训练 | — | Stage-2 训练时各任务的 Stage-1 配置 |
+
+### 搜索算法与实际入口
+
+| `--search-algorithm` | 含义 | 实际入口 |
+| --- | --- | --- |
+| `rl` | Per-task 两阶段普通 RL 搜索 | `rl_tune.py` |
+| `ga` | COINN 风格两阶段遗传算法搜索 | `rl_tune_genetic.py` |
+| `general-rl` | 多任务通用策略训练 / 离线推断 | `rl_tune_general.py` |
+| `rl-and-ga-compare` | 同时运行一份普通 RL 与一份 GA，并在 Stage-1 / Stage-2 后生成对比结果 | `rl_ga_compare_runner.py` |
 
 ### 模式互斥规则
 
-- 选择 `--search-algorithm=general-rl` 后，**不能**使用 rl/ga 专用参数（如 `--stage1-rl-episodes`、`--skip-stage1-rl`、`--final-eval-config`、`--manual-gelu` 等），否则脚本报错。
-- 选择 `--search-algorithm=rl` 或 `ga` 后，**不能**使用 general-rl 专用参数（如 `--general-stage1-policy`、`--general-rl-tasks` 等），否则脚本报错。
-- 选择 `--search-algorithm=ga` 后，**不能**使用 RL 兼容别名（如 `--skip-stage1-rl`、`--stage1-rl-episodes`），必须使用算法无关写法。
+- 选择 `--search-algorithm=general-rl` 后，不能再混用普通 RL / GA 的阶段搜索或最终评估参数。
+- 选择 `--search-algorithm=rl` 或 `ga` 后，不能再混用 `--general-rl-*` 参数。
+- 选择 `--search-algorithm=ga` 后，不能传 `--stage1-search-lr` / `--stage2-search-lr`。
+- 选择 `--search-algorithm=rl-and-ga-compare` 后，脚本会强制执行完整的两阶段搜索与最终评估，因此**不允许**：
+  - `--skip-stage1-search`
+  - `--skip-noise-search`
+  - `--skip-stage1-final-eval`
+  - `--skip-noise-final-eval`
+  - `--final-eval-source json/manual`
+  - `--noise-eval-source json/manual`
+  - `--manual-gelu`
+  - `--manual-softmax`
+  - `--manual-noise-config`
+  - `--resume-from`
 
----
+### JSON 配置文件默认值
 
-## 搜索算法可选项说明（强化学习 / 遗传算法 / 通用RL）
-
-统一通过主脚本选择搜索算法：
-
-```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm rl
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm ga
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm general-rl --general-rl-mode train --general-rl-tasks mrpc,cola,rte,stsb
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm general-rl --general-rl-mode infer --general-stage1-policy general_stage1_policy.pt --model mrpc
-```
-
-### 1. 选项定义
-
-| 选项 | 可选值 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `--search-algorithm` | `rl` / `ga` / `general-rl` | `rl` | 统一控制搜索使用哪种算法 |
-
-对应关系如下：
-
-| 选项值 | 含义 | 实际入口 |
-| --- | --- | --- |
-| `rl` | Per-task 两阶段 PPO 搜索 | `rl_tune.py` |
-| `ga` | COINN 风格两阶段遗传算法搜索 | `rl_tune_genetic.py` |
-| `general-rl` | 多任务通用策略训练 / 离线推断 | `rl_tune_general.py` |
-
-不写 `--search-algorithm` 时，默认走 RL。
-
-### 2. 与现有流程的关系
-
-- `rl` 模式下，保持原有项目逻辑：Stage-1 搜索 `GELU/Softmax`，Stage-2 搜索 7 类噪声 scaling factor。
-- `ga` 模式下，模型、数据集、评估约束、最终评估模块、结果目录结构都与原流程保持一致，只把”搜索算法本体”替换为遗传算法。
-- `general-rl` 模式下，使用多任务 round-robin 训练通用策略（含 Critic），部署时只需冻结策略做离线 rollout，无需为每个新任务重新训练数万回合。
-- `rl` 和 `ga` 共用相同的阶段跳过逻辑、最终评估逻辑、JSON/manual 配置读取逻辑和结果输出逻辑，因此对比更公平。`general-rl` 使用独立的参数体系。
-
-### 3. 推荐写法与兼容写法
-
-为了避免“选了 GA，但后面的参数仍然沿用 RL 命名”的混用，主脚本新增了算法无关写法，并保留了 RL 兼容别名：
-
-| 推荐写法 | 旧兼容别名 | 说明 |
-| --- | --- | --- |
-| `--skip-stage1-search` | `--skip-stage1-rl` | 跳过第一阶段搜索 |
-| `--skip-noise-search` | `--skip-noise-rl` | 跳过第二阶段噪声搜索 |
-| `--stage1-search-episodes N` | `--stage1-rl-episodes N` | 设置第一阶段搜索预算 |
-| `--stage2-search-episodes N` | `--stage2-rl-episodes N` | 设置第二阶段搜索预算 |
-
-使用规则：
-
-- 选择 `--search-algorithm=rl` 时，推荐写法和旧兼容别名都可以使用。
-- 选择 `--search-algorithm=ga` 时，必须使用推荐写法；如果还使用 `--skip-stage1-rl`、`--skip-noise-rl`、`--stage1-rl-episodes`、`--stage2-rl-episodes`，脚本会直接报错。
-
-### 4. JSON 配置文件的算法家族约束
-
-当第一阶段或第二阶段最终评估使用 `json` 配置来源时，脚本会检查配置文件名是否和算法家族一致。
-
-默认配置文件如下：
-
-| 算法 | 第一阶段 JSON 默认值 | 第二阶段 JSON 默认值 |
+| 算法 | Stage-1 JSON 默认值 | Stage-2 JSON 默认值 |
 | --- | --- | --- |
 | `rl` | `glue_configs_best_ppo.json` | `glue_noise_configs_best_ppo.json` |
 | `ga` | `glue_configs_best_genetic.json` | `glue_noise_configs_best_genetic.json` |
 
-一致性校验规则如下：
+当 `--final-eval-source=json` 或 `--noise-eval-source=json` 时，脚本会检查文件名是否与所选算法家族匹配，避免把 PPO 配置错用到 GA，或把 GA 配置错用到 PPO。当前仓库默认只内置了 PPO 这套 JSON；如果你要在 `ga` 模式下走 JSON 评估，需要自行准备并命名为 `glue_configs_best_genetic.json` / `glue_noise_configs_best_genetic.json`，或显式通过 `--final-eval-config` / `--noise-eval-config` 指定。
 
-- 如果选择 `--search-algorithm=ga`，但第一阶段 JSON 仍使用 `glue_configs_best_ppo.json` 这类 PPO/RL 家族文件，脚本会报错。
-- 如果选择 `--search-algorithm=ga`，但第二阶段 JSON 仍使用 `glue_noise_configs_best_ppo.json` 这类 PPO/RL 家族文件，脚本会报错。
-- 如果选择 `--search-algorithm=rl`，但 JSON 文件名明显属于 genetic/ga 家族，脚本也会报错。
-- 如果你使用的是自定义文件名，只要文件名里不带明显的 `ppo` / `genetic` / `_ga` 等家族标识，脚本会按“自定义配置文件”处理，不会额外阻止。
+### 推荐命令示例
 
-### 5. 与已有阶段约束的组合规则
-
-这部分规则没有变，但现在会带上算法选择一起检查：
-
-- 若第一阶段搜索会执行，则 `--final-eval-source` 只能为 `search`。
-- 若使用 `--final-eval-source json|manual`，则必须跳过第一阶段搜索。
-- 若第二阶段搜索会执行，且没有跳过噪声最终评估，则 `--noise-eval-source` 只能为 `search`。
-- 若使用 `--noise-eval-source json|manual`，则必须跳过第二阶段搜索。
-
-也就是说，算法选择只是决定”搜索器是 RL 还是 GA”，但不会放宽已有的流程一致性约束。`general-rl` 模式下这些 rl/ga 阶段约束不适用。
-
-### 6. 推荐命令示例
-
-#### 6.1 默认强化学习流程
+#### 1. 默认普通 RL
 
 ```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2
+bash llama_7B_LayerImportance.sh --dataset mrpc
 ```
 
-等价于：
+#### 2. 普通 RL，分别指定 Stage-1 / Stage-2 学习率
 
 ```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm rl
-```
-
-#### 6.2 完整遗传算法流程
-
-```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --search-algorithm ga
-```
-
-#### 6.3 遗传算法模式下跳过第一阶段搜索，直接读取第一阶段 JSON 配置
-
-```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --search-algorithm ga \
-  --skip-stage1-search \
-  --final-eval-source json \
-  --final-eval-config glue_configs_best_genetic.json
-```
-
-#### 6.4 遗传算法模式下跳过第二阶段搜索，直接读取噪声 JSON 配置
-
-```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --search-algorithm ga \
-  --skip-noise-search \
-  --noise-eval-source json \
-  --noise-eval-config glue_noise_configs_best_genetic.json
-```
-
-#### 6.5 强化学习模式下沿用旧参数名
-
-```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
   --search-algorithm rl \
-  --skip-stage1-rl \
-  --final-eval-source json \
-  --final-eval-config glue_configs_best_ppo.json
+  --stage1-search-lr 3e-5 \
+  --stage2-search-lr 1e-5
 ```
 
-#### 6.6 通用 RL — 多任务训练（Phase A: 一次性训练通用策略）
+#### 3. 完整 GA
 
 ```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --search-algorithm ga
+```
+
+#### 4. RL 与 GA 并行对比实验
+
+```bash
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --search-algorithm rl-and-ga-compare \
+  --stage1-search-episodes 51000 \
+  --stage2-search-episodes 40000 \
+  --stage1-search-lr 1e-4 \
+  --stage2-search-lr 1e-4
+```
+
+该模式会在当前 run 根目录下生成：
+
+- `rl_run/`：普通 RL 子运行目录
+- `ga_run/`：GA 子运行目录
+- `comparison/stage1_compare_report_<dataset>.md`：Stage-1 对比文本报告
+- `comparison/stage1_compare_plot_<dataset>.png`：Stage-1 对比图
+- `comparison/stage2_compare_report_<dataset>.md`：Stage-2 对比文本报告
+- `comparison/stage2_compare_plot_<dataset>.png`：Stage-2 对比图
+
+如果其中一方提前停止，对比模块会优先使用该方当前 checkpoint / 搜索结果里恢复出的最优配置继续补做最终评估，并在报告中显式写出警告。
+
+#### 5. 通用 RL 训练
+
+```bash
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
   --search-algorithm general-rl \
   --general-rl-mode train \
   --general-rl-tasks mrpc,cola,rte,stsb \
   --general-rl-rounds 50 \
   --general-rl-episodes-per-round 170 \
-  --general-rl-lr 3e-5 \
-  --model mrpc
+  --general-rl-lr 3e-5
 ```
 
-训练完成后会在 run 目录下生成 `general_stage1_policy.pt` 和 `general_stage2_noise_policy.pt`。
-
-#### 6.7 通用 RL — 离线推断（Phase B: 快速部署到新任务）
+#### 6. 通用 RL 离线推断
 
 ```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh \
   --search-algorithm general-rl \
   --general-rl-mode infer \
   --general-stage1-policy general_stage1_policy.pt \
   --general-stage2-policy general_stage2_noise_policy.pt \
   --general-rl-num-rollouts 500 \
-  --model qnli
+  --dataset qnli
 ```
 
 只做 Stage-1 推断（跳过 Stage-2）：
 
 ```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm general-rl \
   --general-rl-mode infer \
   --general-stage1-policy general_stage1_policy.pt \
   --general-rl-skip-stage2 \
-  --model mrpc
+  --dataset mrpc
 ```
 
 贪心 rollout（确定性推断，rollout 次数自动置 1）：
 
 ```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm general-rl \
   --general-rl-mode infer \
   --general-stage1-policy general_stage1_policy.pt \
   --general-rl-greedy \
-  --model mrpc
+  --dataset mrpc
 ```
 
 ### 7. 常见错误示例
@@ -254,35 +194,40 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 
 ```bash
 # 错误：GA 模式却继续使用 RL 家族 JSON
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
   --search-algorithm ga \
   --skip-stage1-search \
   --final-eval-source json \
   --final-eval-config glue_configs_best_ppo.json
 
-# 错误：GA 模式却继续使用 RL 命名兼容别名
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+# 错误：GA 模式却继续使用 RL 专用学习率参数
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
   --search-algorithm ga \
-  --skip-stage1-rl
+  --stage1-search-lr 1e-4
 
 # 错误：RL 模式却读取 genetic 家族 JSON
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
   --search-algorithm rl \
   --skip-noise-search \
   --noise-eval-source json \
   --noise-eval-config glue_noise_configs_best_genetic.json
 
-# 错误：general-rl 模式下使用了 rl/ga 专用参数
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+# 错误：general-rl 模式下使用了普通 RL / GA 阶段参数
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
   --search-algorithm general-rl \
   --general-rl-mode infer \
   --general-stage1-policy general_stage1_policy.pt \
-  --stage1-rl-episodes 51000    # 不允许！
+  --stage1-search-episodes 51000
 
 # 错误：rl 模式下使用了 general-rl 专用参数
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
   --search-algorithm rl \
-  --general-stage1-policy general_stage1_policy.pt    # 不允许！
+  --general-stage1-policy general_stage1_policy.pt
 ```
 
 ### 8. 迁移建议
@@ -298,6 +243,16 @@ Please Ignore the LLM-Adapters, EzPC, and importance-aware-sparse-tuning-IST-pap
 
 ## 使用说明
 
+> 下面这一大节里仍保留了部分历史实验记录与说明文字。若命令写法与上面的“命令行参数总表”冲突，请统一按新 CLI 规则理解：
+>
+> - `--model` → `--dataset`
+> - `--batch_size` → `--batch-size`
+> - `--skip-stage1-rl` → `--skip-stage1-search`
+> - `--skip-noise-rl` → `--skip-noise-search`
+> - `--stage1-rl-episodes` → `--stage1-search-episodes`
+> - `--stage2-rl-episodes` → `--stage2-search-episodes`
+> - 删除旧的 5 个位置参数写法，统一改用全可选参数
+
 ### 运行前准备
 
 ```bash
@@ -309,31 +264,29 @@ cd /var/tmp/root-home/Reinforcement-For-Robustness
 ### 基础命令
 
 ```bash
-bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [degree]
+bash llama_7B_LayerImportance.sh [可选参数]
 ```
 
-位置参数说明：
+当前脚本入口已经统一改成**全可选参数**，不再接受旧版 5 个位置参数。
+已经移除的旧入口参数有：
 
-
-| 参数             | 说明                                                                |
-| -------------- | ----------------------------------------------------------------- |
-| `lora_r`       | LoRA rank，当前固定传 `32`                                              |
-| `lora_alpha`   | LoRA alpha，当前固定传 `64`                                             |
-| `logfile_path` | nohup 日志文件名提示；真实日志会自动写入当前 run 目录下的 `logs/` 子目录                    |
-| `rl_lr`        | PPO 学习率控制。若 `< 1` 则直接作为学习率；旧值如 `20` / `40` 会解释为 `20e-6` / `40e-6` |
-| `degree`       | 历史调试参数，固定传 `2`                                                    |
-
+- `lora_r`
+- `lora_alpha`
+- `degree`
 
 基础示例：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
+
+```bash
+bash llama_7B_LayerImportance.sh --dataset mrpc
+```
 
 ### 并行安全运行（Concurrent-safe run layout）
 
-命令格式不变，但 `logfile_path` 现在只用于提示日志文件名（实际写入位置由 run 目录决定）。
+命令格式已经改成全可选参数；`--logfile` 现在只用于提示日志文件名，实际日志写入位置由 run 目录决定。
 每次启动都会自动创建一个唯一的 run 目录：
 
 ```text
-experiment_results/layer_importance_runs/<dataset>/<YYYYmmdd_HHMMSS>_pid<PID>/
+rl_results/layer_importance_runs/<dataset>/<YYYYmmdd_HHMMSS>_pid<PID>/
 ```
 
 启动器会把各类输出写入不同子目录：
@@ -347,16 +300,28 @@ experiment_results/layer_importance_runs/<dataset>/<YYYYmmdd_HHMMSS>_pid<PID>/
 因此，下面这些命令可以同时并行运行，即使它们都使用相同的 `output.log`：
 
 ```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc
+bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
+  --skip-stage1-search \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval \
+  --noise-eval-repeat 200
 
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model stsb
+bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset stsb \
+  --skip-stage1-search \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval \
+  --noise-eval-repeat 200
 ```
 
 脚本本身也不再强制设置 `CUDA_VISIBLE_DEVICES=0`。如果你想让并行运行时分别绑定不同 GPU，请在脚本外部设置：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
-CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model stsb
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc
+CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh --logfile output.log --dataset stsb
 ```
 
 #### 如何在命令行并行跑多数据集
@@ -365,26 +330,34 @@ CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --
 
 并行常用做法：
 
-1. 最推荐：分别在不同终端窗口/会话里启动不同 `--model`（每条命令就是一个独立实验进程）。
+1. 最推荐：分别在不同终端窗口/会话里启动不同 `--dataset`（每条命令就是一个独立实验进程）。
 2. 需要在同一终端里同时跑：把每条命令放到后台执行（给命令后面加 `&`），例如 `bash ... &`。
 
 示例（并行跑 MRPC + STS-B；与上面“命令并行可运行”的示例一致）：
 
 ```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc &
+bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
+  --skip-stage1-search \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval \
+  --noise-eval-repeat 200 &
 
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval --noise-eval-repeat 200 --model stsb &
+bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset stsb \
+  --skip-stage1-search \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval \
+  --noise-eval-repeat 200 &
 ```
 
 如果你有多张 GPU，建议再给每条命令绑定不同 GPU（避免显存互抢）：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc &
-CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model stsb &
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc &
+CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh --logfile output.log --dataset stsb &
 ```
 
 #### 并行相关可选参数怎么用（对应上面的并行示例）
@@ -394,23 +367,23 @@ CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --
 
 | 参数                         | 作用                                 | 并行时该怎么配                                                                |
 | -------------------------- | ---------------------------------- | ---------------------------------------------------------------------- |
-| `logfile_path`             | `nohup` 日志名提示（会取 basename 作为日志文件名） | 多个并行进程可传相同文件名（产出仍在各自 run 目录下）                                          |
-| `--model`                  | 选择数据集（并自动匹配对应 `base_model`）        | 并行时让不同进程分别用不同 `--model` 值                                              |
-| `--skip-stage1-rl`         | 跳过第一阶段 RL 搜索/训练                    | 并行加速的常用开关：先有/后用已有配置或搜索结果时可加                                            |
-| `--final-eval-source json` | 第一阶段最终评估配置来源为 JSON                 | 当 `--final-eval-source` 取 `json`（或 `manual`）时，需要显式加 `--skip-stage1-rl` |
+| `--logfile FILE`           | `nohup` 日志名提示（会取 basename 作为日志文件名） | 多个并行进程可传相同文件名（产出仍在各自 run 目录下）                                          |
+| `--dataset`                | 选择数据集（并自动匹配对应 `base_model`）        | 并行时让不同进程分别用不同 `--dataset` 值                                            |
+| `--skip-stage1-search`     | 跳过第一阶段搜索                            | 并行加速的常用开关：先有/后用已有配置或搜索结果时可加                                            |
+| `--final-eval-source json` | 第一阶段最终评估配置来源为 JSON                 | 当 `--final-eval-source` 取 `json`（或 `manual`）时，需要显式加 `--skip-stage1-search` |
 | `--final-eval-config PATH` | 第一阶段最终评估用的 JSON 配置文件路径             | 一般并行时保持一致，避免同时改动多个配置来源                                                 |
 | `--skip-stage1-final-eval` | 跳过第一阶段最终评估                         | 只关心后续阶段（例如噪声阶段）时可加                                                     |
 | `--noise-eval-repeat N`    | 噪声最终评估重复次数                         | 并行时想要统计更稳可调大；想缩短总耗时可调小                                                 |
-| `--skip-noise-rl`          | 跳过第二阶段噪声 RL 训练                     | 只想跑噪声最终评估时加；当 `--noise-eval-source` 用 `json/manual` 时也需要显式加            |
+| `--skip-noise-search`      | 跳过第二阶段噪声搜索                         | 只想跑噪声最终评估时加；当 `--noise-eval-source` 用 `json/manual` 时也需要显式加            |
 | `--skip-noise-final-eval`  | 跳过第二阶段噪声最终评估                       | 只关心噪声 RL 训练过程/中间产物时加                                                   |
 | `--noise-eval-source`      | 噪声最终评估配置来源（`search/json/manual`）   | 并行时常用 `json`：配合 `--noise-eval-config` 直接读配置                            |
 | `--noise-eval-config PATH` | `json` 模式下的噪声配置文件                  | 例如默认的 `glue_noise_configs_best_ppo.json`                               |
 | `--manual-noise-config`    | `manual` 模式下的噪声配置（JSON 字符串）        | 配置很少且不想改文件时用                                                           |
 
 
-### --model 数据集+模型切换
+### --dataset 数据集+模型切换
 
-可以通过 `--model` 一次性切换数据集和对应 `base_model`，不需要再手动改
+可以通过 `--dataset` 一次性切换数据集和对应 `base_model`，不需要再手动改
 `llama_7B_LayerImportance.sh` 里的 `--base_model` / `--data_path`，也不需要再手动改 `rl_tune.py`。
 
 支持值（大小写不敏感）：
@@ -426,7 +399,7 @@ CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --
 映射关系：
 
 
-| `--model` 值 | 自动设置 `--base_model`                  |
+| `--dataset` 值 | 自动设置 `--base_model`                  |
 | ----------- | ------------------------------------ |
 | `mrpc`      | `textattack/bert-base-uncased-MRPC`  |
 | `stsb`      | `textattack/bert-base-uncased-STS-B` |
@@ -437,19 +410,19 @@ CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --
 | `qnli`      | `textattack/bert-base-uncased-QNLI`  |
 
 
-同时自动设置 `--data_path` 为同名任务（如 `--model qnli` -> `--data_path qnli`）。
+同时自动设置 `--data_path` 为同名任务（如 `--dataset qnli` -> `--data_path qnli`）。
 
 示例：
 
 ```bash
-# 默认 mrpc（不写 --model 也可以）
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
+# 默认 mrpc（不写 --dataset 也可以）
+bash llama_7B_LayerImportance.sh --dataset mrpc
 
 # 切换到 STS-B（回归任务）
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model stsb
+bash llama_7B_LayerImportance.sh --dataset stsb
 
 # 切换到 QNLI（问句-句子对）
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model qnli
+bash llama_7B_LayerImportance.sh --dataset qnli
 ```
 
 说明：`rl_tune.py` 已改为按 `data_path` 自动选择输入列与 `num_labels`，例如
@@ -481,7 +454,7 @@ bert-base 切换到 24 层的 bert-large，或切换到 12 层的 gpt-2。
 | `gpt-2`          | `PavanNeerudu/gpt2-finetuned-<task>`（每任务独立微调） | 12  |
 
 
-`--model-type` 与 `--model` 组合后会按 `(model-type, dataset)` 解析最终
+`--model-type` 与 `--dataset` 组合后会按 `(model-type, dataset)` 解析最终
 `--base_model`。`bert-base` 兼容此前所有 7 个 GLUE 任务；`bert-large`
 当前仅支持以下任务（其余任务暂时跳过，运行时会以
 “bert-large 当前不支持数据集: …” 错误退出）：
@@ -493,7 +466,7 @@ bert-base 切换到 24 层的 bert-large，或切换到 12 层的 gpt-2。
 - `sst2`
 - `qnli`
 
-不支持的组合（例如 `--model-type bert-large --model wnli`）会在脚本
+不支持的组合（例如 `--model-type bert-large --dataset wnli`）会在脚本
 启动阶段立即报错并提示当前支持列表，避免到 HuggingFace 下载阶段才
 失败。如果未来需要新增 bert-large checkpoint，可在
 `llama_7B_LayerImportance.sh` 的 `MODEL_TYPE=bert-large` 分支里
@@ -503,15 +476,15 @@ bert-base 切换到 24 层的 bert-large，或切换到 12 层的 gpt-2。
 
 ```bash
 # 在 mrpc 上用 bert-large 跑完整两阶段流程（搜索 + 评估）
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc --model-type bert-large
+bash llama_7B_LayerImportance.sh --dataset mrpc --model-type bert-large
 
 # 在 cola 上用 bert-large 跳过第一阶段 RL，仅做最终评估
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --model cola --model-type bert-large \
-  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json
+bash llama_7B_LayerImportance.sh \
+  --dataset cola --model-type bert-large \
+  --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json
 
 # 不写 --model-type 时等价于历史行为（bert-base）
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
+bash llama_7B_LayerImportance.sh --dataset mrpc
 ```
 
 注意事项：
@@ -519,7 +492,7 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model mrpc
 1. bert-large 第一阶段每个 episode 需要在所有 24 层上各做一步决策，
   单次 PPO update 的 token 数也按 `total_layers` 自动翻倍，因此显存
    占用、单 episode 耗时大约是 bert-base 的 2 倍，建议在 24GB 及以上
-   显存上运行，必要时通过 `--batch_size` 适当调小。
+   显存上运行，必要时通过 `--batch-size` 适当调小。
 2. 第二阶段噪声 RL 的状态/动作序列同样按 24 层展开，`noise_rl_module_v2.py`
   已读取 `evaluator.total_layers` 自适应，无需额外配置。
 3. 第一阶段最终评估、噪声最终评估、随机对照实验都会按 `total_layers`
@@ -609,38 +582,38 @@ RL 后请把 PPO 输出的最优配置覆写到这两个文件的 `"gpt-2"` 段�
 
 ```bash
 # 在 sst2 上用 gpt-2 跑完整两阶段 RL + 最终评估
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --model sst2 --model-type gpt-2
+bash llama_7B_LayerImportance.sh --dataset sst2 --model-type gpt-2
 
 # 在 mrpc 上跳过第一阶段 RL，直接用 JSON 中的 gpt-2 段做最终评估
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --model mrpc --model-type gpt-2 \
-  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc --model-type gpt-2 \
+  --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json
 
 # 用 gpt-2 基座生成 GLUE 官网提交文件（前提：已在训练阶段完成 head 微调）
 python generate_glue_submission.py \
   --config glue_configs_best_ppo.json \
   --noise_config glue_noise_configs_best_ppo.json \
-  --model_type gpt-2 \
+  --model-type gpt-2 \
   --output_dir gpt2_run
 ```
 
 ### 命名参数与安全约束
 
-旧版 5 参数命令依然兼容，但新增了更严格的流程校验，避免“前面跑 RL，后面却拿手动/JSON 配置做评估”的混用。
+当前脚本已经统一改成全可选参数，并增加了更严格的流程校验，避免“前面跑搜索，后面却拿手动/JSON 配置做评估”的混用。
 
 **第一阶段：GELU/Softmax RL 与最终评估**
 
 第一阶段的“是否执行 RL”与“是否执行最终评估”仍可独立控制，但配置来源现在有安全约束：
 
-- 若执行第一阶段 RL，则 `--final-eval-source` 只能为 `search`
-- 若使用 `json` 或 `manual`，则必须显式添加 `--skip-stage1-rl`
-- 若跳过第一阶段 RL，则不能再使用 `search`
-- `--skip-stage1-rl` 会一并跳过 Phase 1 baseline 建立、Phase 1.5 GELU 输入分布分析、Phase 2 PPO 和 Phase 2.5 贪心搜索
+- 若执行第一阶段搜索，则 `--final-eval-source` 只能为 `search`
+- 若使用 `json` 或 `manual`，则必须显式添加 `--skip-stage1-search`
+- 若跳过第一阶段搜索，则不能再使用 `search`
+- `--skip-stage1-search` 会一并跳过 Phase 1 baseline 建立、Phase 1.5 GELU 输入分布分析、Phase 2 PPO 和 Phase 2.5 贪心搜索
 
 
 | 参数                             | 说明                                                                                  | 默认值                          |
 | ------------------------------ | ----------------------------------------------------------------------------------- | ---------------------------- |
-| `--skip-stage1-rl`             | 跳过整个第一阶段搜索准备与搜索流程：Phase 1 baseline、Phase 1.5 GELU 输入分布分析、Phase 2 PPO、Phase 2.5 贪心搜索 | 不跳过                          |
+| `--skip-stage1-search`         | 跳过整个第一阶段搜索准备与搜索流程：Phase 1 baseline、Phase 1.5 GELU 输入分布分析、Phase 2 PPO、Phase 2.5 贪心搜索 | 不跳过                          |
 | `--skip-stage1-final-eval`     | 跳过第一阶段最终评估（Phase 3 + Phase 4），但仍会先解析第一阶段配置，再进入第二阶段                                  | 不跳过                          |
 | `--final-eval-source` | 第一阶段最终评估配置来源：可选 `search`（本次搜索结果）、`json`（`--final-eval-config`）、`manual`（`--manual-gelu` / `--manual-softmax`） | `search`                      |
 | `--final-eval-config PATH`     | `json` 模式下的配置文件路径                                                                   | `glue_configs_best_ppo.json` |
@@ -656,14 +629,14 @@ python generate_glue_submission.py \
 
 第二阶段同样增加了安全约束：
 
-- 若执行噪声 RL，且没有跳过噪声最终评估，则 `--noise-eval-source` 只能为 `search`
-- 若使用 `json` 或 `manual` 做噪声最终评估，则必须显式添加 `--skip-noise-rl`
-- 若跳过噪声 RL，则不能在噪声最终评估中再使用 `search`
+- 若执行噪声搜索，且没有跳过噪声最终评估，则 `--noise-eval-source` 只能为 `search`
+- 若使用 `json` 或 `manual` 做噪声最终评估，则必须显式添加 `--skip-noise-search`
+- 若跳过噪声搜索，则不能在噪声最终评估中再使用 `search`
 
 
 | 参数                                        | 说明                            | 默认值                                |
 | ----------------------------------------- | ----------------------------- | ---------------------------------- |
-| `--skip-noise-rl`                         | 跳过第二阶段噪声 RL 训练                | 不跳过                                |
+| `--skip-noise-search`                     | 跳过第二阶段噪声搜索                  | 不跳过                                |
 | `--skip-noise-final-eval`                 | 跳过第二阶段噪声最终评估                  | 不跳过                                |
 | `--noise-eval-source` | 第二阶段噪声最终评估配置来源：可选 `search`、`json`（`--noise-eval-config`）、`manual`（`--manual-noise-config`） | `search`                            |
 | `--noise-eval-config PATH`                | `json` 模式下的噪声配置文件路径           | `glue_noise_configs_best_ppo.json` |
@@ -722,22 +695,25 @@ python generate_glue_submission.py \
 
 ```bash
 # 1) 仅随机 X
-NOISE_RANDOM_MODE=x_only bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval --skip-noise-rl --noise-eval-source json \
-  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200 --model mrpc
+NOISE_RANDOM_MODE=x_only bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
+  --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval --skip-noise-search --noise-eval-source json \
+  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200
 
 # 2) 随机 X + 所有 W （默认，可省略环境变量）
-NOISE_RANDOM_MODE=x_w bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval --skip-noise-rl --noise-eval-source json \
-  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200 --model mrpc
+NOISE_RANDOM_MODE=x_w bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
+  --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval --skip-noise-search --noise-eval-source json \
+  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200
 
 # 3) 随机 X + 所有 W + 非线性层（GELU/Softmax）
-NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval --skip-noise-rl --noise-eval-source json \
-  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200 --model mrpc
+NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
+  --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
+  --skip-stage1-final-eval --skip-noise-search --noise-eval-source json \
+  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200
 ```
 
 > Windows PowerShell 下设置环境变量请用 `$env:NOISE_RANDOM_MODE="x_only"; bash ...`；CMD 下用 `set NOISE_RANDOM_MODE=x_only && bash ...`。
@@ -770,44 +746,44 @@ NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh 32 64 output.lo
 ### 使用示例
 
 默认完整流程（第一阶段 RL + 最终评估 + 第二阶段噪声 RL + 噪声最终评估）：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2`
+`bash llama_7B_LayerImportance.sh --dataset mrpc`
 
 只运行第一阶段，跳过第二阶段：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --skip-noise-final-eval`
+`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-noise-search --skip-noise-final-eval`
 
 不跑第一阶段 RL，直接从 JSON 读取第一阶段配置：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json`
+`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json`
 
 不跑第一阶段 RL，手动指定每层 GELU/Softmax：
-`bash llama_7B_LayerImportance.sh 32 64 output_manual.log 20 2 --skip-stage1-rl --final-eval-source manual --manual-gelu "[1,1,1,4,1,1,1,1,1,1,1,1]" --manual-softmax "[2,3,4,6,4,4,5,4,4,5,5,2]"`
+`bash llama_7B_LayerImportance.sh --logfile output_manual.log --dataset mrpc --skip-stage1-search --final-eval-source manual --manual-gelu "[1,1,1,4,1,1,1,1,1,1,1,1]" --manual-softmax "[2,3,4,6,4,4,5,4,4,5,5,2]"`
 
 跳过噪声 RL，直接从 JSON 做噪声最终评估：  
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`
+`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-noise-search --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`
 
 跳过噪声 RL，手动指定噪声配置并重复评估 100 次：
-`bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-noise-rl --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[14,16,18,20,22,14,16,18,20,22,14,16],"wk":[14,16,18,20,22,14,16,18,20,22,14,16],"wv":[14,16,18,20,22,14,16,18,20,22,14,16],"wo":[14,16,18,20,22,14,16,18,20,22,14,16],"wffn1":[16,18,20,22,24,16,18,20,22,24,16,18],"wffn2":[14,16,18,20,22,14,16,18,20,22,14,16]}' --noise-eval-repeat 100`
+`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-noise-search --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[14,16,18,20,22,14,16,18,20,22,14,16],"wk":[14,16,18,20,22,14,16,18,20,22,14,16],"wv":[14,16,18,20,22,14,16,18,20,22,14,16],"wo":[14,16,18,20,22,14,16,18,20,22,14,16],"wffn1":[16,18,20,22,24,16,18,20,22,24,16,18],"wffn2":[14,16,18,20,22,14,16,18,20,22,14,16]}' --noise-eval-repeat 100`
 
 只进行第二阶段rl  
-`CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc --stage2-rl-episodes [轮数] --batch_size [batch size 大小]`
+`CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --stage2-search-episodes [轮数] --batch-size [batch size 大小]`
 
 （实例）
 
-`CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --model mrpc --stage2-rl-episodes 15000 --batch_size 128`
+`CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --stage2-search-episodes 15000 --batch-size 128`
 
 只进行第二阶段最终评估
 
-`CUDA_VISIBLE_DEVICES=0 NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --skip-stage1-rl --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --skip-noise-rl --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200 --model mrpc --batch_size 128`
+`CUDA_VISIBLE_DEVICES=0 NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --skip-noise-search --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200 --batch-size 128`
 
 完全跳过两个阶段的搜索/训练，手动指定所有配置只做后续评估：
 
 ```bash
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --skip-stage1-rl \
+bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc \
+  --skip-stage1-search \
   --final-eval-source manual \
   --manual-gelu "[1,1,1,1,1,4,1,1,1,1,1,1]" \
   --manual-softmax "[2,2,5,5,5,2,5,2,5,5,6,2]" \
   --skip-stage1-final-eval \
-  --skip-noise-rl \
+  --skip-noise-search \
   --noise-eval-source manual \
   --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[14,16,18,20,22,14,16,18,20,22,14,16],"wk":[14,16,18,20,22,14,16,18,20,22,14,16],"wv":[14,16,18,20,22,14,16,18,20,22,14,16],"wo":[14,16,18,20,22,14,16,18,20,22,14,16],"wffn1":[16,18,20,22,24,16,18,20,22,24,16,18],"wffn2":[14,16,18,20,22,14,16,18,20,22,14,16]}'
 ```
@@ -815,7 +791,7 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 帮助：  
 `bash llama_7B_LayerImportance.sh --help`
 
-使用 JSON 配置生成 GLUE 官网提交的 TSV（以及可选的 `submission.zip`），输出目录为 **`glue_submission/<output_dir>/`**；`--output_dir` 默认为 `run`，即默认写到 `glue_submission/run`。默认骨干为 **`bert-base`**；若使用仓库里为 GPT-2 准备的配置段，需加 **`--model_type gpt-2`**，且须先在训练流程中完成分类头微调。若无 GPU 且需跑 CPU，需加 **`--allow_cpu`**（会很慢）。
+使用 JSON 配置生成 GLUE 官网提交的 TSV（以及可选的 `submission.zip`），输出目录为 **`glue_submission/<output_dir>/`**；`--output_dir` 默认为 `run`，即默认写到 `glue_submission/run`。默认骨干为 **`bert-base`**；若使用仓库里为 GPT-2 准备的配置段，需加 **`--model-type gpt-2`**，且须先在训练流程中完成分类头微调。若无 GPU 且需跑 CPU，需加 **`--allow_cpu`**（会很慢）。
 
 ```bash
 python generate_glue_submission.py \
@@ -872,14 +848,14 @@ bash run_all_experiments.sh --quick
 python experiment_single_layer_degradation.py --tasks sst2 mrpc --device cuda
 python experiment_block1_monotonicity.py --tasks sst2 --n_bootstrap 100 --device cuda
 
-### `--batch_size` 可选项
+### `--batch-size` 可选项
 
-可以通过命令行额外传入 `--batch_size N` 来覆盖当前脚本默认的批大小设置。
+可以通过命令行额外传入 `--batch-size N` 来覆盖当前脚本默认的批大小设置。
 
 
 | 参数               | 说明                                                                                                                                                                | 默认值  |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| `--batch_size N` | 统一设置 `llama_7B_LayerImportance.sh` 启动后强化学习与评估阶段使用的批大小。脚本会同步把 `--batch_size` 和 `--micro_batch_size` 都设为 `N`，并继续传递给 `rl_tune.py` 和 `layer_importance_evaluator.py`。 | `16` |
+| `--batch-size N` | 统一设置 `llama_7B_LayerImportance.sh` 启动后强化学习与评估阶段使用的批大小。脚本会同步把 `--batch_size` 和 `--micro_batch_size` 都设为 `N`，并继续传递给 `rl_tune.py` 和 `layer_importance_evaluator.py`。 | `16` |
 
 
 使用说明：
@@ -893,28 +869,28 @@ python experiment_block1_monotonicity.py --tasks sst2 --n_bootstrap 100 --device
 
 ```bash
 # 使用 batch size = 8 运行 MRPC
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 --batch_size 8 --model mrpc
+bash llama_7B_LayerImportance.sh --logfile output.log --batch-size 8 --dataset mrpc
 
 # 使用 batch size = 4，只运行第二阶段 noise RL
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --batch_size 4 \
-  --skip-stage1-rl \
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
+  --batch-size 4 \
+  --dataset mrpc \
+  --skip-stage1-search \
   --final-eval-source json \
   --final-eval-config glue_configs_best_ppo.json \
   --skip-stage1-final-eval \
-  --noise-eval-repeat 200 \
-  --model mrpc
+  --noise-eval-repeat 200
 ```
 
-### `--stage1-rl-episodes` / `--stage2-rl-episodes` 可选项
+### `--stage1-search-episodes` / `--stage2-search-episodes` 可选项
 
-可以通过命令行额外传入第一阶段和第二阶段强化学习轮数，分别控制 Stage-1 GELU/Softmax RL 和 Stage-2 noise RL 的 episode 数。
+可以通过命令行额外传入第一阶段和第二阶段搜索轮数，分别控制 Stage-1 GELU/Softmax 搜索和 Stage-2 noise 搜索的 episode 数。
 
 
-| 参数                       | 说明                                                                   | 默认值     |
-| ------------------------ | -------------------------------------------------------------------- | ------- |
-| `--stage1-rl-episodes N` | 设置第一阶段强化学习轮数，对应 `layer_importance_evaluator.py` 中的 Stage-1 PPO 搜索轮数。 | `51000` |
-| `--stage2-rl-episodes N` | 设置第二阶段强化学习轮数，对应 `noise_rl_module.py` 中的 Stage-2 noise PPO 搜索轮数。      | `40000` |
+| 参数                           | 说明                                                                   | 默认值     |
+| ---------------------------- | -------------------------------------------------------------------- | ------- |
+| `--stage1-search-episodes N` | 设置第一阶段强化学习轮数，对应 `layer_importance_evaluator.py` 中的 Stage-1 PPO 搜索轮数。 | `51000` |
+| `--stage2-search-episodes N` | 设置第二阶段强化学习轮数，对应 `noise_rl_module.py` 中的 Stage-2 noise PPO 搜索轮数。      | `40000` |
 
 
 使用说明：
@@ -922,28 +898,28 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 - `N` 必须是正整数。
 - 当对应阶段没有被跳过时，`N` 必须大于等于 `170`。
 这是因为当前 `PPO_UPDATE_INTERVAL=170`，如果轮数小于 `170`，PPO 将无法完成一次真正的策略更新。
-- 如果使用了 `--skip-stage1-rl`，就不能再同时显式传入 `--stage1-rl-episodes`。
-- 如果使用了 `--skip-noise-rl`，就不能再同时显式传入 `--stage2-rl-episodes`。
+- 如果使用了 `--skip-stage1-search`，就不能再同时显式传入 `--stage1-search-episodes`。
+- 如果使用了 `--skip-noise-search`，就不能再同时显式传入 `--stage2-search-episodes`。
 - 这两个参数只控制强化学习搜索轮数，不影响最终评估重复次数；最终评估重复次数仍然由 `--noise-eval-repeat` 等参数控制。
 
 示例：
 
 ```bash
 # 同时自定义第一阶段和第二阶段 RL 轮数
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --stage1-rl-episodes 1020 \
-  --stage2-rl-episodes 3400 \
-  --model mrpc
+bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
+  --stage1-search-episodes 1020 \
+  --stage2-search-episodes 3400
 
 # 跳过第一阶段，只运行第二阶段 noise RL，并把第二阶段轮数改成 680
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --skip-stage1-rl \
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
+  --skip-stage1-search \
   --final-eval-source json \
   --final-eval-config glue_configs_best_ppo.json \
   --skip-stage1-final-eval \
-  --stage2-rl-episodes 680 \
-  --noise-eval-repeat 200 \
-  --model mrpc
+  --stage2-search-episodes 680 \
+  --noise-eval-repeat 200
 ```
 
 ### `--resume-from` 断点续训可选项
@@ -955,7 +931,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 | 搜索算法 | Stage-1 checkpoint 路径 | Stage-2 checkpoint 路径 |
 | --- | --- | --- |
 | `rl` | `<run_dir>/stage1/stage1_rl_checkpoint.pt` | `<run_dir>/stage2_noise/progress/noise_rl_checkpoint.pt` |
-| `ga` | `<run_dir>/stage1/ga_stage1_checkpoint.pt` | `<run_dir>/stage2_noise/progress/ga_stage2_noise_checkpoint.pt` |
+| `ga` | `<run_dir>/stage1/ga_stage1_checkpoint.pt` | `<run_dir>/stage2_noise/progress/ga_stage2_checkpoint.pt` |
 | `general-rl` | `<run_dir>/stage1/general_stage1_train_checkpoint.pt` | `<run_dir>/stage2_noise/general_stage2_train_checkpoint.pt` |
 
 
@@ -979,68 +955,68 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 # ---- RL 模式续训 ----
 
 # 第一次训练：Stage-2 训练 15000 轮
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --skip-stage1-rl \
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
+  --skip-stage1-search \
   --final-eval-source json \
   --final-eval-config glue_configs_best_ppo.json \
   --skip-stage1-final-eval \
   --noise-eval-repeat 200 \
-  --model mrpc \
-  --stage2-rl-episodes 15000
+  --stage2-search-episodes 15000
 
 # 发现轮数不够，续训到 30000 轮
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --skip-stage1-rl \
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
+  --skip-stage1-search \
   --final-eval-source json \
   --final-eval-config glue_configs_best_ppo.json \
   --skip-stage1-final-eval \
   --noise-eval-repeat 200 \
-  --model mrpc \
-  --stage2-rl-episodes 30000 \
+  --stage2-search-episodes 30000 \
   --resume-from rl_results/layer_importance_runs/mrpc/20260404_151155_pid711833
 
 # Stage-1 续训示例：先训 10000 轮，再续训到 20000 轮
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --model mrpc \
-  --stage1-rl-episodes 10000 \
-  --skip-noise-rl --skip-noise-final-eval
+bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
+  --stage1-search-episodes 10000 \
+  --skip-noise-search --skip-noise-final-eval
 
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-  --model mrpc \
-  --stage1-rl-episodes 20000 \
-  --skip-noise-rl --skip-noise-final-eval \
+bash llama_7B_LayerImportance.sh --logfile output.log \
+  --dataset mrpc \
+  --stage1-search-episodes 20000 \
+  --skip-noise-search --skip-noise-final-eval \
   --resume-from rl_results/layer_importance_runs/mrpc/<之前的run目录>
 
 # ---- GA 模式续训 ----
 
 # 第一次 GA 搜索
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm ga \
-  --model mrpc
+  --dataset mrpc
 
 # GA 续训（从上次中断处继续）
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm ga \
-  --model mrpc \
+  --dataset mrpc \
   --resume-from rl_results/layer_importance_runs/mrpc/<之前的ga_run目录>
 
 # ---- General-RL 模式续训 ----
 
 # 第一次通用 RL 训练
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm general-rl \
   --general-rl-mode train \
   --general-rl-tasks mrpc,cola,rte,stsb \
   --general-rl-rounds 50 \
-  --model mrpc
+  --dataset mrpc
 
 # 从上次训练中断处继续
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm general-rl \
   --general-rl-mode train \
   --general-rl-tasks mrpc,cola,rte,stsb \
   --general-rl-rounds 100 \
-  --model mrpc \
+  --dataset mrpc \
   --resume-from rl_results/layer_importance_runs/mrpc/<之前的general-rl_run目录>
 ```
 
@@ -1092,15 +1068,15 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 
 ```bash
 # 1) 启动训练（脚本内部会 nohup 后台运行并打印 PID / 停止命令）
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-    --skip-stage1-rl \
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
+    --dataset mrpc \
+    --skip-stage1-search \
     --final-eval-source json \
     --final-eval-config glue_configs_best_ppo.json \
     --skip-stage1-final-eval \
     --noise-eval-repeat 200 \
-    --model mrpc \
-    --stage2-rl-episodes 15000 \
-    --batch_size 128
+    --stage2-search-episodes 15000 \
+    --batch-size 128
 # -> 终端会打印 Background PID: 712345 以及 Resolved run root: rl_results/.../20260408_.../
 ```
 
@@ -1130,16 +1106,16 @@ touch "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)/stage2_noise/
 
 ```bash
 # 3) 续训：只需把原命令加上 --resume-from 指向上次的 run 目录即可
-#    （建议同时把 --stage2-rl-episodes 调到你想要的“总轮数”）
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
-    --skip-stage1-rl \
+#    （建议同时把 --stage2-search-episodes 调到你想要的“总轮数”）
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
+    --dataset mrpc \
+    --skip-stage1-search \
     --final-eval-source json \
     --final-eval-config glue_configs_best_ppo.json \
     --skip-stage1-final-eval \
     --noise-eval-repeat 200 \
-    --model mrpc \
-    --stage2-rl-episodes 30000 \
-    --batch_size 128 \
+    --stage2-search-episodes 30000 \
+    --batch-size 128 \
     --resume-from "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)"
 ```
 
@@ -1152,9 +1128,9 @@ training-curve 曲线与 PPO 训练曲线在续训前后能**严丝合缝地接�
 
 ```bash
 # 1) 启动 GA 搜索
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh --logfile output.log \
     --search-algorithm ga \
-    --model mrpc
+    --dataset mrpc
 # -> 脚本打印 Background PID: 812345 及停止命令
 
 # 2) 优雅停止（方式 A / B / C 均可）
@@ -1165,9 +1141,9 @@ kill -INT 812345
 # touch rl_results/.../stage2_noise/progress/STOP_RL  # 停 GA Stage-2
 
 # 3) 续训：加上 --resume-from 指向上次的 run 目录
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh --logfile output.log \
     --search-algorithm ga \
-    --model mrpc \
+    --dataset mrpc \
     --resume-from "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)"
 ```
 
@@ -1175,12 +1151,12 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 
 ```bash
 # 1) 启动通用 RL 多任务训练
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh --logfile output.log \
     --search-algorithm general-rl \
     --general-rl-mode train \
     --general-rl-tasks mrpc,cola,rte,stsb \
     --general-rl-rounds 50 \
-    --model mrpc
+    --dataset mrpc
 # -> 脚本打印 Background PID: 912345 及停止命令
 
 # 2) 优雅停止
@@ -1190,12 +1166,12 @@ kill -INT 912345
 # touch rl_results/.../STOP_RL
 
 # 3) 续训：增大 rounds 并指定 --resume-from
-bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+bash llama_7B_LayerImportance.sh --logfile output.log \
     --search-algorithm general-rl \
     --general-rl-mode train \
     --general-rl-tasks mrpc,cola,rte,stsb \
     --general-rl-rounds 100 \
-    --model mrpc \
+    --dataset mrpc \
     --resume-from "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)"
 ```
 
@@ -1233,7 +1209,7 @@ episode，ga 模式在当代结束后生效，general-rl 模式在当前 round �
 立刻强退——此时已保存的 checkpoint 仍然有效，只是最新窗口内未保存的 rollout 会丢失。
 - 若停止时恰好处于 RL 训练之外（例如 Stage-1/2 的最终评估阶段），停止标志不会生效；
 请等 RL 训练进入下一个 PPO 窗口时再观察日志。
-- 续训时 `--stage1-rl-episodes` / `--stage2-rl-episodes` 指的是**总轮数**（不是追加
+- 续训时 `--stage1-search-episodes` / `--stage2-search-episodes` 指的是**总轮数**（不是追加
 轮数）。若总轮数小于等于 checkpoint 中已完成的轮数，该阶段不会再追加训练。
 - 成功停止后，脚本会自动删除已消费的 `STOP_RL` 文件，避免下次启动被误触发。
 - Windows 下同样可用：`Ctrl+C` 会走 SIGINT 分支；停止标志文件用资源管理器或
