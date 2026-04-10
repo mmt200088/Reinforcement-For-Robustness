@@ -147,7 +147,7 @@ LOG_PATH="${LOG_DIR}/${LOGFILE}"
 CMD=(
     python generate_glue_submission.py
     "${MODE_ARGS[@]}"
-    --output_dir "${RUN_ID}"
+    --output_dir "${RUN_ROOT}"
     "${EXTRA_ARGS[@]}"
 )
 

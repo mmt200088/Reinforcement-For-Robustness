@@ -119,12 +119,26 @@ import numpy as np
 import torch
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from datasets import load_dataset
-from transformers import (
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-    DataCollatorWithPadding,
-)
+
+try:
+    from datasets import load_dataset
+    _DATASETS_IMPORT_ERROR = None
+except ImportError as exc:
+    load_dataset = None
+    _DATASETS_IMPORT_ERROR = exc
+
+try:
+    from transformers import (
+        AutoModelForSequenceClassification,
+        AutoTokenizer,
+        DataCollatorWithPadding,
+    )
+    _TRANSFORMERS_IMPORT_ERROR = None
+except ImportError as exc:
+    AutoModelForSequenceClassification = None
+    AutoTokenizer = None
+    DataCollatorWithPadding = None
+    _TRANSFORMERS_IMPORT_ERROR = exc
 from function_handler import (
     ReversibleLayerHandler,
     INPUT_NOISE_ALLOWED_SCALING_FACTORS,
@@ -330,6 +344,20 @@ EXPECTED_LINES = {
     'WNLI.tsv': 147,
 }
 
+PLACEHOLDER_DEFAULTS = {
+    'AX.tsv': 'entailment',
+    'CoLA.tsv': '0',
+    'MNLI-mm.tsv': 'entailment',
+    'MNLI-m.tsv': 'entailment',
+    'MRPC.tsv': '0',
+    'QNLI.tsv': 'entailment',
+    'QQP.tsv': '0',
+    'RTE.tsv': 'entailment',
+    'SST-2.tsv': '0',
+    'STS-B.tsv': '0.000',
+    'WNLI.tsv': '0',
+}
+
 
 def detect_layer_attribute(model):
     candidates = ['bert.encoder.layer', 'model.layers', 'transformer.h', 'roberta.encoder.layer']
@@ -520,6 +548,17 @@ def tokenize_and_prepare(dataset_split, tokenizer, input_cols, max_length):
 def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
                  noise_config, output_dir, device, max_length=128, batch_size=16,
                  no_approx=False, no_noise=False):
+    if _DATASETS_IMPORT_ERROR is not None:
+        raise ImportError(
+            "The 'datasets' package is required for GLUE submission generation. "
+            "Install it in the active Python environment."
+        ) from _DATASETS_IMPORT_ERROR
+    if _TRANSFORMERS_IMPORT_ERROR is not None:
+        raise ImportError(
+            "The 'transformers' package is required for GLUE submission generation. "
+            "Install it in the active Python environment."
+        ) from _TRANSFORMERS_IMPORT_ERROR
+
     print(f"\n{'=' * 60}")
     print(f"Task: {task_name.upper()}")
 
@@ -707,6 +746,18 @@ def create_submission_zip(output_dir):
     return zip_path
 
 
+def fill_missing_submission_files(output_dir):
+    print(f"\n{'=' * 60}")
+    print("Filling missing submission files with placeholders")
+    print(f"{'=' * 60}")
+    for filename, expected in sorted(EXPECTED_LINES.items()):
+        filepath = os.path.join(output_dir, filename)
+        if os.path.exists(filepath):
+            continue
+        default_label = PLACEHOLDER_DEFAULTS.get(filename, "0")
+        generate_placeholder(filepath, expected - 1, default_label=default_label)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate GLUE benchmark submission files from optimized configurations"
@@ -807,10 +858,15 @@ def main():
         noise_configs.pop("_comment", None)
 
     # All outputs are rooted under ./glue_submission/<sub>
-    if os.path.isabs(args.output_dir) or args.output_dir.startswith("glue_submission"):
-        final_output_dir = args.output_dir
+    normalized_output_dir = os.path.normpath(args.output_dir)
+    already_under_glue_submission = (
+        normalized_output_dir == "glue_submission"
+        or normalized_output_dir.startswith(f"glue_submission{os.sep}")
+    )
+    if os.path.isabs(args.output_dir) or already_under_glue_submission:
+        final_output_dir = normalized_output_dir
     else:
-        final_output_dir = os.path.join("glue_submission", args.output_dir)
+        final_output_dir = os.path.join("glue_submission", normalized_output_dir)
     args.output_dir = final_output_dir
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -836,6 +892,8 @@ def main():
     print(f"Tasks to process:  {tasks_to_run}")
     print(f"Output directory:  {args.output_dir}")
     print(f"Device:            {device}")
+
+    task_failures = []
 
     for task_name in tasks_to_run:
         if task_name not in TASK_REGISTRY:
@@ -882,32 +940,39 @@ def main():
                 continue
         else:
             task_noise = None
-
-        process_task(
-            task_name, task_cfg, gelu, softmax, task_noise,
-            args.output_dir, device, args.max_length, args.batch_size,
-            no_approx=args.no_approx, no_noise=not use_noise,
-        )
+ 
+        try:
+            process_task(
+                task_name, task_cfg, gelu, softmax, task_noise,
+                args.output_dir, device, args.max_length, args.batch_size,
+                no_approx=args.no_approx, no_noise=not use_noise,
+            )
+        except Exception as exc:
+            task_failures.append((task_name, exc))
+            print(f"\n[Error] Task '{task_name}' failed; continuing with remaining tasks.")
+            print(f"        {type(exc).__name__}: {exc}")
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     print(f"\n{'=' * 60}")
-    print("Generating placeholder files (QQP, AX)")
+    print("Generating placeholder files")
     print(f"{'=' * 60}")
-
-    qqp_path = os.path.join(args.output_dir, "QQP.tsv")
-    if not os.path.exists(qqp_path):
-        generate_placeholder(qqp_path, EXPECTED_LINES['QQP.tsv'] - 1, default_label="0")
-
-    ax_path = os.path.join(args.output_dir, "AX.tsv")
-    if not os.path.exists(ax_path):
-        generate_placeholder(ax_path, EXPECTED_LINES['AX.tsv'] - 1, default_label="entailment")
+    fill_missing_submission_files(args.output_dir)
 
     all_ok = verify_outputs(args.output_dir)
     create_submission_zip(args.output_dir)
 
+    if task_failures:
+        print("\nTask failures encountered during generation:")
+        for task_name, exc in task_failures:
+            print(f"  - {task_name}: {type(exc).__name__}: {exc}")
+        all_ok = False
+
     if all_ok:
         print("\nAll checks passed. Ready to submit to https://gluebenchmark.com/")
     else:
-        print("\nSome checks failed. Please verify the output files before submitting.")
+        print("\nSome checks failed or placeholders were used after task errors. "
+              "Please verify the output files before submitting.")
 
 
 if __name__ == "__main__":
