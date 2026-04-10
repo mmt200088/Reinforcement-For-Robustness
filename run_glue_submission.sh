@@ -70,7 +70,8 @@ set -euo pipefail
 #
 #   # 3) 仅噪声，自定义噪声配置
 #   bash run_glue_submission.sh noise noise_max output.log \
-#        --noise_config glue_noise_configs_best_ppo.json
+#        --noise_config glue_noise_configs_best_ppo.json \
+#        --config glue_configs_best_ppo.json
 #
 #   # 4) 近似+噪声完整组合
 #   bash run_glue_submission.sh full full_ppo output.log

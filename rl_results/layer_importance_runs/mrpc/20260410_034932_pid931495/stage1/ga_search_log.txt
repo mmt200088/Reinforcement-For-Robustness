@@ -1,0 +1,360 @@
+
+Stage-1 GELU distribution screening for degree-0 eligibility:
+  layer=00  <-2.7= 39.58%  [-2.7,0)= 54.03%  [0,2.7]=  6.02%  >2.7=  0.38%  status=not_eligible
+  layer=01  <-2.7= 28.00%  [-2.7,0)= 66.77%  [0,2.7]=  5.11%  >2.7=  0.11%  status=not_eligible
+  layer=02  <-2.7= 32.84%  [-2.7,0)= 63.27%  [0,2.7]=  3.83%  >2.7=  0.05%  status=not_eligible
+  layer=03  <-2.7= 27.34%  [-2.7,0)= 67.74%  [0,2.7]=  4.88%  >2.7=  0.04%  status=not_eligible
+  layer=04  <-2.7= 24.89%  [-2.7,0)= 69.97%  [0,2.7]=  5.08%  >2.7=  0.06%  status=not_eligible
+  layer=05  <-2.7= 21.53%  [-2.7,0)= 72.96%  [0,2.7]=  5.46%  >2.7=  0.05%  status=not_eligible
+  layer=06  <-2.7= 23.04%  [-2.7,0)= 72.29%  [0,2.7]=  4.62%  >2.7=  0.05%  status=not_eligible
+  layer=07  <-2.7= 17.62%  [-2.7,0)= 77.91%  [0,2.7]=  4.42%  >2.7=  0.04%  status=not_eligible
+  layer=08  <-2.7= 13.84%  [-2.7,0)= 81.25%  [0,2.7]=  4.88%  >2.7=  0.04%  status=not_eligible
+  layer=09  <-2.7= 11.70%  [-2.7,0)= 84.88%  [0,2.7]=  3.39%  >2.7=  0.02%  status=not_eligible
+  layer=10  <-2.7=  7.71%  [-2.7,0)= 88.63%  [0,2.7]=  3.65%  >2.7=  0.01%  status=not_eligible
+  layer=11  <-2.7=  3.39%  [-2.7,0)= 91.03%  [0,2.7]=  5.54%  >2.7=  0.05%  status=not_eligible
+
+Stage-1 baseline and constraints:
+  baseline metrics on validation_full: 损失（Loss）: 0.341358, Accuracy: 0.879902, F1: 0.877442
+  simulated cost: total=72.00, gelu=36.00, softmax=36.00
+  constraints: 损失（Loss）<=0.3564, Accuracy>=0.8667, F1>=0.8643
+
+Stage-1 Genetic Search follows COINN: score-guided random selection and adjacent-mesh mutation, without PPO and without crossover.
+Per-layer valid mesh states:
+  layer=00  valid_states=15  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2)]
+  layer=01  valid_states=15  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2)]
+  layer=02  valid_states=15  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2)]
+  layer=03  valid_states=15  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2)]
+  layer=04  valid_states=15  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2)]
+  layer=05  valid_states=15  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2)]
+  layer=06  valid_states=15  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2)]
+  layer=07  valid_states=15  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2)]
+  layer=08  valid_states=12  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5)]
+  layer=09  valid_states=15  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2)]
+  layer=10  valid_states=15  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2)]
+  layer=11  valid_states=15  states=[(4, 6), (4, 5), (4, 4), (4, 3), (4, 2), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2)]
+Initial population size=32  max_generations=469  stagnation_tolerance=156  diversity_injection_at=78
+[Stage1][Gen 0001] gen_best_score=1.061376  gen_best_cost=67.50  global_best_score=1.061376  global_best_cost=67.50  feasible_ratio=100.00%  stagnation=0/156
+[Stage1][Gen 0002] gen_best_score=1.079474  gen_best_cost=67.00  global_best_score=1.079474  global_best_cost=67.00  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0003] gen_best_score=1.096242  gen_best_cost=66.00  global_best_score=1.096242  global_best_cost=66.00  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0004] gen_best_score=1.117075  gen_best_cost=64.00  global_best_score=1.117075  global_best_cost=64.00  feasible_ratio=100.00%  stagnation=0/156
+[Stage1][Gen 0005] gen_best_score=1.154382  gen_best_cost=62.00  global_best_score=1.154382  global_best_cost=62.00  feasible_ratio=100.00%  stagnation=0/156
+[Stage1][Gen 0006] gen_best_score=1.154382  gen_best_cost=62.00  global_best_score=1.154382  global_best_cost=62.00  feasible_ratio=100.00%  stagnation=1/156
+[Stage1][Gen 0007] gen_best_score=1.214798  gen_best_cost=59.00  global_best_score=1.214798  global_best_cost=59.00  feasible_ratio=100.00%  stagnation=0/156
+[Stage1][Gen 0008] gen_best_score=1.214798  gen_best_cost=59.00  global_best_score=1.214798  global_best_cost=59.00  feasible_ratio=100.00%  stagnation=1/156
+[Stage1][Gen 0009] gen_best_score=1.217020  gen_best_cost=58.50  global_best_score=1.217020  global_best_cost=58.50  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0010] gen_best_score=1.229295  gen_best_cost=58.50  global_best_score=1.229295  global_best_cost=58.50  feasible_ratio=100.00%  stagnation=0/156
+[Stage1][Gen 0011] gen_best_score=1.234569  gen_best_cost=58.00  global_best_score=1.234569  global_best_cost=58.00  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0012] gen_best_score=1.257360  gen_best_cost=57.00  global_best_score=1.257360  global_best_cost=57.00  feasible_ratio=100.00%  stagnation=0/156
+[Stage1][Gen 0013] gen_best_score=1.294237  gen_best_cost=55.00  global_best_score=1.294237  global_best_cost=55.00  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0014] gen_best_score=1.294237  gen_best_cost=55.00  global_best_score=1.294237  global_best_cost=55.00  feasible_ratio=100.00%  stagnation=1/156
+[Stage1][Gen 0015] gen_best_score=1.298063  gen_best_cost=55.00  global_best_score=1.298063  global_best_cost=55.00  feasible_ratio=100.00%  stagnation=0/156
+[Stage1][Gen 0016] gen_best_score=1.341169  gen_best_cost=53.00  global_best_score=1.341169  global_best_cost=53.00  feasible_ratio=93.75%  stagnation=0/156
+[Stage1][Gen 0017] gen_best_score=1.348588  gen_best_cost=53.00  global_best_score=1.348588  global_best_cost=53.00  feasible_ratio=93.75%  stagnation=0/156
+[Stage1][Gen 0018] gen_best_score=1.348588  gen_best_cost=53.00  global_best_score=1.348588  global_best_cost=53.00  feasible_ratio=96.88%  stagnation=1/156
+[Stage1][Gen 0019] gen_best_score=1.384184  gen_best_cost=52.00  global_best_score=1.384184  global_best_cost=52.00  feasible_ratio=90.62%  stagnation=0/156
+[Stage1][Gen 0020] gen_best_score=1.384565  gen_best_cost=51.50  global_best_score=1.384565  global_best_cost=51.50  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0021] gen_best_score=1.449948  gen_best_cost=49.00  global_best_score=1.449948  global_best_cost=49.00  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0022] gen_best_score=1.476255  gen_best_cost=48.00  global_best_score=1.476255  global_best_cost=48.00  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0023] gen_best_score=1.476255  gen_best_cost=48.00  global_best_score=1.476255  global_best_cost=48.00  feasible_ratio=90.62%  stagnation=1/156
+[Stage1][Gen 0024] gen_best_score=1.483086  gen_best_cost=48.00  global_best_score=1.483086  global_best_cost=48.00  feasible_ratio=93.75%  stagnation=0/156
+[Stage1][Gen 0025] gen_best_score=1.483774  gen_best_cost=48.00  global_best_score=1.483774  global_best_cost=48.00  feasible_ratio=93.75%  stagnation=0/156
+[Stage1][Gen 0026] gen_best_score=1.516310  gen_best_cost=47.00  global_best_score=1.516310  global_best_cost=47.00  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0027] gen_best_score=1.540948  gen_best_cost=46.00  global_best_score=1.540948  global_best_cost=46.00  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0028] gen_best_score=1.560194  gen_best_cost=45.50  global_best_score=1.560194  global_best_cost=45.50  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0029] gen_best_score=1.567334  gen_best_cost=45.00  global_best_score=1.567334  global_best_cost=45.00  feasible_ratio=84.38%  stagnation=0/156
+[Stage1][Gen 0030] gen_best_score=1.603940  gen_best_cost=44.50  global_best_score=1.603940  global_best_cost=44.50  feasible_ratio=84.38%  stagnation=0/156
+[Stage1][Gen 0031] gen_best_score=1.603940  gen_best_cost=44.50  global_best_score=1.603940  global_best_cost=44.50  feasible_ratio=96.88%  stagnation=1/156
+[Stage1][Gen 0032] gen_best_score=1.614383  gen_best_cost=44.00  global_best_score=1.614383  global_best_cost=44.00  feasible_ratio=78.12%  stagnation=0/156
+[Stage1][Gen 0033] gen_best_score=1.614383  gen_best_cost=44.00  global_best_score=1.614383  global_best_cost=44.00  feasible_ratio=93.75%  stagnation=1/156
+[Stage1][Gen 0034] gen_best_score=1.636591  gen_best_cost=43.50  global_best_score=1.636591  global_best_cost=43.50  feasible_ratio=93.75%  stagnation=0/156
+[Stage1][Gen 0035] gen_best_score=1.661791  gen_best_cost=43.00  global_best_score=1.661791  global_best_cost=43.00  feasible_ratio=87.50%  stagnation=0/156
+[Stage1][Gen 0036] gen_best_score=1.665844  gen_best_cost=43.00  global_best_score=1.665844  global_best_cost=43.00  feasible_ratio=87.50%  stagnation=0/156
+[Stage1][Gen 0037] gen_best_score=1.680027  gen_best_cost=42.50  global_best_score=1.680027  global_best_cost=42.50  feasible_ratio=87.50%  stagnation=0/156
+[Stage1][Gen 0038] gen_best_score=1.729188  gen_best_cost=41.00  global_best_score=1.729188  global_best_cost=41.00  feasible_ratio=90.62%  stagnation=0/156
+[Stage1][Gen 0039] gen_best_score=1.769005  gen_best_cost=40.50  global_best_score=1.769005  global_best_cost=40.50  feasible_ratio=90.62%  stagnation=0/156
+[Stage1][Gen 0040] gen_best_score=1.769005  gen_best_cost=40.50  global_best_score=1.769005  global_best_cost=40.50  feasible_ratio=93.75%  stagnation=1/156
+[Stage1][Gen 0041] gen_best_score=1.769005  gen_best_cost=40.50  global_best_score=1.769005  global_best_cost=40.50  feasible_ratio=96.88%  stagnation=2/156
+[Stage1][Gen 0042] gen_best_score=1.769005  gen_best_cost=40.50  global_best_score=1.769005  global_best_cost=40.50  feasible_ratio=87.50%  stagnation=3/156
+[Stage1][Gen 0043] gen_best_score=1.769005  gen_best_cost=40.50  global_best_score=1.769005  global_best_cost=40.50  feasible_ratio=75.00%  stagnation=4/156
+[Stage1][Gen 0044] gen_best_score=1.769005  gen_best_cost=40.50  global_best_score=1.769005  global_best_cost=40.50  feasible_ratio=93.75%  stagnation=5/156
+[Stage1][Gen 0045] gen_best_score=1.775561  gen_best_cost=40.50  global_best_score=1.775561  global_best_cost=40.50  feasible_ratio=90.62%  stagnation=0/156
+[Stage1][Gen 0046] gen_best_score=1.775561  gen_best_cost=40.50  global_best_score=1.775561  global_best_cost=40.50  feasible_ratio=87.50%  stagnation=1/156
+[Stage1][Gen 0047] gen_best_score=1.775561  gen_best_cost=40.50  global_best_score=1.775561  global_best_cost=40.50  feasible_ratio=96.88%  stagnation=2/156
+[Stage1][Gen 0048] gen_best_score=1.783335  gen_best_cost=40.50  global_best_score=1.783335  global_best_cost=40.50  feasible_ratio=96.88%  stagnation=0/156
+[Stage1][Gen 0049] gen_best_score=1.813303  gen_best_cost=39.50  global_best_score=1.813303  global_best_cost=39.50  feasible_ratio=90.62%  stagnation=0/156
+[Stage1][Gen 0050] gen_best_score=1.813303  gen_best_cost=39.50  global_best_score=1.813303  global_best_cost=39.50  feasible_ratio=84.38%  stagnation=1/156
+[Stage1][Gen 0051] gen_best_score=1.813303  gen_best_cost=39.50  global_best_score=1.813303  global_best_cost=39.50  feasible_ratio=84.38%  stagnation=2/156
+[Stage1][Gen 0052] gen_best_score=1.886022  gen_best_cost=37.50  global_best_score=1.886022  global_best_cost=37.50  feasible_ratio=90.62%  stagnation=0/156
+[Stage1][Gen 0053] gen_best_score=1.886022  gen_best_cost=37.50  global_best_score=1.886022  global_best_cost=37.50  feasible_ratio=96.88%  stagnation=1/156
+[Stage1][Gen 0054] gen_best_score=1.886022  gen_best_cost=37.50  global_best_score=1.886022  global_best_cost=37.50  feasible_ratio=90.62%  stagnation=2/156
+[Stage1][Gen 0055] gen_best_score=1.886022  gen_best_cost=37.50  global_best_score=1.886022  global_best_cost=37.50  feasible_ratio=93.75%  stagnation=3/156
+[Stage1][Gen 0056] gen_best_score=1.915824  gen_best_cost=37.50  global_best_score=1.915824  global_best_cost=37.50  feasible_ratio=90.62%  stagnation=0/156
+[Stage1][Gen 0057] gen_best_score=1.915824  gen_best_cost=37.50  global_best_score=1.915824  global_best_cost=37.50  feasible_ratio=93.75%  stagnation=1/156
+[Stage1][Gen 0058] gen_best_score=1.967535  gen_best_cost=36.50  global_best_score=1.967535  global_best_cost=36.50  feasible_ratio=100.00%  stagnation=0/156
+[Stage1][Gen 0059] gen_best_score=1.967535  gen_best_cost=36.50  global_best_score=1.967535  global_best_cost=36.50  feasible_ratio=100.00%  stagnation=1/156
+[Stage1][Gen 0060] gen_best_score=1.967535  gen_best_cost=36.50  global_best_score=1.967535  global_best_cost=36.50  feasible_ratio=93.75%  stagnation=2/156
+[Stage1][Gen 0061] gen_best_score=1.967535  gen_best_cost=36.50  global_best_score=1.967535  global_best_cost=36.50  feasible_ratio=96.88%  stagnation=3/156
+[Stage1][Gen 0062] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=81.25%  stagnation=0/156
+[Stage1][Gen 0063] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=87.50%  stagnation=1/156
+[Stage1][Gen 0064] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=68.75%  stagnation=2/156
+[Stage1][Gen 0065] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=87.50%  stagnation=3/156
+[Stage1][Gen 0066] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=87.50%  stagnation=4/156
+[Stage1][Gen 0067] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=87.50%  stagnation=5/156
+[Stage1][Gen 0068] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=71.88%  stagnation=6/156
+[Stage1][Gen 0069] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=87.50%  stagnation=7/156
+[Stage1][Gen 0070] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=78.12%  stagnation=8/156
+[Stage1][Gen 0071] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=84.38%  stagnation=9/156
+[Stage1][Gen 0072] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=81.25%  stagnation=10/156
+[Stage1][Gen 0073] gen_best_score=2.096609  gen_best_cost=34.00  global_best_score=2.096609  global_best_cost=34.00  feasible_ratio=78.12%  stagnation=11/156
+[Stage1][Gen 0074] gen_best_score=2.137811  gen_best_cost=33.00  global_best_score=2.137811  global_best_cost=33.00  feasible_ratio=75.00%  stagnation=0/156
+[Stage1][Gen 0075] gen_best_score=2.137811  gen_best_cost=33.00  global_best_score=2.137811  global_best_cost=33.00  feasible_ratio=81.25%  stagnation=1/156
+[Stage1][Gen 0076] gen_best_score=2.137811  gen_best_cost=33.00  global_best_score=2.137811  global_best_cost=33.00  feasible_ratio=81.25%  stagnation=2/156
+[Stage1][Gen 0077] gen_best_score=2.137811  gen_best_cost=33.00  global_best_score=2.137811  global_best_cost=33.00  feasible_ratio=65.62%  stagnation=3/156
+[Stage1][Gen 0078] gen_best_score=2.137811  gen_best_cost=33.00  global_best_score=2.137811  global_best_cost=33.00  feasible_ratio=78.12%  stagnation=4/156
+[Stage1][Gen 0079] gen_best_score=2.137811  gen_best_cost=33.00  global_best_score=2.137811  global_best_cost=33.00  feasible_ratio=78.12%  stagnation=5/156
+[Stage1][Gen 0080] gen_best_score=2.137811  gen_best_cost=33.00  global_best_score=2.137811  global_best_cost=33.00  feasible_ratio=78.12%  stagnation=6/156
+[Stage1][Gen 0081] gen_best_score=2.167862  gen_best_cost=33.00  global_best_score=2.167862  global_best_cost=33.00  feasible_ratio=75.00%  stagnation=0/156
+[Stage1][Gen 0082] gen_best_score=2.167862  gen_best_cost=33.00  global_best_score=2.167862  global_best_cost=33.00  feasible_ratio=87.50%  stagnation=1/156
+[Stage1][Gen 0083] gen_best_score=2.167862  gen_best_cost=33.00  global_best_score=2.167862  global_best_cost=33.00  feasible_ratio=87.50%  stagnation=2/156
+[Stage1][Gen 0084] gen_best_score=2.167862  gen_best_cost=33.00  global_best_score=2.167862  global_best_cost=33.00  feasible_ratio=78.12%  stagnation=3/156
+[Stage1][Gen 0085] gen_best_score=2.167862  gen_best_cost=33.00  global_best_score=2.167862  global_best_cost=33.00  feasible_ratio=93.75%  stagnation=4/156
+[Stage1][Gen 0086] gen_best_score=2.167862  gen_best_cost=33.00  global_best_score=2.167862  global_best_cost=33.00  feasible_ratio=75.00%  stagnation=5/156
+[Stage1][Gen 0087] gen_best_score=2.167862  gen_best_cost=33.00  global_best_score=2.167862  global_best_cost=33.00  feasible_ratio=81.25%  stagnation=6/156
+[Stage1][Gen 0088] gen_best_score=2.192655  gen_best_cost=32.50  global_best_score=2.192655  global_best_cost=32.50  feasible_ratio=84.38%  stagnation=0/156
+[Stage1][Gen 0089] gen_best_score=2.192655  gen_best_cost=32.50  global_best_score=2.192655  global_best_cost=32.50  feasible_ratio=75.00%  stagnation=1/156
+[Stage1][Gen 0090] gen_best_score=2.208150  gen_best_cost=32.50  global_best_score=2.208150  global_best_cost=32.50  feasible_ratio=78.12%  stagnation=0/156
+[Stage1][Gen 0091] gen_best_score=2.208150  gen_best_cost=32.50  global_best_score=2.208150  global_best_cost=32.50  feasible_ratio=62.50%  stagnation=1/156
+[Stage1][Gen 0092] gen_best_score=2.208150  gen_best_cost=32.50  global_best_score=2.208150  global_best_cost=32.50  feasible_ratio=65.62%  stagnation=2/156
+[Stage1][Gen 0093] gen_best_score=2.208150  gen_best_cost=32.50  global_best_score=2.208150  global_best_cost=32.50  feasible_ratio=65.62%  stagnation=3/156
+[Stage1][Gen 0094] gen_best_score=2.208150  gen_best_cost=32.50  global_best_score=2.208150  global_best_cost=32.50  feasible_ratio=71.88%  stagnation=4/156
+[Stage1][Gen 0095] gen_best_score=2.231578  gen_best_cost=32.00  global_best_score=2.231578  global_best_cost=32.00  feasible_ratio=78.12%  stagnation=0/156
+[Stage1][Gen 0096] gen_best_score=2.231578  gen_best_cost=32.00  global_best_score=2.231578  global_best_cost=32.00  feasible_ratio=59.38%  stagnation=1/156
+[Stage1][Gen 0097] gen_best_score=2.231578  gen_best_cost=32.00  global_best_score=2.231578  global_best_cost=32.00  feasible_ratio=62.50%  stagnation=2/156
+[Stage1][Gen 0098] gen_best_score=2.231578  gen_best_cost=32.00  global_best_score=2.231578  global_best_cost=32.00  feasible_ratio=68.75%  stagnation=3/156
+[Stage1][Gen 0099] gen_best_score=2.237428  gen_best_cost=32.00  global_best_score=2.237428  global_best_cost=32.00  feasible_ratio=65.62%  stagnation=0/156
+[Stage1][Gen 0100] gen_best_score=2.237428  gen_best_cost=32.00  global_best_score=2.237428  global_best_cost=32.00  feasible_ratio=56.25%  stagnation=1/156
+[Stage1][Gen 0101] gen_best_score=2.237428  gen_best_cost=32.00  global_best_score=2.237428  global_best_cost=32.00  feasible_ratio=71.88%  stagnation=2/156
+[Stage1][Gen 0102] gen_best_score=2.237428  gen_best_cost=32.00  global_best_score=2.237428  global_best_cost=32.00  feasible_ratio=59.38%  stagnation=3/156
+[Stage1][Gen 0103] gen_best_score=2.264122  gen_best_cost=31.50  global_best_score=2.264122  global_best_cost=31.50  feasible_ratio=71.88%  stagnation=0/156
+[Stage1][Gen 0104] gen_best_score=2.275588  gen_best_cost=31.50  global_best_score=2.275588  global_best_cost=31.50  feasible_ratio=75.00%  stagnation=0/156
+[Stage1][Gen 0105] gen_best_score=2.275588  gen_best_cost=31.50  global_best_score=2.275588  global_best_cost=31.50  feasible_ratio=53.12%  stagnation=1/156
+[Stage1][Gen 0106] gen_best_score=2.275588  gen_best_cost=31.50  global_best_score=2.275588  global_best_cost=31.50  feasible_ratio=68.75%  stagnation=2/156
+[Stage1][Gen 0107] gen_best_score=2.275588  gen_best_cost=31.50  global_best_score=2.275588  global_best_cost=31.50  feasible_ratio=65.62%  stagnation=3/156
+[Stage1][Gen 0108] gen_best_score=2.275588  gen_best_cost=31.50  global_best_score=2.275588  global_best_cost=31.50  feasible_ratio=53.12%  stagnation=4/156
+[Stage1][Gen 0109] gen_best_score=2.278658  gen_best_cost=31.50  global_best_score=2.278658  global_best_cost=31.50  feasible_ratio=50.00%  stagnation=0/156
+[Stage1][Gen 0110] gen_best_score=2.278658  gen_best_cost=31.50  global_best_score=2.278658  global_best_cost=31.50  feasible_ratio=59.38%  stagnation=1/156
+[Stage1][Gen 0111] gen_best_score=2.278658  gen_best_cost=31.50  global_best_score=2.278658  global_best_cost=31.50  feasible_ratio=62.50%  stagnation=2/156
+[Stage1][Gen 0112] gen_best_score=2.278658  gen_best_cost=31.50  global_best_score=2.278658  global_best_cost=31.50  feasible_ratio=68.75%  stagnation=3/156
+[Stage1][Gen 0113] gen_best_score=2.278658  gen_best_cost=31.50  global_best_score=2.278658  global_best_cost=31.50  feasible_ratio=62.50%  stagnation=4/156
+[Stage1][Gen 0114] gen_best_score=2.278658  gen_best_cost=31.50  global_best_score=2.278658  global_best_cost=31.50  feasible_ratio=68.75%  stagnation=5/156
+[Stage1][Gen 0115] gen_best_score=2.278658  gen_best_cost=31.50  global_best_score=2.278658  global_best_cost=31.50  feasible_ratio=68.75%  stagnation=6/156
+[Stage1][Gen 0116] gen_best_score=2.301021  gen_best_cost=31.00  global_best_score=2.301021  global_best_cost=31.00  feasible_ratio=75.00%  stagnation=0/156
+[Stage1][Gen 0117] gen_best_score=2.301021  gen_best_cost=31.00  global_best_score=2.301021  global_best_cost=31.00  feasible_ratio=78.12%  stagnation=1/156
+[Stage1][Gen 0118] gen_best_score=2.301021  gen_best_cost=31.00  global_best_score=2.301021  global_best_cost=31.00  feasible_ratio=62.50%  stagnation=2/156
+[Stage1][Gen 0119] gen_best_score=2.301021  gen_best_cost=31.00  global_best_score=2.301021  global_best_cost=31.00  feasible_ratio=65.62%  stagnation=3/156
+[Stage1][Gen 0120] gen_best_score=2.301021  gen_best_cost=31.00  global_best_score=2.301021  global_best_cost=31.00  feasible_ratio=56.25%  stagnation=4/156
+[Stage1][Gen 0121] gen_best_score=2.301021  gen_best_cost=31.00  global_best_score=2.301021  global_best_cost=31.00  feasible_ratio=68.75%  stagnation=5/156
+[Stage1][Gen 0122] gen_best_score=2.301021  gen_best_cost=31.00  global_best_score=2.301021  global_best_cost=31.00  feasible_ratio=75.00%  stagnation=6/156
+[Stage1][Gen 0123] gen_best_score=2.301021  gen_best_cost=31.00  global_best_score=2.301021  global_best_cost=31.00  feasible_ratio=65.62%  stagnation=7/156
+[Stage1][Gen 0124] gen_best_score=2.301021  gen_best_cost=31.00  global_best_score=2.301021  global_best_cost=31.00  feasible_ratio=65.62%  stagnation=8/156
+[Stage1][Gen 0125] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=59.38%  stagnation=0/156
+[Stage1][Gen 0126] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=71.88%  stagnation=1/156
+[Stage1][Gen 0127] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=68.75%  stagnation=2/156
+[Stage1][Gen 0128] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=53.12%  stagnation=3/156
+[Stage1][Gen 0129] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=65.62%  stagnation=4/156
+[Stage1][Gen 0130] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=78.12%  stagnation=5/156
+[Stage1][Gen 0131] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=46.88%  stagnation=6/156
+[Stage1][Gen 0132] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=59.38%  stagnation=7/156
+[Stage1][Gen 0133] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=75.00%  stagnation=8/156
+[Stage1][Gen 0134] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=75.00%  stagnation=9/156
+[Stage1][Gen 0135] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=56.25%  stagnation=10/156
+[Stage1][Gen 0136] gen_best_score=2.314683  gen_best_cost=31.00  global_best_score=2.314683  global_best_cost=31.00  feasible_ratio=56.25%  stagnation=11/156
+[Stage1][Gen 0137] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=62.50%  stagnation=0/156
+[Stage1][Gen 0138] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=53.12%  stagnation=1/156
+[Stage1][Gen 0139] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=56.25%  stagnation=2/156
+[Stage1][Gen 0140] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=50.00%  stagnation=3/156
+[Stage1][Gen 0141] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=59.38%  stagnation=4/156
+[Stage1][Gen 0142] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=62.50%  stagnation=5/156
+[Stage1][Gen 0143] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=46.88%  stagnation=6/156
+[Stage1][Gen 0144] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=56.25%  stagnation=7/156
+[Stage1][Gen 0145] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=53.12%  stagnation=8/156
+[Stage1][Gen 0146] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=46.88%  stagnation=9/156
+[Stage1][Gen 0147] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=50.00%  stagnation=10/156
+[Stage1][Gen 0148] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=46.88%  stagnation=11/156
+[Stage1][Gen 0149] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=62.50%  stagnation=12/156
+[Stage1][Gen 0150] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=59.38%  stagnation=13/156
+[Stage1][Gen 0151] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=53.12%  stagnation=14/156
+[Stage1][Gen 0152] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=59.38%  stagnation=15/156
+[Stage1][Gen 0153] gen_best_score=2.346234  gen_best_cost=30.50  global_best_score=2.346234  global_best_cost=30.50  feasible_ratio=56.25%  stagnation=16/156
+[Stage1][Gen 0154] gen_best_score=2.348873  gen_best_cost=30.50  global_best_score=2.348873  global_best_cost=30.50  feasible_ratio=62.50%  stagnation=0/156
+[Stage1][Gen 0155] gen_best_score=2.348873  gen_best_cost=30.50  global_best_score=2.348873  global_best_cost=30.50  feasible_ratio=56.25%  stagnation=1/156
+[Stage1][Gen 0156] gen_best_score=2.348873  gen_best_cost=30.50  global_best_score=2.348873  global_best_cost=30.50  feasible_ratio=62.50%  stagnation=2/156
+[Stage1][Gen 0157] gen_best_score=2.348873  gen_best_cost=30.50  global_best_score=2.348873  global_best_cost=30.50  feasible_ratio=65.62%  stagnation=3/156
+[Stage1][Gen 0158] gen_best_score=2.348873  gen_best_cost=30.50  global_best_score=2.348873  global_best_cost=30.50  feasible_ratio=46.88%  stagnation=4/156
+[Stage1][Gen 0159] gen_best_score=2.348873  gen_best_cost=30.50  global_best_score=2.348873  global_best_cost=30.50  feasible_ratio=59.38%  stagnation=5/156
+[Stage1][Gen 0160] gen_best_score=2.348873  gen_best_cost=30.50  global_best_score=2.348873  global_best_cost=30.50  feasible_ratio=59.38%  stagnation=6/156
+[Stage1][Gen 0161] gen_best_score=2.348873  gen_best_cost=30.50  global_best_score=2.348873  global_best_cost=30.50  feasible_ratio=59.38%  stagnation=7/156
+[Stage1][Gen 0162] gen_best_score=2.348873  gen_best_cost=30.50  global_best_score=2.348873  global_best_cost=30.50  feasible_ratio=68.75%  stagnation=8/156
+[Stage1][Gen 0163] gen_best_score=2.348873  gen_best_cost=30.50  global_best_score=2.348873  global_best_cost=30.50  feasible_ratio=56.25%  stagnation=9/156
+[Stage1][Gen 0164] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=0/156
+[Stage1][Gen 0165] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=1/156
+[Stage1][Gen 0166] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=43.75%  stagnation=2/156
+[Stage1][Gen 0167] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=43.75%  stagnation=3/156
+[Stage1][Gen 0168] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=34.38%  stagnation=4/156
+[Stage1][Gen 0169] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=40.62%  stagnation=5/156
+[Stage1][Gen 0170] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=6/156
+[Stage1][Gen 0171] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=7/156
+[Stage1][Gen 0172] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=8/156
+[Stage1][Gen 0173] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=9/156
+[Stage1][Gen 0174] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=71.88%  stagnation=10/156
+[Stage1][Gen 0175] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=11/156
+[Stage1][Gen 0176] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=12/156
+[Stage1][Gen 0177] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=37.50%  stagnation=13/156
+[Stage1][Gen 0178] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=14/156
+[Stage1][Gen 0179] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=15/156
+[Stage1][Gen 0180] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=16/156
+[Stage1][Gen 0181] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=17/156
+[Stage1][Gen 0182] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=18/156
+[Stage1][Gen 0183] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=19/156
+[Stage1][Gen 0184] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=20/156
+[Stage1][Gen 0185] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=21/156
+[Stage1][Gen 0186] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=22/156
+[Stage1][Gen 0187] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=23/156
+[Stage1][Gen 0188] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=24/156
+[Stage1][Gen 0189] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=25/156
+[Stage1][Gen 0190] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=26/156
+[Stage1][Gen 0191] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=27/156
+[Stage1][Gen 0192] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=28/156
+[Stage1][Gen 0193] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=29/156
+[Stage1][Gen 0194] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=30/156
+[Stage1][Gen 0195] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=31/156
+[Stage1][Gen 0196] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=32/156
+[Stage1][Gen 0197] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=37.50%  stagnation=33/156
+[Stage1][Gen 0198] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=34/156
+[Stage1][Gen 0199] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=75.00%  stagnation=35/156
+[Stage1][Gen 0200] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=40.62%  stagnation=36/156
+[Stage1][Gen 0201] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=37/156
+[Stage1][Gen 0202] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=38/156
+[Stage1][Gen 0203] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=39/156
+[Stage1][Gen 0204] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=40/156
+[Stage1][Gen 0205] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=41/156
+[Stage1][Gen 0206] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=42/156
+[Stage1][Gen 0207] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=43/156
+[Stage1][Gen 0208] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=43.75%  stagnation=44/156
+[Stage1][Gen 0209] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=45/156
+[Stage1][Gen 0210] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=46/156
+[Stage1][Gen 0211] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=47/156
+[Stage1][Gen 0212] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=48/156
+[Stage1][Gen 0213] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=49/156
+[Stage1][Gen 0214] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=50/156
+[Stage1][Gen 0215] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=51/156
+[Stage1][Gen 0216] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=43.75%  stagnation=52/156
+[Stage1][Gen 0217] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=53/156
+[Stage1][Gen 0218] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=43.75%  stagnation=54/156
+[Stage1][Gen 0219] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=55/156
+[Stage1][Gen 0220] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=56/156
+[Stage1][Gen 0221] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=57/156
+[Stage1][Gen 0222] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=75.00%  stagnation=58/156
+[Stage1][Gen 0223] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=59/156
+[Stage1][Gen 0224] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=60/156
+[Stage1][Gen 0225] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=61/156
+[Stage1][Gen 0226] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=62/156
+[Stage1][Gen 0227] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=63/156
+[Stage1][Gen 0228] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=64/156
+[Stage1][Gen 0229] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=65/156
+[Stage1][Gen 0230] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=66/156
+[Stage1][Gen 0231] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=67/156
+[Stage1][Gen 0232] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=68/156
+[Stage1][Gen 0233] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=69/156
+[Stage1][Gen 0234] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=70/156
+[Stage1][Gen 0235] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=71/156
+[Stage1][Gen 0236] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=72/156
+[Stage1][Gen 0237] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=73/156
+[Stage1][Gen 0238] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=74/156
+[Stage1][Gen 0239] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=75/156
+[Stage1][Gen 0240] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=40.62%  stagnation=76/156
+[Stage1][Gen 0241] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=75.00%  stagnation=77/156
+[Stage1][Gen 0242] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=78/156
+[Stage1][Gen 0242] diversity injection: injected 23 random immigrants
+[Stage1][Gen 0243] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=100.00%  stagnation=79/156
+[Stage1][Gen 0244] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=40.62%  stagnation=80/156
+[Stage1][Gen 0245] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=43.75%  stagnation=81/156
+[Stage1][Gen 0246] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=82/156
+[Stage1][Gen 0247] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=40.62%  stagnation=83/156
+[Stage1][Gen 0248] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=84/156
+[Stage1][Gen 0249] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=85/156
+[Stage1][Gen 0250] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=86/156
+[Stage1][Gen 0251] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=87/156
+[Stage1][Gen 0252] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=71.88%  stagnation=88/156
+[Stage1][Gen 0253] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=89/156
+[Stage1][Gen 0254] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=90/156
+[Stage1][Gen 0255] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=40.62%  stagnation=91/156
+[Stage1][Gen 0256] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=92/156
+[Stage1][Gen 0257] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=93/156
+[Stage1][Gen 0258] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=94/156
+[Stage1][Gen 0259] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=95/156
+[Stage1][Gen 0260] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=96/156
+[Stage1][Gen 0261] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=97/156
+[Stage1][Gen 0262] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=98/156
+[Stage1][Gen 0263] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=99/156
+[Stage1][Gen 0264] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=100/156
+[Stage1][Gen 0265] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=71.88%  stagnation=101/156
+[Stage1][Gen 0266] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=102/156
+[Stage1][Gen 0267] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=103/156
+[Stage1][Gen 0268] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=104/156
+[Stage1][Gen 0269] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=71.88%  stagnation=105/156
+[Stage1][Gen 0270] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=106/156
+[Stage1][Gen 0271] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=107/156
+[Stage1][Gen 0272] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=108/156
+[Stage1][Gen 0273] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=43.75%  stagnation=109/156
+[Stage1][Gen 0274] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=110/156
+[Stage1][Gen 0275] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=111/156
+[Stage1][Gen 0276] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=112/156
+[Stage1][Gen 0277] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=31.25%  stagnation=113/156
+[Stage1][Gen 0278] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=114/156
+[Stage1][Gen 0279] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=37.50%  stagnation=115/156
+[Stage1][Gen 0280] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=116/156
+[Stage1][Gen 0281] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=40.62%  stagnation=117/156
+[Stage1][Gen 0282] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=118/156
+[Stage1][Gen 0283] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=40.62%  stagnation=119/156
+[Stage1][Gen 0284] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=120/156
+[Stage1][Gen 0285] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=121/156
+[Stage1][Gen 0286] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=122/156
+[Stage1][Gen 0287] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=123/156
+[Stage1][Gen 0288] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=124/156
+[Stage1][Gen 0289] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=125/156
+[Stage1][Gen 0290] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=126/156
+[Stage1][Gen 0291] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=75.00%  stagnation=127/156
+[Stage1][Gen 0292] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=128/156
+[Stage1][Gen 0293] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=129/156
+[Stage1][Gen 0294] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=130/156
+[Stage1][Gen 0295] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=131/156
+[Stage1][Gen 0296] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=132/156
+[Stage1][Gen 0297] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=133/156
+[Stage1][Gen 0298] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=134/156
+[Stage1][Gen 0299] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=135/156
+[Stage1][Gen 0300] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=136/156
+[Stage1][Gen 0301] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=137/156
+[Stage1][Gen 0302] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=138/156
+[Stage1][Gen 0303] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=65.62%  stagnation=139/156
+[Stage1][Gen 0304] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=140/156
+[Stage1][Gen 0305] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=141/156
+[Stage1][Gen 0306] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=142/156
+[Stage1][Gen 0307] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=143/156
+[Stage1][Gen 0308] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=68.75%  stagnation=144/156
+[Stage1][Gen 0309] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=59.38%  stagnation=145/156
+[Stage1][Gen 0310] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=146/156
+[Stage1][Gen 0311] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=62.50%  stagnation=147/156
+[Stage1][Gen 0312] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=148/156
+[Stage1][Gen 0313] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=43.75%  stagnation=149/156
+[Stage1][Gen 0314] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=150/156
+[Stage1][Gen 0315] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=40.62%  stagnation=151/156
+[Stage1][Gen 0316] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=50.00%  stagnation=152/156
+[Stage1][Gen 0317] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=53.12%  stagnation=153/156
+[Stage1][Gen 0318] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=46.88%  stagnation=154/156
+[Stage1][Gen 0319] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=56.25%  stagnation=155/156
+[Stage1][Gen 0320] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=37.50%  stagnation=156/156
+[Stage1][Gen 0320] diversity injection: injected 23 random immigrants
+[Stage1][Gen 0321] gen_best_score=2.384238  gen_best_cost=30.00  global_best_score=2.384238  global_best_cost=30.00  feasible_ratio=100.00%  stagnation=157/156
+Early stop: best feasible score has not improved for more than 156 generations.
+Stage-1 genetic search finished. Best cost=30.00, score=2.384238, saved to rl_results/layer_importance_runs/mrpc/20260410_034932_pid931495/stage1/ga_search_results.json
