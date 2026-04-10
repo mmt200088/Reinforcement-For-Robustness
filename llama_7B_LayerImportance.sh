@@ -259,16 +259,33 @@ set -euo pipefail
 #       --noise-eval-source manual \
 #       --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[10,12,14,16,18,20,22,10,12,14,16,18],"wk":[10,12,14,16,18,20,22,10,12,14,16,18],"wv":[10,12,14,16,18,20,22,10,12,14,16,18],"wo":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn1":[10,12,14,16,18,20,22,10,12,14,16,18],"wffn2":[10,12,14,16,18,20,22,10,12,14,16,18]}'
 #
+# 12. 断点续训 — 从之前中断的 RL 运行目录恢复
+#     bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+#       --resume-from rl_results/layer_importance_runs/mrpc/20260404_151155_pid711833
+#
+# 12b. 断点续训 — 从之前中断的 GA 运行目录恢复
+#     bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+#       --search-algorithm ga \
+#       --resume-from rl_results/layer_importance_runs/mrpc/20260410_034932_pid931495
+#
+# 12c. 断点续训 — 从之前中断的 general-rl 训练恢复
+#     bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+#       --search-algorithm general-rl --general-rl-mode train \
+#       --general-rl-tasks mrpc,cola,rte,stsb \
+#       --resume-from rl_results/layer_importance_runs/mrpc/20260409_183000_pid12345
+#
 # ======================================================================
 # 项目相关说明
 # ======================================================================
 # - 当前默认数据集：mrpc（可通过 --model 参数切换）
 # - 脚本使用 nohup 后台运行；实际日志路径会在启动时打印出来
-# - 停止任务：ps aux | grep rl_tune.py，然后 kill -9 <PID>
+# - 停止任务：使用 kill -INT <PID>（优雅停止），切勿使用 kill -9（会跳过 checkpoint 保存）
 # - 服务器部署时需同步的 Python 文件：
 #     final_evaluation_module.py         第一阶段最终评估模块
 #     noise_rl_module.py                 第二阶段噪声 RL 模块
 #     noise_final_evaluation_module.py   第二阶段噪声最终评估模块
+#     genetic_search_module.py           遗传算法搜索模块（GA）
+#     general_policy_module.py           通用 RL 策略模块（general-rl）
 # ======================================================================
 
 usage() {
@@ -327,12 +344,15 @@ usage() {
     echo "  --skip-stage1-final-eval 跳过第一阶段最终评估（Phase 3+4），"
     echo "                            仍根据第一阶段配置来源解析 GELU/Softmax 后进入第二阶段。"
     echo
-    echo "断点续训："
-    echo "  --resume-from PATH       从之前的 run 目录恢复 RL 训练。"
+    echo "断点续训（适用于 rl / ga / general-rl 三种搜索算法）："
+    echo "  --resume-from PATH       从之前的 run 目录恢复训练。"
     echo "                            PATH 为之前的 run 目录路径，例如："
     echo "                            rl_results/layer_importance_runs/mrpc/20260404_151155_pid711833"
-    echo "                            程序会自动在该目录下查找 checkpoint 文件。"
-    echo "                            续训时 --stage1/2-rl-episodes 表示总轮数（非追加轮数）。"
+    echo "                            程序会自动在该目录下查找对应算法的 checkpoint 文件："
+    echo "                              rl:         stage1/stage1_rl_checkpoint.pt"
+    echo "                              ga:         stage1/ga_stage1_checkpoint.pt"
+    echo "                              general-rl: stage1/general_stage1_train_checkpoint.pt"
+    echo "                            续训时 --stage1/2-search-episodes 表示总轮数（非追加轮数）。"
     echo
     echo "示例："
     echo "  bash llama_7B_LayerImportance.sh 32 64 output.log 20 2"
@@ -516,12 +536,13 @@ Common options:
   --noise-eval-repeat N
 
   --resume-from PATH
-      Resume RL training from a previous run directory.
+      Resume training from a previous run directory (works for rl, ga, general-rl).
       PATH should be a previous run directory, e.g.:
         rl_results/layer_importance_runs/mrpc/20260404_151155_pid711833
-      The system will look for checkpoint files in:
-        <PATH>/stage1/stage1_rl_checkpoint.pt  (Stage-1)
-        <PATH>/stage2_noise/progress/noise_rl_checkpoint.pt  (Stage-2)
+      The system auto-detects checkpoints based on --search-algorithm:
+        rl:         <PATH>/stage1/stage1_rl_checkpoint.pt
+        ga:         <PATH>/stage1/ga_stage1_checkpoint.pt
+        general-rl: <PATH>/stage1/general_stage1_train_checkpoint.pt
 
   --search-algorithm rl|ga|general-rl
       Select the search algorithm. Default: rl.
@@ -1230,6 +1251,9 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
         if [ -n "$GENERAL_RL_STAGE1_CONFIG_JSON" ]; then
             CMD+=(--stage1_config_json "$GENERAL_RL_STAGE1_CONFIG_JSON")
         fi
+        if [ -n "$RESUME_RUN_DIR" ]; then
+            CMD+=(--resume_from "$RESUME_RUN_DIR")
+        fi
     else
         # infer mode
         CMD+=(
@@ -1348,8 +1372,15 @@ echo "  方式 B：通过数据集级 LATEST 指针（无需记住 PID / run 目
 echo "      kill -INT \$(cat ${LATEST_POINTER_DIR}/LATEST_PID)"
 echo ""
 echo "  方式 C：创建停止标志文件（不依赖信号，适合脚本化批量停止）"
-echo "      touch ${RUN_ROOT}/stage1/STOP_RL              # 停 Stage-1 RL"
-echo "      touch ${RUN_ROOT}/stage2_noise/progress/STOP_RL  # 停 Stage-2 噪声 RL"
+if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
+    echo "      touch ${RUN_ROOT}/STOP_RL                      # 停 general-rl 当前 Stage"
+elif [ "$SEARCH_ALGORITHM" = "ga" ]; then
+    echo "      touch ${RUN_ROOT}/stage1/STOP_RL              # 停 GA Stage-1"
+    echo "      touch ${RUN_ROOT}/stage2_noise/progress/STOP_RL  # 停 GA Stage-2"
+else
+    echo "      touch ${RUN_ROOT}/stage1/STOP_RL              # 停 Stage-1 RL"
+    echo "      touch ${RUN_ROOT}/stage2_noise/progress/STOP_RL  # 停 Stage-2 噪声 RL"
+fi
 echo ""
 echo "  停止后续训：下次启动时加上 --resume-from ${RUN_ROOT}"
 echo "  ⚠ 切勿使用 kill -9（SIGKILL），它会绕过 checkpoint 保存导致续训断层！"

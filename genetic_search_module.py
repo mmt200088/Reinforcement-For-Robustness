@@ -26,19 +26,89 @@ from noise_rl_module_v2 import (
     NOISE_STAGE_MC_TRAIN_SAMPLES,
     NOISE_STAGE_STATUS_NO_STABLE_FEASIBLE,
     NOISE_STAGE_STATUS_OK,
+    NOISE_STAGE_STOP_FLAG_FILENAME,
+    _log_rounded_box,
     _auto_adjust_segments,
     _compute_dynamic_limits,
     _compute_dynamic_std_upper_bound,
     _get_low_risk_noise_configuration,
     _get_worst_case_noise_configuration,
+    install_graceful_stop_handler,
+    uninstall_graceful_stop_handler,
+    reset_graceful_stop_state,
+    is_graceful_stop_requested,
+    consume_stop_flag_file,
 )
 
+import torch
+
+import time as _time
 
 EPS = 1e-8
 SCORE_EXP_BASE = 4.0
 STAGE1_DEFAULT_POPULATION = 32
 STAGE2_DEFAULT_POPULATION = 32
 STAGNATION_TOLERANCE_BASE = 10
+GA_PROGRESS_BOX_INTERVAL = 5
+
+
+def _progress_bar(current, total, width=30):
+    """Render a fixed-width unicode progress bar."""
+    ratio = min(current / max(total, 1), 1.0)
+    filled = int(round(ratio * width))
+    bar = "\u2588" * filled + "\u2591" * (width - filled)
+    return f"[{bar}] {ratio:6.1%}"
+
+
+def _fmt_elapsed(seconds):
+    h, rem = divmod(int(seconds), 3600)
+    m, s = divmod(rem, 60)
+    if h > 0:
+        return f"{h}h{m:02d}m{s:02d}s"
+    return f"{m}m{s:02d}s"
+
+
+def _log_ga_stage_header(log_fn, stage_label, pop_size, max_gen, stag_tol):
+    """Log a visually distinct stage start header."""
+    log_fn("")
+    log_fn("╔══════════════════════════════════════════════════════════════════╗")
+    log_fn(f"║  {stage_label:^64s}║")
+    log_fn("╠══════════════════════════════════════════════════════════════════╣")
+    log_fn(f"║  种群规模（Population）    : {pop_size:<38d}║")
+    log_fn(f"║  最大代数（Max Generations）: {max_gen:<38d}║")
+    log_fn(f"║  停滞容忍（Stagnation Tol）: {stag_tol:<38d}║")
+    log_fn("╚══════════════════════════════════════════════════════════════════╝")
+    log_fn("")
+
+
+def _log_ga_finish_summary(log_fn, stage_label, status, gen_count, max_gen,
+                            best_score, best_cost, elapsed, extra_lines=None):
+    """Log a visually distinct completion summary."""
+    lines = [
+        f"{stage_label} — 搜索完成（Search Completed）",
+        f"退出原因: {status}",
+        f"已搜索代数: {gen_count} / {max_gen}",
+        f"最优得分（Best Score）: {best_score:.6f}",
+        f"最优成本（Best Cost） : {best_cost:.2f}",
+        f"总耗时: {_fmt_elapsed(elapsed)}",
+    ]
+    if extra_lines:
+        lines.extend(extra_lines)
+    _log_rounded_box(log_fn, lines, indent="")
+
+GA_STAGE1_CHECKPOINT_FILENAME = "ga_stage1_checkpoint.pt"
+GA_STAGE2_CHECKPOINT_FILENAME = "ga_stage2_checkpoint.pt"
+
+
+def _save_ga_checkpoint(path, data):
+    """Save GA checkpoint using torch.save for consistency with RL checkpoints."""
+    os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
+    torch.save(data, path)
+
+
+def _load_ga_checkpoint(path):
+    """Load GA checkpoint."""
+    return torch.load(path, map_location="cpu", weights_only=False)
 
 
 @dataclass
@@ -470,23 +540,23 @@ def _noise_signature(noise_cfg: Dict[str, np.ndarray]) -> Tuple[Tuple[int, ...],
 
 
 class Stage1GeneticSearcher:
-    def __init__(self, evaluator, random_seed=42):
+    def __init__(self, evaluator, random_seed=42, resume_checkpoint_path=None):
         self.evaluator = evaluator
         self.rng = np.random.default_rng(int(random_seed))
         self.population_size = max(STAGE1_DEFAULT_POPULATION, evaluator.total_layers * 2)
         self.max_generations = max(1, math.ceil(evaluator.stage1_rl_episodes / self.population_size))
         stage1_dir = os.path.dirname(evaluator.step_info_file)
-        self.log_path = os.path.join(stage1_dir, "ga_search_log.txt")
         self.result_path = os.path.join(stage1_dir, "ga_search_results.json")
         self.plot_path = os.path.join(stage1_dir, "ga_search_curve.png")
+        self.checkpoint_path = os.path.join(stage1_dir, GA_STAGE1_CHECKPOINT_FILENAME)
+        self.stop_flag_path = os.path.join(stage1_dir, NOISE_STAGE_STOP_FLAG_FILENAME)
+        self.resume_checkpoint_path = resume_checkpoint_path
         self._cache: Dict[Tuple[Tuple[int, ...], Tuple[int, ...]], Dict[str, object]] = {}
         self._valid_states: List[List[Tuple[int, int]]] = []
         self._neighbor_map: List[Dict[Tuple[int, int], List[Tuple[int, int]]]] = []
         self.context: Optional[Stage1Context] = None
 
     def _log(self, message: str):
-        with open(self.log_path, "a", encoding="utf-8") as handle:
-            handle.write(message + "\n")
         self.evaluator.log(message)
 
     def _allowed_gelu_degrees(self, layer_idx: int) -> Tuple[int, ...]:
@@ -657,10 +727,28 @@ class Stage1GeneticSearcher:
 
         return population
 
+    def _save_checkpoint(self, generation, best_candidate, best_generation, stagnation,
+                         history, population):
+        """Save GA Stage-1 checkpoint at current generation boundary."""
+        pop_serialized = [
+            (g.tolist(), s.tolist()) for g, s in population
+        ]
+        data = {
+            "version": 1,
+            "algorithm": "genetic_coinn_style_stage1",
+            "completed_generation": generation,
+            "best_candidate": _to_serializable(best_candidate),
+            "best_generation": best_generation,
+            "stagnation": stagnation,
+            "history": history,
+            "population": pop_serialized,
+            "rng_state": self.rng.bit_generator.state,
+        }
+        _save_ga_checkpoint(self.checkpoint_path, data)
+        self._log(f"[Stage1] Checkpoint saved at generation {generation} → {self.checkpoint_path}")
+
     def run(self) -> Dict[str, object]:
         self._cache.clear()
-        with open(self.log_path, "w", encoding="utf-8") as handle:
-            handle.write("")
 
         self.context = build_stage1_context(self.evaluator, log_fn=self._log)
         self._log("")
@@ -691,11 +779,16 @@ class Stage1GeneticSearcher:
             effective_stagnation_tolerance // 2,
         )
 
+        _log_ga_stage_header(
+            self._log,
+            "Stage-1 遗传算法搜索（Genetic Algorithm — GELU/Softmax）",
+            len(population),
+            self.max_generations,
+            effective_stagnation_tolerance,
+        )
         self._log(
-            f"Initial population size={len(population)}  "
-            f"max_generations={self.max_generations}  "
-            f"stagnation_tolerance={effective_stagnation_tolerance}  "
-            f"diversity_injection_at={diversity_injection_threshold}"
+            f"  多样性注入阈值（Diversity Injection）: {diversity_injection_threshold}  "
+            f"种群规模（Population）: {len(population)}"
         )
 
         best_candidate = self._evaluate(
@@ -705,8 +798,41 @@ class Stage1GeneticSearcher:
         best_generation = 0
         stagnation = 0
         history = []
+        resume_start_generation = 1
 
-        for generation in range(1, self.max_generations + 1):
+        # ---- Resume from checkpoint ----
+        if self.resume_checkpoint_path and os.path.isfile(self.resume_checkpoint_path):
+            ckpt = _load_ga_checkpoint(self.resume_checkpoint_path)
+            resume_start_generation = int(ckpt["completed_generation"]) + 1
+            best_candidate = ckpt["best_candidate"]
+            # Restore numpy arrays in best_candidate
+            for k in ("gelu", "softmax"):
+                if k in best_candidate and not isinstance(best_candidate[k], np.ndarray):
+                    best_candidate[k] = np.asarray(best_candidate[k], dtype=int)
+            best_generation = int(ckpt["best_generation"])
+            stagnation = int(ckpt["stagnation"])
+            history = list(ckpt["history"])
+            pop_raw = ckpt["population"]
+            population = [
+                (np.asarray(g, dtype=int), np.asarray(s, dtype=int))
+                for g, s in pop_raw
+            ]
+            if "rng_state" in ckpt:
+                self.rng.bit_generator.state = ckpt["rng_state"]
+            self._log(
+                f"[Stage1] Resumed from checkpoint: generation={resume_start_generation - 1}, "
+                f"best_score={best_candidate['score']:.6f}, stagnation={stagnation}"
+            )
+
+        # ---- Install graceful stop handler ----
+        reset_graceful_stop_state()
+        consume_stop_flag_file(self.stop_flag_path)
+        install_graceful_stop_handler(log_fn=self._log)
+
+        _t0 = _time.time()
+        graceful_stopped = False
+        for generation in range(resume_start_generation, self.max_generations + 1):
+            _gen_t0 = _time.time()
             results = [self._evaluate(gelu_arr, softmax_arr) for gelu_arr, softmax_arr in population]
             scores = np.asarray([max(float(item["score"]), EPS) for item in results], dtype=float)
             mean_score = float(np.mean(scores)) if len(scores) else 0.0
@@ -749,20 +875,53 @@ class Stage1GeneticSearcher:
                     "improved": improved,
                 }
             )
+            _gen_elapsed = _time.time() - _gen_t0
+            _star = " ★" if improved else ""
             self._log(
-                f"[Stage1][Gen {generation:04d}] "
-                f"gen_best_score={raw_best['score']:.6f}  "
-                f"gen_best_cost={raw_best['cost']:.2f}  "
-                f"global_best_score={best_candidate['score']:.6f}  "
-                f"global_best_cost={best_candidate['cost']:.2f}  "
-                f"feasible_ratio={feasible_ratio:.2%}  "
-                f"stagnation={stagnation}/{effective_stagnation_tolerance}"
+                f"[Stage1][Gen {generation:04d}/{self.max_generations}] "
+                f"本代最优={raw_best['score']:.6f}(cost={raw_best['cost']:.2f})  "
+                f"全局最优={best_candidate['score']:.6f}(cost={best_candidate['cost']:.2f})  "
+                f"可行比={feasible_ratio:.0%}  "
+                f"停滞={stagnation}/{effective_stagnation_tolerance}  "
+                f"耗时={_gen_elapsed:.1f}s{_star}"
             )
+
+            if generation % GA_PROGRESS_BOX_INTERVAL == 0 or generation == self.max_generations:
+                _elapsed_total = _time.time() - _t0
+                _avg_gen_time = _elapsed_total / max(generation - resume_start_generation + 1, 1)
+                _remaining_gen = self.max_generations - generation
+                _eta = _avg_gen_time * _remaining_gen
+                _log_rounded_box(
+                    self._log,
+                    [
+                        f"Stage-1 GA 进度 · 第 {generation} / {self.max_generations} 代",
+                        _progress_bar(generation, self.max_generations),
+                        f"全局最优得分: {best_candidate['score']:.6f}  "
+                        f"最优成本: {best_candidate['cost']:.2f}  "
+                        f"(第 {best_generation} 代发现)",
+                        f"已用时: {_fmt_elapsed(_elapsed_total)}  "
+                        f"预计剩余: {_fmt_elapsed(_eta)}  "
+                        f"缓存命中: {len(self._cache)} 条",
+                    ],
+                    indent="  ",
+                )
+
             if stagnation > effective_stagnation_tolerance:
                 self._log(
                     f"Early stop: best feasible score has not improved for more than "
                     f"{effective_stagnation_tolerance} generations."
                 )
+                break
+
+            # ---- Graceful stop check ----
+            if is_graceful_stop_requested(self.stop_flag_path):
+                self._save_checkpoint(generation, best_candidate, best_generation,
+                                      stagnation, history, population)
+                consume_stop_flag_file(self.stop_flag_path)
+                uninstall_graceful_stop_handler()
+                self._log(f"[Stage1] Graceful stop at generation {generation}. "
+                          f"Resume with --resume-from to continue.")
+                graceful_stopped = True
                 break
 
             ranked_indices = sorted(
@@ -855,6 +1014,11 @@ class Stage1GeneticSearcher:
 
             population = next_population[: self.population_size]
 
+        uninstall_graceful_stop_handler()
+
+        if graceful_stopped:
+            raise SystemExit(0)
+
         payload = {
             "status": "ok",
             "algorithm": "genetic_coinn_style_stage1",
@@ -870,7 +1034,7 @@ class Stage1GeneticSearcher:
             "cache_size": int(len(self._cache)),
             "result_path": self.result_path,
             "plot_path": self.plot_path,
-            "log_path": self.log_path,
+            "log_path": self.evaluator.log_file,
         }
         _json_dump(self.result_path, _to_serializable(payload))
         _series_plot(
@@ -880,10 +1044,25 @@ class Stage1GeneticSearcher:
             score_key="best_score",
             cost_key="best_cost",
         )
-        self._log(
-            f"Stage-1 genetic search finished. "
-            f"Best cost={best_candidate['cost']:.2f}, score={best_candidate['score']:.6f}, "
-            f"saved to {self.result_path}"
+        _total_elapsed = _time.time() - _t0
+        _exit_reason = "达到最大代数" if not history or not history[-1].get("improved", False) and stagnation <= effective_stagnation_tolerance else (
+            "提前停止（停滞收敛）" if stagnation > effective_stagnation_tolerance else "正常完成"
+        )
+        _log_ga_finish_summary(
+            self._log,
+            "Stage-1 GA（GELU/Softmax）",
+            _exit_reason,
+            len(history),
+            self.max_generations,
+            best_candidate["score"],
+            best_candidate["cost"],
+            _total_elapsed,
+            extra_lines=[
+                f"最优配置发现于第 {best_generation} 代",
+                f"GELU : {best_candidate.get('gelu', 'N/A')}",
+                f"Softmax: {best_candidate.get('softmax', 'N/A')}",
+                f"结果已保存 → {self.result_path}",
+            ],
         )
         return payload
 
@@ -897,6 +1076,7 @@ class Stage2NoiseGeneticSearcher:
         fixed_label,
         fixed_source,
         random_seed=42,
+        resume_checkpoint_path=None,
     ):
         self.evaluator = evaluator
         self.fixed_gelu = np.asarray(fixed_gelu, dtype=int).copy()
@@ -907,9 +1087,11 @@ class Stage2NoiseGeneticSearcher:
         self.population_size = max(STAGE2_DEFAULT_POPULATION, evaluator.total_layers)
         self.max_generations = max(1, math.ceil(evaluator.stage2_rl_episodes / self.population_size))
         stage2_dir = os.path.dirname(evaluator.noise_step_info_file)
-        self.log_path = os.path.join(stage2_dir, "noise_ga_search_log.txt")
         self.result_path = os.path.join(stage2_dir, "noise_ga_search_results.json")
         self.plot_path = os.path.join(stage2_dir, "noise_ga_search_curve.png")
+        self.checkpoint_path = os.path.join(stage2_dir, GA_STAGE2_CHECKPOINT_FILENAME)
+        self.stop_flag_path = os.path.join(stage2_dir, NOISE_STAGE_STOP_FLAG_FILENAME)
+        self.resume_checkpoint_path = resume_checkpoint_path
         self.context: Optional[Stage2Context] = None
         self._cache: Dict[Tuple[int, Tuple[Tuple[int, ...], ...]], Dict[str, object]] = {}
         self._allowed_values = {
@@ -923,8 +1105,6 @@ class Stage2NoiseGeneticSearcher:
         }
 
     def _log(self, message: str):
-        with open(self.log_path, "a", encoding="utf-8") as handle:
-            handle.write(message + "\n")
         self.evaluator.log(message)
 
     def _evaluate(self, noise_cfg: Dict[str, np.ndarray], segments: Optional[int] = None) -> Dict[str, object]:
@@ -1095,10 +1275,27 @@ class Stage2NoiseGeneticSearcher:
 
         return population
 
+    def _save_checkpoint(self, generation, incumbent, incumbent_history,
+                         best_generation, stagnation, history, population):
+        """Save GA Stage-2 checkpoint at current generation boundary."""
+        pop_serialized = [_to_serializable(cfg) for cfg in population]
+        data = {
+            "version": 1,
+            "algorithm": "genetic_coinn_style_stage2",
+            "completed_generation": generation,
+            "incumbent": _to_serializable(incumbent),
+            "incumbent_history": [dict(item) for item in incumbent_history],
+            "best_generation": best_generation,
+            "stagnation": stagnation,
+            "history": history,
+            "population": pop_serialized,
+            "rng_state": self.rng.bit_generator.state,
+        }
+        _save_ga_checkpoint(self.checkpoint_path, data)
+        self._log(f"[Stage2] Checkpoint saved at generation {generation} → {self.checkpoint_path}")
+
     def run(self) -> Dict[str, object]:
         self._cache.clear()
-        with open(self.log_path, "w", encoding="utf-8") as handle:
-            handle.write("")
 
         self.context = build_stage2_context(
             self.evaluator,
@@ -1129,6 +1326,7 @@ class Stage2NoiseGeneticSearcher:
         history = []
         best_generation = 0
         stagnation = 0
+        resume_start_generation = 1
 
         # Dynamic stagnation tolerance: ensure at least 1/3 of budget is used
         # before early stop. COINN does not use aggressive early stopping.
@@ -1141,16 +1339,57 @@ class Stage2NoiseGeneticSearcher:
             effective_stagnation_tolerance // 2,
         )
 
+        _log_ga_stage_header(
+            self._log,
+            "Stage-2 遗传算法搜索（Genetic Algorithm — Noise Scaling）",
+            len(population),
+            self.max_generations,
+            effective_stagnation_tolerance,
+        )
         self._log(
-            f"Initial population size={len(population)}  "
-            f"max_generations={self.max_generations}  "
-            f"stagnation_tolerance={effective_stagnation_tolerance}  "
-            f"diversity_injection_at={diversity_injection_threshold}  "
-            f"initial_incumbent_cost={incumbent['cost']:.2f}  "
-            f"initial_incumbent_score={incumbent['score']:.6f}"
+            f"  多样性注入阈值: {diversity_injection_threshold}  "
+            f"初始incumbent: score={incumbent['score']:.6f}, cost={incumbent['cost']:.2f}"
         )
 
-        for generation in range(1, self.max_generations + 1):
+        # ---- Resume from checkpoint ----
+        if self.resume_checkpoint_path and os.path.isfile(self.resume_checkpoint_path):
+            ckpt = _load_ga_checkpoint(self.resume_checkpoint_path)
+            resume_start_generation = int(ckpt["completed_generation"]) + 1
+            incumbent = ckpt["incumbent"]
+            # Restore numpy arrays in noise config keys
+            for key in NOISE_SCALING_FACTOR_KEYS:
+                if key in incumbent and not isinstance(incumbent[key], np.ndarray):
+                    incumbent[key] = np.asarray(incumbent[key])
+            incumbent_history = list(ckpt["incumbent_history"])
+            best_generation = int(ckpt["best_generation"])
+            stagnation = int(ckpt["stagnation"])
+            history = list(ckpt["history"])
+            pop_raw = ckpt["population"]
+            population = []
+            for cfg in pop_raw:
+                restored = {}
+                for k, v in cfg.items():
+                    if k in NOISE_SCALING_FACTOR_KEYS and not isinstance(v, np.ndarray):
+                        restored[k] = np.asarray(v)
+                    else:
+                        restored[k] = v
+                population.append(restored)
+            if "rng_state" in ckpt:
+                self.rng.bit_generator.state = ckpt["rng_state"]
+            self._log(
+                f"[Stage2] Resumed from checkpoint: generation={resume_start_generation - 1}, "
+                f"incumbent_score={incumbent['score']:.6f}, stagnation={stagnation}"
+            )
+
+        # ---- Install graceful stop handler ----
+        reset_graceful_stop_state()
+        consume_stop_flag_file(self.stop_flag_path)
+        install_graceful_stop_handler(log_fn=self._log)
+
+        _t0 = _time.time()
+        graceful_stopped = False
+        for generation in range(resume_start_generation, self.max_generations + 1):
+            _gen_t0 = _time.time()
             results = [self._evaluate(candidate) for candidate in population]
             scores = np.asarray([max(float(item["score"]), EPS) for item in results], dtype=float)
             mean_score = float(np.mean(scores)) if len(scores) else 0.0
@@ -1211,20 +1450,53 @@ class Stage2NoiseGeneticSearcher:
                     "improved": improved,
                 }
             )
+            _gen_elapsed = _time.time() - _gen_t0
+            _star = " ★" if improved else ""
             self._log(
-                f"[Stage2][Gen {generation:04d}] "
-                f"gen_best_score={raw_best['score']:.6f}  "
-                f"gen_best_cost={raw_best['cost']:.2f}  "
-                f"incumbent_score={incumbent['score']:.6f}  "
-                f"incumbent_cost={incumbent['cost']:.2f}  "
-                f"qualified_ratio={qualified_ratio:.2%}  "
-                f"stagnation={stagnation}/{effective_stagnation_tolerance}"
+                f"[Stage2][Gen {generation:04d}/{self.max_generations}] "
+                f"本代最优={raw_best['score']:.6f}(cost={raw_best['cost']:.2f})  "
+                f"incumbent={incumbent['score']:.6f}(cost={incumbent['cost']:.2f})  "
+                f"合格比={qualified_ratio:.0%}  "
+                f"停滞={stagnation}/{effective_stagnation_tolerance}  "
+                f"耗时={_gen_elapsed:.1f}s{_star}"
             )
+
+            if generation % GA_PROGRESS_BOX_INTERVAL == 0 or generation == self.max_generations:
+                _elapsed_total = _time.time() - _t0
+                _avg_gen_time = _elapsed_total / max(generation - resume_start_generation + 1, 1)
+                _remaining_gen = self.max_generations - generation
+                _eta = _avg_gen_time * _remaining_gen
+                _log_rounded_box(
+                    self._log,
+                    [
+                        f"Stage-2 GA 进度 · 第 {generation} / {self.max_generations} 代",
+                        _progress_bar(generation, self.max_generations),
+                        f"Incumbent 得分: {incumbent['score']:.6f}  "
+                        f"成本: {incumbent['cost']:.2f}  "
+                        f"(第 {best_generation} 代确认)",
+                        f"已用时: {_fmt_elapsed(_elapsed_total)}  "
+                        f"预计剩余: {_fmt_elapsed(_eta)}  "
+                        f"缓存命中: {len(self._cache)} 条",
+                    ],
+                    indent="  ",
+                )
+
             if stagnation > effective_stagnation_tolerance:
                 self._log(
                     f"Early stop: confirmed incumbent has not improved for more than "
                     f"{effective_stagnation_tolerance} generations."
                 )
+                break
+
+            # ---- Graceful stop check ----
+            if is_graceful_stop_requested(self.stop_flag_path):
+                self._save_checkpoint(generation, incumbent, incumbent_history,
+                                      best_generation, stagnation, history, population)
+                consume_stop_flag_file(self.stop_flag_path)
+                uninstall_graceful_stop_handler()
+                self._log(f"[Stage2] Graceful stop at generation {generation}. "
+                          f"Resume with --resume-from to continue.")
+                graceful_stopped = True
                 break
 
             next_population: List[Dict[str, np.ndarray]] = []
@@ -1293,6 +1565,11 @@ class Stage2NoiseGeneticSearcher:
                 _add_next(immigrant)
 
             population = next_population[: self.population_size]
+
+        uninstall_graceful_stop_handler()
+
+        if graceful_stopped:
+            raise SystemExit(0)
 
         selected_config = incumbent if incumbent.get("qualification_passed", False) else None
         status = (
@@ -1384,7 +1661,7 @@ class Stage2NoiseGeneticSearcher:
             "ga_history": history,
             "result_path": self.result_path,
             "plot_path": self.plot_path,
-            "log_path": self.log_path,
+            "log_path": self.evaluator.noise_log_file,
             "best_generation": int(best_generation),
         }
         _json_dump(self.result_path, _to_serializable(payload))
@@ -1395,16 +1672,33 @@ class Stage2NoiseGeneticSearcher:
             score_key="best_score",
             cost_key="best_cost",
         )
-        self._log(
-            f"Stage-2 noise genetic search finished. "
-            f"Status={status}, incumbent_cost={incumbent['cost']:.2f}, "
-            f"incumbent_score={incumbent['score']:.6f}, saved to {self.result_path}"
+        _total_elapsed = _time.time() - _t0
+        _exit_reason = "达到最大代数" if not history or not history[-1].get("improved", False) and stagnation <= effective_stagnation_tolerance else (
+            "提前停止（停滞收敛）" if stagnation > effective_stagnation_tolerance else "正常完成"
+        )
+        _log_ga_finish_summary(
+            self._log,
+            "Stage-2 GA（Noise Scaling）",
+            f"{_exit_reason} (status={status})",
+            len(history),
+            self.max_generations,
+            incumbent["score"],
+            incumbent["cost"],
+            _total_elapsed,
+            extra_lines=[
+                f"最优配置发现于第 {best_generation} 代（确认次数: {len(incumbent_history)}）",
+                f"结果已保存 → {self.result_path}",
+            ],
         )
         return payload
 
 
-def run_stage1_genetic_search(evaluator, random_seed=42):
-    return Stage1GeneticSearcher(evaluator, random_seed=random_seed).run()
+def run_stage1_genetic_search(evaluator, random_seed=42, resume_checkpoint_path=None):
+    return Stage1GeneticSearcher(
+        evaluator,
+        random_seed=random_seed,
+        resume_checkpoint_path=resume_checkpoint_path,
+    ).run()
 
 
 def run_stage2_noise_genetic_search(
@@ -1414,6 +1708,7 @@ def run_stage2_noise_genetic_search(
     fixed_label,
     fixed_source,
     random_seed=42,
+    resume_checkpoint_path=None,
 ):
     return Stage2NoiseGeneticSearcher(
         evaluator=evaluator,
@@ -1422,4 +1717,5 @@ def run_stage2_noise_genetic_search(
         fixed_label=fixed_label,
         fixed_source=fixed_source,
         random_seed=random_seed,
+        resume_checkpoint_path=resume_checkpoint_path,
     ).run()
