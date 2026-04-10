@@ -284,9 +284,9 @@ PPO_ENTROPY_DECAY = 1.0     # 熵系数衰减率设为1.0表示不衰减
 PPO_MINI_BATCH_SIZE = 64    # Mini-batch大小（PDF 6.4：增至64）
 
 # ==================== 策略一：奖励函数重构配置（PDF 6.1 线性化修复） ====================
-REWARD_THRESHOLD = 0.01       # 约束阈值 1%
+REWARD_THRESHOLD = 0.005      # 约束阈值 0.5%
 REWARD_SAFETY_BUFFER = 0.002  # 安全边界 0.2%
-REWARD_TARGET = REWARD_THRESHOLD - REWARD_SAFETY_BUFFER  # 有效目标 0.8%
+REWARD_TARGET = REWARD_THRESHOLD - REWARD_SAFETY_BUFFER  # 有效目标 0.3%
 REWARD_COST_WEIGHT = 20.0     # 成本奖励权重
 REWARD_SAFETY_BONUS = 1.0     # 安全区域基础奖励
 # PDF 6.1：移除指数惩罚，改用线性惩罚（防止梯度爆炸）
@@ -1948,7 +1948,7 @@ class TransformerOptEnv:
         
         # 敏锐度优化PDF 3.3：约束阈值（用于预算感知和课程学习）
         if constraint_limits is None:
-            # 默认约束：1%偏差
+            # 默认约束：0.5%偏差
             self.constraint_limits = {
                 'loss': self.baseline_loss * (1 + REWARD_THRESHOLD),
                 'metric1': self.baseline_p * (1 - REWARD_THRESHOLD),
@@ -2490,9 +2490,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.rl_lr_raw = rl_lr
         self.ppo_lr_initial, self.ppo_lr_mode = resolve_ppo_learning_rate(rl_lr)
         
-        # --- 用户阈值配置 (Strict 1.5%) ---
-        self.error_threshold = 0.015
-        self.correlation_drop_ratio = 0.015
+        # --- 用户阈值配置（统一采用百分比形式；当前为 0.5%） ---
+        # 保留既有字段名以兼容旧调用方，但这里的 error_threshold
+        # 现在表示 loss 允许上浮的比例，而非绝对增量。
+        self.error_threshold = 0.005
+        self.correlation_drop_ratio = 0.005
         
         self.search_algorithm = search_algorithm or "rl"
         output_layout = resolve_run_output_layout(run_output_dir, search_algorithm=self.search_algorithm)
@@ -3782,7 +3784,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             else float(correlation_drop_ratio)
         )
         return {
-            "loss": float(base_loss + error_threshold),
+            "loss": float(base_loss * (1.0 + error_threshold)),
             "metric1": float(base_p * (1.0 - correlation_drop_ratio)),
             "metric2": float(base_s * (1.0 - correlation_drop_ratio)),
         }
@@ -4780,7 +4782,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     )
                 else:
                     base_loss, base_p, base_s, _ = self.stage1_final_evaluate(base_gelu, base_softmax, use_train=True)
-                limit_loss = base_loss + self.error_threshold
+                limit_loss = base_loss * (1.0 + self.error_threshold)
                 limit_p = base_p * (1.0 - self.correlation_drop_ratio)
                 limit_s = base_s * (1.0 - self.correlation_drop_ratio)
         else:
@@ -4817,7 +4819,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 base_s = base_s_train
 
             # Constraints
-            limit_loss = base_loss + self.error_threshold
+            limit_loss = base_loss * (1.0 + self.error_threshold)
             limit_p = base_p * (1.0 - self.correlation_drop_ratio)
             limit_s = base_s * (1.0 - self.correlation_drop_ratio)
 
@@ -5067,9 +5069,19 @@ class LayerImportanceEvaluator(TrainerCallback):
             if not USE_VALIDATION_FOR_REWARD:
                 proxy_base_loss, proxy_base_p, proxy_base_s = base_loss_train, base_p_train, base_s_train
 
-            env = TransformerOptEnv(self.total_layers, base_tot_c, baseline_metrics, rl_evaluator,
-                                   num_metrics=self.get_num_metrics(),
-                                   gelu_degree0_eligible=gelu_degree0_eligible)
+            env = TransformerOptEnv(
+                self.total_layers,
+                base_tot_c,
+                baseline_metrics,
+                rl_evaluator,
+                constraint_limits={
+                    "loss": float(limit_loss),
+                    "metric1": float(limit_p),
+                    "metric2": float(limit_s),
+                },
+                num_metrics=self.get_num_metrics(),
+                gelu_degree0_eligible=gelu_degree0_eligible,
+            )
             if USE_VALIDATION_FOR_REWARD:
                 rl_evaluator.split_name = online_reward_split
             env.prev_episode_metrics = {
