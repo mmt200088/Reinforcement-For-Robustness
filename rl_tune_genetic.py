@@ -564,6 +564,8 @@ def train(
     if use_ist:
         from layer_importance_evaluator import LayerImportanceEvaluator
         from genetic_search_module import (
+            GA_STAGE1_CHECKPOINT_FILENAME,
+            GA_STAGE2_CHECKPOINT_FILENAME,
             GeneticFinalEvaluationModule,
             GeneticNoiseFinalEvaluationModule,
             build_stage1_context,
@@ -607,10 +609,24 @@ def train(
             skip_noise_final_eval=skip_noise_final_eval,
             resume_run_dir=resume_run_dir,
             data_path=data_path,
-            test_data_mm=val_data_mm
+            test_data_mm=val_data_mm,
+            search_algorithm="ga",
         )
         model.config.use_cache = False
         model.config.is_decoder = False
+
+        # ---- Resolve GA resume checkpoint paths ----
+        ga_stage1_resume_path = None
+        ga_stage2_resume_path = None
+        if resume_run_dir:
+            _s1_path = os.path.join(resume_run_dir, "stage1", GA_STAGE1_CHECKPOINT_FILENAME)
+            if os.path.isfile(_s1_path):
+                ga_stage1_resume_path = _s1_path
+                print(f"[GA Resume] Found Stage-1 checkpoint: {_s1_path}")
+            _s2_path = os.path.join(resume_run_dir, "stage2_noise", "progress", GA_STAGE2_CHECKPOINT_FILENAME)
+            if os.path.isfile(_s2_path):
+                ga_stage2_resume_path = _s2_path
+                print(f"[GA Resume] Found Stage-2 checkpoint: {_s2_path}")
 
         stage1_search_result = None
         stage1_context = None
@@ -618,6 +634,7 @@ def train(
             stage1_search_result = run_stage1_genetic_search(
                 importance_evaluator,
                 random_seed=final_eval_random_seed,
+                resume_checkpoint_path=ga_stage1_resume_path,
             )
             stage1_context = stage1_search_result["context"]
         else:
@@ -692,6 +709,7 @@ def train(
                 fixed_label=fixed_label,
                 fixed_source=fixed_source,
                 random_seed=final_eval_random_seed,
+                resume_checkpoint_path=ga_stage2_resume_path,
             )
         else:
             importance_evaluator.log("Stage-2 noise genetic search skipped by flag.")

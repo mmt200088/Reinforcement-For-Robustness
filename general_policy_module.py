@@ -87,11 +87,57 @@ _NoiseGTrXLNet = _s2._NoiseGTrXLStrategyNetwork
 _NoiseOptEnv = _s2._NoiseOptEnv
 _NoiseBuffer = _s2._NoiseRecurrentRolloutBuffer
 
+# ---- 优雅停止相关 ----
+import time as _time
+
+from noise_rl_module_v2 import (
+    NOISE_STAGE_STOP_FLAG_FILENAME as _STOP_FLAG_FILENAME,
+    _log_rounded_box,
+    install_graceful_stop_handler as _install_stop,
+    uninstall_graceful_stop_handler as _uninstall_stop,
+    reset_graceful_stop_state as _reset_stop,
+    is_graceful_stop_requested as _is_stop,
+    consume_stop_flag_file as _consume_stop,
+)
+
+GENERAL_STAGE1_TRAIN_CHECKPOINT = "general_stage1_train_checkpoint.pt"
+GENERAL_STAGE2_TRAIN_CHECKPOINT = "general_stage2_train_checkpoint.pt"
+
 # ===========================================================================
 # 配置常量
 # ===========================================================================
 TASK_CONTEXT_DIM = 5
 GENERAL_POLICY_VERSION = 1
+
+
+# ===========================================================================
+# 进度输出辅助
+# ===========================================================================
+
+def _progress_bar(current, total, width=30):
+    ratio = min(current / max(total, 1), 1.0)
+    filled = int(round(ratio * width))
+    bar = "\u2588" * filled + "\u2591" * (width - filled)
+    return f"[{bar}] {ratio:6.1%}"
+
+
+def _fmt_elapsed(seconds):
+    h, rem = divmod(int(seconds), 3600)
+    m, s = divmod(rem, 60)
+    if h > 0:
+        return f"{h}h{m:02d}m{s:02d}s"
+    return f"{m}m{s:02d}s"
+
+
+def _log_general_header(log_fn, title, info_lines):
+    log_fn("")
+    log_fn("╔══════════════════════════════════════════════════════════════════╗")
+    log_fn(f"║  {title:^64s}║")
+    log_fn("╠══════════════════════════════════════════════════════════════════╣")
+    for line in info_lines:
+        log_fn(f"║  {line:<64s}║")
+    log_fn("╚══════════════════════════════════════════════════════════════════╝")
+    log_fn("")
 
 
 # ===========================================================================
@@ -567,6 +613,7 @@ def multi_task_train_stage1(
     lr=3e-5,
     log_fn=None,
     device="cuda",
+    resume_checkpoint_path=None,
 ):
     """多任务 round-robin 训练 Stage-1 通用策略 + 通用 Critic。
 
@@ -633,11 +680,49 @@ def multi_task_train_stage1(
     all_rewards = {n: [] for n in task_names}
     all_entropies = []
 
-    log_fn(f"[通用策略] 开始多任务训练: {num_tasks} 个任务, {total_rounds} 轮, "
-           f"每轮每任务 {episodes_per_task_per_round} 回合, 总 {total_episodes} 回合")
-    log_fn(f"[通用策略] 任务列表: {task_names}")
+    # ---- 续训练：加载 checkpoint ----
+    resume_start_round = 0
+    if resume_checkpoint_path and os.path.isfile(resume_checkpoint_path):
+        ckpt = torch.load(resume_checkpoint_path, map_location=device, weights_only=False)
+        net.load_state_dict(ckpt["net_state_dict"])
+        optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        ppo_cnt = ckpt.get("ppo_cnt", 0)
+        global_ep = ckpt.get("global_ep", 0)
+        best_configs = ckpt.get("best_configs", best_configs)
+        best_rewards = ckpt.get("best_rewards", best_rewards)
+        all_rewards = ckpt.get("all_rewards", all_rewards)
+        all_entropies = ckpt.get("all_entropies", all_entropies)
+        if "return_norm" in ckpt:
+            rn = ckpt["return_norm"]
+            return_norm.mean = rn["mean"]
+            return_norm.var = rn["var"]
+            return_norm.count = rn["count"]
+        resume_start_round = ckpt.get("completed_round", 0)
+        log_fn(f"[通用策略] 从 checkpoint 续训练: 已完成 {resume_start_round} 轮, "
+               f"global_ep={global_ep}, ppo_cnt={ppo_cnt}")
 
-    for rnd in range(total_rounds):
+    # ---- 停止信号文件路径 ----
+    stop_flag_path = os.path.join(
+        os.path.dirname(output_path) if os.path.dirname(output_path) else ".",
+        _STOP_FLAG_FILENAME,
+    )
+
+    _log_general_header(
+        log_fn,
+        "Stage-1 通用策略训练（General Policy Training）",
+        [
+            f"任务数量: {num_tasks}    训练轮数: {total_rounds}",
+            f"每轮每任务回合数: {episodes_per_task_per_round}    总回合: {total_episodes}",
+            f"任务列表: {', '.join(task_names)}",
+            f"学习率: {lr}    PPO 间隔: {ppo_interval}",
+        ],
+    )
+
+    _reset_stop()
+    _install_stop(stop_flag_path)
+    _t0 = _time.time()
+
+    for rnd in range(resume_start_round, total_rounds):
         for task_name in task_names:
             tc = tasks[task_name]
             env = envs[task_name]
@@ -698,8 +783,60 @@ def multi_task_train_stage1(
                         log_fn(f"  [PPO #{ppo_cnt}] 轮 {rnd+1}/{total_rounds} 任务 {task_name} | "
                                f"熵={ent:.4f} | {avg_str}")
 
+        _elapsed = _time.time() - _t0
+        _avg_rnd = _elapsed / max(rnd - resume_start_round + 1, 1)
+        _eta = _avg_rnd * (total_rounds - rnd - 1)
         best_str = ", ".join(f"{n}={best_rewards[n]:.3f}" for n in task_names)
-        log_fn(f"[通用策略] 轮 {rnd+1}/{total_rounds} 完成 | 各任务最优: {best_str}")
+        avg_str = ", ".join(
+            f"{n}={np.mean(all_rewards[n][-episodes_per_task_per_round:]):.3f}"
+            for n in task_names if all_rewards[n]
+        )
+        _log_rounded_box(
+            log_fn,
+            [
+                f"Stage-1 通用策略 · 轮 {rnd+1} / {total_rounds}",
+                _progress_bar(rnd + 1, total_rounds),
+                f"近期均值: {avg_str}",
+                f"各任务最优: {best_str}",
+                f"PPO 更新: {ppo_cnt} 次  总回合: {global_ep}",
+                f"已用时: {_fmt_elapsed(_elapsed)}  预计剩余: {_fmt_elapsed(_eta)}",
+            ],
+            indent="  ",
+        )
+
+        # ---- 优雅停止检查 ----
+        if _is_stop(stop_flag_path):
+            _consume_stop(stop_flag_path)
+            ckpt_save_path = os.path.join(
+                os.path.dirname(output_path) if os.path.dirname(output_path) else ".",
+                GENERAL_STAGE1_TRAIN_CHECKPOINT,
+            )
+            torch.save({
+                "version": GENERAL_POLICY_VERSION,
+                "completed_round": rnd + 1,
+                "net_state_dict": net.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "ppo_cnt": ppo_cnt,
+                "global_ep": global_ep,
+                "best_configs": best_configs,
+                "best_rewards": best_rewards,
+                "all_rewards": all_rewards,
+                "all_entropies": all_entropies,
+                "return_norm": {
+                    "mean": return_norm.mean,
+                    "var": return_norm.var,
+                    "count": return_norm.count,
+                },
+                "task_names": task_names,
+                "total_rounds": total_rounds,
+                "episodes_per_task_per_round": episodes_per_task_per_round,
+            }, ckpt_save_path)
+            log_fn(f"[通用策略] 优雅停止: checkpoint 已保存 → {ckpt_save_path} "
+                   f"(已完成 {rnd+1}/{total_rounds} 轮)")
+            _uninstall_stop()
+            raise SystemExit(0)
+
+    _uninstall_stop()
 
     # ---- 保存 general policy ----
     os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
@@ -725,7 +862,19 @@ def multi_task_train_stage1(
             "best_rewards": {n: float(best_rewards[n]) for n in task_names},
         },
     }, output_path)
-    log_fn(f"[通用策略] 已保存 → {output_path}")
+    _total_elapsed = _time.time() - _t0
+    best_str = ", ".join(f"{n}={best_rewards[n]:.3f}" for n in task_names)
+    _log_rounded_box(
+        log_fn,
+        [
+            "Stage-1 通用策略训练 — 完成（Training Completed）",
+            f"总轮数: {total_rounds}    PPO 更新: {ppo_cnt} 次    总回合: {global_ep}",
+            f"各任务最优: {best_str}",
+            f"总耗时: {_fmt_elapsed(_total_elapsed)}",
+            f"策略已保存 → {output_path}",
+        ],
+        indent="",
+    )
 
     net.set_task_context(None)
     return {
@@ -811,7 +960,17 @@ def offline_find_best_config_stage1(
     best_config = None
     all_results = []
 
-    log_fn(f"[离线推断] 开始 {'贪心' if greedy else f'{num_rollouts} 次采样'} rollout...")
+    _mode_str = "贪心（Greedy）" if greedy else f"{num_rollouts} 次采样（Sampling）"
+    _log_general_header(
+        log_fn,
+        "Stage-1 离线推断（Offline Inference）",
+        [
+            f"模式: {_mode_str}",
+            f"策略来源: {general_policy_path}",
+        ],
+    )
+    _t0 = _time.time()
+    _progress_interval = max(1, num_rollouts // 10)
 
     for i in range(num_rollouts):
         ep_reward, config, _steps = _stage1_rollout_one_episode(
@@ -821,13 +980,29 @@ def offline_find_best_config_stage1(
         if ep_reward > best_reward:
             best_reward = ep_reward
             best_config = config
-        if (i + 1) % max(1, num_rollouts // 5) == 0:
-            log_fn(f"  [{i+1}/{num_rollouts}] 当前最优 reward={best_reward:.4f}")
+        if (i + 1) % _progress_interval == 0 or i + 1 == num_rollouts:
+            _elapsed = _time.time() - _t0
+            _eta = _elapsed / (i + 1) * (num_rollouts - i - 1)
+            log_fn(
+                f"  {_progress_bar(i + 1, num_rollouts)}  "
+                f"当前最优={best_reward:.4f}  "
+                f"已用时={_fmt_elapsed(_elapsed)}  "
+                f"剩余≈{_fmt_elapsed(_eta)}"
+            )
 
     net.set_task_context(None)
-    log_fn(f"[离线推断] 完成. 最优 reward={best_reward:.4f}, cost={best_config['cost']:.2f}")
-    log_fn(f"  GELU:    {best_config['gelu'].tolist()}")
-    log_fn(f"  Softmax: {best_config['softmax'].tolist()}")
+    _total_elapsed = _time.time() - _t0
+    _log_rounded_box(
+        log_fn,
+        [
+            "Stage-1 离线推断 — 完成（Inference Completed）",
+            f"最优 Reward: {best_reward:.4f}    Cost: {best_config['cost']:.2f}",
+            f"GELU   : {best_config['gelu'].tolist()}",
+            f"Softmax: {best_config['softmax'].tolist()}",
+            f"总耗时: {_fmt_elapsed(_total_elapsed)}    Rollout 次数: {num_rollouts}",
+        ],
+        indent="",
+    )
 
     return {
         "best_config": best_config,
@@ -920,7 +1095,17 @@ def offline_find_best_config_stage2(
     best_noise_config = None
     all_results = []
 
-    log_fn(f"[Stage-2 离线] 开始 {'贪心' if greedy else f'{num_rollouts} 次采样'} rollout...")
+    _mode_str = "贪心（Greedy）" if greedy else f"{num_rollouts} 次采样（Sampling）"
+    _log_general_header(
+        log_fn,
+        "Stage-2 噪声离线推断（Noise Offline Inference）",
+        [
+            f"模式: {_mode_str}",
+            f"策略来源: {general_policy_path}",
+        ],
+    )
+    _t0 = _time.time()
+    _progress_interval = max(1, num_rollouts // 10)
 
     for i in range(num_rollouts):
         state = env.reset()
@@ -982,11 +1167,27 @@ def offline_find_best_config_stage2(
             best_reward = episode_reward
             best_noise_config = noise_config
 
-        if (i + 1) % max(1, num_rollouts // 5) == 0:
-            log_fn(f"  [{i+1}/{num_rollouts}] 当前最优 reward={best_reward:.4f}")
+        if (i + 1) % _progress_interval == 0 or i + 1 == num_rollouts:
+            _elapsed = _time.time() - _t0
+            _eta = _elapsed / (i + 1) * (num_rollouts - i - 1)
+            log_fn(
+                f"  {_progress_bar(i + 1, num_rollouts)}  "
+                f"当前最优={best_reward:.4f}  "
+                f"已用时={_fmt_elapsed(_elapsed)}  "
+                f"剩余≈{_fmt_elapsed(_eta)}"
+            )
 
     net.set_task_context(None)
-    log_fn(f"[Stage-2 离线] 完成. 最优 reward={best_reward:.4f}")
+    _total_elapsed = _time.time() - _t0
+    _log_rounded_box(
+        log_fn,
+        [
+            "Stage-2 噪声离线推断 — 完成（Inference Completed）",
+            f"最优 Reward: {best_reward:.4f}",
+            f"总耗时: {_fmt_elapsed(_total_elapsed)}    Rollout 次数: {num_rollouts}",
+        ],
+        indent="",
+    )
 
     return {
         "best_noise_config": best_noise_config,
@@ -1529,6 +1730,7 @@ def multi_task_train_stage2(
     lr=3e-5,
     log_fn=None,
     device="cuda",
+    resume_checkpoint_path=None,
 ):
     """多任务 round-robin 训练 Stage-2 通用噪声策略 + 通用 Critic。
 
@@ -1590,11 +1792,49 @@ def multi_task_train_stage2(
     all_rewards = {n: [] for n in task_names}
     all_entropies = []
 
-    log_fn(f"[通用噪声策略] 开始多任务训练: {num_tasks} 个任务, {total_rounds} 轮, "
-           f"每轮每任务 {episodes_per_task_per_round} 回合, 总 {total_episodes} 回合")
-    log_fn(f"[通用噪声策略] 任务列表: {task_names}")
+    # ---- 续训练：加载 checkpoint ----
+    resume_start_round = 0
+    if resume_checkpoint_path and os.path.isfile(resume_checkpoint_path):
+        ckpt = torch.load(resume_checkpoint_path, map_location=device, weights_only=False)
+        net.load_state_dict(ckpt["net_state_dict"])
+        optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        ppo_cnt = ckpt.get("ppo_cnt", 0)
+        global_ep = ckpt.get("global_ep", 0)
+        best_configs = ckpt.get("best_configs", best_configs)
+        best_rewards = ckpt.get("best_rewards", best_rewards)
+        all_rewards = ckpt.get("all_rewards", all_rewards)
+        all_entropies = ckpt.get("all_entropies", all_entropies)
+        if "return_norm" in ckpt:
+            rn = ckpt["return_norm"]
+            return_norm.mean = rn["mean"]
+            return_norm.var = rn["var"]
+            return_norm.count = rn["count"]
+        resume_start_round = ckpt.get("completed_round", 0)
+        log_fn(f"[通用噪声策略] 从 checkpoint 续训练: 已完成 {resume_start_round} 轮, "
+               f"global_ep={global_ep}, ppo_cnt={ppo_cnt}")
 
-    for rnd in range(total_rounds):
+    # ---- 停止信号文件路径 ----
+    stop_flag_path = os.path.join(
+        os.path.dirname(output_path) if os.path.dirname(output_path) else ".",
+        _STOP_FLAG_FILENAME,
+    )
+
+    _log_general_header(
+        log_fn,
+        "Stage-2 通用噪声策略训练（General Noise Policy Training）",
+        [
+            f"任务数量: {num_tasks}    训练轮数: {total_rounds}",
+            f"每轮每任务回合数: {episodes_per_task_per_round}    总回合: {total_episodes}",
+            f"任务列表: {', '.join(task_names)}",
+            f"学习率: {lr}    PPO 间隔: {ppo_interval}",
+        ],
+    )
+
+    _reset_stop()
+    _install_stop(stop_flag_path)
+    _t0 = _time.time()
+
+    for rnd in range(resume_start_round, total_rounds):
         for task_name in task_names:
             tc = tasks[task_name]
             env = envs[task_name]
@@ -1656,8 +1896,61 @@ def multi_task_train_stage2(
                         log_fn(f"  [PPO #{ppo_cnt}] 轮 {rnd+1}/{total_rounds} 任务 {task_name} | "
                                f"熵={ent:.4f} | {avg_str}")
 
+        _elapsed = _time.time() - _t0
+        _avg_rnd = _elapsed / max(rnd - resume_start_round + 1, 1)
+        _eta = _avg_rnd * (total_rounds - rnd - 1)
         best_str = ", ".join(f"{n}={best_rewards[n]:.3f}" for n in task_names)
-        log_fn(f"[通用噪声策略] 轮 {rnd+1}/{total_rounds} 完成 | 各任务最优: {best_str}")
+        avg_str = ", ".join(
+            f"{n}={np.mean(all_rewards[n][-episodes_per_task_per_round:]):.3f}"
+            for n in task_names if all_rewards[n]
+        )
+        _log_rounded_box(
+            log_fn,
+            [
+                f"Stage-2 通用噪声策略 · 轮 {rnd+1} / {total_rounds}",
+                _progress_bar(rnd + 1, total_rounds),
+                f"近期均值: {avg_str}",
+                f"各任务最优: {best_str}",
+                f"PPO 更新: {ppo_cnt} 次  总回合: {global_ep}",
+                f"已用时: {_fmt_elapsed(_elapsed)}  预计剩余: {_fmt_elapsed(_eta)}",
+            ],
+            indent="  ",
+        )
+
+        # ---- 优雅停止检查 ----
+        if _is_stop(stop_flag_path):
+
+            _consume_stop(stop_flag_path)
+            ckpt_save_path = os.path.join(
+                os.path.dirname(output_path) if os.path.dirname(output_path) else ".",
+                GENERAL_STAGE2_TRAIN_CHECKPOINT,
+            )
+            torch.save({
+                "version": GENERAL_POLICY_VERSION,
+                "completed_round": rnd + 1,
+                "net_state_dict": net.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "ppo_cnt": ppo_cnt,
+                "global_ep": global_ep,
+                "best_configs": best_configs,
+                "best_rewards": best_rewards,
+                "all_rewards": all_rewards,
+                "all_entropies": all_entropies,
+                "return_norm": {
+                    "mean": return_norm.mean,
+                    "var": return_norm.var,
+                    "count": return_norm.count,
+                },
+                "task_names": task_names,
+                "total_rounds": total_rounds,
+                "episodes_per_task_per_round": episodes_per_task_per_round,
+            }, ckpt_save_path)
+            log_fn(f"[通用噪声策略] 优雅停止: checkpoint 已保存 → {ckpt_save_path} "
+                   f"(已完成 {rnd+1}/{total_rounds} 轮)")
+            _uninstall_stop()
+            raise SystemExit(0)
+
+    _uninstall_stop()
 
     # ---- 保存 general noise policy ----
     os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
@@ -1683,7 +1976,19 @@ def multi_task_train_stage2(
             "best_rewards": {n: float(best_rewards[n]) for n in task_names},
         },
     }, output_path)
-    log_fn(f"[通用噪声策略] 已保存 → {output_path}")
+    _total_elapsed = _time.time() - _t0
+    best_str = ", ".join(f"{n}={best_rewards[n]:.3f}" for n in task_names)
+    _log_rounded_box(
+        log_fn,
+        [
+            "Stage-2 通用噪声策略训练 — 完成（Training Completed）",
+            f"总轮数: {total_rounds}    PPO 更新: {ppo_cnt} 次    总回合: {global_ep}",
+            f"各任务最优: {best_str}",
+            f"总耗时: {_fmt_elapsed(_total_elapsed)}",
+            f"策略已保存 → {output_path}",
+        ],
+        indent="",
+    )
 
     net.set_task_context(None)
     return {

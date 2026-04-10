@@ -142,6 +142,18 @@ NOISE_STAGE_STEP_INFO_FILE = "noise_ppo_step_info.txt"
 NOISE_STAGE_TRAINING_CURVE_PATH = "noise_ppo_training_curve.png"
 NOISE_STAGE_ENTROPY_CURVE_PATH = "noise_ppo_entropy_curve.png"
 DEFAULT_STAGE1_SEARCH_LOG_FILE = "pruning_search_log.txt"
+
+_SEARCH_LOG_FILENAMES = {
+    "rl": ("pruning_search_log.txt", "pruning_search_log.txt"),
+    "ga": ("ga_search_log.txt", "ga_noise_search_log.txt"),
+    "general-rl": ("general_rl_search_log.txt", "general_rl_noise_search_log.txt"),
+}
+
+_SEARCH_LOG_HEADERS = {
+    "rl": "=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===",
+    "ga": "=== 遗传算法(GA)搜索优化日志已启动（Genetic Algorithm Search Log Started） ===",
+    "general-rl": "=== 通用RL策略训练日志已启动（General RL Policy Training Log Started） ===",
+}
 DEFAULT_STAGE1_STEP_INFO_FILE = "ppo_step_info.txt"
 DEFAULT_STAGE1_TRAINING_CURVE_FILE = "ppo_training_curve.png"
 DEFAULT_STAGE1_ENTROPY_CURVE_FILE = "ppo_entropy_curve.png"
@@ -156,13 +168,16 @@ def ensure_parent_dir(path):
         os.makedirs(parent_dir, exist_ok=True)
 
 
-def resolve_run_output_layout(run_output_dir):
+def resolve_run_output_layout(run_output_dir, search_algorithm=None):
+    s1_log, s2_log = _SEARCH_LOG_FILENAMES.get(
+        search_algorithm, (DEFAULT_STAGE1_SEARCH_LOG_FILE, DEFAULT_STAGE1_SEARCH_LOG_FILE),
+    )
     run_output_dir = str(run_output_dir or "").strip()
     if not run_output_dir:
         return {
             "run_output_dir": "",
-            "log_file": DEFAULT_STAGE1_SEARCH_LOG_FILE,
-            "noise_log_file": DEFAULT_STAGE1_SEARCH_LOG_FILE,
+            "log_file": s1_log,
+            "noise_log_file": s2_log,
             "stage1_step_info_file": DEFAULT_STAGE1_STEP_INFO_FILE,
             "stage1_training_curve_path": DEFAULT_STAGE1_TRAINING_CURVE_FILE,
             "stage1_entropy_curve_path": DEFAULT_STAGE1_ENTROPY_CURVE_FILE,
@@ -194,8 +209,8 @@ def resolve_run_output_layout(run_output_dir):
 
     layout = {
         "run_output_dir": run_output_dir,
-        "log_file": os.path.join(stage1_dir, DEFAULT_STAGE1_SEARCH_LOG_FILE),
-        "noise_log_file": os.path.join(stage2_noise_dir, DEFAULT_STAGE1_SEARCH_LOG_FILE),
+        "log_file": os.path.join(stage1_dir, s1_log),
+        "noise_log_file": os.path.join(stage2_noise_dir, s2_log),
         "stage1_step_info_file": os.path.join(stage1_dir, DEFAULT_STAGE1_STEP_INFO_FILE),
         "stage1_training_curve_path": os.path.join(
             stage1_dir, DEFAULT_STAGE1_TRAINING_CURVE_FILE
@@ -2344,7 +2359,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                  skip_stage1_rl=False,
                  skip_stage1_final_eval=False,
                  skip_noise_final_eval=False,
-                 resume_run_dir=''):
+                 resume_run_dir='',
+                 search_algorithm=None):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -2478,7 +2494,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.error_threshold = 0.015
         self.correlation_drop_ratio = 0.015
         
-        output_layout = resolve_run_output_layout(run_output_dir)
+        self.search_algorithm = search_algorithm or "rl"
+        output_layout = resolve_run_output_layout(run_output_dir, search_algorithm=self.search_algorithm)
         self.run_output_dir = output_layout["run_output_dir"]
         self.log_file = output_layout["log_file"]
         self.noise_log_file = output_layout["noise_log_file"]
@@ -2492,8 +2509,12 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.noise_stage_entropy_curve_path = output_layout["noise_entropy_curve_path"]
         self.noise_stage_progress_dir = output_layout["noise_progress_dir"]
         self.noise_final_eval_dir = output_layout["noise_final_eval_dir"]
+        _log_header = _SEARCH_LOG_HEADERS.get(
+            self.search_algorithm,
+            "=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===",
+        )
         with open(self.log_file, "w", encoding="utf-8") as f:
-            f.write("=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===\n")
+            f.write(_log_header + "\n")
         with open(self.log_file, "a", encoding="utf-8") as f:
             f.write(
                 f"[信息] PPO学习率（LR）从 rl_lr={self.rl_lr_raw!r} 解析为 -> "

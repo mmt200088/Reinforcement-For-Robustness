@@ -43,7 +43,7 @@ bash llama_7B_LayerImportance.sh [lora_r] [lora_alpha] [logfile_path] [rl_lr] [d
 | `--perm-trials N` | rl, ga | `10` | 置换试验次数 |
 | `--cost-trials N` | rl, ga | `10` | 等价成本试验次数 |
 | `--budget-trials N` | rl, ga | `10` | 等价预算试验次数 |
-| `--resume-from PATH` | rl, ga | — | 从之前的 run 目录恢复训练 |
+| `--resume-from PATH` | rl, ga, general-rl | — | 从之前的 run 目录恢复训练（rl/ga/general-rl 均支持） |
 | **rl 兼容别名**（GA 模式下禁用） | | | |
 | `--stage1-rl-episodes N` | rl | `51000` | 等价于 --stage1-search-episodes |
 | `--stage2-rl-episodes N` | rl | `40000` | 等价于 --stage2-search-episodes |
@@ -942,31 +942,36 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 
 ### `--resume-from` 断点续训可选项
 
-当一次强化学习训练完成后，如果发现轮数不够，可以通过 `--resume-from` 指定之前的 run 目录，在之前训练的基础上继续训练更多轮次。效果等价于一次性训练更多轮（例如先训 30000 轮，再续训 10000 轮，等价于一次性训练 40000 轮）。
+当一次搜索/训练完成后，如果发现轮数不够，可以通过 `--resume-from` 指定之前的 run 目录，在之前训练的基础上继续训练更多轮次。效果等价于一次性训练更多轮（例如先训 30000 轮，再续训 10000 轮，等价于一次性训练 40000 轮）。**此功能适用于 rl、ga、general-rl 三种搜索算法。**
 
-训练过程中会自动在 run 目录下保存 checkpoint 文件（每次 PPO 更新窗口结束时保存）：
+训练过程中会自动在 run 目录下保存 checkpoint 文件（每次 PPO 更新窗口 / 遗传代际 / round 结束时保存）：
 
-- Stage-1 checkpoint: `<run_dir>/stage1/stage1_rl_checkpoint.pt`
-- Stage-2 checkpoint: `<run_dir>/stage2_noise/progress/noise_rl_checkpoint.pt`
+| 搜索算法 | Stage-1 checkpoint 路径 | Stage-2 checkpoint 路径 |
+| --- | --- | --- |
+| `rl` | `<run_dir>/stage1/stage1_rl_checkpoint.pt` | `<run_dir>/stage2_noise/progress/noise_rl_checkpoint.pt` |
+| `ga` | `<run_dir>/stage1/ga_stage1_checkpoint.pt` | `<run_dir>/stage2_noise/progress/ga_stage2_noise_checkpoint.pt` |
+| `general-rl` | `<run_dir>/stage1/general_stage1_train_checkpoint.pt` | `<run_dir>/stage2_noise/general_stage2_train_checkpoint.pt` |
 
 
 | 参数                   | 说明                                                                                                                                          | 默认值 |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| `--resume-from PATH` | 指定之前的 run 目录路径，从该目录的 checkpoint 恢复训练。程序会自动在 `<PATH>/stage1/` 和 `<PATH>/stage2_noise/progress/` 下查找 checkpoint 文件。如果 checkpoint 不存在，则从头开始训练。 | 空   |
+| `--resume-from PATH` | 指定之前的 run 目录路径，从该目录的 checkpoint 恢复训练。程序会根据 `--search-algorithm` 自动在对应路径查找 checkpoint 文件。如果 checkpoint 不存在，则从头开始训练。 | 空   |
 
 
 使用说明：
 
 - `PATH` 必须是一个已存在的 run 目录（例如 `rl_results/layer_importance_runs/mrpc/20260404_151155_pid711833`）。
-- 续训时，`--stage1-rl-episodes` / `--stage2-rl-episodes` 表示的是**总轮数**（而非追加轮数）。例如之前训了 30000 轮，想再加 10000 轮，则设置 `--stage2-rl-episodes 40000`。
+- 续训时指定的轮数表示**总轮数**（而非追加轮数）。例如之前训了 30000 轮，想再加 10000 轮，则设置 `--stage2-search-episodes 40000`。
 - 如果指定的总轮数小于等于 checkpoint 中已完成的轮数，则该阶段不会追加训练。
-- `--resume-from` 可以与 `--skip-stage1-rl`、`--skip-noise-rl` 等跳过选项组合使用：只有未被跳过的阶段才会尝试加载对应的 checkpoint。
+- `--resume-from` 可以与各模式的跳过选项组合使用：只有未被跳过的阶段才会尝试加载对应的 checkpoint。
 - 续训产出的新日志和文件会写入新生成的 run 目录（不会覆盖原目录），但模型状态和训练统计会从旧 checkpoint 恢复。
 - checkpoint 会在每次进度快照时自动保存，因此即使训练中途被中断，也可以从最近的 checkpoint 恢复。
 
 示例：
 
 ```bash
+# ---- RL 模式续训 ----
+
 # 第一次训练：Stage-2 训练 15000 轮
 CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --skip-stage1-rl \
@@ -977,8 +982,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --model mrpc \
   --stage2-rl-episodes 15000
 
-# 发现轮数不够，续训到 30000 轮（在之前 15000 轮的基础上再训 15000 轮）
-# 这里的 PATH 填第一次训练生成的 run 目录
+# 发现轮数不够，续训到 30000 轮
 CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --skip-stage1-rl \
   --final-eval-source json \
@@ -995,12 +999,43 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --stage1-rl-episodes 10000 \
   --skip-noise-rl --skip-noise-final-eval
 
-# 续训 Stage-1 到 20000 轮
 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
   --model mrpc \
   --stage1-rl-episodes 20000 \
   --skip-noise-rl --skip-noise-final-eval \
   --resume-from rl_results/layer_importance_runs/mrpc/<之前的run目录>
+
+# ---- GA 模式续训 ----
+
+# 第一次 GA 搜索
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm ga \
+  --model mrpc
+
+# GA 续训（从上次中断处继续）
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm ga \
+  --model mrpc \
+  --resume-from rl_results/layer_importance_runs/mrpc/<之前的ga_run目录>
+
+# ---- General-RL 模式续训 ----
+
+# 第一次通用 RL 训练
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm general-rl \
+  --general-rl-mode train \
+  --general-rl-tasks mrpc,cola,rte,stsb \
+  --general-rl-rounds 50 \
+  --model mrpc
+
+# 从上次训练中断处继续
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+  --search-algorithm general-rl \
+  --general-rl-mode train \
+  --general-rl-tasks mrpc,cola,rte,stsb \
+  --general-rl-rounds 100 \
+  --model mrpc \
+  --resume-from rl_results/layer_importance_runs/mrpc/<之前的general-rl_run目录>
 ```
 
 ### 优雅停止与断点续训（Graceful Stop / Resume）
@@ -1008,9 +1043,9 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 由于 `llama_7B_LayerImportance.sh` 内部以 `nohup ... &` 的方式把实际的 Python
 训练进程放到后台运行，因此**请不要再使用 `kill -9 <PID>`（SIGKILL）**，否则会
 绕过 checkpoint 保存逻辑、导致下次续训时训练曲线出现明显断层。正确的做法是
-**发送 SIGINT 触发优雅停止**，程序会在下一次 PPO 更新边界保存 checkpoint，
-然后安全退出；之后用 `--resume-from` 指向同一个 run 目录即可**严丝合缝**地
-继续训练。
+**发送 SIGINT 触发优雅停止**，程序会在下一次安全边界（PPO 更新边界 / 遗传代际边界 / round 边界）
+保存 checkpoint，然后安全退出；之后用 `--resume-from` 指向同一个 run 目录即可
+**严丝合缝**地继续训练。**此功能适用于 rl、ga、general-rl 三种搜索算法。**
 
 #### 启动脚本会提示什么
 
@@ -1028,8 +1063,11 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
       kill -INT $(cat rl_results/layer_importance_runs/mrpc/LATEST_PID)
 
   方式 C：创建停止标志文件（不依赖信号，适合脚本化批量停止）
-      touch rl_results/.../20260408_.../stage1/STOP_RL              # 停 Stage-1 RL
-      touch rl_results/.../20260408_.../stage2_noise/progress/STOP_RL  # 停 Stage-2 噪声 RL
+    ── rl 或 ga 模式：
+      touch rl_results/.../20260408_.../stage1/STOP_RL              # 停 Stage-1
+      touch rl_results/.../20260408_.../stage2_noise/progress/STOP_RL  # 停 Stage-2
+    ── general-rl 模式：
+      touch rl_results/.../20260408_.../STOP_RL                     # 停当前 Stage
 
   停止后续训：下次启动时加上 --resume-from rl_results/.../20260408_...
   ⚠ 切勿使用 kill -9（SIGKILL），它会绕过 checkpoint 保存导致续训断层！
@@ -1104,9 +1142,60 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 incumbent / best_config / window_best、以及所有 episode 级统计列表，因此
 training-curve 曲线与 PPO 训练曲线在续训前后能**严丝合缝地接上**。
 
+#### 完整示例：GA 模式下的启动 → 优雅停止 → 续训
+
+```bash
+# 1) 启动 GA 搜索
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+    --search-algorithm ga \
+    --model mrpc
+# -> 脚本打印 Background PID: 812345 及停止命令
+
+# 2) 优雅停止（方式 A / B / C 均可）
+kill -INT 812345
+
+# 或创建停止标志文件：
+# touch rl_results/.../stage1/STOP_RL        # 停 GA Stage-1
+# touch rl_results/.../stage2_noise/progress/STOP_RL  # 停 GA Stage-2
+
+# 3) 续训：加上 --resume-from 指向上次的 run 目录
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+    --search-algorithm ga \
+    --model mrpc \
+    --resume-from "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)"
+```
+
+#### 完整示例：General-RL 模式下的启动 → 优雅停止 → 续训
+
+```bash
+# 1) 启动通用 RL 多任务训练
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+    --search-algorithm general-rl \
+    --general-rl-mode train \
+    --general-rl-tasks mrpc,cola,rte,stsb \
+    --general-rl-rounds 50 \
+    --model mrpc
+# -> 脚本打印 Background PID: 912345 及停止命令
+
+# 2) 优雅停止
+kill -INT 912345
+
+# 或创建停止标志文件（general-rl 的 STOP_RL 位于 run 根目录）：
+# touch rl_results/.../STOP_RL
+
+# 3) 续训：增大 rounds 并指定 --resume-from
+bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
+    --search-algorithm general-rl \
+    --general-rl-mode train \
+    --general-rl-tasks mrpc,cola,rte,stsb \
+    --general-rl-rounds 100 \
+    --model mrpc \
+    --resume-from "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)"
+```
+
 #### 严丝合缝续训的关键机制
 
-为了让“停→续”与“一次性训练到底”等效，代码强制在 **PPO 更新边界**保存 checkpoint：
+为了让“停→续”与“一次性训练到底”等效，代码在不同算法中强制在安全边界保存 checkpoint：
 
 - **Stage-1**：每个 PPO 更新窗口结束（即 `(episode+1) % PPO_UPDATE_INTERVAL == 0`）
 后会写一次 checkpoint；优雅停止检查紧跟其后，因此保存时 buffer 刚刚清空、
@@ -1121,13 +1210,19 @@ training-curve 曲线与 PPO 训练曲线在续训前后能**严丝合缝地接�
 `PPO_UPDATE_INTERVAL` 的新 rollout 再做更新，策略/价值网络的梯度步数与回合计数
 与“一次性训练到底”完全一致。
 
+**ga 模式（遗传算法）：** 在每一代（generation）的遗传操作完成后保存 checkpoint。续训时从下一代直接开始，种群状态、历史统计、缓存均完整恢复。
+
+**general-rl 模式（通用RL）：** 在每一轮 round-robin 结束后保存 checkpoint。续训时从下一个 round 开始，通用策略/critic 权重、优化器状态、round 计数均完整恢复。
+
+由于停止点必然落在安全边界上（PPO 更新边界 / 代际边界 / round 边界），resume 后的训练与“一次性训练到底”在统计上完全一致。
+
 #### 注意事项
 
 - **必须用 `kill -INT`（SIGINT）或停止标志文件，禁用 `kill -9`（SIGKILL）。** SIGKILL
 不会被 Python 捕获，无法触发 checkpoint 保存，续训会丢失最近一段窗口的训练成果。
-- 停止请求是在“下一次 PPO 更新边界”生效，最多延迟 `PPO_UPDATE_INTERVAL` 个
-episode。只要耐心等一下，日志里出现 `[优雅停止] checkpoint 已写入` 就说明
-安全退出完成。
+- 停止请求在“下一次安全边界”生效。rl 模式最多延迟 PPO_UPDATE_INTERVAL 个
+episode，ga 模式在当代结束后生效，general-rl 模式在当前 round 结束后生效。
+日志里出现 [优雅停止] checkpoint 已写入 就说明安全退出完成。
 - 若再按一次 `Ctrl+C`（或再次 `kill -INT`），程序会抛出 `KeyboardInterrupt`
 立刻强退——此时已保存的 checkpoint 仍然有效，只是最新窗口内未保存的 rollout 会丢失。
 - 若停止时恰好处于 RL 训练之外（例如 Stage-1/2 的最终评估阶段），停止标志不会生效；

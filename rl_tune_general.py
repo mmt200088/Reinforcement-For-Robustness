@@ -269,6 +269,7 @@ def _build_evaluator(
         skip_noise_final_eval=True,
         data_path=data_path,
         test_data_mm=val_data_mm,
+        search_algorithm="general-rl",
     )
     model.config.use_cache = False
     model.config.is_decoder = False
@@ -301,6 +302,8 @@ def train(
     stage2_output: str = "",
     # Stage-1 固定配置（用于 Stage-2 训练）
     stage1_config_json: str = "",
+    # 续训练
+    resume_from: str = "",
     # 设备
     device: str = "cuda",
 ):
@@ -315,22 +318,34 @@ def train(
         episodes_per_task_per_round, "episodes_per_task_per_round"
     )
 
+    resume_run_dir = resume_from.strip() if resume_from else ""
     os.makedirs(output_dir, exist_ok=True)
-
-    task_names = [t.strip().lower() for t in data_path.split(",") if t.strip()]
-    if len(task_names) < 1:
-        raise ValueError("--data_path 至少需要提供一个数据集名称。")
-
-    print(f"[通用RL训练] 任务列表: {task_names}")
-    print(f"[通用RL训练] 训练轮数: {total_rounds}, 每轮每任务回合数: {episodes_per_task_per_round}")
-    print(f"[通用RL训练] 学习率: {general_lr}, 设备: {device}")
 
     from general_policy_module import (
         prepare_stage1_task,
         multi_task_train_stage1,
         prepare_stage2_task,
         multi_task_train_stage2,
+        GENERAL_STAGE1_TRAIN_CHECKPOINT,
+        GENERAL_STAGE2_TRAIN_CHECKPOINT,
     )
+
+    # ---- 续训练 checkpoint 路径检测 ----
+    general_s1_resume_path = None
+    general_s2_resume_path = None
+    if resume_run_dir:
+        _s1_ckpt = os.path.join(resume_run_dir, GENERAL_STAGE1_TRAIN_CHECKPOINT)
+        if os.path.isfile(_s1_ckpt):
+            general_s1_resume_path = _s1_ckpt
+            print(f"[续训练] 检测到 Stage-1 checkpoint: {_s1_ckpt}")
+        _s2_ckpt = os.path.join(resume_run_dir, GENERAL_STAGE2_TRAIN_CHECKPOINT)
+        if os.path.isfile(_s2_ckpt):
+            general_s2_resume_path = _s2_ckpt
+            print(f"[续训练] 检测到 Stage-2 checkpoint: {_s2_ckpt}")
+
+    task_names = [t.strip().lower() for t in data_path.split(",") if t.strip()]
+    if len(task_names) < 1:
+        raise ValueError("--data_path 至少需要提供一个数据集名称。")
 
     # ---- Stage-1 训练 ----
     s1_output = stage1_output or os.path.join(output_dir, "general_stage1_policy.pt")
@@ -366,6 +381,7 @@ def train(
         lr=general_lr,
         log_fn=print,
         device=device,
+        resume_checkpoint_path=general_s1_resume_path,
     )
     print(f"\n[Stage-1] 训练完成, 策略已保存至: {s1_output}")
 
@@ -429,6 +445,7 @@ def train(
         lr=general_lr,
         log_fn=print,
         device=device,
+        resume_checkpoint_path=general_s2_resume_path,
     )
     print(f"\n[Stage-2] 训练完成, 噪声策略已保存至: {s2_output}")
 
