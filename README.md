@@ -642,7 +642,7 @@ python generate_glue_submission.py \
 | ------------------------------ | ----------------------------------------------------------------------------------- | ---------------------------- |
 | `--skip-stage1-rl`             | 跳过整个第一阶段搜索准备与搜索流程：Phase 1 baseline、Phase 1.5 GELU 输入分布分析、Phase 2 PPO、Phase 2.5 贪心搜索 | 不跳过                          |
 | `--skip-stage1-final-eval`     | 跳过第一阶段最终评估（Phase 3 + Phase 4），但仍会先解析第一阶段配置，再进入第二阶段                                  | 不跳过                          |
-| `--final-eval-source search    | json                                                                                | manual`                      |
+| `--final-eval-source` | 第一阶段最终评估配置来源：可选 `search`（本次搜索结果）、`json`（`--final-eval-config`）、`manual`（`--manual-gelu` / `--manual-softmax`） | `search`                      |
 | `--final-eval-config PATH`     | `json` 模式下的配置文件路径                                                                   | `glue_configs_best_ppo.json` |
 | `--manual-gelu "[1,1,...]"`    | `manual` 模式下的每层 GELU degree，必须与 `--manual-softmax` 同时提供                             | —                            |
 | `--manual-softmax "[2,2,...]"` | `manual` 模式下的每层 Softmax degree，必须与 `--manual-gelu` 同时提供                             | —                            |
@@ -665,7 +665,7 @@ python generate_glue_submission.py \
 | ----------------------------------------- | ----------------------------- | ---------------------------------- |
 | `--skip-noise-rl`                         | 跳过第二阶段噪声 RL 训练                | 不跳过                                |
 | `--skip-noise-final-eval`                 | 跳过第二阶段噪声最终评估                  | 不跳过                                |
-| `--noise-eval-source search               | json                          | manual`                            |
+| `--noise-eval-source` | 第二阶段噪声最终评估配置来源：可选 `search`、`json`（`--noise-eval-config`）、`manual`（`--manual-noise-config`） | `search`                            |
 | `--noise-eval-config PATH`                | `json` 模式下的噪声配置文件路径           | `glue_noise_configs_best_ppo.json` |
 | `--manual-noise-config '{"x":[...],...}'` | `manual` 模式下的噪声配置，需包含 7 类噪声数组 | —                                  |
 | `--noise-eval-repeat N`                   | 噪声最终评估重复次数，必须为正整数             | `1`                                |
@@ -815,8 +815,14 @@ bash llama_7B_LayerImportance.sh 32 64 output.log 20 2 \
 帮助：  
 `bash llama_7B_LayerImportance.sh --help`
 
-使用json文件生成glue官网提交测试文件
-`python generate_glue_submission.py --config glue_configs_best_ppo.json --noise_config glue_noise_configs_best_ppo.json`
+使用 JSON 配置生成 GLUE 官网提交的 TSV（以及可选的 `submission.zip`），输出目录为 **`glue_submission/<output_dir>/`**；`--output_dir` 默认为 `run`，即默认写到 `glue_submission/run`。默认骨干为 **`bert-base`**；若使用仓库里为 GPT-2 准备的配置段，需加 **`--model_type gpt-2`**，且须先在训练流程中完成分类头微调。若无 GPU 且需跑 CPU，需加 **`--allow_cpu`**（会很慢）。
+
+```bash
+python generate_glue_submission.py \
+  --config glue_configs_best_ppo.json \
+  --noise_config glue_noise_configs_best_ppo.json \
+  --output_dir my_glue_run
+```
 
 #### Note: Though we call the script "llama_7B_LayerImportance.sh", we just evaluate the Bert-base model for different tasks now, please check out the .sh for more detials!
 

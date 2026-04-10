@@ -654,7 +654,7 @@ def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
             test_data, batch_size=batch_size, shuffle=False, collate_fn=data_collator
         )
         logits = run_inference(model, dataloader, device)
-        predictions = logits_to_predictions(logits, task_config)
+        predictions = logits_to_predictions(logits, task_config, task_name, model_id2label)
         write_tsv(os.path.join(output_dir, output_files), predictions)
 
     # Aggressive cleanup: handler holds a deepcopy backup_model that doubles VRAM.
