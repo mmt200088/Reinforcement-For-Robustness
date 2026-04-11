@@ -45,6 +45,7 @@ import time as _time
 
 EPS = 1e-8
 SCORE_EXP_BASE = 4.0
+MAX_PENALTY_EXP_ARG = 700.0
 STAGE1_DEFAULT_POPULATION = 32
 STAGE2_DEFAULT_POPULATION = 32
 STAGNATION_TOLERANCE_BASE = 10
@@ -496,7 +497,7 @@ def _penalty_lower_is_better(value: float, reference: float, limit: float) -> fl
     if value <= limit:
         return linear
     gap = (float(value) - float(limit)) / max(abs(float(limit) - float(reference)), EPS)
-    return linear + (SCORE_EXP_BASE ** max(0.0, gap))
+    return linear + _safe_exp_penalty(gap)
 
 
 def _penalty_higher_is_better(value: float, reference: float, limit: float) -> float:
@@ -506,7 +507,7 @@ def _penalty_higher_is_better(value: float, reference: float, limit: float) -> f
     if value >= limit:
         return linear
     gap = (float(limit) - float(value)) / max(abs(float(reference) - float(limit)), EPS)
-    return linear + (SCORE_EXP_BASE ** max(0.0, gap))
+    return linear + _safe_exp_penalty(gap)
 
 
 def _penalty_std_upper_bound(value: float, reference: float, cap: float) -> float:
@@ -515,7 +516,15 @@ def _penalty_std_upper_bound(value: float, reference: float, cap: float) -> floa
     if value <= cap:
         return linear
     gap = (float(value) - float(cap)) / max(abs(float(cap) - float(reference)), EPS)
-    return linear + (SCORE_EXP_BASE ** max(0.0, gap))
+    return linear + _safe_exp_penalty(gap)
+
+
+def _safe_exp_penalty(gap: float) -> float:
+    if not np.isfinite(gap):
+        return math.exp(MAX_PENALTY_EXP_ARG)
+    positive_gap = max(float(gap), 0.0)
+    exp_arg = min(positive_gap * math.log(SCORE_EXP_BASE), MAX_PENALTY_EXP_ARG)
+    return math.exp(exp_arg)
 
 
 def _to_serializable(value):

@@ -4240,17 +4240,21 @@ class LayerImportanceEvaluator(TrainerCallback):
         with torch.no_grad():
             for batch in dataloader:
                 batch = {k: v.to(self.device) for k, v in batch.items()}
-                labels = batch["labels"].detach().cpu().numpy()
+                labels = self._normalize_labels_for_metrics(
+                    batch["labels"].detach().cpu().numpy()
+                )
                 if torch.cuda.is_available(): torch.cuda.synchronize()
                 start_time = time.time()
                 outputs = self.model(**batch)
                 if torch.cuda.is_available(): torch.cuda.synchronize()
                 batch_times.append((time.time() - start_time) * 1000.0)
                 if outputs.loss is not None: total_loss += outputs.loss.item()
-                logits = outputs.logits.squeeze().detach().cpu().numpy()
-                if np.ndim(logits) == 0: logits = [logits]
-                all_preds.extend(logits)
-                all_labels.extend(labels)
+                logits = self._normalize_logits_for_metrics(
+                    outputs.logits.detach().cpu().numpy(),
+                    expected_batch_size=len(labels),
+                )
+                all_preds.extend(logits.tolist())
+                all_labels.extend(labels.tolist())
         avg_loss = total_loss / len(dataloader)
         avg_time = sum(batch_times) / len(batch_times)
         ds = self.dataset_key
@@ -4306,19 +4310,40 @@ class LayerImportanceEvaluator(TrainerCallback):
             return (preds_arr > 0.5).astype(int)
         return np.argmax(preds_arr, axis=1)
 
+    @staticmethod
+    def _normalize_labels_for_metrics(labels):
+        return np.asarray(labels).reshape(-1)
+
+    @staticmethod
+    def _normalize_logits_for_metrics(logits, expected_batch_size):
+        logits_arr = np.asarray(logits)
+        expected_batch_size = max(int(expected_batch_size), 1)
+        if logits_arr.ndim == 0:
+            logits_arr = logits_arr.reshape(1)
+        if logits_arr.shape[0] != expected_batch_size:
+            logits_arr = logits_arr.reshape(expected_batch_size, -1)
+        elif expected_batch_size == 1 and logits_arr.ndim == 1:
+            logits_arr = logits_arr.reshape(1, -1)
+        if logits_arr.ndim == 2 and logits_arr.shape[1] == 1:
+            return logits_arr.reshape(-1)
+        return logits_arr
+
     def _evaluate_accuracy_on_dataloader(self, dataloader):
         """在指定 dataloader 上计算 accuracy（用于 MNLI mismatched）"""
         all_preds, all_labels = [], []
         with torch.no_grad():
             for batch in dataloader:
                 batch = {k: v.to(self.device) for k, v in batch.items()}
-                labels = batch["labels"].detach().cpu().numpy()
+                labels = self._normalize_labels_for_metrics(
+                    batch["labels"].detach().cpu().numpy()
+                )
                 outputs = self.model(**batch)
-                logits = outputs.logits.squeeze().detach().cpu().numpy()
-                if np.ndim(logits) == 0:
-                    logits = [logits]
-                all_preds.extend(logits)
-                all_labels.extend(labels)
+                logits = self._normalize_logits_for_metrics(
+                    outputs.logits.detach().cpu().numpy(),
+                    expected_batch_size=len(labels),
+                )
+                all_preds.extend(logits.tolist())
+                all_labels.extend(labels.tolist())
         pred_classes = self._logits_to_classes(all_preds)
         return accuracy_score(all_labels, pred_classes)
 
@@ -6228,6 +6253,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             opt_s = opt_res['s']
 
             short_names = self.get_metric_short_names()
+            metric1_name = short_names[0]
+            metric2_name = short_names[1] if num_metrics > 1 else None
             metric1_tag = short_names[0].upper().rstrip('.')
             metric2_tag = short_names[1].upper().rstrip('.') if num_metrics > 1 else None
 
