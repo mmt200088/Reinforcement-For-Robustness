@@ -170,8 +170,10 @@ class GABudgetAndSplitTests(unittest.TestCase):
         self.assertIn("true", rl_cmd)
         self.assertIn("--final_eval_config_source", rl_cmd)
         self.assertIn("json", rl_cmd)
-        self.assertIn("--stage1_rl_episodes_specified", rl_cmd)
-        self.assertIn("false", rl_cmd)
+        self.assertNotIn("--stage1_rl_episodes", rl_cmd)
+        self.assertNotIn("--stage2_rl_episodes", rl_cmd)
+        self.assertNotIn("--stage1_rl_episodes_specified", rl_cmd)
+        self.assertNotIn("--stage2_rl_episodes_specified", rl_cmd)
         self.assertNotIn("--stage1_ga_generations", ga_cmd)
         self.assertNotIn("--stage2_ga_generations", ga_cmd)
 

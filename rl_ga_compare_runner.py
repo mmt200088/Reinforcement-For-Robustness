@@ -1043,16 +1043,20 @@ def build_child_command(
         "--resume_run_dir", "",
     ]
     if algorithm == "rl":
-        cmd.extend(
-            [
-                "--stage1_rl_episodes", str(stage1_search_episodes),
-                "--stage2_rl_episodes", str(stage2_search_episodes),
-                "--stage1_rl_episodes_specified",
-                "false" if side_config.skip_stage1_search else "true",
-                "--stage2_rl_episodes_specified",
-                "false" if side_config.skip_noise_search else "true",
-            ]
-        )
+        if not side_config.skip_stage1_search:
+            cmd.extend(
+                [
+                    "--stage1_rl_episodes", str(stage1_search_episodes),
+                    "--stage1_rl_episodes_specified", "true",
+                ]
+            )
+        if not side_config.skip_noise_search:
+            cmd.extend(
+                [
+                    "--stage2_rl_episodes", str(stage2_search_episodes),
+                    "--stage2_rl_episodes_specified", "true",
+                ]
+            )
         cmd.extend(["--stage1_rl_lr", str(stage1_search_lr), "--stage2_rl_lr", str(stage2_search_lr)])
     else:
         if not side_config.skip_stage1_search:

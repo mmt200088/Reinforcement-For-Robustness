@@ -6157,7 +6157,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.log("阶段3+4（PHASE 3+4）：已跳过（SKIPPED）（--skip-stage1-final-eval）")
             self.log("=" * 60)
 
-            from final_evaluation_module import FinalEvaluationModule
             _resolver = FinalEvaluationModule(
                 evaluator=self,
                 config_source=self.final_eval_config_source,
