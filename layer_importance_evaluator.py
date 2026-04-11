@@ -196,17 +196,6 @@ def resolve_run_output_layout(run_output_dir, search_algorithm=None):
     stage2_noise_progress_dir = os.path.join(stage2_noise_dir, "progress")
     stage2_noise_final_eval_dir = os.path.join(run_output_dir, "stage2_noise_final_eval")
 
-    for dir_path in (
-        run_output_dir,
-        os.path.join(run_output_dir, "logs"),
-        stage1_dir,
-        stage1_final_eval_dir,
-        stage2_noise_dir,
-        stage2_noise_progress_dir,
-        stage2_noise_final_eval_dir,
-    ):
-        os.makedirs(dir_path, exist_ok=True)
-
     layout = {
         "run_output_dir": run_output_dir,
         "log_file": os.path.join(stage1_dir, s1_log),
@@ -229,18 +218,6 @@ def resolve_run_output_layout(run_output_dir, search_algorithm=None):
         "noise_progress_dir": stage2_noise_progress_dir,
         "noise_final_eval_dir": stage2_noise_final_eval_dir,
     }
-
-    for path_key in (
-        "log_file",
-        "noise_log_file",
-        "stage1_step_info_file",
-        "stage1_training_curve_path",
-        "stage1_entropy_curve_path",
-        "noise_step_info_file",
-        "noise_training_curve_path",
-        "noise_entropy_curve_path",
-    ):
-        ensure_parent_dir(layout[path_key])
 
     return layout
 
@@ -2523,10 +2500,12 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.noise_stage_entropy_curve_path = output_layout["noise_entropy_curve_path"]
         self.noise_stage_progress_dir = output_layout["noise_progress_dir"]
         self.noise_final_eval_dir = output_layout["noise_final_eval_dir"]
+        self._noise_log_initialized = self.noise_log_file == self.log_file
         _log_header = _SEARCH_LOG_HEADERS.get(
             self.search_algorithm,
             "=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===",
         )
+        ensure_parent_dir(self.log_file)
         with open(self.log_file, "w", encoding="utf-8") as f:
             f.write(_log_header + "\n")
         with open(self.log_file, "a", encoding="utf-8") as f:
@@ -2542,28 +2521,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
             if self.run_output_dir:
                 f.write(f"[信息] 统一运行输出目录（Unified run output dir）: {self.run_output_dir}\n")
-        if self.noise_log_file != self.log_file:
-            with open(self.noise_log_file, "w", encoding="utf-8") as f:
-                f.write(
-                    "══════════════════════════════════════════════════════════════════════\n"
-                    "  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）\n"
-                    "══════════════════════════════════════════════════════════════════════\n"
-                )
-            with open(self.noise_log_file, "a", encoding="utf-8") as f:
-                f.write(
-                    f"  [信息] Stage-1 PPO学习率（LR）: raw={self.stage1_rl_lr_raw!r} -> "
-                    f"{self.stage1_ppo_lr_initial:.6g} ({self.stage1_ppo_lr_mode}) | "
-                    f"Stage-2 PPO学习率（LR）: raw={self.stage2_rl_lr_raw!r} -> "
-                    f"{self.stage2_ppo_lr_initial:.6g} ({self.stage2_ppo_lr_mode})\n"
-                )
-                f.write(
-                    f"  [信息] 一阶段 RL 回合 stage-1 episodes={self.stage1_rl_episodes}  ·  "
-                    f"二阶段噪声 RL 回合 stage-2 episodes={self.stage2_rl_episodes}\n"
-                )
-                if self.run_output_dir:
-                    f.write(
-                        f"  [信息] 本次运行根目录 run_output_dir={self.run_output_dir}\n"
-                    )
         
         # ==================== 策略二：动态超参数调度状态 ====================
         self.current_episode = 0
@@ -2649,7 +2606,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "若要使用 json/manual，请设置 skip_stage1_rl=True。"
             )
 
-        if (not self.skip_stage1_rl) and self.stage1_rl_episodes < PPO_UPDATE_INTERVAL:
+        if (
+            (not self.skip_stage1_rl)
+            and self.search_algorithm != "ga"
+            and self.stage1_rl_episodes < PPO_UPDATE_INTERVAL
+        ):
             raise ValueError(
                 f"stage1_rl_episodes={self.stage1_rl_episodes} is too small. "
                 f"It must be >= PPO_UPDATE_INTERVAL ({PPO_UPDATE_INTERVAL}) so Stage-1 PPO can update at least once."
@@ -2686,7 +2647,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "若要使用 json/manual，请设置 skip_noise_rl=True。"
             )
 
-        if (not self.skip_noise_rl) and self.stage2_rl_episodes < PPO_UPDATE_INTERVAL:
+        if (
+            (not self.skip_noise_rl)
+            and self.search_algorithm != "ga"
+            and self.stage2_rl_episodes < PPO_UPDATE_INTERVAL
+        ):
             raise ValueError(
                 f"stage2_rl_episodes={self.stage2_rl_episodes} is too small. "
                 f"It must be >= PPO_UPDATE_INTERVAL ({PPO_UPDATE_INTERVAL}) so Stage-2 PPO can update at least once."
@@ -3358,8 +3323,40 @@ class LayerImportanceEvaluator(TrainerCallback):
     def log(self, message):
         print(message, flush=True)
         target_log_file = getattr(self, "active_log_file", self.log_file)
+        ensure_parent_dir(target_log_file)
         with open(target_log_file, "a", encoding="utf-8") as f:
             f.write(message + "\n")
+
+    def _initialize_noise_log_file(self):
+        if getattr(self, "_noise_log_initialized", False):
+            return
+        if self.noise_log_file == self.log_file:
+            self._noise_log_initialized = True
+            return
+
+        ensure_parent_dir(self.noise_log_file)
+        with open(self.noise_log_file, "w", encoding="utf-8") as f:
+            f.write(
+                "══════════════════════════════════════════════════════════════════════\n"
+                "  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）\n"
+                "══════════════════════════════════════════════════════════════════════\n"
+            )
+        with open(self.noise_log_file, "a", encoding="utf-8") as f:
+            f.write(
+                f"  [信息] Stage-1 PPO学习率（LR）: raw={self.stage1_rl_lr_raw!r} -> "
+                f"{self.stage1_ppo_lr_initial:.6g} ({self.stage1_ppo_lr_mode}) | "
+                f"Stage-2 PPO学习率（LR）: raw={self.stage2_rl_lr_raw!r} -> "
+                f"{self.stage2_ppo_lr_initial:.6g} ({self.stage2_ppo_lr_mode})\n"
+            )
+            f.write(
+                f"  [信息] 一阶段 RL 回合 stage-1 episodes={self.stage1_rl_episodes}  ·  "
+                f"二阶段噪声 RL 回合 stage-2 episodes={self.stage2_rl_episodes}\n"
+            )
+            if self.run_output_dir:
+                f.write(
+                    f"  [信息] 本次运行根目录 run_output_dir={self.run_output_dir}\n"
+                )
+        self._noise_log_initialized = True
 
     def get_simulated_cost(self, gelu_degrees, softmax_degrees):
         g_c = sum(self.GELU_COST_MAP.get(d, 0) for d in gelu_degrees)
@@ -6298,6 +6295,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         noise_stage_result = None
         noise_eval_result = None
         previous_log_file = getattr(self, "active_log_file", self.log_file)
+        self._initialize_noise_log_file()
         self.active_log_file = self.noise_log_file
         try:
             if self.skip_noise_rl:

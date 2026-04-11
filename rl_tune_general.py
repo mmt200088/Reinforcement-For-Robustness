@@ -28,6 +28,7 @@ from transformers import (
     LlamaTokenizer,
     DataCollatorWithPadding,
 )
+from runtime_error_reporter import run_fire_entrypoint
 
 sys.path.append(os.path.join(os.getcwd(), "./importance-aware-sparse-tuning-IST-paper/peft/src/"))
 
@@ -631,7 +632,11 @@ def infer(
 # ===========================================================================
 
 if __name__ == "__main__":
-    fire.Fire({
-        "train": train,
-        "infer": infer,
-    })
+    run_fire_entrypoint(
+        fire,
+        {
+            "train": train,
+            "infer": infer,
+        },
+        program_name="rl_tune_general.py",
+    )

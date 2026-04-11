@@ -8,6 +8,7 @@ import torch
 import transformers
 from datasets import load_dataset
 from typing import List, Optional, Union
+from runtime_error_reporter import run_fire_entrypoint
 """
 Unused imports:
 import torch.nn as nn
@@ -714,5 +715,9 @@ def generate_prompt(data_point):
 
 
 if __name__ == "__main__":
-    fire.Fire(train)
+    run_fire_entrypoint(
+        fire,
+        train,
+        program_name="rl_tune.py",
+    )
 

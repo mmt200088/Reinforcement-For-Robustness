@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import math
 from typing import List
 
 import fire
@@ -8,6 +9,7 @@ import torch
 import transformers
 from datasets import load_dataset
 from typing import List, Optional, Union
+from runtime_error_reporter import run_fire_entrypoint
 """
 Unused imports:
 import torch.nn as nn
@@ -86,6 +88,61 @@ def parse_positive_int(raw_value, flag_name):
     return value
 
 
+def parse_optional_positive_int(raw_value, flag_name):
+    if raw_value is None or raw_value == "":
+        return None
+    return parse_positive_int(raw_value, flag_name)
+
+
+def infer_model_total_layers(model):
+    config = getattr(model, "config", None)
+    for attr_name in ("num_hidden_layers", "n_layer", "num_layers"):
+        value = getattr(config, attr_name, None)
+        if value is not None:
+            return parse_positive_int(value, f"model.config.{attr_name}")
+    raise ValueError("Unable to infer total layer count from model.config.")
+
+
+def stage1_ga_population_size(total_layers):
+    return max(32, int(total_layers) * 2)
+
+
+def stage2_ga_population_size(total_layers):
+    return max(32, int(total_layers))
+
+
+def resolve_ga_generation_budget(
+    *,
+    generation_raw,
+    generation_specified,
+    generation_flag_name,
+    legacy_episode_raw,
+    legacy_episode_specified,
+    legacy_episode_flag_name,
+    population_size,
+):
+    generation_value = parse_optional_positive_int(generation_raw, generation_flag_name)
+    generation_is_explicit = bool(generation_specified) or generation_value is not None
+    legacy_episode_value = parse_positive_int(legacy_episode_raw, legacy_episode_flag_name)
+
+    if generation_is_explicit and legacy_episode_specified:
+        raise ValueError(
+            f"Do not specify both {generation_flag_name} and {legacy_episode_flag_name}."
+        )
+
+    if generation_is_explicit:
+        if generation_value is None:
+            raise ValueError(f"{generation_flag_name} must be provided as a positive integer.")
+        return generation_value, True, generation_flag_name
+
+    resolved_generations = max(
+        1,
+        math.ceil(legacy_episode_value / max(int(population_size), 1)),
+    )
+    source = legacy_episode_flag_name if legacy_episode_specified else "default"
+    return resolved_generations, bool(legacy_episode_specified), source
+
+
 def train(
         # model/data params
         base_model: str = "",  # the only required argument
@@ -126,6 +183,10 @@ def train(
         use_rst: bool = False,
         rl_lr: float = 1e-4, 
         degree: int = 4,  # degree of polynomial for approximation
+        stage1_ga_generations: Optional[int] = None,
+        stage2_ga_generations: Optional[int] = None,
+        stage1_ga_generations_specified: bool = False,
+        stage2_ga_generations_specified: bool = False,
         stage1_rl_episodes: int = 51000,
         stage2_rl_episodes: int = 40000,
         stage1_rl_episodes_specified: bool = False,
@@ -165,6 +226,12 @@ def train(
     skip_noise_final_eval = parse_bool_flag(
         skip_noise_final_eval, "skip_noise_final_eval"
     )
+    stage1_ga_generations_specified = parse_bool_flag(
+        stage1_ga_generations_specified, "stage1_ga_generations_specified"
+    )
+    stage2_ga_generations_specified = parse_bool_flag(
+        stage2_ga_generations_specified, "stage2_ga_generations_specified"
+    )
     stage1_rl_episodes_specified = parse_bool_flag(
         stage1_rl_episodes_specified, "stage1_rl_episodes_specified"
     )
@@ -173,6 +240,12 @@ def train(
     )
     batch_size = parse_positive_int(batch_size, "batch_size")
     micro_batch_size = parse_positive_int(micro_batch_size, "micro_batch_size")
+    stage1_ga_generations = parse_optional_positive_int(
+        stage1_ga_generations, "stage1_ga_generations"
+    )
+    stage2_ga_generations = parse_optional_positive_int(
+        stage2_ga_generations, "stage2_ga_generations"
+    )
     stage1_rl_episodes = parse_positive_int(
         stage1_rl_episodes, "stage1_rl_episodes"
     )
@@ -210,6 +283,10 @@ def train(
         f"final_eval_config_path: {final_eval_config_path}\n"
         f"manual_final_gelu: {manual_final_gelu}\n"
         f"manual_final_softmax: {manual_final_softmax}\n"
+        f"stage1_ga_generations: {stage1_ga_generations}\n"
+        f"stage2_ga_generations: {stage2_ga_generations}\n"
+        f"stage1_ga_generations_specified: {stage1_ga_generations_specified}\n"
+        f"stage2_ga_generations_specified: {stage2_ga_generations_specified}\n"
         f"stage1_rl_episodes: {stage1_rl_episodes}\n"
         f"stage2_rl_episodes: {stage2_rl_episodes}\n"
         f"stage1_rl_episodes_specified: {stage1_rl_episodes_specified}\n"
@@ -324,6 +401,47 @@ def train(
     model.eval()
 
     model.to("cuda")
+
+    total_layers = infer_model_total_layers(model)
+    stage1_population_size = stage1_ga_population_size(total_layers)
+    stage2_population_size = stage2_ga_population_size(total_layers)
+    stage1_ga_generations, stage1_budget_specified, stage1_budget_source = (
+        resolve_ga_generation_budget(
+            generation_raw=stage1_ga_generations,
+            generation_specified=stage1_ga_generations_specified,
+            generation_flag_name="stage1_ga_generations",
+            legacy_episode_raw=stage1_rl_episodes,
+            legacy_episode_specified=stage1_rl_episodes_specified,
+            legacy_episode_flag_name="stage1_rl_episodes",
+            population_size=stage1_population_size,
+        )
+    )
+    stage2_ga_generations, stage2_budget_specified, stage2_budget_source = (
+        resolve_ga_generation_budget(
+            generation_raw=stage2_ga_generations,
+            generation_specified=stage2_ga_generations_specified,
+            generation_flag_name="stage2_ga_generations",
+            legacy_episode_raw=stage2_rl_episodes,
+            legacy_episode_specified=stage2_rl_episodes_specified,
+            legacy_episode_flag_name="stage2_rl_episodes",
+            population_size=stage2_population_size,
+        )
+    )
+    stage1_rl_episodes = int(stage1_ga_generations * stage1_population_size)
+    stage2_rl_episodes = int(stage2_ga_generations * stage2_population_size)
+    stage1_rl_episodes_specified = stage1_budget_specified
+    stage2_rl_episodes_specified = stage2_budget_specified
+
+    print(
+        "Resolved GA search budgets:\n"
+        f"total_layers: {total_layers}\n"
+        f"stage1_ga_population_size: {stage1_population_size}\n"
+        f"stage2_ga_population_size: {stage2_population_size}\n"
+        f"stage1_ga_generations_resolved: {stage1_ga_generations} (source={stage1_budget_source})\n"
+        f"stage2_ga_generations_resolved: {stage2_ga_generations} (source={stage2_budget_source})\n"
+        f"stage1_eval_budget: {stage1_rl_episodes}\n"
+        f"stage2_eval_budget: {stage2_rl_episodes}\n"
+    )
 
 
     def tokenize(prompt, add_eos_token=True):
@@ -611,6 +729,19 @@ def train(
             data_path=data_path,
             test_data_mm=val_data_mm,
             search_algorithm="ga",
+        )
+        importance_evaluator.stage1_ga_generations = int(stage1_ga_generations)
+        importance_evaluator.stage2_ga_generations = int(stage2_ga_generations)
+        importance_evaluator.stage1_ga_generations_specified = bool(stage1_budget_specified)
+        importance_evaluator.stage2_ga_generations_specified = bool(stage2_budget_specified)
+        importance_evaluator.stage1_ga_population_size = int(stage1_population_size)
+        importance_evaluator.stage2_ga_population_size = int(stage2_population_size)
+        importance_evaluator.log(
+            "GA budgets resolved to validation-full search units: "
+            f"stage1_generations={stage1_ga_generations} "
+            f"(population={stage1_population_size}), "
+            f"stage2_generations={stage2_ga_generations} "
+            f"(population={stage2_population_size})."
         )
         model.config.use_cache = False
         model.config.is_decoder = False
@@ -901,5 +1032,9 @@ def generate_prompt(data_point):
 
 
 if __name__ == "__main__":
-    fire.Fire(train)
+    run_fire_entrypoint(
+        fire,
+        train,
+        program_name="rl_tune_genetic.py",
+    )
 

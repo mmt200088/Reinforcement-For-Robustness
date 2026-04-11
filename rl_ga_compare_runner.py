@@ -12,6 +12,11 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+from runtime_error_reporter import (
+    clear_error_summary,
+    read_text_tail,
+    write_error_summary,
+)
 
 
 TARGET_MODULES_LITERAL = "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]"
@@ -42,6 +47,16 @@ class ChildRunSpec:
     command: List[str]
     env_overrides: Dict[str, str]
     process: Optional[subprocess.Popen] = None
+
+
+@dataclass
+class CompareSideConfig:
+    skip_stage1_search: bool = False
+    final_eval_config_source: str = "search"
+    final_eval_config_path: str = ""
+    skip_noise_search: bool = False
+    noise_eval_config_source: str = "search"
+    noise_eval_config_path: str = ""
 
 
 class CompareRunnerError(RuntimeError):
@@ -118,6 +133,87 @@ def split_cuda_visible_devices(raw: Optional[str]) -> Tuple[Optional[str], Optio
             f"第二个给 GA（{ga_devices}），其余设备不自动使用。"
         )
     return rl_devices, ga_devices, warnings
+
+
+def normalize_compare_config_source(raw_value: str, *, flag_name: str) -> str:
+    source = str(raw_value or "search").strip().lower()
+    if source not in ("search", "json"):
+        raise CompareRunnerError(
+            f"{flag_name} must be one of: search, json."
+        )
+    return source
+
+
+def normalize_compare_side_config(
+    *,
+    label: str,
+    skip_stage1_search: bool,
+    final_eval_config_source: str,
+    final_eval_config_path: str,
+    skip_noise_search: bool,
+    noise_eval_config_source: str,
+    noise_eval_config_path: str,
+) -> CompareSideConfig:
+    stage1_source = normalize_compare_config_source(
+        final_eval_config_source,
+        flag_name=f"{label.lower()} final-eval source",
+    )
+    stage2_source = normalize_compare_config_source(
+        noise_eval_config_source,
+        flag_name=f"{label.lower()} noise-eval source",
+    )
+    stage1_path = str(final_eval_config_path or "").strip()
+    stage2_path = str(noise_eval_config_path or "").strip()
+
+    if skip_stage1_search:
+        if stage1_source == "search":
+            raise CompareRunnerError(
+                f"{label} skip_stage1_search=True 时，Stage-1 配置来源不能是 search；"
+                "请改用 json。"
+            )
+    else:
+        if stage1_source != "search":
+            raise CompareRunnerError(
+                f"{label} 未跳过 Stage-1 搜索时，Stage-1 配置来源必须为 search。"
+            )
+        if stage1_path:
+            raise CompareRunnerError(
+                f"{label} 未跳过 Stage-1 搜索时，不应提供 Stage-1 JSON 配置路径。"
+            )
+
+    if skip_noise_search:
+        if stage2_source == "search":
+            raise CompareRunnerError(
+                f"{label} skip_noise_search=True 时，Stage-2 配置来源不能是 search；"
+                "请改用 json。"
+            )
+    else:
+        if stage2_source != "search":
+            raise CompareRunnerError(
+                f"{label} 未跳过 Stage-2 搜索时，Stage-2 配置来源必须为 search。"
+            )
+        if stage2_path:
+            raise CompareRunnerError(
+                f"{label} 未跳过 Stage-2 搜索时，不应提供 Stage-2 JSON 配置路径。"
+            )
+
+    if stage1_source == "json" and not stage1_path:
+        raise CompareRunnerError(
+            f"{label} 使用 Stage-1 JSON 配置时，必须提供配置文件路径。"
+        )
+    if stage2_source == "json" and not stage2_path:
+        raise CompareRunnerError(
+            f"{label} 使用 Stage-2 JSON 配置时，必须提供配置文件路径。"
+        )
+
+    return CompareSideConfig(
+        skip_stage1_search=bool(skip_stage1_search),
+        final_eval_config_source=stage1_source,
+        final_eval_config_path=stage1_path,
+        skip_noise_search=bool(skip_noise_search),
+        noise_eval_config_source=stage2_source,
+        noise_eval_config_path=stage2_path,
+    )
 
 
 def stage1_final_eval_json(run_dir: Path, dataset: str) -> Path:
@@ -406,6 +502,7 @@ def ensure_stage1_eval_json(
     *,
     algorithm: str,
     run_dir: Path,
+    side_config: CompareSideConfig,
     dataset: str,
     base_model: str,
     data_path: str,
@@ -422,10 +519,20 @@ def ensure_stage1_eval_json(
     if json_path.is_file():
         return json_path, []
 
-    warnings: List[str] = [
-        f"{algorithm.upper()} 的 Stage-1 最终评估文件缺失，已改为基于当前最优配置补做最终评估。"
-    ]
-    search_best_config, source = recover_stage1_search_best(run_dir, algorithm)
+    config_source = side_config.final_eval_config_source
+    config_path = side_config.final_eval_config_path
+    warnings: List[str] = []
+    search_best_config = None
+    source = ""
+    if config_source == "search":
+        warnings.append(
+            f"{algorithm.upper()} 的 Stage-1 最终评估文件缺失，已改为基于当前最优配置补做最终评估。"
+        )
+        search_best_config, source = recover_stage1_search_best(run_dir, algorithm)
+    else:
+        warnings.append(
+            f"{algorithm.upper()} 的 Stage-1 最终评估文件缺失，已按声明的 {config_source} 配置补做最终评估。"
+        )
 
     evaluator = build_compare_evaluator(
         base_model=base_model,
@@ -446,7 +553,7 @@ def ensure_stage1_eval_json(
     from genetic_search_module import GeneticFinalEvaluationModule, build_stage1_context
 
     context = build_stage1_context(evaluator, log_fn=evaluator.log, include_distribution=False)
-    if search_best_config is None:
+    if config_source == "search" and search_best_config is None:
         warnings.append(
             f"{algorithm.upper()} 未找到 Stage-1 checkpoint/search 结果，已回退到 baseline 配置生成对比结果。"
         )
@@ -455,13 +562,14 @@ def ensure_stage1_eval_json(
             "softmax": context.base_softmax.copy(),
             "cost": float(context.base_tot_c),
         }
-    else:
+    elif config_source == "search":
         warnings.append(f"{algorithm.upper()} Stage-1 fallback 来源：{source}")
 
     module_cls = GeneticFinalEvaluationModule if algorithm == "ga" else FinalEvaluationModule
     runner = module_cls(
         evaluator=evaluator,
-        config_source="search",
+        config_source=config_source,
+        config_path=config_path,
         random_seed=random_seed,
         permutation_trials=perm_trials,
         cost_equivalent_trials=cost_trials,
@@ -486,6 +594,7 @@ def ensure_stage2_eval_json(
     *,
     algorithm: str,
     run_dir: Path,
+    side_config: CompareSideConfig,
     dataset: str,
     base_model: str,
     data_path: str,
@@ -502,9 +611,17 @@ def ensure_stage2_eval_json(
     if json_path.is_file():
         return json_path, []
 
-    warnings: List[str] = [
-        f"{algorithm.upper()} 的 Stage-2 最终评估文件缺失，已改为基于当前最优噪声配置补做最终评估。"
-    ]
+    config_source = side_config.noise_eval_config_source
+    config_path = side_config.noise_eval_config_path
+    warnings: List[str] = []
+    if config_source == "search":
+        warnings.append(
+            f"{algorithm.upper()} 的 Stage-2 最终评估文件缺失，已改为基于当前最优噪声配置补做最终评估。"
+        )
+    else:
+        warnings.append(
+            f"{algorithm.upper()} 的 Stage-2 最终评估文件缺失，已按声明的 {config_source} 配置补做最终评估。"
+        )
 
     fixed_stage1_config, fixed_source = resolve_stage1_selected_config_from_artifacts(
         run_dir, algorithm, dataset
@@ -548,13 +665,16 @@ def ensure_stage2_eval_json(
 
     fixed_gelu = np.asarray(fixed_stage1_config["gelu"], dtype=int)
     fixed_softmax = np.asarray(fixed_stage1_config["softmax"], dtype=int)
-    noise_best_config, noise_source = recover_stage2_search_best(run_dir, algorithm)
-    if noise_best_config is None:
-        warnings.append(
-            f"{algorithm.upper()} 未找到 Stage-2 稳定最优噪声配置，将仅输出 baseline/no-noise 对照并附带警告。"
-        )
-    else:
-        warnings.append(f"{algorithm.upper()} Stage-2 fallback 来源：{noise_source}")
+    noise_best_config = None
+    noise_source = ""
+    if config_source == "search":
+        noise_best_config, noise_source = recover_stage2_search_best(run_dir, algorithm)
+        if noise_best_config is None:
+            warnings.append(
+                f"{algorithm.upper()} 未找到 Stage-2 稳定最优噪声配置，将仅输出 baseline/no-noise 对照并附带警告。"
+            )
+        else:
+            warnings.append(f"{algorithm.upper()} Stage-2 fallback 来源：{noise_source}")
 
     context = build_stage2_context(
         evaluator,
@@ -565,7 +685,8 @@ def ensure_stage2_eval_json(
     module_cls = GeneticNoiseFinalEvaluationModule if algorithm == "ga" else NoiseFinalEvaluationModule
     runner = module_cls(
         evaluator=evaluator,
-        config_source="search",
+        config_source=config_source,
+        config_path=config_path,
         random_seed=random_seed,
         permutation_trials=perm_trials,
         cost_equivalent_trials=cost_trials,
@@ -723,6 +844,7 @@ def save_stage_compare_report(payload: dict, output_dir: Path) -> Tuple[Path, Pa
             side.get("status") or "-",
             side.get("process_state") or "-",
             side.get("selected_origin") or "-",
+            side.get("selected_source") or "-",
             f"{float(selected.get('loss', 0.0)):.6f}",
             f"{float(selected.get('p', 0.0)):.6f}",
             metric2_text,
@@ -740,6 +862,7 @@ def save_stage_compare_report(payload: dict, output_dir: Path) -> Tuple[Path, Pa
         "评估状态",
         "进程状态",
         "展示来源",
+        "配置来源",
         "Loss",
         metric_names[0],
         header_metric2,
@@ -774,6 +897,8 @@ def save_stage_compare_report(payload: dict, output_dir: Path) -> Tuple[Path, Pa
         "",
         f"- RL 结果文件：`{rl_side['json_path']}`",
         f"- GA 结果文件：`{ga_side['json_path']}`",
+        f"- RL 选中配置来源：`{rl_side.get('selected_source')}`",
+        f"- GA 选中配置来源：`{ga_side.get('selected_source')}`",
     ])
 
     if stage == "stage1":
@@ -864,12 +989,15 @@ def build_child_command(
     *,
     python_exe: str,
     algorithm: str,
+    side_config: CompareSideConfig,
     base_model: str,
     data_path: str,
     run_dir: Path,
     batch_size: int,
     stage1_search_episodes: int,
     stage2_search_episodes: int,
+    stage1_search_generations: int,
+    stage2_search_generations: int,
     stage1_search_lr: Optional[str],
     stage2_search_lr: Optional[str],
     random_seed: int,
@@ -895,31 +1023,52 @@ def build_child_command(
         "--eval_step", "80",
         "--adapter_name", "lora",
         "--target_modules", TARGET_MODULES_LITERAL,
-        "--stage1_rl_episodes", str(stage1_search_episodes),
-        "--stage2_rl_episodes", str(stage2_search_episodes),
-        "--stage1_rl_episodes_specified", "true",
-        "--stage2_rl_episodes_specified", "true",
         "--use_ist",
-        "--final_eval_config_source", "search",
-        "--final_eval_config_path", "",
+        "--final_eval_config_source", side_config.final_eval_config_source,
+        "--final_eval_config_path", side_config.final_eval_config_path,
         "--manual_final_gelu", "",
         "--manual_final_softmax", "",
         "--final_eval_random_seed", str(random_seed),
         "--final_eval_permutation_trials", str(perm_trials),
         "--final_eval_cost_equivalent_trials", str(cost_trials),
         "--final_eval_budget_equivalent_trials", str(budget_trials),
-        "--skip_noise_rl", "false",
-        "--noise_eval_config_source", "search",
-        "--noise_eval_config_path", "",
+        "--skip_noise_rl", "true" if side_config.skip_noise_search else "false",
+        "--noise_eval_config_source", side_config.noise_eval_config_source,
+        "--noise_eval_config_path", side_config.noise_eval_config_path,
         "--manual_noise_config", "",
         "--noise_eval_repeat_n", str(noise_eval_repeat),
-        "--skip_stage1_rl", "false",
+        "--skip_stage1_rl", "true" if side_config.skip_stage1_search else "false",
         "--skip_stage1_final_eval", "false",
         "--skip_noise_final_eval", "false",
         "--resume_run_dir", "",
     ]
     if algorithm == "rl":
+        cmd.extend(
+            [
+                "--stage1_rl_episodes", str(stage1_search_episodes),
+                "--stage2_rl_episodes", str(stage2_search_episodes),
+                "--stage1_rl_episodes_specified",
+                "false" if side_config.skip_stage1_search else "true",
+                "--stage2_rl_episodes_specified",
+                "false" if side_config.skip_noise_search else "true",
+            ]
+        )
         cmd.extend(["--stage1_rl_lr", str(stage1_search_lr), "--stage2_rl_lr", str(stage2_search_lr)])
+    else:
+        if not side_config.skip_stage1_search:
+            cmd.extend(
+                [
+                    "--stage1_ga_generations", str(stage1_search_generations),
+                    "--stage1_ga_generations_specified", "true",
+                ]
+            )
+        if not side_config.skip_noise_search:
+            cmd.extend(
+                [
+                    "--stage2_ga_generations", str(stage2_search_generations),
+                    "--stage2_ga_generations_specified", "true",
+                ]
+            )
     return cmd
 
 
@@ -992,6 +1141,44 @@ def summarize_process_state(
     }
 
 
+def child_error_summary_path(spec: ChildRunSpec) -> Path:
+    return spec.run_dir / "logs" / "error_summary.txt"
+
+
+def is_abnormal_final_state(state: dict) -> bool:
+    return state.get("state") not in ("completed", "stopped_by_request")
+
+
+def build_compare_error_sections(
+    rl_state: Optional[dict],
+    ga_state: Optional[dict],
+    rl_spec: ChildRunSpec,
+    ga_spec: ChildRunSpec,
+) -> List[Tuple[str, str]]:
+    sections: List[Tuple[str, str]] = []
+    state_pairs = (
+        ("RL", rl_state, rl_spec),
+        ("GA", ga_state, ga_spec),
+    )
+    for label, state, spec in state_pairs:
+        if state:
+            sections.append(
+                (
+                    f"{label} Process State",
+                    json.dumps(to_jsonable(state), ensure_ascii=False, indent=2),
+                )
+            )
+        summary_text = read_text_tail(child_error_summary_path(spec), max_lines=120)
+        if summary_text:
+            sections.append((f"{label} Child Error Summary", summary_text))
+            continue
+        if state and is_abnormal_final_state(state):
+            log_tail = read_text_tail(spec.log_path, max_lines=80)
+            if log_tail:
+                sections.append((f"{label} Child Log Tail", log_tail))
+    return sections
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="并行运行 RL 与 GA，并生成阶段对比结果。")
     parser.add_argument("--base-model", required=True)
@@ -1001,6 +1188,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--stage1-search-episodes", type=int, required=True)
     parser.add_argument("--stage2-search-episodes", type=int, required=True)
+    parser.add_argument("--stage1-search-generations", type=int, required=True)
+    parser.add_argument("--stage2-search-generations", type=int, required=True)
     parser.add_argument("--stage1-search-lr", default="1e-4")
     parser.add_argument("--stage2-search-lr", default="1e-4")
     parser.add_argument("--random-seed", type=int, default=42)
@@ -1012,21 +1201,72 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--python-exe", default=sys.executable)
     parser.add_argument("--rl-cuda-visible-devices", default="")
     parser.add_argument("--ga-cuda-visible-devices", default="")
+    parser.add_argument("--rl-skip-stage1-search", action="store_true")
+    parser.add_argument("--ga-skip-stage1-search", action="store_true")
+    parser.add_argument("--rl-final-eval-source", default="search")
+    parser.add_argument("--ga-final-eval-source", default="search")
+    parser.add_argument("--rl-final-eval-config", default="")
+    parser.add_argument("--ga-final-eval-config", default="")
+    parser.add_argument("--rl-skip-noise-search", action="store_true")
+    parser.add_argument("--ga-skip-noise-search", action="store_true")
+    parser.add_argument("--rl-noise-eval-source", default="search")
+    parser.add_argument("--ga-noise-eval-source", default="search")
+    parser.add_argument("--rl-noise-eval-config", default="")
+    parser.add_argument("--ga-noise-eval-config", default="")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    for flag_name in (
+        "stage1_search_episodes",
+        "stage2_search_episodes",
+        "stage1_search_generations",
+        "stage2_search_generations",
+        "batch_size",
+        "perm_trials",
+        "cost_trials",
+        "budget_trials",
+        "noise_eval_repeat",
+        "poll_seconds",
+    ):
+        if getattr(args, flag_name) <= 0:
+            raise CompareRunnerError(f"{flag_name} must be a positive integer.")
     compare_root = Path(args.output_dir).resolve()
-    rl_run_dir = compare_root / "rl_run"
-    ga_run_dir = compare_root / "ga_run"
-    compare_dir = compare_root / "comparison"
-    logs_dir = compare_root / "logs"
-    ensure_dir(compare_dir)
-    ensure_dir(logs_dir)
+    meta_dir = compare_root / "meta"
+    children_dir = compare_root / "children"
+    rl_run_dir = children_dir / "rl"
+    ga_run_dir = children_dir / "ga"
+    compare_dir = compare_root / "reports"
+    compare_metadata_path = meta_dir / "compare_metadata.json"
+    compare_runtime_path = meta_dir / "compare_runtime.json"
+    compare_status_path = meta_dir / "compare_status.json"
+    compare_final_status_path = meta_dir / "compare_final_status.json"
+    compare_pid_path = meta_dir / "compare.pid"
+    rl_pid_path = meta_dir / "rl.pid"
+    ga_pid_path = meta_dir / "ga.pid"
+    clear_error_summary(str(compare_root))
 
     global_stop_requested = {"value": False}
+    rl_side_config = normalize_compare_side_config(
+        label="RL",
+        skip_stage1_search=args.rl_skip_stage1_search,
+        final_eval_config_source=args.rl_final_eval_source,
+        final_eval_config_path=args.rl_final_eval_config,
+        skip_noise_search=args.rl_skip_noise_search,
+        noise_eval_config_source=args.rl_noise_eval_source,
+        noise_eval_config_path=args.rl_noise_eval_config,
+    )
+    ga_side_config = normalize_compare_side_config(
+        label="GA",
+        skip_stage1_search=args.ga_skip_stage1_search,
+        final_eval_config_source=args.ga_final_eval_source,
+        final_eval_config_path=args.ga_final_eval_config,
+        skip_noise_search=args.ga_skip_noise_search,
+        noise_eval_config_source=args.ga_noise_eval_source,
+        noise_eval_config_path=args.ga_noise_eval_config,
+    )
 
     rl_spec = ChildRunSpec(
         algorithm="rl",
@@ -1036,12 +1276,15 @@ def main() -> int:
         command=build_child_command(
             python_exe=args.python_exe,
             algorithm="rl",
+            side_config=rl_side_config,
             base_model=args.base_model,
             data_path=args.data_path,
             run_dir=rl_run_dir,
             batch_size=args.batch_size,
             stage1_search_episodes=args.stage1_search_episodes,
             stage2_search_episodes=args.stage2_search_episodes,
+            stage1_search_generations=args.stage1_search_generations,
+            stage2_search_generations=args.stage2_search_generations,
             stage1_search_lr=args.stage1_search_lr,
             stage2_search_lr=args.stage2_search_lr,
             random_seed=args.random_seed,
@@ -1060,12 +1303,15 @@ def main() -> int:
         command=build_child_command(
             python_exe=args.python_exe,
             algorithm="ga",
+            side_config=ga_side_config,
             base_model=args.base_model,
             data_path=args.data_path,
             run_dir=ga_run_dir,
             batch_size=args.batch_size,
             stage1_search_episodes=args.stage1_search_episodes,
             stage2_search_episodes=args.stage2_search_episodes,
+            stage1_search_generations=args.stage1_search_generations,
+            stage2_search_generations=args.stage2_search_generations,
             stage1_search_lr=args.stage1_search_lr,
             stage2_search_lr=args.stage2_search_lr,
             random_seed=args.random_seed,
@@ -1111,8 +1357,12 @@ def main() -> int:
         "ga_run_dir": str(ga_run_dir),
         "rl_cuda_visible_devices": rl_cuda,
         "ga_cuda_visible_devices": ga_cuda,
-        "stage1_search_episodes": args.stage1_search_episodes,
-        "stage2_search_episodes": args.stage2_search_episodes,
+        "rl_stage1_search_episodes": args.stage1_search_episodes,
+        "rl_stage2_search_episodes": args.stage2_search_episodes,
+        "ga_stage1_search_generations": args.stage1_search_generations,
+        "ga_stage2_search_generations": args.stage2_search_generations,
+        "rl_side_config": to_jsonable(rl_side_config.__dict__),
+        "ga_side_config": to_jsonable(ga_side_config.__dict__),
         "stage1_search_lr": args.stage1_search_lr,
         "stage2_search_lr": args.stage2_search_lr,
         "random_seed": args.random_seed,
@@ -1124,26 +1374,27 @@ def main() -> int:
         "rl_command": rl_spec.command,
         "ga_command": ga_spec.command,
     }
-    write_json(compare_root / "compare_metadata.json", metadata)
+    write_json(compare_metadata_path, metadata)
 
     if args.dry_run:
-        log("dry-run 模式：仅写入 compare_metadata.json，不启动任何子进程。")
+        log("dry-run 模式：仅写入 meta/compare_metadata.json，不启动任何子进程。")
         return 0
 
     log("启动 RL 与 GA 并行对比实验。")
     start_child(rl_spec, extra_env={})
     start_child(ga_spec, extra_env={})
     write_json(
-        compare_root / "compare_runtime.json",
+        compare_runtime_path,
         {
             "compare_pid": os.getpid(),
             "rl_pid": rl_spec.process.pid if rl_spec.process else None,
             "ga_pid": ga_spec.process.pid if ga_spec.process else None,
         },
     )
-    (compare_root / "compare.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-    (compare_root / "rl.pid").write_text(f"{rl_spec.process.pid}\n", encoding="utf-8")
-    (compare_root / "ga.pid").write_text(f"{ga_spec.process.pid}\n", encoding="utf-8")
+    compare_pid_path.parent.mkdir(parents=True, exist_ok=True)
+    compare_pid_path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    rl_pid_path.write_text(f"{rl_spec.process.pid}\n", encoding="utf-8")
+    ga_pid_path.write_text(f"{ga_spec.process.pid}\n", encoding="utf-8")
 
     stage1_compared = False
     stage1_report_path = None
@@ -1159,7 +1410,7 @@ def main() -> int:
                 ga_spec, args.dataset, global_stop_requested["value"]
             )
             write_json(
-                compare_root / "compare_status.json",
+                compare_status_path,
                 {
                     "updated_at": now_ts(),
                     "elapsed_seconds": round(time.time() - loop_started, 2),
@@ -1178,6 +1429,7 @@ def main() -> int:
                     rl_json, rl_warn = ensure_stage1_eval_json(
                         algorithm="rl",
                         run_dir=rl_run_dir,
+                        side_config=rl_side_config,
                         dataset=args.dataset,
                         base_model=args.base_model,
                         data_path=args.data_path,
@@ -1193,6 +1445,7 @@ def main() -> int:
                     ga_json, ga_warn = ensure_stage1_eval_json(
                         algorithm="ga",
                         run_dir=ga_run_dir,
+                        side_config=ga_side_config,
                         dataset=args.dataset,
                         base_model=args.base_model,
                         data_path=args.data_path,
@@ -1241,6 +1494,7 @@ def main() -> int:
             rl_json, rl_warn = ensure_stage1_eval_json(
                 algorithm="rl",
                 run_dir=rl_run_dir,
+                side_config=rl_side_config,
                 dataset=args.dataset,
                 base_model=args.base_model,
                 data_path=args.data_path,
@@ -1256,6 +1510,7 @@ def main() -> int:
             ga_json, ga_warn = ensure_stage1_eval_json(
                 algorithm="ga",
                 run_dir=ga_run_dir,
+                side_config=ga_side_config,
                 dataset=args.dataset,
                 base_model=args.base_model,
                 data_path=args.data_path,
@@ -1290,6 +1545,7 @@ def main() -> int:
         rl_json, rl_warn = ensure_stage2_eval_json(
             algorithm="rl",
             run_dir=rl_run_dir,
+            side_config=rl_side_config,
             dataset=args.dataset,
             base_model=args.base_model,
             data_path=args.data_path,
@@ -1305,6 +1561,7 @@ def main() -> int:
         ga_json, ga_warn = ensure_stage2_eval_json(
             algorithm="ga",
             run_dir=ga_run_dir,
+            side_config=ga_side_config,
             dataset=args.dataset,
             base_model=args.base_model,
             data_path=args.data_path,
@@ -1344,8 +1601,45 @@ def main() -> int:
             "stage1_report_path": str(stage1_report_path) if stage1_report_path else None,
             "stage2_report_path": str(stage2_report_path) if stage2_report_path else None,
         }
-        write_json(compare_root / "compare_final_status.json", final_state)
+        write_json(compare_final_status_path, final_state)
+        abnormal_children = [
+            state for state in (rl_state, ga_state)
+            if is_abnormal_final_state(state)
+        ]
+        if global_stop_requested["value"] or abnormal_children:
+            if global_stop_requested["value"]:
+                status = "interrupted"
+                message = (
+                    "Received SIGINT and forwarded it to the RL/GA child processes. "
+                    "The compare run stopped before full completion."
+                )
+                signal_name = "SIGINT"
+                exit_code = 130
+            else:
+                status = "failed"
+                message = (
+                    "At least one RL/GA child run exited abnormally or stopped early. "
+                    "See the child summaries below."
+                )
+                signal_name = ""
+                exit_code = 1
+            write_error_summary(
+                str(compare_root),
+                program_name="rl_ga_compare_runner.py",
+                status=status,
+                message=message,
+                argv=sys.argv,
+                exit_code=exit_code,
+                signal_name=signal_name,
+                extra_sections=build_compare_error_sections(
+                    rl_state, ga_state, rl_spec, ga_spec
+                ),
+            )
         log("RL/GA 对比实验已结束。")
+        if global_stop_requested["value"]:
+            return 130
+        if abnormal_children:
+            return 1
         return 0
     except Exception as exc:
         error_payload = {
@@ -1353,7 +1647,19 @@ def main() -> int:
             "error": str(exc),
             "traceback": traceback.format_exc(),
         }
-        write_json(compare_root / "compare_error.json", error_payload)
+        write_json(meta_dir / "compare_error.json", error_payload)
+        write_error_summary(
+            str(compare_root),
+            program_name="rl_ga_compare_runner.py",
+            status="failed",
+            message=f"{type(exc).__name__}: {exc}",
+            argv=sys.argv,
+            exit_code=1,
+            traceback_text=traceback.format_exc(),
+            extra_sections=build_compare_error_sections(
+                None, None, rl_spec, ga_spec
+            ),
+        )
         log(f"[Error] 对比实验失败：{exc}")
         return 1
 

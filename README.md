@@ -22,9 +22,11 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--model-type TYPE` | 全局 | `bert-base` | 骨干模型类型：`bert-base` / `bert-large` / `gpt-2` |
 | `--batch-size N` | 全局 | `16` | 统一设置 `batch_size` 与 `micro_batch_size` |
 | `--resume-from PATH` | `rl`、`ga`、`general-rl` | — | 从已有 run 目录恢复；当前不支持 `rl-and-ga-compare` |
-| **普通 RL / GA 共用** | | | |
-| `--stage1-search-episodes N` | `rl`、`ga`、`rl-and-ga-compare` | `51000` | Stage-1 搜索回合数 |
-| `--stage2-search-episodes N` | `rl`、`ga`、`rl-and-ga-compare` | `40000` | Stage-2 噪声搜索回合数 |
+| **普通 RL / GA 搜索预算** | | | |
+| `--stage1-search-episodes N` | `rl`、`rl-and-ga-compare` | `51000` | Stage-1 搜索回合数，仅用于普通 RL |
+| `--stage2-search-episodes N` | `rl`、`rl-and-ga-compare` | `40000` | Stage-2 噪声搜索回合数，仅用于普通 RL |
+| `--stage1-search-generations N` | `ga`、`rl-and-ga-compare` | 按模型自动推导 | Stage-1 GA 搜索迭代代数 |
+| `--stage2-search-generations N` | `ga`、`rl-and-ga-compare` | 按模型自动推导 | Stage-2 GA 噪声搜索迭代代数 |
 | `--skip-stage1-search` | `rl`、`ga` | — | 跳过 Stage-1 搜索 |
 | `--skip-noise-search` | `rl`、`ga` | — | 跳过 Stage-2 搜索 |
 | `--skip-stage1-final-eval` | `rl`、`ga` | — | 跳过 Stage-1 最终评估 |
@@ -44,6 +46,19 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | **普通 RL 专用** | | | |
 | `--stage1-search-lr FLOAT` | `rl`、`rl-and-ga-compare` | `1e-4` | 普通 RL 的 Stage-1 学习率 |
 | `--stage2-search-lr FLOAT` | `rl`、`rl-and-ga-compare` | `1e-4` | 普通 RL 的 Stage-2 学习率 |
+| **对比实验专用** | | | |
+| `--rl-skip-stage1-search` | `rl-and-ga-compare` | — | 仅让 RL 跳过 Stage-1 搜索，并改为从 RL 的 Stage-1 配置来源做最终评估 |
+| `--ga-skip-stage1-search` | `rl-and-ga-compare` | — | 仅让 GA 跳过 Stage-1 搜索，并改为从 GA 的 Stage-1 配置来源做最终评估 |
+| `--rl-final-eval-source search/json` | `rl-and-ga-compare` | `search` | RL 在对比实验中的 Stage-1 配置来源 |
+| `--ga-final-eval-source search/json` | `rl-and-ga-compare` | `search` | GA 在对比实验中的 Stage-1 配置来源 |
+| `--rl-final-eval-config PATH` | `rl-and-ga-compare` | 自动 | RL 在对比实验中的 Stage-1 JSON 配置文件 |
+| `--ga-final-eval-config PATH` | `rl-and-ga-compare` | 自动 | GA 在对比实验中的 Stage-1 JSON 配置文件 |
+| `--rl-skip-noise-search` | `rl-and-ga-compare` | — | 仅让 RL 跳过 Stage-2 噪声搜索，并改为从 RL 的噪声配置来源做最终评估 |
+| `--ga-skip-noise-search` | `rl-and-ga-compare` | — | 仅让 GA 跳过 Stage-2 噪声搜索，并改为从 GA 的噪声配置来源做最终评估 |
+| `--rl-noise-eval-source search/json` | `rl-and-ga-compare` | `search` | RL 在对比实验中的 Stage-2 噪声配置来源 |
+| `--ga-noise-eval-source search/json` | `rl-and-ga-compare` | `search` | GA 在对比实验中的 Stage-2 噪声配置来源 |
+| `--rl-noise-eval-config PATH` | `rl-and-ga-compare` | 自动 | RL 在对比实验中的 Stage-2 JSON 噪声配置文件 |
+| `--ga-noise-eval-config PATH` | `rl-and-ga-compare` | 自动 | GA 在对比实验中的 Stage-2 JSON 噪声配置文件 |
 | **通用 RL 专用** | | | |
 | `--general-rl-mode train/infer` | `general-rl` | `infer` | 通用 RL 的运行模式 |
 | `--general-rl-tasks T1,T2,...` | `general-rl` 训练 | 同 `--dataset` | 逗号分隔的训练任务列表 |
@@ -70,18 +85,14 @@ bash llama_7B_LayerImportance.sh [可选参数]
 
 - 选择 `--search-algorithm=general-rl` 后，不能再混用普通 RL / GA 的阶段搜索或最终评估参数。
 - 选择 `--search-algorithm=rl` 或 `ga` 后，不能再混用 `--general-rl-*` 参数。
-- 选择 `--search-algorithm=ga` 后，不能传 `--stage1-search-lr` / `--stage2-search-lr`。
-- 选择 `--search-algorithm=rl-and-ga-compare` 后，脚本会强制执行完整的两阶段搜索与最终评估，因此**不允许**：
-  - `--skip-stage1-search`
-  - `--skip-noise-search`
-  - `--skip-stage1-final-eval`
-  - `--skip-noise-final-eval`
-  - `--final-eval-source json/manual`
-  - `--noise-eval-source json/manual`
-  - `--manual-gelu`
-  - `--manual-softmax`
-  - `--manual-noise-config`
-  - `--resume-from`
+- 选择 `--search-algorithm=rl` 后，不能传 `--stage1-search-generations` / `--stage2-search-generations`。
+- 选择 `--search-algorithm=ga` 后，不能传 `--stage1-search-lr` / `--stage2-search-lr`，也不能再传 `--stage1-search-episodes` / `--stage2-search-episodes`。
+- 选择 `--search-algorithm=rl-and-ga-compare` 后：
+  - 仍然**不允许**使用全局的 `--skip-stage1-search`、`--skip-noise-search`、`--final-eval-source`、`--noise-eval-source`、`--final-eval-config`、`--noise-eval-config`、`--manual-*`、`--resume-from`。
+  - 需要改用对比实验专用的 side 参数：`--rl-*` / `--ga-*`。
+  - 若某一侧没有跳过某阶段搜索，则该侧对应的 `*-eval-source` 必须为 `search`。
+  - 若某一侧跳过某阶段搜索，则该侧对应的 `*-eval-source` 必须为 `json`；若未显式给出 `*-eval-config`，脚本会自动回落到该算法家族的默认 JSON 文件名。
+  - 对比实验始终保留 Stage-1 / Stage-2 最终评估，因此依然不支持 `--skip-stage1-final-eval` 与 `--skip-noise-final-eval`。
 
 ### JSON 配置文件默认值
 
@@ -91,6 +102,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `ga` | `glue_configs_best_genetic.json` | `glue_noise_configs_best_genetic.json` |
 
 当 `--final-eval-source=json` 或 `--noise-eval-source=json` 时，脚本会检查文件名是否与所选算法家族匹配，避免把 PPO 配置错用到 GA，或把 GA 配置错用到 PPO。当前仓库默认只内置了 PPO 这套 JSON；如果你要在 `ga` 模式下走 JSON 评估，需要自行准备并命名为 `glue_configs_best_genetic.json` / `glue_noise_configs_best_genetic.json`，或显式通过 `--final-eval-config` / `--noise-eval-config` 指定。
+`rl-and-ga-compare` 模式下的 `--rl-final-eval-config` / `--ga-final-eval-config` / `--rl-noise-eval-config` / `--ga-noise-eval-config` 也沿用同一套默认命名与家族一致性检查规则。
 
 ### 推荐命令示例
 
@@ -126,20 +138,49 @@ bash llama_7B_LayerImportance.sh \
   --search-algorithm rl-and-ga-compare \
   --stage1-search-episodes 51000 \
   --stage2-search-episodes 40000 \
+  --stage1-search-generations 1594 \
+  --stage2-search-generations 1250 \
   --stage1-search-lr 1e-4 \
   --stage2-search-lr 1e-4
 ```
 
+示例：只让 RL 跳过两阶段搜索，直接从 JSON 取配置；GA 仍执行完整搜索。
+
+```bash
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --search-algorithm rl-and-ga-compare \
+  --stage1-search-episodes 34000 \
+  --stage2-search-episodes 50000 \
+  --stage1-search-generations 300 \
+  --stage2-search-generations 500 \
+  --rl-skip-stage1-search \
+  --rl-final-eval-source json \
+  --rl-final-eval-config glue_configs_best_ppo.json \
+  --rl-skip-noise-search \
+  --rl-noise-eval-source json \
+  --rl-noise-eval-config glue_noise_configs_best_ppo.json
+```
+
 该模式会在当前 run 根目录下生成：
 
-- `rl_run/`：普通 RL 子运行目录
-- `ga_run/`：GA 子运行目录
-- `comparison/stage1_compare_report_<dataset>.md`：Stage-1 对比文本报告
-- `comparison/stage1_compare_plot_<dataset>.png`：Stage-1 对比图
-- `comparison/stage2_compare_report_<dataset>.md`：Stage-2 对比文本报告
-- `comparison/stage2_compare_plot_<dataset>.png`：Stage-2 对比图
+- `children/rl/`：普通 RL 子运行目录
+- `children/ga/`：GA 子运行目录
+- `reports/stage1_compare_summary_<dataset>.json`：Stage-1 结构化对比摘要，适合脚本读取
+- `reports/stage1_compare_report_<dataset>.md`：Stage-1 对比文本报告
+- `reports/stage1_compare_plot_<dataset>.png`：Stage-1 对比图，展示 RL/GA 在 Loss、主指标、次指标/Time、Cost 上的对比
+- `reports/stage2_compare_summary_<dataset>.json`：Stage-2 结构化对比摘要，适合脚本读取
+- `reports/stage2_compare_report_<dataset>.md`：Stage-2 对比文本报告
+- `reports/stage2_compare_plot_<dataset>.png`：Stage-2 对比图，展示 RL/GA 在 Loss、主指标、次指标/Time、Cost 上的对比
+- `meta/compare_metadata.json`：对比实验元信息，包括两侧是否跳过搜索、JSON 来源、子命令等
+- `meta/compare_status.json`：运行中状态快照
+- `meta/compare_final_status.json`：最终状态与报告路径汇总
 
-如果其中一方提前停止，对比模块会优先使用该方当前 checkpoint / 搜索结果里恢复出的最优配置继续补做最终评估，并在报告中显式写出警告。
+如果其中一方提前停止，对比模块会优先按该方声明的配置来源补做最终评估：
+
+- 若该方走 `search`，则优先从 checkpoint / 搜索结果恢复当前最优配置。
+- 若该方走 `json`，则优先按对应 JSON 文件补做最终评估。
+- 所有 fallback 与警告都会写入对比报告和 `compare_summary_*.json`。
 
 #### 5. 通用 RL 训练
 
@@ -233,7 +274,7 @@ bash llama_7B_LayerImportance.sh \
 ### 8. 迁移建议
 
 - 老命令如果不加 `--search-algorithm`，默认仍走 RL，不会影响已有实验。
-- 新做 GA 对比实验时，建议显式加 `--search-algorithm ga`，并统一使用 `--skip-stage1-search` / `--skip-noise-search` / `--stage1-search-episodes` / `--stage2-search-episodes` 这组算法无关参数。
+- 新做 GA 实验时，建议显式加 `--search-algorithm ga`，并统一使用 `--stage1-search-generations` / `--stage2-search-generations` 这组 GA 预算参数。
 - 如果准备长期保留 GA 的 JSON 配置，建议按默认命名方式保存为 `glue_configs_best_genetic.json` 和 `glue_noise_configs_best_genetic.json`，这样脚本能自动做家族一致性检查。
 - 使用通用 RL 时，建议先在少量任务上 `train` 训练策略，然后用 `infer` 部署到新任务。通用策略做 500 次 rollout 的耗时约为 per-task RL 的 1/100。
 
@@ -249,8 +290,9 @@ Please Ignore the LLM-Adapters, EzPC, and importance-aware-sparse-tuning-IST-pap
 > - `--batch_size` → `--batch-size`
 > - `--skip-stage1-rl` → `--skip-stage1-search`
 > - `--skip-noise-rl` → `--skip-noise-search`
-> - `--stage1-rl-episodes` → `--stage1-search-episodes`
-> - `--stage2-rl-episodes` → `--stage2-search-episodes`
+> - `--stage1-rl-episodes` → `--stage1-search-episodes`（普通 RL）
+> - `--stage2-rl-episodes` → `--stage2-search-episodes`（普通 RL）
+> - GA 模式不再使用 `episode` 作为预算单位，改为 `--stage1-search-generations` / `--stage2-search-generations`
 > - 删除旧的 5 个位置参数写法，统一改用全可选参数
 
 ### 运行前准备
@@ -283,19 +325,73 @@ bash llama_7B_LayerImportance.sh --dataset mrpc
 ### 并行安全运行（Concurrent-safe run layout）
 
 命令格式已经改成全可选参数；`--logfile` 现在只用于提示日志文件名，实际日志写入位置由 run 目录决定。
-每次启动都会自动创建一个唯一的 run 目录：
+现在会先按**模式**分层，再进入具体数据集/任务集合目录。每次启动都会自动创建唯一的 `run_id=<YYYYmmdd_HHMMSS>_pid<PID>`。
+
+#### 1. 各模式的根目录
 
 ```text
-rl_results/layer_importance_runs/<dataset>/<YYYYmmdd_HHMMSS>_pid<PID>/
+rl_results/runs/rl/<dataset>/<run_id>/
+rl_results/runs/ga/<dataset>/<run_id>/
+rl_results/runs/general_rl/train/<taskset_id>/<run_id>/
+rl_results/runs/general_rl/infer/<dataset>/<run_id>/
+rl_results/runs/compare/rl_vs_ga/<dataset>/<run_id>/
 ```
 
-启动器会把各类输出写入不同子目录：
+说明：
 
-- nohup 日志：`.../logs/<basename(logfile_path)>`
-- 第一阶段（stage-1）搜索日志 / step 信息 / 曲线：`.../stage1/`
-- 第一阶段（stage-1）最终评估输出：`.../stage1_final_eval/`
-- 第二阶段（stage-2）噪声 RL 输出与进度快照：`.../stage2_noise/`
-- 第二阶段（stage-2）噪声最终评估输出：`.../stage2_noise_final_eval/`
+- `dataset` 是当前单任务数据集，例如 `mrpc`、`stsb`。
+- `taskset_id` 是训练任务集合的规范化标识，例如 `mrpc,cola,rte,stsb` 会落为 `mrpc_cola_rte_stsb`。
+- `compare` 模式单独放在 `compare/rl_vs_ga/` 下，不再与普通 `rl` / `ga` 共用同一个根目录层。
+
+#### 2. 各模式内部目录
+
+普通 `rl` / `ga` / `general-rl infer` 的核心目录：
+
+- nohup 启动日志与错误摘要：`<run_dir>/logs/`
+- 第一阶段搜索：`<run_dir>/stage1/`
+- 第一阶段最终评估：`<run_dir>/stage1_final_eval/`
+- 第二阶段搜索：`<run_dir>/stage2_noise/`
+- 第二阶段最终评估：`<run_dir>/stage2_noise_final_eval/`
+
+`general-rl train` 额外会写出：
+
+- 通用策略文件：`<run_dir>/general_stage1_policy.pt`
+- 通用噪声策略文件：`<run_dir>/general_stage2_noise_policy.pt`
+- 训练 checkpoint：`<run_dir>/general_stage1_train_checkpoint.pt`、`<run_dir>/general_stage2_train_checkpoint.pt`
+- 各任务 evaluator 目录：`<run_dir>/task_<task_name>/`
+
+`rl-and-ga-compare` 额外会写出：
+
+- `children/rl/`：普通 RL 子运行目录
+- `children/ga/`：GA 子运行目录
+- `reports/`：Stage-1 / Stage-2 的 `compare_summary_*.json`、`compare_report_*.md`、`compare_plot_*.png`
+- `meta/`：`compare_metadata.json`、`compare_status.json`、`compare_final_status.json`、PID 文件等元信息
+
+#### 3. 示例
+
+普通 RL 的一个 run：
+
+```text
+rl_results/runs/rl/mrpc/<run_id>/
+```
+
+GA 的一个 run：
+
+```text
+rl_results/runs/ga/mrpc/<run_id>/
+```
+
+通用 RL 多任务训练的一个 run：
+
+```text
+rl_results/runs/general_rl/train/mrpc_cola_rte_stsb/<run_id>/
+```
+
+RL 与 GA 对比实验的一个 run：
+
+```text
+rl_results/runs/compare/rl_vs_ga/mrpc/<run_id>/
+```
 
 因此，下面这些命令可以同时并行运行，即使它们都使用相同的 `output.log`：
 
@@ -326,7 +422,7 @@ CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh --logfile output.log --d
 
 #### 如何在命令行并行跑多数据集
 
-实现并行的关键是：每个进程都会自动落到独立的 run 目录（包含 `<dataset>/<YYYYmmdd_HHMMSS>_pid<PID>/`），所以你可以在并行任务里重复使用同一个 `logfile_path`（例如都传 `output.log`），不会互相覆盖产出。
+实现并行的关键是：每个进程都会自动落到独立的 run 目录（按模式分层后再进入 `<dataset_or_taskset>/<YYYYmmdd_HHMMSS>_pid<PID>/`），所以你可以在并行任务里重复使用同一个 `logfile_path`（例如都传 `output.log`），不会互相覆盖产出。
 
 并行常用做法：
 
@@ -882,36 +978,48 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
   --noise-eval-repeat 200
 ```
 
-### `--stage1-search-episodes` / `--stage2-search-episodes` 可选项
+### 搜索预算参数可选项
 
-可以通过命令行额外传入第一阶段和第二阶段搜索轮数，分别控制 Stage-1 GELU/Softmax 搜索和 Stage-2 noise 搜索的 episode 数。
+当前命令行把普通 RL 和 GA 的搜索预算单位拆开了：
 
+- 普通 RL 使用 `episode`，对应 `--stage1-search-episodes` / `--stage2-search-episodes`。
+- GA 使用 `generation`，对应 `--stage1-search-generations` / `--stage2-search-generations`。
 
-| 参数                           | 说明                                                                   | 默认值     |
-| ---------------------------- | -------------------------------------------------------------------- | ------- |
-| `--stage1-search-episodes N` | 设置第一阶段强化学习轮数，对应 `layer_importance_evaluator.py` 中的 Stage-1 PPO 搜索轮数。 | `51000` |
-| `--stage2-search-episodes N` | 设置第二阶段强化学习轮数，对应 `noise_rl_module.py` 中的 Stage-2 noise PPO 搜索轮数。      | `40000` |
-
+| 参数 | 适用算法 | 说明 | 默认值 |
+| --- | --- | --- | --- |
+| `--stage1-search-episodes N` | `rl`、`rl-and-ga-compare` | 设置普通 RL 的 Stage-1 PPO 搜索回合数。 | `51000` |
+| `--stage2-search-episodes N` | `rl`、`rl-and-ga-compare` | 设置普通 RL 的 Stage-2 noise PPO 搜索回合数。 | `40000` |
+| `--stage1-search-generations N` | `ga`、`rl-and-ga-compare` | 设置 GA 的 Stage-1 搜索迭代代数。 | 按模型自动推导 |
+| `--stage2-search-generations N` | `ga`、`rl-and-ga-compare` | 设置 GA 的 Stage-2 噪声搜索迭代代数。 | 按模型自动推导 |
 
 使用说明：
 
-- `N` 必须是正整数。
-- 当对应阶段没有被跳过时，`N` 必须大于等于 `170`。
-这是因为当前 `PPO_UPDATE_INTERVAL=170`，如果轮数小于 `170`，PPO 将无法完成一次真正的策略更新。
-- 如果使用了 `--skip-stage1-search`，就不能再同时显式传入 `--stage1-search-episodes`。
-- 如果使用了 `--skip-noise-search`，就不能再同时显式传入 `--stage2-search-episodes`。
-- 这两个参数只控制强化学习搜索轮数，不影响最终评估重复次数；最终评估重复次数仍然由 `--noise-eval-repeat` 等参数控制。
+- 所有 `N` 都必须是正整数。
+- 普通 RL 在对应阶段未跳过时，`--stage1-search-episodes` / `--stage2-search-episodes` 必须大于等于 `170`。这是因为当前 `PPO_UPDATE_INTERVAL=170`，如果轮数小于 `170`，PPO 无法完成一次真正的策略更新。
+- GA 不再使用 `episode` 作为搜索预算单位；请改用 `--stage1-search-generations` / `--stage2-search-generations`。
+- `ga` 模式下如果不显式传代数，脚本会按模型层数自动推导默认值，以对齐旧版本的默认搜索预算。
+- 在单独的 `rl` / `ga` 模式下，如果使用了 `--skip-stage1-search`，就不要再把该阶段预算当作“本次要执行的搜索预算”来理解。
+- 在单独的 `rl` / `ga` 模式下，如果使用了 `--skip-noise-search`，就不要再把该阶段预算当作“本次要执行的搜索预算”来理解。
+- 在 `rl-and-ga-compare` 模式下，若要跳过某一侧某一阶段的搜索，请改用 `--rl-*` / `--ga-*` 的对比专用参数，而不是全局 `--skip-stage1-search` / `--skip-noise-search`。
+- 这些参数只控制搜索预算，不影响最终评估重复次数；最终评估重复次数仍然由 `--noise-eval-repeat` 等参数控制。
 
 示例：
 
 ```bash
-# 同时自定义第一阶段和第二阶段 RL 轮数
+# 同时自定义第一阶段和第二阶段 RL 回合数
 bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
   --stage1-search-episodes 1020 \
   --stage2-search-episodes 3400
 
-# 跳过第一阶段，只运行第二阶段 noise RL，并把第二阶段轮数改成 680
+# 自定义 GA 的第一阶段和第二阶段迭代代数
+bash llama_7B_LayerImportance.sh --logfile output.log \
+  --search-algorithm ga \
+  --dataset mrpc \
+  --stage1-search-generations 120 \
+  --stage2-search-generations 90
+
+# 跳过第一阶段，只运行第二阶段 noise RL，并把第二阶段回合数改成 680
 CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
   --skip-stage1-search \
@@ -942,8 +1050,11 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 
 使用说明：
 
-- `PATH` 必须是一个已存在的 run 目录（例如 `rl_results/layer_importance_runs/mrpc/20260404_151155_pid711833`）。
-- 续训时指定的轮数表示**总轮数**（而非追加轮数）。例如之前训了 30000 轮，想再加 10000 轮，则设置 `--stage2-search-episodes 40000`。
+- `PATH` 必须是一个已存在的 run 目录。
+  例如普通 RL 可以是 `rl_results/runs/rl/mrpc/20260404_151155_pid711833`；
+  GA 可以是 `rl_results/runs/ga/mrpc/20260404_151155_pid711833`；
+  通用 RL 多任务训练可以是 `rl_results/runs/general_rl/train/mrpc_cola_rte_stsb/20260404_151155_pid711833`。
+- 续训时指定的是**总搜索预算**而不是追加量：普通 RL 用 `--stage1-search-episodes` / `--stage2-search-episodes` 表示总回合数；GA 用 `--stage1-search-generations` / `--stage2-search-generations` 表示总代数。
 - 如果指定的总轮数小于等于 checkpoint 中已完成的轮数，则该阶段不会追加训练。
 - `--resume-from` 可以与各模式的跳过选项组合使用：只有未被跳过的阶段才会尝试加载对应的 checkpoint。
 - 续训产出的新日志和文件会写入新生成的 run 目录（不会覆盖原目录），但模型状态和训练统计会从旧 checkpoint 恢复。
@@ -973,7 +1084,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
   --skip-stage1-final-eval \
   --noise-eval-repeat 200 \
   --stage2-search-episodes 30000 \
-  --resume-from rl_results/layer_importance_runs/mrpc/20260404_151155_pid711833
+  --resume-from rl_results/runs/rl/mrpc/20260404_151155_pid711833
 
 # Stage-1 续训示例：先训 10000 轮，再续训到 20000 轮
 bash llama_7B_LayerImportance.sh --logfile output.log \
@@ -985,20 +1096,24 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
   --stage1-search-episodes 20000 \
   --skip-noise-search --skip-noise-final-eval \
-  --resume-from rl_results/layer_importance_runs/mrpc/<之前的run目录>
+  --resume-from rl_results/runs/rl/mrpc/<之前的run目录>
 
 # ---- GA 模式续训 ----
 
-# 第一次 GA 搜索
-bash llama_7B_LayerImportance.sh --logfile output.log \
-  --search-algorithm ga \
-  --dataset mrpc
-
-# GA 续训（从上次中断处继续）
+# 第一次 GA 搜索（示例中显式指定总代数）
 bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm ga \
   --dataset mrpc \
-  --resume-from rl_results/layer_importance_runs/mrpc/<之前的ga_run目录>
+  --stage1-search-generations 120 \
+  --stage2-search-generations 90
+
+# GA 续训（从上次中断处继续；代数表示总预算，不是追加量）
+bash llama_7B_LayerImportance.sh --logfile output.log \
+  --search-algorithm ga \
+  --dataset mrpc \
+  --stage1-search-generations 180 \
+  --stage2-search-generations 140 \
+  --resume-from rl_results/runs/ga/mrpc/<之前的run目录>
 
 # ---- General-RL 模式续训 ----
 
@@ -1017,7 +1132,7 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
   --general-rl-tasks mrpc,cola,rte,stsb \
   --general-rl-rounds 100 \
   --dataset mrpc \
-  --resume-from rl_results/layer_importance_runs/mrpc/<之前的general-rl_run目录>
+  --resume-from rl_results/runs/general_rl/train/mrpc_cola_rte_stsb/<之前的run目录>
 ```
 
 ### 优雅停止与断点续训（Graceful Stop / Resume）
@@ -1042,7 +1157,7 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
       kill -INT 712345
 
   方式 B：通过数据集级 LATEST 指针（无需记住 PID / run 目录）
-      kill -INT $(cat rl_results/layer_importance_runs/mrpc/LATEST_PID)
+      kill -INT $(cat rl_results/runs/rl/mrpc/LATEST_PID)
 
   方式 C：创建停止标志文件（不依赖信号，适合脚本化批量停止）
     ── rl 或 ga 模式：
@@ -1058,9 +1173,23 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
 
 脚本同时在以下位置持久化了 PID / run 目录信息：
 
-- `<run_dir>/rl.pid`：当前任务的 Python 进程 PID
-- `rl_results/layer_importance_runs/<dataset>/LATEST_PID`：该数据集最近一次启动的 PID
-- `rl_results/layer_importance_runs/<dataset>/LATEST_RUN_DIR`：该数据集最近一次启动的 run 目录
+- `<run_dir>/run.pid`：当前任务的 Python 进程 PID（非 compare 模式）
+- `rl_results/runs/rl/<dataset>/LATEST_PID`：普通 RL 最近一次启动的 PID
+- `rl_results/runs/rl/<dataset>/LATEST_RUN_DIR`：普通 RL 最近一次启动的 run 目录
+- `rl_results/runs/ga/<dataset>/LATEST_PID`：GA 最近一次启动的 PID
+- `rl_results/runs/ga/<dataset>/LATEST_RUN_DIR`：GA 最近一次启动的 run 目录
+- `rl_results/runs/general_rl/train/<taskset_id>/LATEST_PID`：通用 RL 训练最近一次启动的 PID
+- `rl_results/runs/general_rl/train/<taskset_id>/LATEST_RUN_DIR`：通用 RL 训练最近一次启动的 run 目录
+- `rl_results/runs/general_rl/infer/<dataset>/LATEST_PID`：通用 RL 推断最近一次启动的 PID
+- `rl_results/runs/general_rl/infer/<dataset>/LATEST_RUN_DIR`：通用 RL 推断最近一次启动的 run 目录
+- `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_PID`：对比实验 launcher 最近一次启动的 PID
+- `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_RUN_DIR`：对比实验最近一次启动的 run 目录
+
+补充说明：
+
+- 由于目录现在按模式分层，**不要再跨模式复用同一组 LATEST 指针**。例如要停止 GA，就看 `rl_results/runs/ga/<dataset>/LATEST_PID`，不要看 `rl_results/runs/rl/<dataset>/LATEST_PID`。
+- `general-rl train` 的 `taskset_id` 由 `--general-rl-tasks` 规范化得到。例如 `mrpc,cola,rte,stsb` 会写到 `rl_results/runs/general_rl/train/mrpc_cola_rte_stsb/`。
+- `compare` 模式除了 `LATEST_RUN_DIR` / `LATEST_PID` 之外，还会额外兼容写入 `LATEST_COMPARE_RUN_DIR` / `LATEST_COMPARE_PID`。
 
 #### 完整示例：启动 → 优雅停止 → 续训
 
@@ -1087,10 +1216,10 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 kill -INT 712345
 
 # 方式 B：用 LATEST 指针（最省事，不必记 PID）
-kill -INT $(cat rl_results/layer_importance_runs/mrpc/LATEST_PID)
+kill -INT $(cat rl_results/runs/rl/mrpc/LATEST_PID)
 
 # 方式 C：创建停止标志文件（Stage-2 训练时）
-touch "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)/stage2_noise/progress/STOP_RL"
+touch "$(cat rl_results/runs/rl/mrpc/LATEST_RUN_DIR)/stage2_noise/progress/STOP_RL"
 ```
 
 收到信号后，你会在日志里看到：
@@ -1116,7 +1245,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
     --noise-eval-repeat 200 \
     --stage2-search-episodes 30000 \
     --batch-size 128 \
-    --resume-from "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)"
+    --resume-from "$(cat rl_results/runs/rl/mrpc/LATEST_RUN_DIR)"
 ```
 
 续训会加载上次保存的 GTrXL 网络权重、优化器状态、PPO 更新计数、`reward_history`
@@ -1130,7 +1259,9 @@ training-curve 曲线与 PPO 训练曲线在续训前后能**严丝合缝地接�
 # 1) 启动 GA 搜索
 bash llama_7B_LayerImportance.sh --logfile output.log \
     --search-algorithm ga \
-    --dataset mrpc
+    --dataset mrpc \
+    --stage1-search-generations 120 \
+    --stage2-search-generations 90
 # -> 脚本打印 Background PID: 812345 及停止命令
 
 # 2) 优雅停止（方式 A / B / C 均可）
@@ -1144,7 +1275,9 @@ kill -INT 812345
 bash llama_7B_LayerImportance.sh --logfile output.log \
     --search-algorithm ga \
     --dataset mrpc \
-    --resume-from "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)"
+    --stage1-search-generations 180 \
+    --stage2-search-generations 140 \
+    --resume-from "$(cat rl_results/runs/ga/mrpc/LATEST_RUN_DIR)"
 ```
 
 #### 完整示例：General-RL 模式下的启动 → 优雅停止 → 续训
@@ -1172,7 +1305,7 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
     --general-rl-tasks mrpc,cola,rte,stsb \
     --general-rl-rounds 100 \
     --dataset mrpc \
-    --resume-from "$(cat rl_results/layer_importance_runs/mrpc/LATEST_RUN_DIR)"
+    --resume-from "$(cat rl_results/runs/general_rl/train/mrpc_cola_rte_stsb/LATEST_RUN_DIR)"
 ```
 
 #### 严丝合缝续训的关键机制
@@ -1209,8 +1342,7 @@ episode，ga 模式在当代结束后生效，general-rl 模式在当前 round �
 立刻强退——此时已保存的 checkpoint 仍然有效，只是最新窗口内未保存的 rollout 会丢失。
 - 若停止时恰好处于 RL 训练之外（例如 Stage-1/2 的最终评估阶段），停止标志不会生效；
 请等 RL 训练进入下一个 PPO 窗口时再观察日志。
-- 续训时 `--stage1-search-episodes` / `--stage2-search-episodes` 指的是**总轮数**（不是追加
-轮数）。若总轮数小于等于 checkpoint 中已完成的轮数，该阶段不会再追加训练。
+- 续训时普通 RL 的 `--stage1-search-episodes` / `--stage2-search-episodes` 指的是**总回合数**，GA 的 `--stage1-search-generations` / `--stage2-search-generations` 指的是**总代数**；都不是追加量。若总预算小于等于 checkpoint 中已完成的值，该阶段不会再追加训练。
 - 成功停止后，脚本会自动删除已消费的 `STOP_RL` 文件，避免下次启动被误触发。
 - Windows 下同样可用：`Ctrl+C` 会走 SIGINT 分支；停止标志文件用资源管理器或
 `type NUL > STOP_RL` 手动创建即可。

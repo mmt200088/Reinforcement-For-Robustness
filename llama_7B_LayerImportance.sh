@@ -13,9 +13,15 @@ cat <<'EOF'
   --model-type bert-base|bert-large|gpt-2
   --batch-size N
 
-普通 RL / GA：
+普通 RL / 对比实验中的 RL：
   --stage1-search-episodes N
   --stage2-search-episodes N
+
+GA / 对比实验中的 GA：
+  --stage1-search-generations N
+  --stage2-search-generations N
+
+普通 RL / GA 共用：
   --skip-stage1-search
   --skip-noise-search
   --skip-stage1-final-eval
@@ -33,6 +39,20 @@ cat <<'EOF'
   --cost-trials N
   --budget-trials N
   --resume-from PATH
+
+对比实验专用（仅 rl-and-ga-compare 可用）：
+  --rl-skip-stage1-search
+  --ga-skip-stage1-search
+  --rl-final-eval-source search|json
+  --ga-final-eval-source search|json
+  --rl-final-eval-config PATH
+  --ga-final-eval-config PATH
+  --rl-skip-noise-search
+  --ga-skip-noise-search
+  --rl-noise-eval-source search|json
+  --ga-noise-eval-source search|json
+  --rl-noise-eval-config PATH
+  --ga-noise-eval-config PATH
 
 普通 RL（仅 rl 可用）：
   --stage1-search-lr FLOAT
@@ -62,8 +82,8 @@ cat <<'EOF'
 示例：
   bash llama_7B_LayerImportance.sh --dataset mrpc
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl --stage1-search-lr 3e-5 --stage2-search-lr 1e-5
-  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm ga
-  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl-and-ga-compare
+  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm ga --stage1-search-generations 120 --stage2-search-generations 90
+  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl-and-ga-compare --stage1-search-generations 1594 --stage2-search-generations 1250
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm general-rl --general-rl-mode train --general-rl-tasks mrpc,cola,rte,stsb
 EOF
 }
@@ -72,6 +92,53 @@ err(){ echo "错误：$1" >&2; exit 1; }
 needv(){ [ "$#" -ge 2 ] || err "选项 $1 缺少取值。"; }
 is_pos_int(){ [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
 is_pos_num(){ [[ "$1" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$ ]] && awk -v x="$1" 'BEGIN { exit !((x + 0) > 0) }'; }
+ga_total_layers_for_model_type(){
+  case "$1" in
+    bert-base|gpt-2) echo 12 ;;
+    bert-large) echo 24 ;;
+    *) err "无法为模型类型推断 GA 默认代数：$1" ;;
+  esac
+}
+ga_default_generations_from_episodes(){
+  local episode_budget="$1"
+  local population_size="$2"
+  echo $(( (episode_budget + population_size - 1) / population_size ))
+}
+ga_default_stage1_generations_for_model(){
+  local layers pop
+  layers="$(ga_total_layers_for_model_type "$1")"
+  pop=$(( layers * 2 ))
+  [ "$pop" -ge 32 ] || pop=32
+  ga_default_generations_from_episodes 51000 "$pop"
+}
+ga_default_stage2_generations_for_model(){
+  local layers pop
+  layers="$(ga_total_layers_for_model_type "$1")"
+  pop="$layers"
+  [ "$pop" -ge 32 ] || pop=32
+  ga_default_generations_from_episodes 40000 "$pop"
+}
+normalize_taskset_id(){
+  local raw="$1"
+  local old_ifs token out=""
+  old_ifs="$IFS"
+  IFS=','
+  read -r -a __task_items <<< "$raw"
+  IFS="$old_ifs"
+  for token in "${__task_items[@]}"; do
+    token="$(printf '%s' "$token" | tr '[:upper:]' '[:lower:]' | xargs)"
+    token="${token//[^a-z0-9_-]/_}"
+    token="${token//-/_}"
+    [ -z "$token" ] && continue
+    if [ -z "$out" ]; then
+      out="$token"
+    else
+      out="${out}_${token}"
+    fi
+  done
+  [ -n "$out" ] || err "无法从任务列表生成 taskset 标识：$raw"
+  echo "$out"
+}
 origin(){ [ "$1" = "true" ] && echo "显式指定" || echo "使用默认值"; }
 show(){ echo "  $1：$2（$(origin "$3")）"; }
 boolzh(){ [ "$1" = "true" ] && echo "是" || echo "否"; }
@@ -111,6 +178,12 @@ infer_family(){
     echo unknown
   fi
 }
+default_stage1_json_for_family(){
+  [ "$1" = "ga" ] && echo "glue_configs_best_genetic.json" || echo "glue_configs_best_ppo.json"
+}
+default_stage2_json_for_family(){
+  [ "$1" = "ga" ] && echo "glue_noise_configs_best_genetic.json" || echo "glue_noise_configs_best_ppo.json"
+}
 
 resolve_compare_cuda_split() {
   RL_COMPARE_CUDA_VISIBLE_DEVICES=""
@@ -145,6 +218,8 @@ MODEL_TYPE="bert-base"; S_MODEL_TYPE="false"
 BATCH_SIZE="16"; S_BATCH_SIZE="false"
 STAGE1_EPISODES="51000"; S_STAGE1_EPISODES="false"
 STAGE2_EPISODES="40000"; S_STAGE2_EPISODES="false"
+STAGE1_GENERATIONS=""; S_STAGE1_GENERATIONS="false"
+STAGE2_GENERATIONS=""; S_STAGE2_GENERATIONS="false"
 STAGE1_LR="1e-4"; S_STAGE1_LR="false"
 STAGE2_LR="1e-4"; S_STAGE2_LR="false"
 SKIP_STAGE1_SEARCH="false"; S_SKIP_STAGE1_SEARCH="false"
@@ -174,6 +249,18 @@ GENERAL_STAGE1_POLICY=""; S_GENERAL_STAGE1_POLICY="false"
 GENERAL_STAGE2_POLICY=""; S_GENERAL_STAGE2_POLICY="false"
 GENERAL_SKIP_STAGE2="false"; S_GENERAL_SKIP_STAGE2="false"
 GENERAL_STAGE1_CONFIG_JSON=""; S_GENERAL_STAGE1_CONFIG_JSON="false"
+RL_COMPARE_SKIP_STAGE1_SEARCH="false"; S_RL_COMPARE_SKIP_STAGE1_SEARCH="false"
+GA_COMPARE_SKIP_STAGE1_SEARCH="false"; S_GA_COMPARE_SKIP_STAGE1_SEARCH="false"
+RL_COMPARE_FINAL_EVAL_SOURCE="search"; S_RL_COMPARE_FINAL_EVAL_SOURCE="false"
+GA_COMPARE_FINAL_EVAL_SOURCE="search"; S_GA_COMPARE_FINAL_EVAL_SOURCE="false"
+RL_COMPARE_FINAL_EVAL_CONFIG=""; S_RL_COMPARE_FINAL_EVAL_CONFIG="false"
+GA_COMPARE_FINAL_EVAL_CONFIG=""; S_GA_COMPARE_FINAL_EVAL_CONFIG="false"
+RL_COMPARE_SKIP_NOISE_SEARCH="false"; S_RL_COMPARE_SKIP_NOISE_SEARCH="false"
+GA_COMPARE_SKIP_NOISE_SEARCH="false"; S_GA_COMPARE_SKIP_NOISE_SEARCH="false"
+RL_COMPARE_NOISE_EVAL_SOURCE="search"; S_RL_COMPARE_NOISE_EVAL_SOURCE="false"
+GA_COMPARE_NOISE_EVAL_SOURCE="search"; S_GA_COMPARE_NOISE_EVAL_SOURCE="false"
+RL_COMPARE_NOISE_EVAL_CONFIG=""; S_RL_COMPARE_NOISE_EVAL_CONFIG="false"
+GA_COMPARE_NOISE_EVAL_CONFIG=""; S_GA_COMPARE_NOISE_EVAL_CONFIG="false"
 RESUME_FROM=""; S_RESUME_FROM="false"
 
 while [ "$#" -gt 0 ]; do
@@ -187,6 +274,8 @@ while [ "$#" -gt 0 ]; do
     --batch-size) needv "$@"; BATCH_SIZE="$2"; S_BATCH_SIZE="true"; shift 2 ;;
     --stage1-search-episodes) needv "$@"; STAGE1_EPISODES="$2"; S_STAGE1_EPISODES="true"; shift 2 ;;
     --stage2-search-episodes) needv "$@"; STAGE2_EPISODES="$2"; S_STAGE2_EPISODES="true"; shift 2 ;;
+    --stage1-search-generations) needv "$@"; STAGE1_GENERATIONS="$2"; S_STAGE1_GENERATIONS="true"; shift 2 ;;
+    --stage2-search-generations) needv "$@"; STAGE2_GENERATIONS="$2"; S_STAGE2_GENERATIONS="true"; shift 2 ;;
     --stage1-search-lr) needv "$@"; STAGE1_LR="$2"; S_STAGE1_LR="true"; shift 2 ;;
     --stage2-search-lr) needv "$@"; STAGE2_LR="$2"; S_STAGE2_LR="true"; shift 2 ;;
     --skip-stage1-search) SKIP_STAGE1_SEARCH="true"; S_SKIP_STAGE1_SEARCH="true"; shift ;;
@@ -216,6 +305,18 @@ while [ "$#" -gt 0 ]; do
     --general-stage2-policy) needv "$@"; GENERAL_STAGE2_POLICY="$2"; S_GENERAL_STAGE2_POLICY="true"; shift 2 ;;
     --general-rl-skip-stage2) GENERAL_SKIP_STAGE2="true"; S_GENERAL_SKIP_STAGE2="true"; shift ;;
     --general-rl-stage1-config-json) needv "$@"; GENERAL_STAGE1_CONFIG_JSON="$2"; S_GENERAL_STAGE1_CONFIG_JSON="true"; shift 2 ;;
+    --rl-skip-stage1-search) RL_COMPARE_SKIP_STAGE1_SEARCH="true"; S_RL_COMPARE_SKIP_STAGE1_SEARCH="true"; shift ;;
+    --ga-skip-stage1-search) GA_COMPARE_SKIP_STAGE1_SEARCH="true"; S_GA_COMPARE_SKIP_STAGE1_SEARCH="true"; shift ;;
+    --rl-final-eval-source) needv "$@"; RL_COMPARE_FINAL_EVAL_SOURCE="$2"; S_RL_COMPARE_FINAL_EVAL_SOURCE="true"; shift 2 ;;
+    --ga-final-eval-source) needv "$@"; GA_COMPARE_FINAL_EVAL_SOURCE="$2"; S_GA_COMPARE_FINAL_EVAL_SOURCE="true"; shift 2 ;;
+    --rl-final-eval-config) needv "$@"; RL_COMPARE_FINAL_EVAL_CONFIG="$2"; S_RL_COMPARE_FINAL_EVAL_CONFIG="true"; shift 2 ;;
+    --ga-final-eval-config) needv "$@"; GA_COMPARE_FINAL_EVAL_CONFIG="$2"; S_GA_COMPARE_FINAL_EVAL_CONFIG="true"; shift 2 ;;
+    --rl-skip-noise-search) RL_COMPARE_SKIP_NOISE_SEARCH="true"; S_RL_COMPARE_SKIP_NOISE_SEARCH="true"; shift ;;
+    --ga-skip-noise-search) GA_COMPARE_SKIP_NOISE_SEARCH="true"; S_GA_COMPARE_SKIP_NOISE_SEARCH="true"; shift ;;
+    --rl-noise-eval-source) needv "$@"; RL_COMPARE_NOISE_EVAL_SOURCE="$2"; S_RL_COMPARE_NOISE_EVAL_SOURCE="true"; shift 2 ;;
+    --ga-noise-eval-source) needv "$@"; GA_COMPARE_NOISE_EVAL_SOURCE="$2"; S_GA_COMPARE_NOISE_EVAL_SOURCE="true"; shift 2 ;;
+    --rl-noise-eval-config) needv "$@"; RL_COMPARE_NOISE_EVAL_CONFIG="$2"; S_RL_COMPARE_NOISE_EVAL_CONFIG="true"; shift 2 ;;
+    --ga-noise-eval-config) needv "$@"; GA_COMPARE_NOISE_EVAL_CONFIG="$2"; S_GA_COMPARE_NOISE_EVAL_CONFIG="true"; shift 2 ;;
     --resume-from) needv "$@"; RESUME_FROM="$2"; S_RESUME_FROM="true"; shift 2 ;;
     --*) err "不支持的参数：$1" ;;
     *) err "不再支持位置参数：$1。请改用 --dataset mrpc 这种写法。" ;;
@@ -228,6 +329,10 @@ MODEL_TYPE="$(printf '%s' "$MODEL_TYPE" | tr '[:upper:]' '[:lower:]')"
 FINAL_EVAL_SOURCE="$(printf '%s' "$FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
 NOISE_EVAL_SOURCE="$(printf '%s' "$NOISE_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
 GENERAL_MODE="$(printf '%s' "$GENERAL_MODE" | tr '[:upper:]' '[:lower:]')"
+RL_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$RL_COMPARE_FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
+GA_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$GA_COMPARE_FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
+RL_COMPARE_NOISE_EVAL_SOURCE="$(printf '%s' "$RL_COMPARE_NOISE_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
+GA_COMPARE_NOISE_EVAL_SOURCE="$(printf '%s' "$GA_COMPARE_NOISE_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
 
 case "$SEARCH_ALGORITHM" in
   rl|ppo) SEARCH_ALGORITHM="rl" ;;
@@ -247,6 +352,13 @@ case "$FINAL_EVAL_SOURCE" in search|json|manual) ;; *) err "不支持的第一�
 case "$NOISE_EVAL_SOURCE" in search|json|manual) ;; *) err "不支持的第二阶段评估来源：$NOISE_EVAL_SOURCE" ;; esac
 case "$GENERAL_MODE" in train|infer) ;; *) err "general-rl 模式必须是 train 或 infer，当前为：$GENERAL_MODE" ;; esac
 
+if [ "$S_STAGE1_GENERATIONS" = "false" ]; then
+  STAGE1_GENERATIONS="$(ga_default_stage1_generations_for_model "$MODEL_TYPE")"
+fi
+if [ "$S_STAGE2_GENERATIONS" = "false" ]; then
+  STAGE2_GENERATIONS="$(ga_default_stage2_generations_for_model "$MODEL_TYPE")"
+fi
+
 is_pos_int "$BATCH_SIZE" || err "--batch-size 必须是正整数，当前为：$BATCH_SIZE"
 is_pos_int "$NOISE_EVAL_REPEAT" || err "--noise-eval-repeat 必须是正整数，当前为：$NOISE_EVAL_REPEAT"
 [ -z "$RESUME_FROM" ] || [ -d "$RESUME_FROM" ] || err "--resume-from 指定的目录不存在：$RESUME_FROM"
@@ -261,8 +373,12 @@ if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$SEARCH_ALGORITHM" != "rl-and-g
   [ "$S_NOISE_EVAL_CONFIG" = "true" ] || NOISE_EVAL_CONFIG=$([ "$SEARCH_ALGORITHM" = "ga" ] && echo glue_noise_configs_best_genetic.json || echo glue_noise_configs_best_ppo.json)
 fi
 
+if [ "$SEARCH_ALGORITHM" != "rl-and-ga-compare" ]; then
+  { [ "$S_RL_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_RL_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_CONFIG" = "false" ]; } || err "当前模式不是 rl-and-ga-compare，请不要使用 --rl-* / --ga-* 的对比专用参数。"
+fi
+
 if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
-  { [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] && [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] && [ "$S_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_SKIP_STAGE1_FINAL_EVAL" = "false" ] && [ "$S_SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$S_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_FINAL_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_GELU" ] && [ -z "$MANUAL_SOFTMAX" ] && [ "$S_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_NOISE_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_NOISE_CONFIG" ]; } || err "general-rl 不能与普通 RL / GA 的阶段搜索或最终评估参数混用。"
+  { [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] && [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] && [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] && [ "$S_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_SKIP_STAGE1_FINAL_EVAL" = "false" ] && [ "$S_SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$S_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_FINAL_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_GELU" ] && [ -z "$MANUAL_SOFTMAX" ] && [ "$S_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_NOISE_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_NOISE_CONFIG" ]; } || err "general-rl 不能与普通 RL / GA 的阶段搜索或最终评估参数混用。"
   if [ "$GENERAL_MODE" = "train" ]; then
     is_pos_int "$GENERAL_ROUNDS" || err "--general-rl-rounds 必须是正整数"
     is_pos_int "$GENERAL_EPISODES_PER_ROUND" || err "--general-rl-episodes-per-round 必须是正整数"
@@ -279,30 +395,90 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ]; } || err "rl-and-ga-compare 不能与 general-rl 参数混用。"
   is_pos_int "$STAGE1_EPISODES" || err "--stage1-search-episodes 必须是正整数"
   is_pos_int "$STAGE2_EPISODES" || err "--stage2-search-episodes 必须是正整数"
+  is_pos_int "$STAGE1_GENERATIONS" || err "--stage1-search-generations 必须是正整数"
+  is_pos_int "$STAGE2_GENERATIONS" || err "--stage2-search-generations 必须是正整数"
   is_pos_num "$STAGE1_LR" || err "--stage1-search-lr 必须是正数"
   is_pos_num "$STAGE2_LR" || err "--stage2-search-lr 必须是正数"
-  [ "$SKIP_STAGE1_SEARCH" = "false" ] || err "rl-and-ga-compare 必须执行 Stage-1 搜索，不能使用 --skip-stage1-search。"
-  [ "$SKIP_NOISE_SEARCH" = "false" ] || err "rl-and-ga-compare 必须执行 Stage-2 搜索，不能使用 --skip-noise-search。"
   [ "$SKIP_STAGE1_FINAL_EVAL" = "false" ] || err "rl-and-ga-compare 必须保留 Stage-1 最终评估，不能使用 --skip-stage1-final-eval。"
   [ "$SKIP_NOISE_FINAL_EVAL" = "false" ] || err "rl-and-ga-compare 必须保留 Stage-2 最终评估，不能使用 --skip-noise-final-eval。"
-  [ "$FINAL_EVAL_SOURCE" = "search" ] || err "rl-and-ga-compare 只支持 --final-eval-source=search。"
-  [ "$NOISE_EVAL_SOURCE" = "search" ] || err "rl-and-ga-compare 只支持 --noise-eval-source=search。"
+  [ "$SKIP_STAGE1_SEARCH" = "false" ] || err "rl-and-ga-compare 不使用全局 --skip-stage1-search；请改用 --rl-skip-stage1-search / --ga-skip-stage1-search。"
+  [ "$SKIP_NOISE_SEARCH" = "false" ] || err "rl-and-ga-compare 不使用全局 --skip-noise-search；请改用 --rl-skip-noise-search / --ga-skip-noise-search。"
+  [ "$FINAL_EVAL_SOURCE" = "search" ] || err "rl-and-ga-compare 不使用全局 --final-eval-source；请改用 --rl-final-eval-source / --ga-final-eval-source。"
+  [ "$NOISE_EVAL_SOURCE" = "search" ] || err "rl-and-ga-compare 不使用全局 --noise-eval-source；请改用 --rl-noise-eval-source / --ga-noise-eval-source。"
   [ -z "$MANUAL_GELU" ] && [ -z "$MANUAL_SOFTMAX" ] && [ -z "$MANUAL_NOISE_CONFIG" ] || err "rl-and-ga-compare 不支持 manual 配置输入。"
-  [ "$S_FINAL_EVAL_CONFIG" = "false" ] || err "rl-and-ga-compare 不使用 --final-eval-config，请移除该参数。"
-  [ "$S_NOISE_EVAL_CONFIG" = "false" ] || err "rl-and-ga-compare 不使用 --noise-eval-config，请移除该参数。"
+  [ "$S_FINAL_EVAL_CONFIG" = "false" ] || err "rl-and-ga-compare 不使用全局 --final-eval-config；请改用 --rl-final-eval-config / --ga-final-eval-config。"
+  [ "$S_NOISE_EVAL_CONFIG" = "false" ] || err "rl-and-ga-compare 不使用全局 --noise-eval-config；请改用 --rl-noise-eval-config / --ga-noise-eval-config。"
   [ "$S_RESUME_FROM" = "false" ] || err "当前版本的 rl-and-ga-compare 不支持 --resume-from，请分别续训 RL/GA run。"
-  [ "$STAGE1_EPISODES" -ge 170 ] || err "rl-and-ga-compare 的 Stage-1 回合数至少需要 170。"
-  [ "$STAGE2_EPISODES" -ge 170 ] || err "rl-and-ga-compare 的 Stage-2 回合数至少需要 170。"
+  [ "$RL_COMPARE_FINAL_EVAL_SOURCE" = "search" ] || [ "$RL_COMPARE_FINAL_EVAL_SOURCE" = "json" ] || err "--rl-final-eval-source 只支持 search/json。"
+  [ "$GA_COMPARE_FINAL_EVAL_SOURCE" = "search" ] || [ "$GA_COMPARE_FINAL_EVAL_SOURCE" = "json" ] || err "--ga-final-eval-source 只支持 search/json。"
+  [ "$RL_COMPARE_NOISE_EVAL_SOURCE" = "search" ] || [ "$RL_COMPARE_NOISE_EVAL_SOURCE" = "json" ] || err "--rl-noise-eval-source 只支持 search/json。"
+  [ "$GA_COMPARE_NOISE_EVAL_SOURCE" = "search" ] || [ "$GA_COMPARE_NOISE_EVAL_SOURCE" = "json" ] || err "--ga-noise-eval-source 只支持 search/json。"
+
+  if [ "$RL_COMPARE_SKIP_STAGE1_SEARCH" = "true" ]; then
+    [ "$RL_COMPARE_FINAL_EVAL_SOURCE" != "search" ] || RL_COMPARE_FINAL_EVAL_SOURCE="json"
+    [ -n "$RL_COMPARE_FINAL_EVAL_CONFIG" ] || RL_COMPARE_FINAL_EVAL_CONFIG="$(default_stage1_json_for_family rl)"
+  else
+    [ "$RL_COMPARE_FINAL_EVAL_SOURCE" = "search" ] || err "RL 未跳过 Stage-1 搜索时，--rl-final-eval-source 必须为 search。"
+    [ -z "$RL_COMPARE_FINAL_EVAL_CONFIG" ] || err "RL 未跳过 Stage-1 搜索时，不应提供 --rl-final-eval-config。"
+    [ "$STAGE1_EPISODES" -ge 170 ] || err "RL 的 Stage-1 回合数至少需要 170。"
+  fi
+  if [ "$GA_COMPARE_SKIP_STAGE1_SEARCH" = "true" ]; then
+    [ "$GA_COMPARE_FINAL_EVAL_SOURCE" != "search" ] || GA_COMPARE_FINAL_EVAL_SOURCE="json"
+    [ -n "$GA_COMPARE_FINAL_EVAL_CONFIG" ] || GA_COMPARE_FINAL_EVAL_CONFIG="$(default_stage1_json_for_family ga)"
+  else
+    [ "$GA_COMPARE_FINAL_EVAL_SOURCE" = "search" ] || err "GA 未跳过 Stage-1 搜索时，--ga-final-eval-source 必须为 search。"
+    [ -z "$GA_COMPARE_FINAL_EVAL_CONFIG" ] || err "GA 未跳过 Stage-1 搜索时，不应提供 --ga-final-eval-config。"
+  fi
+  if [ "$RL_COMPARE_SKIP_NOISE_SEARCH" = "true" ]; then
+    [ "$RL_COMPARE_NOISE_EVAL_SOURCE" != "search" ] || RL_COMPARE_NOISE_EVAL_SOURCE="json"
+    [ -n "$RL_COMPARE_NOISE_EVAL_CONFIG" ] || RL_COMPARE_NOISE_EVAL_CONFIG="$(default_stage2_json_for_family rl)"
+  else
+    [ "$RL_COMPARE_NOISE_EVAL_SOURCE" = "search" ] || err "RL 未跳过 Stage-2 搜索时，--rl-noise-eval-source 必须为 search。"
+    [ -z "$RL_COMPARE_NOISE_EVAL_CONFIG" ] || err "RL 未跳过 Stage-2 搜索时，不应提供 --rl-noise-eval-config。"
+    [ "$STAGE2_EPISODES" -ge 170 ] || err "RL 的 Stage-2 回合数至少需要 170。"
+  fi
+  if [ "$GA_COMPARE_SKIP_NOISE_SEARCH" = "true" ]; then
+    [ "$GA_COMPARE_NOISE_EVAL_SOURCE" != "search" ] || GA_COMPARE_NOISE_EVAL_SOURCE="json"
+    [ -n "$GA_COMPARE_NOISE_EVAL_CONFIG" ] || GA_COMPARE_NOISE_EVAL_CONFIG="$(default_stage2_json_for_family ga)"
+  else
+    [ "$GA_COMPARE_NOISE_EVAL_SOURCE" = "search" ] || err "GA 未跳过 Stage-2 搜索时，--ga-noise-eval-source 必须为 search。"
+    [ -z "$GA_COMPARE_NOISE_EVAL_CONFIG" ] || err "GA 未跳过 Stage-2 搜索时，不应提供 --ga-noise-eval-config。"
+  fi
+
+  if [ "$RL_COMPARE_FINAL_EVAL_SOURCE" = "json" ]; then
+    [ -f "$RL_COMPARE_FINAL_EVAL_CONFIG" ] || err "RL Stage-1 JSON 配置文件不存在：$RL_COMPARE_FINAL_EVAL_CONFIG"
+    FAM="$(infer_family "$RL_COMPARE_FINAL_EVAL_CONFIG")"
+    [ "$FAM" != "ga" ] || err "RL Stage-1 JSON 配置看起来属于 GA 家族：$RL_COMPARE_FINAL_EVAL_CONFIG"
+  fi
+  if [ "$GA_COMPARE_FINAL_EVAL_SOURCE" = "json" ]; then
+    [ -f "$GA_COMPARE_FINAL_EVAL_CONFIG" ] || err "GA Stage-1 JSON 配置文件不存在：$GA_COMPARE_FINAL_EVAL_CONFIG"
+    FAM="$(infer_family "$GA_COMPARE_FINAL_EVAL_CONFIG")"
+    [ "$FAM" != "rl" ] || err "GA Stage-1 JSON 配置看起来属于 RL/PPO 家族：$GA_COMPARE_FINAL_EVAL_CONFIG"
+  fi
+  if [ "$RL_COMPARE_NOISE_EVAL_SOURCE" = "json" ]; then
+    [ -f "$RL_COMPARE_NOISE_EVAL_CONFIG" ] || err "RL Stage-2 JSON 配置文件不存在：$RL_COMPARE_NOISE_EVAL_CONFIG"
+    FAM="$(infer_family "$RL_COMPARE_NOISE_EVAL_CONFIG")"
+    [ "$FAM" != "ga" ] || err "RL Stage-2 JSON 配置看起来属于 GA 家族：$RL_COMPARE_NOISE_EVAL_CONFIG"
+  fi
+  if [ "$GA_COMPARE_NOISE_EVAL_SOURCE" = "json" ]; then
+    [ -f "$GA_COMPARE_NOISE_EVAL_CONFIG" ] || err "GA Stage-2 JSON 配置文件不存在：$GA_COMPARE_NOISE_EVAL_CONFIG"
+    FAM="$(infer_family "$GA_COMPARE_NOISE_EVAL_CONFIG")"
+    [ "$FAM" != "rl" ] || err "GA Stage-2 JSON 配置看起来属于 RL/PPO 家族：$GA_COMPARE_NOISE_EVAL_CONFIG"
+  fi
 else
   { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ]; } || err "当前搜索算法不是 general-rl，请不要使用 --general-rl-* 参数。"
-  is_pos_int "$STAGE1_EPISODES" || err "--stage1-search-episodes 必须是正整数"
-  is_pos_int "$STAGE2_EPISODES" || err "--stage2-search-episodes 必须是正整数"
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
+    [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] || err "rl 模式不使用 GA 代数参数，请移除 --stage1-search-generations / --stage2-search-generations。"
+    is_pos_int "$STAGE1_EPISODES" || err "--stage1-search-episodes 必须是正整数"
+    is_pos_int "$STAGE2_EPISODES" || err "--stage2-search-episodes 必须是正整数"
     is_pos_num "$STAGE1_LR" || err "--stage1-search-lr 必须是正数"
     is_pos_num "$STAGE2_LR" || err "--stage2-search-lr 必须是正数"
     [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$STAGE1_EPISODES" -ge 170 ] || err "rl 的 Stage-1 回合数至少需要 170。"
     [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$STAGE2_EPISODES" -ge 170 ] || err "rl 的 Stage-2 回合数至少需要 170。"
   else
+    [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] || err "ga 模式不再使用 episode 作为搜索预算，请改用 --stage1-search-generations / --stage2-search-generations。"
+    is_pos_int "$STAGE1_GENERATIONS" || err "--stage1-search-generations 必须是正整数"
+    is_pos_int "$STAGE2_GENERATIONS" || err "--stage2-search-generations 必须是正整数"
     [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] || err "GA 不使用 PPO 学习率参数，请移除 --stage1-search-lr / --stage2-search-lr。"
   fi
   if [ "$FINAL_EVAL_SOURCE" = "manual" ]; then
@@ -371,8 +547,25 @@ LOGFILE_BASENAME="$(basename "$LOGFILE")"
 [ -n "$LOGFILE_BASENAME" ] || LOGFILE_BASENAME="output.log"
 RUN_TIMESTAMP="$(date +"%Y%m%d_%H%M%S")"
 RUN_ID="${RUN_TIMESTAMP}_pid$$"
-RUN_ROOT="rl_results/layer_importance_runs/${DATASET}/${RUN_ID}"
+GENERAL_TASKSET_ID=""
+if [ "$SEARCH_ALGORITHM" = "rl" ]; then
+  RUN_GROUP_DIR="rl_results/runs/rl/${DATASET}"
+elif [ "$SEARCH_ALGORITHM" = "ga" ]; then
+  RUN_GROUP_DIR="rl_results/runs/ga/${DATASET}"
+elif [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
+  if [ "$GENERAL_MODE" = "train" ]; then
+    GENERAL_TASKSET_ID="$(normalize_taskset_id "${GENERAL_TASKS:-$DATASET}")"
+    RUN_GROUP_DIR="rl_results/runs/general_rl/train/${GENERAL_TASKSET_ID}"
+  else
+    RUN_GROUP_DIR="rl_results/runs/general_rl/infer/${DATASET}"
+  fi
+else
+  RUN_GROUP_DIR="rl_results/runs/compare/rl_vs_ga/${DATASET}"
+fi
+RUN_ROOT="${RUN_GROUP_DIR}/${RUN_ID}"
+LATEST_BASE_DIR="$RUN_GROUP_DIR"
 LOGFILE_PATH="${RUN_ROOT}/logs/${LOGFILE_BASENAME}"
+ERROR_SUMMARY_PATH="${RUN_ROOT}/logs/error_summary.txt"
 mkdir -p "${RUN_ROOT}/logs"
 
 if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
@@ -389,14 +582,25 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
   fi
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   resolve_compare_cuda_split
-  CMD=(python rl_ga_compare_runner.py --base-model "$BASE_MODEL" --data-path "$DATA_PATH" --dataset "$DATASET" --output-dir "$RUN_ROOT" --batch-size "$BATCH_SIZE" --stage1-search-episodes "$STAGE1_EPISODES" --stage2-search-episodes "$STAGE2_EPISODES" --stage1-search-lr "$STAGE1_LR" --stage2-search-lr "$STAGE2_LR" --random-seed "$RANDOM_SEED" --perm-trials "$PERM_TRIALS" --cost-trials "$COST_TRIALS" --budget-trials "$BUDGET_TRIALS" --noise-eval-repeat "$NOISE_EVAL_REPEAT")
+  CMD=(python rl_ga_compare_runner.py --base-model "$BASE_MODEL" --data-path "$DATA_PATH" --dataset "$DATASET" --output-dir "$RUN_ROOT" --batch-size "$BATCH_SIZE" --stage1-search-episodes "$STAGE1_EPISODES" --stage2-search-episodes "$STAGE2_EPISODES" --stage1-search-generations "$STAGE1_GENERATIONS" --stage2-search-generations "$STAGE2_GENERATIONS" --stage1-search-lr "$STAGE1_LR" --stage2-search-lr "$STAGE2_LR" --random-seed "$RANDOM_SEED" --perm-trials "$PERM_TRIALS" --cost-trials "$COST_TRIALS" --budget-trials "$BUDGET_TRIALS" --noise-eval-repeat "$NOISE_EVAL_REPEAT")
+  [ "$RL_COMPARE_SKIP_STAGE1_SEARCH" = "true" ] && CMD+=(--rl-skip-stage1-search)
+  [ "$GA_COMPARE_SKIP_STAGE1_SEARCH" = "true" ] && CMD+=(--ga-skip-stage1-search)
+  CMD+=(--rl-final-eval-source "$RL_COMPARE_FINAL_EVAL_SOURCE" --ga-final-eval-source "$GA_COMPARE_FINAL_EVAL_SOURCE")
+  CMD+=(--rl-final-eval-config "$RL_COMPARE_FINAL_EVAL_CONFIG" --ga-final-eval-config "$GA_COMPARE_FINAL_EVAL_CONFIG")
+  [ "$RL_COMPARE_SKIP_NOISE_SEARCH" = "true" ] && CMD+=(--rl-skip-noise-search)
+  [ "$GA_COMPARE_SKIP_NOISE_SEARCH" = "true" ] && CMD+=(--ga-skip-noise-search)
+  CMD+=(--rl-noise-eval-source "$RL_COMPARE_NOISE_EVAL_SOURCE" --ga-noise-eval-source "$GA_COMPARE_NOISE_EVAL_SOURCE")
+  CMD+=(--rl-noise-eval-config "$RL_COMPARE_NOISE_EVAL_CONFIG" --ga-noise-eval-config "$GA_COMPARE_NOISE_EVAL_CONFIG")
   [ -n "$RL_COMPARE_CUDA_VISIBLE_DEVICES" ] && CMD+=(--rl-cuda-visible-devices "$RL_COMPARE_CUDA_VISIBLE_DEVICES")
   [ -n "$GA_COMPARE_CUDA_VISIBLE_DEVICES" ] && CMD+=(--ga-cuda-visible-devices "$GA_COMPARE_CUDA_VISIBLE_DEVICES")
 else
-  ENTRY=rl_tune.py
-  [ "$SEARCH_ALGORITHM" = "ga" ] && ENTRY=rl_tune_genetic.py
-  CMD=(python "$ENTRY" --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$S_STAGE1_EPISODES" --stage2_rl_episodes_specified "$S_STAGE2_EPISODES" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM")
-  [ "$SEARCH_ALGORITHM" = "rl" ] && CMD+=(--stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR")
+  if [ "$SEARCH_ALGORITHM" = "rl" ]; then
+    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$S_STAGE1_EPISODES" --stage2_rl_episodes_specified "$S_STAGE2_EPISODES" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR")
+  else
+    CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM")
+    [ "$S_STAGE1_GENERATIONS" = "true" ] && CMD+=(--stage1_ga_generations "$STAGE1_GENERATIONS" --stage1_ga_generations_specified "true")
+    [ "$S_STAGE2_GENERATIONS" = "true" ] && CMD+=(--stage2_ga_generations "$STAGE2_GENERATIONS" --stage2_ga_generations_specified "true")
+  fi
 fi
 
 printf -v CMD_STR '%q ' "${CMD[@]}"
@@ -406,6 +610,7 @@ show "数据集" "$DATASET" "$S_DATASET"
 show "模型类型" "$(modelzh "$MODEL_TYPE")" "$S_MODEL_TYPE"
 show "日志文件" "$LOGFILE_BASENAME" "$S_LOGFILE"
 show "批大小" "$BATCH_SIZE" "$S_BATCH_SIZE"
+show "模式目录" "$RUN_GROUP_DIR" "true"
 show "运行目录" "$RUN_ROOT" "true"
 
 if [ "$SEARCH_ALGORITHM" = "rl" ]; then
@@ -418,27 +623,39 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   show "跳过 Stage-1 搜索" "$(boolzh "$SKIP_STAGE1_SEARCH")" "$S_SKIP_STAGE1_SEARCH"
   show "跳过 Stage-2 搜索" "$(boolzh "$SKIP_NOISE_SEARCH")" "$S_SKIP_NOISE_SEARCH"
 elif [ "$SEARCH_ALGORITHM" = "ga" ]; then
-  show "Stage-1 回合数" "$STAGE1_EPISODES" "$S_STAGE1_EPISODES"
-  show "Stage-2 回合数" "$STAGE2_EPISODES" "$S_STAGE2_EPISODES"
+  show "Stage-1 迭代代数" "$STAGE1_GENERATIONS" "$S_STAGE1_GENERATIONS"
+  show "Stage-2 迭代代数" "$STAGE2_GENERATIONS" "$S_STAGE2_GENERATIONS"
   show "Stage-1 配置来源" "$(srczh "$FINAL_EVAL_SOURCE")" "$S_FINAL_EVAL_SOURCE"
   show "Stage-2 配置来源" "$(srczh "$NOISE_EVAL_SOURCE")" "$S_NOISE_EVAL_SOURCE"
   show "跳过 Stage-1 搜索" "$(boolzh "$SKIP_STAGE1_SEARCH")" "$S_SKIP_STAGE1_SEARCH"
   show "跳过 Stage-2 搜索" "$(boolzh "$SKIP_NOISE_SEARCH")" "$S_SKIP_NOISE_SEARCH"
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
-  show "Stage-1 回合数" "$STAGE1_EPISODES" "$S_STAGE1_EPISODES"
-  show "Stage-2 回合数" "$STAGE2_EPISODES" "$S_STAGE2_EPISODES"
+  show "RL Stage-1 回合数" "$STAGE1_EPISODES" "$S_STAGE1_EPISODES"
+  show "RL Stage-2 回合数" "$STAGE2_EPISODES" "$S_STAGE2_EPISODES"
+  show "GA Stage-1 迭代代数" "$STAGE1_GENERATIONS" "$S_STAGE1_GENERATIONS"
+  show "GA Stage-2 迭代代数" "$STAGE2_GENERATIONS" "$S_STAGE2_GENERATIONS"
   show "RL Stage-1 学习率" "$STAGE1_LR" "$S_STAGE1_LR"
   show "RL Stage-2 学习率" "$STAGE2_LR" "$S_STAGE2_LR"
   show "噪声最终评估重复次数" "$NOISE_EVAL_REPEAT" "$S_NOISE_EVAL_REPEAT"
-  echo "  子运行目录：${RUN_ROOT}/rl_run（普通 RL）"
-  echo "  子运行目录：${RUN_ROOT}/ga_run（遗传算法）"
-  echo "  对比结果目录：${RUN_ROOT}/comparison"
+  echo "  RL Stage-1 搜索：$(boolzh "$RL_COMPARE_SKIP_STAGE1_SEARCH")（跳过=是时改走 $(srczh "$RL_COMPARE_FINAL_EVAL_SOURCE")）"
+  [ -n "$RL_COMPARE_FINAL_EVAL_CONFIG" ] && echo "  RL Stage-1 JSON：$RL_COMPARE_FINAL_EVAL_CONFIG"
+  echo "  RL Stage-2 搜索：$(boolzh "$RL_COMPARE_SKIP_NOISE_SEARCH")（跳过=是时改走 $(srczh "$RL_COMPARE_NOISE_EVAL_SOURCE")）"
+  [ -n "$RL_COMPARE_NOISE_EVAL_CONFIG" ] && echo "  RL Stage-2 JSON：$RL_COMPARE_NOISE_EVAL_CONFIG"
+  echo "  GA Stage-1 搜索：$(boolzh "$GA_COMPARE_SKIP_STAGE1_SEARCH")（跳过=是时改走 $(srczh "$GA_COMPARE_FINAL_EVAL_SOURCE")）"
+  [ -n "$GA_COMPARE_FINAL_EVAL_CONFIG" ] && echo "  GA Stage-1 JSON：$GA_COMPARE_FINAL_EVAL_CONFIG"
+  echo "  GA Stage-2 搜索：$(boolzh "$GA_COMPARE_SKIP_NOISE_SEARCH")（跳过=是时改走 $(srczh "$GA_COMPARE_NOISE_EVAL_SOURCE")）"
+  [ -n "$GA_COMPARE_NOISE_EVAL_CONFIG" ] && echo "  GA Stage-2 JSON：$GA_COMPARE_NOISE_EVAL_CONFIG"
+  echo "  子运行目录：${RUN_ROOT}/children/rl（普通 RL）"
+  echo "  子运行目录：${RUN_ROOT}/children/ga（遗传算法）"
+  echo "  对比结果目录：${RUN_ROOT}/reports"
+  echo "  元信息目录：${RUN_ROOT}/meta"
   echo "  设备分配：${COMPARE_CUDA_NOTE}"
-  echo "  说明：该模式固定执行完整 Stage-1/Stage-2 搜索与最终评估，不支持跳过阶段。"
+  echo "  说明：该模式支持 RL/GA 分别跳过 Stage-1/Stage-2 搜索，并从各自 JSON 配置直接做最终评估。"
 else
   show "通用强化学习模式" "$GENERAL_MODE" "$S_GENERAL_MODE"
   show "跳过 Stage-2" "$(boolzh "$GENERAL_SKIP_STAGE2")" "$S_GENERAL_SKIP_STAGE2"
   if [ "$GENERAL_MODE" = "train" ]; then
+    show "任务集合标识" "$GENERAL_TASKSET_ID" "true"
     show "训练任务" "${GENERAL_TASKS:-$DATASET}" "$S_GENERAL_TASKS"
     show "训练轮数" "$GENERAL_ROUNDS" "$S_GENERAL_ROUNDS"
     show "每轮每任务回合数" "$GENERAL_EPISODES_PER_ROUND" "$S_GENERAL_EPISODES_PER_ROUND"
@@ -462,23 +679,33 @@ echo "  实际执行命令（Command）：$CMD_STR"
 nohup "${CMD[@]}" > "$LOGFILE_PATH" 2>&1 &
 JOB_PID=$!
 if [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
-  echo "$JOB_PID" > "${RUN_ROOT}/compare_launcher.pid"
-  echo "$RUN_ROOT" > "rl_results/layer_importance_runs/${DATASET}/LATEST_COMPARE_RUN_DIR"
-  echo "$JOB_PID" > "rl_results/layer_importance_runs/${DATASET}/LATEST_COMPARE_PID"
+  mkdir -p "${RUN_ROOT}/meta"
+  echo "$JOB_PID" > "${RUN_ROOT}/meta/compare_launcher.pid"
+  echo "$RUN_ROOT" > "${LATEST_BASE_DIR}/LATEST_RUN_DIR"
+  echo "$JOB_PID" > "${LATEST_BASE_DIR}/LATEST_PID"
+  echo "$RUN_ROOT" > "${LATEST_BASE_DIR}/LATEST_COMPARE_RUN_DIR"
+  echo "$JOB_PID" > "${LATEST_BASE_DIR}/LATEST_COMPARE_PID"
 else
+  echo "$JOB_PID" > "${RUN_ROOT}/run.pid"
   echo "$JOB_PID" > "${RUN_ROOT}/rl.pid"
-  echo "$RUN_ROOT" > "rl_results/layer_importance_runs/${DATASET}/LATEST_RUN_DIR"
-  echo "$JOB_PID" > "rl_results/layer_importance_runs/${DATASET}/LATEST_PID"
+  echo "$RUN_ROOT" > "${LATEST_BASE_DIR}/LATEST_RUN_DIR"
+  echo "$JOB_PID" > "${LATEST_BASE_DIR}/LATEST_PID"
 fi
 
 echo
 echo "已在后台启动。"
 echo "  进程号（PID）：$JOB_PID"
 echo "  查看日志：tail -f $LOGFILE_PATH"
+echo "  错误摘要：$ERROR_SUMMARY_PATH"
+echo "  LATEST_RUN_DIR：${LATEST_BASE_DIR}/LATEST_RUN_DIR"
+echo "  LATEST_PID：${LATEST_BASE_DIR}/LATEST_PID"
 if [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   echo "  优雅停止（Graceful Stop）：kill -INT $JOB_PID"
-  echo "  Stage-1 对比报告：${RUN_ROOT}/comparison/stage1_compare_report_${DATASET}.md"
-  echo "  Stage-2 对比报告：${RUN_ROOT}/comparison/stage2_compare_report_${DATASET}.md"
+  echo "  RL 子进程错误摘要：${RUN_ROOT}/children/rl/logs/error_summary.txt"
+  echo "  GA 子进程错误摘要：${RUN_ROOT}/children/ga/logs/error_summary.txt"
+  echo "  Compare 元信息：${RUN_ROOT}/meta/compare_metadata.json"
+  echo "  Stage-1 对比报告：${RUN_ROOT}/reports/stage1_compare_report_${DATASET}.md"
+  echo "  Stage-2 对比报告：${RUN_ROOT}/reports/stage2_compare_report_${DATASET}.md"
 else
   echo "  优雅停止（Graceful Stop）：kill -INT $JOB_PID"
 fi

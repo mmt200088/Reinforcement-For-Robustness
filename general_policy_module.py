@@ -108,6 +108,7 @@ GENERAL_STAGE2_TRAIN_CHECKPOINT = "general_stage2_train_checkpoint.pt"
 # ===========================================================================
 TASK_CONTEXT_DIM = 5
 GENERAL_POLICY_VERSION = 1
+GENERAL_STAGE1_ALLOWED_GELU_DEGREES = (4, 2, 1)
 
 
 # ===========================================================================
@@ -206,6 +207,19 @@ def compute_task_context(baseline_loss, baseline_m1, baseline_m2,
         float(baseline_loss), float(baseline_m1), float(baseline_m2),
         float(error_threshold), float(correlation_drop_ratio),
     ], dtype=np.float32)
+
+
+def _validate_general_stage1_candidate_configs(candidate_configs):
+    allowed = set(GENERAL_STAGE1_ALLOWED_GELU_DEGREES)
+    for idx, cfg in enumerate(candidate_configs):
+        gelu_arr = np.asarray(cfg["gelu"], dtype=int)
+        invalid = sorted({int(v) for v in gelu_arr.tolist()} - allowed)
+        if invalid:
+            raise ValueError(
+                f"Stage-1 general policy candidate #{idx} contains unsupported GELU degrees "
+                f"{invalid}. Degree 0 is disabled; only {GENERAL_STAGE1_ALLOWED_GELU_DEGREES} "
+                f"are allowed."
+            )
 
 
 # ===========================================================================
@@ -650,6 +664,11 @@ def multi_task_train_stage1(
     envs = {}
     for name in task_names:
         tc = tasks[name]
+        if np.any(np.asarray(tc["gelu0_eligible"], dtype=bool)):
+            raise ValueError(
+                "General Stage-1 explicitly disables GELU degree 0; "
+                "gelu0_eligible must be all False."
+            )
         ev = tc["evaluator"]
 
         class _W:
@@ -935,6 +954,11 @@ def offline_find_best_config_stage1(
            f"(missing={len(missing)}, unexpected={len(unexpected)})")
 
     task_info = prepare_stage1_task(evaluator)
+    if np.any(np.asarray(task_info["gelu0_eligible"], dtype=bool)):
+        raise ValueError(
+            "General Stage-1 offline inference explicitly disables GELU degree 0; "
+            "gelu0_eligible must be all False."
+        )
     tc = torch.tensor(task_info["task_context"], dtype=torch.float32).to(device)
     net.set_task_context(tc)
 
@@ -1245,7 +1269,9 @@ def critic_quick_rank_stage1(
     tc = torch.tensor(task_info["task_context"], dtype=torch.float32).to(device)
     net.set_task_context(tc)
 
-    gelu_to_idx = {4: 0, 2: 1, 1: 2, 0: 3}
+    _validate_general_stage1_candidate_configs(candidate_configs)
+
+    gelu_to_idx = {4: 0, 2: 1, 1: 2}
     softmax_to_idx = {6: 0, 5: 1, 4: 2, 3: 3, 2: 4}
     N = total_layers
 
@@ -1270,7 +1296,7 @@ def critic_quick_rank_stage1(
             li_list.append(layer)
             pg_list.append(prev_g_idx)
             ps_list.append(prev_s_idx)
-            prev_g_idx = gelu_to_idx.get(g_deg, 0)
+            prev_g_idx = gelu_to_idx[g_deg]
             prev_s_idx = softmax_to_idx.get(s_deg, 0)
 
         cf_t = torch.stack(cf_list).unsqueeze(0).to(device)       # (1, N, 6)

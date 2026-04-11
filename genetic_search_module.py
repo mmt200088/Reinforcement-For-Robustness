@@ -7,7 +7,6 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from final_evaluation_module import FinalEvaluationModule
-from layer_importance_evaluator import USE_VALIDATION_FOR_REWARD
 from function_handler import (
     INPUT_NOISE_ALLOWED_SCALING_FACTORS,
     WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
@@ -51,6 +50,7 @@ STAGE2_DEFAULT_POPULATION = 32
 STAGNATION_TOLERANCE_BASE = 10
 GA_PROGRESS_BOX_INTERVAL = 5
 STAGE1_GA_CONSTRAINT_RATIO = 0.005
+GA_STAGE1_ALLOWED_GELU_DEGREES = (4, 2, 1)
 
 
 def _progress_bar(current, total, width=30):
@@ -170,24 +170,46 @@ class GeneticNoiseFinalEvaluationModule(NoiseFinalEvaluationModule):
         return cfg, label, source
 
 
+def _resolve_ga_reward_reference_split(evaluator) -> str:
+    if evaluator.has_dataset_split("validation_full"):
+        return "validation_full"
+    return evaluator.get_reward_reference_split_name()
+
+
+def _resolve_ga_generation_budget(
+    evaluator,
+    *,
+    attr_name: str,
+    fallback_episode_budget: int,
+    population_size: int,
+) -> int:
+    explicit_generations = getattr(evaluator, attr_name, None)
+    if explicit_generations is not None:
+        try:
+            explicit_generations = int(explicit_generations)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{attr_name} must be a positive integer, got {explicit_generations!r}."
+            ) from exc
+        if explicit_generations <= 0:
+            raise ValueError(
+                f"{attr_name} must be a positive integer, got {explicit_generations!r}."
+            )
+        return explicit_generations
+    return max(1, math.ceil(int(fallback_episode_budget) / max(int(population_size), 1)))
+
+
 def build_stage1_context(evaluator, log_fn=None, include_distribution=True) -> Stage1Context:
     base_gelu = np.full(evaluator.total_layers, 4, dtype=int)
     base_softmax = np.full(evaluator.total_layers, 6, dtype=int)
     base_tot_c, base_g_c, base_s_c = evaluator.get_simulated_cost(base_gelu, base_softmax)
 
-    reward_reference_split = evaluator.get_reward_reference_split_name()
-    if USE_VALIDATION_FOR_REWARD:
-        base_loss, base_p, base_s, _ = evaluator.stage1_evaluate(
-            base_gelu,
-            base_softmax,
-            split=reward_reference_split,
-        )
-    else:
-        base_loss, base_p, base_s, _ = evaluator.stage1_evaluate(
-            base_gelu,
-            base_softmax,
-            use_train=True,
-        )
+    reward_reference_split = _resolve_ga_reward_reference_split(evaluator)
+    base_loss, base_p, base_s, _ = evaluator.stage1_evaluate(
+        base_gelu,
+        base_softmax,
+        split=reward_reference_split,
+    )
 
     limits = {
         "loss": float(base_loss * (1.0 + STAGE1_GA_CONSTRAINT_RATIO)),
@@ -196,23 +218,12 @@ def build_stage1_context(evaluator, log_fn=None, include_distribution=True) -> S
     }
 
     gelu_degree0_eligible = np.zeros(evaluator.total_layers, dtype=bool)
-    if include_distribution:
-        gelu_degree0_eligible, gelu_interval_counts = evaluator.analyze_gelu_distribution()
-        if log_fn is not None:
-            log_fn("")
-            log_fn("Stage-1 GELU distribution screening for degree-0 eligibility:")
-            for layer_idx in range(evaluator.total_layers):
-                counts = gelu_interval_counts[layer_idx]
-                total = float(np.sum(counts))
-                if total <= 0:
-                    continue
-                pcts = counts / total * 100.0
-                status = "eligible" if gelu_degree0_eligible[layer_idx] else "not_eligible"
-                log_fn(
-                    f"  layer={layer_idx:02d}  <-2.7={pcts[0]:6.2f}%  "
-                    f"[-2.7,0)={pcts[1]:6.2f}%  [0,2.7]={pcts[2]:6.2f}%  "
-                    f">2.7={pcts[3]:6.2f}%  status={status}"
-                )
+    if include_distribution and log_fn is not None:
+        log_fn("")
+        log_fn(
+            "Stage-1 GELU degree 0 is globally disabled for GA; "
+            "distribution eligibility screening is skipped."
+        )
 
     if log_fn is not None:
         log_fn("")
@@ -255,10 +266,7 @@ def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None) -> S
     fixed_gelu = np.asarray(fixed_gelu, dtype=int)
     fixed_softmax = np.asarray(fixed_softmax, dtype=int)
 
-    if evaluator.has_dataset_split("validation_full"):
-        reward_reference_split = "validation_full"
-    else:
-        reward_reference_split = evaluator.get_reward_reference_split_name()
+    reward_reference_split = _resolve_ga_reward_reference_split(evaluator)
 
     baseline_low_risk_config = _get_low_risk_noise_configuration(evaluator)
     worst_case_noise_config = _get_worst_case_noise_configuration(evaluator)
@@ -387,7 +395,7 @@ def build_stage2_final_eval_context_without_search(evaluator):
         exact_baseline_gelu,
         exact_baseline_softmax,
         repeats=evaluator.noise_eval_repeat_n,
-        split=evaluator.get_reward_reference_split_name(),
+        split=_resolve_ga_reward_reference_split(evaluator),
     )
     limits = evaluator.build_constraint_limits_from_metrics(
         baseline_summary["loss_mean"],
@@ -550,7 +558,12 @@ class Stage1GeneticSearcher:
         self.evaluator = evaluator
         self.rng = np.random.default_rng(int(random_seed))
         self.population_size = max(STAGE1_DEFAULT_POPULATION, evaluator.total_layers * 2)
-        self.max_generations = max(1, math.ceil(evaluator.stage1_rl_episodes / self.population_size))
+        self.max_generations = _resolve_ga_generation_budget(
+            evaluator,
+            attr_name="stage1_ga_generations",
+            fallback_episode_budget=evaluator.stage1_rl_episodes,
+            population_size=self.population_size,
+        )
         stage1_dir = os.path.dirname(evaluator.step_info_file)
         self.result_path = os.path.join(stage1_dir, "ga_search_results.json")
         self.plot_path = os.path.join(stage1_dir, "ga_search_curve.png")
@@ -565,18 +578,26 @@ class Stage1GeneticSearcher:
     def _log(self, message: str):
         self.evaluator.log(message)
 
+    @staticmethod
+    def _sanitize_stage1_candidate(gelu, softmax):
+        gelu_arr = np.asarray(gelu, dtype=int).copy()
+        softmax_arr = np.asarray(softmax, dtype=int).copy()
+        had_degree0 = bool(np.any(gelu_arr == 0))
+        if had_degree0:
+            gelu_arr[gelu_arr == 0] = 1
+        return gelu_arr, softmax_arr, had_degree0
+
     def _allowed_gelu_degrees(self, layer_idx: int) -> Tuple[int, ...]:
-        choices = [4, 2, 1]
-        if self.context.gelu_degree0_eligible[layer_idx]:
-            choices.append(0)
-        return tuple(choices)
+        del layer_idx
+        return GA_STAGE1_ALLOWED_GELU_DEGREES
 
     @staticmethod
     def _softmax_degrees() -> Tuple[int, ...]:
         return (6, 5, 4, 3, 2)
 
     def _candidate_key(self, gelu, softmax):
-        return tuple(np.asarray(gelu, dtype=int).tolist()), tuple(np.asarray(softmax, dtype=int).tolist())
+        gelu_arr, softmax_arr, _ = self._sanitize_stage1_candidate(gelu, softmax)
+        return tuple(gelu_arr.tolist()), tuple(softmax_arr.tolist())
 
     def _evaluate(self, gelu, softmax) -> Dict[str, object]:
         key = self._candidate_key(gelu, softmax)
@@ -584,8 +605,15 @@ class Stage1GeneticSearcher:
         if cached is not None:
             return cached
 
-        gelu_arr = np.asarray(gelu, dtype=int)
-        softmax_arr = np.asarray(softmax, dtype=int)
+        gelu_arr, softmax_arr, had_degree0 = self._sanitize_stage1_candidate(
+            gelu,
+            softmax,
+        )
+        if had_degree0:
+            self._log(
+                "[Stage1] Detected GELU degree 0 in a candidate; "
+                "it was normalized to degree 1 because degree 0 is disabled."
+            )
         loss, p, s, _ = self.evaluator.stage1_evaluate(
             gelu_arr,
             softmax_arr,
@@ -815,12 +843,16 @@ class Stage1GeneticSearcher:
             for k in ("gelu", "softmax"):
                 if k in best_candidate and not isinstance(best_candidate[k], np.ndarray):
                     best_candidate[k] = np.asarray(best_candidate[k], dtype=int)
+            best_candidate = self._evaluate(
+                best_candidate["gelu"],
+                best_candidate["softmax"],
+            )
             best_generation = int(ckpt["best_generation"])
             stagnation = int(ckpt["stagnation"])
             history = list(ckpt["history"])
             pop_raw = ckpt["population"]
             population = [
-                (np.asarray(g, dtype=int), np.asarray(s, dtype=int))
+                self._sanitize_stage1_candidate(g, s)[:2]
                 for g, s in pop_raw
             ]
             if "rng_state" in ckpt:
@@ -1091,7 +1123,12 @@ class Stage2NoiseGeneticSearcher:
         self.fixed_source = str(fixed_source)
         self.rng = np.random.default_rng(int(random_seed))
         self.population_size = max(STAGE2_DEFAULT_POPULATION, evaluator.total_layers)
-        self.max_generations = max(1, math.ceil(evaluator.stage2_rl_episodes / self.population_size))
+        self.max_generations = _resolve_ga_generation_budget(
+            evaluator,
+            attr_name="stage2_ga_generations",
+            fallback_episode_budget=evaluator.stage2_rl_episodes,
+            population_size=self.population_size,
+        )
         stage2_dir = os.path.dirname(evaluator.noise_step_info_file)
         self.result_path = os.path.join(stage2_dir, "noise_ga_search_results.json")
         self.plot_path = os.path.join(stage2_dir, "noise_ga_search_curve.png")
