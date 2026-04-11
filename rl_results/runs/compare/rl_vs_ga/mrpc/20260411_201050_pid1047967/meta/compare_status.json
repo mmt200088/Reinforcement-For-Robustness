@@ -1,14 +1,14 @@
 {
-  "updated_at": "2026-04-11 20:16:51",
-  "elapsed_seconds": 360.31,
+  "updated_at": "2026-04-11 20:34:52",
+  "elapsed_seconds": 1441.22,
   "global_stop_requested": false,
   "rl": {
     "algorithm": "rl",
     "pid": 1048064,
-    "return_code": null,
-    "state": "running",
+    "return_code": 0,
+    "state": "completed",
     "stage1_final_eval_ready": true,
-    "stage2_final_eval_ready": false,
+    "stage2_final_eval_ready": true,
     "run_dir": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260411_201050_pid1047967/children/rl",
     "log_path": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260411_201050_pid1047967/children/rl/logs/output.log",
     "command": [
