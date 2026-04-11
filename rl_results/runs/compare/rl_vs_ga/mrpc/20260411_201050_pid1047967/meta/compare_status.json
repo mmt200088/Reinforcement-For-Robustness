@@ -1,6 +1,6 @@
 {
-  "updated_at": "2026-04-11 20:34:52",
-  "elapsed_seconds": 1441.22,
+  "updated_at": "2026-04-11 22:27:58",
+  "elapsed_seconds": 8227.42,
   "global_stop_requested": false,
   "rl": {
     "algorithm": "rl",
@@ -87,7 +87,7 @@
     "pid": 1048065,
     "return_code": null,
     "state": "running",
-    "stage1_final_eval_ready": false,
+    "stage1_final_eval_ready": true,
     "stage2_final_eval_ready": false,
     "run_dir": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260411_201050_pid1047967/children/ga",
     "log_path": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260411_201050_pid1047967/children/ga/logs/output.log",
@@ -166,6 +166,6 @@
       "CUDA_VISIBLE_DEVICES": "0"
     }
   },
-  "stage1_comparison_generated": false,
+  "stage1_comparison_generated": true,
   "stage2_comparison_generated": false
 }
