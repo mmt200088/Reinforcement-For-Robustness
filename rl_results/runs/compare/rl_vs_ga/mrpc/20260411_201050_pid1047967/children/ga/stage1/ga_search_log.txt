@@ -1,15 +1,15 @@
 === 遗传算法(GA)搜索优化日志已启动（Genetic Algorithm Search Log Started） ===
 [信息] Stage-1 PPO学习率（LR）从 stage1_rl_lr=0.0001 解析为 -> 0.0001 (direct) | Stage-2 PPO学习率（LR）从 stage2_rl_lr=0.0001 解析为 -> 0.0001 (direct)
 [信息] 第一阶段RL回合数（Stage-1 RL episodes）: 9600 | 第二阶段RL回合数（Stage-2 RL episodes）: 16000
-[信息] 统一运行输出目录（Unified run output dir）: /var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260411_194811_pid1043781/children/ga
+[信息] 统一运行输出目录（Unified run output dir）: /var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260411_201050_pid1047967/children/ga
 GA budgets resolved to validation-full search units: stage1_generations=300 (population=32), stage2_generations=500 (population=32).
 
 Stage-1 GELU degree 0 is globally disabled for GA; distribution eligibility screening is skipped.
 
 Stage-1 baseline and constraints:
-  baseline metrics on validation_full: 损失（Loss）: 0.337497, Accuracy: 0.879902, F1: 0.877442
+  baseline metrics on validation_full: 损失（Loss）: 0.341833, Accuracy: 0.879902, F1: 0.877442
   simulated cost: total=72.00, gelu=36.00, softmax=36.00
   constraint ratio: 0.50%
-  constraints: 损失（Loss）<=0.3392, Accuracy>=0.8755, F1>=0.8731
+  constraints: 损失（Loss）<=0.3435, Accuracy>=0.8755, F1>=0.8731
 
 Stage-1 Genetic Search follows COINN: score-guided random selection and adjacent-mesh mutation, without PPO and without crossover.

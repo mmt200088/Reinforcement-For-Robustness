@@ -1,0 +1,42 @@
+══════════════════════════════════════════════════════════════════════
+  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）
+══════════════════════════════════════════════════════════════════════
+  [信息] Stage-1 PPO学习率（LR）: raw=0.0001 -> 0.0001 (direct) | Stage-2 PPO学习率（LR）: raw=0.0001 -> 0.0001 (direct)
+  [信息] 一阶段 RL 回合 stage-1 episodes=51000  ·  二阶段噪声 RL 回合 stage-2 episodes=40000
+  [信息] 本次运行根目录 run_output_dir=/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260411_201050_pid1047967/children/rl
+
+[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。
+
+============================================================
+PHASE 5.5: NOISE RL FINAL EVALUATION (验证集)
+NOISE_EVAL_CONFIG_SOURCE=json
+NOISE_RANDOM_MODE=x_w
+NOISE_EVAL_REPEAT_N=5
+Selection constraints (from stage-2 search protocol): Loss<=0.3401, Acc.>=0.8755, F1>=0.8731
+Noise cost reference (max-noise, for cost normalization only): 49.20
+============================================================
+
+--- Baseline (Stage-1 Exact) : N=5 次重复评估 ---
+  统计: Loss=0.3384±0.000000 [0.3384, 0.3384]
+  统计: Acc.=0.8799±0.000000 [0.8799, 0.8799]
+  统计: F1=0.8774±0.000000 [0.8774, 0.8774]
+Final-eval report constraints (based on repeated baseline on validation_full): Loss<=0.3401, Acc.>=0.8755, F1>=0.8731
+Evaluating no-noise control for the fixed stage-1 configuration...
+
+--- No-Noise (Fixed Stage-1) : N=5 次重复评估 ---
+  统计: Loss=0.3272±0.000000 [0.3272, 0.3272]
+  统计: Acc.=0.8824±0.000000 [0.8824, 0.8824]
+  统计: F1=0.8804±0.000000 [0.8804, 0.8804]
+
+--- Selected (Saved Noise RL) : N=5 次重复评估 ---
+  Trial 1/5: Loss=0.3202, Acc.=0.8848, F1=0.8831, Time=103.1ms
+  Trial 2/5: Loss=0.3269, Acc.=0.8775, F1=0.8754, Time=108.4ms
+  Trial 3/5: Loss=0.3301, Acc.=0.8799, F1=0.8778, Time=102.0ms
+  Trial 4/5: Loss=0.3291, Acc.=0.8750, F1=0.8734, Time=101.5ms
+  Trial 5/5: Loss=0.3298, Acc.=0.8799, F1=0.8781, Time=102.3ms
+  统计: Loss=0.3272±0.003688 [0.3202, 0.3301]
+  统计: Acc.=0.8794±0.003252 [0.8750, 0.8848]
+  统计: F1=0.8776±0.003230 [0.8734, 0.8831]
+Generating 10 permutation noise random configs...
+Generating 10 cost-equivalent noise random configs...
+Generating 10 budget-equivalent noise random configs...
