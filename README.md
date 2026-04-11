@@ -907,6 +907,8 @@ The result outputs to file importance_scores_.....txt in /root/ppml/MoE-Privacy.
 Cause running the sh now is using nohup, so we run it in backend.  
 When you want interrupt it, run
 `ps aux | grep rl_tune.py`
+`ps aux | grep rl_ga_compare_runner.py`
+`ps aux | grep rl_tune_genetic.py`
 to check the process (rl_tune.py is the starting point of our evaluate, because we use the LLM-Adapter framework).  
 And then kill the first process:
 `kill -9 [process_id_of_rl_tune.py]` 
