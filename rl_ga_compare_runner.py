@@ -1,4 +1,5 @@
 import argparse
+import ctypes
 import json
 import os
 import signal
@@ -25,6 +26,7 @@ NOISE_STAGE_CHECKPOINT_FILENAME = "noise_rl_checkpoint.pt"
 GA_STAGE1_CHECKPOINT_FILENAME = "ga_stage1_checkpoint.pt"
 GA_STAGE2_CHECKPOINT_FILENAME = "ga_stage2_checkpoint.pt"
 DEFAULT_POLL_SECONDS = 15
+LINUX_PR_SET_PDEATHSIG = 1
 
 DATASET_METRIC_SHORT_NAMES = {
     "sst2": ["Acc."],
@@ -73,6 +75,34 @@ def log(msg: str) -> None:
 
 def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
+
+def _build_parent_death_preexec_fn():
+    if os.name != "posix":
+        return None
+
+    parent_pid = os.getpid()
+
+    def _preexec():
+        try:
+            libc = ctypes.CDLL(None)
+            result = libc.prctl(
+                LINUX_PR_SET_PDEATHSIG,
+                signal.SIGKILL,
+                0,
+                0,
+                0,
+            )
+            if result != 0:
+                return
+            if os.getppid() != parent_pid:
+                os.kill(os.getpid(), signal.SIGKILL)
+        except Exception:
+            # Best effort only. On non-Linux POSIX systems, or when prctl is
+            # unavailable, we simply fall back to the existing behavior.
+            return
+
+    return _preexec
 
 
 def to_jsonable(value):
@@ -1082,14 +1112,21 @@ def start_child(spec: ChildRunSpec, extra_env: Dict[str, str]) -> None:
     env = os.environ.copy()
     env.update(extra_env)
     env.update(spec.env_overrides)
+    popen_kwargs = {
+        "stdout": None,
+        "stderr": subprocess.STDOUT,
+        "cwd": os.getcwd(),
+        "env": env,
+        "start_new_session": True,
+    }
+    preexec_fn = _build_parent_death_preexec_fn()
+    if preexec_fn is not None:
+        popen_kwargs["preexec_fn"] = preexec_fn
     with spec.log_path.open("w", encoding="utf-8") as log_handle:
+        popen_kwargs["stdout"] = log_handle
         spec.process = subprocess.Popen(
             spec.command,
-            stdout=log_handle,
-            stderr=subprocess.STDOUT,
-            cwd=os.getcwd(),
-            env=env,
-            start_new_session=True,
+            **popen_kwargs,
         )
 
 

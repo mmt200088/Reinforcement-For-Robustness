@@ -1185,13 +1185,16 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
 - `rl_results/runs/general_rl/infer/<dataset>/LATEST_PID`：通用 RL 推断最近一次启动的 PID
 - `rl_results/runs/general_rl/infer/<dataset>/LATEST_RUN_DIR`：通用 RL 推断最近一次启动的 run 目录
 - `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_PID`：对比实验 launcher 最近一次启动的 PID
+- `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_RL_PID`：对比实验中 RL 子进程最近一次启动的 PID
+- `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_GA_PID`：对比实验中 GA 子进程最近一次启动的 PID
 - `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_RUN_DIR`：对比实验最近一次启动的 run 目录
 
 补充说明：
 
 - 由于目录现在按模式分层，**不要再跨模式复用同一组 LATEST 指针**。例如要停止 GA，就看 `rl_results/runs/ga/<dataset>/LATEST_PID`，不要看 `rl_results/runs/rl/<dataset>/LATEST_PID`。
 - `general-rl train` 的 `taskset_id` 由 `--general-rl-tasks` 规范化得到。例如 `mrpc,cola,rte,stsb` 会写到 `rl_results/runs/general_rl/train/mrpc_cola_rte_stsb/`。
-- `compare` 模式除了 `LATEST_RUN_DIR` / `LATEST_PID` 之外，还会额外兼容写入 `LATEST_COMPARE_RUN_DIR` / `LATEST_COMPARE_PID`。
+- `compare` 模式除了 `LATEST_RUN_DIR` / `LATEST_PID` 之外，还会额外兼容写入 `LATEST_COMPARE_RUN_DIR` / `LATEST_COMPARE_PID`，并在 launcher 启动后尽量写出 `LATEST_RL_PID` / `LATEST_GA_PID`。
+- 当前 compare run 目录下也会同步写出 `meta/rl.pid` 与 `meta/ga.pid`，用于精确停止 RL/GA 子进程。
 
 #### 完整示例：启动 → 优雅停止 → 续训
 

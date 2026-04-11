@@ -679,12 +679,31 @@ echo "  实际执行命令（Command）：$CMD_STR"
 nohup "${CMD[@]}" > "$LOGFILE_PATH" 2>&1 &
 JOB_PID=$!
 if [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
+  RL_CHILD_PID_FILE="${RUN_ROOT}/meta/rl.pid"
+  GA_CHILD_PID_FILE="${RUN_ROOT}/meta/ga.pid"
+  RL_CHILD_PID=""
+  GA_CHILD_PID=""
   mkdir -p "${RUN_ROOT}/meta"
   echo "$JOB_PID" > "${RUN_ROOT}/meta/compare_launcher.pid"
   echo "$RUN_ROOT" > "${LATEST_BASE_DIR}/LATEST_RUN_DIR"
   echo "$JOB_PID" > "${LATEST_BASE_DIR}/LATEST_PID"
   echo "$RUN_ROOT" > "${LATEST_BASE_DIR}/LATEST_COMPARE_RUN_DIR"
   echo "$JOB_PID" > "${LATEST_BASE_DIR}/LATEST_COMPARE_PID"
+  rm -f "${LATEST_BASE_DIR}/LATEST_RL_PID" "${LATEST_BASE_DIR}/LATEST_GA_PID"
+  for _ in $(seq 1 50); do
+    if [ -z "$RL_CHILD_PID" ] && [ -f "$RL_CHILD_PID_FILE" ]; then
+      RL_CHILD_PID="$(tr -d '[:space:]' < "$RL_CHILD_PID_FILE")"
+    fi
+    if [ -z "$GA_CHILD_PID" ] && [ -f "$GA_CHILD_PID_FILE" ]; then
+      GA_CHILD_PID="$(tr -d '[:space:]' < "$GA_CHILD_PID_FILE")"
+    fi
+    if [ -n "$RL_CHILD_PID" ] && [ -n "$GA_CHILD_PID" ]; then
+      break
+    fi
+    sleep 0.1
+  done
+  [ -n "$RL_CHILD_PID" ] && echo "$RL_CHILD_PID" > "${LATEST_BASE_DIR}/LATEST_RL_PID"
+  [ -n "$GA_CHILD_PID" ] && echo "$GA_CHILD_PID" > "${LATEST_BASE_DIR}/LATEST_GA_PID"
 else
   echo "$JOB_PID" > "${RUN_ROOT}/run.pid"
   echo "$JOB_PID" > "${RUN_ROOT}/rl.pid"
@@ -701,6 +720,12 @@ echo "  LATEST_RUN_DIR：${LATEST_BASE_DIR}/LATEST_RUN_DIR"
 echo "  LATEST_PID：${LATEST_BASE_DIR}/LATEST_PID"
 if [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   echo "  优雅停止（Graceful Stop）：kill -INT $JOB_PID"
+  [ -n "${RL_CHILD_PID:-}" ] && echo "  RL 子进程 PID：$RL_CHILD_PID"
+  [ -n "${GA_CHILD_PID:-}" ] && echo "  GA 子进程 PID：$GA_CHILD_PID"
+  echo "  RL 子进程 PID 文件：${RUN_ROOT}/meta/rl.pid"
+  echo "  GA 子进程 PID 文件：${RUN_ROOT}/meta/ga.pid"
+  [ -n "${RL_CHILD_PID:-}" ] && echo "  LATEST_RL_PID：${LATEST_BASE_DIR}/LATEST_RL_PID"
+  [ -n "${GA_CHILD_PID:-}" ] && echo "  LATEST_GA_PID：${LATEST_BASE_DIR}/LATEST_GA_PID"
   echo "  RL 子进程错误摘要：${RUN_ROOT}/children/rl/logs/error_summary.txt"
   echo "  GA 子进程错误摘要：${RUN_ROOT}/children/ga/logs/error_summary.txt"
   echo "  Compare 元信息：${RUN_ROOT}/meta/compare_metadata.json"
