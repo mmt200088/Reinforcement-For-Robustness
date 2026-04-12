@@ -500,16 +500,19 @@ def _general_ppo_update_stage1(
 # Stage-1 任务准备
 # ===========================================================================
 
-def prepare_stage1_task(evaluator, use_train=True):
+def prepare_stage1_task(evaluator, use_train=True, tolerance=None):
     """从 evaluator 准备一个 task config dict，用于 multi_task_train_stage1 或 offline 推断。
 
     Args:
         evaluator: LayerImportanceEvaluator 实例（模型 + 数据集已加载）
         use_train: 是否使用训练集计算基线（默认 True）
+        tolerance: float or None, 准确度容忍比例（同时用于 loss 上浮和指标下降）。
+                   默认 None 则使用 evaluator 自身的 error_threshold (0.005)。
 
     Returns:
         dict，包含多任务训练 / 离线推断所需的全部信息
     """
+    tol = float(tolerance) if tolerance is not None else evaluator.error_threshold
     base_gelu = np.full(evaluator.total_layers, 4, dtype=int)
     base_softmax = np.full(evaluator.total_layers, 6, dtype=int)
     base_cost = evaluator.get_simulated_cost(base_gelu, base_softmax)[0]
@@ -518,21 +521,45 @@ def prepare_stage1_task(evaluator, use_train=True):
     )
     task_ctx = compute_task_context(
         base_loss, base_m1, base_m2,
-        evaluator.error_threshold, evaluator.correlation_drop_ratio,
+        tol, tol,
     )
     return {
         "evaluator": evaluator,
         "baseline_metrics": (float(base_loss), float(base_m1), float(base_m2)),
         "baseline_cost": float(base_cost),
         "constraint_limits": {
-            "loss": float(base_loss * (1.0 + evaluator.error_threshold)),
-            "metric1": float(base_m1 * (1.0 - evaluator.correlation_drop_ratio)),
-            "metric2": float(base_m2 * (1.0 - evaluator.correlation_drop_ratio)),
+            "loss": float(base_loss * (1.0 + tol)),
+            "metric1": float(base_m1 * (1.0 - tol)),
+            "metric2": float(base_m2 * (1.0 - tol)),
         },
         "gelu0_eligible": np.zeros(evaluator.total_layers, dtype=bool),
         "task_context": task_ctx,
         "num_metrics": evaluator.get_num_metrics(),
+        "tolerance": tol,
     }
+
+
+def recompute_task_for_tolerance(task_config, tolerance):
+    """根据新的准确度容忍比例, 重新计算 task_context 和 constraint_limits。
+
+    不重新跑基线评估, 仅在已有 baseline_metrics 上变换约束阈值和上下文向量。
+
+    Args:
+        task_config: dict, prepare_stage1_task 的返回值
+        tolerance: float, 新的准确度容忍比例
+
+    Returns:
+        新的 (task_context, constraint_limits) 元组
+    """
+    tol = float(tolerance)
+    bl, bm1, bm2 = task_config["baseline_metrics"]
+    task_ctx = compute_task_context(bl, bm1, bm2, tol, tol)
+    constraint_limits = {
+        "loss": float(bl * (1.0 + tol)),
+        "metric1": float(bm1 * (1.0 - tol)),
+        "metric2": float(bm2 * (1.0 - tol)),
+    }
+    return task_ctx, constraint_limits
 
 
 # ===========================================================================
@@ -628,6 +655,7 @@ def multi_task_train_stage1(
     log_fn=None,
     device="cuda",
     resume_checkpoint_path=None,
+    accuracy_tolerances=None,
 ):
     """多任务 round-robin 训练 Stage-1 通用策略 + 通用 Critic。
 
@@ -639,6 +667,9 @@ def multi_task_train_stage1(
         lr: float, 学习率
         log_fn: callable（默认 print）
         device: str
+        accuracy_tolerances: list[float] or None, 准确度容忍比例列表。
+            当提供时, 每轮从中随机采样一个 tolerance, 动态更新 task_context
+            和 constraint_limits, 使策略学会泛化到不同准确度要求。
 
     Returns:
         dict 包含训练结果及保存路径
@@ -727,6 +758,15 @@ def multi_task_train_stage1(
         _STOP_FLAG_FILENAME,
     )
 
+    # ---- 准确度容忍泛化 ----
+    _use_tol_gen = accuracy_tolerances is not None and len(accuracy_tolerances) > 1
+    _tol_list = list(accuracy_tolerances) if accuracy_tolerances else []
+    _tol_rng = np.random.RandomState(42)  # 独立随机源, 可复现
+
+    _tol_info = ""
+    if _use_tol_gen:
+        _tol_info = f"\n  准确度容忍泛化: {[f'{t*100:.1f}%' for t in _tol_list]}"
+
     _log_general_header(
         log_fn,
         "Stage-1 通用策略训练（General Policy Training）",
@@ -734,7 +774,7 @@ def multi_task_train_stage1(
             f"任务数量: {num_tasks}    训练轮数: {total_rounds}",
             f"每轮每任务回合数: {episodes_per_task_per_round}    总回合: {total_episodes}",
             f"任务列表: {', '.join(task_names)}",
-            f"学习率: {lr}    PPO 间隔: {ppo_interval}",
+            f"学习率: {lr}    PPO 间隔: {ppo_interval}" + _tol_info,
         ],
     )
 
@@ -743,6 +783,18 @@ def multi_task_train_stage1(
     _t0 = _time.time()
 
     for rnd in range(resume_start_round, total_rounds):
+        # ---- 准确度容忍泛化: 每轮随机采样一个 tolerance ----
+        if _use_tol_gen:
+            _cur_tol = float(_tol_rng.choice(_tol_list))
+            for name in task_names:
+                tc = tasks[name]
+                new_ctx, new_limits = recompute_task_for_tolerance(tc, _cur_tol)
+                tc["task_context"] = new_ctx
+                tc["constraint_limits"] = new_limits
+                envs[name].constraint_limits = new_limits
+            if rnd % 10 == 0:
+                log_fn(f"  [容忍泛化] 轮 {rnd+1}: tolerance={_cur_tol*100:.1f}%")
+
         for task_name in task_names:
             tc = tasks[task_name]
             env = envs[task_name]
@@ -916,6 +968,7 @@ def offline_find_best_config_stage1(
     greedy=False,
     device="cuda",
     log_fn=None,
+    tolerance=None,
 ):
     """使用 Stage-1 通用策略在给定任务上做离线 rollout，找到最优 GELU/Softmax 配置。
 
@@ -953,7 +1006,7 @@ def offline_find_best_config_stage1(
     log_fn(f"[离线推断] 加载通用策略 ← {general_policy_path} "
            f"(missing={len(missing)}, unexpected={len(unexpected)})")
 
-    task_info = prepare_stage1_task(evaluator)
+    task_info = prepare_stage1_task(evaluator, tolerance=tolerance)
     if np.any(np.asarray(task_info["gelu0_eligible"], dtype=bool)):
         raise ValueError(
             "General Stage-1 offline inference explicitly disables GELU degree 0; "
@@ -1759,6 +1812,7 @@ def multi_task_train_stage2(
     log_fn=None,
     device="cuda",
     resume_checkpoint_path=None,
+    accuracy_tolerances=None,
 ):
     """多任务 round-robin 训练 Stage-2 通用噪声策略 + 通用 Critic。
 
@@ -1770,6 +1824,7 @@ def multi_task_train_stage2(
         lr: float, 学习率
         log_fn: callable（默认 print）
         device: str
+        accuracy_tolerances: list[float] or None, 准确度容忍比例列表（同 Stage-1）
 
     Returns:
         dict 包含训练结果及保存路径
@@ -1847,6 +1902,15 @@ def multi_task_train_stage2(
         _STOP_FLAG_FILENAME,
     )
 
+    # ---- 准确度容忍泛化 (Stage-2) ----
+    _use_tol_gen = accuracy_tolerances is not None and len(accuracy_tolerances) > 1
+    _tol_list = list(accuracy_tolerances) if accuracy_tolerances else []
+    _tol_rng = np.random.RandomState(42)
+
+    _tol_info = ""
+    if _use_tol_gen:
+        _tol_info = f"\n  准确度容忍泛化: {[f'{t*100:.1f}%' for t in _tol_list]}"
+
     _log_general_header(
         log_fn,
         "Stage-2 通用噪声策略训练（General Noise Policy Training）",
@@ -1854,7 +1918,7 @@ def multi_task_train_stage2(
             f"任务数量: {num_tasks}    训练轮数: {total_rounds}",
             f"每轮每任务回合数: {episodes_per_task_per_round}    总回合: {total_episodes}",
             f"任务列表: {', '.join(task_names)}",
-            f"学习率: {lr}    PPO 间隔: {ppo_interval}",
+            f"学习率: {lr}    PPO 间隔: {ppo_interval}" + _tol_info,
         ],
     )
 
@@ -1863,6 +1927,16 @@ def multi_task_train_stage2(
     _t0 = _time.time()
 
     for rnd in range(resume_start_round, total_rounds):
+        # ---- 准确度容忍泛化: 每轮随机采样一个 tolerance ----
+        if _use_tol_gen:
+            _cur_tol = float(_tol_rng.choice(_tol_list))
+            for name in task_names:
+                tc = tasks[name]
+                new_ctx, _ = recompute_task_for_tolerance(tc, _cur_tol)
+                tc["task_context"] = new_ctx
+            if rnd % 10 == 0:
+                log_fn(f"  [容忍泛化] 轮 {rnd+1}: tolerance={_cur_tol*100:.1f}%")
+
         for task_name in task_names:
             tc = tasks[task_name]
             env = envs[task_name]

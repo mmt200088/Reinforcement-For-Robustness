@@ -71,6 +71,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--general-stage2-policy PATH` | `general-rl` 推断 | — | Stage-2 通用噪声策略文件，可选 |
 | `--general-rl-skip-stage2` | `general-rl` | — | 跳过 Stage-2 训练或推断 |
 | `--general-rl-stage1-config-json PATH` | `general-rl` 训练 | — | Stage-2 训练时各任务的 Stage-1 配置 |
+| `--general-rl-accuracy-tolerances T1,T2,...` | `general-rl` | — | 逗号分隔的准确度容忍比例列表（如 `0.005,0.01,0.02`）；训练时每轮随机采样一个 tolerance 让策略泛化到不同准确度要求，推断时取第一个值作为目标 tolerance |
 
 ### 搜索算法与实际入口
 
@@ -182,7 +183,9 @@ bash llama_7B_LayerImportance.sh \
 - 若该方走 `json`，则优先按对应 JSON 文件补做最终评估。
 - 所有 fallback 与警告都会写入对比报告和 `compare_summary_*.json`。
 
-#### 5. 通用 RL 训练
+#### 5. 通用 RL 训练 — 数据集泛化
+
+训练一个跨多个数据集泛化的通用策略，策略文件保存到 `rl_results/runs/general_rl/train/dataset_gen/` 下：
 
 ```bash
 bash llama_7B_LayerImportance.sh \
@@ -195,6 +198,53 @@ bash llama_7B_LayerImportance.sh \
   --general-rl-lr 3e-5
 ```
 
+#### 5b. 通用 RL 训练 — 准确度容忍泛化
+
+训练一个适配不同准确度要求的通用策略。例如 `0.005,0.01,0.02` 表示策略需要同时适应 0.5%、1%、2% 三种 loss/指标波动容忍度。
+策略文件保存到 `rl_results/runs/general_rl/train/accuracy_gen/` 下：
+
+```bash
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --search-algorithm general-rl \
+  --general-rl-mode train \
+  --general-rl-tasks mrpc \
+  --general-rl-accuracy-tolerances 0.005,0.01,0.02 \
+  --general-rl-rounds 50 \
+  --general-rl-episodes-per-round 170 \
+  --general-rl-lr 3e-5
+```
+
+#### 5c. 通用 RL 训练 — 数据集 + 准确度联合泛化
+
+同时在多个数据集和多个准确度要求上训练，策略文件保存到 `rl_results/runs/general_rl/train/combined_gen/` 下：
+
+```bash
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --search-algorithm general-rl \
+  --general-rl-mode train \
+  --general-rl-tasks mrpc,cola,rte,stsb \
+  --general-rl-accuracy-tolerances 0.005,0.01,0.02 \
+  --general-rl-rounds 50 \
+  --general-rl-episodes-per-round 170 \
+  --general-rl-lr 3e-5
+```
+
+三种泛化模式的输出目录对比：
+
+| 泛化模式 | 条件 | 输出目录前缀 |
+| --- | --- | --- |
+| 数据集泛化 | `--general-rl-tasks` 含多个任务 | `general_rl/train/dataset_gen/` |
+| 准确度泛化 | `--general-rl-accuracy-tolerances` 含多个值 | `general_rl/train/accuracy_gen/` |
+| 联合泛化 | 两者同时提供多个值 | `general_rl/train/combined_gen/` |
+| 单任务单容忍 | 均为单值 | `general_rl/train/single/` |
+
+> **安全检查**：
+> - `--general-rl-accuracy-tolerances` 中的每个值必须是 (0, 1) 区间的正数（如 0.01 表示 1%）。
+> - 训练模式下如果既没有提供多个任务也没有提供多个容忍值，脚本会发出警告。
+> - `--general-rl-accuracy-tolerances` 不能在非 `general-rl` 模式下使用。
+
 #### 6. 通用 RL 离线推断
 
 ```bash
@@ -205,6 +255,18 @@ bash llama_7B_LayerImportance.sh \
   --general-stage2-policy general_stage2_noise_policy.pt \
   --general-rl-num-rollouts 500 \
   --dataset qnli
+```
+
+指定推断时的准确度容忍目标（使用准确度泛化策略时）：
+
+```bash
+bash llama_7B_LayerImportance.sh \
+  --search-algorithm general-rl \
+  --general-rl-mode infer \
+  --general-stage1-policy general_stage1_policy.pt \
+  --general-rl-accuracy-tolerances 0.01 \
+  --general-rl-num-rollouts 500 \
+  --dataset mrpc
 ```
 
 只做 Stage-1 推断（跳过 Stage-2）：
@@ -332,7 +394,7 @@ bash llama_7B_LayerImportance.sh --dataset mrpc
 ```text
 rl_results/runs/rl/<dataset>/<run_id>/
 rl_results/runs/ga/<dataset>/<run_id>/
-rl_results/runs/general_rl/train/<taskset_id>/<run_id>/
+rl_results/runs/general_rl/train/<gen_mode>/<taskset_id>/<run_id>/
 rl_results/runs/general_rl/infer/<dataset>/<run_id>/
 rl_results/runs/compare/rl_vs_ga/<dataset>/<run_id>/
 ```
@@ -341,6 +403,11 @@ rl_results/runs/compare/rl_vs_ga/<dataset>/<run_id>/
 
 - `dataset` 是当前单任务数据集，例如 `mrpc`、`stsb`。
 - `taskset_id` 是训练任务集合的规范化标识，例如 `mrpc,cola,rte,stsb` 会落为 `mrpc_cola_rte_stsb`。
+- `gen_mode` 是泛化模式子目录，根据 CLI 参数自动决定：
+  - `dataset_gen`：仅数据集泛化（`--general-rl-tasks` 含多个任务）
+  - `accuracy_gen`：仅准确度泛化（`--general-rl-accuracy-tolerances` 含多个值）
+  - `combined_gen`：联合泛化（两者同时提供多个值）
+  - `single`：单任务单容忍度
 - `compare` 模式单独放在 `compare/rl_vs_ga/` 下，不再与普通 `rl` / `ga` 共用同一个根目录层。
 
 #### 2. 各模式内部目录
@@ -381,10 +448,22 @@ GA 的一个 run：
 rl_results/runs/ga/mrpc/<run_id>/
 ```
 
-通用 RL 多任务训练的一个 run：
+通用 RL 多任务训练的一个 run（数据集泛化模式）：
 
 ```text
-rl_results/runs/general_rl/train/mrpc_cola_rte_stsb/<run_id>/
+rl_results/runs/general_rl/train/dataset_gen/mrpc_cola_rte_stsb/<run_id>/
+```
+
+通用 RL 准确度泛化训练的一个 run：
+
+```text
+rl_results/runs/general_rl/train/accuracy_gen/mrpc/<run_id>/
+```
+
+通用 RL 联合泛化训练的一个 run：
+
+```text
+rl_results/runs/general_rl/train/combined_gen/mrpc_cola_rte_stsb/<run_id>/
 ```
 
 RL 与 GA 对比实验的一个 run：
@@ -650,16 +729,15 @@ QKV 融合、激活函数替换等层面与 BERT 做了专门适配，
 | GLUE 提交文件生成                       | ✅         | ✅          | ✅（直接复用 PavanNeerudu 微调权重） |
 
 
-**为什么 GPT-2 不支持 Softmax 近似？** BERT 的 `BertSelfAttention` 模块
+**GPT-2 的 Softmax 近似实现**：BERT 的 `BertSelfAttention` 模块
 能够被整体替换为 `BertSelfAttentionWithAproximation`，从而在 forward
-里用指数近似替换 softmax；而 HuggingFace 的 `GPT2Attention` 将 Q/K/V
-融合到单个 Conv1D (`c_attn`)，并把因果 mask + scale + softmax + c_proj
-绑死在同一个 forward 里，没有提供同等的可分离入口。本 repo 当前选择
-在 GPT-2 上**自动跳过 Stage 1 的 softmax 近似**（`replace_layer_softmax`
-会在 GPT-2 上打印警告并直接返回），Stage 1 仍可启用 GELU 近似，
-Stage 2 七种噪声全部可用。如果后续需要完整复现 BERT 的 Stage 1 行为，
-可以在 `function_handler.py` 里新增 `GPT2AttentionWithApproximation`
-包装类对齐 HF 的 `GPT2Attention.forward` 逻辑。
+里用指数近似替换 softmax。GPT-2 的 `GPT2Attention` 将 Q/K/V 融合到
+单个 Conv1D (`c_attn`)，并把因果 mask + scale + softmax 绑在同一个
+`eager_attention_forward` 函数里。本 repo 通过 monkey-patch 该函数，
+在 `replace_layer_softmax` 被调用时动态替换为使用近似 softmax 的版本
+（`_make_gpt2_approx_attn_forward`），使 GPT-2 的 Stage 1 同时支持
+GELU 和 Softmax 两种近似，Stage 2 七种噪声全部可用。恢复时
+`restore_layer_softmax` 会还原原始 forward。
 
 **Q/K/V 噪声在 GPT-2 上的实现细节**：`ReversibleLayerHandler` 会在首次
 为某一层调用 `replace_layer_{query,key,value}_noise` 时，包装该层的
@@ -1055,7 +1133,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 - `PATH` 必须是一个已存在的 run 目录。
   例如普通 RL 可以是 `rl_results/runs/rl/mrpc/20260404_151155_pid711833`；
   GA 可以是 `rl_results/runs/ga/mrpc/20260404_151155_pid711833`；
-  通用 RL 多任务训练可以是 `rl_results/runs/general_rl/train/mrpc_cola_rte_stsb/20260404_151155_pid711833`。
+  通用 RL 多任务训练可以是 `rl_results/runs/general_rl/train/dataset_gen/mrpc_cola_rte_stsb/20260404_151155_pid711833`。
 - 续训时指定的是**总搜索预算**而不是追加量：普通 RL 用 `--stage1-search-episodes` / `--stage2-search-episodes` 表示总回合数；GA 用 `--stage1-search-generations` / `--stage2-search-generations` 表示总代数。
 - 如果指定的总轮数小于等于 checkpoint 中已完成的轮数，则该阶段不会追加训练。
 - `--resume-from` 可以与各模式的跳过选项组合使用：只有未被跳过的阶段才会尝试加载对应的 checkpoint。
@@ -1134,7 +1212,7 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
   --general-rl-tasks mrpc,cola,rte,stsb \
   --general-rl-rounds 100 \
   --dataset mrpc \
-  --resume-from rl_results/runs/general_rl/train/mrpc_cola_rte_stsb/<之前的run目录>
+  --resume-from rl_results/runs/general_rl/train/dataset_gen/mrpc_cola_rte_stsb/<之前的run目录>
 ```
 
 ### 优雅停止与断点续训（Graceful Stop / Resume）
@@ -1180,8 +1258,8 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
 - `rl_results/runs/rl/<dataset>/LATEST_RUN_DIR`：普通 RL 最近一次启动的 run 目录
 - `rl_results/runs/ga/<dataset>/LATEST_PID`：GA 最近一次启动的 PID
 - `rl_results/runs/ga/<dataset>/LATEST_RUN_DIR`：GA 最近一次启动的 run 目录
-- `rl_results/runs/general_rl/train/<taskset_id>/LATEST_PID`：通用 RL 训练最近一次启动的 PID
-- `rl_results/runs/general_rl/train/<taskset_id>/LATEST_RUN_DIR`：通用 RL 训练最近一次启动的 run 目录
+- `rl_results/runs/general_rl/train/<gen_mode>/<taskset_id>/LATEST_PID`：通用 RL 训练最近一次启动的 PID（`gen_mode` 为 `dataset_gen` / `accuracy_gen` / `combined_gen` / `single`）
+- `rl_results/runs/general_rl/train/<gen_mode>/<taskset_id>/LATEST_RUN_DIR`：通用 RL 训练最近一次启动的 run 目录
 - `rl_results/runs/general_rl/infer/<dataset>/LATEST_PID`：通用 RL 推断最近一次启动的 PID
 - `rl_results/runs/general_rl/infer/<dataset>/LATEST_RUN_DIR`：通用 RL 推断最近一次启动的 run 目录
 - `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_PID`：对比实验 launcher 最近一次启动的 PID
@@ -1192,7 +1270,7 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
 补充说明：
 
 - 由于目录现在按模式分层，**不要再跨模式复用同一组 LATEST 指针**。例如要停止 GA，就看 `rl_results/runs/ga/<dataset>/LATEST_PID`，不要看 `rl_results/runs/rl/<dataset>/LATEST_PID`。
-- `general-rl train` 的 `taskset_id` 由 `--general-rl-tasks` 规范化得到。例如 `mrpc,cola,rte,stsb` 会写到 `rl_results/runs/general_rl/train/mrpc_cola_rte_stsb/`。
+- `general-rl train` 的 `taskset_id` 由 `--general-rl-tasks` 规范化得到。例如 `mrpc,cola,rte,stsb` 会落为 `mrpc_cola_rte_stsb`，并根据泛化模式写到对应的 `rl_results/runs/general_rl/train/<gen_mode>/mrpc_cola_rte_stsb/` 下。
 - `compare` 模式除了 `LATEST_RUN_DIR` / `LATEST_PID` 之外，还会额外兼容写入 `LATEST_COMPARE_RUN_DIR` / `LATEST_COMPARE_PID`，并在 launcher 启动后尽量写出 `LATEST_RL_PID` / `LATEST_GA_PID`。
 - 当前 compare run 目录下也会同步写出 `meta/rl.pid` 与 `meta/ga.pid`，用于精确停止 RL/GA 子进程。
 
@@ -1310,7 +1388,7 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
     --general-rl-tasks mrpc,cola,rte,stsb \
     --general-rl-rounds 100 \
     --dataset mrpc \
-    --resume-from "$(cat rl_results/runs/general_rl/train/mrpc_cola_rte_stsb/LATEST_RUN_DIR)"
+    --resume-from "$(cat rl_results/runs/general_rl/train/dataset_gen/mrpc_cola_rte_stsb/LATEST_RUN_DIR)"
 ```
 
 #### 严丝合缝续训的关键机制

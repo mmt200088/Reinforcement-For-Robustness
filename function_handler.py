@@ -7,6 +7,10 @@ try:
     from transformers.models.gpt2.modeling_gpt2 import Conv1D as _GPT2Conv1D
 except Exception:  # pragma: no cover - transformers always ships this, but be defensive
     _GPT2Conv1D = None
+try:
+    from transformers.models.gpt2.modeling_gpt2 import GPT2Attention as _GPT2Attention
+except Exception:  # pragma: no cover
+    _GPT2Attention = None
 import copy
 from torch import Tensor
 from typing import Optional
@@ -495,6 +499,86 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
             outputs = outputs + (past_key_value,)
         return outputs
 
+# ---------------------------------------------------------------------------
+# GPT-2 Softmax 近似: 通过 monkey-patch eager_attention_forward 实现
+# ---------------------------------------------------------------------------
+
+def _approx_exponential(x: torch.Tensor, degree: int) -> torch.Tensor:
+    """Taylor 展开近似 exp(x), degree 控制精度."""
+    return torch.pow(1 + x / (2 ** degree), 2 ** degree)
+
+
+def _approx_softmax(x: torch.Tensor, degree: int, lower_bound: float) -> torch.Tensor:
+    """使用指数近似计算 softmax, 与 BertSelfAttentionWithAproximation 保持一致."""
+    x = x - x.max(dim=-1, keepdim=True)[0] + 1e-9
+    exp_approx = _approx_exponential(x, degree)
+    exp_out = torch.where(x < lower_bound, torch.zeros_like(x), exp_approx)
+    sum_exp = torch.sum(exp_out, dim=-1, keepdim=True) + 1e-9
+    return exp_out / sum_exp
+
+
+def _make_gpt2_approx_attn_forward(attn_module, degree: int, lower_bound: float):
+    """构造一个替代 GPT2Attention.forward 的函数, 将 softmax 替换为近似版本.
+
+    该函数完整复制 HuggingFace eager_attention_forward 的计算逻辑,
+    唯一区别是把 ``nn.functional.softmax(attn_weights, dim=-1)`` 换成
+    ``_approx_softmax(attn_weights, degree, lower_bound)``.
+    """
+    original_forward = attn_module.forward
+
+    def _approx_eager_attention(module, query, key, value,
+                                attention_mask, head_mask=None, **kwargs):
+        attn_weights = torch.matmul(query, key.transpose(-1, -2))
+        if module.scale_attn_weights:
+            attn_weights = attn_weights / torch.full(
+                [], value.size(-1) ** 0.5,
+                dtype=attn_weights.dtype, device=attn_weights.device,
+            )
+        if getattr(module, "scale_attn_by_inverse_layer_idx", False):
+            attn_weights = attn_weights / float(module.layer_idx + 1)
+        if not module.is_cross_attention:
+            query_length, key_length = query.size(-2), key.size(-2)
+            causal_mask = module.bias[:, :, key_length - query_length:key_length, :key_length]
+            mask_value = torch.finfo(attn_weights.dtype).min
+            mask_value = torch.full(
+                [], mask_value, dtype=attn_weights.dtype, device=attn_weights.device,
+            )
+            attn_weights = torch.where(causal_mask, attn_weights.to(attn_weights.dtype), mask_value)
+        if attention_mask is not None:
+            causal_mask = attention_mask[:, :, :, :key.shape[-2]]
+            attn_weights = attn_weights + causal_mask
+        # ----- 核心替换: 使用近似 softmax -----
+        attn_weights = _approx_softmax(attn_weights, degree, lower_bound)
+        attn_weights = attn_weights.type(value.dtype)
+        attn_weights = module.attn_dropout(attn_weights)
+        if head_mask is not None:
+            attn_weights = attn_weights * head_mask
+        attn_output = torch.matmul(attn_weights, value)
+        attn_output = attn_output.transpose(1, 2)
+        return attn_output, attn_weights
+
+    def patched_forward(hidden_states, *args, **kwargs):
+        """替换 GPT2Attention.forward, 强制使用带近似 softmax 的 eager attention."""
+        # 保存原始 _attn_implementation, 临时强制 eager 模式
+        orig_impl = attn_module.config._attn_implementation
+        orig_reorder = attn_module.reorder_and_upcast_attn
+        attn_module.config._attn_implementation = "eager"
+        attn_module.reorder_and_upcast_attn = False
+        # 注入自定义 attention 函数
+        import transformers.models.gpt2.modeling_gpt2 as _gpt2_mod
+        _saved_fn = _gpt2_mod.eager_attention_forward
+        _gpt2_mod.eager_attention_forward = _approx_eager_attention
+        try:
+            result = original_forward(hidden_states, *args, **kwargs)
+        finally:
+            _gpt2_mod.eager_attention_forward = _saved_fn
+            attn_module.config._attn_implementation = orig_impl
+            attn_module.reorder_and_upcast_attn = orig_reorder
+        return result
+
+    return patched_forward
+
+
 class PerturbedLiner(nn.Module):
     """可逆的三次多项式GELU近似"""
     def __init__(self, degree=4):
@@ -647,16 +731,22 @@ class ReversibleLayerHandler:
         pass
 
     def replace_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention", degree=1):
-        """替换指定层的Softmax函数"""
+        """替换指定层的Softmax函数 (BERT: 替换 BertSelfAttention; GPT-2: monkey-patch forward)"""
         if self._arch == "gpt2":
-            # GPT-2 的 self-attention 是融合 c_attn + 内联 softmax 的单体模块,
-            # 未提供 BERT 那样的可插拔 BertSelfAttention 结构. 当前实现不支持
-            # 在 GPT-2 上做 softmax 近似 (Stage 1), 只支持 Stage 2 的 GELU + 噪声.
-            if layer_indices:
-                print(
-                    "[ReversibleLayerHandler] 警告: GPT-2 当前不支持 softmax 近似,"
-                    f" 忽略 {len(layer_indices)} 层的 replace_layer_softmax 调用."
-                )
+            lb = Exp_bound.get(degree)
+            if lb is None:
+                print(f"[ReversibleLayerHandler] 警告: degree={degree} 没有对应的 Exp_bound, 跳过 softmax 近似.")
+                return
+            for i, layer in enumerate(eval("self." + layer_name)):
+                if i in layer_indices:
+                    if i not in self.original_attention:
+                        self.original_attention[i] = {
+                            'attention_forward': layer.attn.forward,
+                        }
+                    layer.attn.forward = _make_gpt2_approx_attn_forward(
+                        layer.attn, degree=degree, lower_bound=lb,
+                    )
+            print(f"已替换 {len(layer_indices)} 层的Softmax函数（GPT-2 approximate softmax, degree={degree}）")
             return
         for i, layer in enumerate(eval("self." + layer_name)):
             if i in layer_indices:
@@ -665,13 +755,13 @@ class ReversibleLayerHandler:
                     self.original_attention[i] = {
                         'attention': eval("layer."+ attention_name)
                     }
-                
+
                 # 应用新函数
                 orig_sd = layer.attention.self.state_dict()
                 new_attn = BertSelfAttentionWithAproximation(self.model.config, degree=degree, lower_bound=Exp_bound[degree])
                 new_attn.load_state_dict(orig_sd, strict=False)
                 layer.attention.self = new_attn
-        
+
         print(f"已替换 {len(layer_indices)} 层的Softmax函数（Softmax function）")
     
     def replace_layer_input_noise(
@@ -960,7 +1050,13 @@ class ReversibleLayerHandler:
     def restore_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention"):
         """恢复指定层的原始Softmax函数"""
         if self._arch == "gpt2":
-            return  # 无可恢复状态 (GPT-2 不支持 softmax 近似)
+            for i, layer in enumerate(eval("self." + layer_name)):
+                if i in layer_indices and i in self.original_attention:
+                    original_fwd = self.original_attention[i].get('attention_forward')
+                    if original_fwd is not None:
+                        layer.attn.forward = original_fwd
+                    del self.original_attention[i]
+            return
         for i, layer in enumerate(eval("self." + layer_name)):
             if i in layer_indices and i in self.original_attention:
                 layer.attention.self = self.original_attention[i]['attention']

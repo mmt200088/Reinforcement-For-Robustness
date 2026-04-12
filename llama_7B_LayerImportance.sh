@@ -70,6 +70,7 @@ GA / 对比实验中的 GA：
   --general-stage2-policy PATH
   --general-rl-skip-stage2
   --general-rl-stage1-config-json PATH
+  --general-rl-accuracy-tolerances T1,T2,...
 
 说明：
   1. 不再支持位置参数，统一改为可选参数。
@@ -249,6 +250,7 @@ GENERAL_STAGE1_POLICY=""; S_GENERAL_STAGE1_POLICY="false"
 GENERAL_STAGE2_POLICY=""; S_GENERAL_STAGE2_POLICY="false"
 GENERAL_SKIP_STAGE2="false"; S_GENERAL_SKIP_STAGE2="false"
 GENERAL_STAGE1_CONFIG_JSON=""; S_GENERAL_STAGE1_CONFIG_JSON="false"
+GENERAL_ACCURACY_TOLERANCES=""; S_GENERAL_ACCURACY_TOLERANCES="false"
 RL_COMPARE_SKIP_STAGE1_SEARCH="false"; S_RL_COMPARE_SKIP_STAGE1_SEARCH="false"
 GA_COMPARE_SKIP_STAGE1_SEARCH="false"; S_GA_COMPARE_SKIP_STAGE1_SEARCH="false"
 RL_COMPARE_FINAL_EVAL_SOURCE="search"; S_RL_COMPARE_FINAL_EVAL_SOURCE="false"
@@ -305,6 +307,7 @@ while [ "$#" -gt 0 ]; do
     --general-stage2-policy) needv "$@"; GENERAL_STAGE2_POLICY="$2"; S_GENERAL_STAGE2_POLICY="true"; shift 2 ;;
     --general-rl-skip-stage2) GENERAL_SKIP_STAGE2="true"; S_GENERAL_SKIP_STAGE2="true"; shift ;;
     --general-rl-stage1-config-json) needv "$@"; GENERAL_STAGE1_CONFIG_JSON="$2"; S_GENERAL_STAGE1_CONFIG_JSON="true"; shift 2 ;;
+    --general-rl-accuracy-tolerances) needv "$@"; GENERAL_ACCURACY_TOLERANCES="$2"; S_GENERAL_ACCURACY_TOLERANCES="true"; shift 2 ;;
     --rl-skip-stage1-search) RL_COMPARE_SKIP_STAGE1_SEARCH="true"; S_RL_COMPARE_SKIP_STAGE1_SEARCH="true"; shift ;;
     --ga-skip-stage1-search) GA_COMPARE_SKIP_STAGE1_SEARCH="true"; S_GA_COMPARE_SKIP_STAGE1_SEARCH="true"; shift ;;
     --rl-final-eval-source) needv "$@"; RL_COMPARE_FINAL_EVAL_SOURCE="$2"; S_RL_COMPARE_FINAL_EVAL_SOURCE="true"; shift 2 ;;
@@ -379,6 +382,38 @@ fi
 
 if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
   { [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] && [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] && [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] && [ "$S_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_SKIP_STAGE1_FINAL_EVAL" = "false" ] && [ "$S_SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$S_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_FINAL_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_GELU" ] && [ -z "$MANUAL_SOFTMAX" ] && [ "$S_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_NOISE_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_NOISE_CONFIG" ]; } || err "general-rl 不能与普通 RL / GA 的阶段搜索或最终评估参数混用。"
+  # ---- 准确度容忍参数校验 ----
+  if [ -n "$GENERAL_ACCURACY_TOLERANCES" ]; then
+    IFS=',' read -r -a __tol_items <<< "$GENERAL_ACCURACY_TOLERANCES"
+    for __tol_val in "${__tol_items[@]}"; do
+      __tol_val="$(printf '%s' "$__tol_val" | xargs)"
+      [ -z "$__tol_val" ] && continue
+      is_pos_num "$__tol_val" || err "--general-rl-accuracy-tolerances 中的值必须是正数：$__tol_val"
+      awk -v x="$__tol_val" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--general-rl-accuracy-tolerances 中的值必须 < 1（即百分比形式如 0.01 表示 1%），当前值：$__tol_val"
+    done
+  fi
+
+  # ---- 泛化模式推断 ----
+  _HAS_MULTI_TASKS="false"
+  if [ -n "$GENERAL_TASKS" ]; then
+    IFS=',' read -r -a __task_arr <<< "$GENERAL_TASKS"
+    [ "${#__task_arr[@]}" -gt 1 ] && _HAS_MULTI_TASKS="true"
+  fi
+  _HAS_MULTI_TOLS="false"
+  if [ -n "$GENERAL_ACCURACY_TOLERANCES" ]; then
+    IFS=',' read -r -a __tol_arr <<< "$GENERAL_ACCURACY_TOLERANCES"
+    __tol_cnt=0
+    for __t in "${__tol_arr[@]}"; do
+      __t="$(printf '%s' "$__t" | xargs)"
+      [ -n "$__t" ] && __tol_cnt=$(( __tol_cnt + 1 ))
+    done
+    [ "$__tol_cnt" -gt 1 ] && _HAS_MULTI_TOLS="true"
+  fi
+  # 训练模式: 至少需要一种泛化维度（多任务或多容忍度）
+  if [ "$GENERAL_MODE" = "train" ] && [ "$_HAS_MULTI_TASKS" = "false" ] && [ "$_HAS_MULTI_TOLS" = "false" ]; then
+    echo "警告：general-rl train 模式下既未提供多个任务也未提供多个准确度容忍值，策略可能无法学习到有效泛化。" >&2
+  fi
+
   if [ "$GENERAL_MODE" = "train" ]; then
     is_pos_int "$GENERAL_ROUNDS" || err "--general-rl-rounds 必须是正整数"
     is_pos_int "$GENERAL_EPISODES_PER_ROUND" || err "--general-rl-episodes-per-round 必须是正整数"
@@ -392,7 +427,7 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
     { [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_RESUME_FROM" = "false" ]; } || err "general-rl infer 模式不能使用训练专用参数。"
   fi
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
-  { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ]; } || err "rl-and-ga-compare 不能与 general-rl 参数混用。"
+  { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "rl-and-ga-compare 不能与 general-rl 参数混用。"
   is_pos_int "$STAGE1_EPISODES" || err "--stage1-search-episodes 必须是正整数"
   is_pos_int "$STAGE2_EPISODES" || err "--stage2-search-episodes 必须是正整数"
   is_pos_int "$STAGE1_GENERATIONS" || err "--stage1-search-generations 必须是正整数"
@@ -466,7 +501,7 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
     [ "$FAM" != "rl" ] || err "GA Stage-2 JSON 配置看起来属于 RL/PPO 家族：$GA_COMPARE_NOISE_EVAL_CONFIG"
   fi
 else
-  { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ]; } || err "当前搜索算法不是 general-rl，请不要使用 --general-rl-* 参数。"
+  { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "当前搜索算法不是 general-rl，请不要使用 --general-rl-* 参数。"
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] || err "rl 模式不使用 GA 代数参数，请移除 --stage1-search-generations / --stage2-search-generations。"
     is_pos_int "$STAGE1_EPISODES" || err "--stage1-search-episodes 必须是正整数"
@@ -555,7 +590,17 @@ elif [ "$SEARCH_ALGORITHM" = "ga" ]; then
 elif [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
   if [ "$GENERAL_MODE" = "train" ]; then
     GENERAL_TASKSET_ID="$(normalize_taskset_id "${GENERAL_TASKS:-$DATASET}")"
-    RUN_GROUP_DIR="rl_results/runs/general_rl/train/${GENERAL_TASKSET_ID}"
+    # 泛化模式决定子目录
+    if [ "$_HAS_MULTI_TASKS" = "true" ] && [ "$_HAS_MULTI_TOLS" = "true" ]; then
+      _GEN_SUBDIR="combined_gen"
+    elif [ "$_HAS_MULTI_TOLS" = "true" ]; then
+      _GEN_SUBDIR="accuracy_gen"
+    elif [ "$_HAS_MULTI_TASKS" = "true" ]; then
+      _GEN_SUBDIR="dataset_gen"
+    else
+      _GEN_SUBDIR="single"
+    fi
+    RUN_GROUP_DIR="rl_results/runs/general_rl/train/${_GEN_SUBDIR}/${GENERAL_TASKSET_ID}"
   else
     RUN_GROUP_DIR="rl_results/runs/general_rl/infer/${DATASET}"
   fi
@@ -575,10 +620,12 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
   if [ "$GENERAL_MODE" = "train" ]; then
     CMD+=(--total_rounds "$GENERAL_ROUNDS" --episodes_per_task_per_round "$GENERAL_EPISODES_PER_ROUND" --general_lr "$GENERAL_LR" --skip_stage2 "$GENERAL_SKIP_STAGE2")
     [ -n "$GENERAL_STAGE1_CONFIG_JSON" ] && CMD+=(--stage1_config_json "$GENERAL_STAGE1_CONFIG_JSON")
+    [ -n "$GENERAL_ACCURACY_TOLERANCES" ] && CMD+=(--accuracy_tolerances "$GENERAL_ACCURACY_TOLERANCES")
     [ -n "$RESUME_FROM" ] && CMD+=(--resume_from "$RESUME_FROM")
   else
     CMD+=(--general_stage1_policy "$GENERAL_STAGE1_POLICY" --num_rollouts "$GENERAL_NUM_ROLLOUTS" --greedy "$GENERAL_GREEDY" --skip_stage2 "$GENERAL_SKIP_STAGE2")
     [ -n "$GENERAL_STAGE2_POLICY" ] && CMD+=(--general_stage2_policy "$GENERAL_STAGE2_POLICY")
+    [ -n "$GENERAL_ACCURACY_TOLERANCES" ] && CMD+=(--accuracy_tolerance "$(printf '%s' "$GENERAL_ACCURACY_TOLERANCES" | cut -d, -f1 | xargs)")
   fi
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   resolve_compare_cuda_split
@@ -655,8 +702,16 @@ else
   show "通用强化学习模式" "$GENERAL_MODE" "$S_GENERAL_MODE"
   show "跳过 Stage-2" "$(boolzh "$GENERAL_SKIP_STAGE2")" "$S_GENERAL_SKIP_STAGE2"
   if [ "$GENERAL_MODE" = "train" ]; then
+    # 泛化模式显示
+    case "$_GEN_SUBDIR" in
+      dataset_gen) show "泛化模式" "数据集泛化" "true" ;;
+      accuracy_gen) show "泛化模式" "准确度泛化" "true" ;;
+      combined_gen) show "泛化模式" "数据集 + 准确度联合泛化" "true" ;;
+      *) show "泛化模式" "单任务单容忍" "true" ;;
+    esac
     show "任务集合标识" "$GENERAL_TASKSET_ID" "true"
     show "训练任务" "${GENERAL_TASKS:-$DATASET}" "$S_GENERAL_TASKS"
+    [ -n "$GENERAL_ACCURACY_TOLERANCES" ] && show "准确度容忍值" "$GENERAL_ACCURACY_TOLERANCES" "$S_GENERAL_ACCURACY_TOLERANCES"
     show "训练轮数" "$GENERAL_ROUNDS" "$S_GENERAL_ROUNDS"
     show "每轮每任务回合数" "$GENERAL_EPISODES_PER_ROUND" "$S_GENERAL_EPISODES_PER_ROUND"
     show "通用策略学习率" "$GENERAL_LR" "$S_GENERAL_LR"
@@ -665,6 +720,7 @@ else
     show "离线 rollout 次数" "$GENERAL_NUM_ROLLOUTS" "$S_GENERAL_NUM_ROLLOUTS"
     show "是否贪心 rollout" "$(boolzh "$GENERAL_GREEDY")" "$S_GENERAL_GREEDY"
     [ -n "$GENERAL_STAGE2_POLICY" ] && show "Stage-2 策略文件" "$GENERAL_STAGE2_POLICY" "$S_GENERAL_STAGE2_POLICY"
+    [ -n "$GENERAL_ACCURACY_TOLERANCES" ] && show "推断准确度容忍" "$GENERAL_ACCURACY_TOLERANCES" "$S_GENERAL_ACCURACY_TOLERANCES"
   fi
 fi
 
