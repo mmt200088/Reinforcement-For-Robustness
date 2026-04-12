@@ -39,6 +39,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--noise-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的 Stage-2 噪声配置文件路径 |
 | `--manual-noise-config JSON_OBJECT` | `rl`、`ga` | — | `manual` 模式下的 7 类噪声配置 |
 | `--noise-eval-repeat N` | `rl`、`ga`、`rl-and-ga-compare` | `1` | Stage-2 最终评估重复次数 |
+| `--stage2-compare-repeats N` | `rl-and-ga-compare` | 跟随 `--noise-eval-repeat` | 仅用于 `rl-and-ga-compare` 的 Stage-2 多次对比次数；会让 RL/GA 两侧都重复评估，并在报告中汇总均值、标准差、方差、最大值、最小值 |
 | `--random-seed N` | `rl`、`ga`、`rl-and-ga-compare` | `42` | 随机种子 |
 | `--perm-trials N` | `rl`、`ga`、`rl-and-ga-compare` | `10` | 随机置换对照次数 |
 | `--cost-trials N` | `rl`、`ga`、`rl-and-ga-compare` | `10` | 等价成本对照次数 |
@@ -93,6 +94,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
   - 需要改用对比实验专用的 side 参数：`--rl-*` / `--ga-*`。
   - 若某一侧没有跳过某阶段搜索，则该侧对应的 `*-eval-source` 必须为 `search`。
   - 若某一侧跳过某阶段搜索，则该侧对应的 `*-eval-source` 必须为 `json`；若未显式给出 `*-eval-config`，脚本会自动回落到该算法家族的默认 JSON 文件名。
+  - `--stage2-compare-repeats` 只作用于 Stage-2 对比报告；若不显式传入，会继承 `--noise-eval-repeat`。
   - 对比实验始终保留 Stage-1 / Stage-2 最终评估，因此依然不支持 `--skip-stage1-final-eval` 与 `--skip-noise-final-eval`。
 
 ### JSON 配置文件默认值
@@ -102,7 +104,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `rl` | `glue_configs_best_ppo.json` | `glue_noise_configs_best_ppo.json` |
 | `ga` | `glue_configs_best_genetic.json` | `glue_noise_configs_best_genetic.json` |
 
-当 `--final-eval-source=json` 或 `--noise-eval-source=json` 时，脚本会检查文件名是否与所选算法家族匹配，避免把 PPO 配置错用到 GA，或把 GA 配置错用到 PPO。当前仓库默认只内置了 PPO 这套 JSON；如果你要在 `ga` 模式下走 JSON 评估，需要自行准备并命名为 `glue_configs_best_genetic.json` / `glue_noise_configs_best_genetic.json`，或显式通过 `--final-eval-config` / `--noise-eval-config` 指定。
+当 `--final-eval-source=json` 或 `--noise-eval-source=json` 时，脚本会检查文件名是否与所选算法家族匹配，避免把 PPO 配置错用到 GA，或把 GA 配置错用到 PPO。当前仓库已内置 PPO 与 GA 两套默认 JSON；其中 `glue_configs_best_genetic.json` / `glue_noise_configs_best_genetic.json` 目前按 PPO 默认配置生成，便于在 `ga` 或 `rl-and-ga-compare` 模式下直接跳过搜索。如果你后续得到 GA 自己的更优配置，可以直接覆盖这两个 genetic JSON，或者显式通过 `--final-eval-config` / `--noise-eval-config` 指定。
 `rl-and-ga-compare` 模式下的 `--rl-final-eval-config` / `--ga-final-eval-config` / `--rl-noise-eval-config` / `--ga-noise-eval-config` 也沿用同一套默认命名与家族一致性检查规则。
 
 ### 推荐命令示例
@@ -141,6 +143,7 @@ bash llama_7B_LayerImportance.sh \
   --stage2-search-episodes 40000 \
   --stage1-search-generations 1594 \
   --stage2-search-generations 1250 \
+  --stage2-compare-repeats 20 \
   --stage1-search-lr 1e-4 \
   --stage2-search-lr 1e-4
 ```
@@ -155,6 +158,7 @@ bash llama_7B_LayerImportance.sh \
   --stage2-search-episodes 50000 \
   --stage1-search-generations 300 \
   --stage2-search-generations 500 \
+  --stage2-compare-repeats 20 \
   --rl-skip-stage1-search \
   --rl-final-eval-source json \
   --rl-final-eval-config glue_configs_best_ppo.json \
@@ -171,8 +175,8 @@ bash llama_7B_LayerImportance.sh \
 - `reports/stage1_compare_report_<dataset>.md`：Stage-1 对比文本报告
 - `reports/stage1_compare_plot_<dataset>.png`：Stage-1 对比图，展示 RL/GA 在 Loss、主指标、次指标/Time、Cost 上的对比
 - `reports/stage2_compare_summary_<dataset>.json`：Stage-2 结构化对比摘要，适合脚本读取
-- `reports/stage2_compare_report_<dataset>.md`：Stage-2 对比文本报告
-- `reports/stage2_compare_plot_<dataset>.png`：Stage-2 对比图，展示 RL/GA 在 Loss、主指标、次指标/Time、Cost 上的对比
+- `reports/stage2_compare_report_<dataset>.md`：Stage-2 对比文本报告；会明确写出 RL/GA 各自固定的 Stage-1 配置、选中的 Stage-2 噪声配置，以及多次评估后的均值、标准差、方差、最大值、最小值
+- `reports/stage2_compare_plot_<dataset>.png`：Stage-2 对比图；会用均值±标准差柱状图展示 Loss、主指标、次指标/Time，并标注最小值/最大值，另附噪声 Cost 对比
 - `meta/compare_metadata.json`：对比实验元信息，包括两侧是否跳过搜索、JSON 来源、子命令等
 - `meta/compare_status.json`：运行中状态快照
 - `meta/compare_final_status.json`：最终状态与报告路径汇总
@@ -182,6 +186,11 @@ bash llama_7B_LayerImportance.sh \
 - 若该方走 `search`，则优先从 checkpoint / 搜索结果恢复当前最优配置。
 - 若该方走 `json`，则优先按对应 JSON 文件补做最终评估。
 - 所有 fallback 与警告都会写入对比报告和 `compare_summary_*.json`。
+
+补充说明：
+
+- Stage-2 对比不是“只比较噪声配置”。最终评估会把 RL 和 GA 各自在 Stage-1 找到的 GELU/Softmax 配置固定住，再分别叠加各自 Stage-2 找到的噪声配置后送入模型评估。
+- `reports/stage2_compare_summary_<dataset>.json` 中会保留 `fixed_stage1_config`、`selected.noise_config`、`repeat_evaluation.stats` 等字段，便于后续核对这次对比到底用了什么组合配置。
 
 #### 5. 通用 RL 训练 — 数据集泛化
 
@@ -1082,6 +1091,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 - 在单独的 `rl` / `ga` 模式下，如果使用了 `--skip-noise-search`，就不要再把该阶段预算当作“本次要执行的搜索预算”来理解。
 - 在 `rl-and-ga-compare` 模式下，若要跳过某一侧某一阶段的搜索，请改用 `--rl-*` / `--ga-*` 的对比专用参数，而不是全局 `--skip-stage1-search` / `--skip-noise-search`。
 - 这些参数只控制搜索预算，不影响最终评估重复次数；最终评估重复次数仍然由 `--noise-eval-repeat` 等参数控制。
+- 若要单独控制 `rl-and-ga-compare` 的 Stage-2 多次对比次数，请使用 `--stage2-compare-repeats`；不传时会跟随 `--noise-eval-repeat`。
 
 示例：
 

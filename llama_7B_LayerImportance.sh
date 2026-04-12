@@ -41,6 +41,7 @@ GA / 对比实验中的 GA：
   --resume-from PATH
 
 对比实验专用（仅 rl-and-ga-compare 可用）：
+  --stage2-compare-repeats N
   --rl-skip-stage1-search
   --ga-skip-stage1-search
   --rl-final-eval-source search|json
@@ -235,6 +236,7 @@ NOISE_EVAL_SOURCE="search"; S_NOISE_EVAL_SOURCE="false"
 NOISE_EVAL_CONFIG=""; S_NOISE_EVAL_CONFIG="false"
 MANUAL_NOISE_CONFIG=""
 NOISE_EVAL_REPEAT="1"; S_NOISE_EVAL_REPEAT="false"
+STAGE2_COMPARE_REPEATS=""; S_STAGE2_COMPARE_REPEATS="false"
 RANDOM_SEED="42"; S_RANDOM_SEED="false"
 PERM_TRIALS="10"; S_PERM_TRIALS="false"
 COST_TRIALS="10"; S_COST_TRIALS="false"
@@ -292,6 +294,7 @@ while [ "$#" -gt 0 ]; do
     --noise-eval-config) needv "$@"; NOISE_EVAL_CONFIG="$2"; S_NOISE_EVAL_CONFIG="true"; shift 2 ;;
     --manual-noise-config) needv "$@"; MANUAL_NOISE_CONFIG="$2"; shift 2 ;;
     --noise-eval-repeat) needv "$@"; NOISE_EVAL_REPEAT="$2"; S_NOISE_EVAL_REPEAT="true"; shift 2 ;;
+    --stage2-compare-repeats) needv "$@"; STAGE2_COMPARE_REPEATS="$2"; S_STAGE2_COMPARE_REPEATS="true"; shift 2 ;;
     --random-seed) needv "$@"; RANDOM_SEED="$2"; S_RANDOM_SEED="true"; shift 2 ;;
     --perm-trials) needv "$@"; PERM_TRIALS="$2"; S_PERM_TRIALS="true"; shift 2 ;;
     --cost-trials) needv "$@"; COST_TRIALS="$2"; S_COST_TRIALS="true"; shift 2 ;;
@@ -377,7 +380,7 @@ if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$SEARCH_ALGORITHM" != "rl-and-g
 fi
 
 if [ "$SEARCH_ALGORITHM" != "rl-and-ga-compare" ]; then
-  { [ "$S_RL_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_RL_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_CONFIG" = "false" ]; } || err "当前模式不是 rl-and-ga-compare，请不要使用 --rl-* / --ga-* 的对比专用参数。"
+  { [ "$S_STAGE2_COMPARE_REPEATS" = "false" ] && [ "$S_RL_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_RL_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_CONFIG" = "false" ]; } || err "当前模式不是 rl-and-ga-compare，请不要使用对比专用参数（包括 --stage2-compare-repeats、--rl-*、--ga-*）。"
 fi
 
 if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
@@ -432,6 +435,10 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   is_pos_int "$STAGE2_EPISODES" || err "--stage2-search-episodes 必须是正整数"
   is_pos_int "$STAGE1_GENERATIONS" || err "--stage1-search-generations 必须是正整数"
   is_pos_int "$STAGE2_GENERATIONS" || err "--stage2-search-generations 必须是正整数"
+  if [ -z "$STAGE2_COMPARE_REPEATS" ]; then
+    STAGE2_COMPARE_REPEATS="$NOISE_EVAL_REPEAT"
+  fi
+  is_pos_int "$STAGE2_COMPARE_REPEATS" || err "--stage2-compare-repeats 必须是正整数"
   is_pos_num "$STAGE1_LR" || err "--stage1-search-lr 必须是正数"
   is_pos_num "$STAGE2_LR" || err "--stage2-search-lr 必须是正数"
   [ "$SKIP_STAGE1_FINAL_EVAL" = "false" ] || err "rl-and-ga-compare 必须保留 Stage-1 最终评估，不能使用 --skip-stage1-final-eval。"
@@ -629,7 +636,7 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
   fi
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   resolve_compare_cuda_split
-  CMD=(python rl_ga_compare_runner.py --base-model "$BASE_MODEL" --data-path "$DATA_PATH" --dataset "$DATASET" --output-dir "$RUN_ROOT" --batch-size "$BATCH_SIZE" --stage1-search-episodes "$STAGE1_EPISODES" --stage2-search-episodes "$STAGE2_EPISODES" --stage1-search-generations "$STAGE1_GENERATIONS" --stage2-search-generations "$STAGE2_GENERATIONS" --stage1-search-lr "$STAGE1_LR" --stage2-search-lr "$STAGE2_LR" --random-seed "$RANDOM_SEED" --perm-trials "$PERM_TRIALS" --cost-trials "$COST_TRIALS" --budget-trials "$BUDGET_TRIALS" --noise-eval-repeat "$NOISE_EVAL_REPEAT")
+  CMD=(python rl_ga_compare_runner.py --base-model "$BASE_MODEL" --data-path "$DATA_PATH" --dataset "$DATASET" --output-dir "$RUN_ROOT" --batch-size "$BATCH_SIZE" --stage1-search-episodes "$STAGE1_EPISODES" --stage2-search-episodes "$STAGE2_EPISODES" --stage1-search-generations "$STAGE1_GENERATIONS" --stage2-search-generations "$STAGE2_GENERATIONS" --stage1-search-lr "$STAGE1_LR" --stage2-search-lr "$STAGE2_LR" --random-seed "$RANDOM_SEED" --perm-trials "$PERM_TRIALS" --cost-trials "$COST_TRIALS" --budget-trials "$BUDGET_TRIALS" --noise-eval-repeat "$NOISE_EVAL_REPEAT" --stage2-compare-repeats "$STAGE2_COMPARE_REPEATS")
   [ "$RL_COMPARE_SKIP_STAGE1_SEARCH" = "true" ] && CMD+=(--rl-skip-stage1-search)
   [ "$GA_COMPARE_SKIP_STAGE1_SEARCH" = "true" ] && CMD+=(--ga-skip-stage1-search)
   CMD+=(--rl-final-eval-source "$RL_COMPARE_FINAL_EVAL_SOURCE" --ga-final-eval-source "$GA_COMPARE_FINAL_EVAL_SOURCE")
@@ -684,6 +691,7 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   show "RL Stage-1 学习率" "$STAGE1_LR" "$S_STAGE1_LR"
   show "RL Stage-2 学习率" "$STAGE2_LR" "$S_STAGE2_LR"
   show "噪声最终评估重复次数" "$NOISE_EVAL_REPEAT" "$S_NOISE_EVAL_REPEAT"
+  show "Stage-2 对比重复次数" "$STAGE2_COMPARE_REPEATS" "$S_STAGE2_COMPARE_REPEATS"
   echo "  RL Stage-1 搜索：$(boolzh "$RL_COMPARE_SKIP_STAGE1_SEARCH")（跳过=是时改走 $(srczh "$RL_COMPARE_FINAL_EVAL_SOURCE")）"
   [ -n "$RL_COMPARE_FINAL_EVAL_CONFIG" ] && echo "  RL Stage-1 JSON：$RL_COMPARE_FINAL_EVAL_CONFIG"
   echo "  RL Stage-2 搜索：$(boolzh "$RL_COMPARE_SKIP_NOISE_SEARCH")（跳过=是时改走 $(srczh "$RL_COMPARE_NOISE_EVAL_SOURCE")）"

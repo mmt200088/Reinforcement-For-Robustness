@@ -132,6 +132,8 @@ class OutputLayoutRegressionTests(unittest.TestCase):
                 "6",
                 "--stage2-search-generations",
                 "5",
+                "--stage2-compare-repeats",
+                "7",
                 "--dry-run",
             ]
 
@@ -155,6 +157,7 @@ class OutputLayoutRegressionTests(unittest.TestCase):
             metadata = json.loads((output_dir / "meta" / "compare_metadata.json").read_text(encoding="utf-8"))
             self.assertEqual(metadata["rl_stage1_search_episodes"], 170)
             self.assertEqual(metadata["ga_stage1_search_generations"], 6)
+            self.assertEqual(metadata["stage2_compare_repeats"], 7)
             self.assertEqual(metadata["rl_side_config"]["final_eval_config_source"], "search")
             self.assertEqual(metadata["ga_side_config"]["noise_eval_config_source"], "search")
 

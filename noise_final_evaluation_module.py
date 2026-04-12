@@ -76,7 +76,7 @@ class NoiseFinalEvaluationModule:
         self.cost_equivalent_trials = max(0, int(cost_equivalent_trials))
         self.budget_equivalent_trials = max(0, int(budget_equivalent_trials))
         self.full_random_trials = max(0, int(full_random_trials))
-        self.repeat_n = max(5, int(repeat_n))
+        self.repeat_n = max(1, int(repeat_n))
         default_results_dir = getattr(
             evaluator,
             "noise_final_eval_dir",
@@ -472,6 +472,8 @@ class NoiseFinalEvaluationModule:
             )
             ev.log(f"[Warning] {message}")
             summary_path = self._save_results_json(
+                fixed_gelu=fixed_gelu,
+                fixed_softmax=fixed_softmax,
                 selected_source="search",
                 baseline_result=baseline_result,
                 baseline_single_result=baseline_single_result,
@@ -575,6 +577,8 @@ class NoiseFinalEvaluationModule:
 
         # 8. 保存 JSON
         summary_path = self._save_results_json(
+            fixed_gelu=fixed_gelu,
+            fixed_softmax=fixed_softmax,
             selected_source=selected_source,
             baseline_result=baseline_result,
             baseline_single_result=baseline_single_result,
@@ -1721,6 +1725,8 @@ class NoiseFinalEvaluationModule:
 
     def _save_results_json(
         self,
+        fixed_gelu,
+        fixed_softmax,
         selected_source,
         baseline_result,
         baseline_single_result,
@@ -1741,6 +1747,10 @@ class NoiseFinalEvaluationModule:
             "status": status,
             "message": message,
             "selected_source": selected_source,
+            "fixed_stage1_config": {
+                "gelu": np.asarray(fixed_gelu, dtype=int).tolist(),
+                "softmax": np.asarray(fixed_softmax, dtype=int).tolist(),
+            },
             "constraints": {
                 "selection": {
                     "limit_loss": float(selection_constraints["loss"]),

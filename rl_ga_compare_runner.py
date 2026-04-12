@@ -386,6 +386,110 @@ def resolve_stage1_selected_config_from_artifacts(
     return cfg, source
 
 
+def default_stage1_json_for_algorithm(algorithm: str) -> str:
+    return (
+        "glue_configs_best_genetic.json"
+        if algorithm == "ga"
+        else "glue_configs_best_ppo.json"
+    )
+
+
+def default_stage2_json_for_algorithm(algorithm: str) -> str:
+    return (
+        "glue_noise_configs_best_genetic.json"
+        if algorithm == "ga"
+        else "glue_noise_configs_best_ppo.json"
+    )
+
+
+def _extract_repeat_evaluation(obj: dict) -> Tuple[Optional[dict], List[dict]]:
+    repeat_obj = obj.get("repeat_evaluation") or {}
+    stats = repeat_obj.get("stats")
+    trials = repeat_obj.get("trials") or []
+    if stats is None:
+        return None, []
+    return stats, trials
+
+
+def _variance_from_stats(stats: Optional[dict], key: str) -> Optional[float]:
+    if not stats:
+        return None
+    std_value = stats.get(f"{key}_std")
+    if std_value is None:
+        return None
+    std_value = float(std_value)
+    return float(std_value * std_value)
+
+
+def _build_stage2_repeat_summary(metric_names: List[str], rl_side: dict, ga_side: dict) -> Optional[dict]:
+    rl_stats = rl_side.get("repeat_stats")
+    ga_stats = ga_side.get("repeat_stats")
+    if rl_stats is None and ga_stats is None:
+        return None
+
+    metric_specs: List[Tuple[str, str, bool]] = [
+        ("loss", "Loss", True),
+        ("p", metric_names[0], False),
+    ]
+    if len(metric_names) > 1:
+        metric_specs.append(("s", metric_names[1], False))
+    metric_specs.append(("time_ms", "Time(ms)", True))
+
+    summary_rows = []
+    for key, label, lower_better in metric_specs:
+        rl_mean = rl_stats.get(f"{key}_mean") if rl_stats else None
+        ga_mean = ga_stats.get(f"{key}_mean") if ga_stats else None
+        if rl_mean is None and ga_mean is None:
+            continue
+
+        rl_mean = float(rl_mean) if rl_mean is not None else None
+        ga_mean = float(ga_mean) if ga_mean is not None else None
+        winner = "tie"
+        if rl_mean is not None and ga_mean is not None:
+            if abs(rl_mean - ga_mean) <= 1e-12:
+                winner = "tie"
+            elif lower_better:
+                winner = "rl" if rl_mean < ga_mean else "ga"
+            else:
+                winner = "rl" if rl_mean > ga_mean else "ga"
+
+        summary_rows.append(
+            {
+                "key": key,
+                "label": label,
+                "lower_better": lower_better,
+                "winner": winner,
+                "mean_gap_rl_minus_ga": (
+                    float(rl_mean - ga_mean)
+                    if rl_mean is not None and ga_mean is not None
+                    else None
+                ),
+                "rl": {
+                    "n": int(rl_stats.get("n", 0)) if rl_stats else 0,
+                    "mean": rl_mean,
+                    "std": float(rl_stats.get(f"{key}_std")) if rl_stats and rl_stats.get(f"{key}_std") is not None else None,
+                    "var": _variance_from_stats(rl_stats, key),
+                    "min": float(rl_stats.get(f"{key}_min")) if rl_stats and rl_stats.get(f"{key}_min") is not None else None,
+                    "max": float(rl_stats.get(f"{key}_max")) if rl_stats and rl_stats.get(f"{key}_max") is not None else None,
+                },
+                "ga": {
+                    "n": int(ga_stats.get("n", 0)) if ga_stats else 0,
+                    "mean": ga_mean,
+                    "std": float(ga_stats.get(f"{key}_std")) if ga_stats and ga_stats.get(f"{key}_std") is not None else None,
+                    "var": _variance_from_stats(ga_stats, key),
+                    "min": float(ga_stats.get(f"{key}_min")) if ga_stats and ga_stats.get(f"{key}_min") is not None else None,
+                    "max": float(ga_stats.get(f"{key}_max")) if ga_stats and ga_stats.get(f"{key}_max") is not None else None,
+                },
+            }
+        )
+
+    return {
+        "rl_repeat_count": int(rl_stats.get("n", 0)) if rl_stats else 0,
+        "ga_repeat_count": int(ga_stats.get("n", 0)) if ga_stats else 0,
+        "metrics": summary_rows,
+    }
+
+
 def build_compare_evaluator(
     *,
     base_model: str,
@@ -697,10 +801,13 @@ def ensure_stage2_eval_json(
         ),
         final_eval_config_path=(
             side_config.final_eval_config_path
-            or "glue_configs_best_ppo.json"
+            or default_stage1_json_for_algorithm(algorithm)
         ),
         noise_eval_config_source=config_source,
-        noise_eval_config_path=config_path,
+        noise_eval_config_path=(
+            config_path
+            or default_stage2_json_for_algorithm(algorithm)
+        ),
         skip_stage1_rl=True,
         skip_noise_rl=(config_source != "search"),
         skip_stage1_final_eval=True,
@@ -837,13 +944,18 @@ def build_stage_compare_payload(
             )
         process_state = (process_meta.get(algorithm) or {}).get("state", "-")
         process_return_code = (process_meta.get(algorithm) or {}).get("return_code")
-        stage1_selected_config, stage1_selected_source = (
-            resolve_stage1_selected_config_from_artifacts(run_dir, algorithm, dataset)
-        )
+        stage1_selected_config = obj.get("fixed_stage1_config")
+        stage1_selected_source = "stage2_final_eval_fixed_config"
+        if stage1_selected_config is None:
+            stage1_selected_config, stage1_selected_source = (
+                resolve_stage1_selected_config_from_artifacts(run_dir, algorithm, dataset)
+            )
+        repeat_stats, repeat_trials = _extract_repeat_evaluation(obj)
         return {
             "label": label,
             "baseline": baseline,
             "selected": selected,
+            "selected_single": obj.get("selected_single"),
             "selected_origin": selected_origin,
             "selected_warning": selected_warning,
             "json_path": str(source_path),
@@ -854,6 +966,9 @@ def build_stage_compare_payload(
             "process_return_code": process_return_code,
             "stage1_selected_config": stage1_selected_config,
             "stage1_selected_source": stage1_selected_source,
+            "repeat_stats": repeat_stats,
+            "repeat_trials": repeat_trials,
+            "baseline_repeat_stats": (obj.get("baseline_repeat_evaluation") or {}).get("stats"),
         }
 
     rl_side = extract_side("RL", "rl", rl_run_dir, rl_obj, rl_json_path)
@@ -892,6 +1007,17 @@ def build_stage_compare_payload(
             payload["warnings"].append(
                 f"{label} 进程状态为 {state}；本次对比结果可能基于中断前保存的当前最优配置。"
             )
+    for label, side in (("RL", rl_side), ("GA", ga_side)):
+        if stage_label == "stage2" and not side.get("stage1_selected_config"):
+            payload["warnings"].append(
+                f"{label} Stage-2 对比未能解析出固定的 Stage-1 配置；当前结果可能已回退到 baseline。"
+            )
+    if stage_label == "stage2":
+        payload["stage2_repeat_summary"] = _build_stage2_repeat_summary(
+            metric_names,
+            rl_side,
+            ga_side,
+        )
     return payload
 
 
@@ -957,6 +1083,7 @@ def save_stage_compare_report(payload: dict, output_dir: Path) -> Tuple[Path, Pa
         f"d{header_metric2}%" if len(metric_names) > 1 else "-",
     ]
     rows = [row("RL", rl_side), row("GA", ga_side)]
+    stage2_repeat_summary = payload.get("stage2_repeat_summary")
 
     lines = [
         f"# {stage.upper()}：RL 与 GA 对比报告",
@@ -1020,6 +1147,48 @@ def save_stage_compare_report(payload: dict, output_dir: Path) -> Tuple[Path, Pa
         for item in payload["warnings"]:
             lines.append(f"- {item}")
 
+    if stage != "stage1" and stage2_repeat_summary:
+        lines.extend(
+            [
+                "",
+                "## Stage-2 多次评估统计",
+                "",
+                f"- RL 重复评估次数：`{stage2_repeat_summary.get('rl_repeat_count', 0)}`",
+                f"- GA 重复评估次数：`{stage2_repeat_summary.get('ga_repeat_count', 0)}`",
+                "",
+                "| 指标 | RL 均值 | RL 标准差 | RL 方差 | RL 最小值 | RL 最大值 | GA 均值 | GA 标准差 | GA 方差 | GA 最小值 | GA 最大值 | RL-GA 均值差 | 更优方 |",
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            ]
+        )
+        for metric_row in stage2_repeat_summary.get("metrics", []):
+            rl_stats = metric_row.get("rl") or {}
+            ga_stats = metric_row.get("ga") or {}
+            winner_text = {"rl": "RL", "ga": "GA", "tie": "持平"}.get(
+                metric_row.get("winner", "tie"),
+                str(metric_row.get("winner", "tie")),
+            )
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        str(metric_row.get("label", "-")),
+                        f"{float(rl_stats.get('mean', 0.0)):.6f}" if rl_stats.get("mean") is not None else "-",
+                        f"{float(rl_stats.get('std', 0.0)):.6f}" if rl_stats.get("std") is not None else "-",
+                        f"{float(rl_stats.get('var', 0.0)):.6f}" if rl_stats.get("var") is not None else "-",
+                        f"{float(rl_stats.get('min', 0.0)):.6f}" if rl_stats.get("min") is not None else "-",
+                        f"{float(rl_stats.get('max', 0.0)):.6f}" if rl_stats.get("max") is not None else "-",
+                        f"{float(ga_stats.get('mean', 0.0)):.6f}" if ga_stats.get("mean") is not None else "-",
+                        f"{float(ga_stats.get('std', 0.0)):.6f}" if ga_stats.get("std") is not None else "-",
+                        f"{float(ga_stats.get('var', 0.0)):.6f}" if ga_stats.get("var") is not None else "-",
+                        f"{float(ga_stats.get('min', 0.0)):.6f}" if ga_stats.get("min") is not None else "-",
+                        f"{float(ga_stats.get('max', 0.0)):.6f}" if ga_stats.get("max") is not None else "-",
+                        f"{float(metric_row.get('mean_gap_rl_minus_ga', 0.0)):.6f}" if metric_row.get("mean_gap_rl_minus_ga") is not None else "-",
+                        winner_text,
+                    ]
+                )
+                + " |"
+            )
+
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     _plot_stage_compare(payload, plot_path)
     return md_path, plot_path
@@ -1039,6 +1208,85 @@ def _plot_stage_compare(payload: dict, plot_path: Path) -> None:
     metric_names = payload["metric_names"]
     rl_side = payload["sides"]["rl"]["selected"]
     ga_side = payload["sides"]["ga"]["selected"]
+    stage2_repeat_summary = payload.get("stage2_repeat_summary")
+
+    if stage == "stage2" and stage2_repeat_summary:
+        summary_metrics = stage2_repeat_summary.get("metrics", [])
+        display_rows = summary_metrics[:3]
+        include_time = not any(item.get("key") == "time_ms" for item in display_rows)
+        if include_time:
+            time_metric = next(
+                (item for item in summary_metrics if item.get("key") == "time_ms"),
+                None,
+            )
+            if time_metric is not None and len(display_rows) < 3:
+                display_rows.append(time_metric)
+
+        fig, axes = plt.subplots(2, 2, figsize=(13, 9))
+        fig.suptitle("STAGE2: RL vs GA Repeated Evaluation", fontsize=14, fontweight="bold")
+        colors = {"RL": "#4C78A8", "GA": "#E45756"}
+
+        for ax, metric_row in zip(axes.flat[:3], display_rows):
+            rl_stats = metric_row.get("rl") or {}
+            ga_stats = metric_row.get("ga") or {}
+            means = [
+                float(rl_stats.get("mean", 0.0) or 0.0),
+                float(ga_stats.get("mean", 0.0) or 0.0),
+            ]
+            stds = [
+                float(rl_stats.get("std", 0.0) or 0.0),
+                float(ga_stats.get("std", 0.0) or 0.0),
+            ]
+            mins = [rl_stats.get("min"), ga_stats.get("min")]
+            maxs = [rl_stats.get("max"), ga_stats.get("max")]
+            ax.bar(
+                ["RL", "GA"],
+                means,
+                yerr=stds,
+                capsize=6,
+                color=[colors["RL"], colors["GA"]],
+                alpha=0.85,
+            )
+            ax.set_title(f"{metric_row.get('label')} (mean ± std)")
+            ax.grid(True, axis="y", alpha=0.3)
+            for idx, value in enumerate(means):
+                min_text = f"{float(mins[idx]):.4f}" if mins[idx] is not None else "-"
+                max_text = f"{float(maxs[idx]):.4f}" if maxs[idx] is not None else "-"
+                ax.text(
+                    idx,
+                    value,
+                    f"{value:.4f}\nσ={stds[idx]:.4f}\n[{min_text}, {max_text}]",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                )
+
+        cost_ax = axes.flat[3]
+        cost_values = [
+            float(rl_side.get("tot_c", 0.0) or 0.0),
+            float(ga_side.get("tot_c", 0.0) or 0.0),
+        ]
+        cost_ax.bar(["RL", "GA"], cost_values, color=[colors["RL"], colors["GA"]], alpha=0.85)
+        cost_ax.set_title("Noise Cost")
+        cost_ax.grid(True, axis="y", alpha=0.3)
+        for idx, value in enumerate(cost_values):
+            cost_ax.text(idx, value, f"{value:.4f}", ha="center", va="bottom", fontsize=9)
+        rl_n = stage2_repeat_summary.get("rl_repeat_count", 0)
+        ga_n = stage2_repeat_summary.get("ga_repeat_count", 0)
+        cost_ax.text(
+            0.5,
+            0.95,
+            f"Repeat count: RL={rl_n}, GA={ga_n}",
+            ha="center",
+            va="top",
+            transform=cost_ax.transAxes,
+            fontsize=9,
+        )
+
+        plt.tight_layout()
+        plt.savefig(plot_path, dpi=180)
+        plt.close(fig)
+        return
 
     metrics = [
         ("loss", "Loss"),
@@ -1291,6 +1539,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cost-trials", type=int, default=10)
     parser.add_argument("--budget-trials", type=int, default=10)
     parser.add_argument("--noise-eval-repeat", type=int, default=1)
+    parser.add_argument("--stage2-compare-repeats", type=int, default=None)
     parser.add_argument("--poll-seconds", type=int, default=DEFAULT_POLL_SECONDS)
     parser.add_argument("--python-exe", default=sys.executable)
     parser.add_argument("--rl-cuda-visible-devices", default="")
@@ -1313,6 +1562,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.stage2_compare_repeats is None:
+        args.stage2_compare_repeats = args.noise_eval_repeat
     for flag_name in (
         "stage1_search_episodes",
         "stage2_search_episodes",
@@ -1323,6 +1574,7 @@ def main() -> int:
         "cost_trials",
         "budget_trials",
         "noise_eval_repeat",
+        "stage2_compare_repeats",
         "poll_seconds",
     ):
         if getattr(args, flag_name) <= 0:
@@ -1385,7 +1637,7 @@ def main() -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat=args.noise_eval_repeat,
+            noise_eval_repeat=args.stage2_compare_repeats,
         ),
         env_overrides={},
     )
@@ -1412,7 +1664,7 @@ def main() -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat=args.noise_eval_repeat,
+            noise_eval_repeat=args.stage2_compare_repeats,
         ),
         env_overrides={},
     )
@@ -1464,6 +1716,7 @@ def main() -> int:
         "cost_trials": args.cost_trials,
         "budget_trials": args.budget_trials,
         "noise_eval_repeat": args.noise_eval_repeat,
+        "stage2_compare_repeats": args.stage2_compare_repeats,
         "warnings": compare_warnings,
         "rl_command": rl_spec.command,
         "ga_command": ga_spec.command,
@@ -1650,7 +1903,7 @@ def main() -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat_n=args.noise_eval_repeat,
+            noise_eval_repeat_n=args.stage2_compare_repeats,
         )
         ga_json, ga_warn = ensure_stage2_eval_json(
             algorithm="ga",
@@ -1666,7 +1919,7 @@ def main() -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat_n=args.noise_eval_repeat,
+            noise_eval_repeat_n=args.stage2_compare_repeats,
         )
         payload = build_stage_compare_payload(
             stage_label="stage2",
