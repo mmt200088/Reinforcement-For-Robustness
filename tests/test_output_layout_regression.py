@@ -161,6 +161,96 @@ class OutputLayoutRegressionTests(unittest.TestCase):
             self.assertEqual(metadata["rl_side_config"]["final_eval_config_source"], "search")
             self.assertEqual(metadata["ga_side_config"]["noise_eval_config_source"], "search")
 
+    def test_compare_runner_deprecated_noise_eval_repeat_alias(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "compare_dry_run_alias"
+            command = [
+                sys.executable,
+                "rl_ga_compare_runner.py",
+                "--base-model",
+                "dummy-model",
+                "--data-path",
+                "mrpc",
+                "--dataset",
+                "mrpc",
+                "--output-dir",
+                str(output_dir),
+                "--stage1-search-episodes",
+                "170",
+                "--stage2-search-episodes",
+                "170",
+                "--stage1-search-generations",
+                "6",
+                "--stage2-search-generations",
+                "5",
+                "--noise-eval-repeat",
+                "9",
+                "--dry-run",
+            ]
+
+            completed = subprocess.run(
+                command,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(
+                completed.returncode,
+                0,
+                msg=completed.stderr or completed.stdout,
+            )
+            metadata = json.loads(
+                (output_dir / "meta" / "compare_metadata.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(metadata["stage2_compare_repeats"], 9)
+            self.assertTrue(
+                any("noise-eval-repeat" in item for item in metadata["warnings"])
+            )
+
+    def test_compare_runner_rejects_duplicate_repeat_flags(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "compare_dry_run_conflict"
+            command = [
+                sys.executable,
+                "rl_ga_compare_runner.py",
+                "--base-model",
+                "dummy-model",
+                "--data-path",
+                "mrpc",
+                "--dataset",
+                "mrpc",
+                "--output-dir",
+                str(output_dir),
+                "--stage1-search-episodes",
+                "170",
+                "--stage2-search-episodes",
+                "170",
+                "--stage1-search-generations",
+                "6",
+                "--stage2-search-generations",
+                "5",
+                "--noise-eval-repeat",
+                "9",
+                "--stage2-compare-repeats",
+                "7",
+                "--dry-run",
+            ]
+
+            completed = subprocess.run(
+                command,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("stage2-compare-repeats", completed.stderr + completed.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

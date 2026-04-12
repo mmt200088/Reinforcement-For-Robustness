@@ -1335,7 +1335,7 @@ def build_child_command(
     perm_trials: int,
     cost_trials: int,
     budget_trials: int,
-    noise_eval_repeat: int,
+    stage2_compare_repeats: int,
 ) -> List[str]:
     entrypoint = "rl_tune.py" if algorithm == "rl" else "rl_tune_genetic.py"
 
@@ -1367,7 +1367,7 @@ def build_child_command(
         "--noise_eval_config_source", side_config.noise_eval_config_source,
         "--noise_eval_config_path", side_config.noise_eval_config_path,
         "--manual_noise_config", "",
-        "--noise_eval_repeat_n", str(noise_eval_repeat),
+        "--noise_eval_repeat_n", str(stage2_compare_repeats),
         "--skip_stage1_rl", "true" if side_config.skip_stage1_search else "false",
         "--skip_stage1_final_eval", "false",
         "--skip_noise_final_eval", "false",
@@ -1538,7 +1538,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--perm-trials", type=int, default=10)
     parser.add_argument("--cost-trials", type=int, default=10)
     parser.add_argument("--budget-trials", type=int, default=10)
-    parser.add_argument("--noise-eval-repeat", type=int, default=1)
+    parser.add_argument("--noise-eval-repeat", type=int, default=None)
     parser.add_argument("--stage2-compare-repeats", type=int, default=None)
     parser.add_argument("--poll-seconds", type=int, default=DEFAULT_POLL_SECONDS)
     parser.add_argument("--python-exe", default=sys.executable)
@@ -1562,8 +1562,21 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    compare_repeat_alias_warning = None
     if args.stage2_compare_repeats is None:
-        args.stage2_compare_repeats = args.noise_eval_repeat
+        if args.noise_eval_repeat is not None:
+            args.stage2_compare_repeats = args.noise_eval_repeat
+            compare_repeat_alias_warning = (
+                "在 rl-and-ga-compare 模式中，--noise-eval-repeat 已废弃；"
+                "本次已将其作为 --stage2-compare-repeats 的兼容别名处理。"
+            )
+        else:
+            args.stage2_compare_repeats = 1
+    elif args.noise_eval_repeat is not None:
+        raise CompareRunnerError(
+            "rl-and-ga-compare 模式请只使用 --stage2-compare-repeats；"
+            "不要与已废弃的 --noise-eval-repeat 同时传入。"
+        )
     for flag_name in (
         "stage1_search_episodes",
         "stage2_search_episodes",
@@ -1573,7 +1586,6 @@ def main() -> int:
         "perm_trials",
         "cost_trials",
         "budget_trials",
-        "noise_eval_repeat",
         "stage2_compare_repeats",
         "poll_seconds",
     ):
@@ -1637,7 +1649,7 @@ def main() -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat=args.stage2_compare_repeats,
+            stage2_compare_repeats=args.stage2_compare_repeats,
         ),
         env_overrides={},
     )
@@ -1664,7 +1676,7 @@ def main() -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat=args.stage2_compare_repeats,
+            stage2_compare_repeats=args.stage2_compare_repeats,
         ),
         env_overrides={},
     )
@@ -1682,6 +1694,8 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_sigint)
 
     compare_warnings: List[str] = []
+    if compare_repeat_alias_warning is not None:
+        compare_warnings.append(compare_repeat_alias_warning)
     rl_cuda = normalize_cuda_value(args.rl_cuda_visible_devices)
     ga_cuda = normalize_cuda_value(args.ga_cuda_visible_devices)
     if not rl_cuda and not ga_cuda:
@@ -1715,7 +1729,6 @@ def main() -> int:
         "perm_trials": args.perm_trials,
         "cost_trials": args.cost_trials,
         "budget_trials": args.budget_trials,
-        "noise_eval_repeat": args.noise_eval_repeat,
         "stage2_compare_repeats": args.stage2_compare_repeats,
         "warnings": compare_warnings,
         "rl_command": rl_spec.command,
@@ -1787,7 +1800,7 @@ def main() -> int:
                         perm_trials=args.perm_trials,
                         cost_trials=args.cost_trials,
                         budget_trials=args.budget_trials,
-                        noise_eval_repeat_n=args.noise_eval_repeat,
+                        noise_eval_repeat_n=args.stage2_compare_repeats,
                     )
                     ga_json, ga_warn = ensure_stage1_eval_json(
                         algorithm="ga",
@@ -1803,7 +1816,7 @@ def main() -> int:
                         perm_trials=args.perm_trials,
                         cost_trials=args.cost_trials,
                         budget_trials=args.budget_trials,
-                        noise_eval_repeat_n=args.noise_eval_repeat,
+                        noise_eval_repeat_n=args.stage2_compare_repeats,
                     )
                     payload = build_stage_compare_payload(
                         stage_label="stage1",
@@ -1852,7 +1865,7 @@ def main() -> int:
                 perm_trials=args.perm_trials,
                 cost_trials=args.cost_trials,
                 budget_trials=args.budget_trials,
-                noise_eval_repeat_n=args.noise_eval_repeat,
+                noise_eval_repeat_n=args.stage2_compare_repeats,
             )
             ga_json, ga_warn = ensure_stage1_eval_json(
                 algorithm="ga",
@@ -1868,7 +1881,7 @@ def main() -> int:
                 perm_trials=args.perm_trials,
                 cost_trials=args.cost_trials,
                 budget_trials=args.budget_trials,
-                noise_eval_repeat_n=args.noise_eval_repeat,
+                noise_eval_repeat_n=args.stage2_compare_repeats,
             )
             payload = build_stage_compare_payload(
                 stage_label="stage1",

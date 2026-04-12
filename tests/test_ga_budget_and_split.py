@@ -82,7 +82,7 @@ class GABudgetAndSplitTests(unittest.TestCase):
             perm_trials=10,
             cost_trials=10,
             budget_trials=10,
-            noise_eval_repeat=1,
+            stage2_compare_repeats=1,
         )
         ga_cmd = compare_runner.build_child_command(
             python_exe="python",
@@ -102,7 +102,7 @@ class GABudgetAndSplitTests(unittest.TestCase):
             perm_trials=10,
             cost_trials=10,
             budget_trials=10,
-            noise_eval_repeat=1,
+            stage2_compare_repeats=1,
         )
 
         self.assertIn("--stage1_rl_episodes", rl_cmd)
@@ -143,7 +143,7 @@ class GABudgetAndSplitTests(unittest.TestCase):
             perm_trials=10,
             cost_trials=10,
             budget_trials=10,
-            noise_eval_repeat=1,
+            stage2_compare_repeats=1,
         )
         ga_cmd = compare_runner.build_child_command(
             python_exe="python",
@@ -163,7 +163,7 @@ class GABudgetAndSplitTests(unittest.TestCase):
             perm_trials=10,
             cost_trials=10,
             budget_trials=10,
-            noise_eval_repeat=1,
+            stage2_compare_repeats=1,
         )
 
         self.assertIn("--skip_stage1_rl", rl_cmd)

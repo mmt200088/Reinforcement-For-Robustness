@@ -435,8 +435,16 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   is_pos_int "$STAGE2_EPISODES" || err "--stage2-search-episodes 必须是正整数"
   is_pos_int "$STAGE1_GENERATIONS" || err "--stage1-search-generations 必须是正整数"
   is_pos_int "$STAGE2_GENERATIONS" || err "--stage2-search-generations 必须是正整数"
+  if [ "$S_STAGE2_COMPARE_REPEATS" = "true" ] && [ "$S_NOISE_EVAL_REPEAT" = "true" ]; then
+    err "rl-and-ga-compare 模式请只使用 --stage2-compare-repeats；不要再同时传入 --noise-eval-repeat。"
+  fi
   if [ -z "$STAGE2_COMPARE_REPEATS" ]; then
-    STAGE2_COMPARE_REPEATS="$NOISE_EVAL_REPEAT"
+    if [ "$S_NOISE_EVAL_REPEAT" = "true" ]; then
+      STAGE2_COMPARE_REPEATS="$NOISE_EVAL_REPEAT"
+      echo "警告：在 rl-and-ga-compare 模式中，--noise-eval-repeat 已废弃；本次将其作为 --stage2-compare-repeats 的兼容别名处理。" >&2
+    else
+      STAGE2_COMPARE_REPEATS="1"
+    fi
   fi
   is_pos_int "$STAGE2_COMPARE_REPEATS" || err "--stage2-compare-repeats 必须是正整数"
   is_pos_num "$STAGE1_LR" || err "--stage1-search-lr 必须是正数"
@@ -636,7 +644,7 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
   fi
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   resolve_compare_cuda_split
-  CMD=(python rl_ga_compare_runner.py --base-model "$BASE_MODEL" --data-path "$DATA_PATH" --dataset "$DATASET" --output-dir "$RUN_ROOT" --batch-size "$BATCH_SIZE" --stage1-search-episodes "$STAGE1_EPISODES" --stage2-search-episodes "$STAGE2_EPISODES" --stage1-search-generations "$STAGE1_GENERATIONS" --stage2-search-generations "$STAGE2_GENERATIONS" --stage1-search-lr "$STAGE1_LR" --stage2-search-lr "$STAGE2_LR" --random-seed "$RANDOM_SEED" --perm-trials "$PERM_TRIALS" --cost-trials "$COST_TRIALS" --budget-trials "$BUDGET_TRIALS" --noise-eval-repeat "$NOISE_EVAL_REPEAT" --stage2-compare-repeats "$STAGE2_COMPARE_REPEATS")
+  CMD=(python rl_ga_compare_runner.py --base-model "$BASE_MODEL" --data-path "$DATA_PATH" --dataset "$DATASET" --output-dir "$RUN_ROOT" --batch-size "$BATCH_SIZE" --stage1-search-episodes "$STAGE1_EPISODES" --stage2-search-episodes "$STAGE2_EPISODES" --stage1-search-generations "$STAGE1_GENERATIONS" --stage2-search-generations "$STAGE2_GENERATIONS" --stage1-search-lr "$STAGE1_LR" --stage2-search-lr "$STAGE2_LR" --random-seed "$RANDOM_SEED" --perm-trials "$PERM_TRIALS" --cost-trials "$COST_TRIALS" --budget-trials "$BUDGET_TRIALS" --stage2-compare-repeats "$STAGE2_COMPARE_REPEATS")
   [ "$RL_COMPARE_SKIP_STAGE1_SEARCH" = "true" ] && CMD+=(--rl-skip-stage1-search)
   [ "$GA_COMPARE_SKIP_STAGE1_SEARCH" = "true" ] && CMD+=(--ga-skip-stage1-search)
   CMD+=(--rl-final-eval-source "$RL_COMPARE_FINAL_EVAL_SOURCE" --ga-final-eval-source "$GA_COMPARE_FINAL_EVAL_SOURCE")
@@ -690,8 +698,8 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   show "GA Stage-2 迭代代数" "$STAGE2_GENERATIONS" "$S_STAGE2_GENERATIONS"
   show "RL Stage-1 学习率" "$STAGE1_LR" "$S_STAGE1_LR"
   show "RL Stage-2 学习率" "$STAGE2_LR" "$S_STAGE2_LR"
-  show "噪声最终评估重复次数" "$NOISE_EVAL_REPEAT" "$S_NOISE_EVAL_REPEAT"
   show "Stage-2 对比重复次数" "$STAGE2_COMPARE_REPEATS" "$S_STAGE2_COMPARE_REPEATS"
+  [ "$S_NOISE_EVAL_REPEAT" = "true" ] && echo "  兼容提示：本次曾传入已废弃的 --noise-eval-repeat，但 compare 模式最终只使用 Stage-2 对比重复次数。"
   echo "  RL Stage-1 搜索：$(boolzh "$RL_COMPARE_SKIP_STAGE1_SEARCH")（跳过=是时改走 $(srczh "$RL_COMPARE_FINAL_EVAL_SOURCE")）"
   [ -n "$RL_COMPARE_FINAL_EVAL_CONFIG" ] && echo "  RL Stage-1 JSON：$RL_COMPARE_FINAL_EVAL_CONFIG"
   echo "  RL Stage-2 搜索：$(boolzh "$RL_COMPARE_SKIP_NOISE_SEARCH")（跳过=是时改走 $(srczh "$RL_COMPARE_NOISE_EVAL_SOURCE")）"

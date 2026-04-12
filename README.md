@@ -38,8 +38,8 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--noise-eval-source search/json/manual` | `rl`、`ga` | `search` | Stage-2 最终评估配置来源 |
 | `--noise-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的 Stage-2 噪声配置文件路径 |
 | `--manual-noise-config JSON_OBJECT` | `rl`、`ga` | — | `manual` 模式下的 7 类噪声配置 |
-| `--noise-eval-repeat N` | `rl`、`ga`、`rl-and-ga-compare` | `1` | Stage-2 最终评估重复次数 |
-| `--stage2-compare-repeats N` | `rl-and-ga-compare` | 跟随 `--noise-eval-repeat` | 仅用于 `rl-and-ga-compare` 的 Stage-2 多次对比次数；会让 RL/GA 两侧都重复评估，并在报告中汇总均值、标准差、方差、最大值、最小值 |
+| `--noise-eval-repeat N` | `rl`、`ga` | `1` | Stage-2 最终评估重复次数 |
+| `--stage2-compare-repeats N` | `rl-and-ga-compare` | `1` | `rl-and-ga-compare` 唯一正式的 Stage-2 多次对比次数入口；会让 RL/GA 两侧都重复评估，并在报告中汇总均值、标准差、方差、最大值、最小值 |
 | `--random-seed N` | `rl`、`ga`、`rl-and-ga-compare` | `42` | 随机种子 |
 | `--perm-trials N` | `rl`、`ga`、`rl-and-ga-compare` | `10` | 随机置换对照次数 |
 | `--cost-trials N` | `rl`、`ga`、`rl-and-ga-compare` | `10` | 等价成本对照次数 |
@@ -94,7 +94,8 @@ bash llama_7B_LayerImportance.sh [可选参数]
   - 需要改用对比实验专用的 side 参数：`--rl-*` / `--ga-*`。
   - 若某一侧没有跳过某阶段搜索，则该侧对应的 `*-eval-source` 必须为 `search`。
   - 若某一侧跳过某阶段搜索，则该侧对应的 `*-eval-source` 必须为 `json`；若未显式给出 `*-eval-config`，脚本会自动回落到该算法家族的默认 JSON 文件名。
-  - `--stage2-compare-repeats` 只作用于 Stage-2 对比报告；若不显式传入，会继承 `--noise-eval-repeat`。
+  - `rl-and-ga-compare` 模式下，Stage-2 多次对比只看 `--stage2-compare-repeats`。
+  - `--noise-eval-repeat` 不再作为 compare 模式的正式参数；仅保留兼容别名行为。若旧命令只传了它而没传 `--stage2-compare-repeats`，系统会临时按 `--stage2-compare-repeats` 处理并给出警告。
   - 对比实验始终保留 Stage-1 / Stage-2 最终评估，因此依然不支持 `--skip-stage1-final-eval` 与 `--skip-noise-final-eval`。
 
 ### JSON 配置文件默认值
@@ -1090,8 +1091,9 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 - 在单独的 `rl` / `ga` 模式下，如果使用了 `--skip-stage1-search`，就不要再把该阶段预算当作“本次要执行的搜索预算”来理解。
 - 在单独的 `rl` / `ga` 模式下，如果使用了 `--skip-noise-search`，就不要再把该阶段预算当作“本次要执行的搜索预算”来理解。
 - 在 `rl-and-ga-compare` 模式下，若要跳过某一侧某一阶段的搜索，请改用 `--rl-*` / `--ga-*` 的对比专用参数，而不是全局 `--skip-stage1-search` / `--skip-noise-search`。
-- 这些参数只控制搜索预算，不影响最终评估重复次数；最终评估重复次数仍然由 `--noise-eval-repeat` 等参数控制。
-- 若要单独控制 `rl-and-ga-compare` 的 Stage-2 多次对比次数，请使用 `--stage2-compare-repeats`；不传时会跟随 `--noise-eval-repeat`。
+- 这些参数只控制搜索预算，不影响最终评估重复次数。
+- 单独的 `rl` / `ga` 模式仍使用 `--noise-eval-repeat` 控制 Stage-2 最终评估重复次数。
+- `rl-and-ga-compare` 模式只使用 `--stage2-compare-repeats` 控制 Stage-2 多次对比次数；RL/GA 两侧会保持同一重复次数，不支持分别设置。
 
 示例：
 
