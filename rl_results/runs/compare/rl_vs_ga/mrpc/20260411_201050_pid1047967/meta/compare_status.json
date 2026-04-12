@@ -1,6 +1,6 @@
 {
-  "updated_at": "2026-04-11 22:27:58",
-  "elapsed_seconds": 8227.42,
+  "updated_at": "2026-04-12 03:43:59",
+  "elapsed_seconds": 27188.96,
   "global_stop_requested": false,
   "rl": {
     "algorithm": "rl",
@@ -85,8 +85,8 @@
   "ga": {
     "algorithm": "ga",
     "pid": 1048065,
-    "return_code": null,
-    "state": "running",
+    "return_code": 1,
+    "state": "failed(rc=1)",
     "stage1_final_eval_ready": true,
     "stage2_final_eval_ready": false,
     "run_dir": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260411_201050_pid1047967/children/ga",

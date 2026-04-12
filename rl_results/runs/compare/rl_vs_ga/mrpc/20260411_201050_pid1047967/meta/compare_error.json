@@ -1,0 +1,5 @@
+{
+  "updated_at": "2026-04-12 03:44:09",
+  "error": "skip_stage1_rl=True 与 final_eval_config_source='search' 不能同时使用：跳过第一阶段搜索后没有 RL/贪心结果可供 search 使用。请改用 json 或 manual，或设置 skip_stage1_rl=False。",
+  "traceback": "Traceback (most recent call last):\n  File \"/var/tmp/root-home/Reinforcement-For-Robustness/rl_ga_compare_runner.py\", line 1565, in main\n    noise_eval_repeat_n=args.noise_eval_repeat,\n  File \"/var/tmp/root-home/Reinforcement-For-Robustness/rl_ga_compare_runner.py\", line 630, in ensure_stage2_eval_json\n    data_path: str,\n  File \"/var/tmp/root-home/Reinforcement-For-Robustness/rl_ga_compare_runner.py\", line 476, in build_compare_evaluator\n  File \"/var/tmp/root-home/Reinforcement-For-Robustness/layer_importance_evaluator.py\", line 2586, in __init__\n    raise ValueError(\nValueError: skip_stage1_rl=True 与 final_eval_config_source='search' 不能同时使用：跳过第一阶段搜索后没有 RL/贪心结果可供 search 使用。请改用 json 或 manual，或设置 skip_stage1_rl=False。\n"
+}
