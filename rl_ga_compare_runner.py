@@ -400,6 +400,14 @@ def build_compare_evaluator(
     cost_trials: int,
     budget_trials: int,
     noise_eval_repeat_n: int,
+    final_eval_config_source: str = "json",
+    final_eval_config_path: str = "glue_configs_best_ppo.json",
+    noise_eval_config_source: str = "json",
+    noise_eval_config_path: str = "glue_noise_configs_best_ppo.json",
+    skip_stage1_rl: bool = True,
+    skip_noise_rl: bool = True,
+    skip_stage1_final_eval: bool = True,
+    skip_noise_final_eval: bool = True,
 ):
     from datasets import load_dataset
     from transformers import (
@@ -513,15 +521,19 @@ def build_compare_evaluator(
         stage1_rl_lr=stage1_rl_lr,
         stage2_rl_lr=stage2_rl_lr,
         run_output_dir=run_output_dir,
+        final_eval_config_source=final_eval_config_source,
+        final_eval_config_path=final_eval_config_path,
         final_eval_random_seed=random_seed,
         final_eval_permutation_trials=perm_trials,
         final_eval_cost_equivalent_trials=cost_trials,
         final_eval_budget_equivalent_trials=budget_trials,
+        noise_eval_config_source=noise_eval_config_source,
+        noise_eval_config_path=noise_eval_config_path,
         noise_eval_repeat_n=noise_eval_repeat_n,
-        skip_stage1_rl=True,
-        skip_noise_rl=True,
-        skip_stage1_final_eval=False,
-        skip_noise_final_eval=False,
+        skip_stage1_rl=skip_stage1_rl,
+        skip_noise_rl=skip_noise_rl,
+        skip_stage1_final_eval=skip_stage1_final_eval,
+        skip_noise_final_eval=skip_noise_final_eval,
         data_path=data_path,
         search_algorithm=search_algorithm,
     )
@@ -577,6 +589,14 @@ def ensure_stage1_eval_json(
         cost_trials=cost_trials,
         budget_trials=budget_trials,
         noise_eval_repeat_n=noise_eval_repeat_n,
+        final_eval_config_source=config_source,
+        final_eval_config_path=config_path,
+        noise_eval_config_source=side_config.noise_eval_config_source,
+        noise_eval_config_path=side_config.noise_eval_config_path,
+        skip_stage1_rl=(config_source != "search"),
+        skip_noise_rl=True,
+        skip_stage1_final_eval=False,
+        skip_noise_final_eval=True,
     )
 
     from final_evaluation_module import FinalEvaluationModule
@@ -670,6 +690,21 @@ def ensure_stage2_eval_json(
         cost_trials=cost_trials,
         budget_trials=budget_trials,
         noise_eval_repeat_n=noise_eval_repeat_n,
+        final_eval_config_source=(
+            side_config.final_eval_config_source
+            if side_config.final_eval_config_source != "search"
+            else "json"
+        ),
+        final_eval_config_path=(
+            side_config.final_eval_config_path
+            or "glue_configs_best_ppo.json"
+        ),
+        noise_eval_config_source=config_source,
+        noise_eval_config_path=config_path,
+        skip_stage1_rl=True,
+        skip_noise_rl=(config_source != "search"),
+        skip_stage1_final_eval=True,
+        skip_noise_final_eval=False,
     )
 
     from genetic_search_module import (

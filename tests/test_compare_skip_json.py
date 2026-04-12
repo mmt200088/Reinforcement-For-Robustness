@@ -264,6 +264,117 @@ class CompareSkipJsonTests(unittest.TestCase):
             self.assertIsNone(captured["run_kwargs"]["search_best_noise_config"])
             self.assertTrue(any("json" in item for item in warnings))
 
+    def test_ensure_stage2_eval_json_uses_safe_evaluator_flags_for_search_fallback(self):
+        try:
+            import rl_ga_compare_runner as compare_runner
+        except ImportError as exc:
+            self.skipTest(f"rl_ga_compare_runner import unavailable: {exc}")
+
+        with TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir) / "ga_run"
+            stage1_summary = run_dir / "stage1_final_eval" / "final_eval_results_mrpc.json"
+            stage1_summary.parent.mkdir(parents=True, exist_ok=True)
+            stage1_summary.write_text(
+                json.dumps(
+                    {
+                        "selected": {
+                            "gelu": [4, 4],
+                            "softmax": [6, 6],
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            evaluator_kwargs = {}
+
+            class FakeEvaluator:
+                def __init__(self):
+                    self.stage1_final_eval_dir = str(run_dir / "stage1_final_eval")
+                    self.noise_final_eval_dir = str(run_dir / "stage2_noise_final_eval")
+
+                def log(self, message):
+                    del message
+
+            class FakeNoiseRunner:
+                def __init__(self, *, evaluator, config_source, config_path, **kwargs):
+                    del kwargs
+                    self.results_dir = Path(evaluator.noise_final_eval_dir)
+                    self.config_source = config_source
+                    self.config_path = config_path
+
+                def run(self, **kwargs):
+                    del kwargs
+                    summary_path = self.results_dir / "noise_final_eval_results_mrpc.json"
+                    summary_path.parent.mkdir(parents=True, exist_ok=True)
+                    summary_path.write_text(
+                        json.dumps({"status": "ok", "selected_source": self.config_source}, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    return {"summary_path": str(summary_path)}
+
+            fake_context = SimpleNamespace(
+                search_limits={"loss": 0.2, "metric1": 0.8, "metric2": 0.7},
+                cost_reference_noise_config={"x": [18, 18]},
+                cost_reference_tot_c=4.0,
+            )
+
+            fake_ga_module = SimpleNamespace(
+                GeneticNoiseFinalEvaluationModule=FakeNoiseRunner,
+                build_stage1_context=lambda evaluator, log_fn=None, include_distribution=False: None,
+                build_stage2_context=lambda evaluator, fixed_gelu, fixed_softmax, log_fn=None: fake_context,
+            )
+            fake_noise_module = SimpleNamespace(NoiseFinalEvaluationModule=FakeNoiseRunner)
+            side_config = compare_runner.CompareSideConfig(
+                skip_stage1_search=False,
+                final_eval_config_source="search",
+                final_eval_config_path="",
+                skip_noise_search=False,
+                noise_eval_config_source="search",
+                noise_eval_config_path="",
+            )
+
+            def _fake_build_compare_evaluator(**kwargs):
+                evaluator_kwargs.update(kwargs)
+                return FakeEvaluator()
+
+            with patch.object(
+                compare_runner,
+                "build_compare_evaluator",
+                side_effect=_fake_build_compare_evaluator,
+            ), patch.dict(
+                sys.modules,
+                {
+                    "genetic_search_module": fake_ga_module,
+                    "noise_final_evaluation_module": fake_noise_module,
+                },
+            ):
+                json_path, warnings = compare_runner.ensure_stage2_eval_json(
+                    algorithm="ga",
+                    run_dir=run_dir,
+                    side_config=side_config,
+                    dataset="mrpc",
+                    base_model="dummy-model",
+                    data_path="mrpc",
+                    batch_size=16,
+                    stage1_rl_lr="1e-4",
+                    stage2_rl_lr="1e-4",
+                    random_seed=42,
+                    perm_trials=10,
+                    cost_trials=10,
+                    budget_trials=10,
+                    noise_eval_repeat_n=1,
+                )
+
+            self.assertTrue(json_path.is_file())
+            self.assertEqual(evaluator_kwargs["skip_stage1_rl"], True)
+            self.assertEqual(evaluator_kwargs["skip_stage1_final_eval"], True)
+            self.assertEqual(evaluator_kwargs["final_eval_config_source"], "json")
+            self.assertEqual(evaluator_kwargs["skip_noise_rl"], False)
+            self.assertEqual(evaluator_kwargs["skip_noise_final_eval"], False)
+            self.assertEqual(evaluator_kwargs["noise_eval_config_source"], "search")
+            self.assertTrue(any("Stage-2" in item for item in warnings))
+
 
 if __name__ == "__main__":
     unittest.main()
