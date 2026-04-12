@@ -113,6 +113,12 @@ def _load_ga_checkpoint(path):
     return torch.load(path, map_location="cpu", weights_only=False)
 
 
+def _ensure_parent_dir(path):
+    parent_dir = os.path.dirname(path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+
+
 @dataclass
 class Stage1Context:
     base_gelu: np.ndarray
@@ -436,6 +442,7 @@ def resolve_stage1_selected_config(
 
 
 def _json_dump(path, payload):
+    _ensure_parent_dir(path)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
 
@@ -474,6 +481,7 @@ def _series_plot(path, title, history, score_key="best_score", cost_key="best_co
 
     fig.suptitle(title)
     plt.tight_layout()
+    _ensure_parent_dir(path)
     plt.savefig(path, dpi=150)
     plt.close(fig)
     return path

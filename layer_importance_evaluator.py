@@ -3358,6 +3358,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                 )
         self._noise_log_initialized = True
 
+    def activate_noise_logging(self):
+        previous_log_file = getattr(self, "active_log_file", self.log_file)
+        self._initialize_noise_log_file()
+        self.active_log_file = self.noise_log_file
+        return previous_log_file
+
+    def restore_log_file(self, previous_log_file):
+        self.active_log_file = previous_log_file or self.log_file
+
     def get_simulated_cost(self, gelu_degrees, softmax_degrees):
         g_c = sum(self.GELU_COST_MAP.get(d, 0) for d in gelu_degrees)
         s_c = sum(self.SOFTMAX_COST_MAP.get(d, 0) for d in softmax_degrees)

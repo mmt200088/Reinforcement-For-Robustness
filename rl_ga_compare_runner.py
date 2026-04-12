@@ -706,35 +706,53 @@ def ensure_stage2_eval_json(
         else:
             warnings.append(f"{algorithm.upper()} Stage-2 fallback 来源：{noise_source}")
 
-    context = build_stage2_context(
-        evaluator,
-        fixed_gelu,
-        fixed_softmax,
-        log_fn=evaluator.log,
-    )
-    module_cls = GeneticNoiseFinalEvaluationModule if algorithm == "ga" else NoiseFinalEvaluationModule
-    runner = module_cls(
-        evaluator=evaluator,
-        config_source=config_source,
-        config_path=config_path,
-        random_seed=random_seed,
-        permutation_trials=perm_trials,
-        cost_equivalent_trials=cost_trials,
-        budget_equivalent_trials=budget_trials,
-        repeat_n=noise_eval_repeat_n,
-        results_dir=evaluator.noise_final_eval_dir,
-    )
-    result = runner.run(
-        search_best_noise_config=noise_best_config,
-        search_status="fallback_missing_search_best" if noise_best_config is None else "fallback_from_partial_run",
-        fixed_gelu=fixed_gelu,
-        fixed_softmax=fixed_softmax,
-        baseline_noise_config=context.cost_reference_noise_config,
-        baseline_tot_c=context.cost_reference_tot_c,
-        limit_loss=context.search_limits["loss"],
-        limit_p=context.search_limits["metric1"],
-        limit_s=context.search_limits["metric2"],
-    )
+    if hasattr(evaluator, "activate_noise_logging"):
+        previous_log_file = evaluator.activate_noise_logging()
+        restore_log = lambda: evaluator.restore_log_file(previous_log_file)
+    else:
+        previous_log_file = getattr(evaluator, "active_log_file", None)
+        noise_log_file = getattr(evaluator, "noise_log_file", None)
+        if noise_log_file:
+            noise_log_path = Path(noise_log_file)
+            noise_log_path.parent.mkdir(parents=True, exist_ok=True)
+            evaluator.active_log_file = str(noise_log_path)
+
+        def restore_log():
+            if previous_log_file is not None:
+                evaluator.active_log_file = previous_log_file
+
+    try:
+        context = build_stage2_context(
+            evaluator,
+            fixed_gelu,
+            fixed_softmax,
+            log_fn=evaluator.log,
+        )
+        module_cls = GeneticNoiseFinalEvaluationModule if algorithm == "ga" else NoiseFinalEvaluationModule
+        runner = module_cls(
+            evaluator=evaluator,
+            config_source=config_source,
+            config_path=config_path,
+            random_seed=random_seed,
+            permutation_trials=perm_trials,
+            cost_equivalent_trials=cost_trials,
+            budget_equivalent_trials=budget_trials,
+            repeat_n=noise_eval_repeat_n,
+            results_dir=evaluator.noise_final_eval_dir,
+        )
+        result = runner.run(
+            search_best_noise_config=noise_best_config,
+            search_status="fallback_missing_search_best" if noise_best_config is None else "fallback_from_partial_run",
+            fixed_gelu=fixed_gelu,
+            fixed_softmax=fixed_softmax,
+            baseline_noise_config=context.cost_reference_noise_config,
+            baseline_tot_c=context.cost_reference_tot_c,
+            limit_loss=context.search_limits["loss"],
+            limit_p=context.search_limits["metric1"],
+            limit_s=context.search_limits["metric2"],
+        )
+    finally:
+        restore_log()
     return Path(result["summary_path"]), warnings
 
 

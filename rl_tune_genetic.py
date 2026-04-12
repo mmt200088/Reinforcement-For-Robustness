@@ -814,84 +814,103 @@ def train(
         fixed_softmax = None
         fixed_label = None
         fixed_source = None
+        stage2_log_previous = None
+        stage2_logging_active = False
         if (not importance_evaluator.skip_noise_rl) or (not importance_evaluator.skip_noise_final_eval):
-            fixed_gelu, fixed_softmax, fixed_label, fixed_source = resolve_stage1_selected_config(
-                evaluator=importance_evaluator,
-                search_best_config=(
-                    stage1_search_result["best_config"]
-                    if stage1_search_result is not None
-                    else None
-                ),
-                config_source=final_eval_config_source,
-                config_path=final_eval_config_path,
-                manual_gelu=parsed_manual_gelu,
-                manual_softmax=parsed_manual_softmax,
-            )
-            importance_evaluator.log(
-                f"Stage-2 fixed Stage-1 config source={fixed_source}, label={fixed_label}"
-            )
-
-        noise_stage_result = None
-        if not importance_evaluator.skip_noise_rl:
-            noise_stage_result = run_stage2_noise_genetic_search(
-                importance_evaluator,
-                fixed_gelu=fixed_gelu,
-                fixed_softmax=fixed_softmax,
-                fixed_label=fixed_label,
-                fixed_source=fixed_source,
-                random_seed=final_eval_random_seed,
-                resume_checkpoint_path=ga_stage2_resume_path,
-            )
-        else:
-            importance_evaluator.log("Stage-2 noise genetic search skipped by flag.")
-
-        noise_final_eval_result = None
-        if not importance_evaluator.skip_noise_final_eval:
-            if noise_stage_result is not None:
-                baseline_noise_config = noise_stage_result["baseline_noise_config"]
-                baseline_tot_c = noise_stage_result["baseline_tot_c"]
-                search_best_noise_config = noise_stage_result["best_noise_config"]
-                search_status = noise_stage_result.get("status")
-                limit_loss = noise_stage_result["limit_loss"]
-                limit_p = noise_stage_result["limit_p"]
-                limit_s = noise_stage_result["limit_s"]
+            if hasattr(importance_evaluator, "activate_noise_logging"):
+                stage2_log_previous = importance_evaluator.activate_noise_logging()
             else:
-                noise_final_eval_context = build_stage2_final_eval_context_without_search(
-                    importance_evaluator
+                stage2_log_previous = getattr(importance_evaluator, "active_log_file", None)
+                noise_log_file = getattr(importance_evaluator, "noise_log_file", None)
+                if noise_log_file:
+                    os.makedirs(os.path.dirname(noise_log_file), exist_ok=True)
+                    importance_evaluator.active_log_file = noise_log_file
+            stage2_logging_active = True
+        try:
+            if (not importance_evaluator.skip_noise_rl) or (not importance_evaluator.skip_noise_final_eval):
+                fixed_gelu, fixed_softmax, fixed_label, fixed_source = resolve_stage1_selected_config(
+                    evaluator=importance_evaluator,
+                    search_best_config=(
+                        stage1_search_result["best_config"]
+                        if stage1_search_result is not None
+                        else None
+                    ),
+                    config_source=final_eval_config_source,
+                    config_path=final_eval_config_path,
+                    manual_gelu=parsed_manual_gelu,
+                    manual_softmax=parsed_manual_softmax,
                 )
-                baseline_noise_config = noise_final_eval_context["baseline_noise_config"]
-                baseline_tot_c = noise_final_eval_context["baseline_tot_c"]
-                search_best_noise_config = None
-                search_status = None
-                limit_loss = noise_final_eval_context["limit_loss"]
-                limit_p = noise_final_eval_context["limit_p"]
-                limit_s = noise_final_eval_context["limit_s"]
+                importance_evaluator.log(
+                    f"Stage-2 fixed Stage-1 config source={fixed_source}, label={fixed_label}"
+                )
 
-            noise_final_eval_runner = GeneticNoiseFinalEvaluationModule(
-                evaluator=importance_evaluator,
-                config_source=noise_eval_config_source,
-                config_path=noise_eval_config_path,
-                manual_noise_config=parsed_noise_config,
-                random_seed=final_eval_random_seed,
-                permutation_trials=final_eval_permutation_trials,
-                cost_equivalent_trials=final_eval_cost_equivalent_trials,
-                budget_equivalent_trials=final_eval_budget_equivalent_trials,
-                repeat_n=noise_eval_repeat_n,
-                results_dir=importance_evaluator.noise_final_eval_dir,
-            )
-            noise_final_eval_result = noise_final_eval_runner.run(
-                search_best_noise_config=search_best_noise_config,
-                search_status=search_status,
-                fixed_gelu=fixed_gelu,
-                fixed_softmax=fixed_softmax,
-                baseline_noise_config=baseline_noise_config,
-                baseline_tot_c=baseline_tot_c,
-                limit_loss=limit_loss,
-                limit_p=limit_p,
-                limit_s=limit_s,
-            )
-        else:
-            importance_evaluator.log("Stage-2 noise final evaluation skipped by flag.")
+            noise_stage_result = None
+            if not importance_evaluator.skip_noise_rl:
+                noise_stage_result = run_stage2_noise_genetic_search(
+                    importance_evaluator,
+                    fixed_gelu=fixed_gelu,
+                    fixed_softmax=fixed_softmax,
+                    fixed_label=fixed_label,
+                    fixed_source=fixed_source,
+                    random_seed=final_eval_random_seed,
+                    resume_checkpoint_path=ga_stage2_resume_path,
+                )
+            else:
+                importance_evaluator.log("Stage-2 noise genetic search skipped by flag.")
+
+            noise_final_eval_result = None
+            if not importance_evaluator.skip_noise_final_eval:
+                if noise_stage_result is not None:
+                    baseline_noise_config = noise_stage_result["baseline_noise_config"]
+                    baseline_tot_c = noise_stage_result["baseline_tot_c"]
+                    search_best_noise_config = noise_stage_result["best_noise_config"]
+                    search_status = noise_stage_result.get("status")
+                    limit_loss = noise_stage_result["limit_loss"]
+                    limit_p = noise_stage_result["limit_p"]
+                    limit_s = noise_stage_result["limit_s"]
+                else:
+                    noise_final_eval_context = build_stage2_final_eval_context_without_search(
+                        importance_evaluator
+                    )
+                    baseline_noise_config = noise_final_eval_context["baseline_noise_config"]
+                    baseline_tot_c = noise_final_eval_context["baseline_tot_c"]
+                    search_best_noise_config = None
+                    search_status = None
+                    limit_loss = noise_final_eval_context["limit_loss"]
+                    limit_p = noise_final_eval_context["limit_p"]
+                    limit_s = noise_final_eval_context["limit_s"]
+
+                noise_final_eval_runner = GeneticNoiseFinalEvaluationModule(
+                    evaluator=importance_evaluator,
+                    config_source=noise_eval_config_source,
+                    config_path=noise_eval_config_path,
+                    manual_noise_config=parsed_noise_config,
+                    random_seed=final_eval_random_seed,
+                    permutation_trials=final_eval_permutation_trials,
+                    cost_equivalent_trials=final_eval_cost_equivalent_trials,
+                    budget_equivalent_trials=final_eval_budget_equivalent_trials,
+                    repeat_n=noise_eval_repeat_n,
+                    results_dir=importance_evaluator.noise_final_eval_dir,
+                )
+                noise_final_eval_result = noise_final_eval_runner.run(
+                    search_best_noise_config=search_best_noise_config,
+                    search_status=search_status,
+                    fixed_gelu=fixed_gelu,
+                    fixed_softmax=fixed_softmax,
+                    baseline_noise_config=baseline_noise_config,
+                    baseline_tot_c=baseline_tot_c,
+                    limit_loss=limit_loss,
+                    limit_p=limit_p,
+                    limit_s=limit_s,
+                )
+            else:
+                importance_evaluator.log("Stage-2 noise final evaluation skipped by flag.")
+        finally:
+            if stage2_logging_active:
+                if hasattr(importance_evaluator, "restore_log_file"):
+                    importance_evaluator.restore_log_file(stage2_log_previous)
+                elif stage2_log_previous is not None:
+                    importance_evaluator.active_log_file = stage2_log_previous
 
         return {
             "stage1_search_status": (
