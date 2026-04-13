@@ -1,4 +1,0 @@
-=== 遗传算法(GA)搜索优化日志已启动（Genetic Algorithm Search Log Started） ===
-[信息] Stage-1 PPO学习率（LR）从 stage1_rl_lr='1e-4' 解析为 -> 0.0001 (direct) | Stage-2 PPO学习率（LR）从 stage2_rl_lr='1e-4' 解析为 -> 0.0001 (direct)
-[信息] 第一阶段RL回合数（Stage-1 RL episodes）: 51000 | 第二阶段RL回合数（Stage-2 RL episodes）: 40000
-[信息] 统一运行输出目录（Unified run output dir）: /var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260411_201050_pid1047967/children/ga

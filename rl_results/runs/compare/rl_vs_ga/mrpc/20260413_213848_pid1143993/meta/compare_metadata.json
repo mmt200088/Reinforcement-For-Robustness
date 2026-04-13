@@ -1,0 +1,24 @@
+{
+  "dataset": "mrpc",
+  "model_type": "bert-base",
+  "base_model": "textattack/bert-base-uncased-MRPC",
+  "data_path": "mrpc",
+  "compare_root": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260413_213848_pid1143993",
+  "compare_config_mode": "direct",
+  "stage2_compare_repeats": 100,
+  "random_seed": 42,
+  "perm_trials": 10,
+  "cost_trials": 10,
+  "budget_trials": 10,
+  "rl_side": {
+    "compare_config_mode": "direct",
+    "stage1_json_path": "/var/tmp/root-home/Reinforcement-For-Robustness/glue_configs_best_ppo.json",
+    "stage2_json_path": "/var/tmp/root-home/Reinforcement-For-Robustness/glue_noise_configs_best_ppo.json"
+  },
+  "ga_side": {
+    "compare_config_mode": "direct",
+    "stage1_json_path": "/var/tmp/root-home/Reinforcement-For-Robustness/glue_configs_best_genetic.json",
+    "stage2_json_path": "/var/tmp/root-home/Reinforcement-For-Robustness/glue_noise_configs_best_genetic.json"
+  },
+  "warnings": []
+}
