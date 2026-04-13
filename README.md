@@ -21,12 +21,18 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--logfile FILE` | 全局 | `output.log` | launcher 的 nohup 日志文件名；真实运行目录下也会自动生成阶段日志 |
 | `--model-type TYPE` | 全局 | `bert-base` | 骨干模型类型：`bert-base` / `bert-large` / `gpt-2` |
 | `--batch-size N` | 全局 | `16` | 统一设置 `batch_size` 与 `micro_batch_size` |
-| `--resume-from PATH` | `rl`、`ga`、`general-rl` | — | 从已有 run 目录恢复；当前不支持 `rl-and-ga-compare` |
+| `--resume-from PATH` | `general-rl` | — | 从已有 run 目录恢复；仅 `general-rl` 可用。`rl` / `ga` 已改用持久化目录自动续训练 |
+| **准确度约束参数** | | | |
+| `--stage1-accuracy-tolerance FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.005` | Stage-1 指标约束百分比。0.005 表示允许 loss 上浮 0.5%、指标下降 0.5% |
+| `--stage2-limit-quartile FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.2` | Stage-2 指标约束：baseline 与 worst-case 之间的插值百分位数。0.2 表示允许偏离 baseline 20% 的 baseline→worst 区间 |
+| `--stage2-stability-quartile FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.2` | Stage-2 稳定性约束：loss/指标的标准差上界，为 baseline_std 与 worst_std 之间的插值百分位数 |
+| **持久化与续训练** | | | |
+| `--fresh-start` | `rl`、`ga` | — | 从头开始训练。首次运行某参数组合时**必须指定**，否则报错；后续运行相同参数时不指定则自动续训练 |
 | **普通 RL / GA 搜索预算** | | | |
-| `--stage1-search-episodes N` | `rl`、`rl-and-ga-compare` | `51000` | Stage-1 搜索回合数，仅用于普通 RL |
-| `--stage2-search-episodes N` | `rl`、`rl-and-ga-compare` | `40000` | Stage-2 噪声搜索回合数，仅用于普通 RL |
-| `--stage1-search-generations N` | `ga`、`rl-and-ga-compare` | 按模型自动推导 | Stage-1 GA 搜索迭代代数 |
-| `--stage2-search-generations N` | `ga`、`rl-and-ga-compare` | 按模型自动推导 | Stage-2 GA 噪声搜索迭代代数 |
+| `--stage1-search-episodes N` | `rl` | `51000` | Stage-1 搜索回合数，仅用于普通 RL |
+| `--stage2-search-episodes N` | `rl` | `40000` | Stage-2 噪声搜索回合数，仅用于普通 RL |
+| `--stage1-search-generations N` | `ga` | 按模型自动推导 | Stage-1 GA 搜索迭代代数 |
+| `--stage2-search-generations N` | `ga` | 按模型自动推导 | Stage-2 GA 噪声搜索迭代代数 |
 | `--skip-stage1-search` | `rl`、`ga` | — | 跳过 Stage-1 搜索 |
 | `--skip-noise-search` | `rl`、`ga` | — | 跳过 Stage-2 搜索 |
 | `--skip-stage1-final-eval` | `rl`、`ga` | — | 跳过 Stage-1 最终评估 |
@@ -45,21 +51,21 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--cost-trials N` | `rl`、`ga`、`rl-and-ga-compare` | `10` | 等价成本对照次数 |
 | `--budget-trials N` | `rl`、`ga`、`rl-and-ga-compare` | `10` | 等价预算对照次数 |
 | **普通 RL 专用** | | | |
-| `--stage1-search-lr FLOAT` | `rl`、`rl-and-ga-compare` | `1e-4` | 普通 RL 的 Stage-1 学习率 |
-| `--stage2-search-lr FLOAT` | `rl`、`rl-and-ga-compare` | `1e-4` | 普通 RL 的 Stage-2 学习率 |
+| `--stage1-search-lr FLOAT` | `rl` | `1e-4` | 普通 RL 的 Stage-1 学习率 |
+| `--stage2-search-lr FLOAT` | `rl` | `1e-4` | 普通 RL 的 Stage-2 学习率 |
 | **对比实验专用** | | | |
-| `--rl-skip-stage1-search` | `rl-and-ga-compare` | — | 仅让 RL 跳过 Stage-1 搜索，并改为从 RL 的 Stage-1 配置来源做最终评估 |
-| `--ga-skip-stage1-search` | `rl-and-ga-compare` | — | 仅让 GA 跳过 Stage-1 搜索，并改为从 GA 的 Stage-1 配置来源做最终评估 |
-| `--rl-final-eval-source search/json` | `rl-and-ga-compare` | `search` | RL 在对比实验中的 Stage-1 配置来源 |
-| `--ga-final-eval-source search/json` | `rl-and-ga-compare` | `search` | GA 在对比实验中的 Stage-1 配置来源 |
-| `--rl-final-eval-config PATH` | `rl-and-ga-compare` | 自动 | RL 在对比实验中的 Stage-1 JSON 配置文件 |
-| `--ga-final-eval-config PATH` | `rl-and-ga-compare` | 自动 | GA 在对比实验中的 Stage-1 JSON 配置文件 |
-| `--rl-skip-noise-search` | `rl-and-ga-compare` | — | 仅让 RL 跳过 Stage-2 噪声搜索，并改为从 RL 的噪声配置来源做最终评估 |
-| `--ga-skip-noise-search` | `rl-and-ga-compare` | — | 仅让 GA 跳过 Stage-2 噪声搜索，并改为从 GA 的噪声配置来源做最终评估 |
-| `--rl-noise-eval-source search/json` | `rl-and-ga-compare` | `search` | RL 在对比实验中的 Stage-2 噪声配置来源 |
-| `--ga-noise-eval-source search/json` | `rl-and-ga-compare` | `search` | GA 在对比实验中的 Stage-2 噪声配置来源 |
-| `--rl-noise-eval-config PATH` | `rl-and-ga-compare` | 自动 | RL 在对比实验中的 Stage-2 JSON 噪声配置文件 |
-| `--ga-noise-eval-config PATH` | `rl-and-ga-compare` | 自动 | GA 在对比实验中的 Stage-2 JSON 噪声配置文件 |
+| `--compare-config-mode direct/persistent` | `rl-and-ga-compare` | `direct` | 对比配置来源：`direct`=显式指定 4 个 JSON；`persistent`=按数据集/模型/约束从持久化目录自动寻找 |
+| `--compare-persistent-root PATH` | `rl-and-ga-compare` | `rl_results/persistent` | `persistent` 模式下的持久化目录根路径 |
+| `--rl-compare-stage1-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 RL 的 Stage-1 JSON；可传配置模板，也可传最终评估结果 JSON |
+| `--rl-compare-stage2-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 RL 的 Stage-2 JSON；可传配置模板，也可传最终评估结果 JSON |
+| `--ga-compare-stage1-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 GA 的 Stage-1 JSON；可传配置模板，也可传最终评估结果 JSON |
+| `--ga-compare-stage2-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 GA 的 Stage-2 JSON；可传配置模板，也可传最终评估结果 JSON |
+| `--rl-compare-stage1-accuracy-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage1-accuracy-tolerance` 或 `0.005` | `persistent` 模式下 RL 侧的 Stage-1 约束，用于定位 RL 持久化目录 |
+| `--rl-compare-stage2-limit-quartile FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-limit-quartile` 或 `0.2` | `persistent` 模式下 RL 侧的 Stage-2 指标约束，用于定位 RL 持久化目录 |
+| `--rl-compare-stage2-stability-quartile FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-stability-quartile` 或 `0.2` | `persistent` 模式下 RL 侧的 Stage-2 稳定性约束，用于定位 RL 持久化目录 |
+| `--ga-compare-stage1-accuracy-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage1-accuracy-tolerance` 或 `0.005` | `persistent` 模式下 GA 侧的 Stage-1 约束，用于定位 GA 持久化目录 |
+| `--ga-compare-stage2-limit-quartile FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-limit-quartile` 或 `0.2` | `persistent` 模式下 GA 侧的 Stage-2 指标约束，用于定位 GA 持久化目录 |
+| `--ga-compare-stage2-stability-quartile FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-stability-quartile` 或 `0.2` | `persistent` 模式下 GA 侧的 Stage-2 稳定性约束，用于定位 GA 持久化目录 |
 | **通用 RL 专用** | | | |
 | `--general-rl-mode train/infer` | `general-rl` | `infer` | 通用 RL 的运行模式 |
 | `--general-rl-tasks T1,T2,...` | `general-rl` 训练 | 同 `--dataset` | 逗号分隔的训练任务列表 |
@@ -81,19 +87,20 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `rl` | Per-task 两阶段普通 RL 搜索 | `rl_tune.py` |
 | `ga` | COINN 风格两阶段遗传算法搜索 | `rl_tune_genetic.py` |
 | `general-rl` | 多任务通用策略训练 / 离线推断 | `rl_tune_general.py` |
-| `rl-and-ga-compare` | 同时运行一份普通 RL 与一份 GA，并在 Stage-1 / Stage-2 后生成对比结果 | `rl_ga_compare_runner.py` |
+| `rl-and-ga-compare` | 不再重新训练 RL/GA；而是直接读取显式 JSON 或持久化目录中的已有结果，并生成 Stage-1 / Stage-2 对比报告 | `rl_ga_compare_runner.py` |
 
 ### 模式互斥规则
 
 - 选择 `--search-algorithm=general-rl` 后，不能再混用普通 RL / GA 的阶段搜索或最终评估参数。
-- 选择 `--search-algorithm=rl` 或 `ga` 后，不能再混用 `--general-rl-*` 参数。
+- 选择 `--search-algorithm=rl` 或 `ga` 后，不能再混用 `--general-rl-*` 参数；也**不能**再传 `--resume-from`（已改用持久化目录自动续训练）。
 - 选择 `--search-algorithm=rl` 后，不能传 `--stage1-search-generations` / `--stage2-search-generations`。
 - 选择 `--search-algorithm=ga` 后，不能传 `--stage1-search-lr` / `--stage2-search-lr`，也不能再传 `--stage1-search-episodes` / `--stage2-search-episodes`。
 - 选择 `--search-algorithm=rl-and-ga-compare` 后：
   - 仍然**不允许**使用全局的 `--skip-stage1-search`、`--skip-noise-search`、`--final-eval-source`、`--noise-eval-source`、`--final-eval-config`、`--noise-eval-config`、`--manual-*`、`--resume-from`。
-  - 需要改用对比实验专用的 side 参数：`--rl-*` / `--ga-*`。
-  - 若某一侧没有跳过某阶段搜索，则该侧对应的 `*-eval-source` 必须为 `search`。
-  - 若某一侧跳过某阶段搜索，则该侧对应的 `*-eval-source` 必须为 `json`；若未显式给出 `*-eval-config`，脚本会自动回落到该算法家族的默认 JSON 文件名。
+  - 也不再支持旧的 compare 专用参数：`--rl/ga-skip-*`、`--rl/ga-*-eval-source`、`--rl/ga-*-eval-config`。
+  - `direct` 模式必须同时提供 4 个 JSON：RL/GA 各自的 Stage-1 与 Stage-2。
+  - `persistent` 模式必须提供 `--compare-persistent-root`；RL 与 GA 可以使用不同约束参数，但模型类型与数据集必须一致。
+  - `persistent` 模式下，如未显式提供 `--rl/ga-compare-*` 约束参数，会分别继承全局的 `--stage1-accuracy-tolerance`、`--stage2-limit-quartile`、`--stage2-stability-quartile`。
   - `rl-and-ga-compare` 模式下，Stage-2 多次对比只看 `--stage2-compare-repeats`。
   - `--noise-eval-repeat` 不再作为 compare 模式的正式参数；仅保留兼容别名行为。若旧命令只传了它而没传 `--stage2-compare-repeats`，系统会临时按 `--stage2-compare-repeats` 处理并给出警告。
   - 对比实验始终保留 Stage-1 / Stage-2 最终评估，因此依然不支持 `--skip-stage1-final-eval` 与 `--skip-noise-final-eval`。
@@ -106,7 +113,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `ga` | `glue_configs_best_genetic.json` | `glue_noise_configs_best_genetic.json` |
 
 当 `--final-eval-source=json` 或 `--noise-eval-source=json` 时，脚本会检查文件名是否与所选算法家族匹配，避免把 PPO 配置错用到 GA，或把 GA 配置错用到 PPO。当前仓库已内置 PPO 与 GA 两套默认 JSON；其中 `glue_configs_best_genetic.json` / `glue_noise_configs_best_genetic.json` 目前按 PPO 默认配置生成，便于在 `ga` 或 `rl-and-ga-compare` 模式下直接跳过搜索。如果你后续得到 GA 自己的更优配置，可以直接覆盖这两个 genetic JSON，或者显式通过 `--final-eval-config` / `--noise-eval-config` 指定。
-`rl-and-ga-compare` 模式下的 `--rl-final-eval-config` / `--ga-final-eval-config` / `--rl-noise-eval-config` / `--ga-noise-eval-config` 也沿用同一套默认命名与家族一致性检查规则。
+`rl-and-ga-compare` 的 `direct` 模式同样沿用这套家族一致性检查；如果显式传入的是最终评估结果 JSON，则还会额外校验其中记录的数据集与模型层数，避免把不同模型或不同数据集的结果拿来直接对比。
 
 ### 推荐命令示例
 
@@ -131,66 +138,143 @@ bash llama_7B_LayerImportance.sh \
 ```bash
 bash llama_7B_LayerImportance.sh \
   --dataset mrpc \
-  --search-algorithm ga
+  --search-algorithm ga \
+  --fresh-start
 ```
 
-#### 4. RL 与 GA 并行对比实验
+#### 3b. 自定义准确度约束
+
+通过 `--stage1-accuracy-tolerance`、`--stage2-limit-quartile`、`--stage2-stability-quartile` 调整搜索约束：
+
+```bash
+# Stage-1 指标容忍度放宽到 1%，Stage-2 约束放宽到 30% 百分位
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --fresh-start \
+  --stage1-accuracy-tolerance 0.01 \
+  --stage2-limit-quartile 0.3 \
+  --stage2-stability-quartile 0.3
+```
+
+参数含义：
+
+- `--stage1-accuracy-tolerance 0.01`：Stage-1 允许 loss 上浮 1%、主指标下降 1%（默认 0.005 = 0.5%）。
+- `--stage2-limit-quartile 0.3`：Stage-2 动态指标约束取 baseline 与 worst-case 之间 30% 的插值位置（默认 0.2 = 20%）。
+- `--stage2-stability-quartile 0.3`：Stage-2 稳定性约束（标准差上界）取 baseline_std 与 worst_std 之间 30% 的插值位置（默认 0.2 = 20%）。
+
+三个参数值越小，搜索越保守（更贴近 baseline）；越大，允许精度降低越多，搜索空间越大。
+
+#### 3c. 持久化目录与自动续训练（rl / ga）
+
+`rl` 和 `ga` 模式采用**持久化目录**方案：相同的 `(算法, 模型, 数据集, 约束参数)` 组合映射到唯一确定性目录，后续相同参数运行自动从 checkpoint 续训练，无需手动指定 `--resume-from`。
+
+```bash
+# 首次运行：必须加 --fresh-start
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --fresh-start \
+  --stage2-search-episodes 15000
+
+# 发现轮数不够，直接加大预算再跑（不加 --fresh-start → 自动续训练）
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --stage2-search-episodes 30000
+
+# 换一组约束参数 → 新的持久化目录，需要再次 --fresh-start
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --fresh-start \
+  --stage1-accuracy-tolerance 0.01 \
+  --stage2-search-episodes 15000
+```
+
+持久化目录路径格式：
+
+```text
+rl_results/persistent/<algorithm>/<model_type>/<dataset>/s1t<T>_s2q<L>_s2sq<S>/
+```
+
+示例：
+
+```text
+rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/
+rl_results/persistent/ga/bert-large/stsb/s1t0.01_s2q0.3_s2sq0.3/
+```
+
+目录下的 `metadata.json` 记录算法、模型、数据集、约束参数值、创建时间和运行次数。
+
+#### 4. RL 与 GA 对比实验（直接读取已有结果）
+
+`rl-and-ga-compare` 已经不再重新启动一份 RL 和一份 GA 完整训练；现在只负责把**已有 JSON** 或 **持久化目录中的已有结果**整理成统一的对比报告。
+
+方式 1：`direct`，显式指定 4 个 JSON。
 
 ```bash
 bash llama_7B_LayerImportance.sh \
   --dataset mrpc \
   --search-algorithm rl-and-ga-compare \
-  --stage1-search-episodes 51000 \
-  --stage2-search-episodes 40000 \
-  --stage1-search-generations 1594 \
-  --stage2-search-generations 1250 \
+  --compare-config-mode direct \
   --stage2-compare-repeats 20 \
-  --stage1-search-lr 1e-4 \
-  --stage2-search-lr 1e-4
+  --rl-compare-stage1-json glue_configs_best_ppo.json \
+  --rl-compare-stage2-json glue_noise_configs_best_ppo.json \
+  --ga-compare-stage1-json glue_configs_best_genetic.json \
+  --ga-compare-stage2-json glue_noise_configs_best_genetic.json
 ```
 
-示例：只让 RL 跳过两阶段搜索，直接从 JSON 取配置；GA 仍执行完整搜索。
+方式 2：`persistent`，只给数据集、模型和约束，脚本自动去持久化目录定位对应的 RL / GA 结果。
 
 ```bash
+# RL 与 GA 使用同一组约束（继承全局约束参数）
 bash llama_7B_LayerImportance.sh \
   --dataset mrpc \
+  --model-type bert-base \
   --search-algorithm rl-and-ga-compare \
-  --stage1-search-episodes 34000 \
-  --stage2-search-episodes 50000 \
-  --stage1-search-generations 300 \
-  --stage2-search-generations 500 \
-  --stage2-compare-repeats 20 \
-  --rl-skip-stage1-search \
-  --rl-final-eval-source json \
-  --rl-final-eval-config glue_configs_best_ppo.json \
-  --rl-skip-noise-search \
-  --rl-noise-eval-source json \
-  --rl-noise-eval-config glue_noise_configs_best_ppo.json
+  --compare-config-mode persistent \
+  --compare-persistent-root rl_results/persistent \
+  --stage1-accuracy-tolerance 0.005 \
+  --stage2-limit-quartile 0.2 \
+  --stage2-stability-quartile 0.2 \
+  --stage2-compare-repeats 20
 ```
 
-该模式会在当前 run 根目录下生成：
+```bash
+# RL 与 GA 使用不同约束，但模型和数据集必须一致
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --model-type bert-base \
+  --search-algorithm rl-and-ga-compare \
+  --compare-config-mode persistent \
+  --compare-persistent-root rl_results/persistent \
+  --rl-compare-stage1-accuracy-tolerance 0.005 \
+  --rl-compare-stage2-limit-quartile 0.2 \
+  --rl-compare-stage2-stability-quartile 0.2 \
+  --ga-compare-stage1-accuracy-tolerance 0.01 \
+  --ga-compare-stage2-limit-quartile 0.3 \
+  --ga-compare-stage2-stability-quartile 0.3 \
+  --stage2-compare-repeats 20
+```
 
-- `children/rl/`：普通 RL 子运行目录
-- `children/ga/`：GA 子运行目录
+安全检查：
+
+- `direct` 模式下，4 个 JSON 都会做算法家族检查；如果是最终结果 JSON，还会检查其中记录的数据集和模型层数。
+- `persistent` 模式下，RL / GA 两侧可以使用不同约束参数，但脚本会强制要求两侧的 `dataset` 与 `model_type` 一致，否则直接报错。
+- `Stage-2` 对比不是“只比较噪声配置”。最终评估会固定各自 Stage-1 的 GELU/Softmax 配置，再叠加各自 Stage-2 的噪声配置后比较。
+
+该模式会在当前 compare run 根目录下生成：
+
 - `reports/stage1_compare_summary_<dataset>.json`：Stage-1 结构化对比摘要，适合脚本读取
 - `reports/stage1_compare_report_<dataset>.md`：Stage-1 对比文本报告
 - `reports/stage1_compare_plot_<dataset>.png`：Stage-1 对比图，展示 RL/GA 在 Loss、主指标、次指标/Time、Cost 上的对比
 - `reports/stage2_compare_summary_<dataset>.json`：Stage-2 结构化对比摘要，适合脚本读取
 - `reports/stage2_compare_report_<dataset>.md`：Stage-2 对比文本报告；会明确写出 RL/GA 各自固定的 Stage-1 配置、选中的 Stage-2 噪声配置，以及多次评估后的均值、标准差、方差、最大值、最小值
 - `reports/stage2_compare_plot_<dataset>.png`：Stage-2 对比图；会用均值±标准差柱状图展示 Loss、主指标、次指标/Time，并标注最小值/最大值，另附噪声 Cost 对比
-- `meta/compare_metadata.json`：对比实验元信息，包括两侧是否跳过搜索、JSON 来源、子命令等
+- `meta/compare_metadata.json`：对比实验元信息，包括 compare 模式、RL/GA 输入来源、持久化目录或显式 JSON 路径、告警信息等
 - `meta/compare_status.json`：运行中状态快照
 - `meta/compare_final_status.json`：最终状态与报告路径汇总
 
-如果其中一方提前停止，对比模块会优先按该方声明的配置来源补做最终评估：
-
-- 若该方走 `search`，则优先从 checkpoint / 搜索结果恢复当前最优配置。
-- 若该方走 `json`，则优先按对应 JSON 文件补做最终评估。
-- 所有 fallback 与警告都会写入对比报告和 `compare_summary_*.json`。
-
 补充说明：
 
-- Stage-2 对比不是“只比较噪声配置”。最终评估会把 RL 和 GA 各自在 Stage-1 找到的 GELU/Softmax 配置固定住，再分别叠加各自 Stage-2 找到的噪声配置后送入模型评估。
+- `direct` 模式下，如果传入的是配置模板而不是最终结果 JSON，compare runner 会先补做该侧最终评估，再进入对比。
 - `reports/stage2_compare_summary_<dataset>.json` 中会保留 `fixed_stage1_config`、`selected.noise_config`、`repeat_evaluation.stats` 等字段，便于后续核对这次对比到底用了什么组合配置。
 
 #### 5. 通用 RL 训练 — 数据集泛化
@@ -402,8 +486,10 @@ bash llama_7B_LayerImportance.sh --dataset mrpc
 #### 1. 各模式的根目录
 
 ```text
-rl_results/runs/rl/<dataset>/<run_id>/
-rl_results/runs/ga/<dataset>/<run_id>/
+# rl / ga 持久化目录（确定性路径，相同参数自动复用）
+rl_results/persistent/<algorithm>/<model_type>/<dataset>/s1t<T>_s2q<L>_s2sq<S>/
+
+# general-rl / compare 仍使用时间戳目录
 rl_results/runs/general_rl/train/<gen_mode>/<taskset_id>/<run_id>/
 rl_results/runs/general_rl/infer/<dataset>/<run_id>/
 rl_results/runs/compare/rl_vs_ga/<dataset>/<run_id>/
@@ -411,6 +497,7 @@ rl_results/runs/compare/rl_vs_ga/<dataset>/<run_id>/
 
 说明：
 
+- **rl / ga 持久化目录**：`<algorithm>` 为 `rl` 或 `ga`；`<model_type>` 为 `bert-base`、`bert-large`、`gpt-2`；`s1t<T>_s2q<L>_s2sq<S>` 由三个约束参数拼成确定性标识（例如 `s1t0.005_s2q0.2_s2sq0.2`）。首次运行需加 `--fresh-start`，后续相同参数自动续训练。
 - `dataset` 是当前单任务数据集，例如 `mrpc`、`stsb`。
 - `taskset_id` 是训练任务集合的规范化标识，例如 `mrpc,cola,rte,stsb` 会落为 `mrpc_cola_rte_stsb`。
 - `gen_mode` 是泛化模式子目录，根据 CLI 参数自动决定：
@@ -439,23 +526,22 @@ rl_results/runs/compare/rl_vs_ga/<dataset>/<run_id>/
 
 `rl-and-ga-compare` 额外会写出：
 
-- `children/rl/`：普通 RL 子运行目录
-- `children/ga/`：GA 子运行目录
 - `reports/`：Stage-1 / Stage-2 的 `compare_summary_*.json`、`compare_report_*.md`、`compare_plot_*.png`
-- `meta/`：`compare_metadata.json`、`compare_status.json`、`compare_final_status.json`、PID 文件等元信息
+- `meta/`：`compare_metadata.json`、`compare_status.json`、`compare_final_status.json`、`compare.pid` 等元信息
+- `children/rl/`、`children/ga/`：仅在 `direct` 模式且输入为“结果 JSON 物化”或需要补做最终评估时使用；`persistent` 模式通常直接复用 RL / GA 自己的持久化目录
 
 #### 3. 示例
 
-普通 RL 的一个 run：
+普通 RL 的持久化目录（默认约束参数）：
 
 ```text
-rl_results/runs/rl/mrpc/<run_id>/
+rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/
 ```
 
-GA 的一个 run：
+GA 的持久化目录（自定义约束参数）：
 
 ```text
-rl_results/runs/ga/mrpc/<run_id>/
+rl_results/persistent/ga/bert-base/mrpc/s1t0.01_s2q0.3_s2sq0.3/
 ```
 
 通用 RL 多任务训练的一个 run（数据集泛化模式）：
@@ -1077,10 +1163,10 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 
 | 参数 | 适用算法 | 说明 | 默认值 |
 | --- | --- | --- | --- |
-| `--stage1-search-episodes N` | `rl`、`rl-and-ga-compare` | 设置普通 RL 的 Stage-1 PPO 搜索回合数。 | `51000` |
-| `--stage2-search-episodes N` | `rl`、`rl-and-ga-compare` | 设置普通 RL 的 Stage-2 noise PPO 搜索回合数。 | `40000` |
-| `--stage1-search-generations N` | `ga`、`rl-and-ga-compare` | 设置 GA 的 Stage-1 搜索迭代代数。 | 按模型自动推导 |
-| `--stage2-search-generations N` | `ga`、`rl-and-ga-compare` | 设置 GA 的 Stage-2 噪声搜索迭代代数。 | 按模型自动推导 |
+| `--stage1-search-episodes N` | `rl` | 设置普通 RL 的 Stage-1 PPO 搜索回合数。 | `51000` |
+| `--stage2-search-episodes N` | `rl` | 设置普通 RL 的 Stage-2 noise PPO 搜索回合数。 | `40000` |
+| `--stage1-search-generations N` | `ga` | 设置 GA 的 Stage-1 搜索迭代代数。 | 按模型自动推导 |
+| `--stage2-search-generations N` | `ga` | 设置 GA 的 Stage-2 噪声搜索迭代代数。 | 按模型自动推导 |
 
 使用说明：
 
@@ -1090,10 +1176,9 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 - `ga` 模式下如果不显式传代数，脚本会按模型层数自动推导默认值，以对齐旧版本的默认搜索预算。
 - 在单独的 `rl` / `ga` 模式下，如果使用了 `--skip-stage1-search`，就不要再把该阶段预算当作“本次要执行的搜索预算”来理解。
 - 在单独的 `rl` / `ga` 模式下，如果使用了 `--skip-noise-search`，就不要再把该阶段预算当作“本次要执行的搜索预算”来理解。
-- 在 `rl-and-ga-compare` 模式下，若要跳过某一侧某一阶段的搜索，请改用 `--rl-*` / `--ga-*` 的对比专用参数，而不是全局 `--skip-stage1-search` / `--skip-noise-search`。
 - 这些参数只控制搜索预算，不影响最终评估重复次数。
 - 单独的 `rl` / `ga` 模式仍使用 `--noise-eval-repeat` 控制 Stage-2 最终评估重复次数。
-- `rl-and-ga-compare` 模式只使用 `--stage2-compare-repeats` 控制 Stage-2 多次对比次数；RL/GA 两侧会保持同一重复次数，不支持分别设置。
+- `rl-and-ga-compare` 不再重跑搜索，因此也不再消费这些预算参数；compare 模式只使用 `--stage2-compare-repeats` 控制 Stage-2 多次对比次数。
 
 示例：
 
@@ -1122,92 +1207,140 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
   --noise-eval-repeat 200
 ```
 
+### 持久化目录与自动续训练（`--fresh-start`）
+
+`rl` 和 `ga` 模式使用**持久化目录**方案：相同的 `(算法, 模型, 数据集, 约束参数)` 组合映射到一个唯一的确定性目录。后续相同参数运行时自动检测 checkpoint 并续训练，无需手动指定 `--resume-from`。
+
+#### 持久化目录路径格式
+
+```text
+rl_results/persistent/<algorithm>/<model_type>/<dataset>/s1t<T>_s2q<L>_s2sq<S>/
+```
+
+其中 `s1t<T>` = `--stage1-accuracy-tolerance`，`s2q<L>` = `--stage2-limit-quartile`，`s2sq<S>` = `--stage2-stability-quartile`。
+
+示例：
+
+```text
+rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/
+rl_results/persistent/ga/bert-large/stsb/s1t0.01_s2q0.3_s2sq0.3/
+```
+
+目录下会自动创建 `metadata.json`，记录算法、模型、数据集、约束参数值、创建时间和运行次数。
+
+#### 三种运行状态
+
+| 状态 | 条件 | 行为 |
+| --- | --- | --- |
+| **首次运行** | 目录不存在 + 未跳过所有搜索 | 必须指定 `--fresh-start`，否则报错 |
+| **自动续训练** | 目录存在 + 有 `metadata.json` | 自动从 checkpoint 续训练（不加 `--fresh-start`） |
+| **从头训练** | 指定 `--fresh-start` + 目录已存在 | 清除旧目录并重新开始 |
+| **Eval-only** | 目录不存在 + 所有搜索都跳过 | 自动创建目录，无需 `--fresh-start` |
+
+#### 使用示例
+
+```bash
+# 首次运行：必须加 --fresh-start
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --fresh-start \
+  --stage2-search-episodes 15000
+
+# 发现轮数不够，直接加大预算再跑（不加 --fresh-start → 自动续训练）
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --stage2-search-episodes 30000
+
+# 换一组约束参数 → 新的持久化目录，需要再次 --fresh-start
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --fresh-start \
+  --stage1-accuracy-tolerance 0.01
+
+# Eval-only：跳过所有搜索，无需 --fresh-start
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --skip-stage1-search \
+  --final-eval-source json \
+  --skip-stage1-final-eval \
+  --skip-noise-search \
+  --skip-noise-final-eval
+```
+
+#### 安全注意事项
+
+1. **`--fresh-start` 会删除整个持久化目录**（`rm -rf`）。如果该目录中已有 Stage-1 搜索结果，`--fresh-start` 会一并删除，即使你同时使用了 `--skip-stage1-search`。
+
+   - 如果你只想重做 Stage-2 而保留 Stage-1 结果，**不要使用 `--fresh-start`**，直接运行即可。自动续训练会保留 Stage-1 结果，Stage-2 从 checkpoint 继续。
+   - 如果你误用了 `--fresh-start` + `--skip-stage1-search`，脚本会打印警告并等待 5 秒，给你取消的机会。
+
+2. **Stage-1 配置一致性校验**：Stage-2 checkpoint 会记录训练时使用的 Stage-1 GELU/Softmax 配置。如果续训练时 Stage-1 配置发生了变化（例如上次跳过 Stage-1 用 JSON 配置，这次做了实际 Stage-1 搜索得到不同结果），系统会打印 `⚠⚠ [Stage-1 配置不一致警告]`，提醒你 Stage-2 policy 可能需要重新训练。
+
+3. **并发安全**：同一参数组合的持久化目录在同一时刻只能由一个进程使用。如需并行运行，请确保使用不同的约束参数或不同的数据集（它们会落到不同的持久化目录）。
+
+4. **`general-rl` 的运行目录和 `rl-and-ga-compare` 的报告目录仍使用时间戳目录**：`general-rl` 续训练仍需手动指定 `--resume-from`。但 `rl-and-ga-compare` 的 `persistent` 模式会去读取 `rl` / `ga` 的持久化目录作为输入来源。
+
 ### `--resume-from` 断点续训可选项
 
-当一次搜索/训练完成后，如果发现轮数不够，可以通过 `--resume-from` 指定之前的 run 目录，在之前训练的基础上继续训练更多轮次。效果等价于一次性训练更多轮（例如先训 30000 轮，再续训 10000 轮，等价于一次性训练 40000 轮）。**此功能适用于 rl、ga、general-rl 三种搜索算法。**
+> **注意**：`rl` 和 `ga` 模式已改用**持久化目录自动续训练**，不再支持手动 `--resume-from`。相同参数组合直接再次运行即可自动续训（参见"3c. 持久化目录与自动续训练"）。`--resume-from` 现在**仅适用于 `general-rl`** 模式。
 
 训练过程中会自动在 run 目录下保存 checkpoint 文件（每次 PPO 更新窗口 / 遗传代际 / round 结束时保存）：
 
 | 搜索算法 | Stage-1 checkpoint 路径 | Stage-2 checkpoint 路径 |
 | --- | --- | --- |
-| `rl` | `<run_dir>/stage1/stage1_rl_checkpoint.pt` | `<run_dir>/stage2_noise/progress/noise_rl_checkpoint.pt` |
-| `ga` | `<run_dir>/stage1/ga_stage1_checkpoint.pt` | `<run_dir>/stage2_noise/progress/ga_stage2_checkpoint.pt` |
+| `rl` | `<persistent_dir>/stage1/stage1_rl_checkpoint.pt` | `<persistent_dir>/stage2_noise/progress/noise_rl_checkpoint.pt` |
+| `ga` | `<persistent_dir>/stage1/ga_stage1_checkpoint.pt` | `<persistent_dir>/stage2_noise/progress/ga_stage2_checkpoint.pt` |
 | `general-rl` | `<run_dir>/stage1/general_stage1_train_checkpoint.pt` | `<run_dir>/stage2_noise/general_stage2_train_checkpoint.pt` |
 
 
 | 参数                   | 说明                                                                                                                                          | 默认值 |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| `--resume-from PATH` | 指定之前的 run 目录路径，从该目录的 checkpoint 恢复训练。程序会根据 `--search-algorithm` 自动在对应路径查找 checkpoint 文件。如果 checkpoint 不存在，则从头开始训练。 | 空   |
+| `--resume-from PATH` | 指定之前的 run 目录路径，从该目录的 checkpoint 恢复训练。**仅 `general-rl` 可用。** | 空   |
 
 
 使用说明：
 
-- `PATH` 必须是一个已存在的 run 目录。
-  例如普通 RL 可以是 `rl_results/runs/rl/mrpc/20260404_151155_pid711833`；
-  GA 可以是 `rl_results/runs/ga/mrpc/20260404_151155_pid711833`；
-  通用 RL 多任务训练可以是 `rl_results/runs/general_rl/train/dataset_gen/mrpc_cola_rte_stsb/20260404_151155_pid711833`。
-- 续训时指定的是**总搜索预算**而不是追加量：普通 RL 用 `--stage1-search-episodes` / `--stage2-search-episodes` 表示总回合数；GA 用 `--stage1-search-generations` / `--stage2-search-generations` 表示总代数。
+- **rl / ga 模式**：不再需要 `--resume-from`。持久化目录自动检测 checkpoint 并续训练。详见"3c. 持久化目录与自动续训练"。
+- **general-rl 模式**：`PATH` 必须是一个已存在的 run 目录，例如 `rl_results/runs/general_rl/train/dataset_gen/mrpc_cola_rte_stsb/20260404_151155_pid711833`。
+- 续训时指定的是**总搜索预算**而不是追加量。
 - 如果指定的总轮数小于等于 checkpoint 中已完成的轮数，则该阶段不会追加训练。
 - `--resume-from` 可以与各模式的跳过选项组合使用：只有未被跳过的阶段才会尝试加载对应的 checkpoint。
-- 续训产出的新日志和文件会写入新生成的 run 目录（不会覆盖原目录），但模型状态和训练统计会从旧 checkpoint 恢复。
 - checkpoint 会在每次进度快照时自动保存，因此即使训练中途被中断，也可以从最近的 checkpoint 恢复。
 
 示例：
 
 ```bash
-# ---- RL 模式续训 ----
+# ---- RL 模式续训（自动，无需 --resume-from）----
 
-# 第一次训练：Stage-2 训练 15000 轮
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
+# 首次运行
+bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
-  --skip-stage1-search \
-  --final-eval-source json \
-  --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval \
-  --noise-eval-repeat 200 \
+  --fresh-start \
   --stage2-search-episodes 15000
 
-# 发现轮数不够，续训到 30000 轮
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
-  --dataset mrpc \
-  --skip-stage1-search \
-  --final-eval-source json \
-  --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval \
-  --noise-eval-repeat 200 \
-  --stage2-search-episodes 30000 \
-  --resume-from rl_results/runs/rl/mrpc/20260404_151155_pid711833
-
-# Stage-1 续训示例：先训 10000 轮，再续训到 20000 轮
+# 发现轮数不够，直接加大预算再跑（相同参数 → 自动续训练）
 bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
-  --stage1-search-episodes 10000 \
-  --skip-noise-search --skip-noise-final-eval
+  --stage2-search-episodes 30000
 
-bash llama_7B_LayerImportance.sh --logfile output.log \
-  --dataset mrpc \
-  --stage1-search-episodes 20000 \
-  --skip-noise-search --skip-noise-final-eval \
-  --resume-from rl_results/runs/rl/mrpc/<之前的run目录>
+# ---- GA 模式续训（自动，无需 --resume-from）----
 
-# ---- GA 模式续训 ----
-
-# 第一次 GA 搜索（示例中显式指定总代数）
+# 首次运行
 bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm ga \
   --dataset mrpc \
+  --fresh-start \
   --stage1-search-generations 120 \
   --stage2-search-generations 90
 
-# GA 续训（从上次中断处继续；代数表示总预算，不是追加量）
+# 发现代数不够，直接加大预算再跑
 bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm ga \
   --dataset mrpc \
   --stage1-search-generations 180 \
-  --stage2-search-generations 140 \
-  --resume-from rl_results/runs/ga/mrpc/<之前的run目录>
+  --stage2-search-generations 140
 
-# ---- General-RL 模式续训 ----
+# ---- General-RL 模式续训（仍需 --resume-from）----
 
 # 第一次通用 RL 训练
 bash llama_7B_LayerImportance.sh --logfile output.log \
@@ -1233,8 +1366,11 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
 训练进程放到后台运行，因此**请不要再使用 `kill -9 <PID>`（SIGKILL）**，否则会
 绕过 checkpoint 保存逻辑、导致下次续训时训练曲线出现明显断层。正确的做法是
 **发送 SIGINT 触发优雅停止**，程序会在下一次安全边界（PPO 更新边界 / 遗传代际边界 / round 边界）
-保存 checkpoint，然后安全退出；之后用 `--resume-from` 指向同一个 run 目录即可
-**严丝合缝**地继续训练。**此功能适用于 rl、ga、general-rl 三种搜索算法。**
+保存 checkpoint，然后安全退出。**此功能适用于 rl、ga、general-rl 三种搜索算法。**
+
+续训方式因模式而异：
+- **rl / ga**：持久化目录方案，checkpoint 保存在确定性路径中。下次用相同参数运行即可自动续训练，无需 `--resume-from`。
+- **general-rl**：下次启动时用 `--resume-from` 指向同一个 run 目录即可续训练。
 
 #### 启动脚本会提示什么
 
@@ -1258,7 +1394,9 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
     ── general-rl 模式：
       touch rl_results/.../20260408_.../STOP_RL                     # 停当前 Stage
 
-  停止后续训：下次启动时加上 --resume-from rl_results/.../20260408_...
+  停止后续训：
+    rl / ga：相同参数直接再跑即可自动续训练
+    general-rl：加上 --resume-from rl_results/.../20260408_...
   ⚠ 切勿使用 kill -9（SIGKILL），它会绕过 checkpoint 保存导致续训断层！
 ========================================================================
 ```
@@ -1274,26 +1412,23 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
 - `rl_results/runs/general_rl/train/<gen_mode>/<taskset_id>/LATEST_RUN_DIR`：通用 RL 训练最近一次启动的 run 目录
 - `rl_results/runs/general_rl/infer/<dataset>/LATEST_PID`：通用 RL 推断最近一次启动的 PID
 - `rl_results/runs/general_rl/infer/<dataset>/LATEST_RUN_DIR`：通用 RL 推断最近一次启动的 run 目录
-- `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_PID`：对比实验 launcher 最近一次启动的 PID
-- `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_RL_PID`：对比实验中 RL 子进程最近一次启动的 PID
-- `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_GA_PID`：对比实验中 GA 子进程最近一次启动的 PID
+- `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_PID`：对比实验最近一次启动的 compare runner PID
 - `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_RUN_DIR`：对比实验最近一次启动的 run 目录
 
 补充说明：
 
 - 由于目录现在按模式分层，**不要再跨模式复用同一组 LATEST 指针**。例如要停止 GA，就看 `rl_results/runs/ga/<dataset>/LATEST_PID`，不要看 `rl_results/runs/rl/<dataset>/LATEST_PID`。
 - `general-rl train` 的 `taskset_id` 由 `--general-rl-tasks` 规范化得到。例如 `mrpc,cola,rte,stsb` 会落为 `mrpc_cola_rte_stsb`，并根据泛化模式写到对应的 `rl_results/runs/general_rl/train/<gen_mode>/mrpc_cola_rte_stsb/` 下。
-- `compare` 模式除了 `LATEST_RUN_DIR` / `LATEST_PID` 之外，还会额外兼容写入 `LATEST_COMPARE_RUN_DIR` / `LATEST_COMPARE_PID`，并在 launcher 启动后尽量写出 `LATEST_RL_PID` / `LATEST_GA_PID`。
-- 当前 compare run 目录下也会同步写出 `meta/rl.pid` 与 `meta/ga.pid`，用于精确停止 RL/GA 子进程。
+- `compare` 模式除了 `LATEST_RUN_DIR` / `LATEST_PID` 之外，还会额外兼容写入 `LATEST_COMPARE_RUN_DIR` / `LATEST_COMPARE_PID`。
+- 当前 compare run 目录下会写出 `meta/compare.pid`，对应 compare runner 本身；不再额外启动 RL / GA 子进程。
 
-#### 完整示例：启动 → 优雅停止 → 续训
-
-以你给出的命令为例：
+#### 完整示例：RL 模式下的启动 → 优雅停止 → 续训（持久化目录）
 
 ```bash
-# 1) 启动训练（脚本内部会 nohup 后台运行并打印 PID / 停止命令）
+# 1) 首次启动训练（必须加 --fresh-start）
 CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
     --dataset mrpc \
+    --fresh-start \
     --skip-stage1-search \
     --final-eval-source json \
     --final-eval-config glue_configs_best_ppo.json \
@@ -1301,7 +1436,8 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
     --noise-eval-repeat 200 \
     --stage2-search-episodes 15000 \
     --batch-size 128
-# -> 终端会打印 Background PID: 712345 以及 Resolved run root: rl_results/.../20260408_.../
+# -> 终端会打印 Background PID: 712345
+# -> 持久化目录：rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/
 ```
 
 ```bash
@@ -1310,27 +1446,21 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 # 方式 A：直接用启动时打印的 PID
 kill -INT 712345
 
-# 方式 B：用 LATEST 指针（最省事，不必记 PID）
-kill -INT $(cat rl_results/runs/rl/mrpc/LATEST_PID)
-
 # 方式 C：创建停止标志文件（Stage-2 训练时）
-touch "$(cat rl_results/runs/rl/mrpc/LATEST_RUN_DIR)/stage2_noise/progress/STOP_RL"
+touch rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/stage2_noise/progress/STOP_RL
 ```
 
 收到信号后，你会在日志里看到：
 
-（这里ctrl+c等价于命令行再用一次kill -INT pid）
-
 ```
   [优雅停止] 收到中断信号 (Ctrl+C)，将在当前回合结束后保存 checkpoint 并退出；再按一次 Ctrl+C 立即强退。
-  [优雅停止] 已检测到停止请求，正在于 PPO 边界保存 Stage-2 checkpoint (episode=..., update#...) ...
-  [优雅停止] checkpoint 已写入 → rl_results/.../20260408_.../stage2_noise/progress/noise_rl_checkpoint.pt
-  下次启动请使用 --resume-from 指向本 run 目录以严丝合缝续训。
+  [优雅停止] checkpoint 已写入 → rl_results/persistent/.../stage2_noise/progress/noise_rl_checkpoint.pt
+  下次用相同参数直接运行即可自动续训练。
 ```
 
 ```bash
-# 3) 续训：只需把原命令加上 --resume-from 指向上次的 run 目录即可
-#    （建议同时把 --stage2-search-episodes 调到你想要的“总轮数”）
+# 3) 续训：相同参数直接运行，不加 --fresh-start → 自动检测 checkpoint 续训练
+#    （建议同时把 --stage2-search-episodes 调到你想要的”总轮数”）
 CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
     --dataset mrpc \
     --skip-stage1-search \
@@ -1339,8 +1469,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
     --skip-stage1-final-eval \
     --noise-eval-repeat 200 \
     --stage2-search-episodes 30000 \
-    --batch-size 128 \
-    --resume-from "$(cat rl_results/runs/rl/mrpc/LATEST_RUN_DIR)"
+    --batch-size 128
 ```
 
 续训会加载上次保存的 GTrXL 网络权重、优化器状态、PPO 更新计数、`reward_history`
@@ -1348,31 +1477,32 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 incumbent / best_config / window_best、以及所有 episode 级统计列表，因此
 training-curve 曲线与 PPO 训练曲线在续训前后能**严丝合缝地接上**。
 
-#### 完整示例：GA 模式下的启动 → 优雅停止 → 续训
+#### 完整示例：GA 模式下的启动 → 优雅停止 → 续训（持久化目录）
 
 ```bash
-# 1) 启动 GA 搜索
+# 1) 首次启动 GA 搜索（必须加 --fresh-start）
 bash llama_7B_LayerImportance.sh --logfile output.log \
     --search-algorithm ga \
     --dataset mrpc \
+    --fresh-start \
     --stage1-search-generations 120 \
     --stage2-search-generations 90
 # -> 脚本打印 Background PID: 812345 及停止命令
+# -> 持久化目录：rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/
 
-# 2) 优雅停止（方式 A / B / C 均可）
+# 2) 优雅停止（方式 A / C 均可）
 kill -INT 812345
 
 # 或创建停止标志文件：
-# touch rl_results/.../stage1/STOP_RL        # 停 GA Stage-1
-# touch rl_results/.../stage2_noise/progress/STOP_RL  # 停 GA Stage-2
+# touch rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/stage1/STOP_RL
+# touch rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/stage2_noise/progress/STOP_RL
 
-# 3) 续训：加上 --resume-from 指向上次的 run 目录
+# 3) 续训：相同参数直接运行，不加 --fresh-start
 bash llama_7B_LayerImportance.sh --logfile output.log \
     --search-algorithm ga \
     --dataset mrpc \
     --stage1-search-generations 180 \
-    --stage2-search-generations 140 \
-    --resume-from "$(cat rl_results/runs/ga/mrpc/LATEST_RUN_DIR)"
+    --stage2-search-generations 140
 ```
 
 #### 完整示例：General-RL 模式下的启动 → 优雅停止 → 续训
@@ -1468,6 +1598,17 @@ episode，ga 模式在当代结束后生效，general-rl 模式在当前 round �
 <run_dir>/stage1/stage1_policy.pt              # 第一阶段便携 policy
 <run_dir>/stage2_noise/stage2_noise_policy.pt  # 第二阶段便携 noise policy
 ```
+
+此外，搜索完成后还会自动汇总到 `best_policy/` 目录：
+
+```text
+<run_dir>/best_policy/
+├── stage1_policy.pt           # 第一阶段最佳 policy 副本
+├── stage2_noise_policy.pt     # 第二阶段最佳 noise policy 副本
+└── constraint_metadata.json   # 约束参数元信息（tolerance、quartile、dataset、algorithm）
+```
+
+`constraint_metadata.json` 记录了训练时使用的 `stage1_accuracy_tolerance`、`stage2_limit_quartile`、`stage2_stability_quartile`、`dataset`、`search_algorithm` 等信息，便于下游模块（如通用 RL）识别 policy 的训练条件。
 
 文件格式（`torch.save` 的 dict）：
 

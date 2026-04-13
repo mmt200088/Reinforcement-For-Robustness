@@ -61,6 +61,18 @@ class CompareSideConfig:
     noise_eval_config_path: str = ""
 
 
+@dataclass
+class EvaluationOnlySideSpec:
+    algorithm: str
+    run_dir: Path
+    side_config: CompareSideConfig
+    stage1_input_kind: str
+    stage2_input_kind: str
+    stage1_input_path: Optional[Path] = None
+    stage2_input_path: Optional[Path] = None
+    source_metadata: Optional[dict] = None
+
+
 class CompareRunnerError(RuntimeError):
     pass
 
@@ -402,6 +414,267 @@ def default_stage2_json_for_algorithm(algorithm: str) -> str:
     )
 
 
+def normalize_model_type(raw_value: str) -> str:
+    value = str(raw_value or "").strip().lower().replace("_", "-")
+    alias_map = {
+        "bertbase": "bert-base",
+        "bert-base": "bert-base",
+        "bertlarge": "bert-large",
+        "bert-large": "bert-large",
+        "gpt2": "gpt-2",
+        "gpt-2": "gpt-2",
+    }
+    normalized = alias_map.get(value)
+    if normalized is None:
+        raise CompareRunnerError(
+            f"Unsupported model_type={raw_value!r}. Expected one of: bert-base, bert-large, gpt-2."
+        )
+    return normalized
+
+
+def expected_total_layers(model_type: str) -> int:
+    if model_type == "bert-large":
+        return 24
+    return 12
+
+
+def compare_constraint_slug(
+    stage1_accuracy_tolerance: float,
+    stage2_limit_quartile: float,
+    stage2_stability_quartile: float,
+) -> str:
+    return (
+        f"s1t{stage1_accuracy_tolerance}"
+        f"_s2q{stage2_limit_quartile}"
+        f"_s2sq{stage2_stability_quartile}"
+    )
+
+
+def persistent_run_dir_for_compare(
+    *,
+    persistent_root: Path,
+    algorithm: str,
+    model_type: str,
+    dataset: str,
+    stage1_accuracy_tolerance: float,
+    stage2_limit_quartile: float,
+    stage2_stability_quartile: float,
+) -> Path:
+    return (
+        persistent_root
+        / algorithm
+        / model_type
+        / dataset
+        / compare_constraint_slug(
+            stage1_accuracy_tolerance,
+            stage2_limit_quartile,
+            stage2_stability_quartile,
+        )
+    )
+
+
+def infer_algorithm_family_from_path(path: Path) -> str:
+    lower_path = str(path).lower().replace("\\", "/")
+    parts = [part for part in lower_path.split("/") if part]
+    for part in reversed(parts):
+        if part in ("rl", "ga"):
+            return part
+    name = path.name.lower()
+    if "genetic" in name or name.startswith("ga_") or "_ga." in name or "-ga." in name:
+        return "ga"
+    if "ppo" in name:
+        return "rl"
+    return "unknown"
+
+
+def _resolve_model_section(config_map: dict, model_type: str, *, config_path: Path) -> dict:
+    if model_type in config_map and isinstance(config_map[model_type], dict):
+        return config_map[model_type]
+    if any(key in config_map for key in ("bert-base", "bert-large", "gpt-2")):
+        raise CompareRunnerError(
+            f"Model variant '{model_type}' not found in '{config_path}'."
+        )
+    if model_type != "bert-base":
+        raise CompareRunnerError(
+            f"Config file '{config_path}' uses the legacy flat schema and only supports bert-base."
+        )
+    return config_map
+
+
+def validate_stage1_config_template(path: Path, *, dataset: str, model_type: str) -> None:
+    obj = read_json(path)
+    if not isinstance(obj, dict):
+        raise CompareRunnerError(f"Invalid Stage-1 JSON file: {path}")
+    obj = dict(obj)
+    obj.pop("_comment", None)
+    section = _resolve_model_section(obj, model_type, config_path=path)
+    if dataset not in section:
+        raise CompareRunnerError(
+            f"Dataset '{dataset}' not found under '{model_type}' in Stage-1 JSON '{path}'."
+        )
+    dataset_obj = section[dataset]
+    if not isinstance(dataset_obj, dict) or "gelu" not in dataset_obj or "softmax" not in dataset_obj:
+        raise CompareRunnerError(
+            f"Stage-1 JSON '{path}' is missing gelu/softmax for dataset '{dataset}'."
+        )
+
+
+def validate_stage2_config_template(path: Path, *, dataset: str, model_type: str) -> None:
+    obj = read_json(path)
+    if not isinstance(obj, dict):
+        raise CompareRunnerError(f"Invalid Stage-2 JSON file: {path}")
+    obj = dict(obj)
+    obj.pop("_comment", None)
+    section = _resolve_model_section(obj, model_type, config_path=path)
+    if dataset not in section:
+        raise CompareRunnerError(
+            f"Dataset '{dataset}' not found under '{model_type}' in Stage-2 JSON '{path}'."
+        )
+    dataset_obj = section[dataset]
+    if not isinstance(dataset_obj, dict):
+        raise CompareRunnerError(
+            f"Stage-2 JSON '{path}' has an invalid dataset payload for '{dataset}'."
+        )
+    required_keys = (
+        "x",
+        "wq",
+        "wk",
+        "wv",
+        "wo",
+        "wffn1",
+        "wffn2",
+    )
+    missing = [key for key in required_keys if key not in dataset_obj]
+    if missing:
+        raise CompareRunnerError(
+            f"Stage-2 JSON '{path}' is missing keys for dataset '{dataset}': {missing}."
+        )
+
+
+def _extract_stage1_result_layer_count(obj: dict) -> Optional[int]:
+    for candidate in (
+        (obj.get("selected") or {}).get("gelu"),
+        (obj.get("baseline") or {}).get("gelu"),
+        (obj.get("no_approx") or {}).get("gelu"),
+    ):
+        if isinstance(candidate, list) and candidate:
+            return len(candidate)
+    return None
+
+
+def _extract_stage2_result_layer_count(obj: dict) -> Optional[int]:
+    fixed_stage1 = obj.get("fixed_stage1_config") or {}
+    gelu = fixed_stage1.get("gelu")
+    if isinstance(gelu, list) and gelu:
+        return len(gelu)
+
+    noise_cfg = (obj.get("selected") or {}).get("noise_config") or {}
+    for value in noise_cfg.values():
+        if isinstance(value, list) and value:
+            return len(value)
+    return None
+
+
+def validate_stage_result_json(
+    path: Path,
+    *,
+    stage_label: str,
+    dataset: str,
+    model_type: str,
+) -> dict:
+    obj = read_json(path)
+    if not isinstance(obj, dict):
+        raise CompareRunnerError(f"Invalid {stage_label} result JSON: {path}")
+    actual_dataset = obj.get("dataset")
+    if actual_dataset and actual_dataset != dataset:
+        raise CompareRunnerError(
+            f"{stage_label} result JSON '{path}' belongs to dataset '{actual_dataset}', expected '{dataset}'."
+        )
+
+    expected_layers = expected_total_layers(model_type)
+    actual_layers = (
+        _extract_stage1_result_layer_count(obj)
+        if stage_label == "stage1"
+        else _extract_stage2_result_layer_count(obj)
+    )
+    if actual_layers is not None and actual_layers != expected_layers:
+        raise CompareRunnerError(
+            f"{stage_label} result JSON '{path}' has layer count {actual_layers}, "
+            f"which does not match model_type='{model_type}' ({expected_layers} layers)."
+        )
+    return obj
+
+
+def materialize_result_json(
+    *,
+    stage_label: str,
+    src_path: Path,
+    run_dir: Path,
+    dataset: str,
+) -> Path:
+    obj = read_json(src_path)
+    if not isinstance(obj, dict):
+        raise CompareRunnerError(f"Invalid {stage_label} result JSON: {src_path}")
+    dest_path = (
+        stage1_final_eval_json(run_dir, dataset)
+        if stage_label == "stage1"
+        else stage2_final_eval_json(run_dir, dataset)
+    )
+    write_json(dest_path, obj)
+    return dest_path
+
+
+def validate_persistent_run_dir(
+    *,
+    run_dir: Path,
+    algorithm: str,
+    model_type: str,
+    dataset: str,
+) -> dict:
+    metadata_path = run_dir / "metadata.json"
+    metadata = read_json(metadata_path)
+    if metadata is None:
+        raise CompareRunnerError(
+            f"Persistent run dir '{run_dir}' is missing metadata.json."
+        )
+    actual_algorithm = str(metadata.get("algorithm") or "").strip().lower()
+    actual_model_type = str(metadata.get("model_type") or "").strip().lower()
+    actual_dataset = str(metadata.get("dataset") or "").strip().lower()
+    if actual_algorithm != algorithm:
+        raise CompareRunnerError(
+            f"Persistent run dir '{run_dir}' belongs to algorithm '{actual_algorithm}', expected '{algorithm}'."
+        )
+    if actual_model_type != model_type:
+        raise CompareRunnerError(
+            f"Persistent run dir '{run_dir}' belongs to model_type '{actual_model_type}', expected '{model_type}'."
+        )
+    if actual_dataset != dataset:
+        raise CompareRunnerError(
+            f"Persistent run dir '{run_dir}' belongs to dataset '{actual_dataset}', expected '{dataset}'."
+        )
+    return metadata
+
+
+def ensure_persistent_side_has_compare_artifacts(
+    *,
+    run_dir: Path,
+    algorithm: str,
+    dataset: str,
+) -> None:
+    if not stage1_final_eval_json(run_dir, dataset).is_file():
+        stage1_cfg, _ = recover_stage1_search_best(run_dir, algorithm)
+        if stage1_cfg is None:
+            raise CompareRunnerError(
+                f"Persistent run dir '{run_dir}' has no usable Stage-1 compare artifact."
+            )
+    if not stage2_final_eval_json(run_dir, dataset).is_file():
+        stage2_cfg, _ = recover_stage2_search_best(run_dir, algorithm)
+        if stage2_cfg is None:
+            raise CompareRunnerError(
+                f"Persistent run dir '{run_dir}' has no usable Stage-2 compare artifact."
+            )
+
+
 def _extract_repeat_evaluation(obj: dict) -> Tuple[Optional[dict], List[dict]]:
     repeat_obj = obj.get("repeat_evaluation") or {}
     stats = repeat_obj.get("stats")
@@ -496,6 +769,7 @@ def build_compare_evaluator(
     data_path: str,
     batch_size: int,
     run_output_dir: str,
+    model_type: Optional[str] = None,
     search_algorithm: str,
     stage1_rl_lr: Optional[str],
     stage2_rl_lr: Optional[str],
@@ -641,6 +915,8 @@ def build_compare_evaluator(
         data_path=data_path,
         search_algorithm=search_algorithm,
     )
+    if model_type is not None:
+        evaluator.model_type = normalize_model_type(model_type)
     return evaluator
 
 
@@ -660,6 +936,8 @@ def ensure_stage1_eval_json(
     cost_trials: int,
     budget_trials: int,
     noise_eval_repeat_n: int,
+    model_type: Optional[str] = None,
+    prepared_evaluator=None,
 ) -> Tuple[Path, List[str]]:
     json_path = stage1_final_eval_json(run_dir, dataset)
     if json_path.is_file():
@@ -680,33 +958,39 @@ def ensure_stage1_eval_json(
             f"{algorithm.upper()} 的 Stage-1 最终评估文件缺失，已按声明的 {config_source} 配置补做最终评估。"
         )
 
-    evaluator = build_compare_evaluator(
-        base_model=base_model,
-        data_path=data_path,
-        batch_size=batch_size,
-        run_output_dir=str(run_dir),
-        search_algorithm=algorithm,
-        stage1_rl_lr=stage1_rl_lr,
-        stage2_rl_lr=stage2_rl_lr,
-        random_seed=random_seed,
-        perm_trials=perm_trials,
-        cost_trials=cost_trials,
-        budget_trials=budget_trials,
-        noise_eval_repeat_n=noise_eval_repeat_n,
-        final_eval_config_source=config_source,
-        final_eval_config_path=config_path,
-        noise_eval_config_source=side_config.noise_eval_config_source,
-        noise_eval_config_path=side_config.noise_eval_config_path,
-        skip_stage1_rl=(config_source != "search"),
-        skip_noise_rl=True,
-        skip_stage1_final_eval=False,
-        skip_noise_final_eval=True,
-    )
+    evaluator = prepared_evaluator
+    if evaluator is None:
+        evaluator = build_compare_evaluator(
+            base_model=base_model,
+            data_path=data_path,
+            batch_size=batch_size,
+            run_output_dir=str(run_dir),
+            model_type=model_type,
+            search_algorithm=algorithm,
+            stage1_rl_lr=stage1_rl_lr,
+            stage2_rl_lr=stage2_rl_lr,
+            random_seed=random_seed,
+            perm_trials=perm_trials,
+            cost_trials=cost_trials,
+            budget_trials=budget_trials,
+            noise_eval_repeat_n=noise_eval_repeat_n,
+            final_eval_config_source=config_source,
+            final_eval_config_path=config_path,
+            noise_eval_config_source=side_config.noise_eval_config_source,
+            noise_eval_config_path=side_config.noise_eval_config_path,
+            skip_stage1_rl=(config_source != "search"),
+            skip_noise_rl=True,
+            skip_stage1_final_eval=False,
+            skip_noise_final_eval=True,
+        )
 
     from final_evaluation_module import FinalEvaluationModule
     from genetic_search_module import GeneticFinalEvaluationModule, build_stage1_context
 
-    context = build_stage1_context(evaluator, log_fn=evaluator.log, include_distribution=False)
+    context = build_stage1_context(
+        evaluator, log_fn=evaluator.log, include_distribution=False,
+        constraint_ratio=getattr(evaluator, "error_threshold", None),
+    )
     if config_source == "search" and search_best_config is None:
         warnings.append(
             f"{algorithm.upper()} 未找到 Stage-1 checkpoint/search 结果，已回退到 baseline 配置生成对比结果。"
@@ -760,6 +1044,8 @@ def ensure_stage2_eval_json(
     cost_trials: int,
     budget_trials: int,
     noise_eval_repeat_n: int,
+    model_type: Optional[str] = None,
+    prepared_evaluator=None,
 ) -> Tuple[Path, List[str]]:
     json_path = stage2_final_eval_json(run_dir, dataset)
     if json_path.is_file():
@@ -781,38 +1067,41 @@ def ensure_stage2_eval_json(
         run_dir, algorithm, dataset
     )
 
-    evaluator = build_compare_evaluator(
-        base_model=base_model,
-        data_path=data_path,
-        batch_size=batch_size,
-        run_output_dir=str(run_dir),
-        search_algorithm=algorithm,
-        stage1_rl_lr=stage1_rl_lr,
-        stage2_rl_lr=stage2_rl_lr,
-        random_seed=random_seed,
-        perm_trials=perm_trials,
-        cost_trials=cost_trials,
-        budget_trials=budget_trials,
-        noise_eval_repeat_n=noise_eval_repeat_n,
-        final_eval_config_source=(
-            side_config.final_eval_config_source
-            if side_config.final_eval_config_source != "search"
-            else "json"
-        ),
-        final_eval_config_path=(
-            side_config.final_eval_config_path
-            or default_stage1_json_for_algorithm(algorithm)
-        ),
-        noise_eval_config_source=config_source,
-        noise_eval_config_path=(
-            config_path
-            or default_stage2_json_for_algorithm(algorithm)
-        ),
-        skip_stage1_rl=True,
-        skip_noise_rl=(config_source != "search"),
-        skip_stage1_final_eval=True,
-        skip_noise_final_eval=False,
-    )
+    evaluator = prepared_evaluator
+    if evaluator is None:
+        evaluator = build_compare_evaluator(
+            base_model=base_model,
+            data_path=data_path,
+            batch_size=batch_size,
+            run_output_dir=str(run_dir),
+            model_type=model_type,
+            search_algorithm=algorithm,
+            stage1_rl_lr=stage1_rl_lr,
+            stage2_rl_lr=stage2_rl_lr,
+            random_seed=random_seed,
+            perm_trials=perm_trials,
+            cost_trials=cost_trials,
+            budget_trials=budget_trials,
+            noise_eval_repeat_n=noise_eval_repeat_n,
+            final_eval_config_source=(
+                side_config.final_eval_config_source
+                if side_config.final_eval_config_source != "search"
+                else "json"
+            ),
+            final_eval_config_path=(
+                side_config.final_eval_config_path
+                or default_stage1_json_for_algorithm(algorithm)
+            ),
+            noise_eval_config_source=config_source,
+            noise_eval_config_path=(
+                config_path
+                or default_stage2_json_for_algorithm(algorithm)
+            ),
+            skip_stage1_rl=True,
+            skip_noise_rl=(config_source != "search"),
+            skip_stage1_final_eval=True,
+            skip_noise_final_eval=False,
+        )
 
     from genetic_search_module import (
         GeneticNoiseFinalEvaluationModule,
@@ -823,7 +1112,8 @@ def ensure_stage2_eval_json(
 
     if fixed_stage1_config is None:
         stage1_context = build_stage1_context(
-            evaluator, log_fn=evaluator.log, include_distribution=False
+            evaluator, log_fn=evaluator.log, include_distribution=False,
+            constraint_ratio=getattr(evaluator, "error_threshold", None),
         )
         fixed_stage1_config = {
             "gelu": stage1_context.base_gelu.copy(),
@@ -869,6 +1159,8 @@ def ensure_stage2_eval_json(
             fixed_gelu,
             fixed_softmax,
             log_fn=evaluator.log,
+            limit_quartile=getattr(evaluator, "stage2_limit_quartile", None),
+            stability_quartile=getattr(evaluator, "stage2_stability_quartile", None),
         )
         module_cls = GeneticNoiseFinalEvaluationModule if algorithm == "ga" else NoiseFinalEvaluationModule
         runner = module_cls(
@@ -1336,6 +1628,9 @@ def build_child_command(
     cost_trials: int,
     budget_trials: int,
     stage2_compare_repeats: int,
+    stage1_accuracy_tolerance: Optional[float] = None,
+    stage2_limit_quartile: Optional[float] = None,
+    stage2_stability_quartile: Optional[float] = None,
 ) -> List[str]:
     entrypoint = "rl_tune.py" if algorithm == "rl" else "rl_tune_genetic.py"
 
@@ -1404,6 +1699,12 @@ def build_child_command(
                     "--stage2_ga_generations_specified", "true",
                 ]
             )
+    if stage1_accuracy_tolerance is not None:
+        cmd.extend(["--stage1_accuracy_tolerance", str(stage1_accuracy_tolerance)])
+    if stage2_limit_quartile is not None:
+        cmd.extend(["--stage2_limit_quartile", str(stage2_limit_quartile)])
+    if stage2_stability_quartile is not None:
+        cmd.extend(["--stage2_stability_quartile", str(stage2_stability_quartile)])
     return cmd
 
 
@@ -1521,17 +1822,576 @@ def build_compare_error_sections(
     return sections
 
 
+def classify_stage_json_input(
+    *,
+    path: Path,
+    stage_label: str,
+    dataset: str,
+    model_type: str,
+    expected_algorithm: str,
+) -> str:
+    if not path.is_file():
+        raise CompareRunnerError(
+            f"{expected_algorithm.upper()} {stage_label} JSON file does not exist: {path}"
+        )
+    inferred_family = infer_algorithm_family_from_path(path)
+    if inferred_family not in ("unknown", expected_algorithm):
+        raise CompareRunnerError(
+            f"{expected_algorithm.upper()} {stage_label} JSON '{path}' looks like a {inferred_family.upper()} artifact."
+        )
+
+    obj = read_json(path)
+    if not isinstance(obj, dict):
+        raise CompareRunnerError(f"Invalid JSON file: {path}")
+
+    if "selected" in obj or "baseline" in obj or "status" in obj:
+        validate_stage_result_json(
+            path,
+            stage_label=stage_label,
+            dataset=dataset,
+            model_type=model_type,
+        )
+        return "result_json"
+
+    if stage_label == "stage1":
+        validate_stage1_config_template(
+            path,
+            dataset=dataset,
+            model_type=model_type,
+        )
+    else:
+        validate_stage2_config_template(
+            path,
+            dataset=dataset,
+            model_type=model_type,
+        )
+    return "config_json"
+
+
+def resolve_direct_side_spec(
+    *,
+    algorithm: str,
+    dataset: str,
+    model_type: str,
+    run_dir: Path,
+    stage1_json_path: str,
+    stage2_json_path: str,
+) -> EvaluationOnlySideSpec:
+    stage1_path = Path(stage1_json_path).expanduser().resolve()
+    stage2_path = Path(stage2_json_path).expanduser().resolve()
+    stage1_kind = classify_stage_json_input(
+        path=stage1_path,
+        stage_label="stage1",
+        dataset=dataset,
+        model_type=model_type,
+        expected_algorithm=algorithm,
+    )
+    stage2_kind = classify_stage_json_input(
+        path=stage2_path,
+        stage_label="stage2",
+        dataset=dataset,
+        model_type=model_type,
+        expected_algorithm=algorithm,
+    )
+    side_config = normalize_compare_side_config(
+        label=algorithm.upper(),
+        skip_stage1_search=(stage1_kind == "config_json"),
+        final_eval_config_source=("json" if stage1_kind == "config_json" else "search"),
+        final_eval_config_path=(str(stage1_path) if stage1_kind == "config_json" else ""),
+        skip_noise_search=(stage2_kind == "config_json"),
+        noise_eval_config_source=("json" if stage2_kind == "config_json" else "search"),
+        noise_eval_config_path=(str(stage2_path) if stage2_kind == "config_json" else ""),
+    )
+    return EvaluationOnlySideSpec(
+        algorithm=algorithm,
+        run_dir=run_dir,
+        side_config=side_config,
+        stage1_input_kind=stage1_kind,
+        stage2_input_kind=stage2_kind,
+        stage1_input_path=stage1_path,
+        stage2_input_path=stage2_path,
+        source_metadata={
+            "compare_config_mode": "direct",
+            "stage1_json_path": str(stage1_path),
+            "stage2_json_path": str(stage2_path),
+        },
+    )
+
+
+def resolve_persistent_side_spec(
+    *,
+    algorithm: str,
+    dataset: str,
+    model_type: str,
+    persistent_root: Path,
+    stage1_accuracy_tolerance: float,
+    stage2_limit_quartile: float,
+    stage2_stability_quartile: float,
+) -> EvaluationOnlySideSpec:
+    run_dir = persistent_run_dir_for_compare(
+        persistent_root=persistent_root,
+        algorithm=algorithm,
+        model_type=model_type,
+        dataset=dataset,
+        stage1_accuracy_tolerance=stage1_accuracy_tolerance,
+        stage2_limit_quartile=stage2_limit_quartile,
+        stage2_stability_quartile=stage2_stability_quartile,
+    ).resolve()
+    if not run_dir.is_dir():
+        raise CompareRunnerError(
+            f"Persistent compare directory not found for {algorithm.upper()}: {run_dir}"
+        )
+    metadata = validate_persistent_run_dir(
+        run_dir=run_dir,
+        algorithm=algorithm,
+        model_type=model_type,
+        dataset=dataset,
+    )
+    ensure_persistent_side_has_compare_artifacts(
+        run_dir=run_dir,
+        algorithm=algorithm,
+        dataset=dataset,
+    )
+    return EvaluationOnlySideSpec(
+        algorithm=algorithm,
+        run_dir=run_dir,
+        side_config=CompareSideConfig(),
+        stage1_input_kind="persistent_artifact",
+        stage2_input_kind="persistent_artifact",
+        source_metadata={
+            "compare_config_mode": "persistent",
+            "persistent_run_dir": str(run_dir),
+            "constraint_slug": compare_constraint_slug(
+                stage1_accuracy_tolerance,
+                stage2_limit_quartile,
+                stage2_stability_quartile,
+            ),
+            "metadata": metadata,
+        },
+    )
+
+
+def materialize_direct_result_jsons(side_spec: EvaluationOnlySideSpec, *, dataset: str) -> None:
+    if side_spec.stage1_input_kind == "result_json" and side_spec.stage1_input_path is not None:
+        materialize_result_json(
+            stage_label="stage1",
+            src_path=side_spec.stage1_input_path,
+            run_dir=side_spec.run_dir,
+            dataset=dataset,
+        )
+    if side_spec.stage2_input_kind == "result_json" and side_spec.stage2_input_path is not None:
+        materialize_result_json(
+            stage_label="stage2",
+            src_path=side_spec.stage2_input_path,
+            run_dir=side_spec.run_dir,
+            dataset=dataset,
+        )
+
+
+def side_needs_evaluator(side_spec: EvaluationOnlySideSpec, *, dataset: str) -> bool:
+    return (
+        not stage1_final_eval_json(side_spec.run_dir, dataset).is_file()
+        or not stage2_final_eval_json(side_spec.run_dir, dataset).is_file()
+    )
+
+
+def build_evaluation_only_process_state(
+    side_spec: EvaluationOnlySideSpec,
+    *,
+    dataset: str,
+) -> dict:
+    return {
+        "algorithm": side_spec.algorithm,
+        "pid": None,
+        "return_code": 0,
+        "state": "completed",
+        "stage1_final_eval_ready": stage1_final_eval_json(side_spec.run_dir, dataset).is_file(),
+        "stage2_final_eval_ready": stage2_final_eval_json(side_spec.run_dir, dataset).is_file(),
+        "run_dir": str(side_spec.run_dir),
+        "log_path": str(side_spec.run_dir / "logs" / "output.log"),
+        "command": None,
+        "env_overrides": {},
+        "mode": "evaluation_only",
+        "stage1_input_kind": side_spec.stage1_input_kind,
+        "stage2_input_kind": side_spec.stage2_input_kind,
+        "source_metadata": to_jsonable(side_spec.source_metadata or {}),
+    }
+
+
+def run_evaluation_only_compare(args: argparse.Namespace) -> int:
+    compare_root = Path(args.output_dir).resolve()
+    meta_dir = compare_root / "meta"
+    children_dir = compare_root / "children"
+    compare_dir = compare_root / "reports"
+    compare_metadata_path = meta_dir / "compare_metadata.json"
+    compare_runtime_path = meta_dir / "compare_runtime.json"
+    compare_status_path = meta_dir / "compare_status.json"
+    compare_final_status_path = meta_dir / "compare_final_status.json"
+    compare_pid_path = meta_dir / "compare.pid"
+    clear_error_summary(str(compare_root))
+
+    model_type = normalize_model_type(args.model_type)
+    dataset = str(args.dataset or "").strip().lower()
+    compare_warnings: List[str] = []
+    alias_warning = getattr(args, "compare_repeat_alias_warning", None)
+    if alias_warning:
+        compare_warnings.append(alias_warning)
+
+    try:
+        if args.compare_config_mode == "direct":
+            rl_side_spec = resolve_direct_side_spec(
+                algorithm="rl",
+                dataset=dataset,
+                model_type=model_type,
+                run_dir=children_dir / "rl",
+                stage1_json_path=args.rl_compare_stage1_json,
+                stage2_json_path=args.rl_compare_stage2_json,
+            )
+            ga_side_spec = resolve_direct_side_spec(
+                algorithm="ga",
+                dataset=dataset,
+                model_type=model_type,
+                run_dir=children_dir / "ga",
+                stage1_json_path=args.ga_compare_stage1_json,
+                stage2_json_path=args.ga_compare_stage2_json,
+            )
+            materialize_direct_result_jsons(rl_side_spec, dataset=dataset)
+            materialize_direct_result_jsons(ga_side_spec, dataset=dataset)
+        elif args.compare_config_mode == "persistent":
+            persistent_root = Path(args.compare_persistent_root).expanduser().resolve()
+            rl_side_spec = resolve_persistent_side_spec(
+                algorithm="rl",
+                dataset=dataset,
+                model_type=model_type,
+                persistent_root=persistent_root,
+                stage1_accuracy_tolerance=float(args.rl_compare_stage1_accuracy_tolerance),
+                stage2_limit_quartile=float(args.rl_compare_stage2_limit_quartile),
+                stage2_stability_quartile=float(args.rl_compare_stage2_stability_quartile),
+            )
+            ga_side_spec = resolve_persistent_side_spec(
+                algorithm="ga",
+                dataset=dataset,
+                model_type=model_type,
+                persistent_root=persistent_root,
+                stage1_accuracy_tolerance=float(args.ga_compare_stage1_accuracy_tolerance),
+                stage2_limit_quartile=float(args.ga_compare_stage2_limit_quartile),
+                stage2_stability_quartile=float(args.ga_compare_stage2_stability_quartile),
+            )
+        else:
+            raise CompareRunnerError(
+                f"Unsupported compare_config_mode={args.compare_config_mode!r}."
+            )
+
+        metadata = {
+            "dataset": dataset,
+            "model_type": model_type,
+            "base_model": args.base_model,
+            "data_path": args.data_path,
+            "compare_root": str(compare_root),
+            "compare_config_mode": args.compare_config_mode,
+            "stage2_compare_repeats": args.stage2_compare_repeats,
+            "random_seed": args.random_seed,
+            "perm_trials": args.perm_trials,
+            "cost_trials": args.cost_trials,
+            "budget_trials": args.budget_trials,
+            "rl_side": to_jsonable(rl_side_spec.source_metadata or {}),
+            "ga_side": to_jsonable(ga_side_spec.source_metadata or {}),
+            "warnings": compare_warnings,
+        }
+        write_json(compare_metadata_path, metadata)
+        if args.dry_run:
+            log("dry-run 模式：仅写入 compare 元信息，不执行评估。")
+            return 0
+
+        write_json(
+            compare_runtime_path,
+            {
+                "compare_pid": os.getpid(),
+                "compare_config_mode": args.compare_config_mode,
+            },
+        )
+        compare_pid_path.parent.mkdir(parents=True, exist_ok=True)
+        compare_pid_path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+        write_json(
+            compare_status_path,
+            {
+                "updated_at": now_ts(),
+                "mode": "evaluation_only",
+                "compare_config_mode": args.compare_config_mode,
+                "stage": "preparing",
+            },
+        )
+
+        rl_evaluator = (
+            build_compare_evaluator(
+                base_model=args.base_model,
+                data_path=args.data_path,
+                batch_size=args.batch_size,
+                run_output_dir=str(rl_side_spec.run_dir),
+                model_type=model_type,
+                search_algorithm="rl",
+                stage1_rl_lr=args.stage1_search_lr,
+                stage2_rl_lr=args.stage2_search_lr,
+                random_seed=args.random_seed,
+                perm_trials=args.perm_trials,
+                cost_trials=args.cost_trials,
+                budget_trials=args.budget_trials,
+                noise_eval_repeat_n=args.stage2_compare_repeats,
+                final_eval_config_source=(
+                    rl_side_spec.side_config.final_eval_config_source
+                    if rl_side_spec.side_config.final_eval_config_source != "search"
+                    else "json"
+                ),
+                final_eval_config_path=(
+                    rl_side_spec.side_config.final_eval_config_path
+                    or default_stage1_json_for_algorithm("rl")
+                ),
+                noise_eval_config_source=(
+                    rl_side_spec.side_config.noise_eval_config_source
+                    if rl_side_spec.side_config.noise_eval_config_source != "search"
+                    else "json"
+                ),
+                noise_eval_config_path=(
+                    rl_side_spec.side_config.noise_eval_config_path
+                    or default_stage2_json_for_algorithm("rl")
+                ),
+                skip_stage1_rl=True,
+                skip_noise_rl=True,
+                skip_stage1_final_eval=True,
+                skip_noise_final_eval=True,
+            )
+            if side_needs_evaluator(rl_side_spec, dataset=dataset)
+            else None
+        )
+        ga_evaluator = (
+            build_compare_evaluator(
+                base_model=args.base_model,
+                data_path=args.data_path,
+                batch_size=args.batch_size,
+                run_output_dir=str(ga_side_spec.run_dir),
+                model_type=model_type,
+                search_algorithm="ga",
+                stage1_rl_lr=args.stage1_search_lr,
+                stage2_rl_lr=args.stage2_search_lr,
+                random_seed=args.random_seed,
+                perm_trials=args.perm_trials,
+                cost_trials=args.cost_trials,
+                budget_trials=args.budget_trials,
+                noise_eval_repeat_n=args.stage2_compare_repeats,
+                final_eval_config_source=(
+                    ga_side_spec.side_config.final_eval_config_source
+                    if ga_side_spec.side_config.final_eval_config_source != "search"
+                    else "json"
+                ),
+                final_eval_config_path=(
+                    ga_side_spec.side_config.final_eval_config_path
+                    or default_stage1_json_for_algorithm("ga")
+                ),
+                noise_eval_config_source=(
+                    ga_side_spec.side_config.noise_eval_config_source
+                    if ga_side_spec.side_config.noise_eval_config_source != "search"
+                    else "json"
+                ),
+                noise_eval_config_path=(
+                    ga_side_spec.side_config.noise_eval_config_path
+                    or default_stage2_json_for_algorithm("ga")
+                ),
+                skip_stage1_rl=True,
+                skip_noise_rl=True,
+                skip_stage1_final_eval=True,
+                skip_noise_final_eval=True,
+            )
+            if side_needs_evaluator(ga_side_spec, dataset=dataset)
+            else None
+        )
+
+        rl_stage1_json, rl_stage1_warn = ensure_stage1_eval_json(
+            algorithm="rl",
+            run_dir=rl_side_spec.run_dir,
+            side_config=rl_side_spec.side_config,
+            dataset=dataset,
+            base_model=args.base_model,
+            data_path=args.data_path,
+            batch_size=args.batch_size,
+            stage1_rl_lr=args.stage1_search_lr,
+            stage2_rl_lr=args.stage2_search_lr,
+            random_seed=args.random_seed,
+            perm_trials=args.perm_trials,
+            cost_trials=args.cost_trials,
+            budget_trials=args.budget_trials,
+            noise_eval_repeat_n=args.stage2_compare_repeats,
+            model_type=model_type,
+            prepared_evaluator=rl_evaluator,
+        )
+        ga_stage1_json, ga_stage1_warn = ensure_stage1_eval_json(
+            algorithm="ga",
+            run_dir=ga_side_spec.run_dir,
+            side_config=ga_side_spec.side_config,
+            dataset=dataset,
+            base_model=args.base_model,
+            data_path=args.data_path,
+            batch_size=args.batch_size,
+            stage1_rl_lr=args.stage1_search_lr,
+            stage2_rl_lr=args.stage2_search_lr,
+            random_seed=args.random_seed,
+            perm_trials=args.perm_trials,
+            cost_trials=args.cost_trials,
+            budget_trials=args.budget_trials,
+            noise_eval_repeat_n=args.stage2_compare_repeats,
+            model_type=model_type,
+            prepared_evaluator=ga_evaluator,
+        )
+
+        rl_state = build_evaluation_only_process_state(rl_side_spec, dataset=dataset)
+        ga_state = build_evaluation_only_process_state(ga_side_spec, dataset=dataset)
+        stage1_payload = build_stage_compare_payload(
+            stage_label="stage1",
+            dataset=dataset,
+            compare_root=compare_root,
+            rl_run_dir=rl_side_spec.run_dir,
+            ga_run_dir=ga_side_spec.run_dir,
+            rl_json_path=rl_stage1_json,
+            ga_json_path=ga_stage1_json,
+            rl_warnings=rl_stage1_warn,
+            ga_warnings=ga_stage1_warn,
+            process_meta={
+                "compare_warnings": compare_warnings,
+                "rl": rl_state,
+                "ga": ga_state,
+            },
+        )
+        stage1_report_path, _ = save_stage_compare_report(stage1_payload, compare_dir)
+        log(f"Stage-1 对比结果已生成：{stage1_report_path}")
+
+        write_json(
+            compare_status_path,
+            {
+                "updated_at": now_ts(),
+                "mode": "evaluation_only",
+                "compare_config_mode": args.compare_config_mode,
+                "stage": "stage2",
+                "stage1_report_path": str(stage1_report_path),
+            },
+        )
+
+        rl_stage2_json, rl_stage2_warn = ensure_stage2_eval_json(
+            algorithm="rl",
+            run_dir=rl_side_spec.run_dir,
+            side_config=rl_side_spec.side_config,
+            dataset=dataset,
+            base_model=args.base_model,
+            data_path=args.data_path,
+            batch_size=args.batch_size,
+            stage1_rl_lr=args.stage1_search_lr,
+            stage2_rl_lr=args.stage2_search_lr,
+            random_seed=args.random_seed,
+            perm_trials=args.perm_trials,
+            cost_trials=args.cost_trials,
+            budget_trials=args.budget_trials,
+            noise_eval_repeat_n=args.stage2_compare_repeats,
+            model_type=model_type,
+            prepared_evaluator=rl_evaluator,
+        )
+        ga_stage2_json, ga_stage2_warn = ensure_stage2_eval_json(
+            algorithm="ga",
+            run_dir=ga_side_spec.run_dir,
+            side_config=ga_side_spec.side_config,
+            dataset=dataset,
+            base_model=args.base_model,
+            data_path=args.data_path,
+            batch_size=args.batch_size,
+            stage1_rl_lr=args.stage1_search_lr,
+            stage2_rl_lr=args.stage2_search_lr,
+            random_seed=args.random_seed,
+            perm_trials=args.perm_trials,
+            cost_trials=args.cost_trials,
+            budget_trials=args.budget_trials,
+            noise_eval_repeat_n=args.stage2_compare_repeats,
+            model_type=model_type,
+            prepared_evaluator=ga_evaluator,
+        )
+
+        rl_state = build_evaluation_only_process_state(rl_side_spec, dataset=dataset)
+        ga_state = build_evaluation_only_process_state(ga_side_spec, dataset=dataset)
+        stage2_payload = build_stage_compare_payload(
+            stage_label="stage2",
+            dataset=dataset,
+            compare_root=compare_root,
+            rl_run_dir=rl_side_spec.run_dir,
+            ga_run_dir=ga_side_spec.run_dir,
+            rl_json_path=rl_stage2_json,
+            ga_json_path=ga_stage2_json,
+            rl_warnings=rl_stage2_warn,
+            ga_warnings=ga_stage2_warn,
+            process_meta={
+                "compare_warnings": compare_warnings,
+                "rl": rl_state,
+                "ga": ga_state,
+            },
+        )
+        stage2_report_path, _ = save_stage_compare_report(stage2_payload, compare_dir)
+        log(f"Stage-2 对比结果已生成：{stage2_report_path}")
+
+        final_state = {
+            "updated_at": now_ts(),
+            "mode": "evaluation_only",
+            "compare_config_mode": args.compare_config_mode,
+            "rl": rl_state,
+            "ga": ga_state,
+            "stage1_report_path": str(stage1_report_path),
+            "stage2_report_path": str(stage2_report_path),
+        }
+        write_json(compare_final_status_path, final_state)
+        write_json(compare_status_path, final_state)
+        return 0
+    except Exception as exc:
+        error_payload = {
+            "updated_at": now_ts(),
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+        }
+        write_json(meta_dir / "compare_error.json", error_payload)
+        write_error_summary(
+            str(compare_root),
+            program_name="rl_ga_compare_runner.py",
+            status="failed",
+            message=f"{type(exc).__name__}: {exc}",
+            argv=sys.argv,
+            exit_code=1,
+            traceback_text=traceback.format_exc(),
+        )
+        log(f"[Error] 对比实验失败：{exc}")
+        return 1
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="并行运行 RL 与 GA，并生成阶段对比结果。")
     parser.add_argument("--base-model", required=True)
     parser.add_argument("--data-path", required=True)
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--model-type", required=True)
+    parser.add_argument(
+        "--compare-config-mode",
+        choices=("direct", "persistent"),
+        default="direct",
+    )
+    parser.add_argument("--compare-persistent-root", default="rl_results/persistent")
+    parser.add_argument("--rl-compare-stage1-json", default="")
+    parser.add_argument("--rl-compare-stage2-json", default="")
+    parser.add_argument("--ga-compare-stage1-json", default="")
+    parser.add_argument("--ga-compare-stage2-json", default="")
+    parser.add_argument("--rl-compare-stage1-accuracy-tolerance", type=float, default=None)
+    parser.add_argument("--rl-compare-stage2-limit-quartile", type=float, default=None)
+    parser.add_argument("--rl-compare-stage2-stability-quartile", type=float, default=None)
+    parser.add_argument("--ga-compare-stage1-accuracy-tolerance", type=float, default=None)
+    parser.add_argument("--ga-compare-stage2-limit-quartile", type=float, default=None)
+    parser.add_argument("--ga-compare-stage2-stability-quartile", type=float, default=None)
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--stage1-search-episodes", type=int, required=True)
-    parser.add_argument("--stage2-search-episodes", type=int, required=True)
-    parser.add_argument("--stage1-search-generations", type=int, required=True)
-    parser.add_argument("--stage2-search-generations", type=int, required=True)
+    parser.add_argument("--stage1-search-episodes", type=int, default=51000)
+    parser.add_argument("--stage2-search-episodes", type=int, default=40000)
+    parser.add_argument("--stage1-search-generations", type=int, default=1594)
+    parser.add_argument("--stage2-search-generations", type=int, default=1250)
     parser.add_argument("--stage1-search-lr", default="1e-4")
     parser.add_argument("--stage2-search-lr", default="1e-4")
     parser.add_argument("--random-seed", type=int, default=42)
@@ -1557,11 +2417,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rl-noise-eval-config", default="")
     parser.add_argument("--ga-noise-eval-config", default="")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--stage1-accuracy-tolerance", type=float, default=None)
+    parser.add_argument("--stage2-limit-quartile", type=float, default=None)
+    parser.add_argument("--stage2-stability-quartile", type=float, default=None)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    args.dataset = str(args.dataset or "").strip().lower()
+    args.model_type = normalize_model_type(args.model_type)
     compare_repeat_alias_warning = None
     if args.stage2_compare_repeats is None:
         if args.noise_eval_repeat is not None:
@@ -1577,17 +2442,116 @@ def main() -> int:
             "rl-and-ga-compare 模式请只使用 --stage2-compare-repeats；"
             "不要与已废弃的 --noise-eval-repeat 同时传入。"
         )
+    args.compare_repeat_alias_warning = compare_repeat_alias_warning
     for flag_name in (
-        "stage1_search_episodes",
-        "stage2_search_episodes",
-        "stage1_search_generations",
-        "stage2_search_generations",
         "batch_size",
         "perm_trials",
         "cost_trials",
         "budget_trials",
         "stage2_compare_repeats",
         "poll_seconds",
+    ):
+        if getattr(args, flag_name) <= 0:
+            raise CompareRunnerError(f"{flag_name} must be a positive integer.")
+    for flag_name in (
+        "stage1_accuracy_tolerance",
+        "stage2_limit_quartile",
+        "stage2_stability_quartile",
+        "rl_compare_stage1_accuracy_tolerance",
+        "rl_compare_stage2_limit_quartile",
+        "rl_compare_stage2_stability_quartile",
+        "ga_compare_stage1_accuracy_tolerance",
+        "ga_compare_stage2_limit_quartile",
+        "ga_compare_stage2_stability_quartile",
+    ):
+        value = getattr(args, flag_name, None)
+        if value is None:
+            continue
+        if value <= 0 or value >= 1:
+            raise CompareRunnerError(
+                f"{flag_name} must be a float in (0, 1), got {value!r}."
+            )
+    if args.compare_config_mode == "persistent":
+        direct_values = (
+            args.rl_compare_stage1_json,
+            args.rl_compare_stage2_json,
+            args.ga_compare_stage1_json,
+            args.ga_compare_stage2_json,
+        )
+        if any(str(value or "").strip() for value in direct_values):
+            raise CompareRunnerError(
+                "persistent compare mode does not accept direct stage JSON path flags."
+            )
+        if args.rl_compare_stage1_accuracy_tolerance is None:
+            args.rl_compare_stage1_accuracy_tolerance = (
+                args.stage1_accuracy_tolerance
+                if args.stage1_accuracy_tolerance is not None
+                else 0.005
+            )
+        if args.rl_compare_stage2_limit_quartile is None:
+            args.rl_compare_stage2_limit_quartile = (
+                args.stage2_limit_quartile
+                if args.stage2_limit_quartile is not None
+                else 0.2
+            )
+        if args.rl_compare_stage2_stability_quartile is None:
+            args.rl_compare_stage2_stability_quartile = (
+                args.stage2_stability_quartile
+                if args.stage2_stability_quartile is not None
+                else 0.2
+            )
+        if args.ga_compare_stage1_accuracy_tolerance is None:
+            args.ga_compare_stage1_accuracy_tolerance = (
+                args.stage1_accuracy_tolerance
+                if args.stage1_accuracy_tolerance is not None
+                else 0.005
+            )
+        if args.ga_compare_stage2_limit_quartile is None:
+            args.ga_compare_stage2_limit_quartile = (
+                args.stage2_limit_quartile
+                if args.stage2_limit_quartile is not None
+                else 0.2
+            )
+        if args.ga_compare_stage2_stability_quartile is None:
+            args.ga_compare_stage2_stability_quartile = (
+                args.stage2_stability_quartile
+                if args.stage2_stability_quartile is not None
+                else 0.2
+            )
+        return run_evaluation_only_compare(args)
+    if args.compare_config_mode == "direct":
+        persistent_values = (
+            args.rl_compare_stage1_accuracy_tolerance,
+            args.rl_compare_stage2_limit_quartile,
+            args.rl_compare_stage2_stability_quartile,
+            args.ga_compare_stage1_accuracy_tolerance,
+            args.ga_compare_stage2_limit_quartile,
+            args.ga_compare_stage2_stability_quartile,
+        )
+        if any(value is not None for value in persistent_values):
+            raise CompareRunnerError(
+                "direct compare mode does not accept persistent constraint flags."
+            )
+        required_direct_flags = {
+            "rl_compare_stage1_json": args.rl_compare_stage1_json,
+            "rl_compare_stage2_json": args.rl_compare_stage2_json,
+            "ga_compare_stage1_json": args.ga_compare_stage1_json,
+            "ga_compare_stage2_json": args.ga_compare_stage2_json,
+        }
+        missing = [
+            name for name, value in required_direct_flags.items()
+            if not str(value or "").strip()
+        ]
+        if missing:
+            raise CompareRunnerError(
+                f"direct compare mode requires these JSON paths: {', '.join(missing)}."
+            )
+        return run_evaluation_only_compare(args)
+    for flag_name in (
+        "stage1_search_episodes",
+        "stage2_search_episodes",
+        "stage1_search_generations",
+        "stage2_search_generations",
     ):
         if getattr(args, flag_name) <= 0:
             raise CompareRunnerError(f"{flag_name} must be a positive integer.")
@@ -1650,6 +2614,9 @@ def main() -> int:
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
             stage2_compare_repeats=args.stage2_compare_repeats,
+            stage1_accuracy_tolerance=getattr(args, "stage1_accuracy_tolerance", None),
+            stage2_limit_quartile=getattr(args, "stage2_limit_quartile", None),
+            stage2_stability_quartile=getattr(args, "stage2_stability_quartile", None),
         ),
         env_overrides={},
     )
@@ -1677,6 +2644,9 @@ def main() -> int:
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
             stage2_compare_repeats=args.stage2_compare_repeats,
+            stage1_accuracy_tolerance=getattr(args, "stage1_accuracy_tolerance", None),
+            stage2_limit_quartile=getattr(args, "stage2_limit_quartile", None),
+            stage2_stability_quartile=getattr(args, "stage2_stability_quartile", None),
         ),
         env_overrides={},
     )

@@ -206,7 +206,7 @@ def _resolve_ga_generation_budget(
     return max(1, math.ceil(int(fallback_episode_budget) / max(int(population_size), 1)))
 
 
-def build_stage1_context(evaluator, log_fn=None, include_distribution=True) -> Stage1Context:
+def build_stage1_context(evaluator, log_fn=None, include_distribution=True, constraint_ratio=None) -> Stage1Context:
     base_gelu = np.full(evaluator.total_layers, 4, dtype=int)
     base_softmax = np.full(evaluator.total_layers, 6, dtype=int)
     base_tot_c, base_g_c, base_s_c = evaluator.get_simulated_cost(base_gelu, base_softmax)
@@ -218,10 +218,11 @@ def build_stage1_context(evaluator, log_fn=None, include_distribution=True) -> S
         split=reward_reference_split,
     )
 
+    _effective_ratio = float(constraint_ratio) if constraint_ratio is not None else STAGE1_GA_CONSTRAINT_RATIO
     limits = {
-        "loss": float(base_loss * (1.0 + STAGE1_GA_CONSTRAINT_RATIO)),
-        "metric1": float(base_p * (1.0 - STAGE1_GA_CONSTRAINT_RATIO)),
-        "metric2": float(base_s * (1.0 - STAGE1_GA_CONSTRAINT_RATIO)),
+        "loss": float(base_loss * (1.0 + _effective_ratio)),
+        "metric1": float(base_p * (1.0 - _effective_ratio)),
+        "metric2": float(base_s * (1.0 - _effective_ratio)),
     }
 
     gelu_degree0_eligible = np.zeros(evaluator.total_layers, dtype=bool)
@@ -242,7 +243,7 @@ def build_stage1_context(evaluator, log_fn=None, include_distribution=True) -> S
         log_fn(
             f"  simulated cost: total={base_tot_c:.2f}, gelu={base_g_c:.2f}, softmax={base_s_c:.2f}"
         )
-        log_fn(f"  constraint ratio: {STAGE1_GA_CONSTRAINT_RATIO:.2%}")
+        log_fn(f"  constraint ratio: {_effective_ratio:.2%}")
         log_fn(
             "  constraints: "
             + evaluator._fmt_constraints(
@@ -269,7 +270,8 @@ def build_stage1_context(evaluator, log_fn=None, include_distribution=True) -> S
     )
 
 
-def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None) -> Stage2Context:
+def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None,
+                         limit_quartile=None, stability_quartile=None) -> Stage2Context:
     fixed_gelu = np.asarray(fixed_gelu, dtype=int)
     fixed_softmax = np.asarray(fixed_softmax, dtype=int)
 
@@ -318,6 +320,8 @@ def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None) -> S
     )
     cost_reference_tot_c, _ = evaluator.get_noise_simulated_cost(**cost_reference_noise_config)
 
+    _eff_limit_q = float(limit_quartile) if limit_quartile is not None else NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE
+    _eff_stab_q = float(stability_quartile) if stability_quartile is not None else NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE
     search_limits = _compute_dynamic_limits(
         baseline_reference_stats["loss_mean"],
         baseline_reference_stats["p_mean"],
@@ -325,24 +329,28 @@ def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None) -> S
         worst_reference_stats["loss_mean"],
         worst_reference_stats["p_mean"],
         worst_reference_stats["s_mean"],
+        quartile=_eff_limit_q,
     )
     dynamic_loss_std_cap = _compute_dynamic_std_upper_bound(
         baseline_reference_stats["loss_std"],
         worst_reference_stats["loss_std"],
+        quartile=_eff_stab_q,
     )
     dynamic_m1_std_cap = _compute_dynamic_std_upper_bound(
         baseline_reference_stats["p_std"],
         worst_reference_stats["p_std"],
+        quartile=_eff_stab_q,
     )
     dynamic_m2_std_cap = _compute_dynamic_std_upper_bound(
         baseline_reference_stats["s_std"],
         worst_reference_stats["s_std"],
+        quartile=_eff_stab_q,
     )
 
     if log_fn is not None:
         log_fn("")
         log_fn("Stage-2 baseline and dynamic constraints:")
-        log_fn(f"  split={reward_reference_split}  quartile={NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE}")
+        log_fn(f"  split={reward_reference_split}  limit_quartile={_eff_limit_q}  stability_quartile={_eff_stab_q}")
         log_fn(
             "  low-risk baseline: "
             + evaluator._fmt_metrics(
@@ -801,7 +809,10 @@ class Stage1GeneticSearcher:
     def run(self) -> Dict[str, object]:
         self._cache.clear()
 
-        self.context = build_stage1_context(self.evaluator, log_fn=self._log)
+        self.context = build_stage1_context(
+            self.evaluator, log_fn=self._log,
+            constraint_ratio=getattr(self.evaluator, "error_threshold", None),
+        )
         self._log("")
         self._log(
             "Stage-1 Genetic Search follows COINN: score-guided random selection and "
@@ -1350,6 +1361,9 @@ class Stage2NoiseGeneticSearcher:
             "history": history,
             "population": pop_serialized,
             "rng_state": self.rng.bit_generator.state,
+            # 记录训练时使用的 Stage-1 配置，用于续训练时的一致性校验
+            "fixed_gelu": np.asarray(self.fixed_gelu, dtype=int).tolist(),
+            "fixed_softmax": np.asarray(self.fixed_softmax, dtype=int).tolist(),
         }
         _save_ga_checkpoint(self.checkpoint_path, data)
         self._log(f"[Stage2] Checkpoint saved at generation {generation} → {self.checkpoint_path}")
@@ -1362,6 +1376,8 @@ class Stage2NoiseGeneticSearcher:
             self.fixed_gelu,
             self.fixed_softmax,
             log_fn=self._log,
+            limit_quartile=getattr(self.evaluator, "stage2_limit_quartile", None),
+            stability_quartile=getattr(self.evaluator, "stage2_stability_quartile", None),
         )
         self._log("")
         self._log(
@@ -1440,6 +1456,22 @@ class Stage2NoiseGeneticSearcher:
                 f"[Stage2] Resumed from checkpoint: generation={resume_start_generation - 1}, "
                 f"incumbent_score={incumbent['score']:.6f}, stagnation={stagnation}"
             )
+            # Stage-1 配置一致性校验
+            _ckpt_gelu = ckpt.get("fixed_gelu")
+            _ckpt_softmax = ckpt.get("fixed_softmax")
+            if _ckpt_gelu is not None and _ckpt_softmax is not None:
+                _cur_gelu_list = np.asarray(self.fixed_gelu, dtype=int).tolist()
+                _cur_softmax_list = np.asarray(self.fixed_softmax, dtype=int).tolist()
+                if _ckpt_gelu != _cur_gelu_list or _ckpt_softmax != _cur_softmax_list:
+                    self._log(
+                        f"  ⚠⚠ [Stage-1 配置不一致警告] checkpoint 中的 Stage-1 配置与当前不同！\n"
+                        f"     checkpoint GELU   : {_ckpt_gelu}\n"
+                        f"     当前 GELU          : {_cur_gelu_list}\n"
+                        f"     checkpoint Softmax : {_ckpt_softmax}\n"
+                        f"     当前 Softmax        : {_cur_softmax_list}\n"
+                        f"     Stage-2 noise 搜索是在旧 Stage-1 配置下训练的，与当前配置不匹配。\n"
+                        f"     建议：使用 --fresh-start 重新训练，或确保 Stage-1 配置在续训练间保持一致。"
+                    )
 
         # ---- Install graceful stop handler ----
         reset_graceful_stop_state()
@@ -1659,7 +1691,8 @@ class Stage2NoiseGeneticSearcher:
             },
             "worst_case_noise_config": _clone_noise_config(self.context.worst_case_noise_config),
             "limit_computation_method": "dynamic_quartile",
-            "limit_quartile": float(NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE),
+            "limit_quartile": float(getattr(self.evaluator, "stage2_limit_quartile", NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE)),
+            "stability_quartile": float(getattr(self.evaluator, "stage2_stability_quartile", NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE)),
             "search_limits": {k: float(v) for k, v in self.context.search_limits.items()},
             "status": status,
             "best_noise_config": (

@@ -564,6 +564,8 @@ def save_noise_rl_checkpoint(
     ev_runtime_state,
     noise_prev_avg_reward,
     noise_warnings,
+    fixed_gelu=None,
+    fixed_softmax=None,
 ):
     """保存 Stage-2 噪声 RL 的完整训练状态（checkpoint）。"""
     checkpoint = {
@@ -590,6 +592,11 @@ def save_noise_rl_checkpoint(
         "noise_prev_avg_reward": noise_prev_avg_reward,
         "noise_warnings": _serialize_numpy(noise_warnings),
     }
+    # 记录训练时使用的 Stage-1 配置，用于续训练时的一致性校验
+    if fixed_gelu is not None:
+        checkpoint["fixed_gelu"] = np.asarray(fixed_gelu, dtype=int).tolist()
+    if fixed_softmax is not None:
+        checkpoint["fixed_softmax"] = np.asarray(fixed_softmax, dtype=int).tolist()
     os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
     torch.save(checkpoint, path)
 
@@ -1847,14 +1854,16 @@ class NoiseRLModuleV2:
         worst_s = worst_reference_stats["s_mean"]
 
         # \u52a8\u6001\u7ea6\u675f
-        search_limits = _compute_dynamic_limits(base_loss, base_p, base_s, worst_loss, worst_p, worst_s)
+        _s2_limit_q = getattr(ev, "stage2_limit_quartile", NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE)
+        _s2_stab_q = getattr(ev, "stage2_stability_quartile", NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE)
+        search_limits = _compute_dynamic_limits(base_loss, base_p, base_s, worst_loss, worst_p, worst_s, quartile=_s2_limit_q)
         limit_loss = float(search_limits["loss"])
         limit_p = float(search_limits["metric1"])
         limit_s = float(search_limits["metric2"])
 
         _noise_block_title(
             ev.log,
-            f"\u52a8\u6001\u7ea6\u675f\uff08Dynamic constraints, quartile={NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE} on {reward_reference_split}\uff09",
+            f"\u52a8\u6001\u7ea6\u675f\uff08Dynamic constraints, limit_quartile={_s2_limit_q}, stability_quartile={_s2_stab_q} on {reward_reference_split}\uff09",
         )
         ev.log(f"  \u25b8 \u57fa\u7ebf\uff08baseline\uff09: {ev._fmt_metrics(base_loss, base_p, base_s)}")
         ev.log(f"  \u25b8 \u6700\u574f\uff08worst\uff09:   {ev._fmt_metrics(worst_loss, worst_p, worst_s)}")
@@ -1868,13 +1877,13 @@ class NoiseRLModuleV2:
         worst_m1_std = float(worst_reference_stats["p_std"])
         worst_m2_std = float(worst_reference_stats["s_std"])
         dynamic_loss_std_cap = _compute_dynamic_std_upper_bound(
-            baseline_loss_std, worst_loss_std,
+            baseline_loss_std, worst_loss_std, quartile=_s2_stab_q,
         )
         dynamic_m1_std_cap = _compute_dynamic_std_upper_bound(
-            baseline_m1_std, worst_m1_std,
+            baseline_m1_std, worst_m1_std, quartile=_s2_stab_q,
         )
         dynamic_m2_std_cap = _compute_dynamic_std_upper_bound(
-            baseline_m2_std, worst_m2_std,
+            baseline_m2_std, worst_m2_std, quartile=_s2_stab_q,
         )
 
         _noise_block_title(ev.log, "\u8bad\u7ec3\u8d85\u53c2\u4e0e\u8bbe\u5b9a\u6458\u8981\uff08Training hyperparameters V2\uff09")
@@ -1893,7 +1902,7 @@ class NoiseRLModuleV2:
         ev.log(
             f"  \u25b8 \u65b9\u5dee\u60e9\u7f5a: lambda={NOISE_STAGE_STABILITY_LAMBDA}  "
             f"\u00b7 \u52a8\u6001 loss_std \u4e0a\u754c={dynamic_loss_std_cap:.6f}  "
-            f"(baseline {baseline_loss_std:.6f} \u2192 worst {worst_loss_std:.6f}, q={NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE})"
+            f"(baseline {baseline_loss_std:.6f} \u2192 worst {worst_loss_std:.6f}, stability_q={_s2_stab_q})"
         )
         ev.log(
             f"  \u25b8 \u52a8\u6001 m1_std \u4e0a\u754c={dynamic_m1_std_cap:.6f}  "
@@ -2226,6 +2235,29 @@ class NoiseRLModuleV2:
                 ev.return_normalizer.mean = float(_ev_rt["return_normalizer_mean"])
                 ev.return_normalizer.var = float(_ev_rt["return_normalizer_var"])
                 ev.return_normalizer.count = float(_ev_rt["return_normalizer_count"])
+            # Stage-1 配置一致性校验：检查 checkpoint 中记录的 fixed_gelu/fixed_softmax
+            # 是否与本次训练传入的一致。不一致说明 Stage-1 搜索结果在两次运行间发生了变化，
+            # 此时 Stage-2 policy 优化目标与实际 Stage-1 配置不匹配。
+            _ckpt_gelu = ckpt.get("fixed_gelu")
+            _ckpt_softmax = ckpt.get("fixed_softmax")
+            if _ckpt_gelu is not None and _ckpt_softmax is not None:
+                _cur_gelu_list = np.asarray(fixed_gelu, dtype=int).tolist()
+                _cur_softmax_list = np.asarray(fixed_softmax, dtype=int).tolist()
+                if _ckpt_gelu != _cur_gelu_list or _ckpt_softmax != _cur_softmax_list:
+                    ev.log(
+                        f"  ⚠⚠ [Stage-1 配置不一致警告] checkpoint 中的 Stage-1 配置与当前不同！\n"
+                        f"     checkpoint GELU   : {_ckpt_gelu}\n"
+                        f"     当前 GELU          : {_cur_gelu_list}\n"
+                        f"     checkpoint Softmax : {_ckpt_softmax}\n"
+                        f"     当前 Softmax        : {_cur_softmax_list}\n"
+                        f"     Stage-2 noise policy 是在旧 Stage-1 配置下训练的，与当前配置不匹配。\n"
+                        f"     建议：使用 --fresh-start 重新训练，或确保 Stage-1 配置在续训练间保持一致。"
+                    )
+            elif _ckpt_gelu is None:
+                ev.log(
+                    f"  [信息] checkpoint 未记录 Stage-1 配置（旧版 checkpoint），跳过一致性校验。"
+                )
+
             ev.log(
                 f"  ▸ 已恢复至回合 {resume_start_episode}，"
                 f"将从回合 {resume_start_episode + 1} 继续训练至 {stage2_total_episodes}"
@@ -2620,6 +2652,8 @@ class NoiseRLModuleV2:
                         },
                         noise_prev_avg_reward=noise_prev_avg_reward[0],
                         noise_warnings=noise_warnings,
+                        fixed_gelu=fixed_gelu,
+                        fixed_softmax=fixed_softmax,
                     )
                     ev.log(
                         f"  [checkpoint] 已保存 · PPO 更新 #{noise_ppo_update_count}, "
@@ -2665,11 +2699,14 @@ class NoiseRLModuleV2:
                         },
                         noise_prev_avg_reward=noise_prev_avg_reward[0],
                         noise_warnings=noise_warnings,
+                        fixed_gelu=fixed_gelu,
+                        fixed_softmax=fixed_softmax,
                     )
                     consume_stop_flag_file(noise_stop_flag_path)
                     ev.log(
                         f"  [优雅停止] checkpoint 已写入 → {noise_rl_checkpoint_path}\n"
-                        f"  下次启动请使用 --resume-from 指向本 run 目录以严丝合缝续训。"
+                        f"  下次用相同参数直接运行即可自动续训练（rl/ga 持久化目录），"
+                        f"或使用 --resume-from 指向本 run 目录（general-rl）。"
                     )
                     uninstall_graceful_stop_handler()
                     raise SystemExit(0)
@@ -2788,6 +2825,8 @@ class NoiseRLModuleV2:
                 },
                 noise_prev_avg_reward=noise_prev_avg_reward[0],
                 noise_warnings=noise_warnings,
+                fixed_gelu=fixed_gelu,
+                fixed_softmax=fixed_softmax,
             )
             ev.log(f"  [完成] 最终 checkpoint 已保存 → {noise_rl_checkpoint_path}")
 
@@ -2882,7 +2921,8 @@ class NoiseRLModuleV2:
             "worst_reference_stats": _copy_repeat_summary(worst_reference_stats),
             "worst_case_noise_config": {k: v.copy() for k, v in worst_case_noise_config.items()},
             "limit_computation_method": "dynamic_quartile",
-            "limit_quartile": float(NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE),
+            "limit_quartile": float(_s2_limit_q),
+            "stability_quartile": float(_s2_stab_q),
             "search_limits": {k: float(v) for k, v in search_limits.items()},
             "status": status,
             "best_noise_config": _clone_candidate(selected_config),

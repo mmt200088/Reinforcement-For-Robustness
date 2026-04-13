@@ -150,6 +150,10 @@ def train(
         skip_stage1_final_eval: bool = False,
         skip_noise_final_eval: bool = False,
         resume_run_dir: str = "",
+        # accuracy constraint params
+        stage1_accuracy_tolerance: float = None,
+        stage2_limit_quartile: float = None,
+        stage2_stability_quartile: float = None,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
         group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -605,7 +609,10 @@ def train(
             skip_noise_final_eval=skip_noise_final_eval,
             resume_run_dir=resume_run_dir,
             data_path=data_path,
-            test_data_mm=val_data_mm
+            test_data_mm=val_data_mm,
+            stage1_accuracy_tolerance=stage1_accuracy_tolerance,
+            stage2_limit_quartile=stage2_limit_quartile,
+            stage2_stability_quartile=stage2_stability_quartile,
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

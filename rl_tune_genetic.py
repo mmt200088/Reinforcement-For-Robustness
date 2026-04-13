@@ -208,6 +208,10 @@ def train(
         skip_stage1_final_eval: bool = False,
         skip_noise_final_eval: bool = False,
         resume_run_dir: str = "",
+        # accuracy constraint params
+        stage1_accuracy_tolerance: float = None,
+        stage2_limit_quartile: float = None,
+        stage2_stability_quartile: float = None,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
         group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -729,6 +733,9 @@ def train(
             data_path=data_path,
             test_data_mm=val_data_mm,
             search_algorithm="ga",
+            stage1_accuracy_tolerance=stage1_accuracy_tolerance,
+            stage2_limit_quartile=stage2_limit_quartile,
+            stage2_stability_quartile=stage2_stability_quartile,
         )
         importance_evaluator.stage1_ga_generations = int(stage1_ga_generations)
         importance_evaluator.stage2_ga_generations = int(stage2_ga_generations)
@@ -776,6 +783,7 @@ def train(
                 importance_evaluator,
                 log_fn=importance_evaluator.log,
                 include_distribution=False,
+                constraint_ratio=getattr(importance_evaluator, "error_threshold", None),
             )
 
         stage1_final_eval_result = None

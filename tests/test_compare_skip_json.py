@@ -92,7 +92,7 @@ class CompareSkipJsonTests(unittest.TestCase):
             fake_eval_module = SimpleNamespace(FinalEvaluationModule=FakeRunner)
             fake_ga_module = SimpleNamespace(
                 GeneticFinalEvaluationModule=FakeRunner,
-                build_stage1_context=lambda evaluator, log_fn=None, include_distribution=False: fake_context,
+                build_stage1_context=lambda evaluator, log_fn=None, include_distribution=False, **kwargs: fake_context,
             )
             side_config = compare_runner.CompareSideConfig(
                 skip_stage1_search=True,
@@ -220,8 +220,8 @@ class CompareSkipJsonTests(unittest.TestCase):
 
             fake_ga_module = SimpleNamespace(
                 GeneticNoiseFinalEvaluationModule=FakeNoiseRunner,
-                build_stage1_context=lambda evaluator, log_fn=None, include_distribution=False: None,
-                build_stage2_context=lambda evaluator, fixed_gelu, fixed_softmax, log_fn=None: fake_context,
+                build_stage1_context=lambda evaluator, log_fn=None, include_distribution=False, **kwargs: None,
+                build_stage2_context=lambda evaluator, fixed_gelu, fixed_softmax, log_fn=None, **kwargs: fake_context,
             )
             fake_noise_module = SimpleNamespace(NoiseFinalEvaluationModule=FakeNoiseRunner)
             side_config = compare_runner.CompareSideConfig(
@@ -321,8 +321,8 @@ class CompareSkipJsonTests(unittest.TestCase):
 
             fake_ga_module = SimpleNamespace(
                 GeneticNoiseFinalEvaluationModule=FakeNoiseRunner,
-                build_stage1_context=lambda evaluator, log_fn=None, include_distribution=False: None,
-                build_stage2_context=lambda evaluator, fixed_gelu, fixed_softmax, log_fn=None: fake_context,
+                build_stage1_context=lambda evaluator, log_fn=None, include_distribution=False, **kwargs: None,
+                build_stage2_context=lambda evaluator, fixed_gelu, fixed_softmax, log_fn=None, **kwargs: fake_context,
             )
             fake_noise_module = SimpleNamespace(NoiseFinalEvaluationModule=FakeNoiseRunner)
             side_config = compare_runner.CompareSideConfig(
@@ -461,8 +461,8 @@ class CompareSkipJsonTests(unittest.TestCase):
 
             fake_ga_module = SimpleNamespace(
                 GeneticNoiseFinalEvaluationModule=FakeNoiseRunner,
-                build_stage1_context=lambda evaluator, log_fn=None, include_distribution=False: None,
-                build_stage2_context=lambda evaluator, fixed_gelu, fixed_softmax, log_fn=None: fake_context,
+                build_stage1_context=lambda evaluator, log_fn=None, include_distribution=False, **kwargs: None,
+                build_stage2_context=lambda evaluator, fixed_gelu, fixed_softmax, log_fn=None, **kwargs: fake_context,
             )
             fake_noise_module = SimpleNamespace(NoiseFinalEvaluationModule=FakeNoiseRunner)
             side_config = compare_runner.CompareSideConfig(

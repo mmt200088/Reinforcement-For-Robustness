@@ -1822,11 +1822,26 @@ class NoiseFinalEvaluationModule:
         config_map.pop("_comment", None)
 
         total_layers = int(getattr(self.evaluator, "total_layers", 12) or 12)
-        variant_key = "bert-large" if total_layers >= 24 else "bert-base"
+        explicit_variant = getattr(self.evaluator, "model_type", None)
+        if explicit_variant in ("bert-base", "bert-large", "gpt-2"):
+            variant_key = explicit_variant
+        else:
+            model = getattr(self.evaluator, "model", None)
+            is_gpt2 = bool(
+                model is not None
+                and getattr(model, "transformer", None) is not None
+                and hasattr(model.transformer, "h")
+            )
+            if is_gpt2:
+                variant_key = "gpt-2"
+            elif total_layers >= 24:
+                variant_key = "bert-large"
+            else:
+                variant_key = "bert-base"
 
         if variant_key in config_map and isinstance(config_map[variant_key], dict):
             section = config_map[variant_key]
-        elif "bert-base" in config_map or "bert-large" in config_map:
+        elif any(key in config_map for key in ("bert-base", "bert-large", "gpt-2")):
             raise KeyError(
                 f"模型变体 '{variant_key}' (total_layers={total_layers}) "
                 f"在噪声配置文件 '{self.config_path}' 中未找到。"

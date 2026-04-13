@@ -2339,7 +2339,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                  skip_stage1_final_eval=False,
                  skip_noise_final_eval=False,
                  resume_run_dir='',
-                 search_algorithm=None):
+                 search_algorithm=None,
+                 stage1_accuracy_tolerance=None,
+                 stage2_limit_quartile=None,
+                 stage2_stability_quartile=None):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -2479,11 +2482,16 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.ppo_lr_initial = self.stage1_ppo_lr_initial
         self.ppo_lr_mode = self.stage1_ppo_lr_mode
         
-        # --- 用户阈值配置（统一采用百分比形式；当前为 0.5%） ---
+        # --- 用户阈值配置（统一采用百分比形式；默认 0.5%） ---
         # 保留既有字段名以兼容旧调用方，但这里的 error_threshold
         # 现在表示 loss 允许上浮的比例，而非绝对增量。
-        self.error_threshold = 0.005
-        self.correlation_drop_ratio = 0.005
+        # 可通过 stage1_accuracy_tolerance 参数外部传入。
+        _s1_tol = float(stage1_accuracy_tolerance) if stage1_accuracy_tolerance is not None else 0.005
+        self.error_threshold = _s1_tol
+        self.correlation_drop_ratio = _s1_tol
+        # Stage-2 动态约束的 quartile 参数（baseline → worst 插值比例）
+        self.stage2_limit_quartile = float(stage2_limit_quartile) if stage2_limit_quartile is not None else 0.2
+        self.stage2_stability_quartile = float(stage2_stability_quartile) if stage2_stability_quartile is not None else 0.2
         
         self.search_algorithm = search_algorithm or "rl"
         output_layout = resolve_run_output_layout(run_output_dir, search_algorithm=self.search_algorithm)
@@ -4161,6 +4169,31 @@ class LayerImportanceEvaluator(TrainerCallback):
         return module.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source,
                           resume_checkpoint_path=resume_checkpoint_path)
 
+    def save_best_policies_snapshot(self):
+        """将搜索到的最佳 policy 汇总到 best_policy/ 目录，便于通用 RL 等下游使用。"""
+        import shutil
+        bp_dir = os.path.join(self.run_output_dir, "best_policy")
+        os.makedirs(bp_dir, exist_ok=True)
+        _candidates = [
+            (os.path.join(os.path.dirname(self.step_info_file), "stage1_policy.pt"), "stage1_policy.pt"),
+            (os.path.join(self.noise_stage_progress_dir, "stage2_noise_policy.pt"), "stage2_noise_policy.pt"),
+        ]
+        for src, dst_name in _candidates:
+            if os.path.isfile(src):
+                shutil.copy2(src, os.path.join(bp_dir, dst_name))
+                self.log(f"  [best_policy] 已复制 {src} → {os.path.join(bp_dir, dst_name)}")
+        # 写出约束参数元信息
+        import json as _json
+        meta = {
+            "stage1_accuracy_tolerance": float(self.error_threshold),
+            "stage2_limit_quartile": float(self.stage2_limit_quartile),
+            "stage2_stability_quartile": float(self.stage2_stability_quartile),
+            "dataset": str(getattr(self, "data_path", "")),
+            "search_algorithm": str(getattr(self, "search_algorithm", "")),
+        }
+        with open(os.path.join(bp_dir, "constraint_metadata.json"), "w") as _f:
+            _json.dump(meta, _f, indent=2)
+
     def run_noise_final_eval_stage(self, fixed_gelu, fixed_softmax, noise_stage_result=None):
         from noise_final_evaluation_module import NoiseFinalEvaluationModule
         import numpy as np
@@ -5561,7 +5594,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                     consume_stop_flag_file(stage1_stop_flag_path)
                     self.log(
                         f"  [优雅停止] checkpoint 已写入 → {stage1_checkpoint_path}\n"
-                        f"  下次启动请使用 --resume-run-dir 指向本 run 目录以续训。"
+                        f"  下次用相同参数直接运行即可自动续训练（rl/ga 持久化目录），"
+                        f"或使用 --resume-from 指向本 run 目录（general-rl）。"
                     )
                     uninstall_graceful_stop_handler()
                     raise SystemExit(0)
@@ -6362,4 +6396,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.last_noise_eval_result = noise_eval_result
 
         self.log("\n配置评估完成（Configuration evaluation finished）。")
+        # 汇总最佳 policy 到 best_policy/ 目录
+        try:
+            self.save_best_policies_snapshot()
+        except Exception as _bp_err:
+            self.log(f"  [best_policy][警告] 汇总失败：{_bp_err}")
         self.apply_configuration(opt_gelu, opt_softmax)

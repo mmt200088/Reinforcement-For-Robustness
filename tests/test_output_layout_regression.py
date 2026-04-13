@@ -7,6 +7,40 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 
+def _write_compare_direct_jsons(root: Path) -> dict:
+    stage1_template = {
+        "bert-base": {
+            "mrpc": {
+                "gelu": [4] * 12,
+                "softmax": [6] * 12,
+            }
+        }
+    }
+    stage2_template = {
+        "bert-base": {
+            "mrpc": {
+                "x": [20] * 12,
+                "wq": [20] * 12,
+                "wk": [20] * 12,
+                "wv": [20] * 12,
+                "wo": [20] * 12,
+                "wffn1": [20] * 12,
+                "wffn2": [20] * 12,
+            }
+        }
+    }
+    paths = {
+        "rl_stage1": root / "glue_configs_best_ppo.json",
+        "rl_stage2": root / "glue_noise_configs_best_ppo.json",
+        "ga_stage1": root / "glue_configs_best_genetic.json",
+        "ga_stage2": root / "glue_noise_configs_best_genetic.json",
+    }
+    for key, path in paths.items():
+        payload = stage1_template if "stage1" in key else stage2_template
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return paths
+
+
 class OutputLayoutRegressionTests(unittest.TestCase):
     def test_resolve_run_output_layout_is_lazy(self):
         try:
@@ -113,6 +147,7 @@ class OutputLayoutRegressionTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parents[1]
         with TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir) / "compare_dry_run"
+            json_paths = _write_compare_direct_jsons(Path(tmpdir))
             command = [
                 sys.executable,
                 "rl_ga_compare_runner.py",
@@ -124,14 +159,18 @@ class OutputLayoutRegressionTests(unittest.TestCase):
                 "mrpc",
                 "--output-dir",
                 str(output_dir),
-                "--stage1-search-episodes",
-                "170",
-                "--stage2-search-episodes",
-                "170",
-                "--stage1-search-generations",
-                "6",
-                "--stage2-search-generations",
-                "5",
+                "--model-type",
+                "bert-base",
+                "--compare-config-mode",
+                "direct",
+                "--rl-compare-stage1-json",
+                str(json_paths["rl_stage1"]),
+                "--rl-compare-stage2-json",
+                str(json_paths["rl_stage2"]),
+                "--ga-compare-stage1-json",
+                str(json_paths["ga_stage1"]),
+                "--ga-compare-stage2-json",
+                str(json_paths["ga_stage2"]),
                 "--stage2-compare-repeats",
                 "7",
                 "--dry-run",
@@ -155,16 +194,17 @@ class OutputLayoutRegressionTests(unittest.TestCase):
             self.assertFalse((output_dir / "reports").exists())
             self.assertFalse((output_dir / "children").exists())
             metadata = json.loads((output_dir / "meta" / "compare_metadata.json").read_text(encoding="utf-8"))
-            self.assertEqual(metadata["rl_stage1_search_episodes"], 170)
-            self.assertEqual(metadata["ga_stage1_search_generations"], 6)
+            self.assertEqual(metadata["compare_config_mode"], "direct")
+            self.assertEqual(metadata["model_type"], "bert-base")
             self.assertEqual(metadata["stage2_compare_repeats"], 7)
-            self.assertEqual(metadata["rl_side_config"]["final_eval_config_source"], "search")
-            self.assertEqual(metadata["ga_side_config"]["noise_eval_config_source"], "search")
+            self.assertEqual(metadata["rl_side"]["stage1_json_path"], str(json_paths["rl_stage1"]))
+            self.assertEqual(metadata["ga_side"]["stage2_json_path"], str(json_paths["ga_stage2"]))
 
     def test_compare_runner_deprecated_noise_eval_repeat_alias(self):
         repo_root = Path(__file__).resolve().parents[1]
         with TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir) / "compare_dry_run_alias"
+            json_paths = _write_compare_direct_jsons(Path(tmpdir))
             command = [
                 sys.executable,
                 "rl_ga_compare_runner.py",
@@ -176,14 +216,18 @@ class OutputLayoutRegressionTests(unittest.TestCase):
                 "mrpc",
                 "--output-dir",
                 str(output_dir),
-                "--stage1-search-episodes",
-                "170",
-                "--stage2-search-episodes",
-                "170",
-                "--stage1-search-generations",
-                "6",
-                "--stage2-search-generations",
-                "5",
+                "--model-type",
+                "bert-base",
+                "--compare-config-mode",
+                "direct",
+                "--rl-compare-stage1-json",
+                str(json_paths["rl_stage1"]),
+                "--rl-compare-stage2-json",
+                str(json_paths["rl_stage2"]),
+                "--ga-compare-stage1-json",
+                str(json_paths["ga_stage1"]),
+                "--ga-compare-stage2-json",
+                str(json_paths["ga_stage2"]),
                 "--noise-eval-repeat",
                 "9",
                 "--dry-run",
@@ -214,6 +258,7 @@ class OutputLayoutRegressionTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parents[1]
         with TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir) / "compare_dry_run_conflict"
+            json_paths = _write_compare_direct_jsons(Path(tmpdir))
             command = [
                 sys.executable,
                 "rl_ga_compare_runner.py",
@@ -225,14 +270,18 @@ class OutputLayoutRegressionTests(unittest.TestCase):
                 "mrpc",
                 "--output-dir",
                 str(output_dir),
-                "--stage1-search-episodes",
-                "170",
-                "--stage2-search-episodes",
-                "170",
-                "--stage1-search-generations",
-                "6",
-                "--stage2-search-generations",
-                "5",
+                "--model-type",
+                "bert-base",
+                "--compare-config-mode",
+                "direct",
+                "--rl-compare-stage1-json",
+                str(json_paths["rl_stage1"]),
+                "--rl-compare-stage2-json",
+                str(json_paths["rl_stage2"]),
+                "--ga-compare-stage1-json",
+                str(json_paths["ga_stage1"]),
+                "--ga-compare-stage2-json",
+                str(json_paths["ga_stage2"]),
                 "--noise-eval-repeat",
                 "9",
                 "--stage2-compare-repeats",
