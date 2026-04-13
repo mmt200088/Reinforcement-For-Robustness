@@ -86,8 +86,10 @@ GA / 对比实验中的 GA：
   2. 参数 --model 已废弃，请改用 --dataset。
   3. 以下旧参数已从命令行入口移除，因为当前流程不会实际生效：
      lora_r、lora_alpha、degree
-  4. --search-algorithm=rl-and-ga-compare 现在直接比较已有 JSON 或持久化目录结果，
+ 4. --search-algorithm=rl-and-ga-compare 现在直接比较已有 JSON 或持久化目录结果，
      不再重新启动完整 RL / GA 训练。
+  5. compare 的 persistent 模式会在启动前检查 RL / GA 目标持久化目录与 metadata.json，
+     如果找不到会直接报错并打印对应路径。
 
 示例：
   bash llama_7B_LayerImportance.sh --dataset mrpc
@@ -537,6 +539,14 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
       is_pos_num "$_cmp_val" || err "持久化目录对比的约束参数必须是正数，当前值：$_cmp_val"
       awk -v x="$_cmp_val" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "持久化目录对比的约束参数必须 < 1，当前值：$_cmp_val"
     done
+    RL_COMPARE_CONSTRAINT_SLUG="s1t${RL_COMPARE_STAGE1_ACCURACY_TOLERANCE}_s2q${RL_COMPARE_STAGE2_LIMIT_QUARTILE}_s2sq${RL_COMPARE_STAGE2_STABILITY_QUARTILE}"
+    GA_COMPARE_CONSTRAINT_SLUG="s1t${GA_COMPARE_STAGE1_ACCURACY_TOLERANCE}_s2q${GA_COMPARE_STAGE2_LIMIT_QUARTILE}_s2sq${GA_COMPARE_STAGE2_STABILITY_QUARTILE}"
+    RL_COMPARE_PERSISTENT_DIR="${COMPARE_PERSISTENT_ROOT}/rl/${MODEL_TYPE}/${DATASET}/${RL_COMPARE_CONSTRAINT_SLUG}"
+    GA_COMPARE_PERSISTENT_DIR="${COMPARE_PERSISTENT_ROOT}/ga/${MODEL_TYPE}/${DATASET}/${GA_COMPARE_CONSTRAINT_SLUG}"
+    [ -d "$RL_COMPARE_PERSISTENT_DIR" ] || err "persistent 模式未找到 RL 持久化目录：$RL_COMPARE_PERSISTENT_DIR。请先运行对应 RL 实验，或检查数据集 / 模型 / 约束参数是否一致。"
+    [ -f "${RL_COMPARE_PERSISTENT_DIR}/metadata.json" ] || err "persistent 模式找到 RL 目录但缺少 metadata.json：${RL_COMPARE_PERSISTENT_DIR}/metadata.json"
+    [ -d "$GA_COMPARE_PERSISTENT_DIR" ] || err "persistent 模式未找到 GA 持久化目录：$GA_COMPARE_PERSISTENT_DIR。请先运行对应 GA 实验，或检查数据集 / 模型 / 约束参数是否一致。"
+    [ -f "${GA_COMPARE_PERSISTENT_DIR}/metadata.json" ] || err "persistent 模式找到 GA 目录但缺少 metadata.json：${GA_COMPARE_PERSISTENT_DIR}/metadata.json"
   fi
 else
   { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "当前搜索算法不是 general-rl，请不要使用 --general-rl-* 参数。"
@@ -822,6 +832,8 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
     echo "  持久化目录根路径：$COMPARE_PERSISTENT_ROOT"
     echo "  RL 约束：s1_tol=$RL_COMPARE_STAGE1_ACCURACY_TOLERANCE, s2_limit_q=$RL_COMPARE_STAGE2_LIMIT_QUARTILE, s2_stability_q=$RL_COMPARE_STAGE2_STABILITY_QUARTILE"
     echo "  GA 约束：s1_tol=$GA_COMPARE_STAGE1_ACCURACY_TOLERANCE, s2_limit_q=$GA_COMPARE_STAGE2_LIMIT_QUARTILE, s2_stability_q=$GA_COMPARE_STAGE2_STABILITY_QUARTILE"
+    echo "  RL 持久化目录：$RL_COMPARE_PERSISTENT_DIR"
+    echo "  GA 持久化目录：$GA_COMPARE_PERSISTENT_DIR"
   fi
   echo "  对比结果目录：${RUN_ROOT}/reports"
   echo "  元信息目录：${RUN_ROOT}/meta"

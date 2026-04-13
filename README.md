@@ -55,7 +55,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--stage2-search-lr FLOAT` | `rl` | `1e-4` | 普通 RL 的 Stage-2 学习率 |
 | **对比实验专用** | | | |
 | `--compare-config-mode direct/persistent` | `rl-and-ga-compare` | `direct` | 对比配置来源：`direct`=显式指定 4 个 JSON；`persistent`=按数据集/模型/约束从持久化目录自动寻找 |
-| `--compare-persistent-root PATH` | `rl-and-ga-compare` | `rl_results/persistent` | `persistent` 模式下的持久化目录根路径 |
+| `--compare-persistent-root PATH` | `rl-and-ga-compare` | `rl_results/persistent` | `persistent` 模式下的持久化目录根路径；启动前会检查推导出的 RL / GA 目标目录是否存在 |
 | `--rl-compare-stage1-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 RL 的 Stage-1 JSON；可传配置模板，也可传最终评估结果 JSON |
 | `--rl-compare-stage2-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 RL 的 Stage-2 JSON；可传配置模板，也可传最终评估结果 JSON |
 | `--ga-compare-stage1-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 GA 的 Stage-1 JSON；可传配置模板，也可传最终评估结果 JSON |
@@ -101,6 +101,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
   - `direct` 模式必须同时提供 4 个 JSON：RL/GA 各自的 Stage-1 与 Stage-2。
   - `persistent` 模式必须提供 `--compare-persistent-root`；RL 与 GA 可以使用不同约束参数，但模型类型与数据集必须一致。
   - `persistent` 模式下，如未显式提供 `--rl/ga-compare-*` 约束参数，会分别继承全局的 `--stage1-accuracy-tolerance`、`--stage2-limit-quartile`、`--stage2-stability-quartile`。
+  - `persistent` 模式启动前会先推导出 RL / GA 各自的目标持久化目录；如果目录或其中的 `metadata.json` 不存在，会直接报错并打印具体路径。
   - `rl-and-ga-compare` 模式下，Stage-2 多次对比只看 `--stage2-compare-repeats`。
   - `--noise-eval-repeat` 不再作为 compare 模式的正式参数；仅保留兼容别名行为。若旧命令只传了它而没传 `--stage2-compare-repeats`，系统会临时按 `--stage2-compare-repeats` 处理并给出警告。
   - 对比实验始终保留 Stage-1 / Stage-2 最终评估，因此依然不支持 `--skip-stage1-final-eval` 与 `--skip-noise-final-eval`。
@@ -223,6 +224,13 @@ bash llama_7B_LayerImportance.sh \
 
 方式 2：`persistent`，只给数据集、模型和约束，脚本自动去持久化目录定位对应的 RL / GA 结果。
 
+启动前，launcher 会先根据 `(algorithm, model_type, dataset, 约束参数)` 推导出 RL / GA 两侧的目标持久化目录，并检查：
+
+- 目录是否存在
+- 目录下的 `metadata.json` 是否存在
+
+任一检查失败都会直接报错并打印具体路径，不会等到 compare runner 启动后再失败。
+
 ```bash
 # RL 与 GA 使用同一组约束（继承全局约束参数）
 bash llama_7B_LayerImportance.sh \
@@ -258,6 +266,7 @@ bash llama_7B_LayerImportance.sh \
 
 - `direct` 模式下，4 个 JSON 都会做算法家族检查；如果是最终结果 JSON，还会检查其中记录的数据集和模型层数。
 - `persistent` 模式下，RL / GA 两侧可以使用不同约束参数，但脚本会强制要求两侧的 `dataset` 与 `model_type` 一致，否则直接报错。
+- `persistent` 模式下，如果推导出的 RL / GA 持久化目录不存在，或目录中缺少 `metadata.json`，launcher 会立即报错并打印缺失路径，提示你先运行对应实验或检查约束参数。
 - `Stage-2` 对比不是“只比较噪声配置”。最终评估会固定各自 Stage-1 的 GELU/Softmax 配置，再叠加各自 Stage-2 的噪声配置后比较。
 
 该模式会在当前 compare run 根目录下生成：
