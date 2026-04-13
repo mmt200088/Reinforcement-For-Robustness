@@ -656,6 +656,7 @@ def multi_task_train_stage1(
     device="cuda",
     resume_checkpoint_path=None,
     accuracy_tolerances=None,
+    accuracy_tolerance_range=None,
 ):
     """多任务 round-robin 训练 Stage-1 通用策略 + 通用 Critic。
 
@@ -670,6 +671,9 @@ def multi_task_train_stage1(
         accuracy_tolerances: list[float] or None, 准确度容忍比例列表。
             当提供时, 每轮从中随机采样一个 tolerance, 动态更新 task_context
             和 constraint_limits, 使策略学会泛化到不同准确度要求。
+        accuracy_tolerance_range: tuple(float, float) or None, 连续准确度容忍范围。
+            如 (0.005, 0.02) 表示从 [0.5%, 2%] 连续均匀采样。
+            优先级高于 accuracy_tolerances（两者同时提供时使用 range）。
 
     Returns:
         dict 包含训练结果及保存路径
@@ -759,13 +763,21 @@ def multi_task_train_stage1(
     )
 
     # ---- 准确度容忍泛化 ----
-    _use_tol_gen = accuracy_tolerances is not None and len(accuracy_tolerances) > 1
+    _use_tol_range = (accuracy_tolerance_range is not None
+                      and len(accuracy_tolerance_range) == 2
+                      and accuracy_tolerance_range[0] < accuracy_tolerance_range[1])
+    _use_tol_gen = (not _use_tol_range
+                    and accuracy_tolerances is not None
+                    and len(accuracy_tolerances) > 1)
     _tol_list = list(accuracy_tolerances) if accuracy_tolerances else []
     _tol_rng = np.random.RandomState(42)  # 独立随机源, 可复现
 
     _tol_info = ""
-    if _use_tol_gen:
-        _tol_info = f"\n  准确度容忍泛化: {[f'{t*100:.1f}%' for t in _tol_list]}"
+    if _use_tol_range:
+        _tol_lo, _tol_hi = float(accuracy_tolerance_range[0]), float(accuracy_tolerance_range[1])
+        _tol_info = f"\n  准确度容忍泛化(连续): [{_tol_lo*100:.1f}%, {_tol_hi*100:.1f}%]"
+    elif _use_tol_gen:
+        _tol_info = f"\n  准确度容忍泛化(离散): {[f'{t*100:.1f}%' for t in _tol_list]}"
 
     _log_general_header(
         log_fn,
@@ -784,7 +796,17 @@ def multi_task_train_stage1(
 
     for rnd in range(resume_start_round, total_rounds):
         # ---- 准确度容忍泛化: 每轮随机采样一个 tolerance ----
-        if _use_tol_gen:
+        if _use_tol_range:
+            _cur_tol = float(_tol_rng.uniform(_tol_lo, _tol_hi))
+            for name in task_names:
+                tc = tasks[name]
+                new_ctx, new_limits = recompute_task_for_tolerance(tc, _cur_tol)
+                tc["task_context"] = new_ctx
+                tc["constraint_limits"] = new_limits
+                envs[name].constraint_limits = new_limits
+            if rnd % 10 == 0:
+                log_fn(f"  [容忍泛化·连续] 轮 {rnd+1}: tolerance={_cur_tol*100:.2f}%")
+        elif _use_tol_gen:
             _cur_tol = float(_tol_rng.choice(_tol_list))
             for name in task_names:
                 tc = tasks[name]
@@ -793,7 +815,7 @@ def multi_task_train_stage1(
                 tc["constraint_limits"] = new_limits
                 envs[name].constraint_limits = new_limits
             if rnd % 10 == 0:
-                log_fn(f"  [容忍泛化] 轮 {rnd+1}: tolerance={_cur_tol*100:.1f}%")
+                log_fn(f"  [容忍泛化·离散] 轮 {rnd+1}: tolerance={_cur_tol*100:.1f}%")
 
         for task_name in task_names:
             tc = tasks[task_name]
@@ -932,6 +954,8 @@ def multi_task_train_stage1(
             "total_episodes": global_ep,
             "ppo_updates": ppo_cnt,
             "best_rewards": {n: float(best_rewards[n]) for n in task_names},
+            "accuracy_tolerance_range": list(accuracy_tolerance_range) if _use_tol_range else None,
+            "accuracy_tolerances": _tol_list if _use_tol_gen else None,
         },
     }, output_path)
     _total_elapsed = _time.time() - _t0
@@ -1813,6 +1837,7 @@ def multi_task_train_stage2(
     device="cuda",
     resume_checkpoint_path=None,
     accuracy_tolerances=None,
+    accuracy_tolerance_range=None,
 ):
     """多任务 round-robin 训练 Stage-2 通用噪声策略 + 通用 Critic。
 
@@ -1825,6 +1850,9 @@ def multi_task_train_stage2(
         log_fn: callable（默认 print）
         device: str
         accuracy_tolerances: list[float] or None, 准确度容忍比例列表（同 Stage-1）
+        accuracy_tolerance_range: tuple(float, float) or None, 连续准确度容忍范围。
+            如 (0.005, 0.02) 表示从 [0.5%, 2%] 连续均匀采样。
+            优先级高于 accuracy_tolerances（两者同时提供时使用 range）。
 
     Returns:
         dict 包含训练结果及保存路径
@@ -1903,13 +1931,21 @@ def multi_task_train_stage2(
     )
 
     # ---- 准确度容忍泛化 (Stage-2) ----
-    _use_tol_gen = accuracy_tolerances is not None and len(accuracy_tolerances) > 1
+    _use_tol_range = (accuracy_tolerance_range is not None
+                      and len(accuracy_tolerance_range) == 2
+                      and accuracy_tolerance_range[0] < accuracy_tolerance_range[1])
+    _use_tol_gen = (not _use_tol_range
+                    and accuracy_tolerances is not None
+                    and len(accuracy_tolerances) > 1)
     _tol_list = list(accuracy_tolerances) if accuracy_tolerances else []
     _tol_rng = np.random.RandomState(42)
 
     _tol_info = ""
-    if _use_tol_gen:
-        _tol_info = f"\n  准确度容忍泛化: {[f'{t*100:.1f}%' for t in _tol_list]}"
+    if _use_tol_range:
+        _tol_lo, _tol_hi = float(accuracy_tolerance_range[0]), float(accuracy_tolerance_range[1])
+        _tol_info = f"\n  准确度容忍泛化(连续): [{_tol_lo*100:.1f}%, {_tol_hi*100:.1f}%]"
+    elif _use_tol_gen:
+        _tol_info = f"\n  准确度容忍泛化(离散): {[f'{t*100:.1f}%' for t in _tol_list]}"
 
     _log_general_header(
         log_fn,
@@ -1928,14 +1964,22 @@ def multi_task_train_stage2(
 
     for rnd in range(resume_start_round, total_rounds):
         # ---- 准确度容忍泛化: 每轮随机采样一个 tolerance ----
-        if _use_tol_gen:
+        if _use_tol_range:
+            _cur_tol = float(_tol_rng.uniform(_tol_lo, _tol_hi))
+            for name in task_names:
+                tc = tasks[name]
+                new_ctx, _ = recompute_task_for_tolerance(tc, _cur_tol)
+                tc["task_context"] = new_ctx
+            if rnd % 10 == 0:
+                log_fn(f"  [容忍泛化·连续] 轮 {rnd+1}: tolerance={_cur_tol*100:.2f}%")
+        elif _use_tol_gen:
             _cur_tol = float(_tol_rng.choice(_tol_list))
             for name in task_names:
                 tc = tasks[name]
                 new_ctx, _ = recompute_task_for_tolerance(tc, _cur_tol)
                 tc["task_context"] = new_ctx
             if rnd % 10 == 0:
-                log_fn(f"  [容忍泛化] 轮 {rnd+1}: tolerance={_cur_tol*100:.1f}%")
+                log_fn(f"  [容忍泛化·离散] 轮 {rnd+1}: tolerance={_cur_tol*100:.1f}%")
 
         for task_name in task_names:
             tc = tasks[task_name]
@@ -2076,6 +2120,8 @@ def multi_task_train_stage2(
             "total_episodes": global_ep,
             "ppo_updates": ppo_cnt,
             "best_rewards": {n: float(best_rewards[n]) for n in task_names},
+            "accuracy_tolerance_range": list(accuracy_tolerance_range) if _use_tol_range else None,
+            "accuracy_tolerances": _tol_list if _use_tol_gen else None,
         },
     }, output_path)
     _total_elapsed = _time.time() - _t0

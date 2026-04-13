@@ -18,14 +18,26 @@ from noise_final_evaluation_module import (
 )
 from noise_rl_module_v2 import (
     NOISE_STAGE_BASELINE_SEGMENTS,
+    NOISE_STAGE_BARRIER_WEIGHT_LOSS,
+    NOISE_STAGE_BARRIER_WEIGHT_M1,
+    NOISE_STAGE_BARRIER_WEIGHT_M2,
     NOISE_STAGE_BEST_TEST_SEGMENTS,
     NOISE_STAGE_BEST_TEST_TRIGGER_MARGIN,
+    NOISE_STAGE_COST_WEIGHT,
     NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE,
     NOISE_STAGE_MC_CONFIRM_SEGMENTS,
     NOISE_STAGE_MC_TRAIN_SAMPLES,
+    NOISE_STAGE_PERF_WEIGHT_LOSS,
+    NOISE_STAGE_PERF_WEIGHT_M1,
+    NOISE_STAGE_PERF_WEIGHT_M2,
+    NOISE_STAGE_REWARD_CLIP_MAX,
+    NOISE_STAGE_REWARD_CLIP_MIN,
     NOISE_STAGE_STATUS_NO_STABLE_FEASIBLE,
     NOISE_STAGE_STATUS_OK,
     NOISE_STAGE_STOP_FLAG_FILENAME,
+    NOISE_STAGE_STABILITY_LAMBDA,
+    NOISE_STAGE_TAIL_MARGIN_WEIGHT,
+    NOISE_STAGE_TAIL_VIOLATION_WEIGHT,
     _log_rounded_box,
     _auto_adjust_segments,
     _compute_dynamic_limits,
@@ -143,6 +155,8 @@ class Stage2Context:
     worst_case_noise_config: Dict[str, np.ndarray]
     cost_reference_noise_config: Dict[str, np.ndarray]
     cost_reference_tot_c: float
+    cost_lower_bound: float
+    cost_upper_bound: float
     baseline_reference_stats: Dict[str, object]
     worst_reference_stats: Dict[str, object]
     search_limits: Dict[str, float]
@@ -319,6 +333,10 @@ def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None,
         **worst_case_noise_config,
     )
     cost_reference_tot_c, _ = evaluator.get_noise_simulated_cost(**cost_reference_noise_config)
+    cost_lower_bound, cost_upper_bound = _compute_noise_cost_bounds(
+        evaluator,
+        upper_bound=cost_reference_tot_c,
+    )
 
     _eff_limit_q = float(limit_quartile) if limit_quartile is not None else NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE
     _eff_stab_q = float(stability_quartile) if stability_quartile is not None else NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE
@@ -380,7 +398,8 @@ def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None,
             f"m1={dynamic_m1_std_cap:.6f}, m2={dynamic_m2_std_cap:.6f}"
         )
         log_fn(
-            f"  cost reference (max-sf configuration): total_noise_cost={cost_reference_tot_c:.2f}"
+            f"  cost reference (max-sf configuration): total_noise_cost={cost_reference_tot_c:.2f}  "
+            f"(score range {cost_lower_bound:.2f} -> {cost_upper_bound:.2f})"
         )
 
     return Stage2Context(
@@ -389,6 +408,8 @@ def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None,
         worst_case_noise_config=worst_case_noise_config,
         cost_reference_noise_config=cost_reference_noise_config,
         cost_reference_tot_c=float(cost_reference_tot_c),
+        cost_lower_bound=float(cost_lower_bound),
+        cost_upper_bound=float(cost_upper_bound),
         baseline_reference_stats=baseline_reference_stats,
         worst_reference_stats=worst_reference_stats,
         search_limits={k: float(v) for k, v in search_limits.items()},
@@ -434,9 +455,13 @@ def resolve_stage1_selected_config(
     manual_gelu=None,
     manual_softmax=None,
 ):
+    normalized_source = str(config_source or "stage1_result").strip().lower()
+    if normalized_source == "search":
+        normalized_source = "stage1_result"
+    module_source = "search" if normalized_source == "stage1_result" else normalized_source
     module = GeneticFinalEvaluationModule(
         evaluator=evaluator,
-        config_source=config_source,
+        config_source=module_source,
         config_path=config_path,
         manual_gelu=manual_gelu,
         manual_softmax=manual_softmax,
@@ -446,7 +471,12 @@ def resolve_stage1_selected_config(
         budget_equivalent_trials=evaluator.final_eval_budget_equivalent_trials,
         results_dir=evaluator.stage1_final_eval_dir,
     )
-    return module._resolve_selected_config(search_best_config, evaluator.total_layers)
+    gelu, softmax, label, source = module._resolve_selected_config(
+        search_best_config, evaluator.total_layers
+    )
+    if normalized_source == "stage1_result":
+        source = "stage1_result"
+    return gelu, softmax, label, source
 
 
 def _json_dump(path, payload):
@@ -541,6 +571,129 @@ def _safe_exp_penalty(gap: float) -> float:
     positive_gap = max(float(gap), 0.0)
     exp_arg = min(positive_gap * math.log(SCORE_EXP_BASE), MAX_PENALTY_EXP_ARG)
     return math.exp(exp_arg)
+
+
+def _compute_noise_cost_bounds(evaluator, upper_bound: float) -> Tuple[float, float]:
+    try:
+        input_cost_map = dict(getattr(evaluator, "INPUT_NOISE_COST_MAP"))
+        weight_cost_map = dict(getattr(evaluator, "WEIGHT_NOISE_COST_MAP"))
+        wffn1_cost_map = dict(getattr(evaluator, "WFFN1_NOISE_COST_MAP", weight_cost_map))
+        lower_per_layer = (
+            float(min(input_cost_map.values()))
+            + 5.0 * float(min(weight_cost_map.values()))
+            + float(min(wffn1_cost_map.values()))
+        )
+        lower_bound = max(float(getattr(evaluator, "total_layers", 0)) * lower_per_layer, 0.0)
+    except Exception:
+        lower_bound = 0.0
+
+    upper_bound = float(upper_bound)
+    if not np.isfinite(upper_bound) or upper_bound <= lower_bound:
+        upper_bound = lower_bound + 1.0
+    return float(lower_bound), float(upper_bound)
+
+
+def _margin_lower_is_better(value: float, baseline: float, limit: float) -> float:
+    denom = max(abs(float(limit) - float(baseline)), 0.01)
+    return (float(limit) - float(value)) / denom
+
+
+def _margin_higher_is_better(value: float, baseline: float, limit: float) -> float:
+    denom = max(abs(float(baseline) - float(limit)), 0.01)
+    return (float(value) - float(limit)) / denom
+
+
+def _compute_rl_aligned_noise_search_score(
+    *,
+    stats: Dict[str, float],
+    cost: float,
+    baseline_reference_stats: Dict[str, float],
+    search_limits: Dict[str, float],
+    dynamic_loss_std_cap: float,
+    dynamic_m1_std_cap: float,
+    dynamic_m2_std_cap: float,
+    cost_lower_bound: float,
+    cost_upper_bound: float,
+    num_metrics: int,
+) -> Dict[str, float]:
+    margin_loss = _margin_lower_is_better(
+        stats["loss_mean"],
+        baseline_reference_stats["loss_mean"],
+        search_limits["loss"],
+    )
+    margin_m1 = _margin_higher_is_better(
+        stats["p_mean"],
+        baseline_reference_stats["p_mean"],
+        search_limits["metric1"],
+    )
+    margin_m2 = 0.0
+    if num_metrics > 1:
+        margin_m2 = _margin_higher_is_better(
+            stats["s_mean"],
+            baseline_reference_stats["s_mean"],
+            search_limits["metric2"],
+        )
+
+    viol_loss = max(0.0, -margin_loss)
+    viol_m1 = max(0.0, -margin_m1)
+    viol_m2 = max(0.0, -margin_m2) if num_metrics > 1 else 0.0
+    violation_penalty = (
+        float(NOISE_STAGE_BARRIER_WEIGHT_LOSS) * viol_loss
+        + float(NOISE_STAGE_BARRIER_WEIGHT_M1) * viol_m1
+    )
+    if num_metrics > 1:
+        violation_penalty += float(NOISE_STAGE_BARRIER_WEIGHT_M2) * viol_m2
+
+    util_loss = max(0.0, margin_loss)
+    util_m1 = max(0.0, margin_m1)
+    util_m2 = max(0.0, margin_m2) if num_metrics > 1 else 0.0
+    perf_score = (
+        float(NOISE_STAGE_PERF_WEIGHT_LOSS) * util_loss
+        + float(NOISE_STAGE_PERF_WEIGHT_M1) * util_m1
+    )
+    if num_metrics > 1:
+        perf_score += float(NOISE_STAGE_PERF_WEIGHT_M2) * util_m2
+
+    std_excesses = [
+        max(0.0, float(stats["loss_std"]) - float(dynamic_loss_std_cap)),
+        max(0.0, float(stats["p_std"]) - float(dynamic_m1_std_cap)),
+    ]
+    if num_metrics > 1:
+        std_excesses.append(
+            max(0.0, float(stats["s_std"]) - float(dynamic_m2_std_cap))
+        )
+    stability_penalty = -float(NOISE_STAGE_STABILITY_LAMBDA) * float(np.mean(std_excesses))
+
+    cost_score = float(np.clip(
+        (float(cost_upper_bound) - float(cost))
+        / max(float(cost_upper_bound) - float(cost_lower_bound), EPS),
+        0.0,
+        1.0,
+    ))
+
+    raw_score = (
+        float(NOISE_STAGE_TAIL_MARGIN_WEIGHT) * perf_score
+        - float(NOISE_STAGE_TAIL_VIOLATION_WEIGHT) * violation_penalty
+        + float(NOISE_STAGE_COST_WEIGHT) * cost_score
+        + stability_penalty
+    )
+    final_score = float(np.clip(
+        raw_score,
+        float(NOISE_STAGE_REWARD_CLIP_MIN),
+        float(NOISE_STAGE_REWARD_CLIP_MAX),
+    ))
+
+    return {
+        "margin_loss": float(margin_loss),
+        "margin_m1": float(margin_m1),
+        "margin_m2": float(margin_m2),
+        "perf_score": float(perf_score),
+        "violation_penalty": float(violation_penalty),
+        "cost_score": float(cost_score),
+        "stability_reward_penalty": float(stability_penalty),
+        "raw_score": float(raw_score),
+        "score": float(final_score),
+    }
 
 
 def _to_serializable(value):
@@ -889,7 +1042,6 @@ class Stage1GeneticSearcher:
                 f"[Stage1] Resumed from checkpoint: generation={resume_start_generation - 1}, "
                 f"best_score={best_candidate['score']:.6f}, stagnation={stagnation}"
             )
-
         # ---- Install graceful stop handler ----
         reset_graceful_stop_state()
         consume_stop_flag_file(self.stop_flag_path)
@@ -1240,10 +1392,19 @@ class Stage2NoiseGeneticSearcher:
 
         metric_penalty = float(np.mean(metric_penalties))
         stability_penalty = float(np.mean(stability_penalties))
-        score = float(
-            (self.context.cost_reference_tot_c / max(float(cost), EPS))
-            / max(metric_penalty * stability_penalty, EPS)
+        score_components = _compute_rl_aligned_noise_search_score(
+            stats=stats,
+            cost=float(cost),
+            baseline_reference_stats=self.context.baseline_reference_stats,
+            search_limits=self.context.search_limits,
+            dynamic_loss_std_cap=self.context.dynamic_loss_std_cap,
+            dynamic_m1_std_cap=self.context.dynamic_m1_std_cap,
+            dynamic_m2_std_cap=self.context.dynamic_m2_std_cap,
+            cost_lower_bound=self.context.cost_lower_bound,
+            cost_upper_bound=self.context.cost_upper_bound,
+            num_metrics=self.evaluator.get_num_metrics(),
         )
+        score = float(score_components["score"])
 
         constraint_pass = bool(
             self.evaluator._candidate_meets_constraints(
@@ -1278,8 +1439,17 @@ class Stage2NoiseGeneticSearcher:
             "breakdown": breakdown,
             "metric_penalty": float(metric_penalty),
             "stability_penalty": float(stability_penalty),
+            "margin_loss": float(score_components["margin_loss"]),
+            "margin_m1": float(score_components["margin_m1"]),
+            "margin_m2": float(score_components["margin_m2"]),
+            "perf_score": float(score_components["perf_score"]),
+            "violation_penalty": float(score_components["violation_penalty"]),
+            "cost_score": float(score_components["cost_score"]),
+            "stability_reward_penalty": float(score_components["stability_reward_penalty"]),
+            "raw_score": float(score_components["raw_score"]),
             "search_score_mean": float(score),
             "score": float(score),
+            "score_mode": "rl_aligned_margin_v1",
             "constraint_pass": constraint_pass,
             "std_pass": std_pass,
             "qualification_passed": bool(constraint_pass and std_pass),
@@ -1351,8 +1521,9 @@ class Stage2NoiseGeneticSearcher:
         """Save GA Stage-2 checkpoint at current generation boundary."""
         pop_serialized = [_to_serializable(cfg) for cfg in population]
         data = {
-            "version": 1,
+            "version": 2,
             "algorithm": "genetic_coinn_style_stage2",
+            "score_mode": "rl_aligned_margin_v1",
             "completed_generation": generation,
             "incumbent": _to_serializable(incumbent),
             "incumbent_history": [dict(item) for item in incumbent_history],
@@ -1382,8 +1553,9 @@ class Stage2NoiseGeneticSearcher:
         self._log("")
         self._log(
             "Stage-2 Noise Genetic Search follows COINN: fitness-weighted selection plus "
-            "adjacent scaling-factor mutation, while keeping the current dynamic constraints "
-            "and challenger-confirmation protocol."
+            "adjacent scaling-factor mutation, while using an RL-aligned score that puts "
+            "more pressure on performance margins and stability under the current dynamic "
+            "constraints and challenger-confirmation protocol."
         )
 
         incumbent = self._evaluate(
@@ -1452,10 +1624,6 @@ class Stage2NoiseGeneticSearcher:
                 population.append(restored)
             if "rng_state" in ckpt:
                 self.rng.bit_generator.state = ckpt["rng_state"]
-            self._log(
-                f"[Stage2] Resumed from checkpoint: generation={resume_start_generation - 1}, "
-                f"incumbent_score={incumbent['score']:.6f}, stagnation={stagnation}"
-            )
             # Stage-1 配置一致性校验
             _ckpt_gelu = ckpt.get("fixed_gelu")
             _ckpt_softmax = ckpt.get("fixed_softmax")
@@ -1472,6 +1640,37 @@ class Stage2NoiseGeneticSearcher:
                         f"     Stage-2 noise 搜索是在旧 Stage-1 配置下训练的，与当前配置不匹配。\n"
                         f"     建议：使用 --fresh-start 重新训练，或确保 Stage-1 配置在续训练间保持一致。"
                     )
+
+            checkpoint_score_mode = str(
+                ckpt.get("score_mode")
+                or incumbent.get("score_mode")
+                or "legacy_unknown"
+            )
+            if checkpoint_score_mode != "rl_aligned_margin_v1":
+                incumbent_segments = int(
+                    incumbent.get("segments", self.context.confirm_segments)
+                )
+                incumbent = self._evaluate(incumbent, segments=incumbent_segments)
+                best_generation = max(resume_start_generation - 1, 0)
+                stagnation = 0
+                history = []
+                incumbent_history = [
+                    {
+                        "source": "resume_rescored_incumbent",
+                        "generation": int(best_generation),
+                        "mean_score": float(incumbent["score"]),
+                        "cost": float(incumbent["cost"]),
+                    }
+                ]
+                self._log(
+                    f"[Stage2] Legacy checkpoint score mode={checkpoint_score_mode}; "
+                    f"rescored incumbent with rl_aligned_margin_v1 and reset score history/stagnation "
+                    f"to avoid mixing incompatible score scales."
+                )
+            self._log(
+                f"[Stage2] Resumed from checkpoint: generation={resume_start_generation - 1}, "
+                f"incumbent_score={incumbent['score']:.6f}, stagnation={stagnation}"
+            )
 
         # ---- Install graceful stop handler ----
         reset_graceful_stop_state()
@@ -1677,6 +1876,8 @@ class Stage2NoiseGeneticSearcher:
             "fixed_source": self.fixed_source,
             "baseline_noise_config": _clone_noise_config(self.context.cost_reference_noise_config),
             "baseline_tot_c": float(self.context.cost_reference_tot_c),
+            "cost_lower_bound": float(self.context.cost_lower_bound),
+            "cost_upper_bound": float(self.context.cost_upper_bound),
             "cost_reference_noise_config": _clone_noise_config(self.context.cost_reference_noise_config),
             "cost_reference_source": "max_noise_configuration",
             "performance_baseline_gelu": self.fixed_gelu.copy(),
@@ -1745,7 +1946,23 @@ class Stage2NoiseGeneticSearcher:
                 "best_test_segments": int(self.context.best_test_segments),
             },
             "reward_diagnostics": {
-                "terminal_reward_mode": "coinn_style_score",
+                "terminal_reward_mode": "rl_aligned_margin_v1",
+                "tail_margin_weight": float(NOISE_STAGE_TAIL_MARGIN_WEIGHT),
+                "tail_violation_weight": float(NOISE_STAGE_TAIL_VIOLATION_WEIGHT),
+                "cost_weight": float(NOISE_STAGE_COST_WEIGHT),
+                "stability_lambda": float(NOISE_STAGE_STABILITY_LAMBDA),
+                "perf_weights": {
+                    "loss": float(NOISE_STAGE_PERF_WEIGHT_LOSS),
+                    "metric1": float(NOISE_STAGE_PERF_WEIGHT_M1),
+                    "metric2": float(NOISE_STAGE_PERF_WEIGHT_M2),
+                },
+                "barrier_weights": {
+                    "loss": float(NOISE_STAGE_BARRIER_WEIGHT_LOSS),
+                    "metric1": float(NOISE_STAGE_BARRIER_WEIGHT_M1),
+                    "metric2": float(NOISE_STAGE_BARRIER_WEIGHT_M2),
+                },
+                "score_clip_min": float(NOISE_STAGE_REWARD_CLIP_MIN),
+                "score_clip_max": float(NOISE_STAGE_REWARD_CLIP_MAX),
                 "mean_generation_score": float(np.mean([item["mean_score"] for item in history]))
                 if history
                 else None,

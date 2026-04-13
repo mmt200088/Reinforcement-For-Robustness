@@ -137,6 +137,10 @@ def train(
         final_eval_config_path: str = "glue_configs_best_ppo.json",
         manual_final_gelu: str = "",
         manual_final_softmax: str = "",
+        stage2_fixed_config_source: str = "",
+        stage2_fixed_config_path: str = "",
+        stage2_manual_gelu: str = "",
+        stage2_manual_softmax: str = "",
         final_eval_random_seed: int = 42,
         final_eval_permutation_trials: int = 10,
         final_eval_cost_equivalent_trials: int = 10,
@@ -220,6 +224,10 @@ def train(
         f"final_eval_config_path: {final_eval_config_path}\n"
         f"manual_final_gelu: {manual_final_gelu}\n"
         f"manual_final_softmax: {manual_final_softmax}\n"
+        f"stage2_fixed_config_source: {stage2_fixed_config_source}\n"
+        f"stage2_fixed_config_path: {stage2_fixed_config_path}\n"
+        f"stage2_manual_gelu: {stage2_manual_gelu}\n"
+        f"stage2_manual_softmax: {stage2_manual_softmax}\n"
         f"stage1_rl_episodes: {stage1_rl_episodes}\n"
         f"stage2_rl_episodes: {stage2_rl_episodes}\n"
         f"stage1_rl_episodes_specified: {stage1_rl_episodes_specified}\n"
@@ -568,6 +576,8 @@ def train(
     #     model.model_parallel = True
     parsed_manual_gelu = parse_degree_config(manual_final_gelu)
     parsed_manual_softmax = parse_degree_config(manual_final_softmax)
+    parsed_stage2_manual_gelu = parse_degree_config(stage2_manual_gelu)
+    parsed_stage2_manual_softmax = parse_degree_config(stage2_manual_softmax)
     parsed_noise_config = parse_noise_config(manual_noise_config)
     trainer_callbacks = []
 
@@ -595,6 +605,10 @@ def train(
             final_eval_config_path=final_eval_config_path,
             manual_final_gelu=parsed_manual_gelu,
             manual_final_softmax=parsed_manual_softmax,
+            stage2_fixed_config_source=stage2_fixed_config_source,
+            stage2_fixed_config_path=stage2_fixed_config_path,
+            stage2_manual_gelu=parsed_stage2_manual_gelu,
+            stage2_manual_softmax=parsed_stage2_manual_softmax,
             final_eval_random_seed=final_eval_random_seed,
             final_eval_permutation_trials=final_eval_permutation_trials,
             final_eval_cost_equivalent_trials=final_eval_cost_equivalent_trials,

@@ -305,6 +305,7 @@ def train(
     stage1_config_json: str = "",
     # 准确度容忍泛化
     accuracy_tolerances: str = "",
+    accuracy_tolerance_range: str = "",
     # 续训练
     resume_from: str = "",
     # 设备
@@ -313,6 +314,11 @@ def train(
     """多任务 round-robin 训练通用策略 + Critic。
 
     必须提供多个数据集用逗号分隔: --data_path mrpc,cola,rte,stsb
+
+    准确度容忍泛化有两种模式:
+      --accuracy_tolerances 0.005,0.01,0.02  离散采样
+      --accuracy_tolerance_range 0.005,0.02  连续均匀采样 [0.5%, 2%]
+    连续模式优先级高于离散模式。
     """
     skip_stage2 = parse_bool_flag(skip_stage2, "skip_stage2")
     batch_size = parse_positive_int(batch_size, "batch_size")
@@ -321,7 +327,7 @@ def train(
         episodes_per_task_per_round, "episodes_per_task_per_round"
     )
 
-    # 解析准确度容忍列表
+    # 解析准确度容忍列表（离散模式）
     parsed_tolerances = None
     if accuracy_tolerances and str(accuracy_tolerances).strip():
         _raw = str(accuracy_tolerances).strip()
@@ -338,7 +344,31 @@ def train(
                     f"--accuracy_tolerances 中的值必须在 (0, 1) 区间, "
                     f"当前值 {t} 不合法. 例如 0.01 表示 1%."
                 )
-        print(f"准确度容忍泛化: {[f'{t*100:.1f}%' for t in parsed_tolerances]}")
+        print(f"准确度容忍泛化(离散): {[f'{t*100:.1f}%' for t in parsed_tolerances]}")
+
+    # 解析准确度容忍范围（连续模式）
+    parsed_tolerance_range = None
+    if accuracy_tolerance_range and str(accuracy_tolerance_range).strip():
+        _raw_range = str(accuracy_tolerance_range).strip()
+        try:
+            _parts = [float(x.strip()) for x in _raw_range.split(",") if x.strip()]
+        except ValueError:
+            raise ValueError(
+                f"--accuracy_tolerance_range 格式错误: {_raw_range!r}. "
+                "请提供两个逗号分隔的浮点数, 如 '0.005,0.02'"
+            )
+        if len(_parts) != 2:
+            raise ValueError(
+                f"--accuracy_tolerance_range 需要恰好两个值 (min,max), "
+                f"当前提供了 {len(_parts)} 个值."
+            )
+        if _parts[0] <= 0 or _parts[1] >= 1 or _parts[0] >= _parts[1]:
+            raise ValueError(
+                f"--accuracy_tolerance_range 要求 0 < min < max < 1, "
+                f"当前值 ({_parts[0]}, {_parts[1]}) 不合法."
+            )
+        parsed_tolerance_range = tuple(_parts)
+        print(f"准确度容忍泛化(连续): [{_parts[0]*100:.1f}%, {_parts[1]*100:.1f}%]")
 
     resume_run_dir = resume_from.strip() if resume_from else ""
     os.makedirs(output_dir, exist_ok=True)
@@ -405,6 +435,7 @@ def train(
         device=device,
         resume_checkpoint_path=general_s1_resume_path,
         accuracy_tolerances=parsed_tolerances,
+        accuracy_tolerance_range=parsed_tolerance_range,
     )
     print(f"\n[Stage-1] 训练完成, 策略已保存至: {s1_output}")
 
@@ -470,6 +501,7 @@ def train(
         device=device,
         resume_checkpoint_path=general_s2_resume_path,
         accuracy_tolerances=parsed_tolerances,
+        accuracy_tolerance_range=parsed_tolerance_range,
     )
     print(f"\n[Stage-2] 训练完成, 噪声策略已保存至: {s2_output}")
 

@@ -2326,6 +2326,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                  final_eval_config_path='glue_configs_best_ppo.json',
                  manual_final_gelu=None,
                  manual_final_softmax=None,
+                 stage2_fixed_config_source=None,
+                 stage2_fixed_config_path='',
+                 stage2_manual_gelu=None,
+                 stage2_manual_softmax=None,
                  final_eval_random_seed=42,
                  final_eval_permutation_trials=10,
                  final_eval_cost_equivalent_trials=10,
@@ -2559,6 +2563,33 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.final_eval_config_path = final_eval_config_path or 'glue_configs_best_ppo.json'
         self.manual_final_gelu = manual_final_gelu
         self.manual_final_softmax = manual_final_softmax
+        _stage2_fixed_source_hint = stage2_fixed_config_source
+        if _stage2_fixed_source_hint in (None, ''):
+            if stage2_manual_gelu is not None or stage2_manual_softmax is not None:
+                _stage2_fixed_source_hint = 'manual'
+            elif stage2_fixed_config_path:
+                _stage2_fixed_source_hint = 'json'
+            else:
+                _stage2_fixed_source_hint = self.final_eval_config_source
+        _stage2_fixed_source = self._normalize_stage2_fixed_config_source(
+            _stage2_fixed_source_hint
+        )
+        self.stage2_fixed_config_source = _stage2_fixed_source
+        self.stage2_fixed_config_path = (
+            stage2_fixed_config_path
+            or self.final_eval_config_path
+            or 'glue_configs_best_ppo.json'
+        )
+        self.stage2_manual_gelu = (
+            stage2_manual_gelu
+            if stage2_manual_gelu is not None
+            else self.manual_final_gelu
+        )
+        self.stage2_manual_softmax = (
+            stage2_manual_softmax
+            if stage2_manual_softmax is not None
+            else self.manual_final_softmax
+        )
         self.final_eval_random_seed = int(final_eval_random_seed)
         self.final_eval_permutation_trials = max(0, int(final_eval_permutation_trials))
         self.final_eval_cost_equivalent_trials = max(0, int(final_eval_cost_equivalent_trials))
@@ -2576,6 +2607,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.skip_noise_final_eval = self._coerce_bool_flag(
             skip_noise_final_eval, 'skip_noise_final_eval'
         )
+        self.needs_stage2_fixed_config = (
+            (not self.skip_noise_rl) or (not self.skip_noise_final_eval)
+        )
         self.resume_run_dir = str(resume_run_dir or '').strip()
 
         if self.noise_eval_config_source not in ('search', 'json', 'manual'):
@@ -2590,10 +2624,27 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "Use one of: search, json, manual."
             )
 
+        if self.stage2_fixed_config_source not in ('stage1_result', 'json', 'manual'):
+            raise ValueError(
+                f"Unsupported stage2_fixed_config_source '{self.stage2_fixed_config_source}'. "
+                "Use one of: stage1_result, json, manual."
+            )
+
         if self.skip_stage1_rl and self.final_eval_config_source == 'search':
             raise ValueError(
                 "skip_stage1_rl=True 与 final_eval_config_source='search' 不能同时使用："
                 "跳过第一阶段搜索后没有 RL/贪心结果可供 search 使用。"
+                "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
+            )
+
+        if (
+            self.needs_stage2_fixed_config
+            and self.skip_stage1_rl
+            and self.stage2_fixed_config_source == 'stage1_result'
+        ):
+            raise ValueError(
+                "skip_stage1_rl=True 与 stage2_fixed_config_source='stage1_result' 不能同时使用："
+                "跳过第一阶段搜索后，没有 Stage-1 搜索结果可供第二阶段固定 GELU/Softmax 使用。"
                 "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
             )
 
@@ -2629,6 +2680,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                 raise ValueError(
                     "final_eval_config_source='manual' 时必须同时提供 "
                     "manual_final_gelu 和 manual_final_softmax。"
+                )
+
+        if self.needs_stage2_fixed_config and self.stage2_fixed_config_source == 'manual':
+            if self.stage2_manual_gelu is None or self.stage2_manual_softmax is None:
+                raise ValueError(
+                    "stage2_fixed_config_source='manual' 时必须同时提供 "
+                    "stage2_manual_gelu 和 stage2_manual_softmax。"
                 )
 
         if self.skip_noise_rl and (not self.skip_noise_final_eval) and self.noise_eval_config_source == 'search':
@@ -2706,6 +2764,39 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"Invalid positive integer for {flag_name}: {raw_value!r}."
             )
         return value
+
+    @staticmethod
+    def _normalize_stage2_fixed_config_source(raw_value):
+        text = str(raw_value or 'stage1_result').strip().lower()
+        if text == 'search':
+            return 'stage1_result'
+        return text
+
+    def _resolve_stage2_fixed_stage1_config(self, search_best_config=None):
+        resolver_source = (
+            'search'
+            if self.stage2_fixed_config_source == 'stage1_result'
+            else self.stage2_fixed_config_source
+        )
+        resolver = FinalEvaluationModule(
+            evaluator=self,
+            config_source=resolver_source,
+            config_path=self.stage2_fixed_config_path,
+            manual_gelu=self.stage2_manual_gelu,
+            manual_softmax=self.stage2_manual_softmax,
+            random_seed=self.final_eval_random_seed,
+            permutation_trials=self.final_eval_permutation_trials,
+            cost_equivalent_trials=self.final_eval_cost_equivalent_trials,
+            budget_equivalent_trials=self.final_eval_budget_equivalent_trials,
+            results_dir=self.stage1_final_eval_dir,
+        )
+        gelu, softmax, label, source = resolver._resolve_selected_config(
+            search_best_config=search_best_config,
+            total_layers=self.total_layers,
+        )
+        if self.stage2_fixed_config_source == 'stage1_result':
+            source = 'stage1_result'
+        return gelu, softmax, label, source
     
     def _detect_task_type(self):
         """
@@ -4836,6 +4927,10 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.log("开始配置评估（STARTING CONFIGURATION EVALUATION）")
         self.log(f"搜索模式（SEARCH_MODE）={SEARCH_MODE}" + (" (使用贪心搜索USE_GREEDY_SEARCH=" + str(USE_GREEDY_SEARCH) + ")" if SEARCH_MODE == "both" else ""))
         self.log(f"最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）={self.final_eval_config_source}")
+        self.log(
+            "Stage-2 固定 GELU/Softmax 来源"
+            f"（STAGE2_FIXED_CONFIG_SOURCE）={self.stage2_fixed_config_source}"
+        )
         if self.skip_stage1_rl:
             self.log("[信息] 第一阶段RL/贪心搜索已跳过（--skip-stage1-rl）。")
         self.log("="*60)
@@ -6243,6 +6338,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"[Info] 跳过第一阶段最终评估，直接使用 {selected_label} "
                 f"(source={selected_source}) 配置进入第二阶段。"
             )
+            self.log(
+                f"[Info] Stage-2 固定 GELU/Softmax 将按 "
+                f"stage2_fixed_config_source={self.stage2_fixed_config_source} 单独解析。"
+            )
             self.log(f"  GELU   : {opt_gelu.tolist()}")
             self.log(f"  Softmax: {opt_softmax.tolist()}")
         else:
@@ -6363,6 +6462,28 @@ class LayerImportanceEvaluator(TrainerCallback):
         # ---------------------------------------------------------
         noise_stage_result = None
         noise_eval_result = None
+        stage2_fixed_gelu = opt_gelu
+        stage2_fixed_softmax = opt_softmax
+        stage2_fixed_label = selected_label
+        stage2_fixed_source = selected_source
+        if not self.skip_noise_rl or not self.skip_noise_final_eval:
+            (
+                stage2_fixed_gelu,
+                stage2_fixed_softmax,
+                stage2_fixed_label,
+                stage2_fixed_source,
+            ) = self._resolve_stage2_fixed_stage1_config(search_best_config=best_config)
+            self.log(
+                f"[Info] Stage-2 固定 GELU/Softmax 来源："
+                f"{stage2_fixed_label} (source={stage2_fixed_source})"
+            )
+            if (
+                selected_source != stage2_fixed_source
+                or not np.array_equal(np.asarray(opt_gelu), np.asarray(stage2_fixed_gelu))
+                or not np.array_equal(np.asarray(opt_softmax), np.asarray(stage2_fixed_softmax))
+            ):
+                self.log(f"  Stage-2 GELU   : {np.asarray(stage2_fixed_gelu).tolist()}")
+                self.log(f"  Stage-2 Softmax: {np.asarray(stage2_fixed_softmax).tolist()}")
         previous_log_file = getattr(self, "active_log_file", self.log_file)
         self._initialize_noise_log_file()
         self.active_log_file = self.noise_log_file
@@ -6371,10 +6492,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.log("\n[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。")
             else:
                 noise_stage_result = self.run_noise_rl_stage(
-                    fixed_gelu=opt_gelu,
-                    fixed_softmax=opt_softmax,
-                    fixed_label=selected_label,
-                    fixed_source=selected_source,
+                    fixed_gelu=stage2_fixed_gelu,
+                    fixed_softmax=stage2_fixed_softmax,
+                    fixed_label=stage2_fixed_label,
+                    fixed_source=stage2_fixed_source,
                     resume_checkpoint_path=self._get_stage2_resume_checkpoint_path(),
                 )
 
@@ -6385,8 +6506,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.log("\n[信息] 噪声最终评估已跳过（--skip-noise-final-eval）。")
             else:
                 noise_eval_result = self.run_noise_final_eval_stage(
-                    fixed_gelu=opt_gelu,
-                    fixed_softmax=opt_softmax,
+                    fixed_gelu=stage2_fixed_gelu,
+                    fixed_softmax=stage2_fixed_softmax,
                     noise_stage_result=noise_stage_result,
                 )
         finally:

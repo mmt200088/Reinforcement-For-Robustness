@@ -38,6 +38,10 @@ GA / 对比实验中的 GA：
   --final-eval-config PATH
   --manual-gelu JSON_ARRAY
   --manual-softmax JSON_ARRAY
+  --stage2-fixed-config-source stage1_result|json|manual
+  --stage2-fixed-config PATH
+  --stage2-manual-gelu JSON_ARRAY
+  --stage2-manual-softmax JSON_ARRAY
   --noise-eval-source search|json|manual
   --noise-eval-config PATH
   --manual-noise-config JSON_OBJECT
@@ -68,18 +72,27 @@ GA / 对比实验中的 GA：
   --stage2-search-lr FLOAT
 
 通用 RL（仅 general-rl 可用）：
-  --general-rl-mode train|infer
+  --general-rl-mode train|search          训练 或 搜索（search 等同于原 infer）
   --general-rl-tasks TASK1,TASK2,...
   --general-rl-rounds N
   --general-rl-episodes-per-round N
   --general-rl-lr FLOAT
   --general-rl-num-rollouts N
   --general-rl-greedy
-  --general-stage1-policy PATH
-  --general-stage2-policy PATH
+  --general-stage1-policy PATH            搜索模式：显式指定 Stage-1 策略文件
+  --general-stage2-policy PATH            搜索模式：显式指定 Stage-2 策略文件
+  --general-policy-dir PATH               搜索模式：指定训练持久化目录，自动推导策略文件
   --general-rl-skip-stage2
   --general-rl-stage1-config-json PATH
   --general-rl-accuracy-tolerances T1,T2,...
+  --general-rl-accuracy-tolerance-range MIN,MAX
+  --fresh-start                           通用 RL 训练模式同样支持
+
+持久化目录结构（general-rl train 自动管理）：
+  rl_results/persistent/general-rl/{model_type}/{taskset}/{accuracy_slug}/
+  - 同一数据集 + 同一准确度区间 → 同一目录（自动续训练）
+  - 不同区间 → 不同目录
+  - accuracy_slug 示例：range_0.50pct_2.00pct / discrete_0.50pct_1.00pct / default
 
 说明：
   1. 不再支持位置参数，统一改为可选参数。
@@ -96,7 +109,8 @@ GA / 对比实验中的 GA：
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl --stage1-search-lr 3e-5 --stage2-search-lr 1e-5
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm ga --stage1-search-generations 120 --stage2-search-generations 90
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl-and-ga-compare --compare-config-mode direct --rl-compare-stage1-json glue_configs_best_ppo.json --rl-compare-stage2-json glue_noise_configs_best_ppo.json --ga-compare-stage1-json glue_configs_best_genetic.json --ga-compare-stage2-json glue_noise_configs_best_genetic.json
-  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm general-rl --general-rl-mode train --general-rl-tasks mrpc,cola,rte,stsb
+  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm general-rl --general-rl-mode train --general-rl-tasks mrpc,cola,rte,stsb --fresh-start
+  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm general-rl --general-rl-mode search --general-policy-dir rl_results/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default
 EOF
 }
 
@@ -166,6 +180,7 @@ algzh(){
 srczh(){
   case "$1" in
     search) echo "搜索结果（search）" ;;
+    stage1_result) echo "Stage-1 搜索结果（stage1_result）" ;;
     json) echo "JSON 文件（json）" ;;
     manual) echo "手动指定（manual）" ;;
     *) echo "$1" ;;
@@ -242,6 +257,10 @@ FINAL_EVAL_SOURCE="search"; S_FINAL_EVAL_SOURCE="false"
 FINAL_EVAL_CONFIG=""; S_FINAL_EVAL_CONFIG="false"
 MANUAL_GELU=""
 MANUAL_SOFTMAX=""
+STAGE2_FIXED_CONFIG_SOURCE=""; S_STAGE2_FIXED_CONFIG_SOURCE="false"
+STAGE2_FIXED_CONFIG=""; S_STAGE2_FIXED_CONFIG="false"
+STAGE2_MANUAL_GELU=""
+STAGE2_MANUAL_SOFTMAX=""
 NOISE_EVAL_SOURCE="search"; S_NOISE_EVAL_SOURCE="false"
 NOISE_EVAL_CONFIG=""; S_NOISE_EVAL_CONFIG="false"
 MANUAL_NOISE_CONFIG=""
@@ -260,9 +279,11 @@ GENERAL_NUM_ROLLOUTS="500"; S_GENERAL_NUM_ROLLOUTS="false"
 GENERAL_GREEDY="false"; S_GENERAL_GREEDY="false"
 GENERAL_STAGE1_POLICY=""; S_GENERAL_STAGE1_POLICY="false"
 GENERAL_STAGE2_POLICY=""; S_GENERAL_STAGE2_POLICY="false"
+GENERAL_POLICY_DIR=""; S_GENERAL_POLICY_DIR="false"
 GENERAL_SKIP_STAGE2="false"; S_GENERAL_SKIP_STAGE2="false"
 GENERAL_STAGE1_CONFIG_JSON=""; S_GENERAL_STAGE1_CONFIG_JSON="false"
 GENERAL_ACCURACY_TOLERANCES=""; S_GENERAL_ACCURACY_TOLERANCES="false"
+GENERAL_ACCURACY_TOLERANCE_RANGE=""; S_GENERAL_ACCURACY_TOLERANCE_RANGE="false"
 RL_COMPARE_SKIP_STAGE1_SEARCH="false"; S_RL_COMPARE_SKIP_STAGE1_SEARCH="false"
 GA_COMPARE_SKIP_STAGE1_SEARCH="false"; S_GA_COMPARE_SKIP_STAGE1_SEARCH="false"
 RL_COMPARE_FINAL_EVAL_SOURCE="search"; S_RL_COMPARE_FINAL_EVAL_SOURCE="false"
@@ -316,6 +337,10 @@ while [ "$#" -gt 0 ]; do
     --final-eval-config) needv "$@"; FINAL_EVAL_CONFIG="$2"; S_FINAL_EVAL_CONFIG="true"; shift 2 ;;
     --manual-gelu) needv "$@"; MANUAL_GELU="$2"; shift 2 ;;
     --manual-softmax) needv "$@"; MANUAL_SOFTMAX="$2"; shift 2 ;;
+    --stage2-fixed-config-source) needv "$@"; STAGE2_FIXED_CONFIG_SOURCE="$2"; S_STAGE2_FIXED_CONFIG_SOURCE="true"; shift 2 ;;
+    --stage2-fixed-config) needv "$@"; STAGE2_FIXED_CONFIG="$2"; S_STAGE2_FIXED_CONFIG="true"; shift 2 ;;
+    --stage2-manual-gelu) needv "$@"; STAGE2_MANUAL_GELU="$2"; shift 2 ;;
+    --stage2-manual-softmax) needv "$@"; STAGE2_MANUAL_SOFTMAX="$2"; shift 2 ;;
     --noise-eval-source) needv "$@"; NOISE_EVAL_SOURCE="$2"; S_NOISE_EVAL_SOURCE="true"; shift 2 ;;
     --noise-eval-config) needv "$@"; NOISE_EVAL_CONFIG="$2"; S_NOISE_EVAL_CONFIG="true"; shift 2 ;;
     --manual-noise-config) needv "$@"; MANUAL_NOISE_CONFIG="$2"; shift 2 ;;
@@ -334,9 +359,11 @@ while [ "$#" -gt 0 ]; do
     --general-rl-greedy) GENERAL_GREEDY="true"; S_GENERAL_GREEDY="true"; shift ;;
     --general-stage1-policy) needv "$@"; GENERAL_STAGE1_POLICY="$2"; S_GENERAL_STAGE1_POLICY="true"; shift 2 ;;
     --general-stage2-policy) needv "$@"; GENERAL_STAGE2_POLICY="$2"; S_GENERAL_STAGE2_POLICY="true"; shift 2 ;;
+    --general-policy-dir) needv "$@"; GENERAL_POLICY_DIR="$2"; S_GENERAL_POLICY_DIR="true"; shift 2 ;;
     --general-rl-skip-stage2) GENERAL_SKIP_STAGE2="true"; S_GENERAL_SKIP_STAGE2="true"; shift ;;
     --general-rl-stage1-config-json) needv "$@"; GENERAL_STAGE1_CONFIG_JSON="$2"; S_GENERAL_STAGE1_CONFIG_JSON="true"; shift 2 ;;
     --general-rl-accuracy-tolerances) needv "$@"; GENERAL_ACCURACY_TOLERANCES="$2"; S_GENERAL_ACCURACY_TOLERANCES="true"; shift 2 ;;
+    --general-rl-accuracy-tolerance-range) needv "$@"; GENERAL_ACCURACY_TOLERANCE_RANGE="$2"; S_GENERAL_ACCURACY_TOLERANCE_RANGE="true"; shift 2 ;;
     --rl-skip-stage1-search) RL_COMPARE_SKIP_STAGE1_SEARCH="true"; S_RL_COMPARE_SKIP_STAGE1_SEARCH="true"; shift ;;
     --ga-skip-stage1-search) GA_COMPARE_SKIP_STAGE1_SEARCH="true"; S_GA_COMPARE_SKIP_STAGE1_SEARCH="true"; shift ;;
     --rl-final-eval-source) needv "$@"; RL_COMPARE_FINAL_EVAL_SOURCE="$2"; S_RL_COMPARE_FINAL_EVAL_SOURCE="true"; shift 2 ;;
@@ -375,6 +402,7 @@ DATASET="$(printf '%s' "$DATASET" | tr '[:upper:]' '[:lower:]')"
 SEARCH_ALGORITHM="$(printf '%s' "$SEARCH_ALGORITHM" | tr '[:upper:]' '[:lower:]')"
 MODEL_TYPE="$(printf '%s' "$MODEL_TYPE" | tr '[:upper:]' '[:lower:]')"
 FINAL_EVAL_SOURCE="$(printf '%s' "$FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
+STAGE2_FIXED_CONFIG_SOURCE="$(printf '%s' "$STAGE2_FIXED_CONFIG_SOURCE" | tr '[:upper:]' '[:lower:]')"
 NOISE_EVAL_SOURCE="$(printf '%s' "$NOISE_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
 GENERAL_MODE="$(printf '%s' "$GENERAL_MODE" | tr '[:upper:]' '[:lower:]')"
 RL_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$RL_COMPARE_FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
@@ -398,8 +426,12 @@ case "$MODEL_TYPE" in
   *) err "不支持的模型类型：$MODEL_TYPE" ;;
 esac
 case "$FINAL_EVAL_SOURCE" in search|json|manual) ;; *) err "不支持的第一阶段评估来源：$FINAL_EVAL_SOURCE" ;; esac
+case "$STAGE2_FIXED_CONFIG_SOURCE" in ""|stage1_result|search|json|manual) ;; *) err "不支持的 Stage-2 固定 GELU/Softmax 来源：$STAGE2_FIXED_CONFIG_SOURCE" ;; esac
+[ "$STAGE2_FIXED_CONFIG_SOURCE" = "search" ] && STAGE2_FIXED_CONFIG_SOURCE="stage1_result"
 case "$NOISE_EVAL_SOURCE" in search|json|manual) ;; *) err "不支持的第二阶段评估来源：$NOISE_EVAL_SOURCE" ;; esac
-case "$GENERAL_MODE" in train|infer) ;; *) err "general-rl 模式必须是 train 或 infer，当前为：$GENERAL_MODE" ;; esac
+# search 是 infer 的别名
+case "$GENERAL_MODE" in train|infer|search) ;; *) err "general-rl 模式必须是 train、search 或 infer，当前为：$GENERAL_MODE" ;; esac
+[ "$GENERAL_MODE" = "infer" ] && GENERAL_MODE="search"
 
 if [ "$S_STAGE1_GENERATIONS" = "false" ]; then
   STAGE1_GENERATIONS="$(ga_default_stage1_generations_for_model "$MODEL_TYPE")"
@@ -427,14 +459,35 @@ esac
 if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$SEARCH_ALGORITHM" != "rl-and-ga-compare" ]; then
   [ "$S_FINAL_EVAL_CONFIG" = "true" ] || FINAL_EVAL_CONFIG=$([ "$SEARCH_ALGORITHM" = "ga" ] && echo glue_configs_best_genetic.json || echo glue_configs_best_ppo.json)
   [ "$S_NOISE_EVAL_CONFIG" = "true" ] || NOISE_EVAL_CONFIG=$([ "$SEARCH_ALGORITHM" = "ga" ] && echo glue_noise_configs_best_genetic.json || echo glue_noise_configs_best_ppo.json)
+  if [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ -n "$STAGE2_MANUAL_GELU" -o -n "$STAGE2_MANUAL_SOFTMAX" ]; then
+    STAGE2_FIXED_CONFIG_SOURCE="manual"
+    [ "$S_STAGE2_FIXED_CONFIG" = "true" ] || STAGE2_FIXED_CONFIG="$FINAL_EVAL_CONFIG"
+  elif [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "true" ]; then
+    STAGE2_FIXED_CONFIG_SOURCE="json"
+  elif [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; then
+    case "$FINAL_EVAL_SOURCE" in
+      search) STAGE2_FIXED_CONFIG_SOURCE="stage1_result" ;;
+      *) STAGE2_FIXED_CONFIG_SOURCE="$FINAL_EVAL_SOURCE" ;;
+    esac
+    STAGE2_FIXED_CONFIG="$FINAL_EVAL_CONFIG"
+    STAGE2_MANUAL_GELU="$MANUAL_GELU"
+    STAGE2_MANUAL_SOFTMAX="$MANUAL_SOFTMAX"
+  else
+    [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "true" ] || STAGE2_FIXED_CONFIG_SOURCE="stage1_result"
+    [ "$S_STAGE2_FIXED_CONFIG" = "true" ] || STAGE2_FIXED_CONFIG="$FINAL_EVAL_CONFIG"
+  fi
 fi
 
 if [ "$SEARCH_ALGORITHM" != "rl-and-ga-compare" ]; then
   { [ "$S_STAGE2_COMPARE_REPEATS" = "false" ] && [ "$S_RL_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_RL_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_CONFIG" = "false" ] && [ "$S_COMPARE_CONFIG_MODE" = "false" ] && [ "$S_COMPARE_PERSISTENT_ROOT" = "false" ] && [ "$S_RL_COMPARE_STAGE1_JSON" = "false" ] && [ "$S_RL_COMPARE_STAGE2_JSON" = "false" ] && [ "$S_GA_COMPARE_STAGE1_JSON" = "false" ] && [ "$S_GA_COMPARE_STAGE2_JSON" = "false" ] && [ "$S_RL_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_LIMIT_QUARTILE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_STABILITY_QUARTILE" = "false" ] && [ "$S_GA_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_LIMIT_QUARTILE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_STABILITY_QUARTILE" = "false" ]; } || err "当前模式不是 rl-and-ga-compare，请不要使用对比专用参数。"
 fi
 
+if [ "$SEARCH_ALGORITHM" = "general-rl" ] || [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
+  { [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; } || err "当前模式不支持 --stage2-fixed-config-* 参数；该参数组仅普通 rl / ga 可用。"
+fi
+
 if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
-  { [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] && [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] && [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] && [ "$S_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_SKIP_STAGE1_FINAL_EVAL" = "false" ] && [ "$S_SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$S_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_FINAL_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_GELU" ] && [ -z "$MANUAL_SOFTMAX" ] && [ "$S_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_NOISE_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_NOISE_CONFIG" ]; } || err "general-rl 不能与普通 RL / GA 的阶段搜索或最终评估参数混用。"
+  { [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] && [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] && [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] && [ "$S_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_SKIP_STAGE1_FINAL_EVAL" = "false" ] && [ "$S_SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$S_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_FINAL_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_GELU" ] && [ -z "$MANUAL_SOFTMAX" ] && [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ] && [ "$S_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_NOISE_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_NOISE_CONFIG" ]; } || err "general-rl 不能与普通 RL / GA 的阶段搜索或最终评估参数混用。"
   # ---- 准确度容忍参数校验 ----
   if [ -n "$GENERAL_ACCURACY_TOLERANCES" ]; then
     IFS=',' read -r -a __tol_items <<< "$GENERAL_ACCURACY_TOLERANCES"
@@ -445,6 +498,18 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
       awk -v x="$__tol_val" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--general-rl-accuracy-tolerances 中的值必须 < 1（即百分比形式如 0.01 表示 1%），当前值：$__tol_val"
     done
   fi
+  # ---- 连续准确度容忍范围校验 ----
+  if [ -n "$GENERAL_ACCURACY_TOLERANCE_RANGE" ]; then
+    IFS=',' read -r -a __range_items <<< "$GENERAL_ACCURACY_TOLERANCE_RANGE"
+    [ "${#__range_items[@]}" -eq 2 ] || err "--general-rl-accuracy-tolerance-range 需要恰好两个值 (min,max)，如 '0.005,0.02'"
+    __range_lo="$(printf '%s' "${__range_items[0]}" | xargs)"
+    __range_hi="$(printf '%s' "${__range_items[1]}" | xargs)"
+    is_pos_num "$__range_lo" || err "--general-rl-accuracy-tolerance-range 的下界必须是正数：$__range_lo"
+    is_pos_num "$__range_hi" || err "--general-rl-accuracy-tolerance-range 的上界必须是正数：$__range_hi"
+    awk -v x="$__range_lo" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--general-rl-accuracy-tolerance-range 的下界必须 < 1，当前值：$__range_lo"
+    awk -v x="$__range_hi" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--general-rl-accuracy-tolerance-range 的上界必须 < 1，当前值：$__range_hi"
+    awk -v lo="$__range_lo" -v hi="$__range_hi" 'BEGIN { if ((lo + 0) >= (hi + 0)) exit 1 }' || err "--general-rl-accuracy-tolerance-range 要求 min < max，当前 $__range_lo >= $__range_hi"
+  fi
 
   # ---- 泛化模式推断 ----
   _HAS_MULTI_TASKS="false"
@@ -453,7 +518,9 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
     [ "${#__task_arr[@]}" -gt 1 ] && _HAS_MULTI_TASKS="true"
   fi
   _HAS_MULTI_TOLS="false"
-  if [ -n "$GENERAL_ACCURACY_TOLERANCES" ]; then
+  if [ -n "$GENERAL_ACCURACY_TOLERANCE_RANGE" ]; then
+    _HAS_MULTI_TOLS="true"
+  elif [ -n "$GENERAL_ACCURACY_TOLERANCES" ]; then
     IFS=',' read -r -a __tol_arr <<< "$GENERAL_ACCURACY_TOLERANCES"
     __tol_cnt=0
     for __t in "${__tol_arr[@]}"; do
@@ -462,22 +529,41 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
     done
     [ "$__tol_cnt" -gt 1 ] && _HAS_MULTI_TOLS="true"
   fi
-  # 训练模式: 至少需要一种泛化维度（多任务或多容忍度）
+  # 训练模式: 至少需要一种泛化维度（多任务或多容忍度或连续容忍范围）
   if [ "$GENERAL_MODE" = "train" ] && [ "$_HAS_MULTI_TASKS" = "false" ] && [ "$_HAS_MULTI_TOLS" = "false" ]; then
-    echo "警告：general-rl train 模式下既未提供多个任务也未提供多个准确度容忍值，策略可能无法学习到有效泛化。" >&2
+    echo "警告：general-rl train 模式下既未提供多个任务也未提供多个准确度容忍值/范围，策略可能无法学习到有效泛化。" >&2
   fi
 
   if [ "$GENERAL_MODE" = "train" ]; then
     is_pos_int "$GENERAL_ROUNDS" || err "--general-rl-rounds 必须是正整数"
     is_pos_int "$GENERAL_EPISODES_PER_ROUND" || err "--general-rl-episodes-per-round 必须是正整数"
     is_pos_num "$GENERAL_LR" || err "--general-rl-lr 必须是正数"
-    [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] || err "general-rl train 模式不能使用 rollout / policy 参数。"
+    [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_POLICY_DIR" = "false" ] || err "general-rl train 模式不能使用 rollout / policy 参数。"
   else
-    [ -n "$GENERAL_STAGE1_POLICY" ] || err "general-rl infer 模式必须提供 --general-stage1-policy。"
+    # search 模式：支持 --general-policy-dir 自动推导，或显式指定 policy 文件
+    if [ -n "$GENERAL_POLICY_DIR" ]; then
+      [ -d "$GENERAL_POLICY_DIR" ] || err "--general-policy-dir 指定的目录不存在：$GENERAL_POLICY_DIR"
+      # 自动推导 Stage-1 策略
+      if [ -z "$GENERAL_STAGE1_POLICY" ]; then
+        _auto_s1="${GENERAL_POLICY_DIR}/general_stage1_policy.pt"
+        [ -f "$_auto_s1" ] || err "在 --general-policy-dir 中未找到 Stage-1 策略文件：$_auto_s1"
+        GENERAL_STAGE1_POLICY="$_auto_s1"
+        echo "自动推导 Stage-1 策略：$GENERAL_STAGE1_POLICY"
+      fi
+      # 自动推导 Stage-2 策略（可选）
+      if [ -z "$GENERAL_STAGE2_POLICY" ]; then
+        _auto_s2="${GENERAL_POLICY_DIR}/general_stage2_noise_policy.pt"
+        if [ -f "$_auto_s2" ]; then
+          GENERAL_STAGE2_POLICY="$_auto_s2"
+          echo "自动推导 Stage-2 策略：$GENERAL_STAGE2_POLICY"
+        fi
+      fi
+    fi
+    [ -n "$GENERAL_STAGE1_POLICY" ] || err "general-rl search 模式必须提供 --general-stage1-policy 或 --general-policy-dir。"
     [ -f "$GENERAL_STAGE1_POLICY" ] || err "--general-stage1-policy 指定的文件不存在：$GENERAL_STAGE1_POLICY"
     [ -z "$GENERAL_STAGE2_POLICY" ] || [ -f "$GENERAL_STAGE2_POLICY" ] || err "--general-stage2-policy 指定的文件不存在：$GENERAL_STAGE2_POLICY"
     is_pos_int "$GENERAL_NUM_ROLLOUTS" || err "--general-rl-num-rollouts 必须是正整数"
-    { [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_RESUME_FROM" = "false" ]; } || err "general-rl infer 模式不能使用训练专用参数。"
+    { [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_RESUME_FROM" = "false" ]; } || err "general-rl search 模式不能使用训练专用参数。"
   fi
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "rl-and-ga-compare 不能与 general-rl 参数混用。"
@@ -570,6 +656,24 @@ else
     [ -n "$MANUAL_GELU" ] && [ -n "$MANUAL_SOFTMAX" ] || err "manual 第一阶段配置必须同时提供 --manual-gelu 和 --manual-softmax。"
   else
     [ -z "$MANUAL_GELU" ] && [ -z "$MANUAL_SOFTMAX" ] || err "只有 --final-eval-source=manual 时才能提供手动 GELU / Softmax 配置。"
+  fi
+  _NEEDS_STAGE2_FIXED_CONFIG="false"
+  if [ "$SKIP_NOISE_SEARCH" = "false" ] || [ "$SKIP_NOISE_FINAL_EVAL" = "false" ]; then
+    _NEEDS_STAGE2_FIXED_CONFIG="true"
+  fi
+  if [ "$_NEEDS_STAGE2_FIXED_CONFIG" = "true" ]; then
+    if [ "$STAGE2_FIXED_CONFIG_SOURCE" = "manual" ]; then
+      [ -n "$STAGE2_MANUAL_GELU" ] && [ -n "$STAGE2_MANUAL_SOFTMAX" ] || err "stage2-fixed-config-source=manual 时必须同时提供 --stage2-manual-gelu 和 --stage2-manual-softmax。"
+    else
+      [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ] || err "只有 --stage2-fixed-config-source=manual 时才能提供 --stage2-manual-gelu / --stage2-manual-softmax。"
+    fi
+    [ "$SKIP_STAGE1_SEARCH" = "false" ] || [ "$STAGE2_FIXED_CONFIG_SOURCE" != "stage1_result" ] || err "跳过 Stage-1 搜索后，Stage-2 固定 GELU/Softmax 不能再使用 --stage2-fixed-config-source=stage1_result。"
+    if [ "$STAGE2_FIXED_CONFIG_SOURCE" = "json" ]; then
+      [ -f "$STAGE2_FIXED_CONFIG" ] || err "Stage-2 固定 GELU/Softmax 的 JSON 配置文件不存在：$STAGE2_FIXED_CONFIG"
+      FAM="$(infer_family "$STAGE2_FIXED_CONFIG")"
+      [ "$SEARCH_ALGORITHM" != "ga" ] || [ "$FAM" != "rl" ] || err "已选择 ga，但 Stage-2 固定 GELU/Softmax 的 JSON 配置看起来属于 RL/PPO 家族：$STAGE2_FIXED_CONFIG"
+      [ "$SEARCH_ALGORITHM" != "rl" ] || [ "$FAM" != "ga" ] || err "已选择 rl，但 Stage-2 固定 GELU/Softmax 的 JSON 配置看起来属于 GA 家族：$STAGE2_FIXED_CONFIG"
+    fi
   fi
   if [ "$NOISE_EVAL_SOURCE" = "manual" ]; then
     [ -n "$MANUAL_NOISE_CONFIG" ] || err "manual 第二阶段配置必须提供 --manual-noise-config。"
@@ -759,6 +863,7 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
     CMD+=(--total_rounds "$GENERAL_ROUNDS" --episodes_per_task_per_round "$GENERAL_EPISODES_PER_ROUND" --general_lr "$GENERAL_LR" --skip_stage2 "$GENERAL_SKIP_STAGE2")
     [ -n "$GENERAL_STAGE1_CONFIG_JSON" ] && CMD+=(--stage1_config_json "$GENERAL_STAGE1_CONFIG_JSON")
     [ -n "$GENERAL_ACCURACY_TOLERANCES" ] && CMD+=(--accuracy_tolerances "$GENERAL_ACCURACY_TOLERANCES")
+    [ -n "$GENERAL_ACCURACY_TOLERANCE_RANGE" ] && CMD+=(--accuracy_tolerance_range "$GENERAL_ACCURACY_TOLERANCE_RANGE")
     [ -n "$RESUME_FROM" ] && CMD+=(--resume_from "$RESUME_FROM")
   else
     CMD+=(--general_stage1_policy "$GENERAL_STAGE1_POLICY" --num_rollouts "$GENERAL_NUM_ROLLOUTS" --greedy "$GENERAL_GREEDY" --skip_stage2 "$GENERAL_SKIP_STAGE2")
@@ -776,9 +881,9 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   fi
 else
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
-    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$S_STAGE1_EPISODES" --stage2_rl_episodes_specified "$S_STAGE2_EPISODES" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_quartile "$STAGE2_LIMIT_QUARTILE" --stage2_stability_quartile "$STAGE2_STABILITY_QUARTILE")
+    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$S_STAGE1_EPISODES" --stage2_rl_episodes_specified "$S_STAGE2_EPISODES" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_quartile "$STAGE2_LIMIT_QUARTILE" --stage2_stability_quartile "$STAGE2_STABILITY_QUARTILE")
   else
-    CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_quartile "$STAGE2_LIMIT_QUARTILE" --stage2_stability_quartile "$STAGE2_STABILITY_QUARTILE")
+    CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_quartile "$STAGE2_LIMIT_QUARTILE" --stage2_stability_quartile "$STAGE2_STABILITY_QUARTILE")
     [ "$S_STAGE1_GENERATIONS" = "true" ] && CMD+=(--stage1_ga_generations "$STAGE1_GENERATIONS" --stage1_ga_generations_specified "true")
     [ "$S_STAGE2_GENERATIONS" = "true" ] && CMD+=(--stage2_ga_generations "$STAGE2_GENERATIONS" --stage2_ga_generations_specified "true")
   fi
@@ -808,15 +913,17 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   show "Stage-2 回合数" "$STAGE2_EPISODES" "$S_STAGE2_EPISODES"
   show "Stage-1 学习率" "$STAGE1_LR" "$S_STAGE1_LR"
   show "Stage-2 学习率" "$STAGE2_LR" "$S_STAGE2_LR"
-  show "Stage-1 配置来源" "$(srczh "$FINAL_EVAL_SOURCE")" "$S_FINAL_EVAL_SOURCE"
-  show "Stage-2 配置来源" "$(srczh "$NOISE_EVAL_SOURCE")" "$S_NOISE_EVAL_SOURCE"
+  show "Stage-1 最终评估来源" "$(srczh "$FINAL_EVAL_SOURCE")" "$S_FINAL_EVAL_SOURCE"
+  show "Stage-2 固定 GELU/Softmax 来源" "$(srczh "$STAGE2_FIXED_CONFIG_SOURCE")" "$S_STAGE2_FIXED_CONFIG_SOURCE"
+  show "Stage-2 噪声评估来源" "$(srczh "$NOISE_EVAL_SOURCE")" "$S_NOISE_EVAL_SOURCE"
   show "跳过 Stage-1 搜索" "$(boolzh "$SKIP_STAGE1_SEARCH")" "$S_SKIP_STAGE1_SEARCH"
   show "跳过 Stage-2 搜索" "$(boolzh "$SKIP_NOISE_SEARCH")" "$S_SKIP_NOISE_SEARCH"
 elif [ "$SEARCH_ALGORITHM" = "ga" ]; then
   show "Stage-1 迭代代数" "$STAGE1_GENERATIONS" "$S_STAGE1_GENERATIONS"
   show "Stage-2 迭代代数" "$STAGE2_GENERATIONS" "$S_STAGE2_GENERATIONS"
-  show "Stage-1 配置来源" "$(srczh "$FINAL_EVAL_SOURCE")" "$S_FINAL_EVAL_SOURCE"
-  show "Stage-2 配置来源" "$(srczh "$NOISE_EVAL_SOURCE")" "$S_NOISE_EVAL_SOURCE"
+  show "Stage-1 最终评估来源" "$(srczh "$FINAL_EVAL_SOURCE")" "$S_FINAL_EVAL_SOURCE"
+  show "Stage-2 固定 GELU/Softmax 来源" "$(srczh "$STAGE2_FIXED_CONFIG_SOURCE")" "$S_STAGE2_FIXED_CONFIG_SOURCE"
+  show "Stage-2 噪声评估来源" "$(srczh "$NOISE_EVAL_SOURCE")" "$S_NOISE_EVAL_SOURCE"
   show "跳过 Stage-1 搜索" "$(boolzh "$SKIP_STAGE1_SEARCH")" "$S_SKIP_STAGE1_SEARCH"
   show "跳过 Stage-2 搜索" "$(boolzh "$SKIP_NOISE_SEARCH")" "$S_SKIP_NOISE_SEARCH"
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then

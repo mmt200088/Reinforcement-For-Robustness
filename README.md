@@ -38,10 +38,14 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--skip-stage1-final-eval` | `rl`、`ga` | — | 跳过 Stage-1 最终评估 |
 | `--skip-noise-final-eval` | `rl`、`ga` | — | 跳过 Stage-2 最终评估 |
 | `--final-eval-source search/json/manual` | `rl`、`ga` | `search` | Stage-1 最终评估配置来源 |
-| `--final-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的 Stage-1 配置文件路径 |
-| `--manual-gelu JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 GELU 配置 |
-| `--manual-softmax JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Softmax 配置 |
-| `--noise-eval-source search/json/manual` | `rl`、`ga` | `search` | Stage-2 最终评估配置来源 |
+| `--final-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的 Stage-1 最终评估配置文件路径 |
+| `--manual-gelu JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-1 GELU 配置 |
+| `--manual-softmax JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-1 Softmax 配置 |
+| `--stage2-fixed-config-source stage1_result/json/manual` | `rl`、`ga` | 兼容继承 Stage-1 参数 | Stage-2 固定 GELU/Softmax 的来源；`stage1_result` 表示直接使用 Stage-1 搜索结果，不再借用 Stage-1 final eval 参数表达 |
+| `--stage2-fixed-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的 Stage-2 固定 GELU/Softmax 配置文件路径 |
+| `--stage2-manual-gelu JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-2 固定 GELU 配置 |
+| `--stage2-manual-softmax JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-2 固定 Softmax 配置 |
+| `--noise-eval-source search/json/manual` | `rl`、`ga` | `search` | Stage-2 噪声最终评估配置来源 |
 | `--noise-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的 Stage-2 噪声配置文件路径 |
 | `--manual-noise-config JSON_OBJECT` | `rl`、`ga` | — | `manual` 模式下的 7 类噪声配置 |
 | `--noise-eval-repeat N` | `rl`、`ga` | `1` | Stage-2 最终评估重复次数 |
@@ -91,12 +95,12 @@ bash llama_7B_LayerImportance.sh [可选参数]
 
 ### 模式互斥规则
 
-- 选择 `--search-algorithm=general-rl` 后，不能再混用普通 RL / GA 的阶段搜索或最终评估参数。
+- 选择 `--search-algorithm=general-rl` 后，不能再混用普通 RL / GA 的阶段搜索、Stage-2 固定 GELU/Softmax 参数或最终评估参数。
 - 选择 `--search-algorithm=rl` 或 `ga` 后，不能再混用 `--general-rl-*` 参数；也**不能**再传 `--resume-from`（已改用持久化目录自动续训练）。
 - 选择 `--search-algorithm=rl` 后，不能传 `--stage1-search-generations` / `--stage2-search-generations`。
 - 选择 `--search-algorithm=ga` 后，不能传 `--stage1-search-lr` / `--stage2-search-lr`，也不能再传 `--stage1-search-episodes` / `--stage2-search-episodes`。
 - 选择 `--search-algorithm=rl-and-ga-compare` 后：
-  - 仍然**不允许**使用全局的 `--skip-stage1-search`、`--skip-noise-search`、`--final-eval-source`、`--noise-eval-source`、`--final-eval-config`、`--noise-eval-config`、`--manual-*`、`--resume-from`。
+  - 仍然**不允许**使用全局的 `--skip-stage1-search`、`--skip-noise-search`、`--final-eval-source`、`--stage2-fixed-config-*`、`--noise-eval-source`、`--final-eval-config`、`--noise-eval-config`、`--manual-*`、`--resume-from`。
   - 也不再支持旧的 compare 专用参数：`--rl/ga-skip-*`、`--rl/ga-*-eval-source`、`--rl/ga-*-eval-config`。
   - `direct` 模式必须同时提供 4 个 JSON：RL/GA 各自的 Stage-1 与 Stage-2。
   - `persistent` 模式必须提供 `--compare-persistent-root`；RL 与 GA 可以使用不同约束参数，但模型类型与数据集必须一致。
@@ -114,6 +118,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `ga` | `glue_configs_best_genetic.json` | `glue_noise_configs_best_genetic.json` |
 
 当 `--final-eval-source=json` 或 `--noise-eval-source=json` 时，脚本会检查文件名是否与所选算法家族匹配，避免把 PPO 配置错用到 GA，或把 GA 配置错用到 PPO。当前仓库已内置 PPO 与 GA 两套默认 JSON；其中 `glue_configs_best_genetic.json` / `glue_noise_configs_best_genetic.json` 目前按 PPO 默认配置生成，便于在 `ga` 或 `rl-and-ga-compare` 模式下直接跳过搜索。如果你后续得到 GA 自己的更优配置，可以直接覆盖这两个 genetic JSON，或者显式通过 `--final-eval-config` / `--noise-eval-config` 指定。
+`--stage2-fixed-config-source=json` 时，`--stage2-fixed-config` 默认也会沿用这一套 Stage-1 JSON 默认值；如果你不显式传 `--stage2-fixed-config-*`，脚本会继续兼容旧命令，把 Stage-1 final eval 的来源自动映射为 Stage-2 固定 `GELU/Softmax` 的来源。
 `rl-and-ga-compare` 的 `direct` 模式同样沿用这套家族一致性检查；如果显式传入的是最终评估结果 JSON，则还会额外校验其中记录的数据集与模型层数，避免把不同模型或不同数据集的结果拿来直接对比。
 
 ### 推荐命令示例
@@ -203,6 +208,49 @@ rl_results/persistent/ga/bert-large/stsb/s1t0.01_s2q0.3_s2sq0.3/
 ```
 
 目录下的 `metadata.json` 记录算法、模型、数据集、约束参数值、创建时间和运行次数。
+
+#### 3d. 独立指定 Stage-2 固定 GELU / Softmax 来源
+
+现在 Stage-2 固定的 `GELU/Softmax` 不再依赖 `--final-eval-source` 的语义来间接表达，而是用单独的一组参数控制：
+
+- `--stage2-fixed-config-source stage1_result`：直接使用 Stage-1 搜索结果
+- `--stage2-fixed-config-source json`：从 JSON 读取固定的 Stage-1 配置
+- `--stage2-fixed-config-source manual`：手动传入 `--stage2-manual-gelu` 与 `--stage2-manual-softmax`
+
+兼容行为：
+
+- 如果你**没有显式传** `--stage2-fixed-config-*`，脚本会按旧行为自动兼容：
+  - `--final-eval-source=search` 会映射为 `--stage2-fixed-config-source=stage1_result`
+  - `--final-eval-source=json/manual` 会把对应配置继承给 Stage-2 固定配置
+- 如果你只传了 `--stage2-fixed-config`，launcher 会自动把 `--stage2-fixed-config-source` 视为 `json`；如果你只传了 `--stage2-manual-gelu` / `--stage2-manual-softmax`，launcher 会自动把来源视为 `manual`。
+
+安全规则：
+
+- 只要 Stage-2 搜索或 Stage-2 最终评估会执行，就必须能解析出 Stage-2 固定的 `GELU/Softmax`。
+- 如果使用 `--stage2-fixed-config-source=stage1_result`，则**不能**再同时传 `--skip-stage1-search`；因为跳过 Stage-1 后不存在可复用的搜索结果。
+- 如果使用 `json`，launcher 会在启动前检查 JSON 文件是否存在，并校验它与当前算法家族一致。
+- 如果使用 `manual`，必须同时提供 `--stage2-manual-gelu` 和 `--stage2-manual-softmax`。
+
+示例 1：Stage-2 固定配置来自 Stage-1 搜索结果。
+
+```bash
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --search-algorithm rl \
+  --stage2-fixed-config-source stage1_result
+```
+
+示例 2：跳过 Stage-1 搜索，直接用 JSON 指定 Stage-2 固定配置。
+
+```bash
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --search-algorithm rl \
+  --skip-stage1-search \
+  --skip-stage1-final-eval \
+  --stage2-fixed-config-source json \
+  --stage2-fixed-config glue_configs_best_ppo.json
+```
 
 #### 4. RL 与 GA 对比实验（直接读取已有结果）
 
