@@ -143,6 +143,49 @@ def resolve_ga_generation_budget(
     return resolved_generations, bool(legacy_episode_specified), source
 
 
+def normalize_ga_skip_budget_flags(
+    *,
+    skip_stage1_rl,
+    skip_noise_rl,
+    stage1_ga_generations,
+    stage2_ga_generations,
+    stage1_budget_specified,
+    stage2_budget_specified,
+    stage1_rl_episodes,
+    stage2_rl_episodes,
+):
+    if skip_stage1_rl and stage1_budget_specified:
+        raise ValueError(
+            "skip_stage1_rl=True 时不能再显式设置 Stage-1 GA 搜索预算。"
+            "请移除 --stage1-search-generations，或取消 --skip-stage1-search。"
+        )
+    if skip_noise_rl and stage2_budget_specified:
+        raise ValueError(
+            "skip_noise_rl=True 时不能再显式设置 Stage-2 GA 搜索预算。"
+            "请移除 --stage2-search-generations，或取消 --skip-noise-search。"
+        )
+
+    stage1_budget_source = "skipped" if skip_stage1_rl else None
+    stage2_budget_source = "skipped" if skip_noise_rl else None
+    if skip_stage1_rl:
+        stage1_rl_episodes = 51000
+        stage1_budget_specified = False
+    if skip_noise_rl:
+        stage2_rl_episodes = 40000
+        stage2_budget_specified = False
+
+    return {
+        "stage1_ga_generations": int(stage1_ga_generations),
+        "stage2_ga_generations": int(stage2_ga_generations),
+        "stage1_budget_specified": bool(stage1_budget_specified),
+        "stage2_budget_specified": bool(stage2_budget_specified),
+        "stage1_rl_episodes": int(stage1_rl_episodes),
+        "stage2_rl_episodes": int(stage2_rl_episodes),
+        "stage1_budget_source": stage1_budget_source,
+        "stage2_budget_source": stage2_budget_source,
+    }
+
+
 def train(
         # model/data params
         base_model: str = "",  # the only required argument
@@ -443,6 +486,24 @@ def train(
     stage2_rl_episodes = int(stage2_ga_generations * stage2_population_size)
     stage1_rl_episodes_specified = stage1_budget_specified
     stage2_rl_episodes_specified = stage2_budget_specified
+    skip_budget_normalized = normalize_ga_skip_budget_flags(
+        skip_stage1_rl=skip_stage1_rl,
+        skip_noise_rl=skip_noise_rl,
+        stage1_ga_generations=stage1_ga_generations,
+        stage2_ga_generations=stage2_ga_generations,
+        stage1_budget_specified=stage1_budget_specified,
+        stage2_budget_specified=stage2_budget_specified,
+        stage1_rl_episodes=stage1_rl_episodes,
+        stage2_rl_episodes=stage2_rl_episodes,
+    )
+    stage1_rl_episodes = skip_budget_normalized["stage1_rl_episodes"]
+    stage2_rl_episodes = skip_budget_normalized["stage2_rl_episodes"]
+    stage1_rl_episodes_specified = skip_budget_normalized["stage1_budget_specified"]
+    stage2_rl_episodes_specified = skip_budget_normalized["stage2_budget_specified"]
+    if skip_budget_normalized["stage1_budget_source"] is not None:
+        stage1_budget_source = skip_budget_normalized["stage1_budget_source"]
+    if skip_budget_normalized["stage2_budget_source"] is not None:
+        stage2_budget_source = skip_budget_normalized["stage2_budget_source"]
 
     print(
         "Resolved GA search budgets:\n"

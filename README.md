@@ -31,8 +31,8 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | **普通 RL / GA 搜索预算** | | | |
 | `--stage1-search-episodes N` | `rl` | `51000` | Stage-1 搜索回合数，仅用于普通 RL |
 | `--stage2-search-episodes N` | `rl` | `40000` | Stage-2 噪声搜索回合数，仅用于普通 RL |
-| `--stage1-search-generations N` | `ga` | 按模型自动推导 | Stage-1 GA 搜索迭代代数 |
-| `--stage2-search-generations N` | `ga` | 按模型自动推导 | Stage-2 GA 噪声搜索迭代代数 |
+| `--stage1-search-generations N` | `ga` | 按模型自动推导 | Stage-1 GA 搜索迭代代数；仅在未跳过 Stage-1 搜索时生效 |
+| `--stage2-search-generations N` | `ga` | 按模型自动推导 | Stage-2 GA 噪声搜索迭代代数；仅在未跳过 Stage-2 搜索时生效 |
 | `--skip-stage1-search` | `rl`、`ga` | — | 跳过 Stage-1 搜索 |
 | `--skip-noise-search` | `rl`、`ga` | — | 跳过 Stage-2 搜索 |
 | `--skip-stage1-final-eval` | `rl`、`ga` | — | 跳过 Stage-1 最终评估 |
@@ -99,6 +99,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
 - 选择 `--search-algorithm=rl` 或 `ga` 后，不能再混用 `--general-rl-*` 参数；也**不能**再传 `--resume-from`（已改用持久化目录自动续训练）。
 - 选择 `--search-algorithm=rl` 后，不能传 `--stage1-search-generations` / `--stage2-search-generations`。
 - 选择 `--search-algorithm=ga` 后，不能传 `--stage1-search-lr` / `--stage2-search-lr`，也不能再传 `--stage1-search-episodes` / `--stage2-search-episodes`。
+- 选择 `--search-algorithm=ga` 后，如果已经传了 `--skip-stage1-search` 或 `--skip-noise-search`，就不能再显式传对应阶段的 `--stage1-search-generations` / `--stage2-search-generations`；被跳过阶段的默认预算会自动忽略，不需要手动补 0。
 - 选择 `--search-algorithm=rl-and-ga-compare` 后：
   - 仍然**不允许**使用全局的 `--skip-stage1-search`、`--skip-noise-search`、`--final-eval-source`、`--stage2-fixed-config-*`、`--noise-eval-source`、`--final-eval-config`、`--noise-eval-config`、`--manual-*`、`--resume-from`。
   - 也不再支持旧的 compare 专用参数：`--rl/ga-skip-*`、`--rl/ga-*-eval-source`、`--rl/ga-*-eval-config`。
@@ -208,6 +209,28 @@ rl_results/persistent/ga/bert-large/stsb/s1t0.01_s2q0.3_s2sq0.3/
 ```
 
 目录下的 `metadata.json` 记录算法、模型、数据集、约束参数值、创建时间和运行次数。
+
+补充说明：
+
+- `ga` 现在和 `rl` 一样支持单独跳过 Stage-1 或 Stage-2 搜索。
+- 如果某一阶段被跳过，该阶段的默认 GA 代数只会保留在内部兼容逻辑里，不会再被当成“你显式指定了预算”。
+- 但如果你已经传了 `--skip-stage1-search`，就不要再同时传 `--stage1-search-generations`；`--skip-noise-search` 与 `--stage2-search-generations` 同理。
+
+示例：只跑 GA 的 Stage-2，Stage-1 结构配置从 JSON 读取。
+
+```bash
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --search-algorithm ga \
+  --fresh-start \
+  --skip-stage1-search \
+  --skip-stage1-final-eval \
+  --stage2-search-generations 2500 \
+  --final-eval-source json \
+  --final-eval-config glue_configs_best_genetic.json \
+  --stage2-fixed-config-source json \
+  --stage2-fixed-config glue_configs_best_genetic.json
+```
 
 #### 3d. 独立指定 Stage-2 固定 GELU / Softmax 来源
 

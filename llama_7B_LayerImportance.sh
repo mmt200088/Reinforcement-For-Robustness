@@ -108,6 +108,7 @@ GA / 对比实验中的 GA：
   bash llama_7B_LayerImportance.sh --dataset mrpc
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl --stage1-search-lr 3e-5 --stage2-search-lr 1e-5
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm ga --stage1-search-generations 120 --stage2-search-generations 90
+  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm ga --skip-stage1-search --skip-stage1-final-eval --stage2-search-generations 2500 --stage2-fixed-config-source json --stage2-fixed-config glue_configs_best_genetic.json
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl-and-ga-compare --compare-config-mode direct --rl-compare-stage1-json glue_configs_best_ppo.json --rl-compare-stage2-json glue_noise_configs_best_ppo.json --ga-compare-stage1-json glue_configs_best_genetic.json --ga-compare-stage2-json glue_noise_configs_best_genetic.json
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm general-rl --general-rl-mode train --general-rl-tasks mrpc,cola,rte,stsb --fresh-start
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm general-rl --general-rl-mode search --general-policy-dir rl_results/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default
@@ -650,6 +651,8 @@ else
     [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] || err "ga 模式不再使用 episode 作为搜索预算，请改用 --stage1-search-generations / --stage2-search-generations。"
     is_pos_int "$STAGE1_GENERATIONS" || err "--stage1-search-generations 必须是正整数"
     is_pos_int "$STAGE2_GENERATIONS" || err "--stage2-search-generations 必须是正整数"
+    [ "$SKIP_STAGE1_SEARCH" = "false" ] || [ "$S_STAGE1_GENERATIONS" = "false" ] || err "已指定 --skip-stage1-search 时，不能再显式提供 --stage1-search-generations。"
+    [ "$SKIP_NOISE_SEARCH" = "false" ] || [ "$S_STAGE2_GENERATIONS" = "false" ] || err "已指定 --skip-noise-search 时，不能再显式提供 --stage2-search-generations。"
     [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] || err "GA 不使用 PPO 学习率参数，请移除 --stage1-search-lr / --stage2-search-lr。"
   fi
   if [ "$FINAL_EVAL_SOURCE" = "manual" ]; then
