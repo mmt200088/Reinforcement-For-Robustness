@@ -1,13 +1,21 @@
 """
 rl_tune_general.py — 通用 RL 策略的命令行入口脚本
 =================================================
-支持两种运行模式:
-  train  多任务 round-robin 训练通用策略 + Critic
-  infer  利用已训练的通用策略做离线 rollout 搜索最优配置
+训练和搜索完全分离:
+  train   多任务 round-robin 训练通用策略 + Critic → 输出到持久化目录
+  search  利用已训练的通用策略做离线 rollout 搜索最优配置（网络冻结不变）
+
+持久化目录结构:
+  rl_results/persistent/general-rl/{model_type}/{taskset}/{accuracy_slug}/
+  - 同一数据集 + 同一准确度区间 → 同一目录（自动续训练）
+  - 不同区间 → 不同目录
 
 用法:
-  python rl_tune_general.py train --base_model ... --data_path mrpc,cola,rte ...
-  python rl_tune_general.py infer --base_model ... --data_path mrpc ...
+  # 训练（输出到持久化目录，可续训练）
+  python rl_tune_general.py train --model_type bert-base --data_path mrpc,cola,rte,stsb ...
+  # 搜索（手动指定持久化目录或策略文件路径）
+  python rl_tune_general.py search --data_path mrpc --general_policy_dir rl_results/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default
+  python rl_tune_general.py search --data_path mrpc --general_stage1_policy path/to/policy.pt
 """
 
 import os
@@ -383,17 +391,27 @@ def train(
     )
 
     # ---- 续训练 checkpoint 路径检测 ----
+    # 优先使用显式 resume_from；否则自动检测 output_dir 中的 checkpoint
     general_s1_resume_path = None
     general_s2_resume_path = None
+    _search_dirs = []
     if resume_run_dir:
-        _s1_ckpt = os.path.join(resume_run_dir, GENERAL_STAGE1_TRAIN_CHECKPOINT)
-        if os.path.isfile(_s1_ckpt):
-            general_s1_resume_path = _s1_ckpt
-            print(f"[续训练] 检测到 Stage-1 checkpoint: {_s1_ckpt}")
-        _s2_ckpt = os.path.join(resume_run_dir, GENERAL_STAGE2_TRAIN_CHECKPOINT)
-        if os.path.isfile(_s2_ckpt):
-            general_s2_resume_path = _s2_ckpt
-            print(f"[续训练] 检测到 Stage-2 checkpoint: {_s2_ckpt}")
+        _search_dirs.append(resume_run_dir)
+    # 持久化目录模式下 output_dir == resume_run_dir，
+    # 但如果 resume_from 未指定，也尝试在 output_dir 中查找 checkpoint
+    if output_dir and output_dir not in _search_dirs:
+        _search_dirs.append(output_dir)
+    for _dir in _search_dirs:
+        if general_s1_resume_path is None:
+            _s1_ckpt = os.path.join(_dir, GENERAL_STAGE1_TRAIN_CHECKPOINT)
+            if os.path.isfile(_s1_ckpt):
+                general_s1_resume_path = _s1_ckpt
+                print(f"[续训练] 检测到 Stage-1 checkpoint: {_s1_ckpt}")
+        if general_s2_resume_path is None:
+            _s2_ckpt = os.path.join(_dir, GENERAL_STAGE2_TRAIN_CHECKPOINT)
+            if os.path.isfile(_s2_ckpt):
+                general_s2_resume_path = _s2_ckpt
+                print(f"[续训练] 检测到 Stage-2 checkpoint: {_s2_ckpt}")
 
     task_names = [t.strip().lower() for t in data_path.split(",") if t.strip()]
     if len(task_names) < 1:
@@ -512,27 +530,28 @@ def train(
 
 
 # ===========================================================================
-# 子命令: infer — 离线 rollout 推断
+# 子命令: search — 离线 rollout 搜索（网络冻结不变）
 # ===========================================================================
 
-def infer(
+def search(
     # 基础参数
     base_model: str = "",
     data_path: str = "mrpc",
     model_type: str = "bert-base",
-    output_dir: str = "./general_rl_infer_output",
+    output_dir: str = "./general_rl_search_output",
     batch_size: int = 16,
     rl_lr: float = 1e-4,
     degree: int = 4,
     lora_r: int = 32,
     lora_alpha: int = 64,
-    # 通用策略路径
-    general_stage1_policy: str = "general_stage1_policy.pt",
+    # 通用策略路径（二选一：显式指定文件 或 指定持久化目录自动推导）
+    general_stage1_policy: str = "",
     general_stage2_policy: str = "",
-    # 推断参数
+    general_policy_dir: str = "",
+    # 搜索参数
     num_rollouts: int = 500,
     greedy: bool = False,
-    # Stage-1 固定配置（用于 Stage-2 推断，可选）
+    # Stage-1 固定配置（用于 Stage-2 搜索，可选）
     fixed_gelu: str = "",
     fixed_softmax: str = "",
     # 控制
@@ -549,7 +568,13 @@ def infer(
     # 设备
     device: str = "cuda",
 ):
-    """使用已训练的通用策略对单个任务做离线 rollout，找到最优配置。
+    """使用已训练的通用策略对单个任务做离线 rollout 搜索最优配置。
+
+    策略网络在搜索过程中完全冻结，不做任何梯度更新。
+
+    策略来源（二选一）:
+      --general_policy_dir PATH    指定训练持久化目录，自动推导策略文件
+      --general_stage1_policy PATH 显式指定 Stage-1 策略文件
 
     --data_path 只需提供单个数据集名称。
     """
@@ -558,6 +583,33 @@ def infer(
     greedy = parse_bool_flag(greedy, "greedy")
     batch_size = parse_positive_int(batch_size, "batch_size")
     num_rollouts = parse_positive_int(num_rollouts, "num_rollouts")
+
+    # ---- 从 general_policy_dir 自动推导策略文件路径 ----
+    if general_policy_dir:
+        general_policy_dir = general_policy_dir.strip()
+        if not os.path.isdir(general_policy_dir):
+            raise ValueError(
+                f"--general_policy_dir 指定的目录不存在: {general_policy_dir}"
+            )
+        if not general_stage1_policy:
+            _auto_s1 = os.path.join(general_policy_dir, "general_stage1_policy.pt")
+            if os.path.isfile(_auto_s1):
+                general_stage1_policy = _auto_s1
+                print(f"[搜索] 自动推导 Stage-1 策略: {_auto_s1}")
+            else:
+                raise ValueError(
+                    f"在 --general_policy_dir 中未找到 Stage-1 策略文件: {_auto_s1}"
+                )
+        if not general_stage2_policy:
+            _auto_s2 = os.path.join(general_policy_dir, "general_stage2_noise_policy.pt")
+            if os.path.isfile(_auto_s2):
+                general_stage2_policy = _auto_s2
+                print(f"[搜索] 自动推导 Stage-2 策略: {_auto_s2}")
+
+    if not general_stage1_policy:
+        raise ValueError(
+            "必须提供 --general_stage1_policy 或 --general_policy_dir 以指定策略来源。"
+        )
 
     # 解析准确度容忍
     _infer_tol = None
@@ -573,13 +625,18 @@ def infer(
 
     task_name = data_path.strip().lower()
     if "," in task_name:
-        raise ValueError("--data_path 离线推断模式只支持单个数据集名称。")
+        raise ValueError("--data_path 搜索模式只支持单个数据集名称。")
 
     bm = base_model if base_model else resolve_base_model(model_type, task_name)
-    print(f"[通用RL推断] 任务: {task_name}, base_model={bm}")
-    print(f"[通用RL推断] rollouts={num_rollouts}, greedy={greedy}")
+    print(f"[通用RL搜索] 任务: {task_name}, base_model={bm}")
+    print(f"[通用RL搜索] rollouts={num_rollouts}, greedy={greedy}")
+    if general_policy_dir:
+        print(f"[通用RL搜索] 策略目录: {general_policy_dir}")
+    print(f"[通用RL搜索] Stage-1 策略: {general_stage1_policy}")
+    if general_stage2_policy:
+        print(f"[通用RL搜索] Stage-2 策略: {general_stage2_policy}")
     if _infer_tol is not None:
-        print(f"[通用RL推断] 准确度容忍: {_infer_tol*100:.1f}%")
+        print(f"[通用RL搜索] 准确度容忍: {_infer_tol*100:.1f}%")
 
     _, evaluator, _ = _build_evaluator(
         base_model=bm,
@@ -697,6 +754,10 @@ def infer(
     return result
 
 
+# infer 保留为 search 的别名，兼容旧脚本调用
+infer = search
+
+
 # ===========================================================================
 # 入口
 # ===========================================================================
@@ -706,7 +767,8 @@ if __name__ == "__main__":
         fire,
         {
             "train": train,
-            "infer": infer,
+            "search": search,
+            "infer": infer,  # 兼容别名
         },
         program_name="rl_tune_general.py",
     )

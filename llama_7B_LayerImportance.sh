@@ -801,7 +801,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ]; then
 elif [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
   if [ "$GENERAL_MODE" = "train" ]; then
     GENERAL_TASKSET_ID="$(normalize_taskset_id "${GENERAL_TASKS:-$DATASET}")"
-    # 泛化模式决定子目录
+    # 泛化模式决定子目录（仅用于显示）
     if [ "$_HAS_MULTI_TASKS" = "true" ] && [ "$_HAS_MULTI_TOLS" = "true" ]; then
       _GEN_SUBDIR="combined_gen"
     elif [ "$_HAS_MULTI_TOLS" = "true" ]; then
@@ -811,12 +811,53 @@ elif [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
     else
       _GEN_SUBDIR="single"
     fi
-    RUN_GROUP_DIR="rl_results/runs/general_rl/train/${_GEN_SUBDIR}/${GENERAL_TASKSET_ID}"
+    # ---- 构建准确度标识符（accuracy_slug）----
+    if [ -n "$GENERAL_ACCURACY_TOLERANCE_RANGE" ]; then
+      # 连续范围: range_0.50pct_2.00pct
+      IFS=',' read -r -a __range_parts <<< "$GENERAL_ACCURACY_TOLERANCE_RANGE"
+      _lo_pct="$(awk -v x="$(printf '%s' "${__range_parts[0]}" | xargs)" 'BEGIN{printf "%.2f", x*100}')"
+      _hi_pct="$(awk -v x="$(printf '%s' "${__range_parts[1]}" | xargs)" 'BEGIN{printf "%.2f", x*100}')"
+      GENERAL_ACCURACY_SLUG="range_${_lo_pct}pct_${_hi_pct}pct"
+    elif [ -n "$GENERAL_ACCURACY_TOLERANCES" ]; then
+      # 离散列表: discrete_0.50pct_1.00pct_2.00pct
+      _slug="discrete"
+      IFS=',' read -r -a __tol_parts <<< "$GENERAL_ACCURACY_TOLERANCES"
+      for __tv in "${__tol_parts[@]}"; do
+        __tv="$(printf '%s' "$__tv" | xargs)"
+        [ -z "$__tv" ] && continue
+        _tv_pct="$(awk -v x="$__tv" 'BEGIN{printf "%.2f", x*100}')"
+        _slug="${_slug}_${_tv_pct}pct"
+      done
+      GENERAL_ACCURACY_SLUG="$_slug"
+    else
+      GENERAL_ACCURACY_SLUG="default"
+    fi
+    # ---- 持久化目录 ----
+    USE_PERSISTENT="true"
+    PERSISTENT_DIR="rl_results/persistent/general-rl/${MODEL_TYPE}/${GENERAL_TASKSET_ID}/${GENERAL_ACCURACY_SLUG}"
+    if [ "$FRESH_START" = "true" ]; then
+      if [ -d "$PERSISTENT_DIR" ]; then
+        echo "警告：--fresh-start 指定，正在清除已有持久化目录：$PERSISTENT_DIR"
+        rm -rf "$PERSISTENT_DIR"
+      fi
+      mkdir -p "${PERSISTENT_DIR}/logs"
+    elif [ -d "$PERSISTENT_DIR" ] && [ -f "${PERSISTENT_DIR}/metadata.json" ]; then
+      echo "检测到已有持久化目录：$PERSISTENT_DIR"
+      echo "自动进入续训练模式（如需从头训练请加 --fresh-start）。"
+      RESUME_FROM="$PERSISTENT_DIR"
+      S_RESUME_FROM="true"
+    else
+      err "首次运行该参数组合（${GENERAL_TASKSET_ID}/${GENERAL_ACCURACY_SLUG}），请显式指定 --fresh-start 以确认从头训练。如果是续训练但目录被删除，请重新用 --fresh-start 开始。"
+    fi
+    RUN_ROOT="$PERSISTENT_DIR"
+    RUN_GROUP_DIR="$(dirname "$PERSISTENT_DIR")"
+    LATEST_BASE_DIR="$RUN_GROUP_DIR"
   else
-    RUN_GROUP_DIR="rl_results/runs/general_rl/infer/${DATASET}"
+    # search 模式：使用时间戳目录存放搜索结果
+    RUN_GROUP_DIR="rl_results/runs/general_rl/search/${DATASET}"
+    RUN_ROOT="${RUN_GROUP_DIR}/${RUN_ID}"
+    LATEST_BASE_DIR="$RUN_GROUP_DIR"
   fi
-  RUN_ROOT="${RUN_GROUP_DIR}/${RUN_ID}"
-  LATEST_BASE_DIR="$RUN_GROUP_DIR"
 else
   # rl-and-ga-compare：对比实验使用时间戳目录
   RUN_GROUP_DIR="rl_results/runs/compare/rl_vs_ga/${DATASET}"
@@ -831,7 +872,29 @@ mkdir -p "${RUN_ROOT}/logs"
 if [ "$USE_PERSISTENT" = "true" ]; then
   _META_FILE="${PERSISTENT_DIR}/metadata.json"
   if [ ! -f "$_META_FILE" ]; then
-    cat > "$_META_FILE" <<METAEOF
+    if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
+      # general-rl 持久化 metadata
+      _META_TASKS="${GENERAL_TASKS:-$DATASET}"
+      _META_TOL_RANGE="${GENERAL_ACCURACY_TOLERANCE_RANGE:-null}"
+      _META_TOL_LIST="${GENERAL_ACCURACY_TOLERANCES:-null}"
+      [ "$_META_TOL_RANGE" != "null" ] && _META_TOL_RANGE="\"$_META_TOL_RANGE\""
+      [ "$_META_TOL_LIST" != "null" ] && _META_TOL_LIST="\"$_META_TOL_LIST\""
+      cat > "$_META_FILE" <<METAEOF
+{
+  "algorithm": "general-rl",
+  "model_type": "$MODEL_TYPE",
+  "taskset": "$GENERAL_TASKSET_ID",
+  "tasks": "$_META_TASKS",
+  "accuracy_slug": "$GENERAL_ACCURACY_SLUG",
+  "accuracy_tolerance_range": $_META_TOL_RANGE,
+  "accuracy_tolerances": $_META_TOL_LIST,
+  "created_at": "$(date -Iseconds)",
+  "last_updated_at": "$(date -Iseconds)",
+  "run_count": 1
+}
+METAEOF
+    else
+      cat > "$_META_FILE" <<METAEOF
 {
   "algorithm": "$SEARCH_ALGORITHM",
   "model_type": "$MODEL_TYPE",
@@ -844,6 +907,7 @@ if [ "$USE_PERSISTENT" = "true" ]; then
   "run_count": 1
 }
 METAEOF
+    fi
   else
     # 更新已有 metadata 的时间戳和计数
     if command -v python3 &>/dev/null; then
@@ -861,7 +925,10 @@ fi
 if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
   GENERAL_DATA_PATH="$DATA_PATH"
   [ "$GENERAL_MODE" = "train" ] && [ -n "$GENERAL_TASKS" ] && GENERAL_DATA_PATH="$GENERAL_TASKS"
-  CMD=(python rl_tune_general.py "$GENERAL_MODE" --model_type "$MODEL_TYPE" --data_path "$GENERAL_DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --device cuda)
+  # search 模式在 Python 端仍映射为 infer（兼容）
+  _PY_MODE="$GENERAL_MODE"
+  [ "$_PY_MODE" = "search" ] && _PY_MODE="search"
+  CMD=(python rl_tune_general.py "$_PY_MODE" --model_type "$MODEL_TYPE" --data_path "$GENERAL_DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --device cuda)
   if [ "$GENERAL_MODE" = "train" ]; then
     CMD+=(--total_rounds "$GENERAL_ROUNDS" --episodes_per_task_per_round "$GENERAL_EPISODES_PER_ROUND" --general_lr "$GENERAL_LR" --skip_stage2 "$GENERAL_SKIP_STAGE2")
     [ -n "$GENERAL_STAGE1_CONFIG_JSON" ] && CMD+=(--stage1_config_json "$GENERAL_STAGE1_CONFIG_JSON")
@@ -871,6 +938,7 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
   else
     CMD+=(--general_stage1_policy "$GENERAL_STAGE1_POLICY" --num_rollouts "$GENERAL_NUM_ROLLOUTS" --greedy "$GENERAL_GREEDY" --skip_stage2 "$GENERAL_SKIP_STAGE2")
     [ -n "$GENERAL_STAGE2_POLICY" ] && CMD+=(--general_stage2_policy "$GENERAL_STAGE2_POLICY")
+    [ -n "$GENERAL_POLICY_DIR" ] && CMD+=(--general_policy_dir "$GENERAL_POLICY_DIR")
     [ -n "$GENERAL_ACCURACY_TOLERANCES" ] && CMD+=(--accuracy_tolerance "$(printf '%s' "$GENERAL_ACCURACY_TOLERANCES" | cut -d, -f1 | xargs)")
   fi
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
@@ -960,12 +1028,16 @@ else
       *) show "泛化模式" "单任务单容忍" "true" ;;
     esac
     show "任务集合标识" "$GENERAL_TASKSET_ID" "true"
+    show "准确度标识" "$GENERAL_ACCURACY_SLUG" "true"
     show "训练任务" "${GENERAL_TASKS:-$DATASET}" "$S_GENERAL_TASKS"
     [ -n "$GENERAL_ACCURACY_TOLERANCES" ] && show "准确度容忍值" "$GENERAL_ACCURACY_TOLERANCES" "$S_GENERAL_ACCURACY_TOLERANCES"
+    [ -n "$GENERAL_ACCURACY_TOLERANCE_RANGE" ] && show "准确度容忍范围" "$GENERAL_ACCURACY_TOLERANCE_RANGE" "true"
     show "训练轮数" "$GENERAL_ROUNDS" "$S_GENERAL_ROUNDS"
     show "每轮每任务回合数" "$GENERAL_EPISODES_PER_ROUND" "$S_GENERAL_EPISODES_PER_ROUND"
     show "通用策略学习率" "$GENERAL_LR" "$S_GENERAL_LR"
+    show "从头训练" "$(boolzh "$FRESH_START")" "$S_FRESH_START"
   else
+    [ -n "$GENERAL_POLICY_DIR" ] && show "策略目录" "$GENERAL_POLICY_DIR" "$S_GENERAL_POLICY_DIR"
     show "Stage-1 策略文件" "$GENERAL_STAGE1_POLICY" "$S_GENERAL_STAGE1_POLICY"
     show "离线 rollout 次数" "$GENERAL_NUM_ROLLOUTS" "$S_GENERAL_NUM_ROLLOUTS"
     show "是否贪心 rollout" "$(boolzh "$GENERAL_GREEDY")" "$S_GENERAL_GREEDY"
