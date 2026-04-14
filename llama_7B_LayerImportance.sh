@@ -28,6 +28,8 @@ GA / 对比实验中的 GA：
 
 持久化与续训练（rl / ga 可用）：
   --fresh-start                        从头开始训练（首次运行必须指定）
+  --fresh-stage1                       仅重置 Stage-1 数据（保留 Stage-2）
+  --fresh-stage2                       仅重置 Stage-2 数据（保留 Stage-1）
 
 普通 RL / GA 共用：
   --skip-stage1-search
@@ -314,6 +316,8 @@ STAGE1_ACCURACY_TOLERANCE="0.005"; S_STAGE1_ACCURACY_TOLERANCE="false"
 STAGE2_LIMIT_QUARTILE="0.2"; S_STAGE2_LIMIT_QUARTILE="false"
 STAGE2_STABILITY_QUARTILE="0.2"; S_STAGE2_STABILITY_QUARTILE="false"
 FRESH_START="false"; S_FRESH_START="false"
+FRESH_STAGE1="false"; S_FRESH_STAGE1="false"
+FRESH_STAGE2="false"; S_FRESH_STAGE2="false"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -394,6 +398,8 @@ while [ "$#" -gt 0 ]; do
     --stage2-limit-quartile) needv "$@"; STAGE2_LIMIT_QUARTILE="$2"; S_STAGE2_LIMIT_QUARTILE="true"; shift 2 ;;
     --stage2-stability-quartile) needv "$@"; STAGE2_STABILITY_QUARTILE="$2"; S_STAGE2_STABILITY_QUARTILE="true"; shift 2 ;;
     --fresh-start) FRESH_START="true"; S_FRESH_START="true"; shift ;;
+    --fresh-stage1) FRESH_STAGE1="true"; S_FRESH_STAGE1="true"; shift ;;
+    --fresh-stage2) FRESH_STAGE2="true"; S_FRESH_STAGE2="true"; shift ;;
     --*) err "不支持的参数：$1" ;;
     *) err "不再支持位置参数：$1。请改用 --dataset mrpc 这种写法。" ;;
   esac
@@ -670,7 +676,12 @@ else
     else
       [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ] || err "只有 --stage2-fixed-config-source=manual 时才能提供 --stage2-manual-gelu / --stage2-manual-softmax。"
     fi
-    [ "$SKIP_STAGE1_SEARCH" = "false" ] || [ "$STAGE2_FIXED_CONFIG_SOURCE" != "stage1_result" ] || err "跳过 Stage-1 搜索后，Stage-2 固定 GELU/Softmax 不能再使用 --stage2-fixed-config-source=stage1_result。"
+    # 跳过 Stage-1 时，若持久化目录中已有 Stage-1 完成结果，仍允许使用 stage1_result
+    if [ "$SKIP_STAGE1_SEARCH" = "true" ] && [ "$STAGE2_FIXED_CONFIG_SOURCE" = "stage1_result" ]; then
+      _HAS_S1_CKPT="false"
+      [ -f "${PERSISTENT_DIR}/stage1/stage1_rl_checkpoint.pt" ] && _HAS_S1_CKPT="true"
+      [ "$_HAS_S1_CKPT" = "true" ] || err "跳过 Stage-1 搜索且无历史 Stage-1 结果，Stage-2 固定 GELU/Softmax 不能使用 --stage2-fixed-config-source=stage1_result。请改用 json 或 manual，或先运行 Stage-1。"
+    fi
     if [ "$STAGE2_FIXED_CONFIG_SOURCE" = "json" ]; then
       [ -f "$STAGE2_FIXED_CONFIG" ] || err "Stage-2 固定 GELU/Softmax 的 JSON 配置文件不存在：$STAGE2_FIXED_CONFIG"
       FAM="$(infer_family "$STAGE2_FIXED_CONFIG")"
@@ -684,9 +695,28 @@ else
     [ -z "$MANUAL_NOISE_CONFIG" ] || err "只有 --noise-eval-source=manual 时才能提供手动噪声配置。"
   fi
   [ "$SKIP_STAGE1_SEARCH" = "false" ] || [ "$FINAL_EVAL_SOURCE" != "search" ] || err "跳过 Stage-1 搜索后，不能再使用 --final-eval-source=search。"
-  [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$FINAL_EVAL_SOURCE" = "search" ] || err "执行 Stage-1 搜索时，--final-eval-source 只能是 search。"
+  # 仅在用户显式指定了 --final-eval-source 时校验一致性；
+  # 续训切换阶段开关时，若用户未指定则自动适配。
+  if [ "$S_FINAL_EVAL_SOURCE" = "true" ]; then
+    [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$FINAL_EVAL_SOURCE" = "search" ] || err "执行 Stage-1 搜索时，--final-eval-source 只能是 search。"
+  else
+    # 未显式指定：根据 skip 状态自动适配
+    if [ "$SKIP_STAGE1_SEARCH" = "false" ] && [ "$FINAL_EVAL_SOURCE" != "search" ]; then
+      echo "[自动适配] 启用 Stage-1 搜索，自动将 --final-eval-source 设为 search。"
+      FINAL_EVAL_SOURCE="search"
+    fi
+  fi
   [ "$SKIP_NOISE_FINAL_EVAL" = "true" ] || [ "$SKIP_NOISE_SEARCH" = "false" ] || [ "$NOISE_EVAL_SOURCE" != "search" ] || err "跳过 Stage-2 搜索后，不能再使用 --noise-eval-source=search。"
-  [ "$SKIP_NOISE_FINAL_EVAL" = "true" ] || [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$NOISE_EVAL_SOURCE" = "search" ] || err "执行 Stage-2 搜索且保留最终评估时，--noise-eval-source 只能是 search。"
+  # 仅在用户显式指定了 --noise-eval-source 时校验一致性
+  if [ "$S_NOISE_EVAL_SOURCE" = "true" ]; then
+    [ "$SKIP_NOISE_FINAL_EVAL" = "true" ] || [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$NOISE_EVAL_SOURCE" = "search" ] || err "执行 Stage-2 搜索且保留最终评估时，--noise-eval-source 只能是 search。"
+  else
+    # 未显式指定：根据 skip 状态自动适配
+    if [ "$SKIP_NOISE_SEARCH" = "false" ] && [ "$SKIP_NOISE_FINAL_EVAL" = "false" ] && [ "$NOISE_EVAL_SOURCE" != "search" ]; then
+      echo "[自动适配] 启用 Stage-2 搜索+评估，自动将 --noise-eval-source 设为 search。"
+      NOISE_EVAL_SOURCE="search"
+    fi
+  fi
   if [ "$FINAL_EVAL_SOURCE" = "json" ]; then [ -f "$FINAL_EVAL_CONFIG" ] || err "第一阶段 JSON 配置文件不存在：$FINAL_EVAL_CONFIG"; fi
   if [ "$NOISE_EVAL_SOURCE" = "json" ] && [ "$SKIP_NOISE_FINAL_EVAL" = "false" ]; then [ -f "$NOISE_EVAL_CONFIG" ] || err "第二阶段 JSON 配置文件不存在：$NOISE_EVAL_CONFIG"; fi
   if [ "$FINAL_EVAL_SOURCE" = "json" ]; then
@@ -787,6 +817,40 @@ if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ]; then
     echo "自动进入续训练模式（如需从头训练请加 --fresh-start）。"
     RESUME_FROM="$PERSISTENT_DIR"
     S_RESUME_FROM="true"
+    # ---- 单阶段重置（--fresh-stage1 / --fresh-stage2） ----
+    if [ "$FRESH_STAGE1" = "true" ] && [ -d "${PERSISTENT_DIR}/stage1" ]; then
+      echo "[单阶段重置] --fresh-stage1 指定，正在清除 Stage-1 数据：${PERSISTENT_DIR}/stage1"
+      rm -rf "${PERSISTENT_DIR}/stage1"
+      rm -rf "${PERSISTENT_DIR}/stage1_final_eval"
+      # 更新 metadata 中的阶段状态
+      if command -v python3 &>/dev/null; then
+        python3 -c "
+import json, sys
+p = '${PERSISTENT_DIR}/metadata.json'
+with open(p, 'r') as f: m = json.load(f)
+ss = m.setdefault('stage_status', {})
+ss['stage1_search'] = 'not_started'
+ss['stage1_final_eval'] = 'not_started'
+with open(p, 'w') as f: json.dump(m, f, indent=2)
+" 2>/dev/null || true
+      fi
+    fi
+    if [ "$FRESH_STAGE2" = "true" ] && [ -d "${PERSISTENT_DIR}/stage2_noise" ]; then
+      echo "[单阶段重置] --fresh-stage2 指定，正在清除 Stage-2 数据：${PERSISTENT_DIR}/stage2_noise"
+      rm -rf "${PERSISTENT_DIR}/stage2_noise"
+      rm -rf "${PERSISTENT_DIR}/stage2_noise_final_eval"
+      if command -v python3 &>/dev/null; then
+        python3 -c "
+import json, sys
+p = '${PERSISTENT_DIR}/metadata.json'
+with open(p, 'r') as f: m = json.load(f)
+ss = m.setdefault('stage_status', {})
+ss['stage2_search'] = 'not_started'
+ss['stage2_final_eval'] = 'not_started'
+with open(p, 'w') as f: json.dump(m, f, indent=2)
+" 2>/dev/null || true
+      fi
+    fi
   elif [ "$_ALL_SEARCH_SKIPPED" = "true" ]; then
     # 所有搜索都跳过（eval-only）：无需 --fresh-start，自动创建目录
     echo "所有搜索阶段已跳过（eval-only 模式），自动创建持久化目录：$PERSISTENT_DIR"
@@ -904,7 +968,13 @@ METAEOF
   "stage2_stability_quartile": $STAGE2_STABILITY_QUARTILE,
   "created_at": "$(date -Iseconds)",
   "last_updated_at": "$(date -Iseconds)",
-  "run_count": 1
+  "run_count": 1,
+  "stage_status": {
+    "stage1_search": "not_started",
+    "stage1_final_eval": "not_started",
+    "stage2_search": "not_started",
+    "stage2_final_eval": "not_started"
+  }
 }
 METAEOF
     fi
@@ -977,6 +1047,8 @@ fi
 if [ "$USE_PERSISTENT" = "true" ]; then
   show "持久化目录" "$PERSISTENT_DIR" "true"
   show "从头训练" "$(boolzh "$FRESH_START")" "$S_FRESH_START"
+  if [ "$FRESH_STAGE1" = "true" ]; then show "单独重置 Stage-1" "是" "$S_FRESH_STAGE1"; fi
+  if [ "$FRESH_STAGE2" = "true" ]; then show "单独重置 Stage-2" "是" "$S_FRESH_STAGE2"; fi
 fi
 
 if [ "$SEARCH_ALGORITHM" = "rl" ]; then

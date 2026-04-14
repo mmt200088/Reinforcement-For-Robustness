@@ -541,6 +541,26 @@ def _deserialize_numpy_keys(obj, keys_to_convert):
     return obj
 
 
+def _atomic_torch_save(obj, path):
+    """原子性 torch.save：先写临时文件再 rename，避免中断导致 checkpoint 损坏。
+
+    如果进程在 torch.save 期间崩溃，残留的 .tmp 文件不会污染正式 checkpoint；
+    下次保存时 .tmp 会被覆盖。
+    """
+    tmp_path = path + ".tmp"
+    try:
+        torch.save(obj, tmp_path)
+        os.replace(tmp_path, path)  # 原子替换（Windows 和 POSIX 均支持）
+    except BaseException:
+        # 写入失败时清理残留临时文件
+        if os.path.isfile(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
+
+
 def save_noise_rl_checkpoint(
     path,
     noise_net,
@@ -598,7 +618,7 @@ def save_noise_rl_checkpoint(
     if fixed_softmax is not None:
         checkpoint["fixed_softmax"] = np.asarray(fixed_softmax, dtype=int).tolist()
     os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
-    torch.save(checkpoint, path)
+    _atomic_torch_save(checkpoint, path)
 
 
 def load_noise_rl_checkpoint(path, noise_net, optimizer, device="cuda"):
@@ -672,7 +692,7 @@ def save_stage1_rl_checkpoint(
         "stage1_warnings": _serialize_numpy(stage1_warnings),
     }
     os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
-    torch.save(checkpoint, path)
+    _atomic_torch_save(checkpoint, path)
 
 
 def load_stage1_rl_checkpoint(path, gtrxl_net, optimizer, device="cuda"):
@@ -2703,6 +2723,16 @@ class NoiseRLModuleV2:
                         fixed_softmax=fixed_softmax,
                     )
                     consume_stop_flag_file(noise_stop_flag_path)
+                    if ev.run_output_dir:
+                        from layer_importance_evaluator import update_persistent_metadata_stage
+                        update_persistent_metadata_stage(
+                            ev.run_output_dir, "stage2_search", "in_progress",
+                            extra_fields={
+                                "completed_episodes": episode + 1,
+                                "total_episodes": int(stage2_total_episodes),
+                                "stopped_by": "graceful_stop",
+                            },
+                        )
                     ev.log(
                         f"  [优雅停止] checkpoint 已写入 → {noise_rl_checkpoint_path}\n"
                         f"  下次用相同参数直接运行即可自动续训练（rl/ga 持久化目录），"

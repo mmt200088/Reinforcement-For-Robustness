@@ -168,6 +168,58 @@ def ensure_parent_dir(path):
         os.makedirs(parent_dir, exist_ok=True)
 
 
+def update_persistent_metadata_stage(run_output_dir, stage_key, status,
+                                     extra_fields=None):
+    """更新持久化目录中 metadata.json 的阶段完成状态。
+
+    stage_key: 'stage1_search', 'stage1_final_eval', 'stage2_search',
+               'stage2_final_eval'
+    status:    'completed', 'skipped', 'in_progress', 'not_started'
+    extra_fields: dict of additional fields to merge (optional)
+    """
+    import json as _json
+    import datetime as _dt
+    meta_path = os.path.join(run_output_dir, "metadata.json")
+    if not os.path.isfile(meta_path):
+        return
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = _json.load(f)
+    except Exception:
+        return
+    stages = meta.setdefault("stage_status", {})
+    stages[stage_key] = status
+    if extra_fields:
+        stage_detail = meta.setdefault("stage_detail", {})
+        stage_detail.setdefault(stage_key, {}).update(extra_fields)
+    meta["last_updated_at"] = _dt.datetime.now().isoformat()
+    tmp_path = meta_path + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            _json.dump(meta, f, indent=2, ensure_ascii=False)
+        # 原子替换（Windows 上 os.replace 也是原子性的）
+        os.replace(tmp_path, meta_path)
+    except Exception:
+        if os.path.isfile(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def read_persistent_metadata(run_output_dir):
+    """读取持久化目录的 metadata.json，返回 dict 或 None。"""
+    import json as _json
+    meta_path = os.path.join(run_output_dir, "metadata.json")
+    if not os.path.isfile(meta_path):
+        return None
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            return _json.load(f)
+    except Exception:
+        return None
+
+
 def resolve_run_output_layout(run_output_dir, search_algorithm=None):
     s1_log, s2_log = _SEARCH_LOG_FILENAMES.get(
         search_algorithm, (DEFAULT_STAGE1_SEARCH_LOG_FILE, DEFAULT_STAGE1_SEARCH_LOG_FILE),
@@ -2504,6 +2556,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.noise_log_file = output_layout["noise_log_file"]
         self.active_log_file = self.log_file
         self.step_info_file = output_layout["stage1_step_info_file"]
+        self.stage1_step_info_file = self.step_info_file  # alias for clarity
         self.stage1_training_curve_path = output_layout["stage1_training_curve_path"]
         self.stage1_entropy_curve_path = output_layout["stage1_entropy_curve_path"]
         self.stage1_final_eval_dir = output_layout["stage1_final_eval_dir"]
@@ -2518,8 +2571,17 @@ class LayerImportanceEvaluator(TrainerCallback):
             "=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===",
         )
         ensure_parent_dir(self.log_file)
-        with open(self.log_file, "w", encoding="utf-8") as f:
-            f.write(_log_header + "\n")
+        # 续训时使用追加模式，避免覆盖之前的日志
+        _is_resuming = bool(str(resume_run_dir or '').strip())
+        _log_open_mode = "a" if _is_resuming and os.path.isfile(self.log_file) else "w"
+        with open(self.log_file, _log_open_mode, encoding="utf-8") as f:
+            if _is_resuming:
+                f.write(f"\n{'='*60}\n")
+                import datetime as _dt
+                f.write(f"=== 续训日志开始（Resume Log Started） {_dt.datetime.now().isoformat()} ===\n")
+                f.write(f"{'='*60}\n")
+            else:
+                f.write(_log_header + "\n")
         with open(self.log_file, "a", encoding="utf-8") as f:
             f.write(
                 f"[信息] Stage-1 PPO学习率（LR）从 stage1_rl_lr={self.stage1_rl_lr_raw!r} 解析为 -> "
@@ -2630,23 +2692,43 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "Use one of: stage1_result, json, manual."
             )
 
+        # ---------- 阶段组合校验（兼容续训时灵活切换阶段开关） ----------
+        # 在持久化目录续训时，允许用户改变 skip 标志。
+        # 仅在逻辑上真正冲突时报错。
+        _has_stage1_checkpoint = (
+            self.resume_run_dir
+            and os.path.isfile(os.path.join(
+                self.resume_run_dir, "stage1",
+                "stage1_rl_checkpoint.pt"
+            ))
+        )
+        _prev_meta = read_persistent_metadata(self.run_output_dir) if self.run_output_dir else None
+        _prev_stage1_done = (
+            _prev_meta is not None
+            and _prev_meta.get("stage_status", {}).get("stage1_search") == "completed"
+        )
+
         if self.skip_stage1_rl and self.final_eval_config_source == 'search':
-            raise ValueError(
-                "skip_stage1_rl=True 与 final_eval_config_source='search' 不能同时使用："
-                "跳过第一阶段搜索后没有 RL/贪心结果可供 search 使用。"
-                "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
-            )
+            # 跳过 stage1 但要求 search 结果——只有在没有历史 stage1 结果时才报错
+            if not (_has_stage1_checkpoint or _prev_stage1_done):
+                raise ValueError(
+                    "skip_stage1_rl=True 与 final_eval_config_source='search' 不能同时使用："
+                    "跳过第一阶段搜索后没有 RL/贪心结果可供 search 使用。"
+                    "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
+                )
 
         if (
             self.needs_stage2_fixed_config
             and self.skip_stage1_rl
             and self.stage2_fixed_config_source == 'stage1_result'
         ):
-            raise ValueError(
-                "skip_stage1_rl=True 与 stage2_fixed_config_source='stage1_result' 不能同时使用："
-                "跳过第一阶段搜索后，没有 Stage-1 搜索结果可供第二阶段固定 GELU/Softmax 使用。"
-                "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
-            )
+            # 跳过 stage1 但 stage2 要用 stage1 结果——只有在没有历史结果时才报错
+            if not (_has_stage1_checkpoint or _prev_stage1_done):
+                raise ValueError(
+                    "skip_stage1_rl=True 与 stage2_fixed_config_source='stage1_result' 不能同时使用："
+                    "跳过第一阶段搜索后，没有 Stage-1 搜索结果可供第二阶段固定 GELU/Softmax 使用。"
+                    "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
+                )
 
         if self.skip_stage1_rl and (
             self.stage1_rl_episodes_specified
@@ -2658,12 +2740,12 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
 
         if (not self.skip_stage1_rl) and self.final_eval_config_source != 'search':
-            raise ValueError(
-                "检测到第一阶段 RL/贪心搜索将执行，但 final_eval_config_source 不是 'search'。"
-                "为避免“前面跑 RL、后面却用手动/JSON 配置评估”的流程混用，"
-                "执行第一阶段 RL 时只能使用 search。"
-                "若要使用 json/manual，请设置 skip_stage1_rl=True。"
+            # 自动适配：启用 stage1 时自动将 final_eval_config_source 切换为 search
+            print(
+                "[自动适配] 启用 Stage-1 搜索，自动将 final_eval_config_source 从 "
+                f"'{self.final_eval_config_source}' 切换为 'search'。"
             )
+            self.final_eval_config_source = 'search'
 
         if (
             (not self.skip_stage1_rl)
@@ -3434,12 +3516,23 @@ class LayerImportanceEvaluator(TrainerCallback):
             return
 
         ensure_parent_dir(self.noise_log_file)
-        with open(self.noise_log_file, "w", encoding="utf-8") as f:
-            f.write(
-                "══════════════════════════════════════════════════════════════════════\n"
-                "  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）\n"
-                "══════════════════════════════════════════════════════════════════════\n"
-            )
+        # 续训时使用追加模式，避免覆盖之前的 Stage-2 日志
+        _is_resuming = bool(self.resume_run_dir)
+        _noise_log_mode = "a" if _is_resuming and os.path.isfile(self.noise_log_file) else "w"
+        with open(self.noise_log_file, _noise_log_mode, encoding="utf-8") as f:
+            if _is_resuming and _noise_log_mode == "a":
+                import datetime as _dt
+                f.write(
+                    f"\n{'═'*70}\n"
+                    f"  续训日志开始（Resume Stage-2 Log Started） {_dt.datetime.now().isoformat()}\n"
+                    f"{'═'*70}\n"
+                )
+            else:
+                f.write(
+                    "══════════════════════════════════════════════════════════════════════\n"
+                    "  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）\n"
+                    "══════════════════════════════════════════════════════════════════════\n"
+                )
         with open(self.noise_log_file, "a", encoding="utf-8") as f:
             f.write(
                 f"  [信息] Stage-1 PPO学习率（LR）: raw={self.stage1_rl_lr_raw!r} -> "
@@ -4949,6 +5042,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.log("[信息] 基线建立已跳过，因其仅用于第一阶段RL/贪心搜索。")
             self.log("\n--- 阶段1.5（Phase 1.5）: 已跳过（SKIPPED）（--skip-stage1-rl） ---")
             self.log("[信息] GELU输入分布分析已跳过，因其仅用于第一阶段RL/贪心搜索。")
+            if self.run_output_dir:
+                update_persistent_metadata_stage(
+                    self.run_output_dir, "stage1_search", "skipped")
 
             if not self.skip_stage1_final_eval:
                 # Phase 3/4 仍需要约束阈值；仅在需要最终评估时静默计算。
@@ -5687,6 +5783,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                         stage1_warnings=stage1_warnings,
                     )
                     consume_stop_flag_file(stage1_stop_flag_path)
+                    if self.run_output_dir:
+                        update_persistent_metadata_stage(
+                            self.run_output_dir, "stage1_search", "in_progress",
+                            extra_fields={
+                                "completed_episodes": episode + 1,
+                                "total_episodes": int(self.stage1_rl_episodes),
+                                "stopped_by": "graceful_stop",
+                            },
+                        )
                     self.log(
                         f"  [优雅停止] checkpoint 已写入 → {stage1_checkpoint_path}\n"
                         f"  下次用相同参数直接运行即可自动续训练（rl/ga 持久化目录），"
@@ -5746,6 +5851,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                     stage1_warnings=stage1_warnings,
                 )
                 self.log(f"  [完成] Stage-1 最终 checkpoint 已保存 → {stage1_checkpoint_path}")
+            if self.run_output_dir:
+                update_persistent_metadata_stage(
+                    self.run_output_dir, "stage1_search", "completed",
+                    extra_fields={
+                        "episodes": int(self.stage1_rl_episodes),
+                        "best_reward": float(best_reward),
+                        "best_cost": float(best_cost),
+                    },
+                )
 
             # ---- (可迁移) 保存独立的 portable policy 文件，仅含权重 + 元数据 ----
             if RL_OPT_FLAGS.get("stage1_save_portable_policy", False):
@@ -6344,6 +6458,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
             self.log(f"  GELU   : {opt_gelu.tolist()}")
             self.log(f"  Softmax: {opt_softmax.tolist()}")
+            if self.run_output_dir:
+                update_persistent_metadata_stage(
+                    self.run_output_dir, "stage1_final_eval", "skipped")
         else:
             # ---------------------------------------------------------
             # Phase 3: Final Report（第一阶段最终评估）
@@ -6457,6 +6574,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                     d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
                     self.log(_format_sensitivity_msg(f"第{i}层（L{i}） Smax {cd_s}->{cd_s-1}", status, l, p, s, d_l, d_p, d_s))
 
+        if self.run_output_dir and not self.skip_stage1_final_eval:
+            update_persistent_metadata_stage(
+                self.run_output_dir, "stage1_final_eval", "completed")
+
         # ---------------------------------------------------------
         # Phase 5: Second-stage noise RL training (独立可控)
         # ---------------------------------------------------------
@@ -6490,6 +6611,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         try:
             if self.skip_noise_rl:
                 self.log("\n[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。")
+                if self.run_output_dir:
+                    update_persistent_metadata_stage(
+                        self.run_output_dir, "stage2_search", "skipped")
             else:
                 noise_stage_result = self.run_noise_rl_stage(
                     fixed_gelu=stage2_fixed_gelu,
@@ -6498,18 +6622,31 @@ class LayerImportanceEvaluator(TrainerCallback):
                     fixed_source=stage2_fixed_source,
                     resume_checkpoint_path=self._get_stage2_resume_checkpoint_path(),
                 )
+                if self.run_output_dir:
+                    update_persistent_metadata_stage(
+                        self.run_output_dir, "stage2_search", "completed",
+                        extra_fields={
+                            "episodes": int(self.stage2_rl_episodes),
+                        },
+                    )
 
             # ---------------------------------------------------------
             # Phase 5.5: Noise final evaluation (独立可控)
             # ---------------------------------------------------------
             if self.skip_noise_final_eval:
                 self.log("\n[信息] 噪声最终评估已跳过（--skip-noise-final-eval）。")
+                if self.run_output_dir:
+                    update_persistent_metadata_stage(
+                        self.run_output_dir, "stage2_final_eval", "skipped")
             else:
                 noise_eval_result = self.run_noise_final_eval_stage(
                     fixed_gelu=stage2_fixed_gelu,
                     fixed_softmax=stage2_fixed_softmax,
                     noise_stage_result=noise_stage_result,
                 )
+                if self.run_output_dir:
+                    update_persistent_metadata_stage(
+                        self.run_output_dir, "stage2_final_eval", "completed")
         finally:
             self.active_log_file = previous_log_file
 
