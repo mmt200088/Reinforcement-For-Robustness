@@ -574,15 +574,25 @@ def _stage1_rollout_one_episode(net, env, device, total_layers, greedy=False):
         config: dict with gelu, softmax, cost
         steps: list of (cont_feat_np, layer_idx, prev_g, prev_s, action_g, action_s,
                logprob, reward, value, done, gelu_mask_np)
+
+    性能优化（不改变任何数值结果）:
+      - 预分配 (1, N, ...) 缓冲区, 通过 slice view 传入网络, 避免每步 torch.cat 的 O(N²) 开销
+        slice [:, :step+1] 是 view（不拷贝），与 torch.cat 构造的连续张量在数值上完全等价
     """
     state = env.reset()
-    prev_g = torch.tensor([[_SOS_GELU]], dtype=torch.long, device=device)
-    prev_s = torch.tensor([[_SOS_SOFTMAX]], dtype=torch.long, device=device)
+    prev_g_val = _SOS_GELU
+    prev_s_val = _SOS_SOFTMAX
+    N = total_layers
 
-    seq_cf, seq_li, seq_pg, seq_ps, seq_gm = [], [], [], [], []
+    # 预分配缓冲区，避免每步 torch.cat 动态扩展
+    buf_cf = torch.zeros(1, N, 6, dtype=torch.float32, device=device)
+    buf_li = torch.zeros(1, N, dtype=torch.long, device=device)
+    buf_pg = torch.zeros(1, N, dtype=torch.long, device=device)
+    buf_ps = torch.zeros(1, N, dtype=torch.long, device=device)
+    buf_gm = torch.zeros(1, N, 4, dtype=torch.bool, device=device)
+
     episode_reward = 0.0
     steps = []
-    N = total_layers
 
     for step in range(N):
         layer_idx = int(np.argmax(state[0:N]))
@@ -593,23 +603,21 @@ def _stage1_rollout_one_episode(net, env, device, total_layers, greedy=False):
             state[m1b] if len(state) > m1b else 0.0,
             state[m2b] if len(state) > m2b else 0.0,
         ], dtype=np.float32)
-
-        cf_t = torch.tensor(cf, dtype=torch.float32).view(1, 1, -1).to(device)
-        li_t = torch.tensor([[layer_idx]], dtype=torch.long, device=device)
         gm_np = env.get_gelu_action_mask(layer_idx)
-        gm_t = torch.tensor(gm_np, dtype=torch.bool).view(1, 1, -1).to(device)
 
-        seq_cf.append(cf_t)
-        seq_li.append(li_t)
-        seq_pg.append(prev_g)
-        seq_ps.append(prev_s)
-        seq_gm.append(gm_t)
+        # 填入预分配缓冲区（in-place 赋值，不分配新张量）
+        buf_cf[0, step] = torch.from_numpy(cf).to(device, non_blocking=True)
+        buf_li[0, step] = layer_idx
+        buf_pg[0, step] = prev_g_val
+        buf_ps[0, step] = prev_s_val
+        buf_gm[0, step] = torch.from_numpy(gm_np).to(device, non_blocking=True)
 
-        full_cf = torch.cat(seq_cf, dim=1)
-        full_li = torch.cat(seq_li, dim=1)
-        full_pg = torch.cat(seq_pg, dim=1)
-        full_ps = torch.cat(seq_ps, dim=1)
-        full_gm = torch.cat(seq_gm, dim=1)
+        # slice view: 与 torch.cat 产生等价的输入（因果掩码下网络仅看到前 step+1 个 token）
+        full_cf = buf_cf[:, :step + 1]
+        full_li = buf_li[:, :step + 1]
+        full_pg = buf_pg[:, :step + 1]
+        full_ps = buf_ps[:, :step + 1]
+        full_gm = buf_gm[:, :step + 1]
 
         with torch.no_grad():
             if greedy:
@@ -624,12 +632,12 @@ def _stage1_rollout_one_episode(net, env, device, total_layers, greedy=False):
                 )
 
         next_state, reward, done, info = env.step(g_act.item(), s_act.item())
-        steps.append((cf, layer_idx, prev_g.squeeze().item(), prev_s.squeeze().item(),
+        steps.append((cf, layer_idx, prev_g_val, prev_s_val,
                        g_act.item(), s_act.item(), logprob.cpu(), reward, value.cpu(),
                        float(done), gm_np))
 
-        prev_g = g_act.reshape(1, 1).to(device)
-        prev_s = s_act.reshape(1, 1).to(device)
+        prev_g_val = g_act.item()
+        prev_s_val = s_act.item()
         episode_reward += reward
         state = next_state
 
@@ -1748,31 +1756,47 @@ def _stage2_rollout_one_episode(net, env, device, total_layers, greedy=False):
         episode_reward: float
         noise_config: dict with per-component noise scaling factors + reward
         steps: list of step tuples for buffer
+
+    性能优化（不改变数值结果）:
+      - 预分配 (1, N, ...) 缓冲区, 通过 slice view 传入网络, 避免每步 O(N²) 的 torch.cat
     """
     sos_tokens = list(_s1.NOISE_STAGE_SOS_TOKENS)
+    num_actions = len(sos_tokens)
+    N = total_layers
 
     state = env.reset()
-    prev_actions = torch.tensor(
-        [sos_tokens], dtype=torch.long, device=device,
-    ).unsqueeze(0)   # (1, 1, 7)
+    # 获取首步输入的连续特征维度
+    _probe_cf = env.get_continuous_features()
+    cont_dim = int(np.asarray(_probe_cf, dtype=np.float32).reshape(-1).shape[0])
 
-    seq_cf, seq_li, seq_pa = [], [], []
+    # 预分配缓冲区
+    buf_cf = torch.zeros(1, N, cont_dim, dtype=torch.float32, device=device)
+    buf_li = torch.zeros(1, N, dtype=torch.long, device=device)
+    buf_pa = torch.zeros(1, N, num_actions, dtype=torch.long, device=device)
+
+    # 初始 prev_actions = SOS
+    prev_actions_cpu = torch.tensor(sos_tokens, dtype=torch.long)
+
     episode_reward = 0.0
     steps = []
 
-    for step in range(total_layers):
+    for step in range(N):
         layer_idx = env.current_layer
-        cf_np = env.get_continuous_features()
-        cf = torch.tensor(cf_np, dtype=torch.float32, device=device).view(1, 1, -1)
-        li = torch.tensor([[layer_idx]], dtype=torch.long, device=device)
+        if step == 0:
+            cf_np = _probe_cf
+        else:
+            cf_np = env.get_continuous_features()
+        cf_np_arr = np.asarray(cf_np, dtype=np.float32).reshape(-1)
 
-        seq_cf.append(cf)
-        seq_li.append(li)
-        seq_pa.append(prev_actions)
+        # 写入预分配缓冲区
+        buf_cf[0, step] = torch.from_numpy(cf_np_arr).to(device, non_blocking=True)
+        buf_li[0, step] = layer_idx
+        buf_pa[0, step] = prev_actions_cpu.to(device, non_blocking=True)
 
-        cf_seq = torch.cat(seq_cf, dim=1)
-        li_seq = torch.cat(seq_li, dim=1)
-        pa_seq = torch.cat(seq_pa, dim=1)
+        # slice view（与 torch.cat 数值等价）
+        cf_seq = buf_cf[:, :step + 1]
+        li_seq = buf_li[:, :step + 1]
+        pa_seq = buf_pa[:, :step + 1]
 
         with torch.no_grad():
             if greedy:
@@ -1791,10 +1815,10 @@ def _stage2_rollout_one_episode(net, env, device, total_layers, greedy=False):
         next_state, reward, done, info = env.step(*[a.item() for a in actions])
 
         steps.append((
-            torch.tensor(cf_np, dtype=torch.float32),
+            torch.from_numpy(cf_np_arr.copy()),
             layer_idx,
-            prev_actions.squeeze(0).squeeze(0).clone(),  # (7,)
-            actions.clone(),                               # (7,)
+            prev_actions_cpu.clone(),                     # (num_actions,)
+            actions.detach().cpu().clone(),               # (num_actions,)
             logprob.cpu(),
             reward,
             value.cpu(),
@@ -1807,7 +1831,8 @@ def _stage2_rollout_one_episode(net, env, device, total_layers, greedy=False):
         else:
             episode_reward += reward
 
-        prev_actions = actions.unsqueeze(0).unsqueeze(0).to(device)
+        # 更新 prev_actions: 保留一份 CPU 副本供下一步和 steps 使用
+        prev_actions_cpu = actions.detach().cpu().to(torch.long)
         state = next_state
 
     noise_config = {

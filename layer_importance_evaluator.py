@@ -2415,6 +2415,13 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.data_collator = data_collator
         self.batch_size = max(1, int(batch_size))
+
+        # 评估结果缓存（基于 (gelu_config, softmax_config, use_train, split) 的确定性缓存）
+        # 模型在 eval 模式 + no_grad + dataloader shuffle=False + 无随机性 → 相同配置评估结果必然一致
+        # 相同配置的重复评估可直接复用缓存结果，不会改变任何数值结果
+        self._eval_cache = {}
+        # 跳过 _run_evaluation 中重复的 model.eval()/model.to() 调用（只需第一次调用时设置一次）
+        self._eval_infra_ready = False
         self.stage1_rl_episodes = self._coerce_positive_int(
             stage1_rl_episodes, 'stage1_rl_episodes'
         )
@@ -2434,19 +2441,23 @@ class LayerImportanceEvaluator(TrainerCallback):
         self._log_task_type()
         
         # 训练集用于RL训练，验证集用于最终评估
+        # pin_memory=True: 将 CPU 数据放入 page-locked 内存, 加速 CPU→GPU 传输, 不改变任何数值结果
+        _pin = torch.cuda.is_available()
         self.dataloader_train = DataLoader(
             train_data,
             batch_size=self.batch_size,
             shuffle=False,
             collate_fn=data_collator,
+            pin_memory=_pin,
         )
         self.dataloader_test = DataLoader(
             test_data,
             batch_size=self.batch_size,
             shuffle=False,
             collate_fn=data_collator,
+            pin_memory=_pin,
         )
-        
+
         # MNLI mismatched 验证集（仅 MNLI 需要）
         if test_data_mm is not None:
             self.dataloader_test_mm = DataLoader(
@@ -2454,6 +2465,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 batch_size=self.batch_size,
                 shuffle=False,
                 collate_fn=data_collator,
+                pin_memory=_pin,
             )
         else:
             self.dataloader_test_mm = None
@@ -2947,11 +2959,13 @@ class LayerImportanceEvaluator(TrainerCallback):
     def _make_dataloader(self, dataset):
         if dataset is None:
             return None
+        # pin_memory=True: 加速 CPU→GPU 传输, 不改变数值
         return DataLoader(
             dataset,
             batch_size=self.batch_size,
             shuffle=False,
             collate_fn=self.data_collator,
+            pin_memory=torch.cuda.is_available(),
         )
 
     def _register_dataset_split(self, split_name, dataset, dataset_mm=None):
@@ -4452,28 +4466,38 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
 
     def _run_evaluation(self, dataloader, use_train=False, split_name=None):
-        """在当前模型上运行评估循环（不修改配置），用于无近似对照组等。"""
-        self.model.eval()
-        self.model.to(self.device)
+        """在当前模型上运行评估循环（不修改配置），用于无近似对照组等。
+
+        性能优化（不改变任何数值结果）:
+          - 仅首次调用执行 model.eval() + model.to(device) (之后模型状态不变)
+          - 移除每批次 cuda.synchronize() (仅用于计时, 不影响计算)
+          - 移除每次调用的 dummy warmup forward pass (CUDA kernels 已 warmup)
+          - 使用 torch.inference_mode() 替代 no_grad() (禁用版本计数, 更快)
+          - 在 GPU 传输前提取 labels, 避免 GPU→CPU 往返
+          - non_blocking=True + pin_memory 实现异步 CPU→GPU DMA
+        """
+        # 首次调用时确保模型处于 eval 模式且在正确设备上；后续调用模型状态不变, 无需重复设置
+        if not self._eval_infra_ready:
+            self.model.eval()
+            self.model.to(self.device)
+            self._eval_infra_ready = True
         total_loss = 0.0
         all_preds, all_labels = [], []
-        batch_times = []
-        if torch.cuda.is_available():
-            dummy = next(iter(dataloader))
-            dummy = {k: v.to(self.device) for k, v in dummy.items()}
-            with torch.no_grad(): _ = self.model(**dummy)
-            torch.cuda.synchronize()
-        with torch.no_grad():
+        _use_cuda = torch.cuda.is_available()
+        _t0 = time.time()
+        with torch.inference_mode():
             for batch in dataloader:
-                batch = {k: v.to(self.device) for k, v in batch.items()}
-                labels = self._normalize_labels_for_metrics(
-                    batch["labels"].detach().cpu().numpy()
-                )
-                if torch.cuda.is_available(): torch.cuda.synchronize()
-                start_time = time.time()
+                # 在 GPU 传输前直接从 CPU 读取 labels, 避免 labels 被多余地发到 GPU 再拷回 CPU
+                _labels_tensor = batch["labels"]
+                if isinstance(_labels_tensor, torch.Tensor):
+                    labels_np_raw = _labels_tensor.detach().numpy()
+                else:
+                    labels_np_raw = np.asarray(_labels_tensor)
+                labels = self._normalize_labels_for_metrics(labels_np_raw)
+
+                # 异步 CPU→GPU 传输; 与 pin_memory 配合使用提升数据传输效率
+                batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
                 outputs = self.model(**batch)
-                if torch.cuda.is_available(): torch.cuda.synchronize()
-                batch_times.append((time.time() - start_time) * 1000.0)
                 if outputs.loss is not None: total_loss += outputs.loss.item()
                 logits = self._normalize_logits_for_metrics(
                     outputs.logits.detach().cpu().numpy(),
@@ -4482,7 +4506,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 all_preds.extend(logits.tolist())
                 all_labels.extend(labels.tolist())
         avg_loss = total_loss / len(dataloader)
-        avg_time = sum(batch_times) / len(batch_times)
+        # avg_time 以整体墙钟时间平均给出（避免每批次 cuda.synchronize 的阻塞开销）
+        # 训练路径不使用 avg_time 字段, 仅日志用途
+        _n_batches = max(1, len(dataloader))
+        avg_time = (time.time() - _t0) * 1000.0 / _n_batches
         ds = self.dataset_key
         try:
             if ds == 'stsb':
@@ -4518,15 +4545,31 @@ class LayerImportanceEvaluator(TrainerCallback):
         return avg_loss, metric1, metric2, avg_time
 
     def evaluate_model(self, gelu_degrees, softmax_degrees, use_train=True, split=None):
-        """评估模型，use_train=True时使用训练集，否则使用验证集"""
+        """评估模型，use_train=True时使用训练集，否则使用验证集
+
+        性能优化: 评估结果缓存。由于 model 在 eval 模式冻结参数、dataloader shuffle=False、
+        无任何随机性源, 相同 (gelu, softmax, use_train, split) 评估结果必然 bit-identical。
+        直接从缓存返回可节省一次完整数据集前向推理, 不改变任何数值结果。
+        """
+        cache_key = (
+            tuple(int(d) for d in gelu_degrees),
+            tuple(int(d) for d in softmax_degrees),
+            bool(use_train),
+            split,
+        )
+        cached = self._eval_cache.get(cache_key)
+        if cached is not None:
+            return cached
         self.apply_configuration(gelu_degrees, softmax_degrees)
         split_name = self._resolve_eval_split(use_train=use_train, split=split)
         dataloader = self.dataloaders[split_name]
-        return self._run_evaluation(
+        result = self._run_evaluation(
             dataloader,
             use_train=(split_name == "train"),
             split_name=split_name,
         )
+        self._eval_cache[cache_key] = result
+        return result
 
     @staticmethod
     def _logits_to_classes(all_preds):
