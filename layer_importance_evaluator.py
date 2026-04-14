@@ -2422,6 +2422,10 @@ class LayerImportanceEvaluator(TrainerCallback):
         self._eval_cache = {}
         # 跳过 _run_evaluation 中重复的 model.eval()/model.to() 调用（只需第一次调用时设置一次）
         self._eval_infra_ready = False
+        # 记录上一次已应用的 (gelu_degrees, softmax_degrees); apply_configuration 是幂等的,
+        # 配置未变时可安全跳过重复调用 (例如同一配置同时评估 train 和 test 两个 split 的情况)
+        # 结果 bit-identical, 因为模型状态仅由 (gelu, softmax) 决定
+        self._last_applied_config = None
         self.stage1_rl_episodes = self._coerce_positive_int(
             stage1_rl_episodes, 'stage1_rl_episodes'
         )
@@ -4560,7 +4564,14 @@ class LayerImportanceEvaluator(TrainerCallback):
         cached = self._eval_cache.get(cache_key)
         if cached is not None:
             return cached
-        self.apply_configuration(gelu_degrees, softmax_degrees)
+        # 仅在配置变化时重新应用 GELU/Softmax; apply_configuration 幂等, 同配置重复调用是无效功耗
+        cfg_sig = (
+            tuple(int(d) for d in gelu_degrees),
+            tuple(int(d) for d in softmax_degrees),
+        )
+        if self._last_applied_config != cfg_sig:
+            self.apply_configuration(gelu_degrees, softmax_degrees)
+            self._last_applied_config = cfg_sig
         split_name = self._resolve_eval_split(use_train=use_train, split=split)
         dataloader = self.dataloaders[split_name]
         result = self._run_evaluation(
