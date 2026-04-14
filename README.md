@@ -21,13 +21,15 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--logfile FILE` | 全局 | `output.log` | launcher 的 nohup 日志文件名；真实运行目录下也会自动生成阶段日志 |
 | `--model-type TYPE` | 全局 | `bert-base` | 骨干模型类型：`bert-base` / `bert-large` / `gpt-2` |
 | `--batch-size N` | 全局 | `16` | 统一设置 `batch_size` 与 `micro_batch_size` |
-| `--resume-from PATH` | `general-rl` | — | 从已有 run 目录恢复；仅 `general-rl` 可用。`rl` / `ga` 已改用持久化目录自动续训练 |
+| `--resume-from PATH` | 兼容保留 | — | 兼容保留的内部恢复参数；当前 launcher 的正式续训流程已改为按持久化目录自动恢复，普通命令行不建议手动传 |
 | **准确度约束参数** | | | |
 | `--stage1-accuracy-tolerance FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.005` | Stage-1 指标约束百分比。0.005 表示允许 loss 上浮 0.5%、指标下降 0.5% |
 | `--stage2-limit-quartile FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.2` | Stage-2 指标约束：baseline 与 worst-case 之间的插值百分位数。0.2 表示允许偏离 baseline 20% 的 baseline→worst 区间 |
 | `--stage2-stability-quartile FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.2` | Stage-2 稳定性约束：loss/指标的标准差上界，为 baseline_std 与 worst_std 之间的插值百分位数 |
 | **持久化与续训练** | | | |
-| `--fresh-start` | `rl`、`ga` | — | 从头开始训练。首次运行某参数组合时**必须指定**，否则报错；后续运行相同参数时不指定则自动续训练 |
+| `--fresh-start` | `rl`、`ga`、`general-rl` 训练 | — | 清空当前参数组合对应的整个持久化目录并从头开始；首次运行某参数组合时**必须指定**，否则报错 |
+| `--fresh-stage1` | `rl`、`ga` | — | 仅清空已有持久化目录中的 `stage1/` 与 `stage1_final_eval/`，保留 Stage-2；仅适用于已有持久化目录的续训场景 |
+| `--fresh-stage2` | `rl`、`ga` | — | 仅清空已有持久化目录中的 `stage2_noise/` 与 `stage2_noise_final_eval/`，保留 Stage-1；仅适用于已有持久化目录的续训场景 |
 | **普通 RL / GA 搜索预算** | | | |
 | `--stage1-search-episodes N` | `rl` | `51000` | Stage-1 搜索回合数，仅用于普通 RL |
 | `--stage2-search-episodes N` | `rl` | `40000` | Stage-2 噪声搜索回合数，仅用于普通 RL |
@@ -71,18 +73,20 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--ga-compare-stage2-limit-quartile FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-limit-quartile` 或 `0.2` | `persistent` 模式下 GA 侧的 Stage-2 指标约束，用于定位 GA 持久化目录 |
 | `--ga-compare-stage2-stability-quartile FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-stability-quartile` 或 `0.2` | `persistent` 模式下 GA 侧的 Stage-2 稳定性约束，用于定位 GA 持久化目录 |
 | **通用 RL 专用** | | | |
-| `--general-rl-mode train/infer` | `general-rl` | `infer` | 通用 RL 的运行模式 |
+| `--general-rl-mode train/search` | `general-rl` | `search` | 通用 RL 的运行模式；`search` 为正式名称，`infer` 仍保留为兼容别名 |
 | `--general-rl-tasks T1,T2,...` | `general-rl` 训练 | 同 `--dataset` | 逗号分隔的训练任务列表 |
 | `--general-rl-rounds N` | `general-rl` 训练 | `50` | Round-robin 训练轮数 |
 | `--general-rl-episodes-per-round N` | `general-rl` 训练 | `170` | 每轮每任务的回合数 |
 | `--general-rl-lr FLOAT` | `general-rl` 训练 | `3e-5` | 通用策略训练学习率 |
-| `--general-rl-num-rollouts N` | `general-rl` 推断 | `500` | 离线 rollout 次数 |
-| `--general-rl-greedy` | `general-rl` 推断 | — | 使用贪心 rollout |
-| `--general-stage1-policy PATH` | `general-rl` 推断 | — | Stage-1 通用策略文件，必需 |
-| `--general-stage2-policy PATH` | `general-rl` 推断 | — | Stage-2 通用噪声策略文件，可选 |
-| `--general-rl-skip-stage2` | `general-rl` | — | 跳过 Stage-2 训练或推断 |
+| `--general-rl-num-rollouts N` | `general-rl` 搜索 | `500` | 离线 rollout 次数 |
+| `--general-rl-greedy` | `general-rl` 搜索 | — | 使用贪心 rollout |
+| `--general-stage1-policy PATH` | `general-rl` 搜索 | — | Stage-1 通用策略文件；可显式指定，或由 `--general-policy-dir` 自动推导 |
+| `--general-stage2-policy PATH` | `general-rl` 搜索 | — | Stage-2 通用噪声策略文件，可选；也可由 `--general-policy-dir` 自动推导 |
+| `--general-policy-dir PATH` | `general-rl` 搜索 | — | 指向一个已训练好的通用 RL 持久化目录；launcher 会自动寻找 `general_stage1_policy.pt`，若存在也会自动带上 `general_stage2_noise_policy.pt` |
+| `--general-rl-skip-stage2` | `general-rl` | — | 跳过 Stage-2 训练或搜索 |
 | `--general-rl-stage1-config-json PATH` | `general-rl` 训练 | — | Stage-2 训练时各任务的 Stage-1 配置 |
-| `--general-rl-accuracy-tolerances T1,T2,...` | `general-rl` | — | 逗号分隔的准确度容忍比例列表（如 `0.005,0.01,0.02`）；训练时每轮随机采样一个 tolerance 让策略泛化到不同准确度要求，推断时取第一个值作为目标 tolerance |
+| `--general-rl-accuracy-tolerances T1,T2,...` | `general-rl` | — | 逗号分隔的准确度容忍比例列表（如 `0.005,0.01,0.02`）；训练时每轮随机采样一个 tolerance 让策略泛化到不同准确度要求，搜索时取第一个值作为目标 tolerance |
+| `--general-rl-accuracy-tolerance-range MIN,MAX` | `general-rl` 训练 | — | 连续准确度容忍区间；训练时在 `[MIN, MAX]` 内采样 tolerance 让策略泛化，要求 `0 < MIN < MAX < 1` |
 
 ### 搜索算法与实际入口
 
@@ -90,12 +94,12 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | --- | --- | --- |
 | `rl` | Per-task 两阶段普通 RL 搜索 | `rl_tune.py` |
 | `ga` | COINN 风格两阶段遗传算法搜索 | `rl_tune_genetic.py` |
-| `general-rl` | 多任务通用策略训练 / 离线推断 | `rl_tune_general.py` |
+| `general-rl` | 多任务通用策略训练 / 离线搜索 | `rl_tune_general.py` |
 | `rl-and-ga-compare` | 不再重新训练 RL/GA；而是直接读取显式 JSON 或持久化目录中的已有结果，并生成 Stage-1 / Stage-2 对比报告 | `rl_ga_compare_runner.py` |
 
 ### 模式互斥规则
 
-- 选择 `--search-algorithm=general-rl` 后，不能再混用普通 RL / GA 的阶段搜索、Stage-2 固定 GELU/Softmax 参数或最终评估参数。
+- 选择 `--search-algorithm=general-rl` 后，不能再混用普通 RL / GA 的阶段搜索、Stage-2 固定 GELU/Softmax 参数或最终评估参数；`search` 模式必须提供 `--general-stage1-policy` 或 `--general-policy-dir`。`infer` 仅作为 `search` 的兼容别名保留。
 - 选择 `--search-algorithm=rl` 或 `ga` 后，不能再混用 `--general-rl-*` 参数；也**不能**再传 `--resume-from`（已改用持久化目录自动续训练）。
 - 选择 `--search-algorithm=rl` 后，不能传 `--stage1-search-generations` / `--stage2-search-generations`。
 - 选择 `--search-algorithm=ga` 后，不能传 `--stage1-search-lr` / `--stage2-search-lr`，也不能再传 `--stage1-search-episodes` / `--stage2-search-episodes`。
@@ -250,7 +254,7 @@ bash llama_7B_LayerImportance.sh \
 安全规则：
 
 - 只要 Stage-2 搜索或 Stage-2 最终评估会执行，就必须能解析出 Stage-2 固定的 `GELU/Softmax`。
-- 如果使用 `--stage2-fixed-config-source=stage1_result`，则**不能**再同时传 `--skip-stage1-search`；因为跳过 Stage-1 后不存在可复用的搜索结果。
+- 如果使用 `--stage2-fixed-config-source=stage1_result`，且本次同时传了 `--skip-stage1-search`，那么当前持久化目录中必须已经存在历史 Stage-1 搜索结果；否则 launcher 会直接报错，并要求改用 `json` / `manual`，或先运行一次 Stage-1。
 - 如果使用 `json`，launcher 会在启动前检查 JSON 文件是否存在，并校验它与当前算法家族一致。
 - 如果使用 `manual`，必须同时提供 `--stage2-manual-gelu` 和 `--stage2-manual-softmax`。
 
@@ -359,7 +363,9 @@ bash llama_7B_LayerImportance.sh \
 
 #### 5. 通用 RL 训练 — 数据集泛化
 
-训练一个跨多个数据集泛化的通用策略，策略文件保存到 `rl_results/runs/general_rl/train/dataset_gen/` 下：
+训练一个跨多个数据集泛化的通用策略。`general-rl train` 现在也使用持久化目录：
+`rl_results/persistent/general-rl/<model_type>/<taskset_id>/<accuracy_slug>/`。
+首次运行必须加 `--fresh-start`；后续相同 `taskset_id + accuracy_slug` 直接再次运行即可自动续训。
 
 ```bash
 bash llama_7B_LayerImportance.sh \
@@ -369,13 +375,14 @@ bash llama_7B_LayerImportance.sh \
   --general-rl-tasks mrpc,cola,rte,stsb \
   --general-rl-rounds 50 \
   --general-rl-episodes-per-round 170 \
-  --general-rl-lr 3e-5
+  --general-rl-lr 3e-5 \
+  --fresh-start
 ```
 
 #### 5b. 通用 RL 训练 — 准确度容忍泛化
 
 训练一个适配不同准确度要求的通用策略。例如 `0.005,0.01,0.02` 表示策略需要同时适应 0.5%、1%、2% 三种 loss/指标波动容忍度。
-策略文件保存到 `rl_results/runs/general_rl/train/accuracy_gen/` 下：
+此时持久化目录中的 `accuracy_slug` 会变成 `discrete_0.50pct_1.00pct_2.00pct` 这一类形式：
 
 ```bash
 bash llama_7B_LayerImportance.sh \
@@ -386,12 +393,13 @@ bash llama_7B_LayerImportance.sh \
   --general-rl-accuracy-tolerances 0.005,0.01,0.02 \
   --general-rl-rounds 50 \
   --general-rl-episodes-per-round 170 \
-  --general-rl-lr 3e-5
+  --general-rl-lr 3e-5 \
+  --fresh-start
 ```
 
 #### 5c. 通用 RL 训练 — 数据集 + 准确度联合泛化
 
-同时在多个数据集和多个准确度要求上训练，策略文件保存到 `rl_results/runs/general_rl/train/combined_gen/` 下：
+同时在多个数据集和多个准确度要求上训练：
 
 ```bash
 bash llama_7B_LayerImportance.sh \
@@ -402,64 +410,97 @@ bash llama_7B_LayerImportance.sh \
   --general-rl-accuracy-tolerances 0.005,0.01,0.02 \
   --general-rl-rounds 50 \
   --general-rl-episodes-per-round 170 \
-  --general-rl-lr 3e-5
+  --general-rl-lr 3e-5 \
+  --fresh-start
 ```
 
-三种泛化模式的输出目录对比：
+#### 5d. 通用 RL 训练 — 连续准确度范围泛化
+
+如果你希望策略覆盖一个连续的准确度容忍区间，而不是一组离散值，可以使用
+`--general-rl-accuracy-tolerance-range MIN,MAX`：
+
+```bash
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --search-algorithm general-rl \
+  --general-rl-mode train \
+  --general-rl-tasks mrpc,cola,rte,stsb \
+  --general-rl-accuracy-tolerance-range 0.005,0.02 \
+  --general-rl-rounds 50 \
+  --general-rl-episodes-per-round 170 \
+  --general-rl-lr 3e-5 \
+  --fresh-start
+```
+
+不同泛化模式的持久化目录示意：
 
 | 泛化模式 | 条件 | 输出目录前缀 |
 | --- | --- | --- |
-| 数据集泛化 | `--general-rl-tasks` 含多个任务 | `general_rl/train/dataset_gen/` |
-| 准确度泛化 | `--general-rl-accuracy-tolerances` 含多个值 | `general_rl/train/accuracy_gen/` |
-| 联合泛化 | 两者同时提供多个值 | `general_rl/train/combined_gen/` |
-| 单任务单容忍 | 均为单值 | `general_rl/train/single/` |
+| 数据集泛化 | `--general-rl-tasks` 含多个任务 | `rl_results/persistent/general-rl/<model_type>/<taskset_id>/default/` |
+| 准确度离散泛化 | `--general-rl-accuracy-tolerances` 含多个值 | `rl_results/persistent/general-rl/<model_type>/<taskset_id>/discrete_.../` |
+| 准确度范围泛化 | `--general-rl-accuracy-tolerance-range MIN,MAX` | `rl_results/persistent/general-rl/<model_type>/<taskset_id>/range_<lo>pct_<hi>pct/` |
+| 联合泛化 | 多任务 + 多容忍 | `rl_results/persistent/general-rl/<model_type>/<taskset_id>/(discrete_... 或 range_...)/` |
+| 单任务单容忍 | 均为单值 | `rl_results/persistent/general-rl/<model_type>/<dataset>/default/` |
 
 > **安全检查**：
 > - `--general-rl-accuracy-tolerances` 中的每个值必须是 (0, 1) 区间的正数（如 0.01 表示 1%）。
 > - 训练模式下如果既没有提供多个任务也没有提供多个容忍值，脚本会发出警告。
 > - `--general-rl-accuracy-tolerances` 不能在非 `general-rl` 模式下使用。
 
-#### 6. 通用 RL 离线推断
+#### 6. 通用 RL 离线搜索
+
+`general-rl` 现在正式使用 `--general-rl-mode search`；`infer` 仍然可以继续使用，但仅作为兼容别名。
+如果你已经有一个训练好的通用 RL 持久化目录，也可以直接通过 `--general-policy-dir` 自动推导 Stage-1 / Stage-2 策略文件。
 
 ```bash
 bash llama_7B_LayerImportance.sh \
   --search-algorithm general-rl \
-  --general-rl-mode infer \
+  --general-rl-mode search \
   --general-stage1-policy general_stage1_policy.pt \
   --general-stage2-policy general_stage2_noise_policy.pt \
   --general-rl-num-rollouts 500 \
   --dataset qnli
 ```
 
-指定推断时的准确度容忍目标（使用准确度泛化策略时）：
+指定搜索时的准确度容忍目标（使用准确度泛化策略时）：
 
 ```bash
 bash llama_7B_LayerImportance.sh \
   --search-algorithm general-rl \
-  --general-rl-mode infer \
+  --general-rl-mode search \
   --general-stage1-policy general_stage1_policy.pt \
   --general-rl-accuracy-tolerances 0.01 \
   --general-rl-num-rollouts 500 \
   --dataset mrpc
 ```
 
-只做 Stage-1 推断（跳过 Stage-2）：
+只做 Stage-1 搜索（跳过 Stage-2）：
 
 ```bash
 bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm general-rl \
-  --general-rl-mode infer \
+  --general-rl-mode search \
   --general-stage1-policy general_stage1_policy.pt \
   --general-rl-skip-stage2 \
   --dataset mrpc
 ```
 
-贪心 rollout（确定性推断，rollout 次数自动置 1）：
+通过持久化目录自动推导策略文件：
 
 ```bash
 bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm general-rl \
-  --general-rl-mode infer \
+  --general-rl-mode search \
+  --general-policy-dir rl_results/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default \
+  --dataset mrpc
+```
+
+贪心 rollout（确定性搜索，rollout 次数自动置 1）：
+
+```bash
+bash llama_7B_LayerImportance.sh --logfile output.log \
+  --search-algorithm general-rl \
+  --general-rl-mode search \
   --general-stage1-policy general_stage1_policy.pt \
   --general-rl-greedy \
   --dataset mrpc
@@ -496,7 +537,7 @@ bash llama_7B_LayerImportance.sh \
 bash llama_7B_LayerImportance.sh \
   --dataset mrpc \
   --search-algorithm general-rl \
-  --general-rl-mode infer \
+  --general-rl-mode search \
   --general-stage1-policy general_stage1_policy.pt \
   --stage1-search-episodes 51000
 
@@ -512,7 +553,7 @@ bash llama_7B_LayerImportance.sh \
 - 老命令如果不加 `--search-algorithm`，默认仍走 RL，不会影响已有实验。
 - 新做 GA 实验时，建议显式加 `--search-algorithm ga`，并统一使用 `--stage1-search-generations` / `--stage2-search-generations` 这组 GA 预算参数。
 - 如果准备长期保留 GA 的 JSON 配置，建议按默认命名方式保存为 `glue_configs_best_genetic.json` 和 `glue_noise_configs_best_genetic.json`，这样脚本能自动做家族一致性检查。
-- 使用通用 RL 时，建议先在少量任务上 `train` 训练策略，然后用 `infer` 部署到新任务。通用策略做 500 次 rollout 的耗时约为 per-task RL 的 1/100。
+- 使用通用 RL 时，建议先在少量任务上 `train` 训练策略，然后用 `search` 部署到新任务。`infer` 仍可用作兼容别名。通用策略做 500 次 rollout 的耗时约为 per-task RL 的 1/100。
 
 This is a Repository for Transformer robustness evaluation using Reinforcement Learning.
 
@@ -569,27 +610,29 @@ bash llama_7B_LayerImportance.sh --dataset mrpc
 # rl / ga 持久化目录（确定性路径，相同参数自动复用）
 rl_results/persistent/<algorithm>/<model_type>/<dataset>/s1t<T>_s2q<L>_s2sq<S>/
 
-# general-rl / compare 仍使用时间戳目录
-rl_results/runs/general_rl/train/<gen_mode>/<taskset_id>/<run_id>/
-rl_results/runs/general_rl/infer/<dataset>/<run_id>/
+# general-rl train 持久化目录（确定性路径，相同 taskset + accuracy_slug 自动复用）
+rl_results/persistent/general-rl/<model_type>/<taskset_id>/<accuracy_slug>/
+
+# general-rl search / compare 仍使用时间戳目录
+rl_results/runs/general_rl/search/<dataset>/<run_id>/
 rl_results/runs/compare/rl_vs_ga/<dataset>/<run_id>/
 ```
 
 说明：
 
 - **rl / ga 持久化目录**：`<algorithm>` 为 `rl` 或 `ga`；`<model_type>` 为 `bert-base`、`bert-large`、`gpt-2`；`s1t<T>_s2q<L>_s2sq<S>` 由三个约束参数拼成确定性标识（例如 `s1t0.005_s2q0.2_s2sq0.2`）。首次运行需加 `--fresh-start`，后续相同参数自动续训练。
+- **general-rl train 持久化目录**：`<taskset_id>` 由 `--general-rl-tasks` 规范化得到；`<accuracy_slug>` 由 `--general-rl-accuracy-tolerances` 或 `--general-rl-accuracy-tolerance-range` 决定，例如 `default`、`discrete_0.50pct_1.00pct_2.00pct`、`range_0.50pct_2.00pct`。首次运行同样需加 `--fresh-start`，后续相同参数自动续训练。
 - `dataset` 是当前单任务数据集，例如 `mrpc`、`stsb`。
 - `taskset_id` 是训练任务集合的规范化标识，例如 `mrpc,cola,rte,stsb` 会落为 `mrpc_cola_rte_stsb`。
-- `gen_mode` 是泛化模式子目录，根据 CLI 参数自动决定：
-  - `dataset_gen`：仅数据集泛化（`--general-rl-tasks` 含多个任务）
-  - `accuracy_gen`：仅准确度泛化（`--general-rl-accuracy-tolerances` 含多个值）
-  - `combined_gen`：联合泛化（两者同时提供多个值）
-  - `single`：单任务单容忍度
+- `accuracy_slug` 是准确度泛化标识：
+  - `default`：未显式提供泛化容忍集合
+  - `discrete_*`：使用 `--general-rl-accuracy-tolerances`
+  - `range_*`：使用 `--general-rl-accuracy-tolerance-range`
 - `compare` 模式单独放在 `compare/rl_vs_ga/` 下，不再与普通 `rl` / `ga` 共用同一个根目录层。
 
 #### 2. 各模式内部目录
 
-普通 `rl` / `ga` / `general-rl infer` 的核心目录：
+普通 `rl` / `ga` / `general-rl search` 的核心目录：
 
 - nohup 启动日志与错误摘要：`<run_dir>/logs/`
 - 第一阶段搜索：`<run_dir>/stage1/`
@@ -624,22 +667,22 @@ GA 的持久化目录（自定义约束参数）：
 rl_results/persistent/ga/bert-base/mrpc/s1t0.01_s2q0.3_s2sq0.3/
 ```
 
-通用 RL 多任务训练的一个 run（数据集泛化模式）：
+通用 RL 多任务训练的一个持久化目录（数据集泛化模式）：
 
 ```text
-rl_results/runs/general_rl/train/dataset_gen/mrpc_cola_rte_stsb/<run_id>/
+rl_results/persistent/general-rl/bert-base/mrpc_cola_rte_stsb/default/
 ```
 
-通用 RL 准确度泛化训练的一个 run：
+通用 RL 准确度泛化训练的一个持久化目录：
 
 ```text
-rl_results/runs/general_rl/train/accuracy_gen/mrpc/<run_id>/
+rl_results/persistent/general-rl/bert-base/mrpc/discrete_0.50pct_1.00pct_2.00pct/
 ```
 
-通用 RL 联合泛化训练的一个 run：
+通用 RL 联合泛化训练的一个持久化目录：
 
 ```text
-rl_results/runs/general_rl/train/combined_gen/mrpc_cola_rte_stsb/<run_id>/
+rl_results/persistent/general-rl/bert-base/mrpc_cola_rte_stsb/discrete_0.50pct_1.00pct_2.00pct/
 ```
 
 RL 与 GA 对比实验的一个 run：
@@ -1287,7 +1330,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
   --noise-eval-repeat 200
 ```
 
-### 持久化目录与自动续训练（`--fresh-start`）
+### 持久化目录与自动续训练（`--fresh-start` / `--fresh-stage1` / `--fresh-stage2`）
 
 `rl` 和 `ga` 模式使用**持久化目录**方案：相同的 `(算法, 模型, 数据集, 约束参数)` 组合映射到一个唯一的确定性目录。后续相同参数运行时自动检测 checkpoint 并续训练，无需手动指定 `--resume-from`。
 
@@ -1308,14 +1351,22 @@ rl_results/persistent/ga/bert-large/stsb/s1t0.01_s2q0.3_s2sq0.3/
 
 目录下会自动创建 `metadata.json`，记录算法、模型、数据集、约束参数值、创建时间和运行次数。
 
-#### 三种运行状态
+#### 运行状态与 fresh 行为
 
 | 状态 | 条件 | 行为 |
 | --- | --- | --- |
 | **首次运行** | 目录不存在 + 未跳过所有搜索 | 必须指定 `--fresh-start`，否则报错 |
 | **自动续训练** | 目录存在 + 有 `metadata.json` | 自动从 checkpoint 续训练（不加 `--fresh-start`） |
 | **从头训练** | 指定 `--fresh-start` + 目录已存在 | 清除旧目录并重新开始 |
+| **仅重置 Stage-1** | 目录存在 + 有 `metadata.json` + `--fresh-stage1` | 删除 `stage1/` 与 `stage1_final_eval/`，保留 Stage-2 |
+| **仅重置 Stage-2** | 目录存在 + 有 `metadata.json` + `--fresh-stage2` | 删除 `stage2_noise/` 与 `stage2_noise_final_eval/`，保留 Stage-1 |
 | **Eval-only** | 目录不存在 + 所有搜索都跳过 | 自动创建目录，无需 `--fresh-start` |
+
+补充说明：
+
+- `--fresh-stage1` 和 `--fresh-stage2` 只适用于**已有持久化目录**的续训场景；如果这是第一次运行该参数组合，仍然必须使用 `--fresh-start`。
+- `--fresh-start` 会清空整个持久化目录；`--fresh-stage1` / `--fresh-stage2` 只会清空对应阶段及其最终评估目录。
+- 如果你只想重做某一个阶段，优先使用分阶段 fresh，而不是直接 `--fresh-start`。
 
 #### 使用示例
 
@@ -1330,6 +1381,22 @@ bash llama_7B_LayerImportance.sh \
 bash llama_7B_LayerImportance.sh \
   --dataset mrpc \
   --stage2-search-episodes 30000
+
+# 仅重做 Stage-2，保留已有 Stage-1 结果
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --fresh-stage2 \
+  --skip-stage1-search \
+  --skip-stage1-final-eval \
+  --stage2-search-episodes 30000
+
+# 仅重做 Stage-1，保留 Stage-2 目录；通常建议同时跳过 Stage-2
+bash llama_7B_LayerImportance.sh \
+  --dataset mrpc \
+  --fresh-stage1 \
+  --skip-noise-search \
+  --skip-noise-final-eval \
+  --stage1-search-episodes 60000
 
 # 换一组约束参数 → 新的持久化目录，需要再次 --fresh-start
 bash llama_7B_LayerImportance.sh \
@@ -1354,43 +1421,49 @@ bash llama_7B_LayerImportance.sh \
    - 如果你只想重做 Stage-2 而保留 Stage-1 结果，**不要使用 `--fresh-start`**，直接运行即可。自动续训练会保留 Stage-1 结果，Stage-2 从 checkpoint 继续。
    - 如果你误用了 `--fresh-start` + `--skip-stage1-search`，脚本会打印警告并等待 5 秒，给你取消的机会。
 
-2. **Stage-1 配置一致性校验**：Stage-2 checkpoint 会记录训练时使用的 Stage-1 GELU/Softmax 配置。如果续训练时 Stage-1 配置发生了变化（例如上次跳过 Stage-1 用 JSON 配置，这次做了实际 Stage-1 搜索得到不同结果），系统会打印 `⚠⚠ [Stage-1 配置不一致警告]`，提醒你 Stage-2 policy 可能需要重新训练。
+2. **`--fresh-stage1` / `--fresh-stage2` 是分阶段清理，不会删除整个持久化目录**。
 
-3. **并发安全**：同一参数组合的持久化目录在同一时刻只能由一个进程使用。如需并行运行，请确保使用不同的约束参数或不同的数据集（它们会落到不同的持久化目录）。
+   - `--fresh-stage1` 会删除 `stage1/` 与 `stage1_final_eval/`，并把 metadata 中的 Stage-1 状态重置为 `not_started`。
+   - `--fresh-stage2` 会删除 `stage2_noise/` 与 `stage2_noise_final_eval/`，并把 metadata 中的 Stage-2 状态重置为 `not_started`。
+   - 如果目录不存在，脚本不会把它当作“首次运行的分阶段 fresh”；这时仍然需要显式使用 `--fresh-start`。
 
-4. **`general-rl` 的运行目录和 `rl-and-ga-compare` 的报告目录仍使用时间戳目录**：`general-rl` 续训练仍需手动指定 `--resume-from`。但 `rl-and-ga-compare` 的 `persistent` 模式会去读取 `rl` / `ga` 的持久化目录作为输入来源。
+3. **Stage-1 配置一致性校验**：Stage-2 checkpoint 会记录训练时使用的 Stage-1 GELU/Softmax 配置。如果续训练时 Stage-1 配置发生了变化（例如上次跳过 Stage-1 用 JSON 配置，这次做了实际 Stage-1 搜索得到不同结果），系统会打印 `⚠⚠ [Stage-1 配置不一致警告]`，提醒你 Stage-2 policy 可能需要重新训练。
 
-### `--resume-from` 断点续训可选项
+4. **并发安全**：同一参数组合的持久化目录在同一时刻只能由一个进程使用。如需并行运行，请确保使用不同的约束参数或不同的数据集（它们会落到不同的持久化目录）。
 
-> **注意**：`rl` 和 `ga` 模式已改用**持久化目录自动续训练**，不再支持手动 `--resume-from`。相同参数组合直接再次运行即可自动续训（参见"3c. 持久化目录与自动续训练"）。`--resume-from` 现在**仅适用于 `general-rl`** 模式。
+5. **`general-rl` 的搜索运行目录和 `rl-and-ga-compare` 的报告目录仍使用时间戳目录**：`general-rl` 训练已改用持久化目录自动续训；`search` 模式仍使用时间戳目录。`rl-and-ga-compare` 的 `persistent` 模式会去读取 `rl` / `ga` 的持久化目录作为输入来源。
 
-训练过程中会自动在 run 目录下保存 checkpoint 文件（每次 PPO 更新窗口 / 遗传代际 / round 结束时保存）：
+### 自动续训与 checkpoint
+
+> **注意**：当前 launcher 的正式续训方式已经统一为“按确定性目录自动恢复”。
+>
+> - `rl` / `ga`：按 `(algorithm, model_type, dataset, 约束参数)` 使用持久化目录自动续训。
+> - `general-rl train`：按 `(model_type, taskset_id, accuracy_slug)` 使用持久化目录自动续训。
+> - `general-rl search`：只产生时间戳结果目录，不属于训练续训流程。
+> - `rl-and-ga-compare`：只读取已有结果，不属于训练续训流程。
+>
+> `--resume-from` 目前仅作为兼容保留参数存在；普通 launcher 用法不再建议手动传它。
+
+训练过程中会自动保存 checkpoint：
 
 | 搜索算法 | Stage-1 checkpoint 路径 | Stage-2 checkpoint 路径 |
 | --- | --- | --- |
 | `rl` | `<persistent_dir>/stage1/stage1_rl_checkpoint.pt` | `<persistent_dir>/stage2_noise/progress/noise_rl_checkpoint.pt` |
 | `ga` | `<persistent_dir>/stage1/ga_stage1_checkpoint.pt` | `<persistent_dir>/stage2_noise/progress/ga_stage2_checkpoint.pt` |
-| `general-rl` | `<run_dir>/stage1/general_stage1_train_checkpoint.pt` | `<run_dir>/stage2_noise/general_stage2_train_checkpoint.pt` |
-
-
-| 参数                   | 说明                                                                                                                                          | 默认值 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| `--resume-from PATH` | 指定之前的 run 目录路径，从该目录的 checkpoint 恢复训练。**仅 `general-rl` 可用。** | 空   |
-
+| `general-rl train` | `<persistent_dir>/general_stage1_train_checkpoint.pt` | `<persistent_dir>/general_stage2_train_checkpoint.pt` |
 
 使用说明：
 
-- **rl / ga 模式**：不再需要 `--resume-from`。持久化目录自动检测 checkpoint 并续训练。详见"3c. 持久化目录与自动续训练"。
-- **general-rl 模式**：`PATH` 必须是一个已存在的 run 目录，例如 `rl_results/runs/general_rl/train/dataset_gen/mrpc_cola_rte_stsb/20260404_151155_pid711833`。
+- **rl / ga 模式**：相同参数组合直接再次运行即可自动续训，无需 `--resume-from`。
+- **general-rl train**：相同的 `--general-rl-tasks` 与准确度配置再次运行即可自动续训；首次运行必须加 `--fresh-start`。
 - 续训时指定的是**总搜索预算**而不是追加量。
 - 如果指定的总轮数小于等于 checkpoint 中已完成的轮数，则该阶段不会追加训练。
-- `--resume-from` 可以与各模式的跳过选项组合使用：只有未被跳过的阶段才会尝试加载对应的 checkpoint。
 - checkpoint 会在每次进度快照时自动保存，因此即使训练中途被中断，也可以从最近的 checkpoint 恢复。
 
 示例：
 
 ```bash
-# ---- RL 模式续训（自动，无需 --resume-from）----
+# ---- RL 模式续训（自动）----
 
 # 首次运行
 bash llama_7B_LayerImportance.sh --logfile output.log \
@@ -1403,7 +1476,7 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
   --stage2-search-episodes 30000
 
-# ---- GA 模式续训（自动，无需 --resume-from）----
+# ---- GA 模式续训（自动）----
 
 # 首次运行
 bash llama_7B_LayerImportance.sh --logfile output.log \
@@ -1420,24 +1493,24 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
   --stage1-search-generations 180 \
   --stage2-search-generations 140
 
-# ---- General-RL 模式续训（仍需 --resume-from）----
+# ---- General-RL train 模式续训（自动）----
 
-# 第一次通用 RL 训练
+# 第一次通用 RL 训练（必须加 --fresh-start）
 bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm general-rl \
   --general-rl-mode train \
   --general-rl-tasks mrpc,cola,rte,stsb \
   --general-rl-rounds 50 \
-  --dataset mrpc
+  --dataset mrpc \
+  --fresh-start
 
-# 从上次训练中断处继续
+# 从上次训练中断处继续（相同 taskset + accuracy_slug，直接再次运行）
 bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm general-rl \
   --general-rl-mode train \
   --general-rl-tasks mrpc,cola,rte,stsb \
   --general-rl-rounds 100 \
-  --dataset mrpc \
-  --resume-from rl_results/runs/general_rl/train/dataset_gen/mrpc_cola_rte_stsb/<之前的run目录>
+  --dataset mrpc
 ```
 
 ### 优雅停止与断点续训（Graceful Stop / Resume）
@@ -1450,7 +1523,8 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
 
 续训方式因模式而异：
 - **rl / ga**：持久化目录方案，checkpoint 保存在确定性路径中。下次用相同参数运行即可自动续训练，无需 `--resume-from`。
-- **general-rl**：下次启动时用 `--resume-from` 指向同一个 run 目录即可续训练。
+- **general-rl train**：持久化目录方案。下次用相同的 `taskset_id + accuracy_slug` 直接再次运行即可自动续训练。
+- **general-rl search**：是离线搜索结果生成流程，不是训练续训流程。
 
 #### 启动脚本会提示什么
 
@@ -1476,7 +1550,7 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
 
   停止后续训：
     rl / ga：相同参数直接再跑即可自动续训练
-    general-rl：加上 --resume-from rl_results/.../20260408_...
+    general-rl train：相同 taskset + accuracy_slug 直接再跑即可自动续训练
   ⚠ 切勿使用 kill -9（SIGKILL），它会绕过 checkpoint 保存导致续训断层！
 ========================================================================
 ```
@@ -1488,17 +1562,17 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
 - `rl_results/runs/rl/<dataset>/LATEST_RUN_DIR`：普通 RL 最近一次启动的 run 目录
 - `rl_results/runs/ga/<dataset>/LATEST_PID`：GA 最近一次启动的 PID
 - `rl_results/runs/ga/<dataset>/LATEST_RUN_DIR`：GA 最近一次启动的 run 目录
-- `rl_results/runs/general_rl/train/<gen_mode>/<taskset_id>/LATEST_PID`：通用 RL 训练最近一次启动的 PID（`gen_mode` 为 `dataset_gen` / `accuracy_gen` / `combined_gen` / `single`）
-- `rl_results/runs/general_rl/train/<gen_mode>/<taskset_id>/LATEST_RUN_DIR`：通用 RL 训练最近一次启动的 run 目录
-- `rl_results/runs/general_rl/infer/<dataset>/LATEST_PID`：通用 RL 推断最近一次启动的 PID
-- `rl_results/runs/general_rl/infer/<dataset>/LATEST_RUN_DIR`：通用 RL 推断最近一次启动的 run 目录
+- `rl_results/persistent/general-rl/<model_type>/<taskset_id>/LATEST_PID`：通用 RL 训练最近一次启动的 PID
+- `rl_results/persistent/general-rl/<model_type>/<taskset_id>/LATEST_RUN_DIR`：通用 RL 训练最近一次启动的持久化目录
+- `rl_results/runs/general_rl/search/<dataset>/LATEST_PID`：通用 RL 搜索最近一次启动的 PID
+- `rl_results/runs/general_rl/search/<dataset>/LATEST_RUN_DIR`：通用 RL 搜索最近一次启动的 run 目录
 - `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_PID`：对比实验最近一次启动的 compare runner PID
 - `rl_results/runs/compare/rl_vs_ga/<dataset>/LATEST_RUN_DIR`：对比实验最近一次启动的 run 目录
 
 补充说明：
 
 - 由于目录现在按模式分层，**不要再跨模式复用同一组 LATEST 指针**。例如要停止 GA，就看 `rl_results/runs/ga/<dataset>/LATEST_PID`，不要看 `rl_results/runs/rl/<dataset>/LATEST_PID`。
-- `general-rl train` 的 `taskset_id` 由 `--general-rl-tasks` 规范化得到。例如 `mrpc,cola,rte,stsb` 会落为 `mrpc_cola_rte_stsb`，并根据泛化模式写到对应的 `rl_results/runs/general_rl/train/<gen_mode>/mrpc_cola_rte_stsb/` 下。
+- `general-rl train` 的 `taskset_id` 由 `--general-rl-tasks` 规范化得到。例如 `mrpc,cola,rte,stsb` 会落为 `mrpc_cola_rte_stsb`，并写到 `rl_results/persistent/general-rl/<model_type>/mrpc_cola_rte_stsb/<accuracy_slug>/` 下。
 - `compare` 模式除了 `LATEST_RUN_DIR` / `LATEST_PID` 之外，还会额外兼容写入 `LATEST_COMPARE_RUN_DIR` / `LATEST_COMPARE_PID`。
 - 当前 compare run 目录下会写出 `meta/compare.pid`，对应 compare runner 本身；不再额外启动 RL / GA 子进程。
 
@@ -1603,14 +1677,13 @@ kill -INT 912345
 # 或创建停止标志文件（general-rl 的 STOP_RL 位于 run 根目录）：
 # touch rl_results/.../STOP_RL
 
-# 3) 续训：增大 rounds 并指定 --resume-from
+# 3) 续训：增大 rounds，直接再次运行即可自动续训
 bash llama_7B_LayerImportance.sh --logfile output.log \
     --search-algorithm general-rl \
     --general-rl-mode train \
     --general-rl-tasks mrpc,cola,rte,stsb \
     --general-rl-rounds 100 \
-    --dataset mrpc \
-    --resume-from "$(cat rl_results/runs/general_rl/train/dataset_gen/mrpc_cola_rte_stsb/LATEST_RUN_DIR)"
+    --dataset mrpc
 ```
 
 #### 严丝合缝续训的关键机制
@@ -1798,7 +1871,7 @@ NOISE_RL_OPT_FLAGS["pretrained_policy_path"]  = None   # 不加载预训练 nois
 #### 核心思想
 
 1. **多任务轮训（Multi-Task Round-Robin Training）**：在多个数据集 / 约束设定上轮流采集 rollout，共同更新同一个 policy + critic 网络，使 policy 学到"哪些层对精度更敏感"的通用先验，critic 学到跨任务的状态价值模式。
-2. **离线推断（Offline Inference）**：加载训练好的 general policy，在新任务上**只做前向推理（不训练）**，通过 best-of-K rollout 找到该任务的最优配置。
+2. **离线搜索（Offline Search）**：加载训练好的 general policy，在新任务上**只做前向推理（不训练）**，通过 best-of-K rollout 找到该任务的最优配置。
 3. **通用 Critic 快速评分**：Policy 和 Critic 共享 GTrXL 骨干网络。通用 Critic 可以用 V(s) 对候选配置快速评分（不做模型评测），适合预筛选大量候选。
 4. **与现有 online RL 完全并存**：现有的 per-task online RL（`layer_importance_evaluator.py` 的 Stage-1 PPO、`noise_rl_module_v2.py` 的 Stage-2 噪声 PPO）完全不受影响。
 
@@ -1882,7 +1955,7 @@ result = multi_task_train_stage2(
 | `lr` | Adam 优化器学习率 | `3e-5` |
 | `device` | PyTorch 设备 | `"cuda"` |
 
-##### Phase B：离线部署（在新 / 旧任务上做推断，不训练）
+##### Phase B：离线部署（在新 / 旧任务上做搜索，不训练）
 
 **Stage-1 离线 rollout 找最优配置**
 
@@ -1919,7 +1992,7 @@ result = offline_find_best_config_stage2(
 print(result["best_noise_config"])
 ```
 
-离线推断关键参数：
+离线搜索关键参数：
 
 | 参数 | 说明 | 默认值 |
 | --- | --- | --- |
@@ -2012,7 +2085,7 @@ for score, cfg in ranked[:5]:
 | 场景 | 兼容性 | 备注 |
 | --- | --- | --- |
 | 通用策略 → per-task online RL（作为 base policy） | ✅ | `task_context_proj` 层被 `strict=False` 跳过，不影响运行 |
-| per-task 便携 policy → 通用策略离线推断 | ✅ | 缺失的 `task_context_proj` 保持零初始化 |
+| per-task 便携 policy → 通用策略离线搜索 | ✅ | 缺失的 `task_context_proj` 保持零初始化 |
 | 不同 `total_layers`（如 12 层 → 24 层） | ⚠️ 部分迁移 | layer embedding 不匹配的层会被跳过 |
 | Stage-1 ↔ Stage-2 | ❌ | 动作空间不同，必须分别训练 |
 
