@@ -33,6 +33,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | **普通 RL / GA 搜索预算** | | | |
 | `--stage1-search-episodes N` | `rl` | `51000` | Stage-1 搜索回合数，仅用于普通 RL |
 | `--stage2-search-episodes N` | `rl` | `40000` | Stage-2 噪声搜索回合数，仅用于普通 RL |
+| `--ppo-update-interval N` | `rl`、`general-rl` | `120` | PPO 更新间隔（每多少个 episode 触发一次策略更新）；同时决定 `details/` 下每个 txt 的回合数（= `3 × N`，默认 `360`）。`general-rl` 训练模式下还等同于"每轮每任务的 episode 数"。必须 ≥ 该值才能完成至少一次 PPO 更新 |
 | `--stage1-search-generations N` | `ga` | 按模型自动推导 | Stage-1 GA 搜索迭代代数；仅在未跳过 Stage-1 搜索时生效 |
 | `--stage2-search-generations N` | `ga` | 按模型自动推导 | Stage-2 GA 噪声搜索迭代代数；仅在未跳过 Stage-2 搜索时生效 |
 | `--skip-stage1-search` | `rl`、`ga` | — | 跳过 Stage-1 搜索 |
@@ -76,7 +77,6 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--general-rl-mode train/search` | `general-rl` | `search` | 通用 RL 的运行模式；`search` 为正式名称，`infer` 仍保留为兼容别名 |
 | `--general-rl-tasks T1,T2,...` | `general-rl` 训练 | 同 `--dataset` | 逗号分隔的训练任务列表 |
 | `--general-rl-rounds N` | `general-rl` 训练 | `50` | Round-robin 训练轮数 |
-| `--general-rl-episodes-per-round N` | `general-rl` 训练 | `170` | 每轮每任务的回合数 |
 | `--general-rl-lr FLOAT` | `general-rl` 训练 | `3e-5` | 通用策略训练学习率 |
 | `--general-rl-num-rollouts N` | `general-rl` 搜索 | `500` | 离线 rollout 次数 |
 | `--general-rl-greedy` | `general-rl` 搜索 | — | 使用贪心 rollout |
@@ -374,7 +374,7 @@ bash llama_7B_LayerImportance.sh \
   --general-rl-mode train \
   --general-rl-tasks mrpc,cola,rte,stsb \
   --general-rl-rounds 50 \
-  --general-rl-episodes-per-round 170 \
+  --ppo-update-interval 120 \
   --general-rl-lr 3e-5 \
   --fresh-start
 ```
@@ -392,7 +392,7 @@ bash llama_7B_LayerImportance.sh \
   --general-rl-tasks mrpc \
   --general-rl-accuracy-tolerances 0.005,0.01,0.02 \
   --general-rl-rounds 50 \
-  --general-rl-episodes-per-round 170 \
+  --ppo-update-interval 120 \
   --general-rl-lr 3e-5 \
   --fresh-start
 ```
@@ -409,7 +409,7 @@ bash llama_7B_LayerImportance.sh \
   --general-rl-tasks mrpc,cola,rte,stsb \
   --general-rl-accuracy-tolerances 0.005,0.01,0.02 \
   --general-rl-rounds 50 \
-  --general-rl-episodes-per-round 170 \
+  --ppo-update-interval 120 \
   --general-rl-lr 3e-5 \
   --fresh-start
 ```
@@ -427,7 +427,7 @@ bash llama_7B_LayerImportance.sh \
   --general-rl-tasks mrpc,cola,rte,stsb \
   --general-rl-accuracy-tolerance-range 0.005,0.02 \
   --general-rl-rounds 50 \
-  --general-rl-episodes-per-round 170 \
+  --ppo-update-interval 120 \
   --general-rl-lr 3e-5 \
   --fresh-start
 ```
@@ -1294,7 +1294,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 使用说明：
 
 - 所有 `N` 都必须是正整数。
-- 普通 RL 在对应阶段未跳过时，`--stage1-search-episodes` / `--stage2-search-episodes` 必须大于等于 `170`。这是因为当前 `PPO_UPDATE_INTERVAL=170`，如果轮数小于 `170`，PPO 无法完成一次真正的策略更新。
+- 普通 RL 在对应阶段未跳过时，`--stage1-search-episodes` / `--stage2-search-episodes` 必须大于等于 `--ppo-update-interval`（默认 `120`）。这是因为 PPO 每 `PPO_UPDATE_INTERVAL` 个 episode 才更新一次，回合数小于该值时 PPO 无法完成一次真正的策略更新。
 - GA 不再使用 `episode` 作为搜索预算单位；请改用 `--stage1-search-generations` / `--stage2-search-generations`。
 - `ga` 模式下如果不显式传代数，脚本会按模型层数自动推导默认值，以对齐旧版本的默认搜索预算。
 - 在单独的 `rl` / `ga` 模式下，如果使用了 `--skip-stage1-search`，就不要再把该阶段预算当作“本次要执行的搜索预算”来理解。
@@ -1913,7 +1913,7 @@ result = multi_task_train_stage1(
     tasks,
     output_path="general_stage1_policy.pt",
     total_rounds=50,                    # round-robin 轮数
-    episodes_per_task_per_round=170,    # 每轮每任务的 episode 数
+    episodes_per_task_per_round=120,    # 每轮每任务的 episode 数
     lr=3e-5,                            # 学习率
     device="cuda",
 )
@@ -1937,7 +1937,7 @@ result = multi_task_train_stage2(
     tasks,
     output_path="general_stage2_noise_policy.pt",
     total_rounds=50,
-    episodes_per_task_per_round=170,
+    episodes_per_task_per_round=120,
     lr=3e-5,
     device="cuda",
 )
@@ -1951,9 +1951,11 @@ result = multi_task_train_stage2(
 | `tasks` | dict，键为任务名，值由 `prepare_stage1_task` / `prepare_stage2_task` 产出 | — |
 | `output_path` | 保存通用策略文件的路径 | — |
 | `total_rounds` | round-robin 总轮数 | `50` |
-| `episodes_per_task_per_round` | 每轮每任务采集的 episode 数 | `170` |
+| `episodes_per_task_per_round` | 每轮每任务采集的 episode 数（需等于 `PPO_UPDATE_INTERVAL`，确保 PPO buffer 不跨任务混合） | `120` |
 | `lr` | Adam 优化器学习率 | `3e-5` |
 | `device` | PyTorch 设备 | `"cuda"` |
+
+> 使用 CLI (`llama_7B_LayerImportance.sh`) 启动通用 RL 时，`--ppo-update-interval N` 会同时设置 `PPO_UPDATE_INTERVAL` 与 `episodes_per_task_per_round`，无需单独配置。
 
 ##### Phase B：离线部署（在新 / 旧任务上做搜索，不训练）
 
@@ -2072,8 +2074,8 @@ for score, cfg in ranked[:5]:
     "metadata": {
         "task_names": ["mrpc", "stsb", "cola", "rte"],
         "total_rounds": 50,
-        "episodes_per_task_per_round": 170,
-        "total_episodes": 34000,
+        "episodes_per_task_per_round": 120,
+        "total_episodes": 24000,
         "ppo_updates": 200,
         "best_rewards": {"mrpc": 1.23, "stsb": 0.98, ...},
     },

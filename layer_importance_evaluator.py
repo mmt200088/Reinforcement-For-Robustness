@@ -285,15 +285,29 @@ PPO_K_EPOCHS = 4
 PPO_ENTROPY_COEF = 0.05  # 初始熵系数（策略二：从0.05开始衰减）
 PPO_VALUE_COEF = 0.5
 # PDF 6.4：由于采样步数大幅增加，需要相应调整总episodes
-# PDF建议：每2048 steps更新，考虑到每episode 12步，即每170 episodes更新
 PPO_MAX_EPISODES = 51000
-# PDF 6.4：增加采样步数以获得更稳定的梯度估计
-# "建议增加采样步数，例如每2048 steps更新一次"
-# 折中方案：每50 episodes更新一次（600步），在训练时间和稳定性之间平衡
-PPO_UPDATE_INTERVAL = 170  # 每170个episode更新一次
-PPO_BATCH_SIZE = 12 * 170  # 170 episodes per update
+# PPO 更新间隔 / batch 大小 / details 分块大小 都以 PPO_UPDATE_INTERVAL 为单一真相源。
+# 命令行入口会调用 set_ppo_update_interval() 在训练开始前覆盖这三个量，保持它们恒等关系：
+#   PPO_BATCH_SIZE       = 12 * PPO_UPDATE_INTERVAL
+#   STEP_INFO_CHUNK_SIZE = 3  * PPO_UPDATE_INTERVAL   (每 txt 对应 3 次 PPO 更新)
+PPO_UPDATE_INTERVAL = 120  # 默认每 120 个 episode 更新一次
+PPO_BATCH_SIZE = 12 * PPO_UPDATE_INTERVAL
+STEP_INFO_CHUNK_SIZE = 3 * PPO_UPDATE_INTERVAL  # 默认 360 回合/txt（3 次 PPO 更新）
 
-STEP_INFO_CHUNK_SIZE = 510
+
+def set_ppo_update_interval(n):
+    """命令行入口调用此函数覆盖 PPO 更新间隔（及其派生常量）。
+
+    必须在创建 LayerImportanceEvaluator / multi_task_train_stage{1,2} 之前调用，
+    否则训练循环已读取旧值。
+    """
+    global PPO_UPDATE_INTERVAL, PPO_BATCH_SIZE, STEP_INFO_CHUNK_SIZE
+    n = int(n)
+    if n <= 0:
+        raise ValueError(f"ppo_update_interval 必须是正整数, 得到 {n}")
+    PPO_UPDATE_INTERVAL = n
+    PPO_BATCH_SIZE = 12 * n
+    STEP_INFO_CHUNK_SIZE = 3 * n
 REWARD_DROP_WARNING_THRESHOLD = 0.2
 
 # ==================== 策略二：超参数配置（PDF 6.4 稳定性修复） ====================
@@ -5283,12 +5297,17 @@ class LayerImportanceEvaluator(TrainerCallback):
             step_info_chunk_file = [None]
             step_info_chunk_idx = [0]
             step_info_is_resuming = [False]  # 续训标记，在 checkpoint 加载后设置
+            # chunk 锚点：续训时设为 completed_episodes，确保新 chunk 从「已完成回合 + 1」起编号，
+            # 使跨 interval 的 details/ 文件名区间连续而不是对齐到全局 0 基边界。
+            step_info_chunk_anchor = [0]
             stage1_warning_file = os.path.join(os.path.dirname(self.step_info_file), "warning.txt")
             stage1_prev_avg_reward = [None]
             stage1_warnings = []
 
             def _get_stage1_chunk_filename(episode_1based):
-                chunk_start = ((episode_1based - 1) // STEP_INFO_CHUNK_SIZE) * STEP_INFO_CHUNK_SIZE + 1
+                anchor = step_info_chunk_anchor[0]
+                rel = episode_1based - anchor - 1
+                chunk_start = anchor + (rel // STEP_INFO_CHUNK_SIZE) * STEP_INFO_CHUNK_SIZE + 1
                 chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
                 return os.path.join(
                     step_info_details_dir,
@@ -5297,12 +5316,13 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             def _open_stage1_chunk(episode_1based):
                 target = _get_stage1_chunk_filename(episode_1based)
-                new_idx = (episode_1based - 1) // STEP_INFO_CHUNK_SIZE
+                anchor = step_info_chunk_anchor[0]
+                new_idx = (episode_1based - anchor - 1) // STEP_INFO_CHUNK_SIZE
                 if step_info_chunk_file[0] is not None and step_info_chunk_idx[0] == new_idx:
                     return step_info_chunk_file[0]
                 if step_info_chunk_file[0] is not None:
                     step_info_chunk_file[0].close()
-                chunk_start = new_idx * STEP_INFO_CHUNK_SIZE + 1
+                chunk_start = anchor + new_idx * STEP_INFO_CHUNK_SIZE + 1
                 chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
                 # 续训时首个 chunk 文件可能已有内容，用 "a" 追加；后续新 chunk 用 "w"
                 if step_info_is_resuming[0] and os.path.isfile(target):
@@ -5502,6 +5522,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                     self.return_normalizer.var = float(_ev_rt["return_normalizer_var"])
                     self.return_normalizer.count = float(_ev_rt["return_normalizer_count"])
                 step_info_is_resuming[0] = True
+                # 续训锚点：新 chunk 从「已完成回合 + 1」起编号，确保跨 PPO_UPDATE_INTERVAL
+                # 变化时 details/ 文件名区间连续，不与旧 run 的 chunk 边界产生"错位"。
+                step_info_chunk_anchor[0] = stage1_resume_start_episode
                 self.log(
                     f"  已恢复至回合 {stage1_resume_start_episode}，"
                     f"将从回合 {stage1_resume_start_episode + 1} 继续训练至 {self.stage1_rl_episodes}"

@@ -1631,7 +1631,7 @@ def _plot_noise_training_curves(
     base_loss, base_p, base_s,
     training_curve_path="noise_ppo_training_curve.png",
     entropy_curve_path="noise_ppo_entropy_curve.png",
-    ppo_update_interval=170,
+    ppo_update_interval=120,
 ):
     if len(episode_returns) == 0:
         return
@@ -1945,12 +1945,18 @@ class NoiseRLModuleV2:
         noise_step_info_chunk_file = [None]
         noise_step_info_chunk_idx = [0]
         noise_step_info_is_resuming = [bool(resume_checkpoint_path and os.path.isfile(resume_checkpoint_path))]
+        # chunk 锚点：续训时设为 completed_episodes（下方 checkpoint 加载后覆盖），
+        # 新 chunk 从「已完成回合 + 1」起编号，确保跨 PPO_UPDATE_INTERVAL 变化时
+        # details/ 文件名区间连续，不与旧 run 的 chunk 边界"错位"。
+        noise_step_info_chunk_anchor = [0]
         noise_warning_file = os.path.join(os.path.dirname(ev.noise_step_info_file), "warning.txt")
         noise_prev_avg_reward = [None]
         noise_warnings = []
 
         def _get_noise_chunk_filename(episode_1based):
-            chunk_start = ((episode_1based - 1) // STEP_INFO_CHUNK_SIZE) * STEP_INFO_CHUNK_SIZE + 1
+            anchor = noise_step_info_chunk_anchor[0]
+            rel = episode_1based - anchor - 1
+            chunk_start = anchor + (rel // STEP_INFO_CHUNK_SIZE) * STEP_INFO_CHUNK_SIZE + 1
             chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
             return os.path.join(
                 noise_step_info_details_dir,
@@ -1959,12 +1965,13 @@ class NoiseRLModuleV2:
 
         def _open_noise_chunk(episode_1based):
             target = _get_noise_chunk_filename(episode_1based)
-            new_idx = (episode_1based - 1) // STEP_INFO_CHUNK_SIZE
+            anchor = noise_step_info_chunk_anchor[0]
+            new_idx = (episode_1based - anchor - 1) // STEP_INFO_CHUNK_SIZE
             if noise_step_info_chunk_file[0] is not None and noise_step_info_chunk_idx[0] == new_idx:
                 return noise_step_info_chunk_file[0]
             if noise_step_info_chunk_file[0] is not None:
                 noise_step_info_chunk_file[0].close()
-            chunk_start = new_idx * STEP_INFO_CHUNK_SIZE + 1
+            chunk_start = anchor + new_idx * STEP_INFO_CHUNK_SIZE + 1
             chunk_end = chunk_start + STEP_INFO_CHUNK_SIZE - 1
             # 续训时首个 chunk 文件可能已有内容，用 "a" 追加；后续新 chunk 用 "w"
             if noise_step_info_is_resuming[0] and os.path.isfile(target):
@@ -2278,6 +2285,9 @@ class NoiseRLModuleV2:
                     f"  [信息] checkpoint 未记录 Stage-1 配置（旧版 checkpoint），跳过一致性校验。"
                 )
 
+            # 续训锚点：新 chunk 从「已完成回合 + 1」起编号，确保跨 PPO_UPDATE_INTERVAL
+            # 变化时 details/ 文件名区间连续，不与旧 run 的 chunk 边界产生"错位"。
+            noise_step_info_chunk_anchor[0] = resume_start_episode
             ev.log(
                 f"  ▸ 已恢复至回合 {resume_start_episode}，"
                 f"将从回合 {resume_start_episode + 1} 继续训练至 {stage2_total_episodes}"

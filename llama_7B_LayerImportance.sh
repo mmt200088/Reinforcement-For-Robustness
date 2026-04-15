@@ -16,6 +16,8 @@ cat <<'EOF'
 普通 RL / 对比实验中的 RL：
   --stage1-search-episodes N
   --stage2-search-episodes N
+  --ppo-update-interval N              每多少 episode 触发一次 PPO 更新（默认 120）；
+                                       同时决定每个 details/txt 的回合数（= 3 × N, 默认 360）
 
 GA / 对比实验中的 GA：
   --stage1-search-generations N
@@ -77,7 +79,8 @@ GA / 对比实验中的 GA：
   --general-rl-mode train|search          训练 或 搜索（search 等同于原 infer）
   --general-rl-tasks TASK1,TASK2,...
   --general-rl-rounds N
-  --general-rl-episodes-per-round N
+  --ppo-update-interval N                 同时决定"每轮每任务的 episode 数"与 PPO 更新间隔
+                                          （两者恒等；默认 120）
   --general-rl-lr FLOAT
   --general-rl-num-rollouts N
   --general-rl-greedy
@@ -276,7 +279,7 @@ BUDGET_TRIALS="10"; S_BUDGET_TRIALS="false"
 GENERAL_MODE="infer"; S_GENERAL_MODE="false"
 GENERAL_TASKS=""; S_GENERAL_TASKS="false"
 GENERAL_ROUNDS="50"; S_GENERAL_ROUNDS="false"
-GENERAL_EPISODES_PER_ROUND="170"; S_GENERAL_EPISODES_PER_ROUND="false"
+PPO_UPDATE_INTERVAL_VAL="120"; S_PPO_UPDATE_INTERVAL="false"
 GENERAL_LR="3e-5"; S_GENERAL_LR="false"
 GENERAL_NUM_ROLLOUTS="500"; S_GENERAL_NUM_ROLLOUTS="false"
 GENERAL_GREEDY="false"; S_GENERAL_GREEDY="false"
@@ -358,7 +361,7 @@ while [ "$#" -gt 0 ]; do
     --general-rl-mode) needv "$@"; GENERAL_MODE="$2"; S_GENERAL_MODE="true"; shift 2 ;;
     --general-rl-tasks) needv "$@"; GENERAL_TASKS="$2"; S_GENERAL_TASKS="true"; shift 2 ;;
     --general-rl-rounds) needv "$@"; GENERAL_ROUNDS="$2"; S_GENERAL_ROUNDS="true"; shift 2 ;;
-    --general-rl-episodes-per-round) needv "$@"; GENERAL_EPISODES_PER_ROUND="$2"; S_GENERAL_EPISODES_PER_ROUND="true"; shift 2 ;;
+    --ppo-update-interval) needv "$@"; PPO_UPDATE_INTERVAL_VAL="$2"; S_PPO_UPDATE_INTERVAL="true"; shift 2 ;;
     --general-rl-lr) needv "$@"; GENERAL_LR="$2"; S_GENERAL_LR="true"; shift 2 ;;
     --general-rl-num-rollouts) needv "$@"; GENERAL_NUM_ROLLOUTS="$2"; S_GENERAL_NUM_ROLLOUTS="true"; shift 2 ;;
     --general-rl-greedy) GENERAL_GREEDY="true"; S_GENERAL_GREEDY="true"; shift ;;
@@ -543,7 +546,7 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
 
   if [ "$GENERAL_MODE" = "train" ]; then
     is_pos_int "$GENERAL_ROUNDS" || err "--general-rl-rounds 必须是正整数"
-    is_pos_int "$GENERAL_EPISODES_PER_ROUND" || err "--general-rl-episodes-per-round 必须是正整数"
+    is_pos_int "$PPO_UPDATE_INTERVAL_VAL" || err "--ppo-update-interval 必须是正整数"
     is_pos_num "$GENERAL_LR" || err "--general-rl-lr 必须是正数"
     [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_POLICY_DIR" = "false" ] || err "general-rl train 模式不能使用 rollout / policy 参数。"
   else
@@ -570,10 +573,10 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
     [ -f "$GENERAL_STAGE1_POLICY" ] || err "--general-stage1-policy 指定的文件不存在：$GENERAL_STAGE1_POLICY"
     [ -z "$GENERAL_STAGE2_POLICY" ] || [ -f "$GENERAL_STAGE2_POLICY" ] || err "--general-stage2-policy 指定的文件不存在：$GENERAL_STAGE2_POLICY"
     is_pos_int "$GENERAL_NUM_ROLLOUTS" || err "--general-rl-num-rollouts 必须是正整数"
-    { [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_RESUME_FROM" = "false" ]; } || err "general-rl search 模式不能使用训练专用参数。"
+    { [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_PPO_UPDATE_INTERVAL" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_RESUME_FROM" = "false" ]; } || err "general-rl search 模式不能使用训练专用参数。"
   fi
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
-  { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "rl-and-ga-compare 不能与 general-rl 参数混用。"
+  { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_PPO_UPDATE_INTERVAL" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "rl-and-ga-compare 不能与 general-rl 参数混用。"
   if [ "$S_STAGE2_COMPARE_REPEATS" = "true" ] && [ "$S_NOISE_EVAL_REPEAT" = "true" ]; then
     err "rl-and-ga-compare 模式请只使用 --stage2-compare-repeats；不要再同时传入 --noise-eval-repeat。"
   fi
@@ -642,7 +645,7 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
     [ -f "${GA_COMPARE_PERSISTENT_DIR}/metadata.json" ] || err "persistent 模式找到 GA 目录但缺少 metadata.json：${GA_COMPARE_PERSISTENT_DIR}/metadata.json"
   fi
 else
-  { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_EPISODES_PER_ROUND" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "当前搜索算法不是 general-rl，请不要使用 --general-rl-* 参数。"
+  { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "当前搜索算法不是 general-rl，请不要使用 --general-rl-* 参数。"
   # rl/ga 模式下 --resume-from 已废弃，改用持久化目录自动续训练
   [ "$S_RESUME_FROM" = "false" ] || err "rl / ga 模式已改用持久化目录自动续训练，不再支持手动 --resume-from。续训练时直接运行相同参数即可；首次运行请加 --fresh-start。"
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
@@ -1000,7 +1003,7 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
   [ "$_PY_MODE" = "search" ] && _PY_MODE="search"
   CMD=(python rl_tune_general.py "$_PY_MODE" --model_type "$MODEL_TYPE" --data_path "$GENERAL_DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --device cuda)
   if [ "$GENERAL_MODE" = "train" ]; then
-    CMD+=(--total_rounds "$GENERAL_ROUNDS" --episodes_per_task_per_round "$GENERAL_EPISODES_PER_ROUND" --general_lr "$GENERAL_LR" --skip_stage2 "$GENERAL_SKIP_STAGE2")
+    CMD+=(--total_rounds "$GENERAL_ROUNDS" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --general_lr "$GENERAL_LR" --skip_stage2 "$GENERAL_SKIP_STAGE2")
     [ -n "$GENERAL_STAGE1_CONFIG_JSON" ] && CMD+=(--stage1_config_json "$GENERAL_STAGE1_CONFIG_JSON")
     [ -n "$GENERAL_ACCURACY_TOLERANCES" ] && CMD+=(--accuracy_tolerances "$GENERAL_ACCURACY_TOLERANCES")
     [ -n "$GENERAL_ACCURACY_TOLERANCE_RANGE" ] && CMD+=(--accuracy_tolerance_range "$GENERAL_ACCURACY_TOLERANCE_RANGE")
@@ -1022,7 +1025,7 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   fi
 else
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
-    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$S_STAGE1_EPISODES" --stage2_rl_episodes_specified "$S_STAGE2_EPISODES" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_quartile "$STAGE2_LIMIT_QUARTILE" --stage2_stability_quartile "$STAGE2_STABILITY_QUARTILE")
+    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$S_STAGE1_EPISODES" --stage2_rl_episodes_specified "$S_STAGE2_EPISODES" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_quartile "$STAGE2_LIMIT_QUARTILE" --stage2_stability_quartile "$STAGE2_STABILITY_QUARTILE")
   else
     CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_quartile "$STAGE2_LIMIT_QUARTILE" --stage2_stability_quartile "$STAGE2_STABILITY_QUARTILE")
     [ "$S_STAGE1_GENERATIONS" = "true" ] && CMD+=(--stage1_ga_generations "$STAGE1_GENERATIONS" --stage1_ga_generations_specified "true")
@@ -1054,6 +1057,7 @@ fi
 if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   show "Stage-1 回合数" "$STAGE1_EPISODES" "$S_STAGE1_EPISODES"
   show "Stage-2 回合数" "$STAGE2_EPISODES" "$S_STAGE2_EPISODES"
+  show "PPO 更新间隔" "$PPO_UPDATE_INTERVAL_VAL" "$S_PPO_UPDATE_INTERVAL"
   show "Stage-1 学习率" "$STAGE1_LR" "$S_STAGE1_LR"
   show "Stage-2 学习率" "$STAGE2_LR" "$S_STAGE2_LR"
   show "Stage-1 最终评估来源" "$(srczh "$FINAL_EVAL_SOURCE")" "$S_FINAL_EVAL_SOURCE"
@@ -1105,7 +1109,7 @@ else
     [ -n "$GENERAL_ACCURACY_TOLERANCES" ] && show "准确度容忍值" "$GENERAL_ACCURACY_TOLERANCES" "$S_GENERAL_ACCURACY_TOLERANCES"
     [ -n "$GENERAL_ACCURACY_TOLERANCE_RANGE" ] && show "准确度容忍范围" "$GENERAL_ACCURACY_TOLERANCE_RANGE" "true"
     show "训练轮数" "$GENERAL_ROUNDS" "$S_GENERAL_ROUNDS"
-    show "每轮每任务回合数" "$GENERAL_EPISODES_PER_ROUND" "$S_GENERAL_EPISODES_PER_ROUND"
+    show "PPO 更新间隔" "$PPO_UPDATE_INTERVAL_VAL" "$S_PPO_UPDATE_INTERVAL"
     show "通用策略学习率" "$GENERAL_LR" "$S_GENERAL_LR"
     show "从头训练" "$(boolzh "$FRESH_START")" "$S_FRESH_START"
   else

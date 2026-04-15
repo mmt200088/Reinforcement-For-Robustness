@@ -303,7 +303,8 @@ def train(
     lora_alpha: int = 64,
     # 通用策略训练参数
     total_rounds: int = 50,
-    episodes_per_task_per_round: int = 170,
+    # ppo_update_interval 同时决定：PPO 更新间隔 / 每轮每任务的 episode 数 / details 分块大小(=3×)
+    ppo_update_interval: int = 120,
     general_lr: float = 3e-5,
     # Stage-1/Stage-2 选项
     skip_stage2: bool = False,
@@ -331,9 +332,18 @@ def train(
     skip_stage2 = parse_bool_flag(skip_stage2, "skip_stage2")
     batch_size = parse_positive_int(batch_size, "batch_size")
     total_rounds = parse_positive_int(total_rounds, "total_rounds")
-    episodes_per_task_per_round = parse_positive_int(
-        episodes_per_task_per_round, "episodes_per_task_per_round"
+    ppo_update_interval = parse_positive_int(
+        ppo_update_interval, "ppo_update_interval"
     )
+    # 覆盖 PPO 更新间隔及其派生常量, 必须在构建 evaluator / 启动 multi_task_train 之前
+    import layer_importance_evaluator as _lie
+    _lie.set_ppo_update_interval(ppo_update_interval)
+    print(
+        f"[PPO] ppo_update_interval={_lie.PPO_UPDATE_INTERVAL} "
+        f"(batch={_lie.PPO_BATCH_SIZE} steps, details chunk={_lie.STEP_INFO_CHUNK_SIZE} episodes)"
+    )
+    # 每轮每任务的 episode 数与 PPO 更新间隔保持相等（确保 buffer 不跨任务混合）
+    episodes_per_task_per_round = ppo_update_interval
 
     # 解析准确度容忍列表（离散模式）
     parsed_tolerances = None

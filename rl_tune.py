@@ -133,6 +133,7 @@ def train(
         stage2_rl_episodes: int = 40000,
         stage1_rl_episodes_specified: bool = False,
         stage2_rl_episodes_specified: bool = False,
+        ppo_update_interval: int = 120,  # PPO 更新间隔（episode 数）；同时决定 batch 大小与 details 分块大小
         final_eval_config_source: str = "search",  # search | json | manual
         final_eval_config_path: str = "glue_configs_best_ppo.json",
         manual_final_gelu: str = "",
@@ -189,6 +190,16 @@ def train(
     )
     stage2_rl_episodes = parse_positive_int(
         stage2_rl_episodes, "stage2_rl_episodes"
+    )
+    ppo_update_interval = parse_positive_int(
+        ppo_update_interval, "ppo_update_interval"
+    )
+    # 在创建 LayerImportanceEvaluator 之前覆盖 PPO 更新间隔及其派生常量
+    import layer_importance_evaluator as _lie
+    _lie.set_ppo_update_interval(ppo_update_interval)
+    print(
+        f"[PPO] ppo_update_interval={_lie.PPO_UPDATE_INTERVAL} "
+        f"(batch={_lie.PPO_BATCH_SIZE} steps, details chunk={_lie.STEP_INFO_CHUNK_SIZE} episodes)"
     )
 
     print(
