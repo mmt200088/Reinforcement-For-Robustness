@@ -1,3 +1,23 @@
+## 快速开始（预设系统）
+
+最简单的使用方式是通过预设（preset）启动：
+
+```bash
+# 列出所有可用预设
+bash llama_7B_LayerImportance.sh --list-presets
+
+# 首次运行（必须加 --fresh-start）
+bash llama_7B_LayerImportance.sh --preset mrpc-rl-default --fresh-start
+
+# 续训练（自动从 checkpoint 恢复，无需额外参数）
+bash llama_7B_LayerImportance.sh --preset mrpc-rl-default
+
+# 预设 + 自定义覆盖（命令行参数优先于预设）
+bash llama_7B_LayerImportance.sh --preset mrpc-rl-default --stage2-search-episodes 60000
+```
+
+预设文件位于 `presets/` 目录下，格式为每行一个命令行参数（支持 `#` 注释）。可自行添加新预设。
+
 ## 命令行参数总表
 
 ```bash

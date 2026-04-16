@@ -1117,6 +1117,8 @@ class Stage1GeneticSearcher:
                         f"全局最优得分: {best_candidate['score']:.6f}  "
                         f"最优成本: {best_candidate['cost']:.2f}  "
                         f"(第 {best_generation} 代发现)",
+                        f"  GELU:    {list(best_candidate['gelu'])}",
+                        f"  Softmax: {list(best_candidate['softmax'])}",
                         f"已用时: {_fmt_elapsed(_elapsed_total)}  "
                         f"预计剩余: {_fmt_elapsed(_eta)}  "
                         f"缓存命中: {len(self._cache)} 条",
@@ -1757,6 +1759,17 @@ class Stage2NoiseGeneticSearcher:
                 _avg_gen_time = _elapsed_total / max(generation - resume_start_generation + 1, 1)
                 _remaining_gen = self.max_generations - generation
                 _eta = _avg_gen_time * _remaining_gen
+                _inc_noise_lines = []
+                for _nk in (
+                    "input_noise_scaling_factors", "wq_noise_scaling_factors",
+                    "wk_noise_scaling_factors", "wv_noise_scaling_factors",
+                    "wo_noise_scaling_factors", "wffn1_noise_scaling_factors",
+                    "wffn2_noise_scaling_factors",
+                ):
+                    if _nk in incumbent:
+                        _inc_noise_lines.append(
+                            f"  {_nk}: {np.asarray(incumbent[_nk], dtype=int).tolist()}"
+                        )
                 _log_rounded_box(
                     self._log,
                     [
@@ -1765,6 +1778,7 @@ class Stage2NoiseGeneticSearcher:
                         f"Incumbent 得分: {incumbent['score']:.6f}  "
                         f"成本: {incumbent['cost']:.2f}  "
                         f"(第 {best_generation} 代确认)",
+                        *_inc_noise_lines,
                         f"已用时: {_fmt_elapsed(_elapsed_total)}  "
                         f"预计剩余: {_fmt_elapsed(_eta)}  "
                         f"缓存命中: {len(self._cache)} 条",

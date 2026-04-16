@@ -6,6 +6,10 @@ cat <<'EOF'
 用法：
   bash llama_7B_LayerImportance.sh [可选参数]
 
+预设系统：
+  --preset NAME              加载 presets/NAME.conf 中的参数（命令行参数优先覆盖预设）
+  --list-presets             列出所有可用预设
+
 核心参数：
   --dataset DATASET
   --search-algorithm rl|ga|general-rl|rl-and-ga-compare
@@ -110,6 +114,9 @@ GA / 对比实验中的 GA：
      如果找不到会直接报错并打印对应路径。
 
 示例：
+  bash llama_7B_LayerImportance.sh --list-presets
+  bash llama_7B_LayerImportance.sh --preset mrpc-rl-default --fresh-start
+  bash llama_7B_LayerImportance.sh --preset mrpc-rl-default            # 续训练（无需 --fresh-start）
   bash llama_7B_LayerImportance.sh --dataset mrpc
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl --stage1-search-lr 3e-5 --stage2-search-lr 1e-5
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm ga --stage1-search-generations 120 --stage2-search-generations 90
@@ -322,9 +329,54 @@ FRESH_START="false"; S_FRESH_START="false"
 FRESH_STAGE1="false"; S_FRESH_STAGE1="false"
 FRESH_STAGE2="false"; S_FRESH_STAGE2="false"
 
+# ── 预设支持（--preset）──────────────────────────────────────────────
+# 用法: bash llama_7B_LayerImportance.sh --preset <预设名> [额外参数...]
+# 预设文件位于 presets/<预设名>.conf，内容为每行一个命令行参数。
+# 命令行中后续传入的参数会覆盖预设中的同名参数。
+PRESET_ARGS=()
+_raw_args=("$@")
+_new_args=()
+_i=0
+while [ $_i -lt ${#_raw_args[@]} ]; do
+  if [ "${_raw_args[$_i]}" = "--preset" ]; then
+    _i=$((_i + 1))
+    [ $_i -lt ${#_raw_args[@]} ] || err "选项 --preset 缺少取值。"
+    _preset_name="${_raw_args[$_i]}"
+    _preset_file="$(cd "$(dirname "$0")" && pwd)/presets/${_preset_name}.conf"
+    [ -f "$_preset_file" ] || err "预设文件不存在：$_preset_file\n可用预设：$(ls "$(cd "$(dirname "$0")" && pwd)/presets/" 2>/dev/null | sed 's/\.conf$//' | tr '\n' ' ')"
+    # 读取预设文件（忽略空行和注释）
+    while IFS= read -r _pline; do
+      _pline="$(printf '%s' "$_pline" | sed 's/#.*//' | xargs)"
+      [ -n "$_pline" ] || continue
+      PRESET_ARGS+=($_pline)
+    done < "$_preset_file"
+    echo "已加载预设：${_preset_name}（${_preset_file}）"
+  else
+    _new_args+=("${_raw_args[$_i]}")
+  fi
+  _i=$((_i + 1))
+done
+# 预设参数放在前面，命令行参数放在后面（后面的覆盖前面的）
+set -- "${PRESET_ARGS[@]+"${PRESET_ARGS[@]}"}" "${_new_args[@]+"${_new_args[@]}"}"
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
+    --list-presets)
+      _presets_dir="$(cd "$(dirname "$0")" && pwd)/presets"
+      echo "可用预设（presets/ 目录）："
+      if [ -d "$_presets_dir" ]; then
+        for _pf in "$_presets_dir"/*.conf; do
+          [ -f "$_pf" ] || continue
+          _pn="$(basename "$_pf" .conf)"
+          _pd="$(head -1 "$_pf" | sed 's/^#\s*//')"
+          printf "  %-30s %s\n" "$_pn" "$_pd"
+        done
+      else
+        echo "  （目录不存在）"
+      fi
+      exit 0 ;;
+    --preset) shift 2 ;;  # 已在预处理阶段处理，此处跳过
     --dataset) needv "$@"; DATASET="$2"; S_DATASET="true"; shift 2 ;;
     --model) err "参数 --model 已废弃，请改用 --dataset。" ;;
     --search-algorithm) needv "$@"; SEARCH_ALGORITHM="$2"; S_SEARCH_ALGORITHM="true"; shift 2 ;;

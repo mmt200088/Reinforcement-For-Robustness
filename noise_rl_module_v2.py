@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Categorical
+import time as _time
 
 
 # ===========================================================================
@@ -491,6 +492,26 @@ def _write_noise_step_info(step_info, f):
     if step_info.get("mc_loss_mean") is not None:
         f.write(f"  MC: loss={step_info['mc_loss_mean']:.4f}+/-{step_info.get('mc_loss_std', 0):.4f}, "
                 f"m1={step_info.get('mc_metric1_mean', 0):.4f}+/-{step_info.get('mc_metric1_std', 0):.4f}\n")
+
+
+def _progress_bar(current, total, width=30):
+    """Render a fixed-width unicode progress bar."""
+    ratio = min(current / max(total, 1), 1.0)
+    filled = int(round(ratio * width))
+    bar = "\u2588" * filled + "\u2591" * (width - filled)
+    return f"[{bar}] {ratio:6.1%}"
+
+
+def _fmt_elapsed(seconds):
+    h, rem = divmod(int(seconds), 3600)
+    m, s = divmod(rem, 60)
+    if h > 0:
+        return f"{h}h{m:02d}m{s:02d}s"
+    return f"{m}m{s:02d}s"
+
+
+# 噪声 RL 进度框输出间隔（以 PPO 更新次数为单位）
+NOISE_RL_PROGRESS_BOX_PPO_INTERVAL = 5
 
 
 def _write_warning_report(warning_file, warnings, stage_label=""):
@@ -2301,6 +2322,7 @@ class NoiseRLModuleV2:
         # ============================
         # 主训练循环
         # ============================
+        _rl_t0 = _time.time()
         for episode in range(resume_start_episode, stage2_total_episodes):
             current_lr, current_entropy = ev.update_hyperparameters(optimizer, episode)
             env.set_episode_progress(episode, stage2_total_episodes)
@@ -2616,6 +2638,49 @@ class NoiseRLModuleV2:
                         f"\u72b6\u6001={_warmup_status_zh(warmup_status)}",
                     ],
                 )
+
+                # 进度条（每 N 次 PPO 更新或最后一次更新时输出）
+                if (noise_ppo_update_count % NOISE_RL_PROGRESS_BOX_PPO_INTERVAL == 0
+                        or episode + 1 >= stage2_total_episodes):
+                    _rl_elapsed = _time.time() - _rl_t0
+                    _rl_done_episodes = episode + 1 - resume_start_episode
+                    _rl_total_to_run = stage2_total_episodes - resume_start_episode
+                    _rl_avg_ep_time = _rl_elapsed / max(_rl_done_episodes, 1)
+                    _rl_remaining_ep = stage2_total_episodes - (episode + 1)
+                    _rl_eta = _rl_avg_ep_time * _rl_remaining_ep
+                    _inc_score_str = f"{incumbent_mean_score:.4f}" if incumbent_best_noise_config is not None else "N/A"
+                    _inc_cost_str = (
+                        f"{incumbent_best_noise_config['cost']:.2f}"
+                        if incumbent_best_noise_config is not None and "cost" in incumbent_best_noise_config
+                        else "N/A"
+                    )
+                    _inc_cfg_lines = []
+                    if incumbent_best_noise_config is not None:
+                        for _nk in (
+                            "input_noise_scaling_factors", "wq_noise_scaling_factors",
+                            "wk_noise_scaling_factors", "wv_noise_scaling_factors",
+                            "wo_noise_scaling_factors", "wffn1_noise_scaling_factors",
+                            "wffn2_noise_scaling_factors",
+                        ):
+                            if _nk in incumbent_best_noise_config:
+                                _inc_cfg_lines.append(
+                                    f"  {_nk}: "
+                                    f"{np.asarray(incumbent_best_noise_config[_nk], dtype=int).tolist()}"
+                                )
+                    _log_rounded_box(
+                        ev.log,
+                        [
+                            f"Stage-2 噪声 RL 进度 · 回合 {episode + 1} / {stage2_total_episodes}",
+                            _progress_bar(episode + 1, stage2_total_episodes),
+                            f"守擂最优（Incumbent）得分: {_inc_score_str}  成本: {_inc_cost_str}",
+                            *_inc_cfg_lines,
+                            f"训练期最优（Train best）得分: {best_final_selection_score:.4f}  成本: {best_cost:.2f}",
+                            f"已用时: {_fmt_elapsed(_rl_elapsed)}  "
+                            f"预计剩余: {_fmt_elapsed(_rl_eta)}  "
+                            f"PPO 更新: {noise_ppo_update_count} 次",
+                        ],
+                        indent="  ",
+                    )
 
                 # \u5956\u52b1\u9a9f\u964d\u68c0\u6d4b
                 if noise_prev_avg_reward[0] is not None:

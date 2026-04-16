@@ -22,7 +22,7 @@ from function_handler import (
     WFFN1_NOISE_DEFAULT_SCALING_FACTOR,
 )
 from final_evaluation_module import FinalEvaluationModule
-from noise_rl_module_v2 import _log_rounded_box
+from noise_rl_module_v2 import _log_rounded_box, _progress_bar, _fmt_elapsed, NOISE_RL_PROGRESS_BOX_PPO_INTERVAL
 import os
 import random
 import hashlib
@@ -5535,6 +5535,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         f"目标回合数 {self.stage1_rl_episodes} 无需追加训练。"
                     )
 
+            _stage1_rl_t0 = time.time()
             for episode in range(stage1_resume_start_episode, self.stage1_rl_episodes):
                 # 动态超参数调度（学习率和熵系数）
                 current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
@@ -5730,6 +5731,37 @@ class LayerImportanceEvaluator(TrainerCallback):
                             ),
                         ],
                     )
+
+                    # 进度条（每 N 次 PPO 更新或最后一次更新时输出）
+                    if (gtrxl_ppo_update_count % NOISE_RL_PROGRESS_BOX_PPO_INTERVAL == 0
+                            or episode + 1 >= self.stage1_rl_episodes):
+                        _s1_elapsed = time.time() - _stage1_rl_t0
+                        _s1_done = episode + 1 - stage1_resume_start_episode
+                        _s1_avg_ep = _s1_elapsed / max(_s1_done, 1)
+                        _s1_remain = self.stage1_rl_episodes - (episode + 1)
+                        _s1_eta = _s1_avg_ep * _s1_remain
+                        _s1_best_lines = []
+                        if search_best_config is not None:
+                            _s1_best_lines.append(
+                                f"搜索最优得分: {search_best_config.get('proxy_reward', 0):.4f}  "
+                                f"成本: {search_best_config.get('cost', 0):.2f}"
+                            )
+                            _s1_best_lines.append(f"  GELU:    {list(search_best_config.get('gelu', []))}")
+                            _s1_best_lines.append(f"  Softmax: {list(search_best_config.get('softmax', []))}")
+                        else:
+                            _s1_best_lines.append("搜索最优: 尚未找到")
+                        _log_rounded_box(
+                            self.log,
+                            [
+                                f"Stage-1 RL 进度 · 回合 {episode + 1} / {self.stage1_rl_episodes}",
+                                _progress_bar(episode + 1, self.stage1_rl_episodes),
+                                *_s1_best_lines,
+                                f"已用时: {_fmt_elapsed(_s1_elapsed)}  "
+                                f"预计剩余: {_fmt_elapsed(_s1_eta)}  "
+                                f"PPO 更新: {gtrxl_ppo_update_count} 次",
+                            ],
+                            indent="  ",
+                        )
 
                     if stage1_prev_avg_reward[0] is not None:
                         reward_drop = stage1_prev_avg_reward[0] - avg_reward
