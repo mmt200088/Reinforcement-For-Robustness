@@ -9,7 +9,7 @@
 
 ## 2. 单任务 GA（rl_results/persistent/ga/）
 
-- `bert-base / mrpc [s1t0.005_s2q0.05_s2sq0.…]`：进度 `S1 未开始/未开始；S2 未开始/未开始；S1 已有搜索日志，S2 已有搜索日志`；当前最优 `S2 搜索 score=1.4159，cost=36.90，gen2441/2500`
+- `bert-base / mrpc [s1t0.005_s2q0.05_s2sq0.…]`：进度 `S1 未开始/未开始；S2 未开始/未开始；S2 已有终评结果，S1 已有搜索日志，S2 已有搜索日志`；当前最优 `S2 终评 主=0.8725，次=0.8725，cost=36.90，1.33x，不可行`
 
 ## 3. 通用策略 General-RL（rl_results/persistent/general-rl/）
 
