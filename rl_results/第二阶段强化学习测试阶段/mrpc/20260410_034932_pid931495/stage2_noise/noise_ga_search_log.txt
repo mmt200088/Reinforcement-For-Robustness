@@ -1,0 +1,59 @@
+  [自动调整] 指定分段数 N=10 导致每段仅 40 个样本（< 80），已自动缩减为 N=5（每段约 81 个样本）
+  [自动调整] 指定分段数 N=10 导致每段仅 40 个样本（< 80），已自动缩减为 N=5（每段约 81 个样本）
+  [自动调整] 指定分段数 N=10 导致每段仅 40 个样本（< 80），已自动缩减为 N=5（每段约 81 个样本）
+  [自动调整] 指定分段数 N=10 导致每段仅 40 个样本（< 80），已自动缩减为 N=5（每段约 81 个样本）
+
+Stage-2 baseline and dynamic constraints:
+  split=validation_full  quartile=0.2
+  low-risk baseline: 损失（Loss）: 0.331139, Accuracy: 0.524390, F1: 0.523397
+  worst-case baseline: 损失（Loss）: 0.339718, Accuracy: 0.521951, F1: 0.521019
+  dynamic constraints: 损失（Loss）<=0.3329, Accuracy>=0.5239, F1>=0.5229
+  std caps: loss=0.020585, m1=0.428603, m2=0.427713
+  cost reference (max-sf configuration): total_noise_cost=49.20
+
+Stage-2 Noise Genetic Search follows COINN: fitness-weighted selection plus adjacent scaling-factor mutation, while keeping the current dynamic constraints and challenger-confirmation protocol.
+Initial population size=32  max_generations=938  stagnation_tolerance=312  diversity_injection_at=156  initial_incumbent_cost=49.20  initial_incumbent_score=1.000000
+[Stage2][Gen 0001] challenger confirm score(train)=1.017227  score(confirm)=1.017227  constraint=True  std=True
+[Stage2][Gen 0001] gen_best_score=1.017227  gen_best_cost=48.35  incumbent_score=1.017227  incumbent_cost=48.35  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0002] challenger confirm score(train)=1.019628  score(confirm)=1.019628  constraint=True  std=True
+[Stage2][Gen 0002] gen_best_score=1.019628  gen_best_cost=48.25  incumbent_score=1.019628  incumbent_cost=48.25  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0003] challenger confirm score(train)=1.024152  score(confirm)=1.024152  constraint=True  std=True
+[Stage2][Gen 0003] gen_best_score=1.024152  gen_best_cost=48.00  incumbent_score=1.024152  incumbent_cost=48.00  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0004] challenger confirm score(train)=1.027422  score(confirm)=1.027422  constraint=True  std=True
+[Stage2][Gen 0004] gen_best_score=1.027422  gen_best_cost=47.85  incumbent_score=1.027422  incumbent_cost=47.85  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0005] challenger confirm score(train)=1.031870  score(confirm)=1.031870  constraint=True  std=True
+[Stage2][Gen 0005] gen_best_score=1.031870  gen_best_cost=47.65  incumbent_score=1.031870  incumbent_cost=47.65  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0006] challenger confirm score(train)=1.035709  score(confirm)=1.035709  constraint=True  std=True
+[Stage2][Gen 0006] gen_best_score=1.035709  gen_best_cost=47.50  incumbent_score=1.035709  incumbent_cost=47.50  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0007] challenger confirm score(train)=1.039018  score(confirm)=1.039018  constraint=True  std=True
+[Stage2][Gen 0007] gen_best_score=1.039018  gen_best_cost=47.35  incumbent_score=1.039018  incumbent_cost=47.35  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0008] challenger confirm score(train)=1.043497  score(confirm)=1.043497  constraint=True  std=True
+[Stage2][Gen 0008] gen_best_score=1.043497  gen_best_cost=47.15  incumbent_score=1.043497  incumbent_cost=47.15  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0009] challenger confirm score(train)=1.048005  score(confirm)=1.048005  constraint=True  std=True
+[Stage2][Gen 0009] gen_best_score=1.048005  gen_best_cost=46.90  incumbent_score=1.048005  incumbent_cost=46.90  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0010] challenger confirm score(train)=1.049147  score(confirm)=1.049147  constraint=True  std=True
+[Stage2][Gen 0010] gen_best_score=1.049147  gen_best_cost=46.85  incumbent_score=1.049147  incumbent_cost=46.85  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0011] challenger confirm score(train)=1.052418  score(confirm)=1.052418  constraint=True  std=True
+[Stage2][Gen 0011] gen_best_score=1.052418  gen_best_cost=46.75  incumbent_score=1.052418  incumbent_cost=46.75  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0012] challenger confirm score(train)=1.059104  score(confirm)=1.059104  constraint=True  std=True
+[Stage2][Gen 0012] gen_best_score=1.059104  gen_best_cost=46.45  incumbent_score=1.059104  incumbent_cost=46.45  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0013] challenger confirm score(train)=1.062492  score(confirm)=1.062492  constraint=True  std=True
+[Stage2][Gen 0013] gen_best_score=1.062492  gen_best_cost=46.30  incumbent_score=1.062492  incumbent_cost=46.30  qualified_ratio=96.88%  stagnation=0/312
+[Stage2][Gen 0014] challenger confirm score(train)=1.065934  score(confirm)=1.065934  constraint=True  std=True
+[Stage2][Gen 0014] gen_best_score=1.065934  gen_best_cost=46.15  incumbent_score=1.065934  incumbent_cost=46.15  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0015] challenger confirm score(train)=1.067255  score(confirm)=1.067255  constraint=True  std=True
+[Stage2][Gen 0015] gen_best_score=1.067255  gen_best_cost=46.10  incumbent_score=1.067255  incumbent_cost=46.10  qualified_ratio=96.88%  stagnation=0/312
+[Stage2][Gen 0016] challenger confirm score(train)=1.074190  score(confirm)=1.074190  constraint=True  std=True
+[Stage2][Gen 0016] gen_best_score=1.074190  gen_best_cost=45.80  incumbent_score=1.074190  incumbent_cost=45.80  qualified_ratio=96.88%  stagnation=0/312
+[Stage2][Gen 0017] challenger confirm score(train)=1.076779  score(confirm)=1.076779  constraint=True  std=True
+[Stage2][Gen 0017] gen_best_score=1.076779  gen_best_cost=45.70  incumbent_score=1.076779  incumbent_cost=45.70  qualified_ratio=96.88%  stagnation=0/312
+[Stage2][Gen 0018] challenger confirm score(train)=1.076980  score(confirm)=1.076980  constraint=True  std=True
+[Stage2][Gen 0018] gen_best_score=1.076980  gen_best_cost=45.65  incumbent_score=1.076980  incumbent_cost=45.65  qualified_ratio=96.88%  stagnation=0/312
+[Stage2][Gen 0019] challenger confirm score(train)=1.078050  score(confirm)=1.078050  constraint=True  std=True
+[Stage2][Gen 0019] gen_best_score=1.078050  gen_best_cost=45.60  incumbent_score=1.078050  incumbent_cost=45.60  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0020] challenger confirm score(train)=1.081507  score(confirm)=1.081507  constraint=True  std=True
+[Stage2][Gen 0020] gen_best_score=1.081507  gen_best_cost=45.50  incumbent_score=1.081507  incumbent_cost=45.50  qualified_ratio=100.00%  stagnation=0/312
+[Stage2][Gen 0021] challenger confirm score(train)=1.084369  score(confirm)=1.084369  constraint=True  std=True
+[Stage2][Gen 0021] gen_best_score=1.084369  gen_best_cost=45.35  incumbent_score=1.084369  incumbent_cost=45.35  qualified_ratio=96.88%  stagnation=0/312
+[Stage2][Gen 0022] challenger confirm score(train)=1.086314  score(confirm)=1.086314  constraint=True  std=True
+[Stage2][Gen 0022] gen_best_score=1.086314  gen_best_cost=45.30  incumbent_score=1.086314  incumbent_cost=45.30  qualified_ratio=100.00%  stagnation=0/312
