@@ -2117,3 +2117,125 @@ for score, cfg in ranked[:5]:
 2. **离线快速部署**：新任务到来时，用 `offline_find_best_config_stage1` / `offline_find_best_config_stage2` 做 500 次 rollout 快速找到最优配置，无需数万回合 online RL。
 3. **精细化微调**：如果离线结果不够理想，可将通用策略作为 base policy 加载到 online RL 中继续微调，通常只需原来 1/5 ~ 1/3 的回合数即可收敛。
 4. **Critic 预筛选**：如果有大量候选配置需要评估，先用 `critic_quick_rank_stage1` 快速排序，再对 top-K 做真实评测。
+
+
+所有 v3 更新汇总
+改动位置速览
+全部优化通过 noise_rl_module_v2.py:211 的 NOISE_RL_OPT_FLAGS 字典控制，默认全部开启，每项可单独关闭回退到 v2 行为。
+
+各优化项说明
+v3-A 熵退火调度（Cosine + Plateau）
+问题： 旧 schedule 让熵长期停在 ~0.02，policy 近乎 uniform，7 个动作头无法真正收敛。
+
+改动： 前 8% 回合维持高探索（0.02），之后 cosine 衰减至 0.0008，允许策略真正 commit。
+
+代码： 293-315 _resolve_stage2_entropy_coef，主循环 2551 注入。
+
+控制键：
+
+
+"use_v3_entropy_schedule": True,   # False → 退回 v2 schedule
+"v3_entropy_start": 0.02,
+"v3_entropy_end": 0.0008,
+"v3_entropy_floor": 0.0006,
+"v3_entropy_plateau_ratio": 0.08,
+v3-B 逐头（Per-head）熵地板
+问题： 全局熵均值合格时，某些头（如 wffn1）可能已完全坍缩，但被其他头的高熵"平均掉"。
+
+改动： 对每个动作头单独检测是否低于 log(action_dim) × 22%，只对真正坍缩的头施加补偿。
+
+代码： 辅助函数 318-336；evaluate_actions 新增 return_per_head_entropy 参数 1097；PPO 更新中调用。
+
+控制键：
+
+
+"use_per_head_entropy_recovery": True,   # False → 退回全局均值检测
+"v3_per_head_entropy_floor_frac": 0.22,
+"v3_per_head_recovery_multiplier": 6.0,
+v3-C 势能塑形（Potential-based Reward Shaping）
+问题： 仅终止步有奖励（稀疏），前 11 步全为 0，策略梯度信号极弱。
+
+改动： 每步叠加 shaping_weight × (φ(s') - φ(s))，φ 定义为成本超支和噪声债务的负值。数学上保证最优策略不变（Ng et al. 1999 势能塑形定理）。终止步补偿 -φ(s_prev) 使总回报不偏移。
+
+代码： 辅助函数 338-353；env.reset() 1249；env.step() 非终止 1463 与终止 1482 分支。
+
+控制键：
+
+
+"use_potential_shaping": True,   # False → 完全禁用（纯稀疏奖励）
+"shaping_weight": 0.06,
+v3-D PPO 超参优化 + KL 自适应学习率
+问题： eps_clip=0.12 + K=6 步长太保守；LR 恒定，KL 超标时仍强行更新。
+
+改动：
+
+eps_clip 0.12 → 0.2，K_epochs 6 → 4，mini_batch 8 → 12（更大更少批次）
+LR × 2.5 倍（避免 LR 过低导致有效更新太慢）
+KL 自适应：上次 update 均值 KL > 2× target → LR × 0.5；< 0.5× target → LR × 1.5，比率限制在 [0.25, 2.5]
+代码： 1650-1690。
+
+控制键：
+
+
+"use_v3_ppo_hparams": True,   # False → 退回 v2 所有 PPO 超参（clip/K/mini_batch/LR 全不变）
+"v3_eps_clip": 0.2,
+"v3_k_epochs": 4,
+"v3_mini_batch_episodes": 12,
+"v3_lr_multiplier": 2.5,
+"v3_adaptive_lr_kl": True,
+"v3_kl_adaptive_target": 0.015,
+"v3_kl_adaptive_min_ratio": 0.25,
+"v3_kl_adaptive_max_ratio": 2.5,
+v3-E Challenger 确认优化（三合一）
+问题三点：
+
+trigger margin=0 → 任何比 incumbent 高一点的候选都触发昂贵 confirm（10 段评测）
+训练 MC std 已超标时 confirm 必败，但仍白白评测
+confirm fail 写 -50 惩罚 → 主导整 batch advantage，其他 episode 梯度被压成接近 0
+改动：
+
+trigger margin 提高到 0.010（需显著提升才触发）
+训练期 last_mc_eval std > cap × 1.5 时直接跳过 confirm，日志标记 [v3 precheck]
+confirm fail penalty 从 -50 裁剪到 -5
+代码： 2732-2875。
+
+控制键：
+
+
+"v3_confirm_trigger_margin": 0.010,   # 只有 use_v3_ppo_hparams=True 时生效
+"v3_confirm_precheck_std": True,
+"v3_confirm_penalty_clip_min": -5.0,  # 只有 use_v3_ppo_hparams=True 时生效
+v3-F 策略冷启动偏置（Warmstart Bias）
+问题： 初始化时每个动作等概率（~20%），policy 从噪声最高处开始探索，触发大量约束违反 → 负奖励风暴。
+
+改动： 对每个动作头的 bias[-1]（= 最大 SF = 最低风险动作）加 1.2，使初始概率约 47% vs 其他 13%，从 baseline 附近出发。恢复 checkpoint 时 load_state_dict 覆盖该偏置，不影响续训。
+
+代码： 1017-1026。
+
+控制键：
+
+
+"v3_warmstart_baseline_bias": True,
+"v3_warmstart_bias_gain": 1.2,
+v3-G 稳健 Advantage 归一化
+问题： confirm fail 的 -50 惩罚使 adv.std() 暴增，把其余 episode 的 advantage 全压成接近 0，policy 梯度几乎消失。
+
+改动： z-score 之前先按 中位数 ± 6×MAD 裁剪离群点，再做标准化；只影响统计稳定性，不改变方向。
+
+代码： 1715-1730。
+
+控制键：
+
+
+"v3_robust_advantage_norm": True,
+"v3_adv_outlier_clip": 6.0,   # 中位数 ± 6×MAD
+消融/回滚方式
+要回退哪项	操作
+全部 v3	把所有 "use_v3_*": True 改为 False
+仅 PPO 超参	"use_v3_ppo_hparams": False
+仅熵调度	"use_v3_entropy_schedule": False
+仅 shaping	"use_potential_shaping": False
+仅 per-head 熵	"use_per_head_entropy_recovery": False
+仅 robust adv norm	"v3_robust_advantage_norm": False
+仅 warmstart	"v3_warmstart_baseline_bias": False
+仅 confirm 优化	"v3_confirm_precheck_std": False + "use_v3_ppo_hparams": False（margin/penalty 随之失效）

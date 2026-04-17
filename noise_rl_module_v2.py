@@ -209,7 +209,7 @@ NOISE_STAGE_REWARD_CLIP_MAX = 5.0
 #          的问题（policy 过早收敛 / 单次 lucky 评测被采为 best）。
 # ==================================================================
 NOISE_RL_OPT_FLAGS = {
-    # 1) 抬高熵下界（原 0.005），增强自适应熵恢复力度
+    # 1) 抬高熵下界（原 0.005），增强自适应熵恢复力度（v2 保留，v3 会改用 per-head）
     "raise_entropy_lower_bound": True,
     "entropy_lower_bound_override": 0.012,
     "stronger_entropy_recovery": True,
@@ -225,6 +225,49 @@ NOISE_RL_OPT_FLAGS = {
 
     # 4) 训练结束写入局部最优检测报告
     "write_local_optimum_report": True,
+
+    # ================================================================
+    # v3 优化（Stage-2 噪声 RL 针对大动作空间 + 稀疏约束慢收敛的加速包）
+    # 所有 v3 开关支持单独关闭回退到 v2；默认全开。
+    # ================================================================
+    # v3-A: 熵调度（Cosine plateau + decay，收敛后允许策略真正 commit）
+    "use_v3_entropy_schedule": True,
+    "v3_entropy_start": 0.02,          # 前期高探索
+    "v3_entropy_end": 0.0008,          # 末期强制收敛
+    "v3_entropy_floor": 0.0006,        # 硬下限
+    "v3_entropy_plateau_ratio": 0.08,  # 前 8% 回合维持 start
+    # v3-B: 逐头（per-head）熵地板，允许个别头部坍缩，其他头保持多样性
+    "use_per_head_entropy_recovery": True,
+    "v3_per_head_entropy_floor_frac": 0.22,  # 相对 log(action_dim) 的最低比例
+    "v3_per_head_recovery_multiplier": 6.0,  # 仅对真正过低的头施加惩罚
+
+    # v3-C: 稠密势能塑形（Potential-based reward shaping，保证最优策略不变）
+    "use_potential_shaping": True,
+    "shaping_weight": 0.06,
+
+    # v3-D: PPO 超参优化（更大步长 + 更少 epoch + 自适应 LR）
+    "use_v3_ppo_hparams": True,
+    "v3_eps_clip": 0.2,
+    "v3_k_epochs": 4,
+    "v3_mini_batch_episodes": 12,
+    "v3_lr_multiplier": 2.5,               # e.g. 2e-5 -> 5e-5
+    "v3_adaptive_lr_kl": True,
+    "v3_kl_adaptive_target": 0.015,
+    "v3_kl_adaptive_min_ratio": 0.25,
+    "v3_kl_adaptive_max_ratio": 2.5,
+
+    # v3-E: Challenger 确认优化（精准触发 + 预检省算力 + penalty 不破坏 advantage）
+    "v3_confirm_trigger_margin": 0.010,     # 需要 >0.010 的提升才触发 confirm
+    "v3_confirm_precheck_std": True,        # 训练 MC 的 std 若已越界则跳过 confirm
+    "v3_confirm_penalty_clip_min": -5.0,    # 将 -50 罚换成 -5，避免主导 batch advantage
+
+    # v3-F: 策略冷启动（偏置最大 scaling 动作；等价于从 baseline 附近出发）
+    "v3_warmstart_baseline_bias": True,
+    "v3_warmstart_bias_gain": 1.2,
+
+    # v3-G: 稳健 advantage 归一化（先裁剪离群点再 z-score）
+    "v3_robust_advantage_norm": True,
+    "v3_adv_outlier_clip": 6.0,
 }
 
 
@@ -238,6 +281,77 @@ def _noise_rl_entropy_recovery_mul():
     if NOISE_RL_OPT_FLAGS.get("stronger_entropy_recovery", False):
         return float(NOISE_RL_OPT_FLAGS.get("entropy_recovery_multiplier", 10.0))
     return 10.0
+
+
+# ============================================================
+# v3 helpers：熵调度 / 势能函数 / 每头熵地板
+# ------------------------------------------------------------
+# 这些 helper 都是旁路式的，关掉对应 flag 即可完全回退到 v2 行为。
+# ============================================================
+
+def _resolve_stage2_entropy_coef(episode, total_episodes, legacy_coef):
+    """Stage-2 专用熵系数调度。
+
+    - 前 plateau 段保持 v3_entropy_start（高探索）
+    - 之后 cosine 衰减到 v3_entropy_end
+    - 始终 >= v3_entropy_floor 与 legacy_coef 的较小值
+    - 未启用 v3 时直接返回传入的 legacy_coef
+    """
+    if not NOISE_RL_OPT_FLAGS.get("use_v3_entropy_schedule", False):
+        return float(legacy_coef)
+    start = float(NOISE_RL_OPT_FLAGS.get("v3_entropy_start", 0.02))
+    end = float(NOISE_RL_OPT_FLAGS.get("v3_entropy_end", 0.001))
+    floor = float(NOISE_RL_OPT_FLAGS.get("v3_entropy_floor", 0.0005))
+    plateau = float(NOISE_RL_OPT_FLAGS.get("v3_entropy_plateau_ratio", 0.08))
+    total = max(1, int(total_episodes))
+    progress = min(max(float(episode) / float(total), 0.0), 1.0)
+    if progress <= plateau:
+        coef = start
+    else:
+        tail = (progress - plateau) / max(1.0 - plateau, 1e-8)
+        tail = min(max(tail, 0.0), 1.0)
+        cos_factor = 0.5 * (1.0 + math.cos(math.pi * tail))  # 1 -> 0
+        coef = end + (start - end) * cos_factor
+    return float(max(coef, floor))
+
+
+def _per_head_entropy_recovery_delta(per_head_entropy_means, action_dims):
+    """对每个头计算「过低多少」并返回总回补量。
+
+    采用 per-head floor（log(action_dim) 的某一比例）；只有真正塌缩的头才触发。
+    每个头最大贡献 floor 级别的 deficit 而非 legacy 版本的 (10 - 0.01) 巨大差值。
+    """
+    if not NOISE_RL_OPT_FLAGS.get("use_per_head_entropy_recovery", False):
+        return 0.0
+    frac = float(NOISE_RL_OPT_FLAGS.get("v3_per_head_entropy_floor_frac", 0.22))
+    mult = float(NOISE_RL_OPT_FLAGS.get("v3_per_head_recovery_multiplier", 6.0))
+    total = 0.0
+    for h_ent, a_dim in zip(per_head_entropy_means, action_dims):
+        if a_dim <= 1:
+            continue
+        floor = frac * math.log(float(a_dim))
+        deficit = floor - float(h_ent)
+        if deficit > 0:
+            total += deficit
+    return total * mult
+
+
+def _v3_potential(env):
+    """势能函数 φ(s) ∈ [-1, 0]：
+
+    φ = -max(0, cost_deviation) - 0.5 * max(0, noise_debt_ratio - 0.5)
+    （越接近 0 越「健康」——成本在预算内、噪声债务未爆表）
+    """
+    if not NOISE_RL_OPT_FLAGS.get("use_potential_shaping", False):
+        return 0.0
+    try:
+        cont = env.get_continuous_features()
+    except Exception:
+        return 0.0
+    cost_dev = float(cont[0])
+    debt_ratio = float(cont[3])
+    phi = -max(0.0, cost_dev) - 0.5 * max(0.0, debt_ratio - 0.5)
+    return float(phi)
 
 # checkpoint 文件名
 NOISE_STAGE_CHECKPOINT_FILENAME = "noise_rl_checkpoint.pt"
@@ -898,6 +1012,18 @@ class _NoiseGTrXLStrategyNetwork(nn.Module):
             nn.init.orthogonal_(head.weight, gain=0.01)
             nn.init.constant_(head.bias, 0.0)
 
+        # v3-F: 将各 head 的最后一个 action 索引（=最大 scaling，最低噪声 = low-risk baseline）
+        # 的 bias 抬高一个温和 gain，使初始策略偏向可行基线而非纯均匀随机，
+        # 避免 78125^12 动作空间的冷启动"瞎走"。
+        if NOISE_RL_OPT_FLAGS.get("v3_warmstart_baseline_bias", False):
+            gain = float(NOISE_RL_OPT_FLAGS.get("v3_warmstart_bias_gain", 1.2))
+            for name in self.action_names:
+                head = self.noise_heads[name]
+                a_dim = head.out_features
+                if a_dim > 1:
+                    with torch.no_grad():
+                        head.bias[a_dim - 1] = float(gain)
+
         if isinstance(self.input_proj, nn.Linear):
             nn.init.orthogonal_(self.input_proj.weight, gain=1.0)
             if self.input_proj.bias is not None:
@@ -969,14 +1095,21 @@ class _NoiseGTrXLStrategyNetwork(nn.Module):
             return actions_tensor, logprob, value, probs
         return actions_tensor, logprob, value
 
-    def evaluate_actions(self, cont_features, layer_indices, prev_actions, actions):
+    def evaluate_actions(self, cont_features, layer_indices, prev_actions, actions,
+                         return_per_head_entropy: bool = False):
         logits_dict, values = self.forward(cont_features, layer_indices, prev_actions)
         logprobs = torch.zeros_like(values)
         entropy = torch.zeros_like(values)
+        per_head_entropies = [] if return_per_head_entropy else None
         for idx, name in enumerate(self.action_names):
             dist = Categorical(logits=logits_dict[name])
             logprobs = logprobs + dist.log_prob(actions[:, :, idx])
-            entropy = entropy + dist.entropy()
+            h = dist.entropy()
+            entropy = entropy + h
+            if per_head_entropies is not None:
+                per_head_entropies.append(h)
+        if return_per_head_entropy:
+            return logprobs, entropy, values, per_head_entropies
         return logprobs, entropy, values
 
 
@@ -1119,6 +1252,7 @@ class _NoiseOptEnv:
         self.current_episode_metrics = None
         self.last_reward_components = None
         self.last_mc_eval = None
+        self._v3_last_potential = 0.0
 
         self.input_noise_config = []
         self.wq_noise_config = []
@@ -1317,12 +1451,19 @@ class _NoiseOptEnv:
 
         self.current_layer += 1
         if self.current_layer < self.total_layers:
-            # \u975e\u7ec8\u6b62\u6b65\uff1areward = 0, done = False
-            info["step_reward"] = 0.0
+            # 非终止步：reward = 0 + 可选 potential shaping（保证最优策略不变）
+            base_r = 0.0
+            shaped_r = base_r
+            if NOISE_RL_OPT_FLAGS.get("use_potential_shaping", False):
+                phi_next = _v3_potential(self)
+                shaping_w = float(NOISE_RL_OPT_FLAGS.get("shaping_weight", 0.06))
+                shaped_r = base_r + shaping_w * (phi_next - self._v3_last_potential)
+                self._v3_last_potential = phi_next
+            info["step_reward"] = shaped_r
             info["raw_final_reward"] = None
             info["final_selection_score"] = None
             info["mc_eval"] = None
-            return self._get_state(), 0.0, False, info
+            return self._get_state(), shaped_r, False, info
 
         # \u7ec8\u6b62\u6b65\uff1aMC \u8bc4\u4f30 + \u7ec8\u7aef\u5956\u52b1
         terminal_reward, reward_components, mc_eval = self._compute_terminal_reward_mc()
@@ -1335,12 +1476,19 @@ class _NoiseOptEnv:
         self.last_reward_components = dict(reward_components)
         self.last_mc_eval = mc_eval
 
-        info["step_reward"] = terminal_reward
+        final_r = terminal_reward
+        if NOISE_RL_OPT_FLAGS.get("use_potential_shaping", False):
+            # 终止步 φ(s_terminal)=0（Ng et al. 1999 约定），仅补 -φ(s_prev) 项
+            shaping_w = float(NOISE_RL_OPT_FLAGS.get("shaping_weight", 0.06))
+            final_r = terminal_reward + shaping_w * (0.0 - self._v3_last_potential)
+            self._v3_last_potential = 0.0
+
+        info["step_reward"] = final_r
         info["raw_final_reward"] = terminal_reward
         info["final_selection_score"] = reward_components.get("final_selection_score", terminal_reward)
         info["mc_eval"] = mc_eval
         info["reward_components"] = reward_components
-        return self._get_state(), terminal_reward, True, info
+        return self._get_state(), final_r, True, info
 
     def _compute_terminal_reward_mc(self):
         """MC 终端奖励：将验证集切成 N 段、每段独立噪声采样评测，总计只遍历 1 遍数据。"""
@@ -1499,7 +1647,32 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
     if entropy_coef is None:
         entropy_coef = evaluator.get_current_entropy_coef()
 
+    # v3 PPO hparam overrides（默认 ON，可按 flag 回滚到 v2）
+    if NOISE_RL_OPT_FLAGS.get("use_v3_ppo_hparams", False):
+        ppo_eps_clip = float(NOISE_RL_OPT_FLAGS.get("v3_eps_clip", 0.2))
+        ppo_k_epochs = int(NOISE_RL_OPT_FLAGS.get("v3_k_epochs", 4))
+        gtrxl_mini_batch_episodes = int(
+            NOISE_RL_OPT_FLAGS.get("v3_mini_batch_episodes", 12)
+        )
+
     target_lr = float(getattr(evaluator, "stage2_ppo_lr_initial", evaluator.ppo_lr_initial))
+    if NOISE_RL_OPT_FLAGS.get("use_v3_ppo_hparams", False):
+        target_lr = target_lr * float(NOISE_RL_OPT_FLAGS.get("v3_lr_multiplier", 2.5))
+    # KL-adaptive LR: 按上一次 update 累计出的 avg_kl 缩放 target_lr
+    if NOISE_RL_OPT_FLAGS.get("v3_adaptive_lr_kl", False):
+        prev_kl = float(getattr(evaluator, "_v3_last_avg_kl", -1.0))
+        if prev_kl >= 0.0:
+            kl_target_v3 = float(NOISE_RL_OPT_FLAGS.get("v3_kl_adaptive_target", 0.015))
+            ratio_min = float(NOISE_RL_OPT_FLAGS.get("v3_kl_adaptive_min_ratio", 0.25))
+            ratio_max = float(NOISE_RL_OPT_FLAGS.get("v3_kl_adaptive_max_ratio", 2.5))
+            lr_scale = float(getattr(evaluator, "_v3_lr_scale", 1.0))
+            if prev_kl > 2.0 * kl_target_v3:
+                lr_scale *= 0.5
+            elif prev_kl < 0.5 * kl_target_v3:
+                lr_scale *= 1.5
+            lr_scale = float(np.clip(lr_scale, ratio_min, ratio_max))
+            evaluator._v3_lr_scale = lr_scale
+            target_lr = target_lr * lr_scale
     warmup_updates = max(0, int(gtrxl_warmup_updates))
     if gtrxl_warmup_mode == "short":
         warmup_updates = max(1, int(gtrxl_short_warmup_updates))
@@ -1534,7 +1707,20 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
     advantages = torch.stack(all_advantages).to(device)
     returns = torch.stack(all_returns).to(device)
     adv_flat = advantages.reshape(-1)
-    advantages = (advantages - adv_flat.mean()) / (adv_flat.std() + 1e-8)
+    if NOISE_RL_OPT_FLAGS.get("v3_robust_advantage_norm", False):
+        # Robust adv norm：先按中位数 ± k·MAD 裁剪极端 outlier（例如 confirm_fail 的 -50 终端惩罚），
+        # 再做 z-score 标准化，避免 1~2 个异常值把整批 advantage 吸入噪声范围。
+        clip_k = float(NOISE_RL_OPT_FLAGS.get("v3_adv_outlier_clip", 6.0))
+        med = adv_flat.median()
+        mad = (adv_flat - med).abs().median() + 1e-8
+        lower = med - clip_k * mad
+        upper = med + clip_k * mad
+        adv_flat_clipped = torch.clamp(adv_flat, min=lower.item(), max=upper.item())
+        mean_c = adv_flat_clipped.mean()
+        std_c = adv_flat_clipped.std() + 1e-8
+        advantages = (torch.clamp(advantages, min=lower.item(), max=upper.item()) - mean_c) / std_c
+    else:
+        advantages = (advantages - adv_flat.mean()) / (adv_flat.std() + 1e-8)
 
     evaluator.return_normalizer.update(returns)
     returns_normalized = torch.tensor(
@@ -1549,6 +1735,16 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
     last_policy_loss = 0.0
     last_value_loss = 0.0
     last_entropy = 0.0
+    total_kl_acc = 0.0
+    total_kl_count = 0
+
+    use_per_head_rec = NOISE_RL_OPT_FLAGS.get("use_per_head_entropy_recovery", False)
+    action_dims_for_heads = None
+    if use_per_head_rec:
+        action_dims_for_heads = [
+            int(noise_net.noise_heads[name].out_features)
+            for name in noise_net.action_names
+        ]
 
     kl_early_stop = False
     for _ in range(ppo_k_epochs):
@@ -1570,9 +1766,18 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
             mb_ret = returns_normalized[mb_idx]
             mb_old_val = values_normalized[mb_idx]
 
-            new_logprobs, entropy, new_values = noise_net.evaluate_actions(
-                mb_cont, mb_layer, mb_prev_actions, mb_actions
-            )
+            if use_per_head_rec:
+                new_logprobs, entropy, new_values, per_head_entropies = (
+                    noise_net.evaluate_actions(
+                        mb_cont, mb_layer, mb_prev_actions, mb_actions,
+                        return_per_head_entropy=True,
+                    )
+                )
+            else:
+                new_logprobs, entropy, new_values = noise_net.evaluate_actions(
+                    mb_cont, mb_layer, mb_prev_actions, mb_actions
+                )
+                per_head_entropies = None
 
             new_logprobs_flat = new_logprobs.reshape(-1)
             entropy_flat = entropy.reshape(-1)
@@ -1609,6 +1814,16 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
                 entropy_deficit = _entropy_lb - mean_entropy.item()
                 effective_entropy_coef = entropy_coef + _noise_rl_entropy_recovery_mul() * entropy_deficit
 
+            # Per-head entropy recovery：若有单一 head 坍缩（e.g. wffn1 总是同一动作），
+            # 即便整体 mean_entropy 合格也补偿该 head 的熵系数，允许其他 head 收敛。
+            per_head_delta = 0.0
+            if use_per_head_rec and per_head_entropies is not None:
+                per_head_means = [float(h.mean().item()) for h in per_head_entropies]
+                per_head_delta = _per_head_entropy_recovery_delta(
+                    per_head_means, action_dims_for_heads
+                )
+                effective_entropy_coef = effective_entropy_coef + per_head_delta
+
             entropy_loss = -mean_entropy
             loss = (
                 policy_loss
@@ -1625,17 +1840,23 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
             last_value_loss = value_loss.item()
             last_entropy = mean_entropy.item()
 
-            if NOISE_RL_OPT_FLAGS.get("use_kl_early_stop", False):
+            if (NOISE_RL_OPT_FLAGS.get("use_kl_early_stop", False)
+                    or NOISE_RL_OPT_FLAGS.get("v3_adaptive_lr_kl", False)):
                 with torch.no_grad():
                     approx_kl = (mb_old_lp_flat - new_logprobs_flat).mean().item()
                 epoch_kl_acc += approx_kl
                 epoch_kl_count += 1
+                total_kl_acc += approx_kl
+                total_kl_count += 1
 
         if (NOISE_RL_OPT_FLAGS.get("use_kl_early_stop", False)
                 and epoch_kl_count > 0):
             avg_kl = epoch_kl_acc / epoch_kl_count
             if avg_kl > 1.5 * float(NOISE_RL_OPT_FLAGS.get("kl_target", 0.02)):
                 kl_early_stop = True
+
+    if NOISE_RL_OPT_FLAGS.get("v3_adaptive_lr_kl", False) and total_kl_count > 0:
+        evaluator._v3_last_avg_kl = float(total_kl_acc / total_kl_count)
 
     return last_policy_loss, last_value_loss, last_entropy
 
@@ -2325,6 +2546,11 @@ class NoiseRLModuleV2:
         _rl_t0 = _time.time()
         for episode in range(resume_start_episode, stage2_total_episodes):
             current_lr, current_entropy = ev.update_hyperparameters(optimizer, episode)
+            # v3 cosine+plateau 熵退火：给定足够长的高熵探索期后再陡峭收敛，
+            # 避免默认 schedule 停在 ~0.02 造成策略长期 uniform、学不到层间差异。
+            current_entropy = _resolve_stage2_entropy_coef(
+                episode, stage2_total_episodes, current_entropy
+            )
             env.set_episode_progress(episode, stage2_total_episodes)
             state = env.reset()
             prev_actions = torch.tensor(
@@ -2504,11 +2730,44 @@ class NoiseRLModuleV2:
 
             # \u6311\u6218\u8005\u786e\u8ba4\u673a\u5236
             challenger_signature = _candidate_signature(final_noise_config)
+            # v3：提高 trigger margin 以抑制边缘 challenger 触发昂贵 confirm（节省评测开销，
+            # 且这些样本往往因与 incumbent 同量级而在 std_check 下被打回、产生 confirm_fail 噪声）
+            _v3_trigger_margin = float(NOISE_STAGE_BEST_TEST_TRIGGER_MARGIN)
+            if NOISE_RL_OPT_FLAGS.get("use_v3_ppo_hparams", False):
+                _v3_trigger_margin = max(
+                    _v3_trigger_margin,
+                    float(NOISE_RL_OPT_FLAGS.get("v3_confirm_trigger_margin", 0.010)),
+                )
+            # v3 precheck：若训练期 MC std 已明显超过 dynamic cap，confirm 几乎必败（相同数据只是不同 seed），
+            # 直接跳过确认评测以节省 confirm_segments 段推理时间。
+            _v3_skip_confirm = False
+            if NOISE_RL_OPT_FLAGS.get("v3_confirm_precheck_std", False):
+                _train_mc_eval = getattr(env, "last_mc_eval", None)
+                if _train_mc_eval is not None:
+                    _t_loss_std = float(_train_mc_eval.get("loss_std", 0.0))
+                    _t_m1_std = float(_train_mc_eval.get("p_std", 0.0))
+                    _t_m2_std = float(_train_mc_eval.get("s_std", 0.0))
+                    if (
+                        _t_loss_std > dynamic_loss_std_cap * 1.5
+                        or _t_m1_std > dynamic_m1_std_cap * 1.5
+                        or (num_metrics > 1 and _t_m2_std > dynamic_m2_std_cap * 1.5)
+                    ):
+                        _v3_skip_confirm = True
+                        if (
+                            incumbent_best_signature is None
+                            or challenger_signature != incumbent_best_signature
+                        ) and episode_final_selection_score_val > (
+                            incumbent_mean_score + _v3_trigger_margin
+                        ):
+                            ev.log(
+                                f"  [v3 precheck] 训练期 MC std 超 cap 1.5×，跳过 confirm 评测（\u7701\u65f6\u95f4\u3001\u514d confirm_fail 噪声）"
+                            )
             if (
                 (incumbent_best_signature is None or challenger_signature != incumbent_best_signature)
                 and episode_final_selection_score_val > (
-                    incumbent_mean_score + float(NOISE_STAGE_BEST_TEST_TRIGGER_MARGIN)
+                    incumbent_mean_score + _v3_trigger_margin
                 )
+                and not _v3_skip_confirm
             ):
                 confirm_noise_kwargs = {
                     key: value.copy()
@@ -2590,10 +2849,21 @@ class NoiseRLModuleV2:
                 else:
                     # \u786e\u8ba4\u5931\u8d25\uff1a\u5199\u56de\u60e9\u7f5a\u5230 buffer
                     if buffer.episodes:
-                        buffer.episodes[-1]["rewards"][-1] = float(NOISE_STAGE_CONFIRM_FAIL_PENALTY)
+                        # v3 clipped confirm penalty：原始 -50 会主导 advantage normalization，
+                        # 把所有其他 episode 的信号压成接近 0，学习几乎停滞；
+                        # 将惩罚裁剪到 v3_confirm_penalty_clip_min（默认 -5）保留方向性但不破坏 adv 分布。
+                        _penalty = float(NOISE_STAGE_CONFIRM_FAIL_PENALTY)
+                        if NOISE_RL_OPT_FLAGS.get("use_v3_ppo_hparams", False):
+                            _penalty = max(
+                                _penalty,
+                                float(NOISE_RL_OPT_FLAGS.get(
+                                    "v3_confirm_penalty_clip_min", -5.0
+                                )),
+                            )
+                        buffer.episodes[-1]["rewards"][-1] = _penalty
                         ev.log(
                             f"  \u2716 \u786e\u8ba4\u5931\u8d25\uff0c\u5df2\u5c06\u7ec8\u7aef\u5956\u52b1\u8986\u76d6\u4e3a "
-                            f"CONFIRM_FAIL_PENALTY={NOISE_STAGE_CONFIRM_FAIL_PENALTY}"
+                            f"CONFIRM_FAIL_PENALTY={_penalty}"
                         )
 
             # PPO \u66f4\u65b0
