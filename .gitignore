@@ -1,5 +1,4 @@
 ppo_step_info.txt
-*.txt
 *.log
 output.log
 *.csv

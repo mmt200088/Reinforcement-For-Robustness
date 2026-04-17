@@ -1,0 +1,1296 @@
+Session 12A: Applications and Privacy of ML                                                            CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+           COINN: Crypto/ML Codesign for Oblivious Inference via
+                            Neural Networks
+       Siam Umar Hussain∗                               Mojan Javaheripi∗                          Mohammad Samragh∗                        Farinaz Koushanfar
+          siamumar@ucsd.edu                                 mojan@ucsd.edu                                 msamragh@ucsd.edu                   farinaz@ucsd.edu
+             UC San Diego                                    UC San Diego                                     UC San Diego                       UC San Diego
+                 USA                                             USA                                              USA                                 USA
+ABSTRACT                                                                                               1    INTRODUCTION
+We introduce COINN – an e�cient, accurate, and scalable frame-                                         Recent algorithmic and technological breakthroughs in Machine
+work for oblivious deep neural network (DNN) inference in the                                          Learning (ML) have led to a surge in cloud-based inference using
+two-party setting. In our system, DNN inference is performed with-                                     Deep Neural Networks (DNNs). In this scenario, a server trains and
+out revealing the client’s private inputs to the server or revealing                                   holds the DNN model. Clients then send their data to the server to
+server’s proprietary DNN weights to the client. To speedup the                                         perform inference using the server’s trained DNN. Cloud-based in-
+secure inference while maintaining a high accuracy, we make three                                      ference, a.k.a. Machine Learning as a Service (MLaaS), is integrated
+interlinked innovations in the plaintext and ciphertext domains:                                       in a wide range of real-world applications such as personal assis-
+(i) we develop a new domain-speci�c low-bit quantization scheme                                        tants [32], face authentication [40], medical diagnosis [4, 18, 19, 45],
+tailored for high-e�ciency ciphertext computation, (ii) we con-                                        and health monitoring [3]. However, plaintext DNN inference ei-
+struct novel techniques for increasing data re-use in secure matrix-                                   ther violate the users’ privacy by revealing their private data to the
+multiplication allowing us to gain signi�cant performance boosts                                       server or infringe the server’s intellectual property by exposing
+through factored operations, and (iii) we propose customized cryp-                                     its proprietary model/data to the client. This paper focuses on the
+tographic protocols that complement our optimized DNNs in the                                          critical subject of oblivious inference, where the server and the
+ciphertext domain. By co-optimization of the aforesaid components,                                     client participate in two-party secure computation to run inference
+COINN brings an unprecedented level of e�ciency to the setting of                                      without revealing either the model parameters or client’s data.
+oblivious DNN inference, achieving an end-to-end runtime speedup                                           We present COINN, a provably secure cryptographic framework
+of 4.7⇥–14.4⇥ over the state-of-the-art. We demonstrate the scala-                                     that surpasses the e�ciency of all known methods for oblivious
+bility of our proposed methods by optimizing complex DNNs with                                         inference to date. Our work addresses the tension between three crit-
+over 100 layers and performing oblivious inference in the Billion-                                     ical requirements for privacy-preserving DNN inference, namely,
+operation regime for the challenging ImageNet dataset. Our frame-                                      security, e�ciency, and accuracy. Although several prior works
+work is available at https://github.com/ACESLabUCSD/COINN.git.                                         have attempted to solve this tri-objective, there still remains a large
+                                                                                                       gap in the accuracy and/or runtime of oblivious inference and plain-
+CCS CONCEPTS                                                                                           text DNN execution. To deliver a balanced tradeo� between the
+• Security and privacy ! Privacy-preserving protocols; •                                               above three criteria, we co-design the DNN and the secure execution
+Computing methodologies ! Machine learning.                                                            protocol and holistically optimize both aspects via our automated
+                                                                                                       design con�guration tool. Our key design goals are as follows:
+KEYWORDS
+                                                                                                         1 Compact Communication and Computation: We opti-
+Privacy-preserving deep neural network inference; secure two-                                           mize the computation bitwidth to reduce the secure execution
+party computation                                                                                       cost of both linear and nonlinear operations. In doing this opti-
+ACM Reference Format:                                                                                   mization, we adapt techniques from Genetic Algorithms [57] to
+Siam Umar Hussain, Mojan Javaheripi, Mohammad Samragh, and Farinaz                                      the constraints of secure computation. Moreover, we design ef-
+Koushanfar. 2021. COINN: Crypto/ML Codesign for Oblivious Inference                                     �cient cryptographic protocols that reduce the communication
+via Neural Networks. In Proceedings of the 2021 ACM SIGSAC Conference on                                cost of secure matrix-multiplication by 5⇥–9⇥, and achieve an
+Computer and Communications Security (CCS ’21), November 15–19, 2021,                                   end-to-end runtime speedup of 4.7⇥–14.4⇥ over best prior work,
+Virtual Event, Republic of Korea. ACM, New York, NY, USA, 16 pages. https:                              namely CrypTFow2 [46], in the LAN setting.
+//doi.org/10.1145/3460120.3484797
+                                                                                                         2 Inference Accuracy: COINN improves the accuracy of prior
+                                                                                                        ML-security co-optimization methods, namely [38, 41, 47], by
+∗ Authors contributed equally to this research.
+                                                                                                        0.6%–4.7% while achieving 23.1⇥–36.8⇥ lower secure execution
+                                                                                                        runtime in the LAN setting.
+Permission to make digital or hard copies of part or all of this work for personal or                    3 Scalability: Our framework scales to DNNs with over 100
+classroom use is granted without fee provided that copies are not made or distributed
+for pro�t or commercial advantage and that copies bear this notice and the full citation
+                                                                                                        layers. COINN achieves 6.1⇥–7.8⇥ lower runtime in the LAN
+on the�
+ This     rst is
+       work   page.  Copyrights
+                 licensed under afor  third-party
+                                   Creative       components
+                                             Commons            of this work must be honored.
+                                                        Attribution-NonCommercial-
+                                                                                                        setting for the largest ever studied image classi�cation task [46]
+For all otherInternational
+ ShareAlike                    theLicense.
+                 uses, contact4.0   owner/author(s).                                                    with over 4 billion arithmetic operations.
+CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+©CCS
+  2021     Novemberheld
+      '21,Copyright         by2021,
+                        15–19,       Virtual Event, Republic of Korea.
+                               the owner/author(s).
+ © 2021
+ACM       Copyright
+       ISBN            held by the owner/author(s).
+               978-1-4503-8454-4/21/11.                                                                In what follows, we review the design challenges, survey the prior
+ ACM ISBN 978-1-4503-8454-4/21/11.
+https://doi.org/10.1145/3460120.3484797                                                                work, and specify our contributions in detail.
+ https://doi.org/10.1145/3460120.3484797
+
+
+
+
+                                                                                                3266
+Session 12A: Applications and Privacy of ML                                                CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+Security-aware Quantization. To reduce the high cost of cipher-
+text execution, contemporary methods modify the neural network
+architecture by removing/replacing non-linear operations such as
+ReLU [22, 41], or binarizing model parameters and activations [47].
+While these methods increase the secure execution e�ciency, they
+come at the cost of reduced inference accuracy. Our work ap-
+proaches the problem from a di�erent perspective. Since the com-
+putation and communication overheads of cryptographic protocols
+are highly dependent on the computation bitwidth, we focus on
+developing quantization methods that take into account the con-
+                                                                                           Figure 1: Accuracy and secure inference runtime of a 7-
+straints of ciphertext computation.
+                                                                                           layer DNN on CIFAR-10 dataset using prior work: Del-
+   Our low-bit quantization reduces the communication and compu-
+                                                                                           phi [41], SafeNet [38], XONN [47], AutoPrivacy [39], and
+tation cost for not only linear but also nonlinear layers which are the
+                                                                                           CrypTFlow2 [46]. The ¢ symbol represents COINN.
+main e�ciency bottleneck reported in prior works [23, 31, 35, 41].
+A critical design challenge is that o�-the-shelf quantization meth-
+ods used in the ML community comprise operations such as full-                             each layer’s weight matrix with minimal loss of inference accuracy.
+precision accumulation, rounding, and scaling; these operations                            The unique values can then be leveraged to replace individual mul-
+are e�cient in plaintext inference but require expensive crypto-                           tiplications with factored ones. This, in turn, allows us to substitute
+graphic operations in ciphertext. To address this challenge, we                            the bulk of costly multiplications with cheaper conditional summa-
+devise a novel ciphertext-aware quantization scheme that replaces                          tions. Consider a dot product between two # -dimensional vectors,
+the costly operations with counterparts that are low-cost in the                           which requires # multiplications and additions. By ensuring that
+secure domain while minimally a�ecting the DNN accuracy.                                   one vector contains + unique values, only # additions followed
+   A major concern in computation on quantized data is the linear                          by + multiplications and additions are required. To accompany
+growth of the computational bitwidth with increased multiplicative                         factored multiplication in cipher domain, we introduce an e�cient
+depth. To mitigate this growth, prior work [41] locally truncates the                      custom protocol based on Oblivious Transfer (OT) that multiplies
+bits which sacri�ces the correctness of ciphertext computation by                          the factored weights with the activations without revealing either
+introducing random noise as shown in followup work [46]. Devel-                            the unique values or their locations.
+oping cryptographic tools for truncation, as suggested in [17, 46],                        Automated Parameter Con�guration. To fully exploit the e�-
+incurs additional secure execution cost. We address this issue at                          ciency gains from quantization and factored multiplication while
+zero cost by simulating the e�ect of over�ow in our ML quantiza-                           minimally a�ecting the inference accuracy, COINN automatically
+tion library. We further provide training methods compatible with                          determines the best parameters for quantization and factorization
+our over�ow simulation to� ne-tune model weights and minimize                              across all DNN layers. By this cross-layer heterogeneous parameter
+the e�ect of over�ow on model accuracy in the low-bit regime. This,                        selection, our system achieves a prominent advantage over previ-
+in turn, eliminates the need for truncation altogether.                                    ous work that use homogeneous and super�uous bitwidths [2, 35],
+E�cient and Secure Linear Arithmetic. Matrix-multiplication                                as shown in Figure 1. The� rst challenge in� nding the best set
+comprises the core operation performed in linear layers of contem-                         of per-layer parameters is simultaneous optimization of two of
+porary ML models. State-of-the-art oblivious inference frameworks                          our objectives that are con�icting – accuracy and e�ciency. To
+employ either Arithmetic Sharing (AS) [22, 35] or Homomorphic En-                          account for this tradeo�, we leverage a score function that cap-
+cryption (HE) [31, 41] for secure matrix-multiplication and Garbled                        tures both model accuracy and secure execution cost and assigns a
+Circuit (GC) for the nonlinear operations. In this work, we choose                         quantitative measure of quality to each design con�guration. The
+AS for e�cient realization of secure linear layers since the secure                        second challenge is the excessively large number of possible param-
+conversion cost between AS and GC is ⇠ 2.5⇥ smaller than the                               eter con�gurations (search-space) that grows exponentially with
+conversion cost between HE and GC1 . Moreover, prior work [47]                             model layers. We develop a highly scalable parameter optimizer
+demonstrates that current HE-based methods [31, 41] would incur                            based on genetic algorithms [57] to e�ectively traverse the large
+additional overhead to provide circuit privacy.                                            search-space. The score function is then used to guide our genetic
+   Our secure AS-based matrix-multiplication is optimized for the                          algorithm to� nd the most optimal DNN for secure inference.
+amortized setting, where one client-server pair runs multiple infer-                       COINN API. Our framework includes a high-level API that fa-
+ences on the same trained model. In this setting, which is the com-                        cilitates end-to-end deployment of user-de�ned DNNs for secure
+mon scenario in real-world applications, the matrix-multiplication                         execution. Our API ensures that a user can employ COINN as a black
+in each linear layer is computed in a single round, thus reducing                          box without knowing the details of underlying cryptographic pro-
+the e�ect of network latency on runtime.                                                   tocols and DNN optimizations. The user provides the desired DNN
+Factored matrix-multiplication. We further optimize the linear                             model described in the well-known deep learning library PyTorch
+layers and introduce repetition into the weight matrices. Our opti-                        along with the trained model parameters. The custom-designed
+mization ensures that only a limited set of unique values appear in                        libraries of COINN for quantization and factored multiplication are
+                                                                                           then invoked through our automated design con�gurator to de-
+1 The ⇠ 2.5⇥ scale directly compares methods in Gazelle [31] (HE-GC) and ABY [16]          liver the optimized DNN. Our framework also provides a seamless
+(AS-GC). Further explanation is included in Section 5.3.                                   PyTorch interface to the secure inference engine developed in C++.
+
+
+
+
+                                                                                    3267
+Session 12A: Applications and Privacy of ML                                     CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+                     Pre-trained Plaintext Model Customization                         Secure Ciphertext Execution
+                        DNN
+                                    Quantization                                    Mat-Mult                Max-Pool
+                                                    Automated      Optimized                                                           Data Owner
+      Model Owner
+                                                    Parameter       Network                     Protocol
+        (Server)                                                                    Factored                                             (Client)
+                                                   Configuration                               Conversion     ReLU
+                                     Clustering                                     Mat-Mult
+                       Target                                       Weights           AS                        GC
+                      Accuracy
+
+
+
+Figure 2: Overview of COINN. The plaintext model customization is only performed once per DNN and provides the optimized
+network for COINN secure inference.
+
+
+2 PRELIMINARIES                                                                 output. Assuming the : ⇥ : windows are non-overlapping, pooling
+2.1 Notations                                                                   layers reduce data dimensionality from ⇠ ⇥ ⇡ 1 ⇥ ⇡ 1 to ⇠ ⇥ ⇡:1 ⇥ ⇡:1 .
+Throughout this manuscript, we represent scalars with lowercase                 ReLU. This layer often follows a linear layer to introduce non-
+G, vectors with bold lowercase x, 2-dimensional matrices with up-               linearity in the model. A ReLU operation simply replaces negative
+percase - , and higher order tensors with bold uppercase letters X.             inputs with zero and keeps positive values intact.
+Element selection is denoted by brackets x[8] and G h8i denotes the
+8-th bit of scalar G. 0 denotes a vector/matrix/tensor with all the
+                                                                                2.3    Cryptographic Primitives
+entries set to 0. We denote the computational security parameter
+with ^ and set it to 128 following common standard [31, 35, 46].                Oblivious Transfer. Oblivious Transfer (OT) [44] allows a receiver
+                                                                                Alice to choose one from a set of messages provided by a sender
+2.2     Deep Neural Networks                                                    Bob without revealing her choice. In a 1-out-of-2 OT, (OT_2 ), Bob
+Contemporary DNNs comprise two classes of layers: linear (convo-                holds a pair of messages {`0, `1 } 2 {0, 1}_ ; Alice holds a choice
+lution, fully-connected, batch normalization, and average-pooling)              bit f 2 {0, 1} and obtains `f without revealing f. An extension of
+and non-linear (max-pooling and ReLU). We brie�y explain com-                   this protocol, called OT extension [28], allows performing a large
+monly used layers in each category.                                             number of OT_2 with a� xed number of base OTs and linear number
+Convolution. A convolution layer (CONV) is a linear operation                   of less expensive private-key operations. In this work, we employ
+  (X, W, b) : R⇠⇥⇡ 1 ⇥⇡ 1 ! R"⇥⇡ 2 ⇥⇡ 2 , where X 2 R⇠⇥⇡ 1 ⇥⇡ 1 is the          two variants of OT extension: random OT (ROT_2 ) and correlated
+3-way input tensor, W 2 R"⇥⇠⇥:⇥: is the 4-way weight tensor,                    OT (COT_2 ) [5]. In ROT_2 , instead of choosing his messages, Bob
+b 2 R" is the bias vector, and Y 2 R"⇥⇡ 2 ⇥⇡ 2 is the 3-way output              receives random messages {`0, `1 } and Alice receives `f . The com-
+tensor. The plaintext operation of CONV can be represented as a                 munication cost of one ROT_2 is a ^-bit message embedding the
+matrix-multiplication followed by bias addition . = , ·- +b where               choice bit f from Alice to Bob. In COT_2 , Bob chooses a correlation
+, 2 R"⇥# is achieved by reshaping the original 4-way tensor                     function i (`) and receives a random message `. Alice receives ` if
+into a 2⇡ matrix and - 2 R# ⇥! is formed by sliding through the                 f = 0 and i (`) if f = 1. The communication cost of one COT_2 is
+original 3-way tensor and vectorizing the corresponding windows                 cost of one ROT_2 plus a _-bit message from Bob to Alice, i.e., ^ + _.
+into matrix columns. Each element of the output is computed via a               Arithmetic Sharing (AS). We denote the arithmetic share (AS) [6]
+vector dot product (VDP) and the total number of VDPs required                  of an integer G between two parties Alice and Bob as JGK. For 1-bit
+for the matrix-multiplication is " ⇥ !.
+                                                                                arithmetic sharing, JGK = JGK + JGK⌫ mod 21 , where JGK is held
+Fully-Connected. The fully-connected (FC) layer takes a vector                  by Alice and JGK⌫ is held by Bob with JGK, JGK , JGK⌫ 2 Z21 . All
+x 2 R# and generates the output vector y = , ⇥ x + b where                      operations on arithmetic shared values are performed in ring Z21 ,
+, 2 R"⇥# and 1 2 R" are the weight and bias, respectively.                      i.e., operations are mod 21 .
+Similar to CONV, the matrix-vector multiplication consists of "
+                                                                                Addition and Multiplication in AS. In AS, addition of shared
+VDPs between rows of , and x.
+                                                                                variables is free since each party can locally add their shares without
+Batch Normalization. Batch normalization (BN) is a common                       communication. Multiplication can be performed through COT
+linear operation applied on the output of CONV layers to adjust                 following [16]. Let us consider the scalar product JIK = JFK JGK⌫ .
+                                                             (⌫# )
+the range of numerical values. At test time, BN computes y8          =          For each bit 8 2 [1], Alice and Bob engage in one COT12 . Bob acts as
+U8 y8 + V8 , where U8 and V8 are constant scalars, y8 is one row of             the sender with the correlation function q (`8 ) = `8 + JGK⌫ ⇤ 28 and
+                                                         (⌫# )
+the output . 2 R"⇥! from the preceding CONV, and y8             is the          receives `8 . Alice acts as the receiver with choice bit f8 = JFK h8i
+corresponding row after BN.                                                     and receives `f8 = `8 + f8 JGK⌫ ⇤ 28 . Alice and Bob then compute
+                                                                                          Õ                       Õ1 1
+Pooling. Contemporary DNNs include two forms of pooling layers,                 JIK = 18=01 `f8 and JIK⌫ =          8=0 `8 , respectively. Note that `8 s
+namely max-pooling (MP) and average-pooling (AP). These layers                  are random masks that are independent of the input JGK and are
+extract : ⇥ : windows from the input X 2 R⇠⇥⇡ 1 ⇥⇡ 1 and compute                generated o�ine before JGK is known. Since JIK⌫ only depends on
+the average or the maximum value in the enclosed window as the                  `8 , it can also be generated o�ine.
+
+
+
+
+                                                                         3268
+Session 12A: Applications and Privacy of ML                                        CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+Garbled Circuits. Yao’s Garbled Circuit (GC) [59] is a 2PC proto-                     Most prior works assume a large bitwidth 1 across all DNN
+col between Alice, the garbler and Bob, the evaluator, that allows                 layers (e.g., 32-bit ring size and activations in [46]). In contrast,
+computation on a function’s Boolean logic representation. In GC,                   COINN uses smaller bitwidths, e.g., it may use 1 = 16 for the
+to share a 1-bit integer G 2 Z21 , for each bit 8 2 [1], Alice holds               ring size and 1 = 10 for the output of nonlinear layers. Exposing
+a global key 2 {0, 1}^ and a label !8G 2 {0, 1}^ while Bob holds                   the customized 1 at each layer might reveal some information
+!8G G h8i . GC is less e�cient than AS for addition and multiplica-                about the context and/or distribution of the training dataset. It is
+tion. However, GC is currently the most e�cient protocol for logical               unclear whether this information can give additional advantage
+operations, e.g., AND and XOR. Moreover, in GC, bit level manipula-                to an attacker. In addition, having lower bitwidths may reduce
+tions, e.g., left or right shift, incur negligible costs. A 1-bit private          the computational complexity for extracting the neural network
+integer can be securely transferred from AS share to GC share (and                 weights. Let us consider an attacker who launches a brute-force
+vice-versa) by executing a 1-bit addition through GC [16].                         attack without any prior knowledge. The computation complexity
+                                                                                   for such an attack is O (21= ), where = is in the order of millions.
+3     COINN OVERVIEW AND THREAT MODEL
+                                                                                   Therefore, even with the minimum bitwidth (1 = 1 as in XONN [47])
+The COINN framework is composed of two interlinked components                      the attack complexity, i.e., O (2= ), is still exponential in =. Similarly,
+as depicted in Figure 2: (i) model customization on plaintext training             by knowing the unique size + for factored matrix multiplication,
+data and (ii) secure execution on client’s private input. We use the               the attack complexity is O (+ = ).
+popular ML library, PyTorch, to describe the DNNs and develop                         A more knowledgeable adversary might try to employ more
+our secure execution protocols in C++. In the following, we brie�y                 sophisticated attacks such as model extraction [54], model inver-
+introduce the incorporated design units.                                           sion [20], and membership inference [52]. Similar to related work in
+Plaintext Model Customization. This is a one-time pre-                             oblivious inference [22, 31, 35, 41, 46, 47], COINN does not address
+processing performed on pre-trained full-precision DNNs prior to                   these query-based attack algorithms. Mitigating such attacks is also
+oblivious inference. Plaintext model customization is an important                 an active area of research and in most cases is orthogonal to our
+contributor to COINN e�ciency and scalability as it enables cus-                   work [1, 12, 47, 51, 58]. Example mitigation strategies include di�er-
+tomization of any given DNN for minimized secure execution cost                    ential privacy, rounding the prediction vector, or returning only the
+under an accuracy constraint. Section 4 encloses the details of our                argmax of the prediction to the client. We refer the curious reader
+plaintext model customization and its core components, i.e., cipher-               to [47]-Appendix B and [41]-Section 8.2 for more discussions.
+text aware quantization (§ 4.1), factored matrix-multiplication
+(§ 4.2), and automated parameter con�guration (§ 4.3).                             4     COINN MODEL CUSTOMIZATION
+Secure Ciphertext Execution. We perform the linear operations                      This section elaborates on COINN methodologies for plaintext
+such as CONV, FC through AS, and the nonlinear operations such                     model preparation devised to minimize the secure execution cost
+as ReLU, MP through GC. Wherever necessary, we securely convert                    while maintaining inference accuracy.
+between AS and GC. We devise e�cient cryptographic protocols
+that complement our optimized DNN models in the ciphertext do-                     4.1    Ciphertext-aware Quantization
+main. Our cryptographic components bene�t from low-bit quanti-
+                                                                                   Most contemporary ML libraries utilize 32-bit� oating-point for-
+zation performed by our model customization step. We also develop
+                                                                                   mat (FP32) for data representation. In practice, the extremely high
+e�cient AS-based protocols for both regular and factored matrix-
+                                                                                   computational cost and complex circuits make FP32 unsuitable for
+multiplications. A thorough explanation of our end-to-end oblivious
+                                                                                   secure computation. Quantization addresses the aforesaid short-
+inference and cryptographic protocols is provided in Section 5.
+                                                                                   comings by representing data in the integer format with a lower
+3.1    Threat Model                                                                number of bits. Figure 3 demonstrates how FP32 values can be
+COINN presents privacy-preserving protocols involving two par-                     converted to low-bit integers through quantization. Let us denote
+ties: Alice – the server, and Bob – the client. The private inputs of              the signed integer format with 1 bits by INT-b. The mapping of an
+Alice and Bob are trained weight parameters of the DNN and input                   FP32 parameter G 5 to its INT-b representation G@ is computed as:
+to the DNN, respectively. At the end of the protocol execution, Bob                                                                2 11
+learns the inference results without revealing any information to
+                                                                                                G@ = A>D=3 (B · G 5 ) ,    B = 2 ⇥ max( |G |)             (1)
+                                                                                                                                            5
+Alice. Following previous works on privacy-preserving neural net-                  where B is called the scaling factor and max(|G 5 |) denotes the max-
+work inference [31, 35, 46], we adopt an honest-but-curious security               imum range that parameter G 5 can take. In a linear layer with FP32
+model where the two parties follow the agreed upon protocol, yet                   inputs - 5 , weight parameters , 5 , and bias b 5 , the output can be
+may try to learn more from the information at hand.                                approximated using quantized values as:
+   Consistent with prior work, we assume the information related
+                                                                                                                         1              B F BG
+to model architecture is public to the client and the server. This                           .5 = , 5 · - 5 + b 5 ⇡          (,@ · -@ +        b@ )       (2)
+information includes number of layers, layer types, layer dimen-                                                      B F BG              B1
+sions, number of bits required to represent the output of nonlinear                where BG , B F , and B1 denote the quantization scales for the input,
+layers, and AS computation ring size Z21 . In our factored matrix                  layer weights, and the bias, respectively. The quantized version of
+multiplication (Section 4.2), the client additionally knows the per-               .5 is calculated using the corresponding scale B ~ as follows:
+layer number of unique weight values + but he is not aware of the                                          ⇣ B                             ⌘
+distribution of the unique values inside the weight matrices.                                    .@ = A>D=3 B F~BG (,@ · -@ + B FB1BG b@ )                (3)
+
+
+
+
+                                                                            3269
+Session 12A: Applications and Privacy of ML                                    CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+.@ is the quantized output of the linear layer which serves as the             of over�ows. This allows us to match the plaintext inference ac-
+input of the next layer in a quantized DNN. While evaluating Eq. 3             curacy with the accuracy obtained via low-bit accumulations in
+is straightforward in plaintext, multiplication by the quantization            the ciphertext domain. Building upon our customized over�ow
+             B
+scales B = B F~BG and A>D=3 (·) incur signi�cant costs in ciphertext.          simulation, we provide an automated strategy that� nds the best
+In what follows, we� rst introduce our highly e�cient counterparts             allocation of bitwidths across DNN layers to minimize accuracy
+for these operations designed to minimize the secure execution cost.           degradation, as will be discussed in Section 4.3. We further develop
+We then explain how we manage over�ow in the low-bit regime.                   an over�ow-aware training scheme which enables us to adjust the
+                                                                               model parameters such that the adverse e�ect of over�ow on in-
+                                                                               ference accuracy is minimized. Since over�ow simulation involves
+                                                                               non-di�erentiable operations, we devise an approximate gradient
+                                                                               for this function to allow� ne-tuning of our quantized models. De-
+                                                                               tails of our over�ow simulation and its gradient approximation are
+                                                                               included in Appendix A.
+ Figure 3: Quantizing FP32 values for INT-b representation.
+                                                                               4.2     Factored Matrix-Multiplication
+Optimizing Scaling. In our framework, the matrix-multiplication                Matrix-multiplication accounts for the bulk of computations in
+,@ .-@ as well as the addition with the bias vector are computed               DNN inference, which leads to a high communication cost in AS.
+                                                      B
+e�ciently via AS. Scaling the result by B = B F~BG in AS would                 Our goal in this section is to reduce this cost via factored matrix-
+                                                                               multiplication, which replaces the majority of costly multiplications
+increases the overall multiplicative depth for computing B (,@ ·-@ +
+                                                                               with cheaper conditional additions. Below, we introduce the build-
+b), increasing the AS computation bitwidth, thereby sacri�cing the
+                                                                               ing blocks of factored matrix-multiplication and explain our method
+overall e�ciency. To avoid bit-extending the matrix-multiplication
+                                                                               in detail. Later, in Section 5, we present a custom COT-based proto-
+operands, we separate scaling and evaluate it using GC ciphers. In
+                                                                               col for our factored matrix-multiplication.
+this scenario, for scaling a 1-bit number with a scale containing
+                                                                                  Consider a matrix-multiplication of the form . = , · - , where
+1 0 nonzero bits, the GC communication cost would be 21 (1 0
+1)^. Instead, we enforce the scale values to be powers of 2, which             . 2 R"⇥! , , 2 R"⇥# , and - 2 R# ⇥! . This operation can be
+allows us to implement the previously costly scale operation with              broken down into " ⇥! VDPs, where each VDP operates on vectors
+⇠zero cost logical shifts in GC. We do this by replacing the original          of length # , w 2 R# and x 2 R# , corresponding to a row of ,
+formula in Eq. 1 with Eq. 4, and� ne-tuning the DNN to adjust the              and a column of - , respectively. Each VDP therefore requires #
+quantization and preserve inference accuracy.                                  multiplications and # additions. We propose the factored VDP as
+                             l                      m                          the core operation in factored matrix-multiplication. We start with
+                                        21 1                                   the de�nitions of the unique space and the coded representation of
+                               log2 2 ⇥ max(|G
+                      B=2                      5 |)
+                                                                  (4)          vectors involved in VDP.
+Rounding Workaround. Let us consider an =-bit integer value,                       De�nition 4.1. The unique space of w 2 R# is the set c =
+right shifted by = 1 bits through the scaling step to obtain a� xed-           {2 1, . . . , 2+ } such that w[8] 2 c (8 8 2 [# ]). We refer to + as
+point value with 1 bits integer and (= 1) bits fraction. Rounding              the unique size of w.
+operation in GC works by adding the MSB of the fraction with the
+1-bit integer. The GC cost is therefore equal to 21 ⇥ ^, which is                 De�nition 4.2. Given a vector w 2 R# and its unique space
+quite signi�cant considering it has to be repeated for all output              c = {2 1, . . . , 2+ }, the coded representation of w is a vector of integer
+elements across all DNN layers. To eliminate this cost, we replace             indices we 2 [+ ] # such that w[8] = c[e     w [8]].
+A>D=3 (·) with the� oor operation b·c in our plaintext DNNs. Since                Knowing the unique space c and the coded representation w    e,
+�ooring is equivalent to removing all fraction bits, it incurs no              the factored VDP can be computed via + multiplications and # + +
+GC cost. To adapt the model weights to this modi�cation, we use                additions: we� rst compute # conditional additions, each of which
+the original training data to� ne-tune the model. This is done by              adds an input element to one of + accumulators based on its code:
+applying� ooring during the forward pass and straight-through                                      ’
+gradients during the backward pass. Data-free� ne-tuning is also                            s[E] =     G,                  e [8] = E }
+                                                                                                              SE = {x[8] | w                  (5)
+possible at the cost of a small accuracy loss as in [25].                                               G 2SE
+Over�ow Management. Performing matrix-multiplication re-                       Next, a VDP is computed between the accumulated values and
+quires repeatedly updating an accumulator ~ B ~ + w[8]x[8]. An                 the unique space of w, i.e., VDP(x, w) = VDP(s, c). The bene�ts
+imminent challenge when moving to the low-bit quantized regime                 of factored multiplication are most substantial when + << # 2 .
+is the occurrence of over�ow in the accumulator. To avoid over-                In general, + can be as large as 21 , where 1 is the quantization
+�ows, existing ML libraries for quantization perform accumulations             bitwidth of w. Even after quantizing w with lower bitwidths, +
+using high-precision data representations, e.g., ~ is INT-32 while G           can be quite large, e.g., + = 64 for 6-bit weights. To decrease + , we
+and F are low-bit. In secure execution, high-precision accumulators            approximate weight matrices with few representative elements via
+are extremely costly. Therefore, we augment the underlying ML                  clustering [49]. We provide details of the clustering algorithm in
+library with a new custom operation that simulates DNN execu-
+tion with low-bit accumulators and directly models the occurrence              2 # is in the order of 100-10000
+
+
+
+
+                                                                        3270
+Session 12A: Applications and Privacy of ML                                       CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+                                                                                     This process is performed on a per-layer basis: for each linear
+                                                                                  layer in the network, we discard the subset of its corresponding
+                                                                                  quantization bitwidths that violate the accuracy constraint. In doing
+                                                                                  so, we keep the remaining layers in full-precision format. Note that
+                                                                                  such per-layer analysis allows us to shrink the original search
+                                                                                  space but does not determine the optimal bitwidth con�guration
+                                                                                  across all layers. This is due to the fact that the per-layer analysis
+                                                                                  does not re�ect the e�ect of inter-layer correlations on inference
+Figure 4: Example 4⇥4 weight matrix approximated via clus-
+                                                                                  accuracy when all DNN layers are simultaneously quantized. We
+tering with + = 4. The approximated matrix , can be repre-
+                                                                                  therefore devise an optimizer to search the reduced parameter space
+                      e ).
+sented as a tuple (⇠, ,
+                                                                                  obtained from the per-layer analysis to� nd the optimal bitwidth
+                                                                                  con�guration across all layers.
+Appendix B. Figure 4 shows an example weight matrix and its ap-
+proximation obtained by clustering. The server performs clustering
+over plaintext weight matrices and computes c and w    e for all DNN
+layers. These values are then used in ciphertext execution.
+   It is worth noting that the value of + directly a�ects the tradeo�
+between the DNN inference accuracy and the secure execution
+cost. Higher + values achieve higher accuracy but also incur higher
+secure execution cost. It is a great challenge to determine the per-
+layer + values and balance this trade-o� such that the DNN is
+executed accurately and e�ciently. To address this challenge, we                  Figure 5: (left) Inference accuracy versus the input and
+provide an automated algorithm that speci�es + for each linear                    weight bits of a CONV layer in an example DNN. (right) 3⇡
+layer in a desired DNN as will be discussed in Section 4.3. Addition-             visualization of the layer’s valid bitwidth con�gurations.
+ally, we develop custom gradient computation methods to enable
+back-propagation through the clustered weights for�ne-tuning
+                                                                                     Figure 5-(left) demonstrates the model accuracy versus the input
+and increasing the inference accuracy. We enclose the details of
+                                                                                  and weight bitwidths for one layer of an example DNN when the
+gradient computation for factored weight matrices in Appendix B.
+                                                                                  activation bit is set to the maximum value (1022 = 16). As seen, due
+                                                                                  to the occurrence of over�ow, many of the con�gurations fall below
+4.3     Automated Parameter Con�guration
+                                                                                  the accuracy constraint plane. Using this intuition, we construct
+The quantization bitwidths and the unique spaces across di�erent                  a 3⇡ mesh of valid bitwidth con�gurations that comply with the
+layers are not independent and they collectively determine the                    accuracy constraint for each layer as shown in Figure 5-(right). Each
+model accuracy as well as the secure execution cost. COINN is                     node corresponds to a tuple (18=? , 1 F , 1022 ) and its neighbors are
+equipped with an automated parameter con�gurator that searches                    nodes with a maximum bit distance of 1. As seen in this example,
+for the optimum number of quantization bits and weight clusters                   the search space for one layer is reduced to ⇠ 18 , which provides a
+across DNN layers such that: (1) the secure execution cost is min-
+                                                                                  lot of saving for the overall DNN, i.e., ⇠ ( 18 ) L . Our optimizer then
+imized and (2) a user-de�ned constraint on inference accuracy is
+                                                                                  traverses this mesh to� nd the optimal DNN con�guration.
+met. COINN con�gurator initially reduces the optimization space,
+                                                                                     For clustering, the per-layer con�guration comprises only one
+and then uses our customized optimizer and score function to�nd
+                                                                                  parameter, i.e., the unique size + , which undergoes a similar process
+the optimal DNN. The con�gurator performs the above process sep-
+                                                                                  for identifying the valid optimization space.
+arately for quantization and matrix factorization. Below we explain
+each component of COINN con�gurator in detail.                                    Optimizer. We develop a novel genetic algorithm [57] with cus-
+                                                                                  tomized graph operations to traverse our constructed mesh of valid
+Optimization Space Reduction. For quantization, the bitwidths
+                                                                                  con�gurations and� nd the optimal quantized/clustered DNN. Our
+for the input (18=? ), weights (1 F ), and the activation (1022 ) should
+                                                                                  genetic algorithm operates on a population of individuals where
+be con�gured at each linear layer. Finding the optimal quantized
+                                                                                  each individual corresponds to a candidate DNN con�guration. Op-
+DNN is therefore equivalent to searching over a parameter space
+                                                                                  timization is performed iteratively and the population is gradually
+containing ⌫ 3L di�erent network con�gurations where L and ⌫                      evolved to obtain better DNN con�gurations that have higher ac-
+denote the number of linear layers and the maximum bitwidth                       curacy and/or lower secure execution cost. At each iteration, all
+budget3 , respectively. Finding the best parameter con�guration                   members of the current population are evaluated in terms of the
+in such a large space is very time-consuming and the� nal ob-                     secure execution cost and the inference accuracy. We utilize a cus-
+tained DNN con�guration is often sub-optimal. We observe that                     tomized score function to combine these two (con�icting) metrics
+many of the bitwidth con�gurations in this search-space violate                   and assign a measure of optimality to each individual. We then
+the user-de�ned accuracy constraint. Therefore, prior to�nding                    perform a random selection from the population where individuals
+the optimal bitwidths, we� rst identify and eliminate the invalid                 with higher scores have higher chances of being selected. Each
+bitwidth con�gurations from the search space.                                     selected individual is then randomly tweaked by moving along the
+3 In our experiments we set ⌫ = 16.                                               con�guration mesh to adjacent neighbor nodes. This is equivalent
+
+
+
+
+                                                                           3271
+Session 12A: Applications and Privacy of ML                                     CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+to performing small-scale changes in the model architecture to                  of matrix products to achieve a signi�cant reduction in the commu-
+explore new (unseen) con�gurations and� nd the optimal DNN.                     nication cost. The outputs of the linear operations in the AS domain
+Score Function. The objective of parameter optimization for se-                 are securely converted to the GC domain for computation of the
+cure inference is to minimize the secure execution cost while en-               non-linear layers – maxpool (MP) and ReLU. The scaling operation
+forcing the inference accuracy to be higher than a user-de�ned                  is also embedded into the AS to GC (and vice versa) conversion.
+threshold (constraint). The objective of this constrained optimiza-             Our design is optimized for the amortized setting where the same
+tion can be embedded into a single score function that absorbs                  server-client pair runs multiple inferences without retraining the
+both accuracy and secure execution cost. Let us denote the DNN                  model, which is the common scenario in real-world applications.
+con�guration (quantization/clustering parameters) as p 2 R3 and                    Besides the aforementioned layers, COINN also supports batch
+the corresponding accuracy and secure execution cost as A (p)                   normalization (BN) and average pooling (AP). These layers are
+and C(p), respectively. For a given DNN con�guration, the secure                fused into their preceding CONV/FC layers. Using this trick, heavy
+execution cost C(p) is the cumulative per-layer costs calculated                cryptographic operations such as the division protocol of CrypT-
+using Table 6 in Appendix D and the accuracy A (p) is measured                  Flow2 [46] can be avoided, allowing us to evaluate AP and BN at
+on a held out validation dataset. We adapt the score function from              zero cost. Details of our layer fusion is enclosed in Appendix C.
+ML-customization literature [30], which use fractions and an ex-
+ponential penalty function [43] to enforce the inference accuracy               5.1       Matrix-Multiplication
+constraint. Our score function is de�ned as:                                    As explained in Section 3, the weight matrix , is only known by
+                                     C     C (p)
+                                                                  (6)           Alice, i.e., J, K = J, K and J, K⌫ = 0 while the activation matrix
+                                    b ( A (p)) ,
+                             S(p) = <0G
+                                                                                J- K is shared between Alice and Bob. We need to compute the
+where C<0G is the execution cost of the reference DNN prior to                  matrix product J. K = J, K · J- K = J, K · J- K + J, K · J- K⌫ .
+optimization. The numerator of the score function encourages mini-              Since Alice can locally compute J, K · J- K , we focus on secure
+mization of the ciphertext execution cost C(p) and the denominator              computation of J/ K = J, K · J- K⌫ .
+b (·) enforces a strict lower bound (threshold) for the accuracy using
+                                                                                Regular Matrix-Multiplication. The product J/ K 2 Z"⇥! of
+exponential penalty methods [7, 43] as follows:                                                                                    1              2
+                  (                                                             J, K 2 Z"⇥#        and J- K⌫ 2 Z#1⇥! can be computed with "# !
+                                                                                            21                    2
+                      A<0G    A (p)               A (p) > A<8=                  scalar multiplications. This approach requires "# !1 invocation of
+    b (A (p)) =                                                   (7)
+                      A<0G    A (p) + 4 A (p) A<8= >C⌘4AF8B4                    COT12 [16], thus incurring a communication cost of "# !1 (^ + 1)
+where A<0G is the accuracy of the reference point DNN. As seen,                 bits. The communication cost of one instance of COT_2 is ^+_, where
+b (·) puts a linear penalty on points with a high accuracy but ex-              the� rst term (the cost of one ROT_2 ) is independent of the message
+ponentially increases the penalty when the accuracy drops below                 bitwidth _. Since the computation of the matrix product involves dot
+the lower bound A<8= . As we show in our experiments, this score                product of each row of J, K with ! columns of J- K⌫ , we compute
+function ensures that our genetic algorithm� nds a DNN con�gura-                the matrix product with "#1 invocations of COT!1   2 . This approach
+tion that has signi�cantly lower ciphertext cost compared to the                reduces the number of COTs by increasing the message length,
+baseline (plaintext) model with comparable accuracy.                            thereby reducing the total communication cost to "#1 (^ + !1).
+                                                                                Compared to the protocols with independent multiplications [16,
+                                                                                                            ! (^+1)
+                                                                                35], the cost is reduced by ^+!1 . This cost can be further reduced
+                                                                                in the amortized setting as will be explained in Section 5.2.
+                                                                                Factored Matrix-Multiplication. We now present our proto-
+                                                                                col for securely computing the factored matrix-multiplication ex-
+                                                                                plained in Section 4.2. We� rst de�ne the one-hot encoded repre-
+                                                                                sentation of a vector.
+
+                                                                                   De�nition 5.1. Given a vector w 2 R# and its coded representa-
+                                                                                     e 2 [+ ] # w.r.t. its unique space c = {2 1, . . . , 2+ }, the one-hot
+                                                                                tion w
+                                                                                encoded representation of w                 e 2 {0, 1}+ ⇥# such that
+                                                                                                              e is a matrix ,
+                                                                                 e              e [=] = E and 0 otherwise (8E 2 [+ ], = 2 [# ]).
+                                                                                , [E,= ] = 1 if F
+Figure 6: Plaintext operations and their equivalent cipher-
+text realization in COINN oblivious inference framework.                        We will be using the following notations to explain our secure
+                                                                                factored matrix-multiplication:
+5   CRYPTOGRAPHIC PROTOCOLS                                                     • The
+                                                                                  n collectionoof unique spaces for all rows of J, K :
+Figure 6 illustrates operations in plaintext DNNs and their cor-                    JcK
+                                                                                          (<)
+                                                                                                2 Z+1
+responding secure computation in COINN framework. The lin-                                         2    < 2 [" ]
+ear layers – CONV and FC are executed through secure matrix-                    • The collection
+                                                                                           n      of one hot encodings
+                                                                                                                  o         of all rows of J, K w.r.t.
+multiplication protocols in the AS domain. We provide protocols for
+                                                                                     (<)
+                                                                                  JcK : J, K e  (<)
+                                                                                                     2 {0, 1}+ ⇥#
+
+both regular and factored matrix-multiplication for these two linear                           n                 o < 2 [" ]
+                                                                                                    (<)
+layers. We exploit the data repetition inherent in the computation              • Partial sum: J(K      2 Z+1⇥!
+                                                                                                                   2   < 2 [" ]
+
+
+
+
+                                                                         3272
+Session 12A: Applications and Privacy of ML                                                CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+Using the above notations, the product J/ K = J, K · J- K⌫ is                              In practice, following the state-of-the-art OT libraries [48, 55], Al-
+computed as:                                                                               ice receives "#1 ^-bit seeds W@ ; 8@ 2 ["#1] and Bob receives
+                                                                                           ^-bit seeds W 0@ and W 1@ ; 8@ 2 ["#1] which are later expanded to
+                                  ’
+                                  #
+           J(K
+                 (<)
+                       [E,; ] =          eK
+                                        J,
+                                               (<)
+                                                     [E,= ] · J- K⌫ [=,; ];                1-bit messages 89 2 [ ], ; 2 [!] through Cryptographically Secure
+                                  ==1
+                                                                              (8)          Pseudo Random Number Generator (CS-PRNG). This makes sure
+                                    8< 2 ["], E 2 [+ ], ; 2 [!]                            that the memory requirement is independent of the number of
+                                                                                           inferences . The communication cost of the setup phase is "#1^.
+                                  ’
+                                  +
+             J/ K[<,; ] =               JcK
+                                              (<)
+                                                    [E] · J(K (<) [E,; ];                  Similarly, the communication cost of the setup phase for factored
+                                  E=1
+                                                                              (9)          matrix-multiplication is "+ (# + 1)^.
+                                                8< 2 ["], ; 2 [!]                          O�line and Online Phases. These two phases are performed once
+                                                                                           per inference 9. The o�ine and online phases involve computation
+Eq. 8 represents conditional accumulation and Eq. 9 represents                             before and after the input - is available, respectively. We employ
+dot product of length + vectors of 1-bit integers. Note that the                           the technique proposed by Slalom [53], to ensure that most of the
+number of integer multiplications is reduced from "# ! in regular                          cost corresponds to the o�ine phase. In this technique, in the o�ine
+matrix-multiplication to "+ ! in the factored version (+ ⌧ # ).                            phase, Alice and Bob securely compute the matrix product J/ 0 K =
+The majority of the cost is now incurred by the conditional ac-
+                                                                                           J, K · J* K⌫ , where J* K⌫ 2 Z#1⇥! is a random matrix generated
+cumulation, which is computed through COT. We leverage our                                                                   2
+                                                                                           and known by Bob. They locally expand the seeds obtained in the
+optimization presented for the regular matrix-multiplication, i.e.,
+                                                                                           setup phase for the particular inference index 9 and for each column
+merging the COT messages involving the same selector bit, for both                                                                2 . The communication cost
+                                                                                           ; 2 [!] of - and completes the COT!1
+Eq. 8 and 9 to reduce the communication cost.
+                                                                                           of this phase for each 9 2 [ ] for regular and factored matrix-
+   Algorithm 1 presents the protocol for computing the partial
+                                                                                           multiplications are "# !1 2 and "+ # !1 respectively. In the online
+sums through conditional accumulation. Since the protocol requires
+             2 , the communication cost of computing the partial                           phase, Bob directly sends = J- K⌫ J* K⌫ to Alice who locally
+"+ # COT!1
+                                                                                           computes J/ K = J/ K + J, K J K . Bob sets J/ K⌫ = J/ 0 K⌫ . The
+sums is "+ # (^ + !1). The dot product of Eq. 9 can then be com-
+                                                                                           communication cost in this phase negligible compared to that of
+puted following the technique presented in MiniONN [35] with a
+                                                                                           the o�ine phase.
+communication cost of "+ 1 (^ + !1). Thus the total cost of com-
+puting factored matrix-multiplication is "+ (# + 1)(^ + !1). Since                         Number of Communication Rounds. In the proposed setting,
+in practice, 1 ⌧ # , we approximate the cost as "+ # (^ + !1).                             the only communication from Alice to Bob occurs in the setup
+                                                                                           phase. The o�ine and online phases involve communication from
+Proof Sketch. The security proof of Algorithm 1 directly follows
+                                                                                           Bob to Alice, only. Thus the number of communication rounds is 2,
+from the security guarantee of OT. Observe that all the commu-
+                                                                                           irrespective of the number of inferences . This reduces the adverse
+nication between Alice and Bob is performed through OT which
+                                                                                           e�ect of increased network latency in the Wide Area Network
+ensures the privacy of both the selection bits and messages. More-
+                                                                                           (WAN) setting.
+over, the correlation function chosen by Bob ensures that Alice
+never receives an unmasked version of any element of J- K⌫ . Fur-                          Switching between Regular and Factored Multiplication.
+thermore, every instance of OT involves freshly generated unique                           Based on the optimal unique size allocated to each layer’s weights
+masks that ensures the security of the one-time pad.                                       by the model con�gurator, our protocol automatically switches
+                                                                                           between regular and factored multiplication to maximize e�ciency.
+                                                                                           Switching is done when the costs of both multiplications are equal,
+5.2   Linear Layers in the Amortized Setting
+                                                                                           i.e., "# !1 2 = "+ # !1 in the amortized setting, which renders the
+The mean communication cost of computing both regular and fac-                             switching point 1 = + , i.e., when the number of unique values in
+tored matrix-multiplication is further reduced in the amortized                            each row of the weight matrix is equal to the AS shares’ bitwidth.
+setting where one server-client pair runs a large number of in-
+ferences with the same trained model but di�erent inputs, i.e, ,
+remains constant while - changes in each inference. In case of reg-                        5.3    Non-linear Layers
+ular matrix-multiplication, since, , does not change, the number                           COINN GC domain incorporates the following four stages:
+of COTs remains the same while message length increases to !1,
+                                                                                           (i) AS to GC Conversion. A variable JGK 2 Z21 shared between
+where is the number of inferences. The mean cost per matrix-
+                                                                                           Alice and Bob through AS is securely converted to its share in the
+multiplication is therefore "#1 (^ + !1)/ ⇡ "# !1 2 for large .
+                                                                                           GC domain by securely computing the addition function through
+Similarly, for factored matrix-multiplication, the mean amortized
+                                                                                           GC with inputs from Alice, the garbler and Bob, the evaluator as
+cost is "+ # !1. More importantly, in this setting, the number of
+                                                                                           JGK and JGK⌫ , respectively. Before the addition, Bob obtains the
+communication rounds remains constant (= 2), irrespective of the
+                                                                                           Yao share for his input JGK⌫ through COT, which requires two
+number of inferences . Our protocol execution is split into setup,
+                                                                                           rounds of communication. In this particular scenario, Bob’s share is
+o�ine and online phases as described below.
+                                                                                           generated through multiplication in the AS domain. According to
+Setup Phase. This is performed once per server-client pair irre-                           the multiplication technique described in Section 2.3, his shares are
+spective of the number of inferences . In this phase, for regular                          independent of his input. Therefore, we perform the COTs for all
+matrix-multiplication, Alice and Bob perform the "#1 ROT2!1 as                             the layers in parallel during the o�ine phase, which reduces one
+part of the "#1 COT2!1 for matrix-multiplication computation.                              round of communication for each layer in the online phase.
+
+
+
+
+                                                                                    3273
+Session 12A: Applications and Privacy of ML                                                   CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+ Algorithm 1: Protocol for Computing Conditional Accumulation
+                                                              n                      o
+                                                                e K (<) 2 {0, 1}+ ⇥#
+  Input : From Alice, one-hot encoding of weight matrix J, K : J,
+                                                                                                                   < 2 [" ]
+    Input : From Bob, share of the activation J- K: J- K⌫ 2 Z#1⇥! :
+                         n                o                    2
+    Output : Partial sum J(K (<) 2 Z+1⇥!
+                                   n 2     < 2 [" ]    o
+    OT message received by Alice, ` 0 (;) 2 Z"⇥+    ⇥#
+                                 n            2
+                                                     o ; 2 [!]
+                                               1
+
+    OT message received by Bob, ` (;) 2 Z"⇥+     ⇥#
+                                            1       2           ; 2 [!]
+                                                          (;)
+    Bob chooses a set of correlation functions i<,E,= (·) as
+     n                         o    n                              o
+1
+       (;)
+      i<,E,= (` (;) [<, E,= ])    = ` (;) [<, E,= ] + J- K⌫ [=,; ]                     ; 8< 2 ["], E 2 [+ ], = 2 [# ]
+                                ; 2 [!]                                      ; 2 [!]
+2   foreach < 2 ["], E 2 [+ ], = 2 [# ] do
+       Alice and Bob run COT!1 2 where
+                                                     n           o                                    n                o
+3
+                                                       (;)
+        Bob acts as sender with correlation functions i<,E,= (·)                          and receives ` (;) [<, E,= ]
+                                                                                ; 2 [!]                                       ; 2 [!]
+      Alice acts as receiver with choice bits J,         e K (<) [E,= ] and receives
+       n                   o          n                                                  o
+         ` 0 (;) [<, E,= ]           = ` (;) [<, E,= ] + J,e K (<) [E,= ] · J- K⌫ [=,; ]
+                                    Õ# ⇣ 0 (;)            ⌘
+                             ; 2 [!]                                                       ; 2 [!]
+                   (<)
+4 Alice sets J(K        [E,; ] = ==1      `     [<, E,= ] ; 8< 2 ["], E 2 [+ ], ; 2 [!]
+                  (<)             Õ# ⇣ (;)             ⌘
+  Bob sets J(K⌫ [E,; ] = ==1            ` [<, E,= ] ; 8< 2 ["], E 2 [+ ], ; 2 [!]
+
+
+(ii) Scaling. As a result of the optimizations presented in Section 4.1,                      Table 1: Cost break down of di�erent phases of linear layers
+scaling is performed through bit shift, which can be evaluated                                in COINN and previous works. #B;>C is the number of slots
+in GC with no additional communication cost. Scaling converts                                 in vectorized HE operations. ⇠>BC"D;C (@) is the cost of one
+the bitwidth of the shared variables from 1 to 18=? , where, 18=?                             scalar multiplication in Z@ in HE. @ the cipher-text modulus
+is the input bitwidth of the next CONV/FC layer. This approach                                which is ⇠ 3⇥ larger than plain-text modulus ? ⇡ 21022 .
+signi�cantly reduces the GC execution cost for nonlinear layers.
+                                                                                                                                              Per-layer Complexity
+(iii) MaxPool and ReLU. An MP operation with a window size                                     Work
+                                                                                                                                 One time setup          Per-inference
+of : ⇥ : requires : 2 1 comparison and multiplexing operations,
+each of which incurs a communication cost of 2 · ^ · 18=? bits. Note                           Gazelle/Delphi/CTF2 (HE)                   -           O "#  !
+                                                                                                                                                        #B;>C .⇠>BC"D;C (@)
+that MP (ReLU (x))=ReLU (MP (x)), thus we perform MP before                                    MiniONN/CTF2 (OT)                          -          O "#1022 (^ + !1022 )
+ReLU as it shrinks the size of the activation tensor by a factor of                            XONN (GC)                                  -                     2 ^
+                                                                                                                                                         O "# !1022
+: 2 , thereby reducing the ReLU cost. Each ReLU includes 18=? AND                              COINN – regular (OT)                O "#1022 ^                    2
+                                                                                                                                                          O "# !1022
+operations requiring 2 · ^ · 18=? bits of communication.
+                                                                                               COINN – factored (OT)               O "+ 1022 ^       O "+ !1022 (# + 1022 )
+(iv) GC to AS Conversion. For this operation, Alice generates a
+random 1-bit integer which is added to the ReLU output and the                                execution of the linear layers in COINN and compare them with
+sum is revealed to Bob. This operation does not require COT since                             prior work in Table 1. For HE-based works, the complexity refers
+there is no input from Bob. During conversion, the values are sign-                           only to the computation cost. For OT-based works, the complexity
+extended to 1 bits to match the AS ring size. It is worth noting that                         refers to both communication and computation cost while commu-
+our computations in the AS domain are performed modulo 21 and                                 nication is usually the dominant factor. The number of communi-
+the GC circuit for 1-bit addition automatically takes care of the                             cation rounds for all works is equal to the number of layers, except
+modulo operation [16]. On the contrary, to bene�t from SIMD oper-                             for XONN which has constant number of rounds. The performance
+ations in HE, the modulus is chosen as a prime number. Therefore,                             gains of COINN over prior work stem from two main reasons:
+the circuit for modular addition requires 1-bit addition, subtraction,                        • Separating setup time. We move a large part of the computa-
+and multiplexing, thereby increasing the cost of HE-GC conver-                                  tion/communication of the (OT-based) linear layers of COINN
+sion [31]. In summary, the HE-GC conversion (as seen in [31])                                   to a one-time setup phase without a�ecting security. In contrast,
+requires ⇠ 2.5⇥ more computation/communication compared to                                      previous OT-based methods (MiniONN [35], CrypTFlow2 [33]) re-
+AS-GC conversion (as seen in [16]).                                                             peat these operations for every inference 4 . Moreover, separation
+                                                                                                of setup and per-inference phases is not readily applicable in the
+5.4     Cost Breakdown and Comparison with                                                      HE-based methods (Gazelle [31], Delphi [41], CrypTFlow2 [33])
+        Previous Works                                                                          or GC-based methods (XONN [47]).
+To explain the source of runtime improvement in the proposed                                  4 The preprocessing phase of Delphi [41] is equivalent to our o�ine phase and needs
+method, we summarize the cost complexity of di�erent phases of                                to be repeated per inference to ensure security.
+
+
+
+
+                                                                                       3274
+Session 12A: Applications and Privacy of ML                                    CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+• Optimizing parameters. Prior works use a large but� xed                         Perhaps the most related model-adjustment techniques to
+  bitwidth 1022 for all linear layers. COINN customization�nds                 COINN are the quantization in [2, 14]. These works have two
+  smaller values of 1022 that vary from one layer to another, signif-          major di�erences with COINN quantization. Firstly, they simply
+  icantly reducing the secure execution cost while preserving the              use homogeneous bitwidths for all DNN weights/activations. We
+  accuracy. Additionally, our factored matrix multiplication can               show that by solving the challenging problem of heterogeneous
+  further reduce the execution cost of linear layers when + < 1022 .           bitwidth selection, secure execution cost can be signi�cantly low-
+  Note that by reducing the computational bitwidth, COINN also                 ered without hurting model accuracy. Secondly, the aforesaid works
+  reduces the cost of protocol conversion and nonlinear layers as              use the available quantization schemes optimized for the plain-
+  formalized in Table 6.                                                       text domain [29, 56], while COINN develops a new cipher domain
+                                                                               optimized quantization scheme that replaces costly quantization
+6   RELATED WORK                                                               operations with variants that incur a negligible GC cost. For exam-
+In this section, we review the related work that employ similar                ple, we leverage logarithmic representation for the quantization
+settings as ours, i.e., cryptographically secure two-party protocols           scale in Eq. 4. It is worth mentioning that our quantization is dif-
+where the server owns the model and the client owns the input.                 ferent than [42], which applies logarithmic encoding to the matrix
+There are two classes of techniques: Homomorphic Encryption                    multiplication operands themselves. By doing so, [42] replaces mul-
+(HE) [21], which is heavy on computation and Multi-Party Com-                  tiplications with bit-wise shifts and conditional additions. However,
+putation (MPC) techniques such as Garbled Circuits (GC) [59] and               the ciphertext computation corresponding to bit-wise shift is not
+Arithmetic Sharing (AS) [6], which are heavy on communication.                 e�ciently realizable in AS. Hence, unlike [42], we use� xed-point
+   CryptoNets [23] is perhaps the pioneer of 2-party oblivious in-             representation for our matrix multiplication operands (layer in-
+ference. More e�cient variants and compilers have since been                   puts and weights) to keep them consistent with the AS domain.
+proposed for optimized DNN inference [10, 11, 13, 15, 26, 50]. HE-             After multiplication, the result is converted to GC to perform scal-
+based methods such as [23] allow outsourcing the majority of the               ing and nonlinear operations. Since bit-wise shifting is free in GC,
+computations to the more capable party, i.e., the server. However,             we enforce our quantization scale to be a power of two using the
+frameworks that are entirely based on HE replace the nonlinear                 logarithm operation in Eq. 4.
+activations with HE-friendly polynomial approximations, resulting                 COINN bridges the gap between protocol design and ML model
+in reduced inference accuracy. Oblivious inference based on GC                 adjustment to optimize the ciphertext execution of both linear
+has also been proposed [8] which provides better accuracy but                  and non-linear operations. Compared to works that only optimize
+su�ers from long run times due to the large communication cost                 the cryptographic protocols [31, 35, 46], the contributions of our
+of multiplications in GC. To mitigate this, XONN [47] presents a               work lie in designing security-aware low-bit quantization and in-
+GC-based framework for Binarized Neural Networks (BNN) where                   troduction of factored multiplication and its accompanying custom
+all multiplications are replaced with cost-free XNOR operations.               secure execution protocol. Compared to works that optimize the
+Nevertheless, the binary weights and activations in a BNN have an              ML model [22, 38, 39, 41, 47], our model adjustment techniques
+adverse e�ect on the inference accuracy.                                       are scalable to many-layer architectures trained for complex tasks
+   At present, most e�cient secure inference engines employ a                  such as ImageNet. Additionally, COINN quantization and factored
+hybrid approach –using the most e�cient cryptographic primitive                multiplication together with our automated parameter con�gurator
+for a particular layer. MiniONN [35] employs a combination of                  achieve a better accuracy-runtime tradeo� compared to prior model
+AS, GC, and HE. Follow-up works Gazelle [31] and Delphi [41],                  adjustment methods such as modifying ReLU layers [22, 38, 41].
+support e�cient HE-based linear operations along with GC-based
+nonlinear functions, and perform secure protocol conversion when
+necessary [31, 35]. Subsequent works [34, 47] have pointed out
+                                                                               7   EXPERIMENTS
+security vulnerabilities in HE-based methods, safeguarding against             In this section, we empirically evaluate the performance of COINN
+which would result in increased runtime. CrypTFlow2 [46] proposes              in various settings. We perform a detailed study of the e�ciency
+a hybrid protocol that supports both HE and AS-based linear layers             gains achieved by each of COINN optimizations, namely, quan-
+and has custom protocols for secure comparison (used in ReLU and               tization, clustering, and end-to-end parameter con�guration, in
+MP) which incur less communication at the cost of higher number                Section 7.1. Next, we provide a side-by-side comparison of COINN
+of communication rounds compared to GC.                                        with recent works in Section 7.2, in terms of the ciphertext execu-
+   A parallel line of work in oblivious inference focuses on applying          tion time, showing 4.7⇥–36.8⇥ faster inference on contemporary
+optimizations to reduce the secure execution cost of previously pro-           DNNs in LAN setting. We further show that COINN achieves better
+posed security protocols. The contributions in this domain can be              performance compared to prior work in the high-latency setting.
+categorized in two separate directions: (1) adjusting the parameters           Evaluation Setup. We use the PyTorch library for training the
+for the secure protocol, and (2) changing the DNN architecture for             FP32 DNNs and develop our security-aware quantization, cluster-
+improved secure execution. In the� rst category, recent work [9, 39]           ing, and automated parameter con�guration with PyTorch backend
+adjust the HE parameters for hybrid HE-GC protocols, i.e., Gazelle             for easy utilization by the community. Our ciphertext execution
+and Delphi, to reduce the secure execution cost. The methods in                uses OT, and CS-PRNG implementations from EMP-toolkit [55]
+the second category [22, 38, 41] reduce the number of ReLU acti-               and GC implementation from TinyGarble2 [27]. For fast matrix-
+vations throughout the network to reduce the GC communication                  multiplication, we utilize the Intel intrinsic instructions and repre-
+and runtime in hybrid HE/AS and GC protocols.                                  sent matrices with the Eigen library [24].
+
+
+
+
+                                                                        3275
+Session 12A: Applications and Privacy of ML                                      CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+                    Table 2: COINN benchmarks.
+
+ Model           Layers                             Acc MACs Params
+ MiniONN [35] 6 CONV, 1 FC, 2 MP, 6 ReLU            88.3 6.1e7    1.6e5
+ ResNet32        31 CONV, 1 FC, 1 AP, 31 ReLU       68.7 6.9e7    4.7e5
+ ResNet110       109 CONV, 1 FC, 1 AP, 109 ReLU     94.1 2.5e8    1.7e6
+ ResNet50        49 CONV, 1 FC, 1, MP, 1 AP, 49 ReLU 76.1 4.1e9   2.5e6
+
+
+   We run our ciphertext evaluations using 4 threads on machines
+with 2.2 GHz Intel Xeon CPU and 16 GB RAM. For runtime mea-                      Figure 7: E�ect of quantization bitwidth on communication
+surements, we consider two real-world network settings, namely                   cost (bars) and accuracy (curve). The numbers on the hor-
+LAN with a throughput of 1.25 GBps, round trip time of 0.25ms,                   izontal axis show the bitwidth for homogeneous quantiza-
+and WAN with a throughput of 125 MBps, round trip time of 100ms.                 tion of weights/inputs across all layers. Label Q represents
+We simulate the network settings via Linux Tra�c Control5 .                      the heterogeneous bitwidths found by COINN.
+Benchmarks. We perform evaluations on the CIFAR-10, CIFAR-
+100, and ImageNet classi�cation benchmarks. The number of classes                possible via our secure computation-aware quantization which ac-
+in these datasets is 10, 100, and 1000, respectively. Table 2 presents           curately simulates the e�ect of low-bit quantization in ciphertext.
+details of our benchmarked DNNs along with their FP32 accuracy.                  This allows us to explore the trade-o� between communication
+We evaluate the 7-layer network from MiniONN [36] and ResNet110                  cost and model accuracy. We present the heterogeneous bitwidths
+on CIFAR-10, ResNet32 on CIFAR-100, and ResNet50 on ImageNet                     found by COINN con�gurator for ResNet32 in Figure 8-a.
+dataset. Our DNN benchmarks cover a wide range of parameter                      Factored Matrix-Multiplication. Figure 7 shows that the bulk
+sizes (0.5M to 23M) and number of MAC operations (60M to 4B)                     of total communication cost in a quantized model corresponds to
+commonly observed in real-world models.                                          linear operations. We now showcase how COINN further reduces
+Accuracy Measurement. Throughout the evaluations, we report                      this cost via factored matrix-multiplication. Figure 10 presents the
+the secure model accuracy, which is measured e�ciently (and cor-                 communication cost and accuracy as a function of the number of
+rectly) by simulating ciphertext operations in PyTorch. The correct-             unique elements in each layer’s weight matrices + . The label Q
+ness is validated by matching all DNN layers’ activations in secure              represents our model with heterogeneous quantization bitwidths
+inference with those from PyTorch on randomly selected inputs.                   from Figure 7. The numeric labels to its left represent models with a
+                                                                                 uniform selection of + across all layers. Such naïve selection results
+7.1     Evaluation of COINN Optimizations                                        in accuracy degradation, particularly for small + . Our automated
+In this section, we provide a breakdown of the savings in secure                 parameter con�gurator� nds a heterogeneous allocation of + across
+execution cost as a result of COINN’s model adjustment methods                   DNN layers that balances the tradeo� between inference accuracy
+and protocol optimization.                                                       and ciphertext communication. The result is an optimal DNN repre-
+Low-Bit Heterogeneous Quantization. We illustrate the bene-                      sented with the label Q+C that reduces the secure communication
+�ts of our quantization scheme in reducing the secure communica-                 cost of the quantized model by 1.4⇥ while maintaining the original
+tion cost, while maintaining accuracy, for a large scale real-world              model accuracy. We present the heterogeneous number of per-layer
+DNN – ResNet32. Figure 7 presents the communication cost and                     clusters found by our con�gurator for this benchmark in Figure 8-b.
+accuracy of secure execution as a function of the bitwidth. The
+numerical labels on the horizontal axis represent homogeneous
+quantization (equal bitwidths across all layers), where each label
+is 18=? = 1 F with 1022 set to 218=? + 1. The label 16 represents the
+con�guration implemented in prior works [41, 46] which we use
+as a baseline. Figure 7 shows that while reducing the bitwidth in
+the homogeneous setting results in a linear reduction of ciphertext
+communication, it also results in a signi�cant drop in accuracy.
+    To mitigate the undesireable accuracy drop of homogeneous
+quantization, our automated parameter con�gurator� nds a het-
+erogeneous allocation of per-layer bitwidths that simultaneously
+ensures high accuracy and low communication cost. The rightmost
+label, Q in Figure 7, represents the COINN optimized model with
+heterogeneous quantization bitwidths across layers. This optimal
+set of bitwidths results in a communication cost equivalent to the
+6-bit homogeneous model and achieves an accuracy comparable to
+the 16-bit baseline. Such optimization of per-layer bitwidths is made            Figure 8: Heterogeneous parameters across ResNet-32 layers
+                                                                                 found by COINN con�gurator. (a) Quantization bitwidths.
+5 https://man7.org/linux/man-pages/man8/tc.8.html
+                                                                                 (b) Number of clusters + .
+
+
+
+
+                                                                          3276
+Session 12A: Applications and Privacy of ML                                  CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+                                                                             Table 3: Evaluation of COINN in LAN and WAN settings. Q
+                                                                             and C denote quantization and clustering, respectively.
+                                                                                             Comm. (GB)            LAN Time (s)            WAN Time (s)
+                                                                             Model
+                                                                                          Base     Q     Q+C     Base    Q        Q+C Base      Q      Q+C
+                                                                             MiniONN       8.7     2.3    1.0     4.85   1.9      1.45   74.6   26.5   18.5
+                                                                             Res32         10.4    2.4    1.9     9.8    3.8      3.68 143.9    67.1   62.9
+                                                                             Res110        37.6    9.7    6.8     36.0   14.2     14.0 518.1 242.8     226.0
+Figure 10: E�ect of factored multiplication on inference ac-                 Res50        583.1 148.0 122.0 571.46 165.3 145.7 4994 1420.4 1189.7
+curacy and communication cost of linear operations. The la-
+bel Q on the horizontal axis shows the baseline quantized                    showed the complexity of linear layers in the setup and per infer-
+DNN. The numbers to its left represent the homogeneous +                     ence phases. We now show the e�ect of this optimization through
+used to cluster all layer weights. The label Q+C stands for                  experimental evaluation. Figure 11 presents the breakdown of setup
+the heterogeneous + con�guration found by COINN.                             time and amortized inference time for each of the four benchmarks
+                                                                             under LAN and WAN settings. As expected, separating the setup
+Holistic Optimization. Figure 9 presents the reduction in commu-             time from oblivious inference signi�cantly reduces the runtime.
+nication cost achieved by applying COINN automated quantization
+and clustering on all benchmarks. As our baseline design, we adopt
+the bitwidths from prior work [41], i.e., 16-bit inputs/weights and
+32-bit activations, and perform regular matrix-multiplication. For
+COINN results, we� rst� nd heterogeneous quantization con�g-
+urations using our genetic algorithm and� ne-tune the model to
+regain accuracy. We show the optimized quantized model via Q on
+Figure 9. Next, we use our automated parameter con�gurator to
+�nd the weight clusters for each layer and� ne-tune the resulting
+model once more to obtain Q+C. The linear operations in the Q and            Figure 11: Breakdown of setup and amortized times for the
+Q+C are performed via regular and factored Matrix-Multiplication,            under LAN and WAN settings.
+respectively. As seen, by� nding the best set of heterogeneous
+bitwidths across DNN layers, COINN successfully reduces the se-
+cure communication for linear and nonlinear layers by 3.9⇥–4.3⇥              7.2      Comparison with Prior Work
+and 1.9⇥–2.2⇥, respectively. By optimizing the weight clusters, we           In this section, we compare COINN amortized runtime with the
+further improve the e�ciency of linear layers by 4.8⇥–8.1⇥.                  prior art in oblivious inference. In Table 4, we report the perfor-
+   Table 3 provides the total runtime and communication cost of              mance of COINN along with four contemporary works, namely,
+our baseline, Q, and Q+C con�gurations in both LAN and WAN                   XONN [47] with extremely low-bit (binary) weights/activations,
+settings. The evaluation veri�es the e�ect of our optimization on            Delphi [41] with a hybrid HE-GC protocol, SafeNet [38] which
+the runtime: applying Q+C reduces the baseline runtime by 2.6⇥–              perform ML optimization for Delphi’s secure protocol, and CrypT-
+3.9⇥ and 2.3⇥–4.2⇥ in LAN and WAN settings, respectively. The                Flow2 [46] which is the current state-of-the-art in oblivious in-
+e�ect of COINN optimizations on standalone micro-benchmarks of               ference. For a fair and accurate comparison, we re-run the open-
+the CONV and ReLU is presented in Appendix E.                                source codes provided by Delphi6 and CrypTFlow27 to obtain run-
+Setup Time Separation. Finally, we evaluate the e�ect of introduc-           time/communication measurements on our machines. For the re-
+ing the one-time setup phase to reduce the amortized per-inference           maining works [38, 47], we directly report the numbers from the
+cost. The setup phase is only performed the� rst time a connection           original papers since no public code was available.
+is established between the client and server and is independent              6 https://github.com/mc2-project/delphi
+
+of the number of inferences. In the previous section (Table 1), we           7 https://github.com/mpc-msri/EzPC/tree/master/SCI
+
+
+
+
+Figure 9: Communication for baseline and COINN optimized models, where Q represents quantized model and Q+C further
+applies clustering to enable factored multiplication.
+
+
+
+
+                                                                      3277
+ Session 12A: Applications and Privacy of ML                                   CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+Table 4: Performance comparison of COINN with best prior                       WAN, HE) is due to the heavy imbalance of the cost towards linear
+work. “Improv.” shows the improvement in total runtime.                        layers in this particular benchmark.
+CTF2 refers to CrypTFlow2 [46].
+                                                                               7.3    Model Customization Runtime
+                                LAN                 WAN          Acc.
+                                                                               COINN plaintext model customization (Section 4) is a one-time pro-
+                      Runtime (s) Improv. Runtime (s) Improv.    (%)           cess performed on the pre-trained model by the server irrespective
+          XONN           33.5         23.1⇥     -          -     83.0          of the number of inference or the number of clients. Table 5 outlines
+          Delphi         49.9         34.4⇥    59.8       3.2⇥   82.9          the runtime of each customization step on one GPU, across various
+MiniONN
+
+
+
+
+                                                                               benchmarks. For better comparison, we normalize the customiza-
+          SafeNet        53.4         36.8⇥     -          -     85.1
+                                                                               tion and� ne-tuning runtimes by the time required for training the
+          CTF2 (HE)      20.8         14.4⇥    55.4       3.0⇥   86.0          baseline DNN on the same hardware. For� ne-tuning, the num-
+          CTF2 (OT)      11.9         8.2⇥    108.2       5.8⇥   86.0          ber of� ne-tuning epochs for each model is determined such that
+          COINN          1.45          1⇥      18.5       1⇥     87.6          the validation accuracy reaches a convergence plateau. Regarding
+                                                                               model customization, we terminate the genetic algorithm when the
+          Delphi         88.8         24.0⇥   145.9       2.3⇥   65.7          best obtained score does not improve for more than 5 iterations.
+          SafeNet       128.0         34.6⇥     -          -     67.5          Note that COINN customization step enjoys a linear speedup as the
+Res32
+
+
+
+
+          CTF2 (HE)      32.6         8.8⇥    136.9       2.2⇥   68.0          number of GPU cores increases. This is due to the independence of
+                                                                               score evaluations inside a population [30].
+          CTF2 (OT)      18.7         5.1⇥    176.7       2.8⇥   68.0
+          COINN          3.7           1⇥      62.9       1⇥     68.1          Table 5: Runtime of COINN model customization and�ne-
+          CTF2 (HE)     110.3         7.8⇥    448.2       2.0⇥   94.1          tuning, normalized by the target DNN’s training time on one
+Res110
+
+
+
+
+          CTF2 (OT)      65.4         4.7⇥    579.3       2.6⇥   94.1          NVIDIA Titan XP GPU. Here, Q and C denote the quantiza-
+                                                                               tion and clustering stages, respectively.
+          COINN          14.0          1⇥     226.0       1⇥     93.4
+          CTF2 (HE)     893.2         6.1⇥    1463.3      1.2⇥   76.1                   Training COINN Customization Fine-tuning
+                                                                                Model
+                                                                                        (minutes) Steps # iter Runtime # iter Runtime
+Res50
+
+
+
+
+          CTF2 (OT)     1139.8        7.8⇥    4241.8      3.6⇥   76.1
+                                                                                                    Q     30    2.29⇥    20    0.50⇥
+          COINN         145.7          1⇥     1189.7      1⇥     73.9           MinioNN    11.6
+                                                                                                    C     20    2.12⇥    5     0.14⇥
+                                                                                                    Q     20    1.48⇥    20    0.56⇥
+                                                                                Res32      34.2
+    Table 4 shows COINN achieves 4.7⇥–36.8⇥ faster ciphertext ex-                                   C     30    1.94⇥    20    0.65⇥
+ecution in the LAN setting compared to prior work. Even though                                      Q     30    1.89⇥    5     0.14⇥
+                                                                                Res110    107.6
+in the high latency setting the bene�t margins are smaller, COINN                                   C     30    1.43⇥    20    0.59⇥
+still outperforms the best methods to date. This is achieved by opti-                               Q     20    0.05⇥    5     0.14⇥
+                                                                                Res50    14,040.0
+mizing both non-linear and linear computations/communications                                       C     30    0.16⇥    2     0.07⇥
+through quantization and factored multiplication. Furthermore,
+COINN achieves 0.6%– 4.7% higher accuracy with 23.1⇥–36.8⇥                     8     CONCLUSION AND FUTURE WORK
+faster secure runtime compared to prior crypto/ML co-optimization              We present COINN, an oblivious DNN inference framework that
+work, namely [38, 41, 47].                                                     outperforms state of the art in both accuracy and e�ciency.
+Evaluation on Large-scale Benchmarks. To fully demonstrate                     Through a unique combination of complimentary optimizations in
+the e�cacy and scalability of COINN model adjustment techniques                ML and crypto domains, COINN brings us one step closer to real
+and custom secure protocols, we evaluate two exceptionally com-                life deployment of contemporary DNNs in the privacy-preserving
+plex DNNs, namely, ResNet110 on CIFAR-10 and ResNet50 on Ima-                  setting. The enhanced performance of COINN roots in three in-
+geNet datasets. The� rst benchmark, i.e., ResNet110, is challenging            novations, namely, ciphertext-aware quantization, enhanced data
+due to the extremely high dimensionality of the parameter con�g-               reuse, and automated parameter con�guration. Our contributions
+uration space: there are 330 bitwidths and 110 clustering parame-              in the plaintext are accompanied by e�cient custom cryptographic
+ters that require per-layer adjustment. The second benchmark, i.e.,            protocols. We performed rigorous empirical analysis on every step
+ResNet50, is the largest DNN ever studied in the secure computation            of our optimization process to demonstrate their e�ect on reducing
+domain with over 4 Billion scalar multiplications and additions.               the secure communication and oblivious inference runtime. Our
+    In Table 4, we present the runtime for the large scale networks            evaluations on practical DNN benchmarks showed an end-to-end
+and compare our results with the state-of-the-art CrypTFlow2. In               runtime speedup of 4.7⇥–14.4⇥ over the best prior work.
+the LAN setting, COINN achieves 4.7⇥–7.8⇥ and 6.1⇥–7.8⇥ run-                       While this paper considers oblivious inference, optimizing obliv-
+time improvement compared to CrypTFlow2’s OT-based and HE-                     ious training is an interesting future direction. Our amortized AS-
+based implementations, respectively. In the WAN setting, COINN                 based matrix-multiplication can bene�t linear operations in forward
+achieves 2.6⇥–3.6⇥ and 1.2⇥–2⇥ runtime improvement compared                    and backward passes during training. However, remaining chal-
+to CrypTFlow2’s OT-based and HE-based implementations, respec-                 lenges for training include adjusting scales during training, secure
+tively. It is worth noting that the relatively lower improvement mar-          quantization customized for training, and exploring the impact of
+gin achieved by COINN in one speci�c setting (1.2⇥ for ResNet50,               model updates on data privacy.
+
+
+
+
+                                                                        3278
+Session 12A: Applications and Privacy of ML                                                      CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+REFERENCES                                                                                       [25] Matan Haroush, Itay Hubara, Elad Ho�er, and Daniel Soudry. 2020. The knowl-
+ [1] Martín Abadi, Andy Chu, Ian Goodfellow, H Brendan McMahan, Ilya Mironov,                         edge within: Methods for data-free model compression. In Proceedings of the
+     Kunal Talwar, and Li Zhang. 2016. Deep Learning with Di�erential Privacy. arXiv                  IEEE/CVF Conference on Computer Vision and Pattern Recognition. 8494–8502.
+     preprint arXiv:1607.00133 (2016).                                                           [26] Ehsan Hesamifard, Hassan Takabi, and Mehdi Ghasemi. 2017. Cryptodl: Deep
+ [2] Nitin Agrawal, Ali Shahin Shamsabadi, Matt J Kusner, and Adrià Gascón. 2019.                     neural networks over encrypted data. arXiv preprint arXiv:1711.05189 (2017).
+     QUOTIENT: two-party secure neural network training and prediction. In Pro-                  [27] Siam U Hussain, Baiyu Li, Farinaz Koushanfar, and Rosario Cammarota. 2020.
+     ceedings of the 2019 ACM SIGSAC Conference on Computer and Communications                        TinyGarble2: Smart, E�cient, and Scalable Yao’s Garble Circuit. In ACM Workshop
+     Security. 1231–1247.                                                                             on Privacy-Preserving Machine Learning in Practice(PPMLP).
+ [3] Abdalla Alameen and Ashu Gupta. 2020. Optimization driven deep learning                     [28] Yuval Ishai, Joe Kilian, Kobbi Nissim, and Erez Petrank. 2003. Extending Oblivious
+     approach for health monitoring and risk assessment in wireless body sensor                       Transfers E�ciently.. In Crypto, Vol. 2729. Springer.
+     networks. International Journal of Business Data Communications and Networking              [29] Benoit Jacob, Skirmantas Kligys, Bo Chen, Menglong Zhu, Matthew Tang, Andrew
+     (IJBDCN) 16, 1 (2020), 70–93.                                                                    Howard, Hartwig Adam, and Dmitry Kalenichenko. 2018. Quantization and
+ [4] Babak Alipanahi, Andrew Delong, Matthew T Weirauch, and Brendan J Frey.                          training of neural networks for e�cient integer-arithmetic-only inference. In
+     2015. Predicting the sequence speci�cities of DNA-and RNA-binding proteins by                    Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition.
+     deep learning. Nature biotechnology 33, 8 (2015), 831.                                           2704–2713.
+ [5] Gilad Asharov, Yehuda Lindell, Thomas Schneider, and Michael Zohner. 2013.                  [30] Mojan Javaheripi, Mohammad Samragh, Tara Javidi, and Farinaz Koushanfar.
+     More e�cient oblivious transfer and extensions for faster secure computation. In                 2020. GeneCAI: gene tic evolution for acquiring c ompact AI. In Proceedings of
+     Proceedings of the 2013 ACM SIGSAC conference on Computer & communications                       the 2020 Genetic and Evolutionary Computation Conference. 350–358.
+     security. 535–548.                                                                          [31] Chiraag Juvekar, Vinod Vaikuntanathan, and Anantha Chandrakasan. 2018.
+ [6] Mikhail Atallah, Marina Bykova, Jiangtao Li, Keith Frikken, and Mercan Topkara.                   {GAZELLE }: A low latency framework for secure neural network inference.
+     2004. Private collaborative forecasting and benchmarking. In Proceedings of the                  In 27th {USENIX } Security Symposium ( {USENIX } Security 18). 1651–1669.
+     2004 ACM workshop on Privacy in the electronic society. 103–114.                            [32] Veton Kepuska and Gamal Bohouta. 2018. Next-generation of virtual personal
+ [7] Thomas Bäck, David B Fogel, and Zbigniew Michalewicz. 1997. Handbook of                          assistants (microsoft cortana, apple siri, amazon alexa and google home). In
+     evolutionary computation. CRC Press.                                                             2018 IEEE 8th Annual Computing and Communication Workshop and Conference
+ [8] Marshall Ball, Brent Carmer, Tal Malkin, Mike Rosulek, and Nichole Schimanski.                   (CCWC). IEEE, 99–103.
+     2019. Garbled Neural Networks are Practical. IACR Cryptol. ePrint Arch. 2019                [33] Nishant Kumar, Mayank Rathee, Nishanth Chandran, Divya Gupta, Aseem Ras-
+     (2019), 338.                                                                                     togi, and Rahul Sharma. 2020. Crypt�ow: Secure tensor�ow inference. In 2020
+ [9] Song Bian, Masayuki Hiromoto, and Takashi Sato. 2019. DArL: Dynamic param-                       IEEE Symposium on Security and Privacy (SP). IEEE, 336–353.
+     eter adjustment for LWE-based secure inference. In 2019 Design, Automation &                [34] Baiyu Li and Daniele Micciancio. 2020. On the security of homomorphic encryp-
+     Test in Europe Conference & Exhibition (DATE). IEEE, 1739–1744.                                  tion on approximate numbers. IACR Cryptol. ePrint Arch 2020 (2020), 1533.
+[10] Florian Bourse, Michele Minelli, Matthias Minihold, and Pascal Paillier. 2018.              [35] Jian Liu, Mika Juuti, Yao Lu, and Nadarajah Asokan. 2017. Oblivious neural
+     Fast homomorphic evaluation of deep discretized neural networks. In Annual                       network predictions via minionn transformations. In SIGSAC Conference on
+     International Cryptology Conference. Springer, 483–512.                                          Computer and Communications Security. ACM, 619–631.
+[11] Alon Brutzkus, Ran Gilad-Bachrach, and Oren Elisha. 2019. Low latency privacy               [36] Jian Liu, Mika Juuti, Yao Lu, and N Asokan. 2017. Oblivious Neural Network
+     preserving inference. In International Conference on Machine Learning. PMLR,                     Predictions via MiniONN transformations. In CCS. ACM.
+     812–821.                                                                                    [37] Stuart Lloyd. 1982. Least squares quantization in PCM. IEEE transactions on
+[12] Qingrong Chen, Chong Xiang, Minhui Xue, Bo Li, Nikita Borisov, Dali Kaarfar,                     information theory 28, 2 (1982), 129–137.
+     and Haojin Zhu. 2018. Di�erentially private data generative models. arXiv                   [38] Qian Lou, Yilin Shen, Hongxia Jin, and Lei Jiang. 2021. {SAFEN}et: A Secure,
+     preprint arXiv:1812.02274 (2018).                                                                Accurate and Fast Neural Network Inference. In International Conference on
+[13] Edward Chou, Josh Beal, Daniel Levy, Serena Yeung, Albert Haque, and Li Fei-Fei.                 Learning Representations.
+     2018. Faster cryptonets: Leveraging sparsity for real-world encrypted inference.            [39] Qian Lou, Bian Song, and Lei Jiang. 2020. AutoPrivacy: Automated Layer-wise
+     arXiv preprint arXiv:1811.09953 (2018).                                                          Parameter Selection for Secure Neural Network Inference. In Advances in Neural
+[14] Anders Dalskov, Daniel Escudero, and Marcel Keller. 2020. Secure evaluation of                   Information Processing Systems.
+     quantized neural networks. Proceedings on Privacy Enhancing Technologies 2020,              [40] Iacopo Masi, Yue Wu, Tal Hassner, and Prem Natarajan. 2018. Deep face recogni-
+     4 (2020), 355–375.                                                                               tion: A survey. In 2018 31st SIBGRAPI conference on graphics, patterns and images
+[15] Roshan Dathathri, Olli Saarikivi, Hao Chen, Kim Laine, Kristin Lauter, Saeed                     (SIBGRAPI). IEEE, 471–478.
+     Maleki, Madanlal Musuvathi, and Todd Mytkowicz. 2019. CHET: an optimizing                   [41] Pratyush Mishra, Ryan Lehmkuhl, Akshayaram Srinivasan, Wenting Zheng, and
+     compiler for fully-homomorphic neural-network inferencing. In Proceedings                        Raluca Ada Popa. 2020. DELPHI: A cryptographic inference service for neural
+     of the 40th ACM SIGPLAN Conference on Programming Language Design and                            networks. In 29th {USENIX } Security Symposium ( {USENIX } Security 20).
+     Implementation. 142–156.                                                                    [42] Daisuke Miyashita, Edward H Lee, and Boris Murmann. 2016. Convolu-
+[16] Daniel Demmler, Thomas Schneider, and Michael Zohner. 2015. ABY-A Frame-                         tional neural networks using logarithmic data representation. arXiv preprint
+     work for E�cient Mixed-Protocol Secure Two-Party Computation.. In NDSS. The                      arXiv:1603.01025 (2016).
+     Internet Society.                                                                           [43] Parwadi Moengin. 2011. Exponential Penalty Methods for Solving Linear Pro-
+[17] Daniel Escudero, Satrajit Ghosh, Marcel Keller, Rahul Rachuri, and Peter Scholl.                 gramming Problems. In Proceedings of the World Congress on Engineering and
+     2020. Improved primitives for MPC over mixed arithmetic-binary circuits. In                      Computer Science, Vol. 2.
+     Annual International Cryptology Conference. Springer, 823–852.                              [44] Moni Naor and Benny Pinkas. 2005. Computationally secure oblivious transfer.
+[18] Andre Esteva, Brett Kuprel, Roberto A Novoa, Justin Ko, Susan M Swetter, He-                     Journal of Cryptology 18, 1 (2005).
+     len M Blau, and Sebastian Thrun. 2017. Dermatologist-level classi�cation of skin            [45] Alvin Rajkomar, Eyal Oren, Kai Chen, Andrew M Dai, Nissan Hajaj, Michaela
+     cancer with deep neural networks. Nature 542, 7639 (2017), 115.                                  Hardt, Peter J Liu, Xiaobing Liu, Jake Marcus, Mimi Sun, et al. 2018. Scalable and
+[19] Andre Esteva, Alexandre Robicquet, Bharath Ramsundar, Volodymyr Kuleshov,                        accurate deep learning with electronic health records. npj Digital Medicine 1, 1
+     Mark DePristo, Katherine Chou, Claire Cui, Greg Corrado, Sebastian Thrun, and                    (2018), 18.
+     Je� Dean. 2019. A guide to deep learning in healthcare. Nature medicine 25, 1               [46] Deevashwer Rathee, Mayank Rathee, Nishant Kumar, Nishanth Chandran, Divya
+     (2019), 24.                                                                                      Gupta, Aseem Rastogi, and Rahul Sharma. 2020. CrypTFlow2: Practical 2-party
+[20] Matt Fredrikson, Somesh Jha, and Thomas Ristenpart. 2015. Model inversion                        secure inference. In Proceedings of the 2020 ACM SIGSAC Conference on Computer
+     attacks that exploit con�dence information and basic countermeasures. In ACM                     and Communications Security. 325–342.
+     CCS.                                                                                        [47] M Sadegh Riazi, Mohammad Samragh, Hao Chen, Kim Laine, Kristin E Lauter,
+[21] Craig Gentry. 2009. Fully homomorphic encryption using ideal lattices. In Proceed-               and Farinaz Koushanfar. 2019. XONN: XNOR-based Oblivious Deep Neural
+     ings of the forty-�rst annual ACM symposium on Theory of computing. 169–178.                     Network Inference.. In USENIX Security.
+[22] Zahra Ghodsi, Akshaj Veldanda, Brandon Reagen, and Siddharth Garg. 2020.                    [48] Peter Rindal. [n. d.]. libOTe: an e�cient, portable, and easy to use Oblivious
+     Cryptonas: Private inference on a relu budget. In Advances in Neural Information                 Transfer Library. https://github.com/osu-crypto/libOTe.
+     Processing Systems.                                                                         [49] Mohammad Samragh, Mohammad Ghasemzadeh, and Farinaz Koushanfar. 2017.
+[23] Ran Gilad-Bachrach, Nathan Dowlin, Kim Laine, Kristin Lauter, Michael Naehrig,                   Customizing neural networks for e�cient fpga implementation. In 2017 IEEE
+     and John Wernsing. 2016. CryptoNets: Applying Neural Networks to Encrypted                       25th Annual International Symposium on Field-Programmable Custom Computing
+     Data with High Throughput and Accuracy. In International Conference on Machine                   Machines (FCCM). IEEE, 85–92.
+     Learning.                                                                                   [50] Amartya Sanyal, Matt Kusner, Adria Gascon, and Varun Kanade. 2018. TAPAS:
+[24] Gaël Guennebaud, Benoît Jacob, et al. 2010. Eigen v3. http://eigen.tuxfamily.org.                Tricks to accelerate (encrypted) prediction as a service. In International Conference
+                                                                                                      on Machine Learning. PMLR, 4490–4499.
+
+
+
+
+                                                                                          3279
+Session 12A: Applications and Privacy of ML                                                    CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+[51] Reza Shokri and Vitaly Shmatikov. 2015. Privacy-preserving deep learning. In              A    OVERFLOW MANAGEMENT
+     SIGSAC Conference on Computer and Communications Security. ACM.
+[52] Reza Shokri, Marco Stronati, Congzheng Song, and Vitaly Shmatikov. 2017. Mem-             Eq. 10 presents our over�ow simulation, which models the loss of
+     bership inference attacks against machine learning models. In 2017 IEEE Sympo-            MSB bits in case of over�ow for an INT-b accumulator.
+     sium on Security and Privacy (SP). IEEE, 3–18.                                                                 (
+[53] Florian Tramer and Dan Boneh. 2019. Slalom: Fast, Veri�able and Private Exe-                                       G <>3 21 ,                (G <>3 21 ) < 21 1
+     cution of Neural Networks in Trusted Hardware. In International Conference on               >E4A 5 ;>F (G) =
+                                                                                                     G >0               G <>3 21 21 ,             >C⌘4AF8B4
+     Learning Representations.
+[54] Florian Tramèr, Fan Zhang, Ari Juels, Michael K Reiter, and Thomas Ristenpart.
+                                                                                                                    (                                                         (10)
+     2016. Stealing machine learning models via prediction apis. In 25th {USENIX }                                      G <>3 21 ,                (G <>3 21 )        21 1
+                                                                                                 >E4A 5 ;>F (G) =
+     Security Symposium ( {USENIX } Security 16). 601–618.                                           G <0               G <>3 21 + 21 ,           >C⌘4AF8B4
+[55] Xiao Wang, Alex J. Malozemo�, and Jonathan Katz. 2016. EMP-toolkit: E�cient
+     MultiParty computation toolkit. https://github.com/emp-toolkit.                           Here, <>3 represents the modulo operation and G <>3 21 checks
+[56] Shuang Wu, Guoqi Li, Feng Chen, and Luping Shi. 2018. Training and Inference
+     with Integers in Deep Neural Networks. In International Conference on Learning            for the occurrence of an over�ow. In the forward pass (during DNN
+     Representations. https://openreview.net/forum?id=HJGXzmspb                                inference or training), the above operation is applied on all layer
+[57] Lingxi Xie and Alan Yuille. 2017. Genetic cnn. arXiv preprint arXiv:1703.01513
+     (2017).
+                                                                                               outputs to account for the occurrence of over�ow according to the
+[58] Ziqi Yang, Bin Shao, Bohan Xuan, Ee-Chien Chang, and Fan Zhang. 2020. Defend-             secure execution bitwidth. By leveraging the proposed over�ow
+     ing model inversion and membership inference attacks via prediction puri�cation.          simulation, we accurately measure the secure execution accuracy
+     arXiv preprint arXiv:2005.03915 (2020).
+[59] Andrew Yao. 1986. How to generate and exchange secrets. In Foundations of                 in the presence of (occasional) over�ows. This, in turn, allows us to
+     Computer Science, 1986., 27th Annual Symposium on.                                        �nd the best bitwidths throughout the network that strike a good
+                                                                                               balance between over�ow, accuracy, and secure execution cost.
+                                                                                               Additionally, we provide a� ne-tuning methodology that further
+                                                                                               compensates the reduced inference accuracy caused by over�ows
+                                                                                               as explained in the following.
+                                                                                               Gradients for Over�ow. To enable� ne-tuning of models that
+                                                                                               include our over�ow simulation in their computation graph (see
+                                                                                               Eq. 10), we provide a smooth approximation for the gradients of
+                                                                                               over�ow. Let G be a scalar value, G denote its value after over�ow,
+                                                                                               and rG be the gradient of the training loss function with respect to
+                                                                                               G. We compute the gradient with respect to G as follows:
+                                                                                                                         (
+                                                                                                                           rG      85 G = G
+                                                                                                                   rG =                                         (11)
+                                                                                                                           0     >C⌘4AF8B4
+
+
+
+                                                                                               B    CLUSTERING
+                                                                                               Here we provide details on the clustering algorithm that reduces the
+                                                                                               unique size of weight matrices. Given a vectorized weight matrix
+                                                                                               w 2 R# and a given unique size + , we aim to� nd the unique space
+                                                                                               c 2 R+ and the coded representation w   e 2 {1, . . . , +}# that solve
+                                                                                               the following optimization:
+                                                                                                                                ’
+                                                                                                                                #
+                                                                                                                         min             w [8]]
+                                                                                                                                      (c[e           w[8]) 2                  (12)
+                                                                                                                           w
+                                                                                                                         c,e
+                                                                                                                                8=1
+                                                                                               We use Lloyd’s K-means algorithm [37] to� nd the solution to the
+                                                                                               above optimization. It starts with a random set for c and sets w e [8]
+                                                                                               to the index of the value in the unique space that is closest to w[8]:
+                                                                                                        e [8] = 0A6 min |w[8]
+                                                                                                        w                                  c[ 9]|,     88 2 {1, . . . , # }   (13)
+                                                                                                                    9 2 {1,...,+ }
+                                                                                               Next, the elements of the unique space are updated as follows:
+                                                                                                    c[ 9] = 0E4A064 ({w[8]|e
+                                                                                                                           w [8] = 9 }),               89 2 {1, . . . , +}    (14)
+                                                                                               By repeating 13 and 14, the unique space and the coded represen-
+                                                                                               tation are computed. For each DNN layer, we run the K-means
+                                                                                               algorithm on the weights with di�erent + and pre-compute the
+                                                                                               unique space and coded values. During the automated design ex-
+                                                                                               ploration (Section 4.3), we use these pre-computed values to cluster
+                                                                                               the weights of DNN layers.
+
+
+
+
+                                                                                        3280
+Session 12A: Applications and Privacy of ML                                           CCS ’21, November 15–19, 2021, Virtual Event, Republic of Korea
+
+
+
+
+    Table 6: COINN secure execution cost for core operations in a DNN. Here, ^ is the security parameter that is set to 128.
+                                            operation
+                               inputdim            ! outputdim                 Ciphertext Cost                              Parameters
+                                                                    regular           2
+                                                                                 "# !1022                         1022 : accumulator bitwidth
+                                       ,"⇥#
+                Mat-Mult      - # ⇥!        ! ."⇥!                  factored     "+ !1022 (# + 1022 + 1)          + : unique size of ,
+                                            :⇥:                                                                   18=? : next layer input bitwidth
+                MaxPool       -⇠⇥⇡ 1 ⇥⇡ 1     ! .⇠⇥⇡ 2 ⇥⇡ 2         4^⇠⇡ 2 ⇡ 2 (: 2       1)18=?
+                                                                                                                  :: window size
+                                            >0
+                ReLU          -⇠⇥⇡ 1 ⇥⇡ 1 ! .⇠⇥⇡ 1 ⇥⇡ 1             2^⇠⇡ 1 ⇡ 118=?                                18=? : next layer input bitwidth
+                                            1022 !18=?
+                AS ! GC       -⇠⇥⇡ 1 ⇥⇡ 1           ! .⇠⇥⇡ 1 ⇥⇡ 1   5^⇠⇡ 1 ⇡ 11022                                1022 : accumulator bitwidth
+                                            18=? !1022                                                            18=? : next layer input bitwidth
+                GC ! AS       -⇠⇥⇡ 1 ⇥⇡ 1           ! .⇠⇥⇡ 1 ⇥⇡ 1   3^⇠⇡ 1 ⇡ 118=?
+                                                                                                                  1022 : accumulator bitwidth
+
+Fine-tuning Clustered Parameters. Let w be a weight vector, c                         D      CIPHERTEXT COMMUNICATION COST
+denote the set of cluster centers, and w be its approximated version                  Table 6 summarizes the communication cost associated with dif-
+after clustering. During forward propagation, w is computed based                     ferent ciphertext operations described in Section 5. These cost are
+on w and c, then it is used to perform CONV and FC. During                            incorporated into our automated design customization tool pre-
+backward propagation, w and c are updated. Since clustering is a                      sented in Section 4.3. Note that for the linear layers, we report the
+non-di�erentiable operation, we need to approximate its gradient                      amortized costs (see Section 5.2).
+computation to enable� ne-tuning. Let rw be the gradient of the
+training loss function with respect to the approximated                               Table 7: Evaluation on convolution layers of COINN with
+                                                       « value. We
+compute   the  gradient with  respect to   as             rw where                    regular matrix multiplication
+«                                        w     r w = m
+    denotes element-wise multiplication and m is de�ned as follows:                          Input        Kernal             LAN                 WAN
+                  (                                                                       ⇠ ⇥ ⇥,         #⇥ ⇥         1 = 8 1 = 16 1 = 32 1 = 8 1 = 16 1 = 32
+                    1     8 5 <8=(c) < w[8] < <0G (c)
+          m[8] =                                                (15)                      16 ⇥ 32 ⇥ 32   16 ⇥ 3 ⇥ 3   0.021 0.073 0.317 0.703 1.217 3.557
+                    0     >C⌘4AF8B4                                                       32 ⇥ 16 ⇥ 16   32 ⇥ 3 ⇥ 3   0.021 0.071 0.284 0.711 1.202 3.350
+                                                                                           64 ⇥ 8 ⇥ 8    64 ⇥ 3 ⇥ 3   0.027 0.070 0.268 0.703 1.220 3.139
+            w [8] = 9 } be the set of indices where w is approximated
+Let 9 = {8 |e
+via c[ 9]. The gradient with respect to c[ 9], i.e., the 9-th element of
+the unique space, is computed as:                                                     Table 8: Evaluation on convolution layers of COINN with
+                                  ’             1
+                                                                                      factored matrix multiplication, 1 = 16
+                        rc [ 9] =     rw [8] ·                      (16)
+                                               | 9|                                          Input        Kernal           LAN                 WAN
+                                82 9                                                      ⇠ ⇥ ⇥,         #⇥ ⇥       + = 8 + = 12 + = 16 + = 8 + = 12 + = 16
+                                                                                          16 ⇥ 32 ⇥ 32   16 ⇥ 3 ⇥ 3 0.039  0.056  0.073 0.902  1.107  1.217
+C    LAYER FUSION                                                                         32 ⇥ 16 ⇥ 16   32 ⇥ 3 ⇥ 3 0.037  0.054  0.073 0.810  1.011  1.203
+                                                                                           64 ⇥ 8 ⇥ 8    64 ⇥ 3 ⇥ 3 0.038  0.053  0.071 0.812  1.013  1.227
+Batch Normalization. Recall that BN operates on the output of
+its preceding CONV layer, i.e., . 2 R"⇥! , It multiplies each row
+by U8 and adds V8 to the result. Naïve implementation of the BN                       Table 9: Evaluation on ReLU of COINN (including AS-GC
+would treat this layer independently which incurs a non-negligible                    conversions)
+secure execution cost. Instead, we fuse the BN operation into the
+                                                                                                   Input              LAN                 WAN
+preceding CONV layer so that the combination of CONV +BN can
+                                                                                                ⇠ ⇥ ⇥,         1 = 8 1 = 16 1 = 32 1 = 8 1 = 16 1 = 32
+be realized via a single matrix-multiplication. The 8-th row of . is                            16 ⇥ 32 ⇥ 32   0.063 0.084 0.116 1.581 1.645 1.664
+originally computed in the preceding CONV layer as y8 = w8 ·- +b8 .                             32 ⇥ 16 ⇥ 16   0.053 0.058 0.062 1.019 1.130 1.232
+Application of BN on this row vector renders:                                                    64 ⇥ 8 ⇥ 8    0.018 0.025 0.033 0.413 0.421 0.432
+          ⌫# (.8 )   = U8 y8 + V8      = U8 (w8 · - + b8 ) + V8
+                                                                      (17)
+                                       = U8 w8 · - + U8 b8 + V8                       E      EVALUATION ON MICROBENCHMARKS
+We thus remove the BN layer and set the preceding CONV’s weight                       We present the evaluation results on standalone linear and nonlin-
+matrix rows to U8 w8 and bias values to U8 b8 + V8 .                                  ear layers of COINN in tables 7, 8, and 9. Observe that the run-time
+Average Pooling. Average pooling works by computing the sum                           for the convolution layers with regular matrix-multiplication in-
+over : ⇥: windows of convolution outputs and dividing the summa-                      creases quadratically with the bitwidth 1. The quantization and
+tion result by : 2 . Prior work [46] implements an additional protocol                automated parameter con�gurator of COINN thus greatly enhance
+to securely evaluate the division at an extra cost. In contrast, we                   the performance by minimizing the bitwidths. The run-time of con-
+propose to fuse the AP with a linear layer in the plaintext model                     volution layers with factored multiplication increases linearly with
+to remove its overhead. Similar to the fusion of BN, we can avoid                     the number of unique elements, + m and becomes equal to that of
+division by : 2 by dividing the weight and bias of the preceding                      regular matrix-multiplication when + = 1. This is consistent with
+CONV/FC layer by : 2 , and computing the sum instead of average                       the analysis in Section 5.2. Table 9 shows the run-time of combined
+values in the pooling layer. In our setting, we perform average pool                  AS to GC, ReLU, and GC-AS operations. As expected, the run-time
+layers with zero cost in AS as summation is free in this protocol.                    increases linearly with 1.
+
+
+
+
+                                                                             3281
+
