@@ -64,11 +64,22 @@ class StatusBoardTests(unittest.TestCase):
                     {
                         "dataset": "mrpc",
                         "selected": {
+                            "gelu": [1] * 12,
+                            "softmax": [2] * 12,
+                            "noise_config": {
+                                "input_noise_scaling_factors": [22] * 12,
+                                "wq_noise_scaling_factors": [14] * 12,
+                            },
+                            "loss": 0.3268341392,
                             "p": 0.8784313725,
                             "s": 0.8763587246,
                             "tot_c": 37.75,
                             "tot_spd": 1.3033,
                             "feasible": True,
+                            "evaluation_n": 5,
+                            "loss_std": 0.0006230874,
+                            "p_std": 0.0048029210,
+                            "s_std": 0.0050463713,
                         }
                     },
                     ensure_ascii=False,
@@ -103,7 +114,14 @@ class StatusBoardTests(unittest.TestCase):
             )
 
             self.assertIn("# 任务总板 / STATUS", markdown)
-            self.assertIn("当前最优 `S2 终评 主=0.8784，次=0.8764，cost=37.75，1.30x`", markdown)
+            self.assertIn("| 当前最优 | `S2 终评` · `loss=0.3268` · `主=0.8784` · `次=0.8764` · `cost=37.75` · `speed=1.30x` · `可行` |", markdown)
+            self.assertIn("| 终评测试 | `n=5` · `loss=0.3268±0.0006` · `主=0.8784±0.0048` · `次=0.8764±0.0050` |", markdown)
+            self.assertIn("**最优配置**", markdown)
+            self.assertIn("[阶段1]", markdown)
+            self.assertIn("gelu    [1, 1, 1, 1, 1, 1]", markdown)
+            self.assertIn("        [1, 1, 1, 1, 1, 1]", markdown)
+            self.assertIn("[阶段2]", markdown)
+            self.assertRegex(markdown, r"x\s+\[22, 22, 22, 22, 22, 22\]")
             self.assertNotIn("生成时间", markdown)
             self.assertNotIn("最近更新", markdown)
             self.assertNotIn("| model | dataset | slug |", markdown)

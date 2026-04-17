@@ -902,6 +902,740 @@ def _experiment_best_result_summary(record: ExperimentRecord) -> str:
     return summary or _fallback_experiment_summary(path)
 
 
+_NOISE_CONFIG_KEY_MAP = {
+    "input_noise_scaling_factors": "x",
+    "wq_noise_scaling_factors": "wq",
+    "wk_noise_scaling_factors": "wk",
+    "wv_noise_scaling_factors": "wv",
+    "wo_noise_scaling_factors": "wo",
+    "wffn1_noise_scaling_factors": "wffn1",
+    "wffn2_noise_scaling_factors": "wffn2",
+    "x": "x",
+    "wq": "wq",
+    "wk": "wk",
+    "wv": "wv",
+    "wo": "wo",
+    "wffn1": "wffn1",
+    "wffn2": "wffn2",
+}
+_NOISE_CONFIG_ORDER = ("x", "wq", "wk", "wv", "wo", "wffn1", "wffn2")
+_DETAIL_RANGE_RE = re.compile(r"_(?P<start>\d+)-(?P<end>\d+)\.txt$")
+_RL_NEW_BEST_RE = re.compile(r"回合\s*(?P<episode>\d+).*训练过程新高")
+_RL_CONFIRM_HEADER_RE = re.compile(r"挑战者确认.*回合.*?(?P<episode>\d+)")
+_RL_CONFIRM_N_RE = re.compile(r"N=(?P<n>\d+)")
+_RL_CONFIRM_LOSS_RE = re.compile(
+    r"loss=(?P<loss>-?\d+(?:\.\d+)?)\+/-?(?P<loss_std>\d+(?:\.\d+)?)\s*,?\s*m1=(?P<m1>-?\d+(?:\.\d+)?)\+/-?(?P<m1_std>\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+_RL_CONFIRM_BOOL_RE = re.compile(r"=(?P<value>True|False)")
+_RL_CONFIRM_VERDICT_RE = re.compile(r"\b(?P<value>PASS|FAIL)\b")
+
+
+def _parse_int_list(raw: Any) -> Optional[List[int]]:
+    if isinstance(raw, list):
+        values: List[int] = []
+        for item in raw:
+            if not isinstance(item, (int, float)):
+                return None
+            values.append(int(item))
+        return values
+    if not isinstance(raw, str):
+        return None
+    values = [int(part) for part in re.findall(r"-?\d+", raw)]
+    return values or None
+
+
+def _normalize_stage1_config(config: Optional[dict]) -> Optional[Dict[str, List[int]]]:
+    if not isinstance(config, dict):
+        return None
+    gelu = _parse_int_list(config.get("gelu"))
+    softmax = _parse_int_list(config.get("softmax"))
+    if not gelu and not softmax:
+        return None
+    out: Dict[str, List[int]] = {}
+    if gelu:
+        out["gelu"] = gelu
+    if softmax:
+        out["softmax"] = softmax
+    return out or None
+
+
+def _normalize_noise_config(config: Optional[dict]) -> Optional[Dict[str, List[int]]]:
+    if not isinstance(config, dict):
+        return None
+    out: Dict[str, List[int]] = {}
+    for key, alias in _NOISE_CONFIG_KEY_MAP.items():
+        values = _parse_int_list(config.get(key))
+        if values:
+            out[alias] = values
+    return out or None
+
+
+def _extract_stage1_config(data: Optional[dict]) -> Optional[Dict[str, List[int]]]:
+    if not isinstance(data, dict):
+        return None
+    for candidate in (
+        data.get("fixed_stage1_config"),
+        data.get("stage1_selected_config"),
+        {"gelu": data.get("fixed_gelu"), "softmax": data.get("fixed_softmax")},
+        data.get("selected"),
+        data.get("selected_single"),
+        data.get("best_config"),
+    ):
+        normalized = _normalize_stage1_config(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def _extract_noise_config(data: Optional[dict]) -> Optional[Dict[str, List[int]]]:
+    if not isinstance(data, dict):
+        return None
+    for candidate in (
+        (data.get("selected") or {}).get("noise_config"),
+        (data.get("selected_single") or {}).get("noise_config"),
+        data.get("best_noise_config"),
+        data.get("stable_search_best_noise_config"),
+        data.get("stable_joint_best_noise_config"),
+    ):
+        normalized = _normalize_noise_config(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def _stats_from_selected(selected: Optional[dict]) -> Optional[dict]:
+    if not isinstance(selected, dict):
+        return None
+    payload = {
+        "n": selected.get("evaluation_n"),
+        "loss_mean": selected.get("loss"),
+        "loss_std": selected.get("loss_std"),
+        "p_mean": selected.get("p"),
+        "p_std": selected.get("p_std"),
+        "s_mean": selected.get("s"),
+        "s_std": selected.get("s_std"),
+        "time_mean_ms": selected.get("time_ms"),
+        "time_std_ms": selected.get("time_std_ms"),
+    }
+    if any(payload.get(key) is not None for key in ("loss_mean", "p_mean", "s_mean")):
+        return payload
+    return None
+
+
+def _extract_eval_stats(data: Optional[dict]) -> Optional[dict]:
+    if not isinstance(data, dict):
+        return None
+    repeat = data.get("repeat_evaluation") or {}
+    stats = repeat.get("stats")
+    if isinstance(stats, dict):
+        return stats
+    return _stats_from_selected(data.get("selected") or data.get("selected_single"))
+
+
+def _format_token_line(tokens: Iterable[str]) -> str:
+    filtered = [f"`{token}`" for token in tokens if token]
+    return " · ".join(filtered)
+
+
+def _selected_metric_tokens(selected: Optional[dict]) -> List[str]:
+    if not isinstance(selected, dict):
+        return []
+    tokens: List[str] = []
+    if isinstance(selected.get("score"), (int, float)):
+        tokens.append(f"score={_format_float(selected.get('score'))}")
+    if isinstance(selected.get("loss"), (int, float)):
+        tokens.append(f"loss={_format_float(selected.get('loss'))}")
+    if isinstance(selected.get("p"), (int, float)):
+        tokens.append(f"主={_format_float(selected.get('p'))}")
+    elif isinstance(selected.get("metric1"), (int, float)):
+        tokens.append(f"m1={_format_float(selected.get('metric1'))}")
+    if isinstance(selected.get("s"), (int, float)):
+        tokens.append(f"次={_format_float(selected.get('s'))}")
+    elif isinstance(selected.get("metric2"), (int, float)):
+        tokens.append(f"m2={_format_float(selected.get('metric2'))}")
+    if isinstance(selected.get("tot_c"), (int, float)) and not selected.get("show_cost_as_na"):
+        tokens.append(f"cost={_format_cost(selected.get('tot_c'))}")
+    elif isinstance(selected.get("cost"), (int, float)):
+        tokens.append(f"cost={_format_cost(selected.get('cost'))}")
+    if isinstance(selected.get("tot_spd"), (int, float)):
+        tokens.append(f"speed={_format_speedup(selected.get('tot_spd'))}")
+    if selected.get("feasible") is False or selected.get("qualification_passed") is False:
+        tokens.append("不可行")
+    elif selected.get("feasible") is True or selected.get("qualification_passed") is True:
+        tokens.append("可行")
+    return tokens
+
+
+def _stats_tokens(stats: Optional[dict]) -> List[str]:
+    if not isinstance(stats, dict):
+        return []
+    tokens: List[str] = []
+    if stats.get("n") is not None:
+        tokens.append(f"n={stats.get('n')}")
+    if isinstance(stats.get("loss_mean"), (int, float)):
+        loss_std = stats.get("loss_std")
+        if isinstance(loss_std, (int, float)):
+            tokens.append(f"loss={_format_float(stats.get('loss_mean'))}±{_format_float(loss_std)}")
+        else:
+            tokens.append(f"loss={_format_float(stats.get('loss_mean'))}")
+    if isinstance(stats.get("p_mean"), (int, float)):
+        p_std = stats.get("p_std")
+        if isinstance(p_std, (int, float)):
+            tokens.append(f"主={_format_float(stats.get('p_mean'))}±{_format_float(p_std)}")
+        else:
+            tokens.append(f"主={_format_float(stats.get('p_mean'))}")
+    if isinstance(stats.get("s_mean"), (int, float)):
+        s_std = stats.get("s_std")
+        if isinstance(s_std, (int, float)):
+            tokens.append(f"次={_format_float(stats.get('s_mean'))}±{_format_float(s_std)}")
+        else:
+            tokens.append(f"次={_format_float(stats.get('s_mean'))}")
+    if isinstance(stats.get("time_mean_ms"), (int, float)):
+        time_std = stats.get("time_std_ms")
+        if isinstance(time_std, (int, float)):
+            tokens.append(f"time={_format_float(stats.get('time_mean_ms'))}±{_format_float(time_std)}ms")
+        else:
+            tokens.append(f"time={_format_float(stats.get('time_mean_ms'))}ms")
+    return tokens
+
+
+def _chunk_vector(values: List[int], chunk_size: int = 6) -> List[str]:
+    return [
+        "[" + ", ".join(str(v) for v in values[i : i + chunk_size]) + "]"
+        for i in range(0, len(values), chunk_size)
+    ]
+
+
+def _format_config_entries(entries: List[Tuple[str, List[int]]]) -> List[str]:
+    if not entries:
+        return []
+    label_width = max(len(label) for label, _ in entries)
+    lines: List[str] = []
+    for label, values in entries:
+        chunks = _chunk_vector(values)
+        if not chunks:
+            continue
+        indent = " " * (label_width + 1)
+        lines.append(f"{label:<{label_width}} {chunks[0]}")
+        lines.extend(f"{indent}{chunk}" for chunk in chunks[1:])
+    return lines
+
+
+def _format_stage1_config_lines(config: Optional[Dict[str, List[int]]], prefix: str = "") -> List[str]:
+    if not config:
+        return []
+    label_prefix = f"{prefix}." if prefix else ""
+    entries: List[Tuple[str, List[int]]] = []
+    if config.get("gelu"):
+        entries.append((f"{label_prefix}gelu", config["gelu"]))
+    if config.get("softmax"):
+        entries.append((f"{label_prefix}softmax", config["softmax"]))
+    return _format_config_entries(entries)
+
+
+def _format_noise_config_lines(config: Optional[Dict[str, List[int]]], prefix: str = "") -> List[str]:
+    if not config:
+        return []
+    label_prefix = f"{prefix}." if prefix else ""
+    entries: List[Tuple[str, List[int]]] = []
+    for key in _NOISE_CONFIG_ORDER:
+        values = config.get(key)
+        if values:
+            entries.append((f"{label_prefix}{key}", values))
+    return _format_config_entries(entries)
+
+
+def _combine_config_lines(
+    stage1_config: Optional[Dict[str, List[int]]] = None,
+    noise_config: Optional[Dict[str, List[int]]] = None,
+    prefix: str = "",
+) -> Optional[str]:
+    lines: List[str] = []
+    stage1_lines = _format_stage1_config_lines(stage1_config, prefix)
+    noise_lines = _format_noise_config_lines(noise_config, prefix)
+    if stage1_lines:
+        lines.append("[阶段1]")
+        lines.extend(stage1_lines)
+    if stage1_lines and noise_lines:
+        lines.append("")
+    if noise_lines:
+        lines.append("[阶段2]")
+        lines.extend(noise_lines)
+    if not lines:
+        return None
+    return "\n".join(lines)
+
+
+def _md_cell(text: str) -> str:
+    return text.replace("|", "\\|").replace("\n", "<br>")
+
+
+def _append_markdown_card(
+    lines: List[str],
+    title: str,
+    rows: List[Tuple[str, str]],
+    *,
+    config_blocks: Optional[List[Tuple[str, str]]] = None,
+) -> None:
+    lines.append(f"### `{title}`")
+    lines.append("")
+    lines.append("| 项目 | 内容 |")
+    lines.append("|---|---|")
+    for label, value in rows:
+        if not value:
+            continue
+        lines.append(f"| {label} | {_md_cell(value)} |")
+    lines.append("")
+    for block_title, block_body in config_blocks or []:
+        if not block_body:
+            continue
+        lines.append(f"**{block_title}**")
+        lines.append("")
+        lines.append("```text")
+        lines.extend(block_body.splitlines())
+        lines.append("```")
+        lines.append("")
+    lines.append("---")
+    lines.append("")
+
+
+def _parse_rl_stage1_config_from_stage2_log(log_path: Path) -> Optional[Dict[str, List[int]]]:
+    if not log_path.exists():
+        return None
+    gelu: Optional[List[int]] = None
+    softmax: Optional[List[int]] = None
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return None
+    for line in lines[:120]:
+        if gelu is None and "GELU" in line and "[" in line and ("离散阶数向量" in line or "[Selected" in line):
+            gelu = _parse_int_list(line)
+        if softmax is None and "Softmax" in line and "[" in line and ("离散阶数向量" in line or "[Selected" in line):
+            softmax = _parse_int_list(line)
+        if gelu and softmax:
+            break
+    return _normalize_stage1_config({"gelu": gelu, "softmax": softmax})
+
+
+def _parse_rl_latest_config_from_log(log_path: Path) -> Optional[Dict[str, List[int]]]:
+    if not log_path.exists():
+        return None
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return None
+    latest: Optional[Dict[str, List[int]]] = None
+    current: Optional[Dict[str, List[int]]] = None
+    for line in lines:
+        if _RL_NEW_BEST_RE.search(line):
+            if current:
+                latest = current
+            current = {}
+            continue
+        if current is None:
+            continue
+        match = re.search(r"(?P<key>[A-Za-z0-9_]+):\s*(?P<vals>\[.*\])", line)
+        if not match:
+            if current:
+                latest = current
+                current = None
+            continue
+        alias = _NOISE_CONFIG_KEY_MAP.get(match.group("key"))
+        values = _parse_int_list(match.group("vals"))
+        if alias and values:
+            current[alias] = values
+    if current:
+        latest = current
+    return latest or None
+
+
+def _parse_rl_confirmation_blocks(log_path: Path) -> Dict[int, dict]:
+    blocks: Dict[int, dict] = {}
+    if not log_path.exists():
+        return blocks
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return blocks
+    i = 0
+    while i < len(lines):
+        header_match = _RL_CONFIRM_HEADER_RE.search(lines[i])
+        if not header_match:
+            i += 1
+            continue
+        episode = int(header_match.group("episode"))
+        payload: Dict[str, Any] = {"episode": episode}
+        j = i + 1
+        while j < len(lines):
+            line = lines[j]
+            if _RL_CONFIRM_HEADER_RE.search(line):
+                break
+            n_match = _RL_CONFIRM_N_RE.search(line)
+            if n_match:
+                payload["n"] = int(n_match.group("n"))
+            loss_match = _RL_CONFIRM_LOSS_RE.search(line)
+            if loss_match:
+                payload["loss"] = float(loss_match.group("loss"))
+                payload["loss_std"] = float(loss_match.group("loss_std"))
+                payload["m1"] = float(loss_match.group("m1"))
+                payload["m1_std"] = float(loss_match.group("m1_std"))
+            if "std_check=" in line:
+                bool_match = _RL_CONFIRM_BOOL_RE.search(line)
+                if bool_match:
+                    payload["std_check"] = (bool_match.group("value") == "True")
+            if "constraint=" in line:
+                bool_match = _RL_CONFIRM_BOOL_RE.search(line)
+                if bool_match:
+                    payload["constraint"] = (bool_match.group("value") == "True")
+            if "裁定" in line:
+                verdict_match = _RL_CONFIRM_VERDICT_RE.search(line)
+                if verdict_match:
+                    payload["verdict"] = verdict_match.group("value")
+            j += 1
+        blocks[episode] = payload
+        i = j
+    return blocks
+
+
+def _parse_rl_latest_incumbent(log_path: Path) -> Optional[dict]:
+    if not log_path.exists():
+        return None
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return None
+    latest: Optional[dict] = None
+    for line in lines:
+        match = _RL_MEAN_SCORE_RE.search(line) or _RL_SELECTION_SCORE_RE.search(line)
+        if match:
+            latest = {
+                "episode": int(match.group("step")),
+                "score": float(match.group("score")),
+                "cost": float(match.group("cost")),
+            }
+    return latest
+
+
+def _parse_rl_episode_noise_config(details_dir: Path, episode: int) -> Optional[Dict[str, List[int]]]:
+    if not details_dir.is_dir():
+        return None
+    target_file: Optional[Path] = None
+    for path in sorted(details_dir.glob("noise_ppo_step_info_*.txt")):
+        match = _DETAIL_RANGE_RE.search(path.name)
+        if not match:
+            continue
+        start = int(match.group("start"))
+        end = int(match.group("end"))
+        if start <= episode <= end:
+            target_file = path
+            break
+    if target_file is None:
+        return None
+    try:
+        lines = target_file.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return None
+    collecting = False
+    out: Dict[str, List[int]] = {key: [] for key in _NOISE_CONFIG_ORDER}
+    for line in lines:
+        header_match = re.search(r"episode\s+(?P<episode>\d+)", line)
+        if header_match:
+            current_episode = int(header_match.group("episode"))
+            if current_episode == episode:
+                collecting = True
+                continue
+            if collecting:
+                break
+        if not collecting:
+            continue
+        for key, alias in (
+            ("curr_input_noise_scaling_factor", "x"),
+            ("curr_wq_noise_scaling_factor", "wq"),
+            ("curr_wk_noise_scaling_factor", "wk"),
+            ("curr_wv_noise_scaling_factor", "wv"),
+            ("curr_wo_noise_scaling_factor", "wo"),
+            ("curr_wffn1_noise_scaling_factor", "wffn1"),
+            ("curr_wffn2_noise_scaling_factor", "wffn2"),
+        ):
+            match = re.search(rf"{key}:\s*(?P<value>-?\d+)", line)
+            if match:
+                out[alias].append(int(match.group("value")))
+    if not any(out.values()):
+        return None
+    return {key: value for key, value in out.items() if value}
+
+
+def _parse_rl_stage2_bundle(run_path: Path) -> Dict[str, Any]:
+    bundle: Dict[str, Any] = {}
+    log_path = run_path / "stage2_noise" / "pruning_search_log.txt"
+    if not log_path.exists():
+        return bundle
+    bundle["stage1_config"] = _parse_rl_stage1_config_from_stage2_log(log_path)
+    incumbent = _parse_rl_latest_incumbent(log_path)
+    if incumbent:
+        bundle["best"] = incumbent
+        confirm_blocks = _parse_rl_confirmation_blocks(log_path)
+        confirmation = confirm_blocks.get(int(incumbent["episode"]))
+        if confirmation:
+            bundle["confirmation"] = confirmation
+        config = _parse_rl_episode_noise_config(run_path / "stage2_noise" / "details", int(incumbent["episode"]))
+        if config:
+            bundle["noise_config"] = config
+    if "noise_config" not in bundle:
+        config = _parse_rl_latest_config_from_log(log_path)
+        if config:
+            bundle["noise_config"] = config
+    return bundle
+
+
+def _format_rl_search_line(bundle: Optional[dict]) -> str:
+    if not isinstance(bundle, dict):
+        return ""
+    best = bundle.get("best") or {}
+    confirmation = bundle.get("confirmation") or {}
+    tokens: List[str] = []
+    if best.get("episode") is not None:
+        tokens.append(f"ep={best.get('episode')}")
+    if isinstance(best.get("score"), (int, float)):
+        tokens.append(f"score={_format_float(best.get('score'))}")
+    if isinstance(best.get("cost"), (int, float)):
+        tokens.append(f"cost={_format_cost(best.get('cost'))}")
+    if confirmation.get("n") is not None:
+        tokens.append(f"N={confirmation.get('n')}")
+    if isinstance(confirmation.get("loss"), (int, float)):
+        if isinstance(confirmation.get("loss_std"), (int, float)):
+            tokens.append(
+                f"loss={_format_float(confirmation.get('loss'))}±{_format_float(confirmation.get('loss_std'))}"
+            )
+        else:
+            tokens.append(f"loss={_format_float(confirmation.get('loss'))}")
+    if isinstance(confirmation.get("m1"), (int, float)):
+        if isinstance(confirmation.get("m1_std"), (int, float)):
+            tokens.append(
+                f"m1={_format_float(confirmation.get('m1'))}±{_format_float(confirmation.get('m1_std'))}"
+            )
+        else:
+            tokens.append(f"m1={_format_float(confirmation.get('m1'))}")
+    if confirmation.get("verdict"):
+        tokens.append(str(confirmation.get("verdict")))
+    return _format_token_line(tokens)
+
+
+def _choose_ga_noise_search_best(data: Optional[dict]) -> Optional[dict]:
+    if not isinstance(data, dict):
+        return None
+    for key in ("stable_joint_best_noise_config", "stable_search_best_noise_config", "best_noise_config"):
+        candidate = data.get(key)
+        if isinstance(candidate, dict):
+            return candidate
+    return None
+
+
+def _format_ga_noise_search_line(data: Optional[dict]) -> str:
+    best = _choose_ga_noise_search_best(data)
+    if not isinstance(best, dict):
+        return ""
+    tokens: List[str] = []
+    if data and data.get("best_generation") is not None:
+        tokens.append(f"gen={data.get('best_generation')}")
+    if isinstance(best.get("search_score_mean"), (int, float)):
+        tokens.append(f"score={_format_float(best.get('search_score_mean'))}")
+    elif isinstance(best.get("score"), (int, float)):
+        tokens.append(f"score={_format_float(best.get('score'))}")
+    if isinstance(best.get("cost"), (int, float)):
+        tokens.append(f"cost={_format_cost(best.get('cost'))}")
+    stats = best.get("stats") if isinstance(best.get("stats"), dict) else None
+    tokens.extend(_stats_tokens(stats))
+    return _format_token_line(tokens)
+
+
+def _format_ga_stage1_search_line(data: Optional[dict]) -> str:
+    if not isinstance(data, dict):
+        return ""
+    best = data.get("best_config")
+    if not isinstance(best, dict):
+        return ""
+    tokens: List[str] = []
+    if data.get("best_generation") is not None:
+        tokens.append(f"gen={data.get('best_generation')}")
+    tokens.extend(_selected_metric_tokens(best))
+    return _format_token_line(tokens)
+
+
+def _select_best_eval(paths: List[Path]) -> Optional[Tuple[Path, dict]]:
+    best: Optional[Tuple[int, float, float, Path, dict]] = None
+    for path in paths:
+        data = _read_json(path) or {}
+        selected = data.get("selected") or data.get("selected_single")
+        if not isinstance(selected, dict):
+            continue
+        feasible_rank = 1 if selected.get("feasible") is not False else 0
+        primary = float(selected.get("p")) if isinstance(selected.get("p"), (int, float)) else float("-inf")
+        speed = float(selected.get("tot_spd")) if isinstance(selected.get("tot_spd"), (int, float)) else float("-inf")
+        candidate = (feasible_rank, primary, speed, path, data)
+        if best is None or candidate[:3] > best[:3]:
+            best = candidate
+    if best is None:
+        return None
+    return best[3], best[4]
+
+
+def _build_run_markdown_card(record: RunRecord) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+    rows: List[Tuple[str, str]] = [("进度", _format_token_line([_run_progress_summary(record)]))]
+    config_blocks: List[Tuple[str, str]] = []
+    stage1_eval_path = _find_first(record.path / "stage1_final_eval", "final_eval_results_*.json")
+    stage2_eval_path = _find_first(record.path / "stage2_noise_final_eval", "noise_final_eval_results_*.json")
+    stage1_eval = _read_json(stage1_eval_path) if stage1_eval_path else None
+    stage2_eval = _read_json(stage2_eval_path) if stage2_eval_path else None
+    ga_stage1_search = _read_json(record.path / "stage1" / "ga_search_results.json")
+    ga_stage2_search = _read_json(record.path / "stage2_noise" / "noise_ga_search_results.json")
+    rl_stage2_bundle = _parse_rl_stage2_bundle(record.path) if record.algorithm == "RL" else {}
+
+    stage1_config = None
+    noise_config = None
+
+    if stage2_eval:
+        selected = stage2_eval.get("selected") or stage2_eval.get("selected_single")
+        rows.append(("当前最优", _format_token_line(["S2 终评"] + _selected_metric_tokens(selected))))
+        eval_stats = _extract_eval_stats(stage2_eval)
+        if eval_stats:
+            rows.append(("终评测试", _format_token_line(_stats_tokens(eval_stats))))
+        if record.algorithm == "GA" and ga_stage2_search:
+            search_line = _format_ga_noise_search_line(ga_stage2_search)
+            if search_line:
+                rows.append(("搜索验证", search_line))
+        elif record.algorithm == "RL":
+            search_line = _format_rl_search_line(rl_stage2_bundle)
+            if search_line:
+                rows.append(("搜索确认", search_line))
+        stage1_config = _extract_stage1_config(stage2_eval) or _extract_stage1_config(ga_stage2_search) or rl_stage2_bundle.get("stage1_config")
+        noise_config = _extract_noise_config(stage2_eval) or _extract_noise_config(ga_stage2_search) or rl_stage2_bundle.get("noise_config")
+    elif record.algorithm == "GA" and ga_stage2_search:
+        rows.append(("当前最优", _format_token_line(["S2 搜索"] + [token.strip("`") for token in _format_ga_noise_search_line(ga_stage2_search).replace("`", "").split(" · ")])))
+        stage1_config = _extract_stage1_config(ga_stage2_search)
+        noise_config = _extract_noise_config(ga_stage2_search)
+    elif record.algorithm == "RL" and rl_stage2_bundle.get("best"):
+        best = rl_stage2_bundle.get("best") or {}
+        tokens = ["S2 搜索"]
+        if best.get("episode") is not None:
+            tokens.append(f"ep={best.get('episode')}")
+        if isinstance(best.get("score"), (int, float)):
+            tokens.append(f"score={_format_float(best.get('score'))}")
+        if isinstance(best.get("cost"), (int, float)):
+            tokens.append(f"cost={_format_cost(best.get('cost'))}")
+        rows.append(("当前最优", _format_token_line(tokens)))
+        search_line = _format_rl_search_line(rl_stage2_bundle)
+        if search_line:
+            rows.append(("搜索确认", search_line))
+        stage1_config = rl_stage2_bundle.get("stage1_config")
+        noise_config = rl_stage2_bundle.get("noise_config")
+    elif stage1_eval:
+        selected = stage1_eval.get("selected") or stage1_eval.get("selected_single")
+        rows.append(("当前最优", _format_token_line(["S1 终评"] + _selected_metric_tokens(selected))))
+        eval_stats = _extract_eval_stats(stage1_eval)
+        if eval_stats:
+            rows.append(("终评测试", _format_token_line(_stats_tokens(eval_stats))))
+        if record.algorithm == "GA" and ga_stage1_search:
+            search_line = _format_ga_stage1_search_line(ga_stage1_search)
+            if search_line:
+                rows.append(("搜索验证", search_line))
+        stage1_config = _extract_stage1_config(stage1_eval) or _extract_stage1_config(ga_stage1_search)
+    elif record.algorithm == "GA" and ga_stage1_search:
+        rows.append(("当前最优", _format_token_line(["S1 搜索"] + [token.strip("`") for token in _format_ga_stage1_search_line(ga_stage1_search).replace("`", "").split(" · ")])))
+        stage1_config = _extract_stage1_config(ga_stage1_search)
+    else:
+        rows.append(("当前最优", _format_token_line([_run_best_result_summary(record)])))
+
+    config_text = _combine_config_lines(stage1_config, noise_config)
+    if config_text:
+        config_blocks.append(("最优配置", config_text))
+    return rows, config_blocks
+
+
+def _build_compare_markdown_card(record: CompareRecord) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+    rows: List[Tuple[str, str]] = [("进度", _format_token_line([_compare_progress_summary(record)]))]
+    config_blocks: List[Tuple[str, str]] = []
+    reports_dir = record.path / "reports"
+    stage2_summary_path = _find_first(reports_dir, "stage2_compare_summary*.json")
+    stage1_summary_path = _find_first(reports_dir, "stage1_compare_summary*.json")
+    stage_label = "S2" if stage2_summary_path else "S1"
+    summary = _read_json(stage2_summary_path or stage1_summary_path) or {}
+    rows.append(("当前阶段", _format_token_line([stage_label])))
+
+    for side_key, side_label in (("rl", "RL"), ("ga", "GA")):
+        side = (summary.get("sides") or {}).get(side_key) or {}
+        selected = side.get("selected")
+        if isinstance(selected, dict):
+            rows.append((f"{side_label} 终评", _format_token_line(_selected_metric_tokens(selected))))
+            stats = _stats_from_selected(selected)
+            if stats:
+                rows.append((f"{side_label} 终评测试", _format_token_line(_stats_tokens(stats))))
+        search_line = ""
+        if stage_label == "S2":
+            if side_key == "ga":
+                search_line = _format_ga_noise_search_line(
+                    _read_json(record.path / "children" / "ga" / "stage2_noise" / "noise_ga_search_results.json")
+                )
+            else:
+                search_line = _format_rl_search_line(_parse_rl_stage2_bundle(record.path / "children" / "rl"))
+        elif stage_label == "S1" and side_key == "ga":
+            search_line = _format_ga_stage1_search_line(
+                _read_json(record.path / "children" / "ga" / "stage1" / "ga_search_results.json")
+            )
+        if search_line:
+            rows.append((f"{side_label} 搜索验证", search_line))
+
+        stage1_config = _extract_stage1_config(side)
+        noise_config = _extract_noise_config(side)
+        block = _combine_config_lines(stage1_config, noise_config)
+        if block:
+            config_blocks.append((f"{side_label} 最优配置", block))
+
+    return rows, config_blocks
+
+
+def _build_eval_experiment_card(record: ExperimentRecord, eval_paths: List[Path]) -> Optional[Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]]:
+    chosen = _select_best_eval(eval_paths)
+    if chosen is None:
+        return None
+    best_path, data = chosen
+    selected = data.get("selected") or data.get("selected_single")
+    rows: List[Tuple[str, str]] = [
+        ("进度", _format_token_line([_experiment_progress_summary(record)])),
+        ("最佳来源", _format_token_line([str(best_path.parent.relative_to(record.path)) if best_path.parent != record.path else best_path.name])),
+        ("当前最优", _format_token_line(_selected_metric_tokens(selected))),
+    ]
+    stats = _extract_eval_stats(data)
+    if stats:
+        rows.append(("终评测试", _format_token_line(_stats_tokens(stats))))
+    config_text = _combine_config_lines(_extract_stage1_config(data), _extract_noise_config(data))
+    config_blocks = [("最优配置", config_text)] if config_text else []
+    return rows, config_blocks
+
+
+def _build_experiment_markdown_card(record: ExperimentRecord) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+    rows: List[Tuple[str, str]] = [("进度", _format_token_line([_experiment_progress_summary(record)]))]
+    config_blocks: List[Tuple[str, str]] = []
+
+    if record.name == "final_evaluation":
+        card = _build_eval_experiment_card(record, _find_all(record.path, "final_eval_results_*.json"))
+        if card:
+            return card
+    elif record.name == "noise_final_evaluation":
+        card = _build_eval_experiment_card(record, _find_all(record.path, "noise_final_eval_results_*.json"))
+        if card:
+            return card
+    elif record.name == "layer_importance_runs":
+        card = _build_eval_experiment_card(record, _find_all(record.path, "noise_final_eval_results_*.json", recursive=True))
+        if card:
+            return card
+
+    rows.append(("结果摘要", _format_token_line([_experiment_best_result_summary(record)])))
+    return rows, config_blocks
+
+
 def render_markdown(
     rl_runs: List[RunRecord],
     ga_runs: List[RunRecord],
@@ -914,7 +1648,7 @@ def render_markdown(
     lines: List[str] = []
     lines.append("# 任务总板 / STATUS")
     lines.append("")
-    lines.append("> 只保留任务进度和当前最优结果，省略更新时间、PID 等运维字段。")
+    lines.append("> 聚焦任务进度、当前最优结果、最优配置，以及训练/终评阶段已经产出的测试摘要。")
     lines.append("")
 
     def _emit_run_section(title: str, runs: List[RunRecord]) -> None:
@@ -925,11 +1659,8 @@ def render_markdown(
             lines.append("")
             return
         for r in runs:
-            lines.append(
-                f"- `{_run_title(r)}`：进度 `{_run_progress_summary(r)}`；"
-                f"当前最优 `{_run_best_result_summary(r)}`"
-            )
-        lines.append("")
+            rows, config_blocks = _build_run_markdown_card(r)
+            _append_markdown_card(lines, _run_title(r), rows, config_blocks=config_blocks)
 
     _emit_run_section("1. 单任务 RL（rl_results/persistent/rl/）", rl_runs)
     _emit_run_section("2. 单任务 GA（rl_results/persistent/ga/）", ga_runs)
@@ -943,11 +1674,8 @@ def render_markdown(
         lines.append("")
     else:
         for c in compare_runs:
-            lines.append(
-                f"- `{c.dataset} / {c.run_name}`：进度 `{_compare_progress_summary(c)}`；"
-                f"当前结果 `{_compare_best_result_summary(c)}`"
-            )
-        lines.append("")
+            rows, config_blocks = _build_compare_markdown_card(c)
+            _append_markdown_card(lines, f"{c.dataset} / {c.run_name}", rows, config_blocks=config_blocks)
 
     # ---- experiments ----
     lines.append("## 5. 一次性实验（experiment_results/）")
@@ -957,14 +1685,12 @@ def render_markdown(
         lines.append("")
     else:
         for e in experiments:
-            lines.append(
-                f"- `{e.name}`：进度 `{_experiment_progress_summary(e)}`；"
-                f"当前结果 `{_experiment_best_result_summary(e)}`"
-            )
-        lines.append("")
+            rows, config_blocks = _build_experiment_markdown_card(e)
+            _append_markdown_card(lines, e.name, rows, config_blocks=config_blocks)
 
-    lines.append("---")
-    lines.append("")
+    if len(lines) < 2 or lines[-2] != "---":
+        lines.append("---")
+        lines.append("")
     lines.append("- `S1/S2` 进度格式：`搜索/终评`")
     lines.append("- compare 的 `终评 S1/S2` 格式：`RL/GA`")
     lines.append("- 结果展示优先级：`S2 终评 > S2 搜索 > S1 终评 > S1 搜索`")
