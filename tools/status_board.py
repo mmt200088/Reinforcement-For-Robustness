@@ -1100,25 +1100,16 @@ def _stats_tokens(stats: Optional[dict]) -> List[str]:
     return tokens
 
 
-def _chunk_vector(values: List[int], chunk_size: int = 6) -> List[str]:
-    return [
-        "[" + ", ".join(str(v) for v in values[i : i + chunk_size]) + "]"
-        for i in range(0, len(values), chunk_size)
-    ]
-
-
 def _format_config_entries(entries: List[Tuple[str, List[int]]]) -> List[str]:
     if not entries:
         return []
     label_width = max(len(label) for label, _ in entries)
     lines: List[str] = []
     for label, values in entries:
-        chunks = _chunk_vector(values)
-        if not chunks:
+        if not values:
             continue
-        indent = " " * (label_width + 1)
-        lines.append(f"{label:<{label_width}} {chunks[0]}")
-        lines.extend(f"{indent}{chunk}" for chunk in chunks[1:])
+        vector_text = "[" + ", ".join(str(v) for v in values) + "]"
+        lines.append(f"{label:<{label_width}} {vector_text}")
     return lines
 
 
