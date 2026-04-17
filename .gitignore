@@ -18,6 +18,7 @@ all_analysis_new/**/*.png
 !rl_results/layer_importance_runs/**/stage2_noise/details/*.txt
 # Noise RL step dumps are huge; keep them local (overrides un-ignore above for stage2_noise/*.txt)
 rl_results/**/noise_ppo_step_info*.txt
+!rl_results/persistent/**/noise_ppo_step_info*.txt
 
 # Compare / orchestration runs: track everything under rl_results/runs (overrides global *.txt / *.log / *.csv),
 # but keep verbose log streams out of git (only *.log under any .../logs/ directory).
@@ -43,13 +44,4 @@ experiment_results/**/*.log
 experiment_results/**/*.txt
 !experiment_results/**/pruning_search_log.txt
 
-# ---------------------------------------------------------------------------
-# rl_results/persistent: 可提交 ckpt /曲线图 / json 等；不提交各类搜索与训练日志。
-# （放在文件末尾，覆盖上文对 pruning_search_log.txt 的全局反忽略。）
-# noise_ppo_step_info分片仍由 rl_results/**/noise_ppo_step_info*.txt 忽略（体积大）。
-# ---------------------------------------------------------------------------
-rl_results/persistent/**/*.log
-rl_results/persistent/**/pruning_search_log*.txt
-rl_results/persistent/**/ga_search_log.txt
-rl_results/persistent/**/ga_noise_search_log.txt
-rl_results/persistent/**/noise_ga_search_log.txt
+# rl_results/persistent: 仅忽略 *.log（与仓库顶部全局 *.log 一致；不额外排除 *.txt）。
