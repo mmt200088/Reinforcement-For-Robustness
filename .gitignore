@@ -20,6 +20,10 @@ all_analysis_new/**/*.png
 rl_results/**/noise_ppo_step_info*.txt
 !rl_results/persistent/**/noise_ppo_step_info*.txt
 
+# rl_results/persistent：仅忽略 *.log；撤销对该目录内其它全局忽略（ppo_step_info、csv）。
+!rl_results/persistent/**/ppo_step_info.txt
+!rl_results/persistent/**/*.csv
+
 # Compare / orchestration runs: track everything under rl_results/runs (overrides global *.txt / *.log / *.csv),
 # but keep verbose log streams out of git (only *.log under any .../logs/ directory).
 !rl_results/runs/
@@ -43,5 +47,3 @@ __pycache__/
 experiment_results/**/*.log
 experiment_results/**/*.txt
 !experiment_results/**/pruning_search_log.txt
-
-# rl_results/persistent: 仅忽略 *.log（与仓库顶部全局 *.log 一致；不额外排除 *.txt）。
