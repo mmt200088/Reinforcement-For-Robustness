@@ -63,6 +63,8 @@ FAMILY_COLORS = {
     "max_action": "#d55e00",
     "random_control": "#0072b2",
 }
+MAX_ACTION_GELU_DEGREE = 4
+MAX_ACTION_SOFTMAX_DEGREE = 6
 
 
 def parse_args() -> argparse.Namespace:
@@ -118,21 +120,49 @@ def _json_default(obj):
     raise TypeError(f"Unsupported type for JSON serialization: {type(obj)!r}")
 
 
-def _make_max_action_config(total_layers: int, evaluator) -> Dict[str, object]:
-    gelu_degree = GELU_MAP[max(GELU_MAP.keys())]
-    softmax_degree = SOFTMAX_MAP[max(SOFTMAX_MAP.keys())]
+def _make_max_action_config(total_layers: int) -> Dict[str, object]:
+    # For this experiment we define "max action" in degree/scaling space:
+    # GELU degree=4, Softmax degree=6, and all noise terms at max scaling.
+    gelu_degree = int(MAX_ACTION_GELU_DEGREE)
+    softmax_degree = int(MAX_ACTION_SOFTMAX_DEGREE)
     return {
         "family": "max_action",
         "label": FAMILY_LABELS["max_action"],
         "gelu": np.full(total_layers, gelu_degree, dtype=int),
         "softmax": np.full(total_layers, softmax_degree, dtype=int),
-        "noise": evaluator._get_max_noise_configuration(),
+        "noise": {
+            "input_noise_scaling_factors": np.full(
+                total_layers, max(INPUT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int
+            ),
+            "wq_noise_scaling_factors": np.full(
+                total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int
+            ),
+            "wk_noise_scaling_factors": np.full(
+                total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int
+            ),
+            "wv_noise_scaling_factors": np.full(
+                total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int
+            ),
+            "wo_noise_scaling_factors": np.full(
+                total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int
+            ),
+            "wffn1_noise_scaling_factors": np.full(
+                total_layers, max(WFFN1_NOISE_ALLOWED_SCALING_FACTORS), dtype=int
+            ),
+            "wffn2_noise_scaling_factors": np.full(
+                total_layers, max(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS), dtype=int
+            ),
+        },
     }
 
 
 def _make_random_control_config(total_layers: int, seed: int) -> Dict[str, object]:
     rng = np.random.default_rng(seed)
-    gelu_choices = np.asarray(sorted(set(GELU_MAP.values())), dtype=int)
+    # Random control excludes GELU degree 0.
+    gelu_choices = np.asarray(
+        sorted(v for v in set(GELU_MAP.values()) if int(v) != 0),
+        dtype=int,
+    )
     softmax_choices = np.asarray(sorted(set(SOFTMAX_MAP.values())), dtype=int)
     return {
         "family": "random_control",
@@ -576,7 +606,7 @@ def main() -> None:
         )
 
         family_configs = [
-            _make_max_action_config(evaluator.total_layers, evaluator),
+            _make_max_action_config(evaluator.total_layers),
             _make_random_control_config(evaluator.total_layers, args.seed),
         ]
         metric_short_names = evaluator.get_metric_short_names()
