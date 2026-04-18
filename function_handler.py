@@ -428,40 +428,100 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
     #     absolute_error = torch.
         
     
+    def _looks_like_attention_mask(self, value) -> bool:
+        return torch.is_tensor(value) and value.dim() >= 2
+
+    def _looks_like_cache_position(self, value) -> bool:
+        return (
+            torch.is_tensor(value)
+            and value.dim() <= 1
+            and value.dtype in (
+                torch.int8,
+                torch.int16,
+                torch.int32,
+                torch.int64,
+                torch.uint8,
+                torch.long,
+            )
+        )
+
+    def _looks_like_cache(self, value) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, (tuple, list)):
+            return True
+        return any(
+            hasattr(value, attr)
+            for attr in ("update", "is_updated", "layers", "self_attention_cache", "cross_attention_cache")
+        )
+
     def forward(
         self,
         hidden_states,
         attention_mask=None,
         head_mask=None,
         encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        past_key_value=None,
-        past_key_values=None,
-        output_attentions=False,
-        cache_position=None,
+        *args,
         **kwargs,
     ):
        # Follow the current transformers BERT attention flow and replace
        # only the softmax step with the approximation variant.
+        encoder_attention_mask = kwargs.pop("encoder_attention_mask", None)
+        past_key_value = kwargs.pop("past_key_value", None)
+        past_key_values = kwargs.pop("past_key_values", None)
+        output_attentions = kwargs.pop("output_attentions", False)
+        cache_position = kwargs.pop("cache_position", None)
+
+        tail = list(args)
+
         if isinstance(past_key_value, bool):
-            # Older transformers versions call BERT self-attention with the
-            # legacy positional signature:
-            #   (..., encoder_hidden_states, past_key_value, output_attentions)
-            # Our cross-version wrapper still includes ``encoder_attention_mask``,
-            # so the legacy ``past_key_value`` lands there and the legacy
-            # ``output_attentions`` lands in ``past_key_value``.
             if output_attentions in (False, None):
                 output_attentions = past_key_value
-            if past_key_values is not None:
-                past_key_value = past_key_values
-                past_key_values = None
-            elif encoder_attention_mask is not None and not torch.is_tensor(encoder_attention_mask):
-                past_key_value = encoder_attention_mask
-                encoder_attention_mask = None
-            else:
-                past_key_value = None
+            past_key_value = None
+        if isinstance(past_key_values, bool):
+            if output_attentions in (False, None):
+                output_attentions = past_key_values
+            past_key_values = None
+
+        if tail and self._looks_like_cache_position(tail[-1]) and cache_position is None:
+            cache_position = tail.pop()
+
+        if tail and isinstance(tail[-1], bool):
+            output_attentions = tail.pop()
+
+        if encoder_hidden_states is not None and tail:
+            first = tail[0]
+            if encoder_attention_mask is None and (first is None or self._looks_like_attention_mask(first)):
+                encoder_attention_mask = tail.pop(0)
+
+        if past_key_value is None and past_key_values is None and tail:
+            candidate = tail.pop(0)
+            if isinstance(candidate, bool):
+                if output_attentions in (False, None):
+                    output_attentions = candidate
+                candidate = None
+            elif (
+                encoder_hidden_states is None
+                and encoder_attention_mask is None
+                and self._looks_like_attention_mask(candidate)
+            ):
+                # Some legacy positional paths may still include a placeholder
+                # encoder-attention mask slot even for encoder-only BERT.
+                encoder_attention_mask = candidate
+                candidate = tail.pop(0) if tail else None
+            past_key_value = candidate
+
         if past_key_value is None and past_key_values is not None:
             past_key_value = past_key_values
+        elif past_key_values is None and past_key_value is not None:
+            past_key_values = past_key_value
+
+        if isinstance(past_key_value, bool):
+            if output_attentions in (False, None):
+                output_attentions = past_key_value
+            past_key_value = None
+            past_key_values = None
+
         batch_size, _, _ = hidden_states.shape
         query_layer = self.query(hidden_states)
         query_layer = query_layer.view(
@@ -509,7 +569,7 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
                     )
                     if is_cross_attention and hasattr(past_key_value, "is_updated"):
                         past_key_value.is_updated[self.layer_idx] = True
-                else:
+                elif self._looks_like_cache(curr_past_key_value):
                     key_layer = torch.cat([curr_past_key_value[0], key_layer], dim=2)
                     value_layer = torch.cat([curr_past_key_value[1], value_layer], dim=2)
 
