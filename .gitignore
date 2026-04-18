@@ -38,15 +38,14 @@ __pycache__/
 
 # ---------------------------------------------------------------------------
 # Track all experiment artifacts for sharing via git.
-# Note: we still keep global ignores (e.g. *.log/*.txt) for other folders,
-# but explicitly un-ignore everything under experiment_results/.
-# Re-ignore bulky logs and text dumps under experiment_results/ (GitHub 100MB limit).
+# - experiment/: full tree tracked except Python cache (overrides global *.log / *.csv / etc.).
+# - experiment_results/: un-ignore tree but re-ignore bulky *.log/*.txt (GitHub 100MB limit).
 # ---------------------------------------------------------------------------
-!experiment/outputs/
-!experiment/outputs/**
-experiment/outputs/**/*.log
-experiment/outputs/**/*.txt
-!experiment/outputs/**/pruning_search_log.txt
+!experiment/
+!experiment/**
+experiment/**/__pycache__/
+experiment/**/*.py[cod]
+experiment/**/*$py.class
 !experiment_results/
 !experiment_results/**
 experiment_results/**/*.log
