@@ -379,11 +379,23 @@ class PolynomiaTanh(nn.Module):
 class BertSelfAttentionWithAproximation(BertSelfAttention):
     """BertSelfAttention with softmax approximation"""
     def __init__(self, config, degree, lower_bound, position_embedding_type=None, layer_idx=None):
-        super().__init__(
-            config,
-            position_embedding_type=position_embedding_type,
-            layer_idx=layer_idx,
-        )
+        try:
+            super().__init__(
+                config,
+                position_embedding_type=position_embedding_type,
+                layer_idx=layer_idx,
+            )
+        except TypeError:
+            try:
+                super().__init__(
+                    config,
+                    position_embedding_type=position_embedding_type,
+                )
+            except TypeError:
+                super().__init__(config)
+        if position_embedding_type is not None:
+            self.position_embedding_type = position_embedding_type
+        self.layer_idx = layer_idx
         self.degree = degree 
         self.lower_bound = lower_bound
 

@@ -1,0 +1,3 @@
+family,label,probe_size_requested,probe_size_observed,k_value,loss_mean,loss_std,p_mean,p_std,s_mean,s_std,time_mean_ms,time_std_ms,approx_total_cost,gelu_cost,softmax_cost,noise_total_cost
+max_action,Max-Action,32,8,5,1.115861701965332,0.0040951599793566116,0.375,0.0,0.20454545454545453,0.0,155.01055717468262,108.60035702670862,0.0,-12.0,12.0,49.2
+random_control,Random-Control,32,8,5,0.34498022198677064,0.06744153310417722,0.8,0.06123724356957945,0.7972727272727272,0.05789703028396602,123.14481735229492,16.462044122738344,40.0,14.5,25.5,41.5
