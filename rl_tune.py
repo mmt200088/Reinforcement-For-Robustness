@@ -159,6 +159,8 @@ def train(
         stage1_accuracy_tolerance: float = None,
         stage2_limit_tolerance: float = None,
         stage2_stability_tolerance: float = None,
+        stage2_k_trials: int = None,
+        stage2_probe_size: int = None,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
         group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -638,6 +640,8 @@ def train(
             stage1_accuracy_tolerance=stage1_accuracy_tolerance,
             stage2_limit_tolerance=stage2_limit_tolerance,
             stage2_stability_tolerance=stage2_stability_tolerance,
+            stage2_k_trials=stage2_k_trials,
+            stage2_probe_size=stage2_probe_size,
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

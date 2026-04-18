@@ -25,13 +25,17 @@ from noise_rl_module_v2 import (
     NOISE_STAGE_BEST_TEST_TRIGGER_MARGIN,
     NOISE_STAGE_COST_WEIGHT,
     NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE,
+    NOISE_STAGE_K_TRIALS,
     NOISE_STAGE_MC_CONFIRM_SEGMENTS,
     NOISE_STAGE_MC_TRAIN_SAMPLES,
+    NOISE_STAGE_METRIC_TIER_BONUS,
+    NOISE_STAGE_PROBE_SIZE,
     NOISE_STAGE_PERF_WEIGHT_LOSS,
     NOISE_STAGE_PERF_WEIGHT_M1,
     NOISE_STAGE_PERF_WEIGHT_M2,
     NOISE_STAGE_REWARD_CLIP_MAX,
     NOISE_STAGE_REWARD_CLIP_MIN,
+    NOISE_STAGE_STABILITY_TIER_BONUS,
     NOISE_STAGE_STATUS_NO_STABLE_FEASIBLE,
     NOISE_STAGE_STATUS_OK,
     NOISE_STAGE_STOP_FLAG_FILENAME,
@@ -297,25 +301,19 @@ def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None,
 
     dataset = evaluator.dataset_splits.get(reward_reference_split)
     dataset_size = len(dataset) if dataset is not None else 0
+    _ga_k = int(getattr(evaluator, "stage2_k_trials", NOISE_STAGE_K_TRIALS))
+    _ga_probe = int(getattr(evaluator, "stage2_probe_size", NOISE_STAGE_PROBE_SIZE))
     baseline_segments = _auto_adjust_segments(
-        dataset_size,
-        NOISE_STAGE_BASELINE_SEGMENTS,
-        log_fn=log_fn,
+        dataset_size, _ga_k, log_fn=log_fn, min_samples=_ga_probe,
     )
     train_segments = _auto_adjust_segments(
-        dataset_size,
-        NOISE_STAGE_MC_TRAIN_SAMPLES,
-        log_fn=log_fn,
+        dataset_size, _ga_k, log_fn=log_fn, min_samples=_ga_probe,
     )
     confirm_segments = _auto_adjust_segments(
-        dataset_size,
-        NOISE_STAGE_MC_CONFIRM_SEGMENTS,
-        log_fn=log_fn,
+        dataset_size, _ga_k, log_fn=log_fn, min_samples=_ga_probe,
     )
     best_test_segments = _auto_adjust_segments(
-        dataset_size,
-        NOISE_STAGE_BEST_TEST_SEGMENTS,
-        log_fn=log_fn,
+        dataset_size, _ga_k, log_fn=log_fn, min_samples=_ga_probe,
     )
 
     baseline_reference_stats = evaluator.evaluate_model_with_attention_noise_segmented(
@@ -678,17 +676,33 @@ def _compute_rl_aligned_noise_search_score(
         1.0,
     ))
 
-    raw_score = (
+    # 分层判定：metric_ok 严格优先于 stability_ok（与 RL 端 _compute_terminal_reward_mc 口径一致）
+    metric_ok = (margin_loss >= 0.0) and (margin_m1 >= 0.0)
+    if num_metrics > 1:
+        metric_ok = metric_ok and (margin_m2 >= 0.0)
+    stability_ok = all(e <= 0.0 for e in std_excesses)
+
+    # 未满足 metric 时不启用 stability 信号，使 GA 选择压力先聚焦于"把指标拉回可行区间"
+    effective_stability_penalty = stability_penalty if metric_ok else 0.0
+
+    raw_shaping = (
         float(NOISE_STAGE_TAIL_MARGIN_WEIGHT) * perf_score
         - float(NOISE_STAGE_TAIL_VIOLATION_WEIGHT) * violation_penalty
         + float(NOISE_STAGE_COST_WEIGHT) * cost_score
-        + stability_penalty
+        + effective_stability_penalty
     )
-    final_score = float(np.clip(
-        raw_score,
+    clipped_shaping = float(np.clip(
+        raw_shaping,
         float(NOISE_STAGE_REWARD_CLIP_MIN),
         float(NOISE_STAGE_REWARD_CLIP_MAX),
     ))
+
+    tier_bonus = 0.0
+    if metric_ok:
+        tier_bonus += float(NOISE_STAGE_METRIC_TIER_BONUS)
+        if stability_ok:
+            tier_bonus += float(NOISE_STAGE_STABILITY_TIER_BONUS)
+    final_score = clipped_shaping + tier_bonus
 
     return {
         "margin_loss": float(margin_loss),
@@ -698,7 +712,12 @@ def _compute_rl_aligned_noise_search_score(
         "violation_penalty": float(violation_penalty),
         "cost_score": float(cost_score),
         "stability_reward_penalty": float(stability_penalty),
-        "raw_score": float(raw_score),
+        "effective_stability_penalty": float(effective_stability_penalty),
+        "metric_ok": bool(metric_ok),
+        "stability_ok": bool(stability_ok),
+        "tier_bonus": float(tier_bonus),
+        "shaping_score": float(clipped_shaping),
+        "raw_score": float(raw_shaping),
         "score": float(final_score),
     }
 

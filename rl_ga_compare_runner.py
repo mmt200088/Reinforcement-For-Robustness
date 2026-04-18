@@ -786,6 +786,8 @@ def build_compare_evaluator(
     skip_noise_rl: bool = True,
     skip_stage1_final_eval: bool = True,
     skip_noise_final_eval: bool = True,
+    stage2_k_trials: Optional[int] = None,
+    stage2_probe_size: Optional[int] = None,
 ):
     from datasets import load_dataset
     from transformers import (
@@ -914,6 +916,8 @@ def build_compare_evaluator(
         skip_noise_final_eval=skip_noise_final_eval,
         data_path=data_path,
         search_algorithm=search_algorithm,
+        stage2_k_trials=stage2_k_trials,
+        stage2_probe_size=stage2_probe_size,
     )
     if model_type is not None:
         evaluator.model_type = normalize_model_type(model_type)
@@ -1631,6 +1635,8 @@ def build_child_command(
     stage1_accuracy_tolerance: Optional[float] = None,
     stage2_limit_tolerance: Optional[float] = None,
     stage2_stability_tolerance: Optional[float] = None,
+    stage2_k_trials: Optional[int] = None,
+    stage2_probe_size: Optional[int] = None,
 ) -> List[str]:
     entrypoint = "rl_tune.py" if algorithm == "rl" else "rl_tune_genetic.py"
 
@@ -1705,6 +1711,10 @@ def build_child_command(
         cmd.extend(["--stage2_limit_tolerance", str(stage2_limit_tolerance)])
     if stage2_stability_tolerance is not None:
         cmd.extend(["--stage2_stability_tolerance", str(stage2_stability_tolerance)])
+    if stage2_k_trials is not None:
+        cmd.extend(["--stage2_k_trials", str(int(stage2_k_trials))])
+    if stage2_probe_size is not None:
+        cmd.extend(["--stage2_probe_size", str(int(stage2_probe_size))])
     return cmd
 
 
@@ -2159,6 +2169,8 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
                 skip_noise_rl=True,
                 skip_stage1_final_eval=True,
                 skip_noise_final_eval=True,
+                stage2_k_trials=getattr(args, "stage2_k_trials", None),
+                stage2_probe_size=getattr(args, "stage2_probe_size", None),
             )
             if side_needs_evaluator(rl_side_spec, dataset=dataset)
             else None
@@ -2200,6 +2212,8 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
                 skip_noise_rl=True,
                 skip_stage1_final_eval=True,
                 skip_noise_final_eval=True,
+                stage2_k_trials=getattr(args, "stage2_k_trials", None),
+                stage2_probe_size=getattr(args, "stage2_probe_size", None),
             )
             if side_needs_evaluator(ga_side_spec, dataset=dataset)
             else None
@@ -2420,6 +2434,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stage1-accuracy-tolerance", type=float, default=None)
     parser.add_argument("--stage2-limit-tolerance", type=float, default=None)
     parser.add_argument("--stage2-stability-tolerance", type=float, default=None)
+    parser.add_argument("--stage2-k-trials", type=int, default=None,
+                        help="Stage-2 稳定性评测噪声试验次数 K（默认 5）")
+    parser.add_argument("--stage2-probe-size", type=int, default=None,
+                        help="Stage-2 稳定性评测探针子集大小（默认 256）")
     return parser.parse_args()
 
 
@@ -2453,6 +2471,10 @@ def main() -> int:
     ):
         if getattr(args, flag_name) <= 0:
             raise CompareRunnerError(f"{flag_name} must be a positive integer.")
+    for flag_name in ("stage2_k_trials", "stage2_probe_size"):
+        v = getattr(args, flag_name, None)
+        if v is not None and int(v) <= 0:
+            raise CompareRunnerError(f"{flag_name} must be a positive integer when provided.")
     for flag_name in (
         "stage1_accuracy_tolerance",
         "stage2_limit_tolerance",
@@ -2617,6 +2639,8 @@ def main() -> int:
             stage1_accuracy_tolerance=getattr(args, "stage1_accuracy_tolerance", None),
             stage2_limit_tolerance=getattr(args, "stage2_limit_tolerance", None),
             stage2_stability_tolerance=getattr(args, "stage2_stability_tolerance", None),
+            stage2_k_trials=getattr(args, "stage2_k_trials", None),
+            stage2_probe_size=getattr(args, "stage2_probe_size", None),
         ),
         env_overrides={},
     )
@@ -2647,6 +2671,8 @@ def main() -> int:
             stage1_accuracy_tolerance=getattr(args, "stage1_accuracy_tolerance", None),
             stage2_limit_tolerance=getattr(args, "stage2_limit_tolerance", None),
             stage2_stability_tolerance=getattr(args, "stage2_stability_tolerance", None),
+            stage2_k_trials=getattr(args, "stage2_k_trials", None),
+            stage2_probe_size=getattr(args, "stage2_probe_size", None),
         ),
         env_overrides={},
     )

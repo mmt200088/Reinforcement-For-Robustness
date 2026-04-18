@@ -2412,7 +2412,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                  search_algorithm=None,
                  stage1_accuracy_tolerance=None,
                  stage2_limit_tolerance=None,
-                 stage2_stability_tolerance=None):
+                 stage2_stability_tolerance=None,
+                 stage2_k_trials=None,
+                 stage2_probe_size=None):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -2580,6 +2582,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         #   stability: std 允许上浮 tol（baseline 探针的纯噪声采样方差）
         self.stage2_limit_tolerance = float(stage2_limit_tolerance) if stage2_limit_tolerance is not None else 0.05
         self.stage2_stability_tolerance = float(stage2_stability_tolerance) if stage2_stability_tolerance is not None else 0.05
+        # Stage-2 稳定性评测：K 次噪声 trial 在同一份固定分层探针上评测
+        #   stage2_k_trials: 噪声 trial 次数（K）
+        #   stage2_probe_size: 探针子集大小
+        self.stage2_k_trials = max(1, int(stage2_k_trials)) if stage2_k_trials is not None else 5
+        self.stage2_probe_size = max(1, int(stage2_probe_size)) if stage2_probe_size is not None else 256
         
         self.search_algorithm = search_algorithm or "rl"
         output_layout = resolve_run_output_layout(run_output_dir, search_algorithm=self.search_algorithm)
@@ -3078,9 +3085,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         selected_indices = np.sort(np.asarray(selected_indices, dtype=int))
         return dataset.select(selected_indices.tolist())
 
-    # 稳定性探针每段最少样本数：保证探针上的 mean 估计有足够样本量，
-    # 避免小探针上 accuracy/loss 均值波动过大，让 limit / reward 对比失真。
-    STABILITY_PROBE_MIN_SAMPLES = 80
+    # 稳定性探针默认子集大小（保留为向后兼容常量；实际生效值由实例属性
+    # `self.stage2_probe_size` 承载，默认 256，可由 CLI `--stage2-probe-size` 覆盖）。
+    STABILITY_PROBE_MIN_SAMPLES = 256
 
     def _get_stability_probe(self, split_name, probe_size, probe_seed=42):
         """返回并缓存一份固定的分层采样探针子集，供稳定性评测复用。
@@ -4188,13 +4195,14 @@ class LayerImportanceEvaluator(TrainerCallback):
         下界因此退化为两个几乎相等的值，稳定性约束失效。
 
         新语义（参数名 `segments` 保留以兼容调用方，语义改为 **K = 噪声试验数**）：
-        - 每个 split 首次访问时，用分层采样构造一份固定探针子集（大小 ≈
-          len(val)/K，但不低于 `STABILITY_PROBE_MIN_SAMPLES`），缓存在 evaluator
-          上；baseline / worst / 每个候选配置在整轮训练里都看到同一份数据。
-        - 对同一份探针跑 K 次独立噪声种子：每次的 torch/numpy RNG 被独立设置，
-          相当于 K 次 i.i.d. 噪声实现；由于数据完全一样，`loss_std / p_std / s_std`
-          只剩纯噪声采样方差。
-        - 单次评测总样本量 = K × probe_size ≈ len(val)，与历史实现成本一致。
+        - 每个 split 首次访问时，用分层采样构造一份固定探针子集（大小 =
+          `self.stage2_probe_size`，默认 256，可由 CLI `--stage2-probe-size` 覆盖），
+          缓存在 evaluator 上；baseline / worst / 每个候选配置在整轮训练里都看到
+          同一份数据。
+        - 对同一份探针跑 K 次独立噪声种子（K 默认 5，可由 CLI `--stage2-k-trials`
+          覆盖）：每次的 torch/numpy RNG 被独立设置，相当于 K 次 i.i.d. 噪声实现；
+          由于数据完全一样，`loss_std / p_std / s_std` 只剩纯噪声采样方差。
+        - 单次评测总样本量 = K × probe_size（默认 5 × 256 = 1280）。
         - `loss_min/max, p_min/max, s_min/max` 现在真实表达"同一数据上最坏/最好
           的噪声实现"，直接可用于 tail-risk / worst-case 约束。
         - 返回 dict 中新增 `probe_size` 与 `evaluation_mode` 字段用于诊断。
@@ -4218,15 +4226,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 split=split,
             )
 
-        # 成本等价探针尺寸：K × probe_size ≈ len(dataset)。探针下限
-        # `STABILITY_PROBE_MIN_SAMPLES` 保证 mean 在探针上有足够统计样本；
-        # 若 trials 较大导致 probe_size 被下限抬到 > len/K，总样本量会略超
-        # 历史实现（上限为 K×len_probe_min），但仍远小于"每 trial 跑全集"。
+        # 探针子集大小：默认取 evaluator.stage2_probe_size（可由 CLI
+        # `--stage2-probe-size` 覆盖；实例属性缺失时回退到 256）。
+        # 显式传入 `probe_size_override` 仍然拥有最高优先级（例如探针尺寸扫荡实验）。
         if probe_size_override is None:
-            probe_size = max(
-                self.STABILITY_PROBE_MIN_SAMPLES,
-                len(dataset) // max(trials, 1),
-            )
+            probe_size = int(getattr(self, "stage2_probe_size", 256))
         else:
             probe_size = int(probe_size_override)
         probe_size = max(1, min(probe_size, len(dataset)))
@@ -4475,6 +4479,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             "stage1_accuracy_tolerance": float(self.error_threshold),
             "stage2_limit_tolerance": float(self.stage2_limit_tolerance),
             "stage2_stability_tolerance": float(self.stage2_stability_tolerance),
+            "stage2_k_trials": int(self.stage2_k_trials),
+            "stage2_probe_size": int(self.stage2_probe_size),
             "dataset": str(getattr(self, "data_path", "")),
             "search_algorithm": str(getattr(self, "search_algorithm", "")),
         }

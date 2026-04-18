@@ -46,6 +46,8 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--stage1-accuracy-tolerance FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.005` | Stage-1 指标约束百分比。0.005 表示允许 loss 上浮 0.5%、指标下降 0.5% |
 | `--stage2-limit-tolerance FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.05` | Stage-2 指标约束百分比（以 baseline 为基准，与 `--stage1-accuracy-tolerance` 同构）。0.05 表示允许 loss 上浮 5%、metric1/metric2 下降 5% |
 | `--stage2-stability-tolerance FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.05` | Stage-2 稳定性约束百分比（以 baseline 探针的纯噪声采样 std 为基准）。0.05 表示允许 std 上浮 5% |
+| `--stage2-k-trials INT` | `rl`、`ga`、`rl-and-ga-compare` | `5` | Stage-2 稳定性评测噪声试验次数 K。每次评测在同一份固定分层探针上跑 K 个独立噪声种子，std 反映纯噪声采样方差（不进入持久化目录 slug，仅作为采样预算） |
+| `--stage2-probe-size INT` | `rl`、`ga`、`rl-and-ga-compare` | `256` | Stage-2 稳定性评测探针子集大小。用分层采样从验证集中抽取一份固定子集，K 次 trial 共用同一份数据；默认 K×probe = 5×256 = 1280 次前向 |
 | **持久化与续训练** | | | |
 | `--fresh-start` | `rl`、`ga`、`general-rl` 训练 | — | 清空当前参数组合对应的整个持久化目录并从头开始；首次运行某参数组合时**必须指定**，否则报错 |
 | `--fresh-stage1` | `rl`、`ga` | — | 仅清空已有持久化目录中的 `stage1/` 与 `stage1_final_eval/`，保留 Stage-2；仅适用于已有持久化目录的续训场景 |

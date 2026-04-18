@@ -31,6 +31,8 @@ GA / 对比实验中的 GA：
   --stage1-accuracy-tolerance FLOAT    Stage-1 指标约束百分比（默认 0.005 即 0.5%）
   --stage2-limit-tolerance FLOAT       Stage-2 指标约束百分比（以 baseline 为基准，默认 0.05 即 5%；loss 允许上浮 5%、metric 允许下降 5%）
   --stage2-stability-tolerance FLOAT   Stage-2 稳定性约束百分比（以 baseline 探针的 std 为基准，默认 0.05 即 5%）
+  --stage2-k-trials INT                Stage-2 稳定性评测噪声试验次数 K（默认 5；每次评测在同一份探针上跑 K 个独立噪声种子）
+  --stage2-probe-size INT              Stage-2 稳定性评测探针子集大小（默认 256；用分层采样从验证集中抽取 K 次 trial 共用的固定子集）
 
 持久化与续训练（rl / ga 可用）：
   --fresh-start                        从头开始训练（首次运行必须指定）
@@ -325,6 +327,8 @@ RESUME_FROM=""; S_RESUME_FROM="false"
 STAGE1_ACCURACY_TOLERANCE="0.005"; S_STAGE1_ACCURACY_TOLERANCE="false"
 STAGE2_LIMIT_TOLERANCE="0.05"; S_STAGE2_LIMIT_TOLERANCE="false"
 STAGE2_STABILITY_TOLERANCE="0.05"; S_STAGE2_STABILITY_TOLERANCE="false"
+STAGE2_K_TRIALS="5"; S_STAGE2_K_TRIALS="false"
+STAGE2_PROBE_SIZE="256"; S_STAGE2_PROBE_SIZE="false"
 FRESH_START="false"; S_FRESH_START="false"
 FRESH_STAGE1="false"; S_FRESH_STAGE1="false"
 FRESH_STAGE2="false"; S_FRESH_STAGE2="false"
@@ -452,6 +456,8 @@ while [ "$#" -gt 0 ]; do
     --stage1-accuracy-tolerance) needv "$@"; STAGE1_ACCURACY_TOLERANCE="$2"; S_STAGE1_ACCURACY_TOLERANCE="true"; shift 2 ;;
     --stage2-limit-tolerance) needv "$@"; STAGE2_LIMIT_TOLERANCE="$2"; S_STAGE2_LIMIT_TOLERANCE="true"; shift 2 ;;
     --stage2-stability-tolerance) needv "$@"; STAGE2_STABILITY_TOLERANCE="$2"; S_STAGE2_STABILITY_TOLERANCE="true"; shift 2 ;;
+    --stage2-k-trials) needv "$@"; STAGE2_K_TRIALS="$2"; S_STAGE2_K_TRIALS="true"; shift 2 ;;
+    --stage2-probe-size) needv "$@"; STAGE2_PROBE_SIZE="$2"; S_STAGE2_PROBE_SIZE="true"; shift 2 ;;
     --fresh-start) FRESH_START="true"; S_FRESH_START="true"; shift ;;
     --fresh-stage1) FRESH_STAGE1="true"; S_FRESH_STAGE1="true"; shift ;;
     --fresh-stage2) FRESH_STAGE2="true"; S_FRESH_STAGE2="true"; shift ;;
@@ -512,6 +518,8 @@ is_pos_num "$STAGE2_LIMIT_TOLERANCE" || err "--stage2-limit-tolerance 必须是�
 awk -v x="$STAGE2_LIMIT_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-limit-tolerance 必须 < 1（百分比形式如 0.05 表示 5%），当前为：$STAGE2_LIMIT_TOLERANCE"
 is_pos_num "$STAGE2_STABILITY_TOLERANCE" || err "--stage2-stability-tolerance 必须是正数，当前为：$STAGE2_STABILITY_TOLERANCE"
 awk -v x="$STAGE2_STABILITY_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-stability-tolerance 必须 < 1（百分比形式如 0.05 表示 5%），当前为：$STAGE2_STABILITY_TOLERANCE"
+is_pos_int "$STAGE2_K_TRIALS" || err "--stage2-k-trials 必须是正整数，当前为：$STAGE2_K_TRIALS"
+is_pos_int "$STAGE2_PROBE_SIZE" || err "--stage2-probe-size 必须是正整数，当前为：$STAGE2_PROBE_SIZE"
 
 case "$DATASET" in
   mrpc|sst2|stsb|cola|qnli|rte|wnli) DATA_PATH="$DATASET" ;;
@@ -1021,6 +1029,8 @@ METAEOF
   "stage1_accuracy_tolerance": $STAGE1_ACCURACY_TOLERANCE,
   "stage2_limit_tolerance": $STAGE2_LIMIT_TOLERANCE,
   "stage2_stability_tolerance": $STAGE2_STABILITY_TOLERANCE,
+  "stage2_k_trials": $STAGE2_K_TRIALS,
+  "stage2_probe_size": $STAGE2_PROBE_SIZE,
   "created_at": "$(date -Iseconds)",
   "last_updated_at": "$(date -Iseconds)",
   "run_count": 1,
@@ -1067,7 +1077,7 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
     [ -n "$GENERAL_ACCURACY_TOLERANCES" ] && CMD+=(--accuracy_tolerance "$(printf '%s' "$GENERAL_ACCURACY_TOLERANCES" | cut -d, -f1 | xargs)")
   fi
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
-  CMD=(python rl_ga_compare_runner.py --base-model "$BASE_MODEL" --data-path "$DATA_PATH" --dataset "$DATASET" --output-dir "$RUN_ROOT" --model-type "$MODEL_TYPE" --batch-size "$BATCH_SIZE" --stage1-search-episodes "$STAGE1_EPISODES" --stage2-search-episodes "$STAGE2_EPISODES" --stage1-search-generations "$STAGE1_GENERATIONS" --stage2-search-generations "$STAGE2_GENERATIONS" --stage1-search-lr "$STAGE1_LR" --stage2-search-lr "$STAGE2_LR" --random-seed "$RANDOM_SEED" --perm-trials "$PERM_TRIALS" --cost-trials "$COST_TRIALS" --budget-trials "$BUDGET_TRIALS" --stage2-compare-repeats "$STAGE2_COMPARE_REPEATS" --compare-config-mode "$COMPARE_CONFIG_MODE" --stage1-accuracy-tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2-limit-tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2-stability-tolerance "$STAGE2_STABILITY_TOLERANCE")
+  CMD=(python rl_ga_compare_runner.py --base-model "$BASE_MODEL" --data-path "$DATA_PATH" --dataset "$DATASET" --output-dir "$RUN_ROOT" --model-type "$MODEL_TYPE" --batch-size "$BATCH_SIZE" --stage1-search-episodes "$STAGE1_EPISODES" --stage2-search-episodes "$STAGE2_EPISODES" --stage1-search-generations "$STAGE1_GENERATIONS" --stage2-search-generations "$STAGE2_GENERATIONS" --stage1-search-lr "$STAGE1_LR" --stage2-search-lr "$STAGE2_LR" --random-seed "$RANDOM_SEED" --perm-trials "$PERM_TRIALS" --cost-trials "$COST_TRIALS" --budget-trials "$BUDGET_TRIALS" --stage2-compare-repeats "$STAGE2_COMPARE_REPEATS" --compare-config-mode "$COMPARE_CONFIG_MODE" --stage1-accuracy-tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2-limit-tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2-stability-tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2-k-trials "$STAGE2_K_TRIALS" --stage2-probe-size "$STAGE2_PROBE_SIZE")
   if [ "$COMPARE_CONFIG_MODE" = "direct" ]; then
     CMD+=(--rl-compare-stage1-json "$RL_COMPARE_STAGE1_JSON" --rl-compare-stage2-json "$RL_COMPARE_STAGE2_JSON" --ga-compare-stage1-json "$GA_COMPARE_STAGE1_JSON" --ga-compare-stage2-json "$GA_COMPARE_STAGE2_JSON")
   else
@@ -1077,9 +1087,9 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   fi
 else
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
-    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$S_STAGE1_EPISODES" --stage2_rl_episodes_specified "$S_STAGE2_EPISODES" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE")
+    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$S_STAGE1_EPISODES" --stage2_rl_episodes_specified "$S_STAGE2_EPISODES" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
   else
-    CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE")
+    CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
     [ "$S_STAGE1_GENERATIONS" = "true" ] && CMD+=(--stage1_ga_generations "$STAGE1_GENERATIONS" --stage1_ga_generations_specified "true")
     [ "$S_STAGE2_GENERATIONS" = "true" ] && CMD+=(--stage2_ga_generations "$STAGE2_GENERATIONS" --stage2_ga_generations_specified "true")
   fi
@@ -1098,6 +1108,8 @@ if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ]; then
   show "Stage-1 准确度约束" "$STAGE1_ACCURACY_TOLERANCE" "$S_STAGE1_ACCURACY_TOLERANCE"
   show "Stage-2 指标约束百分比" "$STAGE2_LIMIT_TOLERANCE" "$S_STAGE2_LIMIT_TOLERANCE"
   show "Stage-2 稳定性约束百分比" "$STAGE2_STABILITY_TOLERANCE" "$S_STAGE2_STABILITY_TOLERANCE"
+  show "Stage-2 K 次噪声试验" "$STAGE2_K_TRIALS" "$S_STAGE2_K_TRIALS"
+  show "Stage-2 探针子集大小" "$STAGE2_PROBE_SIZE" "$S_STAGE2_PROBE_SIZE"
 fi
 if [ "$USE_PERSISTENT" = "true" ]; then
   show "持久化目录" "$PERSISTENT_DIR" "true"

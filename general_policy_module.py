@@ -1594,7 +1594,11 @@ def prepare_stage2_task(evaluator, fixed_gelu, fixed_softmax, split_name=None):
 
     _eval_dataset = ev.dataset_splits.get(split_name)
     _eval_dataset_size = len(_eval_dataset) if _eval_dataset is not None else 0
-    baseline_segments = _s2._auto_adjust_segments(_eval_dataset_size, 10)
+    _gp_k = int(getattr(ev, "stage2_k_trials", _s2.NOISE_STAGE_K_TRIALS))
+    _gp_probe = int(getattr(ev, "stage2_probe_size", _s2.NOISE_STAGE_PROBE_SIZE))
+    baseline_segments = _s2._auto_adjust_segments(
+        _eval_dataset_size, _gp_k, min_samples=_gp_probe,
+    )
 
     baseline_stats = ev.evaluate_model_with_attention_noise_segmented(
         fixed_gelu, fixed_softmax,
@@ -1654,7 +1658,9 @@ def prepare_stage2_task(evaluator, fixed_gelu, fixed_softmax, split_name=None):
 
     rl_evaluator = _NoiseRLEvaluatorWrapper(ev, fixed_gelu, fixed_softmax, split_name)
 
-    mc_train_samples = _s2._auto_adjust_segments(_eval_dataset_size, 10)
+    mc_train_samples = _s2._auto_adjust_segments(
+        _eval_dataset_size, _gp_k, min_samples=_gp_probe,
+    )
 
     # task context
     base_gelu = np.full(total_layers, 4, dtype=int)

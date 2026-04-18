@@ -140,12 +140,18 @@ NOISE_STAGE_GTRXL_WARMUP_MODE = "constant"
 NOISE_STAGE_GTRXL_WARMUP_UPDATES = 0
 NOISE_STAGE_GTRXL_SHORT_WARMUP_UPDATES = 20
 
-# 分段评测段数（所有评测环节统一使用分段法；实际段数受 MIN_SAMPLES_PER_SEGMENT 自动下调保护）
-NOISE_STAGE_BASELINE_SEGMENTS = 10         # baseline / worst 参考曲线
-NOISE_STAGE_BEST_TEST_SEGMENTS = 10        # 初始守擂（initial incumbent）
-NOISE_STAGE_MC_TRAIN_SAMPLES = 10          # 训练期终止步 MC 分段数
-NOISE_STAGE_MC_CONFIRM_SEGMENTS = 10       # 挑战者确认（challenger confirmation）
-NOISE_STAGE_MIN_SAMPLES_PER_SEGMENT = 80  # 每段最少样本数，段数超限时自动缩减
+# Stage-2 稳定性评测：固定分层探针 + K 次独立噪声 trial
+# K = 噪声试验次数；probe = 每次 trial 评测的固定分层探针子集大小
+# 两者都可通过 CLI (--stage2-k-trials / --stage2-probe-size) 覆盖，evaluator 实例属性
+# stage2_k_trials / stage2_probe_size 承载最终生效值
+NOISE_STAGE_K_TRIALS = 5                   # 默认 K = 5
+NOISE_STAGE_PROBE_SIZE = 256               # 默认 probe 子集大小 = 256
+# 各评测环节统一用 NOISE_STAGE_K_TRIALS，实际 K 受 probe_size 自动下调保护
+NOISE_STAGE_BASELINE_SEGMENTS = NOISE_STAGE_K_TRIALS    # baseline / worst 参考曲线
+NOISE_STAGE_BEST_TEST_SEGMENTS = NOISE_STAGE_K_TRIALS   # 初始守擂（initial incumbent）
+NOISE_STAGE_MC_TRAIN_SAMPLES = NOISE_STAGE_K_TRIALS     # 训练期终止步 MC trial 数
+NOISE_STAGE_MC_CONFIRM_SEGMENTS = NOISE_STAGE_K_TRIALS  # 挑战者确认（challenger confirmation）
+NOISE_STAGE_MIN_SAMPLES_PER_SEGMENT = NOISE_STAGE_PROBE_SIZE  # 探针下限 = probe_size
 
 # 方差惩罚（Stability Penalty）
 NOISE_STAGE_STABILITY_LAMBDA = 5.0        # lambda_stab 方差惩罚权重
@@ -201,6 +207,25 @@ NOISE_STAGE_STATUS_NO_STABLE_FEASIBLE = "no_stable_feasible_candidate"
 # reward 裁剪
 NOISE_STAGE_REWARD_CLIP_MIN = -5.0
 NOISE_STAGE_REWARD_CLIP_MAX = 5.0
+
+# ===============================================================
+# Stage-2 分层优先级奖励（Hierarchical Priority Bonus）
+# ---------------------------------------------------------------
+# 业务目标：在 baseline 指标约束的基础上，先满足"指标约束"，再满足"稳定性约束"，
+# 最后以"成本最小"为优化目标。三者存在严格次序，不应被线性叠加后相互抵消。
+#
+# 实现：把 shaping reward 裁剪到 [CLIP_MIN, CLIP_MAX]（宽度 = CLIP_MAX - CLIP_MIN）
+# 之后，按层级加上 tier bonus，使得任何"下层"候选的 shaping 分都无法追上"上层"
+# 候选的最低分。为此 tier bonus 必须严格大于 shaping 的最大值差：
+#   (CLIP_MAX - CLIP_MIN) = 10  →  取 20 以保留安全边际。
+#
+# 三个 tier 的分数区间（不可行 → 仅指标 OK → 指标+稳定性全 OK）：
+#   tier0 infeasible : [CLIP_MIN, CLIP_MAX]                     = [-5, +5]
+#   tier1 metric-ok  : [CLIP_MIN + 20, CLIP_MAX + 20]           = [+15, +25]
+#   tier2 fully-ok   : [CLIP_MIN + 40, CLIP_MAX + 40]           = [+35, +45]
+# ===============================================================
+NOISE_STAGE_METRIC_TIER_BONUS = 20.0
+NOISE_STAGE_STABILITY_TIER_BONUS = 20.0
 
 # ==================================================================
 # NOISE_RL_OPT_FLAGS — Stage-2 噪声 RL 算法优化开关（消融 / 一键回滚）
@@ -1584,22 +1609,39 @@ class _NoiseOptEnv:
             _excess.append(max(0.0, float(m2_std) - self._dynamic_m2_std_cap))
         stability_penalty = -self._stability_lambda * float(np.mean(_excess))
 
-        # -- \u7ec8\u7aef\u5956\u52b1 --
-        terminal_reward = (
+        # -- 分层判定：metric_ok 严格优先于 stability_ok --
+        metric_ok = (margin_loss >= 0.0) and (margin_m1 >= 0.0)
+        if self.num_metrics > 1:
+            metric_ok = metric_ok and (margin_m2 >= 0.0)
+        stability_ok = all(e <= 0.0 for e in _excess)
+
+        # 未满足 metric 时不启用 stability 信号（避免 PPO 在不可行区间被 std 分散注意力，
+        # 失去"先把指标做到可行再优化稳定性"的探索方向性）。
+        effective_stability_penalty = stability_penalty if metric_ok else 0.0
+
+        # -- shaping reward（与 tier bonus 分离并裁剪） --
+        shaping_reward = (
             float(NOISE_STAGE_TAIL_MARGIN_WEIGHT) * perf_score
             - float(NOISE_STAGE_TAIL_VIOLATION_WEIGHT) * violation_penalty
             + float(NOISE_STAGE_COST_WEIGHT) * cost_score
-            + stability_penalty
+            + effective_stability_penalty
         )
-
-        # \u5b89\u5168\u88c1\u526a
-        clipped_reward = float(np.clip(
-            terminal_reward, self._reward_clip_min, self._reward_clip_max,
+        clipped_shaping = float(np.clip(
+            shaping_reward, self._reward_clip_min, self._reward_clip_max,
         ))
 
-        constraints_ok = (margin_loss >= 0.0) and (margin_m1 >= 0.0)
-        if self.num_metrics > 1:
-            constraints_ok = constraints_ok and (margin_m2 >= 0.0)
+        # -- tier bonus（严格次序）--
+        tier_bonus = 0.0
+        if metric_ok:
+            tier_bonus += float(NOISE_STAGE_METRIC_TIER_BONUS)
+            if stability_ok:
+                tier_bonus += float(NOISE_STAGE_STABILITY_TIER_BONUS)
+
+        terminal_reward = clipped_shaping + tier_bonus
+        # tier bonus 已严格 > shaping 裁剪宽度，terminal_reward 天然有界，无需再次裁剪
+        clipped_reward = terminal_reward
+
+        constraints_ok = metric_ok
 
         reward_components = {
             "loss_limit": float(limits["loss"]),
@@ -1612,9 +1654,14 @@ class _NoiseOptEnv:
             "cost_score": float(cost_score),
             "violation_penalty": float(violation_penalty),
             "stability_penalty": float(stability_penalty),
+            "effective_stability_penalty": float(effective_stability_penalty),
             "sigma_cand": float(sigma_cand),
             "sigma_base": float(sigma_base),
             "constraints_ok": bool(constraints_ok),
+            "metric_ok": bool(metric_ok),
+            "stability_ok": bool(stability_ok),
+            "tier_bonus": float(tier_bonus),
+            "shaping_reward": float(clipped_shaping),
             "cost_lower_bound": float(self._cost_lower_bound),
             "cost_upper_bound": float(self._cost_upper_bound),
             "current_cost": float(self.accumulated_cost),
@@ -2089,8 +2136,10 @@ class NoiseRLModuleV2:
 
         _eval_dataset = ev.dataset_splits.get(reward_reference_split)
         _eval_dataset_size = len(_eval_dataset) if _eval_dataset is not None else 0
+        _stage2_k = int(getattr(ev, "stage2_k_trials", NOISE_STAGE_K_TRIALS))
+        _stage2_probe = int(getattr(ev, "stage2_probe_size", NOISE_STAGE_PROBE_SIZE))
         baseline_segments = _auto_adjust_segments(
-            _eval_dataset_size, NOISE_STAGE_BASELINE_SEGMENTS, log_fn=ev.log,
+            _eval_dataset_size, _stage2_k, log_fn=ev.log, min_samples=_stage2_probe,
         )
 
         baseline_reference_stats = ev.evaluate_model_with_attention_noise_segmented(
@@ -2164,8 +2213,8 @@ class NoiseRLModuleV2:
             f"k_epochs={NOISE_STAGE_PPO_K_EPOCHS}, warmup={NOISE_STAGE_GTRXL_WARMUP_MODE}"
         )
         ev.log(
-            f"  \u25b8 MC: train_trials={NOISE_STAGE_MC_TRAIN_SAMPLES}, confirm_trials={NOISE_STAGE_MC_CONFIRM_SEGMENTS}"
-            f"  (baseline_trials={baseline_segments}, probe_min_samples={NOISE_STAGE_MIN_SAMPLES_PER_SEGMENT})"
+            f"  \u25b8 MC: K_trials={_stage2_k}  probe_size={_stage2_probe}"
+            f"  (actual baseline K={baseline_segments})"
             f"  \u2190 \u56fa\u5b9a\u5206\u5c42\u63a2\u9488 + K \u6b21\u566a\u58f0\u65b9\u5f02\u79cd\u5b50"
         )
         ev.log(
@@ -2362,7 +2411,7 @@ class NoiseRLModuleV2:
             barrier_weight_m1=NOISE_STAGE_BARRIER_WEIGHT_M1,
             barrier_weight_m2=NOISE_STAGE_BARRIER_WEIGHT_M2,
             mc_train_samples=_auto_adjust_segments(
-                _eval_dataset_size, NOISE_STAGE_MC_TRAIN_SAMPLES, log_fn=ev.log,
+                _eval_dataset_size, _stage2_k, log_fn=ev.log, min_samples=_stage2_probe,
             ),
             stability_lambda=NOISE_STAGE_STABILITY_LAMBDA,
             stability_base_std_tolerance=NOISE_STAGE_STABILITY_BASE_STD_TOLERANCE,
@@ -2431,7 +2480,7 @@ class NoiseRLModuleV2:
 
             # \u521d\u59cb\u5b88\u64c2\u7edf\u8ba1\uff08\u5206\u6bb5\u8bc4\u6d4b\uff0c\u6574\u4efd\u9a8c\u8bc1\u96c6\u5207 N \u6bb5\uff0c\u53ea\u8dd1 1 \u904d\uff09
             best_test_segments = _auto_adjust_segments(
-                _eval_dataset_size, NOISE_STAGE_BEST_TEST_SEGMENTS, log_fn=ev.log,
+                _eval_dataset_size, _stage2_k, log_fn=ev.log, min_samples=_stage2_probe,
             )
             baseline_confirm_stats = ev.evaluate_model_with_attention_noise_segmented(
                 fixed_gelu, fixed_softmax,
@@ -2439,18 +2488,24 @@ class NoiseRLModuleV2:
                 segments=best_test_segments,
                 split=reward_reference_split,
             )
+            # 基线按定义属于 tier2（metric+stability 双 OK），分数下限 = METRIC_TIER + STABILITY_TIER；
+            # 以此为 incumbent 参考线，任何更低 tier 的候选（仅 metric OK / 不可行）无法触发 confirm，
+            # 避免在明显不可能胜过基线的候选上浪费 confirm 段评测。
+            _baseline_incumbent_score = float(
+                NOISE_STAGE_METRIC_TIER_BONUS + NOISE_STAGE_STABILITY_TIER_BONUS
+            )
             incumbent_best_noise_config = _clone_candidate(initial_incumbent_config)
             incumbent_best_noise_config["search_score_mean"] = float(baseline_confirm_stats["loss_mean"])
             incumbent_best_noise_config["search_score_std"] = float(baseline_confirm_stats["loss_std"])
             incumbent_best_noise_config["qualification_passed"] = True
             incumbent_best_noise_config["raw_final_reward"] = 0.0
-            incumbent_best_noise_config["final_selection_score"] = 0.0
+            incumbent_best_noise_config["final_selection_score"] = _baseline_incumbent_score
             incumbent_best_signature = _candidate_signature(initial_incumbent_config)
-            incumbent_mean_score = 0.0  # \u57fa\u7ebf\u5206\u6570\u53c2\u8003
+            incumbent_mean_score = _baseline_incumbent_score
             incumbent_history.append({
                 "source": "initial_incumbent",
                 "episode": 0,
-                "mean_score": 0.0,
+                "mean_score": _baseline_incumbent_score,
                 "cost": float(incumbent_cost_value),
             })
             ev.log(
@@ -2782,7 +2837,7 @@ class NoiseRLModuleV2:
                     if key.endswith("scaling_factors")
                 }
                 confirm_segments = _auto_adjust_segments(
-                    _eval_dataset_size, NOISE_STAGE_MC_CONFIRM_SEGMENTS,
+                    _eval_dataset_size, _stage2_k, min_samples=_stage2_probe,
                 )
                 confirm_stats = ev.evaluate_model_with_attention_noise_segmented(
                     fixed_gelu, fixed_softmax,
@@ -3301,6 +3356,8 @@ class NoiseRLModuleV2:
             "performance_baseline_softmax": fixed_softmax.copy(),
             "performance_baseline_source": "stage1_fixed_low_risk_noise",
             "baseline_segments": int(baseline_segments),
+            "k_trials": int(_stage2_k),
+            "probe_size": int(_stage2_probe),
             "search_baseline_stats": _copy_repeat_summary(baseline_reference_stats),
             "worst_reference_stats": _copy_repeat_summary(worst_reference_stats),
             "worst_case_noise_config": {k: v.copy() for k, v in worst_case_noise_config.items()},
@@ -3314,8 +3371,10 @@ class NoiseRLModuleV2:
             "stable_joint_best_noise_config": _clone_candidate(selected_config),
             "selection_diagnostics": {
                 "selection_mode": "incumbent_best_test_v2",
-                "mc_train_samples": int(NOISE_STAGE_MC_TRAIN_SAMPLES),
-                "mc_confirm_segments": int(NOISE_STAGE_MC_CONFIRM_SEGMENTS),
+                "mc_train_samples": int(_stage2_k),
+                "mc_confirm_segments": int(_stage2_k),
+                "k_trials": int(_stage2_k),
+                "probe_size": int(_stage2_probe),
                 "stability_lambda": float(NOISE_STAGE_STABILITY_LAMBDA),
                 "confirm_fail_penalty": float(NOISE_STAGE_CONFIRM_FAIL_PENALTY),
                 "noise_debt_log_alpha": float(NOISE_STAGE_NOISE_DEBT_LOG_ALPHA),
@@ -3349,8 +3408,10 @@ class NoiseRLModuleV2:
                 "ppo_update_interval": PPO_UPDATE_INTERVAL,
                 "ppo_eps_clip": NOISE_STAGE_PPO_EPS_CLIP,
                 "ppo_k_epochs": NOISE_STAGE_PPO_K_EPOCHS,
-                "mc_train_samples": NOISE_STAGE_MC_TRAIN_SAMPLES,
-                "mc_confirm_segments": NOISE_STAGE_MC_CONFIRM_SEGMENTS,
+                "mc_train_samples": _stage2_k,
+                "mc_confirm_segments": _stage2_k,
+                "k_trials": _stage2_k,
+                "probe_size": _stage2_probe,
                 "stability_lambda": NOISE_STAGE_STABILITY_LAMBDA,
                 "stability_base_std_tolerance": NOISE_STAGE_STABILITY_BASE_STD_TOLERANCE,
                 "dynamic_loss_std_cap": float(dynamic_loss_std_cap),
@@ -3366,7 +3427,9 @@ class NoiseRLModuleV2:
             },
             "reward_diagnostics": {
                 "terminal_reward_mode": "mc_sparse_v2",
-                "mc_train_samples": NOISE_STAGE_MC_TRAIN_SAMPLES,
+                "mc_train_samples": _stage2_k,
+                "k_trials": _stage2_k,
+                "probe_size": _stage2_probe,
                 "episode_return_mean": float(np.mean(episode_returns)) if episode_returns else None,
                 "final_selection_score_mean": float(np.mean(episode_final_selection_scores)) if episode_final_selection_scores else None,
                 "raw_final_reward_mean": float(np.mean(episode_raw_final_rewards)) if episode_raw_final_rewards else None,
