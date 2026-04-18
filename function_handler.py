@@ -378,8 +378,12 @@ class PolynomiaTanh(nn.Module):
 # change BertsdpaAttention to normal self attention and change its softmax
 class BertSelfAttentionWithAproximation(BertSelfAttention):
     """BertSelfAttention with softmax approximation"""
-    def __init__(self, config, degree, lower_bound):
-        super().__init__(config)
+    def __init__(self, config, degree, lower_bound, position_embedding_type=None, layer_idx=None):
+        super().__init__(
+            config,
+            position_embedding_type=position_embedding_type,
+            layer_idx=layer_idx,
+        )
         self.degree = degree 
         self.lower_bound = lower_bound
 
@@ -427,6 +431,23 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
     ):
        # Follow the current transformers BERT attention flow and replace
        # only the softmax step with the approximation variant.
+        if isinstance(past_key_value, bool):
+            # Older transformers versions call BERT self-attention with the
+            # legacy positional signature:
+            #   (..., encoder_hidden_states, past_key_value, output_attentions)
+            # Our cross-version wrapper still includes ``encoder_attention_mask``,
+            # so the legacy ``past_key_value`` lands there and the legacy
+            # ``output_attentions`` lands in ``past_key_value``.
+            if output_attentions in (False, None):
+                output_attentions = past_key_value
+            if past_key_values is not None:
+                past_key_value = past_key_values
+                past_key_values = None
+            elif encoder_attention_mask is not None and not torch.is_tensor(encoder_attention_mask):
+                past_key_value = encoder_attention_mask
+                encoder_attention_mask = None
+            else:
+                past_key_value = None
         if past_key_value is None and past_key_values is not None:
             past_key_value = past_key_values
         batch_size, _, _ = hidden_states.shape
@@ -790,9 +811,20 @@ class ReversibleLayerHandler:
                     }
 
                 # 应用新函数
-                orig_sd = layer.attention.self.state_dict()
-                new_attn = BertSelfAttentionWithAproximation(self.model.config, degree=degree, lower_bound=Exp_bound[degree])
+                orig_self = layer.attention.self
+                orig_sd = orig_self.state_dict()
+                new_attn = BertSelfAttentionWithAproximation(
+                    self.model.config,
+                    degree=degree,
+                    lower_bound=Exp_bound[degree],
+                    position_embedding_type=getattr(orig_self, "position_embedding_type", None),
+                    layer_idx=getattr(orig_self, "layer_idx", None),
+                )
                 new_attn.load_state_dict(orig_sd, strict=False)
+                new_attn = new_attn.to(
+                    device=orig_self.query.weight.device,
+                    dtype=orig_self.query.weight.dtype,
+                )
                 layer.attention.self = new_attn
 
         print(f"已替换 {len(layer_indices)} 层的Softmax函数（Softmax function）")
