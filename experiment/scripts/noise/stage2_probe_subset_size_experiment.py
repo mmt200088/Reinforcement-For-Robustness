@@ -8,10 +8,10 @@ noise-sampling results under two configuration families:
 2. A fixed random-control config for GELU / Softmax / noise.
 
 For each family, the experiment runs:
-- probe_size in {32, 64, 128, 256}
+- probe_size in {32, 64, 128, 200, 256}
 - K in {5, 10}
 
-This yields 16 groups in total. Each group stores every trial result, plus
+By default this yields 20 groups in total. Each group stores every trial result, plus
 mean/std summaries, text reports, CSV tables, JSON output, and plots.
 """
 
@@ -52,7 +52,7 @@ DEFAULT_OUTPUT_DIR = os.path.join(
     "stage2_probe_subset_size",
     DATASET_KEY,
 )
-DEFAULT_PROBE_SIZES = (32, 64, 128, 256)
+DEFAULT_PROBE_SIZES = (32, 64, 128, 200, 256)
 DEFAULT_K_VALUES = (5, 10)
 FAMILY_ORDER = ("max_action", "random_control")
 FAMILY_LABELS = {
@@ -76,6 +76,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_length", type=int, default=128)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--probe_seed", type=int, default=42)
+    parser.add_argument(
+        "--random_control_seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed for Random-Control config sampling. If omitted, a fresh seed "
+            "is generated each run."
+        ),
+    )
     parser.add_argument("--max_eval_samples", type=int, default=0)
     parser.add_argument(
         "--probe_sizes",
@@ -118,6 +127,12 @@ def _json_default(obj):
     if isinstance(obj, np.generic):
         return obj.item()
     raise TypeError(f"Unsupported type for JSON serialization: {type(obj)!r}")
+
+
+def _resolve_random_control_seed(seed_value):
+    if seed_value is not None:
+        return int(seed_value)
+    return int.from_bytes(os.urandom(8), "big")
 
 
 def _make_max_action_config(total_layers: int) -> Dict[str, object]:
@@ -569,6 +584,7 @@ def main() -> None:
     args = parse_args()
     probe_sizes = [int(v) for v in args.probe_sizes]
     k_values = [int(v) for v in args.k_values]
+    random_control_seed = _resolve_random_control_seed(args.random_control_seed)
     output_dir = _ensure_dir(os.path.normpath(args.output_dir))
 
     print("=" * 72, flush=True)
@@ -577,6 +593,7 @@ def main() -> None:
     print(f"Dataset       : {DATASET_KEY}", flush=True)
     print(f"Probe sizes   : {probe_sizes}", flush=True)
     print(f"K values      : {k_values}", flush=True)
+    print(f"Random seed   : {random_control_seed} (Random-Control)", flush=True)
     print(f"Output dir    : {output_dir}", flush=True)
     resolved_device = args.device
     if resolved_device == "cuda" and not torch.cuda.is_available():
@@ -607,7 +624,7 @@ def main() -> None:
 
         family_configs = [
             _make_max_action_config(evaluator.total_layers),
-            _make_random_control_config(evaluator.total_layers, args.seed),
+            _make_random_control_config(evaluator.total_layers, random_control_seed),
         ]
         metric_short_names = evaluator.get_metric_short_names()
         if len(metric_short_names) < 2:
@@ -652,6 +669,7 @@ def main() -> None:
             "k_values": k_values,
             "seed": int(args.seed),
             "probe_seed": int(args.probe_seed),
+            "random_control_seed": int(random_control_seed),
             "metric_short_names": list(metric_short_names[:2]),
             "results": results,
         }
