@@ -129,7 +129,7 @@ rl_results/persistent/{algorithm}/{model_type}/{dataset}/{accuracy_slug}/
 ```
 
 - `algorithm` ∈ `{rl, ga, general-rl}`（值来自 `config.paths.PERSISTENT_*_BRANCH`）
-- `accuracy_slug` 由精度容忍度 + Stage-2 分位数组合而成，如 `s1t0.005_s2q0.05_s2sq0.05`
+- `accuracy_slug` 由精度容忍度 + Stage-2 波动百分比组合而成，如 `s1t0.005_s2t0.05_s2st0.05`
 - 同一 slug → 同一目录 → 自动续训练
 - 每个 dataset 目录下还有 `LATEST_PID` / `LATEST_RUN_DIR` 两个标签文件，指向最近一次运行
 

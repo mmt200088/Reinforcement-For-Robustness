@@ -24,7 +24,7 @@ from noise_rl_module_v2 import (
     NOISE_STAGE_BEST_TEST_SEGMENTS,
     NOISE_STAGE_BEST_TEST_TRIGGER_MARGIN,
     NOISE_STAGE_COST_WEIGHT,
-    NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE,
+    NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE,
     NOISE_STAGE_MC_CONFIRM_SEGMENTS,
     NOISE_STAGE_MC_TRAIN_SAMPLES,
     NOISE_STAGE_PERF_WEIGHT_LOSS,
@@ -285,7 +285,7 @@ def build_stage1_context(evaluator, log_fn=None, include_distribution=True, cons
 
 
 def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None,
-                         limit_quartile=None, stability_quartile=None) -> Stage2Context:
+                         limit_tolerance=None, stability_tolerance=None) -> Stage2Context:
     fixed_gelu = np.asarray(fixed_gelu, dtype=int)
     fixed_softmax = np.asarray(fixed_softmax, dtype=int)
 
@@ -338,37 +338,38 @@ def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None,
         upper_bound=cost_reference_tot_c,
     )
 
-    _eff_limit_q = float(limit_quartile) if limit_quartile is not None else NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE
-    _eff_stab_q = float(stability_quartile) if stability_quartile is not None else NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE
+    _eff_limit_tol = float(limit_tolerance) if limit_tolerance is not None else NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE
+    _eff_stab_tol = float(stability_tolerance) if stability_tolerance is not None else NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE
     search_limits = _compute_dynamic_limits(
         baseline_reference_stats["loss_mean"],
         baseline_reference_stats["p_mean"],
         baseline_reference_stats["s_mean"],
-        worst_reference_stats["loss_mean"],
-        worst_reference_stats["p_mean"],
-        worst_reference_stats["s_mean"],
-        quartile=_eff_limit_q,
+        tolerance=_eff_limit_tol,
     )
     dynamic_loss_std_cap = _compute_dynamic_std_upper_bound(
-        baseline_reference_stats["loss_std"],
-        worst_reference_stats["loss_std"],
-        quartile=_eff_stab_q,
+        baseline_reference_stats["loss_std"], tolerance=_eff_stab_tol,
     )
     dynamic_m1_std_cap = _compute_dynamic_std_upper_bound(
-        baseline_reference_stats["p_std"],
-        worst_reference_stats["p_std"],
-        quartile=_eff_stab_q,
+        baseline_reference_stats["p_std"], tolerance=_eff_stab_tol,
     )
     dynamic_m2_std_cap = _compute_dynamic_std_upper_bound(
-        baseline_reference_stats["s_std"],
-        worst_reference_stats["s_std"],
-        quartile=_eff_stab_q,
+        baseline_reference_stats["s_std"], tolerance=_eff_stab_tol,
     )
 
     if log_fn is not None:
         log_fn("")
         log_fn("Stage-2 baseline and dynamic constraints:")
-        log_fn(f"  split={reward_reference_split}  limit_quartile={_eff_limit_q}  stability_quartile={_eff_stab_q}")
+        log_fn(
+            f"  split={reward_reference_split}  "
+            f"limit_tolerance={_eff_limit_tol} ({_eff_limit_tol*100:.2f}% around baseline)  "
+            f"stability_tolerance={_eff_stab_tol} ({_eff_stab_tol*100:.2f}% around baseline std)"
+        )
+        log_fn(
+            f"  evaluation_mode=stability_probe_trials  "
+            f"(baseline K={baseline_segments}, train K={train_segments}, "
+            f"confirm K={confirm_segments}, best-test K={best_test_segments}; "
+            f"probe size={baseline_reference_stats.get('probe_size', '?')})"
+        )
         log_fn(
             "  low-risk baseline: "
             + evaluator._fmt_metrics(
@@ -376,6 +377,9 @@ def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None,
                 baseline_reference_stats["p_mean"],
                 baseline_reference_stats["s_mean"],
             )
+            + f"  worst-trial: loss_max={baseline_reference_stats.get('loss_max', float('nan')):.4f}, "
+            f"m1_min={baseline_reference_stats.get('p_min', float('nan')):.4f}, "
+            f"m2_min={baseline_reference_stats.get('s_min', float('nan')):.4f}"
         )
         log_fn(
             "  worst-case baseline: "
@@ -384,6 +388,9 @@ def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None,
                 worst_reference_stats["p_mean"],
                 worst_reference_stats["s_mean"],
             )
+            + f"  worst-trial: loss_max={worst_reference_stats.get('loss_max', float('nan')):.4f}, "
+            f"m1_min={worst_reference_stats.get('p_min', float('nan')):.4f}, "
+            f"m2_min={worst_reference_stats.get('s_min', float('nan')):.4f}"
         )
         log_fn(
             "  dynamic constraints: "
@@ -394,7 +401,7 @@ def build_stage2_context(evaluator, fixed_gelu, fixed_softmax, log_fn=None,
             )
         )
         log_fn(
-            f"  std caps: loss={dynamic_loss_std_cap:.6f}, "
+            f"  std caps (pure noise-sampling variance): loss={dynamic_loss_std_cap:.6f}, "
             f"m1={dynamic_m1_std_cap:.6f}, m2={dynamic_m2_std_cap:.6f}"
         )
         log_fn(
@@ -1549,8 +1556,8 @@ class Stage2NoiseGeneticSearcher:
             self.fixed_gelu,
             self.fixed_softmax,
             log_fn=self._log,
-            limit_quartile=getattr(self.evaluator, "stage2_limit_quartile", None),
-            stability_quartile=getattr(self.evaluator, "stage2_stability_quartile", None),
+            limit_tolerance=getattr(self.evaluator, "stage2_limit_tolerance", None),
+            stability_tolerance=getattr(self.evaluator, "stage2_stability_tolerance", None),
         )
         self._log("")
         self._log(
@@ -1905,9 +1912,9 @@ class Stage2NoiseGeneticSearcher:
                 key: value for key, value in self.context.worst_reference_stats.items()
             },
             "worst_case_noise_config": _clone_noise_config(self.context.worst_case_noise_config),
-            "limit_computation_method": "dynamic_quartile",
-            "limit_quartile": float(getattr(self.evaluator, "stage2_limit_quartile", NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE)),
-            "stability_quartile": float(getattr(self.evaluator, "stage2_stability_quartile", NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE)),
+            "limit_computation_method": "baseline_tolerance_percentage",
+            "limit_tolerance": float(getattr(self.evaluator, "stage2_limit_tolerance", NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE)),
+            "stability_tolerance": float(getattr(self.evaluator, "stage2_stability_tolerance", NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE)),
             "search_limits": {k: float(v) for k, v in self.context.search_limits.items()},
             "status": status,
             "best_noise_config": (

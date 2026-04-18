@@ -132,8 +132,8 @@ class CompareConfigModeTests(unittest.TestCase):
                 model_type="bert-base",
                 dataset="mrpc",
                 stage1_accuracy_tolerance=0.005,
-                stage2_limit_quartile=0.2,
-                stage2_stability_quartile=0.2,
+                stage2_limit_tolerance=0.05,
+                stage2_stability_tolerance=0.05,
             )
             run_dir.mkdir(parents=True, exist_ok=True)
             (run_dir / "metadata.json").write_text(
@@ -155,8 +155,8 @@ class CompareConfigModeTests(unittest.TestCase):
                     model_type="bert-base",
                     persistent_root=root,
                     stage1_accuracy_tolerance=0.005,
-                    stage2_limit_quartile=0.2,
-                    stage2_stability_quartile=0.2,
+                    stage2_limit_tolerance=0.05,
+                    stage2_stability_tolerance=0.05,
                 )
 
     def test_noise_final_eval_loads_gpt2_variant_from_json(self):

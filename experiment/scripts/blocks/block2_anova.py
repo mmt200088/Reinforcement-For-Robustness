@@ -7,8 +7,8 @@ Factor B (Softmax of layer j, 2 levels: full/low). Tests for significant
 A*B interaction via two-way ANOVA, interaction plots, and baseline comparison.
 
 Usage:
-    python experiment_block2_anova.py --device cuda --output_dir results/block2
-    python experiment_block2_anova.py --tasks sst2 mrpc --n_bootstrap 100
+    python -m experiment.scripts.blocks.block2_anova --device cuda
+    python -m experiment.scripts.blocks.block2_anova --tasks sst2 mrpc --n_bootstrap 100
 """
 
 import os
@@ -24,7 +24,7 @@ plt.rcParams['font.serif'] = ['Times New Roman', 'DejaVu Serif', 'serif']
 from scipy import stats
 import warnings
 
-from experiment_core import (
+from experiment.core.experiment_core import (
     TASK_REGISTRY, ALL_TASKS, NUM_LAYERS,
     GELU_FULL, GELU_LOW, SOFTMAX_FULL, SOFTMAX_LOW, BASELINE_CONFIG,
     load_model_and_data, get_logits_for_config, compute_metrics,
@@ -377,7 +377,11 @@ def main():
     parser = argparse.ArgumentParser(description="Block 2: ANOVA interaction effect analysis")
     parser.add_argument("--tasks", nargs='+', default=None)
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--output_dir", type=str, default="results/block2")
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="experiment/outputs/blocks/block2",
+    )
     parser.add_argument("--n_bootstrap", type=int, default=100)
     parser.add_argument("--max_length", type=int, default=128)
     parser.add_argument("--batch_size", type=int, default=16)

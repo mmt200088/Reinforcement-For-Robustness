@@ -7,8 +7,8 @@ across all 8 datasets, and performs Spearman rank correlation analysis to
 test whether approximation error effects are consistent across tasks.
 
 Usage:
-    python experiment_block3_cross_task.py --device cuda --output_dir results/block3
-    python experiment_block3_cross_task.py --input_dir results/ --output_dir results/block3
+    python -m experiment.scripts.blocks.block3_cross_task --device cuda
+    python -m experiment.scripts.blocks.block3_cross_task --tasks sst2 mrpc
 """
 
 import os
@@ -23,7 +23,7 @@ plt.rcParams['font.serif'] = ['Times New Roman', 'DejaVu Serif', 'serif']
 from scipy.stats import spearmanr
 from itertools import combinations
 
-from experiment_core import (
+from experiment.core.experiment_core import (
     TASK_REGISTRY, ALL_TASKS, NUM_LAYERS, TASK_GROUPS,
     GELU_FULL, GELU_LOW, SOFTMAX_FULL, SOFTMAX_LOW, BASELINE_CONFIG,
     load_model_and_data, evaluate_config, get_primary_metric,
@@ -270,7 +270,11 @@ def main():
     parser = argparse.ArgumentParser(description="Block 3: Cross-task verification & robustness")
     parser.add_argument("--tasks", nargs='+', default=None, help="Tasks (default: all 8)")
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--output_dir", type=str, default="results/block3")
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="experiment/outputs/blocks/block3",
+    )
     parser.add_argument("--max_length", type=int, default=128)
     parser.add_argument("--batch_size", type=int, default=16)
     args = parser.parse_args()

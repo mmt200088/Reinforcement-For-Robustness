@@ -7,8 +7,8 @@ while keeping all other layers at full precision. Plot per-dataset results
 and a summary heatmap.
 
 Usage:
-    python experiment_single_layer_degradation.py --device cuda --output_dir results/single_layer
-    python experiment_single_layer_degradation.py --tasks sst2 mrpc --device cuda
+    python -m experiment.scripts.degradation.single_layer_degradation --device cuda
+    python -m experiment.scripts.degradation.single_layer_degradation --tasks sst2 mrpc --device cuda
 """
 
 import os
@@ -22,7 +22,7 @@ import matplotlib.ticker as ticker
 plt.rcParams['font.family'] = 'serif'
 plt.rcParams['font.serif'] = ['Times New Roman', 'DejaVu Serif', 'serif']
 
-from experiment_core import (
+from experiment.core.experiment_core import (
     TASK_REGISTRY, ALL_TASKS, NUM_LAYERS,
     GELU_FULL, GELU_LOW, SOFTMAX_FULL, SOFTMAX_LOW, BASELINE_CONFIG,
     load_model_and_data, evaluate_config, get_primary_metric,
@@ -202,7 +202,11 @@ def main():
     parser = argparse.ArgumentParser(description="Single-layer degradation test for all GLUE tasks")
     parser.add_argument("--tasks", nargs='+', default=None, help="Tasks to run (default: all)")
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--output_dir", type=str, default="results/single_layer")
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="experiment/outputs/degradation/single_layer",
+    )
     parser.add_argument("--max_length", type=int, default=128)
     parser.add_argument("--batch_size", type=int, default=16)
     args = parser.parse_args()

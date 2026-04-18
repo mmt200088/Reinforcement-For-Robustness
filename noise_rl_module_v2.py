@@ -171,7 +171,10 @@ NOISE_STAGE_BARRIER_WEIGHT_M1 = 0.45
 NOISE_STAGE_BARRIER_WEIGHT_M2 = 0.45
 
 # 动态约束
-NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE = 0.2
+# 以 baseline 为基准的允许波动百分比（与 Stage-1 的 stage1_accuracy_tolerance 同构）：
+#   - limit 方向：loss 最多上浮 tolerance，metric 最多下降 tolerance。
+#   - stability 方向：std 最多上浮 tolerance（基线探针的噪声采样方差）。
+NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE = 0.05
 
 # 挑战者触发
 NOISE_STAGE_BEST_TEST_TRIGGER_MARGIN = 0.0
@@ -398,29 +401,18 @@ def _get_worst_case_noise_configuration(evaluator):
 
 def _compute_dynamic_limits(
     base_loss, base_p, base_s,
-    worst_loss, worst_p, worst_s,
-    quartile=NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE,
+    tolerance=NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE,
 ):
-    """根据 baseline 和 worst-case 指标动态计算约束上下限。
+    """以 baseline 为基准、tolerance 百分比给出 Stage-2 约束上下限（与 Stage-1 同构）。
 
-    Loss 越小越好；metric1/metric2 越大越好。
-    特殊情况（统计噪声导致插值方向反常）时不插值，使用 baseline 本身。
+    - Loss 越小越好 → 允许上浮 `tolerance`：limit_loss = base_loss * (1 + tolerance)
+    - metric1/2 越大越好 → 允许下降 `tolerance`：limit_p = base_p * (1 - tolerance)
+    - 对 base 指标为负数或零的异常情况退化为 base 本身，避免倒挂。
     """
-    if base_loss > worst_loss:
-        limit_loss = float(base_loss)
-    else:
-        limit_loss = float(base_loss + quartile * (worst_loss - base_loss))
-
-    if base_p < worst_p:
-        limit_p = float(base_p)
-    else:
-        limit_p = float(base_p + quartile * (worst_p - base_p))
-
-    if base_s < worst_s:
-        limit_s = float(base_s)
-    else:
-        limit_s = float(base_s + quartile * (worst_s - base_s))
-
+    tol = max(0.0, float(tolerance))
+    limit_loss = float(base_loss) * (1.0 + tol) if float(base_loss) > 0 else float(base_loss)
+    limit_p = float(base_p) * (1.0 - tol) if float(base_p) > 0 else float(base_p)
+    limit_s = float(base_s) * (1.0 - tol) if float(base_s) > 0 else float(base_s)
     return {
         "loss": limit_loss,
         "metric1": limit_p,
@@ -429,23 +421,33 @@ def _compute_dynamic_limits(
 
 
 def _compute_dynamic_std_upper_bound(
-    baseline_std, worst_std, quartile=NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE,
+    baseline_std, tolerance=NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE,
 ):
-    """与 `_compute_dynamic_limits` 中 loss 维同构：std 越大越不利。
+    """稳定性 std 上界：以 baseline_std 为基准允许上浮 `tolerance` 百分比。
 
-    - 正常：上界 = baseline_std + quartile * (worst_std - baseline_std)
-    - 若 worst_std < baseline_std（最坏情形反而更稳），不外推放宽，取 baseline_std。
+    输入 `baseline_std` 来自 evaluate_model_with_attention_noise_segmented，
+    新语义是「同一分层探针多次噪声采样」的纯噪声方差（参见那里的 docstring）。
+
+    返回：baseline_std * (1 + tolerance)。baseline_std ≤ 0 时返回 baseline_std。
     """
-    if baseline_std > worst_std:
-        return float(baseline_std)
-    return float(baseline_std + quartile * (worst_std - baseline_std))
+    tol = max(0.0, float(tolerance))
+    bs = float(baseline_std)
+    if bs <= 0.0:
+        return bs
+    return bs * (1.0 + tol)
 
 
 def _auto_adjust_segments(dataset_size, requested_segments, log_fn=None,
                           min_samples=NOISE_STAGE_MIN_SAMPLES_PER_SEGMENT):
-    """根据数据集大小自动缩减分段数，保证每段样本数 >= min_samples。
+    """根据数据集大小自动缩减分段数（新语义下 = 噪声试验次数 K），
+    保证每段 / 探针样本数 >= min_samples。
 
-    返回实际使用的段数（>= 1）。
+    自 2026-04 起，"分段"已不再是切分数据：evaluate_model_with_attention_noise_segmented
+    改为"固定分层探针 + K 次噪声试验"。本函数仍起到"根据数据集大小 clamp K
+    上限"的作用：探针尺寸 ≈ len(dataset) / K，需要 >= min_samples，因此
+    K 上限 = dataset_size // min_samples，与本函数原有公式一致。
+
+    返回实际使用的 K（>= 1）。
     """
     requested_segments = max(1, int(requested_segments))
     if dataset_size <= 0:
@@ -1491,7 +1493,11 @@ class _NoiseOptEnv:
         return self._get_state(), final_r, True, info
 
     def _compute_terminal_reward_mc(self):
-        """MC 终端奖励：将验证集切成 N 段、每段独立噪声采样评测，总计只遍历 1 遍数据。"""
+        """MC 终端奖励：在固定分层探针上跑 K 次不同噪声种子，std 为纯噪声采样方差。
+
+        (参数名 `segments=K` 保留；语义由 evaluate_model_with_attention_noise_segmented
+        从"N 段数据各跑 1 次"迁移到"同一份探针跑 K 次 i.i.d. 噪声"。详见那里的
+        docstring。)"""
         noise_kwargs = {
             "input_noise_scaling_factors": np.array(self.input_noise_config, dtype=int),
             "wq_noise_scaling_factors": np.array(self.wq_noise_config, dtype=int),
@@ -2066,13 +2072,19 @@ class NoiseRLModuleV2:
             }
 
         def _log_repeat_baseline(label, stats):
+            _probe_n = stats.get('probe_size', '?')
             ev.log(
-                f"{label} \u00b7 \u5206\u6bb5 segments={stats['n']} \u00b7 \u5b50\u96c6 split={stats['split_name']}"
+                f"{label} \u00b7 \u566a\u58f0\u8bd5\u9a8c trials={stats['n']} "
+                f"\u00b7 \u63a2\u9488 probe={_probe_n} \u00b7 \u5b50\u96c6 split={stats['split_name']}"
             )
             ev.log(
                 "     "
                 f"{ev._fmt_metrics(stats['loss_mean'], stats['p_mean'], stats['s_mean'])}  "
-                f"\u2502 \u6807\u51c6\u5dee std: loss={stats['loss_std']:.4f}, m1={stats['p_std']:.4f}, m2={stats['s_std']:.4f}"
+                f"\u2502 \u566a\u58f0\u566a\u58f0\u65b9\u5dee std: loss={stats['loss_std']:.4f}, "
+                f"m1={stats['p_std']:.4f}, m2={stats['s_std']:.4f}  "
+                f"\u2502 \u6700\u574f loss_max={stats.get('loss_max', float('nan')):.4f}, "
+                f"m1_min={stats.get('p_min', float('nan')):.4f}, "
+                f"m2_min={stats.get('s_min', float('nan')):.4f}"
             )
 
         _eval_dataset = ev.dataset_splits.get(reward_reference_split)
@@ -2116,37 +2128,31 @@ class NoiseRLModuleV2:
         worst_s = worst_reference_stats["s_mean"]
 
         # \u52a8\u6001\u7ea6\u675f
-        _s2_limit_q = getattr(ev, "stage2_limit_quartile", NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE)
-        _s2_stab_q = getattr(ev, "stage2_stability_quartile", NOISE_STAGE_DYNAMIC_LIMIT_QUARTILE)
-        search_limits = _compute_dynamic_limits(base_loss, base_p, base_s, worst_loss, worst_p, worst_s, quartile=_s2_limit_q)
+        _s2_limit_tol = getattr(ev, "stage2_limit_tolerance", NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE)
+        _s2_stab_tol = getattr(ev, "stage2_stability_tolerance", NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE)
+        search_limits = _compute_dynamic_limits(base_loss, base_p, base_s, tolerance=_s2_limit_tol)
         limit_loss = float(search_limits["loss"])
         limit_p = float(search_limits["metric1"])
         limit_s = float(search_limits["metric2"])
 
         _noise_block_title(
             ev.log,
-            f"\u52a8\u6001\u7ea6\u675f\uff08Dynamic constraints, limit_quartile={_s2_limit_q}, stability_quartile={_s2_stab_q} on {reward_reference_split}\uff09",
+            f"\u52a8\u6001\u7ea6\u675f\uff08Dynamic constraints, limit_tolerance={_s2_limit_tol}, stability_tolerance={_s2_stab_tol} on {reward_reference_split}\uff09",
         )
         ev.log(f"  \u25b8 \u57fa\u7ebf\uff08baseline\uff09: {ev._fmt_metrics(base_loss, base_p, base_s)}")
-        ev.log(f"  \u25b8 \u6700\u574f\uff08worst\uff09:   {ev._fmt_metrics(worst_loss, worst_p, worst_s)}")
-        ev.log(f"  \u25b8 \u754c\u9650\uff08limit\uff09:   {ev._fmt_constraints(limit_loss, limit_p, limit_s)}")
+        ev.log(f"  \u25b8 \u6700\u574f\uff08worst-ref\uff09: {ev._fmt_metrics(worst_loss, worst_p, worst_s)}  (\u4ec5\u505a\u89c2\u5bdf\uff0c\u4e0d\u518d\u53c2\u4e0e\u754c\u9650\u8ba1\u7b97)")
+        ev.log(f"  \u25b8 \u754c\u9650\uff08limit\uff09:   {ev._fmt_constraints(limit_loss, limit_p, limit_s)}  (baseline \xb1 {_s2_limit_tol*100:.2f}%)")
 
-        # baseline / worst \u7684\u6807\u51c6\u5dee\uff1a\u7528\u4e8e\u52a8\u6001 std \u4e0a\u754c\uff08\u4e0e limit \u540c quartile\uff09
+        # baseline \u7684\u6807\u51c6\u5dee\uff1a\u7528\u4e8e\u52a8\u6001 std \u4e0a\u754c\uff08baseline*(1+tolerance)\uff09
         baseline_loss_std = float(baseline_reference_stats["loss_std"])
         baseline_m1_std = float(baseline_reference_stats["p_std"])
         baseline_m2_std = float(baseline_reference_stats["s_std"])
         worst_loss_std = float(worst_reference_stats["loss_std"])
         worst_m1_std = float(worst_reference_stats["p_std"])
         worst_m2_std = float(worst_reference_stats["s_std"])
-        dynamic_loss_std_cap = _compute_dynamic_std_upper_bound(
-            baseline_loss_std, worst_loss_std, quartile=_s2_stab_q,
-        )
-        dynamic_m1_std_cap = _compute_dynamic_std_upper_bound(
-            baseline_m1_std, worst_m1_std, quartile=_s2_stab_q,
-        )
-        dynamic_m2_std_cap = _compute_dynamic_std_upper_bound(
-            baseline_m2_std, worst_m2_std, quartile=_s2_stab_q,
-        )
+        dynamic_loss_std_cap = _compute_dynamic_std_upper_bound(baseline_loss_std, tolerance=_s2_stab_tol)
+        dynamic_m1_std_cap = _compute_dynamic_std_upper_bound(baseline_m1_std, tolerance=_s2_stab_tol)
+        dynamic_m2_std_cap = _compute_dynamic_std_upper_bound(baseline_m2_std, tolerance=_s2_stab_tol)
 
         _noise_block_title(ev.log, "\u8bad\u7ec3\u8d85\u53c2\u4e0e\u8bbe\u5b9a\u6458\u8981\uff08Training hyperparameters V2\uff09")
         ev.log(
@@ -2158,19 +2164,20 @@ class NoiseRLModuleV2:
             f"k_epochs={NOISE_STAGE_PPO_K_EPOCHS}, warmup={NOISE_STAGE_GTRXL_WARMUP_MODE}"
         )
         ev.log(
-            f"  \u25b8 MC: train_samples={NOISE_STAGE_MC_TRAIN_SAMPLES}, confirm_samples={NOISE_STAGE_MC_CONFIRM_SEGMENTS}"
-            f"  (baseline_segments={baseline_segments}, min_per_seg={NOISE_STAGE_MIN_SAMPLES_PER_SEGMENT})"
+            f"  \u25b8 MC: train_trials={NOISE_STAGE_MC_TRAIN_SAMPLES}, confirm_trials={NOISE_STAGE_MC_CONFIRM_SEGMENTS}"
+            f"  (baseline_trials={baseline_segments}, probe_min_samples={NOISE_STAGE_MIN_SAMPLES_PER_SEGMENT})"
+            f"  \u2190 \u56fa\u5b9a\u5206\u5c42\u63a2\u9488 + K \u6b21\u566a\u58f0\u65b9\u5f02\u79cd\u5b50"
         )
         ev.log(
             f"  \u25b8 \u65b9\u5dee\u60e9\u7f5a: lambda={NOISE_STAGE_STABILITY_LAMBDA}  "
             f"\u00b7 \u52a8\u6001 loss_std \u4e0a\u754c={dynamic_loss_std_cap:.6f}  "
-            f"(baseline {baseline_loss_std:.6f} \u2192 worst {worst_loss_std:.6f}, stability_q={_s2_stab_q})"
+            f"(baseline {baseline_loss_std:.6f} * (1+{_s2_stab_tol}))"
         )
         ev.log(
             f"  \u25b8 \u52a8\u6001 m1_std \u4e0a\u754c={dynamic_m1_std_cap:.6f}  "
-            f"(baseline {baseline_m1_std:.6f} \u2192 worst {worst_m1_std:.6f})  "
+            f"(baseline {baseline_m1_std:.6f} * (1+{_s2_stab_tol}))  "
             f"\u00b7 m2_std \u4e0a\u754c={dynamic_m2_std_cap:.6f}  "
-            f"({baseline_m2_std:.6f} \u2192 {worst_m2_std:.6f})"
+            f"(baseline {baseline_m2_std:.6f} * (1+{_s2_stab_tol}))"
         )
         ev.log(
             f"  \u25b8 \u5956\u52b1\u6743\u91cd: margin={NOISE_STAGE_TAIL_MARGIN_WEIGHT}, "
@@ -2820,9 +2827,11 @@ class NoiseRLModuleV2:
                     )
                 _log_rounded_box(ev.log, [
                     f"\u6311\u6218\u8005\u786e\u8ba4\uff08Challenger Confirmation\uff09\u00b7 \u56de\u5408 {episode + 1}",
-                    f"  N={confirm_segments} \u5206\u6bb5\u8bc4\u6d4b",
-                    f"  loss={confirm_stats['loss_mean']:.4f}+/-{confirm_loss_std:.4f}, "
-                    f"m1={confirm_stats['p_mean']:.4f}+/-{confirm_m1_std:.4f}",
+                    f"  K={confirm_segments} \u6b21\u566a\u58f0\u8bd5\u9a8c \u00b7 \u63a2\u9488={confirm_stats.get('probe_size', '?')} \u6837\u672c",
+                    f"  loss={confirm_stats['loss_mean']:.4f}+/-{confirm_loss_std:.4f} "
+                    f"(max {confirm_stats.get('loss_max', float('nan')):.4f}), "
+                    f"m1={confirm_stats['p_mean']:.4f}+/-{confirm_m1_std:.4f} "
+                    f"(min {confirm_stats.get('p_min', float('nan')):.4f})",
                     *_std_lines,
                     f"  \u7ea6\u675f\u68c0\u67e5 constraint={constraint_pass}",
                     f"  \u88c1\u5b9a\uff08verdict\uff09: {'PASS' if passed else 'FAIL'}",
@@ -3295,9 +3304,9 @@ class NoiseRLModuleV2:
             "search_baseline_stats": _copy_repeat_summary(baseline_reference_stats),
             "worst_reference_stats": _copy_repeat_summary(worst_reference_stats),
             "worst_case_noise_config": {k: v.copy() for k, v in worst_case_noise_config.items()},
-            "limit_computation_method": "dynamic_quartile",
-            "limit_quartile": float(_s2_limit_q),
-            "stability_quartile": float(_s2_stab_q),
+            "limit_computation_method": "baseline_tolerance_percentage",
+            "limit_tolerance": float(_s2_limit_tol),
+            "stability_tolerance": float(_s2_stab_tol),
             "search_limits": {k: float(v) for k, v in search_limits.items()},
             "status": status,
             "best_noise_config": _clone_candidate(selected_config),

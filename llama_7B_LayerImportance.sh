@@ -29,8 +29,8 @@ GA / 对比实验中的 GA：
 
 准确度约束参数（rl / ga / rl-and-ga-compare 可用）：
   --stage1-accuracy-tolerance FLOAT    Stage-1 指标约束百分比（默认 0.005 即 0.5%）
-  --stage2-limit-quartile FLOAT        Stage-2 指标约束：baseline 与 worst 的百分位数（默认 0.2 即 20%）
-  --stage2-stability-quartile FLOAT    Stage-2 稳定性约束：baseline 与 worst 的百分位数（默认 0.2 即 20%）
+  --stage2-limit-tolerance FLOAT       Stage-2 指标约束百分比（以 baseline 为基准，默认 0.05 即 5%；loss 允许上浮 5%、metric 允许下降 5%）
+  --stage2-stability-tolerance FLOAT   Stage-2 稳定性约束百分比（以 baseline 探针的 std 为基准，默认 0.05 即 5%）
 
 持久化与续训练（rl / ga 可用）：
   --fresh-start                        从头开始训练（首次运行必须指定）
@@ -69,11 +69,11 @@ GA / 对比实验中的 GA：
   --ga-compare-stage1-json PATH
   --ga-compare-stage2-json PATH
   --rl-compare-stage1-accuracy-tolerance FLOAT
-  --rl-compare-stage2-limit-quartile FLOAT
-  --rl-compare-stage2-stability-quartile FLOAT
+  --rl-compare-stage2-limit-tolerance FLOAT
+  --rl-compare-stage2-stability-tolerance FLOAT
   --ga-compare-stage1-accuracy-tolerance FLOAT
-  --ga-compare-stage2-limit-quartile FLOAT
-  --ga-compare-stage2-stability-quartile FLOAT
+  --ga-compare-stage2-limit-tolerance FLOAT
+  --ga-compare-stage2-stability-tolerance FLOAT
 
 普通 RL（仅 rl 可用）：
   --stage1-search-lr FLOAT
@@ -316,15 +316,15 @@ RL_COMPARE_STAGE2_JSON=""; S_RL_COMPARE_STAGE2_JSON="false"
 GA_COMPARE_STAGE1_JSON=""; S_GA_COMPARE_STAGE1_JSON="false"
 GA_COMPARE_STAGE2_JSON=""; S_GA_COMPARE_STAGE2_JSON="false"
 RL_COMPARE_STAGE1_ACCURACY_TOLERANCE=""; S_RL_COMPARE_STAGE1_ACCURACY_TOLERANCE="false"
-RL_COMPARE_STAGE2_LIMIT_QUARTILE=""; S_RL_COMPARE_STAGE2_LIMIT_QUARTILE="false"
-RL_COMPARE_STAGE2_STABILITY_QUARTILE=""; S_RL_COMPARE_STAGE2_STABILITY_QUARTILE="false"
+RL_COMPARE_STAGE2_LIMIT_TOLERANCE=""; S_RL_COMPARE_STAGE2_LIMIT_TOLERANCE="false"
+RL_COMPARE_STAGE2_STABILITY_TOLERANCE=""; S_RL_COMPARE_STAGE2_STABILITY_TOLERANCE="false"
 GA_COMPARE_STAGE1_ACCURACY_TOLERANCE=""; S_GA_COMPARE_STAGE1_ACCURACY_TOLERANCE="false"
-GA_COMPARE_STAGE2_LIMIT_QUARTILE=""; S_GA_COMPARE_STAGE2_LIMIT_QUARTILE="false"
-GA_COMPARE_STAGE2_STABILITY_QUARTILE=""; S_GA_COMPARE_STAGE2_STABILITY_QUARTILE="false"
+GA_COMPARE_STAGE2_LIMIT_TOLERANCE=""; S_GA_COMPARE_STAGE2_LIMIT_TOLERANCE="false"
+GA_COMPARE_STAGE2_STABILITY_TOLERANCE=""; S_GA_COMPARE_STAGE2_STABILITY_TOLERANCE="false"
 RESUME_FROM=""; S_RESUME_FROM="false"
 STAGE1_ACCURACY_TOLERANCE="0.005"; S_STAGE1_ACCURACY_TOLERANCE="false"
-STAGE2_LIMIT_QUARTILE="0.2"; S_STAGE2_LIMIT_QUARTILE="false"
-STAGE2_STABILITY_QUARTILE="0.2"; S_STAGE2_STABILITY_QUARTILE="false"
+STAGE2_LIMIT_TOLERANCE="0.05"; S_STAGE2_LIMIT_TOLERANCE="false"
+STAGE2_STABILITY_TOLERANCE="0.05"; S_STAGE2_STABILITY_TOLERANCE="false"
 FRESH_START="false"; S_FRESH_START="false"
 FRESH_STAGE1="false"; S_FRESH_STAGE1="false"
 FRESH_STAGE2="false"; S_FRESH_STAGE2="false"
@@ -443,15 +443,15 @@ while [ "$#" -gt 0 ]; do
     --ga-compare-stage1-json) needv "$@"; GA_COMPARE_STAGE1_JSON="$2"; S_GA_COMPARE_STAGE1_JSON="true"; shift 2 ;;
     --ga-compare-stage2-json) needv "$@"; GA_COMPARE_STAGE2_JSON="$2"; S_GA_COMPARE_STAGE2_JSON="true"; shift 2 ;;
     --rl-compare-stage1-accuracy-tolerance) needv "$@"; RL_COMPARE_STAGE1_ACCURACY_TOLERANCE="$2"; S_RL_COMPARE_STAGE1_ACCURACY_TOLERANCE="true"; shift 2 ;;
-    --rl-compare-stage2-limit-quartile) needv "$@"; RL_COMPARE_STAGE2_LIMIT_QUARTILE="$2"; S_RL_COMPARE_STAGE2_LIMIT_QUARTILE="true"; shift 2 ;;
-    --rl-compare-stage2-stability-quartile) needv "$@"; RL_COMPARE_STAGE2_STABILITY_QUARTILE="$2"; S_RL_COMPARE_STAGE2_STABILITY_QUARTILE="true"; shift 2 ;;
+    --rl-compare-stage2-limit-tolerance) needv "$@"; RL_COMPARE_STAGE2_LIMIT_TOLERANCE="$2"; S_RL_COMPARE_STAGE2_LIMIT_TOLERANCE="true"; shift 2 ;;
+    --rl-compare-stage2-stability-tolerance) needv "$@"; RL_COMPARE_STAGE2_STABILITY_TOLERANCE="$2"; S_RL_COMPARE_STAGE2_STABILITY_TOLERANCE="true"; shift 2 ;;
     --ga-compare-stage1-accuracy-tolerance) needv "$@"; GA_COMPARE_STAGE1_ACCURACY_TOLERANCE="$2"; S_GA_COMPARE_STAGE1_ACCURACY_TOLERANCE="true"; shift 2 ;;
-    --ga-compare-stage2-limit-quartile) needv "$@"; GA_COMPARE_STAGE2_LIMIT_QUARTILE="$2"; S_GA_COMPARE_STAGE2_LIMIT_QUARTILE="true"; shift 2 ;;
-    --ga-compare-stage2-stability-quartile) needv "$@"; GA_COMPARE_STAGE2_STABILITY_QUARTILE="$2"; S_GA_COMPARE_STAGE2_STABILITY_QUARTILE="true"; shift 2 ;;
+    --ga-compare-stage2-limit-tolerance) needv "$@"; GA_COMPARE_STAGE2_LIMIT_TOLERANCE="$2"; S_GA_COMPARE_STAGE2_LIMIT_TOLERANCE="true"; shift 2 ;;
+    --ga-compare-stage2-stability-tolerance) needv "$@"; GA_COMPARE_STAGE2_STABILITY_TOLERANCE="$2"; S_GA_COMPARE_STAGE2_STABILITY_TOLERANCE="true"; shift 2 ;;
     --resume-from) needv "$@"; RESUME_FROM="$2"; S_RESUME_FROM="true"; shift 2 ;;
     --stage1-accuracy-tolerance) needv "$@"; STAGE1_ACCURACY_TOLERANCE="$2"; S_STAGE1_ACCURACY_TOLERANCE="true"; shift 2 ;;
-    --stage2-limit-quartile) needv "$@"; STAGE2_LIMIT_QUARTILE="$2"; S_STAGE2_LIMIT_QUARTILE="true"; shift 2 ;;
-    --stage2-stability-quartile) needv "$@"; STAGE2_STABILITY_QUARTILE="$2"; S_STAGE2_STABILITY_QUARTILE="true"; shift 2 ;;
+    --stage2-limit-tolerance) needv "$@"; STAGE2_LIMIT_TOLERANCE="$2"; S_STAGE2_LIMIT_TOLERANCE="true"; shift 2 ;;
+    --stage2-stability-tolerance) needv "$@"; STAGE2_STABILITY_TOLERANCE="$2"; S_STAGE2_STABILITY_TOLERANCE="true"; shift 2 ;;
     --fresh-start) FRESH_START="true"; S_FRESH_START="true"; shift ;;
     --fresh-stage1) FRESH_STAGE1="true"; S_FRESH_STAGE1="true"; shift ;;
     --fresh-stage2) FRESH_STAGE2="true"; S_FRESH_STAGE2="true"; shift ;;
@@ -508,10 +508,10 @@ is_pos_int "$NOISE_EVAL_REPEAT" || err "--noise-eval-repeat 必须是正整数�
 # 准确度约束参数校验
 is_pos_num "$STAGE1_ACCURACY_TOLERANCE" || err "--stage1-accuracy-tolerance 必须是正数，当前为：$STAGE1_ACCURACY_TOLERANCE"
 awk -v x="$STAGE1_ACCURACY_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage1-accuracy-tolerance 必须 < 1（百分比形式如 0.005 表示 0.5%），当前为：$STAGE1_ACCURACY_TOLERANCE"
-is_pos_num "$STAGE2_LIMIT_QUARTILE" || err "--stage2-limit-quartile 必须是正数，当前为：$STAGE2_LIMIT_QUARTILE"
-awk -v x="$STAGE2_LIMIT_QUARTILE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-limit-quartile 必须 < 1（百分位数如 0.2 表示 20%），当前为：$STAGE2_LIMIT_QUARTILE"
-is_pos_num "$STAGE2_STABILITY_QUARTILE" || err "--stage2-stability-quartile 必须是正数，当前为：$STAGE2_STABILITY_QUARTILE"
-awk -v x="$STAGE2_STABILITY_QUARTILE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-stability-quartile 必须 < 1（百分位数如 0.2 表示 20%），当前为：$STAGE2_STABILITY_QUARTILE"
+is_pos_num "$STAGE2_LIMIT_TOLERANCE" || err "--stage2-limit-tolerance 必须是正数，当前为：$STAGE2_LIMIT_TOLERANCE"
+awk -v x="$STAGE2_LIMIT_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-limit-tolerance 必须 < 1（百分比形式如 0.05 表示 5%），当前为：$STAGE2_LIMIT_TOLERANCE"
+is_pos_num "$STAGE2_STABILITY_TOLERANCE" || err "--stage2-stability-tolerance 必须是正数，当前为：$STAGE2_STABILITY_TOLERANCE"
+awk -v x="$STAGE2_STABILITY_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-stability-tolerance 必须 < 1（百分比形式如 0.05 表示 5%），当前为：$STAGE2_STABILITY_TOLERANCE"
 
 case "$DATASET" in
   mrpc|sst2|stsb|cola|qnli|rte|wnli) DATA_PATH="$DATASET" ;;
@@ -541,7 +541,7 @@ if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$SEARCH_ALGORITHM" != "rl-and-g
 fi
 
 if [ "$SEARCH_ALGORITHM" != "rl-and-ga-compare" ]; then
-  { [ "$S_STAGE2_COMPARE_REPEATS" = "false" ] && [ "$S_RL_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_RL_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_CONFIG" = "false" ] && [ "$S_COMPARE_CONFIG_MODE" = "false" ] && [ "$S_COMPARE_PERSISTENT_ROOT" = "false" ] && [ "$S_RL_COMPARE_STAGE1_JSON" = "false" ] && [ "$S_RL_COMPARE_STAGE2_JSON" = "false" ] && [ "$S_GA_COMPARE_STAGE1_JSON" = "false" ] && [ "$S_GA_COMPARE_STAGE2_JSON" = "false" ] && [ "$S_RL_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_LIMIT_QUARTILE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_STABILITY_QUARTILE" = "false" ] && [ "$S_GA_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_LIMIT_QUARTILE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_STABILITY_QUARTILE" = "false" ]; } || err "当前模式不是 rl-and-ga-compare，请不要使用对比专用参数。"
+  { [ "$S_STAGE2_COMPARE_REPEATS" = "false" ] && [ "$S_RL_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_FINAL_EVAL_CONFIG" = "false" ] && [ "$S_RL_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_GA_COMPARE_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_SOURCE" = "false" ] && [ "$S_RL_COMPARE_NOISE_EVAL_CONFIG" = "false" ] && [ "$S_GA_COMPARE_NOISE_EVAL_CONFIG" = "false" ] && [ "$S_COMPARE_CONFIG_MODE" = "false" ] && [ "$S_COMPARE_PERSISTENT_ROOT" = "false" ] && [ "$S_RL_COMPARE_STAGE1_JSON" = "false" ] && [ "$S_RL_COMPARE_STAGE2_JSON" = "false" ] && [ "$S_GA_COMPARE_STAGE1_JSON" = "false" ] && [ "$S_GA_COMPARE_STAGE2_JSON" = "false" ] && [ "$S_RL_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_LIMIT_TOLERANCE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_STABILITY_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_LIMIT_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_STABILITY_TOLERANCE" = "false" ]; } || err "当前模式不是 rl-and-ga-compare，请不要使用对比专用参数。"
 fi
 
 if [ "$SEARCH_ALGORITHM" = "general-rl" ] || [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
@@ -659,7 +659,7 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
 
   if [ "$COMPARE_CONFIG_MODE" = "direct" ]; then
     [ "$S_COMPARE_PERSISTENT_ROOT" = "false" ] || err "direct 模式不使用 --compare-persistent-root。"
-    { [ "$S_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_STAGE2_LIMIT_QUARTILE" = "false" ] && [ "$S_STAGE2_STABILITY_QUARTILE" = "false" ] && [ "$S_RL_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_LIMIT_QUARTILE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_STABILITY_QUARTILE" = "false" ] && [ "$S_GA_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_LIMIT_QUARTILE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_STABILITY_QUARTILE" = "false" ]; } || err "direct 模式不接受准确度约束参数，请直接指定四个 JSON 文件。"
+    { [ "$S_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_STAGE2_LIMIT_TOLERANCE" = "false" ] && [ "$S_STAGE2_STABILITY_TOLERANCE" = "false" ] && [ "$S_RL_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_LIMIT_TOLERANCE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_STABILITY_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_LIMIT_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_STABILITY_TOLERANCE" = "false" ]; } || err "direct 模式不接受准确度约束参数，请直接指定四个 JSON 文件。"
     [ -n "$RL_COMPARE_STAGE1_JSON" ] || err "direct 模式必须提供 --rl-compare-stage1-json。"
     [ -n "$RL_COMPARE_STAGE2_JSON" ] || err "direct 模式必须提供 --rl-compare-stage2-json。"
     [ -n "$GA_COMPARE_STAGE1_JSON" ] || err "direct 模式必须提供 --ga-compare-stage1-json。"
@@ -676,19 +676,19 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
     { [ "$S_RL_COMPARE_STAGE1_JSON" = "false" ] && [ "$S_RL_COMPARE_STAGE2_JSON" = "false" ] && [ "$S_GA_COMPARE_STAGE1_JSON" = "false" ] && [ "$S_GA_COMPARE_STAGE2_JSON" = "false" ]; } || err "persistent 模式不接受直接 JSON 路径参数。"
     [ -d "$COMPARE_PERSISTENT_ROOT" ] || err "--compare-persistent-root 指定的目录不存在：$COMPARE_PERSISTENT_ROOT"
     [ -n "$RL_COMPARE_STAGE1_ACCURACY_TOLERANCE" ] || RL_COMPARE_STAGE1_ACCURACY_TOLERANCE="$STAGE1_ACCURACY_TOLERANCE"
-    [ -n "$RL_COMPARE_STAGE2_LIMIT_QUARTILE" ] || RL_COMPARE_STAGE2_LIMIT_QUARTILE="$STAGE2_LIMIT_QUARTILE"
-    [ -n "$RL_COMPARE_STAGE2_STABILITY_QUARTILE" ] || RL_COMPARE_STAGE2_STABILITY_QUARTILE="$STAGE2_STABILITY_QUARTILE"
+    [ -n "$RL_COMPARE_STAGE2_LIMIT_TOLERANCE" ] || RL_COMPARE_STAGE2_LIMIT_TOLERANCE="$STAGE2_LIMIT_TOLERANCE"
+    [ -n "$RL_COMPARE_STAGE2_STABILITY_TOLERANCE" ] || RL_COMPARE_STAGE2_STABILITY_TOLERANCE="$STAGE2_STABILITY_TOLERANCE"
     [ -n "$GA_COMPARE_STAGE1_ACCURACY_TOLERANCE" ] || GA_COMPARE_STAGE1_ACCURACY_TOLERANCE="$STAGE1_ACCURACY_TOLERANCE"
-    [ -n "$GA_COMPARE_STAGE2_LIMIT_QUARTILE" ] || GA_COMPARE_STAGE2_LIMIT_QUARTILE="$STAGE2_LIMIT_QUARTILE"
-    [ -n "$GA_COMPARE_STAGE2_STABILITY_QUARTILE" ] || GA_COMPARE_STAGE2_STABILITY_QUARTILE="$STAGE2_STABILITY_QUARTILE"
+    [ -n "$GA_COMPARE_STAGE2_LIMIT_TOLERANCE" ] || GA_COMPARE_STAGE2_LIMIT_TOLERANCE="$STAGE2_LIMIT_TOLERANCE"
+    [ -n "$GA_COMPARE_STAGE2_STABILITY_TOLERANCE" ] || GA_COMPARE_STAGE2_STABILITY_TOLERANCE="$STAGE2_STABILITY_TOLERANCE"
     for _cmp_val in \
-      "$RL_COMPARE_STAGE1_ACCURACY_TOLERANCE" "$RL_COMPARE_STAGE2_LIMIT_QUARTILE" "$RL_COMPARE_STAGE2_STABILITY_QUARTILE" \
-      "$GA_COMPARE_STAGE1_ACCURACY_TOLERANCE" "$GA_COMPARE_STAGE2_LIMIT_QUARTILE" "$GA_COMPARE_STAGE2_STABILITY_QUARTILE"; do
+      "$RL_COMPARE_STAGE1_ACCURACY_TOLERANCE" "$RL_COMPARE_STAGE2_LIMIT_TOLERANCE" "$RL_COMPARE_STAGE2_STABILITY_TOLERANCE" \
+      "$GA_COMPARE_STAGE1_ACCURACY_TOLERANCE" "$GA_COMPARE_STAGE2_LIMIT_TOLERANCE" "$GA_COMPARE_STAGE2_STABILITY_TOLERANCE"; do
       is_pos_num "$_cmp_val" || err "持久化目录对比的约束参数必须是正数，当前值：$_cmp_val"
       awk -v x="$_cmp_val" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "持久化目录对比的约束参数必须 < 1，当前值：$_cmp_val"
     done
-    RL_COMPARE_CONSTRAINT_SLUG="s1t${RL_COMPARE_STAGE1_ACCURACY_TOLERANCE}_s2q${RL_COMPARE_STAGE2_LIMIT_QUARTILE}_s2sq${RL_COMPARE_STAGE2_STABILITY_QUARTILE}"
-    GA_COMPARE_CONSTRAINT_SLUG="s1t${GA_COMPARE_STAGE1_ACCURACY_TOLERANCE}_s2q${GA_COMPARE_STAGE2_LIMIT_QUARTILE}_s2sq${GA_COMPARE_STAGE2_STABILITY_QUARTILE}"
+    RL_COMPARE_CONSTRAINT_SLUG="s1t${RL_COMPARE_STAGE1_ACCURACY_TOLERANCE}_s2t${RL_COMPARE_STAGE2_LIMIT_TOLERANCE}_s2st${RL_COMPARE_STAGE2_STABILITY_TOLERANCE}"
+    GA_COMPARE_CONSTRAINT_SLUG="s1t${GA_COMPARE_STAGE1_ACCURACY_TOLERANCE}_s2t${GA_COMPARE_STAGE2_LIMIT_TOLERANCE}_s2st${GA_COMPARE_STAGE2_STABILITY_TOLERANCE}"
     RL_COMPARE_PERSISTENT_DIR="${COMPARE_PERSISTENT_ROOT}/rl/${MODEL_TYPE}/${DATASET}/${RL_COMPARE_CONSTRAINT_SLUG}"
     GA_COMPARE_PERSISTENT_DIR="${COMPARE_PERSISTENT_ROOT}/ga/${MODEL_TYPE}/${DATASET}/${GA_COMPARE_CONSTRAINT_SLUG}"
     [ -d "$RL_COMPARE_PERSISTENT_DIR" ] || err "persistent 模式未找到 RL 持久化目录：$RL_COMPARE_PERSISTENT_DIR。请先运行对应 RL 实验，或检查数据集 / 模型 / 约束参数是否一致。"
@@ -826,7 +826,7 @@ RUN_TIMESTAMP="$(date +"%Y%m%d_%H%M%S")"
 RUN_ID="${RUN_TIMESTAMP}_pid$$"
 GENERAL_TASKSET_ID=""
 # 持久化约束配置标识符（用于构建确定性目录）
-CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2q${STAGE2_LIMIT_QUARTILE}_s2sq${STAGE2_STABILITY_QUARTILE}"
+CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"
 USE_PERSISTENT="false"
 PERSISTENT_DIR=""
 
@@ -1019,8 +1019,8 @@ METAEOF
   "model_type": "$MODEL_TYPE",
   "dataset": "$DATASET",
   "stage1_accuracy_tolerance": $STAGE1_ACCURACY_TOLERANCE,
-  "stage2_limit_quartile": $STAGE2_LIMIT_QUARTILE,
-  "stage2_stability_quartile": $STAGE2_STABILITY_QUARTILE,
+  "stage2_limit_tolerance": $STAGE2_LIMIT_TOLERANCE,
+  "stage2_stability_tolerance": $STAGE2_STABILITY_TOLERANCE,
   "created_at": "$(date -Iseconds)",
   "last_updated_at": "$(date -Iseconds)",
   "run_count": 1,
@@ -1067,19 +1067,19 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
     [ -n "$GENERAL_ACCURACY_TOLERANCES" ] && CMD+=(--accuracy_tolerance "$(printf '%s' "$GENERAL_ACCURACY_TOLERANCES" | cut -d, -f1 | xargs)")
   fi
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
-  CMD=(python rl_ga_compare_runner.py --base-model "$BASE_MODEL" --data-path "$DATA_PATH" --dataset "$DATASET" --output-dir "$RUN_ROOT" --model-type "$MODEL_TYPE" --batch-size "$BATCH_SIZE" --stage1-search-episodes "$STAGE1_EPISODES" --stage2-search-episodes "$STAGE2_EPISODES" --stage1-search-generations "$STAGE1_GENERATIONS" --stage2-search-generations "$STAGE2_GENERATIONS" --stage1-search-lr "$STAGE1_LR" --stage2-search-lr "$STAGE2_LR" --random-seed "$RANDOM_SEED" --perm-trials "$PERM_TRIALS" --cost-trials "$COST_TRIALS" --budget-trials "$BUDGET_TRIALS" --stage2-compare-repeats "$STAGE2_COMPARE_REPEATS" --compare-config-mode "$COMPARE_CONFIG_MODE" --stage1-accuracy-tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2-limit-quartile "$STAGE2_LIMIT_QUARTILE" --stage2-stability-quartile "$STAGE2_STABILITY_QUARTILE")
+  CMD=(python rl_ga_compare_runner.py --base-model "$BASE_MODEL" --data-path "$DATA_PATH" --dataset "$DATASET" --output-dir "$RUN_ROOT" --model-type "$MODEL_TYPE" --batch-size "$BATCH_SIZE" --stage1-search-episodes "$STAGE1_EPISODES" --stage2-search-episodes "$STAGE2_EPISODES" --stage1-search-generations "$STAGE1_GENERATIONS" --stage2-search-generations "$STAGE2_GENERATIONS" --stage1-search-lr "$STAGE1_LR" --stage2-search-lr "$STAGE2_LR" --random-seed "$RANDOM_SEED" --perm-trials "$PERM_TRIALS" --cost-trials "$COST_TRIALS" --budget-trials "$BUDGET_TRIALS" --stage2-compare-repeats "$STAGE2_COMPARE_REPEATS" --compare-config-mode "$COMPARE_CONFIG_MODE" --stage1-accuracy-tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2-limit-tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2-stability-tolerance "$STAGE2_STABILITY_TOLERANCE")
   if [ "$COMPARE_CONFIG_MODE" = "direct" ]; then
     CMD+=(--rl-compare-stage1-json "$RL_COMPARE_STAGE1_JSON" --rl-compare-stage2-json "$RL_COMPARE_STAGE2_JSON" --ga-compare-stage1-json "$GA_COMPARE_STAGE1_JSON" --ga-compare-stage2-json "$GA_COMPARE_STAGE2_JSON")
   else
     CMD+=(--compare-persistent-root "$COMPARE_PERSISTENT_ROOT")
-    CMD+=(--rl-compare-stage1-accuracy-tolerance "$RL_COMPARE_STAGE1_ACCURACY_TOLERANCE" --rl-compare-stage2-limit-quartile "$RL_COMPARE_STAGE2_LIMIT_QUARTILE" --rl-compare-stage2-stability-quartile "$RL_COMPARE_STAGE2_STABILITY_QUARTILE")
-    CMD+=(--ga-compare-stage1-accuracy-tolerance "$GA_COMPARE_STAGE1_ACCURACY_TOLERANCE" --ga-compare-stage2-limit-quartile "$GA_COMPARE_STAGE2_LIMIT_QUARTILE" --ga-compare-stage2-stability-quartile "$GA_COMPARE_STAGE2_STABILITY_QUARTILE")
+    CMD+=(--rl-compare-stage1-accuracy-tolerance "$RL_COMPARE_STAGE1_ACCURACY_TOLERANCE" --rl-compare-stage2-limit-tolerance "$RL_COMPARE_STAGE2_LIMIT_TOLERANCE" --rl-compare-stage2-stability-tolerance "$RL_COMPARE_STAGE2_STABILITY_TOLERANCE")
+    CMD+=(--ga-compare-stage1-accuracy-tolerance "$GA_COMPARE_STAGE1_ACCURACY_TOLERANCE" --ga-compare-stage2-limit-tolerance "$GA_COMPARE_STAGE2_LIMIT_TOLERANCE" --ga-compare-stage2-stability-tolerance "$GA_COMPARE_STAGE2_STABILITY_TOLERANCE")
   fi
 else
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
-    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$S_STAGE1_EPISODES" --stage2_rl_episodes_specified "$S_STAGE2_EPISODES" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_quartile "$STAGE2_LIMIT_QUARTILE" --stage2_stability_quartile "$STAGE2_STABILITY_QUARTILE")
+    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$S_STAGE1_EPISODES" --stage2_rl_episodes_specified "$S_STAGE2_EPISODES" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE")
   else
-    CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_quartile "$STAGE2_LIMIT_QUARTILE" --stage2_stability_quartile "$STAGE2_STABILITY_QUARTILE")
+    CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_final_gelu "$MANUAL_GELU" --manual_final_softmax "$MANUAL_SOFTMAX" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --skip_noise_rl "$SKIP_NOISE_SEARCH" --noise_eval_config_source "$NOISE_EVAL_SOURCE" --noise_eval_config_path "$NOISE_EVAL_CONFIG" --manual_noise_config "$MANUAL_NOISE_CONFIG" --noise_eval_repeat_n "$NOISE_EVAL_REPEAT" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_stage1_final_eval "$SKIP_STAGE1_FINAL_EVAL" --skip_noise_final_eval "$SKIP_NOISE_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE")
     [ "$S_STAGE1_GENERATIONS" = "true" ] && CMD+=(--stage1_ga_generations "$STAGE1_GENERATIONS" --stage1_ga_generations_specified "true")
     [ "$S_STAGE2_GENERATIONS" = "true" ] && CMD+=(--stage2_ga_generations "$STAGE2_GENERATIONS" --stage2_ga_generations_specified "true")
   fi
@@ -1096,8 +1096,8 @@ show "模式目录" "$RUN_GROUP_DIR" "true"
 show "运行目录" "$RUN_ROOT" "true"
 if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ]; then
   show "Stage-1 准确度约束" "$STAGE1_ACCURACY_TOLERANCE" "$S_STAGE1_ACCURACY_TOLERANCE"
-  show "Stage-2 指标约束百分位" "$STAGE2_LIMIT_QUARTILE" "$S_STAGE2_LIMIT_QUARTILE"
-  show "Stage-2 稳定性约束百分位" "$STAGE2_STABILITY_QUARTILE" "$S_STAGE2_STABILITY_QUARTILE"
+  show "Stage-2 指标约束百分比" "$STAGE2_LIMIT_TOLERANCE" "$S_STAGE2_LIMIT_TOLERANCE"
+  show "Stage-2 稳定性约束百分比" "$STAGE2_STABILITY_TOLERANCE" "$S_STAGE2_STABILITY_TOLERANCE"
 fi
 if [ "$USE_PERSISTENT" = "true" ]; then
   show "持久化目录" "$PERSISTENT_DIR" "true"
@@ -1136,8 +1136,8 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
     echo "  GA Stage-2 JSON：$GA_COMPARE_STAGE2_JSON"
   else
     echo "  持久化目录根路径：$COMPARE_PERSISTENT_ROOT"
-    echo "  RL 约束：s1_tol=$RL_COMPARE_STAGE1_ACCURACY_TOLERANCE, s2_limit_q=$RL_COMPARE_STAGE2_LIMIT_QUARTILE, s2_stability_q=$RL_COMPARE_STAGE2_STABILITY_QUARTILE"
-    echo "  GA 约束：s1_tol=$GA_COMPARE_STAGE1_ACCURACY_TOLERANCE, s2_limit_q=$GA_COMPARE_STAGE2_LIMIT_QUARTILE, s2_stability_q=$GA_COMPARE_STAGE2_STABILITY_QUARTILE"
+    echo "  RL 约束：s1_tol=$RL_COMPARE_STAGE1_ACCURACY_TOLERANCE, s2_limit_tol=$RL_COMPARE_STAGE2_LIMIT_TOLERANCE, s2_stability_tol=$RL_COMPARE_STAGE2_STABILITY_TOLERANCE"
+    echo "  GA 约束：s1_tol=$GA_COMPARE_STAGE1_ACCURACY_TOLERANCE, s2_limit_tol=$GA_COMPARE_STAGE2_LIMIT_TOLERANCE, s2_stability_tol=$GA_COMPARE_STAGE2_STABILITY_TOLERANCE"
     echo "  RL 持久化目录：$RL_COMPARE_PERSISTENT_DIR"
     echo "  GA 持久化目录：$GA_COMPARE_PERSISTENT_DIR"
   fi

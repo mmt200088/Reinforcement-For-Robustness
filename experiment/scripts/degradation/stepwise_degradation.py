@@ -7,8 +7,8 @@ position at a time in random order until reaching the PPO-optimal config.
 Repeat 5 times with different random orderings per dataset.
 
 Usage:
-    python experiment_stepwise_degradation.py --device cuda --output_dir results/stepwise
-    python experiment_stepwise_degradation.py --tasks sst2 mrpc --n_trials 5
+    python -m experiment.scripts.degradation.stepwise_degradation --device cuda
+    python -m experiment.scripts.degradation.stepwise_degradation --tasks sst2 mrpc --n_trials 5
 """
 
 import os
@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 plt.rcParams['font.family'] = 'serif'
 plt.rcParams['font.serif'] = ['Times New Roman', 'DejaVu Serif', 'serif']
 
-from experiment_core import (
+from experiment.core.experiment_core import (
     TASK_REGISTRY, ALL_TASKS, NUM_LAYERS,
     GELU_FULL, SOFTMAX_FULL, BASELINE_CONFIG,
     load_model_and_data, evaluate_config, get_primary_metric, load_ppo_configs,
@@ -214,7 +214,11 @@ def main():
     parser = argparse.ArgumentParser(description="Stepwise degradation from full precision to PPO optimal")
     parser.add_argument("--tasks", nargs='+', default=None, help="Tasks to run (default: all)")
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--output_dir", type=str, default="results/stepwise")
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="experiment/outputs/degradation/stepwise",
+    )
     parser.add_argument("--ppo_config", type=str, default="glue_configs_best_ppo.json")
     parser.add_argument("--n_trials", type=int, default=5)
     parser.add_argument("--max_length", type=int, default=128)

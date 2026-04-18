@@ -287,8 +287,8 @@ TARGET_MODULES_LITERAL = '["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"]
 **已存在于磁盘上的目录名** = 也是一种"全局部件"：改了命名约定，旧 run 识别不了。
 
 目前已固化的命名：
-- `rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.05_s2sq0.05/` — slug 拼接规则
-- `rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2q0.05_s2sq0.05/` — 对应 GA
+- `rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/` — slug 拼接规则
+- `rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/` — 对应 GA
 - `rl_results/runs/compare/rl_vs_ga/mrpc/comp_1/`、`comp_2/`、
   `20260413_213848_pid1143993/` — 自增编号 OR 时间戳+PID
 - `rl_results/第二阶段强化学习测试阶段/` — **中文目录名**（历史遗留，未来建议迁到英文）

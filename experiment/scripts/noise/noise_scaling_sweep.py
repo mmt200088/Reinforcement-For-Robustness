@@ -45,7 +45,7 @@
 
 五、输出文件
 默认输出目录：
-experiment_results/noise_scaling_sweep
+experiment/outputs/noise/scaling_sweep
 
 每个数据集会生成：
 1. noise_scaling_sweep_<dataset>.png
@@ -54,21 +54,21 @@ experiment_results/noise_scaling_sweep
 
 六、前台运行示例
 1. 跑全部数据集：
-   python experiment_noise_scaling_sweep.py
+   python -m experiment.scripts.noise.noise_scaling_sweep
 2. 只跑单个数据集：
-   python experiment_noise_scaling_sweep.py --tasks sst2
+   python -m experiment.scripts.noise.noise_scaling_sweep --tasks sst2
 3. 指定多个数据集：
-   python experiment_noise_scaling_sweep.py --tasks sst2 mrpc cola
+   python -m experiment.scripts.noise.noise_scaling_sweep --tasks sst2 mrpc cola
 4. 指定输出目录：
-   python experiment_noise_scaling_sweep.py --output_dir experiment_results/noise_scaling_sweep_v2
+   python -m experiment.scripts.noise.noise_scaling_sweep --output_dir experiment/outputs/noise/scaling_sweep_v2
 5. 指定评估切分：
-   python experiment_noise_scaling_sweep.py --tasks sst2 --eval_split validation_full
+   python -m experiment.scripts.noise.noise_scaling_sweep --tasks sst2 --eval_split validation_full
 6. 指定重复次数：
-   python experiment_noise_scaling_sweep.py --tasks sst2 --repeat_n 100
+   python -m experiment.scripts.noise.noise_scaling_sweep --tasks sst2 --repeat_n 100
 7. 开发调试用小样本模式：
-   python experiment_noise_scaling_sweep.py --tasks sst2 --repeat_n 2 --max_eval_samples 32
+   python -m experiment.scripts.noise.noise_scaling_sweep --tasks sst2 --repeat_n 2 --max_eval_samples 32
 8. 使用手动噪声配置作为“当前配置”：
-   python experiment_noise_scaling_sweep.py --tasks mrpc --noise_base_source manual --manual_noise_config "{\"x\":[30,30,30,30,30,30,30,30,30,30,30,30],\"wq\":[22,22,22,22,22,22,22,22,22,22,22,22],\"wk\":[22,22,22,22,22,22,22,22,22,22,22,22],\"wv\":[22,22,22,22,22,22,22,22,22,22,22,22],\"wo\":[22,22,22,22,22,22,22,22,22,22,22,22],\"wffn1\":[22,22,22,22,22,22,22,22,22,22,22,22],\"wffn2\":[22,22,22,22,22,22,22,22,22,22,22,22]}"
+   python -m experiment.scripts.noise.noise_scaling_sweep --tasks mrpc --noise_base_source manual --manual_noise_config "{\"x\":[30,30,30,30,30,30,30,30,30,30,30,30],\"wq\":[22,22,22,22,22,22,22,22,22,22,22,22],\"wk\":[22,22,22,22,22,22,22,22,22,22,22,22],\"wv\":[22,22,22,22,22,22,22,22,22,22,22,22],\"wo\":[22,22,22,22,22,22,22,22,22,22,22,22],\"wffn1\":[22,22,22,22,22,22,22,22,22,22,22,22],\"wffn2\":[22,22,22,22,22,22,22,22,22,22,22,22]}"
 
 七、后台运行方式
 推荐直接使用配套的 run_noise_scaling_sweep.sh：
@@ -82,11 +82,11 @@ experiment_results/noise_scaling_sweep
 八、查看日志与停止任务
 如果使用 run_noise_scaling_sweep.sh 后台运行：
 1. 查看日志：
-   tail -f experiment_results/noise_scaling_sweep/run.log
+   tail -f experiment/outputs/noise/scaling_sweep/run.log
 2. 查看 PID：
-   cat experiment_results/noise_scaling_sweep/pid.txt
+   cat experiment/outputs/noise/scaling_sweep/pid.txt
 3. 停止任务：
-   kill -9 $(cat experiment_results/noise_scaling_sweep/pid.txt)
+   kill -9 $(cat experiment/outputs/noise/scaling_sweep/pid.txt)
 
 九、注意事项
 1. 正式实验建议保持默认 repeat_n=50 或更高。
@@ -276,7 +276,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output_dir",
         type=str,
-        default=os.path.join("experiment_results", "noise_scaling_sweep"),
+        default=os.path.join("experiment", "outputs", "noise", "scaling_sweep"),
     )
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--batch_size", type=int, default=16)
@@ -1147,7 +1147,7 @@ def build_task_json_summary(
 def main() -> None:
     args = parse_args()
     tasks = resolve_tasks(args.tasks)
-    output_dir = os.path.abspath(args.output_dir)
+    output_dir = os.path.normpath(args.output_dir)
     noise_base_config_path = os.path.abspath(args.noise_base_config)
     approx_base_config_path = os.path.abspath(args.approx_base_config)
     manual_noise_config = parse_noise_config(args.manual_noise_config)

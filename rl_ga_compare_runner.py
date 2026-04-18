@@ -440,13 +440,13 @@ def expected_total_layers(model_type: str) -> int:
 
 def compare_constraint_slug(
     stage1_accuracy_tolerance: float,
-    stage2_limit_quartile: float,
-    stage2_stability_quartile: float,
+    stage2_limit_tolerance: float,
+    stage2_stability_tolerance: float,
 ) -> str:
     return (
         f"s1t{stage1_accuracy_tolerance}"
-        f"_s2q{stage2_limit_quartile}"
-        f"_s2sq{stage2_stability_quartile}"
+        f"_s2t{stage2_limit_tolerance}"
+        f"_s2st{stage2_stability_tolerance}"
     )
 
 
@@ -457,8 +457,8 @@ def persistent_run_dir_for_compare(
     model_type: str,
     dataset: str,
     stage1_accuracy_tolerance: float,
-    stage2_limit_quartile: float,
-    stage2_stability_quartile: float,
+    stage2_limit_tolerance: float,
+    stage2_stability_tolerance: float,
 ) -> Path:
     return (
         persistent_root
@@ -467,8 +467,8 @@ def persistent_run_dir_for_compare(
         / dataset
         / compare_constraint_slug(
             stage1_accuracy_tolerance,
-            stage2_limit_quartile,
-            stage2_stability_quartile,
+            stage2_limit_tolerance,
+            stage2_stability_tolerance,
         )
     )
 
@@ -1159,8 +1159,8 @@ def ensure_stage2_eval_json(
             fixed_gelu,
             fixed_softmax,
             log_fn=evaluator.log,
-            limit_quartile=getattr(evaluator, "stage2_limit_quartile", None),
-            stability_quartile=getattr(evaluator, "stage2_stability_quartile", None),
+            limit_tolerance=getattr(evaluator, "stage2_limit_tolerance", None),
+            stability_tolerance=getattr(evaluator, "stage2_stability_tolerance", None),
         )
         module_cls = GeneticNoiseFinalEvaluationModule if algorithm == "ga" else NoiseFinalEvaluationModule
         runner = module_cls(
@@ -1629,8 +1629,8 @@ def build_child_command(
     budget_trials: int,
     stage2_compare_repeats: int,
     stage1_accuracy_tolerance: Optional[float] = None,
-    stage2_limit_quartile: Optional[float] = None,
-    stage2_stability_quartile: Optional[float] = None,
+    stage2_limit_tolerance: Optional[float] = None,
+    stage2_stability_tolerance: Optional[float] = None,
 ) -> List[str]:
     entrypoint = "rl_tune.py" if algorithm == "rl" else "rl_tune_genetic.py"
 
@@ -1701,10 +1701,10 @@ def build_child_command(
             )
     if stage1_accuracy_tolerance is not None:
         cmd.extend(["--stage1_accuracy_tolerance", str(stage1_accuracy_tolerance)])
-    if stage2_limit_quartile is not None:
-        cmd.extend(["--stage2_limit_quartile", str(stage2_limit_quartile)])
-    if stage2_stability_quartile is not None:
-        cmd.extend(["--stage2_stability_quartile", str(stage2_stability_quartile)])
+    if stage2_limit_tolerance is not None:
+        cmd.extend(["--stage2_limit_tolerance", str(stage2_limit_tolerance)])
+    if stage2_stability_tolerance is not None:
+        cmd.extend(["--stage2_stability_tolerance", str(stage2_stability_tolerance)])
     return cmd
 
 
@@ -1925,8 +1925,8 @@ def resolve_persistent_side_spec(
     model_type: str,
     persistent_root: Path,
     stage1_accuracy_tolerance: float,
-    stage2_limit_quartile: float,
-    stage2_stability_quartile: float,
+    stage2_limit_tolerance: float,
+    stage2_stability_tolerance: float,
 ) -> EvaluationOnlySideSpec:
     run_dir = persistent_run_dir_for_compare(
         persistent_root=persistent_root,
@@ -1934,8 +1934,8 @@ def resolve_persistent_side_spec(
         model_type=model_type,
         dataset=dataset,
         stage1_accuracy_tolerance=stage1_accuracy_tolerance,
-        stage2_limit_quartile=stage2_limit_quartile,
-        stage2_stability_quartile=stage2_stability_quartile,
+        stage2_limit_tolerance=stage2_limit_tolerance,
+        stage2_stability_tolerance=stage2_stability_tolerance,
     ).resolve()
     if not run_dir.is_dir():
         raise CompareRunnerError(
@@ -1963,8 +1963,8 @@ def resolve_persistent_side_spec(
             "persistent_run_dir": str(run_dir),
             "constraint_slug": compare_constraint_slug(
                 stage1_accuracy_tolerance,
-                stage2_limit_quartile,
-                stage2_stability_quartile,
+                stage2_limit_tolerance,
+                stage2_stability_tolerance,
             ),
             "metadata": metadata,
         },
@@ -2065,8 +2065,8 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
                 model_type=model_type,
                 persistent_root=persistent_root,
                 stage1_accuracy_tolerance=float(args.rl_compare_stage1_accuracy_tolerance),
-                stage2_limit_quartile=float(args.rl_compare_stage2_limit_quartile),
-                stage2_stability_quartile=float(args.rl_compare_stage2_stability_quartile),
+                stage2_limit_tolerance=float(args.rl_compare_stage2_limit_tolerance),
+                stage2_stability_tolerance=float(args.rl_compare_stage2_stability_tolerance),
             )
             ga_side_spec = resolve_persistent_side_spec(
                 algorithm="ga",
@@ -2074,8 +2074,8 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
                 model_type=model_type,
                 persistent_root=persistent_root,
                 stage1_accuracy_tolerance=float(args.ga_compare_stage1_accuracy_tolerance),
-                stage2_limit_quartile=float(args.ga_compare_stage2_limit_quartile),
-                stage2_stability_quartile=float(args.ga_compare_stage2_stability_quartile),
+                stage2_limit_tolerance=float(args.ga_compare_stage2_limit_tolerance),
+                stage2_stability_tolerance=float(args.ga_compare_stage2_stability_tolerance),
             )
         else:
             raise CompareRunnerError(
@@ -2382,11 +2382,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ga-compare-stage1-json", default="")
     parser.add_argument("--ga-compare-stage2-json", default="")
     parser.add_argument("--rl-compare-stage1-accuracy-tolerance", type=float, default=None)
-    parser.add_argument("--rl-compare-stage2-limit-quartile", type=float, default=None)
-    parser.add_argument("--rl-compare-stage2-stability-quartile", type=float, default=None)
+    parser.add_argument("--rl-compare-stage2-limit-tolerance", type=float, default=None)
+    parser.add_argument("--rl-compare-stage2-stability-tolerance", type=float, default=None)
     parser.add_argument("--ga-compare-stage1-accuracy-tolerance", type=float, default=None)
-    parser.add_argument("--ga-compare-stage2-limit-quartile", type=float, default=None)
-    parser.add_argument("--ga-compare-stage2-stability-quartile", type=float, default=None)
+    parser.add_argument("--ga-compare-stage2-limit-tolerance", type=float, default=None)
+    parser.add_argument("--ga-compare-stage2-stability-tolerance", type=float, default=None)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--stage1-search-episodes", type=int, default=51000)
     parser.add_argument("--stage2-search-episodes", type=int, default=40000)
@@ -2418,8 +2418,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ga-noise-eval-config", default="")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--stage1-accuracy-tolerance", type=float, default=None)
-    parser.add_argument("--stage2-limit-quartile", type=float, default=None)
-    parser.add_argument("--stage2-stability-quartile", type=float, default=None)
+    parser.add_argument("--stage2-limit-tolerance", type=float, default=None)
+    parser.add_argument("--stage2-stability-tolerance", type=float, default=None)
     return parser.parse_args()
 
 
@@ -2455,14 +2455,14 @@ def main() -> int:
             raise CompareRunnerError(f"{flag_name} must be a positive integer.")
     for flag_name in (
         "stage1_accuracy_tolerance",
-        "stage2_limit_quartile",
-        "stage2_stability_quartile",
+        "stage2_limit_tolerance",
+        "stage2_stability_tolerance",
         "rl_compare_stage1_accuracy_tolerance",
-        "rl_compare_stage2_limit_quartile",
-        "rl_compare_stage2_stability_quartile",
+        "rl_compare_stage2_limit_tolerance",
+        "rl_compare_stage2_stability_tolerance",
         "ga_compare_stage1_accuracy_tolerance",
-        "ga_compare_stage2_limit_quartile",
-        "ga_compare_stage2_stability_quartile",
+        "ga_compare_stage2_limit_tolerance",
+        "ga_compare_stage2_stability_tolerance",
     ):
         value = getattr(args, flag_name, None)
         if value is None:
@@ -2488,17 +2488,17 @@ def main() -> int:
                 if args.stage1_accuracy_tolerance is not None
                 else 0.005
             )
-        if args.rl_compare_stage2_limit_quartile is None:
-            args.rl_compare_stage2_limit_quartile = (
-                args.stage2_limit_quartile
-                if args.stage2_limit_quartile is not None
-                else 0.2
+        if args.rl_compare_stage2_limit_tolerance is None:
+            args.rl_compare_stage2_limit_tolerance = (
+                args.stage2_limit_tolerance
+                if args.stage2_limit_tolerance is not None
+                else 0.05
             )
-        if args.rl_compare_stage2_stability_quartile is None:
-            args.rl_compare_stage2_stability_quartile = (
-                args.stage2_stability_quartile
-                if args.stage2_stability_quartile is not None
-                else 0.2
+        if args.rl_compare_stage2_stability_tolerance is None:
+            args.rl_compare_stage2_stability_tolerance = (
+                args.stage2_stability_tolerance
+                if args.stage2_stability_tolerance is not None
+                else 0.05
             )
         if args.ga_compare_stage1_accuracy_tolerance is None:
             args.ga_compare_stage1_accuracy_tolerance = (
@@ -2506,27 +2506,27 @@ def main() -> int:
                 if args.stage1_accuracy_tolerance is not None
                 else 0.005
             )
-        if args.ga_compare_stage2_limit_quartile is None:
-            args.ga_compare_stage2_limit_quartile = (
-                args.stage2_limit_quartile
-                if args.stage2_limit_quartile is not None
-                else 0.2
+        if args.ga_compare_stage2_limit_tolerance is None:
+            args.ga_compare_stage2_limit_tolerance = (
+                args.stage2_limit_tolerance
+                if args.stage2_limit_tolerance is not None
+                else 0.05
             )
-        if args.ga_compare_stage2_stability_quartile is None:
-            args.ga_compare_stage2_stability_quartile = (
-                args.stage2_stability_quartile
-                if args.stage2_stability_quartile is not None
-                else 0.2
+        if args.ga_compare_stage2_stability_tolerance is None:
+            args.ga_compare_stage2_stability_tolerance = (
+                args.stage2_stability_tolerance
+                if args.stage2_stability_tolerance is not None
+                else 0.05
             )
         return run_evaluation_only_compare(args)
     if args.compare_config_mode == "direct":
         persistent_values = (
             args.rl_compare_stage1_accuracy_tolerance,
-            args.rl_compare_stage2_limit_quartile,
-            args.rl_compare_stage2_stability_quartile,
+            args.rl_compare_stage2_limit_tolerance,
+            args.rl_compare_stage2_stability_tolerance,
             args.ga_compare_stage1_accuracy_tolerance,
-            args.ga_compare_stage2_limit_quartile,
-            args.ga_compare_stage2_stability_quartile,
+            args.ga_compare_stage2_limit_tolerance,
+            args.ga_compare_stage2_stability_tolerance,
         )
         if any(value is not None for value in persistent_values):
             raise CompareRunnerError(
@@ -2615,8 +2615,8 @@ def main() -> int:
             budget_trials=args.budget_trials,
             stage2_compare_repeats=args.stage2_compare_repeats,
             stage1_accuracy_tolerance=getattr(args, "stage1_accuracy_tolerance", None),
-            stage2_limit_quartile=getattr(args, "stage2_limit_quartile", None),
-            stage2_stability_quartile=getattr(args, "stage2_stability_quartile", None),
+            stage2_limit_tolerance=getattr(args, "stage2_limit_tolerance", None),
+            stage2_stability_tolerance=getattr(args, "stage2_stability_tolerance", None),
         ),
         env_overrides={},
     )
@@ -2645,8 +2645,8 @@ def main() -> int:
             budget_trials=args.budget_trials,
             stage2_compare_repeats=args.stage2_compare_repeats,
             stage1_accuracy_tolerance=getattr(args, "stage1_accuracy_tolerance", None),
-            stage2_limit_quartile=getattr(args, "stage2_limit_quartile", None),
-            stage2_stability_quartile=getattr(args, "stage2_stability_quartile", None),
+            stage2_limit_tolerance=getattr(args, "stage2_limit_tolerance", None),
+            stage2_stability_tolerance=getattr(args, "stage2_stability_tolerance", None),
         ),
         env_overrides={},
     )

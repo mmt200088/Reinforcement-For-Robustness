@@ -3,8 +3,8 @@
 # Transformer Approximation Error Non-Accumulation Experiment Runner
 #
 # Runs all experiment blocks sequentially in background (nohup). Each block
-# saves results to its own subdirectory under experiment_results/. Log and PID are
-# written to experiment_results/run.log and experiment_results/pid.txt.
+# saves results to its own subdirectory under experiment/outputs/. Log and PID are
+# written to experiment/outputs/run.log and experiment/outputs/pid.txt.
 #
 # Usage:
 #   bash run_all_experiments.sh              # Run all experiments in background
@@ -12,8 +12,8 @@
 #   bash run_all_experiments.sh --foreground # Run in foreground (no nohup)
 #
 # Check status:  ps aux | grep -E "experiment_|run_all"
-# Stop process:  kill -9 $(cat experiment_results/pid.txt)
-# View log:      tail -f experiment_results/run.log
+# Stop process:  kill -9 $(cat experiment/outputs/pid.txt)
+# View log:      tail -f experiment/outputs/run.log
 #
 
 set -e
@@ -26,7 +26,7 @@ DEVICE="${DEVICE:-cuda}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 MAX_LENGTH="${MAX_LENGTH:-128}"
 N_BOOTSTRAP="${N_BOOTSTRAP:-100}"
-RESULTS_DIR="${RESULTS_DIR:-experiment_results}"
+RESULTS_DIR="${RESULTS_DIR:-experiment/outputs}"
 
 if [ "$1" = "--quick" ]; then
     TASKS="--tasks sst2 mrpc"
@@ -61,61 +61,61 @@ run_experiments() {
     echo "============================================================"
     echo "  [1/5] Supplementary Test 1: Single-Layer Degradation"
     echo "============================================================"
-    python -u experiment_single_layer_degradation.py \
+    python -u -m experiment.scripts.degradation.single_layer_degradation \
         $TASKS \
         --device "$DEVICE" \
         --batch_size "$BATCH_SIZE" \
         --max_length "$MAX_LENGTH" \
-        --output_dir "$RESULTS_DIR/single_layer"
+        --output_dir "$RESULTS_DIR/degradation/single_layer"
 
     echo ""
     echo "============================================================"
     echo "  [2/5] Supplementary Test 2: Stepwise Degradation"
     echo "============================================================"
-    python -u experiment_stepwise_degradation.py \
+    python -u -m experiment.scripts.degradation.stepwise_degradation \
         $TASKS \
         --device "$DEVICE" \
         --batch_size "$BATCH_SIZE" \
         --max_length "$MAX_LENGTH" \
         --n_trials 5 \
         --ppo_config glue_configs_best_ppo.json \
-        --output_dir "$RESULTS_DIR/stepwise"
+        --output_dir "$RESULTS_DIR/degradation/stepwise"
 
     echo ""
     echo "============================================================"
     echo "  [3/5] Block 1: Non-Monotonicity Statistical Test"
     echo "============================================================"
-    python -u experiment_block1_monotonicity.py \
+    python -u -m experiment.scripts.blocks.block1_monotonicity \
         $TASKS \
         --device "$DEVICE" \
         --batch_size "$BATCH_SIZE" \
         --max_length "$MAX_LENGTH" \
         --n_pairs 30 \
         --n_bootstrap "$N_BOOTSTRAP" \
-        --output_dir "$RESULTS_DIR/block1"
+        --output_dir "$RESULTS_DIR/blocks/block1"
 
     echo ""
     echo "============================================================"
     echo "  [4/5] Block 2: ANOVA Interaction Effect"
     echo "============================================================"
-    python -u experiment_block2_anova.py \
+    python -u -m experiment.scripts.blocks.block2_anova \
         $TASKS \
         --device "$DEVICE" \
         --batch_size "$BATCH_SIZE" \
         --max_length "$MAX_LENGTH" \
         --n_bootstrap "$N_BOOTSTRAP" \
-        --output_dir "$RESULTS_DIR/block2"
+        --output_dir "$RESULTS_DIR/blocks/block2"
 
     echo ""
     echo "============================================================"
     echo "  [5/5] Block 3: Cross-Task Robustness Analysis"
     echo "============================================================"
-    python -u experiment_block3_cross_task.py \
+    python -u -m experiment.scripts.blocks.block3_cross_task \
         $TASKS \
         --device "$DEVICE" \
         --batch_size "$BATCH_SIZE" \
         --max_length "$MAX_LENGTH" \
-        --output_dir "$RESULTS_DIR/block3"
+        --output_dir "$RESULTS_DIR/blocks/block3"
 
     echo ""
     echo "============================================================"

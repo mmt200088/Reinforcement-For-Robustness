@@ -1617,19 +1617,15 @@ def prepare_stage2_task(evaluator, fixed_gelu, fixed_softmax, split_name=None):
     worst_p = worst_stats["p_mean"]
     worst_s = worst_stats["s_mean"]
 
-    search_limits = _s2._compute_dynamic_limits(base_loss, base_p, base_s, worst_loss, worst_p, worst_s)
+    _gp_limit_tol = getattr(ev, "stage2_limit_tolerance", _s2.NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE)
+    _gp_stab_tol = getattr(ev, "stage2_stability_tolerance", _s2.NOISE_STAGE_DYNAMIC_LIMIT_TOLERANCE)
+    search_limits = _s2._compute_dynamic_limits(base_loss, base_p, base_s, tolerance=_gp_limit_tol)
 
     baseline_loss_std = float(baseline_stats["loss_std"])
     baseline_m1_std = float(baseline_stats["p_std"])
-    dynamic_loss_std_cap = _s2._compute_dynamic_std_upper_bound(
-        baseline_loss_std, float(worst_stats["loss_std"]),
-    )
-    dynamic_m1_std_cap = _s2._compute_dynamic_std_upper_bound(
-        float(baseline_stats["p_std"]), float(worst_stats["p_std"]),
-    )
-    dynamic_m2_std_cap = _s2._compute_dynamic_std_upper_bound(
-        float(baseline_stats["s_std"]), float(worst_stats["s_std"]),
-    )
+    dynamic_loss_std_cap = _s2._compute_dynamic_std_upper_bound(baseline_loss_std, tolerance=_gp_stab_tol)
+    dynamic_m1_std_cap = _s2._compute_dynamic_std_upper_bound(float(baseline_stats["p_std"]), tolerance=_gp_stab_tol)
+    dynamic_m2_std_cap = _s2._compute_dynamic_std_upper_bound(float(baseline_stats["s_std"]), tolerance=_gp_stab_tol)
 
     # 评估器包装器
     class _NoiseRLEvaluatorWrapper:

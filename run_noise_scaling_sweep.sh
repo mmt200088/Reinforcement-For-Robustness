@@ -136,7 +136,7 @@ while (($#)); do
 done
 
 if [ -z "$OUTPUT_DIR" ]; then
-    OUTPUT_DIR="experiment_results/noise_scaling_sweep"
+    OUTPUT_DIR="experiment/outputs/noise/scaling_sweep"
     PASS_ARGS+=("--output_dir" "$OUTPUT_DIR")
 fi
 
@@ -150,7 +150,7 @@ run_experiment() {
     echo "  Device:       ${CUDA_VISIBLE_DEVICES:-0}"
     echo "  Python Args:  ${PASS_ARGS[*]}"
     echo "============================================================"
-    python -u experiment_noise_scaling_sweep.py "${PASS_ARGS[@]}"
+    python -u -m experiment.scripts.noise.noise_scaling_sweep "${PASS_ARGS[@]}"
 }
 
 if [ "$FOREGROUND" -eq 1 ]; then

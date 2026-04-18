@@ -44,8 +44,8 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--resume-from PATH` | 兼容保留 | — | 兼容保留的内部恢复参数；当前 launcher 的正式续训流程已改为按持久化目录自动恢复，普通命令行不建议手动传 |
 | **准确度约束参数** | | | |
 | `--stage1-accuracy-tolerance FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.005` | Stage-1 指标约束百分比。0.005 表示允许 loss 上浮 0.5%、指标下降 0.5% |
-| `--stage2-limit-quartile FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.2` | Stage-2 指标约束：baseline 与 worst-case 之间的插值百分位数。0.2 表示允许偏离 baseline 20% 的 baseline→worst 区间 |
-| `--stage2-stability-quartile FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.2` | Stage-2 稳定性约束：loss/指标的标准差上界，为 baseline_std 与 worst_std 之间的插值百分位数 |
+| `--stage2-limit-tolerance FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.05` | Stage-2 指标约束百分比（以 baseline 为基准，与 `--stage1-accuracy-tolerance` 同构）。0.05 表示允许 loss 上浮 5%、metric1/metric2 下降 5% |
+| `--stage2-stability-tolerance FLOAT` | `rl`、`ga`、`rl-and-ga-compare` | `0.05` | Stage-2 稳定性约束百分比（以 baseline 探针的纯噪声采样 std 为基准）。0.05 表示允许 std 上浮 5% |
 | **持久化与续训练** | | | |
 | `--fresh-start` | `rl`、`ga`、`general-rl` 训练 | — | 清空当前参数组合对应的整个持久化目录并从头开始；首次运行某参数组合时**必须指定**，否则报错 |
 | `--fresh-stage1` | `rl`、`ga` | — | 仅清空已有持久化目录中的 `stage1/` 与 `stage1_final_eval/`，保留 Stage-2；仅适用于已有持久化目录的续训场景 |
@@ -88,11 +88,11 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--ga-compare-stage1-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 GA 的 Stage-1 JSON；可传配置模板，也可传最终评估结果 JSON |
 | `--ga-compare-stage2-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 GA 的 Stage-2 JSON；可传配置模板，也可传最终评估结果 JSON |
 | `--rl-compare-stage1-accuracy-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage1-accuracy-tolerance` 或 `0.005` | `persistent` 模式下 RL 侧的 Stage-1 约束，用于定位 RL 持久化目录 |
-| `--rl-compare-stage2-limit-quartile FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-limit-quartile` 或 `0.2` | `persistent` 模式下 RL 侧的 Stage-2 指标约束，用于定位 RL 持久化目录 |
-| `--rl-compare-stage2-stability-quartile FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-stability-quartile` 或 `0.2` | `persistent` 模式下 RL 侧的 Stage-2 稳定性约束，用于定位 RL 持久化目录 |
+| `--rl-compare-stage2-limit-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-limit-tolerance` 或 `0.05` | `persistent` 模式下 RL 侧的 Stage-2 指标约束，用于定位 RL 持久化目录 |
+| `--rl-compare-stage2-stability-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-stability-tolerance` 或 `0.05` | `persistent` 模式下 RL 侧的 Stage-2 稳定性约束，用于定位 RL 持久化目录 |
 | `--ga-compare-stage1-accuracy-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage1-accuracy-tolerance` 或 `0.005` | `persistent` 模式下 GA 侧的 Stage-1 约束，用于定位 GA 持久化目录 |
-| `--ga-compare-stage2-limit-quartile FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-limit-quartile` 或 `0.2` | `persistent` 模式下 GA 侧的 Stage-2 指标约束，用于定位 GA 持久化目录 |
-| `--ga-compare-stage2-stability-quartile FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-stability-quartile` 或 `0.2` | `persistent` 模式下 GA 侧的 Stage-2 稳定性约束，用于定位 GA 持久化目录 |
+| `--ga-compare-stage2-limit-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-limit-tolerance` 或 `0.05` | `persistent` 模式下 GA 侧的 Stage-2 指标约束，用于定位 GA 持久化目录 |
+| `--ga-compare-stage2-stability-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-stability-tolerance` 或 `0.05` | `persistent` 模式下 GA 侧的 Stage-2 稳定性约束，用于定位 GA 持久化目录 |
 | **通用 RL 专用** | | | |
 | `--general-rl-mode train/search` | `general-rl` | `search` | 通用 RL 的运行模式；`search` 为正式名称，`infer` 仍保留为兼容别名 |
 | `--general-rl-tasks T1,T2,...` | `general-rl` 训练 | 同 `--dataset` | 逗号分隔的训练任务列表 |
@@ -129,7 +129,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
   - 也不再支持旧的 compare 专用参数：`--rl/ga-skip-*`、`--rl/ga-*-eval-source`、`--rl/ga-*-eval-config`。
   - `direct` 模式必须同时提供 4 个 JSON：RL/GA 各自的 Stage-1 与 Stage-2。
   - `persistent` 模式必须提供 `--compare-persistent-root`；RL 与 GA 可以使用不同约束参数，但模型类型与数据集必须一致。
-  - `persistent` 模式下，如未显式提供 `--rl/ga-compare-*` 约束参数，会分别继承全局的 `--stage1-accuracy-tolerance`、`--stage2-limit-quartile`、`--stage2-stability-quartile`。
+  - `persistent` 模式下，如未显式提供 `--rl/ga-compare-*` 约束参数，会分别继承全局的 `--stage1-accuracy-tolerance`、`--stage2-limit-tolerance`、`--stage2-stability-tolerance`。
   - `persistent` 模式启动前会先推导出 RL / GA 各自的目标持久化目录；如果目录或其中的 `metadata.json` 不存在，会直接报错并打印具体路径。
   - `rl-and-ga-compare` 模式下，Stage-2 多次对比只看 `--stage2-compare-repeats`。
   - `--noise-eval-repeat` 不再作为 compare 模式的正式参数；仅保留兼容别名行为。若旧命令只传了它而没传 `--stage2-compare-repeats`，系统会临时按 `--stage2-compare-repeats` 处理并给出警告。
@@ -175,25 +175,25 @@ bash llama_7B_LayerImportance.sh \
 
 #### 3b. 自定义准确度约束
 
-通过 `--stage1-accuracy-tolerance`、`--stage2-limit-quartile`、`--stage2-stability-quartile` 调整搜索约束：
+通过 `--stage1-accuracy-tolerance`、`--stage2-limit-tolerance`、`--stage2-stability-tolerance` 调整搜索约束：
 
 ```bash
-# Stage-1 指标容忍度放宽到 1%，Stage-2 约束放宽到 30% 百分位
+# Stage-1 指标容忍度放宽到 1%，Stage-2 约束放宽到 10% 波动
 bash llama_7B_LayerImportance.sh \
   --dataset mrpc \
   --fresh-start \
   --stage1-accuracy-tolerance 0.01 \
-  --stage2-limit-quartile 0.3 \
-  --stage2-stability-quartile 0.3
+  --stage2-limit-tolerance 0.1 \
+  --stage2-stability-tolerance 0.1
 ```
 
 参数含义：
 
 - `--stage1-accuracy-tolerance 0.01`：Stage-1 允许 loss 上浮 1%、主指标下降 1%（默认 0.005 = 0.5%）。
-- `--stage2-limit-quartile 0.3`：Stage-2 动态指标约束取 baseline 与 worst-case 之间 30% 的插值位置（默认 0.2 = 20%）。
-- `--stage2-stability-quartile 0.3`：Stage-2 稳定性约束（标准差上界）取 baseline_std 与 worst_std 之间 30% 的插值位置（默认 0.2 = 20%）。
+- `--stage2-limit-tolerance 0.1`：Stage-2 指标约束以 baseline 为基准，允许 loss 上浮 10%、metric1/metric2 下降 10%（默认 0.05 = 5%）。
+- `--stage2-stability-tolerance 0.1`：Stage-2 稳定性约束以 baseline 探针 std 为基准，允许 std 上浮 10%（默认 0.05 = 5%）。
 
-三个参数值越小，搜索越保守（更贴近 baseline）；越大，允许精度降低越多，搜索空间越大。
+三个参数值越小，搜索越保守（更贴近 baseline）；越大，允许波动越多，搜索空间越大。
 
 #### 3c. 持久化目录与自动续训练（rl / ga）
 
@@ -222,14 +222,14 @@ bash llama_7B_LayerImportance.sh \
 持久化目录路径格式：
 
 ```text
-rl_results/persistent/<algorithm>/<model_type>/<dataset>/s1t<T>_s2q<L>_s2sq<S>/
+rl_results/persistent/<algorithm>/<model_type>/<dataset>/s1t<T>_s2t<L>_s2st<S>/
 ```
 
 示例：
 
 ```text
-rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/
-rl_results/persistent/ga/bert-large/stsb/s1t0.01_s2q0.3_s2sq0.3/
+rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/
+rl_results/persistent/ga/bert-large/stsb/s1t0.01_s2t0.1_s2st0.1/
 ```
 
 目录下的 `metadata.json` 记录算法、模型、数据集、约束参数值、创建时间和运行次数。
@@ -335,8 +335,8 @@ bash llama_7B_LayerImportance.sh \
   --compare-config-mode persistent \
   --compare-persistent-root rl_results/persistent \
   --stage1-accuracy-tolerance 0.005 \
-  --stage2-limit-quartile 0.2 \
-  --stage2-stability-quartile 0.2 \
+  --stage2-limit-tolerance 0.05 \
+  --stage2-stability-tolerance 0.05 \
   --stage2-compare-repeats 20
 ```
 
@@ -349,11 +349,11 @@ bash llama_7B_LayerImportance.sh \
   --compare-config-mode persistent \
   --compare-persistent-root rl_results/persistent \
   --rl-compare-stage1-accuracy-tolerance 0.005 \
-  --rl-compare-stage2-limit-quartile 0.2 \
-  --rl-compare-stage2-stability-quartile 0.2 \
+  --rl-compare-stage2-limit-tolerance 0.05 \
+  --rl-compare-stage2-stability-tolerance 0.05 \
   --ga-compare-stage1-accuracy-tolerance 0.01 \
-  --ga-compare-stage2-limit-quartile 0.3 \
-  --ga-compare-stage2-stability-quartile 0.3 \
+  --ga-compare-stage2-limit-tolerance 0.1 \
+  --ga-compare-stage2-stability-tolerance 0.1 \
   --stage2-compare-repeats 20
 ```
 
@@ -628,7 +628,7 @@ bash llama_7B_LayerImportance.sh --dataset mrpc
 
 ```text
 # rl / ga 持久化目录（确定性路径，相同参数自动复用）
-rl_results/persistent/<algorithm>/<model_type>/<dataset>/s1t<T>_s2q<L>_s2sq<S>/
+rl_results/persistent/<algorithm>/<model_type>/<dataset>/s1t<T>_s2t<L>_s2st<S>/
 
 # general-rl train 持久化目录（确定性路径，相同 taskset + accuracy_slug 自动复用）
 rl_results/persistent/general-rl/<model_type>/<taskset_id>/<accuracy_slug>/
@@ -640,7 +640,7 @@ rl_results/runs/compare/rl_vs_ga/<dataset>/<run_id>/
 
 说明：
 
-- **rl / ga 持久化目录**：`<algorithm>` 为 `rl` 或 `ga`；`<model_type>` 为 `bert-base`、`bert-large`、`gpt-2`；`s1t<T>_s2q<L>_s2sq<S>` 由三个约束参数拼成确定性标识（例如 `s1t0.005_s2q0.2_s2sq0.2`）。首次运行需加 `--fresh-start`，后续相同参数自动续训练。
+- **rl / ga 持久化目录**：`<algorithm>` 为 `rl` 或 `ga`；`<model_type>` 为 `bert-base`、`bert-large`、`gpt-2`；`s1t<T>_s2t<L>_s2st<S>` 由三个约束参数拼成确定性标识（例如 `s1t0.005_s2t0.05_s2st0.05`）。首次运行需加 `--fresh-start`，后续相同参数自动续训练。
 - **general-rl train 持久化目录**：`<taskset_id>` 由 `--general-rl-tasks` 规范化得到；`<accuracy_slug>` 由 `--general-rl-accuracy-tolerances` 或 `--general-rl-accuracy-tolerance-range` 决定，例如 `default`、`discrete_0.50pct_1.00pct_2.00pct`、`range_0.50pct_2.00pct`。首次运行同样需加 `--fresh-start`，后续相同参数自动续训练。
 - `dataset` 是当前单任务数据集，例如 `mrpc`、`stsb`。
 - `taskset_id` 是训练任务集合的规范化标识，例如 `mrpc,cola,rte,stsb` 会落为 `mrpc_cola_rte_stsb`。
@@ -678,13 +678,13 @@ rl_results/runs/compare/rl_vs_ga/<dataset>/<run_id>/
 普通 RL 的持久化目录（默认约束参数）：
 
 ```text
-rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/
+rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/
 ```
 
 GA 的持久化目录（自定义约束参数）：
 
 ```text
-rl_results/persistent/ga/bert-base/mrpc/s1t0.01_s2q0.3_s2sq0.3/
+rl_results/persistent/ga/bert-base/mrpc/s1t0.01_s2t0.1_s2st0.1/
 ```
 
 通用 RL 多任务训练的一个持久化目录（数据集泛化模式）：
@@ -1357,16 +1357,16 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 #### 持久化目录路径格式
 
 ```text
-rl_results/persistent/<algorithm>/<model_type>/<dataset>/s1t<T>_s2q<L>_s2sq<S>/
+rl_results/persistent/<algorithm>/<model_type>/<dataset>/s1t<T>_s2t<L>_s2st<S>/
 ```
 
-其中 `s1t<T>` = `--stage1-accuracy-tolerance`，`s2q<L>` = `--stage2-limit-quartile`，`s2sq<S>` = `--stage2-stability-quartile`。
+其中 `s1t<T>` = `--stage1-accuracy-tolerance`，`s2t<L>` = `--stage2-limit-tolerance`，`s2st<S>` = `--stage2-stability-tolerance`。
 
 示例：
 
 ```text
-rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/
-rl_results/persistent/ga/bert-large/stsb/s1t0.01_s2q0.3_s2sq0.3/
+rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/
+rl_results/persistent/ga/bert-large/stsb/s1t0.01_s2t0.1_s2st0.1/
 ```
 
 目录下会自动创建 `metadata.json`，记录算法、模型、数据集、约束参数值、创建时间和运行次数。
@@ -1611,7 +1611,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
     --stage2-search-episodes 15000 \
     --batch-size 128
 # -> 终端会打印 Background PID: 712345
-# -> 持久化目录：rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/
+# -> 持久化目录：rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/
 ```
 
 ```bash
@@ -1621,7 +1621,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 kill -INT 712345
 
 # 方式 C：创建停止标志文件（Stage-2 训练时）
-touch rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/stage2_noise/progress/STOP_RL
+touch rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/stage2_noise/progress/STOP_RL
 ```
 
 收到信号后，你会在日志里看到：
@@ -1662,14 +1662,14 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
     --stage1-search-generations 120 \
     --stage2-search-generations 90
 # -> 脚本打印 Background PID: 812345 及停止命令
-# -> 持久化目录：rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/
+# -> 持久化目录：rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/
 
 # 2) 优雅停止（方式 A / C 均可）
 kill -INT 812345
 
 # 或创建停止标志文件：
-# touch rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/stage1/STOP_RL
-# touch rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2q0.2_s2sq0.2/stage2_noise/progress/STOP_RL
+# touch rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/stage1/STOP_RL
+# touch rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/stage2_noise/progress/STOP_RL
 
 # 3) 续训：相同参数直接运行，不加 --fresh-start
 bash llama_7B_LayerImportance.sh --logfile output.log \
@@ -1778,10 +1778,10 @@ episode，ga 模式在当代结束后生效，general-rl 模式在当前 round �
 <run_dir>/best_policy/
 ├── stage1_policy.pt           # 第一阶段最佳 policy 副本
 ├── stage2_noise_policy.pt     # 第二阶段最佳 noise policy 副本
-└── constraint_metadata.json   # 约束参数元信息（tolerance、quartile、dataset、algorithm）
+└── constraint_metadata.json   # 约束参数元信息（tolerance、dataset、algorithm）
 ```
 
-`constraint_metadata.json` 记录了训练时使用的 `stage1_accuracy_tolerance`、`stage2_limit_quartile`、`stage2_stability_quartile`、`dataset`、`search_algorithm` 等信息，便于下游模块（如通用 RL）识别 policy 的训练条件。
+`constraint_metadata.json` 记录了训练时使用的 `stage1_accuracy_tolerance`、`stage2_limit_tolerance`、`stage2_stability_tolerance`、`dataset`、`search_algorithm` 等信息，便于下游模块（如通用 RL）识别 policy 的训练条件。
 
 文件格式（`torch.save` 的 dict）：
 

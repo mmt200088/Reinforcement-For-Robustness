@@ -2411,8 +2411,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                  resume_run_dir='',
                  search_algorithm=None,
                  stage1_accuracy_tolerance=None,
-                 stage2_limit_quartile=None,
-                 stage2_stability_quartile=None):
+                 stage2_limit_tolerance=None,
+                 stage2_stability_tolerance=None):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -2575,9 +2575,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         _s1_tol = float(stage1_accuracy_tolerance) if stage1_accuracy_tolerance is not None else 0.005
         self.error_threshold = _s1_tol
         self.correlation_drop_ratio = _s1_tol
-        # Stage-2 动态约束的 quartile 参数（baseline → worst 插值比例）
-        self.stage2_limit_quartile = float(stage2_limit_quartile) if stage2_limit_quartile is not None else 0.2
-        self.stage2_stability_quartile = float(stage2_stability_quartile) if stage2_stability_quartile is not None else 0.2
+        # Stage-2 动态约束：以 baseline 为基准的允许波动百分比（与 Stage-1 tolerance 同构）
+        #   limit: loss 允许上浮 tol, metric 允许下降 tol
+        #   stability: std 允许上浮 tol（baseline 探针的纯噪声采样方差）
+        self.stage2_limit_tolerance = float(stage2_limit_tolerance) if stage2_limit_tolerance is not None else 0.05
+        self.stage2_stability_tolerance = float(stage2_stability_tolerance) if stage2_stability_tolerance is not None else 0.05
         
         self.search_algorithm = search_algorithm or "rl"
         output_layout = resolve_run_output_layout(run_output_dir, search_algorithm=self.search_algorithm)
@@ -3075,6 +3077,40 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
         selected_indices = np.sort(np.asarray(selected_indices, dtype=int))
         return dataset.select(selected_indices.tolist())
+
+    # 稳定性探针每段最少样本数：保证探针上的 mean 估计有足够样本量，
+    # 避免小探针上 accuracy/loss 均值波动过大，让 limit / reward 对比失真。
+    STABILITY_PROBE_MIN_SAMPLES = 80
+
+    def _get_stability_probe(self, split_name, probe_size, probe_seed=42):
+        """返回并缓存一份固定的分层采样探针子集，供稳定性评测复用。
+
+        Why: 过去的"把验证集切 N 段、每段独立采样一次噪声"做法，std 实际上
+        被 **每段样本分布不同** 导致的有限样本抖动主导（≈ √(p(1-p)/n)），
+        与噪声无关；噪声注入的方差被完全淹没。改为"同一份固定分层子集
+        + 多次不同噪声"后，各 trial 之间的数据完全一致，std 才是纯噪声
+        采样方差。
+        """
+        cache = self.__dict__.setdefault("_stability_probe_cache", {})
+        key = (str(split_name), int(probe_size), int(probe_seed))
+        if key in cache:
+            return cache[key]
+        dataset = self.dataset_splits.get(split_name)
+        if dataset is None or len(dataset) == 0:
+            cache[key] = (None, None)
+            return cache[key]
+        clipped_size = max(1, min(int(probe_size), len(dataset)))
+        subset = self._sample_dataset_by_size(dataset, clipped_size, int(probe_seed))
+
+        dataset_mm = self.dataset_splits_mm.get(split_name)
+        subset_mm = None
+        if dataset_mm is not None and len(dataset_mm) > 0:
+            mm_size = max(1, min(clipped_size, len(dataset_mm)))
+            subset_mm = self._sample_dataset_by_size(
+                dataset_mm, mm_size, int(probe_seed),
+            )
+        cache[key] = (subset, subset_mm)
+        return cache[key]
 
     def _split_dataset_for_rl(self, dataset, holdout_ratio, seed):
         if dataset is None:
@@ -4139,17 +4175,35 @@ class LayerImportanceEvaluator(TrainerCallback):
             segments=5,
             use_train=True,
             split=None,
+            probe_size_override=None,
+            probe_seed=42,
             ):
-        """将数据集切为 N 段、每段独立噪声采样评测 1 次，总计只遍历数据集 1 遍。
+        """在一份固定分层探针上做 K 次不同噪声种子的评测，std 反映纯噪声采样方差。
 
-        返回格式与 evaluate_model_with_attention_noise_repeated 一致（n / loss_mean / loss_std / …）。
+        Why: 历史实现是把验证集切 N 段、每段独立跑 1 次不同噪声，std 取"N 段
+        结果"的标准差。问题是——在 MRPC 这类小验证集 + 类别不均匀的场景下，
+        每段 ~80 样本上 accuracy 的有限样本抖动 ≈ √(p(1-p)/n) ≈ 0.033，已经
+        与观测的 m1_std 基本相等，而最强噪声 vs 最弱噪声的 std 差不到 0.01，
+        说明 std 基本等于"数据切分噪声"，完全没反映噪声采样方差。动态 std 上
+        下界因此退化为两个几乎相等的值，稳定性约束失效。
+
+        新语义（参数名 `segments` 保留以兼容调用方，语义改为 **K = 噪声试验数**）：
+        - 每个 split 首次访问时，用分层采样构造一份固定探针子集（大小 ≈
+          len(val)/K，但不低于 `STABILITY_PROBE_MIN_SAMPLES`），缓存在 evaluator
+          上；baseline / worst / 每个候选配置在整轮训练里都看到同一份数据。
+        - 对同一份探针跑 K 次独立噪声种子：每次的 torch/numpy RNG 被独立设置，
+          相当于 K 次 i.i.d. 噪声实现；由于数据完全一样，`loss_std / p_std / s_std`
+          只剩纯噪声采样方差。
+        - 单次评测总样本量 = K × probe_size ≈ len(val)，与历史实现成本一致。
+        - `loss_min/max, p_min/max, s_min/max` 现在真实表达"同一数据上最坏/最好
+          的噪声实现"，直接可用于 tail-risk / worst-case 约束。
+        - 返回 dict 中新增 `probe_size` 与 `evaluation_mode` 字段用于诊断。
         """
-        segments = max(1, int(segments))
+        trials = max(1, int(segments))
         split_name = self._resolve_eval_split(use_train=use_train, split=split)
         dataset = self.dataset_splits.get(split_name)
-        dataset_mm = self.dataset_splits_mm.get(split_name)
 
-        if dataset is None or len(dataset) < segments:
+        if dataset is None or len(dataset) == 0:
             return self.evaluate_model_with_attention_noise_repeated(
                 gelu_degrees, softmax_degrees,
                 input_noise_scaling_factors=input_noise_scaling_factors,
@@ -4159,19 +4213,40 @@ class LayerImportanceEvaluator(TrainerCallback):
                 wo_noise_scaling_factors=wo_noise_scaling_factors,
                 wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
                 wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
-                repeats=segments,
+                repeats=trials,
                 use_train=use_train,
                 split=split,
             )
 
-        rng = np.random.RandomState(42)
-        perm = rng.permutation(len(dataset))
-        seg_index_lists = np.array_split(perm, segments)
-        if dataset_mm is not None and len(dataset_mm) >= segments:
-            perm_mm = rng.permutation(len(dataset_mm))
-            seg_mm_lists = np.array_split(perm_mm, segments)
+        # 成本等价探针尺寸：K × probe_size ≈ len(dataset)。探针下限
+        # `STABILITY_PROBE_MIN_SAMPLES` 保证 mean 在探针上有足够统计样本；
+        # 若 trials 较大导致 probe_size 被下限抬到 > len/K，总样本量会略超
+        # 历史实现（上限为 K×len_probe_min），但仍远小于"每 trial 跑全集"。
+        if probe_size_override is None:
+            probe_size = max(
+                self.STABILITY_PROBE_MIN_SAMPLES,
+                len(dataset) // max(trials, 1),
+            )
         else:
-            seg_mm_lists = None
+            probe_size = int(probe_size_override)
+        probe_size = max(1, min(probe_size, len(dataset)))
+        probe_subset, probe_subset_mm = self._get_stability_probe(
+            split_name, probe_size, probe_seed=probe_seed,
+        )
+        if probe_subset is None:
+            return self.evaluate_model_with_attention_noise_repeated(
+                gelu_degrees, softmax_degrees,
+                input_noise_scaling_factors=input_noise_scaling_factors,
+                wq_noise_scaling_factors=wq_noise_scaling_factors,
+                wk_noise_scaling_factors=wk_noise_scaling_factors,
+                wv_noise_scaling_factors=wv_noise_scaling_factors,
+                wo_noise_scaling_factors=wo_noise_scaling_factors,
+                wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
+                wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
+                repeats=trials,
+                use_train=use_train,
+                split=split,
+            )
 
         _cpu_rng_state = torch.get_rng_state()
         _cuda_rng_state_all = (
@@ -4180,25 +4255,19 @@ class LayerImportanceEvaluator(TrainerCallback):
         _np_rng_state = np.random.get_state()
         _py_rng_state = random.getstate()
 
-        _tmp_split = "__noise_segment_tmp__"
-        trials = []
+        _tmp_split = "__noise_stability_probe_tmp__"
+        trial_results = []
         try:
+            self._register_dataset_split(_tmp_split, probe_subset, probe_subset_mm)
             base_seed = int(getattr(self, "final_eval_random_seed", 42))
-            for seg_idx, seg_indices in enumerate(seg_index_lists):
-                trial_seed = base_seed + seg_idx * 1_000_003
+            for trial_idx in range(trials):
+                # 每个 trial 独立可复现的噪声流（torch.randn / numpy），数据固定，
+                # 只变 noise seed → std 只剩纯噪声方差。
+                trial_seed = base_seed + trial_idx * 1_000_003
                 torch.manual_seed(trial_seed)
                 np.random.seed(trial_seed % (2**32))
                 if torch.cuda.is_available():
                     torch.cuda.manual_seed_all(trial_seed)
-
-                subset = dataset.select(np.sort(seg_indices).tolist())
-                subset_mm = None
-                if seg_mm_lists is not None:
-                    subset_mm = dataset_mm.select(
-                        np.sort(seg_mm_lists[seg_idx]).tolist()
-                    )
-
-                self._register_dataset_split(_tmp_split, subset, subset_mm)
 
                 loss, p, s, t = self.evaluate_model_with_attention_noise(
                     gelu_degrees, softmax_degrees,
@@ -4211,7 +4280,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
                     split=_tmp_split,
                 )
-                trials.append({
+                trial_results.append({
                     "loss": float(loss),
                     "p": float(p),
                     "s": float(s),
@@ -4228,13 +4297,15 @@ class LayerImportanceEvaluator(TrainerCallback):
             np.random.set_state(_np_rng_state)
             random.setstate(_py_rng_state)
 
-        losses = np.asarray([trial["loss"] for trial in trials], dtype=float)
-        ps = np.asarray([trial["p"] for trial in trials], dtype=float)
-        ss = np.asarray([trial["s"] for trial in trials], dtype=float)
-        times = np.asarray([trial["time_ms"] for trial in trials], dtype=float)
+        losses = np.asarray([trial["loss"] for trial in trial_results], dtype=float)
+        ps = np.asarray([trial["p"] for trial in trial_results], dtype=float)
+        ss = np.asarray([trial["s"] for trial in trial_results], dtype=float)
+        times = np.asarray([trial["time_ms"] for trial in trial_results], dtype=float)
         return {
             "split_name": split_name,
-            "n": segments,
+            "n": trials,
+            "probe_size": int(len(probe_subset)),
+            "evaluation_mode": "stability_probe_trials",
             "loss_mean": float(np.mean(losses)),
             "loss_std": float(np.std(losses)),
             "loss_min": float(np.min(losses)),
@@ -4252,7 +4323,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             "s_range": float(np.max(ss) - np.min(ss)),
             "time_mean_ms": float(np.mean(times)),
             "time_std_ms": float(np.std(times)),
-            "trials": trials,
+            "trials": trial_results,
         }
 
     def get_stage1_exact_baseline_configuration(self):
@@ -4402,8 +4473,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         import json as _json
         meta = {
             "stage1_accuracy_tolerance": float(self.error_threshold),
-            "stage2_limit_quartile": float(self.stage2_limit_quartile),
-            "stage2_stability_quartile": float(self.stage2_stability_quartile),
+            "stage2_limit_tolerance": float(self.stage2_limit_tolerance),
+            "stage2_stability_tolerance": float(self.stage2_stability_tolerance),
             "dataset": str(getattr(self, "data_path", "")),
             "search_algorithm": str(getattr(self, "search_algorithm", "")),
         }

@@ -92,7 +92,7 @@ class StatusBoardTests(unittest.TestCase):
                     algorithm="RL",
                     model_type="bert-base",
                     task="mrpc",
-                    slug="s1t0.005_s2q0.05_s2sq0.05",
+                    slug="s1t0.005_s2t0.05_s2st0.05",
                     path=run_dir,
                     stage_status={
                         "stage1_search": "skipped",

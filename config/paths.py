@@ -23,7 +23,8 @@ import os
 RL_RESULTS_ROOT: str = "rl_results"
 """所有 RL / GA / general-rl / compare 的结果统一放在这下面。"""
 
-EXPERIMENT_RESULTS_ROOT: str = "experiment_results"
+EXPERIMENT_ROOT: str = "experiment"
+EXPERIMENT_RESULTS_ROOT: str = os.path.join(EXPERIMENT_ROOT, "outputs")
 """一次性实验脚本（experiment_block*, experiment_noise_scaling_sweep 等）的输出根目录。"""
 
 GLUE_SUBMISSION_ROOT: str = "glue_submission"

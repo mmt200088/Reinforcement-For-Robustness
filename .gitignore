@@ -42,6 +42,11 @@ __pycache__/
 # but explicitly un-ignore everything under experiment_results/.
 # Re-ignore bulky logs and text dumps under experiment_results/ (GitHub 100MB limit).
 # ---------------------------------------------------------------------------
+!experiment/outputs/
+!experiment/outputs/**
+experiment/outputs/**/*.log
+experiment/outputs/**/*.txt
+!experiment/outputs/**/pruning_search_log.txt
 !experiment_results/
 !experiment_results/**
 experiment_results/**/*.log

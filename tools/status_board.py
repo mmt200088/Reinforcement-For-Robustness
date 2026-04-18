@@ -60,7 +60,8 @@ RL_RESULTS_ROOT = "rl_results"
 PERSISTENT_SUBDIR = "persistent"
 RUNS_SUBDIR = "runs"
 COMPARE_SUBDIR_REL = os.path.join("compare", "rl_vs_ga")
-EXPERIMENT_RESULTS_ROOT = "experiment_results"
+EXPERIMENT_RESULTS_ROOT = os.path.join("experiment", "outputs")
+LEGACY_EXPERIMENT_RESULTS_ROOT = "experiment_results"
 
 PERSISTENT_RL_BRANCH = "rl"
 PERSISTENT_GA_BRANCH = "ga"
@@ -345,18 +346,46 @@ def _scan_compare_runs(root: Path) -> List[CompareRecord]:
 
 def _scan_experiments(root: Path) -> List[ExperimentRecord]:
     records: List[ExperimentRecord] = []
-    exp_root = root / EXPERIMENT_RESULTS_ROOT
-    if not exp_root.is_dir():
-        return records
-    for d in sorted(exp_root.iterdir()):
-        if not d.is_dir():
-            continue
-        has_log = (d / "run.log").exists()
+    seen: set[Path] = set()
+
+    def add_record(name: str, path: Path) -> None:
+        if not path.is_dir():
+            return
+        resolved = path.resolve()
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        has_log = (path / "run.log").exists()
         try:
-            mtime = datetime.fromtimestamp(d.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            mtime = datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
             mtime = None
-        records.append(ExperimentRecord(name=d.name, path=d, has_run_log=has_log, last_mtime=mtime))
+        records.append(
+            ExperimentRecord(name=name, path=path, has_run_log=has_log, last_mtime=mtime)
+        )
+
+    exp_root = root / EXPERIMENT_RESULTS_ROOT
+    current_layout = {
+        "single_layer": Path("degradation") / "single_layer",
+        "stepwise": Path("degradation") / "stepwise",
+        "block1": Path("blocks") / "block1",
+        "block2": Path("blocks") / "block2",
+        "block3": Path("blocks") / "block3",
+        "noise_scaling_sweep": Path("noise") / "scaling_sweep",
+    }
+    for name, rel_path in current_layout.items():
+        add_record(name, exp_root / rel_path)
+
+    legacy_root = root / LEGACY_EXPERIMENT_RESULTS_ROOT
+    legacy_layout = {
+        "final_evaluation": Path("final_evaluation"),
+        "noise_final_evaluation": Path("noise_final_evaluation"),
+        "layer_importance_runs": Path("layer_importance_runs"),
+    }
+    for name, rel_path in legacy_layout.items():
+        add_record(name, legacy_root / rel_path)
+
+    records.sort(key=lambda record: record.name)
     return records
 
 

@@ -7,8 +7,8 @@ pairs (C_A > C_B in precision), and tests whether M(C_B) > M(C_A) (counter-monot
 Uses Bootstrap resampling + paired t-test / Wilcoxon signed-rank test.
 
 Usage:
-    python experiment_block1_monotonicity.py --device cuda --output_dir results/block1
-    python experiment_block1_monotonicity.py --tasks sst2 mrpc --n_bootstrap 200
+    python -m experiment.scripts.blocks.block1_monotonicity --device cuda
+    python -m experiment.scripts.blocks.block1_monotonicity --tasks sst2 mrpc --n_bootstrap 200
 """
 
 import os
@@ -23,7 +23,7 @@ plt.rcParams['font.family'] = 'serif'
 plt.rcParams['font.serif'] = ['Times New Roman', 'DejaVu Serif', 'serif']
 from scipy import stats
 
-from experiment_core import (
+from experiment.core.experiment_core import (
     TASK_REGISTRY, ALL_TASKS, NUM_LAYERS,
     GELU_FULL, GELU_LOW, SOFTMAX_FULL, SOFTMAX_LOW, BASELINE_CONFIG,
     load_model_and_data, get_logits_for_config, compute_metrics,
@@ -305,7 +305,11 @@ def main():
     parser = argparse.ArgumentParser(description="Block 1: Non-monotonicity statistical test")
     parser.add_argument("--tasks", nargs='+', default=None)
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--output_dir", type=str, default="results/block1")
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="experiment/outputs/blocks/block1",
+    )
     parser.add_argument("--n_pairs", type=int, default=30)
     parser.add_argument("--n_bootstrap", type=int, default=100)
     parser.add_argument("--max_length", type=int, default=128)
