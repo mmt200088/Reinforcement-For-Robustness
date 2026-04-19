@@ -119,11 +119,9 @@ class GABudgetAndSplitTests(unittest.TestCase):
 
         side_config = compare_runner.CompareSideConfig(
             skip_stage1_search=True,
-            final_eval_config_source="json",
-            final_eval_config_path="glue_configs_best_ppo.json",
             skip_noise_search=True,
-            noise_eval_config_source="json",
-            noise_eval_config_path="glue_noise_configs_best_genetic.json",
+            final_eval_config_source="json",
+            final_eval_config_path="glue_final_configs_best_ppo.json",
         )
         rl_cmd = compare_runner.build_child_command(
             python_exe="python",

@@ -30,10 +30,10 @@ def _write_compare_direct_jsons(root: Path) -> dict:
         }
     }
     paths = {
-        "rl_stage1": root / "glue_configs_best_ppo.json",
-        "rl_stage2": root / "glue_noise_configs_best_ppo.json",
-        "ga_stage1": root / "glue_configs_best_genetic.json",
-        "ga_stage2": root / "glue_noise_configs_best_genetic.json",
+        "rl_stage1": root / "glue_final_configs_best_ppo.json",
+        "rl_stage2": root / "glue_final_configs_best_ppo.json",
+        "ga_stage1": root / "glue_final_configs_best_genetic.json",
+        "ga_stage2": root / "glue_final_configs_best_genetic.json",
     }
     for key, path in paths.items():
         payload = stage1_template if "stage1" in key else stage2_template
@@ -199,107 +199,6 @@ class OutputLayoutRegressionTests(unittest.TestCase):
             self.assertEqual(metadata["stage2_compare_repeats"], 7)
             self.assertEqual(metadata["rl_side"]["stage1_json_path"], str(json_paths["rl_stage1"]))
             self.assertEqual(metadata["ga_side"]["stage2_json_path"], str(json_paths["ga_stage2"]))
-
-    def test_compare_runner_deprecated_noise_eval_repeat_alias(self):
-        repo_root = Path(__file__).resolve().parents[1]
-        with TemporaryDirectory() as tmpdir:
-            output_dir = Path(tmpdir) / "compare_dry_run_alias"
-            json_paths = _write_compare_direct_jsons(Path(tmpdir))
-            command = [
-                sys.executable,
-                "rl_ga_compare_runner.py",
-                "--base-model",
-                "dummy-model",
-                "--data-path",
-                "mrpc",
-                "--dataset",
-                "mrpc",
-                "--output-dir",
-                str(output_dir),
-                "--model-type",
-                "bert-base",
-                "--compare-config-mode",
-                "direct",
-                "--rl-compare-stage1-json",
-                str(json_paths["rl_stage1"]),
-                "--rl-compare-stage2-json",
-                str(json_paths["rl_stage2"]),
-                "--ga-compare-stage1-json",
-                str(json_paths["ga_stage1"]),
-                "--ga-compare-stage2-json",
-                str(json_paths["ga_stage2"]),
-                "--noise-eval-repeat",
-                "9",
-                "--dry-run",
-            ]
-
-            completed = subprocess.run(
-                command,
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            self.assertEqual(
-                completed.returncode,
-                0,
-                msg=completed.stderr or completed.stdout,
-            )
-            metadata = json.loads(
-                (output_dir / "meta" / "compare_metadata.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(metadata["stage2_compare_repeats"], 9)
-            self.assertTrue(
-                any("noise-eval-repeat" in item for item in metadata["warnings"])
-            )
-
-    def test_compare_runner_rejects_duplicate_repeat_flags(self):
-        repo_root = Path(__file__).resolve().parents[1]
-        with TemporaryDirectory() as tmpdir:
-            output_dir = Path(tmpdir) / "compare_dry_run_conflict"
-            json_paths = _write_compare_direct_jsons(Path(tmpdir))
-            command = [
-                sys.executable,
-                "rl_ga_compare_runner.py",
-                "--base-model",
-                "dummy-model",
-                "--data-path",
-                "mrpc",
-                "--dataset",
-                "mrpc",
-                "--output-dir",
-                str(output_dir),
-                "--model-type",
-                "bert-base",
-                "--compare-config-mode",
-                "direct",
-                "--rl-compare-stage1-json",
-                str(json_paths["rl_stage1"]),
-                "--rl-compare-stage2-json",
-                str(json_paths["rl_stage2"]),
-                "--ga-compare-stage1-json",
-                str(json_paths["ga_stage1"]),
-                "--ga-compare-stage2-json",
-                str(json_paths["ga_stage2"]),
-                "--noise-eval-repeat",
-                "9",
-                "--stage2-compare-repeats",
-                "7",
-                "--dry-run",
-            ]
-
-            completed = subprocess.run(
-                command,
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            self.assertNotEqual(completed.returncode, 0)
-            self.assertIn("stage2-compare-repeats", completed.stderr + completed.stdout)
-
 
 if __name__ == "__main__":
     unittest.main()

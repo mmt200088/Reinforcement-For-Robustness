@@ -21,7 +21,7 @@ from function_handler import (
     WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
     WFFN1_NOISE_DEFAULT_SCALING_FACTOR,
 )
-from final_evaluation_module import FinalEvaluationModule
+from final_evaluation_module import UnifiedFinalEvaluationModule
 from noise_rl_module_v2 import _log_rounded_box, _progress_bar, _fmt_elapsed, NOISE_RL_PROGRESS_BOX_PPO_INTERVAL
 import os
 import random
@@ -157,9 +157,8 @@ _SEARCH_LOG_HEADERS = {
 DEFAULT_STAGE1_STEP_INFO_FILE = "ppo_step_info.txt"
 DEFAULT_STAGE1_TRAINING_CURVE_FILE = "ppo_training_curve.png"
 DEFAULT_STAGE1_ENTROPY_CURVE_FILE = "ppo_entropy_curve.png"
-DEFAULT_STAGE1_FINAL_EVAL_DIR = os.path.join("rl_results", "final_evaluation")
+DEFAULT_FINAL_EVAL_DIR = os.path.join("rl_results", "final_eval")
 DEFAULT_NOISE_PROGRESS_DIR = os.path.join("rl_results", "noise_rl_progress")
-DEFAULT_NOISE_FINAL_EVAL_DIR = os.path.join("rl_results", "noise_final_evaluation")
 
 
 def ensure_parent_dir(path):
@@ -172,8 +171,7 @@ def update_persistent_metadata_stage(run_output_dir, stage_key, status,
                                      extra_fields=None):
     """更新持久化目录中 metadata.json 的阶段完成状态。
 
-    stage_key: 'stage1_search', 'stage1_final_eval', 'stage2_search',
-               'stage2_final_eval'
+    stage_key: 'stage1_search', 'stage2_search', 'final_eval'
     status:    'completed', 'skipped', 'in_progress', 'not_started'
     extra_fields: dict of additional fields to merge (optional)
     """
@@ -233,20 +231,18 @@ def resolve_run_output_layout(run_output_dir, search_algorithm=None):
             "stage1_step_info_file": DEFAULT_STAGE1_STEP_INFO_FILE,
             "stage1_training_curve_path": DEFAULT_STAGE1_TRAINING_CURVE_FILE,
             "stage1_entropy_curve_path": DEFAULT_STAGE1_ENTROPY_CURVE_FILE,
-            "stage1_final_eval_dir": DEFAULT_STAGE1_FINAL_EVAL_DIR,
+            "final_eval_dir": DEFAULT_FINAL_EVAL_DIR,
             "noise_step_info_file": NOISE_STAGE_STEP_INFO_FILE,
             "noise_training_curve_path": NOISE_STAGE_TRAINING_CURVE_PATH,
             "noise_entropy_curve_path": NOISE_STAGE_ENTROPY_CURVE_PATH,
             "noise_progress_dir": DEFAULT_NOISE_PROGRESS_DIR,
-            "noise_final_eval_dir": DEFAULT_NOISE_FINAL_EVAL_DIR,
         }
 
     run_output_dir = os.path.normpath(run_output_dir)
     stage1_dir = os.path.join(run_output_dir, "stage1")
-    stage1_final_eval_dir = os.path.join(run_output_dir, "stage1_final_eval")
     stage2_noise_dir = os.path.join(run_output_dir, "stage2_noise")
     stage2_noise_progress_dir = os.path.join(stage2_noise_dir, "progress")
-    stage2_noise_final_eval_dir = os.path.join(run_output_dir, "stage2_noise_final_eval")
+    final_eval_dir = os.path.join(run_output_dir, "final_eval")
 
     layout = {
         "run_output_dir": run_output_dir,
@@ -259,7 +255,7 @@ def resolve_run_output_layout(run_output_dir, search_algorithm=None):
         "stage1_entropy_curve_path": os.path.join(
             stage1_dir, DEFAULT_STAGE1_ENTROPY_CURVE_FILE
         ),
-        "stage1_final_eval_dir": stage1_final_eval_dir,
+        "final_eval_dir": final_eval_dir,
         "noise_step_info_file": os.path.join(stage2_noise_dir, NOISE_STAGE_STEP_INFO_FILE),
         "noise_training_curve_path": os.path.join(
             stage2_noise_dir, NOISE_STAGE_TRAINING_CURVE_PATH
@@ -268,7 +264,6 @@ def resolve_run_output_layout(run_output_dir, search_algorithm=None):
             stage2_noise_dir, NOISE_STAGE_ENTROPY_CURVE_PATH
         ),
         "noise_progress_dir": stage2_noise_progress_dir,
-        "noise_final_eval_dir": stage2_noise_final_eval_dir,
     }
 
     return layout
@@ -508,7 +503,7 @@ RL_OPT_FLAGS = {
 
     # 6) Stage-1 Phase-2.5 / Phase-3/4 最终评估同样使用最大 scaling factor 噪声环境，
     #    保持训练-评估环境一致。独立开关，可与 (5) 单独消融。
-    "stage1_final_eval_use_max_scaling_noise_env": True,
+    "final_eval_use_max_scaling_noise_env": True,
 
     # 7) Stage-1 训练结束后写入局部最优检测报告（pruning_search_log.txt）
     "stage1_write_local_optimum_report": True,
@@ -2389,25 +2384,20 @@ class LayerImportanceEvaluator(TrainerCallback):
                  device='cuda', data_path='stsb', test_data_mm=None,
                  run_output_dir='',
                  final_eval_config_source='search',
-                 final_eval_config_path='glue_configs_best_ppo.json',
-                 manual_final_gelu=None,
-                 manual_final_softmax=None,
-                 stage2_fixed_config_source=None,
-                 stage2_fixed_config_path='',
-                 stage2_manual_gelu=None,
-                 stage2_manual_softmax=None,
+                 final_eval_config_path='glue_final_configs_best_ppo.json',
+                 manual_stage1_gelu=None,
+                 manual_stage1_softmax=None,
+                 manual_stage2_noise=None,
                  final_eval_random_seed=42,
                  final_eval_permutation_trials=10,
                  final_eval_cost_equivalent_trials=10,
                  final_eval_budget_equivalent_trials=10,
+                 final_eval_stage1_budget_trials=10,
+                 final_eval_stage2_budget_trials=10,
+                 final_eval_repeat_n=5,
                  skip_noise_rl=False,
-                 noise_eval_config_source='search',
-                 noise_eval_config_path='glue_noise_configs_best_ppo.json',
-                 manual_noise_config=None,
-                 noise_eval_repeat_n=5,
                  skip_stage1_rl=False,
-                 skip_stage1_final_eval=False,
-                 skip_noise_final_eval=False,
+                 skip_final_eval=False,
                  resume_run_dir='',
                  search_algorithm=None,
                  stage1_accuracy_tolerance=None,
@@ -2598,12 +2588,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.stage1_step_info_file = self.step_info_file  # alias for clarity
         self.stage1_training_curve_path = output_layout["stage1_training_curve_path"]
         self.stage1_entropy_curve_path = output_layout["stage1_entropy_curve_path"]
-        self.stage1_final_eval_dir = output_layout["stage1_final_eval_dir"]
+        self.final_eval_dir = output_layout["final_eval_dir"]
         self.noise_step_info_file = output_layout["noise_step_info_file"]
         self.noise_stage_training_curve_path = output_layout["noise_training_curve_path"]
         self.noise_stage_entropy_curve_path = output_layout["noise_entropy_curve_path"]
         self.noise_stage_progress_dir = output_layout["noise_progress_dir"]
-        self.noise_final_eval_dir = output_layout["noise_final_eval_dir"]
         self._noise_log_initialized = self.noise_log_file == self.log_file
         _log_header = _SEARCH_LOG_HEADERS.get(
             self.search_algorithm,
@@ -2661,74 +2650,27 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.lagrangian_m2 = LAGRANGIAN_INITIAL
 
         self.final_eval_config_source = (final_eval_config_source or 'search').lower()
-        self.final_eval_config_path = final_eval_config_path or 'glue_configs_best_ppo.json'
-        self.manual_final_gelu = manual_final_gelu
-        self.manual_final_softmax = manual_final_softmax
-        _stage2_fixed_source_hint = stage2_fixed_config_source
-        if _stage2_fixed_source_hint in (None, ''):
-            if stage2_manual_gelu is not None or stage2_manual_softmax is not None:
-                _stage2_fixed_source_hint = 'manual'
-            elif stage2_fixed_config_path:
-                _stage2_fixed_source_hint = 'json'
-            else:
-                _stage2_fixed_source_hint = self.final_eval_config_source
-        _stage2_fixed_source = self._normalize_stage2_fixed_config_source(
-            _stage2_fixed_source_hint
-        )
-        self.stage2_fixed_config_source = _stage2_fixed_source
-        self.stage2_fixed_config_path = (
-            stage2_fixed_config_path
-            or self.final_eval_config_path
-            or 'glue_configs_best_ppo.json'
-        )
-        self.stage2_manual_gelu = (
-            stage2_manual_gelu
-            if stage2_manual_gelu is not None
-            else self.manual_final_gelu
-        )
-        self.stage2_manual_softmax = (
-            stage2_manual_softmax
-            if stage2_manual_softmax is not None
-            else self.manual_final_softmax
-        )
+        self.final_eval_config_path = final_eval_config_path or 'glue_final_configs_best_ppo.json'
+        self.manual_stage1_gelu = manual_stage1_gelu
+        self.manual_stage1_softmax = manual_stage1_softmax
+        self.manual_stage2_noise = manual_stage2_noise
         self.final_eval_random_seed = int(final_eval_random_seed)
         self.final_eval_permutation_trials = max(0, int(final_eval_permutation_trials))
         self.final_eval_cost_equivalent_trials = max(0, int(final_eval_cost_equivalent_trials))
         self.final_eval_budget_equivalent_trials = max(0, int(final_eval_budget_equivalent_trials))
+        self.final_eval_stage1_budget_trials = max(0, int(final_eval_stage1_budget_trials))
+        self.final_eval_stage2_budget_trials = max(0, int(final_eval_stage2_budget_trials))
+        self.final_eval_repeat_n = max(1, int(final_eval_repeat_n))
         self.skip_stage1_rl = self._coerce_bool_flag(skip_stage1_rl, 'skip_stage1_rl')
         self.skip_noise_rl = self._coerce_bool_flag(skip_noise_rl, 'skip_noise_rl')
-
-        self.noise_eval_config_source = (noise_eval_config_source or 'search').lower()
-        self.noise_eval_config_path = noise_eval_config_path or 'glue_noise_configs_best_ppo.json'
-        self.manual_noise_config = manual_noise_config
-        self.noise_eval_repeat_n = max(5, int(noise_eval_repeat_n))
-        self.skip_stage1_final_eval = self._coerce_bool_flag(
-            skip_stage1_final_eval, 'skip_stage1_final_eval'
-        )
-        self.skip_noise_final_eval = self._coerce_bool_flag(
-            skip_noise_final_eval, 'skip_noise_final_eval'
-        )
-        self.needs_stage2_fixed_config = (
-            (not self.skip_noise_rl) or (not self.skip_noise_final_eval)
-        )
+        self.skip_final_eval = self._coerce_bool_flag(skip_final_eval, 'skip_final_eval')
+        self.needs_stage2_fixed_config = (not self.skip_noise_rl) or (not self.skip_final_eval)
         self.resume_run_dir = str(resume_run_dir or '').strip()
-
-        if self.noise_eval_config_source not in ('search', 'json', 'manual'):
-            raise ValueError(
-                f"Unsupported noise_eval_config_source '{self.noise_eval_config_source}'. "
-                "Use one of: search, json, manual."
-            )
 
         if self.final_eval_config_source not in ('search', 'json', 'manual'):
             raise ValueError(
                 f"Unsupported final_eval_config_source '{self.final_eval_config_source}'. "
                 "Use one of: search, json, manual."
-            )
-
-        if self.stage2_fixed_config_source not in ('stage1_result', 'json', 'manual'):
-            raise ValueError(
-                f"Unsupported stage2_fixed_config_source '{self.stage2_fixed_config_source}'. "
-                "Use one of: stage1_result, json, manual."
             )
 
         # ---------- 阶段组合校验（兼容续训时灵活切换阶段开关） ----------
@@ -2759,13 +2701,13 @@ class LayerImportanceEvaluator(TrainerCallback):
         if (
             self.needs_stage2_fixed_config
             and self.skip_stage1_rl
-            and self.stage2_fixed_config_source == 'stage1_result'
+            and self.final_eval_config_source == 'search'
         ):
-            # 跳过 stage1 但 stage2 要用 stage1 结果——只有在没有历史结果时才报错
+            # 跳过 stage1 但 stage2 RL / final-eval 要用 stage1 搜索结果——只有在没有历史结果时才报错
             if not (_has_stage1_checkpoint or _prev_stage1_done):
                 raise ValueError(
-                    "skip_stage1_rl=True 与 stage2_fixed_config_source='stage1_result' 不能同时使用："
-                    "跳过第一阶段搜索后，没有 Stage-1 搜索结果可供第二阶段固定 GELU/Softmax 使用。"
+                    "skip_stage1_rl=True 与 final_eval_config_source='search' 不能同时用于 "
+                    "Stage-2 RL / 统一 final-eval：跳过第一阶段搜索后，没有 Stage-1 搜索结果可供固定使用。"
                     "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
                 )
 
@@ -2797,23 +2739,20 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
 
         if self.final_eval_config_source == 'manual':
-            if self.manual_final_gelu is None or self.manual_final_softmax is None:
+            if (
+                self.manual_stage1_gelu is None
+                or self.manual_stage1_softmax is None
+                or self.manual_stage2_noise is None
+            ):
                 raise ValueError(
                     "final_eval_config_source='manual' 时必须同时提供 "
-                    "manual_final_gelu 和 manual_final_softmax。"
+                    "manual_stage1_gelu、manual_stage1_softmax 与 manual_stage2_noise。"
                 )
 
-        if self.needs_stage2_fixed_config and self.stage2_fixed_config_source == 'manual':
-            if self.stage2_manual_gelu is None or self.stage2_manual_softmax is None:
-                raise ValueError(
-                    "stage2_fixed_config_source='manual' 时必须同时提供 "
-                    "stage2_manual_gelu 和 stage2_manual_softmax。"
-                )
-
-        if self.skip_noise_rl and (not self.skip_noise_final_eval) and self.noise_eval_config_source == 'search':
+        if self.skip_noise_rl and (not self.skip_final_eval) and self.final_eval_config_source == 'search':
             raise ValueError(
-                "skip_noise_rl=True 与 noise_eval_config_source='search' 不能同时用于噪声最终评估："
-                "跳过噪声 RL 后没有搜索结果可供 search 使用。"
+                "skip_noise_rl=True 与 final_eval_config_source='search' 不能同时用于统一 final-eval："
+                "跳过 Stage-2 噪声 RL 后没有 Stage-2 搜索结果可供 search 使用。"
                 "请改用 json 或 manual，或设置 skip_noise_rl=False。"
             )
 
@@ -2826,11 +2765,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "Remove --stage2-rl-episodes or disable --skip-noise-rl."
             )
 
-        if (not self.skip_noise_rl) and (not self.skip_noise_final_eval) and self.noise_eval_config_source != 'search':
+        if (not self.skip_noise_rl) and (not self.skip_final_eval) and self.final_eval_config_source != 'search':
             raise ValueError(
-                "检测到第二阶段噪声 RL 将执行，且噪声最终评估未跳过，但 noise_eval_config_source 不是 'search'。"
-                "为避免“前面跑噪声 RL、后面却用手动/JSON 配置评估”的流程混用，"
-                "执行噪声 RL 且保留噪声最终评估时只能使用 search。"
+                "检测到 Stage-2 噪声 RL 将执行且统一 final-eval 未跳过，但 final_eval_config_source 不是 'search'。"
+                "为避免“前面跑 RL、后面却用手动/JSON 配置评估”的流程混用，"
+                "执行噪声 RL 且保留 final-eval 时只能使用 search。"
                 "若要使用 json/manual，请设置 skip_noise_rl=True。"
             )
 
@@ -2842,11 +2781,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             raise ValueError(
                 f"stage2_rl_episodes={self.stage2_rl_episodes} is too small. "
                 f"It must be >= PPO_UPDATE_INTERVAL ({PPO_UPDATE_INTERVAL}) so Stage-2 PPO can update at least once."
-            )
-
-        if self.noise_eval_config_source == 'manual' and self.manual_noise_config is None:
-            raise ValueError(
-                "noise_eval_config_source='manual' 时必须提供 manual_noise_config。"
             )
         
         # ==================== 敏锐度优化PDF：课程学习状态 ====================
@@ -2886,37 +2820,31 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
         return value
 
-    @staticmethod
-    def _normalize_stage2_fixed_config_source(raw_value):
-        text = str(raw_value or 'stage1_result').strip().lower()
-        if text == 'search':
-            return 'stage1_result'
-        return text
-
-    def _resolve_stage2_fixed_stage1_config(self, search_best_config=None):
-        resolver_source = (
-            'search'
-            if self.stage2_fixed_config_source == 'stage1_result'
-            else self.stage2_fixed_config_source
-        )
-        resolver = FinalEvaluationModule(
+    def _build_final_eval_runner(self):
+        return UnifiedFinalEvaluationModule(
             evaluator=self,
-            config_source=resolver_source,
-            config_path=self.stage2_fixed_config_path,
-            manual_gelu=self.stage2_manual_gelu,
-            manual_softmax=self.stage2_manual_softmax,
+            config_source=self.final_eval_config_source,
+            config_path=self.final_eval_config_path,
+            manual_stage1_gelu=self.manual_stage1_gelu,
+            manual_stage1_softmax=self.manual_stage1_softmax,
+            manual_stage2_noise=self.manual_stage2_noise,
             random_seed=self.final_eval_random_seed,
             permutation_trials=self.final_eval_permutation_trials,
             cost_equivalent_trials=self.final_eval_cost_equivalent_trials,
             budget_equivalent_trials=self.final_eval_budget_equivalent_trials,
-            results_dir=self.stage1_final_eval_dir,
+            stage1_budget_trials=self.final_eval_stage1_budget_trials,
+            stage2_budget_trials=self.final_eval_stage2_budget_trials,
+            repeat_n=self.final_eval_repeat_n,
+            results_dir=self.final_eval_dir,
         )
-        gelu, softmax, label, source = resolver._resolve_selected_config(
-            search_best_config=search_best_config,
+
+    def _resolve_stage2_fixed_stage1_config(self, search_best_config=None):
+        resolver = self._build_final_eval_runner()
+        gelu, softmax, source = resolver.resolve_stage1_only(
+            search_best_stage1=search_best_config,
             total_layers=self.total_layers,
         )
-        if self.stage2_fixed_config_source == 'stage1_result':
-            source = 'stage1_result'
+        label = f"Stage-1 config ({source})"
         return gelu, softmax, label, source
     
     def _detect_task_type(self):
@@ -4035,7 +3963,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     def stage1_final_evaluate(self, gelu_degrees, softmax_degrees, use_train=False, split=None):
         """Phase-2.5/Phase-3/4 最终评估的统一入口；按独立 flag 决定是否带最大 sf 噪声环境。"""
-        if RL_OPT_FLAGS.get("stage1_final_eval_use_max_scaling_noise_env", False):
+        if RL_OPT_FLAGS.get("final_eval_use_max_scaling_noise_env", False):
             sf = self._stage1_max_scaling_noise_arrays()
             return self.evaluate_model_with_attention_noise(
                 gelu_degrees,
@@ -4487,77 +4415,55 @@ class LayerImportanceEvaluator(TrainerCallback):
         with open(os.path.join(bp_dir, "constraint_metadata.json"), "w") as _f:
             _json.dump(meta, _f, indent=2)
 
-    def run_noise_final_eval_stage(self, fixed_gelu, fixed_softmax, noise_stage_result=None):
-        from noise_final_evaluation_module import NoiseFinalEvaluationModule
+    def run_unified_final_eval(self, stage1_search_best=None, stage2_search_best=None,
+                               baseline_stage1_gelu=None, baseline_stage1_softmax=None,
+                               baseline_noise_tot_c=None,
+                               limit_loss=None, limit_p=None, limit_s=None):
+        """统一 final-eval 入口：合并 stage1 + stage2 的最终评估。
+
+        ``stage1_search_best`` 形如 ``{'gelu': [...], 'softmax': [...]}``，由 Stage-1 RL/GA 输出。
+        ``stage2_search_best`` 为 dict，键为 ``*_scaling_factors``，由 Stage-2 噪声 RL/GA 输出。
+        在 ``config_source`` 为 json / manual 时两者可为 None。
+        """
         import numpy as np
 
-        fixed_gelu = np.asarray(fixed_gelu, dtype=int)
-        fixed_softmax = np.asarray(fixed_softmax, dtype=int)
-
-        if noise_stage_result is not None:
-            baseline_noise_config = noise_stage_result["baseline_noise_config"]
-            baseline_tot_c = noise_stage_result["baseline_tot_c"]
-            best_noise_cfg = noise_stage_result["best_noise_config"]
-            search_best = None
-            if best_noise_cfg is not None:
-                search_best = {
-                    k: v for k, v in best_noise_cfg.items()
-                    if k.endswith("scaling_factors")
-                }
-            limit_loss = noise_stage_result["limit_loss"]
-            limit_p = noise_stage_result["limit_p"]
-            limit_s = noise_stage_result["limit_s"]
-            search_status = noise_stage_result.get("status")
-        else:
-            baseline_noise_config = self._get_max_noise_configuration()
-            baseline_tot_c, _ = self.get_noise_simulated_cost(**baseline_noise_config)
-            search_best = None
-
-            exact_baseline_gelu, exact_baseline_softmax = (
+        if baseline_stage1_gelu is None or baseline_stage1_softmax is None:
+            baseline_stage1_gelu, baseline_stage1_softmax = (
                 self.get_stage1_exact_baseline_configuration()
             )
+        baseline_stage1_gelu = np.asarray(baseline_stage1_gelu, dtype=int)
+        baseline_stage1_softmax = np.asarray(baseline_stage1_softmax, dtype=int)
+
+        if baseline_noise_tot_c is None:
+            baseline_noise_config = self._get_max_noise_configuration()
+            baseline_noise_tot_c, _ = self.get_noise_simulated_cost(**baseline_noise_config)
+
+        if limit_loss is None or limit_p is None or limit_s is None:
             baseline_summary = self.evaluate_model_repeated(
-                exact_baseline_gelu,
-                exact_baseline_softmax,
-                repeats=self.noise_eval_repeat_n,
+                baseline_stage1_gelu,
+                baseline_stage1_softmax,
+                repeats=self.final_eval_repeat_n,
                 split=self.get_reward_reference_split_name(),
             )
-            base_loss = baseline_summary["loss_mean"]
-            base_p = baseline_summary["p_mean"]
-            base_s = baseline_summary["s_mean"]
             selection_limits = self.build_constraint_limits_from_metrics(
-                base_loss,
-                base_p,
-                base_s,
+                baseline_summary["loss_mean"],
+                baseline_summary["p_mean"],
+                baseline_summary["s_mean"],
             )
-            limit_loss = selection_limits["loss"]
-            limit_p = selection_limits["metric1"]
-            limit_s = selection_limits["metric2"]
-            search_status = None
+            limit_loss = selection_limits["loss"] if limit_loss is None else limit_loss
+            limit_p = selection_limits["metric1"] if limit_p is None else limit_p
+            limit_s = selection_limits["metric2"] if limit_s is None else limit_s
 
-        runner = NoiseFinalEvaluationModule(
-            evaluator=self,
-            config_source=self.noise_eval_config_source,
-            config_path=self.noise_eval_config_path,
-            manual_noise_config=self.manual_noise_config,
-            random_seed=self.final_eval_random_seed,
-            permutation_trials=self.final_eval_permutation_trials,
-            cost_equivalent_trials=self.final_eval_cost_equivalent_trials,
-            budget_equivalent_trials=self.final_eval_budget_equivalent_trials,
-            repeat_n=self.noise_eval_repeat_n,
-            results_dir=self.noise_final_eval_dir,
-        )
-
+        runner = self._build_final_eval_runner()
         return runner.run(
-            search_best_noise_config=search_best,
-            search_status=search_status,
-            fixed_gelu=fixed_gelu,
-            fixed_softmax=fixed_softmax,
-            baseline_noise_config=baseline_noise_config,
-            baseline_tot_c=baseline_tot_c,
-            limit_loss=limit_loss,
-            limit_p=limit_p,
-            limit_s=limit_s,
+            search_best_stage1=stage1_search_best,
+            search_best_stage2=stage2_search_best,
+            baseline_stage1_gelu=baseline_stage1_gelu,
+            baseline_stage1_softmax=baseline_stage1_softmax,
+            baseline_noise_tot_c=float(baseline_noise_tot_c),
+            limit_loss=float(limit_loss),
+            limit_p=float(limit_p),
+            limit_s=float(limit_s),
         )
 
     def _run_evaluation(self, dataloader, use_train=False, split_name=None):
@@ -5165,10 +5071,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.log("开始配置评估（STARTING CONFIGURATION EVALUATION）")
         self.log(f"搜索模式（SEARCH_MODE）={SEARCH_MODE}" + (" (使用贪心搜索USE_GREEDY_SEARCH=" + str(USE_GREEDY_SEARCH) + ")" if SEARCH_MODE == "both" else ""))
         self.log(f"最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）={self.final_eval_config_source}")
-        self.log(
-            "Stage-2 固定 GELU/Softmax 来源"
-            f"（STAGE2_FIXED_CONFIG_SOURCE）={self.stage2_fixed_config_source}"
-        )
         if self.skip_stage1_rl:
             self.log("[信息] 第一阶段RL/贪心搜索已跳过（--skip-stage1-rl）。")
         self.log("="*60)
@@ -5191,8 +5093,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 update_persistent_metadata_stage(
                     self.run_output_dir, "stage1_search", "skipped")
 
-            if not self.skip_stage1_final_eval:
-                # Phase 3/4 仍需要约束阈值；仅在需要最终评估时静默计算。
+            if not self.skip_final_eval:
+                # 统一 final-eval 仍需要约束阈值；仅在需要最终评估时静默计算。
                 if USE_VALIDATION_FOR_REWARD:
                     base_loss, base_p, base_s, _ = self.stage1_final_evaluate(
                         base_gelu,
@@ -6471,309 +6373,16 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.log("最终评估报告（FINAL EVALUATION REPORT）（验证集）")
         self.log("="*60)
         
-        # 重新计算验证集上的baseline
-        """
-        base_loss, base_p, base_s, base_time = self.evaluate_model(base_gelu, base_softmax, use_train=False)
-        
-        # 用于缓存评估结果
-        eval_cache = {}
-        eval_cache[(tuple(base_gelu), tuple(base_softmax))] = (base_loss, base_p, base_s, base_time)
-        
-        # Use Global Best State as the "Optimized" result
-        opt_gelu = best_config['gelu']
-        opt_softmax = best_config['softmax']
-        
-        # Helper to format results
-        def get_result_dict(name, gelu_arr, softmax_arr):
-            # Check cache first
-            sig = (tuple(gelu_arr), tuple(softmax_arr))
-            if sig in eval_cache:
-                loss, p, s, t = eval_cache[sig]
-            else:
-                loss, p, s, t = self.evaluate_model(gelu_arr, softmax_arr, use_train=False)
-                eval_cache[sig] = (loss, p, s, t)
-            
-            tot_c, g_c, s_c = self.get_simulated_cost(gelu_arr, softmax_arr)
-            
-            # Stats relative to baseline
-            tot_spd = base_tot_c / (tot_c + 1e-6)
-            g_spd = base_g_c / (g_c + 1e-6)
-            s_spd = base_s_c / (s_c + 1e-6)
-            
-            return {
-                'name': name, 'loss': loss, 'p': p, 's': s,
-                'tot_c': tot_c, 'tot_spd': tot_spd,
-                'g_c': g_c, 'g_spd': g_spd,
-                's_c': s_c, 's_spd': s_spd,
-                'gelu': gelu_arr, 'softmax': softmax_arr
-            }
-
-        opt_res = get_result_dict('Optimized (PPO)', opt_gelu, opt_softmax)
-        
-        # --- 无近似对照组：直接用 GELU 和 exp(softmax)，不经过多项式/近似 ---
-        self.log("Evaluating No-Approx control (exact GELU + exact softmax)...")
-        self.reversible_handler.restore_all()
-        self.model = self.reversible_handler.model
-        no_approx_loss, no_approx_p, no_approx_s, no_approx_time = self._run_evaluation(self.dataloader_test, use_train=False)
-        self.apply_configuration(opt_gelu, opt_softmax)  # 恢复为 Optimized 配置，供后续 Phase 4 使用
-        no_approx_res = {
-            'name': 'No-Approx (Exact)',
-            'loss': no_approx_loss, 'p': no_approx_p, 's': no_approx_s,
-            'tot_c': base_tot_c, 'tot_spd': 1.0,
-            'g_c': base_g_c, 'g_spd': 1.0,
-            's_c': base_s_c, 's_spd': 1.0,
-            'gelu': base_gelu, 'softmax': base_softmax
-        }
-        
-        # --- Random Logic ---
-        def generate_cost_equivalent_config(target_cost, cost_map, length, rng):
-            degrees = list(cost_map.keys())
-            for _ in range(2000):
-                cfg = rng.choice(degrees, size=length)
-                for _ in range(500):
-                    curr = sum(cost_map[d] for d in cfg)
-                    diff = curr - target_cost
-                    if abs(diff) < 1e-4: return cfg
-                    idx = rng.integers(0, length)
-                    old_v = cfg[idx]
-                    moves = [d for d in degrees if abs((curr - cost_map[old_v] + cost_map[d]) - target_cost) < abs(diff)]
-                    if moves: cfg[idx] = rng.choice(moves)
-                    else: cfg[idx] = rng.choice(degrees)
-            return rng.permutation(degrees[:length])
-
-        rng = np.random.default_rng(42)
-        random_results = []
-        
-        self.log("Generating 10 Permutations (Type 1)...")
-        for i in range(10):
-            random_results.append(get_result_dict(f'Perm_{i+1}', rng.permutation(opt_gelu), rng.permutation(opt_softmax)))
-            
-        self.log("Generating 10 Cost-Equivalent (Type 2)...")
-        for i in range(10):
-            r_g = generate_cost_equivalent_config(opt_res['g_c'], self.GELU_COST_MAP, self.total_layers, rng)
-            r_s = generate_cost_equivalent_config(opt_res['s_c'], self.SOFTMAX_COST_MAP, self.total_layers, rng)
-            random_results.append(get_result_dict(f'Equiv_{i+1}', r_g, r_s))
-
-        # --- Output ---
-        self.log("\nFinal Configurations Details:")
-        self.log(f"[Optimized] GELU   : {opt_gelu.tolist()}")
-        self.log(f"[Optimized] Softmax: {opt_softmax.tolist()}")
-        self.log("\nRandom Configurations Details:")
-        for res in random_results:
-             self.log(f"[{res['name']}] GELU   : {res['gelu'].tolist()}")
-             self.log(f"[{res['name']}] Softmax: {res['softmax'].tolist()}")
-
-        # 根据数据集类型设置表头（支持单指标/双指标）
-        short_names = self.get_metric_short_names()
-        m1_short = short_names[0]
-        
-        self.log("\nPerformance Comparison Table:")
-        if num_metrics == 1:
-            header = (f"{'Method':<15} | {'Loss':<6} {m1_short:<6} | "
-                     f"{'Loss Δ%':<8} {m1_short + ' Δ%':<10} | "
-                     f"{'Tot C':<6} {'Tot S':<5} | {'GELU C':<6} {'GELU S':<6} | {'Smax C':<6} {'Smax S':<6}")
-        else:
-            m2_short = short_names[1]
-            header = (f"{'Method':<15} | {'Loss':<6} {m1_short:<6} {m2_short:<6} | "
-                     f"{'Loss Δ%':<8} {m1_short + ' Δ%':<10} {m2_short + ' Δ%':<10} | "
-                     f"{'Tot C':<6} {'Tot S':<5} | {'GELU C':<6} {'GELU S':<6} | {'Smax C':<6} {'Smax S':<6}")
-        self.log("-" * len(header))
-        self.log(header)
-        self.log("-" * len(header))
-        
-        # Baseline行：变化百分比为0.00%
-        if num_metrics == 1:
-            self.log(f"{'Baseline':<15} | {base_loss:<6.4f} {base_p:<6.4f} | "
-                     f"{'0.00%':<8} {'0.00%':<10} | "
-                     f"{base_tot_c:<6.1f} {'1.0x':<5} | {base_g_c:<6.1f} {'1.0x':<6} | {base_s_c:<6.1f} {'1.0x':<6}")
-        else:
-            self.log(f"{'Baseline':<15} | {base_loss:<6.4f} {base_p:<6.4f} {base_s:<6.4f} | "
-                     f"{'0.00%':<8} {'0.00%':<10} {'0.00%':<10} | "
-                     f"{base_tot_c:<6.1f} {'1.0x':<5} | {base_g_c:<6.1f} {'1.0x':<6} | {base_s_c:<6.1f} {'1.0x':<6}")
-        def format_row(r):
-            loss_delta_pct = ((r['loss'] - base_loss) / (base_loss + 1e-8)) * 100.0
-            metric1_delta_pct = ((r['p'] - base_p) / (base_p + 1e-8)) * 100.0
-            cost_part = (f"{r['tot_c']:<6.1f} {r['tot_spd']:<5.2f} | "
-                         f"{r['g_c']:<6.1f} {r['g_spd']:<6.2f} | "
-                         f"{r['s_c']:<6.1f} {r['s_spd']:<6.2f}")
-            if num_metrics == 1:
-                return (f"{r['name']:<15} | {r['loss']:<6.4f} {r['p']:<6.4f} | "
-                        f"{loss_delta_pct:>7.2f}% {metric1_delta_pct:>9.2f}% | {cost_part}")
-            else:
-                metric2_delta_pct = ((r['s'] - base_s) / (base_s + 1e-8)) * 100.0
-                return (f"{r['name']:<15} | {r['loss']:<6.4f} {r['p']:<6.4f} {r['s']:<6.4f} | "
-                        f"{loss_delta_pct:>7.2f}% {metric1_delta_pct:>9.2f}% {metric2_delta_pct:>9.2f}% | {cost_part}")
-        
-        self.log(format_row(no_approx_res))   # 无近似对照组（直接用 GELU 和 exp）
-        self.log(format_row(opt_res))
-        self.log("-" * len(header))
-        for res in random_results: self.log(format_row(res))
-        self.log("-" * len(header))
-
-        """
-
-        if self.skip_stage1_final_eval:
-            # ---------------------------------------------------------
-            # 跳过第一阶段最终评估（Phase 3 + Phase 4），直接解析配置
-            # ---------------------------------------------------------
-            self.log("\n" + "=" * 60)
-            self.log("阶段3+4（PHASE 3+4）：已跳过（SKIPPED）（--skip-stage1-final-eval）")
-            self.log("=" * 60)
-
-            _resolver = FinalEvaluationModule(
-                evaluator=self,
-                config_source=self.final_eval_config_source,
-                config_path=self.final_eval_config_path,
-                manual_gelu=self.manual_final_gelu,
-                manual_softmax=self.manual_final_softmax,
-                results_dir=self.stage1_final_eval_dir,
-            )
-            opt_gelu, opt_softmax, selected_label, selected_source = (
-                _resolver._resolve_selected_config(
-                    search_best_config=best_config,
-                    total_layers=self.total_layers,
-                )
-            )
-            self.log(
-                f"[Info] 跳过第一阶段最终评估，直接使用 {selected_label} "
-                f"(source={selected_source}) 配置进入第二阶段。"
-            )
-            self.log(
-                f"[Info] Stage-2 固定 GELU/Softmax 将按 "
-                f"stage2_fixed_config_source={self.stage2_fixed_config_source} 单独解析。"
-            )
-            self.log(f"  GELU   : {opt_gelu.tolist()}")
-            self.log(f"  Softmax: {opt_softmax.tolist()}")
-            if self.run_output_dir:
-                update_persistent_metadata_stage(
-                    self.run_output_dir, "stage1_final_eval", "skipped")
-        else:
-            # ---------------------------------------------------------
-            # Phase 3: Final Report（第一阶段最终评估）
-            # ---------------------------------------------------------
-            final_eval_runner = FinalEvaluationModule(
-                evaluator=self,
-                config_source=self.final_eval_config_source,
-                config_path=self.final_eval_config_path,
-                manual_gelu=self.manual_final_gelu,
-                manual_softmax=self.manual_final_softmax,
-                random_seed=self.final_eval_random_seed,
-                permutation_trials=self.final_eval_permutation_trials,
-                cost_equivalent_trials=self.final_eval_cost_equivalent_trials,
-                budget_equivalent_trials=self.final_eval_budget_equivalent_trials,
-                results_dir=self.stage1_final_eval_dir,
-            )
-            final_eval_result = final_eval_runner.run(
-                search_best_config=best_config,
-                base_gelu=base_gelu,
-                base_softmax=base_softmax,
-                base_tot_c=base_tot_c,
-                base_g_c=base_g_c,
-                base_s_c=base_s_c,
-                limit_loss=limit_loss,
-                limit_p=limit_p,
-                limit_s=limit_s,
-            )
-
-            selected_label = final_eval_result['selected_label']
-            selected_source = final_eval_result['selected_source']
-            opt_gelu = final_eval_result['selected_gelu']
-            opt_softmax = final_eval_result['selected_softmax']
-            opt_res = final_eval_result['selected_result']
-            eval_cache = final_eval_result['eval_cache']
-
-            # ---------------------------------------------------------
-            # Phase 4: Sensitivity (Validation on Selected Config)
-            # ---------------------------------------------------------
-            self.log("\n" + "="*60)
-            self.log(f"阶段4（PHASE 4）：敏感性分析（SENSITIVITY ANALYSIS）（在 {selected_label} 上验证）")
-            self.log(
-                f"检查从所选配置进一步单层降阶是否仍然安全 "
-                f"（来源source={selected_source}）。"
-            )
-            self.log("="*60)
-
-            opt_loss = opt_res['loss']
-            opt_p = opt_res['p']
-            opt_s = opt_res['s']
-
-            short_names = self.get_metric_short_names()
-            metric1_name = short_names[0]
-            metric2_name = short_names[1] if num_metrics > 1 else None
-            metric1_tag = short_names[0].upper().rstrip('.')
-            metric2_tag = short_names[1].upper().rstrip('.') if num_metrics > 1 else None
-
-            def _check_violation(l, p, s):
-                is_viol = False
-                viol_tags = []
-                if l > limit_loss:
-                    is_viol = True
-                    viol_tags.append("LOSS")
-                if p < limit_p:
-                    is_viol = True
-                    viol_tags.append(metric1_tag)
-                if num_metrics > 1 and s < limit_s:
-                    is_viol = True
-                    viol_tags.append(metric2_tag)
-                return is_viol, viol_tags
-
-            def _format_sensitivity_msg(prefix, status, l, p, s, d_l, d_p, d_s):
-                msg = (f"{prefix}: {status} | "
-                       f"损失（Loss）: {l:.4f} ({d_l:+.4f}) | "
-                       f"{metric1_name}: {p:.4f} ({d_p:+.4f})")
-                if num_metrics > 1:
-                    msg += f" | {metric2_name}: {s:.4f} ({d_s:+.4f})"
-                return msg
-
-            for i in range(self.total_layers):
-                cd = opt_gelu[i]
-                if cd == 4:
-                    td = 2
-                elif cd == 2:
-                    td = 1
-                elif cd == 1 and gelu_degree0_eligible[i]:
-                    td = 0
-                else:
-                    td = None
-                if td is not None:
-                    tmp = opt_gelu.copy()
-                    tmp[i] = td
-                    sig = (tuple(tmp), tuple(opt_softmax))
-                    if sig in eval_cache: l, p, s, t = eval_cache[sig]
-                    else: l, p, s, t = self.evaluate_model(tmp, opt_softmax, use_train=False)
-
-                    is_viol, viol_tags = _check_violation(l, p, s)
-                    status = f"违约（VIOLATED）({','.join(viol_tags)})" if is_viol else "安全（SAFE）"
-                    d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
-                    self.log(_format_sensitivity_msg(f"第{i}层（L{i}） GELU {cd}->{td}", status, l, p, s, d_l, d_p, d_s))
-
-                cd_s = opt_softmax[i]
-                if cd_s > 2:
-                    tmp_s = opt_softmax.copy()
-                    tmp_s[i] = cd_s - 1
-                    sig = (tuple(opt_gelu), tuple(tmp_s))
-                    if sig in eval_cache: l, p, s, t = eval_cache[sig]
-                    else: l, p, s, t = self.evaluate_model(opt_gelu, tmp_s, use_train=False)
-
-                    is_viol, viol_tags = _check_violation(l, p, s)
-                    status = f"违约（VIOLATED）({','.join(viol_tags)})" if is_viol else "安全（SAFE）"
-                    d_l, d_p, d_s = l - opt_loss, p - opt_p, s - opt_s
-                    self.log(_format_sensitivity_msg(f"第{i}层（L{i}） Smax {cd_s}->{cd_s-1}", status, l, p, s, d_l, d_p, d_s))
-
-        if self.run_output_dir and not self.skip_stage1_final_eval:
-            update_persistent_metadata_stage(
-                self.run_output_dir, "stage1_final_eval", "completed")
-
         # ---------------------------------------------------------
         # Phase 5: Second-stage noise RL training (独立可控)
         # ---------------------------------------------------------
         noise_stage_result = None
-        noise_eval_result = None
-        stage2_fixed_gelu = opt_gelu
-        stage2_fixed_softmax = opt_softmax
-        stage2_fixed_label = selected_label
-        stage2_fixed_source = selected_source
-        if not self.skip_noise_rl or not self.skip_noise_final_eval:
+        final_eval_result = None
+        stage2_fixed_gelu = np.asarray(base_gelu, dtype=int)
+        stage2_fixed_softmax = np.asarray(base_softmax, dtype=int)
+        stage2_fixed_label = "Baseline"
+        stage2_fixed_source = "baseline"
+        if self.needs_stage2_fixed_config:
             (
                 stage2_fixed_gelu,
                 stage2_fixed_softmax,
@@ -6784,13 +6393,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"[Info] Stage-2 固定 GELU/Softmax 来源："
                 f"{stage2_fixed_label} (source={stage2_fixed_source})"
             )
-            if (
-                selected_source != stage2_fixed_source
-                or not np.array_equal(np.asarray(opt_gelu), np.asarray(stage2_fixed_gelu))
-                or not np.array_equal(np.asarray(opt_softmax), np.asarray(stage2_fixed_softmax))
-            ):
-                self.log(f"  Stage-2 GELU   : {np.asarray(stage2_fixed_gelu).tolist()}")
-                self.log(f"  Stage-2 Softmax: {np.asarray(stage2_fixed_softmax).tolist()}")
+            self.log(f"  Stage-2 GELU   : {np.asarray(stage2_fixed_gelu).tolist()}")
+            self.log(f"  Stage-2 Softmax: {np.asarray(stage2_fixed_softmax).tolist()}")
+
         previous_log_file = getattr(self, "active_log_file", self.log_file)
         self._initialize_noise_log_file()
         self.active_log_file = self.noise_log_file
@@ -6817,27 +6422,68 @@ class LayerImportanceEvaluator(TrainerCallback):
                     )
 
             # ---------------------------------------------------------
-            # Phase 5.5: Noise final evaluation (独立可控)
+            # Phase 6: 统一 Final Evaluation (stage1 + stage2 合并评估)
             # ---------------------------------------------------------
-            if self.skip_noise_final_eval:
-                self.log("\n[信息] 噪声最终评估已跳过（--skip-noise-final-eval）。")
+            if self.skip_final_eval:
+                self.log("\n[信息] 统一最终评估已跳过（--skip-final-eval）。")
                 if self.run_output_dir:
                     update_persistent_metadata_stage(
-                        self.run_output_dir, "stage2_final_eval", "skipped")
+                        self.run_output_dir, "final_eval", "skipped")
             else:
-                noise_eval_result = self.run_noise_final_eval_stage(
-                    fixed_gelu=stage2_fixed_gelu,
-                    fixed_softmax=stage2_fixed_softmax,
-                    noise_stage_result=noise_stage_result,
+                stage1_search_best = None
+                if best_config is not None:
+                    stage1_search_best = {
+                        "gelu": np.asarray(best_config["gelu"], dtype=int),
+                        "softmax": np.asarray(best_config["softmax"], dtype=int),
+                    }
+
+                stage2_search_best = None
+                noise_limit_loss = limit_loss
+                noise_limit_p = limit_p
+                noise_limit_s = limit_s
+                if noise_stage_result is not None:
+                    best_noise_cfg = noise_stage_result.get("best_noise_config")
+                    if best_noise_cfg is not None:
+                        stage2_search_best = {
+                            k: v for k, v in best_noise_cfg.items()
+                            if k.endswith("scaling_factors")
+                        }
+                    noise_limit_loss = noise_stage_result.get("limit_loss", limit_loss)
+                    noise_limit_p = noise_stage_result.get("limit_p", limit_p)
+                    noise_limit_s = noise_stage_result.get("limit_s", limit_s)
+                    baseline_noise_tot_c = noise_stage_result.get("baseline_tot_c")
+                else:
+                    baseline_noise_cfg = self._get_max_noise_configuration()
+                    baseline_noise_tot_c, _ = self.get_noise_simulated_cost(**baseline_noise_cfg)
+
+                final_eval_result = self.run_unified_final_eval(
+                    stage1_search_best=stage1_search_best,
+                    stage2_search_best=stage2_search_best,
+                    baseline_stage1_gelu=base_gelu,
+                    baseline_stage1_softmax=base_softmax,
+                    baseline_noise_tot_c=baseline_noise_tot_c,
+                    limit_loss=noise_limit_loss,
+                    limit_p=noise_limit_p,
+                    limit_s=noise_limit_s,
                 )
                 if self.run_output_dir:
                     update_persistent_metadata_stage(
-                        self.run_output_dir, "stage2_final_eval", "completed")
+                        self.run_output_dir, "final_eval", "completed")
         finally:
             self.active_log_file = previous_log_file
 
         self.last_noise_stage_result = noise_stage_result
-        self.last_noise_eval_result = noise_eval_result
+        self.last_final_eval_result = final_eval_result
+
+        if final_eval_result is not None:
+            opt_gelu = np.asarray(final_eval_result["opt_gelu"], dtype=int)
+            opt_softmax = np.asarray(final_eval_result["opt_softmax"], dtype=int)
+        elif best_config is not None:
+            opt_gelu = np.asarray(best_config["gelu"], dtype=int)
+            opt_softmax = np.asarray(best_config["softmax"], dtype=int)
+        else:
+            opt_gelu = stage2_fixed_gelu
+            opt_softmax = stage2_fixed_softmax
 
         self.log("\n配置评估完成（Configuration evaluation finished）。")
         # 汇总最佳 policy 到 best_policy/ 目录

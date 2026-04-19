@@ -106,12 +106,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--approx_base_config",
         type=str,
-        default="glue_configs_best_ppo.json",
+        default="glue_final_configs_best_ppo.json",
     )
     parser.add_argument(
         "--noise_base_config",
         type=str,
-        default="glue_noise_configs_best_ppo.json",
+        default="glue_final_configs_best_ppo.json",
     )
     return parser.parse_args()
 

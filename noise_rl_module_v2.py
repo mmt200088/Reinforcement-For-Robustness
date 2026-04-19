@@ -3344,7 +3344,7 @@ class NoiseRLModuleV2:
         ev.clear_input_noise_configuration()
         ev.clear_weight_noise_configuration()
 
-        # 返回结果字典（兼容下游 noise_final_evaluation_module）
+        # 返回结果字典（供下游 UnifiedFinalEvaluationModule 消费）
         return {
             "fixed_gelu": fixed_gelu.copy(),
             "fixed_softmax": fixed_softmax.copy(),

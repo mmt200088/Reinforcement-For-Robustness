@@ -58,8 +58,7 @@ Local_program/
 ├── noise_rl_module_v2.py          # 【核心】Stage-2 噪声 RL（3365 行）
 ├── genetic_search_module.py       # 【核心】两阶段 GA（2045 行）
 ├── general_policy_module.py       # 【核心】通用策略训练 / 离线推理（2279 行）
-├── final_evaluation_module.py     # Stage-1 最终评估（996 行）
-├── noise_final_evaluation_module.py # Stage-2 最终评估（1968 行）
+├── final_evaluation_module.py     # 【核心】Stage-1 + Stage-2 合并的 UnifiedFinalEvaluationModule
 ├── function_handler.py            # GELU/Softmax/噪声注入的算子（1204 行）
 │
 ├── experiment_*.py         # 一次性实验脚本
@@ -176,7 +175,7 @@ rl_results/runs/compare/rl_vs_ga/{dataset}/
 ### `genetic_search_module.py`（2045 行）
 - GA 全家桶：Stage-1 / Stage-2 GA、适应度、选择、交叉、变异、持久化 checkpoint。
 - 从 `function_handler` 和 `noise_rl_module_v2` 导入噪声常量与权重；从
-  `noise_final_evaluation_module` 导入评估；从 `final_evaluation_module` 导入 Stage-1 评估。
+  `final_evaluation_module`（`UnifiedFinalEvaluationModule`）导入 Stage-1 与 Stage-2 合并的最终评估。
 
 ### `general_policy_module.py`（2279 行）
 - 多任务轮训 / 离线推理通用策略。
@@ -185,9 +184,12 @@ rl_results/runs/compare/rl_vs_ga/{dataset}/
 - **输出**：一个 `.pt` 文件，可作为 `RL_OPT_FLAGS["stage1_pretrained_policy_path"]`
   或 `NOISE_RL_OPT_FLAGS["pretrained_policy_path"]` 供原 CLI 使用。
 
-### `final_evaluation_module.py` / `noise_final_evaluation_module.py`
+### `final_evaluation_module.py`
 - 对搜索到的最优配置做"最终评估"（permutation / cost-equivalent / budget-equivalent）。
-- 写 JSON + PNG 到各自默认目录。
+- 入口 `UnifiedFinalEvaluationModule` 同时处理 Stage-1（GELU/Softmax 多项式）
+  与 Stage-2（噪声 scaling factor）两组约束，并输出合并的 JSON（顶层按变体 / 任务分节，
+  每个任务下包含 `stage1` 和 `stage2` 子块）与 PNG 报告。
+- 旧的 `noise_final_evaluation_module.py` 已被此模块吸收，不再存在独立文件。
 
 ### `function_handler.py`
 - `ReversibleLayerHandler`：在线替换模型里的 GELU / Softmax、注入各类噪声。

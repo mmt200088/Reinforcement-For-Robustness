@@ -21,9 +21,9 @@
 3. 默认重复次数：
    每个扫描点重复 50 次
 4. 默认“当前 x 和 6 个 W 配置”来源：
-   glue_noise_configs_best_ppo.json
+   glue_final_configs_best_ppo.json（合并 JSON，自动抽取 stage2 子块）
 5. 默认固定的 GELU / Softmax 配置来源：
-   glue_configs_best_ppo.json
+   glue_final_configs_best_ppo.json（合并 JSON，自动抽取 stage1 子块）
 6. 默认扫描方式：
    对目标噪声项的 12 层统一设置为同一个 scaling factor，
    其余 6 类噪声保持当前配置不变。
@@ -294,13 +294,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--noise_base_config",
         type=str,
-        default="glue_noise_configs_best_ppo.json",
+        default="glue_final_configs_best_ppo.json",
     )
     parser.add_argument("--manual_noise_config", type=str, default="")
     parser.add_argument(
         "--approx_base_config",
         type=str,
-        default="glue_configs_best_ppo.json",
+        default="glue_final_configs_best_ppo.json",
     )
     return parser.parse_args()
 
@@ -439,7 +439,6 @@ def build_evaluator(
     batch_size: int,
     output_dir: str,
     approx_base_config_path: str,
-    noise_base_config_path: str,
     eval_split: str,
     seed: int,
 ):
@@ -505,12 +504,9 @@ def build_evaluator(
             test_data_mm=validation_data_mm,
             final_eval_config_source="json",
             final_eval_config_path=approx_base_config_path,
-            noise_eval_config_source="json",
-            noise_eval_config_path=noise_base_config_path,
             skip_stage1_rl=True,
-            skip_stage1_final_eval=True,
             skip_noise_rl=True,
-            skip_noise_final_eval=True,
+            skip_final_eval=True,
         )
     finally:
         os.chdir(original_cwd)
@@ -1197,7 +1193,6 @@ def main() -> None:
                 batch_size=args.batch_size,
                 output_dir=output_dir,
                 approx_base_config_path=approx_base_config_path,
-                noise_base_config_path=noise_base_config_path,
                 eval_split=args.eval_split,
                 seed=args.seed,
             )

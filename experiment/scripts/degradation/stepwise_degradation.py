@@ -219,7 +219,7 @@ def main():
         type=str,
         default="experiment/outputs/degradation/stepwise",
     )
-    parser.add_argument("--ppo_config", type=str, default="glue_configs_best_ppo.json")
+    parser.add_argument("--ppo_config", type=str, default="glue_final_configs_best_ppo.json")
     parser.add_argument("--n_trials", type=int, default=5)
     parser.add_argument("--max_length", type=int, default=128)
     parser.add_argument("--batch_size", type=int, default=16)

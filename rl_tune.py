@@ -135,25 +135,20 @@ def train(
         stage2_rl_episodes_specified: bool = False,
         ppo_update_interval: int = 120,  # PPO 更新间隔（episode 数）；同时决定 batch 大小与 details 分块大小
         final_eval_config_source: str = "search",  # search | json | manual
-        final_eval_config_path: str = "glue_configs_best_ppo.json",
-        manual_final_gelu: str = "",
-        manual_final_softmax: str = "",
-        stage2_fixed_config_source: str = "",
-        stage2_fixed_config_path: str = "",
-        stage2_manual_gelu: str = "",
-        stage2_manual_softmax: str = "",
+        final_eval_config_path: str = "glue_final_configs_best_ppo.json",
+        manual_stage1_gelu: str = "",
+        manual_stage1_softmax: str = "",
+        manual_stage2_noise: str = "",
         final_eval_random_seed: int = 42,
         final_eval_permutation_trials: int = 10,
         final_eval_cost_equivalent_trials: int = 10,
         final_eval_budget_equivalent_trials: int = 10,
+        final_eval_stage1_budget_trials: int = 10,
+        final_eval_stage2_budget_trials: int = 10,
+        final_eval_repeat_n: int = 1,
         skip_noise_rl: bool = False,
-        noise_eval_config_source: str = "search",
-        noise_eval_config_path: str = "glue_noise_configs_best_ppo.json",
-        manual_noise_config: str = "",
-        noise_eval_repeat_n: int = 1,
         skip_stage1_rl: bool = False,
-        skip_stage1_final_eval: bool = False,
-        skip_noise_final_eval: bool = False,
+        skip_final_eval: bool = False,
         resume_run_dir: str = "",
         # accuracy constraint params
         stage1_accuracy_tolerance: float = None,
@@ -173,12 +168,7 @@ def train(
 ):
     skip_noise_rl = parse_bool_flag(skip_noise_rl, "skip_noise_rl")
     skip_stage1_rl = parse_bool_flag(skip_stage1_rl, "skip_stage1_rl")
-    skip_stage1_final_eval = parse_bool_flag(
-        skip_stage1_final_eval, "skip_stage1_final_eval"
-    )
-    skip_noise_final_eval = parse_bool_flag(
-        skip_noise_final_eval, "skip_noise_final_eval"
-    )
+    skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
     stage1_rl_episodes_specified = parse_bool_flag(
         stage1_rl_episodes_specified, "stage1_rl_episodes_specified"
     )
@@ -235,24 +225,17 @@ def train(
         f"target_modules: {target_modules}\n"
         f"final_eval_config_source: {final_eval_config_source}\n"
         f"final_eval_config_path: {final_eval_config_path}\n"
-        f"manual_final_gelu: {manual_final_gelu}\n"
-        f"manual_final_softmax: {manual_final_softmax}\n"
-        f"stage2_fixed_config_source: {stage2_fixed_config_source}\n"
-        f"stage2_fixed_config_path: {stage2_fixed_config_path}\n"
-        f"stage2_manual_gelu: {stage2_manual_gelu}\n"
-        f"stage2_manual_softmax: {stage2_manual_softmax}\n"
+        f"manual_stage1_gelu: {manual_stage1_gelu}\n"
+        f"manual_stage1_softmax: {manual_stage1_softmax}\n"
+        f"manual_stage2_noise: {manual_stage2_noise}\n"
         f"stage1_rl_episodes: {stage1_rl_episodes}\n"
         f"stage2_rl_episodes: {stage2_rl_episodes}\n"
         f"stage1_rl_episodes_specified: {stage1_rl_episodes_specified}\n"
         f"stage2_rl_episodes_specified: {stage2_rl_episodes_specified}\n"
         f"skip_noise_rl: {skip_noise_rl}\n"
-        f"noise_eval_config_source: {noise_eval_config_source}\n"
-        f"noise_eval_config_path: {noise_eval_config_path}\n"
-        f"manual_noise_config: {manual_noise_config}\n"
-        f"noise_eval_repeat_n: {noise_eval_repeat_n}\n"
+        f"final_eval_repeat_n: {final_eval_repeat_n}\n"
         f"skip_stage1_rl: {skip_stage1_rl}\n"
-        f"skip_stage1_final_eval: {skip_stage1_final_eval}\n"
-        f"skip_noise_final_eval: {skip_noise_final_eval}\n"
+        f"skip_final_eval: {skip_final_eval}\n"
         f"group_by_length: {group_by_length}\n"
         f"wandb_project: {wandb_project}\n"
         f"wandb_run_name: {wandb_run_name}\n"
@@ -587,11 +570,9 @@ def train(
     #     # keeps Trainer from trying its own DataParallelism when more than 1 gpu is available
     #     model.is_parallelizable = True
     #     model.model_parallel = True
-    parsed_manual_gelu = parse_degree_config(manual_final_gelu)
-    parsed_manual_softmax = parse_degree_config(manual_final_softmax)
-    parsed_stage2_manual_gelu = parse_degree_config(stage2_manual_gelu)
-    parsed_stage2_manual_softmax = parse_degree_config(stage2_manual_softmax)
-    parsed_noise_config = parse_noise_config(manual_noise_config)
+    parsed_manual_stage1_gelu = parse_degree_config(manual_stage1_gelu)
+    parsed_manual_stage1_softmax = parse_degree_config(manual_stage1_softmax)
+    parsed_manual_stage2_noise = parse_noise_config(manual_stage2_noise)
     trainer_callbacks = []
 
     if use_ist:
@@ -616,24 +597,19 @@ def train(
             run_output_dir=run_output_dir,
             final_eval_config_source=final_eval_config_source,
             final_eval_config_path=final_eval_config_path,
-            manual_final_gelu=parsed_manual_gelu,
-            manual_final_softmax=parsed_manual_softmax,
-            stage2_fixed_config_source=stage2_fixed_config_source,
-            stage2_fixed_config_path=stage2_fixed_config_path,
-            stage2_manual_gelu=parsed_stage2_manual_gelu,
-            stage2_manual_softmax=parsed_stage2_manual_softmax,
+            manual_stage1_gelu=parsed_manual_stage1_gelu,
+            manual_stage1_softmax=parsed_manual_stage1_softmax,
+            manual_stage2_noise=parsed_manual_stage2_noise,
             final_eval_random_seed=final_eval_random_seed,
             final_eval_permutation_trials=final_eval_permutation_trials,
             final_eval_cost_equivalent_trials=final_eval_cost_equivalent_trials,
             final_eval_budget_equivalent_trials=final_eval_budget_equivalent_trials,
+            final_eval_stage1_budget_trials=final_eval_stage1_budget_trials,
+            final_eval_stage2_budget_trials=final_eval_stage2_budget_trials,
+            final_eval_repeat_n=final_eval_repeat_n,
             skip_noise_rl=skip_noise_rl,
-            noise_eval_config_source=noise_eval_config_source,
-            noise_eval_config_path=noise_eval_config_path,
-            manual_noise_config=parsed_noise_config,
-            noise_eval_repeat_n=noise_eval_repeat_n,
             skip_stage1_rl=skip_stage1_rl,
-            skip_stage1_final_eval=skip_stage1_final_eval,
-            skip_noise_final_eval=skip_noise_final_eval,
+            skip_final_eval=skip_final_eval,
             resume_run_dir=resume_run_dir,
             data_path=data_path,
             test_data_mm=val_data_mm,

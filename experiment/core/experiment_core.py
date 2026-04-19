@@ -333,7 +333,7 @@ def config_label(gelu, softmax):
     return f"G[{g_str}]_S[{s_str}]"
 
 
-def load_ppo_configs(path="glue_configs_best_ppo.json"):
+def load_ppo_configs(path="glue_final_configs_best_ppo.json"):
     with open(path, 'r') as f:
         configs = json.load(f)
     configs.pop("_comment", None)

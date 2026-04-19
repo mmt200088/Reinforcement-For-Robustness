@@ -50,8 +50,7 @@
 | `RUNS_SUBDIR` | `runs` | 多处 | 同上 |
 | `COMPARE_RL_VS_GA_SUBDIR` | `compare/rl_vs_ga` | `rl_ga_compare_runner.py` | 同上 |
 | `NOISE_RL_PROGRESS_SUBDIR` | `rl_results/noise_rl_progress` | `noise_rl_module_v2.py:191` | 被 `rl_tune_genetic.py` 复用 |
-| `STAGE1_FINAL_EVAL_SUBDIR` | `rl_results/final_evaluation` | `layer_importance_evaluator.py:160` | `final_evaluation_module.py:36` 重复声明（必须同步） |
-| `NOISE_FINAL_EVAL_SUBDIR` | `rl_results/noise_final_evaluation` | `layer_importance_evaluator.py:162` | `noise_final_evaluation_module.py:83` 重复声明（必须同步） |
+| `FINAL_EVAL_SUBDIR` | `rl_results/final_evaluation` | `layer_importance_evaluator.py` | `final_evaluation_module.py` 中 `UnifiedFinalEvaluationModule` 共用此目录（Stage-1 + Stage-2 合并写出） |
 
 ### A.3 标签文件
 
@@ -82,11 +81,12 @@
 
 | 文件 | 读取方 | 写入方 |
 |---|---|---|
-| `glue_configs_best_ppo.json` | `generate_glue_submission.py`, `final_evaluation_module.py` | RL Stage-1 训练完成后写 |
-| `glue_configs_best_genetic.json` | 同上 | GA Stage-1 完成后写 |
-| `glue_noise_configs_best_ppo.json` | `generate_glue_submission.py`, `noise_final_evaluation_module.py` | RL Stage-2 完成后写 |
-| `glue_noise_configs_best_genetic.json` | 同上 | GA Stage-2 完成后写 |
+| `glue_final_configs_best_ppo.json` | `generate_glue_submission.py`, `final_evaluation_module.py`（`UnifiedFinalEvaluationModule`） | RL Stage-1 + Stage-2 全部训练完成后合并写出 |
+| `glue_final_configs_best_genetic.json` | 同上 | GA Stage-1 + Stage-2 全部完成后合并写出 |
 | `glue_configs.json` | `generate_glue_submission.py`（未 `--config` 时兜底） | 手维护 |
+
+合并 JSON 结构：`{变体: {任务: {stage1: {gelu, softmax}, stage2: {x, wq, wk, wv, wo, wffn1, wffn2}}}}`。
+同一份文件既可用作 `--config`（自动抽取 `stage1`），也可用作 `--noise_config`（自动抽取 `stage2`）。
 
 ---
 
@@ -243,8 +243,8 @@ RL_DATASET_SPLIT_SEED = 42
 避免了 top-level 循环。**别把这些延迟 import 提到文件顶部**，否则 import 链直接死锁。
 
 ### `layer_importance_evaluator` / `noise_rl_module_v2` / `genetic_search_module`
-都依赖 `function_handler`、`final_evaluation_module`、`noise_final_evaluation_module`。
-这三个下层模块**没有反向 import 上层**，是干净的。
+都依赖 `function_handler`、`final_evaluation_module`（其中 `UnifiedFinalEvaluationModule`
+合并了旧的 Stage-1 / Stage-2 两份评估器）。这两个下层模块**没有反向 import 上层**，是干净的。
 
 ---
 

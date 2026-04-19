@@ -54,11 +54,9 @@ class ChildRunSpec:
 @dataclass
 class CompareSideConfig:
     skip_stage1_search: bool = False
+    skip_noise_search: bool = False
     final_eval_config_source: str = "search"
     final_eval_config_path: str = ""
-    skip_noise_search: bool = False
-    noise_eval_config_source: str = "search"
-    noise_eval_config_path: str = ""
 
 
 @dataclass
@@ -190,80 +188,48 @@ def normalize_compare_side_config(
     *,
     label: str,
     skip_stage1_search: bool,
+    skip_noise_search: bool,
     final_eval_config_source: str,
     final_eval_config_path: str,
-    skip_noise_search: bool,
-    noise_eval_config_source: str,
-    noise_eval_config_path: str,
 ) -> CompareSideConfig:
-    stage1_source = normalize_compare_config_source(
+    source = normalize_compare_config_source(
         final_eval_config_source,
         flag_name=f"{label.lower()} final-eval source",
     )
-    stage2_source = normalize_compare_config_source(
-        noise_eval_config_source,
-        flag_name=f"{label.lower()} noise-eval source",
-    )
-    stage1_path = str(final_eval_config_path or "").strip()
-    stage2_path = str(noise_eval_config_path or "").strip()
+    path = str(final_eval_config_path or "").strip()
 
-    if skip_stage1_search:
-        if stage1_source == "search":
+    need_json = bool(skip_stage1_search) or bool(skip_noise_search)
+    if need_json:
+        if source == "search":
             raise CompareRunnerError(
-                f"{label} skip_stage1_search=True 时，Stage-1 配置来源不能是 search；"
+                f"{label} 跳过 Stage-1 或 Stage-2 搜索时，final-eval 配置来源不能是 search；"
                 "请改用 json。"
             )
     else:
-        if stage1_source != "search":
+        if source != "search":
             raise CompareRunnerError(
-                f"{label} 未跳过 Stage-1 搜索时，Stage-1 配置来源必须为 search。"
+                f"{label} 未跳过任何搜索阶段时，final-eval 配置来源必须为 search。"
             )
-        if stage1_path:
+        if path:
             raise CompareRunnerError(
-                f"{label} 未跳过 Stage-1 搜索时，不应提供 Stage-1 JSON 配置路径。"
-            )
-
-    if skip_noise_search:
-        if stage2_source == "search":
-            raise CompareRunnerError(
-                f"{label} skip_noise_search=True 时，Stage-2 配置来源不能是 search；"
-                "请改用 json。"
-            )
-    else:
-        if stage2_source != "search":
-            raise CompareRunnerError(
-                f"{label} 未跳过 Stage-2 搜索时，Stage-2 配置来源必须为 search。"
-            )
-        if stage2_path:
-            raise CompareRunnerError(
-                f"{label} 未跳过 Stage-2 搜索时，不应提供 Stage-2 JSON 配置路径。"
+                f"{label} 未跳过任何搜索阶段时，不应提供 final-eval JSON 配置路径。"
             )
 
-    if stage1_source == "json" and not stage1_path:
+    if source == "json" and not path:
         raise CompareRunnerError(
-            f"{label} 使用 Stage-1 JSON 配置时，必须提供配置文件路径。"
-        )
-    if stage2_source == "json" and not stage2_path:
-        raise CompareRunnerError(
-            f"{label} 使用 Stage-2 JSON 配置时，必须提供配置文件路径。"
+            f"{label} 使用 JSON 配置时，必须提供配置文件路径。"
         )
 
     return CompareSideConfig(
         skip_stage1_search=bool(skip_stage1_search),
-        final_eval_config_source=stage1_source,
-        final_eval_config_path=stage1_path,
         skip_noise_search=bool(skip_noise_search),
-        noise_eval_config_source=stage2_source,
-        noise_eval_config_path=stage2_path,
+        final_eval_config_source=source,
+        final_eval_config_path=path,
     )
 
 
-def stage1_final_eval_json(run_dir: Path, dataset: str) -> Path:
-    return run_dir / "stage1_final_eval" / f"final_eval_results_{dataset}.json"
-
-
-def stage2_final_eval_json(run_dir: Path, dataset: str) -> Path:
-    return run_dir / "stage2_noise_final_eval" / f"noise_final_eval_results_{dataset}.json"
+def final_eval_json(run_dir: Path, dataset: str) -> Path:
+    return run_dir / "final_eval" / f"final_eval_results_{dataset}.json"
 
 
 def stage1_ga_result_json(run_dir: Path) -> Path:
@@ -388,29 +354,21 @@ def recover_stage2_search_best(run_dir: Path, algorithm: str) -> Tuple[Optional[
 def resolve_stage1_selected_config_from_artifacts(
     run_dir: Path, algorithm: str, dataset: str
 ) -> Tuple[Optional[dict], str]:
-    obj = read_json(stage1_final_eval_json(run_dir, dataset))
+    obj = read_json(final_eval_json(run_dir, dataset))
     if obj is not None and obj.get("selected") is not None:
         return {
             "gelu": obj["selected"]["gelu"],
             "softmax": obj["selected"]["softmax"],
-        }, "stage1_final_eval_selected"
+        }, "final_eval_selected"
     cfg, source = recover_stage1_search_best(run_dir, algorithm)
     return cfg, source
 
 
-def default_stage1_json_for_algorithm(algorithm: str) -> str:
+def default_final_eval_json_for_algorithm(algorithm: str) -> str:
     return (
-        "glue_configs_best_genetic.json"
+        "glue_final_configs_best_genetic.json"
         if algorithm == "ga"
-        else "glue_configs_best_ppo.json"
-    )
-
-
-def default_stage2_json_for_algorithm(algorithm: str) -> str:
-    return (
-        "glue_noise_configs_best_genetic.json"
-        if algorithm == "ga"
-        else "glue_noise_configs_best_ppo.json"
+        else "glue_final_configs_best_ppo.json"
     )
 
 
@@ -616,9 +574,9 @@ def materialize_result_json(
     if not isinstance(obj, dict):
         raise CompareRunnerError(f"Invalid {stage_label} result JSON: {src_path}")
     dest_path = (
-        stage1_final_eval_json(run_dir, dataset)
+        final_eval_json(run_dir, dataset)
         if stage_label == "stage1"
-        else stage2_final_eval_json(run_dir, dataset)
+        else final_eval_json(run_dir, dataset)
     )
     write_json(dest_path, obj)
     return dest_path
@@ -661,13 +619,13 @@ def ensure_persistent_side_has_compare_artifacts(
     algorithm: str,
     dataset: str,
 ) -> None:
-    if not stage1_final_eval_json(run_dir, dataset).is_file():
+    if not final_eval_json(run_dir, dataset).is_file():
         stage1_cfg, _ = recover_stage1_search_best(run_dir, algorithm)
         if stage1_cfg is None:
             raise CompareRunnerError(
                 f"Persistent run dir '{run_dir}' has no usable Stage-1 compare artifact."
             )
-    if not stage2_final_eval_json(run_dir, dataset).is_file():
+    if not final_eval_json(run_dir, dataset).is_file():
         stage2_cfg, _ = recover_stage2_search_best(run_dir, algorithm)
         if stage2_cfg is None:
             raise CompareRunnerError(
@@ -777,15 +735,12 @@ def build_compare_evaluator(
     perm_trials: int,
     cost_trials: int,
     budget_trials: int,
-    noise_eval_repeat_n: int,
+    final_eval_repeat_n: int,
     final_eval_config_source: str = "json",
-    final_eval_config_path: str = "glue_configs_best_ppo.json",
-    noise_eval_config_source: str = "json",
-    noise_eval_config_path: str = "glue_noise_configs_best_ppo.json",
+    final_eval_config_path: str = "glue_final_configs_best_ppo.json",
     skip_stage1_rl: bool = True,
     skip_noise_rl: bool = True,
-    skip_stage1_final_eval: bool = True,
-    skip_noise_final_eval: bool = True,
+    skip_final_eval: bool = True,
     stage2_k_trials: Optional[int] = None,
     stage2_probe_size: Optional[int] = None,
 ):
@@ -907,13 +862,10 @@ def build_compare_evaluator(
         final_eval_permutation_trials=perm_trials,
         final_eval_cost_equivalent_trials=cost_trials,
         final_eval_budget_equivalent_trials=budget_trials,
-        noise_eval_config_source=noise_eval_config_source,
-        noise_eval_config_path=noise_eval_config_path,
-        noise_eval_repeat_n=noise_eval_repeat_n,
+        final_eval_repeat_n=final_eval_repeat_n,
         skip_stage1_rl=skip_stage1_rl,
         skip_noise_rl=skip_noise_rl,
-        skip_stage1_final_eval=skip_stage1_final_eval,
-        skip_noise_final_eval=skip_noise_final_eval,
+        skip_final_eval=skip_final_eval,
         data_path=data_path,
         search_algorithm=search_algorithm,
         stage2_k_trials=stage2_k_trials,
@@ -924,7 +876,7 @@ def build_compare_evaluator(
     return evaluator
 
 
-def ensure_stage1_eval_json(
+def ensure_final_eval_json(
     *,
     algorithm: str,
     run_dir: Path,
@@ -939,31 +891,36 @@ def ensure_stage1_eval_json(
     perm_trials: int,
     cost_trials: int,
     budget_trials: int,
-    noise_eval_repeat_n: int,
+    final_eval_repeat_n: int,
     model_type: Optional[str] = None,
     prepared_evaluator=None,
 ) -> Tuple[Path, List[str]]:
-    json_path = stage1_final_eval_json(run_dir, dataset)
+    json_path = final_eval_json(run_dir, dataset)
     if json_path.is_file():
         return json_path, []
 
     config_source = side_config.final_eval_config_source
     config_path = side_config.final_eval_config_path
     warnings: List[str] = []
-    search_best_config = None
-    source = ""
+    stage1_search_best = None
+    stage2_search_best = None
+    stage1_source = ""
+    stage2_source = ""
+
     if config_source == "search":
         warnings.append(
-            f"{algorithm.upper()} 的 Stage-1 最终评估文件缺失，已改为基于当前最优配置补做最终评估。"
+            f"{algorithm.upper()} 的 final-eval 文件缺失，已基于当前最优搜索结果补做统一最终评估。"
         )
-        search_best_config, source = recover_stage1_search_best(run_dir, algorithm)
+        stage1_search_best, stage1_source = recover_stage1_search_best(run_dir, algorithm)
+        stage2_search_best, stage2_source = recover_stage2_search_best(run_dir, algorithm)
     else:
         warnings.append(
-            f"{algorithm.upper()} 的 Stage-1 最终评估文件缺失，已按声明的 {config_source} 配置补做最终评估。"
+            f"{algorithm.upper()} 的 final-eval 文件缺失，已按声明的 {config_source} 配置补做统一最终评估。"
         )
 
     evaluator = prepared_evaluator
     if evaluator is None:
+        effective_config_path = config_path or default_final_eval_json_for_algorithm(algorithm)
         evaluator = build_compare_evaluator(
             base_model=base_model,
             data_path=data_path,
@@ -977,170 +934,45 @@ def ensure_stage1_eval_json(
             perm_trials=perm_trials,
             cost_trials=cost_trials,
             budget_trials=budget_trials,
-            noise_eval_repeat_n=noise_eval_repeat_n,
+            final_eval_repeat_n=final_eval_repeat_n,
             final_eval_config_source=config_source,
-            final_eval_config_path=config_path,
-            noise_eval_config_source=side_config.noise_eval_config_source,
-            noise_eval_config_path=side_config.noise_eval_config_path,
-            skip_stage1_rl=(config_source != "search"),
-            skip_noise_rl=True,
-            skip_stage1_final_eval=False,
-            skip_noise_final_eval=True,
-        )
-
-    from final_evaluation_module import FinalEvaluationModule
-    from genetic_search_module import GeneticFinalEvaluationModule, build_stage1_context
-
-    context = build_stage1_context(
-        evaluator, log_fn=evaluator.log, include_distribution=False,
-        constraint_ratio=getattr(evaluator, "error_threshold", None),
-    )
-    if config_source == "search" and search_best_config is None:
-        warnings.append(
-            f"{algorithm.upper()} 未找到 Stage-1 checkpoint/search 结果，已回退到 baseline 配置生成对比结果。"
-        )
-        search_best_config = {
-            "gelu": context.base_gelu.copy(),
-            "softmax": context.base_softmax.copy(),
-            "cost": float(context.base_tot_c),
-        }
-    elif config_source == "search":
-        warnings.append(f"{algorithm.upper()} Stage-1 fallback 来源：{source}")
-
-    module_cls = GeneticFinalEvaluationModule if algorithm == "ga" else FinalEvaluationModule
-    runner = module_cls(
-        evaluator=evaluator,
-        config_source=config_source,
-        config_path=config_path,
-        random_seed=random_seed,
-        permutation_trials=perm_trials,
-        cost_equivalent_trials=cost_trials,
-        budget_equivalent_trials=budget_trials,
-        results_dir=evaluator.stage1_final_eval_dir,
-    )
-    result = runner.run(
-        search_best_config=search_best_config,
-        base_gelu=context.base_gelu,
-        base_softmax=context.base_softmax,
-        base_tot_c=context.base_tot_c,
-        base_g_c=context.base_g_c,
-        base_s_c=context.base_s_c,
-        limit_loss=context.limit_loss,
-        limit_p=context.limit_p,
-        limit_s=context.limit_s,
-    )
-    return Path(result["summary_path"]), warnings
-
-
-def ensure_stage2_eval_json(
-    *,
-    algorithm: str,
-    run_dir: Path,
-    side_config: CompareSideConfig,
-    dataset: str,
-    base_model: str,
-    data_path: str,
-    batch_size: int,
-    stage1_rl_lr: Optional[str],
-    stage2_rl_lr: Optional[str],
-    random_seed: int,
-    perm_trials: int,
-    cost_trials: int,
-    budget_trials: int,
-    noise_eval_repeat_n: int,
-    model_type: Optional[str] = None,
-    prepared_evaluator=None,
-) -> Tuple[Path, List[str]]:
-    json_path = stage2_final_eval_json(run_dir, dataset)
-    if json_path.is_file():
-        return json_path, []
-
-    config_source = side_config.noise_eval_config_source
-    config_path = side_config.noise_eval_config_path
-    warnings: List[str] = []
-    if config_source == "search":
-        warnings.append(
-            f"{algorithm.upper()} 的 Stage-2 最终评估文件缺失，已改为基于当前最优噪声配置补做最终评估。"
-        )
-    else:
-        warnings.append(
-            f"{algorithm.upper()} 的 Stage-2 最终评估文件缺失，已按声明的 {config_source} 配置补做最终评估。"
-        )
-
-    fixed_stage1_config, fixed_source = resolve_stage1_selected_config_from_artifacts(
-        run_dir, algorithm, dataset
-    )
-
-    evaluator = prepared_evaluator
-    if evaluator is None:
-        evaluator = build_compare_evaluator(
-            base_model=base_model,
-            data_path=data_path,
-            batch_size=batch_size,
-            run_output_dir=str(run_dir),
-            model_type=model_type,
-            search_algorithm=algorithm,
-            stage1_rl_lr=stage1_rl_lr,
-            stage2_rl_lr=stage2_rl_lr,
-            random_seed=random_seed,
-            perm_trials=perm_trials,
-            cost_trials=cost_trials,
-            budget_trials=budget_trials,
-            noise_eval_repeat_n=noise_eval_repeat_n,
-            final_eval_config_source=(
-                side_config.final_eval_config_source
-                if side_config.final_eval_config_source != "search"
-                else "json"
-            ),
-            final_eval_config_path=(
-                side_config.final_eval_config_path
-                or default_stage1_json_for_algorithm(algorithm)
-            ),
-            noise_eval_config_source=config_source,
-            noise_eval_config_path=(
-                config_path
-                or default_stage2_json_for_algorithm(algorithm)
-            ),
+            final_eval_config_path=effective_config_path,
             skip_stage1_rl=True,
-            skip_noise_rl=(config_source != "search"),
-            skip_stage1_final_eval=True,
-            skip_noise_final_eval=False,
+            skip_noise_rl=True,
+            skip_final_eval=False,
         )
 
     from genetic_search_module import (
-        GeneticNoiseFinalEvaluationModule,
+        GeneticUnifiedFinalEvaluationModule,
         build_stage1_context,
         build_stage2_context,
+        build_stage2_final_eval_context_without_search,
+        resolve_stage1_selected_config,
     )
-    from noise_final_evaluation_module import NoiseFinalEvaluationModule
+    from final_evaluation_module import UnifiedFinalEvaluationModule
 
-    if fixed_stage1_config is None:
-        stage1_context = build_stage1_context(
-            evaluator, log_fn=evaluator.log, include_distribution=False,
-            constraint_ratio=getattr(evaluator, "error_threshold", None),
+    stage1_context = build_stage1_context(
+        evaluator, log_fn=evaluator.log, include_distribution=False,
+        constraint_ratio=getattr(evaluator, "error_threshold", None),
+    )
+    if config_source == "search" and stage1_search_best is None:
+        warnings.append(
+            f"{algorithm.upper()} 未找到 Stage-1 checkpoint/search 结果，已回退到 baseline 配置生成对比结果。"
         )
-        fixed_stage1_config = {
+        stage1_search_best = {
             "gelu": stage1_context.base_gelu.copy(),
             "softmax": stage1_context.base_softmax.copy(),
+            "cost": float(stage1_context.base_tot_c),
         }
-        warnings.append(
-            f"{algorithm.upper()} 未找到 Stage-1 选中配置，Stage-2 fallback 改用 baseline Stage-1 配置。"
-        )
-    else:
-        warnings.append(f"{algorithm.upper()} Stage-2 固定的 Stage-1 配置来源：{fixed_source}")
+    elif config_source == "search":
+        warnings.append(f"{algorithm.upper()} Stage-1 fallback 来源：{stage1_source}")
 
-    fixed_gelu = np.asarray(fixed_stage1_config["gelu"], dtype=int)
-    fixed_softmax = np.asarray(fixed_stage1_config["softmax"], dtype=int)
-    noise_best_config = None
-    noise_source = ""
-    if config_source == "search":
-        noise_best_config, noise_source = recover_stage2_search_best(run_dir, algorithm)
-        if noise_best_config is None:
-            warnings.append(
-                f"{algorithm.upper()} 未找到 Stage-2 稳定最优噪声配置，将仅输出 baseline/no-noise 对照并附带警告。"
-            )
-        else:
-            warnings.append(f"{algorithm.upper()} Stage-2 fallback 来源：{noise_source}")
+    fixed_gelu, fixed_softmax, fixed_label, fixed_resolved_source = resolve_stage1_selected_config(
+        evaluator=evaluator,
+        search_best_config=stage1_search_best,
+        config_source=config_source,
+        config_path=config_path,
+    )
 
     if hasattr(evaluator, "activate_noise_logging"):
         previous_log_file = evaluator.activate_noise_logging()
@@ -1158,15 +990,35 @@ def ensure_stage2_eval_json(
                 evaluator.active_log_file = previous_log_file
 
     try:
-        context = build_stage2_context(
-            evaluator,
-            fixed_gelu,
-            fixed_softmax,
-            log_fn=evaluator.log,
-            limit_tolerance=getattr(evaluator, "stage2_limit_tolerance", None),
-            stability_tolerance=getattr(evaluator, "stage2_stability_tolerance", None),
+        if stage2_search_best is not None:
+            stage2_context = build_stage2_context(
+                evaluator,
+                fixed_gelu,
+                fixed_softmax,
+                log_fn=evaluator.log,
+                limit_tolerance=getattr(evaluator, "stage2_limit_tolerance", None),
+                stability_tolerance=getattr(evaluator, "stage2_stability_tolerance", None),
+            )
+            baseline_noise_tot_c = stage2_context.cost_reference_tot_c
+            limit_loss = stage2_context.search_limits["loss"]
+            limit_p = stage2_context.search_limits["metric1"]
+            limit_s = stage2_context.search_limits["metric2"]
+        else:
+            stage2_eval_context = build_stage2_final_eval_context_without_search(evaluator)
+            baseline_noise_tot_c = stage2_eval_context["baseline_tot_c"]
+            limit_loss = stage2_eval_context["limit_loss"]
+            limit_p = stage2_eval_context["limit_p"]
+            limit_s = stage2_eval_context["limit_s"]
+            if config_source == "search":
+                warnings.append(
+                    f"{algorithm.upper()} 未找到 Stage-2 稳定最优噪声配置，将仅输出 baseline/no-noise 对照并附带警告。"
+                )
+
+        module_cls = (
+            GeneticUnifiedFinalEvaluationModule
+            if algorithm == "ga"
+            else UnifiedFinalEvaluationModule
         )
-        module_cls = GeneticNoiseFinalEvaluationModule if algorithm == "ga" else NoiseFinalEvaluationModule
         runner = module_cls(
             evaluator=evaluator,
             config_source=config_source,
@@ -1175,19 +1027,18 @@ def ensure_stage2_eval_json(
             permutation_trials=perm_trials,
             cost_equivalent_trials=cost_trials,
             budget_equivalent_trials=budget_trials,
-            repeat_n=noise_eval_repeat_n,
-            results_dir=evaluator.noise_final_eval_dir,
+            repeat_n=final_eval_repeat_n,
+            results_dir=evaluator.final_eval_dir,
         )
         result = runner.run(
-            search_best_noise_config=noise_best_config,
-            search_status="fallback_missing_search_best" if noise_best_config is None else "fallback_from_partial_run",
-            fixed_gelu=fixed_gelu,
-            fixed_softmax=fixed_softmax,
-            baseline_noise_config=context.cost_reference_noise_config,
-            baseline_tot_c=context.cost_reference_tot_c,
-            limit_loss=context.search_limits["loss"],
-            limit_p=context.search_limits["metric1"],
-            limit_s=context.search_limits["metric2"],
+            search_best_stage1=stage1_search_best,
+            search_best_stage2=stage2_search_best,
+            baseline_stage1_gelu=stage1_context.base_gelu,
+            baseline_stage1_softmax=stage1_context.base_softmax,
+            baseline_noise_tot_c=baseline_noise_tot_c,
+            limit_loss=limit_loss,
+            limit_p=limit_p,
+            limit_s=limit_s,
         )
     finally:
         restore_log()
@@ -1658,20 +1509,17 @@ def build_child_command(
         "--use_ist",
         "--final_eval_config_source", side_config.final_eval_config_source,
         "--final_eval_config_path", side_config.final_eval_config_path,
-        "--manual_final_gelu", "",
-        "--manual_final_softmax", "",
+        "--manual_stage1_gelu", "",
+        "--manual_stage1_softmax", "",
+        "--manual_stage2_noise", "",
         "--final_eval_random_seed", str(random_seed),
         "--final_eval_permutation_trials", str(perm_trials),
         "--final_eval_cost_equivalent_trials", str(cost_trials),
         "--final_eval_budget_equivalent_trials", str(budget_trials),
+        "--final_eval_repeat_n", str(stage2_compare_repeats),
         "--skip_noise_rl", "true" if side_config.skip_noise_search else "false",
-        "--noise_eval_config_source", side_config.noise_eval_config_source,
-        "--noise_eval_config_path", side_config.noise_eval_config_path,
-        "--manual_noise_config", "",
-        "--noise_eval_repeat_n", str(stage2_compare_repeats),
         "--skip_stage1_rl", "true" if side_config.skip_stage1_search else "false",
-        "--skip_stage1_final_eval", "false",
-        "--skip_noise_final_eval", "false",
+        "--skip_final_eval", "false",
         "--resume_run_dir", "",
     ]
     if algorithm == "rl":
@@ -1768,11 +1616,10 @@ def summarize_process_state(
     global_stop_requested: bool,
 ) -> dict:
     rc = child_return_code(spec)
-    s1_ok = stage1_final_eval_json(spec.run_dir, dataset).is_file()
-    s2_ok = stage2_final_eval_json(spec.run_dir, dataset).is_file()
+    final_ok = final_eval_json(spec.run_dir, dataset).is_file()
     if rc is None:
         state = "running"
-    elif rc == 0 and s1_ok and s2_ok:
+    elif rc == 0 and final_ok:
         state = "completed"
     elif rc == 0 and global_stop_requested:
         state = "stopped_by_request"
@@ -1785,8 +1632,7 @@ def summarize_process_state(
         "pid": spec.process.pid if spec.process is not None else None,
         "return_code": rc,
         "state": state,
-        "stage1_final_eval_ready": s1_ok,
-        "stage2_final_eval_ready": s2_ok,
+        "final_eval_ready": final_ok,
         "run_dir": str(spec.run_dir),
         "log_path": str(spec.log_path),
         "command": spec.command,
@@ -1903,14 +1749,23 @@ def resolve_direct_side_spec(
         model_type=model_type,
         expected_algorithm=algorithm,
     )
+    any_json = stage1_kind == "config_json" or stage2_kind == "config_json"
+    if stage1_kind == "config_json" and stage2_kind == "config_json" and stage1_path != stage2_path:
+        raise CompareRunnerError(
+            f"{algorithm.upper()} 直接比较时，Stage-1 和 Stage-2 的 JSON 配置应指向同一个合并文件，"
+            f"但得到 {stage1_path} 与 {stage2_path}。"
+        )
+    merged_path = ""
+    if stage2_kind == "config_json":
+        merged_path = str(stage2_path)
+    elif stage1_kind == "config_json":
+        merged_path = str(stage1_path)
     side_config = normalize_compare_side_config(
         label=algorithm.upper(),
         skip_stage1_search=(stage1_kind == "config_json"),
-        final_eval_config_source=("json" if stage1_kind == "config_json" else "search"),
-        final_eval_config_path=(str(stage1_path) if stage1_kind == "config_json" else ""),
         skip_noise_search=(stage2_kind == "config_json"),
-        noise_eval_config_source=("json" if stage2_kind == "config_json" else "search"),
-        noise_eval_config_path=(str(stage2_path) if stage2_kind == "config_json" else ""),
+        final_eval_config_source=("json" if any_json else "search"),
+        final_eval_config_path=merged_path,
     )
     return EvaluationOnlySideSpec(
         algorithm=algorithm,
@@ -1999,10 +1854,7 @@ def materialize_direct_result_jsons(side_spec: EvaluationOnlySideSpec, *, datase
 
 
 def side_needs_evaluator(side_spec: EvaluationOnlySideSpec, *, dataset: str) -> bool:
-    return (
-        not stage1_final_eval_json(side_spec.run_dir, dataset).is_file()
-        or not stage2_final_eval_json(side_spec.run_dir, dataset).is_file()
-    )
+    return not final_eval_json(side_spec.run_dir, dataset).is_file()
 
 
 def build_evaluation_only_process_state(
@@ -2015,8 +1867,7 @@ def build_evaluation_only_process_state(
         "pid": None,
         "return_code": 0,
         "state": "completed",
-        "stage1_final_eval_ready": stage1_final_eval_json(side_spec.run_dir, dataset).is_file(),
-        "stage2_final_eval_ready": stage2_final_eval_json(side_spec.run_dir, dataset).is_file(),
+        "final_eval_ready": final_eval_json(side_spec.run_dir, dataset).is_file(),
         "run_dir": str(side_spec.run_dir),
         "log_path": str(side_spec.run_dir / "logs" / "output.log"),
         "command": None,
@@ -2043,9 +1894,6 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
     model_type = normalize_model_type(args.model_type)
     dataset = str(args.dataset or "").strip().lower()
     compare_warnings: List[str] = []
-    alias_warning = getattr(args, "compare_repeat_alias_warning", None)
-    if alias_warning:
-        compare_warnings.append(alias_warning)
 
     try:
         if args.compare_config_mode == "direct":
@@ -2146,7 +1994,7 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
                 perm_trials=args.perm_trials,
                 cost_trials=args.cost_trials,
                 budget_trials=args.budget_trials,
-                noise_eval_repeat_n=args.stage2_compare_repeats,
+                final_eval_repeat_n=args.stage2_compare_repeats,
                 final_eval_config_source=(
                     rl_side_spec.side_config.final_eval_config_source
                     if rl_side_spec.side_config.final_eval_config_source != "search"
@@ -2154,21 +2002,11 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
                 ),
                 final_eval_config_path=(
                     rl_side_spec.side_config.final_eval_config_path
-                    or default_stage1_json_for_algorithm("rl")
-                ),
-                noise_eval_config_source=(
-                    rl_side_spec.side_config.noise_eval_config_source
-                    if rl_side_spec.side_config.noise_eval_config_source != "search"
-                    else "json"
-                ),
-                noise_eval_config_path=(
-                    rl_side_spec.side_config.noise_eval_config_path
-                    or default_stage2_json_for_algorithm("rl")
+                    or default_final_eval_json_for_algorithm("rl")
                 ),
                 skip_stage1_rl=True,
                 skip_noise_rl=True,
-                skip_stage1_final_eval=True,
-                skip_noise_final_eval=True,
+                skip_final_eval=True,
                 stage2_k_trials=getattr(args, "stage2_k_trials", None),
                 stage2_probe_size=getattr(args, "stage2_probe_size", None),
             )
@@ -2189,7 +2027,7 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
                 perm_trials=args.perm_trials,
                 cost_trials=args.cost_trials,
                 budget_trials=args.budget_trials,
-                noise_eval_repeat_n=args.stage2_compare_repeats,
+                final_eval_repeat_n=args.stage2_compare_repeats,
                 final_eval_config_source=(
                     ga_side_spec.side_config.final_eval_config_source
                     if ga_side_spec.side_config.final_eval_config_source != "search"
@@ -2197,21 +2035,11 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
                 ),
                 final_eval_config_path=(
                     ga_side_spec.side_config.final_eval_config_path
-                    or default_stage1_json_for_algorithm("ga")
-                ),
-                noise_eval_config_source=(
-                    ga_side_spec.side_config.noise_eval_config_source
-                    if ga_side_spec.side_config.noise_eval_config_source != "search"
-                    else "json"
-                ),
-                noise_eval_config_path=(
-                    ga_side_spec.side_config.noise_eval_config_path
-                    or default_stage2_json_for_algorithm("ga")
+                    or default_final_eval_json_for_algorithm("ga")
                 ),
                 skip_stage1_rl=True,
                 skip_noise_rl=True,
-                skip_stage1_final_eval=True,
-                skip_noise_final_eval=True,
+                skip_final_eval=True,
                 stage2_k_trials=getattr(args, "stage2_k_trials", None),
                 stage2_probe_size=getattr(args, "stage2_probe_size", None),
             )
@@ -2219,7 +2047,7 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
             else None
         )
 
-        rl_stage1_json, rl_stage1_warn = ensure_stage1_eval_json(
+        rl_stage1_json, rl_stage1_warn = ensure_final_eval_json(
             algorithm="rl",
             run_dir=rl_side_spec.run_dir,
             side_config=rl_side_spec.side_config,
@@ -2233,11 +2061,11 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat_n=args.stage2_compare_repeats,
+            final_eval_repeat_n=args.stage2_compare_repeats,
             model_type=model_type,
             prepared_evaluator=rl_evaluator,
         )
-        ga_stage1_json, ga_stage1_warn = ensure_stage1_eval_json(
+        ga_stage1_json, ga_stage1_warn = ensure_final_eval_json(
             algorithm="ga",
             run_dir=ga_side_spec.run_dir,
             side_config=ga_side_spec.side_config,
@@ -2251,7 +2079,7 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat_n=args.stage2_compare_repeats,
+            final_eval_repeat_n=args.stage2_compare_repeats,
             model_type=model_type,
             prepared_evaluator=ga_evaluator,
         )
@@ -2288,7 +2116,7 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
             },
         )
 
-        rl_stage2_json, rl_stage2_warn = ensure_stage2_eval_json(
+        rl_stage2_json, rl_stage2_warn = ensure_final_eval_json(
             algorithm="rl",
             run_dir=rl_side_spec.run_dir,
             side_config=rl_side_spec.side_config,
@@ -2302,11 +2130,11 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat_n=args.stage2_compare_repeats,
+            final_eval_repeat_n=args.stage2_compare_repeats,
             model_type=model_type,
             prepared_evaluator=rl_evaluator,
         )
-        ga_stage2_json, ga_stage2_warn = ensure_stage2_eval_json(
+        ga_stage2_json, ga_stage2_warn = ensure_final_eval_json(
             algorithm="ga",
             run_dir=ga_side_spec.run_dir,
             side_config=ga_side_spec.side_config,
@@ -2320,7 +2148,7 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat_n=args.stage2_compare_repeats,
+            final_eval_repeat_n=args.stage2_compare_repeats,
             model_type=model_type,
             prepared_evaluator=ga_evaluator,
         )
@@ -2412,7 +2240,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--perm-trials", type=int, default=10)
     parser.add_argument("--cost-trials", type=int, default=10)
     parser.add_argument("--budget-trials", type=int, default=10)
-    parser.add_argument("--noise-eval-repeat", type=int, default=None)
     parser.add_argument("--stage2-compare-repeats", type=int, default=None)
     parser.add_argument("--poll-seconds", type=int, default=DEFAULT_POLL_SECONDS)
     parser.add_argument("--python-exe", default=sys.executable)
@@ -2426,10 +2253,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ga-final-eval-config", default="")
     parser.add_argument("--rl-skip-noise-search", action="store_true")
     parser.add_argument("--ga-skip-noise-search", action="store_true")
-    parser.add_argument("--rl-noise-eval-source", default="search")
-    parser.add_argument("--ga-noise-eval-source", default="search")
-    parser.add_argument("--rl-noise-eval-config", default="")
-    parser.add_argument("--ga-noise-eval-config", default="")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--stage1-accuracy-tolerance", type=float, default=None)
     parser.add_argument("--stage2-limit-tolerance", type=float, default=None)
@@ -2445,22 +2268,8 @@ def main() -> int:
     args = parse_args()
     args.dataset = str(args.dataset or "").strip().lower()
     args.model_type = normalize_model_type(args.model_type)
-    compare_repeat_alias_warning = None
     if args.stage2_compare_repeats is None:
-        if args.noise_eval_repeat is not None:
-            args.stage2_compare_repeats = args.noise_eval_repeat
-            compare_repeat_alias_warning = (
-                "在 rl-and-ga-compare 模式中，--noise-eval-repeat 已废弃；"
-                "本次已将其作为 --stage2-compare-repeats 的兼容别名处理。"
-            )
-        else:
-            args.stage2_compare_repeats = 1
-    elif args.noise_eval_repeat is not None:
-        raise CompareRunnerError(
-            "rl-and-ga-compare 模式请只使用 --stage2-compare-repeats；"
-            "不要与已废弃的 --noise-eval-repeat 同时传入。"
-        )
-    args.compare_repeat_alias_warning = compare_repeat_alias_warning
+        args.stage2_compare_repeats = 1
     for flag_name in (
         "batch_size",
         "perm_trials",
@@ -2596,20 +2405,16 @@ def main() -> int:
     rl_side_config = normalize_compare_side_config(
         label="RL",
         skip_stage1_search=args.rl_skip_stage1_search,
+        skip_noise_search=args.rl_skip_noise_search,
         final_eval_config_source=args.rl_final_eval_source,
         final_eval_config_path=args.rl_final_eval_config,
-        skip_noise_search=args.rl_skip_noise_search,
-        noise_eval_config_source=args.rl_noise_eval_source,
-        noise_eval_config_path=args.rl_noise_eval_config,
     )
     ga_side_config = normalize_compare_side_config(
         label="GA",
         skip_stage1_search=args.ga_skip_stage1_search,
+        skip_noise_search=args.ga_skip_noise_search,
         final_eval_config_source=args.ga_final_eval_source,
         final_eval_config_path=args.ga_final_eval_config,
-        skip_noise_search=args.ga_skip_noise_search,
-        noise_eval_config_source=args.ga_noise_eval_source,
-        noise_eval_config_path=args.ga_noise_eval_config,
     )
 
     rl_spec = ChildRunSpec(
@@ -2690,8 +2495,6 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_sigint)
 
     compare_warnings: List[str] = []
-    if compare_repeat_alias_warning is not None:
-        compare_warnings.append(compare_repeat_alias_warning)
     rl_cuda = normalize_cuda_value(args.rl_cuda_visible_devices)
     ga_cuda = normalize_cuda_value(args.ga_cuda_visible_devices)
     if not rl_cuda and not ga_cuda:
@@ -2779,10 +2582,10 @@ def main() -> int:
             )
 
             if not stage1_compared:
-                rl_stage1_ready = stage1_final_eval_json(rl_run_dir, args.dataset).is_file() or child_return_code(rl_spec) is not None
-                ga_stage1_ready = stage1_final_eval_json(ga_run_dir, args.dataset).is_file() or child_return_code(ga_spec) is not None
+                rl_stage1_ready = final_eval_json(rl_run_dir, args.dataset).is_file() or child_return_code(rl_spec) is not None
+                ga_stage1_ready = final_eval_json(ga_run_dir, args.dataset).is_file() or child_return_code(ga_spec) is not None
                 if rl_stage1_ready and ga_stage1_ready:
-                    rl_json, rl_warn = ensure_stage1_eval_json(
+                    rl_json, rl_warn = ensure_final_eval_json(
                         algorithm="rl",
                         run_dir=rl_run_dir,
                         side_config=rl_side_config,
@@ -2796,9 +2599,9 @@ def main() -> int:
                         perm_trials=args.perm_trials,
                         cost_trials=args.cost_trials,
                         budget_trials=args.budget_trials,
-                        noise_eval_repeat_n=args.stage2_compare_repeats,
+                        final_eval_repeat_n=args.stage2_compare_repeats,
                     )
-                    ga_json, ga_warn = ensure_stage1_eval_json(
+                    ga_json, ga_warn = ensure_final_eval_json(
                         algorithm="ga",
                         run_dir=ga_run_dir,
                         side_config=ga_side_config,
@@ -2812,7 +2615,7 @@ def main() -> int:
                         perm_trials=args.perm_trials,
                         cost_trials=args.cost_trials,
                         budget_trials=args.budget_trials,
-                        noise_eval_repeat_n=args.stage2_compare_repeats,
+                        final_eval_repeat_n=args.stage2_compare_repeats,
                     )
                     payload = build_stage_compare_payload(
                         stage_label="stage1",
@@ -2847,7 +2650,7 @@ def main() -> int:
         )
 
         if not stage1_compared:
-            rl_json, rl_warn = ensure_stage1_eval_json(
+            rl_json, rl_warn = ensure_final_eval_json(
                 algorithm="rl",
                 run_dir=rl_run_dir,
                 side_config=rl_side_config,
@@ -2861,9 +2664,9 @@ def main() -> int:
                 perm_trials=args.perm_trials,
                 cost_trials=args.cost_trials,
                 budget_trials=args.budget_trials,
-                noise_eval_repeat_n=args.stage2_compare_repeats,
+                final_eval_repeat_n=args.stage2_compare_repeats,
             )
-            ga_json, ga_warn = ensure_stage1_eval_json(
+            ga_json, ga_warn = ensure_final_eval_json(
                 algorithm="ga",
                 run_dir=ga_run_dir,
                 side_config=ga_side_config,
@@ -2877,7 +2680,7 @@ def main() -> int:
                 perm_trials=args.perm_trials,
                 cost_trials=args.cost_trials,
                 budget_trials=args.budget_trials,
-                noise_eval_repeat_n=args.stage2_compare_repeats,
+                final_eval_repeat_n=args.stage2_compare_repeats,
             )
             payload = build_stage_compare_payload(
                 stage_label="stage1",
@@ -2898,7 +2701,7 @@ def main() -> int:
             stage1_report_path, _ = save_stage_compare_report(payload, compare_dir)
             log(f"Stage-1 对比结果已补生成：{stage1_report_path}")
 
-        rl_json, rl_warn = ensure_stage2_eval_json(
+        rl_json, rl_warn = ensure_final_eval_json(
             algorithm="rl",
             run_dir=rl_run_dir,
             side_config=rl_side_config,
@@ -2912,9 +2715,9 @@ def main() -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat_n=args.stage2_compare_repeats,
+            final_eval_repeat_n=args.stage2_compare_repeats,
         )
-        ga_json, ga_warn = ensure_stage2_eval_json(
+        ga_json, ga_warn = ensure_final_eval_json(
             algorithm="ga",
             run_dir=ga_run_dir,
             side_config=ga_side_config,
@@ -2928,7 +2731,7 @@ def main() -> int:
             perm_trials=args.perm_trials,
             cost_trials=args.cost_trials,
             budget_trials=args.budget_trials,
-            noise_eval_repeat_n=args.stage2_compare_repeats,
+            final_eval_repeat_n=args.stage2_compare_repeats,
         )
         payload = build_stage_compare_payload(
             stage_label="stage2",

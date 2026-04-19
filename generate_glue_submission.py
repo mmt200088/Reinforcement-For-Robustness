@@ -41,38 +41,42 @@ GLUE 基准测试提交文件生成器
 配置文件格式
 ================================================================================
 
-▶ GELU/Softmax 近似配置 (--config):
-  每个任务包含 "gelu" 和 "softmax" 两个数组，长度 = 模型层数 (BERT-base: 12)。
-  GELU degree 取值 {1, 2, 4}；Softmax degree 取值 {2, 3, 4, 5, 6}。
+统一的合并 JSON（推荐，glue_final_configs_best_{ppo|genetic}.json）结构：
+  顶层按模型变体分节 ("bert-base" / "bert-large" / "gpt-2")，
+  每个任务下同时包含 "stage1" 和 "stage2" 两个子块。
+  --config 和 --noise_config 都接收同一份合并 JSON；
+  本脚本会自动抽取 stage1 用于近似、stage2 用于噪声注入。
 
-  示例 (glue_configs_best_ppo.json):
+  示例：
   {
-      "qnli": {
-          "gelu":    [1, 1, 1, 1, 2, 4, 4, 4, 4, 1, 1, 1],
-          "softmax": [2, 3, 4, 4, 3, 2, 2, 4, 3, 5, 5, 5]
-      },
-      ...
+      "bert-base": {
+          "qnli": {
+              "stage1": {
+                  "gelu":    [1, 1, 1, 1, 2, 4, 4, 4, 4, 1, 1, 1],
+                  "softmax": [2, 3, 4, 4, 3, 2, 2, 4, 3, 5, 5, 5]
+              },
+              "stage2": {
+                  "x":     [30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+                  "wq":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
+                  "wk":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
+                  "wv":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
+                  "wo":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
+                  "wffn1": [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
+                  "wffn2": [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
+              }
+          },
+          ...
+      }
   }
 
-▶ 噪声 Scaling Factor 配置 (--noise_config):
-  每个任务包含 7 个数组 (x, wq, wk, wv, wo, wffn1, wffn2)，长度 = 模型层数。
-  x 取值 {22, 24, 26, 28, 30}；wq/wk/wv/wo/wffn2 取值 {14, 16, 18, 20, 22}；
-  wffn1 取值 {16, 18, 20, 22, 24}。
-  数值越大 → 噪声越大 → 隐私保护越强。
+取值范围：
+  GELU degree ∈ {1, 2, 4}；Softmax degree ∈ {2, 3, 4, 5, 6}。
+  x ∈ {22, 24, 26, 28, 30}；wq/wk/wv/wo/wffn2 ∈ {14, 16, 18, 20, 22}；
+  wffn1 ∈ {16, 18, 20, 22, 24}。噪声数值越大 → 隐私保护越强。
 
-  示例 (glue_noise_configs_best_ppo.json):
-  {
-      "qnli": {
-          "x":     [30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
-          "wq":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
-          "wk":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
-          "wv":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
-          "wo":    [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
-          "wffn1": [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22],
-          "wffn2": [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
-      },
-      ...
-  }
+兼容性：加载器也能识别旧的分离式 JSON
+  （仅含 "gelu"/"softmax" 或仅含 "x"/"wq"/... 的任务字典）——
+  这种情况下它按原样返回，不做 stage1/stage2 抽取。
 
 ================================================================================
 使用示例
@@ -82,19 +86,19 @@ GLUE 基准测试提交文件生成器
 python generate_glue_submission.py --no_approx --output_dir glue_baseline
 
 # 2) 仅 GELU/Softmax 近似（无噪声）
-python generate_glue_submission.py --config glue_configs_best_ppo.json --output_dir glue_approx
+python generate_glue_submission.py --config glue_final_configs_best_ppo.json --output_dir glue_approx
 
 # 3) 仅噪声注入（无近似）
-python generate_glue_submission.py --no_approx --noise_config glue_noise_configs_best_ppo.json --output_dir glue_noise_only
+python generate_glue_submission.py --no_approx --noise_config glue_final_configs_best_ppo.json --output_dir glue_noise_only
 
-# 4) 近似 + 噪声（完整两阶段优化）
-python generate_glue_submission.py --config glue_configs_best_ppo.json --noise_config glue_noise_configs_best_ppo.json --output_dir glue_full
+# 4) 近似 + 噪声（完整两阶段优化）同一份合并 JSON 同时用作 --config 和 --noise_config
+python generate_glue_submission.py --config glue_final_configs_best_ppo.json --noise_config glue_final_configs_best_ppo.json --output_dir glue_full
 
 # 5) 指定部分任务
-python generate_glue_submission.py --config glue_configs_best_ppo.json --noise_config glue_noise_configs_best_ppo.json --tasks qnli sst2 mrpc
+python generate_glue_submission.py --config glue_final_configs_best_ppo.json --noise_config glue_final_configs_best_ppo.json --tasks qnli sst2 mrpc
 
-# 6) 近似 + 最高 scaling factor 噪声（使用全部最大值的噪声配置文件）
-python generate_glue_submission.py --config glue_configs_best_ppo.json --noise_config glue_noise_configs_best_ppo.json --output_dir glue_max_noise
+# 6) 近似 + GA 最优噪声组合
+python generate_glue_submission.py --config glue_final_configs_best_genetic.json --noise_config glue_final_configs_best_genetic.json --output_dir glue_ga_full
 
 ================================================================================
 输出说明
@@ -308,13 +312,17 @@ GPT2_MODEL_NAMES = {
 }
 
 
-def _unwrap_variant_config(cfg_map, model_type, cfg_path):
+def _unwrap_variant_config(cfg_map, model_type, cfg_path, stage_key=None):
     """
-    Accept both the new nested schema
+    Accept the merged schema
+        {"bert-base": {task: {"stage1": {...}, "stage2": {...}}}, ...}
+    the per-stage variant schema
         {"bert-base": {task: {...}}, "bert-large": {task: {...}}}
     and the legacy flat schema
         {task: {...}}  (implicitly bert-base only)
-    and return the task-level dict for the selected `model_type`.
+    and return the task-level dict for the selected `model_type`. When the
+    merged schema is detected and `stage_key` ("stage1" / "stage2") is
+    supplied, the corresponding sub-dict is extracted for every task.
     """
     if not isinstance(cfg_map, dict):
         raise ValueError(f"Config file '{cfg_path}' is not a JSON object.")
@@ -330,15 +338,34 @@ def _unwrap_variant_config(cfg_map, model_type, cfg_path):
             raise ValueError(
                 f"Config file '{cfg_path}' section '{model_type}' is not a dict."
             )
-        return section
-    # Legacy flat schema — only valid for bert-base.
-    if model_type != 'bert-base':
-        raise KeyError(
-            f"Config file '{cfg_path}' uses the legacy flat schema which only "
-            f"supports bert-base; add a '{model_type}' section to use it with "
-            f"--model_type {model_type}."
+    else:
+        # Legacy flat schema — only valid for bert-base.
+        if model_type != 'bert-base':
+            raise KeyError(
+                f"Config file '{cfg_path}' uses the legacy flat schema which only "
+                f"supports bert-base; add a '{model_type}' section to use it with "
+                f"--model_type {model_type}."
+            )
+        section = cfg_map
+
+    if stage_key is not None:
+        sample_task = next(
+            (t for t, v in section.items() if isinstance(v, dict) and t != "_comment"),
+            None,
         )
-    return cfg_map
+        if sample_task is not None and stage_key in section[sample_task]:
+            extracted = {}
+            for task, per_task in section.items():
+                if task == "_comment" or not isinstance(per_task, dict):
+                    continue
+                if stage_key not in per_task:
+                    raise KeyError(
+                        f"Config file '{cfg_path}' task '{task}' missing "
+                        f"'{stage_key}' section."
+                    )
+                extracted[task] = per_task[stage_key]
+            return extracted
+    return section
 
 
 EXPECTED_LINES = {
@@ -941,7 +968,7 @@ def main():
         with open(args.config, 'r') as f:
             raw = json.load(f)
         raw.pop("_comment", None)
-        approx_configs = _unwrap_variant_config(raw, model_type, args.config)
+        approx_configs = _unwrap_variant_config(raw, model_type, args.config, stage_key="stage1")
         approx_configs.pop("_comment", None)
 
     noise_configs = {}
@@ -949,7 +976,7 @@ def main():
         with open(args.noise_config, 'r') as f:
             raw = json.load(f)
         raw.pop("_comment", None)
-        noise_configs = _unwrap_variant_config(raw, model_type, args.noise_config)
+        noise_configs = _unwrap_variant_config(raw, model_type, args.noise_config, stage_key="stage2")
         noise_configs.pop("_comment", None)
 
     # All outputs are rooted under ./glue_submission/<sub>

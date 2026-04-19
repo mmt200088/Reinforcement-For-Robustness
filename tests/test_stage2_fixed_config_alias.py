@@ -27,7 +27,7 @@ class Stage2FixedConfigAliasTests(unittest.TestCase):
             stage1_final_eval_dir = "unused"
             total_layers = 4
 
-        with patch.object(ga_module, "GeneticFinalEvaluationModule", DummyModule):
+        with patch.object(ga_module, "GeneticUnifiedFinalEvaluationModule", DummyModule):
             gelu, softmax, label, source = ga_module.resolve_stage1_selected_config(
                 evaluator=DummyEvaluator(),
                 search_best_config={"gelu": [1, 1, 1, 1], "softmax": [2, 2, 2, 2]},
@@ -64,7 +64,7 @@ class Stage2FixedConfigAliasTests(unittest.TestCase):
             stage1_final_eval_dir = "unused"
             total_layers = 4
 
-        with patch.object(ga_module, "GeneticFinalEvaluationModule", DummyModule):
+        with patch.object(ga_module, "GeneticUnifiedFinalEvaluationModule", DummyModule):
             _, _, _, source = ga_module.resolve_stage1_selected_config(
                 evaluator=DummyEvaluator(),
                 search_best_config={"gelu": [1, 1, 1, 1], "softmax": [2, 2, 2, 2]},

@@ -235,25 +235,20 @@ def train(
         stage1_rl_episodes_specified: bool = False,
         stage2_rl_episodes_specified: bool = False,
         final_eval_config_source: str = "search",  # search | json | manual
-        final_eval_config_path: str = "glue_configs_best_ppo.json",
-        manual_final_gelu: str = "",
-        manual_final_softmax: str = "",
-        stage2_fixed_config_source: str = "",
-        stage2_fixed_config_path: str = "",
-        stage2_manual_gelu: str = "",
-        stage2_manual_softmax: str = "",
+        final_eval_config_path: str = "glue_final_configs_best_genetic.json",
+        manual_stage1_gelu: str = "",
+        manual_stage1_softmax: str = "",
+        manual_stage2_noise: str = "",
         final_eval_random_seed: int = 42,
         final_eval_permutation_trials: int = 10,
         final_eval_cost_equivalent_trials: int = 10,
         final_eval_budget_equivalent_trials: int = 10,
+        final_eval_stage1_budget_trials: int = 10,
+        final_eval_stage2_budget_trials: int = 10,
+        final_eval_repeat_n: int = 1,
         skip_noise_rl: bool = False,
-        noise_eval_config_source: str = "search",
-        noise_eval_config_path: str = "glue_noise_configs_best_ppo.json",
-        manual_noise_config: str = "",
-        noise_eval_repeat_n: int = 1,
         skip_stage1_rl: bool = False,
-        skip_stage1_final_eval: bool = False,
-        skip_noise_final_eval: bool = False,
+        skip_final_eval: bool = False,
         resume_run_dir: str = "",
         # accuracy constraint params
         stage1_accuracy_tolerance: float = None,
@@ -273,12 +268,7 @@ def train(
 ):
     skip_noise_rl = parse_bool_flag(skip_noise_rl, "skip_noise_rl")
     skip_stage1_rl = parse_bool_flag(skip_stage1_rl, "skip_stage1_rl")
-    skip_stage1_final_eval = parse_bool_flag(
-        skip_stage1_final_eval, "skip_stage1_final_eval"
-    )
-    skip_noise_final_eval = parse_bool_flag(
-        skip_noise_final_eval, "skip_noise_final_eval"
-    )
+    skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
     stage1_ga_generations_specified = parse_bool_flag(
         stage1_ga_generations_specified, "stage1_ga_generations_specified"
     )
@@ -334,12 +324,9 @@ def train(
         f"target_modules: {target_modules}\n"
         f"final_eval_config_source: {final_eval_config_source}\n"
         f"final_eval_config_path: {final_eval_config_path}\n"
-        f"manual_final_gelu: {manual_final_gelu}\n"
-        f"manual_final_softmax: {manual_final_softmax}\n"
-        f"stage2_fixed_config_source: {stage2_fixed_config_source}\n"
-        f"stage2_fixed_config_path: {stage2_fixed_config_path}\n"
-        f"stage2_manual_gelu: {stage2_manual_gelu}\n"
-        f"stage2_manual_softmax: {stage2_manual_softmax}\n"
+        f"manual_stage1_gelu: {manual_stage1_gelu}\n"
+        f"manual_stage1_softmax: {manual_stage1_softmax}\n"
+        f"manual_stage2_noise: {manual_stage2_noise}\n"
         f"stage1_ga_generations: {stage1_ga_generations}\n"
         f"stage2_ga_generations: {stage2_ga_generations}\n"
         f"stage1_ga_generations_specified: {stage1_ga_generations_specified}\n"
@@ -349,13 +336,9 @@ def train(
         f"stage1_rl_episodes_specified: {stage1_rl_episodes_specified}\n"
         f"stage2_rl_episodes_specified: {stage2_rl_episodes_specified}\n"
         f"skip_noise_rl: {skip_noise_rl}\n"
-        f"noise_eval_config_source: {noise_eval_config_source}\n"
-        f"noise_eval_config_path: {noise_eval_config_path}\n"
-        f"manual_noise_config: {manual_noise_config}\n"
-        f"noise_eval_repeat_n: {noise_eval_repeat_n}\n"
+        f"final_eval_repeat_n: {final_eval_repeat_n}\n"
         f"skip_stage1_rl: {skip_stage1_rl}\n"
-        f"skip_stage1_final_eval: {skip_stage1_final_eval}\n"
-        f"skip_noise_final_eval: {skip_noise_final_eval}\n"
+        f"skip_final_eval: {skip_final_eval}\n"
         f"group_by_length: {group_by_length}\n"
         f"wandb_project: {wandb_project}\n"
         f"wandb_run_name: {wandb_run_name}\n"
@@ -749,11 +732,9 @@ def train(
     #     # keeps Trainer from trying its own DataParallelism when more than 1 gpu is available
     #     model.is_parallelizable = True
     #     model.model_parallel = True
-    parsed_manual_gelu = parse_degree_config(manual_final_gelu)
-    parsed_manual_softmax = parse_degree_config(manual_final_softmax)
-    parsed_stage2_manual_gelu = parse_degree_config(stage2_manual_gelu)
-    parsed_stage2_manual_softmax = parse_degree_config(stage2_manual_softmax)
-    parsed_noise_config = parse_noise_config(manual_noise_config)
+    parsed_manual_stage1_gelu = parse_degree_config(manual_stage1_gelu)
+    parsed_manual_stage1_softmax = parse_degree_config(manual_stage1_softmax)
+    parsed_manual_stage2_noise = parse_noise_config(manual_stage2_noise)
     trainer_callbacks = []
 
     if use_ist:
@@ -761,8 +742,7 @@ def train(
         from genetic_search_module import (
             GA_STAGE1_CHECKPOINT_FILENAME,
             GA_STAGE2_CHECKPOINT_FILENAME,
-            GeneticFinalEvaluationModule,
-            GeneticNoiseFinalEvaluationModule,
+            GeneticUnifiedFinalEvaluationModule,
             build_stage1_context,
             build_stage2_final_eval_context_without_search,
             resolve_stage1_selected_config,
@@ -788,24 +768,19 @@ def train(
             run_output_dir=run_output_dir,
             final_eval_config_source=final_eval_config_source,
             final_eval_config_path=final_eval_config_path,
-            manual_final_gelu=parsed_manual_gelu,
-            manual_final_softmax=parsed_manual_softmax,
-            stage2_fixed_config_source=stage2_fixed_config_source,
-            stage2_fixed_config_path=stage2_fixed_config_path,
-            stage2_manual_gelu=parsed_stage2_manual_gelu,
-            stage2_manual_softmax=parsed_stage2_manual_softmax,
+            manual_stage1_gelu=parsed_manual_stage1_gelu,
+            manual_stage1_softmax=parsed_manual_stage1_softmax,
+            manual_stage2_noise=parsed_manual_stage2_noise,
             final_eval_random_seed=final_eval_random_seed,
             final_eval_permutation_trials=final_eval_permutation_trials,
             final_eval_cost_equivalent_trials=final_eval_cost_equivalent_trials,
             final_eval_budget_equivalent_trials=final_eval_budget_equivalent_trials,
+            final_eval_stage1_budget_trials=final_eval_stage1_budget_trials,
+            final_eval_stage2_budget_trials=final_eval_stage2_budget_trials,
+            final_eval_repeat_n=final_eval_repeat_n,
             skip_noise_rl=skip_noise_rl,
-            noise_eval_config_source=noise_eval_config_source,
-            noise_eval_config_path=noise_eval_config_path,
-            manual_noise_config=parsed_noise_config,
-            noise_eval_repeat_n=noise_eval_repeat_n,
             skip_stage1_rl=skip_stage1_rl,
-            skip_stage1_final_eval=skip_stage1_final_eval,
-            skip_noise_final_eval=skip_noise_final_eval,
+            skip_final_eval=skip_final_eval,
             resume_run_dir=resume_run_dir,
             data_path=data_path,
             test_data_mm=val_data_mm,
@@ -865,45 +840,24 @@ def train(
                 constraint_ratio=getattr(importance_evaluator, "error_threshold", None),
             )
 
-        stage1_final_eval_result = None
-        if not importance_evaluator.skip_stage1_final_eval:
-            stage1_final_eval_runner = GeneticFinalEvaluationModule(
-                evaluator=importance_evaluator,
-                config_source=final_eval_config_source,
-                config_path=final_eval_config_path,
-                manual_gelu=parsed_manual_gelu,
-                manual_softmax=parsed_manual_softmax,
-                random_seed=final_eval_random_seed,
-                permutation_trials=final_eval_permutation_trials,
-                cost_equivalent_trials=final_eval_cost_equivalent_trials,
-                budget_equivalent_trials=final_eval_budget_equivalent_trials,
-                results_dir=importance_evaluator.stage1_final_eval_dir,
-            )
-            stage1_final_eval_result = stage1_final_eval_runner.run(
-                search_best_config=(
-                    stage1_search_result["best_config"]
-                    if stage1_search_result is not None
-                    else None
-                ),
-                base_gelu=stage1_context.base_gelu,
-                base_softmax=stage1_context.base_softmax,
-                base_tot_c=stage1_context.base_tot_c,
-                base_g_c=stage1_context.base_g_c,
-                base_s_c=stage1_context.base_s_c,
-                limit_loss=stage1_context.limit_loss,
-                limit_p=stage1_context.limit_p,
-                limit_s=stage1_context.limit_s,
-            )
-        else:
-            importance_evaluator.log("Stage-1 final evaluation skipped by flag.")
+        stage1_search_best = (
+            stage1_search_result["best_config"]
+            if stage1_search_result is not None
+            else None
+        )
 
         fixed_gelu = None
         fixed_softmax = None
         fixed_label = None
         fixed_source = None
+        noise_stage_result = None
+        final_eval_result = None
         stage2_log_previous = None
         stage2_logging_active = False
-        if (not importance_evaluator.skip_noise_rl) or (not importance_evaluator.skip_noise_final_eval):
+        need_stage2_scope = (not importance_evaluator.skip_noise_rl) or (
+            not importance_evaluator.skip_final_eval
+        )
+        if need_stage2_scope:
             if hasattr(importance_evaluator, "activate_noise_logging"):
                 stage2_log_previous = importance_evaluator.activate_noise_logging()
             else:
@@ -914,24 +868,19 @@ def train(
                     importance_evaluator.active_log_file = noise_log_file
             stage2_logging_active = True
         try:
-            if (not importance_evaluator.skip_noise_rl) or (not importance_evaluator.skip_noise_final_eval):
+            if need_stage2_scope:
                 fixed_gelu, fixed_softmax, fixed_label, fixed_source = resolve_stage1_selected_config(
                     evaluator=importance_evaluator,
-                    search_best_config=(
-                        stage1_search_result["best_config"]
-                        if stage1_search_result is not None
-                        else None
-                    ),
-                    config_source=importance_evaluator.stage2_fixed_config_source,
-                    config_path=importance_evaluator.stage2_fixed_config_path,
-                    manual_gelu=importance_evaluator.stage2_manual_gelu,
-                    manual_softmax=importance_evaluator.stage2_manual_softmax,
+                    search_best_config=stage1_search_best,
+                    config_source=importance_evaluator.final_eval_config_source,
+                    config_path=importance_evaluator.final_eval_config_path,
+                    manual_gelu=importance_evaluator.manual_stage1_gelu,
+                    manual_softmax=importance_evaluator.manual_stage1_softmax,
                 )
                 importance_evaluator.log(
                     f"Stage-2 fixed Stage-1 config source={fixed_source}, label={fixed_label}"
                 )
 
-            noise_stage_result = None
             if not importance_evaluator.skip_noise_rl:
                 noise_stage_result = run_stage2_noise_genetic_search(
                     importance_evaluator,
@@ -945,13 +894,11 @@ def train(
             else:
                 importance_evaluator.log("Stage-2 noise genetic search skipped by flag.")
 
-            noise_final_eval_result = None
-            if not importance_evaluator.skip_noise_final_eval:
+            if not importance_evaluator.skip_final_eval:
                 if noise_stage_result is not None:
                     baseline_noise_config = noise_stage_result["baseline_noise_config"]
                     baseline_tot_c = noise_stage_result["baseline_tot_c"]
-                    search_best_noise_config = noise_stage_result["best_noise_config"]
-                    search_status = noise_stage_result.get("status")
+                    stage2_search_best = noise_stage_result["best_noise_config"]
                     limit_loss = noise_stage_result["limit_loss"]
                     limit_p = noise_stage_result["limit_p"]
                     limit_s = noise_stage_result["limit_s"]
@@ -961,37 +908,39 @@ def train(
                     )
                     baseline_noise_config = noise_final_eval_context["baseline_noise_config"]
                     baseline_tot_c = noise_final_eval_context["baseline_tot_c"]
-                    search_best_noise_config = None
-                    search_status = None
+                    stage2_search_best = None
                     limit_loss = noise_final_eval_context["limit_loss"]
                     limit_p = noise_final_eval_context["limit_p"]
                     limit_s = noise_final_eval_context["limit_s"]
 
-                noise_final_eval_runner = GeneticNoiseFinalEvaluationModule(
+                final_eval_runner = GeneticUnifiedFinalEvaluationModule(
                     evaluator=importance_evaluator,
-                    config_source=noise_eval_config_source,
-                    config_path=noise_eval_config_path,
-                    manual_noise_config=parsed_noise_config,
+                    config_source=final_eval_config_source,
+                    config_path=final_eval_config_path,
+                    manual_stage1_gelu=parsed_manual_stage1_gelu,
+                    manual_stage1_softmax=parsed_manual_stage1_softmax,
+                    manual_stage2_noise=parsed_manual_stage2_noise,
                     random_seed=final_eval_random_seed,
                     permutation_trials=final_eval_permutation_trials,
                     cost_equivalent_trials=final_eval_cost_equivalent_trials,
                     budget_equivalent_trials=final_eval_budget_equivalent_trials,
-                    repeat_n=noise_eval_repeat_n,
-                    results_dir=importance_evaluator.noise_final_eval_dir,
+                    stage1_budget_trials=final_eval_stage1_budget_trials,
+                    stage2_budget_trials=final_eval_stage2_budget_trials,
+                    repeat_n=importance_evaluator.final_eval_repeat_n,
+                    results_dir=importance_evaluator.final_eval_dir,
                 )
-                noise_final_eval_result = noise_final_eval_runner.run(
-                    search_best_noise_config=search_best_noise_config,
-                    search_status=search_status,
-                    fixed_gelu=fixed_gelu,
-                    fixed_softmax=fixed_softmax,
-                    baseline_noise_config=baseline_noise_config,
-                    baseline_tot_c=baseline_tot_c,
+                final_eval_result = final_eval_runner.run(
+                    search_best_stage1=stage1_search_best,
+                    search_best_stage2=stage2_search_best,
+                    baseline_stage1_gelu=stage1_context.base_gelu,
+                    baseline_stage1_softmax=stage1_context.base_softmax,
+                    baseline_noise_tot_c=baseline_tot_c,
                     limit_loss=limit_loss,
                     limit_p=limit_p,
                     limit_s=limit_s,
                 )
             else:
-                importance_evaluator.log("Stage-2 noise final evaluation skipped by flag.")
+                importance_evaluator.log("Unified final evaluation skipped by flag.")
         finally:
             if stage2_logging_active:
                 if hasattr(importance_evaluator, "restore_log_file"):
@@ -1010,11 +959,6 @@ def train(
                 if stage1_search_result is not None
                 else None
             ),
-            "stage1_final_eval_path": (
-                stage1_final_eval_result["summary_path"]
-                if stage1_final_eval_result is not None
-                else None
-            ),
             "stage2_noise_search_status": (
                 noise_stage_result["status"]
                 if noise_stage_result is not None
@@ -1025,9 +969,9 @@ def train(
                 if noise_stage_result is not None
                 else None
             ),
-            "stage2_noise_final_eval_path": (
-                noise_final_eval_result["summary_path"]
-                if noise_final_eval_result is not None
+            "final_eval_path": (
+                final_eval_result["summary_path"]
+                if final_eval_result is not None
                 else None
             ),
         }

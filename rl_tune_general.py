@@ -271,11 +271,8 @@ def _build_evaluator(
         final_eval_config_source="search",
         final_eval_config_path="",
         skip_noise_rl=False,
-        noise_eval_config_source="search",
-        noise_eval_config_path="",
         skip_stage1_rl=False,
-        skip_stage1_final_eval=True,
-        skip_noise_final_eval=True,
+        skip_final_eval=True,
         data_path=data_path,
         test_data_mm=val_data_mm,
         search_algorithm="general-rl",
@@ -574,7 +571,7 @@ def search(
     final_eval_permutation_trials: int = 10,
     final_eval_cost_equivalent_trials: int = 10,
     final_eval_budget_equivalent_trials: int = 10,
-    noise_eval_repeat_n: int = 1,
+    final_eval_repeat_n: int = 1,
     # 设备
     device: str = "cuda",
 ):

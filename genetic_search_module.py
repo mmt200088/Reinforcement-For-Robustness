@@ -6,15 +6,14 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-from final_evaluation_module import FinalEvaluationModule
+from final_evaluation_module import (
+    NOISE_SCALING_FACTOR_KEYS,
+    UnifiedFinalEvaluationModule,
+)
 from function_handler import (
     INPUT_NOISE_ALLOWED_SCALING_FACTORS,
     WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
     WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
-)
-from noise_final_evaluation_module import (
-    NOISE_SCALING_FACTOR_KEYS,
-    NoiseFinalEvaluationModule,
 )
 from noise_rl_module_v2 import (
     NOISE_STAGE_BASELINE_SEGMENTS,
@@ -173,26 +172,13 @@ class Stage2Context:
     best_test_segments: int
 
 
-class GeneticFinalEvaluationModule(FinalEvaluationModule):
-    def _resolve_selected_config(self, search_best_config, total_layers: int):
-        gelu, softmax, label, source = super()._resolve_selected_config(
-            search_best_config=search_best_config,
-            total_layers=total_layers,
-        )
-        if self.config_source == "search":
-            return gelu, softmax, "Optimized (Genetic)", source
-        return gelu, softmax, label, source
+class GeneticUnifiedFinalEvaluationModule(UnifiedFinalEvaluationModule):
+    """Genetic-labeled variant of the unified final-eval module."""
 
-
-class GeneticNoiseFinalEvaluationModule(NoiseFinalEvaluationModule):
-    def _resolve_selected_config(self, search_best_noise_config, total_layers):
-        cfg, label, source = super()._resolve_selected_config(
-            search_best_noise_config=search_best_noise_config,
-            total_layers=total_layers,
-        )
+    def _log_optimized_label(self):
         if self.config_source == "search":
-            return cfg, "Optimized (Noise Genetic)", source
-        return cfg, label, source
+            return "Optimized (Genetic)"
+        return super()._log_optimized_label() if hasattr(super(), "_log_optimized_label") else "Optimized"
 
 
 def _resolve_ga_reward_reference_split(evaluator) -> str:
@@ -435,7 +421,7 @@ def build_stage2_final_eval_context_without_search(evaluator):
     baseline_summary = evaluator.evaluate_model_repeated(
         exact_baseline_gelu,
         exact_baseline_softmax,
-        repeats=evaluator.noise_eval_repeat_n,
+        repeats=evaluator.final_eval_repeat_n,
         split=_resolve_ga_reward_reference_split(evaluator),
     )
     limits = evaluator.build_constraint_limits_from_metrics(
@@ -456,7 +442,7 @@ def resolve_stage1_selected_config(
     evaluator,
     search_best_config=None,
     config_source="search",
-    config_path="glue_configs_best_ppo.json",
+    config_path="glue_final_configs_best_genetic.json",
     manual_gelu=None,
     manual_softmax=None,
 ):
@@ -464,23 +450,33 @@ def resolve_stage1_selected_config(
     if normalized_source == "search":
         normalized_source = "stage1_result"
     module_source = "search" if normalized_source == "stage1_result" else normalized_source
-    module = GeneticFinalEvaluationModule(
+    module = GeneticUnifiedFinalEvaluationModule(
         evaluator=evaluator,
         config_source=module_source,
         config_path=config_path,
-        manual_gelu=manual_gelu,
-        manual_softmax=manual_softmax,
+        manual_stage1_gelu=manual_gelu,
+        manual_stage1_softmax=manual_softmax,
         random_seed=evaluator.final_eval_random_seed,
         permutation_trials=evaluator.final_eval_permutation_trials,
         cost_equivalent_trials=evaluator.final_eval_cost_equivalent_trials,
         budget_equivalent_trials=evaluator.final_eval_budget_equivalent_trials,
-        results_dir=evaluator.stage1_final_eval_dir,
+        results_dir=evaluator.final_eval_dir,
     )
-    gelu, softmax, label, source = module._resolve_selected_config(
+    gelu, softmax, source = module.resolve_stage1_only(
         search_best_config, evaluator.total_layers
     )
     if normalized_source == "stage1_result":
         source = "stage1_result"
+    if source == "search":
+        label = "Optimized (Genetic Stage-1)"
+    elif source == "json":
+        label = "JSON Stage-1"
+    elif source == "manual":
+        label = "Manual Stage-1"
+    elif source == "stage1_result":
+        label = "Stage-1 Search Result"
+    else:
+        label = source
     return gelu, softmax, label, source
 
 

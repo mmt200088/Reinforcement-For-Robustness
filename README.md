@@ -1,3 +1,25 @@
+## ⚠️ 最终评估 CLI 统一说明（请先读此节）
+
+Stage-1（GELU/Softmax 多项式次数）与 Stage-2（噪声 scaling factor）原先是两套独立的
+"最终评估"流程，参数各自分家。现在已合并为**单一的统一最终评估**，请用新 flag：
+
+| 旧 flag / 文件 | 新 flag / 文件 | 说明 |
+|---|---|---|
+| `--skip-stage1-final-eval` + `--skip-noise-final-eval` | `--skip-final-eval` | 一次跳过两个阶段合并的最终评估 |
+| `--manual-gelu` | `--manual-stage1-gelu` | 仅改名，语义不变 |
+| `--manual-softmax` | `--manual-stage1-softmax` | 仅改名，语义不变 |
+| `--manual-noise-config` | `--manual-stage2-noise` | 仅改名，语义不变 |
+| `--noise-eval-source` | `--final-eval-source` | 统一成一个 source，对 Stage-1 / Stage-2 同时生效 |
+| `--noise-eval-config` | `--final-eval-config` | 同一份合并 JSON 同时覆盖两个阶段 |
+| `--noise-eval-repeat` | `--final-eval-repeat` | 重复次数对合并流程整体生效 |
+| `glue_configs_best_*.json` + `glue_noise_configs_best_*.json` | `glue_final_configs_best_*.json` | 合并为一份；`{变体: {任务: {stage1: {...}, stage2: {...}}}}` |
+| `noise_final_evaluation_module.py` | `final_evaluation_module.py`（`UnifiedFinalEvaluationModule`） | 旧模块已吸收进统一评估器 |
+
+本 README 下文已批量替换为新名称。若你在旧 shell / notebook 里还看到旧 flag，请按照
+上表对照替换；直接沿用旧名称会报 `unknown argument`。
+
+---
+
 ## 快速开始（预设系统）
 
 最简单的使用方式是通过预设（preset）启动：
@@ -60,20 +82,17 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--stage2-search-generations N` | `ga` | 按模型自动推导 | Stage-2 GA 噪声搜索迭代代数；仅在未跳过 Stage-2 搜索时生效 |
 | `--skip-stage1-search` | `rl`、`ga` | — | 跳过 Stage-1 搜索 |
 | `--skip-noise-search` | `rl`、`ga` | — | 跳过 Stage-2 搜索 |
-| `--skip-stage1-final-eval` | `rl`、`ga` | — | 跳过 Stage-1 最终评估 |
-| `--skip-noise-final-eval` | `rl`、`ga` | — | 跳过 Stage-2 最终评估 |
-| `--final-eval-source search/json/manual` | `rl`、`ga` | `search` | Stage-1 最终评估配置来源 |
-| `--final-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的 Stage-1 最终评估配置文件路径 |
-| `--manual-gelu JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-1 GELU 配置 |
-| `--manual-softmax JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-1 Softmax 配置 |
-| `--stage2-fixed-config-source stage1_result/json/manual` | `rl`、`ga` | 兼容继承 Stage-1 参数 | Stage-2 固定 GELU/Softmax 的来源；`stage1_result` 表示直接使用 Stage-1 搜索结果，不再借用 Stage-1 final eval 参数表达 |
+| `--skip-final-eval` | `rl`、`ga` | — | 一次跳过 Stage-1 + Stage-2 合并的最终评估（取代旧的两个分开 flag） |
+| `--final-eval-source search/json/manual` | `rl`、`ga` | `search` | 统一最终评估的配置来源，同时覆盖 Stage-1 与 Stage-2 |
+| `--final-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的合并 JSON（同时包含 stage1/stage2 两块） |
+| `--manual-stage1-gelu JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-1 GELU 配置 |
+| `--manual-stage1-softmax JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-1 Softmax 配置 |
+| `--manual-stage2-noise JSON_OBJECT` | `rl`、`ga` | — | `manual` 模式下的 7 类 Stage-2 噪声配置；`manual` 要求三个 manual-stage* 参数同时提供 |
+| `--final-eval-repeat N` | `rl`、`ga` | `1` | 统一最终评估的重复次数 |
+| `--stage2-fixed-config-source stage1_result/json/manual` | `rl`、`ga` | 兼容继承 Stage-1 参数 | Stage-2 RL/GA 训练中"固定 GELU/Softmax"的来源；与最终评估的 Stage-1 配置是两套不同参数 |
 | `--stage2-fixed-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的 Stage-2 固定 GELU/Softmax 配置文件路径 |
 | `--stage2-manual-gelu JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-2 固定 GELU 配置 |
 | `--stage2-manual-softmax JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-2 固定 Softmax 配置 |
-| `--noise-eval-source search/json/manual` | `rl`、`ga` | `search` | Stage-2 噪声最终评估配置来源 |
-| `--noise-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的 Stage-2 噪声配置文件路径 |
-| `--manual-noise-config JSON_OBJECT` | `rl`、`ga` | — | `manual` 模式下的 7 类噪声配置 |
-| `--noise-eval-repeat N` | `rl`、`ga` | `1` | Stage-2 最终评估重复次数 |
 | `--stage2-compare-repeats N` | `rl-and-ga-compare` | `1` | `rl-and-ga-compare` 唯一正式的 Stage-2 多次对比次数入口；会让 RL/GA 两侧都重复评估，并在报告中汇总均值、标准差、方差、最大值、最小值 |
 | `--random-seed N` | `rl`、`ga`、`rl-and-ga-compare` | `42` | 随机种子 |
 | `--perm-trials N` | `rl`、`ga`、`rl-and-ga-compare` | `10` | 随机置换对照次数 |
@@ -127,24 +146,24 @@ bash llama_7B_LayerImportance.sh [可选参数]
 - 选择 `--search-algorithm=ga` 后，不能传 `--stage1-search-lr` / `--stage2-search-lr`，也不能再传 `--stage1-search-episodes` / `--stage2-search-episodes`。
 - 选择 `--search-algorithm=ga` 后，如果已经传了 `--skip-stage1-search` 或 `--skip-noise-search`，就不能再显式传对应阶段的 `--stage1-search-generations` / `--stage2-search-generations`；被跳过阶段的默认预算会自动忽略，不需要手动补 0。
 - 选择 `--search-algorithm=rl-and-ga-compare` 后：
-  - 仍然**不允许**使用全局的 `--skip-stage1-search`、`--skip-noise-search`、`--final-eval-source`、`--stage2-fixed-config-*`、`--noise-eval-source`、`--final-eval-config`、`--noise-eval-config`、`--manual-*`、`--resume-from`。
+  - 仍然**不允许**使用全局的 `--skip-stage1-search`、`--skip-noise-search`、`--final-eval-source`、`--stage2-fixed-config-*`、`--final-eval-config`、`--manual-*`、`--resume-from`。
   - 也不再支持旧的 compare 专用参数：`--rl/ga-skip-*`、`--rl/ga-*-eval-source`、`--rl/ga-*-eval-config`。
   - `direct` 模式必须同时提供 4 个 JSON：RL/GA 各自的 Stage-1 与 Stage-2。
   - `persistent` 模式必须提供 `--compare-persistent-root`；RL 与 GA 可以使用不同约束参数，但模型类型与数据集必须一致。
   - `persistent` 模式下，如未显式提供 `--rl/ga-compare-*` 约束参数，会分别继承全局的 `--stage1-accuracy-tolerance`、`--stage2-limit-tolerance`、`--stage2-stability-tolerance`。
   - `persistent` 模式启动前会先推导出 RL / GA 各自的目标持久化目录；如果目录或其中的 `metadata.json` 不存在，会直接报错并打印具体路径。
   - `rl-and-ga-compare` 模式下，Stage-2 多次对比只看 `--stage2-compare-repeats`。
-  - `--noise-eval-repeat` 不再作为 compare 模式的正式参数；仅保留兼容别名行为。若旧命令只传了它而没传 `--stage2-compare-repeats`，系统会临时按 `--stage2-compare-repeats` 处理并给出警告。
-  - 对比实验始终保留 Stage-1 / Stage-2 最终评估，因此依然不支持 `--skip-stage1-final-eval` 与 `--skip-noise-final-eval`。
+  - `--final-eval-repeat` 不再作为 compare 模式的正式参数；compare 模式请使用 `--stage2-compare-repeats`。
+  - 对比实验始终保留 Stage-1 / Stage-2 最终评估，因此依然不支持 `--skip-final-eval`。
 
 ### JSON 配置文件默认值
 
 | 算法 | Stage-1 JSON 默认值 | Stage-2 JSON 默认值 |
 | --- | --- | --- |
-| `rl` | `glue_configs_best_ppo.json` | `glue_noise_configs_best_ppo.json` |
-| `ga` | `glue_configs_best_genetic.json` | `glue_noise_configs_best_genetic.json` |
+| `rl` | `glue_final_configs_best_ppo.json` | `glue_final_configs_best_ppo.json` |
+| `ga` | `glue_final_configs_best_genetic.json` | `glue_final_configs_best_genetic.json` |
 
-当 `--final-eval-source=json` 或 `--noise-eval-source=json` 时，脚本会检查文件名是否与所选算法家族匹配，避免把 PPO 配置错用到 GA，或把 GA 配置错用到 PPO。当前仓库已内置 PPO 与 GA 两套默认 JSON；其中 `glue_configs_best_genetic.json` / `glue_noise_configs_best_genetic.json` 目前按 PPO 默认配置生成，便于在 `ga` 或 `rl-and-ga-compare` 模式下直接跳过搜索。如果你后续得到 GA 自己的更优配置，可以直接覆盖这两个 genetic JSON，或者显式通过 `--final-eval-config` / `--noise-eval-config` 指定。
+当 `--final-eval-source=json` 或 `--final-eval-source=json` 时，脚本会检查文件名是否与所选算法家族匹配，避免把 PPO 配置错用到 GA，或把 GA 配置错用到 PPO。当前仓库已内置 PPO 与 GA 两套默认 JSON；其中 `glue_final_configs_best_genetic.json` / `glue_final_configs_best_genetic.json` 目前按 PPO 默认配置生成，便于在 `ga` 或 `rl-and-ga-compare` 模式下直接跳过搜索。如果你后续得到 GA 自己的更优配置，可以直接覆盖这两个 genetic JSON，或者显式通过 `--final-eval-config` / `--final-eval-config` 指定。
 `--stage2-fixed-config-source=json` 时，`--stage2-fixed-config` 默认也会沿用这一套 Stage-1 JSON 默认值；如果你不显式传 `--stage2-fixed-config-*`，脚本会继续兼容旧命令，把 Stage-1 final eval 的来源自动映射为 Stage-2 固定 `GELU/Softmax` 的来源。
 `rl-and-ga-compare` 的 `direct` 模式同样沿用这套家族一致性检查；如果显式传入的是最终评估结果 JSON，则还会额外校验其中记录的数据集与模型层数，避免把不同模型或不同数据集的结果拿来直接对比。
 
@@ -250,12 +269,12 @@ bash llama_7B_LayerImportance.sh \
   --search-algorithm ga \
   --fresh-start \
   --skip-stage1-search \
-  --skip-stage1-final-eval \
+  --skip-final-eval \
   --stage2-search-generations 2500 \
   --final-eval-source json \
-  --final-eval-config glue_configs_best_genetic.json \
+  --final-eval-config glue_final_configs_best_genetic.json \
   --stage2-fixed-config-source json \
-  --stage2-fixed-config glue_configs_best_genetic.json
+  --stage2-fixed-config glue_final_configs_best_genetic.json
 ```
 
 #### 3d. 独立指定 Stage-2 固定 GELU / Softmax 来源
@@ -296,9 +315,9 @@ bash llama_7B_LayerImportance.sh \
   --dataset mrpc \
   --search-algorithm rl \
   --skip-stage1-search \
-  --skip-stage1-final-eval \
+  --skip-final-eval \
   --stage2-fixed-config-source json \
-  --stage2-fixed-config glue_configs_best_ppo.json
+  --stage2-fixed-config glue_final_configs_best_ppo.json
 ```
 
 #### 4. RL 与 GA 对比实验（直接读取已有结果）
@@ -313,10 +332,10 @@ bash llama_7B_LayerImportance.sh \
   --search-algorithm rl-and-ga-compare \
   --compare-config-mode direct \
   --stage2-compare-repeats 20 \
-  --rl-compare-stage1-json glue_configs_best_ppo.json \
-  --rl-compare-stage2-json glue_noise_configs_best_ppo.json \
-  --ga-compare-stage1-json glue_configs_best_genetic.json \
-  --ga-compare-stage2-json glue_noise_configs_best_genetic.json
+  --rl-compare-stage1-json glue_final_configs_best_ppo.json \
+  --rl-compare-stage2-json glue_final_configs_best_ppo.json \
+  --ga-compare-stage1-json glue_final_configs_best_genetic.json \
+  --ga-compare-stage2-json glue_final_configs_best_genetic.json
 ```
 
 方式 2：`persistent`，只给数据集、模型和约束，脚本自动去持久化目录定位对应的 RL / GA 结果。
@@ -539,7 +558,7 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
   --search-algorithm ga \
   --skip-stage1-search \
   --final-eval-source json \
-  --final-eval-config glue_configs_best_ppo.json
+  --final-eval-config glue_final_configs_best_ppo.json
 
 # 错误：GA 模式却继续使用 RL 专用学习率参数
 bash llama_7B_LayerImportance.sh \
@@ -552,8 +571,8 @@ bash llama_7B_LayerImportance.sh \
   --dataset mrpc \
   --search-algorithm rl \
   --skip-noise-search \
-  --noise-eval-source json \
-  --noise-eval-config glue_noise_configs_best_genetic.json
+  --final-eval-source json \
+  --final-eval-config glue_final_configs_best_genetic.json
 
 # 错误：general-rl 模式下使用了普通 RL / GA 阶段参数
 bash llama_7B_LayerImportance.sh \
@@ -574,7 +593,7 @@ bash llama_7B_LayerImportance.sh \
 
 - 老命令如果不加 `--search-algorithm`，默认仍走 RL，不会影响已有实验。
 - 新做 GA 实验时，建议显式加 `--search-algorithm ga`，并统一使用 `--stage1-search-generations` / `--stage2-search-generations` 这组 GA 预算参数。
-- 如果准备长期保留 GA 的 JSON 配置，建议按默认命名方式保存为 `glue_configs_best_genetic.json` 和 `glue_noise_configs_best_genetic.json`，这样脚本能自动做家族一致性检查。
+- 如果准备长期保留 GA 的 JSON 配置，建议按默认命名方式保存为 `glue_final_configs_best_genetic.json` 和 `glue_final_configs_best_genetic.json`，这样脚本能自动做家族一致性检查。
 - 使用通用 RL 时，建议先在少量任务上 `train` 训练策略，然后用 `search` 部署到新任务。`infer` 仍可用作兼容别名。通用策略做 500 次 rollout 的耗时约为 per-task RL 的 1/100。
 
 This is a Repository for Transformer robustness evaluation using Reinforcement Learning.
@@ -720,17 +739,17 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
   --skip-stage1-search \
   --final-eval-source json \
-  --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval \
-  --noise-eval-repeat 200
+  --final-eval-config glue_final_configs_best_ppo.json \
+  --skip-final-eval \
+  --final-eval-repeat 200
 
 bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset stsb \
   --skip-stage1-search \
   --final-eval-source json \
-  --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval \
-  --noise-eval-repeat 200
+  --final-eval-config glue_final_configs_best_ppo.json \
+  --skip-final-eval \
+  --final-eval-repeat 200
 ```
 
 脚本本身也不再强制设置 `CUDA_VISIBLE_DEVICES=0`。如果你想让并行运行时分别绑定不同 GPU，请在脚本外部设置：
@@ -756,17 +775,17 @@ bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
   --skip-stage1-search \
   --final-eval-source json \
-  --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval \
-  --noise-eval-repeat 200 &
+  --final-eval-config glue_final_configs_best_ppo.json \
+  --skip-final-eval \
+  --final-eval-repeat 200 &
 
 bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset stsb \
   --skip-stage1-search \
   --final-eval-source json \
-  --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval \
-  --noise-eval-repeat 200 &
+  --final-eval-config glue_final_configs_best_ppo.json \
+  --skip-final-eval \
+  --final-eval-repeat 200 &
 ```
 
 如果你有多张 GPU，建议再给每条命令绑定不同 GPU（避免显存互抢）：
@@ -788,13 +807,13 @@ CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh --logfile output.log --d
 | `--skip-stage1-search`     | 跳过第一阶段搜索                            | 并行加速的常用开关：先有/后用已有配置或搜索结果时可加                                            |
 | `--final-eval-source json` | 第一阶段最终评估配置来源为 JSON                 | 当 `--final-eval-source` 取 `json`（或 `manual`）时，需要显式加 `--skip-stage1-search` |
 | `--final-eval-config PATH` | 第一阶段最终评估用的 JSON 配置文件路径             | 一般并行时保持一致，避免同时改动多个配置来源                                                 |
-| `--skip-stage1-final-eval` | 跳过第一阶段最终评估                         | 只关心后续阶段（例如噪声阶段）时可加                                                     |
-| `--noise-eval-repeat N`    | 噪声最终评估重复次数                         | 并行时想要统计更稳可调大；想缩短总耗时可调小                                                 |
-| `--skip-noise-search`      | 跳过第二阶段噪声搜索                         | 只想跑噪声最终评估时加；当 `--noise-eval-source` 用 `json/manual` 时也需要显式加            |
-| `--skip-noise-final-eval`  | 跳过第二阶段噪声最终评估                       | 只关心噪声 RL 训练过程/中间产物时加                                                   |
-| `--noise-eval-source`      | 噪声最终评估配置来源（`search/json/manual`）   | 并行时常用 `json`：配合 `--noise-eval-config` 直接读配置                            |
-| `--noise-eval-config PATH` | `json` 模式下的噪声配置文件                  | 例如默认的 `glue_noise_configs_best_ppo.json`                               |
-| `--manual-noise-config`    | `manual` 模式下的噪声配置（JSON 字符串）        | 配置很少且不想改文件时用                                                           |
+| `--skip-final-eval` | 跳过第一阶段最终评估                         | 只关心后续阶段（例如噪声阶段）时可加                                                     |
+| `--final-eval-repeat N`    | 噪声最终评估重复次数                         | 并行时想要统计更稳可调大；想缩短总耗时可调小                                                 |
+| `--skip-noise-search`      | 跳过第二阶段噪声搜索                         | 只想跑噪声最终评估时加；当 `--final-eval-source` 用 `json/manual` 时也需要显式加            |
+| `--skip-final-eval`  | 跳过第二阶段噪声最终评估                       | 只关心噪声 RL 训练过程/中间产物时加                                                   |
+| `--final-eval-source`      | 噪声最终评估配置来源（`search/json/manual`）   | 并行时常用 `json`：配合 `--final-eval-config` 直接读配置                            |
+| `--final-eval-config PATH` | `json` 模式下的噪声配置文件                  | 例如默认的 `glue_final_configs_best_ppo.json`                               |
+| `--manual-stage2-noise`    | `manual` 模式下的噪声配置（JSON 字符串）        | 配置很少且不想改文件时用                                                           |
 
 
 ### --dataset 数据集+模型切换
@@ -897,7 +916,7 @@ bash llama_7B_LayerImportance.sh --dataset mrpc --model-type bert-large
 # 在 cola 上用 bert-large 跳过第一阶段 RL，仅做最终评估
 bash llama_7B_LayerImportance.sh \
   --dataset cola --model-type bert-large \
-  --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json
+  --skip-stage1-search --final-eval-source json --final-eval-config glue_final_configs_best_ppo.json
 
 # 不写 --model-type 时等价于历史行为（bert-base）
 bash llama_7B_LayerImportance.sh --dataset mrpc
@@ -912,8 +931,8 @@ bash llama_7B_LayerImportance.sh --dataset mrpc
 2. 第二阶段噪声 RL 的状态/动作序列同样按 24 层展开，`noise_rl_module_v2.py`
   已读取 `evaluator.total_layers` 自适应，无需额外配置。
 3. 第一阶段最终评估、噪声最终评估、随机对照实验都会按 `total_layers`
-  自动扩展数组长度，原有的 `glue_configs_best_ppo.json` /
-   `glue_noise_configs_best_ppo.json` 等历史配置文件如果是按 12 层
+  自动扩展数组长度，原有的 `glue_final_configs_best_ppo.json` /
+   `glue_final_configs_best_ppo.json` 等历史配置文件如果是按 12 层
    保存的，会被 `final_evaluation_module.py` 自动按"最后一个值填充
    或截断"补齐到 24 层并打印 `[Info]` 提示；为了 bert-large 的
    实验复现，建议为 bert-large 单独维护一份按 24 层书写的配置文件。
@@ -988,7 +1007,7 @@ GELU 和 Softmax 两种近似，Stage 2 七种噪声全部可用。恢复时
 `restore_layer_{query,key,value}_noise` 把所有槽位都清空后，c_attn
 的原始 forward 会被恢复。
 
-`glue_configs_best_ppo.json` 与 `glue_noise_configs_best_ppo.json` 中
+`glue_final_configs_best_ppo.json` 与 `glue_final_configs_best_ppo.json` 中
 都已新增 `"gpt-2"` 顶层段（12 层占位配置，GELU 全部 4、噪声全部保守
 值），用于在未跑完 RL 之前也能走通最终评估与 GLUE 提交生成流程。跑完
 RL 后请把 PPO 输出的最优配置覆写到这两个文件的 `"gpt-2"` 段。
@@ -1002,12 +1021,12 @@ bash llama_7B_LayerImportance.sh --dataset sst2 --model-type gpt-2
 # 在 mrpc 上跳过第一阶段 RL，直接用 JSON 中的 gpt-2 段做最终评估
 bash llama_7B_LayerImportance.sh \
   --dataset mrpc --model-type gpt-2 \
-  --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json
+  --skip-stage1-search --final-eval-source json --final-eval-config glue_final_configs_best_ppo.json
 
 # 用 gpt-2 基座生成 GLUE 官网提交文件（前提：已在训练阶段完成 head 微调）
 python generate_glue_submission.py \
-  --config glue_configs_best_ppo.json \
-  --noise_config glue_noise_configs_best_ppo.json \
+  --config glue_final_configs_best_ppo.json \
+  --noise_config glue_final_configs_best_ppo.json \
   --model-type gpt-2 \
   --output_dir gpt2_run
 ```
@@ -1029,11 +1048,11 @@ python generate_glue_submission.py \
 | 参数                             | 说明                                                                                  | 默认值                          |
 | ------------------------------ | ----------------------------------------------------------------------------------- | ---------------------------- |
 | `--skip-stage1-search`         | 跳过整个第一阶段搜索准备与搜索流程：Phase 1 baseline、Phase 1.5 GELU 输入分布分析、Phase 2 PPO、Phase 2.5 贪心搜索 | 不跳过                          |
-| `--skip-stage1-final-eval`     | 跳过第一阶段最终评估（Phase 3 + Phase 4），但仍会先解析第一阶段配置，再进入第二阶段                                  | 不跳过                          |
-| `--final-eval-source` | 第一阶段最终评估配置来源：可选 `search`（本次搜索结果）、`json`（`--final-eval-config`）、`manual`（`--manual-gelu` / `--manual-softmax`） | `search`                      |
-| `--final-eval-config PATH`     | `json` 模式下的配置文件路径                                                                   | `glue_configs_best_ppo.json` |
-| `--manual-gelu "[1,1,...]"`    | `manual` 模式下的每层 GELU degree，必须与 `--manual-softmax` 同时提供                             | —                            |
-| `--manual-softmax "[2,2,...]"` | `manual` 模式下的每层 Softmax degree，必须与 `--manual-gelu` 同时提供                             | —                            |
+| `--skip-final-eval`     | 跳过第一阶段最终评估（Phase 3 + Phase 4），但仍会先解析第一阶段配置，再进入第二阶段                                  | 不跳过                          |
+| `--final-eval-source` | 第一阶段最终评估配置来源：可选 `search`（本次搜索结果）、`json`（`--final-eval-config`）、`manual`（`--manual-stage1-gelu` / `--manual-stage1-softmax`） | `search`                      |
+| `--final-eval-config PATH`     | `json` 模式下的配置文件路径                                                                   | `glue_final_configs_best_ppo.json` |
+| `--manual-stage1-gelu "[1,1,...]"`    | `manual` 模式下的每层 GELU degree，必须与 `--manual-stage1-softmax` 同时提供                             | —                            |
+| `--manual-stage1-softmax "[2,2,...]"` | `manual` 模式下的每层 Softmax degree，必须与 `--manual-stage1-gelu` 同时提供                             | —                            |
 | `--random-seed N`              | 随机实验种子                                                                              | `42`                         |
 | `--perm-trials N`              | Permutation 随机对照实验次数                                                                | `10`                         |
 | `--cost-trials N`              | 精确 cost-matched 随机对照实验次数                                                            | `10`                         |
@@ -1044,7 +1063,7 @@ python generate_glue_submission.py \
 
 第二阶段同样增加了安全约束：
 
-- 若执行噪声搜索，且没有跳过噪声最终评估，则 `--noise-eval-source` 只能为 `search`
+- 若执行噪声搜索，且没有跳过噪声最终评估，则 `--final-eval-source` 只能为 `search`
 - 若使用 `json` 或 `manual` 做噪声最终评估，则必须显式添加 `--skip-noise-search`
 - 若跳过噪声搜索，则不能在噪声最终评估中再使用 `search`
 
@@ -1052,11 +1071,11 @@ python generate_glue_submission.py \
 | 参数                                        | 说明                            | 默认值                                |
 | ----------------------------------------- | ----------------------------- | ---------------------------------- |
 | `--skip-noise-search`                     | 跳过第二阶段噪声搜索                  | 不跳过                                |
-| `--skip-noise-final-eval`                 | 跳过第二阶段噪声最终评估                  | 不跳过                                |
-| `--noise-eval-source` | 第二阶段噪声最终评估配置来源：可选 `search`、`json`（`--noise-eval-config`）、`manual`（`--manual-noise-config`） | `search`                            |
-| `--noise-eval-config PATH`                | `json` 模式下的噪声配置文件路径           | `glue_noise_configs_best_ppo.json` |
-| `--manual-noise-config '{"x":[...],...}'` | `manual` 模式下的噪声配置，需包含 7 类噪声数组 | —                                  |
-| `--noise-eval-repeat N`                   | 噪声最终评估重复次数，必须为正整数             | `1`                                |
+| `--skip-final-eval`                 | 跳过第二阶段噪声最终评估                  | 不跳过                                |
+| `--final-eval-source` | 第二阶段噪声最终评估配置来源：可选 `search`、`json`（`--final-eval-config`）、`manual`（`--manual-stage2-noise`） | `search`                            |
+| `--final-eval-config PATH`                | `json` 模式下的噪声配置文件路径           | `glue_final_configs_best_ppo.json` |
+| `--manual-stage2-noise '{"x":[...],...}'` | `manual` 模式下的噪声配置，需包含 7 类噪声数组 | —                                  |
+| `--final-eval-repeat N`                   | 噪声最终评估重复次数，必须为正整数             | `1`                                |
 
 
 第二阶段 RL 训练保持第一阶段选定的 GELU/Softmax 不变，用 PPO 学习每层 7 个噪声 scaling factor：
@@ -1073,7 +1092,7 @@ python generate_glue_submission.py \
 | `wffn2`（FFN 第二层权重噪声） | output.dense           | `{14, 16, 18, 20, 22}`     |
 
 
-第二阶段 RL 训练逻辑位于 `noise_rl_module.py`，噪声最终评估逻辑位于 `noise_final_evaluation_module.py`。
+第二阶段 RL 训练逻辑位于 `noise_rl_module.py`，噪声最终评估逻辑位于 `final_evaluation_module.py（UnifiedFinalEvaluationModule）`。
 
 第二阶段产出文件：
 
@@ -1082,15 +1101,15 @@ python generate_glue_submission.py \
 - `noise_ppo_entropy_curve.png` — 策略熵曲线图
 - 主日志中搜索 `PHASE 5: SECOND-STAGE NOISE RL` 和 `Best Noise Configuration Found`
 
-**噪声最终评估配置来源**（仅在未 `--skip-noise-final-eval` 时生效）
+**噪声最终评估配置来源**（仅在未 `--skip-final-eval` 时生效）
 
 
 | 参数                                                | 说明                                                                                                    | 默认值                                |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `--noise-eval-source search/json/manual`          | 噪声最终评估使用的配置来源：`search` 使用本次噪声 RL 搜索结果；`json` 从 JSON 文件读取；`manual` 手动指定。若执行噪声 RL 且保留最终评估，则只能为 `search` | `search`                           |
-| `--noise-eval-config PATH`                        | `json` 模式下指定的噪声配置 JSON 文件路径。程序根据当前数据集名自动读取对应条目                                                        | `glue_noise_configs_best_ppo.json` |
-| `--manual-noise-config '{"x":[...],...}'`         | `manual` 模式下手动指定 7 种噪声 scaling factor 数组（JSON 对象格式），支持短名称 `x, wq, wk, wv, wo, wffn1, wffn2`           | —                                  |
-| `--noise-eval-repeat N`                           | 对选定配置执行 N 次重复评估，输出 N 次结果及均值/标准差统计                                                                     | `1`                                |
+| `--final-eval-source search/json/manual`          | 噪声最终评估使用的配置来源：`search` 使用本次噪声 RL 搜索结果；`json` 从 JSON 文件读取；`manual` 手动指定。若执行噪声 RL 且保留最终评估，则只能为 `search` | `search`                           |
+| `--final-eval-config PATH`                        | `json` 模式下指定的噪声配置 JSON 文件路径。程序根据当前数据集名自动读取对应条目                                                        | `glue_final_configs_best_ppo.json` |
+| `--manual-stage2-noise '{"x":[...],...}'`         | `manual` 模式下手动指定 7 种噪声 scaling factor 数组（JSON 对象格式），支持短名称 `x, wq, wk, wv, wo, wffn1, wffn2`           | —                                  |
+| `--final-eval-repeat N`                           | 对选定配置执行 N 次重复评估，输出 N 次结果及均值/标准差统计                                                                     | `1`                                |
 | 环境变量 `NOISE_RANDOM_MODE=x_only/x_w/x_w_nonlinear` | 噪声随机消融实验模式，控制 `Full Random` 对照组中随机化的范围（详见下一节）                                                         | `x_w`                              |
 
 
@@ -1112,23 +1131,23 @@ python generate_glue_submission.py \
 # 1) 仅随机 X
 NOISE_RANDOM_MODE=x_only bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
-  --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval --skip-noise-search --noise-eval-source json \
-  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200
+  --skip-stage1-search --final-eval-source json --final-eval-config glue_final_configs_best_ppo.json \
+  --skip-final-eval --skip-noise-search --final-eval-source json \
+  --final-eval-config glue_final_configs_best_ppo.json --final-eval-repeat 200
 
 # 2) 随机 X + 所有 W （默认，可省略环境变量）
 NOISE_RANDOM_MODE=x_w bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
-  --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval --skip-noise-search --noise-eval-source json \
-  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200
+  --skip-stage1-search --final-eval-source json --final-eval-config glue_final_configs_best_ppo.json \
+  --skip-final-eval --skip-noise-search --final-eval-source json \
+  --final-eval-config glue_final_configs_best_ppo.json --final-eval-repeat 200
 
 # 3) 随机 X + 所有 W + 非线性层（GELU/Softmax）
 NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
-  --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval --skip-noise-search --noise-eval-source json \
-  --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200
+  --skip-stage1-search --final-eval-source json --final-eval-config glue_final_configs_best_ppo.json \
+  --skip-final-eval --skip-noise-search --final-eval-source json \
+  --final-eval-config glue_final_configs_best_ppo.json --final-eval-repeat 200
 ```
 
 > Windows PowerShell 下设置环境变量请用 `$env:NOISE_RANDOM_MODE="x_only"; bash ...`；CMD 下用 `set NOISE_RANDOM_MODE=x_only && bash ...`。
@@ -1151,7 +1170,7 @@ NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh --logfile outpu
 }
 ```
 
-噪声最终评估的逻辑位于独立模块 `noise_final_evaluation_module.py` 中，功能与第一阶段 `final_evaluation_module.py` 一致，并新增 N 次重复评估。
+噪声最终评估的逻辑位于独立模块 `final_evaluation_module.py（UnifiedFinalEvaluationModule）` 中，功能与第一阶段 `final_evaluation_module.py` 一致，并新增 N 次重复评估。
 
 噪声最终评估产出文件（位于当前 run 目录下的 `stage2_noise_final_eval/` 目录）：
 
@@ -1164,30 +1183,30 @@ NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh --logfile outpu
 `bash llama_7B_LayerImportance.sh --dataset mrpc`
 
 只运行第一阶段，跳过第二阶段：
-`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-noise-search --skip-noise-final-eval`
+`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-noise-search --skip-final-eval`
 
 不跑第一阶段 RL，直接从 JSON 读取第一阶段配置：
-`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json`
+`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_final_configs_best_ppo.json`
 
 不跑第一阶段 RL，手动指定每层 GELU/Softmax：
-`bash llama_7B_LayerImportance.sh --logfile output_manual.log --dataset mrpc --skip-stage1-search --final-eval-source manual --manual-gelu "[1,1,1,4,1,1,1,1,1,1,1,1]" --manual-softmax "[2,3,4,6,4,4,5,4,4,5,5,2]"`
+`bash llama_7B_LayerImportance.sh --logfile output_manual.log --dataset mrpc --skip-stage1-search --final-eval-source manual --manual-stage1-gelu "[1,1,1,4,1,1,1,1,1,1,1,1]" --manual-stage1-softmax "[2,3,4,6,4,4,5,4,4,5,5,2]"`
 
 跳过噪声 RL，直接从 JSON 做噪声最终评估：  
-`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-noise-search --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json`
+`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-noise-search --final-eval-source json --final-eval-config glue_final_configs_best_ppo.json`
 
 跳过噪声 RL，手动指定噪声配置并重复评估 100 次：
-`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-noise-search --noise-eval-source manual --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[14,16,18,20,22,14,16,18,20,22,14,16],"wk":[14,16,18,20,22,14,16,18,20,22,14,16],"wv":[14,16,18,20,22,14,16,18,20,22,14,16],"wo":[14,16,18,20,22,14,16,18,20,22,14,16],"wffn1":[16,18,20,22,24,16,18,20,22,24,16,18],"wffn2":[14,16,18,20,22,14,16,18,20,22,14,16]}' --noise-eval-repeat 100`
+`bash llama_7B_LayerImportance.sh --dataset mrpc --skip-noise-search --final-eval-source manual --manual-stage2-noise '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[14,16,18,20,22,14,16,18,20,22,14,16],"wk":[14,16,18,20,22,14,16,18,20,22,14,16],"wv":[14,16,18,20,22,14,16,18,20,22,14,16],"wo":[14,16,18,20,22,14,16,18,20,22,14,16],"wffn1":[16,18,20,22,24,16,18,20,22,24,16,18],"wffn2":[14,16,18,20,22,14,16,18,20,22,14,16]}' --final-eval-repeat 100`
 
 只进行第二阶段rl  
-`CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --stage2-search-episodes [轮数] --batch-size [batch size 大小]`
+`CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_final_configs_best_ppo.json --skip-final-eval --final-eval-repeat 200 --stage2-search-episodes [轮数] --batch-size [batch size 大小]`
 
 （实例）
 
-`CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --noise-eval-repeat 200 --stage2-search-episodes 15000 --batch-size 128`
+`CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_final_configs_best_ppo.json --skip-final-eval --final-eval-repeat 200 --stage2-search-episodes 15000 --batch-size 128`
 
 只进行第二阶段最终评估
 
-`CUDA_VISIBLE_DEVICES=0 NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_configs_best_ppo.json --skip-stage1-final-eval --skip-noise-search --noise-eval-source json --noise-eval-config glue_noise_configs_best_ppo.json --noise-eval-repeat 200 --batch-size 128`
+`CUDA_VISIBLE_DEVICES=0 NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc --skip-stage1-search --final-eval-source json --final-eval-config glue_final_configs_best_ppo.json --skip-final-eval --skip-noise-search --final-eval-source json --final-eval-config glue_final_configs_best_ppo.json --final-eval-repeat 200 --batch-size 128`
 
 完全跳过两个阶段的搜索/训练，手动指定所有配置只做后续评估：
 
@@ -1195,12 +1214,12 @@ NOISE_RANDOM_MODE=x_w_nonlinear bash llama_7B_LayerImportance.sh --logfile outpu
 bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc \
   --skip-stage1-search \
   --final-eval-source manual \
-  --manual-gelu "[1,1,1,1,1,4,1,1,1,1,1,1]" \
-  --manual-softmax "[2,2,5,5,5,2,5,2,5,5,6,2]" \
-  --skip-stage1-final-eval \
+  --manual-stage1-gelu "[1,1,1,1,1,4,1,1,1,1,1,1]" \
+  --manual-stage1-softmax "[2,2,5,5,5,2,5,2,5,5,6,2]" \
+  --skip-final-eval \
   --skip-noise-search \
-  --noise-eval-source manual \
-  --manual-noise-config '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[14,16,18,20,22,14,16,18,20,22,14,16],"wk":[14,16,18,20,22,14,16,18,20,22,14,16],"wv":[14,16,18,20,22,14,16,18,20,22,14,16],"wo":[14,16,18,20,22,14,16,18,20,22,14,16],"wffn1":[16,18,20,22,24,16,18,20,22,24,16,18],"wffn2":[14,16,18,20,22,14,16,18,20,22,14,16]}'
+  --final-eval-source manual \
+  --manual-stage2-noise '{"x":[20,22,24,26,28,30,20,22,24,26,28,30],"wq":[14,16,18,20,22,14,16,18,20,22,14,16],"wk":[14,16,18,20,22,14,16,18,20,22,14,16],"wv":[14,16,18,20,22,14,16,18,20,22,14,16],"wo":[14,16,18,20,22,14,16,18,20,22,14,16],"wffn1":[16,18,20,22,24,16,18,20,22,24,16,18],"wffn2":[14,16,18,20,22,14,16,18,20,22,14,16]}'
 ```
 
 帮助：  
@@ -1210,8 +1229,8 @@ bash llama_7B_LayerImportance.sh --logfile output.log --dataset mrpc \
 
 ```bash
 python generate_glue_submission.py \
-  --config glue_configs_best_ppo.json \
-  --noise_config glue_noise_configs_best_ppo.json \
+  --config glue_final_configs_best_ppo.json \
+  --noise_config glue_final_configs_best_ppo.json \
   --output_dir my_glue_run
 ```
 
@@ -1294,9 +1313,9 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
   --skip-stage1-search \
   --final-eval-source json \
-  --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval \
-  --noise-eval-repeat 200
+  --final-eval-config glue_final_configs_best_ppo.json \
+  --skip-final-eval \
+  --final-eval-repeat 200
 ```
 
 ### 搜索预算参数可选项
@@ -1322,7 +1341,7 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
 - 在单独的 `rl` / `ga` 模式下，如果使用了 `--skip-stage1-search`，就不要再把该阶段预算当作“本次要执行的搜索预算”来理解。
 - 在单独的 `rl` / `ga` 模式下，如果使用了 `--skip-noise-search`，就不要再把该阶段预算当作“本次要执行的搜索预算”来理解。
 - 这些参数只控制搜索预算，不影响最终评估重复次数。
-- 单独的 `rl` / `ga` 模式仍使用 `--noise-eval-repeat` 控制 Stage-2 最终评估重复次数。
+- 单独的 `rl` / `ga` 模式仍使用 `--final-eval-repeat` 控制 Stage-2 最终评估重复次数。
 - `rl-and-ga-compare` 不再重跑搜索，因此也不再消费这些预算参数；compare 模式只使用 `--stage2-compare-repeats` 控制 Stage-2 多次对比次数。
 
 示例：
@@ -1346,10 +1365,10 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
   --dataset mrpc \
   --skip-stage1-search \
   --final-eval-source json \
-  --final-eval-config glue_configs_best_ppo.json \
-  --skip-stage1-final-eval \
+  --final-eval-config glue_final_configs_best_ppo.json \
+  --skip-final-eval \
   --stage2-search-episodes 680 \
-  --noise-eval-repeat 200
+  --final-eval-repeat 200
 ```
 
 ### 持久化目录与自动续训练（`--fresh-start` / `--fresh-stage1` / `--fresh-stage2`）
@@ -1409,7 +1428,7 @@ bash llama_7B_LayerImportance.sh \
   --dataset mrpc \
   --fresh-stage2 \
   --skip-stage1-search \
-  --skip-stage1-final-eval \
+  --skip-final-eval \
   --stage2-search-episodes 30000
 
 # 仅重做 Stage-1，保留 Stage-2 目录；通常建议同时跳过 Stage-2
@@ -1417,7 +1436,7 @@ bash llama_7B_LayerImportance.sh \
   --dataset mrpc \
   --fresh-stage1 \
   --skip-noise-search \
-  --skip-noise-final-eval \
+  --skip-final-eval \
   --stage1-search-episodes 60000
 
 # 换一组约束参数 → 新的持久化目录，需要再次 --fresh-start
@@ -1426,14 +1445,12 @@ bash llama_7B_LayerImportance.sh \
   --fresh-start \
   --stage1-accuracy-tolerance 0.01
 
-# Eval-only：跳过所有搜索，无需 --fresh-start
+# Eval-only：跳过所有搜索和最终评估，无需 --fresh-start
 bash llama_7B_LayerImportance.sh \
   --dataset mrpc \
   --skip-stage1-search \
-  --final-eval-source json \
-  --skip-stage1-final-eval \
   --skip-noise-search \
-  --skip-noise-final-eval
+  --skip-final-eval
 ```
 
 #### 安全注意事项
@@ -1607,9 +1624,9 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
     --fresh-start \
     --skip-stage1-search \
     --final-eval-source json \
-    --final-eval-config glue_configs_best_ppo.json \
-    --skip-stage1-final-eval \
-    --noise-eval-repeat 200 \
+    --final-eval-config glue_final_configs_best_ppo.json \
+    --skip-final-eval \
+    --final-eval-repeat 200 \
     --stage2-search-episodes 15000 \
     --batch-size 128
 # -> 终端会打印 Background PID: 712345
@@ -1641,9 +1658,9 @@ CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh --logfile output.log \
     --dataset mrpc \
     --skip-stage1-search \
     --final-eval-source json \
-    --final-eval-config glue_configs_best_ppo.json \
-    --skip-stage1-final-eval \
-    --noise-eval-repeat 200 \
+    --final-eval-config glue_final_configs_best_ppo.json \
+    --skip-final-eval \
+    --final-eval-repeat 200 \
     --stage2-search-episodes 30000 \
     --batch-size 128
 ```

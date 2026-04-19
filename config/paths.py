@@ -51,11 +51,9 @@ COMPARE_RL_VS_GA_SUBDIR: str = os.path.join(COMPARE_SUBDIR, "rl_vs_ga")
 NOISE_RL_PROGRESS_SUBDIR: str = os.path.join(RL_RESULTS_ROOT, "noise_rl_progress")
 """Stage-2 噪声 RL 的训练过程产物（会被 ``rl_tune_genetic`` / ``noise_rl_module_v2`` 使用）。"""
 
-STAGE1_FINAL_EVAL_SUBDIR: str = os.path.join(RL_RESULTS_ROOT, "final_evaluation")
-"""Stage-1 最终评估（final_evaluation_module）默认输出目录。"""
-
-NOISE_FINAL_EVAL_SUBDIR: str = os.path.join(RL_RESULTS_ROOT, "noise_final_evaluation")
-"""Stage-2 最终评估（noise_final_evaluation_module）默认输出目录。"""
+FINAL_EVAL_SUBDIR: str = os.path.join(RL_RESULTS_ROOT, "final_eval")
+"""统一的最终评估（UnifiedFinalEvaluationModule）默认输出目录。
+合并了旧版 stage1 和 stage2 的 final evaluation，单一 final_eval 同时覆盖两阶段。"""
 
 
 # ---------------------------------------------------------------------------
@@ -143,10 +141,9 @@ STAGE1_ENTROPY_CURVE_FILENAME: str = "ppo_entropy_curve.png"
 # 项目根目录下的写死 JSON 配置（GLUE 提交使用）
 # ---------------------------------------------------------------------------
 
-GLUE_CONFIGS_BEST_PPO: str = "glue_configs_best_ppo.json"
-GLUE_CONFIGS_BEST_GENETIC: str = "glue_configs_best_genetic.json"
-GLUE_NOISE_CONFIGS_BEST_PPO: str = "glue_noise_configs_best_ppo.json"
-GLUE_NOISE_CONFIGS_BEST_GENETIC: str = "glue_noise_configs_best_genetic.json"
+GLUE_FINAL_CONFIGS_BEST_PPO: str = "glue_final_configs_best_ppo.json"
+GLUE_FINAL_CONFIGS_BEST_GENETIC: str = "glue_final_configs_best_genetic.json"
+"""统一的 final-eval 配置文件：同时包含 stage1 (gelu/softmax) 与 stage2 (x/wq/wk/wv/wo/wffn1/wffn2) 的最佳配置。"""
 
 
 # ---------------------------------------------------------------------------

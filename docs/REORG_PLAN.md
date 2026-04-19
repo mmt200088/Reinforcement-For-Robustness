@@ -41,11 +41,11 @@ Local_program/
 │   │   ├── function_handler.py      # 从根目录挪进来
 │   │   └── runtime_error_reporter.py
 │   ├── stage1/
-│   │   ├── rl.py                    # 现 layer_importance_evaluator.py（拆分或全搬）
-│   │   └── evaluator.py             # 现 final_evaluation_module.py
+│   │   └── rl.py                    # 现 layer_importance_evaluator.py（拆分或全搬）
 │   ├── stage2/
-│   │   ├── rl.py                    # 现 noise_rl_module_v2.py
-│   │   └── evaluator.py             # 现 noise_final_evaluation_module.py
+│   │   └── rl.py                    # 现 noise_rl_module_v2.py
+│   ├── evaluation/
+│   │   └── unified.py               # 现 final_evaluation_module.py（合并 Stage-1 + Stage-2）
 │   ├── ga/
 │   │   └── search.py                # 现 genetic_search_module.py
 │   └── general/
