@@ -1,13 +1,13 @@
 Stage-2 RL Probe Subset Size Experiment
 ========================================================================
 Dataset: MRPC
-Groups: 16
+Groups: 12
 
 Configuration Families
 ------------------------------------------------------------------------
 [Max-Action]
-GELU    : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-Softmax : [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+GELU    : [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+Softmax : [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
 input_noise_scaling_factors : [30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30]
 wq_noise_scaling_factors    : [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
 wk_noise_scaling_factors    : [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
@@ -15,207 +15,161 @@ wv_noise_scaling_factors    : [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
 wo_noise_scaling_factors    : [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
 wffn1_noise_scaling_factors : [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24]
 wffn2_noise_scaling_factors : [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
-Approx cost / GELU / Softmax / Noise total: 0.00 / -12.00 / 12.00 / 49.20
+Approx cost / GELU / Softmax / Noise total: 72.00 / 36.00 / 36.00 / 49.20
 
 [Random-Control]
-GELU    : [0, 4, 2, 1, 1, 4, 0, 2, 0, 0, 2, 4]
-Softmax : [5, 5, 5, 5, 4, 2, 6, 4, 4, 3, 2, 6]
-input_noise_scaling_factors : [28, 28, 26, 30, 26, 26, 26, 24, 22, 26, 30, 22]
-wq_noise_scaling_factors    : [22, 22, 16, 20, 14, 20, 20, 16, 14, 22, 18, 22]
-wk_noise_scaling_factors    : [20, 20, 20, 14, 16, 18, 18, 14, 18, 14, 20, 20]
-wv_noise_scaling_factors    : [22, 20, 16, 22, 18, 16, 22, 16, 14, 18, 20, 14]
-wo_noise_scaling_factors    : [18, 14, 20, 18, 16, 16, 18, 20, 22, 18, 14, 22]
-wffn1_noise_scaling_factors : [22, 22, 16, 18, 22, 24, 20, 24, 24, 18, 24, 18]
-wffn2_noise_scaling_factors : [16, 20, 20, 14, 22, 14, 22, 14, 20, 20, 20, 20]
-Approx cost / GELU / Softmax / Noise total: 40.00 / 14.50 / 25.50 / 41.50
+GELU    : [4, 4, 2, 1, 1, 1, 2, 1, 4, 2, 4, 1]
+Softmax : [4, 6, 3, 6, 4, 3, 3, 5, 4, 6, 5, 6]
+input_noise_scaling_factors : [30, 24, 24, 22, 28, 28, 26, 30, 24, 26, 30, 22]
+wq_noise_scaling_factors    : [16, 16, 14, 14, 18, 22, 14, 22, 16, 22, 22, 14]
+wk_noise_scaling_factors    : [22, 18, 22, 18, 22, 22, 16, 18, 18, 20, 16, 14]
+wv_noise_scaling_factors    : [18, 14, 14, 14, 16, 18, 16, 20, 18, 14, 18, 20]
+wo_noise_scaling_factors    : [16, 22, 20, 16, 16, 14, 14, 18, 14, 16, 14, 16]
+wffn1_noise_scaling_factors : [22, 22, 16, 16, 16, 24, 18, 18, 22, 22, 20, 16]
+wffn2_noise_scaling_factors : [18, 20, 18, 22, 22, 14, 18, 14, 16, 16, 18, 22]
+Approx cost / GELU / Softmax / Noise total: 52.00 / 24.50 / 27.50 / 39.90
 
 Group Summary
 ------------------------------------------------------------------------
 Family            Probe    K           Loss(mean±std)           Acc.(mean±std)             F1(mean±std)
 -------------------------------------------------------------------------------------------------------
-Max-Action           32    5     1.2052±0.0020         0.3125±0.0000         0.1488±0.0000    
-Max-Action           32   10     1.2058±0.0023         0.3125±0.0000         0.1488±0.0000    
-Max-Action           64    5     1.2053±0.0016         0.3125±0.0000         0.1488±0.0000    
-Max-Action           64   10     1.2065±0.0022         0.3125±0.0000         0.1488±0.0000    
-Max-Action          128    5     1.2056±0.0011         0.3125±0.0000         0.1488±0.0000    
-Max-Action          128   10     1.2059±0.0011         0.3125±0.0000         0.1488±0.0000    
-Max-Action          256    5     1.1996±0.0012         0.3164±0.0000         0.1521±0.0000    
-Max-Action          256   10     1.1998±0.0010         0.3164±0.0000         0.1521±0.0000    
-Random-Control       32    5     0.4469±0.0584         0.8125±0.0685         0.8113±0.0692    
-Random-Control       32   10     0.4633±0.0462         0.8031±0.0610         0.8005±0.0619    
-Random-Control       64    5     0.4277±0.0233         0.7875±0.0234         0.7879±0.0248    
-Random-Control       64   10     0.4154±0.0397         0.8047±0.0344         0.8052±0.0346    
-Random-Control      128    5     0.3729±0.0151         0.8203±0.0191         0.8208±0.0193    
-Random-Control      128   10     0.3762±0.0240         0.8219±0.0177         0.8226±0.0181    
-Random-Control      256    5     0.4449±0.0197         0.7922±0.0100         0.7929±0.0104    
-Random-Control      256   10     0.4418±0.0165         0.7883±0.0097         0.7888±0.0102    
+Max-Action          128    5     0.3290±0.0085         0.8922±0.0058         0.8902±0.0062    
+Max-Action          128   10     0.3319±0.0112         0.8906±0.0049         0.8887±0.0055    
+Max-Action          200    5     0.3561±0.0115         0.8660±0.0102         0.8643±0.0103    
+Max-Action          200   10     0.3566±0.0090         0.8680±0.0100         0.8664±0.0102    
+Max-Action          256    5     0.3845±0.0090         0.8664±0.0067         0.8641±0.0066    
+Max-Action          256   10     0.3802±0.0125         0.8625±0.0074         0.8600±0.0076    
+Random-Control      128    5     0.3350±0.0123         0.8734±0.0091         0.8716±0.0092    
+Random-Control      128   10     0.3334±0.0119         0.8781±0.0106         0.8764±0.0108    
+Random-Control      200    5     0.3516±0.0114         0.8700±0.0077         0.8693±0.0079    
+Random-Control      200   10     0.3536±0.0127         0.8665±0.0078         0.8658±0.0078    
+Random-Control      256    5     0.3820±0.0108         0.8531±0.0053         0.8515±0.0057    
+Random-Control      256   10     0.3771±0.0167         0.8527±0.0080         0.8513±0.0082    
 
 Per-Group Trial Details
 ------------------------------------------------------------------------
-[Max-Action] probe=32 K=5 observed_probe=32
-Summary: loss=1.205224±0.001952, Acc.=0.312500±0.000000, F1=0.148810±0.000000, time_ms=292.977±19.186
-  Trial  1: loss=1.206716, Acc.=0.312500, F1=0.148810, time_ms=267.858
-  Trial  2: loss=1.202004, Acc.=0.312500, F1=0.148810, time_ms=325.759
-  Trial  3: loss=1.203969, Acc.=0.312500, F1=0.148810, time_ms=283.509
-  Trial  4: loss=1.206247, Acc.=0.312500, F1=0.148810, time_ms=289.210
-  Trial  5: loss=1.207183, Acc.=0.312500, F1=0.148810, time_ms=298.550
-
-[Max-Action] probe=32 K=10 observed_probe=32
-Summary: loss=1.205832±0.002346, Acc.=0.312500±0.000000, F1=0.148810±0.000000, time_ms=320.525±9.467
-  Trial  1: loss=1.203239, Acc.=0.312500, F1=0.148810, time_ms=312.671
-  Trial  2: loss=1.202004, Acc.=0.312500, F1=0.148810, time_ms=320.075
-  Trial  3: loss=1.203969, Acc.=0.312500, F1=0.148810, time_ms=317.961
-  Trial  4: loss=1.206247, Acc.=0.312500, F1=0.148810, time_ms=325.565
-  Trial  5: loss=1.207183, Acc.=0.312500, F1=0.148810, time_ms=315.593
-  Trial  6: loss=1.209577, Acc.=0.312500, F1=0.148810, time_ms=302.903
-  Trial  7: loss=1.206085, Acc.=0.312500, F1=0.148810, time_ms=318.696
-  Trial  8: loss=1.204804, Acc.=0.312500, F1=0.148810, time_ms=324.153
-  Trial  9: loss=1.209442, Acc.=0.312500, F1=0.148810, time_ms=340.805
-  Trial 10: loss=1.205768, Acc.=0.312500, F1=0.148810, time_ms=326.827
-
-[Max-Action] probe=64 K=5 observed_probe=64
-Summary: loss=1.205302±0.001618, Acc.=0.312500±0.000000, F1=0.148810±0.000000, time_ms=327.362±9.753
-  Trial  1: loss=1.202554, Acc.=0.312500, F1=0.148810, time_ms=325.741
-  Trial  2: loss=1.204669, Acc.=0.312500, F1=0.148810, time_ms=338.560
-  Trial  3: loss=1.206741, Acc.=0.312500, F1=0.148810, time_ms=325.307
-  Trial  4: loss=1.205505, Acc.=0.312500, F1=0.148810, time_ms=311.050
-  Trial  5: loss=1.207040, Acc.=0.312500, F1=0.148810, time_ms=336.153
-
-[Max-Action] probe=64 K=10 observed_probe=64
-Summary: loss=1.206480±0.002216, Acc.=0.312500±0.000000, F1=0.148810±0.000000, time_ms=332.051±10.030
-  Trial  1: loss=1.202554, Acc.=0.312500, F1=0.148810, time_ms=325.246
-  Trial  2: loss=1.204669, Acc.=0.312500, F1=0.148810, time_ms=338.630
-  Trial  3: loss=1.206741, Acc.=0.312500, F1=0.148810, time_ms=325.232
-  Trial  4: loss=1.205505, Acc.=0.312500, F1=0.148810, time_ms=318.200
-  Trial  5: loss=1.207040, Acc.=0.312500, F1=0.148810, time_ms=338.191
-  Trial  6: loss=1.207017, Acc.=0.312500, F1=0.148810, time_ms=354.867
-  Trial  7: loss=1.206848, Acc.=0.312500, F1=0.148810, time_ms=335.324
-  Trial  8: loss=1.204949, Acc.=0.312500, F1=0.148810, time_ms=331.817
-  Trial  9: loss=1.211331, Acc.=0.312500, F1=0.148810, time_ms=331.369
-  Trial 10: loss=1.208143, Acc.=0.312500, F1=0.148810, time_ms=321.630
-
 [Max-Action] probe=128 K=5 observed_probe=128
-Summary: loss=1.205562±0.001144, Acc.=0.312500±0.000000, F1=0.148810±0.000000, time_ms=322.367±6.366
-  Trial  1: loss=1.203785, Acc.=0.312500, F1=0.148810, time_ms=333.317
-  Trial  2: loss=1.205266, Acc.=0.312500, F1=0.148810, time_ms=325.083
-  Trial  3: loss=1.207245, Acc.=0.312500, F1=0.148810, time_ms=315.166
-  Trial  4: loss=1.205317, Acc.=0.312500, F1=0.148810, time_ms=320.281
-  Trial  5: loss=1.206196, Acc.=0.312500, F1=0.148810, time_ms=317.990
+Summary: loss=0.328963±0.008486, Acc.=0.892188±0.005846, F1=0.890249±0.006159, time_ms=73.183±23.922
+  Trial  1: loss=0.329661, Acc.=0.898438, F1=0.896455, time_ms=121.026
+  Trial  2: loss=0.326028, Acc.=0.890625, F1=0.888962, time_ms=61.509
+  Trial  3: loss=0.319110, Acc.=0.898438, F1=0.897310, time_ms=61.132
+  Trial  4: loss=0.344517, Acc.=0.882812, F1=0.880525, time_ms=61.108
+  Trial  5: loss=0.325498, Acc.=0.890625, F1=0.887994, time_ms=61.140
 
 [Max-Action] probe=128 K=10 observed_probe=128
-Summary: loss=1.205881±0.001116, Acc.=0.312500±0.000000, F1=0.148810±0.000000, time_ms=323.943±9.981
-  Trial  1: loss=1.203785, Acc.=0.312500, F1=0.148810, time_ms=313.435
-  Trial  2: loss=1.205266, Acc.=0.312500, F1=0.148810, time_ms=328.911
-  Trial  3: loss=1.207245, Acc.=0.312500, F1=0.148810, time_ms=335.764
-  Trial  4: loss=1.205317, Acc.=0.312500, F1=0.148810, time_ms=342.387
-  Trial  5: loss=1.206196, Acc.=0.312500, F1=0.148810, time_ms=319.306
-  Trial  6: loss=1.205703, Acc.=0.312500, F1=0.148810, time_ms=307.813
-  Trial  7: loss=1.204947, Acc.=0.312500, F1=0.148810, time_ms=316.131
-  Trial  8: loss=1.205662, Acc.=0.312500, F1=0.148810, time_ms=322.777
-  Trial  9: loss=1.207648, Acc.=0.312500, F1=0.148810, time_ms=322.944
-  Trial 10: loss=1.207038, Acc.=0.312500, F1=0.148810, time_ms=329.959
+Summary: loss=0.331866±0.011230, Acc.=0.890625±0.004941, F1=0.888720±0.005523, time_ms=61.186±0.251
+  Trial  1: loss=0.336718, Acc.=0.890625, F1=0.889837, time_ms=61.335
+  Trial  2: loss=0.326028, Acc.=0.890625, F1=0.888962, time_ms=61.085
+  Trial  3: loss=0.319110, Acc.=0.898438, F1=0.897310, time_ms=61.114
+  Trial  4: loss=0.344517, Acc.=0.882812, F1=0.880525, time_ms=60.897
+  Trial  5: loss=0.325498, Acc.=0.890625, F1=0.887994, time_ms=61.193
+  Trial  6: loss=0.327684, Acc.=0.898438, F1=0.897310, time_ms=61.856
+  Trial  7: loss=0.334603, Acc.=0.890625, F1=0.889837, time_ms=61.204
+  Trial  8: loss=0.333953, Acc.=0.890625, F1=0.887994, time_ms=61.108
+  Trial  9: loss=0.315426, Acc.=0.890625, F1=0.887994, time_ms=60.967
+  Trial 10: loss=0.355119, Acc.=0.882812, F1=0.879435, time_ms=61.103
+
+[Max-Action] probe=200 K=5 observed_probe=200
+Summary: loss=0.356053±0.011477, Acc.=0.866000±0.010198, F1=0.864342±0.010318, time_ms=59.112±0.178
+  Trial  1: loss=0.356451, Acc.=0.870000, F1=0.869423, time_ms=59.416
+  Trial  2: loss=0.352813, Acc.=0.880000, F1=0.878286, time_ms=59.048
+  Trial  3: loss=0.350844, Acc.=0.870000, F1=0.868143, time_ms=59.078
+  Trial  4: loss=0.342924, Acc.=0.860000, F1=0.857240, time_ms=59.150
+  Trial  5: loss=0.377230, Acc.=0.850000, F1=0.848620, time_ms=58.869
+
+[Max-Action] probe=200 K=10 observed_probe=200
+Summary: loss=0.356577±0.008985, Acc.=0.868000±0.010050, F1=0.866376±0.010171, time_ms=59.119±0.158
+  Trial  1: loss=0.356451, Acc.=0.870000, F1=0.869423, time_ms=59.183
+  Trial  2: loss=0.352813, Acc.=0.880000, F1=0.878286, time_ms=58.978
+  Trial  3: loss=0.350844, Acc.=0.870000, F1=0.868143, time_ms=59.030
+  Trial  4: loss=0.342924, Acc.=0.860000, F1=0.857240, time_ms=59.247
+  Trial  5: loss=0.377230, Acc.=0.850000, F1=0.848620, time_ms=59.012
+  Trial  6: loss=0.349199, Acc.=0.870000, F1=0.868143, time_ms=59.075
+  Trial  7: loss=0.360913, Acc.=0.870000, F1=0.868143, time_ms=59.492
+  Trial  8: loss=0.355880, Acc.=0.885000, F1=0.883654, time_ms=58.910
+  Trial  9: loss=0.354591, Acc.=0.855000, F1=0.853303, time_ms=59.178
+  Trial 10: loss=0.364926, Acc.=0.870000, F1=0.868804, time_ms=59.084
 
 [Max-Action] probe=256 K=5 observed_probe=256
-Summary: loss=1.199567±0.001220, Acc.=0.316406±0.000000, F1=0.152100±0.000000, time_ms=317.787±3.844
-  Trial  1: loss=1.197953, Acc.=0.316406, F1=0.152100, time_ms=319.354
-  Trial  2: loss=1.200796, Acc.=0.316406, F1=0.152100, time_ms=313.313
-  Trial  3: loss=1.200770, Acc.=0.316406, F1=0.152100, time_ms=320.783
-  Trial  4: loss=1.198280, Acc.=0.316406, F1=0.152100, time_ms=322.347
-  Trial  5: loss=1.200036, Acc.=0.316406, F1=0.152100, time_ms=313.136
+Summary: loss=0.384539±0.008997, Acc.=0.866406±0.006721, F1=0.864149±0.006587, time_ms=61.583±0.115
+  Trial  1: loss=0.374332, Acc.=0.871094, F1=0.869447, time_ms=61.528
+  Trial  2: loss=0.398515, Acc.=0.855469, F1=0.853622, time_ms=61.776
+  Trial  3: loss=0.381959, Acc.=0.867188, F1=0.865222, time_ms=61.558
+  Trial  4: loss=0.390940, Acc.=0.863281, F1=0.860384, time_ms=61.428
+  Trial  5: loss=0.376949, Acc.=0.875000, F1=0.872072, time_ms=61.626
 
 [Max-Action] probe=256 K=10 observed_probe=256
-Summary: loss=1.199807±0.000990, Acc.=0.316406±0.000000, F1=0.152100±0.000000, time_ms=329.215±12.682
-  Trial  1: loss=1.197953, Acc.=0.316406, F1=0.152100, time_ms=315.230
-  Trial  2: loss=1.200796, Acc.=0.316406, F1=0.152100, time_ms=332.126
-  Trial  3: loss=1.200770, Acc.=0.316406, F1=0.152100, time_ms=323.916
-  Trial  4: loss=1.198280, Acc.=0.316406, F1=0.152100, time_ms=354.757
-  Trial  5: loss=1.200036, Acc.=0.316406, F1=0.152100, time_ms=315.427
-  Trial  6: loss=1.199481, Acc.=0.316406, F1=0.152100, time_ms=311.047
-  Trial  7: loss=1.200041, Acc.=0.316406, F1=0.152100, time_ms=340.393
-  Trial  8: loss=1.199386, Acc.=0.316406, F1=0.152100, time_ms=328.502
-  Trial  9: loss=1.200301, Acc.=0.316406, F1=0.152100, time_ms=336.447
-  Trial 10: loss=1.201027, Acc.=0.316406, F1=0.152100, time_ms=334.307
-
-[Random-Control] probe=32 K=5 observed_probe=32
-Summary: loss=0.446939±0.058442, Acc.=0.812500±0.068465, F1=0.811265±0.069231, time_ms=396.735±19.702
-  Trial  1: loss=0.527968, Acc.=0.718750, F1=0.714474, time_ms=433.603
-  Trial  2: loss=0.420059, Acc.=0.843750, F1=0.841374, time_ms=397.639
-  Trial  3: loss=0.491718, Acc.=0.750000, F1=0.750000, time_ms=390.252
-  Trial  4: loss=0.435491, Acc.=0.843750, F1=0.845653, time_ms=376.131
-  Trial  5: loss=0.359459, Acc.=0.906250, F1=0.904825, time_ms=386.050
-
-[Random-Control] probe=32 K=10 observed_probe=32
-Summary: loss=0.463250±0.046184, Acc.=0.803125±0.060998, F1=0.800451±0.061881, time_ms=393.013±7.169
-  Trial  1: loss=0.527968, Acc.=0.718750, F1=0.714474, time_ms=386.824
-  Trial  2: loss=0.420059, Acc.=0.843750, F1=0.841374, time_ms=394.185
-  Trial  3: loss=0.491718, Acc.=0.750000, F1=0.750000, time_ms=400.825
-  Trial  4: loss=0.435491, Acc.=0.843750, F1=0.845653, time_ms=394.829
-  Trial  5: loss=0.359459, Acc.=0.906250, F1=0.904825, time_ms=401.069
-  Trial  6: loss=0.470935, Acc.=0.781250, F1=0.777924, time_ms=392.409
-  Trial  7: loss=0.513471, Acc.=0.718750, F1=0.714474, time_ms=399.755
-  Trial  8: loss=0.476990, Acc.=0.812500, F1=0.796875, time_ms=397.177
-  Trial  9: loss=0.475379, Acc.=0.781250, F1=0.783915, time_ms=384.535
-  Trial 10: loss=0.461030, Acc.=0.875000, F1=0.875000, time_ms=378.523
-
-[Random-Control] probe=64 K=5 observed_probe=64
-Summary: loss=0.427697±0.023294, Acc.=0.787500±0.023385, F1=0.787918±0.024821, time_ms=387.122±5.327
-  Trial  1: loss=0.457737, Acc.=0.765625, F1=0.767136, time_ms=385.395
-  Trial  2: loss=0.418434, Acc.=0.765625, F1=0.767136, time_ms=391.745
-  Trial  3: loss=0.453235, Acc.=0.781250, F1=0.773853, time_ms=393.439
-  Trial  4: loss=0.404148, Acc.=0.828125, F1=0.831088, time_ms=378.322
-  Trial  5: loss=0.404933, Acc.=0.796875, F1=0.800376, time_ms=386.709
-
-[Random-Control] probe=64 K=10 observed_probe=64
-Summary: loss=0.415401±0.039669, Acc.=0.804688±0.034410, F1=0.805155±0.034628, time_ms=391.561±3.848
-  Trial  1: loss=0.457737, Acc.=0.765625, F1=0.767136, time_ms=390.122
-  Trial  2: loss=0.418434, Acc.=0.765625, F1=0.767136, time_ms=386.059
-  Trial  3: loss=0.453235, Acc.=0.781250, F1=0.773853, time_ms=392.891
-  Trial  4: loss=0.404148, Acc.=0.828125, F1=0.831088, time_ms=398.765
-  Trial  5: loss=0.404933, Acc.=0.796875, F1=0.800376, time_ms=389.077
-  Trial  6: loss=0.481126, Acc.=0.765625, F1=0.769665, time_ms=393.112
-  Trial  7: loss=0.378504, Acc.=0.828125, F1=0.826887, time_ms=387.399
-  Trial  8: loss=0.365095, Acc.=0.875000, F1=0.876523, time_ms=393.005
-  Trial  9: loss=0.435738, Acc.=0.812500, F1=0.809649, time_ms=388.594
-  Trial 10: loss=0.355056, Acc.=0.828125, F1=0.829233, time_ms=396.588
+Summary: loss=0.380202±0.012453, Acc.=0.862500±0.007370, F1=0.860050±0.007572, time_ms=61.499±0.120
+  Trial  1: loss=0.374332, Acc.=0.871094, F1=0.869447, time_ms=61.432
+  Trial  2: loss=0.398515, Acc.=0.855469, F1=0.853622, time_ms=61.443
+  Trial  3: loss=0.381959, Acc.=0.867188, F1=0.865222, time_ms=61.424
+  Trial  4: loss=0.390940, Acc.=0.863281, F1=0.860384, time_ms=61.574
+  Trial  5: loss=0.376949, Acc.=0.875000, F1=0.872072, time_ms=61.545
+  Trial  6: loss=0.363279, Acc.=0.867188, F1=0.865222, time_ms=61.499
+  Trial  7: loss=0.394076, Acc.=0.855469, F1=0.852406, time_ms=61.402
+  Trial  8: loss=0.377724, Acc.=0.851562, F1=0.848741, time_ms=61.817
+  Trial  9: loss=0.386895, Acc.=0.863281, F1=0.860974, time_ms=61.389
+  Trial 10: loss=0.357352, Acc.=0.855469, F1=0.852406, time_ms=61.463
 
 [Random-Control] probe=128 K=5 observed_probe=128
-Summary: loss=0.372902±0.015126, Acc.=0.820312±0.019137, F1=0.820772±0.019255, time_ms=398.531±14.421
-  Trial  1: loss=0.362295, Acc.=0.828125, F1=0.829233, time_ms=389.946
-  Trial  2: loss=0.392094, Acc.=0.796875, F1=0.799349, time_ms=383.303
-  Trial  3: loss=0.375361, Acc.=0.804688, F1=0.804003, time_ms=392.139
-  Trial  4: loss=0.350115, Acc.=0.851562, F1=0.852958, time_ms=402.744
-  Trial  5: loss=0.384645, Acc.=0.820312, F1=0.818318, time_ms=424.523
+Summary: loss=0.335001±0.012250, Acc.=0.873437±0.009111, F1=0.871617±0.009188, time_ms=42.568±0.082
+  Trial  1: loss=0.348887, Acc.=0.867188, F1=0.865713, time_ms=42.539
+  Trial  2: loss=0.323217, Acc.=0.875000, F1=0.873099, time_ms=42.528
+  Trial  3: loss=0.319694, Acc.=0.890625, F1=0.888962, time_ms=42.670
+  Trial  4: loss=0.348575, Acc.=0.867188, F1=0.865713, time_ms=42.652
+  Trial  5: loss=0.334631, Acc.=0.867188, F1=0.864595, time_ms=42.452
 
 [Random-Control] probe=128 K=10 observed_probe=128
-Summary: loss=0.376247±0.024023, Acc.=0.821875±0.017747, F1=0.822577±0.018059, time_ms=417.174±12.451
-  Trial  1: loss=0.362295, Acc.=0.828125, F1=0.829233, time_ms=434.467
-  Trial  2: loss=0.392094, Acc.=0.796875, F1=0.799349, time_ms=436.414
-  Trial  3: loss=0.375361, Acc.=0.804688, F1=0.804003, time_ms=423.621
-  Trial  4: loss=0.350115, Acc.=0.851562, F1=0.852958, time_ms=416.290
-  Trial  5: loss=0.384645, Acc.=0.820312, F1=0.818318, time_ms=404.523
-  Trial  6: loss=0.378857, Acc.=0.820312, F1=0.822002, time_ms=411.018
-  Trial  7: loss=0.395287, Acc.=0.804688, F1=0.804003, time_ms=398.808
-  Trial  8: loss=0.322062, Acc.=0.851562, F1=0.852958, time_ms=429.482
-  Trial  9: loss=0.406016, Acc.=0.828125, F1=0.829233, time_ms=409.912
-  Trial 10: loss=0.395735, Acc.=0.812500, F1=0.813709, time_ms=407.207
+Summary: loss=0.333417±0.011910, Acc.=0.878125±0.010597, F1=0.876355±0.010803, time_ms=42.597±0.304
+  Trial  1: loss=0.348887, Acc.=0.867188, F1=0.865713, time_ms=42.436
+  Trial  2: loss=0.323217, Acc.=0.875000, F1=0.873099, time_ms=42.453
+  Trial  3: loss=0.319694, Acc.=0.890625, F1=0.888962, time_ms=43.486
+  Trial  4: loss=0.348575, Acc.=0.867188, F1=0.865713, time_ms=42.603
+  Trial  5: loss=0.334631, Acc.=0.867188, F1=0.864595, time_ms=42.536
+  Trial  6: loss=0.331459, Acc.=0.898438, F1=0.897310, time_ms=42.492
+  Trial  7: loss=0.326189, Acc.=0.875000, F1=0.873099, time_ms=42.424
+  Trial  8: loss=0.328928, Acc.=0.890625, F1=0.888962, time_ms=42.525
+  Trial  9: loss=0.319517, Acc.=0.875000, F1=0.874100, time_ms=42.617
+  Trial 10: loss=0.353069, Acc.=0.875000, F1=0.871993, time_ms=42.400
+
+[Random-Control] probe=200 K=5 observed_probe=200
+Summary: loss=0.351577±0.011390, Acc.=0.870000±0.007746, F1=0.869286±0.007930, time_ms=41.188±0.043
+  Trial  1: loss=0.351318, Acc.=0.865000, F1=0.864085, time_ms=41.161
+  Trial  2: loss=0.349034, Acc.=0.865000, F1=0.864705, time_ms=41.215
+  Trial  3: loss=0.343902, Acc.=0.885000, F1=0.884749, time_ms=41.206
+  Trial  4: loss=0.340562, Acc.=0.870000, F1=0.868804, time_ms=41.237
+  Trial  5: loss=0.373068, Acc.=0.865000, F1=0.864085, time_ms=41.118
+
+[Random-Control] probe=200 K=10 observed_probe=200
+Summary: loss=0.353563±0.012707, Acc.=0.866500±0.007762, F1=0.865809±0.007768, time_ms=41.194±0.065
+  Trial  1: loss=0.351318, Acc.=0.865000, F1=0.864085, time_ms=41.317
+  Trial  2: loss=0.349034, Acc.=0.865000, F1=0.864705, time_ms=41.172
+  Trial  3: loss=0.343902, Acc.=0.885000, F1=0.884749, time_ms=41.216
+  Trial  4: loss=0.340562, Acc.=0.870000, F1=0.868804, time_ms=41.132
+  Trial  5: loss=0.373068, Acc.=0.865000, F1=0.864085, time_ms=41.147
+  Trial  6: loss=0.329342, Acc.=0.870000, F1=0.868804, time_ms=41.118
+  Trial  7: loss=0.363294, Acc.=0.860000, F1=0.859378, time_ms=41.238
+  Trial  8: loss=0.366751, Acc.=0.870000, F1=0.869423, time_ms=41.281
+  Trial  9: loss=0.355442, Acc.=0.855000, F1=0.854684, time_ms=41.195
+  Trial 10: loss=0.362916, Acc.=0.860000, F1=0.859378, time_ms=41.125
 
 [Random-Control] probe=256 K=5 observed_probe=256
-Summary: loss=0.444871±0.019732, Acc.=0.792188±0.010005, F1=0.792920±0.010380, time_ms=411.061±6.129
-  Trial  1: loss=0.438969, Acc.=0.804688, F1=0.806472, time_ms=407.739
-  Trial  2: loss=0.411891, Acc.=0.792969, F1=0.791895, time_ms=422.826
-  Trial  3: loss=0.461406, Acc.=0.777344, F1=0.778405, time_ms=407.937
-  Trial  4: loss=0.443777, Acc.=0.800781, F1=0.802320, time_ms=405.710
-  Trial  5: loss=0.468313, Acc.=0.785156, F1=0.785507, time_ms=411.092
+Summary: loss=0.381991±0.010806, Acc.=0.853125±0.005299, F1=0.851519±0.005706, time_ms=42.942±0.020
+  Trial  1: loss=0.377519, Acc.=0.851562, F1=0.849959, time_ms=42.926
+  Trial  2: loss=0.402987, Acc.=0.843750, F1=0.841437, time_ms=42.942
+  Trial  3: loss=0.374816, Acc.=0.855469, F1=0.853622, time_ms=42.981
+  Trial  4: loss=0.381047, Acc.=0.859375, F1=0.858389, time_ms=42.933
+  Trial  5: loss=0.373584, Acc.=0.855469, F1=0.854185, time_ms=42.928
 
 [Random-Control] probe=256 K=10 observed_probe=256
-Summary: loss=0.441779±0.016534, Acc.=0.788281±0.009695, F1=0.788835±0.010204, time_ms=405.071±2.774
-  Trial  1: loss=0.438969, Acc.=0.804688, F1=0.806472, time_ms=404.178
-  Trial  2: loss=0.411891, Acc.=0.792969, F1=0.791895, time_ms=401.948
-  Trial  3: loss=0.461406, Acc.=0.777344, F1=0.778405, time_ms=405.042
-  Trial  4: loss=0.443777, Acc.=0.800781, F1=0.802320, time_ms=401.789
-  Trial  5: loss=0.468313, Acc.=0.785156, F1=0.785507, time_ms=402.212
-  Trial  6: loss=0.444595, Acc.=0.777344, F1=0.777708, time_ms=405.611
-  Trial  7: loss=0.425775, Acc.=0.792969, F1=0.794568, time_ms=408.403
-  Trial  8: loss=0.440719, Acc.=0.789062, F1=0.789743, time_ms=403.304
-  Trial  9: loss=0.456556, Acc.=0.789062, F1=0.789062, time_ms=408.718
-  Trial 10: loss=0.425788, Acc.=0.773438, F1=0.772665, time_ms=409.500
+Summary: loss=0.377082±0.016682, Acc.=0.852734±0.008015, F1=0.851271±0.008244, time_ms=43.031±0.146
+  Trial  1: loss=0.377519, Acc.=0.851562, F1=0.849959, time_ms=42.780
+  Trial  2: loss=0.402987, Acc.=0.843750, F1=0.841437, time_ms=42.905
+  Trial  3: loss=0.374816, Acc.=0.855469, F1=0.853622, time_ms=43.019
+  Trial  4: loss=0.381047, Acc.=0.859375, F1=0.858389, time_ms=43.126
+  Trial  5: loss=0.373584, Acc.=0.855469, F1=0.854185, time_ms=43.039
+  Trial  6: loss=0.360616, Acc.=0.855469, F1=0.854719, time_ms=42.925
+  Trial  7: loss=0.405978, Acc.=0.835938, F1=0.834165, time_ms=43.093
+  Trial  8: loss=0.362585, Acc.=0.851562, F1=0.850522, time_ms=43.341
+  Trial  9: loss=0.381806, Acc.=0.867188, F1=0.865753, time_ms=42.957
+  Trial 10: loss=0.349880, Acc.=0.851562, F1=0.849959, time_ms=43.122

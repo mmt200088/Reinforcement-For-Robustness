@@ -1,0 +1,7 @@
+{
+  "stage1_accuracy_tolerance": 0.005,
+  "stage2_limit_quartile": 0.05,
+  "stage2_stability_quartile": 0.05,
+  "dataset": "mrpc",
+  "search_algorithm": "rl"
+}

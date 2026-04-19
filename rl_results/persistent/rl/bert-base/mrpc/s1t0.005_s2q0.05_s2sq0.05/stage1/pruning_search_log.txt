@@ -36,3 +36,6 @@ Stage-2 固定 GELU/Softmax 来源（STAGE2_FIXED_CONFIG_SOURCE）=json
   GELU   : [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1]
   Softmax: [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
 [Info] Stage-2 固定 GELU/Softmax 来源：Selected (Saved RL) (source=json)
+
+配置评估完成（Configuration evaluation finished）。
+  [best_policy] 已复制 rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.05_s2sq0.05/stage2_noise/progress/stage2_noise_policy.pt → rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.05_s2sq0.05/best_policy/stage2_noise_policy.pt
