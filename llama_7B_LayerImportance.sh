@@ -675,6 +675,8 @@ else
   { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "当前搜索算法不是 general-rl，请不要使用 --general-rl-* 参数。"
   # rl/ga 模式下 --resume-from 已废弃，改用持久化目录自动续训练
   [ "$S_RESUME_FROM" = "false" ] || err "rl / ga 模式已改用持久化目录自动续训练，不再支持手动 --resume-from。续训练时直接运行相同参数即可；首次运行请加 --fresh-start。"
+  _EARLY_CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"
+  _EARLY_PERSISTENT_DIR="rl_results/persistent/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${_EARLY_CONSTRAINT_SLUG}"
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] || err "rl 模式不使用 GA 代数参数，请移除 --stage1-search-generations / --stage2-search-generations。"
     is_pos_int "$STAGE1_EPISODES" || err "--stage1-search-episodes 必须是正整数"
@@ -709,7 +711,7 @@ else
     fi
     if [ "$SKIP_STAGE1_SEARCH" = "true" ] && [ "$STAGE2_FIXED_CONFIG_SOURCE" = "stage1_result" ]; then
       _HAS_S1_CKPT="false"
-      [ -f "${PERSISTENT_DIR}/stage1/stage1_rl_checkpoint.pt" ] && _HAS_S1_CKPT="true"
+      [ -f "${_EARLY_PERSISTENT_DIR}/stage1/stage1_rl_checkpoint.pt" ] && _HAS_S1_CKPT="true"
       [ "$_HAS_S1_CKPT" = "true" ] || err "跳过 Stage-1 搜索且无历史 Stage-1 结果，Stage-2 固定 GELU/Softmax 不能使用 --stage2-fixed-config-source=stage1_result。请改用 json 或 manual，或先运行 Stage-1。"
     fi
     if [ "$STAGE2_FIXED_CONFIG_SOURCE" = "json" ]; then
@@ -719,6 +721,9 @@ else
       [ "$SEARCH_ALGORITHM" != "rl" ] || [ "$FAM" != "ga" ] || err "已选择 rl，但 Stage-2 固定 GELU/Softmax 的 JSON 配置看起来属于 GA 家族：$STAGE2_FIXED_CONFIG"
     fi
   fi
+  [ "$FRESH_START" = "false" ] || [ "$SKIP_STAGE1_SEARCH" = "false" ] || [ "$SKIP_FINAL_EVAL" = "true" ] || [ "$FINAL_EVAL_SOURCE" != "search" ] || err "fresh-start + skip-stage1-search 不能与 --final-eval-source=search 同时使用：首次运行时没有 Stage-1 搜索结果可供 search 评估。请改用 --final-eval-source=json/manual，或关闭 --skip-stage1-search。"
+  [ "$FRESH_STAGE1" = "false" ] || [ "$SKIP_STAGE1_SEARCH" = "false" ] || [ "$SKIP_FINAL_EVAL" = "true" ] || [ "$FINAL_EVAL_SOURCE" != "search" ] || err "fresh-stage1 + skip-stage1-search 不能与 --final-eval-source=search 同时使用：你已清空 Stage-1 结果且又跳过 Stage-1 搜索。请改用 --final-eval-source=json/manual，或关闭 --skip-stage1-search。"
+  [ "$SKIP_NOISE_SEARCH" = "false" ] || [ "$SKIP_FINAL_EVAL" = "true" ] || [ "$FINAL_EVAL_SOURCE" != "search" ] || err "skip-noise-search 不能与 --final-eval-source=search 同时用于最终评估：跳过 Stage-2 后没有 Stage-2 搜索结果可供 search 使用。请改用 --final-eval-source=json/manual，或关闭 --skip-noise-search。"
   [ "$SKIP_STAGE1_SEARCH" = "false" ] || [ "$SKIP_NOISE_SEARCH" = "false" ] || [ "$SKIP_FINAL_EVAL" = "true" ] || [ "$FINAL_EVAL_SOURCE" != "search" ] || err "Stage-1/Stage-2 搜索均被跳过且保留最终评估时，不能再使用 --final-eval-source=search。"
   if [ "$S_FINAL_EVAL_SOURCE" = "true" ]; then
     [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$FINAL_EVAL_SOURCE" = "search" ] || err "执行 Stage-1 / Stage-2 搜索时，--final-eval-source 只能是 search。"

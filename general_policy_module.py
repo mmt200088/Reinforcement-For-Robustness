@@ -745,6 +745,7 @@ def multi_task_train_stage1(
 
     # ---- 续训练：加载 checkpoint ----
     resume_start_round = 0
+    _resume_tol_rng_state = None
     if resume_checkpoint_path and os.path.isfile(resume_checkpoint_path):
         ckpt = torch.load(resume_checkpoint_path, map_location=device, weights_only=False)
         net.load_state_dict(ckpt["net_state_dict"])
@@ -760,6 +761,7 @@ def multi_task_train_stage1(
             return_norm.mean = rn["mean"]
             return_norm.var = rn["var"]
             return_norm.count = rn["count"]
+        _resume_tol_rng_state = ckpt.get("tol_rng_state")
         resume_start_round = ckpt.get("completed_round", 0)
         log_fn(f"[通用策略] 从 checkpoint 续训练: 已完成 {resume_start_round} 轮, "
                f"global_ep={global_ep}, ppo_cnt={ppo_cnt}")
@@ -779,6 +781,11 @@ def multi_task_train_stage1(
                     and len(accuracy_tolerances) > 1)
     _tol_list = list(accuracy_tolerances) if accuracy_tolerances else []
     _tol_rng = np.random.RandomState(42)  # 独立随机源, 可复现
+    if _resume_tol_rng_state is not None:
+        try:
+            _tol_rng.set_state(_resume_tol_rng_state)
+        except Exception:
+            pass
 
     _tol_info = ""
     if _use_tol_range:
@@ -929,6 +936,7 @@ def multi_task_train_stage1(
                     "var": return_norm.var,
                     "count": return_norm.count,
                 },
+                "tol_rng_state": _tol_rng.get_state(),
                 "task_names": task_names,
                 "total_rounds": total_rounds,
                 "episodes_per_task_per_round": episodes_per_task_per_round,
@@ -1932,6 +1940,7 @@ def multi_task_train_stage2(
 
     # ---- 续训练：加载 checkpoint ----
     resume_start_round = 0
+    _resume_tol_rng_state = None
     if resume_checkpoint_path and os.path.isfile(resume_checkpoint_path):
         ckpt = torch.load(resume_checkpoint_path, map_location=device, weights_only=False)
         net.load_state_dict(ckpt["net_state_dict"])
@@ -1947,6 +1956,7 @@ def multi_task_train_stage2(
             return_norm.mean = rn["mean"]
             return_norm.var = rn["var"]
             return_norm.count = rn["count"]
+        _resume_tol_rng_state = ckpt.get("tol_rng_state")
         resume_start_round = ckpt.get("completed_round", 0)
         log_fn(f"[通用噪声策略] 从 checkpoint 续训练: 已完成 {resume_start_round} 轮, "
                f"global_ep={global_ep}, ppo_cnt={ppo_cnt}")
@@ -1966,6 +1976,11 @@ def multi_task_train_stage2(
                     and len(accuracy_tolerances) > 1)
     _tol_list = list(accuracy_tolerances) if accuracy_tolerances else []
     _tol_rng = np.random.RandomState(42)
+    if _resume_tol_rng_state is not None:
+        try:
+            _tol_rng.set_state(_resume_tol_rng_state)
+        except Exception:
+            pass
 
     _tol_info = ""
     if _use_tol_range:
@@ -2114,6 +2129,7 @@ def multi_task_train_stage2(
                     "var": return_norm.var,
                     "count": return_norm.count,
                 },
+                "tol_rng_state": _tol_rng.get_state(),
                 "task_names": task_names,
                 "total_rounds": total_rounds,
                 "episodes_per_task_per_round": episodes_per_task_per_round,

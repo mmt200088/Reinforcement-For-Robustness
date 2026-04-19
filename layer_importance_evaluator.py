@@ -3520,7 +3520,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         ensure_parent_dir(self.noise_log_file)
         # 续训时使用追加模式，避免覆盖之前的 Stage-2 日志
-        _is_resuming = bool(self.resume_run_dir)
+        _is_resuming = bool(getattr(self, "resume_run_dir", ""))
         _noise_log_mode = "a" if _is_resuming and os.path.isfile(self.noise_log_file) else "w"
         with open(self.noise_log_file, _noise_log_mode, encoding="utf-8") as f:
             if _is_resuming and _noise_log_mode == "a":

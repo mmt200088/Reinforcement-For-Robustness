@@ -130,6 +130,17 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--general-rl-accuracy-tolerance-range MIN,MAX` | `general-rl` 训练 | — | 连续准确度容忍区间；训练时在 `[MIN, MAX]` 内采样 tolerance 让策略泛化，要求 `0 < MIN < MAX < 1` |
 
 
+### 数据集补充说明（精简）
+
+1. 当前 launcher 支持的数据集：`mrpc`、`sst2`、`stsb`、`cola`、`qnli`、`rte`、`wnli`。
+2. 任务类型：
+`stsb` 是回归任务（`num_labels=1`）；其余为二分类任务（`num_labels=2`）。
+3. 输入字段约定：
+`sst2/cola` 使用 `sentence`；`qnli` 使用 `question + sentence`；`mrpc/stsb/rte/wnli` 使用 `sentence1 + sentence2`。
+4. `--model-type` 与数据集兼容性：
+`bert-base` 支持全部 7 个任务；`bert-large` 当前不支持 `wnli`；`gpt-2` 支持全部 7 个任务。
+5. 若数据集与模型类型不兼容，launcher 会在启动前直接报错并中止，不会进入训练阶段。
+
 ### 安全性约束补充（精简版）
 
 > 命令行参数仅以上面的“可选参数总表”为主维护入口。本节只保留高风险约束，避免重复说明。
