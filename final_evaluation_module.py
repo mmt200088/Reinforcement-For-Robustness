@@ -389,26 +389,16 @@ class UnifiedFinalEvaluationModule:
         不要求 stage-2 search 结果存在。
         """
         if self.config_source == "search":
-            if search_best_stage1 is None:
-                raise ValueError(
-                    "config_source='search' requires stage1 search result for stage1 resolution."
+            if search_best_stage1 is not None:
+                gelu, softmax = self._resolve_stage1_from_search(
+                    search_best_stage1, total_layers
                 )
-            gelu = self._normalize_config_array(
-                search_best_stage1["gelu"], total_layers, 4, self.allowed_gelu_selected, "search_gelu"
-            )
-            softmax = self._normalize_config_array(
-                search_best_stage1["softmax"], total_layers, 6, self.allowed_softmax, "search_softmax"
-            )
-            return gelu, softmax, "search"
+                return gelu, softmax, "search"
+            gelu, softmax, source = self._resolve_stage1_fallback(total_layers)
+            return gelu, softmax, source
 
         if self.config_source == "json":
-            s1, _ = self._load_dataset_config_from_json()
-            gelu = self._normalize_config_array(
-                s1["gelu"], total_layers, 4, self.allowed_gelu_selected, "json_gelu"
-            )
-            softmax = self._normalize_config_array(
-                s1["softmax"], total_layers, 6, self.allowed_softmax, "json_softmax"
-            )
+            gelu, softmax = self._resolve_stage1_from_json(total_layers)
             return gelu, softmax, "json"
 
         if self.config_source == "manual":
@@ -416,12 +406,7 @@ class UnifiedFinalEvaluationModule:
                 raise ValueError(
                     "config_source='manual' requires manual_stage1_gelu and manual_stage1_softmax."
                 )
-            gelu = self._normalize_config_array(
-                self.manual_stage1_gelu, total_layers, 4, self.allowed_gelu_selected, "manual_gelu"
-            )
-            softmax = self._normalize_config_array(
-                self.manual_stage1_softmax, total_layers, 6, self.allowed_softmax, "manual_softmax"
-            )
+            gelu, softmax = self._resolve_stage1_from_manual(total_layers)
             return gelu, softmax, "manual"
 
         raise ValueError(
@@ -430,37 +415,39 @@ class UnifiedFinalEvaluationModule:
 
     def _resolve_selected_config(self, search_best_stage1, search_best_stage2, total_layers):
         if self.config_source == "search":
-            if search_best_stage1 is None or search_best_stage2 is None:
+            stage1_from_search = search_best_stage1 is not None
+            stage2_from_search = search_best_stage2 is not None
+            if not stage1_from_search and not stage2_from_search:
                 raise ValueError(
-                    "config_source='search' requires both stage1 and stage2 search results."
+                    "config_source='search' requires at least one search result. "
+                    "Both stage1 and stage2 search results are missing."
                 )
-            gelu = self._normalize_config_array(
-                search_best_stage1["gelu"], total_layers, 4, self.allowed_gelu_selected, "search_gelu"
-            )
-            softmax = self._normalize_config_array(
-                search_best_stage1["softmax"], total_layers, 6, self.allowed_softmax, "search_softmax"
-            )
-            noise_cfg = {
-                key: self._normalize_noise_array(search_best_stage2[key], total_layers, key)
-                for key in NOISE_SCALING_FACTOR_KEYS
-            }
-            return gelu, softmax, noise_cfg, "search"
+
+            if stage1_from_search:
+                gelu, softmax = self._resolve_stage1_from_search(
+                    search_best_stage1, total_layers
+                )
+                stage1_source = "search"
+            else:
+                gelu, softmax, stage1_source = self._resolve_stage1_fallback(total_layers)
+
+            if stage2_from_search:
+                noise_cfg = self._resolve_stage2_from_search(
+                    search_best_stage2, total_layers
+                )
+                stage2_source = "search"
+            else:
+                noise_cfg, stage2_source = self._resolve_stage2_fallback(total_layers)
+
+            if stage1_source == "search" and stage2_source == "search":
+                selected_source = "search"
+            else:
+                selected_source = f"search(stage1={stage1_source},stage2={stage2_source})"
+            return gelu, softmax, noise_cfg, selected_source
 
         if self.config_source == "json":
-            s1, s2 = self._load_dataset_config_from_json()
-            gelu = self._normalize_config_array(
-                s1["gelu"], total_layers, 4, self.allowed_gelu_selected, "json_gelu"
-            )
-            softmax = self._normalize_config_array(
-                s1["softmax"], total_layers, 6, self.allowed_softmax, "json_softmax"
-            )
-            noise_cfg = {}
-            for key in NOISE_SCALING_FACTOR_KEYS:
-                short = self._full_to_short(key)
-                raw = s2.get(key) or s2.get(short)
-                if raw is None:
-                    raise KeyError(f"JSON 配置缺少 stage2 字段 '{key}' / '{short}'。")
-                noise_cfg[key] = self._normalize_noise_array(raw, total_layers, key)
+            gelu, softmax = self._resolve_stage1_from_json(total_layers)
+            noise_cfg = self._resolve_stage2_from_json(total_layers)
             return gelu, softmax, noise_cfg, "json"
 
         if self.config_source == "manual":
@@ -473,26 +460,104 @@ class UnifiedFinalEvaluationModule:
                     "config_source='manual' requires manual_stage1_gelu, manual_stage1_softmax, "
                     "and manual_stage2_noise."
                 )
-            gelu = self._normalize_config_array(
-                self.manual_stage1_gelu, total_layers, 4, self.allowed_gelu_selected, "manual_gelu"
-            )
-            softmax = self._normalize_config_array(
-                self.manual_stage1_softmax, total_layers, 6, self.allowed_softmax, "manual_softmax"
-            )
-            noise_cfg = {}
-            for key in NOISE_SCALING_FACTOR_KEYS:
-                short = self._full_to_short(key)
-                raw = self.manual_stage2_noise.get(key) or self.manual_stage2_noise.get(short)
-                if raw is None:
-                    raise KeyError(f"manual_stage2_noise 中缺少 '{key}' / '{short}'。")
-                noise_cfg[key] = self._normalize_noise_array(raw, total_layers, key)
+            gelu, softmax = self._resolve_stage1_from_manual(total_layers)
+            noise_cfg = self._resolve_stage2_from_manual(total_layers)
             return gelu, softmax, noise_cfg, "manual"
 
         raise ValueError(
             f"Unsupported config_source '{self.config_source}'. Use: search / json / manual."
         )
 
-    def _load_dataset_config_from_json(self):
+    def _resolve_stage1_from_search(self, search_best_stage1, total_layers):
+        gelu = self._normalize_config_array(
+            search_best_stage1["gelu"], total_layers, 4, self.allowed_gelu_selected, "search_gelu"
+        )
+        softmax = self._normalize_config_array(
+            search_best_stage1["softmax"], total_layers, 6, self.allowed_softmax, "search_softmax"
+        )
+        return gelu, softmax
+
+    def _resolve_stage2_from_search(self, search_best_stage2, total_layers):
+        return {
+            key: self._normalize_noise_array(search_best_stage2[key], total_layers, key)
+            for key in NOISE_SCALING_FACTOR_KEYS
+        }
+
+    def _resolve_stage1_from_json(self, total_layers):
+        s1, _ = self._load_dataset_config_from_json(required_sections=("stage1",))
+        gelu = self._normalize_config_array(
+            s1["gelu"], total_layers, 4, self.allowed_gelu_selected, "json_gelu"
+        )
+        softmax = self._normalize_config_array(
+            s1["softmax"], total_layers, 6, self.allowed_softmax, "json_softmax"
+        )
+        return gelu, softmax
+
+    def _resolve_stage2_from_json(self, total_layers):
+        _, s2 = self._load_dataset_config_from_json(required_sections=("stage2",))
+        noise_cfg = {}
+        for key in NOISE_SCALING_FACTOR_KEYS:
+            short = self._full_to_short(key)
+            raw = s2.get(key) or s2.get(short)
+            if raw is None:
+                raise KeyError(f"JSON config missing stage2 key '{key}' / '{short}'.")
+            noise_cfg[key] = self._normalize_noise_array(raw, total_layers, key)
+        return noise_cfg
+
+    def _resolve_stage1_from_manual(self, total_layers):
+        gelu = self._normalize_config_array(
+            self.manual_stage1_gelu, total_layers, 4, self.allowed_gelu_selected, "manual_gelu"
+        )
+        softmax = self._normalize_config_array(
+            self.manual_stage1_softmax, total_layers, 6, self.allowed_softmax, "manual_softmax"
+        )
+        return gelu, softmax
+
+    def _resolve_stage2_from_manual(self, total_layers):
+        noise_cfg = {}
+        for key in NOISE_SCALING_FACTOR_KEYS:
+            short = self._full_to_short(key)
+            raw = self.manual_stage2_noise.get(key) or self.manual_stage2_noise.get(short)
+            if raw is None:
+                raise KeyError(f"manual_stage2_noise missing '{key}' / '{short}'.")
+            noise_cfg[key] = self._normalize_noise_array(raw, total_layers, key)
+        return noise_cfg
+
+    def _resolve_stage1_fallback(self, total_layers):
+        if self.manual_stage1_gelu is not None or self.manual_stage1_softmax is not None:
+            if self.manual_stage1_gelu is None or self.manual_stage1_softmax is None:
+                raise ValueError(
+                    "Stage-1 fallback requires both manual_stage1_gelu and manual_stage1_softmax."
+                )
+            gelu, softmax = self._resolve_stage1_from_manual(total_layers)
+            return gelu, softmax, "manual"
+
+        try:
+            gelu, softmax = self._resolve_stage1_from_json(total_layers)
+            return gelu, softmax, "json"
+        except Exception as exc:
+            raise ValueError(
+                "Stage-1 search result is unavailable, and fallback resolution failed. "
+                "Provide --final-eval-config with valid stage1 content, or provide "
+                "both --manual-stage1-gelu and --manual-stage1-softmax."
+            ) from exc
+
+    def _resolve_stage2_fallback(self, total_layers):
+        if self.manual_stage2_noise is not None:
+            noise_cfg = self._resolve_stage2_from_manual(total_layers)
+            return noise_cfg, "manual"
+
+        try:
+            noise_cfg = self._resolve_stage2_from_json(total_layers)
+            return noise_cfg, "json"
+        except Exception as exc:
+            raise ValueError(
+                "Stage-2 search result is unavailable, and fallback resolution failed. "
+                "Provide --final-eval-config with valid stage2 content, or provide "
+                "--manual-stage2-noise."
+            ) from exc
+
+    def _load_dataset_config_from_json(self, required_sections=("stage1", "stage2")):
         with open(self.config_path, "r", encoding="utf-8") as fh:
             config_map = json.load(fh)
         config_map.pop("_comment", None)
@@ -524,12 +589,12 @@ class UnifiedFinalEvaluationModule:
         if ds not in section:
             raise KeyError(f"Dataset '{ds}' missing under '{variant}' in '{self.config_path}'.")
         entry = section[ds]
-        if "stage1" not in entry or "stage2" not in entry:
+        missing = [name for name in required_sections if name not in entry]
+        if missing:
             raise KeyError(
-                f"Entry '{variant}/{ds}' in '{self.config_path}' must contain both "
-                f"'stage1' and 'stage2' sections."
+                f"Entry '{variant}/{ds}' in '{self.config_path}' is missing sections: {missing}."
             )
-        return entry["stage1"], entry["stage2"]
+        return entry.get("stage1"), entry.get("stage2")
 
     # ------------------------------------------------------------------
     # Random group generation

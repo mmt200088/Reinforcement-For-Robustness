@@ -2676,40 +2676,30 @@ class LayerImportanceEvaluator(TrainerCallback):
         # ---------- 阶段组合校验（兼容续训时灵活切换阶段开关） ----------
         # 在持久化目录续训时，允许用户改变 skip 标志。
         # 仅在逻辑上真正冲突时报错。
-        _has_stage1_checkpoint = (
-            self.resume_run_dir
-            and os.path.isfile(os.path.join(
-                self.resume_run_dir, "stage1",
-                "stage1_rl_checkpoint.pt"
-            ))
+        _has_stage1_manual = (
+            self.manual_stage1_gelu is not None
+            and self.manual_stage1_softmax is not None
         )
-        _prev_meta = read_persistent_metadata(self.run_output_dir) if self.run_output_dir else None
-        _prev_stage1_done = (
-            _prev_meta is not None
-            and _prev_meta.get("stage_status", {}).get("stage1_search") == "completed"
+        _has_stage2_manual = self.manual_stage2_noise is not None
+        _has_json_fallback = bool(
+            self.final_eval_config_path
+            and os.path.isfile(self.final_eval_config_path)
         )
-
-        if self.skip_stage1_rl and self.final_eval_config_source == 'search':
-            # 跳过 stage1 但要求 search 结果——只有在没有历史 stage1 结果时才报错
-            if not (_has_stage1_checkpoint or _prev_stage1_done):
-                raise ValueError(
-                    "skip_stage1_rl=True 与 final_eval_config_source='search' 不能同时使用："
-                    "跳过第一阶段搜索后没有 RL/贪心结果可供 search 使用。"
-                    "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
-                )
+        _can_fallback_stage1 = _has_stage1_manual or _has_json_fallback
+        _can_fallback_stage2 = _has_stage2_manual or _has_json_fallback
 
         if (
             self.needs_stage2_fixed_config
             and self.skip_stage1_rl
             and self.final_eval_config_source == 'search'
+            and (not _can_fallback_stage1)
         ):
-            # 跳过 stage1 但 stage2 RL / final-eval 要用 stage1 搜索结果——只有在没有历史结果时才报错
-            if not (_has_stage1_checkpoint or _prev_stage1_done):
-                raise ValueError(
-                    "skip_stage1_rl=True 与 final_eval_config_source='search' 不能同时用于 "
-                    "Stage-2 RL / 统一 final-eval：跳过第一阶段搜索后，没有 Stage-1 搜索结果可供固定使用。"
-                    "请改用 json 或 manual，或设置 skip_stage1_rl=False。"
-                )
+            raise ValueError(
+                "skip_stage1_rl=True 且 final_eval_config_source='search' 时，"
+                "需要提供 Stage-1 回退配置（json/manual）。"
+                "请提供包含 stage1 的 --final-eval-config，"
+                "或同时提供 --manual-stage1-gelu 与 --manual-stage1-softmax。"
+            )
 
         if self.skip_stage1_rl and (
             self.stage1_rl_episodes_specified
@@ -2750,10 +2740,23 @@ class LayerImportanceEvaluator(TrainerCallback):
                 )
 
         if self.skip_noise_rl and (not self.skip_final_eval) and self.final_eval_config_source == 'search':
+            if not _can_fallback_stage2:
+                raise ValueError(
+                    "skip_noise_rl=True 且 final_eval_config_source='search' 时，"
+                    "需要提供 Stage-2 回退配置（json/manual）。"
+                    "请提供包含 stage2 的 --final-eval-config，"
+                    "或提供 --manual-stage2-noise。"
+                )
+
+        if (
+            self.skip_stage1_rl
+            and self.skip_noise_rl
+            and (not self.skip_final_eval)
+            and self.final_eval_config_source == 'search'
+        ):
             raise ValueError(
-                "skip_noise_rl=True 与 final_eval_config_source='search' 不能同时用于统一 final-eval："
-                "跳过 Stage-2 噪声 RL 后没有 Stage-2 搜索结果可供 search 使用。"
-                "请改用 json 或 manual，或设置 skip_noise_rl=False。"
+                "当 Stage-1 与 Stage-2 搜索都被跳过时，统一 final-eval 不能使用 "
+                "final_eval_config_source='search'。"
             )
 
         if self.skip_noise_rl and (

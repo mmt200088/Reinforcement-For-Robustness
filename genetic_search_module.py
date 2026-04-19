@@ -460,14 +460,30 @@ def resolve_stage1_selected_config(
         permutation_trials=evaluator.final_eval_permutation_trials,
         cost_equivalent_trials=evaluator.final_eval_cost_equivalent_trials,
         budget_equivalent_trials=evaluator.final_eval_budget_equivalent_trials,
-        results_dir=evaluator.final_eval_dir,
+        results_dir=getattr(
+            evaluator,
+            "final_eval_dir",
+            getattr(evaluator, "stage1_final_eval_dir", None),
+        ),
     )
-    gelu, softmax, source = module.resolve_stage1_only(
-        search_best_config, evaluator.total_layers
-    )
+    resolved_label = None
+    if hasattr(module, "resolve_stage1_only"):
+        gelu, softmax, source = module.resolve_stage1_only(
+            search_best_config, evaluator.total_layers
+        )
+    else:
+        legacy = module._resolve_selected_config(search_best_config, evaluator.total_layers)
+        if len(legacy) == 3:
+            gelu, softmax, source = legacy
+        elif len(legacy) == 4:
+            gelu, softmax, resolved_label, source = legacy
+        else:
+            raise ValueError("Unexpected legacy stage1 resolver output format.")
     if normalized_source == "stage1_result":
         source = "stage1_result"
-    if source == "search":
+    if resolved_label is not None:
+        label = resolved_label
+    elif source == "search":
         label = "Optimized (Genetic Stage-1)"
     elif source == "json":
         label = "JSON Stage-1"

@@ -83,8 +83,8 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--skip-stage1-search` | `rl`、`ga` | — | 跳过 Stage-1 搜索 |
 | `--skip-noise-search` | `rl`、`ga` | — | 跳过 Stage-2 搜索 |
 | `--skip-final-eval` | `rl`、`ga` | — | 一次跳过 Stage-1 + Stage-2 合并的最终评估（取代旧的两个分开 flag） |
-| `--final-eval-source search/json/manual` | `rl`、`ga` | `search` | 统一最终评估的配置来源，同时覆盖 Stage-1 与 Stage-2 |
-| `--final-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式下的合并 JSON（同时包含 stage1/stage2 两块） |
+| `--final-eval-source search/json/manual` | `rl`、`ga` | `search` | 统一最终评估来源；`search` 模式下会优先使用已执行阶段的搜索结果，若某阶段被 `skip` 则回退到 `--final-eval-config` 对应阶段配置 |
+| `--final-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式必填；`search` + 单阶段 `skip` 时也用于缺失阶段回退（文件需包含 stage1/stage2 两块） |
 | `--manual-stage1-gelu JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-1 GELU 配置 |
 | `--manual-stage1-softmax JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-1 Softmax 配置 |
 | `--manual-stage2-noise JSON_OBJECT` | `rl`、`ga` | — | `manual` 模式下的 7 类 Stage-2 噪声配置；`manual` 要求三个 manual-stage* 参数同时提供 |
