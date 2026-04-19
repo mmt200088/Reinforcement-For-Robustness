@@ -1,0 +1,34 @@
+══════════════════════════════════════════════════════════════════════
+  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）
+══════════════════════════════════════════════════════════════════════
+  [信息] Stage-1 PPO学习率（LR）: raw=0.0001 -> 0.0001 (direct) | Stage-2 PPO学习率（LR）: raw=0.0001 -> 0.0001 (direct)
+  [信息] 一阶段 RL 回合 stage-1 episodes=51000  ·  二阶段噪声 RL 回合 stage-2 episodes=25600
+  [信息] 本次运行根目录 run_output_dir=rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005
+Stage-2 fixed Stage-1 config source=stage1_result, label=Stage-1 Search Result
+  [自动调整] 指定分段数 N=5 导致每段仅 81 个样本（< 256），已自动缩减为 N=1（每段约 408 个样本）
+  [自动调整] 指定分段数 N=5 导致每段仅 81 个样本（< 256），已自动缩减为 N=1（每段约 408 个样本）
+  [自动调整] 指定分段数 N=5 导致每段仅 81 个样本（< 256），已自动缩减为 N=1（每段约 408 个样本）
+  [自动调整] 指定分段数 N=5 导致每段仅 81 个样本（< 256），已自动缩减为 N=1（每段约 408 个样本）
+
+Stage-2 baseline and dynamic constraints:
+  split=validation_full  limit_tolerance=0.005 (0.50% around baseline)  stability_tolerance=0.005 (0.50% around baseline std)
+  evaluation_mode=stability_probe_trials  (baseline K=1, train K=1, confirm K=1, best-test K=1; probe size=256)
+  low-risk baseline: 损失（Loss）: 0.397123, Accuracy: 0.828125, F1: 0.830159  worst-trial: loss_max=0.3971, m1_min=0.8281, m2_min=0.8302
+  worst-case baseline: 损失（Loss）: 0.387664, Accuracy: 0.843750, F1: 0.845178  worst-trial: loss_max=0.3877, m1_min=0.8438, m2_min=0.8452
+  dynamic constraints: 损失（Loss）<=0.3991, Accuracy>=0.8240, F1>=0.8260
+  std caps (pure noise-sampling variance): loss=0.000000, m1=0.000000, m2=0.000000
+  cost reference (max-sf configuration): total_noise_cost=49.20  (score range 32.40 -> 49.20)
+
+Stage-2 Noise Genetic Search follows COINN: fitness-weighted selection plus adjacent scaling-factor mutation, while using an RL-aligned score that puts more pressure on performance margins and stability under the current dynamic constraints and challenger-confirmation protocol.
+
+╔══════════════════════════════════════════════════════════════════╗
+║         Stage-2 遗传算法搜索（Genetic Algorithm — Noise Scaling）        ║
+╠══════════════════════════════════════════════════════════════════╣
+║  种群规模（Population）    : 32                                    ║
+║  最大代数（Max Generations）: 800                                   ║
+║  停滞容忍（Stagnation Tol）: 266                                   ║
+╚══════════════════════════════════════════════════════════════════╝
+
+  多样性注入阈值: 133  初始incumbent: score=40.382170, cost=49.20
+[Stage2][Gen 0001] challenger confirm score(train)=40.396796  score(confirm)=40.396796  constraint=True  std=True
+[Stage2][Gen 0001/800] 本代最优=40.396796(cost=48.35)  incumbent=40.396796(cost=48.35)  合格比=100%  停滞=0/266  耗时=41.6s ★

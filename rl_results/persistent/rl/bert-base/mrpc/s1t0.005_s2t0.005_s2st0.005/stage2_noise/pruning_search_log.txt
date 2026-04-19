@@ -1,0 +1,152 @@
+══════════════════════════════════════════════════════════════════════
+  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）
+══════════════════════════════════════════════════════════════════════
+  [信息] Stage-1 PPO学习率（LR）: raw=2e-05 -> 2e-05 (direct) | Stage-2 PPO学习率（LR）: raw=2e-05 -> 2e-05 (direct)
+  [信息] 一阶段 RL 回合 stage-1 episodes=51000  ·  二阶段噪声 RL 回合 stage-2 episodes=80000
+  [信息] 本次运行根目录 run_output_dir=rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005
+
+════════════════════════════════════════════════════════════════════
+  阶段5 · 二阶段噪声强化学习 V2（Phase 5 · Second-stage noise RL V2）
+════════════════════════════════════════════════════════════════════
+  ▸ 固定 GELU / Softmax 来源（source）: json    标签（label）: Stage-1 config (json)
+  ▸ GELU 离散阶数向量:   [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1]
+  ▸ Softmax 离散阶数向量: [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
+  ▸ 指标维度 num_metrics=2    指标名 metric names=('Accuracy', 'F1')
+  ▸ Noise RL 评测子集 split=「validation_full」（完整验证集 validation_full）
+  [自动调整] 指定分段数 N=5 导致每段仅 81 个样本（< 256），已自动缩减为 N=1（每段约 408 个样本）
+
+  【性能基线 · 固定 Stage-1 + 低风险参考噪声（Noise-stage baseline）】
+  ▸ 低风险缩放因子配置（low-risk noise config）：
+     input_noise_scaling_factors: [30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30]
+     wq_noise_scaling_factors: [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
+     wk_noise_scaling_factors: [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
+     wv_noise_scaling_factors: [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
+     wo_noise_scaling_factors: [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
+     wffn1_noise_scaling_factors: [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24]
+     wffn2_noise_scaling_factors: [22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22]
+  基线（Baseline） · 噪声试验 trials=1 · 探针 probe=256 · 子集 split=validation_full
+     损失（Loss）: 0.295725, Accuracy: 0.878906, F1: 0.877831  │ 噪声噪声方差 std: loss=0.0000, m1=0.0000, m2=0.0000  │ 最坏 loss_max=0.2957, m1_min=0.8789, m2_min=0.8778
+
+  【最坏情形 · 固定 Stage-1 + 最强噪声（Worst-case noise）】
+  最坏（Worst） · 噪声试验 trials=1 · 探针 probe=256 · 子集 split=validation_full
+     损失（Loss）: 0.296289, Accuracy: 0.886719, F1: 0.886131  │ 噪声噪声方差 std: loss=0.0000, m1=0.0000, m2=0.0000  │ 最坏 loss_max=0.2963, m1_min=0.8867, m2_min=0.8861
+
+  【成本参考（Cost reference）】
+  ▸ 聚合成本（noise cost）: 49.20
+
+  【动态约束（Dynamic constraints, limit_tolerance=0.005, stability_tolerance=0.005 on validation_full）】
+  ▸ 基线（baseline）: 损失（Loss）: 0.295725, Accuracy: 0.878906, F1: 0.877831
+  ▸ 最坏（worst-ref）: 损失（Loss）: 0.296289, Accuracy: 0.886719, F1: 0.886131  (仅做观察，不再参与界限计算)
+  ▸ 界限（limit）:   损失（Loss）<=0.2972, Accuracy>=0.8745, F1>=0.8734  (baseline ± 0.50%)
+
+  【训练超参与设定摘要（Training hyperparameters V2）】
+  ▸ GTrXL: d_model=256, heads=8, layers=4, d_ff=512
+  ▸ PPO: max_episodes=80000, eps_clip=0.12, k_epochs=6, warmup=constant
+  ▸ MC: K_trials=5  probe_size=256  (actual baseline K=1)  ← 固定分层探针 + K 次噪声方异种子
+  ▸ 方差惩罚: lambda=5.0  · 动态 loss_std 上界=0.000000  (baseline 0.000000 * (1+0.005))
+  ▸ 动态 m1_std 上界=0.000000  (baseline 0.000000 * (1+0.005))  · m2_std 上界=0.000000  (baseline 0.000000 * (1+0.005))
+  ▸ 奖励权重: margin=1.0, violation=1.0, cost=0.25
+  ▸ 基线标准差: loss_std=0.000000, m1_std=0.000000, m2_std=0.000000
+  [自动调整] 指定分段数 N=5 导致每段仅 81 个样本（< 256），已自动缩减为 N=1（每段约 408 个样本）
+  [自动调整] 指定分段数 N=5 导致每段仅 81 个样本（< 256），已自动缩减为 N=1（每段约 408 个样本）
+  [最优复试 BestTest] 初始守擂已就绪（基线无条件上台）: 成本 cost=49.20
+  [优雅停止] 训练期间可按 Ctrl+C 或创建 rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/STOP_RL 触发安全停止（在下一回合边界保存 checkpoint 后退出）。
+
+  【回合 1 · 训练过程新高（episode new best）】
+  ▸ 终选分=0.8050  │  成本 cost=43.15
+  ▸ 训练期最优回合·噪声 scaling 序列（按层，与 Stage-2 动作映射后的 SF）:
+     input_noise_scaling_factors: [30, 28, 24, 30, 28, 26, 24, 30, 24, 28, 26, 30]
+     wq_noise_scaling_factors: [22, 22, 18, 22, 22, 22, 22, 14, 22, 22, 22, 14]
+     wk_noise_scaling_factors: [22, 16, 18, 16, 14, 14, 20, 16, 22, 18, 22, 22]
+     wv_noise_scaling_factors: [16, 20, 22, 22, 22, 22, 22, 14, 20, 22, 22, 14]
+     wo_noise_scaling_factors: [22, 16, 16, 22, 14, 14, 18, 16, 18, 16, 20, 14]
+     wffn1_noise_scaling_factors: [24, 24, 16, 24, 22, 24, 18, 20, 24, 24, 24, 24]
+     wffn2_noise_scaling_factors: [22, 16, 18, 14, 18, 22, 22, 14, 22, 14, 18, 22]
+
+  【回合 2 · 训练过程新高（episode new best）】
+  ▸ 终选分=40.5086  │  成本 cost=44.05
+  ▸ 训练期最优回合·噪声 scaling 序列（按层，与 Stage-2 动作映射后的 SF）:
+     input_noise_scaling_factors: [30, 24, 26, 30, 30, 22, 30, 30, 26, 30, 30, 30]
+     wq_noise_scaling_factors: [14, 14, 22, 22, 14, 14, 20, 18, 22, 22, 22, 22]
+     wk_noise_scaling_factors: [14, 22, 22, 22, 16, 22, 22, 14, 16, 22, 22, 16]
+     wv_noise_scaling_factors: [22, 22, 14, 14, 22, 18, 22, 22, 22, 22, 22, 20]
+     wo_noise_scaling_factors: [16, 16, 20, 18, 16, 22, 22, 22, 22, 20, 22, 18]
+     wffn1_noise_scaling_factors: [24, 24, 20, 24, 18, 24, 24, 20, 22, 24, 16, 24]
+     wffn2_noise_scaling_factors: [22, 20, 22, 14, 18, 22, 14, 22, 22, 16, 20, 16]
+  ╭────────────────────────────────────────────────────────────────────────╮
+  │ 挑战者确认（Challenger Confirmation）· 回合 2                                 │
+  │   K=1 次噪声试验 · 探针=256 样本                                              │
+  │   loss=0.2933+/-0.0000 (max 0.2933), m1=0.8789+/-0.0000 (min 0.8789) │
+  │   方差检查 std_check=True  (loss_std 0.000000 vs cap 0.000000)           │
+  │   m1_std 0.000000 vs cap 0.000000                                    │
+  │   m2_std 0.000000 vs cap 0.000000                                    │
+  │   约束检查 constraint=True                                               │
+  │   裁定（verdict）: PASS                                                  │
+  ╰────────────────────────────────────────────────────────────────────────╯
+  ★ 守擂最优（incumbent best）已更新 · 回合 2: 新 mean_score=40.5086, 成本 cost=44.05
+
+  【回合 3 · 训练过程新高（episode new best）】
+  ▸ 终选分=40.7947  │  成本 cost=44.35
+  ▸ 训练期最优回合·噪声 scaling 序列（按层，与 Stage-2 动作映射后的 SF）:
+     input_noise_scaling_factors: [30, 22, 30, 28, 30, 30, 26, 30, 24, 30, 26, 24]
+     wq_noise_scaling_factors: [18, 22, 14, 22, 22, 14, 22, 20, 22, 18, 22, 22]
+     wk_noise_scaling_factors: [16, 20, 16, 20, 18, 16, 22, 14, 20, 18, 22, 22]
+     wv_noise_scaling_factors: [22, 22, 18, 20, 16, 22, 22, 22, 20, 22, 16, 22]
+     wo_noise_scaling_factors: [22, 20, 22, 20, 16, 14, 22, 22, 20, 22, 22, 16]
+     wffn1_noise_scaling_factors: [24, 20, 22, 24, 20, 18, 24, 16, 24, 18, 24, 16]
+     wffn2_noise_scaling_factors: [22, 22, 20, 16, 22, 22, 16, 22, 22, 22, 22, 22]
+  ╭────────────────────────────────────────────────────────────────────────╮
+  │ 挑战者确认（Challenger Confirmation）· 回合 3                                 │
+  │   K=1 次噪声试验 · 探针=256 样本                                              │
+  │   loss=0.2955+/-0.0000 (max 0.2955), m1=0.8828+/-0.0000 (min 0.8828) │
+  │   方差检查 std_check=True  (loss_std 0.000000 vs cap 0.000000)           │
+  │   m1_std 0.000000 vs cap 0.000000                                    │
+  │   m2_std 0.000000 vs cap 0.000000                                    │
+  │   约束检查 constraint=True                                               │
+  │   裁定（verdict）: PASS                                                  │
+  ╰────────────────────────────────────────────────────────────────────────╯
+  ★ 守擂最优（incumbent best）已更新 · 回合 3: 新 mean_score=40.7947, 成本 cost=44.35
+
+  【回合 9 · 训练过程新高（episode new best）】
+  ▸ 终选分=40.8244  │  成本 cost=43.15
+  ▸ 训练期最优回合·噪声 scaling 序列（按层，与 Stage-2 动作映射后的 SF）:
+     input_noise_scaling_factors: [30, 22, 30, 30, 30, 22, 24, 22, 30, 30, 30, 30]
+     wq_noise_scaling_factors: [20, 18, 22, 22, 18, 18, 16, 18, 22, 22, 18, 16]
+     wk_noise_scaling_factors: [18, 16, 18, 18, 22, 20, 18, 22, 22, 18, 20, 18]
+     wv_noise_scaling_factors: [16, 22, 18, 14, 14, 22, 20, 14, 18, 20, 20, 20]
+     wo_noise_scaling_factors: [16, 16, 18, 14, 16, 22, 22, 22, 22, 18, 18, 22]
+     wffn1_noise_scaling_factors: [24, 24, 24, 22, 24, 20, 24, 22, 16, 24, 16, 24]
+     wffn2_noise_scaling_factors: [22, 14, 18, 16, 22, 18, 20, 22, 20, 18, 22, 16]
+  ╭────────────────────────────────────────────────────────────────────────╮
+  │ 挑战者确认（Challenger Confirmation）· 回合 9                                 │
+  │   K=1 次噪声试验 · 探针=256 样本                                              │
+  │   loss=0.2960+/-0.0000 (max 0.2960), m1=0.8828+/-0.0000 (min 0.8828) │
+  │   方差检查 std_check=True  (loss_std 0.000000 vs cap 0.000000)           │
+  │   m1_std 0.000000 vs cap 0.000000                                    │
+  │   m2_std 0.000000 vs cap 0.000000                                    │
+  │   约束检查 constraint=True                                               │
+  │   裁定（verdict）: PASS                                                  │
+  ╰────────────────────────────────────────────────────────────────────────╯
+  ★ 守擂最优（incumbent best）已更新 · 回合 9: 新 mean_score=40.8244, 成本 cost=43.15
+
+  【回合 13 · 训练过程新高（episode new best）】
+  ▸ 终选分=41.2057  │  成本 cost=42.40
+  ▸ 训练期最优回合·噪声 scaling 序列（按层，与 Stage-2 动作映射后的 SF）:
+     input_noise_scaling_factors: [30, 28, 24, 22, 30, 24, 28, 30, 26, 30, 22, 30]
+     wq_noise_scaling_factors: [16, 20, 22, 16, 14, 22, 22, 16, 22, 18, 22, 22]
+     wk_noise_scaling_factors: [18, 22, 16, 18, 18, 22, 16, 20, 14, 18, 22, 16]
+     wv_noise_scaling_factors: [22, 14, 16, 22, 20, 14, 14, 22, 14, 22, 18, 14]
+     wo_noise_scaling_factors: [18, 14, 18, 16, 20, 16, 18, 22, 20, 22, 20, 22]
+     wffn1_noise_scaling_factors: [16, 24, 20, 24, 22, 24, 24, 16, 24, 18, 24, 20]
+     wffn2_noise_scaling_factors: [14, 20, 22, 18, 18, 18, 22, 18, 22, 14, 22, 18]
+  ╭────────────────────────────────────────────────────────────────────────╮
+  │ 挑战者确认（Challenger Confirmation）· 回合 13                                │
+  │   K=1 次噪声试验 · 探针=256 样本                                              │
+  │   loss=0.2941+/-0.0000 (max 0.2941), m1=0.8867+/-0.0000 (min 0.8867) │
+  │   方差检查 std_check=True  (loss_std 0.000000 vs cap 0.000000)           │
+  │   m1_std 0.000000 vs cap 0.000000                                    │
+  │   m2_std 0.000000 vs cap 0.000000                                    │
+  │   约束检查 constraint=True                                               │
+  │   裁定（verdict）: PASS                                                  │
+  ╰────────────────────────────────────────────────────────────────────────╯
+  ★ 守擂最优（incumbent best）已更新 · 回合 13: 新 mean_score=41.2057, 成本 cost=42.40
