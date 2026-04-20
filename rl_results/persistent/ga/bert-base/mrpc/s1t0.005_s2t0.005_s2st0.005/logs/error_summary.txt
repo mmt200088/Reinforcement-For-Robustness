@@ -1,0 +1,20 @@
+[Time]
+2026-04-20 11:25:06
+
+[Program]
+rl_tune_genetic.py
+
+[Status]
+failed
+
+[Message]
+Process exited with a non-zero status (2).
+
+[Run Output Dir]
+rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005
+
+[Exit Code]
+2
+
+[Command]
+rl_tune_genetic.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005 --batch_size 64 --micro_batch_size 64 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules '["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"]' --use_ist --final_eval_config_source search --final_eval_config_path glue_final_configs_best_genetic.json --manual_stage1_gelu '' --manual_stage1_softmax '' --manual_stage2_noise '' --stage2_fixed_config_source json --stage2_fixed_config_path glue_final_configs_best_genetic.json --stage2_manual_gelu '' --stage2_manual_softmax '' --final_eval_random_seed 42 --final_eval_permutation_trials 50 --final_eval_cost_equivalent_trials 50 --final_eval_budget_equivalent_trials 50 --final_eval_repeat_n 1 --skip_noise_rl false --skip_stage1_rl true --skip_final_eval false --resume_run_dir '' --stage1_accuracy_tolerance 0.005 --stage2_limit_tolerance 0.005 --stage2_stability_tolerance 0.005 --stage2_k_trials 5 --stage2_probe_size 256 --stage2_ga_generations 800 --stage2_ga_generations_specified true
