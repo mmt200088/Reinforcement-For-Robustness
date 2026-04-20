@@ -918,3 +918,6 @@ Stage-2 Noise Genetic Search follows COINN: fitness-weighted selection plus adja
   ╰───────────────────────────────────────────────────────────────────────────────────╯
 [Stage2][Gen 0216] challenger confirm score(train)=41.186011  score(confirm)=41.186011  constraint=True  std=True
 [Stage2][Gen 0216/800] 本代最优=41.186011(cost=39.50)  incumbent=41.186011(cost=39.50)  合格比=88%  停滞=0/266  耗时=187.2s ★
+[Stage2][Gen 0217/800] 本代最优=41.186011(cost=39.50)  incumbent=41.186011(cost=39.50)  合格比=84%  停滞=1/266  耗时=186.2s
+[Stage2][Gen 0218/800] 本代最优=41.186011(cost=39.50)  incumbent=41.186011(cost=39.50)  合格比=78%  停滞=2/266  耗时=187.3s
+[Stage2][Gen 0219/800] 本代最优=41.186011(cost=39.50)  incumbent=41.186011(cost=39.50)  合格比=94%  停滞=3/266  耗时=187.4s
