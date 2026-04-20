@@ -208,6 +208,11 @@ NOISE_STAGE_STATUS_NO_STABLE_FEASIBLE = "no_stable_feasible_candidate"
 NOISE_STAGE_REWARD_CLIP_MIN = -5.0
 NOISE_STAGE_REWARD_CLIP_MAX = 5.0
 
+# Stage-2 terminal reward is tiered around 0 / 20 / 40.  A 0.2-point
+# moving-window drop is normal tier-mixture noise, so use a threshold that
+# indicates a meaningful drop in the 120-episode PPO window.
+NOISE_STAGE_REWARD_DROP_WARNING_THRESHOLD = 5.0
+
 # ===============================================================
 # Stage-2 分层优先级奖励（Hierarchical Priority Bonus）
 # ---------------------------------------------------------------
@@ -341,6 +346,29 @@ def _resolve_stage2_entropy_coef(episode, total_episodes, legacy_coef):
         cos_factor = 0.5 * (1.0 + math.cos(math.pi * tail))  # 1 -> 0
         coef = end + (start - end) * cos_factor
     return float(max(coef, floor))
+
+
+def _resolve_effective_stage2_ppo_hparams(
+    ppo_eps_clip=NOISE_STAGE_PPO_EPS_CLIP,
+    ppo_k_epochs=NOISE_STAGE_PPO_K_EPOCHS,
+    gtrxl_mini_batch_episodes=None,
+):
+    """Return the PPO hyperparameters that will actually be used at update time."""
+    eps_clip = float(ppo_eps_clip)
+    k_epochs = int(ppo_k_epochs)
+    mini_batch_episodes = (
+        None if gtrxl_mini_batch_episodes is None else int(gtrxl_mini_batch_episodes)
+    )
+    mode = "base"
+    if NOISE_RL_OPT_FLAGS.get("use_v3_ppo_hparams", False):
+        eps_clip = float(NOISE_RL_OPT_FLAGS.get("v3_eps_clip", eps_clip))
+        k_epochs = int(NOISE_RL_OPT_FLAGS.get("v3_k_epochs", k_epochs))
+        if mini_batch_episodes is not None:
+            mini_batch_episodes = int(
+                NOISE_RL_OPT_FLAGS.get("v3_mini_batch_episodes", mini_batch_episodes)
+            )
+        mode = "v3_overrides"
+    return eps_clip, k_epochs, mini_batch_episodes, mode
 
 
 def _per_head_entropy_recovery_delta(per_head_entropy_means, action_dims):
@@ -666,7 +694,9 @@ def _write_warning_report(warning_file, warnings, stage_label=""):
             ep_start, ep_end = w["episode_range"]
             f.write(f"--- \u8b66\u544a #{i} ---\n")
             f.write(f"  \u7c7b\u578b: {w['type']}\n")
-            f.write(f"  \u6da8\u5e45: {w['drop']:.4f} (\u4e0a\u6b21={w['prev_avg']:.4f}, \u672c\u6b21={w['curr_avg']:.4f})\n")
+            f.write(f"  \u964d\u5e45: {w['drop']:.4f} (\u4e0a\u6b21={w['prev_avg']:.4f}, \u672c\u6b21={w['curr_avg']:.4f})\n")
+            if "threshold" in w:
+                f.write(f"  \u89e6\u53d1\u9608\u503c: {float(w['threshold']):.4f}\n")
             f.write(f"  \u56de\u5408\u8303\u56f4: {ep_start}-{ep_end}\n")
             for df in w.get("detail_files", []):
                 f.write(f"    -> details/{df}\n")
@@ -1698,12 +1728,13 @@ def _ppo_update_noise_gtrxl(evaluator, noise_net, optimizer, buffer, device,
         entropy_coef = evaluator.get_current_entropy_coef()
 
     # v3 PPO hparam overrides（默认 ON，可按 flag 回滚到 v2）
-    if NOISE_RL_OPT_FLAGS.get("use_v3_ppo_hparams", False):
-        ppo_eps_clip = float(NOISE_RL_OPT_FLAGS.get("v3_eps_clip", 0.2))
-        ppo_k_epochs = int(NOISE_RL_OPT_FLAGS.get("v3_k_epochs", 4))
-        gtrxl_mini_batch_episodes = int(
-            NOISE_RL_OPT_FLAGS.get("v3_mini_batch_episodes", 12)
+    ppo_eps_clip, ppo_k_epochs, gtrxl_mini_batch_episodes, _ = (
+        _resolve_effective_stage2_ppo_hparams(
+            ppo_eps_clip=ppo_eps_clip,
+            ppo_k_epochs=ppo_k_epochs,
+            gtrxl_mini_batch_episodes=gtrxl_mini_batch_episodes,
         )
+    )
 
     target_lr = float(getattr(evaluator, "stage2_ppo_lr_initial", evaluator.ppo_lr_initial))
     if NOISE_RL_OPT_FLAGS.get("use_v3_ppo_hparams", False):
@@ -2062,7 +2093,6 @@ class NoiseRLModuleV2:
             GTRXL_MINI_BATCH_EPISODES,
             GTrXLBlock,
             STEP_INFO_CHUNK_SIZE,
-            REWARD_DROP_WARNING_THRESHOLD,
         )
 
         ev = self.evaluator
@@ -2199,6 +2229,24 @@ class NoiseRLModuleV2:
         dynamic_loss_std_cap = _compute_dynamic_std_upper_bound(baseline_loss_std, tolerance=_s2_stab_tol)
         dynamic_m1_std_cap = _compute_dynamic_std_upper_bound(baseline_m1_std, tolerance=_s2_stab_tol)
         dynamic_m2_std_cap = _compute_dynamic_std_upper_bound(baseline_m2_std, tolerance=_s2_stab_tol)
+        (
+            effective_ppo_eps_clip,
+            effective_ppo_k_epochs,
+            effective_mini_batch_episodes,
+            effective_ppo_hparam_mode,
+        ) = _resolve_effective_stage2_ppo_hparams(
+            ppo_eps_clip=NOISE_STAGE_PPO_EPS_CLIP,
+            ppo_k_epochs=NOISE_STAGE_PPO_K_EPOCHS,
+            gtrxl_mini_batch_episodes=GTRXL_MINI_BATCH_EPISODES,
+        )
+        stage2_base_lr = float(getattr(ev, "stage2_ppo_lr_initial", ev.ppo_lr_initial))
+        stage2_lr_multiplier = (
+            float(NOISE_RL_OPT_FLAGS.get("v3_lr_multiplier", 1.0))
+            if NOISE_RL_OPT_FLAGS.get("use_v3_ppo_hparams", False)
+            else 1.0
+        )
+        stage2_effective_target_lr = stage2_base_lr * stage2_lr_multiplier
+        stage2_adaptive_lr_enabled = bool(NOISE_RL_OPT_FLAGS.get("v3_adaptive_lr_kl", False))
 
         _noise_block_title(ev.log, "\u8bad\u7ec3\u8d85\u53c2\u4e0e\u8bbe\u5b9a\u6458\u8981\uff08Training hyperparameters V2\uff09")
         ev.log(
@@ -2206,8 +2254,16 @@ class NoiseRLModuleV2:
             f"layers={NOISE_STAGE_GTRXL_N_LAYERS}, d_ff={NOISE_STAGE_GTRXL_D_FF}"
         )
         ev.log(
-            f"  \u25b8 PPO: max_episodes={stage2_total_episodes}, eps_clip={NOISE_STAGE_PPO_EPS_CLIP}, "
-            f"k_epochs={NOISE_STAGE_PPO_K_EPOCHS}, warmup={NOISE_STAGE_GTRXL_WARMUP_MODE}"
+            f"  \u25b8 PPO 实际生效: max_episodes={stage2_total_episodes}, "
+            f"eps_clip={effective_ppo_eps_clip}, k_epochs={effective_ppo_k_epochs}, "
+            f"mini_batch_episodes={effective_mini_batch_episodes}, "
+            f"hparam_mode={effective_ppo_hparam_mode}, warmup={NOISE_STAGE_GTRXL_WARMUP_MODE}"
+        )
+        ev.log(
+            f"  \u25b8 PPO LR 实际生效: base={stage2_base_lr:.6g}, "
+            f"target={stage2_effective_target_lr:.6g}, "
+            f"v3_lr_multiplier={stage2_lr_multiplier:g}, "
+            f"adaptive_kl={'on' if stage2_adaptive_lr_enabled else 'off'}"
         )
         ev.log(
             f"  \u25b8 MC: K_trials={_stage2_k}  probe_size={_stage2_probe}"
@@ -2232,6 +2288,11 @@ class NoiseRLModuleV2:
         ev.log(
             f"  \u25b8 \u57fa\u7ebf\u6807\u51c6\u5dee: loss_std={baseline_loss_std:.6f}, "
             f"m1_std={baseline_m1_std:.6f}, m2_std={baseline_m2_std:.6f}"
+        )
+        ev.log(
+            f"  \u25b8 Stage-2 reward-drop warning 阈值: "
+            f"{NOISE_STAGE_REWARD_DROP_WARNING_THRESHOLD:.4f} "
+            f"（终局奖励按 tier 分段，低于该幅度的窗口波动不写 warning.txt）"
         )
         os.makedirs(noise_progress_dir, exist_ok=True)
 
@@ -3017,7 +3078,7 @@ class NoiseRLModuleV2:
                 # \u5956\u52b1\u9a9f\u964d\u68c0\u6d4b
                 if noise_prev_avg_reward[0] is not None:
                     reward_drop = noise_prev_avg_reward[0] - avg_raw_final_reward
-                    if reward_drop > REWARD_DROP_WARNING_THRESHOLD:
+                    if reward_drop > NOISE_STAGE_REWARD_DROP_WARNING_THRESHOLD:
                         window_start_ep = episode + 1 - PPO_UPDATE_INTERVAL + 1
                         window_end_ep = episode + 1
                         involved_files = sorted(set(
@@ -3031,7 +3092,7 @@ class NoiseRLModuleV2:
                             "prev_avg": float(noise_prev_avg_reward[0]),
                             "curr_avg": float(avg_raw_final_reward),
                             "drop": float(reward_drop),
-                            "threshold": float(REWARD_DROP_WARNING_THRESHOLD),
+                            "threshold": float(NOISE_STAGE_REWARD_DROP_WARNING_THRESHOLD),
                             "episode_range": (window_start_ep, window_end_ep),
                             "detail_files": involved_basenames,
                         }
@@ -3040,7 +3101,8 @@ class NoiseRLModuleV2:
                             f"\u26a0 \u5956\u52b1\u9a9f\u964d\u8b66\u544a \u00b7 \u7b2c {len(noise_warnings)} \u6761",
                             f"\u7a97\u53e3: {noise_ppo_update_count}, \u56de\u5408: {window_start_ep}-{window_end_ep}",
                             f"\u4e0a\u6b21={noise_prev_avg_reward[0]:.4f} -> \u672c\u6b21={avg_raw_final_reward:.4f}, "
-                            f"\u964d\u5e45={reward_drop:.4f}",
+                            f"\u964d\u5e45={reward_drop:.4f} "
+                            f"(\u9608\u503c={NOISE_STAGE_REWARD_DROP_WARNING_THRESHOLD:.4f})",
                         ])
                         _write_warning_report(noise_warning_file, noise_warnings,
                                               stage_label="\u566a\u58f0\u9636\u6bb5 V2\uff08Stage-2 Noise V2\uff09")
@@ -3404,8 +3466,15 @@ class NoiseRLModuleV2:
                 "gtrxl_d_ff": NOISE_STAGE_GTRXL_D_FF,
                 "ppo_max_episodes": stage2_total_episodes,
                 "ppo_update_interval": PPO_UPDATE_INTERVAL,
-                "ppo_eps_clip": NOISE_STAGE_PPO_EPS_CLIP,
-                "ppo_k_epochs": NOISE_STAGE_PPO_K_EPOCHS,
+                "ppo_eps_clip": effective_ppo_eps_clip,
+                "ppo_k_epochs": effective_ppo_k_epochs,
+                "ppo_base_eps_clip": NOISE_STAGE_PPO_EPS_CLIP,
+                "ppo_base_k_epochs": NOISE_STAGE_PPO_K_EPOCHS,
+                "ppo_hparam_mode": effective_ppo_hparam_mode,
+                "ppo_mini_batch_episodes": effective_mini_batch_episodes,
+                "ppo_base_lr": float(stage2_base_lr),
+                "ppo_effective_target_lr": float(stage2_effective_target_lr),
+                "ppo_adaptive_kl_lr": bool(stage2_adaptive_lr_enabled),
                 "mc_train_samples": _stage2_k,
                 "mc_confirm_segments": _stage2_k,
                 "k_trials": _stage2_k,
@@ -3421,6 +3490,7 @@ class NoiseRLModuleV2:
                 "noise_debt_log_alpha": NOISE_STAGE_NOISE_DEBT_LOG_ALPHA,
                 "ppo_gamma": float(NOISE_STAGE_PPO_GAMMA),
                 "value_clip_range": float(NOISE_STAGE_VALUE_CLIP_RANGE),
+                "reward_drop_warning_threshold": float(NOISE_STAGE_REWARD_DROP_WARNING_THRESHOLD),
                 "v2_cont_dim": NOISE_STAGE_V2_CONT_DIM,
             },
             "reward_diagnostics": {
