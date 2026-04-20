@@ -643,6 +643,11 @@ def _fmt_elapsed(seconds):
     return f"{m}m{s:02d}s"
 
 
+def _fmt_eta_finish(eta_seconds):
+    finish_ts = _time.time() + max(float(eta_seconds), 0.0)
+    return _time.strftime("%Y-%m-%d %H:%M:%S", _time.localtime(finish_ts))
+
+
 # 噪声 RL 进度框输出间隔（以 PPO 更新次数为单位）
 NOISE_RL_PROGRESS_BOX_PPO_INTERVAL = 5
 
@@ -3003,6 +3008,7 @@ class NoiseRLModuleV2:
                             f"训练期最优（Train best）得分: {best_final_selection_score:.4f}  成本: {best_cost:.2f}",
                             f"已用时: {_fmt_elapsed(_rl_elapsed)}  "
                             f"预计剩余: {_fmt_elapsed(_rl_eta)}  "
+                            f"预计完成: {_fmt_eta_finish(_rl_eta)}  "
                             f"PPO 更新: {noise_ppo_update_count} 次",
                         ],
                         indent="  ",

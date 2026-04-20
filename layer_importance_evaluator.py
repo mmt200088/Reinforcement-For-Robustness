@@ -22,7 +22,13 @@ from function_handler import (
     WFFN1_NOISE_DEFAULT_SCALING_FACTOR,
 )
 from final_evaluation_module import UnifiedFinalEvaluationModule
-from noise_rl_module_v2 import _log_rounded_box, _progress_bar, _fmt_elapsed, NOISE_RL_PROGRESS_BOX_PPO_INTERVAL
+from noise_rl_module_v2 import (
+    NOISE_RL_PROGRESS_BOX_PPO_INTERVAL,
+    _fmt_elapsed,
+    _fmt_eta_finish,
+    _log_rounded_box,
+    _progress_bar,
+)
 import os
 import random
 import hashlib
@@ -5740,6 +5746,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                                 *_s1_best_lines,
                                 f"已用时: {_fmt_elapsed(_s1_elapsed)}  "
                                 f"预计剩余: {_fmt_elapsed(_s1_eta)}  "
+                                f"预计完成: {_fmt_eta_finish(_s1_eta)}  "
                                 f"PPO 更新: {gtrxl_ppo_update_count} 次",
                             ],
                             indent="  ",
