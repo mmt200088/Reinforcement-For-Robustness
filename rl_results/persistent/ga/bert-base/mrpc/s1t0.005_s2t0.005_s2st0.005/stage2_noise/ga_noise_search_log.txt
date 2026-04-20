@@ -358,3 +358,282 @@ Stage-2 Noise Genetic Search follows COINN: fitness-weighted selection plus adja
 [Stage2][Gen 0078] challenger confirm score(train)=40.632863  score(confirm)=40.632863  constraint=True  std=True
 [Stage2][Gen 0078/800] 本代最优=40.632863(cost=42.45)  incumbent=40.632863(cost=42.45)  合格比=91%  停滞=0/266  耗时=186.9s ★
 [Stage2][Gen 0079/800] 本代最优=40.632863(cost=42.45)  incumbent=40.632863(cost=42.45)  合格比=100%  停滞=1/266  耗时=187.2s
+[Stage2][Gen 0080/800] 本代最优=40.632863(cost=42.45)  incumbent=40.632863(cost=42.45)  合格比=84%  停滞=2/266  耗时=186.6s
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 80 / 800 代                                                    │
+  │ [███░░░░░░░░░░░░░░░░░░░░░░░░░░░]  10.0%                                         │
+  │ Incumbent 得分: 40.632863  成本: 42.45  (第 78 代确认)                                  │
+  │   input_noise_scaling_factors: [30, 26, 26, 26, 28, 24, 28, 28, 28, 26, 28, 28] │
+  │   wq_noise_scaling_factors: [18, 18, 18, 20, 18, 16, 18, 18, 22, 22, 16, 18]    │
+  │   wk_noise_scaling_factors: [18, 22, 18, 20, 16, 18, 20, 18, 20, 20, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 16, 18, 16, 22, 20, 20, 18, 16, 18, 20, 16]    │
+  │   wo_noise_scaling_factors: [22, 16, 22, 18, 14, 18, 16, 20, 18, 14, 20, 20]    │
+  │   wffn1_noise_scaling_factors: [20, 22, 20, 24, 22, 22, 22, 20, 22, 22, 18, 22] │
+  │   wffn2_noise_scaling_factors: [18, 16, 20, 20, 22, 20, 18, 20, 20, 16, 20, 20] │
+  │ 已用时: 4h09m34s  预计剩余: 37h26m10s  缓存命中: 2164 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0081/800] 本代最优=40.632863(cost=42.45)  incumbent=40.632863(cost=42.45)  合格比=81%  停滞=3/266  耗时=187.2s
+[Stage2][Gen 0082] challenger confirm score(train)=40.634616  score(confirm)=40.634616  constraint=True  std=True
+[Stage2][Gen 0082/800] 本代最优=40.634616(cost=42.40)  incumbent=40.634616(cost=42.40)  合格比=81%  停滞=0/266  耗时=187.2s ★
+[Stage2][Gen 0083] challenger confirm score(train)=40.637589  score(confirm)=40.637589  constraint=True  std=True
+[Stage2][Gen 0083/800] 本代最优=40.637589(cost=42.05)  incumbent=40.637589(cost=42.05)  合格比=91%  停滞=0/266  耗时=187.0s ★
+[Stage2][Gen 0084/800] 本代最优=40.637589(cost=42.05)  incumbent=40.637589(cost=42.05)  合格比=88%  停滞=1/266  耗时=186.5s
+[Stage2][Gen 0085/800] 本代最优=40.637589(cost=42.05)  incumbent=40.637589(cost=42.05)  合格比=94%  停滞=2/266  耗时=187.1s
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 85 / 800 代                                                    │
+  │ [███░░░░░░░░░░░░░░░░░░░░░░░░░░░]  10.6%                                         │
+  │ Incumbent 得分: 40.637589  成本: 42.05  (第 83 代确认)                                  │
+  │   input_noise_scaling_factors: [30, 26, 26, 26, 28, 24, 28, 26, 28, 26, 28, 28] │
+  │   wq_noise_scaling_factors: [16, 18, 18, 20, 16, 14, 16, 18, 22, 22, 18, 18]    │
+  │   wk_noise_scaling_factors: [18, 20, 18, 20, 16, 20, 20, 18, 18, 20, 16, 18]    │
+  │   wv_noise_scaling_factors: [20, 16, 18, 16, 22, 20, 20, 18, 16, 18, 20, 16]    │
+  │   wo_noise_scaling_factors: [22, 18, 22, 18, 14, 18, 16, 16, 18, 14, 20, 20]    │
+  │   wffn1_noise_scaling_factors: [18, 22, 20, 24, 22, 22, 22, 20, 22, 22, 18, 22] │
+  │   wffn2_noise_scaling_factors: [16, 16, 20, 20, 22, 20, 18, 20, 20, 18, 20, 20] │
+  │ 已用时: 4h25m09s  预计剩余: 37h10m26s  缓存命中: 2299 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0086] challenger confirm score(train)=40.637818  score(confirm)=40.637818  constraint=True  std=True
+[Stage2][Gen 0086/800] 本代最优=40.637818(cost=42.30)  incumbent=40.637818(cost=42.30)  合格比=88%  停滞=0/266  耗时=187.1s ★
+[Stage2][Gen 0087] challenger confirm score(train)=40.638168  score(confirm)=40.638168  constraint=True  std=True
+[Stage2][Gen 0087/800] 本代最优=40.638168(cost=42.35)  incumbent=40.638168(cost=42.35)  合格比=81%  停滞=0/266  耗时=187.2s ★
+[Stage2][Gen 0088] challenger confirm score(train)=40.708640  score(confirm)=40.708640  constraint=True  std=True
+[Stage2][Gen 0088/800] 本代最优=40.708640(cost=42.60)  incumbent=40.708640(cost=42.60)  合格比=91%  停滞=0/266  耗时=186.7s ★
+[Stage2][Gen 0089/800] 本代最优=40.708640(cost=42.60)  incumbent=40.708640(cost=42.60)  合格比=88%  停滞=1/266  耗时=186.9s
+[Stage2][Gen 0090/800] 本代最优=40.708640(cost=42.60)  incumbent=40.708640(cost=42.60)  合格比=91%  停滞=2/266  耗时=187.1s
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 90 / 800 代                                                    │
+  │ [███░░░░░░░░░░░░░░░░░░░░░░░░░░░]  11.2%                                         │
+  │ Incumbent 得分: 40.708640  成本: 42.60  (第 88 代确认)                                  │
+  │   input_noise_scaling_factors: [30, 26, 26, 26, 28, 24, 28, 28, 28, 26, 30, 30] │
+  │   wq_noise_scaling_factors: [16, 20, 18, 20, 18, 16, 18, 18, 22, 22, 16, 18]    │
+  │   wk_noise_scaling_factors: [18, 22, 18, 20, 16, 18, 20, 18, 20, 22, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 14, 18, 16, 22, 20, 20, 18, 16, 18, 20, 16]    │
+  │   wo_noise_scaling_factors: [20, 16, 22, 18, 14, 18, 14, 20, 18, 16, 20, 20]    │
+  │   wffn1_noise_scaling_factors: [20, 22, 20, 24, 24, 24, 22, 20, 22, 22, 20, 22] │
+  │   wffn2_noise_scaling_factors: [18, 14, 20, 20, 22, 20, 18, 20, 20, 16, 20, 20] │
+  │ 已用时: 4h40m44s  预计剩余: 36h54m43s  缓存命中: 2434 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0091/800] 本代最优=40.708640(cost=42.60)  incumbent=40.708640(cost=42.60)  合格比=94%  停滞=3/266  耗时=187.1s
+[Stage2][Gen 0092] challenger confirm score(train)=40.709823  score(confirm)=40.709823  constraint=True  std=True
+[Stage2][Gen 0092/800] 本代最优=40.709823(cost=41.85)  incumbent=40.709823(cost=41.85)  合格比=84%  停滞=0/266  耗时=186.5s ★
+[Stage2][Gen 0093/800] 本代最优=40.709823(cost=41.85)  incumbent=40.709823(cost=41.85)  合格比=78%  停滞=1/266  耗时=187.2s
+[Stage2][Gen 0094/800] 本代最优=40.709823(cost=41.85)  incumbent=40.709823(cost=41.85)  合格比=91%  停滞=2/266  耗时=187.3s
+[Stage2][Gen 0095/800] 本代最优=40.709823(cost=41.85)  incumbent=40.709823(cost=41.85)  合格比=94%  停滞=3/266  耗时=187.3s
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 95 / 800 代                                                    │
+  │ [████░░░░░░░░░░░░░░░░░░░░░░░░░░]  11.9%                                         │
+  │ Incumbent 得分: 40.709823  成本: 41.85  (第 92 代确认)                                  │
+  │   input_noise_scaling_factors: [30, 26, 26, 26, 28, 22, 28, 26, 30, 24, 28, 28] │
+  │   wq_noise_scaling_factors: [16, 20, 18, 20, 16, 14, 16, 18, 22, 18, 18, 18]    │
+  │   wk_noise_scaling_factors: [18, 20, 18, 20, 14, 20, 20, 18, 18, 22, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 14, 18, 16, 22, 20, 20, 18, 16, 18, 20, 16]    │
+  │   wo_noise_scaling_factors: [22, 18, 22, 18, 14, 16, 16, 16, 18, 14, 20, 20]    │
+  │   wffn1_noise_scaling_factors: [18, 22, 18, 24, 22, 22, 22, 20, 22, 20, 18, 22] │
+  │   wffn2_noise_scaling_factors: [16, 16, 20, 20, 22, 22, 18, 20, 20, 18, 20, 20] │
+  │ 已用时: 4h56m19s  预计剩余: 36h39m04s  缓存命中: 2569 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0096] challenger confirm score(train)=40.710756  score(confirm)=40.710756  constraint=True  std=True
+[Stage2][Gen 0096/800] 本代最优=40.710756(cost=41.80)  incumbent=40.710756(cost=41.80)  合格比=84%  停滞=0/266  耗时=186.5s ★
+[Stage2][Gen 0097/800] 本代最优=40.710756(cost=41.80)  incumbent=40.710756(cost=41.80)  合格比=97%  停滞=1/266  耗时=187.1s
+[Stage2][Gen 0098] challenger confirm score(train)=40.714225  score(confirm)=40.714225  constraint=True  std=True
+[Stage2][Gen 0098/800] 本代最优=40.714225(cost=41.55)  incumbent=40.714225(cost=41.55)  合格比=100%  停滞=0/266  耗时=187.3s ★
+[Stage2][Gen 0099] challenger confirm score(train)=40.714616  score(confirm)=40.714616  constraint=True  std=True
+[Stage2][Gen 0099/800] 本代最优=40.714616(cost=41.65)  incumbent=40.714616(cost=41.65)  合格比=91%  停滞=0/266  耗时=187.3s ★
+[Stage2][Gen 0100/800] 本代最优=40.714616(cost=41.65)  incumbent=40.714616(cost=41.65)  合格比=91%  停滞=1/266  耗时=186.1s
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 100 / 800 代                                                   │
+  │ [████░░░░░░░░░░░░░░░░░░░░░░░░░░]  12.5%                                         │
+  │ Incumbent 得分: 40.714616  成本: 41.65  (第 99 代确认)                                  │
+  │   input_noise_scaling_factors: [26, 26, 26, 26, 28, 22, 28, 26, 30, 24, 28, 28] │
+  │   wq_noise_scaling_factors: [16, 22, 18, 20, 18, 14, 16, 18, 22, 18, 18, 16]    │
+  │   wk_noise_scaling_factors: [18, 20, 18, 20, 14, 18, 20, 18, 18, 22, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 14, 18, 16, 22, 20, 20, 18, 16, 16, 20, 16]    │
+  │   wo_noise_scaling_factors: [22, 18, 22, 18, 14, 16, 16, 16, 18, 14, 20, 20]    │
+  │   wffn1_noise_scaling_factors: [16, 22, 18, 24, 22, 22, 22, 20, 22, 18, 18, 22] │
+  │   wffn2_noise_scaling_factors: [16, 16, 20, 20, 22, 22, 20, 20, 20, 18, 20, 20] │
+  │ 已用时: 5h11m54s  预计剩余: 36h23m18s  缓存命中: 2704 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0101] challenger confirm score(train)=40.715432  score(confirm)=40.715432  constraint=True  std=True
+[Stage2][Gen 0101/800] 本代最优=40.715432(cost=41.55)  incumbent=40.715432(cost=41.55)  合格比=94%  停滞=0/266  耗时=187.1s ★
+[Stage2][Gen 0102] challenger confirm score(train)=40.716430  score(confirm)=40.716430  constraint=True  std=True
+[Stage2][Gen 0102/800] 本代最优=40.716430(cost=41.45)  incumbent=40.716430(cost=41.45)  合格比=100%  停滞=0/266  耗时=187.2s ★
+[Stage2][Gen 0103] challenger confirm score(train)=40.721165  score(confirm)=40.721165  constraint=True  std=True
+[Stage2][Gen 0103/800] 本代最优=40.721165(cost=41.60)  incumbent=40.721165(cost=41.60)  合格比=94%  停滞=0/266  耗时=186.9s ★
+[Stage2][Gen 0104] challenger confirm score(train)=40.724587  score(confirm)=40.724587  constraint=True  std=True
+[Stage2][Gen 0104/800] 本代最优=40.724587(cost=41.45)  incumbent=40.724587(cost=41.45)  合格比=94%  停滞=0/266  耗时=187.2s ★
+[Stage2][Gen 0105] challenger confirm score(train)=40.792451  score(confirm)=40.792451  constraint=True  std=True
+[Stage2][Gen 0105/800] 本代最优=40.792451(cost=41.55)  incumbent=40.792451(cost=41.55)  合格比=97%  停滞=0/266  耗时=186.4s ★
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 105 / 800 代                                                   │
+  │ [████░░░░░░░░░░░░░░░░░░░░░░░░░░]  13.1%                                         │
+  │ Incumbent 得分: 40.792451  成本: 41.55  (第 105 代确认)                                 │
+  │   input_noise_scaling_factors: [26, 26, 26, 26, 28, 22, 28, 26, 30, 24, 28, 28] │
+  │   wq_noise_scaling_factors: [16, 22, 18, 20, 18, 14, 18, 18, 22, 18, 18, 16]    │
+  │   wk_noise_scaling_factors: [18, 18, 20, 20, 14, 18, 20, 18, 18, 22, 18, 20]    │
+  │   wv_noise_scaling_factors: [20, 14, 20, 16, 22, 20, 20, 20, 16, 16, 20, 14]    │
+  │   wo_noise_scaling_factors: [20, 20, 22, 16, 14, 16, 16, 16, 18, 14, 20, 18]    │
+  │   wffn1_noise_scaling_factors: [16, 22, 18, 22, 22, 22, 22, 18, 22, 18, 18, 22] │
+  │   wffn2_noise_scaling_factors: [16, 14, 20, 20, 22, 22, 20, 20, 20, 18, 20, 20] │
+  │ 已用时: 5h27m28s  预计剩余: 36h07m37s  缓存命中: 2839 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0106/800] 本代最优=40.792451(cost=41.55)  incumbent=40.792451(cost=41.55)  合格比=97%  停滞=1/266  耗时=187.0s
+[Stage2][Gen 0107] challenger confirm score(train)=40.793847  score(confirm)=40.793847  constraint=True  std=True
+[Stage2][Gen 0107/800] 本代最优=40.793847(cost=41.55)  incumbent=40.793847(cost=41.55)  合格比=100%  停滞=0/266  耗时=187.1s ★
+[Stage2][Gen 0108] challenger confirm score(train)=40.794222  score(confirm)=40.794222  constraint=True  std=True
+[Stage2][Gen 0108/800] 本代最优=40.794222(cost=41.55)  incumbent=40.794222(cost=41.55)  合格比=97%  停滞=0/266  耗时=187.1s ★
+[Stage2][Gen 0109] challenger confirm score(train)=40.794682  score(confirm)=40.794682  constraint=True  std=True
+[Stage2][Gen 0109/800] 本代最优=40.794682(cost=41.50)  incumbent=40.794682(cost=41.50)  合格比=97%  停滞=0/266  耗时=186.6s ★
+[Stage2][Gen 0110] challenger confirm score(train)=40.863822  score(confirm)=40.863822  constraint=True  std=True
+[Stage2][Gen 0110/800] 本代最优=40.863822(cost=41.45)  incumbent=40.863822(cost=41.45)  合格比=97%  停滞=0/266  耗时=187.2s ★
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 110 / 800 代                                                   │
+  │ [████░░░░░░░░░░░░░░░░░░░░░░░░░░]  13.8%                                         │
+  │ Incumbent 得分: 40.863822  成本: 41.45  (第 110 代确认)                                 │
+  │   input_noise_scaling_factors: [24, 26, 26, 26, 28, 22, 28, 26, 28, 24, 28, 28] │
+  │   wq_noise_scaling_factors: [16, 22, 18, 20, 18, 14, 20, 18, 20, 18, 18, 16]    │
+  │   wk_noise_scaling_factors: [18, 18, 20, 20, 14, 18, 20, 18, 16, 22, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 14, 20, 18, 22, 20, 20, 20, 16, 16, 20, 14]    │
+  │   wo_noise_scaling_factors: [22, 20, 22, 16, 14, 16, 14, 16, 18, 14, 20, 18]    │
+  │   wffn1_noise_scaling_factors: [16, 22, 18, 22, 22, 24, 22, 18, 22, 18, 18, 22] │
+  │   wffn2_noise_scaling_factors: [16, 14, 20, 20, 22, 22, 20, 20, 20, 18, 20, 20] │
+  │ 已用时: 5h43m04s  预计剩余: 35h51m58s  缓存命中: 2974 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0111/800] 本代最优=40.863822(cost=41.45)  incumbent=40.863822(cost=41.45)  合格比=97%  停滞=1/266  耗时=187.0s
+[Stage2][Gen 0112/800] 本代最优=40.863822(cost=41.45)  incumbent=40.863822(cost=41.45)  合格比=91%  停滞=2/266  耗时=186.9s
+[Stage2][Gen 0113/800] 本代最优=40.863822(cost=41.45)  incumbent=40.863822(cost=41.45)  合格比=91%  停滞=3/266  耗时=186.3s
+[Stage2][Gen 0114/800] 本代最优=40.863822(cost=41.45)  incumbent=40.863822(cost=41.45)  合格比=97%  停滞=4/266  耗时=186.9s
+[Stage2][Gen 0115/800] 本代最优=40.863822(cost=41.45)  incumbent=40.863822(cost=41.45)  合格比=91%  停滞=5/266  耗时=187.2s
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 115 / 800 代                                                   │
+  │ [████░░░░░░░░░░░░░░░░░░░░░░░░░░]  14.4%                                         │
+  │ Incumbent 得分: 40.863822  成本: 41.45  (第 110 代确认)                                 │
+  │   input_noise_scaling_factors: [24, 26, 26, 26, 28, 22, 28, 26, 28, 24, 28, 28] │
+  │   wq_noise_scaling_factors: [16, 22, 18, 20, 18, 14, 20, 18, 20, 18, 18, 16]    │
+  │   wk_noise_scaling_factors: [18, 18, 20, 20, 14, 18, 20, 18, 16, 22, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 14, 20, 18, 22, 20, 20, 20, 16, 16, 20, 14]    │
+  │   wo_noise_scaling_factors: [22, 20, 22, 16, 14, 16, 14, 16, 18, 14, 20, 18]    │
+  │   wffn1_noise_scaling_factors: [16, 22, 18, 22, 22, 24, 22, 18, 22, 18, 18, 22] │
+  │   wffn2_noise_scaling_factors: [16, 14, 20, 20, 22, 22, 20, 20, 20, 18, 20, 20] │
+  │ 已用时: 5h58m38s  预计剩余: 35h36m14s  缓存命中: 3109 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0116/800] 本代最优=40.863822(cost=41.45)  incumbent=40.863822(cost=41.45)  合格比=72%  停滞=6/266  耗时=187.1s
+[Stage2][Gen 0117/800] 本代最优=40.863822(cost=41.45)  incumbent=40.863822(cost=41.45)  合格比=75%  停滞=7/266  耗时=186.7s
+[Stage2][Gen 0118] challenger confirm score(train)=40.864565  score(confirm)=40.864565  constraint=True  std=True
+[Stage2][Gen 0118/800] 本代最优=40.864565(cost=41.40)  incumbent=40.864565(cost=41.40)  合格比=81%  停滞=0/266  耗时=187.3s ★
+[Stage2][Gen 0119/800] 本代最优=40.864565(cost=41.40)  incumbent=40.864565(cost=41.40)  合格比=84%  停滞=1/266  耗时=187.1s
+[Stage2][Gen 0120/800] 本代最优=40.864565(cost=41.40)  incumbent=40.864565(cost=41.40)  合格比=88%  停滞=2/266  耗时=187.2s
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 120 / 800 代                                                   │
+  │ [████░░░░░░░░░░░░░░░░░░░░░░░░░░]  15.0%                                         │
+  │ Incumbent 得分: 40.864565  成本: 41.40  (第 118 代确认)                                 │
+  │   input_noise_scaling_factors: [24, 26, 26, 26, 28, 22, 28, 26, 28, 24, 28, 28] │
+  │   wq_noise_scaling_factors: [16, 22, 18, 20, 18, 14, 20, 18, 20, 18, 18, 16]    │
+  │   wk_noise_scaling_factors: [18, 18, 20, 20, 14, 18, 20, 18, 16, 20, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 14, 20, 18, 22, 20, 20, 20, 16, 16, 20, 14]    │
+  │   wo_noise_scaling_factors: [22, 20, 22, 16, 14, 16, 14, 16, 18, 14, 20, 18]    │
+  │   wffn1_noise_scaling_factors: [16, 22, 18, 22, 22, 24, 22, 18, 22, 18, 18, 22] │
+  │   wffn2_noise_scaling_factors: [16, 14, 20, 20, 22, 22, 20, 20, 20, 18, 20, 20] │
+  │ 已用时: 6h14m13s  预计剩余: 35h20m38s  缓存命中: 3244 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0121] challenger confirm score(train)=40.864669  score(confirm)=40.864669  constraint=True  std=True
+[Stage2][Gen 0121/800] 本代最优=40.864669(cost=41.25)  incumbent=40.864669(cost=41.25)  合格比=81%  停滞=0/266  耗时=186.2s ★
+[Stage2][Gen 0122] challenger confirm score(train)=40.864795  score(confirm)=40.864795  constraint=True  std=True
+[Stage2][Gen 0122/800] 本代最优=40.864795(cost=41.25)  incumbent=40.864795(cost=41.25)  合格比=91%  停滞=0/266  耗时=187.1s ★
+[Stage2][Gen 0123/800] 本代最优=40.864795(cost=41.25)  incumbent=40.864795(cost=41.25)  合格比=97%  停滞=1/266  耗时=187.0s
+[Stage2][Gen 0124/800] 本代最优=40.864795(cost=41.25)  incumbent=40.864795(cost=41.25)  合格比=94%  停滞=2/266  耗时=187.2s
+[Stage2][Gen 0125/800] 本代最优=40.864795(cost=41.25)  incumbent=40.864795(cost=41.25)  合格比=91%  停滞=3/266  耗时=186.3s
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 125 / 800 代                                                   │
+  │ [█████░░░░░░░░░░░░░░░░░░░░░░░░░]  15.6%                                         │
+  │ Incumbent 得分: 40.864795  成本: 41.25  (第 122 代确认)                                 │
+  │   input_noise_scaling_factors: [24, 26, 26, 26, 30, 22, 28, 26, 28, 24, 28, 28] │
+  │   wq_noise_scaling_factors: [16, 20, 18, 18, 18, 14, 20, 18, 20, 16, 18, 16]    │
+  │   wk_noise_scaling_factors: [18, 18, 20, 20, 14, 18, 22, 18, 16, 22, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 14, 20, 18, 22, 20, 20, 20, 16, 16, 20, 14]    │
+  │   wo_noise_scaling_factors: [22, 18, 22, 16, 14, 16, 14, 16, 16, 14, 20, 18]    │
+  │   wffn1_noise_scaling_factors: [16, 22, 18, 22, 22, 24, 22, 18, 24, 18, 18, 22] │
+  │   wffn2_noise_scaling_factors: [16, 14, 20, 20, 22, 20, 18, 20, 20, 18, 18, 22] │
+  │ 已用时: 6h29m47s  预计剩余: 35h04m52s  缓存命中: 3379 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0126] challenger confirm score(train)=40.868084  score(confirm)=40.868084  constraint=True  std=True
+[Stage2][Gen 0126/800] 本代最优=40.868084(cost=41.10)  incumbent=40.868084(cost=41.10)  合格比=94%  停滞=0/266  耗时=187.2s ★
+[Stage2][Gen 0127/800] 本代最优=40.868084(cost=41.10)  incumbent=40.868084(cost=41.10)  合格比=91%  停滞=1/266  耗时=187.1s
+[Stage2][Gen 0128/800] 本代最优=40.868084(cost=41.10)  incumbent=40.868084(cost=41.10)  合格比=91%  停滞=2/266  耗时=187.2s
+[Stage2][Gen 0129] challenger confirm score(train)=40.870020  score(confirm)=40.870020  constraint=True  std=True
+[Stage2][Gen 0129/800] 本代最优=40.870020(cost=41.00)  incumbent=40.870020(cost=41.00)  合格比=78%  停滞=0/266  耗时=186.6s ★
+[Stage2][Gen 0130] challenger confirm score(train)=40.870089  score(confirm)=40.870089  constraint=True  std=True
+[Stage2][Gen 0130/800] 本代最优=40.870089(cost=41.00)  incumbent=40.870089(cost=41.00)  合格比=88%  停滞=0/266  耗时=189.8s ★
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 130 / 800 代                                                   │
+  │ [█████░░░░░░░░░░░░░░░░░░░░░░░░░]  16.2%                                         │
+  │ Incumbent 得分: 40.870089  成本: 41.00  (第 130 代确认)                                 │
+  │   input_noise_scaling_factors: [24, 26, 26, 26, 28, 22, 28, 26, 26, 24, 26, 26] │
+  │   wq_noise_scaling_factors: [16, 22, 18, 20, 18, 14, 20, 20, 18, 18, 16, 18]    │
+  │   wk_noise_scaling_factors: [18, 18, 20, 20, 14, 18, 20, 18, 16, 22, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 14, 20, 18, 20, 18, 20, 20, 16, 16, 20, 14]    │
+  │   wo_noise_scaling_factors: [22, 20, 20, 16, 14, 16, 14, 14, 18, 16, 22, 18]    │
+  │   wffn1_noise_scaling_factors: [16, 22, 16, 22, 22, 24, 22, 18, 22, 18, 18, 22] │
+  │   wffn2_noise_scaling_factors: [16, 14, 20, 20, 22, 20, 20, 18, 18, 18, 20, 20] │
+  │ 已用时: 6h45m25s  预计剩余: 34h49m30s  缓存命中: 3513 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0131/800] 本代最优=40.870089(cost=41.00)  incumbent=40.870089(cost=41.00)  合格比=88%  停滞=1/266  耗时=190.2s
+[Stage2][Gen 0132] challenger confirm score(train)=40.873015  score(confirm)=40.873015  constraint=True  std=True
+[Stage2][Gen 0132/800] 本代最优=40.873015(cost=41.05)  incumbent=40.873015(cost=41.05)  合格比=78%  停滞=0/266  耗时=187.3s ★
+[Stage2][Gen 0133] challenger confirm score(train)=40.875058  score(confirm)=40.875058  constraint=True  std=True
+[Stage2][Gen 0133/800] 本代最优=40.875058(cost=40.85)  incumbent=40.875058(cost=40.85)  合格比=75%  停滞=0/266  耗时=191.4s ★
+[Stage2][Gen 0134/800] 本代最优=40.875058(cost=40.85)  incumbent=40.875058(cost=40.85)  合格比=88%  停滞=1/266  耗时=194.1s
+[Stage2][Gen 0135/800] 本代最优=40.875058(cost=40.85)  incumbent=40.875058(cost=40.85)  合格比=81%  停滞=2/266  耗时=187.2s
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 135 / 800 代                                                   │
+  │ [█████░░░░░░░░░░░░░░░░░░░░░░░░░]  16.9%                                         │
+  │ Incumbent 得分: 40.875058  成本: 40.85  (第 133 代确认)                                 │
+  │   input_noise_scaling_factors: [24, 26, 26, 26, 28, 22, 28, 26, 26, 24, 26, 26] │
+  │   wq_noise_scaling_factors: [14, 20, 18, 20, 18, 14, 20, 20, 18, 18, 16, 18]    │
+  │   wk_noise_scaling_factors: [18, 18, 20, 20, 14, 18, 20, 18, 16, 22, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 14, 20, 18, 20, 18, 20, 20, 16, 16, 20, 14]    │
+  │   wo_noise_scaling_factors: [22, 20, 20, 16, 14, 16, 14, 14, 18, 16, 22, 18]    │
+  │   wffn1_noise_scaling_factors: [16, 22, 18, 22, 20, 24, 22, 18, 22, 16, 18, 22] │
+  │   wffn2_noise_scaling_factors: [16, 14, 20, 20, 22, 20, 20, 18, 18, 18, 20, 20] │
+  │ 已用时: 7h01m15s  预计剩余: 34h35m06s  缓存命中: 3648 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0136/800] 本代最优=40.875058(cost=40.85)  incumbent=40.875058(cost=40.85)  合格比=88%  停滞=3/266  耗时=187.0s
+[Stage2][Gen 0137] challenger confirm score(train)=40.878873  score(confirm)=40.878873  constraint=True  std=True
+[Stage2][Gen 0137/800] 本代最优=40.878873(cost=40.75)  incumbent=40.878873(cost=40.75)  合格比=94%  停滞=0/266  耗时=187.3s ★
+[Stage2][Gen 0138] challenger confirm score(train)=40.880382  score(confirm)=40.880382  constraint=True  std=True
+[Stage2][Gen 0138/800] 本代最优=40.880382(cost=40.50)  incumbent=40.880382(cost=40.50)  合格比=91%  停滞=0/266  耗时=188.7s ★
+[Stage2][Gen 0139] challenger confirm score(train)=40.881720  score(confirm)=40.881720  constraint=True  std=True
+[Stage2][Gen 0139/800] 本代最优=40.881720(cost=40.45)  incumbent=40.881720(cost=40.45)  合格比=94%  停滞=0/266  耗时=191.1s ★
+[Stage2][Gen 0140/800] 本代最优=40.881720(cost=40.45)  incumbent=40.881720(cost=40.45)  合格比=97%  停滞=1/266  耗时=191.6s
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 140 / 800 代                                                   │
+  │ [█████░░░░░░░░░░░░░░░░░░░░░░░░░]  17.5%                                         │
+  │ Incumbent 得分: 40.881720  成本: 40.45  (第 139 代确认)                                 │
+  │   input_noise_scaling_factors: [24, 26, 26, 26, 26, 22, 28, 26, 26, 24, 26, 26] │
+  │   wq_noise_scaling_factors: [14, 20, 16, 20, 18, 14, 20, 18, 18, 18, 16, 18]    │
+  │   wk_noise_scaling_factors: [18, 18, 20, 20, 14, 18, 20, 18, 16, 22, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 14, 16, 18, 20, 18, 20, 20, 16, 16, 20, 16]    │
+  │   wo_noise_scaling_factors: [18, 20, 20, 16, 14, 16, 14, 14, 18, 16, 22, 18]    │
+  │   wffn1_noise_scaling_factors: [16, 22, 16, 22, 22, 24, 20, 18, 20, 16, 18, 22] │
+  │   wffn2_noise_scaling_factors: [16, 14, 20, 20, 22, 20, 20, 18, 16, 20, 20, 20] │
+  │ 已用时: 7h17m01s  预计剩余: 34h20m14s  缓存命中: 3782 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯
+[Stage2][Gen 0141/800] 本代最优=40.881720(cost=40.45)  incumbent=40.881720(cost=40.45)  合格比=94%  停滞=2/266  耗时=187.1s
+[Stage2][Gen 0142] challenger confirm score(train)=40.882643  score(confirm)=40.882643  constraint=True  std=True
+[Stage2][Gen 0142/800] 本代最优=40.882643(cost=40.40)  incumbent=40.882643(cost=40.40)  合格比=84%  停滞=0/266  耗时=186.8s ★
+[Stage2][Gen 0143/800] 本代最优=40.882643(cost=40.40)  incumbent=40.882643(cost=40.40)  合格比=94%  停滞=1/266  耗时=187.3s
+[Stage2][Gen 0144] challenger confirm score(train)=40.882917  score(confirm)=40.882917  constraint=True  std=True
+[Stage2][Gen 0144/800] 本代最优=40.882917(cost=40.70)  incumbent=40.882917(cost=40.70)  合格比=91%  停滞=0/266  耗时=187.3s ★
+[Stage2][Gen 0145/800] 本代最优=40.882917(cost=40.70)  incumbent=40.882917(cost=40.70)  合格比=88%  停滞=1/266  耗时=187.2s
+  ╭───────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-2 GA 进度 · 第 145 / 800 代                                                   │
+  │ [█████░░░░░░░░░░░░░░░░░░░░░░░░░]  18.1%                                         │
+  │ Incumbent 得分: 40.882917  成本: 40.70  (第 144 代确认)                                 │
+  │   input_noise_scaling_factors: [24, 26, 26, 28, 30, 22, 26, 26, 28, 24, 28, 26] │
+  │   wq_noise_scaling_factors: [16, 22, 18, 18, 18, 16, 14, 18, 20, 16, 18, 16]    │
+  │   wk_noise_scaling_factors: [18, 20, 22, 20, 14, 16, 20, 16, 16, 22, 18, 18]    │
+  │   wv_noise_scaling_factors: [20, 14, 16, 18, 20, 20, 18, 22, 16, 16, 18, 14]    │
+  │   wo_noise_scaling_factors: [18, 18, 20, 16, 16, 16, 14, 16, 16, 16, 18, 18]    │
+  │   wffn1_noise_scaling_factors: [16, 22, 18, 22, 20, 24, 22, 16, 24, 18, 18, 22] │
+  │   wffn2_noise_scaling_factors: [18, 14, 20, 18, 20, 22, 18, 20, 22, 18, 20, 18] │
+  │ 已用时: 7h32m36s  预计剩余: 34h04m34s  缓存命中: 3917 条                                    │
+  ╰───────────────────────────────────────────────────────────────────────────────────╯

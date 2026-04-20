@@ -1,0 +1,21 @@
+{
+  "_comment": [
+    "Default per-layer approximation config for analyze_all_distribution_approx.py.",
+    "softmax.default_degree: 1..6 (Exp_bound keys). lower_bound is automatically",
+    "  looked up from function_handler.Exp_bound (1:-2, 2:-4, 3:-8, 4:-12, 5:-13, 6:-13).",
+    "gelu.default_degree: 0..4 (GELU_COEEF keys in function_handler).",
+    "per_layer overrides default; set a value to null to disable that approximation",
+    "on that layer. If default_degree is null, approximation is off unless per_layer",
+    "explicitly sets a degree for a given layer."
+  ],
+
+  "softmax": {
+    "default_degree": 4,
+    "per_layer": {}
+  },
+
+  "gelu": {
+    "default_degree": 2,
+    "per_layer": {}
+  }
+}

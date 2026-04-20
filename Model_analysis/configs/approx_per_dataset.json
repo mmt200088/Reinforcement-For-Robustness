@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "Per-dataset approximation config for analyze_all_distribution_approx.py.",
+    "",
+    "Top-level keys = task names registered in TASK_REGISTRY (see",
+    "analyze_all_distribution_new.py).  Each task has one or more stages",
+    "('stage1', 'stage2', ...).  Within a stage, 'gelu' and 'softmax' are",
+    "arrays of per-layer degrees; the array length must match the model's",
+    "num_layers (bert-base = 12, bert-large = 24).",
+    "",
+    "Degree keys:",
+    "  softmax: 1..6  (Exp_bound keys in function_handler.py;",
+    "                  lower_bound is automatically looked up)",
+    "  gelu:    0..4  (GELU_COEEF keys in function_handler.py)",
+    "  Use null in a slot to skip approximation for that single layer.",
+    "",
+    "Select a stage at runtime with --stage (default: stage1)."
+  ],
+
+  "wnli": {
+    "stage1": {
+      "gelu":    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2],
+      "softmax": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+    }
+  }
+}
