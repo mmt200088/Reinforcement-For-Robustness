@@ -654,3 +654,7 @@ v3-G 稳健 Advantage 归一化
 仅 robust adv norm	"v3_robust_advantage_norm": False
 仅 warmstart	"v3_warmstart_baseline_bias": False
 仅 confirm 优化	"v3_confirm_precheck_std": False + "use_v3_ppo_hparams": False（margin/penalty 随之失效）
+
+# 查看进程
+ps aux | grep 'rl_tune_genetic.py'
+ps aux | grep 'rl_tune.py'
