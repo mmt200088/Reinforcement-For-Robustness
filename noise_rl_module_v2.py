@@ -464,30 +464,22 @@ def _compute_dynamic_std_upper_bound(
 
 def _auto_adjust_segments(dataset_size, requested_segments, log_fn=None,
                           min_samples=NOISE_STAGE_MIN_SAMPLES_PER_SEGMENT):
-    """根据数据集大小自动缩减分段数（新语义下 = 噪声试验次数 K），
-    保证每段 / 探针样本数 >= min_samples。
+    """返回噪声试验次数 K（新语义）。
 
     自 2026-04 起，"分段"已不再是切分数据：evaluate_model_with_attention_noise_segmented
-    改为"固定分层探针 + K 次噪声试验"。本函数仍起到"根据数据集大小 clamp K
-    上限"的作用：探针尺寸 ≈ len(dataset) / K，需要 >= min_samples，因此
-    K 上限 = dataset_size // min_samples，与本函数原有公式一致。
+    改为"固定分层探针 + K 次噪声试验"，同一份 probe（大小 = min_samples = probe_size）
+    在 K 次 trial 之间复用。因此 K 与 dataset_size 相互独立——只要 probe_size <=
+    dataset_size 即可（该约束已在 `_get_stability_probe` 中自动 clip probe_size），
+    K 本身没有上限。旧版本按 `dataset_size // probe_size` 去 clamp K 是错误的
+    （把 K=5 压到 K=1，导致每次评测的 std 退化为单次 trial 的 0，challenger 确认
+    中的 std_check 形同虚设），现予以修复。
 
-    返回实际使用的 K（>= 1）。
+    返回 `max(1, requested_segments)`；仅当 `dataset_size <= 0` 时兜底为 1。
     """
     requested_segments = max(1, int(requested_segments))
     if dataset_size <= 0:
         return 1
-    max_n = max(1, dataset_size // min_samples)
-    if requested_segments <= max_n:
-        return requested_segments
-    adjusted = max_n
-    if log_fn is not None:
-        log_fn(
-            f"  [自动调整] 指定分段数 N={requested_segments} 导致每段仅 "
-            f"{dataset_size // requested_segments} 个样本（< {min_samples}），"
-            f"已自动缩减为 N={adjusted}（每段约 {dataset_size // adjusted} 个样本）"
-        )
-    return adjusted
+    return requested_segments
 
 
 def _log_rounded_box(log_fn, lines, indent="  ", min_inner_width=8):
