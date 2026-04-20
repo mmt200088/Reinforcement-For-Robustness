@@ -394,7 +394,7 @@ Probe: softmax_x_shifted (Softmax x−max)
   L10        36,155,904     -4.2332      2.3360    -28.0914      0.0000             —
   L11        36,155,904     -3.6578      2.0065    -22.6629      0.0000             —
 
-Probe: softmax_exp_scaled (x/2^n)
+Probe: softmax_exp_scaled ((x-xmax)/2^n)
   Layer            Count        Mean         Std         Min         Max      AccumMax
   ----------------------------------------------------------------------------------
   L0         36,155,904     -1.0570      0.8053     -5.1056      0.0000             —
@@ -410,7 +410,7 @@ Probe: softmax_exp_scaled (x/2^n)
   L10        36,155,904     -1.0583      0.5840     -7.0228      0.0000             —
   L11        36,155,904     -0.9144      0.5016     -5.6657      0.0000             —
 
-Probe: softmax_exp_base (1 + x/2^n)
+Probe: softmax_exp_base (1 + (x-xmax)/2^n)
   Layer            Count        Mean         Std         Min         Max      AccumMax
   ----------------------------------------------------------------------------------
   L0         36,155,904     -0.0570      0.8053     -4.1056      1.0000             —

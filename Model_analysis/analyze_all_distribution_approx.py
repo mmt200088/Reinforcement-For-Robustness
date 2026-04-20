@@ -53,11 +53,14 @@ Usage
 
     mkdir -p all_analysis_approx/wnli
     
-    python analyze_all_distribution_approx.py \
-    --config configs/approx_per_dataset.json \
-    --stage stage1 \
-    --tasks wnli \
-    --output_dir all_analysis_approx/wnli
+    nohup python analyze_all_distribution_approx.py \
+        --tasks wnli \
+        --approx_config configs/approx_per_dataset.json \
+        --stage stage1 \
+        --max_length 128 \
+        --batch_size 32 \
+        --output_dir all_analysis_approx \
+    > all_analysis_approx/wnli/wnli_run.log 2>&1 &
 
     tail -f all_analysis_approx/wnli/wnli_run.log
 """
@@ -134,13 +137,22 @@ from function_handler import Exp_bound, GELU_COEEF, polynomial
 #
 # Probe inventory for the approximation internals
 # ----------------------------------------------
-# Softmax exp chain (iterated-squaring Taylor):
-#   softmax_x_shifted      x - x.max()
-#   softmax_exp_scaled     x_shifted / 2^n                  (scaled input)
-#   softmax_exp_base       1 + x_shifted / 2^n              (Taylor base)
-#   softmax_exp_sq1..sq6   base^(2^i) after each squaring   (layer fills up to i=n)
-#   softmax_exp_raw        final exp approx, = sq{n}        (kept for compatibility)
-#   softmax_exp_out        exp_raw after lower_bound clip
+# Softmax exp chain (iterated-squaring Taylor).  Every intermediate is
+# recorded raw; the only sanitisation is dropping positions where the
+# logged value is non-finite or has |value| > 1e30 — this removes the
+# padding-mask sentinel (x_shifted ≈ ±3.4e38 and the inf it becomes after
+# a few squarings) without touching any real-data positions.  No lb-clip
+# is applied to any chain probe, so sub-bound positions show their true
+# (possibly very large) Taylor values and you can see how far the
+# approximation drifts before the final algorithmic clip kicks in.
+#   softmax_x_shifted      x - x.max()                         (mask-filter)
+#   softmax_exp_scaled     x_shifted / 2^n                     (mask-filter)
+#   softmax_exp_base       1 + x_shifted / 2^n                 (mask-filter)
+#   softmax_exp_sq1..sq6   base^(2^i) after each squaring      (mask-filter)
+#                                      (layer fills up to i=n)
+#   softmax_exp_raw        final exp approx = sq{n}            (mask-filter)
+#   softmax_exp_out        exp_raw · 1[x_shifted ≥ lb]   (lb-clip is HERE,
+#                                                        inside the algorithm)
 #   softmax_sum_exp        Σ exp_out over last dim
 #
 # GELU polynomial (piecewise, Bumblebee):
@@ -171,8 +183,8 @@ APPROX_PROBES = [
 
 _PROBE_DISPLAY_ADD = {
     "softmax_x_shifted":   "Softmax x−max",
-    "softmax_exp_scaled":  "x/2^n",
-    "softmax_exp_base":    "1 + x/2^n",
+    "softmax_exp_scaled":  "(x-xmax)/2^n",
+    "softmax_exp_base":    "1 + (x-xmax)/2^n",
     **{f"softmax_exp_sq{i}": f"(1+x/2^n)^{2**i}"
        for i in range(1, _SOFTMAX_EXP_SQ_MAX + 1)},
     "softmax_exp_raw":     "Approx exp (pre-mask)",
@@ -192,15 +204,20 @@ _PROBE_DISPLAY_ADD = {
 # range are clipped to the edge bins.
 _PROBE_HIST_RANGE_ADD = {
     "softmax_x_shifted":  (-50.0,   1.0, 300),
-    "softmax_exp_scaled": (-15.0,   1.0, 300),
-    "softmax_exp_base":   (-15.0,   2.0, 300),
-    "softmax_exp_sq1":    (0.0,   100.0, 300),
-    "softmax_exp_sq2":    (0.0,  1000.0, 300),
-    "softmax_exp_sq3":    (0.0, 10000.0, 300),
-    "softmax_exp_sq4":    (0.0, 10000.0, 300),
-    "softmax_exp_sq5":    (0.0, 10000.0, 300),
-    "softmax_exp_sq6":    (0.0, 10000.0, 300),
-    "softmax_exp_raw":    (0.0,  1000.0, 300),
+    # No lb-clip is applied to any chain probe, so sq_i / exp_raw can be
+    # arbitrarily large when base is negative (sub-bound regime).  Linear-bin
+    # histograms are inevitably coarse for such wide supports; the log-scale
+    # magnitude bars (*_magnitude_bar.png) are what you want for the real
+    # shape.  Values falling outside the range pile into the edge bin.
+    "softmax_exp_scaled": (-20.0,     0.5, 300),
+    "softmax_exp_base":   (-20.0,     1.5, 300),
+    "softmax_exp_sq1":    ( -5.0,   300.0, 300),
+    "softmax_exp_sq2":    (-10.0,  2000.0, 300),
+    "softmax_exp_sq3":    (-10.0, 10000.0, 300),
+    "softmax_exp_sq4":    (-10.0, 10000.0, 300),
+    "softmax_exp_sq5":    (-10.0, 10000.0, 300),
+    "softmax_exp_sq6":    (-10.0, 10000.0, 300),
+    "softmax_exp_raw":    (-10.0, 10000.0, 300),
     "softmax_exp_out":    (0.0,     1.5, 300),
     "softmax_sum_exp":    (0.0,    50.0, 300),
     "gelu_x2":            (0.0,   250.0, 300),
@@ -430,11 +447,7 @@ def resolve_gelu_degree(cfg, layer_idx):
 
 def _approx_exp(x, degree):
     """Exp approximation via iterated-squaring Taylor, identical to
-    ``BertSelfAttentionWithAproximation.approximation_exponential``.
-
-    Kept as a reference single-call variant.  The instrumented softmax below
-    inlines the iterative form so that every intermediate can be probed.
-    """
+    ``BertSelfAttentionWithAproximation.approximation_exponential``."""
     return torch.pow(1 + x / (2 ** degree), 2 ** degree)
 
 
@@ -442,19 +455,29 @@ def _make_approx_softmax_with_stats(degree, lower_bound, layer_idx, q):
     """Return a softmax function (signature ``fn(x, dim=-1)``) that is
     numerically equivalent to ``BertSelfAttentionWithAproximation.approximation_softmax``
     but exposes every step of the iterated-squaring exp approximation as a
-    probe:
+    probe.
 
-        x_shifted       = x − max(x)                       → softmax_x_shifted
-        scaled          = x_shifted / 2^degree             → softmax_exp_scaled
-        base            = 1 + scaled                       → softmax_exp_base
-        sq_i            = base^(2^i),  i = 1 .. degree     → softmax_exp_sq{i}
-        exp_raw         = sq_{degree}                      → softmax_exp_raw
-        exp_out         = exp_raw · 1[x_shifted ≥ lb]      → softmax_exp_out
-        sum_exp         = Σ_j exp_out_j                    → softmax_sum_exp
+    Every intermediate in the exp chain is recorded raw — NO lower-bound
+    clip is applied to the statistics.  The only sanitisation is
+    ``_enqueue_mask_filtered``, which drops positions where the value is
+    non-finite (``inf`` / ``nan``) or has |value| > 1e30; this removes the
+    padding-mask sentinel (x_shifted ≈ ±3.4e38 and the ``inf`` it produces
+    after a few squarings) without touching any real-data positions.  So
+    for every real attention row you see the actual Taylor output, whether
+    or not ``x_shifted`` fell below ``Exp_bound[degree]``.
 
-    All derivatives of ``x_shifted`` go through ``_enqueue_mask_filtered`` so
-    the padding-mask sentinel (torch.finfo.min ≈ −3.4e38) does not poison the
-    distribution statistics.
+    The lb-based ``torch.where`` clip is still applied to the *computation*
+    of ``exp_out`` (because that is what ``function_handler.py`` does and
+    what the softmax normaliser uses downstream); its probe is emitted
+    without extra clipping on top.
+
+        x_shifted       = x − max(x)                           → softmax_x_shifted
+        scaled          = x_shifted / 2^degree                 → softmax_exp_scaled
+        base            = 1 + scaled                           → softmax_exp_base
+        sq_i            = base^(2^i), i=1..degree              → softmax_exp_sq{i}
+        exp_raw         = sq_{degree}                          → softmax_exp_raw
+        exp_out         = torch.where(x<lb, 0, exp_raw)        → softmax_exp_out
+        sum_exp         = Σ_j exp_out_j                        → softmax_sum_exp
     """
 
     two_d = 2 ** degree
@@ -482,6 +505,9 @@ def _make_approx_softmax_with_stats(degree, lower_bound, layer_idx, q):
         exp_raw = current  # = base^(2^degree)
         _enqueue_mask_filtered("softmax_exp_raw", layer_idx, exp_raw.detach(), q)
 
+        # The final output still applies the lb-clip that the original
+        # algorithm (function_handler.py) uses — this is the only place the
+        # clip happens.  Its probe logs the post-clip values as-is.
         exp_out = torch.where(
             x_shifted < lower_bound, torch.zeros_like(x_shifted), exp_raw
         )
@@ -499,21 +525,19 @@ class StatsPolynomialGELU(nn.Module):
     """Bumblebee piecewise polynomial GELU (matches ``PolynomialGELU``) with
     per-term statistic capture.
 
-    For each branch (negative / positive) the polynomial
-    ``Σ_i c_i · x^i`` is expanded term by term and every intermediate is
-    probed:
+    For each branch (negative / positive) the polynomial ``Σ_i c_i · x^i`` is
+    expanded term-by-term and every intermediate is probed:
 
-        x^i               → ``gelu_x{i}``    (shared, i = 2..degree)
-        c_i · x^i (neg)   → ``gelu_neg_t{i}``  (i = 0..degree)
-        c_i · x^i (pos)   → ``gelu_pos_t{i}``  (i = 0..degree)
+        x^i               → ``gelu_x{i}``       (shared, i = 2..degree)
+        c_i · x^i (neg)   → ``gelu_neg_t{i}``   (i = 0..degree)
+        c_i · x^i (pos)   → ``gelu_pos_t{i}``   (i = 0..degree)
         Σ_i c_i·x^i (neg) → ``gelu_poly_neg``
         Σ_i c_i·x^i (pos) → ``gelu_poly_pos``
 
-    Results on the full ``x`` tensor are recorded; the branch-selection mask
-    is applied only for the returned output, exactly as in
-    ``function_handler.PolynomialGELU``.
-    ``gelu_input`` / ``gelu_output`` are captured by the surrounding
-    ``_ActWrapper``.
+    Everything is recorded on the full ``x`` tensor; the branch-selection
+    mask is applied only to the returned output, exactly as in
+    ``function_handler.PolynomialGELU``.  ``gelu_input`` / ``gelu_output``
+    are captured separately by the surrounding ``_ActWrapper``.
     """
 
     def __init__(self, degree, layer_idx, q):
@@ -525,10 +549,8 @@ class StatsPolynomialGELU(nn.Module):
 
     def _branch_poly(self, x, sign, branch_name, powers):
         """Evaluate ``Σ_i c_i · x^i`` for the requested branch, emitting a
-        probe for each term.
-
-        ``powers`` is a list with ``powers[i] = x^i`` for ``i = 1..degree``
-        (``powers[0]`` is unused since ``c_0`` multiplies the implicit ``x^0``).
+        probe for each term.  ``powers`` is a list with
+        ``powers[i] = x^i`` for ``i = 1..degree``.
         """
         coeffs = self.coeff[sign]
         result = None
@@ -543,9 +565,10 @@ class StatsPolynomialGELU(nn.Module):
         return result
 
     def _compute_powers(self, x):
-        """Return ``[None, x, x^2, x^3, ..., x^degree]`` and enqueue
-        ``gelu_x{i}`` for ``i >= 2``.  ``x^1`` itself is already captured by
-        the ``_ActWrapper`` as ``gelu_input`` and is not re-emitted."""
+        """Return ``[None, x, x^2, ..., x^degree]`` and enqueue ``gelu_x{i}``
+        for ``i >= 2``.  ``x^1`` itself is already captured by the
+        ``_ActWrapper`` as ``gelu_input``.
+        """
         powers = [None, x]
         for i in range(2, self.degree + 1):
             xi = x.pow(i)
