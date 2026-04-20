@@ -119,6 +119,7 @@ import os
 import sys
 import argparse
 import zipfile
+import re
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -396,6 +397,25 @@ PLACEHOLDER_DEFAULTS = {
     'WNLI.tsv': '0',
 }
 
+EXPECTED_LABELS = {
+    'AX.tsv': {'entailment', 'neutral', 'contradiction'},
+    'CoLA.tsv': {'0', '1'},
+    'MNLI-mm.tsv': {'entailment', 'neutral', 'contradiction'},
+    'MNLI-m.tsv': {'entailment', 'neutral', 'contradiction'},
+    'MRPC.tsv': {'0', '1'},
+    'QNLI.tsv': {'entailment', 'not_entailment'},
+    'QQP.tsv': {'0', '1'},
+    'RTE.tsv': {'entailment', 'not_entailment'},
+    'SST-2.tsv': {'0', '1'},
+    'WNLI.tsv': {'0', '1'},
+}
+
+TEXTATTACK_MNLI_LABEL_MAP = {
+    0: 'contradiction',
+    1: 'entailment',
+    2: 'neutral',
+}
+
 
 def detect_layer_attribute(model):
     candidates = ['bert.encoder.layer', 'model.layers', 'transformer.h', 'roberta.encoder.layer']
@@ -562,7 +582,31 @@ def run_inference(model, dataloader, device):
     return np.concatenate(all_logits, axis=0)
 
 
-def _normalize_glue_label(task_name, raw_label):
+def _is_generic_model_label(raw_label):
+    return re.fullmatch(r"(?:label[_-]?)?\d+", str(raw_label).strip().lower()) is not None
+
+
+def _extract_generic_label_id(raw_label):
+    match = re.fullmatch(r"(?:label[_-]?)?(\d+)", str(raw_label).strip().lower())
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _generic_class_index_to_glue_label(task_name, class_idx, task_config):
+    """Convert a numeric model class index to GLUE's submission label string."""
+    model_name = str(task_config.get('model_name', '')).lower()
+    if task_name in ('mnli', 'ax') and 'textattack/' in model_name:
+        return TEXTATTACK_MNLI_LABEL_MAP[int(class_idx)]
+
+    label_map = task_config.get('label_map')
+    if label_map is not None:
+        return str(label_map[int(class_idx)])
+
+    return str(class_idx)
+
+
+def _normalize_glue_label(task_name, raw_label, class_idx=None, task_config=None):
     """Map a model-specific label string to the GLUE-submission label string.
 
     Different textattack BERT checkpoints use different id2label conventions
@@ -571,6 +615,13 @@ def _normalize_glue_label(task_name, raw_label):
     `model.config.id2label`, then normalize the *string* to the GLUE format.
     """
     s = str(raw_label).strip().lower().replace('-', '_').replace(' ', '_')
+    generic_label_id = _extract_generic_label_id(s)
+    if generic_label_id is not None:
+        resolved_idx = int(class_idx) if class_idx is not None else generic_label_id
+        if task_config is not None:
+            return _generic_class_index_to_glue_label(task_name, resolved_idx, task_config)
+        return str(generic_label_id)
+
     # NLI-style tasks
     if task_name in ('mnli', 'ax'):
         if 'contradict' in s:
@@ -579,14 +630,13 @@ def _normalize_glue_label(task_name, raw_label):
             return 'neutral'
         if 'entail' in s:
             return 'entailment'
-        # numeric fallback (some checkpoints keep id strings)
-        return {'0': 'contradiction', '1': 'entailment', '2': 'neutral'}.get(s, s)
+        return s
     if task_name in ('qnli', 'rte'):
         if 'not' in s and 'entail' in s:
             return 'not_entailment'
         if 'entail' in s:
             return 'entailment'
-        return {'0': 'entailment', '1': 'not_entailment'}.get(s, s)
+        return s
     # Binary 0/1 tasks (cola, sst2, mrpc, wnli)
     positive_markers = ('1', 'positive', 'acceptable', 'equivalent',
                         'duplicate', 'entailment', 'true', 'pos')
@@ -617,11 +667,31 @@ def logits_to_predictions(logits, task_config, task_name, id2label):
         pred_classes = np.argmax(logits, axis=1)
 
     if id2label is None:
-        # Fallback to the static registry map (legacy path).
-        label_map = task_config['label_map']
-        return [str(label_map[int(c)]) for c in pred_classes]
+        return [
+            _generic_class_index_to_glue_label(task_name, int(c), task_config)
+            for c in pred_classes
+        ]
 
-    return [_normalize_glue_label(task_name, id2label[int(c)]) for c in pred_classes]
+    predictions = []
+    for c in pred_classes:
+        class_idx = int(c)
+        raw_label = id2label.get(class_idx)
+        if raw_label is None:
+            raw_label = id2label.get(str(class_idx))
+        if raw_label is None or _is_generic_model_label(raw_label):
+            predictions.append(
+                _generic_class_index_to_glue_label(task_name, class_idx, task_config)
+            )
+        else:
+            predictions.append(
+                _normalize_glue_label(
+                    task_name,
+                    raw_label,
+                    class_idx=class_idx,
+                    task_config=task_config,
+                )
+            )
+    return predictions
 
 
 def write_tsv(filepath, predictions):
@@ -638,6 +708,58 @@ def generate_placeholder(filepath, num_predictions, default_label="0"):
         for idx in range(num_predictions):
             f.write(f"{idx}\t{default_label}\n")
     print(f"  -> [Placeholder] {os.path.basename(filepath)}: {num_predictions + 1} lines")
+
+
+def _validate_prediction_value(filename, value):
+    if filename == 'STS-B.tsv':
+        try:
+            score = float(value)
+        except ValueError:
+            return False, "STS-B prediction is not a float"
+        if not 0.0 <= score <= 5.0:
+            return False, "STS-B prediction outside [0, 5]"
+        return True, None
+
+    allowed = EXPECTED_LABELS.get(filename)
+    if allowed is not None and value not in allowed:
+        return False, f"prediction '{value}' not in {sorted(allowed)}"
+    return True, None
+
+
+def validate_tsv_file(filepath, filename, expected_lines):
+    errors = []
+    try:
+        with open(filepath, 'r') as f:
+            lines = [line.rstrip('\n').rstrip('\r') for line in f]
+    except OSError as exc:
+        return 0, [f"failed to read file: {exc}"]
+
+    actual_lines = len(lines)
+    if actual_lines != expected_lines:
+        errors.append(f"line count {actual_lines}, expected {expected_lines}")
+
+    if not lines:
+        errors.append("empty file")
+        return actual_lines, errors
+
+    if lines[0] != "index\tprediction":
+        errors.append("header must be exactly 'index\\tprediction'")
+
+    for expected_idx, line in enumerate(lines[1:]):
+        parts = line.split('\t')
+        if len(parts) != 2:
+            errors.append(f"row {expected_idx}: expected 2 tab-separated columns")
+            break
+        row_idx, prediction = parts
+        if row_idx != str(expected_idx):
+            errors.append(f"row {expected_idx}: index column is '{row_idx}'")
+            break
+        ok, message = _validate_prediction_value(filename, prediction)
+        if not ok:
+            errors.append(f"row {expected_idx}: {message}")
+            break
+
+    return actual_lines, errors
 
 
 def tokenize_and_prepare(dataset_split, tokenizer, input_cols, max_length):
@@ -832,18 +954,17 @@ def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
 
 def verify_outputs(output_dir):
     print(f"\n{'=' * 60}")
-    print("Verification: TSV line counts")
+    print("Verification: TSV format, labels, and line counts")
     print(f"{'=' * 60}")
     all_ok = True
     for filename, expected in sorted(EXPECTED_LINES.items()):
         filepath = os.path.join(output_dir, filename)
         if os.path.exists(filepath):
-            with open(filepath, 'r') as f:
-                actual = sum(1 for _ in f)
-            if actual == expected:
+            actual, errors = validate_tsv_file(filepath, filename, expected)
+            if not errors:
                 status = "OK"
             else:
-                status = f"MISMATCH (expected {expected})"
+                status = f"INVALID ({'; '.join(errors[:2])})"
                 all_ok = False
             print(f"  {filename:15s}: {actual:>8d} lines  [{status}]")
         else:
@@ -878,6 +999,20 @@ def fill_missing_submission_files(output_dir):
         generate_placeholder(filepath, expected - 1, default_label=default_label)
         created_files.append(filename)
     return created_files
+
+
+def remove_stale_submission_files(output_dir):
+    removed = []
+    for filename in list(EXPECTED_LINES) + ["submission.zip"]:
+        filepath = os.path.join(output_dir, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            removed.append(filename)
+    if removed:
+        print(
+            f"[Output] Removed {len(removed)} stale submission file(s) from "
+            f"{output_dir}: {', '.join(sorted(removed))}"
+        )
 
 
 def main():
@@ -991,6 +1126,7 @@ def main():
         final_output_dir = os.path.join("glue_submission", normalized_output_dir)
     args.output_dir = final_output_dir
     os.makedirs(args.output_dir, exist_ok=True)
+    remove_stale_submission_files(args.output_dir)
 
     if args.tasks:
         tasks_to_run = args.tasks
@@ -1085,9 +1221,10 @@ def main():
                 no_approx=args.no_approx, no_noise=not use_noise,
             )
         except Exception as exc:
-            task_failures.append((task_name, exc))
+            task_failures.append((task_name, type(exc).__name__, str(exc)))
             print(f"\n[Error] Task '{task_name}' failed; continuing with remaining tasks.")
             print(f"        {type(exc).__name__}: {exc}")
+            exc.__traceback__ = None
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
@@ -1113,8 +1250,8 @@ def main():
 
     if task_failures:
         print("\nTask failures encountered during generation:")
-        for task_name, exc in task_failures:
-            print(f"  - {task_name}: {type(exc).__name__}: {exc}")
+        for task_name, exc_type, message in task_failures:
+            print(f"  - {task_name}: {exc_type}: {message}")
         all_ok = False
 
     if all_ok:

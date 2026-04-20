@@ -25,8 +25,8 @@ set -euo pipefail
 # ----------------------------------------------------------------------
 #   $1  mode       运行模式，四选一：
 #                    baseline    纯基线，原始 GELU+exp，无近似、无噪声
-#                    approx      仅近似（默认 config = glue_configs_best_ppo.json）
-#                    noise       仅噪声（默认 noise_config = glue_noise_configs_best_ppo.json）
+#                    approx      仅近似（默认 config = glue_final_configs_best_ppo.json）
+#                    noise       仅噪声（默认 noise_config = glue_final_configs_best_ppo.json）
 #                    full        近似 + 噪声（两阶段优化结果一起用）
 #
 #   $2  run_name   本次运行的子目录名，例如 "ppo_v1"
@@ -70,8 +70,8 @@ set -euo pipefail
 #
 #   # 3) 仅噪声，自定义噪声配置
 #   bash run_glue_submission.sh noise noise_max output.log \
-#        --noise_config glue_noise_configs_best_ppo.json \
-#        --config glue_configs_best_ppo.json
+#        --noise_config glue_final_configs_best_ppo.json \
+#        --config glue_final_configs_best_ppo.json
 #
 #   # 4) 近似+噪声完整组合
 #   bash run_glue_submission.sh full full_ppo output.log
@@ -114,8 +114,8 @@ fi
 
 EXTRA_ARGS=("$@")
 
-DEFAULT_APPROX_CFG="glue_configs_best_ppo.json"
-DEFAULT_NOISE_CFG="glue_noise_configs_best_ppo.json"
+DEFAULT_APPROX_CFG="glue_final_configs_best_ppo.json"
+DEFAULT_NOISE_CFG="glue_final_configs_best_ppo.json"
 
 MODE_ARGS=()
 case "$MODE" in
