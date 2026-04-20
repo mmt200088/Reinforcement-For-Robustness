@@ -6,7 +6,7 @@ GA budgets resolved to validation-full search units: stage1_generations=1594 (po
 Stage-1 genetic search skipped by flag.
 
 Stage-1 baseline and constraints:
-  baseline metrics on validation_full: 损失（Loss）: 0.370974, Accuracy: 0.879902, F1: 0.877442
+  baseline metrics on validation_full: 损失（Loss）: 0.345298, Accuracy: 0.879902, F1: 0.877442
   simulated cost: total=72.00, gelu=36.00, softmax=36.00
   constraint ratio: 0.50%
-  constraints: 损失（Loss）<=0.3728, Accuracy>=0.8755, F1>=0.8731
+  constraints: 损失（Loss）<=0.3470, Accuracy>=0.8755, F1>=0.8731

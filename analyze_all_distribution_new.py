@@ -207,6 +207,7 @@ PROBE_DISPLAY = {
     'ln2_invstd':   'LN₂ 1/σ',
 }
 
+
 PROBE_HIST_RANGE = {
     'input_ids':    (0.0, 50300.0, 300),
     'after_embed':  (-5.0, 5.0, 300),
