@@ -20,6 +20,8 @@ from function_handler import (
     WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
     WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
     WFFN1_NOISE_DEFAULT_SCALING_FACTOR,
+    SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS,
+    SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
 )
 from final_evaluation_module import UnifiedFinalEvaluationModule
 from noise_rl_module_v2 import (
@@ -2547,12 +2549,25 @@ class LayerImportanceEvaluator(TrainerCallback):
             WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
             dtype=int,
         )
+        self.current_softmax_value_softmax_noise_scaling_factors = np.full(
+            self.total_layers,
+            SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
+        self.current_softmax_value_v_noise_scaling_factors = np.full(
+            self.total_layers,
+            SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
         self.wq_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
         self.wk_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
         self.wv_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
         self.wo_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
         self.wffn1_noise_action_space = tuple(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
         self.wffn2_noise_action_space = tuple(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+        self.softmax_value_noise_action_space = tuple(
+            SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS
+        )
         self.rl_lr_raw = rl_lr
         self.stage1_rl_lr_raw = stage1_rl_lr if stage1_rl_lr not in (None, "") else rl_lr
         self.stage2_rl_lr_raw = stage2_rl_lr if stage2_rl_lr not in (None, "") else self.stage1_rl_lr_raw
@@ -3835,6 +3850,69 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.clear_wffn1_noise_configuration()
         self.clear_wffn2_noise_configuration()
 
+    def validate_softmax_value_noise_scaling_factors(self, scaling_factors, noise_name):
+        arr = np.asarray(scaling_factors, dtype=int)
+        if arr.shape != (self.total_layers,):
+            raise ValueError(
+                f"{noise_name}_scaling_factors must have shape ({self.total_layers},), "
+                f"but got {arr.shape}"
+            )
+        invalid = sorted(
+            set(arr.tolist()) - set(SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS)
+        )
+        if invalid:
+            raise ValueError(
+                f"Unsupported {noise_name} scaling factors: {invalid}. "
+                f"Allowed values: {list(SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS)}"
+            )
+        return arr
+
+    def apply_softmax_value_noise_configuration(
+            self,
+            softmax_noise_scaling_factors,
+            value_noise_scaling_factors,
+            ):
+        """Apply layer-wise fresh noise for (softmax + e1) @ (V + e2)."""
+        softmax_arr = self.validate_softmax_value_noise_scaling_factors(
+            softmax_noise_scaling_factors,
+            "softmax_value_softmax_noise",
+        )
+        value_arr = self.validate_softmax_value_noise_scaling_factors(
+            value_noise_scaling_factors,
+            "softmax_value_v_noise",
+        )
+        handler_layer_name = "model." + self.layers_attribute
+        pair_map = {}
+        for idx, (softmax_sf, value_sf) in enumerate(zip(softmax_arr, value_arr)):
+            pair_map.setdefault((int(softmax_sf), int(value_sf)), []).append(idx)
+        for (softmax_sf, value_sf), layer_indices in sorted(pair_map.items()):
+            self.reversible_handler.replace_layer_softmax_value_noise(
+                layer_indices,
+                handler_layer_name,
+                softmax_scaling_factor=softmax_sf,
+                value_scaling_factor=value_sf,
+                distribution="fresh",
+            )
+        self.current_softmax_value_softmax_noise_scaling_factors = softmax_arr.copy()
+        self.current_softmax_value_v_noise_scaling_factors = value_arr.copy()
+
+    def clear_softmax_value_noise_configuration(self):
+        handler_layer_name = "model." + self.layers_attribute
+        self.reversible_handler.restore_layer_softmax_value_noise(
+            list(range(self.total_layers)),
+            handler_layer_name,
+        )
+        self.current_softmax_value_softmax_noise_scaling_factors = np.full(
+            self.total_layers,
+            SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
+        self.current_softmax_value_v_noise_scaling_factors = np.full(
+            self.total_layers,
+            SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
+            dtype=int,
+        )
+
     def apply_qkv_noise_configuration(
             self,
             wq_noise_scaling_factors=None,
@@ -3924,6 +4002,68 @@ class LayerImportanceEvaluator(TrainerCallback):
                 split_name=split_name,
             )
         finally:
+            if weight_noise_enabled:
+                self.clear_weight_noise_configuration()
+            if input_noise_enabled:
+                self.clear_input_noise_configuration()
+
+    def evaluate_model_with_softmax_value_noise(
+            self,
+            gelu_degrees,
+            softmax_degrees,
+            softmax_noise_scaling_factors,
+            value_noise_scaling_factors,
+            input_noise_scaling_factors=None,
+            wq_noise_scaling_factors=None,
+            wk_noise_scaling_factors=None,
+            wv_noise_scaling_factors=None,
+            wo_noise_scaling_factors=None,
+            wffn1_noise_scaling_factors=None,
+            wffn2_noise_scaling_factors=None,
+            use_train=True,
+            split=None,
+            ):
+        """Evaluate with attention-product noise: (softmax + e1) @ (V + e2)."""
+        self.apply_configuration(gelu_degrees, softmax_degrees)
+        input_noise_enabled = input_noise_scaling_factors is not None
+        weight_noise_enabled = any(
+            config is not None
+            for config in (
+                wq_noise_scaling_factors,
+                wk_noise_scaling_factors,
+                wv_noise_scaling_factors,
+                wo_noise_scaling_factors,
+                wffn1_noise_scaling_factors,
+                wffn2_noise_scaling_factors,
+            )
+        )
+
+        if input_noise_enabled:
+            self.apply_input_noise_configuration(input_noise_scaling_factors)
+        if weight_noise_enabled:
+            self.apply_weight_noise_configuration(
+                wq_noise_scaling_factors=wq_noise_scaling_factors,
+                wk_noise_scaling_factors=wk_noise_scaling_factors,
+                wv_noise_scaling_factors=wv_noise_scaling_factors,
+                wo_noise_scaling_factors=wo_noise_scaling_factors,
+                wffn1_noise_scaling_factors=wffn1_noise_scaling_factors,
+                wffn2_noise_scaling_factors=wffn2_noise_scaling_factors,
+            )
+        self.apply_softmax_value_noise_configuration(
+            softmax_noise_scaling_factors=softmax_noise_scaling_factors,
+            value_noise_scaling_factors=value_noise_scaling_factors,
+        )
+
+        split_name = self._resolve_eval_split(use_train=use_train, split=split)
+        dataloader = self.dataloaders[split_name]
+        try:
+            return self._run_evaluation(
+                dataloader,
+                use_train=(split_name == "train"),
+                split_name=split_name,
+            )
+        finally:
+            self.clear_softmax_value_noise_configuration()
             if weight_noise_enabled:
                 self.clear_weight_noise_configuration()
             if input_noise_enabled:

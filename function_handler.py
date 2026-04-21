@@ -109,6 +109,8 @@ WEIGHT_NOISE_ALLOWED_SCALING_FACTORS = (14, 16, 18, 20, 22)
 WEIGHT_NOISE_DEFAULT_SCALING_FACTOR = 22
 WFFN1_NOISE_ALLOWED_SCALING_FACTORS = (16, 18, 20, 22, 24)
 WFFN1_NOISE_DEFAULT_SCALING_FACTOR = 24
+SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS = tuple(sorted(INPUT_NOISE_VARIANCE_TABLE))
+SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR = max(SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS)
 
 
 def get_input_noise_variance(scaling_factor: int, distribution: str = "fresh") -> float:
@@ -199,6 +201,33 @@ def add_gaussian_weight_noise(
     std = math.sqrt(variance)
     noise = torch.randn_like(weight) * std
     return weight + noise
+
+
+def _apply_softmax_value_noise(attention_probs: Tensor, value_layer: Tensor, owner) -> tuple:
+    """Apply fresh tensor noise to attention_probs and value_layer before attention matmul."""
+    state = getattr(owner, "_softmax_value_noise_state", None)
+    if not state:
+        return attention_probs, value_layer
+
+    distribution = str(state.get("distribution", "fresh")).lower()
+    softmax_scaling_factor = state.get("softmax_scaling_factor")
+    value_scaling_factor = state.get("value_scaling_factor")
+
+    noisy_attention_probs = attention_probs
+    noisy_value_layer = value_layer
+    if softmax_scaling_factor is not None:
+        noisy_attention_probs = add_gaussian_input_noise(
+            attention_probs,
+            scaling_factor=int(softmax_scaling_factor),
+            distribution=distribution,
+        )
+    if value_scaling_factor is not None:
+        noisy_value_layer = add_gaussian_input_noise(
+            value_layer,
+            scaling_factor=int(value_scaling_factor),
+            distribution=distribution,
+        )
+    return noisy_attention_probs, noisy_value_layer
 
 
 def _make_noisy_linear_forward(linear_module: nn.Linear, scaling_factor: int, distribution: str = "encoding"):
@@ -398,6 +427,7 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
         self.layer_idx = layer_idx
         self.degree = degree 
         self.lower_bound = lower_bound
+        self._softmax_value_noise_state = None
 
     def approximation_exponential(self, x: torch.Tensor) -> torch.Tensor:
         """近似计算指数函数""" # degree = 1,2,3,4,5,6 
@@ -616,7 +646,12 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
         if head_mask is not None:
             attention_probs = attention_probs * head_mask
 
-        context_layer = torch.matmul(attention_probs, value_layer)
+        context_attention_probs, context_value_layer = _apply_softmax_value_noise(
+            attention_probs,
+            value_layer,
+            self,
+        )
+        context_layer = torch.matmul(context_attention_probs, context_value_layer)
 
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
@@ -679,7 +714,12 @@ def _make_gpt2_approx_attn_forward(attn_module, degree: int, lower_bound: float)
         attn_weights = module.attn_dropout(attn_weights)
         if head_mask is not None:
             attn_weights = attn_weights * head_mask
-        attn_output = torch.matmul(attn_weights, value)
+        context_attn_weights, context_value = _apply_softmax_value_noise(
+            attn_weights,
+            value,
+            module,
+        )
+        attn_output = torch.matmul(context_attn_weights, context_value)
         attn_output = attn_output.transpose(1, 2)
         return attn_output, attn_weights
 
@@ -802,6 +842,7 @@ class ReversibleLayerHandler:
             "wffn1": {},
             "wffn2": {},
         }
+        self.original_softmax_value_noise = {}
         # GPT-2 fused Q/K/V state: {layer_idx: {"query"/"key"/"value": (sf, distribution)}}
         self._gpt2_qkv_state = {}
         # Wrapped c_attn registry so we install the proxy forward only once per layer.
@@ -939,6 +980,53 @@ class ReversibleLayerHandler:
             self.original_input_noise[i]["distribution"] = str(distribution).lower()
 
         print(_format_noise_enable_message("input", len(selected), scaling_factor, distribution))
+
+    def _get_attention_core_module(self, layer):
+        if self._arch == "gpt2":
+            return layer.attn
+        return layer.attention.self
+
+    def replace_layer_softmax_value_noise(
+            self,
+            layer_indices=None,
+            layer_name="model.model.layers",
+            softmax_scaling_factor=SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
+            value_scaling_factor=SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
+            distribution="fresh",
+            ):
+        """Inject fresh noise as (softmax + e1) @ (V + e2) in attention."""
+        _ = get_input_noise_variance(int(softmax_scaling_factor), distribution=distribution)
+        _ = get_input_noise_variance(int(value_scaling_factor), distribution=distribution)
+
+        layers = list(eval("self." + layer_name))
+        if layer_indices is None:
+            selected = set(range(len(layers)))
+        else:
+            selected = set(layer_indices)
+            if not selected:
+                return
+
+        state = {
+            "softmax_scaling_factor": int(softmax_scaling_factor),
+            "value_scaling_factor": int(value_scaling_factor),
+            "distribution": str(distribution).lower(),
+        }
+        for i, layer in enumerate(layers):
+            if i not in selected:
+                continue
+            attn_module = self._get_attention_core_module(layer)
+            self.original_softmax_value_noise.setdefault(
+                i,
+                getattr(attn_module, "_softmax_value_noise_state", None),
+            )
+            setattr(attn_module, "_softmax_value_noise_state", dict(state))
+
+        print(
+            "Enabled softmax/V attention-product noise for "
+            f"{len(selected)} layers "
+            f"(softmax sf={int(softmax_scaling_factor)}, "
+            f"V sf={int(value_scaling_factor)}, distribution={str(distribution).lower()})"
+        )
 
     def _ensure_gpt2_qkv_wrapper(self, layer_idx, layer):
         """Install a single proxy forward on this layer's ``attn.c_attn``.
@@ -1216,6 +1304,22 @@ class ReversibleLayerHandler:
                     layer.forward = original_forward
                 del self.original_input_noise[i]
 
+    def restore_layer_softmax_value_noise(self, layer_indices=None, layer_name="model.model.layers"):
+        layers = list(eval("self." + layer_name))
+        if layer_indices is None:
+            selected = set(range(len(layers)))
+        else:
+            selected = set(layer_indices)
+            if not selected:
+                return
+
+        for i, layer in enumerate(layers):
+            if i not in selected:
+                continue
+            attn_module = self._get_attention_core_module(layer)
+            previous_state = self.original_softmax_value_noise.pop(i, None)
+            setattr(attn_module, "_softmax_value_noise_state", previous_state)
+
     def _restore_attention_projection_noise(
             self,
             projection_name,
@@ -1336,6 +1440,7 @@ class ReversibleLayerHandler:
             "wffn1": {},
             "wffn2": {},
         }
+        self.original_softmax_value_noise = {}
         self._gpt2_qkv_state = {}
         self._gpt2_qkv_wrapped = {}
         print("已完全恢复原始模型状态")
