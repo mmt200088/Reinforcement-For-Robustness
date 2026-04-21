@@ -174,6 +174,7 @@ APPROX_PROBES = [
     "softmax_exp_raw",
     "softmax_exp_out",
     "softmax_sum_exp",
+    "softmax_approx_out",
     *[f"gelu_x{i}" for i in range(2, _GELU_TERM_MAX + 1)],
     *[f"gelu_neg_t{i}" for i in range(0, _GELU_TERM_MAX + 1)],
     *[f"gelu_pos_t{i}" for i in range(0, _GELU_TERM_MAX + 1)],
@@ -190,6 +191,7 @@ _PROBE_DISPLAY_ADD = {
     "softmax_exp_raw":     "Approx exp (pre-mask)",
     "softmax_exp_out":     "Approx exp (masked)",
     "softmax_sum_exp":     "Σ exp (denominator)",
+    "softmax_approx_out":  "Approx softmax  exp / Σ exp",
     **{f"gelu_x{i}": f"x^{i}" for i in range(2, _GELU_TERM_MAX + 1)},
     **{f"gelu_neg_t{i}": f"GELU neg  c{i}·x^{i}"
        for i in range(0, _GELU_TERM_MAX + 1)},
@@ -220,6 +222,7 @@ _PROBE_HIST_RANGE_ADD = {
     "softmax_exp_raw":    (-10.0, 10000.0, 300),
     "softmax_exp_out":    (0.0,     1.5, 300),
     "softmax_sum_exp":    (0.0,    50.0, 300),
+    "softmax_approx_out": (0.0,     1.0, 200),
     "gelu_x2":            (0.0,   250.0, 300),
     "gelu_x3":            (-1500.0, 1500.0, 300),
     "gelu_x4":            (0.0, 20000.0, 300),
@@ -250,6 +253,7 @@ _PROBE_COLORS_ADD = {
     "softmax_exp_raw":    "#FF6347",
     "softmax_exp_out":    "#DC143C",
     "softmax_sum_exp":    "#B22222",
+    "softmax_approx_out": "#8B0000",
     "gelu_x2":            "#B0E0E6",
     "gelu_x3":            "#87CEEB",
     "gelu_x4":            "#6495ED",
@@ -516,7 +520,15 @@ def _make_approx_softmax_with_stats(degree, lower_bound, layer_idx, q):
         sum_exp = torch.sum(exp_out, dim=-1, keepdim=True) + 1e-9
         _enqueue("softmax_sum_exp", layer_idx, sum_exp.detach().squeeze(-1), q)
 
-        return exp_out / sum_exp
+        # Full approximated softmax output — this is what gets fed into the
+        # attention weighted sum.  Distinct from ``attn_probs`` because the
+        # latter is also populated on layers that do NOT use approximation
+        # (where it equals the real F.softmax output); ``softmax_approx_out``
+        # only fires when we are actually running the Taylor approximation.
+        approx_out = exp_out / sum_exp
+        _enqueue("softmax_approx_out", layer_idx, approx_out.detach(), q)
+
+        return approx_out
 
     return _softmax_fn
 

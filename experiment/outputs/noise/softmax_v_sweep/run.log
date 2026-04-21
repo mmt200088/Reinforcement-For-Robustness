@@ -1,0 +1,66 @@
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+============================================================
+  Softmax/V Fresh-Noise Sweep
+============================================================
+  Tasks          : ['mrpc']
+  Output dir     : experiment/outputs/noise/softmax_v_sweep
+  Device         : cuda
+  Eval split     : validation_full
+  Repeat n       : 5
+  Scaling factors: [10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48]
+  Base x/W noise : max
+============================================================
+
+=== Running MRPC ===
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/file_download.py:942: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+[信息] 数据集（Dataset）'mrpc' 检测为 CLASSIFICATION 任务
+[信息] 使用指标（Using metrics）: Accuracy, F1
+[数据集协议（Dataset Protocol）] 完整验证集（validation_full）=408  （统一使用 validation_full，不再拆分 search/holdout/proxy）
+[MRPC] Fixed GELU=4, Softmax=6; base_noise_mode=max
+已替换 12 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已为 12 层启用输入噪声（Input noise），缩放因子（scaling_factor）=30，分布（distribution）=新采样（fresh）
+已为 12 层启用查询投影噪声（query noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用键投影噪声（key noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用值投影噪声（value noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用注意力输出投影噪声（wo noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用前馈网络第一层噪声（wffn1 noise），缩放因子（scaling_factor）=24，分布（distribution）=编码分布（encoding）
+已为 12 层启用前馈网络第二层噪声（wffn2 noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+Enabled softmax/V attention-product noise for 12 layers (softmax sf=10, V sf=10, distribution=fresh)
+You're using a BertTokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
+已替换 12 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已为 12 层启用输入噪声（Input noise），缩放因子（scaling_factor）=30，分布（distribution）=新采样（fresh）
+已为 12 层启用查询投影噪声（query noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用键投影噪声（key noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用值投影噪声（value noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用注意力输出投影噪声（wo noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用前馈网络第一层噪声（wffn1 noise），缩放因子（scaling_factor）=24，分布（distribution）=编码分布（encoding）
+已为 12 层启用前馈网络第二层噪声（wffn2 noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+Enabled softmax/V attention-product noise for 12 layers (softmax sf=10, V sf=10, distribution=fresh)
+已替换 12 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已为 12 层启用输入噪声（Input noise），缩放因子（scaling_factor）=30，分布（distribution）=新采样（fresh）
+已为 12 层启用查询投影噪声（query noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用键投影噪声（key noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用值投影噪声（value noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用注意力输出投影噪声（wo noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用前馈网络第一层噪声（wffn1 noise），缩放因子（scaling_factor）=24，分布（distribution）=编码分布（encoding）
+已为 12 层启用前馈网络第二层噪声（wffn2 noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+Enabled softmax/V attention-product noise for 12 layers (softmax sf=10, V sf=10, distribution=fresh)
+已替换 12 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已为 12 层启用输入噪声（Input noise），缩放因子（scaling_factor）=30，分布（distribution）=新采样（fresh）
+已为 12 层启用查询投影噪声（query noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用键投影噪声（key noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用值投影噪声（value noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用注意力输出投影噪声（wo noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+已为 12 层启用前馈网络第一层噪声（wffn1 noise），缩放因子（scaling_factor）=24，分布（distribution）=编码分布（encoding）
+已为 12 层启用前馈网络第二层噪声（wffn2 noise），缩放因子（scaling_factor）=22，分布（distribution）=编码分布（encoding）
+Enabled softmax/V attention-product noise for 12 layers (softmax sf=10, V sf=10, distribution=fresh)

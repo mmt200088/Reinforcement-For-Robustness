@@ -1,0 +1,20 @@
+Dataset: MRPC
+Eval split: validation_full
+Repeats per point: 5
+Fixed approximation: GELU degree 4, Softmax degree 6 on all layers
+Base x/W noise mode: max
+Scanned noise distribution: fresh
+Scaling factors: [10, 48]
+Metric names: ['Acc.', 'F1']
+
+Best points:
+Lowest loss: softmax_sf=48, v_sf=48, loss_mean=0.250861
+Highest m1: softmax_sf=48, v_sf=48, m1_mean=0.906250
+Highest m2: softmax_sf=48, v_sf=48, m2_mean=0.904825
+
+Grid records:
+softmax_sf	v_sf	loss_mean	loss_std	m1_mean	m1_std	m2_mean	m2_std
+10	10	0.81478713	0.06568781	0.45625000	0.07806247	0.44417246	0.09777039
+10	48	0.90016958	0.18447098	0.54375000	0.12593401	0.55619620	0.12517250
+48	10	0.77063896	0.06950946	0.50000000	0.04419417	0.51438831	0.04140252
+48	48	0.25086081	0.02138935	0.90625000	0.00000000	0.90482456	0.00000000
