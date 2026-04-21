@@ -21,11 +21,14 @@ Common python options passed through to the experiment:
   --eval_split validation_full
   --repeat_n 5
   --scaling_factors 10 12 14 ... 48
+                            Optional override. Formal runs should omit this
+                            flag so the script scans the full MAP:
+                            10,12,14,...,48.
   --max_eval_samples 128
 
 Examples:
   bash experiment/run_softmax_v_noise_sweep.sh --tasks mrpc
-  bash experiment/run_softmax_v_noise_sweep.sh --foreground --tasks mrpc --scaling_factors 10 48 --max_eval_samples 32
+  bash experiment/run_softmax_v_noise_sweep.sh --foreground --tasks mrpc --scaling_factors 10 12 --max_eval_samples 32
 
 Background files:
   <output_dir>/run.log

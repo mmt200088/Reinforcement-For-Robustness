@@ -160,6 +160,14 @@ def to_list_config(config: Dict[str, np.ndarray]) -> Dict[str, List[int]]:
     return {key: np.asarray(value, dtype=int).tolist() for key, value in config.items()}
 
 
+def summarize_series_with_variance(values: Sequence[float]) -> dict:
+    summary = summarize_series(values)
+    arr = np.asarray(list(values), dtype=float)
+    finite = arr[np.isfinite(arr)]
+    summary["variance"] = None if finite.size == 0 else float(np.var(finite))
+    return summary
+
+
 def evaluate_grid_point(
     evaluator: LayerImportanceEvaluator,
     fixed_gelu: np.ndarray,
@@ -217,10 +225,10 @@ def evaluate_grid_point(
             get_input_noise_variance(int(value_factor), distribution="fresh")
         ),
         "trial_seeds": trial_seeds,
-        "loss": summarize_series(losses),
-        "m1": summarize_series(metric1_values),
-        "m2": summarize_series(metric2_values),
-        "time_ms": summarize_series(times),
+        "loss": summarize_series_with_variance(losses),
+        "m1": summarize_series_with_variance(metric1_values),
+        "m2": summarize_series_with_variance(metric2_values),
+        "time_ms": summarize_series_with_variance(times),
     }
 
 
@@ -296,17 +304,21 @@ def write_csv(summary: dict, output_path: str) -> None:
         "v_variance_fresh",
         "loss_mean",
         "loss_std",
+        "loss_variance",
         "loss_min",
         "loss_max",
         "m1_mean",
         "m1_std",
+        "m1_variance",
         "m1_min",
         "m1_max",
         "m2_mean",
         "m2_std",
+        "m2_variance",
         "m2_min",
         "m2_max",
         "time_ms_mean",
+        "time_ms_variance",
     ]
     with open(output_path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -321,17 +333,21 @@ def write_csv(summary: dict, output_path: str) -> None:
                     "v_variance_fresh": record["v_variance_fresh"],
                     "loss_mean": record["loss"]["mean"],
                     "loss_std": record["loss"]["std"],
+                    "loss_variance": record["loss"]["variance"],
                     "loss_min": record["loss"]["min"],
                     "loss_max": record["loss"]["max"],
                     "m1_mean": record["m1"]["mean"],
                     "m1_std": record["m1"]["std"],
+                    "m1_variance": record["m1"]["variance"],
                     "m1_min": record["m1"]["min"],
                     "m1_max": record["m1"]["max"],
                     "m2_mean": record["m2"]["mean"],
                     "m2_std": record["m2"]["std"],
+                    "m2_variance": record["m2"]["variance"],
                     "m2_min": record["m2"]["min"],
                     "m2_max": record["m2"]["max"],
                     "time_ms_mean": record["time_ms"]["mean"],
+                    "time_ms_variance": record["time_ms"]["variance"],
                 }
             )
 
@@ -383,17 +399,25 @@ def write_text_report(summary: dict, output_path: str) -> None:
         fmt_best("Highest m2", best_m2, "m2"),
         "",
         "Grid records:",
-        "softmax_sf\tv_sf\tloss_mean\tloss_std\tm1_mean\tm1_std\tm2_mean\tm2_std",
+        (
+            "softmax_sf\tv_sf\t"
+            "loss_mean\tloss_variance\tloss_std\t"
+            "m1_mean\tm1_variance\tm1_std\t"
+            "m2_mean\tm2_variance\tm2_std"
+        ),
     ]
     for record in records:
         lines.append(
             f"{record['softmax_scaling_factor']}\t"
             f"{record['v_scaling_factor']}\t"
             f"{record['loss']['mean']:.8f}\t"
+            f"{record['loss']['variance']:.8f}\t"
             f"{record['loss']['std']:.8f}\t"
             f"{record['m1']['mean']:.8f}\t"
+            f"{record['m1']['variance']:.8f}\t"
             f"{record['m1']['std']:.8f}\t"
             f"{record['m2']['mean']:.8f}\t"
+            f"{record['m2']['variance']:.8f}\t"
             f"{record['m2']['std']:.8f}"
         )
     with open(output_path, "w", encoding="utf-8") as handle:
@@ -404,13 +428,14 @@ def _metric_matrix(
     records: Sequence[dict],
     scaling_factors: Sequence[int],
     metric: str,
+    stat: str = "mean",
 ) -> np.ndarray:
     index = {int(value): idx for idx, value in enumerate(scaling_factors)}
     matrix = np.full((len(scaling_factors), len(scaling_factors)), np.nan, dtype=float)
     for record in records:
         row = index[int(record["v_scaling_factor"])]
         col = index[int(record["softmax_scaling_factor"])]
-        value = record[metric]["mean"]
+        value = record[metric][stat]
         matrix[row, col] = np.nan if value is None else float(value)
     return matrix
 
@@ -467,6 +492,145 @@ def plot_3d_surfaces(summary: dict, output_path: str) -> None:
     fig.savefig(output_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
 
+
+def _grid_edges(values: Sequence[int]) -> np.ndarray:
+    centers = np.asarray(values, dtype=float)
+    if centers.size == 1:
+        return np.asarray([centers[0] - 1.0, centers[0] + 1.0], dtype=float)
+    mids = (centers[:-1] + centers[1:]) / 2.0
+    first = centers[0] - (mids[0] - centers[0])
+    last = centers[-1] + (centers[-1] - mids[-1])
+    return np.concatenate([[first], mids, [last]])
+
+
+def plot_2d_heatmaps(summary: dict, output_path: str) -> None:
+    factors = summary["scaling_factors"]
+    x_edges = _grid_edges(factors)
+    y_edges = _grid_edges(factors)
+    metric_names = summary.get("metric_short_names") or []
+    metric_labels = {
+        "loss": "Loss",
+        "m1": f"m1 ({metric_names[0]})" if metric_names else "m1",
+        "m2": f"m2 ({metric_names[1]})" if len(metric_names) > 1 else "m2",
+    }
+    cmaps = {"loss": "viridis", "m1": "plasma", "m2": "cividis"}
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 9.4), constrained_layout=True)
+    fig.suptitle(
+        f"Softmax/V Fresh-Noise Sweep Mean and Variance ({summary['dataset'].upper()})",
+        fontsize=14,
+        fontweight="bold",
+    )
+
+    for row_idx, stat in enumerate(("mean", "variance")):
+        for col_idx, metric in enumerate(("loss", "m1", "m2")):
+            ax = axes[row_idx, col_idx]
+            matrix = _metric_matrix(summary["records"], factors, metric, stat=stat)
+            mesh = ax.pcolormesh(
+                x_edges,
+                y_edges,
+                matrix,
+                cmap=cmaps[metric],
+                shading="flat",
+            )
+            if len(factors) >= 3:
+                x_centers, y_centers = np.meshgrid(
+                    np.asarray(factors, dtype=float),
+                    np.asarray(factors, dtype=float),
+                )
+                ax.contour(
+                    x_centers,
+                    y_centers,
+                    matrix,
+                    colors="white",
+                    linewidths=0.7,
+                    alpha=0.65,
+                )
+            if len(factors) <= 5:
+                for value_row, value_factor in enumerate(factors):
+                    for softmax_col, softmax_factor in enumerate(factors):
+                        value = matrix[value_row, softmax_col]
+                        if np.isfinite(value):
+                            ax.text(
+                                softmax_factor,
+                                value_factor,
+                                f"{value:.4g}",
+                                ha="center",
+                                va="center",
+                                fontsize=8,
+                                color="white",
+                            )
+            stat_label = "Mean" if stat == "mean" else "Variance"
+            ax.set_title(f"{metric_labels[metric]} {stat_label}")
+            ax.set_xlabel("Softmax scaling factor")
+            ax.set_ylabel("V scaling factor")
+            ax.set_xticks(factors)
+            ax.set_yticks(factors)
+            fig.colorbar(mesh, ax=ax, shrink=0.82)
+
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_2d_change_curves(summary: dict, output_path: str) -> None:
+    factors = np.asarray(summary["scaling_factors"], dtype=int)
+    metric_names = summary.get("metric_short_names") or []
+    metric_labels = {
+        "loss": "Loss",
+        "m1": f"m1 ({metric_names[0]})" if metric_names else "m1",
+        "m2": f"m2 ({metric_names[1]})" if len(metric_names) > 1 else "m2",
+    }
+    records_by_v = {
+        int(v_factor): sorted(
+            [
+                record
+                for record in summary["records"]
+                if int(record["v_scaling_factor"]) == int(v_factor)
+            ],
+            key=lambda record: int(record["softmax_scaling_factor"]),
+        )
+        for v_factor in factors
+    }
+    cmap = plt.get_cmap("viridis")
+    norm = plt.Normalize(vmin=float(factors.min()), vmax=float(factors.max()))
+
+    fig, axes = plt.subplots(3, 2, figsize=(15.5, 13.2), constrained_layout=True)
+    fig.suptitle(
+        f"2D Change Curves by V Scaling Factor ({summary['dataset'].upper()})",
+        fontsize=14,
+        fontweight="bold",
+    )
+
+    for row_idx, metric in enumerate(("loss", "m1", "m2")):
+        for col_idx, stat in enumerate(("mean", "variance")):
+            ax = axes[row_idx, col_idx]
+            for value_factor, records in records_by_v.items():
+                x_values = [int(record["softmax_scaling_factor"]) for record in records]
+                y_values = [
+                    np.nan
+                    if record[metric][stat] is None
+                    else float(record[metric][stat])
+                    for record in records
+                ]
+                ax.plot(
+                    x_values,
+                    y_values,
+                    color=cmap(norm(value_factor)),
+                    linewidth=1.4,
+                    alpha=0.92,
+                )
+            stat_label = "Mean" if stat == "mean" else "Variance"
+            ax.set_title(f"{metric_labels[metric]} {stat_label}")
+            ax.set_xlabel("Softmax scaling factor")
+            ax.set_ylabel(f"{metric_labels[metric]} {stat_label.lower()}")
+            ax.set_xticks(factors)
+            ax.grid(True, alpha=0.25)
+
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    fig.colorbar(sm, ax=axes, shrink=0.72, label="V scaling factor")
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
 
 def main() -> int:
     args = parse_args()
@@ -540,15 +704,27 @@ def main() -> int:
                 args.output_dir,
                 f"softmax_v_noise_sweep_{task_name}_3d.png",
             )
+            heatmap_path = os.path.join(
+                args.output_dir,
+                f"softmax_v_noise_sweep_{task_name}_2d.png",
+            )
+            curve_path = os.path.join(
+                args.output_dir,
+                f"softmax_v_noise_sweep_{task_name}_2d_curves.png",
+            )
             with open(json_path, "w", encoding="utf-8") as handle:
                 json.dump(summary, handle, indent=2, ensure_ascii=False, default=json_default)
             write_csv(summary, csv_path)
             write_text_report(summary, text_path)
             plot_3d_surfaces(summary, plot_path)
+            plot_2d_heatmaps(summary, heatmap_path)
+            plot_2d_change_curves(summary, curve_path)
             print(f"[Saved] {json_path}", flush=True)
             print(f"[Saved] {csv_path}", flush=True)
             print(f"[Saved] {text_path}", flush=True)
             print(f"[Saved] {plot_path}", flush=True)
+            print(f"[Saved] {heatmap_path}", flush=True)
+            print(f"[Saved] {curve_path}", flush=True)
         finally:
             if evaluator is not None:
                 try:
