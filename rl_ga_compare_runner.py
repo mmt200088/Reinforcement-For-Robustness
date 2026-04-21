@@ -459,6 +459,48 @@ def _resolve_model_section(config_map: dict, model_type: str, *, config_path: Pa
     return config_map
 
 
+def _stage1_gelu_softmax_from_dataset_entry(dataset_obj: object) -> Tuple[Optional[object], Optional[object]]:
+    """Resolve gelu/softmax from a per-dataset entry.
+
+    Supports:
+    - Legacy template: ``{ "gelu": [...], "softmax": [...] }`` at dataset root.
+    - Unified glue file: ``{ "stage1": { "gelu": ..., "softmax": ... }, "stage2": ... }``.
+    """
+    if not isinstance(dataset_obj, dict):
+        return None, None
+    if "gelu" in dataset_obj and "softmax" in dataset_obj:
+        return dataset_obj.get("gelu"), dataset_obj.get("softmax")
+    stage1 = dataset_obj.get("stage1")
+    if isinstance(stage1, dict) and "gelu" in stage1 and "softmax" in stage1:
+        return stage1.get("gelu"), stage1.get("softmax")
+    return None, None
+
+
+def _stage2_noise_block_from_dataset_entry(dataset_obj: object) -> Optional[dict]:
+    """Resolve the noise scaling dict from a per-dataset entry.
+
+    Supports legacy flat keys (``x``, ``wq``, ...) at dataset root, or unified glue
+    ``stage2`` nested object with the same short keys.
+    """
+    required_keys = (
+        "x",
+        "wq",
+        "wk",
+        "wv",
+        "wo",
+        "wffn1",
+        "wffn2",
+    )
+    if not isinstance(dataset_obj, dict):
+        return None
+    if all(key in dataset_obj for key in required_keys):
+        return dataset_obj
+    stage2 = dataset_obj.get("stage2")
+    if isinstance(stage2, dict) and all(key in stage2 for key in required_keys):
+        return stage2
+    return None
+
+
 def validate_stage1_config_template(path: Path, *, dataset: str, model_type: str) -> None:
     obj = read_json(path)
     if not isinstance(obj, dict):
@@ -471,7 +513,8 @@ def validate_stage1_config_template(path: Path, *, dataset: str, model_type: str
             f"Dataset '{dataset}' not found under '{model_type}' in Stage-1 JSON '{path}'."
         )
     dataset_obj = section[dataset]
-    if not isinstance(dataset_obj, dict) or "gelu" not in dataset_obj or "softmax" not in dataset_obj:
+    gelu, softmax = _stage1_gelu_softmax_from_dataset_entry(dataset_obj)
+    if gelu is None or softmax is None:
         raise CompareRunnerError(
             f"Stage-1 JSON '{path}' is missing gelu/softmax for dataset '{dataset}'."
         )
@@ -489,9 +532,11 @@ def validate_stage2_config_template(path: Path, *, dataset: str, model_type: str
             f"Dataset '{dataset}' not found under '{model_type}' in Stage-2 JSON '{path}'."
         )
     dataset_obj = section[dataset]
-    if not isinstance(dataset_obj, dict):
+    noise_block = _stage2_noise_block_from_dataset_entry(dataset_obj)
+    if noise_block is None:
         raise CompareRunnerError(
-            f"Stage-2 JSON '{path}' has an invalid dataset payload for '{dataset}'."
+            f"Stage-2 JSON '{path}' has an invalid dataset payload for '{dataset}' "
+            f"(expected flat x/wq/... or unified stage2.x / stage2.wq / ...)."
         )
     required_keys = (
         "x",
@@ -502,7 +547,7 @@ def validate_stage2_config_template(path: Path, *, dataset: str, model_type: str
         "wffn1",
         "wffn2",
     )
-    missing = [key for key in required_keys if key not in dataset_obj]
+    missing = [key for key in required_keys if key not in noise_block]
     if missing:
         raise CompareRunnerError(
             f"Stage-2 JSON '{path}' is missing keys for dataset '{dataset}': {missing}."

@@ -166,10 +166,14 @@ PROBE_POINTS = [
     'ln2_output',
     # LayerNorm internal intermediates
     'ln1_mean_sum',
+    'ln1_mean',
+    'ln1_diff_sq',
     'ln1_var_sum',
     'ln1_var',
     'ln1_invstd',
     'ln2_mean_sum',
+    'ln2_mean',
+    'ln2_diff_sq',
     'ln2_var_sum',
     'ln2_var',
     'ln2_invstd',
@@ -198,10 +202,14 @@ PROBE_DISPLAY = {
     'ln2_input':    'LN₂ input (pre-norm)',
     'ln2_output':   'LN₂ output (pre-norm)',
     'ln1_mean_sum': 'LN₁ Σxᵢ (mean sum)',
+    'ln1_mean':     'LN₁ μ = Σxᵢ/D',
+    'ln1_diff_sq':  'LN₁ (xᵢ−μ)²',
     'ln1_var_sum':  'LN₁ Σ(xᵢ−μ)²',
     'ln1_var':      'LN₁ Variance',
     'ln1_invstd':   'LN₁ 1/σ',
     'ln2_mean_sum': 'LN₂ Σxᵢ (mean sum)',
+    'ln2_mean':     'LN₂ μ = Σxᵢ/D',
+    'ln2_diff_sq':  'LN₂ (xᵢ−μ)²',
     'ln2_var_sum':  'LN₂ Σ(xᵢ−μ)²',
     'ln2_var':      'LN₂ Variance',
     'ln2_invstd':   'LN₂ 1/σ',
@@ -229,10 +237,14 @@ PROBE_HIST_RANGE = {
     'ln2_input':    (-15.0, 15.0, 300),
     'ln2_output':   (-5.0, 5.0, 300),
     'ln1_mean_sum': (-2000.0, 2000.0, 300),
+    'ln1_mean':     (-3.0, 3.0, 300),
+    'ln1_diff_sq':  (0.0, 50.0, 300),
     'ln1_var_sum':  (0.0, 5000.0, 300),
     'ln1_var':      (0.0, 10.0, 300),
     'ln1_invstd':   (0.0, 20.0, 300),
     'ln2_mean_sum': (-2000.0, 2000.0, 300),
+    'ln2_mean':     (-3.0, 3.0, 300),
+    'ln2_diff_sq':  (0.0, 50.0, 300),
     'ln2_var_sum':  (0.0, 5000.0, 300),
     'ln2_var':      (0.0, 10.0, 300),
     'ln2_invstd':   (0.0, 20.0, 300),
@@ -259,13 +271,17 @@ PROBE_COLORS = {
     'ln2_input':    '#2c3e50',
     'ln2_output':   '#34495e',
     'ln1_mean_sum': '#e6194B',
-    'ln1_var_sum':  '#f58231',
-    'ln1_var':      '#ffe119',
-    'ln1_invstd':   '#bfef45',
+    'ln1_mean':     '#fabebe',
+    'ln1_diff_sq':  '#f58231',
+    'ln1_var_sum':  '#ffe119',
+    'ln1_var':      '#bfef45',
+    'ln1_invstd':   '#aaffc3',
     'ln2_mean_sum': '#3cb44b',
-    'ln2_var_sum':  '#42d4f4',
-    'ln2_var':      '#4363d8',
-    'ln2_invstd':   '#911eb4',
+    'ln2_mean':     '#808000',
+    'ln2_diff_sq':  '#42d4f4',
+    'ln2_var_sum':  '#4363d8',
+    'ln2_var':      '#911eb4',
+    'ln2_invstd':   '#f032e6',
 }
 
 # ==================== Magnitude-histogram configuration ====================
@@ -490,11 +506,13 @@ def _make_pre_hook(probe, layer, q):
 def _make_ln_internals_pre_hook(ln_prefix, layer, q):
     """Pre-hook on LayerNorm that computes and enqueues internal intermediates.
 
-    Captures four tensors (each has shape [batch, seq], reduced over hidden dim):
-      {ln_prefix}_mean_sum — Σxᵢ  (the raw sum before dividing by D)
-      {ln_prefix}_var_sum  — Σ(xᵢ − μ)²
-      {ln_prefix}_var      — (1/D) Σ(xᵢ − μ)²
-      {ln_prefix}_invstd   — 1 / √(var + ε)
+    Captures six tensors:
+      {ln_prefix}_mean_sum — Σxᵢ              (shape [B, S])
+      {ln_prefix}_mean     — μ = Σxᵢ / D      (shape [B, S])
+      {ln_prefix}_diff_sq  — (xᵢ − μ)²        (shape [B, S, D], per-element)
+      {ln_prefix}_var_sum  — Σ(xᵢ − μ)²       (shape [B, S])
+      {ln_prefix}_var      — (1/D) Σ(xᵢ − μ)² (shape [B, S])
+      {ln_prefix}_invstd   — 1 / √(var + ε)    (shape [B, S])
     """
     def hook(mod, inp):
         x = inp[0].detach().float()
@@ -504,7 +522,12 @@ def _make_ln_internals_pre_hook(ln_prefix, layer, q):
         _enqueue(f'{ln_prefix}_mean_sum', layer, sum_x, q)
 
         mean = x.mean(dim=-1, keepdim=True)
+        # Per-row mean μ = Σxᵢ / D
+        _enqueue(f'{ln_prefix}_mean', layer, mean.squeeze(-1), q)
+
         diff_sq = (x - mean).pow(2)
+        # Per-element squared deviation (xᵢ − μ)²; keeps the full hidden dim
+        _enqueue(f'{ln_prefix}_diff_sq', layer, diff_sq, q)
 
         sum_var = diff_sq.sum(dim=-1)
         _enqueue(f'{ln_prefix}_var_sum', layer, sum_var, q)

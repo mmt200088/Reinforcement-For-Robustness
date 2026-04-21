@@ -1,0 +1,94 @@
+══════════════════════════════════════════════════════════════════════
+  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）
+══════════════════════════════════════════════════════════════════════
+  [信息] Stage-1 PPO学习率（LR）: raw='1e-4' -> 0.0001 (direct) | Stage-2 PPO学习率（LR）: raw='1e-4' -> 0.0001 (direct)
+  [信息] 一阶段 RL 回合 stage-1 episodes=51000  ·  二阶段噪声 RL 回合 stage-2 episodes=40000
+  [信息] 本次运行根目录 run_output_dir=/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260421_103058_pid676499/children/rl
+
+============================================================
+PHASE: UNIFIED FINAL EVALUATION (validation_full)
+CONFIG_SOURCE=json  REPEAT_N=50
+Optimized stage1 cost=37.00 (gelu=14.00, softmax=23.00)
+Optimized stage2 cost=42.00 breakdown={'x': 7.65, 'wq': 5.6, 'wk': 5.6499999999999995, 'wv': 5.15, 'wo': 5.75, 'wffn1': 6.6, 'wffn2': 5.6}
+Selection constraints: Loss<=0.3468, Acc.>=0.8609, F1>=0.8585
+============================================================
+
+--- Baseline (Stage-1 Exact) : N=50 次重复评估 ---
+
+--- Optimized : N=50 次重复评估 ---
+  统计: Loss=0.3407±0.010249 Acc.=0.8665±0.008103 F1=0.8645±0.008347
+Generating 10 Stage1Budget configs...
+Generating 10 Stage2Budget configs...
+Generating 10 Perm configs...
+Generating 10 Equiv configs...
+Generating 10 Budget configs...
+
+Unified Performance Comparison Table:
+--------------------------------------------------------------------------------------
+Method                    | OK  | Loss     Acc.     F1       | S1 C    S2 C    S2 Spd 
+--------------------------------------------------------------------------------------
+Baseline (Stage-1 Exact)  | Y   | 0.3451   0.8652   0.8628   | 72.00   N/A N/A
+Optimized                 | Y   | 0.3407   0.8665   0.8645   | 37.00   42.00   1.17   
+--------------------------------------------------------------------------------------
+Stage1Budget_1            | N   | 0.3850   0.8554   0.8516   | 37.00   42.00   1.17   
+Stage1Budget_2            | N   | 0.3641   0.8652   0.8656   | 37.00   42.00   1.17   
+Stage1Budget_3            | N   | 0.3552   0.8578   0.8566   | 37.00   42.00   1.17   
+Stage1Budget_4            | N   | 0.3672   0.8480   0.8474   | 37.00   42.00   1.17   
+Stage1Budget_5            | N   | 0.3539   0.8578   0.8592   | 37.00   42.00   1.17   
+Stage1Budget_6            | Y   | 0.3431   0.8652   0.8642   | 37.00   42.00   1.17   
+Stage1Budget_7            | N   | 0.3699   0.8505   0.8500   | 37.00   42.00   1.17   
+Stage1Budget_8            | N   | 0.3479   0.8603   0.8585   | 37.00   42.00   1.17   
+Stage1Budget_9            | N   | 0.3690   0.8603   0.8589   | 37.00   42.00   1.17   
+Stage1Budget_10           | N   | 0.3608   0.8431   0.8435   | 37.00   42.00   1.17   
+Stage2Budget_1            | Y   | 0.3378   0.8652   0.8642   | 37.00   41.55   1.18   
+Stage2Budget_2            | Y   | 0.3251   0.8652   0.8628   | 37.00   41.65   1.18   
+Stage2Budget_3            | Y   | 0.3369   0.8799   0.8778   | 37.00   41.60   1.18   
+Stage2Budget_4            | Y   | 0.3356   0.8652   0.8642   | 37.00   41.60   1.18   
+Stage2Budget_5            | Y   | 0.3428   0.8848   0.8836   | 37.00   41.60   1.18   
+Stage2Budget_6            | N   | 0.3526   0.8603   0.8578   | 37.00   41.55   1.18   
+Stage2Budget_7            | N   | 0.3493   0.8652   0.8638   | 37.00   41.60   1.18   
+Stage2Budget_8            | Y   | 0.3307   0.8725   0.8698   | 37.00   41.55   1.18   
+Stage2Budget_9            | Y   | 0.3225   0.8775   0.8741   | 37.00   41.55   1.18   
+Stage2Budget_10           | Y   | 0.3282   0.8775   0.8766   | 37.00   42.00   1.17   
+Perm_1                    | N   | 0.3505   0.8725   0.8701   | 37.00   42.00   1.17   
+Perm_2                    | N   | 0.3810   0.8407   0.8383   | 37.00   42.00   1.17   
+Perm_3                    | N   | 0.3786   0.8382   0.8375   | 37.00   42.00   1.17   
+Perm_4                    | N   | 0.3649   0.8529   0.8505   | 37.00   42.00   1.17   
+Perm_5                    | N   | 0.3905   0.8456   0.8406   | 37.00   42.00   1.17   
+Perm_6                    | Y   | 0.3363   0.8627   0.8601   | 37.00   42.00   1.17   
+Perm_7                    | Y   | 0.3393   0.8652   0.8638   | 37.00   42.00   1.17   
+Perm_8                    | Y   | 0.3301   0.8725   0.8701   | 37.00   42.00   1.17   
+Perm_9                    | N   | 0.3693   0.8627   0.8618   | 37.00   42.00   1.17   
+Perm_10                   | N   | 0.3813   0.8407   0.8374   | 37.00   42.00   1.17   
+Equiv_1                   | N   | 0.3582   0.8676   0.8668   | 37.00   42.00   1.17   
+Equiv_2                   | N   | 0.3572   0.8652   0.8628   | 37.00   42.00   1.17   
+Equiv_3                   | N   | 0.3703   0.8578   0.8555   | 37.00   42.00   1.17   
+Equiv_4                   | N   | 0.3659   0.8578   0.8559   | 37.00   42.00   1.17   
+Equiv_5                   | N   | 0.3644   0.8480   0.8489   | 37.00   42.00   1.17   
+Equiv_6                   | N   | 0.3513   0.8529   0.8509   | 37.00   42.00   1.17   
+Equiv_7                   | N   | 0.3687   0.8652   0.8632   | 37.00   42.00   1.17   
+Equiv_8                   | N   | 0.3654   0.8701   0.8667   | 37.00   42.00   1.17   
+Equiv_9                   | N   | 0.3573   0.8652   0.8632   | 37.00   42.00   1.17   
+Equiv_10                  | Y   | 0.3453   0.8676   0.8658   | 37.00   42.00   1.17   
+Budget_1                  | N   | 0.3480   0.8701   0.8685   | 37.00   41.65   1.18   
+Budget_2                  | N   | 0.3521   0.8529   0.8523   | 37.00   41.60   1.18   
+Budget_3                  | N   | 0.3494   0.8529   0.8523   | 37.00   41.55   1.18   
+Budget_4                  | Y   | 0.3447   0.8701   0.8694   | 37.00   41.65   1.18   
+Budget_5                  | N   | 0.3537   0.8529   0.8520   | 37.00   41.55   1.18   
+Budget_6                  | N   | 0.3453   0.8480   0.8470   | 37.00   41.65   1.18   
+Budget_7                  | N   | 0.3495   0.8529   0.8538   | 37.00   41.65   1.18   
+Budget_8                  | N   | 0.3726   0.8554   0.8549   | 37.00   41.55   1.18   
+Budget_9                  | N   | 0.3628   0.8750   0.8734   | 37.00   41.65   1.18   
+Budget_10                 | N   | 0.3813   0.8358   0.8372   | 37.00   41.55   1.18   
+--------------------------------------------------------------------------------------
+
+Random Baseline Summary:
+  Overall: samples=50, constraint_ok=28.00%, selected_better_loss=80.00%, selected_better_Acc.=74.00%, selected_dominates=44.00%
+  Overall selected_better_F1=72.00%
+  Stage1Budget   samples=10  ok=10.00% loss_win=100.00% Acc._win=100.00% dominates=90.00% F1_win=90.00%
+  Stage2Budget   samples=10  ok=80.00% loss_win=30.00% Acc._win=50.00% dominates=0.00% F1_win=50.00%
+  Perm           samples=10  ok=30.00% loss_win=70.00% Acc._win=80.00% dominates=60.00% F1_win=80.00%
+  Equiv          samples=10  ok=10.00% loss_win=100.00% Acc._win=70.00% dominates=70.00% F1_win=70.00%
+  Budget         samples=10  ok=10.00% loss_win=100.00% Acc._win=70.00% dominates=0.00% F1_win=70.00%
+Unified final-eval summary saved to: /var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260421_103058_pid676499/children/rl/final_eval/final_eval_results_mrpc.json
+Unified final-eval plot saved to: /var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260421_103058_pid676499/children/rl/final_eval/final_eval_comparison_mrpc.png
