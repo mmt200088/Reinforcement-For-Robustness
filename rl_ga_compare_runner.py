@@ -360,6 +360,19 @@ def resolve_stage1_selected_config_from_artifacts(
             "gelu": obj["selected"]["gelu"],
             "softmax": obj["selected"]["softmax"],
         }, "final_eval_selected"
+    if obj is not None:
+        optimized_stage1 = obj.get("optimized_stage1") or {}
+        if optimized_stage1.get("gelu") is not None and optimized_stage1.get("softmax") is not None:
+            return {
+                "gelu": optimized_stage1["gelu"],
+                "softmax": optimized_stage1["softmax"],
+            }, "final_eval_optimized_stage1"
+        optimized = obj.get("optimized") or {}
+        if optimized.get("gelu") is not None and optimized.get("softmax") is not None:
+            return {
+                "gelu": optimized["gelu"],
+                "softmax": optimized["softmax"],
+            }, "final_eval_optimized"
     cfg, source = recover_stage1_search_best(run_dir, algorithm)
     return cfg, source
 
@@ -557,6 +570,8 @@ def validate_stage2_config_template(path: Path, *, dataset: str, model_type: str
 def _extract_stage1_result_layer_count(obj: dict) -> Optional[int]:
     for candidate in (
         (obj.get("selected") or {}).get("gelu"),
+        (obj.get("optimized") or {}).get("gelu"),
+        (obj.get("optimized_stage1") or {}).get("gelu"),
         (obj.get("baseline") or {}).get("gelu"),
         (obj.get("no_approx") or {}).get("gelu"),
     ):
@@ -566,13 +581,21 @@ def _extract_stage1_result_layer_count(obj: dict) -> Optional[int]:
 
 
 def _extract_stage2_result_layer_count(obj: dict) -> Optional[int]:
-    fixed_stage1 = obj.get("fixed_stage1_config") or {}
-    gelu = fixed_stage1.get("gelu")
-    if isinstance(gelu, list) and gelu:
-        return len(gelu)
+    for stage1_candidate in (
+        obj.get("fixed_stage1_config") or {},
+        obj.get("optimized_stage1") or {},
+    ):
+        gelu = stage1_candidate.get("gelu")
+        if isinstance(gelu, list) and gelu:
+            return len(gelu)
 
-    noise_cfg = (obj.get("selected") or {}).get("noise_config") or {}
-    for value in noise_cfg.values():
+    for result_key in ("selected", "optimized"):
+        noise_cfg = (obj.get(result_key) or {}).get("noise_config") or {}
+        for value in noise_cfg.values():
+            if isinstance(value, list) and value:
+                return len(value)
+    optimized_stage2 = obj.get("optimized_stage2") or {}
+    for value in optimized_stage2.values():
         if isinstance(value, list) and value:
             return len(value)
     return None
@@ -679,7 +702,7 @@ def ensure_persistent_side_has_compare_artifacts(
 
 
 def _extract_repeat_evaluation(obj: dict) -> Tuple[Optional[dict], List[dict]]:
-    repeat_obj = obj.get("repeat_evaluation") or {}
+    repeat_obj = obj.get("optimized_repeat_evaluation") or obj.get("repeat_evaluation") or {}
     stats = repeat_obj.get("stats")
     trials = repeat_obj.get("trials") or []
     if stats is None:
@@ -1123,8 +1146,11 @@ def build_stage_compare_payload(
         source_path: Path,
     ) -> dict:
         baseline = obj.get("baseline") or {}
-        selected = obj.get("selected")
-        selected_origin = "selected"
+        selected = obj.get("optimized")
+        selected_origin = "optimized"
+        if selected is None:
+            selected = obj.get("selected")
+            selected_origin = "selected"
         selected_warning = None
         if selected is None:
             fallback_candidate = obj.get("no_noise") or baseline
@@ -1137,7 +1163,22 @@ def build_stage_compare_payload(
         process_state = (process_meta.get(algorithm) or {}).get("state", "-")
         process_return_code = (process_meta.get(algorithm) or {}).get("return_code")
         stage1_selected_config = obj.get("fixed_stage1_config")
-        stage1_selected_source = "stage2_final_eval_fixed_config"
+        stage1_selected_source = "final_eval_fixed_stage1_config"
+        if stage1_selected_config is None:
+            optimized_stage1 = obj.get("optimized_stage1") or {}
+            if optimized_stage1.get("gelu") is not None and optimized_stage1.get("softmax") is not None:
+                stage1_selected_config = {
+                    "gelu": optimized_stage1["gelu"],
+                    "softmax": optimized_stage1["softmax"],
+                }
+                stage1_selected_source = "final_eval_optimized_stage1"
+        if stage1_selected_config is None and selected is not None:
+            if selected.get("gelu") is not None and selected.get("softmax") is not None:
+                stage1_selected_config = {
+                    "gelu": selected["gelu"],
+                    "softmax": selected["softmax"],
+                }
+                stage1_selected_source = f"final_eval_{selected_origin}"
         if stage1_selected_config is None:
             stage1_selected_config, stage1_selected_source = (
                 resolve_stage1_selected_config_from_artifacts(run_dir, algorithm, dataset)
@@ -1200,11 +1241,11 @@ def build_stage_compare_payload(
                 f"{label} 进程状态为 {state}；本次对比结果可能基于中断前保存的当前最优配置。"
             )
     for label, side in (("RL", rl_side), ("GA", ga_side)):
-        if stage_label == "stage2" and not side.get("stage1_selected_config"):
+        if stage_label in ("stage2", "final") and not side.get("stage1_selected_config"):
             payload["warnings"].append(
                 f"{label} Stage-2 对比未能解析出固定的 Stage-1 配置；当前结果可能已回退到 baseline。"
             )
-    if stage_label == "stage2":
+    if stage_label in ("stage2", "final"):
         payload["stage2_repeat_summary"] = _build_stage2_repeat_summary(
             metric_names,
             rl_side,
@@ -1215,7 +1256,10 @@ def build_stage_compare_payload(
 
 def save_stage_compare_report(payload: dict, output_dir: Path) -> Tuple[Path, Path]:
     ensure_dir(output_dir)
-    stage = payload["stage"]
+    source_stage = payload["stage"]
+    stage = "final" if source_stage in ("stage1", "stage2", "final") else source_stage
+    output_payload = dict(payload)
+    output_payload["stage"] = stage
     dataset = payload["dataset"]
     metric_names = payload["metric_names"]
     rl_side = payload["sides"]["rl"]
@@ -1223,8 +1267,43 @@ def save_stage_compare_report(payload: dict, output_dir: Path) -> Tuple[Path, Pa
     json_path = output_dir / f"{stage}_compare_summary_{dataset}.json"
     md_path = output_dir / f"{stage}_compare_report_{dataset}.md"
     plot_path = output_dir / f"{stage}_compare_plot_{dataset}.png"
+    if stage == "final":
+        for legacy_stage in ("stage1", "stage2"):
+            for legacy_path in output_dir.glob(f"{legacy_stage}_compare_*_{dataset}.*"):
+                try:
+                    legacy_path.unlink()
+                except OSError:
+                    pass
 
-    write_json(json_path, payload)
+    write_json(json_path, output_payload)
+
+    def stage1_cost_value(result: dict) -> Optional[float]:
+        if result.get("stage1_tot_c") is not None:
+            return float(result["stage1_tot_c"])
+        if result.get("tot_c") is not None and result.get("noise_config") is None:
+            return float(result["tot_c"])
+        return None
+
+    def stage2_cost_value(result: dict) -> Optional[float]:
+        if result.get("stage2_tot_c") is not None:
+            return float(result["stage2_tot_c"])
+        if result.get("tot_c") is not None and (
+            result.get("noise_config") is not None or result.get("breakdown") is not None
+        ):
+            return float(result["tot_c"])
+        return None
+
+    def total_cost_value(result: dict) -> Optional[float]:
+        s1_cost = stage1_cost_value(result)
+        s2_cost = stage2_cost_value(result)
+        if s1_cost is not None and s2_cost is not None:
+            return s1_cost + s2_cost
+        if result.get("tot_c") is not None:
+            return float(result["tot_c"])
+        return s1_cost if s1_cost is not None else s2_cost
+
+    def format_cost(value: Optional[float]) -> str:
+        return f"{float(value):.4f}" if value is not None else "-"
 
     def row(label: str, side: dict) -> List[str]:
         selected = side["selected"] or {}
@@ -1249,7 +1328,9 @@ def save_stage_compare_report(payload: dict, output_dir: Path) -> Tuple[Path, Pa
             f"{float(selected.get('loss', 0.0)):.6f}",
             f"{float(selected.get('p', 0.0)):.6f}",
             metric2_text,
-            f"{float(selected.get('tot_c', 0.0)):.4f}" if selected.get("tot_c") is not None else "-",
+            format_cost(stage1_cost_value(selected)),
+            format_cost(stage2_cost_value(selected)),
+            format_cost(total_cost_value(selected)),
             f"{float(selected.get('time_ms', 0.0)):.3f}" if selected.get("time_ms") is not None else "-",
             "Y" if selected.get("feasible", False) else "N",
             delta_loss,
@@ -1267,7 +1348,9 @@ def save_stage_compare_report(payload: dict, output_dir: Path) -> Tuple[Path, Pa
         "Loss",
         metric_names[0],
         header_metric2,
-        "Cost",
+        "Stage1 Cost",
+        "Stage2 Cost",
+        "Total Cost",
         "Time(ms)",
         "Feasible",
         "dLoss%",
@@ -1317,8 +1400,8 @@ def save_stage_compare_report(payload: dict, output_dir: Path) -> Tuple[Path, Pa
         ga_fixed_stage1 = ga_side.get("stage1_selected_config") or {}
         rl_noise_cfg = (rl_side["selected"] or {}).get("noise_config")
         ga_noise_cfg = (ga_side["selected"] or {}).get("noise_config")
-        rl_breakdown = (rl_side["selected"] or {}).get("breakdown")
-        ga_breakdown = (ga_side["selected"] or {}).get("breakdown")
+        rl_breakdown = (rl_side["selected"] or {}).get("stage2_breakdown") or (rl_side["selected"] or {}).get("breakdown")
+        ga_breakdown = (ga_side["selected"] or {}).get("stage2_breakdown") or (ga_side["selected"] or {}).get("breakdown")
         lines.extend(
             [
                 f"- RL 固定的 Stage-1 GELU：`{rl_fixed_stage1.get('gelu')}`",
@@ -1382,7 +1465,7 @@ def save_stage_compare_report(payload: dict, output_dir: Path) -> Tuple[Path, Pa
             )
 
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    _plot_stage_compare(payload, plot_path)
+    _plot_stage_compare(output_payload, plot_path)
     return md_path, plot_path
 
 
@@ -1402,7 +1485,21 @@ def _plot_stage_compare(payload: dict, plot_path: Path) -> None:
     ga_side = payload["sides"]["ga"]["selected"]
     stage2_repeat_summary = payload.get("stage2_repeat_summary")
 
-    if stage == "stage2" and stage2_repeat_summary:
+    def _stage2_cost_for_plot(result: dict) -> float:
+        if result.get("stage2_tot_c") is not None:
+            return float(result.get("stage2_tot_c") or 0.0)
+        if result.get("tot_c") is not None and (
+            result.get("noise_config") is not None or result.get("breakdown") is not None
+        ):
+            return float(result.get("tot_c") or 0.0)
+        return 0.0
+
+    def _set_bar_ylim(ax, values: List[float]) -> None:
+        finite_values = [abs(float(v)) for v in values if np.isfinite(float(v))]
+        upper = max(finite_values) if finite_values else 0.0
+        ax.set_ylim(0.0, upper * 1.22 if upper > 0.0 else 1.0)
+
+    if stage in ("stage2", "final") and stage2_repeat_summary:
         summary_metrics = stage2_repeat_summary.get("metrics", [])
         display_rows = summary_metrics[:3]
         include_time = not any(item.get("key") == "time_ms" for item in display_rows)
@@ -1415,7 +1512,7 @@ def _plot_stage_compare(payload: dict, plot_path: Path) -> None:
                 display_rows.append(time_metric)
 
         fig, axes = plt.subplots(2, 2, figsize=(13, 9))
-        fig.suptitle("STAGE2: RL vs GA Repeated Evaluation", fontsize=14, fontweight="bold")
+        fig.suptitle(f"{stage.upper()}: RL vs GA Repeated Evaluation", fontsize=14, fontweight="bold")
         colors = {"RL": "#4C78A8", "GA": "#E45756"}
 
         for ax, metric_row in zip(axes.flat[:3], display_rows):
@@ -1455,14 +1552,23 @@ def _plot_stage_compare(payload: dict, plot_path: Path) -> None:
 
         cost_ax = axes.flat[3]
         cost_values = [
-            float(rl_side.get("tot_c", 0.0) or 0.0),
-            float(ga_side.get("tot_c", 0.0) or 0.0),
+            _stage2_cost_for_plot(rl_side),
+            _stage2_cost_for_plot(ga_side),
         ]
         cost_ax.bar(["RL", "GA"], cost_values, color=[colors["RL"], colors["GA"]], alpha=0.85)
-        cost_ax.set_title("Noise Cost")
+        cost_ax.set_title("Stage-2 Noise Cost")
         cost_ax.grid(True, axis="y", alpha=0.3)
+        _set_bar_ylim(cost_ax, cost_values)
         for idx, value in enumerate(cost_values):
-            cost_ax.text(idx, value, f"{value:.4f}", ha="center", va="bottom", fontsize=9)
+            cost_ax.annotate(
+                f"{value:.4f}",
+                xy=(idx, value),
+                xytext=(0, 4),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+            )
         rl_n = stage2_repeat_summary.get("rl_repeat_count", 0)
         ga_n = stage2_repeat_summary.get("ga_repeat_count", 0)
         cost_ax.text(
@@ -1475,7 +1581,7 @@ def _plot_stage_compare(payload: dict, plot_path: Path) -> None:
             fontsize=9,
         )
 
-        plt.tight_layout()
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.savefig(plot_path, dpi=180)
         plt.close(fig)
         return
@@ -1488,7 +1594,12 @@ def _plot_stage_compare(payload: dict, plot_path: Path) -> None:
         metrics.append(("s", metric_names[1]))
     else:
         metrics.append(("time_ms", "Time(ms)"))
-    metrics.append(("tot_c", "Cost"))
+    if any(side.get("stage2_tot_c") is not None for side in (rl_side, ga_side)):
+        metrics.append(("stage2_tot_c", "Stage-2 Cost"))
+    elif any(side.get("stage1_tot_c") is not None for side in (rl_side, ga_side)):
+        metrics.append(("stage1_tot_c", "Stage-1 Cost"))
+    else:
+        metrics.append(("tot_c", "Cost"))
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     fig.suptitle(f"{stage.upper()}: RL vs GA", fontsize=14, fontweight="bold")
@@ -1500,10 +1611,20 @@ def _plot_stage_compare(payload: dict, plot_path: Path) -> None:
         ax.bar(["RL", "GA"], [rl_value, ga_value], color=[colors["RL"], colors["GA"]])
         ax.set_title(label)
         ax.grid(True, axis="y", alpha=0.3)
+        if "Cost" in label:
+            _set_bar_ylim(ax, [rl_value, ga_value])
         for idx, value in enumerate([rl_value, ga_value]):
-            ax.text(idx, value, f"{value:.4f}", ha="center", va="bottom", fontsize=9)
+            ax.annotate(
+                f"{value:.4f}",
+                xy=(idx, value),
+                xytext=(0, 4),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+            )
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
     plt.savefig(plot_path, dpi=180)
     plt.close(fig)
 
@@ -2225,6 +2346,7 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
             "compare_config_mode": args.compare_config_mode,
             "rl": rl_state,
             "ga": ga_state,
+            "final_report_path": str(stage2_report_path),
             "stage1_report_path": str(stage1_report_path),
             "stage2_report_path": str(stage2_report_path),
         }
@@ -2802,6 +2924,7 @@ def main() -> int:
             "global_stop_requested": global_stop_requested["value"],
             "rl": rl_state,
             "ga": ga_state,
+            "final_report_path": str(stage2_report_path) if stage2_report_path else None,
             "stage1_report_path": str(stage1_report_path) if stage1_report_path else None,
             "stage2_report_path": str(stage2_report_path) if stage2_report_path else None,
         }

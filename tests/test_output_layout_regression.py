@@ -8,24 +8,22 @@ from tempfile import TemporaryDirectory
 
 
 def _write_compare_direct_jsons(root: Path) -> dict:
-    stage1_template = {
+    unified_template = {
         "bert-base": {
             "mrpc": {
-                "gelu": [4] * 12,
-                "softmax": [6] * 12,
-            }
-        }
-    }
-    stage2_template = {
-        "bert-base": {
-            "mrpc": {
-                "x": [20] * 12,
-                "wq": [20] * 12,
-                "wk": [20] * 12,
-                "wv": [20] * 12,
-                "wo": [20] * 12,
-                "wffn1": [20] * 12,
-                "wffn2": [20] * 12,
+                "stage1": {
+                    "gelu": [4] * 12,
+                    "softmax": [6] * 12,
+                },
+                "stage2": {
+                    "x": [20] * 12,
+                    "wq": [20] * 12,
+                    "wk": [20] * 12,
+                    "wv": [20] * 12,
+                    "wo": [20] * 12,
+                    "wffn1": [20] * 12,
+                    "wffn2": [20] * 12,
+                },
             }
         }
     }
@@ -35,9 +33,8 @@ def _write_compare_direct_jsons(root: Path) -> dict:
         "ga_stage1": root / "glue_final_configs_best_genetic.json",
         "ga_stage2": root / "glue_final_configs_best_genetic.json",
     }
-    for key, path in paths.items():
-        payload = stage1_template if "stage1" in key else stage2_template
-        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    for path in set(paths.values()):
+        path.write_text(json.dumps(unified_template, ensure_ascii=False), encoding="utf-8")
     return paths
 
 

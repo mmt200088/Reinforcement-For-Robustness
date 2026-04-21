@@ -146,6 +146,7 @@ class UnifiedFinalEvaluationModule:
         # Cost references for optimized.
         opt_stage1_tot_c, opt_g_c, opt_s_c = ev.get_simulated_cost(opt_gelu, opt_softmax)
         opt_stage2_tot_c, opt_breakdown = ev.get_noise_simulated_cost(**opt_noise_cfg)
+        opt_stage2_tot_c = self._stage2_cost_key(opt_stage2_tot_c) / 40.0
 
         ev.log("\n" + "=" * 60)
         ev.log("PHASE: UNIFIED FINAL EVALUATION (validation_full)")
@@ -259,6 +260,7 @@ class UnifiedFinalEvaluationModule:
             single, repeat = _noise_eval(gelu, softmax, noise_cfg, name, want_repeat)
             stage1_tot, g_c, s_c = ev.get_simulated_cost(gelu, softmax)
             stage2_tot, breakdown = ev.get_noise_simulated_cost(**noise_cfg)
+            stage2_tot = self._stage2_cost_key(stage2_tot) / 40.0
 
             if repeat is not None:
                 stats = repeat["stats"]
@@ -791,39 +793,85 @@ class UnifiedFinalEvaluationModule:
         return cfg
 
     def _sample_stage2_total_cost(self, rng, target_total, total_layers):
-        # Greedy: randomize each type then perturb to hit target total.
-        for _ in range(200):
-            cfg = {}
-            total = 0.0
-            for short in BREAKDOWN_KEYS:
-                full = SHORT_KEY_TO_FULL[short]
-                allowed = self._stage2_allowed(short)
-                arr = np.array(rng.choice(allowed, size=total_layers), dtype=int)
-                cfg[full] = arr
-                cost_map = self._stage2_cost_map(short)
-                total += sum(cost_map[int(v)] for v in arr)
-            for _ in range(1000):
-                diff = total - target_total
-                if abs(diff) < 0.5:
-                    return cfg
-                bidx = int(rng.integers(0, 7))
-                short = BREAKDOWN_KEYS[bidx]
-                full = SHORT_KEY_TO_FULL[short]
-                layer_idx = int(rng.integers(0, total_layers))
-                allowed = self._stage2_allowed(short)
-                cost_map = self._stage2_cost_map(short)
-                old_v = int(cfg[full][layer_idx])
-                old_cost = cost_map[old_v]
-                best_v, best_diff = old_v, abs(diff)
-                for v in allowed:
-                    nd = abs(total - old_cost + cost_map[int(v)] - target_total)
-                    if nd < best_diff:
-                        best_diff = nd
-                        best_v = v
-                if best_v != old_v:
-                    total = total - old_cost + cost_map[int(best_v)]
-                    cfg[full][layer_idx] = best_v
-        return None
+        target_key = self._stage2_cost_key(target_total)
+        specs = []
+        solution_maps = []
+        for short in BREAKDOWN_KEYS:
+            allowed = self._stage2_allowed(short)
+            solution_map = self._enumerate_stage2_count_solutions(
+                allowed,
+                self._stage2_cost_map(short),
+                total_layers,
+            )
+            specs.append((short, SHORT_KEY_TO_FULL[short], allowed))
+            solution_maps.append(solution_map)
+
+        count_choices = self._sample_stage2_count_combo(rng, solution_maps, target_key)
+        if count_choices is None:
+            return None
+
+        cfg = {}
+        for counts, (_, full, allowed) in zip(count_choices, specs):
+            cfg[full] = self._counts_to_shuffled_config(allowed, counts, rng)
+        if self._stage2_config_cost_key(cfg) != target_key:
+            return None
+        return cfg
+
+    def _enumerate_stage2_count_solutions(self, allowed_degrees, cost_map, total_layers):
+        solution_map: Dict[int, list] = {}
+        counts = [0] * len(allowed_degrees)
+        cost_keys = [self._stage2_cost_key(cost_map[d]) for d in allowed_degrees]
+
+        def backtrack(index, remaining, accumulated):
+            if index == len(allowed_degrees) - 1:
+                counts[index] = remaining
+                final_cost = accumulated + remaining * cost_keys[index]
+                solution_map.setdefault(final_cost, []).append(tuple(counts))
+                return
+            for c in range(remaining + 1):
+                counts[index] = c
+                backtrack(index + 1, remaining - c, accumulated + c * cost_keys[index])
+
+        backtrack(0, total_layers, 0)
+        return solution_map
+
+    @staticmethod
+    def _sample_stage2_count_combo(rng, solution_maps, target_key):
+        suffix_possible = [set() for _ in range(len(solution_maps) + 1)]
+        suffix_possible[-1].add(0)
+        for idx in range(len(solution_maps) - 1, -1, -1):
+            for key in solution_maps[idx].keys():
+                for rest in suffix_possible[idx + 1]:
+                    suffix_possible[idx].add(key + rest)
+        if target_key not in suffix_possible[0]:
+            return None
+
+        remaining = target_key
+        choices = []
+        for idx, solution_map in enumerate(solution_maps):
+            feasible_keys = [
+                key
+                for key in solution_map.keys()
+                if remaining - key in suffix_possible[idx + 1]
+            ]
+            if not feasible_keys:
+                return None
+            key = feasible_keys[int(rng.integers(0, len(feasible_keys)))]
+            candidates = solution_map[key]
+            choices.append(candidates[int(rng.integers(0, len(candidates)))])
+            remaining -= key
+        return choices if remaining == 0 else None
+
+    def _stage2_config_cost_key(self, cfg):
+        total = 0
+        for short in BREAKDOWN_KEYS:
+            full = SHORT_KEY_TO_FULL[short]
+            cost_map = self._stage2_cost_map(short)
+            total += sum(
+                self._stage2_cost_key(cost_map[int(v)])
+                for v in np.asarray(cfg[full], dtype=int)
+            )
+        return int(total)
 
     @staticmethod
     def _stage2_cost_matched_array(rng, target_cost, cost_map, allowed, length):
@@ -1267,6 +1315,10 @@ class UnifiedFinalEvaluationModule:
     @staticmethod
     def _cost_key(value):
         return int(round(float(value) * 2.0))
+
+    @staticmethod
+    def _stage2_cost_key(value):
+        return int(round(float(value) * 40.0))
 
     @staticmethod
     def _full_signature(gelu, softmax, noise_cfg):

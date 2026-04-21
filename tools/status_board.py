@@ -114,6 +114,7 @@ class CompareRecord:
     ga_stage1_ready: Optional[bool] = None
     ga_stage2_ready: Optional[bool] = None
     updated_at: Optional[str] = None
+    final_report: Optional[str] = None
     stage1_report: Optional[str] = None
     stage2_report: Optional[str] = None
     error: Optional[str] = None
@@ -311,8 +312,11 @@ def _scan_compare_runs(root: Path) -> List[CompareRecord]:
             ga_side = chosen.get("ga", {}) if isinstance(chosen, dict) else {}
 
             # 自动寻找 reports
-            stage1_report = stage2_report = None
+            final_report = stage1_report = stage2_report = None
             if reports_dir.is_dir():
+                for p in sorted(reports_dir.glob("final_compare_report*.md")):
+                    final_report = p.name
+                    break
                 for p in sorted(reports_dir.glob("stage1_compare_report*.md")):
                     stage1_report = p.name
                     break
@@ -327,11 +331,12 @@ def _scan_compare_runs(root: Path) -> List[CompareRecord]:
                 mode=chosen.get("mode") if isinstance(chosen, dict) else None,
                 state_rl=rl_side.get("state"),
                 state_ga=ga_side.get("state"),
-                rl_stage1_ready=rl_side.get("stage1_final_eval_ready"),
-                rl_stage2_ready=rl_side.get("stage2_final_eval_ready"),
-                ga_stage1_ready=ga_side.get("stage1_final_eval_ready"),
-                ga_stage2_ready=ga_side.get("stage2_final_eval_ready"),
+                rl_stage1_ready=rl_side.get("stage1_final_eval_ready", rl_side.get("final_eval_ready")),
+                rl_stage2_ready=rl_side.get("stage2_final_eval_ready", rl_side.get("final_eval_ready")),
+                ga_stage1_ready=ga_side.get("stage1_final_eval_ready", ga_side.get("final_eval_ready")),
+                ga_stage2_ready=ga_side.get("stage2_final_eval_ready", ga_side.get("final_eval_ready")),
                 updated_at=chosen.get("updated_at") if isinstance(chosen, dict) else None,
+                final_report=final_report,
                 stage1_report=stage1_report,
                 stage2_report=stage2_report,
             )
@@ -502,8 +507,9 @@ def _format_selected_summary(selected: Optional[dict]) -> Optional[str]:
         parts.append(f"主={_format_float(selected.get('p'))}")
     if selected.get("s") is not None:
         parts.append(f"次={_format_float(selected.get('s'))}")
-    if selected.get("tot_c") is not None and not selected.get("show_cost_as_na"):
-        parts.append(f"cost={_format_cost(selected.get('tot_c'))}")
+    cost_value = selected.get("stage2_tot_c", selected.get("tot_c"))
+    if cost_value is not None and not selected.get("show_cost_as_na"):
+        parts.append(f"cost={_format_cost(cost_value)}")
     if selected.get("tot_spd") is not None:
         parts.append(_format_speedup(selected.get("tot_spd")))
     if selected.get("feasible") is False:
@@ -649,6 +655,12 @@ def _summarize_compare_stage(path: Optional[Path], stage_label: str) -> Optional
 
 def _compare_best_result_summary(record: CompareRecord) -> str:
     reports_dir = record.path / "reports"
+    final = _summarize_compare_stage(
+        _find_first(reports_dir, "final_compare_summary*.json"),
+        "Final",
+    )
+    if final:
+        return final
     stage2 = _summarize_compare_stage(
         _find_first(reports_dir, "stage2_compare_summary*.json"),
         "S2",
@@ -1083,8 +1095,9 @@ def _selected_metric_tokens(selected: Optional[dict]) -> List[str]:
         tokens.append(f"次={_format_float(selected.get('s'))}")
     elif isinstance(selected.get("metric2"), (int, float)):
         tokens.append(f"m2={_format_float(selected.get('metric2'))}")
-    if isinstance(selected.get("tot_c"), (int, float)) and not selected.get("show_cost_as_na"):
-        tokens.append(f"cost={_format_cost(selected.get('tot_c'))}")
+    cost_value = selected.get("stage2_tot_c", selected.get("tot_c"))
+    if isinstance(cost_value, (int, float)) and not selected.get("show_cost_as_na"):
+        tokens.append(f"cost={_format_cost(cost_value)}")
     elif isinstance(selected.get("cost"), (int, float)):
         tokens.append(f"cost={_format_cost(selected.get('cost'))}")
     if isinstance(selected.get("tot_spd"), (int, float)):
@@ -1578,10 +1591,11 @@ def _build_compare_markdown_card(record: CompareRecord) -> Tuple[List[Tuple[str,
     rows: List[Tuple[str, str]] = [("进度", _format_token_line([_compare_progress_summary(record)]))]
     config_blocks: List[Tuple[str, str]] = []
     reports_dir = record.path / "reports"
+    final_summary_path = _find_first(reports_dir, "final_compare_summary*.json")
     stage2_summary_path = _find_first(reports_dir, "stage2_compare_summary*.json")
     stage1_summary_path = _find_first(reports_dir, "stage1_compare_summary*.json")
-    stage_label = "S2" if stage2_summary_path else "S1"
-    summary = _read_json(stage2_summary_path or stage1_summary_path) or {}
+    stage_label = "Final" if final_summary_path else ("S2" if stage2_summary_path else "S1")
+    summary = _read_json(final_summary_path or stage2_summary_path or stage1_summary_path) or {}
     rows.append(("当前阶段", _format_token_line([stage_label])))
 
     for side_key, side_label in (("rl", "RL"), ("ga", "GA")):
@@ -1593,7 +1607,7 @@ def _build_compare_markdown_card(record: CompareRecord) -> Tuple[List[Tuple[str,
             if stats:
                 rows.append((f"{side_label} 终评测试", _format_token_line(_stats_tokens(stats))))
         search_line = ""
-        if stage_label == "S2":
+        if stage_label in ("S2", "Final"):
             if side_key == "ga":
                 search_line = _format_ga_noise_search_line(
                     _read_json(record.path / "children" / "ga" / "stage2_noise" / "noise_ga_search_results.json")
@@ -1912,6 +1926,7 @@ def _compare_to_dict(c: CompareRecord) -> dict:
         "ga_stage1_ready": c.ga_stage1_ready,
         "ga_stage2_ready": c.ga_stage2_ready,
         "updated_at": c.updated_at,
+        "final_report": c.final_report,
         "stage1_report": c.stage1_report,
         "stage2_report": c.stage2_report,
     }

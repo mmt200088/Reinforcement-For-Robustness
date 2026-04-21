@@ -8,6 +8,9 @@ class _DummyEvaluator:
     dataset_key = "mrpc"
     model_type = "bert-base"
     total_layers = 4
+    INPUT_NOISE_COST_MAP = {sf: sf * 0.025 for sf in (22, 24, 26, 28, 30)}
+    WEIGHT_NOISE_COST_MAP = {sf: sf * 0.025 for sf in (14, 16, 18, 20, 22)}
+    WFFN1_NOISE_COST_MAP = {sf: sf * 0.025 for sf in (16, 18, 20, 22, 24)}
 
     def __init__(self):
         self.logs = []
@@ -139,7 +142,30 @@ class UnifiedFinalEvalPartialSearchTests(unittest.TestCase):
                 total_layers=4,
             )
 
+    def test_stage2_budget_sampler_matches_target_cost_exactly(self):
+        module, cfg_path, _ = self._build_module_and_config()
+        self.addCleanup(lambda: cfg_path.unlink(missing_ok=True))
+
+        import numpy as np
+
+        rng = np.random.default_rng(7)
+        target_cfg = {}
+        from final_evaluation_module import BREAKDOWN_KEYS, SHORT_KEY_TO_FULL
+
+        for short_key in BREAKDOWN_KEYS:
+            full_key = SHORT_KEY_TO_FULL[short_key]
+            allowed = list(module._stage2_allowed(short_key))
+            target_cfg[full_key] = np.array(
+                [allowed[0], allowed[-1], allowed[1], allowed[-2]],
+                dtype=int,
+            )
+
+        target_key = module._stage2_config_cost_key(target_cfg)
+        sampled = module._sample_stage2_total_cost(rng, target_key / 40.0, 4)
+
+        self.assertIsNotNone(sampled)
+        self.assertEqual(module._stage2_config_cost_key(sampled), target_key)
+
 
 if __name__ == "__main__":
     unittest.main()
-

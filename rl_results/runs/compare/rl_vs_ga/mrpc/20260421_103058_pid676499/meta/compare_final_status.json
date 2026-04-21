@@ -40,6 +40,7 @@
       "stage2_json_path": "/var/tmp/root-home/Reinforcement-For-Robustness/glue_final_configs_best_genetic.json"
     }
   },
-  "stage1_report_path": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260421_103058_pid676499/reports/stage1_compare_report_mrpc.md",
-  "stage2_report_path": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260421_103058_pid676499/reports/stage2_compare_report_mrpc.md"
+  "stage1_report_path": "rl_results\\runs\\compare\\rl_vs_ga\\mrpc\\20260421_103058_pid676499\\reports\\final_compare_report_mrpc.md",
+  "stage2_report_path": "rl_results\\runs\\compare\\rl_vs_ga\\mrpc\\20260421_103058_pid676499\\reports\\final_compare_report_mrpc.md",
+  "final_report_path": "rl_results\\runs\\compare\\rl_vs_ga\\mrpc\\20260421_103058_pid676499\\reports\\final_compare_report_mrpc.md"
 }
