@@ -1,90 +1,137 @@
 #!/usr/bin/env bash
-# Background launcher for the softmax/V fresh-noise scaling sweep.
-#
-# Examples:
-#   bash experiment/run_softmax_v_noise_sweep.sh
-#   bash experiment/run_softmax_v_noise_sweep.sh --tasks mrpc
-#   bash experiment/run_softmax_v_noise_sweep.sh --foreground --tasks mrpc --scaling_factors 10 48 --max_eval_samples 32
-#
-# Background outputs:
-#   experiment/outputs/noise/softmax_v_sweep/run.log
-#   experiment/outputs/noise/softmax_v_sweep/pid.txt
-
 set -euo pipefail
 
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+usage() {
+cat <<'EOF'
+Usage:
+  bash experiment/run_softmax_v_noise_sweep.sh [launcher options] [python options]
 
-if [ -f /var/tmp/root-home/miniconda3/etc/profile.d/conda.sh ]; then
-    # Match the existing project launchers when that environment is available.
-    # If activation fails, keep the current shell environment.
-    source /var/tmp/root-home/miniconda3/etc/profile.d/conda.sh
-    conda activate llm_ist || true
-fi
+Launcher options:
+  --foreground              Run in the foreground instead of nohup background mode.
+  --output_dir DIR          Output directory. Default:
+                            experiment/outputs/noise/softmax_v_sweep
+  --logfile FILE            Background log filename. Default: run.log
+  -h, --help                Show this help.
+
+Common python options passed through to the experiment:
+  --tasks mrpc
+  --tasks mnli sst2 mrpc stsb qnli cola rte wnli
+  --device cuda
+  --batch_size 16
+  --eval_split validation_full
+  --repeat_n 5
+  --scaling_factors 10 12 14 ... 48
+  --max_eval_samples 128
+
+Examples:
+  bash experiment/run_softmax_v_noise_sweep.sh --tasks mrpc
+  bash experiment/run_softmax_v_noise_sweep.sh --foreground --tasks mrpc --scaling_factors 10 48 --max_eval_samples 32
+
+Background files:
+  <output_dir>/run.log
+  <output_dir>/pid.txt
+  <output_dir>/run.pid
+  <output_dir>/LATEST_RUN_DIR
+  <output_dir>/LATEST_PID
+EOF
+}
+
+err() {
+  echo "Error: $1" >&2
+  exit 1
+}
+
+needv() {
+  [ "$#" -ge 2 ] || err "Option $1 requires a value."
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SCRIPT_PATH="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
 
 FOREGROUND=0
-OUTPUT_DIR=""
+OUTPUT_DIR="experiment/outputs/noise/softmax_v_sweep"
+LOGFILE="run.log"
 PASS_ARGS=()
 
-while (($#)); do
-    case "$1" in
-        --foreground)
-            FOREGROUND=1
-            shift
-            ;;
-        --output_dir)
-            OUTPUT_DIR="$2"
-            PASS_ARGS+=("$1" "$2")
-            shift 2
-            ;;
-        *)
-            PASS_ARGS+=("$1")
-            shift
-            ;;
-    esac
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --foreground)
+      FOREGROUND=1
+      shift
+      ;;
+    --output_dir)
+      needv "$@"
+      OUTPUT_DIR="$2"
+      PASS_ARGS+=("$1" "$2")
+      shift 2
+      ;;
+    --logfile)
+      needv "$@"
+      LOGFILE="$2"
+      shift 2
+      ;;
+    *)
+      PASS_ARGS+=("$1")
+      shift
+      ;;
+  esac
 done
 
-if [ -z "$OUTPUT_DIR" ]; then
-    OUTPUT_DIR="experiment/outputs/noise/softmax_v_sweep"
-    PASS_ARGS+=("--output_dir" "$OUTPUT_DIR")
-fi
-
 case "$OUTPUT_DIR" in
-    /*|[A-Za-z]:*)
-        OUTPUT_DIR_PATH="$OUTPUT_DIR"
-        ;;
-    *)
-        OUTPUT_DIR_PATH="$REPO_ROOT/$OUTPUT_DIR"
-        ;;
+  /*)
+    RUN_ROOT="$OUTPUT_DIR"
+    ;;
+  *)
+    RUN_ROOT="$REPO_ROOT/$OUTPUT_DIR"
+    ;;
 esac
 
-mkdir -p "$OUTPUT_DIR_PATH"
+mkdir -p "$RUN_ROOT"
 
-run_experiment() {
-    echo "============================================================"
-    echo "  Softmax/V Fresh-Noise Sweep"
-    echo "============================================================"
-    echo "  Output Dir:   $OUTPUT_DIR"
-    echo "  Device:       ${CUDA_VISIBLE_DEVICES:-0}"
-    echo "  Python Args:  ${PASS_ARGS[*]}"
-    echo "  Default eval: validation_full, repeat_n=5"
-    echo "============================================================"
-    cd "$REPO_ROOT"
-    python -u -m experiment.scripts.noise.softmax_v_noise_sweep "${PASS_ARGS[@]}"
-}
+LOGFILE_PATH="$RUN_ROOT/$LOGFILE"
+PID_PATH="$RUN_ROOT/pid.txt"
+RUN_PID_PATH="$RUN_ROOT/run.pid"
+LATEST_RUN_DIR_PATH="$RUN_ROOT/LATEST_RUN_DIR"
+LATEST_PID_PATH="$RUN_ROOT/LATEST_PID"
+
+if [ -z "${CUDA_VISIBLE_DEVICES:-}" ]; then
+  export CUDA_VISIBLE_DEVICES=0
+fi
+
+CMD=(python -u -m experiment.scripts.noise.softmax_v_noise_sweep "${PASS_ARGS[@]}")
+printf -v CMD_STR '%q ' "${CMD[@]}"
+
+echo "Launch configuration:"
+echo "  Experiment: softmax/V fresh-noise sweep"
+echo "  Repo root:  $REPO_ROOT"
+echo "  Output dir: $RUN_ROOT"
+echo "  Log file:   $LOGFILE_PATH"
+echo "  CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-unset}"
+echo "  Default eval: validation_full, repeat_n=5"
+echo "  Command:    $CMD_STR"
+
+cd "$REPO_ROOT"
 
 if [ "$FOREGROUND" -eq 1 ]; then
-    run_experiment
-else
-    nohup bash "$SCRIPT_PATH" --foreground "${PASS_ARGS[@]}" > "$OUTPUT_DIR_PATH/run.log" 2>&1 &
-    echo $! > "$OUTPUT_DIR_PATH/pid.txt"
-    disown || true
-    echo "Experiments started in background."
-    echo "  PID:  $(cat "$OUTPUT_DIR_PATH/pid.txt")"
-    echo "  Log:  $OUTPUT_DIR_PATH/run.log"
-    echo "  Check: tail -f $OUTPUT_DIR_PATH/run.log"
-    echo "  Stop:  kill -9 \$(cat $OUTPUT_DIR_PATH/pid.txt)"
+  "${CMD[@]}"
+  exit $?
 fi
+
+nohup "${CMD[@]}" > "$LOGFILE_PATH" 2>&1 &
+JOB_PID=$!
+
+echo "$JOB_PID" > "$PID_PATH"
+echo "$JOB_PID" > "$RUN_PID_PATH"
+echo "$RUN_ROOT" > "$LATEST_RUN_DIR_PATH"
+echo "$JOB_PID" > "$LATEST_PID_PATH"
+
+echo
+echo "Started in background."
+echo "  PID: $JOB_PID"
+echo "  Log: tail -f $LOGFILE_PATH"
+echo "  Stop: kill -INT $JOB_PID"
+echo "  Force stop: kill -9 \$(cat $PID_PATH)"
