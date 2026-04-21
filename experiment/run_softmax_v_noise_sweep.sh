@@ -54,6 +54,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FOREGROUND=0
 OUTPUT_DIR="experiment/outputs/noise/softmax_v_sweep"
 LOGFILE="run.log"
+HAS_BATCH_SIZE=0
 PASS_ARGS=()
 
 while [ "$#" -gt 0 ]; do
@@ -77,12 +78,22 @@ while [ "$#" -gt 0 ]; do
       LOGFILE="$2"
       shift 2
       ;;
+    --batch_size)
+      needv "$@"
+      HAS_BATCH_SIZE=1
+      PASS_ARGS+=("$1" "$2")
+      shift 2
+      ;;
     *)
       PASS_ARGS+=("$1")
       shift
       ;;
   esac
 done
+
+if [ "$HAS_BATCH_SIZE" -eq 0 ]; then
+  PASS_ARGS+=("--batch_size" "16")
+fi
 
 case "$OUTPUT_DIR" in
   /*)
@@ -114,7 +125,7 @@ echo "  Repo root:  $REPO_ROOT"
 echo "  Output dir: $RUN_ROOT"
 echo "  Log file:   $LOGFILE_PATH"
 echo "  CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-unset}"
-echo "  Default eval: validation_full, repeat_n=5"
+echo "  Default eval: validation_full, repeat_n=5, batch_size=16"
 echo "  Command:    $CMD_STR"
 
 cd "$REPO_ROOT"
