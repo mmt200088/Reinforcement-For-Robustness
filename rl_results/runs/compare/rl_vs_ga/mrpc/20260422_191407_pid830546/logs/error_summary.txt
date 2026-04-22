@@ -1,5 +1,5 @@
 [Time]
-2026-04-22 19:06:19
+2026-04-22 19:25:52
 
 [Program]
 rl_ga_compare_runner.py
@@ -8,16 +8,16 @@ rl_ga_compare_runner.py
 failed
 
 [Message]
-OutOfMemoryError: CUDA out of memory. Tried to allocate 72.00 MiB. GPU 0 has a total capacity of 23.51 GiB of which 59.31 MiB is free. Process 1140258 has 11.74 GiB memory in use. Process 1680161 has 6.57 GiB memory in use. Process 1685590 has 5.01 GiB memory in use. Of the allocated memory 4.27 GiB is allocated by PyTorch, and 295.20 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+OutOfMemoryError: CUDA out of memory. Tried to allocate 30.00 MiB. GPU 0 has a total capacity of 23.51 GiB of which 21.31 MiB is free. Process 1140258 has 11.74 GiB memory in use. Process 1680161 has 6.90 GiB memory in use. Process 1690971 has 4.72 GiB memory in use. Of the allocated memory 4.04 GiB is allocated by PyTorch, and 241.48 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
 
 [Run Output Dir]
-/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260422_190011_pid826141
+/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260422_191407_pid830546
 
 [Exit Code]
 1
 
 [Command]
-rl_ga_compare_runner.py --base-model textattack/bert-base-uncased-MRPC --data-path mrpc --dataset mrpc --output-dir rl_results/runs/compare/rl_vs_ga/mrpc/20260422_190011_pid826141 --model-type bert-base --batch-size 16 --stage1-search-episodes 51000 --stage2-search-episodes 40000 --stage1-search-generations 1594 --stage2-search-generations 1250 --stage1-search-lr 1e-4 --stage2-search-lr 1e-4 --random-seed 42 --perm-trials 10 --cost-trials 10 --budget-trials 10 --stage2-compare-repeats 50 --compare-config-mode direct --stage1-accuracy-tolerance 0.005 --stage2-limit-tolerance 0.05 --stage2-stability-tolerance 0.05 --stage2-k-trials 5 --stage2-probe-size 256 --rl-compare-stage1-json glue_final_configs_best_ppo.json --rl-compare-stage2-json glue_final_configs_best_ppo.json --ga-compare-stage1-json glue_final_configs_best_genetic.json --ga-compare-stage2-json glue_final_configs_best_genetic.json
+rl_ga_compare_runner.py --base-model textattack/bert-base-uncased-MRPC --data-path mrpc --dataset mrpc --output-dir rl_results/runs/compare/rl_vs_ga/mrpc/20260422_191407_pid830546 --model-type bert-base --batch-size 4 --stage1-search-episodes 51000 --stage2-search-episodes 40000 --stage1-search-generations 1594 --stage2-search-generations 1250 --stage1-search-lr 1e-4 --stage2-search-lr 1e-4 --random-seed 42 --perm-trials 10 --cost-trials 10 --budget-trials 10 --stage2-compare-repeats 50 --compare-config-mode direct --stage1-accuracy-tolerance 0.005 --stage2-limit-tolerance 0.05 --stage2-stability-tolerance 0.05 --stage2-k-trials 5 --stage2-probe-size 256 --rl-compare-stage1-json glue_final_configs_best_ppo.json --rl-compare-stage2-json glue_final_configs_best_ppo.json --ga-compare-stage1-json glue_final_configs_best_genetic.json --ga-compare-stage2-json glue_final_configs_best_genetic.json
 
 [Traceback]
 Traceback (most recent call last):
@@ -27,8 +27,8 @@ Traceback (most recent call last):
     result = runner.run(
   File "/var/tmp/root-home/Reinforcement-For-Robustness/final_evaluation_module.py", line 317, in run
     random_results = self._generate_random_results(
-  File "/var/tmp/root-home/Reinforcement-For-Robustness/final_evaluation_module.py", line 704, in _generate_random_results
-    register(f"Budget_{idx + 1}", "Budget", g, sm, cfg)
+  File "/var/tmp/root-home/Reinforcement-For-Robustness/final_evaluation_module.py", line 673, in _generate_random_results
+    if register(f"Perm_{idx + 1}", "Perm", g, sm, cfg):
   File "/var/tmp/root-home/Reinforcement-For-Robustness/final_evaluation_module.py", line 637, in register
     res, _ = build_result(name, family, gelu, softmax, noise_cfg)
   File "/var/tmp/root-home/Reinforcement-For-Robustness/final_evaluation_module.py", line 260, in _build_noise_result
@@ -81,6 +81,6 @@ Traceback (most recent call last):
     return forward_call(*args, **kwargs)
   File "/var/tmp/root-home/Reinforcement-For-Robustness/function_handler.py", line 351, in forward
     y1 = polynomial(x, self.coeff, 1)
-  File "/var/tmp/root-home/Reinforcement-For-Robustness/function_handler.py", line 335, in polynomial
-    return (powers * coeff_tensor).sum(dim=-1)
-torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 72.00 MiB. GPU 0 has a total capacity of 23.51 GiB of which 59.31 MiB is free. Process 1140258 has 11.74 GiB memory in use. Process 1680161 has 6.57 GiB memory in use. Process 1685590 has 5.01 GiB memory in use. Of the allocated memory 4.27 GiB is allocated by PyTorch, and 295.20 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+  File "/var/tmp/root-home/Reinforcement-For-Robustness/function_handler.py", line 325, in polynomial
+    powers = torch.stack([x.pow(i) for i in range(len(coeff[sign]))], dim=-1)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 30.00 MiB. GPU 0 has a total capacity of 23.51 GiB of which 21.31 MiB is free. Process 1140258 has 11.74 GiB memory in use. Process 1680161 has 6.90 GiB memory in use. Process 1690971 has 4.72 GiB memory in use. Of the allocated memory 4.04 GiB is allocated by PyTorch, and 241.48 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
