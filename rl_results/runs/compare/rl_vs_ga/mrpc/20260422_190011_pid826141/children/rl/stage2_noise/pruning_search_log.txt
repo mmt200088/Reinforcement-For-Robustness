@@ -1,0 +1,24 @@
+══════════════════════════════════════════════════════════════════════
+  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）
+══════════════════════════════════════════════════════════════════════
+  [信息] Stage-1 PPO学习率（LR）: raw='1e-4' -> 0.0001 (direct) | Stage-2 PPO学习率（LR）: raw='1e-4' -> 0.0001 (direct)
+  [信息] 一阶段 RL 回合 stage-1 episodes=51000  ·  二阶段噪声 RL 回合 stage-2 episodes=40000
+  [信息] 本次运行根目录 run_output_dir=/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260422_190011_pid826141/children/rl
+
+============================================================
+PHASE: UNIFIED FINAL EVALUATION (validation_full)
+CONFIG_SOURCE=json  REPEAT_N=50
+Optimized stage1 cost=37.00 (gelu=14.00, softmax=23.00)
+Optimized stage2 cost=42.00 breakdown={'x': 7.65, 'wq': 5.6, 'wk': 5.6499999999999995, 'wv': 5.15, 'wo': 5.75, 'wffn1': 6.6, 'wffn2': 5.6}
+Selection constraints: Loss<=0.3475, Acc.>=0.8731, F1>=0.8711
+============================================================
+
+--- Baseline (Stage-1 Exact) : N=50 次重复评估 ---
+
+--- Optimized : N=50 次重复评估 ---
+  统计: Loss=0.3445±0.012016 Acc.=0.8655±0.008972 F1=0.8637±0.008991
+Generating 10 Stage1Budget configs...
+Generating 10 Stage2Budget configs...
+Generating 10 Perm configs...
+Generating 10 Equiv configs...
+Generating 10 Budget configs...
