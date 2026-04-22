@@ -4,11 +4,94 @@ import numpy as np
 import torch
 from transformers import BertConfig, BertForSequenceClassification
 
-from function_handler import BertSelfAttentionWithAproximation, ReversibleLayerHandler
+from experiment.scripts.noise.softmax_v_noise_sweep import evaluate_grid_point
+from function_handler import (
+    BertSelfAttentionWithAproximation,
+    ReversibleLayerHandler,
+    SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS,
+)
 from layer_importance_evaluator import LayerImportanceEvaluator
 
 
 class SoftmaxValueNoisePathTests(unittest.TestCase):
+    def test_full_scaling_factor_map_is_scanned_by_default(self):
+        self.assertEqual(
+            SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS,
+            tuple(range(10, 50, 2)),
+        )
+
+    def test_grid_point_evaluates_same_scaling_pair_five_times(self):
+        class FakeEvaluator:
+            total_layers = 3
+
+            def __init__(self):
+                self.calls = []
+
+            def evaluate_model_with_softmax_value_noise(
+                    self,
+                    gelu_degrees,
+                    softmax_degrees,
+                    softmax_noise_scaling_factors,
+                    value_noise_scaling_factors,
+                    use_train=True,
+                    split=None,
+                    **base_noise,
+            ):
+                self.calls.append(
+                    {
+                        "gelu": np.asarray(gelu_degrees).copy(),
+                        "softmax": np.asarray(softmax_degrees).copy(),
+                        "softmax_noise": np.asarray(
+                            softmax_noise_scaling_factors
+                        ).copy(),
+                        "value_noise": np.asarray(value_noise_scaling_factors).copy(),
+                        "use_train": use_train,
+                        "split": split,
+                        "base_noise": {
+                            key: np.asarray(value).copy()
+                            for key, value in base_noise.items()
+                        },
+                    }
+                )
+                trial = len(self.calls)
+                return float(trial), 0.5 + 0.01 * trial, 0.25 + 0.02 * trial, 7.0
+
+        evaluator = FakeEvaluator()
+        record = evaluate_grid_point(
+            evaluator=evaluator,
+            fixed_gelu=np.full(evaluator.total_layers, 4, dtype=int),
+            fixed_softmax=np.full(evaluator.total_layers, 6, dtype=int),
+            base_noise={
+                "input_noise_scaling_factors": np.full(
+                    evaluator.total_layers, 30, dtype=int
+                )
+            },
+            softmax_factor=12,
+            value_factor=14,
+            repeat_n=5,
+            split_name="validation_full",
+            dataset_idx=0,
+            softmax_idx=1,
+            value_idx=2,
+            seed=42,
+        )
+
+        self.assertEqual(len(evaluator.calls), 5)
+        self.assertEqual(record["loss"]["trial_count"], 5)
+        self.assertEqual(record["loss"]["raw_values"], [1.0, 2.0, 3.0, 4.0, 5.0])
+        self.assertAlmostEqual(record["loss"]["mean"], 3.0)
+        self.assertAlmostEqual(record["loss"]["variance"], 2.0)
+        for call in evaluator.calls:
+            np.testing.assert_array_equal(call["gelu"], [4, 4, 4])
+            np.testing.assert_array_equal(call["softmax"], [6, 6, 6])
+            np.testing.assert_array_equal(call["softmax_noise"], [12, 12, 12])
+            np.testing.assert_array_equal(call["value_noise"], [14, 14, 14])
+            np.testing.assert_array_equal(
+                call["base_noise"]["input_noise_scaling_factors"], [30, 30, 30]
+            )
+            self.assertFalse(call["use_train"])
+            self.assertEqual(call["split"], "validation_full")
+
     def test_attention_product_noise_changes_context_output(self):
         config = BertConfig(
             hidden_size=32,

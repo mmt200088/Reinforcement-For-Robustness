@@ -502,6 +502,7 @@ def build_evaluator(
             device=device,
             data_path=task_name,
             test_data_mm=validation_data_mm,
+            batch_size=batch_size,
             final_eval_config_source="json",
             final_eval_config_path=approx_base_config_path,
             skip_stage1_rl=True,

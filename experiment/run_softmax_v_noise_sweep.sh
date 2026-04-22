@@ -10,6 +10,7 @@ Launcher options:
   --foreground              Run in the foreground instead of nohup background mode.
   --output_dir DIR          Output directory. Default:
                             experiment/outputs/noise/softmax_v_sweep
+  --output-dir DIR          Alias for --output_dir.
   --logfile FILE            Background log filename. Default: run.log
   -h, --help                Show this help.
 
@@ -18,6 +19,7 @@ Common python options passed through to the experiment:
   --tasks mnli sst2 mrpc stsb qnli cola rte wnli
   --device cuda
   --batch_size 16
+  --batch-size 16
   --eval_split validation_full
   --repeat_n 5
   --scaling_factors 10 12 14 ... 48
@@ -67,22 +69,36 @@ while [ "$#" -gt 0 ]; do
       FOREGROUND=1
       shift
       ;;
-    --output_dir)
+    --output_dir|--output-dir)
       needv "$@"
       OUTPUT_DIR="$2"
       PASS_ARGS+=("$1" "$2")
       shift 2
+      ;;
+    --output_dir=*|--output-dir=*)
+      OUTPUT_DIR="${1#*=}"
+      PASS_ARGS+=("$1")
+      shift
       ;;
     --logfile)
       needv "$@"
       LOGFILE="$2"
       shift 2
       ;;
-    --batch_size)
+    --logfile=*)
+      LOGFILE="${1#*=}"
+      shift
+      ;;
+    --batch_size|--batch-size)
       needv "$@"
       HAS_BATCH_SIZE=1
       PASS_ARGS+=("$1" "$2")
       shift 2
+      ;;
+    --batch_size=*|--batch-size=*)
+      HAS_BATCH_SIZE=1
+      PASS_ARGS+=("$1")
+      shift
       ;;
     *)
       PASS_ARGS+=("$1")
