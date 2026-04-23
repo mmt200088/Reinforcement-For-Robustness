@@ -29,6 +29,16 @@ sys.path.append(os.path.join(os.getcwd(), "./importance-aware-sparse-tuning-IST-
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer, LlamaTokenizer, DataCollatorWithPadding, AutoModel  # noqa: F402
 
 
+def seed_everything(seed: int) -> int:
+    seed = int(seed)
+    transformers.set_seed(seed)
+    try:
+        torch.backends.cudnn.benchmark = False
+    except Exception:
+        pass
+    return seed
+
+
 
 def parse_degree_config(raw_value):
     if raw_value is None or raw_value == "":
@@ -359,6 +369,7 @@ def train(
         else "./inference_output"
     )
     os.makedirs(trainer_output_dir, exist_ok=True)
+    seed_everything(final_eval_random_seed)
 
     # device_map = "gpu"
     ddp = True  # Distributed Data Parallelism disabled
@@ -671,9 +682,9 @@ def train(
         
         if is_mnli:
             print(f"Loading MNLI dataset (matched + mismatched validation sets)")
-            train_data = data["train"].shuffle().map(tokenize_fn)
-            val_data = data["validation_matched"].shuffle().map(tokenize_fn)
-            val_data_mm = data["validation_mismatched"].shuffle().map(tokenize_fn)
+            train_data = data["train"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
+            val_data = data["validation_matched"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
+            val_data_mm = data["validation_mismatched"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
             
             print(f"After tokenize matched: {val_data[0]}")
             train_data = train_data.rename_column("label", "labels")
@@ -690,8 +701,8 @@ def train(
             print(f"Validation mismatched size: {len(val_data_mm)}")
         else:
             print(f"Loading dataset: {data['validation']}")
-            train_data = data["train"].shuffle().map(tokenize_fn)
-            val_data = data["validation"].shuffle().map(tokenize_fn)
+            train_data = data["train"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
+            val_data = data["validation"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
             # The current RL flow does not use the official test split.
             # test_data = data["test"].shuffle().map(tokenize_fn)
             
@@ -714,7 +725,7 @@ def train(
             # print(f"Test data size: {len(test_data)}")
             
     else:
-        train_data = data["train"].shuffle().map(tokenize_fn)
+        train_data = data["train"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
         val_data = None
 
     # data_collator = transformers.DataCollatorForSeq2Seq(tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True)

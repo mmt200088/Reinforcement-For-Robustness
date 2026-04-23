@@ -3,6 +3,7 @@ import ctypes
 import gc
 import json
 import os
+import random
 import signal
 import subprocess
 import sys
@@ -86,6 +87,20 @@ def log(msg: str) -> None:
 
 def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
+
+def seed_everything(seed: int) -> int:
+    seed = int(seed)
+    random.seed(seed)
+    np.random.seed(seed % (2**32))
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    try:
+        torch.backends.cudnn.benchmark = False
+    except Exception:
+        pass
+    return seed
 
 
 def cleanup_cuda_memory() -> None:
@@ -259,6 +274,34 @@ def normalize_compare_side_config(
 
 def final_eval_json(run_dir: Path, dataset: str) -> Path:
     return run_dir / "final_eval" / f"final_eval_results_{dataset}.json"
+
+
+def final_eval_json_matches_protocol(obj: Optional[dict], repeat_n: int) -> bool:
+    if not obj:
+        return False
+    repeat_n = max(1, int(repeat_n))
+    protocol = obj.get("evaluation_protocol") or {}
+    if int(protocol.get("version", 0) or 0) < 2:
+        return False
+    if protocol.get("baseline") != "single_clean_validation_full":
+        return False
+    if int(protocol.get("noisy_repeat_n", 0) or 0) != repeat_n:
+        return False
+    if obj.get("baseline_repeat_evaluation") is not None:
+        return False
+
+    baseline = obj.get("baseline") or {}
+    if baseline.get("evaluation_n") is not None:
+        return False
+
+    if repeat_n > 1:
+        optimized = obj.get("optimized") or {}
+        if int(optimized.get("evaluation_n", 0) or 0) != repeat_n:
+            return False
+        for result in obj.get("random_results") or []:
+            if int(result.get("evaluation_n", 0) or 0) != repeat_n:
+                return False
+    return True
 
 
 def stage1_ga_result_json(run_dir: Path) -> Path:
@@ -841,6 +884,8 @@ def build_compare_evaluator(
     stage2_k_trials: Optional[int] = None,
     stage2_probe_size: Optional[int] = None,
 ):
+    seed_everything(random_seed)
+
     from datasets import load_dataset
     from transformers import (
         AutoModelForSequenceClassification,
@@ -917,17 +962,17 @@ def build_compare_evaluator(
     data = load_dataset("nyu-mll/glue", data_path)
     val_data_mm = None
     if dataset_key == "mnli":
-        train_data = data["train"].shuffle().map(tokenize_fn)
-        val_data = data["validation_matched"].shuffle().map(tokenize_fn)
-        val_data_mm = data["validation_mismatched"].shuffle().map(tokenize_fn)
+        train_data = data["train"].shuffle(seed=random_seed).map(tokenize_fn)
+        val_data = data["validation_matched"].shuffle(seed=random_seed).map(tokenize_fn)
+        val_data_mm = data["validation_mismatched"].shuffle(seed=random_seed).map(tokenize_fn)
         train_data = train_data.rename_column("label", "labels")
         val_data = val_data.rename_column("label", "labels")
         val_data_mm = val_data_mm.rename_column("label", "labels")
         mm_columns = [c for c in ("input_ids", "attention_mask", "token_type_ids", "labels") if c in val_data_mm.column_names]
         val_data_mm.set_format(type="torch", columns=mm_columns)
     else:
-        train_data = data["train"].shuffle().map(tokenize_fn)
-        val_data = data["validation"].shuffle().map(tokenize_fn)
+        train_data = data["train"].shuffle(seed=random_seed).map(tokenize_fn)
+        val_data = data["validation"].shuffle(seed=random_seed).map(tokenize_fn)
         train_data = train_data.rename_column("label", "labels")
         val_data = val_data.rename_column("label", "labels")
 
@@ -993,12 +1038,18 @@ def ensure_final_eval_json(
     prepared_evaluator=None,
 ) -> Tuple[Path, List[str]]:
     json_path = final_eval_json(run_dir, dataset)
+    warnings: List[str] = []
     if json_path.is_file():
-        return json_path, []
+        existing = read_json(json_path)
+        if final_eval_json_matches_protocol(existing, final_eval_repeat_n):
+            return json_path, []
+        warnings.append(
+            f"{algorithm.upper()} 的 final-eval 文件使用旧评测协议或 repeat_n 不匹配，"
+            "已重新生成统一最终评估。"
+        )
 
     config_source = side_config.final_eval_config_source
     config_path = side_config.final_eval_config_path
-    warnings: List[str] = []
     stage1_search_best = None
     stage2_search_best = None
     stage1_source = ""
@@ -1006,13 +1057,15 @@ def ensure_final_eval_json(
 
     if config_source == "search":
         warnings.append(
-            f"{algorithm.upper()} 的 final-eval 文件缺失，已基于当前最优搜索结果补做统一最终评估。"
+            f"{algorithm.upper()} final-eval JSON missing/stale; "
+            "regenerating unified final eval from current search results."
         )
         stage1_search_best, stage1_source = recover_stage1_search_best(run_dir, algorithm)
         stage2_search_best, stage2_source = recover_stage2_search_best(run_dir, algorithm)
     else:
         warnings.append(
-            f"{algorithm.upper()} 的 final-eval 文件缺失，已按声明的 {config_source} 配置补做统一最终评估。"
+            f"{algorithm.upper()} final-eval JSON missing/stale; "
+            f"regenerating unified final eval from declared {config_source} config."
         )
 
     evaluator = prepared_evaluator

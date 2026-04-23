@@ -4588,16 +4588,16 @@ class LayerImportanceEvaluator(TrainerCallback):
             baseline_noise_tot_c, _ = self.get_noise_simulated_cost(**baseline_noise_config)
 
         if limit_loss is None or limit_p is None or limit_s is None:
-            baseline_summary = self.evaluate_model_repeated(
+            base_loss, base_p, base_s, _ = self.evaluate_model(
                 baseline_stage1_gelu,
                 baseline_stage1_softmax,
-                repeats=self.final_eval_repeat_n,
+                use_train=False,
                 split=self.get_reward_reference_split_name(),
             )
             selection_limits = self.build_constraint_limits_from_metrics(
-                baseline_summary["loss_mean"],
-                baseline_summary["p_mean"],
-                baseline_summary["s_mean"],
+                base_loss,
+                base_p,
+                base_s,
             )
             limit_loss = selection_limits["loss"] if limit_loss is None else limit_loss
             limit_p = selection_limits["metric1"] if limit_p is None else limit_p

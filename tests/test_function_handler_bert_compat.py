@@ -1,10 +1,10 @@
 import unittest
 
 import torch
-from transformers import BertConfig
+from transformers import BertConfig, BertForSequenceClassification
 from transformers.models.bert.modeling_bert import BertSelfAttention
 
-from function_handler import BertSelfAttentionWithAproximation
+from function_handler import BertSelfAttentionWithAproximation, ReversibleLayerHandler
 
 
 class BertAttentionCompatTests(unittest.TestCase):
@@ -79,6 +79,26 @@ class BertAttentionCompatTests(unittest.TestCase):
             self.assertEqual(outputs[1].shape[0], 2)
         finally:
             BertSelfAttention.__init__ = original_init
+
+    def test_softmax_replacement_preserves_eval_mode(self):
+        config = BertConfig(
+            hidden_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            intermediate_size=64,
+            num_labels=2,
+        )
+        model = BertForSequenceClassification(config)
+        model.eval()
+        handler = ReversibleLayerHandler(model)
+
+        handler.replace_layer_softmax(
+            [0],
+            layer_name="model.bert.encoder.layer",
+            degree=6,
+        )
+
+        self.assertFalse(model.bert.encoder.layer[0].attention.self.training)
 
 
 if __name__ == "__main__":  # pragma: no cover

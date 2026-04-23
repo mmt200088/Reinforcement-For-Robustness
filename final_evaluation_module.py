@@ -167,28 +167,21 @@ class UnifiedFinalEvaluationModule:
         ev.log("=" * 60)
 
         # ------------------------------------------------------------------
-        # Baseline group: stage-1 exact, NO noise.
+        # Baseline group: stage-1 exact, NO noise. Clean baseline is
+        # deterministic, so evaluate it once even when noisy groups repeat.
         # ------------------------------------------------------------------
         baseline_repeat = None
-        if self.repeat_n > 1:
-            baseline_repeat = self._run_clean_repeated(
-                baseline_stage1_gelu, baseline_stage1_softmax, "Baseline (Stage-1 Exact)"
-            )
-        baseline_reference = (
-            baseline_repeat["stats"]
-            if baseline_repeat is not None
-            else ev.evaluate_model_repeated(
-                baseline_stage1_gelu,
-                baseline_stage1_softmax,
-                repeats=1,
-                use_train=False,
-                split="validation_full",
-            )
+        ev.log("\n--- Baseline (Stage-1 Exact) : single deterministic evaluation ---")
+        baseline_single = ev.evaluate_model(
+            baseline_stage1_gelu,
+            baseline_stage1_softmax,
+            use_train=False,
+            split="validation_full",
         )
         report_constraints = ev.build_constraint_limits_from_metrics(
-            baseline_reference["loss_mean"] if "loss_mean" in baseline_reference else baseline_reference["loss"],
-            baseline_reference["p_mean"] if "p_mean" in baseline_reference else baseline_reference["p"],
-            baseline_reference["s_mean"] if "s_mean" in baseline_reference else baseline_reference["s"],
+            baseline_single[0],
+            baseline_single[1],
+            baseline_single[2],
         )
 
         baseline_result = self._build_clean_result(
@@ -198,6 +191,7 @@ class UnifiedFinalEvaluationModule:
             baseline_stage1_softmax,
             report_constraints,
             repeat_results=baseline_repeat,
+            single_result=baseline_single,
         )
 
         # ------------------------------------------------------------------
@@ -206,6 +200,14 @@ class UnifiedFinalEvaluationModule:
         eval_cache: Dict = {}
 
         def _noise_eval(gelu, softmax, noise_cfg, label, want_repeat):
+            sig = (
+                tuple(np.asarray(gelu, dtype=int).tolist()),
+                tuple(np.asarray(softmax, dtype=int).tolist()),
+                tuple(
+                    tuple(np.asarray(noise_cfg[k], dtype=int).tolist())
+                    for k in NOISE_SCALING_FACTOR_KEYS
+                ),
+            )
             repeat = None
             if want_repeat and self.repeat_n > 1:
                 ev.log(f"\n--- {label} : N={self.repeat_n} 次重复评估 ---")
@@ -239,14 +241,14 @@ class UnifiedFinalEvaluationModule:
                         else ""
                     )
                 )
-            sig = (
-                tuple(np.asarray(gelu, dtype=int).tolist()),
-                tuple(np.asarray(softmax, dtype=int).tolist()),
-                tuple(
-                    tuple(np.asarray(noise_cfg[k], dtype=int).tolist())
-                    for k in NOISE_SCALING_FACTOR_KEYS
-                ),
-            )
+                cached = {
+                    "loss": float(stats["loss_mean"]),
+                    "p": float(stats["p_mean"]),
+                    "s": float(stats["s_mean"]),
+                    "time_ms": float(stats.get("time_mean_ms", 0.0)),
+                }
+                eval_cache[sig] = cached
+                return cached, repeat
             if sig in eval_cache:
                 return eval_cache[sig], repeat
             loss, p, s, t = ev.evaluate_model_with_attention_noise(
@@ -634,7 +636,9 @@ class UnifiedFinalEvaluationModule:
             if sig in seen:
                 return False
             seen.add(sig)
-            res, _ = build_result(name, family, gelu, softmax, noise_cfg)
+            res, repeat = build_result(name, family, gelu, softmax, noise_cfg, want_repeat=True)
+            if repeat is not None:
+                res["repeat_evaluation"] = repeat
             results.append(res)
             return True
 
@@ -932,12 +936,23 @@ class UnifiedFinalEvaluationModule:
         stats = {k: (float(v) if not isinstance(v, str) else v) for k, v in summary.items() if k != "trials"}
         return {"trials": trials, "stats": stats}
 
-    def _build_clean_result(self, name, family, gelu, softmax, constraints, repeat_results=None):
+    def _build_clean_result(
+        self,
+        name,
+        family,
+        gelu,
+        softmax,
+        constraints,
+        repeat_results=None,
+        single_result=None,
+    ):
         ev = self.evaluator
-        if repeat_results is None:
+        if repeat_results is None and single_result is None:
             loss, p, s, t = ev.evaluate_model(
                 gelu, softmax, use_train=False, split="validation_full"
             )
+        elif single_result is not None:
+            loss, p, s, t = single_result
         else:
             stats = repeat_results["stats"]
             loss = stats["loss_mean"]
@@ -1277,6 +1292,12 @@ class UnifiedFinalEvaluationModule:
             "optimized": self._json_ready(optimized_result),
             "random_results": [self._json_ready(r) for r in random_results],
             "random_summary": summary,
+            "evaluation_protocol": {
+                "version": 2,
+                "baseline": "single_clean_validation_full",
+                "noisy_groups": "repeated_mean" if self.repeat_n > 1 else "single",
+                "noisy_repeat_n": int(self.repeat_n),
+            },
         }
         if baseline_repeat is not None:
             output["baseline_repeat_evaluation"] = baseline_repeat

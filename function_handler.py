@@ -858,7 +858,11 @@ class ReversibleLayerHandler:
                     self.original_gelu[i] = {
                         "act_fn": _get_attr_path(layer, act_path),
                     }
-                _set_attr_path(layer, act_path, PolynomialGELU(degree=degree))
+                orig_act = _get_attr_path(layer, act_path)
+                orig_training = getattr(orig_act, "training", layer.training)
+                new_act = PolynomialGELU(degree=degree)
+                new_act.train(bool(orig_training))
+                _set_attr_path(layer, act_path, new_act)
 
         print(f"已替换 {len(layer_indices)} 层的GELU函数（GELU function）")
     
@@ -938,6 +942,7 @@ class ReversibleLayerHandler:
                     device=orig_self.query.weight.device,
                     dtype=orig_self.query.weight.dtype,
                 )
+                new_attn.train(orig_self.training)
                 layer.attention.self = new_attn
 
         print(f"已替换 {len(layer_indices)} 层的Softmax函数（Softmax function）")
@@ -1284,7 +1289,10 @@ class ReversibleLayerHandler:
             return
         for i, layer in enumerate(eval("self." + layer_name)):
             if i in layer_indices and i in self.original_attention:
-                layer.attention.self = self.original_attention[i]['attention']
+                current_training = layer.attention.self.training
+                restored_attention = self.original_attention[i]['attention']
+                restored_attention.train(bool(current_training))
+                layer.attention.self = restored_attention
 
    
     def restore_layer_input_noise(self, layer_indices=None, layer_name="model.model.layers"):

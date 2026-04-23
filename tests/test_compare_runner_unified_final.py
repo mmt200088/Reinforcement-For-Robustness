@@ -89,6 +89,45 @@ class CompareRunnerUnifiedFinalTests(unittest.TestCase):
             )
             self.assertIsNotNone(payload["stage2_repeat_summary"])
 
+    def test_final_eval_protocol_rejects_repeated_baseline_json(self):
+        from rl_ga_compare_runner import final_eval_json_matches_protocol
+
+        stale = {
+            "evaluation_protocol": {
+                "version": 2,
+                "baseline": "single_clean_validation_full",
+                "noisy_repeat_n": 5,
+            },
+            "baseline": {"loss": 0.1, "p": 0.9, "s": 0.9},
+            "baseline_repeat_evaluation": {"stats": {"n": 5}},
+            "optimized": {"evaluation_n": 5},
+            "random_results": [{"evaluation_n": 5}],
+        }
+        self.assertFalse(final_eval_json_matches_protocol(stale, repeat_n=5))
+
+    def test_final_eval_protocol_requires_random_repeats(self):
+        from rl_ga_compare_runner import final_eval_json_matches_protocol
+
+        current = {
+            "evaluation_protocol": {
+                "version": 2,
+                "baseline": "single_clean_validation_full",
+                "noisy_repeat_n": 5,
+            },
+            "baseline": {"loss": 0.1, "p": 0.9, "s": 0.9},
+            "optimized": {"evaluation_n": 5},
+            "random_results": [{"evaluation_n": 5}],
+        }
+        missing_random_repeat = {
+            **current,
+            "random_results": [{"loss": 0.2, "p": 0.8, "s": 0.8}],
+        }
+
+        self.assertTrue(final_eval_json_matches_protocol(current, repeat_n=5))
+        self.assertFalse(
+            final_eval_json_matches_protocol(missing_random_repeat, repeat_n=5)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
