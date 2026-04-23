@@ -2434,7 +2434,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         # 模型在 eval 模式 + no_grad + dataloader shuffle=False + 无随机性 → 相同配置评估结果必然一致
         # 相同配置的重复评估可直接复用缓存结果，不会改变任何数值结果
         self._eval_cache = {}
-        # 跳过 _run_evaluation 中重复的 model.eval()/model.to() 调用（只需第一次调用时设置一次）
+        # Track one-time device placement; eval mode is re-asserted before each forward.
         self._eval_infra_ready = False
         # 记录上一次已应用的 (gelu_degrees, softmax_degrees); apply_configuration 是幂等的,
         # 配置未变时可安全跳过重复调用 (例如同一配置同时评估 train 和 test 两个 split 的情况)
@@ -3592,6 +3592,13 @@ class LayerImportanceEvaluator(TrainerCallback):
         return g_c + s_c, g_c, s_c
 
     def apply_configuration(self, gelu_degrees, softmax_degrees):
+        # Search "training" updates only the controller/GA state; candidate
+        # scoring must always run the language model in inference mode.
+        model = getattr(self, "model", None)
+        if model is None:
+            model = getattr(getattr(self, "reversible_handler", None), "model", None)
+        if model is not None:
+            model.eval()
         handler_layer_name = "model." + self.layers_attribute
         # GELU (including degree 0)
         gelu_map = {d: [] for d in [0, 1, 2, 4]} 
@@ -4619,16 +4626,17 @@ class LayerImportanceEvaluator(TrainerCallback):
         """在当前模型上运行评估循环（不修改配置），用于无近似对照组等。
 
         性能优化（不改变任何数值结果）:
-          - 仅首次调用执行 model.eval() + model.to(device) (之后模型状态不变)
+          - 每次 forward 前重新确认 model.eval()；model.to(device) 只在首次调用时执行
           - 移除每批次 cuda.synchronize() (仅用于计时, 不影响计算)
           - 移除每次调用的 dummy warmup forward pass (CUDA kernels 已 warmup)
           - 使用 torch.inference_mode() 替代 no_grad() (禁用版本计数, 更快)
           - 在 GPU 传输前提取 labels, 避免 GPU→CPU 往返
           - non_blocking=True + pin_memory 实现异步 CPU→GPU DMA
         """
-        # 首次调用时确保模型处于 eval 模式且在正确设备上；后续调用模型状态不变, 无需重复设置
+        # Re-assert eval mode on every call; configuration/noise helpers may
+        # replace modules between candidate evaluations.
+        self.model.eval()
         if not self._eval_infra_ready:
-            self.model.eval()
             self.model.to(self.device)
             self._eval_infra_ready = True
         total_loss = 0.0
@@ -4757,6 +4765,7 @@ class LayerImportanceEvaluator(TrainerCallback):
     def _evaluate_accuracy_on_dataloader(self, dataloader):
         """在指定 dataloader 上计算 accuracy（用于 MNLI mismatched）"""
         all_preds, all_labels = [], []
+        self.model.eval()
         with torch.no_grad():
             for batch in dataloader:
                 batch = {k: v.to(self.device) for k, v in batch.items()}

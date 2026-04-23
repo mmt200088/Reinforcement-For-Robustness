@@ -1,5 +1,6 @@
 import unittest
 
+import numpy as np
 import torch
 from transformers import BertConfig, BertForSequenceClassification
 from transformers.models.bert.modeling_bert import BertSelfAttention
@@ -99,6 +100,81 @@ class BertAttentionCompatTests(unittest.TestCase):
         )
 
         self.assertFalse(model.bert.encoder.layer[0].attention.self.training)
+
+    def test_gelu_replacement_preserves_eval_mode(self):
+        config = BertConfig(
+            hidden_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            intermediate_size=64,
+            num_labels=2,
+        )
+        model = BertForSequenceClassification(config)
+        model.eval()
+        handler = ReversibleLayerHandler(model)
+
+        handler.replace_layer_gelu(
+            [0],
+            layer_name="model.bert.encoder.layer",
+            degree=4,
+        )
+
+        act_fn = model.bert.encoder.layer[0].intermediate.intermediate_act_fn
+        self.assertFalse(act_fn.training)
+
+    def test_softmax_restore_preserves_current_eval_mode(self):
+        config = BertConfig(
+            hidden_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            intermediate_size=64,
+            num_labels=2,
+        )
+        model = BertForSequenceClassification(config)
+        handler = ReversibleLayerHandler(model)
+
+        handler.replace_layer_softmax(
+            [0],
+            layer_name="model.bert.encoder.layer",
+            degree=6,
+        )
+        model.eval()
+        handler.restore_layer_softmax(
+            [0],
+            layer_name="model.bert.encoder.layer",
+        )
+
+        self.assertFalse(model.bert.encoder.layer[0].attention.self.training)
+
+    def test_evaluator_apply_configuration_forces_eval_mode(self):
+        try:
+            from layer_importance_evaluator import LayerImportanceEvaluator
+        except ImportError as exc:
+            self.skipTest(f"layer_importance_evaluator import unavailable: {exc}")
+
+        config = BertConfig(
+            hidden_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            intermediate_size=64,
+            num_labels=2,
+        )
+        model = BertForSequenceClassification(config)
+        self.assertTrue(model.training)
+
+        evaluator = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
+        evaluator.model = model
+        evaluator.layers_attribute = "bert.encoder.layer"
+        evaluator.reversible_handler = ReversibleLayerHandler(model)
+
+        evaluator.apply_configuration(
+            np.array([4], dtype=int),
+            np.array([6], dtype=int),
+        )
+
+        self.assertFalse(model.training)
+        self.assertFalse(model.bert.encoder.layer[0].attention.self.training)
+        self.assertFalse(model.bert.encoder.layer[0].intermediate.intermediate_act_fn.training)
 
 
 if __name__ == "__main__":  # pragma: no cover
