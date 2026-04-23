@@ -1,5 +1,6 @@
 import argparse
 import ctypes
+import gc
 import json
 import os
 import signal
@@ -85,6 +86,34 @@ def log(msg: str) -> None:
 
 def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
+
+def cleanup_cuda_memory() -> None:
+    """Release Python references and cached CUDA blocks between compare sides."""
+    gc.collect()
+    if not torch.cuda.is_available():
+        return
+    try:
+        torch.cuda.empty_cache()
+    except Exception:
+        pass
+    try:
+        torch.cuda.ipc_collect()
+    except Exception:
+        pass
+
+
+def release_compare_evaluator(evaluator) -> None:
+    if evaluator is None:
+        cleanup_cuda_memory()
+        return
+    model = getattr(evaluator, "model", None)
+    if model is not None:
+        try:
+            model.to("cpu")
+        except Exception:
+            pass
+    cleanup_cuda_memory()
 
 
 def _build_parent_death_preexec_fn():
@@ -987,6 +1016,7 @@ def ensure_final_eval_json(
         )
 
     evaluator = prepared_evaluator
+    created_evaluator = evaluator is None
     if evaluator is None:
         effective_config_path = config_path or default_final_eval_json_for_algorithm(algorithm)
         evaluator = build_compare_evaluator(
@@ -1110,7 +1140,10 @@ def ensure_final_eval_json(
         )
     finally:
         restore_log()
-    return Path(result["summary_path"]), warnings
+    summary_path = Path(result["summary_path"])
+    if created_evaluator:
+        release_compare_evaluator(evaluator)
+    return summary_path, warnings
 
 
 def format_pct_delta(selected: float, baseline: float, lower_better: bool = False) -> str:
@@ -2146,109 +2179,58 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
             },
         )
 
-        rl_evaluator = (
-            build_compare_evaluator(
-                base_model=args.base_model,
-                data_path=args.data_path,
-                batch_size=args.batch_size,
-                run_output_dir=str(rl_side_spec.run_dir),
-                model_type=model_type,
-                search_algorithm="rl",
-                stage1_rl_lr=args.stage1_search_lr,
-                stage2_rl_lr=args.stage2_search_lr,
-                random_seed=args.random_seed,
-                perm_trials=args.perm_trials,
-                cost_trials=args.cost_trials,
-                budget_trials=args.budget_trials,
-                final_eval_repeat_n=args.stage2_compare_repeats,
-                final_eval_config_source=(
-                    rl_side_spec.side_config.final_eval_config_source
-                    if rl_side_spec.side_config.final_eval_config_source != "search"
-                    else "json"
-                ),
-                final_eval_config_path=(
-                    rl_side_spec.side_config.final_eval_config_path
-                    or default_final_eval_json_for_algorithm("rl")
-                ),
-                skip_stage1_rl=True,
-                skip_noise_rl=True,
-                skip_final_eval=True,
-                stage2_k_trials=getattr(args, "stage2_k_trials", None),
-                stage2_probe_size=getattr(args, "stage2_probe_size", None),
+        def _ensure_side_final_eval(
+            *,
+            algorithm: str,
+            side_spec: EvaluationOnlySideSpec,
+        ) -> Tuple[Path, List[str]]:
+            needs_evaluator = side_needs_evaluator(side_spec, dataset=dataset)
+            write_json(
+                compare_status_path,
+                {
+                    "updated_at": now_ts(),
+                    "mode": "evaluation_only",
+                    "compare_config_mode": args.compare_config_mode,
+                    "stage": f"final_eval_{algorithm}",
+                    "algorithm": algorithm,
+                    "needs_evaluator": needs_evaluator,
+                },
             )
-            if side_needs_evaluator(rl_side_spec, dataset=dataset)
-            else None
-        )
-        ga_evaluator = (
-            build_compare_evaluator(
-                base_model=args.base_model,
-                data_path=args.data_path,
-                batch_size=args.batch_size,
-                run_output_dir=str(ga_side_spec.run_dir),
-                model_type=model_type,
-                search_algorithm="ga",
-                stage1_rl_lr=args.stage1_search_lr,
-                stage2_rl_lr=args.stage2_search_lr,
-                random_seed=args.random_seed,
-                perm_trials=args.perm_trials,
-                cost_trials=args.cost_trials,
-                budget_trials=args.budget_trials,
-                final_eval_repeat_n=args.stage2_compare_repeats,
-                final_eval_config_source=(
-                    ga_side_spec.side_config.final_eval_config_source
-                    if ga_side_spec.side_config.final_eval_config_source != "search"
-                    else "json"
-                ),
-                final_eval_config_path=(
-                    ga_side_spec.side_config.final_eval_config_path
-                    or default_final_eval_json_for_algorithm("ga")
-                ),
-                skip_stage1_rl=True,
-                skip_noise_rl=True,
-                skip_final_eval=True,
-                stage2_k_trials=getattr(args, "stage2_k_trials", None),
-                stage2_probe_size=getattr(args, "stage2_probe_size", None),
-            )
-            if side_needs_evaluator(ga_side_spec, dataset=dataset)
-            else None
-        )
+            if needs_evaluator:
+                log(f"{algorithm.upper()} final-eval missing; running it before the other side to keep GPU memory bounded.")
+            try:
+                return ensure_final_eval_json(
+                    algorithm=algorithm,
+                    run_dir=side_spec.run_dir,
+                    side_config=side_spec.side_config,
+                    dataset=dataset,
+                    base_model=args.base_model,
+                    data_path=args.data_path,
+                    batch_size=args.batch_size,
+                    stage1_rl_lr=args.stage1_search_lr,
+                    stage2_rl_lr=args.stage2_search_lr,
+                    random_seed=args.random_seed,
+                    perm_trials=args.perm_trials,
+                    cost_trials=args.cost_trials,
+                    budget_trials=args.budget_trials,
+                    final_eval_repeat_n=args.stage2_compare_repeats,
+                    model_type=model_type,
+                )
+            finally:
+                cleanup_cuda_memory()
 
-        rl_stage1_json, rl_stage1_warn = ensure_final_eval_json(
+        rl_final_json, rl_final_warn = _ensure_side_final_eval(
             algorithm="rl",
-            run_dir=rl_side_spec.run_dir,
-            side_config=rl_side_spec.side_config,
-            dataset=dataset,
-            base_model=args.base_model,
-            data_path=args.data_path,
-            batch_size=args.batch_size,
-            stage1_rl_lr=args.stage1_search_lr,
-            stage2_rl_lr=args.stage2_search_lr,
-            random_seed=args.random_seed,
-            perm_trials=args.perm_trials,
-            cost_trials=args.cost_trials,
-            budget_trials=args.budget_trials,
-            final_eval_repeat_n=args.stage2_compare_repeats,
-            model_type=model_type,
-            prepared_evaluator=rl_evaluator,
+            side_spec=rl_side_spec,
         )
-        ga_stage1_json, ga_stage1_warn = ensure_final_eval_json(
+        ga_final_json, ga_final_warn = _ensure_side_final_eval(
             algorithm="ga",
-            run_dir=ga_side_spec.run_dir,
-            side_config=ga_side_spec.side_config,
-            dataset=dataset,
-            base_model=args.base_model,
-            data_path=args.data_path,
-            batch_size=args.batch_size,
-            stage1_rl_lr=args.stage1_search_lr,
-            stage2_rl_lr=args.stage2_search_lr,
-            random_seed=args.random_seed,
-            perm_trials=args.perm_trials,
-            cost_trials=args.cost_trials,
-            budget_trials=args.budget_trials,
-            final_eval_repeat_n=args.stage2_compare_repeats,
-            model_type=model_type,
-            prepared_evaluator=ga_evaluator,
+            side_spec=ga_side_spec,
         )
+        rl_stage1_json = rl_stage2_json = rl_final_json
+        ga_stage1_json = ga_stage2_json = ga_final_json
+        rl_stage1_warn = rl_stage2_warn = rl_final_warn
+        ga_stage1_warn = ga_stage2_warn = ga_final_warn
 
         rl_state = build_evaluation_only_process_state(rl_side_spec, dataset=dataset)
         ga_state = build_evaluation_only_process_state(ga_side_spec, dataset=dataset)
@@ -2280,43 +2262,6 @@ def run_evaluation_only_compare(args: argparse.Namespace) -> int:
                 "stage": "stage2",
                 "stage1_report_path": str(stage1_report_path),
             },
-        )
-
-        rl_stage2_json, rl_stage2_warn = ensure_final_eval_json(
-            algorithm="rl",
-            run_dir=rl_side_spec.run_dir,
-            side_config=rl_side_spec.side_config,
-            dataset=dataset,
-            base_model=args.base_model,
-            data_path=args.data_path,
-            batch_size=args.batch_size,
-            stage1_rl_lr=args.stage1_search_lr,
-            stage2_rl_lr=args.stage2_search_lr,
-            random_seed=args.random_seed,
-            perm_trials=args.perm_trials,
-            cost_trials=args.cost_trials,
-            budget_trials=args.budget_trials,
-            final_eval_repeat_n=args.stage2_compare_repeats,
-            model_type=model_type,
-            prepared_evaluator=rl_evaluator,
-        )
-        ga_stage2_json, ga_stage2_warn = ensure_final_eval_json(
-            algorithm="ga",
-            run_dir=ga_side_spec.run_dir,
-            side_config=ga_side_spec.side_config,
-            dataset=dataset,
-            base_model=args.base_model,
-            data_path=args.data_path,
-            batch_size=args.batch_size,
-            stage1_rl_lr=args.stage1_search_lr,
-            stage2_rl_lr=args.stage2_search_lr,
-            random_seed=args.random_seed,
-            perm_trials=args.perm_trials,
-            cost_trials=args.cost_trials,
-            budget_trials=args.budget_trials,
-            final_eval_repeat_n=args.stage2_compare_repeats,
-            model_type=model_type,
-            prepared_evaluator=ga_evaluator,
         )
 
         rl_state = build_evaluation_only_process_state(rl_side_spec, dataset=dataset)

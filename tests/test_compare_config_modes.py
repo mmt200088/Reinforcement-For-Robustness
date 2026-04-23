@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 def _stage1_result(dataset: str, layers: int) -> dict:
@@ -157,6 +158,118 @@ class CompareConfigModeTests(unittest.TestCase):
                     stage2_limit_tolerance=0.05,
                     stage2_stability_tolerance=0.05,
                 )
+
+    def test_evaluation_only_compare_evaluates_one_side_at_a_time(self):
+        try:
+            import rl_ga_compare_runner as compare_runner
+        except ImportError as exc:
+            self.skipTest(f"rl_ga_compare_runner import unavailable: {exc}")
+
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            rl_json = root / "glue_final_configs_best_ppo.json"
+            ga_json = root / "glue_final_configs_best_genetic.json"
+            template = {
+                "bert-base": {
+                    "mrpc": {
+                        "stage1": {
+                            "gelu": [4] * 12,
+                            "softmax": [6] * 12,
+                        },
+                        "stage2": _stage2_config_template(
+                            "mrpc", "bert-base", 12
+                        )["bert-base"]["mrpc"],
+                    }
+                }
+            }
+            for path in (rl_json, ga_json):
+                path.write_text(json.dumps(template, ensure_ascii=False), encoding="utf-8")
+
+            args = SimpleNamespace(
+                output_dir=str(root / "compare"),
+                compare_config_mode="direct",
+                compare_persistent_root="",
+                rl_compare_stage1_json=str(rl_json),
+                rl_compare_stage2_json=str(rl_json),
+                ga_compare_stage1_json=str(ga_json),
+                ga_compare_stage2_json=str(ga_json),
+                rl_compare_stage1_accuracy_tolerance=None,
+                rl_compare_stage2_limit_tolerance=None,
+                rl_compare_stage2_stability_tolerance=None,
+                ga_compare_stage1_accuracy_tolerance=None,
+                ga_compare_stage2_limit_tolerance=None,
+                ga_compare_stage2_stability_tolerance=None,
+                model_type="bert-base",
+                base_model="dummy-model",
+                data_path="mrpc",
+                dataset="mrpc",
+                batch_size=1,
+                stage1_search_lr="1e-4",
+                stage2_search_lr="1e-4",
+                random_seed=42,
+                perm_trials=1,
+                cost_trials=1,
+                budget_trials=1,
+                stage2_compare_repeats=1,
+                stage2_k_trials=None,
+                stage2_probe_size=None,
+                dry_run=False,
+            )
+            order = []
+
+            def fake_ensure_final_eval_json(**kwargs):
+                algorithm = kwargs["algorithm"]
+                run_dir = kwargs["run_dir"]
+                dataset = kwargs["dataset"]
+                order.append(f"ensure:{algorithm}")
+                path = compare_runner.final_eval_json(run_dir, dataset)
+                payload = {
+                    "dataset": dataset,
+                    "baseline": {
+                        "loss": 1.0,
+                        "p": 0.7,
+                        "s": 0.7,
+                        "stage1_tot_c": 72.0,
+                        "stage2_tot_c": 0.0,
+                        "gelu": [4] * 12,
+                        "softmax": [6] * 12,
+                    },
+                    "optimized_stage1": {
+                        "gelu": [4] * 12,
+                        "softmax": [6] * 12,
+                    },
+                    "optimized": {
+                        "loss": 0.9,
+                        "p": 0.8,
+                        "s": 0.8,
+                        "stage1_tot_c": 72.0,
+                        "stage2_tot_c": 10.0,
+                        "gelu": [4] * 12,
+                        "softmax": [6] * 12,
+                        "noise_config": {
+                            "input_noise_scaling_factors": [20] * 12,
+                        },
+                    },
+                }
+                compare_runner.write_json(path, payload)
+                return path, []
+
+            def fake_cleanup_cuda_memory():
+                order.append("cleanup")
+
+            with patch.object(
+                compare_runner,
+                "ensure_final_eval_json",
+                side_effect=fake_ensure_final_eval_json,
+            ), patch.object(
+                compare_runner,
+                "cleanup_cuda_memory",
+                side_effect=fake_cleanup_cuda_memory,
+            ):
+                rc = compare_runner.run_evaluation_only_compare(args)
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(order, ["ensure:rl", "cleanup", "ensure:ga", "cleanup"])
 
 if __name__ == "__main__":
     unittest.main()
