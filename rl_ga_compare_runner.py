@@ -276,7 +276,12 @@ def final_eval_json(run_dir: Path, dataset: str) -> Path:
     return run_dir / "final_eval" / f"final_eval_results_{dataset}.json"
 
 
-def final_eval_json_matches_protocol(obj: Optional[dict], repeat_n: int) -> bool:
+def final_eval_json_matches_protocol(
+    obj: Optional[dict],
+    repeat_n: int,
+    *,
+    expect_random_groups: bool = True,
+) -> bool:
     if not obj:
         return False
     repeat_n = max(1, int(repeat_n))
@@ -287,6 +292,13 @@ def final_eval_json_matches_protocol(obj: Optional[dict], repeat_n: int) -> bool
         return False
     if int(protocol.get("noisy_repeat_n", 0) or 0) != repeat_n:
         return False
+    random_groups_mode = protocol.get("random_groups")
+    if expect_random_groups:
+        if random_groups_mode != "enabled":
+            return False
+    else:
+        if random_groups_mode != "disabled":
+            return False
     if obj.get("baseline_repeat_evaluation") is not None:
         return False
 
@@ -298,9 +310,12 @@ def final_eval_json_matches_protocol(obj: Optional[dict], repeat_n: int) -> bool
         optimized = obj.get("optimized") or {}
         if int(optimized.get("evaluation_n", 0) or 0) != repeat_n:
             return False
-        for result in obj.get("random_results") or []:
-            if int(result.get("evaluation_n", 0) or 0) != repeat_n:
-                return False
+        if expect_random_groups:
+            for result in obj.get("random_results") or []:
+                if int(result.get("evaluation_n", 0) or 0) != repeat_n:
+                    return False
+    if not expect_random_groups and (obj.get("random_results") or []):
+        return False
     return True
 
 
@@ -1001,9 +1016,11 @@ def build_compare_evaluator(
         final_eval_config_source=final_eval_config_source,
         final_eval_config_path=final_eval_config_path,
         final_eval_random_seed=random_seed,
-        final_eval_permutation_trials=perm_trials,
-        final_eval_cost_equivalent_trials=cost_trials,
-        final_eval_budget_equivalent_trials=budget_trials,
+        final_eval_permutation_trials=0,
+        final_eval_cost_equivalent_trials=0,
+        final_eval_budget_equivalent_trials=0,
+        final_eval_stage1_budget_trials=0,
+        final_eval_stage2_budget_trials=0,
         final_eval_repeat_n=final_eval_repeat_n,
         skip_stage1_rl=skip_stage1_rl,
         skip_noise_rl=skip_noise_rl,
@@ -1041,7 +1058,11 @@ def ensure_final_eval_json(
     warnings: List[str] = []
     if json_path.is_file():
         existing = read_json(json_path)
-        if final_eval_json_matches_protocol(existing, final_eval_repeat_n):
+        if final_eval_json_matches_protocol(
+            existing,
+            final_eval_repeat_n,
+            expect_random_groups=False,
+        ):
             return json_path, []
         warnings.append(
             f"{algorithm.upper()} 的 final-eval 文件使用旧评测协议或 repeat_n 不匹配，"
@@ -1092,6 +1113,12 @@ def ensure_final_eval_json(
             skip_noise_rl=True,
             skip_final_eval=False,
         )
+
+    compare_perm_trials = 0
+    compare_cost_trials = 0
+    compare_budget_trials = 0
+    compare_stage1_budget_trials = 0
+    compare_stage2_budget_trials = 0
 
     from genetic_search_module import (
         GeneticUnifiedFinalEvaluationModule,
@@ -1175,9 +1202,11 @@ def ensure_final_eval_json(
             config_source=config_source,
             config_path=config_path,
             random_seed=random_seed,
-            permutation_trials=perm_trials,
-            cost_equivalent_trials=cost_trials,
-            budget_equivalent_trials=budget_trials,
+            permutation_trials=compare_perm_trials,
+            cost_equivalent_trials=compare_cost_trials,
+            budget_equivalent_trials=compare_budget_trials,
+            stage1_budget_trials=compare_stage1_budget_trials,
+            stage2_budget_trials=compare_stage2_budget_trials,
             repeat_n=final_eval_repeat_n,
             results_dir=evaluator.final_eval_dir,
         )
@@ -1765,9 +1794,11 @@ def build_child_command(
         "--manual_stage1_softmax", "",
         "--manual_stage2_noise", "",
         "--final_eval_random_seed", str(random_seed),
-        "--final_eval_permutation_trials", str(perm_trials),
-        "--final_eval_cost_equivalent_trials", str(cost_trials),
-        "--final_eval_budget_equivalent_trials", str(budget_trials),
+        "--final_eval_permutation_trials", "0",
+        "--final_eval_cost_equivalent_trials", "0",
+        "--final_eval_budget_equivalent_trials", "0",
+        "--final_eval_stage1_budget_trials", "0",
+        "--final_eval_stage2_budget_trials", "0",
         "--final_eval_repeat_n", str(stage2_compare_repeats),
         "--skip_noise_rl", "true" if side_config.skip_noise_search else "false",
         "--skip_stage1_rl", "true" if side_config.skip_stage1_search else "false",

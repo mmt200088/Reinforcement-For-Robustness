@@ -3,6 +3,11 @@ from pathlib import Path
 
 
 class GABudgetAndSplitTests(unittest.TestCase):
+    @staticmethod
+    def _arg_value(cmd, flag):
+        idx = cmd.index(flag)
+        return cmd[idx + 1]
+
     def test_build_stage1_context_uses_validation_full(self):
         try:
             import genetic_search_module as ga_module
@@ -110,6 +115,46 @@ class GABudgetAndSplitTests(unittest.TestCase):
         self.assertIn("--stage1_ga_generations", ga_cmd)
         self.assertIn("--stage2_ga_generations", ga_cmd)
         self.assertNotIn("--stage1_rl_episodes", ga_cmd)
+        self.assertEqual(
+            self._arg_value(rl_cmd, "--final_eval_permutation_trials"),
+            "0",
+        )
+        self.assertEqual(
+            self._arg_value(rl_cmd, "--final_eval_cost_equivalent_trials"),
+            "0",
+        )
+        self.assertEqual(
+            self._arg_value(rl_cmd, "--final_eval_budget_equivalent_trials"),
+            "0",
+        )
+        self.assertEqual(
+            self._arg_value(rl_cmd, "--final_eval_stage1_budget_trials"),
+            "0",
+        )
+        self.assertEqual(
+            self._arg_value(rl_cmd, "--final_eval_stage2_budget_trials"),
+            "0",
+        )
+        self.assertEqual(
+            self._arg_value(ga_cmd, "--final_eval_permutation_trials"),
+            "0",
+        )
+        self.assertEqual(
+            self._arg_value(ga_cmd, "--final_eval_cost_equivalent_trials"),
+            "0",
+        )
+        self.assertEqual(
+            self._arg_value(ga_cmd, "--final_eval_budget_equivalent_trials"),
+            "0",
+        )
+        self.assertEqual(
+            self._arg_value(ga_cmd, "--final_eval_stage1_budget_trials"),
+            "0",
+        )
+        self.assertEqual(
+            self._arg_value(ga_cmd, "--final_eval_stage2_budget_trials"),
+            "0",
+        )
 
     def test_compare_runner_omits_skipped_search_budget_flags(self):
         try:

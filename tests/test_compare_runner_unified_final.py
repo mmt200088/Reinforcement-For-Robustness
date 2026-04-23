@@ -17,6 +17,12 @@ class CompareRunnerUnifiedFinalTests(unittest.TestCase):
                 payload = {
                     "dataset": "mrpc",
                     "selected_source": "json",
+                    "evaluation_protocol": {
+                        "version": 2,
+                        "baseline": "single_clean_validation_full",
+                        "noisy_repeat_n": 3,
+                        "random_groups": "disabled",
+                    },
                     "baseline": {
                         "loss": 1.0,
                         "p": 0.1,
@@ -97,13 +103,20 @@ class CompareRunnerUnifiedFinalTests(unittest.TestCase):
                 "version": 2,
                 "baseline": "single_clean_validation_full",
                 "noisy_repeat_n": 5,
+                "random_groups": "enabled",
             },
             "baseline": {"loss": 0.1, "p": 0.9, "s": 0.9},
             "baseline_repeat_evaluation": {"stats": {"n": 5}},
             "optimized": {"evaluation_n": 5},
             "random_results": [{"evaluation_n": 5}],
         }
-        self.assertFalse(final_eval_json_matches_protocol(stale, repeat_n=5))
+        self.assertFalse(
+            final_eval_json_matches_protocol(
+                stale,
+                repeat_n=5,
+                expect_random_groups=True,
+            )
+        )
 
     def test_final_eval_protocol_requires_random_repeats(self):
         from rl_ga_compare_runner import final_eval_json_matches_protocol
@@ -113,6 +126,7 @@ class CompareRunnerUnifiedFinalTests(unittest.TestCase):
                 "version": 2,
                 "baseline": "single_clean_validation_full",
                 "noisy_repeat_n": 5,
+                "random_groups": "enabled",
             },
             "baseline": {"loss": 0.1, "p": 0.9, "s": 0.9},
             "optimized": {"evaluation_n": 5},
@@ -123,9 +137,53 @@ class CompareRunnerUnifiedFinalTests(unittest.TestCase):
             "random_results": [{"loss": 0.2, "p": 0.8, "s": 0.8}],
         }
 
-        self.assertTrue(final_eval_json_matches_protocol(current, repeat_n=5))
+        self.assertTrue(
+            final_eval_json_matches_protocol(
+                current,
+                repeat_n=5,
+                expect_random_groups=True,
+            )
+        )
         self.assertFalse(
             final_eval_json_matches_protocol(missing_random_repeat, repeat_n=5)
+        )
+
+    def test_compare_protocol_requires_random_groups_disabled(self):
+        from rl_ga_compare_runner import final_eval_json_matches_protocol
+
+        compare_ready = {
+            "evaluation_protocol": {
+                "version": 2,
+                "baseline": "single_clean_validation_full",
+                "noisy_repeat_n": 5,
+                "random_groups": "disabled",
+            },
+            "baseline": {"loss": 0.1, "p": 0.9, "s": 0.9},
+            "optimized": {"evaluation_n": 5},
+            "random_results": [],
+        }
+        with_random = {
+            **compare_ready,
+            "evaluation_protocol": {
+                **compare_ready["evaluation_protocol"],
+                "random_groups": "enabled",
+            },
+            "random_results": [{"evaluation_n": 5}],
+        }
+
+        self.assertTrue(
+            final_eval_json_matches_protocol(
+                compare_ready,
+                repeat_n=5,
+                expect_random_groups=False,
+            )
+        )
+        self.assertFalse(
+            final_eval_json_matches_protocol(
+                with_random,
+                repeat_n=5,
+                expect_random_groups=False,
+            )
         )
 
 

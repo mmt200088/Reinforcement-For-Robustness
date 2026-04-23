@@ -101,6 +101,16 @@ class UnifiedFinalEvaluationModule:
         self.input_noise_allowed = list(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
         self.weight_noise_allowed = list(WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
         self.wffn1_noise_allowed = list(WFFN1_NOISE_ALLOWED_SCALING_FACTORS)
+        self.include_random_groups = any(
+            trial_count > 0
+            for trial_count in (
+                self.permutation_trials,
+                self.cost_equivalent_trials,
+                self.budget_equivalent_trials,
+                self.stage1_budget_trials,
+                self.stage2_budget_trials,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Public entry
@@ -316,16 +326,20 @@ class UnifiedFinalEvaluationModule:
         )
 
         # 3–7. Random groups.
-        random_results = self._generate_random_results(
-            opt_gelu=opt_gelu,
-            opt_softmax=opt_softmax,
-            opt_noise_cfg=opt_noise_cfg,
-            opt_stage1_tot_c=opt_stage1_tot_c,
-            opt_stage2_tot_c=opt_stage2_tot_c,
-            opt_breakdown=opt_breakdown,
-            total_layers=total_layers,
-            build_result=_build_noise_result,
-        )
+        if self.include_random_groups:
+            random_results = self._generate_random_results(
+                opt_gelu=opt_gelu,
+                opt_softmax=opt_softmax,
+                opt_noise_cfg=opt_noise_cfg,
+                opt_stage1_tot_c=opt_stage1_tot_c,
+                opt_stage2_tot_c=opt_stage2_tot_c,
+                opt_breakdown=opt_breakdown,
+                total_layers=total_layers,
+                build_result=_build_noise_result,
+            )
+        else:
+            ev.log("Random comparison groups are disabled for this final-eval run.")
+            random_results = []
 
         # Summaries / logs / outputs.
         summary = self._summarize_random_results(optimized_result, random_results, num_metrics)
@@ -1297,6 +1311,7 @@ class UnifiedFinalEvaluationModule:
                 "baseline": "single_clean_validation_full",
                 "noisy_groups": "repeated_mean" if self.repeat_n > 1 else "single",
                 "noisy_repeat_n": int(self.repeat_n),
+                "random_groups": "enabled" if self.include_random_groups else "disabled",
             },
         }
         if baseline_repeat is not None:
