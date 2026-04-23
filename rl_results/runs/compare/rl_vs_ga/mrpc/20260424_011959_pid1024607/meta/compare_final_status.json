@@ -1,0 +1,46 @@
+{
+  "updated_at": "2026-04-24 01:27:24",
+  "mode": "evaluation_only",
+  "compare_config_mode": "direct",
+  "rl": {
+    "algorithm": "rl",
+    "pid": null,
+    "return_code": 0,
+    "state": "completed",
+    "final_eval_ready": true,
+    "run_dir": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/children/rl",
+    "log_path": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/children/rl/logs/output.log",
+    "command": null,
+    "env_overrides": {},
+    "mode": "evaluation_only",
+    "stage1_input_kind": "config_json",
+    "stage2_input_kind": "config_json",
+    "source_metadata": {
+      "compare_config_mode": "direct",
+      "stage1_json_path": "/var/tmp/root-home/Reinforcement-For-Robustness/glue_final_configs_best_ppo.json",
+      "stage2_json_path": "/var/tmp/root-home/Reinforcement-For-Robustness/glue_final_configs_best_ppo.json"
+    }
+  },
+  "ga": {
+    "algorithm": "ga",
+    "pid": null,
+    "return_code": 0,
+    "state": "completed",
+    "final_eval_ready": true,
+    "run_dir": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/children/ga",
+    "log_path": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/children/ga/logs/output.log",
+    "command": null,
+    "env_overrides": {},
+    "mode": "evaluation_only",
+    "stage1_input_kind": "config_json",
+    "stage2_input_kind": "config_json",
+    "source_metadata": {
+      "compare_config_mode": "direct",
+      "stage1_json_path": "/var/tmp/root-home/Reinforcement-For-Robustness/glue_final_configs_best_genetic.json",
+      "stage2_json_path": "/var/tmp/root-home/Reinforcement-For-Robustness/glue_final_configs_best_genetic.json"
+    }
+  },
+  "final_report_path": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/reports/final_compare_report_mrpc.md",
+  "stage1_report_path": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/reports/final_compare_report_mrpc.md",
+  "stage2_report_path": "/var/tmp/root-home/Reinforcement-For-Robustness/rl_results/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/reports/final_compare_report_mrpc.md"
+}
