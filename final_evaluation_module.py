@@ -931,25 +931,6 @@ class UnifiedFinalEvaluationModule:
     # Baseline (no-noise) repeated evaluation helper
     # ------------------------------------------------------------------
 
-    def _run_clean_repeated(self, gelu, softmax, label):
-        ev = self.evaluator
-        ev.log(f"\n--- {label} : N={self.repeat_n} 次重复评估 ---")
-        summary = ev.evaluate_model_repeated(
-            gelu, softmax, repeats=self.repeat_n, use_train=False, split="validation_full"
-        )
-        trials = [
-            {
-                "trial": i + 1,
-                "loss": float(t["loss"]),
-                "p": float(t["p"]),
-                "s": float(t["s"]),
-                "time_ms": float(t["time_ms"]),
-            }
-            for i, t in enumerate(summary["trials"])
-        ]
-        stats = {k: (float(v) if not isinstance(v, str) else v) for k, v in summary.items() if k != "trials"}
-        return {"trials": trials, "stats": stats}
-
     def _build_clean_result(
         self,
         name,

@@ -125,48 +125,6 @@ class FunctionApproximator:
             # new_nodes[0], new_nodes[-1] = a, b  # 固定端点
         
         return coeffs
-    
-        def remez_approximation_plus(self, func_name, degree, interval, max_iter=500, tol=1e-3):
-            a, b = interval
-            n = degree + 2
-            target_func = self.functions[func_name]
-           
-            # 改进初始点：非对称切比雪夫节点
-            k = np.arange(1, n+1)
-            nodes = (a + b)/2 - (b - a)/2 * np.cos((2*k-1)*np.pi/(2*n))  # 非对称调整
-            
-            for _ in range(max_iter):
-                V = np.vander(nodes, degree+1, increasing=True)
-                coeffs = np.linalg.lstsq(V, target_func(nodes), rcond=None)[0]
-                
-                # 寻找最大误差点
-                def error_func(x):
-                    approx = np.polyval(coeffs[::-1], x)
-                    return np.abs(target_func(x) - approx)
-            
-                # 在区间内寻找最大误差点
-                max_err_points = []
-                for _ in range(degree+2):
-                    res = minimize_scalar(lambda x: -error_func(x), bounds=(a,b), method='bounded')
-                    max_err_points.append(res.x)
-                
-                # 检查收敛
-                new_nodes = np.array(sorted(max_err_points))
-                if np.max(np.abs(new_nodes - nodes)) < tol:
-                    break
-                nodes = new_nodes
-
-                # # 全局误差分析（关键改进）
-                # x_test = np.linspace(a, b, 1000)
-                # errors = np.abs(target_func(x_test) - np.polyval(coeffs[::-1], x_test))
-                # max_err_idx = np.argmax(errors)
-                # candidate = x_test[max_err_idx]
-                
-                # # 更新节点集
-                # new_nodes = np.sort(np.append(nodes[1:-1], candidate))
-                # new_nodes[0], new_nodes[-1] = a, b  # 固定端点
-            
-            return coeffs
 
 
     # 非Remez方法：多项式拟合GELU-0.5x

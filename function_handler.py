@@ -13,7 +13,6 @@ except Exception:  # pragma: no cover
     _GPT2Attention = None
 import copy
 from torch import Tensor
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -277,44 +276,6 @@ def _make_noisy_projection_forward(module, scaling_factor: int, distribution: st
         return _make_noisy_conv1d_forward(module, scaling_factor, distribution)
     return _make_noisy_linear_forward(module, scaling_factor, distribution)
 
-# Tanh approximation coeff
-Tanh_COEEF = {
-            1: [[0.5, 0.5], [0.5, 0.5]],
-            2: [[0.5, 0.5, 0.5],
-            [0.5, 0.5, 0.5]],
-            3: [[0.5, 0.5, 0.5, 0.5],
-            [0.5, 0.5, 0.5, 0.5]],
-            4: [[0.5, 0.5, 0.5, 0.5, 0.5],
-            [0.5, 0.5, 0.5, 0.5, 0.5]]
-}          
-
-# Less than coeff (to be done, not sure can be approximated in mpc evaluation)
-Less_than_COEEF = {
-            1: [[0.5, 0.5], [0.5, 0.5]],
-            2: [[0.5, 0.5, 0.5],
-            [0.5, 0.5, 0.5]],
-            3: [[0.5, 0.5, 0.5, 0.5],
-            [0.5, 0.5, 0.5, 0.5]],
-            4: [[0.5, 0.5, 0.5, 0.5, 0.5],
-            [0.5, 0.5, 0.5, 0.5, 0.5]]
-}
-
-# Sqrt 1/rootsq
-ReSqrt_COEFF = {
-
-}
-
-
-
-# millionaire approximation used in protocol type: 0->mpc; 1->HE
-def less_than_approximaion (
-        x: torch.Tensor, 
-        coeff: Optional[list] = None, 
-        sign: int = 1, 
-        protocol_type: 
-        int = 0
-        ) -> torch.Tensor:
-    pass
 # tensor polynomial approximation
 def polynomial(x, coeff, sign):
     # x: Tensor, 可能在 cuda:0 或 cpu
@@ -376,34 +337,6 @@ class PolynomialGELU(nn.Module):
         # print(f"X : {x}, Y : {out}, OriginGelu: {origin}")
         return out
     
-class PolynomiaTanh(nn.Module):
-    """可逆的三次多项式GELU近似"""
-    def __init__(self, degree=4):
-        super().__init__()
-        self.coeff = GELU_COEEF[degree]  # 正向系数
-
-        
-    def forward(self, x: Tensor) -> Tensor:
-
-        y0 = torch.zeros_like(x, dtype=x.dtype, device=x.device) 
-        y1 = polynomial(x, self.coeff, 1)
-        y2 = polynomial(x, self.coeff, 0)
-        y3 = x
-        
-        # 创建与x相同设备和类型的输出张量
-        mask_low = x < -2.7
-        mask_neg = (x >= -2.7) & (x < 0)
-        mask_pos = (x >= 0) & (x <= 2.7)
-        mask_high = x > 2.7
-        
-        # 分段处理
-        # print(f"y0 : {y0}, y1 : {y1}, y2 : {y2}, y3 : {y3}")
-        out = torch.where(mask_low, y0, torch.zeros_like(x))
-        out = torch.where(mask_neg, y1, out)
-        out = torch.where(mask_pos, y2, out)
-        out = torch.where(mask_high, y3, out)
-        return out
-
 # change BertsdpaAttention to normal self attention and change its softmax
 class BertSelfAttentionWithAproximation(BertSelfAttention):
     """BertSelfAttention with softmax approximation"""
@@ -745,36 +678,6 @@ def _make_gpt2_approx_attn_forward(attn_module, degree: int, lower_bound: float)
     return patched_forward
 
 
-class PerturbedLiner(nn.Module):
-    """可逆的三次多项式GELU近似"""
-    def __init__(self, degree=4):
-        super().__init__()
-        self.coeff = GELU_COEEF[degree]  # 正向系数
-        
-    def forward(self, x: Tensor) -> Tensor:
-
-        y0 = torch.zeros_like(x, dtype=x.dtype, device=x.device) 
-        y1 = polynomial(x, 1)
-        y2 = polynomial(x, 0)
-        y3 = x
-        
-        # 创建与x相同设备和类型的输出张量
-        mask_low = x < -2.7
-        mask_neg = (x >= -2.7) & (x < 0)
-        mask_pos = (x >= 0) & (x <= 2.7)
-        mask_high = x > 2.7
-        
-        # 分段处理
-        # print(f"y0 : {y0}, y1 : {y1}, y2 : {y2}, y3 : {y3}")
-        out = torch.where(mask_low, y0, torch.zeros_like(x))
-        out = torch.where(mask_neg, y1, out)
-        out = torch.where(mask_pos, y2, out)
-        out = torch.where(mask_high, y3, out)
-
-        origin = x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
-        # print(f"X : {x}, Y : {out}, OriginGelu: {origin}")
-        return out
-    
 class ReversibleLayerHandler:
     """管理GELU/Softmax/噪声替换与恢复的工具类.
 
@@ -866,41 +769,6 @@ class ReversibleLayerHandler:
 
         print(f"已替换 {len(layer_indices)} 层的GELU函数（GELU function）")
     
-    def replace_layer_norm(self, layer_indices=None, layer_name="model.model.layers", degree=1):
-        """替换指定层的LayerNorm函数"""
-        for i, layer in enumerate(eval("self." + layer_name)):
-            if i in layer_indices:
-                # 保存原始函数引用
-                if i not in self.original_gelu:
-                    self.original_gelu[i] = {
-                        # 'act_fn': layer.mlp.act_fn
-                        'act_fn': layer.intermediate.intermediate_act_fn
-                    }
-                
-                # 应用新函数
-                # layer.mlp.act_fn = nn.LayerNorm(layer.mlp.hidden_size)
-                layer.intermediate.intermediate_act_fn = nn.LayerNorm(layer.intermediate.intermediate_size)
-                # layer.output.activation = nn.LayerNorm(layer.output.size)
-    
-    def replace_layer_tanh(self, layer_indices=None, layer_name="model.model.layers", degree=1):
-        """替换指定层的Tanh函数"""
-        for i, layer in enumerate(eval("self." + layer_name)):
-            if i in layer_indices:
-                # 保存原始函数引用
-                if i not in self.original_gelu:
-                    self.original_gelu[i] = {
-                        # 'act_fn': layer.mlp.act_fn
-                        'act_fn': layer.intermediate.intermediate_act_fn
-                    }
-                
-                # 应用新函数
-                # layer.mlp.act_fn = nn.Tanh()
-                layer.intermediate.intermediate_act_fn = nn.Tanh()
-                # layer.output.activation = nn.Tanh()
-
-    def replace_layer_linear(self, layer_indices=None, layer_name="model.model.layers", degree=1):
-        pass
-
     def replace_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention", degree=1):
         """替换指定层的Softmax函数 (BERT: 替换 BertSelfAttention; GPT-2: monkey-patch forward)"""
         if self._arch == "gpt2":

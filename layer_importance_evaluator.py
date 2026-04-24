@@ -1742,87 +1742,6 @@ class LSTMStrategyNetwork(nn.Module):
         return logprobs, entropy, values
 
 
-class RolloutBuffer:
-    """
-    存储Rollout数据的Buffer
-    敏锐度优化PDF：扩展以支持双头Critic的分离奖励存储
-    """
-    def __init__(self):
-        self.states = []
-        self.gelu_actions = []
-        self.softmax_actions = []
-        self.logprobs = []
-        self.rewards = []           # 总奖励（向后兼容）
-        self.cost_rewards = []      # 成本奖励（双头Critic）
-        self.acc_rewards = []       # 精度奖励（双头Critic）
-        self.dones = []
-        self.values = []            # 总价值（单头Critic向后兼容）
-        self.values_cost = []       # 成本价值（双头Critic）
-        self.values_acc = []        # 精度价值（双头Critic）
-    
-    def add(self, state, gelu_action, softmax_action, logprob, reward, done, value,
-            cost_reward=None, acc_reward=None, value_cost=None, value_acc=None):
-        """
-        添加经验数据
-        敏锐度优化PDF：支持分离的成本/精度奖励和价值
-        """
-        self.states.append(state)
-        self.gelu_actions.append(gelu_action)
-        self.softmax_actions.append(softmax_action)
-        self.logprobs.append(logprob)
-        self.rewards.append(reward)
-        self.dones.append(done)
-        self.values.append(value)
-        
-        # 双头Critic数据（可选）
-        if cost_reward is not None:
-            self.cost_rewards.append(cost_reward)
-        if acc_reward is not None:
-            self.acc_rewards.append(acc_reward)
-        if value_cost is not None:
-            self.values_cost.append(value_cost)
-        if value_acc is not None:
-            self.values_acc.append(value_acc)
-    
-    def clear(self):
-        self.states.clear()
-        self.gelu_actions.clear()
-        self.softmax_actions.clear()
-        self.logprobs.clear()
-        self.rewards.clear()
-        self.cost_rewards.clear()
-        self.acc_rewards.clear()
-        self.dones.clear()
-        self.values.clear()
-        self.values_cost.clear()
-        self.values_acc.clear()
-    
-    def get_tensors(self, device):
-        """获取基础张量（向后兼容）"""
-        states = torch.stack(self.states).to(device)
-        gelu_actions = torch.stack(self.gelu_actions).to(device)
-        softmax_actions = torch.stack(self.softmax_actions).to(device)
-        logprobs = torch.stack(self.logprobs).to(device)
-        rewards = torch.tensor(self.rewards, dtype=torch.float32).to(device)
-        dones = torch.tensor(self.dones, dtype=torch.float32).to(device)
-        values = torch.stack(self.values).to(device)
-        return states, gelu_actions, softmax_actions, logprobs, rewards, dones, values
-    
-    def get_dual_head_tensors(self, device):
-        """
-        敏锐度优化PDF：获取双头Critic的分离奖励和价值张量
-        """
-        base_tensors = self.get_tensors(device)
-        
-        # 分离的成本/精度数据
-        cost_rewards = torch.tensor(self.cost_rewards, dtype=torch.float32).to(device) if self.cost_rewards else None
-        acc_rewards = torch.tensor(self.acc_rewards, dtype=torch.float32).to(device) if self.acc_rewards else None
-        values_cost = torch.stack(self.values_cost).to(device) if self.values_cost else None
-        values_acc = torch.stack(self.values_acc).to(device) if self.values_acc else None
-        
-        return base_tensors + (cost_rewards, acc_rewards, values_cost, values_acc)
-
-
 # ==================== LSTM PDF优化方案：循环网络专用Rollout Buffer ====================
 class RecurrentRolloutBuffer:
     """
@@ -3071,33 +2990,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         cache[key] = (subset, subset_mm)
         return cache[key]
 
-    def _split_dataset_for_rl(self, dataset, holdout_ratio, seed):
-        if dataset is None:
-            return None, None
-
-        total_size = len(dataset)
-        if total_size < 2 or holdout_ratio <= 0.0:
-            return dataset, None
-
-        indices = np.arange(total_size)
-        labels = self._extract_labels_for_stratify(dataset)
-        search_indices, holdout_indices = self._safe_train_test_split(
-            indices,
-            seed=seed,
-            labels=labels,
-            test_size=holdout_ratio,
-        )
-        search_indices = np.sort(np.asarray(search_indices, dtype=int))
-        holdout_indices = np.sort(np.asarray(holdout_indices, dtype=int))
-
-        if len(search_indices) == 0 or len(holdout_indices) == 0:
-            return dataset, None
-
-        return (
-            dataset.select(search_indices.tolist()),
-            dataset.select(holdout_indices.tolist()),
-        )
-
     def _prepare_rl_datasets(self, train_data, validation_data, validation_data_mm=None):
         self.dataset_splits = {}
         self.dataset_splits_mm = {}
@@ -3143,48 +3035,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         if self.has_dataset_split("validation_full"):
             return "validation_full"
         return "train"
-
-    def _refresh_validation_proxy_legacy(self, window_index, stage_label="RL", quiet=False):
-        """[已禁用] 旧版 val_proxy 切分逻辑，仅保留供参考。"""
-        if not self.has_dataset_split("val_search_full"):
-            self.current_val_proxy_window = None
-            self.current_val_proxy_subset_id = None
-            return None
-
-        search_dataset = self.dataset_splits["val_search_full"]
-        search_mm_dataset = self.dataset_splits_mm.get("val_search_full")
-        proxy_ratio = self._get_validation_proxy_ratio()
-        proxy_size = max(1, int(round(len(search_dataset) * proxy_ratio)))
-        proxy_dataset = self._sample_dataset_by_size(
-            search_dataset,
-            subset_size=proxy_size,
-            seed=RL_DATASET_SPLIT_SEED + 1000 + int(window_index),
-        )
-
-        proxy_mm_dataset = None
-        if search_mm_dataset is not None:
-            proxy_mm_size = max(1, int(round(len(search_mm_dataset) * proxy_ratio)))
-            proxy_mm_dataset = self._sample_dataset_by_size(
-                search_mm_dataset,
-                subset_size=proxy_mm_size,
-                seed=RL_DATASET_SPLIT_SEED + 2000 + int(window_index),
-            )
-
-        self._register_dataset_split("val_proxy", proxy_dataset, proxy_mm_dataset)
-        self.current_val_proxy_window = int(window_index)
-        self.current_val_proxy_subset_id = f"proxy_window_{int(window_index):04d}"
-
-        if not quiet:
-            msg = (
-                f"[数据集协议（Dataset Protocol）] {stage_label}: "
-                f"验证代理窗口（val_proxy window）={int(window_index) + 1}, "
-                f"大小（size）={len(proxy_dataset)}/{len(search_dataset)}"
-            )
-            if proxy_mm_dataset is not None:
-                msg += f", MNLI不匹配（mnli_mismatched）={len(proxy_mm_dataset)}/{len(search_mm_dataset)}"
-            print(msg)
-
-        return "val_proxy"
 
     def get_reward_reference_split_name(self):
         if USE_VALIDATION_FOR_REWARD:
@@ -3377,26 +3227,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             'metric2': base_limits['metric2'] / self.constraint_slack
         }
     
-    def update_lagrangian_multipliers(self, loss_violation, m1_violation, m2_violation):
-        """
-        敏锐度优化PDF 6.1：更新拉格朗日乘子
-        
-        当约束被违反时，通过梯度上升增大对应的惩罚权重
-        """
-        # 梯度上升：如果违反约束（violation > 0），增大乘子
-        self.lagrangian_loss = np.clip(
-            self.lagrangian_loss + LAGRANGIAN_LR * loss_violation,
-            0.0, LAGRANGIAN_MAX
-        )
-        self.lagrangian_m1 = np.clip(
-            self.lagrangian_m1 + LAGRANGIAN_LR * m1_violation,
-            0.0, LAGRANGIAN_MAX
-        )
-        self.lagrangian_m2 = np.clip(
-            self.lagrangian_m2 + LAGRANGIAN_LR * m2_violation,
-            0.0, LAGRANGIAN_MAX
-        )
-    
     def get_current_entropy_coef(self):
         """获取当前熵系数（供ppo_update使用）"""
         return self.current_entropy_coef
@@ -3418,30 +3248,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.reward_mean = np.mean(self.reward_history)
             self.reward_std = np.std(self.reward_history) + RUNNING_REWARD_EPSILON
     
-    def normalize_reward(self, reward):
-        """
-        PPO 7.1: 对单个回报进行归一化
-        在收集到足够样本后，使用运行时统计量进行归一化
-        """
-        # 如果样本不足，使用固定缩放（回退到策略三的方法）
-        if len(self.reward_history) < RUNNING_REWARD_MIN_SAMPLES:
-            return reward / REWARD_NORMALIZATION_SCALE
-        
-        # 使用运行时统计量进行标准化
-        normalized = (reward - self.reward_mean) / self.reward_std
-        return normalized
-    
-    def normalize_rewards_batch(self, rewards):
-        """
-        PPO 7.1: 对一批回报进行归一化（用于buffer中的rewards）
-        """
-        if len(self.reward_history) < RUNNING_REWARD_MIN_SAMPLES:
-            # 样本不足时使用固定缩放
-            return [r / REWARD_NORMALIZATION_SCALE for r in rewards]
-        
-        # 使用运行时统计量进行标准化
-        return [(r - self.reward_mean) / self.reward_std for r in rewards]
-
     def _detect_layer_attribute(self):
         candidates = ['bert.encoder.layer', 'transformer.h', 'model.layers', 'roberta.encoder.layer']
         for path in candidates:
@@ -3919,47 +3725,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
             dtype=int,
         )
-
-    def apply_qkv_noise_configuration(
-            self,
-            wq_noise_scaling_factors=None,
-            wk_noise_scaling_factors=None,
-            wv_noise_scaling_factors=None
-            ):
-        """Backward-compatible alias for the earlier QKV-only helper."""
-        self.apply_weight_noise_configuration(
-            wq_noise_scaling_factors=wq_noise_scaling_factors,
-            wk_noise_scaling_factors=wk_noise_scaling_factors,
-            wv_noise_scaling_factors=wv_noise_scaling_factors,
-        )
-
-    def clear_qkv_noise_configuration(self):
-        """Backward-compatible alias for the earlier QKV-only helper."""
-        self.clear_wq_noise_configuration()
-        self.clear_wk_noise_configuration()
-        self.clear_wv_noise_configuration()
-
-    def evaluate_model_with_input_noise(
-            self,
-            gelu_degrees,
-            softmax_degrees,
-            input_noise_scaling_factors,
-            use_train=True,
-            split=None
-            ):
-        """Evaluate a fixed GELU/Softmax config with layer-wise x-noise enabled."""
-        self.apply_configuration(gelu_degrees, softmax_degrees)
-        self.apply_input_noise_configuration(input_noise_scaling_factors)
-        split_name = self._resolve_eval_split(use_train=use_train, split=split)
-        dataloader = self.dataloaders[split_name]
-        try:
-            return self._run_evaluation(
-                dataloader,
-                use_train=(split_name == "train"),
-                split_name=split_name,
-            )
-        finally:
-            self.clear_input_noise_configuration()
 
     def evaluate_model_with_attention_noise(
             self,
@@ -4802,273 +4567,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         returns = advantages + values
         
         return advantages, returns
-
-    def ppo_update(self, policy_net, value_net, optimizer, buffer, device, mini_batch_size=PPO_MINI_BATCH_SIZE, entropy_coef=None):
-        """
-        PPO更新 - 包含Shuffle和Mini-batch（按照PDF 5.1节要求）
-        策略二优化：支持动态熵系数
-        PDF步骤7.3：调整mini-batch size以获得更稳定的梯度估计
-        Args:
-            policy_net: 策略网络
-            value_net: 价值网络
-            optimizer: 优化器
-            buffer: 经验回放缓冲区
-            device: 设备
-            mini_batch_size: mini-batch大小（PDF建议调整）
-            entropy_coef: 动态熵系数（策略二），如果为None则使用默认值
-        """
-        # 策略二：使用动态熵系数
-        if entropy_coef is None:
-            entropy_coef = self.get_current_entropy_coef()
-        
-        states, gelu_actions, softmax_actions, old_logprobs, rewards, dones, values = buffer.get_tensors(device)
-        
-        # 计算GAE（在原始尺度下计算）
-        advantages, returns = self.compute_gae(rewards.cpu().numpy(), values.cpu().numpy(), dones.cpu().numpy())
-        advantages = advantages.to(device)
-        returns = returns.to(device)
-        
-        # 标准化优势
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-        
-        # ==================== PDF 6.3: Return Normalization (PopArt风格) ====================
-        # 步骤1：使用 RunningMeanStd 更新统计量（跨batch累积）
-        self.return_normalizer.update(returns)
-        
-        # 步骤2：使用累积统计量归一化 returns
-        # 这比 batch 内归一化更稳定，因为统计量是跨整个训练过程累积的
-        returns_normalized = torch.tensor(
-            self.return_normalizer.normalize(returns.cpu().numpy()),
-            dtype=torch.float32
-        ).to(device)
-        
-        # 步骤3：对采样时的 values 也用同样的统计量归一化
-        # 这确保 old_values 和 new_values 在同一尺度下比较
-        values_normalized = torch.tensor(
-            self.return_normalizer.normalize(values.cpu().numpy()),
-            dtype=torch.float32
-        ).to(device)
-        
-        # 数据总量
-        batch_size = states.size(0)
-        
-        # 用于记录最后一次更新的损失
-        last_policy_loss = 0.0
-        last_value_loss = 0.0
-        last_entropy = 0.0
-        
-        # PPO更新K个epoch
-        for epoch in range(PPO_K_EPOCHS):
-            # Shuffle数据（按照PDF 5.1节要求）
-            indices = torch.randperm(batch_size).to(device)
-            
-            # 按Mini-batch更新
-            for start in range(0, batch_size, mini_batch_size):
-                end = min(start + mini_batch_size, batch_size)
-                mb_indices = indices[start:end]
-                
-                # 获取mini-batch数据
-                mb_states = states[mb_indices]
-                mb_gelu_actions = gelu_actions[mb_indices]
-                mb_softmax_actions = softmax_actions[mb_indices]
-                mb_old_logprobs = old_logprobs[mb_indices]
-                mb_advantages = advantages[mb_indices]
-                # PDF 6.3: 使用 RunningMeanStd 归一化后的 returns
-                mb_returns = returns_normalized[mb_indices]
-                # PDF 6.3: 使用 RunningMeanStd 归一化后的旧 values
-                mb_old_values_normalized = values_normalized[mb_indices]
-                
-                # 评估当前策略
-                new_logprobs, entropy = policy_net.evaluate_actions(mb_states, mb_gelu_actions, mb_softmax_actions)
-                new_values_raw = value_net(mb_states)
-                
-                # 计算ratio
-                ratios = torch.exp(new_logprobs - mb_old_logprobs)
-                
-                # 计算surrogate loss（PPO-Clip目标）
-                surr1 = ratios * mb_advantages
-                surr2 = torch.clamp(ratios, 1 - PPO_EPS_CLIP, 1 + PPO_EPS_CLIP) * mb_advantages
-                
-                # 策略损失
-                policy_loss = -torch.min(surr1, surr2).mean()
-                
-                # PDF 6.3: 使用 RunningMeanStd 的统计量归一化 new_values
-                # Critic 预测的是原始尺度的值，训练时归一化到与 returns 相同的空间
-                new_values_normalized = (new_values_raw - self.return_normalizer.mean) / self.return_normalizer.std
-                
-                # PPO 5.2: Clipped Value Loss（价值函数裁剪）
-                # 防止价值函数更新过大导致训练不稳定
-                # value_clipped = old_value + clip(new_value - old_value, -ε, +ε)
-                # PDF 6.3: 使用归一化后的 values 进行裁剪
-                value_clipped = mb_old_values_normalized + torch.clamp(
-                    new_values_normalized - mb_old_values_normalized, 
-                    -VALUE_CLIP_RANGE, 
-                    VALUE_CLIP_RANGE
-                )
-                
-                # PDF 3.2.2 & 5.3: 使用 Huber Loss 替代 MSE Loss
-                # Huber Loss 对异常值（Outlier）更鲁棒，能有效遏制 Value Loss 尖峰
-                # delta=1.0 表示误差在 1.0 以内是平方损失，超过 1.0 是线性损失
-                huber_loss_fn = nn.HuberLoss(reduction='none', delta=1.0)
-                
-                # 计算两种 Huber Loss：未裁剪的和裁剪的
-                # PDF 6.3: 使用归一化后的values计算loss
-                value_loss_unclipped = huber_loss_fn(new_values_normalized, mb_returns)
-                value_loss_clipped = huber_loss_fn(value_clipped, mb_returns)
-                # 取两者的最大值，确保价值函数不会离旧值太远
-                value_loss = torch.max(value_loss_unclipped, value_loss_clipped).mean()
-                
-                # 熵正则项（鼓励探索）- 策略二：使用动态熵系数
-                entropy_loss = -entropy.mean()
-                
-                # 总损失：L = L_policy + c1 * L_value + c2 * L_entropy
-                # 策略二：使用动态entropy_coef
-                loss = policy_loss + PPO_VALUE_COEF * value_loss + entropy_coef * entropy_loss
-                
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(list(policy_net.parameters()) + list(value_net.parameters()), 0.5)
-                optimizer.step()
-                
-                # 记录最后一次的损失值
-                last_policy_loss = policy_loss.item()
-                last_value_loss = value_loss.item()
-                last_entropy = entropy.mean().item()
-        
-        return last_policy_loss, last_value_loss, last_entropy
-
-    def ppo_update_lstm(self, lstm_net, optimizer, buffer, device, 
-                        mini_batch_episodes=LSTM_MINI_BATCH_EPISODES, entropy_coef=None):
-        """
-        LSTM版PPO更新（LSTM PDF 4.2：Full-Episode BPTT）
-        
-        关键区别：
-        - 以完整Episode为单位进行mini-batch处理，保持LSTM序列完整性
-        - 梯度通过12步时间序列完整反向传播（BPTT）
-        - Mini-batch按Episode数划分（而非按步数）
-        
-        Args:
-            lstm_net: LSTM策略价值网络
-            optimizer: 优化器
-            buffer: RecurrentRolloutBuffer
-            device: 设备
-            mini_batch_episodes: 每个mini-batch包含的episode数
-            entropy_coef: 动态熵系数
-        """
-        if entropy_coef is None:
-            entropy_coef = self.get_current_entropy_coef()
-        
-        # 获取所有episode的batch数据
-        (cont_features, layer_indices, prev_g_actions, prev_s_actions,
-         actions_g, actions_s, old_logprobs, rewards, values, dones, gelu_masks) = buffer.get_batch(device)
-        
-        n_eps = cont_features.size(0)
-        seq_len = cont_features.size(1)
-        
-        # 计算每个Episode的GAE（保持序列独立性）
-        all_advantages = []
-        all_returns = []
-        for i in range(n_eps):
-            ep_rewards = rewards[i].cpu().numpy()
-            ep_values = values[i].cpu().numpy()
-            ep_dones = dones[i].cpu().numpy()
-            adv, ret = self.compute_gae(ep_rewards, ep_values, ep_dones)
-            all_advantages.append(adv)
-            all_returns.append(ret)
-        
-        advantages = torch.stack(all_advantages).to(device)  # (N_eps, 12)
-        returns = torch.stack(all_returns).to(device)         # (N_eps, 12)
-        
-        # 标准化优势（跨所有episode展平后标准化）
-        adv_flat = advantages.reshape(-1)
-        advantages = (advantages - adv_flat.mean()) / (adv_flat.std() + 1e-8)
-        
-        # Return Normalization（PopArt风格, PDF 3.3.2 + 5）
-        self.return_normalizer.update(returns)
-        returns_normalized = torch.tensor(
-            self.return_normalizer.normalize(returns.cpu().numpy()),
-            dtype=torch.float32
-        ).to(device)
-        values_normalized = torch.tensor(
-            self.return_normalizer.normalize(values.cpu().numpy()),
-            dtype=torch.float32
-        ).to(device)
-        
-        last_policy_loss = 0.0
-        last_value_loss = 0.0
-        last_entropy = 0.0
-        
-        # PPO K-Epoch更新
-        for epoch in range(PPO_K_EPOCHS):
-            # Shuffle episodes（不打乱步序，保持每个episode内的时间顺序）
-            ep_indices = torch.randperm(n_eps)
-            
-            # 按Episode mini-batch更新
-            for start in range(0, n_eps, mini_batch_episodes):
-                end = min(start + mini_batch_episodes, n_eps)
-                mb_idx = ep_indices[start:end]
-                
-                # 获取mini-batch数据（保持 (mb_size, 12, ...) 形状）
-                mb_cont = cont_features[mb_idx]
-                mb_layer = layer_indices[mb_idx]
-                mb_prev_g = prev_g_actions[mb_idx]
-                mb_prev_s = prev_s_actions[mb_idx]
-                mb_act_g = actions_g[mb_idx]
-                mb_act_s = actions_s[mb_idx]
-                mb_old_lp = old_logprobs[mb_idx]
-                mb_adv = advantages[mb_idx]
-                mb_ret = returns_normalized[mb_idx]
-                mb_old_val = values_normalized[mb_idx]
-                mb_gelu_mask = gelu_masks[mb_idx] if gelu_masks is not None else None
-                
-                # Full-Episode BPTT前向传播（LSTM PDF 4.2）
-                new_logprobs, entropy, new_values_raw = lstm_net.evaluate_actions(
-                    mb_cont, mb_layer, mb_prev_g, mb_prev_s, mb_act_g, mb_act_s,
-                    gelu_mask=mb_gelu_mask
-                )
-                
-                # 展平为 (mb_size * 12,) 用于损失计算
-                new_logprobs_flat = new_logprobs.reshape(-1)
-                entropy_flat = entropy.reshape(-1)
-                new_values_flat = new_values_raw.reshape(-1)
-                mb_old_lp_flat = mb_old_lp.reshape(-1)
-                mb_adv_flat = mb_adv.reshape(-1)
-                mb_ret_flat = mb_ret.reshape(-1)
-                mb_old_val_flat = mb_old_val.reshape(-1)
-                
-                # PPO-Clip策略损失
-                ratios = torch.exp(new_logprobs_flat - mb_old_lp_flat)
-                surr1 = ratios * mb_adv_flat
-                surr2 = torch.clamp(ratios, 1 - PPO_EPS_CLIP, 1 + PPO_EPS_CLIP) * mb_adv_flat
-                policy_loss = -torch.min(surr1, surr2).mean()
-                
-                # 价值损失（PopArt归一化 + Value Clipping + Huber Loss）
-                new_values_norm = (new_values_flat - self.return_normalizer.mean) / self.return_normalizer.std
-                value_clipped = mb_old_val_flat + torch.clamp(
-                    new_values_norm - mb_old_val_flat,
-                    -VALUE_CLIP_RANGE, VALUE_CLIP_RANGE
-                )
-                huber_loss_fn = nn.HuberLoss(reduction='none', delta=1.0)
-                vl_unclipped = huber_loss_fn(new_values_norm, mb_ret_flat)
-                vl_clipped = huber_loss_fn(value_clipped, mb_ret_flat)
-                value_loss = torch.max(vl_unclipped, vl_clipped).mean()
-                
-                # 熵正则项
-                entropy_loss = -entropy_flat.mean()
-                
-                # 总损失
-                loss = policy_loss + PPO_VALUE_COEF * value_loss + entropy_coef * entropy_loss
-                
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(lstm_net.parameters(), 0.5)
-                optimizer.step()
-                
-                last_policy_loss = policy_loss.item()
-                last_value_loss = value_loss.item()
-                last_entropy = entropy_flat.mean().item()
-        
-        return last_policy_loss, last_value_loss, last_entropy
 
     def ppo_update_gtrxl(self, gtrxl_net, optimizer, buffer, device,
                           mini_batch_episodes=GTRXL_MINI_BATCH_EPISODES, entropy_coef=None,
@@ -6059,7 +5557,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 step_info_chunk_file[0] = None
 
             if stage1_warnings:
-                from noise_rl_module import _write_warning_report
+                from noise_rl_module_v2 import _write_warning_report
                 _write_warning_report(stage1_warning_file, stage1_warnings, stage_label="阶段1（Stage-1 RL）")
                 self.log(f"  ⚠ 共检测到 {len(stage1_warnings)} 次奖励骤降警告，详见: {stage1_warning_file}")
 
