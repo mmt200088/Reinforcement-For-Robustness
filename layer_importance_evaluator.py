@@ -2325,6 +2325,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                  skip_noise_rl=False,
                  skip_stage1_rl=False,
                  skip_final_eval=False,
+                 final_eval_only=False,
                  resume_run_dir='',
                  search_algorithm=None,
                  stage1_accuracy_tolerance=None,
@@ -2604,6 +2605,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.skip_stage1_rl = self._coerce_bool_flag(skip_stage1_rl, 'skip_stage1_rl')
         self.skip_noise_rl = self._coerce_bool_flag(skip_noise_rl, 'skip_noise_rl')
         self.skip_final_eval = self._coerce_bool_flag(skip_final_eval, 'skip_final_eval')
+        self.final_eval_only = self._coerce_bool_flag(final_eval_only, 'final_eval_only')
         self.needs_stage2_fixed_config = (not self.skip_noise_rl) or (not self.skip_final_eval)
         self.resume_run_dir = str(resume_run_dir or '').strip()
 
@@ -2633,6 +2635,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             and self.skip_stage1_rl
             and self.final_eval_config_source == 'search'
             and (not _can_fallback_stage1)
+            and (not self.final_eval_only)
         ):
             raise ValueError(
                 "skip_stage1_rl=True 且 final_eval_config_source='search' 时，"
@@ -2680,7 +2683,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 )
 
         if self.skip_noise_rl and (not self.skip_final_eval) and self.final_eval_config_source == 'search':
-            if not _can_fallback_stage2:
+            if (not _can_fallback_stage2) and (not self.final_eval_only):
                 raise ValueError(
                     "skip_noise_rl=True 且 final_eval_config_source='search' 时，"
                     "需要提供 Stage-2 回退配置（json/manual）。"
@@ -2693,6 +2696,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             and self.skip_noise_rl
             and (not self.skip_final_eval)
             and self.final_eval_config_source == 'search'
+            and (not self.final_eval_only)
         ):
             raise ValueError(
                 "当 Stage-1 与 Stage-2 搜索都被跳过时，统一 final-eval 不能使用 "
@@ -4301,6 +4305,78 @@ class LayerImportanceEvaluator(TrainerCallback):
             NOISE_STAGE_CHECKPOINT_FILENAME,
         )
         return path if os.path.isfile(path) else None
+
+    def _load_prior_rl_search_results(self):
+        """final_eval_only=True 时，从 resume_run_dir 或 run_output_dir 读取之前 RL 搜索得到的最优配置。
+
+        - Stage-1：从 ``{dir}/stage1/stage1_rl_checkpoint.pt`` 读取 ``best_config``（含 gelu/softmax）。
+        - Stage-2：从 ``{dir}/stage2_noise/progress/noise_rl_checkpoint.pt`` 读取
+          ``best_noise_config``（含各 *_scaling_factors）。
+
+        仅读取文件、不写入；不调用任何 graceful-stop 接口；不修改 checkpoint 内容。
+        因此与续训和优雅停止完全互斥（续训路径只在执行 stage1/stage2 RL 时被触发，
+        而 final_eval_only 已强制跳过这两个阶段）。
+        返回 ``(stage1_best_dict_or_None, stage2_best_dict_or_None)``。
+        """
+        from noise_rl_module_v2 import (
+            STAGE1_CHECKPOINT_FILENAME,
+            NOISE_STAGE_CHECKPOINT_FILENAME,
+        )
+
+        candidate_dirs = []
+        if self.resume_run_dir:
+            candidate_dirs.append(self.resume_run_dir)
+        if self.run_output_dir and self.run_output_dir not in candidate_dirs:
+            candidate_dirs.append(self.run_output_dir)
+
+        stage1_best = None
+        stage2_best = None
+
+        for _dir in candidate_dirs:
+            if stage1_best is not None and stage2_best is not None:
+                break
+
+            if stage1_best is None:
+                s1_path = os.path.join(_dir, "stage1", STAGE1_CHECKPOINT_FILENAME)
+                if os.path.isfile(s1_path):
+                    try:
+                        ckpt = torch.load(s1_path, map_location="cpu", weights_only=False)
+                        cfg = ckpt.get("best_config") or ckpt.get("global_best_config")
+                        if cfg and "gelu" in cfg and "softmax" in cfg:
+                            stage1_best = {
+                                "gelu": np.asarray(cfg["gelu"], dtype=int),
+                                "softmax": np.asarray(cfg["softmax"], dtype=int),
+                            }
+                            self.log(f"[final_eval_only] 加载 Stage-1 RL 最优配置: {s1_path}")
+                    except Exception as exc:
+                        self.log(f"[final_eval_only][警告] 读取 {s1_path} 失败: {exc}")
+
+            if stage2_best is None:
+                s2_path = os.path.join(
+                    _dir, "stage2_noise", "progress", NOISE_STAGE_CHECKPOINT_FILENAME,
+                )
+                if os.path.isfile(s2_path):
+                    try:
+                        ckpt = torch.load(s2_path, map_location="cpu", weights_only=False)
+                        cfg = (
+                            ckpt.get("best_noise_config")
+                            or ckpt.get("incumbent_best_noise_config")
+                        )
+                        if cfg:
+                            extracted = {
+                                key: np.asarray(value, dtype=int)
+                                for key, value in cfg.items()
+                                if isinstance(key, str) and key.endswith("scaling_factors")
+                            }
+                            if extracted:
+                                stage2_best = extracted
+                                self.log(
+                                    f"[final_eval_only] 加载 Stage-2 RL 最优配置: {s2_path}"
+                                )
+                    except Exception as exc:
+                        self.log(f"[final_eval_only][警告] 读取 {s2_path} 失败: {exc}")
+
+        return stage1_best, stage2_best
 
     def run_noise_rl_stage(self, fixed_gelu, fixed_softmax, fixed_label, fixed_source,
                            resume_checkpoint_path=None):
@@ -6087,12 +6163,24 @@ class LayerImportanceEvaluator(TrainerCallback):
                     update_persistent_metadata_stage(
                         self.run_output_dir, "final_eval", "skipped")
             else:
+                # final_eval_only=True 时，从之前 RL 搜索的 checkpoint 中读取最优配置，
+                # 用作 final-eval 的输入。仅在 stage1/stage2 搜索结果缺失时回退到这些先验值，
+                # 因此不会影响正常训练流程下的行为。
+                prior_stage1_search_best = None
+                prior_stage2_search_best = None
+                if self.final_eval_only:
+                    prior_stage1_search_best, prior_stage2_search_best = (
+                        self._load_prior_rl_search_results()
+                    )
+
                 stage1_search_best = None
                 if best_config is not None:
                     stage1_search_best = {
                         "gelu": np.asarray(best_config["gelu"], dtype=int),
                         "softmax": np.asarray(best_config["softmax"], dtype=int),
                     }
+                elif prior_stage1_search_best is not None:
+                    stage1_search_best = prior_stage1_search_best
 
                 stage2_search_best = None
                 noise_limit_loss = limit_loss
@@ -6112,6 +6200,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 else:
                     baseline_noise_cfg = self._get_max_noise_configuration()
                     baseline_noise_tot_c, _ = self.get_noise_simulated_cost(**baseline_noise_cfg)
+                    if stage2_search_best is None and prior_stage2_search_best is not None:
+                        stage2_search_best = prior_stage2_search_best
 
                 final_eval_result = self.run_unified_final_eval(
                     stage1_search_best=stage1_search_best,

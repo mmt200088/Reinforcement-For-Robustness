@@ -159,6 +159,7 @@ def train(
         skip_noise_rl: bool = False,
         skip_stage1_rl: bool = False,
         skip_final_eval: bool = False,
+        final_eval_only: bool = False,
         resume_run_dir: str = "",
         # accuracy constraint params
         stage1_accuracy_tolerance: float = None,
@@ -179,6 +180,22 @@ def train(
     skip_noise_rl = parse_bool_flag(skip_noise_rl, "skip_noise_rl")
     skip_stage1_rl = parse_bool_flag(skip_stage1_rl, "skip_stage1_rl")
     skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
+    final_eval_only = parse_bool_flag(final_eval_only, "final_eval_only")
+    # --final_eval_only 语义：只跑 final eval，不跑任何 RL 搜索阶段。
+    # 等价于自动设置 skip_stage1_rl=True & skip_noise_rl=True & skip_final_eval=False，
+    # 同时尝试从 resume_run_dir / output_dir 下读取之前搜索得到的最优配置作为 final-eval 输入。
+    # 该路径不会安装 graceful-stop 信号、不读写 RL 训练 checkpoint，因此不影响优雅停止与续训。
+    if final_eval_only:
+        if skip_final_eval:
+            raise ValueError(
+                "final_eval_only=True 与 skip_final_eval=True 冲突：无可执行项。"
+            )
+        if not skip_stage1_rl:
+            print("[final_eval_only] 自动设置 skip_stage1_rl=True")
+            skip_stage1_rl = True
+        if not skip_noise_rl:
+            print("[final_eval_only] 自动设置 skip_noise_rl=True")
+            skip_noise_rl = True
     stage1_rl_episodes_specified = parse_bool_flag(
         stage1_rl_episodes_specified, "stage1_rl_episodes_specified"
     )
@@ -246,6 +263,7 @@ def train(
         f"final_eval_repeat_n: {final_eval_repeat_n}\n"
         f"skip_stage1_rl: {skip_stage1_rl}\n"
         f"skip_final_eval: {skip_final_eval}\n"
+        f"final_eval_only: {final_eval_only}\n"
         f"group_by_length: {group_by_length}\n"
         f"wandb_project: {wandb_project}\n"
         f"wandb_run_name: {wandb_run_name}\n"
@@ -621,6 +639,7 @@ def train(
             skip_noise_rl=skip_noise_rl,
             skip_stage1_rl=skip_stage1_rl,
             skip_final_eval=skip_final_eval,
+            final_eval_only=final_eval_only,
             resume_run_dir=resume_run_dir,
             data_path=data_path,
             test_data_mm=val_data_mm,

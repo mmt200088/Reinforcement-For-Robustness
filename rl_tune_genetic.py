@@ -104,6 +104,60 @@ def parse_optional_positive_int(raw_value, flag_name):
     return parse_positive_int(raw_value, flag_name)
 
 
+def _load_prior_ga_search_results(run_dir):
+    """从 run_dir 读取之前 GA 运行保存的 stage1 / stage2 搜索结果。
+
+    GA 会把最好配置写到:
+      - {run_dir}/stage1/ga_search_results.json  → payload['best_config'] = {gelu, softmax, ...}
+      - {run_dir}/stage2_noise/noise_ga_search_results.json → payload['best_config'] = {*_scaling_factors, ...}
+
+    返回 ``(stage1_search_best, stage2_search_best)``，缺失项为 None。
+    不存在文件或解析失败时只打印警告并返回 None，不抛错（final_eval 仍可回退到 json/manual）。
+    """
+    import numpy as np
+
+    stage1_best = None
+    stage2_best = None
+    if not run_dir:
+        return stage1_best, stage2_best
+
+    stage1_path = os.path.join(run_dir, "stage1", "ga_search_results.json")
+    if os.path.isfile(stage1_path):
+        try:
+            with open(stage1_path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            cfg = payload.get("best_config")
+            if cfg and "gelu" in cfg and "softmax" in cfg:
+                stage1_best = {
+                    "gelu": np.asarray(cfg["gelu"], dtype=int),
+                    "softmax": np.asarray(cfg["softmax"], dtype=int),
+                }
+                print(f"[final_eval_only] 加载 Stage-1 搜索结果: {stage1_path}")
+        except Exception as exc:  # pragma: no cover - diagnostics path
+            print(f"[final_eval_only][警告] 读取 {stage1_path} 失败: {exc}")
+
+    stage2_path = os.path.join(run_dir, "stage2_noise", "noise_ga_search_results.json")
+    if os.path.isfile(stage2_path):
+        try:
+            with open(stage2_path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            cfg = payload.get("best_config") or payload.get("best_noise_config")
+            if cfg:
+                stage2_best = {
+                    key: np.asarray(value, dtype=int)
+                    for key, value in cfg.items()
+                    if isinstance(key, str) and key.endswith("scaling_factors")
+                }
+                if stage2_best:
+                    print(f"[final_eval_only] 加载 Stage-2 搜索结果: {stage2_path}")
+                else:
+                    stage2_best = None
+        except Exception as exc:  # pragma: no cover - diagnostics path
+            print(f"[final_eval_only][警告] 读取 {stage2_path} 失败: {exc}")
+
+    return stage1_best, stage2_best
+
+
 def infer_model_total_layers(model):
     config = getattr(model, "config", None)
     for attr_name in ("num_hidden_layers", "n_layer", "num_layers"):
@@ -259,6 +313,7 @@ def train(
         skip_noise_rl: bool = False,
         skip_stage1_rl: bool = False,
         skip_final_eval: bool = False,
+        final_eval_only: bool = False,
         resume_run_dir: str = "",
         # accuracy constraint params
         stage1_accuracy_tolerance: float = None,
@@ -279,6 +334,22 @@ def train(
     skip_noise_rl = parse_bool_flag(skip_noise_rl, "skip_noise_rl")
     skip_stage1_rl = parse_bool_flag(skip_stage1_rl, "skip_stage1_rl")
     skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
+    final_eval_only = parse_bool_flag(final_eval_only, "final_eval_only")
+    # --final_eval_only 语义：只跑 final eval，不跑任何搜索阶段。
+    # 这等价于同时设置 skip_stage1_rl=True & skip_noise_rl=True & skip_final_eval=False，
+    # 但额外支持从 resume_run_dir（或 output_dir）加载之前保存的搜索结果作为 search 源。
+    # 由于不进入任何搜索循环，优雅停止 handler 不会被安装，任何训练 checkpoint 也不会被读写。
+    if final_eval_only:
+        if skip_final_eval:
+            raise ValueError(
+                "final_eval_only=True 与 skip_final_eval=True 冲突：无可执行项。"
+            )
+        if not skip_stage1_rl:
+            print("[final_eval_only] 自动设置 skip_stage1_rl=True")
+            skip_stage1_rl = True
+        if not skip_noise_rl:
+            print("[final_eval_only] 自动设置 skip_noise_rl=True")
+            skip_noise_rl = True
     stage1_ga_generations_specified = parse_bool_flag(
         stage1_ga_generations_specified, "stage1_ga_generations_specified"
     )
@@ -349,6 +420,7 @@ def train(
         f"final_eval_repeat_n: {final_eval_repeat_n}\n"
         f"skip_stage1_rl: {skip_stage1_rl}\n"
         f"skip_final_eval: {skip_final_eval}\n"
+        f"final_eval_only: {final_eval_only}\n"
         f"group_by_length: {group_by_length}\n"
         f"wandb_project: {wandb_project}\n"
         f"wandb_run_name: {wandb_run_name}\n"
@@ -792,6 +864,7 @@ def train(
             skip_noise_rl=skip_noise_rl,
             skip_stage1_rl=skip_stage1_rl,
             skip_final_eval=skip_final_eval,
+            final_eval_only=final_eval_only,
             resume_run_dir=resume_run_dir,
             data_path=data_path,
             test_data_mm=val_data_mm,
@@ -831,6 +904,31 @@ def train(
                 ga_stage2_resume_path = _s2_path
                 print(f"[GA Resume] Found Stage-2 checkpoint: {_s2_path}")
 
+        # ---- final_eval_only: 预先加载之前 GA 搜索得到的最优配置 ----
+        # 仅当 final_eval_only=True 时触发；其它情形维持原行为 None。
+        # 不读取/写入任何 checkpoint 文件，因此不会影响续训练；
+        # 同时此分支进入 final_eval 时会跳过两个搜索阶段，所以也不会安装 graceful-stop 信号，
+        # 无法与优雅停止的 STOP_RL 状态发生冲突。
+        prior_stage1_search_best = None
+        prior_stage2_search_best = None
+        if final_eval_only:
+            _prior_load_dir = resume_run_dir or run_output_dir
+            prior_stage1_search_best, prior_stage2_search_best = _load_prior_ga_search_results(
+                _prior_load_dir
+            )
+            if prior_stage1_search_best is None and final_eval_config_source == "search":
+                print(
+                    "[final_eval_only][提示] 未在 "
+                    f"{_prior_load_dir} 找到 Stage-1 GA 搜索结果。"
+                    "final_eval 将按照 final_eval_config_source 的回退规则选择配置。"
+                )
+            if prior_stage2_search_best is None and final_eval_config_source == "search":
+                print(
+                    "[final_eval_only][提示] 未在 "
+                    f"{_prior_load_dir} 找到 Stage-2 GA 搜索结果。"
+                    "final_eval 将按照 final_eval_config_source 的回退规则选择配置。"
+                )
+
         stage1_search_result = None
         stage1_context = None
         if not importance_evaluator.skip_stage1_rl:
@@ -854,7 +952,7 @@ def train(
         stage1_search_best = (
             stage1_search_result["best_config"]
             if stage1_search_result is not None
-            else None
+            else prior_stage1_search_best
         )
 
         fixed_gelu = None
@@ -919,7 +1017,7 @@ def train(
                     )
                     baseline_noise_config = noise_final_eval_context["baseline_noise_config"]
                     baseline_tot_c = noise_final_eval_context["baseline_tot_c"]
-                    stage2_search_best = None
+                    stage2_search_best = prior_stage2_search_best
                     limit_loss = noise_final_eval_context["limit_loss"]
                     limit_p = noise_final_eval_context["limit_p"]
                     limit_s = noise_final_eval_context["limit_s"]
