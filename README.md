@@ -83,6 +83,7 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--skip-stage1-search` | `rl`、`ga` | — | 跳过 Stage-1 搜索 |
 | `--skip-noise-search` | `rl`、`ga` | — | 跳过 Stage-2 搜索 |
 | `--skip-final-eval` | `rl`、`ga` | — | 一次跳过 Stage-1 + Stage-2 合并的最终评估（取代旧的两个分开 flag） |
+| `--final-eval-only` | `rl`、`ga` | — | 只跑统一最终评估，不跑任何 Stage-1 / Stage-2 搜索；自动等价于同时设置 `--skip-stage1-search` + `--skip-noise-search`（与 `--skip-final-eval` 互斥）。会从 `--resume-run-dir`（若未指定则退回到当前 `output_dir`）下读取之前 GA 写入的 `stage1/ga_search_results.json`、`stage2_noise/noise_ga_search_results.json` 或 RL 写入的 `stage1/stage1_rl_checkpoint.pt`、`stage2_noise/progress/noise_rl_checkpoint.pt` 中的最优配置，作为 `search` 来源喂给最终评估；任一阶段读取失败时按 `--final-eval-source` 的回退规则解析。整个流程不会安装 SIGINT 处理器，也不会读写任何训练 checkpoint，因此与优雅停止（`STOP_RL`）和续训（`--resume-run-dir`）完全隔离 |
 | `--final-eval-source search/json/manual` | `rl`、`ga` | `search` | 统一最终评估来源；`search` 模式下会优先使用已执行阶段的搜索结果，若某阶段被 `skip` 则回退到 `--final-eval-config` 对应阶段配置 |
 | `--final-eval-config PATH` | `rl`、`ga` | 自动 | `json` 模式必填；`search` + 单阶段 `skip` 时也用于缺失阶段回退（文件需包含 stage1/stage2 两块） |
 | `--manual-stage1-gelu JSON_ARRAY` | `rl`、`ga` | — | `manual` 模式下的 Stage-1 GELU 配置 |
