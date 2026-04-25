@@ -261,6 +261,7 @@ STAGE2_LR="1e-4"; S_STAGE2_LR="false"
 SKIP_STAGE1_SEARCH="false"; S_SKIP_STAGE1_SEARCH="false"
 SKIP_NOISE_SEARCH="false"; S_SKIP_NOISE_SEARCH="false"
 SKIP_FINAL_EVAL="false"; S_SKIP_FINAL_EVAL="false"
+FINAL_EVAL_ONLY="false"; S_FINAL_EVAL_ONLY="false"
 FINAL_EVAL_SOURCE="search"; S_FINAL_EVAL_SOURCE="false"
 FINAL_EVAL_CONFIG=""; S_FINAL_EVAL_CONFIG="false"
 MANUAL_STAGE1_GELU=""
@@ -383,6 +384,7 @@ while [ "$#" -gt 0 ]; do
     --skip-stage1-search) SKIP_STAGE1_SEARCH="true"; S_SKIP_STAGE1_SEARCH="true"; shift ;;
     --skip-noise-search) SKIP_NOISE_SEARCH="true"; S_SKIP_NOISE_SEARCH="true"; shift ;;
     --skip-final-eval) SKIP_FINAL_EVAL="true"; S_SKIP_FINAL_EVAL="true"; shift ;;
+    --final-eval-only|--final_eval_only) FINAL_EVAL_ONLY="true"; S_FINAL_EVAL_ONLY="true"; shift ;;
     --final-eval-source) needv "$@"; FINAL_EVAL_SOURCE="$2"; S_FINAL_EVAL_SOURCE="true"; shift 2 ;;
     --final-eval-config) needv "$@"; FINAL_EVAL_CONFIG="$2"; S_FINAL_EVAL_CONFIG="true"; shift 2 ;;
     --manual-stage1-gelu) needv "$@"; MANUAL_STAGE1_GELU="$2"; shift 2 ;;
@@ -477,6 +479,11 @@ case "$STAGE2_FIXED_CONFIG_SOURCE" in ""|stage1_result|search|json|manual) ;; *)
 case "$GENERAL_MODE" in train|infer|search) ;; *) err "general-rl 模式必须是 train、search 或 infer，当前为：$GENERAL_MODE" ;; esac
 [ "$GENERAL_MODE" = "infer" ] && GENERAL_MODE="search"
 
+if [ "$FINAL_EVAL_ONLY" = "true" ]; then
+  SKIP_STAGE1_SEARCH="true"
+  SKIP_NOISE_SEARCH="true"
+fi
+
 if [ "$S_STAGE1_GENERATIONS" = "false" ]; then
   STAGE1_GENERATIONS="$(ga_default_stage1_generations_for_model "$MODEL_TYPE")"
 fi
@@ -496,6 +503,11 @@ is_pos_num "$STAGE2_STABILITY_TOLERANCE" || err "--stage2-stability-tolerance �
 awk -v x="$STAGE2_STABILITY_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-stability-tolerance 必须 < 1（百分比形式如 0.05 表示 5%），当前为：$STAGE2_STABILITY_TOLERANCE"
 is_pos_int "$STAGE2_K_TRIALS" || err "--stage2-k-trials 必须是正整数，当前为：$STAGE2_K_TRIALS"
 is_pos_int "$STAGE2_PROBE_SIZE" || err "--stage2-probe-size 必须是正整数，当前为：$STAGE2_PROBE_SIZE"
+
+[ "$FINAL_EVAL_ONLY" = "false" ] || [ "$SKIP_FINAL_EVAL" = "false" ] || err "--final-eval-only 与 --skip-final-eval 冲突。"
+if [ "$FINAL_EVAL_ONLY" = "true" ] && [ "$SEARCH_ALGORITHM" != "rl" ] && [ "$SEARCH_ALGORITHM" != "ga" ]; then
+  err "--final-eval-only 仅支持普通 rl / ga 模式。"
+fi
 
 case "$DATASET" in
   mrpc|sst2|stsb|cola|qnli|rte|wnli) DATA_PATH="$DATASET" ;;
@@ -722,13 +734,13 @@ else
     fi
   fi
   if [ "$FINAL_EVAL_SOURCE" = "search" ]; then
-    if [ "$SKIP_STAGE1_SEARCH" = "true" ] && { [ "$SKIP_NOISE_SEARCH" = "false" ] || [ "$SKIP_FINAL_EVAL" = "false" ]; }; then
+    if [ "$FINAL_EVAL_ONLY" != "true" ] && [ "$SKIP_STAGE1_SEARCH" = "true" ] && { [ "$SKIP_NOISE_SEARCH" = "false" ] || [ "$SKIP_FINAL_EVAL" = "false" ]; }; then
       [ -f "$FINAL_EVAL_CONFIG" ] || err "--final-eval-source=search 且跳过 Stage-1 时，需要 --final-eval-config 提供 Stage-1 回退配置。未找到文件：$FINAL_EVAL_CONFIG"
     fi
-    if [ "$SKIP_NOISE_SEARCH" = "true" ] && [ "$SKIP_FINAL_EVAL" = "false" ]; then
+    if [ "$FINAL_EVAL_ONLY" != "true" ] && [ "$SKIP_NOISE_SEARCH" = "true" ] && [ "$SKIP_FINAL_EVAL" = "false" ]; then
       [ -f "$FINAL_EVAL_CONFIG" ] || err "--final-eval-source=search 且跳过 Stage-2 并保留最终评估时，需要 --final-eval-config 提供 Stage-2 回退配置。未找到文件：$FINAL_EVAL_CONFIG"
     fi
-    [ "$SKIP_STAGE1_SEARCH" = "false" ] || [ "$SKIP_NOISE_SEARCH" = "false" ] || [ "$SKIP_FINAL_EVAL" = "true" ] || err "当 Stage-1 与 Stage-2 搜索都跳过且保留最终评估时，不能使用 --final-eval-source=search。"
+    [ "$SKIP_STAGE1_SEARCH" = "false" ] || [ "$SKIP_NOISE_SEARCH" = "false" ] || [ "$SKIP_FINAL_EVAL" = "true" ] || [ "$FINAL_EVAL_ONLY" = "true" ] || err "final-eval-source=search cannot be used when both searches are skipped unless --final-eval-only is set."
   fi
   if [ "$S_FINAL_EVAL_SOURCE" = "true" ]; then
     [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$FINAL_EVAL_SOURCE" = "search" ] || err "执行 Stage-1 / Stage-2 搜索时，--final-eval-source 只能是 search。"
@@ -1043,9 +1055,9 @@ else
     RL_STAGE2_EPISODES_SPECIFIED="$S_STAGE2_EPISODES"
     [ "$SKIP_STAGE1_SEARCH" = "true" ] && RL_STAGE1_EPISODES_SPECIFIED="false"
     [ "$SKIP_NOISE_SEARCH" = "true" ] && RL_STAGE2_EPISODES_SPECIFIED="false"
-    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
+    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
   else
-    CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
+    CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
     [ "$S_STAGE1_GENERATIONS" = "true" ] && CMD+=(--stage1_ga_generations "$STAGE1_GENERATIONS" --stage1_ga_generations_specified "true")
     [ "$S_STAGE2_GENERATIONS" = "true" ] && CMD+=(--stage2_ga_generations "$STAGE2_GENERATIONS" --stage2_ga_generations_specified "true")
   fi
@@ -1085,6 +1097,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   show "跳过 Stage-1 搜索" "$(boolzh "$SKIP_STAGE1_SEARCH")" "$S_SKIP_STAGE1_SEARCH"
   show "跳过 Stage-2 搜索" "$(boolzh "$SKIP_NOISE_SEARCH")" "$S_SKIP_NOISE_SEARCH"
   show "跳过最终评估" "$(boolzh "$SKIP_FINAL_EVAL")" "$S_SKIP_FINAL_EVAL"
+  show "仅运行最终评估" "$(boolzh "$FINAL_EVAL_ONLY")" "$S_FINAL_EVAL_ONLY"
 elif [ "$SEARCH_ALGORITHM" = "ga" ]; then
   show "Stage-1 迭代代数" "$STAGE1_GENERATIONS" "$S_STAGE1_GENERATIONS"
   show "Stage-2 迭代代数" "$STAGE2_GENERATIONS" "$S_STAGE2_GENERATIONS"
@@ -1093,6 +1106,7 @@ elif [ "$SEARCH_ALGORITHM" = "ga" ]; then
   show "跳过 Stage-1 搜索" "$(boolzh "$SKIP_STAGE1_SEARCH")" "$S_SKIP_STAGE1_SEARCH"
   show "跳过 Stage-2 搜索" "$(boolzh "$SKIP_NOISE_SEARCH")" "$S_SKIP_NOISE_SEARCH"
   show "跳过最终评估" "$(boolzh "$SKIP_FINAL_EVAL")" "$S_SKIP_FINAL_EVAL"
+  show "仅运行最终评估" "$(boolzh "$FINAL_EVAL_ONLY")" "$S_FINAL_EVAL_ONLY"
 elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   show "对比配置模式" "$COMPARE_CONFIG_MODE" "$S_COMPARE_CONFIG_MODE"
   show "Stage-2 对比重复次数" "$STAGE2_COMPARE_REPEATS" "$S_STAGE2_COMPARE_REPEATS"
