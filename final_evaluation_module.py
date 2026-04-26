@@ -341,6 +341,9 @@ class UnifiedFinalEvaluationModule:
             ev.log("Random comparison groups are disabled for this final-eval run.")
             random_results = []
 
+        all_results = [baseline_result, optimized_result] + list(random_results)
+        self._attach_relative_metrics(baseline_result, all_results, num_metrics)
+
         # Summaries / logs / outputs.
         summary = self._summarize_random_results(optimized_result, random_results, num_metrics)
         self._log_performance_table(
@@ -376,6 +379,15 @@ class UnifiedFinalEvaluationModule:
             random_results,
             summary,
         )
+        variance_plot_path = None
+        if type(self)._plot_results is UnifiedFinalEvaluationModule._plot_results:
+            variance_plot_path = self._plot_variance_results(
+                metric_short_names,
+                num_metrics,
+                baseline_result,
+                optimized_result,
+                random_results,
+            )
 
         ev.apply_configuration(opt_gelu, opt_softmax)
         ev.clear_input_noise_configuration()
@@ -394,6 +406,7 @@ class UnifiedFinalEvaluationModule:
             "optimized_repeat": optimized_repeat,
             "summary_path": summary_path,
             "plot_path": plot_path,
+            "variance_plot_path": variance_plot_path,
         }
 
     # ------------------------------------------------------------------
@@ -991,6 +1004,68 @@ class UnifiedFinalEvaluationModule:
     # Summary / logging / plotting / persistence
     # ------------------------------------------------------------------
 
+    def _attach_relative_metrics(self, baseline, results, num_metrics):
+        base_loss = float(baseline["loss"])
+        base_p = float(baseline["p"])
+        base_s = float(baseline["s"])
+        for result in results:
+            result["total_cost"] = self._combined_total_cost(result)
+            result["loss_delta_vs_baseline"] = float(result["loss"] - base_loss)
+            result["p_delta_vs_baseline"] = float(result["p"] - base_p)
+            if num_metrics > 1:
+                result["s_delta_vs_baseline"] = float(result["s"] - base_s)
+            for metric_key in ("loss", "p", "s"):
+                std_key = f"{metric_key}_std"
+                if std_key in result:
+                    std_value = float(result[std_key])
+                    result[f"{metric_key}_var"] = float(std_value * std_value)
+
+    @staticmethod
+    def _combined_total_cost(result):
+        if result.get("show_cost_as_na"):
+            return None
+        stage1 = result.get("stage1_tot_c")
+        stage2 = result.get("stage2_tot_c")
+        if stage1 is None or stage2 is None:
+            return None
+        return float(stage1) + float(stage2)
+
+    @staticmethod
+    def _format_fixed(value, width=8, precision=4):
+        if value is None:
+            return f"{'N/A':<{width}}"
+        try:
+            if not np.isfinite(float(value)):
+                return f"{'N/A':<{width}}"
+            return f"{float(value):<{width}.{precision}f}"
+        except Exception:
+            return f"{'N/A':<{width}}"
+
+    @staticmethod
+    def _format_sci(value, width=10):
+        if value is None:
+            return f"{'N/A':<{width}}"
+        try:
+            if not np.isfinite(float(value)):
+                return f"{'N/A':<{width}}"
+            return f"{float(value):<{width}.2e}"
+        except Exception:
+            return f"{'N/A':<{width}}"
+
+    @staticmethod
+    def _mean_float_or_none(values):
+        clean = [float(value) for value in values if value is not None and np.isfinite(float(value))]
+        if not clean:
+            return None
+        return float(np.mean(clean))
+
+    @staticmethod
+    def _std_float_or_none(values):
+        clean = [float(value) for value in values if value is not None and np.isfinite(float(value))]
+        if not clean:
+            return None
+        return float(np.std(clean))
+
     def _summarize_random_results(self, selected, random_results, num_metrics):
         summary: Dict = {"overall": {}, "by_family": {}}
         if not random_results:
@@ -1023,9 +1098,46 @@ class UnifiedFinalEvaluationModule:
                 "loss_std": float(np.std([it["loss"] for it in items])),
                 "primary_metric_mean": float(np.mean([it["p"] for it in items])),
                 "primary_metric_std": float(np.std([it["p"] for it in items])),
+                "secondary_metric_mean": (
+                    float(np.mean([it["s"] for it in items]))
+                    if num_metrics > 1
+                    else None
+                ),
+                "secondary_metric_std": (
+                    float(np.std([it["s"] for it in items]))
+                    if num_metrics > 1
+                    else None
+                ),
+                "loss_delta_mean": float(
+                    np.mean([it.get("loss_delta_vs_baseline", 0.0) for it in items])
+                ),
+                "primary_metric_delta_mean": float(
+                    np.mean([it.get("p_delta_vs_baseline", 0.0) for it in items])
+                ),
+                "secondary_metric_delta_mean": (
+                    float(np.mean([it.get("s_delta_vs_baseline", 0.0) for it in items]))
+                    if num_metrics > 1
+                    else None
+                ),
+                "total_cost_mean": self._mean_float_or_none(
+                    [it.get("total_cost") for it in items]
+                ),
+                "total_cost_std": self._std_float_or_none(
+                    [it.get("total_cost") for it in items]
+                ),
                 "stage1_cost_mean": float(np.mean([it["stage1_tot_c"] for it in items])),
                 "stage2_cost_mean": float(np.mean([it["stage2_tot_c"] for it in items])),
             }
+            for metric_key in ("loss", "p", "s"):
+                var_values = [
+                    float(it[f"{metric_key}_var"])
+                    for it in items
+                    if f"{metric_key}_var" in it
+                ]
+                if var_values:
+                    summary["by_family"][family][f"{metric_key}_eval_variance_mean"] = float(
+                        np.mean(var_values)
+                    )
             all_feasible.extend(feasible)
             all_loss_win.extend(loss_win)
             all_primary_win.extend(p_win)
@@ -1041,6 +1153,22 @@ class UnifiedFinalEvaluationModule:
                 float(np.mean(all_secondary_win)) if all_secondary_win else None
             ),
             "dominance_rate": float(np.mean(all_dom)) if all_dom else 0.0,
+            "loss_delta_mean": self._mean_float_or_none(
+                [it.get("loss_delta_vs_baseline") for it in random_results]
+            ),
+            "primary_metric_delta_mean": self._mean_float_or_none(
+                [it.get("p_delta_vs_baseline") for it in random_results]
+            ),
+            "secondary_metric_delta_mean": (
+                self._mean_float_or_none(
+                    [it.get("s_delta_vs_baseline") for it in random_results]
+                )
+                if num_metrics > 1
+                else None
+            ),
+            "total_cost_mean": self._mean_float_or_none(
+                [it.get("total_cost") for it in random_results]
+            ),
         }
         return summary
 
@@ -1053,13 +1181,17 @@ class UnifiedFinalEvaluationModule:
             header = (
                 f"{'Method':<25} | {'OK':<3} | "
                 f"{'Loss':<8} {metric_short_names[0]:<8} | "
-                f"{'S1 C':<7} {'S2 C':<7} {'S2 Spd':<7}"
+                f"{'dLoss':<8} {('d' + metric_short_names[0]):<8} | "
+                f"{'VarLoss':<10} {('Var' + metric_short_names[0]):<10} | "
+                f"{'TotalC':<8}"
             )
         else:
             header = (
                 f"{'Method':<25} | {'OK':<3} | "
                 f"{'Loss':<8} {metric_short_names[0]:<8} {metric_short_names[1]:<8} | "
-                f"{'S1 C':<7} {'S2 C':<7} {'S2 Spd':<7}"
+                f"{'dLoss':<8} {('d' + metric_short_names[0]):<8} {('d' + metric_short_names[1]):<8} | "
+                f"{'VarLoss':<10} {('Var' + metric_short_names[0]):<10} {('Var' + metric_short_names[1]):<10} | "
+                f"{'TotalC':<8}"
             )
         ev.log("-" * len(header))
         ev.log(header)
@@ -1073,19 +1205,33 @@ class UnifiedFinalEvaluationModule:
 
     def _format_row(self, result, num_metrics):
         ok = "Y" if result["feasible"] else "N"
-        s2_na = result.get("show_cost_as_na") or result.get("stage2_tot_c") in (None, 0.0) and result.get("stage2_breakdown") is None
-        s2c = "N/A" if s2_na else f"{result['stage2_tot_c']:<7.2f}"
-        s2spd = "N/A" if s2_na or result.get("stage2_tot_spd") is None else f"{result['stage2_tot_spd']:<7.2f}"
+        total_cost = self._format_fixed(result.get("total_cost"), width=8, precision=2)
+        loss_delta = self._format_fixed(
+            result.get("loss_delta_vs_baseline"), width=8, precision=4
+        )
+        p_delta = self._format_fixed(
+            result.get("p_delta_vs_baseline"), width=8, precision=4
+        )
+        loss_var = self._format_sci(result.get("loss_var"), width=10)
+        p_var = self._format_sci(result.get("p_var"), width=10)
         if num_metrics == 1:
             return (
                 f"{result['name']:<25} | {ok:<3} | "
                 f"{result['loss']:<8.4f} {result['p']:<8.4f} | "
-                f"{result['stage1_tot_c']:<7.2f} {s2c} {s2spd}"
+                f"{loss_delta} {p_delta} | "
+                f"{loss_var} {p_var} | "
+                f"{total_cost}"
             )
+        s_delta = self._format_fixed(
+            result.get("s_delta_vs_baseline"), width=8, precision=4
+        )
+        s_var = self._format_sci(result.get("s_var"), width=10)
         return (
             f"{result['name']:<25} | {ok:<3} | "
             f"{result['loss']:<8.4f} {result['p']:<8.4f} {result['s']:<8.4f} | "
-            f"{result['stage1_tot_c']:<7.2f} {s2c} {s2spd}"
+            f"{loss_delta} {p_delta} {s_delta} | "
+            f"{loss_var} {p_var} {s_var} | "
+            f"{total_cost}"
         )
 
     def _log_random_summary(self, metric_short_names, summary, selected):
@@ -1101,12 +1247,19 @@ class UnifiedFinalEvaluationModule:
             f"constraint_ok={overall['feasible_rate']:.2%}, "
             f"selected_better_loss={overall['loss_win_rate']:.2%}, "
             f"selected_better_{metric_short_names[0]}={overall['primary_win_rate']:.2%}, "
-            f"selected_dominates={overall['dominance_rate']:.2%}"
+            f"selected_dominates={overall['dominance_rate']:.2%}, "
+            f"mean_dLoss={self._format_fixed(overall.get('loss_delta_mean'), width=1).strip()}, "
+            f"mean_d{metric_short_names[0]}="
+            f"{self._format_fixed(overall.get('primary_metric_delta_mean'), width=1).strip()}, "
+            f"mean_totalC="
+            f"{self._format_fixed(overall.get('total_cost_mean'), width=1, precision=2).strip()}"
         )
         if overall.get("secondary_win_rate") is not None:
             ev.log(
                 f"  Overall selected_better_{metric_short_names[1]}="
-                f"{overall['secondary_win_rate']:.2%}"
+                f"{overall['secondary_win_rate']:.2%}, "
+                f"mean_d{metric_short_names[1]}="
+                f"{self._format_fixed(overall.get('secondary_metric_delta_mean'), width=1).strip()}"
             )
         for family, fs in summary.get("by_family", {}).items():
             msg = (
@@ -1114,10 +1267,29 @@ class UnifiedFinalEvaluationModule:
                 f"ok={fs['feasible_rate']:.2%} "
                 f"loss_win={fs['loss_win_rate']:.2%} "
                 f"{metric_short_names[0]}_win={fs['primary_win_rate']:.2%} "
-                f"dominates={fs['dominance_rate']:.2%}"
+                f"dominates={fs['dominance_rate']:.2%} "
+                f"dLoss={self._format_fixed(fs.get('loss_delta_mean'), width=1).strip()} "
+                f"d{metric_short_names[0]}="
+                f"{self._format_fixed(fs.get('primary_metric_delta_mean'), width=1).strip()} "
+                f"totalC={self._format_fixed(fs.get('total_cost_mean'), width=1, precision=2).strip()}"
             )
             if fs.get("secondary_win_rate") is not None:
-                msg += f" {metric_short_names[1]}_win={fs['secondary_win_rate']:.2%}"
+                msg += (
+                    f" {metric_short_names[1]}_win={fs['secondary_win_rate']:.2%}"
+                    f" d{metric_short_names[1]}="
+                    f"{self._format_fixed(fs.get('secondary_metric_delta_mean'), width=1).strip()}"
+                )
+            eval_var_parts = [
+                f"varLoss={self._format_sci(fs.get('loss_eval_variance_mean'), width=1).strip()}",
+                f"var{metric_short_names[0]}="
+                f"{self._format_sci(fs.get('p_eval_variance_mean'), width=1).strip()}",
+            ]
+            if num_metrics > 1:
+                eval_var_parts.append(
+                    f"var{metric_short_names[1]}="
+                    f"{self._format_sci(fs.get('s_eval_variance_mean'), width=1).strip()}"
+                )
+            msg += " " + " ".join(eval_var_parts)
             ev.log(msg)
 
     def _plot_results(
@@ -1135,73 +1307,69 @@ class UnifiedFinalEvaluationModule:
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
 
-            fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+            fig, axes = plt.subplots(2, 2, figsize=(16, 11), constrained_layout=True)
             fig.suptitle(
                 f"Unified Final Evaluation ({self.evaluator.dataset_key.upper()})",
                 fontsize=14,
                 fontweight="bold",
             )
-            family_colors = {
-                "Stage1Budget": "#72B7B2",
-                "Stage2Budget": "#EECA3B",
-                "Perm": "#4C78A8",
-                "Equiv": "#F58518",
-                "Budget": "#54A24B",
-            }
+            family_colors = self._family_colors()
             grouped: Dict[str, list] = {}
             for r in random_results:
                 grouped.setdefault(r["family"], []).append(r)
 
-            # Loss vs stage2 cost
-            ax = axes[0, 0]
-            for fam, items in grouped.items():
-                ax.scatter(
-                    [it["stage2_tot_c"] for it in items],
-                    [it["loss"] for it in items],
-                    s=40, alpha=0.75, label=fam,
-                    color=family_colors.get(fam, "#999999"),
-                )
-            ax.scatter(optimized["stage2_tot_c"], optimized["loss"],
-                       marker="*", s=200, color="#E45756", label="Optimized")
-            ax.set_title("Loss vs Stage-2 Cost")
-            ax.set_xlabel("Stage-2 Noise Cost")
-            ax.set_ylabel("Loss")
-            ax.grid(True, alpha=0.3)
-            ax.legend(loc="best", fontsize=8)
+            metric_panels = [
+                ("Loss", "loss"),
+                (metric_short_names[0], "p"),
+                (
+                    metric_short_names[1] if num_metrics > 1 else "Time (ms)",
+                    "s" if num_metrics > 1 else "time_ms",
+                ),
+            ]
 
-            # Primary metric vs stage2 cost
-            ax = axes[0, 1]
-            for fam, items in grouped.items():
-                ax.scatter(
-                    [it["stage2_tot_c"] for it in items],
-                    [it["p"] for it in items],
-                    s=40, alpha=0.75, label=fam,
-                    color=family_colors.get(fam, "#999999"),
-                )
-            ax.scatter(optimized["stage2_tot_c"], optimized["p"],
-                       marker="*", s=200, color="#E45756", label="Optimized")
-            ax.set_title(f"{metric_short_names[0]} vs Stage-2 Cost")
-            ax.set_xlabel("Stage-2 Noise Cost")
-            ax.set_ylabel(metric_short_names[0])
-            ax.grid(True, alpha=0.3)
-            ax.legend(loc="best", fontsize=8)
-
-            # Stage1 cost vs loss
-            ax = axes[1, 0]
-            for fam, items in grouped.items():
-                ax.scatter(
-                    [it["stage1_tot_c"] for it in items],
-                    [it["loss"] for it in items],
-                    s=40, alpha=0.75, label=fam,
-                    color=family_colors.get(fam, "#999999"),
-                )
-            ax.scatter(optimized["stage1_tot_c"], optimized["loss"],
-                       marker="*", s=200, color="#E45756", label="Optimized")
-            ax.set_title("Loss vs Stage-1 Cost")
-            ax.set_xlabel("Stage-1 Cost")
-            ax.set_ylabel("Loss")
-            ax.grid(True, alpha=0.3)
-            ax.legend(loc="best", fontsize=8)
+            for ax, (label, key) in zip(list(axes.flat)[:3], metric_panels):
+                panel_xs = []
+                for fam in self._ordered_families(grouped):
+                    items = grouped[fam]
+                    xs = [it.get("total_cost") for it in items if it.get("total_cost") is not None]
+                    ys = [it[key] for it in items if it.get("total_cost") is not None]
+                    if xs:
+                        panel_xs.extend(xs)
+                        ax.scatter(
+                            xs,
+                            ys,
+                            s=40,
+                            alpha=0.75,
+                            label=fam,
+                            color=family_colors.get(fam, "#999999"),
+                        )
+                if optimized.get("total_cost") is not None:
+                    panel_xs.append(optimized["total_cost"])
+                    ax.scatter(
+                        optimized["total_cost"],
+                        optimized[key],
+                        marker="*",
+                        s=230,
+                        color="#E45756",
+                        label="Optimized",
+                        zorder=5,
+                    )
+                if key in baseline:
+                    ax.axhline(
+                        baseline[key],
+                        color="#666666",
+                        linestyle="--",
+                        linewidth=1.2,
+                        alpha=0.75,
+                        label="Baseline",
+                    )
+                ax.set_title(f"{label} vs Total Cost")
+                ax.set_xlabel("Total Cost (Stage-1 + Stage-2)")
+                ax.set_ylabel(label)
+                ax.grid(True, alpha=0.3)
+                self._set_numeric_axis_limits(ax, panel_xs)
+                ax.margins(x=0.08, y=0.08)
+                ax.legend(loc="best", fontsize=8)
 
             # Summary bar chart
             ax = axes[1, 1]
@@ -1226,7 +1394,6 @@ class UnifiedFinalEvaluationModule:
                 ax.text(0.5, 0.5, "No random results", ha="center", va="center")
                 ax.set_title("Random Baseline Summary")
 
-            plt.tight_layout()
             plot_path = os.path.join(
                 self.results_dir,
                 f"final_eval_comparison_{self.evaluator.dataset_key}.png",
@@ -1237,6 +1404,203 @@ class UnifiedFinalEvaluationModule:
             return plot_path
         except Exception as exc:
             self.evaluator.log(f"[Warning] Failed to plot unified final-eval: {exc}")
+            return None
+
+    @staticmethod
+    def _family_colors():
+        return {
+            "Stage1Budget": "#72B7B2",
+            "Stage2Budget": "#EECA3B",
+            "Perm": "#4C78A8",
+            "Equiv": "#F58518",
+            "Budget": "#54A24B",
+            "Optimized": "#E45756",
+        }
+
+    def _ordered_families(self, grouped):
+        preferred = list(self._family_colors().keys())
+        ordered = [family for family in preferred if family in grouped]
+        ordered.extend(sorted(family for family in grouped.keys() if family not in preferred))
+        return ordered
+
+    @staticmethod
+    def _set_numeric_axis_limits(ax, values):
+        clean = [float(value) for value in values if value is not None and np.isfinite(float(value))]
+        if not clean:
+            return
+        lo = min(clean)
+        hi = max(clean)
+        if lo == hi:
+            pad = max(0.5, abs(lo) * 0.01)
+            ax.set_xlim(lo - pad, hi + pad)
+        else:
+            pad = (hi - lo) * 0.08
+            ax.set_xlim(lo - pad, hi + pad)
+
+    def _plot_variance_results(
+        self,
+        metric_short_names,
+        num_metrics,
+        baseline,
+        optimized,
+        random_results,
+    ):
+        try:
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            family_colors = self._family_colors()
+            grouped: Dict[str, list] = {"Optimized": [optimized]}
+            for result in random_results:
+                grouped.setdefault(result["family"], []).append(result)
+            families = self._ordered_families(grouped)
+
+            fig, axes = plt.subplots(2, 2, figsize=(16, 11), constrained_layout=True)
+            fig.suptitle(
+                f"Final Evaluation Deltas and Variance ({self.evaluator.dataset_key.upper()})",
+                fontsize=14,
+                fontweight="bold",
+            )
+
+            delta_panels = [
+                ("Loss delta vs Baseline", "loss_delta_vs_baseline", "Delta Loss"),
+                (
+                    f"{metric_short_names[0]} delta vs Baseline",
+                    "p_delta_vs_baseline",
+                    f"Delta {metric_short_names[0]}",
+                ),
+                (
+                    f"{metric_short_names[1]} delta vs Baseline"
+                    if num_metrics > 1
+                    else "Time delta vs Baseline",
+                    "s_delta_vs_baseline" if num_metrics > 1 else "time_delta_vs_baseline",
+                    f"Delta {metric_short_names[1]}" if num_metrics > 1 else "Delta Time (ms)",
+                ),
+            ]
+
+            if num_metrics == 1:
+                base_time = float(baseline.get("time_ms", 0.0))
+                for result in [optimized] + list(random_results):
+                    result["time_delta_vs_baseline"] = float(result.get("time_ms", 0.0) - base_time)
+
+            for ax, (title, key, ylabel) in zip(list(axes.flat)[:3], delta_panels):
+                data = []
+                labels = []
+                colors = []
+                for family in families:
+                    vals = [
+                        float(item[key])
+                        for item in grouped[family]
+                        if key in item and np.isfinite(float(item[key]))
+                    ]
+                    if not vals:
+                        continue
+                    data.append(vals)
+                    labels.append(family)
+                    colors.append(family_colors.get(family, "#999999"))
+                if data:
+                    try:
+                        box = ax.boxplot(
+                            data,
+                            tick_labels=labels,
+                            patch_artist=True,
+                            showfliers=True,
+                        )
+                    except TypeError:
+                        box = ax.boxplot(
+                            data,
+                            labels=labels,
+                            patch_artist=True,
+                            showfliers=True,
+                        )
+                    for patch, color in zip(box["boxes"], colors):
+                        patch.set_facecolor(color)
+                        patch.set_alpha(0.55)
+                    ax.axhline(0.0, color="#666666", linestyle="--", linewidth=1.0)
+                    ax.set_xticklabels(labels, rotation=20, ha="right")
+                else:
+                    ax.text(0.5, 0.5, "No delta data", ha="center", va="center")
+                ax.set_title(title)
+                ax.set_ylabel(ylabel)
+                ax.grid(True, axis="y", alpha=0.3)
+
+            ax = axes[1, 1]
+            variance_specs = [
+                ("Loss", "loss_var"),
+                (metric_short_names[0], "p_var"),
+            ]
+            if num_metrics > 1:
+                variance_specs.append((metric_short_names[1], "s_var"))
+
+            variance_rows = []
+            for family in families:
+                row = []
+                has_any = False
+                for _, key in variance_specs:
+                    vals = [
+                        float(item[key])
+                        for item in grouped[family]
+                        if key in item and np.isfinite(float(item[key]))
+                    ]
+                    if vals:
+                        row.append(float(np.mean(vals)))
+                        has_any = True
+                    else:
+                        row.append(0.0)
+                if has_any:
+                    variance_rows.append((family, row))
+
+            if variance_rows:
+                x = np.arange(len(variance_rows))
+                width = min(0.25, 0.75 / max(1, len(variance_specs)))
+                for idx, (metric_label, _) in enumerate(variance_specs):
+                    offset = (idx - (len(variance_specs) - 1) / 2.0) * width
+                    ax.bar(
+                        x + offset,
+                        [row[idx] for _, row in variance_rows],
+                        width=width,
+                        label=metric_label,
+                    )
+                ax.set_xticks(x)
+                ax.set_xticklabels([family for family, _ in variance_rows], rotation=20, ha="right")
+                ax.set_title("Mean Repeat-Eval Variance by Group")
+                ax.set_ylabel("Variance")
+                ax.grid(True, axis="y", alpha=0.3)
+                ax.legend(loc="best", fontsize=8)
+            else:
+                metric_keys = [("Loss", "loss"), (metric_short_names[0], "p")]
+                if num_metrics > 1:
+                    metric_keys.append((metric_short_names[1], "s"))
+                x = np.arange(len(families))
+                width = min(0.25, 0.75 / max(1, len(metric_keys)))
+                for idx, (metric_label, key) in enumerate(metric_keys):
+                    values = [
+                        float(np.var([item[key] for item in grouped[family]]))
+                        if len(grouped[family]) > 1
+                        else 0.0
+                        for family in families
+                    ]
+                    offset = (idx - (len(metric_keys) - 1) / 2.0) * width
+                    ax.bar(x + offset, values, width=width, label=metric_label)
+                ax.set_xticks(x)
+                ax.set_xticklabels(families, rotation=20, ha="right")
+                ax.set_title("Group Result Variance (repeat variance unavailable)")
+                ax.set_ylabel("Variance across sampled configs")
+                ax.grid(True, axis="y", alpha=0.3)
+                ax.legend(loc="best", fontsize=8)
+
+            plot_path = os.path.join(
+                self.results_dir,
+                f"final_eval_variance_{self.evaluator.dataset_key}.png",
+            )
+            plt.savefig(plot_path, dpi=180)
+            plt.close(fig)
+            self.evaluator.log(f"Unified final-eval variance plot saved to: {plot_path}")
+            return plot_path
+        except Exception as exc:
+            self.evaluator.log(f"[Warning] Failed to plot unified final-eval variance: {exc}")
             return None
 
     def _save_results_json(
@@ -1288,11 +1652,13 @@ class UnifiedFinalEvaluationModule:
             "random_results": [self._json_ready(r) for r in random_results],
             "random_summary": summary,
             "evaluation_protocol": {
-                "version": 2,
+                "version": 3,
                 "baseline": "single_clean_validation_full",
                 "noisy_groups": "repeated_mean" if self.repeat_n > 1 else "single",
                 "noisy_repeat_n": int(self.repeat_n),
                 "random_groups": "enabled" if self.include_random_groups else "disabled",
+                "relative_metrics": "delta_vs_baseline",
+                "cost_axis": "total_cost_stage1_plus_stage2",
             },
         }
         if baseline_repeat is not None:
