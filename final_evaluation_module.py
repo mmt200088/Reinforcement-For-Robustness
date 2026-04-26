@@ -208,6 +208,46 @@ class UnifiedFinalEvaluationModule:
         # Optimized group + random groups — all noise-evaluated.
         # ------------------------------------------------------------------
         eval_cache: Dict = {}
+        repeat_cache: Dict = {}
+        variance_cache: Dict = {}
+
+        def _pack_noise_summary(summary):
+            return {
+                "trials": [
+                    {
+                        "trial": i + 1,
+                        "loss": float(t["loss"]),
+                        "p": float(t["p"]),
+                        "s": float(t["s"]),
+                        "time_ms": float(t["time_ms"]),
+                    }
+                    for i, t in enumerate(summary["trials"])
+                ],
+                "stats": {
+                    k: (float(v) if isinstance(v, (int, float, np.integer, np.floating)) else v)
+                    for k, v in summary.items()
+                    if k != "trials"
+                },
+            }
+
+        def _log_noise_variance_stats(label, variance_eval):
+            stats = variance_eval["stats"]
+            mode = stats.get("evaluation_mode", "repeated_validation_full")
+            probe_suffix = (
+                f", probe_size={int(stats['probe_size'])}"
+                if stats.get("probe_size") is not None
+                else ""
+            )
+            ev.log(
+                f"  Variance[{label}] {mode}: N={int(stats['n'])}{probe_suffix}, "
+                f"VarLoss={float(stats['loss_std']) ** 2:.2e}, "
+                f"Var{metric_short_names[0]}={float(stats['p_std']) ** 2:.2e}"
+                + (
+                    f", Var{metric_short_names[1]}={float(stats['s_std']) ** 2:.2e}"
+                    if num_metrics > 1
+                    else ""
+                )
+            )
 
         def _noise_eval(gelu, softmax, noise_cfg, label, want_repeat):
             sig = (
@@ -218,29 +258,23 @@ class UnifiedFinalEvaluationModule:
                     for k in NOISE_SCALING_FACTOR_KEYS
                 ),
             )
+            if sig in eval_cache:
+                return eval_cache[sig], repeat_cache.get(sig), variance_cache.get(sig)
+
             repeat = None
+            variance_repeat = None
             if want_repeat and self.repeat_n > 1:
                 ev.log(f"\n--- {label} : N={self.repeat_n} 次重复评估 ---")
                 summary = ev.evaluate_model_with_attention_noise_repeated(
-                    gelu, softmax, repeats=self.repeat_n, use_train=False, **noise_cfg
+                    gelu,
+                    softmax,
+                    repeats=self.repeat_n,
+                    use_train=False,
+                    split="validation_full",
+                    **noise_cfg,
                 )
-                repeat = {
-                    "trials": [
-                        {
-                            "trial": i + 1,
-                            "loss": float(t["loss"]),
-                            "p": float(t["p"]),
-                            "s": float(t["s"]),
-                            "time_ms": float(t["time_ms"]),
-                        }
-                        for i, t in enumerate(summary["trials"])
-                    ],
-                    "stats": {
-                        k: (float(v) if not isinstance(v, str) else v)
-                        for k, v in summary.items()
-                        if k != "trials"
-                    },
-                }
+                repeat = _pack_noise_summary(summary)
+                variance_repeat = repeat
                 stats = repeat["stats"]
                 ev.log(
                     f"  统计: Loss={stats['loss_mean']:.4f}±{stats['loss_std']:.6f} "
@@ -258,18 +292,47 @@ class UnifiedFinalEvaluationModule:
                     "time_ms": float(stats.get("time_mean_ms", 0.0)),
                 }
                 eval_cache[sig] = cached
-                return cached, repeat
-            if sig in eval_cache:
-                return eval_cache[sig], repeat
+                repeat_cache[sig] = repeat
+                variance_cache[sig] = variance_repeat
+                return cached, repeat, variance_repeat
             loss, p, s, t = ev.evaluate_model_with_attention_noise(
-                gelu, softmax, use_train=False, **noise_cfg
+                gelu, softmax, use_train=False, split="validation_full", **noise_cfg
             )
             cached = {"loss": float(loss), "p": float(p), "s": float(s), "time_ms": float(t)}
             eval_cache[sig] = cached
-            return cached, repeat
+            if want_repeat:
+                variance_n = self._variance_repeat_count()
+                ev.log(
+                    f"\n--- {label} : variance probe N={variance_n} "
+                    "(single final metric is kept) ---"
+                )
+                if hasattr(ev, "evaluate_model_with_attention_noise_segmented"):
+                    summary = ev.evaluate_model_with_attention_noise_segmented(
+                        gelu,
+                        softmax,
+                        segments=variance_n,
+                        use_train=False,
+                        split="validation_full",
+                        **noise_cfg,
+                    )
+                else:
+                    summary = ev.evaluate_model_with_attention_noise_repeated(
+                        gelu,
+                        softmax,
+                        repeats=variance_n,
+                        use_train=False,
+                        split="validation_full",
+                        **noise_cfg,
+                    )
+                variance_repeat = _pack_noise_summary(summary)
+                variance_cache[sig] = variance_repeat
+                _log_noise_variance_stats(label, variance_repeat)
+            return cached, repeat, variance_repeat
 
         def _build_noise_result(name, family, gelu, softmax, noise_cfg, want_repeat=False):
-            single, repeat = _noise_eval(gelu, softmax, noise_cfg, name, want_repeat)
+            single, repeat, variance_repeat = _noise_eval(
+                gelu, softmax, noise_cfg, name, want_repeat
+            )
             stage1_tot, g_c, s_c = ev.get_simulated_cost(gelu, softmax)
             stage2_tot, breakdown = ev.get_noise_simulated_cost(**noise_cfg)
             stage2_tot = self._stage2_cost_key(stage2_tot) / 40.0
@@ -318,11 +381,44 @@ class UnifiedFinalEvaluationModule:
                         "evaluation_protocol": f"repeated_mean_n={int(stats['n'])}",
                     }
                 )
+            if variance_repeat is not None:
+                stats = variance_repeat["stats"]
+                if repeat is None:
+                    result.update(
+                        {
+                            "variance_evaluation_n": int(stats["n"]),
+                            "loss_std": float(stats["loss_std"]),
+                            "p_std": float(stats["p_std"]),
+                            "s_std": float(stats["s_std"]),
+                            "evaluation_protocol": "single_validation_full",
+                            "variance_protocol": (
+                                f"{stats.get('evaluation_mode', 'repeated_validation_full')}"
+                                f"_n={int(stats['n'])}"
+                            ),
+                        }
+                    )
+                else:
+                    result["variance_protocol"] = (
+                        f"repeated_validation_full_n={int(stats['n'])}"
+                    )
+                result["variance_evaluation"] = variance_repeat
             return result, repeat
 
         # 2. Optimized
         optimized_result, optimized_repeat = _build_noise_result(
             "Optimized", "Optimized", opt_gelu, opt_softmax, opt_noise_cfg, want_repeat=True
+        )
+
+        # 2b. Fixed stage-1 config + maximum scaling factors. This is the
+        # requested stability reference for final-eval variance comparisons.
+        stage1_fixed_max_noise_cfg = self._build_max_noise_config(total_layers)
+        stage1_fixed_max_noise_result, stage1_fixed_max_noise_repeat = _build_noise_result(
+            "Stage1Fixed+MaxSF",
+            "Stage1FixedMaxSF",
+            opt_gelu,
+            opt_softmax,
+            stage1_fixed_max_noise_cfg,
+            want_repeat=True,
         )
 
         # 3–7. Random groups.
@@ -341,7 +437,10 @@ class UnifiedFinalEvaluationModule:
             ev.log("Random comparison groups are disabled for this final-eval run.")
             random_results = []
 
-        all_results = [baseline_result, optimized_result] + list(random_results)
+        all_results = (
+            [baseline_result, optimized_result, stage1_fixed_max_noise_result]
+            + list(random_results)
+        )
         self._attach_relative_metrics(baseline_result, all_results, num_metrics)
 
         # Summaries / logs / outputs.
@@ -351,9 +450,10 @@ class UnifiedFinalEvaluationModule:
             num_metrics,
             baseline_result,
             optimized_result,
+            stage1_fixed_max_noise_result,
             random_results,
         )
-        self._log_random_summary(metric_short_names, summary, optimized_result)
+        self._log_random_summary(metric_short_names, summary, optimized_result, num_metrics)
 
         summary_path = self._save_results_json(
             selected_source=selected_source,
@@ -366,6 +466,8 @@ class UnifiedFinalEvaluationModule:
             baseline_repeat=baseline_repeat,
             optimized_result=optimized_result,
             optimized_repeat=optimized_repeat,
+            stage1_fixed_max_noise_result=stage1_fixed_max_noise_result,
+            stage1_fixed_max_noise_repeat=stage1_fixed_max_noise_repeat,
             random_results=random_results,
             summary=summary,
             selection_constraints=selection_constraints,
@@ -376,6 +478,7 @@ class UnifiedFinalEvaluationModule:
             num_metrics,
             baseline_result,
             optimized_result,
+            stage1_fixed_max_noise_result,
             random_results,
             summary,
         )
@@ -386,6 +489,7 @@ class UnifiedFinalEvaluationModule:
                 num_metrics,
                 baseline_result,
                 optimized_result,
+                stage1_fixed_max_noise_result,
                 random_results,
             )
 
@@ -400,10 +504,12 @@ class UnifiedFinalEvaluationModule:
             "opt_noise_config": opt_noise_cfg,
             "baseline_result": baseline_result,
             "optimized_result": optimized_result,
+            "stage1_fixed_max_noise_result": stage1_fixed_max_noise_result,
             "random_results": random_results,
             "random_summary": summary,
             "baseline_repeat": baseline_repeat,
             "optimized_repeat": optimized_repeat,
+            "stage1_fixed_max_noise_repeat": stage1_fixed_max_noise_repeat,
             "summary_path": summary_path,
             "plot_path": plot_path,
             "variance_plot_path": variance_plot_path,
@@ -998,6 +1104,17 @@ class UnifiedFinalEvaluationModule:
                     "evaluation_protocol": f"repeated_mean_n={int(stats['n'])}",
                 }
             )
+        else:
+            result.update(
+                {
+                    "evaluation_n": 1,
+                    "loss_std": 0.0,
+                    "p_std": 0.0,
+                    "s_std": 0.0,
+                    "evaluation_protocol": "single_clean_deterministic",
+                    "variance_protocol": "deterministic_no_noise",
+                }
+            )
         return result
 
     # ------------------------------------------------------------------
@@ -1170,10 +1287,26 @@ class UnifiedFinalEvaluationModule:
                 [it.get("total_cost") for it in random_results]
             ),
         }
+        for metric_key in ("loss", "p", "s"):
+            var_values = [
+                float(it[f"{metric_key}_var"])
+                for it in random_results
+                if f"{metric_key}_var" in it
+            ]
+            if var_values:
+                summary["overall"][f"{metric_key}_eval_variance_mean"] = float(
+                    np.mean(var_values)
+                )
         return summary
 
     def _log_performance_table(
-        self, metric_short_names, num_metrics, baseline, optimized, random_results
+        self,
+        metric_short_names,
+        num_metrics,
+        baseline,
+        optimized,
+        stage1_fixed_max,
+        random_results,
     ):
         ev = self.evaluator
         ev.log("\nUnified Performance Comparison Table:")
@@ -1198,6 +1331,7 @@ class UnifiedFinalEvaluationModule:
         ev.log("-" * len(header))
         ev.log(self._format_row(baseline, num_metrics))
         ev.log(self._format_row(optimized, num_metrics))
+        ev.log(self._format_row(stage1_fixed_max, num_metrics))
         ev.log("-" * len(header))
         for res in random_results:
             ev.log(self._format_row(res, num_metrics))
@@ -1234,7 +1368,7 @@ class UnifiedFinalEvaluationModule:
             f"{total_cost}"
         )
 
-    def _log_random_summary(self, metric_short_names, summary, selected):
+    def _log_random_summary(self, metric_short_names, summary, selected, num_metrics):
         ev = self.evaluator
         ev.log("\nRandom Baseline Summary:")
         overall = summary.get("overall", {})
@@ -1261,6 +1395,17 @@ class UnifiedFinalEvaluationModule:
                 f"mean_d{metric_short_names[1]}="
                 f"{self._format_fixed(overall.get('secondary_metric_delta_mean'), width=1).strip()}"
             )
+        overall_var_parts = [
+            f"varLoss={self._format_sci(overall.get('loss_eval_variance_mean'), width=1).strip()}",
+            f"var{metric_short_names[0]}="
+            f"{self._format_sci(overall.get('p_eval_variance_mean'), width=1).strip()}",
+        ]
+        if num_metrics > 1:
+            overall_var_parts.append(
+                f"var{metric_short_names[1]}="
+                f"{self._format_sci(overall.get('s_eval_variance_mean'), width=1).strip()}"
+            )
+        ev.log("  Overall eval variance: " + " ".join(overall_var_parts))
         for family, fs in summary.get("by_family", {}).items():
             msg = (
                 f"  {family:<14} samples={fs['count']:<3} "
@@ -1298,6 +1443,7 @@ class UnifiedFinalEvaluationModule:
         num_metrics,
         baseline,
         optimized,
+        stage1_fixed_max,
         random_results,
         summary,
     ):
@@ -1353,6 +1499,17 @@ class UnifiedFinalEvaluationModule:
                         color="#E45756",
                         label="Optimized",
                         zorder=5,
+                    )
+                if stage1_fixed_max.get("total_cost") is not None:
+                    panel_xs.append(stage1_fixed_max["total_cost"])
+                    ax.scatter(
+                        stage1_fixed_max["total_cost"],
+                        stage1_fixed_max[key],
+                        marker="D",
+                        s=120,
+                        color="#B279A2",
+                        label="Stage1Fixed+MaxSF",
+                        zorder=4,
                     )
                 if key in baseline:
                     ax.axhline(
@@ -1415,6 +1572,8 @@ class UnifiedFinalEvaluationModule:
             "Equiv": "#F58518",
             "Budget": "#54A24B",
             "Optimized": "#E45756",
+            "Random": "#4C78A8",
+            "Stage1FixedMaxSF": "#B279A2",
         }
 
     def _ordered_families(self, grouped):
@@ -1443,6 +1602,7 @@ class UnifiedFinalEvaluationModule:
         num_metrics,
         baseline,
         optimized,
+        stage1_fixed_max,
         random_results,
     ):
         try:
@@ -1452,14 +1612,21 @@ class UnifiedFinalEvaluationModule:
             import matplotlib.pyplot as plt
 
             family_colors = self._family_colors()
-            grouped: Dict[str, list] = {"Optimized": [optimized]}
-            for result in random_results:
-                grouped.setdefault(result["family"], []).append(result)
-            families = self._ordered_families(grouped)
+            grouped: Dict[str, list] = {
+                "Optimized": [optimized],
+                "Stage1FixedMaxSF": [stage1_fixed_max],
+            }
+            if random_results:
+                grouped["Random"] = list(random_results)
+            families = [
+                family
+                for family in ("Optimized", "Random", "Stage1FixedMaxSF")
+                if family in grouped
+            ]
 
             fig, axes = plt.subplots(2, 2, figsize=(16, 11), constrained_layout=True)
             fig.suptitle(
-                f"Final Evaluation Deltas and Variance ({self.evaluator.dataset_key.upper()})",
+                f"Final Evaluation Deltas and Test Variance ({self.evaluator.dataset_key.upper()})",
                 fontsize=14,
                 fontweight="bold",
             )
@@ -1482,7 +1649,7 @@ class UnifiedFinalEvaluationModule:
 
             if num_metrics == 1:
                 base_time = float(baseline.get("time_ms", 0.0))
-                for result in [optimized] + list(random_results):
+                for result in [optimized, stage1_fixed_max] + list(random_results):
                     result["time_delta_vs_baseline"] = float(result.get("time_ms", 0.0) - base_time)
 
             for ax, (title, key, ylabel) in zip(list(axes.flat)[:3], delta_panels):
@@ -1565,7 +1732,7 @@ class UnifiedFinalEvaluationModule:
                     )
                 ax.set_xticks(x)
                 ax.set_xticklabels([family for family, _ in variance_rows], rotation=20, ha="right")
-                ax.set_title("Mean Repeat-Eval Variance by Group")
+                ax.set_title("Mean Test Variance by Group")
                 ax.set_ylabel("Variance")
                 ax.grid(True, axis="y", alpha=0.3)
                 ax.legend(loc="best", fontsize=8)
@@ -1586,7 +1753,7 @@ class UnifiedFinalEvaluationModule:
                     ax.bar(x + offset, values, width=width, label=metric_label)
                 ax.set_xticks(x)
                 ax.set_xticklabels(families, rotation=20, ha="right")
-                ax.set_title("Group Result Variance (repeat variance unavailable)")
+                ax.set_title("Group Result Variance (test variance unavailable)")
                 ax.set_ylabel("Variance across sampled configs")
                 ax.grid(True, axis="y", alpha=0.3)
                 ax.legend(loc="best", fontsize=8)
@@ -1615,6 +1782,8 @@ class UnifiedFinalEvaluationModule:
         baseline_repeat,
         optimized_result,
         optimized_repeat,
+        stage1_fixed_max_noise_result,
+        stage1_fixed_max_noise_repeat,
         random_results,
         summary,
         selection_constraints,
@@ -1649,13 +1818,23 @@ class UnifiedFinalEvaluationModule:
             },
             "baseline": self._json_ready(baseline_result),
             "optimized": self._json_ready(optimized_result),
+            "stage1_fixed_max_scaling": self._json_ready(stage1_fixed_max_noise_result),
             "random_results": [self._json_ready(r) for r in random_results],
             "random_summary": summary,
             "evaluation_protocol": {
-                "version": 3,
+                "version": 4,
                 "baseline": "single_clean_validation_full",
                 "noisy_groups": "repeated_mean" if self.repeat_n > 1 else "single",
                 "noisy_repeat_n": int(self.repeat_n),
+                "variance_repeat_n": int(
+                    self.repeat_n if self.repeat_n > 1 else self._variance_repeat_count()
+                ),
+                "variance_source": (
+                    "full_validation_repeats"
+                    if self.repeat_n > 1
+                    else "fixed_probe_noise_trials"
+                ),
+                "variance_groups": ["optimized", "random", "stage1_fixed_max_scaling"],
                 "random_groups": "enabled" if self.include_random_groups else "disabled",
                 "relative_metrics": "delta_vs_baseline",
                 "cost_axis": "total_cost_stage1_plus_stage2",
@@ -1665,6 +1844,10 @@ class UnifiedFinalEvaluationModule:
             output["baseline_repeat_evaluation"] = baseline_repeat
         if optimized_repeat is not None:
             output["optimized_repeat_evaluation"] = optimized_repeat
+        if stage1_fixed_max_noise_repeat is not None:
+            output["stage1_fixed_max_scaling_repeat_evaluation"] = (
+                stage1_fixed_max_noise_repeat
+            )
         output_path = os.path.join(
             self.results_dir, f"final_eval_results_{self.evaluator.dataset_key}.json"
         )
@@ -1694,6 +1877,39 @@ class UnifiedFinalEvaluationModule:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _variance_repeat_count(self):
+        stage2_k = getattr(self.evaluator, "stage2_k_trials", None)
+        try:
+            stage2_k = int(stage2_k)
+        except (TypeError, ValueError):
+            stage2_k = 1
+        return max(2, int(self.repeat_n), stage2_k)
+
+    def _build_max_noise_config(self, total_layers):
+        return {
+            "input_noise_scaling_factors": np.full(
+                total_layers, max(self.input_noise_allowed), dtype=int
+            ),
+            "wq_noise_scaling_factors": np.full(
+                total_layers, max(self.weight_noise_allowed), dtype=int
+            ),
+            "wk_noise_scaling_factors": np.full(
+                total_layers, max(self.weight_noise_allowed), dtype=int
+            ),
+            "wv_noise_scaling_factors": np.full(
+                total_layers, max(self.weight_noise_allowed), dtype=int
+            ),
+            "wo_noise_scaling_factors": np.full(
+                total_layers, max(self.weight_noise_allowed), dtype=int
+            ),
+            "wffn1_noise_scaling_factors": np.full(
+                total_layers, max(self.wffn1_noise_allowed), dtype=int
+            ),
+            "wffn2_noise_scaling_factors": np.full(
+                total_layers, max(self.weight_noise_allowed), dtype=int
+            ),
+        }
 
     @staticmethod
     def _cost_key(value):

@@ -315,10 +315,62 @@ class UnifiedFinalEvalPartialSearchTests(unittest.TestCase):
         self.assertEqual(evaluator.clean_repeat_calls, 0)
         self.assertEqual(evaluator.last_clean_split, "validation_full")
         self.assertIsNone(result["baseline_repeat"])
-        self.assertNotIn("evaluation_n", result["baseline_result"])
+        self.assertEqual(result["baseline_result"]["evaluation_n"], 1)
+        self.assertEqual(result["baseline_result"]["loss_var"], 0.0)
+        self.assertEqual(result["baseline_result"]["p_var"], 0.0)
+        self.assertEqual(result["baseline_result"]["s_var"], 0.0)
         self.assertEqual(evaluator.noisy_repeat_calls, 1)
         self.assertEqual(evaluator.noisy_single_calls, 0)
         self.assertEqual(result["optimized_result"]["evaluation_n"], 5)
+
+    def test_final_eval_single_repeat_still_records_variance(self):
+        from final_evaluation_module import (
+            NOISE_SCALING_FACTOR_KEYS,
+            UnifiedFinalEvaluationModule,
+        )
+
+        class NoPlotModule(_NoPlotFinalEvalModuleMixin, UnifiedFinalEvaluationModule):
+            pass
+
+        evaluator = _RunEvaluator()
+        noise_cfg = {
+            key: [30 if key.startswith("input") else 22] * evaluator.total_layers
+            for key in NOISE_SCALING_FACTOR_KEYS
+        }
+        noise_cfg["wffn1_noise_scaling_factors"] = [24] * evaluator.total_layers
+        with tempfile.TemporaryDirectory() as tmpdir:
+            module = NoPlotModule(
+                evaluator=evaluator,
+                config_source="manual",
+                manual_stage1_gelu=[4, 4],
+                manual_stage1_softmax=[6, 6],
+                manual_stage2_noise=noise_cfg,
+                permutation_trials=0,
+                cost_equivalent_trials=0,
+                budget_equivalent_trials=0,
+                stage1_budget_trials=0,
+                stage2_budget_trials=0,
+                repeat_n=1,
+                results_dir=tmpdir,
+            )
+            result = module.run(
+                search_best_stage1=None,
+                search_best_stage2=None,
+                baseline_stage1_gelu=np.array([4, 4], dtype=int),
+                baseline_stage1_softmax=np.array([6, 6], dtype=int),
+                baseline_noise_tot_c=1.0,
+                limit_loss=1.0,
+                limit_p=0.0,
+                limit_s=0.0,
+            )
+
+        self.assertEqual(evaluator.noisy_single_calls, 1)
+        self.assertEqual(evaluator.noisy_repeat_calls, 1)
+        self.assertEqual(result["optimized_result"]["variance_evaluation_n"], 2)
+        self.assertIn("loss_var", result["optimized_result"])
+        self.assertIn("p_var", result["optimized_result"])
+        self.assertIn("s_var", result["optimized_result"])
+        self.assertIn("stage1_fixed_max_noise_result", result)
 
     def test_random_groups_request_repeat_evaluation(self):
         from final_evaluation_module import (
