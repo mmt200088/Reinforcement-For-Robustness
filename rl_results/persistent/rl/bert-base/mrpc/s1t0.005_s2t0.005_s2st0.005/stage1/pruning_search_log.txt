@@ -69,3 +69,37 @@
 
 配置评估完成（Configuration evaluation finished）。
   [best_policy] 已复制 rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/stage2_noise_policy.pt → rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/best_policy/stage2_noise_policy.pt
+
+============================================================
+=== 续训日志开始（Resume Log Started） 2026-04-26T14:04:48.224616 ===
+============================================================
+[信息] Stage-1 PPO学习率（LR）从 stage1_rl_lr=0.0001 解析为 -> 0.0001 (direct) | Stage-2 PPO学习率（LR）从 stage2_rl_lr=0.0001 解析为 -> 0.0001 (direct)
+[信息] 第一阶段RL回合数（Stage-1 RL episodes）: 51000 | 第二阶段RL回合数（Stage-2 RL episodes）: 40000
+[信息] 统一运行输出目录（Unified run output dir）: rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005
+
+============================================================
+开始配置评估（STARTING CONFIGURATION EVALUATION）
+搜索模式（SEARCH_MODE）=rl
+最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）=search
+[信息] 第一阶段RL/贪心搜索已跳过（--skip-stage1-rl）。
+============================================================
+
+--- 阶段1（Phase 1）: 已跳过（SKIPPED）（--skip-stage1-rl） ---
+[信息] 基线建立已跳过，因其仅用于第一阶段RL/贪心搜索。
+
+--- 阶段1.5（Phase 1.5）: 已跳过（SKIPPED）（--skip-stage1-rl） ---
+[信息] GELU输入分布分析已跳过，因其仅用于第一阶段RL/贪心搜索。
+
+============================================================
+阶段2.5（PHASE 2.5）：贪心搜索（GREEDY SEARCH）（已跳过SKIPPED）
+============================================================
+[信息] 第一阶段PPO/贪心已跳过（--skip-stage1-rl）。
+[Info] GELU/Softmax 将根据 --final-eval-source 在最终评估模块中解析。
+============================================================
+
+============================================================
+最终评估报告（FINAL EVALUATION REPORT）（验证集）
+============================================================
+[Info] Stage-2 固定 GELU/Softmax 来源：Stage-1 config (json) (source=json)
+  Stage-2 GELU   : [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1]
+  Stage-2 Softmax: [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
