@@ -12,7 +12,7 @@ cat <<'EOF'
 
 核心参数：
   --dataset DATASET
-  --search-algorithm rl|ga|general-rl|rl-and-ga-compare
+  --search-algorithm rl|ga|greedy|general-rl|rl-and-ga-compare
   --logfile FILE
   --model-type bert-base|bert-large|gpt-2
   --batch-size N
@@ -23,23 +23,23 @@ cat <<'EOF'
   --ppo-update-interval N              每多少 episode 触发一次 PPO 更新（默认 120）；
                                        同时决定每个 details/txt 的回合数（= 3 × N, 默认 360）
 
-GA / 对比实验中的 GA：
+GA / Greedy / 对比实验中的 GA：
   --stage1-search-generations N
   --stage2-search-generations N
 
-准确度约束参数（rl / ga / rl-and-ga-compare 可用）：
+准确度约束参数（rl / ga / greedy / rl-and-ga-compare 可用）：
   --stage1-accuracy-tolerance FLOAT    Stage-1 指标约束百分比（默认 0.005 即 0.5%）
   --stage2-limit-tolerance FLOAT       Stage-2 指标约束百分比（以 baseline 为基准，默认 0.05 即 5%；loss 允许上浮 5%、metric 允许下降 5%）
   --stage2-stability-tolerance FLOAT   Stage-2 稳定性约束百分比（以 baseline 探针的 std 为基准，默认 0.05 即 5%）
   --stage2-k-trials INT                Stage-2 稳定性评测噪声试验次数 K（默认 5；每次评测在同一份探针上跑 K 个独立噪声种子）
   --stage2-probe-size INT              Stage-2 稳定性评测探针子集大小（默认 256；用分层采样从验证集中抽取 K 次 trial 共用的固定子集）
 
-持久化与续训练（rl / ga 可用）：
+持久化与续训练（rl / ga / greedy 可用）：
   --fresh-start                        从头开始训练（首次运行必须指定）
   --fresh-stage1                       仅重置 Stage-1 数据（保留 Stage-2）
   --fresh-stage2                       仅重置 Stage-2 数据（保留 Stage-1）
 
-普通 RL / GA 共用：
+普通 RL / GA / Greedy 共用：
   --skip-stage1-search
   --skip-noise-search
   --skip-final-eval                       跳过 Stage-1 + Stage-2 合并的最终评估
@@ -119,6 +119,7 @@ GA / 对比实验中的 GA：
   bash llama_7B_LayerImportance.sh --dataset mrpc
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl --stage1-search-lr 3e-5 --stage2-search-lr 1e-5
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm ga --stage1-search-generations 120 --stage2-search-generations 90
+  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm greedy --stage1-search-generations 200 --stage2-search-generations 200
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm ga --skip-stage1-search --skip-final-eval --stage2-search-generations 2500 --stage2-fixed-config-source json --stage2-fixed-config glue_final_configs_best_genetic.json
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl-and-ga-compare --compare-config-mode direct --rl-compare-stage1-json glue_final_configs_best_ppo.json --rl-compare-stage2-json glue_final_configs_best_ppo.json --ga-compare-stage1-json glue_final_configs_best_genetic.json --ga-compare-stage2-json glue_final_configs_best_genetic.json
   bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm general-rl --general-rl-mode train --general-rl-tasks mrpc,cola,rte,stsb --fresh-start
@@ -184,6 +185,7 @@ algzh(){
   case "$1" in
     rl) echo "普通强化学习（rl）" ;;
     ga) echo "遗传算法（ga）" ;;
+    greedy) echo "贪心搜索（greedy）" ;;
     general-rl) echo "通用强化学习（general-rl）" ;;
     rl-and-ga-compare) echo "普通 RL 与 GA 对比实验（rl-and-ga-compare）" ;;
     *) echo "$1" ;;
@@ -211,6 +213,8 @@ infer_family(){
   x="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   if [[ "$x" == *genetic* || "$x" == *_ga.* || "$x" == *-ga.* || "$x" == ga_* ]]; then
     echo ga
+  elif [[ "$x" == *greedy* ]]; then
+    echo greedy
   elif [[ "$x" == *ppo* ]]; then
     echo rl
   else
@@ -218,7 +222,11 @@ infer_family(){
   fi
 }
 default_final_eval_json_for_family(){
-  [ "$1" = "ga" ] && echo "glue_final_configs_best_genetic.json" || echo "glue_final_configs_best_ppo.json"
+  case "$1" in
+    ga) echo "glue_final_configs_best_genetic.json" ;;
+    greedy) echo "glue_final_configs_best_greedy.json" ;;
+    *) echo "glue_final_configs_best_ppo.json" ;;
+  esac
 }
 
 resolve_compare_cuda_split() {
@@ -461,6 +469,7 @@ COMPARE_CONFIG_MODE="$(printf '%s' "$COMPARE_CONFIG_MODE" | tr '[:upper:]' '[:lo
 case "$SEARCH_ALGORITHM" in
   rl|ppo) SEARCH_ALGORITHM="rl" ;;
   ga|genetic) SEARCH_ALGORITHM="ga" ;;
+  greedy|greedy-search|greedy_search) SEARCH_ALGORITHM="greedy" ;;
   general-rl|general_rl|generalrl) SEARCH_ALGORITHM="general-rl" ;;
   rl-and-ga-compare|rl_and_ga_compare|compare) SEARCH_ALGORITHM="rl-and-ga-compare" ;;
   *) err "不支持的搜索算法：$SEARCH_ALGORITHM" ;;
@@ -505,8 +514,8 @@ is_pos_int "$STAGE2_K_TRIALS" || err "--stage2-k-trials 必须是正整数，当
 is_pos_int "$STAGE2_PROBE_SIZE" || err "--stage2-probe-size 必须是正整数，当前为：$STAGE2_PROBE_SIZE"
 
 [ "$FINAL_EVAL_ONLY" = "false" ] || [ "$SKIP_FINAL_EVAL" = "false" ] || err "--final-eval-only 与 --skip-final-eval 冲突。"
-if [ "$FINAL_EVAL_ONLY" = "true" ] && [ "$SEARCH_ALGORITHM" != "rl" ] && [ "$SEARCH_ALGORITHM" != "ga" ]; then
-  err "--final-eval-only 仅支持普通 rl / ga 模式。"
+if [ "$FINAL_EVAL_ONLY" = "true" ] && [ "$SEARCH_ALGORITHM" != "rl" ] && [ "$SEARCH_ALGORITHM" != "ga" ] && [ "$SEARCH_ALGORITHM" != "greedy" ]; then
+  err "--final-eval-only 仅支持普通 rl / ga / greedy 模式。"
 fi
 
 case "$DATASET" in
@@ -540,11 +549,11 @@ if [ "$SEARCH_ALGORITHM" != "rl-and-ga-compare" ]; then
 fi
 
 if [ "$SEARCH_ALGORITHM" = "general-rl" ] || [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
-  { [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; } || err "当前模式不支持 --stage2-fixed-config-* 参数；该参数组仅普通 rl / ga 可用。"
+  { [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; } || err "当前模式不支持 --stage2-fixed-config-* 参数；该参数组仅普通 rl / ga / greedy 可用。"
 fi
 
 if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
-  { [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] && [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] && [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] && [ "$S_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_SKIP_FINAL_EVAL" = "false" ] && [ "$S_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_FINAL_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_STAGE1_GELU" ] && [ -z "$MANUAL_STAGE1_SOFTMAX" ] && [ -z "$MANUAL_STAGE2_NOISE" ] && [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; } || err "general-rl 不能与普通 RL / GA 的阶段搜索或最终评估参数混用。"
+  { [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] && [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] && [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] && [ "$S_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_SKIP_FINAL_EVAL" = "false" ] && [ "$S_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_FINAL_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_STAGE1_GELU" ] && [ -z "$MANUAL_STAGE1_SOFTMAX" ] && [ -z "$MANUAL_STAGE2_NOISE" ] && [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; } || err "general-rl 不能与普通 RL / GA / Greedy 的阶段搜索或最终评估参数混用。"
   # ---- 准确度容忍参数校验 ----
   if [ -n "$GENERAL_ACCURACY_TOLERANCES" ]; then
     IFS=',' read -r -a __tol_items <<< "$GENERAL_ACCURACY_TOLERANCES"
@@ -686,7 +695,7 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
 else
   { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "当前搜索算法不是 general-rl，请不要使用 --general-rl-* 参数。"
   # rl/ga 模式下 --resume-from 已废弃，改用持久化目录自动续训练
-  [ "$S_RESUME_FROM" = "false" ] || err "rl / ga 模式已改用持久化目录自动续训练，不再支持手动 --resume-from。续训练时直接运行相同参数即可；首次运行请加 --fresh-start。"
+  [ "$S_RESUME_FROM" = "false" ] || err "rl / ga / greedy 模式已改用持久化目录自动续训练，不再支持手动 --resume-from。续训练时直接运行相同参数即可；首次运行请加 --fresh-start。"
   _EARLY_CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"
   _EARLY_PERSISTENT_DIR="rl_results/persistent/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${_EARLY_CONSTRAINT_SLUG}"
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
@@ -698,12 +707,12 @@ else
     [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$STAGE1_EPISODES" -ge 170 ] || err "rl 的 Stage-1 回合数至少需要 170。"
     [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$STAGE2_EPISODES" -ge 170 ] || err "rl 的 Stage-2 回合数至少需要 170。"
   else
-    [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] || err "ga 模式不再使用 episode 作为搜索预算，请改用 --stage1-search-generations / --stage2-search-generations。"
+    [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] || err "ga / greedy 模式不再使用 episode 作为搜索预算，请改用 --stage1-search-generations / --stage2-search-generations。"
     is_pos_int "$STAGE1_GENERATIONS" || err "--stage1-search-generations 必须是正整数"
     is_pos_int "$STAGE2_GENERATIONS" || err "--stage2-search-generations 必须是正整数"
     [ "$SKIP_STAGE1_SEARCH" = "false" ] || [ "$S_STAGE1_GENERATIONS" = "false" ] || err "已指定 --skip-stage1-search 时，不能再显式提供 --stage1-search-generations。"
     [ "$SKIP_NOISE_SEARCH" = "false" ] || [ "$S_STAGE2_GENERATIONS" = "false" ] || err "已指定 --skip-noise-search 时，不能再显式提供 --stage2-search-generations。"
-    [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] || err "GA 不使用 PPO 学习率参数，请移除 --stage1-search-lr / --stage2-search-lr。"
+    [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] || err "GA / Greedy 不使用 PPO 学习率参数，请移除 --stage1-search-lr / --stage2-search-lr。"
   fi
   if [ "$FINAL_EVAL_SOURCE" = "manual" ]; then
     [ -n "$MANUAL_STAGE1_GELU" ] && [ -n "$MANUAL_STAGE1_SOFTMAX" ] || err "manual 最终评估配置必须同时提供 --manual-stage1-gelu 和 --manual-stage1-softmax。"
@@ -723,13 +732,18 @@ else
     fi
     if [ "$SKIP_STAGE1_SEARCH" = "true" ] && [ "$STAGE2_FIXED_CONFIG_SOURCE" = "stage1_result" ]; then
       _HAS_S1_CKPT="false"
-      [ -f "${_EARLY_PERSISTENT_DIR}/stage1/stage1_rl_checkpoint.pt" ] && _HAS_S1_CKPT="true"
+      case "$SEARCH_ALGORITHM" in
+        rl) [ -f "${_EARLY_PERSISTENT_DIR}/stage1/stage1_rl_checkpoint.pt" ] && _HAS_S1_CKPT="true" ;;
+        ga) [ -f "${_EARLY_PERSISTENT_DIR}/stage1/ga_search_results.json" ] && _HAS_S1_CKPT="true" ;;
+        greedy) [ -f "${_EARLY_PERSISTENT_DIR}/stage1/greedy_search_results.json" ] && _HAS_S1_CKPT="true" ;;
+      esac
       [ "$_HAS_S1_CKPT" = "true" ] || err "跳过 Stage-1 搜索且无历史 Stage-1 结果，Stage-2 固定 GELU/Softmax 不能使用 --stage2-fixed-config-source=stage1_result。请改用 json 或 manual，或先运行 Stage-1。"
     fi
     if [ "$STAGE2_FIXED_CONFIG_SOURCE" = "json" ]; then
       [ -f "$STAGE2_FIXED_CONFIG" ] || err "Stage-2 固定 GELU/Softmax 的 JSON 配置文件不存在：$STAGE2_FIXED_CONFIG"
       FAM="$(infer_family "$STAGE2_FIXED_CONFIG")"
       [ "$SEARCH_ALGORITHM" != "ga" ] || [ "$FAM" != "rl" ] || err "已选择 ga，但 Stage-2 固定 GELU/Softmax 的 JSON 配置看起来属于 RL/PPO 家族：$STAGE2_FIXED_CONFIG"
+      [ "$SEARCH_ALGORITHM" != "greedy" ] || { [ "$FAM" != "rl" ] && [ "$FAM" != "ga" ]; } || err "已选择 greedy，但 Stage-2 固定 GELU/Softmax 的 JSON 配置看起来属于其它搜索家族：$STAGE2_FIXED_CONFIG"
       [ "$SEARCH_ALGORITHM" != "rl" ] || [ "$FAM" != "ga" ] || err "已选择 rl，但 Stage-2 固定 GELU/Softmax 的 JSON 配置看起来属于 GA 家族：$STAGE2_FIXED_CONFIG"
     fi
   fi
@@ -754,6 +768,7 @@ else
     [ -f "$FINAL_EVAL_CONFIG" ] || err "最终评估 JSON 配置文件不存在：$FINAL_EVAL_CONFIG"
     FAM="$(infer_family "$FINAL_EVAL_CONFIG")"
     [ "$SEARCH_ALGORITHM" != "ga" ] || [ "$FAM" != "rl" ] || err "已选择 ga，但最终评估 JSON 配置看起来属于 RL/PPO 家族：$FINAL_EVAL_CONFIG"
+    [ "$SEARCH_ALGORITHM" != "greedy" ] || { [ "$FAM" != "rl" ] && [ "$FAM" != "ga" ]; } || err "已选择 greedy，但最终评估 JSON 配置看起来属于其它搜索家族：$FINAL_EVAL_CONFIG"
     [ "$SEARCH_ALGORITHM" != "rl" ] || [ "$FAM" != "ga" ] || err "已选择 rl，但最终评估 JSON 配置看起来属于 GA 家族：$FINAL_EVAL_CONFIG"
   fi
 fi
@@ -802,8 +817,8 @@ CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2
 USE_PERSISTENT="false"
 PERSISTENT_DIR=""
 
-if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ]; then
-  # RL / GA 使用持久化目录：基于(算法、模型、数据集、约束参数)确定性生成
+if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARCH_ALGORITHM" = "greedy" ]; then
+  # RL / GA / Greedy 使用持久化目录：基于(算法、模型、数据集、约束参数)确定性生成
   USE_PERSISTENT="true"
   PERSISTENT_DIR="rl_results/persistent/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${CONSTRAINT_SLUG}"
 
@@ -1057,7 +1072,7 @@ else
     [ "$SKIP_NOISE_SEARCH" = "true" ] && RL_STAGE2_EPISODES_SPECIFIED="false"
     CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
   else
-    CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
+    CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --search_backend "$SEARCH_ALGORITHM" --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
     [ "$S_STAGE1_GENERATIONS" = "true" ] && CMD+=(--stage1_ga_generations "$STAGE1_GENERATIONS" --stage1_ga_generations_specified "true")
     [ "$S_STAGE2_GENERATIONS" = "true" ] && CMD+=(--stage2_ga_generations "$STAGE2_GENERATIONS" --stage2_ga_generations_specified "true")
   fi
@@ -1072,7 +1087,7 @@ show "日志文件" "$LOGFILE_BASENAME" "$S_LOGFILE"
 show "批大小" "$BATCH_SIZE" "$S_BATCH_SIZE"
 show "模式目录" "$RUN_GROUP_DIR" "true"
 show "运行目录" "$RUN_ROOT" "true"
-if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ]; then
+if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARCH_ALGORITHM" = "greedy" ]; then
   show "Stage-1 准确度约束" "$STAGE1_ACCURACY_TOLERANCE" "$S_STAGE1_ACCURACY_TOLERANCE"
   show "Stage-2 指标约束百分比" "$STAGE2_LIMIT_TOLERANCE" "$S_STAGE2_LIMIT_TOLERANCE"
   show "Stage-2 稳定性约束百分比" "$STAGE2_STABILITY_TOLERANCE" "$S_STAGE2_STABILITY_TOLERANCE"
@@ -1098,9 +1113,14 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   show "跳过 Stage-2 搜索" "$(boolzh "$SKIP_NOISE_SEARCH")" "$S_SKIP_NOISE_SEARCH"
   show "跳过最终评估" "$(boolzh "$SKIP_FINAL_EVAL")" "$S_SKIP_FINAL_EVAL"
   show "仅运行最终评估" "$(boolzh "$FINAL_EVAL_ONLY")" "$S_FINAL_EVAL_ONLY"
-elif [ "$SEARCH_ALGORITHM" = "ga" ]; then
-  show "Stage-1 迭代代数" "$STAGE1_GENERATIONS" "$S_STAGE1_GENERATIONS"
-  show "Stage-2 迭代代数" "$STAGE2_GENERATIONS" "$S_STAGE2_GENERATIONS"
+elif [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARCH_ALGORITHM" = "greedy" ]; then
+  if [ "$SEARCH_ALGORITHM" = "greedy" ]; then
+    show "Stage-1 贪心最大迭代数" "$STAGE1_GENERATIONS" "$S_STAGE1_GENERATIONS"
+    show "Stage-2 贪心最大迭代数" "$STAGE2_GENERATIONS" "$S_STAGE2_GENERATIONS"
+  else
+    show "Stage-1 迭代代数" "$STAGE1_GENERATIONS" "$S_STAGE1_GENERATIONS"
+    show "Stage-2 迭代代数" "$STAGE2_GENERATIONS" "$S_STAGE2_GENERATIONS"
+  fi
   show "最终评估来源" "$(srczh "$FINAL_EVAL_SOURCE")" "$S_FINAL_EVAL_SOURCE"
   show "Stage-2 固定 GELU/Softmax 来源" "$(srczh "$STAGE2_FIXED_CONFIG_SOURCE")" "$S_STAGE2_FIXED_CONFIG_SOURCE"
   show "跳过 Stage-1 搜索" "$(boolzh "$SKIP_STAGE1_SEARCH")" "$S_SKIP_STAGE1_SEARCH"

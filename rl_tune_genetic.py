@@ -104,7 +104,12 @@ def parse_optional_positive_int(raw_value, flag_name):
     return parse_positive_int(raw_value, flag_name)
 
 
-def _load_prior_ga_search_results(run_dir):
+def _load_prior_ga_search_results(
+    run_dir,
+    stage1_filename="ga_search_results.json",
+    stage2_filename="noise_ga_search_results.json",
+    algorithm_label="GA",
+):
     """从 run_dir 读取之前 GA 运行保存的 stage1 / stage2 搜索结果。
 
     GA 会把最好配置写到:
@@ -121,7 +126,7 @@ def _load_prior_ga_search_results(run_dir):
     if not run_dir:
         return stage1_best, stage2_best
 
-    stage1_path = os.path.join(run_dir, "stage1", "ga_search_results.json")
+    stage1_path = os.path.join(run_dir, "stage1", stage1_filename)
     if os.path.isfile(stage1_path):
         try:
             with open(stage1_path, "r", encoding="utf-8") as fh:
@@ -132,11 +137,11 @@ def _load_prior_ga_search_results(run_dir):
                     "gelu": np.asarray(cfg["gelu"], dtype=int),
                     "softmax": np.asarray(cfg["softmax"], dtype=int),
                 }
-                print(f"[final_eval_only] 加载 Stage-1 搜索结果: {stage1_path}")
+                print(f"[final_eval_only] 加载 Stage-1 {algorithm_label} 搜索结果: {stage1_path}")
         except Exception as exc:  # pragma: no cover - diagnostics path
             print(f"[final_eval_only][警告] 读取 {stage1_path} 失败: {exc}")
 
-    stage2_path = os.path.join(run_dir, "stage2_noise", "noise_ga_search_results.json")
+    stage2_path = os.path.join(run_dir, "stage2_noise", stage2_filename)
     if os.path.isfile(stage2_path):
         try:
             with open(stage2_path, "r", encoding="utf-8") as fh:
@@ -149,7 +154,7 @@ def _load_prior_ga_search_results(run_dir):
                     if isinstance(key, str) and key.endswith("scaling_factors")
                 }
                 if stage2_best:
-                    print(f"[final_eval_only] 加载 Stage-2 搜索结果: {stage2_path}")
+                    print(f"[final_eval_only] 加载 Stage-2 {algorithm_label} 搜索结果: {stage2_path}")
                 else:
                     stage2_best = None
         except Exception as exc:  # pragma: no cover - diagnostics path
@@ -288,6 +293,7 @@ def train(
         # Sparse tuning hyperparams
         use_ist: bool = False,
         use_rst: bool = False,
+        search_backend: str = "ga",
         rl_lr: float = 1e-4, 
         degree: int = 4,  # degree of polynomial for approximation
         stage1_ga_generations: Optional[int] = None,
@@ -339,6 +345,15 @@ def train(
     skip_stage1_rl = parse_bool_flag(skip_stage1_rl, "skip_stage1_rl")
     skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
     final_eval_only = parse_bool_flag(final_eval_only, "final_eval_only")
+    search_backend = str(search_backend or "ga").strip().lower().replace("-", "_")
+    if search_backend in ("ga", "genetic"):
+        search_backend = "ga"
+    elif search_backend in ("greedy", "greedy_search"):
+        search_backend = "greedy"
+    else:
+        raise ValueError(
+            f"Unsupported search_backend={search_backend!r}. Expected 'ga' or 'greedy'."
+        )
     # --final_eval_only 语义：只跑 final eval，不跑任何搜索阶段。
     # 这等价于同时设置 skip_stage1_rl=True & skip_noise_rl=True & skip_final_eval=False，
     # 但额外支持从 resume_run_dir（或 output_dir）加载之前保存的搜索结果作为 search 源。
@@ -406,6 +421,7 @@ def train(
         f"train_on_inputs: {train_on_inputs}\n"
         f"scaling: {scaling}\n"
         f"adapter_name: {adapter_name}\n"
+        f"search_backend: {search_backend}\n"
         f"target_modules: {target_modules}\n"
         f"final_eval_config_source: {final_eval_config_source}\n"
         f"final_eval_config_path: {final_eval_config_path}\n"
@@ -577,8 +593,9 @@ def train(
     if skip_budget_normalized["stage2_budget_source"] is not None:
         stage2_budget_source = skip_budget_normalized["stage2_budget_source"]
 
+    _budget_label = "Greedy" if search_backend == "greedy" else "GA"
     print(
-        "Resolved GA search budgets:\n"
+        f"Resolved {_budget_label} search budgets:\n"
         f"total_layers: {total_layers}\n"
         f"stage1_ga_population_size: {stage1_population_size}\n"
         f"stage2_ga_population_size: {stage2_population_size}\n"
@@ -836,8 +853,30 @@ def train(
             run_stage1_genetic_search,
             run_stage2_noise_genetic_search,
         )
+        if search_backend == "greedy":
+            from greedy_search_module import (
+                GREEDY_STAGE1_RESULT_FILENAME,
+                GREEDY_STAGE2_RESULT_FILENAME,
+                GreedyUnifiedFinalEvaluationModule,
+                run_stage1_greedy_search,
+                run_stage2_noise_greedy_search,
+            )
 
-        print("Genetic search to evaluate layer sensitivity to approximation")
+            SearchFinalEvaluationModule = GreedyUnifiedFinalEvaluationModule
+            run_stage1_search = run_stage1_greedy_search
+            run_stage2_noise_search = run_stage2_noise_greedy_search
+            stage1_result_filename = GREEDY_STAGE1_RESULT_FILENAME
+            stage2_result_filename = GREEDY_STAGE2_RESULT_FILENAME
+            backend_label = "Greedy"
+        else:
+            SearchFinalEvaluationModule = GeneticUnifiedFinalEvaluationModule
+            run_stage1_search = run_stage1_genetic_search
+            run_stage2_noise_search = run_stage2_noise_genetic_search
+            stage1_result_filename = "ga_search_results.json"
+            stage2_result_filename = "noise_ga_search_results.json"
+            backend_label = "GA"
+
+        print(f"{backend_label} search to evaluate layer sensitivity to approximation")
         # Pass data_path so evaluator can detect dataset type and metrics.
         importance_evaluator = LayerImportanceEvaluator(
             model=model, 
@@ -872,7 +911,7 @@ def train(
             resume_run_dir=resume_run_dir,
             data_path=data_path,
             test_data_mm=val_data_mm,
-            search_algorithm="ga",
+            search_algorithm=search_backend,
             stage1_accuracy_tolerance=stage1_accuracy_tolerance,
             stage2_limit_tolerance=stage2_limit_tolerance,
             stage2_stability_tolerance=stage2_stability_tolerance,
@@ -886,7 +925,7 @@ def train(
         importance_evaluator.stage1_ga_population_size = int(stage1_population_size)
         importance_evaluator.stage2_ga_population_size = int(stage2_population_size)
         importance_evaluator.log(
-            "GA budgets resolved to validation-full search units: "
+            f"{backend_label} budgets resolved to validation-full search units: "
             f"stage1_generations={stage1_ga_generations} "
             f"(population={stage1_population_size}), "
             f"stage2_generations={stage2_ga_generations} "
@@ -898,7 +937,7 @@ def train(
         # ---- Resolve GA resume checkpoint paths ----
         ga_stage1_resume_path = None
         ga_stage2_resume_path = None
-        if resume_run_dir:
+        if search_backend == "ga" and resume_run_dir:
             _s1_path = os.path.join(resume_run_dir, "stage1", GA_STAGE1_CHECKPOINT_FILENAME)
             if os.path.isfile(_s1_path):
                 ga_stage1_resume_path = _s1_path
@@ -918,32 +957,35 @@ def train(
         if final_eval_only:
             _prior_load_dir = resume_run_dir or run_output_dir
             prior_stage1_search_best, prior_stage2_search_best = _load_prior_ga_search_results(
-                _prior_load_dir
+                _prior_load_dir,
+                stage1_filename=stage1_result_filename,
+                stage2_filename=stage2_result_filename,
+                algorithm_label=backend_label,
             )
             if prior_stage1_search_best is None and final_eval_config_source == "search":
                 print(
                     "[final_eval_only][提示] 未在 "
-                    f"{_prior_load_dir} 找到 Stage-1 GA 搜索结果。"
+                    f"{_prior_load_dir} 找到 Stage-1 {backend_label} 搜索结果。"
                     "final_eval 将按照 final_eval_config_source 的回退规则选择配置。"
                 )
             if prior_stage2_search_best is None and final_eval_config_source == "search":
                 print(
                     "[final_eval_only][提示] 未在 "
-                    f"{_prior_load_dir} 找到 Stage-2 GA 搜索结果。"
+                    f"{_prior_load_dir} 找到 Stage-2 {backend_label} 搜索结果。"
                     "final_eval 将按照 final_eval_config_source 的回退规则选择配置。"
                 )
 
         stage1_search_result = None
         stage1_context = None
         if not importance_evaluator.skip_stage1_rl:
-            stage1_search_result = run_stage1_genetic_search(
+            stage1_search_result = run_stage1_search(
                 importance_evaluator,
                 random_seed=final_eval_random_seed,
                 resume_checkpoint_path=ga_stage1_resume_path,
             )
             stage1_context = stage1_search_result["context"]
         else:
-            importance_evaluator.log("Stage-1 genetic search skipped by flag.")
+            importance_evaluator.log(f"Stage-1 {backend_label} search skipped by flag.")
 
         if stage1_context is None:
             stage1_context = build_stage1_context(
@@ -995,7 +1037,7 @@ def train(
                 )
 
             if not importance_evaluator.skip_noise_rl:
-                noise_stage_result = run_stage2_noise_genetic_search(
+                noise_stage_result = run_stage2_noise_search(
                     importance_evaluator,
                     fixed_gelu=fixed_gelu,
                     fixed_softmax=fixed_softmax,
@@ -1005,7 +1047,7 @@ def train(
                     resume_checkpoint_path=ga_stage2_resume_path,
                 )
             else:
-                importance_evaluator.log("Stage-2 noise genetic search skipped by flag.")
+                importance_evaluator.log(f"Stage-2 noise {backend_label} search skipped by flag.")
 
             if not importance_evaluator.skip_final_eval:
                 if noise_stage_result is not None:
@@ -1026,7 +1068,7 @@ def train(
                     limit_p = noise_final_eval_context["limit_p"]
                     limit_s = noise_final_eval_context["limit_s"]
 
-                final_eval_runner = GeneticUnifiedFinalEvaluationModule(
+                final_eval_runner = SearchFinalEvaluationModule(
                     evaluator=importance_evaluator,
                     config_source=final_eval_config_source,
                     config_path=final_eval_config_path,

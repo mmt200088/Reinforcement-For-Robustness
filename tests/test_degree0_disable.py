@@ -26,6 +26,43 @@ class DegreeZeroDisableTests(unittest.TestCase):
         self.assertTrue(np.array_equal(gelu_arr, np.array([4, 1, 2, 1])))
         self.assertTrue(np.array_equal(softmax_arr, np.array([6, 6, 6, 6])))
 
+    def test_greedy_stage1_never_steps_to_degree0(self):
+        try:
+            import greedy_search_module as greedy_module
+        except ImportError as exc:
+            self.skipTest(f"greedy_search_module import unavailable: {exc}")
+
+        searcher = object.__new__(greedy_module.Stage1GreedySearcher)
+        self.assertEqual(searcher._next_gelu_degree(4), 2)
+        self.assertEqual(searcher._next_gelu_degree(2), 1)
+        self.assertIsNone(searcher._next_gelu_degree(1))
+
+        gelu_arr, _, had_degree0 = greedy_module.Stage1GreedySearcher._sanitize_stage1_candidate(
+            [4, 0, 2, 1],
+            [6, 6, 6, 6],
+        )
+        self.assertTrue(had_degree0)
+        self.assertTrue(np.array_equal(gelu_arr, np.array([4, 1, 2, 1])))
+
+    def test_rl_stage1_env_masks_degree0_even_when_legacy_flag_is_true(self):
+        try:
+            import layer_importance_evaluator as li_module
+        except ImportError as exc:
+            self.skipTest(f"layer_importance_evaluator import unavailable: {exc}")
+
+        env = object.__new__(li_module.TransformerOptEnv)
+        env.total_layers = 3
+        env.current_layer = 0
+        env.gelu_degree0_eligible = np.ones(env.total_layers, dtype=bool)
+
+        self.assertEqual(li_module.GELU_MAP[3], 1)
+        self.assertTrue(
+            np.array_equal(
+                env.get_gelu_action_mask(0),
+                np.array([True, True, True, False], dtype=bool),
+            )
+        )
+
     def test_general_stage1_prepare_task_keeps_degree0_disabled(self):
         try:
             import general_policy_module as gp_module

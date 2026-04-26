@@ -37,7 +37,10 @@ import hashlib
 
 # ==================== PPO 常量与配置定义 ====================
 # 动作映射表（严格按照任务要求）
-GELU_MAP = {0: 4, 1: 2, 2: 1, 3: 0}
+# Keep the GELU head at four logits so old checkpoints remain loadable. The
+# fourth action is permanently masked in Stage-1 RL; map it to degree 1 as a
+# defensive fallback for any legacy path that bypasses the mask.
+GELU_MAP = {0: 4, 1: 2, 2: 1, 3: 1}
 GELU_COST = {4: 3.0, 2: 2.5, 1: 1.0, 0: -1.0}
 SOFTMAX_MAP = {0: 6, 1: 5, 2: 4, 3: 3, 4: 2}
 SOFTMAX_COST = {6: 3.0, 5: 2.5, 4: 2.0, 3: 1.5, 2: 1.0}
@@ -154,12 +157,14 @@ DEFAULT_STAGE1_SEARCH_LOG_FILE = "pruning_search_log.txt"
 _SEARCH_LOG_FILENAMES = {
     "rl": ("pruning_search_log.txt", "pruning_search_log.txt"),
     "ga": ("ga_search_log.txt", "ga_noise_search_log.txt"),
+    "greedy": ("greedy_search_log.txt", "greedy_noise_search_log.txt"),
     "general-rl": ("general_rl_search_log.txt", "general_rl_noise_search_log.txt"),
 }
 
 _SEARCH_LOG_HEADERS = {
     "rl": "=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===",
     "ga": "=== 遗传算法(GA)搜索优化日志已启动（Genetic Algorithm Search Log Started） ===",
+    "greedy": "=== Greedy Search Log Started ===",
     "general-rl": "=== 通用RL策略训练日志已启动（General RL Policy Training Log Started） ===",
 }
 DEFAULT_STAGE1_STEP_INFO_FILE = "ppo_step_info.txt"
@@ -275,9 +280,6 @@ def resolve_run_output_layout(run_output_dir, search_algorithm=None):
     }
 
     return layout
-
-# GELU degree 0 资格阈值：[-2.7, 0) 区间占比 >= 此阈值才能使用 degree 0
-GELU_DEGREE0_THRESHOLD = 2.0 # 设为 2.0（不可能达到）以完全禁用 degree 0 动作 一般设置为 0.80
 
 # PPO 超参数
 PPO_LR = 3e-4
@@ -711,11 +713,7 @@ def detect_rl_local_optimum(
 # - 约束设定：基于验证集baseline，确保在未见数据上满足性能要求
 USE_VALIDATION_FOR_REWARD = True  # True: 使用验证集计算奖励, False: 使用训练集
 
-# ==================== 搜索模式与贪心配置 ====================
-# SEARCH_MODE: 选择优化方式
-#   - "rl": 仅强化学习（Phase 2），不执行贪心
-#   - "greedy": 仅贪婪算法（从下方 GREEDY_INITIAL_* 指定的配置出发），不执行 RL
-#   - "both": 先 RL 再根据 USE_GREEDY_SEARCH 决定是否执行贪心
+# ==================== 验证集引导搜索配置 ====================
 # [已禁用] 不再将验证集拆分为 val_search_full / val_holdout / val_proxy，统一使用 validation_full。
 USE_VALIDATION_SEARCH_PROTOCOL = False
 VALIDATION_SMALL_TASKS = {"mrpc", "rte", "cola", "wnli"}
@@ -728,19 +726,6 @@ RL_DATASET_SPLIT_SEED = 42
 USE_TRAIN_ANCHOR = False
 TRAIN_ANCHOR_SIZE_DEFAULT = 256
 TRAIN_ANCHOR_SIZE_SMALL = 128
-
-SEARCH_MODE = "rl"  # "rl" | "greedy" | "both"
-
-# 仅当 SEARCH_MODE == "greedy" 时生效：贪婪算法的初始 GELU/Softmax 配置
-# 长度需与模型层数一致（如 12）；不足会按最后一值填充，超出会截断
-# GELU 每层取值: 4, 2, 1  ;  Softmax 每层取值: 6, 5, 4, 3, 2
-GREEDY_INITIAL_GELU = [1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1]
-GREEDY_INITIAL_SOFTMAX = [2, 3, 4, 6, 4, 4, 5, 4, 4, 5, 5, 2]
-
-# 仅当 SEARCH_MODE == "both" 时生效：PPO 结束后是否再执行贪心搜索
-# True: PPO 结束后执行贪心 refinement; False: 直接使用 RL 结果
-USE_GREEDY_SEARCH = False
-
 
 def orthogonal_init(layer, gain=1.0):
     """正交初始化"""
@@ -1896,8 +1881,8 @@ class TransformerOptEnv:
                             用于课程学习的动态约束调整
         - prev_metrics: 上一episode结束时的指标（用于差分奖励计算）
         - num_metrics: 当前数据集的评估指标数量 (1 或 2)
-        - gelu_degree0_eligible: np.ndarray[bool], shape=(total_layers,)
-                                 每层是否有资格使用 degree 0 动作
+        - gelu_degree0_eligible: legacy compatibility argument; ignored because
+                                 Stage-1 RL no longer allows degree 0.
         """
         self.total_layers = total_layers
         self.baseline_cost = baseline_cost  # 72.0 for 12 layers
@@ -1905,11 +1890,9 @@ class TransformerOptEnv:
         self.evaluator = evaluator
         self.num_metrics = num_metrics
         
-        # Degree 0 资格掩码
-        if gelu_degree0_eligible is None:
-            self.gelu_degree0_eligible = np.zeros(total_layers, dtype=bool)
-        else:
-            self.gelu_degree0_eligible = gelu_degree0_eligible
+        # Kept for checkpoint/API compatibility. Stage-1 RL permanently masks
+        # degree 0 regardless of this legacy eligibility vector.
+        self.gelu_degree0_eligible = np.zeros(total_layers, dtype=bool)
         
         # 敏锐度优化PDF 3.3：约束阈值（用于预算感知和课程学习）
         if constraint_limits is None:
@@ -1978,16 +1961,12 @@ class TransformerOptEnv:
         """
         返回指定层的 GELU 动作掩码 (4-dim bool)。
         True = 该动作可选, False = 被禁止。
-        动作索引: 0=degree4, 1=degree2, 2=degree1, 3=degree0
+        动作索引: 0=degree4, 1=degree2, 2=degree1, 3=legacy disabled slot
         
         如果 layer_idx 为 None，使用 self.current_layer。
         """
-        if layer_idx is None:
-            layer_idx = self.current_layer
-        mask = np.array([True, True, True, False], dtype=bool)
-        if layer_idx < len(self.gelu_degree0_eligible) and self.gelu_degree0_eligible[layer_idx]:
-            mask[3] = True
-        return mask
+        del layer_idx
+        return np.array([True, True, True, False], dtype=bool)
     
     def _get_state(self):
         """
@@ -3278,65 +3257,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             act = mlp.act
             return act if isinstance(act, nn.Module) else None
         return None
-
-    def analyze_gelu_distribution(self):
-        """
-        分析每层 GELU(x) 输入 x 的分布，判断哪些层有资格使用 degree 0。
-        
-        通过在每层的 intermediate_act_fn 上安装前向钩子，运行一次训练集前向传播，
-        统计 x 落在 [-2.7, 0) 区间的比例。若 >= GELU_DEGREE0_THRESHOLD (80%)，
-        则该层有资格使用 degree 0 动作。
-        
-        Returns:
-            gelu_degree0_eligible: np.ndarray[bool], shape=(total_layers,)
-        """
-        interval_counts = [np.zeros(4, dtype=np.int64) for _ in range(self.total_layers)]
-        hooks = []
-        layers = eval('self.model.' + self.layers_attribute)
-
-        def _make_hook(layer_idx):
-            @torch.no_grad()
-            def hook_fn(module, input_tensor, output_tensor):
-                x = input_tensor[0].detach().reshape(-1)
-                interval_counts[layer_idx][0] += (x < -2.7).sum().item()
-                interval_counts[layer_idx][1] += ((x >= -2.7) & (x < 0)).sum().item()
-                interval_counts[layer_idx][2] += ((x >= 0) & (x <= 2.7)).sum().item()
-                interval_counts[layer_idx][3] += (x > 2.7).sum().item()
-            return hook_fn
-
-        for i, layer in enumerate(layers):
-            act_fn = self._get_layer_act_module(layer)
-            if act_fn is not None:
-                hooks.append(act_fn.register_forward_hook(_make_hook(i)))
-            else:
-                # Fallback: register on the enclosing FFN submodule (BERT: intermediate; GPT-2: mlp).
-                host = getattr(layer, "intermediate", None) or getattr(layer, "mlp", None)
-                if host is not None:
-                    hooks.append(
-                        host.register_forward_hook(
-                            lambda mod, inp, out, idx=i: _make_hook(idx)(mod, inp, out)
-                        )
-                    )
-
-        self.model.eval()
-        self.model.to(self.device)
-        with torch.no_grad():
-            for batch in self.dataloader_train:
-                batch = {k: v.to(self.device) for k, v in batch.items()}
-                self.model(**batch)
-
-        for h in hooks:
-            h.remove()
-
-        eligible = np.zeros(self.total_layers, dtype=bool)
-        for i in range(self.total_layers):
-            ic = interval_counts[i]
-            total = ic.sum()
-            if total > 0:
-                neg_ratio = ic[1] / total
-                eligible[i] = neg_ratio >= GELU_DEGREE0_THRESHOLD
-
-        return eligible, interval_counts
 
     def log(self, message):
         print(message, flush=True)
@@ -4801,10 +4721,9 @@ class LayerImportanceEvaluator(TrainerCallback):
     def on_evaluate(self, args, state, control, **kwargs):
         self.log("\n" + "="*60)
         self.log("开始配置评估（STARTING CONFIGURATION EVALUATION）")
-        self.log(f"搜索模式（SEARCH_MODE）={SEARCH_MODE}" + (" (使用贪心搜索USE_GREEDY_SEARCH=" + str(USE_GREEDY_SEARCH) + ")" if SEARCH_MODE == "both" else ""))
         self.log(f"最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）={self.final_eval_config_source}")
         if self.skip_stage1_rl:
-            self.log("[信息] 第一阶段RL/贪心搜索已跳过（--skip-stage1-rl）。")
+            self.log("[信息] 第一阶段RL搜索已跳过（--skip-stage1-rl）。")
         self.log("="*60)
 
         base_gelu = np.full(self.total_layers, 4, dtype=int)
@@ -4813,14 +4732,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         num_metrics = self.get_num_metrics()
         base_loss = base_p = base_s = None
         base_loss_train = base_p_train = base_s_train = None
-        gelu_degree0_eligible = np.zeros(self.total_layers, dtype=bool)
         reward_reference_split = self.get_reward_reference_split_name()
 
         if self.skip_stage1_rl:
             self.log("\n--- 阶段1（Phase 1）: 已跳过（SKIPPED）（--skip-stage1-rl） ---")
-            self.log("[信息] 基线建立已跳过，因其仅用于第一阶段RL/贪心搜索。")
-            self.log("\n--- 阶段1.5（Phase 1.5）: 已跳过（SKIPPED）（--skip-stage1-rl） ---")
-            self.log("[信息] GELU输入分布分析已跳过，因其仅用于第一阶段RL/贪心搜索。")
+            self.log("[信息] 基线建立已跳过，因其仅用于第一阶段RL搜索。")
             if self.run_output_dir:
                 update_persistent_metadata_stage(
                     self.run_output_dir, "stage1_search", "skipped")
@@ -4878,22 +4794,6 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             self.log(f"约束条件（Constraints）（基于{'验证集（Validation）' if USE_VALIDATION_FOR_REWARD else '训练集（Training）'}）：")
             self.log(f"  {self._fmt_constraints(limit_loss, limit_p, limit_s)}")
-
-            # ---------------------------------------------------------
-            # Phase 1.5: GELU Distribution Analysis (判断 degree 0 资格)
-            # ---------------------------------------------------------
-            self.log("\n--- 阶段1.5（Phase 1.5）: GELU输入分布分析（GELU Input Distribution Analysis） ---")
-            self.log(f"阈值（Threshold）: [-2.7, 0) 区间 >= {GELU_DEGREE0_THRESHOLD*100:.0f}% -> 符合0阶资格（eligible for degree 0）")
-            gelu_degree0_eligible, gelu_interval_counts = self.analyze_gelu_distribution()
-            for i in range(self.total_layers):
-                ic = gelu_interval_counts[i]
-                total = ic.sum()
-                if total > 0:
-                    pcts = ic / total * 100
-                    status = "符合资格（ELIGIBLE）" if gelu_degree0_eligible[i] else "不符合资格（NOT eligible）"
-                    self.log(f"  第{i}层（Layer {i}）: [-2.7,0)={pcts[1]:.2f}% | <-2.7={pcts[0]:.2f}% | [0,2.7]={pcts[2]:.2f}% | >2.7={pcts[3]:.2f}% -> {status}")
-            eligible_count = gelu_degree0_eligible.sum()
-            self.log(f"总结（Summary）: {eligible_count}/{self.total_layers} 层符合GELU 0阶资格")
 
         # 供绘图使用：仅 RL 时会填充
         episode_rewards = []
@@ -4998,9 +4898,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                 )
 
         # ---------------------------------------------------------
-        # Phase 2: PPO Training（仅当 SEARCH_MODE 为 "rl" 或 "both" 时执行）
+        # Phase 2: PPO Training
         # ---------------------------------------------------------
-        if (not self.skip_stage1_rl) and SEARCH_MODE in ("rl", "both"):
+        if not self.skip_stage1_rl:
             self.log("\n--- 阶段2（Phase 2）: PPO强化学习训练（PPO Reinforcement Learning Training） ---")
         
             step_info_details_dir = os.path.join(os.path.dirname(self.step_info_file), "details")
@@ -5139,7 +5039,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                     "metric2": float(limit_s),
                 },
                 num_metrics=self.get_num_metrics(),
-                gelu_degree0_eligible=gelu_degree0_eligible,
             )
             if USE_VALIDATION_FOR_REWARD:
                 rl_evaluator.split_name = online_reward_split
@@ -5777,193 +5676,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.log(f"  GELU配置: {best_config['gelu'].tolist()}")
             self.log(f"  Softmax配置: {best_config['softmax'].tolist()}")
             self.log(f"  成本（Cost）: {best_config['cost']:.2f}, 奖励（Reward）: {best_config['reward']:.4f}")
-
-        # ---------------------------------------------------------
-        # 仅贪婪模式：从用户指定的初始配置开始
-        # ---------------------------------------------------------
-        if (not self.skip_stage1_rl) and SEARCH_MODE == "greedy":
-            # 将 GREEDY_INITIAL_* 转为数组并 pad/truncate 到 total_layers
-            def _pad_or_truncate(arr, length, default_val):
-                a = np.asarray(arr, dtype=int)
-                if len(a) < length:
-                    a = np.concatenate([a, np.full(length - len(a), default_val, dtype=int)])
-                elif len(a) > length:
-                    a = a[:length].copy()
-                return a
-            init_gelu = _pad_or_truncate(GREEDY_INITIAL_GELU, self.total_layers, 4)
-            init_softmax = _pad_or_truncate(GREEDY_INITIAL_SOFTMAX, self.total_layers, 6)
-            if len(GREEDY_INITIAL_GELU) != self.total_layers or len(GREEDY_INITIAL_SOFTMAX) != self.total_layers:
-                self.log(f"[信息] GREEDY_INITIAL_* 长度已调整至 total_layers={self.total_layers}（填充/截断pad/truncate）。")
-            init_cost = self.get_simulated_cost(init_gelu, init_softmax)[0]
-            best_config = {
-                'gelu': init_gelu,
-                'softmax': init_softmax,
-                'cost': init_cost,
-                'reward': 0
-            }
-            self.log("\n--- 仅贪心模式（Greedy-Only Mode）: 使用用户指定的初始配置 ---")
-            self.log(f"  GELU配置: {best_config['gelu'].tolist()}")
-            self.log(f"  Softmax配置: {best_config['softmax'].tolist()}")
-
-        # ---------------------------------------------------------
-        # Phase 2.5: Greedy Search（SEARCH_MODE=="both" 且 USE_GREEDY_SEARCH 时从 RL 结果出发；SEARCH_MODE=="greedy" 时从指定初始配置出发）
-        # ---------------------------------------------------------
-        if (not self.skip_stage1_rl) and ((SEARCH_MODE == "both" and USE_GREEDY_SEARCH) or SEARCH_MODE == "greedy"):
-            self.log("\n" + "="*60)
-            if SEARCH_MODE == "greedy":
-                self.log("阶段2.5（PHASE 2.5）：贪心搜索（GREEDY SEARCH）（仅贪心模式，从用户指定初始配置开始）")
-            else:
-                self.log("阶段2.5（PHASE 2.5）：贪心搜索（GREEDY SEARCH）（RL后精炼Post-RL Refinement）")
-            self.log("贪心地降低成本，同时维持0.5%约束（Greedily reduce cost while maintaining 0.5% constraint）")
-            self.log("="*60)
-            
-            greedy_gelu = best_config['gelu'].copy()
-            greedy_softmax = best_config['softmax'].copy()
-            
-            # 在训练集上评估初始配置（用于记录）
-            init_loss, init_p, init_s, _ = self.stage1_final_evaluate(greedy_gelu, greedy_softmax, use_train=True)
-            init_cost = best_config['cost']
-            
-            self.log(f"初始配置（在训练集上评估）（Initial, evaluated on Training Set）：")
-            self.log(f"  {self._fmt_metrics(init_loss, init_p, init_s)}, 成本（Cost）: {init_cost:.2f}")
-            
-            # 设定 0.5% 的严格约束（贪心在训练集上做，故 baseline 用训练集）
-            GREEDY_CONSTRAINT_RATIO = 0.005
-            greedy_limit_loss = base_loss_train * (1 + GREEDY_CONSTRAINT_RATIO)
-            greedy_limit_p = base_p_train * (1 - GREEDY_CONSTRAINT_RATIO)
-            greedy_limit_s = base_s_train * (1 - GREEDY_CONSTRAINT_RATIO)
-            
-            self.log(f"贪心约束（Greedy Constraints）（0.5%容忍度，基线在训练集上）：")
-            self.log(f"  基线（训练集Baseline Train）: {self._fmt_metrics(base_loss_train, base_p_train, base_s_train)}")
-            self.log(f"  约束限制（Limits）: {self._fmt_constraints(greedy_limit_loss, greedy_limit_p, greedy_limit_s)}")
-            
-            # Best-First 贪心搜索：每轮枚举所有可行的单步降精度，选择成本节省最大的接受
-            # （避免 first-fit 策略中因层序固定导致约束预算被低价值修改抢占的问题）
-            iteration = 0
-            max_iterations = 200  # 每次只接受一步，需要足够多的迭代
-            current_cost = self.get_simulated_cost(greedy_gelu, greedy_softmax)[0]
-            
-            while iteration < max_iterations:
-                iteration += 1
-                
-                # 收集所有可行的候选修改，每个候选 = (成本节省, 类型, 层号, 旧值, 新值, 评估结果)
-                candidates = []
-                
-                # 枚举所有层的 GELU 降精度候选 (4->2->1->0, 0 only if eligible)
-                for layer_idx in range(self.total_layers):
-                    cur_deg = greedy_gelu[layer_idx]
-                    if cur_deg == 4:
-                        cand_deg = 2
-                    elif cur_deg == 2:
-                        cand_deg = 1
-                    elif cur_deg == 1 and gelu_degree0_eligible[layer_idx]:
-                        cand_deg = 0
-                    else:
-                        continue  # 已是最低精度（或不符合 degree 0 资格）
-                    
-                    test_gelu = greedy_gelu.copy()
-                    test_gelu[layer_idx] = cand_deg
-                    test_loss, test_p, test_s, _ = self.stage1_final_evaluate(test_gelu, greedy_softmax, use_train=True)
-                    
-                    # 检查约束
-                    if (test_loss <= greedy_limit_loss and 
-                        test_p >= greedy_limit_p and 
-                        test_s >= greedy_limit_s):
-                        new_cost = self.get_simulated_cost(test_gelu, greedy_softmax)[0]
-                        cost_saving = current_cost - new_cost
-                        candidates.append({
-                            'type': 'GELU', 'layer': layer_idx,
-                            'old_deg': cur_deg, 'new_deg': cand_deg,
-                            'cost_saving': cost_saving, 'new_cost': new_cost,
-                            'loss': test_loss, 'p': test_p, 's': test_s,
-                            'test_gelu': test_gelu, 'test_softmax': greedy_softmax.copy()
-                        })
-                
-                # 枚举所有层的 Softmax 降精度候选
-                for layer_idx in range(self.total_layers):
-                    cur_deg = greedy_softmax[layer_idx]
-                    if cur_deg <= 2:
-                        continue  # 已是最低精度
-                    cand_deg = cur_deg - 1
-                    
-                    test_softmax = greedy_softmax.copy()
-                    test_softmax[layer_idx] = cand_deg
-                    test_loss, test_p, test_s, _ = self.stage1_final_evaluate(greedy_gelu, test_softmax, use_train=True)
-                    
-                    # 检查约束
-                    if (test_loss <= greedy_limit_loss and 
-                        test_p >= greedy_limit_p and 
-                        test_s >= greedy_limit_s):
-                        new_cost = self.get_simulated_cost(greedy_gelu, test_softmax)[0]
-                        cost_saving = current_cost - new_cost
-                        candidates.append({
-                            'type': 'Softmax', 'layer': layer_idx,
-                            'old_deg': cur_deg, 'new_deg': cand_deg,
-                            'cost_saving': cost_saving, 'new_cost': new_cost,
-                            'loss': test_loss, 'p': test_p, 's': test_s,
-                            'test_gelu': greedy_gelu.copy(), 'test_softmax': test_softmax
-                        })
-                
-                # 如果没有任何可行候选，搜索结束
-                if not candidates:
-                    self.log(f"  [迭代（Iter） {iteration}] 未找到可行的单步修改。搜索完成。")
-                    break
-                
-                # 选择成本节省最大的候选
-                best_cand = max(candidates, key=lambda c: c['cost_saving'])
-                
-                # 如果最大成本节省 <= 0，说明无法进一步降低成本，结束
-                if best_cand['cost_saving'] <= 0:
-                    self.log(f"  [迭代（Iter） {iteration}] 未找到可节省成本的候选。搜索完成。")
-                    break
-                
-                # 接受最佳候选
-                greedy_gelu = best_cand['test_gelu']
-                greedy_softmax = best_cand['test_softmax']
-                current_cost = best_cand['new_cost']
-                
-                self.log(f"  [迭代（Iter） {iteration}] 第{best_cand['layer']}层（Layer） {best_cand['type']} "
-                        f"{best_cand['old_deg']}->{best_cand['new_deg']}: "
-                        f"{self._fmt_metrics(best_cand['loss'], best_cand['p'], best_cand['s'])}, "
-                        f"成本（Cost）={current_cost:.2f}, 节省（Saved）={best_cand['cost_saving']:.2f} ✓")
-            
-            # 最终的贪心搜索结果（在验证集上评估）
-            final_loss, final_p, final_s, _ = self.stage1_final_evaluate(greedy_gelu, greedy_softmax, use_train=False)
-            final_cost = self.get_simulated_cost(greedy_gelu, greedy_softmax)[0]
-            
-            self.log(f"\n--- 贪心搜索完成（Greedy Search Completed）（迭代次数Iterations: {iteration}） ---")
-            self.log(f"最终配置（贪心后，在验证集上评估）（Final Configuration after Greedy, evaluated on Validation Set）：")
-            self.log(f"  GELU配置: {greedy_gelu.tolist()}")
-            self.log(f"  Softmax配置: {greedy_softmax.tolist()}")
-            self.log(f"  {self._fmt_metrics(final_loss, final_p, final_s)}")
-            self.log(f"  成本（Cost）: {final_cost:.2f}")
-            self.log(f"成本降低（Cost Reduction）: RL={init_cost:.2f} -> 贪心（Greedy）={final_cost:.2f} (Δ={init_cost - final_cost:.2f})")
-            
-            # 更新 best_config 为贪心搜索的结果
-            best_config = {
-                'gelu': greedy_gelu,
-                'softmax': greedy_softmax,
-                'cost': final_cost,
-                'reward': best_config['reward']  # 保留RL的reward供参考
-            }
-        else:
-            # 跳过贪心搜索
-            self.log("\n" + "="*60)
-            self.log("阶段2.5（PHASE 2.5）：贪心搜索（GREEDY SEARCH）（已跳过SKIPPED）")
-            self.log("="*60)
-            if self.skip_stage1_rl:
-                self.log("[信息] 第一阶段PPO/贪心已跳过（--skip-stage1-rl）。")
-            elif SEARCH_MODE == "rl":
-                self.log("[信息] 搜索模式SEARCH_MODE=rl，贪心搜索未执行。")
-            elif SEARCH_MODE == "both":
-                self.log("[信息] USE_GREEDY_SEARCH=False，跳过贪心精炼。")
-            if self.skip_stage1_rl:
-                self.log(
-                    "[Info] GELU/Softmax 将根据 --final-eval-source 在最终评估模块中解析。"
-                )
-            else:
-                self.log("[信息] 使用当前最优配置（best_config）作为最终配置。")
-            self.log("="*60)
 
         # ---------------------------------------------------------
         # Plot: PPO Training Curves（仅当执行过 RL 时绘制）

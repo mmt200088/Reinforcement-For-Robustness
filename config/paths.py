@@ -62,6 +62,7 @@ FINAL_EVAL_SUBDIR: str = os.path.join(RL_RESULTS_ROOT, "final_eval")
 
 PERSISTENT_RL_BRANCH: str = "rl"
 PERSISTENT_GA_BRANCH: str = "ga"
+PERSISTENT_GREEDY_BRANCH: str = "greedy"
 PERSISTENT_GENERAL_RL_BRANCH: str = "general-rl"
 
 
@@ -143,6 +144,7 @@ STAGE1_ENTROPY_CURVE_FILENAME: str = "ppo_entropy_curve.png"
 
 GLUE_FINAL_CONFIGS_BEST_PPO: str = "glue_final_configs_best_ppo.json"
 GLUE_FINAL_CONFIGS_BEST_GENETIC: str = "glue_final_configs_best_genetic.json"
+GLUE_FINAL_CONFIGS_BEST_GREEDY: str = "glue_final_configs_best_greedy.json"
 """统一的 final-eval 配置文件：同时包含 stage1 (gelu/softmax) 与 stage2 (x/wq/wk/wv/wo/wffn1/wffn2) 的最佳配置。"""
 
 
