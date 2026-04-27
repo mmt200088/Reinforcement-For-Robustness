@@ -270,6 +270,46 @@ class UnifiedFinalEvalPartialSearchTests(unittest.TestCase):
         self.assertIsNotNone(sampled)
         self.assertEqual(module._stage2_config_cost_key(sampled), target_key)
 
+    def test_performance_table_formats_delta_columns_as_percent(self):
+        module, cfg_path, _ = self._build_module_and_config()
+        self.addCleanup(lambda: cfg_path.unlink(missing_ok=True))
+
+        baseline = {
+            "name": "Baseline",
+            "family": "Baseline",
+            "loss": 1.0,
+            "p": 0.5,
+            "s": 0.25,
+            "stage1_tot_c": 1.0,
+            "stage2_tot_c": 0.0,
+            "feasible": True,
+            "loss_std": 0.0,
+            "p_std": 0.0,
+            "s_std": 0.0,
+            "show_cost_as_na": True,
+        }
+        optimized = {
+            "name": "Optimized",
+            "family": "Optimized",
+            "loss": 0.75,
+            "p": 0.55,
+            "s": 0.20,
+            "stage1_tot_c": 2.0,
+            "stage2_tot_c": 3.0,
+            "feasible": True,
+            "loss_std": 0.01,
+            "p_std": 0.02,
+            "s_std": 0.03,
+        }
+
+        module._attach_relative_metrics(baseline, [baseline, optimized], num_metrics=2)
+        row = module._format_row(optimized, num_metrics=2)
+
+        self.assertIn("-25.00%", row)
+        self.assertIn("10.00%", row)
+        self.assertIn("-20.00%", row)
+        self.assertNotIn("-0.2500", row)
+
     def test_final_eval_baseline_is_single_eval_when_noisy_groups_repeat(self):
         from final_evaluation_module import (
             NOISE_SCALING_FACTOR_KEYS,

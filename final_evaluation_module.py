@@ -1129,8 +1129,17 @@ class UnifiedFinalEvaluationModule:
             result["total_cost"] = self._combined_total_cost(result)
             result["loss_delta_vs_baseline"] = float(result["loss"] - base_loss)
             result["p_delta_vs_baseline"] = float(result["p"] - base_p)
+            result["loss_delta_pct_vs_baseline"] = self._relative_delta_percent(
+                result["loss"], base_loss
+            )
+            result["p_delta_pct_vs_baseline"] = self._relative_delta_percent(
+                result["p"], base_p
+            )
             if num_metrics > 1:
                 result["s_delta_vs_baseline"] = float(result["s"] - base_s)
+                result["s_delta_pct_vs_baseline"] = self._relative_delta_percent(
+                    result["s"], base_s
+                )
             for metric_key in ("loss", "p", "s"):
                 std_key = f"{metric_key}_std"
                 if std_key in result:
@@ -1166,6 +1175,29 @@ class UnifiedFinalEvaluationModule:
             if not np.isfinite(float(value)):
                 return f"{'N/A':<{width}}"
             return f"{float(value):<{width}.2e}"
+        except Exception:
+            return f"{'N/A':<{width}}"
+
+    @staticmethod
+    def _relative_delta_percent(value, baseline):
+        try:
+            baseline = float(baseline)
+            value = float(value)
+            if not np.isfinite(value) or not np.isfinite(baseline) or abs(baseline) <= 1e-12:
+                return None
+            return float((value - baseline) / baseline * 100.0)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _format_percent(value, width=8, precision=2):
+        if value is None:
+            return f"{'N/A':<{width}}"
+        try:
+            if not np.isfinite(float(value)):
+                return f"{'N/A':<{width}}"
+            text = f"{float(value):.{precision}f}%"
+            return f"{text:<{width}}"
         except Exception:
             return f"{'N/A':<{width}}"
 
@@ -1314,7 +1346,7 @@ class UnifiedFinalEvaluationModule:
             header = (
                 f"{'Method':<25} | {'OK':<3} | "
                 f"{'Loss':<8} {metric_short_names[0]:<8} | "
-                f"{'dLoss':<8} {('d' + metric_short_names[0]):<8} | "
+                f"{'dLoss%':<8} {('d' + metric_short_names[0] + '%'):<8} | "
                 f"{'VarLoss':<10} {('Var' + metric_short_names[0]):<10} | "
                 f"{'TotalC':<8}"
             )
@@ -1322,7 +1354,7 @@ class UnifiedFinalEvaluationModule:
             header = (
                 f"{'Method':<25} | {'OK':<3} | "
                 f"{'Loss':<8} {metric_short_names[0]:<8} {metric_short_names[1]:<8} | "
-                f"{'dLoss':<8} {('d' + metric_short_names[0]):<8} {('d' + metric_short_names[1]):<8} | "
+                f"{'dLoss%':<8} {('d' + metric_short_names[0] + '%'):<8} {('d' + metric_short_names[1] + '%'):<8} | "
                 f"{'VarLoss':<10} {('Var' + metric_short_names[0]):<10} {('Var' + metric_short_names[1]):<10} | "
                 f"{'TotalC':<8}"
             )
@@ -1340,11 +1372,11 @@ class UnifiedFinalEvaluationModule:
     def _format_row(self, result, num_metrics):
         ok = "Y" if result["feasible"] else "N"
         total_cost = self._format_fixed(result.get("total_cost"), width=8, precision=2)
-        loss_delta = self._format_fixed(
-            result.get("loss_delta_vs_baseline"), width=8, precision=4
+        loss_delta = self._format_percent(
+            result.get("loss_delta_pct_vs_baseline"), width=8, precision=2
         )
-        p_delta = self._format_fixed(
-            result.get("p_delta_vs_baseline"), width=8, precision=4
+        p_delta = self._format_percent(
+            result.get("p_delta_pct_vs_baseline"), width=8, precision=2
         )
         loss_var = self._format_sci(result.get("loss_var"), width=10)
         p_var = self._format_sci(result.get("p_var"), width=10)
@@ -1356,8 +1388,8 @@ class UnifiedFinalEvaluationModule:
                 f"{loss_var} {p_var} | "
                 f"{total_cost}"
             )
-        s_delta = self._format_fixed(
-            result.get("s_delta_vs_baseline"), width=8, precision=4
+        s_delta = self._format_percent(
+            result.get("s_delta_pct_vs_baseline"), width=8, precision=2
         )
         s_var = self._format_sci(result.get("s_var"), width=10)
         return (
@@ -1612,86 +1644,125 @@ class UnifiedFinalEvaluationModule:
             import matplotlib.pyplot as plt
 
             family_colors = self._family_colors()
-            grouped: Dict[str, list] = {
-                "Optimized": [optimized],
-                "Stage1FixedMaxSF": [stage1_fixed_max],
-            }
-            if random_results:
-                grouped["Random"] = list(random_results)
-            families = [
-                family
-                for family in ("Optimized", "Random", "Stage1FixedMaxSF")
-                if family in grouped
+            random_grouped: Dict[str, list] = {}
+            for result in random_results:
+                random_grouped.setdefault(result["family"], []).append(result)
+            random_families = self._ordered_families(random_grouped)
+
+            special_markers = [
+                ("Optimized", "Optimized", optimized, "*", 230, "#E45756"),
+                (
+                    "Stage1FixedMaxSF",
+                    "Stage1Fixed+MaxSF",
+                    stage1_fixed_max,
+                    "D",
+                    120,
+                    "#B279A2",
+                ),
             ]
 
             fig, axes = plt.subplots(2, 2, figsize=(16, 11), constrained_layout=True)
             fig.suptitle(
-                f"Final Evaluation Deltas and Test Variance ({self.evaluator.dataset_key.upper()})",
+                f"Final Evaluation Test Variance Comparison ({self.evaluator.dataset_key.upper()})",
                 fontsize=14,
                 fontweight="bold",
             )
 
-            delta_panels = [
-                ("Loss delta vs Baseline", "loss_delta_vs_baseline", "Delta Loss"),
+            variance_panels = [
+                ("Loss Variance vs Total Cost", "loss_var", "VarLoss"),
                 (
-                    f"{metric_short_names[0]} delta vs Baseline",
-                    "p_delta_vs_baseline",
-                    f"Delta {metric_short_names[0]}",
-                ),
-                (
-                    f"{metric_short_names[1]} delta vs Baseline"
-                    if num_metrics > 1
-                    else "Time delta vs Baseline",
-                    "s_delta_vs_baseline" if num_metrics > 1 else "time_delta_vs_baseline",
-                    f"Delta {metric_short_names[1]}" if num_metrics > 1 else "Delta Time (ms)",
+                    f"{metric_short_names[0]} Variance vs Total Cost",
+                    "p_var",
+                    f"Var{metric_short_names[0]}",
                 ),
             ]
+            if num_metrics > 1:
+                variance_panels.append(
+                    (
+                        f"{metric_short_names[1]} Variance vs Total Cost",
+                        "s_var",
+                        f"Var{metric_short_names[1]}",
+                    )
+                )
+            else:
+                variance_panels.append(("Time Variance vs Total Cost", "time_var", "VarTime"))
 
-            if num_metrics == 1:
-                base_time = float(baseline.get("time_ms", 0.0))
-                for result in [optimized, stage1_fixed_max] + list(random_results):
-                    result["time_delta_vs_baseline"] = float(result.get("time_ms", 0.0) - base_time)
-
-            for ax, (title, key, ylabel) in zip(list(axes.flat)[:3], delta_panels):
-                data = []
-                labels = []
-                colors = []
-                for family in families:
-                    vals = [
-                        float(item[key])
-                        for item in grouped[family]
-                        if key in item and np.isfinite(float(item[key]))
+            for ax, (title, key, ylabel) in zip(list(axes.flat)[:3], variance_panels):
+                panel_xs = []
+                has_data = False
+                for family in random_families:
+                    items = random_grouped[family]
+                    xs = [
+                        float(item.get("total_cost"))
+                        for item in items
+                        if item.get("total_cost") is not None
+                        and key in item
+                        and item.get(key) is not None
+                        and np.isfinite(float(item[key]))
                     ]
-                    if not vals:
+                    ys = [
+                        float(item[key])
+                        for item in items
+                        if item.get("total_cost") is not None
+                        and key in item
+                        and item.get(key) is not None
+                        and np.isfinite(float(item[key]))
+                    ]
+                    if xs:
+                        panel_xs.extend(xs)
+                        has_data = True
+                        ax.scatter(
+                            xs,
+                            ys,
+                            s=40,
+                            alpha=0.75,
+                            label=family,
+                            color=family_colors.get(family, "#999999"),
+                        )
+                for family, label, result, marker, size, color in special_markers:
+                    value = result.get(key)
+                    cost = result.get("total_cost")
+                    if (
+                        value is None
+                        or cost is None
+                        or not np.isfinite(float(value))
+                        or not np.isfinite(float(cost))
+                    ):
                         continue
-                    data.append(vals)
-                    labels.append(family)
-                    colors.append(family_colors.get(family, "#999999"))
-                if data:
-                    try:
-                        box = ax.boxplot(
-                            data,
-                            tick_labels=labels,
-                            patch_artist=True,
-                            showfliers=True,
-                        )
-                    except TypeError:
-                        box = ax.boxplot(
-                            data,
-                            labels=labels,
-                            patch_artist=True,
-                            showfliers=True,
-                        )
-                    for patch, color in zip(box["boxes"], colors):
-                        patch.set_facecolor(color)
-                        patch.set_alpha(0.55)
-                    ax.axhline(0.0, color="#666666", linestyle="--", linewidth=1.0)
-                    ax.set_xticklabels(labels, rotation=20, ha="right")
-                else:
-                    ax.text(0.5, 0.5, "No delta data", ha="center", va="center")
+                    panel_xs.append(float(cost))
+                    has_data = True
+                    ax.scatter(
+                        float(cost),
+                        float(value),
+                        marker=marker,
+                        s=size,
+                        color=color,
+                        label=label,
+                        zorder=5 if family == "Optimized" else 4,
+                    )
+                baseline_value = baseline.get(key)
+                if baseline_value is not None and np.isfinite(float(baseline_value)):
+                    ax.axhline(
+                        float(baseline_value),
+                        color="#666666",
+                        linestyle="--",
+                        linewidth=1.2,
+                        alpha=0.75,
+                        label="Baseline",
+                    )
+                if not has_data:
+                    ax.text(0.5, 0.5, "No variance data", ha="center", va="center")
                 ax.set_title(title)
                 ax.set_ylabel(ylabel)
-                ax.grid(True, axis="y", alpha=0.3)
+                ax.set_xlabel("Total Cost (Stage-1 + Stage-2)")
+                ax.grid(True, alpha=0.3)
+                self._set_numeric_axis_limits(ax, panel_xs)
+                ax.margins(x=0.08, y=0.12)
+                try:
+                    ax.ticklabel_format(axis="y", style="sci", scilimits=(-2, 2))
+                except Exception:
+                    pass
+                ax.legend(loc="best", fontsize=8)
 
             ax = axes[1, 1]
             variance_specs = [
@@ -1701,15 +1772,22 @@ class UnifiedFinalEvaluationModule:
             if num_metrics > 1:
                 variance_specs.append((metric_short_names[1], "s_var"))
 
+            bar_groups = [("Baseline", [baseline]), ("Optimized", [optimized])]
+            for family in random_families:
+                bar_groups.append((family, random_grouped[family]))
+            bar_groups.append(("Stage1Fixed+MaxSF", [stage1_fixed_max]))
+
             variance_rows = []
-            for family in families:
+            for family, items in bar_groups:
                 row = []
                 has_any = False
                 for _, key in variance_specs:
                     vals = [
                         float(item[key])
-                        for item in grouped[family]
-                        if key in item and np.isfinite(float(item[key]))
+                        for item in items
+                        if key in item
+                        and item.get(key) is not None
+                        and np.isfinite(float(item[key]))
                     ]
                     if vals:
                         row.append(float(np.mean(vals)))
@@ -1735,28 +1813,14 @@ class UnifiedFinalEvaluationModule:
                 ax.set_title("Mean Test Variance by Group")
                 ax.set_ylabel("Variance")
                 ax.grid(True, axis="y", alpha=0.3)
+                try:
+                    ax.ticklabel_format(axis="y", style="sci", scilimits=(-2, 2))
+                except Exception:
+                    pass
                 ax.legend(loc="best", fontsize=8)
             else:
-                metric_keys = [("Loss", "loss"), (metric_short_names[0], "p")]
-                if num_metrics > 1:
-                    metric_keys.append((metric_short_names[1], "s"))
-                x = np.arange(len(families))
-                width = min(0.25, 0.75 / max(1, len(metric_keys)))
-                for idx, (metric_label, key) in enumerate(metric_keys):
-                    values = [
-                        float(np.var([item[key] for item in grouped[family]]))
-                        if len(grouped[family]) > 1
-                        else 0.0
-                        for family in families
-                    ]
-                    offset = (idx - (len(metric_keys) - 1) / 2.0) * width
-                    ax.bar(x + offset, values, width=width, label=metric_label)
-                ax.set_xticks(x)
-                ax.set_xticklabels(families, rotation=20, ha="right")
-                ax.set_title("Group Result Variance (test variance unavailable)")
-                ax.set_ylabel("Variance across sampled configs")
-                ax.grid(True, axis="y", alpha=0.3)
-                ax.legend(loc="best", fontsize=8)
+                ax.text(0.5, 0.5, "No variance data", ha="center", va="center")
+                ax.set_title("Mean Test Variance by Group")
 
             plot_path = os.path.join(
                 self.results_dir,
