@@ -271,6 +271,7 @@ class UnifiedFinalEvaluationModule:
                     repeats=self.repeat_n,
                     use_train=False,
                     split="validation_full",
+                    random_noise=True,
                     **noise_cfg,
                 )
                 repeat = _pack_noise_summary(summary)
@@ -313,6 +314,7 @@ class UnifiedFinalEvaluationModule:
                         segments=variance_n,
                         use_train=False,
                         split="validation_full",
+                        random_noise=True,
                         **noise_cfg,
                     )
                 else:
@@ -322,6 +324,7 @@ class UnifiedFinalEvaluationModule:
                         repeats=variance_n,
                         use_train=False,
                         split="validation_full",
+                        random_noise=True,
                         **noise_cfg,
                     )
                 variance_repeat = _pack_noise_summary(summary)
@@ -749,7 +752,9 @@ class UnifiedFinalEvaluationModule:
         build_result,
     ):
         ev = self.evaluator
-        rng = np.random.default_rng(self.random_seed)
+        # 用 OS 熵源构造 RNG，确保每次运行采到的随机配置都是不同的；
+        # 否则两次 final-eval 会得到一模一样的随机组配置。
+        rng = np.random.default_rng()
         results: List[dict] = []
 
         # Pre-enumerate stage1 cost solutions for budget/equiv.

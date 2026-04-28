@@ -3865,6 +3865,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             repeats=1,
             use_train=True,
             split=None,
+            random_noise=False,
             ):
         repeats = max(1, int(repeats))
         split_name = self._resolve_eval_split(use_train=use_train, split=split)
@@ -3880,8 +3881,14 @@ class LayerImportanceEvaluator(TrainerCallback):
         try:
             base_seed = int(getattr(self, "final_eval_random_seed", 42))
             for trial_idx in range(repeats):
-                # 每次重复独立可复现的噪声流（torch.randn / numpy），避免上游固定种子导致 MC 方差恒为 0
-                trial_seed = base_seed + trial_idx * 1_000_003
+                # 当 random_noise=True 时，每个 trial 从 OS 熵源派生独立种子，
+                # 这样多次运行 final-eval 得到的噪声采样是真正独立的（而不是 base_seed 决定的固定模式）；
+                # 当 random_noise=False（默认）时，沿用基于 final_eval_random_seed 的可复现序列，
+                # 保证搜索阶段对候选配置的稳定性比较仍然是公平的。
+                if random_noise:
+                    trial_seed = int.from_bytes(os.urandom(8), "little") & 0x7FFFFFFFFFFFFFFF
+                else:
+                    trial_seed = base_seed + trial_idx * 1_000_003
                 torch.manual_seed(trial_seed)
                 np.random.seed(trial_seed % (2**32))
                 if torch.cuda.is_available():
@@ -3957,6 +3964,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             split=None,
             probe_size_override=None,
             probe_seed=42,
+            random_noise=False,
             ):
         """在一份固定分层探针上做 K 次不同噪声种子的评测，std 反映纯噪声采样方差。
 
@@ -3997,6 +4005,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 repeats=trials,
                 use_train=use_train,
                 split=split,
+                random_noise=random_noise,
             )
 
         # 探针子集大小：默认取 evaluator.stage2_probe_size（可由 CLI
@@ -4023,6 +4032,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 repeats=trials,
                 use_train=use_train,
                 split=split,
+                random_noise=random_noise,
             )
 
         _cpu_rng_state = torch.get_rng_state()
@@ -4038,9 +4048,14 @@ class LayerImportanceEvaluator(TrainerCallback):
             self._register_dataset_split(_tmp_split, probe_subset, probe_subset_mm)
             base_seed = int(getattr(self, "final_eval_random_seed", 42))
             for trial_idx in range(trials):
-                # 每个 trial 独立可复现的噪声流（torch.randn / numpy），数据固定，
-                # 只变 noise seed → std 只剩纯噪声方差。
-                trial_seed = base_seed + trial_idx * 1_000_003
+                # 当 random_noise=True 时，每个 trial 从 OS 熵源派生独立种子，
+                # 这样多次运行 final-eval 得到的噪声采样是真正独立的（而不是 base_seed 决定的固定模式）；
+                # 当 random_noise=False（默认）时，沿用基于 final_eval_random_seed 的可复现序列，
+                # 保证搜索阶段稳定性比较仍然公平。
+                if random_noise:
+                    trial_seed = int.from_bytes(os.urandom(8), "little") & 0x7FFFFFFFFFFFFFFF
+                else:
+                    trial_seed = base_seed + trial_idx * 1_000_003
                 torch.manual_seed(trial_seed)
                 np.random.seed(trial_seed % (2**32))
                 if torch.cuda.is_available():

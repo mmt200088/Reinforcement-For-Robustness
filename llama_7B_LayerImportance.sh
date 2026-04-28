@@ -48,7 +48,7 @@ GA / Greedy / 对比实验中的 GA：
   --manual-stage1-gelu JSON_ARRAY         manual 模式：Stage-1 GELU 多项式次数
   --manual-stage1-softmax JSON_ARRAY      manual 模式：Stage-1 Softmax 多项式次数
   --manual-stage2-noise JSON_OBJECT       manual 模式：Stage-2 噪声系数（x/wq/wk/wv/wo/wffn1/wffn2）
-  --final-eval-repeat N                   最终评估的重复次数
+  --final-eval-repeat N                   最终评估的重复次数（默认 50；用于在每个配置上重复加噪评估并统计均值/方差）
   --stage2-fixed-config-source stage1_result|json|manual
   --stage2-fixed-config PATH
   --stage2-manual-gelu JSON_ARRAY
@@ -279,7 +279,7 @@ STAGE2_FIXED_CONFIG_SOURCE=""; S_STAGE2_FIXED_CONFIG_SOURCE="false"
 STAGE2_FIXED_CONFIG=""; S_STAGE2_FIXED_CONFIG="false"
 STAGE2_MANUAL_GELU=""
 STAGE2_MANUAL_SOFTMAX=""
-FINAL_EVAL_REPEAT="1"; S_FINAL_EVAL_REPEAT="false"
+FINAL_EVAL_REPEAT="50"; S_FINAL_EVAL_REPEAT="false"
 STAGE2_COMPARE_REPEATS=""; S_STAGE2_COMPARE_REPEATS="false"
 RANDOM_SEED="42"; S_RANDOM_SEED="false"
 PERM_TRIALS="10"; S_PERM_TRIALS="false"
