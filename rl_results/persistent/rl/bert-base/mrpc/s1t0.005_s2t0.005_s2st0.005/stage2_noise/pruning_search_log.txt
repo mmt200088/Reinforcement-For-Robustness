@@ -9866,3 +9866,737 @@ Random Baseline Summary:
 Unified final-eval summary saved to: rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/final_eval/final_eval_results_mrpc.json
 Unified final-eval plot saved to: rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/final_eval/final_eval_comparison_mrpc.png
 Unified final-eval variance plot saved to: rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/final_eval/final_eval_variance_mrpc.png
+
+══════════════════════════════════════════════════════════════════════
+  续训日志开始（Resume Stage-2 Log Started） 2026-04-27T22:06:19.498791
+══════════════════════════════════════════════════════════════════════
+  [信息] Stage-1 PPO学习率（LR）: raw=0.0001 -> 0.0001 (direct) | Stage-2 PPO学习率（LR）: raw=0.0001 -> 0.0001 (direct)
+  [信息] 一阶段 RL 回合 stage-1 episodes=51000  ·  二阶段噪声 RL 回合 stage-2 episodes=40000
+  [信息] 本次运行根目录 run_output_dir=rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005
+
+[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。
+[final_eval_only] 加载 Stage-2 RL 最优配置: rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/noise_rl_checkpoint.pt
+
+============================================================
+PHASE: UNIFIED FINAL EVALUATION (validation_full)
+CONFIG_SOURCE=search  REPEAT_N=1
+Optimized stage1 cost=37.00 (gelu=14.00, softmax=23.00)
+Optimized stage2 cost=39.20 breakdown={'x': 7.3, 'wq': 5.4, 'wk': 5.1, 'wv': 5.45, 'wo': 5.6499999999999995, 'wffn1': 5.600000000000001, 'wffn2': 4.7}
+Selection constraints: Loss<=0.3826, Acc.>=0.8755, F1>=0.8731
+============================================================
+
+--- Baseline (Stage-1 Exact) : single deterministic evaluation ---
+
+--- Optimized : variance probe N=5 (single final metric is kept) ---
+  Variance[Optimized] stability_probe_trials: N=5, probe_size=256, VarLoss=3.30e-05, VarAcc.=4.88e-05, VarF1=5.00e-05
+
+--- Stage1Fixed+MaxSF : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage1Fixed+MaxSF] stability_probe_trials: N=5, probe_size=256, VarLoss=1.01e-09, VarAcc.=0.00e+00, VarF1=0.00e+00
+Generating 10 Stage1Budget configs...
+
+--- Stage1Budget_1 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage1Budget_1] stability_probe_trials: N=5, probe_size=256, VarLoss=2.26e-06, VarAcc.=2.20e-05, VarF1=2.50e-05
+
+--- Stage1Budget_2 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage1Budget_2] stability_probe_trials: N=5, probe_size=256, VarLoss=3.29e-06, VarAcc.=2.44e-05, VarF1=2.31e-05
+
+--- Stage1Budget_3 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage1Budget_3] stability_probe_trials: N=5, probe_size=256, VarLoss=5.23e-06, VarAcc.=8.54e-06, VarF1=8.81e-06
+
+--- Stage1Budget_4 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage1Budget_4] stability_probe_trials: N=5, probe_size=256, VarLoss=3.44e-06, VarAcc.=2.44e-06, VarF1=2.18e-06
+
+--- Stage1Budget_5 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage1Budget_5] stability_probe_trials: N=5, probe_size=256, VarLoss=2.55e-05, VarAcc.=9.77e-06, VarF1=9.10e-06
+
+--- Stage1Budget_6 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage1Budget_6] stability_probe_trials: N=5, probe_size=256, VarLoss=7.18e-06, VarAcc.=1.59e-05, VarF1=1.84e-05
+
+--- Stage1Budget_7 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage1Budget_7] stability_probe_trials: N=5, probe_size=256, VarLoss=8.47e-06, VarAcc.=9.77e-06, VarF1=8.63e-06
+
+--- Stage1Budget_8 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage1Budget_8] stability_probe_trials: N=5, probe_size=256, VarLoss=4.69e-06, VarAcc.=6.10e-06, VarF1=7.34e-06
+
+--- Stage1Budget_9 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage1Budget_9] stability_probe_trials: N=5, probe_size=256, VarLoss=8.91e-06, VarAcc.=6.10e-06, VarF1=7.18e-06
+
+--- Stage1Budget_10 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage1Budget_10] stability_probe_trials: N=5, probe_size=256, VarLoss=1.95e-05, VarAcc.=3.66e-06, VarF1=3.23e-06
+Generating 10 Stage2Budget configs...
+
+--- Stage2Budget_1 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage2Budget_1] stability_probe_trials: N=5, probe_size=256, VarLoss=1.73e-05, VarAcc.=5.13e-05, VarF1=5.27e-05
+
+--- Stage2Budget_2 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage2Budget_2] stability_probe_trials: N=5, probe_size=256, VarLoss=2.57e-06, VarAcc.=2.44e-06, VarF1=2.27e-06
+
+--- Stage2Budget_3 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage2Budget_3] stability_probe_trials: N=5, probe_size=256, VarLoss=7.62e-06, VarAcc.=9.77e-06, VarF1=9.41e-06
+
+--- Stage2Budget_4 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage2Budget_4] stability_probe_trials: N=5, probe_size=256, VarLoss=7.91e-06, VarAcc.=1.22e-05, VarF1=1.29e-05
+
+--- Stage2Budget_5 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage2Budget_5] stability_probe_trials: N=5, probe_size=256, VarLoss=2.64e-06, VarAcc.=4.27e-05, VarF1=4.15e-05
+
+--- Stage2Budget_6 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage2Budget_6] stability_probe_trials: N=5, probe_size=256, VarLoss=6.46e-06, VarAcc.=3.42e-05, VarF1=3.29e-05
+
+--- Stage2Budget_7 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage2Budget_7] stability_probe_trials: N=5, probe_size=256, VarLoss=1.25e-05, VarAcc.=2.69e-05, VarF1=2.76e-05
+
+--- Stage2Budget_8 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage2Budget_8] stability_probe_trials: N=5, probe_size=256, VarLoss=2.07e-05, VarAcc.=3.30e-05, VarF1=2.96e-05
+
+--- Stage2Budget_9 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage2Budget_9] stability_probe_trials: N=5, probe_size=256, VarLoss=1.69e-05, VarAcc.=3.30e-05, VarF1=3.38e-05
+
+--- Stage2Budget_10 : variance probe N=5 (single final metric is kept) ---
+  Variance[Stage2Budget_10] stability_probe_trials: N=5, probe_size=256, VarLoss=1.56e-05, VarAcc.=2.81e-05, VarF1=3.01e-05
+Generating 50 Perm configs...
+
+--- Perm_1 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_1] stability_probe_trials: N=5, probe_size=256, VarLoss=7.26e-06, VarAcc.=3.05e-05, VarF1=3.19e-05
+
+--- Perm_2 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_2] stability_probe_trials: N=5, probe_size=256, VarLoss=2.74e-06, VarAcc.=1.83e-05, VarF1=1.97e-05
+
+--- Perm_3 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_3] stability_probe_trials: N=5, probe_size=256, VarLoss=3.54e-06, VarAcc.=9.77e-06, VarF1=9.69e-06
+
+--- Perm_4 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_4] stability_probe_trials: N=5, probe_size=256, VarLoss=1.62e-05, VarAcc.=1.83e-05, VarF1=2.25e-05
+
+--- Perm_5 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_5] stability_probe_trials: N=5, probe_size=256, VarLoss=3.62e-06, VarAcc.=3.66e-06, VarF1=4.80e-06
+
+--- Perm_6 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_6] stability_probe_trials: N=5, probe_size=256, VarLoss=3.40e-06, VarAcc.=1.83e-05, VarF1=2.18e-05
+
+--- Perm_7 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_7] stability_probe_trials: N=5, probe_size=256, VarLoss=8.47e-06, VarAcc.=3.05e-05, VarF1=2.96e-05
+
+--- Perm_8 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_8] stability_probe_trials: N=5, probe_size=256, VarLoss=6.37e-06, VarAcc.=2.08e-05, VarF1=2.14e-05
+
+--- Perm_9 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_9] stability_probe_trials: N=5, probe_size=256, VarLoss=3.66e-06, VarAcc.=3.05e-05, VarF1=3.15e-05
+
+--- Perm_10 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_10] stability_probe_trials: N=5, probe_size=256, VarLoss=4.46e-06, VarAcc.=8.54e-06, VarF1=8.86e-06
+
+--- Perm_11 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_11] stability_probe_trials: N=5, probe_size=256, VarLoss=4.33e-06, VarAcc.=2.69e-05, VarF1=3.31e-05
+
+--- Perm_12 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_12] stability_probe_trials: N=5, probe_size=256, VarLoss=9.18e-06, VarAcc.=1.22e-05, VarF1=1.52e-05
+
+--- Perm_13 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_13] stability_probe_trials: N=5, probe_size=256, VarLoss=1.56e-05, VarAcc.=3.66e-06, VarF1=4.50e-06
+
+--- Perm_14 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_14] stability_probe_trials: N=5, probe_size=256, VarLoss=5.93e-06, VarAcc.=3.66e-06, VarF1=4.32e-06
+
+--- Perm_15 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_15] stability_probe_trials: N=5, probe_size=256, VarLoss=2.48e-05, VarAcc.=8.54e-06, VarF1=8.84e-06
+
+--- Perm_16 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_16] stability_probe_trials: N=5, probe_size=256, VarLoss=2.35e-06, VarAcc.=1.22e-05, VarF1=1.38e-05
+
+--- Perm_17 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_17] stability_probe_trials: N=5, probe_size=256, VarLoss=1.55e-05, VarAcc.=2.44e-06, VarF1=2.78e-06
+
+--- Perm_18 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_18] stability_probe_trials: N=5, probe_size=256, VarLoss=2.17e-06, VarAcc.=1.46e-05, VarF1=1.42e-05
+
+--- Perm_19 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_19] stability_probe_trials: N=5, probe_size=256, VarLoss=8.20e-06, VarAcc.=2.44e-06, VarF1=2.33e-06
+
+--- Perm_20 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_20] stability_probe_trials: N=5, probe_size=256, VarLoss=3.32e-06, VarAcc.=1.59e-05, VarF1=1.77e-05
+
+--- Perm_21 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_21] stability_probe_trials: N=5, probe_size=256, VarLoss=1.85e-06, VarAcc.=3.66e-06, VarF1=2.94e-06
+
+--- Perm_22 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_22] stability_probe_trials: N=5, probe_size=256, VarLoss=4.32e-06, VarAcc.=6.10e-06, VarF1=5.63e-06
+
+--- Perm_23 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_23] stability_probe_trials: N=5, probe_size=256, VarLoss=1.30e-05, VarAcc.=8.54e-06, VarF1=8.59e-06
+
+--- Perm_24 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_24] stability_probe_trials: N=5, probe_size=256, VarLoss=3.03e-06, VarAcc.=8.54e-06, VarF1=1.16e-05
+
+--- Perm_25 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_25] stability_probe_trials: N=5, probe_size=256, VarLoss=1.05e-05, VarAcc.=5.13e-05, VarF1=5.11e-05
+
+--- Perm_26 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_26] stability_probe_trials: N=5, probe_size=256, VarLoss=4.85e-06, VarAcc.=8.54e-06, VarF1=1.04e-05
+
+--- Perm_27 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_27] stability_probe_trials: N=5, probe_size=256, VarLoss=3.26e-06, VarAcc.=2.08e-05, VarF1=1.94e-05
+
+--- Perm_28 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_28] stability_probe_trials: N=5, probe_size=256, VarLoss=4.77e-06, VarAcc.=1.59e-05, VarF1=1.57e-05
+
+--- Perm_29 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_29] stability_probe_trials: N=5, probe_size=256, VarLoss=9.76e-06, VarAcc.=8.54e-06, VarF1=7.59e-06
+
+--- Perm_30 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_30] stability_probe_trials: N=5, probe_size=256, VarLoss=3.20e-06, VarAcc.=3.66e-06, VarF1=3.50e-06
+
+--- Perm_31 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_31] stability_probe_trials: N=5, probe_size=256, VarLoss=1.74e-06, VarAcc.=9.77e-06, VarF1=9.44e-06
+
+--- Perm_32 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_32] stability_probe_trials: N=5, probe_size=256, VarLoss=5.36e-06, VarAcc.=6.96e-05, VarF1=7.15e-05
+
+--- Perm_33 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_33] stability_probe_trials: N=5, probe_size=256, VarLoss=6.58e-07, VarAcc.=9.77e-06, VarF1=1.02e-05
+
+--- Perm_34 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_34] stability_probe_trials: N=5, probe_size=256, VarLoss=1.42e-05, VarAcc.=1.83e-05, VarF1=1.62e-05
+
+--- Perm_35 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_35] stability_probe_trials: N=5, probe_size=256, VarLoss=3.09e-05, VarAcc.=3.05e-05, VarF1=3.51e-05
+
+--- Perm_36 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_36] stability_probe_trials: N=5, probe_size=256, VarLoss=1.24e-05, VarAcc.=3.91e-05, VarF1=3.96e-05
+
+--- Perm_37 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_37] stability_probe_trials: N=5, probe_size=256, VarLoss=6.77e-06, VarAcc.=8.54e-06, VarF1=8.84e-06
+
+--- Perm_38 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_38] stability_probe_trials: N=5, probe_size=256, VarLoss=6.77e-06, VarAcc.=8.54e-06, VarF1=1.06e-05
+
+--- Perm_39 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_39] stability_probe_trials: N=5, probe_size=256, VarLoss=4.34e-06, VarAcc.=9.77e-06, VarF1=1.04e-05
+
+--- Perm_40 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_40] stability_probe_trials: N=5, probe_size=256, VarLoss=6.34e-06, VarAcc.=1.59e-05, VarF1=1.56e-05
+
+--- Perm_41 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_41] stability_probe_trials: N=5, probe_size=256, VarLoss=1.22e-05, VarAcc.=3.05e-05, VarF1=3.20e-05
+
+--- Perm_42 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_42] stability_probe_trials: N=5, probe_size=256, VarLoss=3.68e-06, VarAcc.=2.81e-05, VarF1=2.60e-05
+
+--- Perm_43 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_43] stability_probe_trials: N=5, probe_size=256, VarLoss=4.35e-06, VarAcc.=1.22e-05, VarF1=1.17e-05
+
+--- Perm_44 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_44] stability_probe_trials: N=5, probe_size=256, VarLoss=1.06e-05, VarAcc.=2.44e-06, VarF1=2.16e-06
+
+--- Perm_45 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_45] stability_probe_trials: N=5, probe_size=256, VarLoss=5.39e-06, VarAcc.=2.44e-06, VarF1=1.96e-06
+
+--- Perm_46 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_46] stability_probe_trials: N=5, probe_size=256, VarLoss=4.64e-06, VarAcc.=6.10e-06, VarF1=5.51e-06
+
+--- Perm_47 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_47] stability_probe_trials: N=5, probe_size=256, VarLoss=4.09e-06, VarAcc.=3.66e-06, VarF1=4.27e-06
+
+--- Perm_48 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_48] stability_probe_trials: N=5, probe_size=256, VarLoss=1.88e-06, VarAcc.=6.10e-06, VarF1=5.55e-06
+
+--- Perm_49 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_49] stability_probe_trials: N=5, probe_size=256, VarLoss=4.71e-06, VarAcc.=8.54e-06, VarF1=6.98e-06
+
+--- Perm_50 : variance probe N=5 (single final metric is kept) ---
+  Variance[Perm_50] stability_probe_trials: N=5, probe_size=256, VarLoss=1.43e-05, VarAcc.=3.66e-06, VarF1=3.26e-06
+Generating 50 Equiv configs...
+
+--- Equiv_1 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_1] stability_probe_trials: N=5, probe_size=256, VarLoss=8.56e-06, VarAcc.=4.88e-05, VarF1=4.94e-05
+
+--- Equiv_2 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_2] stability_probe_trials: N=5, probe_size=256, VarLoss=2.89e-06, VarAcc.=2.81e-05, VarF1=3.12e-05
+
+--- Equiv_3 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_3] stability_probe_trials: N=5, probe_size=256, VarLoss=3.90e-06, VarAcc.=9.77e-06, VarF1=1.00e-05
+
+--- Equiv_4 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_4] stability_probe_trials: N=5, probe_size=256, VarLoss=8.84e-06, VarAcc.=3.30e-05, VarF1=3.06e-05
+
+--- Equiv_5 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_5] stability_probe_trials: N=5, probe_size=256, VarLoss=4.17e-06, VarAcc.=2.44e-06, VarF1=3.50e-06
+
+--- Equiv_6 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_6] stability_probe_trials: N=5, probe_size=256, VarLoss=7.78e-06, VarAcc.=3.66e-06, VarF1=3.96e-06
+
+--- Equiv_7 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_7] stability_probe_trials: N=5, probe_size=256, VarLoss=1.49e-06, VarAcc.=6.10e-06, VarF1=6.36e-06
+
+--- Equiv_8 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_8] stability_probe_trials: N=5, probe_size=256, VarLoss=4.88e-06, VarAcc.=1.46e-05, VarF1=1.49e-05
+
+--- Equiv_9 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_9] stability_probe_trials: N=5, probe_size=256, VarLoss=5.63e-06, VarAcc.=8.54e-06, VarF1=1.02e-05
+
+--- Equiv_10 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_10] stability_probe_trials: N=5, probe_size=256, VarLoss=1.65e-05, VarAcc.=2.20e-05, VarF1=2.33e-05
+
+--- Equiv_11 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_11] stability_probe_trials: N=5, probe_size=256, VarLoss=3.74e-06, VarAcc.=1.59e-05, VarF1=1.44e-05
+
+--- Equiv_12 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_12] stability_probe_trials: N=5, probe_size=256, VarLoss=8.86e-06, VarAcc.=9.77e-06, VarF1=1.08e-05
+
+--- Equiv_13 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_13] stability_probe_trials: N=5, probe_size=256, VarLoss=1.11e-05, VarAcc.=2.44e-06, VarF1=2.66e-06
+
+--- Equiv_14 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_14] stability_probe_trials: N=5, probe_size=256, VarLoss=1.45e-06, VarAcc.=4.64e-05, VarF1=4.55e-05
+
+--- Equiv_15 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_15] stability_probe_trials: N=5, probe_size=256, VarLoss=2.55e-06, VarAcc.=2.44e-06, VarF1=2.17e-06
+
+--- Equiv_16 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_16] stability_probe_trials: N=5, probe_size=256, VarLoss=9.62e-06, VarAcc.=2.81e-05, VarF1=2.69e-05
+
+--- Equiv_17 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_17] stability_probe_trials: N=5, probe_size=256, VarLoss=7.91e-06, VarAcc.=9.77e-06, VarF1=9.79e-06
+
+--- Equiv_18 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_18] stability_probe_trials: N=5, probe_size=256, VarLoss=8.43e-06, VarAcc.=0.00e+00, VarF1=1.23e-32
+
+--- Equiv_19 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_19] stability_probe_trials: N=5, probe_size=256, VarLoss=1.43e-06, VarAcc.=2.08e-05, VarF1=2.18e-05
+
+--- Equiv_20 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_20] stability_probe_trials: N=5, probe_size=256, VarLoss=9.45e-06, VarAcc.=8.54e-06, VarF1=8.22e-06
+
+--- Equiv_21 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_21] stability_probe_trials: N=5, probe_size=256, VarLoss=5.07e-06, VarAcc.=1.83e-05, VarF1=2.07e-05
+
+--- Equiv_22 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_22] stability_probe_trials: N=5, probe_size=256, VarLoss=1.69e-05, VarAcc.=6.10e-06, VarF1=6.20e-06
+
+--- Equiv_23 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_23] stability_probe_trials: N=5, probe_size=256, VarLoss=5.51e-06, VarAcc.=1.59e-05, VarF1=1.53e-05
+
+--- Equiv_24 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_24] stability_probe_trials: N=5, probe_size=256, VarLoss=4.64e-06, VarAcc.=1.83e-05, VarF1=2.14e-05
+
+--- Equiv_25 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_25] stability_probe_trials: N=5, probe_size=256, VarLoss=4.02e-06, VarAcc.=8.54e-06, VarF1=8.61e-06
+
+--- Equiv_26 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_26] stability_probe_trials: N=5, probe_size=256, VarLoss=3.47e-06, VarAcc.=8.54e-06, VarF1=8.69e-06
+
+--- Equiv_27 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_27] stability_probe_trials: N=5, probe_size=256, VarLoss=2.36e-06, VarAcc.=1.46e-05, VarF1=1.49e-05
+
+--- Equiv_28 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_28] stability_probe_trials: N=5, probe_size=256, VarLoss=1.59e-06, VarAcc.=2.44e-06, VarF1=2.05e-06
+
+--- Equiv_29 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_29] stability_probe_trials: N=5, probe_size=256, VarLoss=9.56e-06, VarAcc.=6.10e-06, VarF1=5.66e-06
+
+--- Equiv_30 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_30] stability_probe_trials: N=5, probe_size=256, VarLoss=7.60e-06, VarAcc.=6.10e-06, VarF1=6.07e-06
+
+--- Equiv_31 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_31] stability_probe_trials: N=5, probe_size=256, VarLoss=4.75e-06, VarAcc.=1.46e-05, VarF1=1.61e-05
+
+--- Equiv_32 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_32] stability_probe_trials: N=5, probe_size=256, VarLoss=7.80e-06, VarAcc.=2.08e-05, VarF1=2.28e-05
+
+--- Equiv_33 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_33] stability_probe_trials: N=5, probe_size=256, VarLoss=1.78e-06, VarAcc.=3.66e-06, VarF1=3.50e-06
+
+--- Equiv_34 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_34] stability_probe_trials: N=5, probe_size=256, VarLoss=1.32e-06, VarAcc.=3.66e-06, VarF1=4.08e-06
+
+--- Equiv_35 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_35] stability_probe_trials: N=5, probe_size=256, VarLoss=3.81e-06, VarAcc.=2.44e-05, VarF1=2.44e-05
+
+--- Equiv_36 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_36] stability_probe_trials: N=5, probe_size=256, VarLoss=2.44e-06, VarAcc.=1.59e-05, VarF1=1.61e-05
+
+--- Equiv_37 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_37] stability_probe_trials: N=5, probe_size=256, VarLoss=5.85e-06, VarAcc.=2.44e-06, VarF1=2.51e-06
+
+--- Equiv_38 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_38] stability_probe_trials: N=5, probe_size=256, VarLoss=1.73e-06, VarAcc.=1.46e-05, VarF1=1.78e-05
+
+--- Equiv_39 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_39] stability_probe_trials: N=5, probe_size=256, VarLoss=5.37e-06, VarAcc.=6.10e-06, VarF1=7.17e-06
+
+--- Equiv_40 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_40] stability_probe_trials: N=5, probe_size=256, VarLoss=2.16e-06, VarAcc.=6.10e-06, VarF1=7.10e-06
+
+--- Equiv_41 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_41] stability_probe_trials: N=5, probe_size=256, VarLoss=2.30e-06, VarAcc.=2.44e-06, VarF1=2.18e-06
+
+--- Equiv_42 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_42] stability_probe_trials: N=5, probe_size=256, VarLoss=6.37e-07, VarAcc.=1.46e-05, VarF1=1.62e-05
+
+--- Equiv_43 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_43] stability_probe_trials: N=5, probe_size=256, VarLoss=1.35e-05, VarAcc.=2.44e-06, VarF1=2.39e-06
+
+--- Equiv_44 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_44] stability_probe_trials: N=5, probe_size=256, VarLoss=2.59e-06, VarAcc.=4.03e-05, VarF1=4.10e-05
+
+--- Equiv_45 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_45] stability_probe_trials: N=5, probe_size=256, VarLoss=3.36e-06, VarAcc.=6.10e-06, VarF1=6.83e-06
+
+--- Equiv_46 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_46] stability_probe_trials: N=5, probe_size=256, VarLoss=1.35e-05, VarAcc.=8.54e-06, VarF1=8.21e-06
+
+--- Equiv_47 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_47] stability_probe_trials: N=5, probe_size=256, VarLoss=1.05e-05, VarAcc.=8.54e-06, VarF1=8.76e-06
+
+--- Equiv_48 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_48] stability_probe_trials: N=5, probe_size=256, VarLoss=6.35e-06, VarAcc.=2.08e-05, VarF1=2.12e-05
+
+--- Equiv_49 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_49] stability_probe_trials: N=5, probe_size=256, VarLoss=6.66e-06, VarAcc.=6.10e-06, VarF1=5.49e-06
+
+--- Equiv_50 : variance probe N=5 (single final metric is kept) ---
+  Variance[Equiv_50] stability_probe_trials: N=5, probe_size=256, VarLoss=6.39e-06, VarAcc.=2.44e-06, VarF1=2.74e-06
+Generating 50 Budget configs...
+
+--- Budget_1 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_1] stability_probe_trials: N=5, probe_size=256, VarLoss=1.94e-06, VarAcc.=3.30e-05, VarF1=3.71e-05
+
+--- Budget_2 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_2] stability_probe_trials: N=5, probe_size=256, VarLoss=7.34e-06, VarAcc.=1.22e-05, VarF1=1.17e-05
+
+--- Budget_3 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_3] stability_probe_trials: N=5, probe_size=256, VarLoss=2.74e-06, VarAcc.=8.54e-06, VarF1=8.03e-06
+
+--- Budget_4 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_4] stability_probe_trials: N=5, probe_size=256, VarLoss=1.17e-05, VarAcc.=2.69e-05, VarF1=3.22e-05
+
+--- Budget_5 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_5] stability_probe_trials: N=5, probe_size=256, VarLoss=3.28e-05, VarAcc.=1.83e-05, VarF1=1.55e-05
+
+--- Budget_6 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_6] stability_probe_trials: N=5, probe_size=256, VarLoss=7.34e-06, VarAcc.=2.08e-05, VarF1=2.10e-05
+
+--- Budget_7 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_7] stability_probe_trials: N=5, probe_size=256, VarLoss=4.40e-06, VarAcc.=2.44e-06, VarF1=2.18e-06
+
+--- Budget_8 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_8] stability_probe_trials: N=5, probe_size=256, VarLoss=6.53e-06, VarAcc.=1.83e-05, VarF1=1.82e-05
+
+--- Budget_9 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_9] stability_probe_trials: N=5, probe_size=256, VarLoss=1.56e-05, VarAcc.=1.22e-05, VarF1=1.10e-05
+
+--- Budget_10 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_10] stability_probe_trials: N=5, probe_size=256, VarLoss=6.16e-06, VarAcc.=6.10e-06, VarF1=6.40e-06
+
+--- Budget_11 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_11] stability_probe_trials: N=5, probe_size=256, VarLoss=2.21e-06, VarAcc.=3.66e-06, VarF1=4.07e-06
+
+--- Budget_12 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_12] stability_probe_trials: N=5, probe_size=256, VarLoss=4.23e-06, VarAcc.=9.77e-06, VarF1=9.41e-06
+
+--- Budget_13 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_13] stability_probe_trials: N=5, probe_size=256, VarLoss=1.83e-05, VarAcc.=1.46e-05, VarF1=1.52e-05
+
+--- Budget_14 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_14] stability_probe_trials: N=5, probe_size=256, VarLoss=1.07e-05, VarAcc.=9.77e-06, VarF1=9.94e-06
+
+--- Budget_15 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_15] stability_probe_trials: N=5, probe_size=256, VarLoss=2.22e-06, VarAcc.=1.59e-05, VarF1=1.60e-05
+
+--- Budget_16 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_16] stability_probe_trials: N=5, probe_size=256, VarLoss=4.40e-06, VarAcc.=5.49e-05, VarF1=5.50e-05
+
+--- Budget_17 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_17] stability_probe_trials: N=5, probe_size=256, VarLoss=5.83e-06, VarAcc.=6.10e-06, VarF1=5.46e-06
+
+--- Budget_18 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_18] stability_probe_trials: N=5, probe_size=256, VarLoss=1.34e-05, VarAcc.=2.44e-06, VarF1=2.50e-06
+
+--- Budget_19 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_19] stability_probe_trials: N=5, probe_size=256, VarLoss=5.17e-06, VarAcc.=9.77e-06, VarF1=9.73e-06
+
+--- Budget_20 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_20] stability_probe_trials: N=5, probe_size=256, VarLoss=9.58e-06, VarAcc.=9.77e-06, VarF1=9.76e-06
+
+--- Budget_21 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_21] stability_probe_trials: N=5, probe_size=256, VarLoss=5.74e-06, VarAcc.=8.54e-06, VarF1=1.01e-05
+
+--- Budget_22 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_22] stability_probe_trials: N=5, probe_size=256, VarLoss=3.39e-06, VarAcc.=6.10e-06, VarF1=7.12e-06
+
+--- Budget_23 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_23] stability_probe_trials: N=5, probe_size=256, VarLoss=4.18e-06, VarAcc.=3.42e-05, VarF1=3.70e-05
+
+--- Budget_24 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_24] stability_probe_trials: N=5, probe_size=256, VarLoss=1.94e-05, VarAcc.=5.13e-05, VarF1=5.56e-05
+
+--- Budget_25 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_25] stability_probe_trials: N=5, probe_size=256, VarLoss=1.26e-05, VarAcc.=8.54e-06, VarF1=7.76e-06
+
+--- Budget_26 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_26] stability_probe_trials: N=5, probe_size=256, VarLoss=1.18e-05, VarAcc.=6.10e-06, VarF1=6.20e-06
+
+--- Budget_27 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_27] stability_probe_trials: N=5, probe_size=256, VarLoss=3.67e-06, VarAcc.=3.66e-06, VarF1=3.49e-06
+
+--- Budget_28 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_28] stability_probe_trials: N=5, probe_size=256, VarLoss=1.34e-05, VarAcc.=1.46e-05, VarF1=1.57e-05
+
+--- Budget_29 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_29] stability_probe_trials: N=5, probe_size=256, VarLoss=5.05e-06, VarAcc.=1.83e-05, VarF1=1.73e-05
+
+--- Budget_30 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_30] stability_probe_trials: N=5, probe_size=256, VarLoss=1.76e-05, VarAcc.=1.46e-05, VarF1=1.40e-05
+
+--- Budget_31 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_31] stability_probe_trials: N=5, probe_size=256, VarLoss=2.45e-06, VarAcc.=3.30e-05, VarF1=3.42e-05
+
+--- Budget_32 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_32] stability_probe_trials: N=5, probe_size=256, VarLoss=3.89e-06, VarAcc.=2.44e-06, VarF1=2.18e-06
+
+--- Budget_33 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_33] stability_probe_trials: N=5, probe_size=256, VarLoss=4.30e-06, VarAcc.=9.77e-06, VarF1=9.46e-06
+
+--- Budget_34 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_34] stability_probe_trials: N=5, probe_size=256, VarLoss=3.14e-06, VarAcc.=5.74e-05, VarF1=6.02e-05
+
+--- Budget_35 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_35] stability_probe_trials: N=5, probe_size=256, VarLoss=9.38e-06, VarAcc.=1.59e-05, VarF1=1.58e-05
+
+--- Budget_36 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_36] stability_probe_trials: N=5, probe_size=256, VarLoss=3.80e-06, VarAcc.=3.66e-06, VarF1=3.31e-06
+
+--- Budget_37 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_37] stability_probe_trials: N=5, probe_size=256, VarLoss=1.40e-05, VarAcc.=9.77e-06, VarF1=8.67e-06
+
+--- Budget_38 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_38] stability_probe_trials: N=5, probe_size=256, VarLoss=4.04e-06, VarAcc.=2.44e-05, VarF1=2.48e-05
+
+--- Budget_39 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_39] stability_probe_trials: N=5, probe_size=256, VarLoss=7.71e-06, VarAcc.=9.77e-06, VarF1=1.10e-05
+
+--- Budget_40 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_40] stability_probe_trials: N=5, probe_size=256, VarLoss=7.56e-06, VarAcc.=2.44e-06, VarF1=2.20e-06
+
+--- Budget_41 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_41] stability_probe_trials: N=5, probe_size=256, VarLoss=1.51e-06, VarAcc.=9.77e-06, VarF1=1.14e-05
+
+--- Budget_42 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_42] stability_probe_trials: N=5, probe_size=256, VarLoss=4.88e-06, VarAcc.=9.77e-06, VarF1=9.98e-06
+
+--- Budget_43 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_43] stability_probe_trials: N=5, probe_size=256, VarLoss=1.33e-06, VarAcc.=2.81e-05, VarF1=2.90e-05
+
+--- Budget_44 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_44] stability_probe_trials: N=5, probe_size=256, VarLoss=2.81e-06, VarAcc.=2.44e-06, VarF1=3.10e-06
+
+--- Budget_45 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_45] stability_probe_trials: N=5, probe_size=256, VarLoss=7.39e-06, VarAcc.=2.44e-06, VarF1=2.39e-06
+
+--- Budget_46 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_46] stability_probe_trials: N=5, probe_size=256, VarLoss=6.38e-06, VarAcc.=3.66e-06, VarF1=3.16e-06
+
+--- Budget_47 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_47] stability_probe_trials: N=5, probe_size=256, VarLoss=7.62e-06, VarAcc.=9.77e-06, VarF1=9.61e-06
+
+--- Budget_48 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_48] stability_probe_trials: N=5, probe_size=256, VarLoss=7.67e-06, VarAcc.=1.59e-05, VarF1=1.71e-05
+
+--- Budget_49 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_49] stability_probe_trials: N=5, probe_size=256, VarLoss=7.83e-06, VarAcc.=3.91e-05, VarF1=4.48e-05
+
+--- Budget_50 : variance probe N=5 (single final metric is kept) ---
+  Variance[Budget_50] stability_probe_trials: N=5, probe_size=256, VarLoss=1.78e-05, VarAcc.=2.81e-05, VarF1=2.44e-05
+
+Unified Performance Comparison Table:
+---------------------------------------------------------------------------------------------------------------------------------------
+Method                    | OK  | Loss     Acc.     F1       | dLoss%   dAcc.%   dF1%     | VarLoss    VarAcc.    VarF1      | TotalC  
+---------------------------------------------------------------------------------------------------------------------------------------
+Baseline (Stage-1 Exact)  | Y   | 0.3807   0.8799   0.8774   | 0.00%    0.00%    0.00%    | 0.00e+00   0.00e+00   0.00e+00   | N/A     
+Optimized                 | Y   | 0.3728   0.8775   0.8754   | -2.08%   -0.28%   -0.23%   | 3.30e-05   4.88e-05   5.00e-05   | 76.20   
+Stage1Fixed+MaxSF         | Y   | 0.3753   0.8824   0.8804   | -1.44%   0.28%    0.34%    | 1.01e-09   0.00e+00   0.00e+00   | 86.20   
+---------------------------------------------------------------------------------------------------------------------------------------
+Stage1Budget_1            | N   | 0.3834   0.8554   0.8532   | 0.69%    -2.79%   -2.76%   | 2.26e-06   2.20e-05   2.50e-05   | 76.20   
+Stage1Budget_2            | N   | 0.3786   0.8578   0.8581   | -0.56%   -2.51%   -2.20%   | 3.29e-06   2.44e-05   2.31e-05   | 76.20   
+Stage1Budget_3            | N   | 0.3922   0.8505   0.8500   | 3.01%    -3.34%   -3.13%   | 5.23e-06   8.54e-06   8.81e-06   | 76.20   
+Stage1Budget_4            | N   | 0.3857   0.8578   0.8569   | 1.29%    -2.51%   -2.34%   | 3.44e-06   2.44e-06   2.18e-06   | 76.20   
+Stage1Budget_5            | N   | 0.3939   0.8529   0.8538   | 3.46%    -3.06%   -2.69%   | 2.55e-05   9.77e-06   9.10e-06   | 76.20   
+Stage1Budget_6            | N   | 0.3887   0.8480   0.8474   | 2.08%    -3.62%   -3.43%   | 7.18e-06   1.59e-05   1.84e-05   | 76.20   
+Stage1Budget_7            | N   | 0.3841   0.8480   0.8480   | 0.87%    -3.62%   -3.35%   | 8.47e-06   9.77e-06   8.63e-06   | 76.20   
+Stage1Budget_8            | N   | 0.3833   0.8578   0.8551   | 0.67%    -2.51%   -2.54%   | 4.69e-06   6.10e-06   7.34e-06   | 76.20   
+Stage1Budget_9            | N   | 0.3935   0.8652   0.8642   | 3.34%    -1.67%   -1.51%   | 8.91e-06   6.10e-06   7.18e-06   | 76.20   
+Stage1Budget_10           | N   | 0.3942   0.8505   0.8500   | 3.54%    -3.34%   -3.13%   | 1.95e-05   3.66e-06   3.23e-06   | 76.20   
+Stage2Budget_1            | Y   | 0.3749   0.8799   0.8778   | -1.52%   0.00%    0.04%    | 1.73e-05   5.13e-05   5.27e-05   | 76.20   
+Stage2Budget_2            | Y   | 0.3778   0.8799   0.8781   | -0.77%   0.00%    0.07%    | 2.57e-06   2.44e-06   2.27e-06   | 76.20   
+Stage2Budget_3            | Y   | 0.3718   0.8799   0.8781   | -2.35%   0.00%    0.07%    | 7.62e-06   9.77e-06   9.41e-06   | 76.20   
+Stage2Budget_4            | Y   | 0.3730   0.8848   0.8828   | -2.03%   0.56%    0.61%    | 7.91e-06   1.22e-05   1.29e-05   | 76.20   
+Stage2Budget_5            | N   | 0.3737   0.8750   0.8724   | -1.86%   -0.56%   -0.57%   | 2.64e-06   4.27e-05   4.15e-05   | 76.20   
+Stage2Budget_6            | Y   | 0.3777   0.8848   0.8831   | -0.80%   0.56%    0.64%    | 6.46e-06   3.42e-05   3.29e-05   | 76.20   
+Stage2Budget_7            | Y   | 0.3729   0.8799   0.8778   | -2.07%   0.00%    0.04%    | 1.25e-05   2.69e-05   2.76e-05   | 76.20   
+Stage2Budget_8            | Y   | 0.3736   0.8824   0.8807   | -1.87%   0.28%    0.37%    | 2.07e-05   3.30e-05   2.96e-05   | 76.20   
+Stage2Budget_9            | Y   | 0.3765   0.8799   0.8781   | -1.12%   0.00%    0.07%    | 1.69e-05   3.30e-05   3.38e-05   | 76.20   
+Stage2Budget_10           | Y   | 0.3773   0.8775   0.8754   | -0.90%   -0.28%   -0.23%   | 1.56e-05   2.81e-05   3.01e-05   | 76.20   
+Perm_1                    | N   | 0.3844   0.8578   0.8559   | 0.95%    -2.51%   -2.46%   | 7.26e-06   3.05e-05   3.19e-05   | 76.20   
+Perm_2                    | N   | 0.4004   0.8627   0.8608   | 5.16%    -1.95%   -1.89%   | 2.74e-06   1.83e-05   1.97e-05   | 76.20   
+Perm_3                    | N   | 0.3995   0.8627   0.8615   | 4.92%    -1.95%   -1.81%   | 3.54e-06   9.77e-06   9.69e-06   | 76.20   
+Perm_4                    | N   | 0.3859   0.8603   0.8570   | 1.36%    -2.23%   -2.32%   | 1.62e-05   1.83e-05   2.25e-05   | 76.20   
+Perm_5                    | N   | 0.3923   0.8603   0.8589   | 3.02%    -2.23%   -2.12%   | 3.62e-06   3.66e-06   4.80e-06   | 76.20   
+Perm_6                    | N   | 0.4029   0.8529   0.8501   | 5.82%    -3.06%   -3.11%   | 3.40e-06   1.83e-05   2.18e-05   | 76.20   
+Perm_7                    | N   | 0.3890   0.8505   0.8515   | 2.16%    -3.34%   -2.95%   | 8.47e-06   3.05e-05   2.96e-05   | 76.20   
+Perm_8                    | N   | 0.3997   0.8554   0.8543   | 4.98%    -2.79%   -2.64%   | 6.37e-06   2.08e-05   2.14e-05   | 76.20   
+Perm_9                    | N   | 0.3885   0.8652   0.8632   | 2.03%    -1.67%   -1.63%   | 3.66e-06   3.05e-05   3.15e-05   | 76.20   
+Perm_10                   | N   | 0.3930   0.8676   0.8661   | 3.21%    -1.39%   -1.29%   | 4.46e-06   8.54e-06   8.86e-06   | 76.20   
+Perm_11                   | N   | 0.3965   0.8505   0.8466   | 4.14%    -3.34%   -3.52%   | 4.33e-06   2.69e-05   3.31e-05   | 76.20   
+Perm_12                   | N   | 0.4004   0.8627   0.8585   | 5.16%    -1.95%   -2.15%   | 9.18e-06   1.22e-05   1.52e-05   | 76.20   
+Perm_13                   | N   | 0.3894   0.8578   0.8559   | 2.26%    -2.51%   -2.46%   | 1.56e-05   3.66e-06   4.50e-06   | 76.20   
+Perm_14                   | N   | 0.3971   0.8578   0.8559   | 4.29%    -2.51%   -2.46%   | 5.93e-06   3.66e-06   4.32e-06   | 76.20   
+Perm_15                   | N   | 0.3932   0.8529   0.8546   | 3.27%    -3.06%   -2.60%   | 2.48e-05   8.54e-06   8.84e-06   | 76.20   
+Perm_16                   | N   | 0.3985   0.8652   0.8632   | 4.65%    -1.67%   -1.63%   | 2.35e-06   1.22e-05   1.38e-05   | 76.20   
+Perm_17                   | N   | 0.3769   0.8603   0.8592   | -1.00%   -2.23%   -2.08%   | 1.55e-05   2.44e-06   2.78e-06   | 76.20   
+Perm_18                   | N   | 0.3940   0.8578   0.8578   | 3.47%    -2.51%   -2.23%   | 2.17e-06   1.46e-05   1.42e-05   | 76.20   
+Perm_19                   | N   | 0.3839   0.8480   0.8495   | 0.84%    -3.62%   -3.19%   | 8.20e-06   2.44e-06   2.33e-06   | 76.20   
+Perm_20                   | N   | 0.4018   0.8603   0.8562   | 5.53%    -2.23%   -2.42%   | 3.32e-06   1.59e-05   1.77e-05   | 76.20   
+Perm_21                   | N   | 0.3894   0.8505   0.8497   | 2.27%    -3.34%   -3.16%   | 1.85e-06   3.66e-06   2.94e-06   | 76.20   
+Perm_22                   | N   | 0.3886   0.8799   0.8781   | 2.07%    0.00%    0.07%    | 4.32e-06   6.10e-06   5.63e-06   | 76.20   
+Perm_23                   | N   | 0.3981   0.8652   0.8645   | 4.55%    -1.67%   -1.48%   | 1.30e-05   8.54e-06   8.59e-06   | 76.20   
+Perm_24                   | N   | 0.3774   0.8652   0.8624   | -0.87%   -1.67%   -1.71%   | 3.03e-06   8.54e-06   1.16e-05   | 76.20   
+Perm_25                   | N   | 0.3803   0.8652   0.8638   | -0.12%   -1.67%   -1.55%   | 1.05e-05   5.13e-05   5.11e-05   | 76.20   
+Perm_26                   | N   | 0.3824   0.8578   0.8547   | 0.43%    -2.51%   -2.59%   | 4.85e-06   8.54e-06   1.04e-05   | 76.20   
+Perm_27                   | N   | 0.3839   0.8554   0.8569   | 0.82%    -2.79%   -2.34%   | 3.26e-06   2.08e-05   1.94e-05   | 76.20   
+Perm_28                   | N   | 0.3867   0.8480   0.8455   | 1.55%    -3.62%   -3.64%   | 4.77e-06   1.59e-05   1.57e-05   | 76.20   
+Perm_29                   | N   | 0.4045   0.8627   0.8615   | 6.23%    -1.95%   -1.81%   | 9.76e-06   8.54e-06   7.59e-06   | 76.20   
+Perm_30                   | N   | 0.3830   0.8578   0.8566   | 0.59%    -2.51%   -2.38%   | 3.20e-06   3.66e-06   3.50e-06   | 76.20   
+Perm_31                   | N   | 0.3894   0.8431   0.8428   | 2.28%    -4.18%   -3.95%   | 1.74e-06   9.77e-06   9.44e-06   | 76.20   
+Perm_32                   | N   | 0.3837   0.8676   0.8651   | 0.77%    -1.39%   -1.40%   | 5.36e-06   6.96e-05   7.15e-05   | 76.20   
+Perm_33                   | N   | 0.3790   0.8627   0.8608   | -0.45%   -1.95%   -1.89%   | 6.58e-07   9.77e-06   1.02e-05   | 76.20   
+Perm_34                   | N   | 0.3877   0.8676   0.8655   | 1.83%    -1.39%   -1.36%   | 1.42e-05   1.83e-05   1.62e-05   | 76.20   
+Perm_35                   | N   | 0.4011   0.8627   0.8597   | 5.36%    -1.95%   -2.02%   | 3.09e-05   3.05e-05   3.51e-05   | 76.20   
+Perm_36                   | N   | 0.3846   0.8627   0.8622   | 1.01%    -1.95%   -1.74%   | 1.24e-05   3.91e-05   3.96e-05   | 76.20   
+Perm_37                   | N   | 0.3995   0.8676   0.8668   | 4.93%    -1.39%   -1.22%   | 6.77e-06   8.54e-06   8.84e-06   | 76.20   
+Perm_38                   | N   | 0.3795   0.8627   0.8612   | -0.33%   -1.95%   -1.85%   | 6.77e-06   8.54e-06   1.06e-05   | 76.20   
+Perm_39                   | N   | 0.3765   0.8603   0.8589   | -1.11%   -2.23%   -2.12%   | 4.34e-06   9.77e-06   1.04e-05   | 76.20   
+Perm_40                   | N   | 0.3967   0.8578   0.8539   | 4.19%    -2.51%   -2.68%   | 6.34e-06   1.59e-05   1.56e-05   | 76.20   
+Perm_41                   | N   | 0.3951   0.8652   0.8638   | 3.76%    -1.67%   -1.55%   | 1.22e-05   3.05e-05   3.20e-05   | 76.20   
+Perm_42                   | N   | 0.3969   0.8627   0.8625   | 4.24%    -1.95%   -1.71%   | 3.68e-06   2.81e-05   2.60e-05   | 76.20   
+Perm_43                   | N   | 0.3957   0.8701   0.8685   | 3.92%    -1.11%   -1.02%   | 4.35e-06   1.22e-05   1.17e-05   | 76.20   
+Perm_44                   | N   | 0.3790   0.8554   0.8552   | -0.47%   -2.79%   -2.53%   | 1.06e-05   2.44e-06   2.16e-06   | 76.20   
+Perm_45                   | N   | 0.3883   0.8554   0.8561   | 1.97%    -2.79%   -2.43%   | 5.39e-06   2.44e-06   1.96e-06   | 76.20   
+Perm_46                   | N   | 0.3925   0.8578   0.8562   | 3.08%    -2.51%   -2.42%   | 4.64e-06   6.10e-06   5.51e-06   | 76.20   
+Perm_47                   | N   | 0.3904   0.8627   0.8597   | 2.52%    -1.95%   -2.02%   | 4.09e-06   3.66e-06   4.27e-06   | 76.20   
+Perm_48                   | N   | 0.3922   0.8627   0.8618   | 3.01%    -1.95%   -1.78%   | 1.88e-06   6.10e-06   5.55e-06   | 76.20   
+Perm_49                   | N   | 0.4033   0.8505   0.8497   | 5.92%    -3.34%   -3.16%   | 4.71e-06   8.54e-06   6.98e-06   | 76.20   
+Perm_50                   | N   | 0.3991   0.8652   0.8645   | 4.82%    -1.67%   -1.48%   | 1.43e-05   3.66e-06   3.26e-06   | 76.20   
+Equiv_1                   | N   | 0.4038   0.8529   0.8529   | 6.05%    -3.06%   -2.79%   | 8.56e-06   4.88e-05   4.94e-05   | 76.20   
+Equiv_2                   | N   | 0.4075   0.8627   0.8590   | 7.03%    -1.95%   -2.11%   | 2.89e-06   2.81e-05   3.12e-05   | 76.20   
+Equiv_3                   | N   | 0.3822   0.8750   0.8737   | 0.39%    -0.56%   -0.42%   | 3.90e-06   9.77e-06   1.00e-05   | 76.20   
+Equiv_4                   | N   | 0.3869   0.8750   0.8743   | 1.60%    -0.56%   -0.36%   | 8.84e-06   3.30e-05   3.06e-05   | 76.20   
+Equiv_5                   | N   | 0.3952   0.8578   0.8566   | 3.80%    -2.51%   -2.38%   | 4.17e-06   2.44e-06   3.50e-06   | 76.20   
+Equiv_6                   | N   | 0.3805   0.8603   0.8589   | -0.05%   -2.23%   -2.12%   | 7.78e-06   3.66e-06   3.96e-06   | 76.20   
+Equiv_7                   | N   | 0.3904   0.8676   0.8661   | 2.53%    -1.39%   -1.29%   | 1.49e-06   6.10e-06   6.36e-06   | 76.20   
+Equiv_8                   | N   | 0.3790   0.8578   0.8555   | -0.47%   -2.51%   -2.50%   | 4.88e-06   1.46e-05   1.49e-05   | 76.20   
+Equiv_9                   | N   | 0.3803   0.8554   0.8539   | -0.11%   -2.79%   -2.68%   | 5.63e-06   8.54e-06   1.02e-05   | 76.20   
+Equiv_10                  | N   | 0.3773   0.8456   0.8464   | -0.90%   -3.90%   -3.54%   | 1.65e-05   2.20e-05   2.33e-05   | 76.20   
+Equiv_11                  | N   | 0.3814   0.8578   0.8562   | 0.16%    -2.51%   -2.42%   | 3.74e-06   1.59e-05   1.44e-05   | 76.20   
+Equiv_12                  | N   | 0.3919   0.8750   0.8724   | 2.92%    -0.56%   -0.57%   | 8.86e-06   9.77e-06   1.08e-05   | 76.20   
+Equiv_13                  | N   | 0.3825   0.8505   0.8520   | 0.45%    -3.34%   -2.89%   | 1.11e-05   2.44e-06   2.66e-06   | 76.20   
+Equiv_14                  | N   | 0.3888   0.8627   0.8608   | 2.12%    -1.95%   -1.89%   | 1.45e-06   4.64e-05   4.55e-05   | 76.20   
+Equiv_15                  | N   | 0.3783   0.8652   0.8642   | -0.64%   -1.67%   -1.51%   | 2.55e-06   2.44e-06   2.17e-06   | 76.20   
+Equiv_16                  | N   | 0.3964   0.8529   0.8543   | 4.11%    -3.06%   -2.63%   | 9.62e-06   2.81e-05   2.69e-05   | 76.20   
+Equiv_17                  | N   | 0.3885   0.8799   0.8787   | 2.04%    0.00%    0.14%    | 7.91e-06   9.77e-06   9.79e-06   | 76.20   
+Equiv_18                  | N   | 0.4080   0.8627   0.8618   | 7.15%    -1.95%   -1.78%   | 8.43e-06   0.00e+00   1.23e-32   | 76.20   
+Equiv_19                  | N   | 0.3896   0.8775   0.8751   | 2.33%    -0.28%   -0.27%   | 1.43e-06   2.08e-05   2.18e-05   | 76.20   
+Equiv_20                  | N   | 0.3863   0.8627   0.8615   | 1.45%    -1.95%   -1.81%   | 9.45e-06   8.54e-06   8.22e-06   | 76.20   
+Equiv_21                  | N   | 0.3781   0.8554   0.8552   | -0.70%   -2.79%   -2.53%   | 5.07e-06   1.83e-05   2.07e-05   | 76.20   
+Equiv_22                  | N   | 0.3961   0.8725   0.8717   | 4.03%    -0.84%   -0.65%   | 1.69e-05   6.10e-06   6.20e-06   | 76.20   
+Equiv_23                  | N   | 0.3963   0.8676   0.8658   | 4.08%    -1.39%   -1.33%   | 5.51e-06   1.59e-05   1.53e-05   | 76.20   
+Equiv_24                  | N   | 0.3876   0.8750   0.8731   | 1.81%    -0.56%   -0.49%   | 4.64e-06   1.83e-05   2.14e-05   | 76.20   
+Equiv_25                  | N   | 0.4095   0.8627   0.8612   | 7.55%    -1.95%   -1.85%   | 4.02e-06   8.54e-06   8.61e-06   | 76.20   
+Equiv_26                  | N   | 0.3992   0.8676   0.8661   | 4.85%    -1.39%   -1.29%   | 3.47e-06   8.54e-06   8.69e-06   | 76.20   
+Equiv_27                  | N   | 0.4013   0.8603   0.8574   | 5.40%    -2.23%   -2.28%   | 2.36e-06   1.46e-05   1.49e-05   | 76.20   
+Equiv_28                  | N   | 0.3727   0.8578   0.8572   | -2.12%   -2.51%   -2.30%   | 1.59e-06   2.44e-06   2.05e-06   | 76.20   
+Equiv_29                  | N   | 0.3813   0.8725   0.8705   | 0.15%    -0.84%   -0.80%   | 9.56e-06   6.10e-06   5.66e-06   | 76.20   
+Equiv_30                  | N   | 0.4008   0.8505   0.8509   | 5.27%    -3.34%   -3.02%   | 7.60e-06   6.10e-06   6.07e-06   | 76.20   
+Equiv_31                  | Y   | 0.3792   0.8775   0.8754   | -0.40%   -0.28%   -0.23%   | 4.75e-06   1.46e-05   1.61e-05   | 76.20   
+Equiv_32                  | N   | 0.3905   0.8603   0.8589   | 2.56%    -2.23%   -2.12%   | 7.80e-06   2.08e-05   2.28e-05   | 76.20   
+Equiv_33                  | N   | 0.3761   0.8578   0.8555   | -1.23%   -2.51%   -2.50%   | 1.78e-06   3.66e-06   3.50e-06   | 76.20   
+Equiv_34                  | N   | 0.3846   0.8676   0.8665   | 1.01%    -1.39%   -1.25%   | 1.32e-06   3.66e-06   4.08e-06   | 76.20   
+Equiv_35                  | N   | 0.3835   0.8725   0.8708   | 0.72%    -0.84%   -0.76%   | 3.81e-06   2.44e-05   2.44e-05   | 76.20   
+Equiv_36                  | N   | 0.3928   0.8701   0.8691   | 3.17%    -1.11%   -0.95%   | 2.44e-06   1.59e-05   1.61e-05   | 76.20   
+Equiv_37                  | N   | 0.3958   0.8603   0.8601   | 3.96%    -2.23%   -1.97%   | 5.85e-06   2.44e-06   2.51e-06   | 76.20   
+Equiv_38                  | N   | 0.3972   0.8701   0.8685   | 4.32%    -1.11%   -1.02%   | 1.73e-06   1.46e-05   1.78e-05   | 76.20   
+Equiv_39                  | N   | 0.3871   0.8775   0.8758   | 1.68%    -0.28%   -0.19%   | 5.37e-06   6.10e-06   7.17e-06   | 76.20   
+Equiv_40                  | N   | 0.3793   0.8603   0.8595   | -0.38%   -2.23%   -2.04%   | 2.16e-06   6.10e-06   7.10e-06   | 76.20   
+Equiv_41                  | N   | 0.3681   0.8627   0.8618   | -3.33%   -1.95%   -1.78%   | 2.30e-06   2.44e-06   2.18e-06   | 76.20   
+Equiv_42                  | N   | 0.4180   0.8652   0.8632   | 9.77%    -1.67%   -1.63%   | 6.37e-07   1.46e-05   1.62e-05   | 76.20   
+Equiv_43                  | N   | 0.3971   0.8652   0.8632   | 4.30%    -1.67%   -1.63%   | 1.35e-05   2.44e-06   2.39e-06   | 76.20   
+Equiv_44                  | N   | 0.3972   0.8652   0.8617   | 4.33%    -1.67%   -1.80%   | 2.59e-06   4.03e-05   4.10e-05   | 76.20   
+Equiv_45                  | N   | 0.3783   0.8407   0.8409   | -0.65%   -4.46%   -4.17%   | 3.36e-06   6.10e-06   6.83e-06   | 76.20   
+Equiv_46                  | N   | 0.3879   0.8652   0.8638   | 1.88%    -1.67%   -1.55%   | 1.35e-05   8.54e-06   8.21e-06   | 76.20   
+Equiv_47                  | N   | 0.4043   0.8627   0.8608   | 6.18%    -1.95%   -1.89%   | 1.05e-05   8.54e-06   8.76e-06   | 76.20   
+Equiv_48                  | N   | 0.3897   0.8603   0.8585   | 2.34%    -2.23%   -2.15%   | 6.35e-06   2.08e-05   2.12e-05   | 76.20   
+Equiv_49                  | N   | 0.3829   0.8652   0.8635   | 0.56%    -1.67%   -1.59%   | 6.66e-06   6.10e-06   5.49e-06   | 76.20   
+Equiv_50                  | N   | 0.3964   0.8603   0.8604   | 4.10%    -2.23%   -1.94%   | 6.39e-06   2.44e-06   2.74e-06   | 76.20   
+Budget_1                  | N   | 0.3895   0.8578   0.8572   | 2.30%    -2.51%   -2.30%   | 1.94e-06   3.30e-05   3.71e-05   | 76.20   
+Budget_2                  | N   | 0.3788   0.8603   0.8595   | -0.50%   -2.23%   -2.04%   | 7.34e-06   1.22e-05   1.17e-05   | 76.20   
+Budget_3                  | N   | 0.3876   0.8480   0.8477   | 1.81%    -3.62%   -3.39%   | 2.74e-06   8.54e-06   8.03e-06   | 76.20   
+Budget_4                  | N   | 0.4088   0.8529   0.8497   | 7.36%    -3.06%   -3.16%   | 1.17e-05   2.69e-05   3.22e-05   | 76.20   
+Budget_5                  | N   | 0.3903   0.8676   0.8665   | 2.50%    -1.39%   -1.25%   | 3.28e-05   1.83e-05   1.55e-05   | 76.20   
+Budget_6                  | N   | 0.3921   0.8676   0.8671   | 2.97%    -1.39%   -1.18%   | 7.34e-06   2.08e-05   2.10e-05   | 76.20   
+Budget_7                  | N   | 0.3967   0.8627   0.8618   | 4.19%    -1.95%   -1.78%   | 4.40e-06   2.44e-06   2.18e-06   | 76.20   
+Budget_8                  | N   | 0.3868   0.8603   0.8607   | 1.59%    -2.23%   -1.91%   | 6.53e-06   1.83e-05   1.82e-05   | 76.20   
+Budget_9                  | N   | 0.3832   0.8431   0.8414   | 0.65%    -4.18%   -4.11%   | 1.56e-05   1.22e-05   1.10e-05   | 76.20   
+Budget_10                 | N   | 0.3880   0.8603   0.8582   | 1.91%    -2.23%   -2.20%   | 6.16e-06   6.10e-06   6.40e-06   | 76.20   
+Budget_11                 | N   | 0.3852   0.8603   0.8604   | 1.17%    -2.23%   -1.94%   | 2.21e-06   3.66e-06   4.07e-06   | 76.20   
+Budget_12                 | N   | 0.3720   0.8627   0.8618   | -2.31%   -1.95%   -1.78%   | 4.23e-06   9.77e-06   9.41e-06   | 76.20   
+Budget_13                 | N   | 0.3913   0.8505   0.8478   | 2.77%    -3.34%   -3.37%   | 1.83e-05   1.46e-05   1.52e-05   | 76.20   
+Budget_14                 | N   | 0.3832   0.8627   0.8612   | 0.64%    -1.95%   -1.85%   | 1.07e-05   9.77e-06   9.94e-06   | 76.20   
+Budget_15                 | N   | 0.3746   0.8578   0.8559   | -1.61%   -2.51%   -2.46%   | 2.22e-06   1.59e-05   1.60e-05   | 76.20   
+Budget_16                 | N   | 0.3885   0.8505   0.8503   | 2.03%    -3.34%   -3.09%   | 4.40e-06   5.49e-05   5.50e-05   | 76.20   
+Budget_17                 | N   | 0.3881   0.8529   0.8538   | 1.94%    -3.06%   -2.69%   | 5.83e-06   6.10e-06   5.46e-06   | 76.20   
+Budget_18                 | N   | 0.3851   0.8529   0.8526   | 1.13%    -3.06%   -2.83%   | 1.34e-05   2.44e-06   2.50e-06   | 76.20   
+Budget_19                 | N   | 0.4037   0.8627   0.8608   | 6.03%    -1.95%   -1.89%   | 5.17e-06   9.77e-06   9.73e-06   | 76.20   
+Budget_20                 | N   | 0.3916   0.8554   0.8546   | 2.84%    -2.79%   -2.60%   | 9.58e-06   9.77e-06   9.76e-06   | 76.20   
+Budget_21                 | N   | 0.3832   0.8603   0.8598   | 0.64%    -2.23%   -2.01%   | 5.74e-06   8.54e-06   1.01e-05   | 76.20   
+Budget_22                 | N   | 0.3863   0.8701   0.8688   | 1.45%    -1.11%   -0.99%   | 3.39e-06   6.10e-06   7.12e-06   | 76.20   
+Budget_23                 | N   | 0.3790   0.8652   0.8628   | -0.47%   -1.67%   -1.67%   | 4.18e-06   3.42e-05   3.70e-05   | 76.20   
+Budget_24                 | N   | 0.3954   0.8382   0.8364   | 3.85%    -4.74%   -4.68%   | 1.94e-05   5.13e-05   5.56e-05   | 76.20   
+Budget_25                 | N   | 0.3871   0.8676   0.8676   | 1.66%    -1.39%   -1.12%   | 1.26e-05   8.54e-06   7.76e-06   | 76.20   
+Budget_26                 | N   | 0.3841   0.8627   0.8627   | 0.88%    -1.95%   -1.67%   | 1.18e-05   6.10e-06   6.20e-06   | 76.20   
+Budget_27                 | N   | 0.3860   0.8603   0.8578   | 1.39%    -2.23%   -2.24%   | 3.67e-06   3.66e-06   3.49e-06   | 76.20   
+Budget_28                 | N   | 0.4001   0.8578   0.8572   | 5.07%    -2.51%   -2.30%   | 1.34e-05   1.46e-05   1.57e-05   | 76.20   
+Budget_29                 | N   | 0.3853   0.8676   0.8665   | 1.18%    -1.39%   -1.25%   | 5.05e-06   1.83e-05   1.73e-05   | 76.20   
+Budget_30                 | N   | 0.4099   0.8627   0.8615   | 7.65%    -1.95%   -1.81%   | 1.76e-05   1.46e-05   1.40e-05   | 76.20   
+Budget_31                 | N   | 0.3921   0.8603   0.8570   | 2.99%    -2.23%   -2.32%   | 2.45e-06   3.30e-05   3.42e-05   | 76.20   
+Budget_32                 | N   | 0.3885   0.8627   0.8615   | 2.03%    -1.95%   -1.81%   | 3.89e-06   2.44e-06   2.18e-06   | 76.20   
+Budget_33                 | N   | 0.3804   0.8505   0.8512   | -0.09%   -3.34%   -2.99%   | 4.30e-06   9.77e-06   9.46e-06   | 76.20   
+Budget_34                 | N   | 0.3880   0.8603   0.8589   | 1.90%    -2.23%   -2.12%   | 3.14e-06   5.74e-05   6.02e-05   | 76.20   
+Budget_35                 | N   | 0.3853   0.8529   0.8532   | 1.20%    -3.06%   -2.76%   | 9.38e-06   1.59e-05   1.58e-05   | 76.20   
+Budget_36                 | N   | 0.3847   0.8627   0.8627   | 1.05%    -1.95%   -1.67%   | 3.80e-06   3.66e-06   3.31e-06   | 76.20   
+Budget_37                 | N   | 0.3888   0.8554   0.8561   | 2.12%    -2.79%   -2.43%   | 1.40e-05   9.77e-06   8.67e-06   | 76.20   
+Budget_38                 | N   | 0.3817   0.8456   0.8454   | 0.24%    -3.90%   -3.65%   | 4.04e-06   2.44e-05   2.48e-05   | 76.20   
+Budget_39                 | N   | 0.4093   0.8529   0.8509   | 7.51%    -3.06%   -3.02%   | 7.71e-06   9.77e-06   1.10e-05   | 76.20   
+Budget_40                 | N   | 0.3918   0.8578   0.8572   | 2.90%    -2.51%   -2.30%   | 7.56e-06   2.44e-06   2.20e-06   | 76.20   
+Budget_41                 | N   | 0.3812   0.8480   0.8455   | 0.12%    -3.62%   -3.64%   | 1.51e-06   9.77e-06   1.14e-05   | 76.20   
+Budget_42                 | N   | 0.3771   0.8603   0.8595   | -0.96%   -2.23%   -2.04%   | 4.88e-06   9.77e-06   9.98e-06   | 76.20   
+Budget_43                 | N   | 0.4028   0.8578   0.8551   | 5.80%    -2.51%   -2.54%   | 1.33e-06   2.81e-05   2.90e-05   | 76.20   
+Budget_44                 | N   | 0.3764   0.8676   0.8668   | -1.15%   -1.39%   -1.22%   | 2.81e-06   2.44e-06   3.10e-06   | 76.20   
+Budget_45                 | N   | 0.3874   0.8603   0.8582   | 1.74%    -2.23%   -2.20%   | 7.39e-06   2.44e-06   2.39e-06   | 76.20   
+Budget_46                 | N   | 0.3807   0.8529   0.8529   | -0.00%   -3.06%   -2.79%   | 6.38e-06   3.66e-06   3.16e-06   | 76.20   
+Budget_47                 | N   | 0.3953   0.8603   0.8585   | 3.83%    -2.23%   -2.15%   | 7.62e-06   9.77e-06   9.61e-06   | 76.20   
+Budget_48                 | N   | 0.3827   0.8701   0.8691   | 0.50%    -1.11%   -0.95%   | 7.67e-06   1.59e-05   1.71e-05   | 76.20   
+Budget_49                 | N   | 0.3971   0.8725   0.8698   | 4.29%    -0.84%   -0.88%   | 7.83e-06   3.91e-05   4.48e-05   | 76.20   
+Budget_50                 | N   | 0.4008   0.8578   0.8575   | 5.27%    -2.51%   -2.27%   | 1.78e-05   2.81e-05   2.44e-05   | 76.20   
+---------------------------------------------------------------------------------------------------------------------------------------
+
+Random Baseline Summary:
+  Overall: samples=170, constraint_ok=5.88%, selected_better_loss=97.65%, selected_better_Acc.=94.12%, selected_dominates=91.76%, mean_dLoss=0.0080, mean_dAcc.=-0.0183, mean_totalC=76.20
+  Overall selected_better_F1=93.53%, mean_dF1=-0.0172
+  Overall eval variance: varLoss=7.36e-06 varAcc.=1.51e-05 varF1=1.55e-05
+  Stage1Budget   samples=10  ok=0.00% loss_win=100.00% Acc._win=100.00% dominates=100.00% dLoss=0.0070 dAcc.=-0.0255 totalC=76.20 F1_win=100.00% dF1=-0.0238 varLoss=8.85e-06 varAcc.=1.09e-05 varF1=1.13e-05
+  Stage2Budget   samples=10  ok=90.00% loss_win=90.00% Acc._win=20.00% dominates=20.00% dLoss=-0.0058 dAcc.=0.0005 totalC=76.20 F1_win=20.00% dF1=0.0010 varLoss=1.10e-05 varAcc.=2.73e-05 varF1=2.73e-05
+  Perm           samples=50  ok=0.00% loss_win=100.00% Acc._win=98.00% dominates=98.00% dLoss=0.0103 dAcc.=-0.0199 totalC=76.20 F1_win=98.00% dF1=-0.0189 varLoss=7.30e-06 varAcc.=1.50e-05 varF1=1.56e-05
+  Equiv          samples=50  ok=2.00% loss_win=96.00% Acc._win=98.00% dominates=92.00% dLoss=0.0089 dAcc.=-0.0162 totalC=76.20 F1_win=96.00% dF1=-0.0150 varLoss=5.85e-06 varAcc.=1.30e-05 varF1=1.34e-05
+  Budget         samples=50  ok=0.00% loss_win=98.00% Acc._win=100.00% dominates=98.00% dLoss=0.0079 dAcc.=-0.0213 totalC=76.20 F1_win=100.00% dF1=-0.0199 varLoss=7.90e-06 varAcc.=1.56e-05 varF1=1.60e-05
+Unified final-eval summary saved to: rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/final_eval/final_eval_results_mrpc.json
+Unified final-eval plot saved to: rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/final_eval/final_eval_comparison_mrpc.png
+Unified final-eval variance plot saved to: rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/final_eval/final_eval_variance_mrpc.png
