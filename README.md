@@ -83,13 +83,13 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--skip-stage1-search` | `rl`、`ga`、`greedy` | — | 跳过 Stage-1 搜索 |
 | `--skip-noise-search` | `rl`、`ga`、`greedy` | — | 跳过 Stage-2 搜索 |
 | `--skip-final-eval` | `rl`、`ga`、`greedy` | — | 一次跳过 Stage-1 + Stage-2 合并的最终评估（取代旧的两个分开 flag） |
-| `--final-eval-only` | `rl`、`ga`、`greedy` | — | 只跑统一最终评估，不跑任何 Stage-1 / Stage-2 搜索；自动等价于同时设置 `--skip-stage1-search` + `--skip-noise-search`（与 `--skip-final-eval` 互斥）。会从 `--resume-run-dir`（若未指定则退回到当前 `output_dir`）下读取之前 GA/Greedy 写入的搜索 JSON 或 RL 写入的 checkpoint 中的最优配置，作为 `search` 来源喂给最终评估；任一阶段读取失败时按 `--final-eval-source` 的回退规则解析。整个流程不会安装 SIGINT 处理器，也不会读写任何训练 checkpoint，因此与优雅停止（`STOP_RL`）和续训（`--resume-run-dir`）完全隔离 |
+| `--final-eval-only` | `rl`、`ga`、`greedy` | — | 只跑统一最终评估，不跑任何 Stage-1 / Stage-2 搜索；自动等价于同时设置 `--skip-stage1-search` + `--skip-noise-search`（与 `--skip-final-eval` 互斥）。会从 `--resume-from`（若未指定则退回到当前 `output_dir`）下读取之前 GA/Greedy 写入的搜索 JSON 或 RL 写入的 checkpoint 中的最优配置，作为 `search` 来源喂给最终评估；任一阶段读取失败时按 `--final-eval-source` 的回退规则解析。整个流程不会安装 SIGINT 处理器，也不会读写任何训练 checkpoint，因此与优雅停止（`STOP_RL`）和续训完全隔离 |
 | `--final-eval-source search/json/manual` | `rl`、`ga`、`greedy` | `search` | 统一最终评估来源；`search` 模式下会优先使用已执行阶段的搜索结果，若某阶段被 `skip` 则回退到 `--final-eval-config` 对应阶段配置 |
 | `--final-eval-config PATH` | `rl`、`ga`、`greedy` | 自动 | `json` 模式必填；`search` + 单阶段 `skip` 时也用于缺失阶段回退（文件需包含 stage1/stage2 两块） |
 | `--manual-stage1-gelu JSON_ARRAY` | `rl`、`ga`、`greedy` | — | `manual` 模式下的 Stage-1 GELU 配置 |
 | `--manual-stage1-softmax JSON_ARRAY` | `rl`、`ga`、`greedy` | — | `manual` 模式下的 Stage-1 Softmax 配置 |
 | `--manual-stage2-noise JSON_OBJECT` | `rl`、`ga`、`greedy` | — | `manual` 模式下的 7 类 Stage-2 噪声配置；`manual` 要求三个 manual-stage* 参数同时提供 |
-| `--final-eval-repeat N` | `rl`、`ga`、`greedy` | `1` | 统一最终评估的重复次数 |
+| `--final-eval-repeat N` | `rl`、`ga`、`greedy` | `50`（launcher 默认；部分训练预设可覆盖为 `1`） | 统一最终评估 noisy 组的正式重复评估次数。`N>1` 时每个非 Baseline 配置用 N 次完整验证集加噪评估的均值作为正式指标，并直接用这 N 次统计方差；`N=1` 时才额外启用 Stage-2 variance probe |
 | `--stage2-fixed-config-source stage1_result/json/manual` | `rl`、`ga`、`greedy` | 兼容继承 Stage-1 参数 | Stage-2 RL/GA/Greedy 训练中"固定 GELU/Softmax"的来源；与最终评估的 Stage-1 配置是两套不同参数 |
 | `--stage2-fixed-config PATH` | `rl`、`ga`、`greedy` | 自动 | `json` 模式下的 Stage-2 固定 GELU/Softmax 配置文件路径 |
 | `--stage2-manual-gelu JSON_ARRAY` | `rl`、`ga`、`greedy` | — | `manual` 模式下的 Stage-2 固定 GELU 配置 |
@@ -99,6 +99,8 @@ bash llama_7B_LayerImportance.sh [可选参数]
 | `--perm-trials N` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `10` | 随机置换对照次数 |
 | `--cost-trials N` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `10` | 等价成本对照次数 |
 | `--budget-trials N` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `10` | 等价预算对照次数 |
+| `--stage1-budget-trials N` | `rl`、`ga`、`greedy` 的 `--final-eval-only` | `10`（`mrpc-final-eval-only` 预设为 `50`） | Stage1Budget 组随机配置数量；显式传入时仅允许 final-eval-only，避免影响普通训练流程 |
+| `--stage2-budget-trials N` | `rl`、`ga`、`greedy` 的 `--final-eval-only` | `10`（`mrpc-final-eval-only` 预设为 `50`） | Stage2Budget 组随机配置数量；显式传入时仅允许 final-eval-only，避免影响普通训练流程 |
 | **普通 RL 专用** | | | |
 | `--stage1-search-lr FLOAT` | `rl` | `1e-4` | 普通 RL 的 Stage-1 学习率 |
 | `--stage2-search-lr FLOAT` | `rl` | `1e-4` | 普通 RL 的 Stage-2 学习率 |

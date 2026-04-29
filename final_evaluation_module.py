@@ -76,6 +76,8 @@ class UnifiedFinalEvaluationModule:
         self.manual_stage1_softmax = manual_stage1_softmax
         self.manual_stage2_noise = manual_stage2_noise
         self.random_seed = int(random_seed)
+        self.final_eval_only = bool(getattr(evaluator, "final_eval_only", False))
+        self.random_group_seed = None
         self.permutation_trials = max(0, int(permutation_trials))
         self.cost_equivalent_trials = max(0, int(cost_equivalent_trials))
         self.budget_equivalent_trials = max(0, int(budget_equivalent_trials))
@@ -752,9 +754,19 @@ class UnifiedFinalEvaluationModule:
         build_result,
     ):
         ev = self.evaluator
-        # 用 OS 熵源构造 RNG，确保每次运行采到的随机配置都是不同的；
-        # 否则两次 final-eval 会得到一模一样的随机组配置。
-        rng = np.random.default_rng()
+        # 用 OS 熵源构造 RNG，确保 final-eval-only 两次运行采到的随机配置不同；
+        # 同时把本轮种子记下来，方便复查某一次 final-eval-only 的随机组。
+        if self.final_eval_only:
+            self.random_group_seed = (
+                int.from_bytes(os.urandom(8), "little") & 0x7FFFFFFFFFFFFFFF
+            )
+            ev.log(
+                "[final_eval_only] Random comparison seed "
+                f"(OS entropy) = {self.random_group_seed}"
+            )
+            rng = np.random.default_rng(self.random_group_seed)
+        else:
+            rng = np.random.default_rng()
         results: List[dict] = []
 
         # Pre-enumerate stage1 cost solutions for budget/equiv.
@@ -1905,6 +1917,7 @@ class UnifiedFinalEvaluationModule:
                 ),
                 "variance_groups": ["optimized", "random", "stage1_fixed_max_scaling"],
                 "random_groups": "enabled" if self.include_random_groups else "disabled",
+                "random_group_seed": self.random_group_seed,
                 "relative_metrics": "delta_vs_baseline",
                 "cost_axis": "total_cost_stage1_plus_stage2",
             },
