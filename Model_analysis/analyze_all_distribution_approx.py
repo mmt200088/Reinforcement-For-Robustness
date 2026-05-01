@@ -51,6 +51,8 @@ Usage
 
     cd /var/tmp/root-home/Reinforcement-For-Robustness/Model_analysis
 
+    rm -rf all_analysis_approx
+
     mkdir -p all_analysis_approx/wnli
     
     nohup python analyze_all_distribution_approx.py \
@@ -59,8 +61,9 @@ Usage
         --stage stage1 \
         --max_length 128 \
         --batch_size 32 \
-        --output_dir all_analysis_approx \
+        --output_dir all_analysis_approx/wnli \
     > all_analysis_approx/wnli/wnli_run.log 2>&1 &
+
 
     tail -f all_analysis_approx/wnli/wnli_run.log
 """
@@ -105,7 +108,9 @@ from analyze_all_distribution_new import (
     _make_hook,
     _make_linear_hook,
     _make_ln_internals_pre_hook,
+    _make_pre_bias_hook,
     _make_pre_hook,
+    _make_qkv_pre_bias_hook,
     _mag_bin_labels,
     _ORIG_MATMUL,
     _prepare_bert_data,
@@ -717,6 +722,8 @@ def _install_bert_hooks_approx(model, q, approx_cfg):
             ("value_proj", sa.value),
         ]:
             handles.append(mod.register_forward_hook(_make_linear_hook(probe, i, q)))
+            handles.append(mod.register_forward_hook(
+                _make_pre_bias_hook(f"{probe}_nobias", i, q)))
 
         # --- Attention wrapper, optionally with approx softmax ---
         sm_degree = resolve_softmax_degree(approx_cfg, i)
@@ -733,20 +740,24 @@ def _install_bert_hooks_approx(model, q, approx_cfg):
         sa.forward = _make_attn_wrapper_with_softmax(orig_fwd, i, q, sm_fn)
         restore.append(("fwd", sa, orig_fwd))
 
-        # Linear projections
+        # Linear projections (post-bias + pre-bias)
         for probe, mod in [
             ("attn_output", layer.attention.output.dense),
             ("gelu_input", layer.intermediate.dense),
             ("ffn2_output", layer.output.dense),
         ]:
             handles.append(mod.register_forward_hook(_make_linear_hook(probe, i, q)))
+            handles.append(mod.register_forward_hook(
+                _make_pre_bias_hook(f"{probe}_nobias", i, q)))
 
-        # LayerNorm outputs
+        # LayerNorm outputs (post-β + pre-β)
         for probe, mod in [
             ("post_attn_ln", layer.attention.output.LayerNorm),
             ("post_ffn_ln", layer.output.LayerNorm),
         ]:
             handles.append(mod.register_forward_hook(_make_hook(probe, i, q)))
+            handles.append(mod.register_forward_hook(
+                _make_pre_bias_hook(f"{probe}_nobias", i, q)))
         handles.append(
             layer.attention.output.LayerNorm.register_forward_pre_hook(
                 _make_ln_internals_pre_hook("ln1", i, q)
@@ -814,6 +825,8 @@ def _install_gpt2_hooks_approx(model, q, approx_cfg):
             return hook
 
         handles.append(attn.c_attn.register_forward_hook(_make_qkv_hook(i, n_embd)))
+        handles.append(attn.c_attn.register_forward_hook(
+            _make_qkv_pre_bias_hook(i, n_embd, q)))
 
         # Attention internals (with optional approx softmax)
         sm_degree = resolve_softmax_degree(approx_cfg, i)
@@ -832,12 +845,16 @@ def _install_gpt2_hooks_approx(model, q, approx_cfg):
 
         handles.append(attn.c_proj.register_forward_hook(
             _make_linear_hook("attn_output", i, q)))
+        handles.append(attn.c_proj.register_forward_hook(
+            _make_pre_bias_hook("attn_output_nobias", i, q)))
 
         # LayerNorm probes
         handles.append(block.ln_1.register_forward_pre_hook(
             _make_pre_hook("ln1_input", i, q)))
         handles.append(block.ln_1.register_forward_hook(
             _make_hook("ln1_output", i, q)))
+        handles.append(block.ln_1.register_forward_hook(
+            _make_pre_bias_hook("ln1_output_nobias", i, q)))
         handles.append(block.ln_1.register_forward_pre_hook(
             _make_ln_internals_pre_hook("ln1", i, q)))
 
@@ -851,12 +868,16 @@ def _install_gpt2_hooks_approx(model, q, approx_cfg):
         handles.append(block.ln_2.register_forward_pre_hook(_make_ln2_pre_hook(i)))
         handles.append(block.ln_2.register_forward_hook(
             _make_hook("ln2_output", i, q)))
+        handles.append(block.ln_2.register_forward_hook(
+            _make_pre_bias_hook("ln2_output_nobias", i, q)))
         handles.append(block.ln_2.register_forward_pre_hook(
             _make_ln_internals_pre_hook("ln2", i, q)))
 
-        # FFN1
+        # FFN1 (post-bias + pre-bias)
         handles.append(block.mlp.c_fc.register_forward_hook(
             _make_linear_hook("gelu_input", i, q)))
+        handles.append(block.mlp.c_fc.register_forward_hook(
+            _make_pre_bias_hook("gelu_input_nobias", i, q)))
 
         # --- GELU: optionally replace ---
         gelu_degree = resolve_gelu_degree(approx_cfg, i)
@@ -874,9 +895,11 @@ def _install_gpt2_hooks_approx(model, q, approx_cfg):
         block.mlp.act = _ActWrapper(new_act, i, q)
         restore.append(("gpt2_act", block.mlp, orig_act))
 
-        # FFN2
+        # FFN2 (post-bias + pre-bias)
         handles.append(block.mlp.c_proj.register_forward_hook(
             _make_linear_hook("ffn2_output", i, q)))
+        handles.append(block.mlp.c_proj.register_forward_hook(
+            _make_pre_bias_hook("ffn2_output_nobias", i, q)))
 
         def _make_block_hook(li):
             def hook(_mod, _inp, out):

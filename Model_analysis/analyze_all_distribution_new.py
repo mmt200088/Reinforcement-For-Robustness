@@ -147,23 +147,33 @@ PROBE_POINTS = [
     'input_ids',
     'after_embed',
     'query_proj',
+    'query_proj_nobias',
     'key_proj',
+    'key_proj_nobias',
     'value_proj',
+    'value_proj_nobias',
     'qkt_raw',
     'attn_scores',
     'attn_probs',
     'attn_context',
     'attn_output',
+    'attn_output_nobias',
     'post_attn_ln',
+    'post_attn_ln_nobias',
     'gelu_input',
+    'gelu_input_nobias',
     'gelu_output',
     'ffn2_output',
+    'ffn2_output_nobias',
     'post_ffn_ln',
+    'post_ffn_ln_nobias',
     # Pre-norm LayerNorm input/output (GPT-2 only; BERT leaves these empty)
     'ln1_input',
     'ln1_output',
+    'ln1_output_nobias',
     'ln2_input',
     'ln2_output',
+    'ln2_output_nobias',
     # LayerNorm internal intermediates
     'ln1_mean_sum',
     'ln1_mean',
@@ -185,22 +195,32 @@ PROBE_DISPLAY = {
     'input_ids':    'Input IDs',
     'after_embed':  'After Embedding',
     'query_proj':   'XW_q + b_q',
+    'query_proj_nobias': 'XW_q (pre-bias)',
     'key_proj':     'XW_k + b_k',
+    'key_proj_nobias':   'XW_k (pre-bias)',
     'value_proj':   'XW_v + b_v',
+    'value_proj_nobias': 'XW_v (pre-bias)',
     'qkt_raw':      'QKᵀ (raw)',
     'attn_scores':  'QKᵀ/√dₖ + mask',
     'attn_probs':   'Softmax(scores)',
     'attn_context': 'Softmax × V',
     'attn_output':  'Attn × Wₒ',
+    'attn_output_nobias': 'Attn × Wₒ (pre-bias)',
     'post_attn_ln': 'Post-Attn sub-block',
+    'post_attn_ln_nobias': 'Post-Attn LN (pre-β)',
     'gelu_input':   'FFN1 (GELU in)',
+    'gelu_input_nobias':  'FFN1 (pre-bias, X·W₁)',
     'gelu_output':  'GELU output',
     'ffn2_output':  'FFN2 output',
+    'ffn2_output_nobias': 'FFN2 (pre-bias, h·W₂)',
     'post_ffn_ln':  'Post-FFN sub-block',
+    'post_ffn_ln_nobias':  'Post-FFN LN (pre-β)',
     'ln1_input':    'LN₁ input (pre-norm)',
     'ln1_output':   'LN₁ output (pre-norm)',
+    'ln1_output_nobias': 'LN₁ output (pre-β)',
     'ln2_input':    'LN₂ input (pre-norm)',
     'ln2_output':   'LN₂ output (pre-norm)',
+    'ln2_output_nobias': 'LN₂ output (pre-β)',
     'ln1_mean_sum': 'LN₁ Σxᵢ (mean sum)',
     'ln1_mean':     'LN₁ μ = Σxᵢ/D',
     'ln1_diff_sq':  'LN₁ (xᵢ−μ)²',
@@ -220,22 +240,32 @@ PROBE_HIST_RANGE = {
     'input_ids':    (0.0, 50300.0, 300),
     'after_embed':  (-5.0, 5.0, 300),
     'query_proj':   (-5.0, 5.0, 300),
+    'query_proj_nobias': (-5.0, 5.0, 300),
     'key_proj':     (-5.0, 5.0, 300),
+    'key_proj_nobias':   (-5.0, 5.0, 300),
     'value_proj':   (-5.0, 5.0, 300),
+    'value_proj_nobias': (-5.0, 5.0, 300),
     'qkt_raw':      (-100.0, 100.0, 300),
     'attn_scores':  (-50.0, 50.0, 300),
     'attn_probs':   (0.0, 1.0, 200),
     'attn_context': (-5.0, 5.0, 300),
     'attn_output':  (-5.0, 5.0, 300),
+    'attn_output_nobias': (-5.0, 5.0, 300),
     'post_attn_ln': (-5.0, 5.0, 300),
+    'post_attn_ln_nobias': (-5.0, 5.0, 300),
     'gelu_input':   (-15.0, 15.0, 300),
+    'gelu_input_nobias':  (-15.0, 15.0, 300),
     'gelu_output':  (-15.0, 15.0, 300),
     'ffn2_output':  (-15.0, 15.0, 300),
+    'ffn2_output_nobias': (-15.0, 15.0, 300),
     'post_ffn_ln':  (-5.0, 5.0, 300),
+    'post_ffn_ln_nobias':  (-5.0, 5.0, 300),
     'ln1_input':    (-15.0, 15.0, 300),
     'ln1_output':   (-5.0, 5.0, 300),
+    'ln1_output_nobias': (-5.0, 5.0, 300),
     'ln2_input':    (-15.0, 15.0, 300),
     'ln2_output':   (-5.0, 5.0, 300),
+    'ln2_output_nobias': (-5.0, 5.0, 300),
     'ln1_mean_sum': (-2000.0, 2000.0, 300),
     'ln1_mean':     (-3.0, 3.0, 300),
     'ln1_diff_sq':  (0.0, 50.0, 300),
@@ -254,22 +284,32 @@ PROBE_COLORS = {
     'input_ids':    '#95a5a6',
     'after_embed':  '#7f8c8d',
     'query_proj':   '#e74c3c',
+    'query_proj_nobias': '#fadbd8',
     'key_proj':     '#c0392b',
+    'key_proj_nobias':   '#f5b7b1',
     'value_proj':   '#d35400',
+    'value_proj_nobias': '#fae5d3',
     'qkt_raw':      '#e67e22',
     'attn_scores':  '#f39c12',
     'attn_probs':   '#f1c40f',
     'attn_context': '#2ecc71',
     'attn_output':  '#27ae60',
+    'attn_output_nobias': '#a9dfbf',
     'post_attn_ln': '#1abc9c',
+    'post_attn_ln_nobias': '#a3e4d7',
     'gelu_input':   '#3498db',
+    'gelu_input_nobias':  '#aed6f1',
     'gelu_output':  '#2980b9',
     'ffn2_output':  '#9b59b6',
+    'ffn2_output_nobias': '#d2b4de',
     'post_ffn_ln':  '#8e44ad',
+    'post_ffn_ln_nobias':  '#bb8fce',
     'ln1_input':    '#16a085',
     'ln1_output':   '#1abc9c',
+    'ln1_output_nobias': '#76d7c4',
     'ln2_input':    '#2c3e50',
     'ln2_output':   '#34495e',
+    'ln2_output_nobias': '#85929e',
     'ln1_mean_sum': '#e6194B',
     'ln1_mean':     '#fabebe',
     'ln1_diff_sq':  '#f58231',
@@ -503,6 +543,48 @@ def _make_pre_hook(probe, layer, q):
     return hook
 
 
+def _make_pre_bias_hook(probe, layer, q):
+    """Forward hook that subtracts ``mod.bias`` from ``out`` and enqueues it.
+
+    Works uniformly for ``nn.Linear`` (``out = X·Wᵀ + b``), ``Conv1D`` used by
+    GPT-2 (``out = X·W + b``) and ``LayerNorm`` (``out = (x−μ)/σ · γ + β``):
+    in every case ``out − bias`` recovers the pure matmul / scaled-norm
+    output before the bias / β shift was added.
+
+    Modules without a bias produce the same value as the regular post-bias
+    probe; the hook still emits something so the layer slot is filled.
+    """
+    def hook(mod, _inp, out):
+        bias = getattr(mod, 'bias', None)
+        if bias is None:
+            pre = out.detach()
+        else:
+            pre = (out - bias).detach()
+        _enqueue(probe, layer, pre, q)
+    return hook
+
+
+def _make_qkv_pre_bias_hook(layer, ne, q):
+    """GPT-2 ``c_attn`` outputs the concatenated [Q | K | V] stack.
+
+    Equivalent of ``_make_qkv_hook`` but emits the pre-bias variant for each
+    of the three slices.  Bias for the combined Conv1D has the same shape as
+    the output's last dim, so subtracting it before ``split`` is equivalent
+    to subtracting per-slice biases after splitting.
+    """
+    def hook(mod, _inp, out):
+        bias = getattr(mod, 'bias', None)
+        if bias is None:
+            pre = out.detach()
+        else:
+            pre = (out - bias).detach()
+        qp, kp, vp = pre.split(ne, dim=-1)
+        _enqueue('query_proj_nobias', layer, qp, q)
+        _enqueue('key_proj_nobias',   layer, kp, q)
+        _enqueue('value_proj_nobias', layer, vp, q)
+    return hook
+
+
 def _make_ln_internals_pre_hook(ln_prefix, layer, q):
     """Pre-hook on LayerNorm that computes and enqueues internal intermediates.
 
@@ -638,7 +720,7 @@ def _install_bert_hooks(model, q):
     for i, layer in enumerate(model.bert.encoder.layer):
         sa = layer.attention.self
 
-        # Q / K / V  (linear projections → accum_max)
+        # Q / K / V  (linear projections → accum_max + pre-bias variant)
         for probe, mod in [
             ('query_proj', sa.query),
             ('key_proj',   sa.key),
@@ -646,13 +728,15 @@ def _install_bert_hooks(model, q):
         ]:
             handles.append(mod.register_forward_hook(
                 _make_linear_hook(probe, i, q)))
+            handles.append(mod.register_forward_hook(
+                _make_pre_bias_hook(f'{probe}_nobias', i, q)))
 
         # Attention internals
         orig_fwd = sa.forward
         sa.forward = _make_attn_wrapper(orig_fwd, i, q)
         restore.append(('fwd', sa, orig_fwd))
 
-        # Linear projections → accum_max
+        # Linear projections → accum_max + pre-bias variant
         for probe, mod in [
             ('attn_output',  layer.attention.output.dense),
             ('gelu_input',   layer.intermediate.dense),
@@ -660,13 +744,17 @@ def _install_bert_hooks(model, q):
         ]:
             handles.append(mod.register_forward_hook(
                 _make_linear_hook(probe, i, q)))
+            handles.append(mod.register_forward_hook(
+                _make_pre_bias_hook(f'{probe}_nobias', i, q)))
 
-        # Non-linear probes (LayerNorm output, no accumulation)
+        # Non-linear probes (LayerNorm output, no accumulation) + pre-β variant
         for probe, mod in [
             ('post_attn_ln', layer.attention.output.LayerNorm),
             ('post_ffn_ln',  layer.output.LayerNorm),
         ]:
             handles.append(mod.register_forward_hook(_make_hook(probe, i, q)))
+            handles.append(mod.register_forward_hook(
+                _make_pre_bias_hook(f'{probe}_nobias', i, q)))
 
         # LayerNorm internal intermediates (sum-for-mean, sum-for-var, var, 1/std)
         handles.append(layer.attention.output.LayerNorm.register_forward_pre_hook(
@@ -736,15 +824,19 @@ def _install_gpt2_hooks(model, q):
                          accum_ma=va.max().item())
             return hook
         handles.append(attn.c_attn.register_forward_hook(_make_qkv_hook(i, n_embd)))
+        handles.append(attn.c_attn.register_forward_hook(
+            _make_qkv_pre_bias_hook(i, n_embd, q)))
 
         # Attention internals (qkt_raw, attn_scores, attn_probs, attn_context)
         orig_fwd = attn.forward
         attn.forward = _make_attn_wrapper(orig_fwd, i, q)
         restore.append(('fwd', attn, orig_fwd))
 
-        # attn_output = output of W_O projection (linear → accum_max)
+        # attn_output = output of W_O projection (linear → accum_max + pre-bias)
         handles.append(attn.c_proj.register_forward_hook(
             _make_linear_hook('attn_output', i, q)))
+        handles.append(attn.c_proj.register_forward_hook(
+            _make_pre_bias_hook('attn_output_nobias', i, q)))
 
         # ---- LayerNorm probes (pre-norm architecture) ----
         # ln_1: input = block input (prev residual); output = normalized → attn
@@ -752,6 +844,8 @@ def _install_gpt2_hooks(model, q):
             _make_pre_hook('ln1_input', i, q)))
         handles.append(block.ln_1.register_forward_hook(
             _make_hook('ln1_output', i, q)))
+        handles.append(block.ln_1.register_forward_hook(
+            _make_pre_bias_hook('ln1_output_nobias', i, q)))
         handles.append(block.ln_1.register_forward_pre_hook(
             _make_ln_internals_pre_hook('ln1', i, q)))
 
@@ -767,12 +861,16 @@ def _install_gpt2_hooks(model, q):
             _make_ln2_pre_hook(i)))
         handles.append(block.ln_2.register_forward_hook(
             _make_hook('ln2_output', i, q)))
+        handles.append(block.ln_2.register_forward_hook(
+            _make_pre_bias_hook('ln2_output_nobias', i, q)))
         handles.append(block.ln_2.register_forward_pre_hook(
             _make_ln_internals_pre_hook('ln2', i, q)))
 
-        # gelu_input = FFN1 output (linear → accum_max)
+        # gelu_input = FFN1 output (linear → accum_max + pre-bias)
         handles.append(block.mlp.c_fc.register_forward_hook(
             _make_linear_hook('gelu_input', i, q)))
+        handles.append(block.mlp.c_fc.register_forward_hook(
+            _make_pre_bias_hook('gelu_input_nobias', i, q)))
 
         # gelu_output
         act = block.mlp.act
@@ -783,9 +881,11 @@ def _install_gpt2_hooks(model, q):
             block.mlp.act = _ActWrapper(act, i, q)
             restore.append(('gpt2_act', block.mlp, act))
 
-        # ffn2_output = FFN2 output (linear → accum_max)
+        # ffn2_output = FFN2 output (linear → accum_max + pre-bias)
         handles.append(block.mlp.c_proj.register_forward_hook(
             _make_linear_hook('ffn2_output', i, q)))
+        handles.append(block.mlp.c_proj.register_forward_hook(
+            _make_pre_bias_hook('ffn2_output_nobias', i, q)))
 
         # post_ffn_ln: block output = residual + MLP output
         def _make_block_hook(li):
