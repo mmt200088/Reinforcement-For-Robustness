@@ -4,26 +4,57 @@ set -euo pipefail
 usage() {
 cat <<'EOF'
 用法：
-  bash llama_7B_LayerImportance.sh [可选参数]
+  bash llama_7B_LayerImportance.sh run rl [常用参数] [高级参数]
+  bash llama_7B_LayerImportance.sh run ga [常用参数] [高级参数]
+  bash llama_7B_LayerImportance.sh run greedy [常用参数] [高级参数]
+  bash llama_7B_LayerImportance.sh eval [常用参数] [高级参数]
+  bash llama_7B_LayerImportance.sh compare [常用参数] [高级参数]
+  bash llama_7B_LayerImportance.sh general train [常用参数] [高级参数]
+  bash llama_7B_LayerImportance.sh general search [常用参数] [高级参数]
+
+兼容入口：
+  bash llama_7B_LayerImportance.sh [旧版可选参数]
 
 预设系统：
   --preset NAME              加载 presets/NAME.conf 中的参数（命令行参数优先覆盖预设）
   --list-presets             列出所有可用预设
 
-核心参数：
-  --dataset DATASET
-  --search-algorithm rl|ga|greedy|general-rl|rl-and-ga-compare
-  --logfile FILE
-  --model-type bert-base|bert-large|gpt-2
+普通用户常用参数（建议优先使用）：
+  --preset NAME
+  --dataset DATASET          mrpc|sst2|stsb|cola|qnli|rte|wnli
+  --algorithm ALG            rl|ga|greedy（eval 可用；run 子命令由 run 后面的算法决定）
+  --fresh                    等价于 --fresh-start
+  --budget N                 统一设置最终评估随机对照组数量
+  --eval-repeat N            普通 run/eval 等价于 --final-eval-repeat；compare 等价于 --stage2-compare-repeats
   --batch-size N
 
-普通 RL / 对比实验中的 RL：
+高层动作：
+  --mode train               默认：按算法执行搜索，并保留最终评估
+  --mode eval                只运行统一最终评估；等价于跳过 Stage-1/Stage-2 搜索并启用 final-eval-only
+  --mode stage2-only         跳过 Stage-1 搜索，只运行 Stage-2 搜索；若提供 --config，会自动作为 Stage-2 固定 GELU/Softmax 来源
+  --mode stage1-only         跳过 Stage-2 搜索，只运行 Stage-1 搜索（最终评估需要 --config 回退 Stage-2）
+  --mode search-only         运行搜索但跳过统一最终评估
+
+预算简写：
+  --episodes S1,S2           RL：设置 Stage-1 / Stage-2 episode 数；也可传单个 N 表示两阶段相同
+  --generations S1,S2        GA/Greedy：设置 Stage-1 / Stage-2 代数；也可传单个 N 表示两阶段相同
+
+配置简写：
+  --config PATH              等价于 --final-eval-config PATH；eval 模式下会自动使用 --final-eval-source json
+  --source search|json|manual
+
+核心高级参数：
+  --search-algorithm rl|ga|greedy|general-rl|rl-and-ga-compare  旧版兼容入口
+  --logfile FILE
+  --model-type bert-base|bert-large|gpt-2
+
+普通 RL：
   --stage1-search-episodes N
   --stage2-search-episodes N
   --ppo-update-interval N              每多少 episode 触发一次 PPO 更新（默认 120）；
                                        同时决定每个 details/txt 的回合数（= 3 × N, 默认 360）
 
-GA / Greedy / 对比实验中的 GA：
+GA / Greedy：
   --stage1-search-generations N
   --stage2-search-generations N
 
@@ -62,7 +93,7 @@ GA / Greedy / 对比实验中的 GA：
   --resume-from PATH
 
 对比实验专用（仅 rl-and-ga-compare 可用）：
-  --compare-config-mode direct|persistent
+  --compare-config-mode persistent|direct  默认 persistent；direct 是高级模式，需要显式提供四个 JSON
   --stage2-compare-repeats N
   --compare-persistent-root PATH
   --rl-compare-stage1-json PATH
@@ -105,27 +136,25 @@ GA / Greedy / 对比实验中的 GA：
   - accuracy_slug 示例：range_0.50pct_2.00pct / discrete_0.50pct_1.00pct / default
 
 说明：
-  1. 不再支持位置参数，统一改为可选参数。
-  2. 参数 --model 已废弃，请改用 --dataset。
-  3. 以下旧参数已从命令行入口移除，因为当前流程不会实际生效：
-     lora_r、lora_alpha、degree
- 4. --search-algorithm=rl-and-ga-compare 现在直接比较已有 JSON 或持久化目录结果，
+  1. 推荐使用子命令；旧版纯 flag 入口仍保留为兼容入口。
+  2. 参数 --model、--final_eval_only、旧 compare 搜索/skip/source 参数已移除。
+  3. lora_r、lora_alpha、degree 未暴露在 launcher 中，因为当前流程不会实际读取它们。
+  4. --search-algorithm=rl-and-ga-compare 现在直接比较已有 JSON 或持久化目录结果，
      不再重新启动完整 RL / GA 训练。
   5. compare 的 persistent 模式会在启动前检查 RL / GA 目标持久化目录与 metadata.json，
      如果找不到会直接报错并打印对应路径。
 
 示例：
   bash llama_7B_LayerImportance.sh --list-presets
-  bash llama_7B_LayerImportance.sh --preset mrpc-rl-default --fresh-start
-  bash llama_7B_LayerImportance.sh --preset mrpc-rl-default            # 续训练（无需 --fresh-start）
-  bash llama_7B_LayerImportance.sh --dataset mrpc
-  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl --stage1-search-lr 3e-5 --stage2-search-lr 1e-5
-  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm ga --stage1-search-generations 120 --stage2-search-generations 90
-  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm greedy --stage1-search-generations 200 --stage2-search-generations 200
-  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm ga --skip-stage1-search --skip-final-eval --stage2-search-generations 2500 --stage2-fixed-config-source json --stage2-fixed-config glue_final_configs_best_genetic.json
-  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm rl-and-ga-compare --compare-config-mode direct --rl-compare-stage1-json glue_final_configs_best_ppo.json --rl-compare-stage2-json glue_final_configs_best_ppo.json --ga-compare-stage1-json glue_final_configs_best_genetic.json --ga-compare-stage2-json glue_final_configs_best_genetic.json
-  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm general-rl --general-rl-mode train --general-rl-tasks mrpc,cola,rte,stsb --fresh-start
-  bash llama_7B_LayerImportance.sh --dataset mrpc --search-algorithm general-rl --general-rl-mode search --general-policy-dir rl_results/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default
+  bash llama_7B_LayerImportance.sh run rl --preset mrpc-rl-default --fresh
+  bash llama_7B_LayerImportance.sh run rl --preset mrpc-rl-default
+  bash llama_7B_LayerImportance.sh run rl --dataset mrpc --episodes 51000,80000 --eval-repeat 1
+  bash llama_7B_LayerImportance.sh run ga --dataset mrpc --mode stage2-only --generations 1,800 --config glue_final_configs_best_genetic.json
+  bash llama_7B_LayerImportance.sh eval --dataset mrpc --algorithm rl --config glue_final_configs_best_ppo.json --eval-repeat 50 --budget 50
+  bash llama_7B_LayerImportance.sh compare --dataset mrpc
+  bash llama_7B_LayerImportance.sh compare --dataset mrpc --compare-config-mode direct --rl-compare-stage1-json glue_final_configs_best_ppo.json --rl-compare-stage2-json glue_final_configs_best_ppo.json --ga-compare-stage1-json glue_final_configs_best_genetic.json --ga-compare-stage2-json glue_final_configs_best_genetic.json
+  bash llama_7B_LayerImportance.sh general train --dataset mrpc --general-rl-tasks mrpc,cola,rte,stsb --fresh
+  bash llama_7B_LayerImportance.sh general search --dataset mrpc --general-policy-dir rl_results/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default
 EOF
 }
 
@@ -231,6 +260,49 @@ default_final_eval_json_for_family(){
     *) echo "glue_final_configs_best_ppo.json" ;;
   esac
 }
+translate_subcommand_args(){
+  local args=("$@")
+  local first="${args[0]:-}"
+  local sub="${args[1]:-}"
+  SUBCOMMAND_ARGS=()
+  if [ "${#args[@]}" -eq 0 ]; then
+    return
+  fi
+  case "$first" in
+    run)
+      if [ "${#args[@]}" -lt 2 ] || [ "$sub" = "-h" ] || [ "$sub" = "--help" ]; then
+        usage
+        exit 0
+      fi
+      case "$sub" in
+        rl|ppo) SUBCOMMAND_ARGS=(--search-algorithm rl "${args[@]:2}") ;;
+        ga|genetic) SUBCOMMAND_ARGS=(--search-algorithm ga "${args[@]:2}") ;;
+        greedy|greedy-search|greedy_search) SUBCOMMAND_ARGS=(--search-algorithm greedy "${args[@]:2}") ;;
+        *) err "run 子命令只支持 rl / ga / greedy，当前为：$sub" ;;
+      esac
+      ;;
+    eval)
+      SUBCOMMAND_ARGS=(--mode eval "${args[@]:1}")
+      ;;
+    compare)
+      SUBCOMMAND_ARGS=(--search-algorithm rl-and-ga-compare "${args[@]:1}")
+      ;;
+    general)
+      if [ "${#args[@]}" -lt 2 ] || [ "$sub" = "-h" ] || [ "$sub" = "--help" ]; then
+        usage
+        exit 0
+      fi
+      case "$sub" in
+        train|search) SUBCOMMAND_ARGS=(--search-algorithm general-rl --general-rl-mode "$sub" "${args[@]:2}") ;;
+        infer) SUBCOMMAND_ARGS=(--search-algorithm general-rl --general-rl-mode search "${args[@]:2}") ;;
+        *) err "general 子命令只支持 train / search，当前为：$sub" ;;
+      esac
+      ;;
+    *)
+      SUBCOMMAND_ARGS=("${args[@]}")
+      ;;
+  esac
+}
 
 resolve_compare_cuda_split() {
   RL_COMPARE_CUDA_VISIBLE_DEVICES=""
@@ -267,12 +339,14 @@ STAGE1_EPISODES="51000"; S_STAGE1_EPISODES="false"
 STAGE2_EPISODES="40000"; S_STAGE2_EPISODES="false"
 STAGE1_GENERATIONS=""; S_STAGE1_GENERATIONS="false"
 STAGE2_GENERATIONS=""; S_STAGE2_GENERATIONS="false"
+GENERATIONS_PAIR_SPECIFIED="false"
 STAGE1_LR="1e-4"; S_STAGE1_LR="false"
 STAGE2_LR="1e-4"; S_STAGE2_LR="false"
 SKIP_STAGE1_SEARCH="false"; S_SKIP_STAGE1_SEARCH="false"
 SKIP_NOISE_SEARCH="false"; S_SKIP_NOISE_SEARCH="false"
 SKIP_FINAL_EVAL="false"; S_SKIP_FINAL_EVAL="false"
 FINAL_EVAL_ONLY="false"; S_FINAL_EVAL_ONLY="false"
+RUN_MODE="train"; S_RUN_MODE="false"
 FINAL_EVAL_SOURCE="search"; S_FINAL_EVAL_SOURCE="false"
 FINAL_EVAL_CONFIG=""; S_FINAL_EVAL_CONFIG="false"
 MANUAL_STAGE1_GELU=""
@@ -283,11 +357,13 @@ STAGE2_FIXED_CONFIG=""; S_STAGE2_FIXED_CONFIG="false"
 STAGE2_MANUAL_GELU=""
 STAGE2_MANUAL_SOFTMAX=""
 FINAL_EVAL_REPEAT="50"; S_FINAL_EVAL_REPEAT="false"
+GENERIC_EVAL_REPEAT=""; S_GENERIC_EVAL_REPEAT="false"
 STAGE2_COMPARE_REPEATS=""; S_STAGE2_COMPARE_REPEATS="false"
 RANDOM_SEED="42"; S_RANDOM_SEED="false"
 PERM_TRIALS="10"; S_PERM_TRIALS="false"
 COST_TRIALS="10"; S_COST_TRIALS="false"
 BUDGET_TRIALS="10"; S_BUDGET_TRIALS="false"
+SIMPLE_BUDGET_TRIALS=""; S_SIMPLE_BUDGET_TRIALS="false"
 STAGE1_BUDGET_TRIALS="10"; S_STAGE1_BUDGET_TRIALS="false"
 STAGE2_BUDGET_TRIALS="10"; S_STAGE2_BUDGET_TRIALS="false"
 GENERAL_MODE="infer"; S_GENERAL_MODE="false"
@@ -312,7 +388,7 @@ RL_COMPARE_FINAL_EVAL_CONFIG=""; S_RL_COMPARE_FINAL_EVAL_CONFIG="false"
 GA_COMPARE_FINAL_EVAL_CONFIG=""; S_GA_COMPARE_FINAL_EVAL_CONFIG="false"
 RL_COMPARE_SKIP_NOISE_SEARCH="false"; S_RL_COMPARE_SKIP_NOISE_SEARCH="false"
 GA_COMPARE_SKIP_NOISE_SEARCH="false"; S_GA_COMPARE_SKIP_NOISE_SEARCH="false"
-COMPARE_CONFIG_MODE="direct"; S_COMPARE_CONFIG_MODE="false"
+COMPARE_CONFIG_MODE="persistent"; S_COMPARE_CONFIG_MODE="false"
 COMPARE_PERSISTENT_ROOT="rl_results/persistent"; S_COMPARE_PERSISTENT_ROOT="false"
 RL_COMPARE_STAGE1_JSON=""; S_RL_COMPARE_STAGE1_JSON="false"
 RL_COMPARE_STAGE2_JSON=""; S_RL_COMPARE_STAGE2_JSON="false"
@@ -333,6 +409,9 @@ STAGE2_PROBE_SIZE="256"; S_STAGE2_PROBE_SIZE="false"
 FRESH_START="false"; S_FRESH_START="false"
 FRESH_STAGE1="false"; S_FRESH_STAGE1="false"
 FRESH_STAGE2="false"; S_FRESH_STAGE2="false"
+
+translate_subcommand_args "$@"
+set -- "${SUBCOMMAND_ARGS[@]+"${SUBCOMMAND_ARGS[@]}"}"
 
 # ── 预设支持（--preset）──────────────────────────────────────────────
 # 用法: bash llama_7B_LayerImportance.sh --preset <预设名> [额外参数...]
@@ -383,11 +462,29 @@ while [ "$#" -gt 0 ]; do
       exit 0 ;;
     --preset) shift 2 ;;  # 已在预处理阶段处理，此处跳过
     --dataset) needv "$@"; DATASET="$2"; S_DATASET="true"; shift 2 ;;
-    --model) err "参数 --model 已废弃，请改用 --dataset。" ;;
-    --search-algorithm) needv "$@"; SEARCH_ALGORITHM="$2"; S_SEARCH_ALGORITHM="true"; shift 2 ;;
+    --model) err "参数 --model 已移除，请改用 --dataset。" ;;
+    --search-algorithm|--algorithm) needv "$@"; SEARCH_ALGORITHM="$2"; S_SEARCH_ALGORITHM="true"; shift 2 ;;
     --logfile) needv "$@"; LOGFILE="$2"; S_LOGFILE="true"; shift 2 ;;
     --model-type) needv "$@"; MODEL_TYPE="$2"; S_MODEL_TYPE="true"; shift 2 ;;
     --batch-size) needv "$@"; BATCH_SIZE="$2"; S_BATCH_SIZE="true"; shift 2 ;;
+    --mode) needv "$@"; RUN_MODE="$2"; S_RUN_MODE="true"; shift 2 ;;
+    --episodes)
+      needv "$@"
+      _pair="$2"; _a="${_pair%%,*}"; _b="${_pair#*,}"
+      [ "$_a" != "$_pair" ] || _b="$_a"
+      [ -n "$(printf '%s' "$_a" | xargs)" ] && [ -n "$(printf '%s' "$_b" | xargs)" ] || err "--episodes 不能为空；格式示例：51000,80000"
+      STAGE1_EPISODES="$(printf '%s' "$_a" | xargs)"; S_STAGE1_EPISODES="true"
+      STAGE2_EPISODES="$(printf '%s' "$_b" | xargs)"; S_STAGE2_EPISODES="true"
+      shift 2 ;;
+    --generations)
+      needv "$@"
+      _pair="$2"; _a="${_pair%%,*}"; _b="${_pair#*,}"
+      [ "$_a" != "$_pair" ] || _b="$_a"
+      [ -n "$(printf '%s' "$_a" | xargs)" ] && [ -n "$(printf '%s' "$_b" | xargs)" ] || err "--generations 不能为空；格式示例：200,800"
+      STAGE1_GENERATIONS="$(printf '%s' "$_a" | xargs)"; S_STAGE1_GENERATIONS="true"
+      STAGE2_GENERATIONS="$(printf '%s' "$_b" | xargs)"; S_STAGE2_GENERATIONS="true"
+      GENERATIONS_PAIR_SPECIFIED="true"
+      shift 2 ;;
     --stage1-search-episodes) needv "$@"; STAGE1_EPISODES="$2"; S_STAGE1_EPISODES="true"; shift 2 ;;
     --stage2-search-episodes) needv "$@"; STAGE2_EPISODES="$2"; S_STAGE2_EPISODES="true"; shift 2 ;;
     --stage1-search-generations) needv "$@"; STAGE1_GENERATIONS="$2"; S_STAGE1_GENERATIONS="true"; shift 2 ;;
@@ -397,9 +494,9 @@ while [ "$#" -gt 0 ]; do
     --skip-stage1-search) SKIP_STAGE1_SEARCH="true"; S_SKIP_STAGE1_SEARCH="true"; shift ;;
     --skip-noise-search) SKIP_NOISE_SEARCH="true"; S_SKIP_NOISE_SEARCH="true"; shift ;;
     --skip-final-eval) SKIP_FINAL_EVAL="true"; S_SKIP_FINAL_EVAL="true"; shift ;;
-    --final-eval-only|--final_eval_only) FINAL_EVAL_ONLY="true"; S_FINAL_EVAL_ONLY="true"; shift ;;
-    --final-eval-source) needv "$@"; FINAL_EVAL_SOURCE="$2"; S_FINAL_EVAL_SOURCE="true"; shift 2 ;;
-    --final-eval-config) needv "$@"; FINAL_EVAL_CONFIG="$2"; S_FINAL_EVAL_CONFIG="true"; shift 2 ;;
+    --final-eval-only) FINAL_EVAL_ONLY="true"; S_FINAL_EVAL_ONLY="true"; shift ;;
+    --final-eval-source|--source) needv "$@"; FINAL_EVAL_SOURCE="$2"; S_FINAL_EVAL_SOURCE="true"; shift 2 ;;
+    --final-eval-config|--config) needv "$@"; FINAL_EVAL_CONFIG="$2"; S_FINAL_EVAL_CONFIG="true"; shift 2 ;;
     --manual-stage1-gelu) needv "$@"; MANUAL_STAGE1_GELU="$2"; shift 2 ;;
     --manual-stage1-softmax) needv "$@"; MANUAL_STAGE1_SOFTMAX="$2"; shift 2 ;;
     --manual-stage2-noise) needv "$@"; MANUAL_STAGE2_NOISE="$2"; shift 2 ;;
@@ -408,13 +505,21 @@ while [ "$#" -gt 0 ]; do
     --stage2-manual-gelu) needv "$@"; STAGE2_MANUAL_GELU="$2"; shift 2 ;;
     --stage2-manual-softmax) needv "$@"; STAGE2_MANUAL_SOFTMAX="$2"; shift 2 ;;
     --final-eval-repeat) needv "$@"; FINAL_EVAL_REPEAT="$2"; S_FINAL_EVAL_REPEAT="true"; shift 2 ;;
+    --eval-repeat) needv "$@"; GENERIC_EVAL_REPEAT="$2"; S_GENERIC_EVAL_REPEAT="true"; shift 2 ;;
     --stage2-compare-repeats) needv "$@"; STAGE2_COMPARE_REPEATS="$2"; S_STAGE2_COMPARE_REPEATS="true"; shift 2 ;;
     --random-seed) needv "$@"; RANDOM_SEED="$2"; S_RANDOM_SEED="true"; shift 2 ;;
     --perm-trials) needv "$@"; PERM_TRIALS="$2"; S_PERM_TRIALS="true"; shift 2 ;;
     --cost-trials) needv "$@"; COST_TRIALS="$2"; S_COST_TRIALS="true"; shift 2 ;;
     --budget-trials) needv "$@"; BUDGET_TRIALS="$2"; S_BUDGET_TRIALS="true"; shift 2 ;;
-    --stage1-budget-trials|--final-eval-stage1-budget-trials) needv "$@"; STAGE1_BUDGET_TRIALS="$2"; S_STAGE1_BUDGET_TRIALS="true"; shift 2 ;;
-    --stage2-budget-trials|--final-eval-stage2-budget-trials) needv "$@"; STAGE2_BUDGET_TRIALS="$2"; S_STAGE2_BUDGET_TRIALS="true"; shift 2 ;;
+    --budget)
+      needv "$@"
+      SIMPLE_BUDGET_TRIALS="$2"; S_SIMPLE_BUDGET_TRIALS="true"
+      PERM_TRIALS="$2"; S_PERM_TRIALS="true"
+      COST_TRIALS="$2"; S_COST_TRIALS="true"
+      BUDGET_TRIALS="$2"; S_BUDGET_TRIALS="true"
+      shift 2 ;;
+    --stage1-budget-trials) needv "$@"; STAGE1_BUDGET_TRIALS="$2"; S_STAGE1_BUDGET_TRIALS="true"; shift 2 ;;
+    --stage2-budget-trials) needv "$@"; STAGE2_BUDGET_TRIALS="$2"; S_STAGE2_BUDGET_TRIALS="true"; shift 2 ;;
     --general-rl-mode) needv "$@"; GENERAL_MODE="$2"; S_GENERAL_MODE="true"; shift 2 ;;
     --general-rl-tasks) needv "$@"; GENERAL_TASKS="$2"; S_GENERAL_TASKS="true"; shift 2 ;;
     --general-rl-rounds) needv "$@"; GENERAL_ROUNDS="$2"; S_GENERAL_ROUNDS="true"; shift 2 ;;
@@ -429,14 +534,6 @@ while [ "$#" -gt 0 ]; do
     --general-rl-stage1-config-json) needv "$@"; GENERAL_STAGE1_CONFIG_JSON="$2"; S_GENERAL_STAGE1_CONFIG_JSON="true"; shift 2 ;;
     --general-rl-accuracy-tolerances) needv "$@"; GENERAL_ACCURACY_TOLERANCES="$2"; S_GENERAL_ACCURACY_TOLERANCES="true"; shift 2 ;;
     --general-rl-accuracy-tolerance-range) needv "$@"; GENERAL_ACCURACY_TOLERANCE_RANGE="$2"; S_GENERAL_ACCURACY_TOLERANCE_RANGE="true"; shift 2 ;;
-    --rl-skip-stage1-search) RL_COMPARE_SKIP_STAGE1_SEARCH="true"; S_RL_COMPARE_SKIP_STAGE1_SEARCH="true"; shift ;;
-    --ga-skip-stage1-search) GA_COMPARE_SKIP_STAGE1_SEARCH="true"; S_GA_COMPARE_SKIP_STAGE1_SEARCH="true"; shift ;;
-    --rl-final-eval-source) needv "$@"; RL_COMPARE_FINAL_EVAL_SOURCE="$2"; S_RL_COMPARE_FINAL_EVAL_SOURCE="true"; shift 2 ;;
-    --ga-final-eval-source) needv "$@"; GA_COMPARE_FINAL_EVAL_SOURCE="$2"; S_GA_COMPARE_FINAL_EVAL_SOURCE="true"; shift 2 ;;
-    --rl-final-eval-config) needv "$@"; RL_COMPARE_FINAL_EVAL_CONFIG="$2"; S_RL_COMPARE_FINAL_EVAL_CONFIG="true"; shift 2 ;;
-    --ga-final-eval-config) needv "$@"; GA_COMPARE_FINAL_EVAL_CONFIG="$2"; S_GA_COMPARE_FINAL_EVAL_CONFIG="true"; shift 2 ;;
-    --rl-skip-noise-search) RL_COMPARE_SKIP_NOISE_SEARCH="true"; S_RL_COMPARE_SKIP_NOISE_SEARCH="true"; shift ;;
-    --ga-skip-noise-search) GA_COMPARE_SKIP_NOISE_SEARCH="true"; S_GA_COMPARE_SKIP_NOISE_SEARCH="true"; shift ;;
     --compare-config-mode) needv "$@"; COMPARE_CONFIG_MODE="$2"; S_COMPARE_CONFIG_MODE="true"; shift 2 ;;
     --compare-persistent-root) needv "$@"; COMPARE_PERSISTENT_ROOT="$2"; S_COMPARE_PERSISTENT_ROOT="true"; shift 2 ;;
     --rl-compare-stage1-json) needv "$@"; RL_COMPARE_STAGE1_JSON="$2"; S_RL_COMPARE_STAGE1_JSON="true"; shift 2 ;;
@@ -455,7 +552,7 @@ while [ "$#" -gt 0 ]; do
     --stage2-stability-tolerance) needv "$@"; STAGE2_STABILITY_TOLERANCE="$2"; S_STAGE2_STABILITY_TOLERANCE="true"; shift 2 ;;
     --stage2-k-trials) needv "$@"; STAGE2_K_TRIALS="$2"; S_STAGE2_K_TRIALS="true"; shift 2 ;;
     --stage2-probe-size) needv "$@"; STAGE2_PROBE_SIZE="$2"; S_STAGE2_PROBE_SIZE="true"; shift 2 ;;
-    --fresh-start) FRESH_START="true"; S_FRESH_START="true"; shift ;;
+    --fresh-start|--fresh) FRESH_START="true"; S_FRESH_START="true"; shift ;;
     --fresh-stage1) FRESH_STAGE1="true"; S_FRESH_STAGE1="true"; shift ;;
     --fresh-stage2) FRESH_STAGE2="true"; S_FRESH_STAGE2="true"; shift ;;
     --*) err "不支持的参数：$1" ;;
@@ -466,6 +563,7 @@ done
 DATASET="$(printf '%s' "$DATASET" | tr '[:upper:]' '[:lower:]')"
 SEARCH_ALGORITHM="$(printf '%s' "$SEARCH_ALGORITHM" | tr '[:upper:]' '[:lower:]')"
 MODEL_TYPE="$(printf '%s' "$MODEL_TYPE" | tr '[:upper:]' '[:lower:]')"
+RUN_MODE="$(printf '%s' "$RUN_MODE" | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
 FINAL_EVAL_SOURCE="$(printf '%s' "$FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
 STAGE2_FIXED_CONFIG_SOURCE="$(printf '%s' "$STAGE2_FIXED_CONFIG_SOURCE" | tr '[:upper:]' '[:lower:]')"
 GENERAL_MODE="$(printf '%s' "$GENERAL_MODE" | tr '[:upper:]' '[:lower:]')"
@@ -488,6 +586,73 @@ case "$MODEL_TYPE" in
   gpt-2|gpt2|gpt_2) MODEL_TYPE="gpt-2" ;;
   *) err "不支持的模型类型：$MODEL_TYPE" ;;
 esac
+
+case "$RUN_MODE" in
+  train) ;;
+  eval|final-eval|final-eval-only) RUN_MODE="eval" ;;
+  stage2-only|stage2) RUN_MODE="stage2-only" ;;
+  stage1-only|stage1) RUN_MODE="stage1-only" ;;
+  search-only|search) RUN_MODE="search-only" ;;
+  *) err "--mode 只支持 train / eval / stage2-only / stage1-only / search-only，当前为：$RUN_MODE" ;;
+esac
+
+if [ "$S_GENERIC_EVAL_REPEAT" = "true" ]; then
+  if [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
+    [ "$S_STAGE2_COMPARE_REPEATS" = "false" ] || err "请只使用 --eval-repeat 或 --stage2-compare-repeats 其中一个。"
+    STAGE2_COMPARE_REPEATS="$GENERIC_EVAL_REPEAT"
+    S_STAGE2_COMPARE_REPEATS="true"
+  else
+    [ "$S_FINAL_EVAL_REPEAT" = "false" ] || err "请只使用 --eval-repeat 或 --final-eval-repeat 其中一个。"
+    FINAL_EVAL_REPEAT="$GENERIC_EVAL_REPEAT"
+    S_FINAL_EVAL_REPEAT="true"
+  fi
+fi
+
+if [ "$S_RUN_MODE" = "true" ] && { [ "$SEARCH_ALGORITHM" = "general-rl" ] || [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; }; then
+  err "--mode 仅用于 run/eval 的 rl / ga / greedy 流程；general 与 compare 请使用对应子命令。"
+fi
+
+case "$RUN_MODE" in
+  train)
+    ;;
+  eval)
+    [ "$S_SKIP_STAGE1_SEARCH" = "false" ] || err "--mode eval 已隐含跳过 Stage-1 搜索，请不要同时传 --skip-stage1-search。"
+    [ "$S_SKIP_NOISE_SEARCH" = "false" ] || err "--mode eval 已隐含跳过 Stage-2 搜索，请不要同时传 --skip-noise-search。"
+    [ "$S_SKIP_FINAL_EVAL" = "false" ] || err "--mode eval 与 --skip-final-eval 冲突。"
+    [ "$S_FINAL_EVAL_ONLY" = "false" ] || err "--mode eval 已隐含 final-eval-only，请不要同时传 --final-eval-only。"
+    SKIP_STAGE1_SEARCH="true"; S_SKIP_STAGE1_SEARCH="true"
+    SKIP_NOISE_SEARCH="true"; S_SKIP_NOISE_SEARCH="true"
+    FINAL_EVAL_ONLY="true"; S_FINAL_EVAL_ONLY="true"
+    if [ "$S_FINAL_EVAL_CONFIG" = "true" ] && [ "$S_FINAL_EVAL_SOURCE" = "false" ]; then
+      FINAL_EVAL_SOURCE="json"
+      S_FINAL_EVAL_SOURCE="true"
+    fi
+    ;;
+  stage2-only)
+    [ "$S_SKIP_STAGE1_SEARCH" = "false" ] || err "--mode stage2-only 已隐含跳过 Stage-1 搜索，请不要同时传 --skip-stage1-search。"
+    [ "$S_SKIP_NOISE_SEARCH" = "false" ] || err "--mode stage2-only 需要运行 Stage-2 搜索，不能同时传 --skip-noise-search。"
+    [ "$S_FINAL_EVAL_ONLY" = "false" ] || err "--mode stage2-only 与 --final-eval-only 冲突。"
+    SKIP_STAGE1_SEARCH="true"; S_SKIP_STAGE1_SEARCH="true"
+    if [ "$GENERATIONS_PAIR_SPECIFIED" = "true" ]; then
+      S_STAGE1_GENERATIONS="false"
+    fi
+    ;;
+  stage1-only)
+    [ "$S_SKIP_STAGE1_SEARCH" = "false" ] || err "--mode stage1-only 需要运行 Stage-1 搜索，不能同时传 --skip-stage1-search。"
+    [ "$S_SKIP_NOISE_SEARCH" = "false" ] || err "--mode stage1-only 已隐含跳过 Stage-2 搜索，请不要同时传 --skip-noise-search。"
+    [ "$S_FINAL_EVAL_ONLY" = "false" ] || err "--mode stage1-only 与 --final-eval-only 冲突。"
+    SKIP_NOISE_SEARCH="true"; S_SKIP_NOISE_SEARCH="true"
+    if [ "$GENERATIONS_PAIR_SPECIFIED" = "true" ]; then
+      S_STAGE2_GENERATIONS="false"
+    fi
+    ;;
+  search-only)
+    [ "$S_SKIP_FINAL_EVAL" = "false" ] || err "--mode search-only 已隐含跳过最终评估，请不要同时传 --skip-final-eval。"
+    [ "$S_FINAL_EVAL_ONLY" = "false" ] || err "--mode search-only 与 --final-eval-only 冲突。"
+    SKIP_FINAL_EVAL="true"; S_SKIP_FINAL_EVAL="true"
+    ;;
+esac
+
 case "$FINAL_EVAL_SOURCE" in search|json|manual) ;; *) err "不支持的最终评估来源：$FINAL_EVAL_SOURCE" ;; esac
 case "$STAGE2_FIXED_CONFIG_SOURCE" in ""|stage1_result|search|json|manual) ;; *) err "不支持的 Stage-2 固定 GELU/Softmax 来源：$STAGE2_FIXED_CONFIG_SOURCE" ;; esac
 [ "$STAGE2_FIXED_CONFIG_SOURCE" = "search" ] && STAGE2_FIXED_CONFIG_SOURCE="stage1_result"
@@ -498,6 +663,16 @@ case "$GENERAL_MODE" in train|infer|search) ;; *) err "general-rl 模式必须�
 if [ "$FINAL_EVAL_ONLY" = "true" ]; then
   SKIP_STAGE1_SEARCH="true"
   SKIP_NOISE_SEARCH="true"
+  if [ "$S_SIMPLE_BUDGET_TRIALS" = "true" ]; then
+    if [ "$S_STAGE1_BUDGET_TRIALS" = "false" ]; then
+      STAGE1_BUDGET_TRIALS="$SIMPLE_BUDGET_TRIALS"
+      S_STAGE1_BUDGET_TRIALS="true"
+    fi
+    if [ "$S_STAGE2_BUDGET_TRIALS" = "false" ]; then
+      STAGE2_BUDGET_TRIALS="$SIMPLE_BUDGET_TRIALS"
+      S_STAGE2_BUDGET_TRIALS="true"
+    fi
+  fi
 fi
 
 if [ "$S_STAGE1_GENERATIONS" = "false" ]; then
@@ -546,10 +721,14 @@ if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$SEARCH_ALGORITHM" != "rl-and-g
   elif [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "true" ]; then
     STAGE2_FIXED_CONFIG_SOURCE="json"
   elif [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; then
-    case "$FINAL_EVAL_SOURCE" in
-      search) STAGE2_FIXED_CONFIG_SOURCE="stage1_result" ;;
-      *) STAGE2_FIXED_CONFIG_SOURCE="$FINAL_EVAL_SOURCE" ;;
-    esac
+    if [ "$SKIP_STAGE1_SEARCH" = "true" ] && [ "$SKIP_NOISE_SEARCH" = "false" ] && [ -n "$FINAL_EVAL_CONFIG" ]; then
+      STAGE2_FIXED_CONFIG_SOURCE="json"
+    else
+      case "$FINAL_EVAL_SOURCE" in
+        search) STAGE2_FIXED_CONFIG_SOURCE="stage1_result" ;;
+        *) STAGE2_FIXED_CONFIG_SOURCE="$FINAL_EVAL_SOURCE" ;;
+      esac
+    fi
     STAGE2_FIXED_CONFIG="$FINAL_EVAL_CONFIG"
     STAGE2_MANUAL_GELU="$MANUAL_STAGE1_GELU"
     STAGE2_MANUAL_SOFTMAX="$MANUAL_STAGE1_SOFTMAX"
@@ -565,6 +744,9 @@ fi
 
 if [ "$SEARCH_ALGORITHM" = "general-rl" ] || [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   { [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; } || err "当前模式不支持 --stage2-fixed-config-* 参数；该参数组仅普通 rl / ga / greedy 可用。"
+fi
+if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$S_GENERAL_ACCURACY_TOLERANCE_RANGE" = "true" ]; then
+  err "当前搜索算法不是 general-rl，请不要使用 --general-rl-accuracy-tolerance-range。"
 fi
 
 if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
@@ -710,7 +892,7 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
 else
   { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "当前搜索算法不是 general-rl，请不要使用 --general-rl-* 参数。"
   # rl/ga 模式下 --resume-from 已废弃，改用持久化目录自动续训练
-  [ "$S_RESUME_FROM" = "false" ] || err "rl / ga / greedy 模式已改用持久化目录自动续训练，不再支持手动 --resume-from。续训练时直接运行相同参数即可；首次运行请加 --fresh-start。"
+  [ "$S_RESUME_FROM" = "false" ] || [ "$FINAL_EVAL_ONLY" = "true" ] || err "rl / ga / greedy 训练模式已改用持久化目录自动续训练，不再支持手动 --resume-from。续训练时直接运行相同参数即可；首次运行请加 --fresh-start。--mode eval 可使用 --resume-from 指向已有结果目录。"
   _EARLY_CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"
   _EARLY_PERSISTENT_DIR="rl_results/persistent/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${_EARLY_CONSTRAINT_SLUG}"
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
@@ -872,8 +1054,10 @@ if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARC
     # 目录存在且有 metadata → 自动续训练
     echo "检测到已有持久化目录：$PERSISTENT_DIR"
     echo "自动进入续训练模式（如需从头训练请加 --fresh-start）。"
-    RESUME_FROM="$PERSISTENT_DIR"
-    S_RESUME_FROM="true"
+    if [ "$S_RESUME_FROM" = "false" ]; then
+      RESUME_FROM="$PERSISTENT_DIR"
+      S_RESUME_FROM="true"
+    fi
     # ---- 单阶段重置（--fresh-stage1 / --fresh-stage2） ----
     if [ "$FRESH_STAGE1" = "true" ] && [ -d "${PERSISTENT_DIR}/stage1" ]; then
       echo "[单阶段重置] --fresh-stage1 指定，正在清除 Stage-1 数据：${PERSISTENT_DIR}/stage1"

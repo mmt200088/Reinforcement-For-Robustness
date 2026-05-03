@@ -20,117 +20,164 @@ Stage-1（GELU/Softmax 多项式次数）与 Stage-2（噪声 scaling factor）�
 
 ---
 
-## 快速开始（预设系统）
+## 快速开始
 
-最简单的使用方式是通过预设（preset）启动：
+推荐优先使用子命令。旧版纯 flag 入口仍然兼容，但不再作为主阅读路径。
 
 ```bash
-# 列出所有可用预设
+# 列出可用预设
 bash llama_7B_LayerImportance.sh --list-presets
 
-# 首次运行（必须加 --fresh-start）
-bash llama_7B_LayerImportance.sh --preset mrpc-rl-default --fresh-start
+# 首次 RL 运行：必须显式确认 fresh
+bash llama_7B_LayerImportance.sh run rl --preset mrpc-rl-default --fresh
 
-# 续训练（自动从 checkpoint 恢复，无需额外参数）
-bash llama_7B_LayerImportance.sh --preset mrpc-rl-default
+# 续训练：同一参数组合会自动从持久化目录恢复
+bash llama_7B_LayerImportance.sh run rl --preset mrpc-rl-default
 
-# 预设 + 自定义覆盖（命令行参数优先于预设）
-bash llama_7B_LayerImportance.sh --preset mrpc-rl-default --stage2-search-episodes 60000
+# 只跑最终评估
+bash llama_7B_LayerImportance.sh eval --dataset mrpc --algorithm rl \
+  --config glue_final_configs_best_ppo.json --eval-repeat 50 --budget 50
+
+# 只重跑 Stage-2，Stage-1 固定配置自动从 --config 里取
+bash llama_7B_LayerImportance.sh run ga --dataset mrpc --mode stage2-only \
+  --generations 1,800 --config glue_final_configs_best_genetic.json
+
+# RL vs GA 对比：默认从持久化目录查找结果
+bash llama_7B_LayerImportance.sh compare --dataset mrpc
 ```
 
-预设文件位于 `presets/` 目录下，格式为每行一个命令行参数（支持 `#` 注释）。可自行添加新预设。
+预设文件位于 `presets/`，格式是每行一个参数，支持 `#` 注释。命令行参数排在预设之后，优先级更高。
 
-## 命令行参数总表
+## 命令行参数说明
 
-```bash
-bash llama_7B_LayerImportance.sh [可选参数]
-```
+### 常用参数
 
-### 说明
+普通用户默认只需要下面 8 个参数以内：
 
-- 现在**不再支持位置参数**，统一改为可选参数。
-- `--model` 已废弃，请改用 `--dataset`。
-- `lora_r`、`lora_alpha`、`degree` 已从命令行入口移除，因为当前流程不会实际读取它们。
-- 本节是当前命令行入口的**最新说明**。如果下文个别历史实验片段与本节不一致，以本节为准。
-
-### 可选参数总表
-
-| 参数 | 适用模式 | 默认值 | 说明 |
+| 参数 | 适用子命令 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| **全局参数** | | | |
-| `--dataset DATASET` | 全局 | `mrpc` | 数据集名称：`mrpc`、`sst2`、`stsb`、`cola`、`qnli`、`rte`、`wnli` |
-| `--search-algorithm ALG` | 全局 | `rl` | 搜索算法：`rl` / `ga` / `greedy` / `general-rl` / `rl-and-ga-compare` |
-| `--logfile FILE` | 全局 | `output.log` | launcher 的 nohup 日志文件名；真实运行目录下也会自动生成阶段日志 |
-| `--model-type TYPE` | 全局 | `bert-base` | 骨干模型类型：`bert-base` / `bert-large` / `gpt-2` |
-| `--batch-size N` | 全局 | `16` | 统一设置 `batch_size` 与 `micro_batch_size` |
-| `--resume-from PATH` | 兼容保留 | — | 兼容保留的内部恢复参数；当前 launcher 的正式续训流程已改为按持久化目录自动恢复，普通命令行不建议手动传 |
-| **准确度约束参数** | | | |
-| `--stage1-accuracy-tolerance FLOAT` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `0.005` | Stage-1 指标约束百分比。0.005 表示允许 loss 上浮 0.5%、指标下降 0.5% |
-| `--stage2-limit-tolerance FLOAT` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `0.05` | Stage-2 指标约束百分比（以 baseline 为基准，与 `--stage1-accuracy-tolerance` 同构）。0.05 表示允许 loss 上浮 5%、metric1/metric2 下降 5% |
-| `--stage2-stability-tolerance FLOAT` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `0.05` | Stage-2 稳定性约束百分比（以 baseline 探针的纯噪声采样 std 为基准）。0.05 表示允许 std 上浮 5% |
-| `--stage2-k-trials INT` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `5` | Stage-2 稳定性评测噪声试验次数 K。每次评测在同一份固定分层探针上跑 K 个独立噪声种子，std 反映纯噪声采样方差（不进入持久化目录 slug，仅作为采样预算） |
-| `--stage2-probe-size INT` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `256` | Stage-2 稳定性评测探针子集大小。用分层采样从验证集中抽取一份固定子集，K 次 trial 共用同一份数据；默认 K×probe = 5×256 = 1280 次前向 |
-| **持久化与续训练** | | | |
-| `--fresh-start` | `rl`、`ga`、`greedy`、`general-rl` 训练 | — | 清空当前参数组合对应的整个持久化目录并从头开始；首次运行某参数组合时**必须指定**，否则报错 |
-| `--fresh-stage1` | `rl`、`ga`、`greedy` | — | 仅清空已有持久化目录中的 `stage1/` 与 `stage1_final_eval/`，保留 Stage-2；仅适用于已有持久化目录的续训场景 |
-| `--fresh-stage2` | `rl`、`ga`、`greedy` | — | 仅清空已有持久化目录中的 `stage2_noise/` 与 `stage2_noise_final_eval/`，保留 Stage-1；仅适用于已有持久化目录的续训场景 |
-| **普通 RL / GA / Greedy 搜索预算** | | | |
-| `--stage1-search-episodes N` | `rl` | `51000` | Stage-1 搜索回合数，仅用于普通 RL |
-| `--stage2-search-episodes N` | `rl` | `40000` | Stage-2 噪声搜索回合数，仅用于普通 RL |
-| `--ppo-update-interval N` | `rl`、`general-rl` | `120` | PPO 更新间隔（每多少个 episode 触发一次策略更新）；同时决定 `details/` 下每个 txt 的回合数（= `3 × N`，默认 `360`）。`general-rl` 训练模式下还等同于"每轮每任务的 episode 数"。必须 ≥ 该值才能完成至少一次 PPO 更新 |
-| `--stage1-search-generations N` | `ga`、`greedy` | 按模型自动推导 | Stage-1 GA 代数 / Greedy 最大迭代数；仅在未跳过 Stage-1 搜索时生效 |
-| `--stage2-search-generations N` | `ga`、`greedy` | 按模型自动推导 | Stage-2 GA 代数 / Greedy 最大迭代数；仅在未跳过 Stage-2 搜索时生效 |
-| `--skip-stage1-search` | `rl`、`ga`、`greedy` | — | 跳过 Stage-1 搜索 |
-| `--skip-noise-search` | `rl`、`ga`、`greedy` | — | 跳过 Stage-2 搜索 |
-| `--skip-final-eval` | `rl`、`ga`、`greedy` | — | 一次跳过 Stage-1 + Stage-2 合并的最终评估（取代旧的两个分开 flag） |
-| `--final-eval-only` | `rl`、`ga`、`greedy` | — | 只跑统一最终评估，不跑任何 Stage-1 / Stage-2 搜索；自动等价于同时设置 `--skip-stage1-search` + `--skip-noise-search`（与 `--skip-final-eval` 互斥）。会从 `--resume-from`（若未指定则退回到当前 `output_dir`）下读取之前 GA/Greedy 写入的搜索 JSON 或 RL 写入的 checkpoint 中的最优配置，作为 `search` 来源喂给最终评估；任一阶段读取失败时按 `--final-eval-source` 的回退规则解析。整个流程不会安装 SIGINT 处理器，也不会读写任何训练 checkpoint，因此与优雅停止（`STOP_RL`）和续训完全隔离 |
-| `--final-eval-source search/json/manual` | `rl`、`ga`、`greedy` | `search` | 统一最终评估来源；`search` 模式下会优先使用已执行阶段的搜索结果，若某阶段被 `skip` 则回退到 `--final-eval-config` 对应阶段配置 |
-| `--final-eval-config PATH` | `rl`、`ga`、`greedy` | 自动 | `json` 模式必填；`search` + 单阶段 `skip` 时也用于缺失阶段回退（文件需包含 stage1/stage2 两块） |
-| `--manual-stage1-gelu JSON_ARRAY` | `rl`、`ga`、`greedy` | — | `manual` 模式下的 Stage-1 GELU 配置 |
-| `--manual-stage1-softmax JSON_ARRAY` | `rl`、`ga`、`greedy` | — | `manual` 模式下的 Stage-1 Softmax 配置 |
-| `--manual-stage2-noise JSON_OBJECT` | `rl`、`ga`、`greedy` | — | `manual` 模式下的 7 类 Stage-2 噪声配置；`manual` 要求三个 manual-stage* 参数同时提供 |
-| `--final-eval-repeat N` | `rl`、`ga`、`greedy` | `50`（launcher 默认；部分训练预设可覆盖为 `1`） | 统一最终评估 noisy 组的正式重复评估次数。`N>1` 时每个非 Baseline 配置用 N 次完整验证集加噪评估的均值作为正式指标，并直接用这 N 次统计方差；`N=1` 时才额外启用 Stage-2 variance probe |
-| `--stage2-fixed-config-source stage1_result/json/manual` | `rl`、`ga`、`greedy` | 兼容继承 Stage-1 参数 | Stage-2 RL/GA/Greedy 训练中"固定 GELU/Softmax"的来源；与最终评估的 Stage-1 配置是两套不同参数 |
-| `--stage2-fixed-config PATH` | `rl`、`ga`、`greedy` | 自动 | `json` 模式下的 Stage-2 固定 GELU/Softmax 配置文件路径 |
-| `--stage2-manual-gelu JSON_ARRAY` | `rl`、`ga`、`greedy` | — | `manual` 模式下的 Stage-2 固定 GELU 配置 |
-| `--stage2-manual-softmax JSON_ARRAY` | `rl`、`ga`、`greedy` | — | `manual` 模式下的 Stage-2 固定 Softmax 配置 |
-| `--stage2-compare-repeats N` | `rl-and-ga-compare` | `1` | `rl-and-ga-compare` 唯一正式的 Stage-2 多次对比次数入口；会让 RL/GA 两侧都重复评估，并在报告中汇总均值、标准差、方差、最大值、最小值 |
-| `--random-seed N` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `42` | 随机种子 |
-| `--perm-trials N` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `10` | 随机置换对照次数 |
-| `--cost-trials N` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `10` | 等价成本对照次数 |
-| `--budget-trials N` | `rl`、`ga`、`greedy`、`rl-and-ga-compare` | `10` | 等价预算对照次数 |
-| `--stage1-budget-trials N` | `rl`、`ga`、`greedy` 的 `--final-eval-only` | `10`（`mrpc-final-eval-only` 预设为 `50`） | Stage1Budget 组随机配置数量；显式传入时仅允许 final-eval-only，避免影响普通训练流程 |
-| `--stage2-budget-trials N` | `rl`、`ga`、`greedy` 的 `--final-eval-only` | `10`（`mrpc-final-eval-only` 预设为 `50`） | Stage2Budget 组随机配置数量；显式传入时仅允许 final-eval-only，避免影响普通训练流程 |
-| **普通 RL 专用** | | | |
-| `--stage1-search-lr FLOAT` | `rl` | `1e-4` | 普通 RL 的 Stage-1 学习率 |
-| `--stage2-search-lr FLOAT` | `rl` | `1e-4` | 普通 RL 的 Stage-2 学习率 |
-| **对比实验专用** | | | |
-| `--compare-config-mode direct/persistent` | `rl-and-ga-compare` | `direct` | 对比配置来源：`direct`=显式指定 4 个 JSON；`persistent`=按数据集/模型/约束从持久化目录自动寻找 |
-| `--compare-persistent-root PATH` | `rl-and-ga-compare` | `rl_results/persistent` | `persistent` 模式下的持久化目录根路径；启动前会检查推导出的 RL / GA 目标目录是否存在 |
-| `--rl-compare-stage1-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 RL 的 Stage-1 JSON；可传配置模板，也可传最终评估结果 JSON |
-| `--rl-compare-stage2-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 RL 的 Stage-2 JSON；可传配置模板，也可传最终评估结果 JSON |
-| `--ga-compare-stage1-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 GA 的 Stage-1 JSON；可传配置模板，也可传最终评估结果 JSON |
-| `--ga-compare-stage2-json PATH` | `rl-and-ga-compare` | — | `direct` 模式下 GA 的 Stage-2 JSON；可传配置模板，也可传最终评估结果 JSON |
-| `--rl-compare-stage1-accuracy-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage1-accuracy-tolerance` 或 `0.005` | `persistent` 模式下 RL 侧的 Stage-1 约束，用于定位 RL 持久化目录 |
-| `--rl-compare-stage2-limit-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-limit-tolerance` 或 `0.05` | `persistent` 模式下 RL 侧的 Stage-2 指标约束，用于定位 RL 持久化目录 |
-| `--rl-compare-stage2-stability-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-stability-tolerance` 或 `0.05` | `persistent` 模式下 RL 侧的 Stage-2 稳定性约束，用于定位 RL 持久化目录 |
-| `--ga-compare-stage1-accuracy-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage1-accuracy-tolerance` 或 `0.005` | `persistent` 模式下 GA 侧的 Stage-1 约束，用于定位 GA 持久化目录 |
-| `--ga-compare-stage2-limit-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-limit-tolerance` 或 `0.05` | `persistent` 模式下 GA 侧的 Stage-2 指标约束，用于定位 GA 持久化目录 |
-| `--ga-compare-stage2-stability-tolerance FLOAT` | `rl-and-ga-compare` | 继承 `--stage2-stability-tolerance` 或 `0.05` | `persistent` 模式下 GA 侧的 Stage-2 稳定性约束，用于定位 GA 持久化目录 |
-| **通用 RL 专用** | | | |
-| `--general-rl-mode train/search` | `general-rl` | `search` | 通用 RL 的运行模式；`search` 为正式名称，`infer` 仍保留为兼容别名 |
-| `--general-rl-tasks T1,T2,...` | `general-rl` 训练 | 同 `--dataset` | 逗号分隔的训练任务列表 |
-| `--general-rl-rounds N` | `general-rl` 训练 | `50` | Round-robin 训练轮数 |
-| `--general-rl-lr FLOAT` | `general-rl` 训练 | `3e-5` | 通用策略训练学习率 |
-| `--general-rl-num-rollouts N` | `general-rl` 搜索 | `500` | 离线 rollout 次数 |
-| `--general-rl-greedy` | `general-rl` 搜索 | — | 使用贪心 rollout |
-| `--general-stage1-policy PATH` | `general-rl` 搜索 | — | Stage-1 通用策略文件；可显式指定，或由 `--general-policy-dir` 自动推导 |
-| `--general-stage2-policy PATH` | `general-rl` 搜索 | — | Stage-2 通用噪声策略文件，可选；也可由 `--general-policy-dir` 自动推导 |
-| `--general-policy-dir PATH` | `general-rl` 搜索 | — | 指向一个已训练好的通用 RL 持久化目录；launcher 会自动寻找 `general_stage1_policy.pt`，若存在也会自动带上 `general_stage2_noise_policy.pt` |
-| `--general-rl-skip-stage2` | `general-rl` | — | 跳过 Stage-2 训练或搜索 |
-| `--general-rl-stage1-config-json PATH` | `general-rl` 训练 | — | Stage-2 训练时各任务的 Stage-1 配置 |
-| `--general-rl-accuracy-tolerances T1,T2,...` | `general-rl` | — | 逗号分隔的准确度容忍比例列表（如 `0.005,0.01,0.02`）；训练时每轮随机采样一个 tolerance 让策略泛化到不同准确度要求，搜索时取第一个值作为目标 tolerance |
-| `--general-rl-accuracy-tolerance-range MIN,MAX` | `general-rl` 训练 | — | 连续准确度容忍区间；训练时在 `[MIN, MAX]` 内采样 tolerance 让策略泛化，要求 `0 < MIN < MAX < 1` |
+| `--preset NAME` | 全部 | — | 读取 `presets/NAME.conf`；命令行后续参数会覆盖预设 |
+| `--dataset DATASET` | 全部 | `mrpc` | `mrpc`、`sst2`、`stsb`、`cola`、`qnli`、`rte`、`wnli` |
+| `--algorithm rl/ga/greedy` | `eval`、旧版入口 | `rl` | `run` 子命令直接用 `run rl` / `run ga` / `run greedy` |
+| `--fresh` | `run`、`general train` | — | 等价于 `--fresh-start`，首次训练某个参数组合时必须传 |
+| `--mode train/eval/stage2-only/stage1-only/search-only` | `run`、`eval` | `train` | 高层动作，替代常见 skip 参数组合 |
+| `--budget N` | `run`、`eval`、`compare` | `10` | 统一设置 Perm / Equiv / Budget 随机对照数量；`eval` 下也同步 Stage1Budget / Stage2Budget |
+| `--eval-repeat N` | `run`、`eval`、`compare` | `50` 或 compare 的 `1` | 普通流程映射到 `--final-eval-repeat`；compare 映射到 `--stage2-compare-repeats` |
+| `--batch-size N` | 全部 | `16` | 同时传给 `batch_size` 和 `micro_batch_size` |
+
+搜索预算另有两个直观快捷参数：
+
+| 参数 | 适用子命令 | 说明 |
+| --- | --- | --- |
+| `--episodes S1,S2` | `run rl` | 设置 Stage-1 / Stage-2 RL episode 数；传单个 `N` 表示两阶段相同 |
+| `--generations S1,S2` | `run ga`、`run greedy` | 设置 Stage-1 / Stage-2 GA/Greedy 代数；传单个 `N` 表示两阶段相同 |
+
+### 子命令
+
+| 子命令 | 作用 | 常用示例 |
+| --- | --- | --- |
+| `run rl` | 单任务 Stage-1 + Stage-2 RL 搜索 | `bash llama_7B_LayerImportance.sh run rl --dataset mrpc --episodes 51000,80000 --fresh` |
+| `run ga` | 单任务 GA 搜索 | `bash llama_7B_LayerImportance.sh run ga --dataset mrpc --generations 200,800 --fresh` |
+| `run greedy` | 单任务 Greedy 搜索 | `bash llama_7B_LayerImportance.sh run greedy --dataset mrpc --generations 200,200 --fresh` |
+| `eval` | 只跑统一最终评估 | `bash llama_7B_LayerImportance.sh eval --dataset mrpc --algorithm rl --config glue_final_configs_best_ppo.json` |
+| `compare` | 对比已有 RL / GA 结果 | `bash llama_7B_LayerImportance.sh compare --dataset mrpc` |
+| `general train` | 训练跨任务通用策略 | `bash llama_7B_LayerImportance.sh general train --general-rl-tasks mrpc,cola,rte,stsb --fresh` |
+| `general search` | 用通用策略做离线 rollout 搜索 | `bash llama_7B_LayerImportance.sh general search --dataset mrpc --general-policy-dir <dir>` |
+
+### `--mode`
+
+`--mode` 是对旧的 `--skip-stage1-search`、`--skip-noise-search`、`--skip-final-eval`、`--final-eval-only` 的安全封装。
+
+| 模式 | 等价动作 | 典型用途 |
+| --- | --- | --- |
+| `train` | 不自动跳阶段 | 正常两阶段搜索 + 最终评估 |
+| `eval` | 跳过 Stage-1 / Stage-2 搜索，并启用 final-eval-only | 只评估已有 JSON 或已有搜索结果 |
+| `stage2-only` | 跳过 Stage-1 搜索，运行 Stage-2 搜索 | 固定已有 GELU/Softmax，只重搜噪声 |
+| `stage1-only` | 运行 Stage-1，跳过 Stage-2 | 只更新 GELU/Softmax；最终评估需要 `--config` 提供 Stage-2 回退 |
+| `search-only` | 跳过最终评估 | 只产出搜索结果，之后再单独 `eval` |
+
+高级用户仍可直接使用旧的 skip 参数组合；脚本会检查冲突，避免 `--mode eval` 与 `--skip-final-eval` 这种无执行项组合。
+
+### 高级参数附录
+
+| 参数 | 适用子命令 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| **全局/兼容** | | | |
+| `--search-algorithm ALG` | 旧版入口 | `rl` | 兼容旧用法；新用法建议子命令 |
+| `--logfile FILE` | 全部 | `output.log` | launcher 的后台日志文件名 |
+| `--model-type TYPE` | 全部 | `bert-base` | `bert-base` / `bert-large` / `gpt-2` |
+| `--resume-from PATH` | `eval` | — | 指向已有 run 目录，让 final-eval-only 从其中读取搜索结果；训练模式禁用 |
+| **约束** | | | |
+| `--stage1-accuracy-tolerance FLOAT` | `run`、`compare` | `0.005` | Stage-1 指标容忍比例 |
+| `--stage2-limit-tolerance FLOAT` | `run`、`compare` | `0.05` | Stage-2 指标容忍比例 |
+| `--stage2-stability-tolerance FLOAT` | `run`、`compare` | `0.05` | Stage-2 稳定性容忍比例 |
+| `--stage2-k-trials INT` | `run`、`compare` | `5` | Stage-2 稳定性评测噪声 trial 数 |
+| `--stage2-probe-size INT` | `run`、`compare` | `256` | Stage-2 稳定性评测探针子集大小 |
+| **持久化/重置** | | | |
+| `--fresh-start` | `run`、`general train` | — | `--fresh` 的完整写法 |
+| `--fresh-stage1` | `run` | — | 仅清空 Stage-1 产物 |
+| `--fresh-stage2` | `run` | — | 仅清空 Stage-2 产物 |
+| **RL 搜索** | | | |
+| `--stage1-search-episodes N` | `run rl` | `51000` | Stage-1 RL episode 数；推荐用 `--episodes` |
+| `--stage2-search-episodes N` | `run rl` | `40000` | Stage-2 RL episode 数；推荐用 `--episodes` |
+| `--ppo-update-interval N` | `run rl`、`general train` | `120` | PPO 更新间隔；general train 下也是每轮每任务 episode 数 |
+| `--stage1-search-lr FLOAT` | `run rl` | `1e-4` | Stage-1 RL 学习率 |
+| `--stage2-search-lr FLOAT` | `run rl` | `1e-4` | Stage-2 RL 学习率 |
+| **GA / Greedy 搜索** | | | |
+| `--stage1-search-generations N` | `run ga`、`run greedy` | 自动 | Stage-1 代数；推荐用 `--generations` |
+| `--stage2-search-generations N` | `run ga`、`run greedy` | 自动 | Stage-2 代数；推荐用 `--generations` |
+| **高级阶段控制** | | | |
+| `--skip-stage1-search` | `run` | — | 高级兼容入口；一般用 `--mode stage2-only` |
+| `--skip-noise-search` | `run` | — | 高级兼容入口；一般用 `--mode stage1-only` |
+| `--skip-final-eval` | `run` | — | 高级兼容入口；一般用 `--mode search-only` |
+| `--final-eval-only` | `run` / `eval` | — | 高级兼容入口；一般用 `--mode eval` 或 `eval` 子命令 |
+| **最终评估** | | | |
+| `--final-eval-source search/json/manual` | `run`、`eval` | `search` | 最终评估配置来源；`eval --config` 会自动转为 `json` |
+| `--source search/json/manual` | `run`、`eval` | 同上 | `--final-eval-source` 的短写 |
+| `--final-eval-config PATH` | `run`、`eval` | 按算法自动 | 合并 JSON；短写是 `--config` |
+| `--config PATH` | `run`、`eval` | — | 同时用于 final-eval；`stage2-only` 下也自动作为 Stage-2 固定配置来源 |
+| `--manual-stage1-gelu JSON_ARRAY` | `run`、`eval` | — | `manual` 来源下的 GELU 配置 |
+| `--manual-stage1-softmax JSON_ARRAY` | `run`、`eval` | — | `manual` 来源下的 Softmax 配置 |
+| `--manual-stage2-noise JSON_OBJECT` | `run`、`eval` | — | `manual` 来源下的 Stage-2 噪声配置 |
+| `--final-eval-repeat N` | `run`、`eval` | `50` | 正式重复评估次数；推荐用 `--eval-repeat` |
+| `--random-seed N` | `run`、`eval`、`compare` | `42` | 随机种子 |
+| `--perm-trials N` | `run`、`eval`、`compare` | `10` | permutation 对照数量 |
+| `--cost-trials N` | `run`、`eval`、`compare` | `10` | 等价成本对照数量 |
+| `--budget-trials N` | `run`、`eval`、`compare` | `10` | 等价预算对照数量 |
+| `--stage1-budget-trials N` | `eval` | `10` | Stage1Budget 数量；普通训练模式禁止显式传入 |
+| `--stage2-budget-trials N` | `eval` | `10` | Stage2Budget 数量；普通训练模式禁止显式传入 |
+| **Stage-2 固定 Stage-1 配置** | | | |
+| `--stage2-fixed-config-source stage1_result/json/manual` | `run` | 自动 | 一般不需要手动传；`stage2-only --config` 会自动用 `json` |
+| `--stage2-fixed-config PATH` | `run` | 自动 | JSON 来源时的固定 GELU/Softmax 文件 |
+| `--stage2-manual-gelu JSON_ARRAY` | `run` | — | Stage-2 固定配置 manual GELU |
+| `--stage2-manual-softmax JSON_ARRAY` | `run` | — | Stage-2 固定配置 manual Softmax |
+| **Compare** | | | |
+| `--compare-config-mode persistent/direct` | `compare` | `persistent` | 默认从 `rl_results/persistent` 自动定位 RL/GA；`direct` 需要四个 JSON |
+| `--compare-persistent-root PATH` | `compare` | `rl_results/persistent` | persistent 模式的根目录 |
+| `--stage2-compare-repeats N` | `compare` | `1` | compare 的重复评估次数；推荐用 `--eval-repeat` |
+| `--rl-compare-stage1-json PATH` | `compare --compare-config-mode direct` | — | direct 模式 RL Stage-1 JSON |
+| `--rl-compare-stage2-json PATH` | `compare --compare-config-mode direct` | — | direct 模式 RL Stage-2 JSON |
+| `--ga-compare-stage1-json PATH` | `compare --compare-config-mode direct` | — | direct 模式 GA Stage-1 JSON |
+| `--ga-compare-stage2-json PATH` | `compare --compare-config-mode direct` | — | direct 模式 GA Stage-2 JSON |
+| `--rl-compare-stage1-accuracy-tolerance FLOAT` | `compare persistent` | 继承全局约束 | RL 侧目录定位约束 |
+| `--rl-compare-stage2-limit-tolerance FLOAT` | `compare persistent` | 继承全局约束 | RL 侧目录定位约束 |
+| `--rl-compare-stage2-stability-tolerance FLOAT` | `compare persistent` | 继承全局约束 | RL 侧目录定位约束 |
+| `--ga-compare-stage1-accuracy-tolerance FLOAT` | `compare persistent` | 继承全局约束 | GA 侧目录定位约束 |
+| `--ga-compare-stage2-limit-tolerance FLOAT` | `compare persistent` | 继承全局约束 | GA 侧目录定位约束 |
+| `--ga-compare-stage2-stability-tolerance FLOAT` | `compare persistent` | 继承全局约束 | GA 侧目录定位约束 |
+| **General-RL** | | | |
+| `--general-rl-tasks T1,T2,...` | `general train` | 同 `--dataset` | 训练任务列表 |
+| `--general-rl-rounds N` | `general train` | `50` | round-robin 轮数 |
+| `--general-rl-lr FLOAT` | `general train` | `3e-5` | 通用策略学习率 |
+| `--general-rl-stage1-config-json PATH` | `general train` | — | Stage-2 训练时各任务的 Stage-1 配置 |
+| `--general-rl-accuracy-tolerances T1,T2,...` | `general train/search` | — | 离散准确度容忍列表；search 取第一个 |
+| `--general-rl-accuracy-tolerance-range MIN,MAX` | `general train` | — | 连续准确度容忍范围 |
+| `--general-policy-dir PATH` | `general search` | — | 自动推导 `general_stage1_policy.pt` 与可选 Stage-2 policy |
+| `--general-stage1-policy PATH` | `general search` | — | 显式指定 Stage-1 通用策略 |
+| `--general-stage2-policy PATH` | `general search` | — | 显式指定 Stage-2 通用噪声策略 |
+| `--general-rl-num-rollouts N` | `general search` | `500` | 离线 rollout 次数 |
+| `--general-rl-greedy` | `general search` | — | 使用贪心 rollout |
+| `--general-rl-skip-stage2` | `general train/search` | — | 跳过 Stage-2 |
 
 
 ### 数据集补充说明（精简）
@@ -146,15 +193,15 @@ bash llama_7B_LayerImportance.sh [可选参数]
 
 ### 安全性约束补充（精简版）
 
-> 命令行参数仅以上面的“可选参数总表”为主维护入口。本节只保留高风险约束，避免重复说明。
+> 本节只保留高风险约束；完整参数见上面的常用参数与高级参数附录。
 
 1. 以脚本校验为准：launcher 运行时校验优先于文档叙述。
-2. 首次运行保护：`rl`、`ga`、`greedy`、`general-rl(train)` 的新参数组合必须显式传 `--fresh-start`。
-3. 续训安全：持久化流程下不要手工传 `--resume-from`。
+2. 首次运行保护：`run rl`、`run ga`、`run greedy`、`general train` 的新参数组合必须显式传 `--fresh` 或 `--fresh-start`。
+3. 续训安全：训练流程按持久化目录自动续训；`--resume-from` 只建议在 `eval` / `--mode eval` 下使用。
 4. 跳阶段一致性：跳过某阶段时，不要再显式设置该阶段预算参数。
-5. Stage-2 固定配置约束：`stage1_result/json/manual` 来源必须与前置条件匹配。
-6. 对比模式隔离：`rl-and-ga-compare` 不与普通 RL/GA/Greedy 搜索参数混用。
-7. 对比输入完整性：`direct` 必须提供 4 个 JSON；`persistent` 必须存在目标目录与 `metadata.json`。
+5. Stage-2 固定配置约束：`stage2-only --config` 会自动推断为 JSON 来源；手动使用 `stage1_result/json/manual` 时仍必须与前置条件匹配。
+6. 对比模式隔离：`compare` 不与普通 RL/GA/Greedy 搜索参数混用。
+7. 对比输入完整性：默认 `persistent` 必须存在目标目录与 `metadata.json`；高级 `direct` 必须提供 4 个 JSON。
 8. 评估来源一致性：`--final-eval-source` 必须与 `--final-eval-config` / `manual-*` 配套使用。
 9. 并发写入安全：同一个持久化目录同一时刻仅允许一个训练进程写入。
 10. 终止安全：优先优雅停止（SIGINT/停止标志），避免 checkpoint 状态不完整。
