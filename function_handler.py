@@ -75,6 +75,36 @@ def _sample_independent_gaussian(reference: Tensor, std: float) -> Tensor:
     return torch.empty_like(reference).normal_(0.0, float(std), generator=gen)
 
 
+# ---------------------------------------------------------------------------
+# Truncation (PPTI 模拟：MPC ↔ HE 转换时的小数截断)
+# ---------------------------------------------------------------------------
+# 用法：在每个 BLB Block 的"最终输出"上调用 ``_apply_truncation(x, k, mode)``
+# 模拟 MPC/HE 互转之前对结果保留 k 位小数（默认按二进制位，符合 CKKS scaling
+# factor 语义）。数学：
+#   binary：trunc(x · 2^k) / 2^k         （保留 k 位二进制小数；CKKS 默认）
+#   decimal：trunc(x · 10^k) / 10^k      （保留 k 位十进制小数）
+# k=None  → 不截断（用于"首层 Block 1 不存在"等需要跳过的位置）。
+
+def _apply_truncation(
+        x: Tensor,
+        k: Optional[int],
+        mode: str = "binary",
+        ) -> Tensor:
+    """Truncate ``x`` to ``k`` fractional bits (binary) or digits (decimal)。
+
+    - ``k is None``：no-op，原样返回。
+    - mode="binary"：``trunc(x · 2^k) / 2^k``（PPTI / CKKS 默认）
+    - mode="decimal"：``trunc(x · 10^k) / 10^k``（普通"保留 k 位小数"）
+
+    使用 ``torch.trunc``（朝零取整）保证正负对称。
+    """
+    if k is None:
+        return x
+    base = 2.0 if str(mode).lower() == "binary" else 10.0
+    scale = base ** int(k)
+    return torch.trunc(x * scale) / scale
+
+
 def reseed_noise_rng(seed: Optional[int] = None) -> None:
     """手动控制噪声 RNG 的种子模式。
 
@@ -579,6 +609,10 @@ class Block1NoiseConfig:
     mean_result_rescale: Optional[NoisePoint] = None
     square_result_rescale: Optional[NoisePoint] = None
     var_result_rescale: Optional[NoisePoint] = None
+    # PPTI MPC↔HE 转换的小数截断：施加在 Block 1 末尾（var, rsqrt 之前）。
+    # k=None ⇒ 不截断（可用于"首层 Block 1 缺失"的语义）。
+    output_truncation_k: Optional[int] = None
+    output_truncation_mode: str = "binary"  # "binary" / "decimal"
 
 
 def make_block1_default_config(
@@ -592,6 +626,8 @@ def make_block1_default_config(
         mean_rescale_sf: Optional[int] = None,
         square_rescale_sf: Optional[int] = None,
         var_rescale_sf: Optional[int] = None,
+        output_truncation_k: Optional[int] = None,
+        output_truncation_mode: str = "binary",
         ) -> "Block1NoiseConfig":
     """构建 Block 1 噪声配置。
 
@@ -599,12 +635,17 @@ def make_block1_default_config(
     rescale_sf=None 表示**不加**这一处的 rescale 噪声。
 
     默认 N=8192（BLB Block 1 推荐表）；也可以传 N=16384 等动态调整。
+
+    ``output_truncation_k``：Block 1 末尾（var, rsqrt 之前）的 PPTI 截断位数。
+    None ⇒ 不截断（用于"首层 Block 1 缺失"的语义）。
     """
     cfg = Block1NoiseConfig(
         gelu_out_fresh=NoisePoint("fresh", int(gelu_out_sf), int(N)),
         wffn2_encode=NoisePoint("encoding", int(wffn2_sf), int(N)),
         mean_inv_d_encode=NoisePoint("encoding", int(mean_inv_d_sf), int(N)),
         var_inv_d_encode=NoisePoint("encoding", int(var_inv_d_sf), int(N)),
+        output_truncation_k=(int(output_truncation_k) if output_truncation_k is not None else None),
+        output_truncation_mode=str(output_truncation_mode),
     )
     if wffn2_rescale_sf is not None:
         cfg.wffn2_result_rescale = NoisePoint("rescale", int(wffn2_rescale_sf), int(N))
@@ -721,6 +762,10 @@ class Block2NoiseConfig:
     wv_result_rescale: Optional[NoisePoint] = None
     qkt_matmul_result_rescale: Optional[NoisePoint] = None
     qkt_merge_mask_result_rescale: Optional[NoisePoint] = None
+    # PPTI MPC↔HE 截断：Block 2 末尾（合并 Q,K mask 之后的 attention_scores）。
+    # 即便首层 Block 2 前半部分缺失，本截断仍照常应用（Q·K^T 输出存在）。
+    output_truncation_k: Optional[int] = None
+    output_truncation_mode: str = "binary"
 
 
 def make_block2_default_config(
@@ -749,6 +794,8 @@ def make_block2_default_config(
         wv_rescale_sf: Optional[int] = None,
         qkt_matmul_rescale_sf: Optional[int] = None,
         qkt_merge_mask_rescale_sf: Optional[int] = None,
+        output_truncation_k: Optional[int] = None,
+        output_truncation_mode: str = "binary",
         ) -> "Block2NoiseConfig":
     """构建 Block 2 噪声配置。
 
@@ -772,6 +819,8 @@ def make_block2_default_config(
         q_mask2_encode=NoisePoint("encoding", int(q_mask2_sf), int(N)),
         wv_encode=NoisePoint("encoding", int(wv_sf), int(N)),
         qkt_merge_mask_encode=NoisePoint("encoding", int(qkt_merge_mask_sf), int(N)),
+        output_truncation_k=(int(output_truncation_k) if output_truncation_k is not None else None),
+        output_truncation_mode=str(output_truncation_mode),
     )
     if normalize_rescale_sf is not None:
         cfg.normalize_result_rescale = NoisePoint("rescale", int(normalize_rescale_sf), int(N))
@@ -912,6 +961,10 @@ class NoisyBlock1LayerNorm(nn.Module):
         else:
             var = sum_sq / float(D)
 
+        # Block 1 末尾：PPTI MPC↔HE 截断（var = Block 1 输出，rsqrt 之前）
+        if cfg is not None and cfg.output_truncation_k is not None:
+            var = _apply_truncation(var, cfg.output_truncation_k, cfg.output_truncation_mode)
+
         # ===== Block 1 / Block 2 边界：rsqrt 非线性，无噪 =====
         # 若 Block 1 已启用 → var 是 [B, S, H]，inv_std 也 [B, S, H]
         # 若仅 Block 2 启用 → var 是 [B, S, 1]，inv_std 也 [B, S, 1]
@@ -983,6 +1036,8 @@ def _make_block2_qkt_merge_hook(
         qkt_matmul_rescale: Optional[NoisePoint],
         merge_mask_encode: NoisePoint,
         merge_mask_rescale: Optional[NoisePoint],
+        output_truncation_k: Optional[int] = None,
+        output_truncation_mode: str = "binary",
         ):
     """构造 Q·K^T matmul **之后**、softmax **之前**的 "合并 Q,K" 噪声 hook。
 
@@ -990,6 +1045,7 @@ def _make_block2_qkt_merge_hook(
         1. rescale on Q·K^T matmul 结果        (qkt_matmul_rescale, 可选)
         2. ⊙ ones-mask: noisy_ones = 1 + ε_enc; out = qkt_result · noisy_ones
         3. rescale on mask 乘法结果              (merge_mask_rescale, 可选)
+        4. PPTI MPC↔HE 截断 (output_truncation_k, 可选)：Block 2 输出末尾
 
     返回 ``hook(attention_scores) -> attention_scores`` 形状 [B, A, S, S]。
     """
@@ -1004,6 +1060,9 @@ def _make_block2_qkt_merge_hook(
         # 3. rescale on mask 乘法结果（可选）
         if merge_mask_rescale is not None:
             out = out + _sample_gaussian_for_point(out, merge_mask_rescale)
+        # 4. Block 2 末尾 truncation
+        if output_truncation_k is not None:
+            out = _apply_truncation(out, output_truncation_k, output_truncation_mode)
         return out
     return hook
 
@@ -1038,6 +1097,9 @@ class Block3NoiseConfig:
     x_inv_2n_result_rescale: Optional[NoisePoint] = None  # rescale on x · (1/2^n)
     # 长度必须 == degree；每个元素 None 表示该次平方不加 rescale
     square_rescales: Tuple[Optional[NoisePoint], ...] = field(default_factory=tuple)
+    # PPTI MPC↔HE 截断：Block 3 末尾（最后一次 squaring 之后，softmax mask/norm_div 之前）
+    output_truncation_k: Optional[int] = None
+    output_truncation_mode: str = "binary"
 
 
 def make_block3_default_config(
@@ -1048,6 +1110,8 @@ def make_block3_default_config(
         inv_2n_sf: int = 22,
         x_inv_2n_rescale_sf: Optional[int] = None,
         square_rescale_sfs: Sequence[Optional[int]] = (),
+        output_truncation_k: Optional[int] = None,
+        output_truncation_mode: str = "binary",
         ) -> "Block3NoiseConfig":
     """构建 Block 3 噪声配置。
 
@@ -1073,6 +1137,8 @@ def make_block3_default_config(
         degree=deg,
         x_fresh=NoisePoint("fresh", int(x_fresh_sf), int(N)),
         inv_2n_encode=NoisePoint("encoding", int(inv_2n_sf), int(N)),
+        output_truncation_k=(int(output_truncation_k) if output_truncation_k is not None else None),
+        output_truncation_mode=str(output_truncation_mode),
     )
     if x_inv_2n_rescale_sf is not None:
         cfg.x_inv_2n_result_rescale = NoisePoint("rescale", int(x_inv_2n_rescale_sf), int(N))
@@ -1124,6 +1190,9 @@ def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):
             rs = sq_rescales[k] if k < len(sq_rescales) else None
             if rs is not None:
                 y = y + _sample_gaussian_for_point(y, rs)
+        # 6. Block 3 末尾 truncation
+        if cfg.output_truncation_k is not None:
+            y = _apply_truncation(y, cfg.output_truncation_k, cfg.output_truncation_mode)
         return y
 
     return block3_approx_exp
@@ -1252,6 +1321,9 @@ class Block4NoiseConfig:
     ln_mean_result_rescale: Optional[NoisePoint] = None
     ln_square_result_rescale: Optional[NoisePoint] = None
     ln_var_result_rescale: Optional[NoisePoint] = None
+    # PPTI MPC↔HE 截断：Block 4 末尾（post-attn LN var, rsqrt 之前）
+    output_truncation_k: Optional[int] = None
+    output_truncation_mode: str = "binary"
 
 
 def make_block4_default_config(
@@ -1274,6 +1346,8 @@ def make_block4_default_config(
         ln_mean_rescale_sf: Optional[int] = None,
         ln_square_rescale_sf: Optional[int] = None,
         ln_var_rescale_sf: Optional[int] = None,
+        output_truncation_k: Optional[int] = None,
+        output_truncation_mode: str = "binary",
         ) -> "Block4NoiseConfig":
     """构建 Block 4 噪声配置。
 
@@ -1291,6 +1365,8 @@ def make_block4_default_config(
         wo_encode=NoisePoint("encoding", int(wo_sf), int(N)),
         ln_mean_inv_d_encode=NoisePoint("encoding", int(ln_mean_inv_d_sf), int(N)),
         ln_var_inv_d_encode=NoisePoint("encoding", int(ln_var_inv_d_sf), int(N)),
+        output_truncation_k=(int(output_truncation_k) if output_truncation_k is not None else None),
+        output_truncation_mode=str(output_truncation_mode),
     )
     if softmax_out_mask_rescale_sf is not None:
         cfg.softmax_out_mask_rescale = NoisePoint("rescale", int(softmax_out_mask_rescale_sf), int(N))
@@ -1447,6 +1523,10 @@ class NoisyBlock4LayerNorm(nn.Module):
         else:
             var = sum_sq / float(D)
 
+        # Block 4 末尾：PPTI MPC↔HE 截断（var = Block 4 输出，rsqrt 之前）
+        if cfg4 is not None and cfg4.output_truncation_k is not None:
+            var = _apply_truncation(var, cfg4.output_truncation_k, cfg4.output_truncation_mode)
+
         # ===== Block 4 / Block 5 边界：rsqrt 非线性，无噪 =====
         inv_std = torch.rsqrt(var + self.eps)
 
@@ -1555,6 +1635,9 @@ class Block5NoiseConfig:
     # GELU 部分：长度由 degree 决定
     gelu_power_rescales: Tuple[Optional[NoisePoint], ...] = field(default_factory=tuple)
     gelu_coeff_mul_rescales: Tuple[Optional[NoisePoint], ...] = field(default_factory=tuple)
+    # PPTI MPC↔HE 截断：Block 5 末尾（GELU 多项式输出之后）
+    output_truncation_k: Optional[int] = None
+    output_truncation_mode: str = "binary"
 
 
 def make_block5_default_config(
@@ -1571,6 +1654,8 @@ def make_block5_default_config(
         wffn1_rescale_sf: Optional[int] = None,
         gelu_power_rescale_sfs: Sequence[Optional[int]] = (),
         gelu_coeff_mul_rescale_sfs: Sequence[Optional[int]] = (),
+        output_truncation_k: Optional[int] = None,
+        output_truncation_mode: str = "binary",
         ) -> "Block5NoiseConfig":
     """构建 Block 5 噪声配置。
 
@@ -1599,6 +1684,8 @@ def make_block5_default_config(
         wffn1_encode=NoisePoint("encoding", int(wffn1_sf), int(N)),
         gelu_degree=deg,
         gelu_coeff_encode=NoisePoint("encoding", int(gelu_coeff_sf), int(N)),
+        output_truncation_k=(int(output_truncation_k) if output_truncation_k is not None else None),
+        output_truncation_mode=str(output_truncation_mode),
     )
     if normalize_rescale_sf is not None:
         cfg.normalize_result_rescale = NoisePoint("rescale", int(normalize_rescale_sf), int(N))
@@ -1781,6 +1868,9 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
         out = torch.where(mask_neg, y1, out)
         out = torch.where(mask_pos, y2, out)
         out = torch.where(mask_high, y3, out)
+        # Block 5 末尾 truncation（GELU 输出之后）
+        if cfg5.output_truncation_k is not None:
+            out = _apply_truncation(out, cfg5.output_truncation_k, cfg5.output_truncation_mode)
         return out
 
     return block5_gelu_forward
@@ -3165,10 +3255,12 @@ class ReversibleLayerHandler:
                 cfg.kt_mask2_encode, cfg.kt_mask2_result_rescale,
             )
 
-            # ---- 4. Q·K^T merge hook ----
+            # ---- 4. Q·K^T merge hook（含 Block 2 末尾 truncation） ----
             attn_self._block2_qkt_merge_hook = _make_block2_qkt_merge_hook(
                 cfg.qkt_matmul_result_rescale,
                 cfg.qkt_merge_mask_encode, cfg.qkt_merge_mask_result_rescale,
+                output_truncation_k=cfg.output_truncation_k,
+                output_truncation_mode=cfg.output_truncation_mode,
             )
 
             # ---- 5. 记录 cfg ----

@@ -321,7 +321,11 @@ class BLBNoiseRLBridge:
 @dataclass
 class Block1ActionSpec:
     """RL 动作 → Block 1 cfg 的字段映射。每个字段是一个 scaling_factor (int)；
-    rescale_* 字段为 None 表示该处 rescale 不加。"""
+    rescale_* 字段为 None 表示该处 rescale 不加。
+
+    ``output_truncation_k``：Block 1 末尾 PPTI 截断位数；None ⇒ 不截断
+    （**首层 Block 1 缺失**时直接传 None；其它层由 RL agent 选）。
+    """
     gelu_out_sf: int
     wffn2_sf: int
     mean_inv_d_sf: int
@@ -330,6 +334,8 @@ class Block1ActionSpec:
     mean_rescale_sf: Optional[int] = None
     square_rescale_sf: Optional[int] = None
     var_rescale_sf: Optional[int] = None
+    output_truncation_k: Optional[int] = None
+    output_truncation_mode: str = "binary"
 
 
 def build_block1_cfg_from_action(
@@ -347,6 +353,8 @@ def build_block1_cfg_from_action(
         mean_rescale_sf=action.mean_rescale_sf,
         square_rescale_sf=action.square_rescale_sf,
         var_rescale_sf=action.var_rescale_sf,
+        output_truncation_k=action.output_truncation_k,
+        output_truncation_mode=action.output_truncation_mode,
     )
 
 
@@ -375,6 +383,10 @@ class Block2ActionSpec:
     wv_rescale_sf: Optional[int] = None
     qkt_matmul_rescale_sf: Optional[int] = None
     qkt_merge_mask_rescale_sf: Optional[int] = None
+    # PPTI Block 2 末尾 truncation；首层 Block 2 前半部分缺失但后半部分（Q·K^T）
+    # 仍会执行，所以这里仍可加 truncation。
+    output_truncation_k: Optional[int] = None
+    output_truncation_mode: str = "binary"
 
 
 def build_block2_cfg_from_action(
@@ -406,6 +418,8 @@ def build_block2_cfg_from_action(
         wv_rescale_sf=action.wv_rescale_sf,
         qkt_matmul_rescale_sf=action.qkt_matmul_rescale_sf,
         qkt_merge_mask_rescale_sf=action.qkt_merge_mask_rescale_sf,
+        output_truncation_k=action.output_truncation_k,
+        output_truncation_mode=action.output_truncation_mode,
     )
 
 
@@ -418,6 +432,8 @@ class Block3ActionSpec:
     x_inv_2n_rescale_sf: Optional[int] = None
     # 长度必须 == degree
     square_rescale_sfs: Tuple[Optional[int], ...] = ()
+    output_truncation_k: Optional[int] = None
+    output_truncation_mode: str = "binary"
 
 
 def build_block3_cfg_from_action(
@@ -432,6 +448,8 @@ def build_block3_cfg_from_action(
         inv_2n_sf=int(action.inv_2n_sf),
         x_inv_2n_rescale_sf=action.x_inv_2n_rescale_sf,
         square_rescale_sfs=action.square_rescale_sfs,
+        output_truncation_k=action.output_truncation_k,
+        output_truncation_mode=action.output_truncation_mode,
     )
 
 
