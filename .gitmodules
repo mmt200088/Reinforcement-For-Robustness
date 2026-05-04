@@ -1,0 +1,12 @@
+[submodule "EzPC"]
+	path = EzPC
+	url = https://github.com/mpc-msri/EzPC.git
+[submodule "LLM-Adapters"]
+	path = LLM-Adapters
+	url = https://github.com/AGI-Edgerunners/LLM-Adapters.git
+[submodule "Rescale_optimizer"]
+	path = Rescale_optimizer
+	url = https://github.com/mmt200088/rescale_optimizer.git
+[submodule "importance-aware-sparse-tuning-IST-paper"]
+	path = importance-aware-sparse-tuning-IST-paper
+	url = https://github.com/antgroup/importance-aware-sparse-tuning-IST-paper.git
