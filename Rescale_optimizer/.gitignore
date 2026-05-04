@@ -1,0 +1,7 @@
+*.log
+train_gpt2/
+
+# Python cache (do not commit)
+__pycache__/
+*.py[cod]
+*$py.class

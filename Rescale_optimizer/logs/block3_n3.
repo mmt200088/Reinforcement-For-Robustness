@@ -1,0 +1,27 @@
+[INFO] rescale_optimizer: ==========================================================
+[INFO] rescale_optimizer: Stage 1: Feasibility-DAG construction
+[DEBUG] rescale_optimizer: cut_point[0] 'x_input': t_base=28, t=30
+[DEBUG] rescale_optimizer: cut_point[1] 'ctpt_one_plus_x_over_2n': t_base=28, t=30
+[DEBUG] rescale_optimizer: cut_point[2] 'ctct_square_1': t_base=32, t=34
+[DEBUG] rescale_optimizer: cut_point[3] 'ctct_square_2': t_base=32, t=34
+[DEBUG] rescale_optimizer: cut_point[4] 'ctct_square_3': t_base=34, t=36
+[INFO] rescale_optimizer: FeasibilityDAG: 3 stage edges, 1 tail edges
+[INFO] rescale_optimizer: RescaleGraph: M=4  (c_0 .. c_4 + dummy c_5)
+  nodes             : 6
+  stage edges       : 3
+  tail  edges       : 1
+  Q_legal           : [30, 60]
+  h_sf              : 2
+  noise_table       : NoiseLookupTable(ops=['rescale', 'ctpt'])
+[INFO] rescale_optimizer: ==========================================================
+[INFO] rescale_optimizer: Stage 2: Reachability analysis
+[INFO] rescale_optimizer: Reachability: FwdSteps[M+1]=[3],  BwdSteps[0]=[3]
+[INFO] rescale_optimizer: ==========================================================
+[INFO] rescale_optimizer: Stage 3: Backward Level-DP (valid L's: [3])
+[INFO] rescale_optimizer: Best DP: DPResult(L=3, cost=62.200, skeleton=[0, 2, 3, 4, 5])
+[INFO] rescale_optimizer: ==========================================================
+[INFO] rescale_optimizer: Stage 4: Modulus chain construction (+ repair/compress)
+[INFO] rescale_optimizer: Initial chain: ModulusChain(q_head=60, q_1=56, q_2=34, q_3=32, q_tail=60)  total=242 bits, R=3
+[INFO] rescale_optimizer: RepairChain: OK on initial skeleton (0 bumps — initial chain already valid)
+[INFO] rescale_optimizer: After CompressHeadroom: ModulusChain(q_head=60, q_1=56, q_2=34, q_3=32, q_tail=60)  total=242 bits, R=3
+[INFO] rescale_optimizer: Optimization successful.

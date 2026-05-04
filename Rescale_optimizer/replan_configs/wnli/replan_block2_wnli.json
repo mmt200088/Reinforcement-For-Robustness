@@ -1,0 +1,82 @@
+{
+  "config_path": "/var/tmp/root-home/Rescale_optimizer/configs/wnli/block2_wnli.json",
+  "config_name": "block2_wnli",
+  "valid": true,
+  "fusion_count": 1,
+  "actions_file": "/var/tmp/root-home/Rescale_optimizer/replan_configs/wnli/replan_actions_block2_wnli.json",
+  "baseline": {
+    "skeleton": [0, 2, 5, 6, 8],
+    "t_baseline": [32, 32, 32, 32],
+    "q_bits_baseline": [52, 50, 32]
+  },
+  "t_new": [26, 26, 26, 32],
+  "delta_overrides": {
+    "ctct_x_mean_over_std": "x2",
+    "ctpt_gama1": 14,
+    "ctpt_wq_wk": 14,
+    "ctpt_rotKT_mask1": 13,
+    "ctpt_rotKT_mask2": 13,
+    "ctct_preprocess_qkt": "x2",
+    "ctpt_mask": 15
+  },
+  "result": {
+    "valid": true,
+    "message": "replan OK after 1 fusion(s). R: 3 -> 2.",
+    "fusion_count": 1,
+    "skeleton": [0, 2, 5, 8],
+    "q_initial": [40, 40, 20],
+    "q_final": [40, 60],
+    "t_final": [26, 26, 26],
+    "delta_q_vs_baseline": [-12, -10, -12],
+    "applied_delta_overrides": {
+      "ctct_x_mean_over_std": "x2",
+      "ctpt_gama1": 14,
+      "ctpt_wq_wk": 14,
+      "ctpt_rotKT_mask1": 13,
+      "ctpt_rotKT_mask2": 13,
+      "ctct_preprocess_qkt": "x2",
+      "ctpt_mask": 15
+    },
+    "fusions": [
+      {"fused_position": 3, "fused_into": "prev", "small_q": 20, "neighbour_q_before": 40, "neighbour_q_after": 60}
+    ],
+    "chain": {
+      "q_head_bits": 60,
+      "q_bits": [40, 60],
+      "q_tail_bits": 60,
+      "total_bits": 220,
+      "R": 2
+    },
+    "invalid_chain": null
+  },
+  "new_compact_config": {
+    "config_name": "block2_wnli",
+    "success": true,
+    "skeleton": [0, 2, 5, 8],
+    "cut_point_sf": [
+      {"i": 0, "name": "inv_std", "type": "SOURCE", "sf": 26},
+      {"i": 1, "name": "ctct_x_mean_over_std", "type": "CTCT_MUL", "sf": 52},
+      {"i": 2, "name": "ctpt_gama1", "type": "CTPT_MUL", "sf_pre": 66, "sf_post": 26, "drop": 40},
+      {"i": 3, "name": "ctpt_wq_wk", "type": "CTPT_MUL", "sf": 40},
+      {"i": 4, "name": "ctpt_rotKT_mask1", "type": "CTPT_MUL", "sf": 53},
+      {"i": 5, "name": "ctpt_rotKT_mask2", "type": "CTPT_MUL", "sf_pre": 66, "sf_post": 26, "drop": 60},
+      {"i": 6, "name": "ctct_preprocess_qkt", "type": "CTCT_MUL", "sf": 52},
+      {"i": 7, "name": "ctpt_mask", "type": "CTPT_MUL", "sf": 67}
+    ],
+    "propagation_deltas": [
+      {"node_id": 1, "name": "ctct_x_mean_over_std", "type": "CTCT_MUL", "delta": "x2"},
+      {"node_id": 2, "name": "ctpt_gama1", "type": "CTPT_MUL", "delta": 14},
+      {"node_id": 4, "name": "ctpt_wq_wk", "type": "CTPT_MUL", "delta": 14},
+      {"node_id": 6, "name": "ctpt_rotKT_mask1", "type": "CTPT_MUL", "delta": 13},
+      {"node_id": 8, "name": "ctpt_rotKT_mask2", "type": "CTPT_MUL", "delta": 13},
+      {"node_id": 10, "name": "ctct_preprocess_qkt", "type": "CTCT_MUL", "delta": "x2"},
+      {"node_id": 12, "name": "ctpt_mask", "type": "CTPT_MUL", "delta": 15}
+    ],
+    "modulus_chain": {
+      "drop_order": [60, 40, 60, 60],
+      "seal_order": [60, 60, 40, 60],
+      "total_bits": 220
+    },
+    "fusion_count": 1
+  }
+}

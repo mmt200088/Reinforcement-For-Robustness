@@ -1,0 +1,12 @@
+{
+  "config_name": "block5_n2",
+  "notes": "Auto-generated from configs/static_skeletons.json. Edit t_new / delta_overrides as needed.",
+  "t_new": [32, 32, 32, 32],
+  "delta_overrides": {
+    "ctct_xmean_over_std": "x2",
+    "ctpt_gamal": 20,
+    "ctpt_wffn1": 22,
+    "ctct_gelu_x2": "x2",
+    "ctpt_gelu_coeff": 20
+  }
+}

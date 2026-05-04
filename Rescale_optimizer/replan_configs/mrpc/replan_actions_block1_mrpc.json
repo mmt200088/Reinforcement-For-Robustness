@@ -1,0 +1,11 @@
+{
+  "config_name": "block1_mrpc",
+  "notes": "Auto-generated from configs/static_skeletons.json. Edit t_new / delta_overrides as needed.",
+  "t_new": [32, 34, 34],
+  "delta_overrides": {
+    "ctpt_ffn2": 20,
+    "ctpt_inv_d_1": 20,
+    "ctct_ext_square": "x2",
+    "ctpt_inv_d_2": 20
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "config_path": "/var/tmp/root-home/Reinforcement-For-Robustness/Rescale_optimizer/configs/mrpc/block1_mrpc.json",
+  "config_name": "block1_mrpc",
+  "valid": true,
+  "fusion_count": 0,
+  "actions_file": "/var/tmp/root-home/Reinforcement-For-Robustness/Rescale_optimizer/replan_configs/mrpc/replan_actions_block1_mrpc.json",
+  "baseline": {
+    "skeleton": [0, 2, 4, 5],
+    "t_baseline": [30, 34, 34],
+    "q_bits_baseline": [36, 54]
+  },
+  "t_new": [32, 34, 34],
+  "delta_overrides": {"ctpt_ffn2": 20, "ctpt_inv_d_1": 20, "ctct_ext_square": "x2", "ctpt_inv_d_2": 20},
+  "result": {
+    "valid": true,
+    "message": "replan OK after 0 fusion(s). R: 2 -> 2.",
+    "fusion_count": 0,
+    "skeleton": [0, 2, 4, 5],
+    "q_initial": [38, 54],
+    "q_final": [38, 54],
+    "t_final": [32, 34, 34],
+    "delta_q_vs_baseline": [2, 0],
+    "applied_delta_overrides": {"ctpt_ffn2": 20, "ctpt_inv_d_1": 20, "ctct_ext_square": "x2", "ctpt_inv_d_2": 20},
+    "fusions": [],
+    "chain": {
+      "q_head_bits": 60,
+      "q_bits": [38, 54],
+      "q_tail_bits": 60,
+      "total_bits": 212,
+      "R": 2
+    },
+    "invalid_chain": null
+  },
+  "new_compact_config": {
+    "config_name": "block1_mrpc",
+    "success": true,
+    "skeleton": [0, 2, 4, 5],
+    "cut_point_sf": [
+      {"i": 0, "name": "gelu_out", "type": "SOURCE", "sf": 32},
+      {"i": 1, "name": "ctpt_ffn2", "type": "CTPT_MUL", "sf": 52},
+      {"i": 2, "name": "ctpt_inv_d_1", "type": "CTPT_MUL", "sf_pre": 72, "sf_post": 34, "drop": 38},
+      {"i": 3, "name": "ctct_ext_square", "type": "CTCT_MUL", "sf": 68},
+      {"i": 4, "name": "ctpt_inv_d_2", "type": "CTPT_MUL", "sf_pre": 88, "sf_post": 34, "drop": 54}
+    ],
+    "propagation_deltas": [
+      {"node_id": 2, "name": "ctpt_ffn2", "type": "CTPT_MUL", "delta": 20},
+      {"node_id": 5, "name": "ctpt_inv_d_1", "type": "CTPT_MUL", "delta": 20},
+      {"node_id": 6, "name": "ctct_ext_square", "type": "CTCT_MUL", "delta": "x2"},
+      {"node_id": 8, "name": "ctpt_inv_d_2", "type": "CTPT_MUL", "delta": 20}
+    ],
+    "modulus_chain": {
+      "drop_order": [60, 38, 54, 60],
+      "seal_order": [60, 54, 38, 60],
+      "total_bits": 212
+    },
+    "effective_rotations": [],
+    "fusion_count": 0
+  }
+}

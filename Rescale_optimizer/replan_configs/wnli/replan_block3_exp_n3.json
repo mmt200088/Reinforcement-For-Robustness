@@ -1,0 +1,58 @@
+{
+  "config_path": "/var/tmp/root-home/Rescale_optimizer/configs/wnli/block3_exp_n3.json",
+  "config_name": "block3_exp_n3",
+  "valid": true,
+  "fusion_count": 0,
+  "actions_file": "/var/tmp/root-home/Rescale_optimizer/replan_configs/wnli/replan_actions_block3_exp_n3.json",
+  "baseline": {
+    "skeleton": [0, 2, 3, 4, 5],
+    "t_baseline": [30, 32, 32, 32],
+    "q_bits_baseline": [58, 32, 32]
+  },
+  "t_new": [30, 32, 32, 32],
+  "delta_overrides": {"ctpt_inv_2n": 15, "ctct_square_1": "x2", "ctct_square_2": "x2", "ctct_square_3": "x2"},
+  "result": {
+    "valid": true,
+    "message": "replan OK after 0 fusion(s). R: 3 -> 3.",
+    "fusion_count": 0,
+    "skeleton": [0, 2, 3, 4, 5],
+    "q_initial": [58, 32, 32],
+    "q_final": [58, 32, 32],
+    "t_final": [30, 32, 32, 32],
+    "delta_q_vs_baseline": [0, 0, 0],
+    "applied_delta_overrides": {"ctpt_inv_2n": 15, "ctct_square_1": "x2", "ctct_square_2": "x2", "ctct_square_3": "x2"},
+    "fusions": [],
+    "chain": {
+      "q_head_bits": 60,
+      "q_bits": [58, 32, 32],
+      "q_tail_bits": 60,
+      "total_bits": 242,
+      "R": 3
+    },
+    "invalid_chain": null
+  },
+  "new_compact_config": {
+    "config_name": "block3_exp_n3",
+    "success": true,
+    "skeleton": [0, 2, 3, 4, 5],
+    "cut_point_sf": [
+      {"i": 0, "name": "X", "type": "SOURCE", "sf": 30},
+      {"i": 1, "name": "ctpt_inv_2n", "type": "CTPT_MUL", "sf": 45},
+      {"i": 2, "name": "ctct_square_1", "type": "CTCT_MUL", "sf_pre": 90, "sf_post": 32, "drop": 58},
+      {"i": 3, "name": "ctct_square_2", "type": "CTCT_MUL", "sf_pre": 64, "sf_post": 32, "drop": 32},
+      {"i": 4, "name": "ctct_square_3", "type": "CTCT_MUL", "sf_pre": 64, "sf_post": 32, "drop": 32}
+    ],
+    "propagation_deltas": [
+      {"node_id": 1, "name": "ctpt_inv_2n", "type": "CTPT_MUL", "delta": 15},
+      {"node_id": 2, "name": "ctct_square_1", "type": "CTCT_MUL", "delta": "x2"},
+      {"node_id": 3, "name": "ctct_square_2", "type": "CTCT_MUL", "delta": "x2"},
+      {"node_id": 4, "name": "ctct_square_3", "type": "CTCT_MUL", "delta": "x2"}
+    ],
+    "modulus_chain": {
+      "drop_order": [60, 58, 32, 32, 60],
+      "seal_order": [60, 32, 32, 58, 60],
+      "total_bits": 242
+    },
+    "fusion_count": 0
+  }
+}

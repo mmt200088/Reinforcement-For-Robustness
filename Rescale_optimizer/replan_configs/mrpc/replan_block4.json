@@ -1,0 +1,83 @@
+{
+  "config_path": "/var/tmp/root-home/Reinforcement-For-Robustness/Rescale_optimizer/configs/mrpc/block4.json",
+  "config_name": "block4",
+  "valid": true,
+  "fusion_count": 0,
+  "actions_file": "/var/tmp/root-home/Reinforcement-For-Robustness/Rescale_optimizer/replan_configs/mrpc/replan_actions_block4.json",
+  "baseline": {
+    "skeleton": [0, 2, 5, 7, 8],
+    "t_baseline": [35, 31, 31, 28],
+    "q_bits_baseline": [57, 56, 54]
+  },
+  "t_new": [36, 32, 32, 28],
+  "delta_overrides": {
+    "ctpt_mask2": 14,
+    "ctct_rot_softmax_mul_v": 39,
+    "ctpt_mask": 14,
+    "ctpt_wo_attnout": 22,
+    "ctpt_inv_d_1": 20,
+    "ctct_square": "x2",
+    "ctpt_inv_d_2": 20
+  },
+  "result": {
+    "valid": true,
+    "message": "replan OK after 0 fusion(s). R: 3 -> 3.",
+    "fusion_count": 0,
+    "skeleton": [0, 2, 5, 7, 8],
+    "q_initial": [57, 56, 56],
+    "q_final": [57, 56, 56],
+    "t_final": [36, 32, 32, 28],
+    "delta_q_vs_baseline": [0, 0, 2],
+    "applied_delta_overrides": {
+      "ctpt_mask2": 14,
+      "ctct_rot_softmax_mul_v": 39,
+      "ctpt_mask": 14,
+      "ctpt_wo_attnout": 22,
+      "ctpt_inv_d_1": 20,
+      "ctct_square": "x2",
+      "ctpt_inv_d_2": 20
+    },
+    "fusions": [],
+    "chain": {
+      "q_head_bits": 60,
+      "q_bits": [57, 56, 56],
+      "q_tail_bits": 60,
+      "total_bits": 289,
+      "R": 3
+    },
+    "invalid_chain": null
+  },
+  "new_compact_config": {
+    "config_name": "block4",
+    "success": true,
+    "skeleton": [0, 2, 5, 7, 8],
+    "cut_point_sf": [
+      {"i": 0, "name": "rot_softmax", "type": "SOURCE", "sf": 36},
+      {"i": 1, "name": "ctpt_mask2", "type": "CTPT_MUL", "sf": 50},
+      {"i": 2, "name": "ctct_rot_softmax_mul_v", "type": "CTCT_MUL", "sf_pre": 89, "sf_post": 32, "drop": 57},
+      {"i": 3, "name": "ctpt_mask", "type": "CTPT_MUL", "sf": 46},
+      {"i": 4, "name": "ctpt_wo_attnout", "type": "CTPT_MUL", "sf": 68},
+      {"i": 5, "name": "ctpt_inv_d_1", "type": "CTPT_MUL", "sf_pre": 88, "sf_post": 32, "drop": 56},
+      {"i": 6, "name": "ctct_square", "type": "CTCT_MUL", "sf": 64},
+      {"i": 7, "name": "ctpt_inv_d_2", "type": "CTPT_MUL", "sf_pre": 84, "sf_post": 28, "drop": 56}
+    ],
+    "propagation_deltas": [
+      {"node_id": 1, "name": "ctpt_mask2", "type": "CTPT_MUL", "delta": 14},
+      {"node_id": 3, "name": "ctct_rot_softmax_mul_v", "type": "CTCT_MUL", "delta": 39},
+      {"node_id": 5, "name": "ctpt_mask", "type": "CTPT_MUL", "delta": 14},
+      {"node_id": 7, "name": "ctpt_wo_attnout", "type": "CTPT_MUL", "delta": 22},
+      {"node_id": 9, "name": "ctpt_inv_d_1", "type": "CTPT_MUL", "delta": 20},
+      {"node_id": 10, "name": "ctct_square", "type": "CTCT_MUL", "delta": "x2"},
+      {"node_id": 12, "name": "ctpt_inv_d_2", "type": "CTPT_MUL", "delta": 20}
+    ],
+    "modulus_chain": {
+      "drop_order": [60, 57, 56, 56, 60],
+      "seal_order": [60, 56, 56, 57, 60],
+      "total_bits": 289
+    },
+    "effective_rotations": [
+      {"node_id": 4, "name": "rot_st3", "after_cut_point": 2, "sf": 32, "count": 1}
+    ],
+    "fusion_count": 0
+  }
+}
