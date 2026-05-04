@@ -4288,6 +4288,24 @@ class LayerImportanceEvaluator(TrainerCallback):
         from noise_rl_module_v2 import NOISE_STAGE_CHECKPOINT_FILENAME
         if not self.resume_run_dir:
             return None
+        variant = str(getattr(self, "stage2_rl_variant", "blb_v3") or "blb_v3").lower()
+        if variant in ("blb_v3", "blb", "v3", "blb_stage2_rl"):
+            try:
+                from blb_stage2_rl.runner import (
+                    BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+                    BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
+                )
+                for filename in (
+                        BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+                        BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
+                ):
+                    path = os.path.join(
+                        self.resume_run_dir, "stage2_noise", "progress", filename,
+                    )
+                    if os.path.isfile(path):
+                        return path
+            except Exception:
+                pass
         path = os.path.join(
             self.resume_run_dir, "stage2_noise", "progress",
             NOISE_STAGE_CHECKPOINT_FILENAME,
@@ -4363,6 +4381,34 @@ class LayerImportanceEvaluator(TrainerCallback):
                                 )
                     except Exception as exc:
                         self.log(f"[final_eval_only][警告] 读取 {s2_path} 失败: {exc}")
+                if stage2_best is None:
+                    try:
+                        from blb_stage2_rl.runner import (
+                            BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+                            BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
+                        )
+                        for _blb_name in (
+                                BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+                                BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
+                        ):
+                            blb_path = os.path.join(
+                                _dir, "stage2_noise", "progress", _blb_name,
+                            )
+                            if os.path.isfile(blb_path):
+                                # BLB v3 的真实最优配置是 block cfg/action vec，不是 legacy
+                                # *_scaling_factors。final-eval 的兼容输入仍使用 max-noise baseline。
+                                stage2_best = {
+                                    key: np.asarray(value, dtype=int)
+                                    for key, value in self._get_max_noise_configuration().items()
+                                    if isinstance(key, str) and key.endswith("scaling_factors")
+                                }
+                                self.log(
+                                    f"[final_eval_only] 检测到 BLB Stage-2 checkpoint，"
+                                    f"使用 legacy baseline 兼容配置: {blb_path}"
+                                )
+                                break
+                    except Exception as exc:
+                        self.log(f"[final_eval_only][警告] 读取 BLB Stage-2 checkpoint 失败: {exc}")
 
         return stage1_best, stage2_best
 

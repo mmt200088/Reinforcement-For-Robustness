@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import unittest
 
 import numpy as np
@@ -26,6 +27,13 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
+
+
+def _torch_load_checkpoint(path):
+    try:
+        return torch.load(path, map_location="cpu", weights_only=False)
+    except TypeError:
+        return torch.load(path, map_location="cpu")
 
 
 class ActionSpaceBasicTests(unittest.TestCase):
@@ -384,6 +392,35 @@ class RunNoiseRLStageDispatchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             f("invalid_variant_xyz")
 
+    def test_stage2_resume_checkpoint_path_follows_variant(self):
+        from layer_importance_evaluator import LayerImportanceEvaluator
+        from noise_rl_module_v2 import NOISE_STAGE_CHECKPOINT_FILENAME
+        from blb_stage2_rl.runner import (
+            BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+            BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            progress_dir = os.path.join(td, "stage2_noise", "progress")
+            os.makedirs(progress_dir, exist_ok=True)
+            legacy_path = os.path.join(progress_dir, NOISE_STAGE_CHECKPOINT_FILENAME)
+            blb_live_path = os.path.join(progress_dir, BLB_STAGE2_LIVE_CHECKPOINT_FILENAME)
+            blb_final_path = os.path.join(progress_dir, BLB_STAGE2_FINAL_CHECKPOINT_FILENAME)
+            for path in (legacy_path, blb_live_path, blb_final_path):
+                with open(path, "wb") as f:
+                    f.write(b"checkpoint")
+
+            ev = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
+            ev.resume_run_dir = td
+            ev.stage2_rl_variant = "blb_v3"
+            self.assertEqual(ev._get_stage2_resume_checkpoint_path(), blb_final_path)
+
+            os.remove(blb_final_path)
+            self.assertEqual(ev._get_stage2_resume_checkpoint_path(), blb_live_path)
+
+            ev.stage2_rl_variant = "legacy_v2"
+            self.assertEqual(ev._get_stage2_resume_checkpoint_path(), legacy_path)
+
 
 class RunnerEndToEndTests(unittest.TestCase):
     """``BLBStage2RLRunner.run`` 端到端跑 5 个 episode 验证整条链路（不依赖 Rescale_optimizer）。"""
@@ -536,6 +573,7 @@ class RunnerEndToEndTests(unittest.TestCase):
 
     def test_runner_run_completes(self):
         from blb_stage2_rl import BLBStage2RLRunner
+        from blb_stage2_rl.runner import BLB_STAGE2_FINAL_CHECKPOINT_FILENAME
 
         runner = BLBStage2RLRunner(self.ev)
         result = runner.run(
@@ -556,6 +594,45 @@ class RunnerEndToEndTests(unittest.TestCase):
         self.assertEqual(int(result["blb_v3_total_episodes"]), 5)
         # 训练完应该至少给出 best_action_vec
         self.assertIsNotNone(result.get("blb_v3_best_action_vec"))
+        final_ckpt_path = os.path.join(
+            self.ev.noise_stage_progress_dir, BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+        )
+        self.assertTrue(os.path.isfile(final_ckpt_path))
+        ckpt = _torch_load_checkpoint(final_ckpt_path)
+        self.assertEqual(int(ckpt["completed_episodes"]), 5)
+        self.assertEqual(ckpt["fixed_gelu"], [4, 4])
+        self.assertEqual(ckpt["fixed_softmax"], [4, 4])
+        self.assertEqual(ckpt["rl_variant"], "blb_v3")
+
+    def test_runner_resume_from_checkpoint_continues(self):
+        from blb_stage2_rl import BLBStage2RLRunner
+        from blb_stage2_rl.runner import BLB_STAGE2_FINAL_CHECKPOINT_FILENAME
+
+        self.ev.stage2_rl_episodes = 3
+        self.ev.blb_v3_save_interval = 2
+        runner = BLBStage2RLRunner(self.ev)
+        runner.run(
+            fixed_gelu=np.array([4, 4], dtype=int),
+            fixed_softmax=np.array([4, 4], dtype=int),
+            fixed_label="Mock",
+            fixed_source="mock",
+        )
+        final_ckpt_path = os.path.join(
+            self.ev.noise_stage_progress_dir, BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+        )
+        self.assertTrue(os.path.isfile(final_ckpt_path))
+
+        self.ev.stage2_rl_episodes = 5
+        resumed = runner.run(
+            fixed_gelu=np.array([4, 4], dtype=int),
+            fixed_softmax=np.array([4, 4], dtype=int),
+            fixed_label="Mock",
+            fixed_source="mock",
+            resume_checkpoint_path=final_ckpt_path,
+        )
+        self.assertEqual(int(resumed["blb_v3_total_episodes"]), 5)
+        ckpt = _torch_load_checkpoint(final_ckpt_path)
+        self.assertEqual(int(ckpt["completed_episodes"]), 5)
 
 
 if __name__ == "__main__":

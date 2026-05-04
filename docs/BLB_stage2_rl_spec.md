@@ -659,7 +659,7 @@ Local_program/
 │   ├── env.py                     gym.Env 包装：reset/step/close
 │   ├── reward.py                  §6 三层优先级
 │   ├── policy.py                  §7.2 BLBStage2Policy
-│   ├── train.py                   入口；CLI: python -m blb_stage2_rl.train --profile mrpc ...
+│   ├── train.py                   历史设计入口；当前运行统一走 llama_7B_LayerImportance.sh
 │   ├── eval.py                    deterministic eval + 导出最佳 cfg
 │   ├── max_sfs/                   profile → max sf 缓存（JSON）
 │   │   └── mrpc.json
@@ -688,9 +688,9 @@ Local_program/
    `_check_blb_legacy_conflict` 会自动校验，残留 → `RuntimeError`。
 3. **数据层**：训练日志写在 `rl_results/blb_stage2/` 下，不要碰
    `rl_results/layer_importance_runs/`（旧版的目录）。
-4. **CLI 层**：旧版 stage 2 的入口是
-   `python layer_importance_evaluator.py ...`；新版是
-   `python -m blb_stage2_rl.train ...`，分开两条线。
+4. **CLI 层**：当前外部运行统一走
+   `bash llama_7B_LayerImportance.sh run rl ...`，通过
+   `--stage2-rl-variant blb_v3|legacy_v2` 切换实现，不再建议用户直接调用底层入口。
 
 ---
 
@@ -858,8 +858,7 @@ class BLBStage2Env(gym.Env):
 - 任何对 `function_handler.py` / `blb_rl_bridge.py` /
   `rescale_optimizer_bridge.py` 的改动都要保留向后兼容；新增字段只能加在 dataclass
   尾部（带 default 值），不要重排序。
-- 旧版 stage 2 RL 不能 break。运行 `python -m unittest tests` 确保所有现存
-  测试仍通过。
+- 旧版 stage 2 RL 不能 break。改动后需要做完整回归验证，确保所有现存测试仍通过。
 - 当你疑惑 "用户想要的精度阈值是多少 / S 是多少 / acc_threshold 怎么定" 时，
   **在 spec 里给的默认值起步，跑通后跟用户确认**，不要自己拍脑袋长期跑。
 

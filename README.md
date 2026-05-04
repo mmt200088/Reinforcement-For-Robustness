@@ -28,11 +28,11 @@ Stage-1（GELU/Softmax 多项式次数）与 Stage-2（噪声 scaling factor）�
 # 列出可用预设
 bash llama_7B_LayerImportance.sh --list-presets
 
-# 首次 RL 运行：必须显式确认 fresh
-bash llama_7B_LayerImportance.sh run rl --preset mrpc-rl-default --fresh
+# 首次 BLB Stage-2 RL 运行：必须显式确认 fresh
+bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 
 # 续训练：同一参数组合会自动从持久化目录恢复
-bash llama_7B_LayerImportance.sh run rl --preset mrpc-rl-default
+bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl
 
 # 只跑最终评估
 bash llama_7B_LayerImportance.sh eval --dataset mrpc --algorithm rl \
@@ -47,8 +47,13 @@ bash llama_7B_LayerImportance.sh compare --dataset mrpc
 ```
 
 预设文件位于 `presets/`，格式是每行一个参数，支持 `#` 注释。命令行参数排在预设之后，优先级更高。
+BLB Stage-2 RL 推荐先用 `presets/mrpc-blb-stage2-rl.conf`；这份 preset 不内置 `--fresh`，
+因此首次运行在命令行加 `--fresh`，后续续训练直接复用同一 preset。
 
-## 命令行参数说明
+BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs/BLB_stage2_rl_FULL_FLOW.md)，
+简明参数说明见 [`docs/BLB_stage2_rl_README.md`](docs/BLB_stage2_rl_README.md)。
+
+## 命令行参数总表
 
 ### 常用参数
 
@@ -104,7 +109,7 @@ bash llama_7B_LayerImportance.sh compare --dataset mrpc
 | --- | --- | --- | --- |
 | **全局/兼容** | | | |
 | `--search-algorithm ALG` | 旧版入口 | `rl` | 兼容旧用法；新用法建议子命令 |
-| `--logfile FILE` | 全部 | `output.log` | launcher 的后台日志文件名 |
+| `--logfile FILE` | 全部 | `output.log` | launcher 后台日志文件名；实际路径在当前 run 的 `logs/` 目录下 |
 | `--model-type TYPE` | 全部 | `bert-base` | `bert-base` / `bert-large` / `gpt-2` |
 | `--resume-from PATH` | `eval` | — | 指向已有 run 目录，让 final-eval-only 从其中读取搜索结果；训练模式禁用 |
 | **约束** | | | |
@@ -120,14 +125,18 @@ bash llama_7B_LayerImportance.sh compare --dataset mrpc
 | **RL 搜索** | | | |
 | `--stage1-search-episodes N` | `run rl` | `51000` | Stage-1 RL episode 数；推荐用 `--episodes` |
 | `--stage2-search-episodes N` | `run rl` | `40000` | Stage-2 RL episode 数；推荐用 `--episodes` |
-| `--ppo-update-interval N` | `run rl`、`general train` | `120` | PPO 更新间隔；general train 下也是每轮每任务 episode 数 |
+| `--ppo-update-interval N` | `run rl`、`general train` | `120` | PPO 更新间隔；BLB Stage-2 RL 下会作为默认 rollout size，general train 下也是每轮每任务 episode 数 |
 | `--stage1-search-lr FLOAT` | `run rl` | `1e-4` | Stage-1 RL 学习率 |
 | `--stage2-search-lr FLOAT` | `run rl` | `1e-4` | Stage-2 RL 学习率 |
 | **Stage-2 RL variant** | | | |
-| `--stage2-rl-variant blb_v3/legacy_v2` | `run`、`run rl` | `blb_v3` | 选择 Stage-2 RL 实现：`blb_v3`（默认，加强版 BLB Stage 2 RL，覆盖 Block 1-5 + first-input fresh 全部噪声候选点；详见 `docs/BLB_stage2_rl_spec.md`）；`legacy_v2`（旧版 `noise_rl_module_v2`，仅优化 `*_scaling_factors`） |
-| `--blb-v3-rescale-invoker-kind heuristic/subprocess/stub` | `run`、`run rl` | `heuristic` | BLB v3 的 Rescale_optimizer 调用方式；缺省 `heuristic` 使用内置启发式估计（不依赖外部 Rescale_optimizer 子项目） |
-| `--blb-v3-subprocess-optimizer-root PATH` | `run`、`run rl` | — | invoker=`subprocess` 时 Rescale_optimizer 子项目根目录 |
-| `--blb-v3-rollout-size N` | `run`、`run rl` | `32` | BLB v3 PPO rollout 大小（多少 episode 触发一次 PPO update） |
+| `--stage2-rl-variant blb_v3/legacy_v2` | `run rl` | `blb_v3` | 选择 Stage-2 RL 实现：`blb_v3`（默认，加强版 BLB Stage-2 RL，覆盖 Block 1-5 + first-input fresh 全部噪声候选点；详见 `docs/BLB_stage2_rl_FULL_FLOW.md`）；`legacy_v2`（旧版 `noise_rl_module_v2`，仅优化 `*_scaling_factors`） |
+| `--stage2-rescale-invoker heuristic/subprocess/stub` / `--blb-v3-rescale-invoker-kind heuristic/subprocess/stub` | `run rl` | `heuristic` | BLB v3 的 Rescale_optimizer 调用方式；缺省 `heuristic` 使用内置启发式估计（不依赖外部 Rescale_optimizer 子项目） |
+| `--stage2-rescale-root PATH` / `--blb-v3-subprocess-optimizer-root PATH` | `run rl` | — | invoker=`subprocess` 时 Rescale_optimizer 子项目根目录 |
+| `--stage2-rescale-cli-module MODULE` / `--blb-v3-subprocess-cli-module MODULE` | `run rl` | `rescale_optimizer.replan` | invoker=`subprocess` 时调用的 CLI module |
+| `--stage2-rollout-size N` / `--blb-v3-rollout-size N` | `run rl` | 跟随 `--ppo-update-interval` | BLB v3 PPO rollout 大小（多少 episode 触发一次 PPO update） |
+| `--stage2-save-interval N` / `--blb-v3-save-interval N` | `run rl` | `200` | BLB v3 live checkpoint 保存间隔 |
+| `--stage2-eval-interval N` / `--blb-v3-eval-interval N` | `run rl` | `100` | BLB v3 训练日志评估间隔 |
+| `--stage2-calibrate-baseline-samples N` / `--blb-v3-calibrate-baseline-samples N` | `run rl` | `8` | BLB v3 reward 权重校准样本数 |
 | **GA / Greedy 搜索** | | | |
 | `--stage1-search-generations N` | `run ga`、`run greedy` | 自动 | Stage-1 代数；推荐用 `--generations` |
 | `--stage2-search-generations N` | `run ga`、`run greedy` | 自动 | Stage-2 代数；推荐用 `--generations` |
@@ -710,6 +719,9 @@ v3-G 稳健 Advantage 归一化
 仅 warmstart	"v3_warmstart_baseline_bias": False
 仅 confirm 优化	"v3_confirm_precheck_std": False + "use_v3_ppo_hparams": False（margin/penalty 随之失效）
 
-# 查看进程
-ps aux | grep 'rl_tune_genetic.py'
-ps aux | grep 'rl_tune.py'
+# 查看最近一次后台任务
+cat rl_results/LATEST_PID
+cat rl_results/LATEST_RUN_DIR
+
+# 推荐优雅停止
+kill -INT "$(cat rl_results/LATEST_PID)"

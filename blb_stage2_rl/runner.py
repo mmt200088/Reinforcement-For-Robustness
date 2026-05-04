@@ -24,7 +24,7 @@ import json
 import os
 import pickle
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -64,6 +64,11 @@ from .reward import (
     RewardWeights,
     calibrate_weights_from_baseline,
 )
+
+
+BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = "blb_stage2_rl_checkpoint_live.pt"
+BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = "blb_stage2_rl_checkpoint_final.pt"
+BLB_STAGE2_BEST_CFG_FILENAME = "blb_stage2_best_cfg.pkl"
 
 
 # ---------------------------------------------------------------------------
@@ -247,21 +252,29 @@ class BLBStage2RLRunner:
 
         # ---------- 7) Resume（可选） ----------
         start_episode = 0
+        update_count = 0
         best_reward = -float("inf")
         best_action_vec: Optional[np.ndarray] = None
         best_breakdown_dict: Optional[Dict[str, Any]] = None
         best_decoded_pickle: Optional[bytes] = None
+        episode_returns: List[float] = []
         if resume_checkpoint_path and os.path.isfile(resume_checkpoint_path):
             try:
-                ckpt = torch.load(resume_checkpoint_path, map_location=device)
+                ckpt = self._torch_load_checkpoint(resume_checkpoint_path, map_location=device)
                 if isinstance(ckpt, dict):
                     policy.load_state_dict(ckpt["policy"])
                     optimizer.load_state_dict(ckpt["optimizer"])
-                    start_episode = int(ckpt.get("episode", 0))
+                    start_episode = int(ckpt.get("completed_episodes", ckpt.get("episode", 0)))
+                    update_count = int(ckpt.get("ppo_update_count", 0))
+                    episode_returns = [float(x) for x in ckpt.get("episode_returns", [])]
                     if "best_reward" in ckpt:
                         best_reward = float(ckpt["best_reward"])
                     if ckpt.get("best_action") is not None:
                         best_action_vec = np.asarray(ckpt["best_action"], dtype=int)
+                    best_breakdown_dict = ckpt.get("best_breakdown")
+                    best_decoded_pickle = ckpt.get("best_decoded_pickle")
+                    rng_state = ckpt.get("rng_state") or {}
+                    self._restore_rng_state(rng_state)
                     log(f"  {bullet} Resumed from {resume_checkpoint_path} (episode={start_episode})")
             except Exception as exc:
                 log(f"  [resume][警告] 读取 checkpoint 失败：{exc}")
@@ -270,57 +283,127 @@ class BLBStage2RLRunner:
         log("\n训练开始（PPO 单步 episode）...")
         buffer = RolloutBuffer()
         env.reset(seed=int(train_cfg.seed))
-        episode_returns: List[float] = []
-        update_count = 0
+        stop_flag_path = None
+        graceful_stop_logged = False
+        try:
+            from noise_rl_module_v2 import (
+                NOISE_STAGE_STOP_FLAG_FILENAME,
+                consume_stop_flag_file,
+                install_graceful_stop_handler,
+                is_graceful_stop_requested,
+                reset_graceful_stop_state,
+                uninstall_graceful_stop_handler,
+            )
+            stop_flag_path = os.path.join(
+                ev.noise_stage_progress_dir, NOISE_STAGE_STOP_FLAG_FILENAME,
+            )
+            reset_graceful_stop_state()
+            consume_stop_flag_file(stop_flag_path)
+            install_graceful_stop_handler(log_fn=log)
+            log(
+                f"  [优雅停止] 训练期间可按 Ctrl+C 或创建 {stop_flag_path} "
+                f"触发安全停止（在下一次 PPO rollout 边界保存 checkpoint 后退出）。"
+            )
+        except Exception as exc:
+            uninstall_graceful_stop_handler = None
+            is_graceful_stop_requested = None
+            consume_stop_flag_file = None
+            log(f"  [优雅停止][警告] 无法安装优雅停止处理器，将仅按周期保存 checkpoint：{exc}")
 
-        for ep in range(start_episode, int(train_cfg.total_episodes)):
-            obs = env.reset()
+        try:
+            for ep in range(start_episode, int(train_cfg.total_episodes)):
+                obs = env.reset()
 
-            obs_t = torch.from_numpy(obs).float().to(device).unsqueeze(0)
-            with torch.no_grad():
-                action_t, log_prob_t, value_t = policy.sample_action(obs_t, deterministic=False)
-            action_vec = action_t.squeeze(0).cpu().numpy().astype(np.int64)
-            log_prob = float(log_prob_t.item())
-            value = float(value_t.item())
+                obs_t = torch.from_numpy(obs).float().to(device).unsqueeze(0)
+                with torch.no_grad():
+                    action_t, log_prob_t, value_t = policy.sample_action(obs_t, deterministic=False)
+                action_vec = action_t.squeeze(0).cpu().numpy().astype(np.int64)
+                log_prob = float(log_prob_t.item())
+                value = float(value_t.item())
 
-            obs_next, reward, done, info = env.step(action_vec)
+                obs_next, reward, done, info = env.step(action_vec)
 
-            buffer.add(state=obs, action=action_vec, log_prob=log_prob,
-                       reward=float(reward), value=value)
-            episode_returns.append(float(reward))
+                buffer.add(state=obs, action=action_vec, log_prob=log_prob,
+                           reward=float(reward), value=value)
+                episode_returns.append(float(reward))
 
-            # 跟踪 best
-            if float(reward) > best_reward:
-                best_reward = float(reward)
-                best_action_vec = action_vec.copy()
-                breakdown = info.get("reward_breakdown")
-                best_breakdown_dict = self._breakdown_to_dict(breakdown) if breakdown else None
-                # decoded cfg pickle
-                decoded = info.get("decoded")
-                if decoded is not None:
-                    try:
-                        best_decoded_pickle = pickle.dumps(decoded)
-                    except Exception:
-                        best_decoded_pickle = None
+                # 跟踪 best
+                if float(reward) > best_reward:
+                    best_reward = float(reward)
+                    best_action_vec = action_vec.copy()
+                    breakdown = info.get("reward_breakdown")
+                    best_breakdown_dict = self._breakdown_to_dict(breakdown) if breakdown else None
+                    # decoded cfg pickle
+                    decoded = info.get("decoded")
+                    if decoded is not None:
+                        try:
+                            best_decoded_pickle = pickle.dumps(decoded)
+                        except Exception:
+                            best_decoded_pickle = None
 
-            # PPO update
-            if len(buffer) >= int(train_cfg.rollout_size):
-                metrics = ppo_update(policy, optimizer, buffer, train_cfg.ppo, device)
-                buffer.clear()
-                update_count += 1
-                if update_count == 1 or update_count % max(1, int(train_cfg.eval_interval // train_cfg.rollout_size)) == 0:
-                    self._log_train_iter(
-                        log, ep + 1, train_cfg.total_episodes,
-                        episode_returns[-train_cfg.rollout_size:], metrics,
-                        best_reward,
+                did_update = False
+                # PPO update
+                if len(buffer) >= int(train_cfg.rollout_size):
+                    metrics = ppo_update(policy, optimizer, buffer, train_cfg.ppo, device)
+                    buffer.clear()
+                    update_count += 1
+                    did_update = True
+                    if update_count == 1 or update_count % max(1, int(train_cfg.eval_interval // train_cfg.rollout_size)) == 0:
+                        self._log_train_iter(
+                            log, ep + 1, train_cfg.total_episodes,
+                            episode_returns[-train_cfg.rollout_size:], metrics,
+                            best_reward,
+                        )
+
+                # 周期保存
+                if (ep + 1) % max(1, int(train_cfg.save_interval)) == 0:
+                    self._save_checkpoint(
+                        ev=ev, policy=policy, optimizer=optimizer, episode=ep + 1,
+                        best_reward=best_reward, best_action=best_action_vec,
+                        best_breakdown=best_breakdown_dict,
+                        best_decoded_pickle=best_decoded_pickle,
+                        episode_returns=episode_returns,
+                        update_count=update_count,
+                        fixed_gelu=fixed_gelu,
+                        fixed_softmax=fixed_softmax,
+                        train_cfg=train_cfg,
                     )
 
-            # 周期保存
-            if (ep + 1) % max(1, int(train_cfg.save_interval)) == 0:
-                self._save_checkpoint(
-                    ev=ev, policy=policy, optimizer=optimizer, episode=ep + 1,
-                    best_reward=best_reward, best_action=best_action_vec,
-                )
+                if (
+                        is_graceful_stop_requested is not None
+                        and stop_flag_path is not None
+                        and is_graceful_stop_requested(stop_flag_path)
+                ):
+                    if did_update or len(buffer) == 0:
+                        live_path = self._save_checkpoint(
+                            ev=ev, policy=policy, optimizer=optimizer, episode=ep + 1,
+                            best_reward=best_reward, best_action=best_action_vec,
+                            best_breakdown=best_breakdown_dict,
+                            best_decoded_pickle=best_decoded_pickle,
+                            episode_returns=episode_returns,
+                            update_count=update_count,
+                            fixed_gelu=fixed_gelu,
+                            fixed_softmax=fixed_softmax,
+                            train_cfg=train_cfg,
+                        )
+                        if consume_stop_flag_file is not None:
+                            consume_stop_flag_file(stop_flag_path)
+                        self._mark_stage2_stopped(ev, completed_episodes=ep + 1,
+                                                  total_episodes=train_cfg.total_episodes)
+                        log(
+                            f"  [优雅停止] checkpoint 已写入 → {live_path}\n"
+                            f"  下次用相同参数直接运行即可从该 checkpoint 续训练。"
+                        )
+                        raise SystemExit(0)
+                    if not graceful_stop_logged:
+                        log(
+                            "  [优雅停止] 已收到停止请求；当前 rollout 尚未完成，"
+                            "将在下一次 PPO 更新边界保存 checkpoint 后退出。"
+                        )
+                        graceful_stop_logged = True
+        finally:
+            if uninstall_graceful_stop_handler is not None:
+                uninstall_graceful_stop_handler()
 
         # 残留 buffer flush
         if len(buffer) > 0:
@@ -332,13 +415,20 @@ class BLBStage2RLRunner:
             ev=ev, policy=policy, optimizer=optimizer,
             episode=int(train_cfg.total_episodes),
             best_reward=best_reward, best_action=best_action_vec, label="final",
+            best_breakdown=best_breakdown_dict,
+            best_decoded_pickle=best_decoded_pickle,
+            episode_returns=episode_returns,
+            update_count=update_count,
+            fixed_gelu=fixed_gelu,
+            fixed_softmax=fixed_softmax,
+            train_cfg=train_cfg,
         )
         log(f"\n训练完成：best_reward={best_reward:.4f}")
         log(f"  {bullet} Final policy 已保存到：{final_save_path}")
 
         if best_action_vec is not None:
             blb_cfg_dump_path = os.path.join(
-                ev.noise_stage_progress_dir, "blb_stage2_best_cfg.pkl",
+                ev.noise_stage_progress_dir, BLB_STAGE2_BEST_CFG_FILENAME,
             )
             try:
                 os.makedirs(os.path.dirname(blb_cfg_dump_path), exist_ok=True)
@@ -620,6 +710,81 @@ class BLBStage2RLRunner:
     # ------------------------------------------------------------------
     # checkpoint
     # ------------------------------------------------------------------
+    @staticmethod
+    def _torch_load_checkpoint(path: str, *, map_location):
+        try:
+            return torch.load(path, map_location=map_location, weights_only=False)
+        except TypeError:
+            return torch.load(path, map_location=map_location)
+
+    @staticmethod
+    def _rng_state_dict() -> Dict[str, Any]:
+        state: Dict[str, Any] = {
+            "torch_cpu": torch.get_rng_state(),
+            "numpy": np.random.get_state(),
+        }
+        if torch.cuda.is_available():
+            try:
+                state["torch_cuda"] = torch.cuda.get_rng_state_all()
+            except Exception:
+                pass
+        return state
+
+    @staticmethod
+    def _restore_rng_state(state: Mapping[str, Any]) -> None:
+        if not isinstance(state, Mapping):
+            return
+        try:
+            if state.get("torch_cpu") is not None:
+                torch.set_rng_state(state["torch_cpu"])
+        except Exception:
+            pass
+        try:
+            if state.get("numpy") is not None:
+                np.random.set_state(state["numpy"])
+        except Exception:
+            pass
+        try:
+            if torch.cuda.is_available() and state.get("torch_cuda") is not None:
+                torch.cuda.set_rng_state_all(state["torch_cuda"])
+        except Exception:
+            pass
+
+    @staticmethod
+    def _train_cfg_to_dict(train_cfg: BLBStage2TrainConfig) -> Dict[str, Any]:
+        try:
+            return asdict(train_cfg)
+        except Exception:
+            return {
+                "total_episodes": int(getattr(train_cfg, "total_episodes", 0)),
+                "rollout_size": int(getattr(train_cfg, "rollout_size", 0)),
+                "save_interval": int(getattr(train_cfg, "save_interval", 0)),
+                "eval_interval": int(getattr(train_cfg, "eval_interval", 0)),
+                "profile": str(getattr(train_cfg, "profile", "")),
+                "rescale_invoker_kind": str(getattr(train_cfg, "rescale_invoker_kind", "")),
+            }
+
+    @staticmethod
+    def _mark_stage2_stopped(ev, *, completed_episodes: int, total_episodes: int) -> None:
+        run_output_dir = getattr(ev, "run_output_dir", "")
+        if not run_output_dir:
+            return
+        try:
+            from layer_importance_evaluator import update_persistent_metadata_stage
+            update_persistent_metadata_stage(
+                run_output_dir,
+                "stage2_search",
+                "in_progress",
+                extra_fields={
+                    "completed_episodes": int(completed_episodes),
+                    "total_episodes": int(total_episodes),
+                    "stopped_by": "graceful_stop",
+                    "rl_variant": "blb_v3",
+                },
+            )
+        except Exception:
+            pass
+
     def _save_checkpoint(
             self,
             ev,
@@ -629,9 +794,21 @@ class BLBStage2RLRunner:
             best_reward: float,
             best_action: Optional[np.ndarray],
             label: str = "live",
+            best_breakdown: Optional[Dict[str, Any]] = None,
+            best_decoded_pickle: Optional[bytes] = None,
+            episode_returns: Optional[Sequence[float]] = None,
+            update_count: int = 0,
+            fixed_gelu=None,
+            fixed_softmax=None,
+            train_cfg: Optional[BLBStage2TrainConfig] = None,
             ) -> str:
+        filename = (
+            BLB_STAGE2_FINAL_CHECKPOINT_FILENAME
+            if str(label) == "final"
+            else BLB_STAGE2_LIVE_CHECKPOINT_FILENAME
+        )
         path = os.path.join(
-            ev.noise_stage_progress_dir, f"blb_stage2_rl_checkpoint_{label}.pt",
+            ev.noise_stage_progress_dir, filename,
         )
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -639,10 +816,28 @@ class BLBStage2RLRunner:
                 "policy": policy.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "episode": int(episode),
+                "completed_episodes": int(episode),
+                "ppo_update_count": int(update_count),
+                "episode_returns": [float(x) for x in (episode_returns or [])],
                 "best_reward": float(best_reward),
                 "best_action": (
                     best_action.tolist() if best_action is not None else None
                 ),
+                "best_breakdown": dict(best_breakdown or {}),
+                "best_decoded_pickle": best_decoded_pickle,
+                "fixed_gelu": (
+                    np.asarray(fixed_gelu, dtype=int).tolist()
+                    if fixed_gelu is not None else None
+                ),
+                "fixed_softmax": (
+                    np.asarray(fixed_softmax, dtype=int).tolist()
+                    if fixed_softmax is not None else None
+                ),
+                "train_cfg": (
+                    self._train_cfg_to_dict(train_cfg) if train_cfg is not None else {}
+                ),
+                "rng_state": self._rng_state_dict(),
+                "rl_variant": "blb_v3",
             }, path)
         except Exception as exc:
             ev.log(f"  [save_checkpoint][警告] 保存 {path} 失败: {exc}")
