@@ -2311,7 +2311,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage2_limit_tolerance=None,
                  stage2_stability_tolerance=None,
                  stage2_k_trials=None,
-                 stage2_probe_size=None):
+                 stage2_probe_size=None,
+                 stage2_rl_variant='blb_v3',
+                 blb_v3_rescale_invoker_kind='heuristic',
+                 blb_v3_subprocess_optimizer_root=None,
+                 blb_v3_subprocess_cli_module='rescale_optimizer.replan',
+                 blb_v3_rollout_size=None,
+                 blb_v3_eval_interval=None,
+                 blb_v3_save_interval=None,
+                 blb_v3_calibrate_baseline_samples=None):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -2713,6 +2721,31 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.curriculum_phase = 1  # 1=探索, 2=收紧, 3=精调
         self.constraint_slack = CURRICULUM_INITIAL_SLACK  # 当前约束放宽系数
 
+        # ---------- Stage-2 RL variant 路由（新版 BLB v3 / 旧版 v2 二选一） ----------
+        self.stage2_rl_variant = self._coerce_stage2_rl_variant(stage2_rl_variant)
+        # 透传给 BLBStage2RLRunner 的可选参数（None ⇒ 用 BLBStage2TrainConfig 默认）
+        self.blb_v3_rescale_invoker_kind = str(blb_v3_rescale_invoker_kind or 'heuristic').lower()
+        self.blb_v3_subprocess_optimizer_root = (
+            str(blb_v3_subprocess_optimizer_root)
+            if blb_v3_subprocess_optimizer_root not in (None, "") else None
+        )
+        self.blb_v3_subprocess_cli_module = str(
+            blb_v3_subprocess_cli_module or 'rescale_optimizer.replan'
+        )
+        self.blb_v3_rollout_size = (
+            int(blb_v3_rollout_size) if blb_v3_rollout_size not in (None, "") else None
+        )
+        self.blb_v3_eval_interval = (
+            int(blb_v3_eval_interval) if blb_v3_eval_interval not in (None, "") else None
+        )
+        self.blb_v3_save_interval = (
+            int(blb_v3_save_interval) if blb_v3_save_interval not in (None, "") else None
+        )
+        self.blb_v3_calibrate_baseline_samples = (
+            int(blb_v3_calibrate_baseline_samples)
+            if blb_v3_calibrate_baseline_samples not in (None, "") else None
+        )
+
     @staticmethod
     def _coerce_bool_flag(raw_value, flag_name):
         if isinstance(raw_value, bool):
@@ -2745,6 +2778,26 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"Invalid positive integer for {flag_name}: {raw_value!r}."
             )
         return value
+
+    @staticmethod
+    def _coerce_stage2_rl_variant(raw_value):
+        """规范化 ``stage2_rl_variant`` 参数。
+
+        接受的值（不区分大小写）：
+          * ``'blb_v3'`` / ``'blb'`` / ``'v3'`` → 加强版 BLB Stage 2 RL（默认推荐）
+          * ``'legacy_v2'`` / ``'legacy'`` / ``'v2'`` → 旧版 stage2 RL
+        """
+        if raw_value is None:
+            return 'blb_v3'
+        text = str(raw_value).strip().lower()
+        if text in ('blb_v3', 'blb', 'v3', 'blb_stage2_rl', '', 'default'):
+            return 'blb_v3'
+        if text in ('legacy_v2', 'legacy', 'v2', 'noise_rl_module_v2', 'old'):
+            return 'legacy_v2'
+        raise ValueError(
+            f"Invalid stage2_rl_variant: {raw_value!r}. "
+            f"Supported: 'blb_v3' (默认/新版) or 'legacy_v2' (旧版)."
+        )
 
     def _build_final_eval_runner(self):
         return UnifiedFinalEvaluationModule(
@@ -4315,10 +4368,31 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     def run_noise_rl_stage(self, fixed_gelu, fixed_softmax, fixed_label, fixed_source,
                            resume_checkpoint_path=None):
-        from noise_rl_module_v2 import NoiseRLModuleV2
-        module = NoiseRLModuleV2(self)
-        return module.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source,
-                          resume_checkpoint_path=resume_checkpoint_path)
+        """Stage-2 噪声 RL 入口；按 ``self.stage2_rl_variant`` 路由到不同实现。
+
+        变体支持：
+          * ``"blb_v3"``（默认 / 推荐）：加强版 BLB Stage 2 RL，覆盖 Block 1-5 +
+            first-input fresh 全部噪声候选点，按精度/稳定性硬约束 + cost
+            三层优先级训练。详见 ``docs/BLB_stage2_rl_spec.md``。
+          * ``"legacy_v2"``：旧版 stage2 RL（``noise_rl_module_v2.NoiseRLModuleV2``），
+            用 INPUT_NOISE_VARIANCE_TABLE 单 N 表的 ``*_scaling_factors``。
+            提供给希望复现旧实验的用户。
+        """
+        variant = str(getattr(self, "stage2_rl_variant", "blb_v3") or "blb_v3").lower()
+        if variant in ("blb_v3", "blb", "v3", "blb_stage2_rl"):
+            from blb_stage2_rl import BLBStage2RLRunner
+            runner = BLBStage2RLRunner(self)
+            return runner.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source,
+                              resume_checkpoint_path=resume_checkpoint_path)
+        if variant in ("legacy_v2", "legacy", "v2", "noise_rl_module_v2"):
+            from noise_rl_module_v2 import NoiseRLModuleV2
+            module = NoiseRLModuleV2(self)
+            return module.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source,
+                              resume_checkpoint_path=resume_checkpoint_path)
+        raise ValueError(
+            f"Unknown stage2_rl_variant {variant!r}. "
+            f"Supported variants: 'blb_v3' (默认), 'legacy_v2'."
+        )
 
     def save_best_policies_snapshot(self):
         """将搜索到的最佳 policy 汇总到 best_policy/ 目录，便于通用 RL 等下游使用。"""

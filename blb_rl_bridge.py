@@ -44,8 +44,8 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple, Dict
+from dataclasses import dataclass, field
+from typing import Optional, Sequence, Tuple, Dict, Mapping, Any
 
 from function_handler import (
     NoisePoint,
@@ -336,6 +336,11 @@ class Block1ActionSpec:
     var_rescale_sf: Optional[int] = None
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
+    # Rotation 候选点（True ⇒ 在该位置加 rotation 噪声；SF 自动继承绑定源）
+    rotation_after_gelu_out_fresh: bool = False
+    rotation_after_wffn2_rescale_a: bool = False
+    rotation_after_wffn2_rescale_b: bool = False
+    rotation_after_square_rescale: bool = False
 
 
 def build_block1_cfg_from_action(
@@ -355,6 +360,10 @@ def build_block1_cfg_from_action(
         var_rescale_sf=action.var_rescale_sf,
         output_truncation_k=action.output_truncation_k,
         output_truncation_mode=action.output_truncation_mode,
+        rotation_after_gelu_out_fresh=action.rotation_after_gelu_out_fresh,
+        rotation_after_wffn2_rescale_a=action.rotation_after_wffn2_rescale_a,
+        rotation_after_wffn2_rescale_b=action.rotation_after_wffn2_rescale_b,
+        rotation_after_square_rescale=action.rotation_after_square_rescale,
     )
 
 
@@ -387,6 +396,16 @@ class Block2ActionSpec:
     # 仍会执行，所以这里仍可加 truncation。
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
+    # Rotation 候选点（共 5 位置 / 9 sub-slot）
+    rotation_after_gamma_rescale: bool = False
+    rotation_after_wq_rescale: bool = False
+    rotation_after_wk_rescale: bool = False
+    rotation_after_wv_rescale: bool = False
+    rotation_after_q_mask1_rescale: bool = False
+    rotation_after_kt_mask1_rescale: bool = False
+    rotation_after_q_mask2_rescale: bool = False
+    rotation_after_kt_mask2_rescale: bool = False
+    rotation_after_qkt_matmul_rescale: bool = False
 
 
 def build_block2_cfg_from_action(
@@ -420,6 +439,15 @@ def build_block2_cfg_from_action(
         qkt_merge_mask_rescale_sf=action.qkt_merge_mask_rescale_sf,
         output_truncation_k=action.output_truncation_k,
         output_truncation_mode=action.output_truncation_mode,
+        rotation_after_gamma_rescale=action.rotation_after_gamma_rescale,
+        rotation_after_wq_rescale=action.rotation_after_wq_rescale,
+        rotation_after_wk_rescale=action.rotation_after_wk_rescale,
+        rotation_after_wv_rescale=action.rotation_after_wv_rescale,
+        rotation_after_q_mask1_rescale=action.rotation_after_q_mask1_rescale,
+        rotation_after_kt_mask1_rescale=action.rotation_after_kt_mask1_rescale,
+        rotation_after_q_mask2_rescale=action.rotation_after_q_mask2_rescale,
+        rotation_after_kt_mask2_rescale=action.rotation_after_kt_mask2_rescale,
+        rotation_after_qkt_matmul_rescale=action.rotation_after_qkt_matmul_rescale,
     )
 
 
@@ -472,6 +500,15 @@ class Block4ActionSpec:
     ln_mean_rescale_sf: Optional[int] = None
     ln_square_rescale_sf: Optional[int] = None
     ln_var_rescale_sf: Optional[int] = None
+    output_truncation_k: Optional[int] = None
+    output_truncation_mode: str = "binary"
+    # Rotation 候选点（共 6 个）
+    rotation_after_softmax_out_mask_rescale: bool = False
+    rotation_after_v_mask_rescale: bool = False
+    rotation_after_softmax_v_matmul_rescale: bool = False
+    rotation_after_softmax_v_mask_rescale: bool = False
+    rotation_after_wo_rescale: bool = False
+    rotation_after_ln_square_rescale: bool = False
 
 
 def build_block4_cfg_from_action(
@@ -497,6 +534,14 @@ def build_block4_cfg_from_action(
         ln_mean_rescale_sf=action.ln_mean_rescale_sf,
         ln_square_rescale_sf=action.ln_square_rescale_sf,
         ln_var_rescale_sf=action.ln_var_rescale_sf,
+        output_truncation_k=action.output_truncation_k,
+        output_truncation_mode=action.output_truncation_mode,
+        rotation_after_softmax_out_mask_rescale=action.rotation_after_softmax_out_mask_rescale,
+        rotation_after_v_mask_rescale=action.rotation_after_v_mask_rescale,
+        rotation_after_softmax_v_matmul_rescale=action.rotation_after_softmax_v_matmul_rescale,
+        rotation_after_softmax_v_mask_rescale=action.rotation_after_softmax_v_mask_rescale,
+        rotation_after_wo_rescale=action.rotation_after_wo_rescale,
+        rotation_after_ln_square_rescale=action.rotation_after_ln_square_rescale,
     )
 
 
@@ -516,6 +561,11 @@ class Block5ActionSpec:
     gelu_power_rescale_sfs: Tuple[Optional[int], ...] = ()
     # 长度 == gelu_degree
     gelu_coeff_mul_rescale_sfs: Tuple[Optional[int], ...] = ()
+    output_truncation_k: Optional[int] = None
+    output_truncation_mode: str = "binary"
+    # Rotation 候选点（共 2 个）
+    rotation_after_gamma_rescale: bool = False
+    rotation_after_wffn1_rescale: bool = False
 
 
 def build_block5_cfg_from_action(
@@ -536,4 +586,149 @@ def build_block5_cfg_from_action(
         wffn1_rescale_sf=action.wffn1_rescale_sf,
         gelu_power_rescale_sfs=action.gelu_power_rescale_sfs,
         gelu_coeff_mul_rescale_sfs=action.gelu_coeff_mul_rescale_sfs,
+        output_truncation_k=action.output_truncation_k,
+        output_truncation_mode=action.output_truncation_mode,
+        rotation_after_gamma_rescale=action.rotation_after_gamma_rescale,
+        rotation_after_wffn1_rescale=action.rotation_after_wffn1_rescale,
+    )
+
+
+# ===========================================================================
+# Truncation reward 信号聚合
+# ===========================================================================
+
+@dataclass
+class TruncationRewardSignals:
+    """跨 (block, layer) 聚合的 PPTI truncation reward 原料。
+
+    truncation k 是 RL 动作的一部分；reward 侧需要把 "整体上选了多大的 k /
+    多少个 block 跳过 truncation / 平均 k 多少" 这类信号暴露给 reward 计算。
+    本 dataclass 不规定 reward 公式 —— 业务侧用 ``per_block_total_k`` /
+    ``avg_k_when_set`` 等字段自行组合。
+    """
+    total_k: int
+    count_with_k: int
+    count_skip: int
+    avg_k_when_set: float
+    per_block_total_k: Dict[str, int] = field(default_factory=dict)
+    per_block_count_with_k: Dict[str, int] = field(default_factory=dict)
+    per_block_count_skip: Dict[str, int] = field(default_factory=dict)
+
+
+def aggregate_truncation_signals(
+        cfg_dicts: Mapping[str, Mapping[int, Any]],
+        ) -> TruncationRewardSignals:
+    """跨 (block_name, layer_idx) 聚合每个 cfg 的 ``output_truncation_k``。
+
+    Args:
+        cfg_dicts: ``{block_name: {layer_idx: Block*NoiseConfig}}``，
+                   block_name ∈ ``{"block1","block2","block3","block4","block5"}``
+                   或自定义命名。
+
+    Returns:
+        ``TruncationRewardSignals``：
+          * ``total_k``:           所有非 None k 的求和
+          * ``count_with_k``:      非 None k 的 cfg 计数
+          * ``count_skip``:        ``output_truncation_k=None`` 的 cfg 计数
+          * ``avg_k_when_set``:    总 k / 非 None 计数（无非 None 时为 0）
+          * ``per_block_*``:       每个 block 的对应分量
+    """
+    total_k = 0
+    count_with_k = 0
+    count_skip = 0
+    per_block_total_k: Dict[str, int] = {}
+    per_block_count_with_k: Dict[str, int] = {}
+    per_block_count_skip: Dict[str, int] = {}
+
+    for block_name, layer_cfgs in cfg_dicts.items():
+        per_block_total_k.setdefault(block_name, 0)
+        per_block_count_with_k.setdefault(block_name, 0)
+        per_block_count_skip.setdefault(block_name, 0)
+        if layer_cfgs is None:
+            continue
+        for _layer_idx, cfg in layer_cfgs.items():
+            k = getattr(cfg, "output_truncation_k", None)
+            if k is None:
+                count_skip += 1
+                per_block_count_skip[block_name] += 1
+            else:
+                total_k += int(k)
+                count_with_k += 1
+                per_block_total_k[block_name] += int(k)
+                per_block_count_with_k[block_name] += 1
+
+    avg = (total_k / count_with_k) if count_with_k > 0 else 0.0
+    return TruncationRewardSignals(
+        total_k=total_k,
+        count_with_k=count_with_k,
+        count_skip=count_skip,
+        avg_k_when_set=float(avg),
+        per_block_total_k=per_block_total_k,
+        per_block_count_with_k=per_block_count_with_k,
+        per_block_count_skip=per_block_count_skip,
+    )
+
+
+# ===========================================================================
+# Rotation reward 信号聚合
+# ===========================================================================
+# Rotation 噪声已经在 cfg 里以 ``rotation_after_*: bool`` 的形式表达。reward
+# 侧通常关心：每个 (block, layer) 选了多少个 rotation 上线。这里把所有 cfg
+# 上以 ``rotation_after_*`` 开头的 bool 字段统计一下，给业务侧组合 reward。
+
+@dataclass
+class RotationRewardSignals:
+    """跨 (block, layer) 聚合的 KS / rotation reward 原料。
+
+    业务侧用 ``total_active`` / ``per_block_active`` 等字段自行组合 reward。
+    """
+    total_active: int
+    total_slots: int
+    per_block_active: Dict[str, int] = field(default_factory=dict)
+    per_block_slots: Dict[str, int] = field(default_factory=dict)
+
+
+def _count_rotations_on_cfg(cfg: Any) -> Tuple[int, int]:
+    """返回 (active, total)：cfg 上以 rotation_after_ 开头的 bool 字段中开了多少个，总共多少个。"""
+    fields = [name for name in vars(cfg).keys() if name.startswith("rotation_after_")]
+    total = len(fields)
+    active = sum(1 for name in fields if bool(getattr(cfg, name)))
+    return active, total
+
+
+def aggregate_rotation_signals(
+        cfg_dicts: Mapping[str, Mapping[int, Any]],
+        ) -> RotationRewardSignals:
+    """跨 (block_name, layer_idx) 聚合 cfg 上 ``rotation_after_*`` 的开启计数。
+
+    Args:
+        cfg_dicts: ``{block_name: {layer_idx: Block*NoiseConfig}}``
+
+    Returns:
+        ``RotationRewardSignals``：
+          * ``total_active``     所有 block / layer 上 True 的 rotation slot 总数
+          * ``total_slots``      候选 slot 总数（用于计算激活率）
+          * ``per_block_active`` 每 block 激活数
+          * ``per_block_slots``  每 block 候选 slot 数
+    """
+    total_active = 0
+    total_slots = 0
+    per_block_active: Dict[str, int] = {}
+    per_block_slots: Dict[str, int] = {}
+    for block_name, layer_cfgs in cfg_dicts.items():
+        per_block_active.setdefault(block_name, 0)
+        per_block_slots.setdefault(block_name, 0)
+        if layer_cfgs is None:
+            continue
+        for _layer_idx, cfg in layer_cfgs.items():
+            active, total = _count_rotations_on_cfg(cfg)
+            total_active += active
+            total_slots += total
+            per_block_active[block_name] += active
+            per_block_slots[block_name] += total
+    return RotationRewardSignals(
+        total_active=total_active,
+        total_slots=total_slots,
+        per_block_active=per_block_active,
+        per_block_slots=per_block_slots,
     )

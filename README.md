@@ -123,6 +123,11 @@ bash llama_7B_LayerImportance.sh compare --dataset mrpc
 | `--ppo-update-interval N` | `run rl`、`general train` | `120` | PPO 更新间隔；general train 下也是每轮每任务 episode 数 |
 | `--stage1-search-lr FLOAT` | `run rl` | `1e-4` | Stage-1 RL 学习率 |
 | `--stage2-search-lr FLOAT` | `run rl` | `1e-4` | Stage-2 RL 学习率 |
+| **Stage-2 RL variant** | | | |
+| `--stage2-rl-variant blb_v3/legacy_v2` | `run`、`run rl` | `blb_v3` | 选择 Stage-2 RL 实现：`blb_v3`（默认，加强版 BLB Stage 2 RL，覆盖 Block 1-5 + first-input fresh 全部噪声候选点；详见 `docs/BLB_stage2_rl_spec.md`）；`legacy_v2`（旧版 `noise_rl_module_v2`，仅优化 `*_scaling_factors`） |
+| `--blb-v3-rescale-invoker-kind heuristic/subprocess/stub` | `run`、`run rl` | `heuristic` | BLB v3 的 Rescale_optimizer 调用方式；缺省 `heuristic` 使用内置启发式估计（不依赖外部 Rescale_optimizer 子项目） |
+| `--blb-v3-subprocess-optimizer-root PATH` | `run`、`run rl` | — | invoker=`subprocess` 时 Rescale_optimizer 子项目根目录 |
+| `--blb-v3-rollout-size N` | `run`、`run rl` | `32` | BLB v3 PPO rollout 大小（多少 episode 触发一次 PPO update） |
 | **GA / Greedy 搜索** | | | |
 | `--stage1-search-generations N` | `run ga`、`run greedy` | 自动 | Stage-1 代数；推荐用 `--generations` |
 | `--stage2-search-generations N` | `run ga`、`run greedy` | 自动 | Stage-2 代数；推荐用 `--generations` |

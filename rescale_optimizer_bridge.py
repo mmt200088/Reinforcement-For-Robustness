@@ -495,6 +495,24 @@ class OptimizerRewardSignals:
     invalid_chains: Dict[str, dict] = field(default_factory=dict)
 
 
+def apply_rotation_flags_to_cfg(cfg: Any, rotation_flag_names) -> None:
+    """把"开启的 rotation 候选点列表"应用到 cfg 上。
+
+    cfg 上所有 ``rotation_after_*`` bool 字段：在 ``rotation_flag_names`` 里出现
+    的置 True，其余统一置 False。这是和 Rescale_optimizer 输出对接的最小钩子 ──
+    业务侧需要先把优化器输出的 ``effective_rotations`` 转换成 BLB 命名空间的
+    flag 名（per-block 名字表，本仓库不写死）。
+
+    Args:
+        cfg:                Block*NoiseConfig 实例（任意 block）
+        rotation_flag_names: iterable[str]，要置 True 的 ``rotation_after_*`` 字段名
+    """
+    enable = {str(n) for n in rotation_flag_names}
+    for name in vars(cfg).keys():
+        if name.startswith("rotation_after_"):
+            setattr(cfg, name, name in enable)
+
+
 def aggregate_optimizer_signals(
         outputs: Mapping[str, RescaleOptimizerOutput],
         ) -> OptimizerRewardSignals:

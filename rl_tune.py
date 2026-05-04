@@ -171,6 +171,15 @@ def train(
         stage2_stability_tolerance: float = None,
         stage2_k_trials: int = None,
         stage2_probe_size: int = None,
+        # Stage-2 RL variant (新版 BLB v3 / 旧版 v2 二选一；默认新版)
+        stage2_rl_variant: str = "blb_v3",
+        blb_v3_rescale_invoker_kind: str = "heuristic",
+        blb_v3_subprocess_optimizer_root: str = "",
+        blb_v3_subprocess_cli_module: str = "rescale_optimizer.replan",
+        blb_v3_rollout_size: int = None,
+        blb_v3_eval_interval: int = None,
+        blb_v3_save_interval: int = None,
+        blb_v3_calibrate_baseline_samples: int = None,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
         group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -275,6 +284,8 @@ def train(
         f"wandb_log_model: {wandb_log_model}\n"
         f"resume_from_checkpoint: {resume_from_checkpoint}\n"
         f"resume_run_dir: {resume_run_dir}\n"
+        f"stage2_rl_variant: {stage2_rl_variant}\n"
+        f"blb_v3_rescale_invoker_kind: {blb_v3_rescale_invoker_kind}\n"
     )
     assert (
         base_model
@@ -652,6 +663,17 @@ def train(
             stage2_stability_tolerance=stage2_stability_tolerance,
             stage2_k_trials=stage2_k_trials,
             stage2_probe_size=stage2_probe_size,
+            stage2_rl_variant=stage2_rl_variant,
+            blb_v3_rescale_invoker_kind=blb_v3_rescale_invoker_kind,
+            blb_v3_subprocess_optimizer_root=(
+                blb_v3_subprocess_optimizer_root
+                if blb_v3_subprocess_optimizer_root not in (None, "") else None
+            ),
+            blb_v3_subprocess_cli_module=blb_v3_subprocess_cli_module,
+            blb_v3_rollout_size=blb_v3_rollout_size,
+            blb_v3_eval_interval=blb_v3_eval_interval,
+            blb_v3_save_interval=blb_v3_save_interval,
+            blb_v3_calibrate_baseline_samples=blb_v3_calibrate_baseline_samples,
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:
