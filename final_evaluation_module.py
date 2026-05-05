@@ -47,6 +47,7 @@ SHORT_KEY_TO_FULL = {
 }
 
 BREAKDOWN_KEYS = ("x", "wq", "wk", "wv", "wo", "wffn1", "wffn2")
+MAX_CONFIG_SOURCES = {"max", "stage2-max", "stage2_max", "blb-max", "blb_max"}
 
 
 class UnifiedFinalEvaluationModule:
@@ -551,8 +552,18 @@ class UnifiedFinalEvaluationModule:
             gelu, softmax = self._resolve_stage1_from_manual(total_layers)
             return gelu, softmax, "manual"
 
+        if self.config_source in MAX_CONFIG_SOURCES:
+            if search_best_stage1 is not None:
+                gelu, softmax = self._resolve_stage1_from_search(
+                    search_best_stage1, total_layers
+                )
+                return gelu, softmax, "search"
+            gelu, softmax, source = self._resolve_stage1_fallback(total_layers)
+            return gelu, softmax, source
+
         raise ValueError(
-            f"Unsupported config_source '{self.config_source}'. Use: search / json / manual."
+            f"Unsupported config_source '{self.config_source}'. "
+            "Use: search / json / manual / max."
         )
 
     def _resolve_selected_config(self, search_best_stage1, search_best_stage2, total_layers):
@@ -606,8 +617,25 @@ class UnifiedFinalEvaluationModule:
             noise_cfg = self._resolve_stage2_from_manual(total_layers)
             return gelu, softmax, noise_cfg, "manual"
 
+        if self.config_source in MAX_CONFIG_SOURCES:
+            if search_best_stage1 is not None:
+                gelu, softmax = self._resolve_stage1_from_search(
+                    search_best_stage1, total_layers
+                )
+                stage1_source = "search"
+            else:
+                gelu, softmax, stage1_source = self._resolve_stage1_fallback(total_layers)
+            noise_cfg = self._build_max_noise_config(total_layers)
+            return (
+                gelu,
+                softmax,
+                noise_cfg,
+                f"{self.config_source}(stage1={stage1_source},stage2=max)",
+            )
+
         raise ValueError(
-            f"Unsupported config_source '{self.config_source}'. Use: search / json / manual."
+            f"Unsupported config_source '{self.config_source}'. "
+            "Use: search / json / manual / max."
         )
 
     def _resolve_stage1_from_search(self, search_best_stage1, total_layers):

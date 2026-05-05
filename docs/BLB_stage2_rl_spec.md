@@ -117,16 +117,18 @@ Local_program/
 │   - RescaleOptimizerBridge.evaluate_blocks(requests) -> {config_name: Output}
 │   - aggregate_optimizer_signals(outputs) -> OptimizerRewardSignals
 │   - apply_rotation_flags_to_cfg(cfg, rotation_flag_names: Iterable[str])
-│   - SubprocessInvoker / CallableInvoker / StubInvoker  ← invoker 三选一
+│   - InProcessInvoker（推荐） / SubprocessInvoker / CallableInvoker / StubInvoker
 │   - default_block{1..5}_cfg_to_delta(cfg) -> {node_name: delta_int_or_'x2'}
 │
-├── Rescale_optimizer/             ☆ 外部子项目（gitignored，需要单独拉）
-│   ├── configs/<profile>/block*_<profile>.json           输入图
-│   ├── configs/<profile>/static_skeletons_<profile>.json 输出 baseline + max SF
-│   ├── replan_configs/<profile>/replan_actions_*.json    输入：actions
-│   ├── replan_configs/<profile>/replan_*.json            输出：result
-│   └── scripts/replan_what_if.py                         what-if replan CLI
-│   见 docs/README_configs.md（用户已经粘给你看）和 docs/README_rotations.md。
+├── Rescale_optimizer/             ☆ 外部子项目（已经拉下来，配 configs/mrpc 等）
+│   ├── rescale_optimizer/                                 Python 包（可直接 import）
+│   │   ├── replan.py    ReplanInputs / replan_with_user_actions
+│   │   └── ...
+│   ├── configs/<profile>/block*_<profile>.json            输入图（多 block）
+│   ├── configs/<profile>/static_skeletons_<profile>.json  baseline 归档（含 t/skeleton/q）
+│   ├── replan_configs/<profile>/replan_actions_*.json     可选：actions JSON 模板
+│   └── scripts/replan_what_if.py                          what-if replan CLI（subprocess 用）
+│   见 docs/README_configs.md 和 docs/README_rotations.md。
 │
 ├── layer_importance_evaluator.py  ☆ 旧版 stage 2 RL（PPO over legacy noise，不要碰）
 │   - apply_input_noise_configuration / apply_wq_noise_configuration / ...
@@ -326,8 +328,10 @@ def sf_from(idx, max, levels): return max - 2 * (levels - 1 - int(idx))
 
 > ⚠️ 上面 `max_sfs[(block_name, node_name)]` 的具体节点名要对照
 > [`docs/README_configs.md`](README_configs.md) 里 `cut_point_sf[i].name`（例如
-> `ctpt_ffn2`/`ctct_ext_square`/`ctpt_gamma`/`ctpt_wffn1` 等）。我们已经在
-> [`rescale_optimizer_bridge.py`](../rescale_optimizer_bridge.py) 的
+> block1 的 `ctpt_ffn2`/`ctct_ext_square`/`ctpt_inv_d_1`、block2 的
+> `ctpt_gama1`/`ctpt_wq_wk`、block5 的 `ctpt_wffn1`/`ctct_gelu_x2` 等；
+> 注意 BLB cfg 里独立的 `wq` / `wk` 在 graph 里被融合为一个 `ctpt_wq_wk`）。
+> 我们已经在 [`rescale_optimizer_bridge.py`](../rescale_optimizer_bridge.py) 的
 > `default_block{1..5}_cfg_to_delta` 里写了一份默认命名对照，可以反向用。
 
 ---
@@ -374,25 +378,74 @@ bridge.clear()
 
 #### 5.2.2 调 Rescale_optimizer
 
-[`RescaleOptimizerBridge.evaluate_blocks`](../rescale_optimizer_bridge.py)：
+[`RescaleOptimizerBridge.evaluate_blocks`](../rescale_optimizer_bridge.py)。**推荐用
+`InProcessInvoker`**（直接 `import rescale_optimizer` 调
+`replan_with_user_actions`，预加载图 + baseline，单步 ms 级；不用 fork）：
 
 ```python
-rescale = RescaleOptimizerBridge(
-    invoker=SubprocessInvoker(
-        configs={"block1_mrpc": "Rescale_optimizer/configs/mrpc/block1_mrpc.json", ...},
-        optimizer_root="Rescale_optimizer",
-        cli_module="rescale_optimizer.replan",  # 实际看 README_configs.md
-    ),
+from rescale_optimizer_bridge import (
+    InProcessInvoker, RescaleOptimizerBridge, aggregate_optimizer_signals,
 )
-outputs = rescale.evaluate_blocks({
-    "block1_mrpc": ("block1", cfg1_layer0),
-    "block2_mrpc": ("block2", cfg2_layer0),
-    ...
-})
+
+inv = InProcessInvoker.from_profile(
+    rescale_optimizer_root="Rescale_optimizer",
+    profile="mrpc",
+    # configs_dir 默认 = <root>/configs/mrpc
+    # baseline_archive 默认 = <configs_dir>/static_skeletons_mrpc.json
+)
+rescale = RescaleOptimizerBridge(invoker=inv)
+outputs = rescale.evaluate_blocks(
+    requests={
+        "block1_mrpc":   ("block1", cfg1_layer0),
+        "block2_mrpc":   ("block2", cfg2_layer0),
+        "block3_exp_n4": ("block3", cfg3_layer0),
+        "block4":        ("block4", cfg4_layer0),
+        "block5_n4":     ("block5", cfg5_layer0),
+    },
+    # 可选：t_new_per_config={"block1_mrpc": [30, 34, 34], ...}
+    # 不传 ⇒ 走 baseline t（等价于"只改 delta_overrides"）
+)
 signals = aggregate_optimizer_signals(outputs)  # OptimizerRewardSignals
 ```
 
-如果 Rescale_optimizer 还没装好，可以先用 `StubInvoker(canned_dict)` 跑通 RL 框架。
+也可以走 `SubprocessInvoker`（fork `python scripts/replan_what_if.py`，开销几百 ms，
+适合 debug 隔离）：
+
+```python
+from rescale_optimizer_bridge import SubprocessInvoker
+
+inv = SubprocessInvoker(
+    rescale_optimizer_root="Rescale_optimizer",
+    configs={
+        "block1_mrpc": "Rescale_optimizer/configs/mrpc/block1_mrpc.json",
+        "block2_mrpc": "Rescale_optimizer/configs/mrpc/block2_mrpc.json",
+        "block3_exp_n4": "Rescale_optimizer/configs/mrpc/block3_exp_n4.json",
+        "block4": "Rescale_optimizer/configs/mrpc/block4.json",
+        "block5_n4": "Rescale_optimizer/configs/mrpc/block5_n4.json",
+    },
+    baseline_archive="Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json",
+    cli_script="scripts/replan_what_if.py",   # 默认即此值
+)
+```
+
+如果 Rescale_optimizer 还没装好，可以先用 `StubInvoker(canned_dict)` 或者
+`HeuristicStubInvoker`（`blb_stage2_rl.default_invoker`）跑通 RL 框架。
+
+**Action JSON 形态**（invoker 内部 payload）：
+
+```json
+{
+  "t_new":             [30, 34, 34],
+  "delta_overrides":   {"ctpt_ffn2": 20, "ctpt_inv_d_1": 20,
+                        "ctct_ext_square": "x2", "ctpt_inv_d_2": 20}
+}
+```
+
+`t_new` 长度必须 == baseline skeleton 的 R+1（R = rescale 次数）；`delta_overrides`
+的 key 是 graph 里 multiplication 节点名（**不是 BLB 命名！** 实际节点名见
+`configs/<profile>/block*.json` 的 `stages[].cut_point.name`）。bridge 内置的
+`default_block{1..5}_cfg_to_delta` 已对齐 mrpc 节点名（见
+[`rescale_optimizer_bridge.py`](../rescale_optimizer_bridge.py)）。
 
 #### 5.2.3 effective rotations 反写
 
@@ -622,7 +675,8 @@ class BLBStage2Policy(nn.Module):
 - [ ] 把 `Rescale_optimizer/` 拉下来；按 [`docs/README_configs.md`](README_configs.md)
   跑 `batch_run_configs.py` 生成 `static_skeletons_<profile>.json`
 - [ ] 写 `optimizer_rot_to_blb_flag` 命名映射 JSON（每个 (block, profile) 一份）
-- [ ] 切换 `SubprocessInvoker` 真调 CLI；验证一次 evaluate 拿到合法 JSON
+- [ ] 切换 `InProcessInvoker.from_profile(...)` 真调 `replan_with_user_actions`；验证一次 evaluate 拿到合法 JSON
+  （fallback：`SubprocessInvoker` 走 `scripts/replan_what_if.py` CLI）
 - [ ] 测 invalid_chain 路径：故意用 max-2*lots 让 chain 崩
 
 ### M2：单层 / 单 block 先收敛
@@ -759,7 +813,7 @@ import torch
 from function_handler import ReversibleLayerHandler
 from blb_rl_bridge import BLBNoiseRLBridge
 from rescale_optimizer_bridge import (
-    RescaleOptimizerBridge, SubprocessInvoker, aggregate_optimizer_signals,
+    RescaleOptimizerBridge, InProcessInvoker, aggregate_optimizer_signals,
     apply_rotation_flags_to_cfg,
 )
 from .action_space import (

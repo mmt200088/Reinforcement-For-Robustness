@@ -246,6 +246,30 @@ class UnifiedFinalEvalPartialSearchTests(unittest.TestCase):
                 total_layers=4,
             )
 
+    def test_max_source_uses_json_stage1_and_max_stage2(self):
+        from final_evaluation_module import BREAKDOWN_KEYS, SHORT_KEY_TO_FULL
+
+        module, cfg_path, stage1_cfg = self._build_module_and_config()
+        self.addCleanup(lambda: cfg_path.unlink(missing_ok=True))
+        module.config_source = "blb-max"
+
+        gelu, softmax, noise_cfg, source = module._resolve_selected_config(
+            search_best_stage1=None,
+            search_best_stage2=None,
+            total_layers=4,
+        )
+
+        self.assertEqual(gelu.tolist(), stage1_cfg["gelu"])
+        self.assertEqual(softmax.tolist(), stage1_cfg["softmax"])
+        self.assertIn("stage1=json", source)
+        self.assertIn("stage2=max", source)
+        for short_key in BREAKDOWN_KEYS:
+            full_key = SHORT_KEY_TO_FULL[short_key]
+            self.assertEqual(
+                noise_cfg[full_key].tolist(),
+                [int(max(module._stage2_allowed(short_key)))] * 4,
+            )
+
     def test_stage2_budget_sampler_matches_target_cost_exactly(self):
         module, cfg_path, _ = self._build_module_and_config()
         self.addCleanup(lambda: cfg_path.unlink(missing_ok=True))

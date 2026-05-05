@@ -304,7 +304,7 @@ def train(
         stage2_rl_episodes: int = 40000,
         stage1_rl_episodes_specified: bool = False,
         stage2_rl_episodes_specified: bool = False,
-        final_eval_config_source: str = "search",  # search | json | manual
+        final_eval_config_source: str = "search",  # search | json | manual | max
         final_eval_config_path: str = "glue_final_configs_best_genetic.json",
         manual_stage1_gelu: str = "",
         manual_stage1_softmax: str = "",

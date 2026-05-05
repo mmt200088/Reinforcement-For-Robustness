@@ -89,7 +89,17 @@ class HeuristicStubInvoker:
     def clear_cfg_registry(self) -> None:
         self._cfg_lookup.clear()
 
-    def __call__(self, config_name: str, delta_overrides: dict) -> dict:
+    def __call__(self, config_name: str, payload: Any) -> dict:
+        """兼容两种 invoker payload 形态（与 ``rescale_optimizer_bridge`` 一致）：
+        bare ``delta_overrides`` dict 或 ``{"t_new": [...], "delta_overrides": {...}}``。
+        """
+        # 拆 payload
+        if isinstance(payload, Mapping) and (
+            "t_new" in payload or "delta_overrides" in payload
+        ):
+            delta_overrides = payload.get("delta_overrides") or {}
+        else:
+            delta_overrides = payload or {}
         config_name = str(config_name)
         cfg = self._cfg_lookup.get(config_name)
         sf_attrs: Mapping[str, int]

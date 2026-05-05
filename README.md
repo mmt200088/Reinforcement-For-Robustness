@@ -38,6 +38,9 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl
 bash llama_7B_LayerImportance.sh eval --dataset mrpc --algorithm rl \
   --config glue_final_configs_best_ppo.json --eval-repeat 50 --budget 50
 
+# 只跑 BLB Stage-2 最大动作 / 最大噪声配置的最终评估
+bash llama_7B_LayerImportance.sh eval --preset mrpc-blb-max-final-eval
+
 # 只重跑 Stage-2，Stage-1 固定配置自动从 --config 里取
 bash llama_7B_LayerImportance.sh run ga --dataset mrpc --mode stage2-only \
   --generations 1,800 --config glue_final_configs_best_genetic.json
@@ -131,7 +134,7 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | **Stage-2 RL variant** | | | |
 | `--stage2-rl-variant blb_v3/legacy_v2` | `run rl` | `blb_v3` | 选择 Stage-2 RL 实现：`blb_v3`（默认，加强版 BLB Stage-2 RL，覆盖 Block 1-5 + first-input fresh 全部噪声候选点；详见 `docs/BLB_stage2_rl_FULL_FLOW.md`）；`legacy_v2`（旧版 `noise_rl_module_v2`，仅优化 `*_scaling_factors`） |
 | `--stage2-rescale-invoker heuristic/subprocess/stub` / `--blb-v3-rescale-invoker-kind heuristic/subprocess/stub` | `run rl` | `heuristic` | BLB v3 的 Rescale_optimizer 调用方式；缺省 `heuristic` 使用内置启发式估计（不依赖外部 Rescale_optimizer 子项目） |
-| `--stage2-rescale-root PATH` / `--blb-v3-subprocess-optimizer-root PATH` | `run rl` | — | invoker=`subprocess` 时 Rescale_optimizer 子项目根目录 |
+| `--stage2-rescale-root PATH` / `--blb-v3-subprocess-optimizer-root PATH` | `run rl` | — | invoker=`subprocess` 时 Rescale_optimizer 子项目根目录；当前还需内部补齐 configs 与 baseline archive，否则会 fallback 到 `heuristic` |
 | `--stage2-rescale-cli-module MODULE` / `--blb-v3-subprocess-cli-module MODULE` | `run rl` | `rescale_optimizer.replan` | invoker=`subprocess` 时调用的 CLI module |
 | `--stage2-rollout-size N` / `--blb-v3-rollout-size N` | `run rl` | 跟随 `--ppo-update-interval` | BLB v3 PPO rollout 大小（多少 episode 触发一次 PPO update） |
 | `--stage2-save-interval N` / `--blb-v3-save-interval N` | `run rl` | `200` | BLB v3 live checkpoint 保存间隔 |
@@ -146,8 +149,8 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `--skip-final-eval` | `run` | — | 高级兼容入口；一般用 `--mode search-only` |
 | `--final-eval-only` | `run` / `eval` | — | 高级兼容入口；一般用 `--mode eval` 或 `eval` 子命令 |
 | **最终评估** | | | |
-| `--final-eval-source search/json/manual` | `run`、`eval` | `search` | 最终评估配置来源；`eval --config` 会自动转为 `json` |
-| `--source search/json/manual` | `run`、`eval` | 同上 | `--final-eval-source` 的短写 |
+| `--final-eval-source search/json/manual/max` | `run`、`eval` | `search` | 最终评估配置来源；`max`/`stage2-max`/`blb-max` 会把 Stage-2 选为最大动作/最大 scaling-factor，Stage-1 从 JSON 或已有搜索结果回退 |
+| `--source search/json/manual/max` | `run`、`eval` | 同上 | `--final-eval-source` 的短写 |
 | `--final-eval-config PATH` | `run`、`eval` | 按算法自动 | 合并 JSON；短写是 `--config` |
 | `--config PATH` | `run`、`eval` | — | 同时用于 final-eval；`stage2-only` 下也自动作为 Stage-2 固定配置来源 |
 | `--manual-stage1-gelu JSON_ARRAY` | `run`、`eval` | — | `manual` 来源下的 GELU 配置 |

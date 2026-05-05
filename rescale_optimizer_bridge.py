@@ -1,38 +1,51 @@
 """Rescale_optimizer 桥接层（加强版 stage2 RL 奖励侧）。
 
 把 BLB 噪声选择（Block 1-5 的 ``Block*NoiseConfig``）转成 ``Rescale_optimizer``
-所需的 ``delta_overrides``，调用优化器，再从返回 JSON 抽出三个 RL 奖励信号：
+的 ``replan`` 输入（``t_new`` + ``delta_overrides``），调用优化器，再从返回
+JSON 抽出三个 RL 奖励信号：
 
     1) ``fusion_count``        ── 模数链 fusion 次数（越少越好）
     2) ``total_bits``          ── 模数链 total_bits（越小越好）
     3) ``invalid_chain``       ── 链合法性（None=合法；非 None=不合法 + 原因）
 
-约定：``Rescale_optimizer`` 本体不在本仓库（用户在 ``Rescale_optimizer/`` 子目录
-里维护），所以这里**不把它当 Python module 直接 import**，而是通过可插拔的
-``RescaleOptimizerInvoker`` 间接调用。三种现成 invoker：
+可用的 invoker 实现（4 种）：
 
-  * ``SubprocessInvoker``：Rescale_optimizer 是命令行；bridge fork subprocess。
-  * ``CallableInvoker``：Rescale_optimizer 是可 import 的 Python callable。
-  * ``StubInvoker``：测试 / mock；返回预设 JSON。
+  * ``InProcessInvoker`` ── **推荐**。直接 ``import rescale_optimizer`` 调
+    ``replan_with_user_actions``；预加载图与 baseline，单步开销 ms 级。
+  * ``SubprocessInvoker`` ── fork ``python scripts/replan_what_if.py``，开销大但
+    完全隔离；适合 debug 时用。
+  * ``CallableInvoker`` ── 包装任意 ``(config_name, payload) -> dict`` callable。
+  * ``StubInvoker`` / ``HeuristicStubInvoker``（``blb_stage2_rl/default_invoker``）
+    ── 测试 / 没装 Rescale_optimizer 时的兜底。
+
+invoker 调用签名：``invoker(config_name, payload)``，``payload`` 支持两种形态：
+
+  (1) **bare dict**（向后兼容）：``{"node_name": delta, ...}``，被当作
+      ``delta_overrides``，``t_new`` 默认取 baseline t_baseline。
+  (2) **rich dict**：``{"t_new": [int, ...], "delta_overrides": {...}}``，``t_new``
+      长度必须 == baseline skeleton 的 R+1。
 
 reward 部分**只给信号，不给最终公式** —— 用户明说了 reward 不止依赖这三项。
 
-典型用法（接 RL stage 2）：
+典型用法：
 
-    bridge = BLBNoiseRLBridge(handler, ...)
-    rescale = RescaleOptimizerBridge(invoker=SubprocessInvoker(
-        optimizer_root="Rescale_optimizer",
-        configs={"block1_mrpc": "Rescale_optimizer/configs/mrpc/block1_mrpc.json", ...},
-    ))
-
-    # 一回合：
-    #   1) RL 出动作 → 5 个 Block*NoiseConfig
-    #   2) bridge.apply(...)  把 cfg 装到模型
-    #   3) rescale.evaluate_blocks({"block1_mrpc": cfg1, ...}) 跑优化器
-    #   4) signals = aggregate_optimizer_signals(outputs)
-    #      → 业务侧用 signals['total_fusion_count'] / ['total_bits_sum'] /
-    #        ['any_invalid'] 加上其它项算 reward
-    #   5) bridge.clear() 还原模型
+    from rescale_optimizer_bridge import (
+        InProcessInvoker, RescaleOptimizerBridge,
+        aggregate_optimizer_signals,
+    )
+    inv = InProcessInvoker.from_profile(
+        rescale_optimizer_root="Rescale_optimizer",
+        profile="mrpc",
+        configs_dir="Rescale_optimizer/configs/mrpc",
+    )
+    bridge = RescaleOptimizerBridge(invoker=inv)
+    out = bridge.evaluate(
+        config_name="block1_mrpc",
+        block_name="block1",
+        cfg=block1_cfg,                # Block1NoiseConfig
+        t_new=[30, 34, 34],            # length R+1; None ⇒ 用 baseline
+    )
+    print(out.fusion_count, out.total_bits, out.invalid_chain)
 """
 from __future__ import annotations
 
@@ -181,93 +194,366 @@ class CallableInvoker:
         return dict(out)
 
 
-class SubprocessInvoker:
-    """走 subprocess 调用 Rescale_optimizer 的命令行。
+def _split_payload(payload: Any) -> Tuple[Optional[List[int]], Dict[str, Union[int, str]]]:
+    """从 invoker 调用方接到的 ``payload`` 中拆出 (t_new, delta_overrides)。
 
-    工作流（默认）：
-      1. 把 ``delta_overrides`` 写到临时 JSON：``replan_actions_<config_name>.json``
-      2. 调用：
-            ``<python> -m <cli_module> --config <config_path>
-              --actions <actions_path> --output <output_path>``
-      3. 读取 ``output_path`` 里的 JSON 并返回。
+    向后兼容：
+      * 如果 payload 是 bare dict（不含 ``"t_new"`` 也不含 ``"delta_overrides"``），
+        把它整体当作 ``delta_overrides``，``t_new=None``（调用侧使用 baseline）。
+      * 如果 payload 是 rich dict（含 ``"t_new"`` 和/或 ``"delta_overrides"``），
+        分别取出。
+    """
+    if not isinstance(payload, Mapping):
+        return None, {}
+    keys = set(payload.keys())
+    if keys & {"t_new", "delta_overrides"}:
+        t_new_raw = payload.get("t_new")
+        t_new = [int(x) for x in t_new_raw] if t_new_raw is not None else None
+        deltas_raw = payload.get("delta_overrides") or {}
+        deltas = {str(k): v for k, v in deltas_raw.items()}
+        return t_new, deltas
+    # bare dict
+    return None, {str(k): v for k, v in payload.items()}
 
-    config_path 由 ``configs[config_name]`` 决定；用户自行准备。
 
-    如果实际优化器入口 / 参数不一样，**请用户传 ``cli_argv_builder``** 自定义命令行；
-    或干脆用 ``CallableInvoker`` 直接接 Python 函数。
+def load_baseline_archive(path: str) -> Dict[str, Tuple[List[int], List[int], List[int]]]:
+    """读 ``static_skeletons_<profile>.json`` → ``{config_name: (skeleton, t_baseline, q_bits_baseline)}``。
+
+    schema v2 (``cut_point_sf`` / ``modulus_chain.drop_order``)：
+      * skeleton: ``entry["skeleton"]``
+      * t_baseline: 按 skeleton 取 cut_point_sf 的 ``sf_post`` (rescale 点) 或 ``sf`` (source/普通点)
+      * q_bits_baseline: ``modulus_chain.drop_order[1:-1]``（去掉首尾 head/tail prime）
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        archive = json.load(f)
+    out: Dict[str, Tuple[List[int], List[int], List[int]]] = {}
+    for entry in archive.get("results", []):
+        if not entry.get("success"):
+            continue
+        cname = str(entry["config_name"])
+        skel = [int(x) for x in entry.get("skeleton", [])]
+        # t_baseline
+        t_for_idx: Dict[int, int] = {}
+        for row in entry.get("cut_point_sf", []):
+            i = int(row["i"])
+            if "sf_post" in row:
+                t_for_idx[i] = int(row["sf_post"])
+            elif "sf" in row:
+                t_for_idx[i] = int(row["sf"])
+        t_base = [t_for_idx[i] for i in skel if i in t_for_idx]
+        # q_bits
+        mc = entry.get("modulus_chain", {}) or {}
+        drop_order = list(mc.get("drop_order", []))
+        q_base = [int(x) for x in drop_order[1:-1]] if len(drop_order) >= 2 else []
+        out[cname] = (skel, t_base, q_base)
+    return out
+
+
+def _build_replan_output_dict(
+        graph,
+        config_name: str,
+        skeleton: List[int],
+        t_baseline: Optional[List[int]],
+        q_bits_baseline: Optional[List[int]],
+        t_new: List[int],
+        delta_overrides: Dict[str, Union[int, str]],
+        result,
+        ) -> dict:
+    """复刻 ``scripts/replan_what_if.py`` 写出的 JSON shape，给 ``_parse_optimizer_raw`` 解析。"""
+    # 复用 CLI 里的 _build_new_compact_config 拼 effective_rotations
+    try:
+        from scripts.replan_what_if import _build_new_compact_config  # type: ignore
+        compact = _build_new_compact_config(graph, config_name, result)
+    except Exception:
+        compact = None
+
+    out_doc: Dict[str, Any] = {
+        "config_name": config_name,
+        "valid": bool(result.valid),
+        "fusion_count": int(result.fusion_count),
+        "baseline": {
+            "skeleton": list(skeleton),
+            "t_baseline": (list(t_baseline) if t_baseline else None),
+            "q_bits_baseline": (list(q_bits_baseline) if q_bits_baseline else None),
+        },
+        "t_new": list(t_new),
+        "delta_overrides": dict(delta_overrides),
+        "result": {
+            "valid": bool(result.valid),
+            "message": str(result.message),
+            "fusion_count": int(result.fusion_count),
+            "skeleton": [int(x) for x in result.skeleton],
+            "q_initial": [int(x) for x in result.q_initial],
+            "q_final": [int(x) for x in result.q_final],
+            "t_final": [int(x) for x in result.t_final],
+            "delta_q_vs_baseline": [int(x) for x in result.delta_q_vs_baseline],
+            "applied_delta_overrides": dict(result.applied_delta_overrides),
+            "fusions": [
+                {
+                    "fused_position": ev.fused_position,
+                    "fused_into": ev.fused_into,
+                    "small_q": ev.small_q,
+                    "neighbour_q_before": ev.neighbour_q_before,
+                    "neighbour_q_after": ev.neighbour_q_after,
+                }
+                for ev in result.fusions
+            ],
+            "chain": (
+                None if result.chain is None else {
+                    "q_head_bits": int(result.chain.q_head_bits),
+                    "q_bits": [int(x) for x in result.chain.q_bits],
+                    "q_tail_bits": int(result.chain.q_tail_bits),
+                    "total_bits": int(result.chain.total_bits),
+                    "R": int(result.chain.R),
+                }
+            ),
+            "invalid_chain": (
+                None if result.invalid_chain is None else {
+                    "q_head_bits": int(result.invalid_chain.q_head_bits),
+                    "q_bits": [int(x) for x in result.invalid_chain.q_bits],
+                    "q_tail_bits": int(result.invalid_chain.q_tail_bits),
+                }
+            ),
+        },
+    }
+    if compact is not None:
+        compact["fusion_count"] = int(result.fusion_count)
+        out_doc["new_compact_config"] = compact
+    return out_doc
+
+
+class InProcessInvoker:
+    """**推荐**：直接 ``import rescale_optimizer`` 调 ``replan_with_user_actions``。
+
+    构造时预加载每个 config 的 graph + baseline；调用时单步只跑 replan
+    （ms 级；远快于 subprocess）。
+
+    用法：
+
+        inv = InProcessInvoker.from_profile(
+            rescale_optimizer_root="Rescale_optimizer",
+            profile="mrpc",
+            configs_dir="Rescale_optimizer/configs/mrpc",
+        )
+        bridge = RescaleOptimizerBridge(invoker=inv)
+
+    或手工指定每个 config 的 graph json 路径：
+
+        inv = InProcessInvoker(
+            rescale_optimizer_root="Rescale_optimizer",
+            configs={
+                "block1_mrpc": "Rescale_optimizer/configs/mrpc/block1_mrpc.json",
+                "block2_mrpc": "Rescale_optimizer/configs/mrpc/block2_mrpc.json",
+                "block3_exp_n4": "Rescale_optimizer/configs/mrpc/block3_exp_n4.json",
+                "block4": "Rescale_optimizer/configs/mrpc/block4.json",
+                "block5_n4": "Rescale_optimizer/configs/mrpc/block5_n4.json",
+            },
+            baseline_archive="Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json",
+        )
     """
 
     def __init__(
             self,
             *,
             configs: Mapping[str, str],
-            optimizer_root: Optional[str] = None,
+            baseline_archive: str,
+            rescale_optimizer_root: Optional[str] = None,
+            ):
+        if rescale_optimizer_root:
+            root = os.path.abspath(rescale_optimizer_root)
+            if root not in sys.path:
+                sys.path.insert(0, root)
+
+        # Lazy import：避免在没装 Rescale_optimizer 的环境下导入失败
+        from rescale_optimizer import load_graph_from_json, ReplanInputs  # noqa: F401
+        from rescale_optimizer.feasibility import build_feasibility_dag
+
+        self._configs = {str(k): str(v) for k, v in configs.items()}
+        self._baseline_archive_path = str(baseline_archive)
+        self._baselines = load_baseline_archive(self._baseline_archive_path)
+
+        # 预加载每个 graph
+        self._graphs: Dict[str, Any] = {}
+        for cname, path in self._configs.items():
+            graph, _opt_cfg, _amp = load_graph_from_json(path)
+            build_feasibility_dag(graph)
+            self._graphs[cname] = graph
+
+    @classmethod
+    def from_profile(
+            cls,
+            *,
+            rescale_optimizer_root: str,
+            profile: str,
+            configs_dir: Optional[str] = None,
+            baseline_archive: Optional[str] = None,
+            include: Optional[List[str]] = None,
+            ) -> "InProcessInvoker":
+        """便利构造：扫 ``configs/<profile>/*.json`` 自动登记所有 block。
+
+        Args:
+            rescale_optimizer_root: ``Rescale_optimizer`` 根目录绝对/相对路径。
+            profile: ``"mrpc"`` / ``"wnli"`` / ...
+            configs_dir: 默认 ``<root>/configs/<profile>``
+            baseline_archive: 默认 ``<configs_dir>/static_skeletons_<profile>.json``
+            include: 只登记列表中的 config_name；None=全部成功的 baseline。
+        """
+        root = os.path.abspath(str(rescale_optimizer_root))
+        cfg_dir = configs_dir or os.path.join(root, "configs", str(profile))
+        archive = baseline_archive or os.path.join(cfg_dir, f"static_skeletons_{profile}.json")
+        baselines = load_baseline_archive(archive)
+
+        configs: Dict[str, str] = {}
+        for cname in baselines.keys():
+            if include is not None and cname not in include:
+                continue
+            json_path = os.path.join(cfg_dir, f"{cname}.json")
+            if not os.path.exists(json_path):
+                continue
+            configs[cname] = json_path
+        return cls(
+            configs=configs,
+            baseline_archive=archive,
+            rescale_optimizer_root=root,
+        )
+
+    @property
+    def baselines(self) -> Dict[str, Tuple[List[int], List[int], List[int]]]:
+        """``{config_name: (skeleton, t_baseline, q_bits_baseline)}``，readonly."""
+        return dict(self._baselines)
+
+    def __call__(self, config_name: str, payload: Any) -> dict:
+        from rescale_optimizer import ReplanInputs, replan_with_user_actions
+
+        cname = str(config_name)
+        if cname not in self._graphs:
+            raise KeyError(
+                f"InProcessInvoker: 未注册 config_name={cname!r}。"
+                f"可用 keys = {sorted(self._graphs.keys())}"
+            )
+        if cname not in self._baselines:
+            raise KeyError(
+                f"InProcessInvoker: baseline_archive 中没有 {cname!r} 的成功结果"
+            )
+
+        skeleton, t_baseline, q_bits_baseline = self._baselines[cname]
+        t_new, delta_overrides = _split_payload(payload)
+        # 缺省 t_new = baseline → 等价于"只改 delta_overrides"。
+        t_new_eff = list(t_new) if t_new is not None else list(t_baseline)
+
+        # replan 要求 skeleton 末尾是 dummy_sink；如果 baseline 已带就别重复加
+        graph = self._graphs[cname]
+        skel_for_replan = list(skeleton)
+        if skel_for_replan[-1] != graph.M + 1:
+            skel_for_replan = skel_for_replan + [graph.M + 1]
+
+        inputs = ReplanInputs(
+            skeleton=skel_for_replan,
+            t_baseline=list(t_baseline),
+            t_new=t_new_eff,
+            delta_overrides=(delta_overrides or None),
+        )
+        result = replan_with_user_actions(graph, inputs, baseline_q_bits=q_bits_baseline)
+        return _build_replan_output_dict(
+            graph=graph, config_name=cname,
+            skeleton=skeleton, t_baseline=t_baseline,
+            q_bits_baseline=q_bits_baseline,
+            t_new=t_new_eff, delta_overrides=delta_overrides,
+            result=result,
+        )
+
+
+class SubprocessInvoker:
+    """fork ``python scripts/replan_what_if.py`` 调用 Rescale_optimizer。
+
+    单步开销大（每次 ~几百 ms），主要给 debug / 隔离场景用。RL 训练推荐
+    ``InProcessInvoker``。
+
+    工作流：
+      1. 把 ``{"t_new": [...], "delta_overrides": {...}}`` 写到临时 JSON
+         ``replan_actions_<config_name>.json``；
+      2. 调用：
+            ``<python> <root>/scripts/replan_what_if.py
+                --config <root>/configs/<profile>/<cname>.json
+                --baseline-from <static_skeletons_path>
+                --actions-file <tmp_actions>
+                --out <tmp_out>``
+      3. 读取 ``<tmp_out>`` 里的 JSON。
+    """
+
+    def __init__(
+            self,
+            *,
+            rescale_optimizer_root: str,
+            configs: Mapping[str, str],
+            baseline_archive: str,
             python_exe: Optional[str] = None,
-            cli_module: str = "rescale_optimizer.replan",
             actions_dir: Optional[str] = None,
             output_dir: Optional[str] = None,
-            cli_argv_builder: Optional[
-                Callable[[str, str, str, str], List[str]]
-            ] = None,
+            cli_script: str = "scripts/replan_what_if.py",
             timeout_sec: float = 60.0,
             extra_env: Optional[Mapping[str, str]] = None,
             ):
+        self.rescale_optimizer_root = os.path.abspath(rescale_optimizer_root)
         self.configs = {str(k): str(v) for k, v in configs.items()}
-        self.optimizer_root = str(optimizer_root) if optimizer_root else None
+        self.baseline_archive = str(baseline_archive)
         self.python_exe = str(python_exe) if python_exe else sys.executable
-        self.cli_module = str(cli_module)
         self.actions_dir = str(actions_dir) if actions_dir else None
         self.output_dir = str(output_dir) if output_dir else None
-        self.cli_argv_builder = cli_argv_builder
+        self.cli_script = str(cli_script)
         self.timeout_sec = float(timeout_sec)
         self.extra_env = dict(extra_env) if extra_env else {}
 
-    def _default_argv(self, config_path: str, actions_path: str, output_path: str, config_name: str) -> List[str]:
-        return [
-            self.python_exe, "-m", self.cli_module,
-            "--config", config_path,
-            "--actions", actions_path,
-            "--output", output_path,
-        ]
-
-    def __call__(self, config_name: str, delta_overrides: dict) -> dict:
-        if config_name not in self.configs:
+    def __call__(self, config_name: str, payload: Any) -> dict:
+        cname = str(config_name)
+        if cname not in self.configs:
             raise KeyError(
-                f"SubprocessInvoker: 未注册 config_name={config_name!r}。"
+                f"SubprocessInvoker: 未注册 config_name={cname!r}。"
                 f"可用 keys = {sorted(self.configs.keys())}"
             )
-        config_path = self.configs[config_name]
-
+        config_path = self.configs[cname]
         actions_dir = self.actions_dir or tempfile.gettempdir()
         output_dir = self.output_dir or tempfile.gettempdir()
         os.makedirs(actions_dir, exist_ok=True)
         os.makedirs(output_dir, exist_ok=True)
 
-        actions_path = os.path.join(actions_dir, f"replan_actions_{config_name}.json")
-        output_path = os.path.join(output_dir, f"rescale_result_{config_name}.json")
+        actions_path = os.path.join(actions_dir, f"replan_actions_{cname}.json")
+        output_path = os.path.join(output_dir, f"rescale_result_{cname}.json")
 
+        t_new, delta_overrides = _split_payload(payload)
+        actions_doc: Dict[str, Any] = {"config_name": cname}
+        if t_new is not None:
+            actions_doc["t_new"] = list(t_new)
+        if delta_overrides:
+            actions_doc["delta_overrides"] = dict(delta_overrides)
         with open(actions_path, "w", encoding="utf-8") as f:
-            json.dump({"delta_overrides": dict(delta_overrides)}, f, ensure_ascii=False)
+            json.dump(actions_doc, f, ensure_ascii=False)
 
-        argv_builder = self.cli_argv_builder or self._default_argv
-        argv = argv_builder(config_path, actions_path, output_path, config_name)
+        argv = [
+            self.python_exe,
+            os.path.join(self.rescale_optimizer_root, self.cli_script),
+            "--config", config_path,
+            "--baseline-from", self.baseline_archive,
+            "--config-name", cname,
+            "--actions-file", actions_path,
+            "--out", output_path,
+        ]
 
         env = os.environ.copy()
         env.update(self.extra_env)
-        cwd = self.optimizer_root if self.optimizer_root else None
-
         completed = subprocess.run(
-            argv, cwd=cwd, env=env,
+            argv, cwd=self.rescale_optimizer_root, env=env,
             capture_output=True, text=True, timeout=self.timeout_sec,
         )
-        if completed.returncode != 0:
+        # 注意 replan_what_if.py 在 valid=False 时 returncode=3，但仍然写出 JSON
+        if completed.returncode not in (0, 3):
             raise RuntimeError(
-                f"Rescale_optimizer 子进程退出码 {completed.returncode}，"
+                f"replan_what_if.py 子进程退出码 {completed.returncode}，"
                 f"stderr={completed.stderr[-500:]!r}"
             )
         if not os.path.exists(output_path):
             raise RuntimeError(
-                f"Rescale_optimizer 没产出 {output_path}（stdout={completed.stdout[-500:]!r}）"
+                f"replan_what_if.py 没产出 {output_path}（stdout={completed.stdout[-500:]!r}）"
             )
         with open(output_path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -289,81 +575,113 @@ CfgToDeltaFn = Callable[[Any], Dict[str, Union[int, str]]]
 
 
 def default_block1_cfg_to_delta(cfg: Block1NoiseConfig) -> Dict[str, Union[int, str]]:
-    """Block 1 默认映射（基于用户提供的 JSON 例子）。
+    """Block 1 默认映射 —— 与 ``configs/<profile>/block1_<profile>.json`` 节点对齐。
 
-    delta_overrides 规则：
-      * CTPT_MUL 节点 → 用 cfg 里对应的 ``encode.scaling_factor``（int）
-      * CTCT_MUL 节点（squaring） → 固定 "x2" 标记
-    rescale 字段不进 delta_overrides（用户的例子里没有暴露 rescale 节点）。
+    实际节点（schema v2）：
+      * ctpt_ffn2 (CTPT_MUL)        ← Wffn2·X
+      * ctpt_inv_d_1 (CTPT_MUL)     ← μ 的 1/D
+      * ctct_ext_square (CTCT_MUL)  ← (X−μ)²，固定 "x2"
+      * ctpt_inv_d_2 (CTPT_MUL)     ← var 的 1/D
     """
     return {
-        "ctpt_ffn2": int(cfg.wffn2_encode.scaling_factor),
-        "ctpt_inv_d_1": int(cfg.mean_inv_d_encode.scaling_factor),
-        "ctpt_inv_d_2": int(cfg.var_inv_d_encode.scaling_factor),
+        "ctpt_ffn2":      int(cfg.wffn2_encode.scaling_factor),
+        "ctpt_inv_d_1":   int(cfg.mean_inv_d_encode.scaling_factor),
         "ctct_ext_square": "x2",
+        "ctpt_inv_d_2":   int(cfg.var_inv_d_encode.scaling_factor),
     }
 
 
 def default_block2_cfg_to_delta(cfg: Block2NoiseConfig) -> Dict[str, Union[int, str]]:
-    """Block 2 默认映射（占位；实际节点名以优化器配置为准）。"""
+    """Block 2 默认映射 —— 与 ``block2_<profile>.json`` 节点对齐。
+
+    实际节点：
+      * ctct_x_mean_over_std (CTCT_MUL) ← (X−μ)·(1/std)，固定 "x2"
+      * ctpt_gama1 (CTPT_MUL)           ← γ
+      * ctpt_wq_wk (CTPT_MUL)           ← **Q/K 共享**一个节点
+      * ctpt_rotKT_mask1 (CTPT_MUL)     ← K^T BSGS mask 1
+      * ctpt_rotKT_mask2 (CTPT_MUL)     ← K^T BSGS mask 2
+      * ctct_preprocess_qkt (CTCT_MUL)  ← Q·K^T，固定 "x2"
+      * ctpt_mask (CTPT_MUL)            ← 合并 Q,K mask
+
+    BLB cfg 的 ``wq_encode`` / ``wk_encode`` 共享 SF 时映射成 ``ctpt_wq_wk``；
+    （此处取 wq；BLB 约束已经规定 Q/K 共享 SF）。
+    BLB cfg 的 ``q_mask{1,2}_encode`` / ``wv_encode`` 在该 graph 没有对应节点 ──
+    会被丢弃（仅影响明文模型噪声，不进 delta_overrides）。
+    """
     return {
-        "ctct_normalize": "x2",            # (1/std)·(X−μ) ct·ct
-        "ctpt_gamma": int(cfg.gamma_encode.scaling_factor),
-        "ctpt_wq": int(cfg.wq_encode.scaling_factor),
-        "ctpt_wk": int(cfg.wk_encode.scaling_factor),
-        "ctpt_wv": int(cfg.wv_encode.scaling_factor),
-        "ctpt_kt_mask1": int(cfg.kt_mask1_encode.scaling_factor),
-        "ctpt_kt_mask2": int(cfg.kt_mask2_encode.scaling_factor),
-        "ctpt_q_mask1": int(cfg.q_mask1_encode.scaling_factor),
-        "ctpt_q_mask2": int(cfg.q_mask2_encode.scaling_factor),
-        "ctct_qk_matmul": "x2",            # Q·K^T ct·ct
-        "ctpt_qkt_merge_mask": int(cfg.qkt_merge_mask_encode.scaling_factor),
+        "ctct_x_mean_over_std": "x2",
+        "ctpt_gama1":          int(cfg.gamma_encode.scaling_factor),
+        "ctpt_wq_wk":          int(cfg.wq_encode.scaling_factor),
+        "ctpt_rotKT_mask1":    int(cfg.kt_mask1_encode.scaling_factor),
+        "ctpt_rotKT_mask2":    int(cfg.kt_mask2_encode.scaling_factor),
+        "ctct_preprocess_qkt": "x2",
+        "ctpt_mask":           int(cfg.qkt_merge_mask_encode.scaling_factor),
     }
 
 
 def default_block3_cfg_to_delta(cfg: Block3NoiseConfig) -> Dict[str, Union[int, str]]:
-    """Block 3 默认映射（占位；实际节点名以优化器配置为准）。
+    """Block 3 默认映射 —— 与 ``block3_exp_n<degree>.json`` 节点对齐。
 
-    softmax exp 多项式：scalar_div + degree 次自乘。
+    实际节点：
+      * ctpt_inv_2n (CTPT_MUL)             ← 1/2^n
+      * ctct_square_1 .. ctct_square_<n> (CTCT_MUL) ← 迭代平方，固定 "x2"
     """
     deltas: Dict[str, Union[int, str]] = {
-        "ctpt_softmax_inv_2n": int(cfg.inv_2n_encode.scaling_factor),
+        "ctpt_inv_2n": int(cfg.inv_2n_encode.scaling_factor),
     }
     for k in range(int(cfg.degree)):
-        deltas[f"ctct_softmax_pow_s{k+1}"] = "x2"
+        deltas[f"ctct_square_{k+1}"] = "x2"
     return deltas
 
 
 def default_block4_cfg_to_delta(cfg: Block4NoiseConfig) -> Dict[str, Union[int, str]]:
-    """Block 4 默认映射（占位；实际节点名以优化器配置为准）。"""
+    """Block 4 默认映射 —— 与 ``block4.json`` 节点对齐。
+
+    实际节点（注意只有 2 个 mask 节点；BLB cfg 的 3 个 mask encode 中
+    ``softmax_out_mask`` / ``v_mask`` 被 graph 合成一个 ``ctpt_mask2``，
+    我们取 ``softmax_out_mask`` 的 SF）：
+      * ctpt_mask2 (CTPT_MUL)               ← softmax 输出 / V 路径上的 mask
+      * ctct_rot_softmax_mul_v (CTCT_MUL)   ← softmax×V matmul，固定 "x2"
+      * ctpt_mask (CTPT_MUL)                ← 合并 softmax×V 后的 mask
+      * ctpt_wo_attnout (CTPT_MUL)          ← Wo
+      * ctpt_inv_d_1 (CTPT_MUL)             ← post-attn LN μ 的 1/D
+      * ctct_square (CTCT_MUL)              ← post-attn LN (X−μ)²，固定 "x2"
+      * ctpt_inv_d_2 (CTPT_MUL)             ← post-attn LN var 的 1/D
+    """
     return {
-        "ctpt_softmax_out_mask": int(cfg.softmax_out_mask_encode.scaling_factor),
-        "ctpt_v_mask": int(cfg.v_mask_encode.scaling_factor),
-        "ctct_softmax_v": "x2",            # softmax×V ct·ct matmul
-        "ctpt_softmax_v_mask": int(cfg.softmax_v_mask_encode.scaling_factor),
-        "ctpt_wo": int(cfg.wo_encode.scaling_factor),
-        "ctpt_inv_d_attn_mean": int(cfg.ln_mean_inv_d_encode.scaling_factor),
-        "ctct_attn_square": "x2",           # post-attn LN (X−μ)²
-        "ctpt_inv_d_attn_var": int(cfg.ln_var_inv_d_encode.scaling_factor),
+        "ctpt_mask2":             int(cfg.softmax_out_mask_encode.scaling_factor),
+        "ctct_rot_softmax_mul_v": "x2",
+        "ctpt_mask":              int(cfg.softmax_v_mask_encode.scaling_factor),
+        "ctpt_wo_attnout":        int(cfg.wo_encode.scaling_factor),
+        "ctpt_inv_d_1":           int(cfg.ln_mean_inv_d_encode.scaling_factor),
+        "ctct_square":            "x2",
+        "ctpt_inv_d_2":           int(cfg.ln_var_inv_d_encode.scaling_factor),
     }
 
 
 def default_block5_cfg_to_delta(cfg: Block5NoiseConfig) -> Dict[str, Union[int, str]]:
-    """Block 5 默认映射（占位；实际节点名以优化器配置为准）。
+    """Block 5 默认映射 —— 与 ``block5_n<degree>.json`` 节点对齐。
 
-    含 LN tail (×1/std, ×γ) + Wffn1 + GELU 多项式（degree 决定 power 数）。
+    实际节点（按 GELU degree 不同，graph 含的 ctct_gelu_* 也不同）：
+      * ctct_xmean_over_std (CTCT_MUL) ← post-attn (X−μ)·(1/std)
+      * ctpt_gamal (CTPT_MUL)          ← γ
+      * ctpt_wffn1 (CTPT_MUL)          ← W_ffn1·X
+      * (degree==1：无 ctct_gelu_*)
+      * (degree==2：ctct_gelu_x2)
+      * (degree==4：ctct_gelu_x2 + ctct_gelu_x4；**不含 ctct_gelu_x3**，
+        因为 graph 把 x^3 直接折进 x^4)
+      * ctpt_gelu_coeff (CTPT_MUL)     ← 多项式系数
     """
     deltas: Dict[str, Union[int, str]] = {
-        "ctct_normalize_attn": "x2",       # (1/std)·(X−μ)
-        "ctpt_gamma_attn": int(cfg.gamma_encode.scaling_factor),
-        "ctpt_wffn1": int(cfg.wffn1_encode.scaling_factor),
-        "ctpt_gelu_coeff": int(cfg.gelu_coeff_encode.scaling_factor),
+        "ctct_xmean_over_std": "x2",
+        "ctpt_gamal":          int(cfg.gamma_encode.scaling_factor),
+        "ctpt_wffn1":          int(cfg.wffn1_encode.scaling_factor),
     }
     if cfg.gelu_degree >= 2:
         deltas["ctct_gelu_x2"] = "x2"
     if cfg.gelu_degree >= 4:
-        deltas["ctct_gelu_x3"] = "x2"
         deltas["ctct_gelu_x4"] = "x2"
+    deltas["ctpt_gelu_coeff"] = int(cfg.gelu_coeff_encode.scaling_factor)
     return deltas
 
 
@@ -434,23 +752,42 @@ class RescaleOptimizerBridge:
             config_name: str,
             block_name: str,
             cfg: Any,
+            t_new: Optional[List[int]] = None,
             extra_overrides: Optional[Mapping[str, Union[int, str]]] = None,
             ) -> RescaleOptimizerOutput:
         """对单个 (config, block, cfg) 三元组跑一次优化器。
 
-        ``extra_overrides`` 会覆盖默认 cfg→delta 翻译的相同 key（用于业务侧
-        对个别节点强行指定 delta，比如固定 ctct_ext_square="x2"）。
+        Args:
+            config_name: 配置名，对应 ``static_skeletons_<profile>.json`` 中的
+                         ``config_name`` 字段（如 ``"block1_mrpc"``、``"block3_exp_n4"``）。
+            block_name:  ``"block1"`` … ``"block5"``，决定 cfg→delta 用哪个 mapper。
+            cfg:         ``Block{N}NoiseConfig`` 实例。
+            t_new:       per-stage 新 SF（length = R+1，与 baseline skeleton 对齐）；
+                         **None** ⇒ invoker 内部用 baseline t_baseline（等价于不改 t）。
+            extra_overrides: 在默认 cfg→delta 翻译之上叠加 / 覆盖的节点 deltas。
+
+        Returns:
+            ``RescaleOptimizerOutput``。
         """
         deltas = self.cfg_to_delta_overrides(block_name, cfg)
         if extra_overrides:
             deltas.update({str(k): v for k, v in extra_overrides.items()})
-        raw = self.invoker(config_name, deltas)
+        # 兼容两种 invoker 签名：rich payload (t_new + delta_overrides) / bare deltas dict
+        if t_new is not None:
+            payload: Any = {
+                "t_new": [int(x) for x in t_new],
+                "delta_overrides": deltas,
+            }
+        else:
+            payload = deltas
+        raw = self.invoker(config_name, payload)
         return _parse_optimizer_raw(raw, config_name=config_name)
 
     def evaluate_blocks(
             self,
             requests: Mapping[str, Tuple[str, Any]],
             *,
+            t_new_per_config: Optional[Mapping[str, List[int]]] = None,
             extra_overrides: Optional[Mapping[str, Mapping[str, Union[int, str]]]] = None,
             ) -> Dict[str, RescaleOptimizerOutput]:
         """一次跑多个 config。
@@ -458,6 +795,8 @@ class RescaleOptimizerBridge:
         Args:
             requests: ``{config_name: (block_name, cfg)}``，比如
                       ``{"block1_mrpc": ("block1", block1_cfg), ...}``
+            t_new_per_config: ``{config_name: [int, ...]}``，可选；不传则对应
+                              config 走 baseline t_new。
             extra_overrides: ``{config_name: {node: delta, ...}}``，可选
 
         Returns:
@@ -466,10 +805,12 @@ class RescaleOptimizerBridge:
         outputs: Dict[str, RescaleOptimizerOutput] = {}
         for config_name, (block_name, cfg) in requests.items():
             xtra = (extra_overrides or {}).get(config_name)
+            t_new = (t_new_per_config or {}).get(config_name)
             outputs[config_name] = self.evaluate(
                 config_name=config_name,
                 block_name=block_name,
                 cfg=cfg,
+                t_new=t_new,
                 extra_overrides=xtra,
             )
         return outputs

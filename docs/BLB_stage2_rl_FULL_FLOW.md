@@ -28,6 +28,14 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl
 ```
 
+只跑最高配置 final eval：
+
+```bash
+bash llama_7B_LayerImportance.sh eval --preset mrpc-blb-max-final-eval
+```
+
+`mrpc-blb-max-final-eval` 不做搜索。它把 Stage-1 固定为 MRPC 推荐 JSON 配置，把 Stage-2 直接解析为最大动作/最大 scaling-factor，并把 random 对照组数量设为 0，适合先快速看最高配置在统一 final-eval 下的效果。
+
 脚本会自动后台运行。启动后会打印 PID、日志文件、错误摘要、`LATEST_RUN_DIR` 和
 `LATEST_PID`。远程服务器上通常只需要保留这几项信息，后面查看日志、停止任务和续训练都用得到。
 
@@ -239,10 +247,11 @@ BLB reward 是分层的，不是单纯“成本越低越好”。
 | 模式 | 适合场景 | 说明 |
 | --- | --- | --- |
 | `heuristic` | 当前默认、推荐先用 | 不依赖外部 Rescale_optimizer，使用内置启发式成本估计，最适合先把 BLB RL 融入现有框架 |
-| `subprocess` | 远程服务器已有外部 Rescale_optimizer | 成本信号来自真实外部优化器，正式实验时更可信，但环境要求更高 |
+| `subprocess` | 远程服务器已有外部 Rescale_optimizer，且能向 runner 提供 configs 与 baseline archive | 成本信号来自真实外部优化器，正式实验时更可信，但当前 shell 只传 root/module 还不足以完整启用 |
 | `stub` | 小规模受控调试 | 使用固定或模拟信号，主要用于验证流程 |
 
-建议路线是先用 `heuristic` 跑通训练、停止、续训和目录落盘，再切 `subprocess` 做正式成本实验。
+建议路线是先用 `heuristic` 跑通训练、停止、续训和目录落盘，再补齐 `subprocess` 所需的
+configs mapping 与 baseline archive 注入链路，最后切 `subprocess` 做正式成本实验。
 
 ## 7. 如何优雅停止
 

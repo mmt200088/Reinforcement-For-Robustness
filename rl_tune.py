@@ -144,7 +144,7 @@ def train(
         stage1_rl_episodes_specified: bool = False,
         stage2_rl_episodes_specified: bool = False,
         ppo_update_interval: int = 120,  # PPO 更新间隔（episode 数）；同时决定 batch 大小与 details 分块大小
-        final_eval_config_source: str = "search",  # search | json | manual
+        final_eval_config_source: str = "search",  # search | json | manual | max
         final_eval_config_path: str = "glue_final_configs_best_ppo.json",
         manual_stage1_gelu: str = "",
         manual_stage1_softmax: str = "",

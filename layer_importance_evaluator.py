@@ -2596,10 +2596,13 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.needs_stage2_fixed_config = (not self.skip_noise_rl) or (not self.skip_final_eval)
         self.resume_run_dir = str(resume_run_dir or '').strip()
 
-        if self.final_eval_config_source not in ('search', 'json', 'manual'):
+        if self.final_eval_config_source not in (
+                'search', 'json', 'manual', 'max',
+                'stage2-max', 'stage2_max', 'blb-max', 'blb_max',
+        ):
             raise ValueError(
                 f"Unsupported final_eval_config_source '{self.final_eval_config_source}'. "
-                "Use one of: search, json, manual."
+                "Use one of: search, json, manual, max."
             )
 
         # ---------- 阶段组合校验（兼容续训时灵活切换阶段开关） ----------

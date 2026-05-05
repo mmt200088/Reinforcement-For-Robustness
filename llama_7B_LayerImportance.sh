@@ -41,7 +41,7 @@ cat <<'EOF'
 
 配置简写：
   --config PATH              等价于 --final-eval-config PATH；eval 模式下会自动使用 --final-eval-source json
-  --source search|json|manual
+  --source search|json|manual|max
 
 核心高级参数：
   --search-algorithm rl|ga|greedy|general-rl|rl-and-ga-compare  旧版兼容入口
@@ -74,7 +74,7 @@ GA / Greedy：
   --skip-stage1-search
   --skip-noise-search
   --skip-final-eval                       跳过 Stage-1 + Stage-2 合并的最终评估
-  --final-eval-source search|json|manual  最终评估的配置来源
+  --final-eval-source search|json|manual|max  最终评估的配置来源
   --final-eval-config PATH                final-eval-source=json 时的合并 JSON 路径
   --manual-stage1-gelu JSON_ARRAY         manual 模式：Stage-1 GELU 多项式次数
   --manual-stage1-softmax JSON_ARRAY      manual 模式：Stage-1 Softmax 多项式次数
@@ -237,6 +237,7 @@ srczh(){
     stage1_result) echo "Stage-1 搜索结果（stage1_result）" ;;
     json) echo "JSON 文件（json）" ;;
     manual) echo "手动指定（manual）" ;;
+    max|stage2-max|stage2_max|blb-max|blb_max) echo "Stage-2 最大动作（max）" ;;
     *) echo "$1" ;;
   esac
 }
@@ -690,7 +691,7 @@ case "$RUN_MODE" in
     ;;
 esac
 
-case "$FINAL_EVAL_SOURCE" in search|json|manual) ;; *) err "不支持的最终评估来源：$FINAL_EVAL_SOURCE" ;; esac
+case "$FINAL_EVAL_SOURCE" in search|json|manual|max|stage2-max|stage2_max|blb-max|blb_max) ;; *) err "不支持的最终评估来源：$FINAL_EVAL_SOURCE" ;; esac
 case "$STAGE2_FIXED_CONFIG_SOURCE" in ""|stage1_result|search|json|manual) ;; *) err "不支持的 Stage-2 固定 GELU/Softmax 来源：$STAGE2_FIXED_CONFIG_SOURCE" ;; esac
 [ "$STAGE2_FIXED_CONFIG_SOURCE" = "search" ] && STAGE2_FIXED_CONFIG_SOURCE="stage1_result"
 # search 是 infer 的别名
@@ -964,7 +965,7 @@ else
     [ -n "$MANUAL_STAGE1_GELU" ] && [ -n "$MANUAL_STAGE1_SOFTMAX" ] || err "manual 最终评估配置必须同时提供 --manual-stage1-gelu 和 --manual-stage1-softmax。"
     [ -n "$MANUAL_STAGE2_NOISE" ] || err "manual 最终评估配置必须提供 --manual-stage2-noise。"
   else
-    [ -z "$MANUAL_STAGE1_GELU" ] && [ -z "$MANUAL_STAGE1_SOFTMAX" ] && [ -z "$MANUAL_STAGE2_NOISE" ] || err "只有 --final-eval-source=manual 时才能提供 --manual-stage1-gelu / --manual-stage1-softmax / --manual-stage2-noise。"
+    [ -z "$MANUAL_STAGE1_GELU" ] && [ -z "$MANUAL_STAGE1_SOFTMAX" ] && [ -z "$MANUAL_STAGE2_NOISE" ] || err "只有 --final-eval-source=manual 时才能提供 --manual-stage1-gelu / --manual-stage1-softmax / --manual-stage2-noise；最高配置请使用 --final-eval-source=max。"
   fi
   _NEEDS_STAGE2_FIXED_CONFIG="false"
   if [ "$SKIP_NOISE_SEARCH" = "false" ]; then

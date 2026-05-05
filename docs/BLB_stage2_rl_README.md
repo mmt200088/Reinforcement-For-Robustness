@@ -29,6 +29,17 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl
 ```
 
+只跑一次 BLB 最高配置 final eval：
+
+```bash
+bash llama_7B_LayerImportance.sh eval --preset mrpc-blb-max-final-eval
+```
+
+这个 preset 使用 `--final-eval-source blb-max`。含义是：Stage-1 的 GELU/Softmax 从
+`glue_final_configs_best_ppo.json` 中读取 MRPC 推荐配置；Stage-2 不读取搜索结果，也不要求手写
+`--manual-stage2-noise`，而是直接选择当前 final-eval 路径可执行的最大动作/最大 scaling-factor 配置。
+random 对照组数量默认为 0，只保留 Baseline、Optimized/max 与 Stage1Fixed+MaxSF 等核心组别，便于先看最高配置效果。
+
 脚本会自动 `nohup` 后台运行，并在启动后打印 PID、日志路径和持久化目录。
 常见查看方式：
 
@@ -72,7 +83,7 @@ bash llama_7B_LayerImportance.sh run rl --dataset mrpc --stage2-rl-variant legac
 | `--blb-v3-eval-interval N` | `100` | `--stage2-eval-interval` 的长别名 |
 | `--stage2-rescale-invoker heuristic|subprocess|stub` | `heuristic` | BLB 成本信号来源。默认 `heuristic` 不依赖外部 Rescale_optimizer |
 | `--blb-v3-rescale-invoker-kind heuristic|subprocess|stub` | `heuristic` | `--stage2-rescale-invoker` 的长别名 |
-| `--stage2-rescale-root PATH` | 空 | `subprocess` 模式下 Rescale_optimizer 子项目根目录 |
+| `--stage2-rescale-root PATH` | 空 | `subprocess` 模式下 Rescale_optimizer 子项目根目录；当前仅提供 root 还不足以启用真实 subprocess，见下文说明 |
 | `--blb-v3-subprocess-optimizer-root PATH` | 空 | `--stage2-rescale-root` 的长别名 |
 | `--stage2-rescale-cli-module MODULE` | `rescale_optimizer.replan` | `subprocess` 模式下调用的模块名 |
 | `--blb-v3-subprocess-cli-module MODULE` | `rescale_optimizer.replan` | `--stage2-rescale-cli-module` 的长别名 |
@@ -91,6 +102,7 @@ BLB 仍然复用现有 Stage-2 外壳参数：
 | `--stage2-probe-size INT` | 稳定性评估使用的固定探针子集大小 |
 | `--stage2-fixed-config-source stage1_result|json|manual` | Stage-2 固定 GELU/Softmax 的来源 |
 | `--stage2-fixed-config PATH` | `json` 来源下的合并配置文件 |
+| `--final-eval-source max|stage2-max|blb-max` | final-eval-only 时直接选择 Stage-2 最大动作/最大 scaling-factor；Stage-1 仍从 JSON/search/manual 回退 |
 
 ## 产物目录
 
@@ -133,7 +145,8 @@ BLB 会在当前 episode 结束、并且到达安全保存点后写出 live chec
 Stage-2 RL 融入现有框架、先打通训练和续训闭环的阶段。
 
 只有当远程服务器已经准备好外部 `Rescale_optimizer` 项目，并且配置文件与 BLB action
-space 对齐时，才切到 `subprocess`。这时要同时传 `--stage2-rescale-root`，必要时再传
-`--stage2-rescale-cli-module`。
+space 对齐时，才切到 `subprocess`。当前代码内部还需要 `configs` mapping 和
+`baseline_archive`；如果只通过 shell 传 `--stage2-rescale-root` / `--stage2-rescale-cli-module`，
+runner 会因为信息不足自动 fallback 到 `heuristic`。正式接 subprocess 前需要补齐这条注入链路。
 
 `stub` 主要用于受控实验，不建议作为正式训练默认值。

@@ -83,7 +83,7 @@ class BLBStage2TrainConfig:
     eval_interval: int = 100                # 多少 episode 跑一次 deterministic eval
     save_interval: int = 200
     profile: str = "default"
-    rescale_invoker_kind: str = "heuristic"  # "heuristic" / "stub" / "subprocess"
+    rescale_invoker_kind: str = "heuristic"  # "heuristic" / "stub" / "subprocess" / "in_process"
     # spec §6.4 / §3.1
     acc_threshold: float = 0.0              # baseline 精度往下浮 1pp 后用此值
     stab_threshold: float = float("inf")
@@ -95,9 +95,16 @@ class BLBStage2TrainConfig:
     # 自动校准
     calibrate_baseline_samples: int = 8
     # SubprocessInvoker 参数（仅当 rescale_invoker_kind="subprocess" 时使用）
-    subprocess_optimizer_root: Optional[str] = None
-    subprocess_cli_module: str = "rescale_optimizer.replan"
+    subprocess_optimizer_root: Optional[str] = None    # Rescale_optimizer 根目录
+    subprocess_cli_module: str = "rescale_optimizer.replan"  # 已弃用；保留只为不破坏调用方 kwargs
     subprocess_configs: Optional[Mapping[str, str]] = None
+    subprocess_baseline_archive: Optional[str] = None  # static_skeletons_<profile>.json 路径
+    subprocess_cli_script: str = "scripts/replan_what_if.py"
+    # InProcessInvoker 参数（rescale_invoker_kind="in_process"，**推荐**）
+    inproc_rescale_optimizer_root: Optional[str] = None  # e.g. "Rescale_optimizer"
+    inproc_profile: Optional[str] = None                 # e.g. "mrpc"；用于自动定位 configs/<profile>
+    inproc_configs: Optional[Mapping[str, str]] = None   # {config_name: graph_json_path}；不传则按 profile 自动扫
+    inproc_baseline_archive: Optional[str] = None        # 不传则 <root>/configs/<profile>/static_skeletons_<profile>.json
 
 
 # ---------------------------------------------------------------------------
@@ -659,16 +666,56 @@ class BLBStage2RLRunner:
             ) -> Tuple[RescaleOptimizerBridge, Optional[HeuristicStubInvoker]]:
         kind = str(train_cfg.rescale_invoker_kind or "heuristic").lower()
 
+        if kind == "in_process":
+            from rescale_optimizer_bridge import InProcessInvoker
+            root = train_cfg.inproc_rescale_optimizer_root
+            if not root:
+                log("  [警告] in_process invoker 未提供 inproc_rescale_optimizer_root；fallback 到 heuristic。")
+                kind = "heuristic"
+            else:
+                try:
+                    if train_cfg.inproc_configs:
+                        # 手工指定 configs + baseline_archive
+                        baseline = train_cfg.inproc_baseline_archive
+                        if not baseline:
+                            log("  [警告] in_process invoker 提供了 inproc_configs 但未提供 inproc_baseline_archive；fallback 到 heuristic。")
+                            kind = "heuristic"
+                        else:
+                            invoker = InProcessInvoker(
+                                configs=dict(train_cfg.inproc_configs),
+                                baseline_archive=str(baseline),
+                                rescale_optimizer_root=str(root),
+                            )
+                            return RescaleOptimizerBridge(invoker=invoker), None
+                    else:
+                        # 按 profile 自动扫
+                        profile = train_cfg.inproc_profile or train_cfg.profile
+                        invoker = InProcessInvoker.from_profile(
+                            rescale_optimizer_root=str(root),
+                            profile=str(profile),
+                            baseline_archive=train_cfg.inproc_baseline_archive,
+                        )
+                        return RescaleOptimizerBridge(invoker=invoker), None
+                except Exception as e:
+                    log(f"  [警告] in_process invoker 初始化失败 ({e})；fallback 到 heuristic。")
+                    kind = "heuristic"
+
         if kind == "subprocess":
             configs = train_cfg.subprocess_configs or {}
-            if not configs:
-                log("  [警告] subprocess invoker 未提供 configs；自动 fallback 到 heuristic。")
+            root = train_cfg.subprocess_optimizer_root
+            baseline = train_cfg.subprocess_baseline_archive
+            if not configs or not root or not baseline:
+                log(
+                    "  [警告] subprocess invoker 缺 configs / optimizer_root / "
+                    "baseline_archive 之一；自动 fallback 到 heuristic。"
+                )
                 kind = "heuristic"
             else:
                 invoker = SubprocessInvoker(
+                    rescale_optimizer_root=str(root),
                     configs=configs,
-                    optimizer_root=train_cfg.subprocess_optimizer_root,
-                    cli_module=train_cfg.subprocess_cli_module,
+                    baseline_archive=str(baseline),
+                    cli_script=train_cfg.subprocess_cli_script,
                 )
                 bridge = RescaleOptimizerBridge(invoker=invoker)
                 return bridge, None
