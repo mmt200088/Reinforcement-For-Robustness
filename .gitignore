@@ -10,7 +10,10 @@ all_analysis_new/**/*.png
 
 Model_analysis/all_analysis_approx
 Parting Chapter/
-Paean/outputs/
+# Paean：除 *.log 外全部纳入版本库（!Paean/** 放在全局 *.csv 等规则之后；末尾 Paean/**/*.log 确保日志仍被忽略）
+!Paean/
+!Paean/**
+Paean/**/*.log
 !pruning_search_log.txt
 # Stage-1 / stage-2 noise: GA (genetic_search_module) & General RL (general_policy_module)
 # reuse the same paths as PPO (*.txt is ignored globally above). Un-ignore run artifacts
