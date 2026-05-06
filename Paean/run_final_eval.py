@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import List
+from typing import Callable, Dict, List
 
 from .config import (
     DATASET_CHOICES,
@@ -173,6 +174,115 @@ def build_command(settings: FinalEvalSettings) -> List[str]:
     ]
 
 
+def log_path_for(settings: FinalEvalSettings, output_dir: Path) -> Path:
+    logfile_name = Path(str(settings.logfile or "final_eval.log")).name
+    if not logfile_name:
+        logfile_name = "final_eval.log"
+    return output_dir / "logs" / logfile_name
+
+
+def configuration_lines(
+    settings: FinalEvalSettings,
+    output_dir: Path,
+    command: List[str],
+    *,
+    include_command: bool = True,
+) -> List[str]:
+    lines = [
+        "final_eval standalone configuration:",
+        f"  dataset: {settings.dataset}",
+        f"  algorithm: {settings.algorithm}",
+        f"  source: {settings.source}",
+        f"  config: {settings.config}",
+        f"  random_enabled: {settings.random_enabled}",
+    ]
+    if settings.action_config:
+        lines.append(f"  action_config: {settings.action_config}")
+    if settings.action_ranges:
+        lines.append(f"  action_ranges: {list(settings.action_ranges)}")
+    if settings.action_fixed:
+        lines.append(f"  action_fixed: {list(settings.action_fixed)}")
+    lines.extend(
+        [
+            f"  blb_rescale_invoker_kind: {settings.blb_rescale_invoker_kind}",
+        ]
+    )
+    if settings.blb_rescale_optimizer_root:
+        lines.append(f"  blb_rescale_optimizer_root: {settings.blb_rescale_optimizer_root}")
+    lines.append(f"  require_rescale_optimizer: {settings.require_rescale_optimizer}")
+    if settings.resume_from:
+        lines.append(f"  resume_from: {settings.resume_from}")
+    lines.append(f"  output_dir: {output_dir}")
+    if include_command:
+        lines.append(f"  command: {format_command(command)}")
+    return lines
+
+
+def print_configuration(
+    settings: FinalEvalSettings,
+    output_dir: Path,
+    command: List[str],
+    *,
+    include_command: bool = True,
+) -> None:
+    for line in configuration_lines(
+        settings,
+        output_dir,
+        command,
+        include_command=include_command,
+    ):
+        print(line)
+
+
+def launch_background(
+    settings: FinalEvalSettings,
+    command: List[str],
+    output_dir: Path,
+    *,
+    popen_factory: Callable = subprocess.Popen,
+) -> Dict[str, Path | int]:
+    log_path = log_path_for(settings, output_dir)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    latest_base_dir = output_dir.parent
+    latest_base_dir.mkdir(parents=True, exist_ok=True)
+
+    command_text = format_command(command)
+    (log_path.parent / "launch_command.txt").write_text(command_text + "\n", encoding="utf-8")
+
+    with log_path.open("a", encoding="utf-8") as log_file:
+        log_file.write("\n" + "=" * 80 + "\n")
+        log_file.write(f"Launcher time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        for line in configuration_lines(
+            settings,
+            output_dir,
+            command,
+            include_command=True,
+        ):
+            log_file.write(line + "\n")
+        log_file.write("=" * 80 + "\n\n")
+        log_file.flush()
+        proc = popen_factory(
+            command,
+            cwd=str(REPO_ROOT),
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+    pid = int(proc.pid)
+    for pid_file in (output_dir / "run.pid", output_dir / "final_eval.pid"):
+        pid_file.write_text(f"{pid}\n", encoding="utf-8")
+    (latest_base_dir / "LATEST_RUN_DIR").write_text(str(output_dir) + "\n", encoding="utf-8")
+    (latest_base_dir / "LATEST_PID").write_text(f"{pid}\n", encoding="utf-8")
+    return {
+        "pid": pid,
+        "log_path": log_path,
+        "output_dir": output_dir,
+        "latest_base_dir": latest_base_dir,
+    }
+
+
 def main(argv: List[str] | None = None) -> int:
     argv = list(argv if argv is not None else sys.argv[1:])
     if "--list-presets" in argv:
@@ -198,30 +308,23 @@ def main(argv: List[str] | None = None) -> int:
         source_run_dir=settings.resume_from,
         timestamp_if_needed=True,
     )
-    print("final_eval standalone configuration:")
-    print(f"  dataset: {settings.dataset}")
-    print(f"  algorithm: {settings.algorithm}")
-    print(f"  source: {settings.source}")
-    print(f"  config: {settings.config}")
-    print(f"  random_enabled: {settings.random_enabled}")
-    if settings.action_config:
-        print(f"  action_config: {settings.action_config}")
-    if settings.action_ranges:
-        print(f"  action_ranges: {list(settings.action_ranges)}")
-    if settings.action_fixed:
-        print(f"  action_fixed: {list(settings.action_fixed)}")
-    print(f"  blb_rescale_invoker_kind: {settings.blb_rescale_invoker_kind}")
-    if settings.blb_rescale_optimizer_root:
-        print(f"  blb_rescale_optimizer_root: {settings.blb_rescale_optimizer_root}")
-    print(f"  require_rescale_optimizer: {settings.require_rescale_optimizer}")
-    if settings.resume_from:
-        print(f"  resume_from: {settings.resume_from}")
-    print(f"  output_dir: {output_dir}")
-    print(f"  command: {format_command(command)}")
 
     if settings.dry_run:
+        print_configuration(settings, output_dir, command, include_command=True)
         return 0
 
+    if not settings.foreground:
+        launch = launch_background(settings, command, output_dir)
+        print("已在后台启动 final_eval。")
+        print(f"  进程号（PID）：{launch['pid']}")
+        print(f"  输出目录：{launch['output_dir']}")
+        print(f"  查看日志：tail -f {launch['log_path']}")
+        print(f"  LATEST_RUN_DIR：{launch['latest_base_dir'] / 'LATEST_RUN_DIR'}")
+        print(f"  LATEST_PID：{launch['latest_base_dir'] / 'LATEST_PID'}")
+        print(f"  优雅停止（Graceful Stop）：kill -INT {launch['pid']}")
+        return 0
+
+    print_configuration(settings, output_dir, command, include_command=True)
     log_dir = output_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     completed = subprocess.run(command, cwd=str(REPO_ROOT), check=False)

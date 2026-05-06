@@ -244,6 +244,8 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `--output-root PATH` | `Paean/outputs` | 独立 final eval 输出根目录 |
 | `--run-name NAME` | 时间戳或训练目录名 | 输出目录名 |
 | `--repeat N` / `--eval-repeat N` | `50` | 被选配置和随机对照组重复评估次数 |
+| `--logfile FILE` | `final_eval.log` | 后台运行时写入输出目录下的 `logs/FILE`；终端只打印 PID 和 tail 命令 |
+| `--foreground` | 关闭 | 调试用：不后台化，直接在当前终端运行 |
 | `--random-seed N` | `42` | final eval 随机种子 |
 | `--random` / `--enable-random` | 关闭 | 启用随机配置对照；不传时只评估选中的固定配置或 range 网格 |
 | `--perm-trials N` | `0` | Perm 对照组数量；只有 `--random` 模式才允许非零 |

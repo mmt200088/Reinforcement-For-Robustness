@@ -46,6 +46,37 @@ class FinalEvalStandaloneTests(unittest.TestCase):
         self.assertIn("Paean/outputs", completed.stdout.replace("\\", "/"))
         self.assertIn("--final_eval_random_enabled false", completed.stdout)
 
+    def test_background_launcher_redirects_output_and_writes_pid(self):
+        from Paean.config import FinalEvalSettings
+        from Paean.run_final_eval import launch_background
+
+        with TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "mrpc" / "rl" / "unit"
+            settings = FinalEvalSettings(output_root=tmpdir, logfile="unit.log")
+            command = [sys.executable, "-c", "print('background-ok', flush=True)"]
+
+            class FakeProcess:
+                pid = 12345
+
+            def fake_popen(_command, **kwargs):
+                kwargs["stdout"].write("background-ok\n")
+                kwargs["stdout"].flush()
+                return FakeProcess()
+
+            launch = launch_background(
+                settings,
+                command,
+                output_dir,
+                popen_factory=fake_popen,
+            )
+            log_path = Path(launch["log_path"])
+
+            self.assertEqual(launch["pid"], 12345)
+            self.assertTrue((output_dir / "run.pid").is_file())
+            self.assertTrue((output_dir / "final_eval.pid").is_file())
+            self.assertTrue((output_dir.parent / "LATEST_PID").is_file())
+            self.assertIn("background-ok", log_path.read_text(encoding="utf-8"))
+
     def test_action_grid_range_expands_cartesian_product(self):
         from Paean.action_grid import build_action_candidates
 

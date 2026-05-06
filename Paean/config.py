@@ -57,6 +57,7 @@ class FinalEvalSettings:
     manual_stage1_softmax: str = ""
     manual_stage2_noise: str = ""
     dry_run: bool = False
+    foreground: bool = False
 
 
 def _read_preset_args(preset_name: str, preset_dir: Path = PRESET_DIR) -> List[str]:
@@ -152,6 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rescale-invoker-kind", "--blb-rescale-invoker-kind", dest="blb_rescale_invoker_kind", default="heuristic")
     parser.add_argument("--rescale-optimizer-root", "--blb-rescale-optimizer-root", dest="blb_rescale_optimizer_root", default="")
     parser.add_argument("--require-rescale-optimizer", dest="require_rescale_optimizer", action="store_true")
+    parser.add_argument("--foreground", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -265,6 +267,7 @@ def parse_final_eval_settings(
         manual_stage1_softmax=ns.manual_stage1_softmax,
         manual_stage2_noise=ns.manual_stage2_noise,
         dry_run=bool(ns.dry_run),
+        foreground=bool(ns.foreground),
     )
     validate_settings(settings, require_resume_for_search=require_resume_for_search)
     return settings
