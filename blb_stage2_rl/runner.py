@@ -64,11 +64,56 @@ from .reward import (
     RewardWeights,
     calibrate_weights_from_baseline,
 )
+from .persistence import (
+    BLBStatusBoard,
+    dump_crash_report,
+    write_blb_final_report,
+    write_training_curves,
+)
 
 
 BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = "blb_stage2_rl_checkpoint_live.pt"
 BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = "blb_stage2_rl_checkpoint_final.pt"
 BLB_STAGE2_BEST_CFG_FILENAME = "blb_stage2_best_cfg.pkl"
+
+# ---------------------------------------------------------------------------
+# BLB Stage 2 RL 专属持久化根目录（与旧 stage 2 RL 完全分开）
+# ---------------------------------------------------------------------------
+# 旧版 stage 2 RL (noise_rl_module_v2) 把 checkpoint/曲线/状态都丢在 evaluator
+# 给的 ``noise_stage_progress_dir``（默认 ``rl_results/persistent/...``）下。
+# BLB Stage 2 RL 是"最终版本"——为了让用户能清晰区分两套产物，新版的所有
+# 持久化文件都搬到项目根下的 ``Final Chapter/`` 目录里。
+#
+# 当 evaluator 提供了 ``run_output_dir`` 时，最终路径形如
+#   <repo_root>/Final Chapter/<basename(run_output_dir)>/blb_stage2/
+# 否则 fallback 到 ``<repo_root>/Final Chapter/blb_stage2_default_run/``。
+#
+# Why "Final Chapter"：用户明确指示"让旧持久化目录成为历史"，新名字寓意"最终
+# 章节"——这是真正想要的 stage 2 RL，不再迭代。
+BLB_FINAL_CHAPTER_DIRNAME = "Final Chapter"
+
+
+def _resolve_repo_root() -> str:
+    """回到项目根目录。``runner.py`` 位于 ``<root>/blb_stage2_rl/``，向上一级即可。"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(here)
+
+
+def resolve_blb_persistence_dir(evaluator) -> str:
+    """计算 BLB Stage 2 RL 的持久化目录（覆盖 ``ev.noise_stage_progress_dir``）。
+
+    输出形如 ``<repo_root>/Final Chapter/<run_basename>/blb_stage2/progress``。
+    若 ``evaluator.run_output_dir`` 为空，使用 ``blb_stage2_default_run``。
+    """
+    repo_root = _resolve_repo_root()
+    run_dir = str(getattr(evaluator, "run_output_dir", "") or "").strip()
+    if run_dir:
+        run_basename = os.path.basename(os.path.normpath(run_dir)) or "blb_stage2_default_run"
+    else:
+        run_basename = "blb_stage2_default_run"
+    out = os.path.join(repo_root, BLB_FINAL_CHAPTER_DIRNAME, run_basename, "blb_stage2", "progress")
+    os.makedirs(out, exist_ok=True)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -150,15 +195,44 @@ class BLBStage2RLRunner:
 
         # ---------- 0) 解析配置 ----------
         train_cfg = self._build_train_config_from_evaluator(ev)
+        # ---------- 0.1) 切换到 BLB Stage 2 RL 专属持久化根目录 ----------
+        # 把 evaluator 的 noise_stage_progress_dir 覆盖成 "Final Chapter/.../blb_stage2/progress"。
+        # 旧 stage 2 RL 的目录 (rl_results/persistent/...) 不动 —— 这两套互不影响。
+        legacy_progress_dir = str(getattr(ev, "noise_stage_progress_dir", "") or "")
+        blb_progress_dir = resolve_blb_persistence_dir(ev)
+        try:
+            ev.noise_stage_progress_dir = blb_progress_dir
+        except Exception:
+            pass
         log("\n" + "=" * 80)
         log("阶段 5 · 加强版 BLB Stage 2 强化学习（BLB Stage 2 RL · v3）")
         log("=" * 80)
         log(f"  {bullet} 固定 GELU/Softmax 来源：{fixed_source}    标签：{fixed_label}")
         log(f"  {bullet} GELU 离散阶数向量:   {np.asarray(fixed_gelu, dtype=int).tolist()}")
         log(f"  {bullet} Softmax 离散阶数向量: {np.asarray(fixed_softmax, dtype=int).tolist()}")
-        log(f"  {bullet} Profile = {train_cfg.profile!r}    "
-            f"Total episodes = {train_cfg.total_episodes}    "
-            f"PPO update interval = {train_cfg.rollout_size}")
+        log(f"  {bullet} Profile（数据集）= {train_cfg.profile!r}    "
+            f"Episode 总数 = {train_cfg.total_episodes}    "
+            f"PPO 更新间隔（rollout_size） = {train_cfg.rollout_size}")
+        log(f"  {bullet} BLB 持久化目录 = {blb_progress_dir}")
+        if legacy_progress_dir and os.path.normpath(legacy_progress_dir) != os.path.normpath(blb_progress_dir):
+            log(f"  {bullet} （旧 stage 2 RL 持久化目录 {legacy_progress_dir} 已停止使用，仅保留为历史归档）")
+
+        # ---------- 0.2) 初始化训练状态板（支持 live tail） ----------
+        run_basename = os.path.basename(os.path.normpath(str(getattr(ev, "run_output_dir", "") or ""))) or "blb_stage2_default_run"
+        status = BLBStatusBoard(
+            blb_progress_dir,
+            total_episodes=int(train_cfg.total_episodes),
+            profile=str(train_cfg.profile),
+            run_basename=run_basename,
+            extra_meta={
+                "fixed_label": str(fixed_label),
+                "fixed_source": str(fixed_source),
+                "rescale_invoker_kind": str(train_cfg.rescale_invoker_kind),
+            },
+            log_fn=log,
+        )
+        status.set_phase("装载 stage1 GELU/Softmax 多项式近似")
+        log(f"  {bullet} 状态板 JSON = {status.path}（训练期间持续刷新，可 live tail）")
 
         # ---------- 1) 应用 stage1 GELU/Softmax 多项式近似 ----------
         fixed_gelu = np.asarray(fixed_gelu, dtype=int)
@@ -208,12 +282,26 @@ class BLBStage2RLRunner:
         )
 
         # ---------- 5) baseline + reward 权重校准 ----------
+        status.set_phase("校准 baseline cost / reward 权重")
         baseline = estimate_baseline_cost_stats(
             env, sample_count=int(train_cfg.calibrate_baseline_samples),
         )
         env.baseline = baseline
         weights = calibrate_weights_from_baseline(baseline)
         env.reward_weights = weights
+        status.set_baseline({
+            "total_bits_sum": int(baseline.total_bits_sum),
+            "total_fusion_count": int(baseline.total_fusion_count),
+            "avg_k": float(baseline.avg_k),
+            "typical_bits_drop": float(baseline.typical_bits_drop),
+            "typical_fusion_count": float(baseline.typical_fusion_count),
+            "typical_k_drop": float(baseline.typical_k_drop),
+        })
+        status.set_extra("reward_weights", {
+            "w_bits": float(weights.w_bits),
+            "w_fusion": float(weights.w_fusion),
+            "w_k": float(weights.w_k),
+        })
         log(
             f"  {bullet} Baseline cost: total_bits_sum={baseline.total_bits_sum}, "
             f"total_fusion_count={baseline.total_fusion_count}, avg_k={baseline.avg_k:.2f}"
@@ -287,11 +375,15 @@ class BLBStage2RLRunner:
                 log(f"  [resume][警告] 读取 checkpoint 失败：{exc}")
 
         # ---------- 8) 训练循环 ----------
+        status.set_phase(f"训练中（PPO 单步 episode，共 {train_cfg.total_episodes} 回合）")
         log("\n训练开始（PPO 单步 episode）...")
         buffer = RolloutBuffer()
         env.reset(seed=int(train_cfg.seed))
         stop_flag_path = None
         graceful_stop_logged = False
+        # 训练曲线累积（与 episode_returns 配套；ppo_loss_curve 每次 PPO update 追加）
+        best_reward_curve: List[float] = []
+        ppo_loss_curve: List[float] = []
         try:
             from noise_rl_module_v2 import (
                 NOISE_STAGE_STOP_FLAG_FILENAME,
@@ -340,6 +432,12 @@ class BLBStage2RLRunner:
                     best_action_vec = action_vec.copy()
                     breakdown = info.get("reward_breakdown")
                     best_breakdown_dict = self._breakdown_to_dict(breakdown) if breakdown else None
+                    status.set_best(
+                        best_reward=best_reward,
+                        best_action_vec=best_action_vec,
+                        best_breakdown=best_breakdown_dict,
+                        best_episode=int(ep + 1),
+                    )
                     # decoded cfg pickle
                     decoded = info.get("decoded")
                     if decoded is not None:
@@ -347,6 +445,10 @@ class BLBStage2RLRunner:
                             best_decoded_pickle = pickle.dumps(decoded)
                         except Exception:
                             best_decoded_pickle = None
+                # 累积 best_reward 曲线（每 episode 一个点，等长 episode_returns）
+                best_reward_curve.append(float(best_reward) if np.isfinite(best_reward) else 0.0)
+                # 状态板：内存更新（不 flush；PPO update 时统一 flush）
+                status.update_after_episode(int(ep + 1), float(reward), breakdown=best_breakdown_dict)
 
                 did_update = False
                 # PPO update
@@ -355,6 +457,11 @@ class BLBStage2RLRunner:
                     buffer.clear()
                     update_count += 1
                     did_update = True
+                    try:
+                        ppo_loss_curve.append(float(metrics.get("policy_loss", 0.0)))
+                    except Exception:
+                        pass
+                    status.update_after_ppo_update(int(update_count), metrics)
                     if update_count == 1 or update_count % max(1, int(train_cfg.eval_interval // train_cfg.rollout_size)) == 0:
                         self._log_train_iter(
                             log, ep + 1, train_cfg.total_episodes,
@@ -397,6 +504,7 @@ class BLBStage2RLRunner:
                             consume_stop_flag_file(stop_flag_path)
                         self._mark_stage2_stopped(ev, completed_episodes=ep + 1,
                                                   total_episodes=train_cfg.total_episodes)
+                        status.mark_stopped(reason="用户触发优雅停止", completed_episodes=int(ep + 1))
                         log(
                             f"  [优雅停止] checkpoint 已写入 → {live_path}\n"
                             f"  下次用相同参数直接运行即可从该 checkpoint 续训练。"
@@ -408,6 +516,26 @@ class BLBStage2RLRunner:
                             "将在下一次 PPO 更新边界保存 checkpoint 后退出。"
                         )
                         graceful_stop_logged = True
+        except SystemExit:
+            raise  # 优雅停止已经写盘 + 标记，直接出
+        except BaseException as exc:
+            # 训练崩溃：写崩溃归档（含 traceback + 最后状态），然后再抛
+            try:
+                snapshot = {
+                    "completed_episodes": int(ep + 1) if 'ep' in locals() else 0,
+                    "ppo_update_count": int(update_count),
+                    "best_reward": float(best_reward) if np.isfinite(best_reward) else None,
+                    "len_episode_returns": len(episode_returns),
+                    "phase": "训练循环崩溃",
+                }
+                err_path = dump_crash_report(blb_progress_dir, exc=exc, last_state=snapshot, log_fn=log)
+                if err_path:
+                    log(f"  [BLB崩溃归档] traceback 已写入 → {err_path}")
+                status.set_phase("崩溃")
+                status.set_extra("crash_summary", {"type": type(exc).__name__, "msg": str(exc)})
+            except Exception:
+                pass
+            raise
         finally:
             if uninstall_graceful_stop_handler is not None:
                 uninstall_graceful_stop_handler()
@@ -451,6 +579,58 @@ class BLBStage2RLRunner:
                 log(f"  {bullet} Best BLB cfg 已保存到：{blb_cfg_dump_path}")
             except Exception as exc:
                 log(f"  [警告] 无法保存 best_blb_cfg：{exc}")
+
+        # ---------- 9.1) 训练曲线 + 最终报告 ----------
+        status.set_phase("写训练曲线 / 最终报告")
+        try:
+            curve_paths = write_training_curves(
+                blb_progress_dir,
+                episode_returns=episode_returns,
+                best_reward_curve=best_reward_curve,
+                ppo_loss_curve=ppo_loss_curve,
+                log_fn=log,
+            )
+            if curve_paths.get("png"):
+                log(f"  {bullet} 训练曲线 PNG → {curve_paths['png']}")
+            if curve_paths.get("npz"):
+                log(f"  {bullet} 训练曲线 NPZ → {curve_paths['npz']}")
+        except Exception as exc:
+            log(f"  [警告] 写训练曲线失败：{exc}")
+
+        try:
+            report_path = write_blb_final_report(
+                blb_progress_dir,
+                run_basename=run_basename,
+                profile=str(train_cfg.profile),
+                total_episodes=int(train_cfg.total_episodes),
+                completed_episodes=int(train_cfg.total_episodes),
+                elapsed_sec=float(time.time() - status._t0),
+                best_reward=float(best_reward) if np.isfinite(best_reward) else 0.0,
+                best_breakdown=best_breakdown_dict,
+                best_action_vec=(best_action_vec.tolist() if best_action_vec is not None else None),
+                baseline={
+                    "total_bits_sum": int(baseline.total_bits_sum),
+                    "total_fusion_count": int(baseline.total_fusion_count),
+                    "avg_k": float(baseline.avg_k),
+                    "loss_mean": float(getattr(baseline, "loss_mean", 0.0)),
+                    "metric1_mean": float(getattr(baseline, "metric1_mean", 0.0)),
+                },
+                reward_weights={
+                    "w_bits": float(weights.w_bits),
+                    "w_fusion": float(weights.w_fusion),
+                    "w_k": float(weights.w_k),
+                    "acc_threshold": float(env.acc_threshold),
+                    "stab_threshold": float(env.stab_threshold),
+                },
+                episode_returns=episode_returns,
+                rescale_invoker_kind=str(train_cfg.rescale_invoker_kind),
+                log_fn=log,
+            )
+            log(f"  {bullet} 最终训练报告 → {report_path}")
+            status.set_extra("final_report_path", report_path)
+        except Exception as exc:
+            log(f"  [警告] 写最终报告失败：{exc}")
+        status.set_phase("已完成")
 
         # ---------- 10) 还原模型到干净的多项式近似态（不带 BLB 噪声） ----------
         try:

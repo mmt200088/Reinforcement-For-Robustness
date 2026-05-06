@@ -695,6 +695,224 @@ _DEFAULT_BLOCK_MAPPERS: Dict[str, CfgToDeltaFn] = {
 
 
 # ---------------------------------------------------------------------------
+# BLB cfg → t_new 映射（per-(block, profile) 默认 + 可注册覆盖）
+# ---------------------------------------------------------------------------
+# 为什么需要这张表：
+#   ``Rescale_optimizer`` 的 ``replan_with_user_actions`` 接受的 ``t_new`` 是
+#   "skeleton 上每个 stage 的目标 SF"。BLB 的 cfg 里每个 rescale 字段（如
+#   ``Block1NoiseConfig.mean_result_rescale``）的 ``scaling_factor`` 就是该
+#   rescale 点的目标 SF —— 只是哪些 rescale 点真正落到 skeleton 上由 graph
+#   决定。所以需要一张 (config_name) → (skeleton 顺序的 cfg 字段路径) 的表。
+#
+#   skeleton 第 r=0 个 stage 是 source，对应 cfg 的 fresh 字段；
+#   skeleton 第 r>=1 个 stage 是某个 multiplication 节点之后的 rescale 点，
+#   对应 cfg 的 *_result_rescale 字段。
+#
+# 当 RL 没启用某个 rescale 字段 (cfg.field is None) 时，``cfg_to_t_new_from_table``
+# 会把该位置 fallback 到 baseline t (如果调用方提供 baseline_t_new)，否则该
+# (config_name) 整体放弃自动派生 t_new，让 invoker 走 baseline。
+
+@dataclass(frozen=True)
+class _SkelEntry:
+    """skeleton 上某个 stage 对应到 cfg 哪个字段。
+
+    Args:
+        cfg_field:   cfg 上的属性名（必须是 NoisePoint 或 Optional[NoisePoint]
+                     或 Tuple[Optional[NoisePoint]]）
+        tuple_index: 若 cfg_field 是 tuple，取第 N 项；None=该字段是单一 NoisePoint。
+                     支持负索引（如 -1 表示 last 项）。
+    """
+    cfg_field: str
+    tuple_index: Optional[int] = None
+
+
+# 默认表：覆盖 ``Rescale_optimizer/configs/mrpc/`` 下 11 个 baseline。
+# 其它 profile（wnli 等）需要自行扩展或通过 ``RescaleOptimizerBridge(cfg_to_t_new_overrides=...)``
+# 注册。
+DEFAULT_CFG_TO_T_NEW_MAP: Dict[str, Tuple[_SkelEntry, ...]] = {
+    # --- block 1 (mrpc): skeleton=[0, 2, 4, 5]
+    #   i=0 (gelu_out)     → fresh
+    #   i=2 (ctpt_inv_d_1) → mean (μ) 的 rescale
+    #   i=4 (ctpt_inv_d_2) → var 的 rescale
+    "block1_mrpc": (
+        _SkelEntry("gelu_out_fresh"),
+        _SkelEntry("mean_result_rescale"),
+        _SkelEntry("var_result_rescale"),
+    ),
+    # --- block 2 (mrpc): skeleton=[0, 2, 5, 7, 8]
+    #   i=0 (inv_std)         → cfg.inv_std_fresh
+    #   i=2 (ctpt_gama1)      → γ rescale
+    #   i=5 (ctpt_rotKT_mask2)→ kt_mask2 rescale
+    #   i=7 (ctpt_mask)       → qkt_merge_mask rescale
+    "block2_mrpc": (
+        _SkelEntry("inv_std_fresh"),
+        _SkelEntry("gamma_result_rescale"),
+        _SkelEntry("kt_mask2_result_rescale"),
+        _SkelEntry("qkt_merge_mask_result_rescale"),
+    ),
+    # --- block 3 (mrpc, exp_n<degree>): skeleton=[0, 2..(2+deg-1), dummy]
+    #   i=0          → cfg.x_fresh
+    #   i=2..        → cfg.square_rescales[k-1]
+    "block3_exp_n2": (
+        _SkelEntry("x_fresh"),
+        _SkelEntry("square_rescales", 0),
+        _SkelEntry("square_rescales", 1),
+    ),
+    "block3_exp_n3": (
+        _SkelEntry("x_fresh"),
+        _SkelEntry("square_rescales", 0),
+        _SkelEntry("square_rescales", 1),
+        _SkelEntry("square_rescales", 2),
+    ),
+    "block3_exp_n4": (
+        _SkelEntry("x_fresh"),
+        _SkelEntry("square_rescales", 0),
+        _SkelEntry("square_rescales", 1),
+        _SkelEntry("square_rescales", 2),
+        _SkelEntry("square_rescales", 3),
+    ),
+    "block3_exp_n5": (
+        _SkelEntry("x_fresh"),
+        _SkelEntry("square_rescales", 0),
+        _SkelEntry("square_rescales", 1),
+        _SkelEntry("square_rescales", 2),
+        _SkelEntry("square_rescales", 3),
+        # cfg 只有 max degree-1 的 square_rescales（受 RL action 维度限制 max=4）；
+        # 第 5 次平方就重用最后一个 entry 作为 fallback。
+        _SkelEntry("square_rescales", 3),
+    ),
+    "block3_exp_n6": (
+        _SkelEntry("x_fresh"),
+        _SkelEntry("square_rescales", 0),
+        _SkelEntry("square_rescales", 1),
+        _SkelEntry("square_rescales", 2),
+        _SkelEntry("square_rescales", 3),
+        _SkelEntry("square_rescales", 3),
+        _SkelEntry("square_rescales", 3),
+    ),
+    # --- block 4: skeleton=[0, 2, 5, 7, 8]
+    #   i=0  (rot_softmax)             → softmax_out_fresh
+    #   i=2  (ctct_rot_softmax_mul_v)  → softmax_v_matmul_rescale
+    #   i=5  (ctpt_inv_d_1)            → ln_mean_result_rescale
+    #   i=7  (ctpt_inv_d_2)            → ln_var_result_rescale
+    "block4": (
+        _SkelEntry("softmax_out_fresh"),
+        _SkelEntry("softmax_v_matmul_rescale"),
+        _SkelEntry("ln_mean_result_rescale"),
+        _SkelEntry("ln_var_result_rescale"),
+    ),
+    # --- block 5 (n=1): skeleton=[0, 2, 4, 5]
+    #   i=0 (x_mean)            → x_centered_fresh
+    #   i=2 (ctpt_gamal)        → gamma_result_rescale
+    #   i=4 (ctpt_gelu_coeff)   → gelu_coeff_mul_rescales[-1]（深度最大的那个 coeff·x^k）
+    "block5_n1": (
+        _SkelEntry("x_centered_fresh"),
+        _SkelEntry("gamma_result_rescale"),
+        _SkelEntry("gelu_coeff_mul_rescales", -1),
+    ),
+    # --- block 5 (n=2): skeleton=[0, 1, 3, 5, 6]
+    #   i=0 (x_mean)              → x_centered_fresh
+    #   i=1 (ctct_xmean_over_std) → normalize_result_rescale
+    #   i=3 (ctpt_wffn1)          → wffn1_result_rescale
+    #   i=5 (ctpt_gelu_coeff)     → gelu_coeff_mul_rescales[-1]
+    "block5_n2": (
+        _SkelEntry("x_centered_fresh"),
+        _SkelEntry("normalize_result_rescale"),
+        _SkelEntry("wffn1_result_rescale"),
+        _SkelEntry("gelu_coeff_mul_rescales", -1),
+    ),
+    # --- block 5 (n=4): skeleton=[0, 1, 3, 4, 6, 7]
+    #   i=4 (ctct_gelu_x2) → gelu_power_rescales[0]（x²）
+    #     注：graph 把 x³ 折进 x⁴，所以只看 x² 这一个 power rescale 进 t_new
+    "block5_n4": (
+        _SkelEntry("x_centered_fresh"),
+        _SkelEntry("normalize_result_rescale"),
+        _SkelEntry("wffn1_result_rescale"),
+        _SkelEntry("gelu_power_rescales", 0),
+        _SkelEntry("gelu_coeff_mul_rescales", -1),
+    ),
+}
+
+
+def _strip_layer_suffix(config_name: str) -> Tuple[str, Optional[int]]:
+    """``"block1_mrpc_L0"`` → ``("block1_mrpc", 0)``；``"block1_mrpc"`` → ``("block1_mrpc", None)``。
+
+    BLB Stage 2 RL 的 env 端会把每层独立编号成 ``"<graph_key>_L<i>"``；invoker
+    端只关心 graph_key（每个 (block, profile) 共享一份 graph + baseline）。
+    """
+    name = str(config_name)
+    if "_L" in name:
+        head, _, tail = name.rpartition("_L")
+        try:
+            return head, int(tail)
+        except ValueError:
+            return name, None
+    return name, None
+
+
+def _extract_sf_from_cfg(cfg: Any, entry: _SkelEntry) -> Optional[int]:
+    """按 ``_SkelEntry`` 从 cfg 里抽出 NoisePoint 的 ``scaling_factor``。
+
+    None ⇒ 字段不存在 / 值为 None / tuple 越界。
+    """
+    attr = getattr(cfg, entry.cfg_field, None)
+    if attr is None:
+        return None
+    if entry.tuple_index is not None:
+        try:
+            attr = attr[entry.tuple_index]
+        except (IndexError, TypeError, KeyError):
+            return None
+        if attr is None:
+            return None
+    sf = getattr(attr, "scaling_factor", None)
+    if sf is None:
+        return None
+    try:
+        return int(sf)
+    except (TypeError, ValueError):
+        return None
+
+
+def cfg_to_t_new_from_table(
+        graph_key: str,
+        cfg: Any,
+        *,
+        baseline_t_new: Optional[Sequence[int]] = None,
+        table: Optional[Mapping[str, Sequence[_SkelEntry]]] = None,
+        ) -> Optional[List[int]]:
+    """从 cfg 自动派生 ``t_new``。
+
+    返回 None ⇒ 当前 ``graph_key`` 在表里没有映射（caller 应让 invoker fallback
+    到 baseline）。
+
+    返回 list[int] ⇒ 全部 stage 都成功取到 SF（或 baseline_t_new 提供了缺位的
+    fallback）。
+
+    规则：
+      * 如果某 stage 的 cfg 字段是 None（RL 没启用该 rescale）且 baseline_t_new
+        里有对应位置 ⇒ 用 baseline_t_new[r] 填位。
+      * 如果某 stage 的 cfg 字段是 None 且没有 baseline ⇒ 整体放弃，返回 None
+        （让 invoker 用 baseline）。
+    """
+    tbl = table or DEFAULT_CFG_TO_T_NEW_MAP
+    entries = tbl.get(str(graph_key))
+    if not entries:
+        return None
+    out: List[int] = []
+    for r, ent in enumerate(entries):
+        sf = _extract_sf_from_cfg(cfg, ent)
+        if sf is None:
+            if baseline_t_new is not None and r < len(baseline_t_new):
+                out.append(int(baseline_t_new[r]))
+            else:
+                return None
+        else:
+            out.append(int(sf))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 主桥接
 # ---------------------------------------------------------------------------
 
@@ -724,17 +942,59 @@ class RescaleOptimizerBridge:
             invoker: RescaleOptimizerInvoker,
             *,
             cfg_to_delta_overrides: Optional[Mapping[str, CfgToDeltaFn]] = None,
+            cfg_to_t_new_overrides: Optional[Mapping[str, Sequence[_SkelEntry]]] = None,
+            auto_t_new_from_cfg: bool = True,
             ):
+        """构造 bridge。
+
+        Args:
+            invoker:                    ``RescaleOptimizerInvoker``（InProcess / Subprocess / Stub / Heuristic）
+            cfg_to_delta_overrides:     ``{block_name: fn(cfg) -> delta_overrides_dict}``，
+                                        覆盖默认 ``default_block{1..5}_cfg_to_delta``
+            cfg_to_t_new_overrides:     ``{graph_key: tuple[_SkelEntry, ...]}``，扩展或覆盖
+                                        ``DEFAULT_CFG_TO_T_NEW_MAP``。可用于支持 mrpc 之外的
+                                        profile（wnli 等）。
+            auto_t_new_from_cfg:        默认 ``True`` ⇒ 当 ``evaluate(t_new=None)`` 时
+                                        自动从 cfg 派生 t_new；False ⇒ 保持旧行为
+                                        （t_new=None ⇒ invoker fallback 到 baseline）。
+        """
         self.invoker = invoker
-        # 先深复制默认映射，再用业务侧覆盖
+        # cfg → delta_overrides 映射
         self._cfg_mappers: Dict[str, CfgToDeltaFn] = dict(_DEFAULT_BLOCK_MAPPERS)
         if cfg_to_delta_overrides:
             for k, fn in cfg_to_delta_overrides.items():
                 self._cfg_mappers[str(k)] = fn
+        # cfg → t_new 映射（per graph_key）
+        self._cfg_to_t_new_table: Dict[str, Tuple[_SkelEntry, ...]] = {
+            k: tuple(v) for k, v in DEFAULT_CFG_TO_T_NEW_MAP.items()
+        }
+        if cfg_to_t_new_overrides:
+            for k, v in cfg_to_t_new_overrides.items():
+                self._cfg_to_t_new_table[str(k)] = tuple(v)
+        self.auto_t_new_from_cfg = bool(auto_t_new_from_cfg)
 
     def register_cfg_to_delta_overrides(self, block_name: str, fn: CfgToDeltaFn) -> None:
         """业务侧动态注册 / 覆盖某个 block 的 cfg → delta 转换函数。"""
         self._cfg_mappers[str(block_name)] = fn
+
+    def register_cfg_to_t_new(self, graph_key: str, entries: Sequence[_SkelEntry]) -> None:
+        """业务侧动态注册 / 覆盖某个 ``graph_key`` 的 skeleton→cfg 字段映射。"""
+        self._cfg_to_t_new_table[str(graph_key)] = tuple(entries)
+
+    def _lookup_baseline_t_new(self, graph_key: str) -> Optional[List[int]]:
+        """如果 invoker 暴露 ``baselines`` 属性（``InProcessInvoker`` 有），就读
+        baseline t_new 用于 cfg-derived t_new 的 fallback；否则返回 None。"""
+        baselines = getattr(self.invoker, "baselines", None)
+        if not isinstance(baselines, Mapping):
+            return None
+        entry = baselines.get(str(graph_key))
+        if not entry:
+            return None
+        # entry 形如 (skeleton, t_baseline, q_bits_baseline)
+        try:
+            return list(entry[1]) if entry[1] is not None else None
+        except (IndexError, TypeError):
+            return None
 
     def cfg_to_delta_overrides(self, block_name: str, cfg: Any) -> Dict[str, Union[int, str]]:
         """单独把 cfg 翻译成 delta_overrides；不调用优化器，仅做翻译。"""
@@ -758,29 +1018,77 @@ class RescaleOptimizerBridge:
         """对单个 (config, block, cfg) 三元组跑一次优化器。
 
         Args:
-            config_name: 配置名，对应 ``static_skeletons_<profile>.json`` 中的
-                         ``config_name`` 字段（如 ``"block1_mrpc"``、``"block3_exp_n4"``）。
+            config_name: 配置名。可以是 baseline 的原始名（``"block1_mrpc"``、
+                         ``"block3_exp_n4"``）或 RL 端按层加 ``_L<i>`` 后缀的形式
+                         （``"block1_mrpc_L0"``）。后缀会被自动剥掉用作 graph key。
             block_name:  ``"block1"`` … ``"block5"``，决定 cfg→delta 用哪个 mapper。
             cfg:         ``Block{N}NoiseConfig`` 实例。
-            t_new:       per-stage 新 SF（length = R+1，与 baseline skeleton 对齐）；
-                         **None** ⇒ invoker 内部用 baseline t_baseline（等价于不改 t）。
+            t_new:       per-stage 新 SF（length = R+1，与 baseline skeleton 对齐）。
+                         * **None + auto_t_new_from_cfg=True**（默认）⇒ 从 cfg 自动
+                           派生 t_new（按 ``DEFAULT_CFG_TO_T_NEW_MAP``）。
+                         * **None + auto_t_new_from_cfg=False** 或表里没有该 graph_key
+                           ⇒ invoker 内部用 baseline ``t_baseline``。
             extra_overrides: 在默认 cfg→delta 翻译之上叠加 / 覆盖的节点 deltas。
 
         Returns:
-            ``RescaleOptimizerOutput``。
+            ``RescaleOptimizerOutput``（``config_name`` 字段保留 RL 端的原始值，
+            含 ``_L<i>`` 后缀）。
         """
+        # ---- (Bug A 修复) 标准化 config_name：剥 _L<i> 后缀作为 graph key ----
+        graph_key, _layer_idx = _strip_layer_suffix(config_name)
+
+        # ---- delta_overrides ----
         deltas = self.cfg_to_delta_overrides(block_name, cfg)
         if extra_overrides:
             deltas.update({str(k): v for k, v in extra_overrides.items()})
-        # 兼容两种 invoker 签名：rich payload (t_new + delta_overrides) / bare deltas dict
+
+        # ---- (Bug B 修复) 如果调用方没传 t_new，从 cfg 自动派生 ----
+        effective_t_new: Optional[List[int]] = None
         if t_new is not None:
+            effective_t_new = [int(x) for x in t_new]
+        elif self.auto_t_new_from_cfg:
+            baseline_t = self._lookup_baseline_t_new(graph_key)
+            effective_t_new = cfg_to_t_new_from_table(
+                graph_key, cfg,
+                baseline_t_new=baseline_t,
+                table=self._cfg_to_t_new_table,
+            )
+
+        # ---- 构造 invoker payload ----
+        if effective_t_new is not None:
             payload: Any = {
-                "t_new": [int(x) for x in t_new],
+                "t_new": list(effective_t_new),
                 "delta_overrides": deltas,
             }
         else:
             payload = deltas
-        raw = self.invoker(config_name, payload)
+
+        # ---- 调 invoker（用 graph_key，不带 _L<i> 后缀） ----
+        # 如果 invoker 暴露 ``register_cfg``（HeuristicStubInvoker 是这样），就先把
+        # 当前 cfg 按 graph_key 登记进去（覆盖式：每次 evaluate 替换同名 entry）。
+        # 这避免了上层为多个层 (block1_mrpc_L0..L11) 预先批量 register 时多个 cfg
+        # 都坍缩到同一个 graph_key 的问题。
+        register_fn = getattr(self.invoker, "register_cfg", None)
+        if register_fn is not None and not isinstance(register_fn, type):
+            try:
+                register_fn(graph_key, cfg)
+            except Exception:
+                pass
+        raw = self.invoker(graph_key, payload)
+
+        # 把派生出的 t_new 回写到 raw（便于上层 introspect / debug）；不破坏原结构
+        try:
+            if isinstance(raw, dict) and effective_t_new is not None and "_t_new_used" not in raw:
+                raw["_t_new_used"] = list(effective_t_new)
+                raw["_t_new_source"] = (
+                    "user_provided" if t_new is not None
+                    else ("cfg_derived" if graph_key in self._cfg_to_t_new_table else "baseline")
+                )
+                raw["_graph_key"] = graph_key
+        except Exception:
+            pass
+
+        # 解析时保留原始 config_name（带 _L<i>），让上层能按层归并
         return _parse_optimizer_raw(raw, config_name=config_name)
 
     def evaluate_blocks(
