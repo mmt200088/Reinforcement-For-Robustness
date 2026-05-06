@@ -1,0 +1,17 @@
+══════════════════════════════════════════════════════════════════════
+  二阶段噪声强化学习日志已开始（Stage-2 noise RL log started）
+══════════════════════════════════════════════════════════════════════
+  [信息] Stage-1 PPO学习率（LR）: raw=0.0001 -> 0.0001 (direct) | Stage-2 PPO学习率（LR）: raw=0.0001 -> 0.0001 (direct)
+  [信息] 一阶段 RL 回合 stage-1 episodes=51000  ·  二阶段噪声 RL 回合 stage-2 episodes=40000
+  [信息] 本次运行根目录 run_output_dir=/var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/mrpc_blb_baseline_truncation_sweep
+
+[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。
+
+============================================================
+PHASE: BLB ACTION FINAL EVALUATION (validation_full)
+CONFIG_SOURCE=json  STAGE1_SOURCE=json
+RESCALE_OPTIMIZER=in_process root=/var/tmp/root-home/Reinforcement-For-Robustness/Rescale_optimizer mode=baseline
+action_candidates=6 random_enabled=False repeat=50
+============================================================
+
+--- BLB action candidate 1/6: ActionGrid_truncation8 ---
