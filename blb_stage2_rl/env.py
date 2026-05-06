@@ -555,12 +555,12 @@ def estimate_baseline_cost_stats(
         bits_drops.append(float(signals.total_bits_sum) - float(rd_signals.total_bits_sum))
         fusion_counts.append(float(rd_signals.total_fusion_count))
         avg_k = avg_truncation_k_in_action(random_action, env.num_layers)
-        k_drops.append(float(K_LEVELS[-1]) - float(avg_k))
+        k_drops.append(float(max(K_LEVELS)) - float(avg_k))
 
     return BaselineCostStats(
         total_bits_sum=int(signals.total_bits_sum),
         total_fusion_count=int(signals.total_fusion_count),
-        avg_k=float(K_LEVELS[-1]),
+        avg_k=float(max(K_LEVELS)),
         typical_bits_drop=float(np.mean(bits_drops)) if bits_drops else 1.0,
         typical_fusion_count=float(np.mean(fusion_counts)) if fusion_counts else 1.0,
         typical_k_drop=float(np.mean(k_drops)) if k_drops else 1.0,

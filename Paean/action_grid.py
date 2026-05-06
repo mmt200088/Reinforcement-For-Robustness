@@ -69,7 +69,7 @@ def load_action_grid_config(path_value: str) -> ActionGridConfig:
     path = Path(str(path_value or "").strip())
     if not path.is_file():
         raise FileNotFoundError(f"final_eval action config does not exist: {path}")
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(payload, Mapping):
         raise ValueError("--action-config JSON must be an object")
 
@@ -202,7 +202,7 @@ def _normalize_base_action(base_action_vec: Optional[Sequence[int]], num_layers:
         return make_all_max_action_vector(num_layers).astype(int)
     if isinstance(base_action_vec, str):
         text = base_action_vec.strip().lower()
-        if text in ("", "max", "all-max", "all_max"):
+        if text in ("", "max", "all-max", "all_max", "blb-baseline", "blb_baseline", "rescale-baseline", "rescale_baseline"):
             return make_all_max_action_vector(num_layers).astype(int)
         if text in ("min", "all-min", "all_min"):
             return make_all_min_action_vector(num_layers).astype(int)
@@ -230,7 +230,10 @@ def _parse_base_action_vec(base_raw, num_layers_hint: int) -> Optional[np.ndarra
         return None
     if isinstance(base_raw, str):
         text = base_raw.strip()
-        if text.lower() in ("max", "all-max", "all_max", "min", "all-min", "all_min"):
+        if text.lower() in (
+            "max", "all-max", "all_max", "min", "all-min", "all_min",
+            "blb-baseline", "blb_baseline", "rescale-baseline", "rescale_baseline",
+        ):
             return text
         if text.startswith("["):
             return np.asarray(json.loads(text), dtype=int)
@@ -311,7 +314,7 @@ def _value_to_action_index(*, value: int, block_idx: int, field_name: str, kind:
 
     if kind == "K":
         if int(value) not in K_LEVELS:
-            raise ValueError(f"truncation={value} is not selectable; expected one of {list(K_LEVELS)}")
+            raise ValueError(f"truncation={value} is not selectable; expected one of {sorted(K_LEVELS)}")
         return list(K_LEVELS).index(int(value))
 
     levels = NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[str(kind)]

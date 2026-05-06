@@ -60,7 +60,27 @@ LEVELS_W = 5         # weight encode (5 挡：max-8 .. max)
 LEVELS_MS = 3        # mask / scalar encode (3 挡：max-4 .. max)
 LEVELS_R = 4         # rescale (4 挡：max-6 .. max)
 LEVELS_F = 5         # fresh (5 挡：max-8 .. max)
-K_LEVELS: Tuple[int, ...] = (8, 9, 11, 13)   # action_idx ∈ {0,1,2,3}
+
+# Truncation K 挡位默认扩展为 6 档，但保持旧 checkpoint / 旧 action vector 的
+# index 语义：0/1/2/3 仍然解码为 8/9/11/13，新挡位 10/12 追加在后面。
+# 如需做临时实验，可用环境变量覆盖，例如：
+#   BLB_TRUNCATION_K_LEVELS=8,9,11,13,10,12
+DEFAULT_K_LEVELS_LEGACY_COMPAT: Tuple[int, ...] = (8, 9, 11, 13, 10, 12)
+
+
+def _load_k_levels_from_env() -> Tuple[int, ...]:
+    raw = str(os.environ.get("BLB_TRUNCATION_K_LEVELS", "") or "").strip()
+    if not raw:
+        return DEFAULT_K_LEVELS_LEGACY_COMPAT
+    values = tuple(int(x.strip()) for x in raw.replace(";", ",").split(",") if x.strip())
+    if not values:
+        raise ValueError("BLB_TRUNCATION_K_LEVELS must contain at least one integer")
+    if len(set(values)) != len(values):
+        raise ValueError(f"BLB_TRUNCATION_K_LEVELS contains duplicate values: {values}")
+    return values
+
+
+K_LEVELS: Tuple[int, ...] = _load_k_levels_from_env()
 LEVELS_K = len(K_LEVELS)
 LEVELS_FIRST_INPUT = 5   # 与 fresh 一致
 
@@ -776,12 +796,19 @@ def action_vector_to_cfgs(
 # 全 max-action / 全 min-action helper（baseline / sanity）
 # ---------------------------------------------------------------------------
 def make_all_max_action_vector(num_layers: int) -> np.ndarray:
-    """生成"全 max" 动作向量：每个分量取 levels-1，K 取 idx==K_LEVELS.index(13)。
+    """生成"全 max" 动作向量：SF 字段取最高档，K 取数值最大的 truncation。
 
     用于 §6.3 的 baseline + §11 验证清单中"action 全 max → reward = 0"。
     """
     dims = action_dims_for_config(int(num_layers))
     arr = np.array(dims, dtype=int) - 1
+    k_idx = int(K_LEVELS.index(max(K_LEVELS)))
+    fields = per_layer_field_offsets()
+    layer_dim = len(fields)
+    for li in range(int(num_layers)):
+        for field_offset, (_block_idx, _field_name, kind) in enumerate(fields):
+            if kind == "K":
+                arr[li * layer_dim + field_offset] = k_idx
     return arr
 
 
@@ -830,9 +857,29 @@ def avg_truncation_k_in_action(
 # ---------------------------------------------------------------------------
 # config_name <-> (block_idx, layer_idx) 编解码
 # ---------------------------------------------------------------------------
-def make_config_name(profile: str, block_idx: int, layer_idx: int) -> str:
-    """``"block{N}_<profile>_L{layer_idx}"``，用于 ``RescaleOptimizerBridge.evaluate_blocks``。"""
-    return f"block{int(block_idx)}_{str(profile)}_L{int(layer_idx)}"
+def make_config_name(profile: str, block_idx: int, layer_idx: int, cfg: object = None) -> str:
+    """Build the layered Rescale_optimizer config key.
+
+    Block 1/2 are dataset-profile graphs (``block1_mrpc``), while Block 3/5
+    are degree-profile graphs (``block3_exp_n4`` / ``block5_n4``) and Block 4
+    is shared as ``block4``. The ``_L<i>`` suffix is kept for per-layer
+    accounting; ``RescaleOptimizerBridge`` strips it before invoking the
+    underlying optimizer.
+    """
+    block_idx = int(block_idx)
+    if block_idx in (1, 2):
+        graph_key = f"block{block_idx}_{str(profile)}"
+    elif block_idx == 3:
+        degree = int(getattr(cfg, "degree", 4) or 4)
+        graph_key = f"block3_exp_n{degree}"
+    elif block_idx == 4:
+        graph_key = "block4"
+    elif block_idx == 5:
+        degree = int(getattr(cfg, "gelu_degree", 4) or 4)
+        graph_key = f"block5_n{degree}"
+    else:
+        graph_key = f"block{block_idx}_{str(profile)}"
+    return f"{graph_key}_L{int(layer_idx)}"
 
 
 def parse_config_name(config_name: str) -> Tuple[int, str, int]:
@@ -845,6 +892,8 @@ def parse_config_name(config_name: str) -> Tuple[int, str, int]:
     block_idx = int(block_str)
     if not tail:
         raise ValueError(f"unexpected config_name: {name}")
+    if tail.startswith("L") and tail[1:].isdigit():
+        return block_idx, "", int(tail[1:])
     if "_L" not in tail:
         return block_idx, tail, -1
     profile, _, layer_str = tail.rpartition("_L")
@@ -865,6 +914,6 @@ def build_optimizer_requests(
         except ValueError:
             continue
         for layer_idx, cfg in layer_cfgs.items():
-            cn = make_config_name(profile, block_idx, int(layer_idx))
+            cn = make_config_name(profile, block_idx, int(layer_idx), cfg=cfg)
             out[cn] = (str(block_name), cfg)
     return out

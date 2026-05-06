@@ -2326,7 +2326,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                  blb_v3_rollout_size=None,
                  blb_v3_eval_interval=None,
                  blb_v3_save_interval=None,
-                 blb_v3_calibrate_baseline_samples=None):
+                 blb_v3_calibrate_baseline_samples=None,
+                 blb_v3_inproc_rescale_optimizer_root=None,
+                 final_eval_require_rescale_optimizer=False):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -2604,6 +2606,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.final_eval_action_config = str(final_eval_action_config or '').strip()
         self.final_eval_action_ranges = final_eval_action_ranges
         self.final_eval_action_fixed = final_eval_action_fixed
+        self.final_eval_require_rescale_optimizer = self._coerce_bool_flag(
+            final_eval_require_rescale_optimizer, 'final_eval_require_rescale_optimizer')
         self.skip_stage1_rl = self._coerce_bool_flag(skip_stage1_rl, 'skip_stage1_rl')
         self.skip_noise_rl = self._coerce_bool_flag(skip_noise_rl, 'skip_noise_rl')
         self.skip_final_eval = self._coerce_bool_flag(skip_final_eval, 'skip_final_eval')
@@ -2743,6 +2747,10 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.stage2_rl_variant = self._coerce_stage2_rl_variant(stage2_rl_variant)
         # 透传给 BLBStage2RLRunner 的可选参数（None ⇒ 用 BLBStage2TrainConfig 默认）
         self.blb_v3_rescale_invoker_kind = str(blb_v3_rescale_invoker_kind or 'heuristic').lower()
+        self.blb_v3_inproc_rescale_optimizer_root = (
+            str(blb_v3_inproc_rescale_optimizer_root)
+            if blb_v3_inproc_rescale_optimizer_root not in (None, "") else None
+        )
         self.blb_v3_subprocess_optimizer_root = (
             str(blb_v3_subprocess_optimizer_root)
             if blb_v3_subprocess_optimizer_root not in (None, "") else None
@@ -4544,7 +4552,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             limit_s = selection_limits["metric2"] if limit_s is None else limit_s
 
         if self._should_run_blb_action_final_eval(stage2_search_best):
-            from final_eval.blb_action_eval import BLBActionFinalEvaluationModule
+            from Paean.blb_action_eval import BLBActionFinalEvaluationModule
             runner = BLBActionFinalEvaluationModule(
                 evaluator=self,
                 config_source=self.final_eval_config_source,
@@ -6160,7 +6168,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         limit_s=noise_limit_s,
                     )
                 else:
-                    from final_eval.embedded import run_embedded_final_eval
+                    from Paean.embedded import run_embedded_final_eval
 
                     final_eval_result = run_embedded_final_eval(
                         evaluator=self,

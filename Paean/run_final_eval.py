@@ -117,6 +117,12 @@ def build_command(settings: FinalEvalSettings) -> List[str]:
         json.dumps(list(settings.action_ranges)),
         "--final_eval_action_fixed",
         json.dumps(list(settings.action_fixed)),
+        "--blb_v3_rescale_invoker_kind",
+        settings.blb_rescale_invoker_kind,
+        "--blb_v3_inproc_rescale_optimizer_root",
+        settings.blb_rescale_optimizer_root,
+        "--final_eval_require_rescale_optimizer",
+        "true" if settings.require_rescale_optimizer else "false",
         "--skip_noise_rl",
         "true",
         "--skip_stage1_rl",
@@ -175,7 +181,7 @@ def main(argv: List[str] | None = None) -> int:
             path = PRESET_DIR / f"{name}.conf"
             first = ""
             try:
-                first = path.read_text(encoding="utf-8").splitlines()[0].lstrip("# ")
+                first = path.read_text(encoding="utf-8-sig").splitlines()[0].lstrip("# ")
             except Exception:
                 pass
             print(f"  {name:<30} {first}")
@@ -204,6 +210,10 @@ def main(argv: List[str] | None = None) -> int:
         print(f"  action_ranges: {list(settings.action_ranges)}")
     if settings.action_fixed:
         print(f"  action_fixed: {list(settings.action_fixed)}")
+    print(f"  blb_rescale_invoker_kind: {settings.blb_rescale_invoker_kind}")
+    if settings.blb_rescale_optimizer_root:
+        print(f"  blb_rescale_optimizer_root: {settings.blb_rescale_optimizer_root}")
+    print(f"  require_rescale_optimizer: {settings.require_rescale_optimizer}")
     if settings.resume_from:
         print(f"  resume_from: {settings.resume_from}")
     print(f"  output_dir: {output_dir}")

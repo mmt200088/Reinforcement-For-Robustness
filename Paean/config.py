@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import dataclasses
@@ -44,6 +44,9 @@ class FinalEvalSettings:
     action_config: str = ""
     action_ranges: Tuple[str, ...] = dataclasses.field(default_factory=tuple)
     action_fixed: Tuple[str, ...] = dataclasses.field(default_factory=tuple)
+    blb_rescale_invoker_kind: str = "heuristic"
+    blb_rescale_optimizer_root: str = ""
+    require_rescale_optimizer: bool = False
     stage1_accuracy_tolerance: float = 0.005
     stage2_limit_tolerance: float = 0.05
     stage2_stability_tolerance: float = 0.05
@@ -68,7 +71,7 @@ def _read_preset_args(preset_name: str, preset_dir: Path = PRESET_DIR) -> List[s
         )
 
     args: List[str] = []
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
         lexer = shlex.shlex(raw_line, posix=True)
         lexer.whitespace_split = True
         lexer.commenters = "#"
@@ -110,7 +113,7 @@ def expand_preset_args(argv: Sequence[str], preset_dir: Path = PRESET_DIR) -> Li
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="final_eval/run_final_eval.sh",
+        prog="Paean/run_final_eval.sh",
         description="Run the independent unified final-eval module.",
     )
     parser.add_argument("--preset", default="")
@@ -146,6 +149,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--action-config", default="")
     parser.add_argument("--action-range", "--range", dest="action_ranges", action="append", default=[])
     parser.add_argument("--action-fixed", "--fixed-action", dest="action_fixed", action="append", default=[])
+    parser.add_argument("--rescale-invoker-kind", "--blb-rescale-invoker-kind", dest="blb_rescale_invoker_kind", default="heuristic")
+    parser.add_argument("--rescale-optimizer-root", "--blb-rescale-optimizer-root", dest="blb_rescale_optimizer_root", default="")
+    parser.add_argument("--require-rescale-optimizer", dest="require_rescale_optimizer", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -246,6 +252,9 @@ def parse_final_eval_settings(
         action_config=resolve_repo_path(ns.action_config),
         action_ranges=tuple(str(v) for v in (ns.action_ranges or []) if str(v).strip()),
         action_fixed=tuple(str(v) for v in (ns.action_fixed or []) if str(v).strip()),
+        blb_rescale_invoker_kind=str(ns.blb_rescale_invoker_kind or "heuristic").lower().replace("-", "_"),
+        blb_rescale_optimizer_root=resolve_repo_path(ns.blb_rescale_optimizer_root),
+        require_rescale_optimizer=bool(ns.require_rescale_optimizer),
         stage1_accuracy_tolerance=float(ns.stage1_accuracy_tolerance),
         stage2_limit_tolerance=float(ns.stage2_limit_tolerance),
         stage2_stability_tolerance=float(ns.stage2_stability_tolerance),
@@ -317,6 +326,10 @@ def validate_settings(
         raise FileNotFoundError(f"--action-config file does not exist: {settings.action_config}")
     if settings.random_enabled and settings.action_ranges:
         raise ValueError("--random/--enable-random cannot be combined with --action-range/--range")
+    if settings.blb_rescale_invoker_kind not in ("heuristic", "in_process", "subprocess", "stub"):
+        raise ValueError("--rescale-invoker-kind must be heuristic, in_process, subprocess, or stub")
+    if settings.blb_rescale_optimizer_root and not Path(settings.blb_rescale_optimizer_root).is_dir():
+        raise FileNotFoundError(f"--rescale-optimizer-root does not exist: {settings.blb_rescale_optimizer_root}")
 
 
 def _sanitize_component(value: str, fallback: str = "run") -> str:

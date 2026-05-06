@@ -7,7 +7,7 @@ cat <<'EOF'
   bash llama_7B_LayerImportance.sh run rl [常用参数] [高级参数]
   bash llama_7B_LayerImportance.sh run ga [常用参数] [高级参数]
   bash llama_7B_LayerImportance.sh run greedy [常用参数] [高级参数]
-  bash llama_7B_LayerImportance.sh eval [final_eval 独立参数]
+  bash llama_7B_LayerImportance.sh eval [Paean final eval 独立参数]
   bash llama_7B_LayerImportance.sh compare [常用参数] [高级参数]
   bash llama_7B_LayerImportance.sh general train [常用参数] [高级参数]
   bash llama_7B_LayerImportance.sh general search [常用参数] [高级参数]
@@ -19,12 +19,12 @@ cat <<'EOF'
   --preset NAME              加载 presets/NAME.conf 中的参数（命令行参数优先覆盖预设）
   --list-presets             列出所有可用预设
 
-独立 final_eval：
-  bash final_eval/run_final_eval.sh --preset NAME [final_eval 参数]
-  bash llama_7B_LayerImportance.sh eval ... 会转交给 final_eval/run_final_eval.sh
+独立 Paean final eval：
+  bash Paean/run_final_eval.sh --preset NAME [final_eval 参数]
+  bash llama_7B_LayerImportance.sh eval ... 会转交给 Paean/run_final_eval.sh
   action-grid 示例：--range truncation=8,9,11,13 --range wffn1=18,20
   随机对照需显式加 --random；--random 不能和 --range 同时使用。
-  训练结束后的被动 final_eval 使用 --final-eval-preset 指定的 final_eval/presets/*.conf，
+  训练结束后的被动 final_eval 使用 --final-eval-preset 指定的 Paean/presets/*.conf，
   不再读取训练命令中的 --random-seed / --budget / --final-eval-repeat 等评估参数。
 
 普通用户常用参数（建议优先使用）：
@@ -32,7 +32,7 @@ cat <<'EOF'
   --dataset DATASET          mrpc|sst2|stsb|cola|qnli|rte|wnli
   --algorithm ALG            rl|ga|greedy（eval 可用；run 子命令由 run 后面的算法决定）
   --fresh                    等价于 --fresh-start
-  --budget N                 训练兼容路径/compare 的随机对照数量；独立 final_eval 需同时传 --random
+  --budget N                 训练兼容路径/compare 的随机对照数量；独立 Paean final eval 需同时传 --random
   --eval-repeat N            训练兼容路径的重复次数；compare 等价于 --stage2-compare-repeats；被动 final_eval 由 preset 控制
   --batch-size N
 
@@ -82,7 +82,7 @@ GA / Greedy：
   --skip-stage1-search
   --skip-noise-search
   --skip-final-eval                       跳过 Stage-1 + Stage-2 合并的最终评估
-  --final-eval-preset NAME                训练结束后被动调用 final_eval/presets/NAME.conf（默认 default）
+  --final-eval-preset NAME                训练结束后被动调用 Paean/presets/NAME.conf（默认 default）
   --final-eval-source search|json|manual|max  兼容路径的最终评估配置来源；训练结束后被动 final_eval 强制使用刚找到的 search 配置
   --final-eval-config PATH                兼容路径 source=json 时的合并 JSON 路径；被动 final_eval 的 fallback JSON 由 preset 控制
   --manual-stage1-gelu JSON_ARRAY         manual 模式：Stage-1 GELU 多项式次数
@@ -168,8 +168,8 @@ GA / Greedy：
   bash llama_7B_LayerImportance.sh run rl --dataset mrpc --episodes 51000,80000 --eval-repeat 1
   bash llama_7B_LayerImportance.sh run ga --dataset mrpc --mode stage2-only --generations 1,800 --config glue_final_configs_best_genetic.json
   bash llama_7B_LayerImportance.sh eval --preset mrpc-final-eval-only
-  bash final_eval/run_final_eval.sh --preset mrpc-final-eval-only --random --budget 10
-  bash final_eval/run_final_eval.sh --preset mrpc-blb-action-range
+  bash Paean/run_final_eval.sh --preset mrpc-final-eval-only --random --budget 10
+  bash Paean/run_final_eval.sh --preset mrpc-blb-action-range
   bash llama_7B_LayerImportance.sh compare --dataset mrpc
   bash llama_7B_LayerImportance.sh compare --dataset mrpc --compare-config-mode direct --rl-compare-stage1-json glue_final_configs_best_ppo.json --rl-compare-stage2-json glue_final_configs_best_ppo.json --ga-compare-stage1-json glue_final_configs_best_genetic.json --ga-compare-stage2-json glue_final_configs_best_genetic.json
   bash llama_7B_LayerImportance.sh general train --dataset mrpc --general-rl-tasks mrpc,cola,rte,stsb --fresh
@@ -231,7 +231,7 @@ normalize_taskset_id(){
 }
 if [ "${1:-}" = "eval" ] || [ "${1:-}" = "final-eval" ] || [ "${1:-}" = "final_eval" ]; then
   shift
-  exec bash "$(cd "$(dirname "$0")" && pwd)/final_eval/run_final_eval.sh" "$@"
+  exec bash "$(cd "$(dirname "$0")" && pwd)/Paean/run_final_eval.sh" "$@"
 fi
 origin(){ [ "$1" = "true" ] && echo "显式指定" || echo "使用默认值"; }
 show(){ echo "  $1：$2（$(origin "$3")）"; }
@@ -775,8 +775,8 @@ case "$DATASET" in
 esac
 
 if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$SEARCH_ALGORITHM" != "rl-and-ga-compare" ]; then
-  _FINAL_EVAL_PRESET_FILE="$(cd "$(dirname "$0")" && pwd)/final_eval/presets/${FINAL_EVAL_PRESET}.conf"
-  [ -f "$_FINAL_EVAL_PRESET_FILE" ] || err "final_eval 预设文件不存在：$_FINAL_EVAL_PRESET_FILE。可用预设：$(ls "$(cd "$(dirname "$0")" && pwd)/final_eval/presets/" 2>/dev/null | sed 's/\.conf$//' | tr '\n' ' ')"
+  _FINAL_EVAL_PRESET_FILE="$(cd "$(dirname "$0")" && pwd)/Paean/presets/${FINAL_EVAL_PRESET}.conf"
+  [ -f "$_FINAL_EVAL_PRESET_FILE" ] || err "final_eval 预设文件不存在：$_FINAL_EVAL_PRESET_FILE。可用预设：$(ls "$(cd "$(dirname "$0")" && pwd)/Paean/presets/" 2>/dev/null | sed 's/\.conf$//' | tr '\n' ' ')"
   [ "$S_FINAL_EVAL_CONFIG" = "true" ] || FINAL_EVAL_CONFIG="$(default_final_eval_json_for_family "$SEARCH_ALGORITHM")"
   if [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ -n "$STAGE2_MANUAL_GELU" -o -n "$STAGE2_MANUAL_SOFTMAX" ]; then
     STAGE2_FIXED_CONFIG_SOURCE="manual"

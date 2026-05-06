@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -16,7 +16,13 @@ from blb_stage2_rl.action_space import (
 )
 from blb_stage2_rl.default_invoker import HeuristicStubInvoker
 from final_evaluation_module import UnifiedFinalEvaluationModule
-from rescale_optimizer_bridge import RescaleOptimizerBridge, aggregate_optimizer_signals
+from rescale_optimizer_bridge import (
+    InProcessInvoker,
+    RescaleOptimizerBridge,
+    SubprocessInvoker,
+    aggregate_optimizer_signals,
+    load_baseline_archive,
+)
 
 from .action_grid import build_action_candidates, build_random_action_candidates, coerce_spec_list
 
@@ -62,6 +68,7 @@ class BLBActionFinalEvaluationModule:
         self.action_config_path = str(action_config_path or "").strip()
         self.action_ranges = coerce_spec_list(action_ranges)
         self.action_fixed = coerce_spec_list(action_fixed)
+        self.rescale_optimizer_mode = self._load_rescale_optimizer_mode()
 
     def run(
         self,
@@ -81,6 +88,12 @@ class BLBActionFinalEvaluationModule:
         ev = self.evaluator
         total_layers = int(ev.total_layers)
         profile = str(getattr(ev, "dataset_key", "default") or "default")
+        (
+            self.rescale_bridge,
+            self.heuristic_invoker,
+            self.rescale_invoker_kind,
+            self.rescale_optimizer_root,
+        ) = self._build_rescale_bridge(profile)
 
         stage1_resolver = UnifiedFinalEvaluationModule(
             evaluator=ev,
@@ -130,6 +143,11 @@ class BLBActionFinalEvaluationModule:
         ev.log("\n" + "=" * 60)
         ev.log("PHASE: BLB ACTION FINAL EVALUATION (validation_full)")
         ev.log(f"CONFIG_SOURCE={self.config_source}  STAGE1_SOURCE={stage1_source}")
+        ev.log(
+            f"RESCALE_OPTIMIZER={self.rescale_invoker_kind} "
+            f"root={self.rescale_optimizer_root or '(none)'} "
+            f"mode={self.rescale_optimizer_mode}"
+        )
         ev.log(
             f"action_candidates={len(candidates)} random_enabled={self.random_enabled} "
             f"repeat={self.repeat_n}"
@@ -184,7 +202,17 @@ class BLBActionFinalEvaluationModule:
                 "limit_secondary_metric": float(limit_s),
             },
         )
+        text_path = self._save_results_markdown(
+            json_path=summary_path,
+            selected_source=f"blb_action(stage1={stage1_source})",
+            baseline_result=baseline_result,
+            candidate_results=results,
+        )
+        plot_path = self._save_results_plot(candidate_results=results)
         ev.log(f"BLB action final-eval summary saved to: {summary_path}")
+        ev.log(f"BLB action final-eval text report saved to: {text_path}")
+        if plot_path:
+            ev.log(f"BLB action final-eval plot saved to: {plot_path}")
 
         ev.apply_configuration(opt_gelu, opt_softmax)
         self._clear_all_noise()
@@ -200,7 +228,8 @@ class BLBActionFinalEvaluationModule:
             "random_results": results[1:] if self.random_enabled else [],
             "random_summary": {},
             "summary_path": summary_path,
-            "plot_path": None,
+            "text_report_path": text_path,
+            "plot_path": plot_path,
             "variance_plot_path": None,
         }
 
@@ -246,7 +275,7 @@ class BLBActionFinalEvaluationModule:
         )
 
         cfgs_dict = decoded.cfgs_dict()
-        opt_signals = self._optimizer_signals(profile, cfgs_dict)
+        opt_outputs, opt_signals = self._optimizer_outputs(profile, cfgs_dict)
         single, repeat = self._run_blb_eval(decoded, gelu=gelu, softmax=softmax)
         if repeat is not None:
             stats = repeat["stats"]
@@ -279,6 +308,20 @@ class BLBActionFinalEvaluationModule:
             "avg_truncation_k": float(avg_truncation_k_in_action(action_vec, total_layers)),
             "action_overrides": dict(overrides or {}),
             "action_vec": np.asarray(action_vec, dtype=int).copy(),
+            "config_details": self._config_details(decoded, action_vec, overrides, opt_outputs),
+            "rescale_optimizer": {
+                "invoker_kind": str(getattr(self, "rescale_invoker_kind", "unknown")),
+                "root": str(getattr(self, "rescale_optimizer_root", "") or ""),
+                "mode": str(getattr(self, "rescale_optimizer_mode", "cfg_derived")),
+                "request_count": int(len(opt_outputs)),
+                "valid_count": int(sum(1 for o in opt_outputs.values() if o.valid)),
+                "invalid_count": int(sum(1 for o in opt_outputs.values() if not o.valid)),
+                "t_new_sources": sorted({
+                    str((o.raw or {}).get("_t_new_source", "unknown"))
+                    for o in opt_outputs.values()
+                }),
+            },
+            "install_verification": single.get("install_verification", {}),
             "feasible": self._is_feasible(loss, p, s, report_constraints),
         }
         if repeat is not None:
@@ -297,17 +340,240 @@ class BLBActionFinalEvaluationModule:
             result["evaluation_protocol"] = "single_validation_full"
         return result
 
-    def _optimizer_signals(self, profile: str, cfgs_dict):
-        heuristic = HeuristicStubInvoker()
-        bridge = RescaleOptimizerBridge(invoker=heuristic)
+    def _optimizer_outputs(self, profile: str, cfgs_dict):
+        bridge = getattr(self, "rescale_bridge", None)
+        if bridge is None:
+            bridge, heuristic, kind, root = self._build_rescale_bridge(profile)
+            self.rescale_bridge = bridge
+            self.heuristic_invoker = heuristic
+            self.rescale_invoker_kind = kind
+            self.rescale_optimizer_root = root
         requests = build_optimizer_requests(profile, cfgs_dict)
-        for config_name, (_block_name, cfg) in requests.items():
-            heuristic.register_cfg(config_name, cfg)
+        outputs = bridge.evaluate_blocks(requests)
+        return outputs, aggregate_optimizer_signals(outputs)
+
+    def _build_rescale_bridge(self, profile: str) -> Tuple[RescaleOptimizerBridge, Optional[HeuristicStubInvoker], str, str]:
+        ev = self.evaluator
+        kind = str(getattr(ev, "blb_v3_rescale_invoker_kind", "heuristic") or "heuristic")
+        kind = kind.lower().replace("-", "_")
+        require_real = bool(getattr(ev, "final_eval_require_rescale_optimizer", False))
+        root = self._resolve_rescale_optimizer_root()
+
+        def fallback(reason: Exception | str):
+            if require_real:
+                raise RuntimeError(
+                    "final_eval requires a real Rescale_optimizer invoker, "
+                    f"but initialization failed: {reason}"
+                )
+            ev.log(f"  [final_eval][warning] Rescale_optimizer unavailable ({reason}); fallback to heuristic.")
+            heuristic = HeuristicStubInvoker()
+            return RescaleOptimizerBridge(invoker=heuristic, **self._rescale_bridge_options()), heuristic, "heuristic", ""
+
+        if kind == "in_process":
+            try:
+                invoker = InProcessInvoker.from_profile(
+                    rescale_optimizer_root=root,
+                    profile=str(profile),
+                )
+                return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), None, "in_process", root
+            except Exception as exc:
+                return fallback(exc)
+
+        if kind == "subprocess":
+            try:
+                cfg_dir = Path(root) / "configs" / str(profile)
+                archive = cfg_dir / f"static_skeletons_{profile}.json"
+                baselines = load_baseline_archive(str(archive))
+                configs = {
+                    name: str(cfg_dir / f"{name}.json")
+                    for name in baselines
+                    if (cfg_dir / f"{name}.json").is_file()
+                }
+                invoker = SubprocessInvoker(
+                    rescale_optimizer_root=root,
+                    configs=configs,
+                    baseline_archive=str(archive),
+                )
+                return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), None, "subprocess", root
+            except Exception as exc:
+                return fallback(exc)
+
+        if kind == "stub":
+            canned = getattr(ev, "blb_v3_stub_canned", None)
+            if canned:
+                from rescale_optimizer_bridge import StubInvoker
+
+                return RescaleOptimizerBridge(invoker=StubInvoker(canned), **self._rescale_bridge_options()), None, "stub", ""
+            return fallback("stub invoker requested but no blb_v3_stub_canned was provided")
+
+        if require_real:
+            return fallback("rescale invoker kind is heuristic")
+        heuristic = HeuristicStubInvoker()
+        return RescaleOptimizerBridge(invoker=heuristic, **self._rescale_bridge_options()), heuristic, "heuristic", ""
+
+    def _load_rescale_optimizer_mode(self) -> str:
+        if not self.action_config_path:
+            return "cfg_derived"
         try:
-            outputs = bridge.evaluate_blocks(requests)
-        finally:
-            heuristic.clear_cfg_registry()
-        return aggregate_optimizer_signals(outputs)
+            payload = json.loads(Path(self.action_config_path).read_text(encoding="utf-8-sig"))
+        except Exception:
+            return "cfg_derived"
+        mode = str(
+            payload.get("rescale_optimizer_mode")
+            or payload.get("optimizer_mode")
+            or ""
+        ).strip().lower().replace("-", "_")
+        if mode in ("baseline", "optimizer_baseline", "rescale_baseline"):
+            return "baseline"
+        return "cfg_derived"
+
+    def _rescale_bridge_options(self) -> Dict[str, Any]:
+        if self.rescale_optimizer_mode != "baseline":
+            return {}
+
+        def no_delta(_cfg):
+            return {}
+
+        return {
+            "cfg_to_delta_overrides": {
+                "block1": no_delta,
+                "block2": no_delta,
+                "block3": no_delta,
+                "block4": no_delta,
+                "block5": no_delta,
+            },
+            "auto_t_new_from_cfg": False,
+        }
+
+    def _resolve_rescale_optimizer_root(self) -> str:
+        ev = self.evaluator
+        raw = (
+            getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)
+            or getattr(ev, "blb_v3_subprocess_optimizer_root", None)
+            or "Rescale_optimizer"
+        )
+        path = Path(str(raw))
+        if not path.is_absolute():
+            path = Path(__file__).resolve().parents[1] / path
+        return str(path)
+
+    def _verify_model_installation(self, bridge: BLBNoiseRLBridge, decoded) -> Dict[str, Any]:
+        ev = self.evaluator
+        total_layers = int(ev.total_layers)
+        expected_all = set(range(total_layers))
+        expected = {
+            "block1": expected_all,
+            "block2": expected_all,
+            "block3": expected_all,
+            "block4": expected_all,
+            "block5": expected_all,
+            "first_input": {0},
+        }
+        active = {}
+        getter = getattr(ev.reversible_handler, "get_active_blb_noise_layers", None)
+        if callable(getter):
+            active = getter()
+        bridge_installed = bridge.installed_layers()
+        active_json = {k: sorted(int(i) for i in v) for k, v in (active or {}).items()}
+        expected_json = {k: sorted(int(i) for i in v) for k, v in expected.items()}
+        handler_match = all(set(active.get(k, set())) == v for k, v in expected.items())
+        bridge_match = all(
+            all(k in bridge_installed.get(i, set()) for i in v)
+            for k, v in expected.items()
+        )
+        identity_match = self._handler_cfg_identity_match(decoded)
+        return {
+            "checked_before_forward": True,
+            "handler_active_layers": active_json,
+            "expected_active_layers": expected_json,
+            "handler_active_layers_match_expected": bool(handler_match),
+            "bridge_installed_layers_match_expected": bool(bridge_match),
+            "handler_cfg_objects_match_decoded_cfgs": bool(identity_match),
+            "model_will_use_selected_cfg": bool(handler_match and bridge_match and identity_match),
+        }
+
+    def _handler_cfg_identity_match(self, decoded) -> bool:
+        handler = self.evaluator.reversible_handler
+        for block_name in ("block1", "block2", "block3", "block4", "block5"):
+            expected = getattr(decoded, f"{block_name}_cfgs")
+            installed = getattr(handler, f"{block_name}_cfg_per_layer", {})
+            for layer_idx, cfg in expected.items():
+                if installed.get(layer_idx) is not cfg:
+                    return False
+        return True
+
+    def _config_details(self, decoded, action_vec, overrides, opt_outputs) -> Dict[str, Any]:
+        return {
+            "base_action": (
+                "BLB RL baseline action: model-side non-truncation fields use highest "
+                "selectable action-space SF; Rescale_optimizer mode="
+                f"{self.rescale_optimizer_mode}."
+            ),
+            "truncation": self._truncation_summary(decoded),
+            "first_input_sf": int(decoded.first_input_sf),
+            "non_truncation_unique_scaling_factors": self._non_truncation_sf_summary(decoded),
+            "action_overrides": dict(overrides or {}),
+            "action_vector_length": int(np.asarray(action_vec).size),
+            "optimizer_request_names": sorted(str(k) for k in opt_outputs.keys()),
+        }
+
+    @staticmethod
+    def _truncation_summary(decoded) -> Dict[str, Any]:
+        per_block = {}
+        effective_count = 0
+        skipped = []
+        for block_name in ("block1", "block2", "block3", "block4", "block5"):
+            cfgs = getattr(decoded, f"{block_name}_cfgs")
+            vals = {}
+            for layer_idx, cfg in cfgs.items():
+                k = getattr(cfg, "output_truncation_k", None)
+                vals[int(layer_idx)] = k if k is None else int(k)
+                if k is None:
+                    skipped.append({"block": block_name, "layer": int(layer_idx)})
+                else:
+                    effective_count += 1
+            unique = sorted({v for v in vals.values() if v is not None})
+            per_block[block_name] = {
+                "unique_effective_k": unique,
+                "per_layer": vals,
+            }
+        return {
+            "per_block": per_block,
+            "effective_position_count": int(effective_count),
+            "skipped_positions": skipped,
+        }
+
+    @staticmethod
+    def _non_truncation_sf_summary(decoded) -> Dict[str, Any]:
+        def gather_cfg(cfg):
+            out = {}
+            for name, value in vars(cfg).items():
+                if name.startswith("output_truncation"):
+                    continue
+                sf = getattr(value, "scaling_factor", None)
+                if sf is not None:
+                    out.setdefault(name, set()).add(int(sf))
+                elif isinstance(value, tuple):
+                    vals = []
+                    for item in value:
+                        item_sf = getattr(item, "scaling_factor", None)
+                        if item_sf is not None:
+                            vals.append(int(item_sf))
+                    if vals:
+                        out.setdefault(name, set()).update(vals)
+            return out
+
+        summary = {}
+        for block_name in ("block1", "block2", "block3", "block4", "block5"):
+            merged = {}
+            for cfg in getattr(decoded, f"{block_name}_cfgs").values():
+                for name, vals in gather_cfg(cfg).items():
+                    merged.setdefault(name, set()).update(vals)
+            summary[block_name] = {
+                name: sorted(int(v) for v in vals)
+                for name, vals in sorted(merged.items())
+            }
+        return summary
 
     def _run_blb_eval(self, decoded, *, gelu, softmax):
         ev = self.evaluator
@@ -350,6 +616,7 @@ class BLBActionFinalEvaluationModule:
             "p": float(repeat["stats"]["p_mean"]),
             "s": float(repeat["stats"]["s_mean"]),
             "time_ms": float(repeat["stats"]["time_mean_ms"]),
+            "install_verification": trials[0].get("install_verification", {}) if trials else {},
         }, repeat
 
     def _run_single_blb_eval(self, decoded, *, gelu, softmax):
@@ -370,6 +637,7 @@ class BLBActionFinalEvaluationModule:
                 block4_cfgs=decoded.block4_cfgs,
                 block5_cfgs=decoded.block5_cfgs,
             )
+            install_verification = self._verify_model_installation(bridge, decoded)
             split_name = ev._resolve_eval_split(use_train=False, split="validation_full")
             loss, p, s, time_ms = ev._run_evaluation(
                 ev.dataloaders[split_name],
@@ -381,6 +649,7 @@ class BLBActionFinalEvaluationModule:
                 "p": float(p),
                 "s": float(s),
                 "time_ms": float(time_ms),
+                "install_verification": install_verification,
             }
         finally:
             bridge.clear()
@@ -431,6 +700,145 @@ class BLBActionFinalEvaluationModule:
                 )
             except Exception:
                 pass
+
+    def _save_results_markdown(
+        self,
+        *,
+        json_path: str,
+        selected_source: str,
+        baseline_result,
+        candidate_results,
+    ) -> str:
+        metric_names = self.evaluator.get_metric_short_names()
+        primary = metric_names[0] if metric_names else "metric1"
+        secondary = metric_names[1] if len(metric_names) > 1 else "metric2"
+        path = os.path.join(
+            self.results_dir,
+            f"blb_action_final_eval_report_{self.evaluator.dataset_key}.md",
+        )
+        lines = [
+            "# BLB Action Final Evaluation Report",
+            "",
+            f"- dataset: `{self.evaluator.dataset_key}`",
+            f"- split: `validation_full`",
+            f"- selected_source: `{selected_source}`",
+            f"- repeat_n: `{self.repeat_n}`",
+            f"- rescale_optimizer: `{getattr(self, 'rescale_invoker_kind', 'unknown')}`",
+            f"- rescale_optimizer_root: `{getattr(self, 'rescale_optimizer_root', '') or '(none)'}`",
+            f"- json: `{json_path}`",
+            "",
+            "## Baseline",
+            "",
+            f"- clean baseline loss: `{baseline_result['loss']:.6f}`",
+            f"- clean baseline {primary}: `{baseline_result['p']:.6f}`",
+            f"- clean baseline {secondary}: `{baseline_result['s']:.6f}`",
+            "",
+            "## Group Comparison",
+            "",
+            "| group | truncation k | effective K positions | loss mean | loss std | "
+            f"{primary} mean | {primary} std | {secondary} mean | {secondary} std | "
+            "time mean ms | total bits | fusion | model cfg verified |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+        for result in candidate_results:
+            trunc = result.get("config_details", {}).get("truncation", {})
+            unique_k = self._unique_truncation_label(trunc)
+            verify = result.get("install_verification", {}).get("model_will_use_selected_cfg", False)
+            lines.append(
+                f"| `{result['name']}` | {unique_k} | "
+                f"{int(trunc.get('effective_position_count', 0))} | "
+                f"{float(result['loss']):.6f} | {float(result.get('loss_std', 0.0)):.6f} | "
+                f"{float(result['p']):.6f} | {float(result.get('p_std', 0.0)):.6f} | "
+                f"{float(result['s']):.6f} | {float(result.get('s_std', 0.0)):.6f} | "
+                f"{float(result['time_ms']):.3f} | {int(result['total_bits_sum'])} | "
+                f"{int(result['total_fusion_count'])} | {verify} |"
+            )
+
+        lines.extend(["", "## Configuration Details", ""])
+        for result in candidate_results:
+            details = result.get("config_details", {})
+            trunc = details.get("truncation", {})
+            verify = result.get("install_verification", {})
+            lines.extend([
+                f"### {result['name']}",
+                "",
+                f"- action overrides: `{result.get('action_overrides', {})}`",
+                f"- base action: {details.get('base_action', '')}",
+                f"- first_input_sf: `{details.get('first_input_sf')}`",
+                f"- truncation summary: `{self._unique_truncation_label(trunc)}`; "
+                f"effective positions = `{trunc.get('effective_position_count', 0)}`; "
+                f"skipped = `{trunc.get('skipped_positions', [])}`",
+                f"- model cfg verified before forward: `{verify.get('model_will_use_selected_cfg', False)}`",
+                f"- handler active layers match expected: `{verify.get('handler_active_layers_match_expected', False)}`",
+                f"- handler cfg object identity match: `{verify.get('handler_cfg_objects_match_decoded_cfgs', False)}`",
+                f"- rescale optimizer: `{result.get('rescale_optimizer', {})}`",
+                "",
+                "Non-truncation unique scaling factors:",
+                "",
+                "```json",
+                json.dumps(
+                    details.get("non_truncation_unique_scaling_factors", {}),
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+                "```",
+                "",
+            ])
+
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        return path
+
+    def _save_results_plot(self, *, candidate_results) -> Optional[str]:
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except Exception as exc:
+            self.evaluator.log(f"  [plot][warning] matplotlib unavailable: {exc}")
+            return None
+
+        labels = [self._unique_truncation_label(r.get("config_details", {}).get("truncation", {})) for r in candidate_results]
+        x = np.arange(len(candidate_results))
+        loss = np.asarray([float(r["loss"]) for r in candidate_results], dtype=float)
+        loss_std = np.asarray([float(r.get("loss_std", 0.0)) for r in candidate_results], dtype=float)
+        p = np.asarray([float(r["p"]) for r in candidate_results], dtype=float)
+        p_std = np.asarray([float(r.get("p_std", 0.0)) for r in candidate_results], dtype=float)
+        bits = np.asarray([float(r["total_bits_sum"]) for r in candidate_results], dtype=float)
+        time_ms = np.asarray([float(r["time_ms"]) for r in candidate_results], dtype=float)
+
+        fig, axes = plt.subplots(2, 2, figsize=(13, 8))
+        axes = axes.reshape(-1)
+        axes[0].bar(x, loss, yerr=loss_std, capsize=4, color="#4c78a8")
+        axes[0].set_title("Loss mean +/- std")
+        axes[1].bar(x, p, yerr=p_std, capsize=4, color="#59a14f")
+        axes[1].set_title(f"{self.evaluator.get_metric_short_names()[0]} mean +/- std")
+        axes[2].bar(x, bits, color="#f28e2b")
+        axes[2].set_title("Rescale optimizer total_bits")
+        axes[3].bar(x, time_ms, color="#e15759")
+        axes[3].set_title("Time mean ms")
+        for ax in axes:
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels, rotation=30, ha="right")
+            ax.grid(axis="y", alpha=0.25)
+        fig.tight_layout()
+        path = os.path.join(
+            self.results_dir,
+            f"blb_action_final_eval_plot_{self.evaluator.dataset_key}.png",
+        )
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        return path
+
+    @staticmethod
+    def _unique_truncation_label(truncation_summary) -> str:
+        vals = []
+        for block in truncation_summary.get("per_block", {}).values():
+            vals.extend(block.get("unique_effective_k", []))
+        unique = sorted({int(v) for v in vals})
+        if len(unique) == 1:
+            return str(unique[0])
+        return ",".join(str(v) for v in unique) if unique else "none"
 
     def _save_results_json(
         self,

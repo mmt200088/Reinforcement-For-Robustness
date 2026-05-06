@@ -771,6 +771,7 @@ class BLBStage2RLRunner:
         # 5) 评估器上挂的 BLB v3 设置（CLI/init 透传）
         evb_attrs = {
             "rescale_invoker_kind": "blb_v3_rescale_invoker_kind",
+            "inproc_rescale_optimizer_root": "blb_v3_inproc_rescale_optimizer_root",
             "subprocess_optimizer_root": "blb_v3_subprocess_optimizer_root",
             "subprocess_cli_module": "blb_v3_subprocess_cli_module",
         }

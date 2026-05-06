@@ -1,0 +1,14 @@
+{
+  "description": "MRPC BLB baseline non-truncation configuration with truncation sweep over 8, 9, 10, 11, 12, 13.",
+  "base_action": "blb_baseline",
+  "rescale_optimizer_mode": "baseline",
+  "ranges": {
+    "truncation": [8, 9, 10, 11, 12, 13]
+  },
+  "notes": [
+    "The model-side base action is the BLB RL baseline action: all non-truncation fields use their highest selectable action-space scaling-factor settings.",
+    "The optimizer-side mode is baseline: Rescale_optimizer uses its static baseline chain/t_new/delta settings instead of deriving a new chain from the max action. This is intentional because the BLB RL baseline is not simply the action-space max vector.",
+    "The final_eval preset for this file requires the real Rescale_optimizer in-process invoker, so Rescale_optimizer is called for every candidate instead of silently using the heuristic fallback.",
+    "Layer 0 Block 1 output_truncation_k is still forced to null by the BLB action decoder; all other truncation positions use the selected range value."
+  ]
+}

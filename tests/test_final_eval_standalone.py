@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 
 class FinalEvalStandaloneTests(unittest.TestCase):
     def test_preset_parser_uses_independent_output_root(self):
-        from final_eval.config import parse_final_eval_settings
+        from Paean.config import parse_final_eval_settings
 
         settings = parse_final_eval_settings(
             ["--preset", "mrpc-final-eval-only", "--dry-run"]
@@ -18,7 +18,7 @@ class FinalEvalStandaloneTests(unittest.TestCase):
         self.assertEqual(settings.source, "json")
         self.assertEqual(settings.repeat, 50)
         self.assertEqual(settings.perm_trials, 0)
-        self.assertTrue(settings.output_root.endswith(str(Path("final_eval") / "outputs")))
+        self.assertTrue(settings.output_root.endswith(str(Path("Paean") / "outputs")))
 
     def test_cli_dry_run_builds_final_eval_only_command(self):
         repo_root = Path(__file__).resolve().parents[1]
@@ -26,7 +26,7 @@ class FinalEvalStandaloneTests(unittest.TestCase):
             [
                 sys.executable,
                 "-m",
-                "final_eval.run_final_eval",
+                "Paean.run_final_eval",
                 "--preset",
                 "mrpc-final-eval-only",
                 "--dry-run",
@@ -43,11 +43,11 @@ class FinalEvalStandaloneTests(unittest.TestCase):
             msg=completed.stderr or completed.stdout,
         )
         self.assertIn("--final_eval_only true", completed.stdout)
-        self.assertIn("final_eval/outputs", completed.stdout.replace("\\", "/"))
+        self.assertIn("Paean/outputs", completed.stdout.replace("\\", "/"))
         self.assertIn("--final_eval_random_enabled false", completed.stdout)
 
     def test_action_grid_range_expands_cartesian_product(self):
-        from final_eval.action_grid import build_action_candidates
+        from Paean.action_grid import build_action_candidates
 
         candidates = build_action_candidates(
             num_layers=2,
@@ -64,8 +64,44 @@ class FinalEvalStandaloneTests(unittest.TestCase):
         self.assertIn((8, 18), pairs)
         self.assertIn((13, 20), pairs)
 
+    def test_truncation_levels_preserve_legacy_indexes_and_add_new_values(self):
+        from blb_stage2_rl.action_space import (
+            K_LEVELS,
+            action_vector_to_cfgs,
+            load_max_sfs,
+            make_all_max_action_vector,
+        )
+        from Paean.action_grid import build_action_candidates
+
+        self.assertEqual(K_LEVELS[:4], (8, 9, 11, 13))
+        self.assertIn(10, K_LEVELS)
+        self.assertIn(12, K_LEVELS)
+
+        max_action = make_all_max_action_vector(2)
+        decoded = action_vector_to_cfgs(
+            max_action,
+            load_max_sfs("mrpc"),
+            2,
+            gelu_degree=4,
+            attn_degree=4,
+        )
+        self.assertIsNone(decoded.block1_cfgs[0].output_truncation_k)
+        self.assertEqual(decoded.block1_cfgs[1].output_truncation_k, 13)
+        self.assertEqual(decoded.block2_cfgs[0].output_truncation_k, 13)
+
+        candidates = build_action_candidates(
+            num_layers=2,
+            profile="mrpc",
+            range_specs=["truncation=8,9,10,11,12,13"],
+        )
+        self.assertEqual(len(candidates), 6)
+        self.assertEqual(
+            {c.overrides["truncation"] for c in candidates},
+            {8, 9, 10, 11, 12, 13},
+        )
+
     def test_random_mode_rejects_ranges(self):
-        from final_eval.config import parse_final_eval_settings
+        from Paean.config import parse_final_eval_settings
 
         with self.assertRaises(ValueError):
             parse_final_eval_settings(
@@ -80,7 +116,7 @@ class FinalEvalStandaloneTests(unittest.TestCase):
             )
 
     def test_random_flag_supplies_default_random_counts(self):
-        from final_eval.config import parse_final_eval_settings
+        from Paean.config import parse_final_eval_settings
 
         settings = parse_final_eval_settings(
             ["--preset", "mrpc-final-eval-only", "--random", "--dry-run"]
@@ -91,7 +127,7 @@ class FinalEvalStandaloneTests(unittest.TestCase):
         self.assertEqual(settings.stage2_budget_trials, 10)
 
     def test_embedded_training_call_forces_search_but_uses_preset_counts(self):
-        from final_eval.embedded import run_embedded_final_eval
+        from Paean.embedded import run_embedded_final_eval
 
         captured = {}
 

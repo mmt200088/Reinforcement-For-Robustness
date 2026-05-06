@@ -347,6 +347,8 @@ def train(
         blb_v3_eval_interval: int = None,
         blb_v3_save_interval: int = None,
         blb_v3_calibrate_baseline_samples: int = None,
+        blb_v3_inproc_rescale_optimizer_root: str = "",
+        final_eval_require_rescale_optimizer: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
         group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -363,6 +365,9 @@ def train(
     final_eval_only = parse_bool_flag(final_eval_only, "final_eval_only")
     final_eval_random_enabled = parse_bool_flag(
         final_eval_random_enabled, "final_eval_random_enabled"
+    )
+    final_eval_require_rescale_optimizer = parse_bool_flag(
+        final_eval_require_rescale_optimizer, "final_eval_require_rescale_optimizer"
     )
     search_backend = str(search_backend or "ga").strip().lower().replace("-", "_")
     if search_backend in ("ga", "genetic"):
@@ -464,6 +469,7 @@ def train(
         f"final_eval_action_config: {final_eval_action_config}\n"
         f"final_eval_action_ranges: {final_eval_action_ranges}\n"
         f"final_eval_action_fixed: {final_eval_action_fixed}\n"
+        f"final_eval_require_rescale_optimizer: {final_eval_require_rescale_optimizer}\n"
         f"skip_stage1_rl: {skip_stage1_rl}\n"
         f"skip_final_eval: {skip_final_eval}\n"
         f"final_eval_only: {final_eval_only}\n"
@@ -474,6 +480,9 @@ def train(
         f"wandb_log_model: {wandb_log_model}\n"
         f"resume_from_checkpoint: {resume_from_checkpoint}\n"
         f"resume_run_dir: {resume_run_dir}\n"
+        f"stage2_rl_variant: {stage2_rl_variant}\n"
+        f"blb_v3_rescale_invoker_kind: {blb_v3_rescale_invoker_kind}\n"
+        f"blb_v3_inproc_rescale_optimizer_root: {blb_v3_inproc_rescale_optimizer_root}\n"
     )
     assert (
         base_model
@@ -937,6 +946,7 @@ def train(
             final_eval_action_config=final_eval_action_config,
             final_eval_action_ranges=final_eval_action_ranges,
             final_eval_action_fixed=final_eval_action_fixed,
+            final_eval_require_rescale_optimizer=final_eval_require_rescale_optimizer,
             skip_noise_rl=skip_noise_rl,
             skip_stage1_rl=skip_stage1_rl,
             skip_final_eval=skip_final_eval,
@@ -952,6 +962,10 @@ def train(
             stage2_probe_size=stage2_probe_size,
             stage2_rl_variant=stage2_rl_variant,
             blb_v3_rescale_invoker_kind=blb_v3_rescale_invoker_kind,
+            blb_v3_inproc_rescale_optimizer_root=(
+                blb_v3_inproc_rescale_optimizer_root
+                if blb_v3_inproc_rescale_optimizer_root not in (None, "") else None
+            ),
             blb_v3_subprocess_optimizer_root=(
                 blb_v3_subprocess_optimizer_root
                 if blb_v3_subprocess_optimizer_root not in (None, "") else None
@@ -1154,7 +1168,7 @@ def train(
                         limit_s=limit_s,
                     )
                 else:
-                    from final_eval.embedded import run_embedded_final_eval
+                    from Paean.embedded import run_embedded_final_eval
 
                     final_eval_result = run_embedded_final_eval(
                         evaluator=importance_evaluator,

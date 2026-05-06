@@ -1,4 +1,4 @@
-"""Independent final-evaluation package.
+"""Independent Paean final-evaluation package.
 
 The package keeps final-eval command-line configuration separate from training
 configuration while reusing the existing UnifiedFinalEvaluationModule engine.
