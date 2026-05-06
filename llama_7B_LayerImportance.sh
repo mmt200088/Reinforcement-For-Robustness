@@ -123,9 +123,6 @@ GA / Greedy：
   --stage2-rollout-size N                 BLB v3 PPO rollout 大小；默认跟随 --ppo-update-interval
   --stage2-save-interval N                BLB v3 live checkpoint 保存间隔
   --stage2-eval-interval N                BLB v3 训练日志评估间隔
-  --stage2-rescale-invoker heuristic|subprocess|stub
-  --stage2-rescale-root PATH              invoker=subprocess 时的 Rescale_optimizer 根目录
-  --stage2-rescale-cli-module MODULE      invoker=subprocess 时的 CLI module
   --stage2-calibrate-baseline-samples N   BLB v3 reward 权重校准样本数
 
 通用 RL（仅 general-rl 可用）：
@@ -432,9 +429,7 @@ STAGE2_STABILITY_TOLERANCE="0.05"; S_STAGE2_STABILITY_TOLERANCE="false"
 STAGE2_K_TRIALS="5"; S_STAGE2_K_TRIALS="false"
 STAGE2_PROBE_SIZE="256"; S_STAGE2_PROBE_SIZE="false"
 STAGE2_RL_VARIANT="blb_v3"; S_STAGE2_RL_VARIANT="false"
-BLB_V3_RESCALE_INVOKER_KIND="heuristic"; S_BLB_V3_RESCALE_INVOKER_KIND="false"
-BLB_V3_SUBPROCESS_OPTIMIZER_ROOT=""; S_BLB_V3_SUBPROCESS_OPTIMIZER_ROOT="false"
-BLB_V3_SUBPROCESS_CLI_MODULE="rescale_optimizer.replan"; S_BLB_V3_SUBPROCESS_CLI_MODULE="false"
+BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT="Rescale_optimizer"
 BLB_V3_ROLLOUT_SIZE=""; S_BLB_V3_ROLLOUT_SIZE="false"
 BLB_V3_EVAL_INTERVAL=""; S_BLB_V3_EVAL_INTERVAL="false"
 BLB_V3_SAVE_INTERVAL=""; S_BLB_V3_SAVE_INTERVAL="false"
@@ -590,9 +585,6 @@ while [ "$#" -gt 0 ]; do
     --stage2-rollout-size|--blb-v3-rollout-size) needv "$@"; BLB_V3_ROLLOUT_SIZE="$2"; S_BLB_V3_ROLLOUT_SIZE="true"; shift 2 ;;
     --stage2-save-interval|--blb-v3-save-interval) needv "$@"; BLB_V3_SAVE_INTERVAL="$2"; S_BLB_V3_SAVE_INTERVAL="true"; shift 2 ;;
     --stage2-eval-interval|--blb-v3-eval-interval) needv "$@"; BLB_V3_EVAL_INTERVAL="$2"; S_BLB_V3_EVAL_INTERVAL="true"; shift 2 ;;
-    --stage2-rescale-invoker|--blb-v3-rescale-invoker-kind) needv "$@"; BLB_V3_RESCALE_INVOKER_KIND="$2"; S_BLB_V3_RESCALE_INVOKER_KIND="true"; shift 2 ;;
-    --stage2-rescale-root|--blb-v3-subprocess-optimizer-root) needv "$@"; BLB_V3_SUBPROCESS_OPTIMIZER_ROOT="$2"; S_BLB_V3_SUBPROCESS_OPTIMIZER_ROOT="true"; shift 2 ;;
-    --stage2-rescale-cli-module|--blb-v3-subprocess-cli-module) needv "$@"; BLB_V3_SUBPROCESS_CLI_MODULE="$2"; S_BLB_V3_SUBPROCESS_CLI_MODULE="true"; shift 2 ;;
     --stage2-calibrate-baseline-samples|--blb-v3-calibrate-baseline-samples) needv "$@"; BLB_V3_CALIBRATE_BASELINE_SAMPLES="$2"; S_BLB_V3_CALIBRATE_BASELINE_SAMPLES="true"; shift 2 ;;
     --fresh-start|--fresh) FRESH_START="true"; S_FRESH_START="true"; shift ;;
     --fresh-stage1) FRESH_STAGE1="true"; S_FRESH_STAGE1="true"; shift ;;
@@ -613,7 +605,6 @@ RL_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$RL_COMPARE_FINAL_EVAL_SOURCE" | tr
 GA_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$GA_COMPARE_FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
 COMPARE_CONFIG_MODE="$(printf '%s' "$COMPARE_CONFIG_MODE" | tr '[:upper:]' '[:lower:]')"
 STAGE2_RL_VARIANT="$(printf '%s' "$STAGE2_RL_VARIANT" | tr '[:upper:]' '[:lower:]')"
-BLB_V3_RESCALE_INVOKER_KIND="$(printf '%s' "$BLB_V3_RESCALE_INVOKER_KIND" | tr '[:upper:]' '[:lower:]')"
 
 case "$SEARCH_ALGORITHM" in
   rl|ppo) SEARCH_ALGORITHM="rl" ;;
@@ -635,11 +626,6 @@ case "$STAGE2_RL_VARIANT" in
   blb_v3|blb|v3|blb_stage2_rl|default|"") STAGE2_RL_VARIANT="blb_v3" ;;
   legacy_v2|legacy|v2|noise_rl_module_v2|old) STAGE2_RL_VARIANT="legacy_v2" ;;
   *) err "--stage2-rl-variant 只支持 blb_v3 或 legacy_v2。" ;;
-esac
-
-case "$BLB_V3_RESCALE_INVOKER_KIND" in
-  heuristic|subprocess|stub) ;;
-  *) err "--stage2-rescale-invoker 只支持 heuristic / subprocess / stub。" ;;
 esac
 
 case "$RUN_MODE" in
@@ -810,7 +796,7 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ] || [ "$SEARCH_ALGORITHM" = "rl-and-ga-
   { [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; } || err "当前模式不支持 --stage2-fixed-config-* 参数；该参数组仅普通 rl / ga / greedy 可用。"
 fi
 if [ "$SEARCH_ALGORITHM" != "rl" ]; then
-  { [ "$S_STAGE2_RL_VARIANT" = "false" ] && [ "$S_BLB_V3_RESCALE_INVOKER_KIND" = "false" ] && [ "$S_BLB_V3_SUBPROCESS_OPTIMIZER_ROOT" = "false" ] && [ "$S_BLB_V3_SUBPROCESS_CLI_MODULE" = "false" ] && [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ]; } || err "Stage-2 RL variant / BLB 参数仅支持 run rl / --algorithm rl。"
+  { [ "$S_STAGE2_RL_VARIANT" = "false" ] && [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ]; } || err "Stage-2 RL variant / BLB 参数仅支持 run rl / --algorithm rl。"
 fi
 if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$S_GENERAL_ACCURACY_TOLERANCE_RANGE" = "true" ]; then
   err "当前搜索算法不是 general-rl，请不要使用 --general-rl-accuracy-tolerance-range。"
@@ -969,7 +955,7 @@ else
     is_pos_num "$STAGE1_LR" || err "--stage1-search-lr 必须是正数"
     is_pos_num "$STAGE2_LR" || err "--stage2-search-lr 必须是正数"
     if [ "$STAGE2_RL_VARIANT" = "legacy_v2" ]; then
-      { [ "$S_BLB_V3_RESCALE_INVOKER_KIND" = "false" ] && [ "$S_BLB_V3_SUBPROCESS_OPTIMIZER_ROOT" = "false" ] && [ "$S_BLB_V3_SUBPROCESS_CLI_MODULE" = "false" ] && [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ]; } || err "stage2_rl_variant=legacy_v2 时不能同时使用 BLB v3 专属参数。"
+      { [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ]; } || err "stage2_rl_variant=legacy_v2 时不能同时使用 BLB v3 专属参数。"
     fi
     [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$STAGE1_EPISODES" -ge 170 ] || err "rl 的 Stage-1 回合数至少需要 170。"
     [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$STAGE2_EPISODES" -ge 170 ] || err "rl 的 Stage-2 回合数至少需要 170。"
@@ -1339,7 +1325,7 @@ else
     RL_STAGE2_EPISODES_SPECIFIED="$S_STAGE2_EPISODES"
     [ "$SKIP_STAGE1_SEARCH" = "true" ] && RL_STAGE1_EPISODES_SPECIFIED="false"
     [ "$SKIP_NOISE_SEARCH" = "true" ] && RL_STAGE2_EPISODES_SPECIFIED="false"
-    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE" --stage2_rl_variant "$STAGE2_RL_VARIANT" --blb_v3_rescale_invoker_kind "$BLB_V3_RESCALE_INVOKER_KIND" --blb_v3_subprocess_optimizer_root "$BLB_V3_SUBPROCESS_OPTIMIZER_ROOT" --blb_v3_subprocess_cli_module "$BLB_V3_SUBPROCESS_CLI_MODULE" --blb_v3_rollout_size "$BLB_V3_ROLLOUT_SIZE")
+    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE" --stage2_rl_variant "$STAGE2_RL_VARIANT" --blb_v3_inproc_rescale_optimizer_root "$BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT" --blb_v3_rollout_size "$BLB_V3_ROLLOUT_SIZE")
     [ -n "$BLB_V3_EVAL_INTERVAL" ] && CMD+=(--blb_v3_eval_interval "$BLB_V3_EVAL_INTERVAL")
     [ -n "$BLB_V3_SAVE_INTERVAL" ] && CMD+=(--blb_v3_save_interval "$BLB_V3_SAVE_INTERVAL")
     [ -n "$BLB_V3_CALIBRATE_BASELINE_SAMPLES" ] && CMD+=(--blb_v3_calibrate_baseline_samples "$BLB_V3_CALIBRATE_BASELINE_SAMPLES")
@@ -1380,8 +1366,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   show "PPO 更新间隔" "$PPO_UPDATE_INTERVAL_VAL" "$S_PPO_UPDATE_INTERVAL"
   if [ "$STAGE2_RL_VARIANT" = "blb_v3" ]; then
     show "BLB rollout 大小" "$BLB_V3_ROLLOUT_SIZE" "$S_BLB_V3_ROLLOUT_SIZE"
-    show "BLB Rescale invoker" "$BLB_V3_RESCALE_INVOKER_KIND" "$S_BLB_V3_RESCALE_INVOKER_KIND"
-    [ -n "$BLB_V3_SUBPROCESS_OPTIMIZER_ROOT" ] && show "BLB Rescale 根目录" "$BLB_V3_SUBPROCESS_OPTIMIZER_ROOT" "$S_BLB_V3_SUBPROCESS_OPTIMIZER_ROOT"
+    show "BLB Rescale optimizer" "in_process_real (${BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT})" "false"
     [ -n "$BLB_V3_SAVE_INTERVAL" ] && show "BLB checkpoint 间隔" "$BLB_V3_SAVE_INTERVAL" "$S_BLB_V3_SAVE_INTERVAL"
     [ -n "$BLB_V3_EVAL_INTERVAL" ] && show "BLB 日志评估间隔" "$BLB_V3_EVAL_INTERVAL" "$S_BLB_V3_EVAL_INTERVAL"
   fi

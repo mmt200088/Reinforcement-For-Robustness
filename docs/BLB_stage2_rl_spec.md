@@ -117,7 +117,7 @@ Local_program/
 │   - RescaleOptimizerBridge.evaluate_blocks(requests) -> {config_name: Output}
 │   - aggregate_optimizer_signals(outputs) -> OptimizerRewardSignals
 │   - apply_rotation_flags_to_cfg(cfg, rotation_flag_names: Iterable[str])
-│   - InProcessInvoker（推荐） / SubprocessInvoker / CallableInvoker / StubInvoker
+│   - InProcessInvoker（训练固定使用）/ SubprocessInvoker / CallableInvoker / StubInvoker（仅桥接层调试）
 │   - default_block{1..5}_cfg_to_delta(cfg) -> {node_name: delta_int_or_'x2'}
 │
 ├── Rescale_optimizer/             ☆ 外部子项目（已经拉下来，配 configs/mrpc 等）
@@ -408,8 +408,8 @@ outputs = rescale.evaluate_blocks(
 signals = aggregate_optimizer_signals(outputs)  # OptimizerRewardSignals
 ```
 
-也可以走 `SubprocessInvoker`（fork `python scripts/replan_what_if.py`，开销几百 ms，
-适合 debug 隔离）：
+桥接层调试时也可以单独走 `SubprocessInvoker`（fork `python scripts/replan_what_if.py`，
+开销几百 ms，适合 debug 隔离）。BLB Stage-2 RL 训练路径不使用 subprocess：
 
 ```python
 from rescale_optimizer_bridge import SubprocessInvoker
@@ -428,8 +428,8 @@ inv = SubprocessInvoker(
 )
 ```
 
-如果 Rescale_optimizer 还没装好，可以先用 `StubInvoker(canned_dict)` 或者
-`HeuristicStubInvoker`（`blb_stage2_rl.default_invoker`）跑通 RL 框架。
+正式 BLB Stage-2 RL 训练必须使用真实 `Rescale_optimizer` in-process 路径；如果没有装好，
+训练会直接报错停止。`StubInvoker` / `HeuristicStubInvoker` 只保留给桥接层单元测试。
 
 **Action JSON 形态**（invoker 内部 payload）：
 
@@ -668,15 +668,14 @@ class BLBStage2Policy(nn.Module):
   - `cfgs_to_action_vector(...)`（反向，调试用）
 - [ ] `blb_stage2_rl/env.py`：实现 `BLBStage2Env(gym.Env)`，`step` 跑一回合
 - [ ] `blb_stage2_rl/reward.py`：`compute_reward` 三层优先级（§6）
-- [ ] 一条端到端 smoke test：用 `StubInvoker` 跑通 1 个 episode，reward 不报错
+- [ ] 一条端到端 smoke test：用真实 `InProcessInvoker.from_profile(...)` 跑通 1 个 episode，reward 不报错
 
 ### M1：Rescale_optimizer 真接入
 
 - [ ] 把 `Rescale_optimizer/` 拉下来；按 [`docs/README_configs.md`](README_configs.md)
   跑 `batch_run_configs.py` 生成 `static_skeletons_<profile>.json`
 - [ ] 写 `optimizer_rot_to_blb_flag` 命名映射 JSON（每个 (block, profile) 一份）
-- [ ] 切换 `InProcessInvoker.from_profile(...)` 真调 `replan_with_user_actions`；验证一次 evaluate 拿到合法 JSON
-  （fallback：`SubprocessInvoker` 走 `scripts/replan_what_if.py` CLI）
+- [ ] 使用 `InProcessInvoker.from_profile(...)` 真调 `replan_with_user_actions`；验证一次 evaluate 拿到合法 JSON
 - [ ] 测 invalid_chain 路径：故意用 max-2*lots 让 chain 崩
 
 ### M2：单层 / 单 block 先收敛
@@ -767,12 +766,9 @@ Local_program/
 
 ## 12. 已知风险与开放问题
 
-1. **Rescale_optimizer subprocess 开销**：每步至少 5 次 subprocess 调用
-   （5 个 block 各一次），单次几百 ms。PPO 一回合 RT 可能 1–2 秒，50k 步要
-   十几小时。优化路径：
-   - 把 5 个 block 合并到一次 invoker 调用（可以让 `Rescale_optimizer` 接受
-     一次性 batch，需要看那边代码支不支持）；
-   - 或让 invoker 走长寿命子进程 + RPC（zmq / pipe），省掉每次 fork。
+1. **Rescale_optimizer 调用开销**：训练固定走 in-process replan，避免 subprocess fork；
+   后续优化重点是减少每个 episode 内重复 graph/config 调用，或让 `Rescale_optimizer`
+   支持一次性 batch。
 
 2. **首层特殊情况**：Layer 0 没有 Block 1（`output_truncation_k` 必须置 None）。
    action_space 上 layer 0 的 K dim 应该被屏蔽（或者强制 idx=K_LEVELS.index(13)

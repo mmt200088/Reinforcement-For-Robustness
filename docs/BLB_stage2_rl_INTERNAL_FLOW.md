@@ -90,9 +90,7 @@ shell 内部会调用 `rl_tune.py`，但这是 launcher 的实现细节。`rl_tu
 | 参数 | 进入 evaluator 后的字段 |
 | --- | --- |
 | `--stage2_rl_variant` | `stage2_rl_variant` |
-| `--blb_v3_rescale_invoker_kind` | `blb_v3_rescale_invoker_kind` |
-| `--blb_v3_subprocess_optimizer_root` | `blb_v3_subprocess_optimizer_root` |
-| `--blb_v3_subprocess_cli_module` | `blb_v3_subprocess_cli_module` |
+| `--blb_v3_inproc_rescale_optimizer_root` | `blb_v3_inproc_rescale_optimizer_root`，launcher 固定传 `Rescale_optimizer` |
 | `--blb_v3_rollout_size` | `blb_v3_rollout_size` |
 | `--blb_v3_eval_interval` | `blb_v3_eval_interval` |
 | `--blb_v3_save_interval` | `blb_v3_save_interval` |
@@ -178,16 +176,10 @@ num_trials_per_step × probe_batch_count 个 mini-batch forward
 
 ### 5.4 构造 Rescale bridge
 
-BLB reward 的成本部分来自 `RescaleOptimizerBridge`。runner 根据 `rescale_invoker_kind` 构造 invoker。
-
-| kind | 当前行为 |
-| --- | --- |
-| `heuristic` | 默认。使用 `HeuristicStubInvoker`，不依赖外部 `Rescale_optimizer`。 |
-| `stub` | 如果 evaluator 上挂了 `blb_v3_stub_canned`，就使用预设输出；否则 fallback 到 `heuristic`。 |
-| `subprocess` | 需要同时有 configs、optimizer root、baseline archive；缺任一项会 fallback 到 `heuristic`。当前 shell 只暴露 root/module，没有完整暴露 configs 与 baseline archive，因此仅靠 shell 参数切 `subprocess` 通常会 fallback。 |
-| `in_process` | runner 内部支持，但 shell 当前没有暴露这个选项。它也需要 root/profile/configs/baseline 等环境准备。 |
-
-这意味着当前默认、最稳妥、实际可用的路径是 `heuristic`。正式接外部 Rescale_optimizer 前，需要把 configs 与 baseline archive 的注入链路补齐，否则成本信号仍会回到启发式估计。
+BLB reward 的成本部分来自 `RescaleOptimizerBridge`。runner 固定构造真实
+`InProcessInvoker.from_profile(rescale_optimizer_root="Rescale_optimizer", profile=dataset)`。
+不再支持 `heuristic`、`stub` 或 `subprocess` 作为训练路径；如果 profile configs 或
+baseline archive 缺失，训练会直接报错停止。
 
 ### 5.5 加载 max-SF 表
 
@@ -474,14 +466,8 @@ Rescale bridge 返回每个 config 的输出，然后聚合为：
 | `per_config` | 每个 config 的详细信号 |
 | `invalid_chains` | 非法链原因 |
 
-如果使用 `heuristic` invoker，成本信号来自 cfg 字段的启发式估计：
-
-1. `total_bits` 大致等于 cfg 中所有 SF 之和。
-2. `fusion_count` 大致等于启用的 rescale slot 数。
-3. 默认一般不会产生 invalid_chain，除非设置了极端阈值。
-4. 不会反写 effective rotations。
-
-如果使用真实 Rescale optimizer，`effective_rotations` 可能会被转换成 cfg 上的 `rotation_after_*` 标志，再影响后续 BLB 噪声安装。但当前默认 heuristic 不做 rotation 反写。
+成本信号来自真实 Rescale optimizer 的 replan 结果。`effective_rotations` 可能会被转换成
+cfg 上的 `rotation_after_*` 标志，再影响后续 BLB 噪声安装。
 
 ### 10.6 invalid_chain 的快速失败
 
@@ -826,15 +812,14 @@ BLB Stage-2 RL 内部有多个 fallback，目的是让训练流程尽量不中�
 | --- | --- |
 | `max_sfs/{profile}.json` 不存在 | fallback 到 `default.json`，再 fallback 到字段内置 max |
 | action SF 不在噪声方差表 | snap 到合法 SF |
-| Rescale subprocess 缺 configs/root/baseline | fallback 到 heuristic |
-| stub 没 canned 输出 | fallback 到 heuristic |
+| Rescale_optimizer root/configs/baseline 缺失 | 直接报错停止训练 |
 | Rescale 输出 invalid_chain | 不安装 BLB，不跑 forward，直接负 reward |
 | BLB apply 失败 | 当 invalid 处理，返回负 reward |
 | probe 构造失败 | fallback 到 split 数据集本身 |
 | checkpoint 读取失败 | 打 warning，从头继续该 run 的 BLB 训练状态 |
 | checkpoint 保存失败 | 打 warning，但训练流程不会立刻崩 |
 
-这些 fallback 提高鲁棒性，但也意味着看日志很重要。尤其是 Rescale invoker，如果以为自己在跑真实 subprocess，但日志里出现 fallback 到 heuristic，那么实际成本信号就不是外部优化器结果。
+这些保护让 env 对非法动作保持稳健；Rescale_optimizer 初始化失败则不会被吞掉。
 
 ## 18. 当前实现中最容易误解的点
 
@@ -846,9 +831,10 @@ Policy 一次性输出整份 action vector。一个 episode 是一份完整 BLB 
 
 它没有额外跑 deterministic eval 来刷新 best。best 由训练 episode reward 更新。
 
-### 18.3 `subprocess` 不是只传 root 就能正式生效
+### 18.3 Rescale_optimizer 是强依赖
 
-runner 内部需要 configs 和 baseline archive。当前 shell 外壳只传了 root/module，不足以让 subprocess 完整初始化；缺信息时会 fallback 到 heuristic。
+BLB Stage-2 RL 不再有启发式成本估计兜底。训练日志应显示
+`Rescale optimizer mode = in_process_real`；如果真实优化器加载失败，训练会直接中止。
 
 ### 18.4 final-eval 当前仍是 legacy 兼容
 

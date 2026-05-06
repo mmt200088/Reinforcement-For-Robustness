@@ -2320,9 +2320,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage2_k_trials=None,
                  stage2_probe_size=None,
                  stage2_rl_variant='blb_v3',
-                 blb_v3_rescale_invoker_kind='heuristic',
-                 blb_v3_subprocess_optimizer_root=None,
-                 blb_v3_subprocess_cli_module='rescale_optimizer.replan',
                  blb_v3_rollout_size=None,
                  blb_v3_eval_interval=None,
                  blb_v3_save_interval=None,
@@ -2745,18 +2742,10 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         # ---------- Stage-2 RL variant 路由（新版 BLB v3 / 旧版 v2 二选一） ----------
         self.stage2_rl_variant = self._coerce_stage2_rl_variant(stage2_rl_variant)
-        # 透传给 BLBStage2RLRunner 的可选参数（None ⇒ 用 BLBStage2TrainConfig 默认）
-        self.blb_v3_rescale_invoker_kind = str(blb_v3_rescale_invoker_kind or 'heuristic').lower()
+        # BLB v3 training always uses the real in-process Rescale_optimizer path.
         self.blb_v3_inproc_rescale_optimizer_root = (
             str(blb_v3_inproc_rescale_optimizer_root)
             if blb_v3_inproc_rescale_optimizer_root not in (None, "") else None
-        )
-        self.blb_v3_subprocess_optimizer_root = (
-            str(blb_v3_subprocess_optimizer_root)
-            if blb_v3_subprocess_optimizer_root not in (None, "") else None
-        )
-        self.blb_v3_subprocess_cli_module = str(
-            blb_v3_subprocess_cli_module or 'rescale_optimizer.replan'
         )
         self.blb_v3_rollout_size = (
             int(blb_v3_rollout_size) if blb_v3_rollout_size not in (None, "") else None

@@ -242,16 +242,12 @@ BLB reward 是分层的，不是单纯“成本越低越好”。
 最终保存的 `blb_stage2_best_cfg.pkl` 用于分析和后续接入。为了兼容当前统一 final eval，
 下游旧接口仍能拿到 legacy 形态的 Stage-2 结果；BLB 的完整最优配置则保存在 BLB 专属字段和 pkl 文件里。
 
-## 6. Rescale invoker 的三种模式
+## 6. Rescale optimizer 路径
 
-| 模式 | 适合场景 | 说明 |
-| --- | --- | --- |
-| `heuristic` | 当前默认、推荐先用 | 不依赖外部 Rescale_optimizer，使用内置启发式成本估计，最适合先把 BLB RL 融入现有框架 |
-| `subprocess` | 远程服务器已有外部 Rescale_optimizer，且能向 runner 提供 configs 与 baseline archive | 成本信号来自真实外部优化器，正式实验时更可信，但当前 shell 只传 root/module 还不足以完整启用 |
-| `stub` | 小规模受控调试 | 使用固定或模拟信号，主要用于验证流程 |
-
-建议路线是先用 `heuristic` 跑通训练、停止、续训和目录落盘，再补齐 `subprocess` 所需的
-configs mapping 与 baseline archive 注入链路，最后切 `subprocess` 做正式成本实验。
+BLB Stage-2 RL 训练固定使用真实 `Rescale_optimizer` in-process 路径，不再提供
+`heuristic`、`stub` 或 `subprocess` 模式。每个 episode 的 CKKS 模数链、fusion_count 和
+total_bits 都来自 `Rescale_optimizer` 的 replan 结果；如果 profile configs 或 baseline
+archive 无法加载，runner 会直接报错停止训练。
 
 ## 7. 如何优雅停止
 
@@ -363,7 +359,7 @@ bash llama_7B_LayerImportance.sh eval --dataset mrpc --algorithm rl --config glu
 
 1. 每个正式实验先记录完整启动命令和 preset 版本。
 2. 同一个持久化目录只跑一种 Stage-2 RL variant，避免实验语义混乱。
-3. 第一次融入框架时用 `heuristic`，确认日志、checkpoint、停止、续训都正常。
+3. 训练日志里应能看到 `Rescale optimizer mode = in_process_real` 和 `Rescale_optimizer root = ...`。
 4. 要改 `--stage2-limit-tolerance` 或 `--stage2-stability-tolerance` 时，把它当成新实验，因为目录 slug 会变。
 5. 不要把 `--fresh` 写入长期 preset；它应该是一次性的确认动作。
 6. 查看训练是否真的在续训时，重点看日志里的 resume 信息和 checkpoint 的 completed episodes。

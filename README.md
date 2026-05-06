@@ -78,7 +78,8 @@ bash llama_7B_LayerImportance.sh compare --dataset mrpc
 训练预设文件位于 `presets/`，final eval 预设文件位于 `Paean/presets/`。
 格式都是每行一个参数，支持 `#` 注释。命令行参数排在预设之后，优先级更高。
 BLB Stage-2 RL 推荐先用 `presets/mrpc-blb-stage2-rl.conf`；这份 preset 不内置 `--fresh`，
-因此首次运行在命令行加 `--fresh`，后续续训练直接复用同一 preset。
+因此首次运行在命令行加 `--fresh`，后续续训练直接复用同一 preset。BLB Stage-2 RL 训练现在固定使用真实
+`Rescale_optimizer` in-process 路径，CKKS 模数链、fusion 和 total_bits 都由该算法计算；初始化失败会直接中止训练。
 
 BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs/BLB_stage2_rl_FULL_FLOW.md)，
 简明参数说明见 [`docs/BLB_stage2_rl_README.md`](docs/BLB_stage2_rl_README.md)。
@@ -162,9 +163,7 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `--stage2-search-lr FLOAT` | `run rl` | `1e-4` | Stage-2 RL 学习率 |
 | **Stage-2 RL variant** | | | |
 | `--stage2-rl-variant blb_v3/legacy_v2` | `run rl` | `blb_v3` | 选择 Stage-2 RL 实现：`blb_v3`（默认，加强版 BLB Stage-2 RL，覆盖 Block 1-5 + first-input fresh 全部噪声候选点；详见 `docs/BLB_stage2_rl_FULL_FLOW.md`）；`legacy_v2`（旧版 `noise_rl_module_v2`，仅优化 `*_scaling_factors`） |
-| `--stage2-rescale-invoker heuristic/subprocess/stub` / `--blb-v3-rescale-invoker-kind heuristic/subprocess/stub` | `run rl` | `heuristic` | BLB v3 的 Rescale_optimizer 调用方式；缺省 `heuristic` 使用内置启发式估计（不依赖外部 Rescale_optimizer 子项目） |
-| `--stage2-rescale-root PATH` / `--blb-v3-subprocess-optimizer-root PATH` | `run rl` | — | invoker=`subprocess` 时 Rescale_optimizer 子项目根目录；当前还需内部补齐 configs 与 baseline archive，否则会 fallback 到 `heuristic` |
-| `--stage2-rescale-cli-module MODULE` / `--blb-v3-subprocess-cli-module MODULE` | `run rl` | `rescale_optimizer.replan` | invoker=`subprocess` 时调用的 CLI module |
+| BLB v3 Rescale_optimizer | `run rl` | `Rescale_optimizer` | 固定使用真实 in-process `Rescale_optimizer`，不再提供 heuristic/stub/subprocess 命令行选择；初始化失败直接报错 |
 | `--stage2-rollout-size N` / `--blb-v3-rollout-size N` | `run rl` | 跟随 `--ppo-update-interval` | BLB v3 PPO rollout 大小（多少 episode 触发一次 PPO update） |
 | `--stage2-save-interval N` / `--blb-v3-save-interval N` | `run rl` | `200` | BLB v3 live checkpoint 保存间隔 |
 | `--stage2-eval-interval N` / `--blb-v3-eval-interval N` | `run rl` | `100` | BLB v3 训练日志评估间隔 |

@@ -143,8 +143,8 @@ class BLBStage2Env:
             stab_threshold: float,
             max_sfs: MaxSFsTable,
             num_layers: int,
-            gelu_degree: int = 4,
-            attn_degree: int = 4,
+            gelu_degree=4,
+            attn_degree=4,
             layers_attribute: str = "model.bert.encoder.layer",
             is_regression: bool = False,
             env_cfg: Optional[BLBStage2EnvConfig] = None,
@@ -161,8 +161,10 @@ class BLBStage2Env:
         self.stab_threshold = float(stab_threshold)
         self.max_sfs = max_sfs
         self.num_layers = int(num_layers)
-        self.gelu_degree = int(gelu_degree)
-        self.attn_degree = int(attn_degree)
+        self.gelu_degree = self._normalize_degree_vector(gelu_degree, default=4, name="gelu_degree")
+        self.attn_degree = self._normalize_degree_vector(attn_degree, default=4, name="attn_degree")
+        self.gelu_degree_state = self._degree_state_scalar(self.gelu_degree, default=4)
+        self.attn_degree_state = self._degree_state_scalar(self.attn_degree, default=4)
         self.layers_attribute = str(layers_attribute)
         self.is_regression = bool(is_regression)
         self.env_cfg = env_cfg or BLBStage2EnvConfig()
@@ -181,6 +183,25 @@ class BLBStage2Env:
         self._step_idx: int = 0
 
         self._device = next(model.parameters()).device
+
+    def _normalize_degree_vector(self, degrees, *, default: int, name: str):
+        if degrees is None:
+            return int(default)
+        arr = np.asarray(degrees, dtype=int).reshape(-1)
+        if arr.size == 0:
+            return int(default)
+        if arr.size == 1:
+            return int(arr[0])
+        if arr.size != self.num_layers:
+            raise ValueError(f"{name} length {arr.size} must be 1 or num_layers={self.num_layers}")
+        return arr.copy()
+
+    @staticmethod
+    def _degree_state_scalar(degrees, *, default: int) -> float:
+        arr = np.asarray(degrees, dtype=float).reshape(-1)
+        if arr.size == 0:
+            return float(default)
+        return float(arr.mean())
 
     # ------------------------------------------------------------------
     # gym-like 接口
@@ -333,7 +354,11 @@ class BLBStage2Env:
                 block4_cfgs=decoded.block4_cfgs,
                 block5_cfgs=decoded.block5_cfgs,
             )
-        except RuntimeError as exc:
+        except Exception as exc:
+            try:
+                self.bridge.clear()
+            except Exception:
+                pass
             # 互斥校验失败，按 invalid 处理
             metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
             breakdown = compute_reward(
@@ -466,8 +491,8 @@ class BLBStage2Env:
            per_layer_step_indicator_0..L-1]
         """
         static = [
-            float(self.attn_degree),
-            float(self.gelu_degree),
+            float(self.attn_degree_state),
+            float(self.gelu_degree_state),
             float(self.num_layers),
         ]
         # profile ID hash → 2 维 [-1, 1]

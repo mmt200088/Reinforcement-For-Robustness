@@ -15,8 +15,8 @@
   * 训练结束后调用 ``bridge.clear()``（env.step 内已经做）+ 显式
     ``handler.restore_layer_block*_noise`` 防御式还原；旧版 final_eval 仍可
     在干净的多项式近似模型上运行。
-  * 新版 RL 不依赖外部 ``Rescale_optimizer`` 子项目；当用户没有装该子项目时
-    自动 fallback 到 ``HeuristicStubInvoker``（reward 仍单调可指导）。
+  * 新版 RL 强依赖真实 ``Rescale_optimizer`` 子项目；CKKS 模数链、fusion 与
+    total_bits 必须由该算法计算，初始化失败会直接中止训练。
 """
 from __future__ import annotations
 
@@ -30,12 +30,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from rescale_optimizer_bridge import (
-    CallableInvoker,
-    RescaleOptimizerBridge,
-    StubInvoker,
-    SubprocessInvoker,
-)
+from rescale_optimizer_bridge import RescaleOptimizerBridge
 from .action_space import (
     K_LEVELS,
     MaxSFsTable,
@@ -46,7 +41,6 @@ from .action_space import (
     load_max_sfs,
     make_all_max_action_vector,
 )
-from .default_invoker import HeuristicStubInvoker
 from .env import (
     BLBStage2Env,
     BLBStage2EnvConfig,
@@ -128,7 +122,6 @@ class BLBStage2TrainConfig:
     eval_interval: int = 100                # 多少 episode 跑一次 deterministic eval
     save_interval: int = 200
     profile: str = "default"
-    rescale_invoker_kind: str = "heuristic"  # "heuristic" / "stub" / "subprocess" / "in_process"
     # spec §6.4 / §3.1
     acc_threshold: float = 0.0              # baseline 精度往下浮 1pp 后用此值
     stab_threshold: float = float("inf")
@@ -139,14 +132,11 @@ class BLBStage2TrainConfig:
     probe_batch_count: int = 4
     # 自动校准
     calibrate_baseline_samples: int = 8
-    # SubprocessInvoker 参数（仅当 rescale_invoker_kind="subprocess" 时使用）
-    subprocess_optimizer_root: Optional[str] = None    # Rescale_optimizer 根目录
-    subprocess_cli_module: str = "rescale_optimizer.replan"  # 已弃用；保留只为不破坏调用方 kwargs
-    subprocess_configs: Optional[Mapping[str, str]] = None
-    subprocess_baseline_archive: Optional[str] = None  # static_skeletons_<profile>.json 路径
-    subprocess_cli_script: str = "scripts/replan_what_if.py"
-    # InProcessInvoker 参数（rescale_invoker_kind="in_process"，**推荐**）
-    inproc_rescale_optimizer_root: Optional[str] = None  # e.g. "Rescale_optimizer"
+    # Real Rescale_optimizer parameters. BLB Stage-2 RL intentionally has no
+    # heuristic/stub/subprocess training path.
+    inproc_rescale_optimizer_root: Optional[str] = field(
+        default_factory=lambda: os.path.join(_resolve_repo_root(), "Rescale_optimizer")
+    )
     inproc_profile: Optional[str] = None                 # e.g. "mrpc"；用于自动定位 configs/<profile>
     inproc_configs: Optional[Mapping[str, str]] = None   # {config_name: graph_json_path}；不传则按 profile 自动扫
     inproc_baseline_archive: Optional[str] = None        # 不传则 <root>/configs/<profile>/static_skeletons_<profile>.json
@@ -227,7 +217,8 @@ class BLBStage2RLRunner:
             extra_meta={
                 "fixed_label": str(fixed_label),
                 "fixed_source": str(fixed_source),
-                "rescale_invoker_kind": str(train_cfg.rescale_invoker_kind),
+                "rescale_optimizer": "in_process_real",
+                "rescale_optimizer_root": str(train_cfg.inproc_rescale_optimizer_root),
             },
             log_fn=log,
         )
@@ -252,7 +243,7 @@ class BLBStage2RLRunner:
         log(f"  {bullet} 评估子集 batch 数 = {len(probe_batches)}")
 
         # ---------- 3) 准备 RescaleOptimizer 桥 ----------
-        rescale_bridge, heuristic_invoker = self._build_rescale_bridge(train_cfg, log=log)
+        rescale_bridge = self._build_rescale_bridge(train_cfg, log=log)
 
         # ---------- 4) 准备 max_sfs 表 + Env ----------
         max_sfs = load_max_sfs(train_cfg.profile)
@@ -268,8 +259,8 @@ class BLBStage2RLRunner:
             stab_threshold=train_cfg.stab_threshold,
             max_sfs=max_sfs,
             num_layers=int(ev.total_layers),
-            gelu_degree=int(self._dominant_degree(fixed_gelu, default=4)),
-            attn_degree=int(self._dominant_degree(fixed_softmax, default=4)),
+            gelu_degree=fixed_gelu,
+            attn_degree=fixed_softmax,
             layers_attribute="model." + ev.layers_attribute,
             is_regression=bool(getattr(ev, "is_regression", False)),
             env_cfg=BLBStage2EnvConfig(
@@ -277,8 +268,6 @@ class BLBStage2RLRunner:
                 num_trials_per_step=train_cfg.num_trials_per_step,
                 probe_batch_count=train_cfg.probe_batch_count,
             ),
-            heuristic_invoker=heuristic_invoker,
-            stub_register_cfgs=(heuristic_invoker is not None),
         )
 
         # ---------- 5) baseline + reward 权重校准 ----------
@@ -623,7 +612,7 @@ class BLBStage2RLRunner:
                     "stab_threshold": float(env.stab_threshold),
                 },
                 episode_returns=episode_returns,
-                rescale_invoker_kind=str(train_cfg.rescale_invoker_kind),
+                rescale_invoker_kind="in_process_real",
                 log_fn=log,
             )
             log(f"  {bullet} 最终训练报告 → {report_path}")
@@ -768,18 +757,11 @@ class BLBStage2RLRunner:
             cfg.num_trials_per_step = int(getattr(ev, "stage2_k_trials", cfg.num_trials_per_step))
         except Exception:
             pass
-        # 5) 评估器上挂的 BLB v3 设置（CLI/init 透传）
-        evb_attrs = {
-            "rescale_invoker_kind": "blb_v3_rescale_invoker_kind",
-            "inproc_rescale_optimizer_root": "blb_v3_inproc_rescale_optimizer_root",
-            "subprocess_optimizer_root": "blb_v3_subprocess_optimizer_root",
-            "subprocess_cli_module": "blb_v3_subprocess_cli_module",
-        }
-        for cfg_field, attr_name in evb_attrs.items():
-            v = getattr(ev, attr_name, None)
-            if v is None or v == "":
-                continue
-            setattr(cfg, cfg_field, v)
+        # 5) BLB v3 always uses the real in-process Rescale_optimizer.  Legacy
+        # invoker selection attributes are deliberately ignored.
+        root = getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)
+        if root not in (None, ""):
+            cfg.inproc_rescale_optimizer_root = str(root)
         # 6) rollout_size / save_interval / eval_interval：直接从 evaluator 取（如果有挂）
         for cfg_field, attr_name in (
                 ("rollout_size", "blb_v3_rollout_size"),
@@ -844,77 +826,46 @@ class BLBStage2RLRunner:
             self,
             train_cfg: BLBStage2TrainConfig,
             log,
-            ) -> Tuple[RescaleOptimizerBridge, Optional[HeuristicStubInvoker]]:
-        kind = str(train_cfg.rescale_invoker_kind or "heuristic").lower()
+            ) -> RescaleOptimizerBridge:
+        from rescale_optimizer_bridge import InProcessInvoker
 
-        if kind == "in_process":
-            from rescale_optimizer_bridge import InProcessInvoker
-            root = train_cfg.inproc_rescale_optimizer_root
-            if not root:
-                log("  [警告] in_process invoker 未提供 inproc_rescale_optimizer_root；fallback 到 heuristic。")
-                kind = "heuristic"
-            else:
-                try:
-                    if train_cfg.inproc_configs:
-                        # 手工指定 configs + baseline_archive
-                        baseline = train_cfg.inproc_baseline_archive
-                        if not baseline:
-                            log("  [警告] in_process invoker 提供了 inproc_configs 但未提供 inproc_baseline_archive；fallback 到 heuristic。")
-                            kind = "heuristic"
-                        else:
-                            invoker = InProcessInvoker(
-                                configs=dict(train_cfg.inproc_configs),
-                                baseline_archive=str(baseline),
-                                rescale_optimizer_root=str(root),
-                            )
-                            return RescaleOptimizerBridge(invoker=invoker), None
-                    else:
-                        # 按 profile 自动扫
-                        profile = train_cfg.inproc_profile or train_cfg.profile
-                        invoker = InProcessInvoker.from_profile(
-                            rescale_optimizer_root=str(root),
-                            profile=str(profile),
-                            baseline_archive=train_cfg.inproc_baseline_archive,
-                        )
-                        return RescaleOptimizerBridge(invoker=invoker), None
-                except Exception as e:
-                    log(f"  [警告] in_process invoker 初始化失败 ({e})；fallback 到 heuristic。")
-                    kind = "heuristic"
+        root = str(
+            train_cfg.inproc_rescale_optimizer_root
+            or os.path.join(_resolve_repo_root(), "Rescale_optimizer")
+        )
+        profile = str(train_cfg.inproc_profile or train_cfg.profile)
+        log(f"  * Rescale_optimizer root = {root}")
+        log("  * Rescale optimizer mode = in_process_real")
 
-        if kind == "subprocess":
-            configs = train_cfg.subprocess_configs or {}
-            root = train_cfg.subprocess_optimizer_root
-            baseline = train_cfg.subprocess_baseline_archive
-            if not configs or not root or not baseline:
-                log(
-                    "  [警告] subprocess invoker 缺 configs / optimizer_root / "
-                    "baseline_archive 之一；自动 fallback 到 heuristic。"
-                )
-                kind = "heuristic"
-            else:
-                invoker = SubprocessInvoker(
-                    rescale_optimizer_root=str(root),
-                    configs=configs,
+        try:
+            if train_cfg.inproc_configs:
+                baseline = train_cfg.inproc_baseline_archive
+                if not baseline:
+                    raise ValueError(
+                        "inproc_configs requires inproc_baseline_archive for real Rescale_optimizer"
+                    )
+                invoker = InProcessInvoker(
+                    configs=dict(train_cfg.inproc_configs),
                     baseline_archive=str(baseline),
-                    cli_script=train_cfg.subprocess_cli_script,
+                    rescale_optimizer_root=root,
                 )
-                bridge = RescaleOptimizerBridge(invoker=invoker)
-                return bridge, None
-
-        if kind == "stub":
-            # 用户在 evaluator 上挂的 canned dict
-            canned = getattr(self.evaluator, "blb_v3_stub_canned", None)
-            if not canned:
-                log("  [警告] StubInvoker 未提供 canned；自动 fallback 到 heuristic。")
-                kind = "heuristic"
             else:
-                invoker = StubInvoker(canned=canned)
-                return RescaleOptimizerBridge(invoker=invoker), None
+                invoker = InProcessInvoker.from_profile(
+                    rescale_optimizer_root=root,
+                    profile=profile,
+                    baseline_archive=train_cfg.inproc_baseline_archive,
+                )
+            if not getattr(invoker, "baselines", {}):
+                raise ValueError(
+                    f"no Rescale_optimizer baselines loaded for profile={profile!r}"
+                )
+        except Exception as exc:
+            raise RuntimeError(
+                "BLB Stage-2 RL requires the real Rescale_optimizer in-process path. "
+                f"Failed to initialize from root={root!r}, profile={profile!r}: {exc}"
+            ) from exc
 
-        # heuristic（默认 / fallback）
-        h = HeuristicStubInvoker()
-        bridge = RescaleOptimizerBridge(invoker=h)
-        return bridge, h
+        return RescaleOptimizerBridge(invoker=invoker)
 
     @staticmethod
     def _dominant_degree(degrees, default=4) -> int:
@@ -989,7 +940,8 @@ class BLBStage2RLRunner:
                 "save_interval": int(getattr(train_cfg, "save_interval", 0)),
                 "eval_interval": int(getattr(train_cfg, "eval_interval", 0)),
                 "profile": str(getattr(train_cfg, "profile", "")),
-                "rescale_invoker_kind": str(getattr(train_cfg, "rescale_invoker_kind", "")),
+                "rescale_optimizer": "in_process_real",
+                "rescale_optimizer_root": str(getattr(train_cfg, "inproc_rescale_optimizer_root", "")),
             }
 
     @staticmethod

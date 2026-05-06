@@ -81,12 +81,7 @@ bash llama_7B_LayerImportance.sh run rl --dataset mrpc --stage2-rl-variant legac
 | `--blb-v3-save-interval N` | `200` | `--stage2-save-interval` 的长别名 |
 | `--stage2-eval-interval N` | `100` | BLB 训练日志评估间隔，只用于观察策略状态 |
 | `--blb-v3-eval-interval N` | `100` | `--stage2-eval-interval` 的长别名 |
-| `--stage2-rescale-invoker heuristic|subprocess|stub` | `heuristic` | BLB 成本信号来源。默认 `heuristic` 不依赖外部 Rescale_optimizer |
-| `--blb-v3-rescale-invoker-kind heuristic|subprocess|stub` | `heuristic` | `--stage2-rescale-invoker` 的长别名 |
-| `--stage2-rescale-root PATH` | 空 | `subprocess` 模式下 Rescale_optimizer 子项目根目录；当前仅提供 root 还不足以启用真实 subprocess，见下文说明 |
-| `--blb-v3-subprocess-optimizer-root PATH` | 空 | `--stage2-rescale-root` 的长别名 |
-| `--stage2-rescale-cli-module MODULE` | `rescale_optimizer.replan` | `subprocess` 模式下调用的模块名 |
-| `--blb-v3-subprocess-cli-module MODULE` | `rescale_optimizer.replan` | `--stage2-rescale-cli-module` 的长别名 |
+| BLB v3 Rescale_optimizer | `Rescale_optimizer` | 固定使用真实 in-process `Rescale_optimizer`；不再提供 heuristic/stub/subprocess 命令行选择 |
 | `--stage2-calibrate-baseline-samples N` | `8` | 训练前用多少随机动作校准 reward 权重 |
 | `--blb-v3-calibrate-baseline-samples N` | `8` | `--stage2-calibrate-baseline-samples` 的长别名 |
 
@@ -139,14 +134,9 @@ BLB 会在当前 episode 结束、并且到达安全保存点后写出 live chec
 续训练不需要传 `--resume-from`；再次运行同一条 `bash llama_7B_LayerImportance.sh ...`
 命令即可。launcher 会根据相同的数据集、模型和约束参数定位同一个持久化目录，并把它交给训练流程恢复。
 
-## Rescale Invoker 怎么选
+## Rescale Optimizer
 
-默认推荐 `heuristic`。它使用内置启发式估算成本，不需要外部子项目，适合当前把 BLB
-Stage-2 RL 融入现有框架、先打通训练和续训闭环的阶段。
-
-只有当远程服务器已经准备好外部 `Rescale_optimizer` 项目，并且配置文件与 BLB action
-space 对齐时，才切到 `subprocess`。当前代码内部还需要 `configs` mapping 和
-`baseline_archive`；如果只通过 shell 传 `--stage2-rescale-root` / `--stage2-rescale-cli-module`，
-runner 会因为信息不足自动 fallback 到 `heuristic`。正式接 subprocess 前需要补齐这条注入链路。
-
-`stub` 主要用于受控实验，不建议作为正式训练默认值。
+BLB Stage-2 RL 训练固定使用真实 `Rescale_optimizer` in-process 路径，不再提供
+`heuristic`、`stub` 或 `subprocess` 选择。CKKS 模数链、fusion 和 total_bits 必须由
+`Rescale_optimizer` 算法计算；如果 `Rescale_optimizer/configs/{dataset}` 或
+`static_skeletons_{dataset}.json` 无法加载，训练会直接报错并停止。

@@ -338,6 +338,35 @@ class EnvEndToEndTests(unittest.TestCase):
         self.assertEqual(ref_logits.shape, after_logits.shape)
         self.assertTrue(torch.allclose(ref_logits, after_logits, atol=1e-6))
 
+    def test_env_uses_per_layer_stage1_degrees(self):
+        from blb_stage2_rl import action_space
+
+        self.handler.restore_layer_block5_noise(layer_indices=[0, 1], layer_name=self.layers_attr)
+        self.handler.restore_layer_block4_noise(layer_indices=[0, 1], layer_name=self.layers_attr)
+        self.handler.restore_layer_block3_noise(layer_indices=[0, 1], layer_name=self.layers_attr)
+        self.handler.restore_layer_block2_noise(layer_indices=[0, 1], layer_name=self.layers_attr)
+        self.handler.restore_layer_block1_noise(layer_indices=[0, 1], layer_name=self.layers_attr)
+        self.handler.restore_blb_first_input_noise(layer_name=self.layers_attr)
+        self.handler.replace_layer_softmax([0], self.layers_attr, degree=2)
+        self.handler.replace_layer_softmax([1], self.layers_attr, degree=5)
+        self.handler.replace_layer_gelu([0], self.layers_attr, degree=1)
+        self.handler.replace_layer_gelu([1], self.layers_attr, degree=4)
+
+        env = self._make_env()
+        env.gelu_degree = np.asarray([1, 4], dtype=int)
+        env.attn_degree = np.asarray([2, 5], dtype=int)
+        env.gelu_degree_state = env._degree_state_scalar(env.gelu_degree, default=4)
+        env.attn_degree_state = env._degree_state_scalar(env.attn_degree, default=4)
+
+        _, _reward, done, info = env.step(action_space.make_all_max_action_vector(2))
+
+        self.assertTrue(done)
+        self.assertFalse(info["invalid"])
+        self.assertNotIn("error", info)
+        decoded = info["decoded"]
+        self.assertEqual([decoded.block3_cfgs[i].degree for i in range(2)], [2, 5])
+        self.assertEqual([decoded.block5_cfgs[i].gelu_degree for i in range(2)], [1, 4])
+
     def test_invalid_action_does_not_crash(self):
         """invalid_chain 触发时 reward = -INVALID_PENALTY，env 不 crash（spec §11）。"""
         from blb_stage2_rl import action_space
@@ -420,6 +449,47 @@ class RunNoiseRLStageDispatchTests(unittest.TestCase):
 
             ev.stage2_rl_variant = "legacy_v2"
             self.assertEqual(ev._get_stage2_resume_checkpoint_path(), legacy_path)
+
+
+class RunnerRealRescaleConfigTests(unittest.TestCase):
+    """BLB Stage-2 RL training must use the real Rescale_optimizer path."""
+
+    def test_train_config_ignores_legacy_invoker_choice(self):
+        from types import SimpleNamespace
+
+        from blb_stage2_rl import BLBStage2RLRunner
+
+        ev = SimpleNamespace(
+            dataset_key="mrpc",
+            stage2_rl_episodes=80000,
+            blb_v3_rescale_invoker_kind="heuristic",
+            blb_v3_inproc_rescale_optimizer_root="",
+        )
+        cfg = BLBStage2RLRunner(ev)._build_train_config_from_evaluator(ev)
+
+        self.assertEqual(cfg.total_episodes, 80000)
+        self.assertEqual(cfg.profile, "mrpc")
+        self.assertTrue(
+            cfg.inproc_rescale_optimizer_root.endswith("Rescale_optimizer"),
+            cfg.inproc_rescale_optimizer_root,
+        )
+
+    def test_build_rescale_bridge_never_falls_back_to_heuristic(self):
+        import tempfile
+
+        from blb_stage2_rl import BLBStage2RLRunner
+        from blb_stage2_rl.runner import BLBStage2TrainConfig
+
+        with tempfile.TemporaryDirectory() as td:
+            cfg = BLBStage2TrainConfig(
+                profile="mrpc",
+                inproc_rescale_optimizer_root=td,
+            )
+            with self.assertRaises(RuntimeError):
+                BLBStage2RLRunner(object())._build_rescale_bridge(
+                    cfg,
+                    log=lambda _msg: None,
+                )
 
 
 class RunnerEndToEndTests(unittest.TestCase):
