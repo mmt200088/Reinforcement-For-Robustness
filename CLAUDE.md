@@ -112,7 +112,7 @@ Two non-obvious wires (both fixed; if you regress them, the optimizer becomes bl
 ### Persistent directories (two distinct trees)
 
 - **Old stage-2 RL + Stage-1 RL + GA + general-RL**: `rl_results/persistent/{algorithm}/{model}/{dataset}/{accuracy_slug}/...` (`accuracy_slug` is e.g. `s1t0.005_s2t0.05_s2st0.05`). Same parameters → same dir → auto-resume. See `docs/ARCHITECTURE.md` §4.
-- **BLB Stage-2 RL (blb_v3)**: `Final Chapter/<run_basename>/blb_stage2/progress/`. The runner overrides `evaluator.noise_stage_progress_dir` at the start of `run()` so all BLB checkpoints / status board / curves / final report land here, isolated from legacy. See `resolve_blb_persistence_dir()` in `blb_stage2_rl/runner.py`.
+- **BLB Stage-2 RL (blb_v3)**: `Parting Chapter/<run_basename>/blb_stage2/progress/`. The runner overrides `evaluator.noise_stage_progress_dir` at the start of `run()` so all BLB checkpoints / status board / curves / final report land here, isolated from legacy. See `resolve_blb_persistence_dir()` in `blb_stage2_rl/runner.py`.
 
 In each BLB run dir you'll find: `blb_stage2_rl_checkpoint_{live,final}.pt`, `blb_stage2_best_cfg.pkl`, `blb_stage2_status.json` (atomically rewritten — safe to `tail -f` / `cat`), `blb_stage2_training_curve.{npz,png}`, `blb_stage2_report.md`, plus `blb_stage2_error.txt` if the loop crashed.
 
