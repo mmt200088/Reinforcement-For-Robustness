@@ -320,6 +320,13 @@ def train(
         final_eval_stage1_budget_trials: int = 10,
         final_eval_stage2_budget_trials: int = 10,
         final_eval_repeat_n: int = 1,
+        final_eval_preset: str = "default",
+        final_eval_output_root: str = "",
+        final_eval_run_name: str = "",
+        final_eval_random_enabled: bool = False,
+        final_eval_action_config: str = "",
+        final_eval_action_ranges: str = "",
+        final_eval_action_fixed: str = "",
         skip_noise_rl: bool = False,
         skip_stage1_rl: bool = False,
         skip_final_eval: bool = False,
@@ -354,6 +361,9 @@ def train(
     skip_stage1_rl = parse_bool_flag(skip_stage1_rl, "skip_stage1_rl")
     skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
     final_eval_only = parse_bool_flag(final_eval_only, "final_eval_only")
+    final_eval_random_enabled = parse_bool_flag(
+        final_eval_random_enabled, "final_eval_random_enabled"
+    )
     search_backend = str(search_backend or "ga").strip().lower().replace("-", "_")
     if search_backend in ("ga", "genetic"):
         search_backend = "ga"
@@ -447,6 +457,13 @@ def train(
         f"stage2_rl_episodes_specified: {stage2_rl_episodes_specified}\n"
         f"skip_noise_rl: {skip_noise_rl}\n"
         f"final_eval_repeat_n: {final_eval_repeat_n}\n"
+        f"final_eval_preset: {final_eval_preset}\n"
+        f"final_eval_output_root: {final_eval_output_root}\n"
+        f"final_eval_run_name: {final_eval_run_name}\n"
+        f"final_eval_random_enabled: {final_eval_random_enabled}\n"
+        f"final_eval_action_config: {final_eval_action_config}\n"
+        f"final_eval_action_ranges: {final_eval_action_ranges}\n"
+        f"final_eval_action_fixed: {final_eval_action_fixed}\n"
         f"skip_stage1_rl: {skip_stage1_rl}\n"
         f"skip_final_eval: {skip_final_eval}\n"
         f"final_eval_only: {final_eval_only}\n"
@@ -913,6 +930,13 @@ def train(
             final_eval_stage1_budget_trials=final_eval_stage1_budget_trials,
             final_eval_stage2_budget_trials=final_eval_stage2_budget_trials,
             final_eval_repeat_n=final_eval_repeat_n,
+            final_eval_preset=final_eval_preset,
+            final_eval_output_root=final_eval_output_root,
+            final_eval_run_name=final_eval_run_name,
+            final_eval_random_enabled=final_eval_random_enabled,
+            final_eval_action_config=final_eval_action_config,
+            final_eval_action_ranges=final_eval_action_ranges,
+            final_eval_action_fixed=final_eval_action_fixed,
             skip_noise_rl=skip_noise_rl,
             skip_stage1_rl=skip_stage1_rl,
             skip_final_eval=skip_final_eval,
@@ -1088,32 +1112,65 @@ def train(
                     limit_p = noise_final_eval_context["limit_p"]
                     limit_s = noise_final_eval_context["limit_s"]
 
-                final_eval_runner = SearchFinalEvaluationModule(
-                    evaluator=importance_evaluator,
-                    config_source=final_eval_config_source,
-                    config_path=final_eval_config_path,
-                    manual_stage1_gelu=parsed_manual_stage1_gelu,
-                    manual_stage1_softmax=parsed_manual_stage1_softmax,
-                    manual_stage2_noise=parsed_manual_stage2_noise,
-                    random_seed=final_eval_random_seed,
-                    permutation_trials=final_eval_permutation_trials,
-                    cost_equivalent_trials=final_eval_cost_equivalent_trials,
-                    budget_equivalent_trials=final_eval_budget_equivalent_trials,
-                    stage1_budget_trials=final_eval_stage1_budget_trials,
-                    stage2_budget_trials=final_eval_stage2_budget_trials,
-                    repeat_n=importance_evaluator.final_eval_repeat_n,
-                    results_dir=importance_evaluator.final_eval_dir,
-                )
-                final_eval_result = final_eval_runner.run(
-                    search_best_stage1=stage1_search_best,
-                    search_best_stage2=stage2_search_best,
-                    baseline_stage1_gelu=stage1_context.base_gelu,
-                    baseline_stage1_softmax=stage1_context.base_softmax,
-                    baseline_noise_tot_c=baseline_tot_c,
-                    limit_loss=limit_loss,
-                    limit_p=limit_p,
-                    limit_s=limit_s,
-                )
+                if (
+                    importance_evaluator.final_eval_only
+                    and importance_evaluator._should_run_blb_action_final_eval(stage2_search_best)
+                ):
+                    final_eval_result = importance_evaluator.run_unified_final_eval(
+                        stage1_search_best=stage1_search_best,
+                        stage2_search_best=stage2_search_best,
+                        baseline_stage1_gelu=stage1_context.base_gelu,
+                        baseline_stage1_softmax=stage1_context.base_softmax,
+                        baseline_noise_tot_c=baseline_tot_c,
+                        limit_loss=limit_loss,
+                        limit_p=limit_p,
+                        limit_s=limit_s,
+                    )
+                elif importance_evaluator.final_eval_only:
+                    final_eval_runner = SearchFinalEvaluationModule(
+                        evaluator=importance_evaluator,
+                        config_source=final_eval_config_source,
+                        config_path=final_eval_config_path,
+                        manual_stage1_gelu=parsed_manual_stage1_gelu,
+                        manual_stage1_softmax=parsed_manual_stage1_softmax,
+                        manual_stage2_noise=parsed_manual_stage2_noise,
+                        random_seed=final_eval_random_seed,
+                        permutation_trials=final_eval_permutation_trials,
+                        cost_equivalent_trials=final_eval_cost_equivalent_trials,
+                        budget_equivalent_trials=final_eval_budget_equivalent_trials,
+                        stage1_budget_trials=final_eval_stage1_budget_trials,
+                        stage2_budget_trials=final_eval_stage2_budget_trials,
+                        repeat_n=importance_evaluator.final_eval_repeat_n,
+                        results_dir=importance_evaluator.final_eval_dir,
+                    )
+                    final_eval_result = final_eval_runner.run(
+                        search_best_stage1=stage1_search_best,
+                        search_best_stage2=stage2_search_best,
+                        baseline_stage1_gelu=stage1_context.base_gelu,
+                        baseline_stage1_softmax=stage1_context.base_softmax,
+                        baseline_noise_tot_c=baseline_tot_c,
+                        limit_loss=limit_loss,
+                        limit_p=limit_p,
+                        limit_s=limit_s,
+                    )
+                else:
+                    from final_eval.embedded import run_embedded_final_eval
+
+                    final_eval_result = run_embedded_final_eval(
+                        evaluator=importance_evaluator,
+                        search_best_stage1=stage1_search_best,
+                        search_best_stage2=stage2_search_best,
+                        baseline_stage1_gelu=stage1_context.base_gelu,
+                        baseline_stage1_softmax=stage1_context.base_softmax,
+                        baseline_noise_tot_c=baseline_tot_c,
+                        limit_loss=limit_loss,
+                        limit_p=limit_p,
+                        limit_s=limit_s,
+                        preset_name=importance_evaluator.final_eval_preset,
+                        output_root=importance_evaluator.final_eval_output_root,
+                        run_name=importance_evaluator.final_eval_run_name,
+                        module_cls=SearchFinalEvaluationModule,
+                    )
             else:
                 importance_evaluator.log("Unified final evaluation skipped by flag.")
         finally:

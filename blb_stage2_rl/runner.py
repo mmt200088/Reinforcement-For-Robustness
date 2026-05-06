@@ -82,15 +82,15 @@ BLB_STAGE2_BEST_CFG_FILENAME = "blb_stage2_best_cfg.pkl"
 # 旧版 stage 2 RL (noise_rl_module_v2) 把 checkpoint/曲线/状态都丢在 evaluator
 # 给的 ``noise_stage_progress_dir``（默认 ``rl_results/persistent/...``）下。
 # BLB Stage 2 RL 是"最终版本"——为了让用户能清晰区分两套产物，新版的所有
-# 持久化文件都搬到项目根下的 ``Final Chapter/`` 目录里。
+# 持久化文件都搬到项目根下的 ``Parting Chapter/`` 目录里。
 #
 # 当 evaluator 提供了 ``run_output_dir`` 时，最终路径形如
-#   <repo_root>/Final Chapter/<basename(run_output_dir)>/blb_stage2/
-# 否则 fallback 到 ``<repo_root>/Final Chapter/blb_stage2_default_run/``。
+#   <repo_root>/Parting Chapter/<basename(run_output_dir)>/blb_stage2/
+# 否则 fallback 到 ``<repo_root>/Parting Chapter/blb_stage2_default_run/``。
 #
-# Why "Final Chapter"：用户明确指示"让旧持久化目录成为历史"，新名字寓意"最终
-# 章节"——这是真正想要的 stage 2 RL，不再迭代。
-BLB_FINAL_CHAPTER_DIRNAME = "Final Chapter"
+# Why "Parting Chapter"：这是新的 BLB Stage-2 持久化章节名；旧目录只作为
+# 历史归档保留，不再写入。
+BLB_PARTING_CHAPTER_DIRNAME = "Parting Chapter"
 
 
 def _resolve_repo_root() -> str:
@@ -102,7 +102,7 @@ def _resolve_repo_root() -> str:
 def resolve_blb_persistence_dir(evaluator) -> str:
     """计算 BLB Stage 2 RL 的持久化目录（覆盖 ``ev.noise_stage_progress_dir``）。
 
-    输出形如 ``<repo_root>/Final Chapter/<run_basename>/blb_stage2/progress``。
+    输出形如 ``<repo_root>/Parting Chapter/<run_basename>/blb_stage2/progress``。
     若 ``evaluator.run_output_dir`` 为空，使用 ``blb_stage2_default_run``。
     """
     repo_root = _resolve_repo_root()
@@ -111,7 +111,7 @@ def resolve_blb_persistence_dir(evaluator) -> str:
         run_basename = os.path.basename(os.path.normpath(run_dir)) or "blb_stage2_default_run"
     else:
         run_basename = "blb_stage2_default_run"
-    out = os.path.join(repo_root, BLB_FINAL_CHAPTER_DIRNAME, run_basename, "blb_stage2", "progress")
+    out = os.path.join(repo_root, BLB_PARTING_CHAPTER_DIRNAME, run_basename, "blb_stage2", "progress")
     os.makedirs(out, exist_ok=True)
     return out
 
@@ -196,7 +196,7 @@ class BLBStage2RLRunner:
         # ---------- 0) 解析配置 ----------
         train_cfg = self._build_train_config_from_evaluator(ev)
         # ---------- 0.1) 切换到 BLB Stage 2 RL 专属持久化根目录 ----------
-        # 把 evaluator 的 noise_stage_progress_dir 覆盖成 "Final Chapter/.../blb_stage2/progress"。
+        # 把 evaluator 的 noise_stage_progress_dir 覆盖成 "Parting Chapter/.../blb_stage2/progress"。
         # 旧 stage 2 RL 的目录 (rl_results/persistent/...) 不动 —— 这两套互不影响。
         legacy_progress_dir = str(getattr(ev, "noise_stage_progress_dir", "") or "")
         blb_progress_dir = resolve_blb_persistence_dir(ev)

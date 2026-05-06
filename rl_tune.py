@@ -160,6 +160,13 @@ def train(
         final_eval_stage1_budget_trials: int = 10,
         final_eval_stage2_budget_trials: int = 10,
         final_eval_repeat_n: int = 1,
+        final_eval_preset: str = "default",
+        final_eval_output_root: str = "",
+        final_eval_run_name: str = "",
+        final_eval_random_enabled: bool = False,
+        final_eval_action_config: str = "",
+        final_eval_action_ranges: str = "",
+        final_eval_action_fixed: str = "",
         skip_noise_rl: bool = False,
         skip_stage1_rl: bool = False,
         skip_final_eval: bool = False,
@@ -194,6 +201,9 @@ def train(
     skip_stage1_rl = parse_bool_flag(skip_stage1_rl, "skip_stage1_rl")
     skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
     final_eval_only = parse_bool_flag(final_eval_only, "final_eval_only")
+    final_eval_random_enabled = parse_bool_flag(
+        final_eval_random_enabled, "final_eval_random_enabled"
+    )
     # --final_eval_only 语义：只跑 final eval，不跑任何 RL 搜索阶段。
     # 等价于自动设置 skip_stage1_rl=True & skip_noise_rl=True & skip_final_eval=False，
     # 同时尝试从 resume_run_dir / output_dir 下读取之前搜索得到的最优配置作为 final-eval 输入。
@@ -274,6 +284,13 @@ def train(
         f"stage2_rl_episodes_specified: {stage2_rl_episodes_specified}\n"
         f"skip_noise_rl: {skip_noise_rl}\n"
         f"final_eval_repeat_n: {final_eval_repeat_n}\n"
+        f"final_eval_preset: {final_eval_preset}\n"
+        f"final_eval_output_root: {final_eval_output_root}\n"
+        f"final_eval_run_name: {final_eval_run_name}\n"
+        f"final_eval_random_enabled: {final_eval_random_enabled}\n"
+        f"final_eval_action_config: {final_eval_action_config}\n"
+        f"final_eval_action_ranges: {final_eval_action_ranges}\n"
+        f"final_eval_action_fixed: {final_eval_action_fixed}\n"
         f"skip_stage1_rl: {skip_stage1_rl}\n"
         f"skip_final_eval: {skip_final_eval}\n"
         f"final_eval_only: {final_eval_only}\n"
@@ -651,6 +668,13 @@ def train(
             final_eval_stage1_budget_trials=final_eval_stage1_budget_trials,
             final_eval_stage2_budget_trials=final_eval_stage2_budget_trials,
             final_eval_repeat_n=final_eval_repeat_n,
+            final_eval_preset=final_eval_preset,
+            final_eval_output_root=final_eval_output_root,
+            final_eval_run_name=final_eval_run_name,
+            final_eval_random_enabled=final_eval_random_enabled,
+            final_eval_action_config=final_eval_action_config,
+            final_eval_action_ranges=final_eval_action_ranges,
+            final_eval_action_fixed=final_eval_action_fixed,
             skip_noise_rl=skip_noise_rl,
             skip_stage1_rl=skip_stage1_rl,
             skip_final_eval=skip_final_eval,

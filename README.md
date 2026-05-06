@@ -18,6 +18,16 @@ Stage-1（GELU/Softmax 多项式次数）与 Stage-2（噪声 scaling factor）�
 本 README 下文已批量替换为新名称。若你在旧 shell / notebook 里还看到旧 flag，请按照
 上表对照替换；直接沿用旧名称会报 `unknown argument`。
 
+同时，final eval 已从训练 CLI 中拆成独立模块：
+
+- 独立入口：`bash final_eval/run_final_eval.sh ...`
+- 独立 preset：`final_eval/presets/*.conf`
+- 独立输出：默认写入 `final_eval/outputs/{dataset}/{algorithm}/{run}/final_eval/`
+- 兼容入口：`bash llama_7B_LayerImportance.sh eval ...` 会直接转交给 `final_eval/run_final_eval.sh`
+- 主动调用默认只评估你指定的配置；BLB action final eval 可用 `--range truncation=8,9,11,13` 这类参数展开笛卡尔积配置网格。
+- 随机配置对照必须显式传 `--random`；`--random` 模式只能基于一个固定配置生成随机对照，不能和 `--range` 同时使用。
+- 训练结束后的被动 final eval：训练进程会用 `--final-eval-preset` 指向的 `final_eval/presets/*.conf` 触发一次评估；这次评估的 repeat、seed、随机对照数量、输出根目录等不再由训练命令行参数控制。BLB 训练会评估训练找到的最佳 action 配置，并按 final eval preset 的随机对照数量生成对应 random 配置。
+
 ---
 
 ## 快速开始
@@ -34,12 +44,20 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 # 续训练：同一参数组合会自动从持久化目录恢复
 bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl
 
-# 只跑最终评估
-bash llama_7B_LayerImportance.sh eval --dataset mrpc --algorithm rl \
-  --config glue_final_configs_best_ppo.json --eval-repeat 50 --budget 50
+# 只跑最终评估（独立 final_eval 模块）
+bash final_eval/run_final_eval.sh --preset mrpc-final-eval-only
+
+# 只测指定 BLB action 网格：truncation 4 个值 × wffn1 2 个值，共 8 组
+bash final_eval/run_final_eval.sh --preset mrpc-blb-action-range
+
+# 主动 final eval 若需要随机对照，必须显式启用 --random
+bash final_eval/run_final_eval.sh --preset mrpc-final-eval-only --random --budget 10
+
+# 也可以继续使用兼容入口，它会转交给 final_eval/run_final_eval.sh
+bash llama_7B_LayerImportance.sh eval --preset mrpc-final-eval-only
 
 # 只跑 BLB Stage-2 最大动作 / 最大噪声配置的最终评估
-bash llama_7B_LayerImportance.sh eval --preset mrpc-blb-max-final-eval
+bash final_eval/run_final_eval.sh --preset mrpc-blb-max-final-eval
 
 # 只重跑 Stage-2，Stage-1 固定配置自动从 --config 里取
 bash llama_7B_LayerImportance.sh run ga --dataset mrpc --mode stage2-only \
@@ -49,7 +67,8 @@ bash llama_7B_LayerImportance.sh run ga --dataset mrpc --mode stage2-only \
 bash llama_7B_LayerImportance.sh compare --dataset mrpc
 ```
 
-预设文件位于 `presets/`，格式是每行一个参数，支持 `#` 注释。命令行参数排在预设之后，优先级更高。
+训练预设文件位于 `presets/`，final eval 预设文件位于 `final_eval/presets/`。
+格式都是每行一个参数，支持 `#` 注释。命令行参数排在预设之后，优先级更高。
 BLB Stage-2 RL 推荐先用 `presets/mrpc-blb-stage2-rl.conf`；这份 preset 不内置 `--fresh`，
 因此首次运行在命令行加 `--fresh`，后续续训练直接复用同一 preset。
 
@@ -69,7 +88,8 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `--algorithm rl/ga/greedy` | `eval`、旧版入口 | `rl` | `run` 子命令直接用 `run rl` / `run ga` / `run greedy` |
 | `--fresh` | `run`、`general train` | — | 等价于 `--fresh-start`，首次训练某个参数组合时必须传 |
 | `--mode train/eval/stage2-only/stage1-only/search-only` | `run`、`eval` | `train` | 高层动作，替代常见 skip 参数组合 |
-| `--budget N` | `run`、`eval`、`compare` | `10` | 统一设置 Perm / Equiv / Budget 随机对照数量；`eval` 下也同步 Stage1Budget / Stage2Budget |
+| `--final-eval-preset NAME` | `run rl`、`run ga`、`run greedy` | `default` | 训练结束后被动调用 `final_eval/presets/NAME.conf`；控制被动 final eval 的 repeat/seed/随机对照/输出根目录 |
+| `--budget N` | `run`、独立 `eval`、`compare` | `10`；独立 `eval` 默认不启用随机对照 | 统一设置 Perm / Equiv / Budget 随机对照数量；独立 final eval 只有传 `--random` 后才会执行随机对照，并同步 Stage1Budget / Stage2Budget |
 | `--eval-repeat N` | `run`、`eval`、`compare` | `50` 或 compare 的 `1` | 普通流程映射到 `--final-eval-repeat`；compare 映射到 `--stage2-compare-repeats` |
 | `--batch-size N` | 全部 | `16` | 同时传给 `batch_size` 和 `micro_batch_size` |
 
@@ -87,7 +107,7 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `run rl` | 单任务 Stage-1 + Stage-2 RL 搜索 | `bash llama_7B_LayerImportance.sh run rl --dataset mrpc --episodes 51000,80000 --fresh` |
 | `run ga` | 单任务 GA 搜索 | `bash llama_7B_LayerImportance.sh run ga --dataset mrpc --generations 200,800 --fresh` |
 | `run greedy` | 单任务 Greedy 搜索 | `bash llama_7B_LayerImportance.sh run greedy --dataset mrpc --generations 200,200 --fresh` |
-| `eval` | 只跑统一最终评估 | `bash llama_7B_LayerImportance.sh eval --dataset mrpc --algorithm rl --config glue_final_configs_best_ppo.json` |
+| `eval` | 转交给独立 final eval 模块 | `bash llama_7B_LayerImportance.sh eval --preset mrpc-final-eval-only` |
 | `compare` | 对比已有 RL / GA 结果 | `bash llama_7B_LayerImportance.sh compare --dataset mrpc` |
 | `general train` | 训练跨任务通用策略 | `bash llama_7B_LayerImportance.sh general train --general-rl-tasks mrpc,cola,rte,stsb --fresh` |
 | `general search` | 用通用策略做离线 rollout 搜索 | `bash llama_7B_LayerImportance.sh general search --dataset mrpc --general-policy-dir <dir>` |
@@ -95,6 +115,7 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 ### `--mode`
 
 `--mode` 是对旧的 `--skip-stage1-search`、`--skip-noise-search`、`--skip-final-eval`、`--final-eval-only` 的安全封装。
+新的 `eval` 子命令已经改为独立 final eval 入口；旧版纯 flag 形式 `--mode eval` 仍作为兼容路径保留。
 
 | 模式 | 等价动作 | 典型用途 |
 | --- | --- | --- |
@@ -148,8 +169,9 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `--skip-noise-search` | `run` | — | 高级兼容入口；一般用 `--mode stage1-only` |
 | `--skip-final-eval` | `run` | — | 高级兼容入口；一般用 `--mode search-only` |
 | `--final-eval-only` | `run` / `eval` | — | 高级兼容入口；一般用 `--mode eval` 或 `eval` 子命令 |
+| `--final-eval-preset NAME` | `run` | `default` | 普通训练完成后，被动调用 `final_eval/presets/NAME.conf`；训练命令行中的 `--random-seed`、`--budget`、`--final-eval-repeat` 不控制这次被动评估 |
 | **最终评估** | | | |
-| `--final-eval-source search/json/manual/max` | `run`、`eval` | `search` | 最终评估配置来源；`max`/`stage2-max`/`blb-max` 会把 Stage-2 选为最大动作/最大 scaling-factor，Stage-1 从 JSON 或已有搜索结果回退 |
+| `--final-eval-source search/json/manual/max` | `run`、兼容 `--mode eval` | `search` | 兼容参数；普通训练完成后的被动 final eval 会强制使用训练刚找到的 search 配置，评估细节由 `--final-eval-preset` 指向的 preset 控制 |
 | `--source search/json/manual/max` | `run`、`eval` | 同上 | `--final-eval-source` 的短写 |
 | `--final-eval-config PATH` | `run`、`eval` | 按算法自动 | 合并 JSON；短写是 `--config` |
 | `--config PATH` | `run`、`eval` | — | 同时用于 final-eval；`stage2-only` 下也自动作为 Stage-2 固定配置来源 |
@@ -158,11 +180,15 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `--manual-stage2-noise JSON_OBJECT` | `run`、`eval` | — | `manual` 来源下的 Stage-2 噪声配置 |
 | `--final-eval-repeat N` | `run`、`eval` | `50` | 正式重复评估次数；推荐用 `--eval-repeat` |
 | `--random-seed N` | `run`、`eval`、`compare` | `42` | 随机种子 |
-| `--perm-trials N` | `run`、`eval`、`compare` | `10` | permutation 对照数量 |
-| `--cost-trials N` | `run`、`eval`、`compare` | `10` | 等价成本对照数量 |
-| `--budget-trials N` | `run`、`eval`、`compare` | `10` | 等价预算对照数量 |
-| `--stage1-budget-trials N` | `eval` | `10` | Stage1Budget 数量；普通训练模式禁止显式传入 |
-| `--stage2-budget-trials N` | `eval` | `10` | Stage2Budget 数量；普通训练模式禁止显式传入 |
+| `--random` / `--enable-random` | 独立 `eval` | 关闭 | 主动 final eval 默认不做随机对照；启用后才使用下面的 trial 数量 |
+| `--action-config PATH` | 独立 `eval` | — | BLB action final eval 配置 JSON，可指定固定 action、`fixed` 和 `ranges` |
+| `--range NAME=V1,V2,...` / `--action-range ...` | 独立 `eval` | — | BLB action 网格展开参数，可重复传；多个 range 做笛卡尔积 |
+| `--action-fixed NAME=V` | 独立 `eval` | — | BLB action 固定覆写，可重复传 |
+| `--perm-trials N` | `run`、独立 `eval`、`compare` | 训练/compare 为 `10`；独立 `eval` 为 `0` | permutation 对照数量；独立 `eval` 需配合 `--random` |
+| `--cost-trials N` | `run`、独立 `eval`、`compare` | 训练/compare 为 `10`；独立 `eval` 为 `0` | 等价成本对照数量；独立 `eval` 需配合 `--random` |
+| `--budget-trials N` | `run`、独立 `eval`、`compare` | 训练/compare 为 `10`；独立 `eval` 为 `0` | 等价预算对照数量；独立 `eval` 需配合 `--random` |
+| `--stage1-budget-trials N` | 独立 `eval` | `0` | Stage1Budget 数量；传 `--random` 且未指定任何 trial 时自动回到 `10` |
+| `--stage2-budget-trials N` | 独立 `eval` | `0` | Stage2Budget 数量；传 `--random` 且未指定任何 trial 时自动回到 `10` |
 | **Stage-2 固定 Stage-1 配置** | | | |
 | `--stage2-fixed-config-source stage1_result/json/manual` | `run` | 自动 | 一般不需要手动传；`stage2-only --config` 会自动用 `json` |
 | `--stage2-fixed-config PATH` | `run` | 自动 | JSON 来源时的固定 GELU/Softmax 文件 |
@@ -195,6 +221,49 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `--general-rl-num-rollouts N` | `general search` | `500` | 离线 rollout 次数 |
 | `--general-rl-greedy` | `general search` | — | 使用贪心 rollout |
 | `--general-rl-skip-stage2` | `general train/search` | — | 跳过 Stage-2 |
+
+### 独立 final_eval 参数
+
+独立 final eval 入口支持 `bash final_eval/run_final_eval.sh ...`，也支持兼容入口
+`bash llama_7B_LayerImportance.sh eval ...`。它拥有自己的 preset 目录 `final_eval/presets/`，不读取训练 preset。
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--preset NAME` | — | 读取 `final_eval/presets/NAME.conf` |
+| `--list-presets` | — | 列出 final_eval 可用 preset |
+| `--dataset DATASET` | `mrpc` | `mrpc`、`sst2`、`stsb`、`cola`、`qnli`、`rte`、`wnli` |
+| `--algorithm rl/ga/greedy` | `rl` | 选择用 RL、GA 或 Greedy 家族的结果/JSON |
+| `--model-type bert-base/bert-large/gpt-2` | `bert-base` | 模型类型 |
+| `--batch-size N` | `16` | final eval 批大小 |
+| `--source search/json/manual/max/blb-max` | `json` | 配置来源；`search` 需要 `--resume-from` 指向已有训练目录 |
+| `--config PATH` / `--final-eval-config PATH` | 按算法自动 | 合并 JSON 配置文件 |
+| `--resume-from PATH` | — | `--source search` 时读取已有训练目录中的搜索结果 |
+| `--output-root PATH` | `final_eval/outputs` | 独立 final eval 输出根目录 |
+| `--run-name NAME` | 时间戳或训练目录名 | 输出目录名 |
+| `--repeat N` / `--eval-repeat N` | `50` | 被选配置和随机对照组重复评估次数 |
+| `--random-seed N` | `42` | final eval 随机种子 |
+| `--random` / `--enable-random` | 关闭 | 启用随机配置对照；不传时只评估选中的固定配置或 range 网格 |
+| `--perm-trials N` | `0` | Perm 对照组数量；只有 `--random` 模式才允许非零 |
+| `--cost-trials N` | `0` | Equiv 对照组数量；只有 `--random` 模式才允许非零 |
+| `--budget-trials N` | `0` | Budget 对照组数量；只有 `--random` 模式才允许非零 |
+| `--budget N` | — | 同时设置 Perm / Equiv / Budget / Stage1Budget / Stage2Budget 数量；独立 final eval 需配合 `--random` |
+| `--stage1-budget-trials N` | `0` | Stage1Budget 对照组数量；`--random` 且未设置任何 trial 时自动取 `10` |
+| `--stage2-budget-trials N` | `0` | Stage2Budget 对照组数量；`--random` 且未设置任何 trial 时自动取 `10` |
+| `--stage1-accuracy-tolerance FLOAT` | `0.005` | Stage-1 约束比例 |
+| `--stage2-limit-tolerance FLOAT` | `0.05` | Stage-2 指标约束比例 |
+| `--stage2-stability-tolerance FLOAT` | `0.05` | Stage-2 稳定性约束比例 |
+| `--stage2-k-trials N` | `5` | Stage-2 稳定性噪声 trial 数 |
+| `--stage2-probe-size N` | `256` | Stage-2 稳定性探针子集大小 |
+| `--stage2-rl-variant blb_v3/legacy_v2` | `blb_v3` | RL final eval 下用于兼容 BLB/legacy 行为 |
+| `--action-config PATH` | — | BLB action final eval 的 JSON 配置；可包含 `action_vec` / `base_action_vec`、`fixed`、`ranges` |
+| `--range NAME=V1,V2,...` / `--action-range ...` | — | BLB action range，可重复传；多个 range 做笛卡尔积，如 `truncation=8,9,11,13` 与 `wffn1=18,20` 会测试 8 组 |
+| `--action-fixed NAME=V` / `--fixed-action NAME=V` | — | 固定某个 BLB action 维度，可重复传 |
+| `--manual-stage1-gelu JSON_ARRAY` | — | `--source manual` 时的 Stage-1 GELU |
+| `--manual-stage1-softmax JSON_ARRAY` | — | `--source manual` 时的 Stage-1 Softmax |
+| `--manual-stage2-noise JSON_OBJECT` | — | `--source manual` 时的 Stage-2 噪声配置 |
+| `--dry-run` | — | 只打印将执行的底层 Python 命令，不加载模型 |
+
+BLB action range 目前支持 `truncation`、`wffn1`、`wffn1_rescale`、`wffn2`、`first_input`，也支持精确字段名如 `block5.wffn1_sf`。主动调用不传 `--random` 时只测试这些选中配置；传 `--random` 时必须使用一个固定配置，不能再传 `--range`。
 
 
 ### 数据集补充说明（精简）

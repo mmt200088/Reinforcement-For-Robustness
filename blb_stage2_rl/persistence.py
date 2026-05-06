@@ -3,7 +3,7 @@
 旧版 stage 2 RL（``noise_rl_module_v2``）在 ``rl_results/persistent/...`` 下
 做了若干"训练之外"的小事：进度条、curve PNG、checkpoint 元数据、错误归档。
 BLB Stage 2 RL 是最终版本，需要把这些项目操作类的输出补齐到新的持久化目录
-``Final Chapter/<run_basename>/blb_stage2/progress/``。
+``Parting Chapter/<run_basename>/blb_stage2/progress/``。
 
 本模块提供四件事：
 
@@ -421,7 +421,7 @@ def write_blb_final_report(
 
     lines.append("---")
     lines.append("")
-    lines.append("> 持久化目录：`Final Chapter/<run>/blb_stage2/progress/`。"
+    lines.append("> 持久化目录：`Parting Chapter/<run>/blb_stage2/progress/`。"
                  "live checkpoint / final checkpoint / best_cfg.pkl / 状态板 / "
                  "训练曲线（PNG + NPZ）/ 本报告 都在该目录下。")
 

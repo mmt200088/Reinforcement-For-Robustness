@@ -9,6 +9,8 @@ all_analysis/**/*.png
 all_analysis_new/**/*.png
 
 Model_analysis/all_analysis_approx
+Parting Chapter/
+final_eval/outputs/
 !pruning_search_log.txt
 # Stage-1 / stage-2 noise: GA (genetic_search_module) & General RL (general_policy_module)
 # reuse the same paths as PPO (*.txt is ignored globally above). Un-ignore run artifacts

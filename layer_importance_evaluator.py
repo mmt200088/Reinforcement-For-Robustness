@@ -2301,6 +2301,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                  final_eval_stage1_budget_trials=10,
                  final_eval_stage2_budget_trials=10,
                  final_eval_repeat_n=5,
+                 final_eval_preset='default',
+                 final_eval_output_root='',
+                 final_eval_run_name='',
+                 final_eval_random_enabled=False,
+                 final_eval_action_config='',
+                 final_eval_action_ranges='',
+                 final_eval_action_fixed='',
                  skip_noise_rl=False,
                  skip_stage1_rl=False,
                  skip_final_eval=False,
@@ -2589,6 +2596,14 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.final_eval_stage1_budget_trials = max(0, int(final_eval_stage1_budget_trials))
         self.final_eval_stage2_budget_trials = max(0, int(final_eval_stage2_budget_trials))
         self.final_eval_repeat_n = max(1, int(final_eval_repeat_n))
+        self.final_eval_preset = str(final_eval_preset or 'default').strip() or 'default'
+        self.final_eval_output_root = str(final_eval_output_root or '').strip()
+        self.final_eval_run_name = str(final_eval_run_name or '').strip()
+        self.final_eval_random_enabled = self._coerce_bool_flag(
+            final_eval_random_enabled, 'final_eval_random_enabled')
+        self.final_eval_action_config = str(final_eval_action_config or '').strip()
+        self.final_eval_action_ranges = final_eval_action_ranges
+        self.final_eval_action_fixed = final_eval_action_fixed
         self.skip_stage1_rl = self._coerce_bool_flag(skip_stage1_rl, 'skip_stage1_rl')
         self.skip_noise_rl = self._coerce_bool_flag(skip_noise_rl, 'skip_noise_rl')
         self.skip_final_eval = self._coerce_bool_flag(skip_final_eval, 'skip_final_eval')
@@ -4405,6 +4420,25 @@ class LayerImportanceEvaluator(TrainerCallback):
                                     for key, value in self._get_max_noise_configuration().items()
                                     if isinstance(key, str) and key.endswith("scaling_factors")
                                 }
+                                try:
+                                    blb_ckpt = torch.load(
+                                        blb_path, map_location="cpu", weights_only=False
+                                    )
+                                    best_action = (
+                                        blb_ckpt.get("best_action")
+                                        or blb_ckpt.get("blb_v3_best_action_vec")
+                                    )
+                                    if best_action is not None:
+                                        stage2_best["blb_v3_best_action_vec"] = np.asarray(
+                                            best_action, dtype=int
+                                        )
+                                        stage2_best["blb_v3_profile"] = str(
+                                            blb_ckpt.get("profile")
+                                            or getattr(self, "dataset_key", "")
+                                            or ""
+                                        )
+                                except Exception:
+                                    pass
                                 self.log(
                                     f"[final_eval_only] 检测到 BLB Stage-2 checkpoint，"
                                     f"使用 legacy baseline 兼容配置: {blb_path}"
@@ -4509,6 +4543,34 @@ class LayerImportanceEvaluator(TrainerCallback):
             limit_p = selection_limits["metric1"] if limit_p is None else limit_p
             limit_s = selection_limits["metric2"] if limit_s is None else limit_s
 
+        if self._should_run_blb_action_final_eval(stage2_search_best):
+            from final_eval.blb_action_eval import BLBActionFinalEvaluationModule
+            runner = BLBActionFinalEvaluationModule(
+                evaluator=self,
+                config_source=self.final_eval_config_source,
+                config_path=self.final_eval_config_path,
+                manual_stage1_gelu=self.manual_stage1_gelu,
+                manual_stage1_softmax=self.manual_stage1_softmax,
+                random_seed=self.final_eval_random_seed,
+                random_enabled=self.final_eval_random_enabled,
+                random_count=self._final_eval_random_count(),
+                repeat_n=self.final_eval_repeat_n,
+                results_dir=self.final_eval_dir,
+                action_config_path=self.final_eval_action_config,
+                action_ranges=self.final_eval_action_ranges,
+                action_fixed=self.final_eval_action_fixed,
+            )
+            return runner.run(
+                search_best_stage1=stage1_search_best,
+                search_best_stage2=stage2_search_best,
+                baseline_stage1_gelu=baseline_stage1_gelu,
+                baseline_stage1_softmax=baseline_stage1_softmax,
+                baseline_noise_tot_c=float(baseline_noise_tot_c),
+                limit_loss=float(limit_loss),
+                limit_p=float(limit_p),
+                limit_s=float(limit_s),
+            )
+
         runner = self._build_final_eval_runner()
         return runner.run(
             search_best_stage1=stage1_search_best,
@@ -4520,6 +4582,28 @@ class LayerImportanceEvaluator(TrainerCallback):
             limit_p=float(limit_p),
             limit_s=float(limit_s),
         )
+
+    def _final_eval_random_count(self):
+        return int(
+            self.final_eval_permutation_trials
+            + self.final_eval_cost_equivalent_trials
+            + self.final_eval_budget_equivalent_trials
+            + self.final_eval_stage1_budget_trials
+            + self.final_eval_stage2_budget_trials
+        )
+
+    def _should_run_blb_action_final_eval(self, stage2_search_best=None):
+        if str(getattr(self, "final_eval_action_config", "") or "").strip():
+            return True
+        action_ranges = getattr(self, "final_eval_action_ranges", "")
+        if action_ranges not in ("", "[]", (), [], None) and str(action_ranges).strip():
+            return True
+        action_fixed = getattr(self, "final_eval_action_fixed", "")
+        if action_fixed not in ("", "[]", (), [], None) and str(action_fixed).strip():
+            return True
+        if isinstance(stage2_search_best, dict) and stage2_search_best.get("blb_v3_best_action_vec") is not None:
+            return True
+        return False
 
     def _run_evaluation(self, dataloader, use_train=False, split_name=None):
         """在当前模型上运行评估循环（不修改配置），用于无近似对照组等。
@@ -6043,6 +6127,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                             k: v for k, v in best_noise_cfg.items()
                             if k.endswith("scaling_factors")
                         }
+                    if noise_stage_result.get("blb_v3_best_action_vec") is not None:
+                        if stage2_search_best is None:
+                            stage2_search_best = {}
+                        stage2_search_best["blb_v3_best_action_vec"] = np.asarray(
+                            noise_stage_result["blb_v3_best_action_vec"], dtype=int
+                        )
+                        stage2_search_best["blb_v3_profile"] = str(
+                            noise_stage_result.get("blb_v3_profile")
+                            or getattr(self, "dataset_key", "")
+                            or ""
+                        )
                     noise_limit_loss = noise_stage_result.get("limit_loss", limit_loss)
                     noise_limit_p = noise_stage_result.get("limit_p", limit_p)
                     noise_limit_s = noise_stage_result.get("limit_s", limit_s)
@@ -6053,16 +6148,34 @@ class LayerImportanceEvaluator(TrainerCallback):
                     if stage2_search_best is None and prior_stage2_search_best is not None:
                         stage2_search_best = prior_stage2_search_best
 
-                final_eval_result = self.run_unified_final_eval(
-                    stage1_search_best=stage1_search_best,
-                    stage2_search_best=stage2_search_best,
-                    baseline_stage1_gelu=base_gelu,
-                    baseline_stage1_softmax=base_softmax,
-                    baseline_noise_tot_c=baseline_noise_tot_c,
-                    limit_loss=noise_limit_loss,
-                    limit_p=noise_limit_p,
-                    limit_s=noise_limit_s,
-                )
+                if self.final_eval_only:
+                    final_eval_result = self.run_unified_final_eval(
+                        stage1_search_best=stage1_search_best,
+                        stage2_search_best=stage2_search_best,
+                        baseline_stage1_gelu=base_gelu,
+                        baseline_stage1_softmax=base_softmax,
+                        baseline_noise_tot_c=baseline_noise_tot_c,
+                        limit_loss=noise_limit_loss,
+                        limit_p=noise_limit_p,
+                        limit_s=noise_limit_s,
+                    )
+                else:
+                    from final_eval.embedded import run_embedded_final_eval
+
+                    final_eval_result = run_embedded_final_eval(
+                        evaluator=self,
+                        search_best_stage1=stage1_search_best,
+                        search_best_stage2=stage2_search_best,
+                        baseline_stage1_gelu=base_gelu,
+                        baseline_stage1_softmax=base_softmax,
+                        baseline_noise_tot_c=baseline_noise_tot_c,
+                        limit_loss=noise_limit_loss,
+                        limit_p=noise_limit_p,
+                        limit_s=noise_limit_s,
+                        preset_name=self.final_eval_preset,
+                        output_root=self.final_eval_output_root,
+                        run_name=self.final_eval_run_name,
+                    )
                 if self.run_output_dir:
                     update_persistent_metadata_stage(
                         self.run_output_dir, "final_eval", "completed")
