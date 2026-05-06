@@ -1,0 +1,10 @@
+{
+  "description": "MRPC BLB baseline fixed action. Use CLI --range/--action-fixed to sweep precise truncation or scaling-factor points.",
+  "base_action": "blb_baseline",
+  "rescale_optimizer_mode": "baseline",
+  "notes": [
+    "This file intentionally contains no ranges, so command-line fine-grained selectors are not multiplied by a preset sweep.",
+    "The model-side base action is the BLB RL baseline action: all non-truncation fields use their highest selectable action-space scaling-factor settings.",
+    "The optimizer-side mode is baseline: Rescale_optimizer uses its static baseline chain/t_new/delta settings instead of deriving a new chain from the max action."
+  ]
+}

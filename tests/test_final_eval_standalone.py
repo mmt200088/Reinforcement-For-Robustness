@@ -152,6 +152,75 @@ class FinalEvalStandaloneTests(unittest.TestCase):
         self.assertEqual([decoded.block5_cfgs[i].gelu_degree for i in range(3)], [1, 2, 4])
         self.assertEqual([len(decoded.block5_cfgs[i].gelu_power_rescales) for i in range(3)], [0, 1, 3])
 
+    def test_action_grid_supports_layer_block_and_point_selectors(self):
+        from blb_stage2_rl.action_space import action_vector_to_cfgs, load_max_sfs
+        from Paean.action_grid import build_action_candidates
+
+        candidates = build_action_candidates(
+            num_layers=3,
+            profile="mrpc",
+            fixed_specs=[
+                "block2.truncation=8",
+                "layer1.block3.truncation=9",
+                "layer2.block5.wffn1_sf=18",
+            ],
+        )
+        decoded = action_vector_to_cfgs(
+            candidates[0].action_vec,
+            load_max_sfs("mrpc"),
+            3,
+            gelu_degree=4,
+            attn_degree=4,
+        )
+
+        self.assertEqual([decoded.block2_cfgs[i].output_truncation_k for i in range(3)], [8, 8, 8])
+        self.assertEqual([decoded.block3_cfgs[i].output_truncation_k for i in range(3)], [13, 9, 13])
+        self.assertEqual([decoded.block5_cfgs[i].wffn1_encode.scaling_factor for i in range(3)], [22, 22, 18])
+
+    def test_action_grid_range_accepts_precise_selectors(self):
+        from Paean.action_grid import build_action_candidates
+
+        candidates = build_action_candidates(
+            num_layers=2,
+            profile="mrpc",
+            range_specs=[
+                "block1.truncation=8,9",
+                "layer1.block5.wffn1_sf=18,20",
+            ],
+        )
+
+        self.assertEqual(len(candidates), 4)
+        overrides = {tuple(sorted(candidate.overrides.items())) for candidate in candidates}
+        self.assertIn((("block1.truncation", 8), ("layer1.block5.wffn1_sf", 18)), overrides)
+        self.assertIn((("block1.truncation", 9), ("layer1.block5.wffn1_sf", 20)), overrides)
+
+    def test_full_noise_config_report_lists_precise_paths(self):
+        from blb_stage2_rl.action_space import action_vector_to_cfgs, load_max_sfs
+        from Paean.action_grid import build_action_candidates
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+        candidates = build_action_candidates(
+            num_layers=3,
+            profile="mrpc",
+            fixed_specs=[
+                "layer1.block3.truncation=9",
+                "layer2.block5.wffn1_sf=18",
+            ],
+        )
+        decoded = action_vector_to_cfgs(
+            candidates[0].action_vec,
+            load_max_sfs("mrpc"),
+            3,
+            gelu_degree=4,
+            attn_degree=4,
+        )
+        full_config = BLBActionFinalEvaluationModule._full_noise_config(decoded)
+        by_path = {entry["path"]: entry for entry in full_config["entries"]}
+
+        self.assertEqual(by_path["layer1.block3.output_truncation_k"]["truncation_k"], 9)
+        self.assertEqual(by_path["layer2.block5.wffn1_encode"]["scaling_factor"], 18)
+        self.assertEqual(by_path["first_input.fresh"]["scaling_factor"], 30)
+
     def test_random_mode_rejects_ranges(self):
         from Paean.config import parse_final_eval_settings
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -512,6 +512,7 @@ class BLBActionFinalEvaluationModule:
             "truncation": self._truncation_summary(decoded),
             "first_input_sf": int(decoded.first_input_sf),
             "non_truncation_unique_scaling_factors": self._non_truncation_sf_summary(decoded),
+            "full_noise_config": self._full_noise_config(decoded),
             "action_overrides": dict(overrides or {}),
             "action_vector_length": int(np.asarray(action_vec).size),
             "optimizer_request_names": sorted(str(k) for k in opt_outputs.keys()),
@@ -574,6 +575,167 @@ class BLBActionFinalEvaluationModule:
                 for name, vals in sorted(merged.items())
             }
         return summary
+
+    @staticmethod
+    def _full_noise_config(decoded) -> Dict[str, Any]:
+        entries = [
+            {
+                "path": "first_input.fresh",
+                "type": "scaling_factor",
+                "layer": None,
+                "block": "first_input",
+                "point": "fresh",
+                "distribution": "fresh",
+                "N": 16384,
+                "scaling_factor": int(decoded.first_input_sf),
+                "truncation_k": None,
+                "value": None,
+                "active": True,
+            }
+        ]
+
+        for block_name in ("block1", "block2", "block3", "block4", "block5"):
+            cfgs = getattr(decoded, f"{block_name}_cfgs")
+            for layer_idx, cfg in sorted(cfgs.items()):
+                entries.extend(
+                    BLBActionFinalEvaluationModule._cfg_noise_entries(
+                        layer_idx=int(layer_idx),
+                        block_name=block_name,
+                        cfg=cfg,
+                    )
+                )
+
+        return {
+            "entry_count": int(len(entries)),
+            "entries": entries,
+        }
+
+    @staticmethod
+    def _cfg_noise_entries(*, layer_idx: int, block_name: str, cfg) -> List[Dict[str, Any]]:
+        entries: List[Dict[str, Any]] = []
+        truncation_mode = str(getattr(cfg, "output_truncation_mode", ""))
+        for attr, value in vars(cfg).items():
+            base_path = f"layer{layer_idx}.{block_name}.{attr}"
+            if attr == "output_truncation_mode":
+                continue
+            if attr == "output_truncation_k":
+                entries.append({
+                    "path": base_path,
+                    "type": "truncation",
+                    "layer": int(layer_idx),
+                    "block": str(block_name),
+                    "point": str(attr),
+                    "distribution": None,
+                    "N": None,
+                    "scaling_factor": None,
+                    "truncation_k": (None if value is None else int(value)),
+                    "truncation_mode": truncation_mode,
+                    "value": (None if value is None else int(value)),
+                    "active": value is not None,
+                })
+                continue
+            if attr.startswith("rotation_after"):
+                continue
+            if hasattr(value, "scaling_factor"):
+                entries.append(
+                    BLBActionFinalEvaluationModule._noise_point_entry(
+                        path=base_path,
+                        layer_idx=layer_idx,
+                        block_name=block_name,
+                        point=attr,
+                        noise_point=value,
+                    )
+                )
+                continue
+            if value is None and "rescale" in attr:
+                entries.append({
+                    "path": base_path,
+                    "type": "scaling_factor",
+                    "layer": int(layer_idx),
+                    "block": str(block_name),
+                    "point": str(attr),
+                    "distribution": None,
+                    "N": None,
+                    "scaling_factor": None,
+                    "truncation_k": None,
+                    "value": None,
+                    "active": False,
+                })
+                continue
+            if isinstance(value, tuple):
+                if not value:
+                    entries.append({
+                        "path": base_path,
+                        "type": "scaling_factor_tuple",
+                        "layer": int(layer_idx),
+                        "block": str(block_name),
+                        "point": str(attr),
+                        "distribution": None,
+                        "N": None,
+                        "scaling_factor": None,
+                        "truncation_k": None,
+                        "value": [],
+                        "active": False,
+                    })
+                    continue
+                for item_idx, item in enumerate(value):
+                    item_path = f"{base_path}[{item_idx}]"
+                    if hasattr(item, "scaling_factor"):
+                        entries.append(
+                            BLBActionFinalEvaluationModule._noise_point_entry(
+                                path=item_path,
+                                layer_idx=layer_idx,
+                                block_name=block_name,
+                                point=f"{attr}[{item_idx}]",
+                                noise_point=item,
+                            )
+                        )
+                    else:
+                        entries.append({
+                            "path": item_path,
+                            "type": "scaling_factor",
+                            "layer": int(layer_idx),
+                            "block": str(block_name),
+                            "point": f"{attr}[{item_idx}]",
+                            "distribution": None,
+                            "N": None,
+                            "scaling_factor": None,
+                            "truncation_k": None,
+                            "value": None,
+                            "active": False,
+                        })
+                continue
+            if attr in ("degree", "gelu_degree"):
+                entries.append({
+                    "path": base_path,
+                    "type": "parameter",
+                    "layer": int(layer_idx),
+                    "block": str(block_name),
+                    "point": str(attr),
+                    "distribution": None,
+                    "N": None,
+                    "scaling_factor": None,
+                    "truncation_k": None,
+                    "value": int(value),
+                    "active": True,
+                })
+        return entries
+
+    @staticmethod
+    def _noise_point_entry(*, path: str, layer_idx: int, block_name: str, point: str, noise_point) -> Dict[str, Any]:
+        return {
+            "path": str(path),
+            "type": "scaling_factor",
+            "layer": int(layer_idx),
+            "block": str(block_name),
+            "point": str(point),
+            "distribution": str(getattr(noise_point, "distribution", "")),
+            "N": int(getattr(noise_point, "N")),
+            "scaling_factor": int(getattr(noise_point, "scaling_factor")),
+            "truncation_k": None,
+            "value": int(getattr(noise_point, "scaling_factor")),
+            "active": True,
+        }
 
     def _run_blb_eval(self, decoded, *, gelu, softmax):
         ev = self.evaluator
@@ -783,11 +945,49 @@ class BLBActionFinalEvaluationModule:
                 ),
                 "```",
                 "",
+                "Full noise and truncation configuration:",
+                "",
             ])
+            lines.extend(self._full_noise_config_markdown_table(details.get("full_noise_config", {})))
+            lines.append("")
 
         with open(path, "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + "\n")
         return path
+
+    @staticmethod
+    def _full_noise_config_markdown_table(full_config) -> List[str]:
+        entries = list((full_config or {}).get("entries", []) or [])
+        lines = [
+            "| path | type | distribution | N | scaling_factor | truncation_k | value | active |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
+        ]
+        for entry in entries:
+            lines.append(
+                "| "
+                + " | ".join(
+                    BLBActionFinalEvaluationModule._md_cell(value)
+                    for value in (
+                        entry.get("path"),
+                        entry.get("type"),
+                        entry.get("distribution"),
+                        entry.get("N"),
+                        entry.get("scaling_factor"),
+                        entry.get("truncation_k"),
+                        entry.get("value"),
+                        entry.get("active"),
+                    )
+                )
+                + " |"
+            )
+        return lines
+
+    @staticmethod
+    def _md_cell(value) -> str:
+        if value is None:
+            return ""
+        text = str(value)
+        return text.replace("|", "\\|")
 
     def _save_results_plot(self, *, candidate_results) -> Optional[str]:
         try:

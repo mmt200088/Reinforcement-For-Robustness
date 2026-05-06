@@ -24,7 +24,7 @@ Stage-1（GELU/Softmax 多项式次数）与 Stage-2（噪声 scaling factor）�
 - 独立 preset：`Paean/presets/*.conf`
 - 独立输出：默认写入 `Paean/outputs/{dataset}/{algorithm}/{run}/final_eval/`
 - 兼容入口：`bash llama_7B_LayerImportance.sh eval ...` 会直接转交给 `Paean/run_final_eval.sh`
-- 主动调用默认只评估你指定的配置；BLB action final eval 可用 `--range truncation=8,9,11,13` 这类参数展开笛卡尔积配置网格。
+- 主动调用默认只评估你指定的配置；BLB action final eval 可用 `--range truncation=8,9,11,13` 这类参数展开笛卡尔积配置网格，也支持 `block3.truncation=8,9`、`layer7.block3.truncation=11`、`layer2.block5.wffn1_sf=18` 这类细粒度 selector。
 - 随机配置对照必须显式传 `--random`；`--random` 模式只能基于一个固定配置生成随机对照，不能和 `--range` 同时使用。
 - 训练结束后的被动 final eval：训练进程会用 `--final-eval-preset` 指向的 `Paean/presets/*.conf` 触发一次评估；这次评估的 repeat、seed、随机对照数量、输出根目录等不再由训练命令行参数控制。BLB 训练会评估训练找到的最佳 action 配置，并按 final eval preset 的随机对照数量生成对应 random 配置。
 
@@ -49,6 +49,11 @@ bash Paean/run_final_eval.sh --preset mrpc-final-eval-only
 
 # 只测指定 BLB action 网格：truncation 4 个值 × wffn1 2 个值，共 8 组
 bash Paean/run_final_eval.sh --preset mrpc-blb-action-range
+
+# 细粒度 BLB action 网格：只 sweep Block3 的 truncation，并固定第 2 层 Block5 的 wffn1 scaling factor
+bash Paean/run_final_eval.sh --preset mrpc-blb-baseline-fixed \
+  --range block3.truncation=8,9,10,11,12,13 \
+  --action-fixed layer2.block5.wffn1_sf=18
 
 # 只测 BLB baseline 非 truncation 配置 + truncation 8/9/10/11/12/13 六档
 bash Paean/run_final_eval.sh --preset mrpc-blb-baseline-truncation-sweep
@@ -185,8 +190,8 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `--random-seed N` | `run`、`eval`、`compare` | `42` | 随机种子 |
 | `--random` / `--enable-random` | 独立 `eval` | 关闭 | 主动 final eval 默认不做随机对照；启用后才使用下面的 trial 数量 |
 | `--action-config PATH` | 独立 `eval` | — | BLB action final eval 配置 JSON，可指定固定 action、`fixed` 和 `ranges` |
-| `--range NAME=V1,V2,...` / `--action-range ...` | 独立 `eval` | — | BLB action 网格展开参数，可重复传；多个 range 做笛卡尔积 |
-| `--action-fixed NAME=V` | 独立 `eval` | — | BLB action 固定覆写，可重复传 |
+| `--range NAME=V1,V2,...` / `--action-range ...` | 独立 `eval` | — | BLB action 网格展开参数，可重复传；多个 range 做笛卡尔积。`NAME` 支持全局、per-block、per-layer 精确 selector |
+| `--action-fixed NAME=V` | 独立 `eval` | — | BLB action 固定覆写，可重复传。`NAME` 支持全局、per-block、per-layer 精确 selector |
 | `--perm-trials N` | `run`、独立 `eval`、`compare` | 训练/compare 为 `10`；独立 `eval` 为 `0` | permutation 对照数量；独立 `eval` 需配合 `--random` |
 | `--cost-trials N` | `run`、独立 `eval`、`compare` | 训练/compare 为 `10`；独立 `eval` 为 `0` | 等价成本对照数量；独立 `eval` 需配合 `--random` |
 | `--budget-trials N` | `run`、独立 `eval`、`compare` | 训练/compare 为 `10`；独立 `eval` 为 `0` | 等价预算对照数量；独立 `eval` 需配合 `--random` |
@@ -261,8 +266,8 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `--stage2-probe-size N` | `256` | Stage-2 稳定性探针子集大小 |
 | `--stage2-rl-variant blb_v3/legacy_v2` | `blb_v3` | RL final eval 下用于兼容 BLB/legacy 行为 |
 | `--action-config PATH` | — | BLB action final eval 的 JSON 配置；可包含 `action_vec` / `base_action_vec`、`fixed`、`ranges` |
-| `--range NAME=V1,V2,...` / `--action-range ...` | — | BLB action range，可重复传；多个 range 做笛卡尔积，如 `truncation=8,9,11,13` 与 `wffn1=18,20` 会测试 8 组 |
-| `--action-fixed NAME=V` / `--fixed-action NAME=V` | — | 固定某个 BLB action 维度，可重复传 |
+| `--range NAME=V1,V2,...` / `--action-range ...` | — | BLB action range，可重复传；多个 range 做笛卡尔积，如 `truncation=8,9,11,13` 与 `wffn1=18,20` 会测试 8 组；也可写 `block3.truncation=8,9` 或 `layer7.block5.wffn1_sf=18,20` |
+| `--action-fixed NAME=V` / `--fixed-action NAME=V` | — | 固定某个 BLB action 维度，可重复传；支持 `blockN.FIELD` 和 `layerI.blockN.FIELD` |
 | `--rescale-invoker-kind heuristic/in_process/subprocess/stub` | `heuristic` | BLB action final eval 调用 Rescale_optimizer 的方式；正式实验推荐 `in_process` |
 | `--rescale-optimizer-root PATH` | — | `in_process` / `subprocess` 模式下的 `Rescale_optimizer` 根目录 |
 | `--require-rescale-optimizer` | 关闭 | 要求使用真实 Rescale_optimizer；初始化失败时直接报错，不 fallback 到 heuristic |
@@ -271,7 +276,13 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `--manual-stage2-noise JSON_OBJECT` | — | `--source manual` 时的 Stage-2 噪声配置 |
 | `--dry-run` | — | 只打印将执行的底层 Python 命令，不加载模型 |
 
-BLB action range 目前支持 `truncation`、`wffn1`、`wffn1_rescale`、`wffn2`、`first_input`，也支持精确字段名如 `block5.wffn1_sf`。主动调用不传 `--random` 时只测试这些选中配置；传 `--random` 时必须使用一个固定配置，不能再传 `--range`。
+BLB action selector 支持三种粒度：
+
+- 全局字段：`truncation`、`wffn1`、`wffn1_rescale`、`wffn2`、`first_input`，会作用到所有匹配位置。
+- Per-block：`block1.truncation`、`block3.output_truncation_k`、`block5.wffn1_sf`，只作用到指定 block 的所有层。
+- Per-layer + per-block：`layer0.block1.truncation`、`layer7.block3.truncation`、`layer2.block5.wffn1_sf`，只作用到一个精确 action 点。
+
+字段名使用 `blb_stage2_rl/action_space.py` 中各 block 的 action 字段名；`truncation` / `k` 是 `output_truncation_k` 的别名。主动调用不传 `--random` 时只测试这些选中配置；传 `--random` 时必须使用一个固定配置，不能再传 `--range`。BLB action final eval 的 Markdown/JSON 结果会同时写出完整 `full_noise_config`，逐层逐 block 列出每个 scaling factor 点和 truncation 点的实际值。
 
 
 ### 数据集补充说明（精简）

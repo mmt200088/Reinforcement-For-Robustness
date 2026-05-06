@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -259,7 +260,10 @@ def _set_selector_value(vec, num_layers, max_sfs, selector: str, value: int) -> 
 
 
 def _selector_slots(num_layers: int, selector: str) -> List[Dict[str, object]]:
-    name = _canonical_selector_name(selector)
+    parsed = _parse_selector(selector, num_layers)
+    name = parsed["field_name"]
+    exact_block = parsed["block_idx"]
+    target_layers = parsed["layer_indices"]
     fields = per_layer_field_offsets()
     layer_dim = len(fields)
     slots: List[Dict[str, object]] = []
@@ -268,35 +272,33 @@ def _selector_slots(num_layers: int, selector: str) -> List[Dict[str, object]]:
         return [{
             "offset": int(num_layers) * layer_dim,
             "block_idx": 0,
+            "layer_idx": None,
             "field_name": "first_input",
             "kind": "F",
         }]
 
-    exact_block = None
-    exact_field = None
-    if "." in name:
-        block_part, exact_field = name.split(".", 1)
-        if block_part.startswith("block"):
-            exact_block = int(block_part[len("block"):])
     for layer_idx in range(int(num_layers)):
+        if target_layers is not None and layer_idx not in target_layers:
+            continue
         for field_offset, (block_idx, field_name, kind) in enumerate(fields):
             include = False
             if exact_block is not None:
-                include = int(block_idx) == int(exact_block) and field_name == exact_field
-            elif name in ("truncation", "k", "output_truncation_k"):
-                include = kind == "K"
-            elif name == field_name:
-                include = True
-            elif name == "wffn1":
-                include = int(block_idx) == 5 and field_name == "wffn1_sf"
-            elif name == "wffn1_rescale":
-                include = int(block_idx) == 5 and field_name == "wffn1_rescale_sf"
-            elif name == "wffn2":
-                include = int(block_idx) == 1 and field_name == "wffn2_sf"
+                include = int(block_idx) == int(exact_block) and _selector_field_matches(
+                    selector_field=name,
+                    field_name=str(field_name),
+                    kind=str(kind),
+                )
+            else:
+                include = _selector_field_matches(
+                    selector_field=name,
+                    field_name=str(field_name),
+                    kind=str(kind),
+                )
             if include:
                 slots.append({
                     "offset": layer_idx * layer_dim + field_offset,
                     "block_idx": int(block_idx),
+                    "layer_idx": int(layer_idx),
                     "field_name": str(field_name),
                     "kind": str(kind),
                 })
@@ -338,6 +340,78 @@ def _canonical_selector_name(selector: str) -> str:
         "input": "first_input",
     }
     return aliases.get(text, text)
+
+
+def _parse_selector(selector: str, num_layers: int) -> Dict[str, object]:
+    name = _canonical_selector_name(selector)
+    parts = [part for part in name.split(".") if part]
+    layer_indices = None
+    block_idx = None
+    field_parts: List[str] = []
+
+    for part in parts:
+        parsed_layers = _parse_layer_selector(part, num_layers)
+        if parsed_layers is not None:
+            if layer_indices is not None:
+                raise ValueError(f"selector contains multiple layer filters: {selector!r}")
+            layer_indices = parsed_layers
+            continue
+        parsed_block = _parse_block_selector(part)
+        if parsed_block is not None:
+            if block_idx is not None:
+                raise ValueError(f"selector contains multiple block filters: {selector!r}")
+            block_idx = parsed_block
+            continue
+        field_parts.append(part)
+
+    field_name = ".".join(field_parts) if field_parts else name
+    return {
+        "field_name": _canonical_field_name(field_name),
+        "block_idx": block_idx,
+        "layer_indices": layer_indices,
+    }
+
+
+def _parse_layer_selector(part: str, num_layers: int):
+    match = re.fullmatch(r"(?:layer|layers|l)(\d+)", str(part))
+    if not match:
+        return None
+    idx = int(match.group(1))
+    if idx < 0 or idx >= int(num_layers):
+        raise ValueError(f"layer index {idx} outside [0,{int(num_layers)})")
+    return (idx,)
+
+
+def _parse_block_selector(part: str):
+    match = re.fullmatch(r"block([1-5])", str(part))
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _canonical_field_name(name: str) -> str:
+    text = str(name or "").strip().lower().replace("-", "_")
+    aliases = {
+        "trunc": "output_truncation_k",
+        "truncation": "output_truncation_k",
+        "truncation_k": "output_truncation_k",
+        "k": "output_truncation_k",
+        "output_k": "output_truncation_k",
+        "firstinput": "first_input",
+        "first_input_sf": "first_input",
+        "input": "first_input",
+        "wffn1": "wffn1_sf",
+        "wffn1_rescale": "wffn1_rescale_sf",
+        "wffn2": "wffn2_sf",
+        "wffn2_rescale": "wffn2_rescale_sf",
+    }
+    return aliases.get(text, text)
+
+
+def _selector_field_matches(*, selector_field: str, field_name: str, kind: str) -> bool:
+    if selector_field == "output_truncation_k":
+        return str(kind) == "K"
+    return str(field_name) == str(selector_field)
 
 
 def _mapping_to_specs(mapping: Mapping) -> List[str]:
