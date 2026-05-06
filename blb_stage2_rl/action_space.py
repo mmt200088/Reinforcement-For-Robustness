@@ -575,10 +575,18 @@ def _build_block3_action(
     deg = int(attn_degree)
     if deg < 1:
         deg = 1
-    if deg > 4:
-        deg = 4   # 我们的动作向量按 max degree=4 占槽
+    if deg > 6:
+        deg = 6
     sq_keys = ("square_rescale_sf_0", "square_rescale_sf_1", "square_rescale_sf_2", "square_rescale_sf_3")
-    square_rescale_sfs = tuple(int(layer_field_values[sq_keys[k]]) for k in range(deg))
+    square_rescale_base = [int(layer_field_values[key]) for key in sq_keys]
+    if deg <= len(square_rescale_base):
+        square_rescale_sfs = tuple(square_rescale_base[:deg])
+    else:
+        # The historical action vector exposes four square-rescale slots.
+        # Degree-5/6 softmax configs reuse the last slot for the extra powers.
+        square_rescale_sfs = tuple(
+            square_rescale_base + [square_rescale_base[-1]] * (deg - len(square_rescale_base))
+        )
     return Block3ActionSpec(
         degree=deg,
         x_fresh_sf=int(layer_field_values["x_fresh_sf"]),
@@ -691,12 +699,39 @@ def _decode_first_input_sf(
     return _snap_to_table(int(sf), 16384)
 
 
+def _degree_for_layer(
+        degrees: object,
+        layer_idx: int,
+        num_layers: int,
+        *,
+        default: int,
+        name: str,
+        ) -> int:
+    if degrees is None:
+        return int(default)
+    if isinstance(degrees, np.ndarray):
+        arr = np.asarray(degrees, dtype=int).reshape(-1)
+    elif isinstance(degrees, (list, tuple)):
+        arr = np.asarray(degrees, dtype=int).reshape(-1)
+    else:
+        return int(degrees)
+    if arr.size == 0:
+        return int(default)
+    if arr.size == 1:
+        return int(arr[0])
+    if arr.size != int(num_layers):
+        raise ValueError(
+            f"{name} length {arr.size} must be 1 or num_layers={int(num_layers)}"
+        )
+    return int(arr[int(layer_idx)])
+
+
 def action_vector_to_cfgs(
         action_vec: np.ndarray,
         max_sfs: MaxSFsTable,
         num_layers: int,
-        gelu_degree: int = 4,
-        attn_degree: int = 4,
+        gelu_degree: object = 4,
+        attn_degree: object = 4,
         ) -> ActionDecodeResult:
     """``MultiDiscrete`` 风格动作向量 → 每层 5 个 BLB block cfg + first_input SF。
 
@@ -729,6 +764,20 @@ def action_vector_to_cfgs(
     per_layer_values: List[Dict[str, object]] = []
 
     for li in range(int(num_layers)):
+        li_gelu_degree = _degree_for_layer(
+            gelu_degree,
+            li,
+            num_layers,
+            default=4,
+            name="gelu_degree",
+        )
+        li_attn_degree = _degree_for_layer(
+            attn_degree,
+            li,
+            num_layers,
+            default=4,
+            name="attn_degree",
+        )
         slice_start = li * layer_dim
         slice_end = slice_start + layer_dim
         layer_action = arr[slice_start:slice_end]
@@ -746,35 +795,35 @@ def action_vector_to_cfgs(
                 block_idx=b,
                 action_slice=sub,
                 max_sfs=max_sfs,
-                attn_degree=attn_degree,
-                gelu_degree=gelu_degree,
+                attn_degree=li_attn_degree,
+                gelu_degree=li_gelu_degree,
             )
         per_layer_values.append({f"block{b}": dict(v) for b, v in layer_block_values.items()})
 
         # Block 1：首层强制 truncation_k=None
         b1 = _build_block1_action(li, layer_block_values[1], is_first_layer=(li == 0))
         block1_cfgs[li] = build_block1_cfg_from_action(
-            b1, N=_block_default_N(1, gelu_degree=gelu_degree, attn_degree=attn_degree),
+            b1, N=_block_default_N(1, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
         )
         # Block 2
         b2 = _build_block2_action(li, layer_block_values[2])
         block2_cfgs[li] = build_block2_cfg_from_action(
-            b2, N=_block_default_N(2, gelu_degree=gelu_degree, attn_degree=attn_degree),
+            b2, N=_block_default_N(2, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
         )
         # Block 3 (degree-aware)
-        b3 = _build_block3_action(li, layer_block_values[3], attn_degree=attn_degree)
+        b3 = _build_block3_action(li, layer_block_values[3], attn_degree=li_attn_degree)
         block3_cfgs[li] = build_block3_cfg_from_action(
-            b3, N=_block_default_N(3, gelu_degree=gelu_degree, attn_degree=attn_degree),
+            b3, N=_block_default_N(3, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
         )
         # Block 4
         b4 = _build_block4_action(li, layer_block_values[4])
         block4_cfgs[li] = build_block4_cfg_from_action(
-            b4, N=_block_default_N(4, gelu_degree=gelu_degree, attn_degree=attn_degree),
+            b4, N=_block_default_N(4, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
         )
         # Block 5 (gelu degree-aware)
-        b5 = _build_block5_action(li, layer_block_values[5], gelu_degree=gelu_degree)
+        b5 = _build_block5_action(li, layer_block_values[5], gelu_degree=li_gelu_degree)
         block5_cfgs[li] = build_block5_cfg_from_action(
-            b5, N=_block_default_N(5, gelu_degree=gelu_degree, attn_degree=attn_degree),
+            b5, N=_block_default_N(5, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
         )
 
     # 尾部 first_input_sf

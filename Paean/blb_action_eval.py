@@ -270,8 +270,8 @@ class BLBActionFinalEvaluationModule:
             action_vec=np.asarray(action_vec, dtype=int),
             max_sfs=max_sfs,
             num_layers=total_layers,
-            gelu_degree=self._dominant_degree(gelu, default=4),
-            attn_degree=self._dominant_degree(softmax, default=4),
+            gelu_degree=np.asarray(gelu, dtype=int),
+            attn_degree=np.asarray(softmax, dtype=int),
         )
 
         cfgs_dict = decoded.cfgs_dict()

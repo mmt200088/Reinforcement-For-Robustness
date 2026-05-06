@@ -131,6 +131,27 @@ class FinalEvalStandaloneTests(unittest.TestCase):
             {8, 9, 10, 11, 12, 13},
         )
 
+    def test_action_decode_preserves_per_layer_stage1_degrees(self):
+        from blb_stage2_rl.action_space import (
+            action_vector_to_cfgs,
+            load_max_sfs,
+            make_all_max_action_vector,
+        )
+
+        max_action = make_all_max_action_vector(3)
+        decoded = action_vector_to_cfgs(
+            max_action,
+            load_max_sfs("mrpc"),
+            3,
+            gelu_degree=[1, 2, 4],
+            attn_degree=[2, 5, 6],
+        )
+
+        self.assertEqual([decoded.block3_cfgs[i].degree for i in range(3)], [2, 5, 6])
+        self.assertEqual([len(decoded.block3_cfgs[i].square_rescales) for i in range(3)], [2, 5, 6])
+        self.assertEqual([decoded.block5_cfgs[i].gelu_degree for i in range(3)], [1, 2, 4])
+        self.assertEqual([len(decoded.block5_cfgs[i].gelu_power_rescales) for i in range(3)], [0, 1, 3])
+
     def test_random_mode_rejects_ranges(self):
         from Paean.config import parse_final_eval_settings
 
