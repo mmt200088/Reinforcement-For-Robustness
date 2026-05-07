@@ -4,11 +4,11 @@
   "run_basename": "s1t0.005_s2t0.005_s2st0.005",
   "profile": "mrpc",
   "total_episodes": 80000,
-  "completed_episodes": 360,
-  "ppo_update_count": 3,
-  "phase": "训练中（PPO 单步 episode，共 80000 回合）",
-  "elapsed_sec": 38.211,
-  "last_update": "2026-05-07T15:15:41.208218",
+  "completed_episodes": 80000,
+  "ppo_update_count": 666,
+  "phase": "已完成",
+  "elapsed_sec": 8185.606,
+  "last_update": "2026-05-07T17:31:28.603156",
   "recent_returns": [
     -273.0,
     -273.0,
@@ -1016,10 +1016,10 @@
     "typical_k_drop": 2.548728813559322
   },
   "ppo_last_metrics": {
-    "policy_loss": -0.05217808810994029,
-    "value_loss": 74094.0087890625,
-    "entropy": 1214.6399230957031,
-    "clip_fraction": 0.0867745541036129,
+    "policy_loss": 0.11305503826588392,
+    "value_loss": 0.12647725827991962,
+    "entropy": 1206.7185821533203,
+    "clip_fraction": 0.8191964477300644,
     "n_samples": 120
   },
   "extra": {
@@ -1031,6 +1031,7 @@
       "w_bits": 0.03333333333333333,
       "w_fusion": 1.0,
       "w_k": 1.0
-    }
+    },
+    "final_report_path": "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/blb_stage2/progress/blb_stage2_report.md"
   }
 }
