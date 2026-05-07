@@ -179,6 +179,16 @@ def compute_reward(
     """
     weights = weights or RewardWeights()
 
+    # Structural invalid states (Rescale_optimizer invalid_chain or BLB apply
+    # failures) must be handled before accuracy/stability.  Fast-fail paths use
+    # zero fallback metrics, and letting those hit priority 1 hides the real
+    # reason the episode did not evaluate.
+    invalid = bool(any_invalid) if any_invalid is not None else bool(getattr(opt_signals, "any_invalid", False))
+    if invalid:
+        return RewardBreakdown(
+            reward=-float(weights.invalid_penalty), priority=3, invalid=True,
+        )
+
     # 优先级 1：精度
     acc = _resolve_metric_for_threshold(metrics)
     acc_violation = max(0.0, float(acc_threshold) - float(acc))
@@ -199,12 +209,6 @@ def compute_reward(
         )
 
     # 优先级 3：cost
-    invalid = bool(any_invalid) if any_invalid is not None else bool(getattr(opt_signals, "any_invalid", False))
-    if invalid:
-        return RewardBreakdown(
-            reward=-float(weights.invalid_penalty), priority=3, invalid=True,
-        )
-
     bits_drop = float(baseline.total_bits_sum) - float(getattr(opt_signals, "total_bits_sum", 0))
     fusion_count = float(getattr(opt_signals, "total_fusion_count", 0))
     fusion_drop = float(baseline.total_fusion_count) - fusion_count

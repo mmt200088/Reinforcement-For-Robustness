@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import pickle
 import time
@@ -37,6 +38,7 @@ from .action_space import (
     action_dims_for_config,
     action_vector_to_cfgs,
     avg_truncation_k_in_action,
+    describe_action_vector,
     layer_dims,
     load_max_sfs,
     make_all_max_action_vector,
@@ -62,6 +64,7 @@ from .persistence import (
     BLBStatusBoard,
     append_blb_episode_trace_row,
     dump_crash_report,
+    write_action_description_files,
     write_blb_final_report,
     write_training_curves,
 )
@@ -105,6 +108,19 @@ def resolve_blb_persistence_dir(evaluator) -> str:
         )
     os.makedirs(out, exist_ok=True)
     return out
+
+
+def _effective_probe_batch_count(ev, train_cfg) -> int:
+    """Return enough mini-batches to cover stage2_probe_size unless overridden."""
+    explicit = getattr(ev, "blb_v3_probe_batch_count", None)
+    if explicit not in (None, ""):
+        try:
+            return max(1, int(explicit))
+        except Exception:
+            pass
+    probe_size = max(1, int(getattr(ev, "stage2_probe_size", 256)))
+    batch_size = max(1, int(getattr(ev, "batch_size", 1)))
+    return max(1, int(math.ceil(float(probe_size) / float(batch_size))))
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +255,12 @@ class BLBStage2RLRunner:
 
         # ---------- 2) 准备评估子集（probe） ----------
         probe_batches = self._build_probe_batches(ev, train_cfg)
-        log(f"  {bullet} 评估子集 batch 数 = {len(probe_batches)}")
+        train_cfg.probe_batch_count = max(1, int(len(probe_batches) or train_cfg.probe_batch_count))
+        probe_sample_count = sum(int(getattr(b.labels, "numel", lambda: 0)()) for b in probe_batches)
+        log(
+            f"  {bullet} 评估子集 batch 数 = {len(probe_batches)}    "
+            f"样本数 = {probe_sample_count} / requested {int(getattr(ev, 'stage2_probe_size', 256))}"
+        )
 
         # ---------- 3) 准备 RescaleOptimizer 桥 ----------
         rescale_bridge = self._build_rescale_bridge(train_cfg, log=log)
@@ -356,6 +377,30 @@ class BLBStage2RLRunner:
         best_action_vec: Optional[np.ndarray] = None
         best_breakdown_dict: Optional[Dict[str, Any]] = None
         best_decoded_pickle: Optional[bytes] = None
+        best_action_description_paths: Dict[str, str] = {}
+        baseline_action_description_paths: Dict[str, str] = {}
+
+        def persist_action_description(label: str, action_vec: np.ndarray) -> Dict[str, str]:
+            desc = describe_action_vector(
+                action_vec,
+                max_sfs=max_sfs,
+                num_layers=int(env.num_layers),
+                gelu_degree=env.gelu_degree,
+                attn_degree=env.attn_degree,
+                profile=str(train_cfg.profile),
+            )
+            paths = write_action_description_files(
+                blb_progress_dir,
+                desc,
+                label=label,
+                log_fn=log,
+            )
+            status.set_extra(f"{label}_action_description", paths)
+            return paths
+
+        baseline_action_description_paths = persist_action_description("baseline", baseline_action_vec)
+        if baseline_action_description_paths.get("md"):
+            log(f"  {bullet} Baseline action readable description -> {baseline_action_description_paths['md']}")
         episode_returns: List[float] = []
         if resume_checkpoint_path and os.path.isfile(resume_checkpoint_path):
             try:
@@ -401,17 +446,48 @@ class BLBStage2RLRunner:
                     best_breakdown=best_breakdown_dict,
                     best_episode=0,
                 )
+                best_action_description_paths = persist_action_description("best", best_action_vec)
             status.set_extra("warmstart_baseline_eval", {
                 "reward": float(baseline_reward),
                 "breakdown": baseline_breakdown_dict,
+                "metrics": self._metrics_to_dict(baseline_info.get("metrics")),
+                "invalid": bool(baseline_info.get("invalid", False)),
+                "apply_failed": bool(baseline_info.get("apply_failed", False)),
+                "eval_failed": bool(baseline_info.get("eval_failed", False)),
+                "error": str(baseline_info.get("error", "")),
                 "selected_as_incumbent": bool(
                     best_action_vec is not None
                     and np.array_equal(best_action_vec, baseline_action_vec)
                 ),
             })
-            log(f"  {bullet} Baseline action preflight reward={float(baseline_reward):+.4f}")
+            bm = self._metrics_to_dict(baseline_info.get("metrics"))
+            log(
+                f"  {bullet} Baseline action preflight reward={float(baseline_reward):+.4f} "
+                f"priority={baseline_breakdown_dict.get('priority') if baseline_breakdown_dict else ''} "
+                f"invalid={bool(baseline_info.get('invalid', False))} "
+                f"loss={float(bm.get('loss_mean', 0.0)):.4f} "
+                f"m1={float(bm.get('metric1_mean', 0.0)):.4f} "
+                f"m2={float(bm.get('metric2_mean', 0.0)):.4f}"
+            )
+            if baseline_info.get("error"):
+                log(f"  [baseline preflight][error] {baseline_info.get('error')}")
+            if (
+                    bool(baseline_info.get("invalid", False))
+                    or bool(baseline_info.get("apply_failed", False))
+                    or bool(baseline_info.get("eval_failed", False))
+                    or bool((baseline_breakdown_dict or {}).get("invalid", False))
+                    or int((baseline_breakdown_dict or {}).get("priority", 0)) in (1, 2)
+            ):
+                raise RuntimeError(
+                    "Baseline BLB action preflight failed before RL training; "
+                    "the all-max BLB baseline must pass the accuracy threshold. "
+                    f"error={baseline_info.get('error', '')!s}; "
+                    f"metrics={bm}; "
+                    f"breakdown={baseline_breakdown_dict}"
+                )
         except Exception as exc:
-            log(f"  [warmstart][warning] baseline action preflight failed: {exc}")
+            log(f"  [warmstart][error] baseline action preflight failed: {exc}")
+            raise
 
         # ---------- 8) 训练循环 ----------
         status.set_phase(f"训练中（PPO 单步 episode，共 {train_cfg.total_episodes} 回合）")
@@ -470,9 +546,28 @@ class BLBStage2RLRunner:
             )
 
         rollout_rewards: List[float] = []
+        rollout_metric1: List[float] = []
+        rollout_metric2: List[float] = []
+        rollout_metric1_min: List[float] = []
+        rollout_metric2_min: List[float] = []
+        rollout_loss: List[float] = []
+        rollout_loss_std: List[float] = []
+        rollout_loss_max: List[float] = []
         rollout_priority_counts = {1: 0, 2: 0, 3: 0}
         rollout_invalid_count = 0
+        rollout_apply_error_count = 0
+        rollout_eval_error_count = 0
+        rollout_last_error = ""
         rollout_anchor_count = 0
+
+        def mean_or_empty(values: Sequence[float]):
+            return float(np.mean(values)) if values else ""
+
+        def min_or_empty(values: Sequence[float]):
+            return float(np.min(values)) if values else ""
+
+        def max_or_empty(values: Sequence[float]):
+            return float(np.max(values)) if values else ""
 
         try:
             for ep in range(start_episode, int(train_cfg.total_episodes)):
@@ -500,11 +595,35 @@ class BLBStage2RLRunner:
                            reward=float(reward), value=value)
                 episode_returns.append(float(reward))
                 rollout_rewards.append(float(reward))
+                metric_dict = self._metrics_to_dict(info.get("metrics"))
+                if metric_dict:
+                    if np.isfinite(float(metric_dict.get("metric1_mean", float("nan")))):
+                        rollout_metric1.append(float(metric_dict.get("metric1_mean", 0.0)))
+                    if np.isfinite(float(metric_dict.get("metric2_mean", float("nan")))):
+                        rollout_metric2.append(float(metric_dict.get("metric2_mean", 0.0)))
+                    if np.isfinite(float(metric_dict.get("metric1_min", float("nan")))):
+                        rollout_metric1_min.append(float(metric_dict.get("metric1_min", 0.0)))
+                    if np.isfinite(float(metric_dict.get("metric2_min", float("nan")))):
+                        rollout_metric2_min.append(float(metric_dict.get("metric2_min", 0.0)))
+                    if np.isfinite(float(metric_dict.get("loss_mean", float("nan")))):
+                        rollout_loss.append(float(metric_dict.get("loss_mean", 0.0)))
+                    if np.isfinite(float(metric_dict.get("loss_std", float("nan")))):
+                        rollout_loss_std.append(float(metric_dict.get("loss_std", 0.0)))
+                    if np.isfinite(float(metric_dict.get("loss_max", float("nan")))):
+                        rollout_loss_max.append(float(metric_dict.get("loss_max", 0.0)))
+                if bool(info.get("apply_failed", False)):
+                    rollout_apply_error_count += 1
+                if bool(info.get("eval_failed", False)):
+                    rollout_eval_error_count += 1
+                if info.get("error"):
+                    rollout_last_error = str(info.get("error"))
+                    if (rollout_apply_error_count + rollout_eval_error_count) <= 3:
+                        log(f"  [BLB episode error] ep={ep + 1}: {rollout_last_error}")
                 if breakdown_dict:
                     priority = int(breakdown_dict.get("priority", 0))
                     if priority in rollout_priority_counts:
                         rollout_priority_counts[priority] += 1
-                    if bool(breakdown_dict.get("invalid", False)):
+                    if bool(breakdown_dict.get("invalid", False)) or bool(info.get("invalid", False)):
                         rollout_invalid_count += 1
                 if use_anchor_action:
                     rollout_anchor_count += 1
@@ -520,6 +639,7 @@ class BLBStage2RLRunner:
                         best_breakdown=best_breakdown_dict,
                         best_episode=int(ep + 1),
                     )
+                    best_action_description_paths = persist_action_description("best", best_action_vec)
                     # decoded cfg pickle
                     decoded = info.get("decoded")
                     if decoded is not None:
@@ -555,11 +675,21 @@ class BLBStage2RLRunner:
                                 "rollout_reward_mean": float(rr.mean()) if rr.size else 0.0,
                                 "rollout_reward_max": float(rr.max()) if rr.size else 0.0,
                                 "rollout_reward_min": float(rr.min()) if rr.size else 0.0,
+                                "rollout_metric1_mean": mean_or_empty(rollout_metric1),
+                                "rollout_metric2_mean": mean_or_empty(rollout_metric2),
+                                "rollout_metric1_min": min_or_empty(rollout_metric1_min),
+                                "rollout_metric2_min": min_or_empty(rollout_metric2_min),
+                                "rollout_loss_mean": mean_or_empty(rollout_loss),
+                                "rollout_loss_std_mean": mean_or_empty(rollout_loss_std),
+                                "rollout_loss_max": max_or_empty(rollout_loss_max),
                                 "best_reward": float(best_reward),
                                 "priority1_count": int(rollout_priority_counts.get(1, 0)),
                                 "priority2_count": int(rollout_priority_counts.get(2, 0)),
                                 "priority3_count": int(rollout_priority_counts.get(3, 0)),
                                 "invalid_count": int(rollout_invalid_count),
+                                "apply_error_count": int(rollout_apply_error_count),
+                                "eval_error_count": int(rollout_eval_error_count),
+                                "last_error": rollout_last_error,
                                 "anchor_count": int(rollout_anchor_count),
                                 "policy_loss": float(metrics.get("policy_loss", 0.0)),
                                 "value_loss": float(metrics.get("value_loss", 0.0)),
@@ -572,8 +702,18 @@ class BLBStage2RLRunner:
                         if update_count == 1:
                             status.set_extra("episode_trace_csv", trace_path)
                         rollout_rewards = []
+                        rollout_metric1 = []
+                        rollout_metric2 = []
+                        rollout_metric1_min = []
+                        rollout_metric2_min = []
+                        rollout_loss = []
+                        rollout_loss_std = []
+                        rollout_loss_max = []
                         rollout_priority_counts = {1: 0, 2: 0, 3: 0}
                         rollout_invalid_count = 0
+                        rollout_apply_error_count = 0
+                        rollout_eval_error_count = 0
+                        rollout_last_error = ""
                         rollout_anchor_count = 0
                     except Exception as exc:
                         log(f"  [BLB trace][warning] rollout trace update failed: {exc}")
@@ -676,11 +816,21 @@ class BLBStage2RLRunner:
                         "rollout_reward_mean": float(rr.mean()) if rr.size else 0.0,
                         "rollout_reward_max": float(rr.max()) if rr.size else 0.0,
                         "rollout_reward_min": float(rr.min()) if rr.size else 0.0,
+                        "rollout_metric1_mean": mean_or_empty(rollout_metric1),
+                        "rollout_metric2_mean": mean_or_empty(rollout_metric2),
+                        "rollout_metric1_min": min_or_empty(rollout_metric1_min),
+                        "rollout_metric2_min": min_or_empty(rollout_metric2_min),
+                        "rollout_loss_mean": mean_or_empty(rollout_loss),
+                        "rollout_loss_std_mean": mean_or_empty(rollout_loss_std),
+                        "rollout_loss_max": max_or_empty(rollout_loss_max),
                         "best_reward": float(best_reward),
                         "priority1_count": int(rollout_priority_counts.get(1, 0)),
                         "priority2_count": int(rollout_priority_counts.get(2, 0)),
                         "priority3_count": int(rollout_priority_counts.get(3, 0)),
                         "invalid_count": int(rollout_invalid_count),
+                        "apply_error_count": int(rollout_apply_error_count),
+                        "eval_error_count": int(rollout_eval_error_count),
+                        "last_error": rollout_last_error,
                         "anchor_count": int(rollout_anchor_count),
                         "policy_loss": float(metrics.get("policy_loss", 0.0)),
                         "value_loss": float(metrics.get("value_loss", 0.0)),
@@ -711,6 +861,8 @@ class BLBStage2RLRunner:
         log(f"  {bullet} Final policy 已保存到：{final_save_path}")
 
         if best_action_vec is not None:
+            if not best_action_description_paths:
+                best_action_description_paths = persist_action_description("best", best_action_vec)
             blb_cfg_dump_path = os.path.join(
                 ev.noise_stage_progress_dir, BLB_STAGE2_BEST_CFG_FILENAME,
             )
@@ -724,6 +876,7 @@ class BLBStage2RLRunner:
                         "best_breakdown": best_breakdown_dict,
                         "profile": train_cfg.profile,
                         "num_layers": int(ev.total_layers),
+                        "best_action_description_paths": dict(best_action_description_paths or {}),
                     }, f)
                 log(f"  {bullet} Best BLB cfg 已保存到：{blb_cfg_dump_path}")
             except Exception as exc:
@@ -777,6 +930,10 @@ class BLBStage2RLRunner:
                     f"Warmstart baseline bias: {bool(train_cfg.warmstart_baseline_bias)}",
                     f"Warmstart anchor episodes: {int(train_cfg.warmstart_anchor_episodes or 0)}",
                     f"Rollout trace CSV: {os.path.join(blb_progress_dir, 'blb_stage2_episode_trace.csv')}",
+                    f"Baseline action readable JSON: {baseline_action_description_paths.get('json', '')}",
+                    f"Baseline action readable Markdown: {baseline_action_description_paths.get('md', '')}",
+                    f"Best action readable JSON: {best_action_description_paths.get('json', '')}",
+                    f"Best action readable Markdown: {best_action_description_paths.get('md', '')}",
                 ],
                 log_fn=log,
             )
@@ -848,6 +1005,8 @@ class BLBStage2RLRunner:
                 "best_breakdown": best_breakdown_dict,
                 "k_trials": int(train_cfg.num_trials_per_step),
                 "probe_size": int(getattr(ev, "stage2_probe_size", 256)),
+                "baseline_action_description_paths": dict(baseline_action_description_paths or {}),
+                "best_action_description_paths": dict(best_action_description_paths or {}),
             },
             "shortlist_diagnostics": {},
             "limit_loss": float(limit_loss),
@@ -894,6 +1053,8 @@ class BLBStage2RLRunner:
                 best_action_vec.tolist() if best_action_vec is not None else None
             ),
             "blb_v3_best_reward": float(best_reward),
+            "blb_v3_best_action_description_paths": dict(best_action_description_paths or {}),
+            "blb_v3_baseline_action_description_paths": dict(baseline_action_description_paths or {}),
             "blb_v3_profile": str(train_cfg.profile),
             "blb_v3_total_episodes": int(train_cfg.total_episodes),
             "rl_variant": "blb_v3",
@@ -1001,7 +1162,7 @@ class BLBStage2RLRunner:
             collate_fn=ev.data_collator,
             pin_memory=torch.cuda.is_available(),
         )
-        max_count = max(1, int(train_cfg.probe_batch_count))
+        max_count = _effective_probe_batch_count(ev, train_cfg)
         out: List[ProbeBatch] = []
         for batch in loader:
             out.append(ProbeBatch.from_batch(batch, torch.device(device)))
@@ -1264,6 +1425,20 @@ class BLBStage2RLRunner:
             "acc_violation": float(breakdown.acc_violation),
             "stab_violation": float(breakdown.stab_violation),
         }
+
+    @staticmethod
+    def _metrics_to_dict(metrics) -> Dict[str, float]:
+        if metrics is None:
+            return {}
+        out: Dict[str, float] = {}
+        for key in (
+                "loss_mean", "loss_std", "metric1_mean", "metric2_mean",
+                "loss_max", "metric1_min", "metric2_min"):
+            try:
+                out[key] = float(getattr(metrics, key))
+            except Exception:
+                pass
+        return out
 
     # ------------------------------------------------------------------
     # 训练日志

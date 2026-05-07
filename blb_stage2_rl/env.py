@@ -24,6 +24,7 @@ from rescale_optimizer_bridge import (
 
 from .action_space import (
     ActionDecodeResult,
+    BLB_FIRST_INPUT_N,
     K_LEVELS,
     MaxSFsTable,
     action_dims_for_config,
@@ -419,6 +420,8 @@ class BLBStage2Env:
             "opt_signals": opt_signals,
             "opt_outputs_keys": list(opt_outputs.keys()),
             "invalid": any_invalid,
+            "apply_failed": False,
+            "eval_failed": False,
         }
         if degree_sync:
             info["model_degree_sync"] = degree_sync
@@ -450,7 +453,7 @@ class BLBStage2Env:
         try:
             self.bridge.apply(
                 first_input_sf=int(decoded.first_input_sf),
-                first_input_N=16384,
+                first_input_N=BLB_FIRST_INPUT_N,
                 block1_cfgs=decoded.block1_cfgs,
                 block2_cfgs=decoded.block2_cfgs,
                 block3_cfgs=decoded.block3_cfgs,
@@ -475,14 +478,44 @@ class BLBStage2Env:
             )
             info["reward_breakdown"] = breakdown
             info["error"] = f"BLB apply failed: {exc}"
+            info["invalid"] = True
+            info["apply_failed"] = True
             info["metrics"] = metrics
             self._step_idx += 1
+            self._last_invalid_rate = 1.0
+            self._last_total_bits_norm = float(opt_signals.total_bits_sum) / max(1.0, float(self.baseline.total_bits_sum))
+            self._last_fusion_count = float(opt_signals.total_fusion_count)
             return self._build_state(), float(breakdown.reward), True, info
 
         # 5) forward + metrics（多 trial）
         try:
             metrics = self._eval_on_probe(self.env_cfg.num_trials_per_step)
-        finally:
+        except Exception as exc:
+            try:
+                self.bridge.clear()
+            except Exception:
+                pass
+            metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
+            breakdown = compute_reward(
+                metrics, opt_signals,
+                action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
+                baseline=self.baseline,
+                weights=self.reward_weights,
+                acc_threshold=self.acc_threshold,
+                stab_threshold=self.stab_threshold,
+                any_invalid=True,
+            )
+            info["reward_breakdown"] = breakdown
+            info["error"] = f"BLB eval failed: {exc}"
+            info["invalid"] = True
+            info["eval_failed"] = True
+            info["metrics"] = metrics
+            self._step_idx += 1
+            self._last_invalid_rate = 1.0
+            self._last_total_bits_norm = float(opt_signals.total_bits_sum) / max(1.0, float(self.baseline.total_bits_sum))
+            self._last_fusion_count = float(opt_signals.total_fusion_count)
+            return self._build_state(), float(breakdown.reward), True, info
+        else:
             self.bridge.clear()
 
         # 6) reward

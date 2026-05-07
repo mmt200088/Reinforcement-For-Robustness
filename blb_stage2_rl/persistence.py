@@ -50,11 +50,21 @@ BLB_TRACE_FIELDNAMES = (
     "rollout_reward_mean",
     "rollout_reward_max",
     "rollout_reward_min",
+    "rollout_metric1_mean",
+    "rollout_metric2_mean",
+    "rollout_metric1_min",
+    "rollout_metric2_min",
+    "rollout_loss_mean",
+    "rollout_loss_std_mean",
+    "rollout_loss_max",
     "best_reward",
     "priority1_count",
     "priority2_count",
     "priority3_count",
     "invalid_count",
+    "apply_error_count",
+    "eval_error_count",
+    "last_error",
     "anchor_count",
     "policy_loss",
     "value_loss",
@@ -134,6 +144,72 @@ def append_blb_episode_trace_row(
         except Exception:
             pass
     return path
+
+
+def write_action_description_files(
+        persistence_dir: str,
+        description: Mapping[str, Any],
+        *,
+        label: str = "best",
+        log_fn=None,
+        ) -> Dict[str, str]:
+    """Write a full readable BLB action description as JSON and Markdown."""
+    log = log_fn or (lambda _msg: None)
+    safe_label = "".join(
+        ch if ch.isalnum() or ch in ("-", "_") else "_"
+        for ch in str(label or "best")
+    )
+    os.makedirs(persistence_dir, exist_ok=True)
+    json_path = os.path.join(persistence_dir, f"blb_stage2_{safe_label}_action_full.json")
+    md_path = os.path.join(persistence_dir, f"blb_stage2_{safe_label}_action_full.md")
+    out = {"json": json_path, "md": md_path}
+
+    try:
+        _atomic_json_dump(json_path, _to_jsonable(description))
+    except Exception as exc:
+        log(f"  [BLB action][warning] failed to write {json_path}: {exc}")
+        out["json"] = ""
+
+    try:
+        records = list((description or {}).get("records") or [])
+        summary = dict((description or {}).get("summary") or {})
+        lines: List[str] = [
+            f"# BLB Stage 2 action description: {safe_label}",
+            "",
+            f"- profile: `{description.get('profile', '')}`",
+            f"- num_layers: `{description.get('num_layers', '')}`",
+            f"- action_length: `{description.get('action_length', '')}`",
+        ]
+        if summary:
+            lines.extend([
+                f"- records: `{summary.get('record_count', len(records))}`",
+                f"- scaling factor slots: `{summary.get('scaling_factor_count', '')}`",
+                f"- truncation slots: `{summary.get('truncation_count', '')}`",
+                f"- ineffective decoded slots: `{summary.get('ineffective_slot_count', '')}`",
+            ])
+        lines.extend([
+            "",
+            "| idx | location | operation | kind | action_idx | value_type | value | effective | N | max_sf | note |",
+            "|---:|---|---|---|---:|---|---:|---|---:|---:|---|",
+        ])
+        for rec in records:
+            note = str(rec.get("note", "")).replace("|", "\\|")
+            location = str(rec.get("location", "")).replace("|", "\\|")
+            operation = str(rec.get("operation", "")).replace("|", "\\|")
+            max_sf = "" if rec.get("max_sf") is None else str(rec.get("max_sf"))
+            value = "" if rec.get("effective_value") is None else str(rec.get("effective_value"))
+            lines.append(
+                f"| {int(rec.get('global_index', -1))} | `{location}` | `{operation}` | "
+                f"`{rec.get('distribution', rec.get('kind', ''))}` | {int(rec.get('action_index', -1))} | "
+                f"`{rec.get('value_type', '')}` | {value} | {bool(rec.get('effective', True))} | "
+                f"{rec.get('N', '')} | {max_sf} | {note} |"
+            )
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except Exception as exc:
+        log(f"  [BLB action][warning] failed to write {md_path}: {exc}")
+        out["md"] = ""
+    return out
 
 
 # ---------------------------------------------------------------------------

@@ -48,6 +48,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Local scratch dirs used by regression/smoke tests.
+.tmp-tests/
+tmp_tests/
+
 
 # ---------------------------------------------------------------------------
 # Track all experiment artifacts for sharing via git.

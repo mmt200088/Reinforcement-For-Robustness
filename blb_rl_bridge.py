@@ -30,7 +30,7 @@
 
     # 3) 一次性把所有噪声装上模型
     bridge.apply(
-        first_input_sf=action.first_input_sf, first_input_N=16384,
+        first_input_sf=action.first_input_sf, first_input_N=8192,
         block1_cfgs=block1_cfgs, block2_cfgs=block2_cfgs,
         block3_cfgs=block3_cfgs, block4_cfgs=block4_cfgs, block5_cfgs=block5_cfgs,
     )
@@ -141,7 +141,7 @@ class BLBNoiseRLBridge:
             self,
             *,
             first_input_sf: Optional[int] = None,
-            first_input_N: int = 16384,
+            first_input_N: int = 8192,
             first_input_layers: Sequence[int] = (0,),
             block1_cfgs: Optional[Dict[int, Block1NoiseConfig]] = None,
             block2_cfgs: Optional[Dict[int, Block2NoiseConfig]] = None,

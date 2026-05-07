@@ -27,7 +27,7 @@ import json
 import math
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -83,6 +83,7 @@ def _load_k_levels_from_env() -> Tuple[int, ...]:
 K_LEVELS: Tuple[int, ...] = _load_k_levels_from_env()
 LEVELS_K = len(K_LEVELS)
 LEVELS_FIRST_INPUT = 5   # 与 fresh 一致
+BLB_FIRST_INPUT_N = 8192
 
 # 离散挡位数（与 cfg 字段一一对应；同时影响 reward / policy 头维度）
 NUM_LEVELS_PER_DIM_BY_BLOCK_KIND = {
@@ -696,7 +697,7 @@ def _decode_first_input_sf(
     # 没有专门的节点表，沿用 block1 fresh 默认 max=30
     max_sf = 30
     sf = sf_from(int(action_value), max_sf, LEVELS_FIRST_INPUT)
-    return _snap_to_table(int(sf), 16384)
+    return _snap_to_table(int(sf), BLB_FIRST_INPUT_N)
 
 
 def _degree_for_layer(
@@ -839,6 +840,212 @@ def action_vector_to_cfgs(
         first_input_sf=int(first_input_sf),
         per_layer_field_values=per_layer_values,
     )
+
+
+def _action_distribution_for_kind(kind: str) -> str:
+    return {
+        "F": "fresh",
+        "W": "encoding",
+        "M": "encoding",
+        "S": "scalar",
+        "R": "rescale",
+        "K": "truncation",
+    }.get(str(kind), str(kind))
+
+
+def _action_value_type_for_kind(kind: str) -> str:
+    return "truncation_k" if str(kind) == "K" else "scaling_factor"
+
+
+def _field_level_values(
+        *,
+        kind: str,
+        levels: int,
+        max_sf: Optional[int],
+        N: int,
+        ) -> List[int]:
+    if str(kind) == "K":
+        return [int(v) for v in K_LEVELS]
+    return [
+        int(_snap_to_table(sf_from(idx, int(max_sf), int(levels)), int(N)))
+        for idx in range(int(levels))
+    ]
+
+
+def _operation_name(block_idx: int, field_name: str, kind: str) -> str:
+    if str(kind) == "K":
+        return f"block{int(block_idx)}_output_truncation"
+    return _BLOCK_NODE_NAME_BY_FIELD.get(int(block_idx), {}).get(
+        str(field_name),
+        f"block{int(block_idx)}_{field_name}",
+    )
+
+
+def _is_action_field_effective(
+        *,
+        layer_idx: int,
+        block_idx: int,
+        field_name: str,
+        attn_degree: int,
+        gelu_degree: int,
+        ) -> Tuple[bool, str]:
+    if int(layer_idx) == 0 and int(block_idx) == 1 and str(field_name) == "output_truncation_k":
+        return False, "layer0.block1 has no input-side truncation point; decoded cfg uses None"
+    if int(block_idx) == 3 and str(field_name).startswith("square_rescale_sf_"):
+        try:
+            slot = int(str(field_name).rsplit("_", 1)[-1])
+        except Exception:
+            slot = 0
+        if slot >= max(1, int(attn_degree)):
+            return False, f"softmax degree {int(attn_degree)} does not use this square-rescale slot"
+    if int(block_idx) == 5 and str(field_name).startswith("gelu_power_rescale_sf_"):
+        try:
+            slot = int(str(field_name).rsplit("_", 1)[-1])
+        except Exception:
+            slot = 0
+        if slot >= max(0, int(gelu_degree) - 1):
+            return False, f"GELU degree {int(gelu_degree)} does not use this power-rescale slot"
+    if int(block_idx) == 5 and str(field_name).startswith("gelu_coeff_mul_rescale_sf_"):
+        try:
+            slot = int(str(field_name).rsplit("_", 1)[-1])
+        except Exception:
+            slot = 0
+        if slot >= int(gelu_degree):
+            return False, f"GELU degree {int(gelu_degree)} does not use this coefficient-rescale slot"
+    return True, ""
+
+
+def describe_action_vector(
+        action_vec: np.ndarray,
+        *,
+        max_sfs: MaxSFsTable,
+        num_layers: int,
+        gelu_degree: object = 4,
+        attn_degree: object = 4,
+        profile: str = "default",
+        ) -> Dict[str, Any]:
+    """Return a readable per-action-slot description for logs and artifacts.
+
+    The returned records preserve the exact global action index while naming
+    the model location, BLB block, field, operation/noise point, action index,
+    decoded value, scaling-factor table N, and whether the slot is effective
+    for the layer's polynomial degree.
+    """
+    arr = np.asarray(action_vec, dtype=int).reshape(-1)
+    expected_dim = len(action_dims_for_config(num_layers))
+    if arr.size != expected_dim:
+        raise ValueError(
+            f"action_vec length {arr.size} != expected {expected_dim} (num_layers={num_layers})"
+        )
+
+    fields = per_layer_field_offsets()
+    layer_dim = len(fields)
+    records: List[Dict[str, Any]] = []
+    for li in range(int(num_layers)):
+        li_gelu_degree = _degree_for_layer(
+            gelu_degree, li, num_layers, default=4, name="gelu_degree",
+        )
+        li_attn_degree = _degree_for_layer(
+            attn_degree, li, num_layers, default=4, name="attn_degree",
+        )
+        for field_offset, (block_idx, field_name, kind) in enumerate(fields):
+            global_index = int(li * layer_dim + field_offset)
+            action_index = int(arr[global_index])
+            levels = int(NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[kind])
+            N = int(_block_default_N(block_idx, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree))
+            max_sf = None
+            if kind == "K":
+                value = int(K_LEVELS[action_index])
+            else:
+                max_sf = int(max_sfs.get(block_idx, field_name))
+                value = int(_snap_to_table(sf_from(action_index, max_sf, levels), N))
+            effective, note = _is_action_field_effective(
+                layer_idx=li,
+                block_idx=block_idx,
+                field_name=field_name,
+                attn_degree=li_attn_degree,
+                gelu_degree=li_gelu_degree,
+            )
+            effective_value = value if effective else None
+            operation = _operation_name(block_idx, field_name, kind)
+            block_label = f"layer{li}.block{block_idx}"
+            record = {
+                "global_index": global_index,
+                "layer": int(li),
+                "layer_label": f"layer{li}",
+                "block": f"block{int(block_idx)}",
+                "block_index": int(block_idx),
+                "block_label": block_label,
+                "field": str(field_name),
+                "kind": str(kind),
+                "distribution": _action_distribution_for_kind(kind),
+                "operation": operation,
+                "location": f"{block_label}.{field_name}",
+                "config_name": make_config_name(str(profile), block_idx, li),
+                "action_index": action_index,
+                "num_levels": levels,
+                "level_values": _field_level_values(kind=kind, levels=levels, max_sf=max_sf, N=N),
+                "value_type": _action_value_type_for_kind(kind),
+                "value": int(value),
+                "effective": bool(effective),
+                "effective_value": effective_value,
+                "N": N,
+                "max_sf": max_sf,
+                "gelu_degree": int(li_gelu_degree),
+                "attn_degree": int(li_attn_degree),
+            }
+            if note:
+                record["note"] = note
+            records.append(record)
+
+    first_idx = int(arr[-1])
+    first_value = int(_decode_first_input_sf(first_idx, max_sfs))
+    records.append({
+        "global_index": int(arr.size - 1),
+        "layer": 0,
+        "layer_label": "layer0",
+        "block": "first_input",
+        "block_index": None,
+        "block_label": "first_input",
+        "field": "first_input_sf",
+        "kind": "F",
+        "distribution": "fresh",
+        "operation": "first_input_fresh",
+        "location": "first_input.layer0",
+        "config_name": "first_input_L0",
+        "action_index": first_idx,
+        "num_levels": int(LEVELS_FIRST_INPUT),
+        "level_values": _field_level_values(
+            kind="F", levels=LEVELS_FIRST_INPUT, max_sf=30, N=BLB_FIRST_INPUT_N,
+        ),
+        "value_type": "scaling_factor",
+        "value": first_value,
+        "effective": True,
+        "effective_value": first_value,
+        "N": int(BLB_FIRST_INPUT_N),
+        "max_sf": 30,
+        "gelu_degree": None,
+        "attn_degree": None,
+    })
+
+    truncation_count = sum(1 for r in records if r.get("value_type") == "truncation_k")
+    sf_count = sum(1 for r in records if r.get("value_type") == "scaling_factor")
+    ineffective_count = sum(1 for r in records if not r.get("effective", True))
+    return {
+        "schema": "blb_action_description_v1",
+        "profile": str(profile),
+        "num_layers": int(num_layers),
+        "action_length": int(arr.size),
+        "k_levels": [int(v) for v in K_LEVELS],
+        "first_input_N": int(BLB_FIRST_INPUT_N),
+        "summary": {
+            "record_count": int(len(records)),
+            "scaling_factor_count": int(sf_count),
+            "truncation_count": int(truncation_count),
+            "ineffective_slot_count": int(ineffective_count),
+        },
+        "records": records,
+    }
 
 
 # ---------------------------------------------------------------------------
