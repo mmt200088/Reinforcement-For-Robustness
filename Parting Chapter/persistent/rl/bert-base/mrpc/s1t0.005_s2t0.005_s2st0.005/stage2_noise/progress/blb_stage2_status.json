@@ -4,11 +4,11 @@
   "run_basename": "s1t0.005_s2t0.005_s2st0.005",
   "profile": "mrpc",
   "total_episodes": 80000,
-  "completed_episodes": 720,
-  "ppo_update_count": 6,
+  "completed_episodes": 5400,
+  "ppo_update_count": 45,
   "phase": "训练中（PPO 单步 episode，共 80000 回合）",
-  "elapsed_sec": 70.633,
-  "last_update": "2026-05-07T19:03:04.515554",
+  "elapsed_sec": 514.69,
+  "last_update": "2026-05-07T19:10:28.571814",
   "recent_returns": [
     -273.0,
     -273.0,
@@ -1016,10 +1016,10 @@
     "typical_k_drop": 2.548728813559322
   },
   "ppo_last_metrics": {
-    "policy_loss": -0.05316332681104541,
-    "value_loss": 73815.333984375,
-    "entropy": 1075.8892059326172,
-    "clip_fraction": 0.0979352705180645,
+    "policy_loss": -0.07426928589120507,
+    "value_loss": 59217.59130859375,
+    "entropy": 1105.9922637939453,
+    "clip_fraction": 0.43805804708972573,
     "n_samples": 120
   },
   "extra": {
