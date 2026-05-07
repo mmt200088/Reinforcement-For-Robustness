@@ -202,8 +202,8 @@ BLB Stage-2 RL 的完整运行流程见 [`docs/BLB_stage2_rl_FULL_FLOW.md`](docs
 | `--stage2-manual-gelu JSON_ARRAY` | `run` | — | Stage-2 固定配置 manual GELU |
 | `--stage2-manual-softmax JSON_ARRAY` | `run` | — | Stage-2 固定配置 manual Softmax |
 | **Compare** | | | |
-| `--compare-config-mode persistent/direct` | `compare` | `persistent` | 默认从 `rl_results/persistent` 自动定位 RL/GA；`direct` 需要四个 JSON |
-| `--compare-persistent-root PATH` | `compare` | `rl_results/persistent` | persistent 模式的根目录 |
+| `--compare-config-mode persistent/direct` | `compare` | `persistent` | 默认从 `Parting Chapter/persistent` 自动定位 RL/GA；`direct` 需要四个 JSON |
+| `--compare-persistent-root PATH` | `compare` | `Parting Chapter/persistent` | persistent 模式的根目录 |
 | `--stage2-compare-repeats N` | `compare` | `1` | compare 的重复评估次数；推荐用 `--eval-repeat` |
 | `--rl-compare-stage1-json PATH` | `compare --compare-config-mode direct` | — | direct 模式 RL Stage-1 JSON |
 | `--rl-compare-stage2-json PATH` | `compare --compare-config-mode direct` | — | direct 模式 RL Stage-2 JSON |
@@ -810,8 +810,8 @@ v3-G 稳健 Advantage 归一化
 仅 confirm 优化	"v3_confirm_precheck_std": False + "use_v3_ppo_hparams": False（margin/penalty 随之失效）
 
 # 查看最近一次后台任务
-cat rl_results/LATEST_PID
-cat rl_results/LATEST_RUN_DIR
+cat "Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_PID"
+cat "Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_RUN_DIR"
 
 # 推荐优雅停止
-kill -INT "$(cat rl_results/LATEST_PID)"
+kill -INT "$(cat 'Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_PID')"

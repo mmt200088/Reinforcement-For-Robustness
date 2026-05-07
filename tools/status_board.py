@@ -16,10 +16,10 @@
     python tools/status_board.py --root /some/other/project
 
 扫描范围：
-- ``rl_results/persistent/rl/{model}/{dataset}/{slug}/metadata.json``   (单任务 RL)
-- ``rl_results/persistent/ga/{model}/{dataset}/{slug}/metadata.json``   (单任务 GA)
-- ``rl_results/persistent/general-rl/{model}/{taskset}/{slug}/...``     (通用策略)
-- ``rl_results/runs/compare/rl_vs_ga/{dataset}/{run_name}/meta/*.json`` (对比)
+- ``Parting Chapter/persistent/rl/{model}/{dataset}/{slug}/metadata.json``   (单任务 RL)
+- ``Parting Chapter/persistent/ga/{model}/{dataset}/{slug}/metadata.json``   (单任务 GA)
+- ``Parting Chapter/persistent/general-rl/{model}/{taskset}/{slug}/...``     (通用策略)
+- ``Parting Chapter/runs/compare/rl_vs_ga/{dataset}/{run_name}/meta/*.json`` (对比)
 - ``experiment_results/*/``                                             (一次性实验)
 
 本脚本**不修改**任何结果目录内容，只读。
@@ -56,7 +56,7 @@ _force_utf8_stdout()
 
 
 # 避免依赖整条训练 pipeline 的引入；直接用相对路径常量
-RL_RESULTS_ROOT = "rl_results"
+RL_RESULTS_ROOT = "Parting Chapter"
 PERSISTENT_SUBDIR = "persistent"
 RUNS_SUBDIR = "runs"
 COMPARE_SUBDIR_REL = os.path.join("compare", "rl_vs_ga")
@@ -1696,12 +1696,12 @@ def render_markdown(
             rows, config_blocks = _build_run_markdown_card(r)
             _append_markdown_card(lines, _run_title(r), rows, config_blocks=config_blocks)
 
-    _emit_run_section("1. 单任务 RL（rl_results/persistent/rl/）", rl_runs)
-    _emit_run_section("2. 单任务 GA（rl_results/persistent/ga/）", ga_runs)
-    _emit_run_section("3. 通用策略 General-RL（rl_results/persistent/general-rl/）", general_runs)
+    _emit_run_section("1. 单任务 RL（Parting Chapter/persistent/rl/）", rl_runs)
+    _emit_run_section("2. 单任务 GA（Parting Chapter/persistent/ga/）", ga_runs)
+    _emit_run_section("3. 通用策略 General-RL（Parting Chapter/persistent/general-rl/）", general_runs)
 
     # ---- compare ----
-    lines.append("## 4. RL vs GA 对比（rl_results/runs/compare/rl_vs_ga/）")
+    lines.append("## 4. RL vs GA 对比（Parting Chapter/runs/compare/rl_vs_ga/）")
     lines.append("")
     if not compare_runs:
         lines.append("_无记录_")

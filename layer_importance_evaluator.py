@@ -170,8 +170,8 @@ _SEARCH_LOG_HEADERS = {
 DEFAULT_STAGE1_STEP_INFO_FILE = "ppo_step_info.txt"
 DEFAULT_STAGE1_TRAINING_CURVE_FILE = "ppo_training_curve.png"
 DEFAULT_STAGE1_ENTROPY_CURVE_FILE = "ppo_entropy_curve.png"
-DEFAULT_FINAL_EVAL_DIR = os.path.join("rl_results", "final_eval")
-DEFAULT_NOISE_PROGRESS_DIR = os.path.join("rl_results", "noise_rl_progress")
+DEFAULT_FINAL_EVAL_DIR = os.path.join("Parting Chapter", "final_eval")
+DEFAULT_NOISE_PROGRESS_DIR = os.path.join("Parting Chapter", "noise_rl_progress")
 
 
 def ensure_parent_dir(path):

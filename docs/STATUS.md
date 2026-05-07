@@ -2,7 +2,7 @@
 
 > 聚焦任务进度、当前最优结果、最优配置，以及训练/终评阶段已经产出的测试摘要。
 
-## 1. 单任务 RL（rl_results/persistent/rl/）
+## 1. 单任务 RL（Parting Chapter/persistent/rl/）
 
 ### `bert-base / mrpc [s1t0.005_s2q0.05_s2sq0.…]`
 
@@ -58,7 +58,7 @@ wffn2 [14, 20, 18, 22, 14, 20, 14, 14, 18, 14, 16, 18]
 
 ---
 
-## 2. 单任务 GA（rl_results/persistent/ga/）
+## 2. 单任务 GA（Parting Chapter/persistent/ga/）
 
 ### `bert-base / mrpc [s1t0.005_s2q0.05_s2sq0.…]`
 
@@ -88,11 +88,11 @@ wffn2 [20, 14, 20, 16, 20, 14, 18, 18, 14, 18, 18, 14]
 
 ---
 
-## 3. 通用策略 General-RL（rl_results/persistent/general-rl/）
+## 3. 通用策略 General-RL（Parting Chapter/persistent/general-rl/）
 
 _无记录_
 
-## 4. RL vs GA 对比（rl_results/runs/compare/rl_vs_ga/）
+## 4. RL vs GA 对比（Parting Chapter/runs/compare/rl_vs_ga/）
 
 ### `mrpc / comp_1`
 

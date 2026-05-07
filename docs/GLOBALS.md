@@ -37,7 +37,7 @@
 
 | 变量 | 值 | 真相来源 | 还出现在 |
 |---|---|---|---|
-| `RL_RESULTS_ROOT` | `rl_results` | `layer_importance_evaluator.py:160-162`, `noise_rl_module_v2.py:191`, `final_evaluation_module.py:36`, `rl_tune_general.py:17` 注释 | `rl_ga_compare_runner.py:2379` (`--compare-persistent-root rl_results/persistent`) |
+| `RL_RESULTS_ROOT` | `Parting Chapter` | `layer_importance_evaluator.py`, `noise_rl_module_v2.py`, `final_evaluation_module.py`, `rl_tune_general.py` 注释 | `rl_ga_compare_runner.py` (`--compare-persistent-root Parting Chapter/persistent`) |
 | `EXPERIMENT_RESULTS_ROOT` | `experiment_results` | `experiment_noise_scaling_sweep.py:279` | `experiment_block*.py`（隐含） |
 | `GLUE_SUBMISSION_ROOT` | `glue_submission` | `generate_glue_submission.py:955-964` | README |
 | `GLUE_BASELINE_ROOT` / `GLUE_APPROX_ROOT` | `glue_baseline` / `glue_approx` | `generate_glue_submission.py:82-85` | README |
@@ -275,7 +275,7 @@ TARGET_MODULES_LITERAL = '["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"]
 
 `llama_7B_LayerImportance.sh`（81KB）和 `run_*.sh` 里大量写死了：
 - 根目录下的 Python 入口文件名
-- `rl_results/persistent/...` 路径
+- `Parting Chapter/persistent/...` 路径
 - JSON 配置文件名
 
 搬动任何一个 Python 文件都必须同步改这些脚本。
@@ -287,9 +287,9 @@ TARGET_MODULES_LITERAL = '["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"]
 **已存在于磁盘上的目录名** = 也是一种"全局部件"：改了命名约定，旧 run 识别不了。
 
 目前已固化的命名：
-- `rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/` — slug 拼接规则
-- `rl_results/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/` — 对应 GA
-- `rl_results/runs/compare/rl_vs_ga/mrpc/comp_1/`、`comp_2/`、
+- `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/` — slug 拼接规则
+- `Parting Chapter/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.05_s2st0.05/` — 对应 GA
+- `Parting Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/`、`comp_2/`、
   `20260413_213848_pid1143993/` — 自增编号 OR 时间戳+PID
 - `rl_results/第二阶段强化学习测试阶段/` — **中文目录名**（历史遗留，未来建议迁到英文）
 

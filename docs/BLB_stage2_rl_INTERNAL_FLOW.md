@@ -76,7 +76,7 @@ shell 入口会做这些事：
 普通 RL 的持久化目录由 shell 决定，形如：
 
 ```text
-rl_results/persistent/rl/{model_type}/{dataset}/s1t{stage1_tol}_s2t{stage2_limit_tol}_s2st{stage2_stability_tol}/
+Parting Chapter/persistent/rl/{model_type}/{dataset}/s1t{stage1_tol}_s2t{stage2_limit_tol}_s2st{stage2_stability_tol}/
 ```
 
 目录名不包含 `stage2_rl_variant`。BLB 和 legacy checkpoint 文件名不同，所以技术上不会互相加载，但实验管理上建议同一个持久化目录只跑一种 Stage-2 RL 变体。

@@ -203,6 +203,105 @@ class BLBStage2Env:
             return float(default)
         return float(arr.mean())
 
+    @staticmethod
+    def _attr_path_or_none(root, path: str):
+        obj = root
+        for part in str(path).split("."):
+            if not part:
+                continue
+            if not hasattr(obj, part):
+                return None
+            obj = getattr(obj, part)
+        return obj
+
+    @staticmethod
+    def _degree_values_equal(left, right) -> bool:
+        return np.array_equal(
+            np.asarray(left, dtype=int).reshape(-1),
+            np.asarray(right, dtype=int).reshape(-1),
+        )
+
+    def _resolve_transformer_layers(self):
+        raw = str(self.layers_attribute or "").strip()
+        if not raw:
+            return None
+
+        paths: List[str] = [raw]
+        if raw.startswith("model."):
+            paths.append(raw[len("model."):])
+        else:
+            paths.append("model." + raw)
+
+        unique_paths: List[str] = []
+        for path in paths:
+            if path not in unique_paths:
+                unique_paths.append(path)
+
+        for root in (self.model, self.handler):
+            for path in unique_paths:
+                layers = self._attr_path_or_none(root, path)
+                if layers is not None:
+                    return layers
+        return None
+
+    def _read_model_degree_vectors(self) -> Tuple[Optional[List[int]], Optional[List[int]]]:
+        layers = self._resolve_transformer_layers()
+        if layers is None:
+            return None, None
+        try:
+            layer_list = list(layers)
+        except TypeError:
+            return None, None
+        if len(layer_list) < self.num_layers:
+            return None, None
+
+        attn_degrees: List[int] = []
+        gelu_degrees: List[int] = []
+        for layer in layer_list[:self.num_layers]:
+            attn_self = self._attr_path_or_none(layer, "attention.self")
+            attn_degree = getattr(attn_self, "degree", None)
+            if attn_degree is not None:
+                try:
+                    attn_degrees.append(int(attn_degree))
+                except Exception:
+                    attn_degrees = []
+
+            gelu_module = self._attr_path_or_none(layer, "intermediate.intermediate_act_fn")
+            gelu_degree = getattr(gelu_module, "degree", None)
+            if gelu_degree is not None:
+                try:
+                    gelu_degrees.append(int(gelu_degree))
+                except Exception:
+                    gelu_degrees = []
+
+        if len(attn_degrees) != self.num_layers:
+            attn_degrees = None
+        if len(gelu_degrees) != self.num_layers:
+            gelu_degrees = None
+        return attn_degrees, gelu_degrees
+
+    def sync_degree_vectors_from_model(self) -> Dict[str, List[int]]:
+        """Use the installed polynomial modules as the source of truth for degrees."""
+        updates: Dict[str, List[int]] = {}
+        try:
+            attn_degrees, gelu_degrees = self._read_model_degree_vectors()
+        except Exception:
+            return updates
+
+        if attn_degrees is not None:
+            normalized = self._normalize_degree_vector(attn_degrees, default=4, name="attn_degree")
+            if not self._degree_values_equal(self.attn_degree, normalized):
+                self.attn_degree = normalized
+                self.attn_degree_state = self._degree_state_scalar(self.attn_degree, default=4)
+                updates["attn_degree"] = list(attn_degrees)
+        if gelu_degrees is not None:
+            normalized = self._normalize_degree_vector(gelu_degrees, default=4, name="gelu_degree")
+            if not self._degree_values_equal(self.gelu_degree, normalized):
+                self.gelu_degree = normalized
+                self.gelu_degree_state = self._degree_state_scalar(self.gelu_degree, default=4)
+                updates["gelu_degree"] = list(gelu_degrees)
+        return updates
+
     # ------------------------------------------------------------------
     # gym-like 接口
     # ------------------------------------------------------------------
@@ -245,6 +344,7 @@ class BLBStage2Env:
             np.random.seed(int(seed) % (2**32))
             random.seed(int(seed))
 
+        self.sync_degree_vectors_from_model()
         return self._build_state()
 
     def step(
@@ -258,6 +358,7 @@ class BLBStage2Env:
                 f"action_vec dim {action_vec.size} != expected {self.total_action_dim}"
             )
 
+        degree_sync = self.sync_degree_vectors_from_model()
         decoded = action_vector_to_cfgs(
             action_vec=action_vec,
             max_sfs=self.max_sfs,
@@ -319,6 +420,8 @@ class BLBStage2Env:
             "opt_outputs_keys": list(opt_outputs.keys()),
             "invalid": any_invalid,
         }
+        if degree_sync:
+            info["model_degree_sync"] = degree_sync
         if any_invalid:
             metrics = EpisodeMetrics(
                 loss_mean=float("inf"),
@@ -533,6 +636,7 @@ def estimate_baseline_cost_stats(
       * 跑若干 random action 估计典型 ``bits_drop`` / ``fusion_count`` / ``k_drop``，
         反推权重。
     """
+    env.sync_degree_vectors_from_model()
     baseline_action = make_all_max_action_vector(env.num_layers)
     decoded = action_vector_to_cfgs(
         action_vec=baseline_action,

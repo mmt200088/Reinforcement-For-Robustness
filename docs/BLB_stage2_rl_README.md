@@ -44,7 +44,7 @@ random 对照组数量默认为 0，只保留 Baseline、Optimized/max 与 Stage
 常见查看方式：
 
 ```bash
-tail -f rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/logs/blb_stage2_rl.log
+tail -f "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/logs/blb_stage2_rl.log"
 ```
 
 ## BLB 与旧版切换

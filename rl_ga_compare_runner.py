@@ -2296,7 +2296,7 @@ def parse_args() -> argparse.Namespace:
         choices=("direct", "persistent"),
         default="direct",
     )
-    parser.add_argument("--compare-persistent-root", default="rl_results/persistent")
+    parser.add_argument("--compare-persistent-root", default="Parting Chapter/persistent")
     parser.add_argument("--rl-compare-stage1-json", default="")
     parser.add_argument("--rl-compare-stage2-json", default="")
     parser.add_argument("--ga-compare-stage1-json", default="")

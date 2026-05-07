@@ -144,7 +144,7 @@ GA / Greedy：
   --fresh-start                           通用 RL 训练模式同样支持
 
 持久化目录结构（general-rl train 自动管理）：
-  rl_results/persistent/general-rl/{model_type}/{taskset}/{accuracy_slug}/
+  Parting Chapter/persistent/general-rl/{model_type}/{taskset}/{accuracy_slug}/
   - 同一数据集 + 同一准确度区间 → 同一目录（自动续训练）
   - 不同区间 → 不同目录
   - accuracy_slug 示例：range_0.50pct_2.00pct / discrete_0.50pct_1.00pct / default
@@ -170,7 +170,7 @@ GA / Greedy：
   bash llama_7B_LayerImportance.sh compare --dataset mrpc
   bash llama_7B_LayerImportance.sh compare --dataset mrpc --compare-config-mode direct --rl-compare-stage1-json glue_final_configs_best_ppo.json --rl-compare-stage2-json glue_final_configs_best_ppo.json --ga-compare-stage1-json glue_final_configs_best_genetic.json --ga-compare-stage2-json glue_final_configs_best_genetic.json
   bash llama_7B_LayerImportance.sh general train --dataset mrpc --general-rl-tasks mrpc,cola,rte,stsb --fresh
-  bash llama_7B_LayerImportance.sh general search --dataset mrpc --general-policy-dir rl_results/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default
+  bash llama_7B_LayerImportance.sh general search --dataset mrpc --general-policy-dir "Parting Chapter/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default"
 EOF
 }
 
@@ -402,6 +402,8 @@ GENERAL_SKIP_STAGE2="false"; S_GENERAL_SKIP_STAGE2="false"
 GENERAL_STAGE1_CONFIG_JSON=""; S_GENERAL_STAGE1_CONFIG_JSON="false"
 GENERAL_ACCURACY_TOLERANCES=""; S_GENERAL_ACCURACY_TOLERANCES="false"
 GENERAL_ACCURACY_TOLERANCE_RANGE=""; S_GENERAL_ACCURACY_TOLERANCE_RANGE="false"
+PERSISTENT_ROOT="Parting Chapter/persistent"
+RUNS_ROOT="Parting Chapter/runs"
 RL_COMPARE_SKIP_STAGE1_SEARCH="false"; S_RL_COMPARE_SKIP_STAGE1_SEARCH="false"
 GA_COMPARE_SKIP_STAGE1_SEARCH="false"; S_GA_COMPARE_SKIP_STAGE1_SEARCH="false"
 RL_COMPARE_FINAL_EVAL_SOURCE="search"; S_RL_COMPARE_FINAL_EVAL_SOURCE="false"
@@ -411,7 +413,7 @@ GA_COMPARE_FINAL_EVAL_CONFIG=""; S_GA_COMPARE_FINAL_EVAL_CONFIG="false"
 RL_COMPARE_SKIP_NOISE_SEARCH="false"; S_RL_COMPARE_SKIP_NOISE_SEARCH="false"
 GA_COMPARE_SKIP_NOISE_SEARCH="false"; S_GA_COMPARE_SKIP_NOISE_SEARCH="false"
 COMPARE_CONFIG_MODE="persistent"; S_COMPARE_CONFIG_MODE="false"
-COMPARE_PERSISTENT_ROOT="rl_results/persistent"; S_COMPARE_PERSISTENT_ROOT="false"
+COMPARE_PERSISTENT_ROOT="$PERSISTENT_ROOT"; S_COMPARE_PERSISTENT_ROOT="false"
 RL_COMPARE_STAGE1_JSON=""; S_RL_COMPARE_STAGE1_JSON="false"
 RL_COMPARE_STAGE2_JSON=""; S_RL_COMPARE_STAGE2_JSON="false"
 GA_COMPARE_STAGE1_JSON=""; S_GA_COMPARE_STAGE1_JSON="false"
@@ -947,7 +949,7 @@ else
   # rl/ga 模式下 --resume-from 已废弃，改用持久化目录自动续训练
   [ "$S_RESUME_FROM" = "false" ] || [ "$FINAL_EVAL_ONLY" = "true" ] || err "rl / ga / greedy 训练模式已改用持久化目录自动续训练，不再支持手动 --resume-from。续训练时直接运行相同参数即可；首次运行请加 --fresh-start。--mode eval 可使用 --resume-from 指向已有结果目录。"
   _EARLY_CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"
-  _EARLY_PERSISTENT_DIR="rl_results/persistent/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${_EARLY_CONSTRAINT_SLUG}"
+  _EARLY_PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${_EARLY_CONSTRAINT_SLUG}"
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] || err "rl 模式不使用 GA 代数参数，请移除 --stage1-search-generations / --stage2-search-generations。"
     is_pos_int "$STAGE1_EPISODES" || err "--stage1-search-episodes 必须是正整数"
@@ -1073,7 +1075,7 @@ PERSISTENT_DIR=""
 if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARCH_ALGORITHM" = "greedy" ]; then
   # RL / GA / Greedy 使用持久化目录：基于(算法、模型、数据集、约束参数)确定性生成
   USE_PERSISTENT="true"
-  PERSISTENT_DIR="rl_results/persistent/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${CONSTRAINT_SLUG}"
+  PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${CONSTRAINT_SLUG}"
 
   # 判断是否跳过了所有搜索阶段（eval-only 模式）
   _ALL_SEARCH_SKIPPED="false"
@@ -1195,7 +1197,7 @@ elif [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
     fi
     # ---- 持久化目录 ----
     USE_PERSISTENT="true"
-    PERSISTENT_DIR="rl_results/persistent/general-rl/${MODEL_TYPE}/${GENERAL_TASKSET_ID}/${GENERAL_ACCURACY_SLUG}"
+    PERSISTENT_DIR="${PERSISTENT_ROOT}/general-rl/${MODEL_TYPE}/${GENERAL_TASKSET_ID}/${GENERAL_ACCURACY_SLUG}"
     if [ "$FRESH_START" = "true" ]; then
       if [ -d "$PERSISTENT_DIR" ]; then
         echo "警告：--fresh-start 指定，正在清除已有持久化目录：$PERSISTENT_DIR"
@@ -1215,13 +1217,13 @@ elif [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
     LATEST_BASE_DIR="$RUN_GROUP_DIR"
   else
     # search 模式：使用时间戳目录存放搜索结果
-    RUN_GROUP_DIR="rl_results/runs/general_rl/search/${DATASET}"
+    RUN_GROUP_DIR="${RUNS_ROOT}/general_rl/search/${DATASET}"
     RUN_ROOT="${RUN_GROUP_DIR}/${RUN_ID}"
     LATEST_BASE_DIR="$RUN_GROUP_DIR"
   fi
 else
   # rl-and-ga-compare：对比实验使用时间戳目录
-  RUN_GROUP_DIR="rl_results/runs/compare/rl_vs_ga/${DATASET}"
+  RUN_GROUP_DIR="${RUNS_ROOT}/compare/rl_vs_ga/${DATASET}"
   RUN_ROOT="${RUN_GROUP_DIR}/${RUN_ID}"
   LATEST_BASE_DIR="$RUN_GROUP_DIR"
 fi

@@ -117,10 +117,10 @@ Local_program/
 
 ## 4. 结果目录命名规则
 
-### 4.1 持久化（可续）训练：`rl_results/persistent/`
+### 4.1 持久化（可续）训练：`Parting Chapter/persistent/`
 
 ```
-rl_results/persistent/{algorithm}/{model_type}/{dataset}/{accuracy_slug}/
+Parting Chapter/persistent/{algorithm}/{model_type}/{dataset}/{accuracy_slug}/
   metadata.json           # algorithm/model/dataset + stage_status 字典
   stage1/pruning_search_log.txt
   stage2_noise/{details,progress}/
@@ -132,10 +132,10 @@ rl_results/persistent/{algorithm}/{model_type}/{dataset}/{accuracy_slug}/
 - 同一 slug → 同一目录 → 自动续训练
 - 每个 dataset 目录下还有 `LATEST_PID` / `LATEST_RUN_DIR` 两个标签文件，指向最近一次运行
 
-### 4.2 一次性对比：`rl_results/runs/compare/rl_vs_ga/`
+### 4.2 一次性对比：`Parting Chapter/runs/compare/rl_vs_ga/`
 
 ```
-rl_results/runs/compare/rl_vs_ga/{dataset}/
+Parting Chapter/runs/compare/rl_vs_ga/{dataset}/
   LATEST_COMPARE_PID
   LATEST_COMPARE_RUN_DIR
   comp_1/, comp_2/, ..., 20260413_213848_pid1143993/

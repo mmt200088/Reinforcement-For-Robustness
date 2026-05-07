@@ -60,13 +60,13 @@ bash llama_7B_LayerImportance.sh eval --preset mrpc-blb-max-final-eval
 普通单任务 RL 的持久化目录形如：
 
 ```text
-rl_results/persistent/rl/{model_type}/{dataset}/s1t{stage1_tol}_s2t{stage2_limit_tol}_s2st{stage2_stability_tol}/
+Parting Chapter/persistent/rl/{model_type}/{dataset}/s1t{stage1_tol}_s2t{stage2_limit_tol}_s2st{stage2_stability_tol}/
 ```
 
 MRPC preset 默认对应：
 
 ```text
-rl_results/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/
+Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/
 ```
 
 这个目录是自动续训练的锚点。只要下面这些关键信息不变，就会回到同一个目录：

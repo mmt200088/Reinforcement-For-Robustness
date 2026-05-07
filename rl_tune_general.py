@@ -6,7 +6,7 @@ rl_tune_general.py — 通用 RL 策略的命令行入口脚本
   search  利用已训练的通用策略做离线 rollout 搜索最优配置（网络冻结不变）
 
 持久化目录结构:
-  rl_results/persistent/general-rl/{model_type}/{taskset}/{accuracy_slug}/
+  Parting Chapter/persistent/general-rl/{model_type}/{taskset}/{accuracy_slug}/
   - 同一数据集 + 同一准确度区间 → 同一目录（自动续训练）
   - 不同区间 → 不同目录
 
@@ -14,7 +14,7 @@ rl_tune_general.py — 通用 RL 策略的命令行入口脚本
   # 训练（输出到持久化目录，可续训练）
   python rl_tune_general.py train --model_type bert-base --data_path mrpc,cola,rte,stsb ...
   # 搜索（手动指定持久化目录或策略文件路径）
-  python rl_tune_general.py search --data_path mrpc --general_policy_dir rl_results/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default
+  python rl_tune_general.py search --data_path mrpc --general_policy_dir "Parting Chapter/persistent/general-rl/bert-base/cola_mrpc_rte_stsb/default"
   python rl_tune_general.py search --data_path mrpc --general_stage1_policy path/to/policy.pt
 """
 

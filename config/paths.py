@@ -20,7 +20,7 @@ import os
 # 结果根目录
 # ---------------------------------------------------------------------------
 
-RL_RESULTS_ROOT: str = "rl_results"
+RL_RESULTS_ROOT: str = "Parting Chapter"
 """所有 RL / GA / general-rl / compare 的结果统一放在这下面。"""
 
 EXPERIMENT_ROOT: str = "experiment"
@@ -35,18 +35,18 @@ GLUE_APPROX_ROOT: str = "glue_approx"
 
 
 # ---------------------------------------------------------------------------
-# rl_results 下的二级目录
+# Parting Chapter 下的二级目录
 # ---------------------------------------------------------------------------
 
 PERSISTENT_SUBDIR: str = "persistent"
-"""``rl_results/persistent/{rl,ga,general-rl}/...`` —— 跨运行可续的训练结果。"""
+"""``Parting Chapter/persistent/{rl,ga,general-rl}/...`` —— 跨运行可续的训练结果。"""
 
 RUNS_SUBDIR: str = "runs"
-"""``rl_results/runs/compare/rl_vs_ga/...`` —— 一次性运行（compare 等）。"""
+"""``Parting Chapter/runs/compare/rl_vs_ga/...`` —— 一次性运行（compare 等）。"""
 
 COMPARE_SUBDIR: str = "compare"
 COMPARE_RL_VS_GA_SUBDIR: str = os.path.join(COMPARE_SUBDIR, "rl_vs_ga")
-"""在 ``rl_results/runs/`` 下的对比实验目录名。"""
+"""在 ``Parting Chapter/runs/`` 下的对比实验目录名。"""
 
 NOISE_RL_PROGRESS_SUBDIR: str = os.path.join(RL_RESULTS_ROOT, "noise_rl_progress")
 """Stage-2 噪声 RL 的训练过程产物（会被 ``rl_tune_genetic`` / ``noise_rl_module_v2`` 使用）。"""

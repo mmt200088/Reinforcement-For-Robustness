@@ -197,7 +197,7 @@ NOISE_STAGE_PROGRESS_SAVE_INTERVAL = 10000
 # checkpoint 保存间隔（以 PPO 更新次数计），确保始终在 PPO 边界保存
 # 默认值 ≈ NOISE_STAGE_PROGRESS_SAVE_INTERVAL / PPO_UPDATE_INTERVAL
 NOISE_STAGE_CHECKPOINT_PPO_INTERVAL = 59
-NOISE_STAGE_PROGRESS_DIR = os.path.join("rl_results", "noise_rl_progress")
+NOISE_STAGE_PROGRESS_DIR = os.path.join("Parting Chapter", "noise_rl_progress")
 
 # 状态常量
 NOISE_STAGE_WEIGHT_TOL = 1e-6
