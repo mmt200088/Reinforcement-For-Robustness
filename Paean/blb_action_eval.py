@@ -235,13 +235,13 @@ class BLBActionFinalEvaluationModule:
 
     def _resolve_base_action(self, search_best_stage2):
         if isinstance(search_best_stage2, dict):
-            raw = (
-                search_best_stage2.get("blb_v3_best_action_vec")
-                or search_best_stage2.get("best_action_vec")
-                or search_best_stage2.get("best_action")
-            )
-            if raw is not None:
-                return np.asarray(raw, dtype=int)
+            for key in ("blb_v3_best_action_vec", "best_action_vec", "best_action"):
+                raw = search_best_stage2.get(key)
+                if raw is None:
+                    continue
+                arr = np.asarray(raw, dtype=int)
+                if arr.size > 0:
+                    return arr
         return None
 
     def _evaluate_clean_baseline(self, *, baseline_stage1_gelu, baseline_stage1_softmax):

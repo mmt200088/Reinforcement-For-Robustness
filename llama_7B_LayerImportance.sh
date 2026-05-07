@@ -1091,7 +1091,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARC
       _HAS_STAGE1_DATA="false"
       _HAS_STAGE2_DATA="false"
       [ -d "${PERSISTENT_DIR}/stage1" ] && _HAS_STAGE1_DATA="true"
-      [ -d "${PERSISTENT_DIR}/stage2_noise" ] && _HAS_STAGE2_DATA="true"
+      { [ -d "${PERSISTENT_DIR}/stage2_noise" ] || [ -d "${PERSISTENT_DIR}/blb_stage2" ]; } && _HAS_STAGE2_DATA="true"
       if [ "$SKIP_STAGE1_SEARCH" = "true" ] && [ "$_HAS_STAGE1_DATA" = "true" ]; then
         echo "⚠ 警告：--fresh-start 将清除已有的 Stage-1 搜索结果，但当前 --skip-stage1-search 跳过了 Stage-1。"
         echo "  如果您只想重做 Stage-2 搜索，请不要使用 --fresh-start（直接运行即可自动续训练）。"
@@ -1134,9 +1134,10 @@ with open(p, 'w') as f: json.dump(m, f, indent=2)
 " 2>/dev/null || true
       fi
     fi
-    if [ "$FRESH_STAGE2" = "true" ] && [ -d "${PERSISTENT_DIR}/stage2_noise" ]; then
+    if [ "$FRESH_STAGE2" = "true" ] && { [ -d "${PERSISTENT_DIR}/stage2_noise" ] || [ -d "${PERSISTENT_DIR}/blb_stage2" ]; }; then
       echo "[单阶段重置] --fresh-stage2 指定，正在清除 Stage-2 数据：${PERSISTENT_DIR}/stage2_noise"
       rm -rf "${PERSISTENT_DIR}/stage2_noise"
+      rm -rf "${PERSISTENT_DIR}/blb_stage2"
       rm -rf "${PERSISTENT_DIR}/stage2_noise_final_eval"
       if command -v python3 &>/dev/null; then
         python3 -c "

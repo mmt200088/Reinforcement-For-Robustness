@@ -694,6 +694,8 @@ BLB checkpoint 在：
 | `blb_stage2_rl_checkpoint_live.pt` | 周期保存、优雅停止保存 |
 | `blb_stage2_rl_checkpoint_final.pt` | 正常训练结束 |
 | `blb_stage2_best_cfg.pkl` | 正常训练结束且存在 best action 时 |
+| `blb_stage2_status.json` | 训练期间持续刷新，供 live tail 查看 |
+| `blb_stage2_episode_trace.csv` | 每个 PPO rollout 的 reward/priority/invalid/anchor/PPO 指标诊断 |
 
 ### 13.2 checkpoint 内容
 

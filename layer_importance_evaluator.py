@@ -4314,11 +4314,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                         BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
                         BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
                 ):
-                    path = os.path.join(
-                        self.resume_run_dir, "stage2_noise", "progress", filename,
-                    )
-                    if os.path.isfile(path):
-                        return path
+                    for progress_dir_name in ("stage2_noise", "blb_stage2"):
+                        path = os.path.join(
+                            self.resume_run_dir, progress_dir_name, "progress", filename,
+                        )
+                        if os.path.isfile(path):
+                            return path
             except Exception:
                 pass
         path = os.path.join(
@@ -4352,6 +4353,56 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         stage1_best = None
         stage2_best = None
+        stage2_variant = str(getattr(self, "stage2_rl_variant", "blb_v3") or "blb_v3").lower()
+        prefer_blb_stage2 = stage2_variant in ("blb_v3", "blb", "v3", "blb_stage2_rl")
+
+        def _try_load_blb_stage2_best_from_dir(_dir):
+            try:
+                from blb_stage2_rl.runner import (
+                    BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+                    BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
+                )
+                for _blb_name in (
+                        BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+                        BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
+                ):
+                    blb_path = ""
+                    for _progress_dir_name in ("stage2_noise", "blb_stage2"):
+                        _candidate = os.path.join(
+                            _dir, _progress_dir_name, "progress", _blb_name,
+                        )
+                        if os.path.isfile(_candidate):
+                            blb_path = _candidate
+                            break
+                    if not blb_path:
+                        continue
+                    out = {
+                        key: np.asarray(value, dtype=int)
+                        for key, value in self._get_max_noise_configuration().items()
+                        if isinstance(key, str) and key.endswith("scaling_factors")
+                    }
+                    try:
+                        blb_ckpt = torch.load(blb_path, map_location="cpu", weights_only=False)
+                        best_action = blb_ckpt.get("best_action")
+                        if best_action is None:
+                            best_action = blb_ckpt.get("blb_v3_best_action_vec")
+                        if best_action is not None:
+                            out["blb_v3_best_action_vec"] = np.asarray(best_action, dtype=int)
+                            out["blb_v3_profile"] = str(
+                                blb_ckpt.get("profile")
+                                or getattr(self, "dataset_key", "")
+                                or ""
+                            )
+                    except Exception:
+                        pass
+                    self.log(
+                        f"[final_eval_only] 检测到 BLB Stage-2 checkpoint，"
+                        f"使用 legacy baseline 兼容配置: {blb_path}"
+                    )
+                    return out
+            except Exception as exc:
+                self.log(f"[final_eval_only][警告] 读取 BLB Stage-2 checkpoint 失败: {exc}")
+            return None
 
         for _dir in candidate_dirs:
             if stage1_best is not None and stage2_best is not None:
@@ -4373,6 +4424,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                         self.log(f"[final_eval_only][警告] 读取 {s1_path} 失败: {exc}")
 
             if stage2_best is None:
+                if prefer_blb_stage2:
+                    stage2_best = _try_load_blb_stage2_best_from_dir(_dir)
+                if stage2_best is not None:
+                    continue
                 s2_path = os.path.join(
                     _dir, "stage2_noise", "progress", NOISE_STAGE_CHECKPOINT_FILENAME,
                 )
@@ -4406,10 +4461,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                                 BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
                                 BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
                         ):
-                            blb_path = os.path.join(
-                                _dir, "stage2_noise", "progress", _blb_name,
-                            )
-                            if os.path.isfile(blb_path):
+                            blb_path = ""
+                            for _progress_dir_name in ("stage2_noise", "blb_stage2"):
+                                _candidate = os.path.join(
+                                    _dir, _progress_dir_name, "progress", _blb_name,
+                                )
+                                if os.path.isfile(_candidate):
+                                    blb_path = _candidate
+                                    break
+                            if blb_path:
                                 # BLB v3 的真实最优配置是 block cfg/action vec，不是 legacy
                                 # *_scaling_factors。final-eval 的兼容输入仍使用 max-noise baseline。
                                 stage2_best = {
@@ -4421,10 +4481,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                                     blb_ckpt = torch.load(
                                         blb_path, map_location="cpu", weights_only=False
                                     )
-                                    best_action = (
-                                        blb_ckpt.get("best_action")
-                                        or blb_ckpt.get("blb_v3_best_action_vec")
-                                    )
+                                    best_action = blb_ckpt.get("best_action")
+                                    if best_action is None:
+                                        best_action = blb_ckpt.get("blb_v3_best_action_vec")
                                     if best_action is not None:
                                         stage2_best["blb_v3_best_action_vec"] = np.asarray(
                                             best_action, dtype=int

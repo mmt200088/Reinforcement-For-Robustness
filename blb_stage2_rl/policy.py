@@ -84,6 +84,71 @@ class BLBStage2Policy(nn.Module):
 
         self._layer_idx_buf: torch.Tensor
 
+    @staticmethod
+    def _last_linear(module: nn.Module) -> nn.Linear:
+        if isinstance(module, nn.Linear):
+            return module
+        if isinstance(module, nn.Sequential):
+            for child in reversed(module):
+                if isinstance(child, nn.Linear):
+                    return child
+        raise TypeError(f"cannot find final Linear layer in {type(module).__name__}")
+
+    def apply_preferred_action_bias(
+            self,
+            preferred_action: Sequence[int],
+            *,
+            gain: float = 1.2,
+            clear_existing: bool = True,
+            ) -> None:
+        """Bias every categorical head toward a concrete action vector.
+
+        BLB Stage-2 has a very large MultiDiscrete action space.  A uniform cold
+        start almost never samples the safe all-max baseline, so the first PPO
+        rollouts can collapse into identical hard penalties.  This method keeps
+        the architecture unchanged while making the initial policy start near a
+        caller-provided action, usually ``make_all_max_action_vector``.
+        """
+        arr = np.asarray(preferred_action, dtype=int).reshape(-1)
+        per_layer_width = len(self.per_layer_dims)
+        expected = int(self.num_layers) * per_layer_width + 1
+        if arr.size != expected:
+            raise ValueError(
+                f"preferred_action length {arr.size} != expected {expected}"
+            )
+
+        layer_linear = self._last_linear(self.layer_head)
+        with torch.no_grad():
+            if layer_linear.bias is None or self.first_input_head.bias is None:
+                return
+            offsets = np.cumsum([0] + self.per_layer_dims[:-1]).astype(int)
+            for dim_idx, (offset, dim) in enumerate(zip(offsets, self.per_layer_dims)):
+                per_layer_values = [
+                    int(arr[layer_idx * per_layer_width + dim_idx])
+                    for layer_idx in range(int(self.num_layers))
+                ]
+                values, counts = np.unique(per_layer_values, return_counts=True)
+                preferred_idx = int(values[int(np.argmax(counts))])
+                if preferred_idx < 0 or preferred_idx >= int(dim):
+                    raise ValueError(
+                        f"preferred action index {preferred_idx} out of range for dim {dim}"
+                    )
+                start = int(offset)
+                end = start + int(dim)
+                if clear_existing:
+                    layer_linear.bias[start:end].zero_()
+                layer_linear.bias[start + preferred_idx] += float(gain)
+
+            first_idx = int(arr[-1])
+            if first_idx < 0 or first_idx >= int(self.first_input_levels):
+                raise ValueError(
+                    f"preferred first_input index {first_idx} out of range "
+                    f"for dim {self.first_input_levels}"
+                )
+            if clear_existing:
+                self.first_input_head.bias.zero_()
+            self.first_input_head.bias[first_idx] += float(gain)
+
     def _layer_indices(self, batch: int, device: torch.device) -> torch.Tensor:
         return torch.arange(self.num_layers, device=device).unsqueeze(0).expand(batch, -1)
 

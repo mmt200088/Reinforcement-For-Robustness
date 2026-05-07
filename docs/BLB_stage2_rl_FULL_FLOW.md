@@ -97,7 +97,9 @@ Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/
 │   ├── progress/
 │   │   ├── blb_stage2_rl_checkpoint_live.pt
 │   │   ├── blb_stage2_rl_checkpoint_final.pt
-│   │   └── blb_stage2_best_cfg.pkl
+│   │   ├── blb_stage2_best_cfg.pkl
+│   │   ├── blb_stage2_status.json
+│   │   └── blb_stage2_episode_trace.csv
 │   └── ...
 └── stage2_noise_final_eval/
 ```
@@ -111,6 +113,8 @@ Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/
 | `blb_stage2_rl_checkpoint_live.pt` | 训练中的可续训 checkpoint，优雅停止和周期保存都会更新它 |
 | `blb_stage2_rl_checkpoint_final.pt` | 正常完成后的最终 checkpoint；resume 时优先使用 |
 | `blb_stage2_best_cfg.pkl` | 当前最优 BLB 配置和 action vector，给后续分析使用 |
+| `blb_stage2_status.json` | live 状态板，包含当前阶段、best、baseline 和 warmstart 信息 |
+| `blb_stage2_episode_trace.csv` | 每个 PPO rollout 的结构化诊断，记录 reward 分布、priority 计数、invalid 计数、anchor 计数和 PPO 指标 |
 | `STOP_RL` | 手动创建的停止标志；不是默认存在的文件 |
 
 ## 5. BLB Stage-2 RL 的训练流程
@@ -185,6 +189,8 @@ profile，可以新增对应 JSON，让同一套训练流程使用更贴近真�
 
 `--stage2-limit-tolerance` 控制指标能退让多少，`--stage2-stability-tolerance` 控制稳定性波动能放宽多少。
 BLB 的 reward 会优先尊重这些硬约束：一个成本很低但精度崩掉的配置，不应该被当成好配置。
+
+为了避免巨大动作空间的 uniform cold start 一开始全采到不可用配置，BLB v3 会先对 all-max BLB baseline action 做一次 preflight 评估，并把 policy 初始 logits 偏置到这份 action。首次训练的第一个 PPO rollout 默认会有一部分 episode 使用这份 baseline action 作为 anchor，其余 episode 仍正常采样，这样 PPO 能同时看到可用基线和探索配置的 reward 差异。
 
 ### 5.4 每个 episode 发生什么
 

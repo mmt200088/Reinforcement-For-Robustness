@@ -60,6 +60,7 @@ from .reward import (
 )
 from .persistence import (
     BLBStatusBoard,
+    append_blb_episode_trace_row,
     dump_crash_report,
     write_blb_final_report,
     write_training_curves,
@@ -86,12 +87,12 @@ def _resolve_repo_root() -> str:
 def resolve_blb_persistence_dir(evaluator) -> str:
     """计算 BLB Stage 2 RL 的持久化目录（覆盖 ``ev.noise_stage_progress_dir``）。
 
-    输出形如 ``<run_output_dir>/blb_stage2/progress``。
+    输出形如 ``<run_output_dir>/stage2_noise/progress``。
     若 ``evaluator.run_output_dir`` 为空，使用 ``Parting Chapter/persistent/blb_stage2_default_run``。
     """
     run_dir = str(getattr(evaluator, "run_output_dir", "") or "").strip()
     if run_dir:
-        out = os.path.join(run_dir, "blb_stage2", "progress")
+        out = os.path.join(run_dir, "stage2_noise", "progress")
     else:
         repo_root = _resolve_repo_root()
         out = os.path.join(
@@ -99,7 +100,7 @@ def resolve_blb_persistence_dir(evaluator) -> str:
             BLB_PARTING_CHAPTER_DIRNAME,
             BLB_PERSISTENT_DIRNAME,
             "blb_stage2_default_run",
-            "blb_stage2",
+            "stage2_noise",
             "progress",
         )
     os.makedirs(out, exist_ok=True)
@@ -136,6 +137,9 @@ class BLBStage2TrainConfig:
     inproc_profile: Optional[str] = None                 # e.g. "mrpc"；用于自动定位 configs/<profile>
     inproc_configs: Optional[Mapping[str, str]] = None   # {config_name: graph_json_path}；不传则按 profile 自动扫
     inproc_baseline_archive: Optional[str] = None        # 不传则 <root>/configs/<profile>/static_skeletons_<profile>.json
+    warmstart_baseline_bias: bool = True
+    warmstart_bias_gain: float = 1.2
+    warmstart_anchor_episodes: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +186,7 @@ class BLBStage2RLRunner:
         # ---------- 0) 解析配置 ----------
         train_cfg = self._build_train_config_from_evaluator(ev)
         # ---------- 0.1) 切换到 BLB Stage 2 RL 持久化目录 ----------
-        # BLB 进度文件写入当前 run_output_dir/blb_stage2/progress。
+        # BLB 进度文件写入当前 run_output_dir/stage2_noise/progress。
         legacy_progress_dir = str(getattr(ev, "noise_stage_progress_dir", "") or "")
         blb_progress_dir = resolve_blb_persistence_dir(ev)
         try:
@@ -330,6 +334,19 @@ class BLBStage2RLRunner:
             per_layer_dims=per_layer_each_dim,
             first_input_levels=5,
         ).to(device)
+        baseline_action_vec = make_all_max_action_vector(int(env.num_layers)).astype(np.int64)
+        if bool(train_cfg.warmstart_baseline_bias):
+            try:
+                policy.apply_preferred_action_bias(
+                    baseline_action_vec,
+                    gain=float(train_cfg.warmstart_bias_gain),
+                )
+                log(
+                    f"  {bullet} Policy warmstart: preferred all-max BLB baseline "
+                    f"(bias_gain={float(train_cfg.warmstart_bias_gain):.3g})"
+                )
+            except Exception as exc:
+                log(f"  [warmstart][warning] preferred-action bias failed: {exc}")
         optimizer = torch.optim.Adam(policy.parameters(), lr=float(train_cfg.ppo.lr))
 
         # ---------- 7) Resume（可选） ----------
@@ -360,6 +377,41 @@ class BLBStage2RLRunner:
                     log(f"  {bullet} Resumed from {resume_checkpoint_path} (episode={start_episode})")
             except Exception as exc:
                 log(f"  [resume][警告] 读取 checkpoint 失败：{exc}")
+
+        try:
+            env.reset(seed=int(train_cfg.seed))
+            _, baseline_reward, _, baseline_info = env.step(baseline_action_vec)
+            baseline_breakdown = baseline_info.get("reward_breakdown")
+            baseline_breakdown_dict = (
+                self._breakdown_to_dict(baseline_breakdown)
+                if baseline_breakdown is not None else None
+            )
+            if float(baseline_reward) > float(best_reward):
+                best_reward = float(baseline_reward)
+                best_action_vec = baseline_action_vec.copy()
+                best_breakdown_dict = baseline_breakdown_dict
+                decoded = baseline_info.get("decoded")
+                try:
+                    best_decoded_pickle = pickle.dumps(decoded) if decoded is not None else None
+                except Exception:
+                    best_decoded_pickle = None
+                status.set_best(
+                    best_reward=best_reward,
+                    best_action_vec=best_action_vec,
+                    best_breakdown=best_breakdown_dict,
+                    best_episode=0,
+                )
+            status.set_extra("warmstart_baseline_eval", {
+                "reward": float(baseline_reward),
+                "breakdown": baseline_breakdown_dict,
+                "selected_as_incumbent": bool(
+                    best_action_vec is not None
+                    and np.array_equal(best_action_vec, baseline_action_vec)
+                ),
+            })
+            log(f"  {bullet} Baseline action preflight reward={float(baseline_reward):+.4f}")
+        except Exception as exc:
+            log(f"  [warmstart][warning] baseline action preflight failed: {exc}")
 
         # ---------- 8) 训练循环 ----------
         status.set_phase(f"训练中（PPO 单步 episode，共 {train_cfg.total_episodes} 回合）")
@@ -396,29 +448,72 @@ class BLBStage2RLRunner:
             consume_stop_flag_file = None
             log(f"  [优雅停止][警告] 无法安装优雅停止处理器，将仅按周期保存 checkpoint：{exc}")
 
+        warmstart_anchor_episodes = train_cfg.warmstart_anchor_episodes
+        if warmstart_anchor_episodes is None:
+            warmstart_anchor_episodes = int(train_cfg.rollout_size)
+        warmstart_anchor_episodes = max(0, int(warmstart_anchor_episodes))
+        if int(start_episode) > 0:
+            warmstart_anchor_episodes = 0
+        warmstart_anchor_episodes = min(
+            warmstart_anchor_episodes,
+            max(0, int(train_cfg.total_episodes) - int(start_episode)),
+        )
+        status.set_extra("warmstart", {
+            "baseline_bias": bool(train_cfg.warmstart_baseline_bias),
+            "bias_gain": float(train_cfg.warmstart_bias_gain),
+            "anchor_episodes": int(warmstart_anchor_episodes),
+        })
+        if warmstart_anchor_episodes > 0:
+            log(
+                f"  {bullet} Warmstart anchor episodes = {warmstart_anchor_episodes} "
+                f"(early first-rollout episodes use the all-max BLB baseline action)"
+            )
+
+        rollout_rewards: List[float] = []
+        rollout_priority_counts = {1: 0, 2: 0, 3: 0}
+        rollout_invalid_count = 0
+        rollout_anchor_count = 0
+
         try:
             for ep in range(start_episode, int(train_cfg.total_episodes)):
                 obs = env.reset()
 
                 obs_t = torch.from_numpy(obs).float().to(device).unsqueeze(0)
-                with torch.no_grad():
-                    action_t, log_prob_t, value_t = policy.sample_action(obs_t, deterministic=False)
-                action_vec = action_t.squeeze(0).cpu().numpy().astype(np.int64)
+                use_anchor_action = (int(ep) - int(start_episode)) < int(warmstart_anchor_episodes)
+                if use_anchor_action:
+                    action_vec = baseline_action_vec.copy()
+                    action_for_eval = torch.from_numpy(action_vec).long().to(device).unsqueeze(0)
+                    with torch.no_grad():
+                        log_prob_t, _entropy_t, value_t = policy.evaluate_action(obs_t, action_for_eval)
+                else:
+                    with torch.no_grad():
+                        action_t, log_prob_t, value_t = policy.sample_action(obs_t, deterministic=False)
+                    action_vec = action_t.squeeze(0).cpu().numpy().astype(np.int64)
                 log_prob = float(log_prob_t.item())
                 value = float(value_t.item())
 
                 obs_next, reward, done, info = env.step(action_vec)
+                breakdown = info.get("reward_breakdown")
+                breakdown_dict = self._breakdown_to_dict(breakdown) if breakdown else None
 
                 buffer.add(state=obs, action=action_vec, log_prob=log_prob,
                            reward=float(reward), value=value)
                 episode_returns.append(float(reward))
+                rollout_rewards.append(float(reward))
+                if breakdown_dict:
+                    priority = int(breakdown_dict.get("priority", 0))
+                    if priority in rollout_priority_counts:
+                        rollout_priority_counts[priority] += 1
+                    if bool(breakdown_dict.get("invalid", False)):
+                        rollout_invalid_count += 1
+                if use_anchor_action:
+                    rollout_anchor_count += 1
 
                 # 跟踪 best
                 if float(reward) > best_reward:
                     best_reward = float(reward)
                     best_action_vec = action_vec.copy()
-                    breakdown = info.get("reward_breakdown")
-                    best_breakdown_dict = self._breakdown_to_dict(breakdown) if breakdown else None
+                    best_breakdown_dict = breakdown_dict
                     status.set_best(
                         best_reward=best_reward,
                         best_action_vec=best_action_vec,
@@ -435,7 +530,7 @@ class BLBStage2RLRunner:
                 # 累积 best_reward 曲线（每 episode 一个点，等长 episode_returns）
                 best_reward_curve.append(float(best_reward) if np.isfinite(best_reward) else 0.0)
                 # 状态板：内存更新（不 flush；PPO update 时统一 flush）
-                status.update_after_episode(int(ep + 1), float(reward), breakdown=best_breakdown_dict)
+                status.update_after_episode(int(ep + 1), float(reward), breakdown=breakdown_dict)
 
                 did_update = False
                 # PPO update
@@ -449,6 +544,39 @@ class BLBStage2RLRunner:
                     except Exception:
                         pass
                     status.update_after_ppo_update(int(update_count), metrics)
+                    try:
+                        rr = np.asarray(rollout_rewards, dtype=float)
+                        trace_path = append_blb_episode_trace_row(
+                            blb_progress_dir,
+                            {
+                                "episode": int(ep + 1),
+                                "total_episodes": int(train_cfg.total_episodes),
+                                "ppo_update_count": int(update_count),
+                                "rollout_reward_mean": float(rr.mean()) if rr.size else 0.0,
+                                "rollout_reward_max": float(rr.max()) if rr.size else 0.0,
+                                "rollout_reward_min": float(rr.min()) if rr.size else 0.0,
+                                "best_reward": float(best_reward),
+                                "priority1_count": int(rollout_priority_counts.get(1, 0)),
+                                "priority2_count": int(rollout_priority_counts.get(2, 0)),
+                                "priority3_count": int(rollout_priority_counts.get(3, 0)),
+                                "invalid_count": int(rollout_invalid_count),
+                                "anchor_count": int(rollout_anchor_count),
+                                "policy_loss": float(metrics.get("policy_loss", 0.0)),
+                                "value_loss": float(metrics.get("value_loss", 0.0)),
+                                "entropy": float(metrics.get("entropy", 0.0)),
+                                "clip_fraction": float(metrics.get("clip_fraction", 0.0)),
+                                "n_samples": int(metrics.get("n_samples", 0)),
+                            },
+                            log_fn=log,
+                        )
+                        if update_count == 1:
+                            status.set_extra("episode_trace_csv", trace_path)
+                        rollout_rewards = []
+                        rollout_priority_counts = {1: 0, 2: 0, 3: 0}
+                        rollout_invalid_count = 0
+                        rollout_anchor_count = 0
+                    except Exception as exc:
+                        log(f"  [BLB trace][warning] rollout trace update failed: {exc}")
                     if update_count == 1 or update_count % max(1, int(train_cfg.eval_interval // train_cfg.rollout_size)) == 0:
                         self._log_train_iter(
                             log, ep + 1, train_cfg.total_episodes,
@@ -531,6 +659,40 @@ class BLBStage2RLRunner:
         if len(buffer) > 0:
             metrics = ppo_update(policy, optimizer, buffer, train_cfg.ppo, device)
             buffer.clear()
+            update_count += 1
+            try:
+                ppo_loss_curve.append(float(metrics.get("policy_loss", 0.0)))
+            except Exception:
+                pass
+            status.update_after_ppo_update(int(update_count), metrics)
+            try:
+                rr = np.asarray(rollout_rewards, dtype=float)
+                trace_path = append_blb_episode_trace_row(
+                    blb_progress_dir,
+                    {
+                        "episode": int(train_cfg.total_episodes),
+                        "total_episodes": int(train_cfg.total_episodes),
+                        "ppo_update_count": int(update_count),
+                        "rollout_reward_mean": float(rr.mean()) if rr.size else 0.0,
+                        "rollout_reward_max": float(rr.max()) if rr.size else 0.0,
+                        "rollout_reward_min": float(rr.min()) if rr.size else 0.0,
+                        "best_reward": float(best_reward),
+                        "priority1_count": int(rollout_priority_counts.get(1, 0)),
+                        "priority2_count": int(rollout_priority_counts.get(2, 0)),
+                        "priority3_count": int(rollout_priority_counts.get(3, 0)),
+                        "invalid_count": int(rollout_invalid_count),
+                        "anchor_count": int(rollout_anchor_count),
+                        "policy_loss": float(metrics.get("policy_loss", 0.0)),
+                        "value_loss": float(metrics.get("value_loss", 0.0)),
+                        "entropy": float(metrics.get("entropy", 0.0)),
+                        "clip_fraction": float(metrics.get("clip_fraction", 0.0)),
+                        "n_samples": int(metrics.get("n_samples", 0)),
+                    },
+                    log_fn=log,
+                )
+                status.set_extra("episode_trace_csv", trace_path)
+            except Exception as exc:
+                log(f"  [BLB trace][warning] final rollout trace update failed: {exc}")
 
         # ---------- 9) Final 落盘 ----------
         final_save_path = self._save_checkpoint(
@@ -611,6 +773,11 @@ class BLBStage2RLRunner:
                 },
                 episode_returns=episode_returns,
                 rescale_invoker_kind="in_process_real",
+                extra_lines=[
+                    f"Warmstart baseline bias: {bool(train_cfg.warmstart_baseline_bias)}",
+                    f"Warmstart anchor episodes: {int(train_cfg.warmstart_anchor_episodes or 0)}",
+                    f"Rollout trace CSV: {os.path.join(blb_progress_dir, 'blb_stage2_episode_trace.csv')}",
+                ],
                 log_fn=log,
             )
             log(f"  {bullet} 最终训练报告 → {report_path}")
@@ -708,6 +875,9 @@ class BLBStage2RLRunner:
                 "blb_v3_w_bits": float(weights.w_bits),
                 "blb_v3_w_fusion": float(weights.w_fusion),
                 "blb_v3_w_k": float(weights.w_k),
+                "blb_v3_warmstart_baseline_bias": bool(train_cfg.warmstart_baseline_bias),
+                "blb_v3_warmstart_bias_gain": float(train_cfg.warmstart_bias_gain),
+                "blb_v3_warmstart_anchor_episodes": int(train_cfg.warmstart_anchor_episodes or 0),
                 "k_trials": int(train_cfg.num_trials_per_step),
                 "probe_size": int(getattr(ev, "stage2_probe_size", 256)),
             },
@@ -766,6 +936,7 @@ class BLBStage2RLRunner:
                 ("save_interval", "blb_v3_save_interval"),
                 ("eval_interval", "blb_v3_eval_interval"),
                 ("calibrate_baseline_samples", "blb_v3_calibrate_baseline_samples"),
+                ("warmstart_anchor_episodes", "blb_v3_warmstart_anchor_episodes"),
                 ("seed", "final_eval_random_seed"),
         ):
             v = getattr(ev, attr_name, None)
@@ -775,9 +946,27 @@ class BLBStage2RLRunner:
                 setattr(cfg, cfg_field, int(v))
             except Exception:
                 pass
+        v = getattr(ev, "blb_v3_warmstart_bias_gain", None)
+        if v not in (None, ""):
+            try:
+                cfg.warmstart_bias_gain = float(v)
+            except Exception:
+                pass
+        v = getattr(ev, "blb_v3_warmstart_baseline_bias", None)
+        if v not in (None, ""):
+            cfg.warmstart_baseline_bias = str(v).strip().lower() not in (
+                "0", "false", "no", "off",
+            )
 
         # rollout_size 上限不能超过 total_episodes
         cfg.rollout_size = max(1, min(int(cfg.rollout_size), int(cfg.total_episodes)))
+        if cfg.warmstart_anchor_episodes is None:
+            cfg.warmstart_anchor_episodes = max(1, int(round(float(cfg.rollout_size) * 0.25)))
+        else:
+            cfg.warmstart_anchor_episodes = max(
+                0,
+                min(int(cfg.warmstart_anchor_episodes), int(cfg.total_episodes)),
+            )
         return cfg
 
     def _build_probe_batches(
@@ -990,7 +1179,7 @@ class BLBStage2RLRunner:
         )
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            torch.save({
+            payload = {
                 "policy": policy.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "episode": int(episode),
@@ -1014,9 +1203,20 @@ class BLBStage2RLRunner:
                 "train_cfg": (
                     self._train_cfg_to_dict(train_cfg) if train_cfg is not None else {}
                 ),
+                "profile": str(getattr(train_cfg, "profile", "")) if train_cfg is not None else "",
                 "rng_state": self._rng_state_dict(),
                 "rl_variant": "blb_v3",
-            }, path)
+            }
+            tmp_path = path + ".tmp"
+            try:
+                torch.save(payload, tmp_path)
+                os.replace(tmp_path, path)
+            finally:
+                if os.path.isfile(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
         except Exception as exc:
             ev.log(f"  [save_checkpoint][警告] 保存 {path} 失败: {exc}")
         return path

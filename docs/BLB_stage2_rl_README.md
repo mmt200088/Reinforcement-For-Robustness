@@ -108,10 +108,12 @@ BLB checkpoint 存在当前 run 的 Stage-2 进度目录：
 ├── blb_stage2_rl_checkpoint_live.pt
 ├── blb_stage2_rl_checkpoint_final.pt
 ├── blb_stage2_best_cfg.pkl
+├── blb_stage2_status.json
+├── blb_stage2_episode_trace.csv
 └── STOP_RL
 ```
 
-其中 `STOP_RL` 不是默认产物，而是需要优雅停止时手动创建的标志文件。
+其中 `blb_stage2_episode_trace.csv` 会按 PPO rollout 记录 reward 均值/最大/最小、三层 priority 计数、invalid 计数、anchor 计数和 PPO 指标；`STOP_RL` 不是默认产物，而是需要优雅停止时手动创建的标志文件。
 
 旧版 Stage-2 RL 的 checkpoint 仍是 `noise_rl_checkpoint.pt`。resume 逻辑会根据
 `--stage2-rl-variant` 自动选择对应文件，不会把 BLB checkpoint 当成旧版 checkpoint 加载。

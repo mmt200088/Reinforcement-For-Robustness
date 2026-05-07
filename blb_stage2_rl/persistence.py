@@ -3,7 +3,7 @@
 旧版 stage 2 RL（``noise_rl_module_v2``）在 ``rl_results/persistent/...`` 下
 做了若干"训练之外"的小事：进度条、curve PNG、checkpoint 元数据、错误归档。
 BLB Stage 2 RL 是最终版本，需要把这些项目操作类的输出补齐到新的持久化目录
-``Parting Chapter/<run_basename>/blb_stage2/progress/``。
+``Parting Chapter/<run_basename>/stage2_noise/progress/``。
 
 本模块提供四件事：
 
@@ -25,6 +25,7 @@ BLB Stage 2 RL 是最终版本，需要把这些项目操作类的输出补齐�
 from __future__ import annotations
 
 import datetime as _dt
+import csv
 import json
 import os
 import sys
@@ -40,6 +41,27 @@ BLB_TRAINING_CURVE_PNG = "blb_stage2_training_curve.png"
 BLB_TRAINING_CURVE_NPZ = "blb_stage2_training_curve.npz"
 BLB_FINAL_REPORT_MD = "blb_stage2_report.md"
 BLB_ERROR_TXT = "blb_stage2_error.txt"
+BLB_EPISODE_TRACE_CSV = "blb_stage2_episode_trace.csv"
+
+BLB_TRACE_FIELDNAMES = (
+    "episode",
+    "total_episodes",
+    "ppo_update_count",
+    "rollout_reward_mean",
+    "rollout_reward_max",
+    "rollout_reward_min",
+    "best_reward",
+    "priority1_count",
+    "priority2_count",
+    "priority3_count",
+    "invalid_count",
+    "anchor_count",
+    "policy_loss",
+    "value_loss",
+    "entropy",
+    "clip_fraction",
+    "n_samples",
+)
 
 
 def _atomic_json_dump(path: str, obj: Any) -> None:
@@ -83,6 +105,35 @@ def _to_jsonable(obj: Any) -> Any:
         return str(obj)
     except Exception:
         return None
+
+
+def append_blb_episode_trace_row(
+        persistence_dir: str,
+        row: Mapping[str, Any],
+        *,
+        log_fn=None,
+        ) -> str:
+    """Append one PPO-rollout diagnostic row to a stable CSV trace."""
+    log = log_fn or (lambda _msg: None)
+    os.makedirs(persistence_dir, exist_ok=True)
+    path = os.path.join(persistence_dir, BLB_EPISODE_TRACE_CSV)
+    write_header = (not os.path.isfile(path)) or os.path.getsize(path) == 0
+    safe_row = {
+        key: _to_jsonable(row.get(key, ""))
+        for key in BLB_TRACE_FIELDNAMES
+    }
+    try:
+        with open(path, "a", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(BLB_TRACE_FIELDNAMES))
+            if write_header:
+                writer.writeheader()
+            writer.writerow(safe_row)
+    except Exception as exc:
+        try:
+            log(f"  [BLB trace][warning] failed to write {path}: {exc}")
+        except Exception:
+            pass
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +472,7 @@ def write_blb_final_report(
 
     lines.append("---")
     lines.append("")
-    lines.append("> 持久化目录：`Parting Chapter/<run>/blb_stage2/progress/`。"
+    lines.append("> 持久化目录：`Parting Chapter/<run>/stage2_noise/progress/`。"
                  "live checkpoint / final checkpoint / best_cfg.pkl / 状态板 / "
                  "训练曲线（PNG + NPZ）/ 本报告 都在该目录下。")
 

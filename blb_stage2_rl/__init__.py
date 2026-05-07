@@ -8,9 +8,8 @@
   * 完全独立的代码路径，不复用旧版 PPO / state / 单 N 噪声表。
   * 通过 ``BLBNoiseRLBridge`` 接 ``function_handler.ReversibleLayerHandler``
     的多 N BLB 噪声安装入口；BLB 与 legacy 的互斥校验由 handler 内部完成。
-  * 通过 ``RescaleOptimizerBridge`` 接 ``Rescale_optimizer`` 子项目得到
-    cost 信号；当外部子项目不可用时自动 fallback 到内置 ``HeuristicStubInvoker``，
-    保证 RL 训练循环仍能跑通（reward 仍能差异化）。
+  * 通过 ``RescaleOptimizerBridge`` 接真实 ``Rescale_optimizer`` 子项目得到
+    cost 信号；训练路径不再提供 heuristic/stub fallback，初始化失败会直接中止。
   * 顶层入口 ``BLBStage2RLRunner.run(...)`` 返回的 dict 与旧版兼容，
     使 ``LayerImportanceEvaluator.run_unified_final_eval`` 等下游消费保持不变。
 
