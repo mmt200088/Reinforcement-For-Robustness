@@ -8,13 +8,14 @@
   "stage2_k_trials": 5,
   "stage2_probe_size": 256,
   "created_at": "2026-05-07T15:14:33+08:00",
-  "last_updated_at": "2026-05-07T19:01:52.141717",
-  "run_count": 3,
+  "last_updated_at": "2026-05-07T22:52:46.530162",
+  "run_count": 4,
   "stage_status": {
     "stage1_search": "skipped",
     "stage1_final_eval": "not_started",
     "stage2_search": "not_started",
-    "stage2_final_eval": "not_started"
+    "stage2_final_eval": "not_started",
+    "final_eval": "completed"
   },
   "stage_detail": {
     "stage2_search": {
