@@ -455,6 +455,7 @@ class BLBStage2RLRunner:
                 "apply_failed": bool(baseline_info.get("apply_failed", False)),
                 "eval_failed": bool(baseline_info.get("eval_failed", False)),
                 "error": str(baseline_info.get("error", "")),
+                "optimizer_invalid_summary": str(baseline_info.get("optimizer_invalid_summary", "")),
                 "selected_as_incumbent": bool(
                     best_action_vec is not None
                     and np.array_equal(best_action_vec, baseline_action_vec)
@@ -471,6 +472,8 @@ class BLBStage2RLRunner:
             )
             if baseline_info.get("error"):
                 log(f"  [baseline preflight][error] {baseline_info.get('error')}")
+            if baseline_info.get("optimizer_invalid_summary"):
+                log(f"  [baseline preflight][optimizer] {baseline_info.get('optimizer_invalid_summary')}")
             if (
                     bool(baseline_info.get("invalid", False))
                     or bool(baseline_info.get("apply_failed", False))
@@ -482,6 +485,7 @@ class BLBStage2RLRunner:
                     "Baseline BLB action preflight failed before RL training; "
                     "the all-max BLB baseline must pass the accuracy threshold. "
                     f"error={baseline_info.get('error', '')!s}; "
+                    f"optimizer_invalid_summary={baseline_info.get('optimizer_invalid_summary', '')!s}; "
                     f"metrics={bm}; "
                     f"breakdown={baseline_breakdown_dict}"
                 )

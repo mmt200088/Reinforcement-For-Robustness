@@ -49,6 +49,7 @@ reward 部分**只给信号，不给最终公式** —— 用户明说了 reward
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import subprocess
@@ -374,10 +375,12 @@ class InProcessInvoker:
 
         # 预加载每个 graph
         self._graphs: Dict[str, Any] = {}
+        self._graph_delta_baselines: Dict[str, List[Tuple[int, Any]]] = {}
         for cname, path in self._configs.items():
             graph, _opt_cfg, _amp = load_graph_from_json(path)
             build_feasibility_dag(graph)
             self._graphs[cname] = graph
+            self._graph_delta_baselines[cname] = self._snapshot_graph_delta_state(graph)
 
     @classmethod
     def from_profile(
@@ -422,6 +425,23 @@ class InProcessInvoker:
         """``{config_name: (skeleton, t_baseline, q_bits_baseline)}``，readonly."""
         return dict(self._baselines)
 
+    @staticmethod
+    def _snapshot_graph_delta_state(graph: Any) -> List[Tuple[int, Any]]:
+        state: List[Tuple[int, Any]] = []
+        for node in getattr(graph, "nodes", []):
+            state.append((
+                int(getattr(node, "scale_delta_bits", 0)),
+                copy.deepcopy(getattr(node, "other_ct_scale_bits", None)),
+            ))
+        return state
+
+    @staticmethod
+    def _restore_graph_delta_state(graph: Any, state: List[Tuple[int, Any]]) -> None:
+        nodes = list(getattr(graph, "nodes", []))
+        for node, (scale_delta_bits, other_ct_scale_bits) in zip(nodes, state):
+            node.scale_delta_bits = int(scale_delta_bits)
+            node.other_ct_scale_bits = copy.deepcopy(other_ct_scale_bits)
+
     def __call__(self, config_name: str, payload: Any) -> dict:
         from rescale_optimizer import ReplanInputs, replan_with_user_actions
 
@@ -443,6 +463,7 @@ class InProcessInvoker:
 
         # replan 要求 skeleton 末尾是 dummy_sink；如果 baseline 已带就别重复加
         graph = self._graphs[cname]
+        self._restore_graph_delta_state(graph, self._graph_delta_baselines.get(cname, []))
         skel_for_replan = list(skeleton)
         if skel_for_replan[-1] != graph.M + 1:
             skel_for_replan = skel_for_replan + [graph.M + 1]
@@ -1090,6 +1111,28 @@ class RescaleOptimizerBridge:
 
         # 解析时保留原始 config_name（带 _L<i>），让上层能按层归并
         return _parse_optimizer_raw(raw, config_name=config_name)
+
+    def evaluate_baseline(
+            self,
+            *,
+            config_name: str,
+            ) -> RescaleOptimizerOutput:
+        graph_key, _layer_idx = _strip_layer_suffix(config_name)
+        raw = self.invoker(graph_key, {})
+        if isinstance(raw, dict):
+            raw = dict(raw)
+            raw.setdefault("_t_new_source", "optimizer_baseline")
+            raw.setdefault("_graph_key", graph_key)
+        return _parse_optimizer_raw(raw, config_name=config_name)
+
+    def evaluate_baseline_blocks(
+            self,
+            requests: Mapping[str, Tuple[str, Any]],
+            ) -> Dict[str, RescaleOptimizerOutput]:
+        outputs: Dict[str, RescaleOptimizerOutput] = {}
+        for config_name in requests.keys():
+            outputs[config_name] = self.evaluate_baseline(config_name=config_name)
+        return outputs
 
     def evaluate_blocks(
             self,

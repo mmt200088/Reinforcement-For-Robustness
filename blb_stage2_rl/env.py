@@ -100,6 +100,37 @@ def _compute_metrics_on_batch(
 # ---------------------------------------------------------------------------
 # Env 主类
 # ---------------------------------------------------------------------------
+def summarize_optimizer_invalid_outputs(
+        outputs: Mapping[str, Any],
+        *,
+        limit: int = 8,
+        ) -> str:
+    items: List[str] = []
+    for name, out in sorted(outputs.items()):
+        if bool(getattr(out, "valid", False)):
+            continue
+        raw = getattr(out, "raw", {}) or {}
+        message = ""
+        if isinstance(raw, Mapping):
+            result = raw.get("result") or {}
+            if isinstance(result, Mapping):
+                message = str(result.get("message", "") or "")
+        invalid_chain = getattr(out, "invalid_chain", None)
+        if message:
+            detail = message
+        elif invalid_chain is not None:
+            detail = f"invalid_chain={invalid_chain}"
+        else:
+            detail = "optimizer output marked invalid"
+        items.append(f"{name}: {detail}")
+    if not items:
+        return ""
+    shown = items[:max(1, int(limit))]
+    if len(items) > len(shown):
+        shown.append(f"... (+{len(items) - len(shown)} more)")
+    return "Rescale_optimizer invalid blocks: " + "; ".join(shown)
+
+
 @dataclass
 class BLBStage2EnvConfig:
     """``BLBStage2Env`` 的运行参数。"""
@@ -358,6 +389,9 @@ class BLBStage2Env:
             raise ValueError(
                 f"action_vec dim {action_vec.size} != expected {self.total_action_dim}"
             )
+        is_optimizer_baseline_action = bool(
+            np.array_equal(action_vec, make_all_max_action_vector(self.num_layers))
+        )
 
         degree_sync = self.sync_degree_vectors_from_model()
         decoded = action_vector_to_cfgs(
@@ -373,17 +407,28 @@ class BLBStage2Env:
         opt_requests = build_optimizer_requests(self.env_cfg.profile, cfgs_dict)
 
         # 注册 cfg 到 heuristic invoker（后者从 cfg 抽 SF）
-        if self._heuristic is not None and self._stub_register_cfgs:
-            for cn, (_b, c) in opt_requests.items():
-                self._heuristic.register_cfg(cn, c)
-        try:
-            opt_outputs = self.rescale_bridge.evaluate_blocks(opt_requests)
-        finally:
+        use_optimizer_baseline = (
+            is_optimizer_baseline_action
+            and self._heuristic is None
+            and callable(getattr(self.rescale_bridge, "evaluate_baseline_blocks", None))
+        )
+        if use_optimizer_baseline:
+            opt_outputs = self.rescale_bridge.evaluate_baseline_blocks(opt_requests)
+        else:
             if self._heuristic is not None and self._stub_register_cfgs:
-                self._heuristic.clear_cfg_registry()
+                for cn, (_b, c) in opt_requests.items():
+                    self._heuristic.register_cfg(cn, c)
+            try:
+                opt_outputs = self.rescale_bridge.evaluate_blocks(opt_requests)
+            finally:
+                if self._heuristic is not None and self._stub_register_cfgs:
+                    self._heuristic.clear_cfg_registry()
 
         opt_signals = aggregate_optimizer_signals(opt_outputs)
         any_invalid = bool(opt_signals.any_invalid)
+        optimizer_invalid_summary = (
+            summarize_optimizer_invalid_outputs(opt_outputs) if any_invalid else ""
+        )
 
         # 2) 把 effective rotations 反写到 cfg
         if not any_invalid:
@@ -422,7 +467,10 @@ class BLBStage2Env:
             "invalid": any_invalid,
             "apply_failed": False,
             "eval_failed": False,
+            "optimizer_baseline_action": bool(use_optimizer_baseline),
         }
+        if optimizer_invalid_summary:
+            info["optimizer_invalid_summary"] = optimizer_invalid_summary
         if degree_sync:
             info["model_degree_sync"] = degree_sync
         if any_invalid:
@@ -442,6 +490,8 @@ class BLBStage2Env:
                 any_invalid=True,
             )
             info["reward_breakdown"] = breakdown
+            if optimizer_invalid_summary:
+                info["error"] = optimizer_invalid_summary
             info["metrics"] = metrics
             self._step_idx += 1
             self._last_invalid_rate = 1.0
@@ -680,15 +730,25 @@ def estimate_baseline_cost_stats(
     )
     cfgs_dict = decoded.cfgs_dict()
     requests = build_optimizer_requests(env.env_cfg.profile, cfgs_dict)
-    if env._heuristic is not None and env._stub_register_cfgs:
-        for cn, (_b, c) in requests.items():
-            env._heuristic.register_cfg(cn, c)
-    try:
-        outputs = env.rescale_bridge.evaluate_blocks(requests)
-    finally:
+    baseline_eval = getattr(env.rescale_bridge, "evaluate_baseline_blocks", None)
+    if env._heuristic is None and callable(baseline_eval):
+        outputs = baseline_eval(requests)
+    else:
         if env._heuristic is not None and env._stub_register_cfgs:
-            env._heuristic.clear_cfg_registry()
+            for cn, (_b, c) in requests.items():
+                env._heuristic.register_cfg(cn, c)
+        try:
+            outputs = env.rescale_bridge.evaluate_blocks(requests)
+        finally:
+            if env._heuristic is not None and env._stub_register_cfgs:
+                env._heuristic.clear_cfg_registry()
     signals = aggregate_optimizer_signals(outputs)
+    if signals.any_invalid:
+        summary = summarize_optimizer_invalid_outputs(outputs)
+        raise RuntimeError(
+            "BLB optimizer static baseline is invalid"
+            + (f": {summary}" if summary else "")
+        )
 
     # 估计典型 drop
     bits_drops: List[float] = []
@@ -714,6 +774,8 @@ def estimate_baseline_cost_stats(
             if env._heuristic is not None and env._stub_register_cfgs:
                 env._heuristic.clear_cfg_registry()
         rd_signals = aggregate_optimizer_signals(rd_outputs)
+        if rd_signals.any_invalid:
+            continue
         bits_drops.append(float(signals.total_bits_sum) - float(rd_signals.total_bits_sum))
         fusion_counts.append(float(rd_signals.total_fusion_count))
         avg_k = avg_truncation_k_in_action(random_action, env.num_layers)
