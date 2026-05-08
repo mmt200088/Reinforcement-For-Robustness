@@ -1,5 +1,5 @@
 [Time]
-2026-05-07 22:52:51
+2026-05-09 01:08:57
 
 [Program]
 rl_tune.py
@@ -8,7 +8,9 @@ rl_tune.py
 failed
 
 [Message]
-RuntimeError: Baseline BLB action preflight failed before RL training; the all-max BLB baseline must pass the accuracy threshold. error=; metrics={'loss_mean': inf, 'loss_std': inf, 'metric1_mean': 0.0, 'metric2_mean': 0.0, 'loss_max': 0.0, 'metric1_min': 0.0, 'metric2_min': 0.0}; breakdown={'reward': -30.0, 'priority': 3, 'invalid': True, 'r_bits': 0.0, 'r_fusion': 0.0, 'r_k': 0.0, 'bits_drop': 0.0, 'k_drop': 0.0, 'fusion_count': 0.0, 'acc_violation': 0.0, 'stab_violation': 0.0}
+HfHubHTTPError: 500 Server Error: Internal Server Error for url: https://hf-mirror.com/api/datasets/nyu-mll/glue/tree/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c/qnli?recursive=True&expand=False (Request ID: Root=1-69fe1899-2879a1237bcea5ed1189f4de;45269336-fae9-4397-86aa-bcc309331438)
+
+Internal Error - We're working hard to fix this as soon as possible!
 
 [Run Output Dir]
 Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005
@@ -26,18 +28,42 @@ Traceback (most recent call last):
     component, remaining_args = _CallAndUpdateTrace(
   File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
     component = fn(*varargs, **kwargs)
-  File "/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py", line 778, in train
-    eval_results = trainer.evaluate(eval_dataset=val_data)
-  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/trainer.py", line 3035, in evaluate
-    self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, output.metrics)
-  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/trainer_callback.py", line 396, in on_evaluate
-    return self.call_event("on_evaluate", args, state, control, metrics=metrics)
-  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/trainer_callback.py", line 414, in call_event
-    result = getattr(callback, event)(
-  File "/var/tmp/root-home/Reinforcement-For-Robustness/layer_importance_evaluator.py", line 6132, in on_evaluate
-    noise_stage_result = self.run_noise_rl_stage(
-  File "/var/tmp/root-home/Reinforcement-For-Robustness/layer_importance_evaluator.py", line 4524, in run_noise_rl_stage
-    return runner.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source,
-  File "/var/tmp/root-home/Reinforcement-For-Robustness/blb_stage2_rl/runner.py", line 481, in run
-    raise RuntimeError(
-RuntimeError: Baseline BLB action preflight failed before RL training; the all-max BLB baseline must pass the accuracy threshold. error=; metrics={'loss_mean': inf, 'loss_std': inf, 'metric1_mean': 0.0, 'metric2_mean': 0.0, 'loss_max': 0.0, 'metric1_min': 0.0, 'metric2_min': 0.0}; breakdown={'reward': -30.0, 'priority': 3, 'invalid': True, 'r_bits': 0.0, 'r_fusion': 0.0, 'r_k': 0.0, 'bits_drop': 0.0, 'k_drop': 0.0, 'fusion_count': 0.0, 'acc_violation': 0.0, 'stab_violation': 0.0}
+  File "/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py", line 527, in train
+    data = load_dataset("nyu-mll/glue", data_path)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 2128, in load_dataset
+    builder_instance = load_dataset_builder(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 1814, in load_dataset_builder
+    dataset_module = dataset_module_factory(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 1511, in dataset_module_factory
+    raise e1 from None
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 1495, in dataset_module_factory
+    ).get_module()
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 1080, in get_module
+    builder_configs, default_config_name = create_builder_configs_from_metadata_configs(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 558, in create_builder_configs_from_metadata_configs
+    config_data_files_dict = DataFilesDict.from_patterns(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py", line 686, in from_patterns
+    DataFilesList.from_patterns(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py", line 591, in from_patterns
+    resolve_pattern(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py", line 345, in resolve_pattern
+    fs, _, _ = get_fs_token_paths(pattern, storage_options=storage_options)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fsspec/core.py", line 640, in get_fs_token_paths
+    paths = [f for f in sorted(fs.glob(paths)) if not fs.isdir(f)]
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py", line 528, in glob
+    return super().glob(path, **kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fsspec/spec.py", line 602, in glob
+    allpaths = self.find(root, maxdepth=depth, withdirs=True, detail=True, **kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py", line 567, in find
+    out = self._ls_tree(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py", line 471, in _ls_tree
+    for path_info in tree:
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_api.py", line 3191, in list_repo_tree
+    for path_info in paginate(path=tree_url, headers=headers, params={"recursive": recursive, "expand": expand}):
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/utils/_pagination.py", line 37, in paginate
+    hf_raise_for_status(r)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/utils/_http.py", line 475, in hf_raise_for_status
+    raise _format(HfHubHTTPError, str(e), response) from e
+huggingface_hub.errors.HfHubHTTPError: 500 Server Error: Internal Server Error for url: https://hf-mirror.com/api/datasets/nyu-mll/glue/tree/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c/qnli?recursive=True&expand=False (Request ID: Root=1-69fe1899-2879a1237bcea5ed1189f4de;45269336-fae9-4397-86aa-bcc309331438)
+
+Internal Error - We're working hard to fix this as soon as possible!
