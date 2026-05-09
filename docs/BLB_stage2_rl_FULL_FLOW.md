@@ -1,5 +1,11 @@
 # BLB Stage-2 RL 全流程说明
 
+> **该读哪份？**
+> - 只想跑训练 / 改 launcher 旗标 → `BLB_stage2_rl_README.md`
+> - 想理解端到端运行逻辑（启动→停止→续训练→持久化） → **本文**
+> - 想看代码层调用栈 / 模块职责 / 单 episode 内部展开 → `BLB_stage2_rl_INTERNAL_FLOW.md`
+> - 想看设计理由、数学约束、反例分析 → `BLB_stage2_rl_spec.md`
+
 本文档说明当前项目里的 BLB Stage-2 RL 如何作为旧 Stage-2 RL 的替换实现运行。
 重点不是代码位置，而是从启动、搜索、停止、续训练到持久化目录的一整套运行逻辑。
 

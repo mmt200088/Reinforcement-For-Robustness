@@ -73,6 +73,7 @@ llama_7B_LayerImportance.sh:1332:[ -n "$BLB_V3_EVAL_INTERVAL" ] && CMD+=(--blb_v
 llama_7B_LayerImportance.sh:1333:[ -n "$BLB_V3_SAVE_INTERVAL" ] && CMD+=(--blb_v3_save_interval "$BLB_V3_SAVE_INTERVAL")
 llama_7B_LayerImportance.sh:1334:[ -n "$BLB_V3_CALIBRATE_BASELINE_SAMPLES" ] && CMD+=(--blb_v3_calibrate_baseline_samples "$BLB_V3_CALIBRATE_BASELINE_SAMPLES")
 llama_7B_LayerImportance.sh:1370:if [ "$STAGE2_RL_VARIANT" = "blb_v3" ]; then
+project_understanding_blb_stage2_rl.md:834:构造 RescaleOptimizerBridge。
 README.md:169:| `--stage2-rl-variant blb_v3/legacy_v2` | `run rl` | `blb_v3` | 选择 Stage-2 RL 实现：`blb_v3`（默认，加强版 BLB Stage-2 RL，覆盖 Block 1-5 + first-input fresh 全部噪声候选点；详见 `docs/BLB_stage2_rl_FULL_FLOW.md`）；`legacy_v2`（旧版 `noise_rl_module_v2`，仅优化 `*_scaling_factors`） |
 README.md:270:| `--stage2-rl-variant blb_v3/legacy_v2` | `blb_v3` | RL final eval 下用于兼容 BLB/legacy 行为 |
 rescale_optimizer_bridge.py:13:* ``InProcessInvoker`` ── **推荐**。直接 ``import rescale_optimizer`` 调
@@ -162,51 +163,51 @@ blb_stage2_rl/runner.py:34:from rescale_optimizer_bridge import RescaleOptimizer
 blb_stage2_rl/runner.py:39:action_vector_to_cfgs,
 blb_stage2_rl/runner.py:44:make_all_max_action_vector,
 blb_stage2_rl/runner.py:115:explicit = getattr(ev, "blb_v3_probe_batch_count", None)
-blb_stage2_rl/runner.py:131:"""``BLBStage2RLRunner`` 的可配置训练参数。"""
-blb_stage2_rl/runner.py:179:class BLBStage2RLRunner:
-blb_stage2_rl/runner.py:265:# ---------- 3) 准备 RescaleOptimizer 桥 ----------
-blb_stage2_rl/runner.py:358:baseline_action_vec = make_all_max_action_vector(int(env.num_layers)).astype(np.int64)
-blb_stage2_rl/runner.py:1007:"selection_mode": "blb_v3_runtime_best",
-blb_stage2_rl/runner.py:1027:"blb_v3_total_episodes": int(train_cfg.total_episodes),
-blb_stage2_rl/runner.py:1028:"blb_v3_rollout_size": int(train_cfg.rollout_size),
-blb_stage2_rl/runner.py:1029:"blb_v3_ppo_lr": float(train_cfg.ppo.lr),
-blb_stage2_rl/runner.py:1030:"blb_v3_clip_range": float(train_cfg.ppo.clip_range),
-blb_stage2_rl/runner.py:1031:"blb_v3_n_epochs": int(train_cfg.ppo.n_epochs),
-blb_stage2_rl/runner.py:1032:"blb_v3_minibatch_size": int(train_cfg.ppo.minibatch_size),
-blb_stage2_rl/runner.py:1033:"blb_v3_ent_coef": float(train_cfg.ppo.ent_coef),
-blb_stage2_rl/runner.py:1034:"blb_v3_value_coef": float(train_cfg.ppo.value_coef),
-blb_stage2_rl/runner.py:1035:"blb_v3_max_grad_norm": float(train_cfg.ppo.max_grad_norm),
-blb_stage2_rl/runner.py:1036:"blb_v3_acc_threshold": float(env.acc_threshold),
-blb_stage2_rl/runner.py:1037:"blb_v3_stab_threshold": float(env.stab_threshold),
-blb_stage2_rl/runner.py:1038:"blb_v3_w_bits": float(weights.w_bits),
-blb_stage2_rl/runner.py:1039:"blb_v3_w_fusion": float(weights.w_fusion),
-blb_stage2_rl/runner.py:1040:"blb_v3_w_k": float(weights.w_k),
-blb_stage2_rl/runner.py:1041:"blb_v3_warmstart_baseline_bias": bool(train_cfg.warmstart_baseline_bias),
-blb_stage2_rl/runner.py:1042:"blb_v3_warmstart_bias_gain": float(train_cfg.warmstart_bias_gain),
-blb_stage2_rl/runner.py:1043:"blb_v3_warmstart_anchor_episodes": int(train_cfg.warmstart_anchor_episodes or 0),
-blb_stage2_rl/runner.py:1048:"terminal_reward_mode": "blb_v3_three_priority",
-blb_stage2_rl/runner.py:1056:"blb_v3_best_action_vec": (
-blb_stage2_rl/runner.py:1059:"blb_v3_best_reward": float(best_reward),
-blb_stage2_rl/runner.py:1060:"blb_v3_best_action_description_paths": dict(best_action_description_paths or {}),
-blb_stage2_rl/runner.py:1061:"blb_v3_baseline_action_description_paths": dict(baseline_action_description_paths or {}),
-blb_stage2_rl/runner.py:1062:"blb_v3_profile": str(train_cfg.profile),
-blb_stage2_rl/runner.py:1063:"blb_v3_total_episodes": int(train_cfg.total_episodes),
-blb_stage2_rl/runner.py:1064:"rl_variant": "blb_v3",
-blb_stage2_rl/runner.py:1095:root = getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)
-blb_stage2_rl/runner.py:1100:("rollout_size", "blb_v3_rollout_size"),
-blb_stage2_rl/runner.py:1101:("save_interval", "blb_v3_save_interval"),
-blb_stage2_rl/runner.py:1102:("eval_interval", "blb_v3_eval_interval"),
-blb_stage2_rl/runner.py:1103:("calibrate_baseline_samples", "blb_v3_calibrate_baseline_samples"),
-blb_stage2_rl/runner.py:1104:("warmstart_anchor_episodes", "blb_v3_warmstart_anchor_episodes"),
-blb_stage2_rl/runner.py:1114:v = getattr(ev, "blb_v3_warmstart_bias_gain", None)
-blb_stage2_rl/runner.py:1120:v = getattr(ev, "blb_v3_warmstart_baseline_bias", None)
-blb_stage2_rl/runner.py:1181:) -> RescaleOptimizerBridge:
-blb_stage2_rl/runner.py:1182:from rescale_optimizer_bridge import InProcessInvoker
-blb_stage2_rl/runner.py:1199:invoker = InProcessInvoker(
-blb_stage2_rl/runner.py:1205:invoker = InProcessInvoker.from_profile(
-blb_stage2_rl/runner.py:1220:return RescaleOptimizerBridge(invoker=invoker)
-blb_stage2_rl/runner.py:1314:"rl_variant": "blb_v3",
-blb_stage2_rl/runner.py:1373:"rl_variant": "blb_v3",
+blb_stage2_rl/runner.py:170:"""``BLBStage2RLRunner`` 的可配置训练参数。"""
+blb_stage2_rl/runner.py:218:class BLBStage2RLRunner:
+blb_stage2_rl/runner.py:304:# ---------- 3) 准备 RescaleOptimizer 桥 ----------
+blb_stage2_rl/runner.py:397:baseline_action_vec = make_all_max_action_vector(int(env.num_layers)).astype(np.int64)
+blb_stage2_rl/runner.py:1056:"selection_mode": "blb_v3_runtime_best",
+blb_stage2_rl/runner.py:1076:"blb_v3_total_episodes": int(train_cfg.total_episodes),
+blb_stage2_rl/runner.py:1077:"blb_v3_rollout_size": int(train_cfg.rollout_size),
+blb_stage2_rl/runner.py:1078:"blb_v3_ppo_lr": float(train_cfg.ppo.lr),
+blb_stage2_rl/runner.py:1079:"blb_v3_clip_range": float(train_cfg.ppo.clip_range),
+blb_stage2_rl/runner.py:1080:"blb_v3_n_epochs": int(train_cfg.ppo.n_epochs),
+blb_stage2_rl/runner.py:1081:"blb_v3_minibatch_size": int(train_cfg.ppo.minibatch_size),
+blb_stage2_rl/runner.py:1082:"blb_v3_ent_coef": float(train_cfg.ppo.ent_coef),
+blb_stage2_rl/runner.py:1083:"blb_v3_value_coef": float(train_cfg.ppo.value_coef),
+blb_stage2_rl/runner.py:1084:"blb_v3_max_grad_norm": float(train_cfg.ppo.max_grad_norm),
+blb_stage2_rl/runner.py:1085:"blb_v3_acc_threshold": float(env.acc_threshold),
+blb_stage2_rl/runner.py:1086:"blb_v3_stab_threshold": float(env.stab_threshold),
+blb_stage2_rl/runner.py:1087:"blb_v3_w_bits": float(weights.w_bits),
+blb_stage2_rl/runner.py:1088:"blb_v3_w_fusion": float(weights.w_fusion),
+blb_stage2_rl/runner.py:1089:"blb_v3_w_k": float(weights.w_k),
+blb_stage2_rl/runner.py:1090:"blb_v3_warmstart_baseline_bias": bool(train_cfg.warmstart_baseline_bias),
+blb_stage2_rl/runner.py:1091:"blb_v3_warmstart_bias_gain": float(train_cfg.warmstart_bias_gain),
+blb_stage2_rl/runner.py:1092:"blb_v3_warmstart_anchor_episodes": int(train_cfg.warmstart_anchor_episodes or 0),
+blb_stage2_rl/runner.py:1097:"terminal_reward_mode": "blb_v3_three_priority",
+blb_stage2_rl/runner.py:1105:"blb_v3_best_action_vec": (
+blb_stage2_rl/runner.py:1108:"blb_v3_best_reward": float(best_reward),
+blb_stage2_rl/runner.py:1109:"blb_v3_best_action_description_paths": dict(best_action_description_paths or {}),
+blb_stage2_rl/runner.py:1110:"blb_v3_baseline_action_description_paths": dict(baseline_action_description_paths or {}),
+blb_stage2_rl/runner.py:1111:"blb_v3_profile": str(train_cfg.profile),
+blb_stage2_rl/runner.py:1112:"blb_v3_total_episodes": int(train_cfg.total_episodes),
+blb_stage2_rl/runner.py:1113:"rl_variant": "blb_v3",
+blb_stage2_rl/runner.py:1144:root = getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)
+blb_stage2_rl/runner.py:1149:("rollout_size", "blb_v3_rollout_size"),
+blb_stage2_rl/runner.py:1150:("save_interval", "blb_v3_save_interval"),
+blb_stage2_rl/runner.py:1151:("eval_interval", "blb_v3_eval_interval"),
+blb_stage2_rl/runner.py:1152:("calibrate_baseline_samples", "blb_v3_calibrate_baseline_samples"),
+blb_stage2_rl/runner.py:1153:("warmstart_anchor_episodes", "blb_v3_warmstart_anchor_episodes"),
+blb_stage2_rl/runner.py:1163:v = getattr(ev, "blb_v3_warmstart_bias_gain", None)
+blb_stage2_rl/runner.py:1169:v = getattr(ev, "blb_v3_warmstart_baseline_bias", None)
+blb_stage2_rl/runner.py:1230:) -> RescaleOptimizerBridge:
+blb_stage2_rl/runner.py:1231:from rescale_optimizer_bridge import InProcessInvoker
+blb_stage2_rl/runner.py:1248:invoker = InProcessInvoker(
+blb_stage2_rl/runner.py:1254:invoker = InProcessInvoker.from_profile(
+blb_stage2_rl/runner.py:1269:return RescaleOptimizerBridge(invoker=invoker)
+blb_stage2_rl/runner.py:1363:"rl_variant": "blb_v3",
+blb_stage2_rl/runner.py:1422:"rl_variant": "blb_v3",
 blb_stage2_rl/__init__.py:11:* 通过 ``RescaleOptimizerBridge`` 接真实 ``Rescale_optimizer`` 子项目得到
 blb_stage2_rl/__init__.py:13:* 顶层入口 ``BLBStage2RLRunner.run(...)`` 返回的 dict 与旧版兼容，
 blb_stage2_rl/__init__.py:17:from blb_stage2_rl.runner import BLBStage2RLRunner
@@ -267,23 +268,23 @@ docs/BLB_stage2_rl_spec.md:857:cfgs, first_input_sf = action_vector_to_cfgs(
 Paean/action_grid.py:18:make_all_max_action_vector,
 Paean/action_grid.py:203:return make_all_max_action_vector(num_layers).astype(int)
 Paean/action_grid.py:207:return make_all_max_action_vector(num_layers).astype(int)
-Paean/blb_action_eval.py:12:action_vector_to_cfgs,
-Paean/blb_action_eval.py:20:InProcessInvoker,
-Paean/blb_action_eval.py:21:RescaleOptimizerBridge,
-Paean/blb_action_eval.py:238:for key in ("blb_v3_best_action_vec", "best_action_vec", "best_action"):
-Paean/blb_action_eval.py:269:decoded = action_vector_to_cfgs(
-Paean/blb_action_eval.py:355:def _build_rescale_bridge(self, profile: str) -> Tuple[RescaleOptimizerBridge, Optional[HeuristicStubInvoker], str, str]:
-Paean/blb_action_eval.py:357:kind = str(getattr(ev, "blb_v3_rescale_invoker_kind", "heuristic") or "heuristic")
-Paean/blb_action_eval.py:370:return RescaleOptimizerBridge(invoker=heuristic, **self._rescale_bridge_options()), heuristic, "heuristic", ""
-Paean/blb_action_eval.py:374:invoker = InProcessInvoker.from_profile(
-Paean/blb_action_eval.py:378:return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), None, "in_process", root
-Paean/blb_action_eval.py:397:return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), None, "subprocess", root
-Paean/blb_action_eval.py:402:canned = getattr(ev, "blb_v3_stub_canned", None)
-Paean/blb_action_eval.py:406:return RescaleOptimizerBridge(invoker=StubInvoker(canned), **self._rescale_bridge_options()), None, "stub", ""
-Paean/blb_action_eval.py:407:return fallback("stub invoker requested but no blb_v3_stub_canned was provided")
-Paean/blb_action_eval.py:412:return RescaleOptimizerBridge(invoker=heuristic, **self._rescale_bridge_options()), heuristic, "heuristic", ""
-Paean/blb_action_eval.py:451:getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)
-Paean/blb_action_eval.py:452:or getattr(ev, "blb_v3_subprocess_optimizer_root", None)
+Paean/blb_action_eval.py:13:action_vector_to_cfgs,
+Paean/blb_action_eval.py:21:InProcessInvoker,
+Paean/blb_action_eval.py:22:RescaleOptimizerBridge,
+Paean/blb_action_eval.py:239:for key in ("blb_v3_best_action_vec", "best_action_vec", "best_action"):
+Paean/blb_action_eval.py:270:decoded = action_vector_to_cfgs(
+Paean/blb_action_eval.py:372:def _build_rescale_bridge(self, profile: str) -> Tuple[RescaleOptimizerBridge, Optional[HeuristicStubInvoker], str, str]:
+Paean/blb_action_eval.py:374:kind = str(getattr(ev, "blb_v3_rescale_invoker_kind", "heuristic") or "heuristic")
+Paean/blb_action_eval.py:387:return RescaleOptimizerBridge(invoker=heuristic, **self._rescale_bridge_options()), heuristic, "heuristic", ""
+Paean/blb_action_eval.py:391:invoker = InProcessInvoker.from_profile(
+Paean/blb_action_eval.py:395:return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), None, "in_process", root
+Paean/blb_action_eval.py:414:return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), None, "subprocess", root
+Paean/blb_action_eval.py:419:canned = getattr(ev, "blb_v3_stub_canned", None)
+Paean/blb_action_eval.py:423:return RescaleOptimizerBridge(invoker=StubInvoker(canned), **self._rescale_bridge_options()), None, "stub", ""
+Paean/blb_action_eval.py:424:return fallback("stub invoker requested but no blb_v3_stub_canned was provided")
+Paean/blb_action_eval.py:429:return RescaleOptimizerBridge(invoker=heuristic, **self._rescale_bridge_options()), heuristic, "heuristic", ""
+Paean/blb_action_eval.py:468:getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)
+Paean/blb_action_eval.py:469:or getattr(ev, "blb_v3_subprocess_optimizer_root", None)
 Paean/config.py:55:stage2_rl_variant: str = "blb_v3"
 Paean/config.py:146:parser.add_argument("--stage2-rl-variant", default="blb_v3")
 Paean/config.py:265:stage2_rl_variant=str(ns.stage2_rl_variant or "blb_v3").lower(),
@@ -300,6 +301,8 @@ Paean/presets/mrpc-blb-baseline-truncation-sweep.conf:10:--stage2-rl-variant blb
 Paean/presets/mrpc-blb-max-final-eval.conf:8:--stage2-rl-variant blb_v3
 presets/mrpc-blb-max-final-eval.conf:16:--stage2-rl-variant blb_v3
 presets/mrpc-blb-stage2-rl.conf:23:--stage2-rl-variant blb_v3
+reports/phase0_entrypoints.md:5:3. Stage-2 variant switch: `--stage2-rl-variant blb_v3` in `presets/mrpc-blb-stage2-rl.conf`.
+reports/phase0_entrypoints.md:6:4. Runner implementation: `blb_stage2_rl/runner.py` (`BLBStage2RLRunner`).
 scripts/blb_eval_action.py:18:action_vector_to_cfgs,
 scripts/blb_eval_action.py:21:make_all_max_action_vector,
 scripts/blb_eval_action.py:30:InProcessInvoker,
@@ -308,6 +311,7 @@ scripts/blb_eval_action.py:80:return make_all_max_action_vector(num_layers=num_l
 scripts/blb_eval_action.py:110:decoded = action_vector_to_cfgs(
 scripts/blb_eval_action.py:116:bridge = RescaleOptimizerBridge(
 scripts/blb_eval_action.py:117:invoker=InProcessInvoker.from_profile(
+scripts/blb_eval_action.py:122:if np.array_equal(action, make_all_max_action_vector(num_layers=num_layers)):
 scripts/blb_export_action_registry.py:21:make_all_max_action_vector,
 scripts/blb_export_action_registry.py:169:action = make_all_max_action_vector(num_layers=num_layers)
 scripts/blb_phase0_preflight.py:27:"BLBStage2RLRunner",
@@ -320,23 +324,34 @@ scripts/blb_phase0_preflight.py:33:"make_all_max_action_vector",
 scripts/blb_phase0_preflight.py:77:"3. Stage-2 variant switch: `--stage2-rl-variant blb_v3` in `presets/mrpc-blb-stage2-rl.conf`.",
 scripts/blb_phase0_preflight.py:78:"4. Runner implementation: `blb_stage2_rl/runner.py` (`BLBStage2RLRunner`).",
 tests/test_blb_stage2_rl_regressions.py:33:"blb_v3_best_action_vec": action,
-tests/test_blb_stage2_rl_regressions.py:44:from blb_stage2_rl.action_space import layer_dims, make_all_max_action_vector
-tests/test_blb_stage2_rl_regressions.py:47:preferred = make_all_max_action_vector(num_layers=2)
-tests/test_blb_stage2_rl_regressions.py:168:from rescale_optimizer_bridge import RescaleOptimizerBridge
-tests/test_blb_stage2_rl_regressions.py:187:bridge = RescaleOptimizerBridge(invoker=invoker)
-tests/test_blb_stage2_rl_regressions.py:197:from blb_stage2_rl.action_space import load_max_sfs, make_all_max_action_vector
-tests/test_blb_stage2_rl_regressions.py:200:from rescale_optimizer_bridge import RescaleOptimizerOutput
-tests/test_blb_stage2_rl_regressions.py:224:name: RescaleOptimizerOutput(
-tests/test_blb_stage2_rl_regressions.py:238:name: RescaleOptimizerOutput(
-tests/test_blb_stage2_rl_regressions.py:269:_obs, reward, done, info = env.step(make_all_max_action_vector(num_layers=1))
-tests/test_blb_stage2_rl_regressions.py:279:action_vector_to_cfgs,
-tests/test_blb_stage2_rl_regressions.py:282:make_all_max_action_vector,
-tests/test_blb_stage2_rl_regressions.py:285:InProcessInvoker,
-tests/test_blb_stage2_rl_regressions.py:286:RescaleOptimizerBridge,
-tests/test_blb_stage2_rl_regressions.py:292:decoded = action_vector_to_cfgs(
-tests/test_blb_stage2_rl_regressions.py:293:make_all_max_action_vector(num_layers=12),
-tests/test_blb_stage2_rl_regressions.py:300:bridge = RescaleOptimizerBridge(
-tests/test_blb_stage2_rl_regressions.py:301:invoker=InProcessInvoker.from_profile(
-tests/test_blb_stage2_rl_regressions.py:321:make_all_max_action_vector,
-tests/test_blb_stage2_rl_regressions.py:324:action = make_all_max_action_vector(num_layers=1)
-tests/test_blb_stage2_rl_regressions.py:465:blb_v3_probe_batch_count = 3
+tests/test_blb_stage2_rl_regressions.py:43:from blb_stage2_rl.action_space import make_all_max_action_vector
+tests/test_blb_stage2_rl_regressions.py:77:action_vec=make_all_max_action_vector(num_layers=1),
+tests/test_blb_stage2_rl_regressions.py:113:from blb_stage2_rl.action_space import layer_dims, make_all_max_action_vector
+tests/test_blb_stage2_rl_regressions.py:116:preferred = make_all_max_action_vector(num_layers=2)
+tests/test_blb_stage2_rl_regressions.py:286:from rescale_optimizer_bridge import RescaleOptimizerBridge
+tests/test_blb_stage2_rl_regressions.py:305:bridge = RescaleOptimizerBridge(invoker=invoker)
+tests/test_blb_stage2_rl_regressions.py:315:from blb_stage2_rl.action_space import load_max_sfs, make_all_max_action_vector
+tests/test_blb_stage2_rl_regressions.py:318:from rescale_optimizer_bridge import RescaleOptimizerOutput
+tests/test_blb_stage2_rl_regressions.py:342:name: RescaleOptimizerOutput(
+tests/test_blb_stage2_rl_regressions.py:356:name: RescaleOptimizerOutput(
+tests/test_blb_stage2_rl_regressions.py:387:_obs, reward, done, info = env.step(make_all_max_action_vector(num_layers=1))
+tests/test_blb_stage2_rl_regressions.py:397:action_vector_to_cfgs,
+tests/test_blb_stage2_rl_regressions.py:400:make_all_max_action_vector,
+tests/test_blb_stage2_rl_regressions.py:403:InProcessInvoker,
+tests/test_blb_stage2_rl_regressions.py:404:RescaleOptimizerBridge,
+tests/test_blb_stage2_rl_regressions.py:410:decoded = action_vector_to_cfgs(
+tests/test_blb_stage2_rl_regressions.py:411:make_all_max_action_vector(num_layers=12),
+tests/test_blb_stage2_rl_regressions.py:418:bridge = RescaleOptimizerBridge(
+tests/test_blb_stage2_rl_regressions.py:419:invoker=InProcessInvoker.from_profile(
+tests/test_blb_stage2_rl_regressions.py:439:make_all_max_action_vector,
+tests/test_blb_stage2_rl_regressions.py:442:action = make_all_max_action_vector(num_layers=1)
+tests/test_blb_stage2_rl_regressions.py:565:from rescale_optimizer_bridge import RescaleOptimizerOutput
+tests/test_blb_stage2_rl_regressions.py:581:name: RescaleOptimizerOutput(
+tests/test_blb_stage2_rl_regressions.py:595:name: RescaleOptimizerOutput(
+tests/test_blb_stage2_rl_regressions.py:606:old_invoker = mod.InProcessInvoker
+tests/test_blb_stage2_rl_regressions.py:607:old_bridge = mod.RescaleOptimizerBridge
+tests/test_blb_stage2_rl_regressions.py:608:mod.InProcessInvoker = FakeInvoker
+tests/test_blb_stage2_rl_regressions.py:609:mod.RescaleOptimizerBridge = FakeBridge
+tests/test_blb_stage2_rl_regressions.py:622:mod.InProcessInvoker = old_invoker
+tests/test_blb_stage2_rl_regressions.py:623:mod.RescaleOptimizerBridge = old_bridge
+tests/test_blb_stage2_rl_regressions.py:648:blb_v3_probe_batch_count = 3

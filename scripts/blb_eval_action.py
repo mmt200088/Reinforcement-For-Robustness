@@ -119,7 +119,10 @@ def run_f0_eval(
             profile=profile,
         )
     )
-    outputs = bridge.evaluate_blocks(requests)
+    if np.array_equal(action, make_all_max_action_vector(num_layers=num_layers)):
+        outputs = bridge.evaluate_baseline_blocks(requests)
+    else:
+        outputs = bridge.evaluate_blocks(requests)
     signals = aggregate_optimizer_signals(outputs)
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)

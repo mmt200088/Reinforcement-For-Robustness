@@ -1,5 +1,8 @@
 import csv
 import contextlib
+import io
+import json
+import os
 import shutil
 import unittest
 import uuid
@@ -21,6 +24,30 @@ def _workspace_tempdir():
         shutil.rmtree(path, ignore_errors=True)
 
 
+class BLBInstallLogRegressionTests(unittest.TestCase):
+    def test_blb_install_log_helper_respects_quiet_env(self):
+        import function_handler
+
+        previous = os.environ.get("BLB_NOISE_INSTALL_LOGS")
+        try:
+            os.environ["BLB_NOISE_INSTALL_LOGS"] = "0"
+            quiet = io.StringIO()
+            with contextlib.redirect_stdout(quiet):
+                function_handler._print_blb_install("hidden")
+            self.assertEqual(quiet.getvalue(), "")
+
+            os.environ["BLB_NOISE_INSTALL_LOGS"] = "1"
+            loud = io.StringIO()
+            with contextlib.redirect_stdout(loud):
+                function_handler._print_blb_install("shown")
+            self.assertEqual(loud.getvalue(), "shown\n")
+        finally:
+            if previous is None:
+                os.environ.pop("BLB_NOISE_INSTALL_LOGS", None)
+            else:
+                os.environ["BLB_NOISE_INSTALL_LOGS"] = previous
+
+
 class BLBActionFinalEvalRegressionTests(unittest.TestCase):
     def test_resolve_base_action_accepts_numpy_arrays_without_truthiness(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
@@ -38,8 +65,149 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
 
         self.assertTrue(np.array_equal(resolved, action))
 
+    def test_action_candidate_skips_model_forward_when_optimizer_invalid(self):
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from blb_stage2_rl.action_space import make_all_max_action_vector
+
+        class FakeEvaluator:
+            total_layers = 1
+            dataset_key = "mrpc"
+
+            def get_simulated_cost(self, _gelu, _softmax):
+                return 10.0, 4.0, 6.0
+
+        signals = type(
+            "Signals",
+            (),
+            {
+                "any_invalid": True,
+                "total_bits_sum": 0,
+                "total_fusion_count": 0,
+                "invalid_block_count": 1,
+                "valid_block_count": 0,
+            },
+        )()
+
+        runner = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
+        runner.evaluator = FakeEvaluator()
+        runner._optimizer_outputs = lambda _profile, _cfgs_dict: ({}, signals)
+        runner._config_details = lambda *_args, **_kwargs: {}
+        runner._is_feasible = lambda *_args, **_kwargs: True
+
+        def fail_forward(*_args, **_kwargs):
+            raise AssertionError("invalid optimizer output must not run BLB forward")
+
+        runner._run_blb_eval = fail_forward
+
+        result = runner._evaluate_action_candidate(
+            name="candidate",
+            action_vec=make_all_max_action_vector(num_layers=1),
+            overrides={},
+            gelu=np.ones(1, dtype=int),
+            softmax=np.ones(1, dtype=int) * 2,
+            report_constraints={},
+        )
+
+        self.assertTrue(result["any_invalid"])
+        self.assertTrue(result["skipped_forward"])
+        self.assertFalse(result["feasible"])
+        self.assertEqual(result["install_verification"], {})
+
+    def test_full_noise_config_uses_training_first_input_N(self):
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from blb_stage2_rl.action_space import BLB_FIRST_INPUT_N
+
+        decoded = type(
+            "Decoded",
+            (),
+            {
+                "first_input_sf": 30,
+                "block1_cfgs": {},
+                "block2_cfgs": {},
+                "block3_cfgs": {},
+                "block4_cfgs": {},
+                "block5_cfgs": {},
+            },
+        )()
+
+        config = BLBActionFinalEvaluationModule._full_noise_config(decoded)
+
+        self.assertEqual(config["entries"][0]["N"], BLB_FIRST_INPUT_N)
+
 
 class BLBPolicyWarmstartRegressionTests(unittest.TestCase):
+    def test_kind_drop_action_changes_only_target_kind_slots(self):
+        from blb_stage2_rl.action_space import (
+            action_dims_for_config,
+            describe_action_vector,
+            load_max_sfs,
+            make_all_max_action_vector,
+        )
+        from blb_stage2_rl.runner import _build_kind_drop_action
+
+        baseline = make_all_max_action_vector(num_layers=2)
+        desc = describe_action_vector(
+            baseline,
+            max_sfs=load_max_sfs("mrpc"),
+            num_layers=2,
+            gelu_degree=[1, 4],
+            attn_degree=[2, 5],
+            profile="mrpc",
+        )
+        records = list(desc["records"])
+        action, touched = _build_kind_drop_action(
+            baseline,
+            records,
+            action_dims_for_config(2),
+            kinds=("M", "S"),
+            radius=1,
+        )
+
+        self.assertGreater(len(touched), 0)
+        self.assertFalse(np.array_equal(action, baseline))
+        for idx, (actual, expected) in enumerate(zip(action.tolist(), baseline.tolist())):
+            if idx in touched:
+                self.assertIn(records[idx]["kind"], ("M", "S"))
+                self.assertLess(actual, expected)
+            else:
+                self.assertEqual(actual, expected)
+
+    def test_warmstart_action_mode_expires_by_absolute_episode(self):
+        from blb_stage2_rl.runner import _warmstart_action_mode
+
+        kwargs = {
+            "anchor_episodes": 30,
+            "cost_probe_count": 4,
+            "neighbor_sampling": True,
+            "has_mutable_neighbors": True,
+            "neighbor_ramp_episodes": 1200,
+        }
+
+        self.assertEqual(
+            _warmstart_action_mode(episode_index=0, **kwargs),
+            ("anchor", -1),
+        )
+        self.assertEqual(
+            _warmstart_action_mode(episode_index=30, **kwargs),
+            ("cost_probe", 0),
+        )
+        self.assertEqual(
+            _warmstart_action_mode(episode_index=34, **kwargs),
+            ("neighbor", -1),
+        )
+        self.assertEqual(
+            _warmstart_action_mode(episode_index=1199, **kwargs),
+            ("neighbor", -1),
+        )
+        self.assertEqual(
+            _warmstart_action_mode(episode_index=1200, **kwargs),
+            ("policy", -1),
+        )
+        self.assertEqual(
+            _warmstart_action_mode(episode_index=50000, **kwargs),
+            ("policy", -1),
+        )
+
     def test_preferred_action_bias_drives_deterministic_sample_to_baseline(self):
         from blb_stage2_rl.action_space import layer_dims, make_all_max_action_vector
         from blb_stage2_rl.policy import BLBStage2Policy
@@ -62,6 +230,35 @@ class BLBPolicyWarmstartRegressionTests(unittest.TestCase):
 
 
 class BLBTraceWriterRegressionTests(unittest.TestCase):
+    def test_status_board_publishes_live_top_level_fields(self):
+        from blb_stage2_rl.persistence import BLBStatusBoard
+
+        with _workspace_tempdir() as td:
+            board = BLBStatusBoard(td, total_episodes=240, profile="mrpc")
+            board.set_best(
+                best_reward=0.0,
+                best_action_vec=[1, 2, 3],
+                best_breakdown={"priority": 3, "invalid": False},
+                best_episode=0,
+            )
+            board.update_after_episode(
+                120,
+                -30.0,
+                breakdown={"priority": 0, "invalid": True},
+            )
+            board.update_after_ppo_update(1, {"policy_loss": 0.25})
+
+            payload = json.loads(Path(board.path).read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["episode"], 120)
+        self.assertEqual(payload["completed_episodes"], 120)
+        self.assertEqual(payload["best_reward"], 0.0)
+        self.assertEqual(payload["best"]["reward"], 0.0)
+        self.assertEqual(payload["last_reward"], -30.0)
+        self.assertEqual(payload["last_priority"], 0)
+        self.assertTrue(payload["last_invalid"])
+        self.assertIsNotNone(payload["updated_at"])
+
     def test_trace_writer_appends_structured_rollout_rows(self):
         from blb_stage2_rl.persistence import append_blb_episode_trace_row
 
@@ -106,6 +303,77 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
         self.assertEqual(rows[0]["episode"], "120")
         self.assertEqual(rows[0]["priority1_count"], "120")
         self.assertEqual(rows[1]["best_reward"], "0.0")
+
+    def test_trace_writer_migrates_old_header_after_cost_probe_column_added(self):
+        from blb_stage2_rl.persistence import (
+            BLB_EPISODE_TRACE_CSV,
+            BLB_TRACE_FIELDNAMES,
+            append_blb_episode_trace_row,
+        )
+
+        with _workspace_tempdir() as td:
+            trace_path = Path(td) / BLB_EPISODE_TRACE_CSV
+            old_header = [field for field in BLB_TRACE_FIELDNAMES if field != "cost_probe_count"]
+            old_row = {field: "" for field in old_header}
+            old_row.update({
+                "episode": 120,
+                "total_episodes": 80000,
+                "ppo_update_count": 1,
+                "anchor_count": 30,
+                "policy_loss": 0.01,
+                "value_loss": 10.0,
+                "entropy": 100.0,
+                "clip_fraction": 0.1,
+                "n_samples": 120,
+            })
+            malformed_new_row = {field: "" for field in BLB_TRACE_FIELDNAMES}
+            malformed_new_row.update({
+                "episode": 520,
+                "total_episodes": 80000,
+                "ppo_update_count": 4,
+                "anchor_count": 0,
+                "cost_probe_count": 4,
+                "policy_loss": 0.02,
+                "value_loss": 2437.0,
+                "entropy": 1071.0,
+                "clip_fraction": 0.744,
+                "n_samples": 120,
+            })
+            with trace_path.open("w", encoding="utf-8", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(old_header)
+                writer.writerow([old_row.get(field, "") for field in old_header])
+                writer.writerow([malformed_new_row.get(field, "") for field in BLB_TRACE_FIELDNAMES])
+
+            append_blb_episode_trace_row(
+                td,
+                {
+                    "episode": 640,
+                    "total_episodes": 80000,
+                    "ppo_update_count": 5,
+                    "anchor_count": 0,
+                    "cost_probe_count": 0,
+                    "policy_loss": 0.03,
+                    "value_loss": 20.0,
+                    "entropy": 90.0,
+                    "clip_fraction": 0.2,
+                    "n_samples": 120,
+                },
+            )
+
+            with trace_path.open(newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(list(rows[0].keys()), list(BLB_TRACE_FIELDNAMES))
+        self.assertEqual(rows[0]["cost_probe_count"], "0")
+        self.assertEqual(rows[0]["policy_loss"], "0.01")
+        self.assertEqual(rows[1]["cost_probe_count"], "4")
+        self.assertEqual(rows[1]["policy_loss"], "0.02")
+        self.assertEqual(rows[1]["value_loss"], "2437.0")
+        self.assertEqual(rows[1]["entropy"], "1071.0")
+        self.assertEqual(rows[1]["clip_fraction"], "0.744")
+        self.assertEqual(rows[1]["n_samples"], "120")
+        self.assertEqual(rows[2]["episode"], "640")
 
     def test_trace_writer_persists_rollout_eval_diagnostics(self):
         from blb_stage2_rl.persistence import append_blb_episode_trace_row
@@ -159,8 +427,114 @@ class BLBRewardRegressionTests(unittest.TestCase):
         )
 
         self.assertTrue(breakdown.invalid)
-        self.assertEqual(breakdown.priority, 3)
+        # spec §6.1: invalid is "Priority 0" — distinct from cost-priority (3)
+        # so rollout buckets don't double-count invalid against cost successes.
+        self.assertEqual(breakdown.priority, 0)
         self.assertEqual(breakdown.reward, -30.0)
+
+    def test_runner_best_selection_uses_hard_constraints_before_reward(self):
+        from blb_stage2_rl.runner import is_better_blb_candidate
+
+        invalid_high_reward = {
+            "invalid": True,
+            "acc_violation": 0.0,
+            "stab_violation": 0.0,
+        }
+        valid_accuracy_failure = {
+            "invalid": False,
+            "acc_violation": 0.2,
+            "stab_violation": 0.0,
+        }
+        valid_safe_lower_reward = {
+            "invalid": False,
+            "acc_violation": 0.0,
+            "stab_violation": 0.0,
+        }
+        valid_safe_higher_reward = {
+            "invalid": False,
+            "acc_violation": 0.0,
+            "stab_violation": 0.0,
+        }
+
+        self.assertTrue(
+            is_better_blb_candidate(
+                candidate_reward=-100.0,
+                candidate_breakdown=valid_accuracy_failure,
+                best_reward=-30.0,
+                best_breakdown=invalid_high_reward,
+            )
+        )
+        self.assertTrue(
+            is_better_blb_candidate(
+                candidate_reward=1.0,
+                candidate_breakdown=valid_safe_higher_reward,
+                best_reward=0.5,
+                best_breakdown=valid_safe_lower_reward,
+            )
+        )
+        self.assertFalse(
+            is_better_blb_candidate(
+                candidate_reward=-30.0,
+                candidate_breakdown=invalid_high_reward,
+                best_reward=-100.0,
+                best_breakdown=valid_accuracy_failure,
+            )
+        )
+
+    def test_baseline_preflight_stability_threshold_uses_noisy_baseline(self):
+        from blb_stage2_rl.runner import _baseline_preflight_stability_threshold
+
+        widened = _baseline_preflight_stability_threshold(
+            current_threshold=0.001,
+            observed_loss_std=0.0018,
+            tolerance=0.005,
+        )
+
+        self.assertGreater(widened, 0.0018)
+        self.assertAlmostEqual(
+            _baseline_preflight_stability_threshold(
+                current_threshold=0.003,
+                observed_loss_std=0.0018,
+                tolerance=0.005,
+            ),
+            0.003,
+        )
+
+    def test_neighbor_indices_use_real_k_order_not_action_index_order(self):
+        from blb_stage2_rl.action_space import K_LEVELS
+        from blb_stage2_rl.runner import _allowed_neighbor_indices
+
+        baseline_idx = int(K_LEVELS.index(max(K_LEVELS)))
+        allowed = _allowed_neighbor_indices(
+            kind="K",
+            baseline_idx=baseline_idx,
+            dim=len(K_LEVELS),
+            radius=1,
+        )
+
+        self.assertEqual([K_LEVELS[i] for i in allowed], [13, 12])
+
+    def test_neighborhood_curriculum_expands_slowly(self):
+        from blb_stage2_rl.runner import _neighborhood_curriculum
+
+        self.assertEqual(
+            _neighborhood_curriculum(
+                episode_offset=0,
+                ramp_episodes=100,
+                max_mutations=8,
+                max_radius=2,
+            ),
+            (1, 1),
+        )
+        self.assertEqual(
+            _neighborhood_curriculum(
+                episode_offset=100,
+                ramp_episodes=100,
+                max_mutations=8,
+                max_radius=2,
+            ),
+            (8, 2),
+        )
 
 
 class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
@@ -312,6 +686,45 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertEqual(signals.valid_block_count, 60)
         self.assertEqual(signals.invalid_block_count, 0)
 
+    def test_real_mrpc_all_max_cfg_derived_optimizer_outputs_are_valid(self):
+        from blb_stage2_rl.action_space import (
+            action_vector_to_cfgs,
+            build_optimizer_requests,
+            load_max_sfs,
+            make_all_max_action_vector,
+        )
+        from rescale_optimizer_bridge import (
+            InProcessInvoker,
+            RescaleOptimizerBridge,
+            aggregate_optimizer_signals,
+        )
+
+        decoded = action_vector_to_cfgs(
+            make_all_max_action_vector(num_layers=12),
+            load_max_sfs("mrpc"),
+            num_layers=12,
+            gelu_degree=4,
+            attn_degree=4,
+        )
+        requests = build_optimizer_requests("mrpc", decoded.cfgs_dict())
+        bridge = RescaleOptimizerBridge(
+            invoker=InProcessInvoker.from_profile(
+                rescale_optimizer_root="Rescale_optimizer",
+                profile="mrpc",
+            )
+        )
+
+        outputs = bridge.evaluate_blocks(requests)
+        signals = aggregate_optimizer_signals(outputs)
+
+        self.assertFalse(signals.any_invalid, signals.invalid_chains)
+        self.assertEqual(signals.valid_block_count, 60)
+        self.assertEqual(signals.invalid_block_count, 0)
+        self.assertEqual(
+            outputs["block4_L0"].raw["delta_overrides"]["ctct_rot_softmax_mul_v"],
+            39,
+        )
+
 
 class BLBActionDescriptionRegressionTests(unittest.TestCase):
     def test_action_description_names_every_noise_point_and_truncation(self):
@@ -441,6 +854,71 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
         self.assertEqual(record["normalized_cost"], 0.5)
         self.assertEqual(record["optimizer"]["total_bits_sum"], 1200)
         self.assertEqual(record["rank_key"], [0.0, 0.0, 0.0, 0.5])
+
+    def test_f0_eval_all_max_uses_optimizer_baseline_path(self):
+        import scripts.blb_eval_action as mod
+        from rescale_optimizer_bridge import RescaleOptimizerOutput
+
+        calls = []
+
+        class FakeInvoker:
+            @classmethod
+            def from_profile(cls, **_kwargs):
+                return object()
+
+        class FakeBridge:
+            def __init__(self, invoker):
+                self.invoker = invoker
+
+            def evaluate_blocks(self, requests):
+                calls.append("cfg-derived")
+                return {
+                    name: RescaleOptimizerOutput(
+                        config_name=name,
+                        fusion_count=0,
+                        total_bits=0,
+                        invalid_chain={"reason": "wrong path"},
+                        valid=False,
+                        raw={},
+                    )
+                    for name in requests
+                }
+
+            def evaluate_baseline_blocks(self, requests):
+                calls.append("baseline")
+                return {
+                    name: RescaleOptimizerOutput(
+                        config_name=name,
+                        fusion_count=0,
+                        total_bits=100,
+                        invalid_chain=None,
+                        valid=True,
+                        raw={},
+                    )
+                    for name in requests
+                }
+
+        old_invoker = mod.InProcessInvoker
+        old_bridge = mod.RescaleOptimizerBridge
+        mod.InProcessInvoker = FakeInvoker
+        mod.RescaleOptimizerBridge = FakeBridge
+        try:
+            with _workspace_tempdir() as td:
+                record = mod.run_f0_eval(
+                    profile="mrpc",
+                    num_layers=1,
+                    action_json=None,
+                    output_dir=td,
+                    source="all_max_f0",
+                    rescale_optimizer_root="unused",
+                    baseline_total_bits=None,
+                )
+        finally:
+            mod.InProcessInvoker = old_invoker
+            mod.RescaleOptimizerBridge = old_bridge
+
+        self.assertEqual(calls, ["baseline"])
+        self.assertTrue(record["valid"])
 
 
 class BLBProbeSizingRegressionTests(unittest.TestCase):

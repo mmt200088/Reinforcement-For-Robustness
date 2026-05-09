@@ -231,6 +231,31 @@ class BLBStage2Policy(nn.Module):
         action_vec = torch.stack(actions, dim=-1)     # [B, total_dim]
         return action_vec, log_prob_total, out.value
 
+    def per_dim_entropy(self, state: torch.Tensor) -> torch.Tensor:
+        """Return per-action-slot entropy averaged over the input batch.
+
+        Output shape: ``[total_dim]`` aligned with the action vector layout:
+        ``[layer0_slot0, ..., layer0_slotK, layer1_slot0, ..., first_input]``.
+
+        The aggregate ``entropy`` reported by ``ppo_update`` hides whether
+        specific slot kinds (F/W/M/S/R/K) are collapsing early; this helper
+        lets the runner break down entropy by kind / block to surface that.
+        """
+        if state.dim() == 1:
+            state = state.unsqueeze(0)
+        out = self.forward(state)
+        per_layer_split = self._split_layer_logits(out.layer_logits_flat)
+        fi_logits = out.first_input_logits
+
+        entropies: List[torch.Tensor] = []
+        for layer_split in per_layer_split:
+            for dim_logits in layer_split:
+                dist = torch.distributions.Categorical(logits=dim_logits)
+                entropies.append(dist.entropy().mean(dim=0))   # scalar over batch
+        fi_dist = torch.distributions.Categorical(logits=fi_logits)
+        entropies.append(fi_dist.entropy().mean(dim=0))
+        return torch.stack(entropies)
+
     def evaluate_action(
             self,
             state: torch.Tensor,

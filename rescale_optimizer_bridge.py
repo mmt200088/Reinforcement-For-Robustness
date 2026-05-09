@@ -662,7 +662,7 @@ def default_block4_cfg_to_delta(cfg: Block4NoiseConfig) -> Dict[str, Union[int, 
     ``softmax_out_mask`` / ``v_mask`` 被 graph 合成一个 ``ctpt_mask2``，
     我们取 ``softmax_out_mask`` 的 SF）：
       * ctpt_mask2 (CTPT_MUL)               ← softmax 输出 / V 路径上的 mask
-      * ctct_rot_softmax_mul_v (CTCT_MUL)   ← softmax×V matmul，固定 "x2"
+      * ctct_rot_softmax_mul_v (CTCT_MUL)   ← softmax×V matmul，MRPC baseline delta=39
       * ctpt_mask (CTPT_MUL)                ← 合并 softmax×V 后的 mask
       * ctpt_wo_attnout (CTPT_MUL)          ← Wo
       * ctpt_inv_d_1 (CTPT_MUL)             ← post-attn LN μ 的 1/D
@@ -671,7 +671,7 @@ def default_block4_cfg_to_delta(cfg: Block4NoiseConfig) -> Dict[str, Union[int, 
     """
     return {
         "ctpt_mask2":             int(cfg.softmax_out_mask_encode.scaling_factor),
-        "ctct_rot_softmax_mul_v": "x2",
+        "ctct_rot_softmax_mul_v": 39,
         "ctpt_mask":              int(cfg.softmax_v_mask_encode.scaling_factor),
         "ctpt_wo_attnout":        int(cfg.wo_encode.scaling_factor),
         "ctpt_inv_d_1":           int(cfg.ln_mean_inv_d_encode.scaling_factor),

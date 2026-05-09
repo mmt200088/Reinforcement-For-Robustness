@@ -128,7 +128,7 @@ class EpisodeMetrics:
 class RewardBreakdown:
     """``compute_reward`` 的明细返回值。"""
     reward: float
-    priority: int                       # 1=acc, 2=stab, 3=cost
+    priority: int                       # 0=invalid, 1=acc, 2=stab, 3=cost
     invalid: bool                       # invalid_chain
     r_bits: float = 0.0
     r_fusion: float = 0.0
@@ -185,8 +185,10 @@ def compute_reward(
     # reason the episode did not evaluate.
     invalid = bool(any_invalid) if any_invalid is not None else bool(getattr(opt_signals, "any_invalid", False))
     if invalid:
+        # priority=0 == "invalid" (spec §6.1). Distinct from cost-priority (3) so
+        # that rollout buckets don't double-count invalid against cost successes.
         return RewardBreakdown(
-            reward=-float(weights.invalid_penalty), priority=3, invalid=True,
+            reward=-float(weights.invalid_penalty), priority=0, invalid=True,
         )
 
     # 优先级 1：精度

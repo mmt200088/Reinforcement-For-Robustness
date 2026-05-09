@@ -1,5 +1,11 @@
 # BLB Stage-2 RL 内部全流程梳理
 
+> **该读哪份？**
+> - 只想跑训练 / 改 launcher 旗标 → `BLB_stage2_rl_README.md`
+> - 想理解端到端运行逻辑（启动→停止→续训练→持久化） → `BLB_stage2_rl_FULL_FLOW.md`
+> - 想看代码层调用栈 / 模块职责 / 单 episode 内部展开 → **本文**
+> - 想看设计理由、数学约束、反例分析 → `BLB_stage2_rl_spec.md`
+
 本文档描述当前项目中 `blb_v3` Stage-2 RL 的真实内部流程：参数如何进入训练、如何构造动作空间、一个 episode 内部发生什么、reward 如何分层、PPO 如何更新、checkpoint 如何保存与恢复，以及它如何与旧 Stage-2 RL 和统一 final-eval 共存。
 
 本文只解释当前实现。它不是设计草案，也不假设未来会补齐的能力已经存在。

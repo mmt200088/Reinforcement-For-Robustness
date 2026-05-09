@@ -11,7 +11,10 @@
 | 5     | 2         | 1          | 2     | 3+(deg-1)+deg | 1 | 15 + 1K (deg=4) |
 | first-input | 1   | 0          | 0     | 0           | 0 | 1 |
 
-每层 94 维（softmax_deg=4, gelu_deg=4），L=12 层 → 1129 维。
+每层 73 维（softmax_deg=4, gelu_deg=4 各占满），L=12 层 → 73*12 + 1 = 877 维。
+（旧注释里 94 维和 1129 维已废弃；以 ``action_dims_for_config(num_layers)`` 实际返回为准。
+ 用户 spec 的 "59 个必选槽位" 是按 effective slot 计的，部分字段是 compat-extra
+ 或 inactive — 用 ``scripts/blb_export_action_registry.py`` 拿权威分类。）
 
 动作向量布局（顺序）：
   对每层 i ∈ [0, L):
@@ -881,6 +884,51 @@ def _operation_name(block_idx: int, field_name: str, kind: str) -> str:
     )
 
 
+def _short_field_label(field_name: str, kind: str) -> str:
+    """Compact field tag for ``slot_label`` (logs / dashboards).
+
+    Goal: minimum-character disambiguation while staying derivable from the
+    full field name. See CLAUDE.md "Critical mental model" #3 — every action
+    must be locatable in BLB flow without consulting an extra table.
+    """
+    if str(kind) == "K":
+        return ""  # the "K" kind in the label itself already carries this
+    f = str(field_name)
+    if f.startswith("square_rescale_sf_"):
+        return "sq" + f.rsplit("_", 1)[-1]            # block3 softmax square rescales
+    if f.startswith("gelu_power_rescale_sf_"):
+        return "gp" + f.rsplit("_", 1)[-1]            # block5 GELU power rescales
+    if f.startswith("gelu_coeff_mul_rescale_sf_"):
+        return "gc" + f.rsplit("_", 1)[-1]            # block5 GELU coeff-mul rescales
+    if f.endswith("_rescale_sf"):
+        return f[: -len("_rescale_sf")] + "_r"
+    if f.endswith("_sf"):
+        return f[: -len("_sf")]
+    return f
+
+
+def make_slot_label(
+        layer_idx: int,
+        block_idx: Optional[int],
+        kind: str,
+        field_name: str,
+        ) -> str:
+    """Compact ``L{i}.B{n}.{kind}[.{short}]`` label for a single action slot.
+
+    Examples:
+      ``L0.B1.F.gelu_out`` — layer 0, block 1, fresh slot for GELU output
+      ``L3.B5.R.gp2``      — layer 3, block 5, GELU power-rescale slot 2
+      ``L11.B4.K``         — layer 11, block 4, output truncation k
+      ``L0.first_input.F`` — layer-0 first-input fresh (not in any block)
+    """
+    short = _short_field_label(field_name, kind)
+    if block_idx is None:
+        # First-input fresh: outside all 5 blocks.
+        return f"L{int(layer_idx)}.first_input.{str(kind)}"
+    base = f"L{int(layer_idx)}.B{int(block_idx)}.{str(kind)}"
+    return base if not short else f"{base}.{short}"
+
+
 def _is_action_field_effective(
         *,
         layer_idx: int,
@@ -981,6 +1029,7 @@ def describe_action_vector(
                 "distribution": _action_distribution_for_kind(kind),
                 "operation": operation,
                 "location": f"{block_label}.{field_name}",
+                "slot_label": make_slot_label(li, block_idx, kind, field_name),
                 "config_name": make_config_name(str(profile), block_idx, li),
                 "action_index": action_index,
                 "num_levels": levels,
@@ -1012,6 +1061,7 @@ def describe_action_vector(
         "distribution": "fresh",
         "operation": "first_input_fresh",
         "location": "first_input.layer0",
+        "slot_label": make_slot_label(0, None, "F", "first_input_sf"),
         "config_name": "first_input_L0",
         "action_index": first_idx,
         "num_levels": int(LEVELS_FIRST_INPUT),

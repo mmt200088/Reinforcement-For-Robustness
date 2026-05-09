@@ -18,6 +18,16 @@ from typing import Optional, Sequence, Tuple
 from torch import Tensor
 
 
+_BLB_INSTALL_LOG_ENV = "BLB_NOISE_INSTALL_LOGS"
+
+
+def _print_blb_install(message: str) -> None:
+    raw = str(_os.environ.get(_BLB_INSTALL_LOG_ENV, "1")).strip().lower()
+    if raw in ("0", "false", "no", "off", "quiet"):
+        return
+    print(message)
+
+
 # ---------------------------------------------------------------------------
 # 独立噪声 RNG（与 torch 全局 RNG 完全隔离）
 # ---------------------------------------------------------------------------
@@ -3238,7 +3248,7 @@ class ReversibleLayerHandler:
             f"square={cfg.square_result_rescale.scaling_factor if cfg.square_result_rescale else 'off'}, "
             f"var={cfg.var_result_rescale.scaling_factor if cfg.var_result_rescale else 'off'}"
         )
-        print(
+        _print_blb_install(
             f"已为 {len(selected)} 层启用 BLB Block 1 噪声 "
             f"(N={cfg.gelu_out_fresh.N}, "
             f"fresh_gelu_out={cfg.gelu_out_fresh.scaling_factor}, "
@@ -3452,7 +3462,7 @@ class ReversibleLayerHandler:
             f"qkt={cfg.qkt_matmul_result_rescale.scaling_factor if cfg.qkt_matmul_result_rescale else 'off'}, "
             f"merge_mask={cfg.qkt_merge_mask_result_rescale.scaling_factor if cfg.qkt_merge_mask_result_rescale else 'off'}"
         )
-        print(
+        _print_blb_install(
             f"已为 {len(selected)} 层启用 BLB Block 2 噪声 "
             f"(N={cfg.gamma_encode.N}, "
             f"fresh_inv_std={cfg.inv_std_fresh.scaling_factor}, "
@@ -3623,7 +3633,7 @@ class ReversibleLayerHandler:
                 str(rs.scaling_factor) if rs is not None else "off"
                 for rs in sample_cfg.square_rescales
             )
-            print(
+            _print_blb_install(
                 f"已为 {len(installed_summary)} 层启用 BLB Block 3 噪声 "
                 f"(degree∈{{{','.join(str(d) for _, d in installed_summary)}}}, "
                 f"N={sample_cfg.x_fresh.N}, "
@@ -3775,7 +3785,7 @@ class ReversibleLayerHandler:
             f"ln_sq={cfg.ln_square_result_rescale.scaling_factor if cfg.ln_square_result_rescale else 'off'}, "
             f"ln_var={cfg.ln_var_result_rescale.scaling_factor if cfg.ln_var_result_rescale else 'off'}"
         )
-        print(
+        _print_blb_install(
             f"已为 {len(selected)} 层启用 BLB Block 4 噪声 "
             f"(N={cfg.softmax_out_fresh.N}, "
             f"fresh_softmax/V={cfg.softmax_out_fresh.scaling_factor}/{cfg.v_fresh.scaling_factor}, "
@@ -3980,7 +3990,7 @@ class ReversibleLayerHandler:
                 f"gelu_powers=[{pwr_rs_summary}], "
                 f"gelu_coeff_muls=[{coeff_rs_summary}]"
             )
-            print(
+            _print_blb_install(
                 f"已为 {len(installed_summary)} 层启用 BLB Block 5 噪声 "
                 f"(gelu_degree∈{{{','.join(str(d) for _, d in installed_summary)}}}, "
                 f"N={sample_cfg.inv_std_fresh.N}, "
@@ -4105,7 +4115,7 @@ class ReversibleLayerHandler:
             original_forward = self.blb_first_input_noise_state[i]["forward"]
             layer.forward = _make_blb_first_input_noise_forward(original_forward, point)
 
-        print(
+        _print_blb_install(
             f"已为 {len(selected)} 层启用 BLB first-input fresh 噪声 "
             f"(layers={sorted(selected)}, N={N}, scaling_factor={scaling_factor})"
         )

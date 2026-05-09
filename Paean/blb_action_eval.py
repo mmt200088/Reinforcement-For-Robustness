@@ -9,6 +9,7 @@ import numpy as np
 
 from blb_rl_bridge import BLBNoiseRLBridge
 from blb_stage2_rl.action_space import (
+    BLB_FIRST_INPUT_N,
     action_vector_to_cfgs,
     avg_truncation_k_in_action,
     build_optimizer_requests,
@@ -276,18 +277,33 @@ class BLBActionFinalEvaluationModule:
 
         cfgs_dict = decoded.cfgs_dict()
         opt_outputs, opt_signals = self._optimizer_outputs(profile, cfgs_dict)
-        single, repeat = self._run_blb_eval(decoded, gelu=gelu, softmax=softmax)
-        if repeat is not None:
-            stats = repeat["stats"]
-            loss = float(stats["loss_mean"])
-            p = float(stats["p_mean"])
-            s = float(stats["s_mean"])
-            time_ms = float(stats["time_mean_ms"])
+        skipped_forward = bool(opt_signals.any_invalid)
+        if skipped_forward:
+            single = {
+                "loss": float("inf"),
+                "p": 0.0,
+                "s": 0.0,
+                "time_ms": 0.0,
+                "install_verification": {},
+            }
+            repeat = None
+            loss = float("inf")
+            p = 0.0
+            s = 0.0
+            time_ms = 0.0
         else:
-            loss = float(single["loss"])
-            p = float(single["p"])
-            s = float(single["s"])
-            time_ms = float(single["time_ms"])
+            single, repeat = self._run_blb_eval(decoded, gelu=gelu, softmax=softmax)
+            if repeat is not None:
+                stats = repeat["stats"]
+                loss = float(stats["loss_mean"])
+                p = float(stats["p_mean"])
+                s = float(stats["s_mean"])
+                time_ms = float(stats["time_mean_ms"])
+            else:
+                loss = float(single["loss"])
+                p = float(single["p"])
+                s = float(single["s"])
+                time_ms = float(single["time_ms"])
 
         stage1_tot, g_c, s_c = ev.get_simulated_cost(gelu, softmax)
         result = {
@@ -322,7 +338,8 @@ class BLBActionFinalEvaluationModule:
                 }),
             },
             "install_verification": single.get("install_verification", {}),
-            "feasible": self._is_feasible(loss, p, s, report_constraints),
+            "skipped_forward": bool(skipped_forward),
+            "feasible": False if skipped_forward else self._is_feasible(loss, p, s, report_constraints),
         }
         if repeat is not None:
             stats = repeat["stats"]
@@ -586,7 +603,7 @@ class BLBActionFinalEvaluationModule:
                 "block": "first_input",
                 "point": "fresh",
                 "distribution": "fresh",
-                "N": 16384,
+                "N": BLB_FIRST_INPUT_N,
                 "scaling_factor": int(decoded.first_input_sf),
                 "truncation_k": None,
                 "value": None,
@@ -792,7 +809,7 @@ class BLBActionFinalEvaluationModule:
         try:
             bridge.apply(
                 first_input_sf=int(decoded.first_input_sf),
-                first_input_N=16384,
+                first_input_N=BLB_FIRST_INPUT_N,
                 block1_cfgs=decoded.block1_cfgs,
                 block2_cfgs=decoded.block2_cfgs,
                 block3_cfgs=decoded.block3_cfgs,

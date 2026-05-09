@@ -28,6 +28,7 @@ import datetime as _dt
 import csv
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -66,6 +67,7 @@ BLB_TRACE_FIELDNAMES = (
     "eval_error_count",
     "last_error",
     "anchor_count",
+    "cost_probe_count",
     "policy_loss",
     "value_loss",
     "entropy",
@@ -117,6 +119,78 @@ def _to_jsonable(obj: Any) -> Any:
         return None
 
 
+def _migrate_trace_schema_if_needed(path: str, *, log_fn=None) -> None:
+    """Keep live trace CSV readable when new rollout columns are added."""
+    if (not os.path.isfile(path)) or os.path.getsize(path) == 0:
+        return
+
+    current_fields = list(BLB_TRACE_FIELDNAMES)
+    try:
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.reader(f)
+            try:
+                old_fields = next(reader)
+            except StopIteration:
+                return
+            if old_fields == current_fields:
+                return
+            raw_rows = list(reader)
+    except Exception as exc:
+        if log_fn is not None:
+            log_fn(f"  [BLB trace][warning] failed to inspect {path}: {exc}")
+        return
+
+    old_index = {field: idx for idx, field in enumerate(old_fields)}
+    anchor_idx = old_index.get("anchor_count")
+    rows: List[Dict[str, Any]] = []
+    for raw in raw_rows:
+        shifted_cost_probe_row = (
+            "cost_probe_count" not in old_index
+            and anchor_idx is not None
+            and len(raw) == len(old_fields) + 1
+        )
+        migrated: Dict[str, Any] = {}
+        for field in current_fields:
+            if shifted_cost_probe_row and field == "cost_probe_count":
+                src_idx = int(anchor_idx) + 1
+            elif shifted_cost_probe_row and field in old_index and old_index[field] > int(anchor_idx):
+                src_idx = old_index[field] + 1
+            else:
+                src_idx = old_index.get(field)
+            migrated[field] = raw[src_idx] if src_idx is not None and src_idx < len(raw) else ""
+        if "cost_probe_count" not in old_index and not migrated.get("cost_probe_count"):
+            migrated["cost_probe_count"] = "0"
+        rows.append(migrated)
+
+    parent = os.path.dirname(path) or "."
+    timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = f"{path}.bak_schema_{timestamp}"
+    fd, tmp_path = tempfile.mkstemp(prefix=".blb_trace_", suffix=".tmp", dir=parent)
+    tmp_open = True
+    try:
+        shutil.copyfile(path, backup_path)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            tmp_open = False
+            writer = csv.DictWriter(f, fieldnames=current_fields)
+            writer.writeheader()
+            writer.writerows(rows)
+        os.replace(tmp_path, path)
+        if log_fn is not None:
+            log_fn(f"  [BLB trace] migrated CSV schema -> {path} (backup: {backup_path})")
+    except Exception as exc:
+        if tmp_open:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        if log_fn is not None:
+            log_fn(f"  [BLB trace][warning] failed to migrate {path}: {exc}")
+
+
 def append_blb_episode_trace_row(
         persistence_dir: str,
         row: Mapping[str, Any],
@@ -127,6 +201,7 @@ def append_blb_episode_trace_row(
     log = log_fn or (lambda _msg: None)
     os.makedirs(persistence_dir, exist_ok=True)
     path = os.path.join(persistence_dir, BLB_EPISODE_TRACE_CSV)
+    _migrate_trace_schema_if_needed(path, log_fn=log)
     write_header = (not os.path.isfile(path)) or os.path.getsize(path) == 0
     safe_row = {
         key: _to_jsonable(row.get(key, ""))
@@ -189,17 +264,21 @@ def write_action_description_files(
             ])
         lines.extend([
             "",
-            "| idx | location | operation | kind | action_idx | value_type | value | effective | N | max_sf | note |",
-            "|---:|---|---|---|---:|---|---:|---|---:|---:|---|",
+            "Slot label format: `L{layer}.B{block}.{kind}[.{short_field}]` "
+            "(kind: F=fresh, W=weight encode, M=mask, S=scalar, R=rescale, K=trunc).",
+            "",
+            "| idx | slot | location | operation | dist | action_idx | value_type | value | effective | N | max_sf | note |",
+            "|---:|---|---|---|---|---:|---|---:|---|---:|---:|---|",
         ])
         for rec in records:
             note = str(rec.get("note", "")).replace("|", "\\|")
             location = str(rec.get("location", "")).replace("|", "\\|")
             operation = str(rec.get("operation", "")).replace("|", "\\|")
+            slot_label = str(rec.get("slot_label", "")).replace("|", "\\|")
             max_sf = "" if rec.get("max_sf") is None else str(rec.get("max_sf"))
             value = "" if rec.get("effective_value") is None else str(rec.get("effective_value"))
             lines.append(
-                f"| {int(rec.get('global_index', -1))} | `{location}` | `{operation}` | "
+                f"| {int(rec.get('global_index', -1))} | `{slot_label}` | `{location}` | `{operation}` | "
                 f"`{rec.get('distribution', rec.get('kind', ''))}` | {int(rec.get('action_index', -1))} | "
                 f"`{rec.get('value_type', '')}` | {value} | {bool(rec.get('effective', True))} | "
                 f"{rec.get('N', '')} | {max_sf} | {note} |"
@@ -270,6 +349,14 @@ class BLBStatusBoard:
             },
             "baseline": None,
             "ppo_last_metrics": None,
+            "episode": 0,
+            "best_reward": None,
+            "best_episode": None,
+            "last_reward": None,
+            "last_priority": None,
+            "last_invalid": None,
+            "last_breakdown": None,
+            "updated_at": None,
             "extra": dict(extra_meta or {}),
         }
 
@@ -298,6 +385,12 @@ class BLBStatusBoard:
         if len(recent) > int(keep_recent):
             recent = recent[-int(keep_recent):]
         self._state["recent_returns"] = recent
+        last_breakdown = _to_jsonable(breakdown)
+        self._state["last_reward"] = float(reward)
+        self._state["last_breakdown"] = last_breakdown
+        if isinstance(last_breakdown, Mapping):
+            self._state["last_priority"] = last_breakdown.get("priority")
+            self._state["last_invalid"] = bool(last_breakdown.get("invalid", False))
         # 不每步都 flush（频繁 IO 浪费），只在 PPO update 时 flush；这里只在内存更新
 
     def update_after_ppo_update(
@@ -345,7 +438,13 @@ class BLBStatusBoard:
     def flush(self) -> None:
         try:
             self._state["elapsed_sec"] = round(time.time() - self._t0, 3)
-            self._state["last_update"] = _dt.datetime.now().isoformat()
+            now = _dt.datetime.now().isoformat()
+            self._state["last_update"] = now
+            self._state["updated_at"] = now
+            best = self._state.get("best") or {}
+            self._state["episode"] = int(self._state.get("completed_episodes", 0))
+            self._state["best_reward"] = best.get("reward")
+            self._state["best_episode"] = best.get("episode")
             _atomic_json_dump(self._path, self._state)
         except Exception as exc:
             try:

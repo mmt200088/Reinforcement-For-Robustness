@@ -734,6 +734,14 @@ presets/mrpc-ga-default.conf
 presets/mrpc-greedy-default.conf
 presets/mrpc-greedy-final-eval-only.conf
 presets/mrpc-rl-default.conf
+project_understanding_blb_stage2_rl.md
+reports/blb_opt/phase1_registry/action_index_mapping.md
+reports/blb_opt/phase1_registry/slot_registry_effective.json
+reports/blb_opt/phase1_registry/slot_registry_full.json
+reports/blb_opt/phase1_registry/slot_registry_required59_or_mismatch.md
+reports/blb_opt/phase2_eval/optimizer_outputs.json
+reports/blb_opt/phase2_eval/rank_key.json
+reports/phase0_entrypoints.md
 rescale_optimizer_bridge.py
 rl_ga_compare_runner.py
 rl_tune.py
