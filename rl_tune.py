@@ -31,6 +31,9 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSequenceC
 
 
 ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE = True
+GLUE_EQUIVALENT_PARQUET_ENDPOINTS = [
+    "https://huggingface.co",
+]
 
 
 def seed_everything(seed: int) -> int:
@@ -122,6 +125,20 @@ def _extract_hf_revision_from_error(exc: Exception) -> str:
     return "main"
 
 
+def _glue_equivalent_candidate_endpoints(primary_endpoint: str):
+    candidates = []
+    for raw in list(GLUE_EQUIVALENT_PARQUET_ENDPOINTS or []):
+        endpoint = str(raw or "").strip().rstrip("/")
+        if endpoint and endpoint not in candidates:
+            candidates.append(endpoint)
+    primary = str(primary_endpoint or "").strip().rstrip("/")
+    if primary and primary not in candidates:
+        candidates.append(primary)
+    if not candidates:
+        candidates.append(_hf_endpoint_base())
+    return candidates
+
+
 def _glue_parquet_data_files(task_name: str, endpoint: str = None, revision: str = None):
     task = str(task_name).strip().lower()
     splits = GLUE_PARQUET_SPLITS.get(task)
@@ -168,7 +185,9 @@ def _write_glue_equivalent_route_log(
         *,
         route_log_dir: str,
         task: str,
+        primary_endpoint: str,
         endpoint: str,
+        candidate_endpoints,
         revision: str,
         data_files,
         primary_exc: Exception,
@@ -181,8 +200,20 @@ def _write_glue_equivalent_route_log(
         f"task={task}",
         "primary_loader=load_dataset('nyu-mll/glue', task)",
         "equivalent_loader=load_dataset('parquet', data_files=...)",
+        f'original_operation=load_dataset("nyu-mll/glue", "{task}")',
+        'switched_operation=load_dataset("parquet", data_files=<same GLUE task parquet files>)',
+        "route_change_summary=metadata route -> direct parquet file route",
+        f"switch_from_endpoint={primary_endpoint}",
+        f"switch_to_endpoint={endpoint}",
+        f"candidate_endpoints={','.join(candidate_endpoints or [])}",
         f"endpoint={endpoint}",
         f"revision={revision}",
+        (
+            "semantic_equivalence="
+            f"same_repo=nyu-mll/glue; same_task={task}; same_revision={revision}; "
+            f"same_splits={','.join(GLUE_PARQUET_SPLITS.get(task, ()))}; "
+            "schema_check=required_columns"
+        ),
         f"primary_error={type(primary_exc).__name__}: {primary_exc}",
         "data_files:",
     ]
@@ -205,19 +236,23 @@ def load_glue_dataset_equivalent(
     except Exception as primary_exc:
         if not ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE:
             raise
-        endpoint = _extract_hf_endpoint_from_error(primary_exc)
+        primary_endpoint = _extract_hf_endpoint_from_error(primary_exc)
         revision = _extract_hf_revision_from_error(primary_exc)
-        data_files = _glue_parquet_data_files(task, endpoint=endpoint, revision=revision)
-        if data_files is None:
+        candidate_endpoints = _glue_equivalent_candidate_endpoints(primary_endpoint)
+        if _glue_parquet_data_files(task, endpoint=candidate_endpoints[0], revision=revision) is None:
             raise
 
-        try:
+        equivalent_errors = []
+        for endpoint in candidate_endpoints:
+            data_files = _glue_parquet_data_files(task, endpoint=endpoint, revision=revision)
             log_path = None
             if route_log_dir:
                 log_path = _write_glue_equivalent_route_log(
                     route_log_dir=route_log_dir,
                     task=task,
+                    primary_endpoint=primary_endpoint,
                     endpoint=endpoint,
+                    candidate_endpoints=candidate_endpoints,
                     revision=revision,
                     data_files=data_files,
                     primary_exc=primary_exc,
@@ -230,16 +265,19 @@ def load_glue_dataset_equivalent(
                 + (f"; audit_log={log_path}" if log_path else ""),
                 file=sys.stderr,
             )
-            data = load_dataset_fn("parquet", data_files=data_files)
-            _validate_glue_dataset_equivalence(data, task)
-            return data
-        except Exception as equivalent_exc:
-            raise RuntimeError(
-                f"Failed to load GLUE task {task!r} via nyu-mll/glue and "
-                "the equivalent parquet route. "
-                f"Primary error: {primary_exc!r}; "
-                f"equivalent parquet error: {equivalent_exc!r}"
-            ) from primary_exc
+            try:
+                data = load_dataset_fn("parquet", data_files=data_files)
+                _validate_glue_dataset_equivalence(data, task)
+                return data
+            except Exception as equivalent_exc:
+                equivalent_errors.append(f"{endpoint}: {equivalent_exc!r}")
+
+        raise RuntimeError(
+            f"Failed to load GLUE task {task!r} via nyu-mll/glue and "
+            "the equivalent parquet route. "
+            f"Primary error: {primary_exc!r}; "
+            f"equivalent parquet errors: {equivalent_errors}"
+        ) from primary_exc
 
 def parse_bool_flag(raw_value, flag_name):
     if isinstance(raw_value, bool):
