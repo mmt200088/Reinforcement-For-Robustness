@@ -1,6 +1,8 @@
 import os
 import sys
 import json
+import re
+from datetime import datetime, timezone
 from typing import List
 
 import fire
@@ -26,6 +28,9 @@ sys.path.append(os.path.join(os.getcwd(), "./importance-aware-sparse-tuning-IST-
 #     set_peft_model_state_dict,
 # )
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer, LlamaTokenizer, DataCollatorWithPadding, AutoModel  # noqa: F402
+
+
+ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE = True
 
 
 def seed_everything(seed: int) -> int:
@@ -63,6 +68,178 @@ def parse_noise_config(raw_value):
         return None
     return json.loads(text)
 
+
+GLUE_PARQUET_SPLITS = {
+    "cola": ("train", "validation", "test"),
+    "sst2": ("train", "validation", "test"),
+    "mrpc": ("train", "validation", "test"),
+    "stsb": ("train", "validation", "test"),
+    "qqp": ("train", "validation", "test"),
+    "qnli": ("train", "validation", "test"),
+    "rte": ("train", "validation", "test"),
+    "wnli": ("train", "validation", "test"),
+    "mnli": (
+        "train",
+        "validation_matched",
+        "validation_mismatched",
+        "test_matched",
+        "test_mismatched",
+    ),
+}
+
+GLUE_REQUIRED_COLUMNS = {
+    "cola": ("sentence", "label"),
+    "sst2": ("sentence", "label"),
+    "mrpc": ("sentence1", "sentence2", "label"),
+    "stsb": ("sentence1", "sentence2", "label"),
+    "qqp": ("question1", "question2", "label"),
+    "qnli": ("question", "sentence", "label"),
+    "rte": ("sentence1", "sentence2", "label"),
+    "wnli": ("sentence1", "sentence2", "label"),
+    "mnli": ("premise", "hypothesis", "label"),
+}
+
+
+def _hf_endpoint_base() -> str:
+    return (
+        os.environ.get("HF_ENDPOINT")
+        or os.environ.get("HF_HUB_ENDPOINT")
+        or "https://huggingface.co"
+    ).rstrip("/")
+
+
+def _extract_hf_endpoint_from_error(exc: Exception) -> str:
+    match = re.search(r"(https?://[^/]+)/api/datasets/nyu-mll/glue/", str(exc))
+    if match:
+        return match.group(1).rstrip("/")
+    return _hf_endpoint_base()
+
+
+def _extract_hf_revision_from_error(exc: Exception) -> str:
+    match = re.search(r"/tree/([^/?#]+)/", str(exc))
+    if match:
+        return match.group(1)
+    return "main"
+
+
+def _glue_parquet_data_files(task_name: str, endpoint: str = None, revision: str = None):
+    task = str(task_name).strip().lower()
+    splits = GLUE_PARQUET_SPLITS.get(task)
+    if not splits:
+        return None
+    base = (endpoint or _hf_endpoint_base()).rstrip("/")
+    rev = str(revision or "main").strip() or "main"
+    return {
+        split: (
+            f"{base}/datasets/nyu-mll/glue/resolve/{rev}/"
+            f"{task}/{split}-00000-of-00001.parquet"
+        )
+        for split in splits
+    }
+
+
+def _validate_glue_dataset_equivalence(data, task_name: str) -> None:
+    task = str(task_name).strip().lower()
+    expected_splits = GLUE_PARQUET_SPLITS.get(task)
+    required_columns = GLUE_REQUIRED_COLUMNS.get(task)
+    column_names = getattr(data, "column_names", None)
+    if not expected_splits or not required_columns or not isinstance(column_names, dict):
+        return
+
+    missing_splits = [split for split in expected_splits if split not in column_names]
+    missing_columns = {}
+    for split in expected_splits:
+        if split not in column_names:
+            continue
+        cols = set(str(c) for c in column_names.get(split, []))
+        missing = [col for col in required_columns if col not in cols]
+        if missing:
+            missing_columns[split] = missing
+
+    if missing_splits or missing_columns:
+        raise ValueError(
+            "equivalent parquet schema check failed for "
+            f"GLUE task {task!r}: missing_splits={missing_splits}, "
+            f"missing_columns={missing_columns}"
+        )
+
+
+def _write_glue_equivalent_route_log(
+        *,
+        route_log_dir: str,
+        task: str,
+        endpoint: str,
+        revision: str,
+        data_files,
+        primary_exc: Exception,
+        ) -> str:
+    os.makedirs(route_log_dir, exist_ok=True)
+    log_path = os.path.join(route_log_dir, "glue_dataset_equivalent_route.txt")
+    lines = [
+        "[glue_dataset_equivalent_route]",
+        f"time_utc={datetime.now(timezone.utc).isoformat(timespec='seconds')}",
+        f"task={task}",
+        "primary_loader=load_dataset('nyu-mll/glue', task)",
+        "equivalent_loader=load_dataset('parquet', data_files=...)",
+        f"endpoint={endpoint}",
+        f"revision={revision}",
+        f"primary_error={type(primary_exc).__name__}: {primary_exc}",
+        "data_files:",
+    ]
+    for split, url in sorted((data_files or {}).items()):
+        lines.append(f"  {split}={url}")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n\n")
+    return log_path
+
+
+def load_glue_dataset_equivalent(
+        task_name: str,
+        *,
+        load_dataset_fn=load_dataset,
+        route_log_dir: str = None,
+        ):
+    task = str(task_name).strip().lower()
+    try:
+        return load_dataset_fn("nyu-mll/glue", task)
+    except Exception as primary_exc:
+        if not ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE:
+            raise
+        endpoint = _extract_hf_endpoint_from_error(primary_exc)
+        revision = _extract_hf_revision_from_error(primary_exc)
+        data_files = _glue_parquet_data_files(task, endpoint=endpoint, revision=revision)
+        if data_files is None:
+            raise
+
+        try:
+            log_path = None
+            if route_log_dir:
+                log_path = _write_glue_equivalent_route_log(
+                    route_log_dir=route_log_dir,
+                    task=task,
+                    endpoint=endpoint,
+                    revision=revision,
+                    data_files=data_files,
+                    primary_exc=primary_exc,
+                )
+            print(
+                "[dataset] load_dataset('nyu-mll/glue', "
+                f"{task!r}) failed ({type(primary_exc).__name__}: {primary_exc}); "
+                "using equivalent direct parquet route for the same "
+                f"nyu-mll/glue revision={revision!r} via {endpoint}"
+                + (f"; audit_log={log_path}" if log_path else ""),
+                file=sys.stderr,
+            )
+            data = load_dataset_fn("parquet", data_files=data_files)
+            _validate_glue_dataset_equivalence(data, task)
+            return data
+        except Exception as equivalent_exc:
+            raise RuntimeError(
+                f"Failed to load GLUE task {task!r} via nyu-mll/glue and "
+                "the equivalent parquet route. "
+                f"Primary error: {primary_exc!r}; "
+                f"equivalent parquet error: {equivalent_exc!r}"
+            ) from primary_exc
 
 def parse_bool_flag(raw_value, flag_name):
     if isinstance(raw_value, bool):
@@ -524,7 +701,10 @@ def train(
         data = load_dataset("json", data_files=data_path)
     else:
         # glue tasks: "stsb", "mnli", "sst2", "cola", "qnli", "rte", "wnli", "mrpc"
-        data = load_dataset("nyu-mll/glue", data_path)
+        data = load_glue_dataset_equivalent(
+            data_path,
+            route_log_dir=os.path.join(output_dir, "logs"),
+        )
 
 
 
