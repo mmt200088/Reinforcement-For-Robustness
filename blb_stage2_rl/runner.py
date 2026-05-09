@@ -562,16 +562,20 @@ class BLBStage2RLRunner:
             ev.noise_stage_progress_dir = blb_progress_dir
         except Exception:
             pass
+        fixed_label_display = str(fixed_label)
+        if fixed_label_display == "Stage-1 config (json)":
+            fixed_label_display = "一阶段配置（Stage-1 config, json）"
+
         log("\n" + "=" * 80)
-        log("阶段 5 · 加强版 BLB Stage 2 强化学习（BLB Stage 2 RL · v3）")
+        log("【阶段 5：BLB Stage-2 噪声强化学习（v3）】")
         log("=" * 80)
-        log(f"  {bullet} 固定 GELU/Softmax 来源：{fixed_source}    标签：{fixed_label}")
+        log(f"  {bullet} 固定 GELU/Softmax 来源：{fixed_source}；标签：{fixed_label_display}")
         log(f"  {bullet} GELU 离散阶数向量:   {np.asarray(fixed_gelu, dtype=int).tolist()}")
         log(f"  {bullet} Softmax 离散阶数向量: {np.asarray(fixed_softmax, dtype=int).tolist()}")
-        log(f"  {bullet} Profile（数据集）= {train_cfg.profile!r}    "
-            f"Episode 总数 = {train_cfg.total_episodes}    "
-            f"PPO 更新间隔（rollout_size） = {train_cfg.rollout_size}")
-        log(f"  {bullet} BLB 持久化目录 = {blb_progress_dir}")
+        log(f"  {bullet} 训练概览：数据集配置（profile）= {train_cfg.profile!r}    "
+            f"总回合数（episode）= {train_cfg.total_episodes}    "
+            f"PPO 更新间隔（rollout_size）= {train_cfg.rollout_size}")
+        log(f"  {bullet} BLB 持久化目录：{blb_progress_dir}")
         if legacy_progress_dir and os.path.normpath(legacy_progress_dir) != os.path.normpath(blb_progress_dir):
             log(f"  {bullet} （旧 stage 2 RL 持久化目录 {legacy_progress_dir} 已停止使用，仅保留为历史归档）")
 
@@ -615,8 +619,8 @@ class BLBStage2RLRunner:
         train_cfg.probe_batch_count = max(1, int(len(probe_batches) or train_cfg.probe_batch_count))
         probe_sample_count = sum(int(getattr(b.labels, "numel", lambda: 0)()) for b in probe_batches)
         log(
-            f"  {bullet} 评估子集 batch 数 = {len(probe_batches)}    "
-            f"样本数 = {probe_sample_count} / requested {int(getattr(ev, 'stage2_probe_size', 256))}"
+            f"  {bullet} 评估子集：batch 数 = {len(probe_batches)}；"
+            f"样本数 = {probe_sample_count} / 请求值（requested）{int(getattr(ev, 'stage2_probe_size', 256))}"
         )
 
         # ---------- 3) 准备 RescaleOptimizer 桥 ----------
@@ -672,11 +676,11 @@ class BLBStage2RLRunner:
             "w_k": float(weights.w_k),
         })
         log(
-            f"  {bullet} Baseline cost: total_bits_sum={baseline.total_bits_sum}, "
+            f"  {bullet} 基线成本（baseline cost）：total_bits_sum={baseline.total_bits_sum}, "
             f"total_fusion_count={baseline.total_fusion_count}, avg_k={baseline.avg_k:.2f}"
         )
         log(
-            f"  {bullet} Reward weights: w_bits={weights.w_bits:.6g}, "
+            f"  {bullet} 奖励权重（reward weights）：w_bits={weights.w_bits:.6g}, "
             f"w_fusion={weights.w_fusion:.4g}, w_k={weights.w_k:.4g}"
         )
 
@@ -692,7 +696,7 @@ class BLBStage2RLRunner:
         if not np.isfinite(env.stab_threshold):
             env.stab_threshold = float(baseline.loss_std) * 1.5 + 1e-3
         log(
-            f"  {bullet} Baseline metrics: loss_mean={baseline.loss_mean:.4f}, "
+            f"  {bullet} 基线指标（baseline metrics）：loss_mean={baseline.loss_mean:.4f}, "
             f"loss_std={baseline.loss_std:.4f}, m1={baseline.metric1_mean:.4f}, "
             f"m2={baseline.metric2_mean:.4f}"
         )
@@ -720,7 +724,7 @@ class BLBStage2RLRunner:
                     gain=float(train_cfg.warmstart_bias_gain),
                 )
                 log(
-                    f"  {bullet} Policy warmstart: preferred all-max BLB baseline "
+                    f"  {bullet} 策略预热（policy warmstart）：preferred all-max BLB baseline "
                     f"(bias_gain={float(train_cfg.warmstart_bias_gain):.3g})"
                 )
             except Exception as exc:
@@ -757,7 +761,7 @@ class BLBStage2RLRunner:
 
         baseline_action_description_paths = persist_action_description("baseline", baseline_action_vec)
         if baseline_action_description_paths.get("md"):
-            log(f"  {bullet} Baseline action readable description -> {baseline_action_description_paths['md']}")
+            log(f"  {bullet} 基线动作可读说明：{baseline_action_description_paths['md']}")
 
         # Slot-label / kind tables for per-update diagnostics. Built once; the
         # action vector layout is fixed for the entire run.
@@ -830,7 +834,7 @@ class BLBStage2RLRunner:
                             best_breakdown=best_breakdown_dict,
                             best_episode=resume_best_episode,
                         )
-                    log(f"  {bullet} Resumed from {resume_checkpoint_path} (episode={start_episode})")
+                    log(f"  {bullet} 已从 checkpoint 续训（resumed from）：{resume_checkpoint_path}（episode={start_episode}）")
             except Exception as exc:
                 log(f"  [resume][警告] 读取 checkpoint 失败：{exc}")
 
@@ -923,7 +927,7 @@ class BLBStage2RLRunner:
                 ),
             })
             log(
-                f"  {bullet} Baseline action preflight reward={float(baseline_reward):+.4f} "
+                f"  {bullet} 基线动作预检（preflight）：reward={float(baseline_reward):+.4f} "
                 f"priority={baseline_breakdown_dict.get('priority') if baseline_breakdown_dict else ''} "
                 f"invalid={bool(baseline_info.get('invalid', False))} "
                 f"loss={float(bm.get('loss_mean', 0.0)):.4f} "
@@ -1872,8 +1876,8 @@ class BLBStage2RLRunner:
             or os.path.join(_resolve_repo_root(), "Rescale_optimizer")
         )
         profile = str(train_cfg.inproc_profile or train_cfg.profile)
-        log(f"  * Rescale_optimizer root = {root}")
-        log("  * Rescale optimizer mode = in_process_real")
+        log(f"  * Rescale_optimizer 根目录：{root}")
+        log("  * Rescale optimizer 模式：in_process_real")
 
         try:
             if train_cfg.inproc_configs:
