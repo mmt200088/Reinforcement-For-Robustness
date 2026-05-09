@@ -30,6 +30,10 @@ Stage-1（GELU/Softmax 多项式次数）与 Stage-2（噪声 scaling factor）�
 
 ---
 
+## 查看进程
+
+ps -aux | grep 'rl_tune.py'
+
 ## 快速开始
 
 推荐优先使用子命令。旧版纯 flag 入口仍然兼容，但不再作为主阅读路径。
