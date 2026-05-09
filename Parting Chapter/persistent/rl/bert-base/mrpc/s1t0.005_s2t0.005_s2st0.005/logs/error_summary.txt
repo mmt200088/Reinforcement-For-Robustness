@@ -1,0 +1,82 @@
+[Time]
+2026-05-09 10:31:08
+
+[Program]
+rl_tune.py
+
+[Status]
+failed
+
+[Message]
+RuntimeError: Failed to load GLUE task 'mrpc' via nyu-mll/glue and the equivalent parquet route. Primary error: ConnectionError(ProtocolError('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')), '(Request ID: 826b6658-2f1f-4254-8535-cc26ffcc2168)'); equivalent parquet error: ConnectionError("Couldn't reach https://hf-mirror.com/datasets/nyu-mll/glue/resolve/main/mrpc/validation-00000-of-00001.parquet (ConnectionError(ProtocolError('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))))")
+
+[Run Output Dir]
+Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005
+
+[Command]
+rl_tune.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir 'Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005' --batch_size 64 --micro_batch_size 64 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules '["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"]' --stage1_rl_episodes 51000 --stage2_rl_episodes 80000 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified true --ppo_update_interval 120 --use_ist --final_eval_config_source search --final_eval_config_path glue_final_configs_best_ppo.json --manual_stage1_gelu '' --manual_stage1_softmax '' --manual_stage2_noise '' --stage2_fixed_config_source json --stage2_fixed_config_path glue_final_configs_best_ppo.json --stage2_manual_gelu '' --stage2_manual_softmax '' --final_eval_random_seed 42 --final_eval_permutation_trials 0 --final_eval_cost_equivalent_trials 0 --final_eval_budget_equivalent_trials 0 --final_eval_stage1_budget_trials 10 --final_eval_stage2_budget_trials 10 --final_eval_repeat_n 1 --final_eval_preset default --skip_noise_rl false --skip_stage1_rl true --skip_final_eval false --final_eval_only false --resume_run_dir 'Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005' --stage1_rl_lr 2e-5 --stage2_rl_lr 2e-5 --stage1_accuracy_tolerance 0.005 --stage2_limit_tolerance 0.005 --stage2_stability_tolerance 0.005 --stage2_k_trials 5 --stage2_probe_size 256 --stage2_rl_variant blb_v3 --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer --blb_v3_rollout_size 120 --blb_v3_eval_interval 100 --blb_v3_save_interval 200 --blb_v3_calibrate_baseline_samples 8
+
+[Traceback]
+Traceback (most recent call last):
+  File "/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py", line 204, in load_glue_dataset_equivalent
+    return load_dataset_fn("nyu-mll/glue", task)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 2128, in load_dataset
+    builder_instance = load_dataset_builder(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 1814, in load_dataset_builder
+    dataset_module = dataset_module_factory(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 1511, in dataset_module_factory
+    raise e1 from None
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 1495, in dataset_module_factory
+    ).get_module()
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 1080, in get_module
+    builder_configs, default_config_name = create_builder_configs_from_metadata_configs(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py", line 558, in create_builder_configs_from_metadata_configs
+    config_data_files_dict = DataFilesDict.from_patterns(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py", line 686, in from_patterns
+    DataFilesList.from_patterns(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py", line 591, in from_patterns
+    resolve_pattern(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py", line 345, in resolve_pattern
+    fs, _, _ = get_fs_token_paths(pattern, storage_options=storage_options)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fsspec/core.py", line 640, in get_fs_token_paths
+    paths = [f for f in sorted(fs.glob(paths)) if not fs.isdir(f)]
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py", line 528, in glob
+    return super().glob(path, **kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fsspec/spec.py", line 602, in glob
+    allpaths = self.find(root, maxdepth=depth, withdirs=True, detail=True, **kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py", line 567, in find
+    out = self._ls_tree(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py", line 471, in _ls_tree
+    for path_info in tree:
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_api.py", line 3191, in list_repo_tree
+    for path_info in paginate(path=tree_url, headers=headers, params={"recursive": recursive, "expand": expand}):
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/utils/_pagination.py", line 36, in paginate
+    r = session.get(path, params=params, headers=headers)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/sessions.py", line 602, in get
+    return self.request("GET", url, **kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/utils/_http.py", line 95, in send
+    return super().send(request, *args, **kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/adapters.py", line 659, in send
+    raise ConnectionError(err, request=request)
+requests.exceptions.ConnectionError: (ProtocolError('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')), '(Request ID: 826b6658-2f1f-4254-8535-cc26ffcc2168)')
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/var/tmp/root-home/Reinforcement-For-Robustness/runtime_error_reporter.py", line 156, in run_fire_entrypoint
+    fire_module.Fire(target)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py", line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py", line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+  File "/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py", line 704, in train
+    data = load_glue_dataset_equivalent(
+  File "/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py", line 237, in load_glue_dataset_equivalent
+    raise RuntimeError(
+RuntimeError: Failed to load GLUE task 'mrpc' via nyu-mll/glue and the equivalent parquet route. Primary error: ConnectionError(ProtocolError('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')), '(Request ID: 826b6658-2f1f-4254-8535-cc26ffcc2168)'); equivalent parquet error: ConnectionError("Couldn't reach https://hf-mirror.com/datasets/nyu-mll/glue/resolve/main/mrpc/validation-00000-of-00001.parquet (ConnectionError(ProtocolError('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))))")
