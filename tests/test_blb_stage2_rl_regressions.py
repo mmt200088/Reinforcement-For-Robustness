@@ -322,6 +322,13 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
         self.assertIn("近期回报（return，均值 / 最大）", formatted_iter)
         self.assertIn("best_reward=2.733", formatted_iter)
 
+        evaluator_source = (Path(__file__).resolve().parents[1] / "layer_importance_evaluator.py").read_text(
+            encoding="utf-8",
+        )
+        self.assertIn("二阶段噪声 RL 日志开始（Stage-2 noise RL log started）", evaluator_source)
+        self.assertIn("一阶段 PPO 学习率（Stage-1 PPO LR）", evaluator_source)
+        self.assertNotIn("?????? RL", evaluator_source)
+
     def test_status_board_publishes_live_top_level_fields(self):
         from blb_stage2_rl.persistence import BLBStatusBoard
 

@@ -3341,40 +3341,46 @@ class LayerImportanceEvaluator(TrainerCallback):
             return
 
         ensure_parent_dir(self.noise_log_file)
-        # ????????????????? Stage-2 ???
+        # Initialize the dedicated Stage-2 noise log without resetting it on resume.
         _is_resuming = bool(getattr(self, "resume_run_dir", ""))
         _noise_log_mode = "a" if _is_resuming and os.path.isfile(self.noise_log_file) else "w"
+        _lr_mode_labels = {
+            "direct": "直接指定（direct）",
+            "legacy-micro": "旧版微学习率换算（legacy-micro）",
+        }
+        _stage1_lr_mode = _lr_mode_labels.get(str(self.stage1_ppo_lr_mode), str(self.stage1_ppo_lr_mode))
+        _stage2_lr_mode = _lr_mode_labels.get(str(self.stage2_ppo_lr_mode), str(self.stage2_ppo_lr_mode))
         with open(self.noise_log_file, _noise_log_mode, encoding="utf-8") as f:
             if _is_resuming and _noise_log_mode == "a":
                 import datetime as _dt
                 f.write(
                     "\n" + "=" * 80 + "\n"
-                    f"?????? RL ????????{_dt.datetime.now().isoformat()}\n"
+                    f"【二阶段噪声 RL 续训日志】时间：{_dt.datetime.now().isoformat()}\n"
                     "=" * 80 + "\n"
                 )
             else:
                 f.write(
                     "=" * 80 + "\n"
-                    "?????? RL ???Stage-2 noise RL log started\n"
+                    "【二阶段噪声 RL 日志】二阶段噪声 RL 日志开始（Stage-2 noise RL log started）\n"
                     "=" * 80 + "\n"
                 )
         with open(self.noise_log_file, "a", encoding="utf-8") as f:
             f.write(
-                "???????\n"
-                f"  - Stage-1 PPO ????LR??raw={self.stage1_rl_lr_raw!r} -> "
-                f"{self.stage1_ppo_lr_initial:.6g}?{self.stage1_ppo_lr_mode}?\n"
-                f"  - Stage-2 PPO ????LR??raw={self.stage2_rl_lr_raw!r} -> "
-                f"{self.stage2_ppo_lr_initial:.6g}?{self.stage2_ppo_lr_mode}?\n"
+                "【学习率配置】\n"
+                f"  - 一阶段 PPO 学习率（Stage-1 PPO LR）：raw={self.stage1_rl_lr_raw!r} -> "
+                f"{self.stage1_ppo_lr_initial:.6g}（{_stage1_lr_mode}）\n"
+                f"  - 二阶段 PPO 学习率（Stage-2 PPO LR）：raw={self.stage2_rl_lr_raw!r} -> "
+                f"{self.stage2_ppo_lr_initial:.6g}（{_stage2_lr_mode}）\n"
             )
             f.write(
-                "????????\n"
-                f"  - ??? RL ????stage-1 episodes??{self.stage1_rl_episodes}\n"
-                f"  - ????? RL ????stage-2 episodes??{self.stage2_rl_episodes}\n"
+                "【训练轮数配置】\n"
+                f"  - 一阶段 RL 回合数（stage-1 episodes）：{self.stage1_rl_episodes}\n"
+                f"  - 二阶段噪声 RL 回合数（stage-2 episodes）：{self.stage2_rl_episodes}\n"
             )
             if self.run_output_dir:
                 f.write(
-                    "??????\n"
-                    f"  - ????????run_output_dir??{self.run_output_dir}\n"
+                    "【输出目录】\n"
+                    f"  - 本次运行根目录（run_output_dir）：{self.run_output_dir}\n"
                 )
         self._noise_log_initialized = True
 
