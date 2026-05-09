@@ -595,7 +595,7 @@ class BLBStage2RLRunner:
 
         if os.environ.get("BLB_NOISE_INSTALL_LOGS") is None:
             os.environ["BLB_NOISE_INSTALL_LOGS"] = "0"
-            log("  * BLB per-candidate install logs suppressed (set BLB_NOISE_INSTALL_LOGS=1 to enable)")
+            log("  * BLB 单候选安装日志：默认关闭；如需启用，请设置 BLB_NOISE_INSTALL_LOGS=1。")
 
         # ---------- 1) 应用 stage1 GELU/Softmax 多项式近似 ----------
         fixed_gelu = np.asarray(fixed_gelu, dtype=int)
