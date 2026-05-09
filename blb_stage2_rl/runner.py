@@ -24,6 +24,7 @@ import json
 import math
 import os
 import pickle
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -287,6 +288,188 @@ def _warmstart_action_mode(
     ):
         return "neighbor", -1
     return "policy", -1
+
+
+_BLOCK_ERROR_RE = re.compile(
+    r"(?P<label>[A-Za-z0-9_]+_L\d+):\s*(?P<detail>.*?)(?=(?:;\s*)?[A-Za-z0-9_]+_L\d+:\s*|$)"
+)
+
+
+def _translate_rescale_error_detail(detail: str) -> str:
+    text = str(detail or "").strip().strip(";").strip()
+    omitted_suffix = ""
+    omitted_tail = re.search(r";\s*(\.\.\. \(\+[0-9]+ more\))$", text)
+    if omitted_tail:
+        omitted_suffix = "；" + _translate_rescale_error_detail(omitted_tail.group(1))
+        text = text[:omitted_tail.start()].strip()
+    qmax_match = re.fullmatch(
+        r"new chain has prime\(s\) > q_max=([0-9]+) at stage\(s\) (\[[^\]]+\]); "
+        r"fusion cannot reduce\. Reject\.?",
+        text,
+    )
+    if qmax_match:
+        return (
+            f"新模数链出现大于 q_max={qmax_match.group(1)} 的素数（prime）；"
+            f"位置在阶段（stage）{qmax_match.group(2)}；融合（fusion）无法降低，已拒绝。"
+            f"{omitted_suffix}"
+        )
+    qmin_match = re.fullmatch(
+        r"replan FAILED: a prime < q_min=([0-9]+) could not be fused after "
+        r"([0-9]+) successful fusion\(s\)\.?",
+        text,
+    )
+    if qmin_match:
+        return (
+            f"重新规划（replan）失败：存在小于 q_min={qmin_match.group(1)} 的素数（prime）；"
+            f"已完成 {qmin_match.group(2)} 次成功融合（fusion），仍无法继续融合。"
+            f"{omitted_suffix}"
+        )
+    omitted_match = re.fullmatch(r"\.\.\. \(\+([0-9]+) more\)", text)
+    if omitted_match:
+        return f"另有 {omitted_match.group(1)} 项被上游摘要省略。"
+    return text
+
+
+def _format_blb_episode_error_log(episode: int, error_text: str) -> str:
+    raw = str(error_text or "").strip()
+    prefix = "Rescale_optimizer invalid blocks:"
+    body = raw
+    if body.startswith(prefix):
+        body = body[len(prefix):].strip()
+    entries = [
+        (match.group("label").strip(), _translate_rescale_error_detail(match.group("detail")))
+        for match in _BLOCK_ERROR_RE.finditer(body)
+    ]
+    lines = [
+        "  【BLB 单回合错误】",
+        f"    - 回合（episode）：{int(episode)}",
+        "    - 来源：Rescale_optimizer 约束校验",
+    ]
+    if entries:
+        lines.append(f"    - 失败位置：共 {len(entries)} 个 block")
+        for idx, (label, detail) in enumerate(entries, start=1):
+            lines.append(f"      {idx}. {label}：{detail}")
+    else:
+        lines.append(f"    - 原始信息：{_translate_rescale_error_detail(raw)}")
+    return "\n".join(lines)
+
+
+def _format_warmstart_cost_probe_log(warmstart_cost_probe_actions) -> str:
+    lines = ["  * 预热（warmstart）成本探针："]
+    for name, _action, touched in warmstart_cost_probe_actions:
+        lines.append(f"    - {name}：影响槽位 {len(touched)} 个")
+    return "\n".join(lines)
+
+
+def _format_blb_rollout_summary_log(
+        *,
+        update_count: int,
+        episode: int,
+        total_episodes: int,
+        reward_mean: float,
+        reward_max: float,
+        reward_min: float,
+        invalid_count: int,
+        priority_counts: Mapping[int, int],
+        anchor_count: int,
+        cost_probe_count: int,
+        neighborhood_count: int,
+        policy_loss: float,
+        value_loss: float,
+        entropy: float,
+        clip_fraction: float,
+        entropy_by_kind: Optional[Mapping[str, float]] = None,
+        ) -> str:
+    entropy_items = []
+    for key, value in (entropy_by_kind or {}).items():
+        try:
+            entropy_items.append(f"{key}={float(value):.2f}")
+        except Exception:
+            entropy_items.append(f"{key}={value}")
+    entropy_text = "，".join(entropy_items) if entropy_items else "暂无"
+    return "\n".join([
+        "  【BLB Rollout 汇总】",
+        f"    - PPO 更新轮次（update）：{int(update_count)}",
+        f"    - 训练进度（episode）：{int(episode)} / {int(total_episodes)}",
+        f"    - 奖励（reward，均值 / 最大 / 最小）：{float(reward_mean):.3f} / {float(reward_max):.3f} / {float(reward_min):.3f}",
+        (
+            "    - 优先级计数（P0/P1/P2/P3）："
+            f"P0 无效={int(invalid_count)}，"
+            f"P1 精度未达标={int(priority_counts.get(1, 0))}，"
+            f"P2 稳定性未达标={int(priority_counts.get(2, 0))}，"
+            f"P3 约束通过={int(priority_counts.get(3, 0))}"
+        ),
+        (
+            "    - 动作来源（A/C/N）："
+            f"A 基线锚点={int(anchor_count)}，"
+            f"C 成本探针={int(cost_probe_count)}，"
+            f"N 邻域采样={int(neighborhood_count)}"
+        ),
+        (
+            "    - PPO 指标："
+            f"policy_loss={float(policy_loss):.4f}，"
+            f"value_loss={float(value_loss):.4f}，"
+            f"entropy={float(entropy):.4f}，"
+            f"clip_fraction={float(clip_fraction):.4f}"
+        ),
+        f"    - 槽位熵（H_kind）：{entropy_text}",
+    ])
+
+
+def _format_blb_best_log(
+        *,
+        episode: int,
+        best_reward: float,
+        previous_reward_label: Optional[str],
+        priority: Optional[int],
+        diff_text: str = "",
+        ) -> str:
+    lines = [
+        "  【BLB 新最佳】",
+        f"    - 回合（episode）：{int(episode)}",
+        f"    - 当前奖励（reward）：{float(best_reward):.4f}",
+    ]
+    if previous_reward_label:
+        lines.append(f"    - 上一最佳奖励：{previous_reward_label}")
+    else:
+        lines.append("    - 上一最佳奖励：无，这是第一个候选最佳。")
+    if priority is not None:
+        lines.append(f"    - 优先级（priority）：P{int(priority)}")
+    if diff_text:
+        diff_text = re.sub(
+            r"\.\.\. \(\+([0-9]+) more\)",
+            r"另有 \1 个变化未展开",
+            str(diff_text),
+        )
+        lines.append(f"    - 变化位置：{diff_text}")
+    return "\n".join(lines)
+
+
+def _format_blb_train_iter_log(
+        *,
+        episode: int,
+        total_episodes: int,
+        return_mean: float,
+        return_max: float,
+        best_reward: float,
+        policy_loss: float,
+        value_loss: float,
+        entropy: float,
+        clip_fraction: float,
+        ) -> str:
+    return "\n".join([
+        "  【BLB 训练迭代】",
+        f"    - 训练进度（episode）：{int(episode)} / {int(total_episodes)}",
+        f"    - 近期回报（return，均值 / 最大）：{float(return_mean):+.3f} / {float(return_max):+.3f}",
+        f"    - 历史最佳：best_reward={float(best_reward):.3f}",
+        (
+            "    - PPO 指标："
+            f"policy_loss={float(policy_loss):.4f}，"
+            f"value_loss={float(value_loss):.4f}，"
+            f"entropy={float(entropy):.4f}，"
+            f"clip_fraction={float(clip_fraction):.4f}"
+        ),
+    ])
 
 
 # ---------------------------------------------------------------------------
@@ -831,21 +1014,18 @@ class BLBStage2RLRunner:
         })
         if warmstart_anchor_episodes > 0:
             log(
-                f"  {bullet} Warmstart anchor episodes = {warmstart_anchor_episodes} "
-                f"(early first-rollout episodes use the all-max BLB baseline action)"
+                f"  {bullet} 预热（warmstart）基线锚点回合数 = {warmstart_anchor_episodes}；"
+                "这些早期回合固定使用 all-max BLB 基线动作。"
             )
         if bool(train_cfg.warmstart_neighbor_sampling):
             log(
-                f"  {bullet} Warmstart neighborhood sampling: mutable_slots={len(mutable_neighbor_indices)}, "
-                f"first {int(train_cfg.warmstart_neighbor_ramp_episodes or 0)} absolute episodes, "
-                f"max_mutations={int(train_cfg.warmstart_neighbor_max_mutations)}, "
-                f"max_radius={int(train_cfg.warmstart_neighbor_max_radius)}"
+                f"  {bullet} 预热（warmstart）邻域采样：可变槽位={len(mutable_neighbor_indices)}，"
+                f"生效范围=前 {int(train_cfg.warmstart_neighbor_ramp_episodes or 0)} 个绝对回合（absolute episodes），"
+                f"单回合最多变更槽位={int(train_cfg.warmstart_neighbor_max_mutations)}，"
+                f"最大邻域半径={int(train_cfg.warmstart_neighbor_max_radius)}。"
             )
         if warmstart_cost_probe_actions:
-            probes = ", ".join(
-                f"{name}:{len(touched)}" for name, _action, touched in warmstart_cost_probe_actions
-            )
-            log(f"  {bullet} Warmstart cost probes: {probes}")
+            log(_format_warmstart_cost_probe_log(warmstart_cost_probe_actions))
 
         rollout_rewards: List[float] = []
         rollout_metric1: List[float] = []
@@ -1000,7 +1180,7 @@ class BLBStage2RLRunner:
                 if info.get("error"):
                     rollout_last_error = str(info.get("error"))
                     if (rollout_apply_error_count + rollout_eval_error_count) <= 3:
-                        log(f"  [BLB episode error] ep={ep + 1}: {rollout_last_error}")
+                        log(_format_blb_episode_error_log(ep + 1, rollout_last_error))
                 if breakdown_dict:
                     priority = int(breakdown_dict.get("priority", 0))
                     if priority in rollout_priority_counts:
@@ -1035,13 +1215,17 @@ class BLBStage2RLRunner:
                         prev_label = (
                             f"{prev_best_reward:.4f}" if np.isfinite(prev_best_reward) else "-inf"
                         )
-                        priority_str = ""
+                        priority_value = None
                         if isinstance(breakdown_dict, dict):
-                            priority_str = f" priority={int(breakdown_dict.get('priority', 0))}"
+                            priority_value = int(breakdown_dict.get('priority', 0))
                         if prev_best_action_vec is None:
                             log(
-                                f"  [BLB best] ep={ep + 1} reward={best_reward:.4f} "
-                                f"(first incumbent){priority_str}"
+                                _format_blb_best_log(
+                                    episode=ep + 1,
+                                    best_reward=best_reward,
+                                    previous_reward_label=None,
+                                    priority=priority_value,
+                                )
                             )
                         else:
                             diffs = self._format_action_diff(
@@ -1051,11 +1235,16 @@ class BLBStage2RLRunner:
                                 limit=5,
                             )
                             log(
-                                f"  [BLB best] ep={ep + 1} reward={best_reward:.4f} "
-                                f"(was {prev_label}){priority_str}; Δ {diffs}"
+                                _format_blb_best_log(
+                                    episode=ep + 1,
+                                    best_reward=best_reward,
+                                    previous_reward_label=prev_label,
+                                    priority=priority_value,
+                                    diff_text=diffs,
+                                )
                             )
                     except Exception as exc:
-                        log(f"  [BLB best][warning] failed to format slot diff: {exc}")
+                        log(f"  【BLB 新最佳警告】变化位置格式化失败：{exc}")
                     # decoded cfg pickle
                     decoded = info.get("decoded")
                     if decoded is not None:
@@ -1085,25 +1274,7 @@ class BLBStage2RLRunner:
                     # collapsing at uneven rates; surface that here.
                     try:
                         rr = np.asarray(rollout_rewards, dtype=float)
-                        rollout_summary = (
-                            f"rew={rr.mean():.3f}/{rr.max():.3f}/{rr.min():.3f}"
-                            if rr.size
-                            else "rew=-/-/-"
-                        )
-                        priority_summary = (
-                            f"P0/P1/P2/P3={rollout_invalid_count}/"
-                            f"{int(rollout_priority_counts.get(1, 0))}/"
-                            f"{int(rollout_priority_counts.get(2, 0))}/"
-                            f"{int(rollout_priority_counts.get(3, 0))} "
-                            f"A/C/N={rollout_anchor_count}/{rollout_cost_probe_count}/{rollout_neighborhood_count}"
-                        )
-                        ppo_summary = (
-                            f"pl={float(metrics.get('policy_loss', 0.0)):.3f} "
-                            f"vl={float(metrics.get('value_loss', 0.0)):.3f} "
-                            f"H={float(metrics.get('entropy', 0.0)):.3f} "
-                            f"clip={float(metrics.get('clip_fraction', 0.0)):.2f}"
-                        )
-                        kind_entropy_summary = ""
+                        ent_by_kind = {}
                         try:
                             with torch.no_grad():
                                 # Use a small slice of the rollout's last
@@ -1114,17 +1285,30 @@ class BLBStage2RLRunner:
                             ent_by_kind = self._aggregate_entropy_by_kind(
                                 ent_per_dim, kind_by_index
                             )
-                            kind_entropy_summary = "H_kind=" + " ".join(
-                                f"{k}:{v:.2f}" for k, v in ent_by_kind.items()
-                            )
                         except Exception as exc:
-                            kind_entropy_summary = f"H_kind=<err: {exc}>"
+                            ent_by_kind = {"计算失败": str(exc)}
                         log(
-                            f"  [BLB rollout] u={update_count} ep={ep + 1}/{train_cfg.total_episodes} "
-                            f"{rollout_summary} {priority_summary} {ppo_summary}; {kind_entropy_summary}"
+                            _format_blb_rollout_summary_log(
+                                update_count=update_count,
+                                episode=ep + 1,
+                                total_episodes=train_cfg.total_episodes,
+                                reward_mean=float(rr.mean()) if rr.size else 0.0,
+                                reward_max=float(rr.max()) if rr.size else 0.0,
+                                reward_min=float(rr.min()) if rr.size else 0.0,
+                                invalid_count=rollout_invalid_count,
+                                priority_counts=rollout_priority_counts,
+                                anchor_count=rollout_anchor_count,
+                                cost_probe_count=rollout_cost_probe_count,
+                                neighborhood_count=rollout_neighborhood_count,
+                                policy_loss=float(metrics.get('policy_loss', 0.0)),
+                                value_loss=float(metrics.get('value_loss', 0.0)),
+                                entropy=float(metrics.get('entropy', 0.0)),
+                                clip_fraction=float(metrics.get('clip_fraction', 0.0)),
+                                entropy_by_kind=ent_by_kind,
+                            )
                         )
                     except Exception as exc:
-                        log(f"  [BLB rollout][warning] inline summary failed: {exc}")
+                        log(f"  【BLB Rollout 汇总警告】行内汇总生成失败：{exc}")
                     try:
                         rr = np.asarray(rollout_rewards, dtype=float)
                         trace_path = append_blb_episode_trace_row(
@@ -2012,11 +2196,15 @@ class BLBStage2RLRunner:
         rr_mean = float(rr.mean()) if rr is not None and rr.size > 0 else 0.0
         rr_max = float(rr.max()) if rr is not None and rr.size > 0 else 0.0
         log(
-            f"  [BLB-v3] ep={episode}/{total_episodes}    "
-            f"return mean={rr_mean:+.3f} max={rr_max:+.3f}  "
-            f"best={best_reward:+.3f}  "
-            f"policy_loss={float(metrics.get('policy_loss', 0.0)):.4f}  "
-            f"value_loss={float(metrics.get('value_loss', 0.0)):.4f}  "
-            f"entropy={float(metrics.get('entropy', 0.0)):.4f}  "
-            f"clip_fraction={float(metrics.get('clip_fraction', 0.0)):.4f}"
+            _format_blb_train_iter_log(
+                episode=episode,
+                total_episodes=total_episodes,
+                return_mean=rr_mean,
+                return_max=rr_max,
+                best_reward=best_reward,
+                policy_loss=float(metrics.get('policy_loss', 0.0)),
+                value_loss=float(metrics.get('value_loss', 0.0)),
+                entropy=float(metrics.get('entropy', 0.0)),
+                clip_fraction=float(metrics.get('clip_fraction', 0.0)),
+            )
         )

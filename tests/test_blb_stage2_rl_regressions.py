@@ -230,6 +230,98 @@ class BLBPolicyWarmstartRegressionTests(unittest.TestCase):
 
 
 class BLBTraceWriterRegressionTests(unittest.TestCase):
+    def test_stage2_noise_log_formatters_use_readable_chinese(self):
+        from blb_stage2_rl.runner import (
+            _format_blb_best_log,
+            _format_blb_episode_error_log,
+            _format_blb_rollout_summary_log,
+            _format_blb_train_iter_log,
+            _format_warmstart_cost_probe_log,
+        )
+
+        error_text = (
+            "Rescale_optimizer invalid blocks: "
+            "block5_n1_L7: new chain has prime(s) > q_max=60 at stage(s) [1]; "
+            "fusion cannot reduce. Reject.; "
+            "block3_exp_n2_L0: replan FAILED: a prime < q_min=30 could not be fused "
+            "after 0 successful fusion(s)."
+        )
+        formatted_error = _format_blb_episode_error_log(485, error_text)
+
+        self.assertIn("【BLB 单回合错误】", formatted_error)
+        self.assertIn("回合（episode）：485", formatted_error)
+        self.assertIn("失败位置", formatted_error)
+        self.assertIn("block5_n1_L7", formatted_error)
+        self.assertIn("block3_exp_n2_L0", formatted_error)
+        self.assertIn("新模数链", formatted_error)
+        self.assertIn("重新规划（replan）失败", formatted_error)
+        self.assertNotIn("[BLB episode error]", formatted_error)
+        self.assertNotIn("new chain has prime(s)", formatted_error)
+
+        formatted_rollout = _format_blb_rollout_summary_log(
+            update_count=5,
+            episode=600,
+            total_episodes=80000,
+            reward_mean=-36.691,
+            reward_max=-3.400,
+            reward_min=-100.188,
+            invalid_count=11,
+            priority_counts={1: 1, 2: 77, 3: 31},
+            anchor_count=0,
+            cost_probe_count=0,
+            neighborhood_count=120,
+            policy_loss=0.0128,
+            value_loss=1711.9232,
+            entropy=1071.4326,
+            clip_fraction=0.25,
+            entropy_by_kind={"F": 1.44, "W": 1.48, "M": 0.92},
+        )
+
+        self.assertIn("【BLB Rollout 汇总】", formatted_rollout)
+        self.assertIn("训练进度（episode）：600 / 80000", formatted_rollout)
+        self.assertIn("奖励（reward，均值 / 最大 / 最小）：-36.691 / -3.400 / -100.188", formatted_rollout)
+        self.assertIn("优先级计数（P0/P1/P2/P3）", formatted_rollout)
+        self.assertIn("P0 无效=11", formatted_rollout)
+        self.assertIn("动作来源（A/C/N）", formatted_rollout)
+        self.assertIn("槽位熵（H_kind）", formatted_rollout)
+        self.assertIn("F=1.44", formatted_rollout)
+
+        formatted_probes = _format_warmstart_cost_probe_log(
+            [("drop_kind_M", object(), [1, 2]), ("drop_kind_MS", object(), [3])]
+        )
+        self.assertIn("预热（warmstart）成本探针", formatted_probes)
+        self.assertIn("drop_kind_M：影响槽位 2 个", formatted_probes)
+
+        formatted_best = _format_blb_best_log(
+            episode=31,
+            best_reward=2.7333,
+            previous_reward_label="0.0000",
+            priority=3,
+            diff_text="L0.B2.M.gamma 2->1; L0.B2.M.q_mask1 2->1",
+        )
+        self.assertIn("【BLB 新最佳】", formatted_best)
+        self.assertIn("回合（episode）：31", formatted_best)
+        self.assertIn("当前奖励（reward）：2.7333", formatted_best)
+        self.assertIn("上一最佳奖励：0.0000", formatted_best)
+        self.assertIn("变化位置", formatted_best)
+        self.assertIn("L0.B2.M.gamma", formatted_best)
+        self.assertNotIn("[BLB best]", formatted_best)
+
+        formatted_iter = _format_blb_train_iter_log(
+            episode=120,
+            total_episodes=80000,
+            return_mean=-25.817,
+            return_max=2.733,
+            best_reward=2.733,
+            policy_loss=0.2411,
+            value_loss=1298.1715,
+            entropy=1071.0776,
+            clip_fraction=0.8708,
+        )
+        self.assertIn("【BLB 训练迭代】", formatted_iter)
+        self.assertIn("近期回报（return，均值 / 最大）", formatted_iter)
+        self.assertIn("best_reward=2.733", formatted_iter)
+
     def test_status_board_publishes_live_top_level_fields(self):
         from blb_stage2_rl.persistence import BLBStatusBoard
 
