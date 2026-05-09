@@ -20,6 +20,83 @@ def _import_rl_tune():
 
 
 class GlueDatasetLoadingRegressionTests(unittest.TestCase):
+    def test_uses_local_glue_dataset_dir_when_glue_network_routes_fail(self):
+        rl_tune = _import_rl_tune()
+        calls = []
+        disk_calls = []
+
+        class FakeDatasetDict(dict):
+            column_names = {
+                "train": ["sentence1", "sentence2", "label", "idx"],
+                "validation": ["sentence1", "sentence2", "label", "idx"],
+                "test": ["sentence1", "sentence2", "label", "idx"],
+            }
+
+        def fake_load_dataset(path, *args, **kwargs):
+            calls.append((path, args, kwargs))
+            raise RuntimeError("network unavailable")
+
+        def fake_load_from_disk(path):
+            disk_calls.append(path)
+            return FakeDatasetDict({"train": "ok"})
+
+        with tempfile.TemporaryDirectory() as td:
+            local_mrpc = os.path.join(td, "mrpc")
+            os.makedirs(local_mrpc)
+            with mock.patch.dict(os.environ, {"GLUE_LOCAL_DATASET_DIR": td}, clear=False):
+                data = rl_tune.load_glue_dataset_equivalent(
+                    "mrpc",
+                    load_dataset_fn=fake_load_dataset,
+                    load_from_disk_fn=fake_load_from_disk,
+                    route_log_dir=td,
+                )
+            log_path = os.path.join(td, "glue_dataset_local_route.txt")
+            with open(log_path, "r", encoding="utf-8") as f:
+                log_text = f.read()
+
+        self.assertEqual(data, {"train": "ok"})
+        self.assertEqual(calls, [("nyu-mll/glue", ("mrpc",), {})])
+        self.assertEqual(disk_calls, [local_mrpc])
+        self.assertIn("route=local_saved_to_disk", log_text)
+        self.assertIn(f"path={local_mrpc}", log_text)
+
+    def test_uses_hf_local_files_cache_before_remote_parquet_fallback(self):
+        rl_tune = _import_rl_tune()
+        calls = []
+
+        class FakeDatasetDict(dict):
+            column_names = {
+                "train": ["sentence1", "sentence2", "label", "idx"],
+                "validation": ["sentence1", "sentence2", "label", "idx"],
+                "test": ["sentence1", "sentence2", "label", "idx"],
+            }
+
+        def fake_load_dataset(path, *args, **kwargs):
+            calls.append((path, args, kwargs))
+            if len(calls) == 1:
+                raise RuntimeError("metadata listing failed")
+            if path == "nyu-mll/glue" and kwargs.get("download_config") is not None:
+                return FakeDatasetDict({"train": "ok"})
+            raise AssertionError(f"unexpected dataset call: {(path, args, kwargs)!r}")
+
+        with tempfile.TemporaryDirectory() as td:
+            data = rl_tune.load_glue_dataset_equivalent(
+                "mrpc",
+                load_dataset_fn=fake_load_dataset,
+                route_log_dir=td,
+            )
+            log_path = os.path.join(td, "glue_dataset_local_route.txt")
+            with open(log_path, "r", encoding="utf-8") as f:
+                log_text = f.read()
+
+        self.assertEqual(data, {"train": "ok"})
+        self.assertEqual(calls[0], ("nyu-mll/glue", ("mrpc",), {}))
+        self.assertEqual(calls[1][0], "nyu-mll/glue")
+        self.assertEqual(calls[1][1], ("mrpc",))
+        self.assertTrue(getattr(calls[1][2]["download_config"], "local_files_only"))
+        self.assertEqual(len(calls), 2)
+        self.assertIn("route=hf_cache_local_files_only", log_text)
+
     def test_equivalent_route_can_use_configured_alternate_endpoint(self):
         rl_tune = _import_rl_tune()
         calls = []
@@ -59,7 +136,9 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
                     log_text = f.read()
 
         self.assertEqual(data, {"train": "ok"})
-        data_files = calls[1][2]["data_files"]
+        self.assertEqual(calls[1][0], "nyu-mll/glue")
+        self.assertTrue(getattr(calls[1][2]["download_config"], "local_files_only"))
+        data_files = calls[2][2]["data_files"]
         self.assertTrue(data_files["train"].startswith("https://huggingface.co/datasets/"))
         self.assertIn("candidate_endpoints=https://huggingface.co,https://hf-mirror.com", log_text)
         self.assertIn("endpoint=https://huggingface.co", log_text)
@@ -110,8 +189,10 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
 
         self.assertEqual(data, {"train": "ok"})
         self.assertEqual(calls[0], ("nyu-mll/glue", ("mrpc",), {}))
-        self.assertEqual(calls[1][0], "parquet")
-        data_files = calls[1][2]["data_files"]
+        self.assertEqual(calls[1][0], "nyu-mll/glue")
+        self.assertTrue(getattr(calls[1][2]["download_config"], "local_files_only"))
+        self.assertEqual(calls[2][0], "parquet")
+        data_files = calls[2][2]["data_files"]
         self.assertEqual(set(data_files), {"train", "validation", "test"})
         self.assertTrue(data_files["train"].startswith("https://hf-mirror.com/datasets/"))
         self.assertIn(f"/resolve/{revision}/mrpc/train-00000-of-00001.parquet", data_files["train"])

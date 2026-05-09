@@ -142,3 +142,35 @@ BLB Stage-2 RL 训练固定使用真实 `Rescale_optimizer` in-process 路径，
 `heuristic`、`stub` 或 `subprocess` 选择。CKKS 模数链、fusion 和 total_bits 必须由
 `Rescale_optimizer` 算法计算；如果 `Rescale_optimizer/configs/{dataset}` 或
 `static_skeletons_{dataset}.json` 无法加载，训练会直接报错并停止。
+
+## Offline GLUE data fallback
+
+If `load_dataset("nyu-mll/glue", task)` fails because the server cannot reach
+Hugging Face or the configured mirror, `rl_tune.py` now tries local sources
+before the remote parquet fallback:
+
+```bash
+export GLUE_LOCAL_DATASET_DIR=/path/to/local_glue
+bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl
+```
+
+`GLUE_LOCAL_DATASET_DIR` may point to a directory containing `mrpc/` saved by
+`DatasetDict.save_to_disk(...)`, or local split parquet files such as
+`mrpc/train-00000-of-00001.parquet`. Without this env var, the loader still
+tries the existing Hugging Face cache with `local_files_only=True` before
+falling back to remote parquet URLs.
+
+## Playbook audit tools
+
+These tools are sidecar artifacts for the long-cycle BLB optimization playbook;
+they do not replace the launcher commands above.
+
+```bash
+python scripts/blb_phase0_preflight.py --repo-root . --reports-dir reports
+python scripts/blb_export_action_registry.py --profile mrpc --num-layers 12 --output-dir reports/blb_opt/phase1_registry
+python scripts/blb_eval_action.py --profile mrpc --num-layers 12 --output-dir reports/blb_opt/phase2_eval
+```
+
+The first command writes Phase-0 file and entrypoint reports. The second exports
+the full/effective action registry plus the 59-slot mismatch report. The third
+records an F0 optimizer-only candidate in `candidate_store.jsonl`.

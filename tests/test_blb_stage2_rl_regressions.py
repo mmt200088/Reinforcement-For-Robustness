@@ -347,6 +347,102 @@ class BLBActionDescriptionRegressionTests(unittest.TestCase):
         self.assertTrue(any(r["field"] == "square_rescale_sf_0" and r["block"] == "block3" for r in records))
 
 
+class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
+    def test_phase0_preflight_report_names_current_operator_entrypoints(self):
+        from scripts.blb_phase0_preflight import build_phase0_entrypoint_report
+
+        repo_root = Path(__file__).resolve().parents[1]
+        report = build_phase0_entrypoint_report(repo_root)
+
+        self.assertIn("llama_7B_LayerImportance.sh", report)
+        self.assertIn("run rl --preset mrpc-blb-stage2-rl", report)
+        self.assertIn("blb_stage2_rl/runner.py", report)
+        self.assertIn("Rescale_optimizer", report)
+
+    def test_candidate_store_hash_fidelity_and_rank_key_are_stable(self):
+        from blb_stage2_rl.candidate_store import (
+            CandidateStore,
+            action_hash,
+            candidate_rank_key,
+        )
+
+        action = [4, 3, 2, 1]
+        self.assertEqual(action_hash(action), action_hash(np.array(action, dtype=int)))
+        self.assertLess(
+            candidate_rank_key({"valid": True, "acc_violation": 0.0, "stability_violation": 0.0, "normalized_cost": 0.4}),
+            candidate_rank_key({"valid": True, "acc_violation": 0.0, "stability_violation": 0.0, "normalized_cost": 0.8}),
+        )
+        self.assertLess(
+            candidate_rank_key({"valid": True, "acc_violation": 0.0, "stability_violation": 0.1, "normalized_cost": 0.1}),
+            candidate_rank_key({"valid": False, "acc_violation": 0.0, "stability_violation": 0.0, "normalized_cost": 0.0}),
+        )
+
+        with _workspace_tempdir() as td:
+            store = CandidateStore(Path(td) / "candidate_store.jsonl")
+            self.assertTrue(store.should_evaluate(action, "F1"))
+            store.append({"action_indices": action, "fidelity": "F1", "valid": True})
+            self.assertFalse(store.should_evaluate(action, "F1"))
+            self.assertTrue(store.should_evaluate(action, "F2"))
+            store.append({"action_indices": action, "fidelity": "F2", "valid": True})
+            self.assertFalse(store.should_evaluate(action, "F2"))
+
+    def test_registry_export_records_action_values_and_required_slot_mismatch(self):
+        from blb_stage2_rl.action_space import K_LEVELS
+        from scripts.blb_export_action_registry import build_registry_payload
+
+        payload = build_registry_payload(
+            profile="mrpc",
+            num_layers=1,
+            gelu_degree=[4],
+            attn_degree=[2],
+            expected_required_slots_per_layer=59,
+        )
+        records = payload["slot_registry_full"]
+
+        self.assertEqual(payload["schema"], "blb_action_registry_export_v1")
+        self.assertTrue(records)
+        self.assertTrue(all(r["action_values"] for r in records))
+        self.assertTrue(all("scale_semantics" in r for r in records))
+
+        k_records = [r for r in records if r["value_type"] == "truncation_k"]
+        self.assertTrue(k_records)
+        expected_k_idx = list(K_LEVELS).index(max(K_LEVELS))
+        self.assertTrue(all(r["all_max_action_index"] == expected_k_idx for r in k_records))
+
+        mismatch = payload["required59_or_mismatch_markdown"]
+        self.assertIn("expected_required_slots_per_layer", mismatch)
+        self.assertIn("status", mismatch)
+
+    def test_f0_eval_record_contains_action_hash_rank_key_and_optimizer_summary(self):
+        from blb_stage2_rl.candidate_store import action_hash
+        from scripts.blb_eval_action import build_f0_candidate_record
+
+        action = [4, 4, 3, 2]
+        signals = type(
+            "Signals",
+            (),
+            {
+                "any_invalid": False,
+                "total_bits_sum": 1200,
+                "total_fusion_count": 7,
+                "invalid_chains": {},
+            },
+        )()
+
+        record = build_f0_candidate_record(
+            action,
+            source="unit",
+            signals=signals,
+            baseline_total_bits=2400,
+        )
+
+        self.assertEqual(record["fidelity"], "F0")
+        self.assertEqual(record["action_hash"], action_hash(action))
+        self.assertEqual(record["normalized_cost"], 0.5)
+        self.assertEqual(record["optimizer"]["total_bits_sum"], 1200)
+        self.assertEqual(record["rank_key"], [0.0, 0.0, 0.0, 0.5])
+
+
 class BLBProbeSizingRegressionTests(unittest.TestCase):
     def test_probe_batch_count_covers_requested_probe_size(self):
         from blb_stage2_rl.runner import _effective_probe_batch_count

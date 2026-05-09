@@ -2,13 +2,14 @@ import os
 import sys
 import json
 import re
+import glob
 from datetime import datetime, timezone
 from typing import List
 
 import fire
 import torch
 import transformers
-from datasets import load_dataset
+from datasets import DownloadConfig, load_dataset, load_from_disk
 from typing import List, Optional, Union
 from runtime_error_reporter import run_fire_entrypoint
 """
@@ -34,6 +35,10 @@ ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE = True
 GLUE_EQUIVALENT_PARQUET_ENDPOINTS = [
     "https://huggingface.co",
 ]
+GLUE_LOCAL_DATASET_ENV_VARS = (
+    "GLUE_LOCAL_DATASET_DIR",
+    "GLUE_DATASET_DIR",
+)
 
 
 def seed_everything(seed: int) -> int:
@@ -181,6 +186,176 @@ def _validate_glue_dataset_equivalence(data, task_name: str) -> None:
         )
 
 
+def _split_existing_path_list(raw_value: str):
+    paths = []
+    for raw_item in str(raw_value or "").split(os.pathsep):
+        path = raw_item.strip().strip('"').strip("'")
+        if path and path not in paths:
+            paths.append(path)
+    return paths
+
+
+def _glue_local_dataset_roots():
+    roots = []
+    for env_name in GLUE_LOCAL_DATASET_ENV_VARS:
+        for path in _split_existing_path_list(os.environ.get(env_name, "")):
+            if path not in roots:
+                roots.append(path)
+    return roots
+
+
+def _glue_local_dataset_candidates(task_name: str):
+    task = str(task_name).strip().lower()
+    candidates = []
+    for root in _glue_local_dataset_roots():
+        root = os.path.abspath(os.path.expanduser(root))
+        root_name = os.path.basename(os.path.normpath(root)).lower()
+        raw_candidates = []
+        if root_name == task:
+            raw_candidates.append(root)
+        raw_candidates.extend([
+            os.path.join(root, task),
+            os.path.join(root, "glue", task),
+            os.path.join(root, "nyu-mll", "glue", task),
+        ])
+        for path in raw_candidates:
+            if path not in candidates:
+                candidates.append(path)
+    return candidates
+
+
+def _glue_local_parquet_data_files(task_name: str, dataset_dir: str):
+    task = str(task_name).strip().lower()
+    splits = GLUE_PARQUET_SPLITS.get(task)
+    if not splits:
+        return None
+    data_files = {}
+    for split in splits:
+        direct = os.path.join(dataset_dir, f"{split}.parquet")
+        if os.path.exists(direct):
+            data_files[split] = direct
+            continue
+        matches = sorted(glob.glob(os.path.join(dataset_dir, f"{split}-*.parquet")))
+        if matches:
+            data_files[split] = matches if len(matches) > 1 else matches[0]
+            continue
+        return None
+    return data_files
+
+
+def _write_glue_local_route_log(
+        *,
+        route_log_dir: str,
+        task: str,
+        route: str,
+        path: str,
+        primary_exc: Exception,
+        detail: str = "",
+        ) -> str:
+    os.makedirs(route_log_dir, exist_ok=True)
+    log_path = os.path.join(route_log_dir, "glue_dataset_local_route.txt")
+    lines = [
+        "[glue_dataset_local_route]",
+        f"time_utc={datetime.now(timezone.utc).isoformat(timespec='seconds')}",
+        f"task={task}",
+        f"route={route}",
+        f"path={path}",
+        f"detail={detail}",
+        "primary_loader=load_dataset('nyu-mll/glue', task)",
+        f"primary_error={type(primary_exc).__name__}: {primary_exc}",
+    ]
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n\n")
+    return log_path
+
+
+def _try_load_local_glue_dataset(
+        task: str,
+        *,
+        load_dataset_fn,
+        load_from_disk_fn,
+        route_log_dir: str,
+        primary_exc: Exception,
+        ):
+    errors = []
+    for path in _glue_local_dataset_candidates(task):
+        if not os.path.isdir(path):
+            continue
+        try:
+            data = load_from_disk_fn(path)
+            _validate_glue_dataset_equivalence(data, task)
+            log_path = None
+            if route_log_dir:
+                log_path = _write_glue_local_route_log(
+                    route_log_dir=route_log_dir,
+                    task=task,
+                    route="local_saved_to_disk",
+                    path=path,
+                    primary_exc=primary_exc,
+                )
+            print(
+                f"[dataset] using local GLUE dataset for task {task!r} from {path}"
+                + (f"; audit_log={log_path}" if log_path else ""),
+                file=sys.stderr,
+            )
+            return data, errors
+        except Exception as local_exc:
+            errors.append(f"{path} load_from_disk: {local_exc!r}")
+
+        data_files = _glue_local_parquet_data_files(task, path)
+        if data_files is None:
+            continue
+        try:
+            data = load_dataset_fn("parquet", data_files=data_files)
+            _validate_glue_dataset_equivalence(data, task)
+            log_path = None
+            if route_log_dir:
+                log_path = _write_glue_local_route_log(
+                    route_log_dir=route_log_dir,
+                    task=task,
+                    route="local_parquet",
+                    path=path,
+                    primary_exc=primary_exc,
+                    detail=json.dumps(data_files, ensure_ascii=True, sort_keys=True),
+                )
+            print(
+                f"[dataset] using local GLUE parquet files for task {task!r} from {path}"
+                + (f"; audit_log={log_path}" if log_path else ""),
+                file=sys.stderr,
+            )
+            return data, errors
+        except Exception as local_exc:
+            errors.append(f"{path} local_parquet: {local_exc!r}")
+
+    try:
+        data = load_dataset_fn(
+            "nyu-mll/glue",
+            task,
+            download_config=DownloadConfig(local_files_only=True),
+        )
+        _validate_glue_dataset_equivalence(data, task)
+        log_path = None
+        if route_log_dir:
+            log_path = _write_glue_local_route_log(
+                route_log_dir=route_log_dir,
+                task=task,
+                route="hf_cache_local_files_only",
+                path="nyu-mll/glue",
+                primary_exc=primary_exc,
+                detail="DownloadConfig(local_files_only=True)",
+            )
+        print(
+            f"[dataset] using cached local GLUE dataset for task {task!r}"
+            + (f"; audit_log={log_path}" if log_path else ""),
+            file=sys.stderr,
+        )
+        return data, errors
+    except Exception as cache_exc:
+        errors.append(f"hf_cache_local_files_only: {cache_exc!r}")
+
+    return None, errors
+
+
 def _write_glue_equivalent_route_log(
         *,
         route_log_dir: str,
@@ -228,6 +403,7 @@ def load_glue_dataset_equivalent(
         task_name: str,
         *,
         load_dataset_fn=load_dataset,
+        load_from_disk_fn=load_from_disk,
         route_log_dir: str = None,
         ):
     task = str(task_name).strip().lower()
@@ -242,7 +418,16 @@ def load_glue_dataset_equivalent(
         if _glue_parquet_data_files(task, endpoint=candidate_endpoints[0], revision=revision) is None:
             raise
 
-        equivalent_errors = []
+        data, equivalent_errors = _try_load_local_glue_dataset(
+            task,
+            load_dataset_fn=load_dataset_fn,
+            load_from_disk_fn=load_from_disk_fn,
+            route_log_dir=route_log_dir,
+            primary_exc=primary_exc,
+        )
+        if data is not None:
+            return data
+
         for endpoint in candidate_endpoints:
             data_files = _glue_parquet_data_files(task, endpoint=endpoint, revision=revision)
             log_path = None
@@ -274,7 +459,7 @@ def load_glue_dataset_equivalent(
 
         raise RuntimeError(
             f"Failed to load GLUE task {task!r} via nyu-mll/glue and "
-            "the equivalent parquet route. "
+            "the local/cache or equivalent parquet routes. "
             f"Primary error: {primary_exc!r}; "
             f"equivalent parquet errors: {equivalent_errors}"
         ) from primary_exc

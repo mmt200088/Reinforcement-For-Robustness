@@ -1,0 +1,755 @@
+.claude/settings.local.json
+.vscode/extensions.json
+.vscode/settings.json
+CLAUDE.md
+EzPC/.github/workflows/athos.yml
+EzPC/.github/workflows/onnx_bridge.yml
+EzPC/Aramis/3party-aramis/party0/aux_lib/cpp-base64/README.md
+EzPC/Aramis/3party-aramis/party0/compile_porthos_to_aramis.py
+EzPC/Aramis/3party-aramis/party0/compile_to_aramis.sh
+EzPC/Aramis/3party-aramis/party0/files/data/parsedata.py
+EzPC/Aramis/3party-aramis/party0/update-all.sh
+EzPC/Aramis/3party-aramis/party0/utils_sgx_port/parse_circuitfile.py
+EzPC/Aramis/3party-aramis/party1/aux_lib/cpp-base64/README.md
+EzPC/Aramis/3party-aramis/party1/compile_porthos_to_aramis.py
+EzPC/Aramis/3party-aramis/party1/files/data/parsedata.py
+EzPC/Aramis/3party-aramis/party1/utils_sgx_port/parse_circuitfile.py
+EzPC/Aramis/3party-aramis/party2/aux_lib/cpp-base64/README.md
+EzPC/Aramis/3party-aramis/party2/compile_porthos_to_aramis.py
+EzPC/Aramis/3party-aramis/party2/files/data/parsedata.py
+EzPC/Aramis/3party-aramis/party2/utils_sgx_port/parse_circuitfile.py
+EzPC/Aramis/3party-aramis/service-provider/aux_lib/cpp-base64/README.md
+EzPC/Aramis/README.md
+EzPC/Athos/CompileONNXGraph.py
+EzPC/Athos/CompileRandomForests.py
+EzPC/Athos/CompileSampleNetworks.py
+EzPC/Athos/CompileTF.sh
+EzPC/Athos/CompileTFGraph.py
+EzPC/Athos/CompilerScripts/change_onnx_output.py
+EzPC/Athos/CompilerScripts/comparison_scripts/compare_np_arrs.py
+EzPC/Athos/CompilerScripts/comparison_scripts/compare_output.py
+EzPC/Athos/CompilerScripts/comparison_scripts/compare_output.sh
+EzPC/Athos/CompilerScripts/comparison_scripts/convert_scale.py
+EzPC/Athos/CompilerScripts/comparison_scripts/convert_to_signed.py
+EzPC/Athos/CompilerScripts/comparison_scripts/convert_to_signed.sh
+EzPC/Athos/CompilerScripts/compile_tf.py
+EzPC/Athos/CompilerScripts/compile_tf_graph.py
+EzPC/Athos/CompilerScripts/convert_keras_to_onnx.py
+EzPC/Athos/CompilerScripts/convert_keras_to_tf.py
+EzPC/Athos/CompilerScripts/convert_np_to_fixedpt.py
+EzPC/Athos/CompilerScripts/convert_saved_model_to_frozen_graph.py
+EzPC/Athos/CompilerScripts/create_tf_input.py
+EzPC/Athos/CompilerScripts/generate_concat.py
+EzPC/Athos/CompilerScripts/get_output.py
+EzPC/Athos/CompilerScripts/get_pred_tf_graph.py
+EzPC/Athos/CompilerScripts/grappler.py
+EzPC/Athos/CompilerScripts/memory_estimate.py
+EzPC/Athos/CompilerScripts/onnx_replace_subgraph.py
+EzPC/Athos/CompilerScripts/parse_config.py
+EzPC/Athos/CompilerScripts/preprocess_frozen_tf_graph.py
+EzPC/Athos/CompilerScripts/remove_tf_nodes.py
+EzPC/Athos/CompilerScripts/replace_tf_nodes_with_identity.py
+EzPC/Athos/CompilerScripts/sample_networks/print_stats_2pc.sh
+EzPC/Athos/CompilerScripts/sample_networks/print_stats_3pc.sh
+EzPC/Athos/CompilerScripts/sample_networks/print_stats_cpp.sh
+EzPC/Athos/CompilerScripts/sample_networks/run_demo_2pc.sh
+EzPC/Athos/CompilerScripts/sample_networks/run_demo_3pc.sh
+EzPC/Athos/CompilerScripts/sample_networks/run_demo_cpp.sh
+EzPC/Athos/CompilerScripts/tf_graph_io.py
+EzPC/Athos/CompilerScripts/tf_graph_trans.py
+EzPC/Athos/HelperScripts/Confirm_preprocessing.py
+EzPC/Athos/HelperScripts/Convert_WnId_To_TrainId.py
+EzPC/Athos/HelperScripts/FindAccuracy.py
+EzPC/Athos/HelperScripts/FindAccuracy_Porthos.py
+EzPC/Athos/HelperScripts/FindAccuracy_TF.py
+EzPC/Athos/HelperScripts/Prepare_ImageNet_Val.sh
+EzPC/Athos/HelperScripts/Random_Image_Selection.py
+EzPC/Athos/HelperScripts/RunPorthosInference_ImageNet.sh
+EzPC/Athos/HelperScripts/Scale_img_and_model.py
+EzPC/Athos/HelperScripts/SetupCIFAR10.sh
+EzPC/Athos/HelperScripts/SetupCheXpert.sh
+EzPC/Athos/HelperScripts/nn_maxmintest.py
+EzPC/Athos/HelperScripts/pre_commit_format_python.sh
+EzPC/Athos/Networks/CheXpert/Prepare_Model.py
+EzPC/Athos/Networks/CheXpert/Util.py
+EzPC/Athos/Networks/CheXpert/setup_and_run.sh
+EzPC/Athos/Networks/ChestXRay/ChestXRay_tf_main.py
+EzPC/Athos/Networks/ChestXRay/README.md
+EzPC/Athos/Networks/ChestXRay/SetupPretrainedTFModel.sh
+EzPC/Athos/Networks/ChestXRay/setup_and_run.sh
+EzPC/Athos/Networks/DenseNet/AccuracyAnalysisHelper/DenseNet_main_float_acc.py
+EzPC/Athos/Networks/DenseNet/AccuracyAnalysisHelper/PreProcess_ImageNet.sh
+EzPC/Athos/Networks/DenseNet/AccuracyAnalysisHelper/RunInference_ImageNet.sh
+EzPC/Athos/Networks/DenseNet/AccuracyAnalysisHelper/helper_temp.sh
+EzPC/Athos/Networks/DenseNet/DenseNet_main.py
+EzPC/Athos/Networks/DenseNet/PreProcessingImages/DenseNet_preprocess_main.py
+EzPC/Athos/Networks/DenseNet/PreProcessingImages/DenseNet_preprocessing.py
+EzPC/Athos/Networks/DenseNet/README.md
+EzPC/Athos/Networks/DenseNet/densenet.py
+EzPC/Athos/Networks/DenseNet/nets_factory.py
+EzPC/Athos/Networks/DenseNet/setup_and_run.sh
+EzPC/Athos/Networks/Lenet/README.md
+EzPC/Athos/Networks/Lenet/lenetLarge_mnist_inference.py
+EzPC/Athos/Networks/Lenet/lenetLarge_mnist_train.py
+EzPC/Athos/Networks/Lenet/lenetSmall_mnist_inference.py
+EzPC/Athos/Networks/Lenet/lenetSmall_mnist_train.py
+EzPC/Athos/Networks/LogisticRegression/LogisticRegressionInfer.py
+EzPC/Athos/Networks/LogisticRegression/LogisticRegressionTrain.py
+EzPC/Athos/Networks/LogisticRegression/README.md
+EzPC/Athos/Networks/OtherBenchmarks/MiniONN_CIFAR.py
+EzPC/Athos/Networks/OtherBenchmarks/README.md
+EzPC/Athos/Networks/OtherBenchmarks/resnet32_cifar100.py
+EzPC/Athos/Networks/ResNet/AccuracyAnalysisHelper/PreProcess_ImageNet.sh
+EzPC/Athos/Networks/ResNet/AccuracyAnalysisHelper/ResNet_main_float_acc.py
+EzPC/Athos/Networks/ResNet/AccuracyAnalysisHelper/RunInference_ImageNet.sh
+EzPC/Athos/Networks/ResNet/PreProcessingImages/ResNet_preprocess_main.py
+EzPC/Athos/Networks/ResNet/PreProcessingImages/imagenet_preprocessing.py
+EzPC/Athos/Networks/ResNet/README.md
+EzPC/Athos/Networks/ResNet/ResNet_main.py
+EzPC/Athos/Networks/ResNet/Resnet_Model.py
+EzPC/Athos/Networks/ResNet/setup_and_run.sh
+EzPC/Athos/Networks/SecureNNBenchmarks/NetworkA.py
+EzPC/Athos/Networks/SecureNNBenchmarks/NetworkB.py
+EzPC/Athos/Networks/SecureNNBenchmarks/NetworkC.py
+EzPC/Athos/Networks/SecureNNBenchmarks/NetworkD.py
+EzPC/Athos/Networks/SecureNNBenchmarks/README.md
+EzPC/Athos/Networks/SqueezeNetCIFAR10/README.md
+EzPC/Athos/Networks/SqueezeNetCIFAR10/Squeezenet_model.py
+EzPC/Athos/Networks/SqueezeNetCIFAR10/Util.py
+EzPC/Athos/Networks/SqueezeNetCIFAR10/setup_and_run.sh
+EzPC/Athos/Networks/SqueezeNetImgNet/AccuracyAnalysisHelper/PreProcess_ImageNet.sh
+EzPC/Athos/Networks/SqueezeNetImgNet/AccuracyAnalysisHelper/RunInference_ImageNet.sh
+EzPC/Athos/Networks/SqueezeNetImgNet/AccuracyAnalysisHelper/SqueezeNet_main_float_acc.py
+EzPC/Athos/Networks/SqueezeNetImgNet/PreProcessingImages/SqNetImgNet_preprocess_main.py
+EzPC/Athos/Networks/SqueezeNetImgNet/README.md
+EzPC/Athos/Networks/SqueezeNetImgNet/setup_and_run.sh
+EzPC/Athos/Networks/SqueezeNetImgNet/squeezenet_main.py
+EzPC/Athos/ONNXCompiler/ONNXNodesAST.py
+EzPC/Athos/ONNXCompiler/Readme.md
+EzPC/Athos/ONNXCompiler/__init__.py
+EzPC/Athos/ONNXCompiler/common.py
+EzPC/Athos/ONNXCompiler/config.json
+EzPC/Athos/ONNXCompiler/create_input.py
+EzPC/Athos/ONNXCompiler/onnx_run.py
+EzPC/Athos/ONNXCompiler/onnx_run_tf.py
+EzPC/Athos/ONNXCompiler/process_onnx.py
+EzPC/Athos/ONNXCompiler/test/__init__.py
+EzPC/Athos/ONNXCompiler/test/test.py
+EzPC/Athos/README.md
+EzPC/Athos/RandomForests/README.md
+EzPC/Athos/RandomForests/convert_pickle_to_graphviz.py
+EzPC/Athos/RandomForests/notebooks/RandomForestCaliforniaHousingPickle.py
+EzPC/Athos/RandomForests/parse_graphviz_to_ezpc_input.py
+EzPC/Athos/RandomForests/patch_ezpc_code_params.py
+EzPC/Athos/SeeDot/AST/AST.py
+EzPC/Athos/SeeDot/AST/ASTVisitor.py
+EzPC/Athos/SeeDot/AST/IRBuilderAST.py
+EzPC/Athos/SeeDot/AST/MtdAST.py
+EzPC/Athos/SeeDot/AST/PrintAST.py
+EzPC/Athos/SeeDot/Codegen/CodegenBase.py
+EzPC/Athos/SeeDot/Codegen/EzPC.py
+EzPC/Athos/SeeDot/Compiler.py
+EzPC/Athos/SeeDot/IR/IR.py
+EzPC/Athos/SeeDot/IR/IRBuilderCSF.py
+EzPC/Athos/SeeDot/IR/IRUtil.py
+EzPC/Athos/SeeDot/Optimizations/GarbageCollector.py
+EzPC/Athos/SeeDot/Optimizations/ReluMaxpoolOpti.py
+EzPC/Athos/SeeDot/README.md
+EzPC/Athos/SeeDot/SeeDot.py
+EzPC/Athos/SeeDot/Type.py
+EzPC/Athos/SeeDot/Util.py
+EzPC/Athos/SeeDot/Writer.py
+EzPC/Athos/TFCompiler/DumpTFMtData.py
+EzPC/Athos/TFCompiler/Graph.py
+EzPC/Athos/TFCompiler/ProcessTFGraph.py
+EzPC/Athos/TFCompiler/TFNodesAST.py
+EzPC/Athos/demos/onnx/README.md
+EzPC/Athos/demos/onnx/config.json
+EzPC/Athos/demos/onnx/fetch_model.sh
+EzPC/Athos/demos/onnx/pre_process.py
+EzPC/Athos/demos/onnx/run_onnx.py
+EzPC/Athos/node_git_adds.sh
+EzPC/Athos/tests/conftest.py
+EzPC/Athos/tests/onnx/unittests/test_arith_binops.py
+EzPC/Athos/tests/onnx/unittests/test_batchnorm.py
+EzPC/Athos/tests/onnx/unittests/test_convolution.py
+EzPC/Athos/tests/onnx/unittests/test_non_linear.py
+EzPC/Athos/tests/onnx/unittests/test_shape_manipulation.py
+EzPC/Athos/tests/onnx/unittests/test_unaryops.py
+EzPC/Athos/tests/tf/unittests/test_arith_binops.py
+EzPC/Athos/tests/tf/unittests/test_batchnorm.py
+EzPC/Athos/tests/tf/unittests/test_convolution.py
+EzPC/Athos/tests/tf/unittests/test_non_linear.py
+EzPC/Athos/tests/tf/unittests/test_shape_manipulation.py
+EzPC/Athos/tests/tf/unittests/test_unaryops.py
+EzPC/Athos/tests/utils.py
+EzPC/Beacon/README.md
+EzPC/Beacon/beacon_frontend.py
+EzPC/Beacon/beacon_frontend_conv.py
+EzPC/Beacon/bench_client.sh
+EzPC/Beacon/bench_server.sh
+EzPC/Beacon/compile_conv_net.py
+EzPC/Beacon/compile_networks.py
+EzPC/Beacon/micro_client.sh
+EzPC/Beacon/micro_server.sh
+EzPC/EzPC/Docker/compile_docker_example.sh
+EzPC/EzPC/Docker/run_docker_example_client.sh
+EzPC/EzPC/Docker/run_docker_example_server.sh
+EzPC/EzPC/EzPC/compile_aby.sh
+EzPC/EzPC/EzPC/compile_emp.sh
+EzPC/EzPC/EzPC/compile_secfloat.sh
+EzPC/EzPC/EzPC/ezpc.sh
+EzPC/EzPC/EzPC/runemptests.sh
+EzPC/EzPC/EzPC/runtests.sh
+EzPC/EzPC/README.md
+EzPC/FSS/README.md
+EzPC/FSS/docker/README.md
+EzPC/FSS/docker/setup_env_and_build.sh
+EzPC/FSS/src/README.md
+EzPC/FSS/tests/run.sh
+EzPC/FSS/tests/runall.sh
+EzPC/GPU-MPC/README.md
+EzPC/GPU-MPC/experiments/__init__.py
+EzPC/GPU-MPC/experiments/orca/README.md
+EzPC/GPU-MPC/experiments/orca/__init__.py
+EzPC/GPU-MPC/experiments/orca/config.json
+EzPC/GPU-MPC/experiments/orca/datasets/cifar-10/download-cifar10.sh
+EzPC/GPU-MPC/experiments/orca/run_experiment.py
+EzPC/GPU-MPC/experiments/sigma/README.md
+EzPC/GPU-MPC/experiments/sigma/config.json
+EzPC/GPU-MPC/experiments/sigma/run_experiment.py
+EzPC/GPU-MPC/experiments/utils.py
+EzPC/GPU-MPC/ext/sytorch/README.md
+EzPC/GPU-MPC/ext/sytorch/Toy example- multiple inference.md
+EzPC/GPU-MPC/ext/sytorch/Toy example- single inference.md
+EzPC/GPU-MPC/ext/sytorch/ext/sci/README.md
+EzPC/GPU-MPC/ext/sytorch/ext/sci/src/LinearHE/generate_primes.py
+EzPC/GPU-MPC/ext/sytorch/ezpc-cli-2.sh
+EzPC/GPU-MPC/ext/sytorch/ezpc-cli.sh
+EzPC/GPU-MPC/ext/sytorch/scripts/dealer.py
+EzPC/GPU-MPC/ext/sytorch/scripts/diff.py
+EzPC/GPU-MPC/ext/sytorch/scripts/download_keys.py
+EzPC/GPU-MPC/ext/sytorch/scripts/gptacc.py
+EzPC/GPU-MPC/ext/sytorch/scripts/mnli_matched_acc.py
+EzPC/GPU-MPC/ext/sytorch/scripts/mnnli_mismatched_acc.py
+EzPC/GPU-MPC/ext/sytorch/scripts/mrpcacc.py
+EzPC/GPU-MPC/ext/sytorch/scripts/qnli_acc.py
+EzPC/GPU-MPC/ext/sytorch/scripts/server.py
+EzPC/GPU-MPC/ext/sytorch/scripts/sst2acc.py
+EzPC/GPU-MPC/setup.sh
+EzPC/OnnxBridge/Demo/hinet_cifar10-llama/README.md
+EzPC/OnnxBridge/Demo/hinet_cifar10-llama/fetch_image.sh
+EzPC/OnnxBridge/Demo/hinet_cifar10-llama/fetch_model.sh
+EzPC/OnnxBridge/Demo/hinet_cifar10-llama/process_image.sh
+EzPC/OnnxBridge/Demo/mlp/README.md
+EzPC/OnnxBridge/Demo/mlp/ezpc_run_on_single_machine.sh
+EzPC/OnnxBridge/Demo/mlp/ezpc_secure_compile.sh
+EzPC/OnnxBridge/Demo/mlp/ezpc_setup.sh
+EzPC/OnnxBridge/LLAMA/compile_llama.sh
+EzPC/OnnxBridge/LLAMA/sytorchBackendRep.py
+EzPC/OnnxBridge/LLAMA/sytorch_func_calls.py
+EzPC/OnnxBridge/README.md
+EzPC/OnnxBridge/Secfloat/backendRep.py
+EzPC/OnnxBridge/Secfloat/compile_secfloat.sh
+EzPC/OnnxBridge/Secfloat/demo/Readme.md
+EzPC/OnnxBridge/Secfloat/demo/fetch_image.sh
+EzPC/OnnxBridge/Secfloat/demo/fetch_model.sh
+EzPC/OnnxBridge/Secfloat/demo/mnist/create_image.py
+EzPC/OnnxBridge/Secfloat/demo/process_image.sh
+EzPC/OnnxBridge/Secfloat/func_calls.py
+EzPC/OnnxBridge/backend.py
+EzPC/OnnxBridge/helper/README.md
+EzPC/OnnxBridge/helper/compare_np_arrs.py
+EzPC/OnnxBridge/helper/convert_np_to_float_inp.py
+EzPC/OnnxBridge/helper/create_np_array.py
+EzPC/OnnxBridge/helper/make_model.py
+EzPC/OnnxBridge/helper/make_np_arr.py
+EzPC/OnnxBridge/helper/pre_process.py
+EzPC/OnnxBridge/helper/run_onnx.py
+EzPC/OnnxBridge/main.py
+EzPC/OnnxBridge/tests/conftest.py
+EzPC/OnnxBridge/tests/custom_model_test.py
+EzPC/OnnxBridge/tests/test_pipeline.py
+EzPC/OnnxBridge/tests/utils.py
+EzPC/OnnxBridge/utils/__init__.py
+EzPC/OnnxBridge/utils/backend_helper.py
+EzPC/OnnxBridge/utils/concat.py
+EzPC/OnnxBridge/utils/logger.py
+EzPC/OnnxBridge/utils/nodes.py
+EzPC/OnnxBridge/utils/onnx2IR_helper.py
+EzPC/OnnxBridge/utils/onnx_nodes.py
+EzPC/OnnxBridge/utils/optimizations.py
+EzPC/Porthos/README.md
+EzPC/Porthos/party0.sh
+EzPC/Porthos/party1.sh
+EzPC/Porthos/party2.sh
+EzPC/Porthos/setup-eigen.sh
+EzPC/README.md
+EzPC/SCI/README.md
+EzPC/SCI/src/LinearHE/generate_primes.py
+EzPC/SIRNN/README.md
+EzPC/SIRNN/preProcessSIRNN.py
+EzPC/SIRNN/secureCodegen.py
+EzPC/inference-app/Assets/preprocess.py
+EzPC/inference-app/Inference-App.md
+EzPC/inference-app/README.md
+EzPC/inference-app/app.py
+EzPC/inference-app/app_3d.py
+EzPC/inference-app/constants.py
+EzPC/inference-app/ezpc-cli-app.sh
+EzPC/setup_env_and_build.sh
+EzPC/sytorch/README.md
+EzPC/sytorch/Toy example- multiple inference.md
+EzPC/sytorch/Toy example- single inference.md
+EzPC/sytorch/ezpc-cli-2.sh
+EzPC/sytorch/ezpc-cli.sh
+EzPC/sytorch/ramdrive.sh
+EzPC/sytorch/scripts/app.py
+EzPC/sytorch/scripts/dealer.py
+EzPC/sytorch/scripts/download_keys.py
+EzPC/sytorch/scripts/server.py
+EzPC/sytorch/unmount_ramdrive.sh
+LLM-Adapters/README.md
+LLM-Adapters/commonsense_evaluate.py
+LLM-Adapters/dataset/AQuA/AQuA.json
+LLM-Adapters/dataset/AQuA/aqua_1.json
+LLM-Adapters/dataset/AQuA/test.json
+LLM-Adapters/dataset/ARC-Challenge/test.json
+LLM-Adapters/dataset/ARC-Challenge/train.json
+LLM-Adapters/dataset/ARC-Easy/test.json
+LLM-Adapters/dataset/ARC-Easy/train.json
+LLM-Adapters/dataset/AddSub/AddSub.json
+LLM-Adapters/dataset/AddSub/addsub_1.json
+LLM-Adapters/dataset/AddSub/test.json
+LLM-Adapters/dataset/MultiArith/MultiArith.json
+LLM-Adapters/dataset/MultiArith/multiarith_1.json
+LLM-Adapters/dataset/MultiArith/test.json
+LLM-Adapters/dataset/SVAMP/SVAMP.json
+LLM-Adapters/dataset/SVAMP/svamp_1.json
+LLM-Adapters/dataset/SVAMP/test.json
+LLM-Adapters/dataset/SingleEq/SingleEq.json
+LLM-Adapters/dataset/SingleEq/singleeq_1.json
+LLM-Adapters/dataset/SingleEq/test.json
+LLM-Adapters/dataset/boolq/test.json
+LLM-Adapters/dataset/boolq/train.json
+LLM-Adapters/dataset/gsm8k/gsm8k.json
+LLM-Adapters/dataset/gsm8k/gsm8k_1.json
+LLM-Adapters/dataset/gsm8k/test.json
+LLM-Adapters/dataset/hellaswag/test.json
+LLM-Adapters/dataset/hellaswag/train.json
+LLM-Adapters/dataset/mathqa/test.json
+LLM-Adapters/dataset/mawps/data_process.py
+LLM-Adapters/dataset/mawps/test.json
+LLM-Adapters/dataset/mawps/testset.json
+LLM-Adapters/dataset/mawps/trainset.json
+LLM-Adapters/dataset/mawps/validset.json
+LLM-Adapters/dataset/openbookqa/test.json
+LLM-Adapters/dataset/openbookqa/train.json
+LLM-Adapters/dataset/piqa/test.json
+LLM-Adapters/dataset/piqa/train.json
+LLM-Adapters/dataset/social_i_qa/test.json
+LLM-Adapters/dataset/social_i_qa/train.json
+LLM-Adapters/dataset/winogrande/test.json
+LLM-Adapters/dataset/winogrande/train.json
+LLM-Adapters/evaluate.py
+LLM-Adapters/export_hf_checkpoint.py
+LLM-Adapters/export_state_dict_checkpoint.py
+LLM-Adapters/finetune.py
+LLM-Adapters/ft-training_set/alpaca_data.json
+LLM-Adapters/ft-training_set/alpaca_data_cleaned.json
+LLM-Adapters/ft-training_set/commonsense_15k.json
+LLM-Adapters/ft-training_set/commonsense_170k.json
+LLM-Adapters/ft-training_set/math_10k.json
+LLM-Adapters/ft-training_set/math_14k.json
+LLM-Adapters/ft-training_set/math_50k.json
+LLM-Adapters/ft-training_set/math_7k.json
+LLM-Adapters/ft-training_set/math_data.json
+LLM-Adapters/generate.py
+LLM-Adapters/mathqa.py
+LLM-Adapters/multi_dataset_eval.py
+LLM-Adapters/peft/setup.py
+LLM-Adapters/peft/src/peft/__init__.py
+LLM-Adapters/peft/src/peft/mapping.py
+LLM-Adapters/peft/src/peft/peft_model.py
+LLM-Adapters/peft/src/peft/tuners/__init__.py
+LLM-Adapters/peft/src/peft/tuners/bottleneck.py
+LLM-Adapters/peft/src/peft/tuners/lora.py
+LLM-Adapters/peft/src/peft/tuners/p_tuning.py
+LLM-Adapters/peft/src/peft/tuners/prefix_tuning.py
+LLM-Adapters/peft/src/peft/tuners/prompt_tuning.py
+LLM-Adapters/peft/src/peft/utils/__init__.py
+LLM-Adapters/peft/src/peft/utils/adapters_utils.py
+LLM-Adapters/peft/src/peft/utils/config.py
+LLM-Adapters/peft/src/peft/utils/other.py
+LLM-Adapters/peft/src/peft/utils/save_and_load.py
+LLM-Adapters/peft/tests/__init__.py
+LLM-Adapters/peft/tests/test_config.py
+LLM-Adapters/peft/tests/test_peft_model.py
+LLM-Adapters/peft/tests/testing_common.py
+LLM-Adapters/peft/tests/testing_utils.py
+Model_analysis/analyze_all_distribution.py
+Model_analysis/analyze_all_distribution_approx.py
+Model_analysis/analyze_all_distribution_new.py
+Model_analysis/analyze_gelu_distribution.py
+Model_analysis/configs/approx_default.json
+Model_analysis/configs/approx_per_dataset.json
+Model_analysis/configs/approx_per_layer_example.json
+Model_analysis/model_statistics/weight_hist_magnitude_nosample.py
+Paean/__init__.py
+Paean/action_configs/mrpc-blb-baseline-fixed.json
+Paean/action_configs/mrpc-blb-baseline-truncation-8-13.json
+Paean/action_grid.py
+Paean/blb_action_eval.py
+Paean/config.py
+Paean/embedded.py
+Paean/outputs/mrpc/rl/mrpc_blb_baseline_truncation_sweep/best_policy/constraint_metadata.json
+Paean/outputs/mrpc/rl/mrpc_blb_baseline_truncation_sweep/final_eval/blb_action_final_eval_report_mrpc.md
+Paean/outputs/mrpc/rl/mrpc_blb_baseline_truncation_sweep/final_eval/blb_action_final_eval_results_mrpc.json
+Paean/outputs/mrpc/rl/s1t0.005_s2t0.005_s2st0.005/final_eval/blb_action_final_eval_report_mrpc.md
+Paean/outputs/mrpc/rl/s1t0.005_s2t0.005_s2st0.005/final_eval/blb_action_final_eval_results_mrpc.json
+Paean/presets/default.conf
+Paean/presets/mrpc-blb-action-range.conf
+Paean/presets/mrpc-blb-baseline-fixed.conf
+Paean/presets/mrpc-blb-baseline-truncation-sweep.conf
+Paean/presets/mrpc-blb-max-final-eval.conf
+Paean/presets/mrpc-final-eval-only.conf
+Paean/run_final_eval.py
+Paean/run_final_eval.sh
+Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/best_policy/constraint_metadata.json
+Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/metadata.json
+Prelude Chapter/final_evaluation/final_eval_results_mrpc.json
+Prelude Chapter/layer_importance_runs/mrpc/20260326_194447_pid531414/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Prelude Chapter/layer_importance_runs/mrpc/20260327_233427_pid72714/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Prelude Chapter/layer_importance_runs/mrpc/20260328_231251_pid292795/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Prelude Chapter/layer_importance_runs/mrpc/20260329_005858_pid311890/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Prelude Chapter/layer_importance_runs/mrpc/mrpc_scale_all_max/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Prelude Chapter/layer_importance_runs/mrpc/mrpc_scale_all_min/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Prelude Chapter/noise_final_evaluation/noise_final_eval_results_mrpc.json
+Previous Chapter/blb_stage2_default_run/blb_stage2/progress/blb_stage2_report.md
+Previous Chapter/blb_stage2_default_run/blb_stage2/progress/blb_stage2_status.json
+Previous Chapter/mrpc/s1t0.005_s2t0.005_s2st0.005/metadata.json
+Previous Chapter/persistent/ga/bert-base/mrpc/s1t0.005_s2q0.05_s2sq0.05/metadata.json
+Previous Chapter/persistent/ga/bert-base/mrpc/s1t0.005_s2q0.05_s2sq0.05/stage2_noise/noise_ga_search_results.json
+Previous Chapter/persistent/ga/bert-base/mrpc/s1t0.005_s2q0.05_s2sq0.05/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Previous Chapter/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/final_eval/final_eval_results_mrpc.json
+Previous Chapter/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/metadata.json
+Previous Chapter/persistent/ga/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/noise_ga_search_results.json
+Previous Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.05_s2sq0.05/best_policy/constraint_metadata.json
+Previous Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.05_s2sq0.05/metadata.json
+Previous Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2q0.05_s2sq0.05/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Previous Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/best_policy/constraint_metadata.json
+Previous Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/final_eval/final_eval_results_mrpc.json
+Previous Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/metadata.json
+Previous Chapter/persistent/rl/bert-base/stsb/s1t0.005_s2q0.05_s2sq0.05/metadata.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/children/ga/final_eval/final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/children/rl/final_eval/final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/meta/compare_final_status.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/meta/compare_metadata.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/meta/compare_runtime.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/meta/compare_status.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/reports/final_compare_report_mrpc.md
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/20260424_011959_pid1024607/reports/final_compare_summary_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/children/ga/stage1/ga_search_results.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/children/ga/stage1_final_eval/final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/children/ga/stage2_noise/noise_ga_search_results.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/children/ga/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/children/rl/stage1_final_eval/final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/children/rl/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/meta/compare_final_status.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/meta/compare_metadata.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/meta/compare_runtime.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/meta/compare_status.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/reports/stage1_compare_report_mrpc.md
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/reports/stage1_compare_summary_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/reports/stage2_compare_report_mrpc.md
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_1/reports/stage2_compare_summary_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/children/ga/stage1_final_eval/final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/children/ga/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/children/rl/stage1_final_eval/final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/children/rl/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/meta/compare_final_status.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/meta/compare_metadata.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/meta/compare_runtime.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/meta/compare_status.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/reports/stage1_compare_report_mrpc.md
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/reports/stage1_compare_summary_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/reports/stage2_compare_report_mrpc.md
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_2/reports/stage2_compare_summary_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_3/children/ga/final_eval/final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_3/children/rl/final_eval/final_eval_results_mrpc.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_3/meta/compare_final_status.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_3/meta/compare_metadata.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_3/meta/compare_runtime.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_3/meta/compare_status.json
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_3/reports/final_compare_report_mrpc.md
+Previous Chapter/runs/compare/rl_vs_ga/mrpc/comp_3/reports/final_compare_summary_mrpc.json
+Previous Chapter/第二阶段强化学习测试阶段/mrpc/20260405_184815_pid724470/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Previous Chapter/第二阶段强化学习测试阶段/mrpc/20260410_034932_pid931495/stage1/ga_search_results.json
+Previous Chapter/第二阶段强化学习测试阶段/mrpc/20260410_034932_pid931495/stage1_final_eval/final_eval_results_mrpc.json
+Previous Chapter/第二阶段强化学习测试阶段/mrpc/v1/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Previous Chapter/第二阶段强化学习测试阶段/mrpc/v2/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+Previous Chapter/第二阶段强化学习测试阶段/mrpc/v4.1/logs/README.md
+Previous Chapter/第二阶段强化学习测试阶段/mrpc/v7.0/stage2_noise_final_eval/noise_final_eval_results_mrpc.json
+README.md
+Rescale_optimizer/README_configs.md
+Rescale_optimizer/README_rotations.md
+Rescale_optimizer/configs/mrpc/block1_mrpc.json
+Rescale_optimizer/configs/mrpc/block2_mrpc.json
+Rescale_optimizer/configs/mrpc/block3_exp_n2.json
+Rescale_optimizer/configs/mrpc/block3_exp_n3.json
+Rescale_optimizer/configs/mrpc/block3_exp_n4.json
+Rescale_optimizer/configs/mrpc/block3_exp_n5.json
+Rescale_optimizer/configs/mrpc/block3_exp_n6.json
+Rescale_optimizer/configs/mrpc/block4.json
+Rescale_optimizer/configs/mrpc/block5_n1.json
+Rescale_optimizer/configs/mrpc/block5_n2.json
+Rescale_optimizer/configs/mrpc/block5_n4.json
+Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json
+Rescale_optimizer/configs/wnli/block1_wnli.json
+Rescale_optimizer/configs/wnli/block2_wnli.json
+Rescale_optimizer/configs/wnli/block3_exp_n2.json
+Rescale_optimizer/configs/wnli/block3_exp_n3.json
+Rescale_optimizer/configs/wnli/block3_exp_n4.json
+Rescale_optimizer/configs/wnli/block3_exp_n5.json
+Rescale_optimizer/configs/wnli/block3_exp_n6.json
+Rescale_optimizer/configs/wnli/block4.json
+Rescale_optimizer/configs/wnli/block5_n1.json
+Rescale_optimizer/configs/wnli/block5_n2.json
+Rescale_optimizer/configs/wnli/block5_n4.json
+Rescale_optimizer/configs/wnli/static_skeletons_wnli.json
+Rescale_optimizer/diagnose_certacc_output/diagnose_mrpc_validation.json
+Rescale_optimizer/replan_configs/mrpc/replan_actions_block1_mrpc.json
+Rescale_optimizer/replan_configs/mrpc/replan_actions_block2_mrpc.json
+Rescale_optimizer/replan_configs/mrpc/replan_actions_block3_exp_n2.json
+Rescale_optimizer/replan_configs/mrpc/replan_actions_block3_exp_n3.json
+Rescale_optimizer/replan_configs/mrpc/replan_actions_block3_exp_n4.json
+Rescale_optimizer/replan_configs/mrpc/replan_actions_block3_exp_n6.json
+Rescale_optimizer/replan_configs/mrpc/replan_actions_block4.json
+Rescale_optimizer/replan_configs/mrpc/replan_actions_block5_n1.json
+Rescale_optimizer/replan_configs/mrpc/replan_actions_block5_n2.json
+Rescale_optimizer/replan_configs/mrpc/replan_actions_block5_n4.json
+Rescale_optimizer/replan_configs/mrpc/replan_block1_mrpc.json
+Rescale_optimizer/replan_configs/mrpc/replan_block2_mrpc.json
+Rescale_optimizer/replan_configs/mrpc/replan_block3_exp_n2.json
+Rescale_optimizer/replan_configs/mrpc/replan_block3_exp_n3.json
+Rescale_optimizer/replan_configs/mrpc/replan_block3_exp_n4.json
+Rescale_optimizer/replan_configs/mrpc/replan_block3_exp_n6.json
+Rescale_optimizer/replan_configs/mrpc/replan_block4.json
+Rescale_optimizer/replan_configs/mrpc/replan_block5_n1.json
+Rescale_optimizer/replan_configs/mrpc/replan_block5_n2.json
+Rescale_optimizer/replan_configs/mrpc/replan_block5_n4.json
+Rescale_optimizer/replan_configs/run_replan_batch.sh
+Rescale_optimizer/replan_configs/wnli/replan_actions_block1_wnli.json
+Rescale_optimizer/replan_configs/wnli/replan_actions_block2_wnli.json
+Rescale_optimizer/replan_configs/wnli/replan_actions_block3_exp_n2.json
+Rescale_optimizer/replan_configs/wnli/replan_actions_block3_exp_n3.json
+Rescale_optimizer/replan_configs/wnli/replan_actions_block3_exp_n4.json
+Rescale_optimizer/replan_configs/wnli/replan_actions_block3_exp_n6.json
+Rescale_optimizer/replan_configs/wnli/replan_actions_block4.json
+Rescale_optimizer/replan_configs/wnli/replan_actions_block5_n1.json
+Rescale_optimizer/replan_configs/wnli/replan_actions_block5_n2.json
+Rescale_optimizer/replan_configs/wnli/replan_actions_block5_n4.json
+Rescale_optimizer/replan_configs/wnli/replan_block1_wnli.json
+Rescale_optimizer/replan_configs/wnli/replan_block2_wnli.json
+Rescale_optimizer/replan_configs/wnli/replan_block3_exp_n2.json
+Rescale_optimizer/replan_configs/wnli/replan_block3_exp_n3.json
+Rescale_optimizer/replan_configs/wnli/replan_block3_exp_n4.json
+Rescale_optimizer/replan_configs/wnli/replan_block3_exp_n6.json
+Rescale_optimizer/replan_configs/wnli/replan_block4.json
+Rescale_optimizer/replan_configs/wnli/replan_block5_n1.json
+Rescale_optimizer/replan_configs/wnli/replan_block5_n2.json
+Rescale_optimizer/replan_configs/wnli/replan_block5_n4.json
+Rescale_optimizer/rescale_optimizer/__init__.py
+Rescale_optimizer/rescale_optimizer/accuracy_preservation.md
+Rescale_optimizer/rescale_optimizer/accuracy_preservation_render.md
+Rescale_optimizer/rescale_optimizer/accuracy_preservation_v1_subgaussian.md
+Rescale_optimizer/rescale_optimizer/algorithms.md
+Rescale_optimizer/rescale_optimizer/backward_level_dp.py
+Rescale_optimizer/rescale_optimizer/config_loader.py
+Rescale_optimizer/rescale_optimizer/example.py
+Rescale_optimizer/rescale_optimizer/feasibility.py
+Rescale_optimizer/rescale_optimizer/graph.py
+Rescale_optimizer/rescale_optimizer/modulus_chain.py
+Rescale_optimizer/rescale_optimizer/optimizer.py
+Rescale_optimizer/rescale_optimizer/reachability.py
+Rescale_optimizer/rescale_optimizer/replan.py
+Rescale_optimizer/rescale_optimizer/utils.py
+Rescale_optimizer/scripts/README_certacc.md
+Rescale_optimizer/scripts/batch_run_configs.py
+Rescale_optimizer/scripts/check_compress_headroom.py
+Rescale_optimizer/scripts/diagnose_certacc.py
+Rescale_optimizer/scripts/gen_replan_actions.py
+Rescale_optimizer/scripts/replan_what_if.py
+Rescale_optimizer/scripts/sweep_certacc_monotonicity.py
+Rescale_optimizer/scripts/test_replan_fusion.py
+Rescale_optimizer/scripts/update_noise_tables_from_csv.py
+approximation.py
+approximation_exp.py
+bert-test.py
+blb_rl_bridge.py
+blb_stage2_rl/__init__.py
+blb_stage2_rl/action_space.py
+blb_stage2_rl/candidate_store.py
+blb_stage2_rl/default_invoker.py
+blb_stage2_rl/env.py
+blb_stage2_rl/max_sfs/default.json
+blb_stage2_rl/persistence.py
+blb_stage2_rl/policy.py
+blb_stage2_rl/reward.py
+blb_stage2_rl/runner.py
+commonsense_170k.json
+commonsense_evaluate.py
+config/__init__.py
+config/constants.py
+config/paths.py
+distribution_stats.py
+docs/ARCHITECTURE.md
+docs/BLB_stage2_rl_FULL_FLOW.md
+docs/BLB_stage2_rl_INTERNAL_FLOW.md
+docs/BLB_stage2_rl_README.md
+docs/BLB_stage2_rl_spec.md
+docs/GLOBALS.md
+docs/REORG_PLAN.md
+docs/STATUS.md
+docs/noise_targets_BLB_mapping.md
+docs/总板更新命令.md
+experiment/__init__.py
+experiment/core/__init__.py
+experiment/core/experiment_core.py
+experiment/outputs/blocks/block1/block1_cola.json
+experiment/outputs/blocks/block1/block1_mnli.json
+experiment/outputs/blocks/block1/block1_mrpc.json
+experiment/outputs/blocks/block1/block1_qnli.json
+experiment/outputs/blocks/block1/block1_rte.json
+experiment/outputs/blocks/block1/block1_sst2.json
+experiment/outputs/blocks/block1/block1_stsb.json
+experiment/outputs/blocks/block1/block1_summary.json
+experiment/outputs/blocks/block1/block1_wnli.json
+experiment/outputs/blocks/block2/block2_all_results.json
+experiment/outputs/blocks/block2/block2_cola.json
+experiment/outputs/blocks/block2/block2_mnli.json
+experiment/outputs/blocks/block2/block2_mrpc.json
+experiment/outputs/blocks/block2/block2_qnli.json
+experiment/outputs/blocks/block2/block2_rte.json
+experiment/outputs/blocks/block2/block2_sst2.json
+experiment/outputs/blocks/block2/block2_stsb.json
+experiment/outputs/blocks/block2/block2_wnli.json
+experiment/outputs/blocks/block3/block3_results.json
+experiment/outputs/degradation/single_layer/legacy_results/single_layer_cola.json
+experiment/outputs/degradation/single_layer/legacy_results/single_layer_mrpc.json
+experiment/outputs/degradation/single_layer/legacy_results/single_layer_sst2.json
+experiment/outputs/degradation/single_layer/single_layer_all_results.json
+experiment/outputs/degradation/single_layer/single_layer_cola.json
+experiment/outputs/degradation/single_layer/single_layer_mnli.json
+experiment/outputs/degradation/single_layer/single_layer_mrpc.json
+experiment/outputs/degradation/single_layer/single_layer_qnli.json
+experiment/outputs/degradation/single_layer/single_layer_rte.json
+experiment/outputs/degradation/single_layer/single_layer_sst2.json
+experiment/outputs/degradation/single_layer/single_layer_stsb.json
+experiment/outputs/degradation/single_layer/single_layer_wnli.json
+experiment/outputs/degradation/stepwise/stepwise_cola.json
+experiment/outputs/degradation/stepwise/stepwise_mnli.json
+experiment/outputs/degradation/stepwise/stepwise_mrpc.json
+experiment/outputs/degradation/stepwise/stepwise_qnli.json
+experiment/outputs/degradation/stepwise/stepwise_rte.json
+experiment/outputs/degradation/stepwise/stepwise_sst2.json
+experiment/outputs/degradation/stepwise/stepwise_stsb.json
+experiment/outputs/degradation/stepwise/stepwise_wnli.json
+experiment/outputs/noise/scaling_sweep/noise_scaling_sweep_mnli.json
+experiment/outputs/noise/scaling_sweep/noise_scaling_sweep_mrpc.json
+experiment/outputs/noise/scaling_sweep/noise_scaling_sweep_sst2.json
+experiment/outputs/noise/scaling_sweep/noise_scaling_sweep_stsb.json
+experiment/outputs/noise/softmax_v_sweep/softmax_v_noise_sweep_mrpc.json
+experiment/outputs/noise/stage2_probe_subset_size/mrpc/stage2_probe_subset_size_results.json
+experiment/outputs/noise/stage2_probe_subset_size/mrpc_cfgcheck/stage2_probe_subset_size_results.json
+experiment/outputs/noise/stage2_probe_subset_size/mrpc_cfgcheck_no_gelu0/stage2_probe_subset_size_results.json
+experiment/outputs/noise/stage2_probe_subset_size/mrpc_randcheck_a/stage2_probe_subset_size_results.json
+experiment/outputs/noise/stage2_probe_subset_size/mrpc_randcheck_b/stage2_probe_subset_size_results.json
+experiment/outputs/noise/stage2_probe_subset_size/mrpc_recheck/stage2_probe_subset_size_results.json
+experiment/outputs/noise/stage2_probe_subset_size/mrpc_smoke/stage2_probe_subset_size_results.json
+experiment/outputs/noise/stage2_probe_subset_size/mrpc_smoke_v2/stage2_probe_subset_size_results.json
+experiment/outputs/noise/stage2_probe_subset_size/mrpc_smoke_v3/stage2_probe_subset_size_results.json
+experiment/run_softmax_v_noise_sweep.sh
+experiment/scripts/__init__.py
+experiment/scripts/blocks/__init__.py
+experiment/scripts/blocks/block1_monotonicity.py
+experiment/scripts/blocks/block2_anova.py
+experiment/scripts/blocks/block3_cross_task.py
+experiment/scripts/degradation/__init__.py
+experiment/scripts/degradation/single_layer_degradation.py
+experiment/scripts/degradation/stepwise_degradation.py
+experiment/scripts/noise/__init__.py
+experiment/scripts/noise/noise_scaling_sweep.py
+experiment/scripts/noise/softmax_v_noise_sweep.py
+experiment/scripts/noise/stage2_probe_subset_size_experiment.py
+final_evaluation_module.py
+function_handler.py
+general_policy_module.py
+generate_glue_submission.py
+genetic_search_module.py
+glue_configs.json
+glue_final_configs_best_genetic.json
+glue_final_configs_best_ppo.json
+greedy_search_module.py
+importance-aware-sparse-tuning-IST-paper/README.md
+importance-aware-sparse-tuning-IST-paper/commonsense_evaluate.py
+importance-aware-sparse-tuning-IST-paper/finetune.py
+importance-aware-sparse-tuning-IST-paper/generate.py
+importance-aware-sparse-tuning-IST-paper/ist.py
+importance-aware-sparse-tuning-IST-paper/llama3_8B_DoRA_IST.sh
+importance-aware-sparse-tuning-IST-paper/llama_7B_LoRA_IST.sh
+importance-aware-sparse-tuning-IST-paper/llama_7B_LoRA_RST.sh
+importance-aware-sparse-tuning-IST-paper/peft/setup.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/__init__.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/mapping.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/peft_model.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/tuners/__init__.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/tuners/bottleneck.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/tuners/dora.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/tuners/lora.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/tuners/p_tuning.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/tuners/prefix_tuning.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/tuners/prefix_tuning_back.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/tuners/prompt_tuning.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/utils/__init__.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/utils/adapters_utils.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/utils/config.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/utils/other.py
+importance-aware-sparse-tuning-IST-paper/peft/src/peft/utils/save_and_load.py
+importance-aware-sparse-tuning-IST-paper/peft/tests/__init__.py
+importance-aware-sparse-tuning-IST-paper/peft/tests/test_config.py
+importance-aware-sparse-tuning-IST-paper/peft/tests/test_peft_model.py
+importance-aware-sparse-tuning-IST-paper/peft/tests/testing_common.py
+importance-aware-sparse-tuning-IST-paper/peft/tests/testing_utils.py
+layer_importance_evaluator.py
+llama_7B_LayerImportance.sh
+moe_sample.py
+noise_rl_module_v2.py
+noise_targets_registry.py
+presets/mrpc-blb-max-final-eval.conf
+presets/mrpc-blb-stage2-rl.conf
+presets/mrpc-compare.conf
+presets/mrpc-final-eval-only.conf
+presets/mrpc-ga-default.conf
+presets/mrpc-greedy-default.conf
+presets/mrpc-greedy-final-eval-only.conf
+presets/mrpc-rl-default.conf
+rescale_optimizer_bridge.py
+rl_ga_compare_runner.py
+rl_tune.py
+rl_tune_general.py
+rl_tune_genetic.py
+run_all_experiments.sh
+run_gelu_analysis.sh
+run_glue_submission.sh
+run_noise_scaling_sweep.sh
+runtime_error_reporter.py
+scripts/__init__.py
+scripts/blb_eval_action.py
+scripts/blb_export_action_registry.py
+scripts/blb_phase0_preflight.py
+tests/__init__.py
+tests/test_blb_stage2_rl_regressions.py
+tests/test_glue_dataset_loading.py
+tools/__init__.py
+tools/status_board.py
