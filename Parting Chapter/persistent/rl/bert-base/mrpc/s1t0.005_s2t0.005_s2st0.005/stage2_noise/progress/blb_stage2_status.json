@@ -1,14 +1,14 @@
 {
   "schema": "blb_stage2_status_v1",
-  "started_at": "2026-05-09T22:37:52.290722",
+  "started_at": "2026-05-10T01:16:19.963519",
   "run_basename": "s1t0.005_s2t0.005_s2st0.005",
   "profile": "mrpc",
   "total_episodes": 80000,
-  "completed_episodes": 16320,
-  "ppo_update_count": 136,
-  "phase": "训练中（PPO 单步 episode，共 80000 回合）",
-  "elapsed_sec": 4805.066,
-  "last_update": "2026-05-09T23:57:57.356512",
+  "completed_episodes": 80000,
+  "ppo_update_count": 667,
+  "phase": "已完成",
+  "elapsed_sec": 2666.225,
+  "last_update": "2026-05-10T02:00:46.188138",
   "recent_returns": [
     -30.0,
     -30.0,
@@ -1016,13 +1016,13 @@
     "typical_k_drop": 1.0
   },
   "ppo_last_metrics": {
-    "policy_loss": -0.06995231565088034,
-    "value_loss": 0.016543016710784286,
-    "entropy": 1205.8809509277344,
-    "clip_fraction": 0.6501116268336773,
-    "n_samples": 120
+    "policy_loss": -0.03726155310869217,
+    "value_loss": 0.0007679621303395834,
+    "entropy": 1212.117202758789,
+    "clip_fraction": 0.64453125,
+    "n_samples": 80
   },
-  "episode": 16320,
+  "episode": 80000,
   "best_reward": 2.7333333333333334,
   "best_episode": null,
   "last_reward": -30.0,
@@ -1041,7 +1041,7 @@
     "acc_violation": 0.0,
     "stab_violation": 0.0
   },
-  "updated_at": "2026-05-09T23:57:57.356512",
+  "updated_at": "2026-05-10T02:00:46.188138",
   "extra": {
     "fixed_label": "Stage-1 config (json)",
     "fixed_source": "json",
@@ -1058,8 +1058,8 @@
     },
     "baseline_stability_calibration": {
       "old_stab_threshold": 0.001,
-      "new_stab_threshold": 0.002654963055859373,
-      "observed_loss_std": 0.002641754283442162,
+      "new_stab_threshold": 0.001795208530107468,
+      "observed_loss_std": 0.0017862771433905158,
       "tolerance": 0.005,
       "source": "all_max_blb_preflight"
     },
@@ -1079,13 +1079,13 @@
         "stab_violation": 0.0
       },
       "metrics": {
-        "loss_mean": 0.33829327300190926,
-        "loss_std": 0.002641754283442162,
-        "metric1_mean": 0.87421875,
-        "metric2_mean": 0.87421875,
-        "loss_max": 0.3419833183288574,
-        "metric1_min": 0.8671875,
-        "metric2_min": 0.8671875
+        "loss_mean": 0.34190154150128366,
+        "loss_std": 0.0017862771433905158,
+        "metric1_mean": 0.87109375,
+        "metric2_mean": 0.87109375,
+        "loss_max": 0.34491588920354843,
+        "metric1_min": 0.86328125,
+        "metric2_min": 0.86328125
       },
       "invalid": false,
       "apply_failed": false,
@@ -1121,6 +1121,12 @@
           "touched_slots": 264
         }
       ]
-    }
+    },
+    "episode_trace_csv": "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/blb_stage2_episode_trace.csv",
+    "best_action_description": {
+      "json": "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/blb_stage2_best_action_full.json",
+      "md": "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/blb_stage2_best_action_full.md"
+    },
+    "final_report_path": "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/blb_stage2_report.md"
   }
 }
