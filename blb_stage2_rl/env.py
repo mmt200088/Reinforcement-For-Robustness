@@ -36,6 +36,7 @@ from .action_space import (
     parse_config_name,
 )
 from .default_invoker import HeuristicStubInvoker
+from .optimizer_cost import evaluate_action_for_cost
 from .reward import (
     BaselineCostStats,
     EpisodeMetrics,
@@ -394,37 +395,24 @@ class BLBStage2Env:
         )
 
         degree_sync = self.sync_degree_vectors_from_model()
-        decoded = action_vector_to_cfgs(
-            action_vec=action_vec,
-            max_sfs=self.max_sfs,
+        cost_eval = evaluate_action_for_cost(
+            action_vec,
+            profile=self.env_cfg.profile,
             num_layers=self.num_layers,
+            max_sfs=self.max_sfs,
+            rescale_bridge=self.rescale_bridge,
             gelu_degree=self.gelu_degree,
             attn_degree=self.attn_degree,
+            heuristic=self._heuristic,
+            stub_register_cfgs=self._stub_register_cfgs,
         )
+        decoded = cost_eval.decoded
 
         # 1) 调 Rescale_optimizer 拿 cost 信号
-        cfgs_dict = decoded.cfgs_dict()
-        opt_requests = build_optimizer_requests(self.env_cfg.profile, cfgs_dict)
+        cfgs_dict = cost_eval.cfgs_dict
 
-        # 注册 cfg 到 heuristic invoker（后者从 cfg 抽 SF）
-        use_optimizer_baseline = (
-            is_optimizer_baseline_action
-            and self._heuristic is None
-            and callable(getattr(self.rescale_bridge, "evaluate_baseline_blocks", None))
-        )
-        if use_optimizer_baseline:
-            opt_outputs = self.rescale_bridge.evaluate_baseline_blocks(opt_requests)
-        else:
-            if self._heuristic is not None and self._stub_register_cfgs:
-                for cn, (_b, c) in opt_requests.items():
-                    self._heuristic.register_cfg(cn, c)
-            try:
-                opt_outputs = self.rescale_bridge.evaluate_blocks(opt_requests)
-            finally:
-                if self._heuristic is not None and self._stub_register_cfgs:
-                    self._heuristic.clear_cfg_registry()
-
-        opt_signals = aggregate_optimizer_signals(opt_outputs)
+        opt_outputs = cost_eval.outputs
+        opt_signals = cost_eval.signals
         any_invalid = bool(opt_signals.any_invalid)
         optimizer_invalid_summary = (
             summarize_optimizer_invalid_outputs(opt_outputs) if any_invalid else ""
@@ -467,7 +455,8 @@ class BLBStage2Env:
             "invalid": any_invalid,
             "apply_failed": False,
             "eval_failed": False,
-            "optimizer_baseline_action": bool(use_optimizer_baseline),
+            "optimizer_baseline_action": bool(is_optimizer_baseline_action),
+            "optimizer_eval_mode": cost_eval.optimizer_eval_mode,
         }
         if optimizer_invalid_summary:
             info["optimizer_invalid_summary"] = optimizer_invalid_summary
@@ -500,10 +489,11 @@ class BLBStage2Env:
             return self._build_state(), float(breakdown.reward), True, info
 
         # 4) 装 BLB 噪声
+        # 语义更新（2026-05）：first_input fresh 噪声不再注入（"第一个 HE 配置
+        # 无损"），且 layer-0 block1 整体不安装。decoded.block1_cfgs 已不含
+        # layer 0；first_input_sf 字段保留为占位 0 不传给 bridge。
         try:
             self.bridge.apply(
-                first_input_sf=int(decoded.first_input_sf),
-                first_input_N=BLB_FIRST_INPUT_N,
                 block1_cfgs=decoded.block1_cfgs,
                 block2_cfgs=decoded.block2_cfgs,
                 block3_cfgs=decoded.block3_cfgs,
@@ -711,46 +701,38 @@ class BLBStage2Env:
 def estimate_baseline_cost_stats(
         env: BLBStage2Env,
         sample_count: int = 1,
+        *,
+        precomputed_baseline_signals: Optional[Mapping[str, Any]] = None,
         ) -> BaselineCostStats:
-    """在不装 BLB 的前提下，跑一遍"全 max-action"的 Rescale_optimizer，得到 baseline。
+    """基于 static_skeletons baseline 校准 reward 权重。
 
-    spec §6.3 / §6.4：
-      * 跑一次 baseline (全 max action) 拿 ``total_bits_sum`` / ``total_fusion_count``。
-      * 跑若干 random action 估计典型 ``bits_drop`` / ``fusion_count`` / ``k_drop``，
-        反推权重。
+    baseline cost 必须由 Rescale_optimizer 的 static_skeletons archive 提供；
+    本函数只跑若干 random action 估计典型 ``bits_drop`` / ``fusion_count`` /
+    ``k_drop``，用于反推 reward 权重。
+
+    Args:
+        env:                          ``BLBStage2Env`` 实例。
+        sample_count:                 估计 typical drop 的随机采样次数。
+        precomputed_baseline_signals: 必填。必须来自 ``load_static_skeletons_baseline``
+                                       / ``static_skeletons_baseline_to_action``；
+                                       本函数只补 random-sample 部分来估计
+                                       typical_*_drop。
     """
     env.sync_degree_vectors_from_model()
-    baseline_action = make_all_max_action_vector(env.num_layers)
-    decoded = action_vector_to_cfgs(
-        action_vec=baseline_action,
-        max_sfs=env.max_sfs,
-        num_layers=env.num_layers,
-        gelu_degree=env.gelu_degree,
-        attn_degree=env.attn_degree,
-    )
-    cfgs_dict = decoded.cfgs_dict()
-    requests = build_optimizer_requests(env.env_cfg.profile, cfgs_dict)
-    baseline_eval = getattr(env.rescale_bridge, "evaluate_baseline_blocks", None)
-    if env._heuristic is None and callable(baseline_eval):
-        outputs = baseline_eval(requests)
-    else:
-        if env._heuristic is not None and env._stub_register_cfgs:
-            for cn, (_b, c) in requests.items():
-                env._heuristic.register_cfg(cn, c)
-        try:
-            outputs = env.rescale_bridge.evaluate_blocks(requests)
-        finally:
-            if env._heuristic is not None and env._stub_register_cfgs:
-                env._heuristic.clear_cfg_registry()
-    signals = aggregate_optimizer_signals(outputs)
-    if signals.any_invalid:
-        summary = summarize_optimizer_invalid_outputs(outputs)
+
+    if precomputed_baseline_signals is None:
         raise RuntimeError(
-            "BLB optimizer static baseline is invalid"
-            + (f": {summary}" if summary else "")
+            "BLB Stage-2 baseline must come from "
+            "Rescale_optimizer/configs/<dataset>/static_skeletons_<dataset>.json; "
+            "refusing to estimate baseline from the all-max action path."
         )
 
-    # 估计典型 drop
+    baseline_total_bits = int(precomputed_baseline_signals.get("total_bits_sum", 0))
+    baseline_fusion_count = int(precomputed_baseline_signals.get("total_fusion_count", 0))
+    baseline_avg_k = float(precomputed_baseline_signals.get("avg_k", max(K_LEVELS)))
+
+    # 估计典型 drop —— 仍然走 RO 评估，因为我们需要"random action 相对 baseline 的 cost
+    # 差"来反推 reward 权重。precomputed 路径下 baseline_total_bits 是权威值。
     bits_drops: List[float] = []
     fusion_counts: List[float] = []
     k_drops: List[float] = []
@@ -759,32 +741,29 @@ def estimate_baseline_cost_stats(
         random_action = np.array(
             [rng.integers(0, d) for d in env.action_dims], dtype=int,
         )
-        rd = action_vector_to_cfgs(
-            random_action, env.max_sfs, env.num_layers,
-            gelu_degree=env.gelu_degree, attn_degree=env.attn_degree,
+        rd_eval = evaluate_action_for_cost(
+            random_action,
+            profile=env.env_cfg.profile,
+            num_layers=env.num_layers,
+            max_sfs=env.max_sfs,
+            rescale_bridge=env.rescale_bridge,
+            gelu_degree=env.gelu_degree,
+            attn_degree=env.attn_degree,
+            heuristic=env._heuristic,
+            stub_register_cfgs=env._stub_register_cfgs,
         )
-        rd_cfgs = rd.cfgs_dict()
-        rd_requests = build_optimizer_requests(env.env_cfg.profile, rd_cfgs)
-        if env._heuristic is not None and env._stub_register_cfgs:
-            for cn, (_b, c) in rd_requests.items():
-                env._heuristic.register_cfg(cn, c)
-        try:
-            rd_outputs = env.rescale_bridge.evaluate_blocks(rd_requests)
-        finally:
-            if env._heuristic is not None and env._stub_register_cfgs:
-                env._heuristic.clear_cfg_registry()
-        rd_signals = aggregate_optimizer_signals(rd_outputs)
+        rd_signals = rd_eval.signals
         if rd_signals.any_invalid:
             continue
-        bits_drops.append(float(signals.total_bits_sum) - float(rd_signals.total_bits_sum))
+        bits_drops.append(float(baseline_total_bits) - float(rd_signals.total_bits_sum))
         fusion_counts.append(float(rd_signals.total_fusion_count))
         avg_k = avg_truncation_k_in_action(random_action, env.num_layers)
-        k_drops.append(float(max(K_LEVELS)) - float(avg_k))
+        k_drops.append(float(baseline_avg_k) - float(avg_k))
 
     return BaselineCostStats(
-        total_bits_sum=int(signals.total_bits_sum),
-        total_fusion_count=int(signals.total_fusion_count),
-        avg_k=float(max(K_LEVELS)),
+        total_bits_sum=int(baseline_total_bits),
+        total_fusion_count=int(baseline_fusion_count),
+        avg_k=float(baseline_avg_k),
         typical_bits_drop=float(np.mean(bits_drops)) if bits_drops else 1.0,
         typical_fusion_count=float(np.mean(fusion_counts)) if fusion_counts else 1.0,
         typical_k_drop=float(np.mean(k_drops)) if k_drops else 1.0,

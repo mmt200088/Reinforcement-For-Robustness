@@ -244,10 +244,9 @@ reward = compute_reward(metrics, opt_signals, action, max_action_baseline)
 离散动作。
 
 > 注：optional rescale 在我们的 cfg 里也是 `Optional[NoisePoint]`，传 None 表示"不
-> 在该候选点装 rescale"。但是按 §0 解释，rescale 是否真触发由 Rescale_optimizer
-> 判定 —— **RL 输出的 R 挡位永远是有效 SF（4 选 1，不能选 None）**，由优化器
-> 决定哪些 rescale slot 在最终模数链里出现。换句话说：RL 给的是"假如这个点上
-> rescale，应该用什么 SF"，优化器决定"是否真在这个点上 rescale"。
+> 在该候选点装 rescale"。当前动作语义中，R 槽 index 0 表示 off / None；
+> 其余 index 表示真实 SF。这样 static_skeletons baseline 中没有 `sf_post/drop`
+> 的 rescale 点不会被明文噪声模拟误安装。
 
 ### 4.3 动作空间的形式化
 

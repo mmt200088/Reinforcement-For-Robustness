@@ -4054,8 +4054,12 @@ class ReversibleLayerHandler:
             self.block5_cfg_per_layer.pop(i, None)
 
     # ------------------------------------------------------------------
-    # BLB 首次输入 X 的 fresh 噪声安装 / 还原
+    # BLB 首次输入 X 的 fresh 噪声安装 / 还原（**DEPRECATED**）
     # ------------------------------------------------------------------
+    # 语义更新：BLB Stage-2 现在认为"第一个 HE 配置是无损的"——即 layer-0
+    # input 端**不**注入 fresh 噪声。``BLBNoiseRLBridge.apply()`` 已经不再
+    # 调用本方法；保留实现仅用于（1）旧 checkpoint resume 时清理残留 hook，
+    # （2）实验性手工干预。新代码不要调用。
     def replace_blb_first_input_noise(
             self,
             scaling_factor: int,
@@ -4063,7 +4067,7 @@ class ReversibleLayerHandler:
             layer_indices=None,
             layer_name="model.model.layers",
             ):
-        """在指定层（默认 layer 0）的 forward 入口注入 BLB-style fresh 噪声。
+        """[DEPRECATED] 在指定层（默认 layer 0）的 forward 入口注入 BLB-style fresh 噪声。
 
         BLB Block 2-5 是 transformer 各层之间循环的 block，覆盖"上一层 LN tail
         → Wq/Wk/Wv"路径噪声。但 layer 0 的 X 直接来自 embedding（没有上一层

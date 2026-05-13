@@ -1,0 +1,196 @@
+{
+  "schema": "blb_multi_random_f0_scan_v1",
+  "random_seed": 1051,
+  "random_samples_requested": 500,
+  "mutation_counts": [
+    2,
+    4,
+    8,
+    16,
+    32
+  ],
+  "mutable_slot_count": 768,
+  "valid_count": 497,
+  "best_valid": [
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14795,
+      "fusion_count": 1,
+      "raw_action_hash": "41e3ad0fee3e93b2e6ca50ee770ed308297c3dae4eb3cce1fb95cfda6782fe9d",
+      "effective_action_hash": "41e3ad0fee3e93b2e6ca50ee770ed308297c3dae4eb3cce1fb95cfda6782fe9d",
+      "action_hash": "41e3ad0fee3e93b2e6ca50ee770ed308297c3dae4eb3cce1fb95cfda6782fe9d"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14803,
+      "fusion_count": 0,
+      "raw_action_hash": "cc9dd6ef0c6e57f413b675bb10732b145be9b7c978401a6b46c7aaf240c88e1a",
+      "effective_action_hash": "cc9dd6ef0c6e57f413b675bb10732b145be9b7c978401a6b46c7aaf240c88e1a",
+      "action_hash": "cc9dd6ef0c6e57f413b675bb10732b145be9b7c978401a6b46c7aaf240c88e1a"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14803,
+      "fusion_count": 0,
+      "raw_action_hash": "25a87e6d9e982717426610335f833d2771cca7cfa862c0c82dae9eff36071a60",
+      "effective_action_hash": "25a87e6d9e982717426610335f833d2771cca7cfa862c0c82dae9eff36071a60",
+      "action_hash": "25a87e6d9e982717426610335f833d2771cca7cfa862c0c82dae9eff36071a60"
+    },
+    {
+      "mutation_count": 16,
+      "requested_mutation_count": 16,
+      "total_bits_sum": 14809,
+      "fusion_count": 1,
+      "raw_action_hash": "56a7fd7549ebe600215aa2951dfa930e504d4eb3ea131b8249fb7ca4d9351975",
+      "effective_action_hash": "56a7fd7549ebe600215aa2951dfa930e504d4eb3ea131b8249fb7ca4d9351975",
+      "action_hash": "56a7fd7549ebe600215aa2951dfa930e504d4eb3ea131b8249fb7ca4d9351975"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14809,
+      "fusion_count": 1,
+      "raw_action_hash": "4995c4994bd113df62115012231b8c8f0d854334329eaf1dbdee4e3bb3147557",
+      "effective_action_hash": "4995c4994bd113df62115012231b8c8f0d854334329eaf1dbdee4e3bb3147557",
+      "action_hash": "4995c4994bd113df62115012231b8c8f0d854334329eaf1dbdee4e3bb3147557"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14809,
+      "fusion_count": 3,
+      "raw_action_hash": "409d55b64eb23059256de847f8e854b971b92e0484f550c7eae83426cb56af20",
+      "effective_action_hash": "409d55b64eb23059256de847f8e854b971b92e0484f550c7eae83426cb56af20",
+      "action_hash": "409d55b64eb23059256de847f8e854b971b92e0484f550c7eae83426cb56af20"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14811,
+      "fusion_count": 1,
+      "raw_action_hash": "f44b5ebc85c6c45b6a9c50c914543d790ebac2dffba9e8773d3cdc83e35016fb",
+      "effective_action_hash": "f44b5ebc85c6c45b6a9c50c914543d790ebac2dffba9e8773d3cdc83e35016fb",
+      "action_hash": "f44b5ebc85c6c45b6a9c50c914543d790ebac2dffba9e8773d3cdc83e35016fb"
+    },
+    {
+      "mutation_count": 16,
+      "requested_mutation_count": 16,
+      "total_bits_sum": 14813,
+      "fusion_count": 1,
+      "raw_action_hash": "e2ee54a7e30d5e84a3d28b8ef3d2829ebf3be2d53e6d234ba30132e026b8073e",
+      "effective_action_hash": "e2ee54a7e30d5e84a3d28b8ef3d2829ebf3be2d53e6d234ba30132e026b8073e",
+      "action_hash": "e2ee54a7e30d5e84a3d28b8ef3d2829ebf3be2d53e6d234ba30132e026b8073e"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14813,
+      "fusion_count": 2,
+      "raw_action_hash": "88058203c5ec81e4c206c84d31fa834703ee7ce9adab7ac56d7f56ec2b25f7d0",
+      "effective_action_hash": "88058203c5ec81e4c206c84d31fa834703ee7ce9adab7ac56d7f56ec2b25f7d0",
+      "action_hash": "88058203c5ec81e4c206c84d31fa834703ee7ce9adab7ac56d7f56ec2b25f7d0"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14815,
+      "fusion_count": 1,
+      "raw_action_hash": "727f3e1fa51a97f6e31e2377e9c022abd38aed06f56283b4cad1cc8645306bce",
+      "effective_action_hash": "727f3e1fa51a97f6e31e2377e9c022abd38aed06f56283b4cad1cc8645306bce",
+      "action_hash": "727f3e1fa51a97f6e31e2377e9c022abd38aed06f56283b4cad1cc8645306bce"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14815,
+      "fusion_count": 2,
+      "raw_action_hash": "9e5e3024ece1ad87baee51c781dc11a35d9716417c5227856ed44bcf69582e7f",
+      "effective_action_hash": "9e5e3024ece1ad87baee51c781dc11a35d9716417c5227856ed44bcf69582e7f",
+      "action_hash": "9e5e3024ece1ad87baee51c781dc11a35d9716417c5227856ed44bcf69582e7f"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14817,
+      "fusion_count": 0,
+      "raw_action_hash": "9409581158f704a7698a5d805958083f3c660cf4a229537fa7b52fcf3f0f375b",
+      "effective_action_hash": "9409581158f704a7698a5d805958083f3c660cf4a229537fa7b52fcf3f0f375b",
+      "action_hash": "9409581158f704a7698a5d805958083f3c660cf4a229537fa7b52fcf3f0f375b"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14819,
+      "fusion_count": 0,
+      "raw_action_hash": "6cd7551c801f34234d3e323717a181a5986193fab028aa341ab97f68f57af8c7",
+      "effective_action_hash": "6cd7551c801f34234d3e323717a181a5986193fab028aa341ab97f68f57af8c7",
+      "action_hash": "6cd7551c801f34234d3e323717a181a5986193fab028aa341ab97f68f57af8c7"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14819,
+      "fusion_count": 1,
+      "raw_action_hash": "c27762acdc2bf6a9a978ed7b0d7def9bbb4f6bc4c737bd201280a2f08b9f1855",
+      "effective_action_hash": "c27762acdc2bf6a9a978ed7b0d7def9bbb4f6bc4c737bd201280a2f08b9f1855",
+      "action_hash": "c27762acdc2bf6a9a978ed7b0d7def9bbb4f6bc4c737bd201280a2f08b9f1855"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14819,
+      "fusion_count": 3,
+      "raw_action_hash": "293b681c849b9db115462b99f2b4f7b064689cf4d7778d1d6b305606dbb60b88",
+      "effective_action_hash": "293b681c849b9db115462b99f2b4f7b064689cf4d7778d1d6b305606dbb60b88",
+      "action_hash": "293b681c849b9db115462b99f2b4f7b064689cf4d7778d1d6b305606dbb60b88"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14821,
+      "fusion_count": 1,
+      "raw_action_hash": "694a4472cf31db9a2d36a52f6649b0e680e3fe2e5423d7dd9ca2007e8ac8a341",
+      "effective_action_hash": "694a4472cf31db9a2d36a52f6649b0e680e3fe2e5423d7dd9ca2007e8ac8a341",
+      "action_hash": "694a4472cf31db9a2d36a52f6649b0e680e3fe2e5423d7dd9ca2007e8ac8a341"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14823,
+      "fusion_count": 0,
+      "raw_action_hash": "0fdd2d244cac61d248366cb0f3249512bcc326709ea2bb0ccdbf17bc97bdcbc6",
+      "effective_action_hash": "0fdd2d244cac61d248366cb0f3249512bcc326709ea2bb0ccdbf17bc97bdcbc6",
+      "action_hash": "0fdd2d244cac61d248366cb0f3249512bcc326709ea2bb0ccdbf17bc97bdcbc6"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14823,
+      "fusion_count": 1,
+      "raw_action_hash": "f5086928bd86d4dc6cd64837fec17f678c5587f5dcfea267eb7d05864aa53532",
+      "effective_action_hash": "f5086928bd86d4dc6cd64837fec17f678c5587f5dcfea267eb7d05864aa53532",
+      "action_hash": "f5086928bd86d4dc6cd64837fec17f678c5587f5dcfea267eb7d05864aa53532"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14823,
+      "fusion_count": 1,
+      "raw_action_hash": "cc08e06435a10215062eb38cbc48f0d94c5e0722fa3013098f3a38de76ed80cb",
+      "effective_action_hash": "cc08e06435a10215062eb38cbc48f0d94c5e0722fa3013098f3a38de76ed80cb",
+      "action_hash": "cc08e06435a10215062eb38cbc48f0d94c5e0722fa3013098f3a38de76ed80cb"
+    },
+    {
+      "mutation_count": 32,
+      "requested_mutation_count": 32,
+      "total_bits_sum": 14823,
+      "fusion_count": 1,
+      "raw_action_hash": "3fdf4157b2369ad93dff2498c394dc237a991ac140e82150589721605b0b426e",
+      "effective_action_hash": "3fdf4157b2369ad93dff2498c394dc237a991ac140e82150589721605b0b426e",
+      "action_hash": "3fdf4157b2369ad93dff2498c394dc237a991ac140e82150589721605b0b426e"
+    }
+  ]
+}

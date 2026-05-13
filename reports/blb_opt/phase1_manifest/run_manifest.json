@@ -1,0 +1,120 @@
+{
+  "schema": "blb_trust0_run_manifest_v1",
+  "git": {
+    "head": "6341ceab2bb15cd6e4cb0b98805bc88d7343a984",
+    "branch": "jk_standard_rl",
+    "upstream": "6341ceab2bb15cd6e4cb0b98805bc88d7343a984",
+    "diff_hash": "0bc94c1f860e75850be968a178f9df68d15be5b4b670505465464ffd207217d2",
+    "dirty": true,
+    "status_short": "## jk_standard_rl...origin/jk_standard_rl\n M .claude/settings.local.json\n M CLAUDE.md\n M Paean/blb_action_eval.py\n M blb_rl_bridge.py\n M blb_stage2_rl/action_space.py\n M blb_stage2_rl/candidate_store.py\n M blb_stage2_rl/env.py\n M blb_stage2_rl/persistence.py\n M blb_stage2_rl/policy.py\n M blb_stage2_rl/reward.py\n M blb_stage2_rl/runner.py\n M function_handler.py\n M layer_importance_evaluator.py\n M llama_7B_LayerImportance.sh\n M reports/blb_opt/phase1_registry/action_index_mapping.md\n M reports/blb_opt/phase1_registry/slot_registry_effective.json\n M rl_tune.py\n M scripts/blb_eval_action.py\n M scripts/blb_export_action_registry.py\n M tests/test_blb_stage2_rl_regressions.py\n?? .claude/settings.json\n?? README_FOR_GPT55PRO.md\n?? RESULT_CREDIBILITY_PAGE.md\n?? _sync_metadata/\n?? blb_stage2_rl/action_mask.py\n?? blb_stage2_rl/baseline_bootstrap.py\n?? blb_stage2_rl/feasibility.py\n?? docs/blb_baseline_handover_protocol.md\n?? docs/blb_rl_to_rescale_optimizer_mapping.md\n?? reports/blb_opt/phase1_f0_scan/\n?? reports/blb_opt/phase1_manifest/\n?? reports/blb_opt/phase1_registry/current_code_action_registry.json\n?? reports/blb_opt/phase1_registry/current_code_action_registry.md\n?? reports/blb_opt/phase1_registry/current_code_slot_check.md\n?? reports/blb_opt/phase1_registry/current_code_slot_semantics.md\n?? reports/blb_opt/phase1_registry/rotation_derived_slots.md\n?? reports/blb_opt/trust0_examples/\n?? reports/blb_opt/trust0_f0_baseline_stage1ctx/\n?? reports/blb_opt/trust0_manifest/\n?? reports/blb_opt/trust0_registry/\n?? reports/blb_phase1_f0_scan_mask_curriculum_handoff_for_gpt55pro.zip\n?? reports/phase1_handoff_zip_info.txt\n?? reports/phase1_remote_test_log.txt\n?? reports/phase1_result_summary.json\n?? reports/phase1_result_summary.md\n?? reports/server_code_sync_report.json\n?? reports/server_code_sync_report.md\n?? reports/server_environment_snapshot.txt\n?? reports/trust0_handoff_zip_info.txt\n?? reports/trust0_remote_test_log.txt\n?? reports/trust0_smoke_artifacts/\n?? reports/trust0_smoke_summary.json\n?? reports/trust0_smoke_summary.md\n?? scripts/blb_f0_scan_feasible_domain.py\n?? scripts/blb_make_run_manifest.py\n?? tests/test_blb_action_mask.py\n?? tests/test_blb_baseline_bootstrap.py\n?? tests/test_blb_candidate_store_identity.py\n?? tests/test_blb_cost_semantics.py\n?? tests/test_blb_eval_action_stage1_context.py\n?? tests/test_blb_f0_scan.py\n?? tests/test_blb_final_eval_feasibility.py\n?? tests/test_blb_threshold_semantics.py\n?? tests/test_blb_warmstart_resume.py"
+  },
+  "environment": {
+    "python": "3.13.3",
+    "python_executable": "C:\\Users\\74859\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "conda_default_env": null,
+    "cuda_visible_devices": null
+  },
+  "data": {
+    "dataset": "mrpc",
+    "model": "bert-base",
+    "hf_home": null,
+    "hf_endpoint": null,
+    "glue_local_dataset_dir": null
+  },
+  "rescale_optimizer": {
+    "mode": "in_process_real",
+    "root": "Rescale_optimizer",
+    "profile": "mrpc",
+    "hash": "ed28392d4078e4eb7734740023d281d5b87f1abde68340d7776f4e2855e4278e",
+    "canonical_hash": "ed28392d4078e4eb7734740023d281d5b87f1abde68340d7776f4e2855e4278e",
+    "full_tree_hash": "99b6d9dffc0561c1982e905d16852f244c5e32e1f5b0e4ecbce72fbfeec25207"
+  },
+  "action_space": {
+    "version": "current-code-v1",
+    "registry_path": "reports/blb_opt/phase1_registry/current_code_action_registry.json",
+    "registry_hash": "6c3662ba26160952e27dca8a8e3ae164af8326ac01819677c7b1a453fe342412",
+    "slot_counts": {
+      "block1": 9,
+      "block2": 23,
+      "block3": 8,
+      "block4": 17,
+      "block5": 16
+    },
+    "per_layer_slot_count": 73,
+    "full_action_length": 877,
+    "decode_version": "action_space_v1"
+  },
+  "max_sfs": {
+    "path": "blb_stage2_rl/max_sfs/mrpc.json",
+    "hash": "bee17f0ccab949b79b4ca011a97da4cebd1d749e6ad49bffa272a701895e09f6"
+  },
+  "stage1": {
+    "source": "glue_final_configs_best_ppo.json",
+    "config_path": "D:\\Desktop\\隐私计算LLM\\Local_program\\glue_final_configs_best_ppo.json",
+    "hash": "6454e0556f54ddb4519d9d2998582bca40a41fe2910d2ece679e455f8854eed3",
+    "config_content_hash": "6454e0556f54ddb4519d9d2998582bca40a41fe2910d2ece679e455f8854eed3",
+    "gelu_degrees": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      4,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "softmax_degrees": [
+      2,
+      2,
+      5,
+      5,
+      5,
+      2,
+      5,
+      2,
+      5,
+      5,
+      6,
+      2
+    ]
+  },
+  "thresholds": {
+    "source": "smoke_temporary",
+    "acc_limit": null,
+    "f1_limit": null,
+    "acc_std_limit": null,
+    "f1_std_limit": null,
+    "strict_z": 1.0,
+    "strict_z_source": "default"
+  },
+  "cost_policy": {
+    "optimizer_cost_terms": [
+      "total_bits_sum",
+      "fusion_count"
+    ],
+    "optimizer_validity_terms": [
+      "invalid_chain",
+      "optimizer_valid",
+      "any_invalid"
+    ],
+    "optimizer_diagnostic_terms": [
+      "q_bits",
+      "q_head_bits",
+      "q_tail_bits"
+    ],
+    "mpc_truncation_cost_enabled": false,
+    "mpc_truncation_term": null
+  },
+  "fidelity_policy": {
+    "F0": "optimizer-only Rescale_optimizer",
+    "F1": "small probe",
+    "F2": "medium probe",
+    "F3": "formal final eval with real BLB install and repeated evaluation"
+  },
+  "missing_or_todo": []
+}

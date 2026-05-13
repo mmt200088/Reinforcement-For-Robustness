@@ -152,28 +152,40 @@ class BLBNoiseRLBridge:
         """安装一次 RL 动作对应的所有 BLB 噪声。
 
         Args:
-            first_input_sf:    layer 0 入口 fresh 噪声 scaling_factor；None = 不加
-            first_input_N:     first-input 用哪一张 N 表
-            first_input_layers: 默认只装 (0,)；用户可改成更多层
-            block1_cfgs:       {layer_idx: Block1NoiseConfig}；None / {} = 不装 Block 1
-            block2_cfgs..block5_cfgs 同上
+            first_input_sf:    **DEPRECATED**。语义上"第一个 HE 配置无损"，layer 0
+                               input 端不再注入 fresh 噪声。保留参数仅为旧调用
+                               站点兼容；任何非 None 取值会被忽略 + 警告。
+            first_input_N:     与 ``first_input_sf`` 一同 deprecated。
+            first_input_layers: 同上 deprecated。
+            block1_cfgs:       {layer_idx: Block1NoiseConfig}；**layer 0 即便存在
+                               也不会被安装**（用户语义：layer 0 没有上游 FFN2，
+                               block1 噪声整体不加；与 Rescale_optimizer 对齐）。
+                               ``action_vector_to_cfgs`` 已经不会把 layer 0 写进
+                               这个 dict，这里的过滤是双保险。
+            block2_cfgs..block5_cfgs 同上 layer 0 全部生效（block 2 完整存在）。
 
         每个 cfg 直接调用 ``handler.replace_layer_block*_noise`` 完成实际安装；
         Block 3 / Block 5 走 ``cfg_per_layer`` 路径以支持每层不同 degree。
         BLB / legacy 互斥校验由 handler 内部完成（残留 legacy 噪声会抛 RuntimeError）。
         """
-        # ---------- 1) first-input fresh ----------
+        # ---------- 1) first-input fresh：deprecated，整体跳过 ----------
+        # 旧调用站点可能仍在传 first_input_sf；为不破坏接口，悄悄忽略并提示。
         if first_input_sf is not None:
-            self.handler.replace_blb_first_input_noise(
-                scaling_factor=int(first_input_sf),
-                N=int(first_input_N),
-                layer_indices=list(first_input_layers),
-                layer_name=self.layers_attribute,
+            import warnings
+            warnings.warn(
+                "BLBNoiseRLBridge.apply(first_input_sf=...) is deprecated and ignored: "
+                "the first HE config is treated as lossless; no fresh noise is "
+                "injected at layer-0 input.",
+                DeprecationWarning,
+                stacklevel=2,
             )
-            for li in first_input_layers:
-                self._installed.setdefault(int(li), set()).add("first_input")
 
         # ---------- 2) Block 1 / 2 / 4：按 cfg 分组批量安装 ----------
+        # 双保险：剔除 layer 0 的 block1 cfg（即使 caller 误传也安全）。
+        if block1_cfgs:
+            block1_cfgs = {
+                li: cfg for li, cfg in block1_cfgs.items() if int(li) != 0
+            }
         for block_name, cfgs, install_method in (
                 ("block1", block1_cfgs, self.handler.replace_layer_block1_noise),
                 ("block2", block2_cfgs, self.handler.replace_layer_block2_noise),

@@ -30,6 +30,51 @@ def _split_logits_per_dim(
     return list(torch.split(flat_logits, sizes, dim=-1))
 
 
+def _mask_logits_for_slot(
+        logits: torch.Tensor,
+        action_mask: Optional[Sequence[Sequence[bool]]],
+        slot_idx: int,
+        ) -> torch.Tensor:
+    if action_mask is None:
+        return logits
+    if slot_idx >= len(action_mask):
+        raise ValueError(f"action_mask has no slot {slot_idx}")
+    raw = action_mask[slot_idx]
+    mask = torch.as_tensor(raw, dtype=torch.bool, device=logits.device).reshape(-1)
+    if mask.numel() != logits.shape[-1]:
+        raise ValueError(
+            f"action_mask slot {slot_idx} width {mask.numel()} != logits width {logits.shape[-1]}"
+        )
+    if not bool(mask.any().item()):
+        raise ValueError(f"action_mask slot {slot_idx} allows no actions")
+    view_shape = [1] * logits.dim()
+    view_shape[-1] = int(mask.numel())
+    mask = mask.reshape(view_shape)
+    return logits.masked_fill(~mask, torch.finfo(logits.dtype).min)
+
+
+def _adjust_logits_for_slot(
+        logits: torch.Tensor,
+        action_mask: Optional[Sequence[Sequence[bool]]],
+        action_bias: Optional[Sequence[Sequence[float]]],
+        slot_idx: int,
+        ) -> torch.Tensor:
+    out = _mask_logits_for_slot(logits, action_mask, slot_idx)
+    if action_bias is None:
+        return out
+    if slot_idx >= len(action_bias):
+        raise ValueError(f"action_bias has no slot {slot_idx}")
+    raw = action_bias[slot_idx]
+    bias = torch.as_tensor(raw, dtype=out.dtype, device=out.device).reshape(-1)
+    if bias.numel() != out.shape[-1]:
+        raise ValueError(
+            f"action_bias slot {slot_idx} width {bias.numel()} != logits width {out.shape[-1]}"
+        )
+    view_shape = [1] * out.dim()
+    view_shape[-1] = int(bias.numel())
+    return out + bias.reshape(view_shape)
+
+
 @dataclass
 class PolicyForwardResult:
     """``BLBStage2Policy.forward`` 的返回。"""
@@ -193,6 +238,8 @@ class BLBStage2Policy(nn.Module):
             self,
             state: torch.Tensor,
             deterministic: bool = False,
+            action_mask: Optional[Sequence[Sequence[bool]]] = None,
+            action_bias: Optional[Sequence[Sequence[float]]] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """采样一个动作向量（与 spec §4.3 ``MultiDiscrete`` 对齐）。
 
@@ -206,20 +253,27 @@ class BLBStage2Policy(nn.Module):
         fi_logits = out.first_input_logits                         # [B, 5]
 
         actions: List[torch.Tensor] = []     # 收集每个分量的 [B] 整数 tensor
-        log_prob_total = torch.zeros(state.shape[0], device=state.device)
+        batch = int(out.value.shape[0])
+        log_prob_total = torch.zeros(batch, device=state.device)
 
         # per-layer per-dim categorical
+        cursor = 0
         for layer_split in per_layer_split:
             for dim_logits in layer_split:
-                dist = torch.distributions.Categorical(logits=dim_logits)
+                masked_logits = _adjust_logits_for_slot(
+                    dim_logits, action_mask, action_bias, cursor,
+                )
+                dist = torch.distributions.Categorical(logits=masked_logits)
                 if deterministic:
-                    action = torch.argmax(dim_logits, dim=-1)
+                    action = torch.argmax(masked_logits, dim=-1)
                 else:
                     action = dist.sample()
                 log_prob_total = log_prob_total + dist.log_prob(action)
                 actions.append(action)
+                cursor += 1
 
         # first_input
+        fi_logits = _adjust_logits_for_slot(fi_logits, action_mask, action_bias, cursor)
         fi_dist = torch.distributions.Categorical(logits=fi_logits)
         if deterministic:
             fi_action = torch.argmax(fi_logits, dim=-1)
@@ -231,7 +285,12 @@ class BLBStage2Policy(nn.Module):
         action_vec = torch.stack(actions, dim=-1)     # [B, total_dim]
         return action_vec, log_prob_total, out.value
 
-    def per_dim_entropy(self, state: torch.Tensor) -> torch.Tensor:
+    def per_dim_entropy(
+            self,
+            state: torch.Tensor,
+            action_mask: Optional[Sequence[Sequence[bool]]] = None,
+            action_bias: Optional[Sequence[Sequence[float]]] = None,
+            ) -> torch.Tensor:
         """Return per-action-slot entropy averaged over the input batch.
 
         Output shape: ``[total_dim]`` aligned with the action vector layout:
@@ -248,10 +307,16 @@ class BLBStage2Policy(nn.Module):
         fi_logits = out.first_input_logits
 
         entropies: List[torch.Tensor] = []
+        cursor = 0
         for layer_split in per_layer_split:
             for dim_logits in layer_split:
-                dist = torch.distributions.Categorical(logits=dim_logits)
+                logits = _adjust_logits_for_slot(
+                    dim_logits, action_mask, action_bias, cursor,
+                )
+                dist = torch.distributions.Categorical(logits=logits)
                 entropies.append(dist.entropy().mean(dim=0))   # scalar over batch
+                cursor += 1
+        fi_logits = _adjust_logits_for_slot(fi_logits, action_mask, action_bias, cursor)
         fi_dist = torch.distributions.Categorical(logits=fi_logits)
         entropies.append(fi_dist.entropy().mean(dim=0))
         return torch.stack(entropies)
@@ -260,6 +325,8 @@ class BLBStage2Policy(nn.Module):
             self,
             state: torch.Tensor,
             action: torch.Tensor,
+            action_mask: Optional[Sequence[Sequence[bool]]] = None,
+            action_bias: Optional[Sequence[Sequence[float]]] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """给定 (state, action) → (log_prob, entropy, value)，用于 PPO update。
 
@@ -278,13 +345,17 @@ class BLBStage2Policy(nn.Module):
         for layer_split in per_layer_split:
             for dim_logits in layer_split:
                 a_col = action[:, cursor]                           # [B]
-                dist = torch.distributions.Categorical(logits=dim_logits)
+                masked_logits = _adjust_logits_for_slot(
+                    dim_logits, action_mask, action_bias, cursor,
+                )
+                dist = torch.distributions.Categorical(logits=masked_logits)
                 log_prob_total = log_prob_total + dist.log_prob(a_col)
                 entropy_total = entropy_total + dist.entropy()
                 cursor += 1
 
         # first_input
         fi_action = action[:, cursor]
+        fi_logits = _adjust_logits_for_slot(fi_logits, action_mask, action_bias, cursor)
         fi_dist = torch.distributions.Categorical(logits=fi_logits)
         log_prob_total = log_prob_total + fi_dist.log_prob(fi_action)
         entropy_total = entropy_total + fi_dist.entropy()
@@ -362,7 +433,16 @@ class RolloutBuffer:
         returns = rewards.copy()
         advantages = returns - values
         if advantage_normalize and advantages.size > 1:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            adv_std = float(advantages.std())
+            # When a rollout collapses to a single reward bucket (e.g. nearly
+            # every action invalid → all rewards == -invalid_penalty), the
+            # critic also learns to predict that constant, so advantages all
+            # cluster near zero. Centering and dividing by a tiny std then
+            # either zeros out the few valid-action signals or blows them up
+            # to numerical noise. Skip normalization in that regime so the
+            # rare valid candidates keep an unambiguous gradient direction.
+            if adv_std > 1e-3:
+                advantages = (advantages - advantages.mean()) / (adv_std + 1e-8)
 
         return (
             torch.from_numpy(states).to(device),
@@ -391,6 +471,8 @@ def ppo_update(
         buffer: RolloutBuffer,
         cfg: PPOConfig,
         device: torch.device,
+        action_mask: Optional[Sequence[Sequence[bool]]] = None,
+        action_bias: Optional[Sequence[Sequence[float]]] = None,
         ) -> dict:
     """对 buffer 做一次 PPO update（n_epochs × minibatch）。
 
@@ -421,7 +503,12 @@ def ppo_update(
             mb_returns = returns.index_select(0, mb_idx_t)
             mb_adv = advantages.index_select(0, mb_idx_t)
 
-            new_log_probs, entropy, value = policy.evaluate_action(mb_states, mb_actions)
+            new_log_probs, entropy, value = policy.evaluate_action(
+                mb_states,
+                mb_actions,
+                action_mask=action_mask,
+                action_bias=action_bias,
+            )
             ratio = torch.exp(new_log_probs - mb_old_log_probs)
             unclipped = ratio * mb_adv
             clipped = torch.clamp(ratio, 1.0 - cfg.clip_range, 1.0 + cfg.clip_range) * mb_adv

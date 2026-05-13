@@ -1,0 +1,17 @@
+=== BLB Stage-2 RL 奖励暴跌警告（reward-drop warnings）===
+阶段（phase）: BLB Stage-2 RL（v3）
+启动时间（first-write）: 2026-05-10T18:00:59.535654
+
+--- 警告 #1 ---
+  类型: rollout reward drop
+  跌幅（drop）: 22.8933 (prev=0.0000, curr=-22.8933)
+  回合范围: 201-220
+    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.00494_s2t0.00494_s2st0.00494/stage2_noise/details/noise_ppo_step_info_1-360.txt
+  写入时间: 2026-05-10T18:00:59.535669
+
+--- 警告 #2 ---
+  类型: rollout reward drop
+  跌幅（drop）: 7.1067 (prev=-22.8933, curr=-30.0000)
+  回合范围: 221-240
+    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.00494_s2t0.00494_s2st0.00494/stage2_noise/details/noise_ppo_step_info_1-360.txt
+  写入时间: 2026-05-10T18:01:01.848934

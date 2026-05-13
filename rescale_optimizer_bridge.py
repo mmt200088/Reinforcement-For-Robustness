@@ -1129,10 +1129,16 @@ class RescaleOptimizerBridge:
             self,
             requests: Mapping[str, Tuple[str, Any]],
             ) -> Dict[str, RescaleOptimizerOutput]:
-        outputs: Dict[str, RescaleOptimizerOutput] = {}
-        for config_name in requests.keys():
-            outputs[config_name] = self.evaluate_baseline(config_name=config_name)
-        return outputs
+        """Evaluate an all-max baseline through the cfg-derived action path.
+
+        The optimizer's empty-payload baseline can differ from the BLB action
+        decoder's all-max cfg.  Candidate ranking and reward calibration must
+        not mix those conventions, so this batch helper now delegates to the
+        same ``evaluate_blocks`` path used by ordinary actions.  The lower
+        level ``evaluate_baseline`` method remains available for explicit
+        diagnostic comparisons against the optimizer-native baseline.
+        """
+        return self.evaluate_blocks(requests)
 
     def evaluate_blocks(
             self,

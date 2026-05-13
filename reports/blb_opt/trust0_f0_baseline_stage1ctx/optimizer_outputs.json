@@ -1,0 +1,770 @@
+{
+  "block1_mrpc_L0": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block1_mrpc_L1": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block1_mrpc_L10": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block1_mrpc_L11": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block1_mrpc_L2": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block1_mrpc_L3": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block1_mrpc_L4": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block1_mrpc_L5": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block1_mrpc_L6": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block1_mrpc_L7": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block1_mrpc_L8": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block1_mrpc_L9": {
+    "valid": true,
+    "total_bits": 210,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      36,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L0": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L1": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L10": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L11": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L2": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L3": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L4": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L5": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L6": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L7": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L8": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block2_mrpc_L9": {
+    "valid": true,
+    "total_bits": 272,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      51,
+      52,
+      49
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n2_L0": {
+    "valid": true,
+    "total_bits": 206,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      52,
+      34
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n2_L1": {
+    "valid": true,
+    "total_bits": 206,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      52,
+      34
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n2_L11": {
+    "valid": true,
+    "total_bits": 206,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      52,
+      34
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n2_L5": {
+    "valid": true,
+    "total_bits": 206,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      52,
+      34
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n2_L7": {
+    "valid": true,
+    "total_bits": 206,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      52,
+      34
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n5_L2": {
+    "valid": true,
+    "total_bits": 299,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      55,
+      31,
+      31,
+      31,
+      31
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n5_L3": {
+    "valid": true,
+    "total_bits": 299,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      55,
+      31,
+      31,
+      31,
+      31
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n5_L4": {
+    "valid": true,
+    "total_bits": 299,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      55,
+      31,
+      31,
+      31,
+      31
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n5_L6": {
+    "valid": true,
+    "total_bits": 299,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      55,
+      31,
+      31,
+      31,
+      31
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n5_L8": {
+    "valid": true,
+    "total_bits": 299,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      55,
+      31,
+      31,
+      31,
+      31
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n5_L9": {
+    "valid": true,
+    "total_bits": 299,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      55,
+      31,
+      31,
+      31,
+      31
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block3_exp_n6_L10": {
+    "valid": true,
+    "total_bits": 330,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      55,
+      31,
+      31,
+      31,
+      31,
+      31
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L0": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L1": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L10": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L11": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L2": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L3": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L4": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L5": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L6": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L7": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L8": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block4_L9": {
+    "valid": true,
+    "total_bits": 287,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      57,
+      56,
+      54
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n1_L0": {
+    "valid": true,
+    "total_bits": 212,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      50,
+      42
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n1_L1": {
+    "valid": true,
+    "total_bits": 212,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      50,
+      42
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n1_L10": {
+    "valid": true,
+    "total_bits": 212,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      50,
+      42
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n1_L11": {
+    "valid": true,
+    "total_bits": 212,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      50,
+      42
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n1_L2": {
+    "valid": true,
+    "total_bits": 212,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      50,
+      42
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n1_L3": {
+    "valid": true,
+    "total_bits": 212,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      50,
+      42
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n1_L4": {
+    "valid": true,
+    "total_bits": 212,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      50,
+      42
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n1_L6": {
+    "valid": true,
+    "total_bits": 212,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      50,
+      42
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n1_L7": {
+    "valid": true,
+    "total_bits": 212,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      50,
+      42
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n1_L8": {
+    "valid": true,
+    "total_bits": 212,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      50,
+      42
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n1_L9": {
+    "valid": true,
+    "total_bits": 212,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      50,
+      42
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  },
+  "block5_n4_L5": {
+    "valid": true,
+    "total_bits": 275,
+    "fusion_count": 0,
+    "invalid_chain": null,
+    "q_bits": [
+      31,
+      42,
+      31,
+      51
+    ],
+    "q_head_bits": 60,
+    "q_tail_bits": 60
+  }
+}

@@ -7,7 +7,10 @@
       "Bash(python -c \"import py_compile; py_compile.compile\\('layer_importance_evaluator.py', doraise=True\\)\")",
       "Bash(python -c \"import py_compile; py_compile.compile\\('noise_rl_module.py', doraise=True\\); py_compile.compile\\('layer_importance_evaluator.py', doraise=True\\); print\\('OK'\\)\")",
       "Bash(python -c \"import py_compile; py_compile.compile\\('noise_rl_module.py', doraise=True\\); print\\('OK'\\)\")",
-      "Edit(./CLAUDE.md\\),Write\\(./CLAUDE.md)"
+      "Edit(./CLAUDE.md\\),Write\\(./CLAUDE.md)",
+      "Write(./docs/**/*.md\\), Write\\(./blb_stage2_rl/**/*.py\\), Edit\\(./blb_stage2_rl/**/*.py)",
+      "Write(./docs/**\\)\r  Edit\\(./docs/**\\)\r\r  Write\\(./blb_stage2_rl/**\\)\r  Edit\\(./blb_stage2_rl/**)",
+      "Write(./docs/**)"
     ]
   }
 }

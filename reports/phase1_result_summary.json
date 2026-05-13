@@ -1,0 +1,80 @@
+{
+  "schema": "blb_phase1_result_summary_v3",
+  "date": "2026-05-11",
+  "git_head": "6341ceab2bb15cd6e4cb0b98805bc88d7343a984",
+  "local_tracked_diff_hash": "4c333753e92e5bfcdb2a97e9b288f37bef7b0413",
+  "server_sync_status": "not_synced_noninteractive_ssh_permission_denied_publickey_password",
+  "results_from_current_code": {
+    "local_f0_optimizer_only": true,
+    "baseline_handover_unit_test": true,
+    "layer0_flow_smoke": true,
+    "server_f1_masked_smoke": false,
+    "post_claude_rl_training": false
+  },
+  "claude_layer0_flow_change": {
+    "action_layout_unchanged": true,
+    "full_action_length_mrpc_l12": 877,
+    "layer0_block1_effective": false,
+    "first_input_fresh_effective": false,
+    "layer0_block2_effective": true,
+    "canonical_ro_result_count_formula": "5*num_layers - 1",
+    "baseline_response_tolerates_old_5L": true
+  },
+  "rescale_optimizer": {
+    "mode": "in_process_real",
+    "local_root": "Rescale_optimizer",
+    "local_canonical_hash": "ed28392d4078e4eb7734740023d281d5b87f1abde68340d7776f4e2855e4278e"
+  },
+  "stage1": {
+    "config_path": "glue_final_configs_best_ppo.json",
+    "config_content_hash": "6454e0556f54ddb4519d9d2998582bca40a41fe2910d2ece679e455f8854eed3",
+    "gelu_degrees": [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1],
+    "softmax_degrees": [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
+  },
+  "action_registry": {
+    "action_space_version": "current-code-v1",
+    "decode_version": "action_space_v1",
+    "slot_count": 877,
+    "per_layer_slot_count": 73,
+    "required_slot_count": 791,
+    "ineffective_or_compat_extra_count": 86,
+    "registry_hash": "6c3662ba26160952e27dca8a8e3ae164af8326ac01819677c7b1a453fe342412",
+    "max_sfs_hash": "bee17f0ccab949b79b4ca011a97da4cebd1d749e6ad49bffa272a701895e09f6"
+  },
+  "f0_scan": {
+    "output_dir": "reports/blb_opt/phase1_f0_scan",
+    "baseline_optimizer_valid": true,
+    "baseline_total_bits_sum": 14779,
+    "baseline_fusion_count": 0,
+    "baseline_avg_k": 13.0,
+    "mask_hash": "2dda3a20ce9339f9fc95f164b88226f92d543debc2a0f38762f7b1312f4e870e",
+    "mask_action_width": 877,
+    "mask_slot_count": 877,
+    "masked_random_valid_rate": {
+      "1": 1.0,
+      "2": 1.0,
+      "4": 1.0,
+      "8": 1.0
+    },
+    "beam_scan_note": "No cost-improving single-slot mutations were found; beam attempted expansions are zero."
+  },
+  "layer0_flow_smoke": {
+    "action_dim_l3": 220,
+    "block1_cfg_keys_l3": [1, 2],
+    "first_input_sf": 0,
+    "ro_request_count_l3": 14,
+    "has_block1_mrpc_L0": false,
+    "layer0_block1_records": 9,
+    "layer0_block1_all_ineffective": true,
+    "first_input_effective": false
+  },
+  "tests": {
+    "focused_unittest": "49 tests OK",
+    "py_compile": "passed",
+    "git_diff_check": "passed_with_crlf_warnings_only",
+    "json_parse_registry": "passed_with_python_json_tool",
+    "bash_n_launcher": "not_checked_locally_wsl_unavailable",
+    "server_smoke": "not_run_in_this_refresh"
+  },
+  "result_boundary": "F0 is current local optimizer-only diagnostic evidence. No post-Claude layer-0-flow RL training result exists."
+}

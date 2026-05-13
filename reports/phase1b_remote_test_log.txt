@@ -1,0 +1,27 @@
+# Phase-1B Remote Test Log
+
+## Status
+
+Blocked before server sync and before GPU smoke.
+
+## SSH Command Attempted
+
+```bash
+ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=no -p 8722 root@100.84.74.99 "cd /var/tmp/root-home/Reinforcement-For-Robustness && pwd && git rev-parse HEAD"
+```
+
+## Observed Failure
+
+```text
+kex_exchange_identification: read: Connection reset
+Connection reset by 100.84.74.99 port 8722
+```
+
+## Consequence
+
+- Server working tree was not inspected.
+- Local code was not synced to server in this run.
+- Server focused tests were not run.
+- F1 GPU smoke was not run.
+
+This is a stop condition for long training under the Phase-1B taskbook.

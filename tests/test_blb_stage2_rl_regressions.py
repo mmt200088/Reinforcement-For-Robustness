@@ -702,9 +702,9 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
                     name: RescaleOptimizerOutput(
                         config_name=name,
                         fusion_count=0,
-                        total_bits=0,
-                        invalid_chain={"reason": "cfg-derived path should not run"},
-                        valid=False,
+                        total_bits=100,
+                        invalid_chain=None,
+                        valid=True,
                         raw={},
                     )
                     for name in requests
@@ -735,7 +735,10 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
             model=TinyModel(),
             probe_batches=[probe],
             rescale_bridge=bridge,
-            baseline=BaselineCostStats(total_bits_sum=500, total_fusion_count=0, avg_k=13.0),
+            # 4 blocks (block2..5) * 100 bits each — layer-0 block1 is no longer
+            # installed (the first HE config is treated as lossless), so the
+            # all-max baseline reports 4 valid blocks, not 5.
+            baseline=BaselineCostStats(total_bits_sum=400, total_fusion_count=0, avg_k=13.0),
             reward_weights=RewardWeights(),
             acc_threshold=0.5,
             stab_threshold=10.0,
@@ -746,7 +749,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
 
         _obs, reward, done, info = env.step(make_all_max_action_vector(num_layers=1))
 
-        self.assertEqual(bridge.calls, ["baseline"])
+        self.assertEqual(bridge.calls, ["cfg-derived"])
         self.assertTrue(done)
         self.assertFalse(info["invalid"])
         self.assertFalse(info["reward_breakdown"].invalid)
@@ -787,7 +790,9 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         signals = aggregate_optimizer_signals(outputs)
 
         self.assertFalse(signals.any_invalid, signals.invalid_chains)
-        self.assertEqual(signals.valid_block_count, 60)
+        # 5 blocks * 12 layers - 1 = 59 (layer-0 block 1 is no longer installed:
+        # the first HE config is treated as lossless, aligned with Rescale_optimizer).
+        self.assertEqual(signals.valid_block_count, 59)
         self.assertEqual(signals.invalid_block_count, 0)
 
     def test_real_mrpc_all_max_cfg_derived_optimizer_outputs_are_valid(self):
@@ -822,7 +827,9 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         signals = aggregate_optimizer_signals(outputs)
 
         self.assertFalse(signals.any_invalid, signals.invalid_chains)
-        self.assertEqual(signals.valid_block_count, 60)
+        # 5 blocks * 12 layers - 1 = 59 (layer-0 block 1 is no longer installed:
+        # the first HE config is treated as lossless, aligned with Rescale_optimizer).
+        self.assertEqual(signals.valid_block_count, 59)
         self.assertEqual(signals.invalid_block_count, 0)
         self.assertEqual(
             outputs["block4_L0"].raw["delta_overrides"]["ctct_rot_softmax_mul_v"],
@@ -903,7 +910,7 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
             store.append({"action_indices": action, "fidelity": "F2", "valid": True})
             self.assertFalse(store.should_evaluate(action, "F2"))
 
-    def test_registry_export_records_action_values_and_required_slot_mismatch(self):
+    def test_registry_export_records_action_values_and_current_slot_count(self):
         from blb_stage2_rl.action_space import K_LEVELS
         from scripts.blb_export_action_registry import build_registry_payload
 
@@ -912,7 +919,6 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
             num_layers=1,
             gelu_degree=[4],
             attn_degree=[2],
-            expected_required_slots_per_layer=59,
         )
         records = payload["slot_registry_full"]
 
@@ -926,9 +932,15 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
         expected_k_idx = list(K_LEVELS).index(max(K_LEVELS))
         self.assertTrue(all(r["all_max_action_index"] == expected_k_idx for r in k_records))
 
-        mismatch = payload["required59_or_mismatch_markdown"]
-        self.assertIn("expected_required_slots_per_layer", mismatch)
-        self.assertIn("status", mismatch)
+        self.assertEqual(payload["summary"]["per_layer_slot_count"], 73)
+        self.assertEqual(payload["summary"]["block_slot_counts_per_layer"]["block1"], 9)
+        self.assertEqual(payload["summary"]["block_slot_counts_per_layer"]["block2"], 23)
+        self.assertEqual(payload["summary"]["block_slot_counts_per_layer"]["block3"], 8)
+        self.assertEqual(payload["summary"]["block_slot_counts_per_layer"]["block4"], 17)
+        self.assertEqual(payload["summary"]["block_slot_counts_per_layer"]["block5"], 16)
+        slot_check = payload["current_code_slot_check_markdown"]
+        self.assertIn("expected_slots_per_layer", slot_check)
+        self.assertIn("status", slot_check)
 
     def test_f0_eval_record_contains_action_hash_rank_key_and_optimizer_summary(self):
         from blb_stage2_rl.candidate_store import action_hash
@@ -955,9 +967,10 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
 
         self.assertEqual(record["fidelity"], "F0")
         self.assertEqual(record["action_hash"], action_hash(action))
+        self.assertEqual(record["action_vector_hash"], action_hash(action))
         self.assertEqual(record["normalized_cost"], 0.5)
         self.assertEqual(record["optimizer"]["total_bits_sum"], 1200)
-        self.assertEqual(record["rank_key"], [0.0, 0.0, 0.0, 0.5])
+        self.assertEqual(record["rank_key"], [0.0, 1200.0, 7.0])
 
     def test_f0_eval_all_max_uses_optimizer_baseline_path(self):
         import scripts.blb_eval_action as mod
@@ -980,9 +993,9 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
                     name: RescaleOptimizerOutput(
                         config_name=name,
                         fusion_count=0,
-                        total_bits=0,
-                        invalid_chain={"reason": "wrong path"},
-                        valid=False,
+                        total_bits=100,
+                        invalid_chain=None,
+                        valid=True,
                         raw={},
                     )
                     for name in requests
@@ -1021,7 +1034,7 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
             mod.InProcessInvoker = old_invoker
             mod.RescaleOptimizerBridge = old_bridge
 
-        self.assertEqual(calls, ["baseline"])
+        self.assertEqual(calls, ["cfg-derived"])
         self.assertTrue(record["valid"])
 
 

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(./docs/**)",
+      "Write(./docs/**)",
+      "Write(./blb_stage2_rl/**)",
+      "Edit(./blb_stage2_rl/**)",
+      "Bash",
+      "PowerShell"
+    ]
+  }
+}

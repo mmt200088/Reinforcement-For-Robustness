@@ -124,6 +124,12 @@ GA / Greedy：
   --stage2-save-interval N                BLB v3 live checkpoint 保存间隔
   --stage2-eval-interval N                BLB v3 训练日志评估间隔
   --stage2-calibrate-baseline-samples N   BLB v3 reward 权重校准样本数
+  --blb-v3-warmstart-anchor-episodes N    BLB v3 前 N 个 episode 固定 all-max baseline
+  --blb-v3-action-mask-enabled            启用 BLB v3 action mask / baseline prior
+  --blb-v3-action-mask-mode MODE          none|baseline_only|near_baseline|from_file
+  --blb-v3-action-mask-file PATH          mode=from_file 时读取的 F0 suggested_action_mask.json
+  --blb-v3-action-mask-baseline-logit-bonus FLOAT
+                                          给 all-max baseline 动作额外 logit 加成（0 表示不加）
 
 通用 RL（仅 general-rl 可用）：
   --general-rl-mode train|search          训练 或 搜索（search 等同于原 infer）
@@ -179,6 +185,7 @@ needv(){ [ "$#" -ge 2 ] || err "选项 $1 缺少取值。"; }
 is_pos_int(){ [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
 is_nonneg_int(){ [[ "$1" =~ ^[0-9]+$ ]]; }
 is_pos_num(){ [[ "$1" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$ ]] && awk -v x="$1" 'BEGIN { exit !((x + 0) > 0) }'; }
+is_nonneg_num(){ [[ "$1" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$ ]] && awk -v x="$1" 'BEGIN { exit !((x + 0) >= 0) }'; }
 ga_total_layers_for_model_type(){
   case "$1" in
     bert-base|gpt-2) echo 12 ;;
@@ -436,6 +443,11 @@ BLB_V3_ROLLOUT_SIZE=""; S_BLB_V3_ROLLOUT_SIZE="false"
 BLB_V3_EVAL_INTERVAL=""; S_BLB_V3_EVAL_INTERVAL="false"
 BLB_V3_SAVE_INTERVAL=""; S_BLB_V3_SAVE_INTERVAL="false"
 BLB_V3_CALIBRATE_BASELINE_SAMPLES=""; S_BLB_V3_CALIBRATE_BASELINE_SAMPLES="false"
+BLB_V3_WARMSTART_ANCHOR_EPISODES=""; S_BLB_V3_WARMSTART_ANCHOR_EPISODES="false"
+BLB_V3_ACTION_MASK_ENABLED="false"; S_BLB_V3_ACTION_MASK_ENABLED="false"
+BLB_V3_ACTION_MASK_MODE="none"; S_BLB_V3_ACTION_MASK_MODE="false"
+BLB_V3_ACTION_MASK_FILE=""; S_BLB_V3_ACTION_MASK_FILE="false"
+BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="0"; S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="false"
 FRESH_START="false"; S_FRESH_START="false"
 FRESH_STAGE1="false"; S_FRESH_STAGE1="false"
 FRESH_STAGE2="false"; S_FRESH_STAGE2="false"
@@ -588,6 +600,11 @@ while [ "$#" -gt 0 ]; do
     --stage2-save-interval|--blb-v3-save-interval) needv "$@"; BLB_V3_SAVE_INTERVAL="$2"; S_BLB_V3_SAVE_INTERVAL="true"; shift 2 ;;
     --stage2-eval-interval|--blb-v3-eval-interval) needv "$@"; BLB_V3_EVAL_INTERVAL="$2"; S_BLB_V3_EVAL_INTERVAL="true"; shift 2 ;;
     --stage2-calibrate-baseline-samples|--blb-v3-calibrate-baseline-samples) needv "$@"; BLB_V3_CALIBRATE_BASELINE_SAMPLES="$2"; S_BLB_V3_CALIBRATE_BASELINE_SAMPLES="true"; shift 2 ;;
+    --blb-v3-warmstart-anchor-episodes) needv "$@"; BLB_V3_WARMSTART_ANCHOR_EPISODES="$2"; S_BLB_V3_WARMSTART_ANCHOR_EPISODES="true"; shift 2 ;;
+    --blb-v3-action-mask-enabled) BLB_V3_ACTION_MASK_ENABLED="true"; S_BLB_V3_ACTION_MASK_ENABLED="true"; shift ;;
+    --blb-v3-action-mask-mode) needv "$@"; BLB_V3_ACTION_MASK_MODE="$2"; S_BLB_V3_ACTION_MASK_MODE="true"; shift 2 ;;
+    --blb-v3-action-mask-file) needv "$@"; BLB_V3_ACTION_MASK_FILE="$2"; S_BLB_V3_ACTION_MASK_FILE="true"; shift 2 ;;
+    --blb-v3-action-mask-baseline-logit-bonus) needv "$@"; BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="$2"; S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="true"; shift 2 ;;
     --fresh-start|--fresh) FRESH_START="true"; S_FRESH_START="true"; shift ;;
     --fresh-stage1) FRESH_STAGE1="true"; S_FRESH_STAGE1="true"; shift ;;
     --fresh-stage2) FRESH_STAGE2="true"; S_FRESH_STAGE2="true"; shift ;;
@@ -607,6 +624,7 @@ RL_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$RL_COMPARE_FINAL_EVAL_SOURCE" | tr
 GA_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$GA_COMPARE_FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
 COMPARE_CONFIG_MODE="$(printf '%s' "$COMPARE_CONFIG_MODE" | tr '[:upper:]' '[:lower:]')"
 STAGE2_RL_VARIANT="$(printf '%s' "$STAGE2_RL_VARIANT" | tr '[:upper:]' '[:lower:]')"
+BLB_V3_ACTION_MASK_MODE="$(printf '%s' "$BLB_V3_ACTION_MASK_MODE" | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
 
 case "$SEARCH_ALGORITHM" in
   rl|ppo) SEARCH_ALGORITHM="rl" ;;
@@ -748,6 +766,14 @@ is_pos_int "$BLB_V3_ROLLOUT_SIZE" || err "--stage2-rollout-size 必须是正整�
 [ -z "$BLB_V3_SAVE_INTERVAL" ] || is_pos_int "$BLB_V3_SAVE_INTERVAL" || err "--stage2-save-interval 必须是正整数，当前为：$BLB_V3_SAVE_INTERVAL"
 [ -z "$BLB_V3_EVAL_INTERVAL" ] || is_pos_int "$BLB_V3_EVAL_INTERVAL" || err "--stage2-eval-interval 必须是正整数，当前为：$BLB_V3_EVAL_INTERVAL"
 [ -z "$BLB_V3_CALIBRATE_BASELINE_SAMPLES" ] || is_pos_int "$BLB_V3_CALIBRATE_BASELINE_SAMPLES" || err "--stage2-calibrate-baseline-samples 必须是正整数，当前为：$BLB_V3_CALIBRATE_BASELINE_SAMPLES"
+[ -z "$BLB_V3_WARMSTART_ANCHOR_EPISODES" ] || is_pos_int "$BLB_V3_WARMSTART_ANCHOR_EPISODES" || err "--blb-v3-warmstart-anchor-episodes 必须是正整数，当前为：$BLB_V3_WARMSTART_ANCHOR_EPISODES"
+case "$BLB_V3_ACTION_MASK_MODE" in
+  ""|none|off|disabled) BLB_V3_ACTION_MASK_MODE="none" ;;
+  baseline_only|near_baseline|from_file) BLB_V3_ACTION_MASK_ENABLED="true" ;;
+  *) err "--blb-v3-action-mask-mode 只支持 none / baseline_only / near_baseline / from_file，当前为：$BLB_V3_ACTION_MASK_MODE" ;;
+esac
+is_nonneg_num "$BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" || err "--blb-v3-action-mask-baseline-logit-bonus 必须是非负数，当前为：$BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS"
+[ "$BLB_V3_ACTION_MASK_MODE" != "from_file" ] || [ -n "$BLB_V3_ACTION_MASK_FILE" ] || err "--blb-v3-action-mask-mode=from_file 时必须提供 --blb-v3-action-mask-file。"
 
 [ "$FINAL_EVAL_ONLY" = "false" ] || [ "$SKIP_FINAL_EVAL" = "false" ] || err "--final-eval-only 与 --skip-final-eval 冲突。"
 if [ "$FINAL_EVAL_ONLY" = "true" ] && [ "$SEARCH_ALGORITHM" != "rl" ] && [ "$SEARCH_ALGORITHM" != "ga" ] && [ "$SEARCH_ALGORITHM" != "greedy" ]; then
@@ -798,7 +824,7 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ] || [ "$SEARCH_ALGORITHM" = "rl-and-ga-
   { [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; } || err "当前模式不支持 --stage2-fixed-config-* 参数；该参数组仅普通 rl / ga / greedy 可用。"
 fi
 if [ "$SEARCH_ALGORITHM" != "rl" ]; then
-  { [ "$S_STAGE2_RL_VARIANT" = "false" ] && [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ]; } || err "Stage-2 RL variant / BLB 参数仅支持 run rl / --algorithm rl。"
+  { [ "$S_STAGE2_RL_VARIANT" = "false" ] && [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ] && [ "$S_BLB_V3_WARMSTART_ANCHOR_EPISODES" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_ENABLED" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_MODE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_FILE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" = "false" ]; } || err "Stage-2 RL variant / BLB 参数仅支持 run rl / --algorithm rl。"
 fi
 if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$S_GENERAL_ACCURACY_TOLERANCE_RANGE" = "true" ]; then
   err "当前搜索算法不是 general-rl，请不要使用 --general-rl-accuracy-tolerance-range。"
@@ -957,7 +983,7 @@ else
     is_pos_num "$STAGE1_LR" || err "--stage1-search-lr 必须是正数"
     is_pos_num "$STAGE2_LR" || err "--stage2-search-lr 必须是正数"
     if [ "$STAGE2_RL_VARIANT" = "legacy_v2" ]; then
-      { [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ]; } || err "stage2_rl_variant=legacy_v2 时不能同时使用 BLB v3 专属参数。"
+      { [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ] && [ "$S_BLB_V3_WARMSTART_ANCHOR_EPISODES" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_ENABLED" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_MODE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_FILE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" = "false" ]; } || err "stage2_rl_variant=legacy_v2 时不能同时使用 BLB v3 专属参数。"
     fi
     [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$STAGE1_EPISODES" -ge 170 ] || err "rl 的 Stage-1 回合数至少需要 170。"
     [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$STAGE2_EPISODES" -ge 170 ] || err "rl 的 Stage-2 回合数至少需要 170。"
@@ -1332,6 +1358,13 @@ else
     [ -n "$BLB_V3_EVAL_INTERVAL" ] && CMD+=(--blb_v3_eval_interval "$BLB_V3_EVAL_INTERVAL")
     [ -n "$BLB_V3_SAVE_INTERVAL" ] && CMD+=(--blb_v3_save_interval "$BLB_V3_SAVE_INTERVAL")
     [ -n "$BLB_V3_CALIBRATE_BASELINE_SAMPLES" ] && CMD+=(--blb_v3_calibrate_baseline_samples "$BLB_V3_CALIBRATE_BASELINE_SAMPLES")
+    [ -n "$BLB_V3_WARMSTART_ANCHOR_EPISODES" ] && CMD+=(--blb_v3_warmstart_anchor_episodes "$BLB_V3_WARMSTART_ANCHOR_EPISODES")
+    if [ "$BLB_V3_ACTION_MASK_ENABLED" = "true" ] || [ "$S_BLB_V3_ACTION_MASK_MODE" = "true" ] || [ "$S_BLB_V3_ACTION_MASK_FILE" = "true" ] || [ "$S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" = "true" ]; then
+      CMD+=(--blb_v3_action_mask_enabled "$BLB_V3_ACTION_MASK_ENABLED")
+      CMD+=(--blb_v3_action_mask_mode "$BLB_V3_ACTION_MASK_MODE")
+      CMD+=(--blb_v3_action_mask_baseline_logit_bonus "$BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS")
+      [ -n "$BLB_V3_ACTION_MASK_FILE" ] && CMD+=(--blb_v3_action_mask_file "$BLB_V3_ACTION_MASK_FILE" --blb_v3_action_mask_source "$BLB_V3_ACTION_MASK_FILE")
+    fi
   else
     CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --search_backend "$SEARCH_ALGORITHM" --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
     [ "$S_STAGE1_GENERATIONS" = "true" ] && CMD+=(--stage1_ga_generations "$STAGE1_GENERATIONS" --stage1_ga_generations_specified "true")
@@ -1366,6 +1399,11 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   show "Stage-1 回合数" "$STAGE1_EPISODES" "$S_STAGE1_EPISODES"
   show "Stage-2 回合数" "$STAGE2_EPISODES" "$S_STAGE2_EPISODES"
   show "Stage-2 RL 实现" "$STAGE2_RL_VARIANT" "$S_STAGE2_RL_VARIANT"
+  if [ -n "$BLB_V3_WARMSTART_ANCHOR_EPISODES" ]; then show "BLB v3 warmstart anchor episodes" "$BLB_V3_WARMSTART_ANCHOR_EPISODES" "$S_BLB_V3_WARMSTART_ANCHOR_EPISODES"; fi
+  show "BLB v3 action mask" "$(boolzh "$BLB_V3_ACTION_MASK_ENABLED")" "$S_BLB_V3_ACTION_MASK_ENABLED"
+  show "BLB v3 action mask 模式" "$BLB_V3_ACTION_MASK_MODE" "$S_BLB_V3_ACTION_MASK_MODE"
+  if [ -n "$BLB_V3_ACTION_MASK_FILE" ]; then show "BLB v3 action mask 文件" "$BLB_V3_ACTION_MASK_FILE" "$S_BLB_V3_ACTION_MASK_FILE"; fi
+  show "BLB v3 baseline logit 加成" "$BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" "$S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS"
   show "PPO 更新间隔" "$PPO_UPDATE_INTERVAL_VAL" "$S_PPO_UPDATE_INTERVAL"
   if [ "$STAGE2_RL_VARIANT" = "blb_v3" ]; then
     show "BLB rollout 大小" "$BLB_V3_ROLLOUT_SIZE" "$S_BLB_V3_ROLLOUT_SIZE"

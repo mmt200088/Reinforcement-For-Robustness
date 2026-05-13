@@ -13,8 +13,7 @@
 
 每层 73 维（softmax_deg=4, gelu_deg=4 各占满），L=12 层 → 73*12 + 1 = 877 维。
 （旧注释里 94 维和 1129 维已废弃；以 ``action_dims_for_config(num_layers)`` 实际返回为准。
- 用户 spec 的 "59 个必选槽位" 是按 effective slot 计的，部分字段是 compat-extra
- 或 inactive — 用 ``scripts/blb_export_action_registry.py`` 拿权威分类。）
+ 槽位数不再采用旧记忆假设，权威分类由 ``scripts/blb_export_action_registry.py`` 从当前代码导出。）
 
 动作向量布局（顺序）：
   对每层 i ∈ [0, L):
@@ -353,6 +352,17 @@ def sf_from(idx: int, max_sf: int, levels: int) -> int:
     return int(max_sf) - 2 * (levels - 1 - idx)
 
 
+def _rescale_sf_from_index(idx: int, max_sf: int) -> Optional[int]:
+    idx = int(idx)
+    if idx <= 0:
+        return None
+    return sf_from(idx, int(max_sf), LEVELS_R)
+
+
+def _optional_int(value: object) -> Optional[int]:
+    return None if value is None else int(value)
+
+
 def _snap_to_table(sf: int, N: int) -> int:
     """把 SF 钳到 ``NOISE_VARIANCE_TABLE_BY_N[N]`` 实际存在的 key 上。
 
@@ -382,10 +392,21 @@ class MaxSFsTable:
     JSON 缺失节点时 fallback 到 ``_BlockFieldSpec.fields`` 里的 default_max_sf。
     """
     by_block_node: Dict[Tuple[int, str], int] = field(default_factory=dict)
+    by_layer_block_node: Dict[Tuple[int, int, str], int] = field(default_factory=dict)
 
-    def get(self, block_idx: int, field_name: str) -> int:
+    def get(
+            self,
+            block_idx: int,
+            field_name: str,
+            *,
+            layer_idx: Optional[int] = None,
+            ) -> int:
         node = _BLOCK_NODE_NAME_BY_FIELD.get(int(block_idx), {}).get(str(field_name))
         if node is not None:
+            if layer_idx is not None:
+                v = self.by_layer_block_node.get((int(layer_idx), int(block_idx), node))
+                if v is not None:
+                    return int(v)
             v = self.by_block_node.get((int(block_idx), node))
             if v is not None:
                 return int(v)
@@ -530,10 +551,10 @@ def _build_block1_action(
         wffn2_sf=int(layer_field_values["wffn2_sf"]),
         mean_inv_d_sf=int(layer_field_values["mean_inv_d_sf"]),
         var_inv_d_sf=int(layer_field_values["var_inv_d_sf"]),
-        wffn2_rescale_sf=int(layer_field_values["wffn2_rescale_sf"]),
-        mean_rescale_sf=int(layer_field_values["mean_rescale_sf"]),
-        square_rescale_sf=int(layer_field_values["square_rescale_sf"]),
-        var_rescale_sf=int(layer_field_values["var_rescale_sf"]),
+        wffn2_rescale_sf=_optional_int(layer_field_values["wffn2_rescale_sf"]),
+        mean_rescale_sf=_optional_int(layer_field_values["mean_rescale_sf"]),
+        square_rescale_sf=_optional_int(layer_field_values["square_rescale_sf"]),
+        var_rescale_sf=_optional_int(layer_field_values["var_rescale_sf"]),
         output_truncation_k=(None if is_first_layer else int(layer_field_values["output_truncation_k"])),
     )
     return a
@@ -555,17 +576,17 @@ def _build_block2_action(
         q_mask2_sf=int(layer_field_values["q_mask2_sf"]),
         wv_sf=int(layer_field_values["wv_sf"]),
         qkt_merge_mask_sf=int(layer_field_values["qkt_merge_mask_sf"]),
-        normalize_rescale_sf=int(layer_field_values["normalize_rescale_sf"]),
-        gamma_rescale_sf=int(layer_field_values["gamma_rescale_sf"]),
-        wk_rescale_sf=int(layer_field_values["wk_rescale_sf"]),
-        kt_mask1_rescale_sf=int(layer_field_values["kt_mask1_rescale_sf"]),
-        kt_mask2_rescale_sf=int(layer_field_values["kt_mask2_rescale_sf"]),
-        wq_rescale_sf=int(layer_field_values["wq_rescale_sf"]),
-        q_mask1_rescale_sf=int(layer_field_values["q_mask1_rescale_sf"]),
-        q_mask2_rescale_sf=int(layer_field_values["q_mask2_rescale_sf"]),
-        wv_rescale_sf=int(layer_field_values["wv_rescale_sf"]),
-        qkt_matmul_rescale_sf=int(layer_field_values["qkt_matmul_rescale_sf"]),
-        qkt_merge_mask_rescale_sf=int(layer_field_values["qkt_merge_mask_rescale_sf"]),
+        normalize_rescale_sf=_optional_int(layer_field_values["normalize_rescale_sf"]),
+        gamma_rescale_sf=_optional_int(layer_field_values["gamma_rescale_sf"]),
+        wk_rescale_sf=_optional_int(layer_field_values["wk_rescale_sf"]),
+        kt_mask1_rescale_sf=_optional_int(layer_field_values["kt_mask1_rescale_sf"]),
+        kt_mask2_rescale_sf=_optional_int(layer_field_values["kt_mask2_rescale_sf"]),
+        wq_rescale_sf=_optional_int(layer_field_values["wq_rescale_sf"]),
+        q_mask1_rescale_sf=_optional_int(layer_field_values["q_mask1_rescale_sf"]),
+        q_mask2_rescale_sf=_optional_int(layer_field_values["q_mask2_rescale_sf"]),
+        wv_rescale_sf=_optional_int(layer_field_values["wv_rescale_sf"]),
+        qkt_matmul_rescale_sf=_optional_int(layer_field_values["qkt_matmul_rescale_sf"]),
+        qkt_merge_mask_rescale_sf=_optional_int(layer_field_values["qkt_merge_mask_rescale_sf"]),
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
     )
     return a
@@ -582,7 +603,7 @@ def _build_block3_action(
     if deg > 6:
         deg = 6
     sq_keys = ("square_rescale_sf_0", "square_rescale_sf_1", "square_rescale_sf_2", "square_rescale_sf_3")
-    square_rescale_base = [int(layer_field_values[key]) for key in sq_keys]
+    square_rescale_base = [_optional_int(layer_field_values[key]) for key in sq_keys]
     if deg <= len(square_rescale_base):
         square_rescale_sfs = tuple(square_rescale_base[:deg])
     else:
@@ -595,7 +616,7 @@ def _build_block3_action(
         degree=deg,
         x_fresh_sf=int(layer_field_values["x_fresh_sf"]),
         inv_2n_sf=int(layer_field_values["inv_2n_sf"]),
-        x_inv_2n_rescale_sf=int(layer_field_values["x_inv_2n_rescale_sf"]),
+        x_inv_2n_rescale_sf=_optional_int(layer_field_values["x_inv_2n_rescale_sf"]),
         square_rescale_sfs=square_rescale_sfs,
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
     )
@@ -614,14 +635,14 @@ def _build_block4_action(
         wo_sf=int(layer_field_values["wo_sf"]),
         ln_mean_inv_d_sf=int(layer_field_values["ln_mean_inv_d_sf"]),
         ln_var_inv_d_sf=int(layer_field_values["ln_var_inv_d_sf"]),
-        softmax_out_mask_rescale_sf=int(layer_field_values["softmax_out_mask_rescale_sf"]),
-        v_mask_rescale_sf=int(layer_field_values["v_mask_rescale_sf"]),
-        softmax_v_matmul_rescale_sf=int(layer_field_values["softmax_v_matmul_rescale_sf"]),
-        softmax_v_mask_rescale_sf=int(layer_field_values["softmax_v_mask_rescale_sf"]),
-        wo_rescale_sf=int(layer_field_values["wo_rescale_sf"]),
-        ln_mean_rescale_sf=int(layer_field_values["ln_mean_rescale_sf"]),
-        ln_square_rescale_sf=int(layer_field_values["ln_square_rescale_sf"]),
-        ln_var_rescale_sf=int(layer_field_values["ln_var_rescale_sf"]),
+        softmax_out_mask_rescale_sf=_optional_int(layer_field_values["softmax_out_mask_rescale_sf"]),
+        v_mask_rescale_sf=_optional_int(layer_field_values["v_mask_rescale_sf"]),
+        softmax_v_matmul_rescale_sf=_optional_int(layer_field_values["softmax_v_matmul_rescale_sf"]),
+        softmax_v_mask_rescale_sf=_optional_int(layer_field_values["softmax_v_mask_rescale_sf"]),
+        wo_rescale_sf=_optional_int(layer_field_values["wo_rescale_sf"]),
+        ln_mean_rescale_sf=_optional_int(layer_field_values["ln_mean_rescale_sf"]),
+        ln_square_rescale_sf=_optional_int(layer_field_values["ln_square_rescale_sf"]),
+        ln_var_rescale_sf=_optional_int(layer_field_values["ln_var_rescale_sf"]),
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
     )
 
@@ -637,12 +658,16 @@ def _build_block5_action(
         deg = 4 if deg >= 4 else (2 if deg >= 2 else 1)
     power_n = max(0, deg - 1)
     power_keys = ("gelu_power_rescale_sf_0", "gelu_power_rescale_sf_1", "gelu_power_rescale_sf_2")
-    gelu_power_rescale_sfs = tuple(int(layer_field_values[power_keys[k]]) for k in range(power_n))
+    gelu_power_rescale_sfs = tuple(
+        _optional_int(layer_field_values[power_keys[k]]) for k in range(power_n)
+    )
     coeff_keys = (
         "gelu_coeff_mul_rescale_sf_0", "gelu_coeff_mul_rescale_sf_1",
         "gelu_coeff_mul_rescale_sf_2", "gelu_coeff_mul_rescale_sf_3",
     )
-    gelu_coeff_mul_rescale_sfs = tuple(int(layer_field_values[coeff_keys[k]]) for k in range(deg))
+    gelu_coeff_mul_rescale_sfs = tuple(
+        _optional_int(layer_field_values[coeff_keys[k]]) for k in range(deg)
+    )
     return Block5ActionSpec(
         gelu_degree=deg,
         inv_std_fresh_sf=int(layer_field_values["inv_std_fresh_sf"]),
@@ -650,9 +675,9 @@ def _build_block5_action(
         gamma_sf=int(layer_field_values["gamma_sf"]),
         wffn1_sf=int(layer_field_values["wffn1_sf"]),
         gelu_coeff_sf=int(layer_field_values["gelu_coeff_sf"]),
-        normalize_rescale_sf=int(layer_field_values["normalize_rescale_sf"]),
-        gamma_rescale_sf=int(layer_field_values["gamma_rescale_sf"]),
-        wffn1_rescale_sf=int(layer_field_values["wffn1_rescale_sf"]),
+        normalize_rescale_sf=_optional_int(layer_field_values["normalize_rescale_sf"]),
+        gamma_rescale_sf=_optional_int(layer_field_values["gamma_rescale_sf"]),
+        wffn1_rescale_sf=_optional_int(layer_field_values["wffn1_rescale_sf"]),
         gelu_power_rescale_sfs=gelu_power_rescale_sfs,
         gelu_coeff_mul_rescale_sfs=gelu_coeff_mul_rescale_sfs,
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
@@ -683,12 +708,15 @@ def _decode_block_field_values(
         if kind == "K":
             out[fname] = int(K_LEVELS[idx_val])
             continue
-        levels = NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[kind]
-        max_sf = max_sfs.get(int(block_idx), fname)
-        sf = sf_from(idx_val, max_sf, levels)
+        max_sf = max_sfs.get(int(block_idx), fname, layer_idx=int(layer_idx))
         N = _block_default_N(int(block_idx), gelu_degree=gelu_degree, attn_degree=attn_degree)
-        sf = _snap_to_table(sf, N)
-        out[fname] = int(sf)
+        if kind == "R":
+            sf = _rescale_sf_from_index(idx_val, max_sf)
+            out[fname] = None if sf is None else int(_snap_to_table(sf, N))
+        else:
+            levels = NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[kind]
+            sf = sf_from(idx_val, max_sf, levels)
+            out[fname] = int(_snap_to_table(sf, N))
     return out
 
 
@@ -804,11 +832,16 @@ def action_vector_to_cfgs(
             )
         per_layer_values.append({f"block{b}": dict(v) for b, v in layer_block_values.items()})
 
-        # Block 1：首层强制 truncation_k=None
-        b1 = _build_block1_action(li, layer_block_values[1], is_first_layer=(li == 0))
-        block1_cfgs[li] = build_block1_cfg_from_action(
-            b1, N=_block_default_N(1, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
-        )
+        # Block 1：首层 block1 不安装（用户语义：layer 0 没有上游 FFN2，第一个 HE
+        # 配置无损 —— 与 Rescale_optimizer 对齐）。保留 action 向量槽位但不构造 cfg，
+        # 这样下游 (bridge.apply / build_optimizer_requests) 自然跳过 layer 0 block1。
+        if li == 0:
+            pass  # block1_cfgs 故意不写 layer 0，下游用 .get(0) / dict-not-in 判断
+        else:
+            b1 = _build_block1_action(li, layer_block_values[1], is_first_layer=False)
+            block1_cfgs[li] = build_block1_cfg_from_action(
+                b1, N=_block_default_N(1, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
+            )
         # Block 2
         b2 = _build_block2_action(li, layer_block_values[2])
         block2_cfgs[li] = build_block2_cfg_from_action(
@@ -830,17 +863,16 @@ def action_vector_to_cfgs(
             b5, N=_block_default_N(5, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
         )
 
-    # 尾部 first_input_sf
-    first_input_action = int(arr[-1])
-    first_input_sf = _decode_first_input_sf(first_input_action, max_sfs)
-
+    # 尾部 first_input_sf：语义已废弃（"第一个 HE 配置无损"，不再注入 layer 0
+    # input 端的 fresh 噪声）。保留槽位以维持 policy 网络 shape 与旧 checkpoint
+    # 兼容；下游 bridge.apply 完全忽略此字段。``first_input_sf`` 始终回 0 作占位。
     return ActionDecodeResult(
         block1_cfgs=block1_cfgs,
         block2_cfgs=block2_cfgs,
         block3_cfgs=block3_cfgs,
         block4_cfgs=block4_cfgs,
         block5_cfgs=block5_cfgs,
-        first_input_sf=int(first_input_sf),
+        first_input_sf=0,
         per_layer_field_values=per_layer_values,
     )
 
@@ -866,9 +898,17 @@ def _field_level_values(
         levels: int,
         max_sf: Optional[int],
         N: int,
-        ) -> List[int]:
+        ) -> List[object]:
     if str(kind) == "K":
         return [int(v) for v in K_LEVELS]
+    if str(kind) == "R":
+        return [
+            (
+                None if _rescale_sf_from_index(idx, int(max_sf)) is None
+                else int(_snap_to_table(_rescale_sf_from_index(idx, int(max_sf)), int(N)))
+            )
+            for idx in range(int(levels))
+        ]
     return [
         int(_snap_to_table(sf_from(idx, int(max_sf), int(levels)), int(N)))
         for idx in range(int(levels))
@@ -937,8 +977,16 @@ def _is_action_field_effective(
         attn_degree: int,
         gelu_degree: int,
         ) -> Tuple[bool, str]:
-    if int(layer_idx) == 0 and int(block_idx) == 1 and str(field_name) == "output_truncation_k":
-        return False, "layer0.block1 has no input-side truncation point; decoded cfg uses None"
+    # Layer 0 has no upstream FFN2 → block 1 noise is *not* installed at all,
+    # even though the action vector reserves slots for it (so the policy net
+    # shape stays uniform across layers). Mark every block-1 slot at layer 0
+    # as ineffective so logs / candidate descriptions reflect reality, and so
+    # downstream tooling (bridge.apply, build_optimizer_requests) can filter.
+    if int(layer_idx) == 0 and int(block_idx) == 1:
+        return False, (
+            "layer 0 has no upstream FFN2; the first HE config is treated as "
+            "lossless so block1 noise is not installed (aligned with Rescale_optimizer)"
+        )
     if int(block_idx) == 3 and str(field_name).startswith("square_rescale_sf_"):
         try:
             slot = int(str(field_name).rsplit("_", 1)[-1])
@@ -1004,8 +1052,12 @@ def describe_action_vector(
             max_sf = None
             if kind == "K":
                 value = int(K_LEVELS[action_index])
+            elif kind == "R":
+                max_sf = int(max_sfs.get(block_idx, field_name, layer_idx=li))
+                raw_value = _rescale_sf_from_index(action_index, max_sf)
+                value = None if raw_value is None else int(_snap_to_table(raw_value, N))
             else:
-                max_sf = int(max_sfs.get(block_idx, field_name))
+                max_sf = int(max_sfs.get(block_idx, field_name, layer_idx=li))
                 value = int(_snap_to_table(sf_from(action_index, max_sf, levels), N))
             effective, note = _is_action_field_effective(
                 layer_idx=li,
@@ -1035,7 +1087,7 @@ def describe_action_vector(
                 "num_levels": levels,
                 "level_values": _field_level_values(kind=kind, levels=levels, max_sf=max_sf, N=N),
                 "value_type": _action_value_type_for_kind(kind),
-                "value": int(value),
+                "value": value,
                 "effective": bool(effective),
                 "effective_value": effective_value,
                 "N": N,
@@ -1049,6 +1101,9 @@ def describe_action_vector(
 
     first_idx = int(arr[-1])
     first_value = int(_decode_first_input_sf(first_idx, max_sfs))
+    # NOTE: first_input fresh 噪声在新语义下不再注入（"第一个 HE 配置无损"）。
+    # 保留 slot 描述方便审阅旧 checkpoint / candidate；effective=False 表明它
+    # 不影响 cost / 模型 forward。
     records.append({
         "global_index": int(arr.size - 1),
         "layer": 0,
@@ -1070,12 +1125,16 @@ def describe_action_vector(
         ),
         "value_type": "scaling_factor",
         "value": first_value,
-        "effective": True,
-        "effective_value": first_value,
+        "effective": False,
+        "effective_value": None,
         "N": int(BLB_FIRST_INPUT_N),
         "max_sf": 30,
         "gelu_degree": None,
         "attn_degree": None,
+        "note": (
+            "first_input fresh noise deprecated; the first HE config is treated "
+            "as lossless. Slot kept for action-vector backward compatibility."
+        ),
     })
 
     truncation_count = sum(1 for r in records if r.get("value_type") == "truncation_k")
@@ -1210,7 +1269,13 @@ def build_optimizer_requests(
         profile: str,
         cfgs_dict: Mapping[str, Mapping[int, object]],
         ) -> Dict[str, Tuple[str, object]]:
-    """``cfgs_dict["block1"][i]`` → ``{config_name: (block_name, cfg)}``。"""
+    """``cfgs_dict["block1"][i]`` → ``{config_name: (block_name, cfg)}``。
+
+    NOTE: 不会发送 ``(block=1, layer=0)`` 给 Rescale_optimizer —— 该位置
+    的 block1 噪声整体不安装（语义：layer 0 没有上游 FFN2，第一个 HE 配置
+    无损）。``action_vector_to_cfgs`` 也不会把 layer 0 写入 ``block1_cfgs``，
+    所以这里的过滤是双保险。
+    """
     out: Dict[str, Tuple[str, object]] = {}
     for block_name, layer_cfgs in cfgs_dict.items():
         if not str(block_name).startswith("block"):
@@ -1220,6 +1285,9 @@ def build_optimizer_requests(
         except ValueError:
             continue
         for layer_idx, cfg in layer_cfgs.items():
+            if int(block_idx) == 1 and int(layer_idx) == 0:
+                # 语义对齐：layer-0 block1 不发给 RO。
+                continue
             cn = make_config_name(profile, block_idx, int(layer_idx), cfg=cfg)
             out[cn] = (str(block_name), cfg)
     return out

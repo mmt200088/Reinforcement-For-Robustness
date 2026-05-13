@@ -138,6 +138,11 @@ class RewardBreakdown:
     fusion_count: float = 0.0
     acc_violation: float = 0.0          # max(0, threshold - mean_metric)
     stab_violation: float = 0.0         # max(0, std - threshold)
+    optimizer_cost_terms: Any = field(default_factory=lambda: ["total_bits_sum", "fusion_count"])
+    optimizer_validity_terms: Any = field(default_factory=lambda: ["invalid_chain", "optimizer_valid", "any_invalid"])
+    optimizer_diagnostic_terms: Any = field(default_factory=lambda: ["q_bits", "q_head_bits", "q_tail_bits"])
+    mpc_truncation_cost_enabled: bool = True
+    mpc_truncation_term: str = "avg_k"
 
 
 # ---------------------------------------------------------------------------

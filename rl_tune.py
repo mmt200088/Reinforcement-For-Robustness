@@ -585,6 +585,12 @@ def train(
         blb_v3_save_interval: int = None,
         blb_v3_calibrate_baseline_samples: int = None,
         blb_v3_inproc_rescale_optimizer_root: str = "",
+        blb_v3_warmstart_anchor_episodes: int = None,
+        blb_v3_action_mask_enabled: bool = False,
+        blb_v3_action_mask_mode: str = "none",
+        blb_v3_action_mask_file: str = "",
+        blb_v3_action_mask_baseline_logit_bonus: float = 0.0,
+        blb_v3_action_mask_source: str = "",
         final_eval_require_rescale_optimizer: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
@@ -605,6 +611,9 @@ def train(
     )
     final_eval_require_rescale_optimizer = parse_bool_flag(
         final_eval_require_rescale_optimizer, "final_eval_require_rescale_optimizer"
+    )
+    blb_v3_action_mask_enabled = parse_bool_flag(
+        blb_v3_action_mask_enabled, "blb_v3_action_mask_enabled"
     )
     # --final_eval_only 语义：只跑 final eval，不跑任何 RL 搜索阶段。
     # 等价于自动设置 skip_stage1_rl=True & skip_noise_rl=True & skip_final_eval=False，
@@ -706,6 +715,12 @@ def train(
         f"resume_run_dir: {resume_run_dir}\n"
         f"stage2_rl_variant: {stage2_rl_variant}\n"
         f"blb_v3_inproc_rescale_optimizer_root: {blb_v3_inproc_rescale_optimizer_root}\n"
+        f"blb_v3_warmstart_anchor_episodes: {blb_v3_warmstart_anchor_episodes}\n"
+        f"blb_v3_action_mask_enabled: {blb_v3_action_mask_enabled}\n"
+        f"blb_v3_action_mask_mode: {blb_v3_action_mask_mode}\n"
+        f"blb_v3_action_mask_file: {blb_v3_action_mask_file}\n"
+        f"blb_v3_action_mask_baseline_logit_bonus: {blb_v3_action_mask_baseline_logit_bonus}\n"
+        f"blb_v3_action_mask_source: {blb_v3_action_mask_source}\n"
     )
     assert (
         base_model
@@ -1103,6 +1118,12 @@ def train(
             blb_v3_eval_interval=blb_v3_eval_interval,
             blb_v3_save_interval=blb_v3_save_interval,
             blb_v3_calibrate_baseline_samples=blb_v3_calibrate_baseline_samples,
+            blb_v3_warmstart_anchor_episodes=blb_v3_warmstart_anchor_episodes,
+            blb_v3_action_mask_enabled=blb_v3_action_mask_enabled,
+            blb_v3_action_mask_mode=blb_v3_action_mask_mode,
+            blb_v3_action_mask_file=blb_v3_action_mask_file,
+            blb_v3_action_mask_baseline_logit_bonus=blb_v3_action_mask_baseline_logit_bonus,
+            blb_v3_action_mask_source=blb_v3_action_mask_source,
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

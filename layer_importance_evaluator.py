@@ -2321,11 +2321,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage2_probe_size=None,
                  stage2_rl_variant='blb_v3',
                  blb_v3_rollout_size=None,
-                 blb_v3_eval_interval=None,
-                 blb_v3_save_interval=None,
-                 blb_v3_calibrate_baseline_samples=None,
-                 blb_v3_inproc_rescale_optimizer_root=None,
-                 final_eval_require_rescale_optimizer=False):
+                  blb_v3_eval_interval=None,
+                  blb_v3_save_interval=None,
+                  blb_v3_calibrate_baseline_samples=None,
+                  blb_v3_inproc_rescale_optimizer_root=None,
+                  blb_v3_warmstart_anchor_episodes=None,
+                  blb_v3_action_mask_enabled=False,
+                  blb_v3_action_mask_mode='none',
+                  blb_v3_action_mask_file='',
+                  blb_v3_action_mask_baseline_logit_bonus=0.0,
+                  blb_v3_action_mask_source='',
+                  final_eval_require_rescale_optimizer=False):
         """
         基于 PPO 强化学习的策略搜索器。
         目标：在密文推理场景下，通过强化学习寻找最优的多项式近似策略。
@@ -2760,6 +2766,34 @@ class LayerImportanceEvaluator(TrainerCallback):
             int(blb_v3_calibrate_baseline_samples)
             if blb_v3_calibrate_baseline_samples not in (None, "") else None
         )
+        self.blb_v3_warmstart_anchor_episodes = (
+            int(blb_v3_warmstart_anchor_episodes)
+            if blb_v3_warmstart_anchor_episodes not in (None, "") else None
+        )
+        self.blb_v3_action_mask_enabled = self._coerce_bool_flag(
+            blb_v3_action_mask_enabled,
+            'blb_v3_action_mask_enabled',
+        )
+        self.blb_v3_action_mask_mode = (
+            str(blb_v3_action_mask_mode).strip()
+            if blb_v3_action_mask_mode not in (None, "") else "none"
+        )
+        self.blb_v3_action_mask_file = (
+            str(blb_v3_action_mask_file).strip()
+            if blb_v3_action_mask_file not in (None, "") else ""
+        )
+        self.blb_v3_action_mask_source = (
+            str(blb_v3_action_mask_source).strip()
+            if blb_v3_action_mask_source not in (None, "") else ""
+        )
+        try:
+            self.blb_v3_action_mask_baseline_logit_bonus = float(
+                blb_v3_action_mask_baseline_logit_bonus or 0.0
+            )
+        except Exception:
+            self.blb_v3_action_mask_baseline_logit_bonus = 0.0
+        if self.blb_v3_action_mask_mode.lower() not in ("", "none", "off", "disabled"):
+            self.blb_v3_action_mask_enabled = True
 
     @staticmethod
     def _coerce_bool_flag(raw_value, flag_name):

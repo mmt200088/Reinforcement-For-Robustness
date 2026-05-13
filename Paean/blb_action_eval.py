@@ -16,6 +16,7 @@ from blb_stage2_rl.action_space import (
     load_max_sfs,
 )
 from blb_stage2_rl.default_invoker import HeuristicStubInvoker
+from blb_stage2_rl.feasibility import build_final_eval_feasibility
 from final_evaluation_module import UnifiedFinalEvaluationModule
 from rescale_optimizer_bridge import (
     InProcessInvoker,
@@ -339,7 +340,6 @@ class BLBActionFinalEvaluationModule:
             },
             "install_verification": single.get("install_verification", {}),
             "skipped_forward": bool(skipped_forward),
-            "feasible": False if skipped_forward else self._is_feasible(loss, p, s, report_constraints),
         }
         if repeat is not None:
             stats = repeat["stats"]
@@ -354,8 +354,60 @@ class BLBActionFinalEvaluationModule:
                 }
             )
         else:
+            result["loss_std"] = 0.0
+            result["p_std"] = 0.0
+            result["s_std"] = 0.0
             result["evaluation_protocol"] = "single_validation_full"
+        feasibility = self._build_feasibility_report(
+            result=result,
+            report_constraints=report_constraints,
+            optimizer_valid=not bool(opt_signals.any_invalid),
+            decode_ok=True,
+            apply_ok=not bool(skipped_forward),
+            eval_ok=not bool(skipped_forward),
+        )
+        result["final_eval_feasibility"] = feasibility
+        result["feasible"] = False if skipped_forward else feasibility.get("feasible")
+        result["diagnostic_feasible"] = feasibility.get("diagnostic_feasible")
+        result["strict_feasible"] = feasibility.get("strict_feasible")
         return result
+
+    def _build_feasibility_report(self, *, result, report_constraints, optimizer_valid, decode_ok, apply_ok, eval_ok):
+        ev = self.evaluator
+        threshold_source = str(
+            getattr(ev, "blb_final_eval_threshold_source", "")
+            or getattr(ev, "final_eval_threshold_source", "")
+            or "baseline-derived"
+        )
+        acc_std_limit = (
+            report_constraints.get("metric1_std")
+            if isinstance(report_constraints, dict) else None
+        )
+        f1_std_limit = (
+            report_constraints.get("metric2_std")
+            if isinstance(report_constraints, dict) else None
+        )
+        acc_std_limit = getattr(ev, "blb_final_eval_metric1_std_limit", acc_std_limit)
+        f1_std_limit = getattr(ev, "blb_final_eval_metric2_std_limit", f1_std_limit)
+        strict_z = getattr(ev, "blb_final_eval_strict_z", 1.0)
+        return build_final_eval_feasibility(
+            optimizer_valid=bool(optimizer_valid),
+            decode_ok=bool(decode_ok),
+            apply_ok=bool(apply_ok),
+            eval_ok=bool(eval_ok),
+            acc_mean=result.get("p"),
+            f1_mean=result.get("s"),
+            acc_std=result.get("p_std", 0.0),
+            f1_std=result.get("s_std", 0.0),
+            acc_limit=report_constraints.get("metric1") if isinstance(report_constraints, dict) else None,
+            f1_limit=report_constraints.get("metric2") if isinstance(report_constraints, dict) else None,
+            acc_std_limit=acc_std_limit,
+            f1_std_limit=f1_std_limit,
+            loss_mean=result.get("loss"),
+            loss_std=result.get("loss_std", 0.0),
+            threshold_source=threshold_source,
+            strict_z=float(strict_z),
+        )
 
     def _optimizer_outputs(self, profile: str, cfgs_dict):
         bridge = getattr(self, "rescale_bridge", None)
@@ -595,6 +647,10 @@ class BLBActionFinalEvaluationModule:
 
     @staticmethod
     def _full_noise_config(decoded) -> Dict[str, Any]:
+        # NOTE: first_input fresh noise is DEPRECATED (2026-05): the first HE
+        # config is treated as lossless, so this entry is kept for backward
+        # compatibility (and so the markdown table column remains stable) but
+        # ``active=False`` and the value is not installed by ``bridge.apply``.
         entries = [
             {
                 "path": "first_input.fresh",
@@ -604,10 +660,11 @@ class BLBActionFinalEvaluationModule:
                 "point": "fresh",
                 "distribution": "fresh",
                 "N": BLB_FIRST_INPUT_N,
-                "scaling_factor": int(decoded.first_input_sf),
+                "scaling_factor": int(getattr(decoded, "first_input_sf", 0) or 0),
                 "truncation_k": None,
                 "value": None,
-                "active": True,
+                "active": False,
+                "note": "first_input fresh deprecated; not installed",
             }
         ]
 
@@ -807,9 +864,10 @@ class BLBActionFinalEvaluationModule:
         ev.apply_configuration(gelu, softmax)
         self._clear_legacy_noise()
         try:
+            # NOTE: first_input fresh deprecated（layer-0 input 视为无损 HE 配置）；
+            # layer-0 block1 也不安装。decoded.block1_cfgs 已不含 layer 0；
+            # decoded.first_input_sf 仍为占位（=0），不传给 bridge。
             bridge.apply(
-                first_input_sf=int(decoded.first_input_sf),
-                first_input_N=BLB_FIRST_INPUT_N,
                 block1_cfgs=decoded.block1_cfgs,
                 block2_cfgs=decoded.block2_cfgs,
                 block3_cfgs=decoded.block3_cfgs,
@@ -1110,8 +1168,6 @@ class BLBActionFinalEvaluationModule:
 
     @staticmethod
     def _is_feasible(loss, p, s, constraints):
-        if loss > constraints["loss"]:
-            return False
         if p < constraints["metric1"]:
             return False
         if s < constraints["metric2"]:

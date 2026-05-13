@@ -26,6 +26,7 @@ import os
 import pickle
 import re
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -33,6 +34,14 @@ import numpy as np
 import torch
 
 from rescale_optimizer_bridge import RescaleOptimizerBridge
+from .action_mask import (
+    action_allowed,
+    action_mask_hash,
+    build_action_mask,
+    build_baseline_action_bias,
+    ensure_action_allowed,
+    load_action_mask_file,
+)
 from .action_space import (
     K_LEVELS,
     MaxSFsTable,
@@ -41,8 +50,6 @@ from .action_space import (
     avg_truncation_k_in_action,
     describe_action_vector,
     layer_dims,
-    load_max_sfs,
-    make_all_max_action_vector,
 )
 from .env import (
     BLBStage2Env,
@@ -63,12 +70,18 @@ from .reward import (
     compute_reward,
 )
 from .persistence import (
+    BLBRewardCrashWatcher,
     BLBStatusBoard,
+    BLBStepDetailsWriter,
     append_blb_episode_trace_row,
     dump_crash_report,
     write_action_description_files,
     write_blb_final_report,
     write_training_curves,
+)
+from .baseline_bootstrap import (
+    load_static_skeletons_baseline,
+    static_skeletons_baseline_to_action,
 )
 
 
@@ -116,6 +129,8 @@ def _effective_probe_batch_count(ev, train_cfg) -> int:
     """Return enough mini-batches to cover stage2_probe_size unless overridden."""
     explicit = getattr(ev, "blb_v3_probe_batch_count", None)
     if explicit not in (None, ""):
+        acc_threshold_resolution: Optional[BaselineMetricThreshold] = None
+        baseline_preflight_metrics: Dict[str, Any] = {}
         try:
             return max(1, int(explicit))
         except Exception:
@@ -131,6 +146,44 @@ def _selection_float(value: Any, default: float = 0.0) -> float:
     except (TypeError, ValueError):
         return float(default)
     return out if math.isfinite(out) else float(default)
+
+
+@dataclass(frozen=True)
+class BaselineMetricThreshold:
+    threshold: float
+    source: str
+    allowed_drop: float
+    raw_baseline_metric: float
+    all_max_blb_metric: float
+
+
+def _baseline_derived_metric_threshold(
+        *,
+        current_threshold: Any,
+        raw_baseline_metric: Any,
+        all_max_blb_metric: Any,
+        allowed_drop: Any,
+        ) -> BaselineMetricThreshold:
+    """Resolve a metric limit from the all-max BLB baseline unless explicit."""
+    current = _selection_float(current_threshold, 0.0)
+    raw_metric = _selection_float(raw_baseline_metric, 0.0)
+    blb_metric = _selection_float(all_max_blb_metric, raw_metric)
+    drop = max(0.0, _selection_float(allowed_drop, 0.0))
+    if math.isfinite(current) and current > 0.0:
+        return BaselineMetricThreshold(
+            threshold=float(current),
+            source="explicit",
+            allowed_drop=float(drop),
+            raw_baseline_metric=float(raw_metric),
+            all_max_blb_metric=float(blb_metric),
+        )
+    return BaselineMetricThreshold(
+        threshold=max(0.0, float(blb_metric) - float(drop)),
+        source="baseline_derived_all_max_blb",
+        allowed_drop=float(drop),
+        raw_baseline_metric=float(raw_metric),
+        all_max_blb_metric=float(blb_metric),
+    )
 
 
 def _candidate_selection_key(
@@ -290,6 +343,23 @@ def _warmstart_action_mode(
     return "policy", -1
 
 
+def _effective_warmstart_anchor_episodes(
+        *,
+        configured_anchor_episodes: Optional[int],
+        rollout_size: int,
+        total_episodes: int,
+        start_episode: int,
+        disable_warmstart_on_resume: bool = False,
+        ) -> int:
+    if bool(disable_warmstart_on_resume) and int(start_episode) > 0:
+        return 0
+    if configured_anchor_episodes is None:
+        anchor = int(rollout_size)
+    else:
+        anchor = int(configured_anchor_episodes)
+    return max(0, min(anchor, int(total_episodes)))
+
+
 _BLOCK_ERROR_RE = re.compile(
     r"(?P<label>[A-Za-z0-9_]+_L\d+):\s*(?P<detail>.*?)(?=(?:;\s*)?[A-Za-z0-9_]+_L\d+:\s*|$)"
 )
@@ -379,7 +449,18 @@ def _format_blb_rollout_summary_log(
         entropy: float,
         clip_fraction: float,
         entropy_by_kind: Optional[Mapping[str, float]] = None,
+        raw_entropy_by_kind: Optional[Mapping[str, float]] = None,
+        masked_entropy_by_kind: Optional[Mapping[str, float]] = None,
         ) -> str:
+    def _entropy_text(values: Optional[Mapping[str, float]]) -> str:
+        items = []
+        for key, value in (values or {}).items():
+            try:
+                items.append(f"{key}={float(value):.2f}")
+            except Exception:
+                items.append(f"{key}={value}")
+        return ", ".join(items) if items else "none"
+
     entropy_items = []
     for key, value in (entropy_by_kind or {}).items():
         try:
@@ -413,6 +494,8 @@ def _format_blb_rollout_summary_log(
             f"clip_fraction={float(clip_fraction):.4f}"
         ),
         f"    - 槽位熵（H_kind）：{entropy_text}",
+        f"    - raw_entropy_by_kind: {_entropy_text(raw_entropy_by_kind)}",
+        f"    - masked_entropy_by_kind: {_entropy_text(masked_entropy_by_kind)}",
     ])
 
 
@@ -509,6 +592,12 @@ class BLBStage2TrainConfig:
     warmstart_neighbor_ramp_episodes: Optional[int] = None
     warmstart_neighbor_max_mutations: int = 8
     warmstart_neighbor_max_radius: int = 2
+    disable_warmstart_on_resume: bool = False
+    action_mask_enabled: bool = False
+    action_mask_mode: str = "none"
+    action_mask_file: Optional[str] = None
+    action_mask_baseline_logit_bonus: float = 0.0
+    action_mask_source: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -597,6 +686,28 @@ class BLBStage2RLRunner:
         status.set_phase("装载 stage1 GELU/Softmax 多项式近似")
         log(f"  {bullet} 状态板 JSON = {status.path}（训练期间持续刷新，可 live tail）")
 
+        # Stage2 root (parent of progress/) — host of details/ + warning.txt
+        # so the layout matches legacy noise_rl_module_v2 outputs.
+        blb_stage2_root = os.path.dirname(os.path.normpath(blb_progress_dir))
+        details_writer = BLBStepDetailsWriter(
+            blb_stage2_root,
+            batch_size=max(int(train_cfg.rollout_size) * 3, 360),
+            log_fn=log,
+        )
+        crash_watcher = BLBRewardCrashWatcher(
+            blb_stage2_root,
+            drop_threshold=0.3,
+            log_fn=log,
+        )
+        log(
+            f"  {bullet} 详细诊断：{os.path.join(blb_stage2_root, 'details')}/ "
+            f"（每 {details_writer._batch_size} 回合一文件，记录每回合错误/动作变化）"
+        )
+        log(
+            f"  {bullet} 奖励暴跌警告：{os.path.join(blb_stage2_root, 'warning.txt')} "
+            f"（PPO rollout 平均奖励较上一次跌幅 > {crash_watcher._drop_threshold:.2f} 时记录）"
+        )
+
         if os.environ.get("BLB_NOISE_INSTALL_LOGS") is None:
             os.environ["BLB_NOISE_INSTALL_LOGS"] = "0"
             log("  * BLB 单候选安装日志：默认关闭；如需启用，请设置 BLB_NOISE_INSTALL_LOGS=1。")
@@ -627,7 +738,39 @@ class BLBStage2RLRunner:
         rescale_bridge = self._build_rescale_bridge(train_cfg, log=log)
 
         # ---------- 4) 准备 max_sfs 表 + Env ----------
-        max_sfs = load_max_sfs(train_cfg.profile)
+        # Baseline 只能来自 Rescale_optimizer 的 static_skeletons archive。
+        # 文件缺失或 graph_key 不完整时直接让异常向上抛出，停止训练。
+        ss_baseline_obj = load_static_skeletons_baseline(
+            rescale_optimizer_root=str(train_cfg.inproc_rescale_optimizer_root),
+            dataset=str(train_cfg.profile),
+            num_layers=int(ev.total_layers),
+            gelu_per_layer=[int(x) for x in np.asarray(fixed_gelu, dtype=int).reshape(-1)],
+            softmax_per_layer=[int(x) for x in np.asarray(fixed_softmax, dtype=int).reshape(-1)],
+        )
+        _ss_action_vec, max_sfs, ss_cost_stats, ss_diag = static_skeletons_baseline_to_action(
+            ss_baseline_obj,
+            snap_sf_to_noise_table=False,
+        )
+        log(
+            f"  {bullet} Baseline 来源（baseline source）：static_skeletons archive\n"
+            f"      路径 = {ss_baseline_obj.archive_path}\n"
+            f"      (block, layer) 数 = {ss_baseline_obj.aggregate_valid_block_count} (= 5*L - 1)\n"
+            f"      active slots（含 fresh/encode/rescale）= {ss_diag['active_slot_count']}"
+            f"  [fresh={ss_diag['fresh_slot_count']}, "
+            f"encode={ss_diag['encode_slot_count']}, "
+            f"rescale={ss_diag['rescale_slot_count']}]\n"
+            f"      RO baseline 'off' rescale slots = {len(ss_diag['inactive_rescale_slots'])}"
+        )
+        if ss_diag["unmapped_nodes"]["propagation"]:
+            log(
+                f"      [info] {len(ss_diag['unmapped_nodes']['propagation'])} propagation_deltas "
+                f"未映射回 RL 字段（通常是 CTCT_MUL 的 delta，例 ctct_rot_softmax_mul_v）"
+            )
+        if ss_diag["unmapped_nodes"]["rescale"]:
+            log(
+                f"      [info] {len(ss_diag['unmapped_nodes']['rescale'])} rescale 节点未映射"
+                f"（n5/n6 graph 多出的 square 槽位被丢弃）"
+            )
         per_layer_each_dim = layer_dims()
         env = BLBStage2Env(
             handler=ev.reversible_handler,
@@ -656,20 +799,37 @@ class BLBStage2RLRunner:
 
         # ---------- 5) baseline + reward 权重校准 ----------
         status.set_phase("校准 baseline cost / reward 权重")
+        # 如 ss_cost_stats 存在（static_skeletons 路径成功），把它作为权威 baseline
+        # 喂给 estimate_baseline_cost_stats —— RO 不再被调用第二次拿 baseline cost。
+        # random-sample 用于估计 typical_*_drop 仍然走 in-process invoker。
+        precomputed = {
+            "total_bits_sum": int(ss_cost_stats.total_bits_sum),
+            "total_fusion_count": int(ss_cost_stats.total_fusion_count),
+            "avg_k": float(ss_cost_stats.avg_k),
+        }
         baseline = estimate_baseline_cost_stats(
-            env, sample_count=int(train_cfg.calibrate_baseline_samples),
+            env,
+            sample_count=int(train_cfg.calibrate_baseline_samples),
+            precomputed_baseline_signals=precomputed,
         )
         env.baseline = baseline
         weights = calibrate_weights_from_baseline(baseline)
         env.reward_weights = weights
-        status.set_baseline({
+        baseline_status_entry = {
             "total_bits_sum": int(baseline.total_bits_sum),
             "total_fusion_count": int(baseline.total_fusion_count),
             "avg_k": float(baseline.avg_k),
             "typical_bits_drop": float(baseline.typical_bits_drop),
             "typical_fusion_count": float(baseline.typical_fusion_count),
             "typical_k_drop": float(baseline.typical_k_drop),
-        })
+            "baseline_source": "static_skeletons_archive",
+        }
+        baseline_status_entry["static_skeletons_path"] = ss_baseline_obj.archive_path
+        baseline_status_entry["active_slot_count"] = int(ss_diag["active_slot_count"])
+        baseline_status_entry["inactive_rescale_slots_count"] = int(
+            len(ss_diag["inactive_rescale_slots"])
+        )
+        status.set_baseline(baseline_status_entry)
         status.set_extra("reward_weights", {
             "w_bits": float(weights.w_bits),
             "w_fusion": float(weights.w_fusion),
@@ -691,8 +851,6 @@ class BLBStage2RLRunner:
         baseline.metric1_mean = float(baseline_metrics.metric1_mean)
         baseline.metric2_mean = float(baseline_metrics.metric2_mean)
 
-        if not np.isfinite(env.acc_threshold) or env.acc_threshold <= 0.0:
-            env.acc_threshold = max(0.0, float(baseline.metric1_mean) - 0.01)   # 1pp
         if not np.isfinite(env.stab_threshold):
             env.stab_threshold = float(baseline.loss_std) * 1.5 + 1e-3
         log(
@@ -704,6 +862,11 @@ class BLBStage2RLRunner:
             f"  {bullet} 硬约束阈值: acc_threshold={env.acc_threshold:.4f}, "
             f"stab_threshold={env.stab_threshold:.4f}"
         )
+        if not np.isfinite(env.acc_threshold) or env.acc_threshold <= 0.0:
+            log(
+                f"  {bullet} accuracy threshold will be derived from the all-max BLB "
+                "baseline preflight."
+            )
 
         # ---------- 6) Policy + PPO ----------
         torch.manual_seed(int(train_cfg.seed))
@@ -716,7 +879,7 @@ class BLBStage2RLRunner:
             per_layer_dims=per_layer_each_dim,
             first_input_levels=5,
         ).to(device)
-        baseline_action_vec = make_all_max_action_vector(int(env.num_layers)).astype(np.int64)
+        baseline_action_vec = np.asarray(_ss_action_vec, dtype=np.int64).reshape(-1)
         if bool(train_cfg.warmstart_baseline_bias):
             try:
                 policy.apply_preferred_action_bias(
@@ -724,7 +887,7 @@ class BLBStage2RLRunner:
                     gain=float(train_cfg.warmstart_bias_gain),
                 )
                 log(
-                    f"  {bullet} 策略预热（policy warmstart）：preferred all-max BLB baseline "
+                    f"  {bullet} 策略预热（policy warmstart）：preferred static_skeletons BLB baseline "
                     f"(bias_gain={float(train_cfg.warmstart_bias_gain):.3g})"
                 )
             except Exception as exc:
@@ -779,12 +942,117 @@ class BLBStage2RLRunner:
         ]
         kind_by_index: List[str] = [str(r.get("kind", "")) for r in baseline_records]
         action_dim_by_index = action_dims_for_config(int(env.num_layers))
+        action_mask = None
+        action_bias = None
+        action_mask_meta: Dict[str, Any] = {
+            "enabled": False,
+            "mode": "none",
+            "hash": "",
+            "source": "",
+            "baseline_logit_bonus": 0.0,
+            "allowed_width_min": "",
+            "allowed_width_max": "",
+        }
+        if bool(train_cfg.action_mask_enabled):
+            mask_mode = str(train_cfg.action_mask_mode or "none").strip().lower().replace("-", "_")
+            if mask_mode in ("", "none", "off", "disabled"):
+                action_mask = None
+            elif mask_mode == "from_file":
+                if not train_cfg.action_mask_file:
+                    raise ValueError("action_mask_mode='from_file' requires action_mask_file")
+                mask_path = str(train_cfg.action_mask_file)
+                if not os.path.isabs(mask_path):
+                    mask_path = os.path.join(_resolve_repo_root(), mask_path)
+                action_mask, mask_payload = load_action_mask_file(
+                    mask_path,
+                    expected_width=len(action_dim_by_index),
+                    baseline_action=baseline_action_vec.tolist(),
+                    action_dims=action_dim_by_index,
+                    slot_records=baseline_records,
+                )
+                action_mask_meta["source"] = str(train_cfg.action_mask_source or mask_path)
+                if isinstance(mask_payload, Mapping):
+                    action_mask_meta["file_mask_hash"] = str(mask_payload.get("mask_hash", ""))
+                    action_mask_meta["file_schema"] = str(mask_payload.get("schema", ""))
+            elif mask_mode in ("baseline_only", "near_baseline"):
+                action_mask = build_action_mask(
+                    num_layers=int(env.num_layers),
+                    mode=mask_mode,
+                    gelu_degree=env.gelu_degree,
+                    attn_degree=env.attn_degree,
+                    profile=str(train_cfg.profile),
+                    baseline_action=baseline_action_vec.tolist(),
+                    max_sfs=max_sfs,
+                )
+                action_mask_meta["source"] = str(train_cfg.action_mask_source or mask_mode)
+            else:
+                raise ValueError(f"unknown BLB action mask mode: {train_cfg.action_mask_mode!r}")
+            if action_mask is not None:
+                ensure_action_allowed(baseline_action_vec.tolist(), action_mask, label="baseline_action")
+                action_bias = build_baseline_action_bias(
+                    action_dims=action_dim_by_index,
+                    baseline_action=baseline_action_vec.tolist(),
+                    baseline_logit_bonus=float(train_cfg.action_mask_baseline_logit_bonus),
+                )
+                allowed_widths = [int(np.asarray(slot, dtype=bool).sum()) for slot in action_mask]
+                action_mask_meta.update({
+                    "enabled": True,
+                    "mode": mask_mode,
+                    "hash": action_mask_hash(action_mask),
+                    "baseline_logit_bonus": float(train_cfg.action_mask_baseline_logit_bonus),
+                    "allowed_width_min": int(min(allowed_widths)) if allowed_widths else 0,
+                    "allowed_width_max": int(max(allowed_widths)) if allowed_widths else 0,
+                    "allowed_width_mean": float(np.mean(allowed_widths)) if allowed_widths else 0.0,
+                    "action_width": int(len(action_dim_by_index)),
+                })
+                log(
+                    f"  {bullet} Action mask 已启用：mode={mask_mode}，"
+                    f"hash={action_mask_meta['hash'][:12]}，"
+                    f"baseline_logit_bonus={float(train_cfg.action_mask_baseline_logit_bonus):.3g}，"
+                    f"allowed_width={action_mask_meta['allowed_width_min']}..{action_mask_meta['allowed_width_max']}"
+                )
+        status.set_extra("action_mask", action_mask_meta)
+
+        def mutation_diagnostics(action_vec: np.ndarray) -> Dict[str, Any]:
+            arr = np.asarray(action_vec, dtype=int).reshape(-1)
+            changed = np.flatnonzero(arr != baseline_action_vec)
+            by_kind = Counter()
+            by_block = Counter()
+            effective_count = 0
+            ineffective_count = 0
+            for idx in changed.tolist():
+                if idx < len(baseline_records):
+                    by_kind[str(baseline_records[idx].get("kind", ""))] += 1
+                    by_block[str(baseline_records[idx].get("block", ""))] += 1
+                    if bool(baseline_records[idx].get("effective", True)):
+                        effective_count += 1
+                    else:
+                        ineffective_count += 1
+            out = {
+                "mutated_slot_count": int(len(changed)),
+                "mutated_effective_slot_count": int(effective_count),
+                "mutated_ineffective_slot_count": int(ineffective_count),
+                "mutated_by_kind": {str(k): int(v) for k, v in sorted(by_kind.items())},
+                "mutated_by_block": {str(k): int(v) for k, v in sorted(by_block.items())},
+            }
+            for kind in ("F", "W", "M", "S", "R", "K"):
+                out[f"mutated_{kind}_count"] = int(by_kind.get(kind, 0))
+            return out
+
         mutable_neighbor_indices = [
             idx for idx, record in enumerate(baseline_records)
             if idx < len(action_dim_by_index)
             and bool(record.get("effective", True))
             and int(action_dim_by_index[idx]) > 1
         ]
+        if action_mask is not None:
+            mutable_neighbor_indices = [
+                idx for idx in mutable_neighbor_indices
+                if any(
+                    j != int(baseline_action_vec[idx]) and bool(v)
+                    for j, v in enumerate(np.asarray(action_mask[idx], dtype=bool).reshape(-1))
+                )
+            ]
         cost_probe_specs = [
             ("drop_kind_M", ("M",)),
             ("drop_kind_S", ("S",)),
@@ -801,8 +1069,16 @@ class BLBStage2RLRunner:
                 radius=1,
             )
             if touched and not np.array_equal(probe_action, baseline_action_vec):
-                warmstart_cost_probe_actions.append((probe_name, probe_action, touched))
+                if action_mask is None or action_allowed(probe_action.tolist(), action_mask):
+                    warmstart_cost_probe_actions.append((probe_name, probe_action, touched))
+                else:
+                    log(f"  {bullet} 预热成本探针 {probe_name} 不在 action mask 内，已跳过。")
         episode_returns: List[float] = []
+        # Initialize curve buffers here (before the resume block) so the
+        # resume path can populate them and the later `if not resume` path
+        # still sees them as empty lists.
+        best_reward_curve: List[float] = []
+        ppo_loss_curve: List[float] = []
         if resume_checkpoint_path and os.path.isfile(resume_checkpoint_path):
             try:
                 ckpt = self._torch_load_checkpoint(resume_checkpoint_path, map_location=device)
@@ -812,6 +1088,14 @@ class BLBStage2RLRunner:
                     start_episode = int(ckpt.get("completed_episodes", ckpt.get("episode", 0)))
                     update_count = int(ckpt.get("ppo_update_count", 0))
                     episode_returns = [float(x) for x in ckpt.get("episode_returns", [])]
+                    # Bug #4 fix: restore curve buffers if present (older
+                    # checkpoints may not have them — fall back to empty).
+                    saved_best_curve = ckpt.get("best_reward_curve")
+                    if saved_best_curve:
+                        best_reward_curve = [float(x) for x in saved_best_curve]
+                    saved_ppo_curve = ckpt.get("ppo_loss_curve")
+                    if saved_ppo_curve:
+                        ppo_loss_curve = [float(x) for x in saved_ppo_curve]
                     if "best_reward" in ckpt:
                         best_reward = float(ckpt["best_reward"])
                     if ckpt.get("best_action") is not None:
@@ -847,12 +1131,32 @@ class BLBStage2RLRunner:
                 if baseline_breakdown is not None else None
             )
             bm = self._metrics_to_dict(baseline_info.get("metrics"))
+            baseline_preflight_metrics = dict(bm)
             if (
                     not bool(baseline_info.get("invalid", False))
                     and not bool(baseline_info.get("apply_failed", False))
                     and not bool(baseline_info.get("eval_failed", False))
-                    and float(bm.get("metric1_mean", 0.0)) >= float(env.acc_threshold)
             ):
+                old_acc_threshold = float(env.acc_threshold)
+                acc_threshold_resolution = _baseline_derived_metric_threshold(
+                    current_threshold=old_acc_threshold,
+                    raw_baseline_metric=baseline.metric1_mean,
+                    all_max_blb_metric=bm.get("metric1_mean", 0.0),
+                    allowed_drop=getattr(ev, "stage2_limit_tolerance", 0.0),
+                )
+                env.acc_threshold = float(acc_threshold_resolution.threshold)
+                status.set_extra("baseline_accuracy_threshold_calibration", asdict(acc_threshold_resolution))
+                if (
+                        acc_threshold_resolution.source != "explicit"
+                        or abs(float(env.acc_threshold) - old_acc_threshold) > 1e-12
+                ):
+                    log(
+                        f"  {bullet} Baseline accuracy threshold resolved from "
+                        f"{old_acc_threshold:.6g} to {float(env.acc_threshold):.6g} "
+                        f"using source={acc_threshold_resolution.source}, "
+                        f"all_max_blb_metric={acc_threshold_resolution.all_max_blb_metric:.6g}, "
+                        f"allowed_drop={acc_threshold_resolution.allowed_drop:.6g}"
+                    )
                 old_stab_threshold = float(env.stab_threshold)
                 new_stab_threshold = _baseline_preflight_stability_threshold(
                     current_threshold=old_stab_threshold,
@@ -891,6 +1195,21 @@ class BLBStage2RLRunner:
                         f"{old_stab_threshold:.6g} to {float(env.stab_threshold):.6g} "
                         f"using all-max BLB loss_std={float(bm.get('loss_std', 0.0)):.6g}"
                     )
+                baseline_breakdown = compute_reward(
+                    baseline_info.get("metrics"),
+                    baseline_info.get("opt_signals"),
+                    action_avg_k=avg_truncation_k_in_action(
+                        baseline_action_vec, env.num_layers,
+                    ),
+                    baseline=env.baseline,
+                    weights=env.reward_weights,
+                    acc_threshold=env.acc_threshold,
+                    stab_threshold=env.stab_threshold,
+                    any_invalid=False,
+                )
+                baseline_reward = float(baseline_breakdown.reward)
+                baseline_info["reward_breakdown"] = baseline_breakdown
+                baseline_breakdown_dict = self._breakdown_to_dict(baseline_breakdown)
             if is_better_blb_candidate(
                     candidate_reward=float(baseline_reward),
                     candidate_breakdown=baseline_breakdown_dict,
@@ -965,8 +1284,8 @@ class BLBStage2RLRunner:
         stop_flag_path = None
         graceful_stop_logged = False
         # 训练曲线累积（与 episode_returns 配套；ppo_loss_curve 每次 PPO update 追加）
-        best_reward_curve: List[float] = []
-        ppo_loss_curve: List[float] = []
+        # NOTE: these are now initialized earlier (above the resume block) so
+        # the resume path can pre-populate them.
         try:
             from noise_rl_module_v2 import (
                 NOISE_STAGE_STOP_FLAG_FILENAME,
@@ -992,20 +1311,18 @@ class BLBStage2RLRunner:
             consume_stop_flag_file = None
             log(f"  [优雅停止][警告] 无法安装优雅停止处理器，将仅按周期保存 checkpoint：{exc}")
 
-        warmstart_anchor_episodes = train_cfg.warmstart_anchor_episodes
-        if warmstart_anchor_episodes is None:
-            warmstart_anchor_episodes = int(train_cfg.rollout_size)
-        warmstart_anchor_episodes = max(0, int(warmstart_anchor_episodes))
-        if int(start_episode) > 0:
-            warmstart_anchor_episodes = 0
-        warmstart_anchor_episodes = min(
-            warmstart_anchor_episodes,
-            max(0, int(train_cfg.total_episodes) - int(start_episode)),
+        warmstart_anchor_episodes = _effective_warmstart_anchor_episodes(
+            configured_anchor_episodes=train_cfg.warmstart_anchor_episodes,
+            rollout_size=int(train_cfg.rollout_size),
+            total_episodes=int(train_cfg.total_episodes),
+            start_episode=int(start_episode),
+            disable_warmstart_on_resume=bool(train_cfg.disable_warmstart_on_resume),
         )
         status.set_extra("warmstart", {
             "baseline_bias": bool(train_cfg.warmstart_baseline_bias),
             "bias_gain": float(train_cfg.warmstart_bias_gain),
             "anchor_episodes": int(warmstart_anchor_episodes),
+            "disable_warmstart_on_resume": bool(train_cfg.disable_warmstart_on_resume),
             "neighbor_sampling": bool(train_cfg.warmstart_neighbor_sampling),
             "neighbor_ramp_episodes": int(train_cfg.warmstart_neighbor_ramp_episodes or 0),
             "neighbor_max_mutations": int(train_cfg.warmstart_neighbor_max_mutations),
@@ -1047,6 +1364,12 @@ class BLBStage2RLRunner:
         rollout_anchor_count = 0
         rollout_cost_probe_count = 0
         rollout_neighborhood_count = 0
+        rollout_policy_count = 0
+        rollout_mutated_slot_counts: List[int] = []
+        rollout_mutated_effective_slot_counts: List[int] = []
+        rollout_mutated_ineffective_slot_counts: List[int] = []
+        rollout_mutated_kind_counts = Counter()
+        rollout_mutated_block_counts = Counter()
 
         def mean_or_empty(values: Sequence[float]):
             return float(np.mean(values)) if values else ""
@@ -1056,6 +1379,50 @@ class BLBStage2RLRunner:
 
         def max_or_empty(values: Sequence[float]):
             return float(np.max(values)) if values else ""
+
+        def record_mutation_rollup(mut_diag: Mapping[str, Any]) -> None:
+            rollout_mutated_slot_counts.append(int(mut_diag.get("mutated_slot_count", 0)))
+            rollout_mutated_effective_slot_counts.append(int(mut_diag.get("mutated_effective_slot_count", 0)))
+            rollout_mutated_ineffective_slot_counts.append(int(mut_diag.get("mutated_ineffective_slot_count", 0)))
+            for kind, count in dict(mut_diag.get("mutated_by_kind") or {}).items():
+                rollout_mutated_kind_counts[str(kind)] += int(count)
+            for block, count in dict(mut_diag.get("mutated_by_block") or {}).items():
+                rollout_mutated_block_counts[str(block)] += int(count)
+
+        def trace_mask_mutation_fields() -> Dict[str, Any]:
+            return {
+                "action_source": json.dumps({
+                    "anchor": int(rollout_anchor_count),
+                    "cost_probe": int(rollout_cost_probe_count),
+                    "neighbor": int(rollout_neighborhood_count),
+                    "policy": int(rollout_policy_count),
+                }, ensure_ascii=False, sort_keys=True),
+                "action_mask_mode": str(action_mask_meta.get("mode", "none")),
+                "action_mask_hash": str(action_mask_meta.get("hash", "")),
+                "action_bias_bonus": float(action_mask_meta.get("baseline_logit_bonus", 0.0) or 0.0),
+                "action_source_anchor_count": int(rollout_anchor_count),
+                "action_source_cost_probe_count": int(rollout_cost_probe_count),
+                "action_source_neighbor_count": int(rollout_neighborhood_count),
+                "action_source_policy_count": int(rollout_policy_count),
+                "mutated_slot_count": mean_or_empty(rollout_mutated_slot_counts),
+                "mutated_effective_slot_count": mean_or_empty(rollout_mutated_effective_slot_counts),
+                "mutated_ineffective_slot_count": mean_or_empty(rollout_mutated_ineffective_slot_counts),
+                "mutated_slot_count_mean": mean_or_empty(rollout_mutated_slot_counts),
+                "mutated_slot_count_max": max_or_empty(rollout_mutated_slot_counts),
+                "mutated_effective_slot_count_mean": mean_or_empty(rollout_mutated_effective_slot_counts),
+                "mutated_ineffective_slot_count_mean": mean_or_empty(rollout_mutated_ineffective_slot_counts),
+                "mutated_F_count": int(rollout_mutated_kind_counts.get("F", 0)),
+                "mutated_W_count": int(rollout_mutated_kind_counts.get("W", 0)),
+                "mutated_M_count": int(rollout_mutated_kind_counts.get("M", 0)),
+                "mutated_S_count": int(rollout_mutated_kind_counts.get("S", 0)),
+                "mutated_R_count": int(rollout_mutated_kind_counts.get("R", 0)),
+                "mutated_K_count": int(rollout_mutated_kind_counts.get("K", 0)),
+                "mutated_by_block": json.dumps(
+                    {str(k): int(v) for k, v in sorted(rollout_mutated_block_counts.items())},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+            }
 
         def sample_baseline_neighborhood_action(
                 obs_t: torch.Tensor,
@@ -1071,7 +1438,12 @@ class BLBStage2RLRunner:
             if not mutable_neighbor_indices:
                 action_for_eval = torch.from_numpy(candidate).long().to(device).unsqueeze(0)
                 with torch.no_grad():
-                    log_prob_t, _entropy_t, value_t = policy.evaluate_action(obs_t, action_for_eval)
+                    log_prob_t, _entropy_t, value_t = policy.evaluate_action(
+                        obs_t,
+                        action_for_eval,
+                        action_mask=action_mask,
+                        action_bias=action_bias,
+                    )
                 return candidate, log_prob_t, value_t, 0, radius
 
             chosen_count = min(int(mutation_count), len(mutable_neighbor_indices))
@@ -1095,6 +1467,12 @@ class BLBStage2RLRunner:
                         radius=int(radius),
                     )
                     allowed = [idx for idx in allowed if 0 <= int(idx) < dim]
+                    if action_mask is not None:
+                        slot_mask = np.asarray(action_mask[int(slot_idx)], dtype=bool).reshape(-1)
+                        allowed = [
+                            idx for idx in allowed
+                            if int(idx) < int(slot_mask.size) and bool(slot_mask[int(idx)])
+                        ]
                     if not allowed:
                         continue
                     non_baseline = [
@@ -1109,7 +1487,12 @@ class BLBStage2RLRunner:
                     local_dist = torch.distributions.Categorical(logits=logits)
                     candidate[int(slot_idx)] = int(pool_t[local_dist.sample()].item())
                 action_for_eval = torch.from_numpy(candidate).long().to(device).unsqueeze(0)
-                log_prob_t, _entropy_t, value_t = policy.evaluate_action(obs_t, action_for_eval)
+                log_prob_t, _entropy_t, value_t = policy.evaluate_action(
+                    obs_t,
+                    action_for_eval,
+                    action_mask=action_mask,
+                    action_bias=action_bias,
+                )
             return candidate, log_prob_t, value_t, chosen_count, radius
 
         try:
@@ -1129,29 +1512,51 @@ class BLBStage2RLRunner:
                 use_anchor_action = warmstart_mode == "anchor"
                 use_cost_probe_action = warmstart_mode == "cost_probe"
                 use_neighbor_action = warmstart_mode == "neighbor"
+                action_source_label = "policy_masked" if action_mask is not None else "policy_unmasked"
                 if use_anchor_action:
+                    action_source_label = "anchor"
                     action_vec = baseline_action_vec.copy()
                     action_for_eval = torch.from_numpy(action_vec).long().to(device).unsqueeze(0)
                     with torch.no_grad():
-                        log_prob_t, _entropy_t, value_t = policy.evaluate_action(obs_t, action_for_eval)
+                        log_prob_t, _entropy_t, value_t = policy.evaluate_action(
+                            obs_t,
+                            action_for_eval,
+                            action_mask=action_mask,
+                            action_bias=action_bias,
+                        )
                 elif use_cost_probe_action:
                     _probe_name, probe_action_vec, _probe_touched = warmstart_cost_probe_actions[cost_probe_index]
+                    action_source_label = f"cost_probe:{_probe_name}"
                     action_vec = probe_action_vec.copy()
                     action_for_eval = torch.from_numpy(action_vec).long().to(device).unsqueeze(0)
                     with torch.no_grad():
-                        log_prob_t, _entropy_t, value_t = policy.evaluate_action(obs_t, action_for_eval)
+                        log_prob_t, _entropy_t, value_t = policy.evaluate_action(
+                            obs_t,
+                            action_for_eval,
+                            action_mask=action_mask,
+                            action_bias=action_bias,
+                        )
                     rollout_cost_probe_count += 1
                 elif use_neighbor_action:
+                    action_source_label = "neighbor"
                     action_vec, log_prob_t, value_t, neighbor_mutations, neighbor_radius = (
                         sample_baseline_neighborhood_action(obs_t, episode_offset)
                     )
                     rollout_neighborhood_count += 1
                 else:
                     with torch.no_grad():
-                        action_t, log_prob_t, value_t = policy.sample_action(obs_t, deterministic=False)
+                        action_t, log_prob_t, value_t = policy.sample_action(
+                            obs_t,
+                            deterministic=False,
+                            action_mask=action_mask,
+                            action_bias=action_bias,
+                        )
                     action_vec = action_t.squeeze(0).cpu().numpy().astype(np.int64)
+                    rollout_policy_count += 1
                 log_prob = float(log_prob_t.item())
                 value = float(value_t.item())
+                mut_diag = mutation_diagnostics(action_vec)
+                record_mutation_rollup(mut_diag)
 
                 obs_next, reward, done, info = env.step(action_vec)
                 breakdown = info.get("reward_breakdown")
@@ -1181,16 +1586,70 @@ class BLBStage2RLRunner:
                     rollout_apply_error_count += 1
                 if bool(info.get("eval_failed", False)):
                     rollout_eval_error_count += 1
+                ep_error_text = ""
                 if info.get("error"):
-                    rollout_last_error = str(info.get("error"))
-                    if (rollout_apply_error_count + rollout_eval_error_count) <= 3:
-                        log(_format_blb_episode_error_log(ep + 1, rollout_last_error))
+                    ep_error_text = str(info.get("error"))
+                    rollout_last_error = ep_error_text
                 if breakdown_dict:
                     priority = int(breakdown_dict.get("priority", 0))
                     if priority in rollout_priority_counts:
                         rollout_priority_counts[priority] += 1
                     if bool(breakdown_dict.get("invalid", False)) or bool(info.get("invalid", False)):
                         rollout_invalid_count += 1
+                # Bug #7 fix: cap per-rollout main-log error spam at the
+                # FIRST 3 errors regardless of kind (invalid_chain + apply +
+                # eval). Route every per-episode error/diagnostic to the
+                # batched details/ file instead so the main log stays slim.
+                main_log_error_count = (
+                    int(rollout_invalid_count)
+                    + int(rollout_apply_error_count)
+                    + int(rollout_eval_error_count)
+                )
+                if ep_error_text and main_log_error_count <= 3:
+                    log(_format_blb_episode_error_log(ep + 1, ep_error_text))
+                try:
+                    opt_signals_obj = info.get("opt_signals")
+                    opt_signals_dict = (
+                        {
+                            "total_bits_sum": float(getattr(opt_signals_obj, "total_bits_sum", 0)),
+                            "total_fusion_count": float(getattr(opt_signals_obj, "total_fusion_count", 0)),
+                            "any_invalid": bool(getattr(opt_signals_obj, "any_invalid", False)),
+                        }
+                        if opt_signals_obj is not None else None
+                    )
+                    slot_diff_str = ""
+                    if best_action_vec is not None:
+                        try:
+                            slot_diff_str = self._format_action_diff(
+                                baseline_action_vec, action_vec, slot_label_by_index, limit=3,
+                            )
+                        except Exception:
+                            slot_diff_str = ""
+                    details_writer.append_episode(
+                        episode=ep + 1,
+                        episode_return=float(reward),
+                        priority=int(breakdown_dict.get("priority", 0)) if breakdown_dict else 0,
+                        invalid=bool(info.get("invalid", False))
+                        or (bool(breakdown_dict.get("invalid", False)) if breakdown_dict else False),
+                        error_text=ep_error_text,
+                        opt_signals=opt_signals_dict,
+                        slot_diff=slot_diff_str,
+                        extra_lines=[
+                            f"动作来源 action_source={action_source_label}",
+                            f"动作掩码 action_mask_mode={action_mask_meta.get('mode', 'none')}",
+                            f"动作掩码哈希 action_mask_hash={action_mask_meta.get('hash', '')}",
+                            f"baseline logit 加成 action_bias_bonus={action_mask_meta.get('baseline_logit_bonus', 0.0)}",
+                            f"变异 slot 数 mutated_slot_count={mut_diag.get('mutated_slot_count', 0)}",
+                            f"生效 slot 变异数 mutated_effective_slot_count={mut_diag.get('mutated_effective_slot_count', 0)}",
+                            f"无效兼容 slot 变异数 mutated_ineffective_slot_count={mut_diag.get('mutated_ineffective_slot_count', 0)}",
+                            "按类型变异 mutated_by_kind="
+                            + json.dumps(mut_diag.get("mutated_by_kind", {}), ensure_ascii=False, sort_keys=True),
+                            "按 block 变异 mutated_by_block="
+                            + json.dumps(mut_diag.get("mutated_by_block", {}), ensure_ascii=False, sort_keys=True),
+                        ],
+                    )
+                except Exception as _details_exc:
+                    log(f"  [BLB details][warning] append_episode failed: {_details_exc}")
                 if use_anchor_action:
                     rollout_anchor_count += 1
 
@@ -1264,7 +1723,15 @@ class BLBStage2RLRunner:
                 did_update = False
                 # PPO update
                 if len(buffer) >= int(train_cfg.rollout_size):
-                    metrics = ppo_update(policy, optimizer, buffer, train_cfg.ppo, device)
+                    metrics = ppo_update(
+                        policy,
+                        optimizer,
+                        buffer,
+                        train_cfg.ppo,
+                        device,
+                        action_mask=action_mask,
+                        action_bias=action_bias,
+                    )
                     buffer.clear()
                     update_count += 1
                     did_update = True
@@ -1278,19 +1745,25 @@ class BLBStage2RLRunner:
                     # collapsing at uneven rates; surface that here.
                     try:
                         rr = np.asarray(rollout_rewards, dtype=float)
-                        ent_by_kind = {}
+                        raw_ent_by_kind = {}
+                        masked_ent_by_kind = {}
                         try:
                             with torch.no_grad():
                                 # Use a small slice of the rollout's last
                                 # state to keep this cheap (independent of
                                 # buffer size — buffer was just cleared).
                                 state_t = torch.from_numpy(obs_next).float().to(device).unsqueeze(0)
-                                ent_per_dim = policy.per_dim_entropy(state_t).cpu().numpy()
-                            ent_by_kind = self._aggregate_entropy_by_kind(
-                                ent_per_dim, kind_by_index
-                            )
+                                raw_ent_per_dim = policy.per_dim_entropy(state_t).cpu().numpy()
+                                masked_ent_per_dim = policy.per_dim_entropy(
+                                    state_t,
+                                    action_mask=action_mask,
+                                    action_bias=action_bias,
+                                ).cpu().numpy()
+                            raw_ent_by_kind = self._aggregate_entropy_by_kind(raw_ent_per_dim, kind_by_index)
+                            masked_ent_by_kind = self._aggregate_entropy_by_kind(masked_ent_per_dim, kind_by_index)
                         except Exception as exc:
-                            ent_by_kind = {"计算失败": str(exc)}
+                            raw_ent_by_kind = {"计算失败": str(exc)}
+                            masked_ent_by_kind = {"计算失败": str(exc)}
                         log(
                             _format_blb_rollout_summary_log(
                                 update_count=update_count,
@@ -1308,9 +1781,29 @@ class BLBStage2RLRunner:
                                 value_loss=float(metrics.get('value_loss', 0.0)),
                                 entropy=float(metrics.get('entropy', 0.0)),
                                 clip_fraction=float(metrics.get('clip_fraction', 0.0)),
-                                entropy_by_kind=ent_by_kind,
+                                entropy_by_kind=masked_ent_by_kind,
+                                raw_entropy_by_kind=raw_ent_by_kind,
+                                masked_entropy_by_kind=masked_ent_by_kind,
                             )
                         )
+                        # Reward-drop watcher: emit warning.txt entry when
+                        # this rollout's mean reward dropped >= threshold
+                        # vs. previous rollout. Mirrors legacy v2 warning.txt.
+                        try:
+                            rollout_start_ep = max(1, int(ep + 1) - len(rollout_rewards) + 1)
+                            warn = crash_watcher.observe_rollout(
+                                rollout_mean=float(rr.mean()) if rr.size else 0.0,
+                                episode_start=int(rollout_start_ep),
+                                episode_end=int(ep + 1),
+                                details_path=details_writer.current_batch_path,
+                            )
+                            if warn:
+                                log(
+                                    f"  【BLB 奖励暴跌】跌幅={float(warn.get('drop', 0.0)):.4f}; "
+                                    f"详情见 {crash_watcher.warning_path}"
+                                )
+                        except Exception as _crash_exc:
+                            log(f"  [BLB warning][warning] crash watcher failed: {_crash_exc}")
                     except Exception as exc:
                         log(f"  【BLB Rollout 汇总警告】行内汇总生成失败：{exc}")
                     try:
@@ -1344,8 +1837,15 @@ class BLBStage2RLRunner:
                                 "policy_loss": float(metrics.get("policy_loss", 0.0)),
                                 "value_loss": float(metrics.get("value_loss", 0.0)),
                                 "entropy": float(metrics.get("entropy", 0.0)),
+                                "raw_entropy_by_kind": json.dumps(
+                                    raw_ent_by_kind, ensure_ascii=False, sort_keys=True,
+                                ),
+                                "masked_entropy_by_kind": json.dumps(
+                                    masked_ent_by_kind, ensure_ascii=False, sort_keys=True,
+                                ),
                                 "clip_fraction": float(metrics.get("clip_fraction", 0.0)),
                                 "n_samples": int(metrics.get("n_samples", 0)),
+                                **trace_mask_mutation_fields(),
                             },
                             log_fn=log,
                         )
@@ -1367,6 +1867,12 @@ class BLBStage2RLRunner:
                         rollout_anchor_count = 0
                         rollout_cost_probe_count = 0
                         rollout_neighborhood_count = 0
+                        rollout_policy_count = 0
+                        rollout_mutated_slot_counts = []
+                        rollout_mutated_effective_slot_counts = []
+                        rollout_mutated_ineffective_slot_counts = []
+                        rollout_mutated_kind_counts = Counter()
+                        rollout_mutated_block_counts = Counter()
                     except Exception as exc:
                         log(f"  [BLB trace][warning] rollout trace update failed: {exc}")
                     if update_count == 1 or update_count % max(1, int(train_cfg.eval_interval // train_cfg.rollout_size)) == 0:
@@ -1388,6 +1894,8 @@ class BLBStage2RLRunner:
                         fixed_gelu=fixed_gelu,
                         fixed_softmax=fixed_softmax,
                         train_cfg=train_cfg,
+                        best_reward_curve=best_reward_curve,
+                        ppo_loss_curve=ppo_loss_curve,
                     )
 
                 if (
@@ -1406,12 +1914,18 @@ class BLBStage2RLRunner:
                             fixed_gelu=fixed_gelu,
                             fixed_softmax=fixed_softmax,
                             train_cfg=train_cfg,
+                            best_reward_curve=best_reward_curve,
+                            ppo_loss_curve=ppo_loss_curve,
                         )
                         if consume_stop_flag_file is not None:
                             consume_stop_flag_file(stop_flag_path)
                         self._mark_stage2_stopped(ev, completed_episodes=ep + 1,
                                                   total_episodes=train_cfg.total_episodes)
                         status.mark_stopped(reason="用户触发优雅停止", completed_episodes=int(ep + 1))
+                        try:
+                            details_writer.flush()
+                        except Exception:
+                            pass
                         log(
                             f"  [优雅停止] checkpoint 已写入 → {live_path}\n"
                             f"  下次用相同参数直接运行即可从该 checkpoint 续训练。"
@@ -1449,7 +1963,15 @@ class BLBStage2RLRunner:
 
         # 残留 buffer flush
         if len(buffer) > 0:
-            metrics = ppo_update(policy, optimizer, buffer, train_cfg.ppo, device)
+            metrics = ppo_update(
+                policy,
+                optimizer,
+                buffer,
+                train_cfg.ppo,
+                device,
+                action_mask=action_mask,
+                action_bias=action_bias,
+            )
             buffer.clear()
             update_count += 1
             try:
@@ -1490,6 +2012,7 @@ class BLBStage2RLRunner:
                         "entropy": float(metrics.get("entropy", 0.0)),
                         "clip_fraction": float(metrics.get("clip_fraction", 0.0)),
                         "n_samples": int(metrics.get("n_samples", 0)),
+                        **trace_mask_mutation_fields(),
                     },
                     log_fn=log,
                 )
@@ -1509,9 +2032,24 @@ class BLBStage2RLRunner:
             fixed_gelu=fixed_gelu,
             fixed_softmax=fixed_softmax,
             train_cfg=train_cfg,
+            best_reward_curve=best_reward_curve,
+            ppo_loss_curve=ppo_loss_curve,
         )
+        # Flush any pending step-detail buffer so the last (possibly partial)
+        # batch lands on disk before final report is written.
+        try:
+            flushed_path = details_writer.flush()
+            if flushed_path:
+                log(f"  {bullet} 训练末批 details 已刷盘 → {flushed_path}")
+        except Exception as _flush_exc:
+            log(f"  [BLB details][warning] final flush failed: {_flush_exc}")
         log(f"\n训练完成：best_reward={best_reward:.4f}")
         log(f"  {bullet} Final policy 已保存到：{final_save_path}")
+        if int(crash_watcher.total_count) > 0:
+            log(
+                f"  {bullet} 共记录 {int(crash_watcher.total_count)} 条奖励暴跌警告 → "
+                f"{crash_watcher.warning_path}"
+            )
 
         if best_action_vec is not None:
             if not best_action_description_paths:
@@ -1582,6 +2120,11 @@ class BLBStage2RLRunner:
                 extra_lines=[
                     f"Warmstart baseline bias: {bool(train_cfg.warmstart_baseline_bias)}",
                     f"Warmstart anchor episodes: {int(train_cfg.warmstart_anchor_episodes or 0)}",
+                    f"Action mask enabled: {bool(action_mask_meta.get('enabled', False))}",
+                    f"Action mask mode: {action_mask_meta.get('mode', 'none')}",
+                    f"Action mask hash: {action_mask_meta.get('hash', '')}",
+                    f"Action mask source: {action_mask_meta.get('source', '')}",
+                    f"Baseline action logit bonus: {action_mask_meta.get('baseline_logit_bonus', 0.0)}",
                     f"Rollout trace CSV: {os.path.join(blb_progress_dir, 'blb_stage2_episode_trace.csv')}",
                     f"Baseline action readable JSON: {baseline_action_description_paths.get('json', '')}",
                     f"Baseline action readable Markdown: {baseline_action_description_paths.get('md', '')}",
@@ -1618,19 +2161,19 @@ class BLBStage2RLRunner:
         cost_reference_tot_c, _ = ev.get_noise_simulated_cost(**cost_reference_noise_config)
         legacy_best = _build_legacy_compatible_best_noise_config(ev)
 
-        # NOTE: ``best_noise_config`` below is a legacy-shape all-max baseline.
-        # The actual BLB-RL best action lives in ``blb_v3_best_action_vec`` /
-        # ``blb_v3_best_action_description_paths`` and on disk in
-        # ``blb_stage2_best_cfg.pkl``. Any final-eval consumer that reads
-        # ``best_noise_config`` to install Stage-2 noise will silently evaluate
-        # the all-max baseline rather than the BLB best — see CLAUDE.md taboo
-        # #3. ``final_evaluation_module.UnifiedFinalEvaluationModule`` currently
-        # has no path that decodes ``blb_v3_best_action_vec``; switching it on
-        # is a separate cross-module change.
+        # NOTE: ``best_noise_config`` below is a legacy-shape all-max baseline
+        # for backwards compatibility with ``UnifiedFinalEvaluationModule`` only.
+        # The BLB-aware final-eval path (``Paean/blb_action_eval.py`` ->
+        # ``BLBActionFinalEvaluationModule``) reads ``blb_v3_best_action_vec``
+        # from the result dict and installs the real BLB best via
+        # ``BLBNoiseRLBridge.apply``. ``layer_importance_evaluator
+        # ._should_run_blb_action_final_eval`` selects that path when the BLB
+        # best action is present, so legacy ``best_noise_config`` is never the
+        # actual final-eval target — it is purely a compat-shape placeholder.
         log(
-            "  [BLB final_eval contract] result['best_noise_config'] = "
-            "legacy all-max baseline (compat shape). Real BLB best is in "
-            "result['blb_v3_best_action_vec'] and blb_stage2_best_cfg.pkl."
+            "  [BLB final_eval] result['blb_v3_best_action_vec'] -> "
+            "BLBActionFinalEvaluationModule will install via bridge.apply. "
+            "result['best_noise_config'] = all-max compat baseline (unused for BLB best)."
         )
 
         # 用 baseline 来推算 limit_loss / limit_p / limit_s（与旧版一致）
@@ -1642,6 +2185,24 @@ class BLBStage2RLRunner:
         limit_loss = float(limit_dict["loss"])
         limit_p = float(limit_dict["metric1"])
         limit_s = float(limit_dict["metric2"])
+        stage2_metric_allowed_drop = max(
+            0.0, _selection_float(getattr(ev, "stage2_limit_tolerance", 0.0), 0.0),
+        )
+        if baseline_preflight_metrics:
+            preflight_loss = _selection_float(baseline_preflight_metrics.get("loss_mean"), base_loss)
+            preflight_metric1 = _selection_float(baseline_preflight_metrics.get("metric1_mean"), base_p)
+            preflight_metric2 = _selection_float(baseline_preflight_metrics.get("metric2_mean"), base_s)
+            limit_loss = float(preflight_loss * (1.0 + stage2_metric_allowed_drop))
+            if acc_threshold_resolution is not None:
+                limit_p = float(acc_threshold_resolution.threshold)
+            else:
+                limit_p = max(0.0, float(preflight_metric1) - stage2_metric_allowed_drop)
+            limit_s = max(0.0, float(preflight_metric2) - stage2_metric_allowed_drop)
+            limit_dict = {
+                "loss": float(limit_loss),
+                "metric1": float(limit_p),
+                "metric2": float(limit_s),
+            }
 
         result: Dict[str, Any] = {
             "fixed_gelu": fixed_gelu.copy(),
@@ -1655,9 +2216,26 @@ class BLBStage2RLRunner:
             "performance_baseline_source": "stage1_fixed_low_risk_noise",
             "k_trials": int(train_cfg.num_trials_per_step),
             "probe_size": int(getattr(ev, "stage2_probe_size", 256)),
-            "limit_computation_method": "baseline_tolerance_percentage",
+            "limit_computation_method": (
+                "all_max_blb_baseline_absolute_drop"
+                if baseline_preflight_metrics else "raw_baseline_tolerance_percentage"
+            ),
             "limit_tolerance": float(getattr(ev, "stage2_limit_tolerance", 0.05)),
             "stability_tolerance": float(getattr(ev, "stage2_stability_tolerance", 0.05)),
+            "threshold_source": (
+                acc_threshold_resolution.source
+                if acc_threshold_resolution is not None else "unknown"
+            ),
+            "threshold_baseline_source": (
+                "all_max_blb_preflight" if baseline_preflight_metrics else "raw_model_fallback"
+            ),
+            "threshold_allowed_drop": float(stage2_metric_allowed_drop),
+            "raw_model_baseline_metrics": {
+                "loss": float(base_loss),
+                "metric1": float(base_p),
+                "metric2": float(base_s),
+            },
+            "all_max_blb_baseline_metrics": dict(baseline_preflight_metrics),
             "search_limits": {"loss": float(limit_loss),
                               "metric1": float(limit_p),
                               "metric2": float(limit_s)},
@@ -1675,6 +2253,7 @@ class BLBStage2RLRunner:
                 "probe_size": int(getattr(ev, "stage2_probe_size", 256)),
                 "baseline_action_description_paths": dict(baseline_action_description_paths or {}),
                 "best_action_description_paths": dict(best_action_description_paths or {}),
+                "action_mask": dict(action_mask_meta),
             },
             "shortlist_diagnostics": {},
             "limit_loss": float(limit_loss),
@@ -1699,16 +2278,32 @@ class BLBStage2RLRunner:
                 "blb_v3_max_grad_norm": float(train_cfg.ppo.max_grad_norm),
                 "blb_v3_acc_threshold": float(env.acc_threshold),
                 "blb_v3_stab_threshold": float(env.stab_threshold),
+                "blb_v3_acc_threshold_source": (
+                    acc_threshold_resolution.source
+                    if acc_threshold_resolution is not None else "unknown"
+                ),
+                "blb_v3_threshold_baseline_source": (
+                    "all_max_blb_preflight" if baseline_preflight_metrics else "raw_model_fallback"
+                ),
+                "blb_v3_threshold_allowed_drop": float(stage2_metric_allowed_drop),
                 "blb_v3_w_bits": float(weights.w_bits),
                 "blb_v3_w_fusion": float(weights.w_fusion),
                 "blb_v3_w_k": float(weights.w_k),
                 "blb_v3_warmstart_baseline_bias": bool(train_cfg.warmstart_baseline_bias),
                 "blb_v3_warmstart_bias_gain": float(train_cfg.warmstart_bias_gain),
                 "blb_v3_warmstart_anchor_episodes": int(train_cfg.warmstart_anchor_episodes or 0),
+                "blb_v3_disable_warmstart_on_resume": bool(train_cfg.disable_warmstart_on_resume),
                 "blb_v3_warmstart_neighbor_sampling": bool(train_cfg.warmstart_neighbor_sampling),
                 "blb_v3_warmstart_neighbor_ramp_episodes": int(train_cfg.warmstart_neighbor_ramp_episodes or 0),
                 "blb_v3_warmstart_neighbor_max_mutations": int(train_cfg.warmstart_neighbor_max_mutations),
                 "blb_v3_warmstart_neighbor_max_radius": int(train_cfg.warmstart_neighbor_max_radius),
+                "blb_v3_action_mask_enabled": bool(action_mask_meta.get("enabled", False)),
+                "blb_v3_action_mask_mode": str(action_mask_meta.get("mode", "none")),
+                "blb_v3_action_mask_hash": str(action_mask_meta.get("hash", "")),
+                "blb_v3_action_mask_source": str(action_mask_meta.get("source", "")),
+                "blb_v3_action_mask_baseline_logit_bonus": float(
+                    action_mask_meta.get("baseline_logit_bonus", 0.0) or 0.0
+                ),
                 "k_trials": int(train_cfg.num_trials_per_step),
                 "probe_size": int(getattr(ev, "stage2_probe_size", 256)),
             },
@@ -1729,6 +2324,7 @@ class BLBStage2RLRunner:
             "blb_v3_baseline_action_description_paths": dict(baseline_action_description_paths or {}),
             "blb_v3_profile": str(train_cfg.profile),
             "blb_v3_total_episodes": int(train_cfg.total_episodes),
+            "blb_v3_action_mask": dict(action_mask_meta),
             "rl_variant": "blb_v3",
         }
         return result
@@ -1800,17 +2396,65 @@ class BLBStage2RLRunner:
             cfg.warmstart_neighbor_sampling = str(v).strip().lower() not in (
                 "0", "false", "no", "off",
             )
+        v = getattr(ev, "blb_v3_disable_warmstart_on_resume", None)
+        if v not in (None, ""):
+            cfg.disable_warmstart_on_resume = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
+            )
+        v = getattr(ev, "blb_v3_action_mask_enabled", None)
+        if v not in (None, ""):
+            cfg.action_mask_enabled = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
+            )
+        v = getattr(ev, "blb_v3_action_mask_mode", None)
+        if v not in (None, ""):
+            cfg.action_mask_mode = str(v).strip()
+        v = getattr(ev, "blb_v3_action_mask_file", None)
+        if v not in (None, ""):
+            cfg.action_mask_file = str(v).strip()
+        v = getattr(ev, "blb_v3_action_mask_source", None)
+        if v not in (None, ""):
+            cfg.action_mask_source = str(v).strip()
+        v = getattr(ev, "blb_v3_action_mask_baseline_logit_bonus", None)
+        if v not in (None, ""):
+            try:
+                cfg.action_mask_baseline_logit_bonus = float(v)
+            except Exception:
+                pass
+        if str(cfg.action_mask_mode or "").strip().lower() not in ("", "none", "off", "disabled"):
+            cfg.action_mask_enabled = True
 
         cfg.rollout_size = max(1, min(int(cfg.rollout_size), int(cfg.total_episodes)))
         if cfg.warmstart_anchor_episodes is None:
-            cfg.warmstart_anchor_episodes = max(1, int(round(float(cfg.rollout_size) * 0.25)))
+            # Bug #5 fix: previous default ``rollout_size * 0.25`` produced
+            # ~30 anchor episodes for the default 120 rollout — only 0.04%
+            # of an 80k-episode run. After the anchor closed, the actor was
+            # not yet stable enough to stay near the all-max baseline and
+            # diverged into all-invalid actions for the rest of training.
+            # Guarantee at least two rollouts of pure anchor and a 200-ep
+            # floor to cover small-rollout setups.
+            cfg.warmstart_anchor_episodes = max(200, int(cfg.rollout_size) * 2)
+            cfg.warmstart_anchor_episodes = min(
+                cfg.warmstart_anchor_episodes, int(cfg.total_episodes)
+            )
         else:
             cfg.warmstart_anchor_episodes = max(
                 0,
                 min(int(cfg.warmstart_anchor_episodes), int(cfg.total_episodes)),
             )
         if cfg.warmstart_neighbor_ramp_episodes is None:
-            cfg.warmstart_neighbor_ramp_episodes = max(1, int(cfg.rollout_size) * 10)
+            # Bug #5 fix: previous default ``rollout_size * 10`` produced
+            # ~1200 neighbor episodes for an 80k-ep run (1.5%). Make the
+            # default a fraction of the training budget so the guided ramp
+            # is meaningful at any total_episodes; cap so it doesn't eat
+            # the whole training in tiny budgets.
+            cfg.warmstart_neighbor_ramp_episodes = max(
+                int(cfg.rollout_size) * 10,
+                int(cfg.total_episodes) // 5,
+            )
+            cfg.warmstart_neighbor_ramp_episodes = min(
+                cfg.warmstart_neighbor_ramp_episodes, int(cfg.total_episodes)
+            )
         else:
             cfg.warmstart_neighbor_ramp_episodes = max(
                 1,
@@ -2023,6 +2667,8 @@ class BLBStage2RLRunner:
             fixed_gelu=None,
             fixed_softmax=None,
             train_cfg: Optional[BLBStage2TrainConfig] = None,
+            best_reward_curve: Optional[Sequence[float]] = None,
+            ppo_loss_curve: Optional[Sequence[float]] = None,
             ) -> str:
         filename = (
             BLB_STAGE2_FINAL_CHECKPOINT_FILENAME
@@ -2041,6 +2687,12 @@ class BLBStage2RLRunner:
                 "completed_episodes": int(episode),
                 "ppo_update_count": int(update_count),
                 "episode_returns": [float(x) for x in (episode_returns or [])],
+                # Persist curve buffers so resume keeps full-history plots
+                # (Bug #4 fix: previously only ``episode_returns`` was saved
+                # so ``best_reward_curve`` and ``ppo_loss_curve`` got truncated
+                # to the latest session after every resume).
+                "best_reward_curve": [float(x) for x in (best_reward_curve or [])],
+                "ppo_loss_curve": [float(x) for x in (ppo_loss_curve or [])],
                 "best_reward": float(best_reward),
                 "best_action": (
                     best_action.tolist() if best_action is not None else None

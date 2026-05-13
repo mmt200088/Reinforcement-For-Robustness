@@ -147,12 +147,12 @@ Two non-obvious wires (both fixed; if you regress them, the optimizer becomes bl
 
 Field-level details live in the registry, not here, but the conceptual scope of each block is:
 
-- **Block 1** — post-FFN / GELU output / Wffn2 / LayerNorm mean-variance head. Slots: GELU output fresh, Wffn2 weight encode, mean/variance scalar encodes, several rescales, block-end K.
-- **Block 2** — LayerNorm tail + Wq/Wk/Wv projections + QK BSGS/mask/merge. Watch for tied Wq/Wk/mask groups if the optimizer requires them — registry must mark `tied_group`.
+- **Block 1** — post-FFN / GELU output / Wffn2 / LayerNorm mean-variance head. Slots: GELU output fresh, Wffn2 weight encode, mean/variance scalar encodes, several rescales, block-end K. **NOT installed at layer 0** (no upstream FFN2 there; the first HE config is treated as lossless and aligned with Rescale_optimizer).
+- **Block 2** — LayerNorm tail + Wq/Wk/Wv projections + QK BSGS/mask/merge. Watch for tied Wq/Wk/mask groups if the optimizer requires them — registry must mark `tied_group`. **Fully active for layer 0** — the layer-0 X goes directly into block 2's LayerNorm.
 - **Block 3** — Softmax exponential approximation `exp(x) ≈ (1 + x/2^n)^(2^n)`. Some `square` rescales become inactive when Softmax degree is low — registry's `effective` flag is authoritative.
 - **Block 4** — Softmax × V, Wo, post-attention LayerNorm head.
 - **Block 5** — LayerNorm tail + Wffn1 + GELU polynomial chain. High-order GELU coefficient/power rescales become inactive at low GELU degree.
-- **first-input fresh** — layer-0 input from embedding; not inside any block but part of the action vector.
+- **first-input fresh** — DEPRECATED (2026-05). Originally a layer-0 input fresh slot; since the first HE config is now treated as lossless, this slot stays in the action vector for backward compat but `effective=False` and is not installed.
 
 ### Persistent directories (two distinct trees)
 
@@ -164,6 +164,20 @@ In each BLB run dir you'll find: `blb_stage2_rl_checkpoint_{live,final}.pt`, `bl
 ### Graceful stop / resume
 
 Stage-2 RL (both variants) honors **SIGINT** and a stop-flag file (`STOP_RL` in the progress dir). The next PPO update boundary saves a checkpoint then exits with code 0. Re-running the same launcher invocation auto-resumes; the BLB runner restores PPO net + optimizer + episode counter + best reward + `episode_returns` + RNG state.
+
+### Baseline bootstrap from `static_skeletons` archive
+
+Before training, the runner reads `Rescale_optimizer/configs/<dataset>/static_skeletons_<dataset>.json` to derive the BLB baseline (max-action). For each layer it picks the correct graph entry based on Stage-1 (`gelu_degree[layer]`, `softmax_degree[layer]`):
+
+- Block 1 → `block1_<dataset>` (skipped for layer 0 — no upstream FFN2)
+- Block 2 → `block2_<dataset>`
+- Block 3 → `block3_exp_n<softmax_degree[layer]>`
+- Block 4 → `block4`
+- Block 5 → `block5_n<gelu_degree[layer]>`
+
+From each entry, RL extracts: fresh SF (`cut_point_sf[0].sf`), encode SFs (`propagation_deltas[*].delta` numeric), rescale SFs (`cut_point_sf[*].sf_post`). The extracted SFs are written into a calibrated `MaxSFsTable` so that **`make_all_max_action_vector` produces the exact RO baseline** when decoded.
+
+API: `blb_stage2_rl.baseline_bootstrap.load_static_skeletons_baseline(...)` + `static_skeletons_baseline_to_action(...)`. The runner treats this archive as the only allowed BLB Stage-2 RL baseline source: if the archive is missing or a required graph key is absent, training stops instead of falling back to an estimated all-max baseline. See `docs/blb_baseline_handover_protocol.md` §0 for the full schema.
 
 ### Rescale_optimizer integration
 

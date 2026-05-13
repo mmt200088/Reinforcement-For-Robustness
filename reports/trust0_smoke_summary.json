@@ -1,0 +1,201 @@
+{
+  "schema": "trust0_smoke_summary_v1",
+  "fidelity": "F1_small_probe",
+  "source_code": {
+    "git_head": "6341ceab2bb15cd6e4cb0b98805bc88d7343a984",
+    "server_diff_hash": "326c114f02b9064fb66d61acb000f9641aa59e5c59f2dccb848b0fd29fb8fa2c",
+    "dirty": true
+  },
+  "server_environment": {
+    "python": "3.10.19",
+    "python_executable": "/var/tmp/root-home/miniconda3/envs/llm_ist/bin/python",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "torch": "2.9.1+cu128",
+    "cuda_runtime": "12.8",
+    "transformers": "4.36.0",
+    "datasets": "2.15.0",
+    "tokenizers": "0.15.2",
+    "hf_endpoint_for_smoke": "https://hf-mirror.com",
+    "hf_home_for_smoke": "/var/tmp/root-home/.cache/huggingface",
+    "glue_local_dataset_dir_for_smoke": "/var/tmp/root-home/.cache/huggingface/datasets/glue/mrpc/0.0.0/1edab70c7fdff5d2"
+  },
+  "identity_hashes": {
+    "registry_hash": "1c10743457d61f4bb408c7fa4077e6899c3d7133900e80f807c107216d4fe58a",
+    "max_sfs_hash": "bee17f0ccab949b79b4ca011a97da4cebd1d749e6ad49bffa272a701895e09f6",
+    "stage1_hash": "065948c58013b4b4663096a820c3b042ef87db7af5eadd48c157debb98d42d79",
+    "rescale_optimizer_hash": "4b5a91b29158c5ccf04244784c6b2a21ab2c59e9956ec8ec3a1cba2dd3b4ee1a"
+  },
+  "stage1_degrees": {
+    "gelu": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      4,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "softmax": [
+      2,
+      2,
+      5,
+      5,
+      5,
+      2,
+      5,
+      2,
+      5,
+      5,
+      6,
+      2
+    ],
+    "source": "glue_final_configs_best_ppo.json via mrpc-blb-stage2-rl preset"
+  },
+  "thresholds": {
+    "manifest_source": "smoke_temporary",
+    "runner_source": "baseline_derived_all_max_blb",
+    "raw_baseline_metric": 0.9375,
+    "all_max_blb_metric": 0.875,
+    "allowed_drop": 0.00494,
+    "acc_limit": 0.8700600000000001,
+    "f1_limit": 0.87006,
+    "acc_std_limit": 0.0,
+    "f1_std_limit": 0.0,
+    "strict_z": 1.0,
+    "loss_is_hard_constraint": false
+  },
+  "baseline_eval": {
+    "reward": 0.0,
+    "breakdown": {
+      "reward": 0.0,
+      "priority": 3,
+      "invalid": false,
+      "r_bits": 0.0,
+      "r_fusion": 0.0,
+      "r_k": 0.0,
+      "bits_drop": 0.0,
+      "k_drop": 0.0,
+      "fusion_count": 0.0,
+      "acc_violation": 0.0,
+      "stab_violation": 0.0
+    },
+    "metrics": {
+      "loss_mean": 0.26335377246141434,
+      "loss_std": 0.0,
+      "metric1_mean": 0.875,
+      "metric2_mean": 0.875,
+      "loss_max": 0.26335377246141434,
+      "metric1_min": 0.875,
+      "metric2_min": 0.875
+    },
+    "invalid": false,
+    "apply_failed": false,
+    "eval_failed": false,
+    "error": "",
+    "optimizer_invalid_summary": "",
+    "selected_as_incumbent": true
+  },
+  "f0_optimizer_only_baseline": {
+    "path": "reports/blb_opt/trust0_f0_baseline_stage1ctx/candidates/candidate_store.jsonl",
+    "valid": true,
+    "candidate_key": "7a54dd548e4faab7223cd651be35d95431911aae67880e0bdacd2b298bd7fe1b",
+    "action_hash": "e18db2a9a1b3d00d1855894bbf812de4267daa56b82cd6a0d7fd384b8e42ef81",
+    "rescale_cost_rank_key": [
+      14989,
+      0
+    ],
+    "total_bits_sum": 14989,
+    "fusion_count": 0,
+    "avg_k": 13.0,
+    "q_bits_count": 60,
+    "q_head_bits_unique": [
+      60
+    ],
+    "q_tail_bits_unique": [
+      60
+    ],
+    "note": "F0 was rerun with explicit Stage-1 degree vectors; the earlier no-degree F0 output is not used."
+  },
+  "smoke_runs": [
+    {
+      "run_dir": "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.00491_s2t0.00491_s2st0.00491",
+      "status": "failed_before_training",
+      "reason": "manual command passed stage1 episodes while preset had skip_stage1_rl=True"
+    },
+    {
+      "run_dir": "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.00492_s2t0.00492_s2st0.00492",
+      "status": "failed_before_fix",
+      "reason": "baseline preflight used raw model baseline threshold; fixed by deriving threshold from all-max BLB preflight"
+    },
+    {
+      "run_dir": "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.00493_s2t0.00493_s2st0.00493",
+      "status": "completed",
+      "episodes": 170,
+      "coverage": "anchor-only because total episodes <= warmstart anchor",
+      "error_summary": "none"
+    },
+    {
+      "run_dir": "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.00494_s2t0.00494_s2st0.00494",
+      "status": "completed",
+      "episodes": 240,
+      "coverage": "crossed warmstart anchor; episodes 201-240 are non-anchor/cost-probe diagnostic",
+      "error_summary": "none"
+    }
+  ],
+  "rollout_summary": {
+    "rollout_count": 12,
+    "total_samples": 240,
+    "reward_mean_over_rollouts": -4.407777777777778,
+    "reward_min_over_rollouts": -30.0,
+    "reward_max_over_rollouts": 0.0,
+    "invalid_count": 36,
+    "invalid_rate": 0.15,
+    "priority0_invalid_count": 36,
+    "priority1_count": 0,
+    "priority2_count": 0,
+    "priority3_count": 204,
+    "anchor_count": 200,
+    "cost_probe_count": 4,
+    "best_reward": 10.733333333333333,
+    "best_episode": 204,
+    "last_rollout": {
+      "episode": 240,
+      "reward_mean": -30.0,
+      "invalid_count": 20,
+      "priority3_count": 0,
+      "value_loss": 891.678466796875,
+      "policy_loss": -0.0076134398605063325,
+      "clip_fraction": 0.0
+    }
+  },
+  "non_anchor_diagnostic": {
+    "episodes": "201-240",
+    "samples": 40,
+    "invalid_count": 36,
+    "invalid_rate": 0.9,
+    "best_non_anchor_reward": 10.733333333333333,
+    "warning_count": 2,
+    "interpretation": "non-anchor invalid_rate is high; do not increase episodes before action-mask curriculum or F0 feasible-domain scan."
+  },
+  "artifacts": {
+    "trace_csv": "reports/trust0_smoke_artifacts/s1t0.00494_s2t0.00494_s2st0.00494/stage2_noise__progress__blb_stage2_episode_trace.csv",
+    "status_json": "reports/trust0_smoke_artifacts/s1t0.00494_s2t0.00494_s2st0.00494/stage2_noise__progress__blb_stage2_status.json",
+    "report_md": "reports/trust0_smoke_artifacts/s1t0.00494_s2t0.00494_s2st0.00494/stage2_noise__progress__blb_stage2_report.md",
+    "warning_txt": "reports/trust0_smoke_artifacts/s1t0.00494_s2t0.00494_s2st0.00494/stage2_noise__warning.txt",
+    "details_txt": "reports/trust0_smoke_artifacts/s1t0.00494_s2t0.00494_s2st0.00494/stage2_noise__details__noise_ppo_step_info_1-360.txt",
+    "log": "reports/trust0_smoke_artifacts/s1t0.00494_s2t0.00494_s2st0.00494/logs__trust0_smoke_nonanchor.log"
+  },
+  "blockers_or_stop_conditions": [
+    "Trust-0 smoke can run, but non-anchor invalid_rate reached 90% over episodes 201-240 and 100% in the final rollout.",
+    "Per taskbook, stop here; next phase should prioritize action mask curriculum / F0 feasible-domain scan, not longer training."
+  ],
+  "codex_uncertainties": [
+    "The trace action-source buckets show C=4 for rollout 201-220 but A/C/N all zero for 221-240 despite invalid episodes; this looks like a diagnostic labeling gap for policy-sampled invalid actions.",
+    "F1 probe uses only 16 samples and k_trials=1; results are control-flow diagnostics, not quality claims."
+  ]
+}

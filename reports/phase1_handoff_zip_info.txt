@@ -1,0 +1,6 @@
+BLB Phase-1 + Claude layer-0 flow handoff zip
+path: reports/blb_phase1_f0_scan_mask_curriculum_handoff_for_gpt55pro.zip
+size_bytes: 2029974
+sha256: 5f262a2087fe9e021c25bf7de1475f2f5286294b07b3d255c5efa1d06e872b5a
+file_count: 268
+note: zip excludes runtime outputs, checkpoints, caches, old zip files, and root commonsense data.

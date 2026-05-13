@@ -1,0 +1,147 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+
+class BLBCandidateStoreIdentityTests(unittest.TestCase):
+    def test_candidate_key_binds_action_and_context_hashes(self):
+        from blb_stage2_rl.candidate_store import (
+            build_candidate_identity_context,
+            candidate_key,
+        )
+
+        action = [4, 4, 3, 2]
+        base = build_candidate_identity_context(
+            action_space_version="current-code-v1",
+            registry_hash="registry-a",
+            max_sfs_hash="max-sfs-a",
+            stage1_hash="stage1-a",
+            stage1_degrees={"gelu": [4], "softmax": [2]},
+            profile="mrpc",
+            rescale_optimizer_mode="in_process_real",
+            rescale_optimizer_root="Rescale_optimizer",
+            rescale_optimizer_hash="rescale-a",
+            decode_version="decode-v1",
+            dataset="mrpc",
+            model="bert-base",
+            metric_policy_version="mrpc-acc-f1-std-v1",
+            threshold_policy_hash="threshold-a",
+        )
+        same_action_different_registry = dict(base)
+        same_action_different_registry["registry_hash"] = "registry-b"
+
+        self.assertEqual(candidate_key(action, base), candidate_key(action, dict(base)))
+        self.assertNotEqual(candidate_key(action, base), candidate_key(action, same_action_different_registry))
+
+    def test_candidate_identity_uses_phase1_canonical_context_fields(self):
+        from blb_stage2_rl.candidate_store import build_candidate_identity_context, candidate_key
+
+        action = [4, 4, 3, 2]
+        base = build_candidate_identity_context(
+            action_space_version="current-code-v1",
+            registry_hash="registry-a",
+            max_sfs_hash="max-sfs-a",
+            stage1_config_content_hash="stage1-content-a",
+            stage1_gelu_degrees=[4],
+            stage1_softmax_degrees=[2],
+            profile="mrpc",
+            dataset="mrpc",
+            model="bert-base",
+            rescale_optimizer_mode="in_process_real",
+            rescale_optimizer_root="Rescale_optimizer",
+            rescale_optimizer_canonical_hash="rescale-canon-a",
+            decode_version="action_space_v1",
+            metric_policy_version="mrpc-acc-f1-std-v1",
+            threshold_policy_hash="threshold-a",
+            fidelity="F0_optimizer_only",
+        )
+        changed_fidelity = dict(base)
+        changed_fidelity["fidelity"] = "F1_small_probe"
+
+        self.assertEqual(base["stage1_config_content_hash"], "stage1-content-a")
+        self.assertEqual(base["stage1_gelu_degrees"], [4])
+        self.assertEqual(base["stage1_softmax_degrees"], [2])
+        self.assertEqual(base["rescale_optimizer_canonical_hash"], "rescale-canon-a")
+        self.assertEqual(base["fidelity"], "F0_optimizer_only")
+        self.assertNotEqual(candidate_key(action, base), candidate_key(action, changed_fidelity))
+
+    def test_context_lookup_excludes_action_hash_only_legacy_records(self):
+        from blb_stage2_rl.candidate_store import (
+            CandidateStore,
+            build_candidate_identity_context,
+        )
+
+        ctx = build_candidate_identity_context(
+            action_space_version="current-code-v1",
+            registry_hash="registry-a",
+            max_sfs_hash="max-sfs-a",
+            stage1_hash="stage1-a",
+            stage1_degrees={"gelu": [4], "softmax": [2]},
+            profile="mrpc",
+            rescale_optimizer_mode="in_process_real",
+            rescale_optimizer_root="Rescale_optimizer",
+            rescale_optimizer_hash="rescale-a",
+            decode_version="decode-v1",
+            dataset="mrpc",
+            model="bert-base",
+            metric_policy_version="mrpc-acc-f1-std-v1",
+            threshold_policy_hash="threshold-a",
+        )
+        action = [4, 4, 3, 2]
+
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidate_store.jsonl")
+            store.append({"action_indices": action, "fidelity": "F1", "valid": True})
+            self.assertTrue(store.read_all()[0]["legacy_record"])
+            self.assertEqual(store.read_all()[0]["action_vector_hash"], store.read_all()[0]["action_hash"])
+            self.assertIsNone(store.best_for_action(action, identity_context=ctx))
+
+            store.append({
+                "action_indices": action,
+                "fidelity": "F1",
+                "valid": True,
+                "identity_context": ctx,
+            })
+            self.assertIsNotNone(store.best_for_action(action, identity_context=ctx))
+            self.assertFalse(store.should_evaluate(action, "F1", identity_context=ctx))
+
+    def test_store_records_raw_and_effective_action_identity(self):
+        from blb_stage2_rl.candidate_store import (
+            CandidateStore,
+            action_hash,
+            build_candidate_identity_context,
+        )
+
+        ctx = build_candidate_identity_context(
+            action_space_version="current-code-v1",
+            registry_hash="registry-a",
+            max_sfs_hash="max-sfs-a",
+            stage1_hash="stage1-a",
+            stage1_degrees={"gelu": [4], "softmax": [4]},
+            profile="mrpc",
+            rescale_optimizer_mode="in_process_real",
+            rescale_optimizer_root="Rescale_optimizer",
+            rescale_optimizer_hash="rescale-a",
+            decode_version="decode-v1",
+            dataset="mrpc",
+            model="bert-base",
+            metric_policy_version="mrpc-acc-f1-std-v1",
+            threshold_policy_hash="threshold-a",
+        )
+        raw_action = [0, 4, 4]
+        effective_action = [4, 4, 4]
+
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidate_store.jsonl")
+            saved = store.append({
+                "action_indices": raw_action,
+                "effective_action_indices": effective_action,
+                "fidelity": "F0",
+                "valid": True,
+                "identity_context": ctx,
+            })
+
+            self.assertEqual(saved["raw_action_hash"], action_hash(raw_action))
+            self.assertEqual(saved["action_hash"], saved["raw_action_hash"])
+            self.assertEqual(saved["effective_action_hash"], action_hash(effective_action))
+            self.assertEqual(saved["candidate_key_basis"], "effective_action_hash + identity_context")
