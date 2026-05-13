@@ -52,6 +52,9 @@ __pycache__/
 .tmp-tests/
 tmp_tests/
 
+# Local GPT handoff / sync package metadata. Regenerate with the handoff zip.
+_sync_metadata/
+
 
 # ---------------------------------------------------------------------------
 # Track all experiment artifacts for sharing via git.
