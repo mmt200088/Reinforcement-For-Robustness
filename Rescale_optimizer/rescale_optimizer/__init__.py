@@ -69,6 +69,17 @@ from .replan import (
     ReplanResult,
     replan_with_user_actions,
 )
+from .replan_interface import (
+    BaselineRecord,
+    ReplanSession,
+    build_new_compact_config,
+    build_replan_output_dict,
+    graph_key_for_stage1,
+    iter_stage2_graph_targets,
+    load_static_skeleton_baselines,
+    replan_from_variables,
+    split_replan_payload,
+)
 
 __all__ = [
     # graph
@@ -95,4 +106,9 @@ __all__ = [
     "load_graph_from_json", "build_from_dict",
     # replan (what-if + fusion-tolerant feasibility)
     "FusionEvent", "ReplanInputs", "ReplanResult", "replan_with_user_actions",
+    # high-level variable/return-value replan interface
+    "BaselineRecord", "ReplanSession", "build_new_compact_config",
+    "build_replan_output_dict", "graph_key_for_stage1",
+    "iter_stage2_graph_targets", "load_static_skeleton_baselines",
+    "replan_from_variables", "split_replan_payload",
 ]
