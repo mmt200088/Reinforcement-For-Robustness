@@ -1,15 +1,18 @@
 import unittest
 from pathlib import Path
 import sys
+import tempfile
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.bert_mrpc_layer_noise_experiment import (
-    accuracy_and_weighted_f1,
+    accuracy_metric,
     aggregate_metric_trials,
+    build_arg_parser,
     build_sigma_grid,
     inject_noise_into_layer_output,
+    remove_stale_figure_outputs,
     select_mild_drop_sigma,
     temporary_layer_output_noise,
 )
@@ -83,45 +86,60 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
     def test_build_sigma_grid_is_sorted_unique_and_includes_endpoints(self):
         grid = build_sigma_grid()
         self.assertEqual(grid[0], 1e-10)
-        self.assertEqual(grid[-1], 0.2)
+        self.assertEqual(grid[-1], 10.0)
         self.assertEqual(grid, sorted(set(grid)))
         self.assertIn(1e-4, grid)
         self.assertIn(2e-4, grid)
         self.assertIn(9e-4, grid)
-        self.assertNotIn(1.0, grid)
+        self.assertIn(1.0, grid)
+        self.assertIn(10.0, grid)
 
-    def test_select_mild_drop_sigma_targets_small_f1_drop(self):
+    def test_select_mild_drop_sigma_targets_small_acc_drop(self):
         rows = [
-            {"sigma": 1e-5, "f1_mean": 0.910, "acc_mean": 0.880},
-            {"sigma": 1e-4, "f1_mean": 0.905, "acc_mean": 0.879},
-            {"sigma": 1e-3, "f1_mean": 0.890, "acc_mean": 0.868},
-            {"sigma": 1e-2, "f1_mean": 0.810, "acc_mean": 0.790},
+            {"sigma": 1e-5, "acc_mean": 0.880},
+            {"sigma": 1e-4, "acc_mean": 0.879},
+            {"sigma": 1e-3, "acc_mean": 0.868},
+            {"sigma": 1e-2, "acc_mean": 0.790},
         ]
         chosen = select_mild_drop_sigma(
             rows,
-            baseline_f1=0.910,
             baseline_acc=0.880,
             target_drop=0.02,
         )
         self.assertEqual(chosen, 1e-3)
 
-    def test_aggregate_metric_trials_reports_mean_and_sample_std(self):
+    def test_aggregate_metric_trials_reports_accuracy_mean_only(self):
         summary = aggregate_metric_trials([
-            {"acc": 0.80, "f1": 0.90},
-            {"acc": 0.84, "f1": 0.86},
-            {"acc": 0.82, "f1": 0.88},
+            {"acc": 0.80},
+            {"acc": 0.84},
+            {"acc": 0.82},
         ])
         self.assertAlmostEqual(summary["acc_mean"], 0.82)
-        self.assertAlmostEqual(summary["f1_mean"], 0.88)
-        self.assertAlmostEqual(summary["acc_std"], 0.02)
-        self.assertAlmostEqual(summary["f1_std"], 0.02)
+        self.assertEqual(sorted(summary), ["acc_mean"])
 
-    def test_accuracy_and_f1_uses_weighted_average(self):
+    def test_accuracy_metric_reports_accuracy_only(self):
         labels = [0, 0, 0, 0, 1]
         preds = [0, 0, 1, 1, 1]
-        metrics = accuracy_and_weighted_f1(labels, preds)
+        metrics = accuracy_metric(labels, preds)
         self.assertAlmostEqual(metrics["acc"], 0.6)
-        self.assertAlmostEqual(metrics["f1"], 19 / 30)
+        self.assertEqual(sorted(metrics), ["acc"])
+
+    def test_default_cli_uses_accuracy_only_experiment_settings(self):
+        args = build_arg_parser().parse_args([])
+        self.assertEqual(args.repeats, 50)
+        self.assertEqual(args.layer_sigma, "0.4")
+        self.assertIsNone(args.sigmas)
+
+    def test_remove_stale_figure_outputs_deletes_old_f1_figures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            stale = output_dir / "noise_magnitude_f1.png"
+            keep = output_dir / "noise_magnitude_accuracy.png"
+            stale.write_text("old", encoding="utf-8")
+            keep.write_text("new", encoding="utf-8")
+            remove_stale_figure_outputs(output_dir)
+            self.assertFalse(stale.exists())
+            self.assertTrue(keep.exists())
 
     def test_inject_noise_preserves_bert_tuple_structure(self):
         output = ("hidden", "attention")

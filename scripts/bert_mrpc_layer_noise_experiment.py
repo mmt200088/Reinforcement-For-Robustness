@@ -35,7 +35,7 @@ def _nice_float(value: float) -> float:
 
 def build_sigma_grid(
     start: float = 1e-10,
-    stop: float = 2e-1,
+    stop: float = 1e1,
     dense_start: float = 1e-4,
 ) -> List[float]:
     """Return a sorted unique sigma grid with dense decade multiples.
@@ -101,19 +101,12 @@ def inject_noise_into_layer_output(
 def aggregate_metric_trials(trials: Sequence[Mapping[str, float]]) -> Dict[str, float]:
     if not trials:
         raise ValueError("at least one trial is required")
-    summary: Dict[str, float] = {}
-    for metric in ("acc", "f1"):
-        values = [float(trial[metric]) for trial in trials]
-        summary[f"{metric}_mean"] = statistics.fmean(values)
-        summary[f"{metric}_std"] = statistics.stdev(values) if len(values) > 1 else 0.0
-        summary[f"{metric}_min"] = min(values)
-        summary[f"{metric}_max"] = max(values)
-    return summary
+    values = [float(trial["acc"]) for trial in trials]
+    return {"acc_mean": statistics.fmean(values)}
 
 
 def select_mild_drop_sigma(
     rows: Sequence[Mapping[str, float]],
-    baseline_f1: float,
     baseline_acc: float,
     target_drop: float = 0.02,
 ) -> float:
@@ -122,43 +115,20 @@ def select_mild_drop_sigma(
         raise ValueError("cannot select a sigma from empty experiment rows")
     candidates = []
     for row in rows:
-        f1_drop = max(0.0, float(baseline_f1) - float(row["f1_mean"]))
         acc_drop = max(0.0, float(baseline_acc) - float(row["acc_mean"]))
-        max_drop = max(f1_drop, acc_drop)
-        candidates.append((abs(max_drop - target_drop), -max_drop, float(row["sigma"])))
+        candidates.append((abs(acc_drop - target_drop), -acc_drop, float(row["sigma"])))
     candidates.sort()
     return candidates[0][2]
 
 
-def accuracy_and_weighted_f1(labels: Sequence[int], preds: Sequence[int]) -> Dict[str, float]:
+def accuracy_metric(labels: Sequence[int], preds: Sequence[int]) -> Dict[str, float]:
     if len(labels) != len(preds):
         raise ValueError("labels and predictions must have the same length")
     if not labels:
         raise ValueError("cannot compute metrics for an empty prediction set")
 
     correct = sum(1 for label, pred in zip(labels, preds) if int(label) == int(pred))
-    weighted_f1 = 0.0
-    for class_id in sorted({int(label) for label in labels}):
-        support = sum(1 for label in labels if int(label) == class_id)
-        tp = sum(
-            1
-            for label, pred in zip(labels, preds)
-            if int(label) == class_id and int(pred) == class_id
-        )
-        fp = sum(
-            1
-            for label, pred in zip(labels, preds)
-            if int(label) != class_id and int(pred) == class_id
-        )
-        fn = sum(
-            1
-            for label, pred in zip(labels, preds)
-            if int(label) == class_id and int(pred) != class_id
-        )
-        denom = 2 * tp + fp + fn
-        class_f1 = (2 * tp / denom) if denom else 0.0
-        weighted_f1 += (support / len(labels)) * class_f1
-    return {"acc": correct / len(labels), "f1": weighted_f1}
+    return {"acc": correct / len(labels)}
 
 
 def resolve_dotted_attr(root: Any, dotted_path: str) -> Any:
@@ -306,7 +276,7 @@ def evaluate_condition(
                 preds = outputs.logits.argmax(dim=-1)
                 labels_all.extend(labels.detach().cpu().tolist())
                 preds_all.extend(preds.detach().cpu().tolist())
-    metrics = accuracy_and_weighted_f1(labels_all, preds_all)
+    metrics = accuracy_metric(labels_all, preds_all)
     metrics["n_samples"] = float(len(labels_all))
     metrics["elapsed_sec"] = time.time() - started
     return metrics
@@ -336,11 +306,9 @@ def run_repeated_condition(
             sigma=sigma,
             seed=trial_seed,
         )
-        metrics["seed"] = float(trial_seed)
         trials.append(metrics)
     summary = aggregate_metric_trials(trials)
     summary["sigma"] = float(sigma)
-    summary["trials"] = trials
     return summary
 
 
@@ -382,129 +350,145 @@ def save_results(output_dir: Path, results: Mapping[str, Any]) -> Path:
     write_csv(
         output_dir / "noise_magnitude_results.csv",
         exp1_rows,
-        ["sigma", "acc_mean", "acc_std", "acc_min", "acc_max", "f1_mean", "f1_std", "f1_min", "f1_max"],
+        ["sigma", "acc_mean"],
     )
     exp2_rows = results["experiment2"]["rows"]
     write_csv(
         output_dir / "layer_position_results.csv",
         exp2_rows,
-        ["layer", "sigma", "acc_mean", "acc_std", "acc_min", "acc_max", "f1_mean", "f1_std", "f1_min", "f1_max"],
+        ["layer", "sigma", "acc_mean"],
     )
     return result_path
 
 
+def _require_times_new_roman() -> None:
+    from matplotlib import font_manager
+
+    has_font = any(font.name == "Times New Roman" for font in font_manager.fontManager.ttflist)
+    if not has_font:
+        raise RuntimeError("Times New Roman font is required for these figures but was not found.")
+
+
 def configure_matplotlib_style(plt: Any) -> None:
+    _require_times_new_roman()
     plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+        "font.family": "Times New Roman",
         "font.size": 8.5,
         "axes.labelsize": 8.5,
         "axes.titlesize": 9,
+        "axes.labelweight": "bold",
+        "axes.titleweight": "bold",
         "axes.linewidth": 0.75,
         "xtick.labelsize": 7.5,
         "ytick.labelsize": 7.5,
-        "legend.fontsize": 7.5,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
         "savefig.bbox": "tight",
     })
 
 
-def _score_ylim(values: Iterable[float], *, min_span: float = 0.025) -> List[float]:
+def _score_ylim_percent(values: Iterable[float], *, min_span: float = 3.0) -> List[float]:
     vals = list(values)
-    lo = max(0.0, min(vals) - 0.006)
-    hi = min(1.0, max(vals) + 0.006)
+    lo = max(0.0, min(vals) - 0.8)
+    hi = min(100.0, max(vals) + 0.8)
     if hi - lo < min_span:
         center = (hi + lo) / 2
         lo = max(0.0, center - min_span / 2)
-        hi = min(1.0, center + min_span / 2)
+        hi = min(100.0, center + min_span / 2)
     return [lo, hi]
 
 
-def _finish_paper_axes(ax: Any, metric_values: Sequence[float], baseline_value: float) -> None:
+def _finish_paper_axes(ax: Any, metric_values: Sequence[float]) -> None:
     from matplotlib.ticker import MultipleLocator
 
-    for spine in ("top", "right"):
-        ax.spines[spine].set_visible(False)
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(0.75)
+        spine.set_color("black")
     ax.tick_params(width=0.75, length=3.2)
-    ax.yaxis.set_major_locator(MultipleLocator(0.005))
-    ax.set_ylim(_score_ylim([*metric_values, baseline_value]))
-    ax.grid(True, which="major", axis="y", color="#E4E4E4", linewidth=0.55)
+    ax.set_ylim(_score_ylim_percent(metric_values))
+    span = ax.get_ylim()[1] - ax.get_ylim()[0]
+    if span > 35:
+        tick_step = 10.0
+    elif span > 12:
+        tick_step = 5.0
+    elif span > 5:
+        tick_step = 1.0
+    else:
+        tick_step = 0.5
+    ax.yaxis.set_major_locator(MultipleLocator(tick_step))
+    ax.grid(True, which="major", axis="y", color="#E0E0E0", linestyle="--", linewidth=0.55)
 
 
-def plot_noise_magnitude_metric(results: Mapping[str, Any], output_dir: Path, metric: str) -> None:
+def plot_noise_magnitude_accuracy(results: Mapping[str, Any], output_dir: Path) -> None:
     import matplotlib.pyplot as plt
 
     configure_matplotlib_style(plt)
     rows = results["experiment1"]
-    baseline = results["baseline"]
     sigmas = [row["sigma"] for row in rows]
-    values = [row[f"{metric}_mean"] for row in rows]
-    std = [row[f"{metric}_std"] for row in rows]
-    label = "Accuracy" if metric == "acc" else "F1 Score"
-    color = "#0072B2" if metric == "acc" else "#D55E00"
+    values = [100.0 * row["acc_mean"] for row in rows]
 
-    fig, ax = plt.subplots(figsize=(3.5, 2.35))
+    fig, ax = plt.subplots(figsize=(3.0, 3.0))
     ax.set_xscale("log")
-    ax.plot(sigmas, values, marker="o", markersize=2.6, linewidth=1.15, color=color, label=label)
-    ax.fill_between(
-        sigmas,
-        [value - err for value, err in zip(values, std)],
-        [value + err for value, err in zip(values, std)],
-        color=color,
-        alpha=0.14,
-        linewidth=0,
-    )
-    ax.axhline(baseline[metric], color="#666666", linestyle="--", linewidth=0.85, alpha=0.75, label="Clean")
-    ax.set_xlabel("Gaussian Noise Std. Dev.")
-    ax.set_ylabel(label)
-    ax.set_title(f"{label} vs. Uniform Layer-Output Noise")
-    ax.grid(True, which="major", axis="x", color="#E4E4E4", linewidth=0.5)
-    ax.grid(True, which="minor", axis="x", color="#F0F0F0", linewidth=0.35)
-    _finish_paper_axes(ax, values, baseline[metric])
-    ax.legend(frameon=False, loc="lower left", handlelength=1.6)
-    stem = "noise_magnitude_accuracy" if metric == "acc" else "noise_magnitude_f1"
-    fig.savefig(output_dir / f"{stem}.pdf")
-    fig.savefig(output_dir / f"{stem}.png", dpi=600)
+    ax.plot(sigmas, values, marker="o", markersize=2.5, linewidth=1.25, color="#D55E00")
+    ax.set_xlabel("")
+    ax.set_ylabel("Accuracy (%)", fontweight="bold")
+    ax.set_title("Accuracy vs. Uniform Layer-Output Noise", fontweight="bold")
+    ax.grid(True, which="major", axis="x", color="#D0D0D0", linestyle="--", linewidth=0.55)
+    _finish_paper_axes(ax, values)
+    fig.savefig(output_dir / "noise_magnitude_accuracy.pdf")
+    fig.savefig(output_dir / "noise_magnitude_accuracy.png", dpi=600)
     plt.close(fig)
 
 
-def plot_layer_position_metric(results: Mapping[str, Any], output_dir: Path, metric: str) -> None:
+def plot_layer_position_accuracy(results: Mapping[str, Any], output_dir: Path) -> None:
     import matplotlib.pyplot as plt
     import numpy as np
 
     configure_matplotlib_style(plt)
     rows = results["experiment2"]["rows"]
-    baseline = results["baseline"]
     layers = [int(row["layer"]) for row in rows]
     x = np.arange(len(layers))
-    values = np.array([row[f"{metric}_mean"] for row in rows])
-    std = np.array([row[f"{metric}_std"] for row in rows])
-    label = "Accuracy" if metric == "acc" else "F1 Score"
-    color = "#0072B2" if metric == "acc" else "#D55E00"
+    values = np.array([100.0 * row["acc_mean"] for row in rows])
 
-    fig, ax = plt.subplots(figsize=(3.5, 2.35))
-    ax.bar(x, values, 0.62, yerr=std, capsize=1.8, color=color, edgecolor="white", linewidth=0.35)
-    ax.axhline(baseline[metric], color="#666666", linestyle="--", linewidth=0.85, alpha=0.75, label="Clean")
-    ax.set_xlabel("Perturbed Transformer Layer")
-    ax.set_ylabel(label)
-    ax.set_title(f"{label} by Noise Injection Layer (std. dev. = {results['experiment2']['sigma']:.2g})")
+    fig, ax = plt.subplots(figsize=(3.0, 3.0))
+    ax.bar(x, values, 0.62, color="#0072B2", edgecolor="black", linewidth=0.35)
+    ax.set_xlabel("")
+    ax.set_ylabel("Accuracy (%)", fontweight="bold")
+    ax.set_title(f"Accuracy by Noise Injection Layer (std. dev. = {results['experiment2']['sigma']:.2g})",
+                 fontweight="bold")
     ax.set_xticks(x)
     ax.set_xticklabels([str(layer) for layer in layers])
-    _finish_paper_axes(ax, values.tolist(), baseline[metric])
-    ax.legend(frameon=False, loc="upper right", handlelength=1.6)
-    stem = "layer_position_accuracy" if metric == "acc" else "layer_position_f1"
-    fig.savefig(output_dir / f"{stem}.pdf")
-    fig.savefig(output_dir / f"{stem}.png", dpi=600)
+    _finish_paper_axes(ax, values.tolist())
+    fig.savefig(output_dir / "layer_position_accuracy.pdf")
+    fig.savefig(output_dir / "layer_position_accuracy.png", dpi=600)
     plt.close(fig)
+
+
+def remove_stale_figure_outputs(output_dir: Path) -> None:
+    stale_names = [
+        "bert_mrpc_noise_sensitivity_combined.pdf",
+        "bert_mrpc_noise_sensitivity_combined.png",
+        "layer_position_f1.pdf",
+        "layer_position_f1.png",
+        "layer_position_sensitivity.pdf",
+        "layer_position_sensitivity.png",
+        "noise_magnitude_f1.pdf",
+        "noise_magnitude_f1.png",
+        "noise_magnitude_sensitivity.pdf",
+        "noise_magnitude_sensitivity.png",
+    ]
+    for name in stale_names:
+        path = output_dir / name
+        if path.exists():
+            path.unlink()
 
 
 def render_plots(results: Mapping[str, Any], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    plot_noise_magnitude_metric(results, output_dir, "acc")
-    plot_noise_magnitude_metric(results, output_dir, "f1")
-    plot_layer_position_metric(results, output_dir, "acc")
-    plot_layer_position_metric(results, output_dir, "f1")
+    remove_stale_figure_outputs(output_dir)
+    plot_noise_magnitude_accuracy(results, output_dir)
+    plot_layer_position_accuracy(results, output_dir)
 
 
 def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
@@ -549,7 +533,6 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
     )
     baseline = {
         "acc": baseline["acc"],
-        "f1": baseline["f1"],
         "n_samples": int(baseline["n_samples"]),
         "elapsed_sec": baseline["elapsed_sec"],
     }
@@ -570,15 +553,13 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         )
         experiment1.append(row)
         print(
-            f"[exp1] sigma={sigma:.3g} acc={row['acc_mean']:.4f}+/-{row['acc_std']:.4f} "
-            f"f1={row['f1_mean']:.4f}+/-{row['f1_std']:.4f}",
+            f"[exp1] sigma={sigma:.3g} acc_mean={row['acc_mean']:.4f}",
             flush=True,
         )
 
     if args.layer_sigma == "auto":
         layer_sigma = select_mild_drop_sigma(
             experiment1,
-            baseline_f1=baseline["f1"],
             baseline_acc=baseline["acc"],
             target_drop=args.target_drop,
         )
@@ -601,9 +582,7 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         row["layer"] = layer_idx
         experiment2_rows.append(row)
         print(
-            f"[exp2] layer={layer_idx} sigma={layer_sigma:.3g} "
-            f"acc={row['acc_mean']:.4f}+/-{row['acc_std']:.4f} "
-            f"f1={row['f1_mean']:.4f}+/-{row['f1_std']:.4f}",
+            f"[exp2] layer={layer_idx} sigma={layer_sigma:.3g} acc_mean={row['acc_mean']:.4f}",
             flush=True,
         )
 
@@ -621,7 +600,7 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
             "device": str(device),
             "layers_attr": args.layers_attr,
             "layer_count": layer_count,
-            "metric": "MRPC accuracy and weighted F1",
+            "metric": "MRPC accuracy",
         },
         "baseline": baseline,
         "experiment1": experiment1,
@@ -654,18 +633,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--max-length", type=int, default=128)
     parser.add_argument("--max-samples", type=int, default=None)
-    parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--repeats", type=int, default=50)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--layers-attr", default="bert.encoder.layer")
     parser.add_argument(
         "--sigmas",
         default=None,
-        help="Comma-separated sigma list. Defaults to 1e-10..0.2 with dense points from 1e-4.",
+        help="Comma-separated sigma list. Defaults to 1e-10..10 with dense points from 1e-4.",
     )
     parser.add_argument(
         "--layer-sigma",
-        default="auto",
+        default="0.4",
         help="Fixed sigma for layer-wise experiment, or 'auto' to choose a mild-drop value from experiment 1.",
     )
     parser.add_argument("--target-drop", type=float, default=0.02)
@@ -683,6 +662,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.repeats < 1:
         parser.error("--repeats must be at least 1")
     output_dir = Path(args.output_dir)
+    _require_times_new_roman()
 
     if args.plot_only:
         results = load_results(Path(args.plot_only))
