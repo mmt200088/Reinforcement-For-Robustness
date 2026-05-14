@@ -11,7 +11,6 @@ from scripts.bert_mrpc_layer_noise_experiment import (
     aggregate_metric_trials,
     build_arg_parser,
     build_sigma_grid,
-    choose_plot_font,
     inject_noise_into_layer_output,
     remove_stale_figure_outputs,
     select_mild_drop_sigma,
@@ -141,17 +140,6 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
             remove_stale_figure_outputs(output_dir)
             self.assertFalse(stale.exists())
             self.assertTrue(keep.exists())
-
-    def test_choose_plot_font_prefers_times_new_roman_but_falls_back(self):
-        self.assertEqual(
-            choose_plot_font(["DejaVu Serif", "Liberation Serif"]),
-            "DejaVu Serif",
-        )
-        self.assertEqual(
-            choose_plot_font(["Times New Roman", "DejaVu Serif"]),
-            "Times New Roman",
-        )
-        self.assertEqual(choose_plot_font(["Some Missing Family"]), "serif")
 
     def test_inject_noise_preserves_bert_tuple_structure(self):
         output = ("hidden", "attention")
