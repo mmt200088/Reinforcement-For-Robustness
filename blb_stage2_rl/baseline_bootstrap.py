@@ -689,7 +689,7 @@ _RO_RESCALE_NODE_TO_RL_FIELD: Dict[int, Dict[str, str]] = {
         "ctct_softmax_out_mask_rescale": "softmax_out_mask_rescale_sf",
         "ctct_v_mask_rescale":           "v_mask_rescale_sf",
         "ctct_softmax_v_mask_rescale":   "softmax_v_mask_rescale_sf",
-        "ctct_wo_rescale":               "wo_result_rescale_sf",
+        "ctct_wo_rescale":               "wo_rescale_sf",
     },
     5: {
         "ctct_xmean_over_std": "normalize_rescale_sf",

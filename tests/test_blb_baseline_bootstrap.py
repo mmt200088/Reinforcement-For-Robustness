@@ -6,6 +6,8 @@ import unittest
 from blb_stage2_rl.baseline_bootstrap import (
     BaselineHandoverError,
     RESPONSE_SCHEMA_V1,
+    StaticSkeletonsBaseline,
+    StaticSkeletonsLayerBlock,
     baseline_response_to_cost_stats,
     handover_paths,
     load_static_skeletons_baseline,
@@ -265,6 +267,53 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
             )
         ]
         self.assertGreater(len(inactive_rescale), 0)
+
+    def test_static_skeletons_block4_wo_rescale_uses_rl_field_name(self):
+        from blb_stage2_rl.action_space import describe_action_vector
+
+        baseline = StaticSkeletonsBaseline(
+            dataset="mrpc",
+            num_layers=1,
+            gelu_per_layer=[4],
+            softmax_per_layer=[4],
+            archive_path="<unit-test>",
+        )
+        baseline.per_block_layer[(4, 0)] = StaticSkeletonsLayerBlock(
+            block_idx=4,
+            layer_idx=0,
+            graph_key="block4_mrpc",
+            field_baseline_sfs={"wo_rescale_sf": 31},
+            field_kind_in_ro={"wo_rescale_sf": "rescale"},
+            total_bits=287,
+            fusion_count=0,
+        )
+        baseline.aggregate_total_bits = 287
+        baseline.aggregate_fusion_count = 0
+        baseline.aggregate_valid_block_count = 1
+
+        action_vec, max_sfs, _stats, _diag = static_skeletons_baseline_to_action(
+            baseline,
+            snap_sf_to_noise_table=False,
+        )
+        desc = describe_action_vector(
+            action_vec,
+            max_sfs=max_sfs,
+            num_layers=1,
+            gelu_degree=[4],
+            attn_degree=[4],
+            profile="mrpc",
+        )
+
+        record = next(
+            r for r in desc["records"]
+            if (
+                r.get("layer") == 0
+                and r.get("block_index") == 4
+                and r.get("field") == "wo_rescale_sf"
+            )
+        )
+        self.assertEqual(record["value"], 31)
+        self.assertNotEqual(record["action_index"], 0)
 
     def test_runner_has_no_static_skeletons_baseline_fallback(self):
         runner_path = pathlib.Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "runner.py"
