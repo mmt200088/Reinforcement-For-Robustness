@@ -6,6 +6,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.bert_mrpc_layer_noise_experiment import (
+    accuracy_and_weighted_f1,
     aggregate_metric_trials,
     build_sigma_grid,
     inject_noise_into_layer_output,
@@ -113,6 +114,13 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
         self.assertAlmostEqual(summary["f1_mean"], 0.88)
         self.assertAlmostEqual(summary["acc_std"], 0.02)
         self.assertAlmostEqual(summary["f1_std"], 0.02)
+
+    def test_accuracy_and_f1_uses_weighted_average(self):
+        labels = [0, 0, 0, 0, 1]
+        preds = [0, 0, 1, 1, 1]
+        metrics = accuracy_and_weighted_f1(labels, preds)
+        self.assertAlmostEqual(metrics["acc"], 0.6)
+        self.assertAlmostEqual(metrics["f1"], 19 / 30)
 
     def test_inject_noise_preserves_bert_tuple_structure(self):
         output = ("hidden", "attention")

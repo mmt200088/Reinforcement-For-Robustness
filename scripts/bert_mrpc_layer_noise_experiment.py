@@ -130,19 +130,35 @@ def select_mild_drop_sigma(
     return candidates[0][2]
 
 
-def binary_accuracy_and_f1(labels: Sequence[int], preds: Sequence[int]) -> Dict[str, float]:
+def accuracy_and_weighted_f1(labels: Sequence[int], preds: Sequence[int]) -> Dict[str, float]:
     if len(labels) != len(preds):
         raise ValueError("labels and predictions must have the same length")
     if not labels:
         raise ValueError("cannot compute metrics for an empty prediction set")
 
     correct = sum(1 for label, pred in zip(labels, preds) if int(label) == int(pred))
-    tp = sum(1 for label, pred in zip(labels, preds) if int(label) == 1 and int(pred) == 1)
-    fp = sum(1 for label, pred in zip(labels, preds) if int(label) == 0 and int(pred) == 1)
-    fn = sum(1 for label, pred in zip(labels, preds) if int(label) == 1 and int(pred) == 0)
-    denom = 2 * tp + fp + fn
-    f1 = (2 * tp / denom) if denom else 0.0
-    return {"acc": correct / len(labels), "f1": f1}
+    weighted_f1 = 0.0
+    for class_id in sorted({int(label) for label in labels}):
+        support = sum(1 for label in labels if int(label) == class_id)
+        tp = sum(
+            1
+            for label, pred in zip(labels, preds)
+            if int(label) == class_id and int(pred) == class_id
+        )
+        fp = sum(
+            1
+            for label, pred in zip(labels, preds)
+            if int(label) != class_id and int(pred) == class_id
+        )
+        fn = sum(
+            1
+            for label, pred in zip(labels, preds)
+            if int(label) == class_id and int(pred) != class_id
+        )
+        denom = 2 * tp + fp + fn
+        class_f1 = (2 * tp / denom) if denom else 0.0
+        weighted_f1 += (support / len(labels)) * class_f1
+    return {"acc": correct / len(labels), "f1": weighted_f1}
 
 
 def resolve_dotted_attr(root: Any, dotted_path: str) -> Any:
@@ -290,7 +306,7 @@ def evaluate_condition(
                 preds = outputs.logits.argmax(dim=-1)
                 labels_all.extend(labels.detach().cpu().tolist())
                 preds_all.extend(preds.detach().cpu().tolist())
-    metrics = binary_accuracy_and_f1(labels_all, preds_all)
+    metrics = accuracy_and_weighted_f1(labels_all, preds_all)
     metrics["n_samples"] = float(len(labels_all))
     metrics["elapsed_sec"] = time.time() - started
     return metrics
@@ -650,7 +666,7 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
             "device": str(device),
             "layers_attr": args.layers_attr,
             "layer_count": layer_count,
-            "metric": "MRPC accuracy and binary positive-class F1",
+            "metric": "MRPC accuracy and weighted F1",
         },
         "baseline": baseline,
         "experiment1": experiment1,
