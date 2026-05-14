@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BERT-base MRPC Accuracy Under Layer-Output Gaussian Noise</title>
+  <style>
+    :root {
+      --ink: #111;
+      --muted: #5f6368;
+      --rule: #d7d7d7;
+      --panel: #fff;
+      --soft: #f6f6f6;
+      --orange: #d55e00;
+      --blue: #0072b2;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #fff;
+      font-family: "Times New Roman", Times, serif;
+      line-height: 1.45;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 28px 48px;
+    }
+
+    header {
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 18px;
+      margin-bottom: 24px;
+    }
+
+    h1,
+    h2,
+    th {
+      font-weight: 700;
+    }
+
+    h1 {
+      font-size: 34px;
+      line-height: 1.1;
+      margin: 0 0 10px;
+    }
+
+    h2 {
+      font-size: 22px;
+      margin: 0 0 12px;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin: 24px 0;
+    }
+
+    .metric {
+      border: 1px solid var(--rule);
+      background: var(--panel);
+      padding: 14px 16px;
+      min-height: 92px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 28px;
+      line-height: 1.1;
+      margin-bottom: 6px;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .figure-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+      margin: 18px 0 26px;
+    }
+
+    figure {
+      margin: 0;
+      border: 1px solid var(--rule);
+      background: var(--panel);
+      padding: 14px;
+    }
+
+    figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    figcaption {
+      border-top: 1px solid var(--rule);
+      margin-top: 12px;
+      padding-top: 10px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .tables {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 16px;
+      background: var(--panel);
+      border: 1px solid var(--rule);
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--rule);
+      padding: 8px 10px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    th:first-child,
+    td:first-child {
+      text-align: left;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .note {
+      margin-top: 22px;
+      padding: 14px 16px;
+      background: var(--soft);
+      border-left: 4px solid var(--ink);
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .orange {
+      color: var(--orange);
+    }
+
+    .blue {
+      color: var(--blue);
+    }
+
+    @media (max-width: 900px) {
+      .grid,
+      .figure-grid,
+      .tables {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>BERT-base MRPC Accuracy Under Layer-Output Gaussian Noise</h1>
+      <p class="meta">
+        Model: textattack/bert-base-uncased-MRPC · Split: GLUE MRPC validation ·
+        Device: CUDA · Repeats: 50 · Metric: mean Accuracy (%)
+      </p>
+    </header>
+
+    <section class="grid" aria-label="Key results">
+      <div class="metric">
+        <strong>87.75%</strong>
+        <span>Clean baseline accuracy</span>
+      </div>
+      <div class="metric">
+        <strong>52</strong>
+        <span>Noise magnitudes in the line sweep</span>
+      </div>
+      <div class="metric">
+        <strong>10.0</strong>
+        <span>Maximum line-sweep standard deviation</span>
+      </div>
+      <div class="metric">
+        <strong>0.4</strong>
+        <span>Single-layer bar-chart standard deviation</span>
+      </div>
+    </section>
+
+    <section class="figure-grid" aria-label="Accuracy figures">
+      <figure>
+        <img src="noise_magnitude_accuracy.png" alt="Accuracy versus uniform layer-output Gaussian noise standard deviation">
+        <figcaption>
+          <strong class="orange">Line sweep.</strong>
+          The same Gaussian noise standard deviation is applied to every Transformer layer output.
+          Each point is the mean of 50 runs.
+        </figcaption>
+      </figure>
+
+      <figure>
+        <img src="layer_position_accuracy.png" alt="Accuracy by single noisy Transformer layer at standard deviation 0.4">
+        <figcaption>
+          <strong class="blue">Layer-position sweep.</strong>
+          Gaussian noise with standard deviation 0.4 is applied to one Transformer layer output at a time.
+          Each bar is the mean of 50 runs.
+        </figcaption>
+      </figure>
+    </section>
+
+    <section class="tables" aria-label="Numeric summary">
+      <div>
+        <h2>Selected Noise Magnitudes</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Sigma</th>
+              <th>Accuracy (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1e-10</td><td>87.75</td></tr>
+            <tr><td>1e-3</td><td>87.75</td></tr>
+            <tr><td>0.1</td><td>87.42</td></tr>
+            <tr><td>0.2</td><td>85.70</td></tr>
+            <tr><td>0.4</td><td>41.56</td></tr>
+            <tr><td>0.6</td><td>31.78</td></tr>
+            <tr><td>1.0</td><td>36.76</td></tr>
+            <tr><td>10.0</td><td>49.07</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div>
+        <h2>Single-Layer Noise at Sigma = 0.4</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Layer</th>
+              <th>Accuracy (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>0</td><td>86.81</td></tr>
+            <tr><td>1</td><td>86.85</td></tr>
+            <tr><td>2</td><td>86.68</td></tr>
+            <tr><td>3</td><td>86.62</td></tr>
+            <tr><td>4</td><td>86.96</td></tr>
+            <tr><td>5</td><td>87.15</td></tr>
+            <tr><td>6</td><td>86.67</td></tr>
+            <tr><td>7</td><td>86.18</td></tr>
+            <tr><td>8</td><td>86.83</td></tr>
+            <tr><td>9</td><td>86.64</td></tr>
+            <tr><td>10</td><td>87.15</td></tr>
+            <tr><td>11</td><td>87.60</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="note">
+      Source files: bert_mrpc_layer_noise_results.json, noise_magnitude_results.csv,
+      layer_position_results.csv, noise_magnitude_accuracy.png, and layer_position_accuracy.png.
+      Pulled from git commit 9580d88 after the server-side GPU run.
+    </p>
+  </main>
+</body>
+</html>
