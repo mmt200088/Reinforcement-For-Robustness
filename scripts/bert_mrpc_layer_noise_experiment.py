@@ -361,18 +361,23 @@ def save_results(output_dir: Path, results: Mapping[str, Any]) -> Path:
     return result_path
 
 
-def _require_times_new_roman() -> None:
-    from matplotlib import font_manager
+def choose_plot_font(available_fonts: Optional[Iterable[str]] = None) -> str:
+    """Choose a publication-style serif font that is available on this host."""
+    if available_fonts is None:
+        from matplotlib import font_manager
 
-    has_font = any(font.name == "Times New Roman" for font in font_manager.fontManager.ttflist)
-    if not has_font:
-        raise RuntimeError("Times New Roman font is required for these figures but was not found.")
+        available_fonts = (font.name for font in font_manager.fontManager.ttflist)
+    font_names = set(available_fonts)
+    for family in ("Times New Roman", "DejaVu Serif", "Times", "Liberation Serif"):
+        if family in font_names:
+            return family
+    return "serif"
 
 
 def configure_matplotlib_style(plt: Any) -> None:
-    _require_times_new_roman()
+    font_family = choose_plot_font()
     plt.rcParams.update({
-        "font.family": "Times New Roman",
+        "font.family": font_family,
         "font.size": 8.5,
         "axes.labelsize": 8.5,
         "axes.titlesize": 9,
@@ -662,7 +667,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.repeats < 1:
         parser.error("--repeats must be at least 1")
     output_dir = Path(args.output_dir)
-    _require_times_new_roman()
 
     if args.plot_only:
         results = load_results(Path(args.plot_only))
