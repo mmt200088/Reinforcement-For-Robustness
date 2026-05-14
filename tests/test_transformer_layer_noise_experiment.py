@@ -81,13 +81,14 @@ class FakeModel:
 
 class TransformerLayerNoiseExperimentTests(unittest.TestCase):
     def test_build_sigma_grid_is_sorted_unique_and_includes_endpoints(self):
-        grid = build_sigma_grid(1e-10, 1e-1)
+        grid = build_sigma_grid()
         self.assertEqual(grid[0], 1e-10)
-        self.assertEqual(grid[-1], 1e-1)
+        self.assertEqual(grid[-1], 0.2)
         self.assertEqual(grid, sorted(set(grid)))
         self.assertIn(1e-4, grid)
         self.assertIn(2e-4, grid)
         self.assertIn(9e-4, grid)
+        self.assertNotIn(1.0, grid)
 
     def test_select_mild_drop_sigma_targets_small_f1_drop(self):
         rows = [

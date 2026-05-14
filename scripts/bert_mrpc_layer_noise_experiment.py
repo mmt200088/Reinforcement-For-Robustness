@@ -35,7 +35,7 @@ def _nice_float(value: float) -> float:
 
 def build_sigma_grid(
     start: float = 1e-10,
-    stop: float = 1e-1,
+    stop: float = 2e-1,
     dense_start: float = 1e-4,
 ) -> List[float]:
     """Return a sorted unique sigma grid with dense decade multiples.
@@ -397,66 +397,79 @@ def configure_matplotlib_style(plt: Any) -> None:
     plt.rcParams.update({
         "font.family": "serif",
         "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
-        "font.size": 9,
-        "axes.labelsize": 9,
-        "axes.titlesize": 10,
-        "axes.linewidth": 0.8,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "legend.fontsize": 8,
+        "font.size": 8.5,
+        "axes.labelsize": 8.5,
+        "axes.titlesize": 9,
+        "axes.linewidth": 0.75,
+        "xtick.labelsize": 7.5,
+        "ytick.labelsize": 7.5,
+        "legend.fontsize": 7.5,
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
         "savefig.bbox": "tight",
     })
 
 
-def _score_ylim(values: Iterable[float]) -> List[float]:
+def _score_ylim(values: Iterable[float], *, min_span: float = 0.025) -> List[float]:
     vals = list(values)
-    lo = max(0.0, min(vals) - 0.025)
-    hi = min(1.0, max(vals) + 0.025)
-    if hi - lo < 0.05:
+    lo = max(0.0, min(vals) - 0.006)
+    hi = min(1.0, max(vals) + 0.006)
+    if hi - lo < min_span:
         center = (hi + lo) / 2
-        lo = max(0.0, center - 0.03)
-        hi = min(1.0, center + 0.03)
+        lo = max(0.0, center - min_span / 2)
+        hi = min(1.0, center + min_span / 2)
     return [lo, hi]
 
 
-def plot_noise_magnitude(results: Mapping[str, Any], output_dir: Path) -> None:
+def _finish_paper_axes(ax: Any, metric_values: Sequence[float], baseline_value: float) -> None:
+    from matplotlib.ticker import MultipleLocator
+
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    ax.tick_params(width=0.75, length=3.2)
+    ax.yaxis.set_major_locator(MultipleLocator(0.005))
+    ax.set_ylim(_score_ylim([*metric_values, baseline_value]))
+    ax.grid(True, which="major", axis="y", color="#E4E4E4", linewidth=0.55)
+
+
+def plot_noise_magnitude_metric(results: Mapping[str, Any], output_dir: Path, metric: str) -> None:
     import matplotlib.pyplot as plt
 
     configure_matplotlib_style(plt)
     rows = results["experiment1"]
     baseline = results["baseline"]
     sigmas = [row["sigma"] for row in rows]
-    acc = [row["acc_mean"] for row in rows]
-    acc_std = [row["acc_std"] for row in rows]
-    f1 = [row["f1_mean"] for row in rows]
-    f1_std = [row["f1_std"] for row in rows]
-    colors = {"acc": "#0072B2", "f1": "#D55E00"}
+    values = [row[f"{metric}_mean"] for row in rows]
+    std = [row[f"{metric}_std"] for row in rows]
+    label = "Accuracy" if metric == "acc" else "F1 Score"
+    color = "#0072B2" if metric == "acc" else "#D55E00"
 
-    fig, ax = plt.subplots(figsize=(3.45, 2.45))
+    fig, ax = plt.subplots(figsize=(3.5, 2.35))
     ax.set_xscale("log")
-    ax.plot(sigmas, acc, marker="o", markersize=3.0, linewidth=1.35, color=colors["acc"], label="Accuracy")
-    ax.fill_between(sigmas, [a - s for a, s in zip(acc, acc_std)], [a + s for a, s in zip(acc, acc_std)],
-                    color=colors["acc"], alpha=0.13, linewidth=0)
-    ax.plot(sigmas, f1, marker="s", markersize=3.0, linewidth=1.35, color=colors["f1"], label="F1")
-    ax.fill_between(sigmas, [a - s for a, s in zip(f1, f1_std)], [a + s for a, s in zip(f1, f1_std)],
-                    color=colors["f1"], alpha=0.13, linewidth=0)
-    ax.axhline(baseline["acc"], color=colors["acc"], linestyle="--", linewidth=0.9, alpha=0.55)
-    ax.axhline(baseline["f1"], color=colors["f1"], linestyle="--", linewidth=0.9, alpha=0.55)
+    ax.plot(sigmas, values, marker="o", markersize=2.6, linewidth=1.15, color=color, label=label)
+    ax.fill_between(
+        sigmas,
+        [value - err for value, err in zip(values, std)],
+        [value + err for value, err in zip(values, std)],
+        color=color,
+        alpha=0.14,
+        linewidth=0,
+    )
+    ax.axhline(baseline[metric], color="#666666", linestyle="--", linewidth=0.85, alpha=0.75, label="Clean")
     ax.set_xlabel("Gaussian Noise Std. Dev.")
-    ax.set_ylabel("Score")
-    ax.set_title("Uniform Noise Across Transformer Layers")
-    ax.grid(True, which="major", axis="both", color="#D9D9D9", linewidth=0.55, alpha=0.8)
-    ax.grid(True, which="minor", axis="x", color="#EEEEEE", linewidth=0.35, alpha=0.7)
-    ax.set_ylim(_score_ylim([*acc, *f1, baseline["acc"], baseline["f1"]]))
-    ax.legend(frameon=False, loc="best")
-    fig.savefig(output_dir / "noise_magnitude_sensitivity.pdf")
-    fig.savefig(output_dir / "noise_magnitude_sensitivity.png", dpi=600)
+    ax.set_ylabel(label)
+    ax.set_title(f"{label} vs. Uniform Layer-Output Noise")
+    ax.grid(True, which="major", axis="x", color="#E4E4E4", linewidth=0.5)
+    ax.grid(True, which="minor", axis="x", color="#F0F0F0", linewidth=0.35)
+    _finish_paper_axes(ax, values, baseline[metric])
+    ax.legend(frameon=False, loc="lower left", handlelength=1.6)
+    stem = "noise_magnitude_accuracy" if metric == "acc" else "noise_magnitude_f1"
+    fig.savefig(output_dir / f"{stem}.pdf")
+    fig.savefig(output_dir / f"{stem}.png", dpi=600)
     plt.close(fig)
 
 
-def plot_layer_position(results: Mapping[str, Any], output_dir: Path) -> None:
+def plot_layer_position_metric(results: Mapping[str, Any], output_dir: Path, metric: str) -> None:
     import matplotlib.pyplot as plt
     import numpy as np
 
@@ -465,91 +478,33 @@ def plot_layer_position(results: Mapping[str, Any], output_dir: Path) -> None:
     baseline = results["baseline"]
     layers = [int(row["layer"]) for row in rows]
     x = np.arange(len(layers))
-    width = 0.38
-    acc = np.array([row["acc_mean"] for row in rows])
-    acc_std = np.array([row["acc_std"] for row in rows])
-    f1 = np.array([row["f1_mean"] for row in rows])
-    f1_std = np.array([row["f1_std"] for row in rows])
-    colors = {"acc": "#0072B2", "f1": "#D55E00"}
+    values = np.array([row[f"{metric}_mean"] for row in rows])
+    std = np.array([row[f"{metric}_std"] for row in rows])
+    label = "Accuracy" if metric == "acc" else "F1 Score"
+    color = "#0072B2" if metric == "acc" else "#D55E00"
 
-    fig, ax = plt.subplots(figsize=(3.45, 2.45))
-    ax.bar(x - width / 2, acc, width, yerr=acc_std, capsize=2.0, color=colors["acc"],
-           edgecolor="white", linewidth=0.45, label="Accuracy")
-    ax.bar(x + width / 2, f1, width, yerr=f1_std, capsize=2.0, color=colors["f1"],
-           edgecolor="white", linewidth=0.45, label="F1")
-    ax.axhline(baseline["acc"], color=colors["acc"], linestyle="--", linewidth=0.9, alpha=0.55)
-    ax.axhline(baseline["f1"], color=colors["f1"], linestyle="--", linewidth=0.9, alpha=0.55)
+    fig, ax = plt.subplots(figsize=(3.5, 2.35))
+    ax.bar(x, values, 0.62, yerr=std, capsize=1.8, color=color, edgecolor="white", linewidth=0.35)
+    ax.axhline(baseline[metric], color="#666666", linestyle="--", linewidth=0.85, alpha=0.75, label="Clean")
     ax.set_xlabel("Perturbed Transformer Layer")
-    ax.set_ylabel("Score")
-    ax.set_title(f"Single-Layer Noise Sensitivity (std. dev. = {results['experiment2']['sigma']:.2g})")
+    ax.set_ylabel(label)
+    ax.set_title(f"{label} by Noise Injection Layer (std. dev. = {results['experiment2']['sigma']:.2g})")
     ax.set_xticks(x)
     ax.set_xticklabels([str(layer) for layer in layers])
-    ax.grid(True, axis="y", color="#D9D9D9", linewidth=0.55, alpha=0.8)
-    ax.set_ylim(_score_ylim([*acc.tolist(), *f1.tolist(), baseline["acc"], baseline["f1"]]))
-    ax.legend(frameon=False, loc="best")
-    fig.savefig(output_dir / "layer_position_sensitivity.pdf")
-    fig.savefig(output_dir / "layer_position_sensitivity.png", dpi=600)
-    plt.close(fig)
-
-
-def plot_combined(results: Mapping[str, Any], output_dir: Path) -> None:
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    configure_matplotlib_style(plt)
-    exp1 = results["experiment1"]
-    exp2 = results["experiment2"]["rows"]
-    baseline = results["baseline"]
-    colors = {"acc": "#0072B2", "f1": "#D55E00"}
-
-    fig, axes = plt.subplots(1, 2, figsize=(6.9, 2.55))
-
-    ax = axes[0]
-    sigmas = [row["sigma"] for row in exp1]
-    acc = [row["acc_mean"] for row in exp1]
-    f1 = [row["f1_mean"] for row in exp1]
-    ax.set_xscale("log")
-    ax.plot(sigmas, acc, marker="o", markersize=2.7, linewidth=1.25, color=colors["acc"], label="Accuracy")
-    ax.plot(sigmas, f1, marker="s", markersize=2.7, linewidth=1.25, color=colors["f1"], label="F1")
-    ax.axhline(baseline["acc"], color=colors["acc"], linestyle="--", linewidth=0.8, alpha=0.5)
-    ax.axhline(baseline["f1"], color=colors["f1"], linestyle="--", linewidth=0.8, alpha=0.5)
-    ax.set_xlabel("Gaussian Noise Std. Dev.")
-    ax.set_ylabel("Score")
-    ax.set_title("(a) Uniform layer-output noise")
-    ax.grid(True, which="major", color="#D9D9D9", linewidth=0.55, alpha=0.8)
-    ax.grid(True, which="minor", axis="x", color="#EEEEEE", linewidth=0.35, alpha=0.7)
-    ax.set_ylim(_score_ylim([*acc, *f1, baseline["acc"], baseline["f1"]]))
-    ax.legend(frameon=False, loc="best")
-
-    ax = axes[1]
-    layers = [int(row["layer"]) for row in exp2]
-    x = np.arange(len(layers))
-    width = 0.38
-    acc2 = np.array([row["acc_mean"] for row in exp2])
-    f12 = np.array([row["f1_mean"] for row in exp2])
-    ax.bar(x - width / 2, acc2, width, color=colors["acc"], edgecolor="white", linewidth=0.45, label="Accuracy")
-    ax.bar(x + width / 2, f12, width, color=colors["f1"], edgecolor="white", linewidth=0.45, label="F1")
-    ax.axhline(baseline["acc"], color=colors["acc"], linestyle="--", linewidth=0.8, alpha=0.5)
-    ax.axhline(baseline["f1"], color=colors["f1"], linestyle="--", linewidth=0.8, alpha=0.5)
-    ax.set_xlabel("Perturbed Transformer Layer")
-    ax.set_ylabel("Score")
-    ax.set_title("(b) Single-layer noise position")
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(layer) for layer in layers])
-    ax.grid(True, axis="y", color="#D9D9D9", linewidth=0.55, alpha=0.8)
-    ax.set_ylim(_score_ylim([*acc2.tolist(), *f12.tolist(), baseline["acc"], baseline["f1"]]))
-
-    fig.tight_layout(w_pad=1.5)
-    fig.savefig(output_dir / "bert_mrpc_noise_sensitivity_combined.pdf")
-    fig.savefig(output_dir / "bert_mrpc_noise_sensitivity_combined.png", dpi=600)
+    _finish_paper_axes(ax, values.tolist(), baseline[metric])
+    ax.legend(frameon=False, loc="upper right", handlelength=1.6)
+    stem = "layer_position_accuracy" if metric == "acc" else "layer_position_f1"
+    fig.savefig(output_dir / f"{stem}.pdf")
+    fig.savefig(output_dir / f"{stem}.png", dpi=600)
     plt.close(fig)
 
 
 def render_plots(results: Mapping[str, Any], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    plot_noise_magnitude(results, output_dir)
-    plot_layer_position(results, output_dir)
-    plot_combined(results, output_dir)
+    plot_noise_magnitude_metric(results, output_dir, "acc")
+    plot_noise_magnitude_metric(results, output_dir, "f1")
+    plot_layer_position_metric(results, output_dir, "acc")
+    plot_layer_position_metric(results, output_dir, "f1")
 
 
 def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
@@ -706,7 +661,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--sigmas",
         default=None,
-        help="Comma-separated sigma list. Defaults to 1e-10..1e-1 with dense points from 1e-4.",
+        help="Comma-separated sigma list. Defaults to 1e-10..0.2 with dense points from 1e-4.",
     )
     parser.add_argument(
         "--layer-sigma",
