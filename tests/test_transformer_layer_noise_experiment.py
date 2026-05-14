@@ -10,7 +10,72 @@ from scripts.bert_mrpc_layer_noise_experiment import (
     build_sigma_grid,
     inject_noise_into_layer_output,
     select_mild_drop_sigma,
+    temporary_layer_output_noise,
 )
+
+
+class FakeTensor:
+    def __init__(self, value):
+        self.value = float(value)
+
+    def __add__(self, other):
+        other_value = other.value if isinstance(other, FakeTensor) else other
+        return FakeTensor(self.value + other_value)
+
+    def __mul__(self, other):
+        other_value = other.value if isinstance(other, FakeTensor) else other
+        return FakeTensor(self.value * other_value)
+
+
+class FakeTorch:
+    @staticmethod
+    def randn_like(_tensor):
+        return FakeTensor(10.0)
+
+
+class FakeHandle:
+    def __init__(self, layer, hook):
+        self.layer = layer
+        self.hook = hook
+
+    def remove(self):
+        self.layer.hooks.remove(self.hook)
+
+
+class FakeLayer:
+    def __init__(self):
+        self.hooks = []
+
+    def register_forward_hook(self, hook):
+        self.hooks.append(hook)
+        return FakeHandle(self, hook)
+
+    def __call__(self, hidden):
+        output = (hidden + FakeTensor(1.0), "attention")
+        for hook in list(self.hooks):
+            output = hook(self, (hidden,), output)
+        return output[0]
+
+
+class FakeEncoder:
+    def __init__(self, layers):
+        self.layer = layers
+
+
+class FakeBert:
+    def __init__(self, layers):
+        self.encoder = FakeEncoder(layers)
+
+
+class FakeModel:
+    def __init__(self, layer_count):
+        self.bert = FakeBert([FakeLayer() for _ in range(layer_count)])
+
+    def forward_hidden(self, value):
+        hidden = FakeTensor(value)
+        for layer in self.bert.encoder.layer:
+            hidden = layer(hidden)
+        return hidden.value
 
 
 class TransformerLayerNoiseExperimentTests(unittest.TestCase):
@@ -53,6 +118,33 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
         output = ("hidden", "attention")
         result = inject_noise_into_layer_output(output, lambda x: f"noisy:{x}")
         self.assertEqual(result, ("noisy:hidden", "attention"))
+
+    def test_temporary_layer_output_noise_changes_only_selected_forward_path(self):
+        model = FakeModel(layer_count=3)
+        self.assertEqual(model.forward_hidden(0.0), 3.0)
+
+        with temporary_layer_output_noise(
+            model=model,
+            layer_indices=[1],
+            sigma=0.5,
+            torch_module=FakeTorch,
+            layers_attr="bert.encoder.layer",
+        ):
+            self.assertEqual(model.forward_hidden(0.0), 8.0)
+
+        self.assertEqual(model.forward_hidden(0.0), 3.0)
+
+    def test_temporary_layer_output_noise_can_attach_to_all_layers(self):
+        model = FakeModel(layer_count=3)
+
+        with temporary_layer_output_noise(
+            model=model,
+            layer_indices=[0, 1, 2],
+            sigma=0.5,
+            torch_module=FakeTorch,
+            layers_attr="bert.encoder.layer",
+        ):
+            self.assertEqual(model.forward_hidden(0.0), 18.0)
 
 
 if __name__ == "__main__":
