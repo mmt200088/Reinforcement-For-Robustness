@@ -14,6 +14,7 @@
     h1 { font-size:34px; line-height:1.1; margin:0 0 10px; }
     h2 { font-size:22px; margin:0 0 12px; }
     p { margin:0; }
+    img { display:block; width:100%; height:auto; }
     .meta { color:var(--muted); font-size:16px; }
     .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:24px 0; }
     .metric { border:1px solid var(--rule); padding:14px 16px; min-height:92px; }
@@ -21,7 +22,6 @@
     .metric span { color:var(--muted); font-size:15px; }
     .figure-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; margin:18px 0 26px; }
     figure { margin:0; border:1px solid var(--rule); padding:14px; background:#fff; }
-    svg { display:block; width:100%; height:auto; font-family:"Times New Roman", Times, serif; }
     figcaption { border-top:1px solid var(--rule); margin-top:12px; padding-top:10px; color:var(--muted); font-size:15px; }
     .tables { display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:22px; align-items:start; }
     table { width:100%; border-collapse:collapse; font-size:16px; border:1px solid var(--rule); }
@@ -41,170 +41,29 @@
     </header>
     <section class="grid" aria-label="Key results">
       <div class="metric"><strong>87.7%</strong><span>Clean baseline accuracy</span></div>
-      <div class="metric"><strong>52</strong><span>Noise magnitudes in the line sweep</span></div>
+      <div class="metric"><strong>53</strong><span>Noise magnitudes including sigma = 0</span></div>
       <div class="metric"><strong>10</strong><span>Maximum line-sweep standard deviation</span></div>
       <div class="metric"><strong>0.6</strong><span>Single-layer bar-chart standard deviation</span></div>
     </section>
     <section class="figure-grid" aria-label="Accuracy figures">
       <figure>
-        <svg viewBox="0 0 720 680" role="img" aria-label="Accuracy versus uniform layer-output noise">
-<rect x="0" y="0" width="720" height="680" fill="white"/>
-<text x="360.0" y="36" text-anchor="middle" font-size="26" font-weight="700">Accuracy vs. Uniform Layer-Output Noise</text>
-<line x1="105" y1="584.00" x2="685" y2="584.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="589.00" text-anchor="end" font-size="19" font-weight="700">30.0</text>
-<line x1="105" y1="499.67" x2="685" y2="499.67" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="504.67" text-anchor="end" font-size="19" font-weight="700">40.0</text>
-<line x1="105" y1="415.33" x2="685" y2="415.33" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="420.33" text-anchor="end" font-size="19" font-weight="700">50.0</text>
-<line x1="105" y1="331.00" x2="685" y2="331.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="336.00" text-anchor="end" font-size="19" font-weight="700">60.0</text>
-<line x1="105" y1="246.67" x2="685" y2="246.67" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="251.67" text-anchor="end" font-size="19" font-weight="700">70.0</text>
-<line x1="105" y1="162.33" x2="685" y2="162.33" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="167.33" text-anchor="end" font-size="19" font-weight="700">80.0</text>
-<line x1="105" y1="78.00" x2="685" y2="78.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="83.00" text-anchor="end" font-size="19" font-weight="700">90.0</text>
-<line x1="105.00" y1="78" x2="105.00" y2="584" stroke="#d0d0d0" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="105.00" y="626" text-anchor="middle" font-size="19" font-weight="700">10^-10</text>
-<line x1="178.06" y1="78" x2="178.06" y2="584" stroke="#d0d0d0" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="178.06" y="626" text-anchor="middle" font-size="19" font-weight="700">10^-6</text>
-<line x1="294.17" y1="78" x2="294.17" y2="584" stroke="#d0d0d0" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="294.17" y="626" text-anchor="middle" font-size="19" font-weight="700">10^-3</text>
-<line x1="395.00" y1="78" x2="395.00" y2="584" stroke="#d0d0d0" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="395.00" y="626" text-anchor="middle" font-size="19" font-weight="700">10^-1</text>
-<line x1="579.81" y1="78" x2="579.81" y2="584" stroke="#d0d0d0" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="579.81" y="626" text-anchor="middle" font-size="19" font-weight="700">10^0</text>
-<line x1="685.00" y1="78" x2="685.00" y2="584" stroke="#d0d0d0" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="685.00" y="626" text-anchor="middle" font-size="19" font-weight="700">10^1</text>
-<path d="M105.00,97.02 L111.92,97.02 L127.49,97.02 L149.80,97.02 L178.06,97.02 L211.77,97.02 L250.56,97.02 L263.19,97.02 L270.78,97.02 L276.25,97.02 L280.55,97.02 L284.09,97.02 L287.11,97.02 L289.74,97.02 L292.07,97.06 L294.17,97.02 L308.21,97.55 L316.61,97.18 L322.66,97.64 L327.39,97.68 L331.30,97.47 L334.62,98.13 L337.51,98.13 L340.07,98.05 L342.38,98.26 L357.76,97.76 L366.94,96.81 L373.54,97.14 L378.70,96.81 L382.95,96.19 L386.57,97.60 L389.71,98.55 L392.50,99.12 L395.00,99.79 L479.69,114.30 L509.24,202.72 L527.89,486.52 L541.43,567.96 L552.01,568.99 L560.66,566.72 L567.96,561.64 L574.27,550.51 L579.81,526.99 L614.29,432.70 L633.15,418.89 L646.06,428.19 L655.82,427.24 L663.66,423.64 L670.20,421.24 L675.79,420.71 L680.67,424.68 L685.00,423.15" fill="none" stroke="#d55e00" stroke-width="3.0"/>
-<circle cx="105.00" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="111.92" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="127.49" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="149.80" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="178.06" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="211.77" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="250.56" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="263.19" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="270.78" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="276.25" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="280.55" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="284.09" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="287.11" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="289.74" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="292.07" cy="97.06" r="4.2" fill="#d55e00"/>
-<circle cx="294.17" cy="97.02" r="4.2" fill="#d55e00"/>
-<circle cx="308.21" cy="97.55" r="4.2" fill="#d55e00"/>
-<circle cx="316.61" cy="97.18" r="4.2" fill="#d55e00"/>
-<circle cx="322.66" cy="97.64" r="4.2" fill="#d55e00"/>
-<circle cx="327.39" cy="97.68" r="4.2" fill="#d55e00"/>
-<circle cx="331.30" cy="97.47" r="4.2" fill="#d55e00"/>
-<circle cx="334.62" cy="98.13" r="4.2" fill="#d55e00"/>
-<circle cx="337.51" cy="98.13" r="4.2" fill="#d55e00"/>
-<circle cx="340.07" cy="98.05" r="4.2" fill="#d55e00"/>
-<circle cx="342.38" cy="98.26" r="4.2" fill="#d55e00"/>
-<circle cx="357.76" cy="97.76" r="4.2" fill="#d55e00"/>
-<circle cx="366.94" cy="96.81" r="4.2" fill="#d55e00"/>
-<circle cx="373.54" cy="97.14" r="4.2" fill="#d55e00"/>
-<circle cx="378.70" cy="96.81" r="4.2" fill="#d55e00"/>
-<circle cx="382.95" cy="96.19" r="4.2" fill="#d55e00"/>
-<circle cx="386.57" cy="97.60" r="4.2" fill="#d55e00"/>
-<circle cx="389.71" cy="98.55" r="4.2" fill="#d55e00"/>
-<circle cx="392.50" cy="99.12" r="4.2" fill="#d55e00"/>
-<circle cx="395.00" cy="99.79" r="4.2" fill="#d55e00"/>
-<circle cx="479.69" cy="114.30" r="4.2" fill="#d55e00"/>
-<circle cx="509.24" cy="202.72" r="4.2" fill="#d55e00"/>
-<circle cx="527.89" cy="486.52" r="4.2" fill="#d55e00"/>
-<circle cx="541.43" cy="567.96" r="4.2" fill="#d55e00"/>
-<circle cx="552.01" cy="568.99" r="4.2" fill="#d55e00"/>
-<circle cx="560.66" cy="566.72" r="4.2" fill="#d55e00"/>
-<circle cx="567.96" cy="561.64" r="4.2" fill="#d55e00"/>
-<circle cx="574.27" cy="550.51" r="4.2" fill="#d55e00"/>
-<circle cx="579.81" cy="526.99" r="4.2" fill="#d55e00"/>
-<circle cx="614.29" cy="432.70" r="4.2" fill="#d55e00"/>
-<circle cx="633.15" cy="418.89" r="4.2" fill="#d55e00"/>
-<circle cx="646.06" cy="428.19" r="4.2" fill="#d55e00"/>
-<circle cx="655.82" cy="427.24" r="4.2" fill="#d55e00"/>
-<circle cx="663.66" cy="423.64" r="4.2" fill="#d55e00"/>
-<circle cx="670.20" cy="421.24" r="4.2" fill="#d55e00"/>
-<circle cx="675.79" cy="420.71" r="4.2" fill="#d55e00"/>
-<circle cx="680.67" cy="424.68" r="4.2" fill="#d55e00"/>
-<circle cx="685.00" cy="423.15" r="4.2" fill="#d55e00"/>
-<rect x="105" y="78" width="580" height="506" fill="none" stroke="black" stroke-width="2.2"/>
-<text x="395.0" y="658" text-anchor="middle" font-size="22" font-weight="700">Gaussian Noise Std. Dev.</text>
-<text x="28" y="331.0" transform="rotate(-90 28 331.0)" text-anchor="middle" font-size="22" font-weight="700">Accuracy (%)</text>
-</svg>
-        <figcaption><strong class="orange">Line sweep.</strong> The x-axis uses a piecewise stretched log scale with 10^-1 centered, sparse decade labels, and wider spacing around the degradation region. Each point is the mean of 50 runs.</figcaption>
+        <img src="noise_magnitude_accuracy.png" alt="Accuracy versus uniform layer-output Gaussian noise including zero noise">
+        <figcaption><strong class="orange">Line sweep.</strong> The first x-axis point is sigma = 0, using the clean baseline. The positive-noise ticks are rendered in mathematical superscript format.</figcaption>
       </figure>
       <figure>
-        <svg viewBox="0 0 720 680" role="img" aria-label="Accuracy by noisy transformer layer">
-<rect x="0" y="0" width="720" height="680" fill="white"/>
-<text x="360.0" y="36" text-anchor="middle" font-size="26" font-weight="700">Accuracy by Noise Injection Layer (std. dev. = 0.6)</text>
-<line x1="105" y1="584.00" x2="685" y2="584.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="589.00" text-anchor="end" font-size="19" font-weight="700">78.0</text>
-<line x1="105" y1="538.00" x2="685" y2="538.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="543.00" text-anchor="end" font-size="19" font-weight="700">79.0</text>
-<line x1="105" y1="492.00" x2="685" y2="492.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="497.00" text-anchor="end" font-size="19" font-weight="700">80.0</text>
-<line x1="105" y1="446.00" x2="685" y2="446.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="451.00" text-anchor="end" font-size="19" font-weight="700">81.0</text>
-<line x1="105" y1="400.00" x2="685" y2="400.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="405.00" text-anchor="end" font-size="19" font-weight="700">82.0</text>
-<line x1="105" y1="354.00" x2="685" y2="354.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="359.00" text-anchor="end" font-size="19" font-weight="700">83.0</text>
-<line x1="105" y1="308.00" x2="685" y2="308.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="313.00" text-anchor="end" font-size="19" font-weight="700">84.0</text>
-<line x1="105" y1="262.00" x2="685" y2="262.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="267.00" text-anchor="end" font-size="19" font-weight="700">85.0</text>
-<line x1="105" y1="216.00" x2="685" y2="216.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="221.00" text-anchor="end" font-size="19" font-weight="700">86.0</text>
-<line x1="105" y1="170.00" x2="685" y2="170.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="175.00" text-anchor="end" font-size="19" font-weight="700">87.0</text>
-<line x1="105" y1="124.00" x2="685" y2="124.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="129.00" text-anchor="end" font-size="19" font-weight="700">88.0</text>
-<line x1="105" y1="78.00" x2="685" y2="78.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
-<text x="89" y="83.00" text-anchor="end" font-size="19" font-weight="700">89.0</text>
-<rect x="110.35" y="135.73" width="33.91" height="448.27" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="127.31" y="616" text-anchor="middle" font-size="17" font-weight="700">Clean</text>
-<rect x="154.97" y="531.01" width="33.91" height="52.99" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="171.92" y="616" text-anchor="middle" font-size="19" font-weight="700">0</text>
-<rect x="199.58" y="356.03" width="33.91" height="227.97" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="216.54" y="616" text-anchor="middle" font-size="19" font-weight="700">1</text>
-<rect x="244.20" y="308.00" width="33.91" height="276.00" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="261.15" y="616" text-anchor="middle" font-size="19" font-weight="700">2</text>
-<rect x="288.82" y="269.89" width="33.91" height="314.11" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="305.77" y="616" text-anchor="middle" font-size="19" font-weight="700">3</text>
-<rect x="333.43" y="250.95" width="33.91" height="333.05" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="350.38" y="616" text-anchor="middle" font-size="19" font-weight="700">4</text>
-<rect x="378.05" y="246.67" width="33.91" height="337.33" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="395.00" y="616" text-anchor="middle" font-size="19" font-weight="700">5</text>
-<rect x="422.66" y="348.81" width="33.91" height="235.19" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="439.62" y="616" text-anchor="middle" font-size="19" font-weight="700">6</text>
-<rect x="467.28" y="417.36" width="33.91" height="166.64" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="484.23" y="616" text-anchor="middle" font-size="19" font-weight="700">7</text>
-<rect x="511.89" y="236.97" width="33.91" height="347.03" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="528.85" y="616" text-anchor="middle" font-size="19" font-weight="700">8</text>
-<rect x="556.51" y="229.75" width="33.91" height="354.25" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="573.46" y="616" text-anchor="middle" font-size="19" font-weight="700">9</text>
-<rect x="601.12" y="195.03" width="33.91" height="388.97" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="618.08" y="616" text-anchor="middle" font-size="19" font-weight="700">10</text>
-<rect x="645.74" y="146.77" width="33.91" height="437.23" fill="#0072b2" stroke="black" stroke-width="1.1"/>
-<text x="662.69" y="616" text-anchor="middle" font-size="19" font-weight="700">11</text>
-<rect x="105" y="78" width="580" height="506" fill="none" stroke="black" stroke-width="2.2"/>
-<text x="395.0" y="658" text-anchor="middle" font-size="22" font-weight="700">Perturbed Transformer Layer</text>
-<text x="28" y="331.0" transform="rotate(-90 28 331.0)" text-anchor="middle" font-size="22" font-weight="700">Accuracy (%)</text>
-</svg>
-        <figcaption><strong class="blue">Layer-position sweep.</strong> Clean is the no-noise baseline; bars 0-11 apply Gaussian noise with standard deviation 0.6 to one Transformer layer output at a time. Each bar is the mean of 50 runs.</figcaption>
+        <img src="layer_position_accuracy.png" alt="Accuracy by noisy transformer layer with clean baseline reference line">
+        <figcaption><strong class="blue">Layer-position sweep.</strong> Bars are noisy layers 0-11 only; the clean baseline is shown as the gray horizontal reference line.</figcaption>
       </figure>
     </section>
     <section class="tables" aria-label="Numeric summary">
-      <div><h2>Selected Noise Magnitudes</h2><table><thead><tr><th>Sigma</th><th>Accuracy (%)</th></tr></thead><tbody>
-        <tr><td>1e-10</td><td>87.7</td></tr><tr><td>0.001</td><td>87.7</td></tr><tr><td>0.1</td><td>87.4</td></tr><tr><td>0.2</td><td>85.7</td></tr><tr><td>0.4</td><td>41.6</td></tr><tr><td>0.6</td><td>31.8</td></tr><tr><td>1</td><td>36.8</td></tr><tr><td>10</td><td>49.1</td></tr>
+      <div><h2>Selected Noise Magnitudes</h2><table><thead><tr><th>Sigma</th><th>Accuracy</th></tr></thead><tbody>
+        <tr><td>0 (Clean)</td><td>87.7%</td></tr><tr><td>1e-10</td><td>87.7%</td></tr><tr><td>0.001</td><td>87.7%</td></tr><tr><td>0.1</td><td>87.4%</td></tr><tr><td>0.2</td><td>85.7%</td></tr><tr><td>0.4</td><td>41.6%</td></tr><tr><td>0.6</td><td>31.8%</td></tr><tr><td>1</td><td>36.8%</td></tr><tr><td>10</td><td>49.1%</td></tr>
       </tbody></table></div>
-      <div><h2>Single-Layer Noise at Sigma = 0.6</h2><table><thead><tr><th>Layer</th><th>Accuracy (%)</th></tr></thead><tbody>
-        <tr><td>Clean</td><td>87.7</td></tr><tr><td>0</td><td>79.2</td></tr><tr><td>1</td><td>83.0</td></tr><tr><td>2</td><td>84.0</td></tr><tr><td>3</td><td>84.8</td></tr><tr><td>4</td><td>85.2</td></tr><tr><td>5</td><td>85.3</td></tr><tr><td>6</td><td>83.1</td></tr><tr><td>7</td><td>81.6</td></tr><tr><td>8</td><td>85.5</td></tr><tr><td>9</td><td>85.7</td></tr><tr><td>10</td><td>86.5</td></tr><tr><td>11</td><td>87.5</td></tr>
+      <div><h2>Single-Layer Noise at Sigma = 0.6</h2><table><thead><tr><th>Layer</th><th>Accuracy</th></tr></thead><tbody>
+        <tr><td>Clean line</td><td>87.7%</td></tr><tr><td>0</td><td>79.2%</td></tr><tr><td>1</td><td>83.0%</td></tr><tr><td>2</td><td>84.0%</td></tr><tr><td>3</td><td>84.8%</td></tr><tr><td>4</td><td>85.2%</td></tr><tr><td>5</td><td>85.3%</td></tr><tr><td>6</td><td>83.1%</td></tr><tr><td>7</td><td>81.6%</td></tr><tr><td>8</td><td>85.5%</td></tr><tr><td>9</td><td>85.7%</td></tr><tr><td>10</td><td>86.5%</td></tr><tr><td>11</td><td>87.5%</td></tr>
       </tbody></table></div>
     </section>
-    <p class="note">Source files: bert_mrpc_layer_noise_results.json, noise_magnitude_results.csv, layer_position_results.csv, noise_magnitude_accuracy.png, and layer_position_accuracy.png. Pulled from git commit dca45d5 after the server-side GPU run; this HTML was rendered locally from those mean results only.</p>
+    <p class="note">Source commit: d1cb479. Source files: bert_mrpc_layer_noise_results.json, noise_magnitude_accuracy.png, layer_position_accuracy.png, noise_magnitude_accuracy.pdf, and layer_position_accuracy.pdf. This HTML was generated locally after pulling the server-side GPU results.</p>
   </main>
 </body>
 </html>

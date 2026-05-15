@@ -442,13 +442,13 @@ def log_tick_positions(sigmas: Sequence[float]) -> tuple[List[float], List[str]]
     exps = sorted(set(exps))
     tick_sigmas = [10.0 ** exp for exp in exps]
     tick_positions = stretched_log_positions(tick_sigmas)
-    tick_labels = [rf"$10^{{{exp}}}$" for exp in exps]
+    tick_labels = [rf"$\mathbf{{10}}^{{\mathbf{{{exp}}}}}$" for exp in exps]
     return tick_positions, tick_labels
 
 
 def _add_zero_slot_to_stretched_positions(
     positions: Sequence[float],
-    zero_slot_width: float = 0.08,
+    zero_slot_width: float = 0.12,
 ) -> List[float]:
     adjusted = []
     for position in positions:
@@ -505,15 +505,29 @@ def plot_noise_magnitude_accuracy(results: Mapping[str, Any], output_dir: Path) 
     x_positions, values, tick_positions, tick_labels = noise_magnitude_accuracy_curve(results)
 
     fig, ax = plt.subplots(figsize=(3.0, 3.0))
-    ax.plot(x_positions, values, marker="o", markersize=2.5, linewidth=1.25, color="#D55E00")
+    ax.plot(
+        x_positions,
+        values,
+        marker="o",
+        markersize=2.5,
+        linewidth=1.25,
+        color="#D55E00",
+        clip_on=False,
+    )
     ax.set_xlabel("Gaussian Noise Std. Dev.", fontweight="bold")
     ax.set_ylabel("Accuracy (%)", fontweight="bold")
     ax.set_title("Accuracy vs. Uniform Layer-Output Noise", fontweight="bold")
     ax.set_xticks(tick_positions)
     ax.set_xticklabels(tick_labels)
-    ax.set_xlim(-0.025, 1.025)
+    ax.set_xlim(0.0, 1.025)
     ax.grid(True, which="major", axis="x", color="#D0D0D0", linestyle="--", linewidth=0.55)
     _finish_paper_axes(ax, values)
+    for tick_label in ax.get_xticklabels():
+        tick_label.set_fontfamily("Times New Roman")
+        tick_label.set_fontweight("bold")
+        tick_label.set_rotation(0)
+        tick_label.set_ha("center")
+        tick_label.set_va("top")
     fig.savefig(output_dir / "noise_magnitude_accuracy.pdf")
     fig.savefig(output_dir / "noise_magnitude_accuracy.png", dpi=600)
     plt.close(fig)
