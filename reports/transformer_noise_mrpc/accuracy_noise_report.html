@@ -111,6 +111,13 @@
       height: auto;
     }
 
+    .axis-label {
+      margin-top: 6px;
+      text-align: center;
+      font-size: 17px;
+      font-weight: 700;
+    }
+
     figcaption {
       border-top: 1px solid var(--rule);
       margin-top: 12px;
@@ -209,6 +216,7 @@
     <section class="figure-grid" aria-label="Accuracy figures">
       <figure>
         <img src="noise_magnitude_accuracy.png" alt="Accuracy versus uniform layer-output Gaussian noise standard deviation">
+        <div class="axis-label">Gaussian Noise Std. Dev.</div>
         <figcaption>
           <strong class="orange">Line sweep.</strong>
           The same Gaussian noise standard deviation is applied to every Transformer layer output.
@@ -218,6 +226,7 @@
 
       <figure>
         <img src="layer_position_accuracy.png" alt="Accuracy by single noisy Transformer layer at standard deviation 0.4">
+        <div class="axis-label">Perturbed Transformer Layer</div>
         <figcaption>
           <strong class="blue">Layer-position sweep.</strong>
           Gaussian noise with standard deviation 0.4 is applied to one Transformer layer output at a time.
