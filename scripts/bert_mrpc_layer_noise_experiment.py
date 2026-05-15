@@ -398,8 +398,13 @@ def _score_ylim_percent(values: Iterable[float], *, min_span: float = 3.0) -> Li
     return [lo, hi]
 
 
-def stretched_log_positions(sigmas: Sequence[float], exponent: float = 1.6) -> List[float]:
-    """Map sigma to a convex log-space axis so larger sigmas receive more width."""
+def stretched_log_positions(
+    sigmas: Sequence[float],
+    pivot_sigma: float = 1e-1,
+    left_exponent: float = 1.7,
+    right_exponent: float = 0.65,
+) -> List[float]:
+    """Map sigma to a stretched log axis with 1e-1 centered."""
     if not sigmas:
         return []
     logs = [math.log10(float(sigma)) for sigma in sigmas]
@@ -407,16 +412,33 @@ def stretched_log_positions(sigmas: Sequence[float], exponent: float = 1.6) -> L
     hi = max(logs)
     if hi == lo:
         return [0.0 for _ in logs]
-    return [((value - lo) / (hi - lo)) ** exponent for value in logs]
+    pivot = min(max(math.log10(pivot_sigma), lo), hi)
+    positions = []
+    for value in logs:
+        if value <= pivot:
+            denom = pivot - lo
+            norm = 0.0 if denom == 0 else (value - lo) / denom
+            positions.append(0.5 * (norm ** left_exponent))
+        else:
+            denom = hi - pivot
+            norm = 0.0 if denom == 0 else (value - pivot) / denom
+            positions.append(0.5 + 0.5 * (norm ** right_exponent))
+    return positions
 
 
 def log_tick_positions(sigmas: Sequence[float]) -> tuple[List[float], List[str]]:
     logs = [math.log10(float(sigma)) for sigma in sigmas]
     min_exp = math.ceil(min(logs))
     max_exp = math.floor(max(logs))
-    tick_sigmas = [10.0 ** exp for exp in range(min_exp, max_exp + 1)]
+    preferred_exps = [-10, -6, -3, -1, 0, 1]
+    exps = [exp for exp in preferred_exps if min_exp <= exp <= max_exp]
+    for exp in (min_exp, max_exp):
+        if exp not in exps:
+            exps.append(exp)
+    exps = sorted(set(exps))
+    tick_sigmas = [10.0 ** exp for exp in exps]
     tick_positions = stretched_log_positions(tick_sigmas)
-    tick_labels = [rf"$10^{{{exp}}}$" for exp in range(min_exp, max_exp + 1)]
+    tick_labels = [f"10^{exp}" for exp in exps]
     return tick_positions, tick_labels
 
 
@@ -441,6 +463,8 @@ def _finish_paper_axes(ax: Any, metric_values: Sequence[float]) -> None:
     ax.yaxis.set_major_locator(MultipleLocator(tick_step))
     ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
     ax.grid(True, which="major", axis="y", color="#E0E0E0", linestyle="--", linewidth=0.55)
+    for tick_label in list(ax.get_xticklabels()) + list(ax.get_yticklabels()):
+        tick_label.set_fontweight("bold")
 
 
 def plot_noise_magnitude_accuracy(results: Mapping[str, Any], output_dir: Path) -> None:

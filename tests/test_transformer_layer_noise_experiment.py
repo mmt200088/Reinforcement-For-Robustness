@@ -12,6 +12,7 @@ from scripts.bert_mrpc_layer_noise_experiment import (
     build_arg_parser,
     build_sigma_grid,
     inject_noise_into_layer_output,
+    log_tick_positions,
     remove_stale_figure_outputs,
     select_mild_drop_sigma,
     stretched_log_positions,
@@ -131,11 +132,24 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
         self.assertEqual(args.layer_sigma, "0.6")
         self.assertIsNone(args.sigmas)
 
-    def test_stretched_log_positions_expand_larger_sigmas(self):
-        positions = stretched_log_positions([1e-3, 1e-2, 1e-1, 1.0])
-        gaps = [right - left for left, right in zip(positions, positions[1:])]
-        self.assertGreater(gaps[1], gaps[0])
-        self.assertGreater(gaps[2], gaps[1])
+    def test_stretched_log_positions_center_degradation_pivot(self):
+        sigmas = [1e-10, 1e-6, 1e-3, 1e-1, 1.0, 10.0]
+        positions = stretched_log_positions(sigmas)
+        self.assertAlmostEqual(positions[0], 0.0)
+        self.assertAlmostEqual(positions[3], 0.5)
+        self.assertAlmostEqual(positions[-1], 1.0)
+        self.assertGreater(positions[4] - positions[3], positions[3] - positions[2])
+
+    def test_log_tick_positions_keep_sparse_labels(self):
+        _, labels = log_tick_positions([1e-10, 1e-6, 1e-3, 1e-1, 1.0, 10.0])
+        self.assertEqual(labels, [
+            "10^-10",
+            "10^-6",
+            "10^-3",
+            "10^-1",
+            "10^0",
+            "10^1",
+        ])
 
     def test_remove_stale_figure_outputs_deletes_old_f1_figures(self):
         with tempfile.TemporaryDirectory() as tmp:
