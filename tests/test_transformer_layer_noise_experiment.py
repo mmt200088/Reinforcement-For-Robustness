@@ -14,6 +14,7 @@ from scripts.bert_mrpc_layer_noise_experiment import (
     inject_noise_into_layer_output,
     layer_position_accuracy_bars,
     log_tick_positions,
+    noise_magnitude_accuracy_curve,
     remove_stale_figure_outputs,
     select_mild_drop_sigma,
     stretched_log_positions,
@@ -152,7 +153,23 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
             "10^1",
         ])
 
-    def test_layer_position_accuracy_bars_add_clean_without_renumbering_layers(self):
+    def test_noise_magnitude_accuracy_curve_starts_with_zero_clean_baseline(self):
+        x_positions, values, tick_positions, tick_labels = noise_magnitude_accuracy_curve({
+            "baseline": {"acc": 0.90},
+            "experiment1": [
+                {"sigma": 1e-10, "acc_mean": 0.89},
+                {"sigma": 1e-1, "acc_mean": 0.80},
+                {"sigma": 10.0, "acc_mean": 0.70},
+            ],
+        })
+        self.assertEqual(x_positions[0], 0.0)
+        self.assertGreater(x_positions[1], 0.0)
+        self.assertEqual(values[0], 90.0)
+        self.assertEqual(tick_positions[0], 0.0)
+        self.assertEqual(tick_labels[0], "0")
+        self.assertIn("10^-1", tick_labels)
+
+    def test_layer_position_accuracy_bars_keep_layers_without_clean_group(self):
         labels, values = layer_position_accuracy_bars({
             "baseline": {"acc": 0.90},
             "experiment2": {
@@ -162,8 +179,8 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
                 ],
             },
         })
-        self.assertEqual(labels, ["Clean", "0", "1"])
-        self.assertEqual(values, [90.0, 80.0, 70.0])
+        self.assertEqual(labels, ["0", "1"])
+        self.assertEqual(values, [80.0, 70.0])
 
     def test_remove_stale_figure_outputs_deletes_old_f1_figures(self):
         with tempfile.TemporaryDirectory() as tmp:

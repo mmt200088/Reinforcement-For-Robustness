@@ -442,6 +442,33 @@ def log_tick_positions(sigmas: Sequence[float]) -> tuple[List[float], List[str]]
     return tick_positions, tick_labels
 
 
+def _add_zero_slot_to_stretched_positions(
+    positions: Sequence[float],
+    zero_slot_width: float = 0.08,
+) -> List[float]:
+    adjusted = []
+    for position in positions:
+        if position <= 0.5:
+            adjusted.append(zero_slot_width + (0.5 - zero_slot_width) * (position / 0.5))
+        else:
+            adjusted.append(position)
+    return adjusted
+
+
+def noise_magnitude_accuracy_curve(
+    results: Mapping[str, Any],
+) -> tuple[List[float], List[float], List[float], List[str]]:
+    rows = results["experiment1"]
+    sigmas = [float(row["sigma"]) for row in rows]
+    positive_positions = _add_zero_slot_to_stretched_positions(stretched_log_positions(sigmas))
+    tick_positions, tick_labels = log_tick_positions(sigmas)
+    tick_positions = [0.0] + _add_zero_slot_to_stretched_positions(tick_positions)
+    tick_labels = ["0"] + tick_labels
+    values = [100.0 * float(results["baseline"]["acc"])]
+    values.extend(100.0 * float(row["acc_mean"]) for row in rows)
+    return [0.0] + positive_positions, values, tick_positions, tick_labels
+
+
 def _finish_paper_axes(ax: Any, metric_values: Sequence[float]) -> None:
     from matplotlib.ticker import FormatStrFormatter, MultipleLocator
 
@@ -471,11 +498,7 @@ def plot_noise_magnitude_accuracy(results: Mapping[str, Any], output_dir: Path) 
     import matplotlib.pyplot as plt
 
     configure_matplotlib_style(plt)
-    rows = results["experiment1"]
-    sigmas = [row["sigma"] for row in rows]
-    values = [100.0 * row["acc_mean"] for row in rows]
-    x_positions = stretched_log_positions(sigmas)
-    tick_positions, tick_labels = log_tick_positions(sigmas)
+    x_positions, values, tick_positions, tick_labels = noise_magnitude_accuracy_curve(results)
 
     fig, ax = plt.subplots(figsize=(3.0, 3.0))
     ax.plot(x_positions, values, marker="o", markersize=2.5, linewidth=1.25, color="#D55E00")
@@ -494,9 +517,8 @@ def plot_noise_magnitude_accuracy(results: Mapping[str, Any], output_dir: Path) 
 
 def layer_position_accuracy_bars(results: Mapping[str, Any]) -> tuple[List[str], List[float]]:
     rows = results["experiment2"]["rows"]
-    labels = ["Clean"] + [str(int(row["layer"])) for row in rows]
-    values = [100.0 * float(results["baseline"]["acc"])]
-    values.extend(100.0 * float(row["acc_mean"]) for row in rows)
+    labels = [str(int(row["layer"])) for row in rows]
+    values = [100.0 * float(row["acc_mean"]) for row in rows]
     return labels, values
 
 
@@ -508,16 +530,21 @@ def plot_layer_position_accuracy(results: Mapping[str, Any], output_dir: Path) -
     labels, bar_values = layer_position_accuracy_bars(results)
     x = np.arange(len(labels))
     values = np.array(bar_values)
+    baseline_value = 100.0 * float(results["baseline"]["acc"])
 
     fig, ax = plt.subplots(figsize=(3.0, 3.0))
     ax.bar(x, values, 0.58, color="#0072B2", edgecolor="black", linewidth=0.35)
+    ax.axhline(baseline_value, color="#D55E00", linestyle="--", linewidth=1.0, label="Clean")
     ax.set_xlabel("Perturbed Transformer Layer", fontweight="bold")
     ax.set_ylabel("Accuracy (%)", fontweight="bold")
     ax.set_title(f"Accuracy by Noise Injection Layer (std. dev. = {results['experiment2']['sigma']:.2g})",
                  fontweight="bold")
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
-    _finish_paper_axes(ax, values.tolist())
+    _finish_paper_axes(ax, values.tolist() + [baseline_value])
+    legend = ax.legend(frameon=False, loc="lower right", fontsize=7.0, handlelength=1.5)
+    for text in legend.get_texts():
+        text.set_fontweight("bold")
     fig.savefig(output_dir / "layer_position_accuracy.pdf")
     fig.savefig(output_dir / "layer_position_accuracy.png", dpi=600)
     plt.close(fig)
