@@ -1,7 +1,7 @@
 {
   "baseline": {
     "acc": 0.8774509803921569,
-    "elapsed_sec": 0.6704862117767334,
+    "elapsed_sec": 0.7381224632263184,
     "n_samples": 408
   },
   "experiment1": [
