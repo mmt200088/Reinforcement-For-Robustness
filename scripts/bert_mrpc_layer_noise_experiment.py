@@ -381,6 +381,10 @@ def configure_matplotlib_style(plt: Any) -> None:
         "axes.linewidth": 0.75,
         "xtick.labelsize": 7.5,
         "ytick.labelsize": 7.5,
+        "mathtext.fontset": "custom",
+        "mathtext.rm": "Times New Roman",
+        "mathtext.it": "Times New Roman:italic",
+        "mathtext.bf": "Times New Roman:bold",
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
         "savefig.bbox": "tight",
@@ -438,7 +442,7 @@ def log_tick_positions(sigmas: Sequence[float]) -> tuple[List[float], List[str]]
     exps = sorted(set(exps))
     tick_sigmas = [10.0 ** exp for exp in exps]
     tick_positions = stretched_log_positions(tick_sigmas)
-    tick_labels = [f"10^{exp}" for exp in exps]
+    tick_labels = [rf"$10^{{{exp}}}$" for exp in exps]
     return tick_positions, tick_labels
 
 
@@ -534,7 +538,7 @@ def plot_layer_position_accuracy(results: Mapping[str, Any], output_dir: Path) -
 
     fig, ax = plt.subplots(figsize=(3.0, 3.0))
     ax.bar(x, values, 0.58, color="#0072B2", edgecolor="black", linewidth=0.35)
-    ax.axhline(baseline_value, color="#D55E00", linestyle="--", linewidth=1.0, label="Clean")
+    ax.axhline(baseline_value, color="#7A7A7A", linestyle="--", linewidth=1.0, label="Clean")
     ax.set_xlabel("Perturbed Transformer Layer", fontweight="bold")
     ax.set_ylabel("Accuracy (%)", fontweight="bold")
     ax.set_title(f"Accuracy by Noise Injection Layer (std. dev. = {results['experiment2']['sigma']:.2g})",
@@ -542,7 +546,7 @@ def plot_layer_position_accuracy(results: Mapping[str, Any], output_dir: Path) -
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     _finish_paper_axes(ax, values.tolist() + [baseline_value])
-    legend = ax.legend(frameon=False, loc="lower right", fontsize=7.0, handlelength=1.5)
+    legend = ax.legend(frameon=False, loc="upper right", fontsize=7.0, handlelength=1.5)
     for text in legend.get_texts():
         text.set_fontweight("bold")
     fig.savefig(output_dir / "layer_position_accuracy.pdf")

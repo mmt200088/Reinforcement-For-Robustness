@@ -145,12 +145,12 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
     def test_log_tick_positions_keep_sparse_labels(self):
         _, labels = log_tick_positions([1e-10, 1e-6, 1e-3, 1e-1, 1.0, 10.0])
         self.assertEqual(labels, [
-            "10^-10",
-            "10^-6",
-            "10^-3",
-            "10^-1",
-            "10^0",
-            "10^1",
+            "$10^{-10}$",
+            "$10^{-6}$",
+            "$10^{-3}$",
+            "$10^{-1}$",
+            "$10^{0}$",
+            "$10^{1}$",
         ])
 
     def test_noise_magnitude_accuracy_curve_starts_with_zero_clean_baseline(self):
@@ -167,7 +167,7 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
         self.assertEqual(values[0], 90.0)
         self.assertEqual(tick_positions[0], 0.0)
         self.assertEqual(tick_labels[0], "0")
-        self.assertIn("10^-1", tick_labels)
+        self.assertIn("$10^{-1}$", tick_labels)
 
     def test_layer_position_accuracy_bars_keep_layers_without_clean_group(self):
         labels, values = layer_position_accuracy_bars({
