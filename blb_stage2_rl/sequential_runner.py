@@ -372,6 +372,11 @@ def run_sequential_via_runner(
         load_static_skeletons_baseline,
         static_skeletons_baseline_to_action,
     )
+    from .diagnostics import (
+        EpisodeStats,
+        PPOUpdateStats,
+        RLDiagnosticsRecorder,
+    )
     from .env import BLBStage2Env, BLBStage2EnvConfig
     from .reward import BaselineCostStats, RewardWeights
     from .persistence import write_training_curves, BLBStatusBoard
@@ -380,6 +385,8 @@ def run_sequential_via_runner(
         _selection_float,
         resolve_blb_persistence_dir,
     )
+    from .action_space import action_dims_for_config
+    from .action_io import action_vec_to_slots_list
 
     ev = runner.evaluator
     bullet = "*"
@@ -670,6 +677,65 @@ def run_sequential_via_runner(
     rollout_terminal_window: List[float] = []
     ppo_update_counter = [0]   # mutable closure cell
 
+    # ---------- 6.5) Long-term diagnostics recorder ----------
+    # Writes JSONL / NPZ / Markdown to <blb_progress_dir>/diagnostics/. The
+    # summary.md is regenerated each save_interval and is the entry point for
+    # debugging a paused / finished run.
+    num_action_slots = len(action_dims_for_config(int(ev.total_layers)))
+
+    # slots_view_builder converts a raw RL action_vec into the human-readable
+    # "slot list" form (slot_label + scaling_factor / truncation_bits). The
+    # recorder calls this lazily when writing best_action_vec.json + top_candidates.
+    def _slots_view_builder(vec):
+        return action_vec_to_slots_list(
+            vec,
+            max_sfs=max_sfs,
+            num_layers=int(ev.total_layers),
+            gelu_degree=fixed_gelu,
+            attn_degree=fixed_softmax,
+            profile=str(train_cfg.profile),
+        )
+
+    diag_recorder = RLDiagnosticsRecorder(
+        output_dir=blb_progress_dir,
+        num_layers=int(ev.total_layers),
+        num_action_slots=int(num_action_slots),
+        max_action_levels=6,
+        top_k=20,
+        log_fn=log,
+        slots_view_builder=_slots_view_builder,
+    )
+    # Provide the static_skeletons baseline so top-K rows in the summary
+    # can show *diffs* against it (which slots actually changed vs baseline).
+    try:
+        diag_recorder.set_baseline_action_vec(baseline_action_vec)
+    except Exception as exc:
+        log(f"  [diag][warning] set_baseline_action_vec failed: {exc}")
+    diag_recorder.set_meta({
+        "profile": str(train_cfg.profile),
+        "fixed_label": str(fixed_label),
+        "fixed_source": str(fixed_source),
+        "rl_variant": "blb_v3_sequential",
+        "total_episodes_planned": int(total_episodes_planned),
+        "rollout_size": int(train_cfg.rollout_size),
+        "save_interval": int(train_cfg.save_interval),
+        "ppo_lr": float(train_cfg.ppo.lr),
+        "ppo_clip_range": float(train_cfg.ppo.clip_range),
+        "ppo_ent_coef": float(train_cfg.ppo.ent_coef),
+        "ppo_value_coef": float(train_cfg.ppo.value_coef),
+        "invalid_penalty": float(seq_env_cfg.invalid_penalty),
+        "cost_shaping_coeff": float(seq_env_cfg.cost_shaping_coeff),
+        "fusion_shaping_coeff": float(seq_env_cfg.fusion_shaping_coeff),
+        "early_terminate_on_invalid": bool(seq_env_cfg.early_terminate_on_invalid),
+        "acc_threshold": float(base_env.acc_threshold),
+        "stab_threshold": float(base_env.stab_threshold),
+        "static_skeletons_archive": str(ss_baseline_obj.archive_path),
+    })
+    try:
+        diag_recorder.set_baseline_avg_k(float(baseline.avg_k))
+    except Exception:
+        pass
+
     _seq_log_major_rule(log, "开始 PPO 训练（PPO training start）")
     _seq_log_rounded_box(log, [
         f"总回合：{total_episodes_planned}    "
@@ -811,6 +877,58 @@ def run_sequential_via_runner(
         except Exception:
             pass
 
+        # --- Long-term diagnostics: per-episode JSONL + top-K + heatmap update.
+        # The recorder owns its own try/except internally; we still wrap to keep
+        # training resilient if the dataclass schema ever drifts.
+        try:
+            full_vec_now = (
+                np.asarray(seq_env._pending_full_vec, dtype=np.int64).copy()
+                if getattr(seq_env, "_pending_full_vec", None) is not None
+                else None
+            )
+            diag_recorder.record_episode(
+                episode_stats=EpisodeStats(
+                    episode=int(start_episode + record.episode_idx),
+                    total_reward=float(record.total_reward),
+                    terminal_reward=float(record.terminal_reward),
+                    per_step_sum=float(record.per_step_reward_sum),
+                    valid_steps=int(record.valid_step_count),
+                    invalid_steps=int(record.invalid_steps),
+                    steps_taken=int(record.steps_taken),
+                    total_bits=int(record.total_bits_sum_over_steps),
+                    fusion_count=int(record.fusion_count_sum_over_steps),
+                    first_invalid_step=(
+                        int(record.first_invalid_step)
+                        if record.first_invalid_step is not None else None
+                    ),
+                    first_invalid_block=(
+                        int(record.first_invalid_block)
+                        if record.first_invalid_block is not None else None
+                    ),
+                    first_invalid_layer=(
+                        int(record.first_invalid_layer)
+                        if record.first_invalid_layer is not None else None
+                    ),
+                    early_terminated=bool(record.early_terminated),
+                ),
+                full_action_vec=full_vec_now,
+                is_new_best=bool(is_new_best),
+                best_reward_so_far=float(best_reward),
+            )
+        except Exception as exc:
+            log(f"  [diag][warning] record_episode failed: {exc}")
+        # Flush the heavy artifacts (summary.md / npz / top jsonl) on the same
+        # cadence as the model checkpoint — cheap enough at 200-episode intervals.
+        if (record.episode_idx + 1) % int(train_cfg.save_interval) == 0:
+            try:
+                diag_recorder.flush_periodic()
+                log(
+                    f"  [diag] 诊断摘要已刷新 → "
+                    f"{diag_recorder.summary_md_path}"
+                )
+            except Exception as exc:
+                log(f"  [diag][warning] flush_periodic failed: {exc}")
+
     def _ppo_update_end_callback(
             metrics: Dict[str, float],
             completed_episodes: int,
@@ -842,6 +960,26 @@ def run_sequential_via_runner(
             f"更新序号 update#{ppo_update_counter[0]}  ·  "
             f"PPO 样本数={int(metrics.get('n_samples', 0))}",
         ])
+        # Persist PPO-update diagnostics before clearing the rolling window.
+        try:
+            diag_recorder.record_ppo_update(PPOUpdateStats(
+                update=int(ppo_update_counter[0]),
+                completed_episodes=int(start_episode + completed_episodes),
+                policy_loss=float(metrics.get("policy_loss", 0.0)),
+                value_loss=float(metrics.get("value_loss", 0.0)),
+                entropy=float(metrics.get("entropy", 0.0)),
+                clip_fraction=float(metrics.get("clip_fraction", 0.0)),
+                n_samples=int(metrics.get("n_samples", 0)),
+                window_mean_return=float(avg_ret),
+                window_max_return=float(max_ret),
+                window_min_return=float(min_ret),
+                window_mean_invalid=float(avg_inv),
+                best_reward_so_far=float(best_reward),
+                elapsed_sec=float(time.time() - t_start),
+            ))
+        except Exception as exc:
+            log(f"  [diag][warning] record_ppo_update failed: {exc}")
+
         # clear the rolling window for the next PPO interval
         rollout_avg_window.clear()
         rollout_invalid_window.clear()
@@ -907,6 +1045,22 @@ def run_sequential_via_runner(
             else "训练期最优 best_action vec 尚未产生"
         ),
     ])
+
+    # Final flush of the diagnostics recorder — leaves summary.md in its
+    # final form for post-hoc inspection.
+    try:
+        diag_recorder.finalize()
+        log(f"  {bullet} 诊断目录已完成 → {diag_recorder.output_dir}")
+        log(f"  {bullet} 诊断汇总 → {diag_recorder.summary_md_path}")
+        if best_action_vec is not None:
+            log(
+                f"  {bullet} 手动 final-eval 可调用：\n"
+                f"      bash Paean/run_final_eval.sh "
+                f"--preset mrpc-final-eval-only "
+                f"--action-config {diag_recorder.best_json_path}"
+            )
+    except Exception as exc:
+        log(f"  [diag][warning] finalize failed: {exc}")
 
     # ---------- 8) Training curve PNG/NPZ ----------
     try:

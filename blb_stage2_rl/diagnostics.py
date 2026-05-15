@@ -1,0 +1,823 @@
+"""Long-term RL diagnostic recorder for the BLB Stage-2 sequential PPO loop.
+
+Purpose: every run leaves enough on-disk evidence behind that we can answer
+"what went wrong / what's stalled / where is the policy stuck" *after* a run
+finishes (or crashes mid-way). The recorder writes to
+``<blb_progress_dir>/diagnostics/`` and is append-only for streaming-style
+artifacts (JSONL files) so a ``tail -f`` style monitor works even mid-run.
+
+Files written
+-------------
+* ``episodes.jsonl``        – one JSONL row per episode (reward, valid steps,
+                              first-invalid, cost signals, …)
+* ``ppo_updates.jsonl``     – one JSONL row per PPO update (losses, entropy,
+                              clip fraction, rolling window stats)
+* ``top_candidates.jsonl``  – the top-K best actions seen so far. Rewritten on
+                              every periodic flush; sorted descending by reward.
+* ``first_invalid_counts.json`` – Counter of ``"L<ii>-B<b>"`` → how many
+                              episodes hit their *first* invalid step at that
+                              (layer, block) tile. Identifies persistent
+                              failure points fast.
+* ``action_histogram.npz``  – per-slot action-index count matrix, periodically
+                              flushed. Shape ``(num_slots, max_levels)`` int64.
+                              Reveals "policy collapsed onto action 0 / 5".
+* ``diagnostics_summary.md`` – **human-readable Chinese summary** regenerated
+                              at every periodic flush. **Read this first when
+                              debugging.** Contains training progress, Top-K
+                              table, first-invalid heatmap, recent PPO update
+                              dynamics, and auto-flag warnings.
+* ``best_action_vec.json``  – action_grid-compatible JSON of the current best
+                              action. Written on every new best so the user
+                              can run::
+
+                                bash Paean/run_final_eval.sh \\
+                                    --action-config <progress_dir>/diagnostics/best_action_vec.json
+
+                              to evaluate the in-flight champion without waiting
+                              for the run to finish.
+
+Usage
+-----
+.. code-block:: python
+
+    recorder = RLDiagnosticsRecorder(
+        output_dir=blb_progress_dir,
+        num_layers=12,
+        num_action_slots=len(action_dims_for_config(12)),
+        max_action_levels=6,
+        top_k=20,
+        log_fn=log,
+    )
+    recorder.set_meta({"profile": "mrpc", "fixed_label": "..."})
+
+    # in episode callback:
+    recorder.record_episode(
+        episode_stats=EpisodeStats(...), full_action_vec=..., is_new_best=True,
+        best_reward_so_far=..., baseline_avg_k=...,
+    )
+
+    # in ppo-update callback:
+    recorder.record_ppo_update(PPOUpdateStats(...))
+
+    # every save_interval episodes:
+    recorder.flush_periodic()
+
+    # end of training:
+    recorder.finalize()
+
+Design notes
+------------
+* The recorder owns ZERO knowledge about the launcher / runner / policy
+  internals. Callers pass in plain dataclass payloads. This keeps the recorder
+  testable and the runner integration shallow.
+* All writes are best-effort with try/except: a recorder failure must never
+  abort training.
+* JSONL files are append-only so a crash leaves a tail-able record. The
+  ``.json`` / ``.npz`` / ``.md`` files are atomically rewritten (tmp + rename)
+  on each periodic flush.
+"""
+from __future__ import annotations
+
+import heapq
+import json
+import os
+import time
+from collections import Counter
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Mapping, Optional
+
+import numpy as np
+
+
+@dataclass
+class EpisodeStats:
+    """Per-episode payload persisted to ``episodes.jsonl``.
+
+    Kept narrow on purpose — additional per-step detail goes to other files
+    (e.g. ``top_candidates.jsonl`` carries the action_vec).
+    """
+    episode: int                           # global episode index (post-resume offset already applied)
+    total_reward: float
+    terminal_reward: float
+    per_step_sum: float
+    valid_steps: int
+    invalid_steps: int
+    steps_taken: int
+    total_bits: int
+    fusion_count: int
+    first_invalid_step: Optional[int]
+    first_invalid_block: Optional[int]
+    first_invalid_layer: Optional[int]
+    early_terminated: bool
+    timestamp: float = field(default_factory=time.time)
+
+
+@dataclass
+class PPOUpdateStats:
+    """Per-PPO-update payload persisted to ``ppo_updates.jsonl``."""
+    update: int
+    completed_episodes: int                # cumulative episodes finished
+    policy_loss: float
+    value_loss: float
+    entropy: float
+    clip_fraction: float
+    n_samples: int
+    window_mean_return: float
+    window_max_return: float
+    window_min_return: float
+    window_mean_invalid: float
+    best_reward_so_far: float
+    elapsed_sec: float
+    timestamp: float = field(default_factory=time.time)
+
+
+class RLDiagnosticsRecorder:
+    def __init__(
+            self,
+            *,
+            output_dir: str,
+            num_layers: int,
+            num_action_slots: int,
+            max_action_levels: int = 6,
+            top_k: int = 20,
+            log_fn=None,
+            slots_view_builder=None,
+            schema_version: str = "blb_v3_slots_human_v1",
+            ) -> None:
+        """Long-term diagnostics recorder.
+
+        Args:
+            slots_view_builder: optional callable
+                ``action_vec → list[dict]`` that decodes an action vec into
+                the human-readable slot list (label + scaling_factor /
+                truncation_bits). Injected by the caller so this module
+                stays standalone — typical wiring uses
+                :func:`blb_stage2_rl.action_io.action_vec_to_slots_list`.
+            schema_version: emitted in ``best_action_vec.json`` so future
+                Paean parsers can pick the right reader.
+        """
+        self.output_dir = os.path.join(str(output_dir), "diagnostics")
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.num_layers = int(num_layers)
+        self.num_slots = int(num_action_slots)
+        self.max_levels = max(1, int(max_action_levels))
+        self.top_k = max(1, int(top_k))
+        self.log = log_fn or (lambda _msg: None)
+        self._slots_view_builder = slots_view_builder
+        self.schema_version = str(schema_version)
+
+        self.episodes_path = os.path.join(self.output_dir, "episodes.jsonl")
+        self.ppo_updates_path = os.path.join(self.output_dir, "ppo_updates.jsonl")
+        self.top_path = os.path.join(self.output_dir, "top_candidates.jsonl")
+        self.first_inv_path = os.path.join(self.output_dir, "first_invalid_counts.json")
+        self.action_hist_path = os.path.join(self.output_dir, "action_histogram.npz")
+        self.summary_md_path = os.path.join(self.output_dir, "diagnostics_summary.md")
+        self.best_json_path = os.path.join(self.output_dir, "best_action_vec.json")
+        self.baseline_slots_path = os.path.join(self.output_dir, "baseline_action_vec.json")
+
+        # in-memory accumulators (rebuilt from scratch each run — resume from
+        # the on-disk JSONL is left to post-hoc tooling, kept simple here).
+        self._first_invalid_counts: Counter = Counter()
+        self._action_hist: np.ndarray = np.zeros(
+            (self.num_slots, self.max_levels), dtype=np.int64,
+        )
+        # heap entries: (reward, tiebreaker, payload_dict). min-heap by reward.
+        self._top_candidates: List = []
+        self._next_topcand_id = 0
+        self._last_episode_stats: Optional[EpisodeStats] = None
+        self._all_episode_returns: List[float] = []
+        self._all_invalid_counts: List[int] = []
+        self._all_terminal: List[float] = []
+        self._ppo_history: List[PPOUpdateStats] = []
+        self._t_start = time.time()
+        self._meta: Dict[str, Any] = {}
+        self._baseline_avg_k: Optional[float] = None
+        self._baseline_action_vec: Optional[np.ndarray] = None
+        self._baseline_slots: Optional[List[Dict[str, Any]]] = None
+
+    def set_meta(self, meta: Mapping[str, Any]) -> None:
+        """Stash run-level metadata that will be embedded in best_action_vec.json
+        and the summary header (profile, fixed_label, hyperparams, etc.)."""
+        self._meta = dict(meta or {})
+
+    def set_baseline_avg_k(self, value: float) -> None:
+        try:
+            self._baseline_avg_k = float(value)
+        except Exception:
+            self._baseline_avg_k = None
+
+    def set_baseline_action_vec(self, action_vec) -> None:
+        """Record the all-max / static_skeletons baseline so top-K rows in the
+        summary can show *diffs* against it (which slots changed and by how much)."""
+        try:
+            self._baseline_action_vec = np.asarray(action_vec, dtype=np.int64).copy()
+        except Exception:
+            self._baseline_action_vec = None
+        if self._baseline_action_vec is not None and self._slots_view_builder is not None:
+            try:
+                self._baseline_slots = list(self._slots_view_builder(self._baseline_action_vec))
+                # eagerly dump a copy so it lives even if the run crashes early
+                _atomic_json_dump(self.baseline_slots_path, {
+                    "schema_version": self.schema_version,
+                    "num_layers": int(self.num_layers),
+                    "source": "static_skeletons_baseline",
+                    "meta": dict(self._meta),
+                    "slots": self._baseline_slots,
+                    "action_vec": self._baseline_action_vec.tolist(),
+                })
+            except Exception as exc:
+                self.log(f"  [diag][warning] baseline_action_vec.json write failed: {exc}")
+                self._baseline_slots = None
+
+    # ------------------------------------------------------------------
+    # Recording APIs
+    # ------------------------------------------------------------------
+
+    def record_episode(
+            self,
+            *,
+            episode_stats: EpisodeStats,
+            full_action_vec: Optional[np.ndarray],
+            is_new_best: bool,
+            best_reward_so_far: float,
+            ) -> None:
+        """Append episode JSONL row and update in-memory accumulators."""
+        # 1) append JSONL row
+        try:
+            with open(self.episodes_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(episode_stats.__dict__, ensure_ascii=False, default=str) + "\n")
+        except Exception as exc:
+            self.log(f"  [diag][warning] episodes.jsonl write failed: {exc}")
+
+        # 2) accumulate stats
+        self._all_episode_returns.append(float(episode_stats.total_reward))
+        self._all_invalid_counts.append(int(episode_stats.invalid_steps))
+        self._all_terminal.append(float(episode_stats.terminal_reward))
+        self._last_episode_stats = episode_stats
+
+        # 3) first-invalid counter
+        if (
+            episode_stats.first_invalid_layer is not None
+            and episode_stats.first_invalid_block is not None
+        ):
+            key = (
+                f"L{int(episode_stats.first_invalid_layer):02d}"
+                f"-B{int(episode_stats.first_invalid_block)}"
+            )
+            self._first_invalid_counts[key] += 1
+
+        # 4) action histogram (per-slot index counts)
+        if full_action_vec is not None:
+            arr = np.asarray(full_action_vec, dtype=int).reshape(-1)
+            n = min(arr.size, self.num_slots)
+            for slot_idx in range(n):
+                a = int(arr[slot_idx])
+                if 0 <= a < self.max_levels:
+                    self._action_hist[slot_idx, a] += 1
+
+        # 5) top-K candidates
+        if full_action_vec is not None:
+            payload = {
+                "episode": int(episode_stats.episode),
+                "total_reward": float(episode_stats.total_reward),
+                "terminal_reward": float(episode_stats.terminal_reward),
+                "per_step_sum": float(episode_stats.per_step_sum),
+                "valid_steps": int(episode_stats.valid_steps),
+                "invalid_steps": int(episode_stats.invalid_steps),
+                "total_bits": int(episode_stats.total_bits),
+                "fusion_count": int(episode_stats.fusion_count),
+                "action_vec": np.asarray(full_action_vec, dtype=int).tolist(),
+            }
+            entry = (
+                float(episode_stats.total_reward),
+                self._next_topcand_id,
+                payload,
+            )
+            self._next_topcand_id += 1
+            if len(self._top_candidates) < self.top_k:
+                heapq.heappush(self._top_candidates, entry)
+            elif entry[0] > self._top_candidates[0][0]:
+                heapq.heapreplace(self._top_candidates, entry)
+
+        # 6) on new best, persist best_action_vec.json in a *human-readable*
+        # format: every slot listed with its model location + the actual
+        # scaling_factor / truncation_bits value. The flat ``action_vec`` is
+        # kept as a fallback field so Paean's old reader keeps working.
+        if is_new_best and full_action_vec is not None:
+            try:
+                vec_int = np.asarray(full_action_vec, dtype=int)
+                slots_view: Optional[List[Dict[str, Any]]] = None
+                if self._slots_view_builder is not None:
+                    try:
+                        slots_view = list(self._slots_view_builder(vec_int))
+                    except Exception as exc:
+                        self.log(f"  [diag][warning] slots_view_builder failed: {exc}")
+                        slots_view = None
+                diff_vs_baseline = self._diff_against_baseline(slots_view)
+                payload = {
+                    "schema_version": self.schema_version,
+                    "num_layers": int(self.num_layers),
+                    "source": "blb_v3_sequential_runtime_best",
+                    "episode": int(episode_stats.episode),
+                    "total_reward": float(episode_stats.total_reward),
+                    "terminal_reward": float(episode_stats.terminal_reward),
+                    "valid_steps": int(episode_stats.valid_steps),
+                    "invalid_steps": int(episode_stats.invalid_steps),
+                    "best_reward_so_far": float(best_reward_so_far),
+                    "wall_time_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "meta": dict(self._meta),
+                    # Human view (primary)
+                    "slots": slots_view,
+                    "diff_vs_baseline": diff_vs_baseline,
+                    # Machine view (Paean fallback, kept for back-compat)
+                    "action_vec": vec_int.tolist(),
+                    "decode_rules": {
+                        "scaling_factor_kinds": "F W M S R",
+                        "truncation_kind": "K",
+                        "note": (
+                            "SF slots: select 'scaling_factor' (snapped to noise table). "
+                            "K slots: select 'truncation_bits' ∈ K_LEVELS. "
+                            "Rescale (R) slots: scaling_factor=null disables that rescale point."
+                        ),
+                    },
+                }
+                _atomic_json_dump(self.best_json_path, payload)
+            except Exception as exc:
+                self.log(f"  [diag][warning] best_action_vec.json write failed: {exc}")
+
+    def _diff_against_baseline(
+            self,
+            slots_view: Optional[List[Dict[str, Any]]],
+            ) -> List[Dict[str, Any]]:
+        """For each slot whose value differs from the baseline, emit a diff row.
+
+        Diff entries:
+          ``{"label": "L05.B3.K", "baseline": 13, "best": 10, "delta": -3, "kind": "K"}``
+
+        If no baseline has been set, returns ``[]``.
+        """
+        if slots_view is None or self._baseline_slots is None:
+            return []
+        base_by_label: Dict[str, Dict[str, Any]] = {
+            row["label"]: row for row in self._baseline_slots
+        }
+        diff: List[Dict[str, Any]] = []
+        for row in slots_view:
+            label = row.get("label", "")
+            base = base_by_label.get(label)
+            if base is None:
+                continue
+            kind = str(row.get("kind", ""))
+            if kind == "K":
+                a = row.get("truncation_bits")
+                b = base.get("truncation_bits")
+                if a is not None and b is not None and int(a) != int(b):
+                    diff.append({
+                        "label": label, "kind": kind,
+                        "baseline_truncation_bits": int(b),
+                        "best_truncation_bits": int(a),
+                        "delta": int(a) - int(b),
+                    })
+            else:
+                a = row.get("scaling_factor")
+                b = base.get("scaling_factor")
+                # treat None as "off" — comparing None vs int counts as a change.
+                if (a is None) != (b is None) or (
+                    a is not None and b is not None and int(a) != int(b)
+                ):
+                    diff.append({
+                        "label": label, "kind": kind,
+                        "baseline_scaling_factor": (None if b is None else int(b)),
+                        "best_scaling_factor": (None if a is None else int(a)),
+                        "delta": (
+                            None
+                            if (a is None or b is None)
+                            else int(a) - int(b)
+                        ),
+                    })
+        return diff
+
+    def record_ppo_update(self, stats: PPOUpdateStats) -> None:
+        """Append PPO update JSONL row."""
+        try:
+            with open(self.ppo_updates_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(stats.__dict__, ensure_ascii=False, default=str) + "\n")
+        except Exception as exc:
+            self.log(f"  [diag][warning] ppo_updates.jsonl write failed: {exc}")
+        self._ppo_history.append(stats)
+
+    def flush_periodic(self) -> None:
+        """Flush action histogram + first-invalid counts + top candidates +
+        regenerate summary.md. Call at ``save_interval`` cadence (default 200
+        episodes) — cheap enough but not free."""
+        try:
+            np.savez(self.action_hist_path, counts=self._action_hist)
+        except Exception as exc:
+            self.log(f"  [diag][warning] action_histogram.npz write failed: {exc}")
+        try:
+            _atomic_json_dump(self.first_inv_path, dict(self._first_invalid_counts))
+        except Exception as exc:
+            self.log(f"  [diag][warning] first_invalid_counts.json write failed: {exc}")
+        try:
+            tmp = self.top_path + ".tmp"
+            sorted_top = sorted(self._top_candidates, key=lambda e: -e[0])
+            with open(tmp, "w", encoding="utf-8") as f:
+                for rank, entry in enumerate(sorted_top, start=1):
+                    out_row = dict(entry[2])
+                    # Augment top-K rows with a human slots view (best-effort).
+                    if self._slots_view_builder is not None and "action_vec" in out_row:
+                        try:
+                            slots_view = list(self._slots_view_builder(np.asarray(
+                                out_row["action_vec"], dtype=int,
+                            )))
+                            out_row["slots"] = slots_view
+                            out_row["diff_vs_baseline"] = self._diff_against_baseline(slots_view)
+                        except Exception:
+                            pass
+                    out_row["rank"] = int(rank)
+                    f.write(json.dumps(out_row, ensure_ascii=False) + "\n")
+            os.replace(tmp, self.top_path)
+        except Exception as exc:
+            self.log(f"  [diag][warning] top_candidates.jsonl write failed: {exc}")
+        try:
+            self._write_summary_md()
+        except Exception as exc:
+            self.log(f"  [diag][warning] diagnostics_summary.md write failed: {exc}")
+
+    def finalize(self) -> None:
+        """Flush + leave behind the summary in its final form."""
+        self.flush_periodic()
+
+    # ------------------------------------------------------------------
+    # Summary.md writer
+    # ------------------------------------------------------------------
+
+    def _write_summary_md(self) -> None:
+        last = self._last_episode_stats
+        if last is None:
+            return
+        elapsed = time.time() - self._t_start
+        h, rem = divmod(int(elapsed), 3600)
+        m, s = divmod(rem, 60)
+        elapsed_str = f"{h}h{m:02d}m{s:02d}s" if h else f"{m}m{s:02d}s"
+
+        lines: List[str] = []
+        lines.append(
+            f"# BLB Stage-2 Sequential RL · 诊断汇总（diagnostics @ episode={last.episode + 1}）"
+        )
+        lines.append("")
+        lines.append(
+            f"_更新时间: {time.strftime('%Y-%m-%d %H:%M:%S')}_  ·  "
+            f"累计用时: **{elapsed_str}**"
+        )
+        if self._meta:
+            lines.append("")
+            lines.append("**Run meta**：")
+            for k, v in self._meta.items():
+                lines.append(f"- `{k}` = `{v}`")
+        lines.append("")
+
+        # 1. 训练进度
+        lines.append("## 1. 训练进度（training progress）")
+        lines.append("")
+        n_ep = len(self._all_episode_returns)
+        if n_ep == 0:
+            lines.append("_no episodes recorded yet._")
+            self._dump(lines)
+            return
+        last50 = self._all_episode_returns[-50:]
+        last50_inv = self._all_invalid_counts[-50:]
+        last50_term = self._all_terminal[-50:]
+        best_so_far = max(self._all_episode_returns)
+        worst_so_far = min(self._all_episode_returns)
+        lines.append(f"- 已完成回合数: **{n_ep}**")
+        lines.append(
+            f"- 最近 50 回合 mean return: **{np.mean(last50):+.4f}** "
+            f"(min={np.min(last50):+.4f}, max={np.max(last50):+.4f})"
+        )
+        lines.append(
+            f"- 最近 50 回合 mean terminal reward: **{np.mean(last50_term):+.4f}**"
+        )
+        lines.append(
+            f"- 最近 50 回合 mean invalid 子步数: **{np.mean(last50_inv):.2f}** / 59"
+        )
+        lines.append(f"- 训练期 best reward: **{best_so_far:+.4f}**")
+        lines.append(f"- 训练期 worst reward: **{worst_so_far:+.4f}**")
+        lines.append(f"- PPO 更新次数: **{len(self._ppo_history)}**")
+        if self._baseline_avg_k is not None:
+            lines.append(f"- baseline avg_k (per-block 加权): **{self._baseline_avg_k:.3f}**")
+        lines.append("")
+
+        # 2. Top-K candidates
+        lines.append(f"## 2. 训练期 Top-{self.top_k} candidates")
+        lines.append("")
+        lines.append(
+            "**说明**：按 total_reward 排序。每条候选的完整 SF / K 配置（按槽位标签）见 "
+            "`top_candidates.jsonl` 的 `slots` 字段；下面摘要表只列指标。"
+        )
+        lines.append("")
+        lines.append(
+            "| Rank | Episode | total_reward | terminal | per_step_sum | valid | invalid | total_bits | fusion |"
+        )
+        lines.append(
+            "|-----:|--------:|-------------:|---------:|-------------:|------:|--------:|-----------:|-------:|"
+        )
+        topk_sorted = sorted(self._top_candidates, key=lambda e: -e[0])
+        for rank, entry in enumerate(topk_sorted, start=1):
+            p = entry[2]
+            lines.append(
+                f"| {rank} | {p['episode']} | {p['total_reward']:+.4f} | "
+                f"{p['terminal_reward']:+.4f} | {p['per_step_sum']:+.4f} | "
+                f"{p['valid_steps']} | {p['invalid_steps']} | "
+                f"{p['total_bits']} | {p['fusion_count']} |"
+            )
+        lines.append("")
+
+        # 2.1 Best vs baseline — slot-level diff (the actionable view)
+        best_entry = topk_sorted[0] if topk_sorted else None
+        if (
+            best_entry is not None
+            and self._slots_view_builder is not None
+            and self._baseline_slots is not None
+            and "action_vec" in best_entry[2]
+        ):
+            try:
+                best_slots = list(self._slots_view_builder(np.asarray(
+                    best_entry[2]["action_vec"], dtype=int,
+                )))
+                diff = self._diff_against_baseline(best_slots)
+                lines.append("### 2.1 Best vs baseline 槽位 diff（哪些槽变了，变了多少）")
+                lines.append("")
+                if not diff:
+                    lines.append("_best action 与 baseline 完全相同（warmstart 还没动）。_")
+                else:
+                    # Separate SF diffs from K diffs for readability.
+                    sf_diffs = [d for d in diff if d.get("kind") != "K"]
+                    k_diffs = [d for d in diff if d.get("kind") == "K"]
+                    lines.append(
+                        f"_共 {len(diff)} 个槽与 baseline 不同_"
+                        f"（{len(sf_diffs)} SF + {len(k_diffs)} K）"
+                    )
+                    lines.append("")
+                    if k_diffs:
+                        lines.append("**Truncation K diffs**：")
+                        lines.append("")
+                        lines.append("| Slot | Baseline K | Best K | Δ |")
+                        lines.append("|:-----|----------:|------:|--:|")
+                        for d in sorted(k_diffs, key=lambda r: r["label"]):
+                            lines.append(
+                                f"| `{d['label']}` | {d['baseline_truncation_bits']} | "
+                                f"{d['best_truncation_bits']} | {d['delta']:+d} |"
+                            )
+                        lines.append("")
+                    if sf_diffs:
+                        lines.append("**Scaling-factor diffs**（前 20 条按 |Δ| 降序）：")
+                        lines.append("")
+                        lines.append("| Slot | Kind | Baseline SF | Best SF | Δ |")
+                        lines.append("|:-----|:----:|------------:|--------:|--:|")
+                        def _abs_delta(r):
+                            d_ = r.get("delta")
+                            return -1 if d_ is None else abs(int(d_))
+                        for d in sorted(sf_diffs, key=_abs_delta, reverse=True)[:20]:
+                            b_ = d.get("baseline_scaling_factor")
+                            a_ = d.get("best_scaling_factor")
+                            delta_s = "off→on" if b_ is None else (
+                                "on→off" if a_ is None else f"{int(d['delta']):+d}"
+                            )
+                            lines.append(
+                                f"| `{d['label']}` | {d['kind']} | "
+                                f"{'off' if b_ is None else b_} | "
+                                f"{'off' if a_ is None else a_} | {delta_s} |"
+                            )
+                        lines.append("")
+                    lines.append(
+                        "完整 diff 在 `best_action_vec.json` 的 `diff_vs_baseline` 字段。"
+                    )
+                lines.append("")
+            except Exception as exc:
+                self.log(f"  [diag][warning] best/baseline diff section failed: {exc}")
+
+        # 3. first-invalid heatmap
+        lines.append("## 3. First-invalid 频次（哪些 (layer, block) 最先翻车）")
+        lines.append("")
+        if not self._first_invalid_counts:
+            lines.append("_暂无 invalid 记录（所有 episode 完整通过）。_")
+        else:
+            top_inv = self._first_invalid_counts.most_common(15)
+            total_invalid_eps = sum(self._first_invalid_counts.values())
+            invalid_rate = total_invalid_eps / max(n_ep, 1) * 100
+            lines.append(
+                f"_包含至少一个 invalid 步的 episode 数：**{total_invalid_eps}** "
+                f"({invalid_rate:.1f}% 的总回合)_"
+            )
+            lines.append("")
+            lines.append("| Rank | (L, B) | 频次 | 占 invalid 比 |")
+            lines.append("|-----:|:------:|----:|-------------:|")
+            for rank, (key, count) in enumerate(top_inv, start=1):
+                lines.append(
+                    f"| {rank} | {key} | {count} | "
+                    f"{count / max(total_invalid_eps, 1) * 100:.1f}% |"
+                )
+        lines.append("")
+
+        # 4. PPO learning dynamics
+        lines.append("## 4. PPO 学习动态（最近 10 次更新）")
+        lines.append("")
+        if self._ppo_history:
+            recent = self._ppo_history[-10:]
+            lines.append(
+                "| Update | Eps | policy_loss | value_loss | entropy | clip_frac "
+                "| win_mean_ret | win_mean_inv |"
+            )
+            lines.append(
+                "|------:|----:|------------:|-----------:|--------:|----------:"
+                "|-------------:|-------------:|"
+            )
+            for u in recent:
+                lines.append(
+                    f"| {u.update} | {u.completed_episodes} | {u.policy_loss:+.4f} | "
+                    f"{u.value_loss:+.4f} | {u.entropy:+.4f} | {u.clip_fraction:.3f} | "
+                    f"{u.window_mean_return:+.4f} | {u.window_mean_invalid:.2f} |"
+                )
+            if len(self._ppo_history) >= 2:
+                ent0 = self._ppo_history[0].entropy
+                ent1 = self._ppo_history[-1].entropy
+                trend = "下降（policy 在收敛）" if ent1 < ent0 else "上升（policy 在分散）"
+                lines.append("")
+                lines.append(
+                    f"_Entropy 趋势：{ent0:+.4f} → {ent1:+.4f}（{trend}）_"
+                )
+        else:
+            lines.append("_暂无 PPO 更新（episode 数 < rollout_size）_")
+        lines.append("")
+
+        # 5. Action histogram quick overview
+        lines.append("## 5. 动作分布概览（哪些 slot 已经在按 baseline 取最大档）")
+        lines.append("")
+        hist = self._action_hist
+        n_samples_per_slot = max(int(hist.sum(axis=1).max()), 1)
+        collapsed_slots = []
+        spread_slots = []
+        for slot_idx in range(self.num_slots):
+            row = hist[slot_idx]
+            total = int(row.sum())
+            if total == 0:
+                continue
+            max_idx = int(np.argmax(row))
+            max_share = float(row[max_idx]) / total
+            if max_share > 0.85:
+                collapsed_slots.append((slot_idx, max_idx, max_share, total))
+            else:
+                # entropy proxy
+                p = row[row > 0].astype(np.float64) / total
+                ent = float(-(p * np.log(p + 1e-12)).sum())
+                spread_slots.append((slot_idx, ent, total))
+        lines.append(
+            f"- **已收敛 slot**（top-1 占比 > 85%）：**{len(collapsed_slots)}** / {self.num_slots}"
+        )
+        lines.append(
+            f"- **未收敛 slot**：**{len(spread_slots)}** / {self.num_slots}"
+        )
+        if collapsed_slots and len(self._ppo_history) >= 5:
+            sample = collapsed_slots[:8]
+            lines.append("")
+            lines.append("已收敛 slot 示例（前 8 个）：")
+            for slot_idx, max_idx, share, _ in sample:
+                lines.append(
+                    f"  - slot[{slot_idx:03d}] → action_index={max_idx} "
+                    f"（占比 {share*100:.1f}%）"
+                )
+        if spread_slots and len(self._ppo_history) >= 5:
+            spread_slots.sort(key=lambda x: -x[1])
+            sample = spread_slots[:8]
+            lines.append("")
+            lines.append("最分散 slot 示例（前 8 个）：")
+            for slot_idx, ent, _ in sample:
+                lines.append(
+                    f"  - slot[{slot_idx:03d}] entropy={ent:.3f} "
+                    f"(uniform≈{np.log(self.max_levels):.3f})"
+                )
+        lines.append("")
+
+        # 6. auto-flags
+        lines.append("## 6. 自动诊断（auto-flags）")
+        lines.append("")
+        flags: List[str] = []
+        if n_ep >= 20:
+            mean_last20 = float(np.mean(self._all_episode_returns[-20:]))
+            mean_first20 = float(np.mean(self._all_episode_returns[:20]))
+            if mean_last20 < mean_first20 - 0.05:
+                flags.append(
+                    f"⚠ **学习退化**：最近 20 回合平均回报 {mean_last20:+.4f} 低于前 "
+                    f"20 回合 {mean_first20:+.4f}（Δ={mean_last20 - mean_first20:+.4f}）。"
+                    "建议：降低 lr / 增加 ent_coef / 检查 invalid_penalty 是否过强。"
+                )
+            elif (
+                abs(mean_last20 - mean_first20) < 0.05
+                and n_ep > 200
+                and len(self._ppo_history) > 5
+            ):
+                flags.append(
+                    f"⚠ **训练停滞**：训练 {n_ep} 回合后回报变化 "
+                    f"Δ={mean_last20 - mean_first20:+.4f}。"
+                    "建议：检查 reward shaping 是否被 invalid_penalty dominat；"
+                    "尝试提高 lr 或减小 invalid_penalty。"
+                )
+        if last50 and float(np.mean(last50_inv)) > 30:
+            flags.append(
+                f"⚠ **invalid 子步偏多**：最近 50 回合 mean invalid="
+                f"{np.mean(last50_inv):.1f}/59 (>30)。"
+                "建议：检查 stage1 GELU/Softmax degree 是否过低、或 max_sfs 表损坏。"
+            )
+        if self._first_invalid_counts:
+            top1 = self._first_invalid_counts.most_common(1)[0]
+            total = sum(self._first_invalid_counts.values())
+            if top1[1] > total * 0.3 and total > 30:
+                key = top1[0]
+                # extract LL and B
+                try:
+                    layer = int(key[1:3])
+                    block = int(key[-1])
+                except Exception:
+                    layer = -1
+                    block = -1
+                flags.append(
+                    f"⚠ **first-invalid 集中**：{top1[1] / max(total, 1) * 100:.0f}% "
+                    f"的 invalid 都首先发生在 {key}。"
+                    f"建议：查 stage1_degree[{layer}] / max_sfs 表对应 block {block} 的项。"
+                )
+        if self._ppo_history and len(self._ppo_history) >= 5:
+            recent_ent = float(np.mean([u.entropy for u in self._ppo_history[-3:]]))
+            if recent_ent < 0.1:
+                flags.append(
+                    f"⚠ **熵过低**：最近 3 次 PPO 更新平均 entropy={recent_ent:.3f} "
+                    "(< 0.1)。policy 已经几乎确定性输出，可能过早收敛 — "
+                    "增大 ent_coef 或 clip_range。"
+                )
+            recent_clip = float(np.mean([u.clip_fraction for u in self._ppo_history[-3:]]))
+            if recent_clip > 0.40:
+                flags.append(
+                    f"⚠ **clip_fraction 偏高**：最近 3 次 PPO clip_frac="
+                    f"{recent_clip:.2f}（>0.40）。lr 可能过大，"
+                    "建议降低 lr 一档。"
+                )
+        # uniform-collapse check
+        if n_ep > 200 and self._action_hist.sum() > 0:
+            collapsed_pct = len(collapsed_slots) / max(self.num_slots, 1)
+            if collapsed_pct > 0.95 and best_so_far < 0:
+                flags.append(
+                    f"⚠ **policy collapse**：{collapsed_pct*100:.0f}% 的 slot 已经收敛，"
+                    f"但 best_reward 仍为负 ({best_so_far:+.4f})。"
+                    "policy 可能锁死在差解；考虑重置或加大 ent_coef。"
+                )
+        if not flags:
+            flags.append("✓ 暂无异常。")
+        for fl in flags:
+            lines.append(f"- {fl}")
+        lines.append("")
+
+        # 7. file index
+        lines.append("## 7. 原始数据文件（machine-readable）")
+        lines.append("")
+        lines.append("| 文件 | 内容 |")
+        lines.append("|------|------|")
+        lines.append("| `episodes.jsonl` | 完整 per-episode 记录（append-only） |")
+        lines.append("| `ppo_updates.jsonl` | 完整 per-PPO-update 记录（append-only） |")
+        lines.append(f"| `top_candidates.jsonl` | Top-{self.top_k} 训练期 best：含每条候选的完整 `slots` 列表（人类可读） |")
+        lines.append("| `first_invalid_counts.json` | (L, B) → 首次 invalid 计数 |")
+        lines.append("| `action_histogram.npz` | (num_slots, max_levels) 频次矩阵 |")
+        lines.append("| `baseline_action_vec.json` | static_skeletons baseline 的完整 `slots` 视图（参照系） |")
+        lines.append("| `best_action_vec.json` | **训练期最优**：`slots` 列表（按 SF/K 选）+ `action_vec` 兜底字段。**可直接喂给 `Paean/run_final_eval.sh --action-config`** |")
+        lines.append("")
+        lines.append(
+            "**重跑 final eval 的最简命令**（无需等训练结束）："
+        )
+        lines.append("")
+        lines.append("```bash")
+        lines.append(
+            "bash Paean/run_final_eval.sh \\\n"
+            f"    --preset mrpc-final-eval-only \\\n"
+            f"    --action-config {self.best_json_path}"
+        )
+        lines.append("```")
+        lines.append("")
+        lines.append(
+            "**手动调几个槽位**：直接复制 `best_action_vec.json`，改里面 `slots` 列表"
+            "中对应槽位的 `scaling_factor` 或 `truncation_bits`，存成新文件后 `--action-config` 指过去即可。"
+            "支持简写 `{\"base\":\"max\", \"overrides\":[{\"label\":\"L05.B3.K\", \"truncation_bits\":10}]}`。"
+        )
+
+        self._dump(lines)
+
+    def _dump(self, lines: List[str]) -> None:
+        tmp = self.summary_md_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        os.replace(tmp, self.summary_md_path)
+
+
+def _atomic_json_dump(path: str, obj: Any) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2, default=str)
+    os.replace(tmp, path)

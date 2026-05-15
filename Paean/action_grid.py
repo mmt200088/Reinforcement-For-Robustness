@@ -66,7 +66,48 @@ def coerce_spec_list(raw_value) -> Tuple[str, ...]:
     return tuple(_split_spec_string(text))
 
 
-def load_action_grid_config(path_value: str) -> ActionGridConfig:
+def load_action_grid_config(
+        path_value: str,
+        *,
+        num_layers_hint: int = 0,
+        profile: str = "default",
+        gelu_degree: object = 4,
+        attn_degree: object = 4,
+        ) -> ActionGridConfig:
+    """Load an action-config JSON file. Accepts four schemas:
+
+    1. **Human-readable slots list / dict** (preferred — recorder writes this)::
+
+        {"schema_version": "blb_v3_slots_human_v1",
+         "num_layers": 12,
+         "slots": [
+           {"label": "L05.B3.K", "truncation_bits": 10},
+           {"label": "L05.B5.W.wffn1", "scaling_factor": 14},
+           ...
+         ]}
+
+       Or keyed by label::
+
+        {"slots": {"L05.B3.K": {"truncation_bits": 10}, ...}}
+
+    2. **base + overrides** (sparse — start from baseline, only list changes)::
+
+        {"num_layers": 12,
+         "base": "max",
+         "overrides": [{"label": "L05.B3.K", "truncation_bits": 10}]}
+
+    3. **Old action_vec list** (back-compat with existing presets)::
+
+        {"action_vec": [3, 4, 5, ...], "num_layers": 12}
+
+    4. **fixed / ranges only** (back-compat with cartesian-sweep presets)::
+
+        {"fixed": {"layer2.block5.wffn1_sf": 18},
+         "ranges": {"block3.truncation": [8, 9, 10, 11, 12, 13]}}
+
+    All four shapes also support the optional top-level ``fixed`` / ``ranges``
+    fields which apply *after* the base/slots/action_vec is decoded.
+    """
     path = Path(str(path_value or "").strip())
     if not path.is_file():
         raise FileNotFoundError(f"final_eval action config does not exist: {path}")
@@ -74,12 +115,72 @@ def load_action_grid_config(path_value: str) -> ActionGridConfig:
     if not isinstance(payload, Mapping):
         raise ValueError("--action-config JSON must be an object")
 
-    base_raw = (
-        payload.get("action_vec")
-        or payload.get("base_action_vec")
-        or payload.get("base_action")
+    num_layers = int(payload.get("num_layers", 0) or num_layers_hint or 0)
+
+    # Detect shape: slot-form (1) / base+overrides (2) takes precedence over
+    # the legacy action_vec form (3); falling through both leaves the legacy
+    # path (just fixed/ranges, no base) (4).
+    has_slots = (
+        isinstance(payload.get("slots"), (list, Mapping))
+        and bool(payload.get("slots"))
     )
-    base_action_vec = _parse_base_action_vec(base_raw, int(payload.get("num_layers", 0) or 0))
+    has_overrides = (
+        isinstance(payload.get("overrides"), (list, Mapping))
+        and bool(payload.get("overrides"))
+    )
+    has_action_vec = (
+        payload.get("action_vec") is not None
+        or payload.get("base_action_vec") is not None
+        or payload.get("base_action") is not None
+    )
+
+    base_action_vec: Optional[np.ndarray | str] = None
+    coercion_notes: List[Dict[str, object]] = []
+    if (has_slots or has_overrides) and num_layers > 0:
+        # New schema — convert via blb_stage2_rl.action_io.
+        try:
+            from blb_stage2_rl.action_io import slots_payload_to_action_vec
+            from blb_stage2_rl.action_space import load_max_sfs as _load_max_sfs
+        except ImportError as exc:  # pragma: no cover
+            raise ImportError(
+                f"slot-form action-config requires blb_stage2_rl.action_io; import failed: {exc}"
+            )
+        cfg_profile = str(payload.get("profile") or profile or "default")
+        cfg_gelu = payload.get("gelu_degree", gelu_degree)
+        cfg_attn = payload.get("attn_degree", attn_degree)
+        max_sfs = _load_max_sfs(cfg_profile)
+        vec, coercion_notes = slots_payload_to_action_vec(
+            payload,
+            max_sfs=max_sfs,
+            num_layers=int(num_layers),
+            gelu_degree=cfg_gelu,
+            attn_degree=cfg_attn,
+        )
+        base_action_vec = np.asarray(vec, dtype=int)
+    elif has_action_vec:
+        # Legacy shape — flat action_vec.
+        base_raw = (
+            payload.get("action_vec")
+            or payload.get("base_action_vec")
+            or payload.get("base_action")
+        )
+        base_action_vec = _parse_base_action_vec(base_raw, int(num_layers))
+    # else: no base at all → caller decides (typically "max" inside build_action_candidates).
+
+    if coercion_notes:
+        # Surface coercions to the operator so silent snapping is auditable.
+        try:
+            from sys import stderr
+            stderr.write(
+                f"[action_grid] {len(coercion_notes)} slot value(s) snapped to nearest table level:\n"
+            )
+            for note in coercion_notes[:10]:
+                stderr.write(f"  - {note}\n")
+            if len(coercion_notes) > 10:
+                stderr.write(f"  ... and {len(coercion_notes) - 10} more (see action-config payload)\n")
+        except Exception:
+            pass
+
     fixed_specs = tuple(_mapping_to_specs(payload.get("fixed", {}) or {}))
     range_specs = tuple(_mapping_to_specs(payload.get("ranges", {}) or payload.get("range", {}) or {}))
     return ActionGridConfig(
@@ -104,7 +205,11 @@ def build_action_candidates(
 
     config = None
     if action_config_path:
-        config = load_action_grid_config(action_config_path)
+        config = load_action_grid_config(
+            action_config_path,
+            num_layers_hint=num_layers,
+            profile=profile,
+        )
 
     cfg_fixed = config.fixed_specs if config is not None else ()
     cfg_ranges = config.range_specs if config is not None else ()
