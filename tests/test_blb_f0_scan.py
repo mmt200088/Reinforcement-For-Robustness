@@ -6,15 +6,18 @@ from pathlib import Path
 
 class BLBF0ScanTests(unittest.TestCase):
     def _records(self):
+        # NOTE: ``wffn2_rescale_sf`` was removed from the RL action space on
+        # 2026-05-14 because mrpc baseline never places a rescale at that
+        # node. The test now exercises ``mean_rescale_sf`` (still active).
         return [
             {
                 "global_index": 0,
                 "layer": 0,
                 "block": "block1",
-                "field": "wffn2_rescale_sf",
+                "field": "mean_rescale_sf",
                 "kind": "R",
                 "distribution": "scaling",
-                "operation": "ctct_ffn2_rescale",
+                "operation": "ctct_mean_rescale",
                 "effective": True,
                 "N": 8192,
                 "action_values": [16, 18],

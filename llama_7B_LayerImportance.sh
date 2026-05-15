@@ -128,6 +128,14 @@ GA / Greedy：
   --blb-v3-action-mask-enabled            启用 BLB v3 action mask / baseline prior
   --blb-v3-action-mask-mode MODE          none|baseline_only|near_baseline|from_file
   --blb-v3-action-mask-file PATH          mode=from_file 时读取的 F0 suggested_action_mask.json
+  --blb-v3-sequential-rl true|false       BLB Stage-2 RL 序列决策模式（默认 true，每层每 block 单独决策；
+                                            横长 horizon=59；想回退到旧的 577 维单步可传 false 或
+                                            --blb-v3-no-sequential-rl）
+  --blb-v3-no-sequential-rl                等价于 --blb-v3-sequential-rl false
+  --blb-v3-sequential-invalid-penalty FLOAT  每个 invalid 子步骤的负奖励（默认 1.0）
+  --blb-v3-sequential-cost-shaping-coeff FLOAT  每个有效 block 的 cost shaping 系数（默认 0.05）
+  --blb-v3-sequential-fusion-shaping-coeff FLOAT  fusion 数 shaping 系数（默认 0.0；通常不开）
+  --blb-v3-sequential-early-terminate-on-invalid  invalid 时立即终止 episode（默认 false）
   --blb-v3-action-mask-baseline-logit-bonus FLOAT
                                           给 all-max baseline 动作额外 logit 加成（0 表示不加）
 
@@ -448,6 +456,13 @@ BLB_V3_ACTION_MASK_ENABLED="false"; S_BLB_V3_ACTION_MASK_ENABLED="false"
 BLB_V3_ACTION_MASK_MODE="none"; S_BLB_V3_ACTION_MASK_MODE="false"
 BLB_V3_ACTION_MASK_FILE=""; S_BLB_V3_ACTION_MASK_FILE="false"
 BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="0"; S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="false"
+# Per-block sequential RL (default ON since 2026-05-15). Pass --blb-v3-sequential-rl=false to
+# get back the legacy single-shot 577-dim path.
+BLB_V3_SEQUENTIAL_RL="true"; S_BLB_V3_SEQUENTIAL_RL="false"
+BLB_V3_SEQUENTIAL_INVALID_PENALTY="1.0"; S_BLB_V3_SEQUENTIAL_INVALID_PENALTY="false"
+BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="0.05"; S_BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="false"
+BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF="0.0"; S_BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF="false"
+BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="false"; S_BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="false"
 FRESH_START="false"; S_FRESH_START="false"
 FRESH_STAGE1="false"; S_FRESH_STAGE1="false"
 FRESH_STAGE2="false"; S_FRESH_STAGE2="false"
@@ -605,6 +620,13 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-action-mask-mode) needv "$@"; BLB_V3_ACTION_MASK_MODE="$2"; S_BLB_V3_ACTION_MASK_MODE="true"; shift 2 ;;
     --blb-v3-action-mask-file) needv "$@"; BLB_V3_ACTION_MASK_FILE="$2"; S_BLB_V3_ACTION_MASK_FILE="true"; shift 2 ;;
     --blb-v3-action-mask-baseline-logit-bonus) needv "$@"; BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="$2"; S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="true"; shift 2 ;;
+    # Per-block sequential RL knobs (default sequential_rl=true since 2026-05-15)
+    --blb-v3-sequential-rl) needv "$@"; BLB_V3_SEQUENTIAL_RL="$2"; S_BLB_V3_SEQUENTIAL_RL="true"; shift 2 ;;
+    --blb-v3-no-sequential-rl) BLB_V3_SEQUENTIAL_RL="false"; S_BLB_V3_SEQUENTIAL_RL="true"; shift ;;
+    --blb-v3-sequential-invalid-penalty) needv "$@"; BLB_V3_SEQUENTIAL_INVALID_PENALTY="$2"; S_BLB_V3_SEQUENTIAL_INVALID_PENALTY="true"; shift 2 ;;
+    --blb-v3-sequential-cost-shaping-coeff) needv "$@"; BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="$2"; S_BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="true"; shift 2 ;;
+    --blb-v3-sequential-fusion-shaping-coeff) needv "$@"; BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF="$2"; S_BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF="true"; shift 2 ;;
+    --blb-v3-sequential-early-terminate-on-invalid) BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="true"; S_BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="true"; shift ;;
     --fresh-start|--fresh) FRESH_START="true"; S_FRESH_START="true"; shift ;;
     --fresh-stage1) FRESH_STAGE1="true"; S_FRESH_STAGE1="true"; shift ;;
     --fresh-stage2) FRESH_STAGE2="true"; S_FRESH_STAGE2="true"; shift ;;
@@ -1365,6 +1387,14 @@ else
       CMD+=(--blb_v3_action_mask_baseline_logit_bonus "$BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS")
       [ -n "$BLB_V3_ACTION_MASK_FILE" ] && CMD+=(--blb_v3_action_mask_file "$BLB_V3_ACTION_MASK_FILE" --blb_v3_action_mask_source "$BLB_V3_ACTION_MASK_FILE")
     fi
+    # Sequential RL: default ON. Always pass the boolean so users can flip via
+    # --blb-v3-no-sequential-rl. Shaping coeffs / early-terminate are only
+    # forwarded when user explicitly set them.
+    CMD+=(--blb_v3_sequential_rl "$BLB_V3_SEQUENTIAL_RL")
+    [ "$S_BLB_V3_SEQUENTIAL_INVALID_PENALTY" = "true" ] && CMD+=(--blb_v3_sequential_invalid_penalty "$BLB_V3_SEQUENTIAL_INVALID_PENALTY")
+    [ "$S_BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF" = "true" ] && CMD+=(--blb_v3_sequential_cost_shaping_coeff "$BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF")
+    [ "$S_BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF" = "true" ] && CMD+=(--blb_v3_sequential_fusion_shaping_coeff "$BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF")
+    [ "$S_BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID" = "true" ] && CMD+=(--blb_v3_sequential_early_terminate_on_invalid "$BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID")
   else
     CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --search_backend "$SEARCH_ALGORITHM" --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
     [ "$S_STAGE1_GENERATIONS" = "true" ] && CMD+=(--stage1_ga_generations "$STAGE1_GENERATIONS" --stage1_ga_generations_specified "true")

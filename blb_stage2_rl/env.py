@@ -18,8 +18,11 @@ import torch
 from blb_rl_bridge import BLBNoiseRLBridge
 from rescale_optimizer_bridge import (
     RescaleOptimizerBridge,
+    _strip_layer_suffix,
     aggregate_optimizer_signals,
+    apply_optimizer_output_to_cfg,
     apply_rotation_flags_to_cfg,
+    sync_block2_qk_binding,
 )
 
 from .action_space import (
@@ -35,7 +38,6 @@ from .action_space import (
     make_all_max_action_vector,
     parse_config_name,
 )
-from .default_invoker import HeuristicStubInvoker
 from .optimizer_cost import evaluate_action_for_cost
 from .reward import (
     BaselineCostStats,
@@ -151,7 +153,8 @@ class BLBStage2Env:
       * ``handler``：``ReversibleLayerHandler`` 实例（已经替换好 GELU/Softmax 近似）
       * ``model``：HF 模型（用于 forward）
       * ``probe_batches``：评估用的 mini-batches list（每条是 ProbeBatch）
-      * ``rescale_bridge``：``RescaleOptimizerBridge``（HeuristicStubInvoker 兜底）
+      * ``rescale_bridge``：``RescaleOptimizerBridge``（必须 InProcessInvoker；
+        训练路径强制 in-process real，初始化失败即中止）
       * ``baseline``：``BaselineCostStats``（训练前算好）
       * ``reward_weights``：``RewardWeights``
       * ``acc_threshold / stab_threshold``：硬约束阈值
@@ -181,8 +184,6 @@ class BLBStage2Env:
             layers_attribute: str = "model.bert.encoder.layer",
             is_regression: bool = False,
             env_cfg: Optional[BLBStage2EnvConfig] = None,
-            heuristic_invoker: Optional[HeuristicStubInvoker] = None,
-            stub_register_cfgs: bool = True,
             ):
         self.handler = handler
         self.model = model
@@ -201,8 +202,6 @@ class BLBStage2Env:
         self.layers_attribute = str(layers_attribute)
         self.is_regression = bool(is_regression)
         self.env_cfg = env_cfg or BLBStage2EnvConfig()
-        self._heuristic = heuristic_invoker
-        self._stub_register_cfgs = bool(stub_register_cfgs)
 
         self.bridge = BLBNoiseRLBridge(handler, layers_attribute=layers_attribute)
 
@@ -403,8 +402,6 @@ class BLBStage2Env:
             rescale_bridge=self.rescale_bridge,
             gelu_degree=self.gelu_degree,
             attn_degree=self.attn_degree,
-            heuristic=self._heuristic,
-            stub_register_cfgs=self._stub_register_cfgs,
         )
         decoded = cost_eval.decoded
 
@@ -418,7 +415,12 @@ class BLBStage2Env:
             summarize_optimizer_invalid_outputs(opt_outputs) if any_invalid else ""
         )
 
-        # 2) 把 effective rotations 反写到 cfg
+        # 2) Optimizer-driven cfg override: rewrite every (block, layer) cfg in
+        #    place so that the noise actually installed below reflects
+        #    Rescale_optimizer's chosen SFs / fused rescales / effective
+        #    rotations, rather than only the RL action's raw proposal.
+        invoker_baselines: Mapping[str, Any] = getattr(self.rescale_bridge.invoker, "baselines", {}) or {}
+        per_config_overrides: Dict[str, List[Tuple[str, str, Any, Any]]] = {}
         if not any_invalid:
             for cn, out in opt_outputs.items():
                 try:
@@ -427,25 +429,36 @@ class BLBStage2Env:
                     continue
                 if layer_idx < 0:
                     continue
-                eff = out.raw.get("new_compact_config", {}).get("effective_rotations", [])
-                if not eff:
-                    continue
-                # 从 rotation_name_map 拿到该 (block, profile) 的命名映射
-                key = (int(block_idx), str(self.env_cfg.profile))
-                name_map = (self.env_cfg.rotation_name_map or {}).get(key, {})
-                flag_names = []
-                for entry in eff:
-                    src = entry if isinstance(entry, str) else entry.get("name")
-                    if src is None:
-                        continue
-                    flag = name_map.get(str(src))
-                    if flag:
-                        flag_names.append(flag)
-                if not flag_names:
-                    continue
-                # cfgs_dict[blockN][layer_idx] 上反写
                 target_cfg = cfgs_dict[f"block{block_idx}"][int(layer_idx)]
-                apply_rotation_flags_to_cfg(target_cfg, flag_names)
+                graph_key, _ = _strip_layer_suffix(cn)
+                baseline_entry = invoker_baselines.get(graph_key)
+                # invoker.baselines is the InProcessInvoker tuple form
+                # (skeleton, t_baseline, q_bits_baseline)
+                baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
+                rotation_name_map = (self.env_cfg.rotation_name_map or {}).get(
+                    (int(block_idx), str(self.env_cfg.profile)), {}
+                )
+                overrides = apply_optimizer_output_to_cfg(
+                    target_cfg,
+                    output_raw=out.raw,
+                    block_idx=int(block_idx),
+                    graph_key=graph_key,
+                    baseline_skeleton=baseline_skeleton,
+                    rotation_name_map=rotation_name_map,
+                )
+                # Block 2 has Q/K binding (action_space writes wk_sf to both
+                # wk_encode and wq_encode). The optimizer-driven override above
+                # only refreshes the K-side encodes (those are the names in
+                # GRAPH_NODE_TO_CFG_ATTR[2]); without this sync the model would
+                # install Q-channel noise at the pre-override RL SF while
+                # K-channel uses the optimizer-snapped SF.
+                if int(block_idx) == 2:
+                    overrides = list(overrides) + sync_block2_qk_binding(target_cfg)
+                if overrides:
+                    per_config_overrides[cn] = [
+                        (e.cfg_attr, e.source, e.old_value, e.new_value)
+                        for e in overrides
+                    ]
 
         # 3) invalid → 直接判死，不跑 forward
         info: Dict[str, Any] = {
@@ -462,6 +475,8 @@ class BLBStage2Env:
             info["optimizer_invalid_summary"] = optimizer_invalid_summary
         if degree_sync:
             info["model_degree_sync"] = degree_sync
+        if per_config_overrides:
+            info["optimizer_cfg_overrides"] = per_config_overrides
         if any_invalid:
             metrics = EpisodeMetrics(
                 loss_mean=float("inf"),
@@ -749,8 +764,6 @@ def estimate_baseline_cost_stats(
             rescale_bridge=env.rescale_bridge,
             gelu_degree=env.gelu_degree,
             attn_degree=env.attn_degree,
-            heuristic=env._heuristic,
-            stub_register_cfgs=env._stub_register_cfgs,
         )
         rd_signals = rd_eval.signals
         if rd_signals.any_invalid:

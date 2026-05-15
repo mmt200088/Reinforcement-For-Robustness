@@ -20,9 +20,9 @@ These facts override naive readings of the code. Full rationale: `project_unders
 3. **Actions are integer INDICES, not scaling factors.** Policy outputs `a_j ∈ {0,…,m_j-1}` per slot; a decode rule (`sf_from(idx, max_sf, levels) = max_sf - 2*(levels-1-idx)` for SF slots; the `K_LEVELS` table for K slots) maps each index to the actual `scaling_factor` or truncation `k`. Always log both `action_index` AND `decoded_value`. K decoding is **non-monotonic** in some checkpoints — find all-max via the largest `k` value, not the largest index.
 4. **Slot kinds carry distinct semantics.** `F` (fresh ciphertext), `W` (weight encode), `M` (mask encode), `S` (scalar encode), `R` (rescale target scale), `K` (block-output truncation bits). Same `scaling_factor` produces *different* noise variance under different distributions — never collapse kinds into plain integers.
 5. **Rotation noise has NO independent action.** Its scale is bound to the *current* scale (post-rescale, if a rescale precedes it). If a rescale wasn't selected/executed by `Rescale_optimizer`, its trailing rotation noise also must not be added. Don't invent a freestanding rotation SF action.
-6. **Single-step episode.** One `env.step(action_vec)` produces the entire model's config across all layers × all 5 blocks × all slots, plus `first-input fresh` (layer-0 embedding entry, not inside any block). With horizon=1, GAE degenerates to `A = r − V(s)` — that's correct, not a bug.
+6. **Two episode formulations.** The legacy single-shot path (`BLBStage2Env`, `BLBStage2Policy`, `runner.BLBStage2RLRunner`) treats every `env.step(action_vec)` as a horizon-1 episode that emits the full 577-dim config in one go (so GAE degenerates to `A = r − V(s)`). The new sequential path (`BLBStage2SequentialEnv`, `BLBStage2SequentialPolicy`, `sequential_runner.train_sequential`) decomposes the same action into a horizon-N sequence — one `(layer, block)` per step, in the order `L0:B2→B3→B4→B5, L1:B1→B5, …, L11:B1→B5` (59 steps for L=12; layer 0 has no block 1). first-input fresh is folded into step 0 (layer 0 block 2). Per-step reward = ReplanSession cost on just that block (invalid → big penalty); terminal step adds the existing full hard-priority reward. The single-shot path stays canonical for tests, F0 scan, and candidate store; sequential is opt-in for training when the action space is too wide for cold-start PPO to converge.
 7. **Reward is hard-priority, not weighted-sum.** `invalid → accuracy → stability → cost`. Cost reward must never offset an accuracy or stability violation. Final-best selection should use a tuple rank key `(invalid_flag, acc_violation, stab_violation, normalized_cost, …)`, not raw PPO reward.
-8. **`Rescale_optimizer` is the source of truth for modulus-chain validity and cost.** The `HeuristicStubInvoker` keeps PPO learning when the real package is unavailable, but its numbers are NOT real chain cost — never publish a "best" that was confirmed only against the heuristic.
+8. **`Rescale_optimizer` is the source of truth for modulus-chain validity and cost.** Every reward number, including per-step ones in the sequential path, must come from a real `replan_with_user_actions` (via `ReplanSession`). The legacy `HeuristicStubInvoker` was deleted on 2026-05-14; `InProcessInvoker.from_profile(...)` is hardcoded for training. If the real package fails to load, training aborts (no fallback).
 
 The **"59 required slots"** is the user-stated target. Older `action_space.py` field tables export ~73 fields/layer and stale doc comments still say 94. **Trust `scripts/blb_export_action_registry.py` over comments** before changing slot counts; classify discrepancies as `required / effective-extra / compat-extra / inactive` rather than deleting.
 
@@ -40,9 +40,16 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 # Resume same parameter combo (auto-detects persistent dir, no --resume-from needed)
 bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl
 
-# Final eval only
-bash llama_7B_LayerImportance.sh eval --dataset mrpc --algorithm rl \
-  --config glue_final_configs_best_ppo.json --eval-repeat 50
+# Final eval — independent module (preferred). Old `llama_7B_LayerImportance.sh eval ...`
+# is now a compatibility shim that delegates to this entrypoint.
+bash Paean/run_final_eval.sh --preset mrpc-final-eval-only
+bash Paean/run_final_eval.sh --preset mrpc-blb-max-final-eval
+# BLB action grid: cartesian sweep over decoded fields, with per-block/per-layer selectors
+bash Paean/run_final_eval.sh --preset mrpc-blb-baseline-fixed \
+  --range block3.truncation=8,9,10,11,12,13 \
+  --action-fixed layer2.block5.wffn1_sf=18
+# Compatibility entrypoint (same effect):
+bash llama_7B_LayerImportance.sh eval --preset mrpc-final-eval-only
 
 # RL vs GA comparison from persistent dirs
 bash llama_7B_LayerImportance.sh compare --dataset mrpc
@@ -53,13 +60,20 @@ bash llama_7B_LayerImportance.sh general train --general-rl-tasks mrpc,cola,rte,
 
 `--mode` is the safe wrapper for the various skip flags: `train` / `eval` / `stage2-only` / `stage1-only` / `search-only`. Old `--skip-*` flags still work but conflict-checked.
 
+**Paean final-eval module** (`Paean/run_final_eval.{sh,py}`) is now the standalone final-eval entrypoint, separate from training. Knobs:
+- Presets live in `Paean/presets/` (`mrpc-final-eval-only.conf`, `mrpc-blb-action-range.conf`, `mrpc-blb-max-final-eval.conf`, `mrpc-blb-baseline-truncation-sweep.conf`, `mrpc-blb-baseline-fixed.conf`, `default.conf`).
+- Standalone mode does NOT generate random/perm/equiv/budget controls unless you pass `--random`; the `--perm-trials` / `--cost-trials` / `--budget-trials` defaults are `0` here (training-triggered passive final-eval still defaults to `10` each).
+- `--action-config PATH` loads a BLB action JSON; `--range NAME=v1,v2,...` (repeatable) expands a cartesian grid; `--action-fixed NAME=v` (repeatable) pins a slot. Names support global / per-block / per-layer selectors (`truncation=…`, `block3.truncation=…`, `layer2.block5.wffn1_sf=…`).
+- Outputs land under `Paean/outputs/{dataset}/{algorithm}/{run}/final_eval/` by default.
+- Passive (training-end) final-eval is configured via `--final-eval-preset NAME` (resolved against `Paean/presets/`); training-side `--random-seed` / `--budget` / `--final-eval-repeat` do NOT control it.
+
 **Status board** (aggregates running RL/GA/general/compare jobs into one markdown):
 
 ```bash
 python tools/status_board.py --write-md   # rewrites docs/STATUS.md
 ```
 
-**BLB sidecar tools** (do NOT replace the launcher; they ride alongside it):
+**BLB sidecar tools** (in `scripts/`; do NOT replace the launcher — they ride alongside it):
 
 ```bash
 # Confirm entrypoints, env, data, paths before any long run
@@ -71,6 +85,29 @@ python scripts/blb_export_action_registry.py
 
 # Offline-evaluate a single candidate action (supports F0/F1 fidelity ladder)
 python scripts/blb_eval_action.py ...
+
+# F0 sweep: scan feasible action domain via Rescale_optimizer (no model forward)
+python scripts/blb_f0_scan_feasible_domain.py ...
+
+# Compare invoker modes (in-process vs subprocess vs heuristic) on the same action
+python scripts/blb_compare_optimizer_modes.py ...
+
+# Snapshot a reproducible run manifest (env, code rev, configs, hashes)
+python scripts/blb_make_run_manifest.py ...
+
+# Orphan-slot audit: action slot ↔ cfg field ↔ bridge ↔ graph node, both
+# delta_overrides and t_new paths. Pure AST + JSON (torch-free).
+python scripts/blb_orphan_slot_audit.py --profile mrpc
+# → reports/blb_opt/orphan_slots/audit_mrpc.{md,json}
+
+# Noise-install verifier: drives ReplanSession + apply_optimizer_output_to_cfg
+# end-to-end and emits an HTML with per-(layer,block,graph_node) install plan
+# (distribution, SF, N, σ²) plus per-config valid/fusion/total_bits/effective_rotations.
+# Smoke mode is torch-free; full mode needs torch + transformers.
+python scripts/blb_verify_noise_install.py --mode smoke --profile mrpc --num-layers 12
+python scripts/blb_verify_noise_install.py --mode full  --profile mrpc --num-layers 12 \
+  --stage1 '{"gelu_degree_per_layer":[4,...],"softmax_degree_per_layer":[4,...]}'
+# → reports/blb_opt/noise_install_verify/{smoke,full}_<profile>_<ts>.html
 ```
 
 The candidate store (`blb_stage2_rl/candidate_store.py`) is the canonical place to persist `action_index + decoded_value + N + distribution + block + operation + metrics + rank_key`. Never log only the index.
@@ -79,16 +116,16 @@ The candidate store (`blb_stage2_rl/candidate_store.py`) is the canonical place 
 
 ```bash
 # Single test file
-python tests/test_blb_stage2_rl.py
-python tests/test_rescale_optimizer_bridge_real.py
-python tests/test_bridge_action_flow_real.py
-python tests/test_blb_persistence.py
+python tests/test_blb_registry_artifact_consistency.py
+python tests/test_blb_baseline_bootstrap.py
+python tests/test_blb_optimizer_cost_consistency.py
+python tests/test_blb_warmstart_resume.py
 
 # All (best-effort)
 python -m unittest discover -s tests -v
 ```
 
-The four real-invoker tests above are independent of torch — they stub `function_handler` so they can exercise the `Rescale_optimizer` integration in isolation. `test_blb_stage2_rl.py` is the only one that needs torch + transformers.
+Most BLB tests are torch-free — they exercise action-space / registry / bridge / cost / mask / threshold / candidate-store / warmstart logic in isolation, and `test_blb_f0_scan.py` drives the F0 offline scan path. Only `test_blb_action_mask.py` and `test_blb_stage2_rl_regressions.py` pull in torch + transformers; `test_glue_dataset_loading.py` needs `datasets` + a populated GLUE cache (`GLUE_LOCAL_DATASET_DIR`).
 
 ## Submodules
 
@@ -181,14 +218,41 @@ API: `blb_stage2_rl.baseline_bootstrap.load_static_skeletons_baseline(...)` + `s
 
 ### Rescale_optimizer integration
 
-`rescale_optimizer_bridge.py` wraps the local `Rescale_optimizer/rescale_optimizer/` package (graph + `replan_with_user_actions`). Four invoker kinds:
+`rescale_optimizer_bridge.py` wraps the local `Rescale_optimizer/rescale_optimizer/` package. `InProcessInvoker` is now a thin adapter over `rescale_optimizer.ReplanSession` (graphs + baselines preloaded once; per-call cost is one `replan_with_user_actions`). For BLB Stage-2 RL training the choice is **NOT** runtime-configurable — `blb_stage2_rl/runner.py` hardcodes `rescale_invoker_kind="in_process_real"`, and if `InProcessInvoker.from_profile(...)` fails (missing package, missing baseline) training aborts. The `HeuristicStubInvoker` has been deleted — every reward number now passes through real Rescale_optimizer math. Remaining invoker kinds:
 
-- `InProcessInvoker` (recommended; **required for publishable results**) — `import rescale_optimizer`, ms per call. Use `InProcessInvoker.from_profile(rescale_optimizer_root="Rescale_optimizer", profile="mrpc")`.
-- `SubprocessInvoker` — forks `python scripts/replan_what_if.py`; hundreds of ms per call; for debug isolation.
-- `StubInvoker` — canned responses; for unit tests.
-- `HeuristicStubInvoker` (`blb_stage2_rl/default_invoker.py`) — bridge fallback when `Rescale_optimizer` isn't available; reward stays monotonic so PPO can still learn (see mental-model item 8 for the constraint).
+- `InProcessInvoker` — adapter over `ReplanSession`; ms per call. Required for publishable results.
+- `SubprocessInvoker` — forks a `python` worker; hundreds of ms per call; debug-isolation only.
+- `StubInvoker` — canned responses for unit tests.
 
-`build_optimizer_requests(profile, cfgs_dict)` produces `{"block1_mrpc_L0": ("block1", cfg), ...}`; the bridge handles the rest. To support a profile beyond `mrpc`, extend `default_block{1..5}_cfg_to_delta` (graph-node names) and `DEFAULT_CFG_TO_T_NEW_MAP` (skeleton-position → cfg field).
+`build_optimizer_requests(profile, cfgs_dict)` produces `{"block1_mrpc_L0": ("block1", cfg), ...}`. To support a profile beyond `mrpc`, extend `default_block{1..5}_cfg_to_delta` (graph-node names) and `DEFAULT_CFG_TO_T_NEW_MAP` (skeleton-position → cfg field).
+
+### Optimizer-driven cfg override (new path)
+
+After `bridge.evaluate_blocks(...)`, `env.step` reads each result's `new_compact_config` and writes back into the action-decoded cfg via `apply_optimizer_output_to_cfg`. This means **the model installs noise at the SFs Rescale_optimizer actually settled on**, not at the SFs the action proposed — including the optimizer's snapping/repair, fused-away rescale points (cfg field → None), CTPT_MUL propagation deltas, and effective rotations. Previously only effective rotations flowed back this way. The inverse mapping `graph_node → cfg_attribute` lives in `GRAPH_NODE_TO_CFG_ATTR` next to `default_block{1..5}_cfg_to_delta` and must stay in sync. The override list per (block, layer) is surfaced in `env.step` info dict as `optimizer_cfg_overrides`.
+
+For Block 2 specifically, action_space binds Q-side fields (`wq_sf`, `q_mask{1,2}_sf`) to their K-side counterparts (`wk_sf`, `kt_mask{1,2}_sf`). The optimizer override path only touches the K-side cfg fields (those are the names in `GRAPH_NODE_TO_CFG_ATTR[2]`), so `env.step` calls `sync_block2_qk_binding(cfg)` immediately after `apply_optimizer_output_to_cfg` to mirror the K-side updates onto Q-side fields. Without this sync, `function_handler.handler_block2` would install Q noise at the pre-override RL SF while K noise uses the post-override SF.
+
+### Sequential per-block RL (opt-in, additive)
+
+The default training path treats every `env.step(action_vec)` as a horizon-1 episode that decides all 577 dims at once. With ~5^577 search space, cold-start PPO struggles. The opt-in sequential path decomposes this into 59 horizon-N steps:
+
+```
+horizon = 4 + (L-1) * 5    # 59 for L=12
+order   = (L0,B2) -> (L0,B3) -> (L0,B4) -> (L0,B5)
+        -> (L1,B1) -> (L1,B2) -> ... -> (L11,B5)
+```
+
+`first_input fresh` is folded into step 0 (so step 0 has 13 slot decisions; subsequent steps have 7-12). Layer 0 has no block 1.
+
+Three additive modules implement this:
+
+- `blb_stage2_rl/sequential_env.py` — `BLBStage2SequentialEnv` wraps an existing `BLBStage2Env`. Each `step()` splices the per-step action into a `_pending_full_vec`, calls `ReplanSession` on **just that one block's graph** for an immediate dense cost signal, applies `apply_optimizer_output_to_cfg` + `sync_block2_qk_binding` (block 2) to that block's cfg, then either returns shaped per-step reward or, on the terminal step, hands the assembled full vec to `BLBStage2Env.step()` for the existing model forward + full hard-priority reward. Per-step reward shaping is configurable via `SequentialEnvConfig` (invalid_penalty, cost_shaping_coeff, fusion_shaping_coeff, early_terminate_on_invalid).
+- `blb_stage2_rl/sequential_policy.py` — `BLBStage2SequentialPolicy` shares a trunk + a single `MultiDiscrete` head sized to `step_schedule_max_dim` (13). Per-step `(slot_mask, num_levels)` mask out padding so the same head serves every block. Includes `SequentialRolloutBuffer` with proper GAE-λ over horizon-N episodes and `sequential_ppo_update`.
+- `blb_stage2_rl/sequential_runner.py` — `train_sequential(...)` drives the env+policy+buffer end-to-end. Deliberately a thin standalone driver (does NOT touch persistence / status board / candidate store) so it can run alongside the existing `BLBStage2RLRunner`.
+
+Helpers in `action_space.py`: `step_schedule(num_layers, profile, attn_degree_per_layer, gelu_degree_per_layer)` returns the ordered list of `BlockStepSpec` with each step's slot dims, kinds, full-vec offsets, and the graph-key suffix (e.g. `block3_exp_n4`) that ReplanSession should be called against. `splice_step_action_into_full_vec(...)` writes per-step actions into the legacy 577-dim vector. `step_schedule_max_dim(num_layers)` returns the max slots per step (13 for L=12).
+
+Smoke-tested torch-free; runner integration is left to the launcher (the existing `BLBStage2RLRunner` is 2866 lines and not factored for this — `sequential_runner.train_sequential` is the path forward).
 
 ## Verification: F0–F4 fidelity ladder
 
@@ -217,11 +281,13 @@ The runner's "final eval" path must install the actual BLB best action (decode �
 
 In addition to the Critical mental model items above, these mistakes specifically tend to slip past code review:
 
-1. Declaring a final best from a `HeuristicStubInvoker` run (the heuristic is for monotonic-reward training only).
+1. Declaring a final best from any path that didn't go through real `Rescale_optimizer.replan_with_user_actions` (`HeuristicStubInvoker` was deleted on 2026-05-14; `InProcessInvoker.from_profile(...)` is hardcoded).
 2. Selecting "best" from a single noise trial — final-eval must be MC-repeated.
 3. Letting "final eval" silently evaluate a legacy all-max baseline instead of the BLB best.
 4. Replacing the launcher entrypoint instead of riding alongside it (sidecars only).
 5. Large multi-module rewrites without F0/F1/F2 verification between steps.
+6. Forgetting to call `sync_block2_qk_binding(cfg)` after any code path that mutates `wk_encode` / `kt_mask{1,2}_encode` SFs (e.g. a new override hook). Block 2's Q/K binding is action-space convention, not a cfg-level invariant — every mutation site must restore it explicitly.
+7. Hard-coding episode horizon=1 when the sequential RL path is opt-in. The single-shot `BLBStage2Env` and the sequential `BLBStage2SequentialEnv` co-exist; reusable helpers must work with both (e.g. `apply_optimizer_output_to_cfg` is per-block, so it's already compatible).
 
 ## When you're investigating something specific
 
@@ -231,6 +297,8 @@ In addition to the Critical mental model items above, these mistakes specificall
 - "What action dim corresponds to what cfg field" → `blb_stage2_rl/action_space.py` top half (`_BLOCK{1..5}_FIELDS`), then `scripts/blb_export_action_registry.py` for the authoritative registry.
 - "How does cfg get installed into the model" → `blb_rl_bridge.BLBNoiseRLBridge.apply()`.
 - "How does the modulus chain see RL choices" → `RescaleOptimizerBridge.evaluate` + the two helpers `_strip_layer_suffix` and `cfg_to_t_new_from_table` in `rescale_optimizer_bridge.py`.
+- "How is the optimizer's return mirrored back into cfg" → `apply_optimizer_output_to_cfg` (+ `sync_block2_qk_binding` for Block 2's Q/K binding) in `rescale_optimizer_bridge.py`; the env loop in `blb_stage2_rl/env.py:step` and `blb_stage2_rl/sequential_env.py:step` both call them.
+- "Where's the per-block sequential RL path" → `blb_stage2_rl/sequential_env.py` (env), `…/sequential_policy.py` (actor-critic + buffer + GAE + ppo_update), `…/sequential_runner.py` (`train_sequential` driver). Schedule helpers in `action_space.py`: `step_schedule`, `splice_step_action_into_full_vec`, `step_schedule_max_dim`.
 - "How is one candidate stored / ranked" → `blb_stage2_rl/candidate_store.py`.
 - "Offline-evaluate a candidate without retraining" → `scripts/blb_eval_action.py`.
 - "BLB Stage-2 RL docs" → `docs/BLB_stage2_rl_README.md` (launcher knobs) / `…_FULL_FLOW.md` (run-to-resume logic) / `…_INTERNAL_FLOW.md` (per-module call stack) / `…_spec.md` (design rationale, math). The 4 docs disambiguate themselves at the top.

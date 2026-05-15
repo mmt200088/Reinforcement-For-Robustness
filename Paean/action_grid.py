@@ -403,7 +403,12 @@ def _canonical_field_name(name: str) -> str:
         "wffn1": "wffn1_sf",
         "wffn1_rescale": "wffn1_rescale_sf",
         "wffn2": "wffn2_sf",
-        "wffn2_rescale": "wffn2_rescale_sf",
+        # ``wffn2_rescale`` alias removed 2026-05-14:
+        # ``wffn2_rescale_sf`` RL slot was deleted because mrpc baseline skeleton
+        # never places a rescale at ctct_ffn2_rescale. Cfg's ``wffn2_result_rescale``
+        # is fixed to None. Selectors mentioning ``wffn2_rescale`` now resolve to
+        # the literal text (no slot match) and the action-grid expansion errors
+        # explicitly — which is the desired behaviour.
     }
     return aliases.get(text, text)
 

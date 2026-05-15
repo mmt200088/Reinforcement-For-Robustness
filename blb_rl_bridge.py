@@ -332,8 +332,14 @@ class BLBNoiseRLBridge:
 
 @dataclass
 class Block1ActionSpec:
-    """RL 动作 → Block 1 cfg 的字段映射。每个字段是一个 scaling_factor (int)；
-    rescale_* 字段为 None 表示该处 rescale 不加。
+    """RL 动作 → Block 1 cfg 的字段映射。
+
+    2026-05-14 精简：删除了 ``wffn2_rescale_sf`` 和 ``square_rescale_sf`` 两个 RL
+    动作槽（mrpc baseline skeleton 不在那两处下 rescale；Rescale_optimizer 也不
+    会选用）。对应 cfg 的 ``wffn2_result_rescale`` / ``square_result_rescale``
+    字段固定为 None（不安装这两处 rescale 噪声）。配套的 rotation flag
+    （``rotation_after_wffn2_rescale_a/b`` / ``rotation_after_square_rescale``）
+    也一并移除。
 
     ``output_truncation_k``：Block 1 末尾 PPTI 截断位数；None ⇒ 不截断
     （**首层 Block 1 缺失**时直接传 None；其它层由 RL agent 选）。
@@ -342,17 +348,14 @@ class Block1ActionSpec:
     wffn2_sf: int
     mean_inv_d_sf: int
     var_inv_d_sf: int
-    wffn2_rescale_sf: Optional[int] = None
     mean_rescale_sf: Optional[int] = None
-    square_rescale_sf: Optional[int] = None
     var_rescale_sf: Optional[int] = None
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
     # Rotation 候选点（True ⇒ 在该位置加 rotation 噪声；SF 自动继承绑定源）
+    # 仅保留 fresh 上的 rotation（gelu_out_fresh 之后的 rotation）。被删的
+    # rescale 槽不再有对应 rotation flag。
     rotation_after_gelu_out_fresh: bool = False
-    rotation_after_wffn2_rescale_a: bool = False
-    rotation_after_wffn2_rescale_b: bool = False
-    rotation_after_square_rescale: bool = False
 
 
 def build_block1_cfg_from_action(
@@ -366,65 +369,67 @@ def build_block1_cfg_from_action(
         wffn2_sf=int(action.wffn2_sf),
         mean_inv_d_sf=int(action.mean_inv_d_sf),
         var_inv_d_sf=int(action.var_inv_d_sf),
-        wffn2_rescale_sf=action.wffn2_rescale_sf,
+        # 被删的 wffn2_rescale_sf / square_rescale_sf 固定 None（不安装该处噪声）
+        wffn2_rescale_sf=None,
         mean_rescale_sf=action.mean_rescale_sf,
-        square_rescale_sf=action.square_rescale_sf,
+        square_rescale_sf=None,
         var_rescale_sf=action.var_rescale_sf,
         output_truncation_k=action.output_truncation_k,
         output_truncation_mode=action.output_truncation_mode,
         rotation_after_gelu_out_fresh=action.rotation_after_gelu_out_fresh,
-        rotation_after_wffn2_rescale_a=action.rotation_after_wffn2_rescale_a,
-        rotation_after_wffn2_rescale_b=action.rotation_after_wffn2_rescale_b,
-        rotation_after_square_rescale=action.rotation_after_square_rescale,
+        # 被删的 rotation flag 固定 False（cfg.rotation_after_* 默认 False）
+        rotation_after_wffn2_rescale_a=False,
+        rotation_after_wffn2_rescale_b=False,
+        rotation_after_square_rescale=False,
     )
 
 
 @dataclass
 class Block2ActionSpec:
-    """RL 动作 → Block 2 cfg。22 个噪声点全部 sf 字段化。"""
+    """RL 动作 → Block 2 cfg。
+
+    2026-05-14 精简：
+    * Q 侧 3 个 encode 槽（``wq_sf`` / ``q_mask1_sf`` / ``q_mask2_sf``）与 K 侧
+      绑定 —— RL 不再独立选择 Q 侧 SF，由 ``_build_block2_action`` 用 K 侧动作
+      值同步填入。ActionSpec 保留这 3 个字段作为载体（仍然喂给 cfg）。
+    * 删除 8 个 rescale 槽：``normalize_rescale_sf``、``wk_rescale_sf``、
+      ``wq_rescale_sf``、``wv_rescale_sf``、``kt_mask1_rescale_sf``、
+      ``q_mask1_rescale_sf``、``q_mask2_rescale_sf``、``qkt_matmul_rescale_sf``。
+      它们对应的 cfg 字段固定 None。同步删除对应 rotation flags。
+    * 保留 ``gamma_rescale_sf`` / ``kt_mask2_rescale_sf`` / ``qkt_merge_mask_rescale_sf``
+      （这三个通过 t_new 进 optimizer cost）。
+    * ``wv_sf`` 保留作模型噪声单独控制 Wv 的 SF（cfg 仍写入 wv_encode）。
+    """
     inv_std_fresh_sf: int
     x_centered_fresh_sf: int
     gamma_sf: int
     wk_sf: int
     kt_mask1_sf: int
     kt_mask2_sf: int
-    wq_sf: int
-    q_mask1_sf: int
-    q_mask2_sf: int
-    wv_sf: int
-    qkt_merge_mask_sf: int
-    normalize_rescale_sf: Optional[int] = None
+    # Q 侧三个 encode：由 K 侧绑定填入，不是独立 RL 动作。
+    wq_sf: int = 0
+    q_mask1_sf: int = 0
+    q_mask2_sf: int = 0
+    wv_sf: int = 22
+    qkt_merge_mask_sf: int = 22
     gamma_rescale_sf: Optional[int] = None
-    wk_rescale_sf: Optional[int] = None
-    kt_mask1_rescale_sf: Optional[int] = None
     kt_mask2_rescale_sf: Optional[int] = None
-    wq_rescale_sf: Optional[int] = None
-    q_mask1_rescale_sf: Optional[int] = None
-    q_mask2_rescale_sf: Optional[int] = None
-    wv_rescale_sf: Optional[int] = None
-    qkt_matmul_rescale_sf: Optional[int] = None
     qkt_merge_mask_rescale_sf: Optional[int] = None
-    # PPTI Block 2 末尾 truncation；首层 Block 2 前半部分缺失但后半部分（Q·K^T）
-    # 仍会执行，所以这里仍可加 truncation。
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
-    # Rotation 候选点（共 5 位置 / 9 sub-slot）
+    # Rotation 候选点：仅保留与未删 rescale 绑定的两项。
     rotation_after_gamma_rescale: bool = False
-    rotation_after_wq_rescale: bool = False
-    rotation_after_wk_rescale: bool = False
-    rotation_after_wv_rescale: bool = False
-    rotation_after_q_mask1_rescale: bool = False
-    rotation_after_kt_mask1_rescale: bool = False
-    rotation_after_q_mask2_rescale: bool = False
     rotation_after_kt_mask2_rescale: bool = False
-    rotation_after_qkt_matmul_rescale: bool = False
 
 
 def build_block2_cfg_from_action(
         action: Block2ActionSpec,
         N: int = 16384,
         ) -> Block2NoiseConfig:
-    """``Block2ActionSpec`` → ``Block2NoiseConfig``。"""
+    """``Block2ActionSpec`` → ``Block2NoiseConfig``。
+
+    被删的 8 个 rescale 槽 + 7 个 rotation flag 在 cfg 上固定为 None / False。
+    """
     return make_block2_default_config(
         N=int(N),
         inv_std_fresh_sf=int(action.inv_std_fresh_sf),
@@ -433,43 +438,48 @@ def build_block2_cfg_from_action(
         wk_sf=int(action.wk_sf),
         kt_mask1_sf=int(action.kt_mask1_sf),
         kt_mask2_sf=int(action.kt_mask2_sf),
+        # Q/K 绑定：Q 侧三个 encode 与 K 侧同值（由 _build_block2_action 填入）
         wq_sf=int(action.wq_sf),
         q_mask1_sf=int(action.q_mask1_sf),
         q_mask2_sf=int(action.q_mask2_sf),
         wv_sf=int(action.wv_sf),
         qkt_merge_mask_sf=int(action.qkt_merge_mask_sf),
-        normalize_rescale_sf=action.normalize_rescale_sf,
+        normalize_rescale_sf=None,
         gamma_rescale_sf=action.gamma_rescale_sf,
-        wk_rescale_sf=action.wk_rescale_sf,
-        kt_mask1_rescale_sf=action.kt_mask1_rescale_sf,
+        wk_rescale_sf=None,
+        kt_mask1_rescale_sf=None,
         kt_mask2_rescale_sf=action.kt_mask2_rescale_sf,
-        wq_rescale_sf=action.wq_rescale_sf,
-        q_mask1_rescale_sf=action.q_mask1_rescale_sf,
-        q_mask2_rescale_sf=action.q_mask2_rescale_sf,
-        wv_rescale_sf=action.wv_rescale_sf,
-        qkt_matmul_rescale_sf=action.qkt_matmul_rescale_sf,
+        wq_rescale_sf=None,
+        q_mask1_rescale_sf=None,
+        q_mask2_rescale_sf=None,
+        wv_rescale_sf=None,
+        qkt_matmul_rescale_sf=None,
         qkt_merge_mask_rescale_sf=action.qkt_merge_mask_rescale_sf,
         output_truncation_k=action.output_truncation_k,
         output_truncation_mode=action.output_truncation_mode,
         rotation_after_gamma_rescale=action.rotation_after_gamma_rescale,
-        rotation_after_wq_rescale=action.rotation_after_wq_rescale,
-        rotation_after_wk_rescale=action.rotation_after_wk_rescale,
-        rotation_after_wv_rescale=action.rotation_after_wv_rescale,
-        rotation_after_q_mask1_rescale=action.rotation_after_q_mask1_rescale,
-        rotation_after_kt_mask1_rescale=action.rotation_after_kt_mask1_rescale,
-        rotation_after_q_mask2_rescale=action.rotation_after_q_mask2_rescale,
+        rotation_after_wq_rescale=False,
+        rotation_after_wk_rescale=False,
+        rotation_after_wv_rescale=False,
+        rotation_after_q_mask1_rescale=False,
+        rotation_after_kt_mask1_rescale=False,
+        rotation_after_q_mask2_rescale=False,
         rotation_after_kt_mask2_rescale=action.rotation_after_kt_mask2_rescale,
-        rotation_after_qkt_matmul_rescale=action.rotation_after_qkt_matmul_rescale,
+        rotation_after_qkt_matmul_rescale=False,
     )
 
 
 @dataclass
 class Block3ActionSpec:
-    """RL 动作 → Block 3 cfg。degree 决定 N 默认值与 square_rescales 长度。"""
+    """RL 动作 → Block 3 cfg。degree 决定 N 默认值与 square_rescales 长度。
+
+    2026-05-14 精简：删除 ``x_inv_2n_rescale_sf`` —— mrpc baseline skeleton 不上
+    ``ctct_x_inv_2n_rescale``，Rescale_optimizer 不会选用。cfg 上对应字段
+    ``x_inv_2n_result_rescale`` 固定为 None。
+    """
     degree: int
     x_fresh_sf: int
     inv_2n_sf: int
-    x_inv_2n_rescale_sf: Optional[int] = None
     # 长度必须 == degree
     square_rescale_sfs: Tuple[Optional[int], ...] = ()
     output_truncation_k: Optional[int] = None
@@ -480,13 +490,16 @@ def build_block3_cfg_from_action(
         action: Block3ActionSpec,
         N: Optional[int] = None,
         ) -> Block3NoiseConfig:
-    """``Block3ActionSpec`` → ``Block3NoiseConfig`` (N 默认按 degree 自动选)。"""
+    """``Block3ActionSpec`` → ``Block3NoiseConfig`` (N 默认按 degree 自动选)。
+
+    被删的 ``x_inv_2n_rescale_sf`` 槽在 cfg 上固定为 None。
+    """
     return make_block3_default_config(
         degree=int(action.degree),
         N=N,
         x_fresh_sf=int(action.x_fresh_sf),
         inv_2n_sf=int(action.inv_2n_sf),
-        x_inv_2n_rescale_sf=action.x_inv_2n_rescale_sf,
+        x_inv_2n_rescale_sf=None,
         square_rescale_sfs=action.square_rescale_sfs,
         output_truncation_k=action.output_truncation_k,
         output_truncation_mode=action.output_truncation_mode,
@@ -495,7 +508,15 @@ def build_block3_cfg_from_action(
 
 @dataclass
 class Block4ActionSpec:
-    """RL 动作 → Block 4 cfg。"""
+    """RL 动作 → Block 4 cfg。
+
+    2026-05-14 精简：删除 5 个 rescale 槽 ——
+    ``softmax_out_mask_rescale_sf`` / ``v_mask_rescale_sf`` /
+    ``softmax_v_mask_rescale_sf`` / ``wo_rescale_sf`` / ``ln_square_rescale_sf``
+    及对应 5 个 rotation flag。它们对应的 cfg 字段固定 None。
+    保留 V 侧 ``v_fresh_sf`` / ``v_mask_sf`` 控制模型 V 路径上的噪声（mrpc graph
+    没有 V 节点，不入 optimizer cost）。
+    """
     softmax_out_fresh_sf: int
     softmax_out_mask_sf: int
     v_fresh_sf: int
@@ -504,30 +525,23 @@ class Block4ActionSpec:
     wo_sf: int
     ln_mean_inv_d_sf: int
     ln_var_inv_d_sf: int
-    softmax_out_mask_rescale_sf: Optional[int] = None
-    v_mask_rescale_sf: Optional[int] = None
     softmax_v_matmul_rescale_sf: Optional[int] = None
-    softmax_v_mask_rescale_sf: Optional[int] = None
-    wo_rescale_sf: Optional[int] = None
     ln_mean_rescale_sf: Optional[int] = None
-    ln_square_rescale_sf: Optional[int] = None
     ln_var_rescale_sf: Optional[int] = None
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
-    # Rotation 候选点（共 6 个）
-    rotation_after_softmax_out_mask_rescale: bool = False
-    rotation_after_v_mask_rescale: bool = False
+    # Rotation 候选点：仅保留 softmax_v_matmul_rescale 后的 rotation
     rotation_after_softmax_v_matmul_rescale: bool = False
-    rotation_after_softmax_v_mask_rescale: bool = False
-    rotation_after_wo_rescale: bool = False
-    rotation_after_ln_square_rescale: bool = False
 
 
 def build_block4_cfg_from_action(
         action: Block4ActionSpec,
         N: int = 16384,
         ) -> Block4NoiseConfig:
-    """``Block4ActionSpec`` → ``Block4NoiseConfig``。"""
+    """``Block4ActionSpec`` → ``Block4NoiseConfig``。
+
+    被删的 5 个 rescale 槽 + 5 个 rotation flag 在 cfg 上固定 None / False。
+    """
     return make_block4_default_config(
         N=int(N),
         softmax_out_fresh_sf=int(action.softmax_out_fresh_sf),
@@ -538,28 +552,37 @@ def build_block4_cfg_from_action(
         wo_sf=int(action.wo_sf),
         ln_mean_inv_d_sf=int(action.ln_mean_inv_d_sf),
         ln_var_inv_d_sf=int(action.ln_var_inv_d_sf),
-        softmax_out_mask_rescale_sf=action.softmax_out_mask_rescale_sf,
-        v_mask_rescale_sf=action.v_mask_rescale_sf,
+        softmax_out_mask_rescale_sf=None,
+        v_mask_rescale_sf=None,
         softmax_v_matmul_rescale_sf=action.softmax_v_matmul_rescale_sf,
-        softmax_v_mask_rescale_sf=action.softmax_v_mask_rescale_sf,
-        wo_rescale_sf=action.wo_rescale_sf,
+        softmax_v_mask_rescale_sf=None,
+        wo_rescale_sf=None,
         ln_mean_rescale_sf=action.ln_mean_rescale_sf,
-        ln_square_rescale_sf=action.ln_square_rescale_sf,
+        ln_square_rescale_sf=None,
         ln_var_rescale_sf=action.ln_var_rescale_sf,
         output_truncation_k=action.output_truncation_k,
         output_truncation_mode=action.output_truncation_mode,
-        rotation_after_softmax_out_mask_rescale=action.rotation_after_softmax_out_mask_rescale,
-        rotation_after_v_mask_rescale=action.rotation_after_v_mask_rescale,
+        rotation_after_softmax_out_mask_rescale=False,
+        rotation_after_v_mask_rescale=False,
         rotation_after_softmax_v_matmul_rescale=action.rotation_after_softmax_v_matmul_rescale,
-        rotation_after_softmax_v_mask_rescale=action.rotation_after_softmax_v_mask_rescale,
-        rotation_after_wo_rescale=action.rotation_after_wo_rescale,
-        rotation_after_ln_square_rescale=action.rotation_after_ln_square_rescale,
+        rotation_after_softmax_v_mask_rescale=False,
+        rotation_after_wo_rescale=False,
+        rotation_after_ln_square_rescale=False,
     )
 
 
 @dataclass
 class Block5ActionSpec:
-    """RL 动作 → Block 5 cfg。GELU degree 决定 N 默认与 power/coeff_mul rescales 长度。"""
+    """RL 动作 → Block 5 cfg。GELU degree 决定 N 默认与 power/coeff_mul rescales 长度。
+
+    2026-05-14 精简：
+    * ``gelu_power_rescale_sfs`` —— RL 仅控制 idx=0 (x²)；idx=1 (x³) / idx=2 (x⁴)
+      在 mrpc graph 里被折掉，不上 skeleton，固定 None。``_build_block5_action``
+      会用 ``(power_sf_0, None, ...)`` 构造正确长度的 tuple。
+    * ``gelu_coeff_mul_rescale_sfs`` —— 整个 tuple 全部 RL 不再控制，由
+      ``ctpt_gelu_coeff`` 单节点合并表达；``_build_block5_action`` 用
+      ``(None, ..., None)`` 长度=degree 的 tuple。
+    """
     gelu_degree: int
     inv_std_fresh_sf: int
     x_centered_fresh_sf: int
@@ -569,9 +592,9 @@ class Block5ActionSpec:
     normalize_rescale_sf: Optional[int] = None
     gamma_rescale_sf: Optional[int] = None
     wffn1_rescale_sf: Optional[int] = None
-    # 长度 == gelu_degree-1
+    # 长度 == gelu_degree-1；仅 idx=0 (x²) 由 RL 控制，其它为 None
     gelu_power_rescale_sfs: Tuple[Optional[int], ...] = ()
-    # 长度 == gelu_degree
+    # 长度 == gelu_degree；全部 None（RL 不再控制 coeff_mul 链 rescale）
     gelu_coeff_mul_rescale_sfs: Tuple[Optional[int], ...] = ()
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"

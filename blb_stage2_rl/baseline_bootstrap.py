@@ -605,7 +605,7 @@ def static_skeletons_graph_key(
 # 又在 cut_point，对应不同的 RL 字段（encode vs rescale），所以分开。
 #
 # Block 2 / Block 4 有几个 RL 字段共享一个 RO 节点：
-#   block2: ctpt_wq_wk → 同时写 wq_sf 和 wk_sf
+#   block2: ctpt_wq_wk → 只写 wk_sf（2026-05-14 起 wq_sf 已与 wk_sf 绑定，不再独立）
 #   block4: ctpt_mask2 → 同时写 softmax_out_mask_sf 和 v_mask_sf
 
 _RO_SOURCE_NODE_TO_RL_FIELD: Dict[int, Dict[str, str]] = {
@@ -624,7 +624,8 @@ _RO_ENCODE_NODE_TO_RL_FIELDS: Dict[int, Dict[str, Tuple[str, ...]]] = {
     },
     2: {
         "ctpt_gama1":          ("gamma_sf",),
-        "ctpt_wq_wk":          ("wq_sf", "wk_sf"),         # shared
+        # 2026-05-14：Q 侧动作被并入 K 侧。ctpt_wq_wk 反推到 RL 时只写 wk_sf。
+        "ctpt_wq_wk":          ("wk_sf",),
         "ctpt_rotKT_mask1":    ("kt_mask1_sf",),
         "ctpt_rotKT_mask2":    ("kt_mask2_sf",),
         "ctpt_mask":           ("qkt_merge_mask_sf",),
@@ -647,25 +648,17 @@ _RO_ENCODE_NODE_TO_RL_FIELDS: Dict[int, Dict[str, Tuple[str, ...]]] = {
 }
 
 # 在 cut_point_sf 里带 sf_post 的节点 → RL rescale 字段。
-# Block 3 用 squashed key（"ctct_square_<k>"）；block5_n4 的 gelu_x4 映射到
-# gelu_power_rescale_sf_2（动作槽位 idx=2 因为 x3 被 graph 折掉了）。
-# Block 5 的 ctpt_gelu_coeff rescale 取决于 GELU degree —— 我们做特殊处理。
+# 2026-05-14 精简：删除大量 RL 动作槽（参见 action_space._BLOCK*_FIELDS 顶部
+# 的注释）。对应的 RO 节点反推现在直接跳过 —— 它们会出现在
+# ``unmapped_rescale_nodes`` 里（baseline 不写回这些字段，cfg 保留 None）。
 _RO_RESCALE_NODE_TO_RL_FIELD: Dict[int, Dict[str, str]] = {
     1: {
-        "ctpt_ffn2":       "wffn2_rescale_sf",
         "ctpt_inv_d_1":    "mean_rescale_sf",
-        "ctct_ext_square": "square_rescale_sf",
         "ctpt_inv_d_2":    "var_rescale_sf",
     },
     2: {
-        "ctct_x_mean_over_std":   "normalize_rescale_sf",
         "ctpt_gama1":             "gamma_rescale_sf",
-        "ctpt_wq":                "wq_rescale_sf",
-        "ctpt_wk":                "wk_rescale_sf",
-        "ctpt_wv":                "wv_rescale_sf",
-        "ctpt_rotKT_mask1":       "kt_mask1_rescale_sf",
         "ctpt_rotKT_mask2":       "kt_mask2_rescale_sf",
-        "ctct_preprocess_qkt":    "qkt_matmul_rescale_sf",
         "ctpt_mask":              "qkt_merge_mask_rescale_sf",
     },
     3: {
@@ -676,43 +669,21 @@ _RO_RESCALE_NODE_TO_RL_FIELD: Dict[int, Dict[str, str]] = {
         "ctct_square_2": "square_rescale_sf_1",
         "ctct_square_3": "square_rescale_sf_2",
         "ctct_square_4": "square_rescale_sf_3",
-        # ctct_x_inv_2n_rescale 在 mrpc baseline 不上 skeleton；如果别的 dataset 上了，会映射这里
-        "ctct_x_inv_2n_rescale": "x_inv_2n_rescale_sf",
     },
     4: {
         "ctct_rot_softmax_mul_v": "softmax_v_matmul_rescale_sf",
         "ctpt_inv_d_1":           "ln_mean_rescale_sf",
-        "ctct_square":            "ln_square_rescale_sf",
         "ctpt_inv_d_2":           "ln_var_rescale_sf",
-        # 以下 mrpc baseline 不上 skeleton（未启用 rescale），但保留映射以备
-        # 其它 dataset 启用：
-        "ctct_softmax_out_mask_rescale": "softmax_out_mask_rescale_sf",
-        "ctct_v_mask_rescale":           "v_mask_rescale_sf",
-        "ctct_softmax_v_mask_rescale":   "softmax_v_mask_rescale_sf",
-        "ctct_wo_rescale":               "wo_rescale_sf",
     },
     5: {
         "ctct_xmean_over_std": "normalize_rescale_sf",
         "ctpt_gamal":          "gamma_rescale_sf",
         "ctpt_wffn1":          "wffn1_rescale_sf",
         "ctct_gelu_x2":        "gelu_power_rescale_sf_0",
-        # ctct_gelu_x3: graph 把 x³ 折进 x⁴，所以 mrpc baseline 没 x3 这一项；
-        # RL 的 gelu_power_rescale_sf_1 在该 baseline 下没有 RO SF。
-        "ctct_gelu_x4":        "gelu_power_rescale_sf_2",
-        # ctpt_gelu_coeff rescale 写到 gelu_coeff_mul_rescale_sf_<deg-1>（动态，见 _ctpt_gelu_coeff_rescale_field）
+        # ctct_gelu_x4 / ctct_gelu_x3 已不再有 RL 动作（gelu_power_rescale_sf_1/2 被删）。
+        # ctpt_gelu_coeff 的 sf_post 也不再有 RL 动作（gelu_coeff_mul_rescale_sf_* 全删）。
     },
 }
-
-
-def _ctpt_gelu_coeff_rescale_field(gelu_degree: int) -> str:
-    """block 5 ``ctpt_gelu_coeff`` rescale → ``gelu_coeff_mul_rescale_sf_<deg-1>``。
-
-    degree=1: ``gelu_coeff_mul_rescale_sf_0``
-    degree=2: ``gelu_coeff_mul_rescale_sf_1``
-    degree=4: ``gelu_coeff_mul_rescale_sf_3``
-    """
-    deg = max(1, int(gelu_degree))
-    return f"gelu_coeff_mul_rescale_sf_{deg - 1}"
 
 
 # ---------------------------------------------------------------------------
@@ -800,11 +771,9 @@ def _extract_one_block_layer(
         sf_post = cp.get("sf_post")
         if sf_post is None:
             continue
-        # block 5 的 ctpt_gelu_coeff 需要 degree-aware 映射
-        if int(block_idx) == 5 and name == "ctpt_gelu_coeff":
-            rl_field = _ctpt_gelu_coeff_rescale_field(int(gelu_degree))
-        else:
-            rl_field = rescale_map.get(name)
+        # block 5 的 ctpt_gelu_coeff rescale 在 2026-05-14 精简后不再有 RL 动作
+        # （gelu_coeff_mul_rescale_sf_* 全部删除），落到 unmapped 列表。
+        rl_field = rescale_map.get(name)
         if rl_field is None:
             out.unmapped_rescale_nodes.append(name)
             continue
@@ -1068,11 +1037,23 @@ def static_skeletons_baseline_to_action(
             if (li, int(block_idx), str(field_name)) not in active_rescale_slots:
                 action_vec[int(li * layer_dim + field_offset)] = 0
 
-    # BaselineCostStats（avg_k 用 max K_LEVELS — RO 不参与 K，所以 baseline = max k）
+    # BaselineCostStats（avg_k 反映 per-block baseline K：B1=13, B2=10, B3=13, B4=10, B5=13）。
+    # Layer 0 没有 block 1（首层无前置 FFN2），所以 K 槽位总数 = 4·L + (L-1) ≈ 5L-1。
+    # RO 不参与 K，所以 baseline avg_k 仅由 BASELINE_K_BY_BLOCK 决定。
+    from .action_space import BASELINE_K_BY_BLOCK
+    k_sum = 0.0
+    k_count = 0
+    for li in range(L):
+        for b in (1, 2, 3, 4, 5):
+            if li == 0 and b == 1:
+                continue  # layer 0 block 1 K is forced None
+            k_sum += float(BASELINE_K_BY_BLOCK.get(int(b), max(K_LEVELS)))
+            k_count += 1
+    baseline_avg_k = (k_sum / max(k_count, 1)) if k_count else float(max(K_LEVELS))
     cost_stats = BaselineCostStats(
         total_bits_sum=int(baseline.aggregate_total_bits),
         total_fusion_count=int(baseline.aggregate_fusion_count),
-        avg_k=float(max(K_LEVELS)),
+        avg_k=float(baseline_avg_k),
         typical_bits_drop=1.0,
         typical_fusion_count=1.0,
         typical_k_drop=1.0,

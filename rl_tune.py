@@ -591,6 +591,12 @@ def train(
         blb_v3_action_mask_file: str = "",
         blb_v3_action_mask_baseline_logit_bonus: float = 0.0,
         blb_v3_action_mask_source: str = "",
+        # Per-block sequential RL (DEFAULT path since 2026-05-15)
+        blb_v3_sequential_rl: bool = True,
+        blb_v3_sequential_invalid_penalty: float = 1.0,
+        blb_v3_sequential_cost_shaping_coeff: float = 0.05,
+        blb_v3_sequential_fusion_shaping_coeff: float = 0.0,
+        blb_v3_sequential_early_terminate_on_invalid: bool = False,
         final_eval_require_rescale_optimizer: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
@@ -614,6 +620,13 @@ def train(
     )
     blb_v3_action_mask_enabled = parse_bool_flag(
         blb_v3_action_mask_enabled, "blb_v3_action_mask_enabled"
+    )
+    blb_v3_sequential_rl = parse_bool_flag(
+        blb_v3_sequential_rl, "blb_v3_sequential_rl"
+    )
+    blb_v3_sequential_early_terminate_on_invalid = parse_bool_flag(
+        blb_v3_sequential_early_terminate_on_invalid,
+        "blb_v3_sequential_early_terminate_on_invalid",
     )
     # --final_eval_only 语义：只跑 final eval，不跑任何 RL 搜索阶段。
     # 等价于自动设置 skip_stage1_rl=True & skip_noise_rl=True & skip_final_eval=False，
@@ -1124,6 +1137,11 @@ def train(
             blb_v3_action_mask_file=blb_v3_action_mask_file,
             blb_v3_action_mask_baseline_logit_bonus=blb_v3_action_mask_baseline_logit_bonus,
             blb_v3_action_mask_source=blb_v3_action_mask_source,
+            blb_v3_sequential_rl=blb_v3_sequential_rl,
+            blb_v3_sequential_invalid_penalty=blb_v3_sequential_invalid_penalty,
+            blb_v3_sequential_cost_shaping_coeff=blb_v3_sequential_cost_shaping_coeff,
+            blb_v3_sequential_fusion_shaping_coeff=blb_v3_sequential_fusion_shaping_coeff,
+            blb_v3_sequential_early_terminate_on_invalid=blb_v3_sequential_early_terminate_on_invalid,
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

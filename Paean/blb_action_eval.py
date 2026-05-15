@@ -15,7 +15,6 @@ from blb_stage2_rl.action_space import (
     build_optimizer_requests,
     load_max_sfs,
 )
-from blb_stage2_rl.default_invoker import HeuristicStubInvoker
 from blb_stage2_rl.feasibility import build_final_eval_feasibility
 from final_evaluation_module import UnifiedFinalEvaluationModule
 from rescale_optimizer_bridge import (
@@ -92,7 +91,6 @@ class BLBActionFinalEvaluationModule:
         profile = str(getattr(ev, "dataset_key", "default") or "default")
         (
             self.rescale_bridge,
-            self.heuristic_invoker,
             self.rescale_invoker_kind,
             self.rescale_optimizer_root,
         ) = self._build_rescale_bridge(profile)
@@ -412,31 +410,31 @@ class BLBActionFinalEvaluationModule:
     def _optimizer_outputs(self, profile: str, cfgs_dict):
         bridge = getattr(self, "rescale_bridge", None)
         if bridge is None:
-            bridge, heuristic, kind, root = self._build_rescale_bridge(profile)
+            bridge, kind, root = self._build_rescale_bridge(profile)
             self.rescale_bridge = bridge
-            self.heuristic_invoker = heuristic
             self.rescale_invoker_kind = kind
             self.rescale_optimizer_root = root
         requests = build_optimizer_requests(profile, cfgs_dict)
         outputs = bridge.evaluate_blocks(requests)
         return outputs, aggregate_optimizer_signals(outputs)
 
-    def _build_rescale_bridge(self, profile: str) -> Tuple[RescaleOptimizerBridge, Optional[HeuristicStubInvoker], str, str]:
+    def _build_rescale_bridge(self, profile: str) -> Tuple[RescaleOptimizerBridge, str, str]:
         ev = self.evaluator
-        kind = str(getattr(ev, "blb_v3_rescale_invoker_kind", "heuristic") or "heuristic")
+        kind = str(getattr(ev, "blb_v3_rescale_invoker_kind", "in_process") or "in_process")
         kind = kind.lower().replace("-", "_")
-        require_real = bool(getattr(ev, "final_eval_require_rescale_optimizer", False))
         root = self._resolve_rescale_optimizer_root()
 
-        def fallback(reason: Exception | str):
-            if require_real:
-                raise RuntimeError(
-                    "final_eval requires a real Rescale_optimizer invoker, "
-                    f"but initialization failed: {reason}"
-                )
-            ev.log(f"  [final_eval][warning] Rescale_optimizer unavailable ({reason}); fallback to heuristic.")
-            heuristic = HeuristicStubInvoker()
-            return RescaleOptimizerBridge(invoker=heuristic, **self._rescale_bridge_options()), heuristic, "heuristic", ""
+        def fail(reason: Exception | str):
+            raise RuntimeError(
+                "BLB final_eval requires a real Rescale_optimizer invoker "
+                f"(kind={kind!r}, root={root!r}): {reason}"
+            )
+
+        if kind == "heuristic":
+            fail(
+                "heuristic invoker has been removed; set "
+                "evaluator.blb_v3_rescale_invoker_kind='in_process' (or 'subprocess')"
+            )
 
         if kind == "in_process":
             try:
@@ -444,9 +442,9 @@ class BLBActionFinalEvaluationModule:
                     rescale_optimizer_root=root,
                     profile=str(profile),
                 )
-                return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), None, "in_process", root
+                return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), "in_process", root
             except Exception as exc:
-                return fallback(exc)
+                fail(exc)
 
         if kind == "subprocess":
             try:
@@ -463,22 +461,19 @@ class BLBActionFinalEvaluationModule:
                     configs=configs,
                     baseline_archive=str(archive),
                 )
-                return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), None, "subprocess", root
+                return RescaleOptimizerBridge(invoker=invoker, **self._rescale_bridge_options()), "subprocess", root
             except Exception as exc:
-                return fallback(exc)
+                fail(exc)
 
         if kind == "stub":
             canned = getattr(ev, "blb_v3_stub_canned", None)
             if canned:
                 from rescale_optimizer_bridge import StubInvoker
 
-                return RescaleOptimizerBridge(invoker=StubInvoker(canned), **self._rescale_bridge_options()), None, "stub", ""
-            return fallback("stub invoker requested but no blb_v3_stub_canned was provided")
+                return RescaleOptimizerBridge(invoker=StubInvoker(canned), **self._rescale_bridge_options()), "stub", ""
+            fail("stub invoker requested but no blb_v3_stub_canned was provided")
 
-        if require_real:
-            return fallback("rescale invoker kind is heuristic")
-        heuristic = HeuristicStubInvoker()
-        return RescaleOptimizerBridge(invoker=heuristic, **self._rescale_bridge_options()), heuristic, "heuristic", ""
+        fail(f"unknown rescale invoker kind {kind!r}; expected one of in_process/subprocess/stub")
 
     def _load_rescale_optimizer_mode(self) -> str:
         if not self.action_config_path:

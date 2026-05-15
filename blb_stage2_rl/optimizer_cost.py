@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Mapping, Sequence, Tuple
 
 import numpy as np
 
@@ -36,8 +36,6 @@ def evaluate_action_for_cost(
         rescale_bridge: Any,
         gelu_degree: Any = 4,
         attn_degree: Any = 4,
-        heuristic: Optional[Any] = None,
-        stub_register_cfgs: bool = False,
         ) -> ActionCostEvaluation:
     """Evaluate every action through the same cfg-derived optimizer path.
 
@@ -58,14 +56,7 @@ def evaluate_action_for_cost(
     cfgs_dict = decoded.cfgs_dict()
     requests = build_optimizer_requests(profile, cfgs_dict)
 
-    if heuristic is not None and bool(stub_register_cfgs):
-        for cn, (_block_name, cfg) in requests.items():
-            heuristic.register_cfg(cn, cfg)
-    try:
-        outputs = rescale_bridge.evaluate_blocks(requests)
-    finally:
-        if heuristic is not None and bool(stub_register_cfgs):
-            heuristic.clear_cfg_registry()
+    outputs = rescale_bridge.evaluate_blocks(requests)
 
     return ActionCostEvaluation(
         action_indices=[int(x) for x in action_arr.tolist()],

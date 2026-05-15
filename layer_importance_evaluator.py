@@ -2331,6 +2331,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_action_mask_file='',
                   blb_v3_action_mask_baseline_logit_bonus=0.0,
                   blb_v3_action_mask_source='',
+                  blb_v3_sequential_rl=True,
+                  blb_v3_sequential_invalid_penalty=1.0,
+                  blb_v3_sequential_cost_shaping_coeff=0.05,
+                  blb_v3_sequential_fusion_shaping_coeff=0.0,
+                  blb_v3_sequential_early_terminate_on_invalid=False,
                   final_eval_require_rescale_optimizer=False):
         """
         基于 PPO 强化学习的策略搜索器。
@@ -2794,6 +2799,28 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.blb_v3_action_mask_baseline_logit_bonus = 0.0
         if self.blb_v3_action_mask_mode.lower() not in ("", "none", "off", "disabled"):
             self.blb_v3_action_mask_enabled = True
+
+        # Per-block sequential RL (default path since 2026-05-15)
+        self.blb_v3_sequential_rl = self._coerce_bool_flag(
+            blb_v3_sequential_rl,
+            'blb_v3_sequential_rl',
+        ) if blb_v3_sequential_rl not in (None, "") else True
+        try:
+            self.blb_v3_sequential_invalid_penalty = float(blb_v3_sequential_invalid_penalty)
+        except Exception:
+            self.blb_v3_sequential_invalid_penalty = 1.0
+        try:
+            self.blb_v3_sequential_cost_shaping_coeff = float(blb_v3_sequential_cost_shaping_coeff)
+        except Exception:
+            self.blb_v3_sequential_cost_shaping_coeff = 0.05
+        try:
+            self.blb_v3_sequential_fusion_shaping_coeff = float(blb_v3_sequential_fusion_shaping_coeff)
+        except Exception:
+            self.blb_v3_sequential_fusion_shaping_coeff = 0.0
+        self.blb_v3_sequential_early_terminate_on_invalid = self._coerce_bool_flag(
+            blb_v3_sequential_early_terminate_on_invalid,
+            'blb_v3_sequential_early_terminate_on_invalid',
+        )
 
     @staticmethod
     def _coerce_bool_flag(raw_value, flag_name):

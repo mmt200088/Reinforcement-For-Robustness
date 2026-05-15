@@ -598,6 +598,17 @@ class BLBStage2TrainConfig:
     action_mask_file: Optional[str] = None
     action_mask_baseline_logit_bonus: float = 0.0
     action_mask_source: str = ""
+    # ---- per-block sequential RL knobs (additive; default ON 2026-05-15) ----
+    sequential_rl: bool = True
+    """If True, the runner replaces the legacy single-shot rollout loop with the
+    horizon-N per-block sequential loop (BLBStage2SequentialEnv +
+    BLBStage2SequentialPolicy + train_sequential). Default flipped to True on
+    2026-05-15 -- the single-shot path now requires explicit opt-out via
+    ``--blb-v3-sequential-rl false`` in the launcher."""
+    sequential_invalid_penalty: float = 1.0
+    sequential_cost_shaping_coeff: float = 0.05
+    sequential_fusion_shaping_coeff: float = 0.0
+    sequential_early_terminate_on_invalid: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -643,6 +654,21 @@ class BLBStage2RLRunner:
 
         # ---------- 0) 解析配置 ----------
         train_cfg = self._build_train_config_from_evaluator(ev)
+        # 2026-05-15：per-block sequential RL is the default Stage-2 path.
+        # Dispatch to the sequential runner before the heavy single-shot setup
+        # so the two paths stay genuinely independent. The single-shot loop
+        # below is reachable only when ``train_cfg.sequential_rl`` is False.
+        if bool(getattr(train_cfg, "sequential_rl", False)):
+            from .sequential_runner import run_sequential_via_runner
+            return run_sequential_via_runner(
+                runner=self,
+                train_cfg=train_cfg,
+                fixed_gelu=fixed_gelu,
+                fixed_softmax=fixed_softmax,
+                fixed_label=fixed_label,
+                fixed_source=fixed_source,
+                resume_checkpoint_path=resume_checkpoint_path,
+            )
         # ---------- 0.1) 切换到 BLB Stage 2 RL 持久化目录 ----------
         # BLB 进度文件写入当前 run_output_dir/stage2_noise/progress。
         legacy_progress_dir = str(getattr(ev, "noise_stage_progress_dir", "") or "")
@@ -2423,6 +2449,29 @@ class BLBStage2RLRunner:
                 pass
         if str(cfg.action_mask_mode or "").strip().lower() not in ("", "none", "off", "disabled"):
             cfg.action_mask_enabled = True
+
+        # Per-block sequential RL toggle (default True since 2026-05-15).
+        v = getattr(ev, "blb_v3_sequential_rl", None)
+        if v not in (None, ""):
+            cfg.sequential_rl = str(v).strip().lower() not in (
+                "0", "false", "no", "off",
+            )
+        for cfg_field, attr_name, caster in (
+                ("sequential_invalid_penalty", "blb_v3_sequential_invalid_penalty", float),
+                ("sequential_cost_shaping_coeff", "blb_v3_sequential_cost_shaping_coeff", float),
+                ("sequential_fusion_shaping_coeff", "blb_v3_sequential_fusion_shaping_coeff", float),
+        ):
+            v = getattr(ev, attr_name, None)
+            if v not in (None, ""):
+                try:
+                    setattr(cfg, cfg_field, caster(v))
+                except Exception:
+                    pass
+        v = getattr(ev, "blb_v3_sequential_early_terminate_on_invalid", None)
+        if v not in (None, ""):
+            cfg.sequential_early_terminate_on_invalid = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
+            )
 
         cfg.rollout_size = max(1, min(int(cfg.rollout_size), int(cfg.total_episodes)))
         if cfg.warmstart_anchor_episodes is None:

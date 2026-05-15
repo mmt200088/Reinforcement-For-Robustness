@@ -87,6 +87,27 @@ LEVELS_K = len(K_LEVELS)
 LEVELS_FIRST_INPUT = 5   # 与 fresh 一致
 BLB_FIRST_INPUT_N = 8192
 
+# 每个 block 在 baseline / 全 max action 下的 truncation K（user-tuned 2026-05-15）。
+# 之前所有 block 都默认 K=13；现在按 block 类型差异化：B1/B3/B5 用 K=13（更激进、
+# 更便宜），B2/B4 用 K=10（更保守、更精确）。
+# 这是 RL warmstart 锚点 + reward.k_drop 的基准；RL 训练时可以选其它 K 值，但 cost
+# reward 会以这个 baseline 计算 k_drop。
+BASELINE_K_BY_BLOCK: Dict[int, int] = {1: 13, 2: 10, 3: 13, 4: 10, 5: 13}
+
+
+def _baseline_k_index_for_block(block_idx: int) -> int:
+    """Map per-block baseline K value -> action index in K_LEVELS.
+
+    Falls back to ``K_LEVELS.index(max(K_LEVELS))`` if the configured baseline
+    K isn't in the K_LEVELS table (defensive — the BLB_TRUNCATION_K_LEVELS env
+    var override could remove 10 or 13).
+    """
+    target = int(BASELINE_K_BY_BLOCK.get(int(block_idx), max(K_LEVELS)))
+    if target in K_LEVELS:
+        return int(K_LEVELS.index(target))
+    return int(K_LEVELS.index(max(K_LEVELS)))
+
+
 # 离散挡位数（与 cfg 字段一一对应；同时影响 reward / policy 头维度）
 NUM_LEVELS_PER_DIM_BY_BLOCK_KIND = {
     "F": LEVELS_F,
@@ -115,15 +136,16 @@ class _BlockFieldSpec:
 
 
 # Block 1（不含首层 K 字段；首层会在 cfg build 时强制 truncation_k=None）
+# 注（2026-05-14 精简）：删除 ``wffn2_rescale_sf`` / ``square_rescale_sf`` 两个
+# rescale 槽 —— mrpc baseline skeleton 不在这两个节点处下 rescale，且
+# Rescale_optimizer 不会选用，留作 RL 动作是浪费容量。cfg 的对应字段保留为 None。
 _BLOCK1_FIELDS = _BlockFieldSpec(
     fields=(
         ("gelu_out_sf",        "F", 30),
         ("wffn2_sf",           "W", 22),
         ("mean_inv_d_sf",      "S", 22),
         ("var_inv_d_sf",       "S", 22),
-        ("wffn2_rescale_sf",   "R", 22),
         ("mean_rescale_sf",    "R", 22),
-        ("square_rescale_sf",  "R", 22),
         ("var_rescale_sf",     "R", 22),
         ("output_truncation_k","K", 13),
     ),
@@ -131,44 +153,42 @@ _BLOCK1_FIELDS = _BlockFieldSpec(
 
 
 # Block 2
+# 注（2026-05-14 精简）：删除 11 个 RL 槽 ——
+#   * 3 个 encode：``wq_sf`` / ``q_mask1_sf`` / ``q_mask2_sf``。Q 侧三个 encode 与
+#     K 侧绑定，build_block2_cfg_from_action 用 ``wk_sf`` / ``kt_mask1_sf`` /
+#     ``kt_mask2_sf`` 同时填 cfg 上 Q/K 两侧字段。bridge 的 ``ctpt_wq_wk`` 节点
+#     现在从 ``cfg.wk_encode.scaling_factor`` 读。
+#   * 8 个 rescale：``normalize/wk/wq/wv/kt_mask1/q_mask1/q_mask2/qkt_matmul``
+#     这些 rescale 不在 mrpc baseline skeleton 上；cfg 对应字段保留为 None。
+#   * ``wv_sf`` 保留作单独控制 Wv 乘法位置的模型噪声（虽然该节点不在 graph 里，
+#     不入 optimizer cost）。
 _BLOCK2_FIELDS = _BlockFieldSpec(
     fields=(
         ("inv_std_fresh_sf",            "F", 30),
         ("x_centered_fresh_sf",         "F", 30),
         ("gamma_sf",                    "M", 22),
-        ("wq_sf",                       "W", 22),
         ("wk_sf",                       "W", 22),
         ("wv_sf",                       "W", 22),
         ("kt_mask1_sf",                 "M", 22),
         ("kt_mask2_sf",                 "M", 22),
-        ("q_mask1_sf",                  "M", 22),
-        ("q_mask2_sf",                  "M", 22),
         ("qkt_merge_mask_sf",           "M", 22),
-        ("normalize_rescale_sf",        "R", 22),
         ("gamma_rescale_sf",            "R", 22),
-        ("wk_rescale_sf",               "R", 22),
-        ("wq_rescale_sf",               "R", 22),
-        ("wv_rescale_sf",               "R", 22),
-        ("kt_mask1_rescale_sf",         "R", 22),
         ("kt_mask2_rescale_sf",         "R", 22),
-        ("q_mask1_rescale_sf",          "R", 22),
-        ("q_mask2_rescale_sf",          "R", 22),
-        ("qkt_matmul_rescale_sf",       "R", 22),
         ("qkt_merge_mask_rescale_sf",   "R", 22),
         ("output_truncation_k",         "K", 13),
     ),
 )
 
 
-# Block 3 字段是 degree-aware 的 —— square_rescale_sfs 长度 == degree。
-# 我们让 max degree=4（也是 default），动作里固定占 5 个 R 槽（1 个 x_inv_2n + 4 个 square）。
-# build_*_cfg 时按实际 degree 截短；多出来的 dim 在 RL 出动作里占位（不用就掩掉）。
-_BLOCK3_R_SLOTS = 1 + 4   # x_inv_2n_rescale + 4 个 square_rescale (max degree=4)
+# Block 3：Softmax 近似中的 fresh / encode / 多次 squaring。
+# 注（2026-05-14 精简）：删除 ``x_inv_2n_rescale_sf`` —— mrpc baseline skeleton
+# 不上 ``ctct_x_inv_2n_rescale``，Rescale_optimizer 不会选用。
+# 保留 ``square_rescale_sf_0..3``（按 degree 截短），它们通过 t_new 进 optimizer。
+_BLOCK3_R_SLOTS = 4   # square_rescale_sf_0..3 (max degree=4)
 _BLOCK3_FIELDS = _BlockFieldSpec(
     fields=(
         ("x_fresh_sf",              "F", 30),
         ("inv_2n_sf",               "S", 22),
-        ("x_inv_2n_rescale_sf",     "R", 22),
         ("square_rescale_sf_0",     "R", 22),
         ("square_rescale_sf_1",     "R", 22),
         ("square_rescale_sf_2",     "R", 22),
@@ -179,6 +199,12 @@ _BLOCK3_FIELDS = _BlockFieldSpec(
 
 
 # Block 4
+# 注（2026-05-14 精简）：删除 5 个 rescale 槽 ——
+#   * ``softmax_out_mask_rescale_sf`` / ``v_mask_rescale_sf`` /
+#     ``softmax_v_mask_rescale_sf`` / ``wo_rescale_sf`` / ``ln_square_rescale_sf``
+#   这些 rescale 不在 mrpc baseline skeleton 上。
+# 保留 V 侧的 ``v_fresh_sf`` / ``v_mask_sf``：它们影响模型 V 路径上的噪声安装，
+# 即便 block4.json graph 把 V 乘法合到 ``ctct_rot_softmax_mul_v`` 不入 optimizer。
 _BLOCK4_FIELDS = _BlockFieldSpec(
     fields=(
         ("softmax_out_fresh_sf",            "F", 30),
@@ -189,24 +215,21 @@ _BLOCK4_FIELDS = _BlockFieldSpec(
         ("ln_mean_inv_d_sf",                "S", 22),
         ("ln_var_inv_d_sf",                 "S", 22),
         ("wo_sf",                           "W", 22),
-        ("softmax_out_mask_rescale_sf",     "R", 22),
-        ("v_mask_rescale_sf",               "R", 22),
         ("softmax_v_matmul_rescale_sf",     "R", 22),
-        ("softmax_v_mask_rescale_sf",       "R", 22),
-        ("wo_rescale_sf",                   "R", 22),
         ("ln_mean_rescale_sf",              "R", 22),
-        ("ln_square_rescale_sf",            "R", 22),
         ("ln_var_rescale_sf",               "R", 22),
         ("output_truncation_k",             "K", 13),
     ),
 )
 
 
-# Block 5（GELU degree-aware）：固定按 max gelu_degree=4 占槽
-# gelu_power_rescales 长度 = degree-1 = 3
-# gelu_coeff_mul_rescales 长度 = degree = 4
-# normalize/gamma/wffn1 各 1 个 R = 3
-# 加 K = 16 维
+# Block 5（GELU degree-aware）
+# 注（2026-05-14 精简）：删除 6 个 rescale 槽 ——
+#   * ``gelu_power_rescale_sf_1`` / ``gelu_power_rescale_sf_2``：mrpc graph 里
+#     x³ 被折进 x⁴；只有 ``gelu_power_rescale_sf_0`` (x²) 在 skeleton 上。
+#   * ``gelu_coeff_mul_rescale_sf_0..3``：mrpc baseline 把多项式系数乘法合成一个
+#     ``ctpt_gelu_coeff`` 节点；这 4 个独立 rescale 不在 skeleton 上。
+# 保留 ``gelu_power_rescale_sf_0``（degree>=2 时 x² 那一档进 t_new）。
 _BLOCK5_FIELDS = _BlockFieldSpec(
     fields=(
         ("inv_std_fresh_sf",                "F", 30),
@@ -217,13 +240,7 @@ _BLOCK5_FIELDS = _BlockFieldSpec(
         ("normalize_rescale_sf",            "R", 22),
         ("gamma_rescale_sf",                "R", 22),
         ("wffn1_rescale_sf",                "R", 22),
-        ("gelu_power_rescale_sf_0",         "R", 22),  # x²
-        ("gelu_power_rescale_sf_1",         "R", 22),  # x³（degree==4 时启用）
-        ("gelu_power_rescale_sf_2",         "R", 22),  # x⁴（degree==4 时启用）
-        ("gelu_coeff_mul_rescale_sf_0",     "R", 22),
-        ("gelu_coeff_mul_rescale_sf_1",     "R", 22),
-        ("gelu_coeff_mul_rescale_sf_2",     "R", 22),
-        ("gelu_coeff_mul_rescale_sf_3",     "R", 22),
+        ("gelu_power_rescale_sf_0",         "R", 22),  # x²；degree>=2 时启用
         ("output_truncation_k",             "K", 13),
     ),
 )
@@ -247,39 +264,27 @@ _BLOCK_NODE_NAME_BY_FIELD: Dict[int, Dict[str, str]] = {
         "wffn2_sf":             "ctpt_ffn2",
         "mean_inv_d_sf":        "ctpt_inv_d_1",
         "var_inv_d_sf":         "ctpt_inv_d_2",
-        "wffn2_rescale_sf":     "ctct_ffn2_rescale",
         "mean_rescale_sf":      "ctct_mean_rescale",
-        "square_rescale_sf":    "ctct_ext_square",
         "var_rescale_sf":       "ctct_var_rescale",
     },
     2: {
         "inv_std_fresh_sf":            "ctpt_inv_std",
         "x_centered_fresh_sf":         "ctpt_x_centered",
         "gamma_sf":                    "ctpt_gamma",
-        "wq_sf":                       "ctpt_wq",
-        "wk_sf":                       "ctpt_wk",
+        # ``wk_sf`` 同时控制 Q/K 两侧 encode（bridge -> ctpt_wq_wk）
+        "wk_sf":                       "ctpt_wq_wk",
+        # ``wv_sf`` 只控制模型噪声（mrpc graph 无对应节点）
         "wv_sf":                       "ctpt_wv",
-        "kt_mask1_sf":                 "ctpt_kt_mask1",
-        "kt_mask2_sf":                 "ctpt_kt_mask2",
-        "q_mask1_sf":                  "ctpt_q_mask1",
-        "q_mask2_sf":                  "ctpt_q_mask2",
-        "qkt_merge_mask_sf":           "ctpt_qkt_merge_mask",
-        "normalize_rescale_sf":        "ctct_normalize_rescale",
+        "kt_mask1_sf":                 "ctpt_rotKT_mask1",
+        "kt_mask2_sf":                 "ctpt_rotKT_mask2",
+        "qkt_merge_mask_sf":           "ctpt_mask",
         "gamma_rescale_sf":            "ctct_gamma_rescale",
-        "wk_rescale_sf":               "ctct_wk_rescale",
-        "wq_rescale_sf":               "ctct_wq_rescale",
-        "wv_rescale_sf":               "ctct_wv_rescale",
-        "kt_mask1_rescale_sf":         "ctct_kt_mask1_rescale",
         "kt_mask2_rescale_sf":         "ctct_kt_mask2_rescale",
-        "q_mask1_rescale_sf":          "ctct_q_mask1_rescale",
-        "q_mask2_rescale_sf":          "ctct_q_mask2_rescale",
-        "qkt_matmul_rescale_sf":       "ctct_qkt_matmul_rescale",
         "qkt_merge_mask_rescale_sf":   "ctct_qkt_merge_mask_rescale",
     },
     3: {
         "x_fresh_sf":               "ctpt_softmax_x",
         "inv_2n_sf":                "ctpt_softmax_inv_2n",
-        "x_inv_2n_rescale_sf":      "ctct_softmax_x_inv_2n_rescale",
         "square_rescale_sf_0":      "ctct_softmax_pow_s1",
         "square_rescale_sf_1":      "ctct_softmax_pow_s2",
         "square_rescale_sf_2":      "ctct_softmax_pow_s3",
@@ -294,13 +299,8 @@ _BLOCK_NODE_NAME_BY_FIELD: Dict[int, Dict[str, str]] = {
         "ln_mean_inv_d_sf":             "ctpt_inv_d_attn_mean",
         "ln_var_inv_d_sf":              "ctpt_inv_d_attn_var",
         "wo_sf":                        "ctpt_wo",
-        "softmax_out_mask_rescale_sf":  "ctct_softmax_out_mask_rescale",
-        "v_mask_rescale_sf":            "ctct_v_mask_rescale",
         "softmax_v_matmul_rescale_sf":  "ctct_softmax_v_matmul_rescale",
-        "softmax_v_mask_rescale_sf":    "ctct_softmax_v_mask_rescale",
-        "wo_rescale_sf":                "ctct_wo_rescale",
         "ln_mean_rescale_sf":           "ctct_attn_mean_rescale",
-        "ln_square_rescale_sf":         "ctct_attn_square_rescale",
         "ln_var_rescale_sf":            "ctct_attn_var_rescale",
     },
     5: {
@@ -313,12 +313,6 @@ _BLOCK_NODE_NAME_BY_FIELD: Dict[int, Dict[str, str]] = {
         "gamma_rescale_sf":                 "ctct_gamma_attn_rescale",
         "wffn1_rescale_sf":                 "ctct_wffn1_rescale",
         "gelu_power_rescale_sf_0":          "ctct_gelu_x2",
-        "gelu_power_rescale_sf_1":          "ctct_gelu_x3",
-        "gelu_power_rescale_sf_2":          "ctct_gelu_x4",
-        "gelu_coeff_mul_rescale_sf_0":      "ctct_gelu_b_x",
-        "gelu_coeff_mul_rescale_sf_1":      "ctct_gelu_c_x2",
-        "gelu_coeff_mul_rescale_sf_2":      "ctct_gelu_d_x3",
-        "gelu_coeff_mul_rescale_sf_3":      "ctct_gelu_e_x4",
     },
 }
 
@@ -512,6 +506,224 @@ def per_layer_field_offsets() -> List[Tuple[int, str, str]]:
 
 
 # ---------------------------------------------------------------------------
+# Per-block sequential step schedule (for the sequential RL formulation).
+#
+# Episode order:
+#   step 1:  layer 0, block 2  (+ first_input fresh)   -- layer 0 has no block 1
+#   step 2:  layer 0, block 3
+#   step 3:  layer 0, block 4
+#   step 4:  layer 0, block 5
+#   step 5:  layer 1, block 1
+#   step 6:  layer 1, block 2
+#   ...
+#   step 4 + (L-1)*5: layer L-1, block 5
+#
+# Total horizon for L layers = 4 + (L-1)*5
+# For L=12 -> horizon = 59.
+#
+# first_input fresh (legacy "tail" slot in the action vector) is decided
+# alongside layer 0 block 2 to avoid an extra horizon=0 step. It still occupies
+# its same position at the end of the full action vector.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class BlockStepSpec:
+    """Description of one (layer, block) decision step in the sequential episode.
+
+    Attributes:
+        step_idx:        0-based index within the episode (0 .. horizon-1).
+        layer_idx:       0-based transformer layer.
+        block_idx:       1..5.
+        slot_dims:       num_levels for each slot decided at this step.
+        slot_field_names: corresponding _BLOCK{N}_FIELDS field names.
+        slot_kinds:      "F"/"W"/"M"/"S"/"R"/"K".
+        full_vec_offsets: index into the legacy 577-dim action vector where
+                          each slot's value should be written.
+        includes_first_input: True for step_idx==0 only (folded into layer-0
+                              block-2). When True, the LAST entry of slot_dims
+                              etc. is the first_input fresh slot.
+        graph_key:       e.g. "block2_mrpc" -- the Rescale_optimizer graph that
+                         scores this block (independent of layer).
+        terminal:        True for the last step in the episode.
+    """
+    step_idx: int
+    layer_idx: int
+    block_idx: int
+    slot_dims: Tuple[int, ...]
+    slot_field_names: Tuple[str, ...]
+    slot_kinds: Tuple[str, ...]
+    full_vec_offsets: Tuple[int, ...]
+    includes_first_input: bool
+    graph_key_suffix: str          # e.g. "block2_mrpc" -- profile filled in by env
+    terminal: bool
+
+
+# layer 0 lives without block 1 -- the layer-0 input goes straight into block 2.
+_LAYER0_BLOCK_ORDER: Tuple[int, ...] = (2, 3, 4, 5)
+_LAYER_GE_1_BLOCK_ORDER: Tuple[int, ...] = (1, 2, 3, 4, 5)
+
+_BLOCK_GRAPH_KEY_TEMPLATE = {
+    1: "block1_{profile}",
+    2: "block2_{profile}",
+    3: "block3_exp_n{attn_degree}",
+    4: "block4",
+    5: "block5_n{gelu_degree}",
+}
+
+
+def horizon_for_num_layers(num_layers: int) -> int:
+    """Sequential episode horizon = 4 (layer 0) + (L-1) * 5.
+
+    For L=12 this is 59 steps. The first step also writes first_input fresh.
+    """
+    L = int(num_layers)
+    if L < 1:
+        raise ValueError(f"num_layers must be >= 1, got {L}")
+    return 4 + (L - 1) * 5
+
+
+def _full_vec_offset_for_block(num_layers: int, layer_idx: int, block_idx: int) -> int:
+    """Return start offset (into the legacy 577-dim full action vector) of
+    the (layer_idx, block_idx) slot range.
+
+    The full vec is one categorical index per slot per layer, in block order
+    1..5; first_input fresh sits at the very end.
+    """
+    per_layer_width = len(layer_dims())
+    base = int(layer_idx) * per_layer_width
+    cursor = 0
+    for b in (1, 2, 3, 4, 5):
+        if b == int(block_idx):
+            return base + cursor
+        cursor += len(block_dims(b))
+    raise ValueError(f"unknown block_idx={block_idx}")
+
+
+def _full_vec_first_input_offset(num_layers: int) -> int:
+    """The first_input fresh slot lives at the very end of the action vector."""
+    return int(num_layers) * len(layer_dims())
+
+
+def step_schedule(
+        num_layers: int,
+        *,
+        profile: str = "mrpc",
+        attn_degree_per_layer: Optional[Sequence[int]] = None,
+        gelu_degree_per_layer: Optional[Sequence[int]] = None,
+        ) -> List[BlockStepSpec]:
+    """Build the per-block decision schedule.
+
+    Args:
+        num_layers:               number of transformer layers (e.g. 12 for BERT-base).
+        profile:                  Rescale_optimizer profile (e.g. "mrpc"); used to
+                                  compose graph keys for blocks 1, 2, 4. Graph 3
+                                  uses ``block3_exp_n{attn_degree}``, graph 5 uses
+                                  ``block5_n{gelu_degree}`` and so depend on the
+                                  Stage-1 degree per layer.
+        attn_degree_per_layer:    Stage-1 softmax/attn polynomial degree for each
+                                  layer (default 4 if None).
+        gelu_degree_per_layer:    Stage-1 GELU degree per layer (default 4 if None).
+    """
+    L = int(num_layers)
+    horizon = horizon_for_num_layers(L)
+    out: List[BlockStepSpec] = []
+    fi_offset = _full_vec_first_input_offset(L)
+    step_idx = 0
+    for layer_idx in range(L):
+        block_order = _LAYER0_BLOCK_ORDER if layer_idx == 0 else _LAYER_GE_1_BLOCK_ORDER
+        for b in block_order:
+            spec = _BLOCK_SPECS[b]
+            slot_dims: List[int] = []
+            slot_field_names: List[str] = []
+            slot_kinds: List[str] = []
+            full_vec_offsets: List[int] = []
+            block_base = _full_vec_offset_for_block(L, layer_idx, b)
+            for slot_local_idx, (fname, kind, _max) in enumerate(spec.fields):
+                slot_dims.append(NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[kind])
+                slot_field_names.append(fname)
+                slot_kinds.append(kind)
+                full_vec_offsets.append(block_base + slot_local_idx)
+            includes_first = (step_idx == 0)
+            if includes_first:
+                slot_dims.append(LEVELS_FIRST_INPUT)
+                slot_field_names.append("__first_input_sf__")
+                slot_kinds.append("F")
+                full_vec_offsets.append(fi_offset)
+            # graph key suffix
+            if b == 3:
+                deg = (
+                    int(attn_degree_per_layer[layer_idx])
+                    if attn_degree_per_layer is not None and layer_idx < len(attn_degree_per_layer)
+                    else 4
+                )
+                gk = f"block3_exp_n{deg}"
+            elif b == 5:
+                deg = (
+                    int(gelu_degree_per_layer[layer_idx])
+                    if gelu_degree_per_layer is not None and layer_idx < len(gelu_degree_per_layer)
+                    else 4
+                )
+                gk = f"block5_n{deg}"
+            elif b == 4:
+                gk = "block4"
+            else:
+                gk = _BLOCK_GRAPH_KEY_TEMPLATE[b].format(profile=str(profile))
+            out.append(BlockStepSpec(
+                step_idx=step_idx,
+                layer_idx=int(layer_idx),
+                block_idx=int(b),
+                slot_dims=tuple(slot_dims),
+                slot_field_names=tuple(slot_field_names),
+                slot_kinds=tuple(slot_kinds),
+                full_vec_offsets=tuple(full_vec_offsets),
+                includes_first_input=includes_first,
+                graph_key_suffix=gk,
+                terminal=(step_idx == horizon - 1),
+            ))
+            step_idx += 1
+    if step_idx != horizon:
+        raise RuntimeError(
+            f"step_schedule built {step_idx} specs but horizon expected {horizon}"
+        )
+    return out
+
+
+def step_schedule_max_dim(num_layers: int) -> int:
+    """Max number of slots decided at any single step in the schedule.
+
+    Used by the policy network to size a single shared MultiDiscrete head;
+    per-step masks zero out unused slots.
+    """
+    sched = step_schedule(int(num_layers))
+    return max(len(s.slot_dims) for s in sched)
+
+
+def splice_step_action_into_full_vec(
+        full_vec: np.ndarray,
+        step: BlockStepSpec,
+        step_action: Sequence[int],
+        ) -> np.ndarray:
+    """Write the per-step action's slot values into the legacy 577-dim vec.
+
+    ``step_action`` length must equal ``len(step.slot_dims)``. Returns
+    ``full_vec`` for chaining.
+    """
+    arr = np.asarray(step_action, dtype=int).reshape(-1)
+    if arr.size != len(step.full_vec_offsets):
+        raise ValueError(
+            f"step {step.step_idx} expects {len(step.full_vec_offsets)} slots, got {arr.size}"
+        )
+    for offset, val in zip(step.full_vec_offsets, arr.tolist()):
+        full_vec[int(offset)] = int(val)
+    return full_vec
+
+
+def empty_full_action_vec(num_layers: int) -> np.ndarray:
+    """Zero-initialised full action vector matching ``action_dims_for_config`` width."""
+    return np.zeros(len(action_dims_for_config(int(num_layers))), dtype=np.int64)
+
+
+# ---------------------------------------------------------------------------
 # action vector → cfgs
 # ---------------------------------------------------------------------------
 @dataclass
@@ -545,51 +757,55 @@ def _build_block1_action(
     """从单层 block1 字段值构建 ``Block1ActionSpec``。
 
     首层（layer 0）Block 1 缺失（spec §12 风险 #2）→ 强制 truncation_k=None。
+
+    精简后只保留 6 个 RL 槽：``gelu_out_sf / wffn2_sf / mean_inv_d_sf /
+    var_inv_d_sf / mean_rescale_sf / var_rescale_sf``，外加首层依赖的
+    ``output_truncation_k``。被删除的 ``wffn2_rescale_sf`` 和
+    ``square_rescale_sf`` 对应 cfg 字段固定为 None（不安装该处 rescale 噪声）。
     """
-    a = Block1ActionSpec(
+    return Block1ActionSpec(
         gelu_out_sf=int(layer_field_values["gelu_out_sf"]),
         wffn2_sf=int(layer_field_values["wffn2_sf"]),
         mean_inv_d_sf=int(layer_field_values["mean_inv_d_sf"]),
         var_inv_d_sf=int(layer_field_values["var_inv_d_sf"]),
-        wffn2_rescale_sf=_optional_int(layer_field_values["wffn2_rescale_sf"]),
         mean_rescale_sf=_optional_int(layer_field_values["mean_rescale_sf"]),
-        square_rescale_sf=_optional_int(layer_field_values["square_rescale_sf"]),
         var_rescale_sf=_optional_int(layer_field_values["var_rescale_sf"]),
         output_truncation_k=(None if is_first_layer else int(layer_field_values["output_truncation_k"])),
     )
-    return a
 
 
 def _build_block2_action(
         layer_idx: int,
         layer_field_values: Dict[str, object],
         ) -> Block2ActionSpec:
-    a = Block2ActionSpec(
+    """精简后的 Block 2 动作构造。
+
+    Q 侧动作（wq / q_mask1 / q_mask2）被删，cfg 上 Q 侧三个 encode 字段由 K 侧
+    的同名动作绑定填入（K 侧选什么 SF，Q 侧用同一个 SF）。Wv 单独保留一个动作
+    控制模型 V 路径上的噪声（虽然 mrpc graph 没有对应 V 节点）。其余 8 个被删的
+    rescale 字段在 cfg 上保留为 None。
+    """
+    wk_sf = int(layer_field_values["wk_sf"])
+    kt_mask1_sf = int(layer_field_values["kt_mask1_sf"])
+    kt_mask2_sf = int(layer_field_values["kt_mask2_sf"])
+    return Block2ActionSpec(
         inv_std_fresh_sf=int(layer_field_values["inv_std_fresh_sf"]),
         x_centered_fresh_sf=int(layer_field_values["x_centered_fresh_sf"]),
         gamma_sf=int(layer_field_values["gamma_sf"]),
-        wk_sf=int(layer_field_values["wk_sf"]),
-        kt_mask1_sf=int(layer_field_values["kt_mask1_sf"]),
-        kt_mask2_sf=int(layer_field_values["kt_mask2_sf"]),
-        wq_sf=int(layer_field_values["wq_sf"]),
-        q_mask1_sf=int(layer_field_values["q_mask1_sf"]),
-        q_mask2_sf=int(layer_field_values["q_mask2_sf"]),
+        # Q/K 绑定：wq_sf / q_mask{1,2}_sf 不再独立选，等于 K 侧
+        wk_sf=wk_sf,
+        wq_sf=wk_sf,
         wv_sf=int(layer_field_values["wv_sf"]),
+        kt_mask1_sf=kt_mask1_sf,
+        q_mask1_sf=kt_mask1_sf,
+        kt_mask2_sf=kt_mask2_sf,
+        q_mask2_sf=kt_mask2_sf,
         qkt_merge_mask_sf=int(layer_field_values["qkt_merge_mask_sf"]),
-        normalize_rescale_sf=_optional_int(layer_field_values["normalize_rescale_sf"]),
         gamma_rescale_sf=_optional_int(layer_field_values["gamma_rescale_sf"]),
-        wk_rescale_sf=_optional_int(layer_field_values["wk_rescale_sf"]),
-        kt_mask1_rescale_sf=_optional_int(layer_field_values["kt_mask1_rescale_sf"]),
         kt_mask2_rescale_sf=_optional_int(layer_field_values["kt_mask2_rescale_sf"]),
-        wq_rescale_sf=_optional_int(layer_field_values["wq_rescale_sf"]),
-        q_mask1_rescale_sf=_optional_int(layer_field_values["q_mask1_rescale_sf"]),
-        q_mask2_rescale_sf=_optional_int(layer_field_values["q_mask2_rescale_sf"]),
-        wv_rescale_sf=_optional_int(layer_field_values["wv_rescale_sf"]),
-        qkt_matmul_rescale_sf=_optional_int(layer_field_values["qkt_matmul_rescale_sf"]),
         qkt_merge_mask_rescale_sf=_optional_int(layer_field_values["qkt_merge_mask_rescale_sf"]),
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
     )
-    return a
 
 
 def _build_block3_action(
@@ -616,7 +832,8 @@ def _build_block3_action(
         degree=deg,
         x_fresh_sf=int(layer_field_values["x_fresh_sf"]),
         inv_2n_sf=int(layer_field_values["inv_2n_sf"]),
-        x_inv_2n_rescale_sf=_optional_int(layer_field_values["x_inv_2n_rescale_sf"]),
+        # ``x_inv_2n_rescale_sf`` 不在 RL 动作里 -> cfg 字段固定 None
+        x_inv_2n_rescale_sf=None,
         square_rescale_sfs=square_rescale_sfs,
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
     )
@@ -635,13 +852,8 @@ def _build_block4_action(
         wo_sf=int(layer_field_values["wo_sf"]),
         ln_mean_inv_d_sf=int(layer_field_values["ln_mean_inv_d_sf"]),
         ln_var_inv_d_sf=int(layer_field_values["ln_var_inv_d_sf"]),
-        softmax_out_mask_rescale_sf=_optional_int(layer_field_values["softmax_out_mask_rescale_sf"]),
-        v_mask_rescale_sf=_optional_int(layer_field_values["v_mask_rescale_sf"]),
         softmax_v_matmul_rescale_sf=_optional_int(layer_field_values["softmax_v_matmul_rescale_sf"]),
-        softmax_v_mask_rescale_sf=_optional_int(layer_field_values["softmax_v_mask_rescale_sf"]),
-        wo_rescale_sf=_optional_int(layer_field_values["wo_rescale_sf"]),
         ln_mean_rescale_sf=_optional_int(layer_field_values["ln_mean_rescale_sf"]),
-        ln_square_rescale_sf=_optional_int(layer_field_values["ln_square_rescale_sf"]),
         ln_var_rescale_sf=_optional_int(layer_field_values["ln_var_rescale_sf"]),
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
     )
@@ -656,18 +868,15 @@ def _build_block5_action(
     # block5 GELU degree 仅支持 {1, 2, 4}
     if deg not in (1, 2, 4):
         deg = 4 if deg >= 4 else (2 if deg >= 2 else 1)
-    power_n = max(0, deg - 1)
-    power_keys = ("gelu_power_rescale_sf_0", "gelu_power_rescale_sf_1", "gelu_power_rescale_sf_2")
-    gelu_power_rescale_sfs = tuple(
-        _optional_int(layer_field_values[power_keys[k]]) for k in range(power_n)
+    # 精简后 RL 只控制 ``gelu_power_rescale_sf_0``（x²，degree>=2 时启用）。
+    # x³/x⁴ 在 mrpc graph 里被折掉，不上 skeleton；多项式系数乘法 rescale 全部
+    # 被 ``ctpt_gelu_coeff`` 一个节点替代，也不在 skeleton 上。
+    power_sf_0 = _optional_int(layer_field_values["gelu_power_rescale_sf_0"]) if deg >= 2 else None
+    gelu_power_rescale_sfs: Tuple[Optional[int], ...] = (
+        () if deg <= 1 else tuple([power_sf_0] + [None] * (deg - 2))
     )
-    coeff_keys = (
-        "gelu_coeff_mul_rescale_sf_0", "gelu_coeff_mul_rescale_sf_1",
-        "gelu_coeff_mul_rescale_sf_2", "gelu_coeff_mul_rescale_sf_3",
-    )
-    gelu_coeff_mul_rescale_sfs = tuple(
-        _optional_int(layer_field_values[coeff_keys[k]]) for k in range(deg)
-    )
+    # 系数乘法 rescale 全部固定 None（length=deg）
+    gelu_coeff_mul_rescale_sfs: Tuple[Optional[int], ...] = tuple(None for _ in range(deg))
     return Block5ActionSpec(
         gelu_degree=deg,
         inv_std_fresh_sf=int(layer_field_values["inv_std_fresh_sf"]),
@@ -1161,19 +1370,24 @@ def describe_action_vector(
 # 全 max-action / 全 min-action helper（baseline / sanity）
 # ---------------------------------------------------------------------------
 def make_all_max_action_vector(num_layers: int) -> np.ndarray:
-    """生成"全 max" 动作向量：SF 字段取最高档，K 取数值最大的 truncation。
+    """生成 baseline 动作向量：SF 字段取最高档，K 取该 block 的 baseline K 值。
+
+    Per-block baseline K（user-tuned 2026-05-15）：
+        Block 1 → K=13    Block 2 → K=10    Block 3 → K=13
+        Block 4 → K=10    Block 5 → K=13
 
     用于 §6.3 的 baseline + §11 验证清单中"action 全 max → reward = 0"。
+    注：函数名仍叫 ``all_max``（语义上"每个 slot 取其各自的 baseline 最大档"）；
+    truncation K 的"最大"含义已按 BASELINE_K_BY_BLOCK 差异化。
     """
     dims = action_dims_for_config(int(num_layers))
     arr = np.array(dims, dtype=int) - 1
-    k_idx = int(K_LEVELS.index(max(K_LEVELS)))
     fields = per_layer_field_offsets()
     layer_dim = len(fields)
     for li in range(int(num_layers)):
-        for field_offset, (_block_idx, _field_name, kind) in enumerate(fields):
+        for field_offset, (block_idx, _field_name, kind) in enumerate(fields):
             if kind == "K":
-                arr[li * layer_dim + field_offset] = k_idx
+                arr[li * layer_dim + field_offset] = _baseline_k_index_for_block(int(block_idx))
     return arr
 
 

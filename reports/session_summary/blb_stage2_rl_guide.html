@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>BLB Stage-2 RL · 使用指南（per-block sequential）</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         max-width: 1120px; margin: 24px auto; padding: 0 16px;
+         color: #1f2328; line-height: 1.6; }
+  h1 { border-bottom: 2px solid #d0d7de; padding-bottom: 6px; }
+  h2 { margin-top: 32px; border-left: 4px solid #0969da; padding-left: 10px; }
+  h3 { margin-top: 22px; color: #1f2328; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  pre { background: #f6f8fa; padding: 12px 14px; border-radius: 6px;
+        overflow: auto; line-height: 1.4; font-size: 0.9em; }
+  code { background: #f6f8fa; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
+  pre code { background: transparent; padding: 0; font-size: 1em; }
+  table { border-collapse: collapse; margin: 12px 0; font-size: 0.92em; width: 100%; }
+  th, td { border: 1px solid #d0d7de; padding: 6px 10px; text-align: left;
+           vertical-align: top; }
+  th { background: #f6f8fa; }
+  .ok { color: #1a7f37; font-weight: 600; }
+  .warn { color: #9a6700; }
+  .bad { color: #cf222e; font-weight: 600; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px;
+          font-size: 0.78em; background: #ddf4ff; color: #0969da;
+          margin-right: 4px; }
+  .pill.bad { background: #ffebe9; color: #cf222e; }
+  .pill.ok { background: #dafbe1; color: #1a7f37; }
+  .pill.warn { background: #fff8c5; color: #9a6700; }
+  blockquote { border-left: 4px solid #d0d7de; padding-left: 12px;
+               color: #57606a; margin: 8px 0; }
+  .toc { background: #f6f8fa; padding: 12px 16px; border-radius: 6px; }
+  .toc ol { margin: 6px 0; }
+  .box { background: #f6f8fa; border-left: 4px solid #0969da;
+         padding: 12px 16px; margin: 12px 0; border-radius: 4px; }
+  .box.warn { border-left-color: #bf8700; background: #fff8c5; }
+  .box.ok { border-left-color: #1a7f37; background: #dafbe1; }
+  kbd { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;
+        padding: 1px 5px; font-family: inherit; font-size: 0.85em; }
+</style>
+</head>
+<body>
+
+<h1>BLB Stage-2 RL · 使用指南（per-block sequential，2026-05-15 起为默认）</h1>
+<p>
+  <span class="pill ok">Per-block sequential RL</span>
+  <span class="pill ok">horizon=59</span>
+  <span class="pill ok">每步 ReplanSession dense reward</span>
+  <span class="pill ok">Q/K 绑定同步</span>
+  <span class="pill ok">Per-block 差异化 K baseline</span>
+</p>
+
+<div class="toc">
+<strong>目录</strong>
+<ol>
+  <li><a href="#quick">一句话快速上手</a></li>
+  <li><a href="#pipeline">完整训练流程（pipeline）</a></li>
+  <li><a href="#baseline">Baseline 是怎么算出来的</a></li>
+  <li><a href="#action-space">动作空间与每步决策</a></li>
+  <li><a href="#reward">Reward 设计（per-step + terminal）</a></li>
+  <li><a href="#preset">preset 文件与 RL 参数说明</a></li>
+  <li><a href="#run">如何运行 / 监控 / resume</a></li>
+  <li><a href="#output">输出与产物</a></li>
+  <li><a href="#troubleshoot">疑难诊断 / 常见情况</a></li>
+  <li><a href="#rollback">如何回退到旧 single-shot 路径</a></li>
+</ol>
+</div>
+
+<h2 id="quick">1. 一句话快速上手</h2>
+<div class="box ok">
+<strong>首次启动</strong>（一定要带 <code>--fresh</code>）：
+<pre><code>bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh</code></pre>
+<strong>断点续训</strong>（同 preset 不带 <code>--fresh</code>，会自动检测持久化目录续训）：
+<pre><code>bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl</code></pre>
+</div>
+
+<h2 id="pipeline">2. 完整训练流程</h2>
+<p>训练入口 <code>BLBStage2RLRunner.run()</code> 检测到 <code>train_cfg.sequential_rl=True</code>（默认）会派发到 <code>run_sequential_via_runner</code>。整个 pipeline 7 大阶段：</p>
+
+<table>
+<tr><th>阶段</th><th>做了什么</th><th>关键产物</th></tr>
+<tr><td>0 持久化定位</td><td>解析 <code>persistent/{algo}/{model}/{dataset}/{slug}/blb_stage2/progress/</code></td><td><code>blb_stage2_status.json</code> live tail</td></tr>
+<tr><td>1 应用 Stage-1</td><td>把 GELU/Softmax 多项式 degree 安装到模型；清掉旧噪声</td><td>模型进入 polynomial-only 状态</td></tr>
+<tr><td>2 Probe + Bridge</td><td>构造 MC probe batches（5 个 batch × 256 样本）；建 <code>InProcessInvoker.from_profile()</code> 调用 <code>ReplanSession</code></td><td><code>rescale_bridge</code></td></tr>
+<tr><td>3 Baseline 装载</td><td>读 <code>static_skeletons_&lt;dataset&gt;.json</code>，按 (block, layer) 重建 baseline SF + active rescale slots → 校准 <code>MaxSFsTable</code> + 生成 baseline action vec</td><td><code>baseline_action_vec</code>, <code>max_sfs</code>, <code>ss_cost_stats</code></td></tr>
+<tr><td>4 Cost / metrics baseline</td><td>用 baseline action 跑几个样本：建 <code>BaselineCostStats(total_bits, fusion, avg_k=11.78)</code> + 评估 baseline 模型精度 / 稳定性 → 求 <code>w_bits/w_fusion/w_k</code></td><td>校准的 reward 权重 + hard-threshold</td></tr>
+<tr><td>5 Env + Policy</td><td>包装 <code>BLBStage2SequentialEnv(base_env=...)</code>，建 <code>BLBStage2SequentialPolicy(state_dim=1013, head=[13×6])</code>；warmstart bias 偏向 baseline action vec</td><td>seq_env, policy, optimizer</td></tr>
+<tr><td>6 Resume（如有）</td><td>检测 <code>blb_stage2_rl_checkpoint_live.pt</code>：自动还原 policy / optimizer / start_episode / best_reward / best_action_vec；如果 ckpt 的 <code>rl_variant</code> ≠ <code>blb_v3_sequential</code>，安全跳过 load</td><td>训练从断点续</td></tr>
+<tr><td>7 PPO 主循环</td><td>每 episode 走 59 步 per-block sequential；每步调单 graph <code>ReplanSession</code> → dense cost reward；末步交给 <code>BLBStage2Env.step</code> 跑模型 forward + 完整 hard-priority reward；每 <code>rollout_size</code>=60 episode 做 1 次 PPO update；每 5 次 update 打印一次进度框</td><td><code>blb_stage2_rl_checkpoint_live.pt</code>, <code>blb_stage2_training_curve.{png,npz}</code>, <code>blb_stage2_status.json</code></td></tr>
+</table>
+
+<h2 id="baseline">3. Baseline 是怎么算出来的</h2>
+
+<p>Baseline 是 RL 训练的两个核心参考点：</p>
+<ul>
+  <li><strong>Baseline action vec</strong>：每个 slot 在"最安全的 SF + per-block 推荐 K"下的 action index。用于 warmstart 偏置 + reward 计算中的 cost 参考。</li>
+  <li><strong>BaselineCostStats</strong>：用 baseline action 跑 Rescale_optimizer + 模型 forward 得到的 <code>total_bits / fusion_count / avg_k / loss / metric1 / metric2</code>。</li>
+</ul>
+
+<h3>3.1 SF baseline：来自 static_skeletons</h3>
+<p>Stage-2 启动时读 <code>Rescale_optimizer/configs/&lt;dataset&gt;/static_skeletons_&lt;dataset&gt;.json</code>。对每个 (block, layer) 抽取：</p>
+<ul>
+  <li>Fresh SF：<code>cut_point_sf[0].sf</code></li>
+  <li>Encode SF：<code>propagation_deltas[*].delta</code>（仅数值 delta，"x2" 等字面值 skip）</li>
+  <li>Rescale SF：<code>cut_point_sf[r&gt;=1].sf_post</code></li>
+</ul>
+<p>每条 SF 写入校准后的 <code>MaxSFsTable.by_layer_block_node</code>，让 RL "最大档（max idx）"对应 baseline SF。<strong>不在 archive 里的 rescale slot</strong>（"off at RO baseline"）→ baseline action 取 idx 0（= 关闭该 rescale 噪声）。</p>
+
+<h3>3.2 Truncation K baseline：per-block 差异化（2026-05-15 修正）</h3>
+<p>之前所有 block 都默认 K=13；现在按 block 类型差异化：</p>
+<table>
+<tr><th>Block</th><th>Baseline K</th><th>含义</th></tr>
+<tr><td>1 (FFN2/LN-head)</td><td><strong>13</strong></td><td>aggressive truncation：浅 block 稳健</td></tr>
+<tr><td>2 (LN-tail/QKV/QK)</td><td><strong>10</strong></td><td>保守：attention 对精度敏感</td></tr>
+<tr><td>3 (Softmax exp)</td><td><strong>13</strong></td><td>aggressive：迭代平方对截断不敏感</td></tr>
+<tr><td>4 (Softmax·V/Wo/LN-head)</td><td><strong>10</strong></td><td>保守：output projection 对精度敏感</td></tr>
+<tr><td>5 (LN-tail/Wffn1/GELU)</td><td><strong>13</strong></td><td>aggressive：GELU 多项式稳健</td></tr>
+</table>
+<p>对 L=12 层（去掉 L0-B1，共 59 K 槽）：baseline avg_k = (4×46 + 11×59) / 59 ≈ <strong>11.78</strong>（之前是 13.0）。RL 在 reward 上的零点也对应这个新 baseline。</p>
+
+<div class="box warn">
+<strong>为什么这样设？</strong>K 是"截断位数"，越大越激进（越便宜但越多噪声）。B2 / B4 是 attention 的两端，对精度更敏感，所以 baseline 给"温和的 K=10"。RL 仍可以选 K∈{8,9,10,11,12,13}，只是 reward 的 zero-point 落在 per-block tuned 值上。
+</div>
+
+<h2 id="action-space">4. 动作空间与每步决策</h2>
+
+<h3>4.1 完整动作向量（577 维，沿用 legacy 兼容布局）</h3>
+<pre><code>每层 48 槽 × 12 层 + 1 first_input = 577 维 MultiDiscrete
+
+Block 1 (7 槽): F W S S R R K
+Block 2 (12 槽): F F M W W M M M R R R K
+Block 3 (7 槽): F S R R R R K
+Block 4 (12 槽): F F M M M S S W R R R K
+Block 5 (10 槽): F F M W M R R R R K
+</code></pre>
+
+<h3>4.2 每步只决策 1 个 (layer, block)</h3>
+<p>Episode 长 59 步：</p>
+<pre><code>step  0: (L0, B2) + first_input fresh  → 13 维 MultiDiscrete
+step  1: (L0, B3)                       → 7 维
+step  2: (L0, B4)                       → 12 维
+step  3: (L0, B5)                       → 10 维
+step  4: (L1, B1)                       → 7 维
+step  5: (L1, B2)                       → 12 维
+...
+step 58: (L11, B5) [terminal]           → 10 维
+</code></pre>
+<p>L0 没有 block 1（首层没有上游 FFN2），所以总步数 = 4 + 11×5 = 59。</p>
+
+<h3>4.3 每步 obs：static + 当前位置 + 全历史</h3>
+<p><code>state_dim = 1013</code>（L=12）：</p>
+<ul>
+  <li>静态 4 维（num_layers、attn_degree、gelu_degree、horizon）</li>
+  <li>当前 step 一维 one-hot（horizon=59）</li>
+  <li>当前 block 一维 one-hot（5）+ layer_idx 归一化（1）</li>
+  <li>历史动作 horizon × max_step_dim（59×13=767）</li>
+  <li>历史 optimizer 信号 horizon × 3（59×3=177，valid / total_bits_norm / fusion_count_norm）</li>
+</ul>
+
+<h3>4.4 共享 policy head + per-step mask</h3>
+<p><code>BLBStage2SequentialPolicy</code> 共享 trunk + 单一 <code>MultiDiscrete</code> head（13×6 = 78 logits）。每步通过 <code>(slot_mask, per_slot_num_levels)</code> 把 padding slot / padding level 的 logit 屏蔽到 -inf，所以同一头服务所有 block 类型。</p>
+
+<h2 id="reward">5. Reward 设计</h2>
+
+<h3>5.1 Per-step（dense，每步发）</h3>
+<pre><code>if not valid:
+    reward -= invalid_penalty          # 默认 1.0
+else:
+    cost_ratio = total_bits / baseline_block_total_bits
+    reward -= cost_shaping_coeff * (cost_ratio - 1.0)   # 默认 0.05
+    # fusion_shaping_coeff 默认 0（per-block fusion 信息有限，看全局即可）
+</code></pre>
+<p>Per-step reward 故意做得比 terminal 小很多（每步 0.01-0.05 量级），让 PPO 通过 GAE-λ 主要从 terminal 学，per-step 只是"早期 invalid 警报"。</p>
+
+<h3>5.2 Terminal（episode 末，硬约束三层优先级）</h3>
+<p>从 <code>BLBStage2Env.step</code> 来：</p>
+<table>
+<tr><th>优先级</th><th>条件</th><th>奖励</th></tr>
+<tr><td>0 invalid</td><td>有 block invalid_chain</td><td><code>-priority0_penalty</code></td></tr>
+<tr><td>1 accuracy</td><td>acc &lt; acc_threshold</td><td><code>-priority1_penalty + (acc - threshold)·scale</code></td></tr>
+<tr><td>2 stability</td><td>loss_std &gt; stab_threshold</td><td><code>-priority2_penalty + (threshold - std)·scale</code></td></tr>
+<tr><td>3 cost</td><td>都通过</td><td><code>w_bits · bits_drop + w_fusion · fusion_drop + w_k · k_drop</code></td></tr>
+</table>
+<p>这是 hard-priority：cost reward 永远不会"抵消"accuracy 违例。 Best-action 选择按 <code>(invalid_flag, acc_violation, stab_violation, normalized_cost)</code> 元组排序。</p>
+
+<h2 id="preset">6. preset 文件与 RL 参数说明</h2>
+
+<p>preset: <code>presets/mrpc-blb-stage2-rl.conf</code>。常用参数与建议：</p>
+
+<table>
+<tr><th>参数</th><th>preset 值</th><th>含义 / 调参建议</th></tr>
+<tr><td><code>--stage2-search-episodes</code></td><td>6000</td><td>总 episode 数。6000 × 59 steps = 354k env.step。算力充裕时调到 12000-20000；快速验证用 600。</td></tr>
+<tr><td><code>--stage2-rollout-size</code></td><td>60</td><td>PPO 窗口（多少 episode 后 update 一次）。每 update 收 60 × 59 ≈ 3540 transitions。</td></tr>
+<tr><td><code>--stage2-save-interval</code></td><td>200</td><td>checkpoint 保存间隔。MRPC 单 episode 数十秒，200 episode 间隔即每 1-2 小时一次。</td></tr>
+<tr><td><code>--stage2-search-lr</code></td><td>2e-4</td><td>Adam 初始 LR。Sequential 的 batch 比 single-shot 大很多，LR 已经偏低；K_trials 高时可以保持。</td></tr>
+<tr><td><code>--stage2-calibrate-baseline-samples</code></td><td>8</td><td>启动时跑 8 个随机 action 来估计 typical bits/k drop。8 通常够；想更准可调到 16。</td></tr>
+<tr><td><code>--stage2-k-trials</code></td><td>5</td><td>每个 episode 末的 MC noise trials。5 次较稳；如果方差还大可调到 8-10。</td></tr>
+<tr><td><code>--stage2-probe-size</code></td><td>256</td><td>每次 trial 用的样本数。256 是 MRPC 的合理 trade-off。</td></tr>
+<tr><td><code>--blb-v3-sequential-rl</code></td><td>true</td><td>默认 true。 设 false 回退到旧 single-shot。</td></tr>
+<tr><td><code>--blb-v3-sequential-invalid-penalty</code></td><td>1.0</td><td>每个 invalid step 的负奖励。1.0 通常足够，invalid 在 ~10 episode 内归零。</td></tr>
+<tr><td><code>--blb-v3-sequential-cost-shaping-coeff</code></td><td>0.05</td><td>per-step cost shaping 系数。0.05 不会主导 accuracy 信号。</td></tr>
+<tr><td><code>--blb-v3-sequential-fusion-shaping-coeff</code></td><td>0.0</td><td>per-step fusion shaping，默认 0（用 terminal 全局 fusion）。</td></tr>
+<tr><td><code>--blb-v3-warmstart-anchor-episodes</code></td><td>80</td><td>前 80 episode bias 策略 head 偏向 baseline，让冷启动稳定。</td></tr>
+<tr><td><code>--stage1-accuracy-tolerance</code></td><td>0.005</td><td>Stage-1 accuracy 容差，±0.5pp。</td></tr>
+<tr><td><code>--stage2-limit-tolerance</code></td><td>0.005</td><td>Stage-2 accuracy 容差，±0.5pp（baseline acc 下浮 0.5pp 作为硬约束）。</td></tr>
+<tr><td><code>--stage2-stability-tolerance</code></td><td>0.005</td><td>稳定性容差，loss_std × 1.005 作为上限。</td></tr>
+</table>
+
+<h2 id="run">7. 如何运行 / 监控 / resume</h2>
+
+<h3>7.1 首次启动</h3>
+<pre><code>bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh</code></pre>
+
+<h3>7.2 监控进度</h3>
+<p>训练期间控制台会持续输出 v2 风格的进度报告：</p>
+<ol>
+  <li><strong>Setup 摘要</strong>：major rule + 基线信号 + 训练超参与环境设置 boxes</li>
+  <li><strong>训练开始</strong>：进度文件 / checkpoint / 训练曲线路径 box</li>
+  <li><strong>第 1 个 episode</strong>：59 行逐步 trace，可以快速判断 wiring 正常</li>
+  <li><strong>每个新高</strong>：<code>【回合 N · 训练过程新高】</code> 标题 + 每层 action 概览</li>
+  <li><strong>每次 PPO 更新</strong>：<code>PPO 窗口摘要</code> box（mean return / policy_loss / value_loss / entropy / clip_fraction / LR）</li>
+  <li><strong>每 5 次 PPO 更新</strong>：<code>BLB Stage-2 噪声 RL 进度</code> box（progress bar + train best + 已用时 + ETA + 完成时刻）</li>
+  <li><strong>结束</strong>：major rule + 6 行总结</li>
+</ol>
+
+<p>另外可以 <kbd>tail -f</kbd> 这两个文件：</p>
+<pre><code># 训练状态（atomic 写，安全 tail）
+tail -f Parting\ Chapter/persistent/rl/bert-base/mrpc/&lt;slug&gt;/blb_stage2/progress/blb_stage2_status.json
+
+# 完整日志
+tail -f blb_stage2_rl.log
+</code></pre>
+
+<h3>7.3 断点续训</h3>
+<p>相同 preset 不带 <code>--fresh</code>，launcher 自动定位持久化目录；<code>run_sequential_via_runner</code> 检测到 <code>blb_stage2_rl_checkpoint_live.pt</code> 会自动 load policy / optimizer / start_episode / best_reward / best_action_vec。<strong>不需要</strong>显式 <code>--resume-from</code>。</p>
+
+<h3>7.4 graceful stop</h3>
+<p>向 PID 发 <code>SIGINT</code>（Ctrl-C 一次）或在持久化目录创建 <code>STOP_RL</code> 文件，runner 会在下一次 PPO 边界保存 checkpoint 并安全退出（返回码 0）。</p>
+
+<h2 id="output">8. 输出与产物</h2>
+
+<p>持久化目录 <code>persistent/rl/bert-base/mrpc/&lt;slug&gt;/blb_stage2/progress/</code> 下：</p>
+<table>
+<tr><th>文件</th><th>用途</th></tr>
+<tr><td><code>blb_stage2_status.json</code></td><td>atomic 写的实时状态（phase / current_episode / best_reward / recent_returns / last_breakdown）</td></tr>
+<tr><td><code>blb_stage2_rl_checkpoint_live.pt</code></td><td>每 200 episode 写一次：policy + optimizer + episode + best_reward + best_action</td></tr>
+<tr><td><code>blb_stage2_training_curve.{png,npz}</code></td><td>训练曲线：episode_returns / best_reward_curve / ppo_loss_curve</td></tr>
+<tr><td><code>blb_stage2_best_cfg.pkl</code></td><td>训练期最优 (pickle 的 cfg 字典；下游 final-eval 使用)</td></tr>
+<tr><td><code>blb_stage2_error.txt</code></td><td>训练崩溃时的 traceback（正常退出不写）</td></tr>
+</table>
+
+<p>训练结束后，runner 把 <code>blb_v3_best_action_vec</code> 写入 <code>noise_stage_result</code> 字典；<code>UnifiedFinalEvaluationModule</code> 检测到这个字段后会自动派发到 <code>BLBActionFinalEvaluationModule</code>，安装真正的 BLB best 动作做完整验证集 eval。</p>
+
+<h2 id="troubleshoot">9. 疑难诊断 / 常见情况</h2>
+
+<table>
+<tr><th>现象</th><th>排查</th></tr>
+<tr><td>前 1 个 episode 的 step trace 显示大量 invalid</td><td>正常：cold-start 时 policy 随机；warmstart 介入后 5-10 episode 内归零。如果 50 episode 后仍大量 invalid，检查 <code>baseline</code> 是否正确（看 setup box）。</td></tr>
+<tr><td>PPO clip_fraction &gt; 0.5</td><td>policy 变化过大。降 <code>--stage2-search-lr</code> 到 1e-4 或 5e-5；或调大 <code>--stage2-rollout-size</code> 让 batch 更稳。</td></tr>
+<tr><td>entropy 一直高（&gt; 1.5）</td><td>policy 没收敛。检查 reward signal 是否合理；可能 invalid_penalty 太低让 PPO 没紧迫感。</td></tr>
+<tr><td>best_reward 停滞</td><td>用 <code>--blb-v3-sequential-cost-shaping-coeff 0.1</code> 加大 cost 信号；或调大 ent_coef。</td></tr>
+<tr><td>resume 后训练曲线断层</td><td>正常：曲线只画当前 run 的 episode_returns；要看完整曲线请合并历史 npz。</td></tr>
+<tr><td>checkpoint load 失败 / 跳过</td><td>意味着 ckpt 的 <code>rl_variant</code> ≠ <code>blb_v3_sequential</code>。如果是从旧 single-shot ckpt 继续，必须 <code>--fresh</code> 重启 sequential（policy 网络结构不同）。</td></tr>
+</table>
+
+<h2 id="rollback">10. 如何回退到旧 single-shot 路径</h2>
+<pre><code>bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh \
+  --blb-v3-no-sequential-rl</code></pre>
+<p>注意单步 horizon=1 + 577-dim 一次性出 action，<strong>action_dims_for_config 大小</strong>跟之前完全一致，但 PPO 收敛通常显著慢。</p>
+
+<hr>
+<p style="color: #57606a; font-size: 0.9em;">2026-05-15 · BLB Stage-2 RL · per-block sequential 默认</p>
+
+</body>
+</html>

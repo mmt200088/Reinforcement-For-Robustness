@@ -1,0 +1,431 @@
+{
+  "profile": "mrpc",
+  "blocks": {
+    "block1": {
+      "action_slot_count": 8,
+      "slots_reaching_optimizer": [
+        "gelu_out_sf",
+        "mean_inv_d_sf",
+        "mean_rescale_sf",
+        "var_inv_d_sf",
+        "var_rescale_sf",
+        "wffn2_sf"
+      ],
+      "slots_dropped": [
+        "square_rescale_sf",
+        "wffn2_rescale_sf"
+      ],
+      "slots_via_delta": [
+        "mean_inv_d_sf",
+        "var_inv_d_sf",
+        "wffn2_sf"
+      ],
+      "slots_via_t_new": [
+        "gelu_out_sf",
+        "mean_rescale_sf",
+        "var_rescale_sf"
+      ],
+      "bridge_keys": [
+        "ctct_ext_square",
+        "ctpt_ffn2",
+        "ctpt_inv_d_1",
+        "ctpt_inv_d_2"
+      ],
+      "loop_keys": [],
+      "t_new_fields": [
+        "gelu_out_fresh",
+        "mean_result_rescale",
+        "var_result_rescale"
+      ],
+      "t_new_indexed": [],
+      "graphs": {
+        "block1_mrpc": {
+          "node_count": 5,
+          "nodes": [
+            "gelu_out",
+            "ctpt_ffn2",
+            "ctpt_inv_d_1",
+            "ctct_ext_square",
+            "ctpt_inv_d_2"
+          ],
+          "bridge_orphans": [],
+          "graph_only_nodes": [
+            "gelu_out"
+          ]
+        }
+      }
+    },
+    "block2": {
+      "action_slot_count": 22,
+      "slots_reaching_optimizer": [
+        "gamma_rescale_sf",
+        "gamma_sf",
+        "inv_std_fresh_sf",
+        "kt_mask1_sf",
+        "kt_mask2_rescale_sf",
+        "kt_mask2_sf",
+        "qkt_merge_mask_rescale_sf",
+        "qkt_merge_mask_sf",
+        "wk_sf"
+      ],
+      "slots_dropped": [
+        "kt_mask1_rescale_sf",
+        "normalize_rescale_sf",
+        "q_mask1_rescale_sf",
+        "q_mask1_sf",
+        "q_mask2_rescale_sf",
+        "q_mask2_sf",
+        "qkt_matmul_rescale_sf",
+        "wk_rescale_sf",
+        "wq_rescale_sf",
+        "wq_sf",
+        "wv_rescale_sf",
+        "wv_sf",
+        "x_centered_fresh_sf"
+      ],
+      "slots_via_delta": [
+        "gamma_sf",
+        "kt_mask1_sf",
+        "kt_mask2_sf",
+        "qkt_merge_mask_sf",
+        "wk_sf"
+      ],
+      "slots_via_t_new": [
+        "gamma_rescale_sf",
+        "inv_std_fresh_sf",
+        "kt_mask2_rescale_sf",
+        "qkt_merge_mask_rescale_sf"
+      ],
+      "bridge_keys": [
+        "ctct_preprocess_qkt",
+        "ctct_x_mean_over_std",
+        "ctpt_gama1",
+        "ctpt_mask",
+        "ctpt_rotKT_mask1",
+        "ctpt_rotKT_mask2",
+        "ctpt_wq_wk"
+      ],
+      "loop_keys": [],
+      "t_new_fields": [
+        "gamma_result_rescale",
+        "inv_std_fresh",
+        "kt_mask2_result_rescale",
+        "qkt_merge_mask_result_rescale"
+      ],
+      "t_new_indexed": [],
+      "graphs": {
+        "block2_mrpc": {
+          "node_count": 8,
+          "nodes": [
+            "inv_std",
+            "ctct_x_mean_over_std",
+            "ctpt_gama1",
+            "ctpt_wq_wk",
+            "ctpt_rotKT_mask1",
+            "ctpt_rotKT_mask2",
+            "ctct_preprocess_qkt",
+            "ctpt_mask"
+          ],
+          "bridge_orphans": [],
+          "graph_only_nodes": [
+            "inv_std"
+          ]
+        }
+      }
+    },
+    "block3": {
+      "action_slot_count": 7,
+      "slots_reaching_optimizer": [
+        "inv_2n_sf",
+        "square_rescale_sf_0",
+        "square_rescale_sf_1",
+        "square_rescale_sf_2",
+        "square_rescale_sf_3",
+        "x_fresh_sf"
+      ],
+      "slots_dropped": [
+        "x_inv_2n_rescale_sf"
+      ],
+      "slots_via_delta": [
+        "inv_2n_sf"
+      ],
+      "slots_via_t_new": [
+        "square_rescale_sf_0",
+        "square_rescale_sf_1",
+        "square_rescale_sf_2",
+        "square_rescale_sf_3",
+        "x_fresh_sf"
+      ],
+      "bridge_keys": [
+        "ctct_square_{i}",
+        "ctpt_inv_2n"
+      ],
+      "loop_keys": [
+        "ctct_square_{i}"
+      ],
+      "t_new_fields": [
+        "x_fresh"
+      ],
+      "t_new_indexed": [
+        "square_rescales[0]",
+        "square_rescales[1]",
+        "square_rescales[2]",
+        "square_rescales[3]"
+      ],
+      "graphs": {
+        "block3_exp_n2": {
+          "node_count": 4,
+          "nodes": [
+            "X",
+            "ctpt_inv_2n",
+            "ctct_square_1",
+            "ctct_square_2"
+          ],
+          "bridge_orphans": [],
+          "graph_only_nodes": [
+            "X"
+          ]
+        },
+        "block3_exp_n3": {
+          "node_count": 5,
+          "nodes": [
+            "X",
+            "ctpt_inv_2n",
+            "ctct_square_1",
+            "ctct_square_2",
+            "ctct_square_3"
+          ],
+          "bridge_orphans": [],
+          "graph_only_nodes": [
+            "X"
+          ]
+        },
+        "block3_exp_n4": {
+          "node_count": 6,
+          "nodes": [
+            "X",
+            "ctpt_inv_2n",
+            "ctct_square_1",
+            "ctct_square_2",
+            "ctct_square_3",
+            "ctct_square_4"
+          ],
+          "bridge_orphans": [],
+          "graph_only_nodes": [
+            "X"
+          ]
+        },
+        "block3_exp_n5": {
+          "node_count": 7,
+          "nodes": [
+            "X",
+            "ctpt_inv_2n",
+            "ctct_square_1",
+            "ctct_square_2",
+            "ctct_square_3",
+            "ctct_square_4",
+            "ctct_square_5"
+          ],
+          "bridge_orphans": [],
+          "graph_only_nodes": [
+            "X"
+          ]
+        },
+        "block3_exp_n6": {
+          "node_count": 8,
+          "nodes": [
+            "X",
+            "ctpt_inv_2n",
+            "ctct_square_1",
+            "ctct_square_2",
+            "ctct_square_3",
+            "ctct_square_4",
+            "ctct_square_5",
+            "ctct_square_6"
+          ],
+          "bridge_orphans": [],
+          "graph_only_nodes": [
+            "X"
+          ]
+        }
+      }
+    },
+    "block4": {
+      "action_slot_count": 16,
+      "slots_reaching_optimizer": [
+        "ln_mean_inv_d_sf",
+        "ln_mean_rescale_sf",
+        "ln_var_inv_d_sf",
+        "ln_var_rescale_sf",
+        "softmax_out_fresh_sf",
+        "softmax_out_mask_sf",
+        "softmax_v_mask_sf",
+        "softmax_v_matmul_rescale_sf",
+        "wo_sf"
+      ],
+      "slots_dropped": [
+        "ln_square_rescale_sf",
+        "softmax_out_mask_rescale_sf",
+        "softmax_v_mask_rescale_sf",
+        "v_fresh_sf",
+        "v_mask_rescale_sf",
+        "v_mask_sf",
+        "wo_rescale_sf"
+      ],
+      "slots_via_delta": [
+        "ln_mean_inv_d_sf",
+        "ln_var_inv_d_sf",
+        "softmax_out_mask_sf",
+        "softmax_v_mask_sf",
+        "wo_sf"
+      ],
+      "slots_via_t_new": [
+        "ln_mean_rescale_sf",
+        "ln_var_rescale_sf",
+        "softmax_out_fresh_sf",
+        "softmax_v_matmul_rescale_sf"
+      ],
+      "bridge_keys": [
+        "ctct_rot_softmax_mul_v",
+        "ctct_square",
+        "ctpt_inv_d_1",
+        "ctpt_inv_d_2",
+        "ctpt_mask",
+        "ctpt_mask2",
+        "ctpt_wo_attnout"
+      ],
+      "loop_keys": [],
+      "t_new_fields": [
+        "ln_mean_result_rescale",
+        "ln_var_result_rescale",
+        "softmax_out_fresh",
+        "softmax_v_matmul_rescale"
+      ],
+      "t_new_indexed": [],
+      "graphs": {
+        "block4": {
+          "node_count": 8,
+          "nodes": [
+            "rot_softmax",
+            "ctpt_mask2",
+            "ctct_rot_softmax_mul_v",
+            "ctpt_mask",
+            "ctpt_wo_attnout",
+            "ctpt_inv_d_1",
+            "ctct_square",
+            "ctpt_inv_d_2"
+          ],
+          "bridge_orphans": [],
+          "graph_only_nodes": [
+            "rot_softmax"
+          ]
+        }
+      }
+    },
+    "block5": {
+      "action_slot_count": 15,
+      "slots_reaching_optimizer": [
+        "gamma_rescale_sf",
+        "gamma_sf",
+        "gelu_coeff_sf",
+        "gelu_power_rescale_sf_0",
+        "normalize_rescale_sf",
+        "wffn1_rescale_sf",
+        "wffn1_sf",
+        "x_centered_fresh_sf"
+      ],
+      "slots_dropped": [
+        "gelu_coeff_mul_rescale_sf_0",
+        "gelu_coeff_mul_rescale_sf_1",
+        "gelu_coeff_mul_rescale_sf_2",
+        "gelu_coeff_mul_rescale_sf_3",
+        "gelu_power_rescale_sf_1",
+        "gelu_power_rescale_sf_2",
+        "inv_std_fresh_sf"
+      ],
+      "slots_via_delta": [
+        "gamma_sf",
+        "gelu_coeff_sf",
+        "wffn1_sf"
+      ],
+      "slots_via_t_new": [
+        "gamma_rescale_sf",
+        "gelu_power_rescale_sf_0",
+        "normalize_rescale_sf",
+        "wffn1_rescale_sf",
+        "x_centered_fresh_sf"
+      ],
+      "bridge_keys": [
+        "ctct_gelu_x2",
+        "ctct_gelu_x4",
+        "ctct_xmean_over_std",
+        "ctpt_gamal",
+        "ctpt_gelu_coeff",
+        "ctpt_wffn1"
+      ],
+      "loop_keys": [],
+      "t_new_fields": [
+        "gamma_result_rescale",
+        "normalize_result_rescale",
+        "wffn1_result_rescale",
+        "x_centered_fresh"
+      ],
+      "t_new_indexed": [
+        "gelu_coeff_mul_rescales[-1]",
+        "gelu_power_rescales[0]"
+      ],
+      "graphs": {
+        "block5_n1": {
+          "node_count": 5,
+          "nodes": [
+            "x_mean",
+            "ctct_xmean_over_std",
+            "ctpt_gamal",
+            "ctpt_wffn1",
+            "ctpt_gelu_coeff"
+          ],
+          "bridge_orphans": [
+            "ctct_gelu_x2",
+            "ctct_gelu_x4"
+          ],
+          "graph_only_nodes": [
+            "x_mean"
+          ]
+        },
+        "block5_n2": {
+          "node_count": 6,
+          "nodes": [
+            "x_mean",
+            "ctct_xmean_over_std",
+            "ctpt_gamal",
+            "ctpt_wffn1",
+            "ctct_gelu_x2",
+            "ctpt_gelu_coeff"
+          ],
+          "bridge_orphans": [
+            "ctct_gelu_x4"
+          ],
+          "graph_only_nodes": [
+            "x_mean"
+          ]
+        },
+        "block5_n4": {
+          "node_count": 7,
+          "nodes": [
+            "x_mean",
+            "ctct_xmean_over_std",
+            "ctpt_gamal",
+            "ctpt_wffn1",
+            "ctct_gelu_x2",
+            "ctct_gelu_x4",
+            "ctpt_gelu_coeff"
+          ],
+          "bridge_orphans": [],
+          "graph_only_nodes": [
+            "x_mean"
+          ]
+        }
+      }
+    }
+  }
+}
