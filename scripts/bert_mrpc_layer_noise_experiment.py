@@ -431,7 +431,7 @@ def plot_noise_magnitude_accuracy(results: Mapping[str, Any], output_dir: Path) 
     fig, ax = plt.subplots(figsize=(3.0, 3.0))
     ax.set_xscale("log")
     ax.plot(sigmas, values, marker="o", markersize=2.5, linewidth=1.25, color="#D55E00")
-    ax.set_xlabel("")
+    ax.set_xlabel("Gaussian Noise Std. Dev.", fontweight="bold")
     ax.set_ylabel("Accuracy (%)", fontweight="bold")
     ax.set_title("Accuracy vs. Uniform Layer-Output Noise", fontweight="bold")
     ax.grid(True, which="major", axis="x", color="#D0D0D0", linestyle="--", linewidth=0.55)
@@ -453,7 +453,7 @@ def plot_layer_position_accuracy(results: Mapping[str, Any], output_dir: Path) -
 
     fig, ax = plt.subplots(figsize=(3.0, 3.0))
     ax.bar(x, values, 0.62, color="#0072B2", edgecolor="black", linewidth=0.35)
-    ax.set_xlabel("")
+    ax.set_xlabel("Perturbed Transformer Layer", fontweight="bold")
     ax.set_ylabel("Accuracy (%)", fontweight="bold")
     ax.set_title(f"Accuracy by Noise Injection Layer (std. dev. = {results['experiment2']['sigma']:.2g})",
                  fontweight="bold")
