@@ -127,7 +127,7 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
     def test_default_cli_uses_accuracy_only_experiment_settings(self):
         args = build_arg_parser().parse_args([])
         self.assertEqual(args.repeats, 50)
-        self.assertEqual(args.layer_sigma, "0.4")
+        self.assertEqual(args.layer_sigma, "0.6")
         self.assertIsNone(args.sigmas)
 
     def test_remove_stale_figure_outputs_deletes_old_f1_figures(self):

@@ -644,7 +644,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--layer-sigma",
-        default="0.4",
+        default="0.6",
         help="Fixed sigma for layer-wise experiment, or 'auto' to choose a mild-drop value from experiment 1.",
     )
     parser.add_argument("--target-drop", type=float, default=0.02)
