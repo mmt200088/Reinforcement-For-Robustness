@@ -492,24 +492,31 @@ def plot_noise_magnitude_accuracy(results: Mapping[str, Any], output_dir: Path) 
     plt.close(fig)
 
 
+def layer_position_accuracy_bars(results: Mapping[str, Any]) -> tuple[List[str], List[float]]:
+    rows = results["experiment2"]["rows"]
+    labels = ["Clean"] + [str(int(row["layer"])) for row in rows]
+    values = [100.0 * float(results["baseline"]["acc"])]
+    values.extend(100.0 * float(row["acc_mean"]) for row in rows)
+    return labels, values
+
+
 def plot_layer_position_accuracy(results: Mapping[str, Any], output_dir: Path) -> None:
     import matplotlib.pyplot as plt
     import numpy as np
 
     configure_matplotlib_style(plt)
-    rows = results["experiment2"]["rows"]
-    layers = [int(row["layer"]) for row in rows]
-    x = np.arange(len(layers))
-    values = np.array([100.0 * row["acc_mean"] for row in rows])
+    labels, bar_values = layer_position_accuracy_bars(results)
+    x = np.arange(len(labels))
+    values = np.array(bar_values)
 
     fig, ax = plt.subplots(figsize=(3.0, 3.0))
-    ax.bar(x, values, 0.62, color="#0072B2", edgecolor="black", linewidth=0.35)
+    ax.bar(x, values, 0.58, color="#0072B2", edgecolor="black", linewidth=0.35)
     ax.set_xlabel("Perturbed Transformer Layer", fontweight="bold")
     ax.set_ylabel("Accuracy (%)", fontweight="bold")
     ax.set_title(f"Accuracy by Noise Injection Layer (std. dev. = {results['experiment2']['sigma']:.2g})",
                  fontweight="bold")
     ax.set_xticks(x)
-    ax.set_xticklabels([str(layer) for layer in layers])
+    ax.set_xticklabels(labels)
     _finish_paper_axes(ax, values.tolist())
     fig.savefig(output_dir / "layer_position_accuracy.pdf")
     fig.savefig(output_dir / "layer_position_accuracy.png", dpi=600)

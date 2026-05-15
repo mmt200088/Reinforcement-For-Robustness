@@ -12,6 +12,7 @@ from scripts.bert_mrpc_layer_noise_experiment import (
     build_arg_parser,
     build_sigma_grid,
     inject_noise_into_layer_output,
+    layer_position_accuracy_bars,
     log_tick_positions,
     remove_stale_figure_outputs,
     select_mild_drop_sigma,
@@ -150,6 +151,19 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
             "10^0",
             "10^1",
         ])
+
+    def test_layer_position_accuracy_bars_add_clean_without_renumbering_layers(self):
+        labels, values = layer_position_accuracy_bars({
+            "baseline": {"acc": 0.90},
+            "experiment2": {
+                "rows": [
+                    {"layer": 0, "acc_mean": 0.80},
+                    {"layer": 1, "acc_mean": 0.70},
+                ],
+            },
+        })
+        self.assertEqual(labels, ["Clean", "0", "1"])
+        self.assertEqual(values, [90.0, 80.0, 70.0])
 
     def test_remove_stale_figure_outputs_deletes_old_f1_figures(self):
         with tempfile.TemporaryDirectory() as tmp:
