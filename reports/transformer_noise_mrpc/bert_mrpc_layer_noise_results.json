@@ -1,7 +1,7 @@
 {
   "baseline": {
     "acc": 0.8774509803921569,
-    "elapsed_sec": 0.6593530178070068,
+    "elapsed_sec": 0.6704862117767334,
     "n_samples": 408
   },
   "experiment1": [
@@ -217,71 +217,71 @@
   "experiment2": {
     "rows": [
       {
-        "acc_mean": 0.8681372549019608,
+        "acc_mean": 0.7915196078431372,
         "layer": 0,
-        "sigma": 0.4
+        "sigma": 0.6
       },
       {
-        "acc_mean": 0.868529411764706,
+        "acc_mean": 0.8295588235294118,
         "layer": 1,
-        "sigma": 0.4
+        "sigma": 0.6
       },
       {
-        "acc_mean": 0.8667647058823529,
+        "acc_mean": 0.84,
         "layer": 2,
-        "sigma": 0.4
+        "sigma": 0.6
       },
       {
-        "acc_mean": 0.8661764705882353,
+        "acc_mean": 0.8482843137254902,
         "layer": 3,
-        "sigma": 0.4
+        "sigma": 0.6
       },
       {
-        "acc_mean": 0.8695588235294117,
+        "acc_mean": 0.8524019607843136,
         "layer": 4,
-        "sigma": 0.4
+        "sigma": 0.6
       },
       {
-        "acc_mean": 0.8715196078431373,
+        "acc_mean": 0.8533333333333333,
         "layer": 5,
-        "sigma": 0.4
+        "sigma": 0.6
       },
       {
-        "acc_mean": 0.8666666666666667,
+        "acc_mean": 0.8311274509803921,
         "layer": 6,
-        "sigma": 0.4
+        "sigma": 0.6
       },
       {
-        "acc_mean": 0.8618137254901961,
+        "acc_mean": 0.8162254901960785,
         "layer": 7,
-        "sigma": 0.4
+        "sigma": 0.6
       },
       {
-        "acc_mean": 0.8682843137254902,
+        "acc_mean": 0.8554411764705883,
         "layer": 8,
-        "sigma": 0.4
+        "sigma": 0.6
       },
       {
-        "acc_mean": 0.866421568627451,
+        "acc_mean": 0.8570098039215687,
         "layer": 9,
-        "sigma": 0.4
+        "sigma": 0.6
       },
       {
-        "acc_mean": 0.8715196078431373,
+        "acc_mean": 0.8645588235294117,
         "layer": 10,
-        "sigma": 0.4
+        "sigma": 0.6
       },
       {
-        "acc_mean": 0.876029411764706,
+        "acc_mean": 0.8750490196078431,
         "layer": 11,
-        "sigma": 0.4
+        "sigma": 0.6
       }
     ],
     "selection": {
-      "mode": "0.4",
+      "mode": "0.6",
       "target_drop": 0.02
     },
-    "sigma": 0.4
+    "sigma": 0.6
   },
   "metadata": {
     "batch_size": 64,
