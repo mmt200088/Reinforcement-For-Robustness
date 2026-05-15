@@ -196,7 +196,7 @@
 
     <section class="grid" aria-label="Key results">
       <div class="metric">
-        <strong>87.75%</strong>
+        <strong>87.7%</strong>
         <span>Clean baseline accuracy</span>
       </div>
       <div class="metric">
@@ -208,7 +208,7 @@
         <span>Maximum line-sweep standard deviation</span>
       </div>
       <div class="metric">
-        <strong>0.4</strong>
+        <strong>0.6</strong>
         <span>Single-layer bar-chart standard deviation</span>
       </div>
     </section>
@@ -225,11 +225,11 @@
       </figure>
 
       <figure>
-        <img src="layer_position_accuracy.png" alt="Accuracy by single noisy Transformer layer at standard deviation 0.4">
+        <img src="layer_position_accuracy.png" alt="Accuracy by single noisy Transformer layer at standard deviation 0.6">
         <div class="axis-label">Perturbed Transformer Layer</div>
         <figcaption>
           <strong class="blue">Layer-position sweep.</strong>
-          Gaussian noise with standard deviation 0.4 is applied to one Transformer layer output at a time.
+          Gaussian noise with standard deviation 0.6 is applied to one Transformer layer output at a time.
           Each bar is the mean of 50 runs.
         </figcaption>
       </figure>
@@ -246,20 +246,20 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td>1e-10</td><td>87.75</td></tr>
-            <tr><td>1e-3</td><td>87.75</td></tr>
-            <tr><td>0.1</td><td>87.42</td></tr>
-            <tr><td>0.2</td><td>85.70</td></tr>
-            <tr><td>0.4</td><td>41.56</td></tr>
-            <tr><td>0.6</td><td>31.78</td></tr>
-            <tr><td>1.0</td><td>36.76</td></tr>
-            <tr><td>10.0</td><td>49.07</td></tr>
+            <tr><td>1e-10</td><td>87.7</td></tr>
+            <tr><td>1e-3</td><td>87.7</td></tr>
+            <tr><td>0.1</td><td>87.4</td></tr>
+            <tr><td>0.2</td><td>85.7</td></tr>
+            <tr><td>0.4</td><td>41.6</td></tr>
+            <tr><td>0.6</td><td>31.8</td></tr>
+            <tr><td>1.0</td><td>36.8</td></tr>
+            <tr><td>10.0</td><td>49.1</td></tr>
           </tbody>
         </table>
       </div>
 
       <div>
-        <h2>Single-Layer Noise at Sigma = 0.4</h2>
+        <h2>Single-Layer Noise at Sigma = 0.6</h2>
         <table>
           <thead>
             <tr>
@@ -268,18 +268,18 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td>0</td><td>86.81</td></tr>
-            <tr><td>1</td><td>86.85</td></tr>
-            <tr><td>2</td><td>86.68</td></tr>
-            <tr><td>3</td><td>86.62</td></tr>
-            <tr><td>4</td><td>86.96</td></tr>
-            <tr><td>5</td><td>87.15</td></tr>
-            <tr><td>6</td><td>86.67</td></tr>
-            <tr><td>7</td><td>86.18</td></tr>
-            <tr><td>8</td><td>86.83</td></tr>
-            <tr><td>9</td><td>86.64</td></tr>
-            <tr><td>10</td><td>87.15</td></tr>
-            <tr><td>11</td><td>87.60</td></tr>
+            <tr><td>0</td><td>79.2</td></tr>
+            <tr><td>1</td><td>83.0</td></tr>
+            <tr><td>2</td><td>84.0</td></tr>
+            <tr><td>3</td><td>84.8</td></tr>
+            <tr><td>4</td><td>85.2</td></tr>
+            <tr><td>5</td><td>85.3</td></tr>
+            <tr><td>6</td><td>83.1</td></tr>
+            <tr><td>7</td><td>81.6</td></tr>
+            <tr><td>8</td><td>85.5</td></tr>
+            <tr><td>9</td><td>85.7</td></tr>
+            <tr><td>10</td><td>86.5</td></tr>
+            <tr><td>11</td><td>87.5</td></tr>
           </tbody>
         </table>
       </div>
@@ -288,7 +288,7 @@
     <p class="note">
       Source files: bert_mrpc_layer_noise_results.json, noise_magnitude_results.csv,
       layer_position_results.csv, noise_magnitude_accuracy.png, and layer_position_accuracy.png.
-      Pulled from git commit 9580d88 after the server-side GPU run.
+      Pulled from git commit dca45d5 after the server-side GPU run.
     </p>
   </main>
 </body>

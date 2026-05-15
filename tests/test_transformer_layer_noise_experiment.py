@@ -14,6 +14,7 @@ from scripts.bert_mrpc_layer_noise_experiment import (
     inject_noise_into_layer_output,
     remove_stale_figure_outputs,
     select_mild_drop_sigma,
+    stretched_log_positions,
     temporary_layer_output_noise,
 )
 
@@ -129,6 +130,12 @@ class TransformerLayerNoiseExperimentTests(unittest.TestCase):
         self.assertEqual(args.repeats, 50)
         self.assertEqual(args.layer_sigma, "0.6")
         self.assertIsNone(args.sigmas)
+
+    def test_stretched_log_positions_expand_larger_sigmas(self):
+        positions = stretched_log_positions([1e-3, 1e-2, 1e-1, 1.0])
+        gaps = [right - left for left, right in zip(positions, positions[1:])]
+        self.assertGreater(gaps[1], gaps[0])
+        self.assertGreater(gaps[2], gaps[1])
 
     def test_remove_stale_figure_outputs_deletes_old_f1_figures(self):
         with tempfile.TemporaryDirectory() as tmp:

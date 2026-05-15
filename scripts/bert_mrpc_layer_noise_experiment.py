@@ -398,8 +398,30 @@ def _score_ylim_percent(values: Iterable[float], *, min_span: float = 3.0) -> Li
     return [lo, hi]
 
 
+def stretched_log_positions(sigmas: Sequence[float], exponent: float = 1.6) -> List[float]:
+    """Map sigma to a convex log-space axis so larger sigmas receive more width."""
+    if not sigmas:
+        return []
+    logs = [math.log10(float(sigma)) for sigma in sigmas]
+    lo = min(logs)
+    hi = max(logs)
+    if hi == lo:
+        return [0.0 for _ in logs]
+    return [((value - lo) / (hi - lo)) ** exponent for value in logs]
+
+
+def log_tick_positions(sigmas: Sequence[float]) -> tuple[List[float], List[str]]:
+    logs = [math.log10(float(sigma)) for sigma in sigmas]
+    min_exp = math.ceil(min(logs))
+    max_exp = math.floor(max(logs))
+    tick_sigmas = [10.0 ** exp for exp in range(min_exp, max_exp + 1)]
+    tick_positions = stretched_log_positions(tick_sigmas)
+    tick_labels = [rf"$10^{{{exp}}}$" for exp in range(min_exp, max_exp + 1)]
+    return tick_positions, tick_labels
+
+
 def _finish_paper_axes(ax: Any, metric_values: Sequence[float]) -> None:
-    from matplotlib.ticker import MultipleLocator
+    from matplotlib.ticker import FormatStrFormatter, MultipleLocator
 
     for spine in ax.spines.values():
         spine.set_visible(True)
@@ -417,6 +439,7 @@ def _finish_paper_axes(ax: Any, metric_values: Sequence[float]) -> None:
     else:
         tick_step = 0.5
     ax.yaxis.set_major_locator(MultipleLocator(tick_step))
+    ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
     ax.grid(True, which="major", axis="y", color="#E0E0E0", linestyle="--", linewidth=0.55)
 
 
@@ -427,13 +450,17 @@ def plot_noise_magnitude_accuracy(results: Mapping[str, Any], output_dir: Path) 
     rows = results["experiment1"]
     sigmas = [row["sigma"] for row in rows]
     values = [100.0 * row["acc_mean"] for row in rows]
+    x_positions = stretched_log_positions(sigmas)
+    tick_positions, tick_labels = log_tick_positions(sigmas)
 
     fig, ax = plt.subplots(figsize=(3.0, 3.0))
-    ax.set_xscale("log")
-    ax.plot(sigmas, values, marker="o", markersize=2.5, linewidth=1.25, color="#D55E00")
+    ax.plot(x_positions, values, marker="o", markersize=2.5, linewidth=1.25, color="#D55E00")
     ax.set_xlabel("Gaussian Noise Std. Dev.", fontweight="bold")
     ax.set_ylabel("Accuracy (%)", fontweight="bold")
     ax.set_title("Accuracy vs. Uniform Layer-Output Noise", fontweight="bold")
+    ax.set_xticks(tick_positions)
+    ax.set_xticklabels(tick_labels)
+    ax.set_xlim(-0.025, 1.025)
     ax.grid(True, which="major", axis="x", color="#D0D0D0", linestyle="--", linewidth=0.55)
     _finish_paper_axes(ax, values)
     fig.savefig(output_dir / "noise_magnitude_accuracy.pdf")
