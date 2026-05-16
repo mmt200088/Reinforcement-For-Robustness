@@ -26,6 +26,36 @@ These facts override naive readings of the code. Full rationale: `project_unders
 
 The **"59 required slots"** is the user-stated target. Older `action_space.py` field tables export ~73 fields/layer and stale doc comments still say 94. **Trust `scripts/blb_export_action_registry.py` over comments** before changing slot counts; classify discrepancies as `required / effective-extra / compat-extra / inactive` rather than deleting.
 
+## Local/Git/Server workflow
+
+Code changes must be made locally first. The server is for running jobs and
+producing results only.
+
+Required flow:
+
+1. Edit code in the local workspace.
+2. Commit/push the local changes to git.
+3. On the server, pull from git before running.
+4. Run training/evaluation on the server.
+5. Push generated results/artifacts from the server to git.
+6. Pull those results back into the local workspace.
+
+Do not directly patch source code on the server except for emergency inspection
+or a throwaway diagnostic that will not be kept. Any real fix must be applied
+locally, pushed to git, then pulled by the server.
+
+### Server command bridge
+
+Use `SERVER_COMMAND.md` as the normal bridge for server-side command execution.
+The server-side agent watches that file, extracts the first fenced `bash` code
+block under the active command section, and runs it from the repository root.
+
+When a server run is needed, edit `SERVER_COMMAND.md` locally, put the exact
+command in the first fenced `bash` code block, update the human-readable
+metadata/checklist if useful, then commit and push. Let the server agent
+pull/sync and run it. Do not SSH in just to launch routine training/evaluation
+commands, and never use the server bridge to edit source code.
+
 ## Common commands
 
 **All training / evaluation goes through one launcher** (`bash llama_7B_LayerImportance.sh ...`); do not call the underlying `rl_tune*.py` directly. Subcommands and presets:

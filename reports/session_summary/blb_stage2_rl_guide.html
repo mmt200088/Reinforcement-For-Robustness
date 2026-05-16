@@ -99,7 +99,7 @@ Dockerfile + lockfile、F2/F3 fidelity 层级删除。详见
   <li>
     <a href="#quick">一句话快速上手</a>
     <ul>
-      <li><a href="#cheat-sheet">1.1 命令行速查表（12 条最常用）</a></li>
+      <li><a href="#cheat-sheet">1.1 命令行速查表与服务器桥梁</a></li>
     </ul>
   </li>
   <li><a href="#pipeline">完整训练流程（pipeline）</a></li>
@@ -107,7 +107,12 @@ Dockerfile + lockfile、F2/F3 fidelity 层级删除。详见
   <li><a href="#action-space">动作空间与每步决策</a></li>
   <li><a href="#reward">Reward 设计（per-step + terminal）</a></li>
   <li><a href="#preset">preset 文件与 RL 参数说明</a></li>
-  <li><a href="#run">如何运行 / 监控 / resume</a></li>
+  <li>
+    <a href="#run">如何运行 / 监控 / resume</a>
+    <ul>
+      <li><a href="#server-command">7.0 SERVER_COMMAND.md 服务器命令桥梁</a></li>
+    </ul>
+  </li>
   <li>
     <a href="#output">输出与产物</a>
     <ul>
@@ -145,10 +150,26 @@ bash Paean/run_final_eval.sh \
 </code></pre>
 </div>
 
-<h3 id="cheat-sheet">1.1 命令行速查表（最常用的 12 条）</h3>
+<div class="box warn">
+<strong>服务器运行入口</strong>：常规远端训练 / 评估不要 SSH 到服务器手动敲命令。请在本地修改 <code>SERVER_COMMAND.md</code> 的第一个 <code>bash</code> 代码块，提交并 push；服务器 agent 会同步该文件并在仓库根目录执行该代码块里的命令。源码改动仍然只能本地改、本地 push、服务器 pull 后运行。
+</div>
+
+<h3 id="cheat-sheet">1.1 命令行速查表与服务器桥梁</h3>
 
 <table>
 <tr><th>场景</th><th>命令</th></tr>
+<tr>
+<td>⓪ 通过服务器 agent 启动 / 改远端命令（推荐远端入口）</td>
+<td><pre><code># 本地编辑 SERVER_COMMAND.md 的第一个 bash 代码块，例如：
+```bash
+bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
+```
+
+git add SERVER_COMMAND.md
+git commit -m "Update server command"
+git push
+# 服务器 agent 会 pull/sync 并在仓库根目录执行第一个 bash 代码块。</code></pre></td>
+</tr>
 <tr>
 <td>① 首次启动训练（必带 <code>--fresh</code>）</td>
 <td><pre><code>bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh</code></pre></td>
@@ -415,6 +436,26 @@ else:
 </table>
 
 <h2 id="run">7. 如何运行 / 监控 / resume</h2>
+
+<h3 id="server-command">7.0 SERVER_COMMAND.md 服务器命令桥梁</h3>
+<p><code>SERVER_COMMAND.md</code> 是本地与服务器 agent 的命令桥梁。服务器 agent 监听这个文件，只读取其中第一个 fenced <code>bash</code> 代码块，并在仓库根目录用 <code>bash</code> 执行。代码块之外的 metadata / checklist 只给人看，agent 不解析。</p>
+
+<p><strong>推荐远端运行流程</strong>：</p>
+<ol>
+  <li>在本地修改 <code>SERVER_COMMAND.md</code> 的 <code>active command</code> 第一段 <code>bash</code> 代码块。</li>
+  <li>按需更新下面的元信息：任务、更新时间、预期输出目录、验证清单。</li>
+  <li>本地提交并 push。</li>
+  <li>服务器 agent pull/sync 后执行该命令。</li>
+  <li>服务器产出的结果再由服务器侧 push，本地再 pull 回来。</li>
+</ol>
+
+<pre><code># SERVER_COMMAND.md 里 agent 会执行的唯一位置：
+```bash
+bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
+```
+</code></pre>
+
+<p class="warn"><strong>⚠</strong> 常规训练 / 评估不要 SSH 到服务器手动启动命令；也不要在服务器上直接改源码。真实代码改动必须在本地完成并 push，服务器只 pull 代码、运行任务、push 结果。</p>
 
 <h3>7.1 首次启动（前台）</h3>
 <pre><code>bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh</code></pre>

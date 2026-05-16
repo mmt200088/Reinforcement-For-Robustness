@@ -38,6 +38,24 @@ Do not directly patch source code on the server except for emergency inspection
 or a throwaway diagnostic that will not be kept. Any real fix must be applied
 locally, pushed to git, then pulled by the server.
 
+### Server Command Bridge
+
+Use `SERVER_COMMAND.md` as the normal bridge for server-side command execution.
+The server-side agent watches that file, reads the first fenced `bash` code
+block under the active command section, and runs it from the repository root.
+
+When a server run is needed:
+
+1. Edit `SERVER_COMMAND.md` locally.
+2. Put the exact command to run in the first fenced `bash` code block.
+3. Update the human-readable metadata/checklist below it when useful.
+4. Commit and push the file.
+5. Let the server agent pull/sync and run the command.
+
+Do not SSH in just to launch routine training/evaluation commands. Do not use
+the server bridge to edit source code; source changes still follow the local
+edit → git push → server pull flow above.
+
 ## What This Project Is
 
 This is a research codebase for searching noise and approximation schedules for
