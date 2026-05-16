@@ -51,10 +51,18 @@
   <span class="pill ok">Per-block 差异化 K baseline</span>
   <span class="pill ok">诊断 dashboard + auto/manual final-eval (2026-05-16)</span>
   <span class="pill ok">Human-readable SF/K 配置（2026-05-16 晚）</span>
+  <span class="pill ok">Multi-seed + experiments log + paper figures + ADR + Docker (2026-05-16 深夜)</span>
 </p>
 
 <div class="box ok">
-<strong>最近一次更新（2026-05-16 深夜）</strong>：把 <strong>所有训练期写出的文件</strong>（status 板、best_action_full.md、最终 report.md、诊断 dashboard 等）全部统一成 <strong>SF / truncation_bits 视图</strong>。每处需要看动作的地方都按"槽位标签（如 <code>L05.B3.K</code>）→ 实际 SF 值"展示，action_index 只作为可选 sanity 列。HTML 顶部新加 <a href="#cheat-sheet">命令行速查表</a>。详见
+<strong>最近一次更新（2026-05-16 深夜后段）</strong>：补齐了把 BLB Stage-2 RL 当成 <strong>长期科研项目</strong> 跑下去需要的全套基础设施 ——
+multi-seed 框架、跨 run 实验追踪、论文风格 figure 生成、ADR 决策日志、
+Dockerfile + lockfile、F2/F3 fidelity 层级删除。详见
+<a href="#longterm">新加的第 11 节 · 长期研究工作流</a>。
+</div>
+
+<div class="box ok">
+<strong>2026-05-16 深夜</strong>：把 <strong>所有训练期写出的文件</strong>（status 板、best_action_full.md、最终 report.md、诊断 dashboard 等）全部统一成 <strong>SF / truncation_bits 视图</strong>。每处需要看动作的地方都按"槽位标签（如 <code>L05.B3.K</code>）→ 实际 SF 值"展示，action_index 只作为可选 sanity 列。HTML 顶部新加 <a href="#cheat-sheet">命令行速查表</a>。详见
 <a href="#output-files">第 8.1 节</a>、
 <a href="#final-eval">第 8.3 节</a>。
 </div>
@@ -93,6 +101,16 @@
   </li>
   <li><a href="#troubleshoot">疑难诊断 / 常见情况</a></li>
   <li><a href="#rollback">如何回退到旧 single-shot 路径</a></li>
+  <li>
+    <a href="#longterm">长期研究工作流（multi-seed / 实验追踪 / 论文图 / ADR / 环境）</a>
+    <ul>
+      <li><a href="#multiseed">11.1 Multi-seed 训练 + 显著性</a></li>
+      <li><a href="#explog">11.2 实验追踪 (registry.jsonl + index.md)</a></li>
+      <li><a href="#paperfigs">11.3 论文风格 figure 生成</a></li>
+      <li><a href="#adr">11.4 ADR — 重要决策的依据</a></li>
+      <li><a href="#setup">11.5 环境搭建（Docker / venv）</a></li>
+    </ul>
+  </li>
 </ol>
 </div>
 
@@ -181,6 +199,41 @@ bash Paean/run_final_eval.sh --preset mrpc-final-eval-only --action-config /tmp/
 <td><pre><code># 方式 A：Ctrl-C 一次（如果是前台运行）
 # 方式 B：在持久化目录创建 STOP_RL 文件
 touch "$RUN_DIR/blb_stage2/progress/STOP_RL"</code></pre></td>
+</tr>
+<tr>
+<td>⑬ Multi-seed sweep（5 seeds + 自动 mean ± std 聚合）</td>
+<td><pre><code>bash tools/run_multi_seed.sh mrpc-blb-stage2-rl 1,2,3,4,5 trial1 --fresh
+# 结果：experiments/multi_seed/trial1/seed_summary.md</code></pre></td>
+</tr>
+<tr>
+<td>⑭ 看所有 run 索引（自动维护）</td>
+<td><pre><code>python3 tools/experiments_log.py rebuild
+less experiments/index.md</code></pre></td>
+</tr>
+<tr>
+<td>⑮ 过滤 run（CLI 查询）</td>
+<td><pre><code>python3 tools/experiments_log.py query --dataset mrpc --min-reward 0.4
+python3 tools/experiments_log.py query --last-n 20 --format json</code></pre></td>
+</tr>
+<tr>
+<td>⑯ 论文 figure（multi-seed mean±std）</td>
+<td><pre><code>python3 tools/paper_figures.py \
+    --runs "Parting Chapter/persistent/.../trial1_s1" \
+            "Parting Chapter/persistent/.../trial1_s2" \
+            "Parting Chapter/persistent/.../trial1_s3" \
+    --group-label "RL (3 seeds)" \
+    --out figures/trial1 --formats png pdf</code></pre></td>
+</tr>
+<tr>
+<td>⑰ 浏览 ADR（重大决策依据）</td>
+<td><pre><code>less docs/adr/README.md          # 索引
+less docs/adr/ADR-001-per-block-sequential-ppo.md</code></pre></td>
+</tr>
+<tr>
+<td>⑱ Docker 一键启动</td>
+<td><pre><code>docker build -t blb-rl:latest .
+docker run --gpus all -it --rm -v "$PWD":/workspace blb-rl:latest \
+    bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh</code></pre></td>
 </tr>
 </table>
 
@@ -681,16 +734,230 @@ bash Paean/run_final_eval.sh \
   --blb-v3-no-sequential-rl</code></pre>
 <p>注意单步 horizon=1 + 577-dim 一次性出 action，<strong>action_dims_for_config 大小</strong>跟之前完全一致，但 PPO 收敛通常显著慢。</p>
 
+<h2 id="longterm">11. 长期研究工作流</h2>
+
+<p>2026-05-16 加的一整套基础设施，让这个项目能作为长期演进的科研代码工程跑下去。每个子节都给可直接 copy-paste 的命令。</p>
+
+<h3 id="multiseed">11.1 Multi-seed 训练 + 显著性</h3>
+
+<p>单 seed 跑一次得到一个 best_reward 没法判断"赢 baseline 是不是运气"。下面这条一行命令跑 5 个 seed，每个 seed 用独立的持久化目录（不互相 resume），结束后自动汇总成 <code>seed_summary.md</code>：</p>
+
+<pre><code># 一行跑 5 个 seed（用 --fresh 第一次确认覆盖）
+bash tools/run_multi_seed.sh mrpc-blb-stage2-rl 1,2,3,4,5 trial1 --fresh
+
+# 单 seed 手动 override（不走 multi-seed 框架时用）
+bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl \
+    --blb-v3-seed 7 --run-tag pilot_s7 --fresh
+</code></pre>
+
+<p>底层加了两个 launcher flag：</p>
+<table>
+<tr><th>Flag</th><th>作用</th></tr>
+<tr><td><code>--blb-v3-seed N</code></td><td>覆盖 <code>BLBStage2TrainConfig.seed</code> 默认值（42）。通过 <code>rl_tune.py</code> → evaluator → runner 完整传递。</td></tr>
+<tr><td><code>--run-tag SUFFIX</code></td><td>append 到 <code>CONSTRAINT_SLUG</code>，让相同参数 + 不同 seed 落到不同的持久化目录（auto-resume 不互相干扰）。</td></tr>
+</table>
+
+<p>跑完后生成的 summary：</p>
+<pre><code># 汇总文件路径
+ls experiments/multi_seed/trial1/
+#   seed_summary.md     ← 人类阅读
+#   seed_summary.json   ← 机器读取
+#   seed_list.txt       ← 跑了哪些 seed
+#   _failures.txt       ← 哪些 seed crash（如果有）
+
+# 想手动重跑聚合（比如某些 seed 是单独跑的）
+python3 tools/aggregate_seeds.py \
+    --run-name trial1 \
+    --seed-list experiments/multi_seed/trial1/seed_list.txt \
+    --output-dir experiments/multi_seed/trial1
+</code></pre>
+
+<p><code>seed_summary.md</code> 内容：聚合指标（mean ± std 跨 complete seeds）+ per-seed 明细表 + 错误日志。可以直接做 paper 里"BLB Stage-2 RL 上 5 seed 平均 best_reward = X ± Y"的 statement。</p>
+
+<div class="box warn">
+<strong>建议</strong>：论文报数最少 5 seeds。fewer-than-5 sweeps 会被 reviewer 质疑（"single-run RL 没说服力"）。
+</div>
+
+<h3 id="explog">11.2 实验追踪（experiments registry + index）</h3>
+
+<p>每个 RL run 训练结束自动写一行 JSON 到 <code>experiments/registry.jsonl</code>（追加），并重建 <code>experiments/index.md</code> 作为 "项目全局实验索引"。无需 W&amp;B / MLflow。</p>
+
+<p>常用命令：</p>
+<pre><code># 看所有 run（最新在前；每个 dataset 的 best 表 + 全部 runs 表）
+python3 tools/experiments_log.py rebuild   # 重建 index
+less experiments/index.md
+
+# 过滤：仅看 mrpc 上 best_reward &gt; 0.4 的 complete run
+python3 tools/experiments_log.py query --dataset mrpc --min-reward 0.4
+
+# 仅最近 20 个 run
+python3 tools/experiments_log.py query --last-n 20
+
+# 导出 JSON / TSV（方便接 pandas）
+python3 tools/experiments_log.py query --dataset mrpc --format json &gt; mrpc_runs.json
+
+# 手动 register（如果某次 bypass launcher 跑的）
+python3 tools/experiments_log.py register \
+    --run-id "20260515_manual_pid99" \
+    --dataset mrpc --algorithm rl --preset mrpc-blb-stage2-rl \
+    --seed 42 --status complete --elapsed-sec 5400 --best-reward 0.42 \
+    --persistent-dir "Parting Chapter/persistent/rl/bert-base/mrpc/&lt;slug&gt;" \
+    --notes "rerun after fixing baseline bug"
+</code></pre>
+
+<p>给 run 加注释：直接编辑 <code>experiments/registry.jsonl</code> 找到对应行，改它的 <code>"notes"</code> 字段，然后 <code>python3 tools/experiments_log.py rebuild</code> 让 index.md 反映出来。</p>
+
+<p>记录的字段（详见 <code>experiments/README.md</code>）：</p>
+<table>
+<tr><th>字段</th><th>说明</th></tr>
+<tr><td><code>run_id</code></td><td>唯一 ID（如 <code>20260516_143020_pid12345</code>）</td></tr>
+<tr><td><code>git_commit</code> / <code>git_dirty</code></td><td>训练时的代码状态。<code>dirty=true</code> 标记 uncommitted 改动，论文报数前必须 commit。</td></tr>
+<tr><td><code>dataset</code> / <code>model_type</code> / <code>algorithm</code> / <code>preset</code> / <code>rl_variant</code> / <code>seed</code></td><td>run 身份</td></tr>
+<tr><td><code>status</code></td><td><code>complete</code> / <code>training_only</code> / <code>crashed</code></td></tr>
+<tr><td><code>best_reward</code> / <code>final_eval</code></td><td>训练期最优 + final eval 指标（loss / metric1 / metric2 / total_bits / fusion_count / avg_truncation_k）</td></tr>
+<tr><td><code>artifact_paths</code></td><td>指向 report.md / best_action_full.md / diagnostics dir 等关键文件</td></tr>
+<tr><td><code>notes</code></td><td>用户可编辑：研究上的标注（"这是 paper 的图 4 来源"）</td></tr>
+</table>
+
+<h3 id="paperfigs">11.3 论文风格 figure 生成</h3>
+
+<p><code>tools/paper_figures.py</code> 从一个或多个 run 目录渲染 6 类 paper-friendly 图（Times serif + Wong 2011 colorblind palette + 300 DPI PNG + vector PDF）：</p>
+
+<table>
+<tr><th>图类型</th><th>用途</th></tr>
+<tr><td><code>training_curves</code></td><td>每 episode reward 曲线。多 run 同时给 + <code>--group-label</code> 时自动画 mean ± std 阴影带</td></tr>
+<tr><td><code>invalid_heatmap</code></td><td>(layer, block) 第一次 invalid 频率热力（百分比标注）</td></tr>
+<tr><td><code>best_vs_baseline</code></td><td>每 block 的 SF↓/SF↑/K↓/K↑ 计数柱状图（直观看出 RL 学到的方向）</td></tr>
+<tr><td><code>action_histogram</code></td><td>每槽位 action_idx 选择频率热力（policy collapse 检测）</td></tr>
+<tr><td><code>ppo_dynamics</code></td><td>2×2 面板：policy_loss / value_loss / entropy / clip_fraction 随 PPO update</td></tr>
+<tr><td><code>cost_vs_accuracy</code></td><td>Top-K candidates 在 (total_bits, reward) 平面的散点</td></tr>
+</table>
+
+<pre><code># 单 run 全部 6 类图
+python3 tools/paper_figures.py \
+    --runs "Parting Chapter/persistent/rl/bert-base/mrpc/&lt;slug&gt;" \
+    --out figures/run1 --formats png pdf
+
+# Multi-seed：自动 mean ± std 阴影带
+python3 tools/paper_figures.py \
+    --runs "Parting Chapter/persistent/.../trial1_s1" \
+            "Parting Chapter/persistent/.../trial1_s2" \
+            "Parting Chapter/persistent/.../trial1_s3" \
+            "Parting Chapter/persistent/.../trial1_s4" \
+            "Parting Chapter/persistent/.../trial1_s5" \
+    --group-label "RL (5 seeds)" \
+    --out figures/trial1_multiseed --formats png pdf
+
+# 跨方法对比（不同 preset / algorithm 并排）
+python3 tools/paper_figures.py \
+    --runs &lt;run_A&gt; &lt;run_B&gt; \
+    --labels "Sequential" "Single-shot" \
+    --out figures/ablation_sequential
+
+# 仅一两类图 + 单栏宽度（论文 single-column）
+python3 tools/paper_figures.py --runs &lt;run&gt; --out figures/run1 \
+    --figs training_curves ppo_dynamics --single-column
+
+# 同时出 LaTeX 表（booktabs 风格）
+python3 tools/paper_figures.py --runs &lt;run&gt; --out figures/run1 --latex-tables
+</code></pre>
+
+<h3 id="adr">11.4 ADR — 重要决策的依据</h3>
+
+<p>所有重大架构决定都写成 <strong>ADR (Architecture Decision Record)</strong>，存在 <code>docs/adr/</code>。每个 ADR 含：context（背景） / decision（决定） / alternatives considered（被拒绝的方案） / consequences（后果） / references（相关代码）。半年后回头改时，先翻 ADR 看决策前提是否还成立。</p>
+
+<table>
+<tr><th>#</th><th>标题</th></tr>
+<tr><td>ADR-001</td><td>Per-block sequential PPO（取代 single-shot 577-dim）</td></tr>
+<tr><td>ADR-002</td><td>Hard-priority reward（拒绝 weighted-sum）</td></tr>
+<tr><td>ADR-003</td><td>Per-block 差异化 K baseline {B1=13, B2=10, B3=13, B4=10, B5=13}</td></tr>
+<tr><td>ADR-004</td><td>static_skeletons 作为 BLB Stage-2 RL 唯一 baseline 源</td></tr>
+<tr><td>ADR-005</td><td>SF/K-first 人类可读输出 schema</td></tr>
+<tr><td>ADR-006</td><td>F0 / F1 / F4 三级 fidelity ladder（删除 F2 / F3）</td></tr>
+</table>
+
+<pre><code># 浏览
+less docs/adr/README.md          # 索引 + 何时写新 ADR 规则
+less docs/adr/ADR-001-per-block-sequential-ppo.md
+ls docs/adr/                     # 看全部
+
+# 写新 ADR
+cp docs/adr/_TEMPLATE.md docs/adr/ADR-007-&lt;short-slug&gt;.md
+$EDITOR docs/adr/ADR-007-&lt;short-slug&gt;.md
+# 改 docs/adr/README.md 的 ADR 索引表加新一行
+</code></pre>
+
+<div class="box warn">
+<strong>规则</strong>：反转一个 ADR 时 <strong>不要直接编辑老 ADR</strong>，写新 ADR 并标 "Supersedes ADR-XXX"；老 ADR 改 Status 为 "Superseded by ADR-YYY"。这样决策演进路径可追溯。
+</div>
+
+<h3 id="setup">11.5 环境搭建（Docker / venv）</h3>
+
+<p>完整说明在 <code>docs/SETUP.md</code>，这里给最简版本：</p>
+
+<h4>11.5.1 Docker（推荐做可重现的实验）</h4>
+<pre><code># 默认 CUDA 12.1 base
+docker build -t blb-rl:latest .
+
+# 跑训练（GPU pass-through + 持久化目录 + GLUE 缓存挂载）
+docker run --gpus all -it --rm \
+    -v "$PWD":/workspace \
+    -v "$HOME/.cache/huggingface":/root/.cache/huggingface \
+    -e GLUE_LOCAL_DATASET_DIR=/workspace/data/glue \
+    blb-rl:latest \
+    bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
+</code></pre>
+<p>镜像构建完会自动把 pip 解析出的精确版本写到 <code>/opt/requirements-frozen.txt</code> 里。</p>
+
+<h4>11.5.2 venv（推荐做开发 / 远端服务器训练）</h4>
+<pre><code># Python 3.10/3.11 验证过
+python3.11 -m venv .venv
+source .venv/bin/activate
+
+# 先装匹配 CUDA 的 PyTorch
+pip install --index-url https://download.pytorch.org/whl/cu121 \
+    torch==2.4.* torchvision torchaudio
+
+# 其余依赖
+pip install -r requirements.txt
+
+# 冻结当前环境（便于复现）
+pip freeze --exclude-editable &gt; requirements-frozen.txt
+
+# 验证
+python -c "import torch, transformers, numpy; \
+print('torch:', torch.__version__, 'cuda:', torch.cuda.is_available())"
+</code></pre>
+
+<h4>11.5.3 GLUE 数据预下载（避免训练时网络抖动）</h4>
+<pre><code># 一次性把 MRPC 拉到本地
+mkdir -p data/glue
+python -c "from datasets import load_dataset; \
+load_dataset('glue', 'mrpc').save_to_disk('data/glue/mrpc')"
+export GLUE_LOCAL_DATASET_DIR="$PWD/data/glue"
+</code></pre>
+
+<h4>11.5.4 报告 issue / 协作时怎么贴环境</h4>
+<pre><code>python -c "import torch, transformers, numpy, scipy, sklearn, datasets, sys; \
+print(sys.version); \
+print('torch=', torch.__version__, 'cuda=', torch.version.cuda, 'avail=', torch.cuda.is_available()); \
+print('transformers=', transformers.__version__); \
+print('datasets=', datasets.__version__)"
+</code></pre>
+
 <hr>
 <p style="color: #57606a; font-size: 0.9em;">
   2026-05-15 · BLB Stage-2 RL · per-block sequential 默认 ·
-  <strong>2026-05-16 早些时候</strong>：长期诊断 dashboard、auto-flag 警告、
+  <strong>2026-05-16 早</strong>：长期诊断 dashboard、auto-flag 警告、
   <code>best_action_vec.json</code> action_grid 兼容输出、final eval auto/manual 双通道 ·
   <strong>2026-05-16 晚</strong>：把 <code>best_action_vec.json</code> 升级为
   Human-readable SF / K 槽位列表，Paean <code>--action-config</code>
   接受新 SF 形式 / <code>base+overrides</code> 简写 / 旧 <code>action_vec</code> flat list ·
   <strong>2026-05-16 深夜</strong>：训练期所有产物（status / best_action_full /
-  report / diagnostics）统一切换到 SF / truncation_bits 视图；HTML 加命令行速查表。
+  report / diagnostics）统一切换到 SF / truncation_bits 视图；HTML 加命令行速查表 ·
+  <strong>2026-05-16 深夜后段</strong>：长期研究工作流基础设施（multi-seed framework、
+  experiments registry + index、论文 figure 工具、6 个核心 ADR、Dockerfile + lockfile、
+  F2/F3 fidelity 层级删除）。
 </p>
 
 </body>

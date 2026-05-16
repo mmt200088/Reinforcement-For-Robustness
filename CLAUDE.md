@@ -73,6 +73,47 @@ bash llama_7B_LayerImportance.sh general train --general-rl-tasks mrpc,cola,rte,
 python tools/status_board.py --write-md   # rewrites docs/STATUS.md
 ```
 
+**Long-term research workflow** (added 2026-05-16; see HTML guide §11 for prose):
+
+```bash
+# Multi-seed sweep: 5 seeds, isolated persistent dirs, auto-aggregated summary
+bash tools/run_multi_seed.sh mrpc-blb-stage2-rl 1,2,3,4,5 trial1 --fresh
+# Writes experiments/multi_seed/trial1/seed_summary.{md,json}
+
+# Single seed override (manual): --blb-v3-seed N + --run-tag SUFFIX
+bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl \
+    --blb-v3-seed 7 --run-tag pilot_s7 --fresh
+
+# Experiments tracking (auto-registered at training end; can also query manually)
+python tools/experiments_log.py rebuild                 # regen experiments/index.md
+python tools/experiments_log.py query --dataset mrpc --min-reward 0.4
+python tools/experiments_log.py register --run-id ... --dataset ... ...  # manual
+
+# Paper-style figures from one or more run dirs
+python tools/paper_figures.py \
+    --runs "Parting Chapter/persistent/.../trial1_s1" \
+            "Parting Chapter/persistent/.../trial1_s2" \
+            --group-label "RL (5 seeds)" \
+    --out figures/trial1 --formats png pdf
+# Supported figs: training_curves / invalid_heatmap / best_vs_baseline /
+#                 action_histogram / ppo_dynamics / cost_vs_accuracy
+```
+
+**Environment setup** (Docker or venv; full instructions in `docs/SETUP.md`):
+
+```bash
+# Docker (CUDA 12.1 + PyTorch cu121 base, deps frozen at build time)
+docker build -t blb-rl:latest .
+docker run --gpus all -it --rm -v "$PWD":/workspace blb-rl:latest \
+    bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
+
+# venv: install PyTorch first (CUDA wheel), then the rest
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install --index-url https://download.pytorch.org/whl/cu121 torch==2.4.* torchvision torchaudio
+pip install -r requirements.txt
+pip freeze --exclude-editable > requirements-frozen.txt   # capture exact resolved set
+```
+
 **BLB sidecar tools** (in `scripts/`; do NOT replace the launcher — they ride alongside it):
 
 ```bash
@@ -196,7 +237,17 @@ Field-level details live in the registry, not here, but the conceptual scope of 
 - **Old stage-2 RL + Stage-1 RL + GA + general-RL**: `Parting Chapter/persistent/{algorithm}/{model}/{dataset}/{accuracy_slug}/...` (`accuracy_slug` is e.g. `s1t0.005_s2t0.05_s2st0.05`). Same parameters → same dir → auto-resume. See `docs/ARCHITECTURE.md` §4.
 - **BLB Stage-2 RL (blb_v3)**: `Parting Chapter/persistent/{algorithm}/{model}/{dataset}/{accuracy_slug}/blb_stage2/progress/`. The runner overrides `evaluator.noise_stage_progress_dir` at the start of `run()` so all BLB checkpoints / status board / curves / final report land inside the active persistent run directory. See `resolve_blb_persistence_dir()` in `blb_stage2_rl/runner.py`.
 
-In each BLB run dir you'll find: `blb_stage2_rl_checkpoint_{live,final}.pt`, `blb_stage2_best_cfg.pkl`, `blb_stage2_status.json` (atomically rewritten — safe to `tail -f` / `cat`), `blb_stage2_training_curve.{npz,png}`, `blb_stage2_report.md`, plus `blb_stage2_error.txt` if the loop crashed.
+In each BLB run dir you'll find (all SF/K-first since 2026-05-16):
+
+* `blb_stage2_status.json` — atomic-write live status; `best.slots` / `best.slots_by_layer` carry the human view of the current best.
+* `blb_stage2_rl_checkpoint_live.pt` — policy + optimizer + episode + best_reward + best_action + rl_variant.
+* `blb_stage2_training_curve.{png,npz}` — episode_returns / best curve / PPO loss curve.
+* `blb_stage2_best_cfg.pkl` — legacy pickle (kept for back-compat; humans should read the MD/JSON below).
+* `blb_stage2_best_action_full.{json,md}` — full slot description of training best. JSON has top-level `slots`/`slots_by_layer` (Paean-compatible) and the legacy `records`; MD leads with a per-layer/per-block selection table.
+* `blb_stage2_baseline_action_full.{json,md}` — same shape, for the static_skeletons baseline (the reference frame).
+* `blb_stage2_report.md` — final training report; §5 has per-layer/per-block selection + best-vs-baseline diff tables (raw int vec is hidden inside a `<details>` block).
+* `diagnostics/` — long-term diagnostics dashboard (see "Diagnostics dashboard" below).
+* `blb_stage2_error.txt` — traceback, only on crash.
 
 ### Graceful stop / resume
 
@@ -252,7 +303,21 @@ Three additive modules implement this:
 
 Helpers in `action_space.py`: `step_schedule(num_layers, profile, attn_degree_per_layer, gelu_degree_per_layer)` returns the ordered list of `BlockStepSpec` with each step's slot dims, kinds, full-vec offsets, and the graph-key suffix (e.g. `block3_exp_n4`) that ReplanSession should be called against. `splice_step_action_into_full_vec(...)` writes per-step actions into the legacy 577-dim vector. `step_schedule_max_dim(num_layers)` returns the max slots per step (13 for L=12).
 
-Smoke-tested torch-free; runner integration is left to the launcher (the existing `BLBStage2RLRunner` is 2866 lines and not factored for this — `sequential_runner.train_sequential` is the path forward).
+Runner integration: `BLBStage2RLRunner.run(...)` dispatches to `run_sequential_via_runner` whenever `train_cfg.sequential_rl=True` (now the default). The integration owns: persistent-dir resolution, baseline bootstrap, status board updates, checkpoint save/resume (with `rl_variant` compatibility check), diagnostics recorder wiring, SF/K-first action description files, final report markdown, and auto-registration into `experiments/registry.jsonl` at end of training.
+
+### Diagnostics dashboard (added 2026-05-16)
+
+`blb_stage2_rl/diagnostics.py::RLDiagnosticsRecorder` writes to `<progress_dir>/diagnostics/`:
+
+* `diagnostics_summary.md` — human-readable Chinese summary regenerated every `save_interval` episodes. Contains progress / Top-20 candidates / first-invalid heatmap / PPO dynamics / action-distribution overview / **auto-flag warnings** (learning regression / training stall / first-invalid concentration / clip_fraction high / policy collapse). **First place to look when debugging.**
+* `episodes.jsonl` — per-episode JSONL (append-only, tail-able).
+* `ppo_updates.jsonl` — per-PPO-update JSONL.
+* `top_candidates.jsonl` — top-K best episodes with full `slots` view + `diff_vs_baseline`.
+* `first_invalid_counts.json` — `{"L08-B3": 312, ...}` heatmap.
+* `action_histogram.npz` — per-slot action-index counts (`int64[num_slots, max_levels]`).
+* `baseline_action_vec.json` / `best_action_vec.json` — SF/K-first views (Paean-compatible — feed to `--action-config`).
+
+`action_io.py` provides the `action_vec ↔ slots_list` bidirectional converter used by the recorder, the persistence layer, and Paean's `load_action_grid_config`. The slot label format `L<i>.B<n>.<kind>[.<short>]` is the canonical naming convention for cross-tool slot identity.
 
 ## Verification: F0 → F1 → F4 fidelity ladder
 
@@ -274,6 +339,9 @@ The runner's "final eval" path must install the actual BLB best action (decode �
 - **Warmstart toward all-max baseline.** Action space is huge; uniform-random rollouts produce mostly invalid candidates. Bias the actor toward each slot's all-max index at init — this constrains the *prior*, not the search.
 - **GLUE network instability.** `rl_tune.py` honors `GLUE_LOCAL_DATASET_DIR` / `GLUE_DATASET_DIR` / `DatasetDict.save_to_disk` dirs / local parquet / HF cache `local_files_only=True` fallback. Pre-stage data and `export GLUE_LOCAL_DATASET_DIR=...` before remote long runs.
 - Logs/curves/checkpoints under `rl_results/` are mostly gitignored; un-ignored exceptions are explicit in `.gitignore` (e.g. `pruning_search_log.txt`, `persistent/**/*.csv`). Don't add new untracked artifact patterns blindly.
+- **All user-visible artifacts are SF/K-first** (since 2026-05-16). Never persist an action as a flat int vec without also writing the slot-form view (label + decoded SF / truncation_bits). `action_io.action_vec_to_slots_list` + `describe_action_vector` are the conversion entry points.
+- **Major architectural decisions live in `docs/adr/`** (added 2026-05-16). Before changing reward shape / baseline source / action space layout / fidelity ladder, read the relevant ADR. If you reverse a decision, write a new ADR that supersedes the old one (don't just edit it).
+- **Every run gets auto-registered** to `experiments/registry.jsonl` at training end (via `sequential_runner.py` subprocess hook). If you bypass the launcher to debug, register manually with `python tools/experiments_log.py register ...` so cross-run comparisons stay complete.
 - The Windows console may be GBK; `BLBStage2RLRunner._make_log_safe` wraps `evaluator.log` so non-GBK chars fall back without crashing stdout (file logs stay UTF-8). Matplotlib plot titles are intentionally ASCII (the markdown report carries the Chinese). Unicode bullets (▸) in new console output get replaced with `?` in stdout but are preserved in log files.
 - `GLOBALS.md` lists where global path / hyperparameter constants live. `config/paths.py` and `config/constants.py` exist as the future single source of truth, but most modules still hardcode their own — change with care.
 
@@ -288,6 +356,9 @@ In addition to the Critical mental model items above, these mistakes specificall
 5. Large multi-module rewrites without F0 / F1 verification between steps (and F4 before claiming a result).
 6. Forgetting to call `sync_block2_qk_binding(cfg)` after any code path that mutates `wk_encode` / `kt_mask{1,2}_encode` SFs (e.g. a new override hook). Block 2's Q/K binding is action-space convention, not a cfg-level invariant — every mutation site must restore it explicitly.
 7. Hard-coding episode horizon=1 when the sequential RL path is opt-in. The single-shot `BLBStage2Env` and the sequential `BLBStage2SequentialEnv` co-exist; reusable helpers must work with both (e.g. `apply_optimizer_output_to_cfg` is per-block, so it's already compatible).
+8. **Writing a new artifact in action-index form only**. Always pair an `action_vec` with its slot-form view (via `action_io.action_vec_to_slots_list`). User-facing files (markdown / JSON the user opens) must lead with `scaling_factor` / `truncation_bits` columns; `action_index` is at most a sanity-check sidekick column.
+9. **Hardcoding a seed inside the runner** instead of letting it flow through `BLBStage2TrainConfig.seed` (default 42, overridable via `--blb-v3-seed`). Multi-seed framework relies on this single seed knob.
+10. **Modifying `experiments/registry.jsonl` schema without bumping the relevant ADR / experiments doc**. The registry is the cross-run index; downstream tools (`aggregate_seeds.py`, `paper_figures.py`, `experiments_log.py query`) all assume the documented fields.
 
 ## When you're investigating something specific
 
@@ -302,3 +373,9 @@ In addition to the Critical mental model items above, these mistakes specificall
 - "How is one candidate stored / ranked" → `blb_stage2_rl/candidate_store.py`.
 - "Offline-evaluate a candidate without retraining" → `scripts/blb_eval_action.py`.
 - "BLB Stage-2 RL docs" → `docs/BLB_stage2_rl_README.md` (launcher knobs) / `…_FULL_FLOW.md` (run-to-resume logic) / `…_INTERNAL_FLOW.md` (per-module call stack) / `…_spec.md` (design rationale, math). The 4 docs disambiguate themselves at the top.
+- "Why did we make decision X" → `docs/adr/` (Architecture Decision Records). Currently: ADR-001 sequential PPO, ADR-002 hard-priority reward, ADR-003 per-block K baseline, ADR-004 static_skeletons baseline, ADR-005 SF/K-first outputs, ADR-006 F0/F1/F4 ladder. `docs/adr/README.md` has the index.
+- "Find / compare across runs" → `experiments/index.md` (auto-generated from `experiments/registry.jsonl`); CLI filters via `python tools/experiments_log.py query --dataset ... --min-reward ...`.
+- "Multi-seed sweep / aggregate stats across seeds" → `tools/run_multi_seed.sh <preset> <seeds_csv> <run_name>`; aggregation via `tools/aggregate_seeds.py` (also called automatically at end of sweep).
+- "Generate paper-style figures" → `python tools/paper_figures.py --runs ... --out figures/...`. 6 figure types: training_curves (mean±std band on multi-seed), invalid_heatmap, best_vs_baseline, action_histogram, ppo_dynamics, cost_vs_accuracy.
+- "Project user view of the whole system" → `reports/session_summary/blb_stage2_rl_guide.html` (work-product HTML; refreshed each major change; current at 2026-05-16).
+- "Set up the environment from scratch" → `docs/SETUP.md` + `Dockerfile` + `requirements.txt`.
