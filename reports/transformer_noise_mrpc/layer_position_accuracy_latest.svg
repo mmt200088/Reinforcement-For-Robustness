@@ -1,0 +1,55 @@
+<svg viewBox="0 0 720 680" role="img" aria-label="Accuracy by noisy transformer layer">
+<rect x="0" y="0" width="720" height="680" fill="white"/>
+<text x="360.0" y="36" text-anchor="middle" font-size="26" font-weight="700">Accuracy by Noise Injection Layer (std. dev. = 0.6)</text>
+<line x1="105" y1="584.00" x2="685" y2="584.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="589.00" text-anchor="end" font-size="19" font-weight="700">78.0</text>
+<line x1="105" y1="538.00" x2="685" y2="538.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="543.00" text-anchor="end" font-size="19" font-weight="700">79.0</text>
+<line x1="105" y1="492.00" x2="685" y2="492.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="497.00" text-anchor="end" font-size="19" font-weight="700">80.0</text>
+<line x1="105" y1="446.00" x2="685" y2="446.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="451.00" text-anchor="end" font-size="19" font-weight="700">81.0</text>
+<line x1="105" y1="400.00" x2="685" y2="400.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="405.00" text-anchor="end" font-size="19" font-weight="700">82.0</text>
+<line x1="105" y1="354.00" x2="685" y2="354.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="359.00" text-anchor="end" font-size="19" font-weight="700">83.0</text>
+<line x1="105" y1="308.00" x2="685" y2="308.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="313.00" text-anchor="end" font-size="19" font-weight="700">84.0</text>
+<line x1="105" y1="262.00" x2="685" y2="262.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="267.00" text-anchor="end" font-size="19" font-weight="700">85.0</text>
+<line x1="105" y1="216.00" x2="685" y2="216.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="221.00" text-anchor="end" font-size="19" font-weight="700">86.0</text>
+<line x1="105" y1="170.00" x2="685" y2="170.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="175.00" text-anchor="end" font-size="19" font-weight="700">87.0</text>
+<line x1="105" y1="124.00" x2="685" y2="124.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="129.00" text-anchor="end" font-size="19" font-weight="700">88.0</text>
+<line x1="105" y1="78.00" x2="685" y2="78.00" stroke="#dcdcdc" stroke-width="1.3" stroke-dasharray="6 5"/>
+<text x="89" y="83.00" text-anchor="end" font-size="19" font-weight="700">89.0</text>
+<rect x="110.07" y="531.01" width="38.18" height="52.99" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="129.17" y="616" text-anchor="middle" font-size="19" font-weight="700">0</text>
+<rect x="158.41" y="356.03" width="38.18" height="227.97" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="177.50" y="616" text-anchor="middle" font-size="19" font-weight="700">1</text>
+<rect x="206.74" y="308.00" width="38.18" height="276.00" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="225.83" y="616" text-anchor="middle" font-size="19" font-weight="700">2</text>
+<rect x="255.08" y="269.89" width="38.18" height="314.11" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="274.17" y="616" text-anchor="middle" font-size="19" font-weight="700">3</text>
+<rect x="303.41" y="250.95" width="38.18" height="333.05" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="322.50" y="616" text-anchor="middle" font-size="19" font-weight="700">4</text>
+<rect x="351.74" y="246.67" width="38.18" height="337.33" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="370.83" y="616" text-anchor="middle" font-size="19" font-weight="700">5</text>
+<rect x="400.08" y="348.81" width="38.18" height="235.19" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="419.17" y="616" text-anchor="middle" font-size="19" font-weight="700">6</text>
+<rect x="448.41" y="417.36" width="38.18" height="166.64" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="467.50" y="616" text-anchor="middle" font-size="19" font-weight="700">7</text>
+<rect x="496.74" y="236.97" width="38.18" height="347.03" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="515.83" y="616" text-anchor="middle" font-size="19" font-weight="700">8</text>
+<rect x="545.08" y="229.75" width="38.18" height="354.25" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="564.17" y="616" text-anchor="middle" font-size="19" font-weight="700">9</text>
+<rect x="593.41" y="195.03" width="38.18" height="388.97" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="612.50" y="616" text-anchor="middle" font-size="19" font-weight="700">10</text>
+<rect x="641.74" y="146.77" width="38.18" height="437.23" fill="#0072b2" stroke="black" stroke-width="1.1"/>
+<text x="660.83" y="616" text-anchor="middle" font-size="19" font-weight="700">11</text>
+<rect x="105" y="78" width="580" height="506" fill="none" stroke="black" stroke-width="2.2"/>
+<text x="395.0" y="658" text-anchor="middle" font-size="22" font-weight="700">Perturbed Transformer Layer</text>
+<text x="28" y="331.0" transform="rotate(-90 28 331.0)" text-anchor="middle" font-size="22" font-weight="700">Accuracy (%)</text>
+</svg>
