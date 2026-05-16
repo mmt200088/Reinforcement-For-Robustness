@@ -597,6 +597,10 @@ def train(
         blb_v3_sequential_cost_shaping_coeff: float = 0.05,
         blb_v3_sequential_fusion_shaping_coeff: float = 0.0,
         blb_v3_sequential_early_terminate_on_invalid: bool = False,
+        # Multi-seed support (2026-05-16): when None, BLBStage2TrainConfig
+        # keeps its default seed=42; when set, overrides so tools/run_multi_seed.sh
+        # can sweep N seeds for statistical significance.
+        blb_v3_seed: int = None,
         final_eval_require_rescale_optimizer: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
@@ -1142,6 +1146,7 @@ def train(
             blb_v3_sequential_cost_shaping_coeff=blb_v3_sequential_cost_shaping_coeff,
             blb_v3_sequential_fusion_shaping_coeff=blb_v3_sequential_fusion_shaping_coeff,
             blb_v3_sequential_early_terminate_on_invalid=blb_v3_sequential_early_terminate_on_invalid,
+            blb_v3_seed=blb_v3_seed,
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

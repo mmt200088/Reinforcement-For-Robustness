@@ -17,10 +17,14 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 FIDELITY_ORDER = {
     "F0": 0,
     "F1": 1,
-    "F2": 2,
-    "F3": 3,
-    "F4": 4,
+    "F4": 2,
 }
+# Note: F2 / F3 were intermediate tiers in the original spec; deprecated and
+# removed 2026-05-16. The active ladder is F0 (optimizer-only, no model
+# forward) → F1 (small probe + few MC trials during training) → F4 (full
+# validation_full final eval with real BLB install). Old JSONL records with
+# ``fidelity="F2"`` / ``"F3"`` get rank ``-1`` from ``fidelity_rank`` and
+# surface as legacy entries — they are not lost, just not promotable.
 
 
 def normalize_action_indices(action_indices: Any) -> List[int]:

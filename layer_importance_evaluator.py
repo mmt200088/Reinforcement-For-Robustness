@@ -2336,6 +2336,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_sequential_cost_shaping_coeff=0.05,
                   blb_v3_sequential_fusion_shaping_coeff=0.0,
                   blb_v3_sequential_early_terminate_on_invalid=False,
+                  blb_v3_seed=None,
                   final_eval_require_rescale_optimizer=False):
         """
         基于 PPO 强化学习的策略搜索器。
@@ -2821,6 +2822,15 @@ class LayerImportanceEvaluator(TrainerCallback):
             blb_v3_sequential_early_terminate_on_invalid,
             'blb_v3_sequential_early_terminate_on_invalid',
         )
+        # Multi-seed: forwarded by tools/run_multi_seed.sh. None means use
+        # the BLBStage2TrainConfig default (seed=42).
+        if blb_v3_seed in (None, ""):
+            self.blb_v3_seed = None
+        else:
+            try:
+                self.blb_v3_seed = int(blb_v3_seed)
+            except Exception:
+                self.blb_v3_seed = None
 
     @staticmethod
     def _coerce_bool_flag(raw_value, flag_name):

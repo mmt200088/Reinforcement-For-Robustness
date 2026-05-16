@@ -2473,6 +2473,16 @@ class BLBStage2RLRunner:
                 "1", "true", "yes", "on",
             )
 
+        # Multi-seed support: when --blb-v3-seed is provided, override the
+        # default training seed (BLBStage2TrainConfig.seed=42). Used by
+        # tools/run_multi_seed.sh to sweep N seeds for significance testing.
+        v = getattr(ev, "blb_v3_seed", None)
+        if v not in (None, ""):
+            try:
+                cfg.seed = int(v)
+            except Exception:
+                pass
+
         cfg.rollout_size = max(1, min(int(cfg.rollout_size), int(cfg.total_episodes)))
         if cfg.warmstart_anchor_episodes is None:
             # Bug #5 fix: previous default ``rollout_size * 0.25`` produced

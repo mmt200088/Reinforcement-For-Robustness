@@ -254,15 +254,15 @@ Helpers in `action_space.py`: `step_schedule(num_layers, profile, attn_degree_pe
 
 Smoke-tested torch-free; runner integration is left to the launcher (the existing `BLBStage2RLRunner` is 2866 lines and not factored for this — `sequential_runner.train_sequential` is the path forward).
 
-## Verification: F0–F4 fidelity ladder
+## Verification: F0 → F1 → F4 fidelity ladder
 
-Don't grade a candidate at one fidelity. Climb the ladder:
+The active ladder is **three tiers** (F2 / F3 were deprecated and removed
+2026-05-16 — old candidate-store JSONL records still carry those strings but
+they rank as legacy and aren't promotable):
 
 - **F0** — optimizer-only: decode action, call `Rescale_optimizer`, collect `valid / total_bits / fusion_count`. No model forward. For registry checks, sensitivity scans, cheap candidate filtering.
-- **F1** — small probe, low trial count: catch obvious accuracy collapses cheaply.
-- **F2** — medium probe, more trials: validate F1 winners aren't lucky; check `loss_std` and `metric_min`.
-- **F3** — confirmation: large probe, more trials, multiple seeds. Required before promoting an incumbent.
-- **F4** — final eval: full/near-full validation set, real BLB install, frozen report. Only F4 numbers belong in "best" claims.
+- **F1** — small probe + few MC trials, online during training: catches obvious accuracy collapses cheaply. This is where the per-episode reward signal comes from.
+- **F4** — final eval: full/near-full validation set, real BLB install, frozen report. **Only F4 numbers belong in "best" claims.**
 
 The runner's "final eval" path must install the actual BLB best action (decode → `bridge.apply` → real `Rescale_optimizer`), not silently fall back to a legacy all-max baseline. If you change runner glue, verify this path explicitly.
 
@@ -285,7 +285,7 @@ In addition to the Critical mental model items above, these mistakes specificall
 2. Selecting "best" from a single noise trial — final-eval must be MC-repeated.
 3. Letting "final eval" silently evaluate a legacy all-max baseline instead of the BLB best.
 4. Replacing the launcher entrypoint instead of riding alongside it (sidecars only).
-5. Large multi-module rewrites without F0/F1/F2 verification between steps.
+5. Large multi-module rewrites without F0 / F1 verification between steps (and F4 before claiming a result).
 6. Forgetting to call `sync_block2_qk_binding(cfg)` after any code path that mutates `wk_encode` / `kt_mask{1,2}_encode` SFs (e.g. a new override hook). Block 2's Q/K binding is action-space convention, not a cfg-level invariant — every mutation site must restore it explicitly.
 7. Hard-coding episode horizon=1 when the sequential RL path is opt-in. The single-shot `BLBStage2Env` and the sequential `BLBStage2SequentialEnv` co-exist; reusable helpers must work with both (e.g. `apply_optimizer_output_to_cfg` is per-block, so it's already compatible).
 

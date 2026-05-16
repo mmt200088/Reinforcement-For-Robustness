@@ -447,6 +447,8 @@ STAGE2_K_TRIALS="5"; S_STAGE2_K_TRIALS="false"
 STAGE2_PROBE_SIZE="256"; S_STAGE2_PROBE_SIZE="false"
 STAGE2_RL_VARIANT="blb_v3"; S_STAGE2_RL_VARIANT="false"
 BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT="Rescale_optimizer"
+BLB_V3_SEED=""; S_BLB_V3_SEED="false"
+RUN_TAG=""; S_RUN_TAG="false"
 BLB_V3_ROLLOUT_SIZE=""; S_BLB_V3_ROLLOUT_SIZE="false"
 BLB_V3_EVAL_INTERVAL=""; S_BLB_V3_EVAL_INTERVAL="false"
 BLB_V3_SAVE_INTERVAL=""; S_BLB_V3_SAVE_INTERVAL="false"
@@ -612,6 +614,8 @@ while [ "$#" -gt 0 ]; do
     --stage2-probe-size) needv "$@"; STAGE2_PROBE_SIZE="$2"; S_STAGE2_PROBE_SIZE="true"; shift 2 ;;
     --stage2-rl-variant) needv "$@"; STAGE2_RL_VARIANT="$2"; S_STAGE2_RL_VARIANT="true"; shift 2 ;;
     --stage2-rollout-size|--blb-v3-rollout-size) needv "$@"; BLB_V3_ROLLOUT_SIZE="$2"; S_BLB_V3_ROLLOUT_SIZE="true"; shift 2 ;;
+    --blb-v3-seed) needv "$@"; BLB_V3_SEED="$2"; S_BLB_V3_SEED="true"; shift 2 ;;
+    --run-tag) needv "$@"; RUN_TAG="$2"; S_RUN_TAG="true"; shift 2 ;;
     --stage2-save-interval|--blb-v3-save-interval) needv "$@"; BLB_V3_SAVE_INTERVAL="$2"; S_BLB_V3_SAVE_INTERVAL="true"; shift 2 ;;
     --stage2-eval-interval|--blb-v3-eval-interval) needv "$@"; BLB_V3_EVAL_INTERVAL="$2"; S_BLB_V3_EVAL_INTERVAL="true"; shift 2 ;;
     --stage2-calibrate-baseline-samples|--blb-v3-calibrate-baseline-samples) needv "$@"; BLB_V3_CALIBRATE_BASELINE_SAMPLES="$2"; S_BLB_V3_CALIBRATE_BASELINE_SAMPLES="true"; shift 2 ;;
@@ -1117,6 +1121,12 @@ RUN_ID="${RUN_TIMESTAMP}_pid$$"
 GENERAL_TASKSET_ID=""
 # 持久化约束配置标识符（用于构建确定性目录）
 CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"
+# --run-tag SUFFIX appends to the persistent dir so multi-seed sweeps
+# don't collide via auto-resume. Use [a-zA-Z0-9_-] only.
+if [ -n "$RUN_TAG" ]; then
+  RUN_TAG_SAFE="$(printf '%s' "$RUN_TAG" | tr -c 'A-Za-z0-9_-' '_' )"
+  CONSTRAINT_SLUG="${CONSTRAINT_SLUG}__${RUN_TAG_SAFE}"
+fi
 USE_PERSISTENT="false"
 PERSISTENT_DIR=""
 
@@ -1377,6 +1387,10 @@ else
     [ "$SKIP_STAGE1_SEARCH" = "true" ] && RL_STAGE1_EPISODES_SPECIFIED="false"
     [ "$SKIP_NOISE_SEARCH" = "true" ] && RL_STAGE2_EPISODES_SPECIFIED="false"
     CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE" --stage2_rl_variant "$STAGE2_RL_VARIANT" --blb_v3_inproc_rescale_optimizer_root "$BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT" --blb_v3_rollout_size "$BLB_V3_ROLLOUT_SIZE")
+    # Optional multi-seed override (when --blb-v3-seed provided)
+    if [ -n "$BLB_V3_SEED" ]; then
+      CMD+=(--blb_v3_seed "$BLB_V3_SEED")
+    fi
     [ -n "$BLB_V3_EVAL_INTERVAL" ] && CMD+=(--blb_v3_eval_interval "$BLB_V3_EVAL_INTERVAL")
     [ -n "$BLB_V3_SAVE_INTERVAL" ] && CMD+=(--blb_v3_save_interval "$BLB_V3_SAVE_INTERVAL")
     [ -n "$BLB_V3_CALIBRATE_BASELINE_SAMPLES" ] && CMD+=(--blb_v3_calibrate_baseline_samples "$BLB_V3_CALIBRATE_BASELINE_SAMPLES")

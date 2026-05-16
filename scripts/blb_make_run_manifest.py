@@ -277,10 +277,9 @@ def build_manifest(args: argparse.Namespace) -> Dict[str, Any]:
             "mpc_truncation_term": "avg_k" if args.mpc_truncation_cost_enabled else None,
         },
         "fidelity_policy": {
-            "F0": "optimizer-only Rescale_optimizer",
-            "F1": "small probe",
-            "F2": "medium probe",
-            "F3": "formal final eval with real BLB install and repeated evaluation",
+            "F0": "optimizer-only Rescale_optimizer (no model forward)",
+            "F1": "small probe + few MC trials during training",
+            "F4": "formal final eval with real BLB install on validation_full and repeated evaluation",
         },
         "missing_or_todo": missing,
     }

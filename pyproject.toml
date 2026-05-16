@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reinforcement-for-robustness"
+version = "0.1.0"
+description = "BLB Stage-2 RL: PPO-driven search for optimal CKKS+MPC noise / approximation schedules in privacy-preserving BERT inference"
+readme = "README.md"
+requires-python = ">=3.9,<3.13"
+license = { text = "Proprietary — research use only" }
+authors = [
+    { name = "Pengjunkai" },
+]
+keywords = [
+    "privacy-preserving-inference", "CKKS", "MPC", "BERT",
+    "reinforcement-learning", "PPO", "noise-search",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security :: Cryptography",
+]
+dependencies = [
+    "torch>=2.0,<3.0",
+    "transformers>=4.30,<5.0",
+    "datasets>=2.10",
+    "numpy>=1.22,<2.0",
+    "scipy>=1.10",
+    "scikit-learn>=1.2",
+    "matplotlib>=3.7",
+    "fire>=0.5",
+    "tqdm>=4.65",
+    "accelerate>=0.20",
+    "safetensors>=0.3",
+    "evaluate>=0.4",
+]
+
+[project.optional-dependencies]
+# Linux+CUDA only; pip silently skips on macOS / Windows.
+cuda = ["bitsandbytes>=0.41"]
+# For running the experiments dashboards / paper figures locally.
+viz = ["matplotlib>=3.7", "seaborn>=0.12"]
+# For developer workflow (formatting / tests). Keep light.
+dev = [
+    "pytest>=7.0",
+    "pytest-xdist>=3.0",
+]
+
+[project.urls]
+"Source" = "https://github.com/mmt200088/Reinforcement-For-Robustness"
+
+# Tell setuptools NOT to auto-discover packages — this is a research repo,
+# not a library. The top-level modules are imported via PYTHONPATH from
+# the launcher; we don't ship a wheel.
+[tool.setuptools]
+py-modules = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-ra"

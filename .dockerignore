@@ -1,0 +1,42 @@
+# Don't ship persistent runs / large artifacts into the image build context.
+Parting Chapter/persistent/**
+rl_results/**
+reports/**/persistent/**
+reports/blb_opt/**
+
+# Generated / scratch
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.ipynb_checkpoints/
+
+# OS / IDE noise
+.DS_Store
+.vscode/
+.idea/
+
+# Local secrets / configs
+.env
+.env.*
+*.local
+
+# Git internals (the image doesn't need them)
+.git/
+.gitignore
+
+# Submodule build outputs
+EzPC/build/
+LLM-Adapters/output/
+importance-aware-sparse-tuning-IST-paper/output/
+
+# Heavy non-code artifacts
+*.pkl
+*.pth
+*.pt
+*.safetensors
+*.npz
+*.png
+*.pdf
+*.ckpt
+计算图.pptx
