@@ -1,0 +1,36 @@
+{
+  "schema": "blb_stage2_status_v1",
+  "started_at": "2026-05-16T17:56:38.491158",
+  "run_basename": "s1t0.005_s2t0.005_s2st0.005__blb_stage2_20260516_174426",
+  "profile": "mrpc",
+  "total_episodes": 6000,
+  "completed_episodes": 0,
+  "ppo_update_count": 0,
+  "phase": "PPO 训练 (sequential per-block)",
+  "elapsed_sec": 3.008,
+  "last_update": "2026-05-16T17:56:41.499500",
+  "recent_returns": [],
+  "best": {
+    "reward": null,
+    "episode": null,
+    "action_vec": null,
+    "breakdown": null
+  },
+  "baseline": null,
+  "ppo_last_metrics": null,
+  "episode": 0,
+  "best_reward": null,
+  "best_episode": null,
+  "last_reward": null,
+  "last_priority": null,
+  "last_invalid": null,
+  "last_breakdown": null,
+  "updated_at": "2026-05-16T17:56:41.499500",
+  "extra": {
+    "fixed_label": "Stage-1 config (json)",
+    "fixed_source": "json",
+    "rl_mode": "sequential_per_block",
+    "rescale_optimizer": "in_process_real",
+    "rescale_optimizer_root": "Rescale_optimizer"
+  }
+}
