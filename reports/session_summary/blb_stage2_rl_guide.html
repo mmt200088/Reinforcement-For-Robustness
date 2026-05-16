@@ -54,8 +54,13 @@
 </p>
 
 <div class="box ok">
-<strong>最近一次更新（2026-05-16 晚）</strong>：把 final-eval 配置 JSON 从"按 action_index 选"换成"按 <code>scaling_factor</code> / <code>truncation_bits</code> 选"。每个槽位都有一个反映模型位置的标签（如 <code>L05.B3.K</code>、<code>L02.B5.W.wffn1</code>），用户只要看 best_action_vec.json 就能知道每个位置选了什么 SF。Paean 同时兼容旧的 flat <code>action_vec</code> 格式。详见
+<strong>最近一次更新（2026-05-16 深夜）</strong>：把 <strong>所有训练期写出的文件</strong>（status 板、best_action_full.md、最终 report.md、诊断 dashboard 等）全部统一成 <strong>SF / truncation_bits 视图</strong>。每处需要看动作的地方都按"槽位标签（如 <code>L05.B3.K</code>）→ 实际 SF 值"展示，action_index 只作为可选 sanity 列。HTML 顶部新加 <a href="#cheat-sheet">命令行速查表</a>。详见
+<a href="#output-files">第 8.1 节</a>、
 <a href="#final-eval">第 8.3 节</a>。
+</div>
+
+<div class="box ok">
+<strong>2026-05-16 晚些时候</strong>：把 final-eval 配置 JSON 从"按 action_index 选"换成"按 <code>scaling_factor</code> / <code>truncation_bits</code> 选"。每个槽位都有反映模型位置的标签。Paean 同时兼容旧的 flat <code>action_vec</code> 格式。
 </div>
 
 <div class="box ok">
@@ -66,7 +71,12 @@
 <div class="toc">
 <strong>目录</strong>
 <ol>
-  <li><a href="#quick">一句话快速上手</a></li>
+  <li>
+    <a href="#quick">一句话快速上手</a>
+    <ul>
+      <li><a href="#cheat-sheet">1.1 命令行速查表（12 条最常用）</a></li>
+    </ul>
+  </li>
   <li><a href="#pipeline">完整训练流程（pipeline）</a></li>
   <li><a href="#baseline">Baseline 是怎么算出来的</a></li>
   <li><a href="#action-space">动作空间与每步决策</a></li>
@@ -99,6 +109,80 @@ bash Paean/run_final_eval.sh \
     --action-config "Parting Chapter/persistent/rl/bert-base/mrpc/&lt;slug&gt;/blb_stage2/progress/diagnostics/best_action_vec.json"
 </code></pre>
 </div>
+
+<h3 id="cheat-sheet">1.1 命令行速查表（最常用的 12 条）</h3>
+
+<table>
+<tr><th>场景</th><th>命令</th></tr>
+<tr>
+<td>① 首次启动训练（必带 <code>--fresh</code>）</td>
+<td><pre><code>bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh</code></pre></td>
+</tr>
+<tr>
+<td>② 断点续训（同 preset 不带 <code>--fresh</code>）</td>
+<td><pre><code>bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl</code></pre></td>
+</tr>
+<tr>
+<td>③ 后台跑 + 写日志</td>
+<td><pre><code>nohup bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh \
+    &gt; blb_stage2_rl.log 2&gt;&amp;1 &amp;
+echo "PID=$!"</code></pre></td>
+</tr>
+<tr>
+<td>④ 查看持久化目录（slug 拼出来很长，先找一下）</td>
+<td><pre><code># launcher 启动后会写 LATEST_RUN_DIR 指针
+cat "Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_RUN_DIR"
+# 或者：
+ls -d "Parting Chapter/persistent/rl/bert-base/mrpc/"*/blb_stage2/progress | head -3</code></pre></td>
+</tr>
+<tr>
+<td>⑤ 实时监控诊断摘要（推荐）</td>
+<td><pre><code>RUN_DIR="$(cat 'Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_RUN_DIR')"
+watch -n 30 "cat '$RUN_DIR/blb_stage2/progress/diagnostics/diagnostics_summary.md'"</code></pre></td>
+</tr>
+<tr>
+<td>⑥ tail 状态板（atomic 写，安全）</td>
+<td><pre><code>tail -f "$RUN_DIR/blb_stage2/progress/blb_stage2_status.json"</code></pre></td>
+</tr>
+<tr>
+<td>⑦ 看训练期 best 选了什么 SF（按层 / block 表格）</td>
+<td><pre><code>less "$RUN_DIR/blb_stage2/progress/blb_stage2_best_action_full.md"</code></pre></td>
+</tr>
+<tr>
+<td>⑧ jq 抽取 best 的所有 K bits（命令行 quick scan）</td>
+<td><pre><code>jq '.slots[] | select(.kind=="K") | "\(.label) = \(.truncation_bits)"' \
+    "$RUN_DIR/blb_stage2/progress/diagnostics/best_action_vec.json"</code></pre></td>
+</tr>
+<tr>
+<td>⑨ jq 看 best vs baseline 的所有改动</td>
+<td><pre><code>jq '.diff_vs_baseline[]' \
+    "$RUN_DIR/blb_stage2/progress/diagnostics/best_action_vec.json"</code></pre></td>
+</tr>
+<tr>
+<td>⑩ 手动 final eval（用训练期 best）</td>
+<td><pre><code>bash Paean/run_final_eval.sh --preset mrpc-final-eval-only \
+    --action-config "$RUN_DIR/blb_stage2/progress/diagnostics/best_action_vec.json"</code></pre></td>
+</tr>
+<tr>
+<td>⑪ 手动 final eval（自定义某几个槽位）</td>
+<td><pre><code>cat &gt; /tmp/my_action.json &lt;&lt;'EOF'
+{
+  "num_layers": 12, "profile": "mrpc", "base": "max",
+  "overrides": [
+    {"label": "L05.B3.K", "truncation_bits": 10},
+    {"label": "L02.B5.W.wffn1", "scaling_factor": 12}
+  ]
+}
+EOF
+bash Paean/run_final_eval.sh --preset mrpc-final-eval-only --action-config /tmp/my_action.json</code></pre></td>
+</tr>
+<tr>
+<td>⑫ 优雅停止（下一次 PPO 边界保存 ckpt 后退出）</td>
+<td><pre><code># 方式 A：Ctrl-C 一次（如果是前台运行）
+# 方式 B：在持久化目录创建 STOP_RL 文件
+touch "$RUN_DIR/blb_stage2/progress/STOP_RL"</code></pre></td>
+</tr>
+</table>
 
 <h2 id="pipeline">2. 完整训练流程</h2>
 <p>训练入口 <code>BLBStage2RLRunner.run()</code> 检测到 <code>train_cfg.sequential_rl=True</code>（默认）会派发到 <code>run_sequential_via_runner</code>。整个 pipeline 7 大阶段：</p>
@@ -234,8 +318,16 @@ else:
 
 <h2 id="run">7. 如何运行 / 监控 / resume</h2>
 
-<h3>7.1 首次启动</h3>
+<h3>7.1 首次启动（前台）</h3>
 <pre><code>bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh</code></pre>
+
+<h3>7.1.1 首次启动（后台 nohup）</h3>
+<p>服务器上一般推荐后台跑，日志重定向到文件，前台留出来 tail 监控：</p>
+<pre><code>nohup bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh \
+    &gt; blb_stage2_rl.log 2&gt;&amp;1 &amp;
+echo "PID=$!"
+# 看 PID 落到哪
+cat "Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_PID"</code></pre>
 
 <h3>7.2 监控进度</h3>
 <p>训练期间控制台会持续输出 v2 风格的进度报告：</p>
@@ -249,19 +341,52 @@ else:
   <li><strong>结束</strong>：major rule + 6 行总结</li>
 </ol>
 
-<p>另外可以 <kbd>tail -f</kbd> 这两个文件：</p>
-<pre><code># 训练状态（atomic 写，安全 tail）
-tail -f Parting\ Chapter/persistent/rl/bert-base/mrpc/&lt;slug&gt;/blb_stage2/progress/blb_stage2_status.json
+<p><strong>常用监控命令</strong>（先把 RUN_DIR 拎到 shell 变量里）：</p>
+<pre><code># 1. 定位持久化目录
+RUN_DIR="$(cat 'Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_RUN_DIR')"
+echo "$RUN_DIR"
 
-# 完整日志
+# 2. 实时刷新诊断摘要（推荐入口；按层 / block / auto-flag 全在一页）
+watch -n 30 "cat '$RUN_DIR/blb_stage2/progress/diagnostics/diagnostics_summary.md'"
+
+# 3. 实时刷新状态板（atomic 写，安全 tail）
+tail -f "$RUN_DIR/blb_stage2/progress/blb_stage2_status.json"
+
+# 4. 实时看主日志
 tail -f blb_stage2_rl.log
-</code></pre>
+
+# 5. 看当前 best 的逐槽位选择（按层 / block 表格 + 全槽位明细）
+less "$RUN_DIR/blb_stage2/progress/blb_stage2_best_action_full.md"
+
+# 6. jq 提取关键字段（命令行快查）
+jq '.completed_episodes,.best.reward,.best.slots_by_layer' \
+    "$RUN_DIR/blb_stage2/progress/blb_stage2_status.json"
+jq '.slots[] | select(.kind=="K") | "\(.label) = \(.truncation_bits)"' \
+    "$RUN_DIR/blb_stage2/progress/diagnostics/best_action_vec.json"
+jq '.diff_vs_baseline[]' \
+    "$RUN_DIR/blb_stage2/progress/diagnostics/best_action_vec.json"</code></pre>
 
 <h3>7.3 断点续训</h3>
 <p>相同 preset 不带 <code>--fresh</code>，launcher 自动定位持久化目录；<code>run_sequential_via_runner</code> 检测到 <code>blb_stage2_rl_checkpoint_live.pt</code> 会自动 load policy / optimizer / start_episode / best_reward / best_action_vec。<strong>不需要</strong>显式 <code>--resume-from</code>。</p>
+<pre><code>bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl</code></pre>
 
 <h3>7.4 graceful stop</h3>
 <p>向 PID 发 <code>SIGINT</code>（Ctrl-C 一次）或在持久化目录创建 <code>STOP_RL</code> 文件，runner 会在下一次 PPO 边界保存 checkpoint 并安全退出（返回码 0）。</p>
+<pre><code># 方式 A：Ctrl-C 一次（前台运行时）
+# 方式 B：在持久化目录创建 STOP_RL 文件
+touch "$RUN_DIR/blb_stage2/progress/STOP_RL"
+
+# 方式 C：直接发 SIGINT 给 PID
+PID="$(cat 'Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_PID')"
+kill -INT "$PID"</code></pre>
+
+<h3>7.5 重启前清空（rare：换参数组合 / 调过 reward 设计后）</h3>
+<pre><code># 仅删 stage-2 进度，保留 Stage-1 结果与日志
+rm -rf "$RUN_DIR/blb_stage2"
+
+# 全部清掉，从零开始
+rm -rf "$RUN_DIR"</code></pre>
+<p class="warn"><strong>⚠</strong> 切勿手动改 <code>blb_stage2_rl_checkpoint_live.pt</code>。它是 torch pickle，结构不稳定；要回滚就直接删整个 <code>blb_stage2/</code> 目录。</p>
 
 <h2 id="output">8. 输出与产物</h2>
 
@@ -269,14 +394,65 @@ tail -f blb_stage2_rl.log
 
 <p>持久化目录 <code>persistent/rl/bert-base/mrpc/&lt;slug&gt;/blb_stage2/progress/</code> 下：</p>
 <table>
-<tr><th>文件</th><th>用途</th></tr>
-<tr><td><code>blb_stage2_status.json</code></td><td>atomic 写的实时状态（phase / current_episode / best_reward / recent_returns / last_breakdown）</td></tr>
-<tr><td><code>blb_stage2_rl_checkpoint_live.pt</code></td><td>每 200 episode 写一次：policy + optimizer + episode + best_reward + best_action + rl_variant</td></tr>
-<tr><td><code>blb_stage2_training_curve.{png,npz}</code></td><td>训练曲线：episode_returns / best_reward_curve / ppo_loss_curve</td></tr>
-<tr><td><code>blb_stage2_best_cfg.pkl</code></td><td>训练期最优 (pickle 的 cfg 字典；旧路径产物，仍写)</td></tr>
-<tr><td><code>blb_stage2_error.txt</code></td><td>训练崩溃时的 traceback（正常退出不写）</td></tr>
-<tr><td><code>diagnostics/</code></td><td><strong>新</strong>：长期诊断 dashboard，详见 8.2</td></tr>
+<tr><th>文件</th><th>格式 · 适合人看？</th><th>用途</th></tr>
+<tr>
+  <td><code>blb_stage2_status.json</code></td>
+  <td>JSON · ✓（含 <code>best.slots</code> 和 <code>best.slots_by_layer</code>）</td>
+  <td>atomic 写的实时状态（phase / completed_episodes / best.reward / best.slots / last_breakdown）。tail -f 友好。</td>
+</tr>
+<tr>
+  <td><code>blb_stage2_best_action_full.{json,md}</code></td>
+  <td>JSON+Markdown · <strong>✓（新格式）</strong></td>
+  <td>训练期最优动作的 <strong>逐槽位明细</strong>。Markdown：先按层 / block 显示选择概览（如 "L05 B3: F.softmax_exp=14, K=10"），然后是全槽位明细表（SF / K 主列，action_idx 仅作 sanity 列）。JSON：含 top-level <code>slots</code>（可直接喂 Paean）+ <code>slots_by_layer</code> 紧凑视图 + 原 <code>records</code>。</td>
+</tr>
+<tr>
+  <td><code>blb_stage2_baseline_action_full.{json,md}</code></td>
+  <td>同上 · ✓</td>
+  <td>baseline（static_skeletons 全 max）的 SF/K 视图，做参照系用。</td>
+</tr>
+<tr>
+  <td><code>blb_stage2_report.md</code></td>
+  <td>Markdown · ✓（新版）</td>
+  <td>训练结束生成的总结报告。Section 5 用 <strong>"按层 / block 选择概览" + "best vs baseline diff"</strong> 两个表格替代了旧的 flat int 列表（旧 vec 折叠在 &lt;details&gt; 里仅供调试）。</td>
+</tr>
+<tr>
+  <td><code>blb_stage2_rl_checkpoint_live.pt</code></td>
+  <td>Torch pickle · ✗（机器只）</td>
+  <td>每 200 episode 写一次：policy + optimizer + episode + best_reward + best_action + rl_variant。</td>
+</tr>
+<tr>
+  <td><code>blb_stage2_training_curve.{png,npz}</code></td>
+  <td>PNG+NPZ · ✓（看 PNG）</td>
+  <td>训练曲线：episode_returns / best_reward_curve / ppo_loss_curve。</td>
+</tr>
+<tr>
+  <td><code>blb_stage2_best_cfg.pkl</code></td>
+  <td>Python pickle · ✗</td>
+  <td>训练期最优 cfg 字典；旧路径产物，仍写但人类直接读 <code>blb_stage2_best_action_full.md</code> 更清晰。</td>
+</tr>
+<tr>
+  <td><code>blb_stage2_error.txt</code></td>
+  <td>纯文本 · ✓</td>
+  <td>训练崩溃时的 traceback（正常退出不写）。</td>
+</tr>
+<tr>
+  <td><code>diagnostics/</code></td>
+  <td>目录 · ✓</td>
+  <td>长期诊断 dashboard，详见 8.2。</td>
+</tr>
 </table>
+
+<p><strong>查看常用文件的命令</strong>：</p>
+<pre><code># Markdown 报告（最直观）
+less "$RUN_DIR/blb_stage2/progress/blb_stage2_report.md"
+less "$RUN_DIR/blb_stage2/progress/blb_stage2_best_action_full.md"
+
+# 训练曲线 PNG（远程拷回看）
+scp server:"$RUN_DIR/blb_stage2/progress/blb_stage2_training_curve.png" .
+
+# JSON 解析（用 jq）
+jq '.best.slots_by_layer' "$RUN_DIR/blb_stage2/progress/blb_stage2_status.json"
+jq '.slots_by_layer' "$RUN_DIR/blb_stage2/progress/blb_stage2_best_action_full.json"</code></pre>
 
 <h3 id="diagnostics">8.2 长期诊断 dashboard（2026-05-16 新加）</h3>
 
@@ -511,9 +687,10 @@ bash Paean/run_final_eval.sh \
   <strong>2026-05-16 早些时候</strong>：长期诊断 dashboard、auto-flag 警告、
   <code>best_action_vec.json</code> action_grid 兼容输出、final eval auto/manual 双通道 ·
   <strong>2026-05-16 晚</strong>：把 <code>best_action_vec.json</code> 升级为
-  Human-readable SF / K 槽位列表（每个槽位带反映模型位置的标签），Paean
-  <code>--action-config</code> 同时接受新 SF 形式 / <code>base+overrides</code> 简写
-  / 旧 <code>action_vec</code> flat list。
+  Human-readable SF / K 槽位列表，Paean <code>--action-config</code>
+  接受新 SF 形式 / <code>base+overrides</code> 简写 / 旧 <code>action_vec</code> flat list ·
+  <strong>2026-05-16 深夜</strong>：训练期所有产物（status / best_action_full /
+  report / diagnostics）统一切换到 SF / truncation_bits 视图；HTML 加命令行速查表。
 </p>
 
 </body>

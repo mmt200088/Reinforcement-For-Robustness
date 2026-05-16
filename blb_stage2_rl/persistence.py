@@ -246,6 +246,70 @@ def append_blb_episode_trace_row(
     return path
 
 
+def _records_to_slots_view(records: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    """Turn raw ``describe_action_vector`` records into the human SF/K view used by
+    ``best_action_vec.json``. Mirrors ``action_io.action_vec_to_slots_list`` but
+    works straight off the records dict so we don't have a runtime dep here."""
+    out: List[Dict[str, Any]] = []
+    for rec in records:
+        kind = str(rec.get("kind", ""))
+        entry: Dict[str, Any] = {
+            "label": str(rec.get("slot_label", "")),
+            "global_index": int(rec.get("global_index", -1)),
+            "layer": int(rec.get("layer", 0)),
+            "block": rec.get("block_index"),
+            "kind": kind,
+            "field_name": str(rec.get("field", "")),
+            "operation": str(rec.get("operation", "")),
+            "location": str(rec.get("location", "")),
+            "distribution": str(rec.get("distribution", "")),
+            "action_index": int(rec.get("action_index", 0)),
+            "level_values": list(rec.get("level_values") or []),
+            "N": rec.get("N"),
+            "max_sf": rec.get("max_sf"),
+            "effective": bool(rec.get("effective", True)),
+        }
+        if kind == "K":
+            entry["truncation_bits"] = rec.get("value")
+        else:
+            entry["scaling_factor"] = rec.get("value")
+        if rec.get("note"):
+            entry["note"] = str(rec.get("note"))
+        out.append(entry)
+    return out
+
+
+def _slots_by_layer_grouped(slots: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    """Group flat slots into ``{layer_key: {block_key: {short_or_K: value}}}`` for
+    compact display in the markdown and a friendlier JSON section."""
+    layers: Dict[str, Dict[str, Any]] = {}
+    first_input_value = None
+    for row in slots:
+        layer_idx = int(row.get("layer", 0))
+        block_idx = row.get("block")
+        kind = str(row.get("kind", ""))
+        if block_idx is None:
+            first_input_value = row.get("scaling_factor")
+            continue
+        label = str(row.get("label") or "")
+        # short field: everything after L<n>.B<n>.<kind>.
+        parts = label.split(".", 3)
+        short = parts[-1] if len(parts) >= 4 else ""
+        layer_key = f"L{layer_idx:02d}"
+        block_key = f"B{int(block_idx)}"
+        per_layer = layers.setdefault(layer_key, {})
+        per_block = per_layer.setdefault(block_key, {})
+        if kind == "K":
+            per_block["K"] = row.get("truncation_bits")
+        else:
+            display_key = f"{kind}.{short}" if short else kind
+            per_block[display_key] = row.get("scaling_factor")
+    out: Dict[str, Any] = dict(sorted(layers.items()))
+    if first_input_value is not None:
+        out["first_input"] = first_input_value
+    return out
+
+
 def write_action_description_files(
         persistence_dir: str,
         description: Mapping[str, Any],
@@ -253,7 +317,24 @@ def write_action_description_files(
         label: str = "best",
         log_fn=None,
         ) -> Dict[str, str]:
-    """Write a full readable BLB action description as JSON and Markdown."""
+    """Write a full readable BLB action description as JSON and Markdown.
+
+    The JSON is structured for both humans and Paean:
+
+      * top-level ``slots`` — flat list, each slot carries ``label``,
+        ``scaling_factor`` / ``truncation_bits`` (the value humans care about),
+        ``location``, ``operation``, ``kind``, etc. **Same schema as
+        ``best_action_vec.json``** so Paean's ``--action-config`` accepts this
+        file as-is.
+      * top-level ``slots_by_layer`` — grouped compact view ``{"L05": {"B3":
+        {"K": 10, "F.softmax_exp": 14, ...}, ...}, ...}`` for quick reading.
+      * ``records`` — the legacy verbose per-slot records (kept for back-compat).
+      * ``summary`` — counts (scaling-factor slots / truncation slots / ineffective).
+
+    The Markdown table leads with the *decoded value* (SF / truncation_bits)
+    so a reader can answer "what SF did L05.B3.softmax_exp get?" without
+    looking at action indices.
+    """
     log = log_fn or (lambda _msg: None)
     safe_label = "".join(
         ch if ch.isalnum() or ch in ("-", "_") else "_"
@@ -264,17 +345,36 @@ def write_action_description_files(
     md_path = os.path.join(persistence_dir, f"blb_stage2_{safe_label}_action_full.md")
     out = {"json": json_path, "md": md_path}
 
+    records = list((description or {}).get("records") or [])
+    summary = dict((description or {}).get("summary") or {})
+    slots_view = _records_to_slots_view(records)
+    grouped = _slots_by_layer_grouped(slots_view)
+
+    enriched: Dict[str, Any] = {
+        "schema_version": "blb_v3_slots_human_v1",
+        "label": safe_label,
+        "profile": description.get("profile", ""),
+        "num_layers": description.get("num_layers"),
+        "action_length": description.get("action_length"),
+        "slots": slots_view,                # human-readable primary view
+        "slots_by_layer": grouped,          # compact grouped view
+        "records": records,                 # legacy verbose records
+        "summary": summary,
+    }
+    # Pass through any other top-level fields the caller set (e.g. action_vec).
+    for k, v in (description or {}).items():
+        if k not in enriched:
+            enriched[k] = v
+
     try:
-        _atomic_json_dump(json_path, _to_jsonable(description))
+        _atomic_json_dump(json_path, _to_jsonable(enriched))
     except Exception as exc:
         log(f"  [BLB action][warning] failed to write {json_path}: {exc}")
         out["json"] = ""
 
     try:
-        records = list((description or {}).get("records") or [])
-        summary = dict((description or {}).get("summary") or {})
         lines: List[str] = [
-            f"# BLB Stage 2 action description: {safe_label}",
+            f"# BLB Stage 2 action description: `{safe_label}`",
             "",
             f"- profile: `{description.get('profile', '')}`",
             f"- num_layers: `{description.get('num_layers', '')}`",
@@ -289,25 +389,78 @@ def write_action_description_files(
             ])
         lines.extend([
             "",
-            "Slot label format: `L{layer}.B{block}.{kind}[.{short_field}]` "
+            "**Slot label format**: `L{layer}.B{block}.{kind}[.{short_field}]` ",
             "(kind: F=fresh, W=weight encode, M=mask, S=scalar, R=rescale, K=trunc).",
             "",
-            "| idx | slot | location | operation | dist | action_idx | value_type | value | effective | N | max_sf | note |",
-            "|---:|---|---|---|---|---:|---|---:|---|---:|---:|---|",
+            "Each row's primary value is the decoded **`scaling_factor`** "
+            "(for F/W/M/S/R kinds) or **`truncation_bits`** (for K). "
+            "`action_idx` is the policy-side index that produced that value "
+            "and is included only for sanity-checking — humans should read "
+            "the SF / truncation_bits columns.",
+            "",
         ])
+
+        # 1) Compact grouped view (the eye-friendly summary).
+        lines.append("## 1. Per-layer / per-block 选择概览")
+        lines.append("")
+        if not grouped:
+            lines.append("_(empty)_")
+        else:
+            lines.append("| 层 | block | 槽位 → 选择值 |")
+            lines.append("|---|---|---|")
+            for layer_key, layer_val in grouped.items():
+                if layer_key == "first_input":
+                    lines.append(f"| (legacy) first_input | – | `scaling_factor={layer_val}` |")
+                    continue
+                if not isinstance(layer_val, Mapping):
+                    continue
+                for block_key in sorted(layer_val.keys()):
+                    block_val = layer_val[block_key]
+                    if not isinstance(block_val, Mapping):
+                        continue
+                    cell_parts: List[str] = []
+                    for slot_short, value in block_val.items():
+                        if slot_short == "K":
+                            cell_parts.append(f"K=**{value}**")
+                        else:
+                            disp = "off" if value is None else value
+                            cell_parts.append(f"{slot_short}={disp}")
+                    cell = ", ".join(cell_parts)
+                    lines.append(f"| {layer_key} | {block_key} | {cell} |")
+        lines.append("")
+
+        # 2) Full per-slot detail table — lead with SF / K, keep action_idx as a side column.
+        lines.append("## 2. 全槽位明细（按 global_index）")
+        lines.append("")
+        lines.append("| idx | slot | location | operation | dist | **value** | kind | action_idx | effective | N | max_sf | level_values | note |")
+        lines.append("|---:|---|---|---|:---:|---:|:---:|---:|:---:|---:|---:|---|---|")
         for rec in records:
             note = str(rec.get("note", "")).replace("|", "\\|")
             location = str(rec.get("location", "")).replace("|", "\\|")
             operation = str(rec.get("operation", "")).replace("|", "\\|")
             slot_label = str(rec.get("slot_label", "")).replace("|", "\\|")
             max_sf = "" if rec.get("max_sf") is None else str(rec.get("max_sf"))
-            value = "" if rec.get("effective_value") is None else str(rec.get("effective_value"))
+            value = rec.get("effective_value")
+            if value is None and rec.get("effective") is False:
+                value_display = "_off_"
+            elif value is None:
+                value_display = ""
+            else:
+                value_display = f"**{value}**"
+            kind = str(rec.get("kind", ""))
+            level_vals = rec.get("level_values") or []
+            level_str = ",".join(str(v) for v in level_vals) if level_vals else ""
             lines.append(
                 f"| {int(rec.get('global_index', -1))} | `{slot_label}` | `{location}` | `{operation}` | "
-                f"`{rec.get('distribution', rec.get('kind', ''))}` | {int(rec.get('action_index', -1))} | "
-                f"`{rec.get('value_type', '')}` | {value} | {bool(rec.get('effective', True))} | "
-                f"{rec.get('N', '')} | {max_sf} | {note} |"
+                f"`{rec.get('distribution', rec.get('kind', ''))}` | {value_display} | "
+                f"`{kind}` | {int(rec.get('action_index', -1))} | {bool(rec.get('effective', True))} | "
+                f"{rec.get('N', '')} | {max_sf} | `{level_str}` | {note} |"
             )
+        lines.append("")
+        lines.append(
+            f"> JSON 配对文件：`{os.path.basename(json_path)}`。"
+            "可以直接喂给 `Paean/run_final_eval.sh --action-config`。"
+        )
         with open(md_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
     except Exception as exc:
@@ -433,11 +586,28 @@ class BLBStatusBoard:
             best_action_vec: Optional[Sequence[int]] = None,
             best_breakdown: Optional[Any] = None,
             best_episode: Optional[int] = None,
+            best_slots: Optional[Sequence[Mapping[str, Any]]] = None,
+            best_slots_by_layer: Optional[Mapping[str, Any]] = None,
             ) -> None:
+        """Update the ``best`` block of the status board.
+
+        Args:
+            best_slots: optional human-readable slot list (from
+                ``action_io.action_vec_to_slots_list``). When given, surfaces
+                in the status JSON's ``best.slots`` field so a ``tail -f`` /
+                ``jq`` flow can inspect the current best without decoding the
+                integer action vector. The raw ``action_vec`` is kept under
+                ``best.action_vec`` for back-compat.
+            best_slots_by_layer: optional grouped view (also from
+                ``action_io.group_slots_by_layer_block``). Convenient for
+                quick "which layer changed?" inspection.
+        """
         self._state["best"] = {
             "reward": float(best_reward),
             "episode": int(best_episode) if best_episode is not None else None,
             "action_vec": (list(int(x) for x in best_action_vec) if best_action_vec is not None else None),
+            "slots": _to_jsonable(best_slots) if best_slots is not None else None,
+            "slots_by_layer": _to_jsonable(best_slots_by_layer) if best_slots_by_layer is not None else None,
             "breakdown": _to_jsonable(best_breakdown),
         }
         self.flush()
@@ -585,6 +755,11 @@ def write_blb_final_report(
         any_invalid_baseline: bool = False,
         extra_lines: Sequence[str] = (),
         log_fn=None,
+        best_slots: Optional[Sequence[Mapping[str, Any]]] = None,
+        baseline_slots: Optional[Sequence[Mapping[str, Any]]] = None,
+        slot_diff_vs_baseline: Optional[Sequence[Mapping[str, Any]]] = None,
+        best_action_full_md_path: str = "",
+        best_action_full_json_path: str = "",
         ) -> str:
     """落盘 ``blb_stage2_report.md``，返回路径。失败抛 IOError。"""
     log = log_fn or (lambda _msg: None)
@@ -645,13 +820,106 @@ def write_blb_final_report(
         lines.append("")
 
     if best_action_vec is not None:
-        lines.append("## 5. 最优 action 向量")
+        lines.append("## 5. 最优 action：选了什么 SF / K（人类视图）")
+        lines.append("")
+        lines.append(
+            "完整的逐槽位明细在 "
+            f"`{os.path.basename(best_action_full_md_path) or 'blb_stage2_best_action_full.md'}` "
+            "（人类阅读）和 "
+            f"`{os.path.basename(best_action_full_json_path) or 'blb_stage2_best_action_full.json'}` "
+            "（可直接喂给 `Paean/run_final_eval.sh --action-config`）。下面只列出与 baseline 不同的槽位。"
+        )
+        lines.append("")
+        # 5.a Per-block summary using best_slots if available.
+        if best_slots:
+            grouped = _slots_by_layer_grouped(best_slots)
+            if grouped:
+                lines.append("### 5.1 Best action · 按层 / block 选择概览")
+                lines.append("")
+                lines.append("| 层 | block | 槽位选择 |")
+                lines.append("|---|---|---|")
+                for layer_key, layer_val in grouped.items():
+                    if layer_key == "first_input":
+                        lines.append(f"| (legacy) first_input | – | `scaling_factor={layer_val}` |")
+                        continue
+                    if not isinstance(layer_val, Mapping):
+                        continue
+                    for block_key in sorted(layer_val.keys()):
+                        block_val = layer_val[block_key]
+                        if not isinstance(block_val, Mapping):
+                            continue
+                        cell_parts: List[str] = []
+                        for slot_short, value in block_val.items():
+                            if slot_short == "K":
+                                cell_parts.append(f"K=**{value}**")
+                            else:
+                                disp = "off" if value is None else value
+                                cell_parts.append(f"{slot_short}={disp}")
+                        lines.append(f"| {layer_key} | {block_key} | {', '.join(cell_parts)} |")
+                lines.append("")
+        # 5.b Diff against baseline — the actionable view.
+        if slot_diff_vs_baseline:
+            sf_diffs = [d for d in slot_diff_vs_baseline if d.get("kind") != "K"]
+            k_diffs = [d for d in slot_diff_vs_baseline if d.get("kind") == "K"]
+            lines.append("### 5.2 Best vs baseline · 哪些槽位变了")
+            lines.append("")
+            lines.append(
+                f"_共 {len(slot_diff_vs_baseline)} 个槽位发生变化"
+                f"（{len(sf_diffs)} 个 SF + {len(k_diffs)} 个 K bits）_"
+            )
+            lines.append("")
+            if k_diffs:
+                lines.append("**截断 K bits 变化**：")
+                lines.append("")
+                lines.append("| 槽位 | baseline K | best K | Δ |")
+                lines.append("|---|---:|---:|---:|")
+                for d in sorted(k_diffs, key=lambda r: r.get("label", "")):
+                    lines.append(
+                        f"| `{d.get('label','')}` | {d.get('baseline_truncation_bits','?')} | "
+                        f"{d.get('best_truncation_bits','?')} | "
+                        f"{int(d.get('delta', 0)):+d} |"
+                    )
+                lines.append("")
+            if sf_diffs:
+                lines.append("**Scaling factor 变化**（前 25 条按 |Δ| 降序）：")
+                lines.append("")
+                lines.append("| 槽位 | kind | baseline SF | best SF | Δ |")
+                lines.append("|---|:---:|---:|---:|---:|")
+                def _abs_delta(r):
+                    d_ = r.get("delta")
+                    return -1 if d_ is None else abs(int(d_))
+                for d in sorted(sf_diffs, key=_abs_delta, reverse=True)[:25]:
+                    b_ = d.get("baseline_scaling_factor")
+                    a_ = d.get("best_scaling_factor")
+                    if b_ is None:
+                        delta_s = "off→on"
+                    elif a_ is None:
+                        delta_s = "on→off"
+                    else:
+                        delta_s = f"{int(d.get('delta', 0)):+d}"
+                    lines.append(
+                        f"| `{d.get('label','')}` | `{d.get('kind','')}` | "
+                        f"{'off' if b_ is None else b_} | "
+                        f"{'off' if a_ is None else a_} | {delta_s} |"
+                    )
+                lines.append("")
+        else:
+            lines.append(
+                "_（baseline diff 不可用 —— 如果想看 best vs baseline 的具体改动，"
+                "请打开 `diagnostics/best_action_vec.json` 的 `diff_vs_baseline` 字段。）_"
+            )
+            lines.append("")
+        # 5.c Original flat int vector hidden in a collapsible block (debugging only).
+        lines.append("<details>")
+        lines.append("<summary>调试用：原始 action_vec（整数索引）</summary>")
         lines.append("")
         lines.append(f"- 长度: {len(best_action_vec)}")
         lines.append("")
         lines.append("```")
         lines.append(", ".join(str(int(x)) for x in best_action_vec))
         lines.append("```")
+        lines.append("")
+        lines.append("</details>")
         lines.append("")
 
     if any_invalid_baseline:

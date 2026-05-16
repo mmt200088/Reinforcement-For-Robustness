@@ -1062,6 +1062,130 @@ def run_sequential_via_runner(
     except Exception as exc:
         log(f"  [diag][warning] finalize failed: {exc}")
 
+    # ---------- 7.5) Human-readable best/baseline action description files ----------
+    # These are *separate* from the diagnostics/ dir: they live at the
+    # blb_progress_dir root so legacy tooling that looks for
+    # ``blb_stage2_best_action_full.{json,md}`` still finds them — but now
+    # both files use the SF/K-first schema.
+    from .action_space import describe_action_vector as _describe_action_vector
+    from .persistence import write_action_description_files as _write_action_description_files
+    best_action_description_paths: Dict[str, str] = {}
+    baseline_action_description_paths: Dict[str, str] = {}
+    try:
+        baseline_desc = _describe_action_vector(
+            baseline_action_vec,
+            max_sfs=max_sfs,
+            num_layers=int(ev.total_layers),
+            gelu_degree=fixed_gelu,
+            attn_degree=fixed_softmax,
+            profile=str(train_cfg.profile),
+        )
+        # Also carry the raw int vec inside the JSON so it's a true drop-in.
+        baseline_desc = dict(baseline_desc)
+        baseline_desc["action_vec"] = np.asarray(baseline_action_vec, dtype=int).tolist()
+        baseline_desc["source"] = "static_skeletons_baseline"
+        baseline_action_description_paths = _write_action_description_files(
+            blb_progress_dir, baseline_desc, label="baseline", log_fn=log,
+        )
+        if baseline_action_description_paths.get("md"):
+            log(f"  {bullet} 基线动作可读说明 → {baseline_action_description_paths['md']}")
+    except Exception as exc:
+        log(f"  [persist][warning] baseline action description write failed: {exc}")
+    if best_action_vec is not None:
+        try:
+            best_desc = _describe_action_vector(
+                best_action_vec,
+                max_sfs=max_sfs,
+                num_layers=int(ev.total_layers),
+                gelu_degree=fixed_gelu,
+                attn_degree=fixed_softmax,
+                profile=str(train_cfg.profile),
+            )
+            best_desc = dict(best_desc)
+            best_desc["action_vec"] = np.asarray(best_action_vec, dtype=int).tolist()
+            best_desc["source"] = "blb_v3_sequential_runtime_best"
+            best_desc["best_reward"] = float(best_reward)
+            best_action_description_paths = _write_action_description_files(
+                blb_progress_dir, best_desc, label="best", log_fn=log,
+            )
+            if best_action_description_paths.get("md"):
+                log(f"  {bullet} 最优动作可读说明 → {best_action_description_paths['md']}")
+        except Exception as exc:
+            log(f"  [persist][warning] best action description write failed: {exc}")
+
+    # Refresh status board's best block with the human-readable slot view too.
+    try:
+        best_slots_view = None
+        best_slots_grouped = None
+        if best_action_vec is not None and diag_recorder._slots_view_builder is not None:
+            best_slots_view = list(diag_recorder._slots_view_builder(
+                np.asarray(best_action_vec, dtype=int),
+            ))
+            from .action_io import group_slots_by_layer_block
+            best_slots_grouped = group_slots_by_layer_block(best_slots_view)
+        if best_action_vec is not None:
+            status.set_best(
+                float(best_reward),
+                best_action_vec=np.asarray(best_action_vec, dtype=int).tolist(),
+                best_slots=best_slots_view,
+                best_slots_by_layer=best_slots_grouped,
+            )
+    except Exception as exc:
+        log(f"  [status][warning] best block refresh failed: {exc}")
+
+    # ---------- 7.6) Final training report markdown ----------
+    try:
+        from .persistence import write_blb_final_report
+        best_slots_for_report = None
+        baseline_slots_for_report = None
+        slot_diff_for_report = None
+        if diag_recorder._slots_view_builder is not None and best_action_vec is not None:
+            best_slots_for_report = list(diag_recorder._slots_view_builder(
+                np.asarray(best_action_vec, dtype=int),
+            ))
+            baseline_slots_for_report = diag_recorder._baseline_slots
+            slot_diff_for_report = diag_recorder._diff_against_baseline(best_slots_for_report)
+        baseline_summary: Dict[str, Any] = {
+            "total_bits_sum": int(getattr(baseline, "total_bits_sum", 0) or 0),
+            "total_fusion_count": int(getattr(baseline, "total_fusion_count", 0) or 0),
+            "avg_k": float(getattr(baseline, "avg_k", 0.0) or 0.0),
+            "loss_mean": float(getattr(baseline, "loss_mean", 0.0) or 0.0),
+            "metric1_mean": float(getattr(baseline, "metric1_mean", 0.0) or 0.0),
+            "metric2_mean": float(getattr(baseline, "metric2_mean", 0.0) or 0.0),
+        }
+        weights_summary: Dict[str, Any] = {
+            "w_bits": float(getattr(weights, "w_bits", 0.0) or 0.0),
+            "w_fusion": float(getattr(weights, "w_fusion", 0.0) or 0.0),
+            "w_k": float(getattr(weights, "w_k", 0.0) or 0.0),
+        }
+        report_path = write_blb_final_report(
+            blb_progress_dir,
+            run_basename=run_basename,
+            profile=str(train_cfg.profile),
+            total_episodes=int(total_episodes_planned),
+            completed_episodes=int(start_episode + len(episode_returns)),
+            elapsed_sec=float(elapsed),
+            best_reward=float(best_reward),
+            best_breakdown=None,
+            best_action_vec=(
+                np.asarray(best_action_vec, dtype=int).tolist()
+                if best_action_vec is not None else None
+            ),
+            baseline=baseline_summary,
+            reward_weights=weights_summary,
+            episode_returns=episode_returns,
+            rescale_invoker_kind="in_process_real",
+            log_fn=log,
+            best_slots=best_slots_for_report,
+            baseline_slots=baseline_slots_for_report,
+            slot_diff_vs_baseline=slot_diff_for_report,
+            best_action_full_md_path=best_action_description_paths.get("md", ""),
+            best_action_full_json_path=best_action_description_paths.get("json", ""),
+        )
+        log(f"  {bullet} 最终训练报告 → {report_path}")
+    except Exception as exc:
+        log(f"  [persist][warning] final report write failed: {exc}")
+
     # ---------- 8) Training curve PNG/NPZ ----------
     try:
         curve_paths = write_training_curves(
