@@ -196,9 +196,9 @@ def _candidate_selection_key(
     acc_violation = max(0.0, _selection_float(breakdown.get("acc_violation", 0.0), 0.0))
     stab_violation = max(0.0, _selection_float(breakdown.get("stab_violation", 0.0), 0.0))
     return (
-        invalid_rank,
         -acc_violation,
         -stab_violation,
+        invalid_rank,
         _selection_float(reward, -float("inf")),
     )
 
@@ -210,7 +210,7 @@ def is_better_blb_candidate(
         best_reward: float,
         best_breakdown: Optional[Mapping[str, Any]],
         ) -> bool:
-    """Compare BLB candidates by hard constraints before scalar reward."""
+    """Compare BLB candidates by accuracy, stability, then optimizer cost."""
     return _candidate_selection_key(candidate_reward, candidate_breakdown) > _candidate_selection_key(
         best_reward,
         best_breakdown,

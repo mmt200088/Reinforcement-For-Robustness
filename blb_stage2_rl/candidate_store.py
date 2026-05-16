@@ -264,7 +264,7 @@ def _finite_float(value: Any, default: float) -> float:
 
 
 def candidate_rank_key(record: Mapping[str, Any]) -> Tuple[float, ...]:
-    """Hard-priority ordering: validity, accuracy, stability, then cost."""
+    """Hard-priority ordering: accuracy, stability, optimizer validity, then cost."""
     valid = bool(record.get("valid", not bool(record.get("invalid", False))))
     invalid_flag = 0.0 if valid else 1.0
     accuracy_violation = _finite_float(record.get("acc_violation", 0.0), 1.0e9)
@@ -273,16 +273,16 @@ def candidate_rank_key(record: Mapping[str, Any]) -> Tuple[float, ...]:
     if cost_value is not None:
         normalized_cost = _finite_float(cost_value, 1.0e9)
         return (
-            invalid_flag,
             max(0.0, accuracy_violation),
             max(0.0, stability_violation),
+            invalid_flag,
             max(0.0, normalized_cost),
         )
     bits, fusion = rescale_cost_rank_key(record)
     return (
-        invalid_flag,
         max(0.0, accuracy_violation),
         max(0.0, stability_violation),
+        invalid_flag,
         max(0.0, bits),
         max(0.0, fusion),
     )

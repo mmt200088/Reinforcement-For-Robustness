@@ -65,7 +65,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
 
         self.assertTrue(np.array_equal(resolved, action))
 
-    def test_action_candidate_skips_model_forward_when_optimizer_invalid(self):
+    def test_action_candidate_still_runs_model_forward_when_optimizer_invalid(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
         from blb_stage2_rl.action_space import make_all_max_action_vector
 
@@ -94,10 +94,10 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         runner._config_details = lambda *_args, **_kwargs: {}
         runner._is_feasible = lambda *_args, **_kwargs: True
 
-        def fail_forward(*_args, **_kwargs):
-            raise AssertionError("invalid optimizer output must not run BLB forward")
-
-        runner._run_blb_eval = fail_forward
+        runner._run_blb_eval = lambda *_args, **_kwargs: (
+            {"loss": 0.25, "p": 0.875, "s": 0.8, "time_ms": 12.0, "install_verification": {"ok": True}},
+            None,
+        )
 
         result = runner._evaluate_action_candidate(
             name="candidate",
@@ -109,9 +109,10 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         )
 
         self.assertTrue(result["any_invalid"])
-        self.assertTrue(result["skipped_forward"])
+        self.assertFalse(result["skipped_forward"])
         self.assertFalse(result["feasible"])
-        self.assertEqual(result["install_verification"], {})
+        self.assertEqual(result["install_verification"], {"ok": True})
+        self.assertEqual(result["p"], 0.875)
 
     def test_full_noise_config_uses_training_first_input_N(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
@@ -511,7 +512,7 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
 
 
 class BLBRewardRegressionTests(unittest.TestCase):
-    def test_invalid_chain_is_not_masked_by_accuracy_violation(self):
+    def test_optimizer_invalid_is_cost_layer_after_accuracy_and_stability(self):
         from blb_stage2_rl.reward import (
             BaselineCostStats,
             EpisodeMetrics,
@@ -519,7 +520,7 @@ class BLBRewardRegressionTests(unittest.TestCase):
             compute_reward,
         )
 
-        breakdown = compute_reward(
+        accuracy_breakdown = compute_reward(
             EpisodeMetrics(metric1_mean=0.0, loss_mean=float("inf"), loss_std=float("inf")),
             type("Signals", (), {"any_invalid": True, "total_bits_sum": 0, "total_fusion_count": 0})(),
             action_avg_k=13.0,
@@ -530,11 +531,37 @@ class BLBRewardRegressionTests(unittest.TestCase):
             any_invalid=True,
         )
 
-        self.assertTrue(breakdown.invalid)
-        # spec §6.1: invalid is "Priority 0" — distinct from cost-priority (3)
-        # so rollout buckets don't double-count invalid against cost successes.
-        self.assertEqual(breakdown.priority, 0)
-        self.assertEqual(breakdown.reward, -30.0)
+        self.assertTrue(accuracy_breakdown.invalid)
+        self.assertEqual(accuracy_breakdown.priority, 1)
+        self.assertGreater(accuracy_breakdown.acc_violation, 0.0)
+
+        cost_breakdown = compute_reward(
+            EpisodeMetrics(metric1_mean=0.9, loss_mean=0.2, loss_std=0.1),
+            type("Signals", (), {"any_invalid": True, "total_bits_sum": 200, "total_fusion_count": 0})(),
+            action_avg_k=13.0,
+            baseline=BaselineCostStats(total_bits_sum=200, metric1_mean=0.875),
+            weights=RewardWeights(invalid_penalty=30.0),
+            acc_threshold=0.865,
+            stab_threshold=1.0,
+            any_invalid=True,
+        )
+
+        self.assertTrue(cost_breakdown.invalid)
+        self.assertEqual(cost_breakdown.priority, 3)
+        self.assertEqual(cost_breakdown.r_invalid, -30.0)
+
+        nonfinite_stability = compute_reward(
+            EpisodeMetrics(metric1_mean=0.9, loss_mean=0.2, loss_std=float("inf")),
+            type("Signals", (), {"any_invalid": False, "total_bits_sum": 200, "total_fusion_count": 0})(),
+            action_avg_k=13.0,
+            baseline=BaselineCostStats(total_bits_sum=200, metric1_mean=0.875),
+            weights=RewardWeights(priority2_penalty=50.0, priority2_scale=100.0),
+            acc_threshold=0.865,
+            stab_threshold=1.0,
+            any_invalid=False,
+        )
+        self.assertEqual(nonfinite_stability.priority, 2)
+        self.assertEqual(nonfinite_stability.reward, -150.0)
 
     def test_runner_best_selection_uses_hard_constraints_before_reward(self):
         from blb_stage2_rl.runner import is_better_blb_candidate
@@ -560,7 +587,7 @@ class BLBRewardRegressionTests(unittest.TestCase):
             "stab_violation": 0.0,
         }
 
-        self.assertTrue(
+        self.assertFalse(
             is_better_blb_candidate(
                 candidate_reward=-100.0,
                 candidate_breakdown=valid_accuracy_failure,
@@ -576,7 +603,7 @@ class BLBRewardRegressionTests(unittest.TestCase):
                 best_breakdown=valid_safe_lower_reward,
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             is_better_blb_candidate(
                 candidate_reward=-30.0,
                 candidate_breakdown=invalid_high_reward,
@@ -755,6 +782,73 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertFalse(info["reward_breakdown"].invalid)
         self.assertAlmostEqual(reward, 0.0)
 
+    def test_env_runs_forward_even_when_optimizer_invalid(self):
+        from blb_stage2_rl.action_space import load_max_sfs, make_all_max_action_vector
+        from blb_stage2_rl.env import BLBStage2Env, BLBStage2EnvConfig, ProbeBatch
+        from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
+        from rescale_optimizer_bridge import RescaleOptimizerOutput
+
+        class TinyModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.zeros(()))
+                self.forward_count = 0
+
+            def forward(self, **_kwargs):
+                self.forward_count += 1
+                logits = torch.tensor([[0.0, 10.0], [10.0, 0.0]])
+                return type("Output", (), {"logits": logits})()
+
+        class FakeHandler:
+            def __getattr__(self, name):
+                if name.startswith(("replace_", "restore_")):
+                    return lambda *args, **kwargs: None
+                raise AttributeError(name)
+
+        class FakeRescaleBridge:
+            def evaluate_blocks(self, requests):
+                return {
+                    name: RescaleOptimizerOutput(
+                        config_name=name,
+                        fusion_count=0,
+                        total_bits=100,
+                        invalid_chain={"reason": "unit"},
+                        valid=False,
+                        raw={},
+                    )
+                    for name in requests
+                }
+
+        probe = ProbeBatch(
+            input_ids=torch.ones((2, 4), dtype=torch.long),
+            attention_mask=torch.ones((2, 4), dtype=torch.long),
+            labels=torch.tensor([1, 0], dtype=torch.long),
+        )
+        model = TinyModel()
+        env = BLBStage2Env(
+            handler=FakeHandler(),
+            model=model,
+            probe_batches=[probe],
+            rescale_bridge=FakeRescaleBridge(),
+            baseline=BaselineCostStats(total_bits_sum=400, total_fusion_count=0, avg_k=13.0),
+            reward_weights=RewardWeights(invalid_penalty=30.0),
+            acc_threshold=0.5,
+            stab_threshold=10.0,
+            max_sfs=load_max_sfs("mrpc"),
+            num_layers=1,
+            env_cfg=BLBStage2EnvConfig(profile="mrpc", num_trials_per_step=1),
+        )
+
+        _obs, _reward, done, info = env.step(make_all_max_action_vector(num_layers=1))
+
+        self.assertTrue(done)
+        self.assertTrue(info["invalid"])
+        self.assertTrue(info["forward_ran"])
+        self.assertEqual(model.forward_count, 1)
+        self.assertEqual(info["reward_breakdown"].priority, 3)
+        self.assertTrue(info["reward_breakdown"].invalid)
+        self.assertEqual(info["reward_breakdown"].r_invalid, -30.0)
+
     def test_real_mrpc_all_max_baseline_optimizer_outputs_are_valid(self):
         from blb_stage2_rl.action_space import (
             action_vector_to_cfgs,
@@ -896,7 +990,7 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
             candidate_rank_key({"valid": True, "acc_violation": 0.0, "stability_violation": 0.0, "normalized_cost": 0.4}),
             candidate_rank_key({"valid": True, "acc_violation": 0.0, "stability_violation": 0.0, "normalized_cost": 0.8}),
         )
-        self.assertLess(
+        self.assertGreater(
             candidate_rank_key({"valid": True, "acc_violation": 0.0, "stability_violation": 0.1, "normalized_cost": 0.1}),
             candidate_rank_key({"valid": False, "acc_violation": 0.0, "stability_violation": 0.0, "normalized_cost": 0.0}),
         )

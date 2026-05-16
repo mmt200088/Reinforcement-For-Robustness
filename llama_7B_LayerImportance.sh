@@ -77,6 +77,8 @@ GA / Greedy：
   --fresh-start                        从头开始训练（首次运行必须指定）
   --fresh-stage1                       仅重置 Stage-1 数据（保留 Stage-2）
   --fresh-stage2                       仅重置 Stage-2 数据（保留 Stage-1）
+  --persistent-root PATH               持久化根目录（默认 Parting Chapter/persistent；
+                                       BLB Stage-2 preset 使用 Paean/outputs）
 
 普通 RL / GA / Greedy 共用：
   --skip-stage1-search
@@ -417,7 +419,7 @@ GENERAL_SKIP_STAGE2="false"; S_GENERAL_SKIP_STAGE2="false"
 GENERAL_STAGE1_CONFIG_JSON=""; S_GENERAL_STAGE1_CONFIG_JSON="false"
 GENERAL_ACCURACY_TOLERANCES=""; S_GENERAL_ACCURACY_TOLERANCES="false"
 GENERAL_ACCURACY_TOLERANCE_RANGE=""; S_GENERAL_ACCURACY_TOLERANCE_RANGE="false"
-PERSISTENT_ROOT="Parting Chapter/persistent"
+PERSISTENT_ROOT="Parting Chapter/persistent"; S_PERSISTENT_ROOT="false"
 RUNS_ROOT="Parting Chapter/runs"
 RL_COMPARE_SKIP_STAGE1_SEARCH="false"; S_RL_COMPARE_SKIP_STAGE1_SEARCH="false"
 GA_COMPARE_SKIP_STAGE1_SEARCH="false"; S_GA_COMPARE_SKIP_STAGE1_SEARCH="false"
@@ -580,6 +582,7 @@ while [ "$#" -gt 0 ]; do
       shift 2 ;;
     --stage1-budget-trials) needv "$@"; STAGE1_BUDGET_TRIALS="$2"; S_STAGE1_BUDGET_TRIALS="true"; shift 2 ;;
     --stage2-budget-trials) needv "$@"; STAGE2_BUDGET_TRIALS="$2"; S_STAGE2_BUDGET_TRIALS="true"; shift 2 ;;
+    --persistent-root) needv "$@"; PERSISTENT_ROOT="$2"; S_PERSISTENT_ROOT="true"; shift 2 ;;
     --general-rl-mode) needv "$@"; GENERAL_MODE="$2"; S_GENERAL_MODE="true"; shift 2 ;;
     --general-rl-tasks) needv "$@"; GENERAL_TASKS="$2"; S_GENERAL_TASKS="true"; shift 2 ;;
     --general-rl-rounds) needv "$@"; GENERAL_ROUNDS="$2"; S_GENERAL_ROUNDS="true"; shift 2 ;;
@@ -959,6 +962,7 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
 
   if [ "$COMPARE_CONFIG_MODE" = "direct" ]; then
     [ "$S_COMPARE_PERSISTENT_ROOT" = "false" ] || err "direct 模式不使用 --compare-persistent-root。"
+    [ "$S_PERSISTENT_ROOT" = "false" ] || err "direct 模式不使用 --persistent-root。"
     { [ "$S_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_STAGE2_LIMIT_TOLERANCE" = "false" ] && [ "$S_STAGE2_STABILITY_TOLERANCE" = "false" ] && [ "$S_RL_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_LIMIT_TOLERANCE" = "false" ] && [ "$S_RL_COMPARE_STAGE2_STABILITY_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE1_ACCURACY_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_LIMIT_TOLERANCE" = "false" ] && [ "$S_GA_COMPARE_STAGE2_STABILITY_TOLERANCE" = "false" ]; } || err "direct 模式不接受准确度约束参数，请直接指定四个 JSON 文件。"
     [ -n "$RL_COMPARE_STAGE1_JSON" ] || err "direct 模式必须提供 --rl-compare-stage1-json。"
     [ -n "$RL_COMPARE_STAGE2_JSON" ] || err "direct 模式必须提供 --rl-compare-stage2-json。"
@@ -1433,6 +1437,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARC
   show "Stage-2 探针子集大小" "$STAGE2_PROBE_SIZE" "$S_STAGE2_PROBE_SIZE"
 fi
 if [ "$USE_PERSISTENT" = "true" ]; then
+  show "持久化根目录" "$PERSISTENT_ROOT" "$S_PERSISTENT_ROOT"
   show "持久化目录" "$PERSISTENT_DIR" "true"
   show "从头训练" "$(boolzh "$FRESH_START")" "$S_FRESH_START"
   if [ "$FRESH_STAGE1" = "true" ]; then show "单独重置 Stage-1" "是" "$S_FRESH_STAGE1"; fi

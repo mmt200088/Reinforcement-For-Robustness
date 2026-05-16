@@ -842,30 +842,50 @@ def run_sequential_via_runner(
         f"详细 trace：第 1 个 episode 会逐 step 打印；之后按窗口汇总",
     ])
 
-    def _format_best_action_snippet(action_vec_arr: Optional[np.ndarray]) -> List[str]:
-        """Best-action 简要可读形式：按层 / block 维度汇总动作 index 分布。"""
+    def _format_best_action_slots(action_vec_arr: Optional[np.ndarray]) -> List[str]:
+        """Best-action decoded slot view, without policy action indices."""
         if action_vec_arr is None:
             return ["best action 尚未产生（episode_count=0）"]
         try:
-            from .action_space import action_dims_for_config
-            dims = action_dims_for_config(int(ev.total_layers))
             arr = np.asarray(action_vec_arr, dtype=int).reshape(-1)
-            if arr.size != len(dims):
-                return [f"best action vec dim mismatch: {arr.size} vs {len(dims)}"]
-            # 按层切，最后 1 维是 first_input
-            per_layer_w = (len(dims) - 1) // int(ev.total_layers)
-            lines: List[str] = []
-            for li in range(int(ev.total_layers)):
-                seg = arr[li * per_layer_w:(li + 1) * per_layer_w].tolist()
-                # 简要：印出每层 action_idx 的总和 + 极值 + 一段 idx 列表
-                snippet = ", ".join(str(x) for x in seg[:12])
-                if len(seg) > 12:
-                    snippet += " …"
-                lines.append(f"L{li:02d}: sum={sum(seg):3d}  min={min(seg)}  max={max(seg)}  [{snippet}]")
-            lines.append(f"first_input_sf idx = {int(arr[-1])}")
+            slots = _slots_view_builder(arr)
+            grouped: Dict[str, List[str]] = {}
+            first_input: List[str] = []
+
+            def _value_text(row: Mapping[str, Any]) -> str:
+                kind = str(row.get("kind", ""))
+                field_name = str(row.get("field_name", ""))
+                if kind == "K":
+                    value = row.get("truncation_bits")
+                    value_part = f"truncation_bits={value}"
+                else:
+                    value = row.get("scaling_factor")
+                    value_part = "scaling_factor=off" if value is None else f"scaling_factor={value}"
+                meta = (
+                    f"{kind}.{field_name} {value_part}"
+                    f" [op={row.get('operation')}, dist={row.get('distribution')}, N={row.get('N')}]"
+                )
+                if not bool(row.get("effective", True)):
+                    meta += " [inactive]"
+                return meta
+
+            for row in slots:
+                block = row.get("block")
+                if block is None:
+                    first_input.append(_value_text(row))
+                    continue
+                layer = int(row.get("layer", 0))
+                key = f"L{layer:02d}.B{int(block)}"
+                grouped.setdefault(key, []).append(_value_text(row))
+
+            lines = []
+            for key in sorted(grouped):
+                lines.append(f"{key}: " + "; ".join(grouped[key]))
+            if first_input:
+                lines.append("first_input: " + "; ".join(first_input))
             return lines
         except Exception as exc:
-            return [f"<format_best_action_snippet failed: {exc}>"]
+            return [f"<format_best_action_slots failed: {exc}>"]
 
     def _step_callback(episode_idx: int, step_within: int, info: Dict[str, Any]) -> None:
         """Per-step trace — only for the first episode of the WHOLE run. Helps
@@ -928,8 +948,8 @@ def run_sequential_via_runner(
                 f"valid_steps={record.valid_step_count}/{record.steps_taken}  │  "
                 f"invalid_steps={record.invalid_steps}"
             )
-            log("  " + bullet + " 当前 best action vec（按层概览）：")
-            for snippet_line in _format_best_action_snippet(best_action_vec):
+            log("  " + bullet + " 当前 best action（decoded slots；不输出 action index）：")
+            for snippet_line in _format_best_action_slots(best_action_vec):
                 log("      " + snippet_line)
 
         # Periodic checkpoint
@@ -1038,7 +1058,7 @@ def run_sequential_via_runner(
         avg_inv = float(np.mean(rollout_invalid_window)) if rollout_invalid_window else 0.0
         avg_valid = float(np.mean(rollout_valid_window)) if rollout_valid_window else 0.0
         avg_term = float(np.mean(rollout_terminal_window)) if rollout_terminal_window else 0.0
-        _seq_log_rounded_box(log, [
+        summary_lines = [
             f"PPO 窗口摘要 · 截至回合（through episode） "
             f"{start_episode + completed_episodes}",
             f"窗口 N={win_n} 回合 ·  "
@@ -1054,7 +1074,10 @@ def run_sequential_via_runner(
             f"LR={optimizer.param_groups[0]['lr']:.6f}  ·  "
             f"更新序号 update#{ppo_update_counter[0]}  ·  "
             f"PPO 样本数={int(metrics.get('n_samples', 0))}",
-        ])
+        ]
+        log("")
+        for idx, line in enumerate(summary_lines):
+            log(("  " if idx == 0 else "    ") + line)
         # Persist PPO-update diagnostics before clearing the rolling window.
         try:
             diag_recorder.record_ppo_update(PPOUpdateStats(

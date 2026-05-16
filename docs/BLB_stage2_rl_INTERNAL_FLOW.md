@@ -475,21 +475,21 @@ Rescale bridge 返回每个 config 的输出，然后聚合为：
 成本信号来自真实 Rescale optimizer 的 replan 结果。`effective_rotations` 可能会被转换成
 cfg 上的 `rotation_after_*` 标志，再影响后续 BLB 噪声安装。
 
-### 10.6 invalid_chain 的快速失败
+### 10.6 invalid_chain 不再跳过 forward
 
-如果成本信号里有 `any_invalid=True`，env 不再安装噪声，也不跑 forward。它会直接构造一个失败 metrics：
+如果成本信号里有 `any_invalid=True`，env 会把它记录为 Rescale_optimizer 的
+cost/feasibility 诊断，但仍然安装当前 BLB cfg 并跑 probe forward。这样 reward
+始终先来自真实模型指标和稳定性，而不是只来自 Rescale_optimizer。
 
-```text
-loss = inf
-metric1 = 0
-metric2 = 0
-```
+如果 BLB 安装或 forward 本身失败，env 才会构造失败 metrics 并把该回合标成
+`apply_failed` / `eval_failed`。
 
-然后调用 reward，通常会先触发精度违反，得到很低的 reward。这样非法链不会浪费模型 forward 时间。
+reward 的顺序是：精度 violation → 稳定性 violation → cost。`any_invalid=True`
+只在 cost 层作为 optimizer feasibility penalty / 诊断项参与，不允许跳过前两层。
 
 ### 10.7 安装 BLB 噪声
 
-如果没有 invalid，env 调用 `BLBNoiseRLBridge.apply(...)` 把 cfg 安装到模型上。
+env 调用 `BLBNoiseRLBridge.apply(...)` 把 cfg 安装到模型上。
 
 安装内容包括：
 
@@ -609,9 +609,15 @@ reward = r_bits + r_fusion + r_k
 
 ### 11.4 invalid 的位置
 
-`compute_reward` 里 invalid 是第三层 cost 前的检查。但由于 invalid 时 env 构造的 metric 通常会触发第一层精度失败，所以实际常见路径是：invalid 候选先因为 metric=0 被精度层重罚。
+`compute_reward` 里 invalid 只属于第三层 cost/feasibility 诊断。env 即使看到
+Rescale_optimizer 的 `any_invalid=True`，也会继续安装 BLB 并跑模型 forward。
 
-这也是当前实现的真实行为。
+因此真实顺序是：
+
+1. 精度 violation：直接进入 P1。
+2. 精度过关但稳定性 violation：进入 P2。
+3. 精度和稳定性都过关：进入 P3 cost；此时 `any_invalid=True` 会作为
+   optimizer invalid penalty 参与。
 
 ## 12. PPO 训练循环
 
@@ -821,7 +827,7 @@ BLB Stage-2 RL 内部有多个 fallback，目的是让训练流程尽量不中�
 | `max_sfs/{profile}.json` 不存在 | fallback 到 `default.json`，再 fallback 到字段内置 max |
 | action SF 不在噪声方差表 | snap 到合法 SF |
 | Rescale_optimizer root/configs/baseline 缺失 | 直接报错停止训练 |
-| Rescale 输出 invalid_chain | 不安装 BLB，不跑 forward，直接负 reward |
+| Rescale 输出 invalid_chain | 仍安装 BLB 并跑 forward；invalid 只作为 cost/feasibility 诊断 |
 | BLB apply 失败 | 当 invalid 处理，返回负 reward |
 | probe 构造失败 | fallback 到 split 数据集本身 |
 | checkpoint 读取失败 | 打 warning，从头继续该 run 的 BLB 训练状态 |

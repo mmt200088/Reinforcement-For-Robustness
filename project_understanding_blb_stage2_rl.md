@@ -509,7 +509,9 @@ x_trunc = trunc(x * 2^k) / 2^k
 
 ## 7. Rescale_optimizer 在项目中的作用
 
-Rescale_optimizer 是 BLB Stage-2 的核心外部依赖。它不是普通 cost heuristic，而是用来判断候选 scale schedule 在 CKKS 模数链上是否合法，并提供成本信号。
+Rescale_optimizer 是 BLB Stage-2 的核心外部依赖。它不是普通 cost heuristic；
+在 reward 里它只提供 optimizer 成本与 feasibility 诊断，不能替代或跳过真实模型
+forward 得到的精度/稳定性信号。
 
 ### 7.1 输入
 
@@ -639,7 +641,9 @@ loss_max
 
 ### 9.4 成本
 
-只有 valid、精度达标、稳定性达标后，才比较成本。
+只有精度达标、稳定性达标后，才比较成本。Rescale_optimizer 的
+`any_invalid` 属于成本层的 optimizer feasibility 诊断，而不是精度/稳定性之前的
+reward gate。
 
 成本信号应来自真实 Rescale_optimizer 和 truncation k：
 
@@ -658,9 +662,9 @@ possibly rotation count or modulus-chain objective
 
 ```text
 rank_key = (
-    invalid_flag,
     accuracy_violation,
     stability_violation,
+    optimizer_invalid_flag,
     normalized_cost,
     tie_breakers...
 )

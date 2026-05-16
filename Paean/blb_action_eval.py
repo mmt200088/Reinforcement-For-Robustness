@@ -276,33 +276,19 @@ class BLBActionFinalEvaluationModule:
 
         cfgs_dict = decoded.cfgs_dict()
         opt_outputs, opt_signals = self._optimizer_outputs(profile, cfgs_dict)
-        skipped_forward = bool(opt_signals.any_invalid)
-        if skipped_forward:
-            single = {
-                "loss": float("inf"),
-                "p": 0.0,
-                "s": 0.0,
-                "time_ms": 0.0,
-                "install_verification": {},
-            }
-            repeat = None
-            loss = float("inf")
-            p = 0.0
-            s = 0.0
-            time_ms = 0.0
+        skipped_forward = False
+        single, repeat = self._run_blb_eval(decoded, gelu=gelu, softmax=softmax)
+        if repeat is not None:
+            stats = repeat["stats"]
+            loss = float(stats["loss_mean"])
+            p = float(stats["p_mean"])
+            s = float(stats["s_mean"])
+            time_ms = float(stats["time_mean_ms"])
         else:
-            single, repeat = self._run_blb_eval(decoded, gelu=gelu, softmax=softmax)
-            if repeat is not None:
-                stats = repeat["stats"]
-                loss = float(stats["loss_mean"])
-                p = float(stats["p_mean"])
-                s = float(stats["s_mean"])
-                time_ms = float(stats["time_mean_ms"])
-            else:
-                loss = float(single["loss"])
-                p = float(single["p"])
-                s = float(single["s"])
-                time_ms = float(single["time_ms"])
+            loss = float(single["loss"])
+            p = float(single["p"])
+            s = float(single["s"])
+            time_ms = float(single["time_ms"])
 
         stage1_tot, g_c, s_c = ev.get_simulated_cost(gelu, softmax)
         result = {
@@ -361,11 +347,11 @@ class BLBActionFinalEvaluationModule:
             report_constraints=report_constraints,
             optimizer_valid=not bool(opt_signals.any_invalid),
             decode_ok=True,
-            apply_ok=not bool(skipped_forward),
-            eval_ok=not bool(skipped_forward),
+            apply_ok=True,
+            eval_ok=True,
         )
         result["final_eval_feasibility"] = feasibility
-        result["feasible"] = False if skipped_forward else feasibility.get("feasible")
+        result["feasible"] = feasibility.get("feasible")
         result["diagnostic_feasible"] = feasibility.get("diagnostic_feasible")
         result["strict_feasible"] = feasibility.get("strict_feasible")
         return result

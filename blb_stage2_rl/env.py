@@ -419,7 +419,8 @@ class BLBStage2Env:
         #    place so that the noise actually installed below reflects
         #    Rescale_optimizer's chosen SFs / fused rescales / effective
         #    rotations, rather than only the RL action's raw proposal.
-        invoker_baselines: Mapping[str, Any] = getattr(self.rescale_bridge.invoker, "baselines", {}) or {}
+        bridge_invoker = getattr(self.rescale_bridge, "invoker", None)
+        invoker_baselines: Mapping[str, Any] = getattr(bridge_invoker, "baselines", {}) or {}
         per_config_overrides: Dict[str, List[Tuple[str, str, Any, Any]]] = {}
         if not any_invalid:
             for cn, out in opt_outputs.items():
@@ -460,7 +461,9 @@ class BLBStage2Env:
                         for e in overrides
                     ]
 
-        # 3) invalid → 直接判死，不跑 forward
+        # 3) 基础诊断信息。Rescale_optimizer 的 invalid 是成本/可行性信号，
+        #    但不能再作为跳过模型 forward 的理由；终端 reward 必须看到
+        #    实际安装后的 probe metrics / stability。
         info: Dict[str, Any] = {
             "decoded": decoded,
             "opt_signals": opt_signals,
@@ -468,6 +471,7 @@ class BLBStage2Env:
             "invalid": any_invalid,
             "apply_failed": False,
             "eval_failed": False,
+            "forward_ran": False,
             "optimizer_baseline_action": bool(is_optimizer_baseline_action),
             "optimizer_eval_mode": cost_eval.optimizer_eval_mode,
         }
@@ -477,31 +481,6 @@ class BLBStage2Env:
             info["model_degree_sync"] = degree_sync
         if per_config_overrides:
             info["optimizer_cfg_overrides"] = per_config_overrides
-        if any_invalid:
-            metrics = EpisodeMetrics(
-                loss_mean=float("inf"),
-                loss_std=float("inf"),
-                metric1_mean=0.0,
-                metric2_mean=0.0,
-            )
-            breakdown = compute_reward(
-                metrics, opt_signals,
-                action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
-                baseline=self.baseline,
-                weights=self.reward_weights,
-                acc_threshold=self.acc_threshold,
-                stab_threshold=self.stab_threshold,
-                any_invalid=True,
-            )
-            info["reward_breakdown"] = breakdown
-            if optimizer_invalid_summary:
-                info["error"] = optimizer_invalid_summary
-            info["metrics"] = metrics
-            self._step_idx += 1
-            self._last_invalid_rate = 1.0
-            self._last_total_bits_norm = float(opt_signals.total_bits_sum) / max(1.0, float(self.baseline.total_bits_sum))
-            self._last_fusion_count = float(opt_signals.total_fusion_count)
-            return self._build_state(), float(breakdown.reward), True, info
 
         # 4) 装 BLB 噪声
         # 语义更新（2026-05）：first_input fresh 噪声不再注入（"第一个 HE 配置
@@ -545,6 +524,7 @@ class BLBStage2Env:
         # 5) forward + metrics（多 trial）
         try:
             metrics = self._eval_on_probe(self.env_cfg.num_trials_per_step)
+            info["forward_ran"] = True
         except Exception as exc:
             try:
                 self.bridge.clear()
@@ -581,7 +561,7 @@ class BLBStage2Env:
             weights=self.reward_weights,
             acc_threshold=self.acc_threshold,
             stab_threshold=self.stab_threshold,
-            any_invalid=False,
+            any_invalid=any_invalid,
         )
 
         info["reward_breakdown"] = breakdown
@@ -589,7 +569,7 @@ class BLBStage2Env:
 
         # state 更新
         self._step_idx += 1
-        self._last_invalid_rate = 0.0
+        self._last_invalid_rate = 1.0 if any_invalid else 0.0
         self._last_total_bits_norm = float(opt_signals.total_bits_sum) / max(1.0, float(self.baseline.total_bits_sum))
         self._last_fusion_count = float(opt_signals.total_fusion_count)
 

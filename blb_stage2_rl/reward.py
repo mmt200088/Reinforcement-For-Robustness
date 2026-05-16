@@ -1,9 +1,11 @@
-"""BLB Stage 2 RL 奖励函数（spec §6 三层优先级）。
+"""BLB Stage 2 RL 奖励函数（三层优先级）。
 
 设计思想：
   优先级 1 - 精度约束：``acc < ACC_THRESHOLD`` → 直接重罚 + 距离 dense 引导
   优先级 2 - 稳定性约束：``loss_std > STAB_THRESHOLD`` → 中重罚 + dense 引导
-  优先级 3 - cost 优化：``r_bits + r_fusion + r_k`` 加权求和
+  优先级 3 - cost 优化：``r_bits + r_fusion + r_k`` 加权求和。
+               Rescale_optimizer 的 invalid_chain 也只在这一层作为
+               optimizer feasibility penalty 处理，不允许它跳过模型指标层。
 
 硬约束惩罚量级 >> cost reward 量级（差 1-2 个数量级），保证 RL 永远先把硬约束做满
 再去抠 cost。
@@ -25,7 +27,7 @@ DEFAULT_PRIORITY1_PENALTY = 100.0        # 精度违反基础罚
 DEFAULT_PRIORITY1_SCALE = 200.0          # 精度差距 dense 引导
 DEFAULT_PRIORITY2_PENALTY = 50.0         # 稳定性违反基础罚
 DEFAULT_PRIORITY2_SCALE = 100.0          # 稳定性差距 dense 引导
-DEFAULT_INVALID_PENALTY = 30.0           # invalid_chain 直接判死
+DEFAULT_INVALID_PENALTY = 30.0           # cost 层 optimizer invalid penalty
 DEFAULT_BASELINE_AVG_K = 13.0            # 全 max-k baseline 的 avg_k
 
 
@@ -128,11 +130,12 @@ class EpisodeMetrics:
 class RewardBreakdown:
     """``compute_reward`` 的明细返回值。"""
     reward: float
-    priority: int                       # 0=invalid, 1=acc, 2=stab, 3=cost
-    invalid: bool                       # invalid_chain
+    priority: int                       # 1=acc, 2=stab, 3=cost
+    invalid: bool                       # Rescale_optimizer invalid_chain / apply failure diagnostic
     r_bits: float = 0.0
     r_fusion: float = 0.0
     r_k: float = 0.0
+    r_invalid: float = 0.0
     bits_drop: float = 0.0
     k_drop: float = 0.0
     fusion_count: float = 0.0
@@ -167,7 +170,12 @@ def compute_reward(
         stab_threshold: float = float("inf"),
         any_invalid: Optional[bool] = None,
         ) -> RewardBreakdown:
-    """三层优先级奖励（spec §6.1-§6.5）。
+    """三层优先级奖励。
+
+    The ordering mirrors ``noise_rl_module_v2.py``: model accuracy first,
+    model stability second, optimizer-derived cost last.  Rescale_optimizer is
+    only a source for cost/feasibility diagnostics here; it must not mask or
+    replace the reward signal from the actual model forward pass.
 
     Args:
         metrics:       本步 K trials 评估指标
@@ -184,35 +192,35 @@ def compute_reward(
     """
     weights = weights or RewardWeights()
 
-    # Structural invalid states (Rescale_optimizer invalid_chain or BLB apply
-    # failures) must be handled before accuracy/stability.  Fast-fail paths use
-    # zero fallback metrics, and letting those hit priority 1 hides the real
-    # reason the episode did not evaluate.
     invalid = bool(any_invalid) if any_invalid is not None else bool(getattr(opt_signals, "any_invalid", False))
-    if invalid:
-        # priority=0 == "invalid" (spec §6.1). Distinct from cost-priority (3) so
-        # that rollout buckets don't double-count invalid against cost successes.
-        return RewardBreakdown(
-            reward=-float(weights.invalid_penalty), priority=0, invalid=True,
-        )
+
+    acc = _resolve_metric_for_threshold(metrics)
+    loss_std = float(metrics.loss_std)
+    if not math.isfinite(float(acc)):
+        acc = 0.0
+    acc_violation = max(0.0, float(acc_threshold) - float(acc))
 
     # 优先级 1：精度
-    acc = _resolve_metric_for_threshold(metrics)
-    acc_violation = max(0.0, float(acc_threshold) - float(acc))
     if acc_violation > 0:
         # -PEN + (acc - threshold) * SCALE  （acc < threshold 时 (acc - threshold) < 0）
         r = -float(weights.priority1_penalty) + (float(acc) - float(acc_threshold)) * float(weights.priority1_scale)
         return RewardBreakdown(
-            reward=float(r), priority=1, invalid=False, acc_violation=acc_violation,
+            reward=float(r), priority=1, invalid=invalid, acc_violation=acc_violation,
         )
 
     # 优先级 2：稳定性
-    loss_std = float(metrics.loss_std)
-    stab_violation = max(0.0, loss_std - float(stab_threshold))
+    if math.isfinite(loss_std):
+        stab_violation = max(0.0, loss_std - float(stab_threshold))
+    else:
+        # Non-finite loss_std means the probe forward was numerically unstable.
+        # Penalise it as a stability failure without exploding PPO advantages.
+        stab_violation = 1.0
     if stab_violation > 0:
         r = -float(weights.priority2_penalty) + (float(stab_threshold) - loss_std) * float(weights.priority2_scale)
+        if not math.isfinite(r):
+            r = -float(weights.priority2_penalty) - stab_violation * float(weights.priority2_scale)
         return RewardBreakdown(
-            reward=float(r), priority=2, invalid=False, stab_violation=stab_violation,
+            reward=float(r), priority=2, invalid=invalid, stab_violation=stab_violation,
         )
 
     # 优先级 3：cost
@@ -228,11 +236,13 @@ def compute_reward(
     else:
         r_fusion = float(weights.w_fusion) * fusion_drop
 
-    total = r_bits + r_fusion + r_k
+    r_invalid = -float(weights.invalid_penalty) if invalid else 0.0
+    total = r_bits + r_fusion + r_k + r_invalid
     return RewardBreakdown(
         reward=float(total),
         priority=3,
-        invalid=False,
+        invalid=invalid,
         r_bits=r_bits, r_fusion=r_fusion, r_k=r_k,
+        r_invalid=r_invalid,
         bits_drop=bits_drop, k_drop=k_drop, fusion_count=fusion_count,
     )

@@ -1050,12 +1050,13 @@ class BLBStepDetailsWriter:
             self._batch_start = ((ep - 1) // self._batch_size) * self._batch_size + 1
             self._batch_end = self._batch_start + self._batch_size - 1
         prio_label = (
-            "P0(invalid)" if invalid else
             "P1(acc)" if priority == 1 else
             "P2(stab)" if priority == 2 else
             "P3(cost)" if priority == 3 else
             f"P{priority}"
         )
+        if invalid:
+            prio_label = f"{prio_label}+optimizer_invalid"
         block = [
             f"── 回合 episode {ep} ── 回报 episode_return={float(episode_return):+.4f}  优先级 priority={prio_label}",
         ]

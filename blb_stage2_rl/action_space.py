@@ -832,8 +832,6 @@ def _build_block3_action(
         degree=deg,
         x_fresh_sf=int(layer_field_values["x_fresh_sf"]),
         inv_2n_sf=int(layer_field_values["inv_2n_sf"]),
-        # ``x_inv_2n_rescale_sf`` 不在 RL 动作里 -> cfg 字段固定 None
-        x_inv_2n_rescale_sf=None,
         square_rescale_sfs=square_rescale_sfs,
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
     )
