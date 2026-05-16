@@ -341,6 +341,100 @@ def train_sequential(
 # ---------------------------------------------------------------------------
 # Launcher integration: drive the sequential loop from BLBStage2RLRunner
 # ---------------------------------------------------------------------------
+#
+# Note on size: ``run_sequential_via_runner`` is ~1000 lines as of 2026-05-16
+# (down from ~1018 after this round of extraction). Sections that are good
+# candidates for further extraction into private helpers — but each requires
+# careful local-variable plumbing because the function shares ~30 locals
+# across phases:
+#
+#   * §0.1 + §1     "setup_evaluator_and_phase"   (persistent dir + degrees)
+#   * §2  + §3      "build_env_and_bridge"        (probe / bridge / base env)
+#   * §4            "calibrate_baseline_metrics"  (cost stats + reward weights)
+#   * §5            "build_sequential_policy"     (env + policy + optimizer + warmstart)
+#   * §6            "resume_from_checkpoint"      (already concise; keep inline)
+#   * §7            "run_training_loop"           (the PPO loop itself)
+#   * §7.5 + §7.6   "persist_action_artifacts"    (action_full + report.md)
+#   * §7.7          extracted as _register_run_in_experiments_log (below)
+#   * §10           "assemble_legacy_result_dict" (the giant return dict)
+#
+# When refactoring, write a smoke test FIRST (see tests/test_sequential_smoke.py
+# for the artifact-contract pattern) — there's no end-to-end torch-backed test
+# yet, so refactors are best done one section at a time with the smoke test
+# as the regression net for artifact behavior.
+
+def _register_run_in_experiments_log(
+        *,
+        run_basename: str,
+        profile: str,
+        model_type: str,
+        preset_label: str,
+        seed: int,
+        elapsed_sec: float,
+        completed_episodes: int,
+        total_episodes_planned: int,
+        best_reward: float,
+        best_action_present: bool,
+        episode_count: int,
+        blb_progress_dir: str,
+        diag_recorder,
+        save_path: str,
+        best_action_description_paths: Mapping[str, str],
+        baseline_action_description_paths: Mapping[str, str],
+        log: Callable[[str], None],
+        bullet: str,
+) -> None:
+    """Append a row to ``experiments/registry.jsonl`` for this completed run.
+
+    Best-effort: errors are swallowed (registering must never fail a trained
+    model). Set ``BLB_STRICT=1`` to see the actual exception during debug.
+    See :mod:`blb_stage2_rl.strict` for the strict-mode pattern.
+    """
+    try:
+        import subprocess as _sp
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        registry_path = os.path.join(repo_root, "experiments", "registry.jsonl")
+        os.makedirs(os.path.dirname(registry_path), exist_ok=True)
+        artifact_paths = {
+            "best_action_full_md": best_action_description_paths.get("md", ""),
+            "best_action_full_json": best_action_description_paths.get("json", ""),
+            "baseline_action_full_md": baseline_action_description_paths.get("md", ""),
+            "report_md": os.path.join(blb_progress_dir, "blb_stage2_report.md"),
+            "diagnostics_summary": diag_recorder.summary_md_path,
+            "diagnostics_dir": diag_recorder.output_dir,
+            "best_action_vec_json": diag_recorder.best_json_path,
+            "status_json": os.path.join(blb_progress_dir, "blb_stage2_status.json"),
+            "checkpoint_pt": save_path,
+        }
+        _sp.run(
+            [
+                "python3", "-m", "tools.experiments_log",
+                "register",
+                "--run-id", str(run_basename),
+                "--dataset", str(profile),
+                "--model-type", str(model_type),
+                "--algorithm", "rl",
+                "--preset", str(preset_label or ""),
+                "--rl-variant", "blb_v3_sequential",
+                "--seed", str(int(seed)),
+                "--status", ("complete" if best_action_present else "training_only"),
+                "--elapsed-sec", str(float(elapsed_sec)),
+                "--completed-episodes", str(int(completed_episodes)),
+                "--total-episodes-planned", str(int(total_episodes_planned)),
+                "--best-reward", str(float(best_reward)),
+                "--persistent-dir", str(blb_progress_dir),
+                "--artifact-paths-json", json.dumps(artifact_paths),
+                "--notes", f"auto-registered at training end ({episode_count} ep completed)",
+                "--registry-path", registry_path,
+            ],
+            check=False,
+            capture_output=True,
+            cwd=repo_root,   # so `-m tools.experiments_log` resolves the package
+        )
+        log(f"  {bullet} 已登记到 experiments/registry.jsonl（run_id={run_basename}）")
+    except Exception as exc:
+        log(f"  [experiments][warning] register failed: {exc}")
+
 
 def run_sequential_via_runner(
         *,
@@ -1188,53 +1282,26 @@ def run_sequential_via_runner(
         log(f"  [persist][warning] final report write failed: {exc}")
 
     # ---------- 7.7) Register run into experiments/registry.jsonl ----------
-    # Single source of truth for cross-run comparison. The same data also
-    # lives in this run's own persistent dir, but the experiments log is
-    # the **project-wide index**, surveyed via tools/experiments_log.py.
-    try:
-        import subprocess as _sp
-        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        registry_path = os.path.join(repo_root, "experiments", "registry.jsonl")
-        os.makedirs(os.path.dirname(registry_path), exist_ok=True)
-        artifact_paths = {
-            "best_action_full_md": best_action_description_paths.get("md", ""),
-            "best_action_full_json": best_action_description_paths.get("json", ""),
-            "baseline_action_full_md": baseline_action_description_paths.get("md", ""),
-            "report_md": os.path.join(blb_progress_dir, "blb_stage2_report.md"),
-            "diagnostics_summary": diag_recorder.summary_md_path,
-            "diagnostics_dir": diag_recorder.output_dir,
-            "best_action_vec_json": diag_recorder.best_json_path,
-            "status_json": os.path.join(blb_progress_dir, "blb_stage2_status.json"),
-            "checkpoint_pt": save_path,
-        }
-        final_eval_payload = None  # final eval module writes its own row later
-        _sp.run(
-            [
-                "python3", os.path.join(repo_root, "tools", "experiments_log.py"),
-                "register",
-                "--run-id", str(run_basename),
-                "--dataset", str(train_cfg.profile),
-                "--model-type", str(getattr(ev, "model_type", "bert-base")),
-                "--algorithm", "rl",
-                "--preset", str(fixed_label or ""),
-                "--rl-variant", "blb_v3_sequential",
-                "--seed", str(int(train_cfg.seed)),
-                "--status", ("complete" if best_action_vec is not None else "training_only"),
-                "--elapsed-sec", str(float(elapsed)),
-                "--completed-episodes", str(int(start_episode + len(episode_returns))),
-                "--total-episodes-planned", str(int(total_episodes_planned)),
-                "--best-reward", str(float(best_reward) if best_action_vec is not None else 0.0),
-                "--persistent-dir", str(blb_progress_dir),
-                "--artifact-paths-json", json.dumps(artifact_paths),
-                "--notes", f"auto-registered at training end ({len(episode_returns)} ep completed)",
-                "--registry-path", registry_path,
-            ],
-            check=False,
-            capture_output=True,
-        )
-        log(f"  {bullet} 已登记到 experiments/registry.jsonl（run_id={run_basename}）")
-    except Exception as exc:
-        log(f"  [experiments][warning] register failed: {exc}")
+    _register_run_in_experiments_log(
+        run_basename=run_basename,
+        profile=str(train_cfg.profile),
+        model_type=str(getattr(ev, "model_type", "bert-base")),
+        preset_label=str(fixed_label or ""),
+        seed=int(train_cfg.seed),
+        elapsed_sec=float(elapsed),
+        completed_episodes=int(start_episode + len(episode_returns)),
+        total_episodes_planned=int(total_episodes_planned),
+        best_reward=float(best_reward) if best_action_vec is not None else 0.0,
+        best_action_present=best_action_vec is not None,
+        episode_count=len(episode_returns),
+        blb_progress_dir=blb_progress_dir,
+        diag_recorder=diag_recorder,
+        save_path=save_path,
+        best_action_description_paths=best_action_description_paths,
+        baseline_action_description_paths=baseline_action_description_paths,
+        log=log,
+        bullet=bullet,
+    )
 
     # ---------- 8) Training curve PNG/NPZ ----------
     try:

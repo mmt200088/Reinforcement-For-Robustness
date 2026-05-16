@@ -101,7 +101,7 @@ echo
 echo "================================================================"
 echo "  All seeds done. Aggregating ..."
 echo "================================================================"
-python3 tools/aggregate_seeds.py \
+python3 -m tools.aggregate_seeds \
     --run-name "$RUN_NAME_SAFE" \
     --seed-list "$SEED_LIST_FILE" \
     --output-dir "$SUMMARY_DIR" \

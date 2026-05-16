@@ -52,10 +52,16 @@
   <span class="pill ok">诊断 dashboard + auto/manual final-eval (2026-05-16)</span>
   <span class="pill ok">Human-readable SF/K 配置（2026-05-16 晚）</span>
   <span class="pill ok">Multi-seed + experiments log + paper figures + ADR + Docker (2026-05-16 深夜)</span>
+  <span class="pill ok">CI + Makefile + ruff + smoke test + strict mode + unified logging + preset validator (2026-05-16 凌晨)</span>
 </p>
 
 <div class="box ok">
-<strong>最近一次更新（2026-05-16 深夜后段）</strong>：补齐了把 BLB Stage-2 RL 当成 <strong>长期科研项目</strong> 跑下去需要的全套基础设施 ——
+<strong>最近一次更新（2026-05-16 凌晨）</strong>：作为<strong>代码工程项目</strong>补齐了 13 项基础设施 —— GitHub Actions CI、Makefile 一行命令、ruff lint + format、端到端 smoke test（11 case 全过）、`BLB_STRICT=1` 异常审计模式、统一 logging 框架（`logging_helpers.get_logger`）、preset typo 校验器、`tools/` 改 Python package、CHANGELOG.md、F2/F3 fidelity 删除等。详见
+<a href="#longterm">第 11 节 · 长期研究工作流</a> 和 <code>CHANGELOG.md</code>。
+</div>
+
+<div class="box ok">
+<strong>2026-05-16 深夜后段</strong>：补齐了把 BLB Stage-2 RL 当成 <strong>长期科研项目</strong> 跑下去需要的全套基础设施 ——
 multi-seed 框架、跨 run 实验追踪、论文风格 figure 生成、ADR 决策日志、
 Dockerfile + lockfile、F2/F3 fidelity 层级删除。详见
 <a href="#longterm">新加的第 11 节 · 长期研究工作流</a>。
@@ -234,6 +240,34 @@ less docs/adr/ADR-001-per-block-sequential-ppo.md</code></pre></td>
 <td><pre><code>docker build -t blb-rl:latest .
 docker run --gpus all -it --rm -v "$PWD":/workspace blb-rl:latest \
     bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh</code></pre></td>
+</tr>
+<tr>
+<td>⑲ Make 简化（lint / test / docker / train / index）</td>
+<td><pre><code>make help                # 列出所有命令
+make test                # torch-free 单元 + smoke 测试（CI 同款）
+make test-smoke          # 跑 tests/test_sequential_smoke.py（11 case）
+make lint                # ruff check
+make format              # ruff format
+make audit               # pip-audit
+make train-multi-seed SEEDS=1,2,3 RUN_TAG=trial1
+make index               # rebuild experiments/index.md
+make figures RUN="Parting Chapter/.../run_dir" OUT=figures/myrun</code></pre></td>
+</tr>
+<tr>
+<td>⑳ 调试时打开 strict mode + 详细 log</td>
+<td><pre><code># 让所有 best-effort except 重抛
+BLB_STRICT=1 BLB_LOG_LEVEL=DEBUG \
+    bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
+
+# JSON 结构化日志 ship 到 ELK
+BLB_LOG_JSON=1 BLB_LOG_FILE=/var/log/blb.json \
+    bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh</code></pre></td>
+</tr>
+<tr>
+<td>㉑ Preset typo 校验</td>
+<td><pre><code>python tools/validate_preset.py presets/*.conf Paean/presets/*.conf
+# 或 make preset-check
+# 会扫 launcher 接受的 flag 列表，typo 报错</code></pre></td>
 </tr>
 </table>
 

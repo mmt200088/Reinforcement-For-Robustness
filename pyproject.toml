@@ -60,3 +60,85 @@ py-modules = []
 testpaths = ["tests"]
 python_files = "test_*.py"
 addopts = "-ra"
+
+# ---------------------------------------------------------------------------
+# Ruff — lint + format for the project. Configured conservatively so old
+# code passes the baseline; tighten rules over time by graduating items
+# from `ignore` to enforced (or moving from `per-file-ignores` to a
+# narrower set).
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [
+    "Parting Chapter/persistent",   # generated runtime artifacts
+    "rl_results",
+    "reports/blb_opt",
+    "reports/transformer_noise_mrpc",
+    "Rescale_optimizer/configs",
+    "EzPC",                          # vendored submodule
+    "LLM-Adapters",
+    "importance-aware-sparse-tuning-IST-paper",
+    "experiments/multi_seed",        # generated per-run artifacts
+]
+
+[tool.ruff.lint]
+# Conservative baseline:
+#   E,F          pycodestyle errors + pyflakes (real bugs / undefined names)
+#   I            isort (consistent import order)
+#   B            flake8-bugbear (real bugs: mutable defaults, broken-by-design)
+#   UP           pyupgrade (forward-compat syntax)
+#   SIM          flake8-simplify (compress dead branches)
+#   RUF          ruff-specific (catches things flake8 misses)
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    # Long-line tolerance: lots of legacy code has long log strings.
+    "E501",
+    # Lambda assignments OK for tiny callbacks
+    "E731",
+    # Don't force type annotations on every function (we have a separate
+    # gradual type-hint effort; see CLAUDE.md "Conventions").
+    "ANN",
+    # ruff's "use of `typing.X`" sometimes wants Python 3.9 forms; we
+    # support 3.10+ so leave it alone.
+    "UP006", "UP007", "UP035",
+    # Bug-bear's "function-uses-loop-variable" produces false positives
+    # in our env.step closure pattern.
+    "B023",
+    # `assert` in tests is fine.
+    "B011",
+    # SIM117 "use single with" obscures the BLB nested context usage.
+    "SIM117",
+    # RUF012 (mutable class attrs) — RL agents intentionally share mutable state
+    "RUF012",
+]
+# Always allow magic methods even if they shadow stdlib (Pytorch convention).
+allowed-confusables = ["’", "‘"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can use assert / undocumented globals freely
+"tests/*" = ["F401", "F841", "E402"]
+# layer_importance_evaluator.py and noise_rl_module_v2.py are legacy giants;
+# until we refactor (see ADR-007 if/when filed), accept their style.
+"layer_importance_evaluator.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
+"noise_rl_module_v2.py" = ["F401", "F811", "F841", "E402", "E741", "F403"]
+# rl_tune.py is a giant CLI surface area; tolerate unused vars
+"rl_tune.py" = ["F841", "E402"]
+# Bash-wrapped Python in CI uses heredoc; ignore stray usages.
+".github/*" = ["ALL"]
+# Sidecar scripts are one-off and have their own style.
+"scripts/*" = ["F401", "F841"]
+# Bundled vendor / experimental dirs — don't lint at all.
+"Rescale_optimizer/**" = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["blb_stage2_rl", "Paean", "tools"]
+combine-as-imports = true
+force-sort-within-sections = true
+
+[tool.ruff.format]
+# Match Black-compatible defaults; explicit so a future ruff version doesn't drift.
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+docstring-code-format = true

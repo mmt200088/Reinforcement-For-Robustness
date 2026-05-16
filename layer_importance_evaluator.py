@@ -1,7 +1,36 @@
+# ---------------------------------------------------------------------------
+# layer_importance_evaluator.py
+#
+# Stage-1 (GTrXL PPO over GELU/Softmax polynomial degrees) + integration glue
+# with the Stage-2 BLB RL runner, persistent-dir resolution, and unified
+# final-eval dispatch.
+#
+# Size warning: this file is ~6300 lines as of 2026-05-16. The ``LayerImportanceEvaluator``
+# class alone has ~150 methods. A refactor into smaller modules is a tracked
+# debt item (see ``docs/ENGINEERING_GAPS.md``); until then, prefer extending
+# via composition over adding more methods here.
+#
+# Type-hint policy (2026-05-16):
+#   - **Public API** (callable from outside this file: top-level helpers,
+#     LayerImportanceEvaluator.__init__ signature, plus the methods most
+#     callers depend on — ``evaluate_model``, ``apply_configuration``,
+#     ``get_simulated_cost``, ``get_metric_*``, ``build_constraint_limits_from_metrics``,
+#     ``run_unified_final_eval``) has type hints.
+#   - **Internal helpers** (``_*`` prefix or used only within one method) are
+#     deliberately left untyped; adding hints to all 150 methods would be
+#     a multi-day refactor with no incremental safety gain since they
+#     aren't called from outside.
+#   - When you touch an untyped method, please add hints in passing; this is
+#     a gradual migration. ``from __future__ import annotations`` is enabled
+#     so forward-references work everywhere.
+# ---------------------------------------------------------------------------
+from __future__ import annotations
+
 import time
 import copy
 import math
 import sys
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import numpy as np
 import torch
 import torch.nn as nn
@@ -174,14 +203,20 @@ DEFAULT_FINAL_EVAL_DIR = os.path.join("Parting Chapter", "final_eval")
 DEFAULT_NOISE_PROGRESS_DIR = os.path.join("Parting Chapter", "noise_rl_progress")
 
 
-def ensure_parent_dir(path):
+def ensure_parent_dir(path: str) -> None:
+    """Create the parent directory of ``path`` if it doesn't exist (mkdir -p
+    semantics). Idempotent. Used before atomic-writing JSON / pickle / etc."""
     parent_dir = os.path.dirname(path)
     if parent_dir:
         os.makedirs(parent_dir, exist_ok=True)
 
 
-def update_persistent_metadata_stage(run_output_dir, stage_key, status,
-                                     extra_fields=None):
+def update_persistent_metadata_stage(
+        run_output_dir: str,
+        stage_key: str,
+        status: str,
+        extra_fields: Optional[Dict[str, Any]] = None,
+) -> None:
     """更新持久化目录中 metadata.json 的阶段完成状态。
 
     stage_key: 'stage1_search', 'stage2_search', 'final_eval'
@@ -2939,7 +2974,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         print(f"[信息] 数据集（Dataset）'{self.data_path}' 检测为 {task_type} 任务")
         print(f"[信息] 使用指标（Using metrics）: {', '.join(full_names)}")
     
-    def get_metric_names(self):
+    def get_metric_names(self) -> Tuple[str, ...]:
         """
         获取当前数据集的完整指标名称（用于日志显示）
         单指标数据集返回 (name,)，双指标返回 (name1, name2)
@@ -2948,12 +2983,12 @@ class LayerImportanceEvaluator(TrainerCallback):
         if len(full_names) == 1:
             return (full_names[0],)
         return (full_names[0], full_names[1])
-    
-    def get_metric_short_names(self):
+
+    def get_metric_short_names(self) -> Tuple[str, ...]:
         """获取当前数据集的短指标名称（用于表格）"""
         return self.dataset_config['metric_names']
-    
-    def get_num_metrics(self):
+
+    def get_num_metrics(self) -> int:
         """返回当前数据集的评估指标数量 (1 或 2)"""
         return len(self.dataset_config['metrics'])
 
@@ -3464,12 +3499,26 @@ class LayerImportanceEvaluator(TrainerCallback):
     def restore_log_file(self, previous_log_file):
         self.active_log_file = previous_log_file or self.log_file
 
-    def get_simulated_cost(self, gelu_degrees, softmax_degrees):
+    def get_simulated_cost(
+            self,
+            gelu_degrees: Sequence[int],
+            softmax_degrees: Sequence[int],
+    ) -> Tuple[float, float, float]:
+        """Return ``(total_cost, gelu_cost, softmax_cost)`` proxy cost for a
+        Stage-1 GELU/Softmax polynomial degree assignment."""
         g_c = sum(self.GELU_COST_MAP.get(d, 0) for d in gelu_degrees)
         s_c = sum(self.SOFTMAX_COST_MAP.get(d, 0) for d in softmax_degrees)
         return g_c + s_c, g_c, s_c
 
-    def apply_configuration(self, gelu_degrees, softmax_degrees):
+    def apply_configuration(
+            self,
+            gelu_degrees: Sequence[int],
+            softmax_degrees: Sequence[int],
+    ) -> None:
+        """Install GELU + Softmax polynomial approximations on every layer of
+        the underlying transformer. Eagerly switches the model to ``eval()``
+        because candidate scoring is always inference. Mutates the model
+        in-place; no return value."""
         # Search "training" updates only the controller/GA state; candidate
         # scoring must always run the language model in inference mode.
         model = getattr(self, "model", None)
@@ -4821,12 +4870,22 @@ class LayerImportanceEvaluator(TrainerCallback):
             metric1, metric2 = 0.0, 0.0
         return avg_loss, metric1, metric2, avg_time
 
-    def evaluate_model(self, gelu_degrees, softmax_degrees, use_train=True, split=None):
+    def evaluate_model(
+            self,
+            gelu_degrees: Sequence[int],
+            softmax_degrees: Sequence[int],
+            use_train: bool = True,
+            split: Optional[str] = None,
+    ) -> Tuple[float, float, float, float]:
         """评估模型，use_train=True时使用训练集，否则使用验证集
 
         性能优化: 评估结果缓存。由于 model 在 eval 模式冻结参数、dataloader shuffle=False、
         无任何随机性源, 相同 (gelu, softmax, use_train, split) 评估结果必然 bit-identical。
         直接从缓存返回可节省一次完整数据集前向推理, 不改变任何数值结果。
+
+        Returns:
+            ``(loss, metric1, metric2, time_ms)`` — metric2 is 0 for
+            single-metric datasets.
         """
         cache_key = (
             tuple(int(d) for d in gelu_degrees),

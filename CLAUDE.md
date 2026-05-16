@@ -156,17 +156,39 @@ The candidate store (`blb_stage2_rl/candidate_store.py`) is the canonical place 
 **Tests** (plain `unittest` files, no pytest config):
 
 ```bash
+# Recommended entry point: torch-free unit + artifact smoke (parity with CI)
+make test                       # or: bash -c 'BLB_STRICT=0 python -m unittest discover -s tests -p "test_blb_*.py" -v'
+
+# End-to-end artifact smoke (diagnostics / experiments / strict / preset validator)
+make test-smoke                 # or: python tests/test_sequential_smoke.py
+
+# All (best-effort, includes torch-requiring tests)
+make test-all                   # or: python -m unittest discover -s tests -v
+
 # Single test file
 python tests/test_blb_registry_artifact_consistency.py
-python tests/test_blb_baseline_bootstrap.py
-python tests/test_blb_optimizer_cost_consistency.py
-python tests/test_blb_warmstart_resume.py
-
-# All (best-effort)
-python -m unittest discover -s tests -v
 ```
 
-Most BLB tests are torch-free — they exercise action-space / registry / bridge / cost / mask / threshold / candidate-store / warmstart logic in isolation, and `test_blb_f0_scan.py` drives the F0 offline scan path. Only `test_blb_action_mask.py` and `test_blb_stage2_rl_regressions.py` pull in torch + transformers; `test_glue_dataset_loading.py` needs `datasets` + a populated GLUE cache (`GLUE_LOCAL_DATASET_DIR`).
+Most BLB tests are torch-free — they exercise action-space / registry / bridge / cost / mask / threshold / candidate-store / warmstart / diagnostics / strict / preset-validator / action-io logic in isolation. `test_sequential_smoke.py` exercises the SF/K-first artifact pipeline end-to-end (recorder → experiments_log → aggregator) with synthetic data. Only `test_blb_action_mask.py` and `test_blb_stage2_rl_regressions.py` pull in torch + transformers; `test_glue_dataset_loading.py` needs `datasets` + a populated GLUE cache (`GLUE_LOCAL_DATASET_DIR`).
+
+**CI** (`.github/workflows/ci.yml`) runs on every push / PR: torch-free unit tests across py3.10 + py3.11, `ruff check` + `ruff format --check`, `pip-audit` (advisory), and a docs-sanity job that verifies ADR index coverage and HTML guide tag balance.
+
+**Engineering shortcuts** (`make help` lists everything):
+
+```bash
+make lint              # ruff check
+make lint-fix          # ruff check --fix
+make format            # ruff format
+make audit             # pip-audit
+make docker            # build CUDA Docker image
+make train             # bash launcher --fresh
+make train-multi-seed  # bash tools/run_multi_seed.sh (SEEDS=... RUN_TAG=... overrides)
+make index             # rebuild experiments/index.md
+make figures RUN=...   # render paper figures
+make preset-check      # tools/validate_preset.py against the launcher flag list
+make changelog         # tail CHANGELOG.md
+make clean             # nuke __pycache__ / .ruff_cache
+```
 
 ## Submodules
 
@@ -342,6 +364,9 @@ The runner's "final eval" path must install the actual BLB best action (decode �
 - **All user-visible artifacts are SF/K-first** (since 2026-05-16). Never persist an action as a flat int vec without also writing the slot-form view (label + decoded SF / truncation_bits). `action_io.action_vec_to_slots_list` + `describe_action_vector` are the conversion entry points.
 - **Major architectural decisions live in `docs/adr/`** (added 2026-05-16). Before changing reward shape / baseline source / action space layout / fidelity ladder, read the relevant ADR. If you reverse a decision, write a new ADR that supersedes the old one (don't just edit it).
 - **Every run gets auto-registered** to `experiments/registry.jsonl` at training end (via `sequential_runner.py` subprocess hook). If you bypass the launcher to debug, register manually with `python tools/experiments_log.py register ...` so cross-run comparisons stay complete.
+- **Unified logging entry point**: prefer `from blb_stage2_rl.logging_helpers import get_logger; log = get_logger(__name__)` in new code. `BLB_LOG_LEVEL=DEBUG`, `BLB_LOG_FILE=path.log`, `BLB_LOG_JSON=1` switch verbosity / file sink / structured output without code edits. Legacy `evaluator.log` / `print` still work but should be migrated when touching nearby code.
+- **Strict mode**: `BLB_STRICT=1` makes `blb_stage2_rl.strict.swallow` / `strict_guard` re-raise instead of swallowing. Use it when chasing a silent-failure bug. New best-effort code paths (writing optional artifacts) should use these helpers instead of bare `try/except Exception: pass`.
+- **Preset typos are caught** by `tools/validate_preset.py` (also `make preset-check`). Run it before committing a preset change; it parses the launcher's flag list and reports unknown flags / duplicates / bad values.
 - The Windows console may be GBK; `BLBStage2RLRunner._make_log_safe` wraps `evaluator.log` so non-GBK chars fall back without crashing stdout (file logs stay UTF-8). Matplotlib plot titles are intentionally ASCII (the markdown report carries the Chinese). Unicode bullets (▸) in new console output get replaced with `?` in stdout but are preserved in log files.
 - `GLOBALS.md` lists where global path / hyperparameter constants live. `config/paths.py` and `config/constants.py` exist as the future single source of truth, but most modules still hardcode their own — change with care.
 

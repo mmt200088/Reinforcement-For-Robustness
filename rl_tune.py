@@ -407,8 +407,19 @@ def load_glue_dataset_equivalent(
         route_log_dir: str = None,
         ):
     task = str(task_name).strip().lower()
+    # GLUE data loading has 4 possible routes (HF remote / local save_to_disk /
+    # local parquet / HF cache local-only). When debugging "why does this run
+    # see stale data?", knowing which route fired is essential — so we log
+    # the chosen route to stderr at the point of resolution. The fallback
+    # branches already log their own route; here we log when the primary
+    # remote loader succeeds.
     try:
-        return load_dataset_fn("nyu-mll/glue", task)
+        data = load_dataset_fn("nyu-mll/glue", task)
+        print(
+            f"[dataset] task={task!r} → route=hf_remote endpoint=nyu-mll/glue",
+            file=sys.stderr,
+        )
+        return data
     except Exception as primary_exc:
         if not ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE:
             raise
