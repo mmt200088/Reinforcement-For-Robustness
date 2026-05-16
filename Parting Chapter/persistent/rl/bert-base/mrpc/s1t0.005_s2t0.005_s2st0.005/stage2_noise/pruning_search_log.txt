@@ -7197,3 +7197,27 @@
         · K.output_truncation_k      truncation_bits=10      [op=block5_output_truncation, dist=truncation, N=8192]
       [first_input]
         · F.first_input_sf    scaling_factor=26       [op=first_input_fresh, dist=fresh, N=8192] [inactive]
+
+  PPO 窗口摘要 · 截至回合（through episode） 240  ·  时间 2026-05-17 01:54:41
+    窗口 N=60 回合 ·  平均回报 mean return=-160.6459 (min=-164.0173, max=-155.4368)  ·  平均终局 mean terminal=-150.0000
+    平均 valid steps=50.48/59  ·  平均 invalid=8.52  ·  当前 best=-155.4368
+    policy_loss=+0.3506  ·  value_loss=+12.1751  ·  entropy=+4.5873  ·  clip_fraction=0.908
+    LR=0.000200  ·  更新序号 update#4  ·  PPO 样本数=3540
+
+  PPO 窗口摘要 · 截至回合（through episode） 300  ·  时间 2026-05-17 01:59:13
+    窗口 N=60 回合 ·  平均回报 mean return=-163.2984 (min=-165.7748, max=-160.1290)  ·  平均终局 mean terminal=-150.0000
+    平均 valid steps=47.62/59  ·  平均 invalid=11.38  ·  当前 best=-155.4368
+    policy_loss=+0.1482  ·  value_loss=+4.8517  ·  entropy=+4.3530  ·  clip_fraction=0.709
+    LR=0.000200  ·  更新序号 update#5  ·  PPO 样本数=3540
+  ────
+  · BLB Stage-2 噪声 RL 进度 · 回合 300 / 6000
+  · [██░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   5.0%
+  · 训练期最优（train best）得分: -155.4368
+  · 已用时: 22m34s    预计剩余: 7h08m52s    预计完成: 2026-05-17 09:08:05    PPO 更新: 5 次
+  ────
+
+  PPO 窗口摘要 · 截至回合（through episode） 360  ·  时间 2026-05-17 02:03:43
+    窗口 N=60 回合 ·  平均回报 mean return=-164.5023 (min=-167.7160, max=-161.9831)  ·  平均终局 mean terminal=-150.0000
+    平均 valid steps=46.35/59  ·  平均 invalid=12.65  ·  当前 best=-155.4368
+    policy_loss=+0.1328  ·  value_loss=+2.3500  ·  entropy=+4.7229  ·  clip_fraction=0.748
+    LR=0.000200  ·  更新序号 update#6  ·  PPO 样本数=3540
