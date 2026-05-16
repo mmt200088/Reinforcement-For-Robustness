@@ -88,15 +88,23 @@ def _seq_ljust_display(s: str, width: int) -> str:
 
 
 def _seq_log_rounded_box(log_fn, lines, indent: str = "  ", min_inner_width: int = 8) -> None:
-    """Rounded box around multi-line content, aware of CJK display width."""
+    """Render multi-line content as a plain, border-less indented block.
+
+    Historically this used rounded box-drawing characters (``╭─╮│╰╯``), but
+    those broke badly on narrow terminals + CJK mixed content: when a single
+    line stretched past the terminal width, the right border wrapped to the
+    next line and visually decoupled from the rest of the box. As of 2026-05-17
+    we emit a tiny dashed separator + bulleted lines, which scans cleanly at
+    any width and survives copy-paste into chat / markdown.
+    """
     stripped = [str(x) for x in lines]
-    w = max((_seq_display_width(s) for s in stripped), default=0)
-    w = max(w, int(min_inner_width))
-    bar = "─" * (w + 4)
-    log_fn(f"{indent}╭{bar}╮")
+    if not stripped:
+        return
+    sep = "─" * 4
+    log_fn(f"{indent}{sep}")
     for s in stripped:
-        log_fn(f"{indent}│ {_seq_ljust_display(s, w)} │")
-    log_fn(f"{indent}╰{bar}╯")
+        log_fn(f"{indent}· {s}")
+    log_fn(f"{indent}{sep}")
 
 
 def _seq_progress_bar(current: int, total: int, width: int = 30) -> str:
@@ -474,7 +482,12 @@ def run_sequential_via_runner(
     )
     from .env import BLBStage2Env, BLBStage2EnvConfig
     from .reward import BaselineCostStats, RewardWeights
-    from .persistence import write_training_curves, BLBStatusBoard
+    from .persistence import (
+        BLBRewardCrashWatcher,
+        BLBStatusBoard,
+        BLBStepDetailsWriter,
+        write_training_curves,
+    )
     from .runner import (
         _build_legacy_compatible_best_noise_config,
         _selection_float,
@@ -528,6 +541,31 @@ def run_sequential_via_runner(
         log_fn=log,
     )
     status.set_phase("装载 stage1 GELU/Softmax 多项式近似")
+
+    # Stage2 root (parent of progress/) — host of details/ + warning.txt so the
+    # layout matches what legacy noise_rl_module_v2 produced. The legacy single-
+    # shot BLBStage2RLRunner.run() already wires these into its loop; the
+    # sequential path missed them before 2026-05-17 and the user noticed.
+    blb_stage2_root = os.path.dirname(os.path.normpath(blb_progress_dir))
+    details_batch_size = max(int(train_cfg.rollout_size) * 3, 360)
+    details_writer = BLBStepDetailsWriter(
+        blb_stage2_root,
+        batch_size=details_batch_size,
+        log_fn=log,
+    )
+    crash_watcher = BLBRewardCrashWatcher(
+        blb_stage2_root,
+        drop_threshold=0.3,
+        log_fn=log,
+    )
+    log(
+        f"  {bullet} 详细诊断：{os.path.join(blb_stage2_root, 'details')}/ "
+        f"（每 {details_batch_size} 回合一文件，记录每回合错误/动作变化）"
+    )
+    log(
+        f"  {bullet} 奖励暴跌警告：{os.path.join(blb_stage2_root, 'warning.txt')} "
+        f"（PPO rollout 平均奖励较上一次跌幅 > {crash_watcher._drop_threshold:.2f} 时记录）"
+    )
 
     # ---------- 1) apply stage1 polynomial degrees ----------
     fixed_gelu = np.asarray(fixed_gelu, dtype=int)
@@ -843,46 +881,82 @@ def run_sequential_via_runner(
     ])
 
     def _format_best_action_slots(action_vec_arr: Optional[np.ndarray]) -> List[str]:
-        """Best-action decoded slot view, without policy action indices."""
+        """Best-action decoded slot view, one slot per line.
+
+        Layout (chosen 2026-05-17 after user reported the old `; `-joined form
+        was unreadable on terminals < 200 cols):
+
+            [L00.B1]   (block scope subtitle on its own line)
+              · F.gelu_out_sf            scaling_factor=22     [op=ctpt_gelu_out, dist=fresh, N=8192] [inactive]
+              · W.wffn2_sf               scaling_factor=12     [op=ctpt_ffn2, dist=encoding, N=8192]
+              · K.output_truncation_k    truncation_bits=8     [op=block1_output_truncation, dist=truncation, N=8192]
+
+        Each slot lands on its own line so terminals don't wrap mid-record, and
+        each block gets a `[L<i>.B<n>]` header so the eye can quickly scan
+        which layer/block a slot belongs to. ``scaling_factor`` / ``truncation_bits``
+        is column-aligned with a fixed minimum width on the field-name column so
+        values stack vertically.
+        """
         if action_vec_arr is None:
             return ["best action 尚未产生（episode_count=0）"]
         try:
             arr = np.asarray(action_vec_arr, dtype=int).reshape(-1)
             slots = _slots_view_builder(arr)
-            grouped: Dict[str, List[str]] = {}
-            first_input: List[str] = []
 
-            def _value_text(row: Mapping[str, Any]) -> str:
+            def _slot_label(row: Mapping[str, Any]) -> str:
                 kind = str(row.get("kind", ""))
                 field_name = str(row.get("field_name", ""))
+                return f"{kind}.{field_name}"
+
+            def _slot_value(row: Mapping[str, Any]) -> str:
+                kind = str(row.get("kind", ""))
                 if kind == "K":
                     value = row.get("truncation_bits")
-                    value_part = f"truncation_bits={value}"
-                else:
-                    value = row.get("scaling_factor")
-                    value_part = "scaling_factor=off" if value is None else f"scaling_factor={value}"
+                    return f"truncation_bits={value}"
+                value = row.get("scaling_factor")
+                return "scaling_factor=off" if value is None else f"scaling_factor={value}"
+
+            def _slot_meta(row: Mapping[str, Any]) -> str:
                 meta = (
-                    f"{kind}.{field_name} {value_part}"
-                    f" [op={row.get('operation')}, dist={row.get('distribution')}, N={row.get('N')}]"
+                    f"[op={row.get('operation')}, "
+                    f"dist={row.get('distribution')}, "
+                    f"N={row.get('N')}]"
                 )
                 if not bool(row.get("effective", True)):
                     meta += " [inactive]"
                 return meta
 
+            grouped: Dict[str, List[Mapping[str, Any]]] = {}
+            first_input_rows: List[Mapping[str, Any]] = []
             for row in slots:
                 block = row.get("block")
                 if block is None:
-                    first_input.append(_value_text(row))
+                    first_input_rows.append(row)
                     continue
                 layer = int(row.get("layer", 0))
                 key = f"L{layer:02d}.B{int(block)}"
-                grouped.setdefault(key, []).append(_value_text(row))
+                grouped.setdefault(key, []).append(row)
 
-            lines = []
+            lines: List[str] = []
+
+            def _emit_block(header: str, rows: List[Mapping[str, Any]]) -> None:
+                if not rows:
+                    return
+                lines.append(f"[{header}]")
+                # Column widths derived from the actual rows so blocks with
+                # longer field names don't bleed into the value column.
+                label_w = max(len(_slot_label(r)) for r in rows)
+                value_w = max(len(_slot_value(r)) for r in rows)
+                label_w = max(label_w, 18)
+                value_w = max(value_w, 22)
+                for r in rows:
+                    label = _slot_label(r).ljust(label_w)
+                    value = _slot_value(r).ljust(value_w)
+                    lines.append(f"  · {label}  {value}  {_slot_meta(r)}")
+
             for key in sorted(grouped):
-                lines.append(f"{key}: " + "; ".join(grouped[key]))
-            if first_input:
-                lines.append("first_input: " + "; ".join(first_input))
+                _emit_block(key, grouped[key])
+            _emit_block("first_input", first_input_rows)
             return lines
         except Exception as exc:
             return [f"<format_best_action_slots failed: {exc}>"]
@@ -919,6 +993,41 @@ def run_sequential_via_runner(
         rollout_invalid_window.append(int(record.invalid_steps))
         rollout_valid_window.append(int(record.valid_step_count))
         rollout_terminal_window.append(float(record.terminal_reward))
+
+        # Per-episode details file (details/noise_ppo_step_info_<start>-<end>.txt).
+        # Mirrors what legacy noise_rl_module_v2 wrote: one record per episode with
+        # return / priority / cost signals / invalidity. Auto-rolls every
+        # ``details_batch_size`` episodes — the writer owns the buffer + flush.
+        try:
+            priority = 1 if record.invalid_steps > 0 else 3   # cost-only ranks bottom
+            details_writer.append_episode(
+                episode=int(start_episode + record.episode_idx + 1),
+                episode_return=float(record.total_reward),
+                priority=int(priority),
+                invalid=bool(record.invalid_steps > 0),
+                opt_signals={
+                    "total_bits_sum": int(record.total_bits_sum_over_steps),
+                    "total_fusion_count": int(record.fusion_count_sum_over_steps),
+                    "any_invalid": bool(record.invalid_steps > 0),
+                },
+                extra_lines=[
+                    (
+                        f"valid_steps={int(record.valid_step_count)}/{int(record.steps_taken)}, "
+                        f"invalid_steps={int(record.invalid_steps)}, "
+                        f"terminal_reward={float(record.terminal_reward):+.4f}"
+                    ),
+                    (
+                        "first_invalid="
+                        + (
+                            "none"
+                            if record.first_invalid_step is None
+                            else f"step{record.first_invalid_step} (L{record.first_invalid_layer}-B{record.first_invalid_block})"
+                        )
+                    ),
+                ],
+            )
+        except Exception as exc:
+            log(f"  [details][warning] append_episode failed: {exc}")
 
         # First episode summary on its own line
         if record.episode_idx == 0:
@@ -1058,9 +1167,13 @@ def run_sequential_via_runner(
         avg_inv = float(np.mean(rollout_invalid_window)) if rollout_invalid_window else 0.0
         avg_valid = float(np.mean(rollout_valid_window)) if rollout_valid_window else 0.0
         avg_term = float(np.mean(rollout_terminal_window)) if rollout_terminal_window else 0.0
+        # Wall-clock timestamp helps correlate window summaries with ops events
+        # (kill -USR1, OOM, GPU thermals) when reading the log days later. Cost
+        # is negligible compared to the PPO update itself.
+        now_ts = time.strftime("%Y-%m-%d %H:%M:%S")
         summary_lines = [
             f"PPO 窗口摘要 · 截至回合（through episode） "
-            f"{start_episode + completed_episodes}",
+            f"{start_episode + completed_episodes}  ·  时间 {now_ts}",
             f"窗口 N={win_n} 回合 ·  "
             f"平均回报 mean return={avg_ret:+.4f} (min={min_ret:+.4f}, max={max_ret:+.4f})  ·  "
             f"平均终局 mean terminal={avg_term:+.4f}",
@@ -1097,6 +1210,22 @@ def run_sequential_via_runner(
             ))
         except Exception as exc:
             log(f"  [diag][warning] record_ppo_update failed: {exc}")
+
+        # Reward-crash watcher: compare this PPO rollout's mean return to the
+        # previous rollout's. If it dropped > drop_threshold (default 0.3), an
+        # entry is appended to <noise_root>/warning.txt pointing at the current
+        # details batch file. Matches legacy noise_rl_module_v2 warning.txt
+        # semantics so the user can still grep for collapse events.
+        try:
+            crash_watcher.observe_rollout(
+                rollout_mean=float(avg_ret),
+                episode_start=int(start_episode + completed_episodes - win_n + 1),
+                episode_end=int(start_episode + completed_episodes),
+                details_path=str(details_writer.current_batch_path),
+                phase_label="BLB Stage-2 RL · sequential（v3）",
+            )
+        except Exception as exc:
+            log(f"  [crash-watch][warning] observe_rollout failed: {exc}")
 
         # clear the rolling window for the next PPO interval
         rollout_avg_window.clear()
@@ -1147,6 +1276,17 @@ def run_sequential_via_runner(
     )
     elapsed = float(time.time() - t_start)
     status.set_phase("已完成")
+
+    # Flush any remaining buffered episode records into the current details/
+    # batch file before reporting the final summary — otherwise the last
+    # ``len(episode_returns) % details_batch_size`` records would never land
+    # on disk (the writer auto-rolls on full batches, not on shutdown).
+    try:
+        flushed_path = details_writer.flush()
+        if flushed_path:
+            log(f"  {bullet} 详细诊断 final flush → {flushed_path}")
+    except Exception as exc:
+        log(f"  [details][warning] final flush failed: {exc}")
 
     _seq_log_major_rule(log, "PPO 训练结束（Sequential PPO training completed）")
     final_invalid_rate = float(seq_result.get("final_invalid_rate", 0.0))

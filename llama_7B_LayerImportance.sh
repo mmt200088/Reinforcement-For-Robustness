@@ -78,7 +78,7 @@ GA / Greedy：
   --fresh-stage1                       仅重置 Stage-1 数据（保留 Stage-2）
   --fresh-stage2                       仅重置 Stage-2 数据（保留 Stage-1）
   --persistent-root PATH               持久化根目录（默认 Parting Chapter/persistent；
-                                       BLB Stage-2 preset 使用 Paean/outputs）
+                                       所有 preset 共用同一根，便于 status_board / compare 聚合）
 
 普通 RL / GA / Greedy 共用：
   --skip-stage1-search

@@ -269,6 +269,8 @@ In each BLB run dir you'll find (all SF/K-first since 2026-05-16):
 * `blb_stage2_baseline_action_full.{json,md}` — same shape, for the static_skeletons baseline (the reference frame).
 * `blb_stage2_report.md` — final training report; §5 has per-layer/per-block selection + best-vs-baseline diff tables (raw int vec is hidden inside a `<details>` block).
 * `diagnostics/` — long-term diagnostics dashboard (see "Diagnostics dashboard" below).
+* `details/noise_ppo_step_info_<start>-<end>.txt` — per-episode rollover diagnostics (one file per `details_batch_size` episodes, default 360). Wired into the sequential path on 2026-05-17 for parity with legacy v2; each record carries return / priority / cost signals / first_invalid location.
+* `warning.txt` — reward-crash log; appended whenever a new PPO rollout's mean return drops by more than `drop_threshold=0.3` vs the previous one. Points at the current `details/` batch file so root-cause is one `grep` away.
 * `blb_stage2_error.txt` — traceback, only on crash.
 
 ### Graceful stop / resume
@@ -367,6 +369,7 @@ The runner's "final eval" path must install the actual BLB best action (decode �
 - **Unified logging entry point**: prefer `from blb_stage2_rl.logging_helpers import get_logger; log = get_logger(__name__)` in new code. `BLB_LOG_LEVEL=DEBUG`, `BLB_LOG_FILE=path.log`, `BLB_LOG_JSON=1` switch verbosity / file sink / structured output without code edits. Legacy `evaluator.log` / `print` still work but should be migrated when touching nearby code.
 - **Strict mode**: `BLB_STRICT=1` makes `blb_stage2_rl.strict.swallow` / `strict_guard` re-raise instead of swallowing. Use it when chasing a silent-failure bug. New best-effort code paths (writing optional artifacts) should use these helpers instead of bare `try/except Exception: pass`.
 - **Preset typos are caught** by `tools/validate_preset.py` (also `make preset-check`). Run it before committing a preset change; it parses the launcher's flag list and reports unknown flags / duplicates / bad values.
+- **Console / log hygiene (2026-05-17 rewrite).** The sequential RL console output is plain key-value bullets (no rounded box borders) because the old `╭─╮│╰╯` borders broke at narrow widths and CJK mixed content. `pruning_search_log.txt` is truncated on `--fresh` and never re-headers itself within a single run (a long-standing operator-precedence bug at `layer_importance_evaluator.py:3470` used to write the init banner **80×** per call — see `tests/test_sequential_smoke.py::OutputHygieneRegressionTest`). The new `_format_best_action_slots` lays out each slot on its own line under a `[L<i>.B<n>]` block header, column-aligned by field-name width.
 - The Windows console may be GBK; `BLBStage2RLRunner._make_log_safe` wraps `evaluator.log` so non-GBK chars fall back without crashing stdout (file logs stay UTF-8). Matplotlib plot titles are intentionally ASCII (the markdown report carries the Chinese). Unicode bullets (▸) in new console output get replaced with `?` in stdout but are preserved in log files.
 - `GLOBALS.md` lists where global path / hyperparameter constants live. `config/paths.py` and `config/constants.py` exist as the future single source of truth, but most modules still hardcode their own — change with care.
 

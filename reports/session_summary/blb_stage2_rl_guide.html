@@ -53,10 +53,21 @@
   <span class="pill ok">Human-readable SF/K 配置（2026-05-16 晚）</span>
   <span class="pill ok">Multi-seed + experiments log + paper figures + ADR + Docker (2026-05-16 深夜)</span>
   <span class="pill ok">CI + Makefile + ruff + smoke test + strict mode + unified logging + preset validator (2026-05-16 凌晨)</span>
+  <span class="pill ok">Console + 日志输出整顿 + details/ + warning.txt（2026-05-17）</span>
 </p>
 
 <div class="box ok">
-<strong>最近一次更新（2026-05-16 凌晨）</strong>：作为<strong>代码工程项目</strong>补齐了 13 项基础设施 —— GitHub Actions CI、Makefile 一行命令、ruff lint + format、端到端 smoke test（11 case 全过）、`BLB_STRICT=1` 异常审计模式、统一 logging 框架（`logging_helpers.get_logger`）、preset typo 校验器、`tools/` 改 Python package、CHANGELOG.md、F2/F3 fidelity 删除等。详见
+<strong>最近一次更新（2026-05-17）· 输出整顿</strong>：用户报告了 5 个输出层问题，全部已修。<br>
+① <strong>致命 bug 修复</strong>：<code>layer_importance_evaluator._initialize_noise_log_file</code> 因 Python 字符串隐式拼接 + 运算符优先级，原写法 <code>"=" * 80 + "\n" "【…】\n" "=" * 80</code> 实际等价于 <code>"=" * 80 + ("\n【…】\n=") * 80 + "\n"</code> —— 单次调用会把 banner 复制 <strong>80 次</strong>。所有 fresh run 的 <code>pruning_search_log.txt</code> 顶上都有 80 行重复 header，bug 至少存在数周。改成 <code>list + "\n".join</code> 后只写一次。<br>
+② <strong>输出目录调回</strong>：<code>presets/mrpc-blb-stage2-rl.conf</code> 删掉了 <code>--persistent-root Paean/outputs</code>，统一回到 <code>Parting Chapter/persistent</code> —— 与历史 RL/GA/general 同一棵树，status_board / compare / experiments_log 可以同时聚合。<br>
+③ <strong>动作展示一槽一行</strong>：原来 <code>L00.B1: F.gelu_out_sf=22; W.wffn2_sf=12; …</code> 一行塞 8-13 个槽，超过 200 字符。改成 <code>[L00.B1] / · 字段名 / 值 / 元信息</code> 分行布局，列对齐。<br>
+④ <strong>框线全部去掉</strong>：<code>_seq_log_rounded_box</code> 原本输出 <code>╭─╮│╰╯</code>，CJK + 窄终端下右边框会换行错位。改成 4 字符短分隔 + bullet 缩进。<br>
+⑤ <strong>details/ + warning.txt parity</strong>：sequential 路径之前没接 <code>BLBStepDetailsWriter</code> / <code>BLBRewardCrashWatcher</code>（legacy noise_rl_module_v2 一直有）。现在每 360 回合写一个 <code>details/noise_ppo_step_info_&lt;start&gt;-&lt;end&gt;.txt</code>（return / priority / cost / 首个 invalid 位置），PPO rollout 平均回报跌 &gt; 0.3 自动写 <code>warning.txt</code>。PPO 窗口摘要新加 wall-clock 时间戳便于运维 grep。<br>
+回归测试在 <code>tests/test_sequential_smoke.py::OutputHygieneRegressionTest</code>。
+</div>
+
+<div class="box ok">
+<strong>更早一次更新（2026-05-16 凌晨）</strong>：作为<strong>代码工程项目</strong>补齐了 13 项基础设施 —— GitHub Actions CI、Makefile 一行命令、ruff lint + format、端到端 smoke test（11 case 全过）、`BLB_STRICT=1` 异常审计模式、统一 logging 框架（`logging_helpers.get_logger`）、preset typo 校验器、`tools/` 改 Python package、CHANGELOG.md、F2/F3 fidelity 删除等。详见
 <a href="#longterm">第 11 节 · 长期研究工作流</a> 和 <code>CHANGELOG.md</code>。
 </div>
 
@@ -526,6 +537,16 @@ rm -rf "$RUN_DIR"</code></pre>
   <td><code>diagnostics/</code></td>
   <td>目录 · ✓</td>
   <td>长期诊断 dashboard，详见 8.2。</td>
+</tr>
+<tr>
+  <td><code>details/noise_ppo_step_info_&lt;a&gt;-&lt;b&gt;.txt</code></td>
+  <td>纯文本 · ✓（2026-05-17 新加 sequential 接入）</td>
+  <td>每 360 回合一文件（=<code>rollout_size*3</code>，但最少 360）。一回合一记录：回报 / 优先级 / Rescale 信号（total_bits、fusion_count、any_invalid）/ first_invalid 位置 + valid/invalid step 数。回放某段训练时不用从主日志里捞，直接 cat 这一段就够。Legacy noise_rl_module_v2 一直有，sequential 路径直到 2026-05-17 才补齐 parity。</td>
+</tr>
+<tr>
+  <td><code>warning.txt</code></td>
+  <td>纯文本 · ✓（2026-05-17 新加 sequential 接入）</td>
+  <td>奖励暴跌警告（reward-drop watcher）。每次 PPO rollout 算完平均回报，与上次比较；跌幅 &gt; 0.3 时追加一条警告，附跌幅 / 回合区间 / 指向对应 details 文件路径。policy collapse / 探索退化的早期信号。</td>
 </tr>
 </table>
 

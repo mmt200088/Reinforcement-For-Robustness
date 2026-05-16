@@ -3457,19 +3457,28 @@ class LayerImportanceEvaluator(TrainerCallback):
         _stage1_lr_mode = _lr_mode_labels.get(str(self.stage1_ppo_lr_mode), str(self.stage1_ppo_lr_mode))
         _stage2_lr_mode = _lr_mode_labels.get(str(self.stage2_ppo_lr_mode), str(self.stage2_ppo_lr_mode))
         with open(self.noise_log_file, _noise_log_mode, encoding="utf-8") as f:
+            # NB: keep these as a list+'\n'.join (not implicit string concatenation)
+            # — Python's operator precedence parses `"=" * 80 + "\n" "abc\n" "=" * 80`
+            # as `"=" * 80 + ("\n" + "abc\n" + "=") * 80 + ...`, which produces 80
+            # copies of the header (the original cause of the long-standing log
+            # spam where pruning_search_log.txt opened with 80 duplicate banners).
             if _is_resuming and _noise_log_mode == "a":
                 import datetime as _dt
-                f.write(
-                    "\n" + "=" * 80 + "\n"
-                    f"【二阶段噪声 RL 续训日志】时间：{_dt.datetime.now().isoformat()}\n"
-                    "=" * 80 + "\n"
-                )
+                header_lines = [
+                    "",
+                    "=" * 80,
+                    f"【二阶段噪声 RL 续训日志】时间：{_dt.datetime.now().isoformat()}",
+                    "=" * 80,
+                    "",
+                ]
             else:
-                f.write(
-                    "=" * 80 + "\n"
-                    "【二阶段噪声 RL 日志】二阶段噪声 RL 日志开始（Stage-2 noise RL log started）\n"
-                    "=" * 80 + "\n"
-                )
+                header_lines = [
+                    "=" * 80,
+                    "【二阶段噪声 RL 日志】二阶段噪声 RL 日志开始（Stage-2 noise RL log started）",
+                    "=" * 80,
+                    "",
+                ]
+            f.write("\n".join(header_lines))
         with open(self.noise_log_file, "a", encoding="utf-8") as f:
             f.write(
                 "【学习率配置】\n"

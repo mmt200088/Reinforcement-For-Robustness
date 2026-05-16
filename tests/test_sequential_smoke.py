@@ -373,5 +373,59 @@ class PresetValidatorTest(unittest.TestCase):
         self.assertEqual(problems, [], msg=f"preset has problems: {problems}")
 
 
+class OutputHygieneRegressionTest(unittest.TestCase):
+    """Catch the regression where layer_importance_evaluator wrote the noise
+    log header 80x per init (due to implicit string concat * operator-precedence
+    bug), and verify the sequential runner emits border-less progress blocks.
+    """
+
+    def test_noise_log_header_uses_explicit_join_not_implicit_concat(self):
+        src = open("layer_importance_evaluator.py", encoding="utf-8").read()
+        # The new safe form joins a list — no `"=" * 80 + "\n" "abc\n" "=" * 80`
+        # anywhere near the noise log header.
+        head_idx = src.find('"【二阶段噪声 RL 日志】二阶段噪声 RL 日志开始')
+        self.assertGreater(head_idx, 0, "noise log header literal disappeared")
+        snippet = src[max(0, head_idx - 600): head_idx + 400]
+        self.assertNotIn(
+            '"=" * 80 + "\\n"\n                    "【二阶段噪声',
+            snippet,
+            msg="legacy implicit-concat header form re-appeared (80x duplication risk)",
+        )
+        self.assertIn(
+            'header_lines',
+            snippet,
+            msg="expected explicit list+join form in _initialize_noise_log_file",
+        )
+
+    def test_sequential_box_is_borderless(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        box_idx = src.find("def _seq_log_rounded_box")
+        self.assertGreater(box_idx, 0)
+        # Skip past the docstring (which intentionally references the legacy
+        # `╭─╮│╰╯` chars to document why they were removed).
+        body_start = src.find('"""', src.find('"""', box_idx) + 3) + 3
+        body_end = src.find("\ndef ", body_start)
+        box_body = src[body_start: body_end]
+        for ch in ("╭", "╮", "╰", "╯", "│"):
+            self.assertNotIn(
+                ch, box_body,
+                msg=f"box character {ch!r} should be gone after border removal",
+            )
+
+    def test_sequential_runner_wires_details_and_crash_watcher(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        for symbol in (
+            "BLBStepDetailsWriter(",
+            "BLBRewardCrashWatcher(",
+            "details_writer.append_episode",
+            "crash_watcher.observe_rollout",
+            "details_writer.flush",
+        ):
+            self.assertIn(
+                symbol, src,
+                msg=f"{symbol!r} missing from sequential_runner.py — legacy v2 parity broken",
+            )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
