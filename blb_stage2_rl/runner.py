@@ -573,7 +573,12 @@ class BLBStage2TrainConfig:
     # PPO
     ppo: PPOConfig = field(default_factory=PPOConfig)
     # 环境
-    num_trials_per_step: int = 3
+    # Bumped 3→5 on 2026-05-18: 3 trials gave loss_std a ~50% sampling error,
+    # making one outlier trial blow up the std and trip priority-2 (stability)
+    # falsely. 5 trials reduces the relative SE to ~35% so loss_std rank-orders
+    # actions more reliably. ~+67% per-step forward compute, +30% total
+    # wall-time. See diagnostics_summary.md (s1t0.005 run) for the symptom.
+    num_trials_per_step: int = 5
     probe_batch_count: int = 4
     # 自动校准
     calibrate_baseline_samples: int = 8

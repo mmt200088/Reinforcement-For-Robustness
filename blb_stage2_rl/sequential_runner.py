@@ -156,6 +156,15 @@ class EpisodeRecord:
     # rollover txt so operators can grep "L11-B3" / "primes_over_q_max" /
     # "fusion cannot reduce" / etc. without having to re-run the optimizer.
     invalid_block_details: List[Dict[str, Any]] = field(default_factory=list)
+    # Terminal reward breakdown (added 2026-05-18): the actual reward priority
+    # + per-trial metrics from the terminal compute_reward call. Replaces the
+    # previously-hardcoded `priority = 1 if invalid_steps > 0 else 3` label in
+    # the details file, which had no relation to breakdown.priority and lied
+    # whenever P2(stab) tripped on a "0 invalid_steps" episode. 0 = unset.
+    terminal_priority: int = 0
+    terminal_loss_mean: float = 0.0
+    terminal_loss_std: float = 0.0
+    terminal_metric1_mean: float = 0.0
 
 
 def _format_invalid_chain_reason(invalid_chain: Any) -> str:
@@ -277,6 +286,13 @@ def train_sequential(
         steps_taken = 0
         captured_step_infos: List[Dict[str, Any]] = []
         invalid_block_details: List[Dict[str, Any]] = []
+        # Terminal breakdown extracted from the last commit_step's info dict.
+        # 0 / 0.0 means the episode never produced a terminal reward (e.g.,
+        # early_terminate_on_invalid fired before the last step).
+        terminal_priority_int = 0
+        terminal_loss_mean_val = 0.0
+        terminal_loss_std_val = 0.0
+        terminal_metric1_val = 0.0
 
         while True:
             spec = env.current_spec()
@@ -432,6 +448,20 @@ def train_sequential(
             per_step_sum += float(reward)
             if "terminal_reward" in info:
                 terminal_reward = float(info["terminal_reward"])
+            # Extract terminal breakdown for the final EpisodeRecord. Lives in
+            # ``info["terminal_info"]`` (sequential_env.py:commit_step writes it
+            # there on the terminal step). Falls back to defaults when this is
+            # not the terminal step or when the base env short-circuited (any
+            # invalid → no compute_reward call).
+            term_info_dict = info.get("terminal_info") or {}
+            term_breakdown = term_info_dict.get("reward_breakdown")
+            term_metrics = term_info_dict.get("metrics")
+            if term_breakdown is not None:
+                terminal_priority_int = int(getattr(term_breakdown, "priority", 0) or 0)
+            if term_metrics is not None:
+                terminal_loss_mean_val = float(getattr(term_metrics, "loss_mean", 0.0) or 0.0)
+                terminal_loss_std_val = float(getattr(term_metrics, "loss_std", 0.0) or 0.0)
+                terminal_metric1_val = float(getattr(term_metrics, "metric1_mean", 0.0) or 0.0)
 
             obs = next_obs
             if done:
@@ -454,6 +484,10 @@ def train_sequential(
             first_invalid_layer=(int(first_invalid["layer_idx"]) if first_invalid else None),
             step_infos=captured_step_infos,
             invalid_block_details=invalid_block_details,
+            terminal_priority=int(terminal_priority_int),
+            terminal_loss_mean=float(terminal_loss_mean_val),
+            terminal_loss_std=float(terminal_loss_std_val),
+            terminal_metric1_mean=float(terminal_metric1_val),
         )
         episode_records.append(record)
         if on_episode_end is not None:
@@ -845,15 +879,74 @@ def run_sequential_via_runner(
         base_env.acc_threshold = new_acc_threshold
 
     user_stab_threshold = float(base_env.stab_threshold)
+    stab_calib_summary = ""
     if not np.isfinite(user_stab_threshold):
-        # Default: noisy_std × (1 + tol) so the baseline action itself sits
-        # just inside the gate; candidates with materially worse stability
-        # trip priority 2 only when they actually exceed it. Floor at 0.05
-        # (~10–15% of typical MRPC loss=0.34) so a baseline that happens to
-        # be perfectly stable still leaves room for normal MC variance.
-        derived = noisy_baseline_loss_std * (1.0 + stability_tol) + 1e-3
-        floor = max(0.05, 0.1 * noisy_baseline_loss_mean)
-        base_env.stab_threshold = float(max(derived, floor))
+        # 2026-05-18: dynamic calibration. Sample a handful of random valid
+        # actions, take P90 of their loss_std as the threshold so the typical
+        # operating range of explored candidates falls *inside* P3(cost).
+        #
+        # Replaces the old `noisy_std × (1 + tol) + 1e-3` floored to 0.05,
+        # which sat right on the baseline noise floor (loss_std ≈ 0.005 →
+        # threshold ≈ 0.05). Real candidates with any non-trivial BLB noise
+        # produce loss_std ≈ 1 (with N=3 trials), so EVERY action tripped P2
+        # (stab) and the cost branch was unreachable. The visible result was
+        # terminal_reward ≈ -150 ± 50 for the whole training, with the
+        # policy slowly retreating toward baseline (loss_std ↓ → less-bad
+        # P2 reward) instead of learning cost. See diagnostics_summary.md
+        # from the s1t0.005 run for evidence.
+        random_loss_stds: List[float] = []
+        calibration_rng = np.random.default_rng(int(train_cfg.seed) + 999_983)
+        max_calib_attempts = 25
+        target_calib_samples = 5
+        calib_attempted = 0
+        while len(random_loss_stds) < target_calib_samples and calib_attempted < max_calib_attempts:
+            calib_attempted += 1
+            random_action = np.array(
+                [calibration_rng.integers(0, d) for d in base_env.action_dims],
+                dtype=np.int64,
+            )
+            try:
+                base_env.reset(seed=int(train_cfg.seed) + 1000 + calib_attempted)
+                _, _, _, rinfo = base_env.step(random_action)
+            except Exception as exc:
+                log(f"  [stab-calib][warning] random sample #{calib_attempted} failed: {exc}")
+                continue
+            if rinfo.get("invalid", False):
+                continue
+            rmetrics = rinfo.get("metrics")
+            if rmetrics is None:
+                continue
+            rls = float(getattr(rmetrics, "loss_std", 0.0))
+            if np.isfinite(rls) and rls >= 0.0:
+                random_loss_stds.append(rls)
+
+        if len(random_loss_stds) >= 3:
+            p90 = float(np.percentile(np.asarray(random_loss_stds, dtype=np.float64), 90))
+            # Floor: at least 3× baseline std (so a coincidentally-stable
+            # sample set doesn't choke off the gate entirely) and at least
+            # 0.5 (so a uniformly stable random set still leaves headroom
+            # for MC variance during real PPO rollouts).
+            # Ceiling: 5.0 so one wild outlier doesn't push the gate to
+            # "no stability signal at all".
+            derived_threshold = max(p90, 3.0 * noisy_baseline_loss_std, 0.5)
+            derived_threshold = min(derived_threshold, 5.0)
+            base_env.stab_threshold = float(derived_threshold)
+            stab_calib_summary = (
+                f"P90 over N={len(random_loss_stds)} random valid samples = {p90:.4f}  "
+                f"→ stab_threshold = {derived_threshold:.4f}  "
+                f"(samples range=[{min(random_loss_stds):.4f}, {max(random_loss_stds):.4f}])"
+            )
+        else:
+            # All / most random samples were invalid_chain. Fall back to
+            # the old noisy-baseline formula so training can still start.
+            derived = noisy_baseline_loss_std * (1.0 + stability_tol) + 1e-3
+            floor = max(0.05, 0.1 * noisy_baseline_loss_mean)
+            base_env.stab_threshold = float(max(derived, floor))
+            stab_calib_summary = (
+                f"calibration aborted (only {len(random_loss_stds)} valid samples in "
+                f"{calib_attempted} attempts)  → fallback baseline-derived = "
+                f"{base_env.stab_threshold:.4f}"
+            )
 
     log(
         f"  {bullet} 基线噪声预热（noisy baseline preflight）："
@@ -867,6 +960,8 @@ def run_sequential_via_runner(
         f"stab_threshold={base_env.stab_threshold:.4f}  "
         f"(limit_tol={allowed_acc_drop:.4f}, stab_tol={stability_tol:.4f})"
     )
+    if stab_calib_summary:
+        log(f"  {bullet} 稳定阈值校准来源（stab calibration source）：{stab_calib_summary}")
 
     _seq_block_title(log, "基线信号（baseline cost / reward / metrics）")
     _seq_log_rounded_box(log, [
@@ -1250,12 +1345,25 @@ def run_sequential_via_runner(
         # re-running the optimizer. ``first_invalid`` is kept as a sticky
         # summary on top of that list for fast scanning.
         try:
-            priority = 1 if record.invalid_steps > 0 else 3   # cost-only ranks bottom
+            # 2026-05-18: use the real breakdown.priority surfaced via
+            # EpisodeRecord.terminal_priority. Fallback to the legacy
+            # "1 if invalid_steps>0 else 3" only when terminal_priority is
+            # unset (very short or early-terminated episodes that never
+            # reached compute_reward).
+            if int(record.terminal_priority) > 0:
+                priority = int(record.terminal_priority)
+            else:
+                priority = 1 if record.invalid_steps > 0 else 3
             extra_lines = [
                 (
                     f"valid_steps={int(record.valid_step_count)}/{int(record.steps_taken)}, "
                     f"invalid_steps={int(record.invalid_steps)}, "
                     f"terminal_reward={float(record.terminal_reward):+.4f}"
+                ),
+                (
+                    f"terminal_metrics: loss_mean={float(record.terminal_loss_mean):.4f}  "
+                    f"loss_std={float(record.terminal_loss_std):.4f}  "
+                    f"m1={float(record.terminal_metric1_mean):.4f}"
                 ),
                 (
                     "first_invalid="

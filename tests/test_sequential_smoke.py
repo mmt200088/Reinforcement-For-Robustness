@@ -613,5 +613,65 @@ class EnvEvalCommitSplitTest(unittest.TestCase):
             self.assertIn(needle, src, msg=f"missing: {needle!r}")
 
 
+class DynamicStabCalibrationRegressionTest(unittest.TestCase):
+    """2026-05-18: hardens the rewrite that fixed the constant -150 reward.
+
+    Before this fix every episode collapsed into priority-2 (stability)
+    because stab_threshold was derived from the noisy baseline (loss_std
+    ≈ 0.005) and floored at 0.05, but any real candidate produced
+    loss_std ≈ 1 with N=3 trials. The diagnostic label "P3(cost)" was
+    hardcoded to (1 if invalid_steps>0 else 3), hiding the real priority.
+
+    These source-text checks verify that the relevant pieces are wired in
+    so a future refactor can't silently regress the calibration / label /
+    observability.
+    """
+
+    def test_runner_has_dynamic_stab_calibration(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        for needle in (
+            "random_loss_stds",
+            "np.percentile",
+            "calibration_rng",
+            "stab calibration source",
+            "target_calib_samples",
+        ):
+            self.assertIn(
+                needle, src,
+                msg=f"sequential_runner.py missing dynamic stab calibration: {needle!r}",
+            )
+
+    def test_episode_record_has_terminal_priority_and_metrics(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        for needle in (
+            "terminal_priority: int = 0",
+            "terminal_loss_mean: float = 0.0",
+            "terminal_loss_std: float = 0.0",
+            "terminal_metric1_mean: float = 0.0",
+        ):
+            self.assertIn(
+                needle, src,
+                msg=f"EpisodeRecord missing terminal breakdown field: {needle!r}",
+            )
+
+    def test_details_writer_uses_real_priority(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        # The old hardcoded `priority = 1 if invalid_steps > 0 else 3` lied
+        # whenever P2(stab) tripped on a "0 invalid" episode. The new path
+        # reads record.terminal_priority first and falls back to the legacy
+        # form only when terminal_priority is unset (0).
+        self.assertIn("int(record.terminal_priority) > 0", src)
+        self.assertIn("priority = int(record.terminal_priority)", src)
+        # And surfaces the actual metric numbers so operators can verify
+        # which gate is firing without re-running the optimizer.
+        self.assertIn("terminal_metrics: loss_mean=", src)
+
+    def test_default_num_trials_bumped_to_five(self):
+        src = open("blb_stage2_rl/runner.py", encoding="utf-8").read()
+        # The default lives in BLBStage2TrainConfig and flows down through
+        # BLBStage2EnvConfig.num_trials_per_step → env._eval_on_probe(k).
+        self.assertIn("num_trials_per_step: int = 5", src)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

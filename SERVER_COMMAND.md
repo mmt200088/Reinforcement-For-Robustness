@@ -39,28 +39,46 @@ fi
 
 # ----------------------------------------------------------------------
 # 2) --fresh 重跑 BLB Stage-2 sequential RL。
-#    本次包含四项关键改动（commit 待定 → push 后服务器 pull 即生效）：
 #
-#      (a) 在跑训练前 calibrate noisy baseline（acc_threshold / stab_threshold
-#          按真噪声 baseline 推得），避免之前 terminal_reward 恒 -150 的 bug；
-#          来自 commit 173596d。
-#      (b) 优化器 invalid_chain 时跳过模型 forward（env.py），不浪费 GPU。
-#      (c) 引入 ForbiddenActionMask + rejection-sample：每个 (layer, block) 在训练
-#          过程中累计的"导致 invalid_chain 的 action 元组"被永久拉黑；下次 PPO
-#          再采到同样的元组立刻 reject + 重采，直到拿到非黑名单元组才送进 optimizer。
-#          ≥32 次重采还都失败则 fallback 到该 step 的 baseline 动作（保证 valid）。
-#      (d) Warmstart bias 1.2 → 3.5，且 preferred index 改为 LEVELS_F-1=4（之前 5
-#          被 SF 槽位 mask 掉等于没生效）。初始 policy 每个 SF 槽位约 84% 概率落到
-#          baseline index，rejection 命中率开局应该很低，PPO 从 baseline 邻域开始探索。
+#    上一轮（commit 42cfbe4 后）虽然 invalid_chain 被 mask 拦光了（window_mean_invalid
+#    = 0 全程），但 terminal_reward 仍恒在 -160 ± 50 区间。
+#    诊断结论：所有 episode 都跌进 priority-2(stability)，根本到不了 P3(cost)：
+#      · noisy baseline loss_std = 0.0048，stab_threshold 兜底 = 0.05
+#      · 任何"动一动"的 RL 候选 loss_std ≈ 1（3 trials 的 std 误差就这么大）
+#      · P2 公式 r = -50 + (0.05 - 1.0)*100 = -145，每个 episode 都长这样
+#      · cost 项 r_bits / r_fusion / r_k 完全看不见，PPO 学不到 cost 维度
+#      · diagnostic 标签 "P3(cost)" 是 sequential_runner.py:1253 硬编码骗人的
 #
-#    + per-block invalid 可见性（commit f507f25）：details/ 文件里每个 episode
-#      末尾按 "invalid_blocks (N):" 列出每个失败块（在 mask 学好之前主要看这个，
-#      mask 接管后 commit-invalid 应基本为 0，但 rejection_counters 里仍能看到
-#      "samples_rejected_by_optimizer" / "samples_rejected_by_mask" 计数）。
+#    本次 4 项关键修复（commit 待定 → push 后服务器 pull 即生效）：
+#
+#      (a) **动态推导 stab_threshold**（主修复）。
+#          训练前采 5 个随机 valid action 跑真 forward，取 loss_std 的 P90
+#          作为 stab_threshold（floor=0.5，ceiling=5.0）。这样 typical 候选的
+#          loss_std (~1.0) 落在 P3(cost) 区，只有真的 outlier (~2+) 才 P2。
+#          baseline 单点 preflight 不再用来定阈值，它太保守。
+#      (b) **num_trials_per_step 3 → 5**。
+#          3 trials 的 loss_std 相对误差 50%，一个 outlier trial 就把 std 拉到 1+。
+#          5 trials 相对误差降到 ~35%，std 估计更鲁棒。代价：terminal forward
+#          时间 +67%，总训练 wall time +30%。
+#      (c) **修复 sequential_runner.py:1253 fake P3(cost) 标签**。
+#          原来是 `priority = 1 if invalid_steps>0 else 3` —— 和真正的
+#          breakdown.priority 完全没关系。改成从 EpisodeRecord.terminal_priority
+#          读真值。details/ 文件里 "priority=P2(stab)" 才意味着真在 P2。
+#      (d) **EpisodeRecord 加 terminal_loss_mean / loss_std / metric1_mean 字段**。
+#          details/ 文件每条 episode 现在带 "terminal_metrics: loss_mean=X.XX
+#          loss_std=X.XX m1=X.XX" 一行，下次跑完可以直接验证 reward 来自哪条
+#          优先级、loss_std 是不是真的高、acc 有没有被踩。
+#
+#    保留不动（上一轮已经 OK 的）：
+#      · ForbiddenActionMask + rejection-sample（commit 42cfbe4）
+#      · invalid_chain 跳过 forward（commit 42cfbe4）
+#      · Warmstart bias 3.5 + preferred_index=LEVELS_F-1=4（commit 42cfbe4）
+#      · per-block invalid 可见性（commit f507f25）
+#      · noisy baseline preflight（commit 173596d）—— 现在只用来定 acc_threshold
 # ----------------------------------------------------------------------
 echo ""
 echo "================================================================================"
-echo "Start BLB Stage-2 Sequential RL (fresh) — with reward fix + invalid mask + stronger warmstart"
+echo "Start BLB Stage-2 Sequential RL (fresh) — dynamic stab calib + 5 trials + real priority label"
 echo "================================================================================"
 bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 ```
@@ -69,27 +87,29 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 
 ## 元信息（meta，给人看的，agent 忽略）
 
-- **任务**：在 mrpc-blb-stage2-rl preset 下 fresh 跑一轮 6000-episode sequential RL，验证最新的三组修复
-- **更新时间**：2026-05-17
-- **更新原因**：之前一轮 (`f507f25` 之前的) RL 因为 reward 恒 -150 + 没有 invalid 屏蔽，前 215 个 episode 的 best action 在 final-eval 里有 8/59 个 block invalid，模型 Acc 跌到 0.316。本次三组修复全部 push 上来后再跑一次：
-    1. (commit `173596d`) noisy baseline preflight → reward 不再塌成常数；
-    2. (commit `f507f25`) per-block invalid 可见性 + diagnostic 脚本；
-    3. (本次 commit) **ForbiddenActionMask** + rejection-sample + **跳过 invalid 时的 forward** + **warmstart bias 调强**。
-- **预期效果**：
-    - terminal_reward 应该有显著差分（不再全是 -150）。
-    - 每个 PPO 窗口的 `平均 invalid` 应该接近 0（因为 invalid 的 action 在送到 optimizer 之前就被 mask reject 了；如果还能有 invalid，意味着 commit_step 用了 baseline fallback —— 这本身是合法分支但应该罕见）。
-    - 训练日志里能看到 `forbidden_action_mask total=N` 计数随训练上升（典型几百到几千）。
-    - 训练日志里的 `[checkpoint] 已保存` 行末尾会带 `forbidden_action_mask total=N (top 5: L01-B1=12; ...)`。
+- **任务**：在 mrpc-blb-stage2-rl preset 下 fresh 跑一轮 6000-episode sequential RL，验证 reward design 修复
+- **更新时间**：2026-05-18
+- **更新原因**：上一轮（commit 42cfbe4）虽然把 invalid_chain 拦光了，但 reward 恒 -160。诊断发现真正的 priority 是 P2(stability)，stab_threshold=0.05 太低，任何 RL 候选 loss_std 都过这条线。本次：
+    1. 动态推导 stab_threshold —— 用 5 个随机 valid action 的 loss_std P90 作为阈值，让 typical 候选能进 P3(cost)；
+    2. num_trials_per_step 3→5，让 std 估计鲁棒一档；
+    3. 修复 details/ 文件的 `priority=P3(cost)` 假标签 —— 它原来是硬编码的，现在读 EpisodeRecord.terminal_priority 真值；
+    4. EpisodeRecord 加 loss_std/loss_mean/m1 字段，下一轮 details/ 直接能验证 reward 来自哪条优先级。
+- **预期效果**（这次要看的关键信号）：
+    - **terminal_reward 应该跨过 0 进入正区间**（baseline 算 +27，best 候选应该 +25 左右；而不是上一轮的 -160）。
+    - details/ 文件每条 episode 的 `priority=` 应该绝大多数是 `P3(cost)`，而不是上一轮全是假的 P3。如果还有大量 P2(stab)，说明 stab_threshold 还需再调宽。
+    - `terminal_metrics: loss_mean=X loss_std=Y m1=Z` 一行直接能验证：loss_std 应该 < stab_threshold（动态校准后通常 1-2 之间），m1 应该 ≥ acc_threshold。
+    - 训练曲线 best_reward 应该真的能优化 cost —— total_bits 该单调下降（从 baseline 14779 → 真优化目标 < 13000）。
+    - 上一轮的 ForbiddenActionMask + invalid skip-forward + warmstart bias 继续生效，window_mean_invalid 仍接近 0。
 - **预期产物**：
     - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/`
         - `blb_stage2_status.json` —— 实时状态板
         - `diagnostics/diagnostics_summary.md` —— 中文诊断摘要
         - `blb_stage2_rl_checkpoint_live.pt` —— policy + optimizer + forbidden_mask_records
     - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/`
-        - `details/noise_ppo_step_info_<a>-<b>.txt` —— 每 360 回合一个，per-episode 详情
+        - `details/noise_ppo_step_info_<a>-<b>.txt` —— 每 360 回合一个，per-episode 详情（**这次会带真 priority 标签 + terminal_metrics 行**）
         - `warning.txt` —— 奖励暴跌警告
-        - `pruning_search_log.txt` —— 主日志
-- **预期耗时**：6000 episodes × 59 sub-steps × (每 sub-step 1 个 optimizer call + 至多几次 rejection)，约 6-7 小时（与之前同量级；rejection 是 ms 级的，不显著拖慢）。
+        - `pruning_search_log.txt` —— 主日志（**这次启动头部能看到 "稳定阈值校准来源: P90 ... = X.XX"**）
+- **预期耗时**：trials 3→5 单 episode 时间 +30%；6000 episodes 约 8-9 小时（上一轮 ~6 小时）。setup phase 多 5 个随机 sample × 5 trials ≈ 30s，可忽略。
 
 ### Stage-1 → Stage-2 degree 适配（用户问题 #1）
 
