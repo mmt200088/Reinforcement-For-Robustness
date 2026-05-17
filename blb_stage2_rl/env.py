@@ -639,6 +639,20 @@ class BLBStage2Env:
         loss_arr = np.array(per_trial_loss, dtype=float)
         m1_arr = np.array(per_trial_metric1, dtype=float)
         m2_arr = np.array(per_trial_metric2, dtype=float)
+
+        # Clamp non-finite cross-entropy outputs (heavy BLB noise can push some
+        # trials to inf/nan via logit overflow). Without the clamp a *single*
+        # overflowing trial would make np.std → inf, every action would land in
+        # the same priority-2 fallback bucket (terminal_reward ≡ -150), and PPO
+        # would see no gradient between candidates. Clamping to 100 (≫ a
+        # normal MRPC cross_entropy in [0, 5]) preserves rank order while
+        # keeping the std finite and comparable across actions.
+        _LOSS_CAP = 100.0
+        loss_arr = np.nan_to_num(loss_arr, nan=_LOSS_CAP, posinf=_LOSS_CAP, neginf=_LOSS_CAP)
+        loss_arr = np.clip(loss_arr, 0.0, _LOSS_CAP)
+        m1_arr = np.nan_to_num(m1_arr, nan=0.0, posinf=1.0, neginf=0.0)
+        m2_arr = np.nan_to_num(m2_arr, nan=0.0, posinf=1.0, neginf=0.0)
+
         return EpisodeMetrics(
             loss_mean=float(loss_arr.mean()),
             loss_std=float(loss_arr.std(ddof=0)) if loss_arr.size > 1 else 0.0,

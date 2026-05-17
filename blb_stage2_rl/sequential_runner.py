@@ -640,14 +640,92 @@ def run_sequential_via_runner(
     weights = calibrate_weights_from_baseline(baseline)
     base_env.reward_weights = weights
 
-    # baseline accuracy/stability
+    # baseline accuracy/stability (CLEAN model — used for the cost-side
+    # baseline metric1 reference; loss_std here is 0 since no noise is installed
+    # and we use a deterministic forward path. We deliberately do NOT use this
+    # value to set stab_threshold — see noisy preflight below.)
     baseline_metrics = runner._estimate_baseline_metrics(base_env)
     baseline.loss_mean = float(baseline_metrics.loss_mean)
     baseline.loss_std = float(baseline_metrics.loss_std)
     baseline.metric1_mean = float(baseline_metrics.metric1_mean)
     baseline.metric2_mean = float(baseline_metrics.metric2_mean)
-    if not np.isfinite(base_env.stab_threshold):
-        base_env.stab_threshold = float(baseline.loss_std) * 1.5 + 1e-3
+    baseline_clean_metric1 = float(baseline_metrics.metric1_mean)
+
+    # ---------- 4.5) NOISY baseline preflight: calibrate acc/stab gates ----------
+    # Before this preflight the sequential path used to derive
+    #   stab_threshold = baseline.loss_std * 1.5 + 1e-3
+    # but baseline.loss_std comes from the *clean* model (no BLB noise installed,
+    # K trials produce identical losses → std = 0), so the threshold ended up at
+    # 0.001 — below the per-trial noise floor of every real candidate. Every
+    # episode would then trip priority-2, the reward fell into the inf-fallback
+    # branch (terminal_reward = -priority2_penalty - 1.0 * priority2_scale = -150
+    # exactly), and PPO got essentially zero gradient signal across action space.
+    # See diagnostics/diagnostics_summary.md from the s1t0.005 run for evidence.
+    #
+    # Fix: install the all-max baseline action with real BLB noise, run K trials,
+    # and read the *noisy* probe metrics. Calibrate the gates from these so
+    # candidates can be ranked by accuracy/stability deltas rather than all
+    # collapsing into the same fallback.
+    noisy_baseline_metric1 = baseline_clean_metric1
+    noisy_baseline_loss_std = 0.0
+    noisy_baseline_loss_mean = float(baseline.loss_mean)
+    preflight_ok = False
+    try:
+        base_env.reset(seed=int(train_cfg.seed))
+        _, _preflight_reward, _, preflight_info = base_env.step(baseline_action_vec)
+        noisy_metrics = preflight_info.get("metrics")
+        if noisy_metrics is not None:
+            noisy_baseline_metric1 = float(getattr(noisy_metrics, "metric1_mean", baseline_clean_metric1))
+            raw_std = float(getattr(noisy_metrics, "loss_std", 0.0))
+            noisy_baseline_loss_std = raw_std if np.isfinite(raw_std) else 0.0
+            raw_mean = float(getattr(noisy_metrics, "loss_mean", baseline.loss_mean))
+            noisy_baseline_loss_mean = raw_mean if np.isfinite(raw_mean) else float(baseline.loss_mean)
+            # Overwrite baseline.loss_std only — the cost-side fields
+            # (loss_mean, metric*_mean) stay tied to the clean reference so
+            # downstream rank/report code keeps a stable comparison frame.
+            baseline.loss_std = noisy_baseline_loss_std
+            preflight_ok = True
+    except Exception as exc:
+        log(f"  [baseline-preflight][warning] noisy probe failed: {exc}")
+
+    # Resolve gates from the noisy preflight + the user's tolerances.
+    # tolerances come from rl_tune.py CLI (stage2_limit_tolerance,
+    # stage2_stability_tolerance), which the launcher feeds from the preset
+    # (defaults 0.005 / 0.005 in mrpc-blb-stage2-rl.conf).
+    allowed_acc_drop = max(0.0, float(getattr(ev, "stage2_limit_tolerance", 0.05)))
+    stability_tol = max(0.0, float(getattr(ev, "stage2_stability_tolerance", 0.05)))
+
+    user_acc_threshold = float(base_env.acc_threshold)
+    if not (np.isfinite(user_acc_threshold) and user_acc_threshold > 0.0):
+        # Default: floor the gate at (noisy baseline accuracy − tolerance) so
+        # actions that wreck accuracy get caught by priority 1 instead of
+        # masquerading as cost-priority candidates.
+        new_acc_threshold = max(0.0, noisy_baseline_metric1 - allowed_acc_drop)
+        base_env.acc_threshold = new_acc_threshold
+
+    user_stab_threshold = float(base_env.stab_threshold)
+    if not np.isfinite(user_stab_threshold):
+        # Default: noisy_std × (1 + tol) so the baseline action itself sits
+        # just inside the gate; candidates with materially worse stability
+        # trip priority 2 only when they actually exceed it. Floor at 0.05
+        # (~10–15% of typical MRPC loss=0.34) so a baseline that happens to
+        # be perfectly stable still leaves room for normal MC variance.
+        derived = noisy_baseline_loss_std * (1.0 + stability_tol) + 1e-3
+        floor = max(0.05, 0.1 * noisy_baseline_loss_mean)
+        base_env.stab_threshold = float(max(derived, floor))
+
+    log(
+        f"  {bullet} 基线噪声预热（noisy baseline preflight）："
+        f"acc(noisy)={noisy_baseline_metric1:.4f}  "
+        f"loss_std(noisy)={noisy_baseline_loss_std:.4f}  "
+        f"loss_mean(noisy)={noisy_baseline_loss_mean:.4f}"
+    )
+    log(
+        f"  {bullet} 校准后硬约束阈值（calibrated gates）："
+        f"acc_threshold={base_env.acc_threshold:.4f}  "
+        f"stab_threshold={base_env.stab_threshold:.4f}  "
+        f"(limit_tol={allowed_acc_drop:.4f}, stab_tol={stability_tol:.4f})"
+    )
 
     _seq_block_title(log, "基线信号（baseline cost / reward / metrics）")
     _seq_log_rounded_box(log, [

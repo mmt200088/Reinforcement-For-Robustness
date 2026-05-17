@@ -426,6 +426,43 @@ class OutputHygieneRegressionTest(unittest.TestCase):
                 msg=f"{symbol!r} missing from sequential_runner.py — legacy v2 parity broken",
             )
 
+    def test_sequential_runner_has_noisy_baseline_preflight(self):
+        """Regression: previously the sequential path skipped the noisy
+        baseline preflight, leaving stab_threshold at ~0.001 (driven by
+        clean baseline.loss_std == 0). Every episode then collapsed into
+        terminal_reward = -150 from the priority-2 inf-fallback branch.
+        See blb_stage2_rl/sequential_runner.py @ "4.5) NOISY baseline
+        preflight" for the fix.
+        """
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        for needle in (
+            "noisy baseline preflight",
+            "base_env.step(baseline_action_vec)",
+            "stage2_stability_tolerance",
+            "stage2_limit_tolerance",
+        ):
+            self.assertIn(
+                needle, src,
+                msg=f"sequential_runner.py missing preflight calibration: {needle!r}",
+            )
+
+    def test_eval_on_probe_clamps_nonfinite_losses(self):
+        """Regression: cross_entropy can overflow under heavy BLB noise and
+        emit inf/nan losses. Before this clamp a single bad trial made
+        np.std → inf for the whole episode, and every action collapsed to
+        the same -150 reward. The clamp keeps std finite + comparable.
+        """
+        src = open("blb_stage2_rl/env.py", encoding="utf-8").read()
+        for needle in (
+            "_LOSS_CAP",
+            "nan_to_num",
+            "np.clip(loss_arr",
+        ):
+            self.assertIn(
+                needle, src,
+                msg=f"env.py:_eval_on_probe missing finite-loss safety: {needle!r}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
