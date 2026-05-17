@@ -1,6 +1,6 @@
 # Experiments index
 
-_Auto-generated from `/var/tmp/root-home/Reinforcement-For-Robustness/experiments/registry.jsonl` on 2026-05-17T09:02:38+08:00. Edit `notes` field in registry.jsonl to annotate a run; rerun `python3 tools/experiments_log.py rebuild` to refresh._
+_Auto-generated from `/var/folders/4k/w3ccv4d14m964xjmws95x39h0000gn/T/blb_smoke_o6_d6s03/registry.jsonl` on 2026-05-17T15:10:55+08:00. Edit `notes` field in registry.jsonl to annotate a run; rerun `python3 tools/experiments_log.py rebuild` to refresh._
 
 - Total registered run_ids: **1**
 - By status: complete=1
@@ -10,13 +10,13 @@ _Auto-generated from `/var/tmp/root-home/Reinforcement-For-Robustness/experiment
 
 | Dataset | Best reward | Final loss | Final metric1 | Run ID |
 |---|---:|---:|---:|---|
-| mrpc | -152.5556 |  |  | `s1t0.005_s2t0.005_s` |
+| mrpc | +0.4200 | 0.4000 | 0.8000 | `20260516_smoke_pid1` |
 
 ## All runs (most recent first)
 
 | Run ID | Dataset | Algo | Preset | Seed | Status | Time | Best | Loss | Metric1 | Git | Persistent |
 |---|---|---|---|---:|---|---:|---:|---:|---:|---|---|
-| s1t0.005_s2t0.005_s | mrpc | rl | Stage-1 config (json) | 42 | complete | 7.43h | -152.5556 |  |  | `⚠dirty` | `progress` |
+| 20260516_smoke_pid1 | mrpc | rl | smoke-test | 42 | complete | 0.03h | +0.4200 | 0.4000 | 0.8000 | `⚠dirty` | `fake` |
 
 ---
 

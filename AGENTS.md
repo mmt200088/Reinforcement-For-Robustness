@@ -19,6 +19,10 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   the user. When asking, include the recommended answer.
 - For coding tasks, implement only what was requested and verify with the
   narrowest meaningful command or test.
+- Keep this `AGENTS.md` current as the shared project memory for Codex and
+  Claude Code. After each user message that adds or changes project facts,
+  workflow rules, run state, architecture notes, or operating constraints,
+  update this file before finishing the turn.
 
 ### Local/Git/Server Workflow
 
@@ -397,6 +401,10 @@ in prose comments.
   file logs are UTF-8.
 - Do not add broad artifact patterns to `.gitignore` blindly. Many reports and
   checkpoints are intentionally ignored; exceptions are explicit.
+- This local checkout uses sparse-checkout. Keep `/experiments/` included
+  alongside `/experiment/`; server-command run reports such as
+  `experiments/server_command_runs/final_eval_llm_ist_results_2026-05-17.html`
+  may be present in Git but invisible on disk if the sparse rule is missing.
 
 ## Hard Taboos
 
