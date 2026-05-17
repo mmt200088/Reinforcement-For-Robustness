@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Final Eval Bug Report - 2026-05-17</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 32px; color: #17202a; background: #f7f8fa; }
+    main { max-width: 1180px; margin: 0 auto; background: white; border: 1px solid #d8dee4; border-radius: 8px; padding: 28px; }
+    h1 { margin-top: 0; font-size: 28px; }
+    h2 { margin-top: 28px; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #fee2e2; color: #991b1b; font-weight: 700; }
+    .note { background: #fff7ed; border-left: 4px solid #fb923c; padding: 12px 14px; margin: 14px 0; }
+    table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+    th, td { border: 1px solid #d8dee4; padding: 8px 10px; vertical-align: top; text-align: left; }
+    th { background: #f1f5f9; }
+    code { background: #f1f5f9; padding: 1px 4px; border-radius: 4px; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 6px; overflow: auto; font-size: 12px; line-height: 1.45; }
+    .fail { color: #991b1b; font-weight: 700; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Final Eval Bug Report - 2026-05-17</h1>
+  <p><span class="badge">failed before final metrics were produced</span></p>
+  <p>按照 <code>SERVER_COMMAND.md</code> 的 active command 执行后，两个 final eval 都在启动 <code>rl_tune.py</code> 时失败，没有产生可用 final metrics。</p>
+
+  <h2>摘要</h2>
+  <table>
+    <tr><th>项目</th><th>结果</th></tr>
+    <tr><td>服务器</td><td><code>root@100.84.74.99:8722</code></td></tr>
+    <tr><td>仓库</td><td><code>/var/tmp/root-home/Reinforcement-For-Robustness</code></td></tr>
+    <tr><td>active command 包装脚本</td><td><code>experiments/server_command_runs/active_command_2026-05-17_final_eval.sh</code></td></tr>
+    <tr><td>包装脚本日志</td><td><code>experiments/server_command_runs/active_command_2026-05-17_final_eval.log</code></td></tr>
+    <tr><td>Final eval #1</td><td class="fail">baseline 失败：<code>ModuleNotFoundError: No module named &#x27;fire&#x27;</code></td></tr>
+    <tr><td>Final eval #2</td><td class="fail">RL best 失败：<code>ModuleNotFoundError: No module named &#x27;fire&#x27;</code></td></tr>
+    <tr><td>报告生成时间</td><td>2026-05-17 14:07:57</td></tr>
+  </table>
+
+  <h2>主要错误</h2>
+  <div class="note">
+    <p>两个日志都显示使用 <code>/var/tmp/root-home/miniconda3/bin/python</code> 执行 <code>rl_tune.py</code>，随后在 <code>import fire</code> 处失败：</p>
+    <pre>ModuleNotFoundError: No module named &#x27;fire&#x27;</pre>
+    <p>按用户要求，本次没有安装依赖、没有修改代码、没有重跑。</p>
+  </div>
+
+  <h2>额外观察</h2>
+  <p>Final eval #2 的日志里显示 <code>blb_rescale_invoker_kind: heuristic</code>，这与 AGENTS.md 对 BLB action final eval 使用真实 in-process Rescale_optimizer 的要求不一致。不过本次运行在 import 阶段已失败，尚未进入该路径。</p>
+
+  <h2>产物路径</h2>
+  <table>
+    <tr><th>产物</th><th>路径</th></tr>
+    <tr><td>baseline log</td><td><code>Paean/outputs/mrpc/rl/baseline_blb_s1t0.005/logs/blb_baseline_fixed_final_eval.log</code></td></tr>
+    <tr><td>RL best log</td><td><code>Paean/outputs/mrpc/rl/rl_best_ep203_buggy_reward/logs/final_eval_only.log</code></td></tr>
+    <tr><td>server command log</td><td><code>experiments/server_command_runs/active_command_2026-05-17_final_eval.log</code></td></tr>
+    <tr><td>抽取出的 active command</td><td><code>experiments/server_command_runs/active_command_2026-05-17_final_eval.sh</code></td></tr>
+  </table>
+
+  <h2>Active Command</h2>
+  <pre>set -e
+
+# ----------------------------------------------------------------------
+# 1) 先优雅停掉正在跑的（buggy reward 的）RL 训练
+# ----------------------------------------------------------------------
+RUN_DIR=&quot;Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005&quot;
+PIDFILE=&quot;$RUN_DIR/rl.pid&quot;
+if [ -f &quot;$PIDFILE&quot; ]; then
+  RL_PID=&quot;$(cat &quot;$PIDFILE&quot;)&quot;
+  if [ -n &quot;$RL_PID&quot; ] &amp;&amp; kill -0 &quot;$RL_PID&quot; 2&gt;/dev/null; then
+    echo &quot;[stop-rl] running RL pid=$RL_PID, sending SIGINT (graceful) ...&quot;
+    kill -INT &quot;$RL_PID&quot; 2&gt;/dev/null || true
+    for i in 1 2 3 4 5 6; do sleep 10; kill -0 &quot;$RL_PID&quot; 2&gt;/dev/null || break; done
+    if kill -0 &quot;$RL_PID&quot; 2&gt;/dev/null; then
+      echo &quot;[stop-rl] still alive after 60s, sending SIGTERM ...&quot;
+      kill -TERM &quot;$RL_PID&quot; 2&gt;/dev/null || true
+      for i in 1 2 3; do sleep 10; kill -0 &quot;$RL_PID&quot; 2&gt;/dev/null || break; done
+    fi
+    if kill -0 &quot;$RL_PID&quot; 2&gt;/dev/null; then
+      echo &quot;[stop-rl] still alive after 90s, hard-killing with SIGKILL ...&quot;
+      kill -KILL &quot;$RL_PID&quot; 2&gt;/dev/null || true
+      sleep 3
+    fi
+    echo &quot;[stop-rl] RL process stopped.&quot;
+  else
+    echo &quot;[stop-rl] no running RL process at pid=$RL_PID.&quot;
+  fi
+else
+  echo &quot;[stop-rl] no rl.pid found; skipping.&quot;
+fi
+
+# ----------------------------------------------------------------------
+# 2) Final-eval #1 —— BLB 全 max baseline 配置（safe reference）
+#    输出: Paean/outputs/rl/bert-base/mrpc/&lt;slug&gt;/final_eval/baseline_blb_s1t0.005/
+# ----------------------------------------------------------------------
+echo &quot;&quot;
+echo &quot;================================================================================&quot;
+echo &quot;FINAL EVAL #1 / 2 · BLB baseline action (all-max SFs, per-block max K)&quot;
+echo &quot;================================================================================&quot;
+bash Paean/run_final_eval.sh \
+    --preset mrpc-blb-baseline-fixed \
+    --run-name baseline_blb_s1t0.005
+
+# ----------------------------------------------------------------------
+# 3) Final-eval #2 —— 当前 RL 训练期 best 配置（episode 203，total_reward=-155.4）
+#    注意：该 best 是在**有 bug 的 reward**（terminal 恒 -150）下选出来的，
+#    所以并不一定对应真正最优的 BLB 配置。本次 eval 主要是给一个 &quot;buggy RL
+#    在 200 episode 内得到的局部最优&quot; 的 final 数字，作为后续 reward-fix
+#    后 RL run 的对照基线。
+#    输出: Paean/outputs/rl/bert-base/mrpc/&lt;slug&gt;/final_eval/rl_best_ep203_buggy_reward/
+# ----------------------------------------------------------------------
+BEST_JSON=&quot;Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/diagnostics/best_action_vec.json&quot;
+if [ ! -f &quot;$BEST_JSON&quot; ]; then
+  echo &quot;[FATAL] best_action_vec.json not found at: $BEST_JSON&quot;
+  exit 1
+fi
+echo &quot;&quot;
+echo &quot;================================================================================&quot;
+echo &quot;FINAL EVAL #2 / 2 · RL training best @ ep203 (buggy reward)&quot;
+echo &quot;================================================================================&quot;
+bash Paean/run_final_eval.sh \
+    --preset mrpc-final-eval-only \
+    --action-config &quot;$BEST_JSON&quot; \
+    --run-name rl_best_ep203_buggy_reward
+
+echo &quot;&quot;
+echo &quot;================================================================================&quot;
+echo &quot;DONE · 结果在 Paean/outputs/rl/bert-base/mrpc/&lt;slug&gt;/final_eval/{baseline_blb_s1t0.005,rl_best_ep203_buggy_reward}/&quot;
+echo &quot;================================================================================&quot;
+</pre>
+
+  <h2>Server Command Log</h2>
+  <pre>[stop-rl] no running RL process at pid=3925027.
+
+================================================================================
+FINAL EVAL #1 / 2 · BLB baseline action (all-max SFs, per-block max K)
+================================================================================
+已在后台启动 final_eval。
+  进程号（PID）：1125506
+  输出目录：/var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/baseline_blb_s1t0.005
+  查看日志：tail -f /var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/baseline_blb_s1t0.005/logs/blb_baseline_fixed_final_eval.log
+  LATEST_RUN_DIR：/var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/LATEST_RUN_DIR
+  LATEST_PID：/var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/LATEST_PID
+  优雅停止（Graceful Stop）：kill -INT 1125506
+
+================================================================================
+FINAL EVAL #2 / 2 · RL training best @ ep203 (buggy reward)
+================================================================================
+已在后台启动 final_eval。
+  进程号（PID）：1125512
+  输出目录：/var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/rl_best_ep203_buggy_reward
+  查看日志：tail -f /var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/rl_best_ep203_buggy_reward/logs/final_eval_only.log
+  LATEST_RUN_DIR：/var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/LATEST_RUN_DIR
+  LATEST_PID：/var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/LATEST_PID
+  优雅停止（Graceful Stop）：kill -INT 1125512
+
+================================================================================
+DONE · 结果在 Paean/outputs/rl/bert-base/mrpc/&lt;slug&gt;/final_eval/{baseline_blb_s1t0.005,rl_best_ep203_buggy_reward}/
+================================================================================</pre>
+
+  <h2>Baseline Final Eval Log</h2>
+  <pre>
+================================================================================
+Launcher time: 2026-05-17 14:03:29
+final_eval standalone configuration:
+  dataset: mrpc
+  algorithm: rl
+  source: json
+  config: /var/tmp/root-home/Reinforcement-For-Robustness/glue_final_configs_best_ppo.json
+  random_enabled: False
+  action_config: /var/tmp/root-home/Reinforcement-For-Robustness/Paean/action_configs/mrpc-blb-baseline-fixed.json
+  blb_rescale_invoker_kind: in_process
+  blb_rescale_optimizer_root: /var/tmp/root-home/Reinforcement-For-Robustness/Rescale_optimizer
+  require_rescale_optimizer: True
+  output_dir: /var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/baseline_blb_s1t0.005
+  command: /var/tmp/root-home/miniconda3/bin/python /var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir /var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/baseline_blb_s1t0.005 --batch_size 64 --micro_batch_size 64 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules &#x27;[&quot;q_proj&quot;, &quot;k_proj&quot;, &quot;v_proj&quot;, &quot;up_proj&quot;, &quot;down_proj&quot;]&#x27; --use_ist --final_eval_config_source json --final_eval_config_path /var/tmp/root-home/Reinforcement-For-Robustness/glue_final_configs_best_ppo.json --manual_stage1_gelu &#x27;&#x27; --manual_stage1_softmax &#x27;&#x27; --manual_stage2_noise &#x27;&#x27; --final_eval_random_seed 42 --final_eval_permutation_trials 0 --final_eval_cost_equivalent_trials 0 --final_eval_budget_equivalent_trials 0 --final_eval_stage1_budget_trials 0 --final_eval_stage2_budget_trials 0 --final_eval_random_enabled false --final_eval_repeat_n 50 --final_eval_action_config /var/tmp/root-home/Reinforcement-For-Robustness/Paean/action_configs/mrpc-blb-baseline-fixed.json --final_eval_action_ranges &#x27;[]&#x27; --final_eval_action_fixed &#x27;[]&#x27; --blb_v3_rescale_invoker_kind in_process --blb_v3_inproc_rescale_optimizer_root /var/tmp/root-home/Reinforcement-For-Robustness/Rescale_optimizer --final_eval_require_rescale_optimizer true --skip_noise_rl true --skip_stage1_rl true --skip_final_eval false --final_eval_only true --resume_run_dir &#x27;&#x27; --stage1_accuracy_tolerance 0.005 --stage2_limit_tolerance 0.005 --stage2_stability_tolerance 0.005 --stage2_k_trials 5 --stage2_probe_size 256 --stage1_rl_episodes 51000 --stage2_rl_episodes 40000 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified false --ppo_update_interval 120 --stage2_rl_variant blb_v3
+================================================================================
+
+Traceback (most recent call last):
+  File &quot;/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py&quot;, line 9, in &lt;module&gt;
+    import fire
+ModuleNotFoundError: No module named &#x27;fire&#x27;</pre>
+
+  <h2>RL Best Final Eval Log</h2>
+  <pre>
+================================================================================
+Launcher time: 2026-05-17 14:03:29
+final_eval standalone configuration:
+  dataset: mrpc
+  algorithm: rl
+  source: json
+  config: /var/tmp/root-home/Reinforcement-For-Robustness/glue_final_configs_best_ppo.json
+  random_enabled: False
+  action_config: /var/tmp/root-home/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/diagnostics/best_action_vec.json
+  blb_rescale_invoker_kind: heuristic
+  require_rescale_optimizer: False
+  output_dir: /var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/rl_best_ep203_buggy_reward
+  command: /var/tmp/root-home/miniconda3/bin/python /var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir /var/tmp/root-home/Reinforcement-For-Robustness/Paean/outputs/mrpc/rl/rl_best_ep203_buggy_reward --batch_size 64 --micro_batch_size 64 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules &#x27;[&quot;q_proj&quot;, &quot;k_proj&quot;, &quot;v_proj&quot;, &quot;up_proj&quot;, &quot;down_proj&quot;]&#x27; --use_ist --final_eval_config_source json --final_eval_config_path /var/tmp/root-home/Reinforcement-For-Robustness/glue_final_configs_best_ppo.json --manual_stage1_gelu &#x27;&#x27; --manual_stage1_softmax &#x27;&#x27; --manual_stage2_noise &#x27;&#x27; --final_eval_random_seed 42 --final_eval_permutation_trials 0 --final_eval_cost_equivalent_trials 0 --final_eval_budget_equivalent_trials 0 --final_eval_stage1_budget_trials 0 --final_eval_stage2_budget_trials 0 --final_eval_random_enabled false --final_eval_repeat_n 50 --final_eval_action_config &#x27;/var/tmp/root-home/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/diagnostics/best_action_vec.json&#x27; --final_eval_action_ranges &#x27;[]&#x27; --final_eval_action_fixed &#x27;[]&#x27; --blb_v3_rescale_invoker_kind heuristic --blb_v3_inproc_rescale_optimizer_root &#x27;&#x27; --final_eval_require_rescale_optimizer false --skip_noise_rl true --skip_stage1_rl true --skip_final_eval false --final_eval_only true --resume_run_dir &#x27;&#x27; --stage1_accuracy_tolerance 0.005 --stage2_limit_tolerance 0.005 --stage2_stability_tolerance 0.005 --stage2_k_trials 5 --stage2_probe_size 256 --stage1_rl_episodes 51000 --stage2_rl_episodes 40000 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified false --ppo_update_interval 120 --stage2_rl_variant blb_v3
+================================================================================
+
+Traceback (most recent call last):
+  File &quot;/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py&quot;, line 9, in &lt;module&gt;
+    import fire
+ModuleNotFoundError: No module named &#x27;fire&#x27;</pre>
+</main>
+</body>
+</html>
