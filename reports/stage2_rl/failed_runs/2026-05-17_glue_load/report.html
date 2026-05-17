@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Stage2 RL Bug Report - 2026-05-17</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:32px;background:#f6f8fa;color:#17202a}main{max-width:1180px;margin:0 auto;background:#fff;border:1px solid #d8dee4;border-radius:8px;padding:28px}h1{margin-top:0;font-size:28px}h2{margin-top:28px;border-bottom:1px solid #e5e7eb;padding-bottom:8px}table{border-collapse:collapse;width:100%;margin:14px 0}th,td{border:1px solid #d8dee4;padding:8px 10px;text-align:left;vertical-align:top}th{background:#f1f5f9}code{background:#f1f5f9;border-radius:4px;padding:1px 4px}pre{background:#0f172a;color:#e2e8f0;padding:14px;border-radius:6px;overflow:auto;font-size:12px;line-height:1.45}.bad{display:inline-block;padding:4px 10px;border-radius:999px;background:#fee2e2;color:#991b1b;font-weight:700}.warn{display:inline-block;padding:4px 10px;border-radius:999px;background:#fef3c7;color:#92400e;font-weight:700}
+</style></head><body><main>
+<h1>Stage2 RL Bug Report - 2026-05-17</h1>
+<p><span class="bad">Stage2 RL failed before training loop</span> <span class="warn">no final evals ran</span></p>
+<p>本次按最新 <code>SERVER_COMMAND.md</code> 执行 Stage-2 sequential RL fresh run，使用 <code>conda activate llm_ist</code>。命令启动成功，但 <code>rl_tune.py</code> 在加载 MRPC/GLUE 数据时失败，未进入 Stage-2 RL 主循环，因此也没有跑完 final eval。</p>
+<h2>Summary</h2>
+<table>
+<tr><th>server</th><td><code>root@100.84.74.99:8722</code></td></tr>
+<tr><th>repo</th><td><code>/var/tmp/root-home/Reinforcement-For-Robustness</code></td></tr>
+<tr><th>run dir</th><td><code>Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005</code></td></tr>
+<tr><th>actual RL pid</th><td><code>2932752</code> (exited)</td></tr>
+<tr><th>failure class</th><td>GLUE MRPC dataset loading failed</td></tr>
+<tr><th>primary cause</th><td><code>hf-mirror.com</code> DNS resolution failed; equivalent parquet fallback did not find <code>mrpc/train-00000-of-00001.parquet</code></td></tr>
+<tr><th>generated</th><td>2026-05-17 23:00:38</td></tr>
+</table>
+<h2>Important Note</h2>
+<p><code>--fresh</code> cleared the previous persistent run directory before the dataset load failed. I am not committing those deletions; previous results were already pushed before this run, and this failed run only contributes the bug report/log artifacts.</p>
+<h2>Error Summary</h2><pre>[Time]
+2026-05-17 22:58:04
+
+[Program]
+rl_tune.py
+
+[Status]
+failed
+
+[Message]
+RuntimeError: Failed to load GLUE task &#x27;mrpc&#x27; via nyu-mll/glue and the local/cache or equivalent parquet routes. Primary error: ConnectionError(MaxRetryError(&#x27;HTTPSConnectionPool(host=\&#x27;hf-mirror.com\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (Caused by NameResolutionError(&quot;HTTPSConnection(host=\&#x27;hf-mirror.com\&#x27;, port=443): Failed to resolve \&#x27;hf-mirror.com\&#x27; ([Errno -5] No address associated with hostname)&quot;))&#x27;), &#x27;(Request ID: 46f1345e-1ae7-4bc7-aa71-47dc438c2360)&#x27;); equivalent parquet errors: [&#x27;hf_cache_local_files_only: ConnectionError(MaxRetryError(\&#x27;HTTPSConnectionPool(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (Caused by NameResolutionError(&quot;HTTPSConnection(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Failed to resolve \\\&#x27;hf-mirror.com\\\&#x27; ([Errno -5] No address associated with hostname)&quot;))\&#x27;), \&#x27;(Request ID: 396a5d86-b02f-42df-ae83-ace639689563)\&#x27;)&#x27;, &#x27;https://huggingface.co: FileNotFoundError(&quot;Unable to find \&#x27;https://huggingface.co/datasets/nyu-mll/glue/resolve/main/mrpc/train-00000-of-00001.parquet\&#x27;&quot;)&#x27;, &#x27;https://hf-mirror.com: ConnectionError(MaxRetryError(\&#x27;HTTPSConnectionPool(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/main (Caused by NameResolutionError(&quot;HTTPSConnection(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Failed to resolve \\\&#x27;hf-mirror.com\\\&#x27; ([Errno -5] No address associated with hostname)&quot;))\&#x27;), \&#x27;(Request ID: 0ac8b4b1-3461-4a6b-8b4d-d9ef7742b62a)\&#x27;)&#x27;]
+
+[Run Output Dir]
+Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005
+
+[Command]
+rl_tune.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir &#x27;Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005&#x27; --batch_size 64 --micro_batch_size 64 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules &#x27;[&quot;q_proj&quot;, &quot;k_proj&quot;, &quot;v_proj&quot;, &quot;up_proj&quot;, &quot;down_proj&quot;]&#x27; --stage1_rl_episodes 51000 --stage2_rl_episodes 6000 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified true --ppo_update_interval 120 --use_ist --final_eval_config_source search --final_eval_config_path glue_final_configs_best_ppo.json --manual_stage1_gelu &#x27;&#x27; --manual_stage1_softmax &#x27;&#x27; --manual_stage2_noise &#x27;&#x27; --stage2_fixed_config_source json --stage2_fixed_config_path glue_final_configs_best_ppo.json --stage2_manual_gelu &#x27;&#x27; --stage2_manual_softmax &#x27;&#x27; --final_eval_random_seed 42 --final_eval_permutation_trials 0 --final_eval_cost_equivalent_trials 0 --final_eval_budget_equivalent_trials 0 --final_eval_stage1_budget_trials 10 --final_eval_stage2_budget_trials 10 --final_eval_repeat_n 1 --final_eval_preset default --skip_noise_rl false --skip_stage1_rl true --skip_final_eval false --final_eval_only false --resume_run_dir &#x27;&#x27; --stage1_rl_lr 1e-4 --stage2_rl_lr 2e-4 --stage1_accuracy_tolerance 0.005 --stage2_limit_tolerance 0.005 --stage2_stability_tolerance 0.005 --stage2_k_trials 5 --stage2_probe_size 256 --stage2_rl_variant blb_v3 --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer --blb_v3_rollout_size 60 --blb_v3_eval_interval 100 --blb_v3_save_interval 200 --blb_v3_calibrate_baseline_samples 8 --blb_v3_warmstart_anchor_episodes 80 --blb_v3_sequential_rl true --blb_v3_sequential_invalid_penalty 1.0 --blb_v3_sequential_cost_shaping_coeff 0.05 --blb_v3_sequential_fusion_shaping_coeff 0.0
+
+[Traceback]
+Traceback (most recent call last):
+  File &quot;/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py&quot;, line 417, in load_glue_dataset_equivalent
+    data = load_dataset_fn(&quot;nyu-mll/glue&quot;, task)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py&quot;, line 2128, in load_dataset
+    builder_instance = load_dataset_builder(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py&quot;, line 1814, in load_dataset_builder
+    dataset_module = dataset_module_factory(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py&quot;, line 1511, in dataset_module_factory
+    raise e1 from None
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py&quot;, line 1495, in dataset_module_factory
+    ).get_module()
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py&quot;, line 1047, in get_module
+    data_files = DataFilesDict.from_patterns(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py&quot;, line 686, in from_patterns
+    DataFilesList.from_patterns(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py&quot;, line 601, in from_patterns
+    origin_metadata = _get_origin_metadata(data_files, download_config=download_config)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py&quot;, line 516, in _get_origin_metadata
+    return thread_map(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/tqdm/contrib/concurrent.py&quot;, line 69, in thread_map
+    return _executor_map(ThreadPoolExecutor, fn, *iterables, **tqdm_kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/tqdm/contrib/concurrent.py&quot;, line 51, in _executor_map
+    return list(tqdm_class(ex.map(fn, *iterables, chunksize=chunksize), **kwargs))
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/concurrent/futures/_base.py&quot;, line 621, in result_iterator
+    yield _result_or_cancel(fs.pop())
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/concurrent/futures/_base.py&quot;, line 319, in _result_or_cancel
+    return fut.result(timeout)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/concurrent/futures/_base.py&quot;, line 458, in result
+    return self.__get_result()
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/concurrent/futures/_base.py&quot;, line 403, in __get_result
+    raise self._exception
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/concurrent/futures/thread.py&quot;, line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py&quot;, line 496, in _get_single_origin_metadata
+    resolved_path = fs.resolve_path(data_file)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py&quot;, line 199, in resolve_path
+    repo_and_revision_exist, err = self._repo_and_revision_exist(repo_type, repo_id, revision)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py&quot;, line 126, in _repo_and_revision_exist
+    self._api.repo_info(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py&quot;, line 114, in _inner_fn
+    return fn(*args, **kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_api.py&quot;, line 2867, in repo_info
+    return method(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py&quot;, line 114, in _inner_fn
+    return fn(*args, **kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_api.py&quot;, line 2730, in dataset_info
+    r = get_session().get(path, headers=headers, timeout=timeout, params=params)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/sessions.py&quot;, line 602, in get
+    return self.request(&quot;GET&quot;, url, **kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/sessions.py&quot;, line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/sessions.py&quot;, line 703, in send
+    r = adapter.send(request, **kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/utils/_http.py&quot;, line 95, in send
+    return super().send(request, *args, **kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/adapters.py&quot;, line 677, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: (MaxRetryError(&#x27;HTTPSConnectionPool(host=\&#x27;hf-mirror.com\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (Caused by NameResolutionError(&quot;HTTPSConnection(host=\&#x27;hf-mirror.com\&#x27;, port=443): Failed to resolve \&#x27;hf-mirror.com\&#x27; ([Errno -5] No address associated with hostname)&quot;))&#x27;), &#x27;(Request ID: 46f1345e-1ae7-4bc7-aa71-47dc438c2360)&#x27;)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File &quot;/var/tmp/root-home/Reinforcement-For-Robustness/runtime_error_reporter.py&quot;, line 156, in run_fire_entrypoint
+    fire_module.Fire(target)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py&quot;, line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py&quot;, line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py&quot;, line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+  File &quot;/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py&quot;, line 970, in train
+    data = load_glue_dataset_equivalent(
+  File &quot;/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py&quot;, line 471, in load_glue_dataset_equivalent
+    raise RuntimeError(
+RuntimeError: Failed to load GLUE task &#x27;mrpc&#x27; via nyu-mll/glue and the local/cache or equivalent parquet routes. Primary error: ConnectionError(MaxRetryError(&#x27;HTTPSConnectionPool(host=\&#x27;hf-mirror.com\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (Caused by NameResolutionError(&quot;HTTPSConnection(host=\&#x27;hf-mirror.com\&#x27;, port=443): Failed to resolve \&#x27;hf-mirror.com\&#x27; ([Errno -5] No address associated with hostname)&quot;))&#x27;), &#x27;(Request ID: 46f1345e-1ae7-4bc7-aa71-47dc438c2360)&#x27;); equivalent parquet errors: [&#x27;hf_cache_local_files_only: ConnectionError(MaxRetryError(\&#x27;HTTPSConnectionPool(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (Caused by NameResolutionError(&quot;HTTPSConnection(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Failed to resolve \\\&#x27;hf-mirror.com\\\&#x27; ([Errno -5] No address associated with hostname)&quot;))\&#x27;), \&#x27;(Request ID: 396a5d86-b02f-42df-ae83-ace639689563)\&#x27;)&#x27;, &#x27;https://huggingface.co: FileNotFoundError(&quot;Unable to find \&#x27;https://huggingface.co/datasets/nyu-mll/glue/resolve/main/mrpc/train-00000-of-00001.parquet\&#x27;&quot;)&#x27;, &#x27;https://hf-mirror.com: ConnectionError(MaxRetryError(\&#x27;HTTPSConnectionPool(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/main (Caused by NameResolutionError(&quot;HTTPSConnection(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Failed to resolve \\\&#x27;hf-mirror.com\\\&#x27; ([Errno -5] No address associated with hostname)&quot;))\&#x27;), \&#x27;(Request ID: 0ac8b4b1-3461-4a6b-8b4d-d9ef7742b62a)\&#x27;)&#x27;]
+</pre>
+<h2>Dataset Fallback Audit</h2><pre>[glue_dataset_equivalent_route]
+time_utc=2026-05-17T14:57:01+00:00
+task=mrpc
+primary_loader=load_dataset(&#x27;nyu-mll/glue&#x27;, task)
+equivalent_loader=load_dataset(&#x27;parquet&#x27;, data_files=...)
+original_operation=load_dataset(&quot;nyu-mll/glue&quot;, &quot;mrpc&quot;)
+switched_operation=load_dataset(&quot;parquet&quot;, data_files=&lt;same GLUE task parquet files&gt;)
+route_change_summary=metadata route -&gt; direct parquet file route
+switch_from_endpoint=https://hf-mirror.com
+switch_to_endpoint=https://huggingface.co
+candidate_endpoints=https://huggingface.co,https://hf-mirror.com
+endpoint=https://huggingface.co
+revision=main
+semantic_equivalence=same_repo=nyu-mll/glue; same_task=mrpc; same_revision=main; same_splits=train,validation,test; schema_check=required_columns
+primary_error=ConnectionError: (MaxRetryError(&#x27;HTTPSConnectionPool(host=\&#x27;hf-mirror.com\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (Caused by NameResolutionError(&quot;HTTPSConnection(host=\&#x27;hf-mirror.com\&#x27;, port=443): Failed to resolve \&#x27;hf-mirror.com\&#x27; ([Errno -5] No address associated with hostname)&quot;))&#x27;), &#x27;(Request ID: 46f1345e-1ae7-4bc7-aa71-47dc438c2360)&#x27;)
+data_files:
+  test=https://huggingface.co/datasets/nyu-mll/glue/resolve/main/mrpc/test-00000-of-00001.parquet
+  train=https://huggingface.co/datasets/nyu-mll/glue/resolve/main/mrpc/train-00000-of-00001.parquet
+  validation=https://huggingface.co/datasets/nyu-mll/glue/resolve/main/mrpc/validation-00000-of-00001.parquet
+
+[glue_dataset_equivalent_route]
+time_utc=2026-05-17T14:57:43+00:00
+task=mrpc
+primary_loader=load_dataset(&#x27;nyu-mll/glue&#x27;, task)
+equivalent_loader=load_dataset(&#x27;parquet&#x27;, data_files=...)
+original_operation=load_dataset(&quot;nyu-mll/glue&quot;, &quot;mrpc&quot;)
+switched_operation=load_dataset(&quot;parquet&quot;, data_files=&lt;same GLUE task parquet files&gt;)
+route_change_summary=metadata route -&gt; direct parquet file route
+switch_from_endpoint=https://hf-mirror.com
+switch_to_endpoint=https://hf-mirror.com
+candidate_endpoints=https://huggingface.co,https://hf-mirror.com
+endpoint=https://hf-mirror.com
+revision=main
+semantic_equivalence=same_repo=nyu-mll/glue; same_task=mrpc; same_revision=main; same_splits=train,validation,test; schema_check=required_columns
+primary_error=ConnectionError: (MaxRetryError(&#x27;HTTPSConnectionPool(host=\&#x27;hf-mirror.com\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (Caused by NameResolutionError(&quot;HTTPSConnection(host=\&#x27;hf-mirror.com\&#x27;, port=443): Failed to resolve \&#x27;hf-mirror.com\&#x27; ([Errno -5] No address associated with hostname)&quot;))&#x27;), &#x27;(Request ID: 46f1345e-1ae7-4bc7-aa71-47dc438c2360)&#x27;)
+data_files:
+  test=https://hf-mirror.com/datasets/nyu-mll/glue/resolve/main/mrpc/test-00000-of-00001.parquet
+  train=https://hf-mirror.com/datasets/nyu-mll/glue/resolve/main/mrpc/train-00000-of-00001.parquet
+  validation=https://hf-mirror.com/datasets/nyu-mll/glue/resolve/main/mrpc/validation-00000-of-00001.parquet
+
+</pre>
+<h2>Launcher Log</h2><pre>[env] CONDA_DEFAULT_ENV=llm_ist
+[env] python=/var/tmp/root-home/miniconda3/envs/llm_ist/bin/python
+[env] executable=/var/tmp/root-home/miniconda3/envs/llm_ist/bin/python
+[env] fire-ok
+[stop-rl] no running RL process at pid=3925027.
+
+================================================================================
+Start BLB Stage-2 Sequential RL (fresh) — with reward fix + invalid mask + stronger warmstart
+================================================================================
+已加载预设：mrpc-blb-stage2-rl（/var/tmp/root-home/Reinforcement-For-Robustness/presets/mrpc-blb-stage2-rl.conf）
+⚠ 警告：--fresh-start 将清除已有的 Stage-1 搜索结果，但当前 --skip-stage1-search 跳过了 Stage-1。
+  如果您只想重做 Stage-2 搜索，请不要使用 --fresh-start（直接运行即可自动续训练）。
+  5 秒后继续执行（Ctrl+C 可取消）...
+警告：--fresh-start 指定，正在清除已有持久化目录：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005
+启动配置：
+  搜索算法：普通强化学习（rl）（显式指定）
+  数据集：mrpc（显式指定）
+  模型类型：BERT Base（bert-base）（显式指定）
+  日志文件：blb_stage2_rl.log（显式指定）
+  批大小：64（显式指定）
+  模式目录：Parting Chapter/persistent/rl/bert-base/mrpc（显式指定）
+  运行目录：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005（显式指定）
+  Stage-1 准确度约束：0.005（显式指定）
+  Stage-2 指标约束百分比：0.005（显式指定）
+  Stage-2 稳定性约束百分比：0.005（显式指定）
+  Stage-2 K 次噪声试验：5（显式指定）
+  Stage-2 探针子集大小：256（显式指定）
+  持久化根目录：Parting Chapter/persistent（使用默认值）
+  持久化目录：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005（显式指定）
+  从头训练：是（显式指定）
+  Stage-1 回合数：51000（使用默认值）
+  Stage-2 回合数：6000（显式指定）
+  Stage-2 RL 实现：blb_v3（使用默认值）
+  BLB v3 warmstart anchor episodes：80（显式指定）
+  BLB v3 action mask：否（使用默认值）
+  BLB v3 action mask 模式：none（使用默认值）
+  BLB v3 baseline logit 加成：0（使用默认值）
+  PPO 更新间隔：120（使用默认值）
+  BLB rollout 大小：60（显式指定）
+  BLB Rescale optimizer：in_process_real (Rescale_optimizer)（使用默认值）
+  BLB checkpoint 间隔：200（显式指定）
+  BLB 日志评估间隔：100（显式指定）
+  Stage-1 学习率：1e-4（使用默认值）
+  Stage-2 学习率：2e-4（显式指定）
+  被动 final_eval 预设：default（显式指定）
+  最终评估来源：搜索结果（search）（显式指定）
+  Stage-2 固定 GELU/Softmax 来源：JSON 文件（json）（显式指定）
+  跳过 Stage-1 搜索：是（显式指定）
+  跳过 Stage-2 搜索：否（使用默认值）
+  跳过最终评估：否（使用默认值）
+  仅运行最终评估：否（使用默认值）
+  CUDA_VISIBLE_DEVICES：未设置（使用默认值）
+  实际执行命令（Command）：python rl_tune.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir Parting\ Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005 --batch_size 64 --micro_batch_size 64 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules \[\&quot;q_proj\&quot;\,\ \&quot;k_proj\&quot;\,\ \&quot;v_proj\&quot;\,\ \&quot;up_proj\&quot;\,\ \&quot;down_proj\&quot;\] --stage1_rl_episodes 51000 --stage2_rl_episodes 6000 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified true --ppo_update_interval 120 --use_ist --final_eval_config_source search --final_eval_config_path glue_final_configs_best_ppo.json --manual_stage1_gelu &#x27;&#x27; --manual_stage1_softmax &#x27;&#x27; --manual_stage2_noise &#x27;&#x27; --stage2_fixed_config_source json --stage2_fixed_config_path glue_final_configs_best_ppo.json --stage2_manual_gelu &#x27;&#x27; --stage2_manual_softmax &#x27;&#x27; --final_eval_random_seed 42 --final_eval_permutation_trials 0 --final_eval_cost_equivalent_trials 0 --final_eval_budget_equivalent_trials 0 --final_eval_stage1_budget_trials 10 --final_eval_stage2_budget_trials 10 --final_eval_repeat_n 1 --final_eval_preset default --skip_noise_rl false --skip_stage1_rl true --skip_final_eval false --final_eval_only false --resume_run_dir &#x27;&#x27; --stage1_rl_lr 1e-4 --stage2_rl_lr 2e-4 --stage1_accuracy_tolerance 0.005 --stage2_limit_tolerance 0.005 --stage2_stability_tolerance 0.005 --stage2_k_trials 5 --stage2_probe_size 256 --stage2_rl_variant blb_v3 --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer --blb_v3_rollout_size 60 --blb_v3_eval_interval 100 --blb_v3_save_interval 200 --blb_v3_calibrate_baseline_samples 8 --blb_v3_warmstart_anchor_episodes 80 --blb_v3_sequential_rl true --blb_v3_sequential_invalid_penalty 1.0 --blb_v3_sequential_cost_shaping_coeff 0.05 --blb_v3_sequential_fusion_shaping_coeff 0.0 
+
+已在后台启动。
+  进程号（PID）：2932752
+  查看日志：tail -f Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/logs/blb_stage2_rl.log
+  错误摘要：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/logs/error_summary.txt
+  LATEST_RUN_DIR：Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_RUN_DIR
+  LATEST_PID：Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_PID
+  优雅停止（Graceful Stop）：kill -INT 2932752
+</pre>
+<h2>Stage2 RL Log Tail</h2><pre>stage1_rl_lr: 0.0001
+stage2_rl_lr: 0.0002
+cutoff_len: 256
+val_set_size: 120
+use_gradient_checkpointing: False
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules: None
+Wdecompose_target_modules: None
+bottleneck_size: 256
+non_linearity: tanh
+adapter_dropout: 0.0
+use_parallel_adapter: True
+use_adapterp: False
+train_on_inputs: True
+scaling: 1.0
+adapter_name: lora
+target_modules: [&#x27;q_proj&#x27;, &#x27;k_proj&#x27;, &#x27;v_proj&#x27;, &#x27;up_proj&#x27;, &#x27;down_proj&#x27;]
+final_eval_config_source: search
+final_eval_config_path: glue_final_configs_best_ppo.json
+manual_stage1_gelu: 
+manual_stage1_softmax: 
+manual_stage2_noise: 
+stage1_rl_episodes: 51000
+stage2_rl_episodes: 6000
+stage1_rl_episodes_specified: False
+stage2_rl_episodes_specified: True
+skip_noise_rl: False
+final_eval_repeat_n: 1
+final_eval_preset: default
+final_eval_output_root: 
+final_eval_run_name: 
+final_eval_random_enabled: False
+final_eval_action_config: 
+final_eval_action_ranges: 
+final_eval_action_fixed: 
+final_eval_require_rescale_optimizer: False
+skip_stage1_rl: True
+skip_final_eval: False
+final_eval_only: False
+group_by_length: False
+wandb_project: 
+wandb_run_name: 
+wandb_watch: 
+wandb_log_model: 
+resume_from_checkpoint: None
+resume_run_dir: 
+stage2_rl_variant: blb_v3
+blb_v3_inproc_rescale_optimizer_root: Rescale_optimizer
+blb_v3_warmstart_anchor_episodes: 80
+blb_v3_action_mask_enabled: False
+blb_v3_action_mask_mode: none
+blb_v3_action_mask_file: 
+blb_v3_action_mask_baseline_logit_bonus: 0.0
+blb_v3_action_mask_source: 
+
+Auto-detected num_labels=2 for dataset &#x27;mrpc&#x27;
+BertForSequenceClassification(
+  (bert): BertModel(
+    (embeddings): BertEmbeddings(
+      (word_embeddings): Embedding(30522, 768, padding_idx=0)
+      (position_embeddings): Embedding(512, 768)
+      (token_type_embeddings): Embedding(2, 768)
+      (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+      (dropout): Dropout(p=0.1, inplace=False)
+    )
+    (encoder): BertEncoder(
+      (layer): ModuleList(
+        (0-11): 12 x BertLayer(
+          (attention): BertAttention(
+            (self): BertSelfAttention(
+              (query): Linear(in_features=768, out_features=768, bias=True)
+              (key): Linear(in_features=768, out_features=768, bias=True)
+              (value): Linear(in_features=768, out_features=768, bias=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+            (output): BertSelfOutput(
+              (dense): Linear(in_features=768, out_features=768, bias=True)
+              (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+          )
+          (intermediate): BertIntermediate(
+            (dense): Linear(in_features=768, out_features=3072, bias=True)
+            (intermediate_act_fn): GELUActivation()
+          )
+          (output): BertOutput(
+            (dense): Linear(in_features=3072, out_features=768, bias=True)
+            (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+            (dropout): Dropout(p=0.1, inplace=False)
+          )
+        )
+      )
+    )
+    (pooler): BertPooler(
+      (dense): Linear(in_features=768, out_features=768, bias=True)
+      (activation): Tanh()
+    )
+  )
+  (dropout): Dropout(p=0.1, inplace=False)
+  (classifier): Linear(in_features=768, out_features=2, bias=True)
+)
+Traceback (most recent call last):
+  File &quot;/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py&quot;, line 417, in load_glue_dataset_equivalent
+    data = load_dataset_fn(&quot;nyu-mll/glue&quot;, task)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py&quot;, line 2128, in load_dataset
+    builder_instance = load_dataset_builder(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py&quot;, line 1814, in load_dataset_builder
+    dataset_module = dataset_module_factory(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py&quot;, line 1511, in dataset_module_factory
+    raise e1 from None
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py&quot;, line 1495, in dataset_module_factory
+    ).get_module()
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/load.py&quot;, line 1047, in get_module
+    data_files = DataFilesDict.from_patterns(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py&quot;, line 686, in from_patterns
+    DataFilesList.from_patterns(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py&quot;, line 601, in from_patterns
+    origin_metadata = _get_origin_metadata(data_files, download_config=download_config)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py&quot;, line 516, in _get_origin_metadata
+    return thread_map(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/tqdm/contrib/concurrent.py&quot;, line 69, in thread_map
+    return _executor_map(ThreadPoolExecutor, fn, *iterables, **tqdm_kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/tqdm/contrib/concurrent.py&quot;, line 51, in _executor_map
+    return list(tqdm_class(ex.map(fn, *iterables, chunksize=chunksize), **kwargs))
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/concurrent/futures/_base.py&quot;, line 621, in result_iterator
+    yield _result_or_cancel(fs.pop())
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/concurrent/futures/_base.py&quot;, line 319, in _result_or_cancel
+    return fut.result(timeout)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/concurrent/futures/_base.py&quot;, line 458, in result
+    return self.__get_result()
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/concurrent/futures/_base.py&quot;, line 403, in __get_result
+    raise self._exception
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/concurrent/futures/thread.py&quot;, line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/datasets/data_files.py&quot;, line 496, in _get_single_origin_metadata
+    resolved_path = fs.resolve_path(data_file)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py&quot;, line 199, in resolve_path
+    repo_and_revision_exist, err = self._repo_and_revision_exist(repo_type, repo_id, revision)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py&quot;, line 126, in _repo_and_revision_exist
+    self._api.repo_info(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py&quot;, line 114, in _inner_fn
+    return fn(*args, **kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_api.py&quot;, line 2867, in repo_info
+    return method(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py&quot;, line 114, in _inner_fn
+    return fn(*args, **kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/hf_api.py&quot;, line 2730, in dataset_info
+    r = get_session().get(path, headers=headers, timeout=timeout, params=params)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/sessions.py&quot;, line 602, in get
+    return self.request(&quot;GET&quot;, url, **kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/sessions.py&quot;, line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/sessions.py&quot;, line 703, in send
+    r = adapter.send(request, **kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/utils/_http.py&quot;, line 95, in send
+    return super().send(request, *args, **kwargs)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/requests/adapters.py&quot;, line 677, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: (MaxRetryError(&#x27;HTTPSConnectionPool(host=\&#x27;hf-mirror.com\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (Caused by NameResolutionError(&quot;HTTPSConnection(host=\&#x27;hf-mirror.com\&#x27;, port=443): Failed to resolve \&#x27;hf-mirror.com\&#x27; ([Errno -5] No address associated with hostname)&quot;))&#x27;), &#x27;(Request ID: 46f1345e-1ae7-4bc7-aa71-47dc438c2360)&#x27;)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File &quot;/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py&quot;, line 1270, in &lt;module&gt;
+    run_fire_entrypoint(
+  File &quot;/var/tmp/root-home/Reinforcement-For-Robustness/runtime_error_reporter.py&quot;, line 156, in run_fire_entrypoint
+    fire_module.Fire(target)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py&quot;, line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py&quot;, line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+  File &quot;/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py&quot;, line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+  File &quot;/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py&quot;, line 970, in train
+    data = load_glue_dataset_equivalent(
+  File &quot;/var/tmp/root-home/Reinforcement-For-Robustness/rl_tune.py&quot;, line 471, in load_glue_dataset_equivalent
+    raise RuntimeError(
+RuntimeError: Failed to load GLUE task &#x27;mrpc&#x27; via nyu-mll/glue and the local/cache or equivalent parquet routes. Primary error: ConnectionError(MaxRetryError(&#x27;HTTPSConnectionPool(host=\&#x27;hf-mirror.com\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (Caused by NameResolutionError(&quot;HTTPSConnection(host=\&#x27;hf-mirror.com\&#x27;, port=443): Failed to resolve \&#x27;hf-mirror.com\&#x27; ([Errno -5] No address associated with hostname)&quot;))&#x27;), &#x27;(Request ID: 46f1345e-1ae7-4bc7-aa71-47dc438c2360)&#x27;); equivalent parquet errors: [&#x27;hf_cache_local_files_only: ConnectionError(MaxRetryError(\&#x27;HTTPSConnectionPool(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (Caused by NameResolutionError(&quot;HTTPSConnection(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Failed to resolve \\\&#x27;hf-mirror.com\\\&#x27; ([Errno -5] No address associated with hostname)&quot;))\&#x27;), \&#x27;(Request ID: 396a5d86-b02f-42df-ae83-ace639689563)\&#x27;)&#x27;, &#x27;https://huggingface.co: FileNotFoundError(&quot;Unable to find \&#x27;https://huggingface.co/datasets/nyu-mll/glue/resolve/main/mrpc/train-00000-of-00001.parquet\&#x27;&quot;)&#x27;, &#x27;https://hf-mirror.com: ConnectionError(MaxRetryError(\&#x27;HTTPSConnectionPool(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Max retries exceeded with url: /api/datasets/nyu-mll/glue/revision/main (Caused by NameResolutionError(&quot;HTTPSConnection(host=\\\&#x27;hf-mirror.com\\\&#x27;, port=443): Failed to resolve \\\&#x27;hf-mirror.com\\\&#x27; ([Errno -5] No address associated with hostname)&quot;))\&#x27;), \&#x27;(Request ID: 0ac8b4b1-3461-4a6b-8b4d-d9ef7742b62a)\&#x27;)&#x27;]</pre>
+</main></body></html>
