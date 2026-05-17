@@ -1,137 +1,25 @@
 === BLB Stage-2 RL 奖励暴跌警告（reward-drop warnings）===
 阶段（phase）: BLB Stage-2 RL · sequential（v3）
-启动时间（first-write）: 2026-05-17T01:45:48.588417
+启动时间（first-write）: 2026-05-18T00:02:13.880166
 
 --- 警告 #1 ---
   类型: rollout reward drop
-  跌幅（drop）: 0.4810 (prev=-163.5032, curr=-163.9842)
-  回合范围: 61-120
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_1-360.txt
-  写入时间: 2026-05-17T01:45:48.588430
+  跌幅（drop）: 45.6012 (prev=-167.2403, curr=-212.8414)
+  回合范围: 361-420
+    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_361-720.txt
+  写入时间: 2026-05-18T00:02:13.880178
 
 --- 警告 #2 ---
   类型: rollout reward drop
-  跌幅（drop）: 0.7234 (prev=-163.9842, curr=-164.7077)
-  回合范围: 121-180
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_1-360.txt
-  写入时间: 2026-05-17T01:50:18.241719
+  跌幅（drop）: 1.2569 (prev=-164.2722, curr=-165.5291)
+  回合范围: 661-720
+    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_721-1080.txt
+  写入时间: 2026-05-18T00:24:56.894457
 
 --- 警告 #3 ---
   类型: rollout reward drop
-  跌幅（drop）: 2.6525 (prev=-160.6459, curr=-163.2984)
-  回合范围: 241-300
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_1-360.txt
-  写入时间: 2026-05-17T01:59:13.295611
-
---- 警告 #4 ---
-  类型: rollout reward drop
-  跌幅（drop）: 1.2039 (prev=-163.2984, curr=-164.5023)
-  回合范围: 301-360
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_361-720.txt
-  写入时间: 2026-05-17T02:03:43.470669
-
---- 警告 #5 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.6412 (prev=-163.5432, curr=-164.1844)
-  回合范围: 481-540
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_361-720.txt
-  写入时间: 2026-05-17T02:16:56.282501
-
---- 警告 #6 ---
-  类型: rollout reward drop
-  跌幅（drop）: 1.1257 (prev=-162.1711, curr=-163.2968)
-  回合范围: 721-780
+  跌幅（drop）: 0.6844 (prev=-163.6641, curr=-164.3485)
+  回合范围: 961-1020
     -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_721-1080.txt
-  写入时间: 2026-05-17T02:34:41.939420
-
---- 警告 #7 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.5208 (prev=-162.6561, curr=-163.1769)
-  回合范围: 841-900
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_721-1080.txt
-  写入时间: 2026-05-17T02:43:35.883380
-
---- 警告 #8 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.7182 (prev=-159.6524, curr=-160.3706)
-  回合范围: 1021-1080
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_1081-1440.txt
-  写入时间: 2026-05-17T02:57:00.115885
-
---- 警告 #9 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.4153 (prev=-158.0487, curr=-158.4641)
-  回合范围: 1141-1200
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_1081-1440.txt
-  写入时间: 2026-05-17T03:05:55.302104
-
---- 警告 #10 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.3462 (prev=-154.3995, curr=-154.7457)
-  回合范围: 1981-2040
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_1801-2160.txt
-  写入时间: 2026-05-17T04:07:59.272363
-
---- 警告 #11 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.7480 (prev=-153.7296, curr=-154.4776)
-  回合范围: 2281-2340
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_2161-2520.txt
-  写入时间: 2026-05-17T04:30:03.151832
-
---- 警告 #12 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.6079 (prev=-154.4776, curr=-155.0855)
-  回合范围: 2341-2400
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_2161-2520.txt
-  写入时间: 2026-05-17T04:34:36.032012
-
---- 警告 #13 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.7699 (prev=-153.8462, curr=-154.6162)
-  回合范围: 2581-2640
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_2521-2880.txt
-  写入时间: 2026-05-17T04:52:19.389209
-
---- 警告 #14 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.4068 (prev=-153.7180, curr=-154.1248)
-  回合范围: 3541-3600
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_3601-3960.txt
-  写入时间: 2026-05-17T06:03:44.555466
-
---- 警告 #15 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.3120 (prev=-153.6127, curr=-153.9247)
-  回合范围: 3961-4020
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_3961-4320.txt
-  写入时间: 2026-05-17T06:35:08.411075
-
---- 警告 #16 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.4179 (prev=-153.9247, curr=-154.3427)
-  回合范围: 4021-4080
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_3961-4320.txt
-  写入时间: 2026-05-17T06:39:35.611905
-
---- 警告 #17 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.9296 (prev=-153.3934, curr=-154.3229)
-  回合范围: 4621-4680
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_4681-5040.txt
-  写入时间: 2026-05-17T07:24:19.414245
-
---- 警告 #18 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.3407 (prev=-153.0928, curr=-153.4335)
-  回合范围: 5401-5460
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_5401-5760.txt
-  写入时间: 2026-05-17T08:22:15.147458
-
---- 警告 #19 ---
-  类型: rollout reward drop
-  跌幅（drop）: 0.3308 (prev=-153.6654, curr=-153.9961)
-  回合范围: 5521-5580
-    -> Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/details/noise_ppo_step_info_5401-5760.txt
-  写入时间: 2026-05-17T08:31:10.667639
+  写入时间: 2026-05-18T00:47:43.064659
 
