@@ -1,6 +1,6 @@
 # Experiments index
 
-_Auto-generated from `/var/folders/4k/w3ccv4d14m964xjmws95x39h0000gn/T/blb_smoke_o6_d6s03/registry.jsonl` on 2026-05-17T15:10:55+08:00. Edit `notes` field in registry.jsonl to annotate a run; rerun `python3 tools/experiments_log.py rebuild` to refresh._
+_Auto-generated from `/var/folders/4k/w3ccv4d14m964xjmws95x39h0000gn/T/blb_smoke_z4i934ct/registry.jsonl` on 2026-05-17T18:53:06+08:00. Edit `notes` field in registry.jsonl to annotate a run; rerun `python3 tools/experiments_log.py rebuild` to refresh._
 
 - Total registered run_ids: **1**
 - By status: complete=1
