@@ -162,17 +162,24 @@ class BLBStage2SequentialEnv:
         self._terminated_early = False
         return self._build_obs()
 
-    def step(
+    def evaluate_step(
             self,
             per_step_action: Sequence[int],
-            ) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
-        """Decide one (layer, block); return (obs, reward, done, info).
+            ) -> Dict[str, Any]:
+        """Run the optimizer for the candidate action WITHOUT mutating env state.
 
-        ``per_step_action`` length must equal ``len(current_spec().slot_dims)``.
+        Splits :meth:`step` into two phases so the caller can blacklist invalid
+        actions before committing them to the accumulator. The action is
+        spliced into a *copy* of ``_pending_full_vec`` so the persistent vec is
+        unchanged until :meth:`commit_step` is invoked. Returns an ``eval_info``
+        dict that must be passed back to :meth:`commit_step` if the caller
+        accepts the action.
+
+        2026-05-17: added so :func:`train_sequential` can implement the
+        per-(layer, block) invalid-action mask the user requested.
         """
         if self._terminated_early:
-            raise RuntimeError("episode already terminated; call reset() before step()")
-
+            raise RuntimeError("episode already terminated; call reset() before evaluate_step()")
         spec = self.current_spec()
         action = np.asarray(per_step_action, dtype=int).reshape(-1)
         if action.size != len(spec.slot_dims):
@@ -180,18 +187,15 @@ class BLBStage2SequentialEnv:
                 f"step {spec.step_idx} expects {len(spec.slot_dims)} slots, got {action.size}"
             )
 
-        # Splice into the accumulator so action_vector_to_cfgs sees it on the
-        # terminal step (and so subsequent per-step decodes can use it as
-        # context if the block depends on earlier blocks within the same layer).
-        splice_step_action_into_full_vec(self._pending_full_vec, spec, action)
+        # Use a fresh copy of the accumulator so the persistent vec only changes
+        # in commit_step(). Important: we still need the previously-committed
+        # earlier blocks visible to action_vector_to_cfgs, hence the copy
+        # rather than a zero-vec.
+        temp_vec = self._pending_full_vec.copy()
+        splice_step_action_into_full_vec(temp_vec, spec, action)
 
-        # Decode this single (layer, block) cfg out of the partial accumulator.
-        # action_vector_to_cfgs decodes ALL blocks for ALL layers; we pluck the
-        # one we need. Slots not yet decided default to 0 -> baseline-low SF,
-        # which is the safe lossless fallback for blocks that haven't reached
-        # their step yet (they'll be re-decoded in the terminal step anyway).
         decoded = action_vector_to_cfgs(
-            self._pending_full_vec,
+            temp_vec,
             self.base.max_sfs,
             num_layers=self.num_layers,
             gelu_degree=self.base.gelu_degree,
@@ -199,9 +203,8 @@ class BLBStage2SequentialEnv:
         )
         cfgs_by_block = decoded.cfgs_dict()
         block_cfg = cfgs_by_block[f"block{spec.block_idx}"][spec.layer_idx]
-
-        # Per-block ReplanSession call.
         config_name = f"{spec.graph_key_suffix}_L{spec.layer_idx}"
+
         try:
             out = self.base.rescale_bridge.evaluate(
                 config_name=config_name,
@@ -209,37 +212,86 @@ class BLBStage2SequentialEnv:
                 cfg=block_cfg,
             )
         except Exception as exc:
-            # If the bridge errors (missing graph_key etc.), surface a hard
-            # invalid signal but don't crash the loop -- the runner can act
-            # on it.
-            self._record_step(spec, action, valid=False, total_bits=0,
-                              fusion_count=0, error=str(exc))
+            return {
+                "spec": spec,
+                "action": action,
+                "temp_vec": temp_vec,
+                "block_cfg": None,
+                "optimizer_output": None,
+                "valid": False,
+                "total_bits": 0,
+                "fusion_count": 0,
+                "invalid_chain": {"reason": f"bridge_error: {exc}"},
+                "bridge_error": str(exc),
+                "config_name": config_name,
+            }
+
+        return {
+            "spec": spec,
+            "action": action,
+            "temp_vec": temp_vec,
+            "block_cfg": block_cfg,
+            "optimizer_output": out,
+            "valid": bool(out.valid),
+            "total_bits": int(out.total_bits),
+            "fusion_count": int(out.fusion_count),
+            "invalid_chain": out.invalid_chain,
+            "config_name": config_name,
+        }
+
+    def commit_step(
+            self,
+            eval_info: Mapping[str, Any],
+            ) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
+        """Commit a previously-evaluated action: mutate env state, return
+        ``(obs, reward, done, info)`` just like :meth:`step` did before the
+        2026-05-17 split."""
+        if self._terminated_early:
+            raise RuntimeError("episode already terminated; call reset() before commit_step()")
+
+        spec = eval_info["spec"]
+        action = np.asarray(eval_info["action"], dtype=int).reshape(-1)
+        valid = bool(eval_info["valid"])
+        total_bits = int(eval_info["total_bits"])
+        fusion_count = int(eval_info["fusion_count"])
+        config_name = str(eval_info["config_name"])
+
+        # 1) Promote the temp accumulator to the persistent one (this includes
+        #    the splice for the current step).
+        temp_vec = eval_info.get("temp_vec")
+        if temp_vec is not None:
+            self._pending_full_vec = np.asarray(temp_vec, dtype=self._pending_full_vec.dtype).copy()
+
+        # 2) Bookkeeping (record + reward shaping).
+        if eval_info.get("bridge_error"):
+            self._record_step(
+                spec, action,
+                valid=False, total_bits=0, fusion_count=0,
+                error=str(eval_info["bridge_error"]),
+            )
             self._step_idx += 1
             self._terminated_early = True
-            obs = self._build_obs()
             info = {
-                "step": spec.step_idx, "block_idx": spec.block_idx, "layer_idx": spec.layer_idx,
-                "graph_key": config_name, "valid": False,
-                "bridge_error": str(exc), "early_terminated": True,
+                "step": spec.step_idx,
+                "block_idx": spec.block_idx,
+                "layer_idx": spec.layer_idx,
+                "graph_key": config_name,
+                "valid": False,
+                "bridge_error": str(eval_info["bridge_error"]),
+                "early_terminated": True,
             }
-            return obs, -float(self.cfg.invalid_penalty), True, info
+            return self._build_obs(), -float(self.cfg.invalid_penalty), True, info
 
-        valid = bool(out.valid)
-        total_bits = int(out.total_bits)
-        fusion_count = int(out.fusion_count)
-        invalid_chain = out.invalid_chain
-        self._record_step(spec, action, valid=valid, total_bits=total_bits,
-                          fusion_count=fusion_count)
+        self._record_step(
+            spec, action,
+            valid=valid, total_bits=total_bits, fusion_count=fusion_count,
+        )
 
-        # Per-block reward shaping.
         per_step_reward = 0.0
         if not valid:
             per_step_reward -= float(self.cfg.invalid_penalty)
         else:
-            # Normalise by this graph's baseline total_bits so the shaping
-            # is comparable across blocks.
-            graph_key = spec.graph_key_suffix
-            baseline_total = self._lookup_baseline_block_total_bits(graph_key)
+            baseline_total = self._lookup_baseline_block_total_bits(spec.graph_key_suffix)
             if baseline_total and baseline_total > 0:
                 cost_ratio = float(total_bits) / float(baseline_total)
                 per_step_reward -= float(self.cfg.cost_shaping_coeff) * (cost_ratio - 1.0)
@@ -254,15 +306,13 @@ class BLBStage2SequentialEnv:
             "valid": valid,
             "total_bits": total_bits,
             "fusion_count": fusion_count,
-            "invalid_chain": invalid_chain,
+            "invalid_chain": eval_info.get("invalid_chain"),
         }
 
-        # Optimizer-driven cfg override on the in-memory cfg, plus Q/K binding
-        # sync (block 2 only). This mirrors what the single-shot env does after
-        # evaluate_blocks, so the per-step decoded cfg ends up matching what
-        # the optimizer settled on -- useful for downstream model install at
-        # the terminal step.
-        if valid:
+        # 3) Apply optimizer cfg overrides on the (now committed) block_cfg.
+        if valid and eval_info.get("optimizer_output") is not None:
+            out = eval_info["optimizer_output"]
+            block_cfg = eval_info["block_cfg"]
             invoker_baselines: Mapping[str, Any] = (
                 getattr(self.base.rescale_bridge.invoker, "baselines", {}) or {}
             )
@@ -288,6 +338,7 @@ class BLBStage2SequentialEnv:
                     for e in overrides
                 ]
 
+        # 4) Advance step counter + terminal handoff.
         self._step_idx += 1
         done = (self._step_idx == self.horizon)
         if not valid and self.cfg.early_terminate_on_invalid:
@@ -296,16 +347,27 @@ class BLBStage2SequentialEnv:
             info["early_terminated"] = True
 
         if done and not self._terminated_early:
-            # Terminal: hand off the accumulated full action vec to the base env
-            # to run the actual model forward + full hard-priority reward.
             term_state, term_reward, _term_done, term_info = self.base.step(self._pending_full_vec)
             info["terminal_info"] = term_info
             info["terminal_reward"] = float(term_reward)
             return term_state, per_step_reward + float(term_reward), True, info
 
-        # Non-terminal -> next obs
         obs = self._build_obs()
         return obs, per_step_reward, done, info
+
+    def step(
+            self,
+            per_step_action: Sequence[int],
+            ) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
+        """Decide one (layer, block); return (obs, reward, done, info).
+
+        Backward-compat wrapper that combines :meth:`evaluate_step` and
+        :meth:`commit_step`. Callers that want per-step retry logic should
+        call the two phases explicitly so they can drop the eval_info on
+        the floor when the action lands on the invalid-chain blacklist.
+        """
+        eval_info = self.evaluate_step(per_step_action)
+        return self.commit_step(eval_info)
 
     # ------------------------------------------------------------------
     # internals

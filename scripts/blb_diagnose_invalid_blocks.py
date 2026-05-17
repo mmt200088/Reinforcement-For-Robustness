@@ -71,26 +71,75 @@ def _load_action_vec(action_config_path: str, num_layers: int) -> Tuple[np.ndarr
     return arr, meta
 
 
-def _stage1_degrees_from_meta(meta: Mapping[str, Any], num_layers: int) -> Tuple[List[int], List[int]]:
+def _stage1_degrees_from_meta(
+        meta: Mapping[str, Any],
+        num_layers: int,
+        *,
+        model_type: str = "bert-base",
+        ) -> Tuple[List[int], List[int]]:
     """Best-effort recovery of stage-1 (gelu/softmax) per-layer degrees.
 
     The action JSON itself doesn't carry the stage-1 vector; we read it from
-    the canonical ``glue_final_configs_best_ppo.json`` since that's what the
-    BLB preset locks Stage-1 to. Falls back to all-4 if anything goes wrong.
+    the canonical ``glue_final_configs_best_ppo.json``. The schema is:
+
+        {
+          "bert-base": {
+            "mrpc":  {"stage1": {"gelu": [..L..], "softmax": [..L..]}, ...},
+            "cola":  {"stage1": {...}, ...},
+            ...
+          },
+          "bert-large": {...},
+          "gpt-2":     {...},
+        }
+
+    Falls back to all-4 ONLY if absolutely nothing parseable is found — and
+    prints a loud warning so an operator can spot the mismatch in the report.
+    Previously (2026-05-17 first cut) the path was wrong (``cfg[dataset]``
+    instead of ``cfg[model_type][dataset]['stage1']``) and the script silently
+    fell back to all-4, producing an invalid-block report that listed every
+    failing block as ``block5_n4`` / ``block3_exp_n4`` even when the real
+    stage-1 vector had degree 1 / 2 / 5 / 6 for many layers.
     """
     stage1_default = ([4] * num_layers, [4] * num_layers)
     src = meta.get("stage1_config_path") or "glue_final_configs_best_ppo.json"
     path = REPO_ROOT / src
     try:
         cfg = json.loads(path.read_text(encoding="utf-8"))
-        dataset = str(meta.get("meta", {}).get("profile", "mrpc"))
-        entry = cfg.get(dataset, {})
-        gelu = entry.get("gelu_degree") or entry.get("manual_stage1_gelu") or []
-        softmax = entry.get("softmax_degree") or entry.get("manual_stage1_softmax") or []
-        if gelu and softmax and len(gelu) == num_layers and len(softmax) == num_layers:
-            return [int(x) for x in gelu], [int(x) for x in softmax]
     except Exception as exc:
-        print(f"[warn] could not recover stage-1 degrees from {path}: {exc}", file=sys.stderr)
+        print(f"[warn] could not read stage-1 config {path}: {exc}", file=sys.stderr)
+        return stage1_default
+
+    dataset = str(meta.get("meta", {}).get("profile", "mrpc"))
+
+    # Preferred shape: cfg[model_type][dataset]["stage1"]["gelu" / "softmax"].
+    try:
+        stage1 = cfg[str(model_type)][dataset]["stage1"]
+        gelu = stage1["gelu"]
+        softmax = stage1["softmax"]
+        if len(gelu) == num_layers and len(softmax) == num_layers:
+            return [int(x) for x in gelu], [int(x) for x in softmax]
+    except (KeyError, TypeError):
+        pass
+
+    # Older / alternate shapes — keep as fallbacks but warn if they hit.
+    entry = cfg.get(dataset, {})
+    gelu = entry.get("gelu_degree") or entry.get("manual_stage1_gelu") or []
+    softmax = entry.get("softmax_degree") or entry.get("manual_stage1_softmax") or []
+    if gelu and softmax and len(gelu) == num_layers and len(softmax) == num_layers:
+        print(
+            f"[warn] read stage-1 from legacy top-level key '{dataset}' in {path}; "
+            "expected schema is {model_type}.{dataset}.stage1.{gelu,softmax}",
+            file=sys.stderr,
+        )
+        return [int(x) for x in gelu], [int(x) for x in softmax]
+
+    print(
+        f"[warn] could not locate stage-1 per-layer degrees in {path} for "
+        f"model_type={model_type!r} dataset={dataset!r} -- falling back to "
+        f"[4]*{num_layers}. Report's graph_keys (block3_exp_n4 / block5_n4) "
+        f"WILL be wrong if real stage-1 is non-4.",
+        file=sys.stderr,
+    )
     return stage1_default
 
 
@@ -150,6 +199,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--profile", default="mrpc")
     p.add_argument("--num-layers", type=int, default=12)
     p.add_argument(
+        "--model-type", default="bert-base",
+        help="Used to look up stage-1 degrees under cfg[model_type][dataset].",
+    )
+    p.add_argument(
         "--rescale-optimizer-root", default="Rescale_optimizer",
         help="Local Rescale_optimizer package root (default: ./Rescale_optimizer).",
     )
@@ -176,7 +229,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         gelu = [int(x) for x in args.gelu_degree.split(",")]
         softmax = [int(x) for x in args.softmax_degree.split(",")]
     else:
-        gelu, softmax = _stage1_degrees_from_meta(meta, args.num_layers)
+        gelu, softmax = _stage1_degrees_from_meta(
+            meta, args.num_layers, model_type=args.model_type,
+        )
     print(f"[stage1] gelu={gelu}", flush=True)
     print(f"[stage1] softmax={softmax}", flush=True)
 

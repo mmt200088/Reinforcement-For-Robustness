@@ -1,10 +1,25 @@
-"""Action-mask helpers for BLB Stage-2 Trust-0/Phase-1 diagnostics."""
+"""Action-mask helpers for BLB Stage-2 Trust-0/Phase-1 diagnostics.
+
+Two related-but-distinct mask abstractions live here:
+
+  1. Per-slot allow-list (legacy ``build_action_mask`` / ``ensure_action_allowed``)
+     — static, pre-computed list of which level indices a slot may sample.
+     Used by Paean's "near_baseline" / "baseline_only" sweeps.
+
+  2. ``ForbiddenActionMask`` (added 2026-05-17) — dynamic, per-(layer, block)
+     blacklist of *full step-action tuples* that triggered invalid_chain at
+     runtime. Used by the sequential RL loop to rejection-sample around
+     known-bad tuples so the policy never sees them again. The two abstractions
+     are orthogonal: a slot allow-list constrains the action *space*; the
+     forbidden-action set constrains specific *tuples* within that space.
+"""
 from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Sequence, Set, Tuple
 
 import numpy as np
 
@@ -229,3 +244,106 @@ def build_action_mask(
             continue
         raise ValueError(f"unknown action-mask mode: {mode}")
     return out
+
+
+# ===========================================================================
+# Runtime invalid-action blacklist (added 2026-05-17)
+# ===========================================================================
+# Each block at each layer accumulates its own forbidden set. Across episodes
+# the policy can re-sample any non-forbidden action freely; a sample that
+# matches a prior failure is dropped before reaching the optimizer.
+_ForbiddenKey = Tuple[int, int]            # (layer_idx, block_idx)
+_ForbiddenActionTuple = Tuple[int, ...]    # length = len(spec.slot_dims)
+
+
+@dataclass
+class ForbiddenActionMask:
+    """Mutable per-(layer, block) blacklist of failed per-step action tuples.
+
+    Use :meth:`add` after :meth:`is_forbidden` was False but env.evaluate_step
+    came back invalid. Use :meth:`is_forbidden` to gate every fresh sample.
+
+    Design intent (user's spec, 2026-05-17):
+
+      > 选取invalid chain的这个动作根本不进入模型，直接完全从动作空间排除。
+      > 这样修改之后，我希望达到一个效果，就是模型只能看到所有valid的动作，
+      > 在这些valid的动作中学习找到最优。
+
+    Kept intentionally cheap: a plain dict of ``(layer, block) → set[tuple]``.
+    JSON-roundtrip-able via :meth:`to_json_records` / :meth:`from_json_records`
+    so it can ride along inside the PPO checkpoint and survive resume.
+    """
+
+    by_key: Dict[_ForbiddenKey, Set[_ForbiddenActionTuple]] = field(default_factory=dict)
+
+    # ------------------------------------------------------------------
+    # Core operations
+    # ------------------------------------------------------------------
+    def add(self, layer_idx: int, block_idx: int, action_tuple: Sequence[int]) -> bool:
+        """Add an action tuple to the (layer, block) forbidden set.
+
+        Returns True iff the tuple was newly added.
+        """
+        key = (int(layer_idx), int(block_idx))
+        tup = tuple(int(x) for x in action_tuple)
+        bucket = self.by_key.setdefault(key, set())
+        if tup in bucket:
+            return False
+        bucket.add(tup)
+        return True
+
+    def is_forbidden(self, layer_idx: int, block_idx: int, action_tuple: Sequence[int]) -> bool:
+        bucket = self.by_key.get((int(layer_idx), int(block_idx)))
+        if not bucket:
+            return False
+        return tuple(int(x) for x in action_tuple) in bucket
+
+    def count(self, layer_idx: int, block_idx: int) -> int:
+        return len(self.by_key.get((int(layer_idx), int(block_idx)), ()))
+
+    def total(self) -> int:
+        return sum(len(v) for v in self.by_key.values())
+
+    # ------------------------------------------------------------------
+    # Persistence (checkpoint-safe)
+    # ------------------------------------------------------------------
+    def to_json_records(self) -> List[Dict[str, object]]:
+        """``[{"layer", "block", "count", "tuples"}, ...]`` — JSON-safe."""
+        records: List[Dict[str, object]] = []
+        for (li, bi), bucket in sorted(self.by_key.items()):
+            records.append({
+                "layer": int(li),
+                "block": int(bi),
+                "count": int(len(bucket)),
+                "tuples": sorted(list(t) for t in bucket),
+            })
+        return records
+
+    @classmethod
+    def from_json_records(cls, records: Iterable[Mapping[str, object]]) -> "ForbiddenActionMask":
+        out = cls()
+        for r in records or ():
+            li = int(r["layer"])         # type: ignore[arg-type]
+            bi = int(r["block"])         # type: ignore[arg-type]
+            for t in r.get("tuples", []) or []:                   # type: ignore[union-attr]
+                out.add(li, bi, tuple(int(x) for x in t))
+        return out
+
+    # ------------------------------------------------------------------
+    # Diagnostics
+    # ------------------------------------------------------------------
+    def summary(self, top_n: int = 5) -> str:
+        if not self.by_key:
+            return "forbidden_action_mask=empty"
+        rows = sorted(
+            ((k, len(v)) for k, v in self.by_key.items() if v),
+            key=lambda kv: -kv[1],
+        )
+        head = rows[: max(1, int(top_n))]
+        body = "; ".join(f"L{li:02d}-B{bi}={n}" for (li, bi), n in head)
+        rest = sum(n for (_, n) in rows[len(head):])
+        return (
+            f"forbidden_action_mask total={self.total()} "
+            f"(top {len(head)}: {body}"
+            + (f"; +{rest} in {len(rows) - len(head)} more)" if rest else ")")
+        )

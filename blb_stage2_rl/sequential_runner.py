@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 import numpy as np
 import torch
 
+from .action_mask import ForbiddenActionMask
 from .sequential_env import BLBStage2SequentialEnv, SequentialEnvConfig
 from .sequential_policy import (
     BLBStage2SequentialPolicy,
@@ -199,6 +200,9 @@ def train_sequential(
         ] = None,
         capture_step_infos: bool = False,
         logger: Optional[logging.Logger] = None,
+        forbidden_mask: Optional[ForbiddenActionMask] = None,
+        baseline_action_vec: Optional[np.ndarray] = None,
+        max_rejection_retries: int = 32,
         ) -> Dict[str, object]:
     """Train ``policy`` on ``env`` with sequential PPO.
 
@@ -228,6 +232,22 @@ def train_sequential(
     log = logger or logging.getLogger(__name__)
     optimizer = torch.optim.Adam(policy.parameters(), lr=train_cfg.ppo.lr)
     buffer = SequentialRolloutBuffer()
+
+    # Per-(layer, block) blacklist of action tuples that produced invalid_chain.
+    # Survives across episodes within this train_sequential call. If a caller
+    # supplied an existing mask (e.g. resumed from checkpoint), keep its entries
+    # so we don't re-discover the same failures.
+    if forbidden_mask is None:
+        forbidden_mask = ForbiddenActionMask()
+    if baseline_action_vec is not None:
+        baseline_action_vec = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1)
+    rejection_counters = {
+        "samples_rejected_by_mask": 0,   # rejected before optimizer call (cheap)
+        "samples_rejected_by_optimizer": 0,  # called optimizer, got invalid → blacklisted
+        "steps_fallen_back_to_baseline": 0,  # max_retries exhausted, used baseline_step_action
+        "steps_committed_valid": 0,
+        "steps_committed_invalid": 0,    # only when no baseline available + retries exhausted
+    }
 
     episode_returns: List[float] = []
     episode_records: List[EpisodeRecord] = []
@@ -266,44 +286,117 @@ def train_sequential(
             obs_t = torch.from_numpy(obs).float().to(device).unsqueeze(0)
             slot_mask_t = torch.from_numpy(slot_mask_np).to(device).unsqueeze(0)
             levels_t = torch.from_numpy(levels_np).to(device).unsqueeze(0)
-
-            with torch.no_grad():
-                action_t, log_prob_t, value_t = policy.sample_action(
-                    obs_t, slot_mask_t, levels_t, deterministic=False,
-                )
-            action_np = action_t.squeeze(0).cpu().numpy().astype(np.int64)
-            log_prob = float(log_prob_t.item())
-            value = float(value_t.item())
-
-            # The policy outputs max_step_dim slots; keep only those that
-            # are active for this step before passing to the env.
             n_active = int(slot_mask_np.sum())
+
+            # -- Rejection-sample around the per-(layer, block) blacklist --
+            # The policy may sample a tuple that the optimizer previously
+            # rejected for this (layer, block). We:
+            #   1) Skip it BEFORE calling evaluate_step if it's already in the
+            #      mask (no optimizer call → cheap).
+            #   2) If it's a fresh tuple but evaluate_step returns invalid,
+            #      add it to the mask and re-sample.
+            #   3) If max_rejection_retries are exhausted, fall back to the
+            #      baseline action sliced from baseline_action_vec for this
+            #      step (guaranteed valid by static_skeletons). If no baseline
+            #      is available, commit the last sampled action even though
+            #      it failed — caller will see invalid=True in the info dict.
+            chosen_action_np: Optional[np.ndarray] = None
+            chosen_log_prob: float = 0.0
+            chosen_value: float = 0.0
+            chosen_eval_info: Optional[Dict[str, Any]] = None
+            attempts_this_step = 0
+
+            for _attempt in range(int(max_rejection_retries)):
+                attempts_this_step += 1
+                with torch.no_grad():
+                    action_t, log_prob_t, value_t = policy.sample_action(
+                        obs_t, slot_mask_t, levels_t, deterministic=False,
+                    )
+                action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
+                step_action_try = action_np_try[:n_active].tolist()
+                tup = tuple(int(x) for x in step_action_try)
+
+                if forbidden_mask.is_forbidden(spec.layer_idx, spec.block_idx, tup):
+                    rejection_counters["samples_rejected_by_mask"] += 1
+                    continue   # cheap re-sample, no optimizer call
+
+                eval_info = env.evaluate_step(step_action_try)
+                if eval_info["valid"]:
+                    chosen_action_np = action_np_try
+                    chosen_log_prob = float(log_prob_t.item())
+                    chosen_value = float(value_t.item())
+                    chosen_eval_info = eval_info
+                    break
+
+                # New invalid → blacklist + try again. Per the user's spec
+                # ("就好像训练过程中根本不存在这些动作"), the rejected sample
+                # is NOT counted toward invalid_steps / invalid_block_details —
+                # only ``rejection_counters`` records the diagnostic count.
+                forbidden_mask.add(spec.layer_idx, spec.block_idx, tup)
+                rejection_counters["samples_rejected_by_optimizer"] += 1
+
+            if chosen_eval_info is None:
+                # Exhausted retries — fall back to the baseline action for this
+                # specific step. Baseline is the static_skeletons all-max action,
+                # which is verified valid across all 59 (layer, block) configs,
+                # so committing it is guaranteed to keep this episode usable.
+                if baseline_action_vec is not None:
+                    baseline_slice = baseline_action_vec[
+                        list(spec.full_vec_offsets)
+                    ][:n_active]
+                    fallback_action = np.asarray(baseline_slice, dtype=np.int64)
+                    fallback_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
+                    fallback_padded[:n_active] = fallback_action
+                    with torch.no_grad():
+                        actions_t = torch.from_numpy(fallback_padded).to(device).unsqueeze(0)
+                        lp_t, _, val_t = policy.evaluate_action(
+                            obs_t, actions_t, slot_mask_t, levels_t,
+                        )
+                    chosen_eval_info = env.evaluate_step(fallback_action.tolist())
+                    chosen_action_np = fallback_padded
+                    chosen_log_prob = float(lp_t.item())
+                    chosen_value = float(val_t.item())
+                    rejection_counters["steps_fallen_back_to_baseline"] += 1
+                else:
+                    # Last-resort: commit the most-recently sampled action even
+                    # though it failed. Should not happen in production because
+                    # the runner always provides baseline_action_vec.
+                    chosen_action_np = action_np_try
+                    chosen_log_prob = float(log_prob_t.item())
+                    chosen_value = float(value_t.item())
+                    chosen_eval_info = eval_info
+
+            assert chosen_action_np is not None and chosen_eval_info is not None
+
+            action_np = chosen_action_np
+            log_prob = chosen_log_prob
+            value = chosen_value
             step_action_for_env = action_np[:n_active].tolist()
 
-            next_obs, reward, done, info = env.step(step_action_for_env)
+            next_obs, reward, done, info = env.commit_step(chosen_eval_info)
             steps_taken += 1
             valid = bool(info.get("valid", True))
-            if not valid:
-                invalid_steps += 1
+            if valid:
+                valid_step_count += 1
+                rejection_counters["steps_committed_valid"] += 1
+            else:
+                # Only happens if baseline fallback itself failed (defensive).
+                rejection_counters["steps_committed_invalid"] += 1
                 if first_invalid is None:
                     first_invalid = {
                         "step": int(info.get("step", steps_taken - 1)),
                         "block_idx": int(info.get("block_idx", 0)),
                         "layer_idx": int(info.get("layer_idx", 0)),
                     }
-                # Collect EVERY invalid step (not just the first) so the
-                # details/ rollover file can show which (layer, block)
-                # configs failed. Bounded at 59 entries per episode, no
-                # memory concern.
                 invalid_block_details.append({
                     "step": int(info.get("step", steps_taken - 1)),
                     "layer": int(info.get("layer_idx", 0)),
                     "block": int(info.get("block_idx", 0)),
                     "graph_key": str(info.get("graph_key", "")),
                     "reason": _format_invalid_chain_reason(info.get("invalid_chain")),
+                    "rejected_by": "commit",
+                    "action_tuple": list(int(x) for x in step_action_for_env),
                 })
-            else:
-                valid_step_count += 1
             total_bits_sum += int(info.get("total_bits", 0))
             fusion_count_sum += int(info.get("fusion_count", 0))
             if info.get("early_terminated"):
@@ -389,6 +482,8 @@ def train_sequential(
             float(np.mean([r.invalid_steps > 0 for r in episode_records[-10:]]))
             if episode_records else 0.0
         ),
+        "forbidden_mask": forbidden_mask,
+        "rejection_counters": dict(rejection_counters),
     }
 
 
@@ -809,14 +904,40 @@ def run_sequential_via_runner(
     )
     policy = BLBStage2SequentialPolicy(policy_cfg).to(device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=float(train_cfg.ppo.lr))
-    # Warmstart: bias every action head row toward the largest valid index for
-    # that slot kind. Effective indices for SF kinds are levels-1 (largest SF);
-    # for K, the all-max index is K_LEVELS.index(max(K_LEVELS)).
+
+    # Warmstart: bias every action head row toward the BASELINE-indexed slot.
+    # Up to 2026-05-17 we used ``[max_num_levels - 1] * max_step_dim = [5]*13``,
+    # i.e. index 5 — but the SF slots (F/W/M/S/R) only have 3–5 active levels,
+    # so index 5 was always masked out of the categorical at sample time and
+    # the bias did literally nothing for them. K slots got biased toward
+    # K_LEVELS[5]=12, NOT the per-block baseline K (B1/3/5=13 at idx 3,
+    # B2/4=10 at idx 4). Net effect: the warmstart was inert.
+    #
+    # Fix: bias toward index ``LEVELS_F - 1 = 4`` — which is the max-SF index
+    # for every F/W slot (= baseline for those, the common case), is masked
+    # out for MS/R (no effect, harmless), and lands on K_LEVELS[4]=10 for K
+    # (= baseline for B2/B4; B1/B3/B5 baseline is K=13 at idx 3, slightly
+    # off but still much closer than the previous K=12). PPO learns the
+    # remaining offset within a few episodes.
+    #
+    # Default gain bumped from 1.2 → 3.5 so the baseline action gets a clear
+    # majority of the per-slot probability mass at episode 0:
+    #   softmax([3.5, 0, 0, 0, 0])[0] ≈ 0.84  (per slot)
+    # Combined across the ~10 active slots in a typical step that's still
+    # only ~0.84^10 ≈ 0.18 of pure-baseline rollouts, but every individual
+    # slot is heavily biased.
     warmstart_applied = False
     if bool(train_cfg.warmstart_baseline_bias):
         try:
-            preferred = [policy_cfg.max_num_levels - 1] * policy_cfg.max_step_dim
-            policy.apply_preferred_per_step_bias(preferred, gain=float(train_cfg.warmstart_bias_gain))
+            # LEVELS_F - 1 = 4 — universal max-SF baseline index for F/W kinds.
+            # Imported lazily to keep the runner torch-free at module load.
+            from .action_space import LEVELS_F
+            baseline_idx = int(LEVELS_F) - 1
+            preferred = [baseline_idx] * policy_cfg.max_step_dim
+            policy.apply_preferred_per_step_bias(
+                preferred,
+                gain=float(train_cfg.warmstart_bias_gain),
+            )
             warmstart_applied = True
         except Exception as exc:
             log(f"  [warmstart][warning] preferred-per-step bias failed: {exc}")
@@ -1216,13 +1337,16 @@ def run_sequential_via_runner(
                         best_action_vec.tolist() if best_action_vec is not None else None
                     ),
                     "rl_variant": "blb_v3_sequential",
+                    # Persist the forbidden-action mask so the next resume
+                    # doesn't have to re-discover the same invalid tuples.
+                    "forbidden_mask_records": forbidden_mask.to_json_records(),
                 }
                 tmp = save_path + ".tmp"
                 torch.save(payload, tmp)
                 os.replace(tmp, save_path)
                 log(
                     f"  [checkpoint] 已保存 · 回合 {start_episode + record.episode_idx + 1} "
-                    f"→ {save_path}"
+                    f"→ {save_path}  ·  {forbidden_mask.summary()}"
                 )
             except Exception as exc:
                 log(f"  [save_checkpoint][警告] 保存 {save_path} 失败: {exc}")
@@ -1405,6 +1529,22 @@ def run_sequential_via_runner(
             _seq_log_rounded_box(log, progress_lines)
 
     t_start = time.time()
+    # Forbidden-action mask: starts empty (or rehydrated from checkpoint
+    # `forbidden_mask_records` if present in the resumed checkpoint).
+    forbidden_mask = ForbiddenActionMask()
+    if effective_resume_path and os.path.isfile(effective_resume_path):
+        try:
+            _ckpt = torch.load(effective_resume_path, map_location=device)
+            rec = _ckpt.get("forbidden_mask_records") if isinstance(_ckpt, dict) else None
+            if rec:
+                forbidden_mask = ForbiddenActionMask.from_json_records(rec)
+                log(
+                    f"  {bullet} 已从 checkpoint 恢复 forbidden_action_mask: "
+                    f"{forbidden_mask.summary()}"
+                )
+        except Exception as exc:
+            log(f"  [resume][warning] failed to restore forbidden_mask: {exc}")
+
     seq_result = train_sequential(
         env=seq_env,
         policy=policy,
@@ -1415,6 +1555,9 @@ def run_sequential_via_runner(
         on_step_end=_step_callback,
         capture_step_infos=False,  # save memory; we surface aggregates instead
         logger=logging.getLogger("blb_stage2_rl.sequential"),
+        forbidden_mask=forbidden_mask,
+        baseline_action_vec=baseline_action_vec,
+        max_rejection_retries=32,
     )
     elapsed = float(time.time() - t_start)
     status.set_phase("已完成")

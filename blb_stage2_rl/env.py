@@ -482,6 +482,45 @@ class BLBStage2Env:
         if per_config_overrides:
             info["optimizer_cfg_overrides"] = per_config_overrides
 
+        # 3.5) Short-circuit: if Rescale_optimizer already marked any block as
+        # invalid_chain, the assembled cfg is incoherent — installing it would
+        # produce NaN/inf logits and the model forward is wasted compute.
+        # Skip steps 4–6 entirely; emit a priority-3 cost-only reward (with the
+        # invalid_penalty docked) using baseline-derived placeholder metrics.
+        # This is what the user asked for on 2026-05-17: "出现invalid chain
+        # 再去做推理就没有意义了，不用再去做推理了".
+        if any_invalid:
+            metrics = EpisodeMetrics(
+                loss_mean=float(self.baseline.loss_mean or 0.0),
+                loss_std=float(self.baseline.loss_std or 0.0),
+                metric1_mean=float(self.baseline.metric1_mean or 0.0),
+                metric2_mean=float(self.baseline.metric2_mean or 0.0),
+                loss_max=float(self.baseline.loss_mean or 0.0),
+                metric1_min=float(self.baseline.metric1_mean or 0.0),
+                metric2_min=float(self.baseline.metric2_mean or 0.0),
+            )
+            breakdown = compute_reward(
+                metrics, opt_signals,
+                action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
+                baseline=self.baseline,
+                weights=self.reward_weights,
+                acc_threshold=self.acc_threshold,
+                stab_threshold=self.stab_threshold,
+                any_invalid=True,
+            )
+            info["reward_breakdown"] = breakdown
+            info["metrics"] = metrics
+            info["forward_ran"] = False
+            info["forward_skipped_reason"] = "any_invalid_chain"
+            info["invalid"] = True
+            self._step_idx += 1
+            self._last_invalid_rate = 1.0
+            self._last_total_bits_norm = float(opt_signals.total_bits_sum) / max(
+                1.0, float(self.baseline.total_bits_sum)
+            )
+            self._last_fusion_count = float(opt_signals.total_fusion_count)
+            return self._build_state(), float(breakdown.reward), True, info
+
         # 4) 装 BLB 噪声
         # 语义更新（2026-05）：first_input fresh 噪声不再注入（"第一个 HE 配置
         # 无损"），且 layer-0 block1 整体不安装。decoded.block1_cfgs 已不含

@@ -498,5 +498,120 @@ class OutputHygieneRegressionTest(unittest.TestCase):
         self.assertIn("json.dumps", body)
 
 
+class ForbiddenActionMaskTest(unittest.TestCase):
+    """Per-(layer, block) blacklist of action tuples that triggered
+    invalid_chain. Used by train_sequential to rejection-sample around
+    known-bad tuples — see blb_stage2_rl/action_mask.py @ ForbiddenActionMask.
+
+    action_mask.py has a relative import (``from .action_space import ...``)
+    and action_space.py is non-trivial; importing it standalone is painful.
+    So this test exercises the source text only — verifies the class is
+    present with the expected API surface.
+    """
+
+    def test_class_present_with_expected_api(self):
+        src = open("blb_stage2_rl/action_mask.py", encoding="utf-8").read()
+        for needle in (
+            "class ForbiddenActionMask",
+            "def add(self, layer_idx",
+            "def is_forbidden(self, layer_idx",
+            "def to_json_records",
+            "def from_json_records",
+            "def summary",
+        ):
+            self.assertIn(needle, src, msg=f"missing: {needle!r}")
+
+    def test_roundtrip_via_minimal_import_shim(self):
+        """Functional smoke: shim a fake parent package so the file's
+        ``from .action_space import ...`` succeeds, then exercise the
+        public API. The shim only stubs the symbols action_mask actually
+        uses; if action_mask grows new dependencies this test fails loudly
+        and the shim must be updated."""
+        import sys
+        import types
+        pkg_name = "_blb_stage2_rl_test_pkg"
+        if pkg_name in sys.modules:
+            del sys.modules[pkg_name]
+        pkg = types.ModuleType(pkg_name)
+        pkg.__path__ = [str(REPO_ROOT / "blb_stage2_rl")]
+        sys.modules[pkg_name] = pkg
+
+        # Stub the .action_space symbols action_mask imports.
+        action_space_stub = types.ModuleType(f"{pkg_name}.action_space")
+        action_space_stub.K_LEVELS = (8, 9, 11, 13, 10, 12)
+        action_space_stub.action_dims_for_config = lambda L: [5] * (L * 73)
+        action_space_stub.describe_action_vector = lambda *a, **kw: {"records": []}
+        action_space_stub.load_max_sfs = lambda profile: None
+        action_space_stub.make_all_max_action_vector = lambda L: [0] * (L * 73)
+        sys.modules[f"{pkg_name}.action_space"] = action_space_stub
+
+        loader = importlib.machinery.SourceFileLoader(
+            f"{pkg_name}.action_mask",
+            str(REPO_ROOT / "blb_stage2_rl/action_mask.py"),
+        )
+        spec = importlib.util.spec_from_loader(f"{pkg_name}.action_mask", loader)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[f"{pkg_name}.action_mask"] = mod
+        loader.exec_module(mod)
+
+        m = mod.ForbiddenActionMask()
+        self.assertEqual(m.total(), 0)
+        self.assertTrue(m.add(0, 1, (1, 2, 3)))
+        self.assertFalse(m.add(0, 1, (1, 2, 3)))   # duplicate
+        self.assertTrue(m.is_forbidden(0, 1, (1, 2, 3)))
+        self.assertFalse(m.is_forbidden(0, 2, (1, 2, 3)))
+
+        # Round-trip
+        records = m.to_json_records()
+        reborn = mod.ForbiddenActionMask.from_json_records(records)
+        self.assertEqual(reborn.total(), 1)
+        self.assertTrue(reborn.is_forbidden(0, 1, (1, 2, 3)))
+
+        # Summary
+        for i in range(3):
+            m.add(5, 3, (i, 0))
+        self.assertIn("total=4", m.summary())
+
+
+class EnvEvalCommitSplitTest(unittest.TestCase):
+    """Source-text smoke: sequential_env exposes both evaluate_step and
+    commit_step so the runner can sample → optimizer-check → blacklist before
+    committing state. The old single-call ``step`` remains as a backward-compat
+    wrapper.
+    """
+
+    def test_env_has_evaluate_and_commit(self):
+        src = open("blb_stage2_rl/sequential_env.py", encoding="utf-8").read()
+        for needle in ("def evaluate_step", "def commit_step", "def step", "temp_vec"):
+            self.assertIn(needle, src, msg=f"missing: {needle!r}")
+        # The eval_info dict passed between phases must carry the optimizer
+        # output + the spec (needed by commit).
+        eval_idx = src.find("def evaluate_step")
+        commit_idx = src.find("def commit_step")
+        self.assertLess(eval_idx, commit_idx, "evaluate_step should come before commit_step")
+
+    def test_runner_uses_evaluate_then_commit_with_mask(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        for needle in (
+            "ForbiddenActionMask",
+            "forbidden_mask.is_forbidden",
+            "forbidden_mask.add",
+            "env.evaluate_step",
+            "env.commit_step",
+            "rejection_counters",
+            "steps_fallen_back_to_baseline",
+        ):
+            self.assertIn(needle, src, msg=f"missing: {needle!r}")
+
+    def test_base_env_skips_forward_when_any_invalid(self):
+        src = open("blb_stage2_rl/env.py", encoding="utf-8").read()
+        for needle in (
+            "any_invalid_chain",
+            "forward_skipped_reason",
+            "if any_invalid:",
+        ):
+            self.assertIn(needle, src, msg=f"missing: {needle!r}")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
