@@ -149,6 +149,39 @@ class EpisodeRecord:
     first_invalid_block: Optional[int] = None
     first_invalid_layer: Optional[int] = None
     step_infos: List[Dict[str, Any]] = field(default_factory=list)
+    # Per-block invalid_chain details (added 2026-05-17): every step where
+    # the optimizer reported ``valid=False`` lands here, with a short reason
+    # extracted from ``info["invalid_chain"]``. Surfaced into the details/
+    # rollover txt so operators can grep "L11-B3" / "primes_over_q_max" /
+    # "fusion cannot reduce" / etc. without having to re-run the optimizer.
+    invalid_block_details: List[Dict[str, Any]] = field(default_factory=list)
+
+
+def _format_invalid_chain_reason(invalid_chain: Any) -> str:
+    """One-line summary of an optimizer invalid_chain payload.
+
+    Mirrors :func:`scripts/blb_diagnose_invalid_blocks._invalid_chain_reason`
+    so the in-training detail records use the same wording as the offline
+    sidecar. Kept tiny and dependency-free to stay safe inside the hot loop.
+    """
+    if invalid_chain is None:
+        return "(none)"
+    if not isinstance(invalid_chain, dict):
+        return str(invalid_chain)
+    parts: List[str] = []
+    for k in ("reason", "message", "stage", "primes_over_q_max", "primes_under_q_min"):
+        v = invalid_chain.get(k)
+        if v not in (None, "", []):
+            parts.append(f"{k}={v}")
+    if not parts:
+        # Fall back to the full dict, but cap length so a giant payload
+        # can't bloat one details file.
+        try:
+            text = json.dumps(invalid_chain, ensure_ascii=False)
+        except Exception:
+            text = str(invalid_chain)
+        return text[:240] + (" …" if len(text) > 240 else "")
+    return "; ".join(parts)
 
 
 def train_sequential(
@@ -223,6 +256,7 @@ def train_sequential(
         early_terminated = False
         steps_taken = 0
         captured_step_infos: List[Dict[str, Any]] = []
+        invalid_block_details: List[Dict[str, Any]] = []
 
         while True:
             spec = env.current_spec()
@@ -257,6 +291,17 @@ def train_sequential(
                         "block_idx": int(info.get("block_idx", 0)),
                         "layer_idx": int(info.get("layer_idx", 0)),
                     }
+                # Collect EVERY invalid step (not just the first) so the
+                # details/ rollover file can show which (layer, block)
+                # configs failed. Bounded at 59 entries per episode, no
+                # memory concern.
+                invalid_block_details.append({
+                    "step": int(info.get("step", steps_taken - 1)),
+                    "layer": int(info.get("layer_idx", 0)),
+                    "block": int(info.get("block_idx", 0)),
+                    "graph_key": str(info.get("graph_key", "")),
+                    "reason": _format_invalid_chain_reason(info.get("invalid_chain")),
+                })
             else:
                 valid_step_count += 1
             total_bits_sum += int(info.get("total_bits", 0))
@@ -315,6 +360,7 @@ def train_sequential(
             first_invalid_block=(int(first_invalid["block_idx"]) if first_invalid else None),
             first_invalid_layer=(int(first_invalid["layer_idx"]) if first_invalid else None),
             step_infos=captured_step_infos,
+            invalid_block_details=invalid_block_details,
         )
         episode_records.append(record)
         if on_episode_end is not None:
@@ -1076,8 +1122,40 @@ def run_sequential_via_runner(
         # Mirrors what legacy noise_rl_module_v2 wrote: one record per episode with
         # return / priority / cost signals / invalidity. Auto-rolls every
         # ``details_batch_size`` episodes — the writer owns the buffer + flush.
+        #
+        # 2026-05-17: rich invalid-block enumeration. Each invalid sub-step is
+        # listed on its own line as `L<i>-B<n> graph=<key> reason=<reason>`,
+        # so operators can grep "L11-B3" / "fusion cannot reduce" / etc. without
+        # re-running the optimizer. ``first_invalid`` is kept as a sticky
+        # summary on top of that list for fast scanning.
         try:
             priority = 1 if record.invalid_steps > 0 else 3   # cost-only ranks bottom
+            extra_lines = [
+                (
+                    f"valid_steps={int(record.valid_step_count)}/{int(record.steps_taken)}, "
+                    f"invalid_steps={int(record.invalid_steps)}, "
+                    f"terminal_reward={float(record.terminal_reward):+.4f}"
+                ),
+                (
+                    "first_invalid="
+                    + (
+                        "none"
+                        if record.first_invalid_step is None
+                        else f"step{record.first_invalid_step} (L{record.first_invalid_layer}-B{record.first_invalid_block})"
+                    )
+                ),
+            ]
+            if record.invalid_block_details:
+                extra_lines.append(
+                    f"invalid_blocks ({len(record.invalid_block_details)}):"
+                )
+                for d in record.invalid_block_details:
+                    extra_lines.append(
+                        f"  · step{int(d.get('step', -1)):02d} "
+                        f"L{int(d.get('layer', -1)):02d}-B{int(d.get('block', -1))} "
+                        f"graph={d.get('graph_key', '')}  "
+                        f"reason={d.get('reason', '(none)')}"
+                    )
             details_writer.append_episode(
                 episode=int(start_episode + record.episode_idx + 1),
                 episode_return=float(record.total_reward),
@@ -1088,21 +1166,7 @@ def run_sequential_via_runner(
                     "total_fusion_count": int(record.fusion_count_sum_over_steps),
                     "any_invalid": bool(record.invalid_steps > 0),
                 },
-                extra_lines=[
-                    (
-                        f"valid_steps={int(record.valid_step_count)}/{int(record.steps_taken)}, "
-                        f"invalid_steps={int(record.invalid_steps)}, "
-                        f"terminal_reward={float(record.terminal_reward):+.4f}"
-                    ),
-                    (
-                        "first_invalid="
-                        + (
-                            "none"
-                            if record.first_invalid_step is None
-                            else f"step{record.first_invalid_step} (L{record.first_invalid_layer}-B{record.first_invalid_block})"
-                        )
-                    ),
-                ],
+                extra_lines=extra_lines,
             )
         except Exception as exc:
             log(f"  [details][warning] append_episode failed: {exc}")

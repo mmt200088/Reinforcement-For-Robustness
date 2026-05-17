@@ -463,6 +463,40 @@ class OutputHygieneRegressionTest(unittest.TestCase):
                 msg=f"env.py:_eval_on_probe missing finite-loss safety: {needle!r}",
             )
 
+    def test_episode_record_carries_invalid_block_details(self):
+        """Regression: each invalid sub-step's (layer, block, reason) should
+        be appended to ``EpisodeRecord.invalid_block_details`` and surfaced
+        into the details/ rollover file as bulleted lines. Previously only
+        the FIRST invalid step was recorded; operators had to re-run the
+        optimizer to find the other 7+ failures per episode.
+        """
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        for needle in (
+            "invalid_block_details",
+            "_format_invalid_chain_reason",
+            'extra_lines.append(\n                    f"invalid_blocks',
+        ):
+            self.assertIn(
+                needle, src,
+                msg=f"sequential_runner.py missing per-block invalid plumbing: {needle!r}",
+            )
+
+    def test_format_invalid_chain_reason_helper_present(self):
+        """Source-text smoke: the helper function exists and handles the
+        three real-world shapes (None, structured dict with reason+stage+
+        primes_*, opaque fallback). We can't import sequential_runner.py
+        locally because it pulls in torch, so we assert the function body
+        contains the key branches.
+        """
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        head = src.find("def _format_invalid_chain_reason")
+        self.assertGreater(head, 0, "_format_invalid_chain_reason missing")
+        body = src[head: head + 1500]
+        self.assertIn("(none)", body)
+        self.assertIn("reason", body)
+        self.assertIn("primes_over_q_max", body)
+        self.assertIn("json.dumps", body)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
