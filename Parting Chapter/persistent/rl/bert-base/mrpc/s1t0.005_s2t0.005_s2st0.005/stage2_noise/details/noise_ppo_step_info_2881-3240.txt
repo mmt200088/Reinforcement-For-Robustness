@@ -1,0 +1,1802 @@
+=== BLB Stage-2 RL 逐回合诊断 · 回合区间 2881-3240 ===
+
+── 回合 episode 2881 ── 回报 episode_return=-154.5620  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13807, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2882 ── 回报 episode_return=-155.4569  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13803, fusion_count=12, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step4 (L1-B1)
+
+── 回合 episode 2883 ── 回报 episode_return=-154.5548  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13831, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2884 ── 回报 episode_return=-156.4843  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13843, fusion_count=8, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step14 (L3-B1)
+
+── 回合 episode 2885 ── 回报 episode_return=-152.6358  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13863, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2886 ── 回报 episode_return=-156.5116  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13855, fusion_count=9, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2887 ── 回报 episode_return=-155.4877  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13819, fusion_count=11, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2888 ── 回报 episode_return=-157.4072  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13811, fusion_count=10, any_invalid=True
+  valid_steps=54/59, invalid_steps=5, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2889 ── 回报 episode_return=-153.5968  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13835, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 2890 ── 回报 episode_return=-153.5879  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13841, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 2891 ── 回报 episode_return=-152.6204  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13849, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2892 ── 回报 episode_return=-154.5314  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13835, fusion_count=12, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step4 (L1-B1)
+
+── 回合 episode 2893 ── 回报 episode_return=-155.4991  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13841, fusion_count=8, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2894 ── 回报 episode_return=-153.5675  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13791, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2895 ── 回报 episode_return=-154.5444  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13809, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2896 ── 回报 episode_return=-154.5600  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13805, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 2897 ── 回报 episode_return=-154.5526  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13831, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2898 ── 回报 episode_return=-154.5497  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13825, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2899 ── 回报 episode_return=-155.5335  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13829, fusion_count=11, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2900 ── 回报 episode_return=-153.5967  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13841, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 2901 ── 回报 episode_return=-154.5414  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13799, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2902 ── 回报 episode_return=-156.5041  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13819, fusion_count=9, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2903 ── 回报 episode_return=-152.6242  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13819, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2904 ── 回报 episode_return=-153.5680  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13859, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step24 (L5-B1)
+
+── 回合 episode 2905 ── 回报 episode_return=-154.5560  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13793, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 2906 ── 回报 episode_return=-154.5771  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13885, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2907 ── 回报 episode_return=-153.5739  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13781, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 2908 ── 回报 episode_return=-155.5402  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13843, fusion_count=7, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2909 ── 回报 episode_return=-155.4857  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13807, fusion_count=10, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 2910 ── 回报 episode_return=-152.6225  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13825, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2911 ── 回报 episode_return=-155.4888  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13801, fusion_count=8, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2912 ── 回报 episode_return=-153.6065  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13859, fusion_count=7, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2913 ── 回报 episode_return=-154.5482  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13809, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2914 ── 回报 episode_return=-153.5955  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13859, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2915 ── 回报 episode_return=-155.4980  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13831, fusion_count=9, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2916 ── 回报 episode_return=-153.5787  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13801, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2917 ── 回报 episode_return=-154.5505  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13809, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2918 ── 回报 episode_return=-154.5706  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13855, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2919 ── 回报 episode_return=-153.5756  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13813, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2920 ── 回报 episode_return=-154.5023  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13769, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2921 ── 回报 episode_return=-154.5828  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13877, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2922 ── 回报 episode_return=-153.5737  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13809, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2923 ── 回报 episode_return=-153.6100  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13871, fusion_count=8, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 2924 ── 回报 episode_return=-153.6067  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13851, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2925 ── 回报 episode_return=-152.6295  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13843, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2926 ── 回报 episode_return=-155.5218  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13825, fusion_count=10, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2927 ── 回报 episode_return=-152.6120  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13819, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2928 ── 回报 episode_return=-153.6145  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13893, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 2929 ── 回报 episode_return=-153.5783  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13801, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2930 ── 回报 episode_return=-154.5574  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13835, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2931 ── 回报 episode_return=-154.5733  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13849, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 2932 ── 回报 episode_return=-155.5462  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13887, fusion_count=7, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2933 ── 回报 episode_return=-153.5670  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13757, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 2934 ── 回报 episode_return=-154.5749  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13841, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2935 ── 回报 episode_return=-154.5544  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13801, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2936 ── 回报 episode_return=-153.5723  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13815, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2937 ── 回报 episode_return=-156.4732  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13819, fusion_count=7, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2938 ── 回报 episode_return=-155.5020  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13821, fusion_count=9, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2939 ── 回报 episode_return=-152.6075  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13803, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2940 ── 回报 episode_return=-154.5190  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13811, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step44 (L9-B1)
+
+── 回合 episode 2941 ── 回报 episode_return=-154.5755  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13855, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 2942 ── 回报 episode_return=-154.5766  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13859, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2943 ── 回报 episode_return=-154.5803  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13877, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2944 ── 回报 episode_return=-154.5578  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13833, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2945 ── 回报 episode_return=-155.5293  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13815, fusion_count=9, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2946 ── 回报 episode_return=-153.6061  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13863, fusion_count=13, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2947 ── 回报 episode_return=-153.6195  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13867, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 2948 ── 回报 episode_return=-154.5636  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13829, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 2949 ── 回报 episode_return=-154.5432  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13773, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2950 ── 回报 episode_return=-153.6233  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13925, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2951 ── 回报 episode_return=-154.5904  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13885, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2952 ── 回报 episode_return=-153.5982  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13841, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 2953 ── 回报 episode_return=-153.5833  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13791, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2954 ── 回报 episode_return=-155.5404  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13847, fusion_count=10, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2955 ── 回报 episode_return=-154.5507  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13815, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2956 ── 回报 episode_return=-154.5957  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13931, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2957 ── 回报 episode_return=-156.4836  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13859, fusion_count=8, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2958 ── 回报 episode_return=-152.6169  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13815, fusion_count=9, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2959 ── 回报 episode_return=-153.6046  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13873, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2960 ── 回报 episode_return=-153.6152  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13869, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 2961 ── 回报 episode_return=-156.4757  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13847, fusion_count=7, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2962 ── 回报 episode_return=-154.5922  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13883, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 2963 ── 回报 episode_return=-154.5686  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13877, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2964 ── 回报 episode_return=-154.5654  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13835, fusion_count=12, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2965 ── 回报 episode_return=-153.5789  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13795, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2966 ── 回报 episode_return=-154.5414  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13869, fusion_count=12, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2967 ── 回报 episode_return=-152.6132  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13803, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2968 ── 回报 episode_return=-155.5458  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13837, fusion_count=8, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2969 ── 回报 episode_return=-154.5669  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13841, fusion_count=5, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 2970 ── 回报 episode_return=-155.5659  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13913, fusion_count=8, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2971 ── 回报 episode_return=-153.5680  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13799, fusion_count=13, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2972 ── 回报 episode_return=-154.5676  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13823, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2973 ── 回报 episode_return=-156.5109  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13909, fusion_count=8, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step4 (L1-B1)
+
+── 回合 episode 2974 ── 回报 episode_return=-156.5100  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13855, fusion_count=6, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2975 ── 回报 episode_return=-154.5725  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13851, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2976 ── 回报 episode_return=-154.5522  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13813, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2977 ── 回报 episode_return=-154.5652  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13847, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 2978 ── 回报 episode_return=-153.5995  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13845, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 2979 ── 回报 episode_return=-153.5928  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13849, fusion_count=8, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2980 ── 回报 episode_return=-152.6132  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13815, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2981 ── 回报 episode_return=-154.5724  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13839, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 2982 ── 回报 episode_return=-153.6128  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13883, fusion_count=8, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 2983 ── 回报 episode_return=-154.5595  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13819, fusion_count=6, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 2984 ── 回报 episode_return=-153.6139  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13873, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2985 ── 回报 episode_return=-152.6239  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13847, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2986 ── 回报 episode_return=-154.5882  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13873, fusion_count=6, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 2987 ── 回报 episode_return=-154.5411  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13809, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2988 ── 回报 episode_return=-153.5929  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13835, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 2989 ── 回报 episode_return=-152.6324  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13871, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 2990 ── 回报 episode_return=-157.4320  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13797, fusion_count=9, any_invalid=True
+  valid_steps=54/59, invalid_steps=5, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2991 ── 回报 episode_return=-154.5839  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13873, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 2992 ── 回报 episode_return=-157.4852  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13827, fusion_count=6, any_invalid=True
+  valid_steps=54/59, invalid_steps=5, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 2993 ── 回报 episode_return=-153.6000  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13847, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2994 ── 回报 episode_return=-155.5375  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13847, fusion_count=10, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2995 ── 回报 episode_return=-153.6073  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13847, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 2996 ── 回报 episode_return=-154.5643  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13859, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2997 ── 回报 episode_return=-153.6106  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13861, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 2998 ── 回报 episode_return=-154.5343  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13785, fusion_count=12, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 2999 ── 回报 episode_return=-152.6245  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13841, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3000 ── 回报 episode_return=-153.5692  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13797, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3001 ── 回报 episode_return=-153.6315  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13911, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3002 ── 回报 episode_return=-152.6424  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13875, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3003 ── 回报 episode_return=-152.6404  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13879, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3004 ── 回报 episode_return=-152.6456  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13883, fusion_count=9, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3005 ── 回报 episode_return=-153.5774  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13867, fusion_count=13, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step4 (L1-B1)
+
+── 回合 episode 3006 ── 回报 episode_return=-153.6087  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13885, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3007 ── 回报 episode_return=-154.5836  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13871, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3008 ── 回报 episode_return=-154.5882  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13889, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3009 ── 回报 episode_return=-153.6140  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13907, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3010 ── 回报 episode_return=-154.5703  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13839, fusion_count=12, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3011 ── 回报 episode_return=-155.5464  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13877, fusion_count=9, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 3012 ── 回报 episode_return=-153.6149  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13885, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3013 ── 回报 episode_return=-152.6487  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13881, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3014 ── 回报 episode_return=-154.5774  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13839, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 3015 ── 回报 episode_return=-154.5832  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13867, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3016 ── 回报 episode_return=-155.5069  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13859, fusion_count=11, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3017 ── 回报 episode_return=-152.6361  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13865, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3018 ── 回报 episode_return=-152.6328  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13849, fusion_count=13, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3019 ── 回报 episode_return=-152.6470  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13879, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3020 ── 回报 episode_return=-152.6573  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13919, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3021 ── 回报 episode_return=-154.5781  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13867, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3022 ── 回报 episode_return=-153.6185  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13865, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 3023 ── 回报 episode_return=-153.6205  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13885, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3024 ── 回报 episode_return=-154.5698  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13859, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3025 ── 回报 episode_return=-155.5325  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13897, fusion_count=8, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step4 (L1-B1)
+
+── 回合 episode 3026 ── 回报 episode_return=-153.6264  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13901, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3027 ── 回报 episode_return=-153.5990  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13859, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3028 ── 回报 episode_return=-154.5856  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13883, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3029 ── 回报 episode_return=-153.5835  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13881, fusion_count=13, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step14 (L3-B1)
+
+── 回合 episode 3030 ── 回报 episode_return=-152.6333  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13859, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3031 ── 回报 episode_return=-152.6467  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13895, fusion_count=14, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3032 ── 回报 episode_return=-155.5076  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13837, fusion_count=11, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3033 ── 回报 episode_return=-153.6233  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13895, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3034 ── 回报 episode_return=-154.5878  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13893, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3035 ── 回报 episode_return=-154.5671  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13841, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3036 ── 回报 episode_return=-154.5803  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13865, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3037 ── 回报 episode_return=-153.6171  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13889, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 3038 ── 回报 episode_return=-154.5993  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13935, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3039 ── 回报 episode_return=-155.5023  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13847, fusion_count=10, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3040 ── 回报 episode_return=-153.6033  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13861, fusion_count=13, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3041 ── 回报 episode_return=-152.6390  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13873, fusion_count=14, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3042 ── 回报 episode_return=-153.6253  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13915, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3043 ── 回报 episode_return=-155.5678  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13921, fusion_count=9, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3044 ── 回报 episode_return=-156.5121  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13881, fusion_count=7, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3045 ── 回报 episode_return=-152.6303  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13847, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3046 ── 回报 episode_return=-153.6048  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13865, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3047 ── 回报 episode_return=-153.6115  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13867, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 3048 ── 回报 episode_return=-155.5614  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13871, fusion_count=8, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3049 ── 回报 episode_return=-152.6586  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13917, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3050 ── 回报 episode_return=-152.6337  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13857, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3051 ── 回报 episode_return=-155.5184  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13875, fusion_count=9, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step9 (L2-B1)
+
+── 回合 episode 3052 ── 回报 episode_return=-152.6432  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13863, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3053 ── 回报 episode_return=-153.5985  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13863, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3054 ── 回报 episode_return=-154.5949  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13909, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3055 ── 回报 episode_return=-154.5736  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13871, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3056 ── 回报 episode_return=-152.6299  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13857, fusion_count=13, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3057 ── 回报 episode_return=-152.6622  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13915, fusion_count=13, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3058 ── 回报 episode_return=-154.5646  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13853, fusion_count=12, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3059 ── 回报 episode_return=-154.5648  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13825, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3060 ── 回报 episode_return=-154.5893  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13909, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3061 ── 回报 episode_return=-152.6474  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13877, fusion_count=13, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3062 ── 回报 episode_return=-155.5614  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13883, fusion_count=10, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3063 ── 回报 episode_return=-153.6284  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13899, fusion_count=7, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3064 ── 回报 episode_return=-154.6066  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13927, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3065 ── 回报 episode_return=-154.5943  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13889, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3066 ── 回报 episode_return=-153.6025  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13871, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3067 ── 回报 episode_return=-153.6291  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13935, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3068 ── 回报 episode_return=-154.5881  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13867, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3069 ── 回报 episode_return=-152.6567  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13919, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3070 ── 回报 episode_return=-153.6474  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13957, fusion_count=8, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3071 ── 回报 episode_return=-154.5709  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13837, fusion_count=12, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3072 ── 回报 episode_return=-153.6220  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13913, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3073 ── 回报 episode_return=-153.6207  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13901, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3074 ── 回报 episode_return=-152.6341  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13865, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3075 ── 回报 episode_return=-153.6427  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13927, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3076 ── 回报 episode_return=-152.6538  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13915, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3077 ── 回报 episode_return=-152.6605  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13911, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3078 ── 回报 episode_return=-152.6520  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13925, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3079 ── 回报 episode_return=-152.6383  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13877, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3080 ── 回报 episode_return=-155.5606  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13907, fusion_count=10, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3081 ── 回报 episode_return=-153.6175  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13897, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3082 ── 回报 episode_return=-153.6254  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13905, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3083 ── 回报 episode_return=-153.6256  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13909, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3084 ── 回报 episode_return=-154.6024  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13939, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3085 ── 回报 episode_return=-154.5571  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13905, fusion_count=12, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step44 (L9-B1)
+
+── 回合 episode 3086 ── 回报 episode_return=-155.5404  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13939, fusion_count=12, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3087 ── 回报 episode_return=-154.5800  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13877, fusion_count=13, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3088 ── 回报 episode_return=-153.6216  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13905, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3089 ── 回报 episode_return=-154.5929  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13871, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3090 ── 回报 episode_return=-153.6131  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13897, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3091 ── 回报 episode_return=-154.5413  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13875, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3092 ── 回报 episode_return=-156.5530  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13949, fusion_count=10, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3093 ── 回报 episode_return=-153.6054  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13863, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 3094 ── 回报 episode_return=-153.6063  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13869, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3095 ── 回报 episode_return=-154.5763  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13875, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3096 ── 回报 episode_return=-153.6224  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13899, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 3097 ── 回报 episode_return=-154.5914  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13901, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3098 ── 回报 episode_return=-153.6101  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13893, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3099 ── 回报 episode_return=-153.6295  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13897, fusion_count=8, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3100 ── 回报 episode_return=-153.6343  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13929, fusion_count=8, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3101 ── 回报 episode_return=-154.5698  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13853, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3102 ── 回报 episode_return=-153.6118  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13881, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3103 ── 回报 episode_return=-155.5654  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13913, fusion_count=10, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3104 ── 回报 episode_return=-154.6068  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13911, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3105 ── 回报 episode_return=-153.6139  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13879, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 3106 ── 回报 episode_return=-153.6113  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13871, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 3107 ── 回报 episode_return=-154.5863  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13879, fusion_count=6, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3108 ── 回报 episode_return=-155.5603  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13897, fusion_count=6, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3109 ── 回报 episode_return=-153.6433  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13949, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3110 ── 回报 episode_return=-153.6306  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13927, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3111 ── 回报 episode_return=-153.5999  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13833, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 3112 ── 回报 episode_return=-153.6187  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13903, fusion_count=13, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3113 ── 回报 episode_return=-155.5675  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13925, fusion_count=8, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3114 ── 回报 episode_return=-155.5749  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13909, fusion_count=6, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3115 ── 回报 episode_return=-156.5447  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13909, fusion_count=8, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3116 ── 回报 episode_return=-155.5189  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13883, fusion_count=8, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3117 ── 回报 episode_return=-153.6286  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13911, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 3118 ── 回报 episode_return=-152.6510  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13901, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3119 ── 回报 episode_return=-152.6489  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13889, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3120 ── 回报 episode_return=-156.5464  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13935, fusion_count=8, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3121 ── 回报 episode_return=-156.5140  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13919, fusion_count=11, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step14 (L3-B1)
+
+── 回合 episode 3122 ── 回报 episode_return=-154.5867  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13875, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3123 ── 回报 episode_return=-153.5981  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13841, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3124 ── 回报 episode_return=-153.6066  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13861, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3125 ── 回报 episode_return=-155.5120  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13863, fusion_count=8, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step9 (L2-B1)
+
+── 回合 episode 3126 ── 回报 episode_return=-152.6486  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13887, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3127 ── 回报 episode_return=-154.5658  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13915, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3128 ── 回报 episode_return=-154.6051  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13937, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3129 ── 回报 episode_return=-154.5425  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13869, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step19 (L4-B1)
+
+── 回合 episode 3130 ── 回报 episode_return=-153.6131  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13899, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3131 ── 回报 episode_return=-154.5872  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13901, fusion_count=12, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3132 ── 回报 episode_return=-153.6155  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13885, fusion_count=8, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3133 ── 回报 episode_return=-155.5111  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13885, fusion_count=9, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3134 ── 回报 episode_return=-153.6072  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13869, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3135 ── 回报 episode_return=-154.6129  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13953, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3136 ── 回报 episode_return=-155.5114  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13849, fusion_count=7, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step14 (L3-B1)
+
+── 回合 episode 3137 ── 回报 episode_return=-153.6132  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13885, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3138 ── 回报 episode_return=-155.4793  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13861, fusion_count=10, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step4 (L1-B1)
+
+── 回合 episode 3139 ── 回报 episode_return=-154.5754  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13881, fusion_count=6, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3140 ── 回报 episode_return=-153.5900  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13915, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step9 (L2-B1)
+
+── 回合 episode 3141 ── 回报 episode_return=-153.6156  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13865, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 3142 ── 回报 episode_return=-152.6408  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13873, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3143 ── 回报 episode_return=-153.6421  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13947, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3144 ── 回报 episode_return=-152.6378  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13877, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3145 ── 回报 episode_return=-154.5646  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13851, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3146 ── 回报 episode_return=-153.5893  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13905, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step29 (L6-B1)
+
+── 回合 episode 3147 ── 回报 episode_return=-154.5527  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13891, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3148 ── 回报 episode_return=-154.5905  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13913, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3149 ── 回报 episode_return=-154.5900  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13899, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 3150 ── 回报 episode_return=-153.6343  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13929, fusion_count=7, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3151 ── 回报 episode_return=-153.5885  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13821, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3152 ── 回报 episode_return=-153.5949  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13823, fusion_count=8, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3153 ── 回报 episode_return=-154.5304  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13829, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step9 (L2-B1)
+
+── 回合 episode 3154 ── 回报 episode_return=-153.5973  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13837, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3155 ── 回报 episode_return=-154.5755  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13937, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step4 (L1-B1)
+
+── 回合 episode 3156 ── 回报 episode_return=-157.3748  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13835, fusion_count=9, any_invalid=True
+  valid_steps=54/59, invalid_steps=5, terminal_reward=-150.0000
+  first_invalid=step9 (L2-B1)
+
+── 回合 episode 3157 ── 回报 episode_return=-153.6234  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13903, fusion_count=8, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3158 ── 回报 episode_return=-153.6233  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13893, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3159 ── 回报 episode_return=-154.5470  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13845, fusion_count=11, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 3160 ── 回报 episode_return=-153.5740  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13855, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step34 (L7-B1)
+
+── 回合 episode 3161 ── 回报 episode_return=-153.6237  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13915, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3162 ── 回报 episode_return=-153.6041  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13925, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step49 (L10-B1)
+
+── 回合 episode 3163 ── 回报 episode_return=-154.5698  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13863, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3164 ── 回报 episode_return=-155.5266  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13819, fusion_count=7, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3165 ── 回报 episode_return=-153.6264  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13931, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3166 ── 回报 episode_return=-155.4764  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13847, fusion_count=8, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step39 (L8-B1)
+
+── 回合 episode 3167 ── 回报 episode_return=-153.6253  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13919, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3168 ── 回报 episode_return=-155.5455  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13837, fusion_count=7, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3169 ── 回报 episode_return=-156.4960  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13917, fusion_count=7, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3170 ── 回报 episode_return=-153.5603  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13839, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step19 (L4-B1)
+
+── 回合 episode 3171 ── 回报 episode_return=-156.4936  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13875, fusion_count=8, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3172 ── 回报 episode_return=-153.5700  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13855, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step24 (L5-B1)
+
+── 回合 episode 3173 ── 回报 episode_return=-154.5479  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13895, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step9 (L2-B1)
+
+── 回合 episode 3174 ── 回报 episode_return=-153.6199  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13883, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3175 ── 回报 episode_return=-154.5560  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13913, fusion_count=6, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step14 (L3-B1)
+
+── 回合 episode 3176 ── 回报 episode_return=-154.5668  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13851, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3177 ── 回报 episode_return=-153.6029  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13855, fusion_count=7, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 3178 ── 回报 episode_return=-153.5834  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13819, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3179 ── 回报 episode_return=-153.6220  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13933, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3180 ── 回报 episode_return=-153.5735  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13867, fusion_count=13, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step49 (L10-B1)
+
+── 回合 episode 3181 ── 回报 episode_return=-152.6465  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13889, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3182 ── 回报 episode_return=-153.6407  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13941, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 3183 ── 回报 episode_return=-153.6156  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13887, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3184 ── 回报 episode_return=-152.6426  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13891, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3185 ── 回报 episode_return=-154.5572  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13871, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3186 ── 回报 episode_return=-152.6453  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13895, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3187 ── 回报 episode_return=-154.5727  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13869, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3188 ── 回报 episode_return=-153.6256  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13901, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3189 ── 回报 episode_return=-153.6167  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13901, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3190 ── 回报 episode_return=-153.5995  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13841, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3191 ── 回报 episode_return=-154.5985  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13915, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3192 ── 回报 episode_return=-154.5860  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13857, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3193 ── 回报 episode_return=-153.6156  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13879, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3194 ── 回报 episode_return=-154.5945  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13883, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3195 ── 回报 episode_return=-153.6238  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13895, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3196 ── 回报 episode_return=-152.6538  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13905, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3197 ── 回报 episode_return=-153.6256  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13917, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3198 ── 回报 episode_return=-153.5923  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13845, fusion_count=13, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3199 ── 回报 episode_return=-155.5329  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13837, fusion_count=9, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3200 ── 回报 episode_return=-154.5838  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13879, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3201 ── 回报 episode_return=-152.6544  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13911, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3202 ── 回报 episode_return=-153.6163  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13881, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step46 (L9-B3)
+
+── 回合 episode 3203 ── 回报 episode_return=-152.6440  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13873, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3204 ── 回报 episode_return=-153.5990  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13925, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step49 (L10-B1)
+
+── 回合 episode 3205 ── 回报 episode_return=-152.6347  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13873, fusion_count=13, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3206 ── 回报 episode_return=-153.6153  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13909, fusion_count=14, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step28 (L5-B5)
+
+── 回合 episode 3207 ── 回报 episode_return=-154.5967  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13901, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3208 ── 回报 episode_return=-155.5423  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13919, fusion_count=8, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3209 ── 回报 episode_return=-152.6461  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13887, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3210 ── 回报 episode_return=-152.6328  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13859, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3211 ── 回报 episode_return=-153.5890  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13911, fusion_count=12, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step34 (L7-B1)
+
+── 回合 episode 3212 ── 回报 episode_return=-154.5771  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13885, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3213 ── 回报 episode_return=-153.6226  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13891, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 3214 ── 回报 episode_return=-152.6402  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13871, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3215 ── 回报 episode_return=-153.6239  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13883, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3216 ── 回报 episode_return=-156.5237  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13887, fusion_count=7, any_invalid=True
+  valid_steps=55/59, invalid_steps=4, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3217 ── 回报 episode_return=-153.6117  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13867, fusion_count=9, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3218 ── 回报 episode_return=-153.6300  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13903, fusion_count=11, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step51 (L10-B3)
+
+── 回合 episode 3219 ── 回报 episode_return=-154.5499  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13885, fusion_count=12, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3220 ── 回报 episode_return=-155.5042  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13841, fusion_count=7, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3221 ── 回报 episode_return=-154.6036  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13917, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step16 (L3-B3)
+
+── 回合 episode 3222 ── 回报 episode_return=-155.5449  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13855, fusion_count=6, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3223 ── 回报 episode_return=-152.6415  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13893, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3224 ── 回报 episode_return=-152.6629  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13911, fusion_count=13, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3225 ── 回报 episode_return=-154.5792  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13887, fusion_count=9, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3226 ── 回报 episode_return=-155.5294  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13847, fusion_count=9, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3227 ── 回报 episode_return=-152.6525  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13907, fusion_count=10, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3228 ── 回报 episode_return=-154.6102  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13935, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3229 ── 回报 episode_return=-154.5662  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13853, fusion_count=10, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step2 (L0-B4)
+
+── 回合 episode 3230 ── 回报 episode_return=-154.5756  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13869, fusion_count=8, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3231 ── 回报 episode_return=-154.5741  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13835, fusion_count=7, any_invalid=True
+  valid_steps=57/59, invalid_steps=2, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 3232 ── 回报 episode_return=-153.6272  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13911, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step31 (L6-B3)
+
+── 回合 episode 3233 ── 回报 episode_return=-155.5622  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13885, fusion_count=7, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step11 (L2-B3)
+
+── 回合 episode 3234 ── 回报 episode_return=-153.5992  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13915, fusion_count=13, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step39 (L8-B1)
+
+── 回合 episode 3235 ── 回报 episode_return=-152.6467  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13881, fusion_count=11, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3236 ── 回报 episode_return=-153.6038  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13853, fusion_count=10, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step21 (L4-B3)
+
+── 回合 episode 3237 ── 回报 episode_return=-152.6449  优先级 priority=P3(cost)
+  Rescale 信号: total_bits=13873, fusion_count=12, any_invalid=False
+  valid_steps=59/59, invalid_steps=0, terminal_reward=-150.0000
+  first_invalid=none
+
+── 回合 episode 3238 ── 回报 episode_return=-155.5373  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13909, fusion_count=9, any_invalid=True
+  valid_steps=56/59, invalid_steps=3, terminal_reward=-150.0000
+  first_invalid=step44 (L9-B1)
+
+── 回合 episode 3239 ── 回报 episode_return=-153.6264  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13909, fusion_count=8, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step41 (L8-B3)
+
+── 回合 episode 3240 ── 回报 episode_return=-153.5710  优先级 priority=P1(acc)+optimizer_invalid
+  Rescale 信号: total_bits=13853, fusion_count=14, any_invalid=True
+  valid_steps=58/59, invalid_steps=1, terminal_reward=-150.0000
+  first_invalid=step1 (L0-B3)
+
