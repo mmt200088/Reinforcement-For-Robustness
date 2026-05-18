@@ -1,25 +1,21 @@
 {
-  "generated_at": "2026-05-18 snapshot after PPO update #2",
+  "generated_at": "2026-05-18 snapshot after PPO update #4",
   "branch": "jk_standard_rl",
-  "head_after_pull": "b97ca83",
+  "commit": "c4e72ad snapshot base",
   "pid": 808611,
   "run_dir": "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005_rdv2",
   "process_status": "running at snapshot time",
-  "ppo_updates_confirmed": 2,
-  "last_ppo_completed_episodes": 120,
+  "ppo_updates_confirmed": 4,
+  "last_ppo_completed_episodes": 240,
   "ppo_update_1_window_mean_return": -7.804582880731344,
-  "ppo_update_1_window_mean_invalid": 0.0,
   "ppo_update_2_window_mean_return": -7.802154058455085,
-  "ppo_update_2_window_mean_invalid": 0.0,
+  "ppo_update_3_window_mean_return": -7.803755836076386,
+  "ppo_update_4_window_mean_return": -7.800668556626145,
+  "ppo_update_4_window_mean_invalid": 0.0,
   "terminal_reward_observed": [
     -5.0
   ],
-  "post80_terminal_reward_observed": [
-    -5.0
-  ],
-  "best_reward_so_far": -7.758944066658994,
-  "latest_observed_episode": 126,
-  "latest_observed_invalid_steps": 0,
+  "best_reward_so_far": -7.757754252149605,
   "error_summary": "not present at snapshot time",
-  "classification": "reward-signal bug confirmed through two PPO windows"
+  "classification": "reward-signal bug confirmed through four PPO windows"
 }
