@@ -2,13 +2,13 @@
   "schema_version": "blb_v3_slots_human_v1",
   "num_layers": 12,
   "source": "blb_v3_sequential_runtime_best",
-  "episode": 1114,
-  "total_reward": -128.40440590897836,
-  "terminal_reward": -125.875,
+  "episode": 5666,
+  "total_reward": -117.98213974778349,
+  "terminal_reward": -115.25,
   "valid_steps": 59,
   "invalid_steps": 0,
-  "best_reward_so_far": -128.40440590897836,
-  "wall_time_iso": "2026-05-18T00:54:57",
+  "best_reward_so_far": -117.98213974778349,
+  "wall_time_iso": "2026-05-18T06:53:47",
   "meta": {
     "profile": "mrpc",
     "fixed_label": "Stage-1 config (json)",
@@ -203,7 +203,7 @@
       "operation": "ctpt_inv_std",
       "location": "layer0.block2.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         23,
         25,
@@ -214,7 +214,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": 23
     },
     {
       "label": "L0.B2.F.x_centered_fresh",
@@ -249,7 +249,7 @@
       "operation": "ctpt_gamma",
       "location": "layer0.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -258,7 +258,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 18
     },
     {
       "label": "L0.B2.W.wk",
@@ -293,7 +293,7 @@
       "operation": "ctpt_wv",
       "location": "layer0.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -304,7 +304,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L0.B2.M.kt_mask1",
@@ -316,7 +316,7 @@
       "operation": "ctpt_rotKT_mask1",
       "location": "layer0.block2.kt_mask1_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         11,
         13,
@@ -325,7 +325,7 @@
       "N": 16384,
       "max_sf": 15,
       "effective": true,
-      "scaling_factor": 15
+      "scaling_factor": 13
     },
     {
       "label": "L0.B2.M.kt_mask2",
@@ -401,7 +401,7 @@
       "operation": "ctct_kt_mask2_rescale",
       "location": "layer0.block2.kt_mask2_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -411,7 +411,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L0.B2.R.qkt_merge_mask_r",
@@ -423,7 +423,7 @@
       "operation": "ctct_qkt_merge_mask_rescale",
       "location": "layer0.block2.qkt_merge_mask_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -433,7 +433,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L0.B2.K",
@@ -469,7 +469,7 @@
       "operation": "ctpt_softmax_x",
       "location": "layer0.block3.x_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         19,
         21,
@@ -480,7 +480,7 @@
       "N": 8192,
       "max_sf": 27,
       "effective": true,
-      "scaling_factor": 23
+      "scaling_factor": 19
     },
     {
       "label": "L0.B3.S.inv_2n",
@@ -513,7 +513,7 @@
       "operation": "ctct_softmax_pow_s1",
       "location": "layer0.block3.square_rescale_sf_0",
       "distribution": "rescale",
-      "action_index": 3,
+      "action_index": 1,
       "level_values": [
         null,
         30,
@@ -523,7 +523,7 @@
       "N": 8192,
       "max_sf": 34,
       "effective": true,
-      "scaling_factor": 34
+      "scaling_factor": 30
     },
     {
       "label": "L0.B3.R.sq1",
@@ -627,7 +627,7 @@
       "operation": "ctpt_softmax_out",
       "location": "layer0.block4.softmax_out_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         27,
         29,
@@ -638,7 +638,7 @@
       "N": 16384,
       "max_sf": 35,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L0.B4.F.v_fresh",
@@ -673,7 +673,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer0.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -682,7 +682,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 10
+      "scaling_factor": 12
     },
     {
       "label": "L0.B4.M.v_mask",
@@ -715,7 +715,7 @@
       "operation": "ctpt_softmax_v_mask",
       "location": "layer0.block4.softmax_v_mask_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -724,7 +724,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 10
+      "scaling_factor": 12
     },
     {
       "label": "L0.B4.S.ln_mean_inv_d",
@@ -736,7 +736,7 @@
       "operation": "ctpt_inv_d_attn_mean",
       "location": "layer0.block4.ln_mean_inv_d_sf",
       "distribution": "scalar",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -745,7 +745,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 18
     },
     {
       "label": "L0.B4.S.ln_var_inv_d",
@@ -778,7 +778,7 @@
       "operation": "ctpt_wo",
       "location": "layer0.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -789,7 +789,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L0.B4.R.softmax_v_matmul_r",
@@ -823,7 +823,7 @@
       "operation": "ctct_attn_mean_rescale",
       "location": "layer0.block4.ln_mean_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -833,7 +833,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L0.B4.R.ln_var_r",
@@ -845,7 +845,7 @@
       "operation": "ctct_attn_var_rescale",
       "location": "layer0.block4.ln_var_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -855,7 +855,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L0.B4.K",
@@ -891,7 +891,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer0.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -902,7 +902,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L0.B5.F.x_centered_fresh",
@@ -914,7 +914,7 @@
       "operation": "ctpt_attn_x_centered",
       "location": "layer0.block5.x_centered_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -925,7 +925,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L0.B5.M.gamma",
@@ -937,7 +937,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer0.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -946,7 +946,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L0.B5.W.wffn1",
@@ -958,7 +958,7 @@
       "operation": "ctpt_wffn1",
       "location": "layer0.block5.wffn1_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -969,7 +969,7 @@
       "N": 8192,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L0.B5.M.gelu_coeff",
@@ -981,7 +981,7 @@
       "operation": "ctpt_gelu_coeff",
       "location": "layer0.block5.gelu_coeff_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -990,7 +990,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L0.B5.R.normalize_r",
@@ -1002,7 +1002,7 @@
       "operation": "ctct_attn_normalize_rescale",
       "location": "layer0.block5.normalize_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -1012,7 +1012,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": null
     },
     {
       "label": "L0.B5.R.gamma_r",
@@ -1024,7 +1024,7 @@
       "operation": "ctct_gamma_attn_rescale",
       "location": "layer0.block5.gamma_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         26,
@@ -1034,7 +1034,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L0.B5.R.wffn1_r",
@@ -1091,7 +1091,7 @@
       "operation": "block5_output_truncation",
       "location": "layer0.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -1103,7 +1103,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 13
     },
     {
       "label": "L1.B1.F.gelu_out",
@@ -1317,7 +1317,7 @@
       "operation": "ctpt_gamma",
       "location": "layer1.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -1326,7 +1326,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 18
     },
     {
       "label": "L1.B2.W.wk",
@@ -1361,7 +1361,7 @@
       "operation": "ctpt_wv",
       "location": "layer1.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -1372,7 +1372,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L1.B2.M.kt_mask1",
@@ -1384,7 +1384,7 @@
       "operation": "ctpt_rotKT_mask1",
       "location": "layer1.block2.kt_mask1_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         11,
         13,
@@ -1393,7 +1393,7 @@
       "N": 16384,
       "max_sf": 15,
       "effective": true,
-      "scaling_factor": 15
+      "scaling_factor": 13
     },
     {
       "label": "L1.B2.M.kt_mask2",
@@ -1469,7 +1469,7 @@
       "operation": "ctct_kt_mask2_rescale",
       "location": "layer1.block2.kt_mask2_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -1479,7 +1479,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L1.B2.R.qkt_merge_mask_r",
@@ -1491,7 +1491,7 @@
       "operation": "ctct_qkt_merge_mask_rescale",
       "location": "layer1.block2.qkt_merge_mask_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -1501,7 +1501,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L1.B2.K",
@@ -1537,7 +1537,7 @@
       "operation": "ctpt_softmax_x",
       "location": "layer1.block3.x_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         19,
         21,
@@ -1548,7 +1548,7 @@
       "N": 8192,
       "max_sf": 27,
       "effective": true,
-      "scaling_factor": 23
+      "scaling_factor": 19
     },
     {
       "label": "L1.B3.S.inv_2n",
@@ -1581,7 +1581,7 @@
       "operation": "ctct_softmax_pow_s1",
       "location": "layer1.block3.square_rescale_sf_0",
       "distribution": "rescale",
-      "action_index": 3,
+      "action_index": 1,
       "level_values": [
         null,
         30,
@@ -1591,7 +1591,7 @@
       "N": 8192,
       "max_sf": 34,
       "effective": true,
-      "scaling_factor": 34
+      "scaling_factor": 30
     },
     {
       "label": "L1.B3.R.sq1",
@@ -1695,7 +1695,7 @@
       "operation": "ctpt_softmax_out",
       "location": "layer1.block4.softmax_out_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         27,
         29,
@@ -1706,7 +1706,7 @@
       "N": 16384,
       "max_sf": 35,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L1.B4.F.v_fresh",
@@ -1741,7 +1741,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer1.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -1750,7 +1750,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 12
     },
     {
       "label": "L1.B4.M.v_mask",
@@ -1783,7 +1783,7 @@
       "operation": "ctpt_softmax_v_mask",
       "location": "layer1.block4.softmax_v_mask_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -1792,7 +1792,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 10
+      "scaling_factor": 12
     },
     {
       "label": "L1.B4.S.ln_mean_inv_d",
@@ -1846,7 +1846,7 @@
       "operation": "ctpt_wo",
       "location": "layer1.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -1857,7 +1857,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L1.B4.R.softmax_v_matmul_r",
@@ -1891,7 +1891,7 @@
       "operation": "ctct_attn_mean_rescale",
       "location": "layer1.block4.ln_mean_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -1901,7 +1901,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L1.B4.R.ln_var_r",
@@ -1959,7 +1959,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer1.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -1970,7 +1970,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L1.B5.F.x_centered_fresh",
@@ -1982,7 +1982,7 @@
       "operation": "ctpt_attn_x_centered",
       "location": "layer1.block5.x_centered_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -1993,7 +1993,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L1.B5.M.gamma",
@@ -2005,7 +2005,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer1.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -2014,7 +2014,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L1.B5.W.wffn1",
@@ -2026,7 +2026,7 @@
       "operation": "ctpt_wffn1",
       "location": "layer1.block5.wffn1_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -2037,7 +2037,7 @@
       "N": 8192,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L1.B5.M.gelu_coeff",
@@ -2049,7 +2049,7 @@
       "operation": "ctpt_gelu_coeff",
       "location": "layer1.block5.gelu_coeff_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -2058,7 +2058,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L1.B5.R.normalize_r",
@@ -2070,7 +2070,7 @@
       "operation": "ctct_attn_normalize_rescale",
       "location": "layer1.block5.normalize_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -2080,7 +2080,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": null
     },
     {
       "label": "L1.B5.R.gamma_r",
@@ -2092,7 +2092,7 @@
       "operation": "ctct_gamma_attn_rescale",
       "location": "layer1.block5.gamma_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         26,
@@ -2102,7 +2102,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L1.B5.R.wffn1_r",
@@ -2159,7 +2159,7 @@
       "operation": "block5_output_truncation",
       "location": "layer1.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -2171,7 +2171,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 13
     },
     {
       "label": "L2.B1.F.gelu_out",
@@ -2385,7 +2385,7 @@
       "operation": "ctpt_gamma",
       "location": "layer2.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -2394,7 +2394,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 18
     },
     {
       "label": "L2.B2.W.wk",
@@ -2429,7 +2429,7 @@
       "operation": "ctpt_wv",
       "location": "layer2.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -2440,7 +2440,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L2.B2.M.kt_mask1",
@@ -2537,7 +2537,7 @@
       "operation": "ctct_kt_mask2_rescale",
       "location": "layer2.block2.kt_mask2_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -2547,7 +2547,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L2.B2.R.qkt_merge_mask_r",
@@ -2559,7 +2559,7 @@
       "operation": "ctct_qkt_merge_mask_rescale",
       "location": "layer2.block2.qkt_merge_mask_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -2569,7 +2569,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L2.B2.K",
@@ -2693,7 +2693,7 @@
       "operation": "ctct_softmax_pow_s3",
       "location": "layer2.block3.square_rescale_sf_2",
       "distribution": "rescale",
-      "action_index": 3,
+      "action_index": 1,
       "level_values": [
         null,
         27,
@@ -2703,7 +2703,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L2.B3.R.sq3",
@@ -2715,7 +2715,7 @@
       "operation": "ctct_softmax_pow_s4",
       "location": "layer2.block3.square_rescale_sf_3",
       "distribution": "rescale",
-      "action_index": 3,
+      "action_index": 1,
       "level_values": [
         null,
         27,
@@ -2725,7 +2725,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L2.B3.K",
@@ -2807,7 +2807,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer2.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -2816,7 +2816,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 10
+      "scaling_factor": 12
     },
     {
       "label": "L2.B4.M.v_mask",
@@ -2912,7 +2912,7 @@
       "operation": "ctpt_wo",
       "location": "layer2.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -2923,7 +2923,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L2.B4.R.softmax_v_matmul_r",
@@ -2957,7 +2957,7 @@
       "operation": "ctct_attn_mean_rescale",
       "location": "layer2.block4.ln_mean_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -2967,7 +2967,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L2.B4.R.ln_var_r",
@@ -2979,7 +2979,7 @@
       "operation": "ctct_attn_var_rescale",
       "location": "layer2.block4.ln_var_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -2989,7 +2989,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L2.B4.K",
@@ -3025,7 +3025,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer2.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -3036,7 +3036,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L2.B5.F.x_centered_fresh",
@@ -3048,7 +3048,7 @@
       "operation": "ctpt_attn_x_centered",
       "location": "layer2.block5.x_centered_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -3059,7 +3059,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L2.B5.M.gamma",
@@ -3071,7 +3071,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer2.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -3080,7 +3080,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L2.B5.W.wffn1",
@@ -3092,7 +3092,7 @@
       "operation": "ctpt_wffn1",
       "location": "layer2.block5.wffn1_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -3103,7 +3103,7 @@
       "N": 8192,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L2.B5.M.gelu_coeff",
@@ -3115,7 +3115,7 @@
       "operation": "ctpt_gelu_coeff",
       "location": "layer2.block5.gelu_coeff_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -3124,7 +3124,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L2.B5.R.normalize_r",
@@ -3136,7 +3136,7 @@
       "operation": "ctct_attn_normalize_rescale",
       "location": "layer2.block5.normalize_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -3146,7 +3146,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": null
     },
     {
       "label": "L2.B5.R.gamma_r",
@@ -3158,7 +3158,7 @@
       "operation": "ctct_gamma_attn_rescale",
       "location": "layer2.block5.gamma_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         26,
@@ -3168,7 +3168,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L2.B5.R.wffn1_r",
@@ -3225,7 +3225,7 @@
       "operation": "block5_output_truncation",
       "location": "layer2.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -3237,7 +3237,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 13
     },
     {
       "label": "L3.B1.F.gelu_out",
@@ -3405,7 +3405,7 @@
       "operation": "ctpt_inv_std",
       "location": "layer3.block2.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         23,
         25,
@@ -3416,7 +3416,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": 23
     },
     {
       "label": "L3.B2.F.x_centered_fresh",
@@ -3451,7 +3451,7 @@
       "operation": "ctpt_gamma",
       "location": "layer3.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -3460,7 +3460,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 18
     },
     {
       "label": "L3.B2.W.wk",
@@ -3495,7 +3495,7 @@
       "operation": "ctpt_wv",
       "location": "layer3.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -3506,7 +3506,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L3.B2.M.kt_mask1",
@@ -3518,7 +3518,7 @@
       "operation": "ctpt_rotKT_mask1",
       "location": "layer3.block2.kt_mask1_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         11,
         13,
@@ -3527,7 +3527,7 @@
       "N": 16384,
       "max_sf": 15,
       "effective": true,
-      "scaling_factor": 15
+      "scaling_factor": 13
     },
     {
       "label": "L3.B2.M.kt_mask2",
@@ -3603,7 +3603,7 @@
       "operation": "ctct_kt_mask2_rescale",
       "location": "layer3.block2.kt_mask2_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -3613,7 +3613,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L3.B2.R.qkt_merge_mask_r",
@@ -3625,7 +3625,7 @@
       "operation": "ctct_qkt_merge_mask_rescale",
       "location": "layer3.block2.qkt_merge_mask_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -3635,7 +3635,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L3.B2.K",
@@ -3827,7 +3827,7 @@
       "operation": "ctpt_softmax_out",
       "location": "layer3.block4.softmax_out_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         27,
         29,
@@ -3838,7 +3838,7 @@
       "N": 16384,
       "max_sf": 35,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L3.B4.F.v_fresh",
@@ -3873,7 +3873,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer3.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -3882,7 +3882,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 10
+      "scaling_factor": 12
     },
     {
       "label": "L3.B4.M.v_mask",
@@ -3915,7 +3915,7 @@
       "operation": "ctpt_softmax_v_mask",
       "location": "layer3.block4.softmax_v_mask_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -3924,7 +3924,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 10
+      "scaling_factor": 12
     },
     {
       "label": "L3.B4.S.ln_mean_inv_d",
@@ -3936,7 +3936,7 @@
       "operation": "ctpt_inv_d_attn_mean",
       "location": "layer3.block4.ln_mean_inv_d_sf",
       "distribution": "scalar",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -3945,7 +3945,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 18
     },
     {
       "label": "L3.B4.S.ln_var_inv_d",
@@ -3978,7 +3978,7 @@
       "operation": "ctpt_wo",
       "location": "layer3.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -3989,7 +3989,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L3.B4.R.softmax_v_matmul_r",
@@ -4023,7 +4023,7 @@
       "operation": "ctct_attn_mean_rescale",
       "location": "layer3.block4.ln_mean_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -4033,7 +4033,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L3.B4.R.ln_var_r",
@@ -4045,7 +4045,7 @@
       "operation": "ctct_attn_var_rescale",
       "location": "layer3.block4.ln_var_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -4055,7 +4055,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L3.B4.K",
@@ -4091,7 +4091,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer3.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -4102,7 +4102,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L3.B5.F.x_centered_fresh",
@@ -4114,7 +4114,7 @@
       "operation": "ctpt_attn_x_centered",
       "location": "layer3.block5.x_centered_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -4125,7 +4125,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L3.B5.M.gamma",
@@ -4137,7 +4137,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer3.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -4146,7 +4146,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L3.B5.W.wffn1",
@@ -4158,7 +4158,7 @@
       "operation": "ctpt_wffn1",
       "location": "layer3.block5.wffn1_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -4169,7 +4169,7 @@
       "N": 8192,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L3.B5.M.gelu_coeff",
@@ -4181,7 +4181,7 @@
       "operation": "ctpt_gelu_coeff",
       "location": "layer3.block5.gelu_coeff_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -4190,7 +4190,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L3.B5.R.normalize_r",
@@ -4202,7 +4202,7 @@
       "operation": "ctct_attn_normalize_rescale",
       "location": "layer3.block5.normalize_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -4212,7 +4212,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": null
     },
     {
       "label": "L3.B5.R.gamma_r",
@@ -4224,7 +4224,7 @@
       "operation": "ctct_gamma_attn_rescale",
       "location": "layer3.block5.gamma_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         26,
@@ -4234,7 +4234,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L3.B5.R.wffn1_r",
@@ -4291,7 +4291,7 @@
       "operation": "block5_output_truncation",
       "location": "layer3.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -4303,7 +4303,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 13
     },
     {
       "label": "L4.B1.F.gelu_out",
@@ -4517,7 +4517,7 @@
       "operation": "ctpt_gamma",
       "location": "layer4.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -4526,7 +4526,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 18
     },
     {
       "label": "L4.B2.W.wk",
@@ -4561,7 +4561,7 @@
       "operation": "ctpt_wv",
       "location": "layer4.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -4572,7 +4572,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L4.B2.M.kt_mask1",
@@ -4669,7 +4669,7 @@
       "operation": "ctct_kt_mask2_rescale",
       "location": "layer4.block2.kt_mask2_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -4679,7 +4679,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L4.B2.R.qkt_merge_mask_r",
@@ -4691,7 +4691,7 @@
       "operation": "ctct_qkt_merge_mask_rescale",
       "location": "layer4.block2.qkt_merge_mask_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -4701,7 +4701,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L4.B2.K",
@@ -4893,7 +4893,7 @@
       "operation": "ctpt_softmax_out",
       "location": "layer4.block4.softmax_out_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         27,
         29,
@@ -4904,7 +4904,7 @@
       "N": 16384,
       "max_sf": 35,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L4.B4.F.v_fresh",
@@ -4939,7 +4939,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer4.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -4948,7 +4948,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 10
+      "scaling_factor": 12
     },
     {
       "label": "L4.B4.M.v_mask",
@@ -5044,7 +5044,7 @@
       "operation": "ctpt_wo",
       "location": "layer4.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -5055,7 +5055,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L4.B4.R.softmax_v_matmul_r",
@@ -5089,7 +5089,7 @@
       "operation": "ctct_attn_mean_rescale",
       "location": "layer4.block4.ln_mean_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -5099,7 +5099,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L4.B4.R.ln_var_r",
@@ -5157,7 +5157,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer4.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -5168,7 +5168,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L4.B5.F.x_centered_fresh",
@@ -5180,7 +5180,7 @@
       "operation": "ctpt_attn_x_centered",
       "location": "layer4.block5.x_centered_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -5191,7 +5191,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L4.B5.M.gamma",
@@ -5203,7 +5203,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer4.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -5212,7 +5212,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L4.B5.W.wffn1",
@@ -5224,7 +5224,7 @@
       "operation": "ctpt_wffn1",
       "location": "layer4.block5.wffn1_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -5235,7 +5235,7 @@
       "N": 8192,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L4.B5.M.gelu_coeff",
@@ -5247,7 +5247,7 @@
       "operation": "ctpt_gelu_coeff",
       "location": "layer4.block5.gelu_coeff_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -5256,7 +5256,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L4.B5.R.normalize_r",
@@ -5268,7 +5268,7 @@
       "operation": "ctct_attn_normalize_rescale",
       "location": "layer4.block5.normalize_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -5278,7 +5278,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": null
     },
     {
       "label": "L4.B5.R.gamma_r",
@@ -5290,7 +5290,7 @@
       "operation": "ctct_gamma_attn_rescale",
       "location": "layer4.block5.gamma_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         26,
@@ -5300,7 +5300,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L4.B5.R.wffn1_r",
@@ -5357,7 +5357,7 @@
       "operation": "block5_output_truncation",
       "location": "layer4.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -5369,7 +5369,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 13
     },
     {
       "label": "L5.B1.F.gelu_out",
@@ -5583,7 +5583,7 @@
       "operation": "ctpt_gamma",
       "location": "layer5.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -5592,7 +5592,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 18
     },
     {
       "label": "L5.B2.W.wk",
@@ -5627,7 +5627,7 @@
       "operation": "ctpt_wv",
       "location": "layer5.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -5638,7 +5638,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L5.B2.M.kt_mask1",
@@ -5735,7 +5735,7 @@
       "operation": "ctct_kt_mask2_rescale",
       "location": "layer5.block2.kt_mask2_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -5745,7 +5745,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L5.B2.R.qkt_merge_mask_r",
@@ -5803,7 +5803,7 @@
       "operation": "ctpt_softmax_x",
       "location": "layer5.block3.x_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         19,
         21,
@@ -5814,7 +5814,7 @@
       "N": 8192,
       "max_sf": 27,
       "effective": true,
-      "scaling_factor": 23
+      "scaling_factor": 27
     },
     {
       "label": "L5.B3.S.inv_2n",
@@ -5826,7 +5826,7 @@
       "operation": "ctpt_softmax_inv_2n",
       "location": "layer5.block3.inv_2n_sf",
       "distribution": "scalar",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         12,
         14,
@@ -5835,7 +5835,7 @@
       "N": 8192,
       "max_sf": 16,
       "effective": true,
-      "scaling_factor": 12
+      "scaling_factor": 16
     },
     {
       "label": "L5.B3.R.sq0",
@@ -5869,7 +5869,7 @@
       "operation": "ctct_softmax_pow_s2",
       "location": "layer5.block3.square_rescale_sf_1",
       "distribution": "rescale",
-      "action_index": 0,
+      "action_index": 3,
       "level_values": [
         null,
         30,
@@ -5879,7 +5879,7 @@
       "N": 8192,
       "max_sf": 34,
       "effective": true,
-      "scaling_factor": null
+      "scaling_factor": 34
     },
     {
       "label": "L5.B3.R.sq2",
@@ -5891,7 +5891,7 @@
       "operation": "ctct_softmax_pow_s3",
       "location": "layer5.block3.square_rescale_sf_2",
       "distribution": "rescale",
-      "action_index": 3,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -5901,7 +5901,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": false,
-      "scaling_factor": 31,
+      "scaling_factor": null,
       "note": "softmax degree 2 does not use this square-rescale slot"
     },
     {
@@ -5914,7 +5914,7 @@
       "operation": "ctct_softmax_pow_s4",
       "location": "layer5.block3.square_rescale_sf_3",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -5924,7 +5924,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": false,
-      "scaling_factor": 27,
+      "scaling_factor": null,
       "note": "softmax degree 2 does not use this square-rescale slot"
     },
     {
@@ -5937,7 +5937,7 @@
       "operation": "block3_output_truncation",
       "location": "layer5.block3.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 5,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -5949,7 +5949,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 12
+      "truncation_bits": 13
     },
     {
       "label": "L5.B4.F.softmax_out_fresh",
@@ -5961,7 +5961,7 @@
       "operation": "ctpt_softmax_out",
       "location": "layer5.block4.softmax_out_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         27,
         29,
@@ -5972,7 +5972,7 @@
       "N": 16384,
       "max_sf": 35,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L5.B4.F.v_fresh",
@@ -6007,7 +6007,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer5.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -6016,7 +6016,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 12
     },
     {
       "label": "L5.B4.M.v_mask",
@@ -6112,7 +6112,7 @@
       "operation": "ctpt_wo",
       "location": "layer5.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -6123,7 +6123,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L5.B4.R.softmax_v_matmul_r",
@@ -6157,7 +6157,7 @@
       "operation": "ctct_attn_mean_rescale",
       "location": "layer5.block4.ln_mean_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -6167,7 +6167,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L5.B4.R.ln_var_r",
@@ -6179,7 +6179,7 @@
       "operation": "ctct_attn_var_rescale",
       "location": "layer5.block4.ln_var_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -6189,7 +6189,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L5.B4.K",
@@ -6225,7 +6225,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer5.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         22,
         24,
@@ -6236,7 +6236,7 @@
       "N": 16384,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 22
     },
     {
       "label": "L5.B5.F.x_centered_fresh",
@@ -6271,7 +6271,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer5.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -6280,7 +6280,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 18
     },
     {
       "label": "L5.B5.W.wffn1",
@@ -6380,7 +6380,7 @@
       "operation": "ctct_wffn1_rescale",
       "location": "layer5.block5.wffn1_rescale_sf",
       "distribution": "rescale",
-      "action_index": 0,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -6390,7 +6390,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": null
+      "scaling_factor": 31
     },
     {
       "label": "L5.B5.R.gp0",
@@ -6424,7 +6424,7 @@
       "operation": "block5_output_truncation",
       "location": "layer5.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 5,
       "level_values": [
         8,
         9,
@@ -6436,7 +6436,7 @@
       "N": 16384,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 12
     },
     {
       "label": "L6.B1.F.gelu_out",
@@ -6650,7 +6650,7 @@
       "operation": "ctpt_gamma",
       "location": "layer6.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -6659,7 +6659,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 18
     },
     {
       "label": "L6.B2.W.wk",
@@ -6694,7 +6694,7 @@
       "operation": "ctpt_wv",
       "location": "layer6.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -6705,7 +6705,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L6.B2.M.kt_mask1",
@@ -6717,7 +6717,7 @@
       "operation": "ctpt_rotKT_mask1",
       "location": "layer6.block2.kt_mask1_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         11,
         13,
@@ -6726,7 +6726,7 @@
       "N": 16384,
       "max_sf": 15,
       "effective": true,
-      "scaling_factor": 15
+      "scaling_factor": 13
     },
     {
       "label": "L6.B2.M.kt_mask2",
@@ -6802,7 +6802,7 @@
       "operation": "ctct_kt_mask2_rescale",
       "location": "layer6.block2.kt_mask2_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -6812,7 +6812,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L6.B2.R.qkt_merge_mask_r",
@@ -6870,7 +6870,7 @@
       "operation": "ctpt_softmax_x",
       "location": "layer6.block3.x_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         20,
         22,
@@ -6881,7 +6881,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 28
     },
     {
       "label": "L6.B3.S.inv_2n",
@@ -6893,7 +6893,7 @@
       "operation": "ctpt_softmax_inv_2n",
       "location": "layer6.block3.inv_2n_sf",
       "distribution": "scalar",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         11,
         13,
@@ -6902,7 +6902,7 @@
       "N": 16384,
       "max_sf": 15,
       "effective": true,
-      "scaling_factor": 11
+      "scaling_factor": 15
     },
     {
       "label": "L6.B3.R.sq0",
@@ -6936,7 +6936,7 @@
       "operation": "ctct_softmax_pow_s2",
       "location": "layer6.block3.square_rescale_sf_1",
       "distribution": "rescale",
-      "action_index": 0,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -6946,7 +6946,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": null
+      "scaling_factor": 31
     },
     {
       "label": "L6.B3.R.sq2",
@@ -7002,7 +7002,7 @@
       "operation": "block3_output_truncation",
       "location": "layer6.block3.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 5,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -7014,7 +7014,7 @@
       "N": 16384,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 12
+      "truncation_bits": 13
     },
     {
       "label": "L6.B4.F.softmax_out_fresh",
@@ -7026,7 +7026,7 @@
       "operation": "ctpt_softmax_out",
       "location": "layer6.block4.softmax_out_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         27,
         29,
@@ -7037,7 +7037,7 @@
       "N": 16384,
       "max_sf": 35,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L6.B4.F.v_fresh",
@@ -7072,7 +7072,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer6.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -7081,7 +7081,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 12
     },
     {
       "label": "L6.B4.M.v_mask",
@@ -7177,7 +7177,7 @@
       "operation": "ctpt_wo",
       "location": "layer6.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -7188,7 +7188,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L6.B4.R.softmax_v_matmul_r",
@@ -7222,7 +7222,7 @@
       "operation": "ctct_attn_mean_rescale",
       "location": "layer6.block4.ln_mean_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -7232,7 +7232,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L6.B4.R.ln_var_r",
@@ -7244,7 +7244,7 @@
       "operation": "ctct_attn_var_rescale",
       "location": "layer6.block4.ln_var_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -7254,7 +7254,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L6.B4.K",
@@ -7290,7 +7290,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer6.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -7301,7 +7301,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L6.B5.F.x_centered_fresh",
@@ -7313,7 +7313,7 @@
       "operation": "ctpt_attn_x_centered",
       "location": "layer6.block5.x_centered_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -7324,7 +7324,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L6.B5.M.gamma",
@@ -7336,7 +7336,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer6.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -7345,7 +7345,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L6.B5.W.wffn1",
@@ -7357,7 +7357,7 @@
       "operation": "ctpt_wffn1",
       "location": "layer6.block5.wffn1_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -7368,7 +7368,7 @@
       "N": 8192,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L6.B5.M.gelu_coeff",
@@ -7380,7 +7380,7 @@
       "operation": "ctpt_gelu_coeff",
       "location": "layer6.block5.gelu_coeff_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -7389,7 +7389,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L6.B5.R.normalize_r",
@@ -7401,7 +7401,7 @@
       "operation": "ctct_attn_normalize_rescale",
       "location": "layer6.block5.normalize_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -7411,7 +7411,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": null
     },
     {
       "label": "L6.B5.R.gamma_r",
@@ -7423,7 +7423,7 @@
       "operation": "ctct_gamma_attn_rescale",
       "location": "layer6.block5.gamma_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         26,
@@ -7433,7 +7433,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L6.B5.R.wffn1_r",
@@ -7490,7 +7490,7 @@
       "operation": "block5_output_truncation",
       "location": "layer6.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -7502,7 +7502,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 13
     },
     {
       "label": "L7.B1.F.gelu_out",
@@ -7670,7 +7670,7 @@
       "operation": "ctpt_inv_std",
       "location": "layer7.block2.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         23,
         25,
@@ -7681,7 +7681,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": 23
     },
     {
       "label": "L7.B2.F.x_centered_fresh",
@@ -7716,7 +7716,7 @@
       "operation": "ctpt_gamma",
       "location": "layer7.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -7725,7 +7725,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L7.B2.W.wk",
@@ -7760,7 +7760,7 @@
       "operation": "ctpt_wv",
       "location": "layer7.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -7771,7 +7771,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L7.B2.M.kt_mask1",
@@ -7868,7 +7868,7 @@
       "operation": "ctct_kt_mask2_rescale",
       "location": "layer7.block2.kt_mask2_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -7878,7 +7878,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L7.B2.R.qkt_merge_mask_r",
@@ -7936,7 +7936,7 @@
       "operation": "ctpt_softmax_x",
       "location": "layer7.block3.x_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         19,
         21,
@@ -7947,7 +7947,7 @@
       "N": 8192,
       "max_sf": 27,
       "effective": true,
-      "scaling_factor": 23
+      "scaling_factor": 27
     },
     {
       "label": "L7.B3.S.inv_2n",
@@ -7959,7 +7959,7 @@
       "operation": "ctpt_softmax_inv_2n",
       "location": "layer7.block3.inv_2n_sf",
       "distribution": "scalar",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         12,
         14,
@@ -7968,7 +7968,7 @@
       "N": 8192,
       "max_sf": 16,
       "effective": true,
-      "scaling_factor": 12
+      "scaling_factor": 16
     },
     {
       "label": "L7.B3.R.sq0",
@@ -8002,7 +8002,7 @@
       "operation": "ctct_softmax_pow_s2",
       "location": "layer7.block3.square_rescale_sf_1",
       "distribution": "rescale",
-      "action_index": 0,
+      "action_index": 3,
       "level_values": [
         null,
         30,
@@ -8012,7 +8012,7 @@
       "N": 8192,
       "max_sf": 34,
       "effective": true,
-      "scaling_factor": null
+      "scaling_factor": 34
     },
     {
       "label": "L7.B3.R.sq2",
@@ -8024,7 +8024,7 @@
       "operation": "ctct_softmax_pow_s3",
       "location": "layer7.block3.square_rescale_sf_2",
       "distribution": "rescale",
-      "action_index": 3,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -8034,7 +8034,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": false,
-      "scaling_factor": 31,
+      "scaling_factor": null,
       "note": "softmax degree 2 does not use this square-rescale slot"
     },
     {
@@ -8047,7 +8047,7 @@
       "operation": "ctct_softmax_pow_s4",
       "location": "layer7.block3.square_rescale_sf_3",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -8057,7 +8057,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": false,
-      "scaling_factor": 27,
+      "scaling_factor": null,
       "note": "softmax degree 2 does not use this square-rescale slot"
     },
     {
@@ -8070,7 +8070,7 @@
       "operation": "block3_output_truncation",
       "location": "layer7.block3.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 5,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -8082,7 +8082,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 12
+      "truncation_bits": 13
     },
     {
       "label": "L7.B4.F.softmax_out_fresh",
@@ -8094,7 +8094,7 @@
       "operation": "ctpt_softmax_out",
       "location": "layer7.block4.softmax_out_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         27,
         29,
@@ -8105,7 +8105,7 @@
       "N": 16384,
       "max_sf": 35,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L7.B4.F.v_fresh",
@@ -8140,7 +8140,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer7.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -8149,7 +8149,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 12
     },
     {
       "label": "L7.B4.M.v_mask",
@@ -8203,7 +8203,7 @@
       "operation": "ctpt_inv_d_attn_mean",
       "location": "layer7.block4.ln_mean_inv_d_sf",
       "distribution": "scalar",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -8212,7 +8212,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 18
     },
     {
       "label": "L7.B4.S.ln_var_inv_d",
@@ -8245,7 +8245,7 @@
       "operation": "ctpt_wo",
       "location": "layer7.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -8256,7 +8256,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L7.B4.R.softmax_v_matmul_r",
@@ -8290,7 +8290,7 @@
       "operation": "ctct_attn_mean_rescale",
       "location": "layer7.block4.ln_mean_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -8300,7 +8300,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L7.B4.R.ln_var_r",
@@ -8312,7 +8312,7 @@
       "operation": "ctct_attn_var_rescale",
       "location": "layer7.block4.ln_var_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -8322,7 +8322,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L7.B4.K",
@@ -8358,7 +8358,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer7.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -8369,7 +8369,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L7.B5.F.x_centered_fresh",
@@ -8381,7 +8381,7 @@
       "operation": "ctpt_attn_x_centered",
       "location": "layer7.block5.x_centered_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -8392,7 +8392,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L7.B5.M.gamma",
@@ -8404,7 +8404,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer7.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -8413,7 +8413,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L7.B5.W.wffn1",
@@ -8425,7 +8425,7 @@
       "operation": "ctpt_wffn1",
       "location": "layer7.block5.wffn1_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -8436,7 +8436,7 @@
       "N": 8192,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L7.B5.M.gelu_coeff",
@@ -8448,7 +8448,7 @@
       "operation": "ctpt_gelu_coeff",
       "location": "layer7.block5.gelu_coeff_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -8457,7 +8457,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L7.B5.R.normalize_r",
@@ -8469,7 +8469,7 @@
       "operation": "ctct_attn_normalize_rescale",
       "location": "layer7.block5.normalize_rescale_sf",
       "distribution": "rescale",
-      "action_index": 3,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -8479,7 +8479,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": null
     },
     {
       "label": "L7.B5.R.gamma_r",
@@ -8491,7 +8491,7 @@
       "operation": "ctct_gamma_attn_rescale",
       "location": "layer7.block5.gamma_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         26,
@@ -8501,7 +8501,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L7.B5.R.wffn1_r",
@@ -8558,7 +8558,7 @@
       "operation": "block5_output_truncation",
       "location": "layer7.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -8570,7 +8570,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 13
     },
     {
       "label": "L8.B1.F.gelu_out",
@@ -8738,7 +8738,7 @@
       "operation": "ctpt_inv_std",
       "location": "layer8.block2.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         23,
         25,
@@ -8749,7 +8749,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": 23
     },
     {
       "label": "L8.B2.F.x_centered_fresh",
@@ -8784,7 +8784,7 @@
       "operation": "ctpt_gamma",
       "location": "layer8.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -8793,7 +8793,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 18
     },
     {
       "label": "L8.B2.W.wk",
@@ -8828,7 +8828,7 @@
       "operation": "ctpt_wv",
       "location": "layer8.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -8839,7 +8839,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L8.B2.M.kt_mask1",
@@ -8851,7 +8851,7 @@
       "operation": "ctpt_rotKT_mask1",
       "location": "layer8.block2.kt_mask1_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         11,
         13,
@@ -8860,7 +8860,7 @@
       "N": 16384,
       "max_sf": 15,
       "effective": true,
-      "scaling_factor": 15
+      "scaling_factor": 13
     },
     {
       "label": "L8.B2.M.kt_mask2",
@@ -8958,7 +8958,7 @@
       "operation": "ctct_qkt_merge_mask_rescale",
       "location": "layer8.block2.qkt_merge_mask_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -8968,7 +8968,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L8.B2.K",
@@ -9004,7 +9004,7 @@
       "operation": "ctpt_softmax_x",
       "location": "layer8.block3.x_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         20,
         22,
@@ -9015,7 +9015,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L8.B3.S.inv_2n",
@@ -9027,7 +9027,7 @@
       "operation": "ctpt_softmax_inv_2n",
       "location": "layer8.block3.inv_2n_sf",
       "distribution": "scalar",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         11,
         13,
@@ -9036,7 +9036,7 @@
       "N": 16384,
       "max_sf": 15,
       "effective": true,
-      "scaling_factor": 11
+      "scaling_factor": 15
     },
     {
       "label": "L8.B3.R.sq0",
@@ -9070,7 +9070,7 @@
       "operation": "ctct_softmax_pow_s2",
       "location": "layer8.block3.square_rescale_sf_1",
       "distribution": "rescale",
-      "action_index": 0,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -9080,7 +9080,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": null
+      "scaling_factor": 31
     },
     {
       "label": "L8.B3.R.sq2",
@@ -9136,7 +9136,7 @@
       "operation": "block3_output_truncation",
       "location": "layer8.block3.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 5,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -9148,7 +9148,7 @@
       "N": 16384,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 12
+      "truncation_bits": 13
     },
     {
       "label": "L8.B4.F.softmax_out_fresh",
@@ -9206,7 +9206,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer8.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -9215,7 +9215,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 12
     },
     {
       "label": "L8.B4.M.v_mask",
@@ -9311,7 +9311,7 @@
       "operation": "ctpt_wo",
       "location": "layer8.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -9322,7 +9322,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L8.B4.R.softmax_v_matmul_r",
@@ -9356,7 +9356,7 @@
       "operation": "ctct_attn_mean_rescale",
       "location": "layer8.block4.ln_mean_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -9366,7 +9366,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L8.B4.R.ln_var_r",
@@ -9424,7 +9424,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer8.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -9435,7 +9435,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L8.B5.F.x_centered_fresh",
@@ -9447,7 +9447,7 @@
       "operation": "ctpt_attn_x_centered",
       "location": "layer8.block5.x_centered_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -9458,7 +9458,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L8.B5.M.gamma",
@@ -9470,7 +9470,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer8.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -9479,7 +9479,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L8.B5.W.wffn1",
@@ -9491,7 +9491,7 @@
       "operation": "ctpt_wffn1",
       "location": "layer8.block5.wffn1_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -9502,7 +9502,7 @@
       "N": 8192,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L8.B5.M.gelu_coeff",
@@ -9514,7 +9514,7 @@
       "operation": "ctpt_gelu_coeff",
       "location": "layer8.block5.gelu_coeff_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -9523,7 +9523,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L8.B5.R.normalize_r",
@@ -9535,7 +9535,7 @@
       "operation": "ctct_attn_normalize_rescale",
       "location": "layer8.block5.normalize_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -9545,7 +9545,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": null
     },
     {
       "label": "L8.B5.R.gamma_r",
@@ -9557,7 +9557,7 @@
       "operation": "ctct_gamma_attn_rescale",
       "location": "layer8.block5.gamma_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         26,
@@ -9567,7 +9567,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L8.B5.R.wffn1_r",
@@ -9624,7 +9624,7 @@
       "operation": "block5_output_truncation",
       "location": "layer8.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -9636,7 +9636,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 13
     },
     {
       "label": "L9.B1.F.gelu_out",
@@ -9804,7 +9804,7 @@
       "operation": "ctpt_inv_std",
       "location": "layer9.block2.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         23,
         25,
@@ -9815,7 +9815,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": 23
     },
     {
       "label": "L9.B2.F.x_centered_fresh",
@@ -9850,7 +9850,7 @@
       "operation": "ctpt_gamma",
       "location": "layer9.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -9859,7 +9859,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 18
     },
     {
       "label": "L9.B2.W.wk",
@@ -9894,7 +9894,7 @@
       "operation": "ctpt_wv",
       "location": "layer9.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -9905,7 +9905,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L9.B2.M.kt_mask1",
@@ -10002,7 +10002,7 @@
       "operation": "ctct_kt_mask2_rescale",
       "location": "layer9.block2.kt_mask2_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -10012,7 +10012,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L9.B2.R.qkt_merge_mask_r",
@@ -10024,7 +10024,7 @@
       "operation": "ctct_qkt_merge_mask_rescale",
       "location": "layer9.block2.qkt_merge_mask_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         24,
@@ -10034,7 +10034,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 28
     },
     {
       "label": "L9.B2.K",
@@ -10226,7 +10226,7 @@
       "operation": "ctpt_softmax_out",
       "location": "layer9.block4.softmax_out_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         27,
         29,
@@ -10237,7 +10237,7 @@
       "N": 16384,
       "max_sf": 35,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L9.B4.F.v_fresh",
@@ -10272,7 +10272,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer9.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -10281,7 +10281,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 10
+      "scaling_factor": 12
     },
     {
       "label": "L9.B4.M.v_mask",
@@ -10377,7 +10377,7 @@
       "operation": "ctpt_wo",
       "location": "layer9.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -10388,7 +10388,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L9.B4.R.softmax_v_matmul_r",
@@ -10422,7 +10422,7 @@
       "operation": "ctct_attn_mean_rescale",
       "location": "layer9.block4.ln_mean_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -10432,7 +10432,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L9.B4.R.ln_var_r",
@@ -10490,7 +10490,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer9.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -10501,7 +10501,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L9.B5.F.x_centered_fresh",
@@ -10513,7 +10513,7 @@
       "operation": "ctpt_attn_x_centered",
       "location": "layer9.block5.x_centered_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -10524,7 +10524,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L9.B5.M.gamma",
@@ -10536,7 +10536,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer9.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -10545,7 +10545,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L9.B5.W.wffn1",
@@ -10557,7 +10557,7 @@
       "operation": "ctpt_wffn1",
       "location": "layer9.block5.wffn1_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -10568,7 +10568,7 @@
       "N": 8192,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L9.B5.M.gelu_coeff",
@@ -10580,7 +10580,7 @@
       "operation": "ctpt_gelu_coeff",
       "location": "layer9.block5.gelu_coeff_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -10589,7 +10589,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L9.B5.R.normalize_r",
@@ -10601,7 +10601,7 @@
       "operation": "ctct_attn_normalize_rescale",
       "location": "layer9.block5.normalize_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -10611,7 +10611,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": null
     },
     {
       "label": "L9.B5.R.gamma_r",
@@ -10623,7 +10623,7 @@
       "operation": "ctct_gamma_attn_rescale",
       "location": "layer9.block5.gamma_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         26,
@@ -10633,7 +10633,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L9.B5.R.wffn1_r",
@@ -10690,7 +10690,7 @@
       "operation": "block5_output_truncation",
       "location": "layer9.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -10702,7 +10702,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 13
     },
     {
       "label": "L10.B1.F.gelu_out",
@@ -10870,7 +10870,7 @@
       "operation": "ctpt_inv_std",
       "location": "layer10.block2.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         23,
         25,
@@ -10881,7 +10881,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": 23
     },
     {
       "label": "L10.B2.F.x_centered_fresh",
@@ -10916,7 +10916,7 @@
       "operation": "ctpt_gamma",
       "location": "layer10.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -10925,7 +10925,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 18
     },
     {
       "label": "L10.B2.W.wk",
@@ -10960,7 +10960,7 @@
       "operation": "ctpt_wv",
       "location": "layer10.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -10971,7 +10971,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L10.B2.M.kt_mask1",
@@ -11068,7 +11068,7 @@
       "operation": "ctct_kt_mask2_rescale",
       "location": "layer10.block2.kt_mask2_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -11078,7 +11078,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L10.B2.R.qkt_merge_mask_r",
@@ -11136,7 +11136,7 @@
       "operation": "ctpt_softmax_x",
       "location": "layer10.block3.x_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         20,
         22,
@@ -11147,7 +11147,7 @@
       "N": 16384,
       "max_sf": 28,
       "effective": true,
-      "scaling_factor": 24
+      "scaling_factor": 20
     },
     {
       "label": "L10.B3.S.inv_2n",
@@ -11292,7 +11292,7 @@
       "operation": "ctpt_softmax_out",
       "location": "layer10.block4.softmax_out_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         27,
         29,
@@ -11303,7 +11303,7 @@
       "N": 16384,
       "max_sf": 35,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L10.B4.F.v_fresh",
@@ -11338,7 +11338,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer10.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -11347,7 +11347,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 12
     },
     {
       "label": "L10.B4.M.v_mask",
@@ -11443,7 +11443,7 @@
       "operation": "ctpt_wo",
       "location": "layer10.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -11454,7 +11454,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L10.B4.R.softmax_v_matmul_r",
@@ -11556,7 +11556,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer10.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -11567,7 +11567,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L10.B5.F.x_centered_fresh",
@@ -11579,7 +11579,7 @@
       "operation": "ctpt_attn_x_centered",
       "location": "layer10.block5.x_centered_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -11590,7 +11590,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L10.B5.M.gamma",
@@ -11602,7 +11602,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer10.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -11611,7 +11611,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L10.B5.W.wffn1",
@@ -11623,7 +11623,7 @@
       "operation": "ctpt_wffn1",
       "location": "layer10.block5.wffn1_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -11634,7 +11634,7 @@
       "N": 8192,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L10.B5.M.gelu_coeff",
@@ -11646,7 +11646,7 @@
       "operation": "ctpt_gelu_coeff",
       "location": "layer10.block5.gelu_coeff_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -11655,7 +11655,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L10.B5.R.normalize_r",
@@ -11667,7 +11667,7 @@
       "operation": "ctct_attn_normalize_rescale",
       "location": "layer10.block5.normalize_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -11677,7 +11677,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": null
     },
     {
       "label": "L10.B5.R.gamma_r",
@@ -11689,7 +11689,7 @@
       "operation": "ctct_gamma_attn_rescale",
       "location": "layer10.block5.gamma_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         26,
@@ -11699,7 +11699,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L10.B5.R.wffn1_r",
@@ -11756,7 +11756,7 @@
       "operation": "block5_output_truncation",
       "location": "layer10.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -11768,7 +11768,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 13
     },
     {
       "label": "L11.B1.F.gelu_out",
@@ -11936,7 +11936,7 @@
       "operation": "ctpt_inv_std",
       "location": "layer11.block2.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         23,
         25,
@@ -11947,7 +11947,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": 23
     },
     {
       "label": "L11.B2.F.x_centered_fresh",
@@ -11982,7 +11982,7 @@
       "operation": "ctpt_gamma",
       "location": "layer11.block2.gamma_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         16,
         18,
@@ -11991,7 +11991,7 @@
       "N": 16384,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 18
     },
     {
       "label": "L11.B2.W.wk",
@@ -12026,7 +12026,7 @@
       "operation": "ctpt_wv",
       "location": "layer11.block2.wv_sf",
       "distribution": "encoding",
-      "action_index": 3,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -12037,7 +12037,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 20
+      "scaling_factor": 22
     },
     {
       "label": "L11.B2.M.kt_mask1",
@@ -12049,7 +12049,7 @@
       "operation": "ctpt_rotKT_mask1",
       "location": "layer11.block2.kt_mask1_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         11,
         13,
@@ -12058,7 +12058,7 @@
       "N": 16384,
       "max_sf": 15,
       "effective": true,
-      "scaling_factor": 15
+      "scaling_factor": 13
     },
     {
       "label": "L11.B2.M.kt_mask2",
@@ -12134,7 +12134,7 @@
       "operation": "ctct_kt_mask2_rescale",
       "location": "layer11.block2.kt_mask2_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -12144,7 +12144,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L11.B2.R.qkt_merge_mask_r",
@@ -12202,7 +12202,7 @@
       "operation": "ctpt_softmax_x",
       "location": "layer11.block3.x_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         19,
         21,
@@ -12213,7 +12213,7 @@
       "N": 8192,
       "max_sf": 27,
       "effective": true,
-      "scaling_factor": 23
+      "scaling_factor": 27
     },
     {
       "label": "L11.B3.S.inv_2n",
@@ -12225,7 +12225,7 @@
       "operation": "ctpt_softmax_inv_2n",
       "location": "layer11.block3.inv_2n_sf",
       "distribution": "scalar",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         12,
         14,
@@ -12234,7 +12234,7 @@
       "N": 8192,
       "max_sf": 16,
       "effective": true,
-      "scaling_factor": 12
+      "scaling_factor": 16
     },
     {
       "label": "L11.B3.R.sq0",
@@ -12268,7 +12268,7 @@
       "operation": "ctct_softmax_pow_s2",
       "location": "layer11.block3.square_rescale_sf_1",
       "distribution": "rescale",
-      "action_index": 0,
+      "action_index": 3,
       "level_values": [
         null,
         30,
@@ -12278,7 +12278,7 @@
       "N": 8192,
       "max_sf": 34,
       "effective": true,
-      "scaling_factor": null
+      "scaling_factor": 34
     },
     {
       "label": "L11.B3.R.sq2",
@@ -12290,7 +12290,7 @@
       "operation": "ctct_softmax_pow_s3",
       "location": "layer11.block3.square_rescale_sf_2",
       "distribution": "rescale",
-      "action_index": 3,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -12300,7 +12300,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": false,
-      "scaling_factor": 31,
+      "scaling_factor": null,
       "note": "softmax degree 2 does not use this square-rescale slot"
     },
     {
@@ -12313,7 +12313,7 @@
       "operation": "ctct_softmax_pow_s4",
       "location": "layer11.block3.square_rescale_sf_3",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -12323,7 +12323,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": false,
-      "scaling_factor": 27,
+      "scaling_factor": null,
       "note": "softmax degree 2 does not use this square-rescale slot"
     },
     {
@@ -12336,7 +12336,7 @@
       "operation": "block3_output_truncation",
       "location": "layer11.block3.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 5,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -12348,7 +12348,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 12
+      "truncation_bits": 13
     },
     {
       "label": "L11.B4.F.softmax_out_fresh",
@@ -12360,7 +12360,7 @@
       "operation": "ctpt_softmax_out",
       "location": "layer11.block4.softmax_out_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 0,
       "level_values": [
         27,
         29,
@@ -12371,7 +12371,7 @@
       "N": 16384,
       "max_sf": 35,
       "effective": true,
-      "scaling_factor": 31
+      "scaling_factor": 27
     },
     {
       "label": "L11.B4.F.v_fresh",
@@ -12406,7 +12406,7 @@
       "operation": "ctpt_softmax_out_mask",
       "location": "layer11.block4.softmax_out_mask_sf",
       "distribution": "encoding",
-      "action_index": 2,
+      "action_index": 1,
       "level_values": [
         10,
         12,
@@ -12415,7 +12415,7 @@
       "N": 16384,
       "max_sf": 14,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 12
     },
     {
       "label": "L11.B4.M.v_mask",
@@ -12511,7 +12511,7 @@
       "operation": "ctpt_wo",
       "location": "layer11.block4.wo_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -12522,7 +12522,7 @@
       "N": 16384,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L11.B4.R.softmax_v_matmul_r",
@@ -12556,7 +12556,7 @@
       "operation": "ctct_attn_mean_rescale",
       "location": "layer11.block4.ln_mean_rescale_sf",
       "distribution": "rescale",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         null,
         27,
@@ -12566,7 +12566,7 @@
       "N": 16384,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 29
+      "scaling_factor": 31
     },
     {
       "label": "L11.B4.R.ln_var_r",
@@ -12624,7 +12624,7 @@
       "operation": "ctpt_attn_inv_std",
       "location": "layer11.block5.inv_std_fresh_sf",
       "distribution": "fresh",
-      "action_index": 2,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -12635,7 +12635,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L11.B5.F.x_centered_fresh",
@@ -12647,7 +12647,7 @@
       "operation": "ctpt_attn_x_centered",
       "location": "layer11.block5.x_centered_fresh_sf",
       "distribution": "fresh",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         22,
         24,
@@ -12658,7 +12658,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 22
+      "scaling_factor": 30
     },
     {
       "label": "L11.B5.M.gamma",
@@ -12670,7 +12670,7 @@
       "operation": "ctpt_gamma_attn",
       "location": "layer11.block5.gamma_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -12679,7 +12679,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L11.B5.W.wffn1",
@@ -12691,7 +12691,7 @@
       "operation": "ctpt_wffn1",
       "location": "layer11.block5.wffn1_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 4,
       "level_values": [
         14,
         16,
@@ -12702,7 +12702,7 @@
       "N": 8192,
       "max_sf": 22,
       "effective": true,
-      "scaling_factor": 14
+      "scaling_factor": 22
     },
     {
       "label": "L11.B5.M.gelu_coeff",
@@ -12714,7 +12714,7 @@
       "operation": "ctpt_gelu_coeff",
       "location": "layer11.block5.gelu_coeff_sf",
       "distribution": "encoding",
-      "action_index": 0,
+      "action_index": 2,
       "level_values": [
         16,
         18,
@@ -12723,7 +12723,7 @@
       "N": 8192,
       "max_sf": 20,
       "effective": true,
-      "scaling_factor": 16
+      "scaling_factor": 20
     },
     {
       "label": "L11.B5.R.normalize_r",
@@ -12735,7 +12735,7 @@
       "operation": "ctct_attn_normalize_rescale",
       "location": "layer11.block5.normalize_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 0,
       "level_values": [
         null,
         27,
@@ -12745,7 +12745,7 @@
       "N": 8192,
       "max_sf": 31,
       "effective": true,
-      "scaling_factor": 27
+      "scaling_factor": null
     },
     {
       "label": "L11.B5.R.gamma_r",
@@ -12757,7 +12757,7 @@
       "operation": "ctct_gamma_attn_rescale",
       "location": "layer11.block5.gamma_rescale_sf",
       "distribution": "rescale",
-      "action_index": 1,
+      "action_index": 3,
       "level_values": [
         null,
         26,
@@ -12767,7 +12767,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": true,
-      "scaling_factor": 26
+      "scaling_factor": 30
     },
     {
       "label": "L11.B5.R.wffn1_r",
@@ -12824,7 +12824,7 @@
       "operation": "block5_output_truncation",
       "location": "layer11.block5.output_truncation_k",
       "distribution": "truncation",
-      "action_index": 2,
+      "action_index": 3,
       "level_values": [
         8,
         9,
@@ -12836,7 +12836,7 @@
       "N": 8192,
       "max_sf": null,
       "effective": true,
-      "truncation_bits": 11
+      "truncation_bits": 13
     },
     {
       "label": "L0.first_input.F",
@@ -12848,7 +12848,7 @@
       "operation": "first_input_fresh",
       "location": "first_input.layer0",
       "distribution": "fresh",
-      "action_index": 4,
+      "action_index": 0,
       "level_values": [
         22,
         24,
@@ -12859,7 +12859,7 @@
       "N": 8192,
       "max_sf": 30,
       "effective": false,
-      "scaling_factor": 30,
+      "scaling_factor": 22,
       "note": "first_input fresh noise deprecated; the first HE config is treated as lossless. Slot kept for action-vector backward compatibility."
     }
   ],
@@ -12903,8 +12903,8 @@
       "label": "L0.B2.F.inv_std_fresh",
       "kind": "F",
       "baseline_scaling_factor": 31,
-      "best_scaling_factor": 27,
-      "delta": -4
+      "best_scaling_factor": 23,
+      "delta": -8
     },
     {
       "label": "L0.B2.F.x_centered_fresh",
@@ -12914,6 +12914,13 @@
       "delta": -8
     },
     {
+      "label": "L0.B2.M.gamma",
+      "kind": "M",
+      "baseline_scaling_factor": 20,
+      "best_scaling_factor": 18,
+      "delta": -2
+    },
+    {
       "label": "L0.B2.W.wk",
       "kind": "W",
       "baseline_scaling_factor": 22,
@@ -12921,10 +12928,10 @@
       "delta": -8
     },
     {
-      "label": "L0.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
+      "label": "L0.B2.M.kt_mask1",
+      "kind": "M",
+      "baseline_scaling_factor": 15,
+      "best_scaling_factor": 13,
       "delta": -2
     },
     {
@@ -12949,31 +12956,24 @@
       "delta": null
     },
     {
-      "label": "L0.B2.R.kt_mask2_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L0.B2.R.qkt_merge_mask_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
       "label": "L0.B3.F.x_fresh",
       "kind": "F",
       "baseline_scaling_factor": 27,
-      "best_scaling_factor": 23,
-      "delta": -4
+      "best_scaling_factor": 19,
+      "delta": -8
     },
     {
       "label": "L0.B3.S.inv_2n",
       "kind": "S",
       "baseline_scaling_factor": 16,
       "best_scaling_factor": 12,
+      "delta": -4
+    },
+    {
+      "label": "L0.B3.R.sq0",
+      "kind": "R",
+      "baseline_scaling_factor": 34,
+      "best_scaling_factor": 30,
       "delta": -4
     },
     {
@@ -13008,8 +13008,8 @@
       "label": "L0.B4.F.softmax_out_fresh",
       "kind": "F",
       "baseline_scaling_factor": 35,
-      "best_scaling_factor": 31,
-      "delta": -4
+      "best_scaling_factor": 27,
+      "delta": -8
     },
     {
       "label": "L0.B4.F.v_fresh",
@@ -13022,8 +13022,8 @@
       "label": "L0.B4.M.softmax_out_mask",
       "kind": "M",
       "baseline_scaling_factor": 14,
-      "best_scaling_factor": 10,
-      "delta": -4
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L0.B4.M.v_mask",
@@ -13036,8 +13036,15 @@
       "label": "L0.B4.M.softmax_v_mask",
       "kind": "M",
       "baseline_scaling_factor": 14,
-      "best_scaling_factor": 10,
-      "delta": -4
+      "best_scaling_factor": 12,
+      "delta": -2
+    },
+    {
+      "label": "L0.B4.S.ln_mean_inv_d",
+      "kind": "S",
+      "baseline_scaling_factor": 20,
+      "best_scaling_factor": 18,
+      "delta": -2
     },
     {
       "label": "L0.B4.S.ln_var_inv_d",
@@ -13047,88 +13054,11 @@
       "delta": -2
     },
     {
-      "label": "L0.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
       "label": "L0.B4.R.softmax_v_matmul_r",
       "kind": "R",
       "baseline_scaling_factor": 31,
       "best_scaling_factor": null,
       "delta": null
-    },
-    {
-      "label": "L0.B4.R.ln_mean_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L0.B4.R.ln_var_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
-      "label": "L0.B5.F.inv_std_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L0.B5.F.x_centered_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L0.B5.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L0.B5.W.wffn1",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
-      "label": "L0.B5.M.gelu_coeff",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L0.B5.R.normalize_r",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 29,
-      "delta": null
-    },
-    {
-      "label": "L0.B5.R.gamma_r",
-      "kind": "R",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L0.B5.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
     },
     {
       "label": "L1.B2.F.inv_std_fresh",
@@ -13148,8 +13078,8 @@
       "label": "L1.B2.M.gamma",
       "kind": "M",
       "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
+      "best_scaling_factor": 18,
+      "delta": -2
     },
     {
       "label": "L1.B2.W.wk",
@@ -13159,10 +13089,10 @@
       "delta": -8
     },
     {
-      "label": "L1.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
+      "label": "L1.B2.M.kt_mask1",
+      "kind": "M",
+      "baseline_scaling_factor": 15,
+      "best_scaling_factor": 13,
       "delta": -2
     },
     {
@@ -13187,31 +13117,24 @@
       "delta": null
     },
     {
-      "label": "L1.B2.R.kt_mask2_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L1.B2.R.qkt_merge_mask_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
       "label": "L1.B3.F.x_fresh",
       "kind": "F",
       "baseline_scaling_factor": 27,
-      "best_scaling_factor": 23,
-      "delta": -4
+      "best_scaling_factor": 19,
+      "delta": -8
     },
     {
       "label": "L1.B3.S.inv_2n",
       "kind": "S",
       "baseline_scaling_factor": 16,
       "best_scaling_factor": 12,
+      "delta": -4
+    },
+    {
+      "label": "L1.B3.R.sq0",
+      "kind": "R",
+      "baseline_scaling_factor": 34,
+      "best_scaling_factor": 30,
       "delta": -4
     },
     {
@@ -13246,8 +13169,8 @@
       "label": "L1.B4.F.softmax_out_fresh",
       "kind": "F",
       "baseline_scaling_factor": 35,
-      "best_scaling_factor": 31,
-      "delta": -4
+      "best_scaling_factor": 27,
+      "delta": -8
     },
     {
       "label": "L1.B4.F.v_fresh",
@@ -13255,6 +13178,13 @@
       "baseline_scaling_factor": 30,
       "best_scaling_factor": 22,
       "delta": -8
+    },
+    {
+      "label": "L1.B4.M.softmax_out_mask",
+      "kind": "M",
+      "baseline_scaling_factor": 14,
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L1.B4.M.v_mask",
@@ -13267,8 +13197,8 @@
       "label": "L1.B4.M.softmax_v_mask",
       "kind": "M",
       "baseline_scaling_factor": 14,
-      "best_scaling_factor": 10,
-      "delta": -4
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L1.B4.S.ln_mean_inv_d",
@@ -13285,13 +13215,6 @@
       "delta": -2
     },
     {
-      "label": "L1.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
       "label": "L1.B4.R.softmax_v_matmul_r",
       "kind": "R",
       "baseline_scaling_factor": 31,
@@ -13299,74 +13222,11 @@
       "delta": null
     },
     {
-      "label": "L1.B4.R.ln_mean_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
       "label": "L1.B4.R.ln_var_r",
       "kind": "R",
       "baseline_scaling_factor": 28,
       "best_scaling_factor": 24,
       "delta": -4
-    },
-    {
-      "label": "L1.B5.F.inv_std_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L1.B5.F.x_centered_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L1.B5.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L1.B5.W.wffn1",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
-      "label": "L1.B5.M.gelu_coeff",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L1.B5.R.normalize_r",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 27,
-      "delta": null
-    },
-    {
-      "label": "L1.B5.R.gamma_r",
-      "kind": "R",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L1.B5.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
     },
     {
       "label": "L2.B2.F.inv_std_fresh",
@@ -13386,8 +13246,8 @@
       "label": "L2.B2.M.gamma",
       "kind": "M",
       "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
+      "best_scaling_factor": 18,
+      "delta": -2
     },
     {
       "label": "L2.B2.W.wk",
@@ -13395,13 +13255,6 @@
       "baseline_scaling_factor": 22,
       "best_scaling_factor": 14,
       "delta": -8
-    },
-    {
-      "label": "L2.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
-      "delta": -2
     },
     {
       "label": "L2.B2.M.kt_mask1",
@@ -13432,20 +13285,6 @@
       "delta": null
     },
     {
-      "label": "L2.B2.R.kt_mask2_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L2.B2.R.qkt_merge_mask_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
       "label": "L2.B3.F.x_fresh",
       "kind": "F",
       "baseline_scaling_factor": 28,
@@ -13465,6 +13304,20 @@
       "baseline_scaling_factor": 31,
       "best_scaling_factor": null,
       "delta": null
+    },
+    {
+      "label": "L2.B3.R.sq2",
+      "kind": "R",
+      "baseline_scaling_factor": 31,
+      "best_scaling_factor": 27,
+      "delta": -4
+    },
+    {
+      "label": "L2.B3.R.sq3",
+      "kind": "R",
+      "baseline_scaling_factor": 31,
+      "best_scaling_factor": 27,
+      "delta": -4
     },
     {
       "label": "L2.B3.K",
@@ -13491,8 +13344,8 @@
       "label": "L2.B4.M.softmax_out_mask",
       "kind": "M",
       "baseline_scaling_factor": 14,
-      "best_scaling_factor": 10,
-      "delta": -4
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L2.B4.M.v_mask",
@@ -13523,13 +13376,6 @@
       "delta": -2
     },
     {
-      "label": "L2.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
       "label": "L2.B4.R.softmax_v_matmul_r",
       "kind": "R",
       "baseline_scaling_factor": 31,
@@ -13537,81 +13383,11 @@
       "delta": null
     },
     {
-      "label": "L2.B4.R.ln_mean_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L2.B4.R.ln_var_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
-      "label": "L2.B5.F.inv_std_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L2.B5.F.x_centered_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L2.B5.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L2.B5.W.wffn1",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
-      "label": "L2.B5.M.gelu_coeff",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L2.B5.R.normalize_r",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 29,
-      "delta": null
-    },
-    {
-      "label": "L2.B5.R.gamma_r",
-      "kind": "R",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L2.B5.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
-    },
-    {
       "label": "L3.B2.F.inv_std_fresh",
       "kind": "F",
       "baseline_scaling_factor": 31,
-      "best_scaling_factor": 27,
-      "delta": -4
+      "best_scaling_factor": 23,
+      "delta": -8
     },
     {
       "label": "L3.B2.F.x_centered_fresh",
@@ -13621,6 +13397,13 @@
       "delta": -8
     },
     {
+      "label": "L3.B2.M.gamma",
+      "kind": "M",
+      "baseline_scaling_factor": 20,
+      "best_scaling_factor": 18,
+      "delta": -2
+    },
+    {
       "label": "L3.B2.W.wk",
       "kind": "W",
       "baseline_scaling_factor": 22,
@@ -13628,10 +13411,10 @@
       "delta": -8
     },
     {
-      "label": "L3.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
+      "label": "L3.B2.M.kt_mask1",
+      "kind": "M",
+      "baseline_scaling_factor": 15,
+      "best_scaling_factor": 13,
       "delta": -2
     },
     {
@@ -13656,25 +13439,11 @@
       "delta": null
     },
     {
-      "label": "L3.B2.R.kt_mask2_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L3.B2.R.qkt_merge_mask_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
       "label": "L3.B4.F.softmax_out_fresh",
       "kind": "F",
       "baseline_scaling_factor": 35,
-      "best_scaling_factor": 31,
-      "delta": -4
+      "best_scaling_factor": 27,
+      "delta": -8
     },
     {
       "label": "L3.B4.F.v_fresh",
@@ -13687,8 +13456,8 @@
       "label": "L3.B4.M.softmax_out_mask",
       "kind": "M",
       "baseline_scaling_factor": 14,
-      "best_scaling_factor": 10,
-      "delta": -4
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L3.B4.M.v_mask",
@@ -13701,8 +13470,15 @@
       "label": "L3.B4.M.softmax_v_mask",
       "kind": "M",
       "baseline_scaling_factor": 14,
-      "best_scaling_factor": 10,
-      "delta": -4
+      "best_scaling_factor": 12,
+      "delta": -2
+    },
+    {
+      "label": "L3.B4.S.ln_mean_inv_d",
+      "kind": "S",
+      "baseline_scaling_factor": 20,
+      "best_scaling_factor": 18,
+      "delta": -2
     },
     {
       "label": "L3.B4.S.ln_var_inv_d",
@@ -13712,88 +13488,11 @@
       "delta": -2
     },
     {
-      "label": "L3.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
       "label": "L3.B4.R.softmax_v_matmul_r",
       "kind": "R",
       "baseline_scaling_factor": 31,
       "best_scaling_factor": null,
       "delta": null
-    },
-    {
-      "label": "L3.B4.R.ln_mean_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L3.B4.R.ln_var_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
-      "label": "L3.B5.F.inv_std_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L3.B5.F.x_centered_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L3.B5.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L3.B5.W.wffn1",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
-      "label": "L3.B5.M.gelu_coeff",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L3.B5.R.normalize_r",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 29,
-      "delta": null
-    },
-    {
-      "label": "L3.B5.R.gamma_r",
-      "kind": "R",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L3.B5.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
     },
     {
       "label": "L4.B2.F.inv_std_fresh",
@@ -13810,18 +13509,18 @@
       "delta": -8
     },
     {
+      "label": "L4.B2.M.gamma",
+      "kind": "M",
+      "baseline_scaling_factor": 20,
+      "best_scaling_factor": 18,
+      "delta": -2
+    },
+    {
       "label": "L4.B2.W.wk",
       "kind": "W",
       "baseline_scaling_factor": 22,
       "best_scaling_factor": 14,
       "delta": -8
-    },
-    {
-      "label": "L4.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
-      "delta": -2
     },
     {
       "label": "L4.B2.M.kt_mask1",
@@ -13852,25 +13551,11 @@
       "delta": null
     },
     {
-      "label": "L4.B2.R.kt_mask2_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L4.B2.R.qkt_merge_mask_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
       "label": "L4.B4.F.softmax_out_fresh",
       "kind": "F",
       "baseline_scaling_factor": 35,
-      "best_scaling_factor": 31,
-      "delta": -4
+      "best_scaling_factor": 27,
+      "delta": -8
     },
     {
       "label": "L4.B4.F.v_fresh",
@@ -13883,8 +13568,8 @@
       "label": "L4.B4.M.softmax_out_mask",
       "kind": "M",
       "baseline_scaling_factor": 14,
-      "best_scaling_factor": 10,
-      "delta": -4
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L4.B4.M.v_mask",
@@ -13915,13 +13600,6 @@
       "delta": -2
     },
     {
-      "label": "L4.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
       "label": "L4.B4.R.softmax_v_matmul_r",
       "kind": "R",
       "baseline_scaling_factor": 31,
@@ -13929,74 +13607,11 @@
       "delta": null
     },
     {
-      "label": "L4.B4.R.ln_mean_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
       "label": "L4.B4.R.ln_var_r",
       "kind": "R",
       "baseline_scaling_factor": 28,
       "best_scaling_factor": 24,
       "delta": -4
-    },
-    {
-      "label": "L4.B5.F.inv_std_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L4.B5.F.x_centered_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L4.B5.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L4.B5.W.wffn1",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
-      "label": "L4.B5.M.gelu_coeff",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L4.B5.R.normalize_r",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 29,
-      "delta": null
-    },
-    {
-      "label": "L4.B5.R.gamma_r",
-      "kind": "R",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L4.B5.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
     },
     {
       "label": "L5.B2.F.inv_std_fresh",
@@ -14013,18 +13628,18 @@
       "delta": -8
     },
     {
+      "label": "L5.B2.M.gamma",
+      "kind": "M",
+      "baseline_scaling_factor": 20,
+      "best_scaling_factor": 18,
+      "delta": -2
+    },
+    {
       "label": "L5.B2.W.wk",
       "kind": "W",
       "baseline_scaling_factor": 22,
       "best_scaling_factor": 14,
       "delta": -8
-    },
-    {
-      "label": "L5.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
-      "delta": -2
     },
     {
       "label": "L5.B2.M.kt_mask1",
@@ -14055,13 +13670,6 @@
       "delta": null
     },
     {
-      "label": "L5.B2.R.kt_mask2_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
       "label": "L5.B2.R.qkt_merge_mask_r",
       "kind": "R",
       "baseline_scaling_factor": 28,
@@ -14069,53 +13677,11 @@
       "delta": -4
     },
     {
-      "label": "L5.B3.F.x_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 27,
-      "best_scaling_factor": 23,
-      "delta": -4
-    },
-    {
-      "label": "L5.B3.S.inv_2n",
-      "kind": "S",
-      "baseline_scaling_factor": 16,
-      "best_scaling_factor": 12,
-      "delta": -4
-    },
-    {
-      "label": "L5.B3.R.sq1",
-      "kind": "R",
-      "baseline_scaling_factor": 34,
-      "best_scaling_factor": null,
-      "delta": null
-    },
-    {
-      "label": "L5.B3.R.sq2",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 31,
-      "delta": null
-    },
-    {
-      "label": "L5.B3.R.sq3",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 27,
-      "delta": null
-    },
-    {
-      "label": "L5.B3.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 12,
-      "delta": -1
-    },
-    {
       "label": "L5.B4.F.softmax_out_fresh",
       "kind": "F",
       "baseline_scaling_factor": 35,
-      "best_scaling_factor": 31,
-      "delta": -4
+      "best_scaling_factor": 27,
+      "delta": -8
     },
     {
       "label": "L5.B4.F.v_fresh",
@@ -14123,6 +13689,13 @@
       "baseline_scaling_factor": 30,
       "best_scaling_factor": 22,
       "delta": -8
+    },
+    {
+      "label": "L5.B4.M.softmax_out_mask",
+      "kind": "M",
+      "baseline_scaling_factor": 14,
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L5.B4.M.v_mask",
@@ -14153,13 +13726,6 @@
       "delta": -2
     },
     {
-      "label": "L5.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
       "label": "L5.B4.R.softmax_v_matmul_r",
       "kind": "R",
       "baseline_scaling_factor": 31,
@@ -14167,25 +13733,11 @@
       "delta": null
     },
     {
-      "label": "L5.B4.R.ln_mean_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L5.B4.R.ln_var_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
       "label": "L5.B5.F.inv_std_fresh",
       "kind": "F",
       "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
+      "best_scaling_factor": 22,
+      "delta": -8
     },
     {
       "label": "L5.B5.F.x_centered_fresh",
@@ -14193,6 +13745,13 @@
       "baseline_scaling_factor": 31,
       "best_scaling_factor": 23,
       "delta": -8
+    },
+    {
+      "label": "L5.B5.M.gamma",
+      "kind": "M",
+      "baseline_scaling_factor": 20,
+      "best_scaling_factor": 18,
+      "delta": -2
     },
     {
       "label": "L5.B5.W.wffn1",
@@ -14223,13 +13782,6 @@
       "delta": null
     },
     {
-      "label": "L5.B5.R.wffn1_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": null,
-      "delta": null
-    },
-    {
       "label": "L5.B5.R.gp0",
       "kind": "R",
       "baseline_scaling_factor": 31,
@@ -14240,8 +13792,8 @@
       "label": "L5.B5.K",
       "kind": "K",
       "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
+      "best_truncation_bits": 12,
+      "delta": -1
     },
     {
       "label": "L6.B2.F.inv_std_fresh",
@@ -14261,8 +13813,8 @@
       "label": "L6.B2.M.gamma",
       "kind": "M",
       "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
+      "best_scaling_factor": 18,
+      "delta": -2
     },
     {
       "label": "L6.B2.W.wk",
@@ -14272,10 +13824,10 @@
       "delta": -8
     },
     {
-      "label": "L6.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
+      "label": "L6.B2.M.kt_mask1",
+      "kind": "M",
+      "baseline_scaling_factor": 15,
+      "best_scaling_factor": 13,
       "delta": -2
     },
     {
@@ -14300,13 +13852,6 @@
       "delta": null
     },
     {
-      "label": "L6.B2.R.kt_mask2_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
       "label": "L6.B2.R.qkt_merge_mask_r",
       "kind": "R",
       "baseline_scaling_factor": 28,
@@ -14314,39 +13859,11 @@
       "delta": -4
     },
     {
-      "label": "L6.B3.F.x_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 20,
-      "delta": -8
-    },
-    {
-      "label": "L6.B3.S.inv_2n",
-      "kind": "S",
-      "baseline_scaling_factor": 15,
-      "best_scaling_factor": 11,
-      "delta": -4
-    },
-    {
-      "label": "L6.B3.R.sq1",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": null,
-      "delta": null
-    },
-    {
-      "label": "L6.B3.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 12,
-      "delta": -1
-    },
-    {
       "label": "L6.B4.F.softmax_out_fresh",
       "kind": "F",
       "baseline_scaling_factor": 35,
-      "best_scaling_factor": 31,
-      "delta": -4
+      "best_scaling_factor": 27,
+      "delta": -8
     },
     {
       "label": "L6.B4.F.v_fresh",
@@ -14354,6 +13871,13 @@
       "baseline_scaling_factor": 30,
       "best_scaling_factor": 22,
       "delta": -8
+    },
+    {
+      "label": "L6.B4.M.softmax_out_mask",
+      "kind": "M",
+      "baseline_scaling_factor": 14,
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L6.B4.M.v_mask",
@@ -14384,13 +13908,6 @@
       "delta": -2
     },
     {
-      "label": "L6.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
       "label": "L6.B4.R.softmax_v_matmul_r",
       "kind": "R",
       "baseline_scaling_factor": 31,
@@ -14398,81 +13915,11 @@
       "delta": null
     },
     {
-      "label": "L6.B4.R.ln_mean_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L6.B4.R.ln_var_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
-      "label": "L6.B5.F.inv_std_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L6.B5.F.x_centered_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L6.B5.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L6.B5.W.wffn1",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
-      "label": "L6.B5.M.gelu_coeff",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L6.B5.R.normalize_r",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 29,
-      "delta": null
-    },
-    {
-      "label": "L6.B5.R.gamma_r",
-      "kind": "R",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L6.B5.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
-    },
-    {
       "label": "L7.B2.F.inv_std_fresh",
       "kind": "F",
       "baseline_scaling_factor": 31,
-      "best_scaling_factor": 27,
-      "delta": -4
+      "best_scaling_factor": 23,
+      "delta": -8
     },
     {
       "label": "L7.B2.F.x_centered_fresh",
@@ -14482,25 +13929,11 @@
       "delta": -8
     },
     {
-      "label": "L7.B2.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
       "label": "L7.B2.W.wk",
       "kind": "W",
       "baseline_scaling_factor": 22,
       "best_scaling_factor": 14,
       "delta": -8
-    },
-    {
-      "label": "L7.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
-      "delta": -2
     },
     {
       "label": "L7.B2.M.kt_mask1",
@@ -14531,13 +13964,6 @@
       "delta": null
     },
     {
-      "label": "L7.B2.R.kt_mask2_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
       "label": "L7.B2.R.qkt_merge_mask_r",
       "kind": "R",
       "baseline_scaling_factor": 28,
@@ -14545,53 +13971,11 @@
       "delta": -4
     },
     {
-      "label": "L7.B3.F.x_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 27,
-      "best_scaling_factor": 23,
-      "delta": -4
-    },
-    {
-      "label": "L7.B3.S.inv_2n",
-      "kind": "S",
-      "baseline_scaling_factor": 16,
-      "best_scaling_factor": 12,
-      "delta": -4
-    },
-    {
-      "label": "L7.B3.R.sq1",
-      "kind": "R",
-      "baseline_scaling_factor": 34,
-      "best_scaling_factor": null,
-      "delta": null
-    },
-    {
-      "label": "L7.B3.R.sq2",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 31,
-      "delta": null
-    },
-    {
-      "label": "L7.B3.R.sq3",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 27,
-      "delta": null
-    },
-    {
-      "label": "L7.B3.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 12,
-      "delta": -1
-    },
-    {
       "label": "L7.B4.F.softmax_out_fresh",
       "kind": "F",
       "baseline_scaling_factor": 35,
-      "best_scaling_factor": 31,
-      "delta": -4
+      "best_scaling_factor": 27,
+      "delta": -8
     },
     {
       "label": "L7.B4.F.v_fresh",
@@ -14599,6 +13983,13 @@
       "baseline_scaling_factor": 30,
       "best_scaling_factor": 22,
       "delta": -8
+    },
+    {
+      "label": "L7.B4.M.softmax_out_mask",
+      "kind": "M",
+      "baseline_scaling_factor": 14,
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L7.B4.M.v_mask",
@@ -14615,18 +14006,18 @@
       "delta": -4
     },
     {
-      "label": "L7.B4.S.ln_var_inv_d",
+      "label": "L7.B4.S.ln_mean_inv_d",
       "kind": "S",
       "baseline_scaling_factor": 20,
       "best_scaling_factor": 18,
       "delta": -2
     },
     {
-      "label": "L7.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
+      "label": "L7.B4.S.ln_var_inv_d",
+      "kind": "S",
+      "baseline_scaling_factor": 20,
+      "best_scaling_factor": 18,
+      "delta": -2
     },
     {
       "label": "L7.B4.R.softmax_v_matmul_r",
@@ -14636,81 +14027,11 @@
       "delta": null
     },
     {
-      "label": "L7.B4.R.ln_mean_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L7.B4.R.ln_var_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
-      "label": "L7.B5.F.inv_std_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L7.B5.F.x_centered_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L7.B5.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L7.B5.W.wffn1",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
-      "label": "L7.B5.M.gelu_coeff",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L7.B5.R.normalize_r",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 31,
-      "delta": null
-    },
-    {
-      "label": "L7.B5.R.gamma_r",
-      "kind": "R",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L7.B5.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
-    },
-    {
       "label": "L8.B2.F.inv_std_fresh",
       "kind": "F",
       "baseline_scaling_factor": 31,
-      "best_scaling_factor": 27,
-      "delta": -4
+      "best_scaling_factor": 23,
+      "delta": -8
     },
     {
       "label": "L8.B2.F.x_centered_fresh",
@@ -14723,8 +14044,8 @@
       "label": "L8.B2.M.gamma",
       "kind": "M",
       "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
+      "best_scaling_factor": 18,
+      "delta": -2
     },
     {
       "label": "L8.B2.W.wk",
@@ -14734,10 +14055,10 @@
       "delta": -8
     },
     {
-      "label": "L8.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
+      "label": "L8.B2.M.kt_mask1",
+      "kind": "M",
+      "baseline_scaling_factor": 15,
+      "best_scaling_factor": 13,
       "delta": -2
     },
     {
@@ -14769,41 +14090,6 @@
       "delta": -2
     },
     {
-      "label": "L8.B2.R.qkt_merge_mask_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
-      "label": "L8.B3.F.x_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
-      "label": "L8.B3.S.inv_2n",
-      "kind": "S",
-      "baseline_scaling_factor": 15,
-      "best_scaling_factor": 11,
-      "delta": -4
-    },
-    {
-      "label": "L8.B3.R.sq1",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": null,
-      "delta": null
-    },
-    {
-      "label": "L8.B3.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 12,
-      "delta": -1
-    },
-    {
       "label": "L8.B4.F.softmax_out_fresh",
       "kind": "F",
       "baseline_scaling_factor": 35,
@@ -14816,6 +14102,13 @@
       "baseline_scaling_factor": 30,
       "best_scaling_factor": 22,
       "delta": -8
+    },
+    {
+      "label": "L8.B4.M.softmax_out_mask",
+      "kind": "M",
+      "baseline_scaling_factor": 14,
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L8.B4.M.v_mask",
@@ -14846,25 +14139,11 @@
       "delta": -2
     },
     {
-      "label": "L8.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
       "label": "L8.B4.R.softmax_v_matmul_r",
       "kind": "R",
       "baseline_scaling_factor": 31,
       "best_scaling_factor": null,
       "delta": null
-    },
-    {
-      "label": "L8.B4.R.ln_mean_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
     },
     {
       "label": "L8.B4.R.ln_var_r",
@@ -14874,67 +14153,11 @@
       "delta": -4
     },
     {
-      "label": "L8.B5.F.inv_std_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L8.B5.F.x_centered_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L8.B5.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L8.B5.W.wffn1",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
-      "label": "L8.B5.M.gelu_coeff",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L8.B5.R.normalize_r",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 27,
-      "delta": null
-    },
-    {
-      "label": "L8.B5.R.gamma_r",
-      "kind": "R",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L8.B5.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
-    },
-    {
       "label": "L9.B2.F.inv_std_fresh",
       "kind": "F",
       "baseline_scaling_factor": 31,
-      "best_scaling_factor": 27,
-      "delta": -4
+      "best_scaling_factor": 23,
+      "delta": -8
     },
     {
       "label": "L9.B2.F.x_centered_fresh",
@@ -14944,18 +14167,18 @@
       "delta": -8
     },
     {
+      "label": "L9.B2.M.gamma",
+      "kind": "M",
+      "baseline_scaling_factor": 20,
+      "best_scaling_factor": 18,
+      "delta": -2
+    },
+    {
       "label": "L9.B2.W.wk",
       "kind": "W",
       "baseline_scaling_factor": 22,
       "best_scaling_factor": 14,
       "delta": -8
-    },
-    {
-      "label": "L9.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
-      "delta": -2
     },
     {
       "label": "L9.B2.M.kt_mask1",
@@ -14986,25 +14209,11 @@
       "delta": null
     },
     {
-      "label": "L9.B2.R.kt_mask2_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
-      "label": "L9.B2.R.qkt_merge_mask_r",
-      "kind": "R",
-      "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
-    },
-    {
       "label": "L9.B4.F.softmax_out_fresh",
       "kind": "F",
       "baseline_scaling_factor": 35,
-      "best_scaling_factor": 31,
-      "delta": -4
+      "best_scaling_factor": 27,
+      "delta": -8
     },
     {
       "label": "L9.B4.F.v_fresh",
@@ -15017,8 +14226,8 @@
       "label": "L9.B4.M.softmax_out_mask",
       "kind": "M",
       "baseline_scaling_factor": 14,
-      "best_scaling_factor": 10,
-      "delta": -4
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L9.B4.M.v_mask",
@@ -15049,25 +14258,11 @@
       "delta": -2
     },
     {
-      "label": "L9.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
       "label": "L9.B4.R.softmax_v_matmul_r",
       "kind": "R",
       "baseline_scaling_factor": 31,
       "best_scaling_factor": null,
       "delta": null
-    },
-    {
-      "label": "L9.B4.R.ln_mean_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
     },
     {
       "label": "L9.B4.R.ln_var_r",
@@ -15077,67 +14272,11 @@
       "delta": -4
     },
     {
-      "label": "L9.B5.F.inv_std_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L9.B5.F.x_centered_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L9.B5.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L9.B5.W.wffn1",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
-      "label": "L9.B5.M.gelu_coeff",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L9.B5.R.normalize_r",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 27,
-      "delta": null
-    },
-    {
-      "label": "L9.B5.R.gamma_r",
-      "kind": "R",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L9.B5.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
-    },
-    {
       "label": "L10.B2.F.inv_std_fresh",
       "kind": "F",
       "baseline_scaling_factor": 31,
-      "best_scaling_factor": 27,
-      "delta": -4
+      "best_scaling_factor": 23,
+      "delta": -8
     },
     {
       "label": "L10.B2.F.x_centered_fresh",
@@ -15147,18 +14286,18 @@
       "delta": -8
     },
     {
+      "label": "L10.B2.M.gamma",
+      "kind": "M",
+      "baseline_scaling_factor": 20,
+      "best_scaling_factor": 18,
+      "delta": -2
+    },
+    {
       "label": "L10.B2.W.wk",
       "kind": "W",
       "baseline_scaling_factor": 22,
       "best_scaling_factor": 14,
       "delta": -8
-    },
-    {
-      "label": "L10.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
-      "delta": -2
     },
     {
       "label": "L10.B2.M.kt_mask1",
@@ -15189,13 +14328,6 @@
       "delta": null
     },
     {
-      "label": "L10.B2.R.kt_mask2_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
       "label": "L10.B2.R.qkt_merge_mask_r",
       "kind": "R",
       "baseline_scaling_factor": 28,
@@ -15206,8 +14338,8 @@
       "label": "L10.B3.F.x_fresh",
       "kind": "F",
       "baseline_scaling_factor": 28,
-      "best_scaling_factor": 24,
-      "delta": -4
+      "best_scaling_factor": 20,
+      "delta": -8
     },
     {
       "label": "L10.B3.S.inv_2n",
@@ -15241,8 +14373,8 @@
       "label": "L10.B4.F.softmax_out_fresh",
       "kind": "F",
       "baseline_scaling_factor": 35,
-      "best_scaling_factor": 31,
-      "delta": -4
+      "best_scaling_factor": 27,
+      "delta": -8
     },
     {
       "label": "L10.B4.F.v_fresh",
@@ -15250,6 +14382,13 @@
       "baseline_scaling_factor": 30,
       "best_scaling_factor": 22,
       "delta": -8
+    },
+    {
+      "label": "L10.B4.M.softmax_out_mask",
+      "kind": "M",
+      "baseline_scaling_factor": 14,
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L10.B4.M.v_mask",
@@ -15280,13 +14419,6 @@
       "delta": -2
     },
     {
-      "label": "L10.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
       "label": "L10.B4.R.softmax_v_matmul_r",
       "kind": "R",
       "baseline_scaling_factor": 31,
@@ -15308,67 +14440,11 @@
       "delta": -4
     },
     {
-      "label": "L10.B5.F.inv_std_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L10.B5.F.x_centered_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 22,
-      "delta": -8
-    },
-    {
-      "label": "L10.B5.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L10.B5.W.wffn1",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
-      "label": "L10.B5.M.gelu_coeff",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L10.B5.R.normalize_r",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 27,
-      "delta": null
-    },
-    {
-      "label": "L10.B5.R.gamma_r",
-      "kind": "R",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L10.B5.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
-    },
-    {
       "label": "L11.B2.F.inv_std_fresh",
       "kind": "F",
       "baseline_scaling_factor": 31,
-      "best_scaling_factor": 27,
-      "delta": -4
+      "best_scaling_factor": 23,
+      "delta": -8
     },
     {
       "label": "L11.B2.F.x_centered_fresh",
@@ -15378,6 +14454,13 @@
       "delta": -8
     },
     {
+      "label": "L11.B2.M.gamma",
+      "kind": "M",
+      "baseline_scaling_factor": 20,
+      "best_scaling_factor": 18,
+      "delta": -2
+    },
+    {
       "label": "L11.B2.W.wk",
       "kind": "W",
       "baseline_scaling_factor": 22,
@@ -15385,10 +14468,10 @@
       "delta": -8
     },
     {
-      "label": "L11.B2.W.wv",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 20,
+      "label": "L11.B2.M.kt_mask1",
+      "kind": "M",
+      "baseline_scaling_factor": 15,
+      "best_scaling_factor": 13,
       "delta": -2
     },
     {
@@ -15413,13 +14496,6 @@
       "delta": null
     },
     {
-      "label": "L11.B2.R.kt_mask2_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
-    },
-    {
       "label": "L11.B2.R.qkt_merge_mask_r",
       "kind": "R",
       "baseline_scaling_factor": 28,
@@ -15427,53 +14503,11 @@
       "delta": -4
     },
     {
-      "label": "L11.B3.F.x_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 27,
-      "best_scaling_factor": 23,
-      "delta": -4
-    },
-    {
-      "label": "L11.B3.S.inv_2n",
-      "kind": "S",
-      "baseline_scaling_factor": 16,
-      "best_scaling_factor": 12,
-      "delta": -4
-    },
-    {
-      "label": "L11.B3.R.sq1",
-      "kind": "R",
-      "baseline_scaling_factor": 34,
-      "best_scaling_factor": null,
-      "delta": null
-    },
-    {
-      "label": "L11.B3.R.sq2",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 31,
-      "delta": null
-    },
-    {
-      "label": "L11.B3.R.sq3",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 27,
-      "delta": null
-    },
-    {
-      "label": "L11.B3.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 12,
-      "delta": -1
-    },
-    {
       "label": "L11.B4.F.softmax_out_fresh",
       "kind": "F",
       "baseline_scaling_factor": 35,
-      "best_scaling_factor": 31,
-      "delta": -4
+      "best_scaling_factor": 27,
+      "delta": -8
     },
     {
       "label": "L11.B4.F.v_fresh",
@@ -15481,6 +14515,13 @@
       "baseline_scaling_factor": 30,
       "best_scaling_factor": 22,
       "delta": -8
+    },
+    {
+      "label": "L11.B4.M.softmax_out_mask",
+      "kind": "M",
+      "baseline_scaling_factor": 14,
+      "best_scaling_factor": 12,
+      "delta": -2
     },
     {
       "label": "L11.B4.M.v_mask",
@@ -15511,25 +14552,11 @@
       "delta": -2
     },
     {
-      "label": "L11.B4.W.wo",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
       "label": "L11.B4.R.softmax_v_matmul_r",
       "kind": "R",
       "baseline_scaling_factor": 31,
       "best_scaling_factor": null,
       "delta": null
-    },
-    {
-      "label": "L11.B4.R.ln_mean_r",
-      "kind": "R",
-      "baseline_scaling_factor": 31,
-      "best_scaling_factor": 29,
-      "delta": -2
     },
     {
       "label": "L11.B4.R.ln_var_r",
@@ -15539,60 +14566,11 @@
       "delta": -4
     },
     {
-      "label": "L11.B5.F.inv_std_fresh",
-      "kind": "F",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L11.B5.F.x_centered_fresh",
+      "label": "L0.first_input.F",
       "kind": "F",
       "baseline_scaling_factor": 30,
       "best_scaling_factor": 22,
       "delta": -8
-    },
-    {
-      "label": "L11.B5.M.gamma",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L11.B5.W.wffn1",
-      "kind": "W",
-      "baseline_scaling_factor": 22,
-      "best_scaling_factor": 14,
-      "delta": -8
-    },
-    {
-      "label": "L11.B5.M.gelu_coeff",
-      "kind": "M",
-      "baseline_scaling_factor": 20,
-      "best_scaling_factor": 16,
-      "delta": -4
-    },
-    {
-      "label": "L11.B5.R.normalize_r",
-      "kind": "R",
-      "baseline_scaling_factor": null,
-      "best_scaling_factor": 27,
-      "delta": null
-    },
-    {
-      "label": "L11.B5.R.gamma_r",
-      "kind": "R",
-      "baseline_scaling_factor": 30,
-      "best_scaling_factor": 26,
-      "delta": -4
-    },
-    {
-      "label": "L11.B5.K",
-      "kind": "K",
-      "baseline_truncation_bits": 13,
-      "best_truncation_bits": 11,
-      "delta": -2
     }
   ],
   "action_vec": [
@@ -15603,95 +14581,527 @@
     0,
     0,
     0,
-    2,
     0,
+    0,
+    1,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    3,
+    3,
+    4,
+    0,
+    0,
+    1,
+    0,
+    3,
+    1,
+    5,
+    0,
+    0,
+    1,
+    0,
+    1,
+    1,
+    1,
+    4,
+    0,
+    3,
+    3,
+    4,
+    4,
+    4,
+    2,
+    4,
     2,
     0,
     3,
-    2,
-    1,
     0,
     0,
-    2,
-    1,
+    3,
+    4,
     4,
     2,
+    2,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    3,
+    3,
+    4,
+    0,
+    0,
+    1,
+    0,
+    3,
+    1,
+    5,
+    0,
+    0,
+    1,
+    0,
+    1,
+    1,
+    1,
+    4,
+    0,
+    3,
+    1,
+    4,
+    4,
+    4,
+    2,
+    4,
+    2,
+    0,
+    3,
+    0,
+    0,
+    3,
+    4,
+    4,
+    2,
+    2,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    3,
+    3,
+    4,
+    0,
+    0,
+    3,
+    0,
+    1,
+    1,
+    5,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    1,
+    4,
+    0,
+    3,
+    3,
+    4,
+    4,
+    4,
+    2,
+    4,
+    2,
+    0,
+    3,
+    0,
+    0,
+    3,
+    4,
+    4,
+    2,
+    2,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    3,
+    3,
+    4,
+    4,
+    2,
+    3,
+    3,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    1,
+    1,
+    1,
+    4,
+    0,
+    3,
+    3,
+    4,
+    4,
+    4,
+    2,
+    4,
+    2,
+    0,
+    3,
+    0,
+    0,
+    3,
+    4,
+    4,
+    2,
+    2,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    3,
+    3,
+    4,
+    4,
+    2,
+    3,
+    3,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    1,
+    4,
+    0,
+    3,
+    1,
+    4,
+    4,
+    4,
+    2,
+    4,
+    2,
+    0,
+    3,
+    0,
+    0,
+    3,
+    4,
+    4,
+    2,
+    2,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    3,
+    1,
+    4,
+    4,
+    2,
+    3,
+    3,
+    0,
+    0,
+    3,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    1,
+    4,
+    0,
+    3,
+    3,
+    4,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    1,
+    3,
+    0,
+    5,
+    4,
+    4,
+    2,
+    2,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    3,
+    1,
+    4,
+    4,
+    2,
+    3,
+    3,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    1,
+    4,
+    0,
+    3,
+    3,
+    4,
+    4,
+    4,
+    2,
+    4,
+    2,
+    0,
+    3,
+    0,
+    0,
+    3,
+    4,
+    4,
+    2,
+    2,
+    3,
+    3,
+    3,
+    0,
+    0,
+    2,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    3,
+    1,
+    4,
+    4,
+    2,
+    3,
+    3,
+    0,
+    0,
+    3,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    1,
+    4,
+    0,
+    3,
+    3,
+    4,
+    4,
+    4,
+    2,
+    4,
+    2,
+    0,
+    3,
+    0,
+    0,
+    3,
+    4,
+    4,
+    2,
+    2,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    2,
+    3,
+    4,
+    4,
+    2,
+    3,
+    3,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    1,
+    4,
+    0,
+    3,
+    1,
+    4,
+    4,
+    4,
+    2,
+    4,
+    2,
+    0,
+    3,
+    0,
+    0,
+    3,
+    4,
+    4,
+    2,
+    2,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    3,
+    3,
+    4,
+    4,
+    2,
+    3,
+    3,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1,
+    1,
+    4,
+    0,
+    3,
+    1,
+    4,
+    4,
+    4,
+    2,
+    4,
+    2,
+    0,
+    3,
+    0,
+    0,
+    3,
+    4,
+    4,
+    2,
+    2,
+    3,
+    3,
+    3,
+    0,
+    0,
+    1,
+    0,
+    4,
+    1,
+    1,
+    0,
+    0,
+    3,
+    1,
+    4,
+    0,
     0,
     3,
     0,
     3,
     1,
     5,
-    2,
     0,
     0,
-    0,
-    0,
-    2,
     1,
     0,
+    0,
+    1,
+    1,
+    4,
     0,
     2,
     1,
     4,
-    2,
-    0,
-    0,
-    0,
-    0,
-    2,
-    1,
-    0,
-    0,
-    2,
     4,
     4,
     2,
-    2,
-    3,
-    3,
-    3,
-    0,
-    0,
-    0,
-    0,
-    3,
-    2,
-    1,
-    0,
-    0,
-    2,
-    1,
     4,
     2,
     0,
     3,
     0,
+    0,
     3,
-    1,
-    5,
-    2,
-    0,
-    2,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
     4,
     4,
     2,
@@ -15701,478 +15111,46 @@
     3,
     0,
     0,
-    0,
-    0,
-    3,
-    1,
     1,
     0,
-    0,
-    2,
-    1,
     4,
-    0,
-    0,
-    3,
-    0,
-    3,
-    3,
-    5,
-    0,
-    0,
-    0,
-    0,
-    0,
     1,
     1,
     0,
     0,
-    2,
-    1,
-    4,
-    2,
-    0,
-    0,
-    0,
-    0,
-    2,
-    1,
-    0,
-    0,
-    2,
-    4,
-    4,
-    2,
-    2,
     3,
-    3,
-    3,
-    2,
-    0,
-    2,
-    0,
-    3,
-    2,
-    1,
-    0,
-    0,
-    2,
     1,
     4,
     4,
     2,
     3,
     3,
+    0,
+    0,
     3,
-    3,
-    3,
-    2,
     0,
     0,
-    0,
-    0,
-    2,
     1,
     0,
     0,
-    2,
+    1,
     1,
     4,
-    2,
-    0,
-    0,
-    0,
-    0,
-    2,
-    1,
-    0,
-    0,
-    2,
-    4,
-    4,
-    2,
-    2,
-    3,
-    3,
-    3,
-    0,
-    0,
-    2,
     0,
     3,
-    1,
-    1,
-    0,
-    0,
-    2,
     1,
     4,
     4,
-    2,
-    3,
-    3,
-    3,
-    3,
-    3,
-    2,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
     4,
     2,
-    0,
-    0,
-    0,
-    0,
-    2,
-    1,
-    0,
-    0,
-    2,
-    4,
-    4,
-    2,
-    2,
-    3,
-    3,
-    3,
-    0,
-    0,
-    2,
-    0,
-    3,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
     4,
     2,
     0,
     3,
     0,
-    3,
-    1,
-    5,
-    2,
-    0,
-    2,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    2,
-    0,
-    2,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    4,
-    4,
-    2,
-    2,
-    3,
-    3,
-    3,
-    0,
-    0,
-    0,
     0,
     3,
-    2,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    0,
-    0,
-    3,
-    0,
-    3,
-    3,
-    5,
-    2,
-    0,
-    2,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    2,
-    0,
-    0,
-    0,
-    0,
-    2,
-    1,
-    0,
-    0,
-    2,
-    4,
-    4,
-    2,
-    2,
-    3,
-    3,
-    3,
-    2,
-    0,
-    0,
-    0,
-    3,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    2,
-    0,
-    3,
-    0,
-    3,
-    1,
-    5,
-    2,
-    0,
-    2,
-    0,
-    0,
-    2,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    0,
-    0,
-    0,
-    0,
-    0,
-    3,
-    1,
-    0,
-    0,
-    2,
-    4,
-    4,
-    2,
-    2,
-    3,
-    3,
-    3,
-    2,
-    0,
-    0,
-    0,
-    3,
-    2,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    2,
-    0,
-    3,
-    0,
-    3,
-    3,
-    5,
-    0,
-    0,
-    2,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    2,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    4,
-    4,
-    2,
-    2,
-    3,
-    3,
-    3,
-    2,
-    0,
-    2,
-    0,
-    3,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    4,
-    2,
-    3,
-    3,
-    3,
-    3,
-    3,
-    2,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    2,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    4,
-    4,
-    2,
-    2,
-    3,
-    3,
-    3,
-    2,
-    0,
-    2,
-    0,
-    3,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    2,
-    0,
-    3,
-    0,
-    3,
-    1,
-    5,
-    2,
-    0,
-    2,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    4,
-    4,
-    2,
-    2,
-    3,
-    3,
-    3,
-    2,
-    0,
-    2,
-    0,
-    3,
-    2,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    2,
-    0,
-    3,
-    0,
-    3,
-    1,
-    5,
-    2,
-    0,
-    2,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    1,
-    4,
-    2,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    0,
-    0,
-    2,
-    4
+    0
   ],
   "decode_rules": {
     "scaling_factor_kinds": "F W M S R",
