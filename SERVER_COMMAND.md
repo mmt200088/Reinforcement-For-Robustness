@@ -9,9 +9,9 @@
 set -e
 
 # ----------------------------------------------------------------------
-# 1) 优雅停掉前一轮（如果还在跑）。检查老/新两条持久化路径下的 rl.pid。
-#    新一轮（commit "Sequential RL reward redesign v2"）起，CONSTRAINT_SLUG
-#    追加 _rdv2 后缀，所以老路径和新路径都要扫一遍。
+# 1) 优雅停掉前一轮（如果还在跑）。同时扫主目录 + 历史 _rdv2 临时目录，
+#    防止服务器上有任何残留进程。本次起回滚 _rdv2 后缀，回到单目录形式
+#    （用户反馈：多目录维护成本更高，--fresh 强制重启已足够防混用）。
 # ----------------------------------------------------------------------
 stop_rl_at_dir() {
   local PIDFILE="$1/rl.pid"
@@ -38,58 +38,56 @@ stop_rl_at_dir() {
   echo "[stop-rl] $1: stopped."
 }
 
-# 老路径（ADR-002 hard-priority -150 stuck reward 那版）
+# 主目录（本次起 canonical）
 stop_rl_at_dir "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005"
-# 新路径（ADR-007 v2-style rdv2 reward）
+# 历史 _rdv2 临时目录（已废弃；如果服务器上还有跑就停掉）
 stop_rl_at_dir "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005_rdv2"
 
 # ----------------------------------------------------------------------
 # 2) --fresh 重跑 BLB Stage-2 sequential RL。
 #
-#    上一轮（commit d0ab4bc，"dynamic stab calibration"）失败：动态校准 loop
-#    用均匀随机 action 采样，结果 25 次都是 invalid_chain → calibration aborted
-#    → stab_threshold 回落到 0.05 → 和上上轮一样 reward 恒 -212 →
-#    1000 episode 全程 P2 stuck。证据：
-#    `reports/stage2_rl/failed_runs/2026-05-18_dynamic_stab_calibration_fallback/`
+#    上一轮（commit b97ca83，ADR-007 v2 reward）在 _rdv2 目录跑了 200 episode
+#    后 reward 仍恒在 -7.8。bug 报告：
+#    `reports/stage2_rl/bug_reports/2026-05-18_stage2_rl_rdv2_negative_reward_startup/`
+#    诊断报告：
+#    `reports/stage2_rl/fix_reports/2026-05-18_warmstart_acc_collapse_fix/report.html`
 #
-#    诊断：reward design 本身有问题，不是阈值校准能修的：
-#      · hard-priority -50/-100/-200 大惩罚 → 单点 outlier 拖崩 PPO advantage
-#      · 任何 BLB candidate (≠baseline) loss_std ≈ 1+，永远在 P2
-#      · 一旦所有 episode 都在 P2，candidate 之间 reward 差别全淹没在大惩罚里
-#      · v2 (noise_rl_module_v2.py) 在 stage1 上工作得很好，思路可以借鉴
+#    根因（**不是** reward design 问题；上一版 ADR-007 reward 没问题）：
+#      · sequential 路径的 warmstart bias preferred=[4]*13 把 13 个 slot
+#        位置里的 8 个偏到了错误 index（因为不同 slot 位置的 baseline 众数不一样）。
+#      · 8/13 槽位 policy 实际是均匀采样 → 343/577 slot 与 baseline 不同 →
+#        installed 噪声远比 baseline 重 → acc 跌穿 acc_threshold(0.8653) →
+#        每个 episode 都 metric_ok=False → tier_bonus=0 → reward = shaping
+#        clip 下限 -5（确认：所有 episode terminal_reward 恰好 -5）。
 #
-#    本次实施 v2 风格 reward redesign（ADR-007 取代 ADR-002 实现）：
+#    本次三项修复（commit "Stage2 RL warmstart hotfix"）：
 #
-#      (a) **clipped shaping + tier_bonus** (主修复)。
-#          shaping = margin_acc + cost_score + stab_penalty + invalid_term
-#          clipped to [-5, +5]
-#          tier_bonus = 0 if not metric_ok
-#                     else +20 (metric_ok) + (+20 if stab_ok else 0)
-#          total reward in [-5, +45]，PPO advantage 永远 bounded。
-#          硬优先级靠 tier_bonus +20/+40 大跳变体现，cost 永远进不了 stab/acc tier，
-#          但同时 cost differential 在 clip 范围内仍清晰可见，PPO 能学。
-#      (b) **stability = soft continuous penalty**，不是 hard gate。
-#          stab_penalty = -lambda_stab × max(0, loss_std - stab_threshold)
-#          stab_threshold 用 v2 公式 baseline_loss_std × (1 + tol)，不再校准。
-#          loss_std=1.0 → penalty=-5（饱和 clip），但不会跌到 -150。
-#      (c) **持久化目录加 _rdv2 后缀**。
-#          新 dir: `s1t0.005_s2t0.005_s2st0.005_rdv2`
-#          老 dir 的 checkpoint 不会和新代码混。以后再改 reward 设计就 bump _rdv3。
-#      (d) **写 ADR-007 取代 ADR-002 实现**（intent 保留：cost 不能越级补偿 acc/stab）。
+#      (a) **修正 warmstart bias 的 preferred index**（最关键）。
+#          替换硬编码 [4]*13 为"对每个 slot 位置在 59 个 step 上取
+#          baseline_action_vec 的众数"。13 个 slot 位置现在每个都偏向
+#          各自最常见的 baseline 值（4/2/3 三种）。
+#      (b) **新增 "forced baseline anchor episodes"** 机制（更强的 warmstart）。
+#          前 N=max(60, rollout_size*2) 个 episode 直接执行 baseline action，
+#          PPO 通过 policy.evaluate_action 算 log_prob/value 进 buffer，
+#          value head 学到 +45 reward，policy 概率质量被推向 baseline。
+#          之后再切到 PPO sample 探索，开局就在 baseline 邻域。
+#      (c) **持久化目录回滚 _rdv2 后缀**（按用户要求）。
+#          回到 `s1t0.005_s2t0.005_s2st0.005`。单目录维护成本低；
+#          --fresh 强制重启已经够防混用。
+#      (d) **"新最优" 日志补充推理指标行**。
+#          找到新 best 时额外打印 loss_mean/loss_std/m1/priority/total_bits/fusion。
 #
-#    保留不动（前几轮已经 OK 的）：
+#    保留不动（之前已经 OK 的）：
+#      · v2-style reward formula（commit b97ca83）
+#      · stab_threshold = baseline_loss_std × (1 + tol)（commit b97ca83）
 #      · ForbiddenActionMask + rejection-sample（commit 42cfbe4）
 #      · invalid_chain 跳过 forward（commit 42cfbe4）
-#      · Warmstart bias 3.5 + preferred_index=4（commit 42cfbe4）
 #      · per-block invalid 可见性 + diagnostic 脚本（commit f507f25）
-#      · noisy baseline preflight（commit 173596d）
 #      · num_trials_per_step = 5（commit d0ab4bc）
-#      · 修复 fake P3(cost) 标签（commit d0ab4bc）
-#      · EpisodeRecord 带 terminal_loss/metric 字段（commit d0ab4bc）
 # ----------------------------------------------------------------------
 echo ""
 echo "================================================================================"
-echo "Start BLB Stage-2 Sequential RL (fresh, _rdv2) — v2-style clipped+tier reward (ADR-007)"
+echo "Start BLB Stage-2 Sequential RL (fresh) — warmstart hotfix: per-slot mode + force-baseline anchor"
 echo "================================================================================"
 bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 ```
@@ -98,35 +96,34 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 
 ## 元信息（meta，给人看的，agent 忽略）
 
-- **任务**：在 mrpc-blb-stage2-rl preset 下 fresh 跑一轮 6000-episode sequential RL，验证 ADR-007 v2-style reward redesign
-- **更新时间**：2026-05-18
-- **更新原因**：上一轮（commit `d0ab4bc`，动态校准）再次失败：577-dim 均匀随机 action 25 次全 invalid → 校准 abort → stab_threshold 兜底 0.05 → 重蹈覆辙 (-212 reward)。证据：`reports/stage2_rl/failed_runs/2026-05-18_dynamic_stab_calibration_fallback/`。
-    诊断结论：hard-priority -50/-100/-200 大惩罚本质就和 BLB 的 std 噪声水平不匹配，靠校准修不好。
-    **方案**：参考 noise_rl_module_v2.py（用户验证过工作良好），重写 reward 为 v2 风格 clipped+tier_bonus（ADR-007）。
+- **任务**：在 mrpc-blb-stage2-rl preset 下 fresh 跑一轮 6000-episode sequential RL，验证 warmstart hotfix
+- **更新时间**：2026-05-18（晚）
+- **更新原因**：上一轮（commit `b97ca83`，ADR-007 v2 reward）在 _rdv2 目录跑了 200 episode，reward 仍恒在 -7.8。bug 报告 / 诊断报告：
+    - `reports/stage2_rl/bug_reports/2026-05-18_stage2_rl_rdv2_negative_reward_startup/`
+    - `reports/stage2_rl/fix_reports/2026-05-18_warmstart_acc_collapse_fix/report.html`
+    根因：**不是 reward design 问题**（ADR-007 v2 公式没问题）。是 sequential 路径的 warmstart bias preferred=[4]*13 把 13 个 slot 位置里的 8 个偏到错误 index → 8/13 槽位实际是均匀采样 → 343/577 slot 与 baseline 不同 → acc 跌穿 acc_threshold → metric_ok=False → reward = clip 底 -5 → 总 reward ≈ -7.8。
 - **本次改动汇总**：
-    1. `reward.py` 全量重写：`shaping = margin_acc + cost_score + stab_penalty + invalid_term`，clipped 到 [-5, +5]，再叠加 tier_bonus +20(metric_ok) +20(stab_ok)，总范围 [-5, +45]。
-    2. `sequential_runner.py` 去掉失败的动态校准 loop，改用 v2 公式 `stab_threshold = baseline_loss_std × (1 + tol)`。stab 现在是 soft penalty，threshold 设紧也不会爆炸。
-    3. `llama_7B_LayerImportance.sh` CONSTRAINT_SLUG 加 `_rdv2` 后缀 → 新持久化目录 `s1t0.005_s2t0.005_s2st0.005_rdv2`，老 checkpoint 不会和新代码混。
-    4. ADR-002 标记 superseded by ADR-007；ADR-007 完整记录设计 rationale + 失败证据。
-    5. 测试更新：BLBRewardRegressionTests 改成断言新四档 reward 范围 ([-5/0/+15/+25/+35/+45])；test_sequential_smoke 加 RewardDesignV2RegressionTest 锁定 v2 字段不被无声 revert。29/29 smoke tests pass。
-- **预期效果**（这次要看的信号，每个 episode 都该看到）：
-    - **baseline action reward ≈ +45**（baseline 全 max-SF，metric_ok+stab_ok → tier_bonus +40 + clipped shaping ~+5）
-    - **典型 RL 候选 reward 在 [+15, +25]**（metric_ok + stab_fail → tier +20，shaping clipped）
-    - **罕见 cost-better-than-baseline 候选 reward > +30**（metric_ok + 偶尔 stab_ok）
-    - 真的崩的候选 reward < 0（acc_violation 或 invalid 时无 tier_bonus）
-    - PPO 看到 ~50 reward 跨度，advantage 信号清晰
-    - details/ 每条 episode 带 `priority=P3(cost) terminal_metrics: loss_mean=X loss_std=Y m1=Z`，能直接看
-    - total_bits 训练后期应单调下降（从 baseline 14779 → 12500-13500）
-- **预期产物**（**注意新路径！老 `s1t0.005_s2t0.005_s2st0.005/` 已废弃**）：
-    - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005_rdv2/stage2_noise/progress/`
+    1. `sequential_runner.py` 新增 `_compute_per_slot_mode_preferred`：对每个 slot 位置在 59 个 step 上取 baseline_action_vec 的众数作为 preferred，替换旧的硬编码 [4]*13。
+    2. `sequential_runner.py train_sequential` 新增 `force_baseline_episodes` 参数 + 短路逻辑：前 N=max(60, rollout_size*2) 个 episode 直接执行 baseline action，policy 通过 evaluate_action 写 buffer，value head 学到 +45 baseline reward，policy 概率质量预热到 baseline 附近。
+    3. `llama_7B_LayerImportance.sh` 回滚 `_rdv2` 后缀，持久化目录恢复为 `s1t0.005_s2t0.005_s2st0.005`（按用户要求，单目录维护更省心）。
+    4. "新最优" 日志加一行推理指标 `loss_mean / loss_std / m1 / priority / total_bits / fusion`，方便复查。
+    5. 测试更新：加 `WarmstartFixedRegressionTest`（4 个新 case，含 helper 的功能性 functional test）。33/33 smoke tests pass。
+- **预期效果**（这次要看的信号）：
+    - **前 60 episode 都是 forced-baseline，reward 全部 ≈ +45**（确定值），日志里能看到 `forced_baseline=True` 标记。
+    - **episode 60+ 切到 PPO sample 后，前几十个 sampled 候选 reward 应该落在 [+15, +45]**（policy 已偏向 baseline，与 baseline 相差几个 slot，acc 仍应在阈值上方）。
+    - 训练后期 PPO 在 baseline 邻域降 cost：reward 可能突破 +45（cost-better-than-baseline 区，metric+stab 都 ok）。
+    - 每次找到新 best 时，日志里会有 `推理指标 ... loss_mean=X loss_std=Y m1=Z priority=P3(cost)` 一行，直接对照 acc_threshold = 0.8653。
+    - total_bits 训练后期应稳定下降（baseline 14779 → 目标 12500-13500）。
+- **预期产物**（**回滚单目录**）：
+    - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/`
         - `blb_stage2_status.json` —— 实时状态板
-        - `diagnostics/diagnostics_summary.md` —— 中文诊断摘要（meta 里 "reward_weights" 应该是 v2-style 字段）
+        - `diagnostics/diagnostics_summary.md` —— 中文诊断摘要
         - `blb_stage2_rl_checkpoint_live.pt` —— policy + optimizer + forbidden_mask_records
-    - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005_rdv2/stage2_noise/`
-        - `details/noise_ppo_step_info_<a>-<b>.txt` —— 每 360 回合一个，per-episode 详情
+    - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/`
+        - `details/noise_ppo_step_info_<a>-<b>.txt`（带 `terminal_metrics: loss_mean=X loss_std=Y m1=Z`）
         - `warning.txt` —— 奖励暴跌警告
-        - `pruning_search_log.txt` —— 主日志（启动头部能看到 "v2 formula: noisy_baseline_loss_std=X × (1+tol)=Y"）
-- **预期耗时**：~8-9 小时（5 trials × 4 probe batches × 59 sub-steps × 6000 episodes，单 step ~150ms forward）。
+        - `pruning_search_log.txt` —— 主日志（启动头部能看到 `preferred per slot (mode over 59 steps) = [...]` 和 `强制 baseline 锚点: 前 N 个 episode...`）
+- **预期耗时**：~8-9 小时。前 60 个 episode 跑 baseline action 也要 5 trials × 4 probe forward 加 59 个 optimizer call，但 PPO update 仍按 60-episode rollout 算。
 
 ### Stage-1 → Stage-2 degree 适配（用户问题 #1）
 

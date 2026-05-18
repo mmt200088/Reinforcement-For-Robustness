@@ -133,6 +133,49 @@ def _seq_fmt_eta_finish(eta_seconds: float) -> str:
 SEQ_PROGRESS_BOX_PPO_INTERVAL = 5
 
 
+def _compute_per_slot_mode_preferred(
+        *,
+        schedule: Sequence[Any],
+        baseline_action_vec: Optional[np.ndarray],
+        max_step_dim: int,
+        fallback_idx: int = 4,
+        ) -> List[int]:
+    """Per-slot mode of the baseline action across all steps in the schedule.
+
+    For each slot position ``p`` in ``[0, max_step_dim)``, collect the
+    baseline value at that slot position across every step where ``p`` is
+    active (i.e. where ``len(spec.full_vec_offsets) > p``), then return the
+    most common value. This gives a per-slot-position preferred index that
+    actually matches the baseline distribution — without it, a uniform
+    ``preferred=[fallback_idx]*max_step_dim`` is wrong for 8/13 slot positions
+    (see 2026-05-18 diagnosis in `reports/stage2_rl/bug_reports/`).
+
+    If ``baseline_action_vec`` is None or the schedule is empty, falls back
+    to ``[fallback_idx]*max_step_dim``.
+    """
+    from collections import Counter
+
+    if baseline_action_vec is None or not schedule:
+        return [int(fallback_idx)] * int(max_step_dim)
+    bvec = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1)
+    preferred: List[int] = []
+    for slot_pos in range(int(max_step_dim)):
+        vals: List[int] = []
+        for spec in schedule:
+            offsets = getattr(spec, "full_vec_offsets", None)
+            if offsets is None or slot_pos >= len(offsets):
+                continue
+            off = int(offsets[slot_pos])
+            if 0 <= off < bvec.size:
+                vals.append(int(bvec[off]))
+        if not vals:
+            preferred.append(int(fallback_idx))
+            continue
+        mode_val, _ = Counter(vals).most_common(1)[0]
+        preferred.append(int(mode_val))
+    return preferred
+
+
 @dataclass
 class EpisodeRecord:
     episode_idx: int
@@ -212,6 +255,7 @@ def train_sequential(
         forbidden_mask: Optional[ForbiddenActionMask] = None,
         baseline_action_vec: Optional[np.ndarray] = None,
         max_rejection_retries: int = 32,
+        force_baseline_episodes: int = 0,
         ) -> Dict[str, object]:
     """Train ``policy`` on ``env`` with sequential PPO.
 
@@ -250,12 +294,21 @@ def train_sequential(
         forbidden_mask = ForbiddenActionMask()
     if baseline_action_vec is not None:
         baseline_action_vec = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1)
+    force_baseline_episodes = max(0, int(force_baseline_episodes))
+    if force_baseline_episodes > 0 and baseline_action_vec is None:
+        log.warning(
+            "[seqRL] force_baseline_episodes=%d requested but baseline_action_vec is None — "
+            "skipping forced-baseline warmstart",
+            force_baseline_episodes,
+        )
+        force_baseline_episodes = 0
     rejection_counters = {
         "samples_rejected_by_mask": 0,   # rejected before optimizer call (cheap)
         "samples_rejected_by_optimizer": 0,  # called optimizer, got invalid → blacklisted
         "steps_fallen_back_to_baseline": 0,  # max_retries exhausted, used baseline_step_action
         "steps_committed_valid": 0,
         "steps_committed_invalid": 0,    # only when no baseline available + retries exhausted
+        "steps_forced_to_baseline_anchor": 0,  # forced via force_baseline_episodes
     }
 
     episode_returns: List[float] = []
@@ -294,6 +347,23 @@ def train_sequential(
         terminal_loss_std_val = 0.0
         terminal_metric1_val = 0.0
 
+        # 2026-05-18 (rdv2 hotfix): forced-baseline anchor episodes. The
+        # warmstart bias on the action head alone was inadequate — only 5/13
+        # slot positions had a preferred index matching the actual baseline
+        # value (the others were either out of range or pointed at a
+        # non-baseline K). With ~84% per-slot bias on those 5 slots and
+        # uniform sampling on the other 8, virtually no rollout matched
+        # baseline closely enough to satisfy acc_threshold, so every
+        # candidate landed in metric_ok=False (priority 1) → reward
+        # collapsed to -5 to -7. To bootstrap the value function and shift
+        # policy mass toward baseline before exploration, the FIRST
+        # ``force_baseline_episodes`` episodes execute the baseline action
+        # at every step (no sampling, no rejection). PPO still records the
+        # state/action/log_prob/value/reward via ``policy.evaluate_action``
+        # so the update pushes the policy probability mass toward baseline
+        # while the value head learns the +45 baseline reward.
+        force_this_ep = (force_baseline_episodes > 0 and ep < force_baseline_episodes)
+
         while True:
             spec = env.current_spec()
             slot_mask_np, levels_np = step_to_mask_and_levels(
@@ -303,6 +373,79 @@ def train_sequential(
             slot_mask_t = torch.from_numpy(slot_mask_np).to(device).unsqueeze(0)
             levels_t = torch.from_numpy(levels_np).to(device).unsqueeze(0)
             n_active = int(slot_mask_np.sum())
+
+            # -- Forced-baseline anchor short-circuit --
+            # Skip sampling + rejection-loop entirely; commit the baseline
+            # action slice. Value/log_prob come from `policy.evaluate_action`
+            # against the CURRENT policy so PPO gradients are well-defined.
+            if force_this_ep and baseline_action_vec is not None:
+                baseline_slice = baseline_action_vec[list(spec.full_vec_offsets)][:n_active]
+                forced_action = np.asarray(baseline_slice, dtype=np.int64)
+                forced_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
+                forced_padded[:n_active] = forced_action
+                with torch.no_grad():
+                    actions_t = torch.from_numpy(forced_padded).to(device).unsqueeze(0)
+                    lp_t, _, val_t = policy.evaluate_action(
+                        obs_t, actions_t, slot_mask_t, levels_t,
+                    )
+                chosen_eval_info = env.evaluate_step(forced_action.tolist())
+                chosen_action_np = forced_padded
+                chosen_log_prob = float(lp_t.item())
+                chosen_value = float(val_t.item())
+                rejection_counters["steps_forced_to_baseline_anchor"] += 1
+
+                action_np = chosen_action_np
+                log_prob = chosen_log_prob
+                value = chosen_value
+                step_action_for_env = action_np[:n_active].tolist()
+
+                next_obs, reward, done, info = env.commit_step(chosen_eval_info)
+                steps_taken += 1
+                valid = bool(info.get("valid", True))
+                if valid:
+                    valid_step_count += 1
+                    rejection_counters["steps_committed_valid"] += 1
+                total_bits_sum += int(info.get("total_bits", 0))
+                fusion_count_sum += int(info.get("fusion_count", 0))
+                enriched_info = dict(info)
+                enriched_info["action"] = step_action_for_env
+                enriched_info["reward"] = float(reward)
+                enriched_info["value"] = value
+                enriched_info["log_prob"] = log_prob
+                enriched_info["forced_baseline"] = True
+                if on_step_end is not None:
+                    try:
+                        on_step_end(int(ep), int(steps_taken - 1), enriched_info)
+                    except Exception:
+                        pass
+                if capture_step_infos:
+                    captured_step_infos.append(enriched_info)
+                buffer.add(
+                    state=obs,
+                    action=action_np,
+                    slot_mask=slot_mask_np,
+                    per_slot_num_levels=levels_np,
+                    log_prob=log_prob,
+                    value=value,
+                    reward=float(reward),
+                    done=bool(done),
+                )
+                per_step_sum += float(reward)
+                if "terminal_reward" in info:
+                    terminal_reward = float(info["terminal_reward"])
+                term_info_dict = info.get("terminal_info") or {}
+                term_breakdown = term_info_dict.get("reward_breakdown")
+                term_metrics = term_info_dict.get("metrics")
+                if term_breakdown is not None:
+                    terminal_priority_int = int(getattr(term_breakdown, "priority", 0) or 0)
+                if term_metrics is not None:
+                    terminal_loss_mean_val = float(getattr(term_metrics, "loss_mean", 0.0) or 0.0)
+                    terminal_loss_std_val = float(getattr(term_metrics, "loss_std", 0.0) or 0.0)
+                    terminal_metric1_val = float(getattr(term_metrics, "metric1_mean", 0.0) or 0.0)
+                obs = next_obs
+                if done:
+                    break
+                continue   # advance to next step (forced loop)
 
             # -- Rejection-sample around the per-(layer, block) blacklist --
             # The policy may sample a tuple that the optimizer previously
@@ -961,39 +1104,44 @@ def run_sequential_via_runner(
     optimizer = torch.optim.Adam(policy.parameters(), lr=float(train_cfg.ppo.lr))
 
     # Warmstart: bias every action head row toward the BASELINE-indexed slot.
-    # Up to 2026-05-17 we used ``[max_num_levels - 1] * max_step_dim = [5]*13``,
-    # i.e. index 5 — but the SF slots (F/W/M/S/R) only have 3–5 active levels,
-    # so index 5 was always masked out of the categorical at sample time and
-    # the bias did literally nothing for them. K slots got biased toward
-    # K_LEVELS[5]=12, NOT the per-block baseline K (B1/3/5=13 at idx 3,
-    # B2/4=10 at idx 4). Net effect: the warmstart was inert.
+    # 2026-05-18 (rdv2 hotfix): the earlier ``[LEVELS_F - 1] * max_step_dim
+    # = [4]*13`` formula was wrong for 8/13 slot positions. The per-step slot
+    # kinds vary per (layer, block) — slot 2 in some steps is M (3 levels,
+    # baseline idx 2), in others R (4 levels, baseline idx 3); slot 6 is
+    # K-in-B1/3/5 (baseline idx 3) for many steps but K-in-B2/4 (idx 4) for
+    # others. Setting all to 4 either masked out (for slots with <5 active
+    # levels) or actively biased AWAY from baseline (K-B1/3/5: preferred 4
+    # = K_LEVELS[4]=10 vs baseline 3 = K=13).
     #
-    # Fix: bias toward index ``LEVELS_F - 1 = 4`` — which is the max-SF index
-    # for every F/W slot (= baseline for those, the common case), is masked
-    # out for MS/R (no effect, harmless), and lands on K_LEVELS[4]=10 for K
-    # (= baseline for B2/B4; B1/B3/B5 baseline is K=13 at idx 3, slightly
-    # off but still much closer than the previous K=12). PPO learns the
-    # remaining offset within a few episodes.
+    # Fix: compute the MODE of baseline_action_vec values across all 59 steps
+    # for each of the 13 slot positions, and use that as the preferred index.
+    # This matches the most common baseline value for each slot position and
+    # makes the bias actually push toward baseline rather than away from it.
+    # Falls back to LEVELS_F-1 if step schedule isn't available (defensive).
     #
-    # Default gain bumped from 1.2 → 3.5 so the baseline action gets a clear
-    # majority of the per-slot probability mass at episode 0:
-    #   softmax([3.5, 0, 0, 0, 0])[0] ≈ 0.84  (per slot)
-    # Combined across the ~10 active slots in a typical step that's still
-    # only ~0.84^10 ≈ 0.18 of pure-baseline rollouts, but every individual
-    # slot is heavily biased.
+    # NOTE: the forced-baseline anchor (force_baseline_episodes, applied per
+    # episode in the inner loop below) is the primary warmstart mechanism;
+    # this bias is the soft prior that takes over after the anchor ends.
     warmstart_applied = False
+    preferred_summary = ""
     if bool(train_cfg.warmstart_baseline_bias):
         try:
-            # LEVELS_F - 1 = 4 — universal max-SF baseline index for F/W kinds.
-            # Imported lazily to keep the runner torch-free at module load.
             from .action_space import LEVELS_F
-            baseline_idx = int(LEVELS_F) - 1
-            preferred = [baseline_idx] * policy_cfg.max_step_dim
+            preferred = _compute_per_slot_mode_preferred(
+                schedule=seq_env.schedule,
+                baseline_action_vec=baseline_action_vec,
+                max_step_dim=policy_cfg.max_step_dim,
+                fallback_idx=int(LEVELS_F) - 1,
+            )
             policy.apply_preferred_per_step_bias(
                 preferred,
                 gain=float(train_cfg.warmstart_bias_gain),
             )
             warmstart_applied = True
+            preferred_summary = (
+                f"preferred per slot (mode over {len(seq_env.schedule)} steps) = "
+                + str(preferred)
+            )
         except Exception as exc:
             log(f"  [warmstart][warning] preferred-per-step bias failed: {exc}")
 
@@ -1022,7 +1170,8 @@ def run_sequential_via_runner(
         f"early_term_on_invalid={seq_env_cfg.early_terminate_on_invalid}",
         f"Warmstart：bias={warmstart_applied}    "
         f"gain={float(train_cfg.warmstart_bias_gain):.3g}    "
-        f"（K 槽偏置略低于 K_max=13，PPO 几个 episode 内会自行修正）",
+        f"force_baseline_episodes={int(getattr(train_cfg, 'force_baseline_episodes', 0))}    "
+        f"{preferred_summary}",
     ])
 
     # ---------- 6) optional resume ----------
@@ -1388,6 +1537,26 @@ def run_sequential_via_runner(
                 f"valid_steps={record.valid_step_count}/{record.steps_taken}  │  "
                 f"invalid_steps={record.invalid_steps}"
             )
+            # 2026-05-18 (rdv2 hotfix): surface inference test metrics on
+            # every new best so the user can verify acc/stab gates directly
+            # without grepping details/ files. m1 for MRPC = accuracy; the
+            # second metric (m2) isn't currently captured in EpisodeRecord —
+            # add it here once env.py threads it through.
+            _prio_label = (
+                "P1(acc/invalid)" if int(record.terminal_priority) == 1
+                else "P2(stab)" if int(record.terminal_priority) == 2
+                else "P3(cost)" if int(record.terminal_priority) == 3
+                else "P?"
+            )
+            log(
+                f"  {bullet} 推理指标（inference test metrics）："
+                f"loss_mean={record.terminal_loss_mean:.4f}  "
+                f"loss_std={record.terminal_loss_std:.4f}  "
+                f"m1(metric1)={record.terminal_metric1_mean:.4f}  "
+                f"priority={_prio_label}  "
+                f"total_bits={record.total_bits_sum_over_steps}  "
+                f"fusion={record.fusion_count_sum_over_steps}"
+            )
             log("  " + bullet + " 当前 best action（decoded slots；不输出 action index）：")
             for snippet_line in _format_best_action_slots(best_action_vec):
                 log("      " + snippet_line)
@@ -1613,6 +1782,28 @@ def run_sequential_via_runner(
         except Exception as exc:
             log(f"  [resume][warning] failed to restore forbidden_mask: {exc}")
 
+    # 2026-05-18 (rdv2 hotfix): force first N episodes to use the baseline
+    # action so the value function calibrates around +45 (baseline reward)
+    # and PPO pushes policy mass toward baseline before exploration starts.
+    # Without this, the warmstart-biased policy still samples ~80% of slots
+    # uniformly at random for kinds whose baseline index is not the bias
+    # target — virtually no rollout matches baseline closely enough to
+    # satisfy acc_threshold, and every reward collapses to ~-7. See
+    # `reports/stage2_rl/bug_reports/2026-05-18_stage2_rl_rdv2_negative_reward_startup/`.
+    # The fallback ``rollout_size * 2`` mirrors warmstart_anchor_episodes
+    # in the legacy single-shot runner.
+    _force_baseline_episodes = int(getattr(
+        train_cfg, "force_baseline_episodes", 0,
+    ))
+    if _force_baseline_episodes <= 0:
+        _force_baseline_episodes = max(60, int(train_cfg.rollout_size) * 2)
+    log(
+        f"  {bullet} 强制 baseline 锚点（forced-baseline anchor）: "
+        f"前 {_force_baseline_episodes} 个 episode 直接执行 baseline action，"
+        f"让 value head 学到 +45 基线 reward，policy 概率质量先聚到 baseline 附近，"
+        f"之后再切到 PPO sample。"
+    )
+
     seq_result = train_sequential(
         env=seq_env,
         policy=policy,
@@ -1626,6 +1817,7 @@ def run_sequential_via_runner(
         forbidden_mask=forbidden_mask,
         baseline_action_vec=baseline_action_vec,
         max_rejection_retries=32,
+        force_baseline_episodes=_force_baseline_episodes,
     )
     elapsed = float(time.time() - t_start)
     status.set_phase("已完成")

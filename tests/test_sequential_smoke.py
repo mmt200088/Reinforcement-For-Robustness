@@ -661,16 +661,27 @@ class RewardDesignV2RegressionTest(unittest.TestCase):
         self.assertNotIn("target_calib_samples", src)
         self.assertNotIn("calibration_rng", src)
 
-    def test_persistent_slug_has_rdv2_tag(self):
-        """ADR-007 requires the persistent dir slug to bump with reward design
-        changes so old checkpoints don't silently mix with the new code."""
+    def test_persistent_slug_reverted_to_three_tolerances(self):
+        """2026-05-18: reverted _rdv2 suffix per user request. The single
+        persistent dir is easier to maintain (no risk of forgetting to stop
+        old training runs across multiple dirs). --fresh enforces clean
+        reset for reward design changes; the slug stays minimal."""
         src = open("llama_7B_LayerImportance.sh", encoding="utf-8").read()
-        # The main slug used by RL/GA/Greedy runs
+        # Main slug should be EXACTLY the three tolerances — no _rdv2 suffix.
         self.assertIn(
-            '_s2st${STAGE2_STABILITY_TOLERANCE}_rdv2"',
+            'CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"',
             src,
-            msg="llama_7B_LayerImportance.sh CONSTRAINT_SLUG missing _rdv2 tag",
         )
+        # Only allow _rdv2 in comments (the rollback rationale line). No
+        # active code path should still inject the suffix.
+        for line_no, line in enumerate(src.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            self.assertNotIn(
+                "_rdv2", line,
+                msg=f"line {line_no}: _rdv2 still in active code: {line!r}",
+            )
 
     def test_episode_record_has_terminal_priority_and_metrics(self):
         src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
@@ -702,6 +713,126 @@ class RewardDesignV2RegressionTest(unittest.TestCase):
         # The default lives in BLBStage2TrainConfig and flows down through
         # BLBStage2EnvConfig.num_trials_per_step → env._eval_on_probe(k).
         self.assertIn("num_trials_per_step: int = 5", src)
+
+
+class WarmstartFixedRegressionTest(unittest.TestCase):
+    """2026-05-18 rdv2 hotfix: after the first ADR-007 run produced
+    terminal_reward = -5 across 240 episodes (every candidate landed in
+    P1 acc-fail because the warmstart bias preferred=[4]*13 was wrong
+    for 8/13 slot positions), two layers of fix were added:
+
+      (a) per-slot mode of baseline_action_vec used as preferred index
+      (b) forced-baseline anchor for the first N episodes
+
+    These tests lock the fixes in source so a refactor can't silently
+    revert them.
+    """
+
+    def test_per_slot_mode_helper_present(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        for needle in (
+            "_compute_per_slot_mode_preferred",
+            "Counter(vals).most_common",
+            "MODE of baseline_action_vec",
+        ):
+            self.assertIn(
+                needle, src,
+                msg=f"sequential_runner.py missing per-slot mode helper: {needle!r}",
+            )
+
+    def test_force_baseline_anchor_wired(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        for needle in (
+            "force_baseline_episodes",
+            "force_this_ep",
+            "Forced-baseline anchor short-circuit",
+            "steps_forced_to_baseline_anchor",
+        ):
+            self.assertIn(
+                needle, src,
+                msg=f"sequential_runner.py missing force-baseline anchor: {needle!r}",
+            )
+
+    def test_per_slot_mode_returns_correct_values(self):
+        """Quick functional test: given a fake schedule + baseline_vec,
+        the helper should pick the mode per slot position (not a uniform
+        index). This guards against future refactors that accidentally
+        revert to ``[max_idx]*max_step_dim``.
+        """
+        import sys
+        import importlib.util
+        import types
+
+        # Stub heavy deps
+        for name in ("torch", "torch.cuda", "torch.nn", "torch.nn.functional",
+                     "transformers", "blb_rl_bridge", "function_handler",
+                     "rescale_optimizer_bridge"):
+            sys.modules.setdefault(name, types.ModuleType(name))
+        # Stub the action_space symbols sequential_runner imports
+        acs_stub = types.ModuleType("blb_stage2_rl.action_space")
+        sys.modules["blb_stage2_rl.action_space"] = acs_stub
+
+        pkg = sys.modules.get("blb_stage2_rl") or types.ModuleType("blb_stage2_rl")
+        pkg.__path__ = ["blb_stage2_rl"]
+        sys.modules["blb_stage2_rl"] = pkg
+
+        # Load just the helper by exec'ing a minimal stub. The helper itself
+        # is dependency-free (only numpy + collections), so we can extract
+        # and exec it directly.
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        marker_start = src.find("def _compute_per_slot_mode_preferred(")
+        self.assertGreater(marker_start, 0, "helper not found in source")
+        marker_end = src.find("\n\n\n", marker_start)
+        self.assertGreater(marker_end, marker_start, "helper end not found")
+        helper_src = src[marker_start:marker_end]
+
+        import numpy as np
+        from typing import Any, Optional, Sequence, List   # noqa: F401
+        ns = {"np": np, "Any": Any, "Optional": Optional,
+              "Sequence": Sequence, "List": List}
+        exec(helper_src, ns)
+        helper = ns["_compute_per_slot_mode_preferred"]
+
+        # Fake schedule: 3 steps each with full_vec_offsets
+        class FakeSpec:
+            def __init__(self, offs):
+                self.full_vec_offsets = tuple(offs)
+
+        schedule = [
+            FakeSpec([0, 1, 2]),    # slot 0→0, slot 1→1, slot 2→2
+            FakeSpec([3, 4, 5]),    # slot 0→3, slot 1→4, slot 2→5
+            FakeSpec([6, 7]),       # slot 0→6, slot 1→7 (no slot 2)
+        ]
+        baseline_vec = np.array(
+            [4, 2, 3,   # step 0
+             4, 2, 4,   # step 1 (slot 1 = 2 twice now → mode 2)
+             0, 4],     # step 2
+            dtype=np.int64,
+        )
+        preferred = helper(
+            schedule=schedule,
+            baseline_action_vec=baseline_vec,
+            max_step_dim=4,
+            fallback_idx=99,
+        )
+        # slot 0: values [4, 4, 0] → mode 4
+        # slot 1: values [2, 2, 4] → mode 2
+        # slot 2: values [3, 4] (only first 2 steps) → mode 3 (or 4; tie → most_common picks first encountered)
+        # slot 3: no data → fallback 99
+        self.assertEqual(preferred[0], 4)
+        self.assertEqual(preferred[1], 2)
+        self.assertIn(preferred[2], (3, 4))  # tie either way
+        self.assertEqual(preferred[3], 99)
+
+    def test_new_best_logs_inference_metrics(self):
+        """After a new best, the log line should include loss_mean / loss_std /
+        m1 so the user can verify acc/stab gates without grepping details files.
+        """
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        self.assertIn("推理指标（inference test metrics）", src)
+        self.assertIn("record.terminal_loss_mean", src)
+        self.assertIn("record.terminal_loss_std", src)
+        self.assertIn("record.terminal_metric1_mean", src)
 
 
 if __name__ == "__main__":
