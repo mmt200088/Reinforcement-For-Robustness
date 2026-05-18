@@ -812,8 +812,6 @@ def run_sequential_via_runner(
         precomputed_baseline_signals=precomputed,
     )
     base_env.baseline = baseline
-    weights = calibrate_weights_from_baseline(baseline)
-    base_env.reward_weights = weights
 
     # baseline accuracy/stability (CLEAN model — used for the cost-side
     # baseline metric1 reference; loss_std here is 0 since no noise is installed
@@ -825,6 +823,12 @@ def run_sequential_via_runner(
     baseline.metric1_mean = float(baseline_metrics.metric1_mean)
     baseline.metric2_mean = float(baseline_metrics.metric2_mean)
     baseline_clean_metric1 = float(baseline_metrics.metric1_mean)
+
+    # Now baseline is fully populated; calibrate reward weights (v2-style
+    # `calibrate_weights_from_baseline` writes baseline_metric1 into the
+    # weights so margin_acc has the right denominator).
+    weights = calibrate_weights_from_baseline(baseline)
+    base_env.reward_weights = weights
 
     # ---------- 4.5) NOISY baseline preflight: calibrate acc/stab gates ----------
     # Before this preflight the sequential path used to derive
@@ -881,72 +885,24 @@ def run_sequential_via_runner(
     user_stab_threshold = float(base_env.stab_threshold)
     stab_calib_summary = ""
     if not np.isfinite(user_stab_threshold):
-        # 2026-05-18: dynamic calibration. Sample a handful of random valid
-        # actions, take P90 of their loss_std as the threshold so the typical
-        # operating range of explored candidates falls *inside* P3(cost).
+        # 2026-05-18 (rdv2): v2 公式 = baseline_loss_std × (1 + tolerance).
+        # 之前一版尝试用 5 个均匀随机 action 的 loss_std P90 做 dynamic
+        # threshold，但 577-dim 均匀随机几乎必然 invalid_chain（report
+        # `2026-05-18_dynamic_stab_calibration_fallback` 印证：25 次 0 个 valid），
+        # 校准失败回落到 0.05，问题没改。
         #
-        # Replaces the old `noisy_std × (1 + tol) + 1e-3` floored to 0.05,
-        # which sat right on the baseline noise floor (loss_std ≈ 0.005 →
-        # threshold ≈ 0.05). Real candidates with any non-trivial BLB noise
-        # produce loss_std ≈ 1 (with N=3 trials), so EVERY action tripped P2
-        # (stab) and the cost branch was unreachable. The visible result was
-        # terminal_reward ≈ -150 ± 50 for the whole training, with the
-        # policy slowly retreating toward baseline (loss_std ↓ → less-bad
-        # P2 reward) instead of learning cost. See diagnostics_summary.md
-        # from the s1t0.005 run for evidence.
-        random_loss_stds: List[float] = []
-        calibration_rng = np.random.default_rng(int(train_cfg.seed) + 999_983)
-        max_calib_attempts = 25
-        target_calib_samples = 5
-        calib_attempted = 0
-        while len(random_loss_stds) < target_calib_samples and calib_attempted < max_calib_attempts:
-            calib_attempted += 1
-            random_action = np.array(
-                [calibration_rng.integers(0, d) for d in base_env.action_dims],
-                dtype=np.int64,
-            )
-            try:
-                base_env.reset(seed=int(train_cfg.seed) + 1000 + calib_attempted)
-                _, _, _, rinfo = base_env.step(random_action)
-            except Exception as exc:
-                log(f"  [stab-calib][warning] random sample #{calib_attempted} failed: {exc}")
-                continue
-            if rinfo.get("invalid", False):
-                continue
-            rmetrics = rinfo.get("metrics")
-            if rmetrics is None:
-                continue
-            rls = float(getattr(rmetrics, "loss_std", 0.0))
-            if np.isfinite(rls) and rls >= 0.0:
-                random_loss_stds.append(rls)
-
-        if len(random_loss_stds) >= 3:
-            p90 = float(np.percentile(np.asarray(random_loss_stds, dtype=np.float64), 90))
-            # Floor: at least 3× baseline std (so a coincidentally-stable
-            # sample set doesn't choke off the gate entirely) and at least
-            # 0.5 (so a uniformly stable random set still leaves headroom
-            # for MC variance during real PPO rollouts).
-            # Ceiling: 5.0 so one wild outlier doesn't push the gate to
-            # "no stability signal at all".
-            derived_threshold = max(p90, 3.0 * noisy_baseline_loss_std, 0.5)
-            derived_threshold = min(derived_threshold, 5.0)
-            base_env.stab_threshold = float(derived_threshold)
-            stab_calib_summary = (
-                f"P90 over N={len(random_loss_stds)} random valid samples = {p90:.4f}  "
-                f"→ stab_threshold = {derived_threshold:.4f}  "
-                f"(samples range=[{min(random_loss_stds):.4f}, {max(random_loss_stds):.4f}])"
-            )
-        else:
-            # All / most random samples were invalid_chain. Fall back to
-            # the old noisy-baseline formula so training can still start.
-            derived = noisy_baseline_loss_std * (1.0 + stability_tol) + 1e-3
-            floor = max(0.05, 0.1 * noisy_baseline_loss_mean)
-            base_env.stab_threshold = float(max(derived, floor))
-            stab_calib_summary = (
-                f"calibration aborted (only {len(random_loss_stds)} valid samples in "
-                f"{calib_attempted} attempts)  → fallback baseline-derived = "
-                f"{base_env.stab_threshold:.4f}"
-            )
+        # 现在 reward 是 v2-style **soft** penalty + clipped + tier_bonus
+        # （见 reward.py / ADR-007），即使 stab_excess 很大也只贡献 -5 给 shaping，
+        # 不会让 reward 跌到 -150。所以 stab_threshold 设紧一点没关系，stab_ok
+        # 偶尔达到就拿 +20 额外 tier_bonus，达不到就拿 +20 (metric_ok)，cost
+        # 信号继续可见。
+        derived = noisy_baseline_loss_std * (1.0 + stability_tol)
+        base_env.stab_threshold = float(max(derived, 0.01))
+        stab_calib_summary = (
+            f"v2 formula: noisy_baseline_loss_std={noisy_baseline_loss_std:.4f} × "
+            f"(1 + tol={stability_tol:.4f}) → stab_threshold = {base_env.stab_threshold:.4f}  "
+            f"(soft cap under clipped+tier reward; ADR-007)"
+        )
 
     log(
         f"  {bullet} 基线噪声预热（noisy baseline preflight）："
@@ -971,9 +927,13 @@ def run_sequential_via_runner(
         f"avg_k={baseline.avg_k:.2f}",
         f"指标基线（baseline metrics）："
         f"loss={baseline.loss_mean:.4f}, m1={baseline.metric1_mean:.4f}, m2={baseline.metric2_mean:.4f}",
-        f"奖励权重（reward weights）："
-        f"w_bits={weights.w_bits:.4g}, w_fusion={weights.w_fusion:.4g}, w_k={weights.w_k:.4g}",
-        f"硬约束阈值："
+        f"奖励权重（reward weights, v2-style rdv2）："
+        f"cost_weight={weights.cost_weight:.4g}, lambda_stab={weights.lambda_stab:.4g}, "
+        f"invalid_penalty={weights.invalid_penalty:.4g}, "
+        f"clip=[{weights.reward_clip_min:.1f}, {weights.reward_clip_max:.1f}], "
+        f"tier=[{weights.tier_metric_bonus:.1f}, +{weights.tier_stability_bonus:.1f}], "
+        f"baseline_metric1={weights.baseline_metric1:.4f}",
+        f"硬约束阈值（acc=hard, stab=soft cap for excess penalty）："
         f"acc_threshold={base_env.acc_threshold:.4f}, stab_threshold={base_env.stab_threshold:.4f}",
         f"static_skeletons archive：{ss_baseline_obj.archive_path}",
     ])
@@ -1805,9 +1765,15 @@ def run_sequential_via_runner(
             "metric2_mean": float(getattr(baseline, "metric2_mean", 0.0) or 0.0),
         }
         weights_summary: Dict[str, Any] = {
-            "w_bits": float(getattr(weights, "w_bits", 0.0) or 0.0),
-            "w_fusion": float(getattr(weights, "w_fusion", 0.0) or 0.0),
-            "w_k": float(getattr(weights, "w_k", 0.0) or 0.0),
+            "design": "v2-style rdv2",
+            "cost_weight": float(getattr(weights, "cost_weight", 0.0) or 0.0),
+            "lambda_stab": float(getattr(weights, "lambda_stab", 0.0) or 0.0),
+            "invalid_penalty": float(getattr(weights, "invalid_penalty", 0.0) or 0.0),
+            "reward_clip_min": float(getattr(weights, "reward_clip_min", -5.0)),
+            "reward_clip_max": float(getattr(weights, "reward_clip_max", 5.0)),
+            "tier_metric_bonus": float(getattr(weights, "tier_metric_bonus", 0.0) or 0.0),
+            "tier_stability_bonus": float(getattr(weights, "tier_stability_bonus", 0.0) or 0.0),
+            "baseline_metric1": float(getattr(weights, "baseline_metric1", 0.0) or 0.0),
         }
         report_path = write_blb_final_report(
             blb_progress_dir,

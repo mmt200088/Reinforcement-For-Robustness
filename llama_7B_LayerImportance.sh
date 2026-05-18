@@ -991,8 +991,9 @@ elif [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
       is_pos_num "$_cmp_val" || err "持久化目录对比的约束参数必须是正数，当前值：$_cmp_val"
       awk -v x="$_cmp_val" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "持久化目录对比的约束参数必须 < 1，当前值：$_cmp_val"
     done
-    RL_COMPARE_CONSTRAINT_SLUG="s1t${RL_COMPARE_STAGE1_ACCURACY_TOLERANCE}_s2t${RL_COMPARE_STAGE2_LIMIT_TOLERANCE}_s2st${RL_COMPARE_STAGE2_STABILITY_TOLERANCE}"
-    GA_COMPARE_CONSTRAINT_SLUG="s1t${GA_COMPARE_STAGE1_ACCURACY_TOLERANCE}_s2t${GA_COMPARE_STAGE2_LIMIT_TOLERANCE}_s2st${GA_COMPARE_STAGE2_STABILITY_TOLERANCE}"
+    # _rdv2 后缀同主 slug（见下方注释），保证比较目录能匹配到新设计下的训练产物。
+    RL_COMPARE_CONSTRAINT_SLUG="s1t${RL_COMPARE_STAGE1_ACCURACY_TOLERANCE}_s2t${RL_COMPARE_STAGE2_LIMIT_TOLERANCE}_s2st${RL_COMPARE_STAGE2_STABILITY_TOLERANCE}_rdv2"
+    GA_COMPARE_CONSTRAINT_SLUG="s1t${GA_COMPARE_STAGE1_ACCURACY_TOLERANCE}_s2t${GA_COMPARE_STAGE2_LIMIT_TOLERANCE}_s2st${GA_COMPARE_STAGE2_STABILITY_TOLERANCE}_rdv2"
     RL_COMPARE_PERSISTENT_DIR="${COMPARE_PERSISTENT_ROOT}/rl/${MODEL_TYPE}/${DATASET}/${RL_COMPARE_CONSTRAINT_SLUG}"
     GA_COMPARE_PERSISTENT_DIR="${COMPARE_PERSISTENT_ROOT}/ga/${MODEL_TYPE}/${DATASET}/${GA_COMPARE_CONSTRAINT_SLUG}"
     [ -d "$RL_COMPARE_PERSISTENT_DIR" ] || err "persistent 模式未找到 RL 持久化目录：$RL_COMPARE_PERSISTENT_DIR。请先运行对应 RL 实验，或检查数据集 / 模型 / 约束参数是否一致。"
@@ -1004,7 +1005,7 @@ else
   { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "当前搜索算法不是 general-rl，请不要使用 --general-rl-* 参数。"
   # rl/ga 模式下 --resume-from 已废弃，改用持久化目录自动续训练
   [ "$S_RESUME_FROM" = "false" ] || [ "$FINAL_EVAL_ONLY" = "true" ] || err "rl / ga / greedy 训练模式已改用持久化目录自动续训练，不再支持手动 --resume-from。续训练时直接运行相同参数即可；首次运行请加 --fresh-start。--mode eval 可使用 --resume-from 指向已有结果目录。"
-  _EARLY_CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"
+  _EARLY_CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}_rdv2"
   _EARLY_PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${_EARLY_CONSTRAINT_SLUG}"
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] || err "rl 模式不使用 GA 代数参数，请移除 --stage1-search-generations / --stage2-search-generations。"
@@ -1124,7 +1125,11 @@ RUN_TIMESTAMP="$(date +"%Y%m%d_%H%M%S")"
 RUN_ID="${RUN_TIMESTAMP}_pid$$"
 GENERAL_TASKSET_ID=""
 # 持久化约束配置标识符（用于构建确定性目录）
-CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"
+# 后缀 _rdv2 = "reward design v2"（v2-style clipped+tier，2026-05-18 起为默认；
+# 见 docs/adr/ADR-007-v2-style-clipped-tier-reward.md）。任何 reward 公式 / 权重
+# / clip 范围 / tier_bonus 改动都应该 bump 这个 tag，避免旧 checkpoint 和新
+# 代码静默混用。
+CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}_rdv2"
 # --run-tag SUFFIX appends to the persistent dir so multi-seed sweeps
 # don't collide via auto-resume. Use [a-zA-Z0-9_-] only.
 if [ -n "$RUN_TAG" ]; then

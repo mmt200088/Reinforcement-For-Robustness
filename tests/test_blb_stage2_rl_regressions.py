@@ -513,6 +513,18 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
 
 class BLBRewardRegressionTests(unittest.TestCase):
     def test_optimizer_invalid_is_cost_layer_after_accuracy_and_stability(self):
+        """Priority semantics from ADR-002 preserved under ADR-007 v2-style reward.
+
+        The implementation switched from -50/-100/-200 hard penalties to
+        clipped shaping [-5,+5] + tier_bonus (+20/+40), but the priority
+        ordering remains:
+          P1: acc_violation OR invalid → metric_ok=False → no tier_bonus →
+              total ∈ [-5, 0]
+          P2: acc OK + invalid=False but stab fail → metric_ok=True →
+              tier_bonus=+20 → total ∈ [+15, +25]
+          P3: everything OK → tier_bonus=+40 → total ∈ [+35, +45]
+        See ADR-007 for design rationale.
+        """
         from blb_stage2_rl.reward import (
             BaselineCostStats,
             EpisodeMetrics,
@@ -520,48 +532,91 @@ class BLBRewardRegressionTests(unittest.TestCase):
             compute_reward,
         )
 
+        # --- Case 1: acc fail (well below threshold) + invalid_chain ---
+        # metric_ok=False (both acc_violation AND invalid trigger it).
+        # priority label = 1 (acc/invalid takes precedence).
         accuracy_breakdown = compute_reward(
             EpisodeMetrics(metric1_mean=0.0, loss_mean=float("inf"), loss_std=float("inf")),
             type("Signals", (), {"any_invalid": True, "total_bits_sum": 0, "total_fusion_count": 0})(),
             action_avg_k=13.0,
             baseline=BaselineCostStats(metric1_mean=0.875),
-            weights=RewardWeights(invalid_penalty=30.0),
+            weights=RewardWeights(baseline_metric1=0.875),
             acc_threshold=0.865,
             stab_threshold=1.0,
             any_invalid=True,
         )
-
         self.assertTrue(accuracy_breakdown.invalid)
         self.assertEqual(accuracy_breakdown.priority, 1)
         self.assertGreater(accuracy_breakdown.acc_violation, 0.0)
+        self.assertFalse(accuracy_breakdown.metric_ok)
+        self.assertEqual(accuracy_breakdown.tier_bonus, 0.0)
+        # Total reward is clipped shaping only (no tier bonus), bounded in
+        # the [-5, +5] range so PPO advantages stay well-conditioned.
+        self.assertLessEqual(accuracy_breakdown.reward, 5.0)
+        self.assertGreaterEqual(accuracy_breakdown.reward, -10.0)
 
+        # --- Case 2: acc OK but optimizer invalid ---
+        # acc_violation=0 but invalid → metric_ok=False → tier_bonus=0.
+        # The priority *label* is still 3 (since acc & stab gates pass),
+        # but metric_ok is False so no tier bonus.
         cost_breakdown = compute_reward(
             EpisodeMetrics(metric1_mean=0.9, loss_mean=0.2, loss_std=0.1),
             type("Signals", (), {"any_invalid": True, "total_bits_sum": 200, "total_fusion_count": 0})(),
             action_avg_k=13.0,
             baseline=BaselineCostStats(total_bits_sum=200, metric1_mean=0.875),
-            weights=RewardWeights(invalid_penalty=30.0),
+            weights=RewardWeights(baseline_metric1=0.875, invalid_penalty=5.0),
             acc_threshold=0.865,
             stab_threshold=1.0,
             any_invalid=True,
         )
-
         self.assertTrue(cost_breakdown.invalid)
         self.assertEqual(cost_breakdown.priority, 3)
-        self.assertEqual(cost_breakdown.r_invalid, -30.0)
+        self.assertFalse(cost_breakdown.metric_ok)
+        self.assertEqual(cost_breakdown.tier_bonus, 0.0)
+        # invalid_penalty contributes -5 to shaping; clipped at -5.
+        self.assertEqual(cost_breakdown.invalid_term, -5.0)
 
+        # --- Case 3: nonfinite stability, acc OK, no invalid ---
+        # metric_ok=True (acc OK + not invalid). stab_excess=1.0 → stab_penalty=-5.
+        # shaping ≈ margin_acc + cost_score - 5  → clipped to [-5, +5]
+        # tier_bonus = +20 (metric_ok only). total ∈ [+15, +25].
         nonfinite_stability = compute_reward(
             EpisodeMetrics(metric1_mean=0.9, loss_mean=0.2, loss_std=float("inf")),
             type("Signals", (), {"any_invalid": False, "total_bits_sum": 200, "total_fusion_count": 0})(),
             action_avg_k=13.0,
             baseline=BaselineCostStats(total_bits_sum=200, metric1_mean=0.875),
-            weights=RewardWeights(priority2_penalty=50.0, priority2_scale=100.0),
+            weights=RewardWeights(baseline_metric1=0.875, lambda_stab=5.0),
             acc_threshold=0.865,
             stab_threshold=1.0,
             any_invalid=False,
         )
         self.assertEqual(nonfinite_stability.priority, 2)
-        self.assertEqual(nonfinite_stability.reward, -150.0)
+        self.assertTrue(nonfinite_stability.metric_ok)
+        self.assertFalse(nonfinite_stability.stab_ok)
+        self.assertEqual(nonfinite_stability.tier_bonus, 20.0)
+        # Reward in [+15, +25] — well above any P1/invalid candidate (≤ +5)
+        # so priority ordering is preserved.
+        self.assertGreaterEqual(nonfinite_stability.reward, 14.9)
+        self.assertLessEqual(nonfinite_stability.reward, 25.1)
+
+        # --- Case 4: everything OK → both tier bonuses ---
+        all_ok = compute_reward(
+            EpisodeMetrics(metric1_mean=0.9, loss_mean=0.2, loss_std=0.5),
+            type("Signals", (), {"any_invalid": False, "total_bits_sum": 100, "total_fusion_count": 0})(),
+            action_avg_k=11.0,
+            baseline=BaselineCostStats(total_bits_sum=200, metric1_mean=0.875, avg_k=13.0),
+            weights=RewardWeights(baseline_metric1=0.875),
+            acc_threshold=0.865,
+            stab_threshold=1.0,
+            any_invalid=False,
+        )
+        self.assertEqual(all_ok.priority, 3)
+        self.assertTrue(all_ok.metric_ok)
+        self.assertTrue(all_ok.stab_ok)
+        self.assertEqual(all_ok.tier_bonus, 40.0)
+        # Total in [+35, +45] — strictly above any P2 candidate (≤ +25).
+        self.assertGreaterEqual(all_ok.reward, 34.9)
+        self.assertLessEqual(all_ok.reward, 45.1)
 
     def test_runner_best_selection_uses_hard_constraints_before_reward(self):
         from blb_stage2_rl.runner import is_better_blb_candidate

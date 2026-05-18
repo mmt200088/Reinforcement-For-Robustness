@@ -613,33 +613,64 @@ class EnvEvalCommitSplitTest(unittest.TestCase):
             self.assertIn(needle, src, msg=f"missing: {needle!r}")
 
 
-class DynamicStabCalibrationRegressionTest(unittest.TestCase):
-    """2026-05-18: hardens the rewrite that fixed the constant -150 reward.
+class RewardDesignV2RegressionTest(unittest.TestCase):
+    """ADR-007: v2-style clipped+tier reward (supersedes ADR-002 implementation).
 
-    Before this fix every episode collapsed into priority-2 (stability)
-    because stab_threshold was derived from the noisy baseline (loss_std
-    ≈ 0.005) and floored at 0.05, but any real candidate produced
-    loss_std ≈ 1 with N=3 trials. The diagnostic label "P3(cost)" was
-    hardcoded to (1 if invalid_steps>0 else 3), hiding the real priority.
-
-    These source-text checks verify that the relevant pieces are wired in
-    so a future refactor can't silently regress the calibration / label /
-    observability.
+    Locks in the new reward shape so a future refactor can't silently
+    regress back to -50/-100/-200 hard penalties (which produced the
+    -150 stuck reward across every episode — see ADR-007 Context).
     """
 
-    def test_runner_has_dynamic_stab_calibration(self):
-        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+    def test_reward_uses_v2_style_clipped_tier_formula(self):
+        src = open("blb_stage2_rl/reward.py", encoding="utf-8").read()
         for needle in (
-            "random_loss_stds",
-            "np.percentile",
-            "calibration_rng",
-            "stab calibration source",
-            "target_calib_samples",
+            "shaping_clipped",
+            "tier_bonus",
+            "lambda_stab",
+            "reward_clip_min",
+            "reward_clip_max",
+            "tier_metric_bonus",
+            "tier_stability_bonus",
+            "baseline_metric1",
+            "margin_acc",
         ):
             self.assertIn(
                 needle, src,
-                msg=f"sequential_runner.py missing dynamic stab calibration: {needle!r}",
+                msg=f"reward.py missing v2-style field: {needle!r}",
             )
+        # The classic v2 cap of [-5, +5] shaping with +20/+40 tier should be
+        # the default, not just present as a configurable field.
+        self.assertIn("DEFAULT_REWARD_CLIP_MIN = -5.0", src)
+        self.assertIn("DEFAULT_REWARD_CLIP_MAX = 5.0", src)
+        self.assertIn("DEFAULT_TIER_METRIC_BONUS = 20.0", src)
+        self.assertIn("DEFAULT_TIER_STABILITY_BONUS = 20.0", src)
+
+    def test_runner_stab_threshold_uses_v2_formula(self):
+        """stab_threshold = noisy_baseline_loss_std × (1 + tol). The previous
+        attempted dynamic calibration (sampling random valid actions for
+        loss_std P90) failed because 577-dim uniform-random actions are
+        almost always invalid_chain; see
+        reports/stage2_rl/failed_runs/2026-05-18_dynamic_stab_calibration_fallback/
+        """
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        # New formula present
+        self.assertIn("v2 formula:", src)
+        self.assertIn("noisy_baseline_loss_std * (1.0 + stability_tol)", src)
+        # Old failed random-action calibration removed
+        self.assertNotIn("random_loss_stds", src)
+        self.assertNotIn("target_calib_samples", src)
+        self.assertNotIn("calibration_rng", src)
+
+    def test_persistent_slug_has_rdv2_tag(self):
+        """ADR-007 requires the persistent dir slug to bump with reward design
+        changes so old checkpoints don't silently mix with the new code."""
+        src = open("llama_7B_LayerImportance.sh", encoding="utf-8").read()
+        # The main slug used by RL/GA/Greedy runs
+        self.assertIn(
+            '_s2st${STAGE2_STABILITY_TOLERANCE}_rdv2"',
+            src,
+            msg="llama_7B_LayerImportance.sh CONSTRAINT_SLUG missing _rdv2 tag",
+        )
 
     def test_episode_record_has_terminal_priority_and_metrics(self):
         src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()

@@ -9,76 +9,87 @@
 set -e
 
 # ----------------------------------------------------------------------
-# 1) 优雅停掉前一轮（如果还在跑）。如果没有 rl.pid 就直接跳。
+# 1) 优雅停掉前一轮（如果还在跑）。检查老/新两条持久化路径下的 rl.pid。
+#    新一轮（commit "Sequential RL reward redesign v2"）起，CONSTRAINT_SLUG
+#    追加 _rdv2 后缀，所以老路径和新路径都要扫一遍。
 # ----------------------------------------------------------------------
-RUN_DIR="Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005"
-PIDFILE="$RUN_DIR/rl.pid"
-if [ -f "$PIDFILE" ]; then
+stop_rl_at_dir() {
+  local PIDFILE="$1/rl.pid"
+  [ -f "$PIDFILE" ] || { echo "[stop-rl] $1: no rl.pid"; return 0; }
+  local RL_PID
   RL_PID="$(cat "$PIDFILE")"
-  if [ -n "$RL_PID" ] && kill -0 "$RL_PID" 2>/dev/null; then
-    echo "[stop-rl] running RL pid=$RL_PID, sending SIGINT (graceful) ..."
-    kill -INT "$RL_PID" 2>/dev/null || true
-    for i in 1 2 3 4 5 6; do sleep 10; kill -0 "$RL_PID" 2>/dev/null || break; done
-    if kill -0 "$RL_PID" 2>/dev/null; then
-      echo "[stop-rl] still alive after 60s, sending SIGTERM ..."
-      kill -TERM "$RL_PID" 2>/dev/null || true
-      for i in 1 2 3; do sleep 10; kill -0 "$RL_PID" 2>/dev/null || break; done
-    fi
-    if kill -0 "$RL_PID" 2>/dev/null; then
-      echo "[stop-rl] still alive after 90s, hard-killing with SIGKILL ..."
-      kill -KILL "$RL_PID" 2>/dev/null || true
-      sleep 3
-    fi
-    echo "[stop-rl] previous RL process stopped."
-  else
-    echo "[stop-rl] no running RL process at pid=$RL_PID."
+  if [ -z "$RL_PID" ] || ! kill -0 "$RL_PID" 2>/dev/null; then
+    echo "[stop-rl] $1: pid=$RL_PID already dead"
+    return 0
   fi
-else
-  echo "[stop-rl] no rl.pid found; skipping."
-fi
+  echo "[stop-rl] $1: running pid=$RL_PID, SIGINT ..."
+  kill -INT "$RL_PID" 2>/dev/null || true
+  for i in 1 2 3 4 5 6; do sleep 10; kill -0 "$RL_PID" 2>/dev/null || break; done
+  if kill -0 "$RL_PID" 2>/dev/null; then
+    echo "[stop-rl] $1: still alive after 60s, SIGTERM ..."
+    kill -TERM "$RL_PID" 2>/dev/null || true
+    for i in 1 2 3; do sleep 10; kill -0 "$RL_PID" 2>/dev/null || break; done
+  fi
+  if kill -0 "$RL_PID" 2>/dev/null; then
+    echo "[stop-rl] $1: still alive after 90s, SIGKILL ..."
+    kill -KILL "$RL_PID" 2>/dev/null || true
+    sleep 3
+  fi
+  echo "[stop-rl] $1: stopped."
+}
+
+# 老路径（ADR-002 hard-priority -150 stuck reward 那版）
+stop_rl_at_dir "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005"
+# 新路径（ADR-007 v2-style rdv2 reward）
+stop_rl_at_dir "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005_rdv2"
 
 # ----------------------------------------------------------------------
 # 2) --fresh 重跑 BLB Stage-2 sequential RL。
 #
-#    上一轮（commit 42cfbe4 后）虽然 invalid_chain 被 mask 拦光了（window_mean_invalid
-#    = 0 全程），但 terminal_reward 仍恒在 -160 ± 50 区间。
-#    诊断结论：所有 episode 都跌进 priority-2(stability)，根本到不了 P3(cost)：
-#      · noisy baseline loss_std = 0.0048，stab_threshold 兜底 = 0.05
-#      · 任何"动一动"的 RL 候选 loss_std ≈ 1（3 trials 的 std 误差就这么大）
-#      · P2 公式 r = -50 + (0.05 - 1.0)*100 = -145，每个 episode 都长这样
-#      · cost 项 r_bits / r_fusion / r_k 完全看不见，PPO 学不到 cost 维度
-#      · diagnostic 标签 "P3(cost)" 是 sequential_runner.py:1253 硬编码骗人的
+#    上一轮（commit d0ab4bc，"dynamic stab calibration"）失败：动态校准 loop
+#    用均匀随机 action 采样，结果 25 次都是 invalid_chain → calibration aborted
+#    → stab_threshold 回落到 0.05 → 和上上轮一样 reward 恒 -212 →
+#    1000 episode 全程 P2 stuck。证据：
+#    `reports/stage2_rl/failed_runs/2026-05-18_dynamic_stab_calibration_fallback/`
 #
-#    本次 4 项关键修复（commit 待定 → push 后服务器 pull 即生效）：
+#    诊断：reward design 本身有问题，不是阈值校准能修的：
+#      · hard-priority -50/-100/-200 大惩罚 → 单点 outlier 拖崩 PPO advantage
+#      · 任何 BLB candidate (≠baseline) loss_std ≈ 1+，永远在 P2
+#      · 一旦所有 episode 都在 P2，candidate 之间 reward 差别全淹没在大惩罚里
+#      · v2 (noise_rl_module_v2.py) 在 stage1 上工作得很好，思路可以借鉴
 #
-#      (a) **动态推导 stab_threshold**（主修复）。
-#          训练前采 5 个随机 valid action 跑真 forward，取 loss_std 的 P90
-#          作为 stab_threshold（floor=0.5，ceiling=5.0）。这样 typical 候选的
-#          loss_std (~1.0) 落在 P3(cost) 区，只有真的 outlier (~2+) 才 P2。
-#          baseline 单点 preflight 不再用来定阈值，它太保守。
-#      (b) **num_trials_per_step 3 → 5**。
-#          3 trials 的 loss_std 相对误差 50%，一个 outlier trial 就把 std 拉到 1+。
-#          5 trials 相对误差降到 ~35%，std 估计更鲁棒。代价：terminal forward
-#          时间 +67%，总训练 wall time +30%。
-#      (c) **修复 sequential_runner.py:1253 fake P3(cost) 标签**。
-#          原来是 `priority = 1 if invalid_steps>0 else 3` —— 和真正的
-#          breakdown.priority 完全没关系。改成从 EpisodeRecord.terminal_priority
-#          读真值。details/ 文件里 "priority=P2(stab)" 才意味着真在 P2。
-#      (d) **EpisodeRecord 加 terminal_loss_mean / loss_std / metric1_mean 字段**。
-#          details/ 文件每条 episode 现在带 "terminal_metrics: loss_mean=X.XX
-#          loss_std=X.XX m1=X.XX" 一行，下次跑完可以直接验证 reward 来自哪条
-#          优先级、loss_std 是不是真的高、acc 有没有被踩。
+#    本次实施 v2 风格 reward redesign（ADR-007 取代 ADR-002 实现）：
 #
-#    保留不动（上一轮已经 OK 的）：
+#      (a) **clipped shaping + tier_bonus** (主修复)。
+#          shaping = margin_acc + cost_score + stab_penalty + invalid_term
+#          clipped to [-5, +5]
+#          tier_bonus = 0 if not metric_ok
+#                     else +20 (metric_ok) + (+20 if stab_ok else 0)
+#          total reward in [-5, +45]，PPO advantage 永远 bounded。
+#          硬优先级靠 tier_bonus +20/+40 大跳变体现，cost 永远进不了 stab/acc tier，
+#          但同时 cost differential 在 clip 范围内仍清晰可见，PPO 能学。
+#      (b) **stability = soft continuous penalty**，不是 hard gate。
+#          stab_penalty = -lambda_stab × max(0, loss_std - stab_threshold)
+#          stab_threshold 用 v2 公式 baseline_loss_std × (1 + tol)，不再校准。
+#          loss_std=1.0 → penalty=-5（饱和 clip），但不会跌到 -150。
+#      (c) **持久化目录加 _rdv2 后缀**。
+#          新 dir: `s1t0.005_s2t0.005_s2st0.005_rdv2`
+#          老 dir 的 checkpoint 不会和新代码混。以后再改 reward 设计就 bump _rdv3。
+#      (d) **写 ADR-007 取代 ADR-002 实现**（intent 保留：cost 不能越级补偿 acc/stab）。
+#
+#    保留不动（前几轮已经 OK 的）：
 #      · ForbiddenActionMask + rejection-sample（commit 42cfbe4）
 #      · invalid_chain 跳过 forward（commit 42cfbe4）
-#      · Warmstart bias 3.5 + preferred_index=LEVELS_F-1=4（commit 42cfbe4）
-#      · per-block invalid 可见性（commit f507f25）
-#      · noisy baseline preflight（commit 173596d）—— 现在只用来定 acc_threshold
+#      · Warmstart bias 3.5 + preferred_index=4（commit 42cfbe4）
+#      · per-block invalid 可见性 + diagnostic 脚本（commit f507f25）
+#      · noisy baseline preflight（commit 173596d）
+#      · num_trials_per_step = 5（commit d0ab4bc）
+#      · 修复 fake P3(cost) 标签（commit d0ab4bc）
+#      · EpisodeRecord 带 terminal_loss/metric 字段（commit d0ab4bc）
 # ----------------------------------------------------------------------
 echo ""
 echo "================================================================================"
-echo "Start BLB Stage-2 Sequential RL (fresh) — dynamic stab calib + 5 trials + real priority label"
+echo "Start BLB Stage-2 Sequential RL (fresh, _rdv2) — v2-style clipped+tier reward (ADR-007)"
 echo "================================================================================"
 bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 ```
@@ -87,29 +98,35 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 
 ## 元信息（meta，给人看的，agent 忽略）
 
-- **任务**：在 mrpc-blb-stage2-rl preset 下 fresh 跑一轮 6000-episode sequential RL，验证 reward design 修复
+- **任务**：在 mrpc-blb-stage2-rl preset 下 fresh 跑一轮 6000-episode sequential RL，验证 ADR-007 v2-style reward redesign
 - **更新时间**：2026-05-18
-- **更新原因**：上一轮（commit 42cfbe4）虽然把 invalid_chain 拦光了，但 reward 恒 -160。诊断发现真正的 priority 是 P2(stability)，stab_threshold=0.05 太低，任何 RL 候选 loss_std 都过这条线。本次：
-    1. 动态推导 stab_threshold —— 用 5 个随机 valid action 的 loss_std P90 作为阈值，让 typical 候选能进 P3(cost)；
-    2. num_trials_per_step 3→5，让 std 估计鲁棒一档；
-    3. 修复 details/ 文件的 `priority=P3(cost)` 假标签 —— 它原来是硬编码的，现在读 EpisodeRecord.terminal_priority 真值；
-    4. EpisodeRecord 加 loss_std/loss_mean/m1 字段，下一轮 details/ 直接能验证 reward 来自哪条优先级。
-- **预期效果**（这次要看的关键信号）：
-    - **terminal_reward 应该跨过 0 进入正区间**（baseline 算 +27，best 候选应该 +25 左右；而不是上一轮的 -160）。
-    - details/ 文件每条 episode 的 `priority=` 应该绝大多数是 `P3(cost)`，而不是上一轮全是假的 P3。如果还有大量 P2(stab)，说明 stab_threshold 还需再调宽。
-    - `terminal_metrics: loss_mean=X loss_std=Y m1=Z` 一行直接能验证：loss_std 应该 < stab_threshold（动态校准后通常 1-2 之间），m1 应该 ≥ acc_threshold。
-    - 训练曲线 best_reward 应该真的能优化 cost —— total_bits 该单调下降（从 baseline 14779 → 真优化目标 < 13000）。
-    - 上一轮的 ForbiddenActionMask + invalid skip-forward + warmstart bias 继续生效，window_mean_invalid 仍接近 0。
-- **预期产物**：
-    - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/`
+- **更新原因**：上一轮（commit `d0ab4bc`，动态校准）再次失败：577-dim 均匀随机 action 25 次全 invalid → 校准 abort → stab_threshold 兜底 0.05 → 重蹈覆辙 (-212 reward)。证据：`reports/stage2_rl/failed_runs/2026-05-18_dynamic_stab_calibration_fallback/`。
+    诊断结论：hard-priority -50/-100/-200 大惩罚本质就和 BLB 的 std 噪声水平不匹配，靠校准修不好。
+    **方案**：参考 noise_rl_module_v2.py（用户验证过工作良好），重写 reward 为 v2 风格 clipped+tier_bonus（ADR-007）。
+- **本次改动汇总**：
+    1. `reward.py` 全量重写：`shaping = margin_acc + cost_score + stab_penalty + invalid_term`，clipped 到 [-5, +5]，再叠加 tier_bonus +20(metric_ok) +20(stab_ok)，总范围 [-5, +45]。
+    2. `sequential_runner.py` 去掉失败的动态校准 loop，改用 v2 公式 `stab_threshold = baseline_loss_std × (1 + tol)`。stab 现在是 soft penalty，threshold 设紧也不会爆炸。
+    3. `llama_7B_LayerImportance.sh` CONSTRAINT_SLUG 加 `_rdv2` 后缀 → 新持久化目录 `s1t0.005_s2t0.005_s2st0.005_rdv2`，老 checkpoint 不会和新代码混。
+    4. ADR-002 标记 superseded by ADR-007；ADR-007 完整记录设计 rationale + 失败证据。
+    5. 测试更新：BLBRewardRegressionTests 改成断言新四档 reward 范围 ([-5/0/+15/+25/+35/+45])；test_sequential_smoke 加 RewardDesignV2RegressionTest 锁定 v2 字段不被无声 revert。29/29 smoke tests pass。
+- **预期效果**（这次要看的信号，每个 episode 都该看到）：
+    - **baseline action reward ≈ +45**（baseline 全 max-SF，metric_ok+stab_ok → tier_bonus +40 + clipped shaping ~+5）
+    - **典型 RL 候选 reward 在 [+15, +25]**（metric_ok + stab_fail → tier +20，shaping clipped）
+    - **罕见 cost-better-than-baseline 候选 reward > +30**（metric_ok + 偶尔 stab_ok）
+    - 真的崩的候选 reward < 0（acc_violation 或 invalid 时无 tier_bonus）
+    - PPO 看到 ~50 reward 跨度，advantage 信号清晰
+    - details/ 每条 episode 带 `priority=P3(cost) terminal_metrics: loss_mean=X loss_std=Y m1=Z`，能直接看
+    - total_bits 训练后期应单调下降（从 baseline 14779 → 12500-13500）
+- **预期产物**（**注意新路径！老 `s1t0.005_s2t0.005_s2st0.005/` 已废弃**）：
+    - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005_rdv2/stage2_noise/progress/`
         - `blb_stage2_status.json` —— 实时状态板
-        - `diagnostics/diagnostics_summary.md` —— 中文诊断摘要
+        - `diagnostics/diagnostics_summary.md` —— 中文诊断摘要（meta 里 "reward_weights" 应该是 v2-style 字段）
         - `blb_stage2_rl_checkpoint_live.pt` —— policy + optimizer + forbidden_mask_records
-    - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/`
-        - `details/noise_ppo_step_info_<a>-<b>.txt` —— 每 360 回合一个，per-episode 详情（**这次会带真 priority 标签 + terminal_metrics 行**）
+    - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005_rdv2/stage2_noise/`
+        - `details/noise_ppo_step_info_<a>-<b>.txt` —— 每 360 回合一个，per-episode 详情
         - `warning.txt` —— 奖励暴跌警告
-        - `pruning_search_log.txt` —— 主日志（**这次启动头部能看到 "稳定阈值校准来源: P90 ... = X.XX"**）
-- **预期耗时**：trials 3→5 单 episode 时间 +30%；6000 episodes 约 8-9 小时（上一轮 ~6 小时）。setup phase 多 5 个随机 sample × 5 trials ≈ 30s，可忽略。
+        - `pruning_search_log.txt` —— 主日志（启动头部能看到 "v2 formula: noisy_baseline_loss_std=X × (1+tol)=Y"）
+- **预期耗时**：~8-9 小时（5 trials × 4 probe batches × 59 sub-steps × 6000 episodes，单 step ~150ms forward）。
 
 ### Stage-1 → Stage-2 degree 适配（用户问题 #1）
 

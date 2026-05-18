@@ -44,9 +44,10 @@ Proposed → Accepted → (Superseded by ADR-XXX | Deprecated)
 
 | #   | 标题                                              | 状态      | 日期       |
 |-----|---------------------------------------------------|-----------|------------|
-| 001 | Per-block sequential PPO（vs single-shot 577-dim） | Accepted  | 2026-05-15 |
-| 002 | Hard-priority reward（vs weighted sum）           | Accepted  | 2026-05-12 |
-| 003 | Per-block 差异化 K baseline {13,10,13,10,13}      | Accepted  | 2026-05-15 |
-| 004 | static_skeletons 作为唯一 BLB Stage-2 baseline 源 | Accepted  | 2026-05-14 |
-| 005 | SF/K-first 人类可读输出 schema                    | Accepted  | 2026-05-16 |
-| 006 | F0 / F1 / F4 三级 fidelity ladder（去掉 F2/F3）   | Accepted  | 2026-05-16 |
+| 001 | Per-block sequential PPO（vs single-shot 577-dim） | Accepted              | 2026-05-15 |
+| 002 | Hard-priority reward（vs weighted sum）           | Superseded by ADR-007 | 2026-05-12 |
+| 003 | Per-block 差异化 K baseline {13,10,13,10,13}      | Accepted              | 2026-05-15 |
+| 004 | static_skeletons 作为唯一 BLB Stage-2 baseline 源 | Accepted              | 2026-05-14 |
+| 005 | SF/K-first 人类可读输出 schema                    | Accepted              | 2026-05-16 |
+| 006 | F0 / F1 / F4 三级 fidelity ladder（去掉 F2/F3）   | Accepted              | 2026-05-16 |
+| 007 | v2-style clipped-shaping + tier-bonus reward      | Accepted              | 2026-05-18 |

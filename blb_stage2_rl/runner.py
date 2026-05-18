@@ -850,8 +850,6 @@ class BLBStage2RLRunner:
             precomputed_baseline_signals=precomputed,
         )
         env.baseline = baseline
-        weights = calibrate_weights_from_baseline(baseline)
-        env.reward_weights = weights
         baseline_status_entry = {
             "total_bits_sum": int(baseline.total_bits_sum),
             "total_fusion_count": int(baseline.total_fusion_count),
@@ -867,18 +865,9 @@ class BLBStage2RLRunner:
             len(ss_diag["inactive_rescale_slots"])
         )
         status.set_baseline(baseline_status_entry)
-        status.set_extra("reward_weights", {
-            "w_bits": float(weights.w_bits),
-            "w_fusion": float(weights.w_fusion),
-            "w_k": float(weights.w_k),
-        })
         log(
             f"  {bullet} 基线成本（baseline cost）：total_bits_sum={baseline.total_bits_sum}, "
             f"total_fusion_count={baseline.total_fusion_count}, avg_k={baseline.avg_k:.2f}"
-        )
-        log(
-            f"  {bullet} 奖励权重（reward weights）：w_bits={weights.w_bits:.6g}, "
-            f"w_fusion={weights.w_fusion:.4g}, w_k={weights.w_k:.4g}"
         )
 
         # 估计 baseline 精度 + 稳定性，用于硬阈值校准
@@ -887,6 +876,27 @@ class BLBStage2RLRunner:
         baseline.loss_std = float(baseline_metrics.loss_std)
         baseline.metric1_mean = float(baseline_metrics.metric1_mean)
         baseline.metric2_mean = float(baseline_metrics.metric2_mean)
+
+        # baseline 完全 populated 后再校准 reward weights（v2-style 把
+        # baseline_metric1 写进 weights，margin_acc 才有正确的分母）。
+        weights = calibrate_weights_from_baseline(baseline)
+        env.reward_weights = weights
+        status.set_extra("reward_weights", {
+            "cost_weight": float(weights.cost_weight),
+            "lambda_stab": float(weights.lambda_stab),
+            "invalid_penalty": float(weights.invalid_penalty),
+            "reward_clip_min": float(weights.reward_clip_min),
+            "reward_clip_max": float(weights.reward_clip_max),
+            "tier_metric_bonus": float(weights.tier_metric_bonus),
+            "tier_stability_bonus": float(weights.tier_stability_bonus),
+            "baseline_metric1": float(weights.baseline_metric1),
+        })
+        log(
+            f"  {bullet} 奖励权重（reward weights, v2-style rdv2）："
+            f"cost_weight={weights.cost_weight:.4g}, lambda_stab={weights.lambda_stab:.4g}, "
+            f"clip=[{weights.reward_clip_min:.1f}, {weights.reward_clip_max:.1f}], "
+            f"tier_metric=+{weights.tier_metric_bonus:.1f}, tier_stab=+{weights.tier_stability_bonus:.1f}"
+        )
 
         if not np.isfinite(env.stab_threshold):
             env.stab_threshold = float(baseline.loss_std) * 1.5 + 1e-3
@@ -2146,9 +2156,15 @@ class BLBStage2RLRunner:
                     "metric1_mean": float(getattr(baseline, "metric1_mean", 0.0)),
                 },
                 reward_weights={
-                    "w_bits": float(weights.w_bits),
-                    "w_fusion": float(weights.w_fusion),
-                    "w_k": float(weights.w_k),
+                    "design": "v2-style rdv2",
+                    "cost_weight": float(weights.cost_weight),
+                    "lambda_stab": float(weights.lambda_stab),
+                    "invalid_penalty": float(weights.invalid_penalty),
+                    "reward_clip_min": float(weights.reward_clip_min),
+                    "reward_clip_max": float(weights.reward_clip_max),
+                    "tier_metric_bonus": float(weights.tier_metric_bonus),
+                    "tier_stability_bonus": float(weights.tier_stability_bonus),
+                    "baseline_metric1": float(weights.baseline_metric1),
                     "acc_threshold": float(env.acc_threshold),
                     "stab_threshold": float(env.stab_threshold),
                 },
@@ -2323,9 +2339,12 @@ class BLBStage2RLRunner:
                     "all_max_blb_preflight" if baseline_preflight_metrics else "raw_model_fallback"
                 ),
                 "blb_v3_threshold_allowed_drop": float(stage2_metric_allowed_drop),
-                "blb_v3_w_bits": float(weights.w_bits),
-                "blb_v3_w_fusion": float(weights.w_fusion),
-                "blb_v3_w_k": float(weights.w_k),
+                "blb_v3_reward_design": "v2-style rdv2",
+                "blb_v3_cost_weight": float(weights.cost_weight),
+                "blb_v3_lambda_stab": float(weights.lambda_stab),
+                "blb_v3_invalid_penalty": float(weights.invalid_penalty),
+                "blb_v3_tier_metric_bonus": float(weights.tier_metric_bonus),
+                "blb_v3_tier_stability_bonus": float(weights.tier_stability_bonus),
                 "blb_v3_warmstart_baseline_bias": bool(train_cfg.warmstart_baseline_bias),
                 "blb_v3_warmstart_bias_gain": float(train_cfg.warmstart_bias_gain),
                 "blb_v3_warmstart_anchor_episodes": int(train_cfg.warmstart_anchor_episodes or 0),

@@ -1,6 +1,10 @@
 # ADR-002: Hard-priority reward（拒绝 weighted-sum）
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-007](ADR-007-v2-style-clipped-tier-reward.md)
+  on 2026-05-18 — the hard-priority *intent* is preserved (cost can never
+  offset acc/stab failures, via tier_bonus +20/+40 jumps) but the literal
+  `-50 / -100 / -200` penalty implementation produced -150 stuck reward on
+  BLB (see ADR-007 Context for evidence).
 - **Date**: 2026-05-12
 - **Tags**: rl-design, reward, evaluation
 
