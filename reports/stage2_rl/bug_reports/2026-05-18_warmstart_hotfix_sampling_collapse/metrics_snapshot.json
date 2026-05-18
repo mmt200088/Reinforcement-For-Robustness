@@ -1,0 +1,20 @@
+{
+  "generated_at": "2026-05-18 snapshot after PPO update #3",
+  "branch": "jk_standard_rl",
+  "latest_before_run": "4097bea Stage2 RL warmstart hotfix",
+  "run_pid": 1150023,
+  "run_status": "stopped after confirming bug",
+  "run_dir": "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005",
+  "forced_baseline_anchor": "episodes 0-119",
+  "ppo_update_1_completed_episodes": 60,
+  "ppo_update_1_window_mean_return": 36.07409279351275,
+  "ppo_update_1_window_mean_invalid": 0.0,
+  "ppo_update_2_completed_episodes": 120,
+  "ppo_update_2_window_mean_return": 36.77851987684608,
+  "ppo_update_2_window_mean_invalid": 0.0,
+  "ppo_update_3_completed_episodes": 180,
+  "ppo_update_3_window_mean_return": -7.784984380997885,
+  "ppo_update_3_window_mean_invalid": 0.0,
+  "sample_phase_observed": "episodes 120+ terminal_reward=-5.0 despite invalid_steps=0",
+  "classification": "sampling phase reward collapse after forced-baseline anchor"
+}

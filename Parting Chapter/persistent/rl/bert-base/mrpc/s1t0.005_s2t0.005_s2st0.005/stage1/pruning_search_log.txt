@@ -18,5 +18,3 @@
 [Info] Stage-2 固定 GELU/Softmax 来源：Stage-1 config (json) (source=json)
   Stage-2 GELU   : [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1]
   Stage-2 Softmax: [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
-
-配置评估完成（Configuration evaluation finished）。
