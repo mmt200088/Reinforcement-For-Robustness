@@ -46,48 +46,42 @@ stop_rl_at_dir "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s
 # ----------------------------------------------------------------------
 # 2) --fresh 重跑 BLB Stage-2 sequential RL。
 #
-#    上一轮（commit b97ca83，ADR-007 v2 reward）在 _rdv2 目录跑了 200 episode
-#    后 reward 仍恒在 -7.8。bug 报告：
-#    `reports/stage2_rl/bug_reports/2026-05-18_stage2_rl_rdv2_negative_reward_startup/`
-#    诊断报告：
-#    `reports/stage2_rl/fix_reports/2026-05-18_warmstart_acc_collapse_fix/report.html`
+#    上一轮（commit 4097bea, warmstart hotfix）anchor 阶段（eps 0-119）
+#    reward = +36.77 ✓ baseline 执行成功；但切到 PPO sample 后（eps 120+）
+#    reward 立刻塌到 -7.78（terminal=-5 clip 底）。bug 报告：
+#    `reports/stage2_rl/bug_reports/2026-05-18_warmstart_hotfix_sampling_collapse/`
 #
-#    根因（**不是** reward design 问题；上一版 ADR-007 reward 没问题）：
-#      · sequential 路径的 warmstart bias preferred=[4]*13 把 13 个 slot
-#        位置里的 8 个偏到了错误 index（因为不同 slot 位置的 baseline 众数不一样）。
-#      · 8/13 槽位 policy 实际是均匀采样 → 343/577 slot 与 baseline 不同 →
-#        installed 噪声远比 baseline 重 → acc 跌穿 acc_threshold(0.8653) →
-#        每个 episode 都 metric_ok=False → tier_bonus=0 → reward = shaping
-#        clip 下限 -5（确认：所有 episode terminal_reward 恰好 -5）。
+#    根因（用 PPO update entropy 数据印证）：
+#      · 3 次 anchor PPO update 的 entropy：6.48 → 8.47 → 9.21（持续上升）
+#      · PPO loss = policy_grad - ent_coef × entropy，ent_coef=0.02
+#      · update 3: policy_grad=+0.083，entropy 项 = -0.02 × 9.21 = -0.184
+#      · entropy 项比 policy_grad 大 2 倍以上 → 梯度被"最大化 entropy"主导
+#      · 整个 anchor 期间 PPO 不是让 policy 收敛 baseline，反而越来越发散
+#      · sample 阶段一开始，发散的 policy 立即偏离 baseline 多 slot →
+#        acc 跌破阈值 → metric_ok=False → reward=-5 clip 底
 #
-#    本次三项修复（commit "Stage2 RL warmstart hotfix"）：
+#    本次单项修复（entropy schedule，commit 待定）：
 #
-#      (a) **修正 warmstart bias 的 preferred index**（最关键）。
-#          替换硬编码 [4]*13 为"对每个 slot 位置在 59 个 step 上取
-#          baseline_action_vec 的众数"。13 个 slot 位置现在每个都偏向
-#          各自最常见的 baseline 值（4/2/3 三种）。
-#      (b) **新增 "forced baseline anchor episodes"** 机制（更强的 warmstart）。
-#          前 N=max(60, rollout_size*2) 个 episode 直接执行 baseline action，
-#          PPO 通过 policy.evaluate_action 算 log_prob/value 进 buffer，
-#          value head 学到 +45 reward，policy 概率质量被推向 baseline。
-#          之后再切到 PPO sample 探索，开局就在 baseline 邻域。
-#      (c) **持久化目录回滚 _rdv2 后缀**（按用户要求）。
-#          回到 `s1t0.005_s2t0.005_s2st0.005`。单目录维护成本低；
-#          --fresh 强制重启已经够防混用。
-#      (d) **"新最优" 日志补充推理指标行**。
-#          找到新 best 时额外打印 loss_mean/loss_std/m1/priority/total_bits/fusion。
+#      (a) **anchor 期 ent_coef=0**：forced-baseline 阶段完全关掉 entropy bonus，
+#          让 policy_grad 单独把 policy 集中到 baseline 上（policy_loss 是
+#          负的→push baseline 概率上升）。
+#      (b) **sample 期前 240 episode 线性 ramp ent_coef 从 0 → 0.02**：
+#          ramp 完成后回到原本的 0.02 steady。给 PPO 一个 "先稳，再探索" 的过渡。
+#      (c) **日志 + diagnostics 加 ent_coef 列**：PPO update 摘要 + diagnostics_summary.md
+#          的 PPO 表格都加 ent_coef 列，跑起来一眼能看 schedule 是否生效。
 #
 #    保留不动（之前已经 OK 的）：
-#      · v2-style reward formula（commit b97ca83）
+#      · per-slot mode warmstart bias（commit 4097bea）✓
+#      · forced baseline anchor（commit 4097bea）—— anchor 阶段已经能拿 +36.77
+#      · v2-style clipped+tier reward（commit b97ca83）
 #      · stab_threshold = baseline_loss_std × (1 + tol)（commit b97ca83）
 #      · ForbiddenActionMask + rejection-sample（commit 42cfbe4）
-#      · invalid_chain 跳过 forward（commit 42cfbe4）
-#      · per-block invalid 可见性 + diagnostic 脚本（commit f507f25）
-#      · num_trials_per_step = 5（commit d0ab4bc）
+#      · 持久化目录单 dir（commit 4097bea）
+#      · 新最优日志带 metric 行（commit 4097bea）
 # ----------------------------------------------------------------------
 echo ""
 echo "================================================================================"
-echo "Start BLB Stage-2 Sequential RL (fresh) — warmstart hotfix: per-slot mode + force-baseline anchor"
+echo "Start BLB Stage-2 Sequential RL (fresh) — entropy schedule hotfix (anchor ent_coef=0 + ramp)"
 echo "================================================================================"
 bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 ```
@@ -98,21 +92,20 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 
 - **任务**：在 mrpc-blb-stage2-rl preset 下 fresh 跑一轮 6000-episode sequential RL，验证 warmstart hotfix
 - **更新时间**：2026-05-18（晚）
-- **更新原因**：上一轮（commit `b97ca83`，ADR-007 v2 reward）在 _rdv2 目录跑了 200 episode，reward 仍恒在 -7.8。bug 报告 / 诊断报告：
-    - `reports/stage2_rl/bug_reports/2026-05-18_stage2_rl_rdv2_negative_reward_startup/`
-    - `reports/stage2_rl/fix_reports/2026-05-18_warmstart_acc_collapse_fix/report.html`
-    根因：**不是 reward design 问题**（ADR-007 v2 公式没问题）。是 sequential 路径的 warmstart bias preferred=[4]*13 把 13 个 slot 位置里的 8 个偏到错误 index → 8/13 槽位实际是均匀采样 → 343/577 slot 与 baseline 不同 → acc 跌穿 acc_threshold → metric_ok=False → reward = clip 底 -5 → 总 reward ≈ -7.8。
+- **更新原因**：上一轮（commit `4097bea`, warmstart hotfix）anchor 工作正常（reward +36.77），但 sample 阶段一开始 reward 立刻塌到 -7.8。bug 报告：`reports/stage2_rl/bug_reports/2026-05-18_warmstart_hotfix_sampling_collapse/`。
+    根因：PPO 的 entropy bonus（ent_coef=0.02）在 anchor 阶段把 policy 越拉越散。3 次 anchor PPO update 的 entropy 从 6.48 涨到 9.21（接近 13-slot 均匀的最大值）。entropy 项的梯度 (-0.02 × 9.21 = -0.18) 比 policy_grad (+0.08) 还大 2x，导致 PPO 整体把 policy 推向"最大化 entropy"而不是收敛 baseline。Sample 一开始就发散 → 多 slot 偏离 baseline → acc 跌穿。
 - **本次改动汇总**：
-    1. `sequential_runner.py` 新增 `_compute_per_slot_mode_preferred`：对每个 slot 位置在 59 个 step 上取 baseline_action_vec 的众数作为 preferred，替换旧的硬编码 [4]*13。
-    2. `sequential_runner.py train_sequential` 新增 `force_baseline_episodes` 参数 + 短路逻辑：前 N=max(60, rollout_size*2) 个 episode 直接执行 baseline action，policy 通过 evaluate_action 写 buffer，value head 学到 +45 baseline reward，policy 概率质量预热到 baseline 附近。
-    3. `llama_7B_LayerImportance.sh` 回滚 `_rdv2` 后缀，持久化目录恢复为 `s1t0.005_s2t0.005_s2st0.005`（按用户要求，单目录维护更省心）。
-    4. "新最优" 日志加一行推理指标 `loss_mean / loss_std / m1 / priority / total_bits / fusion`，方便复查。
-    5. 测试更新：加 `WarmstartFixedRegressionTest`（4 个新 case，含 helper 的功能性 functional test）。33/33 smoke tests pass。
+    1. `blb_stage2_rl/sequential_policy.py` `sequential_ppo_update` 新增 `ent_coef_override` 参数，PPO update 期间用调度后的 ent_coef 替换 cfg.ent_coef；metrics dict 新增 `ent_coef` 字段。
+    2. `blb_stage2_rl/sequential_runner.py` 新增 `_resolve_ent_coef_schedule(...)` 帮手：anchor 期返回 0.0，ramp 期线性插值，steady 期返回 target；`train_sequential` 每次 PPO update 前算 current_ent_coef 并传过去。
+    3. `SequentialTrainConfig` + `BLBStage2TrainConfig` 加 `ent_coef_anchor=0.0` 和 `ent_coef_ramp_episodes=240` 默认值。
+    4. PPO 更新摘要 + diagnostics_summary.md 的 PPO 表格都加 `ent_coef` 列；启动 box 加 entropy schedule 说明行。
+    5. 测试：`EntCoefScheduleRegressionTest`（7 个新 case，含 helper 的 functional anchor / ramp / steady test）。40/40 smoke tests pass。
 - **预期效果**（这次要看的信号）：
-    - **前 60 episode 都是 forced-baseline，reward 全部 ≈ +45**（确定值），日志里能看到 `forced_baseline=True` 标记。
-    - **episode 60+ 切到 PPO sample 后，前几十个 sampled 候选 reward 应该落在 [+15, +45]**（policy 已偏向 baseline，与 baseline 相差几个 slot，acc 仍应在阈值上方）。
-    - 训练后期 PPO 在 baseline 邻域降 cost：reward 可能突破 +45（cost-better-than-baseline 区，metric+stab 都 ok）。
-    - 每次找到新 best 时，日志里会有 `推理指标 ... loss_mean=X loss_std=Y m1=Z priority=P3(cost)` 一行，直接对照 acc_threshold = 0.8653。
+    - **anchor 期（eps 0-119）entropy 应该下降不再上升**（无 entropy bonus，policy_grad 单独把 policy 集中到 baseline）；window_mean_return ~+36-40。
+    - **PPO update 摘要 + diagnostics PPO 表格里 `ent_coef` 列**：updates 1-2 都是 0.00000；update 3 起开始 ramp（每个 update +0.005 左右）；update 6 之后 steady 在 0.02。
+    - **sample 期（eps 120+）reward 应该 ≥ +20**（policy 已集中 baseline，sampled actions 多数接近 baseline → acc 仍在阈值上方）。
+    - 训练后期 PPO 在 baseline 邻域降 cost：reward 可能突破 +45。
+    - 每次找到新 best 时，日志里有 `推理指标 ... loss_mean=X loss_std=Y m1=Z priority=P3(cost)` 一行（commit 4097bea 加的，本次保留）。
     - total_bits 训练后期应稳定下降（baseline 14779 → 目标 12500-13500）。
 - **预期产物**（**回滚单目录**）：
     - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/`

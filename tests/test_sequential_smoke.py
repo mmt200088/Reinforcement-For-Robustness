@@ -835,5 +835,130 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertIn("record.terminal_metric1_mean", src)
 
 
+class EntCoefScheduleRegressionTest(unittest.TestCase):
+    """2026-05-18 sampling-collapse hotfix: PPO entropy bonus was actively
+    undoing the forced-baseline anchor (entropy rose 6.48 → 9.21 across
+    3 anchor PPO updates, leaving the policy too diffuse for sampling).
+
+    Schedule: ent_coef = 0 during anchor, linear ramp from 0 to target
+    over ``ent_coef_ramp_episodes`` sample episodes, then steady.
+    """
+
+    def test_helper_present_with_expected_signature(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        for needle in (
+            "def _resolve_ent_coef_schedule(",
+            "ep_count_1based",
+            "anchor_episodes",
+            "ramp_episodes",
+            "target_ent_coef",
+        ):
+            self.assertIn(
+                needle, src,
+                msg=f"sequential_runner.py missing ent_coef schedule helper: {needle!r}",
+            )
+
+    def test_ppo_update_passes_override(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        # The PPO update call must use the computed current_ent_coef.
+        self.assertIn("current_ent_coef = _resolve_ent_coef_schedule(", src)
+        self.assertIn("ent_coef_override=current_ent_coef", src)
+
+    def test_ppo_update_accepts_override_param(self):
+        """sequential_ppo_update must accept ent_coef_override kwarg."""
+        src = open("blb_stage2_rl/sequential_policy.py", encoding="utf-8").read()
+        self.assertIn("ent_coef_override: Optional[float] = None", src)
+        self.assertIn("effective_ent_coef", src)
+        # And the loss must use the effective value, not cfg.ent_coef directly.
+        self.assertIn("- effective_ent_coef * entropy_mean", src)
+        # And the returned metrics must surface the ent_coef so diagnostics
+        # can show the schedule in action.
+        self.assertIn('"ent_coef": float(effective_ent_coef)', src)
+
+    def test_train_config_defaults(self):
+        """SequentialTrainConfig should default to ent_coef_anchor=0 and
+        a 240-episode ramp."""
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        self.assertIn("ent_coef_anchor: float = 0.0", src)
+        self.assertIn("ent_coef_ramp_episodes: int = 240", src)
+        # BLBStage2TrainConfig (used by the runner) must also expose them
+        # so the launcher / preset can override.
+        src2 = open("blb_stage2_rl/runner.py", encoding="utf-8").read()
+        self.assertIn("ent_coef_anchor: float = 0.0", src2)
+        self.assertIn("ent_coef_ramp_episodes: int = 240", src2)
+
+    def test_schedule_math_anchor_ramp_steady(self):
+        """Functional test of the helper. Locks in the three-stage behaviour
+        so a refactor can't silently change the ramp shape."""
+        import sys, importlib.util, types
+        # Stub torch (helper itself doesn't need it but the module does)
+        for n in ("torch", "torch.cuda", "torch.nn", "torch.nn.functional",
+                  "transformers", "blb_rl_bridge", "function_handler",
+                  "rescale_optimizer_bridge"):
+            sys.modules.setdefault(n, types.ModuleType(n))
+
+        # Extract helper source and exec in isolation (avoids torch deps)
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        head = src.find("def _resolve_ent_coef_schedule(")
+        tail = src.find("\n\n\n", head)
+        helper_src = src[head:tail]
+        ns = {}
+        exec(helper_src, ns)
+        fn = ns["_resolve_ent_coef_schedule"]
+
+        # Anchor stage: returns anchor_ent_coef (default 0.0)
+        for ep in (1, 30, 60):
+            self.assertEqual(
+                fn(ep_count_1based=ep, anchor_episodes=60, target_ent_coef=0.02),
+                0.0,
+                msg=f"ep={ep} should be anchor (0.0)",
+            )
+
+        # Ramp stage: linear interpolation
+        # ep=180 = 60 anchor + 120 into ramp; ramp_episodes default 240 → 50% ramp
+        self.assertAlmostEqual(
+            fn(ep_count_1based=180, anchor_episodes=60, target_ent_coef=0.02),
+            0.01, places=5,
+        )
+
+        # End of ramp: target
+        self.assertAlmostEqual(
+            fn(ep_count_1based=300, anchor_episodes=60, target_ent_coef=0.02),
+            0.02, places=5,
+        )
+
+        # Steady: target
+        for ep in (301, 1000, 6000):
+            self.assertAlmostEqual(
+                fn(ep_count_1based=ep, anchor_episodes=60, target_ent_coef=0.02),
+                0.02, places=5,
+                msg=f"ep={ep} should be steady (target)",
+            )
+
+        # Custom ramp length
+        self.assertAlmostEqual(
+            fn(ep_count_1based=120, anchor_episodes=60,
+               target_ent_coef=0.02, ramp_episodes=60),
+            0.02, places=5,
+            msg="ramp_episodes=60: ep=120 already past ramp",
+        )
+
+    def test_startup_log_describes_schedule(self):
+        """The startup hyperparameter box should print the three-stage
+        schedule so operators can verify it in the log without code-reading."""
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        self.assertIn("Entropy schedule", src)
+        self.assertIn("anchor[", src)
+        self.assertIn("ramp[", src)
+        self.assertIn("steady[", src)
+
+    def test_diagnostics_table_shows_ent_coef(self):
+        src = open("blb_stage2_rl/diagnostics.py", encoding="utf-8").read()
+        # PPOUpdateStats must have ent_coef field
+        self.assertIn("ent_coef: float = 0.0", src)
+        # And the markdown table must include the column
+        self.assertIn("ent_coef", src)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

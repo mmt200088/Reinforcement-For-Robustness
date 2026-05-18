@@ -620,6 +620,17 @@ class BLBStage2TrainConfig:
     sequential_cost_shaping_coeff: float = 0.05
     sequential_fusion_shaping_coeff: float = 0.0
     sequential_early_terminate_on_invalid: bool = False
+    # 2026-05-18 (sampling-collapse hotfix): the PPO entropy bonus was
+    # actively undoing the forced-baseline anchor. Schedule ent_coef to be
+    # 0 during anchor episodes, then linearly ramp to ``ppo.ent_coef`` over
+    # ``ent_coef_ramp_episodes`` sample episodes. See SequentialTrainConfig
+    # docstring in blb_stage2_rl/sequential_runner.py for full rationale.
+    ent_coef_anchor: float = 0.0
+    ent_coef_ramp_episodes: int = 240
+    # force_baseline_episodes: 0 → use auto-default max(60, rollout_size*2)
+    # inside run_sequential_via_runner. Surfaced here so a preset can pin a
+    # specific anchor length without relying on the auto-default.
+    force_baseline_episodes: int = 0
 
 
 # ---------------------------------------------------------------------------

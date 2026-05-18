@@ -44,6 +44,18 @@ class SequentialTrainConfig:
     log_every_n_episodes: int = 4
     seed: Optional[int] = None
     ppo: SequentialPPOConfig = field(default_factory=SequentialPPOConfig)
+    # 2026-05-18 (warmstart-sampling hotfix): the PPO entropy bonus was
+    # actively undoing the forced-baseline anchor — entropy rose 6.48 →
+    # 9.21 across the 3 anchor PPO updates, so the policy ended *more*
+    # diffuse than at init and crashed acc immediately when sampling
+    # started. The fix is a schedule:
+    #   ep < anchor_episodes                            → ent_coef = ent_coef_anchor (0.0)
+    #   anchor_episodes ≤ ep < anchor_eps + ramp_eps    → linear ramp 0 → cfg.ppo.ent_coef
+    #   ep ≥ anchor_eps + ramp_eps                      → cfg.ppo.ent_coef (steady)
+    # The 0-ent_coef anchor lets the policy gradient cleanly concentrate
+    # mass on baseline; the ramp then re-enables exploration gradually.
+    ent_coef_anchor: float = 0.0
+    ent_coef_ramp_episodes: int = 240
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +143,43 @@ def _seq_fmt_eta_finish(eta_seconds: float) -> str:
 # How often (in PPO updates) to print the big progress box, matching v2's
 # NOISE_RL_PROGRESS_BOX_PPO_INTERVAL.
 SEQ_PROGRESS_BOX_PPO_INTERVAL = 5
+
+
+def _resolve_ent_coef_schedule(
+        *,
+        ep_count_1based: int,
+        anchor_episodes: int,
+        target_ent_coef: float,
+        anchor_ent_coef: float = 0.0,
+        ramp_episodes: int = 240,
+        ) -> float:
+    """Three-stage entropy schedule for sequential PPO.
+
+    Anchor stage (``ep < anchor_episodes``): return ``anchor_ent_coef``
+    (default 0.0) so the PPO update on forced-baseline rollouts can
+    concentrate policy mass on baseline without the entropy bonus
+    pulling it apart.
+
+    Ramp stage (``anchor_episodes ≤ ep < anchor_episodes + ramp_episodes``):
+    linearly interpolate from ``anchor_ent_coef`` to ``target_ent_coef``.
+
+    Steady stage (``ep ≥ anchor_episodes + ramp_episodes``): return
+    ``target_ent_coef`` (the standard PPO ent_coef value).
+
+    Episode count is 1-based to match ``force_baseline_episodes`` semantics
+    (ep_count_1based == anchor_episodes is the FIRST sample-phase episode).
+    """
+    ep = int(ep_count_1based)
+    anchor = max(0, int(anchor_episodes))
+    ramp = max(1, int(ramp_episodes))
+    target = float(target_ent_coef)
+    anchor_val = float(anchor_ent_coef)
+    if ep <= anchor:
+        return anchor_val
+    if ep >= anchor + ramp:
+        return target
+    progress = (ep - anchor) / float(ramp)   # in (0, 1)
+    return anchor_val + (target - anchor_val) * float(progress)
 
 
 def _compute_per_slot_mode_preferred(
@@ -637,7 +686,21 @@ def train_sequential(
             on_episode_end(record)
 
         if (ep + 1) % int(train_cfg.update_every_n_episodes) == 0:
-            metrics = sequential_ppo_update(policy, optimizer, buffer, train_cfg.ppo, device)
+            # 2026-05-18 hotfix: entropy schedule (see SequentialTrainConfig
+            # docstring). ``ep`` is 0-indexed; the schedule uses 1-indexed
+            # episode count to match the anchor boundary semantics in
+            # ``force_baseline_episodes``.
+            current_ent_coef = _resolve_ent_coef_schedule(
+                ep_count_1based=int(ep + 1),
+                anchor_episodes=int(force_baseline_episodes),
+                target_ent_coef=float(train_cfg.ppo.ent_coef),
+                anchor_ent_coef=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
+                ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 240)),
+            )
+            metrics = sequential_ppo_update(
+                policy, optimizer, buffer, train_cfg.ppo, device,
+                ent_coef_override=current_ent_coef,
+            )
             ppo_metric_history.append(metrics)
             buffer.clear()
             if on_ppo_update_end is not None:
@@ -1145,6 +1208,16 @@ def run_sequential_via_runner(
         except Exception as exc:
             log(f"  [warmstart][warning] preferred-per-step bias failed: {exc}")
 
+    # Preview values for the startup hyperparameter box. The actual
+    # values used during train_sequential are computed later (in the
+    # SequentialTrainConfig construction + force_baseline_episodes resolve)
+    # — these mirror that logic so the box shows the eventual config.
+    _preview_force_baseline_episodes = int(getattr(
+        train_cfg, "force_baseline_episodes", 0,
+    )) or max(60, int(train_cfg.rollout_size) * 2)
+    _preview_ent_coef_anchor = float(getattr(train_cfg, "ent_coef_anchor", 0.0))
+    _preview_ramp = int(getattr(train_cfg, "ent_coef_ramp_episodes", 240))
+
     _seq_block_title(log, "训练超参与环境设置（Training hyperparameters · sequential per-block）")
     _seq_log_rounded_box(log, [
         f"Sequential env：horizon={seq_env.horizon}    "
@@ -1170,8 +1243,12 @@ def run_sequential_via_runner(
         f"early_term_on_invalid={seq_env_cfg.early_terminate_on_invalid}",
         f"Warmstart：bias={warmstart_applied}    "
         f"gain={float(train_cfg.warmstart_bias_gain):.3g}    "
-        f"force_baseline_episodes={int(getattr(train_cfg, 'force_baseline_episodes', 0))}    "
+        f"force_baseline_episodes={int(_preview_force_baseline_episodes)}    "
         f"{preferred_summary}",
+        f"Entropy schedule (anchor → ramp → steady)："
+        f"anchor[0..{int(_preview_force_baseline_episodes)}]ep_coef={float(_preview_ent_coef_anchor):.4g} → "
+        f"ramp[{int(_preview_force_baseline_episodes)}..{int(_preview_force_baseline_episodes)+int(_preview_ramp)}]ep_coef→{float(train_cfg.ppo.ent_coef):.4g} → "
+        f"steady[{int(_preview_force_baseline_episodes)+int(_preview_ramp)}+]={float(train_cfg.ppo.ent_coef):.4g}",
     ])
 
     # ---------- 6) optional resume ----------
@@ -1249,6 +1326,8 @@ def run_sequential_via_runner(
         log_every_n_episodes=max(1, int(train_cfg.rollout_size)),
         seed=int(train_cfg.seed) + int(start_episode),  # offset seed so resumed runs don't replay the same RNG
         ppo=ppo,
+        ent_coef_anchor=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
+        ent_coef_ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 240)),
     )
 
     episode_returns: List[float] = []
@@ -1686,7 +1765,8 @@ def run_sequential_via_runner(
             f"policy_loss={metrics.get('policy_loss', 0.0):+.4f}  ·  "
             f"value_loss={metrics.get('value_loss', 0.0):+.4f}  ·  "
             f"entropy={metrics.get('entropy', 0.0):+.4f}  ·  "
-            f"clip_fraction={metrics.get('clip_fraction', 0.0):.3f}",
+            f"clip_fraction={metrics.get('clip_fraction', 0.0):.3f}  ·  "
+            f"ent_coef={metrics.get('ent_coef', 0.0):.5f}",
             f"LR={optimizer.param_groups[0]['lr']:.6f}  ·  "
             f"更新序号 update#{ppo_update_counter[0]}  ·  "
             f"PPO 样本数={int(metrics.get('n_samples', 0))}",
@@ -1710,6 +1790,7 @@ def run_sequential_via_runner(
                 window_mean_invalid=float(avg_inv),
                 best_reward_so_far=float(best_reward),
                 elapsed_sec=float(time.time() - t_start),
+                ent_coef=float(metrics.get("ent_coef", 0.0)),
             ))
         except Exception as exc:
             log(f"  [diag][warning] record_ppo_update failed: {exc}")

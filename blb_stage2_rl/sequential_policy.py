@@ -360,11 +360,24 @@ def sequential_ppo_update(
         buffer: SequentialRolloutBuffer,
         cfg: SequentialPPOConfig,
         device: torch.device,
+        ent_coef_override: Optional[float] = None,
         ) -> dict:
-    """Run a PPO-clip update over the buffer's transitions."""
+    """Run a PPO-clip update over the buffer's transitions.
+
+    ``ent_coef_override``: if not None, replace ``cfg.ent_coef`` for THIS
+    update only. Used by the entropy-schedule mechanism in
+    :func:`train_sequential` to ramp ent_coef from 0 (anchor) to the target
+    value (steady) — see the 2026-05-18 warmstart-sampling bug fix for why
+    the schedule matters (PPO entropy bonus was undoing the warmstart bias
+    during the forced-baseline anchor episodes, leaving the policy too
+    diffuse to land near baseline once sampling started).
+    """
     if len(buffer) == 0:
         return {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
-                "clip_fraction": 0.0, "n_samples": 0}
+                "clip_fraction": 0.0, "n_samples": 0, "ent_coef": 0.0}
+    effective_ent_coef = (
+        float(cfg.ent_coef) if ent_coef_override is None else float(ent_coef_override)
+    )
 
     states, actions, slot_masks, levels, old_log_probs, returns, advantages = buffer.to_tensors(
         device, gamma=cfg.gamma, lam=cfg.gae_lambda,
@@ -399,7 +412,7 @@ def sequential_ppo_update(
             loss = (
                 policy_loss
                 + cfg.value_coef * value_loss
-                - cfg.ent_coef * entropy_mean
+                - effective_ent_coef * entropy_mean
             )
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -421,6 +434,7 @@ def sequential_ppo_update(
         "entropy": metrics_sum["entropy"] / n_mb,
         "clip_fraction": metrics_sum["clip_fraction"] / n_mb,
         "n_samples": int(n),
+        "ent_coef": float(effective_ent_coef),
     }
 
 

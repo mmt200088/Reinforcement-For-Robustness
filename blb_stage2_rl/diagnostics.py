@@ -128,6 +128,11 @@ class PPOUpdateStats:
     window_mean_invalid: float
     best_reward_so_far: float
     elapsed_sec: float
+    # 2026-05-18: effective ent_coef for this update (per the anchor → ramp →
+    # steady schedule in sequential_runner._resolve_ent_coef_schedule).
+    # Surfaced in diagnostics_summary.md "PPO 学习动态" table so operators
+    # can verify the schedule is firing as expected.
+    ent_coef: float = 0.0
     timestamp: float = field(default_factory=time.time)
 
 
@@ -627,16 +632,18 @@ class RLDiagnosticsRecorder:
             recent = self._ppo_history[-10:]
             lines.append(
                 "| Update | Eps | policy_loss | value_loss | entropy | clip_frac "
-                "| win_mean_ret | win_mean_inv |"
+                "| ent_coef | win_mean_ret | win_mean_inv |"
             )
             lines.append(
                 "|------:|----:|------------:|-----------:|--------:|----------:"
-                "|-------------:|-------------:|"
+                "|---------:|-------------:|-------------:|"
             )
             for u in recent:
+                ec = float(getattr(u, "ent_coef", 0.0))
                 lines.append(
                     f"| {u.update} | {u.completed_episodes} | {u.policy_loss:+.4f} | "
                     f"{u.value_loss:+.4f} | {u.entropy:+.4f} | {u.clip_fraction:.3f} | "
+                    f"{ec:.5f} | "
                     f"{u.window_mean_return:+.4f} | {u.window_mean_invalid:.2f} |"
                 )
             if len(self._ppo_history) >= 2:
