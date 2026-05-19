@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stage2 RL Bug Report - Sampling Collapse</title>
+  <style>
+    :root { --bg:#f6f7f9; --panel:#fff; --text:#17202a; --muted:#5f6b7a; --line:#d8dee8; --bad:#b3261e; --good:#16794c; --code:#f0f3f7; }
+    body { margin:0; background:var(--bg); color:var(--text); font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1120px; margin:0 auto; padding:28px 20px 44px; }
+    h1,h2,h3 { margin:0 0 12px; line-height:1.25; } h1 { font-size:28px; } h2 { font-size:19px; margin-top:24px; } h3 { font-size:15px; margin-top:18px; }
+    p { margin:8px 0; } .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px; margin-top:16px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; } .metric { border:1px solid var(--line); border-radius:7px; padding:12px; background:#fbfcfe; }
+    .metric .label { color:var(--muted); font-size:12px; } .metric .value { font-size:20px; font-weight:700; margin-top:4px; }
+    .bad { color:var(--bad); } .good { color:var(--good); } .note { color:var(--muted); }
+    table { width:100%; border-collapse:collapse; margin-top:10px; background:#fff; } th,td { border:1px solid var(--line); padding:8px 9px; text-align:left; vertical-align:top; white-space:nowrap; }
+    th { background:#eef2f7; font-weight:700; } code,pre { background:var(--code); border-radius:6px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    code { padding:1px 5px; } pre { overflow-x:auto; padding:12px; border:1px solid var(--line); white-space:pre-wrap; } ul { margin-top:8px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Stage2 RL Bug Report: Sampling Collapse After Anchor</h1>
+  <p class="note">生成时间：2026-05-19 00:15 CST；服务器路径：<code>/var/tmp/root-home/Reinforcement-For-Robustness</code></p>
+
+  <section class="panel">
+    <h2>结论</h2>
+    <p>本次按最新 <code>SERVER_COMMAND.md</code> 重新跑 <code>stage2 rl</code>，环境为 <code>conda activate llm_ist</code>。训练在 anchor 阶段表现正常，且前两次 PPO update 的 <code>ent_coef=0.0</code> 生效；但一到 episode 120 之后的非 anchor/sample 阶段，reward 立即连续塌到 <code>terminal_reward=-5.0</code>、<code>total_reward≈-7.89</code>。这不符合 md 中 “episode 120+ sample reward 应该 &gt;= +20” 的预期，因此已停止训练并只提交 bug 报告与运行产物，没有修改源码。</p>
+  </section>
+
+  <section class="panel">
+    <h2>Run Metadata</h2>
+    <div class="grid">
+      <div class="metric"><div class="label">Git HEAD</div><div class="value">0ca6de0</div><div class="note">Stage2 RL entropy schedule: anchor ent_coef=0 + 240ep ramp to 0.02</div></div>
+      <div class="metric"><div class="label">Branch</div><div class="value">jk_standard_rl</div></div>
+      <div class="metric"><div class="label">Conda Env</div><div class="value">llm_ist</div><div class="note">Python 3.10.19</div></div>
+      <div class="metric"><div class="label">Started PID</div><div class="value">2098045</div><div class="note">已停止，当前无残留进程</div></div>
+      <div class="metric"><div class="label">Run Dir</div><div class="value" style="font-size:13px">Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005</div></div>
+      <div class="metric"><div class="label">Wrapper Log</div><div class="value" style="font-size:13px">experiments/server_command_runs/active_command_2026-05-19_stage2_rl_entropy_schedule_llm_ist.log</div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Observed Signal</h2>
+    <div class="grid">
+      <div class="metric"><div class="label">Anchor PPO update #1</div><div class="value good">mean +29.86</div><div class="note">completed_episodes=60, ent_coef=0.0</div></div>
+      <div class="metric"><div class="label">Anchor PPO update #2</div><div class="value good">mean +31.20</div><div class="note">completed_episodes=120, ent_coef=0.0</div></div>
+      <div class="metric"><div class="label">First sample episode</div><div class="value bad">-7.892</div><div class="note">episode=120, terminal_reward=-5.0</div></div>
+      <div class="metric"><div class="label">Repeated collapse</div><div class="value bad">120-130</div><div class="note">连续 terminal_reward=-5.0</div></div>
+    </div>
+
+    <h3>PPO Updates</h3>
+    <table>
+      <thead><tr><th>update</th><th>completed_episodes</th><th>window_mean_return</th><th>window_max_return</th><th>window_min_return</th><th>entropy</th><th>clip_fraction</th><th>ent_coef</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>60</td><td class="good">29.863155</td><td>37.761593</td><td>-3.410282</td><td>4.274709</td><td>0.724275</td><td>0.0</td></tr>
+        <tr><td>2</td><td>120</td><td class="good">31.195187</td><td>37.683468</td><td>-3.332157</td><td>3.920764</td><td>0.663295</td><td>0.0</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Boundary Episodes</h3>
+    <table>
+      <thead><tr><th>episode</th><th>total_reward</th><th>terminal_reward</th><th>per_step_sum</th><th>total_bits</th><th>fusion_count</th><th>invalid_steps</th></tr></thead>
+      <tbody>
+        <tr><td>111</td><td class="good">37.292843</td><td>40.265625</td><td>-2.972782</td><td>14779</td><td>0</td><td>0</td></tr>
+        <tr><td>112</td><td class="good">37.292843</td><td>40.265625</td><td>-2.972782</td><td>14779</td><td>0</td><td>0</td></tr>
+        <tr><td>113</td><td class="good">37.136593</td><td>40.109375</td><td>-2.972782</td><td>14779</td><td>0</td><td>0</td></tr>
+        <tr><td>114</td><td class="good">37.449093</td><td>40.421875</td><td>-2.972782</td><td>14779</td><td>0</td><td>0</td></tr>
+        <tr><td>115</td><td class="good">37.136593</td><td>40.109375</td><td>-2.972782</td><td>14779</td><td>0</td><td>0</td></tr>
+        <tr><td>116</td><td class="good">37.292843</td><td>40.265625</td><td>-2.972782</td><td>14779</td><td>0</td><td>0</td></tr>
+        <tr><td>117</td><td class="good">37.449093</td><td>40.421875</td><td>-2.972782</td><td>14779</td><td>0</td><td>0</td></tr>
+        <tr><td>118</td><td class="good">37.214718</td><td>40.187500</td><td>-2.972782</td><td>14779</td><td>0</td><td>0</td></tr>
+        <tr><td>119</td><td class="good">37.370968</td><td>40.343750</td><td>-2.972782</td><td>14779</td><td>0</td><td>0</td></tr>
+        <tr><td>120</td><td class="bad">-7.892222</td><td class="bad">-5.0</td><td>-2.892222</td><td>14559</td><td>14</td><td>0</td></tr>
+        <tr><td>121</td><td class="bad">-7.862066</td><td class="bad">-5.0</td><td>-2.862066</td><td>14481</td><td>14</td><td>0</td></tr>
+        <tr><td>122</td><td class="bad">-7.893548</td><td class="bad">-5.0</td><td>-2.893548</td><td>14559</td><td>14</td><td>0</td></tr>
+        <tr><td>123</td><td class="bad">-7.897829</td><td class="bad">-5.0</td><td>-2.897829</td><td>14573</td><td>13</td><td>0</td></tr>
+        <tr><td>124</td><td class="bad">-7.882695</td><td class="bad">-5.0</td><td>-2.882695</td><td>14529</td><td>14</td><td>0</td></tr>
+        <tr><td>125</td><td class="bad">-7.881428</td><td class="bad">-5.0</td><td>-2.881428</td><td>14527</td><td>14</td><td>0</td></tr>
+        <tr><td>126</td><td class="bad">-7.891838</td><td class="bad">-5.0</td><td>-2.891838</td><td>14549</td><td>14</td><td>0</td></tr>
+        <tr><td>127</td><td class="bad">-7.887678</td><td class="bad">-5.0</td><td>-2.887678</td><td>14549</td><td>13</td><td>0</td></tr>
+        <tr><td>128</td><td class="bad">-7.878545</td><td class="bad">-5.0</td><td>-2.878545</td><td>14541</td><td>14</td><td>0</td></tr>
+        <tr><td>129</td><td class="bad">-7.866535</td><td class="bad">-5.0</td><td>-2.866535</td><td>14485</td><td>13</td><td>0</td></tr>
+        <tr><td>130</td><td class="bad">-7.873190</td><td class="bad">-5.0</td><td>-2.873190</td><td>14505</td><td>14</td><td>0</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>Notes For Debugging</h2>
+    <ul>
+      <li>Anchor 阶段最后几条 episode 仍为 baseline 样式：<code>total_bits=14779</code>、<code>fusion_count=0</code>、reward 约 <code>+37</code>。</li>
+      <li>sample 阶段从 episode 120 开始动作明显变化：<code>total_bits≈14481-14573</code>、<code>fusion_count=13/14</code>，同时 <code>terminal_reward=-5.0</code>。</li>
+      <li>前两次 PPO update 中 <code>ent_coef=0.0</code>，说明 entropy schedule 的 anchor 部分至少在 diagnostics 中生效。</li>
+      <li>没有程序自身写出的 <code>logs/error_summary.txt</code>；这是运行质量不达预期，不是 Python traceback 类崩溃。</li>
+      <li>训练已被停止，未继续等 final eval。</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>Executed Command</h2>
+    <pre>source /var/tmp/root-home/miniconda3/etc/profile.d/conda.sh
+conda activate llm_ist
+export GLUE_LOCAL_DATASET_DIR=/var/tmp/root-home/datasets/glue_local
+export HF_ENDPOINT=${HF_ENDPOINT:-https://hf-mirror.com}
+bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh</pre>
+  </section>
+
+  <section class="panel">
+    <h2>Artifacts</h2>
+    <ul>
+      <li>Run log: <code>Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/logs/blb_stage2_rl.log</code></li>
+      <li>Episode diagnostics: <code>Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/diagnostics/episodes.jsonl</code></li>
+      <li>PPO diagnostics: <code>Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/diagnostics/ppo_updates.jsonl</code></li>
+      <li>Command wrapper: <code>experiments/server_command_runs/active_command_2026-05-19_stage2_rl_entropy_schedule_llm_ist.sh</code></li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>
