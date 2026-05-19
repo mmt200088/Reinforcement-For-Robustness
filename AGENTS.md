@@ -60,6 +60,31 @@ Do not SSH in just to launch routine training/evaluation commands. Do not use
 the server bridge to edit source code; source changes still follow the local
 edit → git push → server pull flow above.
 
+### New GPUShare Server State
+
+As of 2026-05-19, a new GPUShare server was prepared for this project at
+`ssh -p 46587 root@i-1.gpushare.com`. Do not store the password in any config
+or project file.
+
+Current verified server facts:
+
+- OS/container: Ubuntu 22.04.5 style container environment, no systemd.
+- GPUs: 2x NVIDIA GeForce RTX 5090, driver 580.159.03, CUDA runtime visible.
+- Work directory: `/hy-tmp/Reinforcement-For-Robustness`.
+- Checkout: sparse `jk_standard_rl` clone from
+  `https://github.com/mmt200088/Reinforcement-For-Robustness.git` at commit
+  `a28d837`.
+- Caches: `HF_HOME=/hy-tmp/hf_cache`, `GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data`.
+- Python environment: system Python 3.11.12 with PyTorch 2.9.1+cu128. The
+  project needed `transformers==4.44.2` because newer 4.57.x rejects
+  `TrainingArguments(evaluation_strategy=...)`.
+
+`SERVER_COMMAND.md` was extracted and launched once on this server. It reached
+real BLB Stage-2 sequential RL execution, wrote diagnostics under
+`Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/`,
+and was stopped at the user's request. No project source code was edited on the
+server; server git changes were generated run artifacts/logs only.
+
 ## What This Project Is
 
 This is a research codebase for searching noise and approximation schedules for

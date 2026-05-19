@@ -2,13 +2,13 @@
   "schema_version": "blb_v3_slots_human_v1",
   "num_layers": 12,
   "source": "blb_v3_sequential_runtime_best",
-  "episode": 55,
-  "total_reward": 37.76159279351276,
-  "terminal_reward": 40.734375,
+  "episode": 92,
+  "total_reward": 37.76159279351277,
+  "terminal_reward": 40.73437500000001,
   "valid_steps": 59,
   "invalid_steps": 0,
-  "best_reward_so_far": 37.76159279351276,
-  "wall_time_iso": "2026-05-19T00:08:39",
+  "best_reward_so_far": 37.76159279351277,
+  "wall_time_iso": "2026-05-19T15:43:55",
   "meta": {
     "profile": "mrpc",
     "fixed_label": "Stage-1 config (json)",
@@ -25,9 +25,9 @@
     "cost_shaping_coeff": 0.05,
     "fusion_shaping_coeff": 0.0,
     "early_terminate_on_invalid": false,
-    "acc_threshold": 0.87,
+    "acc_threshold": 0.87078125,
     "stab_threshold": 0.01,
-    "static_skeletons_archive": "/var/tmp/root-home/Reinforcement-For-Robustness/Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json"
+    "static_skeletons_archive": "/hy-tmp/Reinforcement-For-Robustness/Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json"
   },
   "slots": [
     {
