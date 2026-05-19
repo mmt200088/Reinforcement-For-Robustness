@@ -155,11 +155,19 @@ CUDA_VISIBLE_DEVICES=0,1 bash llama_7B_LayerImportance.sh run rl \
 ## 元信息（meta，给人看的，agent 忽略）
 
 - **任务**：在 mrpc-blb-stage2-rl preset 下，依次跑（a）契约测试套件、（b）nvidia-smi 双卡可见性确认、（c）fresh 一轮 6000-episode sequential RL，**首次启用两卡奖励探针并行**（`--blb-v3-reward-devices 0,1`）。
-- **更新时间**：2026-05-19（晚）
-- **更新原因**：合并三项尚未在服务器上跑过的修复 + 新功能：
+- **更新时间**：2026-05-20
+- **更新原因**：合并四项尚未在服务器上跑过的修复 + 新功能：
     1. **2026-05-18 entropy schedule fix** (commit `0ca6de0`)：anchor 期 ent_coef=0，ramp 240ep，steady 0.02。
     2. **2026-05-19 policy init + Huber value loss** (commit `50ea91a`)：action_head orthogonal(0.01)、encoder √2、value_head 1.0；value loss MSE→Huber(δ=1)。
-    3. **本次新增 two-GPU reward probe** (待 commit)：`blb_stage2_rl/probe_runner.py` + env/runner/sequential_runner/rl_tune/evaluator/launcher 串通；`--blb-v3-reward-devices 0,1` 即可两卡并行 K 个 trial。worker 0 复用 env 既有 model/handler/bridge；worker 1 deepcopy 主模型到 cuda:1，独立 handler/bridge/probe_batches；threading 并发，trial 顺序保持。
+    3. **2026-05-19 two-GPU reward probe** (commit `54365b5`)：`blb_stage2_rl/probe_runner.py` + env/runner/sequential_runner/rl_tune/evaluator/launcher 串通；`--blb-v3-reward-devices 0,1` 即可两卡并行 K 个 trial。worker 0 复用 env 既有 model/handler/bridge；worker 1 deepcopy 主模型到 cuda:1，独立 handler/bridge/probe_batches；threading 并发，trial 顺序保持。**注：codex agent 仍在排查为何上一轮基准测试两卡 util 没起来**（详见 `experiments/server_command_runs/stage2_reward_probe_benchmark_20260519_202236/`）；本次 RL 训练会继续暴露同一问题供后续修。
+    4. **2026-05-20 contract gate fix** (commit `46d9b01`)：修上一轮 contract gate 的 8 fail + 1 error，全部是 action→config 链路 + stale 测试。具体：
+        - `max_sfs/mrpc.json` block 2 节点名从 `ctpt_kt_mask1/kt_mask2/qkt_merge_mask/wk/wq/q_mask{1,2}` 改成 `ctpt_rotKT_mask1/rotKT_mask2/mask/wq_wk/x_centered`，与 bridge 的 `default_block2_cfg_to_delta` 一致 —— 上一轮 `test_real_mrpc_all_max_*` 失败的根因（命名不一致 → 查表 miss → SF 退回默认 22 → optimizer 算出 q_bits=[51,66,56] invalid）。
+        - `_BLOCK*_FIELDS` 把 2026-05-14 被删的 25 个 slot 以 *compat-extra* 方式恢复（block1+2、block2+11、block3+1、block4+5、block5+6 = 73/层），匹配 CLAUDE.md "rather than deleting" 指引；新增 `_COMPAT_EXTRA_FIELDS` set 让 `_is_action_field_effective` 把它们标 effective=False，cfg-build 路径继续把对应字段写 None。
+        - `BASELINE_K_BY_BLOCK` 从 `{2:10, 4:10}` 还原成统一 13，让 all-max action 的 avg_k=13.0 与 baseline 一致（上一轮 `test_env_all_max` reward=41.5 ≠ 0 / `test_action_description` block2 K=13 都是这个引起的）。
+        - `describe_action_vector` 给 L0B1 的所有 record 设 `value=None`（block 1 在 layer 0 不安装噪声，decoded SF 是默认值的伪信号）—— 这样 baseline-decode 测试的过滤器 `value is not None` 能正确排除它们。
+        - `MaxSFsTable.get` 在 `_BLOCK_NODE_NAME_BY_FIELD` 没有映射时回退到 field_name 当节点名 —— 让 `static_skeletons_baseline_to_action` 注入到 `(layer, block, field_name)` 的 calibration 在 describe 里读得到（test_block4_wo_rescale 走的就是这条路）。
+        - `env.py` any_invalid short-circuit 的 placeholder metrics 抬到 acc/stab 阈值之上，使 `priority=3` 与 docstring 承诺的 "cost-only reward" 一致（之前用 baseline 默认 0 会触发 acc_violation 把 priority 错降到 1）。
+        - 两条 stale test 同步：`test_env_runs_forward_even_when_optimizer_invalid` 现在断言 `forward_ran=False / forward_skipped_reason="any_invalid_chain"` 匹配 2026-05-17 skip-forward 设计；`test_candidate_store_hash_fidelity` F2→F4 匹配 2026-05-16 F0/F1/F4 ladder；`test_env_all_max_action_uses_optimizer_baseline_scoring` 不再断言 reward=0（v2 reward 在 metric_ok+stab_ok 时强制 tier_bonus=40），改为断言 `cost_score/k_drop/bits_drop=0` + reward∈[35,45]。
 - **本次改动汇总**（multi-GPU 部分）：
     1. `blb_stage2_rl/probe_runner.py`（新文件，~360 行）：`ProbeWorker` / `ProbeRunner` / `build_probe_runner` / `parse_device_ids` / `_split_round_robin` / `_trial_seed`。线程并发 + 日志诊断。
     2. `blb_stage2_rl/env.py`：`BLBStage2Env.__init__` 加可选 `probe_runner` 参数；step 的 install/clear、`_eval_on_probe` 在多卡模式下转给 runner，单卡模式 bitwise 不变。
@@ -170,7 +178,7 @@ CUDA_VISIBLE_DEVICES=0,1 bash llama_7B_LayerImportance.sh run rl \
     7. `llama_7B_LayerImportance.sh`：新增 `--blb-v3-reward-devices STR` 启动器开关 + 透传到 `python rl_tune.py --blb_v3_reward_devices`。
     8. `tests/test_blb_chain_integrity.py`：新增 `ProbeRunnerHelpersTest`（8 个 pure-Python case）+ `ProbeRunnerTwoGPUTest`（双卡 smoke，自动 skipUnless ≥2 CUDA 设备）。本地全部 skip 通过；服务器有双卡时会真跑。
 - **预期信号**（按强→弱排）：
-    - **契约测试 29/29 全部通过**（含新增 8 个 helper case；ProbeRunnerTwoGPUTest 在服务器双卡上会真跑）。
+    - **契约测试全部通过**（上一轮 99 个 case 里有 8 fail + 1 error，全部在 commit `46d9b01` 修复；本轮期望 fail=0 / error=0；29 个 chain-integrity case 继续全绿）。
     - **`nvidia-smi` 启动前快照显示 GPU 0/1 都在线，mem.used 极低**。
     - **训练启动后 `logs/nvidia_smi_<ts>.csv` 显示 GPU 0/1 两列 util_pct 都长期 > 0**（不是只有 GPU 0 在 100%、GPU 1 长期 0%）；典型节奏是模型 forward 期间两卡同步上 80%+，optimizer/PPO update 期间两卡都回落（因为这阶段单线程）。
     - **训练日志的 startup banner 含 `Multi-GPU reward probe enabled: devices=[0, 1]` 和 `worker 0/1` 行**（前者来自 runner.py 的 log，后者来自 build_probe_runner 的 log_fn）。
