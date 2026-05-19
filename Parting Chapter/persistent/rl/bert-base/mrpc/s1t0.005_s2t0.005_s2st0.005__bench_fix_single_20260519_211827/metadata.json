@@ -1,0 +1,25 @@
+{
+  "algorithm": "rl",
+  "model_type": "bert-base",
+  "dataset": "mrpc",
+  "stage1_accuracy_tolerance": 0.005,
+  "stage2_limit_tolerance": 0.005,
+  "stage2_stability_tolerance": 0.005,
+  "stage2_k_trials": 5,
+  "stage2_probe_size": 256,
+  "created_at": "2026-05-19T21:18:27+08:00",
+  "last_updated_at": "2026-05-19T21:28:21.647630",
+  "run_count": 1,
+  "stage_status": {
+    "stage1_search": "skipped",
+    "stage1_final_eval": "not_started",
+    "stage2_search": "completed",
+    "stage2_final_eval": "not_started",
+    "final_eval": "skipped"
+  },
+  "stage_detail": {
+    "stage2_search": {
+      "episodes": 200
+    }
+  }
+}
