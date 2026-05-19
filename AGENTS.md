@@ -488,6 +488,13 @@ Current safe-curriculum fix for the 2026-05-20 collapse at episode 121:
 - Build mutable offsets from `describe_action_vector(...)` and exclude inactive
   compatibility slots, layer-0 block-1 pseudo slots, first-input compatibility,
   and single-level dimensions.
+- A second 2026-05-20 finding: K=5 / probe_size=256 noisy probes made the
+  all-max baseline itself occasionally fall one discrete probe sample below
+  `noisy_baseline_metric1 - stage2_limit_tolerance`, producing false P1(acc)
+  points with normal `loss_mean≈0.34` and `m1≈0.865-0.867`. Sequential accuracy
+  threshold calibration must subtract a one-sample probe granularity guard
+  (`1 / stage2_probe_size`) so baseline jitter is not reported as an error,
+  while real collapses such as `m1≈0.31` still fail hard.
 
 Important current gap: the single-shot runner and legacy v2 runner wire
 `STOP_RL`/SIGINT graceful-stop handling through `noise_rl_module_v2.py`; the

@@ -634,6 +634,15 @@ The runner's "final eval" path must install the actual BLB best action (decode �
   `action_level_mask` and replay that same mask during PPO update. Build mutable
   offsets from `describe_action_vector(...)` and exclude inactive compatibility,
   layer-0 block-1, first-input compatibility, and single-level slots.
+- **Noisy baseline accuracy guard (2026-05-20 follow-up).** In the 600-episode
+  smoke, the catastrophic `loss_mean=100` collapse disappeared, but baseline
+  anchor episodes still had occasional P1(acc) with normal loss (`loss_mean≈0.34`)
+  and `m1≈0.865-0.867`. Root cause: with K=5 and `stage2_probe_size=256`, the
+  online probe is discrete enough that the all-max baseline can land one sample
+  below `noisy_baseline_metric1 - stage2_limit_tolerance`. Sequential threshold
+  calibration should subtract a one-sample guard (`1 / stage2_probe_size`) from
+  the noisy-baseline accuracy gate. This prevents false P1 baseline jitter while
+  leaving true accuracy collapses such as `m1≈0.31` far below threshold.
 - The Windows console may be GBK; `BLBStage2RLRunner._make_log_safe` wraps `evaluator.log` so non-GBK chars fall back without crashing stdout (file logs stay UTF-8). Matplotlib plot titles are intentionally ASCII (the markdown report carries the Chinese). Unicode bullets (▸) in new console output get replaced with `?` in stdout but are preserved in log files.
 - `GLOBALS.md` lists where global path / hyperparameter constants live. `config/paths.py` and `config/constants.py` exist as the future single source of truth, but most modules still hardcode their own — change with care.
 

@@ -28,6 +28,15 @@ This means the invalid-action blacklist is working only for optimizer-invalid
 tuples. It cannot protect the model-forward accuracy gate because that signal
 appears only after the full 59-step action vector is assembled.
 
+The first 600-episode smoke after the safe-neighbor change removed the sustained
+collapse but exposed a second issue: the all-max baseline itself can
+occasionally get P1(acc) with normal loss (`loss_mean≈0.34`) because the noisy
+accuracy threshold is tighter than the online probe granularity. With
+`stage2_probe_size=256`, one probe example is about 0.0039 accuracy; the nominal
+threshold `noisy_baseline_metric1 - 0.005` was only about 0.0005 above observed
+baseline jitter points. The sequential threshold therefore needs a one-sample
+probe guard, not a broad reward relaxation.
+
 ## Approach
 
 Keep the sequential formulation, but make the first policy-driven phase safe:
@@ -49,6 +58,10 @@ The curriculum uses existing BLB semantics:
   radius.
 - K slots follow `K_LEVELS` order and keep the top local K values, rather than
   assuming categorical indices are monotonic.
+- Accuracy threshold calibration subtracts a one-sample guard
+  (`1 / stage2_probe_size`) from `noisy_baseline_metric1 - allowed_acc_drop` so
+  baseline probe quantization does not become false P1(acc). This still leaves
+  true collapses such as `m1≈0.31` far below the gate.
 
 ## Success Criteria
 

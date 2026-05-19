@@ -879,6 +879,19 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         Cfg.warmstart_anchor_episodes = None
         self.assertEqual(helper(Cfg()), 120)
 
+    def test_noisy_accuracy_threshold_has_probe_granularity_guard(self):
+        ns = self._exec_runner_helpers("_noisy_accuracy_threshold_with_probe_guard")
+        helper = ns["_noisy_accuracy_threshold_with_probe_guard"]
+
+        threshold = helper(
+            noisy_baseline_metric1=0.8727,
+            allowed_acc_drop=0.005,
+            probe_size=256,
+        )
+        self.assertAlmostEqual(threshold, 0.8727 - 0.005 - (1.0 / 256.0), places=7)
+        self.assertLess(threshold, 0.8648)
+        self.assertGreater(threshold, 0.31)
+
     def test_step_level_mask_keeps_unselected_slots_at_baseline(self):
         ns = self._exec_runner_helpers(
             "_near_baseline_level_indices",

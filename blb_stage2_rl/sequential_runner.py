@@ -430,6 +430,26 @@ def _sample_episode_neighbor_offsets(
     return {int(x) for x in np.asarray(chosen, dtype=np.int64).reshape(-1).tolist()}
 
 
+def _noisy_accuracy_threshold_with_probe_guard(
+        *,
+        noisy_baseline_metric1: float,
+        allowed_acc_drop: float,
+        probe_size: int,
+        ) -> float:
+    """Accuracy gate with one-probe-sample guard for noisy online probes.
+
+    MRPC probe accuracy is discrete. With the default 256-example online probe,
+    one example is ~0.0039 accuracy. A K=5 noisy baseline can therefore jitter
+    just below ``baseline - tolerance`` even when the action is exactly the
+    static-skeleton baseline. The guard prevents false P1(acc) points for the
+    baseline while leaving real collapses (e.g. m1≈0.31) far below threshold.
+    """
+    baseline = float(noisy_baseline_metric1)
+    drop = max(0.0, float(allowed_acc_drop))
+    sample_guard = 1.0 / float(max(1, int(probe_size)))
+    return max(0.0, baseline - drop - sample_guard)
+
+
 @dataclass
 class EpisodeRecord:
     episode_idx: int
@@ -1376,8 +1396,14 @@ def run_sequential_via_runner(
     if not (np.isfinite(user_acc_threshold) and user_acc_threshold > 0.0):
         # Default: floor the gate at (noisy baseline accuracy − tolerance) so
         # actions that wreck accuracy get caught by priority 1 instead of
-        # masquerading as cost-priority candidates.
-        new_acc_threshold = max(0.0, noisy_baseline_metric1 - allowed_acc_drop)
+        # masquerading as cost-priority candidates. The probe-size guard avoids
+        # false P1(acc) episodes where the all-max baseline itself lands one
+        # discrete probe sample below the nominal threshold.
+        new_acc_threshold = _noisy_accuracy_threshold_with_probe_guard(
+            noisy_baseline_metric1=float(noisy_baseline_metric1),
+            allowed_acc_drop=float(allowed_acc_drop),
+            probe_size=int(getattr(ev, "stage2_probe_size", 256)),
+        )
         base_env.acc_threshold = new_acc_threshold
 
     user_stab_threshold = float(base_env.stab_threshold)
