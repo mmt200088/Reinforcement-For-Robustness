@@ -1,0 +1,77 @@
+<!doctype html><meta charset="utf-8"><title>Stage2 reward probe benchmark stage2_reward_probe_benchmark_20260519_202236</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;line-height:1.45;margin:32px;color:#18202a} h1{font-size:28px;margin:0 0 8px} h2{margin-top:28px;border-bottom:1px solid #d8dee8;padding-bottom:6px} table{border-collapse:collapse;width:100%;margin:12px 0} th,td{border:1px solid #d8dee8;padding:7px 9px;text-align:left;vertical-align:top} th{background:#f3f6fb} code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace} pre{background:#0f1720;color:#e6edf3;padding:12px;overflow:auto;border-radius:6px} .bad{color:#9d1c1c;font-weight:700}.ok{color:#146b32;font-weight:700}.warn{color:#8a5a00;font-weight:700}.muted{color:#607080}.pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#edf2f7}</style>
+<h1>Stage2 RL reward-probe single vs dual GPU benchmark</h1>
+<p class="muted">Generated on server at 2026-05-19T20:44:56; git HEAD <code>23da568</code>.</p>
+<h2>Conclusion</h2>
+<p class="bad">Dual-GPU reward probe did not show functional speedup in this run.</p>
+<p>The 200-episode single-GPU and dual-GPU runs both took <b>601 seconds</b>, so observed speedup is <b>1.00x</b>. The dual run log contains NCCL/DataParallel activity and GPU1 memory allocation, but no <code>[multi-gpu] reward probe enabled</code>, <code>ProbeRunner</code>, or worker startup lines. GPU1 utilization samples stayed effectively idle. I therefore did <b>not</b> start the formal long Stage2 RL run, because the required two-card reward-probe parallelism was not verified.</p>
+<h2>Benchmark Runs</h2><table><tr><th>Label</th><th>Command mode</th><th>Elapsed</th><th>Status</th><th>Run dir</th></tr>
+<tr><td>single_gpu</td><td>CUDA_VISIBLE_DEVICES=0; reward_devices=single</td><td>601 sec</td><td>completed_or_clean_exit</td><td>Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_single_20260519_202236</td></tr>
+<tr><td>dual_gpu</td><td>CUDA_VISIBLE_DEVICES=0,1; reward_devices=0,1</td><td>601 sec</td><td>completed_or_clean_exit</td><td>Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_dual_20260519_202236</td></tr>
+</table>
+<p>Observed speedup = single elapsed / dual elapsed = <b>1.000x</b>.</p>
+<h2>GPU Utilization Summary</h2>
+<h3>single_gpu</h3>
+<table><tr><th>GPU</th><th>Samples</th><th>Mean util %</th><th>Nonzero util % of samples</th><th>Max util %</th><th>Max mem MiB</th></tr>
+<tr><td>0</td><td>118</td><td>82.59</td><td>93.2</td><td>98</td><td>3606</td></tr>
+<tr><td>1</td><td>118</td><td>0.00</td><td>0.0</td><td>0</td><td>2</td></tr>
+</table>
+<h3>dual_gpu</h3>
+<table><tr><th>GPU</th><th>Samples</th><th>Mean util %</th><th>Nonzero util % of samples</th><th>Max util %</th><th>Max mem MiB</th></tr>
+<tr><td>0</td><td>119</td><td>85.39</td><td>95.0</td><td>99</td><td>3732</td></tr>
+<tr><td>1</td><td>119</td><td>0.00</td><td>0.0</td><td>0</td><td>1598</td></tr>
+</table>
+<h2>Multi-GPU Activation Evidence</h2>
+<h3>single_gpu</h3>
+<p class="bad">No ProbeRunner / reward-probe multi-GPU activation lines found in log.</p>
+<h3>dual_gpu</h3>
+<p class="bad">No ProbeRunner / reward-probe multi-GPU activation lines found in log.</p>
+<h2>Training Progress Evidence</h2>
+<h3>single_gpu</h3>
+<pre>3830:   PPO 窗口摘要 · 截至回合（through episode） 60  ·  时间 2026-05-19 20:25:52
+6699:   PPO 窗口摘要 · 截至回合（through episode） 120  ·  时间 2026-05-19 20:28:40
+8925:   PPO 窗口摘要 · 截至回合（through episode） 180  ·  时间 2026-05-19 20:31:31
+9705: [信息] 统一最终评估已跳过（--skip-final-eval）。
+9707: 配置评估完成（Configuration evaluation finished）。
+9715: Round 0, Final evaluation loss: 0.34625446796417236</pre>
+<h3>dual_gpu</h3>
+<pre>4541:   PPO 窗口摘要 · 截至回合（through episode） 60  ·  时间 2026-05-19 20:35:51
+6767:   PPO 窗口摘要 · 截至回合（through episode） 120  ·  时间 2026-05-19 20:38:39
+8993:   PPO 窗口摘要 · 截至回合（through episode） 180  ·  时间 2026-05-19 20:41:30
+9773: [信息] 统一最终评估已跳过（--skip-final-eval）。
+9775: 配置评估完成（Configuration evaluation finished）。
+9783: Round 0, Final evaluation loss: 0.34625446796417236</pre>
+<h2>SERVER_COMMAND Gate Status</h2>
+<p class="bad">Contract test gate failed: <code>TEST_RC=1</code>. Formal Stage2 RL was not started.</p>
+<pre>ERROR: test_static_skeletons_block4_wo_rescale_uses_rl_field_name (test_blb_baseline_bootstrap.BLBBaselineBootstrapTests.test_static_skeletons_block4_wo_rescale_uses_rl_field_name)
+FAIL: test_static_skeletons_mixed_degree_baseline_decodes_per_layer_sfs (test_blb_baseline_bootstrap.BLBBaselineBootstrapTests.test_static_skeletons_mixed_degree_baseline_decodes_per_layer_sfs)
+FAIL: test_action_description_names_every_noise_point_and_truncation (test_blb_stage2_rl_regressions.BLBActionDescriptionRegressionTests.test_action_description_names_every_noise_point_and_truncation)
+FAIL: test_env_all_max_action_uses_optimizer_baseline_scoring (test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_env_all_max_action_uses_optimizer_baseline_scoring)
+FAIL: test_env_runs_forward_even_when_optimizer_invalid (test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_env_runs_forward_even_when_optimizer_invalid)
+FAIL: test_real_mrpc_all_max_baseline_optimizer_outputs_are_valid (test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_real_mrpc_all_max_baseline_optimizer_outputs_are_valid)
+FAIL: test_real_mrpc_all_max_cfg_derived_optimizer_outputs_are_valid (test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_real_mrpc_all_max_cfg_derived_optimizer_outputs_are_valid)
+FAIL: test_candidate_store_hash_fidelity_and_rank_key_are_stable (test_blb_stage2_rl_regressions.BLBPlaybookArtifactRegressionTests.test_candidate_store_hash_fidelity_and_rank_key_are_stable)
+FAIL: test_registry_export_records_action_values_and_current_slot_count (test_blb_stage2_rl_regressions.BLBPlaybookArtifactRegressionTests.test_registry_export_records_action_values_and_current_slot_count)
+FAILED (failures=8, errors=1)</pre>
+<h2>Server Snapshot</h2>
+<pre>git status:
+## jk_standard_rl...origin/jk_standard_rl
+ M &quot;Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_PID&quot;
+ M &quot;Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_RUN_DIR&quot;
+ M experiments/index.md
+ M experiments/registry.jsonl
+?? &quot;Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_dual_20260519_202236/&quot;
+?? &quot;Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_single_20260519_202236/&quot;
+?? experiments/server_command_runs/stage2_reward_probe_benchmark_20260519_202236/
+
+GPUs:
+0, NVIDIA GeForce RTX 5090, 32607 MiB
+1, NVIDIA GeForce RTX 5090, 32607 MiB</pre>
+<h2>Artifacts</h2><ul>
+<li><code>experiments/server_command_runs/stage2_reward_probe_benchmark_20260519_202236/benchmark_results.tsv</code></li>
+<li><code>experiments/server_command_runs/stage2_reward_probe_benchmark_20260519_202236/contract_tests_after_benchmark.log</code></li>
+<li><code>experiments/server_command_runs/stage2_reward_probe_benchmark_20260519_202236/contract_tests_after_benchmark.rc</code></li>
+<li><code>experiments/server_command_runs/stage2_reward_probe_benchmark_20260519_202236/single_gpu_nvidia_smi.csv</code></li>
+<li><code>Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_single_20260519_202236/logs/blb_stage2_rl.log</code></li>
+<li><code>experiments/server_command_runs/stage2_reward_probe_benchmark_20260519_202236/dual_gpu_nvidia_smi.csv</code></li>
+<li><code>Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_dual_20260519_202236/logs/blb_stage2_rl.log</code></li>
+</ul>
