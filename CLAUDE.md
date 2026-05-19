@@ -77,6 +77,11 @@ Verified server facts:
   available on 2 GPUs, and `transformers==4.44.2`. Keep `transformers` at 4.44.x
   unless the code is updated, because 4.57.x rejects
   `TrainingArguments(evaluation_strategy=...)`.
+- GitHub HTTPS transport on this server needs repo-local Git settings:
+  `git config --local http.version HTTP/1.1` and
+  `git config --local protocol.version 0`. Without them, `git pull` can fail
+  with `RPC failed; curl 16 Error in the HTTP2 framing layer` and
+  `fatal: expected flush after ref listing`.
 
 `SERVER_COMMAND.md` was launched once on this server and reached real BLB
 Stage-2 sequential RL execution. The stopped run wrote diagnostics under

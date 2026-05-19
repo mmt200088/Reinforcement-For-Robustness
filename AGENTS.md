@@ -80,6 +80,11 @@ Current verified server facts:
 - Python environment: system Python 3.11.12 with PyTorch 2.9.1+cu128. The
   project needed `transformers==4.44.2` because newer 4.57.x rejects
   `TrainingArguments(evaluation_strategy=...)`.
+- GitHub HTTPS transport on this server needs repo-local Git settings:
+  `git config --local http.version HTTP/1.1` and
+  `git config --local protocol.version 0`. Without them, `git pull` can fail
+  with `RPC failed; curl 16 Error in the HTTP2 framing layer` and
+  `fatal: expected flush after ref listing`.
 
 `SERVER_COMMAND.md` was extracted and launched once on this server. It reached
 real BLB Stage-2 sequential RL execution, wrote diagnostics under
