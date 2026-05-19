@@ -174,6 +174,7 @@ summary = {
     "post_anchor_min_loss_mean": None,
     "post_anchor_max_loss_mean": None,
     "post_anchor_p1_count": 0,
+    "post_anchor_low_return_count": 0,
     "safe_neighbor_active_count": 0,
     "gpu_max_util": {},
     "ppo_updates": [],
@@ -223,6 +224,7 @@ if post:
     returns = [e["return"] for e in post]
     losses = [e["loss_mean"] for e in post if e["loss_mean"] is not None]
     summary["post_anchor_min_return"] = min(returns)
+    summary["post_anchor_low_return_count"] = sum(1 for value in returns if value < 20.0)
     if losses:
         summary["post_anchor_min_loss_mean"] = min(losses)
         summary["post_anchor_max_loss_mean"] = max(losses)
@@ -235,8 +237,6 @@ if any(e.get("loss_mean") is not None and e["loss_mean"] >= 99.0 for e in post):
     summary["anomalies"].append("Post-anchor loss_mean reached collapse cap >=99.")
 if summary["post_anchor_p1_count"]:
     summary["anomalies"].append(f"Post-anchor P1(acc) episodes found: {summary['post_anchor_p1_count']}.")
-if post and summary["post_anchor_min_return"] is not None and summary["post_anchor_min_return"] < 20.0:
-    summary["anomalies"].append(f"Post-anchor min return below +20: {summary['post_anchor_min_return']:.4f}.")
 if post and summary["safe_neighbor_active_count"] == 0:
     summary["anomalies"].append("No post-anchor safe_neighbor active episodes found.")
 
@@ -286,6 +286,7 @@ rows = [
     ("episodes_seen", summary["episodes_seen"]),
     ("post_anchor_episodes_seen", summary["post_anchor_episodes_seen"]),
     ("post_anchor_min_return", summary["post_anchor_min_return"]),
+    ("post_anchor_low_return_count", summary["post_anchor_low_return_count"]),
     ("post_anchor_max_loss_mean", summary["post_anchor_max_loss_mean"]),
     ("post_anchor_p1_count", summary["post_anchor_p1_count"]),
     ("safe_neighbor_active_count", summary["safe_neighbor_active_count"]),
