@@ -83,23 +83,82 @@ Verified server facts:
   with `RPC failed; curl 16 Error in the HTTP2 framing layer` and
   `fatal: expected flush after ref listing`.
 
-### Two-GPU RL runs on GPUShare
+### Two-GPU reward-probe parallelism target
 
 The server has two visible GPUs:
 
 - GPU 0: NVIDIA GeForce RTX 5090, about 32607 MiB.
 - GPU 1: NVIDIA GeForce RTX 5090, about 32607 MiB.
 
-Current BLB RL code paths are single-process/single-device. In
-`blb_stage2_rl/sequential_runner.py` and `blb_stage2_rl/runner.py`, the policy
-device is selected with `torch.device("cuda" if torch.cuda.is_available() else
-"cpu")`; there is no DDP or DataParallel wiring in the current RL runner.
-Therefore, do not expect one launcher command with `CUDA_VISIBLE_DEVICES=0,1`
-to split one RL run across both cards. With current code, `cuda` means the
-first visible device for that process.
+The desired two-GPU optimization is not two independent RL jobs. The target is
+one RL job where, after the policy selects one BLB action, the model-forward
+reward probe trials for that same action run concurrently across both GPUs.
+This should accelerate the repeated inference tests used to compute the PPO
+reward for one action.
 
-To use both cards now, run two independent RL jobs concurrently and bind each
-process to one physical GPU:
+Current code facts:
+
+- `--stage2-k-trials` controls the number of Stage-2 reward noise trials. It
+  defaults to 5 and maps into `BLBStage2TrainConfig.num_trials_per_step`.
+- `BLBStage2Env.step(...)` applies the selected BLB config through
+  `BLBNoiseRLBridge.apply(...)`, then calls
+  `self._eval_on_probe(self.env_cfg.num_trials_per_step)`.
+- `BLBStage2Env._eval_on_probe(k_trials)` currently runs
+  `for trial_idx in range(k)` sequentially on `self.model` and
+  `self.probe_batches`.
+- Sequential RL terminal reward reaches the same path through
+  `BLBStage2SequentialEnv` -> assembled full action vector ->
+  `BLBStage2Env.step(...)`. Per-block dense optimizer shaping is not the target
+  for GPU parallelism; only the terminal/full model-forward reward probe is.
+
+The local code-editing agent should implement two-GPU parallelism inside the
+reward probe path, not by launching two run-tags. For the default
+`--stage2-k-trials 5`, split the five independent noise trials across GPUs, for
+example GPU 0 runs trials `[0, 2, 4]` and GPU 1 runs `[1, 3]`, then aggregate the
+five returned loss/metric values exactly as the existing `_eval_on_probe` does:
+`loss_mean`, `loss_std`, `metric1_mean`, `metric2_mean`, `loss_max`,
+`metric1_min`, and `metric2_min`.
+
+Implementation constraints for that future code change:
+
+- Preserve one PPO learner, one action stream, one persistent run directory,
+  and one reward per selected action.
+- Do not solve this by running two separate launcher processes with different
+  `--run-tag` values; that tests different actions/seeds and does not speed up
+  a single action's reward.
+- Do not assume `CUDA_VISIBLE_DEVICES=0,1` alone is enough. Current PyTorch code
+  uses `torch.device("cuda")`, which means the first visible GPU unless the
+  reward probe explicitly places model copies and batches on both devices.
+- Do not share one mutable `model`/`BLBNoiseRLBridge` instance across threads on
+  two GPUs. Each GPU worker needs an isolated model/bridge state with the same
+  weights and the same BLB config installed.
+- Avoid reloading the HuggingFace model for every action. Initialize/cache the
+  per-GPU reward workers once per training run if possible; otherwise model
+  load overhead will erase the expected speedup.
+- Keep the probe dataset fixed across trials exactly as today. Only the
+  independent noise RNG seeds differ per trial.
+- Make trial seeds deterministic from `(episode/action eval id, trial_idx,
+  base_seed)` or otherwise record them. Avoid `time_ns`-only seeds if exact
+  cross-device reproducibility is needed.
+- Preserve the invalid-chain shortcut: if `Rescale_optimizer` reports
+  `any_invalid`, skip model-forward reward as current code does. Do not spend
+  GPU work on invalid candidates.
+- Baseline/noisy preflight that calls `_eval_on_probe(k)` should use the same
+  two-GPU trial runner so baseline std and candidate std have the same
+  semantics.
+- Log enough diagnostics to prove both cards are used: visible devices, reward
+  probe device list, `k_trials`, per-trial device assignment, worker PIDs if
+  multiprocessing is used, and per-device elapsed time.
+
+Suggested user-facing config for the local coding agent to add:
+
+```bash
+--blb-v3-reward-devices 0,1
+--stage2-k-trials 5
+```
+
+The expected server command after that code exists should still be one launcher
+run, for example:
 
 ```bash
 cd /hy-tmp/Reinforcement-For-Robustness
@@ -110,91 +169,21 @@ export HF_ENDPOINT=https://hf-mirror.com
 export HF_HUB_DISABLE_XET=1
 export GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh run rl \
+CUDA_VISIBLE_DEVICES=0,1 bash llama_7B_LayerImportance.sh run rl \
   --preset mrpc-blb-stage2-rl \
-  --blb-v3-seed 101 \
-  --run-tag twogpu_g0_s101 \
-  --fresh
-
-CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh run rl \
-  --preset mrpc-blb-stage2-rl \
-  --blb-v3-seed 102 \
-  --run-tag twogpu_g1_s102 \
+  --stage2-k-trials 5 \
+  --blb-v3-reward-devices 0,1 \
   --fresh
 ```
 
-The launcher itself starts the real training process with `nohup` and returns
-after writing PID/log metadata, so the two commands above can be run one after
-the other. The important part is that `CUDA_VISIBLE_DEVICES` is set on the
-launcher invocation so the background child inherits the one-GPU view.
+Verification target for the future implementation:
 
-Always use distinct `--run-tag` values for concurrent jobs. `--run-tag` is
-appended to the persistent slug, so the example above writes into separate
-directories like:
-
-```text
-Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g0_s101/
-Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g1_s102/
-```
-
-Do not launch two jobs with the same preset/seed/run-tag combination; they will
-share the same persistent directory and corrupt or race on checkpoints, status
-JSON, and diagnostics.
-
-Use `--fresh` only the first time for a new run-tag. To resume the same two jobs
-after interruption, rerun the same commands without `--fresh`. Auto-resume is
-per run-tag.
-
-Check both jobs with:
-
-```bash
-nvidia-smi
-cat "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g0_s101/rl.pid"
-cat "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g1_s102/rl.pid"
-tail -f "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g0_s101/logs/blb_stage2_rl.log"
-tail -f "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g1_s102/logs/blb_stage2_rl.log"
-```
-
-For concurrent runs, do not rely on the parent-level `LATEST_PID`; it can be
-overwritten by whichever launcher runs last. Use each tagged run directory's
-own `rl.pid`, `run.pid`, `metadata.json`, `stage2_noise/progress/`, and
-`logs/blb_stage2_rl.log`.
-
-When using `SERVER_COMMAND.md`, the first fenced `bash` block can launch both
-jobs. Keep the commands in the repository root and keep the per-GPU environment
-on the same line as each launcher invocation:
-
-```bash
-set -euo pipefail
-cd /hy-tmp/Reinforcement-For-Robustness
-git pull --ff-only
-
-export HF_HOME=/hy-tmp/hf_cache
-export HF_ENDPOINT=https://hf-mirror.com
-export HF_HUB_DISABLE_XET=1
-export GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
-
-CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh run rl \
-  --preset mrpc-blb-stage2-rl \
-  --blb-v3-seed 101 \
-  --run-tag twogpu_g0_s101 \
-  --fresh
-
-CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh run rl \
-  --preset mrpc-blb-stage2-rl \
-  --blb-v3-seed 102 \
-  --run-tag twogpu_g1_s102 \
-  --fresh
-
-sleep 5
-nvidia-smi
-```
-
-`tools/run_multi_seed.sh` currently runs seeds sequentially, not in parallel.
-Do not use it expecting automatic two-GPU utilization. For two-card testing,
-manually launch one seed/run-tag per GPU as shown above, or have the local
-code-editing agent add a parallel multi-GPU driver locally and push it through
-git before using it on the server.
+- A smoke run with small `--stage2-probe-size` logs a 5-trial reward probe split
+  across both GPUs.
+- `nvidia-smi` shows both GPUs active during the model-forward reward probe.
+- The metrics aggregation still uses all 5 trials for each action.
+- Single-GPU fallback remains valid when only one GPU is visible or
+  `--blb-v3-reward-devices` is unset.
 
 `SERVER_COMMAND.md` was launched once on this server and reached real BLB
 Stage-2 sequential RL execution. The stopped run wrote diagnostics under
