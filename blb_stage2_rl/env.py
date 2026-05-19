@@ -498,15 +498,31 @@ class BLBStage2Env:
         # invalid_penalty docked) using baseline-derived placeholder metrics.
         # This is what the user asked for on 2026-05-17: "出现invalid chain
         # 再去做推理就没有意义了，不用再去做推理了".
+        #
+        # Placeholder metrics MUST clear the acc / stab gates so the reward
+        # ``priority`` label reflects the actual failure mode (invalid_chain →
+        # cost-layer priority=3) rather than a spurious acc-violation triggered
+        # by the placeholder defaults. We use the noisy baseline metric (if the
+        # runner has calibrated one) and otherwise fall back to the threshold
+        # value itself, which leaves ``acc_violation = stab_excess = 0`` so the
+        # only reward contribution from the gate path is ``invalid_term``.
         if any_invalid:
+            placeholder_metric1 = float(self.baseline.metric1_mean or 0.0)
+            if placeholder_metric1 < float(self.acc_threshold):
+                placeholder_metric1 = float(self.acc_threshold)
+            placeholder_metric2 = float(self.baseline.metric2_mean or 0.0)
+            placeholder_loss_std = float(self.baseline.loss_std or 0.0)
+            if placeholder_loss_std > float(self.stab_threshold):
+                placeholder_loss_std = float(self.stab_threshold)
+            placeholder_loss_mean = float(self.baseline.loss_mean or 0.0)
             metrics = EpisodeMetrics(
-                loss_mean=float(self.baseline.loss_mean or 0.0),
-                loss_std=float(self.baseline.loss_std or 0.0),
-                metric1_mean=float(self.baseline.metric1_mean or 0.0),
-                metric2_mean=float(self.baseline.metric2_mean or 0.0),
-                loss_max=float(self.baseline.loss_mean or 0.0),
-                metric1_min=float(self.baseline.metric1_mean or 0.0),
-                metric2_min=float(self.baseline.metric2_mean or 0.0),
+                loss_mean=placeholder_loss_mean,
+                loss_std=placeholder_loss_std,
+                metric1_mean=placeholder_metric1,
+                metric2_mean=placeholder_metric2,
+                loss_max=placeholder_loss_mean,
+                metric1_min=placeholder_metric1,
+                metric2_min=placeholder_metric2,
             )
             breakdown = compute_reward(
                 metrics, opt_signals,

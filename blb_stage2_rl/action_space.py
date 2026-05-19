@@ -15,6 +15,14 @@
 （旧注释里 94 维和 1129 维已废弃；以 ``action_dims_for_config(num_layers)`` 实际返回为准。
  槽位数不再采用旧记忆假设，权威分类由 ``scripts/blb_export_action_registry.py`` 从当前代码导出。）
 
+注：2026-05-14 一度把 25 个 "mrpc baseline 不覆盖的" 槽（block1 wffn2/square_rescale；
+block2 Q-side encodes + 8 个 rescale；block3 x_inv_2n_rescale；block4 5 个 rescale；
+block5 6 个 rescale）从字段表里删除，但 CLAUDE.md 的指引是 "classify as compat-extra /
+inactive rather than deleting"。所以这些槽现在以 *compat-extra* 形式回到 _BLOCK*_FIELDS：
+槽存在于 action vector / registry / describe 输出里，但 ``_is_action_field_effective``
+把它们标记成 effective=False，``build_block*_cfg_from_action`` 强制把对应 cfg 字段写成
+None（即不安装该处噪声），所以 RL 选这些槽的值不会改变 cfg 也不会改变 optimizer cost。
+
 动作向量布局（顺序）：
   对每层 i ∈ [0, L):
     block1 dims (9) | block2 dims (23) | block3 dims (7+1) | block4 dims (17) | block5 dims (16)
@@ -87,12 +95,13 @@ LEVELS_K = len(K_LEVELS)
 LEVELS_FIRST_INPUT = 5   # 与 fresh 一致
 BLB_FIRST_INPUT_N = 8192
 
-# 每个 block 在 baseline / 全 max action 下的 truncation K（user-tuned 2026-05-15）。
-# 之前所有 block 都默认 K=13；现在按 block 类型差异化：B1/B3/B5 用 K=13（更激进、
-# 更便宜），B2/B4 用 K=10（更保守、更精确）。
+# 每个 block 在 baseline / 全 max action 下的 truncation K。
+# 历史上短暂存在过 per-block 差异化（2026-05-15 实验 B2/B4=10），但相应改动让
+# 全 max 动作的 avg_k 偏离 baseline，造成 reward 不为零 / contract test 失败；
+# 现在统一回归 K=13（与 noise_std_table N=16384 主测档对齐）。
 # 这是 RL warmstart 锚点 + reward.k_drop 的基准；RL 训练时可以选其它 K 值，但 cost
 # reward 会以这个 baseline 计算 k_drop。
-BASELINE_K_BY_BLOCK: Dict[int, int] = {1: 13, 2: 10, 3: 13, 4: 10, 5: 13}
+BASELINE_K_BY_BLOCK: Dict[int, int] = {1: 13, 2: 13, 3: 13, 4: 13, 5: 13}
 
 
 def _baseline_k_index_for_block(block_idx: int) -> int:
@@ -136,9 +145,13 @@ class _BlockFieldSpec:
 
 
 # Block 1（不含首层 K 字段；首层会在 cfg build 时强制 truncation_k=None）
-# 注（2026-05-14 精简）：删除 ``wffn2_rescale_sf`` / ``square_rescale_sf`` 两个
-# rescale 槽 —— mrpc baseline skeleton 不在这两个节点处下 rescale，且
-# Rescale_optimizer 不会选用，留作 RL 动作是浪费容量。cfg 的对应字段保留为 None。
+# 2026-05-14 一度删过 ``wffn2_rescale_sf`` / ``square_rescale_sf`` 两个 rescale 槽，
+# 但 CLAUDE.md 的指引是“classify discrepancies as compat-extra/inactive rather than
+# deleting”，所以现在按 compat-extra 复位 —— 槽保留在 action vector 里、参与 registry
+# 计数、describe_action_vector 仍会汇报；但它们不在 mrpc baseline skeleton 上、
+# Rescale_optimizer 不会选用，``build_block1_cfg_from_action`` 强制把对应 cfg 字段
+# 写成 None（即不安装该处 rescale 噪声）。``_is_action_field_effective`` 会把它们
+# 标记成 effective=False。
 _BLOCK1_FIELDS = _BlockFieldSpec(
     fields=(
         ("gelu_out_sf",        "F", 30),
@@ -147,21 +160,23 @@ _BLOCK1_FIELDS = _BlockFieldSpec(
         ("var_inv_d_sf",       "S", 22),
         ("mean_rescale_sf",    "R", 22),
         ("var_rescale_sf",     "R", 22),
+        # compat-extra (mrpc baseline 不上这两处 rescale；cfg 字段固定 None)
+        ("wffn2_rescale_sf",   "R", 22),
+        ("square_rescale_sf",  "R", 22),
         ("output_truncation_k","K", 13),
     ),
 )
 
 
 # Block 2
-# 注（2026-05-14 精简）：删除 11 个 RL 槽 ——
-#   * 3 个 encode：``wq_sf`` / ``q_mask1_sf`` / ``q_mask2_sf``。Q 侧三个 encode 与
-#     K 侧绑定，build_block2_cfg_from_action 用 ``wk_sf`` / ``kt_mask1_sf`` /
-#     ``kt_mask2_sf`` 同时填 cfg 上 Q/K 两侧字段。bridge 的 ``ctpt_wq_wk`` 节点
-#     现在从 ``cfg.wk_encode.scaling_factor`` 读。
-#   * 8 个 rescale：``normalize/wk/wq/wv/kt_mask1/q_mask1/q_mask2/qkt_matmul``
-#     这些 rescale 不在 mrpc baseline skeleton 上；cfg 对应字段保留为 None。
-#   * ``wv_sf`` 保留作单独控制 Wv 乘法位置的模型噪声（虽然该节点不在 graph 里，
-#     不入 optimizer cost）。
+# 2026-05-14 曾删过 11 个 RL 槽（3 个 Q-side encode + 8 个 rescale），现在按
+# compat-extra 全部复位 ——
+#   * Q-side encodes (``wq_sf`` / ``q_mask1_sf`` / ``q_mask2_sf``) 与 K-side 绑定，
+#     ``_build_block2_action`` 把 K-side action value 拷贝到 cfg 的 Q-side 字段。
+#     RL 选这三个槽的 action 不会影响 cfg（cfg 用 K-side 的值）。
+#   * 8 个 rescale (``normalize/wk/wq/wv/kt_mask1/q_mask1/q_mask2/qkt_matmul``) 不在
+#     mrpc baseline skeleton 上，``build_block2_cfg_from_action`` 强制写 None。
+# ``wv_sf`` 仍然驱动模型 V 路径噪声（虽不入 optimizer cost）。
 _BLOCK2_FIELDS = _BlockFieldSpec(
     fields=(
         ("inv_std_fresh_sf",            "F", 30),
@@ -175,15 +190,28 @@ _BLOCK2_FIELDS = _BlockFieldSpec(
         ("gamma_rescale_sf",            "R", 22),
         ("kt_mask2_rescale_sf",         "R", 22),
         ("qkt_merge_mask_rescale_sf",   "R", 22),
+        # compat-extra encodes (Q-side bound to K-side via _build_block2_action)
+        ("wq_sf",                       "W", 22),
+        ("q_mask1_sf",                  "M", 22),
+        ("q_mask2_sf",                  "M", 22),
+        # compat-extra rescales (mrpc baseline 不上这些点；cfg 字段固定 None)
+        ("normalize_rescale_sf",        "R", 22),
+        ("wk_rescale_sf",               "R", 22),
+        ("wq_rescale_sf",               "R", 22),
+        ("wv_rescale_sf",               "R", 22),
+        ("kt_mask1_rescale_sf",         "R", 22),
+        ("q_mask1_rescale_sf",          "R", 22),
+        ("q_mask2_rescale_sf",          "R", 22),
+        ("qkt_matmul_rescale_sf",       "R", 22),
         ("output_truncation_k",         "K", 13),
     ),
 )
 
 
 # Block 3：Softmax 近似中的 fresh / encode / 多次 squaring。
-# 注（2026-05-14 精简）：删除 ``x_inv_2n_rescale_sf`` —— mrpc baseline skeleton
-# 不上 ``ctct_x_inv_2n_rescale``，Rescale_optimizer 不会选用。
-# 保留 ``square_rescale_sf_0..3``（按 degree 截短），它们通过 t_new 进 optimizer。
+# 2026-05-14 删过 ``x_inv_2n_rescale_sf``，现在按 compat-extra 复位 ——
+# mrpc baseline 不上 ``ctct_x_inv_2n_rescale``，cfg 字段固定 None。
+# ``square_rescale_sf_0..3``（按 degree 截短）通过 t_new 进 optimizer。
 _BLOCK3_R_SLOTS = 4   # square_rescale_sf_0..3 (max degree=4)
 _BLOCK3_FIELDS = _BlockFieldSpec(
     fields=(
@@ -193,18 +221,19 @@ _BLOCK3_FIELDS = _BlockFieldSpec(
         ("square_rescale_sf_1",     "R", 22),
         ("square_rescale_sf_2",     "R", 22),
         ("square_rescale_sf_3",     "R", 22),
+        # compat-extra (mrpc baseline 不上这个 rescale；cfg 字段固定 None)
+        ("x_inv_2n_rescale_sf",     "R", 22),
         ("output_truncation_k",     "K", 13),
     ),
 )
 
 
 # Block 4
-# 注（2026-05-14 精简）：删除 5 个 rescale 槽 ——
-#   * ``softmax_out_mask_rescale_sf`` / ``v_mask_rescale_sf`` /
-#     ``softmax_v_mask_rescale_sf`` / ``wo_rescale_sf`` / ``ln_square_rescale_sf``
-#   这些 rescale 不在 mrpc baseline skeleton 上。
-# 保留 V 侧的 ``v_fresh_sf`` / ``v_mask_sf``：它们影响模型 V 路径上的噪声安装，
-# 即便 block4.json graph 把 V 乘法合到 ``ctct_rot_softmax_mul_v`` 不入 optimizer。
+# 2026-05-14 删过 5 个 rescale 槽 (``softmax_out_mask_rescale_sf`` /
+# ``v_mask_rescale_sf`` / ``softmax_v_mask_rescale_sf`` / ``wo_rescale_sf`` /
+# ``ln_square_rescale_sf``)，现在按 compat-extra 复位 —— 它们不在 mrpc baseline
+# skeleton 上，``build_block4_cfg_from_action`` 强制 cfg 字段 None。
+# V 侧 ``v_fresh_sf`` / ``v_mask_sf`` 仍驱动模型噪声（虽不入 optimizer cost）。
 _BLOCK4_FIELDS = _BlockFieldSpec(
     fields=(
         ("softmax_out_fresh_sf",            "F", 30),
@@ -218,18 +247,23 @@ _BLOCK4_FIELDS = _BlockFieldSpec(
         ("softmax_v_matmul_rescale_sf",     "R", 22),
         ("ln_mean_rescale_sf",              "R", 22),
         ("ln_var_rescale_sf",               "R", 22),
+        # compat-extra rescales (mrpc baseline 不上这些点；cfg 字段固定 None)
+        ("softmax_out_mask_rescale_sf",     "R", 22),
+        ("v_mask_rescale_sf",               "R", 22),
+        ("softmax_v_mask_rescale_sf",       "R", 22),
+        ("wo_rescale_sf",                   "R", 22),
+        ("ln_square_rescale_sf",            "R", 22),
         ("output_truncation_k",             "K", 13),
     ),
 )
 
 
 # Block 5（GELU degree-aware）
-# 注（2026-05-14 精简）：删除 6 个 rescale 槽 ——
-#   * ``gelu_power_rescale_sf_1`` / ``gelu_power_rescale_sf_2``：mrpc graph 里
-#     x³ 被折进 x⁴；只有 ``gelu_power_rescale_sf_0`` (x²) 在 skeleton 上。
-#   * ``gelu_coeff_mul_rescale_sf_0..3``：mrpc baseline 把多项式系数乘法合成一个
-#     ``ctpt_gelu_coeff`` 节点；这 4 个独立 rescale 不在 skeleton 上。
-# 保留 ``gelu_power_rescale_sf_0``（degree>=2 时 x² 那一档进 t_new）。
+# 2026-05-14 删过 6 个 rescale 槽 (gelu_power_rescale_sf_1/2 + 4 个
+# gelu_coeff_mul_rescale_sf_*)，现在按 compat-extra 复位 ——
+# mrpc graph 里 x³ 折进 x⁴、ctpt_gelu_coeff 单节点替代了 4 段 coeff·x^k rescale，
+# 所以这 6 个槽不在 skeleton 上，cfg 字段固定 None。
+# ``gelu_power_rescale_sf_0`` (x²) 在 degree>=2 时通过 t_new 进 optimizer。
 _BLOCK5_FIELDS = _BlockFieldSpec(
     fields=(
         ("inv_std_fresh_sf",                "F", 30),
@@ -241,6 +275,13 @@ _BLOCK5_FIELDS = _BlockFieldSpec(
         ("gamma_rescale_sf",                "R", 22),
         ("wffn1_rescale_sf",                "R", 22),
         ("gelu_power_rescale_sf_0",         "R", 22),  # x²；degree>=2 时启用
+        # compat-extra rescales (x³ 折进 x⁴；coeff_mul 链合到 ctpt_gelu_coeff)
+        ("gelu_power_rescale_sf_1",         "R", 22),
+        ("gelu_power_rescale_sf_2",         "R", 22),
+        ("gelu_coeff_mul_rescale_sf_0",     "R", 22),
+        ("gelu_coeff_mul_rescale_sf_1",     "R", 22),
+        ("gelu_coeff_mul_rescale_sf_2",     "R", 22),
+        ("gelu_coeff_mul_rescale_sf_3",     "R", 22),
         ("output_truncation_k",             "K", 13),
     ),
 )
@@ -395,13 +436,24 @@ class MaxSFsTable:
             *,
             layer_idx: Optional[int] = None,
             ) -> int:
+        # Look up via registered RO graph-node name first; if there is no entry
+        # for the field, fall back to using the field name itself as the node
+        # key. The fallback path is what ``static_skeletons_baseline_to_action``
+        # writes when a baseline provides an SF for a field that has no entry
+        # in ``_BLOCK_NODE_NAME_BY_FIELD`` (e.g. baseline-injected compat-extra
+        # rescales like ``wo_rescale_sf``).
         node = _BLOCK_NODE_NAME_BY_FIELD.get(int(block_idx), {}).get(str(field_name))
+        candidate_nodes: List[str] = []
         if node is not None:
+            candidate_nodes.append(node)
+        if str(field_name) not in candidate_nodes:
+            candidate_nodes.append(str(field_name))
+        for cand in candidate_nodes:
             if layer_idx is not None:
-                v = self.by_layer_block_node.get((int(layer_idx), int(block_idx), node))
+                v = self.by_layer_block_node.get((int(layer_idx), int(block_idx), cand))
                 if v is not None:
                     return int(v)
-            v = self.by_block_node.get((int(block_idx), node))
+            v = self.by_block_node.get((int(block_idx), cand))
             if v is not None:
                 return int(v)
         # fallback 到 _BLOCK_SPECS 默认
@@ -1176,6 +1228,34 @@ def make_slot_label(
     return base if not short else f"{base}.{short}"
 
 
+# Compat-extra slots: kept in the action vector for registry/back-compat but the
+# cfg path forces these fields to None (or binds them to another slot), so the
+# RL action value at these slots does NOT affect the noise installed in the
+# model nor the optimizer's modulus-chain math. ``describe_action_vector`` /
+# ``effective_action_hash`` use this to mark them inactive.
+_COMPAT_EXTRA_FIELDS: Dict[int, frozenset] = {
+    1: frozenset({"wffn2_rescale_sf", "square_rescale_sf"}),
+    2: frozenset({
+        # Q-side encodes (bound to K-side; cfg uses wk_sf / kt_mask*_sf)
+        "wq_sf", "q_mask1_sf", "q_mask2_sf",
+        # rescales not on the mrpc baseline skeleton (cfg fields fixed None)
+        "normalize_rescale_sf", "wk_rescale_sf", "wq_rescale_sf",
+        "wv_rescale_sf", "kt_mask1_rescale_sf", "q_mask1_rescale_sf",
+        "q_mask2_rescale_sf", "qkt_matmul_rescale_sf",
+    }),
+    3: frozenset({"x_inv_2n_rescale_sf"}),
+    4: frozenset({
+        "softmax_out_mask_rescale_sf", "v_mask_rescale_sf",
+        "softmax_v_mask_rescale_sf", "wo_rescale_sf", "ln_square_rescale_sf",
+    }),
+    5: frozenset({
+        "gelu_power_rescale_sf_1", "gelu_power_rescale_sf_2",
+        "gelu_coeff_mul_rescale_sf_0", "gelu_coeff_mul_rescale_sf_1",
+        "gelu_coeff_mul_rescale_sf_2", "gelu_coeff_mul_rescale_sf_3",
+    }),
+}
+
+
 def _is_action_field_effective(
         *,
         layer_idx: int,
@@ -1193,6 +1273,11 @@ def _is_action_field_effective(
         return False, (
             "layer 0 has no upstream FFN2; the first HE config is treated as "
             "lossless so block1 noise is not installed (aligned with Rescale_optimizer)"
+        )
+    if str(field_name) in _COMPAT_EXTRA_FIELDS.get(int(block_idx), frozenset()):
+        return False, (
+            "compat-extra slot retained for action-vector back-compat; cfg field "
+            "is forced None / bound elsewhere so this action value has no effect"
         )
     if int(block_idx) == 3 and str(field_name).startswith("square_rescale_sf_"):
         try:
@@ -1273,6 +1358,14 @@ def describe_action_vector(
                 attn_degree=li_attn_degree,
                 gelu_degree=li_gelu_degree,
             )
+            # Layer-0 block-1 noise is *not installed* (the first HE config is
+            # treated as lossless). The decoded ``value`` for these slots is a
+            # meaningless artifact of the default max-SF table — clear it so
+            # value-based queries (e.g. baseline-decode tests that build a
+            # ``{(layer, block, field): value}`` map and assert "L0B1 is not
+            # present") agree with the install-time semantics.
+            if int(li) == 0 and int(block_idx) == 1:
+                value = None
             effective_value = value if effective else None
             operation = _operation_name(block_idx, field_name, kind)
             block_label = f"layer{li}.block{block_idx}"

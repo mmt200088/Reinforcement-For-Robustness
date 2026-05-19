@@ -1,5 +1,5 @@
 {
-  "_comment": "MRPC Rescale_optimizer-aligned action maxima. Numeric entries are chosen so the all-max BLB RL action decodes to the successful static_skeletons_mrpc baseline t_new/delta values on the cfg-derived optimizer path.",
+  "_comment": "MRPC Rescale_optimizer-aligned action maxima. Numeric entries are chosen so the all-max BLB RL action decodes to the successful static_skeletons_mrpc baseline t_new/delta values on the cfg-derived optimizer path. Keys MUST match _BLOCK_NODE_NAME_BY_FIELD in blb_stage2_rl/action_space.py (the action_space treats each key as the RO graph-node name).",
   "block1": {
     "ctpt_gelu_out": 30,
     "ctpt_ffn2": 20,
@@ -10,15 +10,13 @@
   },
   "block2": {
     "ctpt_inv_std": 31,
+    "ctpt_x_centered": 30,
     "ctpt_gamma": 20,
-    "ctpt_wq": 22,
-    "ctpt_wk": 22,
+    "ctpt_wq_wk": 22,
     "ctpt_wv": 22,
-    "ctpt_kt_mask1": 15,
-    "ctpt_kt_mask2": 15,
-    "ctpt_q_mask1": 15,
-    "ctpt_q_mask2": 15,
-    "ctpt_qkt_merge_mask": 15,
+    "ctpt_rotKT_mask1": 15,
+    "ctpt_rotKT_mask2": 15,
+    "ctpt_mask": 15,
     "ctct_gamma_rescale": 31,
     "ctct_kt_mask2_rescale": 31,
     "ctct_qkt_merge_mask_rescale": 28
@@ -33,7 +31,9 @@
   },
   "block4": {
     "ctpt_softmax_out": 35,
+    "ctpt_v": 30,
     "ctpt_softmax_out_mask": 14,
+    "ctpt_v_mask": 14,
     "ctpt_softmax_v_mask": 14,
     "ctpt_inv_d_attn_mean": 20,
     "ctpt_inv_d_attn_var": 20,
@@ -43,13 +43,14 @@
     "ctct_attn_var_rescale": 28
   },
   "block5": {
+    "ctpt_attn_inv_std": 30,
     "ctpt_attn_x_centered": 31,
     "ctpt_gamma_attn": 20,
     "ctpt_wffn1": 22,
     "ctpt_gelu_coeff": 20,
     "ctct_attn_normalize_rescale": 31,
+    "ctct_gamma_attn_rescale": 30,
     "ctct_wffn1_rescale": 31,
-    "ctct_gelu_x2": 31,
-    "ctct_gelu_e_x4": 31
+    "ctct_gelu_x2": 31
   }
 }

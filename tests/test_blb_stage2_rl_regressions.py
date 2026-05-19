@@ -835,7 +835,22 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertTrue(done)
         self.assertFalse(info["invalid"])
         self.assertFalse(info["reward_breakdown"].invalid)
-        self.assertAlmostEqual(reward, 0.0)
+        # The all-max action matches the test baseline (same total_bits, fusion,
+        # avg_k), so cost_score / k_drop / bits_drop must be zero. v2-style
+        # reward (ADR-007, 2026-05-18) still emits the metric+stab tier bonus
+        # (=+40) when both gates pass, so reward sits in the top tier (~+40)
+        # rather than 0. The legacy "reward == 0 at baseline" pre-dates ADR-007
+        # and no longer matches the design; only the cost-side equality
+        # assertions remain — they are what this regression actually guards.
+        breakdown = info["reward_breakdown"]
+        self.assertEqual(breakdown.k_drop, 0.0)
+        self.assertEqual(breakdown.bits_drop, 0.0)
+        self.assertEqual(breakdown.fusion_count, 0.0)
+        self.assertEqual(breakdown.cost_score, 0.0)
+        self.assertTrue(breakdown.metric_ok)
+        self.assertTrue(breakdown.stab_ok)
+        self.assertGreaterEqual(reward, 35.0)
+        self.assertLessEqual(reward, 45.0)
 
     def test_env_runs_forward_even_when_optimizer_invalid(self):
         from blb_stage2_rl.action_space import load_max_sfs, make_all_max_action_vector
@@ -898,8 +913,16 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
 
         self.assertTrue(done)
         self.assertTrue(info["invalid"])
-        self.assertTrue(info["forward_ran"])
-        self.assertEqual(model.forward_count, 1)
+        # When Rescale_optimizer reports any_invalid, env.step short-circuits the
+        # model forward and emits a priority-3 cost-only reward with the
+        # invalid_penalty docked. This was the behaviour the user asked for on
+        # 2026-05-17 ("出现 invalid chain 再去做推理就没有意义了") and is
+        # documented in CLAUDE.md → "Sequential invalid-action mask + skip-forward".
+        # The reward priority / invalid_penalty contract is preserved; only the
+        # wasted model forward is skipped.
+        self.assertFalse(info["forward_ran"])
+        self.assertEqual(model.forward_count, 0)
+        self.assertEqual(info.get("forward_skipped_reason"), "any_invalid_chain")
         self.assertEqual(info["reward_breakdown"].priority, 3)
         self.assertTrue(info["reward_breakdown"].invalid)
         self.assertEqual(info["reward_breakdown"].r_invalid, -30.0)
@@ -1055,9 +1078,12 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
             self.assertTrue(store.should_evaluate(action, "F1"))
             store.append({"action_indices": action, "fidelity": "F1", "valid": True})
             self.assertFalse(store.should_evaluate(action, "F1"))
-            self.assertTrue(store.should_evaluate(action, "F2"))
-            store.append({"action_indices": action, "fidelity": "F2", "valid": True})
-            self.assertFalse(store.should_evaluate(action, "F2"))
+            # F2/F3 were dropped on 2026-05-16 (see candidate_store.FIDELITY_ORDER
+            # docstring). The active ladder is F0 → F1 → F4, so promotion past
+            # F1 must be checked with F4.
+            self.assertTrue(store.should_evaluate(action, "F4"))
+            store.append({"action_indices": action, "fidelity": "F4", "valid": True})
+            self.assertFalse(store.should_evaluate(action, "F4"))
 
     def test_registry_export_records_action_values_and_current_slot_count(self):
         from blb_stage2_rl.action_space import K_LEVELS
