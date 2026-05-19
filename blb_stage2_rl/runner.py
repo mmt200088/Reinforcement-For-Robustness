@@ -2448,14 +2448,11 @@ class BLBStage2RLRunner:
         # 4b) reward_devices: --blb-v3-reward-devices "0,1" arrives as a string
         # on the evaluator. Parse here so train_cfg holds a List[int]; empty /
         # 1-device → ProbeRunner stays disabled.
-        try:
-            from .probe_runner import parse_device_ids
-            spec = getattr(ev, "blb_v3_reward_devices", None)
-            parsed = parse_device_ids(spec)
-            if parsed:
-                cfg.reward_devices = parsed
-        except Exception:
-            pass
+        from .probe_runner import parse_device_ids
+        spec = getattr(ev, "blb_v3_reward_devices", None)
+        parsed = parse_device_ids(spec)
+        if parsed:
+            cfg.reward_devices = parsed
         # 5) BLB v3 always uses the real in-process Rescale_optimizer.  Legacy
         # invoker selection attributes are deliberately ignored.
         root = getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)

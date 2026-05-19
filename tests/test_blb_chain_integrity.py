@@ -595,6 +595,14 @@ class ProbeRunnerHelpersTest(unittest.TestCase):
         # a tuple, not a string. The launcher sends exactly that form, so this
         # must reach BLBStage2TrainConfig.reward_devices as [0, 1].
         self.assertEqual(parse_device_ids((0, 1)), [0, 1])
+        self.assertEqual(parse_device_ids([0, 1]), [0, 1])
+        self.assertEqual(parse_device_ids(0), [0])
+
+    def test_parse_device_ids_accepts_parenthesized_fire_string(self):
+        # LayerImportanceEvaluator stores CLI args as strings. If Fire already
+        # converted "0,1" to a tuple, str((0, 1)) becomes "(0, 1)".
+        self.assertEqual(parse_device_ids("(0, 1)"), [0, 1])
+        self.assertEqual(parse_device_ids("[0, 1]"), [0, 1])
 
     def test_parse_device_ids_rejects_garbage(self):
         with self.assertRaises(ValueError):

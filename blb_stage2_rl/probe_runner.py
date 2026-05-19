@@ -371,26 +371,47 @@ class ProbeRunner:
 # Factory: build_probe_runner
 # ---------------------------------------------------------------------------
 
-def parse_device_ids(spec: Optional[str]) -> List[int]:
-    """Parse ``"0,1"`` → ``[0, 1]``. Empty / None → ``[]``.
+def parse_device_ids(spec: Any) -> List[int]:
+    """Parse reward-probe device ids into ``[0, 1]`` style integers.
 
-    Used by CLI plumbing (``--blb-v3-reward-devices``) and tests.
+    The launcher passes ``--blb_v3_reward_devices 0,1`` through Python Fire.
+    Fire eagerly parses that value as the tuple ``(0, 1)``; downstream code may
+    then preserve the tuple or stringify it to ``"(0, 1)"``. Accept all of
+    those forms so the server does not silently fall back to single-GPU mode.
     """
     if spec is None:
         return []
-    s = str(spec).strip()
-    if not s:
-        return []
+
+    if isinstance(spec, bool):
+        raise ValueError(
+            f"invalid device id {spec!r}; expected comma-separated ints"
+        )
+
+    if isinstance(spec, int):
+        tokens = [spec]
+    elif isinstance(spec, (list, tuple)):
+        tokens = list(spec)
+    else:
+        s = str(spec).strip()
+        if not s:
+            return []
+        if (s.startswith("(") and s.endswith(")")) or (
+            s.startswith("[") and s.endswith("]")
+        ):
+            s = s[1:-1].strip()
+        tokens = [tok.strip() for tok in s.split(",") if tok.strip()]
+
     out: List[int] = []
-    for tok in s.split(","):
-        t = tok.strip()
-        if not t:
-            continue
+    for tok in tokens:
+        if isinstance(tok, bool):
+            raise ValueError(
+                f"invalid device id {tok!r} in spec {spec!r}; expected ints"
+            )
         try:
-            out.append(int(t))
+            out.append(int(tok))
         except ValueError as exc:
             raise ValueError(
-                f"invalid device id {t!r} in spec {spec!r}; expected comma-separated ints"
+                f"invalid device id {tok!r} in spec {spec!r}; expected comma-separated ints"
             ) from exc
     return out
 
