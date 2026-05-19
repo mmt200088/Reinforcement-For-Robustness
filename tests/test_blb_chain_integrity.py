@@ -590,6 +590,12 @@ class ProbeRunnerHelpersTest(unittest.TestCase):
         # Whitespace tolerated.
         self.assertEqual(parse_device_ids(" 0 , 1 "), [0, 1])
 
+    def test_parse_device_ids_accepts_fire_tuple(self):
+        # Python Fire parses a CLI value like --blb_v3_reward_devices 0,1 as
+        # a tuple, not a string. The launcher sends exactly that form, so this
+        # must reach BLBStage2TrainConfig.reward_devices as [0, 1].
+        self.assertEqual(parse_device_ids((0, 1)), [0, 1])
+
     def test_parse_device_ids_rejects_garbage(self):
         with self.assertRaises(ValueError):
             parse_device_ids("0,abc")
