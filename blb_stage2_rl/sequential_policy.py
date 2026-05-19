@@ -75,6 +75,25 @@ class BLBStage2SequentialPolicy(nn.Module):
             cfg.d_hidden, cfg.max_step_dim * cfg.max_num_levels
         )
         self.value_head = nn.Linear(cfg.d_hidden, 1)
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        # Encoder + value head: orthogonal sqrt(2) — standard actor-critic init.
+        for layer in self.encoder:
+            if isinstance(layer, nn.Linear):
+                nn.init.orthogonal_(layer.weight, gain=float(np.sqrt(2)))
+                nn.init.constant_(layer.bias, 0.0)
+        nn.init.orthogonal_(self.value_head.weight, gain=1.0)
+        nn.init.constant_(self.value_head.bias, 0.0)
+        # Action head: gain=0.01 (legacy noise_rl_module_v2 trick — see line ~1066
+        # there). Keeps ``W_action @ h`` near zero at init AND after the encoder
+        # gets perturbed by value-loss gradient, so the warmstart bias remains
+        # the dominant signal in the action distribution for many PPO updates.
+        # Without this, the default Kaiming init makes ``|W @ h|`` ~ 4-9 at init,
+        # which overwhelms the +3.5 warmstart bias and lets the policy drift
+        # off baseline on the first sample episode (observed 2026-05-19).
+        nn.init.orthogonal_(self.action_head.weight, gain=0.01)
+        nn.init.constant_(self.action_head.bias, 0.0)
 
     # ------------------------------------------------------------------
     def forward(self, state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -407,7 +426,13 @@ def sequential_ppo_update(
             unclipped = ratio * adv
             clipped = torch.clamp(ratio, 1.0 - cfg.clip_range, 1.0 + cfg.clip_range) * adv
             policy_loss = -torch.min(unclipped, clipped).mean()
-            value_loss = F.mse_loss(value, ret)
+            # Huber (delta=1.0) instead of MSE: caps value gradient magnitude
+            # at delta, so unnormalised returns (~+37) don't blow up the
+            # shared-encoder gradient and overwhelm the policy gradient
+            # (observed 2026-05-19: value_loss ~ 60.86 vs policy_loss ~ -0.054
+            # → 1126x ratio caused encoder to drift off warmstart-bias
+            # configuration). Matches legacy noise_rl_module_v2 (line ~1886).
+            value_loss = F.huber_loss(value, ret, delta=1.0)
             entropy_mean = entropy.mean()
             loss = (
                 policy_loss

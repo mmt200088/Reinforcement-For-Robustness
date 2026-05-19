@@ -32,6 +32,10 @@ try:
         apply_optimizer_output_to_cfg,
         sync_block2_qk_binding,
     )
+    from blb_stage2_rl.sequential_policy import (
+        BLBStage2SequentialPolicy,
+        SequentialPolicyConfig,
+    )
     _IMPORT_ERROR = None
 except Exception as _exc:  # torch / transformers / function_handler missing
     torch = None  # type: ignore
@@ -41,6 +45,8 @@ except Exception as _exc:  # torch / transformers / function_handler missing
     make_block2_default_config = None  # type: ignore
     apply_optimizer_output_to_cfg = None  # type: ignore
     sync_block2_qk_binding = None  # type: ignore
+    BLBStage2SequentialPolicy = None  # type: ignore
+    SequentialPolicyConfig = None  # type: ignore
     _IMPORT_ERROR = _exc
 
 _SKIP_REASON = (
@@ -439,6 +445,90 @@ class SampleGaussianLiveReadTest(unittest.TestCase):
         # Variance should be identical because lookup is .lower()-normalised.
         self.assertAlmostEqual(float(s_upper.var()), float(s_lower.var()),
                                places=6)
+
+
+# ---------------------------------------------------------------------------
+# Sequential policy init: warmstart bias must survive encoder perturbation
+# ---------------------------------------------------------------------------
+@unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
+class SequentialPolicyInitTest(unittest.TestCase):
+    """Pin the two init invariants behind the 2026-05-19 sampling-collapse fix.
+
+    The collapse happened because the default Kaiming init on
+    ``action_head.weight`` made ``|W @ h|`` ~ 4-9 at init, overwhelming the
+    ``+3.5`` warmstart bias and letting the policy drift off baseline at the
+    first sample episode. The fix is a legacy noise_rl_module_v2 trick:
+    initialise the action head weights with gain=0.01 so the warmstart bias
+    remains the dominant signal in the action distribution even after the
+    shared encoder gets perturbed by value-loss gradient.
+    """
+
+    def _make_policy(self) -> "BLBStage2SequentialPolicy":
+        cfg = SequentialPolicyConfig(
+            state_dim=64,
+            max_step_dim=13,
+            max_num_levels=6,
+            d_hidden=256,
+            horizon=59,
+        )
+        return BLBStage2SequentialPolicy(cfg)
+
+    def test_action_head_weight_is_small(self):
+        """action_head.weight Frobenius norm must be << default Kaiming."""
+        policy = self._make_policy()
+        weight_norm = float(policy.action_head.weight.norm().item())
+        # orthogonal(gain=0.01) on a [78, 256] tensor → Frobenius = gain * sqrt(min(78,256)) = 0.01*sqrt(78) ≈ 0.088
+        self.assertLess(
+            weight_norm, 0.5,
+            f"action_head.weight norm {weight_norm:.4f} too large; warmstart "
+            "bias will be overwhelmed by W@h (regression of 2026-05-19 fix)",
+        )
+
+    def test_action_head_bias_starts_zero(self):
+        """Warmstart sets bias; init must leave bias at 0 so caller controls it."""
+        policy = self._make_policy()
+        self.assertTrue(
+            torch.allclose(policy.action_head.bias, torch.zeros_like(policy.action_head.bias)),
+            "action_head.bias must start at 0 (warmstart caller sets +gain per slot)",
+        )
+
+    def test_value_head_init_standard(self):
+        policy = self._make_policy()
+        self.assertTrue(
+            torch.allclose(policy.value_head.bias, torch.zeros_like(policy.value_head.bias)),
+            "value_head.bias must start at 0",
+        )
+        weight_norm = float(policy.value_head.weight.norm().item())
+        # orthogonal(gain=1.0) on [1, 256] → ||W|| = 1.0
+        self.assertLess(weight_norm, 2.0,
+                        f"value_head.weight norm {weight_norm:.4f} unexpected (gain=1.0 expected)")
+
+    def test_warmstart_bias_dominates_random_state(self):
+        """With +3.5 warmstart bias and random state, preferred index should
+        retain a comfortable margin over alternatives (>2.0 logit units)."""
+        policy = self._make_policy()
+        max_step_dim = policy.cfg.max_step_dim
+        preferred_idx = [4] * max_step_dim  # LEVELS_F-1 = 4
+        policy.apply_preferred_per_step_bias(preferred_idx, gain=3.5)
+
+        torch.manual_seed(0)
+        # Random state, batch of 32 to average out specific-state effects
+        state = torch.randn(32, policy.cfg.state_dim)
+        with torch.no_grad():
+            logits, _value = policy.forward(state)
+        # logits: [32, max_step_dim, max_num_levels]
+        preferred_logit = logits[:, :, 4]  # [32, max_step_dim]
+        mean_other_logit = (
+            logits[:, :, [0, 1, 2, 3, 5]].mean(dim=-1)  # [32, max_step_dim]
+        )
+        margin = (preferred_logit - mean_other_logit).mean().item()
+        # Without the gain=0.01 fix, this margin would be ~0 (random W @ h dominates).
+        # With the fix, margin should be close to +3.5 (the warmstart bias).
+        self.assertGreater(
+            margin, 2.5,
+            f"warmstart-bias margin {margin:.3f} too low; encoder noise is "
+            "overwhelming the bias (regression of 2026-05-19 fix)",
+        )
 
 
 if __name__ == "__main__":

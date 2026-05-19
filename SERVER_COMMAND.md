@@ -44,44 +44,74 @@ stop_rl_at_dir "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s
 stop_rl_at_dir "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005_rdv2"
 
 # ----------------------------------------------------------------------
-# 2) --fresh 重跑 BLB Stage-2 sequential RL。
-#
-#    上一轮（commit 4097bea, warmstart hotfix）anchor 阶段（eps 0-119）
-#    reward = +36.77 ✓ baseline 执行成功；但切到 PPO sample 后（eps 120+）
-#    reward 立刻塌到 -7.78（terminal=-5 clip 底）。bug 报告：
-#    `reports/stage2_rl/bug_reports/2026-05-18_warmstart_hotfix_sampling_collapse/`
-#
-#    根因（用 PPO update entropy 数据印证）：
-#      · 3 次 anchor PPO update 的 entropy：6.48 → 8.47 → 9.21（持续上升）
-#      · PPO loss = policy_grad - ent_coef × entropy，ent_coef=0.02
-#      · update 3: policy_grad=+0.083，entropy 项 = -0.02 × 9.21 = -0.184
-#      · entropy 项比 policy_grad 大 2 倍以上 → 梯度被"最大化 entropy"主导
-#      · 整个 anchor 期间 PPO 不是让 policy 收敛 baseline，反而越来越发散
-#      · sample 阶段一开始，发散的 policy 立即偏离 baseline 多 slot →
-#        acc 跌破阈值 → metric_ok=False → reward=-5 clip 底
-#
-#    本次单项修复（entropy schedule，commit 待定）：
-#
-#      (a) **anchor 期 ent_coef=0**：forced-baseline 阶段完全关掉 entropy bonus，
-#          让 policy_grad 单独把 policy 集中到 baseline 上（policy_loss 是
-#          负的→push baseline 概率上升）。
-#      (b) **sample 期前 240 episode 线性 ramp ent_coef 从 0 → 0.02**：
-#          ramp 完成后回到原本的 0.02 steady。给 PPO 一个 "先稳，再探索" 的过渡。
-#      (c) **日志 + diagnostics 加 ent_coef 列**：PPO update 摘要 + diagnostics_summary.md
-#          的 PPO 表格都加 ent_coef 列，跑起来一眼能看 schedule 是否生效。
-#
-#    保留不动（之前已经 OK 的）：
-#      · per-slot mode warmstart bias（commit 4097bea）✓
-#      · forced baseline anchor（commit 4097bea）—— anchor 阶段已经能拿 +36.77
-#      · v2-style clipped+tier reward（commit b97ca83）
-#      · stab_threshold = baseline_loss_std × (1 + tol)（commit b97ca83）
-#      · ForbiddenActionMask + rejection-sample（commit 42cfbe4）
-#      · 持久化目录单 dir（commit 4097bea）
-#      · 新最优日志带 metric 行（commit 4097bea）
+# 2) 先跑 torch-required 测试套件，硬卡链路 + 新增 policy init 不变式。
+#    任何一个测试红了就 abort，不进 RL（防止用旧二进制白跑 9 小时）。
+#    - test_blb_chain_integrity.py（19 cases）：apply_optimizer_output_to_cfg
+#      四类回写 + Block2 Q/K binding + _sample_gaussian_for_point live read
+#      + 本轮新增 SequentialPolicyInitTest（action_head ‖W‖<0.5 / 不动 bias /
+#        warmstart bias margin>2.5）
+#    - 其余 torch-free test_blb_*.py 顺带过一遍
 # ----------------------------------------------------------------------
 echo ""
 echo "================================================================================"
-echo "Start BLB Stage-2 Sequential RL (fresh) — entropy schedule hotfix (anchor ent_coef=0 + ramp)"
+echo "Step 1/2: run contract tests (chain integrity + sequential policy init)"
+echo "================================================================================"
+BLB_STRICT=0 python -m unittest discover -s tests -p "test_blb_*.py" -v 2>&1 | tee /tmp/blb_test_output.log
+TEST_RC=${PIPESTATUS[0]}
+if [ "$TEST_RC" -ne 0 ]; then
+  echo ""
+  echo "[abort] contract tests FAILED (rc=$TEST_RC). Not starting RL." >&2
+  echo "        Full log: /tmp/blb_test_output.log" >&2
+  exit "$TEST_RC"
+fi
+echo ""
+echo "[ok] contract tests passed."
+
+# ----------------------------------------------------------------------
+# 3) --fresh 重跑 BLB Stage-2 sequential RL（本次：policy init 修复 + Huber value loss）
+#
+#    上一轮（commit 0ca6de0, entropy schedule fix）anchor 阶段（eps 0-119）
+#    reward = +29.86 → +31.20 ✓ baseline 正常；ent_coef schedule 生效（update
+#    1-2 都是 0.00000）；但 sample 一开始（eps 120+）reward 立刻塌到 -7.89
+#    （terminal=-5）。bug 报告：
+#    `reports/stage2_rl/bug_reports/2026-05-19_entropy_schedule_sampling_collapse/`
+#
+#    根因（值损主导共享 trunk 把 warmstart bias 冲垮）：
+#      · PPO update 1: policy_loss=-0.054, value_loss=60.86, clip_fraction=0.72
+#      · PPO update 2: policy_loss=-0.009, value_loss=33.99, clip_fraction=0.66
+#      · value_loss / policy_loss ≈ 1126x：共享 encoder 的梯度几乎全部来自
+#        value head（returns~+37 而 V_init~0 → MSE 起始 ~1369，loss×0.5×backprop
+#        通过 shared trunk 把 encoder 拉得很猛）
+#      · action_head.weight 用 PyTorch 默认 Kaiming（‖W‖~0.55）→ encoder 演化后
+#        |W@h|~4-9，远超 warmstart bias +3.5 → policy 漂离 baseline
+#      · clip_fraction=0.72 是直接证据：2/3 的 trajectory 的 ratio 在 [0.8,1.2]
+#        外，说明 policy 每个 update 都在剧烈变化
+#      · ep 120 第一个 sample：约 14/59 个 slot 偏离 baseline → 14 fusion →
+#        acc 跌穿
+#
+#    本次三项修复（commit 待定）：
+#
+#      (a) **action_head.weight 用 orthogonal(gain=0.01)** 初始化（legacy
+#          noise_rl_module_v2.py line 1066 同款 trick）。让 ‖W_action‖ 在初始
+#          阶段几乎为 0，bias 项独占 logit → warmstart bias 不被 encoder 演化
+#          冲垮，能稳住很多个 PPO update。
+#      (b) **encoder + value_head 用 orthogonal init**（gain=√2 / 1.0），bias 全 0
+#          —— 标准 actor-critic 初始化，配合 (a) 让初始策略可预测。
+#      (c) **value loss MSE → Huber(delta=1.0)**（v2 line 1886 同款）：
+#          未归一化 returns~+37 时，MSE 的梯度幅度=37，Huber 截到 delta=1。
+#          shared trunk 收到的 value 梯度幅度立刻降 ~30×，policy_grad 的相对
+#          地位不再被压住。
+#
+#    保留不动（前几次已经验证 OK 的）：
+#      · entropy schedule（anchor=0 / ramp 240ep / steady=0.02）—— commit 0ca6de0
+#      · per-slot mode warmstart bias gain=3.5 —— commit 4097bea
+#      · forced baseline anchor（120 ep）—— commit 4097bea
+#      · v2-style clipped+tier reward —— commit b97ca83
+#      · ForbiddenActionMask + rejection-sample —— commit 42cfbe4
+# ----------------------------------------------------------------------
+echo ""
+echo "================================================================================"
+echo "Step 2/2: BLB Stage-2 Sequential RL (fresh) — policy init fix + Huber value loss"
 echo "================================================================================"
 bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 ```
@@ -90,23 +120,23 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 
 ## 元信息（meta，给人看的，agent 忽略）
 
-- **任务**：在 mrpc-blb-stage2-rl preset 下 fresh 跑一轮 6000-episode sequential RL，验证 warmstart hotfix
-- **更新时间**：2026-05-18（晚）
-- **更新原因**：上一轮（commit `4097bea`, warmstart hotfix）anchor 工作正常（reward +36.77），但 sample 阶段一开始 reward 立刻塌到 -7.8。bug 报告：`reports/stage2_rl/bug_reports/2026-05-18_warmstart_hotfix_sampling_collapse/`。
-    根因：PPO 的 entropy bonus（ent_coef=0.02）在 anchor 阶段把 policy 越拉越散。3 次 anchor PPO update 的 entropy 从 6.48 涨到 9.21（接近 13-slot 均匀的最大值）。entropy 项的梯度 (-0.02 × 9.21 = -0.18) 比 policy_grad (+0.08) 还大 2x，导致 PPO 整体把 policy 推向"最大化 entropy"而不是收敛 baseline。Sample 一开始就发散 → 多 slot 偏离 baseline → acc 跌穿。
+- **任务**：先跑契约测试（含本轮新增 policy init 不变式），通过后 fresh 跑一轮 6000-episode sequential RL，验证 policy init + Huber value loss 修复
+- **更新时间**：2026-05-19
+- **更新原因**：上一轮（commit `0ca6de0`, entropy schedule fix）entropy schedule 部分**生效**（anchor 期 ent_coef=0 已落到 PPO update 中），但 sample 一开始 reward 仍立刻塌到 -7.89。bug 报告：`reports/stage2_rl/bug_reports/2026-05-19_entropy_schedule_sampling_collapse/`。
+    新根因：value loss 主导共享 trunk 把 warmstart bias 冲垮。PPO update 1 `value_loss=60.86 / policy_loss=-0.054 → 1126x 比例`。`clip_fraction=0.72` 是直接证据 —— 2/3 trajectory 的 ratio 落在 [0.8,1.2] 外，说明 policy 每个 update 都在剧烈变化。配合 `action_head.weight` 用 PyTorch 默认 Kaiming（‖W‖~0.55），encoder 演化后 `|W@h|~4-9` 远超 warmstart bias +3.5 → policy 漂离 baseline → ep 120 一来就出 14 fusion + acc 跌穿。
 - **本次改动汇总**：
-    1. `blb_stage2_rl/sequential_policy.py` `sequential_ppo_update` 新增 `ent_coef_override` 参数，PPO update 期间用调度后的 ent_coef 替换 cfg.ent_coef；metrics dict 新增 `ent_coef` 字段。
-    2. `blb_stage2_rl/sequential_runner.py` 新增 `_resolve_ent_coef_schedule(...)` 帮手：anchor 期返回 0.0，ramp 期线性插值，steady 期返回 target；`train_sequential` 每次 PPO update 前算 current_ent_coef 并传过去。
-    3. `SequentialTrainConfig` + `BLBStage2TrainConfig` 加 `ent_coef_anchor=0.0` 和 `ent_coef_ramp_episodes=240` 默认值。
-    4. PPO 更新摘要 + diagnostics_summary.md 的 PPO 表格都加 `ent_coef` 列；启动 box 加 entropy schedule 说明行。
-    5. 测试：`EntCoefScheduleRegressionTest`（7 个新 case，含 helper 的 functional anchor / ramp / steady test）。40/40 smoke tests pass。
-- **预期效果**（这次要看的信号）：
-    - **anchor 期（eps 0-119）entropy 应该下降不再上升**（无 entropy bonus，policy_grad 单独把 policy 集中到 baseline）；window_mean_return ~+36-40。
-    - **PPO update 摘要 + diagnostics PPO 表格里 `ent_coef` 列**：updates 1-2 都是 0.00000；update 3 起开始 ramp（每个 update +0.005 左右）；update 6 之后 steady 在 0.02。
-    - **sample 期（eps 120+）reward 应该 ≥ +20**（policy 已集中 baseline，sampled actions 多数接近 baseline → acc 仍在阈值上方）。
-    - 训练后期 PPO 在 baseline 邻域降 cost：reward 可能突破 +45。
-    - 每次找到新 best 时，日志里有 `推理指标 ... loss_mean=X loss_std=Y m1=Z priority=P3(cost)` 一行（commit 4097bea 加的，本次保留）。
-    - total_bits 训练后期应稳定下降（baseline 14779 → 目标 12500-13500）。
+    1. `blb_stage2_rl/sequential_policy.py`：`BLBStage2SequentialPolicy.__init__` 末尾调用新 `_init_weights()`。encoder 各 Linear 用 orthogonal(√2)；value_head orthogonal(1.0)；**action_head orthogonal(0.01)**（legacy v2 line 1066 同款 trick）。
+    2. `blb_stage2_rl/sequential_policy.py`：`sequential_ppo_update` 内的 `value_loss = F.mse_loss(...)` 改为 `F.huber_loss(..., delta=1.0)`（legacy v2 line 1886 同款）。Huber 截断未归一化 returns 的梯度，shared trunk 收到的 value 梯度幅度立刻降 ~30×。
+    3. `tests/test_blb_chain_integrity.py`：新增 `SequentialPolicyInitTest`（4 个 case）—— action_head ‖W‖<0.5 / action_head.bias 初始为 0 / value_head 正确初始化 / 带 warmstart bias=3.5 时随机 state 上 preferred logit margin > 2.5。
+- **预期效果**（这次要看的信号 —— 越前面越强）：
+    - **契约测试 19/19 + 新 policy init test 4/4 通过**（如果挂了立即 abort，不进训练）。
+    - **PPO update 1 的 `value_loss` 应该 << 60.86**（Huber 把梯度幅度从 37 截到 1，shared trunk 不再被 value loss 主导）。
+    - **PPO update 1 的 `clip_fraction` 应该 << 0.72**（policy 每个 update 不再剧烈变化 → 大部分 ratio 落在 [0.8,1.2] 内）。
+    - **anchor 期（eps 0-119）entropy 平稳下降**（gain=0.01 weight init + 0 entropy bonus + forced baseline → policy 高度集中 baseline）。
+    - **sample 期（eps 120+）reward ≥ +25**（policy 仍坐落 baseline 附近，sampled action 大多和 baseline 几乎一样 → fusion 数应 ≤ 2，acc 不动）。
+    - **训练中期（eps 1000-5000）**：policy 慢慢从 baseline 邻域开始探索，total_bits 渐降，reward 可能突破 +45。
+    - **训练后期（eps 5000+）**：reward 应稳定在 +40+，best 可能 +50+。
+    - 用户提示：这个 RL 至少要 5 万轮才会显著收敛，前 6000 episode 主要看 **policy 是否稳坐 baseline 附近、不崩**，不期望立刻找到比 baseline 强很多的 action。
 - **预期产物**（**回滚单目录**）：
     - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/`
         - `blb_stage2_status.json` —— 实时状态板
