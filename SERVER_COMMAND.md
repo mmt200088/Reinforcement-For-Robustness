@@ -111,11 +111,40 @@ CUDA_VISIBLE_DEVICES=0,1 bash llama_7B_LayerImportance.sh run rl \
   --blb-v3-warmstart-anchor-episodes 120 \
   --blb-v3-reward-devices 0,1 \
   --fresh 2>&1 | tee "${ARTIFACT_DIR}/rl_600_dual_gpu.log"
-RL_RC=${PIPESTATUS[0]}
+LAUNCH_RC=${PIPESTATUS[0]}
 set -e
+echo "[rl] launcher rc=$LAUNCH_RC"
+if [ "$LAUNCH_RC" -ne 0 ]; then
+  kill "$NVS_PID" 2>/dev/null || true
+  trap - EXIT
+  exit "$LAUNCH_RC"
+fi
+
+RL_PID_FILE="${PERSIST_ROOT}/rl.pid"
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  [ -s "$RL_PID_FILE" ] && break
+  sleep 2
+done
+if [ ! -s "$RL_PID_FILE" ]; then
+  echo "[fail] launcher returned success but did not write $RL_PID_FILE"
+  kill "$NVS_PID" 2>/dev/null || true
+  trap - EXIT
+  exit 12
+fi
+RUN_PID="$(cat "$RL_PID_FILE")"
+echo "[rl] background pid=$RUN_PID; waiting for completion before monitor"
+while kill -0 "$RUN_PID" 2>/dev/null; do
+  EPISODES_DONE=0
+  if [ -f "${STAGE2_NOISE}/progress/diagnostics/episodes.jsonl" ]; then
+    EPISODES_DONE=$(wc -l < "${STAGE2_NOISE}/progress/diagnostics/episodes.jsonl" | tr -d ' ')
+  fi
+  echo "[rl-monitor] pid=$RUN_PID alive; episodes_jsonl=$EPISODES_DONE; $(date -Is)"
+  sleep 60
+done
+echo "[rl] background pid=$RUN_PID exited; running monitor"
 kill "$NVS_PID" 2>/dev/null || true
 trap - EXIT
-echo "[rl] rc=$RL_RC"
+RL_RC=0
 
 echo ""
 echo "================================================================================"
@@ -293,10 +322,6 @@ git add "$ARTIFACT_DIR"
 git commit -m "Add server safe-curriculum RL monitor results" || true
 git push || true
 
-if [ "$RL_RC" -ne 0 ]; then
-  echo "[fail] RL command failed rc=$RL_RC"
-  exit "$RL_RC"
-fi
 exit "$MONITOR_RC"
 ```
 
