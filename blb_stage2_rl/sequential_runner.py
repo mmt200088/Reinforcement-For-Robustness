@@ -17,15 +17,17 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import torch
 
 from .action_mask import ForbiddenActionMask
+from .action_space import K_LEVELS
 from .sequential_env import BLBStage2SequentialEnv, SequentialEnvConfig
 from .sequential_policy import (
     BLBStage2SequentialPolicy,
@@ -56,6 +58,12 @@ class SequentialTrainConfig:
     # mass on baseline; the ramp then re-enables exploration gradually.
     ent_coef_anchor: float = 0.0
     ent_coef_ramp_episodes: int = 240
+    absolute_episode_start: int = 0
+    warmstart_neighbor_sampling: bool = True
+    warmstart_neighbor_ramp_episodes: int = 0
+    warmstart_neighbor_max_mutations: int = 8
+    warmstart_neighbor_max_radius: int = 2
+    warmstart_mutable_full_offsets: Optional[List[int]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +233,203 @@ def _compute_per_slot_mode_preferred(
     return preferred
 
 
+def _resolve_sequential_force_baseline_episodes(train_cfg: Any) -> int:
+    """Resolve the absolute forced-baseline anchor length for sequential RL."""
+    total = max(0, int(getattr(train_cfg, "total_episodes", 0) or 0))
+    explicit = int(getattr(train_cfg, "force_baseline_episodes", 0) or 0)
+    if explicit > 0:
+        return max(0, min(int(explicit), int(total)))
+    warmstart_anchor = getattr(train_cfg, "warmstart_anchor_episodes", None)
+    if warmstart_anchor is not None:
+        return max(0, min(int(warmstart_anchor), int(total)))
+    rollout = int(
+        getattr(
+            train_cfg,
+            "rollout_size",
+            getattr(train_cfg, "update_every_n_episodes", 1),
+        ) or 1
+    )
+    return max(0, min(max(60, int(rollout) * 2), int(total)))
+
+
+def _near_baseline_level_indices(
+        *,
+        kind: str,
+        baseline_idx: int,
+        dim: int,
+        radius: int,
+        ) -> List[int]:
+    """Local allowed categorical indices around the baseline value.
+
+    K is decoded through non-monotonic ``K_LEVELS``, so locality is by K value
+    order rather than by categorical index.
+    """
+    dim = int(dim)
+    baseline_idx = int(baseline_idx)
+    radius = max(0, int(radius))
+    if dim <= 0:
+        return []
+    if baseline_idx < 0 or baseline_idx >= dim:
+        raise ValueError(f"baseline index {baseline_idx} out of width {dim}")
+    if str(kind) == "K":
+        base_k = int(K_LEVELS[baseline_idx])
+        candidates = [
+            idx for idx, value in enumerate(K_LEVELS[:dim])
+            if int(value) <= base_k
+        ]
+        candidates.sort(key=lambda idx: int(K_LEVELS[idx]), reverse=True)
+        return [int(idx) for idx in candidates[: radius + 1]]
+    lo = max(0, baseline_idx - radius)
+    hi = min(dim - 1, baseline_idx)
+    return [int(idx) for idx in range(lo, hi + 1)]
+
+
+def _default_step_level_mask(
+        *,
+        spec: Any,
+        baseline_action_vec: Sequence[int],
+        max_step_dim: int,
+        max_num_levels: int,
+        ) -> np.ndarray:
+    """Baseline-only per-level mask for one sequential step."""
+    baseline = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1)
+    mask = np.zeros((int(max_step_dim), int(max_num_levels)), dtype=bool)
+    for slot_idx, (offset, dim) in enumerate(zip(spec.full_vec_offsets, spec.slot_dims)):
+        if slot_idx >= int(max_step_dim):
+            break
+        offset = int(offset)
+        dim = int(dim)
+        if offset < 0 or offset >= baseline.size:
+            continue
+        baseline_idx = int(baseline[offset])
+        if baseline_idx < 0 or baseline_idx >= dim or baseline_idx >= int(max_num_levels):
+            raise ValueError(
+                f"baseline action offset {offset} index {baseline_idx} out of width {dim}"
+            )
+        mask[slot_idx, baseline_idx] = True
+    return mask
+
+
+def _build_step_level_mask(
+        *,
+        spec: Any,
+        baseline_action_vec: Sequence[int],
+        selected_full_offsets: Set[int],
+        max_step_dim: int,
+        max_num_levels: int,
+        radius: int,
+        ) -> np.ndarray:
+    """Near-baseline per-level mask for one step.
+
+    Slots selected for the current episode may move inside a local
+    near-baseline neighborhood. Every other slot stays baseline-only.
+    """
+    baseline = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1)
+    mask = _default_step_level_mask(
+        spec=spec,
+        baseline_action_vec=baseline,
+        max_step_dim=int(max_step_dim),
+        max_num_levels=int(max_num_levels),
+    )
+    selected = {int(x) for x in (selected_full_offsets or set())}
+    for slot_idx, (offset, dim, kind) in enumerate(
+            zip(spec.full_vec_offsets, spec.slot_dims, spec.slot_kinds)
+            ):
+        if slot_idx >= int(max_step_dim):
+            break
+        offset = int(offset)
+        if offset not in selected:
+            continue
+        dim = int(dim)
+        baseline_idx = int(baseline[offset])
+        allowed = _near_baseline_level_indices(
+            kind=str(kind),
+            baseline_idx=baseline_idx,
+            dim=dim,
+            radius=int(radius),
+        )
+        mask[slot_idx, :] = False
+        for idx in allowed:
+            if 0 <= int(idx) < dim and int(idx) < int(max_num_levels):
+                mask[slot_idx, int(idx)] = True
+        if not bool(mask[slot_idx, baseline_idx]):
+            raise ValueError(f"near-baseline mask lost baseline offset {offset}")
+    return mask
+
+
+def _sequential_neighbor_curriculum(
+        *,
+        absolute_episode_idx: int,
+        anchor_episodes: int,
+        ramp_episodes: int,
+        max_mutations: int,
+        max_radius: int,
+        ) -> Tuple[int, int]:
+    ramp = max(1, int(ramp_episodes))
+    after_anchor = max(0, int(absolute_episode_idx) - int(anchor_episodes))
+    progress = min(1.0, max(0.0, float(after_anchor) / float(ramp)))
+    mutations = 1 + int(math.floor(progress * max(0, int(max_mutations) - 1)))
+    radius = 1 + int(math.floor(progress * max(0, int(max_radius) - 1)))
+    return max(1, mutations), max(1, radius)
+
+
+def _candidate_neighbor_offsets(
+        *,
+        schedule: Sequence[Any],
+        baseline_action_vec: Sequence[int],
+        mutable_full_offsets: Optional[Sequence[int]] = None,
+        ) -> List[int]:
+    baseline = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1)
+    allowed_set = (
+        {int(x) for x in mutable_full_offsets}
+        if mutable_full_offsets is not None else None
+    )
+    out: List[int] = []
+    seen: Set[int] = set()
+    for spec in schedule:
+        for offset, dim, field_name in zip(
+                spec.full_vec_offsets,
+                spec.slot_dims,
+                spec.slot_field_names,
+                ):
+            offset = int(offset)
+            if offset in seen:
+                continue
+            if str(field_name).startswith("__"):
+                continue
+            if allowed_set is not None and offset not in allowed_set:
+                continue
+            if offset < 0 or offset >= baseline.size:
+                continue
+            if int(dim) <= 1:
+                continue
+            out.append(offset)
+            seen.add(offset)
+    return out
+
+
+def _sample_episode_neighbor_offsets(
+        *,
+        schedule: Sequence[Any],
+        baseline_action_vec: Sequence[int],
+        mutable_full_offsets: Optional[Sequence[int]],
+        mutation_count: int,
+        rng: np.random.Generator,
+        ) -> Set[int]:
+    candidates = _candidate_neighbor_offsets(
+        schedule=schedule,
+        baseline_action_vec=baseline_action_vec,
+        mutable_full_offsets=mutable_full_offsets,
+    )
+    if not candidates:
+        return set()
+    count = max(0, min(int(mutation_count), len(candidates)))
+    if count <= 0:
+        return set()
+    chosen = rng.choice(np.asarray(candidates, dtype=np.int64), size=count, replace=False)
+    return {int(x) for x in np.asarray(chosen, dtype=np.int64).reshape(-1).tolist()}
+
+
 @dataclass
 class EpisodeRecord:
     episode_idx: int
@@ -257,6 +462,9 @@ class EpisodeRecord:
     terminal_loss_mean: float = 0.0
     terminal_loss_std: float = 0.0
     terminal_metric1_mean: float = 0.0
+    safe_neighbor_active: bool = False
+    safe_neighbor_mutation_count: int = 0
+    safe_neighbor_radius: int = 0
 
 
 def _format_invalid_chain_reason(invalid_chain: Any) -> str:
@@ -368,11 +576,17 @@ def train_sequential(
         torch.manual_seed(int(train_cfg.seed))
         np.random.seed(int(train_cfg.seed) % (2**32))
 
+    absolute_episode_start = max(0, int(getattr(train_cfg, "absolute_episode_start", 0) or 0))
+    mutable_full_offsets = getattr(train_cfg, "warmstart_mutable_full_offsets", None)
+    if mutable_full_offsets is not None:
+        mutable_full_offsets = [int(x) for x in mutable_full_offsets]
+
     for ep in range(int(train_cfg.total_episodes)):
+        absolute_ep = int(absolute_episode_start + ep)
         # Only seed the env's RNG on the very first reset; subsequent resets
         # advance the RNG to avoid identical rollouts every episode.
         seed_for_this_ep = (
-            int(train_cfg.seed) + int(ep)
+            int(train_cfg.seed) + int(absolute_ep)
             if (train_cfg.seed is not None and ep == 0)
             else None
         )
@@ -411,7 +625,42 @@ def train_sequential(
         # state/action/log_prob/value/reward via ``policy.evaluate_action``
         # so the update pushes the policy probability mass toward baseline
         # while the value head learns the +45 baseline reward.
-        force_this_ep = (force_baseline_episodes > 0 and ep < force_baseline_episodes)
+        force_this_ep = (
+            force_baseline_episodes > 0
+            and int(absolute_ep) < int(force_baseline_episodes)
+        )
+
+        neighbor_mask_active = False
+        neighbor_selected_offsets: Set[int] = set()
+        neighbor_radius = 1
+        if (
+                (not force_this_ep)
+                and bool(getattr(train_cfg, "warmstart_neighbor_sampling", True))
+                and baseline_action_vec is not None
+        ):
+            neighbor_mutations, neighbor_radius = _sequential_neighbor_curriculum(
+                absolute_episode_idx=int(absolute_ep),
+                anchor_episodes=int(force_baseline_episodes),
+                ramp_episodes=int(
+                    getattr(train_cfg, "warmstart_neighbor_ramp_episodes", 0)
+                    or int(train_cfg.total_episodes)
+                    or 1
+                ),
+                max_mutations=int(getattr(train_cfg, "warmstart_neighbor_max_mutations", 8)),
+                max_radius=int(getattr(train_cfg, "warmstart_neighbor_max_radius", 2)),
+            )
+            seed_base = int(train_cfg.seed) if train_cfg.seed is not None else 0
+            episode_rng = np.random.default_rng(
+                int((seed_base + absolute_ep * 1_000_003) % (2**32))
+            )
+            neighbor_mask_active = True
+            neighbor_selected_offsets = _sample_episode_neighbor_offsets(
+                schedule=env.schedule,
+                baseline_action_vec=baseline_action_vec,
+                mutable_full_offsets=mutable_full_offsets,
+                mutation_count=int(neighbor_mutations),
+                rng=episode_rng,
+            )
 
         while True:
             spec = env.current_spec()
@@ -422,6 +671,20 @@ def train_sequential(
             slot_mask_t = torch.from_numpy(slot_mask_np).to(device).unsqueeze(0)
             levels_t = torch.from_numpy(levels_np).to(device).unsqueeze(0)
             n_active = int(slot_mask_np.sum())
+            action_level_mask_np: Optional[np.ndarray] = None
+            action_level_mask_t = None
+            if neighbor_mask_active and baseline_action_vec is not None:
+                action_level_mask_np = _build_step_level_mask(
+                    spec=spec,
+                    baseline_action_vec=baseline_action_vec,
+                    selected_full_offsets=neighbor_selected_offsets,
+                    max_step_dim=policy.cfg.max_step_dim,
+                    max_num_levels=policy.cfg.max_num_levels,
+                    radius=int(neighbor_radius),
+                )
+                action_level_mask_t = (
+                    torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
+                )
 
             # -- Forced-baseline anchor short-circuit --
             # Skip sampling + rejection-loop entirely; commit the baseline
@@ -474,6 +737,7 @@ def train_sequential(
                     action=action_np,
                     slot_mask=slot_mask_np,
                     per_slot_num_levels=levels_np,
+                    action_level_mask=None,
                     log_prob=log_prob,
                     value=value,
                     reward=float(reward),
@@ -518,7 +782,9 @@ def train_sequential(
                 attempts_this_step += 1
                 with torch.no_grad():
                     action_t, log_prob_t, value_t = policy.sample_action(
-                        obs_t, slot_mask_t, levels_t, deterministic=False,
+                        obs_t, slot_mask_t, levels_t,
+                        deterministic=False,
+                        action_level_mask=action_level_mask_t,
                     )
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
                 step_action_try = action_np_try[:n_active].tolist()
@@ -559,6 +825,7 @@ def train_sequential(
                         actions_t = torch.from_numpy(fallback_padded).to(device).unsqueeze(0)
                         lp_t, _, val_t = policy.evaluate_action(
                             obs_t, actions_t, slot_mask_t, levels_t,
+                            action_level_mask=action_level_mask_t,
                         )
                     chosen_eval_info = env.evaluate_step(fallback_action.tolist())
                     chosen_action_np = fallback_padded
@@ -618,6 +885,11 @@ def train_sequential(
             enriched_info["reward"] = float(reward)
             enriched_info["value"] = value
             enriched_info["log_prob"] = log_prob
+            if action_level_mask_np is not None:
+                enriched_info["neighbor_selected_offsets"] = sorted(
+                    int(x) for x in neighbor_selected_offsets
+                )
+                enriched_info["neighbor_radius"] = int(neighbor_radius)
 
             if on_step_end is not None:
                 try:
@@ -632,6 +904,7 @@ def train_sequential(
                 action=action_np,
                 slot_mask=slot_mask_np,
                 per_slot_num_levels=levels_np,
+                action_level_mask=action_level_mask_np,
                 log_prob=log_prob,
                 value=value,
                 reward=float(reward),
@@ -680,6 +953,9 @@ def train_sequential(
             terminal_loss_mean=float(terminal_loss_mean_val),
             terminal_loss_std=float(terminal_loss_std_val),
             terminal_metric1_mean=float(terminal_metric1_val),
+            safe_neighbor_active=bool(neighbor_mask_active),
+            safe_neighbor_mutation_count=int(len(neighbor_selected_offsets)),
+            safe_neighbor_radius=int(neighbor_radius if neighbor_mask_active else 0),
         )
         episode_records.append(record)
         if on_episode_end is not None:
@@ -691,7 +967,7 @@ def train_sequential(
             # episode count to match the anchor boundary semantics in
             # ``force_baseline_episodes``.
             current_ent_coef = _resolve_ent_coef_schedule(
-                ep_count_1based=int(ep + 1),
+                ep_count_1based=int(absolute_episode_start + ep + 1),
                 anchor_episodes=int(force_baseline_episodes),
                 target_ent_coef=float(train_cfg.ppo.ent_coef),
                 anchor_ent_coef=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
@@ -874,7 +1150,7 @@ def run_sequential_via_runner(
         _selection_float,
         resolve_blb_persistence_dir,
     )
-    from .action_space import action_dims_for_config
+    from .action_space import action_dims_for_config, describe_action_vector
     from .action_io import action_vec_to_slots_list
 
     ev = runner.evaluator
@@ -1224,13 +1500,39 @@ def run_sequential_via_runner(
         except Exception as exc:
             log(f"  [warmstart][warning] preferred-per-step bias failed: {exc}")
 
+    action_dim_by_index = action_dims_for_config(int(ev.total_layers))
+    mutable_neighbor_offsets: List[int] = []
+    try:
+        baseline_desc_for_curriculum = describe_action_vector(
+            baseline_action_vec,
+            max_sfs=max_sfs,
+            num_layers=int(ev.total_layers),
+            gelu_degree=fixed_gelu,
+            attn_degree=fixed_softmax,
+            profile=str(train_cfg.profile),
+        )
+        for record in baseline_desc_for_curriculum.get("records", []) or []:
+            if not isinstance(record, Mapping):
+                continue
+            gi = int(record.get("global_index", -1))
+            if gi < 0 or gi >= len(action_dim_by_index):
+                continue
+            if int(action_dim_by_index[gi]) <= 1:
+                continue
+            if not bool(record.get("effective", True)):
+                continue
+            if record.get("effective_value") is None:
+                continue
+            mutable_neighbor_offsets.append(int(gi))
+    except Exception as exc:
+        mutable_neighbor_offsets = []
+        log(f"  [warmstart][warning] failed to build sequential mutable slots: {exc}")
+
     # Preview values for the startup hyperparameter box. The actual
     # values used during train_sequential are computed later (in the
     # SequentialTrainConfig construction + force_baseline_episodes resolve)
     # — these mirror that logic so the box shows the eventual config.
-    _preview_force_baseline_episodes = int(getattr(
-        train_cfg, "force_baseline_episodes", 0,
-    )) or max(60, int(train_cfg.rollout_size) * 2)
+    _preview_force_baseline_episodes = _resolve_sequential_force_baseline_episodes(train_cfg)
     _preview_ent_coef_anchor = float(getattr(train_cfg, "ent_coef_anchor", 0.0))
     _preview_ramp = int(getattr(train_cfg, "ent_coef_ramp_episodes", 240))
 
@@ -1261,6 +1563,11 @@ def run_sequential_via_runner(
         f"gain={float(train_cfg.warmstart_bias_gain):.3g}    "
         f"force_baseline_episodes={int(_preview_force_baseline_episodes)}    "
         f"{preferred_summary}",
+        f"Safe neighbor curriculum：enabled={bool(getattr(train_cfg, 'warmstart_neighbor_sampling', True))}    "
+        f"mutable_offsets={len(mutable_neighbor_offsets)}    "
+        f"ramp={int(getattr(train_cfg, 'warmstart_neighbor_ramp_episodes', 0) or train_cfg.total_episodes)}    "
+        f"max_mutations={int(getattr(train_cfg, 'warmstart_neighbor_max_mutations', 8))}    "
+        f"max_radius={int(getattr(train_cfg, 'warmstart_neighbor_max_radius', 2))}",
         f"Entropy schedule (anchor → ramp → steady)："
         f"anchor[0..{int(_preview_force_baseline_episodes)}]ep_coef={float(_preview_ent_coef_anchor):.4g} → "
         f"ramp[{int(_preview_force_baseline_episodes)}..{int(_preview_force_baseline_episodes)+int(_preview_ramp)}]ep_coef→{float(train_cfg.ppo.ent_coef):.4g} → "
@@ -1340,10 +1647,24 @@ def run_sequential_via_runner(
         total_episodes=int(remaining_episodes),
         update_every_n_episodes=max(1, int(train_cfg.rollout_size)),
         log_every_n_episodes=max(1, int(train_cfg.rollout_size)),
-        seed=int(train_cfg.seed) + int(start_episode),  # offset seed so resumed runs don't replay the same RNG
+        seed=int(train_cfg.seed),
         ppo=ppo,
         ent_coef_anchor=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
         ent_coef_ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 240)),
+        absolute_episode_start=int(start_episode),
+        warmstart_neighbor_sampling=bool(getattr(train_cfg, "warmstart_neighbor_sampling", True)),
+        warmstart_neighbor_ramp_episodes=int(
+            getattr(train_cfg, "warmstart_neighbor_ramp_episodes", 0)
+            or int(train_cfg.total_episodes)
+            or 1
+        ),
+        warmstart_neighbor_max_mutations=int(
+            getattr(train_cfg, "warmstart_neighbor_max_mutations", 8)
+        ),
+        warmstart_neighbor_max_radius=int(
+            getattr(train_cfg, "warmstart_neighbor_max_radius", 2)
+        ),
+        warmstart_mutable_full_offsets=list(mutable_neighbor_offsets),
     )
 
     episode_returns: List[float] = []
@@ -1570,6 +1891,11 @@ def run_sequential_via_runner(
                     f"m1={float(record.terminal_metric1_mean):.4f}"
                 ),
                 (
+                    f"safe_neighbor: active={bool(record.safe_neighbor_active)}  "
+                    f"mutated_offsets={int(record.safe_neighbor_mutation_count)}  "
+                    f"radius={int(record.safe_neighbor_radius)}"
+                ),
+                (
                     "first_invalid="
                     + (
                         "none"
@@ -1694,6 +2020,9 @@ def run_sequential_via_runner(
                     "steps_taken": int(record.steps_taken),
                     "terminal_reward": float(record.terminal_reward),
                     "best_reward": float(best_reward),
+                    "safe_neighbor_active": bool(record.safe_neighbor_active),
+                    "safe_neighbor_mutation_count": int(record.safe_neighbor_mutation_count),
+                    "safe_neighbor_radius": int(record.safe_neighbor_radius),
                 },
             )
         except Exception:
@@ -1889,11 +2218,7 @@ def run_sequential_via_runner(
     # `reports/stage2_rl/bug_reports/2026-05-18_stage2_rl_rdv2_negative_reward_startup/`.
     # The fallback ``rollout_size * 2`` mirrors warmstart_anchor_episodes
     # in the legacy single-shot runner.
-    _force_baseline_episodes = int(getattr(
-        train_cfg, "force_baseline_episodes", 0,
-    ))
-    if _force_baseline_episodes <= 0:
-        _force_baseline_episodes = max(60, int(train_cfg.rollout_size) * 2)
+    _force_baseline_episodes = _resolve_sequential_force_baseline_episodes(train_cfg)
     log(
         f"  {bullet} 强制 baseline 锚点（forced-baseline anchor）: "
         f"前 {_force_baseline_episodes} 个 episode 直接执行 baseline action，"

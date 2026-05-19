@@ -19,6 +19,14 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   the user. When asking, include the recommended answer.
 - For coding tasks, implement only what was requested and verify with the
   narrowest meaningful command or test.
+- For the current Stage-2 RL collapse task, operate in goal mode rather than
+  one-shot bugfix mode. The goal is not just "tests pass"; RL must train after
+  the anchor without collapse, the reward curve must look like a normal RL
+  curve, terminal metrics must not hit collapse sentinels such as
+  `loss_mean=100`, priority must not enter sustained P1(acc), and monitored
+  parameters must not jump pathologically. If a server run shows a new abnormal
+  point, design the next experiment, inspect evidence, apply the real fix
+  locally, and repeat the git-synced server run loop.
 - Keep this `AGENTS.md` current as the shared project memory for Codex and
   Claude Code. After each user message that adds or changes project facts,
   workflow rules, run state, architecture notes, or operating constraints,
@@ -456,6 +464,30 @@ reward.
 The old single-shot `BLBStage2Env`/`BLBStage2Policy` path still exists for tests,
 F0 tooling, candidate-store compatibility, and explicit
 `--blb-v3-no-sequential-rl` experiments.
+
+Current safe-curriculum fix for the 2026-05-20 collapse at episode 121:
+
+- The collapse was optimizer-valid but accuracy-catastrophic. The first
+  post-anchor sampled episode reached `any_invalid=False` with `loss_mean=100`
+  and P1(acc), so the optimizer-invalid blacklist alone could not protect the
+  terminal model-forward reward.
+- Sequential forced-baseline anchor must respect the configured
+  `warmstart_anchor_episodes` unless `force_baseline_episodes` is explicitly
+  set. Anchor and entropy schedules must use absolute episode indices so resume
+  does not restart the anchor.
+- During forced anchor, PPO must still evaluate baseline actions under
+  unrestricted slot/level support; do not apply a baseline-only mask there,
+  otherwise the actor receives no useful probability-mass signal.
+- After the anchor, safe neighbor sampling may restrict each episode to a small
+  set of mutable full-vector offsets. Non-selected slots stay baseline-only;
+  selected SF-like slots can move only downward within the local radius, and K
+  slots use value-order locality through non-monotonic `K_LEVELS`.
+- Store the exact per-transition `action_level_mask` used during collection and
+  replay it during `sequential_ppo_update`. Recomputing support during PPO
+  update breaks the PPO ratio whenever the per-episode mask changes.
+- Build mutable offsets from `describe_action_vector(...)` and exclude inactive
+  compatibility slots, layer-0 block-1 pseudo slots, first-input compatibility,
+  and single-level dimensions.
 
 Important current gap: the single-shot runner and legacy v2 runner wire
 `STOP_RL`/SIGINT graceful-stop handling through `noise_rl_module_v2.py`; the

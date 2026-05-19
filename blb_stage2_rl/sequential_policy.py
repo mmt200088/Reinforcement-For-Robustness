@@ -9,9 +9,9 @@ Three pieces:
      masked out as well).
 
   2. :class:`SequentialRolloutBuffer` -- stores per-step
-     (state, action, log_prob, value, reward, done, slot_mask) tuples
-     organised by episode. ``compute_gae(...)`` produces λ-returns and
-     advantages over the horizon.
+     (state, action, log_prob, value, reward, done, slot_mask,
+     action_level_mask) tuples organised by episode. ``compute_gae(...)``
+     produces λ-returns and advantages over the horizon.
 
   3. :func:`sequential_ppo_update` -- standard PPO-clip update over the
      buffered transitions. Aware of variable per-step action width via
@@ -113,11 +113,14 @@ class BLBStage2SequentialPolicy(nn.Module):
             slot_mask: torch.Tensor,
             per_slot_num_levels: torch.Tensor,
             max_num_levels: int,
+            action_level_mask: Optional[torch.Tensor] = None,
             ) -> torch.Tensor:
         """Return additive -inf mask for invalid (slot, level) cells.
 
         ``slot_mask`` is ``[B, max_step_dim]`` boolean (True = active).
         ``per_slot_num_levels`` is ``[B, max_step_dim]`` int (0 for padding).
+        ``action_level_mask`` is optional ``[B, max_step_dim, max_num_levels]``
+        or ``[max_step_dim, max_num_levels]`` boolean (True = allowed).
         Output has shape ``[B, max_step_dim, max_num_levels]``.
         """
         B, S = slot_mask.shape
@@ -127,6 +130,25 @@ class BLBStage2SequentialPolicy(nn.Module):
         # within an active slot, levels >= num_levels[slot] get -inf
         level_valid = levels_idx < per_slot_num_levels.unsqueeze(-1)
         valid = slot_alive & level_valid
+        if action_level_mask is not None:
+            extra_mask = action_level_mask.to(device=slot_mask.device, dtype=torch.bool)
+            if extra_mask.dim() == 2:
+                extra_mask = extra_mask.unsqueeze(0)
+            if extra_mask.dim() != 3:
+                raise ValueError(
+                    "action_level_mask must be [B, max_step_dim, max_num_levels] "
+                    "or [max_step_dim, max_num_levels]"
+                )
+            try:
+                extra_mask = extra_mask.expand(B, S, max_num_levels)
+            except RuntimeError as exc:
+                raise ValueError(
+                    f"action_level_mask shape {tuple(extra_mask.shape)} is not "
+                    f"broadcastable to {(B, S, max_num_levels)}"
+                ) from exc
+            valid = valid & extra_mask
+            if (slot_mask & ~valid.any(dim=-1)).any():
+                raise ValueError("action_level_mask leaves an active slot with no allowed levels")
         mask = torch.zeros_like(valid, dtype=torch.float32)
         mask = mask.masked_fill(~valid, float("-inf"))
         return mask
@@ -139,6 +161,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             per_slot_num_levels: torch.Tensor,
             *,
             deterministic: bool = False,
+            action_level_mask: Optional[torch.Tensor] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample one per-step action.
 
@@ -149,7 +172,8 @@ class BLBStage2SequentialPolicy(nn.Module):
         """
         logits, value = self.forward(state)
         logits = logits + self._build_logit_mask(
-            slot_mask, per_slot_num_levels, self.cfg.max_num_levels
+            slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
+            action_level_mask=action_level_mask,
         )
         # collapse padding rows by setting them to a single dummy distribution
         # so torch.distributions doesn't NaN. We then mask-out their log_prob
@@ -176,13 +200,15 @@ class BLBStage2SequentialPolicy(nn.Module):
             actions: torch.Tensor,
             slot_mask: torch.Tensor,
             per_slot_num_levels: torch.Tensor,
+            action_level_mask: Optional[torch.Tensor] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Re-evaluate (log_prob, entropy, value) for a given action under the
         current policy. Used by PPO update.
         """
         logits, value = self.forward(state)
         logits = logits + self._build_logit_mask(
-            slot_mask, per_slot_num_levels, self.cfg.max_num_levels
+            slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
+            action_level_mask=action_level_mask,
         )
         safe_logits = torch.where(
             torch.isfinite(logits).any(dim=-1, keepdim=True),
@@ -245,6 +271,8 @@ class SequentialTransition:
     value: float
     reward: float
     done: bool
+    # action_level_mask: np.ndarray when provided; shape [max_step_dim, max_num_levels].
+    action_level_mask: Optional[np.ndarray] = None
 
 
 class SequentialRolloutBuffer:
@@ -267,16 +295,27 @@ class SequentialRolloutBuffer:
             action: np.ndarray,
             slot_mask: np.ndarray,
             per_slot_num_levels: np.ndarray,
+            action_level_mask: Optional[np.ndarray] = None,
             log_prob: float,
             value: float,
             reward: float,
             done: bool,
             ) -> None:
+        """Append one transition.
+
+        Callers that build a per-step NumPy mask can pass
+        ``action_level_mask=action_level_mask_np``. ``None`` preserves the
+        original unmasked per-level support.
+        """
         self._buf.append(SequentialTransition(
             state=np.asarray(state, dtype=np.float32),
             action=np.asarray(action, dtype=np.int64),
             slot_mask=np.asarray(slot_mask, dtype=bool),
             per_slot_num_levels=np.asarray(per_slot_num_levels, dtype=np.int64),
+            action_level_mask=(
+                None if action_level_mask is None
+                else np.asarray(action_level_mask, dtype=bool)
+            ),
             log_prob=float(log_prob),
             value=float(value),
             reward=float(reward),
@@ -330,7 +369,7 @@ class SequentialRolloutBuffer:
             advantage_normalize: bool = True,
             ):
         """Pack everything into batched tensors. Returns:
-            states, actions, slot_masks, per_slot_num_levels,
+            states, actions, slot_masks, per_slot_num_levels, level_masks,
             old_log_probs, returns, advantages
         """
         if not self._buf:
@@ -339,6 +378,21 @@ class SequentialRolloutBuffer:
         actions = np.stack([t.action for t in self._buf])
         slot_masks = np.stack([t.slot_mask for t in self._buf])
         levels = np.stack([t.per_slot_num_levels for t in self._buf])
+        concrete_level_masks = [
+            t.action_level_mask for t in self._buf
+            if t.action_level_mask is not None
+        ]
+        level_masks = None
+        if concrete_level_masks:
+            mask_shape = tuple(concrete_level_masks[0].shape)
+            level_masks = np.stack([
+                (
+                    np.ones(mask_shape, dtype=bool)
+                    if t.action_level_mask is None
+                    else np.asarray(t.action_level_mask, dtype=bool)
+                )
+                for t in self._buf
+            ])
         log_probs = np.array([t.log_prob for t in self._buf], dtype=np.float32)
         returns, advantages = self.compute_gae(gamma=gamma, lam=lam)
         if advantage_normalize and advantages.size > 1:
@@ -350,6 +404,7 @@ class SequentialRolloutBuffer:
             torch.from_numpy(actions).to(device),
             torch.from_numpy(slot_masks).to(device),
             torch.from_numpy(levels).to(device),
+            None if level_masks is None else torch.from_numpy(level_masks).to(device),
             torch.from_numpy(log_probs).to(device),
             torch.from_numpy(returns).to(device),
             torch.from_numpy(advantages).to(device),
@@ -398,7 +453,7 @@ def sequential_ppo_update(
         float(cfg.ent_coef) if ent_coef_override is None else float(ent_coef_override)
     )
 
-    states, actions, slot_masks, levels, old_log_probs, returns, advantages = buffer.to_tensors(
+    states, actions, slot_masks, levels, level_masks, old_log_probs, returns, advantages = buffer.to_tensors(
         device, gamma=cfg.gamma, lam=cfg.gae_lambda,
     )
     n = states.shape[0]
@@ -418,6 +473,9 @@ def sequential_ppo_update(
                 actions.index_select(0, mb),
                 slot_masks.index_select(0, mb),
                 levels.index_select(0, mb),
+                action_level_mask=(
+                    None if level_masks is None else level_masks.index_select(0, mb)
+                ),
             )
             old_lp = old_log_probs.index_select(0, mb)
             ret = returns.index_select(0, mb)

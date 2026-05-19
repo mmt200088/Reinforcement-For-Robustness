@@ -60,6 +60,20 @@ Collaboration protocol for future Codex + Claude Code work:
 - If a server-side run exposes a code bug, document the diagnosis and reproduce
   the real fix locally; do not keep a server-side source patch as canonical.
 
+Current Stage-2 RL collapse goal mode:
+
+- Treat this as a long research/debugging loop, not a one-shot bugfix. The task
+  is complete only when server evidence shows BLB Stage-2 sequential RL can
+  train after the anchor without reward collapse.
+- Required success signal: the reward curve remains a normal RL curve,
+  terminal metrics avoid collapse sentinels such as `loss_mean=100`, priority
+  does not enter sustained P1(acc), and monitored quantities such as valid
+  steps, PPO entropy/clip fraction, mutation count, radius, and GPU reward
+  probe state do not jump pathologically.
+- If a server run shows a new abnormal point, design a focused experiment,
+  inspect the evidence, apply the real fix locally, push, let the server pull
+  and run again, and continue until the goal is met.
+
 ### Server command bridge
 
 Use `SERVER_COMMAND.md` as the normal bridge for server-side command execution.
@@ -607,6 +621,19 @@ The runner's "final eval" path must install the actual BLB best action (decode �
 - **Invalid-chain attribution: per-block, not just first (2026-05-17).** Previously each episode's `details/noise_ppo_step_info_*.txt` recorded only `first_invalid=step4 (L1-B1)`; when 8 sub-steps failed, the other 7 were silent — operators had to re-run the optimizer with an ad-hoc script to recover the list. Now `EpisodeRecord.invalid_block_details` collects every `(step, layer, block, graph_key, reason)` and the details writer emits them under `invalid_blocks (N):` with `_format_invalid_chain_reason` summarising the optimizer's invalid_chain dict (`primes_over_q_max`, `primes_under_q_min`, `reason`, `stage`, `message`). For post-hoc forensics on any saved action JSON, `scripts/blb_diagnose_invalid_blocks.py --action-config <path> --output-dir <dir>` runs the same pipeline offline and writes `report.{md,json}` enumerating every (layer, block) status + slot SF/K configuration. **Caveat (fixed 2026-05-17 second pass):** the diagnostic script's `_stage1_degrees_from_meta` originally read from the wrong JSON path (`cfg[dataset]` instead of `cfg[model_type][dataset]['stage1']`) and silently fell back to `[4]*L`, producing reports where every invalid block looked like `block5_n4` / `block3_exp_n4` regardless of the real per-layer stage-1 degree. Now reads `cfg[model_type][dataset]['stage1']['gelu' | 'softmax']` correctly and warns loudly on miss.
 - **Sequential invalid-action mask + skip-forward (2026-05-17).** Three coordinated changes so the RL policy "only sees valid actions" the way the user spec'd: (1) `blb_stage2_rl/sequential_env.py` splits `step()` into `evaluate_step(action) → eval_info` (calls optimizer, no state mutation) and `commit_step(eval_info) → (obs, reward, done, info)` (splices accumulator, advances step, runs terminal forward); old single-call `step()` survives as a backward-compat wrapper. (2) `ForbiddenActionMask` in `blb_stage2_rl/action_mask.py` is a per-`(layer, block)` blacklist of action tuples that previously failed; `train_sequential` rejection-samples around it (up to `max_rejection_retries=32`) before calling `evaluate_step`, then adds new failures back to the mask. On exhausted retries we fall back to the baseline action slice for that step (guaranteed valid via static_skeletons). Mask survives across episodes and is round-tripped in the checkpoint as `forbidden_mask_records`. (3) `blb_stage2_rl/env.py:BLBStage2Env.step` now short-circuits the model forward when the optimizer already reported `any_invalid` — emits a priority-3 cost reward with the invalid_penalty docked and `forward_skipped_reason="any_invalid_chain"` in info, skipping `bridge.apply` + `_eval_on_probe` entirely. Combined effect: the policy explores the valid sub-space of actions only; invalid tuples that ever appear are blacklisted forever; if a committed action does turn out invalid (defensive fallback), the wasted model forward is skipped.
 - **Warmstart bias bumped + retargeted (2026-05-17).** Default `warmstart_bias_gain` raised from 1.2 → 3.5 and the preferred index changed from `max_num_levels - 1 = 5` (always masked out for SF kinds) to `LEVELS_F - 1 = 4` (the actual max-SF index baseline for F/W slots, harmlessly masked-out for MS/R, slightly off for K). Net effect at policy init: each SF slot puts ~84% probability mass on its baseline index instead of the previous ~20% (uniform), so the rejection-sample loop hits the mask far less in the first few hundred episodes.
+- **Safe sequential curriculum (2026-05-20 fix in progress).** The episode-121
+  collapse was not an optimizer invalid-chain failure: `any_invalid=False` but
+  the terminal probe hit `loss_mean=100` and P1(acc), so unrestricted
+  post-anchor sampling produced accuracy-catastrophic full actions. The safe
+  path is: honor configured `warmstart_anchor_episodes` unless
+  `force_baseline_episodes` is explicit; use absolute episode indices for
+  anchor/entropy/resume; keep forced-anchor PPO evaluation under unrestricted
+  support; after anchor, open only a small episode-level set of effective
+  full-vector offsets while non-selected slots remain baseline-only; use
+  value-order locality for non-monotonic `K_LEVELS`; store each transition's
+  `action_level_mask` and replay that same mask during PPO update. Build mutable
+  offsets from `describe_action_vector(...)` and exclude inactive compatibility,
+  layer-0 block-1, first-input compatibility, and single-level slots.
 - The Windows console may be GBK; `BLBStage2RLRunner._make_log_safe` wraps `evaluator.log` so non-GBK chars fall back without crashing stdout (file logs stay UTF-8). Matplotlib plot titles are intentionally ASCII (the markdown report carries the Chinese). Unicode bullets (▸) in new console output get replaced with `?` in stdout but are preserved in log files.
 - `GLOBALS.md` lists where global path / hyperparameter constants live. `config/paths.py` and `config/constants.py` exist as the future single source of truth, but most modules still hardcode their own — change with care.
 

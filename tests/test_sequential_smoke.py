@@ -824,6 +824,207 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertIn(preferred[2], (3, 4))  # tie either way
         self.assertEqual(preferred[3], 99)
 
+    def _exec_runner_helpers(self, *names):
+        """Extract dependency-light helpers from sequential_runner without
+        importing the torch-heavy module on local developer machines."""
+        import ast
+        import math
+        import numpy as np
+        from pathlib import Path
+        from typing import Any, Optional, Sequence, Set, List   # noqa: F401
+
+        src = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        wanted = set(names)
+        body = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in wanted
+        ]
+        self.assertEqual(
+            {node.name for node in body},
+            wanted,
+            msg=f"missing helper(s): {sorted(wanted - {node.name for node in body})}",
+        )
+        mod = ast.Module(body=body, type_ignores=[])
+        ast.fix_missing_locations(mod)
+        ns = {
+            "Any": Any,
+            "Optional": Optional,
+            "Sequence": Sequence,
+            "Set": Set,
+            "List": List,
+            "np": np,
+            "math": math,
+            "K_LEVELS": (8, 9, 11, 13, 10, 12),
+        }
+        exec(compile(mod, "<sequential_runner_helpers>", "exec"), ns)
+        return ns
+
+    def test_sequential_force_anchor_honors_warmstart_config(self):
+        ns = self._exec_runner_helpers("_resolve_sequential_force_baseline_episodes")
+        helper = ns["_resolve_sequential_force_baseline_episodes"]
+
+        class Cfg:
+            rollout_size = 60
+            total_episodes = 6000
+            force_baseline_episodes = 0
+            warmstart_anchor_episodes = 80
+
+        self.assertEqual(helper(Cfg()), 80)
+
+        Cfg.force_baseline_episodes = 160
+        self.assertEqual(helper(Cfg()), 160)
+
+        Cfg.force_baseline_episodes = 0
+        Cfg.warmstart_anchor_episodes = None
+        self.assertEqual(helper(Cfg()), 120)
+
+    def test_step_level_mask_keeps_unselected_slots_at_baseline(self):
+        ns = self._exec_runner_helpers(
+            "_near_baseline_level_indices",
+            "_default_step_level_mask",
+            "_build_step_level_mask",
+        )
+        build_mask = ns["_build_step_level_mask"]
+        near = ns["_near_baseline_level_indices"]
+
+        self.assertEqual(set(near(kind="K", baseline_idx=3, dim=6, radius=2)), {2, 3, 5})
+
+        class FakeSpec:
+            slot_dims = (5, 6, 3)
+            slot_kinds = ("F", "K", "M")
+            full_vec_offsets = (0, 1, 2)
+
+        import numpy as np
+
+        baseline = np.array([4, 3, 2], dtype=np.int64)
+        mask = build_mask(
+            spec=FakeSpec(),
+            baseline_action_vec=baseline,
+            selected_full_offsets={1, 2},
+            max_step_dim=4,
+            max_num_levels=6,
+            radius=2,
+        )
+        self.assertEqual(mask.shape, (4, 6))
+        self.assertEqual(set(np.flatnonzero(mask[0]).tolist()), {4})
+        self.assertEqual(set(np.flatnonzero(mask[1]).tolist()), {2, 3, 5})
+        self.assertEqual(set(np.flatnonzero(mask[2]).tolist()), {0, 1, 2})
+        self.assertFalse(mask[3].any())
+
+        baseline_only = build_mask(
+            spec=FakeSpec(),
+            baseline_action_vec=baseline,
+            selected_full_offsets=set(),
+            max_step_dim=4,
+            max_num_levels=6,
+            radius=2,
+        )
+        self.assertEqual(set(np.flatnonzero(baseline_only[0]).tolist()), {4})
+        self.assertEqual(set(np.flatnonzero(baseline_only[1]).tolist()), {3})
+        self.assertEqual(set(np.flatnonzero(baseline_only[2]).tolist()), {2})
+
+    def test_sequential_ppo_buffer_carries_action_level_mask(self):
+        from pathlib import Path
+
+        policy_src = Path("blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
+        runner_src = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        for needle in (
+            "action_level_mask: np.ndarray",
+            "action_level_mask=action_level_mask_np",
+            "level_masks",
+            "action_level_mask: Optional[torch.Tensor] = None",
+        ):
+            self.assertIn(needle, policy_src + runner_src, msg=f"missing mask wiring: {needle!r}")
+
+    def test_sequential_ppo_update_replays_stored_action_level_mask(self):
+        import sys
+
+        torch_mod = sys.modules.get("torch")
+        if torch_mod is not None and not hasattr(getattr(torch_mod, "nn", None), "Module"):
+            for name in list(sys.modules):
+                if name == "torch" or name.startswith("torch."):
+                    del sys.modules[name]
+        try:
+            import torch
+        except Exception as exc:
+            self.skipTest(f"torch unavailable: {exc}")
+        if not hasattr(getattr(torch, "nn", None), "Module"):
+            self.skipTest("real torch.nn.Module unavailable")
+
+        from blb_stage2_rl.sequential_policy import (
+            SequentialPPOConfig,
+            SequentialRolloutBuffer,
+            sequential_ppo_update,
+        )
+        import numpy as np
+
+        class SpyPolicy(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.tensor(0.0))
+                self.seen_masks = []
+
+            def evaluate_action(
+                    self,
+                    state,
+                    actions,
+                    slot_mask,
+                    per_slot_num_levels,
+                    action_level_mask=None,
+                    ):
+                self.seen_masks.append(
+                    None if action_level_mask is None
+                    else action_level_mask.detach().cpu().clone()
+                )
+                batch = state.shape[0]
+                base = self.weight.expand(batch)
+                return base, base + 0.5, base
+
+        level_mask = np.array(
+            [
+                [True, False, False],
+                [False, True, False],
+            ],
+            dtype=bool,
+        )
+        buffer = SequentialRolloutBuffer()
+        buffer.add(
+            state=np.array([0.0, 1.0], dtype=np.float32),
+            action=np.array([0, 1], dtype=np.int64),
+            slot_mask=np.array([True, True], dtype=bool),
+            per_slot_num_levels=np.array([3, 3], dtype=np.int64),
+            action_level_mask=level_mask,
+            log_prob=0.0,
+            value=0.0,
+            reward=1.0,
+            done=True,
+        )
+        policy = SpyPolicy()
+        optimizer = torch.optim.SGD(policy.parameters(), lr=0.0)
+        sequential_ppo_update(
+            policy,
+            optimizer,
+            buffer,
+            SequentialPPOConfig(n_epochs=1, minibatch_size=1, ent_coef=0.0),
+            torch.device("cpu"),
+        )
+        self.assertTrue(policy.seen_masks)
+        self.assertTrue(all(mask is not None for mask in policy.seen_masks))
+        self.assertTrue(torch.equal(policy.seen_masks[0][0], torch.from_numpy(level_mask)))
+
+    def test_sequential_runner_uses_episode_neighbor_offsets(self):
+        from pathlib import Path
+
+        src = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        for needle in (
+            "_sample_episode_neighbor_offsets",
+            "neighbor_selected_offsets",
+            "_build_step_level_mask",
+            "warmstart_neighbor_sampling",
+        ):
+            self.assertIn(needle, src, msg=f"missing safe curriculum wiring: {needle!r}")
+
     def test_new_best_logs_inference_metrics(self):
         """After a new best, the log line should include loss_mean / loss_std /
         m1 so the user can verify acc/stab gates without grepping details files.
