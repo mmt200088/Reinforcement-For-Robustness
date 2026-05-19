@@ -86,6 +86,119 @@ Current verified server facts:
   with `RPC failed; curl 16 Error in the HTTP2 framing layer` and
   `fatal: expected flush after ref listing`.
 
+### Two-GPU RL Runs On GPUShare
+
+The server has two visible GPUs:
+
+- GPU 0: NVIDIA GeForce RTX 5090, about 32607 MiB.
+- GPU 1: NVIDIA GeForce RTX 5090, about 32607 MiB.
+
+Current BLB RL code paths are single-process/single-device. In
+`blb_stage2_rl/sequential_runner.py` and `blb_stage2_rl/runner.py`, the policy
+device is selected with `torch.device("cuda" if torch.cuda.is_available() else
+"cpu")`; there is no DDP or DataParallel wiring in the current RL runner.
+Therefore, do not expect one launcher command with `CUDA_VISIBLE_DEVICES=0,1`
+to split one RL run across both cards. With current code, `cuda` means the
+first visible device for that process.
+
+To use both cards now, run two independent RL jobs concurrently and bind each
+process to one physical GPU:
+
+```bash
+cd /hy-tmp/Reinforcement-For-Robustness
+git pull --ff-only
+
+export HF_HOME=/hy-tmp/hf_cache
+export HF_ENDPOINT=https://hf-mirror.com
+export HF_HUB_DISABLE_XET=1
+export GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
+
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh run rl \
+  --preset mrpc-blb-stage2-rl \
+  --blb-v3-seed 101 \
+  --run-tag twogpu_g0_s101 \
+  --fresh
+
+CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh run rl \
+  --preset mrpc-blb-stage2-rl \
+  --blb-v3-seed 102 \
+  --run-tag twogpu_g1_s102 \
+  --fresh
+```
+
+The launcher itself starts the real training process with `nohup` and returns
+after writing PID/log metadata, so the two commands above can be run one after
+the other. The important part is that `CUDA_VISIBLE_DEVICES` is set on the
+launcher invocation so the background child inherits the one-GPU view.
+
+Always use distinct `--run-tag` values for concurrent jobs. `--run-tag` is
+appended to the persistent slug, so the example above writes into separate
+directories like:
+
+```text
+Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g0_s101/
+Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g1_s102/
+```
+
+Do not launch two jobs with the same preset/seed/run-tag combination; they will
+share the same persistent directory and corrupt or race on checkpoints, status
+JSON, and diagnostics.
+
+Use `--fresh` only the first time for a new run-tag. To resume the same two jobs
+after interruption, rerun the same commands without `--fresh`. Auto-resume is
+per run-tag.
+
+Check both jobs with:
+
+```bash
+nvidia-smi
+cat "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g0_s101/rl.pid"
+cat "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g1_s102/rl.pid"
+tail -f "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g0_s101/logs/blb_stage2_rl.log"
+tail -f "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__twogpu_g1_s102/logs/blb_stage2_rl.log"
+```
+
+For concurrent runs, do not rely on the parent-level `LATEST_PID`; it can be
+overwritten by whichever launcher runs last. Use each tagged run directory's
+own `rl.pid`, `run.pid`, `metadata.json`, `stage2_noise/progress/`, and
+`logs/blb_stage2_rl.log`.
+
+When using `SERVER_COMMAND.md`, the first fenced `bash` block can launch both
+jobs. Keep the commands in the repository root and keep the per-GPU environment
+on the same line as each launcher invocation:
+
+```bash
+set -euo pipefail
+cd /hy-tmp/Reinforcement-For-Robustness
+git pull --ff-only
+
+export HF_HOME=/hy-tmp/hf_cache
+export HF_ENDPOINT=https://hf-mirror.com
+export HF_HUB_DISABLE_XET=1
+export GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
+
+CUDA_VISIBLE_DEVICES=0 bash llama_7B_LayerImportance.sh run rl \
+  --preset mrpc-blb-stage2-rl \
+  --blb-v3-seed 101 \
+  --run-tag twogpu_g0_s101 \
+  --fresh
+
+CUDA_VISIBLE_DEVICES=1 bash llama_7B_LayerImportance.sh run rl \
+  --preset mrpc-blb-stage2-rl \
+  --blb-v3-seed 102 \
+  --run-tag twogpu_g1_s102 \
+  --fresh
+
+sleep 5
+nvidia-smi
+```
+
+`tools/run_multi_seed.sh` currently runs seeds sequentially, not in parallel.
+Do not use it expecting automatic two-GPU utilization. For two-card testing,
+manually launch one seed/run-tag per GPU as shown above, or have the local
+code-editing agent add a parallel multi-GPU driver locally and push it through
+git before using it on the server.
+
 `SERVER_COMMAND.md` was extracted and launched once on this server. It reached
 real BLB Stage-2 sequential RL execution, wrote diagnostics under
 `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/`,
