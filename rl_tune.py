@@ -612,6 +612,10 @@ def train(
         # keeps its default seed=42; when set, overrides so tools/run_multi_seed.sh
         # can sweep N seeds for statistical significance.
         blb_v3_seed: int = None,
+        # 2026-05-19: two-GPU reward-probe parallelism. Comma list e.g. "0,1"
+        # → BLBStage2Env builds a ProbeRunner that fans K trials across these
+        # devices. Empty / single device → single-GPU codepath unchanged.
+        blb_v3_reward_devices: str = "",
         final_eval_require_rescale_optimizer: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
@@ -1158,6 +1162,7 @@ def train(
             blb_v3_sequential_fusion_shaping_coeff=blb_v3_sequential_fusion_shaping_coeff,
             blb_v3_sequential_early_terminate_on_invalid=blb_v3_sequential_early_terminate_on_invalid,
             blb_v3_seed=blb_v3_seed,
+            blb_v3_reward_devices=blb_v3_reward_devices,
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

@@ -1,0 +1,508 @@
+"""Two-GPU (or N-GPU) parallel reward-probe runner.
+
+The PPO reward in BLB Stage-2 RL is computed by repeating the model forward
+``K`` times (``--stage2-k-trials``, default 5) with independent CKKS noise
+seeds. Today ``BLBStage2Env._eval_on_probe`` runs those K trials sequentially
+on a single GPU. On a 2x GPU server we can split the K trials across both
+devices and roughly halve the per-action probe wall time.
+
+Design (per CLAUDE.md "Two-GPU reward-probe parallelism target"):
+
+* **One PPO learner, one action stream.** The runner is invisible to the PPO
+  loop; it slots in behind ``BLBStage2Env`` only at probe time.
+* **Each device owns its own model + handler + bridge + probe_batches.**
+  Worker 0 reuses the env's existing primary model (no extra allocation).
+  Workers 1+ deepcopy the primary model onto their device. Each worker
+  installs the same BLB cfg via its own bridge before running trials.
+* **Threaded fan-out.** Workers run their trial subsets in Python threads;
+  PyTorch CUDA forwards release the GIL so the two cards run truly
+  concurrent. Aggregation happens on the main thread after join.
+* **Single-device fallback.** A 1-worker ``ProbeRunner`` is a thin no-op
+  wrapper. ``BLBStage2Env`` only constructs one when there are 2+ devices,
+  so existing single-GPU runs keep the original codepath bitwise.
+* **Determinism.** Trial seed = ``base_seed XOR (trial_idx * 2654435761)``,
+  derived once per action from ``(episode/step counter)``. Independent of
+  wall clock so repro is feasible.
+"""
+from __future__ import annotations
+
+import copy
+import threading
+import time
+from dataclasses import dataclass, field
+from typing import Any, Callable, List, Optional, Sequence, Tuple
+
+import numpy as np
+import torch
+import torch.nn as nn
+
+from function_handler import ReversibleLayerHandler
+
+from .action_space import ActionDecodeResult
+# We use BLBNoiseRLBridge for noise install/clear; defer import to avoid the
+# heavy chain at module-load time when this file is imported by tests.
+try:
+    from blb_rl_bridge import BLBNoiseRLBridge
+except Exception:  # pragma: no cover — torch-free import path
+    BLBNoiseRLBridge = None  # type: ignore
+
+
+# ---------------------------------------------------------------------------
+# Trial / split helpers
+# ---------------------------------------------------------------------------
+
+_TRIAL_SEED_MULTIPLIER = 2654435761  # Knuth's multiplicative-hash constant
+
+
+def _trial_seed(base_seed: int, trial_idx: int) -> int:
+    """Deterministic per-trial seed.
+
+    Two GPUs running with the same ``base_seed`` but different ``trial_idx``
+    values get truly independent noise streams (and reruns of the same
+    (base_seed, trial_idx) reproduce the same noise — useful for diagnosis).
+    """
+    return int((int(base_seed) ^ (int(trial_idx) * _TRIAL_SEED_MULTIPLIER)) & 0x7FFFFFFFFFFFFFFF)
+
+
+def _split_round_robin(k: int, n_workers: int) -> List[List[int]]:
+    """Return per-worker trial-index lists. Round-robin balances variance.
+
+    Example for k=5, n_workers=2: ``[[0, 2, 4], [1, 3]]``.
+    Example for k=5, n_workers=3: ``[[0, 3], [1, 4], [2]]``.
+    """
+    k = max(0, int(k))
+    n = max(1, int(n_workers))
+    out: List[List[int]] = [[] for _ in range(n)]
+    for i in range(k):
+        out[i % n].append(i)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Probe batch transfer (cheap one-time copy per worker)
+# ---------------------------------------------------------------------------
+
+def _move_probe_batch_to_device(batch: Any, device: torch.device) -> Any:
+    """Return a copy of ``batch`` with every tensor field moved to ``device``.
+
+    ``ProbeBatch`` is a small dataclass with input_ids / attention_mask /
+    labels / token_type_ids. We don't want to import its symbol here to keep
+    this module's import graph thin, so we duck-type on attribute presence.
+    """
+    fields = ("input_ids", "attention_mask", "labels", "token_type_ids")
+    moved = {}
+    for f in fields:
+        t = getattr(batch, f, None)
+        if t is None:
+            moved[f] = None
+            continue
+        if isinstance(t, torch.Tensor):
+            moved[f] = t.to(device, non_blocking=True)
+        else:
+            moved[f] = t
+    # Reconstruct via the original class so downstream code reads identical
+    # attributes (handles ProbeBatch as a dataclass / namedtuple / plain obj).
+    cls = batch.__class__
+    try:
+        return cls(**moved)
+    except TypeError:
+        clone = copy.copy(batch)
+        for f, v in moved.items():
+            try:
+                setattr(clone, f, v)
+            except Exception:
+                pass
+        return clone
+
+
+# ---------------------------------------------------------------------------
+# Metric compute (kept local to avoid env↔probe_runner circular import)
+# ---------------------------------------------------------------------------
+
+def _compute_metrics_on_batch_local(
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        *,
+        is_regression: bool,
+        ) -> Tuple[float, float, float]:
+    """Mirror of ``blb_stage2_rl.env._compute_metrics_on_batch``.
+
+    Local copy so this module is import-safe even when env.py is mid-load
+    (matters at runner boot time when env constructs the probe runner).
+    Returns (mean_loss, metric1, metric2) — all floats — using the same
+    cross-entropy / accuracy convention as the existing path.
+    """
+    if is_regression:
+        preds = logits.view(-1).float()
+        targets = labels.view(-1).float()
+        loss = float(torch.nn.functional.mse_loss(preds, targets).item())
+        # Pearson r as m1 (clamp to [-1, 1])
+        if preds.numel() > 1:
+            pm = preds - preds.mean()
+            tm = targets - targets.mean()
+            denom = float((pm.pow(2).sum() * tm.pow(2).sum()).sqrt().item()) + 1e-12
+            r = float((pm * tm).sum().item()) / denom
+        else:
+            r = 0.0
+        return (loss, float(np.clip(r, -1.0, 1.0)), 0.0)
+    # Classification: cross-entropy + accuracy.
+    loss_t = torch.nn.functional.cross_entropy(
+        logits, labels.long(), reduction="mean",
+    )
+    loss = float(loss_t.item())
+    preds = logits.argmax(dim=-1)
+    acc = float((preds == labels.long()).float().mean().item())
+    return (loss, acc, acc)
+
+
+# ---------------------------------------------------------------------------
+# ProbeWorker — one per device
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ProbeWorker:
+    """Per-GPU state: replicated model + its own handler/bridge/probe_batches."""
+    device: torch.device
+    model: nn.Module
+    handler: Any  # ReversibleLayerHandler
+    bridge: Any   # BLBNoiseRLBridge
+    probe_batches: List[Any]
+    is_regression: bool
+    role: str = "primary"  # "primary" (worker 0, reuses env model) or "replica"
+
+    def install(self, decoded: ActionDecodeResult) -> None:
+        """Install the BLB cfg on this worker's model via its bridge."""
+        with torch.cuda.device(self.device):
+            self.bridge.apply(
+                block1_cfgs=decoded.block1_cfgs,
+                block2_cfgs=decoded.block2_cfgs,
+                block3_cfgs=decoded.block3_cfgs,
+                block4_cfgs=decoded.block4_cfgs,
+                block5_cfgs=decoded.block5_cfgs,
+            )
+
+    def clear(self) -> None:
+        """Reverse install (called even on exception so the model can be reused)."""
+        with torch.cuda.device(self.device):
+            self.bridge.clear()
+
+    def run_trial(
+            self,
+            trial_idx: int,
+            base_seed: int,
+            ) -> Tuple[float, float, float]:
+        """Run one trial on this worker. Returns (loss, m1, m2) averaged over probe_batches."""
+        with torch.cuda.device(self.device):
+            seed = _trial_seed(base_seed, trial_idx)
+            # CUDA generator state is per-device; pinning to self.device above
+            # ensures these seeds land on the right GPU.
+            torch.manual_seed(seed)
+            np.random.seed(seed % (2**32))
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+
+            losses: List[float] = []
+            m1s: List[float] = []
+            m2s: List[float] = []
+            was_training = self.model.training
+            self.model.eval()
+            try:
+                with torch.inference_mode():
+                    for batch in self.probe_batches:
+                        kwargs = {
+                            "input_ids": batch.input_ids,
+                            "attention_mask": batch.attention_mask,
+                            "labels": batch.labels,
+                        }
+                        tti = getattr(batch, "token_type_ids", None)
+                        if tti is not None:
+                            kwargs["token_type_ids"] = tti
+                        out = self.model(**kwargs)
+                        logits = out.logits if hasattr(out, "logits") else out[1]
+                        loss, m1, m2 = _compute_metrics_on_batch_local(
+                            logits, batch.labels, is_regression=self.is_regression,
+                        )
+                        losses.append(loss); m1s.append(m1); m2s.append(m2)
+            finally:
+                if was_training:
+                    self.model.train()
+
+            if not losses:
+                return (float("nan"), float("nan"), float("nan"))
+            return (
+                float(np.mean(losses)),
+                float(np.mean(m1s)),
+                float(np.mean(m2s)),
+            )
+
+
+# ---------------------------------------------------------------------------
+# ProbeRunner — distributes k trials across workers
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ProbeRunnerDiagnostics:
+    """Per-call timing snapshot. Captured each ``run_trials`` invocation;
+    callers can sample these (e.g. every 100 episodes) for the speedup log line."""
+    k: int = 0
+    wall_seconds: float = 0.0
+    per_worker_seconds: List[float] = field(default_factory=list)
+    per_worker_trial_counts: List[int] = field(default_factory=list)
+    devices: List[str] = field(default_factory=list)
+
+    @property
+    def speedup_vs_sequential(self) -> float:
+        if not self.per_worker_seconds or self.wall_seconds <= 0:
+            return 1.0
+        return float(sum(self.per_worker_seconds)) / float(self.wall_seconds)
+
+
+class ProbeRunner:
+    """Fan trials across N workers, aggregate results in trial order."""
+
+    def __init__(self, workers: List[ProbeWorker]):
+        if not workers:
+            raise ValueError("ProbeRunner requires at least one worker")
+        self.workers = workers
+        self.last_diagnostics: Optional[ProbeRunnerDiagnostics] = None
+
+    @property
+    def num_workers(self) -> int:
+        return len(self.workers)
+
+    @property
+    def devices(self) -> List[torch.device]:
+        return [w.device for w in self.workers]
+
+    def install_action(self, decoded: ActionDecodeResult) -> None:
+        """Apply the same cfg on every worker's model. Cheap (microseconds per
+        worker) so we don't bother parallelising this.
+        """
+        for w in self.workers:
+            w.install(decoded)
+
+    def clear(self) -> None:
+        """Reverse install on every worker. Always safe (clear is idempotent)."""
+        for w in self.workers:
+            try:
+                w.clear()
+            except Exception:
+                # Defensive: clearing should never fail, but if it does we
+                # still want to attempt the other workers.
+                pass
+
+    def run_trials(self, k: int, base_seed: int) -> List[Tuple[float, float, float]]:
+        """Run trials [0..k-1] in parallel across workers; return in trial order."""
+        k = max(0, int(k))
+        if k == 0:
+            self.last_diagnostics = ProbeRunnerDiagnostics(
+                k=0, wall_seconds=0.0,
+                devices=[str(d) for d in self.devices],
+            )
+            return []
+
+        assignments = _split_round_robin(k, len(self.workers))
+        results_per_trial: dict = {}
+        per_worker_seconds: List[float] = [0.0] * len(self.workers)
+        errors: List[Tuple[int, BaseException]] = []
+        lock = threading.Lock()
+
+        def task(w_idx: int) -> None:
+            trials = assignments[w_idx]
+            if not trials:
+                return
+            worker = self.workers[w_idx]
+            t0 = time.perf_counter()
+            try:
+                local_results: List[Tuple[int, Tuple[float, float, float]]] = []
+                for ti in trials:
+                    res = worker.run_trial(ti, base_seed)
+                    local_results.append((ti, res))
+                with lock:
+                    for ti, res in local_results:
+                        results_per_trial[ti] = res
+            except BaseException as exc:  # noqa: BLE001
+                with lock:
+                    errors.append((w_idx, exc))
+            finally:
+                per_worker_seconds[w_idx] = time.perf_counter() - t0
+
+        wall_t0 = time.perf_counter()
+        if len(self.workers) == 1:
+            # Single-worker mode: no thread overhead, just call directly.
+            task(0)
+        else:
+            threads = [
+                threading.Thread(target=task, args=(i,), daemon=True)
+                for i in range(len(self.workers))
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        wall_elapsed = time.perf_counter() - wall_t0
+
+        self.last_diagnostics = ProbeRunnerDiagnostics(
+            k=k,
+            wall_seconds=float(wall_elapsed),
+            per_worker_seconds=[float(x) for x in per_worker_seconds],
+            per_worker_trial_counts=[len(a) for a in assignments],
+            devices=[str(d) for d in self.devices],
+        )
+
+        if errors:
+            w_idx, exc = errors[0]
+            raise RuntimeError(
+                f"probe-runner worker {w_idx} (device {self.workers[w_idx].device}) "
+                f"failed: {exc!r}"
+            ) from exc
+
+        ordered: List[Tuple[float, float, float]] = []
+        for ti in range(k):
+            if ti not in results_per_trial:
+                raise RuntimeError(
+                    f"probe-runner missing trial {ti} (assignments={assignments})"
+                )
+            ordered.append(results_per_trial[ti])
+        return ordered
+
+
+# ---------------------------------------------------------------------------
+# Factory: build_probe_runner
+# ---------------------------------------------------------------------------
+
+def parse_device_ids(spec: Optional[str]) -> List[int]:
+    """Parse ``"0,1"`` → ``[0, 1]``. Empty / None → ``[]``.
+
+    Used by CLI plumbing (``--blb-v3-reward-devices``) and tests.
+    """
+    if spec is None:
+        return []
+    s = str(spec).strip()
+    if not s:
+        return []
+    out: List[int] = []
+    for tok in s.split(","):
+        t = tok.strip()
+        if not t:
+            continue
+        try:
+            out.append(int(t))
+        except ValueError as exc:
+            raise ValueError(
+                f"invalid device id {t!r} in spec {spec!r}; expected comma-separated ints"
+            ) from exc
+    return out
+
+
+def build_probe_runner(
+        *,
+        primary_model: nn.Module,
+        primary_handler: Any,                 # ReversibleLayerHandler
+        primary_bridge: Any,                  # BLBNoiseRLBridge owned by the env
+        primary_probe_batches: Sequence[Any], # List[ProbeBatch]
+        layers_attribute: str,
+        is_regression: bool,
+        device_ids: Sequence[int],
+        log_fn: Optional[Callable[[str], None]] = None,
+        ) -> ProbeRunner:
+    """Construct a ProbeRunner with one worker per device id.
+
+    Worker 0 reuses the env's existing model + handler + bridge + probe_batches
+    (zero extra GPU allocation, and avoids the "two bridges, one handler" trap
+    — only the env's bridge tracks what's installed on the primary model).
+    Workers 1+ deepcopy the primary model onto their device and construct
+    their own handler / bridge / probe_batches copies.
+
+    Caller guarantees:
+      * ``primary_model`` is the model the env already holds (so worker 0
+        sees the same parameters PPO data collection sees).
+      * ``primary_bridge`` is ``env.bridge`` (the only bridge wrapping
+        ``primary_handler``; reusing it prevents install-tracking corruption).
+      * ``primary_probe_batches`` are already on the primary device.
+      * ``device_ids[0]`` is the primary device id.
+
+    Raises:
+        ValueError: empty device_ids.
+        RuntimeError: deepcopy / device move failed for a replica.
+    """
+    if BLBNoiseRLBridge is None:
+        raise RuntimeError(
+            "blb_rl_bridge import failed earlier; cannot build ProbeRunner. "
+            "Likely cause: function_handler.py failed to import (torch/transformers missing)."
+        )
+    if not device_ids:
+        raise ValueError("build_probe_runner requires at least one device id")
+
+    log = log_fn or (lambda _msg: None)
+
+    workers: List[ProbeWorker] = []
+
+    # ---- worker 0: reuse env's existing primary model + handler + bridge ----
+    primary_device = torch.device(f"cuda:{int(device_ids[0])}")
+    workers.append(ProbeWorker(
+        device=primary_device,
+        model=primary_model,
+        handler=primary_handler,
+        bridge=primary_bridge,
+        probe_batches=list(primary_probe_batches),
+        is_regression=bool(is_regression),
+        role="primary",
+    ))
+    log(f"[probe-runner] worker 0: {primary_device} (primary, reusing env.bridge)")
+
+    # ---- workers 1+: deepcopy the primary model onto each extra device ----
+    for d in device_ids[1:]:
+        device = torch.device(f"cuda:{int(d)}")
+        try:
+            with torch.cuda.device(device):
+                replica = copy.deepcopy(primary_model)
+                replica = replica.to(device)
+                replica.eval()
+                replica_handler = ReversibleLayerHandler(replica)
+                replica_bridge = BLBNoiseRLBridge(
+                    replica_handler, layers_attribute=layers_attribute,
+                )
+                replica_batches = [
+                    _move_probe_batch_to_device(b, device)
+                    for b in primary_probe_batches
+                ]
+        except Exception as exc:
+            raise RuntimeError(
+                f"failed to deepcopy primary model onto {device}: {exc!r}"
+            ) from exc
+        workers.append(ProbeWorker(
+            device=device,
+            model=replica,
+            handler=replica_handler,
+            bridge=replica_bridge,
+            probe_batches=replica_batches,
+            is_regression=bool(is_regression),
+            role="replica",
+        ))
+        log(f"[probe-runner] worker {len(workers)-1}: {device} (deepcopy replica)")
+
+    return ProbeRunner(workers)
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic helpers (for the env to format the speedup log line)
+# ---------------------------------------------------------------------------
+
+def format_diagnostics_line(diag: ProbeRunnerDiagnostics) -> str:
+    """One-line summary suitable for ``pruning_search_log.txt``.
+
+    Example:
+        ``[probe-runner] k=5 split=[3, 2] devices=[cuda:0, cuda:1]
+          wall=0.42s worker_seconds=[0.41, 0.40] speedup=1.95x``
+    """
+    if diag.k == 0:
+        return "[probe-runner] k=0 (no trials)"
+    ws = ", ".join(f"{s:.3f}" for s in diag.per_worker_seconds)
+    devs = ", ".join(diag.devices)
+    counts = ", ".join(str(n) for n in diag.per_worker_trial_counts)
+    return (
+        f"[probe-runner] k={diag.k} split=[{counts}] devices=[{devs}]  "
+        f"wall={diag.wall_seconds:.3f}s worker_seconds=[{ws}]  "
+        f"speedup={diag.speedup_vs_sequential:.2f}x"
+    )

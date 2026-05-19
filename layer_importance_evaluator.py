@@ -2372,6 +2372,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_sequential_fusion_shaping_coeff=0.0,
                   blb_v3_sequential_early_terminate_on_invalid=False,
                   blb_v3_seed=None,
+                  blb_v3_reward_devices="",
                   final_eval_require_rescale_optimizer=False):
         """
         基于 PPO 强化学习的策略搜索器。
@@ -2866,6 +2867,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.blb_v3_seed = int(blb_v3_seed)
             except Exception:
                 self.blb_v3_seed = None
+        # 2026-05-19: two-GPU reward-probe parallelism.
+        # Empty / single device → BLBStage2Env keeps the single-GPU codepath.
+        # ``"0,1"`` → BLBStage2RLRunner constructs a ProbeRunner that splits
+        # K trials across the listed devices.
+        self.blb_v3_reward_devices = (
+            "" if blb_v3_reward_devices is None else str(blb_v3_reward_devices)
+        )
 
     @staticmethod
     def _coerce_bool_flag(raw_value, flag_name):

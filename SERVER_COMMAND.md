@@ -9,9 +9,17 @@
 set -e
 
 # ----------------------------------------------------------------------
+# 0) GPUShare server env (per CLAUDE.md "GPUShare server state" section).
+#    Safe no-op on other environments — these are exports only.
+# ----------------------------------------------------------------------
+export HF_HOME="${HF_HOME:-/hy-tmp/hf_cache}"
+export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
+export GLUE_LOCAL_DATASET_DIR="${GLUE_LOCAL_DATASET_DIR:-/hy-tmp/glue_data}"
+
+# ----------------------------------------------------------------------
 # 1) 优雅停掉前一轮（如果还在跑）。同时扫主目录 + 历史 _rdv2 临时目录，
-#    防止服务器上有任何残留进程。本次起回滚 _rdv2 后缀，回到单目录形式
-#    （用户反馈：多目录维护成本更高，--fresh 强制重启已足够防混用）。
+#    防止服务器上有任何残留进程。
 # ----------------------------------------------------------------------
 stop_rl_at_dir() {
   local PIDFILE="$1/rl.pid"
@@ -37,24 +45,34 @@ stop_rl_at_dir() {
   fi
   echo "[stop-rl] $1: stopped."
 }
-
-# 主目录（本次起 canonical）
 stop_rl_at_dir "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005"
-# 历史 _rdv2 临时目录（已废弃；如果服务器上还有跑就停掉）
 stop_rl_at_dir "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005_rdv2"
 
 # ----------------------------------------------------------------------
-# 2) 先跑 torch-required 测试套件，硬卡链路 + 新增 policy init 不变式。
-#    任何一个测试红了就 abort，不进 RL（防止用旧二进制白跑 9 小时）。
-#    - test_blb_chain_integrity.py（19 cases）：apply_optimizer_output_to_cfg
-#      四类回写 + Block2 Q/K binding + _sample_gaussian_for_point live read
-#      + 本轮新增 SequentialPolicyInitTest（action_head ‖W‖<0.5 / 不动 bias /
-#        warmstart bias margin>2.5）
-#    - 其余 torch-free test_blb_*.py 顺带过一遍
+# 2) Pull latest code so the server runs the policy-init + Huber + multi-GPU
+#    probe commits. CLAUDE.md "GPUShare server state" notes the local
+#    HTTP/1.1 + protocol.version 0 git config; if a fresh checkout is needed
+#    those settings must already be in repo .git/config.
 # ----------------------------------------------------------------------
 echo ""
 echo "================================================================================"
-echo "Step 1/2: run contract tests (chain integrity + sequential policy init)"
+echo "Step 1/4: git pull (refresh local repo with latest local commits)"
+echo "================================================================================"
+git pull --ff-only || {
+  echo "[warn] git pull --ff-only failed; continuing with whatever HEAD has."
+}
+echo "[git] HEAD = $(git rev-parse --short HEAD)"
+
+# ----------------------------------------------------------------------
+# 3) Contract tests. Gates the RL run — any red test aborts before the
+#    9-hour training. Now includes (a) prior chain-integrity + sequential
+#    policy init tests, (b) the new ProbeRunner helpers (split / seed /
+#    parse_device_ids), and (c) the two-GPU smoke test that only runs when
+#    nvidia exposes >= 2 cards.
+# ----------------------------------------------------------------------
+echo ""
+echo "================================================================================"
+echo "Step 2/4: contract tests (chain + policy init + probe runner)"
 echo "================================================================================"
 BLB_STRICT=0 python -m unittest discover -s tests -p "test_blb_*.py" -v 2>&1 | tee /tmp/blb_test_output.log
 TEST_RC=${PIPESTATUS[0]}
@@ -64,115 +82,119 @@ if [ "$TEST_RC" -ne 0 ]; then
   echo "        Full log: /tmp/blb_test_output.log" >&2
   exit "$TEST_RC"
 fi
-echo ""
 echo "[ok] contract tests passed."
 
 # ----------------------------------------------------------------------
-# 3) --fresh 重跑 BLB Stage-2 sequential RL（本次：policy init 修复 + Huber value loss）
-#
-#    上一轮（commit 0ca6de0, entropy schedule fix）anchor 阶段（eps 0-119）
-#    reward = +29.86 → +31.20 ✓ baseline 正常；ent_coef schedule 生效（update
-#    1-2 都是 0.00000）；但 sample 一开始（eps 120+）reward 立刻塌到 -7.89
-#    （terminal=-5）。bug 报告：
-#    `reports/stage2_rl/bug_reports/2026-05-19_entropy_schedule_sampling_collapse/`
-#
-#    根因（值损主导共享 trunk 把 warmstart bias 冲垮）：
-#      · PPO update 1: policy_loss=-0.054, value_loss=60.86, clip_fraction=0.72
-#      · PPO update 2: policy_loss=-0.009, value_loss=33.99, clip_fraction=0.66
-#      · value_loss / policy_loss ≈ 1126x：共享 encoder 的梯度几乎全部来自
-#        value head（returns~+37 而 V_init~0 → MSE 起始 ~1369，loss×0.5×backprop
-#        通过 shared trunk 把 encoder 拉得很猛）
-#      · action_head.weight 用 PyTorch 默认 Kaiming（‖W‖~0.55）→ encoder 演化后
-#        |W@h|~4-9，远超 warmstart bias +3.5 → policy 漂离 baseline
-#      · clip_fraction=0.72 是直接证据：2/3 的 trajectory 的 ratio 在 [0.8,1.2]
-#        外，说明 policy 每个 update 都在剧烈变化
-#      · ep 120 第一个 sample：约 14/59 个 slot 偏离 baseline → 14 fusion →
-#        acc 跌穿
-#
-#    本次三项修复（commit 待定）：
-#
-#      (a) **action_head.weight 用 orthogonal(gain=0.01)** 初始化（legacy
-#          noise_rl_module_v2.py line 1066 同款 trick）。让 ‖W_action‖ 在初始
-#          阶段几乎为 0，bias 项独占 logit → warmstart bias 不被 encoder 演化
-#          冲垮，能稳住很多个 PPO update。
-#      (b) **encoder + value_head 用 orthogonal init**（gain=√2 / 1.0），bias 全 0
-#          —— 标准 actor-critic 初始化，配合 (a) 让初始策略可预测。
-#      (c) **value loss MSE → Huber(delta=1.0)**（v2 line 1886 同款）：
-#          未归一化 returns~+37 时，MSE 的梯度幅度=37，Huber 截到 delta=1。
-#          shared trunk 收到的 value 梯度幅度立刻降 ~30×，policy_grad 的相对
-#          地位不再被压住。
-#
-#    保留不动（前几次已经验证 OK 的）：
-#      · entropy schedule（anchor=0 / ramp 240ep / steady=0.02）—— commit 0ca6de0
-#      · per-slot mode warmstart bias gain=3.5 —— commit 4097bea
-#      · forced baseline anchor（120 ep）—— commit 4097bea
-#      · v2-style clipped+tier reward —— commit b97ca83
-#      · ForbiddenActionMask + rejection-sample —— commit 42cfbe4
+# 4) Verify both GPUs are visible. Snapshot before training so the log
+#    captures the starting state. The active-utilisation proof comes from
+#    the background sampler in step 5 below.
 # ----------------------------------------------------------------------
 echo ""
 echo "================================================================================"
-echo "Step 2/2: BLB Stage-2 Sequential RL (fresh) — policy init fix + Huber value loss"
+echo "Step 3/4: nvidia-smi snapshot (pre-RL — both GPUs must be visible & free)"
 echo "================================================================================"
-bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
+nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv
+N_GPUS=$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l | tr -d ' ')
+echo "[nvidia-smi] visible GPUs = $N_GPUS"
+if [ "$N_GPUS" -lt 2 ]; then
+  echo "[abort] need >= 2 GPUs for multi-GPU probe; saw $N_GPUS. Re-export CUDA_VISIBLE_DEVICES." >&2
+  exit 1
+fi
+
+# ----------------------------------------------------------------------
+# 5) Launch BLB Stage-2 sequential RL (fresh) with two-GPU reward probe.
+#
+#    Flags vs the prior single-GPU run:
+#      + --blb-v3-reward-devices 0,1
+#        → BLBStage2RLRunner builds a ProbeRunner that fans the K=5 trials
+#          across cuda:0 and cuda:1 (split [0,2,4] / [1,3]); per-trial seeds
+#          are deterministic from base_seed+trial_idx.
+#      + CUDA_VISIBLE_DEVICES=0,1
+#        → both cards visible to torch; without this only cuda:0 is exposed.
+#
+#    Carrying over from prior fixes (commits ebca10d / ed66325 / 50ea91a):
+#      · entropy schedule (anchor=0, ramp 240ep, steady=0.02)
+#      · action_head orthogonal(0.01) init (warmstart bias survives encoder drift)
+#      · Huber value loss (caps shared-trunk perturbation from huge raw returns)
+#      · contract tests on apply_optimizer_output_to_cfg / Q-K sync / live SF read
+#      · per-slot mode warmstart bias gain=3.5
+#      · forced baseline anchor (120 ep)
+#      · v2-style clipped+tier reward
+#      · ForbiddenActionMask + rejection-sample
+#
+#    Background sampler proves both GPUs are actually busy (every 15s logs
+#    util% + mem.used). File lives next to logs/ so it's grep-friendly.
+# ----------------------------------------------------------------------
+mkdir -p logs
+NVS_LOG="logs/nvidia_smi_$(date +%Y%m%d_%H%M%S).csv"
+echo "[nvidia-smi-sampler] writing every 15s → $NVS_LOG"
+(
+  printf "timestamp,gpu_idx,util_pct,mem_used_mib\n" > "$NVS_LOG"
+  while true; do
+    nvidia-smi --query-gpu=timestamp,index,utilization.gpu,memory.used \
+               --format=csv,noheader,nounits >> "$NVS_LOG" 2>/dev/null || true
+    sleep 15
+  done
+) &
+NVS_PID=$!
+trap "kill $NVS_PID 2>/dev/null || true" EXIT
+
+echo ""
+echo "================================================================================"
+echo "Step 4/4: BLB Stage-2 Sequential RL (fresh) — --blb-v3-reward-devices 0,1"
+echo "================================================================================"
+CUDA_VISIBLE_DEVICES=0,1 bash llama_7B_LayerImportance.sh run rl \
+  --preset mrpc-blb-stage2-rl \
+  --stage2-k-trials 5 \
+  --blb-v3-reward-devices 0,1 \
+  --fresh
 ```
 
 ---
 
 ## 元信息（meta，给人看的，agent 忽略）
 
-- **任务**：先跑契约测试（含本轮新增 policy init 不变式），通过后 fresh 跑一轮 6000-episode sequential RL，验证 policy init + Huber value loss 修复
-- **更新时间**：2026-05-19
-- **更新原因**：上一轮（commit `0ca6de0`, entropy schedule fix）entropy schedule 部分**生效**（anchor 期 ent_coef=0 已落到 PPO update 中），但 sample 一开始 reward 仍立刻塌到 -7.89。bug 报告：`reports/stage2_rl/bug_reports/2026-05-19_entropy_schedule_sampling_collapse/`。
-    新根因：value loss 主导共享 trunk 把 warmstart bias 冲垮。PPO update 1 `value_loss=60.86 / policy_loss=-0.054 → 1126x 比例`。`clip_fraction=0.72` 是直接证据 —— 2/3 trajectory 的 ratio 落在 [0.8,1.2] 外，说明 policy 每个 update 都在剧烈变化。配合 `action_head.weight` 用 PyTorch 默认 Kaiming（‖W‖~0.55），encoder 演化后 `|W@h|~4-9` 远超 warmstart bias +3.5 → policy 漂离 baseline → ep 120 一来就出 14 fusion + acc 跌穿。
-- **本次改动汇总**：
-    1. `blb_stage2_rl/sequential_policy.py`：`BLBStage2SequentialPolicy.__init__` 末尾调用新 `_init_weights()`。encoder 各 Linear 用 orthogonal(√2)；value_head orthogonal(1.0)；**action_head orthogonal(0.01)**（legacy v2 line 1066 同款 trick）。
-    2. `blb_stage2_rl/sequential_policy.py`：`sequential_ppo_update` 内的 `value_loss = F.mse_loss(...)` 改为 `F.huber_loss(..., delta=1.0)`（legacy v2 line 1886 同款）。Huber 截断未归一化 returns 的梯度，shared trunk 收到的 value 梯度幅度立刻降 ~30×。
-    3. `tests/test_blb_chain_integrity.py`：新增 `SequentialPolicyInitTest`（4 个 case）—— action_head ‖W‖<0.5 / action_head.bias 初始为 0 / value_head 正确初始化 / 带 warmstart bias=3.5 时随机 state 上 preferred logit margin > 2.5。
-- **预期效果**（这次要看的信号 —— 越前面越强）：
-    - **契约测试 19/19 + 新 policy init test 4/4 通过**（如果挂了立即 abort，不进训练）。
-    - **PPO update 1 的 `value_loss` 应该 << 60.86**（Huber 把梯度幅度从 37 截到 1，shared trunk 不再被 value loss 主导）。
-    - **PPO update 1 的 `clip_fraction` 应该 << 0.72**（policy 每个 update 不再剧烈变化 → 大部分 ratio 落在 [0.8,1.2] 内）。
-    - **anchor 期（eps 0-119）entropy 平稳下降**（gain=0.01 weight init + 0 entropy bonus + forced baseline → policy 高度集中 baseline）。
-    - **sample 期（eps 120+）reward ≥ +25**（policy 仍坐落 baseline 附近，sampled action 大多和 baseline 几乎一样 → fusion 数应 ≤ 2，acc 不动）。
-    - **训练中期（eps 1000-5000）**：policy 慢慢从 baseline 邻域开始探索，total_bits 渐降，reward 可能突破 +45。
-    - **训练后期（eps 5000+）**：reward 应稳定在 +40+，best 可能 +50+。
-    - 用户提示：这个 RL 至少要 5 万轮才会显著收敛，前 6000 episode 主要看 **policy 是否稳坐 baseline 附近、不崩**，不期望立刻找到比 baseline 强很多的 action。
-- **预期产物**（**回滚单目录**）：
+- **任务**：在 mrpc-blb-stage2-rl preset 下，依次跑（a）契约测试套件、（b）nvidia-smi 双卡可见性确认、（c）fresh 一轮 6000-episode sequential RL，**首次启用两卡奖励探针并行**（`--blb-v3-reward-devices 0,1`）。
+- **更新时间**：2026-05-19（晚）
+- **更新原因**：合并三项尚未在服务器上跑过的修复 + 新功能：
+    1. **2026-05-18 entropy schedule fix** (commit `0ca6de0`)：anchor 期 ent_coef=0，ramp 240ep，steady 0.02。
+    2. **2026-05-19 policy init + Huber value loss** (commit `50ea91a`)：action_head orthogonal(0.01)、encoder √2、value_head 1.0；value loss MSE→Huber(δ=1)。
+    3. **本次新增 two-GPU reward probe** (待 commit)：`blb_stage2_rl/probe_runner.py` + env/runner/sequential_runner/rl_tune/evaluator/launcher 串通；`--blb-v3-reward-devices 0,1` 即可两卡并行 K 个 trial。worker 0 复用 env 既有 model/handler/bridge；worker 1 deepcopy 主模型到 cuda:1，独立 handler/bridge/probe_batches；threading 并发，trial 顺序保持。
+- **本次改动汇总**（multi-GPU 部分）：
+    1. `blb_stage2_rl/probe_runner.py`（新文件，~360 行）：`ProbeWorker` / `ProbeRunner` / `build_probe_runner` / `parse_device_ids` / `_split_round_robin` / `_trial_seed`。线程并发 + 日志诊断。
+    2. `blb_stage2_rl/env.py`：`BLBStage2Env.__init__` 加可选 `probe_runner` 参数；step 的 install/clear、`_eval_on_probe` 在多卡模式下转给 runner，单卡模式 bitwise 不变。
+    3. `blb_stage2_rl/runner.py`：`BLBStage2TrainConfig.reward_devices` 字段；`_apply_runtime_overrides_to_cfg` 从 `ev.blb_v3_reward_devices` 解析；`BLBStage2RLRunner.run` 在 env 构造后若 len(reward_devices)≥2 则 `build_probe_runner(primary_bridge=env.bridge, …)` 注入到 `env.probe_runner`。
+    4. `blb_stage2_rl/sequential_runner.py`：在 `train_sequential` 的 base_env 构造后同样钩入 ProbeRunner（与 runner.py 对称，逻辑共享）。
+    5. `rl_tune.py`：新增 `blb_v3_reward_devices=""` 形参，转发给 `LayerImportanceEvaluator`。
+    6. `layer_importance_evaluator.py`：`__init__` 新增 `blb_v3_reward_devices=""` 形参 + 存到 `self.blb_v3_reward_devices`。
+    7. `llama_7B_LayerImportance.sh`：新增 `--blb-v3-reward-devices STR` 启动器开关 + 透传到 `python rl_tune.py --blb_v3_reward_devices`。
+    8. `tests/test_blb_chain_integrity.py`：新增 `ProbeRunnerHelpersTest`（8 个 pure-Python case）+ `ProbeRunnerTwoGPUTest`（双卡 smoke，自动 skipUnless ≥2 CUDA 设备）。本地全部 skip 通过；服务器有双卡时会真跑。
+- **预期信号**（按强→弱排）：
+    - **契约测试 29/29 全部通过**（含新增 8 个 helper case；ProbeRunnerTwoGPUTest 在服务器双卡上会真跑）。
+    - **`nvidia-smi` 启动前快照显示 GPU 0/1 都在线，mem.used 极低**。
+    - **训练启动后 `logs/nvidia_smi_<ts>.csv` 显示 GPU 0/1 两列 util_pct 都长期 > 0**（不是只有 GPU 0 在 100%、GPU 1 长期 0%）；典型节奏是模型 forward 期间两卡同步上 80%+，optimizer/PPO update 期间两卡都回落（因为这阶段单线程）。
+    - **训练日志的 startup banner 含 `Multi-GPU reward probe enabled: devices=[0, 1]` 和 `worker 0/1` 行**（前者来自 runner.py 的 log，后者来自 build_probe_runner 的 log_fn）。
+    - **每个 episode 的 wall-clock 应比同 preset 单卡基线快 ~1.5x–1.9x**（理论上限 2x，扣掉 deepcopy 后单次 worker 启动 + Python 线程 join 开销）。可以从 `details/noise_ppo_step_info_*.txt` 的时间戳 diff 看。
+    - **本次同时验证 policy init + Huber 修复**：anchor 期 `entropy` 应平稳下降，sample 期（eps 120+）reward ≥ +25，clip_fraction << 0.7。
+- **预期产物**：
     - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/`
-        - `blb_stage2_status.json` —— 实时状态板
-        - `diagnostics/diagnostics_summary.md` —— 中文诊断摘要
-        - `blb_stage2_rl_checkpoint_live.pt` —— policy + optimizer + forbidden_mask_records
+        - `blb_stage2_status.json` / `diagnostics_summary.md` / `blb_stage2_rl_checkpoint_live.pt`
     - `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/`
-        - `details/noise_ppo_step_info_<a>-<b>.txt`（带 `terminal_metrics: loss_mean=X loss_std=Y m1=Z`）
-        - `warning.txt` —— 奖励暴跌警告
-        - `pruning_search_log.txt` —— 主日志（启动头部能看到 `preferred per slot (mode over 59 steps) = [...]` 和 `强制 baseline 锚点: 前 N 个 episode...`）
-- **预期耗时**：~8-9 小时。前 60 个 episode 跑 baseline action 也要 5 trials × 4 probe forward 加 59 个 optimizer call，但 PPO update 仍按 60-episode rollout 算。
-
-### Stage-1 → Stage-2 degree 适配（用户问题 #1）
-
-经过审查代码链：
-- `_resolve_stage2_fixed_stage1_config` → `resolve_stage1_only` 从 `glue_final_configs_best_ppo.json` 的 `bert-base.mrpc.stage1.gelu/softmax` 读出 per-layer 向量。
-- 传给 `BLBStage2RLRunner.run(fixed_gelu, fixed_softmax)` → 传给 `BLBStage2Env(gelu_degree=fixed_gelu, attn_degree=fixed_softmax)`。
-- `BLBStage2Env._normalize_degree_vector` 把 length-L 向量直接保留（不会塌成 scalar=4）。
-- `evaluate_action_for_cost(..., gelu_degree=self.gelu_degree, attn_degree=self.attn_degree)` 把向量传到 `action_vector_to_cfgs(..., gelu_degree=..., attn_degree=...)`。
-- `action_vector_to_cfgs` 每层用 `_degree_for_layer(gelu_degree, li, ...)` 拿出该层的 degree，构造 Block3/5 cfg。
-- `make_config_name` 用 `cfg.degree` (Block3) / `cfg.gelu_degree` (Block5) 拼 graph_key，所以每个 (layer, block) 送进 optimizer 时用的是 per-layer graph。
-- **Paean/blb_action_eval.py** 走的是同一条 `action_vector_to_cfgs` 路径，per-layer 向量在 line 273-274 显式传入。
-
-→ **训练 / final-eval 都已经在用 per-layer stage-1 degree**。之前 `report.md` 里出现的 `block5_n4` / `block3_exp_n4` 是 **诊断脚本的 bug**（读 JSON 路径错了，回落到 `[4]*12`），不是训练代码的 bug。本次也修了诊断脚本（`scripts/blb_diagnose_invalid_blocks.py:_stage1_degrees_from_meta`）。
-
-如果对训练日志里实际用的 graph_key 还不放心，跑起来之后看 `details/noise_ppo_step_info_*.txt`，每条 `invalid_blocks` 行里都有 `graph=block5_n1_L0` / `graph=block3_exp_n2_L0` 之类字段，能直接验证 per-layer 是否正确。
+        - `details/noise_ppo_step_info_*.txt` / `warning.txt` / `pruning_search_log.txt`
+    - `logs/nvidia_smi_<ts>.csv`（**这个是 multi-GPU 用量证据**；每 15s 采样，包含两卡 util_pct + mem_used_mib）
+    - `/tmp/blb_test_output.log`（契约测试日志，agent 失败时贴这个）
+- **预期耗时**：~5-6 小时（单卡 ~9 小时 → 双卡奖励探针约 1.7x 加速；首 60 ep 锚定阶段加速最少，因为 forced-baseline 时 K 个 trial 都跑 baseline 行动）。
 
 ## 切换到其他常用任务时（备查，agent 不读这一段）
 
 需要换任务时，**直接覆盖上面的 active command 代码块** + 改这里的元信息。下面只是常用命令样板，不会被执行：
 
 - 续训（同 preset 不带 `--fresh`，自动检测持久化目录、恢复 forbidden_mask）：
-  `bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl`
+  `bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --blb-v3-reward-devices 0,1`
 - 单独 final-eval（最新 best）：
   `bash Paean/run_final_eval.sh --preset mrpc-final-eval-only --action-config "$RUN_DIR/stage2_noise/progress/diagnostics/best_action_vec.json"`
-- 单独 final-eval（baseline）：
-  `bash Paean/run_final_eval.sh --preset mrpc-blb-baseline-fixed --run-name baseline_blb_s1t0.005`
+- 单卡回滚（不传 `--blb-v3-reward-devices` 即可，逻辑等价于历史路径）：
+  `bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh`
 - 离线诊断某个 action 的 invalid_blocks：
   `python scripts/blb_diagnose_invalid_blocks.py --action-config <path> --output-dir reports/blb_opt/invalid_blocks/<name>`
 - 多 seed 扫（5 seeds，隔离持久化目录）：
@@ -184,3 +206,4 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 - agent 应该在仓库根目录 `bash` 执行（不要 `cd`，所有路径已经按相对仓库根写好）。
 - 如果该文件未变更（git hash 未动），agent 不应重复触发同一命令 —— 由 agent 侧做幂等。
 - 本次脚本会主动停掉正在跑的 RL（基于 `<slug>/rl.pid`），所以 agent 不需要额外的 pre-kill 钩子。
+- `set -e` + `trap kill $NVS_PID` 已经处理掉了背景 nvidia-smi 采样进程的清理 —— 即便 RL 中途崩溃，sampler 也会被信号杀掉。

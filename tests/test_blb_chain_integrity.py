@@ -36,6 +36,11 @@ try:
         BLBStage2SequentialPolicy,
         SequentialPolicyConfig,
     )
+    from blb_stage2_rl.probe_runner import (
+        _split_round_robin,
+        _trial_seed,
+        parse_device_ids,
+    )
     _IMPORT_ERROR = None
 except Exception as _exc:  # torch / transformers / function_handler missing
     torch = None  # type: ignore
@@ -47,6 +52,9 @@ except Exception as _exc:  # torch / transformers / function_handler missing
     sync_block2_qk_binding = None  # type: ignore
     BLBStage2SequentialPolicy = None  # type: ignore
     SequentialPolicyConfig = None  # type: ignore
+    _split_round_robin = None  # type: ignore
+    _trial_seed = None  # type: ignore
+    parse_device_ids = None  # type: ignore
     _IMPORT_ERROR = _exc
 
 _SKIP_REASON = (
@@ -529,6 +537,144 @@ class SequentialPolicyInitTest(unittest.TestCase):
             f"warmstart-bias margin {margin:.3f} too low; encoder noise is "
             "overwhelming the bias (regression of 2026-05-19 fix)",
         )
+
+
+# ---------------------------------------------------------------------------
+# Two-GPU probe runner — pure-Python invariants (no real CUDA needed)
+# ---------------------------------------------------------------------------
+@unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
+class ProbeRunnerHelpersTest(unittest.TestCase):
+    """Pin the trial-split and seed-derivation rules behind the 2026-05-19
+    two-GPU reward-probe parallelism. These are pure-Python, so they run on
+    any machine where torch imports.
+    """
+
+    def test_split_round_robin_k5_n2(self):
+        out = _split_round_robin(5, 2)
+        self.assertEqual(out, [[0, 2, 4], [1, 3]])
+
+    def test_split_round_robin_k5_n3(self):
+        out = _split_round_robin(5, 3)
+        self.assertEqual(out, [[0, 3], [1, 4], [2]])
+
+    def test_split_round_robin_k0(self):
+        out = _split_round_robin(0, 2)
+        self.assertEqual(out, [[], []])
+
+    def test_split_round_robin_single_worker(self):
+        out = _split_round_robin(5, 1)
+        self.assertEqual(out, [[0, 1, 2, 3, 4]])
+
+    def test_trial_seed_deterministic(self):
+        # Same input → same output (no time-dependent component).
+        s1 = _trial_seed(12345, 3)
+        s2 = _trial_seed(12345, 3)
+        self.assertEqual(s1, s2)
+
+    def test_trial_seed_independent_per_trial(self):
+        # Different trial_idx values produce widely-spread seeds.
+        base = 12345
+        seeds = [_trial_seed(base, i) for i in range(5)]
+        # All distinct.
+        self.assertEqual(len(set(seeds)), 5,
+                         f"trial seeds collided: {seeds}")
+        # Spread > 1B (Knuth's hash gives good distribution).
+        self.assertGreater(max(seeds) - min(seeds), 10**9,
+                           f"trial seeds too clustered: {seeds}")
+
+    def test_parse_device_ids_basic(self):
+        self.assertEqual(parse_device_ids("0,1"), [0, 1])
+        self.assertEqual(parse_device_ids("0"), [0])
+        self.assertEqual(parse_device_ids(""), [])
+        self.assertEqual(parse_device_ids(None), [])
+        # Whitespace tolerated.
+        self.assertEqual(parse_device_ids(" 0 , 1 "), [0, 1])
+
+    def test_parse_device_ids_rejects_garbage(self):
+        with self.assertRaises(ValueError):
+            parse_device_ids("0,abc")
+
+
+@unittest.skipUnless(
+    _TORCH_AVAILABLE and torch is not None and torch.cuda.is_available()
+    and torch.cuda.device_count() >= 2,
+    "two-GPU probe runner test requires >=2 visible CUDA devices",
+)
+class ProbeRunnerTwoGPUTest(unittest.TestCase):
+    """End-to-end smoke: build a runner with two trivial models on two GPUs,
+    run K trials, check we get K results back in correct order. Only runs
+    when CUDA reports >=2 devices.
+
+    Uses a stub model (nn.Linear) rather than full BERT to keep the test
+    fast; the trial-split + thread-fan-out + ordering logic is what matters.
+    """
+
+    def _make_stub_setup(self, num_layers: int = 2):
+        # A minimal model + handler + bridge stub that satisfies the
+        # ProbeWorker contract without pulling BLB cfg installation logic.
+        # We only verify the trial-split / fan-out / aggregation invariants.
+        from blb_stage2_rl.probe_runner import ProbeRunner, ProbeWorker
+
+        class _StubBatch:
+            def __init__(self, device):
+                self.input_ids = torch.zeros(2, 4, dtype=torch.long, device=device)
+                self.attention_mask = torch.ones(2, 4, dtype=torch.long, device=device)
+                self.labels = torch.zeros(2, dtype=torch.long, device=device)
+                self.token_type_ids = None
+
+        class _StubModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.proj = torch.nn.Linear(4, 2)
+
+            def forward(self, *, input_ids, attention_mask, labels, token_type_ids=None):
+                # Return logits in a shape compatible with cross_entropy
+                x = input_ids.float()                # [B, 4]
+                logits = self.proj(x)                # [B, 2]
+                class _Out:
+                    pass
+                out = _Out()
+                out.logits = logits
+                return out
+
+        workers = []
+        for d in (0, 1):
+            device = torch.device(f"cuda:{d}")
+            with torch.cuda.device(device):
+                model = _StubModel().to(device).eval()
+            # Bridge + handler stubs (install/clear are no-ops for the
+            # split+ordering test).
+            class _NoopBridge:
+                def apply(self, **_kw): pass
+                def clear(self): pass
+            workers.append(ProbeWorker(
+                device=device,
+                model=model,
+                handler=None,
+                bridge=_NoopBridge(),
+                probe_batches=[_StubBatch(device)],
+                is_regression=False,
+                role=("primary" if d == 0 else "replica"),
+            ))
+        return ProbeRunner(workers)
+
+    def test_runner_returns_results_in_trial_order(self):
+        runner = self._make_stub_setup()
+        results = runner.run_trials(k=5, base_seed=12345)
+        self.assertEqual(len(results), 5,
+                         f"expected 5 (loss, m1, m2) tuples; got {len(results)}")
+        # Diagnostics record both worker timings + device list.
+        diag = runner.last_diagnostics
+        self.assertEqual(diag.k, 5)
+        self.assertEqual(len(diag.per_worker_seconds), 2)
+        self.assertEqual(diag.per_worker_trial_counts, [3, 2],
+                         "round-robin split of k=5 across 2 workers should be [3, 2]")
+        self.assertEqual([str(d) for d in runner.devices], ["cuda:0", "cuda:1"])
+
+    def test_runner_handles_k0_gracefully(self):
+        runner = self._make_stub_setup()
+        results = runner.run_trials(k=0, base_seed=0)
+        self.assertEqual(results, [])
 
 
 if __name__ == "__main__":

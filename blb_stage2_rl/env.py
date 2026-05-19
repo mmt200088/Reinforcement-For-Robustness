@@ -39,6 +39,7 @@ from .action_space import (
     parse_config_name,
 )
 from .optimizer_cost import evaluate_action_for_cost
+from .probe_runner import ProbeRunner, format_diagnostics_line
 from .reward import (
     BaselineCostStats,
     EpisodeMetrics,
@@ -184,6 +185,7 @@ class BLBStage2Env:
             layers_attribute: str = "model.bert.encoder.layer",
             is_regression: bool = False,
             env_cfg: Optional[BLBStage2EnvConfig] = None,
+            probe_runner: Optional[ProbeRunner] = None,
             ):
         self.handler = handler
         self.model = model
@@ -204,6 +206,13 @@ class BLBStage2Env:
         self.env_cfg = env_cfg or BLBStage2EnvConfig()
 
         self.bridge = BLBNoiseRLBridge(handler, layers_attribute=layers_attribute)
+        # Multi-GPU probe parallelism: when set, install/clear/_eval_on_probe
+        # route to the runner instead of (self.bridge, self.model). Single-GPU
+        # runs leave this None and the existing path runs bitwise-unchanged.
+        self.probe_runner = probe_runner
+        # Counter for derive_probe_base_seed; bumped every action eval so two
+        # consecutive actions in the same episode get different seed streams.
+        self._probe_eval_counter: int = 0
 
         self.action_dims = action_dims_for_config(self.num_layers)
         self.total_action_dim = len(self.action_dims)
@@ -525,17 +534,25 @@ class BLBStage2Env:
         # 语义更新（2026-05）：first_input fresh 噪声不再注入（"第一个 HE 配置
         # 无损"），且 layer-0 block1 整体不安装。decoded.block1_cfgs 已不含
         # layer 0；first_input_sf 字段保留为占位 0 不传给 bridge。
+        # When probe_runner is set (multi-GPU), install on every worker so each
+        # GPU's model carries the same BLB cfg before its trial subset runs.
         try:
-            self.bridge.apply(
-                block1_cfgs=decoded.block1_cfgs,
-                block2_cfgs=decoded.block2_cfgs,
-                block3_cfgs=decoded.block3_cfgs,
-                block4_cfgs=decoded.block4_cfgs,
-                block5_cfgs=decoded.block5_cfgs,
-            )
+            if self.probe_runner is not None:
+                self.probe_runner.install_action(decoded)
+            else:
+                self.bridge.apply(
+                    block1_cfgs=decoded.block1_cfgs,
+                    block2_cfgs=decoded.block2_cfgs,
+                    block3_cfgs=decoded.block3_cfgs,
+                    block4_cfgs=decoded.block4_cfgs,
+                    block5_cfgs=decoded.block5_cfgs,
+                )
         except Exception as exc:
             try:
-                self.bridge.clear()
+                if self.probe_runner is not None:
+                    self.probe_runner.clear()
+                else:
+                    self.bridge.clear()
             except Exception:
                 pass
             # 互斥校验失败，按 invalid 处理
@@ -566,7 +583,10 @@ class BLBStage2Env:
             info["forward_ran"] = True
         except Exception as exc:
             try:
-                self.bridge.clear()
+                if self.probe_runner is not None:
+                    self.probe_runner.clear()
+                else:
+                    self.bridge.clear()
             except Exception:
                 pass
             metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
@@ -590,7 +610,10 @@ class BLBStage2Env:
             self._last_fusion_count = float(opt_signals.total_fusion_count)
             return self._build_state(), float(breakdown.reward), True, info
         else:
-            self.bridge.clear()
+            if self.probe_runner is not None:
+                self.probe_runner.clear()
+            else:
+                self.bridge.clear()
 
         # 6) reward
         breakdown = compute_reward(
@@ -615,62 +638,104 @@ class BLBStage2Env:
         return self._build_state(), float(breakdown.reward), True, info
 
     # ------------------------------------------------------------------
+    # Multi-GPU probe seed derivation
+    # ------------------------------------------------------------------
+    def _derive_probe_base_seed(self) -> int:
+        """Per-action probe seed for the ProbeRunner.
+
+        Built from (step_idx, action-eval counter, wall ns). Reproducible
+        across reruns if step_idx/counter are reset; deterministic across
+        the two GPU workers (they get the same base_seed and the per-trial
+        offset comes from ``trial_idx`` inside ``_trial_seed``).
+        """
+        return int(
+            (
+                (int(self._step_idx) * 1_000_003)
+                ^ (int(self._probe_eval_counter) * 2654435761)
+                ^ (int(time.time_ns()) & 0xFFFFFFFF)
+            ) & 0x7FFFFFFFFFFFFFFF
+        )
+
+    # ------------------------------------------------------------------
     # 评估子集 forward（单层 K-trials）
     # ------------------------------------------------------------------
     def _eval_on_probe(self, k_trials: int) -> EpisodeMetrics:
-        """在 ``self.probe_batches`` 上跑 k_trials 次（独立 RNG），返回 EpisodeMetrics。"""
-        k = max(1, int(k_trials))
-        was_training = self.model.training
-        self.model.eval()
+        """在 ``self.probe_batches`` 上跑 k_trials 次（独立 RNG），返回 EpisodeMetrics。
 
-        per_trial_loss: List[float] = []
-        per_trial_metric1: List[float] = []
-        per_trial_metric2: List[float] = []
+        If ``self.probe_runner`` is set (multi-GPU), trials are split round-robin
+        across workers and run in parallel threads (one per GPU). Otherwise the
+        original sequential single-GPU path runs unchanged.
+        """
+        k = max(1, int(k_trials))
 
         # 保存外层 RNG 状态以避免污染
         cpu_rng = torch.get_rng_state()
         cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
         np_rng = np.random.get_state()
 
+        per_trial_loss: List[float] = []
+        per_trial_metric1: List[float] = []
+        per_trial_metric2: List[float] = []
+
         try:
-            with torch.inference_mode():
-                for trial_idx in range(k):
-                    # 独立 trial seed —— 让噪声采样独立，但模型权重 / data 不变
-                    seed = (int(time.time_ns()) ^ (trial_idx * 1_000_003)) & 0x7FFFFFFFFFFFFFFF
-                    torch.manual_seed(seed)
-                    np.random.seed(seed % (2**32))
-                    if torch.cuda.is_available():
-                        torch.cuda.manual_seed_all(seed)
+            if self.probe_runner is not None:
+                # ---- Multi-GPU path: fan out via ProbeRunner ----
+                base_seed = self._derive_probe_base_seed()
+                self._probe_eval_counter += 1
+                results = self.probe_runner.run_trials(k, base_seed=base_seed)
+                for (loss, m1, m2) in results:
+                    if loss is None or (isinstance(loss, float) and not math.isfinite(loss)):
+                        # NaN/inf from a probe trial is kept and handled below
+                        # via _LOSS_CAP clamping (same semantics as single-GPU).
+                        per_trial_loss.append(float(loss) if loss is not None else float("nan"))
+                    else:
+                        per_trial_loss.append(float(loss))
+                    per_trial_metric1.append(float(m1))
+                    per_trial_metric2.append(float(m2))
+            else:
+                # ---- Single-GPU path (unchanged from pre-multi-GPU era) ----
+                was_training = self.model.training
+                self.model.eval()
+                try:
+                    with torch.inference_mode():
+                        for trial_idx in range(k):
+                            # 独立 trial seed —— 让噪声采样独立，但模型权重 / data 不变
+                            seed = (int(time.time_ns()) ^ (trial_idx * 1_000_003)) & 0x7FFFFFFFFFFFFFFF
+                            torch.manual_seed(seed)
+                            np.random.seed(seed % (2**32))
+                            if torch.cuda.is_available():
+                                torch.cuda.manual_seed_all(seed)
 
-                    losses, m1s, m2s = [], [], []
-                    for batch in self.probe_batches:
-                        kwargs: Dict[str, torch.Tensor] = {
-                            "input_ids": batch.input_ids,
-                            "attention_mask": batch.attention_mask,
-                            "labels": batch.labels,
-                        }
-                        if batch.token_type_ids is not None:
-                            kwargs["token_type_ids"] = batch.token_type_ids
-                        outputs = self.model(**kwargs)
-                        logits = outputs.logits if hasattr(outputs, "logits") else outputs[1]
-                        loss, m1, m2 = _compute_metrics_on_batch(
-                            logits, batch.labels, is_regression=self.is_regression,
-                        )
-                        losses.append(loss)
-                        m1s.append(m1)
-                        m2s.append(m2)
+                            losses, m1s, m2s = [], [], []
+                            for batch in self.probe_batches:
+                                kwargs: Dict[str, torch.Tensor] = {
+                                    "input_ids": batch.input_ids,
+                                    "attention_mask": batch.attention_mask,
+                                    "labels": batch.labels,
+                                }
+                                if batch.token_type_ids is not None:
+                                    kwargs["token_type_ids"] = batch.token_type_ids
+                                outputs = self.model(**kwargs)
+                                logits = outputs.logits if hasattr(outputs, "logits") else outputs[1]
+                                loss, m1, m2 = _compute_metrics_on_batch(
+                                    logits, batch.labels, is_regression=self.is_regression,
+                                )
+                                losses.append(loss)
+                                m1s.append(m1)
+                                m2s.append(m2)
 
-                    if losses:
-                        per_trial_loss.append(float(np.mean(losses)))
-                        per_trial_metric1.append(float(np.mean(m1s)))
-                        per_trial_metric2.append(float(np.mean(m2s)))
+                            if losses:
+                                per_trial_loss.append(float(np.mean(losses)))
+                                per_trial_metric1.append(float(np.mean(m1s)))
+                                per_trial_metric2.append(float(np.mean(m2s)))
+                finally:
+                    if was_training:
+                        self.model.train()
         finally:
             torch.set_rng_state(cpu_rng)
             if cuda_rng is not None:
                 torch.cuda.set_rng_state_all(cuda_rng)
             np.random.set_state(np_rng)
-            if was_training:
-                self.model.train()
 
         if not per_trial_loss:
             return EpisodeMetrics()

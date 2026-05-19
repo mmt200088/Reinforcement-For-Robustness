@@ -1004,6 +1004,22 @@ def run_sequential_via_runner(
     )
     base_env.sync_degree_vectors_from_model()
 
+    # ---------- 3.5) Multi-GPU reward-probe runner (opt-in) ----------
+    reward_devices = list(getattr(train_cfg, "reward_devices", []) or [])
+    if reward_devices and len(reward_devices) >= 2:
+        from .probe_runner import build_probe_runner
+        log(f"  [multi-gpu] reward probe enabled: devices={reward_devices}")
+        base_env.probe_runner = build_probe_runner(
+            primary_model=ev.model,
+            primary_handler=ev.reversible_handler,
+            primary_bridge=base_env.bridge,
+            primary_probe_batches=base_env.probe_batches,
+            layers_attribute="model." + ev.layers_attribute,
+            is_regression=bool(getattr(ev, "is_regression", False)),
+            device_ids=reward_devices,
+            log_fn=lambda m: log(f"  [multi-gpu] {m}"),
+        )
+
     # ---------- 4) baseline cost / reward weights ----------
     from .env import estimate_baseline_cost_stats
     from .reward import calibrate_weights_from_baseline

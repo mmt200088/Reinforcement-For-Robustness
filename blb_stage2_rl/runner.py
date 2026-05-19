@@ -631,6 +631,12 @@ class BLBStage2TrainConfig:
     # inside run_sequential_via_runner. Surfaced here so a preset can pin a
     # specific anchor length without relying on the auto-default.
     force_baseline_episodes: int = 0
+    # 2026-05-19: two-GPU reward-probe parallelism. Empty / single-element list
+    # → single-GPU codepath unchanged. Two or more device ids → BLBStage2Env
+    # gets a ProbeRunner that fans the K trials across these devices in
+    # parallel. Element 0 must be the primary device (where the env's existing
+    # model lives). Wired through --blb-v3-reward-devices "0,1" in the launcher.
+    reward_devices: List[int] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -844,6 +850,24 @@ class BLBStage2RLRunner:
         degree_sync = env.sync_degree_vectors_from_model()
         if degree_sync:
             log(f"  {bullet} Model degree sync: {degree_sync}")
+
+        # ---------- 4.5) Multi-GPU reward-probe runner (opt-in) ----------
+        if train_cfg.reward_devices and len(train_cfg.reward_devices) >= 2:
+            from .probe_runner import build_probe_runner
+            log(
+                f"  {bullet} Multi-GPU reward probe enabled: "
+                f"devices={train_cfg.reward_devices}"
+            )
+            env.probe_runner = build_probe_runner(
+                primary_model=ev.model,
+                primary_handler=ev.reversible_handler,
+                primary_bridge=env.bridge,
+                primary_probe_batches=env.probe_batches,
+                layers_attribute="model." + ev.layers_attribute,
+                is_regression=bool(getattr(ev, "is_regression", False)),
+                device_ids=list(train_cfg.reward_devices),
+                log_fn=lambda m: log(f"  {bullet} {m}"),
+            )
 
         # ---------- 5) baseline + reward 权重校准 ----------
         status.set_phase("校准 baseline cost / reward 权重")
@@ -2419,6 +2443,17 @@ class BLBStage2RLRunner:
         # 4) num_trials_per_step / probe_batch_count
         try:
             cfg.num_trials_per_step = int(getattr(ev, "stage2_k_trials", cfg.num_trials_per_step))
+        except Exception:
+            pass
+        # 4b) reward_devices: --blb-v3-reward-devices "0,1" arrives as a string
+        # on the evaluator. Parse here so train_cfg holds a List[int]; empty /
+        # 1-device → ProbeRunner stays disabled.
+        try:
+            from .probe_runner import parse_device_ids
+            spec = getattr(ev, "blb_v3_reward_devices", None)
+            parsed = parse_device_ids(spec)
+            if parsed:
+                cfg.reward_devices = parsed
         except Exception:
             pass
         # 5) BLB v3 always uses the real in-process Rescale_optimizer.  Legacy
