@@ -1,0 +1,26 @@
+test_fresh_writes_to_source_field (tests.test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_fresh_writes_to_source_field) ... ok
+test_fused_away_sets_rescale_to_none (tests.test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_fused_away_sets_rescale_to_none) ... ok
+test_invalid_result_short_circuits_no_op (tests.test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_invalid_result_short_circuits_no_op) ... ok
+test_missing_compact_config_no_op (tests.test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_missing_compact_config_no_op) ... ok
+test_non_integer_delta_skipped (tests.test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_non_integer_delta_skipped) ... ok
+test_propagation_delta_writes_to_encode_field (tests.test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_propagation_delta_writes_to_encode_field) ... ok
+test_rescale_post_writes_to_rescale_field (tests.test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_rescale_post_writes_to_rescale_field) ... ok
+test_rotation_flag_resets_when_absent (tests.test_blb_chain_integrity.ApplyOptimizerOutputBlock2RotationTest.test_rotation_flag_resets_when_absent) ... ok
+test_rotation_flag_toggled_on_via_name_map (tests.test_blb_chain_integrity.ApplyOptimizerOutputBlock2RotationTest.test_rotation_flag_toggled_on_via_name_map) ... ok
+test_all_three_pairs_mirrored (tests.test_blb_chain_integrity.SyncBlock2QKBindingTest.test_all_three_pairs_mirrored) ... ok
+test_no_op_when_already_synced (tests.test_blb_chain_integrity.SyncBlock2QKBindingTest.test_no_op_when_already_synced) ... ok
+test_wk_mutation_mirrors_onto_wq (tests.test_blb_chain_integrity.SyncBlock2QKBindingTest.test_wk_mutation_mirrors_onto_wq) ... ok
+test_distribution_string_case_insensitive (tests.test_blb_chain_integrity.SampleGaussianLiveReadTest.test_distribution_string_case_insensitive) ... ok
+test_mutating_scaling_factor_changes_noise_variance (tests.test_blb_chain_integrity.SampleGaussianLiveReadTest.test_mutating_scaling_factor_changes_noise_variance) ... ok
+test_none_point_returns_zero_noise (tests.test_blb_chain_integrity.SampleGaussianLiveReadTest.test_none_point_returns_zero_noise) ... ok
+test_bridge_baseline_evaluation_bypasses_cfg_derived_payload (tests.test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_bridge_baseline_evaluation_bypasses_cfg_derived_payload) ... ok
+test_env_all_max_action_uses_optimizer_baseline_scoring (tests.test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_env_all_max_action_uses_optimizer_baseline_scoring) ... ok
+test_env_runs_forward_even_when_optimizer_invalid (tests.test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_env_runs_forward_even_when_optimizer_invalid) ... ok
+test_real_mrpc_all_max_baseline_optimizer_outputs_are_valid (tests.test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_real_mrpc_all_max_baseline_optimizer_outputs_are_valid) ... ok
+test_real_mrpc_all_max_cfg_derived_optimizer_outputs_are_valid (tests.test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_real_mrpc_all_max_cfg_derived_optimizer_outputs_are_valid) ... ok
+test_action_description_names_every_noise_point_and_truncation (tests.test_blb_stage2_rl_regressions.BLBActionDescriptionRegressionTests.test_action_description_names_every_noise_point_and_truncation) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 0.351s
+
+OK

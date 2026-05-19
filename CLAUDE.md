@@ -225,6 +225,13 @@ single GPU `601s`, dual GPU `601s` (`1.00x`), no multi-GPU activation log, and
 GPU 1 at `0%` utilization. Report:
 `experiments/server_command_runs/stage2_reward_probe_benchmark_20260519_202236/stage2_reward_probe_benchmark_report.html`.
 
+Latest focused action-to-config chain check on 2026-05-20: server HEAD
+`c24d5b8` passed 21/21 focused tests covering optimizer output write-back,
+fused-away rescale handling, Block 2 Q/K sync, live cfg reads during noise
+sampling, all-max optimizer validity, and action-description slot semantics.
+Report:
+`experiments/server_command_runs/action_config_chain_20260520_015951_c24d5b8/action_config_chain_test_report.html`.
+
 `SERVER_COMMAND.md` was launched once on this server and reached real BLB
 Stage-2 sequential RL execution. The stopped run wrote diagnostics under
 `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/`.
