@@ -56,7 +56,14 @@ echo ""
 echo "================================================================================"
 echo "Step 1/5: git pull latest local source changes"
 echo "================================================================================"
-git pull --ff-only
+set +e
+timeout 120 git pull --ff-only
+PULL_RC=$?
+set -e
+if [ "$PULL_RC" -ne 0 ]; then
+  echo "[warn] git pull failed or timed out (rc=$PULL_RC); continuing with current HEAD."
+  echo "[warn] If HEAD is stale, stop here and sync via git bundle or repair server GitHub connectivity."
+fi
 echo "[git] HEAD = $(git rev-parse --short HEAD)"
 
 echo ""
