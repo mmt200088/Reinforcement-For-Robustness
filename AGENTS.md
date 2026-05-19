@@ -509,6 +509,11 @@ The active promotion ladder is:
 - F4: final eval on full or near-full validation with real BLB action install.
   Only F4 evidence belongs in final "best" claims.
 
+RL training is long-cycle. Based on prior runs, effective BLB Stage-2 RL
+usually needs 50,000+ episodes/rounds. Short runs such as 200 episodes are for
+plumbing, performance, and regression smoke only; do not treat their reward
+quality as evidence that the RL search worked or failed.
+
 F2/F3 may appear in old JSONL or older documentation but are no longer the
 active promotion ladder.
 

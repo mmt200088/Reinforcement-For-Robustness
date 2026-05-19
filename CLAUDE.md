@@ -543,6 +543,11 @@ they rank as legacy and aren't promotable):
 - **F1** — small probe + few MC trials, online during training: catches obvious accuracy collapses cheaply. This is where the per-episode reward signal comes from.
 - **F4** — final eval: full/near-full validation set, real BLB install, frozen report. **Only F4 numbers belong in "best" claims.**
 
+RL training is long-cycle. Based on prior runs, effective BLB Stage-2 RL
+usually needs 50,000+ episodes/rounds. Short runs such as 200 episodes are for
+plumbing, performance, and regression smoke only; do not treat their reward
+quality as evidence that the RL search worked or failed.
+
 The runner's "final eval" path must install the actual BLB best action (decode → `bridge.apply` → real `Rescale_optimizer`), not silently fall back to a legacy all-max baseline. If you change runner glue, verify this path explicitly.
 
 ## Conventions worth knowing
