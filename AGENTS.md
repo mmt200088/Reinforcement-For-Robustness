@@ -27,6 +27,12 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   parameters must not jump pathologically. If a server run shows a new abnormal
   point, design the next experiment, inspect evidence, apply the real fix
   locally, and repeat the git-synced server run loop.
+- Treat the Stage-2 RL collapse task as long-running research work. It may
+  require many experiment cycles over many hours, not one or two edits. When the
+  failure is not a simple code bug, act like a researcher: form a falsifiable
+  hypothesis, design the next focused experiment, observe the curve/logs, adjust
+  code or hyperparameters locally, and keep iterating until the goal evidence is
+  clean.
 - Keep this `AGENTS.md` current as the shared project memory for Codex and
   Claude Code. After each user message that adds or changes project facts,
   workflow rules, run state, architecture notes, or operating constraints,

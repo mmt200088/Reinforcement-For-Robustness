@@ -73,6 +73,12 @@ Current Stage-2 RL collapse goal mode:
 - If a server run shows a new abnormal point, design a focused experiment,
   inspect the evidence, apply the real fix locally, push, let the server pull
   and run again, and continue until the goal is met.
+- Assume this may be a long research task requiring many cycles over many
+  hours. If the issue is a difficult training/search behavior rather than a
+  straightforward code bug, do not stop after one or two patches. Form
+  falsifiable hypotheses, run focused experiments, study the reward curve and
+  diagnostics, tune or repair locally, and keep repeating the git-synced
+  server-run loop until the evidence is clean.
 
 ### Server command bridge
 

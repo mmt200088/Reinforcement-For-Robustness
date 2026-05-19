@@ -15,6 +15,12 @@ should not show sudden pathological jumps. If one attempted fix still produces
 abnormal server curves, design the next experiment, inspect the evidence, and
 continue the local-edit -> git -> server-run loop until the target is met.
 
+This is allowed to be a long research loop over many hours. For difficult
+training dynamics, hyperparameter issues, or reward-calibration problems, the
+agent should behave like a researcher: generate a falsifiable hypothesis, run a
+focused experiment, read the curve and diagnostics, then adjust the local fix or
+tuning choice and repeat.
+
 ## Diagnosis
 
 The bad run fails exactly at the anchor boundary. Episodes 1-120 execute the

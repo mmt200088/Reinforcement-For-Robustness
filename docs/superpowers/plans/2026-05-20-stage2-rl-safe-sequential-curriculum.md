@@ -14,6 +14,13 @@ pathologies. If a server run exposes a new abnormal point, do not patch the
 server; design the next experiment, update local code, push, pull on server,
 run again, and keep iterating.
 
+**Researcher operating mode:** Expect this to take repeated experiment cycles,
+possibly over many hours. If the evidence points to training dynamics,
+hyperparameters, reward calibration, or exploration design instead of a simple
+bug, create a focused experiment, run it, inspect the curve/logs, and update the
+local fix or tuning choice based on that evidence. Do not declare completion
+because a short unit test passes.
+
 **Architecture:** Extend the sequential policy and PPO buffer with optional per-level masks, then have the sequential runner build one near-baseline mutation mask per episode. The runner keeps all non-selected slots baseline-only, stores the collection mask in the transition, and resolves anchor/entropy schedules using absolute episode indices for resume correctness.
 
 **Tech Stack:** Python `unittest`, NumPy, PyTorch on the server, existing BLB sequential runner/policy modules.
