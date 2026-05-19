@@ -201,6 +201,21 @@ Verification target for the future implementation:
 - Single-GPU fallback remains valid when only one GPU is visible or
   `--blb-v3-reward-devices` is unset.
 
+Latest server check on 2026-05-19: the `--blb-v3-reward-devices 0,1` code path
+did not prove reward-probe parallelism. Two 200-episode benchmark runs took the
+same time, single GPU `601s` and dual GPU `601s` (`1.00x`). The dual run
+allocated memory on GPU 1 but `nvidia-smi` sampling showed GPU 1 at `0%` util
+for all samples, and the training log had no `[multi-gpu] reward probe enabled`
+or ProbeRunner worker lines. Treat dual-card reward probing as not yet verified.
+Report: `experiments/server_command_runs/stage2_reward_probe_benchmark_20260519_202236/stage2_reward_probe_benchmark_report.html`.
+
+The formal long Stage-2 run was not started after that benchmark, because the
+dual-card precondition failed and the `SERVER_COMMAND.md` contract-test gate
+also failed (`99` tests run, `8` failures, `1` error). The ProbeRunner helper
+and two-GPU smoke tests passed, so the failure is broader stale/broken BLB test
+state plus missing runtime activation evidence, not a completed validation of
+the new dual-card path.
+
 `SERVER_COMMAND.md` was launched once on this server and reached real BLB
 Stage-2 sequential RL execution. The stopped run wrote diagnostics under
 `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/`.
