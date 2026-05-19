@@ -1,0 +1,3 @@
+256:  [multi-gpu] reward probe enabled: devices=[0, 1]
+257:  [multi-gpu] [probe-runner] worker 0: cuda:0 (primary, reusing env.bridge)
+258:  [multi-gpu] [probe-runner] worker 1: cuda:1 (deepcopy replica)

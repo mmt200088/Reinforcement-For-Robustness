@@ -1,0 +1,12 @@
+[信息] 统一最终评估已跳过（--skip-final-eval）。
+
+配置评估完成（Configuration evaluation finished）。
+100%|██████████| 7/7 [09:36<00:00, 82.39s/it]
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 5 层的Softmax函数（Softmax function）
+已替换 6 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+Round 0, Final evaluation loss: 0.34625446796417236
+
+ If there's a warning about missing keys above, please disregard :)

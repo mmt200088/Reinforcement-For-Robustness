@@ -102,82 +102,82 @@ Current verified server facts:
   with `RPC failed; curl 16 Error in the HTTP2 framing layer` and
   `fatal: expected flush after ref listing`.
 
-### Two-GPU Reward-Probe Parallelism Target
+### Two-GPU Reward-Probe Parallelism
 
 The server has two visible GPUs:
 
 - GPU 0: NVIDIA GeForce RTX 5090, about 32607 MiB.
 - GPU 1: NVIDIA GeForce RTX 5090, about 32607 MiB.
 
-The desired two-GPU optimization is not two independent RL jobs. The target is
+The two-GPU optimization is not two independent RL jobs. The target is still
 one RL job where, after the policy selects one BLB action, the model-forward
 reward probe trials for that same action run concurrently across both GPUs.
 This should accelerate the repeated inference tests used to compute the PPO
 reward for one action.
 
-Current code facts:
+Current implementation facts:
 
 - `--stage2-k-trials` controls the number of Stage-2 reward noise trials. It
   defaults to 5 and maps into `BLBStage2TrainConfig.num_trials_per_step`.
-- `BLBStage2Env.step(...)` applies the selected BLB config through
-  `BLBNoiseRLBridge.apply(...)`, then calls
+- Enable the parallel reward probe with `--blb-v3-reward-devices 0,1` plus
+  `CUDA_VISIBLE_DEVICES=0,1`. Leaving `--blb-v3-reward-devices` unset preserves
+  the original single-GPU code path.
+- `blb_stage2_rl/probe_runner.py::parse_device_ids(...)` accepts all launcher
+  forms observed in practice: `"0,1"`, Python Fire tuple `(0, 1)`, list
+  `[0, 1]`, int `0`, and stringified `"(0, 1)"`/`"[0, 1]"`. Invalid non-empty
+  specs raise instead of silently falling back to single GPU.
+- `BLBStage2RLRunner._build_train_config_from_evaluator(...)` fills
+  `BLBStage2TrainConfig.reward_devices`. `sequential_runner.py` attaches a
+  `ProbeRunner` when that list has at least two devices and logs
+  `[multi-gpu] reward probe enabled: devices=[0, 1]`.
+- `BLBStage2Env.step(...)` applies the selected BLB config, installs that same
+  decoded action on every `ProbeRunner` worker, then calls
   `self._eval_on_probe(self.env_cfg.num_trials_per_step)`.
-- `BLBStage2Env._eval_on_probe(k_trials)` currently runs
-  `for trial_idx in range(k)` sequentially on `self.model` and
-  `self.probe_batches`.
+- `BLBStage2Env._eval_on_probe(k_trials)` delegates to `ProbeRunner.run_trials`
+  when a runner is attached. The runner splits trials round-robin. For the
+  default five trials on two GPUs, GPU 0 runs `[0, 2, 4]` and GPU 1 runs
+  `[1, 3]`, then returns results in trial order for the existing aggregation.
 - Sequential RL terminal reward reaches the same path through
   `BLBStage2SequentialEnv` -> assembled full action vector ->
   `BLBStage2Env.step(...)`. Per-block dense optimizer shaping is not the target
   for GPU parallelism; only the terminal/full model-forward reward probe is.
 
-The local code-editing agent should implement two-GPU parallelism inside the
-reward probe path, not by launching two run-tags. For the default
-`--stage2-k-trials 5`, split the five independent noise trials across GPUs, for
-example GPU 0 runs trials `[0, 2, 4]` and GPU 1 runs `[1, 3]`, then aggregate the
-five returned loss/metric values exactly as the existing `_eval_on_probe` does:
-`loss_mean`, `loss_std`, `metric1_mean`, `metric2_mean`, `loss_max`,
-`metric1_min`, and `metric2_min`.
-
-Implementation constraints for that future code change:
+Implementation constraints to preserve:
 
 - Preserve one PPO learner, one action stream, one persistent run directory,
   and one reward per selected action.
 - Do not solve this by running two separate launcher processes with different
   `--run-tag` values; that tests different actions/seeds and does not speed up
   a single action's reward.
-- Do not assume `CUDA_VISIBLE_DEVICES=0,1` alone is enough. Current PyTorch code
-  uses `torch.device("cuda")`, which means the first visible GPU unless the
-  reward probe explicitly places model copies and batches on both devices.
-- Do not share one mutable `model`/`BLBNoiseRLBridge` instance across threads on
-  two GPUs. Each GPU worker needs an isolated model/bridge state with the same
-  weights and the same BLB config installed.
-- Avoid reloading the HuggingFace model for every action. Initialize/cache the
-  per-GPU reward workers once per training run if possible; otherwise model
-  load overhead will erase the expected speedup.
+- Do not assume `CUDA_VISIBLE_DEVICES=0,1` alone is enough. PyTorch
+  `torch.device("cuda")` means the first visible GPU unless the reward probe
+  explicitly places model copies and batches on both devices.
+- Do not share one mutable `model`/`BLBNoiseRLBridge` instance across two GPUs.
+  Worker 0 reuses the env model/bridge on `cuda:0`; worker 1 deep-copies the
+  model to `cuda:1`, builds its own handler/bridge, and moves probe batches.
+- Avoid reloading the HuggingFace model for every action. `ProbeRunner` workers
+  are initialized once per run and reused across action evaluations.
 - Keep the probe dataset fixed across trials exactly as today. Only the
   independent noise RNG seeds differ per trial.
-- Make trial seeds deterministic from `(episode/action eval id, trial_idx,
-  base_seed)` or otherwise record them. Avoid `time_ns`-only seeds if exact
-  cross-device reproducibility is needed.
+- Trial seeds are deterministic from the per-action base seed and trial index
+  inside `probe_runner._trial_seed(...)`.
 - Preserve the invalid-chain shortcut: if `Rescale_optimizer` reports
   `any_invalid`, skip model-forward reward as current code does. Do not spend
   GPU work on invalid candidates.
 - Baseline/noisy preflight that calls `_eval_on_probe(k)` should use the same
   two-GPU trial runner so baseline std and candidate std have the same
   semantics.
-- Log enough diagnostics to prove both cards are used: visible devices, reward
-  probe device list, `k_trials`, per-trial device assignment, worker PIDs if
-  multiprocessing is used, and per-device elapsed time.
+- Keep enough diagnostics to prove both cards are used: visible devices, reward
+  probe device list, trial split, per-device elapsed time, and worker lines.
 
-Suggested user-facing config for the local coding agent to add:
+User-facing config for two-GPU Stage-2 reward probing:
 
 ```bash
 --blb-v3-reward-devices 0,1
 --stage2-k-trials 5
 ```
 
-The expected server command after that code exists should still be one launcher
-run, for example:
+The expected server command is still one launcher run, for example:
 
 ```bash
 cd /hy-tmp/Reinforcement-For-Robustness
@@ -195,29 +195,38 @@ CUDA_VISIBLE_DEVICES=0,1 bash llama_7B_LayerImportance.sh run rl \
   --fresh
 ```
 
-Verification target for the future implementation:
+Verification checklist:
 
-- A smoke run with small `--stage2-probe-size` logs a 5-trial reward probe split
-  across both GPUs.
+- A smoke run logs `[multi-gpu] reward probe enabled: devices=[0, 1]`,
+  `[probe-runner] worker 0: cuda:0`, and
+  `[probe-runner] worker 1: cuda:1`.
 - `nvidia-smi` shows both GPUs active during the model-forward reward probe.
 - The metrics aggregation still uses all 5 trials for each action.
 - Single-GPU fallback remains valid when only one GPU is visible or
   `--blb-v3-reward-devices` is unset.
 
-Latest server check on 2026-05-19: the `--blb-v3-reward-devices 0,1` code path
-did not prove reward-probe parallelism. Two 200-episode benchmark runs took the
-same time, single GPU `601s` and dual GPU `601s` (`1.00x`). The dual run
-allocated memory on GPU 1 but `nvidia-smi` sampling showed GPU 1 at `0%` util
-for all samples, and the training log had no `[multi-gpu] reward probe enabled`
-or ProbeRunner worker lines. Treat dual-card reward probing as not yet verified.
-Report: `experiments/server_command_runs/stage2_reward_probe_benchmark_20260519_202236/stage2_reward_probe_benchmark_report.html`.
+Latest server check on 2026-05-19 after fixing the Fire tuple parsing path:
+two 200-episode benchmark runs completed successfully. Single GPU took `601s`;
+dual GPU took `406s`, a measured `1.48x` speedup and `195s` wall-clock saving.
+The dual run log contains:
 
-The formal long Stage-2 run was not started after that benchmark, because the
-dual-card precondition failed and the `SERVER_COMMAND.md` contract-test gate
-also failed (`99` tests run, `8` failures, `1` error). The ProbeRunner helper
-and two-GPU smoke tests passed, so the failure is broader stale/broken BLB test
-state plus missing runtime activation evidence, not a completed validation of
-the new dual-card path.
+```text
+[multi-gpu] reward probe enabled: devices=[0, 1]
+[multi-gpu] [probe-runner] worker 0: cuda:0 (primary, reusing env.bridge)
+[multi-gpu] [probe-runner] worker 1: cuda:1 (deepcopy replica)
+```
+
+`nvidia-smi` sampling showed dual-run GPU 0 and GPU 1 both active, with max
+utilization `99%` on each and GPU 1 max memory about `3732 MiB`. The 200-episode
+benchmark is performance/plumbing evidence only, not a claim about final RL
+quality. Real Stage-2 RL quality still needs long runs around 50,000+ episodes.
+Report:
+`experiments/server_command_runs/stage2_reward_probe_fix_benchmark_20260519_211827/stage2_reward_probe_fix_benchmark_report.html`.
+
+The earlier pre-fix 2026-05-19 benchmark remains useful as negative evidence:
+single GPU `601s`, dual GPU `601s` (`1.00x`), no multi-GPU activation log, and
+GPU 1 at `0%` utilization. Report:
+`experiments/server_command_runs/stage2_reward_probe_benchmark_20260519_202236/stage2_reward_probe_benchmark_report.html`.
 
 `SERVER_COMMAND.md` was extracted and launched once on this server. It reached
 real BLB Stage-2 sequential RL execution, wrote diagnostics under

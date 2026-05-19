@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Stage2 Reward Probe Dual-GPU Fix Benchmark</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #17202a; line-height: 1.45; }
+h1 { font-size: 26px; margin: 0 0 8px; }
+h2 { font-size: 18px; margin-top: 28px; }
+.meta { color: #5b6773; margin-bottom: 20px; }
+.card { border: 1px solid #d8dee4; border-radius: 8px; padding: 16px; margin: 14px 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.kpi { border: 1px solid #d8dee4; border-radius: 8px; padding: 12px; background: #f8fafc; }
+.kpi b { display: block; font-size: 24px; margin-top: 4px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+th, td { border: 1px solid #d8dee4; padding: 8px 10px; text-align: left; font-size: 14px; }
+th { background: #f3f4f6; }
+pre { white-space: pre-wrap; background: #0f172a; color: #e5e7eb; padding: 12px; border-radius: 8px; overflow-x: auto; }
+.pass { color: #0f7b3a; font-weight: 700; }
+.warn { color: #a15c00; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>Stage2 Reward Probe Dual-GPU Fix Benchmark</h1>
+<div class="meta">Generated from server run <code>stage2_reward_probe_fix_benchmark_20260519_211827</code>; local branch <code>jk_standard_rl</code>, commit <code>8665fa0</code>.</div>
+
+<div class="card">
+  <div class="kpis">
+    <div class="kpi">Single GPU 200 episodes<b>601s</b></div>
+    <div class="kpi">Dual GPU 200 episodes<b>406s</b></div>
+    <div class="kpi">Measured speedup<b>1.48x</b></div>
+    <div class="kpi">Wall time saved<b>195s (32.4%)</b></div>
+  </div>
+</div>
+
+<p><span class="pass">Conclusion:</span> the dual-GPU reward-probe path is now active and faster than the single-GPU baseline. It is not a theoretical 2.00x result on this 200-episode smoke benchmark, but it improves wall-clock time from 601s to 406s (1.48x).</p>
+
+<h2>Benchmark Runs</h2>
+<table>
+<tr><th>Label</th><th>CUDA_VISIBLE_DEVICES</th><th>Reward devices</th><th>Elapsed</th><th>Status</th><th>Run tag</th></tr>
+<tr><td>single_gpu</td><td>0</td><td>single</td><td>601s</td><td>completed_or_clean_exit</td><td><code>bench_fix_single_20260519_211827</code></td></tr>
+<tr><td>dual_gpu</td><td>0,1</td><td>0,1</td><td>406s</td><td>completed_or_clean_exit</td><td><code>bench_fix_dual_20260519_211827</code></td></tr>
+</table>
+
+<h2>GPU Utilization Samples</h2>
+<table>
+<tr><th>Run</th><th>GPU</th><th>Samples</th><th>Avg util, all samples</th><th>Avg util, active samples</th><th>Active samples</th><th>Max util</th><th>Max memory</th></tr>
+<tr><td>single_gpu</td><td>GPU 0</td><td>195</td><td>86.7%</td><td>91.4%</td><td>185 (94.9%)</td><td>98%</td><td>3606 MiB</td></tr>
+<tr><td>single_gpu</td><td>GPU 1</td><td>195</td><td>0.0%</td><td>0.0%</td><td>0 (0.0%)</td><td>0%</td><td>2 MiB</td></tr>
+<tr><td>dual_gpu</td><td>GPU 0</td><td>132</td><td>76.6%</td><td>86.5%</td><td>117 (88.6%)</td><td>99%</td><td>3742 MiB</td></tr>
+<tr><td>dual_gpu</td><td>GPU 1</td><td>132</td><td>48.7%</td><td>91.7%</td><td>70 (53.0%)</td><td>99%</td><td>3732 MiB</td></tr>
+</table>
+
+<h2>Activation Evidence</h2>
+<pre>256:  [multi-gpu] reward probe enabled: devices=[0, 1]
+257:  [multi-gpu] [probe-runner] worker 0: cuda:0 (primary, reusing env.bridge)
+258:  [multi-gpu] [probe-runner] worker 1: cuda:1 (deepcopy replica)
+</pre>
+
+<h2>Progress Windows</h2>
+<h3>Single GPU</h3>
+<pre>3827:  PPO 窗口摘要 · 截至回合（through episode） 60  ·  时间 2026-05-19 21:21:43
+6696:  PPO 窗口摘要 · 截至回合（through episode） 120  ·  时间 2026-05-19 21:24:31
+8922:  PPO 窗口摘要 · 截至回合（through episode） 180  ·  时间 2026-05-19 21:27:22
+</pre>
+<h3>Dual GPU</h3>
+<pre>6798:  PPO 窗口摘要 · 截至回合（through episode） 60  ·  时间 2026-05-19 21:30:44
+12530:  PPO 窗口摘要 · 截至回合（through episode） 120  ·  时间 2026-05-19 21:32:30
+16976:  PPO 窗口摘要 · 截至回合（through episode） 180  ·  时间 2026-05-19 21:34:19
+</pre>
+
+<h2>Notes</h2>
+<ul>
+<li>The failed pre-fix benchmark was 601s vs 601s (1.00x) with no multi-GPU activation log. This run shows explicit ProbeRunner activation and two-GPU load.</li>
+<li>This is a 200-episode plumbing/performance smoke benchmark. It is not evidence of final RL quality; meaningful Stage2 RL quality still needs long runs around 50,000+ episodes.</li>
+<li>Source edits were made locally and synced to the server through git/bundle transfer; server-side work here produced run artifacts only.</li>
+</ul>
+</body>
+</html>
