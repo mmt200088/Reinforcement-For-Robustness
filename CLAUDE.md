@@ -44,6 +44,22 @@ Do not directly patch source code on the server except for emergency inspection
 or a throwaway diagnostic that will not be kept. Any real fix must be applied
 locally, pushed to git, then pulled by the server.
 
+Collaboration protocol for future Codex + Claude Code work:
+
+- Codex and Claude Code may both help modify this repository, but canonical
+  source edits happen only in the local workspace.
+- The server must not be used as a source-editing workspace. Do not edit,
+  format, patch, or commit `.py`, launcher, config, test, or documentation
+  source there unless the user explicitly changes this protocol.
+- The server may only pull code from git, run commands/experiments, produce
+  logs/checkpoints/reports/results, and push or hand back those generated
+  artifacts.
+- Normal synchronization is git-only: local source edit -> local commit/push ->
+  server pull -> server run -> server push generated artifacts/results -> local
+  pull.
+- If a server-side run exposes a code bug, document the diagnosis and reproduce
+  the real fix locally; do not keep a server-side source patch as canonical.
+
 ### Server command bridge
 
 Use `SERVER_COMMAND.md` as the normal bridge for server-side command execution.
