@@ -232,6 +232,13 @@ sampling, all-max optimizer validity, and action-description slot semantics.
 Report:
 `experiments/server_command_runs/action_config_chain_20260520_015951_c24d5b8/action_config_chain_test_report.html`.
 
+Latest full contract-gate rerun on 2026-05-20: server HEAD `26fe463` passed
+the complete command `BLB_STRICT=0 python -m unittest discover -s tests -p
+"test_blb_*.py" -v`, with `101` tests run, `0` failures, and `0` errors. This
+is the rerun of the older red gate that had `99` tests with `8` failures and
+`1` error. Report:
+`experiments/server_command_runs/full_contract_gate_20260520_021220_26fe463/full_contract_gate_report.html`.
+
 `SERVER_COMMAND.md` was launched once on this server and reached real BLB
 Stage-2 sequential RL execution. The stopped run wrote diagnostics under
 `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/`.
