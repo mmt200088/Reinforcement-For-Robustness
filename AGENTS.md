@@ -74,7 +74,9 @@ Current verified server facts:
 - Checkout: sparse `jk_standard_rl` clone from
   `https://github.com/mmt200088/Reinforcement-For-Robustness.git` at commit
   `a28d837`.
-- Caches: `HF_HOME=/hy-tmp/hf_cache`, `GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data`.
+- Runtime/cache env used for successful runs:
+  `HF_HOME=/hy-tmp/hf_cache`, `HF_ENDPOINT=https://hf-mirror.com`,
+  `HF_HUB_DISABLE_XET=1`, `GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data`.
 - Python environment: system Python 3.11.12 with PyTorch 2.9.1+cu128. The
   project needed `transformers==4.44.2` because newer 4.57.x rejects
   `TrainingArguments(evaluation_strategy=...)`.
@@ -84,6 +86,20 @@ real BLB Stage-2 sequential RL execution, wrote diagnostics under
 `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/`,
 and was stopped at the user's request. No project source code was edited on the
 server; server git changes were generated run artifacts/logs only.
+
+After the stopped run, those generated artifacts were mirrored back locally and
+pushed to `origin/jk_standard_rl` as commit `20ee2c1`. The server checkout may
+still show the same generated artifacts as local modifications until it is
+synced to the pushed commit; do not treat them as source changes.
+
+Current user/agent responsibility split:
+
+- The user edits research code locally and pushes those code changes to git.
+- Codex/Claude on the server should pull from git, run the requested experiment,
+  collect generated artifacts/results, and push or hand back those results.
+- Do not proactively patch `.py`, launcher, config, or test source files on the
+  server. If a server-only diagnostic discovers a required source fix, document
+  it and let the local code-editing agent make and push the real change.
 
 ## What This Project Is
 

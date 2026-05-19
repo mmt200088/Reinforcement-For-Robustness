@@ -56,6 +56,43 @@ metadata/checklist if useful, then commit and push. Let the server agent
 pull/sync and run it. Do not SSH in just to launch routine training/evaluation
 commands, and never use the server bridge to edit source code.
 
+### GPUShare server state
+
+As of 2026-05-19, the prepared GPUShare server is reachable at
+`ssh -p 46587 root@i-1.gpushare.com`. Do not store the password in repo files,
+shell profiles, or SSH config.
+
+Verified server facts:
+
+- OS/container: Ubuntu 22.04.5 style container environment, no systemd.
+- GPUs: 2x NVIDIA GeForce RTX 5090, driver 580.159.03.
+- Work directory: `/hy-tmp/Reinforcement-For-Robustness`.
+- Checkout: sparse `jk_standard_rl` clone from
+  `https://github.com/mmt200088/Reinforcement-For-Robustness.git`; the original
+  server clone was at commit `a28d837`.
+- Runtime/cache env used for successful runs:
+  `HF_HOME=/hy-tmp/hf_cache`, `HF_ENDPOINT=https://hf-mirror.com`,
+  `HF_HUB_DISABLE_XET=1`, `GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data`.
+- Python environment: system Python 3.11.12, PyTorch 2.9.1+cu128 with CUDA
+  available on 2 GPUs, and `transformers==4.44.2`. Keep `transformers` at 4.44.x
+  unless the code is updated, because 4.57.x rejects
+  `TrainingArguments(evaluation_strategy=...)`.
+
+`SERVER_COMMAND.md` was launched once on this server and reached real BLB
+Stage-2 sequential RL execution. The stopped run wrote diagnostics under
+`Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/`.
+Those generated artifacts were mirrored locally and pushed to `origin/jk_standard_rl`
+as commit `20ee2c1`. The server checkout may still show the same generated
+artifacts as local modifications until it is synced to the pushed commit; do
+not confuse those artifacts with source edits.
+
+Current responsibility split: the user/local coding agent edits research code
+locally and pushes it to git. Server-side agents should pull from git, run the
+requested experiment, and push or return generated artifacts/results. Do not
+proactively patch `.py`, launcher, config, or test source files on the server.
+If a server diagnostic discovers a required source fix, document it for the
+local code-editing agent instead of making the canonical change on the server.
+
 ## Common commands
 
 **All training / evaluation goes through one launcher** (`bash llama_7B_LayerImportance.sh ...`); do not call the underlying `rl_tune*.py` directly. Subcommands and presets:
