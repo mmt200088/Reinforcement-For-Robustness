@@ -618,6 +618,82 @@ class BLBRewardRegressionTests(unittest.TestCase):
         self.assertGreaterEqual(all_ok.reward, 34.9)
         self.assertLessEqual(all_ok.reward, 45.1)
 
+    def test_metric_std_sampling_jitter_does_not_drop_stability_tier(self):
+        """5-trial MRPC metric std jitter should not masquerade as instability.
+
+        Reward v3 adds metric1_std / metric2_std to the stability gate. The
+        first reward-v3 10k run failed at 345 episodes because normal discrete
+        probe jitter repeatedly landed in P2(stab), even though m1/loss were
+        healthy and there were no P1/invalid/loss-cap events. The metric-std
+        floor keeps tiny sampling swings in the top tier while preserving P2
+        for materially unstable metrics.
+        """
+        from blb_stage2_rl.reward import (
+            BaselineCostStats,
+            EpisodeMetrics,
+            RewardWeights,
+            compute_reward,
+        )
+
+        signals = type(
+            "Signals", (),
+            {"any_invalid": False, "total_bits_sum": 200, "total_fusion_count": 0},
+        )()
+        baseline = BaselineCostStats(
+            total_bits_sum=200,
+            total_fusion_count=0,
+            avg_k=13.0,
+            metric1_mean=0.875,
+            metric2_mean=0.875,
+            metric1_std=0.002,
+            metric2_std=0.002,
+            loss_std=0.002,
+        )
+        weights = RewardWeights(baseline_metric1=0.875, baseline_metric2=0.875)
+
+        jitter = compute_reward(
+            EpisodeMetrics(
+                metric1_mean=0.872,
+                metric2_mean=0.872,
+                metric1_std=0.006,
+                metric2_std=0.006,
+                loss_std=0.003,
+            ),
+            signals,
+            action_avg_k=13.0,
+            baseline=baseline,
+            weights=weights,
+            acc_threshold=0.865,
+            acc_threshold_m2=0.865,
+            stab_threshold=0.01,
+            any_invalid=False,
+        )
+        self.assertEqual(jitter.priority, 3)
+        self.assertTrue(jitter.stab_ok)
+        self.assertEqual(jitter.tier_bonus, 40.0)
+        self.assertGreaterEqual(jitter.reward, 35.0)
+
+        material_instability = compute_reward(
+            EpisodeMetrics(
+                metric1_mean=0.872,
+                metric2_mean=0.872,
+                metric1_std=0.03,
+                metric2_std=0.03,
+                loss_std=0.003,
+            ),
+            signals,
+            action_avg_k=13.0,
+            baseline=baseline,
+            weights=weights,
+            acc_threshold=0.865,
+            acc_threshold_m2=0.865,
+            stab_threshold=0.01,
+            any_invalid=False,
+        )
+        self.assertEqual(material_instability.priority, 2)
+        self.assertFalse(material_instability.stab_ok)
+        self.assertEqual(material_instability.tier_bonus, 20.0)
+
     def test_runner_best_selection_uses_hard_constraints_before_reward(self):
         from blb_stage2_rl.runner import is_better_blb_candidate
 

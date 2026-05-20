@@ -690,6 +690,10 @@ class RewardDesignV2RegressionTest(unittest.TestCase):
             "terminal_loss_mean: float = 0.0",
             "terminal_loss_std: float = 0.0",
             "terminal_metric1_mean: float = 0.0",
+            "terminal_metric2_mean: float = 0.0",
+            "terminal_metric1_std: float = 0.0",
+            "terminal_metric2_std: float = 0.0",
+            "terminal_stab_violation: float = 0.0",
         ):
             self.assertIn(
                 needle, src,
@@ -988,8 +992,14 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "terminal_loss_mean: float = 0.0",
             "terminal_loss_std: float = 0.0",
             "terminal_metric1_mean: float = 0.0",
+            "terminal_metric2_mean: float = 0.0",
+            "terminal_metric1_std: float = 0.0",
+            "terminal_metric2_std: float = 0.0",
+            "terminal_stab_violation: float = 0.0",
             "safe_neighbor_active: bool = False",
             "terminal_priority=int(record.terminal_priority)",
+            "terminal_metric2_mean=float(record.terminal_metric2_mean)",
+            "terminal_stab_violation=float(record.terminal_stab_violation)",
             "safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count)",
         ):
             self.assertIn(needle, diagnostics + runner_src, msg=f"missing JSONL health field: {needle!r}")
@@ -1170,6 +1180,10 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertIn("record.terminal_loss_mean", src)
         self.assertIn("record.terminal_loss_std", src)
         self.assertIn("record.terminal_metric1_mean", src)
+        self.assertIn("record.terminal_metric2_mean", src)
+        self.assertIn("record.terminal_metric1_std", src)
+        self.assertIn("record.terminal_metric2_std", src)
+        self.assertIn("record.terminal_stab_violation", src)
 
 
 class EntCoefScheduleRegressionTest(unittest.TestCase):

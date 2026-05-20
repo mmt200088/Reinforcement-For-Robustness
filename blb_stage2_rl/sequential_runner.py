@@ -482,6 +482,13 @@ class EpisodeRecord:
     terminal_loss_mean: float = 0.0
     terminal_loss_std: float = 0.0
     terminal_metric1_mean: float = 0.0
+    terminal_metric2_mean: float = 0.0
+    terminal_metric1_std: float = 0.0
+    terminal_metric2_std: float = 0.0
+    terminal_stab_excess_m1: float = 0.0
+    terminal_stab_excess_m2: float = 0.0
+    terminal_stab_excess_loss: float = 0.0
+    terminal_stab_violation: float = 0.0
     safe_neighbor_active: bool = False
     safe_neighbor_mutation_count: int = 0
     safe_neighbor_radius: int = 0
@@ -629,6 +636,13 @@ def train_sequential(
         terminal_loss_mean_val = 0.0
         terminal_loss_std_val = 0.0
         terminal_metric1_val = 0.0
+        terminal_metric2_val = 0.0
+        terminal_metric1_std_val = 0.0
+        terminal_metric2_std_val = 0.0
+        terminal_stab_excess_m1_val = 0.0
+        terminal_stab_excess_m2_val = 0.0
+        terminal_stab_excess_loss_val = 0.0
+        terminal_stab_violation_val = 0.0
 
         # 2026-05-18 (rdv2 hotfix): forced-baseline anchor episodes. The
         # warmstart bias on the action head alone was inadequate — only 5/13
@@ -771,10 +785,17 @@ def train_sequential(
                 term_metrics = term_info_dict.get("metrics")
                 if term_breakdown is not None:
                     terminal_priority_int = int(getattr(term_breakdown, "priority", 0) or 0)
+                    terminal_stab_excess_m1_val = float(getattr(term_breakdown, "stab_excess_m1", 0.0) or 0.0)
+                    terminal_stab_excess_m2_val = float(getattr(term_breakdown, "stab_excess_m2", 0.0) or 0.0)
+                    terminal_stab_excess_loss_val = float(getattr(term_breakdown, "stab_excess_loss", 0.0) or 0.0)
+                    terminal_stab_violation_val = float(getattr(term_breakdown, "stab_violation", 0.0) or 0.0)
                 if term_metrics is not None:
                     terminal_loss_mean_val = float(getattr(term_metrics, "loss_mean", 0.0) or 0.0)
                     terminal_loss_std_val = float(getattr(term_metrics, "loss_std", 0.0) or 0.0)
                     terminal_metric1_val = float(getattr(term_metrics, "metric1_mean", 0.0) or 0.0)
+                    terminal_metric2_val = float(getattr(term_metrics, "metric2_mean", 0.0) or 0.0)
+                    terminal_metric1_std_val = float(getattr(term_metrics, "metric1_std", 0.0) or 0.0)
+                    terminal_metric2_std_val = float(getattr(term_metrics, "metric2_std", 0.0) or 0.0)
                 obs = next_obs
                 if done:
                     break
@@ -943,10 +964,17 @@ def train_sequential(
             term_metrics = term_info_dict.get("metrics")
             if term_breakdown is not None:
                 terminal_priority_int = int(getattr(term_breakdown, "priority", 0) or 0)
+                terminal_stab_excess_m1_val = float(getattr(term_breakdown, "stab_excess_m1", 0.0) or 0.0)
+                terminal_stab_excess_m2_val = float(getattr(term_breakdown, "stab_excess_m2", 0.0) or 0.0)
+                terminal_stab_excess_loss_val = float(getattr(term_breakdown, "stab_excess_loss", 0.0) or 0.0)
+                terminal_stab_violation_val = float(getattr(term_breakdown, "stab_violation", 0.0) or 0.0)
             if term_metrics is not None:
                 terminal_loss_mean_val = float(getattr(term_metrics, "loss_mean", 0.0) or 0.0)
                 terminal_loss_std_val = float(getattr(term_metrics, "loss_std", 0.0) or 0.0)
                 terminal_metric1_val = float(getattr(term_metrics, "metric1_mean", 0.0) or 0.0)
+                terminal_metric2_val = float(getattr(term_metrics, "metric2_mean", 0.0) or 0.0)
+                terminal_metric1_std_val = float(getattr(term_metrics, "metric1_std", 0.0) or 0.0)
+                terminal_metric2_std_val = float(getattr(term_metrics, "metric2_std", 0.0) or 0.0)
 
             obs = next_obs
             if done:
@@ -973,6 +1001,13 @@ def train_sequential(
             terminal_loss_mean=float(terminal_loss_mean_val),
             terminal_loss_std=float(terminal_loss_std_val),
             terminal_metric1_mean=float(terminal_metric1_val),
+            terminal_metric2_mean=float(terminal_metric2_val),
+            terminal_metric1_std=float(terminal_metric1_std_val),
+            terminal_metric2_std=float(terminal_metric2_std_val),
+            terminal_stab_excess_m1=float(terminal_stab_excess_m1_val),
+            terminal_stab_excess_m2=float(terminal_stab_excess_m2_val),
+            terminal_stab_excess_loss=float(terminal_stab_excess_loss_val),
+            terminal_stab_violation=float(terminal_stab_violation_val),
             safe_neighbor_active=bool(neighbor_mask_active),
             safe_neighbor_mutation_count=int(len(neighbor_selected_offsets)),
             safe_neighbor_radius=int(neighbor_radius if neighbor_mask_active else 0),
@@ -1952,7 +1987,17 @@ def run_sequential_via_runner(
                 (
                     f"terminal_metrics: loss_mean={float(record.terminal_loss_mean):.4f}  "
                     f"loss_std={float(record.terminal_loss_std):.4f}  "
-                    f"m1={float(record.terminal_metric1_mean):.4f}"
+                    f"m1={float(record.terminal_metric1_mean):.4f}  "
+                    f"m2={float(record.terminal_metric2_mean):.4f}  "
+                    f"m1_std={float(record.terminal_metric1_std):.4f}  "
+                    f"m2_std={float(record.terminal_metric2_std):.4f}"
+                ),
+                (
+                    f"terminal_stab_excess: "
+                    f"m1={float(record.terminal_stab_excess_m1):.6f}  "
+                    f"m2={float(record.terminal_stab_excess_m2):.6f}  "
+                    f"loss={float(record.terminal_stab_excess_loss):.6f}  "
+                    f"combined={float(record.terminal_stab_violation):.6f}"
                 ),
                 (
                     f"safe_neighbor: active={bool(record.safe_neighbor_active)}  "
@@ -2024,9 +2069,7 @@ def run_sequential_via_runner(
             )
             # 2026-05-18 (rdv2 hotfix): surface inference test metrics on
             # every new best so the user can verify acc/stab gates directly
-            # without grepping details/ files. m1 for MRPC = accuracy; the
-            # second metric (m2) isn't currently captured in EpisodeRecord —
-            # add it here once env.py threads it through.
+            # without grepping details/ files. m1/m2 for MRPC are accuracy/F1.
             _prio_label = (
                 "P1(acc/invalid)" if int(record.terminal_priority) == 1
                 else "P2(stab)" if int(record.terminal_priority) == 2
@@ -2038,6 +2081,10 @@ def run_sequential_via_runner(
                 f"loss_mean={record.terminal_loss_mean:.4f}  "
                 f"loss_std={record.terminal_loss_std:.4f}  "
                 f"m1(metric1)={record.terminal_metric1_mean:.4f}  "
+                f"m2(metric2)={record.terminal_metric2_mean:.4f}  "
+                f"m1_std={record.terminal_metric1_std:.4f}  "
+                f"m2_std={record.terminal_metric2_std:.4f}  "
+                f"stab_excess={record.terminal_stab_violation:.6f}  "
                 f"priority={_prio_label}  "
                 f"total_bits={record.total_bits_sum_over_steps}  "
                 f"fusion={record.fusion_count_sum_over_steps}"
@@ -2083,6 +2130,10 @@ def run_sequential_via_runner(
                     "early_terminated": bool(record.early_terminated),
                     "steps_taken": int(record.steps_taken),
                     "terminal_reward": float(record.terminal_reward),
+                    "terminal_metric2_mean": float(record.terminal_metric2_mean),
+                    "terminal_metric1_std": float(record.terminal_metric1_std),
+                    "terminal_metric2_std": float(record.terminal_metric2_std),
+                    "terminal_stab_violation": float(record.terminal_stab_violation),
                     "best_reward": float(best_reward),
                     "safe_neighbor_active": bool(record.safe_neighbor_active),
                     "safe_neighbor_mutation_count": int(record.safe_neighbor_mutation_count),
@@ -2129,6 +2180,13 @@ def run_sequential_via_runner(
                     terminal_loss_mean=float(record.terminal_loss_mean),
                     terminal_loss_std=float(record.terminal_loss_std),
                     terminal_metric1_mean=float(record.terminal_metric1_mean),
+                    terminal_metric2_mean=float(record.terminal_metric2_mean),
+                    terminal_metric1_std=float(record.terminal_metric1_std),
+                    terminal_metric2_std=float(record.terminal_metric2_std),
+                    terminal_stab_excess_m1=float(record.terminal_stab_excess_m1),
+                    terminal_stab_excess_m2=float(record.terminal_stab_excess_m2),
+                    terminal_stab_excess_loss=float(record.terminal_stab_excess_loss),
+                    terminal_stab_violation=float(record.terminal_stab_violation),
                     safe_neighbor_active=bool(record.safe_neighbor_active),
                     safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count),
                     safe_neighbor_radius=int(record.safe_neighbor_radius),

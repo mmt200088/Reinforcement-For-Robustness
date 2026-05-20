@@ -132,6 +132,13 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
     priorities = [_episode_priority(e) for e in episodes]
     losses = [_finite(e.get("terminal_loss_mean")) for e in episodes if "terminal_loss_mean" in e]
     metric1 = [_finite(e.get("terminal_metric1_mean")) for e in episodes if "terminal_metric1_mean" in e]
+    metric2 = [_finite(e.get("terminal_metric2_mean")) for e in episodes if "terminal_metric2_mean" in e]
+    metric1_std = [_finite(e.get("terminal_metric1_std")) for e in episodes if "terminal_metric1_std" in e]
+    metric2_std = [_finite(e.get("terminal_metric2_std")) for e in episodes if "terminal_metric2_std" in e]
+    stab_violation = [
+        _finite(e.get("terminal_stab_violation"))
+        for e in episodes if "terminal_stab_violation" in e
+    ]
     safe = [bool(e.get("safe_neighbor_active", False)) for e in episodes]
     bits = [_finite(e.get("total_bits")) for e in episodes]
     invalid_steps = [int(e.get("invalid_steps", 0) or 0) for e in episodes]
@@ -277,10 +284,18 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
             "post_anchor_loss_cap_max_consecutive": _max_consecutive(post_loss_cap_flags),
             "metric1_min": min(metric1) if metric1 else None,
             "metric1_max": max(metric1) if metric1 else None,
+            "metric2_min": min(metric2) if metric2 else None,
+            "metric2_max": max(metric2) if metric2 else None,
+            "metric1_std_max": max(metric1_std) if metric1_std else None,
+            "metric2_std_max": max(metric2_std) if metric2_std else None,
+            "terminal_stab_violation_max": max(stab_violation) if stab_violation else None,
         },
         "priority": {
             "p1_count": sum(1 for p in priorities if p == 1),
+            "p2_count": sum(1 for p in priorities if p == 2),
+            "p3_count": sum(1 for p in priorities if p == 3),
             "post_anchor_p1_count": sum(1 for p in post_priorities if p == 1),
+            "post_anchor_p2_count": sum(1 for p in post_priorities if p == 2),
             "post_anchor_max_consecutive_p1": _max_consecutive(p == 1 for p in post_priorities),
         },
         "validity": {
@@ -342,7 +357,11 @@ def write_window_csv(path: Path, episodes: List[Dict[str, Any]]) -> None:
 def write_health_csv(path: Path, episodes: List[Dict[str, Any]]) -> None:
     fields = [
         "episode", "total_reward", "terminal_reward", "terminal_priority",
-        "terminal_loss_mean", "terminal_loss_std", "terminal_metric1_mean",
+        "terminal_loss_mean", "terminal_loss_std",
+        "terminal_metric1_mean", "terminal_metric2_mean",
+        "terminal_metric1_std", "terminal_metric2_std",
+        "terminal_stab_excess_m1", "terminal_stab_excess_m2",
+        "terminal_stab_excess_loss", "terminal_stab_violation",
         "valid_steps", "invalid_steps", "total_bits",
         "safe_neighbor_active", "safe_neighbor_mutation_count", "safe_neighbor_radius",
     ]
@@ -365,7 +384,12 @@ def write_report(path: Path, summary: Dict[str, Any]) -> None:
         ("best_episode", reward.get("best_episode")),
         ("post_anchor_mean", reward.get("post_anchor_mean")),
         ("post_anchor_p1_count", summary.get("priority", {}).get("post_anchor_p1_count")),
+        ("post_anchor_p2_count", summary.get("priority", {}).get("post_anchor_p2_count")),
         ("post_anchor_loss_mean_max", terminal.get("post_anchor_loss_mean_max")),
+        ("metric1_range", (terminal.get("metric1_min"), terminal.get("metric1_max"))),
+        ("metric2_range", (terminal.get("metric2_min"), terminal.get("metric2_max"))),
+        ("metric_std_max", (terminal.get("metric1_std_max"), terminal.get("metric2_std_max"))),
+        ("terminal_stab_violation_max", terminal.get("terminal_stab_violation_max")),
         ("invalid_steps_total", summary.get("validity", {}).get("invalid_steps_total")),
         ("safe_neighbor_active_rate", summary.get("safe_neighbor", {}).get("post_anchor_active_rate")),
         ("last_mutation_count", summary.get("safe_neighbor", {}).get("last_mutation_count")),

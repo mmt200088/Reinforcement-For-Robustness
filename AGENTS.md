@@ -333,6 +333,14 @@ experiment reproduction.
    cost. `Rescale_optimizer` contributes optimizer cost / feasibility
    diagnostics only; it must not skip or replace the actual model forward reward.
    Cost must never compensate for an accuracy or stability failure.
+   Reward v3 uses metric1 + metric2 gates and includes metric1_std/metric2_std in
+   the stability gate, but those metric std channels must tolerate normal
+   5-trial MRPC probe quantization. Do not use a tiny `1e-3` metric-std floor:
+   the 2026-05-20 reward-v3 run at commit `6f3d618` failed at 345 episodes with
+   P1=0, invalid=0, loss-cap=0 solely because normal metric-std jitter dropped
+   58 otherwise healthy episodes into P2 and pushed rolling300 below 35. Current
+   behavior keeps tiny metric std jitter in P3 via a `1e-2` floor while still
+   treating materially large metric std as P2.
 7. `Rescale_optimizer` is the source of truth for modulus-chain cost and
    optimizer feasibility diagnostics. `HeuristicStubInvoker` was deleted;
    training and promotable final evals must use real `replan_with_user_actions`

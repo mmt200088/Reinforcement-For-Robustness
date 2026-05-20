@@ -91,12 +91,15 @@ DEFAULT_STAB_W_LOSS = 1.0
 # Tolerances driving the per-metric thresholds. ``acc_tolerance`` is the
 # relative drop you allow from baseline.metric{i}_mean (0.5% by default —
 # matches the 2026-05-18 noisy-baseline preflight constant in sequential_runner).
-# ``stab_tolerance`` is the relative slack you allow above baseline.X_std
-# before declaring an excess (50% by default — generous; std swings under noise
-# are much larger than mean swings).
+# ``stab_tolerance`` is the relative slack you allow above baseline.X_std before
+# declaring an excess. ``stab_floor`` is deliberately 1e-2, not 1e-3: MRPC
+# metric1/metric2 are estimated from only 5 stochastic probe trials over a small
+# validation subset, so their standard deviations are quantized by a few samples.
+# A 1e-3 floor made normal sampling jitter randomly remove the +20 stability
+# tier and collapse rolling reward averages without any accuracy/loss failure.
 DEFAULT_ACC_TOLERANCE = 0.005
 DEFAULT_STAB_TOLERANCE = 0.5
-DEFAULT_STAB_FLOOR = 1.0e-3
+DEFAULT_STAB_FLOOR = 1.0e-2
 
 # Legacy fields kept for any caller / log line that still references them.
 DEFAULT_S = 1.0

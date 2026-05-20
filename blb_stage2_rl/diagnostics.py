@@ -113,6 +113,13 @@ class EpisodeStats:
     terminal_loss_mean: float = 0.0
     terminal_loss_std: float = 0.0
     terminal_metric1_mean: float = 0.0
+    terminal_metric2_mean: float = 0.0
+    terminal_metric1_std: float = 0.0
+    terminal_metric2_std: float = 0.0
+    terminal_stab_excess_m1: float = 0.0
+    terminal_stab_excess_m2: float = 0.0
+    terminal_stab_excess_loss: float = 0.0
+    terminal_stab_violation: float = 0.0
     safe_neighbor_active: bool = False
     safe_neighbor_mutation_count: int = 0
     safe_neighbor_radius: int = 0
