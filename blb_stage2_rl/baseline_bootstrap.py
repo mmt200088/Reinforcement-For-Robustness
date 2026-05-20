@@ -680,9 +680,28 @@ _RO_RESCALE_NODE_TO_RL_FIELD: Dict[int, Dict[str, str]] = {
         "ctpt_gamal":          "gamma_rescale_sf",
         "ctpt_wffn1":          "wffn1_rescale_sf",
         "ctct_gelu_x2":        "gelu_power_rescale_sf_0",
-        # ctct_gelu_x4 / ctct_gelu_x3 已不再有 RL 动作（gelu_power_rescale_sf_1/2 被删）。
-        # ctpt_gelu_coeff 的 sf_post 也不再有 RL 动作（gelu_coeff_mul_rescale_sf_* 全删）。
+        # 2026-05-21 user spec：``ctpt_gelu_coeff`` 在所有 degree 的 block5
+        # baseline 里都是 rescale 点（n=1: sf_post=30；n=2/n=4: sf_post=31），
+        # 但之前没有 RL 动作映射，cfg ``gelu_coeff_mul_rescales[-1]`` 强制 None
+        # → optimizer t_new fallback 到 baseline。现在 promote
+        # ``gelu_coeff_mul_rescale_sf_0`` 为 active slot 驱动这个 rescale；
+        # ``_build_block5_action`` 把它的值放到 ``gelu_coeff_mul_rescales[-1]``
+        # （optimizer 读 [-1]）；compat-extra 集合也对应移除了 _sf_0。
+        "ctpt_gelu_coeff":     "gelu_coeff_mul_rescale_sf_0",
+        # ctct_gelu_x4 / ctct_gelu_x3 仍然没有 RL 动作（gelu_power_rescale_sf_1/2 是 compat-extra）。
     },
+}
+
+
+# 2026-05-21 user spec：``"x2"`` CTCT_MUL 旁节点的语义是"两个 fresh 操作数 SF
+# 相等才能让结果 SF 是 2 倍"。block 2/5 各有一个这样的"辅助 fresh × SOURCE"
+# 旁节点，其 RL 字段没有自己的 SOURCE，baseline 应当从公式推出：
+# ``aux_fresh.sf = SOURCE.sf`` （只在 SOURCE 已经被 cut_point_sf[0] 抽取出来
+# 之后才推算）。下表只列出该模式 —— 真正的 squaring 节点 (ctct_square_*,
+# ctct_gelu_x*) 是同一个 ciphertext 自乘，不需要辅助 fresh。
+_RO_X2_AUX_FRESH_FIELD: Dict[int, Dict[str, str]] = {
+    2: {"ctct_x_mean_over_std": "x_centered_fresh_sf"},
+    5: {"ctct_xmean_over_std":  "inv_std_fresh_sf"},
 }
 
 
@@ -752,12 +771,18 @@ def _extract_one_block_layer(
 
     # SOURCE → fresh
     source_entry = cps[0] if isinstance(cps[0], Mapping) else {}
+    source_sf: Optional[int] = None
     if str(source_entry.get("type", "")) == "SOURCE":
         src_name = str(source_entry.get("name", ""))
         rl_field = _RO_SOURCE_NODE_TO_RL_FIELD.get(int(block_idx), {}).get(src_name)
         sf = source_entry.get("sf")
-        if rl_field and sf is not None:
-            out.field_baseline_sfs[rl_field] = int(sf)
+        if sf is not None:
+            try:
+                source_sf = int(sf)
+            except (TypeError, ValueError):
+                source_sf = None
+        if rl_field and source_sf is not None:
+            out.field_baseline_sfs[rl_field] = source_sf
             out.field_kind_in_ro[rl_field] = "fresh"
 
     # 非第一项里带 sf_post 的 = rescale 动作
@@ -814,6 +839,20 @@ def _extract_one_block_layer(
             v_fresh_sf = int(mulv_delta) - int(mask2_delta)
             out.field_baseline_sfs["v_fresh_sf"] = int(v_fresh_sf)
             out.field_kind_in_ro["v_fresh_sf"] = "fresh"
+
+    # --- block-2/5 "x2" 旁节点 → 辅助 fresh 字段（baseline = SOURCE.sf） ---
+    # block 2 的 ``ctct_x_mean_over_std`` 旁节点 delta="x2"：x_centered_fresh
+    # 的 SF 必须 = inv_std_fresh（SOURCE）的 SF。
+    # block 5 的 ``ctct_xmean_over_std`` 旁节点 delta="x2"：inv_std_fresh 的
+    # SF 必须 = x_centered_fresh（SOURCE）的 SF。
+    # 之前没有这条推算 → x_centered/inv_std 默认 30，与真实 baseline 31/30 偶
+    # 然碰得上时碰对，碰不上时（如 block 2 inv_std=31）就错。
+    if source_sf is not None:
+        aux_map = _RO_X2_AUX_FRESH_FIELD.get(int(block_idx), {})
+        for side_name, aux_field in aux_map.items():
+            if str(pd_delta_by_name.get(side_name)) == "x2":
+                out.field_baseline_sfs[aux_field] = int(source_sf)
+                out.field_kind_in_ro[aux_field] = "fresh"
 
     # --- modulus_chain cost ---
     mc = entry.get("modulus_chain") or {}

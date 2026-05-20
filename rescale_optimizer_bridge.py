@@ -1207,6 +1207,72 @@ def sync_block4_v_mask_binding(cfg: Any) -> List[CfgOverrideEntry]:
     return overrides
 
 
+# Block 2 / Block 5 aux-fresh binding (user spec 2026-05-21):
+# the "x2" CTCT_MUL side node assumes ``SF(side_fresh) == SF(SOURCE_fresh)``,
+# so action_space._build_block{2,5}_action collapses the two fresh slots to
+# ONE action. After apply_optimizer_output_to_cfg rewrites the SOURCE fresh
+# (cfg.inv_std_fresh for block 2, cfg.x_centered_fresh for block 5), the
+# bound counterpart must be mirrored to keep the two SFs equal — otherwise
+# the model installs noise at the wrong variance for the aux fresh side and
+# the optimizer's "x2" prediction diverges from real chain math.
+_BLOCK2_AUX_FRESH_BINDING_PAIRS = (
+    ("x_centered_fresh", "inv_std_fresh"),
+)
+_BLOCK5_AUX_FRESH_BINDING_PAIRS = (
+    ("inv_std_fresh", "x_centered_fresh"),
+)
+
+
+def _mirror_noise_point_binding(
+        cfg: Any,
+        pairs: Sequence[Tuple[str, str]],
+        source_label: str,
+        ) -> List[CfgOverrideEntry]:
+    """Generic ``cfg.<dst>.sf = cfg.<src>.sf`` mirror helper used by the
+    aux-fresh / mask binding sync calls. Returns the override entries that
+    were actually applied (skips the no-op same-SF case).
+    """
+    overrides: List[CfgOverrideEntry] = []
+    for dst_name, src_name in pairs:
+        src_point = getattr(cfg, src_name, None)
+        dst_point = getattr(cfg, dst_name, None)
+        if src_point is None or dst_point is None:
+            continue
+        new_sf = int(getattr(src_point, "scaling_factor", 0))
+        old_sf = int(getattr(dst_point, "scaling_factor", 0))
+        if old_sf == new_sf:
+            continue
+        dst_point.scaling_factor = new_sf
+        overrides.append(CfgOverrideEntry(
+            cfg_attr=f"{dst_name}.scaling_factor",
+            graph_node=None,
+            source=source_label,
+            old_value=old_sf,
+            new_value=new_sf,
+        ))
+    return overrides
+
+
+def sync_block2_aux_fresh_binding(cfg: Any) -> List[CfgOverrideEntry]:
+    """Mirror inv_std_fresh.sf onto x_centered_fresh.sf (block 2 "x2" binding).
+
+    Call after :func:`apply_optimizer_output_to_cfg` for any block-2 cfg.
+    """
+    return _mirror_noise_point_binding(
+        cfg, _BLOCK2_AUX_FRESH_BINDING_PAIRS, "aux_fresh_binding_sync",
+    )
+
+
+def sync_block5_aux_fresh_binding(cfg: Any) -> List[CfgOverrideEntry]:
+    """Mirror x_centered_fresh.sf onto inv_std_fresh.sf (block 5 "x2" binding).
+
+    Call after :func:`apply_optimizer_output_to_cfg` for any block-5 cfg.
+    """
+    return _mirror_noise_point_binding(
+        cfg, _BLOCK5_AUX_FRESH_BINDING_PAIRS, "aux_fresh_binding_sync",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Optimizer return -> cfg overrides
 # ---------------------------------------------------------------------------

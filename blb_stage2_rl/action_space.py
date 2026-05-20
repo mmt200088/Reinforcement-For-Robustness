@@ -354,6 +354,11 @@ _BLOCK_NODE_NAME_BY_FIELD: Dict[int, Dict[str, str]] = {
         "gamma_rescale_sf":                 "ctct_gamma_attn_rescale",
         "wffn1_rescale_sf":                 "ctct_wffn1_rescale",
         "gelu_power_rescale_sf_0":          "ctct_gelu_x2",
+        # 2026-05-21: gelu_coeff_mul_rescale_sf_0 drives the rescale after
+        # ctpt_gelu_coeff (coeff × x^k). All degrees have this rescale in the
+        # baseline (n=1: sf_post=30; n=2/n=4: sf_post=31). Node name follows
+        # the ``ctct_*_rescale`` convention used by neighbouring rescales.
+        "gelu_coeff_mul_rescale_sf_0":      "ctct_gelu_coeff_rescale",
     },
 }
 
@@ -837,16 +842,26 @@ def _build_block2_action(
 
     2026-05-20 user spec：Wv 也不再有 RL 动作 —— Rescale_optimizer 的 block2
     计算图里没有 ``ctpt_wv`` 节点，wv 选什么 SF 都不影响 modulus chain；模型噪声
-    侧用一个固定的 SF（``_BLOCK2_FIXED_WV_SF``）安装 Wv 噪声即可。slot 留在
-    action vector 里但 ``_COMPAT_EXTRA_FIELDS[2]`` 已经把它标记成 effective=False。
-    其余 8 个被删的 rescale 字段在 cfg 上保留为 None。
+    侧用一个固定的 SF（``_BLOCK2_FIXED_WV_SF``）安装 Wv 噪声即可。
+
+    2026-05-21 user spec：``x_centered_fresh_sf`` 绑定到 ``inv_std_fresh_sf``。
+    Rescale_optimizer 的 ``ctct_x_mean_over_std`` 是 "x2" 旁节点，语义要求
+    x_centered 和 inv_std 两个 fresh ciphertext 的 SF 严格相等；二者拆成
+    两个独立动作只会让 optimizer 的 "x2" 假设在某些组合下失效。所以
+    ``x_centered_fresh_sf`` 进 ``_COMPAT_EXTRA_FIELDS[2]``，cfg 上由
+    ``inv_std_fresh_sf`` 一同填入。
+
+    slot 留在 action vector 里但 ``_COMPAT_EXTRA_FIELDS[2]`` 已经把它们标记成
+    effective=False。其余 8 个被删的 rescale 字段在 cfg 上保留为 None。
     """
+    inv_std_fresh_sf = int(layer_field_values["inv_std_fresh_sf"])
     wk_sf = int(layer_field_values["wk_sf"])
     kt_mask1_sf = int(layer_field_values["kt_mask1_sf"])
     kt_mask2_sf = int(layer_field_values["kt_mask2_sf"])
     return Block2ActionSpec(
-        inv_std_fresh_sf=int(layer_field_values["inv_std_fresh_sf"]),
-        x_centered_fresh_sf=int(layer_field_values["x_centered_fresh_sf"]),
+        inv_std_fresh_sf=inv_std_fresh_sf,
+        # x_centered_fresh 绑定到 inv_std_fresh（一同决定）。
+        x_centered_fresh_sf=inv_std_fresh_sf,
         gamma_sf=int(layer_field_values["gamma_sf"]),
         # Q/K 绑定：wq_sf / q_mask{1,2}_sf 不再独立选，等于 K 侧
         wk_sf=wk_sf,
@@ -938,23 +953,43 @@ def _build_block5_action(
         layer_field_values: Dict[str, object],
         gelu_degree: int,
         ) -> Block5ActionSpec:
+    """Block 5 动作构造。
+
+    2026-05-21 user spec：
+    * ``inv_std_fresh_sf`` 绑定到 ``x_centered_fresh_sf``（mrpc graph 的
+      ``ctct_xmean_over_std`` 是 "x2" 旁节点，两个 fresh 必须 SF 相同）。
+      二者合并成一个动作（由 x_centered_fresh_sf 主导）。
+    * ``gelu_coeff_mul_rescale_sf_0`` 升级为 active，驱动
+      ``cfg.gelu_coeff_mul_rescales[-1]``（DEFAULT_CFG_TO_T_NEW_MAP 里所有
+      block5_n* 的最后一个 entry 都读 [-1]）。slot 名带 "_0" 是历史遗留：
+      cfg 的 ``gelu_coeff_mul_rescales`` 是 length=deg 的 tuple，但 mrpc
+      graph 实际把整条 coeff·x^k rescale 合并成一个 ``ctpt_gelu_coeff`` 节点，
+      所以只有 [-1] 位置真正进 optimizer。
+    """
     deg = int(gelu_degree)
     # block5 GELU degree 仅支持 {1, 2, 4}
     if deg not in (1, 2, 4):
         deg = 4 if deg >= 4 else (2 if deg >= 2 else 1)
-    # 精简后 RL 只控制 ``gelu_power_rescale_sf_0``（x²，degree>=2 时启用）。
-    # x³/x⁴ 在 mrpc graph 里被折掉，不上 skeleton；多项式系数乘法 rescale 全部
-    # 被 ``ctpt_gelu_coeff`` 一个节点替代，也不在 skeleton 上。
+    # RL 只控制 ``gelu_power_rescale_sf_0``（x²，degree>=2 时启用）；x³/x⁴ 在
+    # mrpc graph 里被折掉，不上 skeleton。
     power_sf_0 = _optional_int(layer_field_values["gelu_power_rescale_sf_0"]) if deg >= 2 else None
     gelu_power_rescale_sfs: Tuple[Optional[int], ...] = (
         () if deg <= 1 else tuple([power_sf_0] + [None] * (deg - 2))
     )
-    # 系数乘法 rescale 全部固定 None（length=deg）
-    gelu_coeff_mul_rescale_sfs: Tuple[Optional[int], ...] = tuple(None for _ in range(deg))
+    # gelu_coeff_mul_rescale_sf_0 → cfg.gelu_coeff_mul_rescales[-1]
+    # （tuple 其它位置固定 None；optimizer 只读 [-1]）
+    coeff_rescale_sf = _optional_int(layer_field_values["gelu_coeff_mul_rescale_sf_0"])
+    if deg <= 0:
+        gelu_coeff_mul_rescale_sfs: Tuple[Optional[int], ...] = ()
+    else:
+        gelu_coeff_mul_rescale_sfs = tuple([None] * (deg - 1) + [coeff_rescale_sf])
+    # x_centered_fresh / inv_std_fresh 绑定 —— x_centered 主导（block5 SOURCE）
+    x_centered_fresh_sf = int(layer_field_values["x_centered_fresh_sf"])
     return Block5ActionSpec(
         gelu_degree=deg,
-        inv_std_fresh_sf=int(layer_field_values["inv_std_fresh_sf"]),
-        x_centered_fresh_sf=int(layer_field_values["x_centered_fresh_sf"]),
+        # inv_std_fresh 绑定 = x_centered_fresh
+        inv_std_fresh_sf=x_centered_fresh_sf,
+        x_centered_fresh_sf=x_centered_fresh_sf,
         gamma_sf=int(layer_field_values["gamma_sf"]),
         wffn1_sf=int(layer_field_values["wffn1_sf"]),
         gelu_coeff_sf=int(layer_field_values["gelu_coeff_sf"]),
@@ -1267,6 +1302,12 @@ _COMPAT_EXTRA_FIELDS: Dict[int, frozenset] = {
         # removed (slot stays in the action vector for back-compat, cfg field
         # gets a fixed value in _build_block2_action).
         "wv_sf",
+        # 2026-05-21 user spec: ``x_centered_fresh_sf`` is the "x2" side of
+        # ctct_x_mean_over_std — its SF MUST equal inv_std_fresh.sf (SOURCE)
+        # for the optimizer's "x2" assumption to hold. The two slots collapse
+        # to ONE action (driven by inv_std_fresh_sf); x_centered_fresh_sf
+        # stays in the action vector for back-compat but is bound and inactive.
+        "x_centered_fresh_sf",
         # rescales not on the mrpc baseline skeleton (cfg fields fixed None)
         "normalize_rescale_sf", "wk_rescale_sf", "wq_rescale_sf",
         "wv_rescale_sf", "kt_mask1_rescale_sf", "q_mask1_rescale_sf",
@@ -1285,8 +1326,15 @@ _COMPAT_EXTRA_FIELDS: Dict[int, frozenset] = {
         "softmax_v_mask_rescale_sf", "wo_rescale_sf", "ln_square_rescale_sf",
     }),
     5: frozenset({
+        # 2026-05-21 user spec: mirror of block 2. ``inv_std_fresh_sf`` is the
+        # "x2" side of ctct_xmean_over_std (whose SOURCE is x_centered_fresh),
+        # so the two collapse to ONE action driven by x_centered_fresh_sf.
+        "inv_std_fresh_sf",
         "gelu_power_rescale_sf_1", "gelu_power_rescale_sf_2",
-        "gelu_coeff_mul_rescale_sf_0", "gelu_coeff_mul_rescale_sf_1",
+        # 2026-05-21: gelu_coeff_mul_rescale_sf_0 PROMOTED to active —
+        # it drives cfg.gelu_coeff_mul_rescales[-1] (last entry, which the
+        # optimizer reads). The other three coeff_mul slots stay compat-extra.
+        "gelu_coeff_mul_rescale_sf_1",
         "gelu_coeff_mul_rescale_sf_2", "gelu_coeff_mul_rescale_sf_3",
     }),
 }

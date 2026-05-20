@@ -22,8 +22,10 @@ from rescale_optimizer_bridge import (
     aggregate_optimizer_signals,
     apply_optimizer_output_to_cfg,
     apply_rotation_flags_to_cfg,
+    sync_block2_aux_fresh_binding,
     sync_block2_qk_binding,
     sync_block4_v_mask_binding,
+    sync_block5_aux_fresh_binding,
 )
 
 from .action_space import (
@@ -474,7 +476,15 @@ class BLBStage2Env:
                 # install Q-channel noise at the pre-override RL SF while
                 # K-channel uses the optimizer-snapped SF.
                 if int(block_idx) == 2:
+                    # Q/K mask binding (action_space writes wk_sf to both
+                    # K-side and Q-side encodes; optimizer write-back only
+                    # refreshes K-side).
                     overrides = list(overrides) + sync_block2_qk_binding(target_cfg)
+                    # x_centered_fresh / inv_std_fresh "x2" binding (action_space
+                    # writes inv_std_fresh.sf to both; optimizer write-back only
+                    # refreshes inv_std_fresh — apply_optimizer_output_to_cfg's
+                    # SOURCE entry for block2 is cfg.inv_std_fresh).
+                    overrides = list(overrides) + sync_block2_aux_fresh_binding(target_cfg)
                 # Block 4 has mask2 binding (action_space writes the shared
                 # softmax_out_mask SF to both softmax_out_mask_encode and
                 # v_mask_encode). The optimizer-driven override only refreshes
@@ -485,6 +495,11 @@ class BLBStage2Env:
                 # softmax_out side.
                 elif int(block_idx) == 4:
                     overrides = list(overrides) + sync_block4_v_mask_binding(target_cfg)
+                # Block 5 mirror of Block 2: x_centered_fresh / inv_std_fresh
+                # "x2" binding. The SOURCE entry for block5 is cfg.x_centered_fresh,
+                # so the optimizer refreshes that and we mirror onto inv_std_fresh.
+                elif int(block_idx) == 5:
+                    overrides = list(overrides) + sync_block5_aux_fresh_binding(target_cfg)
                 if overrides:
                     per_config_overrides[cn] = [
                         (e.cfg_attr, e.source, e.old_value, e.new_value)

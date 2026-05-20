@@ -10,7 +10,7 @@
   },
   "block2": {
     "ctpt_inv_std": 31,
-    "ctpt_x_centered": 30,
+    "ctpt_x_centered": 31,
     "ctpt_gamma": 20,
     "ctpt_wq_wk": 22,
     "ctpt_wv": 22,
@@ -43,7 +43,7 @@
     "ctct_attn_var_rescale": 28
   },
   "block5": {
-    "ctpt_attn_inv_std": 30,
+    "ctpt_attn_inv_std": 31,
     "ctpt_attn_x_centered": 31,
     "ctpt_gamma_attn": 20,
     "ctpt_wffn1": 22,
@@ -51,6 +51,7 @@
     "ctct_attn_normalize_rescale": 31,
     "ctct_gamma_attn_rescale": 30,
     "ctct_wffn1_rescale": 31,
-    "ctct_gelu_x2": 31
+    "ctct_gelu_x2": 31,
+    "ctct_gelu_coeff_rescale": 31
   }
 }
