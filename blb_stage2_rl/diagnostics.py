@@ -109,6 +109,13 @@ class EpisodeStats:
     first_invalid_block: Optional[int]
     first_invalid_layer: Optional[int]
     early_terminated: bool
+    terminal_priority: int = 0
+    terminal_loss_mean: float = 0.0
+    terminal_loss_std: float = 0.0
+    terminal_metric1_mean: float = 0.0
+    safe_neighbor_active: bool = False
+    safe_neighbor_mutation_count: int = 0
+    safe_neighbor_radius: int = 0
     timestamp: float = field(default_factory=time.time)
 
 

@@ -950,6 +950,50 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         ):
             self.assertIn(needle, policy_src + runner_src, msg=f"missing mask wiring: {needle!r}")
 
+    def test_10k_curve_knobs_are_launcher_visible(self):
+        """The 10k research loop needs to tune exploration without editing
+        Python for every server run."""
+        from pathlib import Path
+
+        launcher = Path("llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
+        rl_tune = Path("rl_tune.py").read_text(encoding="utf-8")
+        evaluator = Path("layer_importance_evaluator.py").read_text(encoding="utf-8")
+        runner = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
+        combined = "\n".join([launcher, rl_tune, evaluator, runner])
+        for needle in (
+            "--blb-v3-warmstart-neighbor-ramp-episodes",
+            "--blb-v3-warmstart-neighbor-max-mutations",
+            "--blb-v3-warmstart-neighbor-max-radius",
+            "--blb-v3-warmstart-neighbor-sampling",
+            "--blb-v3-ent-coef",
+            "--blb-v3-ent-coef-ramp-episodes",
+            "blb_v3_warmstart_neighbor_ramp_episodes",
+            "blb_v3_warmstart_neighbor_max_mutations",
+            "blb_v3_warmstart_neighbor_max_radius",
+            "blb_v3_ent_coef",
+            "blb_v3_ent_coef_ramp_episodes",
+            '("ent_coef_ramp_episodes", "blb_v3_ent_coef_ramp_episodes")',
+        ):
+            self.assertIn(needle, combined, msg=f"missing 10k curve knob: {needle!r}")
+
+    def test_episode_jsonl_carries_terminal_health_fields(self):
+        """10k online monitoring must not depend on grepping details text for
+        terminal loss/P1/safe-neighbor health."""
+        from pathlib import Path
+
+        diagnostics = Path("blb_stage2_rl/diagnostics.py").read_text(encoding="utf-8")
+        runner_src = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        for needle in (
+            "terminal_priority: int = 0",
+            "terminal_loss_mean: float = 0.0",
+            "terminal_loss_std: float = 0.0",
+            "terminal_metric1_mean: float = 0.0",
+            "safe_neighbor_active: bool = False",
+            "terminal_priority=int(record.terminal_priority)",
+            "safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count)",
+        ):
+            self.assertIn(needle, diagnostics + runner_src, msg=f"missing JSONL health field: {needle!r}")
+
     def test_sequential_ppo_update_replays_stored_action_level_mask(self):
         import sys
 

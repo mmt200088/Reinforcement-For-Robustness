@@ -2361,6 +2361,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_calibrate_baseline_samples=None,
                   blb_v3_inproc_rescale_optimizer_root=None,
                   blb_v3_warmstart_anchor_episodes=None,
+                  blb_v3_warmstart_neighbor_ramp_episodes=None,
+                  blb_v3_warmstart_neighbor_max_mutations=None,
+                  blb_v3_warmstart_neighbor_max_radius=None,
+                  blb_v3_warmstart_neighbor_sampling=None,
+                  blb_v3_warmstart_bias_gain=None,
+                  blb_v3_ent_coef=None,
+                  blb_v3_ent_coef_anchor=None,
+                  blb_v3_ent_coef_ramp_episodes=None,
                   blb_v3_action_mask_enabled=False,
                   blb_v3_action_mask_mode='none',
                   blb_v3_action_mask_file='',
@@ -2811,6 +2819,40 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.blb_v3_warmstart_anchor_episodes = (
             int(blb_v3_warmstart_anchor_episodes)
             if blb_v3_warmstart_anchor_episodes not in (None, "") else None
+        )
+        self.blb_v3_warmstart_neighbor_ramp_episodes = (
+            int(blb_v3_warmstart_neighbor_ramp_episodes)
+            if blb_v3_warmstart_neighbor_ramp_episodes not in (None, "") else None
+        )
+        self.blb_v3_warmstart_neighbor_max_mutations = (
+            int(blb_v3_warmstart_neighbor_max_mutations)
+            if blb_v3_warmstart_neighbor_max_mutations not in (None, "") else None
+        )
+        self.blb_v3_warmstart_neighbor_max_radius = (
+            int(blb_v3_warmstart_neighbor_max_radius)
+            if blb_v3_warmstart_neighbor_max_radius not in (None, "") else None
+        )
+        self.blb_v3_warmstart_neighbor_sampling = (
+            None if blb_v3_warmstart_neighbor_sampling in (None, "") else
+            self._coerce_bool_flag(
+                blb_v3_warmstart_neighbor_sampling,
+                'blb_v3_warmstart_neighbor_sampling',
+            )
+        )
+        self.blb_v3_warmstart_bias_gain = (
+            float(blb_v3_warmstart_bias_gain)
+            if blb_v3_warmstart_bias_gain not in (None, "") else None
+        )
+        self.blb_v3_ent_coef = (
+            float(blb_v3_ent_coef) if blb_v3_ent_coef not in (None, "") else None
+        )
+        self.blb_v3_ent_coef_anchor = (
+            float(blb_v3_ent_coef_anchor)
+            if blb_v3_ent_coef_anchor not in (None, "") else None
+        )
+        self.blb_v3_ent_coef_ramp_episodes = (
+            int(blb_v3_ent_coef_ramp_episodes)
+            if blb_v3_ent_coef_ramp_episodes not in (None, "") else None
         )
         self.blb_v3_action_mask_enabled = self._coerce_bool_flag(
             blb_v3_action_mask_enabled,

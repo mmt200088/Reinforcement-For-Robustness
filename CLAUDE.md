@@ -79,6 +79,12 @@ Current Stage-2 RL collapse goal mode:
   falsifiable hypotheses, run focused experiments, study the reward curve and
   diagnostics, tune or repair locally, and keep repeating the git-synced
   server-run loop until the evidence is clean.
+- The active next milestone is the first 10,000 Stage-2 RL episodes. This is
+  not merely a longer smoke test: monitor whether reward keeps improving,
+  whether entropy/clip_fraction collapse into a narrow search, whether
+  safe-neighbor mutation/radius coverage expands, and whether cost signals
+  improve without accuracy/stability regressions. Use online watchdog evidence
+  during the run instead of waiting hours to discover a bad curve.
 
 ### Server command bridge
 

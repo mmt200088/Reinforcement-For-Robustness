@@ -2087,6 +2087,13 @@ def run_sequential_via_runner(
                         if record.first_invalid_layer is not None else None
                     ),
                     early_terminated=bool(record.early_terminated),
+                    terminal_priority=int(record.terminal_priority),
+                    terminal_loss_mean=float(record.terminal_loss_mean),
+                    terminal_loss_std=float(record.terminal_loss_std),
+                    terminal_metric1_mean=float(record.terminal_metric1_mean),
+                    safe_neighbor_active=bool(record.safe_neighbor_active),
+                    safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count),
+                    safe_neighbor_radius=int(record.safe_neighbor_radius),
                 ),
                 full_action_vec=full_vec_now,
                 is_new_best=bool(is_new_best),

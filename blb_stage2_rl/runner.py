@@ -2468,6 +2468,7 @@ class BLBStage2RLRunner:
                 ("warmstart_neighbor_ramp_episodes", "blb_v3_warmstart_neighbor_ramp_episodes"),
                 ("warmstart_neighbor_max_mutations", "blb_v3_warmstart_neighbor_max_mutations"),
                 ("warmstart_neighbor_max_radius", "blb_v3_warmstart_neighbor_max_radius"),
+                ("ent_coef_ramp_episodes", "blb_v3_ent_coef_ramp_episodes"),
                 ("seed", "final_eval_random_seed"),
         ):
             v = getattr(ev, attr_name, None)
@@ -2481,6 +2482,18 @@ class BLBStage2RLRunner:
         if v not in (None, ""):
             try:
                 cfg.warmstart_bias_gain = float(v)
+            except Exception:
+                pass
+        v = getattr(ev, "blb_v3_ent_coef", None)
+        if v not in (None, ""):
+            try:
+                cfg.ppo.ent_coef = max(0.0, float(v))
+            except Exception:
+                pass
+        v = getattr(ev, "blb_v3_ent_coef_anchor", None)
+        if v not in (None, ""):
+            try:
+                cfg.ent_coef_anchor = max(0.0, float(v))
             except Exception:
                 pass
         v = getattr(ev, "blb_v3_warmstart_baseline_bias", None)
@@ -2597,6 +2610,9 @@ class BLBStage2RLRunner:
         )
         cfg.warmstart_neighbor_max_radius = max(
             1, min(int(cfg.warmstart_neighbor_max_radius), 8),
+        )
+        cfg.ent_coef_ramp_episodes = max(
+            0, min(int(cfg.ent_coef_ramp_episodes), int(cfg.total_episodes))
         )
         return cfg
 

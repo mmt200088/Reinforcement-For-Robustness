@@ -597,6 +597,14 @@ def train(
         blb_v3_calibrate_baseline_samples: int = None,
         blb_v3_inproc_rescale_optimizer_root: str = "",
         blb_v3_warmstart_anchor_episodes: int = None,
+        blb_v3_warmstart_neighbor_ramp_episodes: int = None,
+        blb_v3_warmstart_neighbor_max_mutations: int = None,
+        blb_v3_warmstart_neighbor_max_radius: int = None,
+        blb_v3_warmstart_neighbor_sampling: bool = None,
+        blb_v3_warmstart_bias_gain: float = None,
+        blb_v3_ent_coef: float = None,
+        blb_v3_ent_coef_anchor: float = None,
+        blb_v3_ent_coef_ramp_episodes: int = None,
         blb_v3_action_mask_enabled: bool = False,
         blb_v3_action_mask_mode: str = "none",
         blb_v3_action_mask_file: str = "",
@@ -748,6 +756,14 @@ def train(
         f"stage2_rl_variant: {stage2_rl_variant}\n"
         f"blb_v3_inproc_rescale_optimizer_root: {blb_v3_inproc_rescale_optimizer_root}\n"
         f"blb_v3_warmstart_anchor_episodes: {blb_v3_warmstart_anchor_episodes}\n"
+        f"blb_v3_warmstart_neighbor_ramp_episodes: {blb_v3_warmstart_neighbor_ramp_episodes}\n"
+        f"blb_v3_warmstart_neighbor_max_mutations: {blb_v3_warmstart_neighbor_max_mutations}\n"
+        f"blb_v3_warmstart_neighbor_max_radius: {blb_v3_warmstart_neighbor_max_radius}\n"
+        f"blb_v3_warmstart_neighbor_sampling: {blb_v3_warmstart_neighbor_sampling}\n"
+        f"blb_v3_warmstart_bias_gain: {blb_v3_warmstart_bias_gain}\n"
+        f"blb_v3_ent_coef: {blb_v3_ent_coef}\n"
+        f"blb_v3_ent_coef_anchor: {blb_v3_ent_coef_anchor}\n"
+        f"blb_v3_ent_coef_ramp_episodes: {blb_v3_ent_coef_ramp_episodes}\n"
         f"blb_v3_action_mask_enabled: {blb_v3_action_mask_enabled}\n"
         f"blb_v3_action_mask_mode: {blb_v3_action_mask_mode}\n"
         f"blb_v3_action_mask_file: {blb_v3_action_mask_file}\n"
@@ -1151,6 +1167,14 @@ def train(
             blb_v3_save_interval=blb_v3_save_interval,
             blb_v3_calibrate_baseline_samples=blb_v3_calibrate_baseline_samples,
             blb_v3_warmstart_anchor_episodes=blb_v3_warmstart_anchor_episodes,
+            blb_v3_warmstart_neighbor_ramp_episodes=blb_v3_warmstart_neighbor_ramp_episodes,
+            blb_v3_warmstart_neighbor_max_mutations=blb_v3_warmstart_neighbor_max_mutations,
+            blb_v3_warmstart_neighbor_max_radius=blb_v3_warmstart_neighbor_max_radius,
+            blb_v3_warmstart_neighbor_sampling=blb_v3_warmstart_neighbor_sampling,
+            blb_v3_warmstart_bias_gain=blb_v3_warmstart_bias_gain,
+            blb_v3_ent_coef=blb_v3_ent_coef,
+            blb_v3_ent_coef_anchor=blb_v3_ent_coef_anchor,
+            blb_v3_ent_coef_ramp_episodes=blb_v3_ent_coef_ramp_episodes,
             blb_v3_action_mask_enabled=blb_v3_action_mask_enabled,
             blb_v3_action_mask_mode=blb_v3_action_mask_mode,
             blb_v3_action_mask_file=blb_v3_action_mask_file,
@@ -1277,4 +1301,3 @@ if __name__ == "__main__":
         train,
         program_name="rl_tune.py",
     )
-

@@ -128,6 +128,18 @@ GA / Greedy：
   --stage2-eval-interval N                BLB v3 训练日志评估间隔
   --stage2-calibrate-baseline-samples N   BLB v3 reward 权重校准样本数
   --blb-v3-warmstart-anchor-episodes N    BLB v3 前 N 个 episode 固定 all-max baseline
+  --blb-v3-warmstart-neighbor-ramp-episodes N
+                                          BLB v3 anchor 后邻域探索 ramp 长度
+  --blb-v3-warmstart-neighbor-max-mutations N
+                                          BLB v3 邻域探索单 episode 最多开放的 effective slots
+  --blb-v3-warmstart-neighbor-max-radius N
+                                          BLB v3 邻域探索最大局部半径
+  --blb-v3-warmstart-neighbor-sampling true|false
+                                          是否启用 anchor 后 safe-neighbor curriculum
+  --blb-v3-warmstart-bias-gain FLOAT      baseline 动作初始化 logit bias
+  --blb-v3-ent-coef FLOAT                 sequential PPO steady entropy coefficient
+  --blb-v3-ent-coef-anchor FLOAT          anchor 期 entropy coefficient
+  --blb-v3-ent-coef-ramp-episodes N       anchor 后 entropy coefficient ramp 长度
   --blb-v3-action-mask-enabled            启用 BLB v3 action mask / baseline prior
   --blb-v3-action-mask-mode MODE          none|baseline_only|near_baseline|from_file
   --blb-v3-action-mask-file PATH          mode=from_file 时读取的 F0 suggested_action_mask.json
@@ -458,6 +470,14 @@ BLB_V3_EVAL_INTERVAL=""; S_BLB_V3_EVAL_INTERVAL="false"
 BLB_V3_SAVE_INTERVAL=""; S_BLB_V3_SAVE_INTERVAL="false"
 BLB_V3_CALIBRATE_BASELINE_SAMPLES=""; S_BLB_V3_CALIBRATE_BASELINE_SAMPLES="false"
 BLB_V3_WARMSTART_ANCHOR_EPISODES=""; S_BLB_V3_WARMSTART_ANCHOR_EPISODES="false"
+BLB_V3_WARMSTART_NEIGHBOR_RAMP_EPISODES=""; S_BLB_V3_WARMSTART_NEIGHBOR_RAMP_EPISODES="false"
+BLB_V3_WARMSTART_NEIGHBOR_MAX_MUTATIONS=""; S_BLB_V3_WARMSTART_NEIGHBOR_MAX_MUTATIONS="false"
+BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS=""; S_BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS="false"
+BLB_V3_WARMSTART_NEIGHBOR_SAMPLING=""; S_BLB_V3_WARMSTART_NEIGHBOR_SAMPLING="false"
+BLB_V3_WARMSTART_BIAS_GAIN=""; S_BLB_V3_WARMSTART_BIAS_GAIN="false"
+BLB_V3_ENT_COEF=""; S_BLB_V3_ENT_COEF="false"
+BLB_V3_ENT_COEF_ANCHOR=""; S_BLB_V3_ENT_COEF_ANCHOR="false"
+BLB_V3_ENT_COEF_RAMP_EPISODES=""; S_BLB_V3_ENT_COEF_RAMP_EPISODES="false"
 BLB_V3_ACTION_MASK_ENABLED="false"; S_BLB_V3_ACTION_MASK_ENABLED="false"
 BLB_V3_ACTION_MASK_MODE="none"; S_BLB_V3_ACTION_MASK_MODE="false"
 BLB_V3_ACTION_MASK_FILE=""; S_BLB_V3_ACTION_MASK_FILE="false"
@@ -626,6 +646,14 @@ while [ "$#" -gt 0 ]; do
     --stage2-eval-interval|--blb-v3-eval-interval) needv "$@"; BLB_V3_EVAL_INTERVAL="$2"; S_BLB_V3_EVAL_INTERVAL="true"; shift 2 ;;
     --stage2-calibrate-baseline-samples|--blb-v3-calibrate-baseline-samples) needv "$@"; BLB_V3_CALIBRATE_BASELINE_SAMPLES="$2"; S_BLB_V3_CALIBRATE_BASELINE_SAMPLES="true"; shift 2 ;;
     --blb-v3-warmstart-anchor-episodes) needv "$@"; BLB_V3_WARMSTART_ANCHOR_EPISODES="$2"; S_BLB_V3_WARMSTART_ANCHOR_EPISODES="true"; shift 2 ;;
+    --blb-v3-warmstart-neighbor-ramp-episodes) needv "$@"; BLB_V3_WARMSTART_NEIGHBOR_RAMP_EPISODES="$2"; S_BLB_V3_WARMSTART_NEIGHBOR_RAMP_EPISODES="true"; shift 2 ;;
+    --blb-v3-warmstart-neighbor-max-mutations) needv "$@"; BLB_V3_WARMSTART_NEIGHBOR_MAX_MUTATIONS="$2"; S_BLB_V3_WARMSTART_NEIGHBOR_MAX_MUTATIONS="true"; shift 2 ;;
+    --blb-v3-warmstart-neighbor-max-radius) needv "$@"; BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS="$2"; S_BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS="true"; shift 2 ;;
+    --blb-v3-warmstart-neighbor-sampling) needv "$@"; BLB_V3_WARMSTART_NEIGHBOR_SAMPLING="$2"; S_BLB_V3_WARMSTART_NEIGHBOR_SAMPLING="true"; shift 2 ;;
+    --blb-v3-warmstart-bias-gain) needv "$@"; BLB_V3_WARMSTART_BIAS_GAIN="$2"; S_BLB_V3_WARMSTART_BIAS_GAIN="true"; shift 2 ;;
+    --blb-v3-ent-coef) needv "$@"; BLB_V3_ENT_COEF="$2"; S_BLB_V3_ENT_COEF="true"; shift 2 ;;
+    --blb-v3-ent-coef-anchor) needv "$@"; BLB_V3_ENT_COEF_ANCHOR="$2"; S_BLB_V3_ENT_COEF_ANCHOR="true"; shift 2 ;;
+    --blb-v3-ent-coef-ramp-episodes) needv "$@"; BLB_V3_ENT_COEF_RAMP_EPISODES="$2"; S_BLB_V3_ENT_COEF_RAMP_EPISODES="true"; shift 2 ;;
     --blb-v3-action-mask-enabled) BLB_V3_ACTION_MASK_ENABLED="true"; S_BLB_V3_ACTION_MASK_ENABLED="true"; shift ;;
     --blb-v3-action-mask-mode) needv "$@"; BLB_V3_ACTION_MASK_MODE="$2"; S_BLB_V3_ACTION_MASK_MODE="true"; shift 2 ;;
     --blb-v3-action-mask-file) needv "$@"; BLB_V3_ACTION_MASK_FILE="$2"; S_BLB_V3_ACTION_MASK_FILE="true"; shift 2 ;;
@@ -799,6 +827,13 @@ is_pos_int "$BLB_V3_ROLLOUT_SIZE" || err "--stage2-rollout-size 必须是正整�
 [ -z "$BLB_V3_EVAL_INTERVAL" ] || is_pos_int "$BLB_V3_EVAL_INTERVAL" || err "--stage2-eval-interval 必须是正整数，当前为：$BLB_V3_EVAL_INTERVAL"
 [ -z "$BLB_V3_CALIBRATE_BASELINE_SAMPLES" ] || is_pos_int "$BLB_V3_CALIBRATE_BASELINE_SAMPLES" || err "--stage2-calibrate-baseline-samples 必须是正整数，当前为：$BLB_V3_CALIBRATE_BASELINE_SAMPLES"
 [ -z "$BLB_V3_WARMSTART_ANCHOR_EPISODES" ] || is_pos_int "$BLB_V3_WARMSTART_ANCHOR_EPISODES" || err "--blb-v3-warmstart-anchor-episodes 必须是正整数，当前为：$BLB_V3_WARMSTART_ANCHOR_EPISODES"
+[ -z "$BLB_V3_WARMSTART_NEIGHBOR_RAMP_EPISODES" ] || is_pos_int "$BLB_V3_WARMSTART_NEIGHBOR_RAMP_EPISODES" || err "--blb-v3-warmstart-neighbor-ramp-episodes 必须是正整数，当前为：$BLB_V3_WARMSTART_NEIGHBOR_RAMP_EPISODES"
+[ -z "$BLB_V3_WARMSTART_NEIGHBOR_MAX_MUTATIONS" ] || is_pos_int "$BLB_V3_WARMSTART_NEIGHBOR_MAX_MUTATIONS" || err "--blb-v3-warmstart-neighbor-max-mutations 必须是正整数，当前为：$BLB_V3_WARMSTART_NEIGHBOR_MAX_MUTATIONS"
+[ -z "$BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS" ] || is_pos_int "$BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS" || err "--blb-v3-warmstart-neighbor-max-radius 必须是正整数，当前为：$BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS"
+[ -z "$BLB_V3_WARMSTART_BIAS_GAIN" ] || is_nonneg_num "$BLB_V3_WARMSTART_BIAS_GAIN" || err "--blb-v3-warmstart-bias-gain 必须是非负数，当前为：$BLB_V3_WARMSTART_BIAS_GAIN"
+[ -z "$BLB_V3_ENT_COEF" ] || is_nonneg_num "$BLB_V3_ENT_COEF" || err "--blb-v3-ent-coef 必须是非负数，当前为：$BLB_V3_ENT_COEF"
+[ -z "$BLB_V3_ENT_COEF_ANCHOR" ] || is_nonneg_num "$BLB_V3_ENT_COEF_ANCHOR" || err "--blb-v3-ent-coef-anchor 必须是非负数，当前为：$BLB_V3_ENT_COEF_ANCHOR"
+[ -z "$BLB_V3_ENT_COEF_RAMP_EPISODES" ] || is_nonneg_int "$BLB_V3_ENT_COEF_RAMP_EPISODES" || err "--blb-v3-ent-coef-ramp-episodes 必须是非负整数，当前为：$BLB_V3_ENT_COEF_RAMP_EPISODES"
 case "$BLB_V3_ACTION_MASK_MODE" in
   ""|none|off|disabled) BLB_V3_ACTION_MASK_MODE="none" ;;
   baseline_only|near_baseline|from_file) BLB_V3_ACTION_MASK_ENABLED="true" ;;
@@ -1408,6 +1443,14 @@ else
     [ -n "$BLB_V3_SAVE_INTERVAL" ] && CMD+=(--blb_v3_save_interval "$BLB_V3_SAVE_INTERVAL")
     [ -n "$BLB_V3_CALIBRATE_BASELINE_SAMPLES" ] && CMD+=(--blb_v3_calibrate_baseline_samples "$BLB_V3_CALIBRATE_BASELINE_SAMPLES")
     [ -n "$BLB_V3_WARMSTART_ANCHOR_EPISODES" ] && CMD+=(--blb_v3_warmstart_anchor_episodes "$BLB_V3_WARMSTART_ANCHOR_EPISODES")
+    [ -n "$BLB_V3_WARMSTART_NEIGHBOR_RAMP_EPISODES" ] && CMD+=(--blb_v3_warmstart_neighbor_ramp_episodes "$BLB_V3_WARMSTART_NEIGHBOR_RAMP_EPISODES")
+    [ -n "$BLB_V3_WARMSTART_NEIGHBOR_MAX_MUTATIONS" ] && CMD+=(--blb_v3_warmstart_neighbor_max_mutations "$BLB_V3_WARMSTART_NEIGHBOR_MAX_MUTATIONS")
+    [ -n "$BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS" ] && CMD+=(--blb_v3_warmstart_neighbor_max_radius "$BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS")
+    [ -n "$BLB_V3_WARMSTART_NEIGHBOR_SAMPLING" ] && CMD+=(--blb_v3_warmstart_neighbor_sampling "$BLB_V3_WARMSTART_NEIGHBOR_SAMPLING")
+    [ -n "$BLB_V3_WARMSTART_BIAS_GAIN" ] && CMD+=(--blb_v3_warmstart_bias_gain "$BLB_V3_WARMSTART_BIAS_GAIN")
+    [ -n "$BLB_V3_ENT_COEF" ] && CMD+=(--blb_v3_ent_coef "$BLB_V3_ENT_COEF")
+    [ -n "$BLB_V3_ENT_COEF_ANCHOR" ] && CMD+=(--blb_v3_ent_coef_anchor "$BLB_V3_ENT_COEF_ANCHOR")
+    [ -n "$BLB_V3_ENT_COEF_RAMP_EPISODES" ] && CMD+=(--blb_v3_ent_coef_ramp_episodes "$BLB_V3_ENT_COEF_RAMP_EPISODES")
     if [ "$BLB_V3_ACTION_MASK_ENABLED" = "true" ] || [ "$S_BLB_V3_ACTION_MASK_MODE" = "true" ] || [ "$S_BLB_V3_ACTION_MASK_FILE" = "true" ] || [ "$S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" = "true" ]; then
       CMD+=(--blb_v3_action_mask_enabled "$BLB_V3_ACTION_MASK_ENABLED")
       CMD+=(--blb_v3_action_mask_mode "$BLB_V3_ACTION_MASK_MODE")
@@ -1466,6 +1509,11 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   if [ "$STAGE2_RL_VARIANT" = "blb_v3" ]; then
     show "BLB rollout 大小" "$BLB_V3_ROLLOUT_SIZE" "$S_BLB_V3_ROLLOUT_SIZE"
     show "BLB Rescale optimizer" "in_process_real (${BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT})" "false"
+    show "BLB neighbor ramp" "${BLB_V3_WARMSTART_NEIGHBOR_RAMP_EPISODES:-auto}" "$S_BLB_V3_WARMSTART_NEIGHBOR_RAMP_EPISODES"
+    show "BLB neighbor max mutations" "${BLB_V3_WARMSTART_NEIGHBOR_MAX_MUTATIONS:-auto}" "$S_BLB_V3_WARMSTART_NEIGHBOR_MAX_MUTATIONS"
+    show "BLB neighbor max radius" "${BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS:-auto}" "$S_BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS"
+    show "BLB entropy coef" "${BLB_V3_ENT_COEF:-auto}" "$S_BLB_V3_ENT_COEF"
+    show "BLB entropy ramp episodes" "${BLB_V3_ENT_COEF_RAMP_EPISODES:-auto}" "$S_BLB_V3_ENT_COEF_RAMP_EPISODES"
     [ -n "$BLB_V3_SAVE_INTERVAL" ] && show "BLB checkpoint 间隔" "$BLB_V3_SAVE_INTERVAL" "$S_BLB_V3_SAVE_INTERVAL"
     [ -n "$BLB_V3_EVAL_INTERVAL" ] && show "BLB 日志评估间隔" "$BLB_V3_EVAL_INTERVAL" "$S_BLB_V3_EVAL_INTERVAL"
   fi
