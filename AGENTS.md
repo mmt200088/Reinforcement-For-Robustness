@@ -48,9 +48,13 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `NEIGHBOR_MAX_MUTATIONS=16`, `NEIGHBOR_MAX_RADIUS=3` improved reward into the
   low 42s but hit a P1 cluster around episodes 1699-1757. P1 was 0 through
   radius=1 and appeared when safe-neighbor reached `radius=2` with 8-9 mutated
-  offsets. The safer follow-up setting is `NEIGHBOR_RAMP=6000`,
-  `NEIGHBOR_MAX_MUTATIONS=8`, `NEIGHBOR_MAX_RADIUS=1`; this keeps radius-1
-  exploration while avoiding the observed radius-2 accuracy-collapse region.
+  offsets. Current Pareto-only follow-up keeps default radius at 1 but opens
+  exploration inside that radius: `ANCHOR_EPISODES=60`,
+  `NEIGHBOR_RAMP=1800`, `NEIGHBOR_MAX_MUTATIONS=12`,
+  `NEIGHBOR_MAX_RADIUS=1`, `ENT_COEF=0.06`, `ENT_RAMP=600`,
+  `WARMSTART_BIAS_GAIN=2.5`. Do not default to radius2; if the P3 Pareto
+  frontier fails to expand in a 600-1000 episode smoke, design a separate
+  guarded radius2 experiment.
 - Keep this `AGENTS.md` current as the shared project memory for Codex and
   Claude Code. After each user message that adds or changes project facts,
   workflow rules, run state, architecture notes, or operating constraints,
@@ -329,10 +333,11 @@ experiment reproduction.
 5. Rotation has no independent action. Rotation scale is inherited from the
    current scale after the optimizer-set rescale state. If the optimizer fuses
    away a rescale, the trailing rotation must follow the optimizer result.
-6. Reward is hard-priority: model accuracy first, model stability second, then
-   cost. `Rescale_optimizer` contributes optimizer cost / feasibility
-   diagnostics only; it must not skip or replace the actual model forward reward.
-   Cost must never compensate for an accuracy or stability failure.
+6. Reward is hard-priority: invalid/accuracy failure first, model stability
+   second, then cost. `Rescale_optimizer` contributes optimizer cost /
+   feasibility diagnostics only; it must not skip or replace the actual model
+   forward reward. Cost must never compensate for an accuracy or stability
+   failure.
    Reward v3 uses metric1 + metric2 gates and includes metric1_std/metric2_std in
    the stability gate, but those metric std channels must tolerate normal
    5-trial MRPC probe quantization. Do not use a tiny `1e-3` metric-std floor:
@@ -341,6 +346,16 @@ experiment reproduction.
    58 otherwise healthy episodes into P2 and pushed rolling300 below 35. Current
    behavior keeps tiny metric std jitter in P3 via a `1e-2` floor while still
    treating materially large metric std as P2.
+   Current cost reward is Pareto-only in the sequential Stage-2 path: only P3
+   candidates enter `ParetoCostArchive`, whose objective vector maximizes raw
+   `fusion_gain = fusion_count - baseline_fusion_count`,
+   `k_gain = baseline_avg_k - action_avg_k`, and
+   `bits_gain = baseline_total_bits - action_total_bits`. Do not use
+   `typical_bits_drop`, `typical_fusion_count`, or `typical_k_drop` to rank P3
+   cost candidates. PPO still receives a bounded scalar, but that scalar comes
+   from Pareto events: frontier expansion positive, non-dominated frontier
+   member small positive, dominated negative, duplicate near zero/slightly
+   negative.
 7. `Rescale_optimizer` is the source of truth for modulus-chain cost and
    optimizer feasibility diagnostics. `HeuristicStubInvoker` was deleted;
    training and promotable final evals must use real `replan_with_user_actions`

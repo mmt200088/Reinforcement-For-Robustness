@@ -7,15 +7,16 @@ export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
 export GLUE_LOCAL_DATASET_DIR="${GLUE_LOCAL_DATASET_DIR:-/hy-tmp/glue_data}"
 
 PLANNED_EPISODES="${PLANNED_EPISODES:-10000}"
-ANCHOR_EPISODES="${ANCHOR_EPISODES:-120}"
+ANCHOR_EPISODES="${ANCHOR_EPISODES:-60}"
 ROLLOUT_SIZE="${ROLLOUT_SIZE:-60}"
 K_TRIALS="${K_TRIALS:-5}"
 PROBE_SIZE="${PROBE_SIZE:-256}"
-NEIGHBOR_RAMP="${NEIGHBOR_RAMP:-6000}"
-NEIGHBOR_MAX_MUTATIONS="${NEIGHBOR_MAX_MUTATIONS:-8}"
+NEIGHBOR_RAMP="${NEIGHBOR_RAMP:-1800}"
+NEIGHBOR_MAX_MUTATIONS="${NEIGHBOR_MAX_MUTATIONS:-12}"
 NEIGHBOR_MAX_RADIUS="${NEIGHBOR_MAX_RADIUS:-1}"
-ENT_COEF="${ENT_COEF:-0.04}"
-ENT_RAMP="${ENT_RAMP:-1200}"
+ENT_COEF="${ENT_COEF:-0.06}"
+ENT_RAMP="${ENT_RAMP:-600}"
+WARMSTART_BIAS_GAIN="${WARMSTART_BIAS_GAIN:-2.5}"
 
 RUN_ID="stage2_rl_first10k_curve_$(date +%Y%m%d_%H%M%S)"
 ARTIFACT_DIR="experiments/server_command_runs/${RUN_ID}"
@@ -75,6 +76,9 @@ copy_artifacts() {
   local diag_dir="${STAGE2_NOISE}/progress/diagnostics"
   [ -f "${diag_dir}/episodes.jsonl" ] && cp "${diag_dir}/episodes.jsonl" "${ARTIFACT_DIR}/episodes.jsonl" || true
   [ -f "${diag_dir}/ppo_updates.jsonl" ] && cp "${diag_dir}/ppo_updates.jsonl" "${ARTIFACT_DIR}/ppo_updates.jsonl" || true
+  [ -f "${diag_dir}/pareto_frontier.jsonl" ] && cp "${diag_dir}/pareto_frontier.jsonl" "${ARTIFACT_DIR}/pareto_frontier.jsonl" || true
+  [ -f "${diag_dir}/pareto_frontier.json" ] && cp "${diag_dir}/pareto_frontier.json" "${ARTIFACT_DIR}/pareto_frontier.json" || true
+  [ -f "${diag_dir}/pareto_frontier.html" ] && cp "${diag_dir}/pareto_frontier.html" "${ARTIFACT_DIR}/pareto_frontier.html" || true
   [ -f "${STAGE2_NOISE}/warning.txt" ] && cp "${STAGE2_NOISE}/warning.txt" "${ARTIFACT_DIR}/warning.txt" || true
   [ -f "${STAGE2_NOISE}/pruning_search_log.txt" ] && tail -n 40000 "${STAGE2_NOISE}/pruning_search_log.txt" > "${ARTIFACT_DIR}/pruning_search_log_tail_source.txt" || true
   for path in \
@@ -118,7 +122,8 @@ timeout 180 git pull --ff-only
 PULL_RC=$?
 set -e
 if [ "$PULL_RC" -ne 0 ]; then
-  echo "[warn] git pull failed or timed out (rc=$PULL_RC); continuing with current HEAD."
+  echo "[abort] git pull failed or timed out (rc=$PULL_RC); refusing to run on stale HEAD."
+  exit "$PULL_RC"
 fi
 echo "[git] HEAD = $(git rev-parse --short HEAD)"
 
@@ -136,6 +141,7 @@ cat > "${ARTIFACT_DIR}/run_manifest.json" <<JSON
   "neighbor_max_radius": ${NEIGHBOR_MAX_RADIUS},
   "ent_coef": ${ENT_COEF},
   "ent_ramp": ${ENT_RAMP},
+  "warmstart_bias_gain": ${WARMSTART_BIAS_GAIN},
   "reward_devices": "0,1"
 }
 JSON
@@ -195,6 +201,7 @@ CUDA_VISIBLE_DEVICES=0,1 bash llama_7B_LayerImportance.sh run rl \
   --blb-v3-warmstart-neighbor-ramp-episodes "$NEIGHBOR_RAMP" \
   --blb-v3-warmstart-neighbor-max-mutations "$NEIGHBOR_MAX_MUTATIONS" \
   --blb-v3-warmstart-neighbor-max-radius "$NEIGHBOR_MAX_RADIUS" \
+  --blb-v3-warmstart-bias-gain "$WARMSTART_BIAS_GAIN" \
   --blb-v3-ent-coef "$ENT_COEF" \
   --blb-v3-ent-coef-ramp-episodes "$ENT_RAMP" \
   --blb-v3-reward-devices 0,1 \

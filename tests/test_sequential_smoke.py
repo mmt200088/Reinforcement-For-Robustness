@@ -119,6 +119,12 @@ class SequentialArtifactContractsTest(unittest.TestCase):
                     steps_taken=59,
                     total_bits=15000 - ep * 100,
                     fusion_count=50 + ep,
+                    terminal_priority=3,
+                    terminal_bits_gain=float(ep * 100),
+                    terminal_k_gain=float(ep % 3),
+                    terminal_fusion_gain=float(ep),
+                    terminal_cost_score=0.10,
+                    terminal_pareto_event_kind="frontier_expansion",
                     first_invalid_step=(5 if invalid else None),
                     first_invalid_block=(3 if invalid else None),
                     first_invalid_layer=(8 if invalid else None),
@@ -159,6 +165,9 @@ class SequentialArtifactContractsTest(unittest.TestCase):
             "episodes.jsonl",
             "ppo_updates.jsonl",
             "top_candidates.jsonl",
+            "pareto_frontier.jsonl",
+            "pareto_frontier.json",
+            "pareto_frontier.html",
             "first_invalid_counts.json",
             "action_histogram.npz",
             "diagnostics_summary.md",
@@ -205,6 +214,38 @@ class SequentialArtifactContractsTest(unittest.TestCase):
             self.assertIn("episode", r)
             self.assertIn("total_reward", r)
             self.assertIn("invalid_steps", r)
+
+    def test_pareto_frontier_artifacts_and_dominance(self):
+        run_dir = os.path.join(self.tmp, "run_pareto")
+        self._synthesize_run(run_dir, n_episodes=24, seed=5)
+        diag_dir = os.path.join(run_dir, "diagnostics")
+
+        json_path = os.path.join(diag_dir, "pareto_frontier.json")
+        jsonl_path = os.path.join(diag_dir, "pareto_frontier.jsonl")
+        html_path = os.path.join(diag_dir, "pareto_frontier.html")
+        with open(json_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        with open(jsonl_path, "r", encoding="utf-8") as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+
+        self.assertEqual(payload["schema_version"], "blb_stage2_pareto_frontier_v1")
+        self.assertEqual(payload["count"], len(rows))
+        self.assertTrue(rows)
+        self.assertTrue(os.path.isfile(html_path))
+        self.assertIn("terminal_fusion_gain", payload["objectives"]["maximize"])
+        self.assertIn("terminal_k_gain", payload["objectives"]["maximize"])
+        self.assertIn("terminal_bits_gain", payload["objectives"]["maximize"])
+
+        for i, a in enumerate(rows):
+            self.assertIn("pareto_rank", a)
+            self.assertEqual(a["terminal_priority"], 3)
+            for j, b in enumerate(rows):
+                if i == j:
+                    continue
+                self.assertFalse(
+                    self.diag_mod._pareto_dominates(a, b),
+                    msg=f"frontier row {i} dominates row {j}",
+                )
 
     # ----------------------------------------------------------------
     # 4. summary.md contains the auto-flag section and at least one auto-flag
@@ -969,11 +1010,13 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "--blb-v3-warmstart-neighbor-max-mutations",
             "--blb-v3-warmstart-neighbor-max-radius",
             "--blb-v3-warmstart-neighbor-sampling",
+            "--blb-v3-warmstart-bias-gain",
             "--blb-v3-ent-coef",
             "--blb-v3-ent-coef-ramp-episodes",
             "blb_v3_warmstart_neighbor_ramp_episodes",
             "blb_v3_warmstart_neighbor_max_mutations",
             "blb_v3_warmstart_neighbor_max_radius",
+            "blb_v3_warmstart_bias_gain",
             "blb_v3_ent_coef",
             "blb_v3_ent_coef_ramp_episodes",
             '("ent_coef_ramp_episodes", "blb_v3_ent_coef_ramp_episodes")',
@@ -996,10 +1039,16 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "terminal_metric1_std: float = 0.0",
             "terminal_metric2_std: float = 0.0",
             "terminal_stab_violation: float = 0.0",
+            "terminal_bits_gain: float = 0.0",
+            "terminal_k_gain: float = 0.0",
+            "terminal_fusion_gain: float = 0.0",
+            "terminal_pareto_event_kind: str = \"\"",
             "safe_neighbor_active: bool = False",
             "terminal_priority=int(record.terminal_priority)",
             "terminal_metric2_mean=float(record.terminal_metric2_mean)",
             "terminal_stab_violation=float(record.terminal_stab_violation)",
+            "terminal_bits_gain=float(record.terminal_bits_gain)",
+            "terminal_pareto_event_kind=str(record.terminal_pareto_event_kind)",
             "safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count)",
         ):
             self.assertIn(needle, diagnostics + runner_src, msg=f"missing JSONL health field: {needle!r}")
@@ -1010,11 +1059,28 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
 
         src = Path("scripts/stage2_first10k_server_run.sh").read_text(encoding="utf-8")
         for needle in (
-            'NEIGHBOR_RAMP="${NEIGHBOR_RAMP:-6000}"',
-            'NEIGHBOR_MAX_MUTATIONS="${NEIGHBOR_MAX_MUTATIONS:-8}"',
+            'ANCHOR_EPISODES="${ANCHOR_EPISODES:-60}"',
+            'NEIGHBOR_RAMP="${NEIGHBOR_RAMP:-1800}"',
+            'NEIGHBOR_MAX_MUTATIONS="${NEIGHBOR_MAX_MUTATIONS:-12}"',
             'NEIGHBOR_MAX_RADIUS="${NEIGHBOR_MAX_RADIUS:-1}"',
+            'ENT_COEF="${ENT_COEF:-0.06}"',
+            'ENT_RAMP="${ENT_RAMP:-600}"',
+            'WARMSTART_BIAS_GAIN="${WARMSTART_BIAS_GAIN:-2.5}"',
+            '--blb-v3-warmstart-bias-gain "$WARMSTART_BIAS_GAIN"',
         ):
             self.assertIn(needle, src)
+        self.assertNotIn('NEIGHBOR_MAX_RADIUS="${NEIGHBOR_MAX_RADIUS:-2}"', src)
+        self.assertNotIn('NEIGHBOR_MAX_RADIUS="${NEIGHBOR_MAX_RADIUS:-3}"', src)
+
+    def test_first10k_server_run_aborts_on_git_pull_failure(self):
+        """Server runs must not continue experiments from a stale HEAD."""
+        from pathlib import Path
+
+        src = Path("scripts/stage2_first10k_server_run.sh").read_text(encoding="utf-8")
+        self.assertIn("timeout 180 git pull --ff-only", src)
+        self.assertIn('echo "[abort] git pull failed or timed out (rc=$PULL_RC); refusing to run on stale HEAD."', src)
+        self.assertIn('exit "$PULL_RC"', src)
+        self.assertNotIn("continuing with current HEAD", src)
 
     def test_first10k_monitor_tolerates_isolated_loss_cap(self):
         """User criterion allows isolated spikes; repeated caps still fail."""

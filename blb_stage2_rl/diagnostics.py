@@ -14,6 +14,11 @@ Files written
                               clip fraction, rolling window stats)
 * ``top_candidates.jsonl``  – the top-K best actions seen so far. Rewritten on
                               every periodic flush; sorted descending by reward.
+* ``pareto_frontier.jsonl`` – non-dominated candidates seen so far across
+                              quality/cost objectives. Rewritten on every
+                              periodic flush.
+* ``pareto_frontier.json``  – compact metadata plus the same frontier rows.
+* ``pareto_frontier.html``  – lightweight table for browser inspection.
 * ``first_invalid_counts.json`` – Counter of ``"L<ii>-B<b>"`` → how many
                               episodes hit their *first* invalid step at that
                               (layer, block) tile. Identifies persistent
@@ -79,6 +84,7 @@ Design notes
 from __future__ import annotations
 
 import heapq
+import hashlib
 import json
 import os
 import time
@@ -120,6 +126,13 @@ class EpisodeStats:
     terminal_stab_excess_m2: float = 0.0
     terminal_stab_excess_loss: float = 0.0
     terminal_stab_violation: float = 0.0
+    terminal_bits_gain: float = 0.0
+    terminal_k_gain: float = 0.0
+    terminal_fusion_gain: float = 0.0
+    terminal_cost_score: float = 0.0
+    terminal_pareto_event_kind: str = ""
+    terminal_pareto_action_hash: str = ""
+    terminal_pareto_frontier_removed: int = 0
     safe_neighbor_active: bool = False
     safe_neighbor_mutation_count: int = 0
     safe_neighbor_radius: int = 0
@@ -188,6 +201,9 @@ class RLDiagnosticsRecorder:
         self.episodes_path = os.path.join(self.output_dir, "episodes.jsonl")
         self.ppo_updates_path = os.path.join(self.output_dir, "ppo_updates.jsonl")
         self.top_path = os.path.join(self.output_dir, "top_candidates.jsonl")
+        self.pareto_jsonl_path = os.path.join(self.output_dir, "pareto_frontier.jsonl")
+        self.pareto_json_path = os.path.join(self.output_dir, "pareto_frontier.json")
+        self.pareto_html_path = os.path.join(self.output_dir, "pareto_frontier.html")
         self.first_inv_path = os.path.join(self.output_dir, "first_invalid_counts.json")
         self.action_hist_path = os.path.join(self.output_dir, "action_histogram.npz")
         self.summary_md_path = os.path.join(self.output_dir, "diagnostics_summary.md")
@@ -202,6 +218,8 @@ class RLDiagnosticsRecorder:
         )
         # heap entries: (reward, tiebreaker, payload_dict). min-heap by reward.
         self._top_candidates: List = []
+        self._pareto_candidates: List[Dict[str, Any]] = []
+        self._pareto_seen_hashes: set = set()
         self._next_topcand_id = 0
         self._last_episode_stats: Optional[EpisodeStats] = None
         self._all_episode_returns: List[float] = []
@@ -305,8 +323,28 @@ class RLDiagnosticsRecorder:
                 "invalid_steps": int(episode_stats.invalid_steps),
                 "total_bits": int(episode_stats.total_bits),
                 "fusion_count": int(episode_stats.fusion_count),
+                "terminal_priority": int(episode_stats.terminal_priority),
+                "terminal_loss_mean": float(episode_stats.terminal_loss_mean),
+                "terminal_loss_std": float(episode_stats.terminal_loss_std),
+                "terminal_metric1_mean": float(episode_stats.terminal_metric1_mean),
+                "terminal_metric2_mean": float(episode_stats.terminal_metric2_mean),
+                "terminal_metric1_std": float(episode_stats.terminal_metric1_std),
+                "terminal_metric2_std": float(episode_stats.terminal_metric2_std),
+                "terminal_bits_gain": float(episode_stats.terminal_bits_gain),
+                "terminal_k_gain": float(episode_stats.terminal_k_gain),
+                "terminal_fusion_gain": float(episode_stats.terminal_fusion_gain),
+                "terminal_cost_score": float(episode_stats.terminal_cost_score),
+                "terminal_pareto_event_kind": str(episode_stats.terminal_pareto_event_kind),
+                "terminal_pareto_action_hash": str(episode_stats.terminal_pareto_action_hash),
+                "terminal_pareto_frontier_removed": int(episode_stats.terminal_pareto_frontier_removed),
+                "safe_neighbor_active": bool(episode_stats.safe_neighbor_active),
+                "safe_neighbor_mutation_count": int(episode_stats.safe_neighbor_mutation_count),
+                "safe_neighbor_radius": int(episode_stats.safe_neighbor_radius),
                 "action_vec": np.asarray(full_action_vec, dtype=int).tolist(),
             }
+            if not payload["terminal_pareto_action_hash"]:
+                payload["terminal_pareto_action_hash"] = _action_vec_hash(payload["action_vec"])
+            self._consider_pareto_candidate(payload)
             entry = (
                 float(episode_stats.total_reward),
                 self._next_topcand_id,
@@ -459,6 +497,10 @@ class RLDiagnosticsRecorder:
         except Exception as exc:
             self.log(f"  [diag][warning] top_candidates.jsonl write failed: {exc}")
         try:
+            self._write_pareto_artifacts()
+        except Exception as exc:
+            self.log(f"  [diag][warning] pareto frontier write failed: {exc}")
+        try:
             self._write_summary_md()
         except Exception as exc:
             self.log(f"  [diag][warning] diagnostics_summary.md write failed: {exc}")
@@ -470,6 +512,135 @@ class RLDiagnosticsRecorder:
     # ------------------------------------------------------------------
     # Summary.md writer
     # ------------------------------------------------------------------
+
+    def _consider_pareto_candidate(self, payload: Mapping[str, Any]) -> None:
+        candidate = dict(payload)
+        if int(candidate.get("terminal_priority", 0) or 0) != 3:
+            return
+        if int(candidate.get("invalid_steps", 0) or 0) != 0:
+            return
+        action_hash = str(candidate.get("terminal_pareto_action_hash", "") or "")
+        if action_hash and action_hash in self._pareto_seen_hashes:
+            return
+        if action_hash:
+            self._pareto_seen_hashes.add(action_hash)
+        if any(_pareto_dominates(existing, candidate) for existing in self._pareto_candidates):
+            return
+        self._pareto_candidates = [
+            existing
+            for existing in self._pareto_candidates
+            if not _pareto_dominates(candidate, existing)
+        ]
+        self._pareto_candidates.append(candidate)
+
+    def _sorted_pareto_candidates(self) -> List[Dict[str, Any]]:
+        rows = [dict(row) for row in self._pareto_candidates]
+        rows.sort(key=lambda r: (
+            -float(r.get("terminal_fusion_gain", 0.0)),
+            -float(r.get("terminal_k_gain", 0.0)),
+            -float(r.get("terminal_bits_gain", 0.0)),
+            -float(r.get("total_reward", -1e9)),
+            int(r.get("episode", 10**12)),
+        ))
+        for rank, row in enumerate(rows, start=1):
+            row["pareto_rank"] = int(rank)
+            if self._slots_view_builder is not None and "action_vec" in row:
+                try:
+                    slots_view = list(self._slots_view_builder(np.asarray(
+                        row["action_vec"], dtype=int,
+                    )))
+                    row["slots"] = slots_view
+                    row["diff_vs_baseline"] = self._diff_against_baseline(slots_view)
+                except Exception:
+                    pass
+        return rows
+
+    def _write_pareto_artifacts(self) -> None:
+        rows = self._sorted_pareto_candidates()
+        tmp = self.pareto_jsonl_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+        os.replace(tmp, self.pareto_jsonl_path)
+        _atomic_json_dump(self.pareto_json_path, {
+            "schema_version": "blb_stage2_pareto_frontier_v1",
+            "source": "blb_v3_sequential_runtime_diagnostics",
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "meta": dict(self._meta),
+            "objectives": {
+                "maximize": [
+                    "terminal_fusion_gain",
+                    "terminal_k_gain",
+                    "terminal_bits_gain",
+                ],
+            },
+            "dominance_note": (
+                "Only P3 candidates enter this archive. A candidate dominates "
+                "another only when it is no worse on fusion_gain, k_gain, and "
+                "bits_gain, and strictly better on at least one axis."
+            ),
+            "count": int(len(rows)),
+            "frontier": rows,
+        })
+        self._write_pareto_html(rows)
+
+    def _write_pareto_html(self, rows: List[Mapping[str, Any]]) -> None:
+        def esc(value: Any) -> str:
+            return (
+                str(value)
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;")
+            )
+
+        cols = [
+            "pareto_rank",
+            "episode",
+            "terminal_priority",
+            "invalid_steps",
+            "terminal_metric1_mean",
+            "terminal_metric2_mean",
+            "terminal_loss_mean",
+            "terminal_fusion_gain",
+            "terminal_k_gain",
+            "terminal_bits_gain",
+            "terminal_cost_score",
+            "terminal_pareto_event_kind",
+            "total_bits",
+            "total_reward",
+            "safe_neighbor_mutation_count",
+            "safe_neighbor_radius",
+        ]
+        lines = [
+            "<!doctype html>",
+            "<html><head><meta charset=\"utf-8\">",
+            "<title>BLB Stage-2 Pareto Frontier</title>",
+            "<style>",
+            "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;margin:24px;color:#111827}",
+            "table{border-collapse:collapse;font-size:13px}th,td{border:1px solid #d1d5db;padding:6px 8px;text-align:right}",
+            "th{background:#f3f4f6;position:sticky;top:0}td:nth-child(2),th:nth-child(2){text-align:left}",
+            "code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}",
+            "</style></head><body>",
+            "<h1>BLB Stage-2 Pareto Frontier</h1>",
+            "<p>Non-dominated runtime candidates across quality, stability, and cost objectives.</p>",
+            "<table><thead><tr>",
+        ]
+        lines.extend(f"<th>{esc(c)}</th>" for c in cols)
+        lines.append("</tr></thead><tbody>")
+        for row in rows:
+            lines.append("<tr>")
+            for col in cols:
+                value = row.get(col, "")
+                if isinstance(value, float):
+                    value = f"{value:.6g}"
+                lines.append(f"<td>{esc(value)}</td>")
+            lines.append("</tr>")
+        lines.extend(["</tbody></table>", "</body></html>"])
+        tmp = self.pareto_html_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        os.replace(tmp, self.pareto_html_path)
 
     def _write_summary_md(self) -> None:
         last = self._last_episode_stats
@@ -805,6 +976,9 @@ class RLDiagnosticsRecorder:
         lines.append("| `episodes.jsonl` | 完整 per-episode 记录（append-only） |")
         lines.append("| `ppo_updates.jsonl` | 完整 per-PPO-update 记录（append-only） |")
         lines.append(f"| `top_candidates.jsonl` | Top-{self.top_k} 训练期 best：含每条候选的完整 `slots` 列表（人类可读） |")
+        lines.append("| `pareto_frontier.jsonl` | 训练期非支配候选（质量 / 稳定性 / cost 多目标） |")
+        lines.append("| `pareto_frontier.json` | Pareto frontier 元数据 + 完整候选列表 |")
+        lines.append("| `pareto_frontier.html` | 可直接用浏览器打开的 Pareto frontier 表格 |")
         lines.append("| `first_invalid_counts.json` | (L, B) → 首次 invalid 计数 |")
         lines.append("| `action_histogram.npz` | (num_slots, max_levels) 频次矩阵 |")
         lines.append("| `baseline_action_vec.json` | static_skeletons baseline 的完整 `slots` 视图（参照系） |")
@@ -842,3 +1016,47 @@ def _atomic_json_dump(path: str, obj: Any) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2, default=str)
     os.replace(tmp, path)
+
+
+def _pareto_dominates(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
+    objectives = [
+        ("terminal_fusion_gain", "max"),
+        ("terminal_k_gain", "max"),
+        ("terminal_bits_gain", "max"),
+    ]
+    strictly_better = False
+    for key, direction in objectives:
+        av = _pareto_number(a.get(key), direction)
+        bv = _pareto_number(b.get(key), direction)
+        if direction == "min":
+            if av > bv:
+                return False
+            if av < bv:
+                strictly_better = True
+        else:
+            if av < bv:
+                return False
+            if av > bv:
+                strictly_better = True
+    return strictly_better
+
+
+def _action_vec_hash(action_vec: Any) -> str:
+    if hasattr(action_vec, "tolist"):
+        action_vec = action_vec.tolist()
+    payload = json.dumps(
+        [int(x) for x in np.asarray(action_vec, dtype=int).reshape(-1).tolist()],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _pareto_number(value: Any, direction: str) -> float:
+    try:
+        out = float(value)
+    except Exception:
+        return float("inf") if direction == "min" else float("-inf")
+    if not np.isfinite(out):
+        return float("inf") if direction == "min" else float("-inf")
+    return out

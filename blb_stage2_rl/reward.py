@@ -1,4 +1,4 @@
-"""BLB Stage 2 RL 奖励函数（v3：m1+m2 双指标 + 加权 cost + 多维 stability）。
+"""BLB Stage 2 RL 奖励函数（v3：m1+m2 双指标 + Pareto-only P3 cost）。
 
 2026-05-20 v3 重写（保留 ADR-007 的 clipped-shaping + tier-bonus 框架）：
 
@@ -7,14 +7,14 @@
     两者归一化后的均值。
   * 稳定性 gate 看 m1_std、m2_std、loss_std 三个方差，按 30:30:1 加权
     （和指标重要性一致：m1=m2>>loss）。
-  * cost_score 修了两个 bug：
-      - fusion 符号原本是 ``baseline - action``（少 fusion 算好），翻转为
-        ``action - baseline``（多 fusion 算好）。
-      - 三项默认等权 → 改为 ``fusion:k:bits = 30:30:1``，对齐用户在
-        CKKS+MPC 语义下的真实重要性。
-      - typical_bits 默认 1.0（无效）→ 由 caller 动态写为
-        ``baseline.total_bits_sum / num_layers`` (约 baseline 的 1/12)，
-        让"省一个 block 的 bits"对应 bits_norm ≈ 1.0。
+  * 顺序 Stage-2 路径的 cost_score 改为 Pareto-only：
+      - 只有 P3（metric_ok 且 stab_ok 且非 invalid）进入 cost archive。
+      - objective vector 直接最大化 raw gains：
+        ``fusion_gain = action_fusion - baseline_fusion``、
+        ``k_gain = baseline_avg_k - action_avg_k``、
+        ``bits_gain = baseline_bits - action_bits``。
+      - PPO 仍需要 scalar；scalar 只来自 frontier/dominance/duplicate 事件，
+        不用 ``typical_*`` 或人工加权标量决定 P3 cost 排名。
   * 优先级硬序：tier_bonus 0/+20/+40 锁住 metric_ok / stab_ok 三档，
     cost_score 总 ≤ 1.0 永远拉不动 tier 边界，所以 cost 不可能压过指标
     和稳定性 —— 即便所有 cost 维度同时打满。
@@ -32,15 +32,13 @@
   combined_stab_excess = (30·norm_m1 + 30·norm_m2 + 1·norm_loss) / 61
   stability_penalty = -lambda_stab · combined_stab_excess
 
-  cost_score = (30·fusion_norm + 30·k_norm + 1·bits_norm) / 61
-      bits_norm   = (baseline.total_bits_sum - opt.total_bits_sum) / typical_bits
-      fusion_norm = (opt.fusion_count - baseline.fusion_count) / typical_fusion
-      k_norm      = (baseline.avg_k - action_avg_k) / typical_k
+  P3 cost_vector = (fusion_gain, k_gain, bits_gain)
+  pareto_event ∈ {frontier_expansion, frontier_member, dominated, duplicate}
 
   metric_ok = (acc_violation == 0) AND not invalid
   stab_ok = (combined_stab_excess == 0)
 
-  shaping_raw = margin_acc + invalid_term + (cost_score + stab_penalty IF metric_ok ELSE 0)
+  shaping_raw = margin_acc + invalid_term + (pareto_cost_score IF P3 ELSE 0) + (stab_penalty IF metric_ok ELSE 0)
   shaping_clipped = clip(shaping_raw, -5, +5)
   tier_bonus = 20·metric_ok + 20·(metric_ok AND stab_ok)
   total = shaping_clipped + tier_bonus
@@ -256,6 +254,9 @@ class RewardBreakdown:
     stab_excess_m2: float = 0.0
     stab_excess_loss: float = 0.0
     fusion_gain: float = 0.0
+    pareto_event_kind: str = ""
+    pareto_action_hash: str = ""
+    pareto_frontier_removed: int = 0
     # 兼容字段（runner / 诊断 / persistence 仍在读）
     r_bits: float = 0.0
     r_fusion: float = 0.0
@@ -271,6 +272,141 @@ class RewardBreakdown:
     optimizer_diagnostic_terms: Any = field(default_factory=lambda: ["q_bits", "q_head_bits", "q_tail_bits"])
     mpc_truncation_cost_enabled: bool = True
     mpc_truncation_term: str = "avg_k"
+
+
+@dataclass(frozen=True)
+class ParetoCostEntry:
+    """One raw-gain point on the P3 cost Pareto frontier."""
+    action_hash: str
+    fusion_gain: float
+    k_gain: float
+    bits_gain: float
+
+    @property
+    def gains(self) -> tuple:
+        return (self.fusion_gain, self.k_gain, self.bits_gain)
+
+
+@dataclass(frozen=True)
+class ParetoCostEvent:
+    """Bounded scalar shaping emitted by :class:`ParetoCostArchive.add`."""
+    kind: str
+    shaping: float
+    action_hash: str
+    entry: Optional[ParetoCostEntry] = None
+    removed: int = 0
+
+
+class ParetoCostArchive:
+    """P3-only Pareto archive over raw cost gains.
+
+    Ranking maximizes ``fusion_gain``, ``k_gain`` and ``bits_gain`` directly.
+    ``BaselineCostStats.typical_*`` normalizers may be supplied by callers for
+    surrounding reward code, but this archive deliberately does not read them.
+    """
+
+    def __init__(
+            self,
+            *,
+            baseline: Optional[BaselineCostStats] = None,
+            max_abs_shaping: float = 0.25,
+            frontier_member_shaping: float = 0.025,
+            duplicate_shaping: float = -0.005,
+            dominated_shaping: float = -0.05,
+            expansion_base_shaping: float = 0.10,
+            expansion_removed_bonus: float = 0.05,
+            ) -> None:
+        self.baseline = baseline
+        self.max_abs_shaping = abs(float(max_abs_shaping))
+        self.frontier_member_shaping = float(frontier_member_shaping)
+        self.duplicate_shaping = float(duplicate_shaping)
+        self.dominated_shaping = float(dominated_shaping)
+        self.expansion_base_shaping = float(expansion_base_shaping)
+        self.expansion_removed_bonus = float(expansion_removed_bonus)
+        self._frontier: list[ParetoCostEntry] = []
+        self._seen_hashes: set[str] = set()
+
+    @property
+    def frontier(self) -> tuple:
+        return tuple(self._frontier)
+
+    def add(self, action_hash: str, breakdown: RewardBreakdown) -> ParetoCostEvent:
+        action_hash = str(action_hash)
+        if not self._is_p3_candidate(breakdown):
+            return ParetoCostEvent(
+                kind="excluded",
+                shaping=0.0,
+                action_hash=action_hash,
+            )
+        if action_hash in self._seen_hashes:
+            return ParetoCostEvent(
+                kind="duplicate",
+                shaping=self._bounded(self.duplicate_shaping),
+                action_hash=action_hash,
+            )
+
+        entry = ParetoCostEntry(
+            action_hash=action_hash,
+            fusion_gain=_safe_float(getattr(breakdown, "fusion_gain", 0.0), 0.0),
+            k_gain=_safe_float(getattr(breakdown, "k_drop", 0.0), 0.0),
+            bits_gain=_safe_float(getattr(breakdown, "bits_drop", 0.0), 0.0),
+        )
+        self._seen_hashes.add(action_hash)
+
+        if any(self._dominates(existing, entry) for existing in self._frontier):
+            return ParetoCostEvent(
+                kind="dominated",
+                shaping=self._bounded(self.dominated_shaping),
+                action_hash=action_hash,
+                entry=entry,
+            )
+
+        kept = []
+        removed = 0
+        for existing in self._frontier:
+            if self._dominates(entry, existing):
+                removed += 1
+            else:
+                kept.append(existing)
+        kept.append(entry)
+        self._frontier = kept
+
+        if removed > 0 or len(self._frontier) == 1:
+            shaping = self.expansion_base_shaping + self.expansion_removed_bonus * float(removed)
+            kind = "frontier_expansion"
+        else:
+            shaping = self.frontier_member_shaping
+            kind = "frontier_member"
+        return ParetoCostEvent(
+            kind=kind,
+            shaping=self._bounded(shaping),
+            action_hash=action_hash,
+            entry=entry,
+            removed=removed,
+        )
+
+    def _bounded(self, value: float) -> float:
+        if self.max_abs_shaping <= 0.0:
+            return 0.0
+        return float(np.clip(float(value), -self.max_abs_shaping, self.max_abs_shaping))
+
+    @staticmethod
+    def _is_p3_candidate(breakdown: RewardBreakdown) -> bool:
+        return (
+            int(getattr(breakdown, "priority", 0)) == 3
+            and not bool(getattr(breakdown, "invalid", False))
+            and bool(getattr(breakdown, "metric_ok", False))
+            and bool(getattr(breakdown, "stab_ok", False))
+        )
+
+    @staticmethod
+    def _dominates(left: ParetoCostEntry, right: ParetoCostEntry) -> bool:
+        left_gains = left.gains
+        right_gains = right.gains
+        return (
+            all(l >= r for l, r in zip(left_gains, right_gains))
+            and any(l > r for l, r in zip(left_gains, right_gains))
+        )
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -323,6 +459,8 @@ def compute_reward(
         acc_threshold_m2: Optional[float] = None,
         stab_threshold: Optional[float] = None,
         any_invalid: Optional[bool] = None,
+        pareto_archive: Optional[ParetoCostArchive] = None,
+        action_hash: Optional[str] = None,
         ) -> RewardBreakdown:
     """v3 clipped-shaping + tier-bonus reward with m1+m2 gate and 30:30:1 cost weights.
 
@@ -339,6 +477,10 @@ def compute_reward(
                            （baseline.X_std*(1+stab_tol)+stab_floor），传入的
                            ``stab_threshold`` 仅 override loss 那一项以兼容老 caller
         any_invalid:       优化器 invalid_chain 显式覆盖；None=直接读 signals
+        pareto_archive:    可选 P3-only cost archive。传入后，P3 cost scalar
+                           只来自 Pareto event shaping，不读取 typical_* 排名。
+        action_hash:       Pareto archive 的候选身份；与 pareto_archive 同时传入
+                           才启用 Pareto-only cost shaping。
 
     Returns:
         ``RewardBreakdown``
@@ -470,9 +612,42 @@ def compute_reward(
     metric_ok = (combined_acc_violation == 0.0) and not invalid
     stab_ok = (combined_stab_excess == 0.0)
 
-    # Cost & stability only contribute to shaping when metric_ok — preserves
-    # ADR-002 hard-priority intent ("don't let cost compensate acc failure").
-    effective_cost_score = cost_score_raw if metric_ok else 0.0
+    # Priority label follows the hard-ordering contract: invalid/accuracy
+    # failure is P1, stability failure after accuracy passes is P2, and only
+    # accuracy+stability-passing candidates enter P3 cost search.
+    if invalid or combined_acc_violation > 0:
+        priority = 1
+    elif combined_stab_excess > 0:
+        priority = 2
+    else:
+        priority = 3
+
+    # === 4.5. Optional Pareto-only P3 cost shaping ===
+    # Cost must never help P1/P2 candidates. When a Pareto archive is wired
+    # (the sequential Stage-2 path), the three raw gains are only converted to
+    # PPO's required scalar through frontier/dominance events. The weighted
+    # typical_* scalar above is retained as a legacy fallback for code paths
+    # that have not been switched to a stateful archive yet.
+    pareto_event: Optional[ParetoCostEvent] = None
+    use_pareto = pareto_archive is not None and action_hash is not None
+    if use_pareto:
+        pareto_candidate = RewardBreakdown(
+            reward=0.0,
+            priority=int(priority),
+            invalid=bool(invalid),
+            metric_ok=bool(metric_ok),
+            stab_ok=bool(stab_ok),
+            fusion_gain=float(fusion_gain),
+            bits_drop=float(bits_gain),
+            k_drop=float(k_gain),
+        )
+        pareto_event = pareto_archive.add(str(action_hash), pareto_candidate)
+        cost_score_raw = float(pareto_event.shaping) if priority == 3 else 0.0
+
+    # Cost & stability only contribute to shaping when metric_ok. Cost is even
+    # stricter: it only contributes in P3 (metric_ok AND stab_ok), matching the
+    # "accuracy/stability as hard constraints, cost only after both pass" rule.
+    effective_cost_score = cost_score_raw if (metric_ok and stab_ok) else 0.0
     effective_stab_penalty = stability_penalty if metric_ok else 0.0
     invalid_term = -float(weights.invalid_penalty) if invalid else 0.0
 
@@ -496,24 +671,16 @@ def compute_reward(
 
     total = float(shaping_clipped + tier_bonus)
 
-    # === 7. priority label (for reporting) ===
-    if combined_acc_violation > 0:
-        priority = 1
-    elif combined_stab_excess > 0:
-        priority = 2
-    else:
-        priority = 3
-
     # Per-axis raw cost components for downstream diagnostics
     r_fusion = float(
         weights.cost_w_fusion * fusion_norm / cost_total_w * weights.cost_weight
-    ) if metric_ok else 0.0
+    ) if (metric_ok and stab_ok and not use_pareto) else 0.0
     r_k = float(
         weights.cost_w_k * k_norm / cost_total_w * weights.cost_weight
-    ) if metric_ok else 0.0
+    ) if (metric_ok and stab_ok and not use_pareto) else 0.0
     r_bits = float(
         weights.cost_w_bits * bits_norm / cost_total_w * weights.cost_weight
-    ) if metric_ok else 0.0
+    ) if (metric_ok and stab_ok and not use_pareto) else 0.0
 
     return RewardBreakdown(
         reward=float(total),
@@ -540,6 +707,9 @@ def compute_reward(
         stab_excess_m2=float(stab_excess_m2),
         stab_excess_loss=float(stab_excess_loss),
         fusion_gain=float(fusion_gain),
+        pareto_event_kind=str(getattr(pareto_event, "kind", "") or ""),
+        pareto_action_hash=str(action_hash or ""),
+        pareto_frontier_removed=int(getattr(pareto_event, "removed", 0) or 0),
         # legacy / back-compat fields
         r_bits=r_bits,
         r_fusion=r_fusion,

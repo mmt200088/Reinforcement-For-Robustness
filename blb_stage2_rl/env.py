@@ -38,6 +38,7 @@ from .action_space import (
     make_all_max_action_vector,
     parse_config_name,
 )
+from .candidate_store import action_hash
 from .optimizer_cost import evaluate_action_for_cost
 from .probe_runner import ProbeRunner, format_diagnostics_line
 from .reward import (
@@ -217,6 +218,7 @@ class BLBStage2Env:
         # route to the runner instead of (self.bridge, self.model). Single-GPU
         # runs leave this None and the existing path runs bitwise-unchanged.
         self.probe_runner = probe_runner
+        self.pareto_cost_archive = None
         # Counter for derive_probe_base_seed; bumped every action eval so two
         # consecutive actions in the same episode get different seed streams.
         self._probe_eval_counter: int = 0
@@ -408,6 +410,7 @@ class BLBStage2Env:
         is_optimizer_baseline_action = bool(
             np.array_equal(action_vec, make_all_max_action_vector(self.num_layers))
         )
+        action_vec_hash = action_hash(action_vec)
 
         degree_sync = self.sync_degree_vectors_from_model()
         cost_eval = evaluate_action_for_cost(
@@ -549,8 +552,11 @@ class BLBStage2Env:
                 acc_threshold_m2=self.acc_threshold_m2,
                 stab_threshold=self.stab_threshold,
                 any_invalid=True,
+                pareto_archive=self.pareto_cost_archive,
+                action_hash=action_vec_hash,
             )
             info["reward_breakdown"] = breakdown
+            info["action_hash"] = action_vec_hash
             info["metrics"] = metrics
             info["forward_ran"] = False
             info["forward_skipped_reason"] = "any_invalid_chain"
@@ -599,8 +605,11 @@ class BLBStage2Env:
                 acc_threshold_m2=self.acc_threshold_m2,
                 stab_threshold=self.stab_threshold,
                 any_invalid=True,
+                pareto_archive=self.pareto_cost_archive,
+                action_hash=action_vec_hash,
             )
             info["reward_breakdown"] = breakdown
+            info["action_hash"] = action_vec_hash
             info["error"] = f"BLB apply failed: {exc}"
             info["invalid"] = True
             info["apply_failed"] = True
@@ -633,8 +642,11 @@ class BLBStage2Env:
                 acc_threshold_m2=self.acc_threshold_m2,
                 stab_threshold=self.stab_threshold,
                 any_invalid=True,
+                pareto_archive=self.pareto_cost_archive,
+                action_hash=action_vec_hash,
             )
             info["reward_breakdown"] = breakdown
+            info["action_hash"] = action_vec_hash
             info["error"] = f"BLB eval failed: {exc}"
             info["invalid"] = True
             info["eval_failed"] = True
@@ -660,9 +672,12 @@ class BLBStage2Env:
             acc_threshold_m2=self.acc_threshold_m2,
             stab_threshold=self.stab_threshold,
             any_invalid=any_invalid,
+            pareto_archive=self.pareto_cost_archive,
+            action_hash=action_vec_hash,
         )
 
         info["reward_breakdown"] = breakdown
+        info["action_hash"] = action_vec_hash
         info["metrics"] = metrics
 
         # state 更新

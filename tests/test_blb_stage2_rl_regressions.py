@@ -556,9 +556,8 @@ class BLBRewardRegressionTests(unittest.TestCase):
         self.assertGreaterEqual(accuracy_breakdown.reward, -10.0)
 
         # --- Case 2: acc OK but optimizer invalid ---
-        # acc_violation=0 but invalid → metric_ok=False → tier_bonus=0.
-        # The priority *label* is still 3 (since acc & stab gates pass),
-        # but metric_ok is False so no tier bonus.
+        # invalid is a hard P1 failure under the current reward contract:
+        # metric_ok=False, priority=1, tier_bonus=0.
         cost_breakdown = compute_reward(
             EpisodeMetrics(metric1_mean=0.9, loss_mean=0.2, loss_std=0.1),
             type("Signals", (), {"any_invalid": True, "total_bits_sum": 200, "total_fusion_count": 0})(),
@@ -570,7 +569,7 @@ class BLBRewardRegressionTests(unittest.TestCase):
             any_invalid=True,
         )
         self.assertTrue(cost_breakdown.invalid)
-        self.assertEqual(cost_breakdown.priority, 3)
+        self.assertEqual(cost_breakdown.priority, 1)
         self.assertFalse(cost_breakdown.metric_ok)
         self.assertEqual(cost_breakdown.tier_bonus, 0.0)
         # invalid_penalty contributes -5 to shaping; clipped at -5.
@@ -990,8 +989,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertTrue(done)
         self.assertTrue(info["invalid"])
         # When Rescale_optimizer reports any_invalid, env.step short-circuits the
-        # model forward and emits a priority-3 cost-only reward with the
-        # invalid_penalty docked. This was the behaviour the user asked for on
+        # model forward and emits a P1 invalid reward with the invalid_penalty
+        # docked. This was the behaviour the user asked for on
         # 2026-05-17 ("出现 invalid chain 再去做推理就没有意义了") and is
         # documented in CLAUDE.md → "Sequential invalid-action mask + skip-forward".
         # The reward priority / invalid_penalty contract is preserved; only the
@@ -999,7 +998,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertFalse(info["forward_ran"])
         self.assertEqual(model.forward_count, 0)
         self.assertEqual(info.get("forward_skipped_reason"), "any_invalid_chain")
-        self.assertEqual(info["reward_breakdown"].priority, 3)
+        self.assertEqual(info["reward_breakdown"].priority, 1)
         self.assertTrue(info["reward_breakdown"].invalid)
         self.assertEqual(info["reward_breakdown"].r_invalid, -30.0)
 

@@ -489,6 +489,13 @@ class EpisodeRecord:
     terminal_stab_excess_m2: float = 0.0
     terminal_stab_excess_loss: float = 0.0
     terminal_stab_violation: float = 0.0
+    terminal_bits_gain: float = 0.0
+    terminal_k_gain: float = 0.0
+    terminal_fusion_gain: float = 0.0
+    terminal_cost_score: float = 0.0
+    terminal_pareto_event_kind: str = ""
+    terminal_pareto_action_hash: str = ""
+    terminal_pareto_frontier_removed: int = 0
     safe_neighbor_active: bool = False
     safe_neighbor_mutation_count: int = 0
     safe_neighbor_radius: int = 0
@@ -643,6 +650,13 @@ def train_sequential(
         terminal_stab_excess_m2_val = 0.0
         terminal_stab_excess_loss_val = 0.0
         terminal_stab_violation_val = 0.0
+        terminal_bits_gain_val = 0.0
+        terminal_k_gain_val = 0.0
+        terminal_fusion_gain_val = 0.0
+        terminal_cost_score_val = 0.0
+        terminal_pareto_event_kind_val = ""
+        terminal_pareto_action_hash_val = ""
+        terminal_pareto_frontier_removed_val = 0
 
         # 2026-05-18 (rdv2 hotfix): forced-baseline anchor episodes. The
         # warmstart bias on the action head alone was inadequate — only 5/13
@@ -789,6 +803,13 @@ def train_sequential(
                     terminal_stab_excess_m2_val = float(getattr(term_breakdown, "stab_excess_m2", 0.0) or 0.0)
                     terminal_stab_excess_loss_val = float(getattr(term_breakdown, "stab_excess_loss", 0.0) or 0.0)
                     terminal_stab_violation_val = float(getattr(term_breakdown, "stab_violation", 0.0) or 0.0)
+                    terminal_bits_gain_val = float(getattr(term_breakdown, "bits_drop", 0.0) or 0.0)
+                    terminal_k_gain_val = float(getattr(term_breakdown, "k_drop", 0.0) or 0.0)
+                    terminal_fusion_gain_val = float(getattr(term_breakdown, "fusion_gain", 0.0) or 0.0)
+                    terminal_cost_score_val = float(getattr(term_breakdown, "cost_score", 0.0) or 0.0)
+                    terminal_pareto_event_kind_val = str(getattr(term_breakdown, "pareto_event_kind", "") or "")
+                    terminal_pareto_action_hash_val = str(getattr(term_breakdown, "pareto_action_hash", "") or "")
+                    terminal_pareto_frontier_removed_val = int(getattr(term_breakdown, "pareto_frontier_removed", 0) or 0)
                 if term_metrics is not None:
                     terminal_loss_mean_val = float(getattr(term_metrics, "loss_mean", 0.0) or 0.0)
                     terminal_loss_std_val = float(getattr(term_metrics, "loss_std", 0.0) or 0.0)
@@ -968,6 +989,13 @@ def train_sequential(
                 terminal_stab_excess_m2_val = float(getattr(term_breakdown, "stab_excess_m2", 0.0) or 0.0)
                 terminal_stab_excess_loss_val = float(getattr(term_breakdown, "stab_excess_loss", 0.0) or 0.0)
                 terminal_stab_violation_val = float(getattr(term_breakdown, "stab_violation", 0.0) or 0.0)
+                terminal_bits_gain_val = float(getattr(term_breakdown, "bits_drop", 0.0) or 0.0)
+                terminal_k_gain_val = float(getattr(term_breakdown, "k_drop", 0.0) or 0.0)
+                terminal_fusion_gain_val = float(getattr(term_breakdown, "fusion_gain", 0.0) or 0.0)
+                terminal_cost_score_val = float(getattr(term_breakdown, "cost_score", 0.0) or 0.0)
+                terminal_pareto_event_kind_val = str(getattr(term_breakdown, "pareto_event_kind", "") or "")
+                terminal_pareto_action_hash_val = str(getattr(term_breakdown, "pareto_action_hash", "") or "")
+                terminal_pareto_frontier_removed_val = int(getattr(term_breakdown, "pareto_frontier_removed", 0) or 0)
             if term_metrics is not None:
                 terminal_loss_mean_val = float(getattr(term_metrics, "loss_mean", 0.0) or 0.0)
                 terminal_loss_std_val = float(getattr(term_metrics, "loss_std", 0.0) or 0.0)
@@ -1008,6 +1036,13 @@ def train_sequential(
             terminal_stab_excess_m2=float(terminal_stab_excess_m2_val),
             terminal_stab_excess_loss=float(terminal_stab_excess_loss_val),
             terminal_stab_violation=float(terminal_stab_violation_val),
+            terminal_bits_gain=float(terminal_bits_gain_val),
+            terminal_k_gain=float(terminal_k_gain_val),
+            terminal_fusion_gain=float(terminal_fusion_gain_val),
+            terminal_cost_score=float(terminal_cost_score_val),
+            terminal_pareto_event_kind=str(terminal_pareto_event_kind_val),
+            terminal_pareto_action_hash=str(terminal_pareto_action_hash_val),
+            terminal_pareto_frontier_removed=int(terminal_pareto_frontier_removed_val),
             safe_neighbor_active=bool(neighbor_mask_active),
             safe_neighbor_mutation_count=int(len(neighbor_selected_offsets)),
             safe_neighbor_radius=int(neighbor_radius if neighbor_mask_active else 0),
@@ -1193,7 +1228,7 @@ def run_sequential_via_runner(
         RLDiagnosticsRecorder,
     )
     from .env import BLBStage2Env, BLBStage2EnvConfig
-    from .reward import BaselineCostStats, RewardWeights
+    from .reward import BaselineCostStats, ParetoCostArchive, RewardWeights
     from .persistence import (
         BLBRewardCrashWatcher,
         BLBStatusBoard,
@@ -1333,6 +1368,7 @@ def run_sequential_via_runner(
             probe_batch_count=train_cfg.probe_batch_count,
         ),
     )
+    base_env.pareto_cost_archive = None
     base_env.sync_degree_vectors_from_model()
 
     # ---------- 3.5) Multi-GPU reward-probe runner (opt-in) ----------
@@ -1384,11 +1420,10 @@ def run_sequential_via_runner(
     baseline_clean_metric1 = float(baseline_metrics.metric1_mean)
     baseline_clean_metric2 = float(baseline_metrics.metric2_mean)
 
-    # v3 cost path: the user spec says typical_bits_drop ≈ baseline / num_layers
-    # (saving "one layer's worth of bits" → bits_norm ≈ 1.0). Override the
-    # random-sample estimate with this structural normalizer so bits / fusion / k
-    # weights sit at the user-specified 1 / 30 / 30 ratio. typical_fusion (12) and
-    # typical_k_drop (5 = K_LEVELS range 8→13) are static structural maxima.
+    # Legacy weighted-cost fallback still has structural normalizers, but the
+    # active sequential reward path below wires ParetoCostArchive into
+    # compute_reward. That archive ranks P3 candidates only by raw
+    # fusion/k/bits gains and deliberately ignores typical_*.
     baseline.typical_bits_drop = float(
         max(baseline.total_bits_sum / max(int(base_env.num_layers), 1), 1.0)
     )
@@ -1534,6 +1569,12 @@ def run_sequential_via_runner(
         f"acc_threshold={base_env.acc_threshold:.4f}, stab_threshold={base_env.stab_threshold:.4f}",
         f"static_skeletons archive：{ss_baseline_obj.archive_path}",
     ])
+
+    base_env.pareto_cost_archive = ParetoCostArchive(baseline=baseline)
+    log(
+        f"  {bullet} Pareto-only cost reward：P1/P2 不入库；P3 用 "
+        f"(fusion_gain, k_gain, bits_gain) frontier/dominance 事件产生 bounded scalar。"
+    )
 
     # ---------- 5) sequential env + policy ----------
     seq_env_cfg = SequentialEnvConfig(
@@ -2000,6 +2041,14 @@ def run_sequential_via_runner(
                     f"combined={float(record.terminal_stab_violation):.6f}"
                 ),
                 (
+                    f"pareto_cost: event={record.terminal_pareto_event_kind or 'none'}  "
+                    f"score={float(record.terminal_cost_score):+.6f}  "
+                    f"fusion_gain={float(record.terminal_fusion_gain):+.3f}  "
+                    f"k_gain={float(record.terminal_k_gain):+.3f}  "
+                    f"bits_gain={float(record.terminal_bits_gain):+.3f}  "
+                    f"removed={int(record.terminal_pareto_frontier_removed)}"
+                ),
+                (
                     f"safe_neighbor: active={bool(record.safe_neighbor_active)}  "
                     f"mutated_offsets={int(record.safe_neighbor_mutation_count)}  "
                     f"radius={int(record.safe_neighbor_radius)}"
@@ -2134,6 +2183,11 @@ def run_sequential_via_runner(
                     "terminal_metric1_std": float(record.terminal_metric1_std),
                     "terminal_metric2_std": float(record.terminal_metric2_std),
                     "terminal_stab_violation": float(record.terminal_stab_violation),
+                    "terminal_bits_gain": float(record.terminal_bits_gain),
+                    "terminal_k_gain": float(record.terminal_k_gain),
+                    "terminal_fusion_gain": float(record.terminal_fusion_gain),
+                    "terminal_cost_score": float(record.terminal_cost_score),
+                    "terminal_pareto_event_kind": str(record.terminal_pareto_event_kind),
                     "best_reward": float(best_reward),
                     "safe_neighbor_active": bool(record.safe_neighbor_active),
                     "safe_neighbor_mutation_count": int(record.safe_neighbor_mutation_count),
@@ -2187,6 +2241,13 @@ def run_sequential_via_runner(
                     terminal_stab_excess_m2=float(record.terminal_stab_excess_m2),
                     terminal_stab_excess_loss=float(record.terminal_stab_excess_loss),
                     terminal_stab_violation=float(record.terminal_stab_violation),
+                    terminal_bits_gain=float(record.terminal_bits_gain),
+                    terminal_k_gain=float(record.terminal_k_gain),
+                    terminal_fusion_gain=float(record.terminal_fusion_gain),
+                    terminal_cost_score=float(record.terminal_cost_score),
+                    terminal_pareto_event_kind=str(record.terminal_pareto_event_kind),
+                    terminal_pareto_action_hash=str(record.terminal_pareto_action_hash),
+                    terminal_pareto_frontier_removed=int(record.terminal_pareto_frontier_removed),
                     safe_neighbor_active=bool(record.safe_neighbor_active),
                     safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count),
                     safe_neighbor_radius=int(record.safe_neighbor_radius),
