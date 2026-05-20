@@ -19,16 +19,16 @@ bash scripts/stage2_first10k_server_run.sh
   - 启动 fresh 10k dual-GPU Stage-2 sequential RL run，`--skip-final-eval`，避免训练完成后被 final eval 拖住。
   - 使用两张 GPU 并行 reward probe：`CUDA_VISIBLE_DEVICES=0,1` + `--blb-v3-reward-devices 0,1`。
   - 在线 watchdog 每分钟读取 structured `episodes.jsonl` / `ppo_updates.jsonl` / GPU 采样，发现硬失败就优雅停止并保留 partial artifacts。
-- **本次实验假设**：600 轮已证明 collapse 修复有效，但 entropy/clip_fraction 在 anchor 后过低，可能导致 1w 轮搜索过窄。因此本次在保持 safe-neighbor mask 的前提下，提高并拉长 entropy schedule，扩大 neighbor mutation/radius：
+- **本次实验假设**：600 轮已证明 collapse 修复有效。第一次 10k 尝试在 `NEIGHBOR_RAMP=3000, max_mutations=16, max_radius=3` 下到 1784 轮被 watchdog 停止；P1 集中出现在 `radius=2, mutations=8/9`，而 `radius=1` 到约 1500 轮没有 P1 且 reward 均值继续上升。因此本次保留 entropy schedule，但把 safe-neighbor 放宽速度降下来，只允许 radius=1：
   - `--stage2-search-episodes 10000`
   - `--blb-v3-warmstart-anchor-episodes 120`
   - `--blb-v3-ent-coef 0.04`
   - `--blb-v3-ent-coef-ramp-episodes 1200`
-  - `--blb-v3-warmstart-neighbor-ramp-episodes 3000`
-  - `--blb-v3-warmstart-neighbor-max-mutations 16`
-  - `--blb-v3-warmstart-neighbor-max-radius 3`
-- **硬失败示例**：`loss_mean>=99`、NaN/inf、持续 P1(acc)、invalid steps 重新出现、PPO `n_samples != 60*59`、20 分钟无 episode 增长、双卡未使用。
-- **软异常示例**：超过 2000 episodes 没有新 best、entropy 接近 0 且没有进展、clip_fraction 连续偏高、GPU1 active rate 过低。
+  - `--blb-v3-warmstart-neighbor-ramp-episodes 6000`
+  - `--blb-v3-warmstart-neighbor-max-mutations 8`
+  - `--blb-v3-warmstart-neighbor-max-radius 1`
+- **硬失败示例**：NaN/inf、持续或高频 P1(acc)、重复 `loss_mean>=99`、invalid steps 重新出现、PPO `n_samples != 60*59`、20 分钟无 episode 增长、双卡未使用。偶发负 reward 尖刺或孤立 P1 不单独判失败，关键看 rolling mean 和异常频率。
+- **软异常示例**：孤立 `loss_mean>=99`、超过 2000 episodes 没有新 best、entropy 接近 0 且没有进展、clip_fraction 连续偏高、GPU1 active rate 过低。
 - **主要输出**：`experiments/server_command_runs/stage2_rl_first10k_curve_<timestamp>/`
   - `monitor_live.json`
   - `monitor_events.jsonl`

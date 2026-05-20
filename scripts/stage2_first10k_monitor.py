@@ -181,8 +181,21 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
         hard_failures.append(
             f"Run ended before planned episodes: completed {completed} < planned {int(args.planned)}."
         )
-    if post_losses and max(post_losses) >= 99.0:
-        hard_failures.append("Post-anchor terminal_loss_mean reached collapse cap >=99.")
+    post_loss_caps = [
+        _finite(e.get("terminal_loss_mean"))
+        for e in post
+        if "terminal_loss_mean" in e and _finite(e.get("terminal_loss_mean")) >= 99.0
+    ]
+    post_loss_cap_flags = [
+        "terminal_loss_mean" in e and _finite(e.get("terminal_loss_mean")) >= 99.0
+        for e in post
+    ]
+    if _max_consecutive(post_loss_cap_flags) >= 2:
+        hard_failures.append("Repeated terminal_loss_mean collapse cap: >=2 consecutive post-anchor episodes.")
+    if len(post_loss_cap_flags) >= 100 and sum(1 for flag in post_loss_cap_flags[-100:] if flag) >= 2:
+        hard_failures.append("Repeated terminal_loss_mean collapse cap: >=2 episodes in latest 100 post-anchor episodes.")
+    if post_loss_caps and not any("terminal_loss_mean collapse cap" in item for item in hard_failures):
+        warnings.append(f"Observed {len(post_loss_caps)} isolated post-anchor terminal_loss_mean collapse-cap episode(s).")
     if any(_is_nonfinite(e.get("total_reward")) for e in episodes):
         hard_failures.append("Non-finite total_reward observed.")
     if _max_consecutive(p == 1 for p in post_priorities) >= 3:
@@ -260,6 +273,8 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
             "loss_mean_min": min(losses) if losses else None,
             "loss_mean_max": max(losses) if losses else None,
             "post_anchor_loss_mean_max": max(post_losses) if post_losses else None,
+            "post_anchor_loss_cap_count": len(post_loss_caps),
+            "post_anchor_loss_cap_max_consecutive": _max_consecutive(post_loss_cap_flags),
             "metric1_min": min(metric1) if metric1 else None,
             "metric1_max": max(metric1) if metric1 else None,
         },

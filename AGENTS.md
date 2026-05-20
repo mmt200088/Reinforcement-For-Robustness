@@ -44,6 +44,13 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   entropy/clip collapse or an overly narrow safe-neighbor curriculum. Treat 10k
   runs as research evidence, with online watchdog checks and follow-up
   experiments when the curve stalls.
+- First 10k attempt evidence, 2026-05-20: `NEIGHBOR_RAMP=3000`,
+  `NEIGHBOR_MAX_MUTATIONS=16`, `NEIGHBOR_MAX_RADIUS=3` improved reward into the
+  low 42s but hit a P1 cluster around episodes 1699-1757. P1 was 0 through
+  radius=1 and appeared when safe-neighbor reached `radius=2` with 8-9 mutated
+  offsets. The safer follow-up setting is `NEIGHBOR_RAMP=6000`,
+  `NEIGHBOR_MAX_MUTATIONS=8`, `NEIGHBOR_MAX_RADIUS=1`; this keeps radius-1
+  exploration while avoiding the observed radius-2 accuracy-collapse region.
 - Keep this `AGENTS.md` current as the shared project memory for Codex and
   Claude Code. After each user message that adds or changes project facts,
   workflow rules, run state, architecture notes, or operating constraints,

@@ -994,6 +994,85 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         ):
             self.assertIn(needle, diagnostics + runner_src, msg=f"missing JSONL health field: {needle!r}")
 
+    def test_first10k_server_defaults_avoid_radius2_collapse_region(self):
+        """The first failed 10k run showed P1s when radius reached 2."""
+        from pathlib import Path
+
+        src = Path("scripts/stage2_first10k_server_run.sh").read_text(encoding="utf-8")
+        for needle in (
+            'NEIGHBOR_RAMP="${NEIGHBOR_RAMP:-6000}"',
+            'NEIGHBOR_MAX_MUTATIONS="${NEIGHBOR_MAX_MUTATIONS:-8}"',
+            'NEIGHBOR_MAX_RADIUS="${NEIGHBOR_MAX_RADIUS:-1}"',
+        ):
+            self.assertIn(needle, src)
+
+    def test_first10k_monitor_tolerates_isolated_loss_cap(self):
+        """User criterion allows isolated spikes; repeated caps still fail."""
+        import argparse
+
+        monitor = _load_module_standalone(
+            "scripts/stage2_first10k_monitor.py", "stage2_first10k_monitor_test",
+        )
+
+        def write_case(loss_cap_episodes):
+            tmp = Path(tempfile.mkdtemp(prefix="first10k_monitor_"))
+            rows = []
+            for ep in range(220):
+                rows.append({
+                    "episode": ep,
+                    "total_reward": 40.0,
+                    "terminal_reward": 40.0,
+                    "terminal_priority": 3,
+                    "terminal_loss_mean": 100.0 if ep in loss_cap_episodes else 0.34,
+                    "terminal_loss_std": 0.003,
+                    "terminal_metric1_mean": 0.87,
+                    "valid_steps": 59,
+                    "invalid_steps": 0,
+                    "total_bits": 14770,
+                    "safe_neighbor_active": ep >= 120,
+                    "safe_neighbor_mutation_count": 4,
+                    "safe_neighbor_radius": 1,
+                })
+            (tmp / "episodes.jsonl").write_text(
+                "\n".join(json.dumps(row) for row in rows) + "\n",
+                encoding="utf-8",
+            )
+            (tmp / "nvidia.csv").write_text(
+                "timestamp,gpu_idx,util_pct,mem_used_mib\n",
+                encoding="utf-8",
+            )
+            return tmp
+
+        def summary_for(tmp):
+            args = argparse.Namespace(
+                phase="live",
+                artifact_dir=str(tmp),
+                stage2_noise=str(tmp),
+                nvidia_log=str(tmp / "nvidia.csv"),
+                planned=10000,
+                anchor=120,
+                rollout=60,
+                horizon=59,
+                k_trials=5,
+                probe_size=256,
+            )
+            return monitor.build_summary(args)
+
+        isolated_dir = write_case({150})
+        repeated_dir = write_case({150, 151})
+        try:
+            isolated = summary_for(isolated_dir)
+            repeated = summary_for(repeated_dir)
+            self.assertFalse(isolated["hard_failures"], isolated["hard_failures"])
+            self.assertTrue(isolated["warnings"], isolated)
+            self.assertTrue(
+                any("terminal_loss_mean collapse cap" in x for x in repeated["hard_failures"]),
+                repeated["hard_failures"],
+            )
+        finally:
+            shutil.rmtree(isolated_dir, ignore_errors=True)
+            shutil.rmtree(repeated_dir, ignore_errors=True)
+
     def test_sequential_ppo_update_replays_stored_action_level_mask(self):
         import sys
 

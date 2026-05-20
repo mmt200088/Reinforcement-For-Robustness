@@ -46,8 +46,11 @@ instead of relying on text-log parsing for core health checks.
 
 ## First 10k Candidate Settings
 
-Use the same safe baseline as the 600-episode run, but widen exploration
-gradually:
+Use the same safe baseline as the 600-episode run, with conservative
+safe-neighbor expansion. The first candidate used `ramp=3000`,
+`max_mutations=16`, `max_radius=3`; server evidence showed reward improvement
+but P1 clustering when radius reached 2. The current safer candidate therefore
+keeps radius at 1 and expands mutation count more slowly:
 
 - `--stage2-search-episodes 10000`
 - `--skip-final-eval`
@@ -55,14 +58,21 @@ gradually:
 - `--blb-v3-warmstart-anchor-episodes 120`
 - `--blb-v3-ent-coef 0.04`
 - `--blb-v3-ent-coef-ramp-episodes 1200`
-- `--blb-v3-warmstart-neighbor-ramp-episodes 3000`
-- `--blb-v3-warmstart-neighbor-max-mutations 16`
-- `--blb-v3-warmstart-neighbor-max-radius 3`
+- `--blb-v3-warmstart-neighbor-ramp-episodes 6000`
+- `--blb-v3-warmstart-neighbor-max-mutations 8`
+- `--blb-v3-warmstart-neighbor-max-radius 1`
 - `--blb-v3-reward-devices 0,1`
 
-Hypothesis: higher and slower entropy plus wider safe-neighbor support should
-keep the first-10k curve from narrowing too early, while the baseline-local
-mask still prevents the old accuracy catastrophe.
+Hypothesis: higher and slower entropy plus radius-1 safe-neighbor support
+should keep the first-10k curve from narrowing too early while avoiding the
+observed radius-2 accuracy-collapse region.
+
+Failed wider-neighbor evidence: artifact
+`experiments/server_command_runs/stage2_rl_first10k_curve_20260520_141129`
+stopped at 1784 episodes. Overall reward did not broadly collapse, but P1 was
+clustered in episodes 1699-1757; all P1 cases had `safe_neighbor_radius=2`,
+and 7/64 episodes at `(mutations=9, radius=2)` were P1, including two
+`loss_mean=100` sentinels.
 
 ## Success Criteria
 

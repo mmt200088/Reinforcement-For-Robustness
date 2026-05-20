@@ -90,6 +90,12 @@ Current Stage-2 RL collapse goal mode:
   to be clean. Occasional negative reward spikes or isolated P1(acc) episodes
   are acceptable if they do not become frequent or consecutive and the rolling
   reward windows do not collapse.
+- First 10k attempt evidence, 2026-05-20: the `3000/16/radius3` neighbor
+  schedule reached reward around 42 but produced a P1 cluster at episodes
+  1699-1757 once safe-neighbor reached `radius=2` with 8-9 mutated offsets.
+  Through `radius=1`, P1 was 0 and reward improved. The current safer follow-up
+  is `NEIGHBOR_RAMP=6000`, `NEIGHBOR_MAX_MUTATIONS=8`,
+  `NEIGHBOR_MAX_RADIUS=1`.
 
 ### Server command bridge
 

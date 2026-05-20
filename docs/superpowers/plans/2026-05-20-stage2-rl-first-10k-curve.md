@@ -76,3 +76,9 @@ reward spikes or isolated P1(acc) episodes. Reject it when reward rolling
 averages collapse, P1 becomes frequent/consecutive, loss hits collapse
 sentinels, invalid steps return, GPU reward probing fails, or search progress
 stalls for a long window.
+
+Iteration note: the first 10k attempt with `NEIGHBOR_RAMP=3000`,
+`NEIGHBOR_MAX_MUTATIONS=16`, `NEIGHBOR_MAX_RADIUS=3` stopped at 1784 episodes
+after P1 clustered in the `radius=2`, 8-9 mutation region. The next run should
+use `NEIGHBOR_RAMP=6000`, `NEIGHBOR_MAX_MUTATIONS=8`,
+`NEIGHBOR_MAX_RADIUS=1`.

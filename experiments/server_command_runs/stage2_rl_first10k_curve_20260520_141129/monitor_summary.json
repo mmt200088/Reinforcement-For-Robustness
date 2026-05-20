@@ -1,0 +1,160 @@
+{
+  "status": "FAIL",
+  "hard_failures": [
+    "Repeated terminal_loss_mean collapse cap: >=2 episodes in latest 100 post-anchor episodes.",
+    "Sustained P1(acc): >=5 P1 episodes in latest 100 post-anchor episodes."
+  ],
+  "warnings": [],
+  "artifact_dir": "experiments/server_command_runs/stage2_rl_first10k_curve_20260520_141129",
+  "stage2_noise": "experiments/server_command_runs/stage2_rl_first10k_curve_20260520_141129",
+  "planned_episodes": 1784,
+  "completed_episodes": 1784,
+  "anchor_episodes": 120,
+  "rollout_size": 60,
+  "horizon": 59,
+  "k_trials": 5,
+  "probe_size": 256,
+  "reward": {
+    "best_reward": 42.03980635001337,
+    "best_episode": 1722,
+    "episodes_since_best": 61,
+    "mean": 38.95294616536985,
+    "post_anchor_mean": 39.034946303209466,
+    "rolling": {
+      "60": {
+        "size": 60,
+        "mean": 35.84222831047467,
+        "min": -7.9694542022384915,
+        "p05": -6.347826653156014,
+        "p50": 42.03164192971757,
+        "p95": 42.036495131285726,
+        "max": 42.03822967398914,
+        "slope": -5.1050156623269666e-05
+      },
+      "300": {
+        "size": 300,
+        "mean": 39.50261001303524,
+        "min": -7.9694542022384915,
+        "p05": 38.281087511122216,
+        "p50": 41.05481699535118,
+        "p95": 42.0349451771264,
+        "max": 42.03980635001337,
+        "slope": 0.008074460714672773
+      },
+      "1000": {
+        "size": 1000,
+        "mean": 39.64186257911098,
+        "min": -7.9694542022384915,
+        "p05": 38.02721779351276,
+        "p50": 39.931549940694325,
+        "p95": 42.03359382031363,
+        "max": 42.03980635001337,
+        "slope": 0.001697771843511491
+      }
+    }
+  },
+  "terminal_reward": {
+    "rolling": {
+      "60": {
+        "size": 60,
+        "mean": 38.80956180713301,
+        "min": -5.0,
+        "p05": -3.3814432989690775,
+        "p50": 45.0,
+        "p95": 45.0,
+        "max": 45.0,
+        "slope": 0.0
+      },
+      "300": {
+        "size": 300,
+        "mean": 42.471234201176536,
+        "min": -5.0,
+        "p05": 41.25429553264605,
+        "p50": 44.02405498281787,
+        "p95": 45.0,
+        "max": 45.0,
+        "slope": 0.008068130883012097
+      },
+      "1000": {
+        "size": 1000,
+        "mean": 42.61175304327567,
+        "min": -5.0,
+        "p05": 41.0,
+        "p50": 42.90255693400897,
+        "p95": 45.0,
+        "max": 45.0,
+        "slope": 0.0016958539295309101
+      }
+    }
+  },
+  "terminal_metrics": {
+    "loss_mean_min": 0.33442705795168876,
+    "loss_mean_max": 100.0,
+    "post_anchor_loss_mean_max": 100.0,
+    "post_anchor_loss_cap_count": 2,
+    "post_anchor_loss_cap_max_consecutive": 1,
+    "metric1_min": 0.31640625,
+    "metric1_max": 0.88125
+  },
+  "priority": {
+    "p1_count": 9,
+    "post_anchor_p1_count": 9,
+    "post_anchor_max_consecutive_p1": 2
+  },
+  "validity": {
+    "invalid_steps_total": 0,
+    "early_terminated_count": 0,
+    "valid_steps_min": 59
+  },
+  "safe_neighbor": {
+    "post_anchor_active_count": 1664,
+    "post_anchor_active_rate": 1.0,
+    "last_mutation_count": 9,
+    "last_radius": 2
+  },
+  "cost": {
+    "total_bits_min": 14747.0,
+    "total_bits_max": 14783.0,
+    "total_bits_last": 14765.0
+  },
+  "ppo": {
+    "updates_seen": 29,
+    "last_update": {
+      "update": 29,
+      "completed_episodes": 1740,
+      "policy_loss": 0.0014878830074199609,
+      "value_loss": 1.3428625261876732,
+      "entropy": 0.05632153987737963,
+      "clip_fraction": 0.03349609375332615,
+      "n_samples": 3540,
+      "window_mean_return": 36.54440133227563,
+      "window_max_return": 42.03980635001337,
+      "window_min_return": -7.96725293920726,
+      "window_mean_invalid": 0.0,
+      "best_reward_so_far": 42.03980635001337,
+      "elapsed_sec": 3197.08952999115,
+      "ent_coef": 0.04,
+      "timestamp": 1779260761.3368683
+    },
+    "recent_entropy_mean": 0.03667820599067844,
+    "recent_clip_fraction_mean": 0.024737723218277097
+  },
+  "gpu": {
+    "samples": 442,
+    "by_gpu": {
+      "0": {
+        "max_util": 98.0,
+        "p50_util": 98.0,
+        "active_sample_rate": 0.9773755656108597,
+        "max_mem_mib": 3738.0
+      },
+      "1": {
+        "max_util": 98.0,
+        "p50_util": 66.0,
+        "active_sample_rate": 0.5882352941176471,
+        "max_mem_mib": 3732.0
+      }
+    }
+  },
+  "updated_at": 1779261318.788171
+}
