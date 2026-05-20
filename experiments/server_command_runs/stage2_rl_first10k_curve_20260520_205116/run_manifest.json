@@ -1,0 +1,16 @@
+{
+  "run_id": "stage2_rl_first10k_curve_20260520_205116",
+  "git_head": "283c711",
+  "planned_episodes": 1000,
+  "anchor_episodes": 60,
+  "rollout_size": 60,
+  "k_trials": 5,
+  "probe_size": 256,
+  "neighbor_ramp": 1800,
+  "neighbor_max_mutations": 12,
+  "neighbor_max_radius": 1,
+  "ent_coef": 0.06,
+  "ent_ramp": 600,
+  "warmstart_bias_gain": 2.5,
+  "reward_devices": "0,1"
+}

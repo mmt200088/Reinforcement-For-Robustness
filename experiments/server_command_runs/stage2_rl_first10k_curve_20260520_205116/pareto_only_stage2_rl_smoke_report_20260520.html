@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>Pareto-only Stage-2 RL Smoke Report</title><style>
+body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;line-height:1.45;margin:32px;color:#172026;background:#f7f8fa}main{max-width:1160px;margin:auto;background:white;padding:28px;border:1px solid #d9dee7}h1{font-size:28px;margin:0 0 8px}h2{font-size:20px;margin-top:28px;border-bottom:1px solid #e4e8ef;padding-bottom:6px}table{border-collapse:collapse;width:100%;margin:12px 0;background:white}td,th{border:1px solid #dfe4ec;padding:8px;text-align:left;vertical-align:top}th{background:#eef2f7}code{background:#eef2f7;padding:1px 4px;border-radius:3px}.ok{color:#0d6b3c;font-weight:700}.warn{color:#9a5b00;font-weight:700}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.card{border:1px solid #dfe4ec;padding:12px;background:#fbfcfe}.small{color:#5c6670;font-size:13px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap}.note{background:#fff7df;border:1px solid #ead79a;padding:10px}
+</style><body><main>
+<h1>Pareto-only Stage-2 RL Smoke Report</h1>
+<p class="small">Generated from server artifact <code>experiments/server_command_runs/stage2_rl_first10k_curve_20260520_205116</code>. Code commit <code>283c711</code>.</p>
+<div class="grid">
+<div class="card"><b>Smoke status</b><br><span class="ok">PASS</span></div>
+<div class="card"><b>Episodes</b><br>1000 / 1000</div>
+<div class="card"><b>Priority</b><br>P1=13, P2=0, P3=987</div>
+<div class="card"><b>Pareto frontier</b><br> non-dominated candidates</div>
+</div>
+<h2>Implemented Scheme</h2>
+<ul>
+<li>Accuracy and stability remain hard gates. P1/P2 candidates are excluded from the cost archive.</li>
+<li>P3 cost search uses only Pareto dominance over <code>fusion_gain</code>, <code>k_gain</code>, and <code>bits_gain</code>.</li>
+<li>No <code>typical_bits_drop</code>, <code>typical_fusion_count</code>, or <code>typical_k_drop</code> term decides cost ranking.</li>
+<li>PPO receives bounded scalar shaping from Pareto events: frontier expansion, frontier member, dominated, duplicate, or excluded.</li>
+<li>Exploration defaults for this run: anchor 60, ramp 1800, max mutations 12, max radius 1, entropy coefficient 0.06, entropy ramp 600, warmstart bias gain 2.5.</li>
+</ul>
+<h2>Server Validation</h2>
+<table><tr><th>Check</th><th>Observed</th></tr>
+<tr><td>Unit/regression suite before RL</td><td>Server logs show <code>Ran 109 tests ... OK</code>.</td></tr>
+<tr><td>Invalid steps</td><td>0; valid_steps_min=59</td></tr>
+<tr><td>Post-anchor P1/P2</td><td>P1=13, P2=0, max consecutive P1=1</td></tr>
+<tr><td>Loss/stability</td><td>loss_mean range 0.3327984169125557 to 0.3440421886742115; loss cap count=0; stab violation max=0.0</td></tr>
+<tr><td>Reward</td><td>best=38.17087470381741 at episode 980; rolling300 mean=37.21431196127137</td></tr>
+<tr><td>Exploration</td><td>unique action hashes=661; max gains observed: fusion=2.0, K=0.06779661016949134, bits=14.0</td></tr>
+<tr><td>Last PPO update</td><td>updates=16; entropy=0.07367983689930822; ent_coef=0.06; window_mean_return=37.46793632615728</td></tr>
+</table>
+<h2>Pareto Event Counts</h2>
+<table><tr><th>Event</th><th>All episodes</th><th>Post anchor</th></tr>
+<tr><td>dominated</td><td>580</td><td>580</td></tr><tr><td>duplicate</td><td>333</td><td>274</td></tr><tr><td>excluded</td><td>13</td><td>13</td></tr><tr><td>frontier_expansion</td><td>23</td><td>22</td></tr><tr><td>frontier_member</td><td>51</td><td>51</td></tr>
+</table>
+<h2>Non-dominated Frontier</h2>
+<table><tr><th>Episode</th><th>fusion_gain</th><th>k_gain</th><th>bits_gain</th><th>action hash</th></tr><tr><td>856</td><td></td><td></td><td></td><td><code></code></td></tr><tr><td>980</td><td></td><td></td><td></td><td><code></code></td></tr><tr><td>973</td><td></td><td></td><td></td><td><code></code></td></tr><tr><td>901</td><td></td><td></td><td></td><td><code></code></td></tr><tr><td>962</td><td></td><td></td><td></td><td><code></code></td></tr><tr><td>912</td><td></td><td></td><td></td><td><code></code></td></tr><tr><td>758</td><td></td><td></td><td></td><td><code></code></td></tr><tr><td>801</td><td></td><td></td><td></td><td><code></code></td></tr></table>
+<p class="small">Interpretation: rows are not ranked by a weighted cost score. Each row is retained because no other P3 candidate is at least as good on all three cost dimensions and strictly better on one dimension.</p>
+<h2>Dual-GPU Evidence</h2>
+<table><tr><th>GPU</th><th>Max util %</th><th>Median util %</th><th>Active sample rate</th><th>Max memory MiB</th></tr><tr><td>0</td><td>98.0</td><td>97.0</td><td>0.9444444444444444</td><td>3738.0</td></tr><tr><td>1</td><td>99.0</td><td>56.5</td><td>0.5777777777777777</td><td>3732.0</td></tr></table>
+<h2>Formal 10k Run</h2>
+<p>The formal 10k run was launched from <code>/hy-tmp/Reinforcement-For-Robustness-pareto-r1</code> after this smoke passed, using the same commit and settings. Live artifact directory: <code>experiments/server_command_runs/stage2_rl_first10k_curve_20260520_212547</code>; RL PID: <code>230186</code>. A heartbeat monitor is responsible for copying final artifacts and updating the final report when the run finishes.</p>
+<h2>Files</h2>
+<ul>
+<li><code>pareto_frontier.json</code>, <code>pareto_frontier.jsonl</code>, and <code>pareto_frontier.html</code> contain the Pareto archive summary.</li>
+<li><code>episodes.jsonl</code> contains per-episode terminal reward, priority, Pareto event, cost gains, and validity fields.</li>
+<li><code>monitor_summary.json</code> contains the watchdog health verdict for the 1000-episode smoke.</li>
+</ul>
+</main></body></html>
