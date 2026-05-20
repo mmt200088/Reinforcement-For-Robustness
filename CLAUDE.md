@@ -85,6 +85,11 @@ Current Stage-2 RL collapse goal mode:
   safe-neighbor mutation/radius coverage expands, and whether cost signals
   improve without accuracy/stability regressions. Use online watchdog evidence
   during the run instead of waiting hours to discover a bad curve.
+- For the first-10k curve, judge health by rolling reward averages and
+  frequency/sustain of abnormal episodes, not by requiring every single episode
+  to be clean. Occasional negative reward spikes or isolated P1(acc) episodes
+  are acceptable if they do not become frequent or consecutive and the rolling
+  reward windows do not collapse.
 
 ### Server command bridge
 

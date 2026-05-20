@@ -8,6 +8,9 @@ learning curve, not merely process survival: reward windows should remain
 positive and make search progress, terminal metrics must avoid collapse
 sentinels such as `loss_mean=100`, priority must not enter sustained P1(acc),
 and PPO/exploration/GPU metrics must not show unexplained pathological jumps.
+Per user correction during the first 10k attempt, occasional negative reward
+spikes or isolated P1(acc) episodes are acceptable if rolling reward averages
+remain healthy and such events do not become frequent or sustained.
 
 ## Diagnosis From 600 Episodes
 
@@ -69,8 +72,9 @@ mask still prevents the old accuracy catastrophe.
   failure report.
 - Hard failures are absent: no loss cap, no NaN/inf losses, no sustained P1,
   no invalid-step resurgence, no stale episode progress, and both GPUs used.
+- Isolated negative-reward or P1 episodes are not by themselves failure
+  evidence; evaluate their frequency plus rolling 60/300/1000 reward windows.
 - Curve-quality checks are acceptable: rolling reward windows do not collapse,
   best reward continues to improve beyond the 600-episode baseline, entropy and
   clip fraction do not indicate a dead policy without search progress, and cost
   signals improve without accuracy/stability regressions.
-

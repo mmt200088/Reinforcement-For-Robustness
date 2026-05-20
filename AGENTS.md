@@ -35,11 +35,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   clean.
 - Current extension of that goal: optimize the first 10,000 Stage-2 RL episodes,
   not just the initial 600-episode smoke. Success now means the first-10k reward
-  curve stays healthy and continues making search progress: no collapse
-  sentinels, no sustained P1(acc), no invalid-step resurgence, no dead GPU
-  reward-probe path, and no long plateau caused by entropy/clip collapse or an
-  overly narrow safe-neighbor curriculum. Treat 10k runs as research evidence,
-  with online watchdog checks and follow-up experiments when the curve stalls.
+  curve stays healthy and continues making search progress on rolling averages.
+  Occasional negative reward spikes or isolated P1(acc) episodes are acceptable
+  research noise if they do not become frequent or sustained and the rolling
+  reward windows do not collapse. Hard failures remain: collapse sentinels such
+  as `loss_mean=100`, sustained/high-frequency P1(acc), invalid-step
+  resurgence, a dead GPU reward-probe path, or a long plateau caused by
+  entropy/clip collapse or an overly narrow safe-neighbor curriculum. Treat 10k
+  runs as research evidence, with online watchdog checks and follow-up
+  experiments when the curve stalls.
 - Keep this `AGENTS.md` current as the shared project memory for Codex and
   Claude Code. After each user message that adds or changes project facts,
   workflow rules, run state, architecture notes, or operating constraints,

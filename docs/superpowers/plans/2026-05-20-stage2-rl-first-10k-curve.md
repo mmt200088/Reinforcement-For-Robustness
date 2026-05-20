@@ -71,3 +71,8 @@ If the 10k run stalls, collapses, or shows poor curve quality, do not patch the
 server. Diagnose the artifact locally, adjust the local code or
 `SERVER_COMMAND.md`, push, let the server pull, and repeat.
 
+User-corrected interpretation: do not reject a run for occasional negative
+reward spikes or isolated P1(acc) episodes. Reject it when reward rolling
+averages collapse, P1 becomes frequent/consecutive, loss hits collapse
+sentinels, invalid steps return, GPU reward probing fails, or search progress
+stalls for a long window.
