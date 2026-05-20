@@ -31,7 +31,7 @@
   },
   "block4": {
     "ctpt_softmax_out": 35,
-    "ctpt_v": 30,
+    "ctpt_v": 25,
     "ctpt_softmax_out_mask": 14,
     "ctpt_v_mask": 14,
     "ctpt_softmax_v_mask": 14,

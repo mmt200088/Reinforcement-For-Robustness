@@ -523,16 +523,28 @@ def default_block4_cfg_to_delta(cfg: Block4NoiseConfig) -> Dict[str, Union[int, 
     ``softmax_out_mask`` / ``v_mask`` 被 graph 合成一个 ``ctpt_mask2``，
     我们取 ``softmax_out_mask`` 的 SF）：
       * ctpt_mask2 (CTPT_MUL)               ← softmax 输出 / V 路径上的 mask
-      * ctct_rot_softmax_mul_v (CTCT_MUL)   ← softmax×V matmul，MRPC baseline delta=39
+      * ctct_rot_softmax_mul_v (CTCT_MUL)   ← softmax×V matmul，delta = SF(v) + SF(mask2)
       * ctpt_mask (CTPT_MUL)                ← 合并 softmax×V 后的 mask
       * ctpt_wo_attnout (CTPT_MUL)          ← Wo
       * ctpt_inv_d_1 (CTPT_MUL)             ← post-attn LN μ 的 1/D
       * ctct_square (CTCT_MUL)              ← post-attn LN (X−μ)²，固定 "x2"
       * ctpt_inv_d_2 (CTPT_MUL)             ← post-attn LN var 的 1/D
+
+    2026-05-20 user spec：``ctct_rot_softmax_mul_v`` 的 delta 之前是硬编码 39
+    （mrpc baseline 值），现在根据 cfg 动态计算成
+    ``SF(v_fresh) + SF(v_mask_encode)``。CKKS 里两个密文相乘的累积 SF 是各自
+    SF 之和，所以 v * mask2 这一步的 SF 就是 SF(v) + SF(mask2)。``v_mask_encode``
+    已经被 ``_build_block4_action`` 绑定到 ``softmax_out_mask_encode``（同一个
+    mask2），所以无论用哪个读出来 SF 都一样；为了和 baseline_bootstrap 里
+    ``v_fresh.sf = ctct_rot_softmax_mul_v.delta - ctpt_mask2.delta`` 的反推公式
+    精确对称，我们在这里用 ``v_mask_encode`` 来对应 baseline 里的 mask2。
     """
     return {
         "ctpt_mask2":             int(cfg.softmax_out_mask_encode.scaling_factor),
-        "ctct_rot_softmax_mul_v": 39,
+        "ctct_rot_softmax_mul_v": (
+            int(cfg.v_fresh.scaling_factor)
+            + int(cfg.v_mask_encode.scaling_factor)
+        ),
         "ctpt_mask":              int(cfg.softmax_v_mask_encode.scaling_factor),
         "ctpt_wo_attnout":        int(cfg.wo_encode.scaling_factor),
         "ctpt_inv_d_1":           int(cfg.ln_mean_inv_d_encode.scaling_factor),
@@ -1144,6 +1156,51 @@ def sync_block2_qk_binding(cfg: Any) -> List[CfgOverrideEntry]:
             cfg_attr=f"{q_name}.scaling_factor",
             graph_node=None,
             source="qk_binding_sync",
+            old_value=old_sf,
+            new_value=new_sf,
+        ))
+    return overrides
+
+
+# Block 4 mask2 binding: action_space._build_block4_action sets
+# ``v_mask_encode == softmax_out_mask_encode`` (user spec 2026-05-20 — the two
+# mask2 RL slots represent the same graph node ``ctpt_mask2`` and their action
+# values are bound). After the optimizer rewrites cfg via
+# ``apply_optimizer_output_to_cfg``, only ``softmax_out_mask_encode`` gets
+# refreshed (that's the entry in ``GRAPH_NODE_TO_CFG_ATTR[4]['ctpt_mask2']``).
+# Without this sync the V-side encode would stay at the pre-override SF while
+# the softmax_out side moved, silently breaking the binding invariant and the
+# ctct_rot_softmax_mul_v delta computation that depends on cfg.v_mask_encode.
+_BLOCK4_MASK2_BINDING_PAIRS = (
+    ("v_mask_encode", "softmax_out_mask_encode"),
+)
+
+
+def sync_block4_v_mask_binding(cfg: Any) -> List[CfgOverrideEntry]:
+    """Mirror softmax_out_mask_encode onto v_mask_encode (mask2 binding).
+
+    Call this on a Block4NoiseConfig immediately after every cfg mutation that
+    might have touched ``softmax_out_mask_encode`` (typically right after
+    :func:`apply_optimizer_output_to_cfg`). The two encodes represent the same
+    ``ctpt_mask2`` graph node and must stay synchronized for the model-side V
+    noise install and the ``ctct_rot_softmax_mul_v`` delta computation to
+    agree with the RL action.
+    """
+    overrides: List[CfgOverrideEntry] = []
+    for dst_name, src_name in _BLOCK4_MASK2_BINDING_PAIRS:
+        src_point = getattr(cfg, src_name, None)
+        dst_point = getattr(cfg, dst_name, None)
+        if src_point is None or dst_point is None:
+            continue
+        new_sf = int(getattr(src_point, "scaling_factor", 0))
+        old_sf = int(getattr(dst_point, "scaling_factor", 0))
+        if old_sf == new_sf:
+            continue
+        dst_point.scaling_factor = new_sf
+        overrides.append(CfgOverrideEntry(
+            cfg_attr=f"{dst_name}.scaling_factor",
+            graph_node=None,
+            source="v_mask_binding_sync",
             old_value=old_sf,
             new_value=new_sf,
         ))

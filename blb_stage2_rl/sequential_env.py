@@ -34,6 +34,7 @@ from rescale_optimizer_bridge import (
     apply_optimizer_output_to_cfg,
     apply_rotation_flags_to_cfg,
     sync_block2_qk_binding,
+    sync_block4_v_mask_binding,
     _strip_layer_suffix,
 )
 
@@ -332,6 +333,8 @@ class BLBStage2SequentialEnv:
             )
             if int(spec.block_idx) == 2:
                 overrides = list(overrides) + sync_block2_qk_binding(block_cfg)
+            elif int(spec.block_idx) == 4:
+                overrides = list(overrides) + sync_block4_v_mask_binding(block_cfg)
             if overrides:
                 info["optimizer_cfg_overrides"] = [
                     (e.cfg_attr, e.source, e.old_value, e.new_value)

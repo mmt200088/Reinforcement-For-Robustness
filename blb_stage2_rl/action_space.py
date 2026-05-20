@@ -833,9 +833,13 @@ def _build_block2_action(
     """精简后的 Block 2 动作构造。
 
     Q 侧动作（wq / q_mask1 / q_mask2）被删，cfg 上 Q 侧三个 encode 字段由 K 侧
-    的同名动作绑定填入（K 侧选什么 SF，Q 侧用同一个 SF）。Wv 单独保留一个动作
-    控制模型 V 路径上的噪声（虽然 mrpc graph 没有对应 V 节点）。其余 8 个被删的
-    rescale 字段在 cfg 上保留为 None。
+    的同名动作绑定填入（K 侧选什么 SF，Q 侧用同一个 SF）。
+
+    2026-05-20 user spec：Wv 也不再有 RL 动作 —— Rescale_optimizer 的 block2
+    计算图里没有 ``ctpt_wv`` 节点，wv 选什么 SF 都不影响 modulus chain；模型噪声
+    侧用一个固定的 SF（``_BLOCK2_FIXED_WV_SF``）安装 Wv 噪声即可。slot 留在
+    action vector 里但 ``_COMPAT_EXTRA_FIELDS[2]`` 已经把它标记成 effective=False。
+    其余 8 个被删的 rescale 字段在 cfg 上保留为 None。
     """
     wk_sf = int(layer_field_values["wk_sf"])
     kt_mask1_sf = int(layer_field_values["kt_mask1_sf"])
@@ -847,7 +851,8 @@ def _build_block2_action(
         # Q/K 绑定：wq_sf / q_mask{1,2}_sf 不再独立选，等于 K 侧
         wk_sf=wk_sf,
         wq_sf=wk_sf,
-        wv_sf=int(layer_field_values["wv_sf"]),
+        # Wv 不再由 RL 控制；cfg 上用固定 SF 安装 Wv 噪声（默认 22 = baseline）。
+        wv_sf=_BLOCK2_FIXED_WV_SF,
         kt_mask1_sf=kt_mask1_sf,
         q_mask1_sf=kt_mask1_sf,
         kt_mask2_sf=kt_mask2_sf,
@@ -858,6 +863,12 @@ def _build_block2_action(
         qkt_merge_mask_rescale_sf=_optional_int(layer_field_values["qkt_merge_mask_rescale_sf"]),
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
     )
+
+
+# 2026-05-20 user spec: Block 2 Wv encode no longer has an RL action. The model
+# still installs noise at the Wv multiplication point — we just use a constant
+# SF rather than letting RL drift it. 22 matches the mrpc max_sfs.ctpt_wv default.
+_BLOCK2_FIXED_WV_SF: int = 22
 
 
 def _build_block3_action(
@@ -893,11 +904,24 @@ def _build_block4_action(
         layer_idx: int,
         layer_field_values: Dict[str, object],
         ) -> Block4ActionSpec:
+    """精简后的 Block 4 动作构造。
+
+    2026-05-20 user spec：``softmax_out_mask_sf`` 和 ``v_mask_sf`` 在 RO 计算
+    图里对应同一个 ``ctpt_mask2`` 节点（softmax_out × mask 与 v × mask 共享
+    mask2 输入）。RL 只用 ``softmax_out_mask_sf`` 一个 slot 表达 mask2 的 SF；
+    ``v_mask_sf`` 仍然在 action vector 里（compat-extra），cfg 上直接绑定到
+    softmax_out_mask 的 SF。这样模型在 V × mask 这一步安装的噪声 SF 与
+    softmax_out × mask 一致，optimizer 算的 ctct_rot_softmax_mul_v.delta
+    （由 ``default_block4_cfg_to_delta`` 动态计算成 ``SF(v_fresh) + SF(v_mask)``）
+    也对得上 baseline。``_COMPAT_EXTRA_FIELDS[4]`` 把 ``v_mask_sf`` 标成 inactive。
+    """
+    shared_mask2_sf = int(layer_field_values["softmax_out_mask_sf"])
     return Block4ActionSpec(
         softmax_out_fresh_sf=int(layer_field_values["softmax_out_fresh_sf"]),
-        softmax_out_mask_sf=int(layer_field_values["softmax_out_mask_sf"]),
+        softmax_out_mask_sf=shared_mask2_sf,
         v_fresh_sf=int(layer_field_values["v_fresh_sf"]),
-        v_mask_sf=int(layer_field_values["v_mask_sf"]),
+        # mask2 绑定：v_mask cfg 字段总是用与 softmax_out_mask 相同的 SF。
+        v_mask_sf=shared_mask2_sf,
         softmax_v_mask_sf=int(layer_field_values["softmax_v_mask_sf"]),
         wo_sf=int(layer_field_values["wo_sf"]),
         ln_mean_inv_d_sf=int(layer_field_values["ln_mean_inv_d_sf"]),
@@ -1238,6 +1262,11 @@ _COMPAT_EXTRA_FIELDS: Dict[int, frozenset] = {
     2: frozenset({
         # Q-side encodes (bound to K-side; cfg uses wk_sf / kt_mask*_sf)
         "wq_sf", "q_mask1_sf", "q_mask2_sf",
+        # 2026-05-20 user spec: Wv has no Rescale_optimizer node in block2's
+        # graph and no observable cost impact, so the RL action for it is
+        # removed (slot stays in the action vector for back-compat, cfg field
+        # gets a fixed value in _build_block2_action).
+        "wv_sf",
         # rescales not on the mrpc baseline skeleton (cfg fields fixed None)
         "normalize_rescale_sf", "wk_rescale_sf", "wq_rescale_sf",
         "wv_rescale_sf", "kt_mask1_rescale_sf", "q_mask1_rescale_sf",
@@ -1245,6 +1274,13 @@ _COMPAT_EXTRA_FIELDS: Dict[int, frozenset] = {
     }),
     3: frozenset({"x_inv_2n_rescale_sf"}),
     4: frozenset({
+        # 2026-05-20 user spec: block4's graph has ONE mask2 node that is
+        # shared between the softmax_out side and the V side. RL now exposes
+        # ONE active slot (``softmax_out_mask_sf``); ``v_mask_sf`` stays in
+        # the action vector for back-compat but is *bound* — cfg uses the
+        # softmax_out_mask SF for both, and the optimizer's write-back is
+        # mirrored via ``sync_block4_v_mask_binding``.
+        "v_mask_sf",
         "softmax_out_mask_rescale_sf", "v_mask_rescale_sf",
         "softmax_v_mask_rescale_sf", "wo_rescale_sf", "ln_square_rescale_sf",
     }),

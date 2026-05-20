@@ -23,6 +23,7 @@ from rescale_optimizer_bridge import (
     apply_optimizer_output_to_cfg,
     apply_rotation_flags_to_cfg,
     sync_block2_qk_binding,
+    sync_block4_v_mask_binding,
 )
 
 from .action_space import (
@@ -474,6 +475,16 @@ class BLBStage2Env:
                 # K-channel uses the optimizer-snapped SF.
                 if int(block_idx) == 2:
                     overrides = list(overrides) + sync_block2_qk_binding(target_cfg)
+                # Block 4 has mask2 binding (action_space writes the shared
+                # softmax_out_mask SF to both softmax_out_mask_encode and
+                # v_mask_encode). The optimizer-driven override only refreshes
+                # softmax_out_mask_encode (the entry in GRAPH_NODE_TO_CFG_ATTR[4]
+                # for ``ctpt_mask2``); without this sync, V-side install + the
+                # ``ctct_rot_softmax_mul_v`` delta computation (which reads
+                # cfg.v_mask_encode.scaling_factor) would drift from the
+                # softmax_out side.
+                elif int(block_idx) == 4:
+                    overrides = list(overrides) + sync_block4_v_mask_binding(target_cfg)
                 if overrides:
                     per_config_overrides[cn] = [
                         (e.cfg_attr, e.source, e.old_value, e.new_value)

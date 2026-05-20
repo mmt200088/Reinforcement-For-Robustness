@@ -782,13 +782,16 @@ def _extract_one_block_layer(
 
     # --- propagation_deltas：numeric delta = encode 动作 ---
     encode_map = _RO_ENCODE_NODE_TO_RL_FIELDS.get(int(block_idx), {})
+    pd_delta_by_name: Dict[str, Any] = {}
     for pd in entry.get("propagation_deltas") or []:
         if not isinstance(pd, Mapping):
             continue
+        name = str(pd.get("name", ""))
         delta = pd.get("delta")
+        if name:
+            pd_delta_by_name[name] = delta
         if not isinstance(delta, (int, float)):
             continue   # "x2" 是平方乘 2，不是 encode 动作
-        name = str(pd.get("name", ""))
         rl_fields = encode_map.get(name)
         if not rl_fields:
             out.unmapped_propagation_nodes.append(name)
@@ -796,6 +799,21 @@ def _extract_one_block_layer(
         for rl_field in rl_fields:
             out.field_baseline_sfs[rl_field] = int(delta)
             out.field_kind_in_ro[rl_field] = "encode"
+
+    # --- block-4 derived: v_fresh.sf = SF(v*mask2) - SF(mask2) ---
+    # v 在 Rescale_optimizer 的 block4 计算图里没有自己的 SOURCE 节点（V 经
+    # softmax×V 才进入主链）。但 baseline 的 v_fresh SF 是可以推算出来的：
+    # ``ctct_rot_softmax_mul_v`` 是 v*mask2 这次密文-密文乘法的结果，CKKS 里
+    # ``SF(a*b) = SF(a) + SF(b)``，所以 ``SF(v) = SF(v*mask2) - SF(mask2)``，
+    # 即 ``propagation_delta(ctct_rot_softmax_mul_v) - propagation_delta(ctpt_mask2)``。
+    # 例如 mrpc baseline：39 - 14 = 25。
+    if int(block_idx) == 4:
+        mulv_delta = pd_delta_by_name.get("ctct_rot_softmax_mul_v")
+        mask2_delta = pd_delta_by_name.get("ctpt_mask2")
+        if isinstance(mulv_delta, (int, float)) and isinstance(mask2_delta, (int, float)):
+            v_fresh_sf = int(mulv_delta) - int(mask2_delta)
+            out.field_baseline_sfs["v_fresh_sf"] = int(v_fresh_sf)
+            out.field_kind_in_ro["v_fresh_sf"] = "fresh"
 
     # --- modulus_chain cost ---
     mc = entry.get("modulus_chain") or {}
