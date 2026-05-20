@@ -1340,7 +1340,25 @@ def run_sequential_via_runner(
     baseline.loss_std = float(baseline_metrics.loss_std)
     baseline.metric1_mean = float(baseline_metrics.metric1_mean)
     baseline.metric2_mean = float(baseline_metrics.metric2_mean)
+    # v3 stability path: copy per-trial stds for m1 / m2 too — combined_stab_excess
+    # in compute_reward needs baseline.metric{1,2}_std to derive the per-channel
+    # thresholds and normalize the excess. Clean preflight stds are typically 0
+    # (deterministic forward), so the noisy preflight below also writes them.
+    baseline.metric1_std = float(getattr(baseline_metrics, "metric1_std", 0.0) or 0.0)
+    baseline.metric2_std = float(getattr(baseline_metrics, "metric2_std", 0.0) or 0.0)
     baseline_clean_metric1 = float(baseline_metrics.metric1_mean)
+    baseline_clean_metric2 = float(baseline_metrics.metric2_mean)
+
+    # v3 cost path: the user spec says typical_bits_drop ≈ baseline / num_layers
+    # (saving "one layer's worth of bits" → bits_norm ≈ 1.0). Override the
+    # random-sample estimate with this structural normalizer so bits / fusion / k
+    # weights sit at the user-specified 1 / 30 / 30 ratio. typical_fusion (12) and
+    # typical_k_drop (5 = K_LEVELS range 8→13) are static structural maxima.
+    baseline.typical_bits_drop = float(
+        max(baseline.total_bits_sum / max(int(base_env.num_layers), 1), 1.0)
+    )
+    baseline.typical_fusion_count = 12.0
+    baseline.typical_k_drop = 5.0
 
     # Now baseline is fully populated; calibrate reward weights (v2-style
     # `calibrate_weights_from_baseline` writes baseline_metric1 into the
@@ -1364,7 +1382,10 @@ def run_sequential_via_runner(
     # candidates can be ranked by accuracy/stability deltas rather than all
     # collapsing into the same fallback.
     noisy_baseline_metric1 = baseline_clean_metric1
+    noisy_baseline_metric2 = baseline_clean_metric2
     noisy_baseline_loss_std = 0.0
+    noisy_baseline_metric1_std = 0.0
+    noisy_baseline_metric2_std = 0.0
     noisy_baseline_loss_mean = float(baseline.loss_mean)
     preflight_ok = False
     try:
@@ -1373,14 +1394,21 @@ def run_sequential_via_runner(
         noisy_metrics = preflight_info.get("metrics")
         if noisy_metrics is not None:
             noisy_baseline_metric1 = float(getattr(noisy_metrics, "metric1_mean", baseline_clean_metric1))
+            noisy_baseline_metric2 = float(getattr(noisy_metrics, "metric2_mean", baseline_clean_metric2))
             raw_std = float(getattr(noisy_metrics, "loss_std", 0.0))
             noisy_baseline_loss_std = raw_std if np.isfinite(raw_std) else 0.0
+            raw_m1_std = float(getattr(noisy_metrics, "metric1_std", 0.0))
+            noisy_baseline_metric1_std = raw_m1_std if np.isfinite(raw_m1_std) else 0.0
+            raw_m2_std = float(getattr(noisy_metrics, "metric2_std", 0.0))
+            noisy_baseline_metric2_std = raw_m2_std if np.isfinite(raw_m2_std) else 0.0
             raw_mean = float(getattr(noisy_metrics, "loss_mean", baseline.loss_mean))
             noisy_baseline_loss_mean = raw_mean if np.isfinite(raw_mean) else float(baseline.loss_mean)
-            # Overwrite baseline.loss_std only — the cost-side fields
-            # (loss_mean, metric*_mean) stay tied to the clean reference so
-            # downstream rank/report code keeps a stable comparison frame.
+            # Overwrite baseline std fields with the noisy preflight values —
+            # these feed v3 combined_stab_excess thresholds. Keep means tied to
+            # the clean reference so rank/report code has a stable frame.
             baseline.loss_std = noisy_baseline_loss_std
+            baseline.metric1_std = noisy_baseline_metric1_std
+            baseline.metric2_std = noisy_baseline_metric2_std
             preflight_ok = True
     except Exception as exc:
         log(f"  [baseline-preflight][warning] noisy probe failed: {exc}")
@@ -1405,6 +1433,16 @@ def run_sequential_via_runner(
             probe_size=int(getattr(ev, "stage2_probe_size", 256)),
         )
         base_env.acc_threshold = new_acc_threshold
+
+    # v3: derive a separate m2 threshold from the noisy m2 baseline. Same
+    # tolerance / probe-size guard as m1 — user spec (2026-05-20) confirms the
+    # per-metric thresholds differ only because baseline.m1 ≠ baseline.m2.
+    if base_env.acc_threshold_m2 is None:
+        base_env.acc_threshold_m2 = _noisy_accuracy_threshold_with_probe_guard(
+            noisy_baseline_metric1=float(noisy_baseline_metric2),
+            allowed_acc_drop=float(allowed_acc_drop),
+            probe_size=int(getattr(ev, "stage2_probe_size", 256)),
+        )
 
     user_stab_threshold = float(base_env.stab_threshold)
     stab_calib_summary = ""

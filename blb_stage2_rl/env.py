@@ -186,6 +186,7 @@ class BLBStage2Env:
             is_regression: bool = False,
             env_cfg: Optional[BLBStage2EnvConfig] = None,
             probe_runner: Optional[ProbeRunner] = None,
+            acc_threshold_m2: Optional[float] = None,
             ):
         self.handler = handler
         self.model = model
@@ -194,6 +195,12 @@ class BLBStage2Env:
         self.baseline = baseline
         self.reward_weights = reward_weights
         self.acc_threshold = float(acc_threshold)
+        # v3 (2026-05-20): second metric (m2) joins the metric_ok gate. When the
+        # caller doesn't supply a per-m2 threshold, fall back to the m1
+        # threshold (preserves single-metric semantics for legacy code paths).
+        self.acc_threshold_m2: Optional[float] = (
+            float(acc_threshold_m2) if acc_threshold_m2 is not None else None
+        )
         self.stab_threshold = float(stab_threshold)
         self.max_sfs = max_sfs
         self.num_layers = int(num_layers)
@@ -511,15 +518,24 @@ class BLBStage2Env:
             if placeholder_metric1 < float(self.acc_threshold):
                 placeholder_metric1 = float(self.acc_threshold)
             placeholder_metric2 = float(self.baseline.metric2_mean or 0.0)
+            if self.acc_threshold_m2 is not None and placeholder_metric2 < float(self.acc_threshold_m2):
+                placeholder_metric2 = float(self.acc_threshold_m2)
             placeholder_loss_std = float(self.baseline.loss_std or 0.0)
             if placeholder_loss_std > float(self.stab_threshold):
                 placeholder_loss_std = float(self.stab_threshold)
             placeholder_loss_mean = float(self.baseline.loss_mean or 0.0)
+            # v3 stability path: m1_std/m2_std also enter combined_stab_excess.
+            # Use baseline stds (which v3 thresholds will treat as "passing" by
+            # construction) so the short-circuit can't trip stab_violation.
+            placeholder_m1_std = float(self.baseline.metric1_std or 0.0)
+            placeholder_m2_std = float(self.baseline.metric2_std or 0.0)
             metrics = EpisodeMetrics(
                 loss_mean=placeholder_loss_mean,
                 loss_std=placeholder_loss_std,
                 metric1_mean=placeholder_metric1,
                 metric2_mean=placeholder_metric2,
+                metric1_std=placeholder_m1_std,
+                metric2_std=placeholder_m2_std,
                 loss_max=placeholder_loss_mean,
                 metric1_min=placeholder_metric1,
                 metric2_min=placeholder_metric2,
@@ -530,6 +546,7 @@ class BLBStage2Env:
                 baseline=self.baseline,
                 weights=self.reward_weights,
                 acc_threshold=self.acc_threshold,
+                acc_threshold_m2=self.acc_threshold_m2,
                 stab_threshold=self.stab_threshold,
                 any_invalid=True,
             )
@@ -579,6 +596,7 @@ class BLBStage2Env:
                 baseline=self.baseline,
                 weights=self.reward_weights,
                 acc_threshold=self.acc_threshold,
+                acc_threshold_m2=self.acc_threshold_m2,
                 stab_threshold=self.stab_threshold,
                 any_invalid=True,
             )
@@ -612,6 +630,7 @@ class BLBStage2Env:
                 baseline=self.baseline,
                 weights=self.reward_weights,
                 acc_threshold=self.acc_threshold,
+                acc_threshold_m2=self.acc_threshold_m2,
                 stab_threshold=self.stab_threshold,
                 any_invalid=True,
             )
@@ -638,6 +657,7 @@ class BLBStage2Env:
             baseline=self.baseline,
             weights=self.reward_weights,
             acc_threshold=self.acc_threshold,
+            acc_threshold_m2=self.acc_threshold_m2,
             stab_threshold=self.stab_threshold,
             any_invalid=any_invalid,
         )
@@ -778,6 +798,8 @@ class BLBStage2Env:
             loss_std=float(loss_arr.std(ddof=0)) if loss_arr.size > 1 else 0.0,
             metric1_mean=float(m1_arr.mean()),
             metric2_mean=float(m2_arr.mean()),
+            metric1_std=float(m1_arr.std(ddof=0)) if m1_arr.size > 1 else 0.0,
+            metric2_std=float(m2_arr.std(ddof=0)) if m2_arr.size > 1 else 0.0,
             loss_max=float(loss_arr.max()),
             metric1_min=float(m1_arr.min()),
             metric2_min=float(m2_arr.min()),

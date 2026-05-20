@@ -911,9 +911,21 @@ class BLBStage2RLRunner:
         baseline.loss_std = float(baseline_metrics.loss_std)
         baseline.metric1_mean = float(baseline_metrics.metric1_mean)
         baseline.metric2_mean = float(baseline_metrics.metric2_mean)
+        # v3 stability: combined_stab_excess needs baseline.metric{1,2}_std too.
+        baseline.metric1_std = float(getattr(baseline_metrics, "metric1_std", 0.0) or 0.0)
+        baseline.metric2_std = float(getattr(baseline_metrics, "metric2_std", 0.0) or 0.0)
+        # v3 cost: override typical_*_drop with the structural normalizers the
+        # 30:30:1 importance weights are designed around. typical_bits = baseline /
+        # num_layers ("saving one layer's worth of bits" = bits_norm 1.0);
+        # typical_fusion / typical_k = K_LEVELS-derived static maxima.
+        baseline.typical_bits_drop = float(
+            max(baseline.total_bits_sum / max(int(env.num_layers), 1), 1.0)
+        )
+        baseline.typical_fusion_count = 12.0
+        baseline.typical_k_drop = 5.0
 
-        # baseline 完全 populated 后再校准 reward weights（v2-style 把
-        # baseline_metric1 写进 weights，margin_acc 才有正确的分母）。
+        # baseline 完全 populated 后再校准 reward weights（v3 把 baseline_metric1
+        # 和 baseline_metric2 都写进 weights，margin 与阈值都能正确派生）。
         weights = calibrate_weights_from_baseline(baseline)
         env.reward_weights = weights
         status.set_extra("reward_weights", {
