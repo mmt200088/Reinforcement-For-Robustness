@@ -1549,17 +1549,18 @@ def train_sequential(
                 guarded_radius2.radius2_frontier_expansion_count
             )
         episode_records.append(record)
+        pending_full_vec = getattr(env, "_pending_full_vec", None)
         if (
                 int(record.terminal_priority) == 3
                 and str(record.terminal_pareto_event_kind) in {
                     "frontier_expansion",
                     "frontier_member",
                 }
-                and getattr(seq_env, "_pending_full_vec", None) is not None
+                and pending_full_vec is not None
         ):
             frontier_seed_actions.append((
                 int(absolute_ep),
-                np.asarray(seq_env._pending_full_vec, dtype=np.int64).copy(),
+                np.asarray(pending_full_vec, dtype=np.int64).copy(),
             ))
             if len(frontier_seed_actions) > 64:
                 del frontier_seed_actions[:-64]
