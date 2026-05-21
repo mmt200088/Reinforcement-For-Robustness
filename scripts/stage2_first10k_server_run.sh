@@ -28,7 +28,7 @@ ENT_COEF="${ENT_COEF:-0.06}"
 ENT_RAMP="${ENT_RAMP:-600}"
 WARMSTART_BIAS_GAIN="${WARMSTART_BIAS_GAIN:-1.2}"
 
-RUN_ID="stage2_rl_first10k_curve_$(date +%Y%m%d_%H%M%S)"
+RUN_ID="stage2_rl_${PLANNED_EPISODES}_curve_$(date +%Y%m%d_%H%M%S)"
 ARTIFACT_DIR="experiments/server_command_runs/${RUN_ID}"
 PERSIST_ROOT="Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005"
 STAGE2_NOISE="${PERSIST_ROOT}/stage2_noise"
@@ -334,7 +334,7 @@ echo ""
 echo "================================================================================"
 echo "Step 5/6: fresh ${PLANNED_EPISODES}-episode formal four-GPU RL run"
 echo "================================================================================"
-launch_and_watch_rl "formal" "$PLANNED_EPISODES" "rl_10000_four_gpu.log"
+launch_and_watch_rl "formal" "$PLANNED_EPISODES" "rl_${PLANNED_EPISODES}_four_gpu.log"
 FORMAL_RC=$?
 kill "$NVS_PID" 2>/dev/null || true
 trap - EXIT
@@ -353,7 +353,7 @@ echo "==========================================================================
 echo "Step 6/6: best-effort git artifact publish"
 echo "================================================================================"
 git add -f "$ARTIFACT_DIR" || true
-git commit -m "Add GTrXL guarded-radius2 first-10k RL monitor results" || true
+git commit -m "Add GTrXL guarded-radius2 ${PLANNED_EPISODES}-episode RL monitor results" || true
 git push || true
 
 exit 0

@@ -7,21 +7,29 @@
 
 ```bash
 set -euo pipefail
-bash scripts/stage2_reward_probe_scaling_benchmark.sh
+PLANNED_EPISODES=60000 \
+SMOKE_EPISODES=1000 \
+BATCH_SIZE=512 \
+K_TRIALS=4 \
+PROBE_SIZE=256 \
+RL_CUDA_VISIBLE_DEVICES=0,1,2,3 \
+REWARD_DEVICES=0,1,2,3 \
+bash scripts/stage2_first10k_server_run.sh
 ```
 
 ## metadata
 
-- **任务**：新四卡 GPUShare 服务器迁移前，验证 Stage-2 RL reward probe 的 1/2/3/4 卡并行速度和 batch size。
+- **任务**：在新四卡 GPUShare 服务器上运行最新 Stage-2 BLB RL，正式目标 60000 轮，并统计每小时能跑多少轮。
 - **协议**：服务器只负责 `git pull`、运行实验、产出结果 artifacts；真实源码修改都在本地完成并通过 git 同步。
 - **本次目标**：
-  - 使用真实 Stage-2 reward probe 链路测试 `CUDA_VISIBLE_DEVICES=0`、`0,1`、`0,1,2`、`0,1,2,3`。
-  - 固定 `--stage2-k-trials 4` 和 `--stage2-probe-size 256`；四卡时每张卡正好跑一个独立噪声 trial。
-  - 扫描 batch size `128 256 512`，选择 reward probe 平均 wall time 最低的配置。
-  - 输出 `stage2_reward_probe_scaling_report.html`、`benchmark_summary.json`、每个配置的 `episodes.jsonl` 和日志。
-  - 速度验证通过后，正式长 run 使用 `bash scripts/stage2_first10k_server_run.sh`，该脚本默认四卡、K=4、batch size=512。
+  - 先跑 1000 episode smoke；smoke PASS 后启动 fresh 60000 episode formal RL。
+  - 使用最新 GTrXL Stage-2 sequential policy、Pareto-only reward、non-monotonic empirical proposal sampler、guarded radius2。
+  - 固定 `--stage2-k-trials 4` 和 `--stage2-probe-size 256`；四卡时每张卡跑一个独立噪声 trial。
+  - 使用上一轮四卡 benchmark 选出的最快配置：`batch size=512`、`reward_devices=0,1,2,3`。
+  - 监控吞吐：至少在运行约 1 小时后统计 episode/hour；后续继续从 `episodes.jsonl` 和 `monitor_live.json` 更新速度。
+  - 遇到硬失败或明显训练异常时及时停止，不浪费服务器时间；代码 bug 必须回本地修复后再 push、server pull、rerun。
 - **本次实验假设**：上一版 Pareto-only 10k 全程 P3、无 invalid、无稳定性失败，但后期 frontier 扩展少，dominated/duplicate 样本占比高，且旧 MLP policy/critic 表达力不足、baseline prior 过容易把策略锁在 baseline 附近。Claude 已修复 action → 真实模型计算配置链路，旧结果只能作为 baseline。新 run 使用 GTrXL token policy、外部衰减 baseline prior、PPO 稳定器，以及 non-monotonic empirical proposal sampler。历史 raw radius2 曾在 `radius=2, mutations=8/9` 区间触发 P1 cluster，因此仍保持默认 raw `NEIGHBOR_MAX_RADIUS=1`，只在 frontier 停滞且最近健康时打开受控 radius2：
-  - `--stage2-search-episodes 10000`
+  - `--stage2-search-episodes 60000`
   - `--blb-v3-warmstart-anchor-episodes 60`
   - `--blb-v3-ent-coef 0.06`
   - `--blb-v3-ent-coef-ramp-episodes 600`
@@ -35,18 +43,21 @@ bash scripts/stage2_reward_probe_scaling_benchmark.sh
   - `--blb-v3-guarded-radius2-max-mutations 4`
   - `--blb-v3-guarded-radius2-episode-fraction 0.15`
   - `--blb-v3-guarded-radius2-cooldown-episodes 300`
-- **同步保护**：脚本中的 `git pull --ff-only` 如果失败或超时会直接 abort，不能继续用旧 HEAD 跑 10k。
+- **长周期判断**：历史经验上，Stage-2 RL 通常需要 50000+ 轮才有有效搜索结论；但如果到 20000 轮后 reward 仍长期没有进入快速增长期，要把它当成需要诊断的搜索/训练异常，而不是简单继续耗时。
+- **同步保护**：脚本中的 `git pull --ff-only` 如果失败或超时会直接 abort，不能继续用旧 HEAD 跑 60000。
 - **Pareto cost 目标**：P1/P2 不入 cost archive；P3 候选只按 `fusion_gain / k_gain / bits_gain` 的非支配 frontier 给 PPO bounded shaping，不再用 `typical_*` 或人工权重标量决定 cost 排名。
 - **Policy/critic 目标**：`BLBStage2SequentialPolicy` 应为 `blb_v3_sequential_gtrxl_v2scale`：causal GTrXL `d_model=256, n_heads=8, n_layers=4, d_ff=512, dropout=0.1`，per-slot heads，单 value head；旧 sequential checkpoint 不兼容，必须 fresh。
 - **PPO 稳定器**：运行日志/`ppo_updates.jsonl` 应包含 approximate KL、KL early stop、adaptive LR scale、return normalizer、per-slot entropy recovery 等新字段。
 - **Non-monotonic 探索目标**：不要把“降低 SF”当成必然靠近边界。SF/K 的 index move 只是 proposal；真实边界方向只能由 F1 model-forward metric/stability、Rescale_optimizer cost signals 和 Pareto archive 事件确认。允许某些 SF/K 反向或横向 move，如果它们满足 P3 并改善 `fusion_gain/k_gain/bits_gain`。
 - **guarded radius2 规则**：只有 absolute episode 达到 1060、最近 600 轮 frontier expansion 少于 1、最近 100 轮无 P1/P2/invalid/stability/loss-cap，且 offset 在 radius1 历史中至少 3 次 P3 成功且 0 次失败，才允许 radius2；若 radius2 触发硬失败，立刻 300 episode cooldown 回到 radius1。
 - **硬失败示例**：四卡配置没有出现 4 个 probe worker、`terminal_probe_trial_counts` 不是 `[1,1,1,1]`、GPU 采样显示部分卡完全空闲、四卡 wall time 没有明显优于单卡且不是 batch size/启动开销造成。
-- **主要输出**：`experiments/server_command_runs/stage2_reward_probe_scaling_<timestamp>/`
-  - `stage2_reward_probe_scaling_report.html`
-  - `benchmark_summary.json`
-  - `best_batch_size.txt`
-  - `runs.jsonl`
-  - `*_episodes.jsonl`
-  - `*_pruning_search_log.txt`
-  - `benchmark_stdout.log`
+- **主要输出**：`experiments/server_command_runs/stage2_rl_60000_curve_<timestamp>/`
+  - `server_command_stdout.log`
+  - `run_manifest.json`
+  - `smoke_monitor_summary.json`
+  - `formal_monitor_summary.json`
+  - `formal_episodes.jsonl`
+  - `ppo_updates.jsonl`
+  - `pareto_frontier.json`
+  - `nvidia_smi_during_rl.csv`
+  - `server_monitor_report.html`

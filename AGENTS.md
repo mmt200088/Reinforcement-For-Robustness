@@ -33,17 +33,17 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   hypothesis, design the next focused experiment, observe the curve/logs, adjust
   code or hyperparameters locally, and keep iterating until the goal evidence is
   clean.
-- Current extension of that goal: optimize the first 10,000 Stage-2 RL episodes,
-  not just the initial 600-episode smoke. Success now means the first-10k reward
-  curve stays healthy and continues making search progress on rolling averages.
-  Occasional negative reward spikes or isolated P1(acc) episodes are acceptable
-  research noise if they do not become frequent or sustained and the rolling
-  reward windows do not collapse. Hard failures remain: collapse sentinels such
-  as `loss_mean=100`, sustained/high-frequency P1(acc), invalid-step
-  resurgence, a dead GPU reward-probe path, or a long plateau caused by
-  entropy/clip collapse or an overly narrow safe-neighbor curriculum. Treat 10k
-  runs as research evidence, with online watchdog checks and follow-up
-  experiments when the curve stalls.
+- Current extension of that goal: run and monitor a 60,000-episode Stage-2 RL
+  search, not just 600/1000-episode smoke or the earlier first-10k milestone.
+  Success now means the long reward curve stays healthy and makes search
+  progress on rolling averages. Occasional negative reward spikes or isolated
+  P1(acc) episodes are acceptable research noise if they do not become frequent
+  or sustained and the rolling reward windows do not collapse. Hard failures
+  remain: collapse sentinels such as `loss_mean=100`, sustained/high-frequency
+  P1(acc), invalid-step resurgence, a dead GPU reward-probe path, or a long
+  plateau caused by entropy/clip collapse or an overly narrow safe-neighbor
+  curriculum. Treat 60k runs as research evidence, with online watchdog checks
+  and follow-up experiments when the curve stalls.
 - First 10k attempt evidence, 2026-05-20: `NEIGHBOR_RAMP=3000`,
   `NEIGHBOR_MAX_MUTATIONS=16`, `NEIGHBOR_MAX_RADIUS=3` improved reward into the
   low 42s but hit a P1 cluster around episodes 1699-1757. P1 was 0 through
@@ -700,9 +700,12 @@ The active promotion ladder is:
   Only F4 evidence belongs in final "best" claims.
 
 RL training is long-cycle. Based on prior runs, effective BLB Stage-2 RL
-usually needs 50,000+ episodes/rounds. Short runs such as 200 episodes are for
-plumbing, performance, and regression smoke only; do not treat their reward
-quality as evidence that the RL search worked or failed.
+usually needs 50,000+ episodes/rounds. The user expects a healthy run to enter
+a rapid reward-growth phase sometime after roughly 20,000 episodes; if a 60k
+run is still flat well past that point, treat it as a training/search pathology
+to diagnose instead of blindly spending the remaining budget. Short runs such
+as 200 episodes are for plumbing, performance, and regression smoke only; do
+not treat their reward quality as evidence that the RL search worked or failed.
 
 F2/F3 may appear in old JSONL or older documentation but are no longer the
 active promotion ladder.

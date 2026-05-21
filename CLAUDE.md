@@ -79,13 +79,13 @@ Current Stage-2 RL collapse goal mode:
   falsifiable hypotheses, run focused experiments, study the reward curve and
   diagnostics, tune or repair locally, and keep repeating the git-synced
   server-run loop until the evidence is clean.
-- The active next milestone is the first 10,000 Stage-2 RL episodes. This is
+- The active next milestone is a 60,000-episode Stage-2 RL search. This is
   not merely a longer smoke test: monitor whether reward keeps improving,
   whether entropy/clip_fraction collapse into a narrow search, whether
   safe-neighbor mutation/radius coverage expands, and whether cost signals
   improve without accuracy/stability regressions. Use online watchdog evidence
   during the run instead of waiting hours to discover a bad curve.
-- For the first-10k curve, judge health by rolling reward averages and
+- For the long 60k curve, judge health by rolling reward averages and
   frequency/sustain of abnormal episodes, not by requiring every single episode
   to be clean. Occasional negative reward spikes or isolated P1(acc) episodes
   are acceptable if they do not become frequent or consecutive and the rolling
@@ -626,9 +626,12 @@ they rank as legacy and aren't promotable):
 - **F4** — final eval: full/near-full validation set, real BLB install, frozen report. **Only F4 numbers belong in "best" claims.**
 
 RL training is long-cycle. Based on prior runs, effective BLB Stage-2 RL
-usually needs 50,000+ episodes/rounds. Short runs such as 200 episodes are for
-plumbing, performance, and regression smoke only; do not treat their reward
-quality as evidence that the RL search worked or failed.
+usually needs 50,000+ episodes/rounds. The user expects a healthy run to enter
+a rapid reward-growth phase sometime after roughly 20,000 episodes; if a 60k
+run is still flat well past that point, treat it as a training/search pathology
+to diagnose instead of blindly spending the remaining budget. Short runs such
+as 200 episodes are for plumbing, performance, and regression smoke only; do
+not treat their reward quality as evidence that the RL search worked or failed.
 
 The runner's "final eval" path must install the actual BLB best action (decode → `bridge.apply` → real `Rescale_optimizer`), not silently fall back to a legacy all-max baseline. If you change runner glue, verify this path explicitly.
 
