@@ -14,6 +14,7 @@ PROBE_SIZE="${PROBE_SIZE:-256}"
 K_TRIALS="${K_TRIALS:-4}"
 DEVICE_SPECS="${DEVICE_SPECS:-0;0,1;0,1,2;0,1,2,3}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-2400}"
+GPU_SAMPLE_INTERVAL_SECONDS="${GPU_SAMPLE_INTERVAL_SECONDS:-2}"
 
 mkdir -p "$ARTIFACT_DIR"
 exec > >(tee "${ARTIFACT_DIR}/benchmark_stdout.log") 2>&1
@@ -27,6 +28,35 @@ nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --for
   | tee "${ARTIFACT_DIR}/nvidia_pre_benchmark.csv"
 
 IFS=';' read -r -a DEVICE_SPEC_ARRAY <<< "$DEVICE_SPECS"
+
+sample_gpu_usage() {
+  local out_file="$1"
+  printf 'timestamp,index,name,memory_used_mib,utilization_gpu_pct\n' > "$out_file"
+  while true; do
+    nvidia-smi \
+      --query-gpu=timestamp,index,name,memory.used,utilization.gpu \
+      --format=csv,noheader,nounits >> "$out_file" 2>/dev/null || true
+    sleep "$GPU_SAMPLE_INTERVAL_SECONDS"
+  done
+}
+
+wait_for_background_run() {
+  local pid="$1"
+  local timeout_seconds="$2"
+  local elapsed=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$elapsed" -ge "$timeout_seconds" ]; then
+      echo "[bench] pid=${pid} exceeded ${timeout_seconds}s; sending SIGINT"
+      kill -INT "$pid" 2>/dev/null || true
+      sleep 10
+      kill -TERM "$pid" 2>/dev/null || true
+      return 124
+    fi
+    sleep 5
+    elapsed=$((elapsed + 5))
+  done
+  return 0
+}
 
 for batch_size in $BENCH_BATCH_SIZES; do
   for device_spec in "${DEVICE_SPEC_ARRAY[@]}"; do
@@ -43,7 +73,9 @@ PY
     fi
     label="bs${batch_size}_g${gpu_count}"
     persistent_root="${ARTIFACT_DIR}/persistent_${label}"
+    latest_pid_file="${persistent_root}/rl/bert-base/mrpc/LATEST_PID"
     log_file="${ARTIFACT_DIR}/${label}.log"
+    gpu_sample_file="${ARTIFACT_DIR}/${label}_nvidia_smi.csv"
     echo ""
     echo "================================================================================"
     echo "[bench] ${label}: CUDA_VISIBLE_DEVICES=${device_spec}"
@@ -64,15 +96,29 @@ PY
         --skip-final-eval \
         --fresh \
         "${reward_arg[@]}" 2>&1 | tee "$log_file"
-    rc=${PIPESTATUS[0]}
+    launch_rc=${PIPESTATUS[0]}
+    rc=$launch_rc
+    if [ "$launch_rc" -eq 0 ] && [ -f "$latest_pid_file" ]; then
+      job_pid="$(cat "$latest_pid_file" | tr -d '[:space:]')"
+      echo "[bench] ${label} launched pid=${job_pid}; waiting for completion"
+      sample_gpu_usage "$gpu_sample_file" &
+      sampler_pid=$!
+      set +e
+      wait_for_background_run "$job_pid" "$TIMEOUT_SECONDS"
+      wait_rc=$?
+      set -e
+      kill "$sampler_pid" 2>/dev/null || true
+      wait "$sampler_pid" 2>/dev/null || true
+      rc=$wait_rc
+    fi
     set -e
-    echo "[bench] ${label} rc=${rc}"
+    echo "[bench] ${label} launch_rc=${launch_rc} rc=${rc}"
     progress_dir="${persistent_root}/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress"
     diag_dir="${progress_dir}/diagnostics"
     [ -f "${diag_dir}/episodes.jsonl" ] && cp "${diag_dir}/episodes.jsonl" "${ARTIFACT_DIR}/${label}_episodes.jsonl" || true
     [ -f "${progress_dir}/../pruning_search_log.txt" ] && cp "${progress_dir}/../pruning_search_log.txt" "${ARTIFACT_DIR}/${label}_pruning_search_log.txt" || true
-    printf '{"label":"%s","batch_size":%s,"gpu_count":%s,"device_spec":"%s","rc":%s}\n' \
-      "$label" "$batch_size" "$gpu_count" "$device_spec" "$rc" >> "${ARTIFACT_DIR}/runs.jsonl"
+    printf '{"label":"%s","batch_size":%s,"gpu_count":%s,"device_spec":"%s","launch_rc":%s,"rc":%s}\n' \
+      "$label" "$batch_size" "$gpu_count" "$device_spec" "$launch_rc" "$rc" >> "${ARTIFACT_DIR}/runs.jsonl"
   done
 done
 
@@ -97,6 +143,8 @@ for run in runs:
     speedups = []
     devices_seen = set()
     counts_seen = set()
+    gpu_util = {}
+    gpu_mem = {}
     if ep_path.exists():
         for line in ep_path.read_text().splitlines():
             if not line.strip():
@@ -113,6 +161,20 @@ for run in runs:
             counts = rec.get("terminal_probe_trial_counts") or []
             if counts:
                 counts_seen.add(tuple(int(x) for x in counts))
+    smi_path = root / f"{label}_nvidia_smi.csv"
+    if smi_path.exists():
+        for line in smi_path.read_text().splitlines()[1:]:
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 5:
+                continue
+            idx = parts[1]
+            try:
+                mem = float(parts[-2])
+                util = float(parts[-1])
+            except ValueError:
+                continue
+            gpu_mem[idx] = max(gpu_mem.get(idx, 0.0), mem)
+            gpu_util[idx] = max(gpu_util.get(idx, 0.0), util)
     mean_wall = statistics.mean(probe_walls) if probe_walls else None
     median_wall = statistics.median(probe_walls) if probe_walls else None
     mean_speedup = statistics.mean(speedups) if speedups else None
@@ -124,6 +186,8 @@ for run in runs:
         "mean_speedup": mean_speedup,
         "devices_seen": sorted(devices_seen),
         "trial_splits": [list(x) for x in sorted(counts_seen)],
+        "max_gpu_util_pct": gpu_util,
+        "max_gpu_mem_mib": gpu_mem,
     })
 
 completed = [r for r in rows if r["rc"] == 0 and r["mean_wall"] is not None]
@@ -152,6 +216,8 @@ for r in rows:
         f"<td>{fmt(r['mean_speedup'])}</td>"
         f"<td>{html.escape(str(r['devices_seen']))}</td>"
         f"<td>{html.escape(str(r['trial_splits']))}</td>"
+        f"<td>{html.escape(str(r['max_gpu_util_pct']))}</td>"
+        f"<td>{html.escape(str(r['max_gpu_mem_mib']))}</td>"
         "</tr>"
     )
 
@@ -172,7 +238,7 @@ code{{background:#f6f8fa;padding:2px 4px;border-radius:4px}}
 trials over the 256-example validation probe subset. For 4 GPUs, the expected
 trial split is one independent trial per GPU.</p>
 {best_html}
-<table><thead><tr><th>run</th><th>batch</th><th>GPUs</th><th>visible devices</th><th>rc</th><th>probe calls</th><th>mean wall s</th><th>median wall s</th><th>mean speedup</th><th>devices seen</th><th>trial splits</th></tr></thead>
+<table><thead><tr><th>run</th><th>batch</th><th>GPUs</th><th>visible devices</th><th>rc</th><th>probe calls</th><th>mean wall s</th><th>median wall s</th><th>mean speedup</th><th>devices seen</th><th>trial splits</th><th>max GPU util %</th><th>max GPU mem MiB</th></tr></thead>
 <tbody>{''.join(trs)}</tbody></table>
 </body></html>"""
 (root / "stage2_reward_probe_scaling_report.html").write_text(page)
