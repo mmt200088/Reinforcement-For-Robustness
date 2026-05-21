@@ -147,6 +147,14 @@ class BLBStage2EnvConfig:
     probe_batch_count: int = 4              # 每次 trial 跑多少 mini-batch
     deterministic_eval: bool = False
     rotation_name_map: Optional[Mapping[Tuple[int, str], Mapping[str, str]]] = None
+    persistent_probe_install: bool = False
+    """Keep BLB wrappers installed across episodes and update cfgs in-place.
+
+    Multi-GPU reward probes otherwise pay a full clear + reinstall on every
+    episode for every model replica. The handler's BLB replace methods are
+    idempotent and update existing wrappers/hooks, so persistent mode removes
+    the restore/re-wrap churn without changing the action/config semantics.
+    """
 
 
 class BLBStage2Env:
@@ -222,6 +230,7 @@ class BLBStage2Env:
         # runs leave this None and the existing path runs bitwise-unchanged.
         self.probe_runner = probe_runner
         self._last_probe_diagnostics: Dict[str, Any] = {}
+        self._installed_action_hash: Optional[str] = None
         self.pareto_cost_archive = None
         # Counter for derive_probe_base_seed; bumped every action eval so two
         # consecutive actions in the same episode get different seed streams.
@@ -237,6 +246,14 @@ class BLBStage2Env:
         self._step_idx: int = 0
 
         self._device = next(model.parameters()).device
+
+    def clear_installed_blb(self) -> None:
+        """Clear BLB noise from the active single- or multi-GPU install path."""
+        if self.probe_runner is not None:
+            self.probe_runner.clear()
+        else:
+            self.bridge.clear()
+        self._installed_action_hash = None
 
     def _normalize_degree_vector(self, degrees, *, default: int, name: str):
         if degrees is None:
@@ -387,11 +404,14 @@ class BLBStage2Env:
             except Exception:
                 pass
 
-        # 2) 清掉本 env 之前可能装过的 BLB 噪声（重复 clear 安全）
-        try:
-            self.bridge.clear()
-        except Exception:
-            pass
+        # 2) 清掉本 env 之前可能装过的 BLB 噪声（重复 clear 安全）。
+        # Multi-GPU persistent mode deliberately keeps wrappers/hooks installed
+        # across episodes and only updates cfgs when the next action arrives.
+        if not bool(getattr(self.env_cfg, "persistent_probe_install", False)):
+            try:
+                self.clear_installed_blb()
+            except Exception:
+                pass
 
         if seed is not None:
             torch.manual_seed(int(seed))
@@ -417,6 +437,8 @@ class BLBStage2Env:
         action_vec_hash = action_hash(action_vec)
 
         degree_sync = self.sync_degree_vectors_from_model()
+        timing: Dict[str, float] = {}
+        cost_t0 = time.perf_counter()
         cost_eval = evaluate_action_for_cost(
             action_vec,
             profile=self.env_cfg.profile,
@@ -426,6 +448,7 @@ class BLBStage2Env:
             gelu_degree=self.gelu_degree,
             attn_degree=self.attn_degree,
         )
+        timing["cost_eval_wall_seconds"] = float(time.perf_counter() - cost_t0)
         decoded = cost_eval.decoded
 
         # 1) 调 Rescale_optimizer 拿 cost 信号
@@ -520,6 +543,7 @@ class BLBStage2Env:
             "forward_ran": False,
             "optimizer_baseline_action": bool(is_optimizer_baseline_action),
             "optimizer_eval_mode": cost_eval.optimizer_eval_mode,
+            "timing": timing,
         }
         if optimizer_invalid_summary:
             info["optimizer_invalid_summary"] = optimizer_invalid_summary
@@ -602,9 +626,15 @@ class BLBStage2Env:
         # layer 0；first_input_sf 字段保留为占位 0 不传给 bridge。
         # When probe_runner is set (multi-GPU), install on every worker so each
         # GPU's model carries the same BLB cfg before its trial subset runs.
+        persistent_install = bool(getattr(self.env_cfg, "persistent_probe_install", False))
+        install_skipped = False
+        install_t0 = time.perf_counter()
         try:
-            if self.probe_runner is not None:
+            if persistent_install and self._installed_action_hash == action_vec_hash:
+                install_skipped = True
+            elif self.probe_runner is not None:
                 self.probe_runner.install_action(decoded)
+                self._installed_action_hash = action_vec_hash if persistent_install else None
             else:
                 self.bridge.apply(
                     block1_cfgs=decoded.block1_cfgs,
@@ -613,14 +643,14 @@ class BLBStage2Env:
                     block4_cfgs=decoded.block4_cfgs,
                     block5_cfgs=decoded.block5_cfgs,
                 )
+                self._installed_action_hash = action_vec_hash if persistent_install else None
         except Exception as exc:
             try:
-                if self.probe_runner is not None:
-                    self.probe_runner.clear()
-                else:
-                    self.bridge.clear()
+                self.clear_installed_blb()
             except Exception:
                 pass
+            timing["probe_install_wall_seconds"] = float(time.perf_counter() - install_t0)
+            timing["probe_install_skipped"] = float(0.0)
             # 互斥校验失败，按 invalid 处理
             metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
             breakdown = compute_reward(
@@ -640,25 +670,29 @@ class BLBStage2Env:
             info["error"] = f"BLB apply failed: {exc}"
             info["invalid"] = True
             info["apply_failed"] = True
+            info["timing"] = timing
             info["metrics"] = metrics
             self._step_idx += 1
             self._last_invalid_rate = 1.0
             self._last_total_bits_norm = float(opt_signals.total_bits_sum) / max(1.0, float(self.baseline.total_bits_sum))
             self._last_fusion_count = float(opt_signals.total_fusion_count)
             return self._build_state(), float(breakdown.reward), True, info
+        timing["probe_install_wall_seconds"] = float(time.perf_counter() - install_t0)
+        timing["probe_install_skipped"] = float(1.0 if install_skipped else 0.0)
 
         # 5) forward + metrics（多 trial）
         try:
             metrics = self._eval_on_probe(self.env_cfg.num_trials_per_step)
             info["forward_ran"] = True
             if self._last_probe_diagnostics:
-                info["probe_diagnostics"] = dict(self._last_probe_diagnostics)
+                diag = dict(self._last_probe_diagnostics)
+                diag.update(timing)
+                diag["persistent_probe_install"] = bool(persistent_install)
+                diag["probe_install_skipped"] = bool(install_skipped)
+                info["probe_diagnostics"] = diag
         except Exception as exc:
             try:
-                if self.probe_runner is not None:
-                    self.probe_runner.clear()
-                else:
-                    self.bridge.clear()
+                self.clear_installed_blb()
             except Exception:
                 pass
             metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
@@ -679,6 +713,7 @@ class BLBStage2Env:
             info["error"] = f"BLB eval failed: {exc}"
             info["invalid"] = True
             info["eval_failed"] = True
+            info["timing"] = timing
             info["metrics"] = metrics
             self._step_idx += 1
             self._last_invalid_rate = 1.0
@@ -686,10 +721,19 @@ class BLBStage2Env:
             self._last_fusion_count = float(opt_signals.total_fusion_count)
             return self._build_state(), float(breakdown.reward), True, info
         else:
-            if self.probe_runner is not None:
-                self.probe_runner.clear()
+            clear_t0 = time.perf_counter()
+            if persistent_install:
+                timing["probe_clear_wall_seconds"] = 0.0
+                timing["probe_clear_skipped"] = 1.0
             else:
-                self.bridge.clear()
+                self.clear_installed_blb()
+                timing["probe_clear_wall_seconds"] = float(time.perf_counter() - clear_t0)
+                timing["probe_clear_skipped"] = 0.0
+            if "probe_diagnostics" in info:
+                diag = dict(info["probe_diagnostics"])
+                diag.update(timing)
+                diag["probe_clear_skipped"] = bool(persistent_install)
+                info["probe_diagnostics"] = diag
 
         # 6) reward
         breakdown = compute_reward(

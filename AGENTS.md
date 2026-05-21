@@ -215,6 +215,16 @@ Implementation constraints to preserve:
   batches.
 - Avoid reloading the HuggingFace model for every action. `ProbeRunner` workers
   are initialized once per run and reused across action evaluations.
+- For multi-GPU sequential runs, `BLBStage2EnvConfig.persistent_probe_install`
+  is enabled after noisy baseline preflight. BLB wrappers/hooks stay installed
+  across episodes and `BLBNoiseRLBridge.apply(...)` updates cfgs in place; this
+  avoids the old per-episode clear/reinstall churn on four model replicas.
+- `ProbeRunner.install_action(...)` and `ProbeRunner.clear(...)` fan setup work
+  across workers through threads. `episodes.jsonl` now includes timing fields
+  for `per_step_optimizer_wall_seconds`, `terminal_cost_eval_wall_seconds`,
+  `terminal_probe_install_wall_seconds`, and
+  `terminal_probe_clear_wall_seconds` so throughput bottlenecks can be
+  diagnosed from artifacts instead of guessed from GPU utilization alone.
 - Keep the probe dataset fixed across trials exactly as today. Only the
   independent noise RNG seeds differ per trial.
 - Preserve the invalid-chain shortcut: if `Rescale_optimizer` reports

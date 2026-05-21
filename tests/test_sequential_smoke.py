@@ -654,6 +654,45 @@ class EnvEvalCommitSplitTest(unittest.TestCase):
             self.assertIn(needle, src, msg=f"missing: {needle!r}")
 
 
+class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
+    """Source-text locks for the four-GPU reward-probe throughput path."""
+
+    def test_probe_runner_parallelizes_setup_and_clear(self):
+        src = open("blb_stage2_rl/probe_runner.py", encoding="utf-8").read()
+        for needle in (
+            "def _for_each_worker",
+            "threading.Thread(target=task",
+            "self._for_each_worker(lambda w: w.install(decoded))",
+            "self._for_each_worker(clear_one)",
+        ):
+            self.assertIn(needle, src, msg=f"probe_runner.py missing: {needle!r}")
+
+    def test_env_has_persistent_install_and_timing_diagnostics(self):
+        src = open("blb_stage2_rl/env.py", encoding="utf-8").read()
+        for needle in (
+            "persistent_probe_install: bool = False",
+            "def clear_installed_blb",
+            "cost_eval_wall_seconds",
+            "probe_install_wall_seconds",
+            "probe_clear_wall_seconds",
+            "probe_install_skipped",
+            "persistent_probe_install",
+        ):
+            self.assertIn(needle, src, msg=f"env.py missing: {needle!r}")
+
+    def test_sequential_runner_enables_persistent_install_after_preflight(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        for needle in (
+            "base_env.clear_installed_blb()",
+            "base_env.env_cfg.persistent_probe_install = True",
+            "Multi-GPU BLB install cache",
+            "per_step_optimizer_wall_seconds",
+            "terminal_probe_install_wall_seconds",
+            "terminal_probe_clear_wall_seconds",
+        ):
+            self.assertIn(needle, src, msg=f"sequential_runner.py missing: {needle!r}")
+
+
 class RewardDesignV2RegressionTest(unittest.TestCase):
     """ADR-007: v2-style clipped+tier reward (supersedes ADR-002 implementation).
 

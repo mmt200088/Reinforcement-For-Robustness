@@ -26,6 +26,7 @@ fusion_count). The exact obs vector is built by :meth:`_build_obs`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import time
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -208,6 +209,7 @@ class BLBStage2SequentialEnv:
         block_cfg = cfgs_by_block[f"block{spec.block_idx}"][spec.layer_idx]
         config_name = f"{spec.graph_key_suffix}_L{spec.layer_idx}"
 
+        optimizer_t0 = time.perf_counter()
         try:
             out = self.base.rescale_bridge.evaluate(
                 config_name=config_name,
@@ -215,6 +217,7 @@ class BLBStage2SequentialEnv:
                 cfg=block_cfg,
             )
         except Exception as exc:
+            optimizer_wall = float(time.perf_counter() - optimizer_t0)
             return {
                 "spec": spec,
                 "action": action,
@@ -227,7 +230,9 @@ class BLBStage2SequentialEnv:
                 "invalid_chain": {"reason": f"bridge_error: {exc}"},
                 "bridge_error": str(exc),
                 "config_name": config_name,
+                "optimizer_wall_seconds": optimizer_wall,
             }
+        optimizer_wall = float(time.perf_counter() - optimizer_t0)
 
         return {
             "spec": spec,
@@ -240,6 +245,7 @@ class BLBStage2SequentialEnv:
             "fusion_count": int(out.fusion_count),
             "invalid_chain": out.invalid_chain,
             "config_name": config_name,
+            "optimizer_wall_seconds": optimizer_wall,
         }
 
     def commit_step(
@@ -310,6 +316,7 @@ class BLBStage2SequentialEnv:
             "total_bits": total_bits,
             "fusion_count": fusion_count,
             "invalid_chain": eval_info.get("invalid_chain"),
+            "optimizer_wall_seconds": float(eval_info.get("optimizer_wall_seconds", 0.0) or 0.0),
         }
 
         # 3) Apply optimizer cfg overrides on the (now committed) block_cfg.

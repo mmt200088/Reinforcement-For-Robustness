@@ -278,22 +278,57 @@ class ProbeRunner:
     def devices(self) -> List[torch.device]:
         return [w.device for w in self.workers]
 
-    def install_action(self, decoded: ActionDecodeResult) -> None:
-        """Apply the same cfg on every worker's model. Cheap (microseconds per
-        worker) so we don't bother parallelising this.
+    def _for_each_worker(self, fn) -> None:
+        """Run a worker-local operation on every worker.
+
+        Install/clear touches separate model replicas and CUDA devices. The old
+        serial loop made multi-GPU reward probes pay that setup cost N times
+        before the actual parallel forward even began.
         """
-        for w in self.workers:
-            w.install(decoded)
+        if len(self.workers) == 1:
+            fn(self.workers[0])
+            return
+
+        errors: List[Tuple[int, BaseException]] = []
+        lock = threading.Lock()
+
+        def task(w_idx: int) -> None:
+            try:
+                fn(self.workers[w_idx])
+            except BaseException as exc:  # noqa: BLE001
+                with lock:
+                    errors.append((w_idx, exc))
+
+        threads = [
+            threading.Thread(target=task, args=(i,), daemon=True)
+            for i in range(len(self.workers))
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        if errors:
+            w_idx, exc = errors[0]
+            raise RuntimeError(
+                f"probe-runner worker {w_idx} (device {self.workers[w_idx].device}) "
+                f"setup failed: {exc!r}"
+            ) from exc
+
+    def install_action(self, decoded: ActionDecodeResult) -> None:
+        """Apply the same cfg on every worker's model."""
+        self._for_each_worker(lambda w: w.install(decoded))
 
     def clear(self) -> None:
         """Reverse install on every worker. Always safe (clear is idempotent)."""
-        for w in self.workers:
+        def clear_one(w: ProbeWorker) -> None:
             try:
                 w.clear()
             except Exception:
                 # Defensive: clearing should never fail, but if it does we
                 # still want to attempt the other workers.
                 pass
+        self._for_each_worker(clear_one)
 
     def run_trials(self, k: int, base_seed: int) -> List[Tuple[float, float, float]]:
         """Run trials [0..k-1] in parallel across workers; return in trial order."""

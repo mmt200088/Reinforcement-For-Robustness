@@ -181,6 +181,16 @@ Current implementation facts:
 - `ProbeRunner` attaches when `reward_devices` has at least two devices. Worker
   0 reuses the env model/bridge on `cuda:0`; workers 1+ deep-copy the model to
   their own devices, build their own handler/bridge, and move probe batches.
+- For multi-GPU sequential runs, `BLBStage2EnvConfig.persistent_probe_install`
+  is enabled after noisy baseline preflight. BLB wrappers/hooks stay installed
+  across episodes and `BLBNoiseRLBridge.apply(...)` updates cfgs in place; this
+  avoids the old per-episode clear/reinstall churn on four model replicas.
+- `ProbeRunner.install_action(...)` and `ProbeRunner.clear(...)` fan setup work
+  across workers through threads. `episodes.jsonl` now includes timing fields
+  for `per_step_optimizer_wall_seconds`, `terminal_cost_eval_wall_seconds`,
+  `terminal_probe_install_wall_seconds`, and
+  `terminal_probe_clear_wall_seconds` so throughput bottlenecks can be
+  diagnosed from artifacts instead of guessed from GPU utilization alone.
 - With `K=4` and four GPUs, the split is `[1, 1, 1, 1]`: GPU 0 runs trial 0,
   GPU 1 trial 1, GPU 2 trial 2, and GPU 3 trial 3. Results are returned in
   trial order for existing aggregation.

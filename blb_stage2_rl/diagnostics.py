@@ -138,6 +138,12 @@ class EpisodeStats:
     terminal_probe_trial_counts: List[int] = field(default_factory=list)
     terminal_probe_trial_indices: List[List[int]] = field(default_factory=list)
     terminal_probe_speedup: float = 1.0
+    per_step_optimizer_wall_seconds: float = 0.0
+    terminal_cost_eval_wall_seconds: float = 0.0
+    terminal_probe_install_wall_seconds: float = 0.0
+    terminal_probe_clear_wall_seconds: float = 0.0
+    terminal_probe_install_skipped: bool = False
+    terminal_probe_clear_skipped: bool = False
     safe_neighbor_active: bool = False
     safe_neighbor_mutation_count: int = 0
     safe_neighbor_radius: int = 0

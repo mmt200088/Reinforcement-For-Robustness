@@ -827,6 +827,12 @@ class EpisodeRecord:
     terminal_probe_trial_counts: List[int] = field(default_factory=list)
     terminal_probe_trial_indices: List[List[int]] = field(default_factory=list)
     terminal_probe_speedup: float = 1.0
+    per_step_optimizer_wall_seconds: float = 0.0
+    terminal_cost_eval_wall_seconds: float = 0.0
+    terminal_probe_install_wall_seconds: float = 0.0
+    terminal_probe_clear_wall_seconds: float = 0.0
+    terminal_probe_install_skipped: bool = False
+    terminal_probe_clear_skipped: bool = False
     safe_neighbor_active: bool = False
     safe_neighbor_mutation_count: int = 0
     safe_neighbor_radius: int = 0
@@ -997,6 +1003,7 @@ def train_sequential(
         steps_taken = 0
         captured_step_infos: List[Dict[str, Any]] = []
         invalid_block_details: List[Dict[str, Any]] = []
+        per_step_optimizer_wall_seconds_val = 0.0
         # Terminal breakdown extracted from the last commit_step's info dict.
         # 0 / 0.0 means the episode never produced a terminal reward (e.g.,
         # early_terminate_on_invalid fired before the last step).
@@ -1023,6 +1030,11 @@ def train_sequential(
         terminal_probe_trial_counts_val: List[int] = []
         terminal_probe_trial_indices_val: List[List[int]] = []
         terminal_probe_speedup_val = 1.0
+        terminal_cost_eval_wall_seconds_val = 0.0
+        terminal_probe_install_wall_seconds_val = 0.0
+        terminal_probe_clear_wall_seconds_val = 0.0
+        terminal_probe_install_skipped_val = False
+        terminal_probe_clear_skipped_val = False
         baseline_prior_scale = _resolve_baseline_prior_scale(
             int(absolute_ep),
             anchor_episodes=int(force_baseline_episodes),
@@ -1200,6 +1212,9 @@ def train_sequential(
                     rejection_counters["steps_committed_valid"] += 1
                 total_bits_sum += int(info.get("total_bits", 0))
                 fusion_count_sum += int(info.get("fusion_count", 0))
+                per_step_optimizer_wall_seconds_val += float(
+                    info.get("optimizer_wall_seconds", 0.0) or 0.0
+                )
                 enriched_info = dict(info)
                 enriched_info["action"] = step_action_for_env
                 enriched_info["reward"] = float(reward)
@@ -1269,6 +1284,21 @@ def train_sequential(
                     ]
                     terminal_probe_speedup_val = float(
                         term_probe_diag.get("speedup_vs_sequential", 1.0) or 1.0
+                    )
+                    terminal_cost_eval_wall_seconds_val = float(
+                        term_probe_diag.get("cost_eval_wall_seconds", 0.0) or 0.0
+                    )
+                    terminal_probe_install_wall_seconds_val = float(
+                        term_probe_diag.get("probe_install_wall_seconds", 0.0) or 0.0
+                    )
+                    terminal_probe_clear_wall_seconds_val = float(
+                        term_probe_diag.get("probe_clear_wall_seconds", 0.0) or 0.0
+                    )
+                    terminal_probe_install_skipped_val = bool(
+                        term_probe_diag.get("probe_install_skipped", False)
+                    )
+                    terminal_probe_clear_skipped_val = bool(
+                        term_probe_diag.get("probe_clear_skipped", False)
                     )
                 obs = next_obs
                 if done:
@@ -1391,6 +1421,9 @@ def train_sequential(
                 })
             total_bits_sum += int(info.get("total_bits", 0))
             fusion_count_sum += int(info.get("fusion_count", 0))
+            per_step_optimizer_wall_seconds_val += float(
+                info.get("optimizer_wall_seconds", 0.0) or 0.0
+            )
             if info.get("early_terminated"):
                 early_terminated = True
 
@@ -1481,6 +1514,21 @@ def train_sequential(
                 terminal_probe_speedup_val = float(
                     term_probe_diag.get("speedup_vs_sequential", 1.0) or 1.0
                 )
+                terminal_cost_eval_wall_seconds_val = float(
+                    term_probe_diag.get("cost_eval_wall_seconds", 0.0) or 0.0
+                )
+                terminal_probe_install_wall_seconds_val = float(
+                    term_probe_diag.get("probe_install_wall_seconds", 0.0) or 0.0
+                )
+                terminal_probe_clear_wall_seconds_val = float(
+                    term_probe_diag.get("probe_clear_wall_seconds", 0.0) or 0.0
+                )
+                terminal_probe_install_skipped_val = bool(
+                    term_probe_diag.get("probe_install_skipped", False)
+                )
+                terminal_probe_clear_skipped_val = bool(
+                    term_probe_diag.get("probe_clear_skipped", False)
+                )
 
             obs = next_obs
             if done:
@@ -1529,6 +1577,12 @@ def train_sequential(
             terminal_probe_trial_counts=list(terminal_probe_trial_counts_val),
             terminal_probe_trial_indices=[list(x) for x in terminal_probe_trial_indices_val],
             terminal_probe_speedup=float(terminal_probe_speedup_val),
+            per_step_optimizer_wall_seconds=float(per_step_optimizer_wall_seconds_val),
+            terminal_cost_eval_wall_seconds=float(terminal_cost_eval_wall_seconds_val),
+            terminal_probe_install_wall_seconds=float(terminal_probe_install_wall_seconds_val),
+            terminal_probe_clear_wall_seconds=float(terminal_probe_clear_wall_seconds_val),
+            terminal_probe_install_skipped=bool(terminal_probe_install_skipped_val),
+            terminal_probe_clear_skipped=bool(terminal_probe_clear_skipped_val),
             safe_neighbor_active=bool(neighbor_mask_active),
             safe_neighbor_mutation_count=int(len(neighbor_selected_offsets)),
             safe_neighbor_radius=int(neighbor_radius if neighbor_mask_active else 0),
@@ -2109,6 +2163,17 @@ def run_sequential_via_runner(
     )
     if stab_calib_summary:
         log(f"  {bullet} 稳定阈值校准来源（stab calibration source）：{stab_calib_summary}")
+
+    if reward_devices and len(reward_devices) >= 2:
+        try:
+            base_env.clear_installed_blb()
+        except Exception:
+            pass
+        base_env.env_cfg.persistent_probe_install = True
+        log(
+            f"  {bullet} Multi-GPU BLB install cache：enabled "
+            f"(devices={reward_devices}; wrappers/hooks stay installed and cfgs update in-place)"
+        )
 
     _seq_block_title(log, "基线信号（baseline cost / reward / metrics）")
     _seq_log_rounded_box(log, [
@@ -2878,6 +2943,12 @@ def run_sequential_via_runner(
                         list(x) for x in record.terminal_probe_trial_indices
                     ],
                     terminal_probe_speedup=float(record.terminal_probe_speedup),
+                    per_step_optimizer_wall_seconds=float(record.per_step_optimizer_wall_seconds),
+                    terminal_cost_eval_wall_seconds=float(record.terminal_cost_eval_wall_seconds),
+                    terminal_probe_install_wall_seconds=float(record.terminal_probe_install_wall_seconds),
+                    terminal_probe_clear_wall_seconds=float(record.terminal_probe_clear_wall_seconds),
+                    terminal_probe_install_skipped=bool(record.terminal_probe_install_skipped),
+                    terminal_probe_clear_skipped=bool(record.terminal_probe_clear_skipped),
                     safe_neighbor_active=bool(record.safe_neighbor_active),
                     safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count),
                     safe_neighbor_radius=int(record.safe_neighbor_radius),
