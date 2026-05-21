@@ -247,31 +247,28 @@ class BLBStage2SequentialPolicy(nn.Module):
         self._init_weights()
 
     def _init_weights(self) -> None:
+        def init_fast_linear(layer: nn.Linear, gain: float = 1.0) -> None:
+            nn.init.xavier_uniform_(layer.weight, gain=float(gain))
+            if layer.bias is not None:
+                nn.init.constant_(layer.bias, 0.0)
+
         for module in [self.fc_continuous, self.actor_head, self.value_head]:
             for layer in module:
                 if isinstance(layer, nn.Linear):
-                    nn.init.orthogonal_(layer.weight, gain=float(np.sqrt(2)))
-                    if layer.bias is not None:
-                        nn.init.constant_(layer.bias, 0.0)
+                    init_fast_linear(layer, gain=float(np.sqrt(2)))
         if isinstance(self.input_proj, nn.Linear):
-            nn.init.orthogonal_(self.input_proj.weight, gain=1.0)
-            if self.input_proj.bias is not None:
-                nn.init.constant_(self.input_proj.bias, 0.0)
+            init_fast_linear(self.input_proj, gain=1.0)
         for block in self.gtrxl_blocks:
-            nn.init.orthogonal_(block.attn.in_proj_weight, gain=1.0)
+            nn.init.xavier_uniform_(block.attn.in_proj_weight, gain=1.0)
             if block.attn.in_proj_bias is not None:
                 nn.init.constant_(block.attn.in_proj_bias, 0.0)
-            nn.init.orthogonal_(block.attn.out_proj.weight, gain=1.0)
-            if block.attn.out_proj.bias is not None:
-                nn.init.constant_(block.attn.out_proj.bias, 0.0)
+            init_fast_linear(block.attn.out_proj, gain=1.0)
             for layer in list(block.ff) + [
                     block.gate1.linear_r, block.gate1.linear_z, block.gate1.linear_h,
                     block.gate2.linear_r, block.gate2.linear_z, block.gate2.linear_h,
             ]:
                 if isinstance(layer, nn.Linear):
-                    nn.init.orthogonal_(layer.weight, gain=float(np.sqrt(2)))
-                    if layer.bias is not None:
-                        nn.init.constant_(layer.bias, 0.0)
+                    init_fast_linear(layer, gain=float(np.sqrt(2)))
         # v2 trick: keep actor logits near zero, so the external warmstart prior
         # is the dominant early signal even with a large GTrXL trunk.
         for head in self.slot_heads:
