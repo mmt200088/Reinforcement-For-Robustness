@@ -227,14 +227,16 @@ Implementation constraints to preserve:
   devices, reward probe device list, trial split, per-device elapsed time,
   worker lines, and `terminal_probe_*` fields in `episodes.jsonl`.
 - Run `scripts/stage2_reward_probe_scaling_benchmark.sh` on the new server
-  before a long run. It tests 1/2/3/4 GPUs and batch sizes 64/128/256 on the
+  before a long run. It tests 1/2/3/4 GPUs and batch sizes 128/256/512 on the
   real Stage-2 reward probe path, then writes an HTML scaling report.
 
-User-facing config for two-GPU Stage-2 reward probing:
+User-facing config for four-GPU Stage-2 reward probing:
 
 ```bash
---blb-v3-reward-devices 0,1
---stage2-k-trials 5
+--blb-v3-reward-devices 0,1,2,3
+--stage2-k-trials 4
+--stage2-probe-size 256
+--batch-size 512
 ```
 
 The expected server command is still one launcher run, for example:
@@ -248,22 +250,33 @@ export HF_ENDPOINT=https://hf-mirror.com
 export HF_HUB_DISABLE_XET=1
 export GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 
-CUDA_VISIBLE_DEVICES=0,1 bash llama_7B_LayerImportance.sh run rl \
+CUDA_VISIBLE_DEVICES=0,1,2,3 bash llama_7B_LayerImportance.sh run rl \
   --preset mrpc-blb-stage2-rl \
-  --stage2-k-trials 5 \
-  --blb-v3-reward-devices 0,1 \
+  --stage2-k-trials 4 \
+  --stage2-probe-size 256 \
+  --batch-size 512 \
+  --blb-v3-reward-devices 0,1,2,3 \
   --fresh
 ```
 
 Verification checklist:
 
-- A smoke run logs `[multi-gpu] reward probe enabled: devices=[0, 1]`,
-  `[probe-runner] worker 0: cuda:0`, and
-  `[probe-runner] worker 1: cuda:1`.
-- `nvidia-smi` shows both GPUs active during the model-forward reward probe.
-- The metrics aggregation still uses all 5 trials for each action.
+- A smoke run logs `[multi-gpu] reward probe enabled: devices=[0, 1, 2, 3]`,
+  `[probe-runner] worker 0: cuda:0`, and workers 1/2/3 on cuda:1/2/3.
+- `nvidia-smi` shows all four GPUs active during the model-forward reward probe.
+- The metrics aggregation still uses all 4 trials for each action.
 - Single-GPU fallback remains valid when only one GPU is visible or
   `--blb-v3-reward-devices` is unset.
+
+Latest four-GPU scaling check on 2026-05-22, artifact
+`experiments/server_command_runs/stage2_reward_probe_scaling_20260522_003406/`,
+used the real Stage-2 reward probe path with `K=4`, probe size 256, and batch
+sizes 128/256/512. Best observed was `batch=512,gpu=4`: mean terminal probe
+wall time `1.059s`, mean speedup `3.99x` over single GPU, devices
+`cuda:0..cuda:3`, trial split `[1,1,1,1]`, and max sampled utilization `100%`
+on all four GPUs. Because the probe subset is 256 examples, `batch=512` does
+not increase the reward-probe sample count beyond 256; it is simply the fastest
+safe launcher setting observed on the new server.
 
 Latest server check on 2026-05-19 after fixing the Fire tuple parsing path:
 two 200-episode benchmark runs completed successfully. Single GPU took `601s`;

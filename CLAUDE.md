@@ -215,14 +215,24 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 bash llama_7B_LayerImportance.sh run rl \
   --preset mrpc-blb-stage2-rl \
   --stage2-k-trials 4 \
   --stage2-probe-size 256 \
-  --batch-size 256 \
+  --batch-size 512 \
   --blb-v3-reward-devices 0,1,2,3 \
   --fresh
 ```
 
 Run `scripts/stage2_reward_probe_scaling_benchmark.sh` on the new server before
-a long run. It tests 1/2/3/4 GPUs and batch sizes 64/128/256 on the real
+a long run. It tests 1/2/3/4 GPUs and batch sizes 128/256/512 on the real
 Stage-2 reward probe path, then writes an HTML scaling report.
+
+Latest four-GPU scaling check on 2026-05-22, artifact
+`experiments/server_command_runs/stage2_reward_probe_scaling_20260522_003406/`,
+used the real Stage-2 reward probe path with `K=4`, probe size 256, and batch
+sizes 128/256/512. Best observed was `batch=512,gpu=4`: mean terminal probe
+wall time `1.059s`, mean speedup `3.99x` over single GPU, devices
+`cuda:0..cuda:3`, trial split `[1,1,1,1]`, and max sampled utilization `100%`
+on all four GPUs. Because the probe subset is 256 examples, `batch=512` does
+not increase the reward-probe sample count beyond 256; it is simply the fastest
+safe launcher setting observed on the new server.
 
 Latest server check on 2026-05-19 after fixing the Fire tuple parsing path:
 two 200-episode benchmark runs completed successfully. Single GPU took `601s`;
