@@ -50,11 +50,13 @@ reward 部分**只给信号，不给最终公式** —— 用户明说了 reward
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import subprocess
 import sys
 import tempfile
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple, Union, runtime_checkable
 
@@ -880,6 +882,7 @@ class RescaleOptimizerBridge:
             cfg_to_delta_overrides: Optional[Mapping[str, CfgToDeltaFn]] = None,
             cfg_to_t_new_overrides: Optional[Mapping[str, Sequence[_SkelEntry]]] = None,
             auto_t_new_from_cfg: bool = True,
+            cache_max_entries: int = 50000,
             ):
         """构造 bridge。
 
@@ -893,6 +896,10 @@ class RescaleOptimizerBridge:
             auto_t_new_from_cfg:        默认 ``True`` ⇒ 当 ``evaluate(t_new=None)`` 时
                                         自动从 cfg 派生 t_new；False ⇒ 保持旧行为
                                         （t_new=None ⇒ invoker fallback 到 baseline）。
+            cache_max_entries:          LRU cache size for deterministic optimizer
+                                        calls. Sequential RL repeats many per-block
+                                        action tuples; caching avoids recomputing the
+                                        same ReplanSession result dozens of times.
         """
         self.invoker = invoker
         # cfg → delta_overrides 映射
@@ -908,6 +915,10 @@ class RescaleOptimizerBridge:
             for k, v in cfg_to_t_new_overrides.items():
                 self._cfg_to_t_new_table[str(k)] = tuple(v)
         self.auto_t_new_from_cfg = bool(auto_t_new_from_cfg)
+        self.cache_max_entries = max(0, int(cache_max_entries))
+        self._eval_cache: "OrderedDict[Tuple[Any, ...], dict]" = OrderedDict()
+        self.cache_hits = 0
+        self.cache_misses = 0
 
     def register_cfg_to_delta_overrides(self, block_name: str, fn: CfgToDeltaFn) -> None:
         """业务侧动态注册 / 覆盖某个 block 的 cfg → delta 转换函数。"""
@@ -990,7 +1001,7 @@ class RescaleOptimizerBridge:
                 table=self._cfg_to_t_new_table,
             )
 
-        # ---- 构造 invoker payload ----
+        # ---- 构造 invoker payload + deterministic cache key ----
         if effective_t_new is not None:
             payload: Any = {
                 "t_new": list(effective_t_new),
@@ -999,8 +1010,30 @@ class RescaleOptimizerBridge:
         else:
             payload = deltas
 
-        # ---- 调 invoker（用 graph_key，不带 _L<i> 后缀） ----
-        raw = self.invoker(graph_key, payload)
+        cache_key = (
+            str(graph_key),
+            str(block_name),
+            tuple(int(x) for x in effective_t_new) if effective_t_new is not None else None,
+            tuple(sorted((str(k), str(v)) for k, v in deltas.items())),
+        )
+        raw: dict
+        if self.cache_max_entries > 0 and cache_key in self._eval_cache:
+            self.cache_hits += 1
+            cached = self._eval_cache.pop(cache_key)
+            self._eval_cache[cache_key] = cached
+            raw = copy.deepcopy(cached)
+            raw["_optimizer_cache_hit"] = True
+        else:
+            self.cache_misses += 1
+            # ---- 调 invoker（用 graph_key，不带 _L<i> 后缀） ----
+            raw = self.invoker(graph_key, payload)
+            if self.cache_max_entries > 0 and isinstance(raw, dict):
+                self._eval_cache[cache_key] = copy.deepcopy(raw)
+                while len(self._eval_cache) > self.cache_max_entries:
+                    self._eval_cache.popitem(last=False)
+            if isinstance(raw, dict):
+                raw = dict(raw)
+                raw["_optimizer_cache_hit"] = False
 
         # 把派生出的 t_new 回写到 raw（便于上层 introspect / debug）；不破坏原结构
         try:
@@ -1011,6 +1044,9 @@ class RescaleOptimizerBridge:
                     else ("cfg_derived" if graph_key in self._cfg_to_t_new_table else "baseline")
                 )
                 raw["_graph_key"] = graph_key
+            if isinstance(raw, dict):
+                raw["_optimizer_cache_hits"] = int(self.cache_hits)
+                raw["_optimizer_cache_misses"] = int(self.cache_misses)
         except Exception:
             pass
 
