@@ -591,18 +591,16 @@ class BLBStage2TrainConfig:
     inproc_configs: Optional[Mapping[str, str]] = None   # {config_name: graph_json_path}；不传则按 profile 自动扫
     inproc_baseline_archive: Optional[str] = None        # 不传则 <root>/configs/<profile>/static_skeletons_<profile>.json
     warmstart_baseline_bias: bool = True
-    warmstart_bias_gain: float = 3.5
-    # Per-slot logit bonus applied at policy init so the baseline action
-    # dominates the per-slot softmax. Pre-2026-05-17 default was 1.2, which
-    # combined with a stale [max_num_levels-1] target was effectively a no-op
-    # (target index was masked out for every SF kind, see sequential_runner).
-    # 3.5 maps to ~0.84 per-slot probability mass on the baseline index for
-    # SF (5-level) slots, well above the 0.20 uniform.
+    warmstart_bias_gain: float = 1.2
+    # Per-slot baseline prior is now external and decays per episode in the
+    # sequential GTrXL path. 1.2 is only the fresh/anchor prior; it falls to a
+    # weak 0.15 safety prior after episode 2000 so policy learning and
+    # empirical Pareto proposals can leave the baseline neighborhood.
     warmstart_anchor_episodes: Optional[int] = None
     warmstart_neighbor_sampling: bool = True
     warmstart_neighbor_ramp_episodes: Optional[int] = None
-    warmstart_neighbor_max_mutations: int = 8
-    warmstart_neighbor_max_radius: int = 2
+    warmstart_neighbor_max_mutations: int = 12
+    warmstart_neighbor_max_radius: int = 1
     guarded_radius2_enabled: bool = False
     guarded_radius2_min_episode: int = 1060
     guarded_radius2_stall_window: int = 600
@@ -634,9 +632,9 @@ class BLBStage2TrainConfig:
     # ``ent_coef_ramp_episodes`` sample episodes. See SequentialTrainConfig
     # docstring in blb_stage2_rl/sequential_runner.py for full rationale.
     ent_coef_anchor: float = 0.0
-    ent_coef_ramp_episodes: int = 240
-    # force_baseline_episodes: 0 → use auto-default max(60, rollout_size*2)
-    # inside run_sequential_via_runner. Surfaced here so a preset can pin a
+    ent_coef_ramp_episodes: int = 600
+    # force_baseline_episodes: 0 -> use auto-default 60 inside
+    # run_sequential_via_runner. Surfaced here so a preset can pin a
     # specific anchor length without relying on the auto-default.
     force_baseline_episodes: int = 0
     # 2026-05-19: two-GPU reward-probe parallelism. Empty / single-element list

@@ -57,12 +57,12 @@ class SequentialTrainConfig:
     # The 0-ent_coef anchor lets the policy gradient cleanly concentrate
     # mass on baseline; the ramp then re-enables exploration gradually.
     ent_coef_anchor: float = 0.0
-    ent_coef_ramp_episodes: int = 240
+    ent_coef_ramp_episodes: int = 600
     absolute_episode_start: int = 0
     warmstart_neighbor_sampling: bool = True
     warmstart_neighbor_ramp_episodes: int = 0
-    warmstart_neighbor_max_mutations: int = 8
-    warmstart_neighbor_max_radius: int = 2
+    warmstart_neighbor_max_mutations: int = 12
+    warmstart_neighbor_max_radius: int = 1
     warmstart_mutable_full_offsets: Optional[List[int]] = None
     guarded_radius2_enabled: bool = False
     guarded_radius2_min_episode: int = 1060
@@ -159,6 +159,7 @@ def _seq_fmt_eta_finish(eta_seconds: float) -> str:
 # How often (in PPO updates) to print the big progress box, matching v2's
 # NOISE_RL_PROGRESS_BOX_PPO_INTERVAL.
 SEQ_PROGRESS_BOX_PPO_INTERVAL = 5
+SEQ_RL_VARIANT = "blb_v3_sequential_gtrxl_v2scale"
 
 
 def _resolve_ent_coef_schedule(
@@ -167,7 +168,7 @@ def _resolve_ent_coef_schedule(
         anchor_episodes: int,
         target_ent_coef: float,
         anchor_ent_coef: float = 0.0,
-        ramp_episodes: int = 240,
+        ramp_episodes: int = 600,
         ) -> float:
     """Three-stage entropy schedule for sequential PPO.
 
@@ -196,6 +197,32 @@ def _resolve_ent_coef_schedule(
         return target
     progress = (ep - anchor) / float(ramp)   # in (0, 1)
     return anchor_val + (target - anchor_val) * float(progress)
+
+
+def _resolve_baseline_prior_scale(
+        absolute_episode_idx: int,
+        *,
+        anchor_episodes: int = 60,
+        ) -> float:
+    """Decaying logit prior toward static baseline.
+
+    This prior is a soft safety rail, not a permanent lock. It starts strong
+    enough to keep the fresh GTrXL near the verified baseline, then decays so
+    empirical cost-boundary proposals can move away when F1 evidence supports
+    them.
+    """
+    ep = int(absolute_episode_idx)
+    anchor = max(0, int(anchor_episodes))
+    if ep < anchor:
+        return 1.2
+    if ep < 600:
+        denom = max(1, 600 - anchor)
+        t = max(0.0, min(1.0, float(ep - anchor) / float(denom)))
+        return 1.0 + (0.45 - 1.0) * t
+    if ep < 2000:
+        t = max(0.0, min(1.0, float(ep - 600) / 1400.0))
+        return 0.45 + (0.15 - 0.45) * t
+    return 0.15
 
 
 def _compute_per_slot_mode_preferred(
@@ -250,14 +277,7 @@ def _resolve_sequential_force_baseline_episodes(train_cfg: Any) -> int:
     warmstart_anchor = getattr(train_cfg, "warmstart_anchor_episodes", None)
     if warmstart_anchor is not None:
         return max(0, min(int(warmstart_anchor), int(total)))
-    rollout = int(
-        getattr(
-            train_cfg,
-            "rollout_size",
-            getattr(train_cfg, "update_every_n_episodes", 1),
-        ) or 1
-    )
-    return max(0, min(max(60, int(rollout) * 2), int(total)))
+    return max(0, min(60, int(total)))
 
 
 def _near_baseline_level_indices(
@@ -267,10 +287,12 @@ def _near_baseline_level_indices(
         dim: int,
         radius: int,
         ) -> List[int]:
-    """Local allowed categorical indices around the baseline value.
+    """Local allowed categorical indices around a base value.
 
-    K is decoded through non-monotonic ``K_LEVELS``, so locality is by K value
-    order rather than by categorical index.
+    This is deliberately bidirectional. Lower SF is only a proposal direction,
+    not a truth about metric/stability boundary movement. K is decoded through
+    non-monotonic ``K_LEVELS``, so locality is by distance in truncation bits,
+    not categorical-index monotonicity.
     """
     dim = int(dim)
     baseline_idx = int(baseline_idx)
@@ -282,13 +304,13 @@ def _near_baseline_level_indices(
     if str(kind) == "K":
         base_k = int(K_LEVELS[baseline_idx])
         candidates = [
-            idx for idx, value in enumerate(K_LEVELS[:dim])
-            if int(value) <= base_k
+            int(idx) for idx, _value in enumerate(K_LEVELS[:dim])
         ]
-        candidates.sort(key=lambda idx: int(K_LEVELS[idx]), reverse=True)
-        return [int(idx) for idx in candidates[: radius + 1]]
+        candidates.sort(key=lambda idx: (abs(int(K_LEVELS[idx]) - base_k), int(idx)))
+        keep = min(len(candidates), max(1, 2 * int(radius) + 1))
+        return sorted(int(idx) for idx in candidates[:keep])
     lo = max(0, baseline_idx - radius)
-    hi = min(dim - 1, baseline_idx)
+    hi = min(dim - 1, baseline_idx + radius)
     return [int(idx) for idx in range(lo, hi + 1)]
 
 
@@ -299,7 +321,7 @@ def _default_step_level_mask(
         max_step_dim: int,
         max_num_levels: int,
         ) -> np.ndarray:
-    """Baseline-only per-level mask for one sequential step."""
+    """Base-action-only per-level mask for one sequential step."""
     baseline = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1)
     mask = np.zeros((int(max_step_dim), int(max_num_levels)), dtype=bool)
     for slot_idx, (offset, dim) in enumerate(zip(spec.full_vec_offsets, spec.slot_dims)):
@@ -327,10 +349,10 @@ def _build_step_level_mask(
         max_num_levels: int,
         radius: int,
         ) -> np.ndarray:
-    """Near-baseline per-level mask for one step.
+    """Near-base per-level mask for one step.
 
     Slots selected for the current episode may move inside a local
-    near-baseline neighborhood. Every other slot stays baseline-only.
+    near-base neighborhood. Every other slot stays base-action-only.
     """
     baseline = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1)
     mask = _default_step_level_mask(
@@ -399,6 +421,41 @@ class GuardedRadius2Decision:
     reason: str = ""
 
 
+@dataclass
+class OffsetEmpiricalStats:
+    seen: int = 0
+    p3_success: int = 0
+    p1: int = 0
+    p2: int = 0
+    loss_cap: int = 0
+    stab_violation: int = 0
+    invalid: int = 0
+    frontier_expansion: int = 0
+    frontier_member: int = 0
+    dominated: int = 0
+    duplicate: int = 0
+    fusion_gain_sum: float = 0.0
+    k_gain_sum: float = 0.0
+    bits_gain_sum: float = 0.0
+
+    @property
+    def failures(self) -> int:
+        return int(self.p1 + self.p2 + self.loss_cap + self.stab_violation + self.invalid)
+
+    @property
+    def success_rate(self) -> float:
+        return float(self.p3_success) / float(max(1, self.seen))
+
+    @property
+    def failure_rate(self) -> float:
+        return float(self.failures) / float(max(1, self.seen))
+
+    @property
+    def mean_positive_cost_gain(self) -> float:
+        denom = float(max(1, self.p3_success))
+        return max(0.0, self.fusion_gain_sum / denom) + max(0.0, self.k_gain_sum / denom) + max(0.0, self.bits_gain_sum / denom)
+
+
 class GuardedRadius2Controller:
     """Open radius2 only after radius1 Pareto search stalls and stays healthy."""
 
@@ -425,6 +482,7 @@ class GuardedRadius2Controller:
         self._history: List[Dict[str, Any]] = []
         self._offset_successes: Dict[int, int] = {}
         self._offset_failures: Dict[int, int] = {}
+        self._offset_stats: Dict[int, OffsetEmpiricalStats] = {}
         self._cooldown_until_episode = -1
         self.radius2_episode_count = 0
         self.radius2_failure_count = 0
@@ -504,6 +562,9 @@ class GuardedRadius2Controller:
             terminal_stab_violation: float,
             terminal_loss_mean: float,
             terminal_pareto_event_kind: str,
+            terminal_fusion_gain: float = 0.0,
+            terminal_k_gain: float = 0.0,
+            terminal_bits_gain: float = 0.0,
             ) -> None:
         offsets = {int(x) for x in (selected_offsets or [])}
         unhealthy = self._is_unhealthy(
@@ -517,6 +578,34 @@ class GuardedRadius2Controller:
             target = self._offset_failures if unhealthy else self._offset_successes
             for offset in offsets:
                 target[offset] = int(target.get(offset, 0)) + 1
+        for offset in offsets:
+            stats = self._offset_stats.setdefault(int(offset), OffsetEmpiricalStats())
+            stats.seen += 1
+            if int(terminal_priority) == 3 and not unhealthy:
+                stats.p3_success += 1
+                stats.fusion_gain_sum += float(terminal_fusion_gain)
+                stats.k_gain_sum += float(terminal_k_gain)
+                stats.bits_gain_sum += float(terminal_bits_gain)
+                event = str(terminal_pareto_event_kind or "")
+                if event == "frontier_expansion":
+                    stats.frontier_expansion += 1
+                elif event == "frontier_member":
+                    stats.frontier_member += 1
+                elif event == "dominated":
+                    stats.dominated += 1
+                elif event == "duplicate":
+                    stats.duplicate += 1
+            else:
+                if int(terminal_priority) == 1:
+                    stats.p1 += 1
+                if int(terminal_priority) == 2:
+                    stats.p2 += 1
+                if int(invalid_steps) > 0 or bool(early_terminated):
+                    stats.invalid += 1
+                if float(terminal_loss_mean) >= 99.0:
+                    stats.loss_cap += 1
+                if float(terminal_stab_violation) > 0.0:
+                    stats.stab_violation += 1
         if int(radius) >= 2:
             self.radius2_episode_count += 1
             if unhealthy:
@@ -540,13 +629,42 @@ class GuardedRadius2Controller:
 
     def _safe_offsets(self) -> List[int]:
         out: List[int] = []
-        for offset, success_count in self._offset_successes.items():
-            if int(success_count) < self.min_radius1_successes:
+        for offset, stats in self._offset_stats.items():
+            if int(stats.p3_success) < self.min_radius1_successes:
                 continue
-            if int(self._offset_failures.get(int(offset), 0)) != 0:
+            if int(stats.failures) != 0:
                 continue
             out.append(int(offset))
         return sorted(out)
+
+    def offset_rates(self, selected_offsets: Sequence[int]) -> Tuple[float, float]:
+        rates: List[Tuple[float, float]] = []
+        for offset in selected_offsets or []:
+            stats = self._offset_stats.get(int(offset))
+            if stats is None:
+                continue
+            rates.append((float(stats.success_rate), float(stats.failure_rate)))
+        if not rates:
+            return 0.0, 0.0
+        return (
+            float(np.mean([x[0] for x in rates])),
+            float(np.mean([x[1] for x in rates])),
+        )
+
+    def offset_weight(self, offset: int) -> float:
+        stats = self._offset_stats.get(int(offset))
+        if stats is None:
+            return 1.0
+        weight = (
+            1.0
+            + 2.0 * float(stats.p3_success)
+            + 3.0 * float(stats.frontier_expansion)
+            + 1.0 * float(stats.frontier_member)
+            + 0.02 * float(stats.mean_positive_cost_gain)
+        )
+        if stats.failures > 0:
+            weight *= 0.25
+        return max(0.05, float(weight))
 
     @staticmethod
     def _is_unhealthy(
@@ -608,6 +726,7 @@ def _sample_episode_neighbor_offsets(
         mutable_full_offsets: Optional[Sequence[int]],
         mutation_count: int,
         rng: np.random.Generator,
+        empirical_controller: Optional[GuardedRadius2Controller] = None,
         ) -> Set[int]:
     candidates = _candidate_neighbor_offsets(
         schedule=schedule,
@@ -619,7 +738,21 @@ def _sample_episode_neighbor_offsets(
     count = max(0, min(int(mutation_count), len(candidates)))
     if count <= 0:
         return set()
-    chosen = rng.choice(np.asarray(candidates, dtype=np.int64), size=count, replace=False)
+    probs = None
+    if empirical_controller is not None:
+        weights = np.asarray(
+            [empirical_controller.offset_weight(int(x)) for x in candidates],
+            dtype=np.float64,
+        )
+        total_w = float(np.sum(weights))
+        if np.isfinite(total_w) and total_w > 0.0:
+            probs = weights / total_w
+    chosen = rng.choice(
+        np.asarray(candidates, dtype=np.int64),
+        size=count,
+        replace=False,
+        p=probs,
+    )
     return {int(x) for x in np.asarray(chosen, dtype=np.int64).reshape(-1).tolist()}
 
 
@@ -702,6 +835,12 @@ class EpisodeRecord:
     guarded_radius2_episode_count: int = 0
     guarded_radius2_failure_count: int = 0
     guarded_radius2_frontier_expansion_count: int = 0
+    baseline_prior_scale: float = 0.0
+    base_action_source: str = ""
+    proposal_direction: str = ""
+    empirical_offset_success_rate: float = 0.0
+    empirical_offset_failure_rate: float = 0.0
+    frontier_seed_episode: int = -1
 
 
 def _format_invalid_chain_reason(invalid_chain: Any) -> str:
@@ -737,6 +876,7 @@ def train_sequential(
         policy: BLBStage2SequentialPolicy,
         train_cfg: Optional[SequentialTrainConfig] = None,
         device: Optional[torch.device] = None,
+        optimizer: Optional[torch.optim.Optimizer] = None,
         on_episode_end: Optional[Callable[[EpisodeRecord], None]] = None,
         on_ppo_update_end: Optional[
             Callable[[Dict[str, float], int, "EpisodeRecord"], None]
@@ -777,7 +917,7 @@ def train_sequential(
     train_cfg = train_cfg or SequentialTrainConfig()
     device = device or next(policy.parameters()).device
     log = logger or logging.getLogger(__name__)
-    optimizer = torch.optim.Adam(policy.parameters(), lr=train_cfg.ppo.lr)
+    optimizer = optimizer or torch.optim.Adam(policy.parameters(), lr=train_cfg.ppo.lr)
     buffer = SequentialRolloutBuffer()
 
     # Per-(layer, block) blacklist of action tuples that produced invalid_chain.
@@ -808,6 +948,7 @@ def train_sequential(
     episode_returns: List[float] = []
     episode_records: List[EpisodeRecord] = []
     ppo_metric_history: List[Dict[str, float]] = []
+    frontier_seed_actions: List[Tuple[int, np.ndarray]] = []
 
     if train_cfg.seed is not None:
         torch.manual_seed(int(train_cfg.seed))
@@ -872,6 +1013,10 @@ def train_sequential(
         terminal_pareto_event_kind_val = ""
         terminal_pareto_action_hash_val = ""
         terminal_pareto_frontier_removed_val = 0
+        baseline_prior_scale = _resolve_baseline_prior_scale(
+            int(absolute_ep),
+            anchor_episodes=int(force_baseline_episodes),
+        )
 
         # 2026-05-18 (rdv2 hotfix): forced-baseline anchor episodes. The
         # warmstart bias on the action head alone was inadequate — only 5/13
@@ -897,6 +1042,10 @@ def train_sequential(
         neighbor_selected_offsets: Set[int] = set()
         neighbor_radius = 1
         guarded_decision = GuardedRadius2Decision()
+        base_action_vec_for_mask = baseline_action_vec
+        base_action_source = "baseline"
+        frontier_seed_episode = -1
+        proposal_direction = "none"
         if (
                 (not force_this_ep)
                 and bool(getattr(train_cfg, "warmstart_neighbor_sampling", True))
@@ -919,12 +1068,36 @@ def train_sequential(
             episode_rng = np.random.default_rng(
                 int((seed_base + absolute_ep * 1_000_003) % (2**32))
             )
+            if frontier_seed_actions:
+                draw = float(episode_rng.random())
+                if int(absolute_ep) < 600:
+                    use_frontier = draw < 0.30
+                else:
+                    use_frontier = draw < 0.50
+                    if draw >= 0.85:
+                        base_action_source = "exploratory"
+                if use_frontier:
+                    seed_ep, seed_vec = frontier_seed_actions[
+                        int(episode_rng.integers(0, len(frontier_seed_actions)))
+                    ]
+                    base_action_vec_for_mask = np.asarray(seed_vec, dtype=np.int64)
+                    base_action_source = "frontier"
+                    frontier_seed_episode = int(seed_ep)
+            elif int(absolute_ep) >= 600:
+                base_action_source = "exploratory"
             neighbor_mask_active = True
             guarded_decision = guarded_radius2.decide(
                 absolute_episode_idx=int(absolute_ep),
                 rng=episode_rng,
             )
             if guarded_decision.active:
+                if frontier_seed_actions and float(episode_rng.random()) < 0.60:
+                    seed_ep, seed_vec = frontier_seed_actions[
+                        int(episode_rng.integers(0, len(frontier_seed_actions)))
+                    ]
+                    base_action_vec_for_mask = np.asarray(seed_vec, dtype=np.int64)
+                    base_action_source = "frontier"
+                    frontier_seed_episode = int(seed_ep)
                 guarded_offsets = list(int(x) for x in guarded_decision.safe_offsets)
                 neighbor_radius = int(guarded_decision.radius)
                 neighbor_mutations = min(
@@ -937,6 +1110,7 @@ def train_sequential(
                     mutable_full_offsets=guarded_offsets,
                     mutation_count=int(neighbor_mutations),
                     rng=episode_rng,
+                    empirical_controller=guarded_radius2,
                 )
                 if not neighbor_selected_offsets:
                     guarded_decision.active = False
@@ -951,7 +1125,12 @@ def train_sequential(
                     mutable_full_offsets=mutable_full_offsets,
                     mutation_count=int(neighbor_mutations),
                     rng=episode_rng,
+                    empirical_controller=guarded_radius2,
                 )
+            proposal_direction = (
+                "empirical_radius2" if guarded_decision.active else
+                "empirical_bidirectional_radius1"
+            )
 
         while True:
             spec = env.current_spec()
@@ -964,10 +1143,10 @@ def train_sequential(
             n_active = int(slot_mask_np.sum())
             action_level_mask_np: Optional[np.ndarray] = None
             action_level_mask_t = None
-            if neighbor_mask_active and baseline_action_vec is not None:
+            if neighbor_mask_active and base_action_vec_for_mask is not None:
                 action_level_mask_np = _build_step_level_mask(
                     spec=spec,
-                    baseline_action_vec=baseline_action_vec,
+                    baseline_action_vec=base_action_vec_for_mask,
                     selected_full_offsets=neighbor_selected_offsets,
                     max_step_dim=policy.cfg.max_step_dim,
                     max_num_levels=policy.cfg.max_num_levels,
@@ -990,6 +1169,7 @@ def train_sequential(
                     actions_t = torch.from_numpy(forced_padded).to(device).unsqueeze(0)
                     lp_t, _, val_t = policy.evaluate_action(
                         obs_t, actions_t, slot_mask_t, levels_t,
+                        baseline_prior_scale=baseline_prior_scale,
                     )
                 chosen_eval_info = env.evaluate_step(forced_action.tolist())
                 chosen_action_np = forced_padded
@@ -1017,6 +1197,9 @@ def train_sequential(
                 enriched_info["log_prob"] = log_prob
                 enriched_info["forced_baseline"] = True
                 enriched_info["exploration_mode"] = "forced_baseline"
+                enriched_info["baseline_prior_scale"] = float(baseline_prior_scale)
+                enriched_info["base_action_source"] = "baseline"
+                enriched_info["proposal_direction"] = "anchor"
                 enriched_info["guarded_radius2_active"] = False
                 if on_step_end is not None:
                     try:
@@ -1035,6 +1218,7 @@ def train_sequential(
                     value=value,
                     reward=float(reward),
                     done=bool(done),
+                    baseline_prior_scale=float(baseline_prior_scale),
                 )
                 per_step_sum += float(reward)
                 if "terminal_reward" in info:
@@ -1092,6 +1276,7 @@ def train_sequential(
                         obs_t, slot_mask_t, levels_t,
                         deterministic=False,
                         action_level_mask=action_level_mask_t,
+                        baseline_prior_scale=baseline_prior_scale,
                     )
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
                 step_action_try = action_np_try[:n_active].tolist()
@@ -1133,6 +1318,7 @@ def train_sequential(
                         lp_t, _, val_t = policy.evaluate_action(
                             obs_t, actions_t, slot_mask_t, levels_t,
                             action_level_mask=action_level_mask_t,
+                            baseline_prior_scale=baseline_prior_scale,
                         )
                     chosen_eval_info = env.evaluate_step(fallback_action.tolist())
                     chosen_action_np = fallback_padded
@@ -1192,6 +1378,10 @@ def train_sequential(
             enriched_info["reward"] = float(reward)
             enriched_info["value"] = value
             enriched_info["log_prob"] = log_prob
+            enriched_info["baseline_prior_scale"] = float(baseline_prior_scale)
+            enriched_info["base_action_source"] = str(base_action_source)
+            enriched_info["proposal_direction"] = str(proposal_direction)
+            enriched_info["frontier_seed_episode"] = int(frontier_seed_episode)
             if action_level_mask_np is not None:
                 enriched_info["neighbor_selected_offsets"] = sorted(
                     int(x) for x in neighbor_selected_offsets
@@ -1220,6 +1410,7 @@ def train_sequential(
                 value=value,
                 reward=float(reward),
                 done=bool(done),
+                baseline_prior_scale=float(baseline_prior_scale),
             )
             per_step_sum += float(reward)
             if "terminal_reward" in info:
@@ -1258,6 +1449,9 @@ def train_sequential(
                 break
 
         episode_returns.append(per_step_sum)
+        empirical_success_rate, empirical_failure_rate = guarded_radius2.offset_rates(
+            sorted(int(x) for x in neighbor_selected_offsets)
+        )
         record = EpisodeRecord(
             episode_idx=int(ep),
             total_reward=float(per_step_sum),
@@ -1316,6 +1510,12 @@ def train_sequential(
             guarded_radius2_frontier_expansion_count=int(
                 guarded_decision.radius2_frontier_expansion_count
             ),
+            baseline_prior_scale=float(baseline_prior_scale),
+            base_action_source=str("baseline" if force_this_ep else base_action_source),
+            proposal_direction=str("anchor" if force_this_ep else proposal_direction),
+            empirical_offset_success_rate=float(empirical_success_rate),
+            empirical_offset_failure_rate=float(empirical_failure_rate),
+            frontier_seed_episode=int(frontier_seed_episode),
         )
         guarded_radius2.record_episode(
             absolute_episode_idx=int(absolute_ep),
@@ -1327,6 +1527,9 @@ def train_sequential(
             terminal_stab_violation=float(record.terminal_stab_violation),
             terminal_loss_mean=float(record.terminal_loss_mean),
             terminal_pareto_event_kind=str(record.terminal_pareto_event_kind),
+            terminal_fusion_gain=float(record.terminal_fusion_gain),
+            terminal_k_gain=float(record.terminal_k_gain),
+            terminal_bits_gain=float(record.terminal_bits_gain),
         )
         if bool(record.guarded_radius2_active):
             after_decision = guarded_radius2.decide(
@@ -1346,6 +1549,20 @@ def train_sequential(
                 guarded_radius2.radius2_frontier_expansion_count
             )
         episode_records.append(record)
+        if (
+                int(record.terminal_priority) == 3
+                and str(record.terminal_pareto_event_kind) in {
+                    "frontier_expansion",
+                    "frontier_member",
+                }
+                and getattr(seq_env, "_pending_full_vec", None) is not None
+        ):
+            frontier_seed_actions.append((
+                int(absolute_ep),
+                np.asarray(seq_env._pending_full_vec, dtype=np.int64).copy(),
+            ))
+            if len(frontier_seed_actions) > 64:
+                del frontier_seed_actions[:-64]
         if on_episode_end is not None:
             on_episode_end(record)
 
@@ -1359,7 +1576,7 @@ def train_sequential(
                 anchor_episodes=int(force_baseline_episodes),
                 target_ent_coef=float(train_cfg.ppo.ent_coef),
                 anchor_ent_coef=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
-                ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 240)),
+                ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 600)),
             )
             metrics = sequential_ppo_update(
                 policy, optimizer, buffer, train_cfg.ppo, device,
@@ -1468,7 +1685,7 @@ def _register_run_in_experiments_log(
                 "--model-type", str(model_type),
                 "--algorithm", "rl",
                 "--preset", str(preset_label or ""),
-                "--rl-variant", "blb_v3_sequential",
+                "--rl-variant", SEQ_RL_VARIANT,
                 "--seed", str(int(seed)),
                 "--status", ("complete" if best_action_present else "training_only"),
                 "--elapsed-sec", str(float(elapsed_sec)),
@@ -1972,7 +2189,7 @@ def run_sequential_via_runner(
     # — these mirror that logic so the box shows the eventual config.
     _preview_force_baseline_episodes = _resolve_sequential_force_baseline_episodes(train_cfg)
     _preview_ent_coef_anchor = float(getattr(train_cfg, "ent_coef_anchor", 0.0))
-    _preview_ramp = int(getattr(train_cfg, "ent_coef_ramp_episodes", 240))
+    _preview_ramp = int(getattr(train_cfg, "ent_coef_ramp_episodes", 600))
 
     _seq_block_title(log, "训练超参与环境设置（Training hyperparameters · sequential per-block）")
     _seq_log_rounded_box(log, [
@@ -1980,9 +2197,10 @@ def run_sequential_via_runner(
         f"max_step_dim={seq_env.max_step_dim}    "
         f"state_dim={seq_env.state_dim}    "
         f"device={str(device)}",
-        f"Policy：state_dim={policy_cfg.state_dim}, d_hidden={policy_cfg.d_hidden}, "
-        f"head=[{policy_cfg.max_step_dim}×{policy_cfg.max_num_levels}]    "
-        f"num_layers={policy_cfg.num_layers}",
+        f"Policy：GTrXL d_model={policy_cfg.d_model}, heads={policy_cfg.n_heads}, "
+        f"layers={policy_cfg.n_layers}, d_ff={policy_cfg.d_ff}, dropout={policy_cfg.dropout:.2f}, "
+        f"per-slot heads=[{policy_cfg.max_step_dim}×{policy_cfg.max_num_levels}]    "
+        f"env_layers={policy_cfg.num_layers}",
         f"PPO：lr={train_cfg.ppo.lr:.6g}    "
         f"clip={train_cfg.ppo.clip_range:.3f}    "
         f"n_epochs={train_cfg.ppo.n_epochs}    "
@@ -1997,10 +2215,12 @@ def run_sequential_via_runner(
         f"cost_coeff={seq_env_cfg.cost_shaping_coeff:.3g}    "
         f"fusion_coeff={seq_env_cfg.fusion_shaping_coeff:.3g}    "
         f"early_term_on_invalid={seq_env_cfg.early_terminate_on_invalid}",
-        f"Warmstart：bias={warmstart_applied}    "
-        f"gain={float(train_cfg.warmstart_bias_gain):.3g}    "
+        f"Warmstart：decaying_logit_prior={warmstart_applied}    "
+        f"initial_gain={float(train_cfg.warmstart_bias_gain):.3g}    "
         f"force_baseline_episodes={int(_preview_force_baseline_episodes)}    "
         f"{preferred_summary}",
+        f"Baseline prior schedule：anchor=1.20; ep60..600: 1.00→0.45; "
+        f"ep600..2000: 0.45→0.15; after ep2000: 0.15",
         f"Safe neighbor curriculum：enabled={bool(getattr(train_cfg, 'warmstart_neighbor_sampling', True))}    "
         f"mutable_offsets={len(mutable_neighbor_offsets)}    "
         f"ramp={int(getattr(train_cfg, 'warmstart_neighbor_ramp_episodes', 0) or train_cfg.total_episodes)}    "
@@ -2012,6 +2232,8 @@ def run_sequential_via_runner(
         f"max_mutations={int(getattr(train_cfg, 'guarded_radius2_max_mutations', 4))}    "
         f"fraction={float(getattr(train_cfg, 'guarded_radius2_episode_fraction', 0.15)):.3g}    "
         f"cooldown={int(getattr(train_cfg, 'guarded_radius2_cooldown_episodes', 300))}",
+        "Non-monotonic cost-boundary exploration：SF/K move 是 proposal；真实方向只由 F1 metric/stability、"
+        "Rescale_optimizer cost signals 和 Pareto archive 事件确认。",
         f"Entropy schedule (anchor → ramp → steady)："
         f"anchor[0..{int(_preview_force_baseline_episodes)}]ep_coef={float(_preview_ent_coef_anchor):.4g} → "
         f"ramp[{int(_preview_force_baseline_episodes)}..{int(_preview_force_baseline_episodes)+int(_preview_ramp)}]ep_coef→{float(train_cfg.ppo.ent_coef):.4g} → "
@@ -2037,16 +2259,18 @@ def run_sequential_via_runner(
         try:
             ckpt = torch.load(effective_resume_path, map_location=device)
             ckpt_variant = str(ckpt.get("rl_variant", "") or "")
-            if ckpt_variant and ckpt_variant != "blb_v3_sequential":
+            if ckpt_variant and ckpt_variant != SEQ_RL_VARIANT:
                 log(
                     f"  [resume][warning] checkpoint at {effective_resume_path} "
-                    f"has rl_variant={ckpt_variant!r} (expected 'blb_v3_sequential'); "
+                    f"has rl_variant={ckpt_variant!r} (expected {SEQ_RL_VARIANT!r}); "
                     f"skipping load to avoid policy-shape mismatch. Training will "
                     f"start fresh."
                 )
             else:
                 if "policy" in ckpt:
                     policy.load_state_dict(ckpt["policy"])
+                if "policy_ppo_aux" in ckpt:
+                    policy.load_ppo_aux_state_dict(ckpt.get("policy_ppo_aux"))
                 if "optimizer" in ckpt:
                     optimizer.load_state_dict(ckpt["optimizer"])
                 start_episode = int(ckpt.get("episode", 0))
@@ -2094,7 +2318,7 @@ def run_sequential_via_runner(
         seed=int(train_cfg.seed),
         ppo=ppo,
         ent_coef_anchor=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
-        ent_coef_ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 240)),
+        ent_coef_ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 600)),
         absolute_episode_start=int(start_episode),
         warmstart_neighbor_sampling=bool(getattr(train_cfg, "warmstart_neighbor_sampling", True)),
         warmstart_neighbor_ramp_episodes=int(
@@ -2171,7 +2395,7 @@ def run_sequential_via_runner(
         "profile": str(train_cfg.profile),
         "fixed_label": str(fixed_label),
         "fixed_source": str(fixed_source),
-        "rl_variant": "blb_v3_sequential",
+        "rl_variant": SEQ_RL_VARIANT,
         "total_episodes_planned": int(total_episodes_planned),
         "rollout_size": int(train_cfg.rollout_size),
         "save_interval": int(train_cfg.save_interval),
@@ -2372,6 +2596,14 @@ def run_sequential_via_runner(
                     f"radius={int(record.safe_neighbor_radius)}"
                 ),
                 (
+                    f"prior/proposal: baseline_prior_scale={float(record.baseline_prior_scale):.4f}  "
+                    f"base_action_source={record.base_action_source or 'none'}  "
+                    f"proposal_direction={record.proposal_direction or 'none'}  "
+                    f"frontier_seed_episode={int(record.frontier_seed_episode)}  "
+                    f"offset_success_rate={float(record.empirical_offset_success_rate):.3f}  "
+                    f"offset_failure_rate={float(record.empirical_offset_failure_rate):.3f}"
+                ),
+                (
                     f"exploration: mode={record.exploration_mode or 'none'}  "
                     f"guarded_r2={bool(record.guarded_radius2_active)}  "
                     f"frontier_expansions@stall={int(record.guarded_radius2_recent_frontier_expansions)}  "
@@ -2474,13 +2706,14 @@ def run_sequential_via_runner(
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 payload = {
                     "policy": policy.state_dict(),
+                    "policy_ppo_aux": policy.ppo_aux_state_dict(),
                     "optimizer": optimizer.state_dict(),
                     "episode": int(start_episode + record.episode_idx + 1),
                     "best_reward": float(best_reward),
                     "best_action": (
                         best_action_vec.tolist() if best_action_vec is not None else None
                     ),
-                    "rl_variant": "blb_v3_sequential",
+                    "rl_variant": SEQ_RL_VARIANT,
                     # Persist the forbidden-action mask so the next resume
                     # doesn't have to re-discover the same invalid tuples.
                     "forbidden_mask_records": forbidden_mask.to_json_records(),
@@ -2526,6 +2759,11 @@ def run_sequential_via_runner(
                     "guarded_radius2_cooldown_remaining": int(
                         record.guarded_radius2_cooldown_remaining
                     ),
+                    "baseline_prior_scale": float(record.baseline_prior_scale),
+                    "base_action_source": str(record.base_action_source),
+                    "proposal_direction": str(record.proposal_direction),
+                    "empirical_offset_success_rate": float(record.empirical_offset_success_rate),
+                    "empirical_offset_failure_rate": float(record.empirical_offset_failure_rate),
                 },
             )
         except Exception:
@@ -2595,6 +2833,12 @@ def run_sequential_via_runner(
                     guarded_radius2_episode_count=int(record.guarded_radius2_episode_count),
                     guarded_radius2_failure_count=int(record.guarded_radius2_failure_count),
                     guarded_radius2_frontier_expansion_count=int(record.guarded_radius2_frontier_expansion_count),
+                    baseline_prior_scale=float(record.baseline_prior_scale),
+                    base_action_source=str(record.base_action_source),
+                    proposal_direction=str(record.proposal_direction),
+                    empirical_offset_success_rate=float(record.empirical_offset_success_rate),
+                    empirical_offset_failure_rate=float(record.empirical_offset_failure_rate),
+                    frontier_seed_episode=int(record.frontier_seed_episode),
                 ),
                 full_action_vec=full_vec_now,
                 is_new_best=bool(is_new_best),
@@ -2646,7 +2890,12 @@ def run_sequential_via_runner(
             f"entropy={metrics.get('entropy', 0.0):+.4f}  ·  "
             f"clip_fraction={metrics.get('clip_fraction', 0.0):.3f}  ·  "
             f"ent_coef={metrics.get('ent_coef', 0.0):.5f}",
-            f"LR={optimizer.param_groups[0]['lr']:.6f}  ·  "
+            f"approx_kl={metrics.get('approx_kl', 0.0):.5f}  ·  "
+            f"kl_stop={bool(metrics.get('kl_early_stop', False))}  ·  "
+            f"entropy_recovery={metrics.get('entropy_recovery_delta', 0.0):.5f}  ·  "
+            f"return_norm=({metrics.get('return_mean', 0.0):+.3f}, {metrics.get('return_std', 1.0):.3f})",
+            f"LR={metrics.get('lr', optimizer.param_groups[0]['lr']):.6f}  ·  "
+            f"lr_scale={metrics.get('lr_scale', 1.0):.3f}  ·  "
             f"更新序号 update#{ppo_update_counter[0]}  ·  "
             f"PPO 样本数={int(metrics.get('n_samples', 0))}",
         ]
@@ -2670,6 +2919,13 @@ def run_sequential_via_runner(
                 best_reward_so_far=float(best_reward),
                 elapsed_sec=float(time.time() - t_start),
                 ent_coef=float(metrics.get("ent_coef", 0.0)),
+                approx_kl=float(metrics.get("approx_kl", 0.0)),
+                kl_early_stop=bool(metrics.get("kl_early_stop", False)),
+                lr=float(metrics.get("lr", optimizer.param_groups[0]["lr"])),
+                lr_scale=float(metrics.get("lr_scale", 1.0)),
+                entropy_recovery_delta=float(metrics.get("entropy_recovery_delta", 0.0)),
+                return_mean=float(metrics.get("return_mean", 0.0)),
+                return_std=float(metrics.get("return_std", 1.0)),
             ))
         except Exception as exc:
             log(f"  [diag][warning] record_ppo_update failed: {exc}")
@@ -2750,8 +3006,8 @@ def run_sequential_via_runner(
     # target — virtually no rollout matches baseline closely enough to
     # satisfy acc_threshold, and every reward collapses to ~-7. See
     # `reports/stage2_rl/bug_reports/2026-05-18_stage2_rl_rdv2_negative_reward_startup/`.
-    # The fallback ``rollout_size * 2`` mirrors warmstart_anchor_episodes
-    # in the legacy single-shot runner.
+    # The fallback is now exactly 60 episodes, matching the non-monotonic
+    # boundary-search curriculum.
     _force_baseline_episodes = _resolve_sequential_force_baseline_episodes(train_cfg)
     log(
         f"  {bullet} 强制 baseline 锚点（forced-baseline anchor）: "
@@ -2765,6 +3021,7 @@ def run_sequential_via_runner(
         policy=policy,
         train_cfg=seq_train_cfg,
         device=device,
+        optimizer=optimizer,
         on_episode_end=_episode_callback,
         on_ppo_update_end=_ppo_update_end_callback,
         on_step_end=_step_callback,
@@ -3063,7 +3320,7 @@ def run_sequential_via_runner(
         "blb_v3_best_reward": float(best_reward),
         "blb_v3_profile": str(train_cfg.profile),
         "blb_v3_total_episodes": int(train_cfg.total_episodes),
-        "rl_variant": "blb_v3_sequential",
+        "rl_variant": SEQ_RL_VARIANT,
         "sequential_diagnostics": {
             "horizon": int(seq_env.horizon),
             "max_step_dim": int(seq_env.max_step_dim),

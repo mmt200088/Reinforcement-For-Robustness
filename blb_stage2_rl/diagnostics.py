@@ -146,6 +146,12 @@ class EpisodeStats:
     guarded_radius2_episode_count: int = 0
     guarded_radius2_failure_count: int = 0
     guarded_radius2_frontier_expansion_count: int = 0
+    baseline_prior_scale: float = 0.0
+    base_action_source: str = ""
+    proposal_direction: str = ""
+    empirical_offset_success_rate: float = 0.0
+    empirical_offset_failure_rate: float = 0.0
+    frontier_seed_episode: int = -1
     timestamp: float = field(default_factory=time.time)
 
 
@@ -170,6 +176,13 @@ class PPOUpdateStats:
     # Surfaced in diagnostics_summary.md "PPO 学习动态" table so operators
     # can verify the schedule is firing as expected.
     ent_coef: float = 0.0
+    approx_kl: float = 0.0
+    kl_early_stop: bool = False
+    lr: float = 0.0
+    lr_scale: float = 1.0
+    entropy_recovery_delta: float = 0.0
+    return_mean: float = 0.0
+    return_std: float = 1.0
     timestamp: float = field(default_factory=time.time)
 
 
@@ -372,6 +385,16 @@ class RLDiagnosticsRecorder:
                 "guarded_radius2_frontier_expansion_count": int(
                     episode_stats.guarded_radius2_frontier_expansion_count
                 ),
+                "baseline_prior_scale": float(episode_stats.baseline_prior_scale),
+                "base_action_source": str(episode_stats.base_action_source),
+                "proposal_direction": str(episode_stats.proposal_direction),
+                "empirical_offset_success_rate": float(
+                    episode_stats.empirical_offset_success_rate
+                ),
+                "empirical_offset_failure_rate": float(
+                    episode_stats.empirical_offset_failure_rate
+                ),
+                "frontier_seed_episode": int(episode_stats.frontier_seed_episode),
                 "action_vec": np.asarray(full_action_vec, dtype=int).tolist(),
             }
             if not payload["terminal_pareto_action_hash"]:
@@ -649,6 +672,12 @@ class RLDiagnosticsRecorder:
             "guarded_radius2_recent_duplicate_rate",
             "guarded_radius2_recent_dominated_rate",
             "guarded_radius2_cooldown_remaining",
+            "baseline_prior_scale",
+            "base_action_source",
+            "proposal_direction",
+            "empirical_offset_success_rate",
+            "empirical_offset_failure_rate",
+            "frontier_seed_episode",
         ]
         lines = [
             "<!doctype html>",
@@ -855,18 +884,20 @@ class RLDiagnosticsRecorder:
             recent = self._ppo_history[-10:]
             lines.append(
                 "| Update | Eps | policy_loss | value_loss | entropy | clip_frac "
-                "| ent_coef | win_mean_ret | win_mean_inv |"
+                "| ent_coef | approx_kl | lr_scale | entropy_recovery | win_mean_ret | win_mean_inv |"
             )
             lines.append(
                 "|------:|----:|------------:|-----------:|--------:|----------:"
-                "|---------:|-------------:|-------------:|"
+                "|---------:|----------:|---------:|-----------------:|-------------:|-------------:|"
             )
             for u in recent:
                 ec = float(getattr(u, "ent_coef", 0.0))
                 lines.append(
                     f"| {u.update} | {u.completed_episodes} | {u.policy_loss:+.4f} | "
                     f"{u.value_loss:+.4f} | {u.entropy:+.4f} | {u.clip_fraction:.3f} | "
-                    f"{ec:.5f} | "
+                    f"{ec:.5f} | {float(getattr(u, 'approx_kl', 0.0)):.5f} | "
+                    f"{float(getattr(u, 'lr_scale', 1.0)):.3f} | "
+                    f"{float(getattr(u, 'entropy_recovery_delta', 0.0)):.5f} | "
                     f"{u.window_mean_return:+.4f} | {u.window_mean_invalid:.2f} |"
                 )
             if len(self._ppo_history) >= 2:

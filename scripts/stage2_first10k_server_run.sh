@@ -23,7 +23,7 @@ GUARDED_RADIUS2_EPISODE_FRACTION="${GUARDED_RADIUS2_EPISODE_FRACTION:-0.15}"
 GUARDED_RADIUS2_COOLDOWN_EPISODES="${GUARDED_RADIUS2_COOLDOWN_EPISODES:-300}"
 ENT_COEF="${ENT_COEF:-0.06}"
 ENT_RAMP="${ENT_RAMP:-600}"
-WARMSTART_BIAS_GAIN="${WARMSTART_BIAS_GAIN:-2.5}"
+WARMSTART_BIAS_GAIN="${WARMSTART_BIAS_GAIN:-1.2}"
 
 RUN_ID="stage2_rl_first10k_curve_$(date +%Y%m%d_%H%M%S)"
 ARTIFACT_DIR="experiments/server_command_runs/${RUN_ID}"
@@ -35,9 +35,9 @@ export ARTIFACT_DIR STAGE2_NOISE
 mkdir -p "$ARTIFACT_DIR" logs
 exec > >(tee "${ARTIFACT_DIR}/server_command_stdout.log") 2>&1
 
-echo "[goal] Optimize first ${PLANNED_EPISODES} BLB Stage-2 RL episodes."
-echo "[goal] Preserve no-collapse safety while improving the early reward curve."
-echo "[goal] Watch entropy/clip_fraction, safe-neighbor coverage, cost progress, and dual-GPU reward probe health."
+echo "[goal] Fresh GTrXL v2-scale Stage-2 BLB RL run for ${PLANNED_EPISODES} episodes."
+echo "[goal] Preserve no-collapse safety while reducing baseline lock-in with non-monotonic cost-boundary exploration."
+echo "[goal] Watch KL/LR scale, entropy recovery, empirical offset stats, Pareto progress, and dual-GPU reward probe health."
 
 stop_rl_at_dir() {
   local dir="$1"
@@ -265,6 +265,9 @@ cat > "${ARTIFACT_DIR}/run_manifest.json" <<JSON
   "ent_coef": ${ENT_COEF},
   "ent_ramp": ${ENT_RAMP},
   "warmstart_bias_gain": ${WARMSTART_BIAS_GAIN},
+  "policy_variant": "blb_v3_sequential_gtrxl_v2scale",
+  "baseline_prior_schedule": "1.2 anchor; 1.0->0.45 ep60-600; 0.45->0.15 ep600-2000; 0.15 thereafter",
+  "exploration_design": "non-monotonic empirical cost-boundary exploration",
   "reward_devices": "0,1"
 }
 JSON
@@ -344,7 +347,7 @@ echo "==========================================================================
 echo "Step 6/6: best-effort git artifact publish"
 echo "================================================================================"
 git add -f "$ARTIFACT_DIR" || true
-git commit -m "Add guarded-radius2 first-10k RL monitor results" || true
+git commit -m "Add GTrXL guarded-radius2 first-10k RL monitor results" || true
 git push || true
 
 exit 0

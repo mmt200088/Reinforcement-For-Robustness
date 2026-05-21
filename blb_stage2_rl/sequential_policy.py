@@ -19,8 +19,9 @@ Three pieces:
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -49,10 +50,131 @@ class SequentialPolicyConfig:
     horizon: int = 59
     block_count: int = 5         # block one-hot dim (1..5)
     num_layers: int = 12         # for layer one-hot if needed by the trunk
+    d_model: int = 256
+    n_heads: int = 8
+    n_layers: int = 4
+    d_ff: int = 512
+    dropout: float = 0.1
+    step_embed_dim: int = 16
+    layer_embed_dim: int = 16
+    block_embed_dim: int = 8
+    prev_action_embed_dim: int = 4
+    cont_proj_dim: int = 64
+    actor_dim: int = 64
+    critic_dim: int = 64
+    default_prior_scale: float = 0.0
+
+
+class RunningMeanStd:
+    """Tiny Welford running statistics helper for return normalization."""
+
+    def __init__(self, epsilon: float = 1e-4) -> None:
+        self.mean = 0.0
+        self.var = 1.0
+        self.count = float(epsilon)
+
+    @property
+    def std(self) -> float:
+        return float(math.sqrt(float(self.var) + 1e-8))
+
+    def update(self, values: Any) -> None:
+        if isinstance(values, torch.Tensor):
+            values = values.detach().cpu().numpy()
+        arr = np.asarray(values, dtype=np.float64).reshape(-1)
+        if arr.size == 0:
+            return
+        batch_mean = float(np.mean(arr))
+        batch_var = float(np.var(arr))
+        batch_count = int(arr.size)
+        self._update_from_moments(batch_mean, batch_var, batch_count)
+
+    def _update_from_moments(
+            self,
+            batch_mean: float,
+            batch_var: float,
+            batch_count: int,
+            ) -> None:
+        if int(batch_count) <= 0:
+            return
+        delta = float(batch_mean) - float(self.mean)
+        total_count = float(self.count) + float(batch_count)
+        self.mean = float(self.mean) + delta * float(batch_count) / total_count
+        m_a = float(self.var) * float(self.count)
+        m_b = float(batch_var) * float(batch_count)
+        m2 = m_a + m_b + delta * delta * float(self.count) * float(batch_count) / total_count
+        self.var = float(m2 / total_count)
+        self.count = float(total_count)
+
+    def normalize(self, values: Any) -> Any:
+        if isinstance(values, torch.Tensor):
+            return (values - float(self.mean)) / (float(self.std) + 1e-8)
+        return (values - float(self.mean)) / (float(self.std) + 1e-8)
+
+    def state_dict(self) -> Dict[str, float]:
+        return {
+            "mean": float(self.mean),
+            "var": float(self.var),
+            "count": float(self.count),
+        }
+
+    def load_state_dict(self, state: Optional[Dict[str, Any]]) -> None:
+        if not isinstance(state, dict):
+            return
+        self.mean = float(state.get("mean", self.mean))
+        self.var = float(state.get("var", self.var))
+        self.count = float(state.get("count", self.count))
+
+
+class GRUGate(nn.Module):
+    """GTrXL-style gated residual path."""
+
+    def __init__(self, d_model: int):
+        super().__init__()
+        self.linear_r = nn.Linear(d_model * 2, d_model)
+        self.linear_z = nn.Linear(d_model * 2, d_model)
+        self.linear_h = nn.Linear(d_model * 2, d_model)
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        concat = torch.cat([x, y], dim=-1)
+        r = torch.sigmoid(self.linear_r(concat))
+        z = torch.sigmoid(self.linear_z(concat))
+        h = torch.tanh(self.linear_h(torch.cat([x, r * y], dim=-1)))
+        return (1.0 - z) * x + z * h
+
+
+class SequentialGTrXLBlock(nn.Module):
+    """Pre-LN causal self-attention + gated residual FFN block."""
+
+    def __init__(self, d_model: int, n_heads: int, d_ff: int, dropout: float):
+        super().__init__()
+        self.ln1 = nn.LayerNorm(d_model)
+        self.attn = nn.MultiheadAttention(
+            d_model,
+            n_heads,
+            dropout=float(dropout),
+            batch_first=True,
+        )
+        self.gate1 = GRUGate(d_model)
+        self.ln2 = nn.LayerNorm(d_model)
+        self.ff = nn.Sequential(
+            nn.Linear(d_model, d_ff),
+            nn.SiLU(),
+            nn.Dropout(float(dropout)),
+            nn.Linear(d_ff, d_model),
+            nn.Dropout(float(dropout)),
+        )
+        self.gate2 = GRUGate(d_model)
+
+    def forward(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        norm_x = self.ln1(x)
+        attn_out, _ = self.attn(norm_x, norm_x, norm_x, attn_mask=attn_mask)
+        x = self.gate1(x, attn_out)
+        ff_out = self.ff(self.ln2(x))
+        return self.gate2(x, ff_out)
 
 
 class BLBStage2SequentialPolicy(nn.Module):
-    """Actor + critic over per-step decisions.
+    """v2-scale GTrXL actor + critic over per-step decisions.
 
     Forward signature:
         ``state``: ``[B, state_dim]``
@@ -65,44 +187,253 @@ class BLBStage2SequentialPolicy(nn.Module):
     def __init__(self, cfg: SequentialPolicyConfig):
         super().__init__()
         self.cfg = cfg
-        self.encoder = nn.Sequential(
-            nn.Linear(cfg.state_dim, cfg.d_hidden),
-            nn.ReLU(),
-            nn.Linear(cfg.d_hidden, cfg.d_hidden),
-            nn.ReLU(),
+        self.embed_step = nn.Embedding(cfg.horizon, cfg.step_embed_dim)
+        self.embed_layer = nn.Embedding(cfg.num_layers, cfg.layer_embed_dim)
+        self.embed_block = nn.Embedding(cfg.block_count, cfg.block_embed_dim)
+        self.prev_action_embeddings = nn.ModuleList([
+            nn.Embedding(cfg.max_num_levels, cfg.prev_action_embed_dim)
+            for _ in range(cfg.max_step_dim)
+        ])
+        self.fc_continuous = nn.Sequential(
+            nn.Linear(8, cfg.cont_proj_dim),
+            nn.LayerNorm(cfg.cont_proj_dim),
+            nn.SiLU(),
         )
-        self.action_head = nn.Linear(
-            cfg.d_hidden, cfg.max_step_dim * cfg.max_num_levels
+        token_input_dim = (
+            cfg.step_embed_dim
+            + cfg.layer_embed_dim
+            + cfg.block_embed_dim
+            + cfg.max_step_dim * cfg.prev_action_embed_dim
+            + cfg.cont_proj_dim
         )
-        self.value_head = nn.Linear(cfg.d_hidden, 1)
+        self.input_proj = (
+            nn.Identity()
+            if token_input_dim == cfg.d_model
+            else nn.Linear(token_input_dim, cfg.d_model)
+        )
+        self.gtrxl_blocks = nn.ModuleList([
+            SequentialGTrXLBlock(
+                cfg.d_model,
+                cfg.n_heads,
+                cfg.d_ff,
+                cfg.dropout,
+            )
+            for _ in range(cfg.n_layers)
+        ])
+        self.ln_final = nn.LayerNorm(cfg.d_model)
+        self.actor_head = nn.Sequential(
+            nn.Linear(cfg.d_model, cfg.actor_dim),
+            nn.Tanh(),
+        )
+        self.slot_heads = nn.ModuleList([
+            nn.Linear(cfg.actor_dim, cfg.max_num_levels)
+            for _ in range(cfg.max_step_dim)
+        ])
+        self.value_head = nn.Sequential(
+            nn.Linear(cfg.d_model, cfg.critic_dim),
+            nn.Tanh(),
+            nn.Linear(cfg.critic_dim, 1),
+        )
+        self.return_normalizer = RunningMeanStd()
+        self._ppo_lr_scale = 1.0
+        self._ppo_last_avg_kl = -1.0
+        self.default_prior_scale = float(cfg.default_prior_scale)
+        self.register_buffer(
+            "_preferred_per_slot_idx",
+            torch.full((cfg.max_step_dim,), -1, dtype=torch.long),
+            persistent=False,
+        )
+        self._causal_mask_cache: Dict[Tuple[int, torch.device], torch.Tensor] = {}
         self._init_weights()
 
     def _init_weights(self) -> None:
-        # Encoder + value head: orthogonal sqrt(2) — standard actor-critic init.
-        for layer in self.encoder:
-            if isinstance(layer, nn.Linear):
-                nn.init.orthogonal_(layer.weight, gain=float(np.sqrt(2)))
-                nn.init.constant_(layer.bias, 0.0)
-        nn.init.orthogonal_(self.value_head.weight, gain=1.0)
-        nn.init.constant_(self.value_head.bias, 0.0)
-        # Action head: gain=0.01 (legacy noise_rl_module_v2 trick — see line ~1066
-        # there). Keeps ``W_action @ h`` near zero at init AND after the encoder
-        # gets perturbed by value-loss gradient, so the warmstart bias remains
-        # the dominant signal in the action distribution for many PPO updates.
-        # Without this, the default Kaiming init makes ``|W @ h|`` ~ 4-9 at init,
-        # which overwhelms the +3.5 warmstart bias and lets the policy drift
-        # off baseline on the first sample episode (observed 2026-05-19).
-        nn.init.orthogonal_(self.action_head.weight, gain=0.01)
-        nn.init.constant_(self.action_head.bias, 0.0)
+        for module in [self.fc_continuous, self.actor_head, self.value_head]:
+            for layer in module:
+                if isinstance(layer, nn.Linear):
+                    nn.init.orthogonal_(layer.weight, gain=float(np.sqrt(2)))
+                    if layer.bias is not None:
+                        nn.init.constant_(layer.bias, 0.0)
+        if isinstance(self.input_proj, nn.Linear):
+            nn.init.orthogonal_(self.input_proj.weight, gain=1.0)
+            if self.input_proj.bias is not None:
+                nn.init.constant_(self.input_proj.bias, 0.0)
+        for block in self.gtrxl_blocks:
+            nn.init.orthogonal_(block.attn.in_proj_weight, gain=1.0)
+            if block.attn.in_proj_bias is not None:
+                nn.init.constant_(block.attn.in_proj_bias, 0.0)
+            nn.init.orthogonal_(block.attn.out_proj.weight, gain=1.0)
+            if block.attn.out_proj.bias is not None:
+                nn.init.constant_(block.attn.out_proj.bias, 0.0)
+            for layer in list(block.ff) + [
+                    block.gate1.linear_r, block.gate1.linear_z, block.gate1.linear_h,
+                    block.gate2.linear_r, block.gate2.linear_z, block.gate2.linear_h,
+            ]:
+                if isinstance(layer, nn.Linear):
+                    nn.init.orthogonal_(layer.weight, gain=float(np.sqrt(2)))
+                    if layer.bias is not None:
+                        nn.init.constant_(layer.bias, 0.0)
+        # v2 trick: keep actor logits near zero, so the external warmstart prior
+        # is the dominant early signal even with a large GTrXL trunk.
+        for head in self.slot_heads:
+            nn.init.orthogonal_(head.weight, gain=0.01)
+            nn.init.constant_(head.bias, 0.0)
 
     # ------------------------------------------------------------------
-    def forward(self, state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _step_layer_block_indices(self, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        steps = torch.arange(self.cfg.horizon, device=device, dtype=torch.long)
+        layers = torch.where(
+            steps < 4,
+            torch.zeros_like(steps),
+            1 + torch.div(steps - 4, 5, rounding_mode="floor"),
+        )
+        blocks = torch.where(steps < 4, steps + 1, torch.remainder(steps - 4, 5))
+        layers = torch.clamp(layers, min=0, max=max(0, self.cfg.num_layers - 1))
+        blocks = torch.clamp(blocks, min=0, max=max(0, self.cfg.block_count - 1))
+        return steps, layers, blocks
+
+    def _parse_state(self, state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        B = int(state.shape[0])
+        H = int(self.cfg.horizon)
+        S = int(self.cfg.max_step_dim)
+        device = state.device
+        current_step = torch.zeros(B, dtype=torch.long, device=device)
+        static = torch.zeros(B, 4, dtype=state.dtype, device=device)
+        prev_actions = torch.zeros(B, H, S, dtype=torch.long, device=device)
+        prev_signals = torch.zeros(B, H, 3, dtype=state.dtype, device=device)
+        width = int(state.shape[-1])
+        if width >= 4:
+            static[:, : min(4, width)] = state[:, : min(4, width)]
+        cursor = 4
+        if width >= cursor + H:
+            step_oh = state[:, cursor: cursor + H]
+            current_step = torch.argmax(step_oh, dim=-1).long()
+        cursor += H
+        cursor += 5 + 1
+        need_actions = H * S
+        if width >= cursor + need_actions:
+            raw_actions = state[:, cursor: cursor + need_actions].view(B, H, S)
+            prev_actions = torch.round(raw_actions * 8.0).long().clamp(
+                min=0,
+                max=max(0, self.cfg.max_num_levels - 1),
+            )
+        cursor += need_actions
+        need_signals = H * 3
+        if width >= cursor + need_signals:
+            prev_signals = state[:, cursor: cursor + need_signals].view(B, H, 3)
+        return static, current_step, prev_actions, prev_signals
+
+    def _get_causal_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
+        key = (int(seq_len), device)
+        cached = self._causal_mask_cache.get(key)
+        if cached is not None:
+            return cached
+        mask = torch.triu(
+            torch.ones(seq_len, seq_len, device=device, dtype=torch.bool),
+            diagonal=1,
+        )
+        self._causal_mask_cache[key] = mask
+        return mask
+
+    def _build_tokens(self, state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        static, current_step, prev_actions, prev_signals = self._parse_state(state)
+        B = int(state.shape[0])
+        H = int(self.cfg.horizon)
+        device = state.device
+        steps, layers, blocks = self._step_layer_block_indices(device)
+        step_emb = self.embed_step(steps).unsqueeze(0).expand(B, -1, -1)
+        layer_emb = self.embed_layer(layers).unsqueeze(0).expand(B, -1, -1)
+        block_emb = self.embed_block(blocks).unsqueeze(0).expand(B, -1, -1)
+        prev_embs = [
+            emb(prev_actions[:, :, slot_idx])
+            for slot_idx, emb in enumerate(self.prev_action_embeddings)
+        ]
+        static_rep = static.unsqueeze(1).expand(-1, H, -1)
+        is_current = F.one_hot(current_step.clamp(0, H - 1), num_classes=H).to(
+            dtype=state.dtype,
+            device=device,
+        ).unsqueeze(-1)
+        cont = torch.cat([static_rep, prev_signals, is_current], dim=-1)
+        cont_proj = self.fc_continuous(cont)
+        token_input = torch.cat([step_emb, layer_emb, block_emb, *prev_embs, cont_proj], dim=-1)
+        return self.input_proj(token_input), current_step
+
+    def _coerce_prior_scale(
+            self,
+            baseline_prior_scale: Optional[Any],
+            *,
+            batch_size: int,
+            device: torch.device,
+            dtype: torch.dtype,
+            ) -> torch.Tensor:
+        if baseline_prior_scale is None:
+            baseline_prior_scale = float(self.default_prior_scale)
+        if isinstance(baseline_prior_scale, torch.Tensor):
+            scale = baseline_prior_scale.to(device=device, dtype=dtype).reshape(-1)
+        else:
+            scale = torch.full(
+                (batch_size,),
+                float(baseline_prior_scale),
+                device=device,
+                dtype=dtype,
+            )
+        if scale.numel() == 1 and batch_size != 1:
+            scale = scale.expand(batch_size)
+        if scale.numel() != batch_size:
+            raise ValueError(
+                f"baseline_prior_scale has {scale.numel()} values for batch {batch_size}"
+            )
+        return scale.view(batch_size, 1, 1)
+
+    def _baseline_prior_logits(
+            self,
+            *,
+            batch_size: int,
+            device: torch.device,
+            dtype: torch.dtype,
+            baseline_prior_scale: Optional[Any],
+            ) -> torch.Tensor:
+        scale = self._coerce_prior_scale(
+            baseline_prior_scale,
+            batch_size=batch_size,
+            device=device,
+            dtype=dtype,
+        )
+        prior = torch.zeros(
+            batch_size,
+            self.cfg.max_step_dim,
+            self.cfg.max_num_levels,
+            device=device,
+            dtype=dtype,
+        )
+        preferred = self._preferred_per_slot_idx.to(device=device)
+        for slot_idx, lvl in enumerate(preferred.tolist()):
+            lvl = int(lvl)
+            if 0 <= lvl < self.cfg.max_num_levels:
+                prior[:, int(slot_idx), lvl] = scale[:, 0, 0]
+        return prior
+
+    def forward(
+            self,
+            state: torch.Tensor,
+            baseline_prior_scale: Optional[Any] = None,
+            ) -> Tuple[torch.Tensor, torch.Tensor]:
         if state.dim() == 1:
             state = state.unsqueeze(0)
-        h = self.encoder(state)
-        logits_flat = self.action_head(h)  # [B, S*L]
-        logits = logits_flat.view(
-            -1, self.cfg.max_step_dim, self.cfg.max_num_levels
+        tokens, current_step = self._build_tokens(state)
+        causal_mask = self._get_causal_mask(tokens.size(1), tokens.device)
+        x = tokens
+        for block in self.gtrxl_blocks:
+            x = block(x, attn_mask=causal_mask)
+        x = self.ln_final(x)
+        batch_idx = torch.arange(x.shape[0], device=x.device)
+        h = x[batch_idx, current_step.clamp(0, self.cfg.horizon - 1)]
+        actor_feat = self.actor_head(h)
+        logits = torch.stack([head(actor_feat) for head in self.slot_heads], dim=1)
+        logits = logits + self._baseline_prior_logits(
+            batch_size=int(logits.shape[0]),
+            device=logits.device,
+            dtype=logits.dtype,
+            baseline_prior_scale=baseline_prior_scale,
         )
         value = self.value_head(h).squeeze(-1)
         return logits, value
@@ -162,6 +493,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             *,
             deterministic: bool = False,
             action_level_mask: Optional[torch.Tensor] = None,
+            baseline_prior_scale: Optional[Any] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample one per-step action.
 
@@ -170,7 +502,10 @@ class BLBStage2SequentialPolicy(nn.Module):
             log_prob: ``[B]`` summed across active slots
             value:    ``[B]``
         """
-        logits, value = self.forward(state)
+        logits, value = self.forward(
+            state,
+            baseline_prior_scale=baseline_prior_scale,
+        )
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
             action_level_mask=action_level_mask,
@@ -201,11 +536,16 @@ class BLBStage2SequentialPolicy(nn.Module):
             slot_mask: torch.Tensor,
             per_slot_num_levels: torch.Tensor,
             action_level_mask: Optional[torch.Tensor] = None,
-            ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+            baseline_prior_scale: Optional[Any] = None,
+            return_per_slot_entropy: bool = False,
+            ) -> Tuple[torch.Tensor, ...]:
         """Re-evaluate (log_prob, entropy, value) for a given action under the
         current policy. Used by PPO update.
         """
-        logits, value = self.forward(state)
+        logits, value = self.forward(
+            state,
+            baseline_prior_scale=baseline_prior_scale,
+        )
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
             action_level_mask=action_level_mask,
@@ -221,6 +561,8 @@ class BLBStage2SequentialPolicy(nn.Module):
         log_prob = log_prob_per_slot.sum(dim=-1)
         entropy_per_slot = dist.entropy() * slot_mask.float()
         entropy = entropy_per_slot.sum(dim=-1)
+        if return_per_slot_entropy:
+            return log_prob, entropy, value, entropy_per_slot
         return log_prob, entropy, value
 
     def apply_preferred_per_step_bias(
@@ -230,31 +572,53 @@ class BLBStage2SequentialPolicy(nn.Module):
             gain: float = 1.5,
             clear_existing: bool = True,
             ) -> None:
-        """Bias the action head toward a preferred per-slot index for ALL slots.
+        """Install an external per-slot warmstart prior.
 
-        Useful as a warmstart toward the all-max baseline (every slot at its
-        max-SF index). For BLB Stage-2 the all-max action picks the *largest*
-        index for every slot; passing ``[max_idx_for_kind] * max_step_dim``
-        biases the policy toward that. Only the diagonal entries are set;
-        non-active slots are still masked out at sample time.
+        Older MLP policy builds wrote this bias directly into the actor head.
+        The GTrXL policy keeps learned logits near zero and adds a caller-owned
+        prior in ``forward``. That makes the prior schedulable per episode and
+        replayable during PPO updates via ``baseline_prior_scale``.
         """
         if len(preferred_per_slot_idx) != self.cfg.max_step_dim:
             raise ValueError(
                 f"preferred length {len(preferred_per_slot_idx)} != max_step_dim {self.cfg.max_step_dim}"
             )
         with torch.no_grad():
-            if self.action_head.bias is None:
-                return
-            bias = self.action_head.bias.view(self.cfg.max_step_dim, self.cfg.max_num_levels)
+            preferred = torch.full_like(self._preferred_per_slot_idx, -1)
             for slot_idx, lvl in enumerate(preferred_per_slot_idx):
                 lvl = int(lvl)
                 if lvl < 0 or lvl >= self.cfg.max_num_levels:
                     raise ValueError(
                         f"preferred index {lvl} out of range [0, {self.cfg.max_num_levels})"
                     )
-                if clear_existing:
-                    bias[slot_idx].zero_()
-                bias[slot_idx, lvl] += float(gain)
+                preferred[int(slot_idx)] = int(lvl)
+            self._preferred_per_slot_idx.copy_(preferred)
+            self.default_prior_scale = float(gain)
+
+    def ppo_aux_state_dict(self) -> Dict[str, Any]:
+        """State not owned by ``nn.Module.state_dict`` but needed for resume."""
+        return {
+            "return_normalizer": self.return_normalizer.state_dict(),
+            "ppo_lr_scale": float(self._ppo_lr_scale),
+            "ppo_last_avg_kl": float(self._ppo_last_avg_kl),
+            "default_prior_scale": float(self.default_prior_scale),
+            "preferred_per_slot_idx": self._preferred_per_slot_idx.detach().cpu().tolist(),
+        }
+
+    def load_ppo_aux_state_dict(self, state: Optional[Mapping[str, Any]]) -> None:
+        if not isinstance(state, Mapping):
+            return
+        self.return_normalizer.load_state_dict(state.get("return_normalizer"))
+        self._ppo_lr_scale = float(state.get("ppo_lr_scale", self._ppo_lr_scale))
+        self._ppo_last_avg_kl = float(state.get("ppo_last_avg_kl", self._ppo_last_avg_kl))
+        self.default_prior_scale = float(
+            state.get("default_prior_scale", self.default_prior_scale)
+        )
+        preferred = state.get("preferred_per_slot_idx")
+        if preferred is not None:
+            arr = torch.as_tensor(preferred, dtype=torch.long, device=self._preferred_per_slot_idx.device)
+            if arr.numel() == self._preferred_per_slot_idx.numel():
+                self._preferred_per_slot_idx.copy_(arr.view_as(self._preferred_per_slot_idx))
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +637,7 @@ class SequentialTransition:
     done: bool
     # action_level_mask: np.ndarray when provided; shape [max_step_dim, max_num_levels].
     action_level_mask: Optional[np.ndarray] = None
+    baseline_prior_scale: float = 0.0
 
 
 class SequentialRolloutBuffer:
@@ -300,6 +665,7 @@ class SequentialRolloutBuffer:
             value: float,
             reward: float,
             done: bool,
+            baseline_prior_scale: float = 0.0,
             ) -> None:
         """Append one transition.
 
@@ -320,6 +686,7 @@ class SequentialRolloutBuffer:
             value=float(value),
             reward=float(reward),
             done=bool(done),
+            baseline_prior_scale=float(baseline_prior_scale),
         ))
 
     def clear(self) -> None:
@@ -370,7 +737,7 @@ class SequentialRolloutBuffer:
             ):
         """Pack everything into batched tensors. Returns:
             states, actions, slot_masks, per_slot_num_levels, level_masks,
-            old_log_probs, returns, advantages
+            old_log_probs, old_values, returns, advantages, baseline_prior_scales
         """
         if not self._buf:
             raise RuntimeError("SequentialRolloutBuffer is empty")
@@ -394,6 +761,8 @@ class SequentialRolloutBuffer:
                 for t in self._buf
             ])
         log_probs = np.array([t.log_prob for t in self._buf], dtype=np.float32)
+        old_values = np.array([t.value for t in self._buf], dtype=np.float32)
+        prior_scales = np.array([t.baseline_prior_scale for t in self._buf], dtype=np.float32)
         returns, advantages = self.compute_gae(gamma=gamma, lam=lam)
         if advantage_normalize and advantages.size > 1:
             adv_std = float(advantages.std())
@@ -406,8 +775,10 @@ class SequentialRolloutBuffer:
             torch.from_numpy(levels).to(device),
             None if level_masks is None else torch.from_numpy(level_masks).to(device),
             torch.from_numpy(log_probs).to(device),
+            torch.from_numpy(old_values).to(device),
             torch.from_numpy(returns).to(device),
             torch.from_numpy(advantages).to(device),
+            torch.from_numpy(prior_scales).to(device),
         )
 
 
@@ -426,6 +797,63 @@ class SequentialPPOConfig:
     max_grad_norm: float = 1.0
     gamma: float = 0.99
     gae_lambda: float = 0.95
+    value_clip_range: float = 1.0
+    normalize_returns: bool = True
+    robust_advantage_norm: bool = True
+    adv_outlier_clip: float = 6.0
+    use_kl_early_stop: bool = True
+    kl_target: float = 0.02
+    adaptive_lr_kl: bool = True
+    kl_adaptive_min_ratio: float = 0.25
+    kl_adaptive_max_ratio: float = 2.5
+    per_slot_entropy_recovery: bool = True
+    per_slot_entropy_floor_frac: float = 0.22
+    per_slot_entropy_recovery_multiplier: float = 6.0
+
+
+def _robust_normalize_advantages(
+        advantages: torch.Tensor,
+        *,
+        outlier_clip: float,
+        ) -> torch.Tensor:
+    if advantages.numel() <= 1:
+        return advantages
+    adv = advantages.float()
+    median = torch.median(adv)
+    mad = torch.median(torch.abs(adv - median))
+    if bool(torch.isfinite(mad).item()) and float(mad.item()) > 1e-8:
+        radius = float(outlier_clip) * 1.4826 * mad
+        adv = torch.clamp(adv, median - radius, median + radius)
+    std = torch.std(adv, unbiased=False)
+    if bool(torch.isfinite(std).item()) and float(std.item()) > 1e-8:
+        adv = (adv - torch.mean(adv)) / (std + 1e-8)
+    return adv
+
+
+def _apply_adaptive_kl_lr(
+        policy: BLBStage2SequentialPolicy,
+        optimizer: torch.optim.Optimizer,
+        cfg: SequentialPPOConfig,
+        ) -> Tuple[float, float]:
+    if not bool(getattr(cfg, "adaptive_lr_kl", True)):
+        policy._ppo_lr_scale = 1.0
+    else:
+        last_kl = float(getattr(policy, "_ppo_last_avg_kl", -1.0))
+        target = max(1e-8, float(getattr(cfg, "kl_target", 0.02)))
+        scale = float(getattr(policy, "_ppo_lr_scale", 1.0))
+        if last_kl > 1.5 * target:
+            scale *= 0.5
+        elif 0.0 <= last_kl < 0.5 * target:
+            scale *= 1.2
+        policy._ppo_lr_scale = float(np.clip(
+            scale,
+            float(getattr(cfg, "kl_adaptive_min_ratio", 0.25)),
+            float(getattr(cfg, "kl_adaptive_max_ratio", 2.5)),
+        ))
+    lr = float(cfg.lr) * float(policy._ppo_lr_scale)
+    for group in optimizer.param_groups:
+        group["lr"] = lr
+    return lr, float(policy._ppo_lr_scale)
 
 
 def sequential_ppo_update(
@@ -448,19 +876,50 @@ def sequential_ppo_update(
     """
     if len(buffer) == 0:
         return {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
-                "clip_fraction": 0.0, "n_samples": 0, "ent_coef": 0.0}
+                "clip_fraction": 0.0, "n_samples": 0, "ent_coef": 0.0,
+                "approx_kl": 0.0, "kl_early_stop": False,
+                "lr": float(cfg.lr), "lr_scale": 1.0,
+                "entropy_recovery_delta": 0.0,
+                "return_mean": 0.0, "return_std": 1.0}
     effective_ent_coef = (
         float(cfg.ent_coef) if ent_coef_override is None else float(ent_coef_override)
     )
 
-    states, actions, slot_masks, levels, level_masks, old_log_probs, returns, advantages = buffer.to_tensors(
+    (
+        states,
+        actions,
+        slot_masks,
+        levels,
+        level_masks,
+        old_log_probs,
+        old_values,
+        returns,
+        advantages,
+        prior_scales,
+    ) = buffer.to_tensors(
         device, gamma=cfg.gamma, lam=cfg.gae_lambda,
+        advantage_normalize=False,
     )
+    if bool(getattr(cfg, "normalize_returns", True)):
+        policy.return_normalizer.update(returns)
+    if bool(getattr(cfg, "robust_advantage_norm", True)):
+        advantages = _robust_normalize_advantages(
+            advantages,
+            outlier_clip=float(getattr(cfg, "adv_outlier_clip", 6.0)),
+        )
+    elif advantages.numel() > 1:
+        std = torch.std(advantages, unbiased=False)
+        if bool(torch.isfinite(std).item()) and float(std.item()) > 1e-8:
+            advantages = (advantages - torch.mean(advantages)) / (std + 1e-8)
+
     n = states.shape[0]
     indices = np.arange(n)
+    current_lr, lr_scale = _apply_adaptive_kl_lr(policy, optimizer, cfg)
 
     metrics_sum = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
-                   "clip_fraction": 0.0, "n_minibatches": 0}
+                   "clip_fraction": 0.0, "approx_kl": 0.0,
+                   "entropy_recovery_delta": 0.0, "n_minibatches": 0}
+    kl_early_stop = False
 
     for _ in range(int(cfg.n_epochs)):
         np.random.shuffle(indices)
@@ -468,7 +927,7 @@ def sequential_ppo_update(
         for start in range(0, n, mb_size):
             end = min(n, start + mb_size)
             mb = torch.from_numpy(indices[start:end]).long().to(device)
-            new_log_probs, entropy, value = policy.evaluate_action(
+            eval_out = policy.evaluate_action(
                 states.index_select(0, mb),
                 actions.index_select(0, mb),
                 slot_masks.index_select(0, mb),
@@ -476,26 +935,63 @@ def sequential_ppo_update(
                 action_level_mask=(
                     None if level_masks is None else level_masks.index_select(0, mb)
                 ),
+                baseline_prior_scale=prior_scales.index_select(0, mb),
+                return_per_slot_entropy=True,
             )
+            new_log_probs, entropy, value, entropy_per_slot = eval_out
             old_lp = old_log_probs.index_select(0, mb)
+            old_value = old_values.index_select(0, mb)
             ret = returns.index_select(0, mb)
             adv = advantages.index_select(0, mb)
             ratio = torch.exp(new_log_probs - old_lp)
             unclipped = ratio * adv
             clipped = torch.clamp(ratio, 1.0 - cfg.clip_range, 1.0 + cfg.clip_range) * adv
             policy_loss = -torch.min(unclipped, clipped).mean()
-            # Huber (delta=1.0) instead of MSE: caps value gradient magnitude
-            # at delta, so unnormalised returns (~+37) don't blow up the
-            # shared-encoder gradient and overwhelm the policy gradient
-            # (observed 2026-05-19: value_loss ~ 60.86 vs policy_loss ~ -0.054
-            # → 1126x ratio caused encoder to drift off warmstart-bias
-            # configuration). Matches legacy noise_rl_module_v2 (line ~1886).
-            value_loss = F.huber_loss(value, ret, delta=1.0)
+            if bool(getattr(cfg, "normalize_returns", True)):
+                value_target = policy.return_normalizer.normalize(ret)
+                value_pred = policy.return_normalizer.normalize(value)
+                old_value_pred = policy.return_normalizer.normalize(old_value)
+            else:
+                value_target = ret
+                value_pred = value
+                old_value_pred = old_value
+            clipped_value = old_value_pred + torch.clamp(
+                value_pred - old_value_pred,
+                -float(getattr(cfg, "value_clip_range", 1.0)),
+                float(getattr(cfg, "value_clip_range", 1.0)),
+            )
+            value_loss_raw = F.huber_loss(
+                value_pred,
+                value_target,
+                delta=1.0,
+                reduction="none",
+            )
+            value_loss_clipped = F.huber_loss(
+                clipped_value,
+                value_target,
+                delta=1.0,
+                reduction="none",
+            )
+            value_loss = torch.max(value_loss_raw, value_loss_clipped).mean()
             entropy_mean = entropy.mean()
+            entropy_recovery_delta = torch.zeros((), device=device)
+            if bool(getattr(cfg, "per_slot_entropy_recovery", True)):
+                mb_slot_masks = slot_masks.index_select(0, mb).float()
+                mb_levels = levels.index_select(0, mb).float().clamp_min(1.0)
+                entropy_floor = (
+                    float(getattr(cfg, "per_slot_entropy_floor_frac", 0.22))
+                    * torch.log(mb_levels)
+                    * mb_slot_masks
+                )
+                entropy_deficit = torch.relu(entropy_floor - entropy_per_slot) * mb_slot_masks
+                denom = torch.clamp(mb_slot_masks.sum(), min=1.0)
+                entropy_recovery_delta = entropy_deficit.sum() / denom
             loss = (
                 policy_loss
                 + cfg.value_coef * value_loss
                 - effective_ent_coef * entropy_mean
+                - float(getattr(cfg, "per_slot_entropy_recovery_multiplier", 6.0))
+                * entropy_recovery_delta
             )
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -504,20 +1000,40 @@ def sequential_ppo_update(
             optimizer.step()
             with torch.no_grad():
                 clip_frac = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean().item()
+                approx_kl = (old_lp - new_log_probs).mean().item()
             metrics_sum["policy_loss"] += float(policy_loss.item())
             metrics_sum["value_loss"] += float(value_loss.item())
             metrics_sum["entropy"] += float(entropy_mean.item())
             metrics_sum["clip_fraction"] += float(clip_frac)
+            metrics_sum["approx_kl"] += float(approx_kl)
+            metrics_sum["entropy_recovery_delta"] += float(entropy_recovery_delta.detach().item())
             metrics_sum["n_minibatches"] += 1
+        n_seen = max(1, int(metrics_sum["n_minibatches"]))
+        epoch_avg_kl = metrics_sum["approx_kl"] / float(n_seen)
+        if (
+                bool(getattr(cfg, "use_kl_early_stop", True))
+                and float(epoch_avg_kl) > 1.5 * float(getattr(cfg, "kl_target", 0.02))
+        ):
+            kl_early_stop = True
+            break
 
     n_mb = max(1, metrics_sum["n_minibatches"])
+    avg_kl = metrics_sum["approx_kl"] / n_mb
+    policy._ppo_last_avg_kl = float(avg_kl)
     return {
         "policy_loss": metrics_sum["policy_loss"] / n_mb,
         "value_loss": metrics_sum["value_loss"] / n_mb,
         "entropy": metrics_sum["entropy"] / n_mb,
         "clip_fraction": metrics_sum["clip_fraction"] / n_mb,
+        "approx_kl": float(avg_kl),
+        "kl_early_stop": bool(kl_early_stop),
         "n_samples": int(n),
         "ent_coef": float(effective_ent_coef),
+        "lr": float(current_lr),
+        "lr_scale": float(lr_scale),
+        "entropy_recovery_delta": metrics_sum["entropy_recovery_delta"] / n_mb,
+        "return_mean": float(policy.return_normalizer.mean),
+        "return_std": float(policy.return_normalizer.std),
     }
 
 

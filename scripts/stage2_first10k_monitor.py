@@ -191,6 +191,21 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
         _finite(row.get("clip_fraction"))
         for row in ppo_recent
     ]
+    ppo_kl_recent = [
+        _finite(row.get("approx_kl"))
+        for row in ppo_recent
+        if "approx_kl" in row
+    ]
+    ppo_lr_scale_recent = [
+        _finite(row.get("lr_scale"))
+        for row in ppo_recent
+        if "lr_scale" in row
+    ]
+    ppo_entropy_recovery_recent = [
+        _finite(row.get("entropy_recovery_delta"))
+        for row in ppo_recent
+        if "entropy_recovery_delta" in row
+    ]
 
     hard_failures: List[str] = []
     warnings: List[str] = []
@@ -354,6 +369,12 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
             "last_update": ppo[-1] if ppo else None,
             "recent_entropy_mean": statistics.mean(ppo_entropy_recent) if ppo_entropy_recent else None,
             "recent_clip_fraction_mean": statistics.mean(ppo_clip_recent) if ppo_clip_recent else None,
+            "recent_approx_kl_mean": statistics.mean(ppo_kl_recent) if ppo_kl_recent else None,
+            "recent_lr_scale_mean": statistics.mean(ppo_lr_scale_recent) if ppo_lr_scale_recent else None,
+            "recent_entropy_recovery_mean": (
+                statistics.mean(ppo_entropy_recovery_recent)
+                if ppo_entropy_recovery_recent else None
+            ),
         },
         "gpu": gpu,
         "updated_at": time.time(),
@@ -396,6 +417,12 @@ def write_health_csv(path: Path, episodes: List[Dict[str, Any]]) -> None:
         "guarded_radius2_recent_dominated_rate",
         "guarded_radius2_cooldown_remaining",
         "guarded_radius2_safe_offset_count",
+        "baseline_prior_scale",
+        "base_action_source",
+        "proposal_direction",
+        "empirical_offset_success_rate",
+        "empirical_offset_failure_rate",
+        "frontier_seed_episode",
     ]
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
@@ -435,6 +462,9 @@ def write_report(path: Path, summary: Dict[str, Any]) -> None:
         ("ppo_updates_seen", ppo.get("updates_seen")),
         ("recent_entropy_mean", ppo.get("recent_entropy_mean")),
         ("recent_clip_fraction_mean", ppo.get("recent_clip_fraction_mean")),
+        ("recent_approx_kl_mean", ppo.get("recent_approx_kl_mean")),
+        ("recent_lr_scale_mean", ppo.get("recent_lr_scale_mean")),
+        ("recent_entropy_recovery_mean", ppo.get("recent_entropy_recovery_mean")),
         ("gpu", json.dumps(gpu, ensure_ascii=False, indent=2)),
     ]
     table = "".join(

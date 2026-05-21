@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Stage-2 GTrXL + Non-monotonic Exploration 改造报告</title>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:28px;color:#111827;line-height:1.55}
+    h1{font-size:28px;margin:0 0 8px}
+    h2{font-size:20px;margin:28px 0 10px;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
+    h3{font-size:16px;margin:18px 0 8px}
+    .muted{color:#6b7280}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+    .card{border:1px solid #d1d5db;border-radius:8px;padding:12px;background:#f9fafb}
+    table{border-collapse:collapse;width:100%;font-size:13px}
+    th,td{border:1px solid #d1d5db;padding:7px 8px;text-align:left;vertical-align:top}
+    th{background:#f3f4f6}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#f3f4f6;padding:1px 4px;border-radius:4px}
+    .ok{color:#047857;font-weight:600}.warn{color:#b45309;font-weight:600}.bad{color:#b91c1c;font-weight:600}
+  </style>
+</head>
+<body>
+  <h1>Stage-2 v2-scale GTrXL + non-monotonic cost-boundary exploration 改造报告</h1>
+  <p class="muted">生成时间：2026-05-21。本报告记录本地源码改造、旧 run 处理方式、设计取舍、测试状态和服务器 fresh run 启动方案。</p>
+
+  <div class="grid">
+    <div class="card"><b>旧 run 状态</b><br>已停止旧 MLP guarded-radius2 run，并将 partial artifacts 回收到 <code>experiments/server_command_runs/stage2_rl_first10k_curve_20260521_145306/</code>，后续仅作为 superseded baseline。</div>
+    <div class="card"><b>新 policy variant</b><br><code>blb_v3_sequential_gtrxl_v2scale</code>。旧 sequential checkpoint 不兼容，必须 fresh。</div>
+    <div class="card"><b>协议</b><br>源码只在本地改；服务器只 <code>git pull --ff-only</code>、运行、产出 artifacts。</div>
+  </div>
+
+  <h2>1. 旧方案的问题</h2>
+  <table>
+    <tr><th>问题</th><th>表现</th><th>这次怎么处理</th></tr>
+    <tr>
+      <td>MLP policy/critic 表达力偏弱</td>
+      <td>上一版 10k 训练长期 reward 变化小，frontier 后期扩展慢，dominated/duplicate 样本占比高。</td>
+      <td>换成 v2-scale GTrXL token model，让策略能利用 59-step 历史、block/layer 位置、前序动作和 optimizer signals。</td>
+    </tr>
+    <tr>
+      <td>baseline prior 容易锁死</td>
+      <td>强 warmstart 对安全启动有帮助，但长期看会把策略压在 baseline 附近。</td>
+      <td>把永久 actor bias 改成外部衰减 logit prior，并把 <code>baseline_prior_scale</code> 写入 transition 以保证 PPO replay 一致。</td>
+    </tr>
+    <tr>
+      <td>探索方向曾隐含“越低越好”</td>
+      <td>SF 与精度/稳定性不单调；低 SF 可能失败，高/横向 move 也可能通过 optimizer 带来更好 cost。</td>
+      <td>改成 non-monotonic empirical proposal：SF/K move 只是 proposal，真实边界方向由 F1 metrics、stability、Rescale_optimizer cost 和 Pareto event 决定。</td>
+    </tr>
+    <tr>
+      <td>PPO value/advantage 稳定性不足</td>
+      <td>长 run 中 value loss 可能压过 policy signal，或 PPO epoch 更新过猛。</td>
+      <td>加入 return normalization、clipped Huber value loss、MAD advantage clipping、approx KL early stop、adaptive LR 和 entropy recovery。</td>
+    </tr>
+  </table>
+
+  <h2>2. 从 <code>noise_rl_module_v2.py</code> 借鉴的点</h2>
+  <p>这次没有照搬 v2，因为当前 Stage-2 的动作空间是 59-step sequential + 最多 13 slot/head + 577-wide full action，和旧 v2 的动作数不同。借鉴的是结构原则：</p>
+  <ul>
+    <li>使用更强的序列 trunk，而不是浅层 MLP。</li>
+    <li>critic 保持单 value head，避免引入额外 mean auxiliary head 后改变 value 语义。</li>
+    <li>actor logits 初始化保持很小，让 baseline prior 在早期可控。</li>
+    <li>训练过程更重视 KL、value loss 和 entropy 的可监控性。</li>
+  </ul>
+
+  <h2>3. 新 policy / critic 设计</h2>
+  <table>
+    <tr><th>模块</th><th>新实现</th><th>优点</th><th>代价</th></tr>
+    <tr>
+      <td>Token input</td>
+      <td>step/layer/block embedding + previous action embedding + previous optimizer signals + static features + current-step marker</td>
+      <td>策略能看见“之前哪些 block 已经做了什么”和 optimizer 反馈。</td>
+      <td>比 MLP 慢，checkpoint 与旧结构不兼容。</td>
+    </tr>
+    <tr>
+      <td>GTrXL trunk</td>
+      <td><code>d_model=256, n_heads=8, n_layers=4, d_ff=512, dropout=0.1</code></td>
+      <td>表达力接近先代 v2 成功路径，适合 horizon=59 的序列决策。</td>
+      <td>需要 fresh run，短 smoke 不能代表长期效果。</td>
+    </tr>
+    <tr>
+      <td>Actor</td>
+      <td>最多 13 个 per-slot heads，每个 head 输出最多 6 个 level logits；继续使用 slot/action-level mask。</td>
+      <td>保留当前 action-space mask 合约；每个 slot 头可以学到自己的局部分布。</td>
+      <td>每个 slot 的 entropy/lock-in 要单独监控。</td>
+    </tr>
+    <tr>
+      <td>Critic</td>
+      <td><code>Linear(256,64) -> Tanh -> Linear(64,1)</code></td>
+      <td>value 语义简单，PPO 回放与 checkpoint 更清楚。</td>
+      <td>没有辅助任务，value 学习完全依赖 reward/GAE。</td>
+    </tr>
+  </table>
+
+  <h2>4. Non-monotonic cost-boundary exploration</h2>
+  <p>“向边界移动”被重新定义为 cost-boundary move，不是 raw SF downward move。候选如果降低 SF 但 P1/P2/loss-cap/stability violation，就进入失败统计和 cooldown；候选如果提高或保持某些 SF，却通过 optimizer 带来更多 fusion、更低 K 或更少 total bits，并且通过 P3 硬约束，就可以进入 frontier。</p>
+  <ul>
+    <li>默认 forced baseline anchor：60 episodes。</li>
+    <li>Baseline prior：1.2 anchor；episode 60-600 从 1.0 衰减到 0.45；episode 600-2000 衰减到 0.15；之后保持 0.15。</li>
+    <li>Radius1 mask：SF-like slot 在 base action 两侧双向局部扰动；K 用 <code>K_LEVELS</code> 的 truncation-bit 距离。</li>
+    <li>Base action source：baseline 或近期 Pareto frontier seed，而不是永远 baseline。</li>
+    <li>Empirical stats：每个 offset 记录 P3 成功、P1/P2、loss cap、stability violation、invalid、frontier/member/dominated/duplicate、平均 cost-vector 变化。</li>
+    <li>Guarded radius2：只从至少 3 次 P3 成功且 0 失败的 offset 里采样；任何硬失败触发 cooldown。</li>
+  </ul>
+
+  <h2>5. PPO 稳定器</h2>
+  <table>
+    <tr><th>稳定器</th><th>作用</th><th>诊断字段</th></tr>
+    <tr><td>Running return normalization</td><td>把 value loss 尺度压住，减少 value 梯度盖过 policy 梯度。</td><td><code>return_mean</code>, <code>return_std</code></td></tr>
+    <tr><td>Clipped Huber value loss</td><td>避免 value 预测一步跳太大。</td><td><code>value_loss</code></td></tr>
+    <tr><td>MAD advantage clipping</td><td>削弱异常 reward 尖刺对 PPO batch 的影响。</td><td>间接反映在 policy loss / KL</td></tr>
+    <tr><td>Approx KL early stop</td><td>防止一次 PPO update 把 policy 推离采样分布。</td><td><code>approx_kl</code>, <code>kl_early_stop</code></td></tr>
+    <tr><td>Adaptive LR</td><td>KL 过大降 LR，KL 过小适度升 LR。</td><td><code>lr</code>, <code>lr_scale</code></td></tr>
+    <tr><td>Per-slot entropy recovery</td><td>某些 slot 熵低于 floor 时补探索压力，减少早期锁死。</td><td><code>entropy_recovery_delta</code></td></tr>
+  </table>
+
+  <h2>6. 本地验证</h2>
+  <table>
+    <tr><th>检查</th><th>结果</th><th>备注</th></tr>
+    <tr><td>Python compile</td><td class="ok">PASS</td><td><code>sequential_policy.py</code>, <code>sequential_runner.py</code>, <code>diagnostics.py</code>, <code>runner.py</code>, monitor 脚本。</td></tr>
+    <tr><td>Shell syntax</td><td class="ok">PASS</td><td><code>bash -n scripts/stage2_first10k_server_run.sh</code></td></tr>
+    <tr><td>Sequential smoke tests</td><td class="ok">PASS</td><td><code>python3 -m unittest tests.test_sequential_smoke -v</code>，55 tests，1 skipped（本地无 torch）。</td></tr>
+    <tr><td>Policy torch tests</td><td class="warn">SKIPPED locally</td><td>本地没有 torch；服务器测试会覆盖 torch/import 路径。</td></tr>
+  </table>
+
+  <h2>7. 服务器 fresh run 计划</h2>
+  <p><code>SERVER_COMMAND.md</code> 仍然只运行第一段 bash，当前指向 <code>bash scripts/stage2_first10k_server_run.sh</code>。脚本会先 <code>git pull --ff-only</code>，失败则 abort；然后跑 server tests、<code>blb_verify_noise_install.py</code>、GPU 检查、1000-episode smoke，smoke PASS 后再跑 10000-episode formal dual-GPU RL。</p>
+  <p>正式报告会在服务器 run 完成或失败后，用该 run 的 <code>episodes.jsonl</code>、<code>ppo_updates.jsonl</code>、<code>pareto_frontier.json</code>、GPU CSV 和 monitor summaries 更新。</p>
+</body>
+</html>

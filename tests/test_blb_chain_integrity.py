@@ -460,16 +460,7 @@ class SampleGaussianLiveReadTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 @unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
 class SequentialPolicyInitTest(unittest.TestCase):
-    """Pin the two init invariants behind the 2026-05-19 sampling-collapse fix.
-
-    The collapse happened because the default Kaiming init on
-    ``action_head.weight`` made ``|W @ h|`` ~ 4-9 at init, overwhelming the
-    ``+3.5`` warmstart bias and letting the policy drift off baseline at the
-    first sample episode. The fix is a legacy noise_rl_module_v2 trick:
-    initialise the action head weights with gain=0.01 so the warmstart bias
-    remains the dominant signal in the action distribution even after the
-    shared encoder gets perturbed by value-loss gradient.
-    """
+    """Pin the GTrXL per-slot actor init and warmstart-prior contract."""
 
     def _make_policy(self) -> "BLBStage2SequentialPolicy":
         cfg = SequentialPolicyConfig(
@@ -482,34 +473,36 @@ class SequentialPolicyInitTest(unittest.TestCase):
         return BLBStage2SequentialPolicy(cfg)
 
     def test_action_head_weight_is_small(self):
-        """action_head.weight Frobenius norm must be << default Kaiming."""
+        """Every per-slot head must start near zero so external prior wins."""
         policy = self._make_policy()
-        weight_norm = float(policy.action_head.weight.norm().item())
-        # orthogonal(gain=0.01) on a [78, 256] tensor → Frobenius = gain * sqrt(min(78,256)) = 0.01*sqrt(78) ≈ 0.088
-        self.assertLess(
-            weight_norm, 0.5,
-            f"action_head.weight norm {weight_norm:.4f} too large; warmstart "
-            "bias will be overwhelmed by W@h (regression of 2026-05-19 fix)",
-        )
+        for idx, head in enumerate(policy.slot_heads):
+            weight_norm = float(head.weight.norm().item())
+            self.assertLess(
+                weight_norm, 0.05,
+                f"slot_heads[{idx}].weight norm {weight_norm:.4f} too large; "
+                "warmstart prior will be overwhelmed by random logits",
+            )
 
     def test_action_head_bias_starts_zero(self):
-        """Warmstart sets bias; init must leave bias at 0 so caller controls it."""
+        """Learned actor biases start zero; caller controls baseline prior."""
         policy = self._make_policy()
-        self.assertTrue(
-            torch.allclose(policy.action_head.bias, torch.zeros_like(policy.action_head.bias)),
-            "action_head.bias must start at 0 (warmstart caller sets +gain per slot)",
-        )
+        for idx, head in enumerate(policy.slot_heads):
+            self.assertTrue(
+                torch.allclose(head.bias, torch.zeros_like(head.bias)),
+                f"slot_heads[{idx}].bias must start at 0",
+            )
+        self.assertTrue(torch.all(policy._preferred_per_slot_idx < 0))
 
     def test_value_head_init_standard(self):
         policy = self._make_policy()
+        final_linear = policy.value_head[-1]
         self.assertTrue(
-            torch.allclose(policy.value_head.bias, torch.zeros_like(policy.value_head.bias)),
-            "value_head.bias must start at 0",
+            torch.allclose(final_linear.bias, torch.zeros_like(final_linear.bias)),
+            "value head final bias must start at 0",
         )
-        weight_norm = float(policy.value_head.weight.norm().item())
-        # orthogonal(gain=1.0) on [1, 256] → ||W|| = 1.0
+        weight_norm = float(final_linear.weight.norm().item())
         self.assertLess(weight_norm, 2.0,
-                        f"value_head.weight norm {weight_norm:.4f} unexpected (gain=1.0 expected)")
+                        f"value head final weight norm {weight_norm:.4f} unexpected")
 
     def test_warmstart_bias_dominates_random_state(self):
         """With +3.5 warmstart bias and random state, preferred index should
@@ -523,7 +516,7 @@ class SequentialPolicyInitTest(unittest.TestCase):
         # Random state, batch of 32 to average out specific-state effects
         state = torch.randn(32, policy.cfg.state_dim)
         with torch.no_grad():
-            logits, _value = policy.forward(state)
+            logits, _value = policy.forward(state, baseline_prior_scale=3.5)
         # logits: [32, max_step_dim, max_num_levels]
         preferred_logit = logits[:, :, 4]  # [32, max_step_dim]
         mean_other_logit = (

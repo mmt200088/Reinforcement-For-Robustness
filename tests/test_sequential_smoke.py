@@ -962,7 +962,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
 
         Cfg.force_baseline_episodes = 0
         Cfg.warmstart_anchor_episodes = None
-        self.assertEqual(helper(Cfg()), 120)
+        self.assertEqual(helper(Cfg()), 60)
 
     def test_noisy_accuracy_threshold_has_probe_granularity_guard(self):
         ns = self._exec_runner_helpers("_noisy_accuracy_threshold_with_probe_guard")
@@ -977,6 +977,16 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertLess(threshold, 0.8648)
         self.assertGreater(threshold, 0.31)
 
+    def test_baseline_prior_schedule_decays_to_weak_prior(self):
+        ns = self._exec_runner_helpers("_resolve_baseline_prior_scale")
+        helper = ns["_resolve_baseline_prior_scale"]
+
+        self.assertAlmostEqual(helper(0, anchor_episodes=60), 1.2)
+        self.assertAlmostEqual(helper(60, anchor_episodes=60), 1.0)
+        self.assertAlmostEqual(helper(600, anchor_episodes=60), 0.45)
+        self.assertAlmostEqual(helper(2000, anchor_episodes=60), 0.15)
+        self.assertAlmostEqual(helper(8000, anchor_episodes=60), 0.15)
+
     def test_step_level_mask_keeps_unselected_slots_at_baseline(self):
         ns = self._exec_runner_helpers(
             "_near_baseline_level_indices",
@@ -986,7 +996,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         build_mask = ns["_build_step_level_mask"]
         near = ns["_near_baseline_level_indices"]
 
-        self.assertEqual(set(near(kind="K", baseline_idx=3, dim=6, radius=2)), {2, 3, 5})
+        self.assertEqual(set(near(kind="K", baseline_idx=3, dim=6, radius=2)), {1, 2, 3, 4, 5})
 
         class FakeSpec:
             slot_dims = (5, 6, 3)
@@ -1006,7 +1016,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         )
         self.assertEqual(mask.shape, (4, 6))
         self.assertEqual(set(np.flatnonzero(mask[0]).tolist()), {4})
-        self.assertEqual(set(np.flatnonzero(mask[1]).tolist()), {2, 3, 5})
+        self.assertEqual(set(np.flatnonzero(mask[1]).tolist()), {1, 2, 3, 4, 5})
         self.assertEqual(set(np.flatnonzero(mask[2]).tolist()), {0, 1, 2})
         self.assertFalse(mask[3].any())
 
@@ -1023,7 +1033,11 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertEqual(set(np.flatnonzero(baseline_only[2]).tolist()), {2})
 
     def test_guarded_radius2_waits_for_stall_and_healthy_history(self):
-        ns = self._exec_runner_items("GuardedRadius2Decision", "GuardedRadius2Controller")
+        ns = self._exec_runner_items(
+            "GuardedRadius2Decision",
+            "OffsetEmpiricalStats",
+            "GuardedRadius2Controller",
+        )
         Controller = ns["GuardedRadius2Controller"]
 
         controller = Controller(
@@ -1080,7 +1094,11 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertIn("frontier", decision.reason)
 
     def test_guarded_radius2_cooldown_after_radius2_failure(self):
-        ns = self._exec_runner_items("GuardedRadius2Decision", "GuardedRadius2Controller")
+        ns = self._exec_runner_items(
+            "GuardedRadius2Decision",
+            "OffsetEmpiricalStats",
+            "GuardedRadius2Controller",
+        )
         Controller = ns["GuardedRadius2Controller"]
         controller = Controller(
             enabled=True,
@@ -1227,7 +1245,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             'NEIGHBOR_MAX_RADIUS="${NEIGHBOR_MAX_RADIUS:-1}"',
             'ENT_COEF="${ENT_COEF:-0.06}"',
             'ENT_RAMP="${ENT_RAMP:-600}"',
-            'WARMSTART_BIAS_GAIN="${WARMSTART_BIAS_GAIN:-2.5}"',
+            'WARMSTART_BIAS_GAIN="${WARMSTART_BIAS_GAIN:-1.2}"',
             'GUARDED_RADIUS2_ENABLED="${GUARDED_RADIUS2_ENABLED:-1}"',
             'GUARDED_RADIUS2_MIN_EPISODE="${GUARDED_RADIUS2_MIN_EPISODE:-1060}"',
             'GUARDED_RADIUS2_STALL_WINDOW="${GUARDED_RADIUS2_STALL_WINDOW:-600}"',
@@ -1358,6 +1376,8 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
                     slot_mask,
                     per_slot_num_levels,
                     action_level_mask=None,
+                    baseline_prior_scale=None,
+                    return_per_slot_entropy=False,
                     ):
                 self.seen_masks.append(
                     None if action_level_mask is None
@@ -1365,6 +1385,9 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
                 )
                 batch = state.shape[0]
                 base = self.weight.expand(batch)
+                entropy_per_slot = torch.ones_like(slot_mask, dtype=torch.float32) * 0.5
+                if return_per_slot_entropy:
+                    return base, base + 0.5, base, entropy_per_slot
                 return base, base + 0.5, base
 
         level_mask = np.array(
@@ -1385,6 +1408,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             value=0.0,
             reward=1.0,
             done=True,
+            baseline_prior_scale=0.75,
         )
         policy = SpyPolicy()
         optimizer = torch.optim.SGD(policy.parameters(), lr=0.0)
@@ -1468,15 +1492,15 @@ class EntCoefScheduleRegressionTest(unittest.TestCase):
 
     def test_train_config_defaults(self):
         """SequentialTrainConfig should default to ent_coef_anchor=0 and
-        a 240-episode ramp."""
+        a 600-episode ramp."""
         src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
         self.assertIn("ent_coef_anchor: float = 0.0", src)
-        self.assertIn("ent_coef_ramp_episodes: int = 240", src)
+        self.assertIn("ent_coef_ramp_episodes: int = 600", src)
         # BLBStage2TrainConfig (used by the runner) must also expose them
         # so the launcher / preset can override.
         src2 = open("blb_stage2_rl/runner.py", encoding="utf-8").read()
         self.assertIn("ent_coef_anchor: float = 0.0", src2)
-        self.assertIn("ent_coef_ramp_episodes: int = 240", src2)
+        self.assertIn("ent_coef_ramp_episodes: int = 600", src2)
 
     def test_schedule_math_anchor_ramp_steady(self):
         """Functional test of the helper. Locks in the three-stage behaviour
@@ -1506,20 +1530,20 @@ class EntCoefScheduleRegressionTest(unittest.TestCase):
             )
 
         # Ramp stage: linear interpolation
-        # ep=180 = 60 anchor + 120 into ramp; ramp_episodes default 240 → 50% ramp
+        # ep=360 = 60 anchor + 300 into ramp; ramp_episodes default 600 -> 50% ramp
         self.assertAlmostEqual(
-            fn(ep_count_1based=180, anchor_episodes=60, target_ent_coef=0.02),
+            fn(ep_count_1based=360, anchor_episodes=60, target_ent_coef=0.02),
             0.01, places=5,
         )
 
         # End of ramp: target
         self.assertAlmostEqual(
-            fn(ep_count_1based=300, anchor_episodes=60, target_ent_coef=0.02),
+            fn(ep_count_1based=660, anchor_episodes=60, target_ent_coef=0.02),
             0.02, places=5,
         )
 
         # Steady: target
-        for ep in (301, 1000, 6000):
+        for ep in (661, 1000, 6000):
             self.assertAlmostEqual(
                 fn(ep_count_1based=ep, anchor_episodes=60, target_ent_coef=0.02),
                 0.02, places=5,

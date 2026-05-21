@@ -51,7 +51,8 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   offsets. Current guarded-radius2 follow-up still keeps raw safe-neighbor at
   `NEIGHBOR_MAX_RADIUS=1`, with `ANCHOR_EPISODES=60`,
   `NEIGHBOR_RAMP=1800`, `NEIGHBOR_MAX_MUTATIONS=12`, `ENT_COEF=0.06`,
-  `ENT_RAMP=600`, and `WARMSTART_BIAS_GAIN=2.5`. It enables radius2 only when
+  `ENT_RAMP=600`, and `WARMSTART_BIAS_GAIN=1.2` with a decaying baseline
+  prior. It enables radius2 only when
   the frontier has stalled and recent health is clean: default server settings
   are `GUARDED_RADIUS2_ENABLED=1`, `GUARDED_RADIUS2_MIN_EPISODE=1060`,
   `GUARDED_RADIUS2_STALL_WINDOW=600`, `GUARDED_RADIUS2_MAX_MUTATIONS=4`,
@@ -515,34 +516,59 @@ The old single-shot `BLBStage2Env`/`BLBStage2Policy` path still exists for tests
 F0 tooling, candidate-store compatibility, and explicit
 `--blb-v3-no-sequential-rl` experiments.
 
-Current safe-curriculum fix for the 2026-05-20 collapse at episode 121:
+Current sequential policy/search design as of 2026-05-21:
 
-- The collapse was optimizer-valid but accuracy-catastrophic. The first
-  post-anchor sampled episode reached `any_invalid=False` with `loss_mean=100`
-  and P1(acc), so the optimizer-invalid blacklist alone could not protect the
-  terminal model-forward reward.
-- Sequential forced-baseline anchor must respect the configured
-  `warmstart_anchor_episodes` unless `force_baseline_episodes` is explicitly
-  set. Anchor and entropy schedules must use absolute episode indices so resume
-  does not restart the anchor.
-- During forced anchor, PPO must still evaluate baseline actions under
-  unrestricted slot/level support; do not apply a baseline-only mask there,
-  otherwise the actor receives no useful probability-mass signal.
-- After the anchor, safe neighbor sampling may restrict each episode to a small
-  set of mutable full-vector offsets. Non-selected slots stay baseline-only;
-  selected SF-like slots can move only downward within the local radius, and K
-  slots use value-order locality through non-monotonic `K_LEVELS`.
-- Store the exact per-transition `action_level_mask` used during collection and
-  replay it during `sequential_ppo_update`. Recomputing support during PPO
-  update breaks the PPO ratio whenever the per-episode mask changes.
+- `BLBStage2SequentialPolicy` is a v2-scale causal GTrXL token model, not the
+  old two-layer MLP. The default shape is `d_model=256`, `n_heads=8`,
+  `n_layers=4`, `d_ff=512`, `dropout=0.1`. Inputs include step/layer/block
+  embeddings, previous action embeddings, previous optimizer signals, static
+  features, and a current-step token marker.
+- Actor output uses per-slot heads: up to 13 slot heads, each producing up to 6
+  level logits. The existing slot mask and per-level `action_level_mask` still
+  define the legal categorical support for each step. The critic is a single
+  value head `Linear(256,64) -> Tanh -> Linear(64,1)`.
+- Action heads are orthogonal-initialized with gain `0.01`. Warmstart is no
+  longer a permanent learned bias inside the actor head; it is an external
+  decaying baseline logit prior, and every transition stores
+  `baseline_prior_scale` so PPO can replay the exact collection distribution.
+- Baseline prior schedule for fresh sequential runs: anchor episodes use
+  `1.2`; episode 60 starts at `1.0`; episode 60-600 decays to `0.45`; episode
+  600-2000 decays to `0.15`; after episode 2000 it stays at `0.15` as a weak
+  safety prior. Default forced-baseline anchor is exactly 60 episodes unless
+  `force_baseline_episodes` or `warmstart_anchor_episodes` overrides it.
+- PPO update now includes running return normalization, clipped Huber value
+  loss on normalized returns, MAD-clipped advantage normalization, approximate
+  KL stats, KL early stop, adaptive LR scaling, and per-slot entropy recovery.
+  Checkpoint/resume stores policy state plus PPO auxiliary state.
+- Exploration is non-monotonic cost-boundary search. Do not assume lower SF is
+  closer to the metric/stability boundary. SF/K moves are proposal directions
+  only; the true boundary direction comes from F1 model-forward metrics,
+  stability, Rescale_optimizer cost signals, and Pareto archive events.
+- Safe neighbor masks are bidirectional around the selected base action for SF
+  slots; K locality is by truncation-bit distance through non-monotonic
+  `K_LEVELS`, not by categorical index or "lower is better". Non-selected
+  slots stay fixed at the selected base action.
+- Each episode may seed its local mask from the static baseline or a recent
+  Pareto-frontier action. `GuardedRadius2Controller` maintains empirical
+  per-offset stats: P3 successes, P1/P2/loss-cap/stability failures, Pareto
+  event counts, and mean cost-vector changes. Radius2 may sample only offsets
+  with at least three P3 successes and zero failures; any radius2 P1/P2,
+  invalid, loss-cap, or stability violation triggers cooldown.
+- Store the exact per-transition `action_level_mask` and
+  `baseline_prior_scale` used during collection and replay both during
+  `sequential_ppo_update`. Recomputing support or prior scale during PPO update
+  breaks the PPO ratio.
 - Build mutable offsets from `describe_action_vector(...)` and exclude inactive
   compatibility slots, layer-0 block-1 pseudo slots, first-input compatibility,
   and single-level dimensions.
-- A second 2026-05-20 finding: K=5 / probe_size=256 noisy probes made the
-  all-max baseline itself occasionally fall one discrete probe sample below
-  `noisy_baseline_metric1 - stage2_limit_tolerance`, producing false P1(acc)
-  points with normal `loss_mean≈0.34` and `m1≈0.865-0.867`. Sequential accuracy
-  threshold calibration must subtract a one-sample probe granularity guard
+- The 2026-05-20 collapse at episode 121 was optimizer-valid but
+  accuracy-catastrophic (`any_invalid=False`, `loss_mean=100`, P1(acc)), so the
+  optimizer-invalid blacklist alone cannot protect terminal model-forward
+  reward. Keep the forced anchor, blacklist, fallback baseline, cooldown, and
+  health gates.
+- K=5 / probe_size=256 noisy probes can make the all-max baseline fall one
+  discrete probe sample below `noisy_baseline_metric1 - stage2_limit_tolerance`.
+  Sequential accuracy threshold calibration must subtract a one-sample guard
   (`1 / stage2_probe_size`) so baseline jitter is not reported as an error,
   while real collapses such as `m1≈0.31` still fail hard.
 
