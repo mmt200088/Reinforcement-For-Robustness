@@ -550,6 +550,10 @@ class ProbeRunnerHelpersTest(unittest.TestCase):
         out = _split_round_robin(5, 3)
         self.assertEqual(out, [[0, 3], [1, 4], [2]])
 
+    def test_split_round_robin_k4_n4_one_trial_per_gpu(self):
+        out = _split_round_robin(4, 4)
+        self.assertEqual(out, [[0], [1], [2], [3]])
+
     def test_split_round_robin_k0(self):
         out = _split_round_robin(0, 2)
         self.assertEqual(out, [[], []])
@@ -589,6 +593,7 @@ class ProbeRunnerHelpersTest(unittest.TestCase):
         # must reach BLBStage2TrainConfig.reward_devices as [0, 1].
         self.assertEqual(parse_device_ids((0, 1)), [0, 1])
         self.assertEqual(parse_device_ids([0, 1]), [0, 1])
+        self.assertEqual(parse_device_ids((0, 1, 2, 3)), [0, 1, 2, 3])
         self.assertEqual(parse_device_ids(0), [0])
 
     def test_parse_device_ids_accepts_parenthesized_fire_string(self):

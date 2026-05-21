@@ -133,15 +133,16 @@ Current verified server facts:
 - Runtime/cache env used for successful runs:
   `HF_HOME=/hy-tmp/hf_cache`, `HF_ENDPOINT=https://hf-mirror.com`,
   `HF_HUB_DISABLE_XET=1`, `GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data`.
-- Current old-server Python environment was system Python 3.11.12 with
+- Old GPUShare server Python environment was system Python 3.11.12 with
   PyTorch 2.9.1+cu128.
-- Migration target environment: CUDA 12.4 server with PyTorch pinned to
-  `torch==2.5.1` installed from the official `cu124` wheel index. Runtime
-  should report `torch.__version__ == "2.5.1+cu124"` and
-  `torch.version.cuda == "12.4"`.
-- Use `bash scripts/setup_cuda124_env.sh` on the new server before running
-  experiments. It installs `requirements-torch-cu124.txt`, then
-  `requirements.txt`, runs `pip check`, and verifies CUDA visibility.
+- New GPUShare server at `ssh -p 30054 root@i-2.gpushare.com` was verified on
+  2026-05-21 with 4x NVIDIA GeForce RTX 4090, about 48 GiB each, and system
+  PyTorch 2.9.1+cu128 seeing all 4 GPUs. Do not downgrade PyTorch there unless
+  the runtime breaks; install missing Python deps with `pip install -r
+  requirements.txt`.
+- `requirements-torch-cu124.txt` and `scripts/setup_cuda124_env.sh` remain an
+  optional CUDA 12.4 fallback path. The normal new-server path should preserve
+  the working `torch==2.9.1+cu128` runtime.
 - The project also pins `transformers==4.44.2` because newer 4.57.x rejects
   `TrainingArguments(evaluation_strategy=...)`.
 - GitHub HTTPS transport on this server needs repo-local Git settings:
@@ -150,41 +151,49 @@ Current verified server facts:
   with `RPC failed; curl 16 Error in the HTTP2 framing layer` and
   `fatal: expected flush after ref listing`.
 
-### Two-GPU Reward-Probe Parallelism
+### N-GPU / Four-GPU Reward-Probe Parallelism
 
-The server has two visible GPUs:
+The old GPUShare server had two visible GPUs. The new GPUShare server has four
+visible GPUs:
 
-- GPU 0: NVIDIA GeForce RTX 5090, about 32607 MiB.
-- GPU 1: NVIDIA GeForce RTX 5090, about 32607 MiB.
+- GPU 0: NVIDIA GeForce RTX 4090, about 48 GiB.
+- GPU 1: NVIDIA GeForce RTX 4090, about 48 GiB.
+- GPU 2: NVIDIA GeForce RTX 4090, about 48 GiB.
+- GPU 3: NVIDIA GeForce RTX 4090, about 48 GiB.
 
-The two-GPU optimization is not two independent RL jobs. The target is still
+The multi-GPU optimization is not independent RL jobs. The target is still
 one RL job where, after the policy selects one BLB action, the model-forward
-reward probe trials for that same action run concurrently across both GPUs.
+reward probe trials for that same action run concurrently across GPUs.
 This should accelerate the repeated inference tests used to compute the PPO
 reward for one action.
 
 Current implementation facts:
 
 - `--stage2-k-trials` controls the number of Stage-2 reward noise trials. It
-  defaults to 5 and maps into `BLBStage2TrainConfig.num_trials_per_step`.
-- Enable the parallel reward probe with `--blb-v3-reward-devices 0,1` plus
-  `CUDA_VISIBLE_DEVICES=0,1`. Leaving `--blb-v3-reward-devices` unset preserves
-  the original single-GPU code path.
+  maps into `BLBStage2TrainConfig.num_trials_per_step`. On the four-GPU server,
+  use `--stage2-k-trials 4` so each GPU runs one independent trial.
+- Enable four-GPU reward probe with `CUDA_VISIBLE_DEVICES=0,1,2,3` plus
+  `--blb-v3-reward-devices 0,1,2,3`. Leaving `--blb-v3-reward-devices` unset
+  preserves the original single-GPU code path.
 - `blb_stage2_rl/probe_runner.py::parse_device_ids(...)` accepts all launcher
-  forms observed in practice: `"0,1"`, Python Fire tuple `(0, 1)`, list
-  `[0, 1]`, int `0`, and stringified `"(0, 1)"`/`"[0, 1]"`. Invalid non-empty
-  specs raise instead of silently falling back to single GPU.
+  forms observed in practice: `"0,1,2,3"`, Python Fire tuple `(0, 1, 2, 3)`,
+  list `[0, 1, 2, 3]`, int `0`, and stringified tuple/list forms. Invalid
+  non-empty specs raise instead of silently falling back to single GPU.
 - `BLBStage2RLRunner._build_train_config_from_evaluator(...)` fills
   `BLBStage2TrainConfig.reward_devices`. `sequential_runner.py` attaches a
   `ProbeRunner` when that list has at least two devices and logs
-  `[multi-gpu] reward probe enabled: devices=[0, 1]`.
+  `[multi-gpu] reward probe enabled: devices=[0, 1, 2, 3]`.
 - `BLBStage2Env.step(...)` applies the selected BLB config, installs that same
   decoded action on every `ProbeRunner` worker, then calls
   `self._eval_on_probe(self.env_cfg.num_trials_per_step)`.
 - `BLBStage2Env._eval_on_probe(k_trials)` delegates to `ProbeRunner.run_trials`
-  when a runner is attached. The runner splits trials round-robin. For the
-  default five trials on two GPUs, GPU 0 runs `[0, 2, 4]` and GPU 1 runs
-  `[1, 3]`, then returns results in trial order for the existing aggregation.
+  when a runner is attached. The runner splits trials round-robin. With
+  `K=4` and four GPUs, the split is `[1, 1, 1, 1]`: GPU 0 runs trial 0, GPU 1
+  trial 1, GPU 2 trial 2, and GPU 3 trial 3, then returns results in trial
+  order for the existing aggregation.
+- Trial seeds are independent per trial via `probe_runner._trial_seed(...)`.
+  Workers seed only their current CUDA device; they must not call
+  `torch.cuda.manual_seed_all(...)` inside concurrent worker threads.
 - Sequential RL terminal reward reaches the same path through
   `BLBStage2SequentialEnv` -> assembled full action vector ->
   `BLBStage2Env.step(...)`. Per-block dense optimizer shaping is not the target
@@ -197,26 +206,29 @@ Implementation constraints to preserve:
 - Do not solve this by running two separate launcher processes with different
   `--run-tag` values; that tests different actions/seeds and does not speed up
   a single action's reward.
-- Do not assume `CUDA_VISIBLE_DEVICES=0,1` alone is enough. PyTorch
+- Do not assume `CUDA_VISIBLE_DEVICES=0,1,2,3` alone is enough. PyTorch
   `torch.device("cuda")` means the first visible GPU unless the reward probe
-  explicitly places model copies and batches on both devices.
-- Do not share one mutable `model`/`BLBNoiseRLBridge` instance across two GPUs.
-  Worker 0 reuses the env model/bridge on `cuda:0`; worker 1 deep-copies the
-  model to `cuda:1`, builds its own handler/bridge, and moves probe batches.
+  explicitly places model copies and batches on all devices.
+- Do not share one mutable `model`/`BLBNoiseRLBridge` instance across GPUs.
+  Worker 0 reuses the env model/bridge on `cuda:0`; workers 1+ deep-copy the
+  model to their own devices, build their own handler/bridge, and move probe
+  batches.
 - Avoid reloading the HuggingFace model for every action. `ProbeRunner` workers
   are initialized once per run and reused across action evaluations.
 - Keep the probe dataset fixed across trials exactly as today. Only the
   independent noise RNG seeds differ per trial.
-- Trial seeds are deterministic from the per-action base seed and trial index
-  inside `probe_runner._trial_seed(...)`.
 - Preserve the invalid-chain shortcut: if `Rescale_optimizer` reports
   `any_invalid`, skip model-forward reward as current code does. Do not spend
   GPU work on invalid candidates.
 - Baseline/noisy preflight that calls `_eval_on_probe(k)` should use the same
-  two-GPU trial runner so baseline std and candidate std have the same
+  multi-GPU trial runner so baseline std and candidate std have the same
   semantics.
-- Keep enough diagnostics to prove both cards are used: visible devices, reward
-  probe device list, trial split, per-device elapsed time, and worker lines.
+- Keep enough diagnostics to prove all requested cards are used: visible
+  devices, reward probe device list, trial split, per-device elapsed time,
+  worker lines, and `terminal_probe_*` fields in `episodes.jsonl`.
+- Run `scripts/stage2_reward_probe_scaling_benchmark.sh` on the new server
+  before a long run. It tests 1/2/3/4 GPUs and batch sizes 64/128/256 on the
+  real Stage-2 reward probe path, then writes an HTML scaling report.
 
 User-facing config for two-GPU Stage-2 reward probing:
 

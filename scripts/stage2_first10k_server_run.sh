@@ -10,8 +10,11 @@ PLANNED_EPISODES="${PLANNED_EPISODES:-10000}"
 SMOKE_EPISODES="${SMOKE_EPISODES:-1000}"
 ANCHOR_EPISODES="${ANCHOR_EPISODES:-60}"
 ROLLOUT_SIZE="${ROLLOUT_SIZE:-60}"
-K_TRIALS="${K_TRIALS:-5}"
+K_TRIALS="${K_TRIALS:-4}"
 PROBE_SIZE="${PROBE_SIZE:-256}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
+RL_CUDA_VISIBLE_DEVICES="${RL_CUDA_VISIBLE_DEVICES:-0,1,2,3}"
+REWARD_DEVICES="${REWARD_DEVICES:-0,1,2,3}"
 NEIGHBOR_RAMP="${NEIGHBOR_RAMP:-1800}"
 NEIGHBOR_MAX_MUTATIONS="${NEIGHBOR_MAX_MUTATIONS:-12}"
 NEIGHBOR_MAX_RADIUS="${NEIGHBOR_MAX_RADIUS:-1}"
@@ -37,7 +40,7 @@ exec > >(tee "${ARTIFACT_DIR}/server_command_stdout.log") 2>&1
 
 echo "[goal] Fresh GTrXL v2-scale Stage-2 BLB RL run for ${PLANNED_EPISODES} episodes."
 echo "[goal] Preserve no-collapse safety while reducing baseline lock-in with non-monotonic cost-boundary exploration."
-echo "[goal] Watch KL/LR scale, entropy recovery, empirical offset stats, Pareto progress, and dual-GPU reward probe health."
+echo "[goal] Watch KL/LR scale, entropy recovery, empirical offset stats, Pareto progress, and four-GPU reward probe health."
 
 stop_rl_at_dir() {
   local dir="$1"
@@ -125,11 +128,12 @@ launch_and_watch_rl() {
 
   echo ""
   echo "================================================================================"
-  echo "RL phase: ${label} (${planned} episodes, dual GPU)"
+  echo "RL phase: ${label} (${planned} episodes, reward GPUs=${REWARD_DEVICES}, CUDA_VISIBLE_DEVICES=${RL_CUDA_VISIBLE_DEVICES})"
   echo "================================================================================"
   set +e
-  CUDA_VISIBLE_DEVICES=0,1 bash llama_7B_LayerImportance.sh run rl \
+  CUDA_VISIBLE_DEVICES="$RL_CUDA_VISIBLE_DEVICES" bash llama_7B_LayerImportance.sh run rl \
     --preset mrpc-blb-stage2-rl \
+    --batch-size "$BATCH_SIZE" \
     --stage2-search-episodes "$planned" \
     --stage2-rollout-size "$ROLLOUT_SIZE" \
     --stage2-k-trials "$K_TRIALS" \
@@ -149,7 +153,7 @@ launch_and_watch_rl() {
     --blb-v3-guarded-radius2-cooldown-episodes "$GUARDED_RADIUS2_COOLDOWN_EPISODES" \
     --blb-v3-ent-coef "$ENT_COEF" \
     --blb-v3-ent-coef-ramp-episodes "$ENT_RAMP" \
-    --blb-v3-reward-devices 0,1 \
+    --blb-v3-reward-devices "$REWARD_DEVICES" \
     --skip-final-eval \
     --fresh 2>&1 | tee "${ARTIFACT_DIR}/${log_file}"
   local launch_rc=${PIPESTATUS[0]}
@@ -253,6 +257,7 @@ cat > "${ARTIFACT_DIR}/run_manifest.json" <<JSON
   "rollout_size": ${ROLLOUT_SIZE},
   "k_trials": ${K_TRIALS},
   "probe_size": ${PROBE_SIZE},
+  "batch_size": ${BATCH_SIZE},
   "neighbor_ramp": ${NEIGHBOR_RAMP},
   "neighbor_max_mutations": ${NEIGHBOR_MAX_MUTATIONS},
   "neighbor_max_radius": ${NEIGHBOR_MAX_RADIUS},
@@ -268,7 +273,8 @@ cat > "${ARTIFACT_DIR}/run_manifest.json" <<JSON
   "policy_variant": "blb_v3_sequential_gtrxl_v2scale",
   "baseline_prior_schedule": "1.2 anchor; 1.0->0.45 ep60-600; 0.45->0.15 ep600-2000; 0.15 thereafter",
   "exploration_design": "non-monotonic empirical cost-boundary exploration",
-  "reward_devices": "0,1"
+  "cuda_visible_devices": "${RL_CUDA_VISIBLE_DEVICES}",
+  "reward_devices": "${REWARD_DEVICES}"
 }
 JSON
 
@@ -296,8 +302,8 @@ echo "==========================================================================
 nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv | tee "${ARTIFACT_DIR}/nvidia_pre_rl.csv"
 N_GPUS=$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l | tr -d ' ')
 echo "[nvidia-smi] visible GPUs = $N_GPUS"
-if [ "$N_GPUS" -lt 2 ]; then
-  echo "[abort] need >= 2 GPUs for this run; saw $N_GPUS"
+if [ "$N_GPUS" -lt 4 ]; then
+  echo "[abort] need >= 4 GPUs for this run; saw $N_GPUS"
   exit 11
 fi
 
@@ -316,7 +322,7 @@ echo ""
 echo "================================================================================"
 echo "Step 4/6: fresh ${SMOKE_EPISODES}-episode smoke run before formal RL"
 echo "================================================================================"
-launch_and_watch_rl "smoke" "$SMOKE_EPISODES" "rl_smoke_dual_gpu.log"
+launch_and_watch_rl "smoke" "$SMOKE_EPISODES" "rl_smoke_four_gpu.log"
 SMOKE_RC=$?
 if [ "$SMOKE_RC" -ne 0 ]; then
   kill "$NVS_PID" 2>/dev/null || true
@@ -326,9 +332,9 @@ fi
 
 echo ""
 echo "================================================================================"
-echo "Step 5/6: fresh ${PLANNED_EPISODES}-episode formal dual-GPU RL run"
+echo "Step 5/6: fresh ${PLANNED_EPISODES}-episode formal four-GPU RL run"
 echo "================================================================================"
-launch_and_watch_rl "formal" "$PLANNED_EPISODES" "rl_10000_dual_gpu.log"
+launch_and_watch_rl "formal" "$PLANNED_EPISODES" "rl_10000_four_gpu.log"
 FORMAL_RC=$?
 kill "$NVS_PID" 2>/dev/null || true
 trap - EXIT

@@ -133,6 +133,11 @@ class EpisodeStats:
     terminal_pareto_event_kind: str = ""
     terminal_pareto_action_hash: str = ""
     terminal_pareto_frontier_removed: int = 0
+    terminal_probe_wall_seconds: float = 0.0
+    terminal_probe_devices: List[str] = field(default_factory=list)
+    terminal_probe_trial_counts: List[int] = field(default_factory=list)
+    terminal_probe_trial_indices: List[List[int]] = field(default_factory=list)
+    terminal_probe_speedup: float = 1.0
     safe_neighbor_active: bool = False
     safe_neighbor_mutation_count: int = 0
     safe_neighbor_radius: int = 0

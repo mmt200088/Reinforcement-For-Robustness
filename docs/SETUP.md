@@ -13,14 +13,17 @@
 - Python 3.9–3.12（项目用 3.10/3.11 验证过）
 - Linux + NVIDIA GPU（>= 16 GB 显存推荐）；Mac (Apple Silicon) 上 RL
   本身可以跑但 BERT 训练慢、且 `bitsandbytes` 装不上
-- CUDA driver 与 PyTorch wheel 匹配：迁移目标服务器用 CUDA 12.4，因此默认
-  使用 PyTorch 2.5.1 的 `cu124` wheel。运行时版本会显示为
-  `2.5.1+cu124`；pip 版本约束写 `torch==2.5.1`。
+- CUDA driver 与 PyTorch wheel 匹配。若服务器已经有可用 CUDA PyTorch
+  `2.x`，不要主动降级；直接装其余依赖即可。若需要 CUDA 12.4 备用环境，
+  使用 `requirements-torch-cu124.txt` 安装 PyTorch 2.5.1 的 `cu124` wheel。
 
 ### 1.2 安装步骤
 
 ```bash
-# 推荐：自动创建 .venv，安装 CUDA 12.4 / PyTorch 2.5.1 环境，并做版本检查
+# 常规服务器：保留已有可用 CUDA torch，只安装其余依赖
+pip install -r requirements.txt
+
+# CUDA 12.4 备用环境：自动创建 .venv，安装 PyTorch 2.5.1 cu124，并做版本检查
 bash scripts/setup_cuda124_env.sh
 
 # 如果需要手动安装，必须先从官方 cu124 index 安装 PyTorch wheel set：

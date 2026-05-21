@@ -1,12 +1,12 @@
-"""Two-GPU (or N-GPU) parallel reward-probe runner.
+"""N-GPU parallel reward-probe runner.
 
 The PPO reward in BLB Stage-2 RL is computed by repeating the model forward
-``K`` times (``--stage2-k-trials``, default 5) with independent CKKS noise
-seeds. Today ``BLBStage2Env._eval_on_probe`` runs those K trials sequentially
-on a single GPU. On a 2x GPU server we can split the K trials across both
-devices and roughly halve the per-action probe wall time.
+``K`` times (``--stage2-k-trials``) with independent CKKS noise seeds. Without
+this runner, ``BLBStage2Env._eval_on_probe`` runs those K trials sequentially
+on a single GPU. With N workers, each worker owns one GPU and executes its
+assigned trials concurrently.
 
-Design (per CLAUDE.md "Two-GPU reward-probe parallelism target"):
+Design:
 
 * **One PPO learner, one action stream.** The runner is invisible to the PPO
   loop; it slots in behind ``BLBStage2Env`` only at probe time.
@@ -15,14 +15,16 @@ Design (per CLAUDE.md "Two-GPU reward-probe parallelism target"):
   Workers 1+ deepcopy the primary model onto their device. Each worker
   installs the same BLB cfg via its own bridge before running trials.
 * **Threaded fan-out.** Workers run their trial subsets in Python threads;
-  PyTorch CUDA forwards release the GIL so the two cards run truly
-  concurrent. Aggregation happens on the main thread after join.
+  PyTorch CUDA forwards release the GIL so the cards run concurrently.
+  Aggregation happens on the main thread after join.
 * **Single-device fallback.** A 1-worker ``ProbeRunner`` is a thin no-op
   wrapper. ``BLBStage2Env`` only constructs one when there are 2+ devices,
   so existing single-GPU runs keep the original codepath bitwise.
 * **Determinism.** Trial seed = ``base_seed XOR (trial_idx * 2654435761)``,
   derived once per action from ``(episode/step counter)``. Independent of
-  wall clock so repro is feasible.
+  wall clock so repro is feasible. Each worker seeds only its current CUDA
+  device; it must not call ``torch.cuda.manual_seed_all`` because that creates
+  cross-thread RNG interference on multi-GPU reward probes.
 """
 from __future__ import annotations
 
@@ -199,7 +201,7 @@ class ProbeWorker:
             torch.manual_seed(seed)
             np.random.seed(seed % (2**32))
             if torch.cuda.is_available():
-                torch.cuda.manual_seed_all(seed)
+                torch.cuda.manual_seed(seed)
 
             losses: List[float] = []
             m1s: List[float] = []
@@ -248,6 +250,8 @@ class ProbeRunnerDiagnostics:
     wall_seconds: float = 0.0
     per_worker_seconds: List[float] = field(default_factory=list)
     per_worker_trial_counts: List[int] = field(default_factory=list)
+    per_worker_trial_indices: List[List[int]] = field(default_factory=list)
+    per_worker_trial_seeds: List[List[int]] = field(default_factory=list)
     devices: List[str] = field(default_factory=list)
 
     @property
@@ -297,11 +301,17 @@ class ProbeRunner:
         if k == 0:
             self.last_diagnostics = ProbeRunnerDiagnostics(
                 k=0, wall_seconds=0.0,
+                per_worker_trial_indices=[[] for _ in self.workers],
+                per_worker_trial_seeds=[[] for _ in self.workers],
                 devices=[str(d) for d in self.devices],
             )
             return []
 
         assignments = _split_round_robin(k, len(self.workers))
+        seed_assignments = [
+            [_trial_seed(base_seed, ti) for ti in trials]
+            for trials in assignments
+        ]
         results_per_trial: dict = {}
         per_worker_seconds: List[float] = [0.0] * len(self.workers)
         errors: List[Tuple[int, BaseException]] = []
@@ -347,6 +357,8 @@ class ProbeRunner:
             wall_seconds=float(wall_elapsed),
             per_worker_seconds=[float(x) for x in per_worker_seconds],
             per_worker_trial_counts=[len(a) for a in assignments],
+            per_worker_trial_indices=[list(a) for a in assignments],
+            per_worker_trial_seeds=[list(a) for a in seed_assignments],
             devices=[str(d) for d in self.devices],
         )
 
@@ -514,7 +526,7 @@ def format_diagnostics_line(diag: ProbeRunnerDiagnostics) -> str:
     """One-line summary suitable for ``pruning_search_log.txt``.
 
     Example:
-        ``[probe-runner] k=5 split=[3, 2] devices=[cuda:0, cuda:1]
+        ``[probe-runner] k=4 split=[1, 1, 1, 1] devices=[cuda:0, ...]
           wall=0.42s worker_seconds=[0.41, 0.40] speedup=1.95x``
     """
     if diag.k == 0:
@@ -522,8 +534,12 @@ def format_diagnostics_line(diag: ProbeRunnerDiagnostics) -> str:
     ws = ", ".join(f"{s:.3f}" for s in diag.per_worker_seconds)
     devs = ", ".join(diag.devices)
     counts = ", ".join(str(n) for n in diag.per_worker_trial_counts)
+    trial_map = "; ".join(
+        f"{dev}:{idxs}"
+        for dev, idxs in zip(diag.devices, diag.per_worker_trial_indices)
+    )
     return (
         f"[probe-runner] k={diag.k} split=[{counts}] devices=[{devs}]  "
         f"wall={diag.wall_seconds:.3f}s worker_seconds=[{ws}]  "
-        f"speedup={diag.speedup_vs_sequential:.2f}x"
+        f"speedup={diag.speedup_vs_sequential:.2f}x  trials=[{trial_map}]"
     )

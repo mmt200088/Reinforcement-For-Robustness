@@ -822,6 +822,11 @@ class EpisodeRecord:
     terminal_pareto_event_kind: str = ""
     terminal_pareto_action_hash: str = ""
     terminal_pareto_frontier_removed: int = 0
+    terminal_probe_wall_seconds: float = 0.0
+    terminal_probe_devices: List[str] = field(default_factory=list)
+    terminal_probe_trial_counts: List[int] = field(default_factory=list)
+    terminal_probe_trial_indices: List[List[int]] = field(default_factory=list)
+    terminal_probe_speedup: float = 1.0
     safe_neighbor_active: bool = False
     safe_neighbor_mutation_count: int = 0
     safe_neighbor_radius: int = 0
@@ -1013,6 +1018,11 @@ def train_sequential(
         terminal_pareto_event_kind_val = ""
         terminal_pareto_action_hash_val = ""
         terminal_pareto_frontier_removed_val = 0
+        terminal_probe_wall_seconds_val = 0.0
+        terminal_probe_devices_val: List[str] = []
+        terminal_probe_trial_counts_val: List[int] = []
+        terminal_probe_trial_indices_val: List[List[int]] = []
+        terminal_probe_speedup_val = 1.0
         baseline_prior_scale = _resolve_baseline_prior_scale(
             int(absolute_ep),
             anchor_episodes=int(force_baseline_episodes),
@@ -1226,6 +1236,7 @@ def train_sequential(
                 term_info_dict = info.get("terminal_info") or {}
                 term_breakdown = term_info_dict.get("reward_breakdown")
                 term_metrics = term_info_dict.get("metrics")
+                term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
                 if term_breakdown is not None:
                     terminal_priority_int = int(getattr(term_breakdown, "priority", 0) or 0)
                     terminal_stab_excess_m1_val = float(getattr(term_breakdown, "stab_excess_m1", 0.0) or 0.0)
@@ -1246,6 +1257,19 @@ def train_sequential(
                     terminal_metric2_val = float(getattr(term_metrics, "metric2_mean", 0.0) or 0.0)
                     terminal_metric1_std_val = float(getattr(term_metrics, "metric1_std", 0.0) or 0.0)
                     terminal_metric2_std_val = float(getattr(term_metrics, "metric2_std", 0.0) or 0.0)
+                if isinstance(term_probe_diag, dict):
+                    terminal_probe_wall_seconds_val = float(term_probe_diag.get("wall_seconds", 0.0) or 0.0)
+                    terminal_probe_devices_val = [str(x) for x in (term_probe_diag.get("devices") or [])]
+                    terminal_probe_trial_counts_val = [
+                        int(x) for x in (term_probe_diag.get("per_worker_trial_counts") or [])
+                    ]
+                    terminal_probe_trial_indices_val = [
+                        [int(y) for y in (x or [])]
+                        for x in (term_probe_diag.get("per_worker_trial_indices") or [])
+                    ]
+                    terminal_probe_speedup_val = float(
+                        term_probe_diag.get("speedup_vs_sequential", 1.0) or 1.0
+                    )
                 obs = next_obs
                 if done:
                     break
@@ -1423,6 +1447,7 @@ def train_sequential(
             term_info_dict = info.get("terminal_info") or {}
             term_breakdown = term_info_dict.get("reward_breakdown")
             term_metrics = term_info_dict.get("metrics")
+            term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
             if term_breakdown is not None:
                 terminal_priority_int = int(getattr(term_breakdown, "priority", 0) or 0)
                 terminal_stab_excess_m1_val = float(getattr(term_breakdown, "stab_excess_m1", 0.0) or 0.0)
@@ -1443,6 +1468,19 @@ def train_sequential(
                 terminal_metric2_val = float(getattr(term_metrics, "metric2_mean", 0.0) or 0.0)
                 terminal_metric1_std_val = float(getattr(term_metrics, "metric1_std", 0.0) or 0.0)
                 terminal_metric2_std_val = float(getattr(term_metrics, "metric2_std", 0.0) or 0.0)
+            if isinstance(term_probe_diag, dict):
+                terminal_probe_wall_seconds_val = float(term_probe_diag.get("wall_seconds", 0.0) or 0.0)
+                terminal_probe_devices_val = [str(x) for x in (term_probe_diag.get("devices") or [])]
+                terminal_probe_trial_counts_val = [
+                    int(x) for x in (term_probe_diag.get("per_worker_trial_counts") or [])
+                ]
+                terminal_probe_trial_indices_val = [
+                    [int(y) for y in (x or [])]
+                    for x in (term_probe_diag.get("per_worker_trial_indices") or [])
+                ]
+                terminal_probe_speedup_val = float(
+                    term_probe_diag.get("speedup_vs_sequential", 1.0) or 1.0
+                )
 
             obs = next_obs
             if done:
@@ -1486,6 +1524,11 @@ def train_sequential(
             terminal_pareto_event_kind=str(terminal_pareto_event_kind_val),
             terminal_pareto_action_hash=str(terminal_pareto_action_hash_val),
             terminal_pareto_frontier_removed=int(terminal_pareto_frontier_removed_val),
+            terminal_probe_wall_seconds=float(terminal_probe_wall_seconds_val),
+            terminal_probe_devices=list(terminal_probe_devices_val),
+            terminal_probe_trial_counts=list(terminal_probe_trial_counts_val),
+            terminal_probe_trial_indices=[list(x) for x in terminal_probe_trial_indices_val],
+            terminal_probe_speedup=float(terminal_probe_speedup_val),
             safe_neighbor_active=bool(neighbor_mask_active),
             safe_neighbor_mutation_count=int(len(neighbor_selected_offsets)),
             safe_neighbor_radius=int(neighbor_radius if neighbor_mask_active else 0),
@@ -2584,6 +2627,13 @@ def run_sequential_via_runner(
                     f"combined={float(record.terminal_stab_violation):.6f}"
                 ),
                 (
+                    f"probe_runner: wall={float(record.terminal_probe_wall_seconds):.4f}s  "
+                    f"devices={list(record.terminal_probe_devices)}  "
+                    f"trial_counts={list(record.terminal_probe_trial_counts)}  "
+                    f"trial_indices={list(record.terminal_probe_trial_indices)}  "
+                    f"speedup={float(record.terminal_probe_speedup):.3f}x"
+                ),
+                (
                     f"pareto_cost: event={record.terminal_pareto_event_kind or 'none'}  "
                     f"score={float(record.terminal_cost_score):+.6f}  "
                     f"fusion_gain={float(record.terminal_fusion_gain):+.3f}  "
@@ -2821,6 +2871,13 @@ def run_sequential_via_runner(
                     terminal_pareto_event_kind=str(record.terminal_pareto_event_kind),
                     terminal_pareto_action_hash=str(record.terminal_pareto_action_hash),
                     terminal_pareto_frontier_removed=int(record.terminal_pareto_frontier_removed),
+                    terminal_probe_wall_seconds=float(record.terminal_probe_wall_seconds),
+                    terminal_probe_devices=list(record.terminal_probe_devices),
+                    terminal_probe_trial_counts=list(record.terminal_probe_trial_counts),
+                    terminal_probe_trial_indices=[
+                        list(x) for x in record.terminal_probe_trial_indices
+                    ],
+                    terminal_probe_speedup=float(record.terminal_probe_speedup),
                     safe_neighbor_active=bool(record.safe_neighbor_active),
                     safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count),
                     safe_neighbor_radius=int(record.safe_neighbor_radius),

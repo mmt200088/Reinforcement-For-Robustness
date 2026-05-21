@@ -221,6 +221,7 @@ class BLBStage2Env:
         # route to the runner instead of (self.bridge, self.model). Single-GPU
         # runs leave this None and the existing path runs bitwise-unchanged.
         self.probe_runner = probe_runner
+        self._last_probe_diagnostics: Dict[str, Any] = {}
         self.pareto_cost_archive = None
         # Counter for derive_probe_base_seed; bumped every action eval so two
         # consecutive actions in the same episode get different seed streams.
@@ -650,6 +651,8 @@ class BLBStage2Env:
         try:
             metrics = self._eval_on_probe(self.env_cfg.num_trials_per_step)
             info["forward_ran"] = True
+            if self._last_probe_diagnostics:
+                info["probe_diagnostics"] = dict(self._last_probe_diagnostics)
         except Exception as exc:
             try:
                 if self.probe_runner is not None:
@@ -753,6 +756,7 @@ class BLBStage2Env:
         per_trial_loss: List[float] = []
         per_trial_metric1: List[float] = []
         per_trial_metric2: List[float] = []
+        probe_wall_start = time.perf_counter()
 
         try:
             if self.probe_runner is not None:
@@ -760,6 +764,19 @@ class BLBStage2Env:
                 base_seed = self._derive_probe_base_seed()
                 self._probe_eval_counter += 1
                 results = self.probe_runner.run_trials(k, base_seed=base_seed)
+                diag = self.probe_runner.last_diagnostics
+                if diag is not None:
+                    self._last_probe_diagnostics = {
+                        "k": int(diag.k),
+                        "wall_seconds": float(diag.wall_seconds),
+                        "per_worker_seconds": [float(x) for x in diag.per_worker_seconds],
+                        "per_worker_trial_counts": [int(x) for x in diag.per_worker_trial_counts],
+                        "per_worker_trial_indices": [list(map(int, x)) for x in diag.per_worker_trial_indices],
+                        "per_worker_trial_seeds": [list(map(int, x)) for x in diag.per_worker_trial_seeds],
+                        "devices": [str(x) for x in diag.devices],
+                        "speedup_vs_sequential": float(diag.speedup_vs_sequential),
+                        "line": format_diagnostics_line(diag),
+                    }
                 for (loss, m1, m2) in results:
                     if loss is None or (isinstance(loss, float) and not math.isfinite(loss)):
                         # NaN/inf from a probe trial is kept and handled below
@@ -805,6 +822,23 @@ class BLBStage2Env:
                                 per_trial_loss.append(float(np.mean(losses)))
                                 per_trial_metric1.append(float(np.mean(m1s)))
                                 per_trial_metric2.append(float(np.mean(m2s)))
+                    wall_elapsed = time.perf_counter() - probe_wall_start
+                    self._last_probe_diagnostics = {
+                        "k": int(k),
+                        "wall_seconds": float(wall_elapsed),
+                        "per_worker_seconds": [float(wall_elapsed)],
+                        "per_worker_trial_counts": [int(k)],
+                        "per_worker_trial_indices": [list(range(int(k)))],
+                        "per_worker_trial_seeds": [],
+                        "devices": [str(self._device)],
+                        "speedup_vs_sequential": 1.0,
+                        "line": (
+                            f"[probe-runner] k={int(k)} split=[{int(k)}] "
+                            f"devices=[{self._device}] wall={wall_elapsed:.3f}s "
+                            f"worker_seconds=[{wall_elapsed:.3f}] speedup=1.00x "
+                            f"trials=[{self._device}:{list(range(int(k)))}]"
+                        ),
+                    }
                 finally:
                     if was_training:
                         self.model.train()
