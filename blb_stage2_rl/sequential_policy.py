@@ -34,6 +34,18 @@ import torch.nn.functional as F
 # Policy
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class _SlotHeadView:
+    """Read-only compatibility view for legacy tests/introspection.
+
+    The real actor head is vectorized in ``slot_head_weight`` /
+    ``slot_head_bias``; exposing lightweight ``weight`` and ``bias`` slices
+    keeps old initialization checks meaningful without putting a Python
+    ``ModuleList`` back on the hot path.
+    """
+    weight: torch.Tensor
+    bias: torch.Tensor
+
 @dataclass
 class SequentialPolicyConfig:
     """Hyper-params for the sequential actor-critic.
@@ -262,6 +274,13 @@ class BLBStage2SequentialPolicy(nn.Module):
         )
         self._causal_mask_cache: Dict[Tuple[int, torch.device], torch.Tensor] = {}
         self._init_weights()
+
+    @property
+    def slot_heads(self) -> Tuple[_SlotHeadView, ...]:
+        return tuple(
+            _SlotHeadView(self.slot_head_weight[idx], self.slot_head_bias[idx])
+            for idx in range(int(self.cfg.max_step_dim))
+        )
 
     def _init_weights(self) -> None:
         def init_fast_linear(layer: nn.Linear, gain: float = 1.0) -> None:
