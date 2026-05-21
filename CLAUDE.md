@@ -199,6 +199,13 @@ Current implementation facts:
   because the GTrXL mask prevents the current step from attending to future
   tokens, the rollout path only computes tokens `0..current_step`. PPO update
   batches still use the full-horizon path.
+- The GTrXL policy keeps per-slot actor heads and slot-specific previous-action
+  embeddings, but both are vectorized as parameter/embedding tables rather than
+  Python `ModuleList` fan-out. This is a throughput requirement for four-GPU
+  runs: many tiny per-slot kernels were a measurable `policy_rollout` and PPO
+  update bottleneck. Sequential PPO now defaults to `minibatch_size=2048`
+  so each 60-episode update processes the same rollout with far fewer GTrXL
+  forward/backward passes than the old 128-sample minibatches.
 - With `K=4` and four GPUs, the split is `[1, 1, 1, 1]`: GPU 0 runs trial 0,
   GPU 1 trial 1, GPU 2 trial 2, and GPU 3 trial 3. Results are returned in
   trial order for existing aggregation.

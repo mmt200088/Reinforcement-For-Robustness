@@ -701,6 +701,10 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             "truncate_to_current: bool = False",
             "seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1",
             "current_step.clamp(0, x.size(1) - 1)",
+            "prev_action_embedding = nn.Embedding",
+            "slot_head_weight = nn.Parameter",
+            'torch.einsum("ba,sla->bsl"',
+            "minibatch_size: int = 2048",
         ):
             self.assertIn(needle, policy_src, msg=f"sequential_policy.py missing: {needle!r}")
         self.assertIn("truncate_to_current=True", runner_src)

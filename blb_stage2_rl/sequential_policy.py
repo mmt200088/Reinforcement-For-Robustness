@@ -1,8 +1,9 @@
 """Sequential PPO actor-critic + rollout buffer for the per-block env.
 
 Three pieces:
-  1. :class:`BLBStage2SequentialPolicy` -- shared trunk + a single
-     ``MultiDiscrete`` head sized to ``step_schedule_max_dim`` (13 for L=12).
+  1. :class:`BLBStage2SequentialPolicy` -- shared trunk + vectorized per-slot
+     heads sized to ``step_schedule_max_dim`` (24 for the current L=12 action
+     space).
      At each step the env tells the policy which slots are *active* (a
      boolean mask of length max_step_dim, padding suppressed via -inf logits)
      and what the per-slot ``num_levels`` are (so logits beyond that get
@@ -190,10 +191,18 @@ class BLBStage2SequentialPolicy(nn.Module):
         self.embed_step = nn.Embedding(cfg.horizon, cfg.step_embed_dim)
         self.embed_layer = nn.Embedding(cfg.num_layers, cfg.layer_embed_dim)
         self.embed_block = nn.Embedding(cfg.block_count, cfg.block_embed_dim)
-        self.prev_action_embeddings = nn.ModuleList([
-            nn.Embedding(cfg.max_num_levels, cfg.prev_action_embed_dim)
-            for _ in range(cfg.max_step_dim)
-        ])
+        # One table with slot-specific index offsets is equivalent to one
+        # embedding per slot, but avoids launching many tiny embedding kernels
+        # during the 59-step rollout loop.
+        self.prev_action_embedding = nn.Embedding(
+            cfg.max_step_dim * cfg.max_num_levels,
+            cfg.prev_action_embed_dim,
+        )
+        self.register_buffer(
+            "_prev_action_slot_offsets",
+            torch.arange(cfg.max_step_dim, dtype=torch.long) * int(cfg.max_num_levels),
+            persistent=False,
+        )
         self.fc_continuous = nn.Sequential(
             nn.Linear(8, cfg.cont_proj_dim),
             nn.LayerNorm(cfg.cont_proj_dim),
@@ -225,10 +234,18 @@ class BLBStage2SequentialPolicy(nn.Module):
             nn.Linear(cfg.d_model, cfg.actor_dim),
             nn.Tanh(),
         )
-        self.slot_heads = nn.ModuleList([
-            nn.Linear(cfg.actor_dim, cfg.max_num_levels)
-            for _ in range(cfg.max_step_dim)
-        ])
+        # Per-slot actor heads, vectorized as one parameter tensor. This keeps
+        # the architecture's independent slot heads while replacing many small
+        # Linear calls with one batched contraction.
+        self.slot_head_weight = nn.Parameter(torch.empty(
+            cfg.max_step_dim,
+            cfg.max_num_levels,
+            cfg.actor_dim,
+        ))
+        self.slot_head_bias = nn.Parameter(torch.zeros(
+            cfg.max_step_dim,
+            cfg.max_num_levels,
+        ))
         self.value_head = nn.Sequential(
             nn.Linear(cfg.d_model, cfg.critic_dim),
             nn.Tanh(),
@@ -269,11 +286,12 @@ class BLBStage2SequentialPolicy(nn.Module):
             ]:
                 if isinstance(layer, nn.Linear):
                     init_fast_linear(layer, gain=float(np.sqrt(2)))
+        nn.init.normal_(self.prev_action_embedding.weight, mean=0.0, std=0.02)
         # v2 trick: keep actor logits near zero, so the external warmstart prior
         # is the dominant early signal even with a large GTrXL trunk.
-        for head in self.slot_heads:
-            nn.init.orthogonal_(head.weight, gain=0.01)
-            nn.init.constant_(head.bias, 0.0)
+        for slot_idx in range(int(self.cfg.max_step_dim)):
+            nn.init.orthogonal_(self.slot_head_weight[slot_idx], gain=0.01)
+        nn.init.constant_(self.slot_head_bias, 0.0)
 
     # ------------------------------------------------------------------
     def _step_layer_block_indices(self, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -353,10 +371,16 @@ class BLBStage2SequentialPolicy(nn.Module):
         step_emb = self.embed_step(steps).unsqueeze(0).expand(B, -1, -1)
         layer_emb = self.embed_layer(layers).unsqueeze(0).expand(B, -1, -1)
         block_emb = self.embed_block(blocks).unsqueeze(0).expand(B, -1, -1)
-        prev_embs = [
-            emb(prev_actions[:, :, slot_idx])
-            for slot_idx, emb in enumerate(self.prev_action_embeddings)
-        ]
+        slot_offsets = self._prev_action_slot_offsets[: self.cfg.max_step_dim].to(
+            device=device,
+            dtype=torch.long,
+        )
+        prev_action_indices = prev_actions + slot_offsets.view(1, 1, -1)
+        prev_emb = self.prev_action_embedding(prev_action_indices).reshape(
+            B,
+            seq_len,
+            self.cfg.max_step_dim * self.cfg.prev_action_embed_dim,
+        )
         static_rep = static.unsqueeze(1).expand(-1, seq_len, -1)
         is_current = F.one_hot(current_step.clamp(0, seq_len - 1), num_classes=seq_len).to(
             dtype=state.dtype,
@@ -364,7 +388,7 @@ class BLBStage2SequentialPolicy(nn.Module):
         ).unsqueeze(-1)
         cont = torch.cat([static_rep, prev_signals, is_current], dim=-1)
         cont_proj = self.fc_continuous(cont)
-        token_input = torch.cat([step_emb, layer_emb, block_emb, *prev_embs, cont_proj], dim=-1)
+        token_input = torch.cat([step_emb, layer_emb, block_emb, prev_emb, cont_proj], dim=-1)
         return self.input_proj(token_input), current_step
 
     def _coerce_prior_scale(
@@ -443,7 +467,8 @@ class BLBStage2SequentialPolicy(nn.Module):
         batch_idx = torch.arange(x.shape[0], device=x.device)
         h = x[batch_idx, current_step.clamp(0, x.size(1) - 1)]
         actor_feat = self.actor_head(h)
-        logits = torch.stack([head(actor_feat) for head in self.slot_heads], dim=1)
+        logits = torch.einsum("ba,sla->bsl", actor_feat, self.slot_head_weight)
+        logits = logits + self.slot_head_bias.unsqueeze(0)
         logits = logits + self._baseline_prior_logits(
             batch_size=int(logits.shape[0]),
             device=logits.device,
@@ -810,7 +835,7 @@ class SequentialPPOConfig:
     lr: float = 3e-4
     clip_range: float = 0.2
     n_epochs: int = 4
-    minibatch_size: int = 128
+    minibatch_size: int = 2048
     ent_coef: float = 0.01
     value_coef: float = 0.5
     max_grad_norm: float = 1.0
