@@ -221,10 +221,15 @@ Implementation constraints to preserve:
   avoids the old per-episode clear/reinstall churn on four model replicas.
 - `ProbeRunner.install_action(...)` and `ProbeRunner.clear(...)` fan setup work
   across workers through threads. `episodes.jsonl` now includes timing fields
-  for `per_step_optimizer_wall_seconds`, `terminal_cost_eval_wall_seconds`,
-  `terminal_probe_install_wall_seconds`, and
+  for `policy_rollout_wall_seconds`, `per_step_optimizer_wall_seconds`,
+  `terminal_cost_eval_wall_seconds`, `terminal_probe_install_wall_seconds`, and
   `terminal_probe_clear_wall_seconds` so throughput bottlenecks can be
   diagnosed from artifacts instead of guessed from GPU utilization alone.
+- During rollout collection, `BLBStage2SequentialPolicy` uses a causal-prefix
+  fast path (`truncate_to_current=True`) for single-step sampling/evaluation:
+  because the GTrXL mask prevents the current step from attending to future
+  tokens, the rollout path only computes tokens `0..current_step`. PPO update
+  batches still use the full-horizon path.
 - Keep the probe dataset fixed across trials exactly as today. Only the
   independent noise RNG seeds differ per trial.
 - Preserve the invalid-chain shortcut: if `Rescale_optimizer` reports

@@ -692,6 +692,18 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         ):
             self.assertIn(needle, src, msg=f"sequential_runner.py missing: {needle!r}")
 
+    def test_rollout_policy_uses_causal_prefix_fast_path(self):
+        policy_src = open("blb_stage2_rl/sequential_policy.py", encoding="utf-8").read()
+        runner_src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        for needle in (
+            "truncate_to_current: bool = False",
+            "seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1",
+            "current_step.clamp(0, x.size(1) - 1)",
+        ):
+            self.assertIn(needle, policy_src, msg=f"sequential_policy.py missing: {needle!r}")
+        self.assertIn("truncate_to_current=True", runner_src)
+        self.assertIn("policy_rollout_wall_seconds", runner_src)
+
 
 class RewardDesignV2RegressionTest(unittest.TestCase):
     """ADR-007: v2-style clipped+tier reward (supersedes ADR-002 implementation).

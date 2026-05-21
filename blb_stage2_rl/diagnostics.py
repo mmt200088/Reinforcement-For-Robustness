@@ -139,6 +139,7 @@ class EpisodeStats:
     terminal_probe_trial_indices: List[List[int]] = field(default_factory=list)
     terminal_probe_speedup: float = 1.0
     per_step_optimizer_wall_seconds: float = 0.0
+    policy_rollout_wall_seconds: float = 0.0
     terminal_cost_eval_wall_seconds: float = 0.0
     terminal_probe_install_wall_seconds: float = 0.0
     terminal_probe_clear_wall_seconds: float = 0.0

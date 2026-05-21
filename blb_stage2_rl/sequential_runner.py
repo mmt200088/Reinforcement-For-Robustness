@@ -828,6 +828,7 @@ class EpisodeRecord:
     terminal_probe_trial_indices: List[List[int]] = field(default_factory=list)
     terminal_probe_speedup: float = 1.0
     per_step_optimizer_wall_seconds: float = 0.0
+    policy_rollout_wall_seconds: float = 0.0
     terminal_cost_eval_wall_seconds: float = 0.0
     terminal_probe_install_wall_seconds: float = 0.0
     terminal_probe_clear_wall_seconds: float = 0.0
@@ -1004,6 +1005,7 @@ def train_sequential(
         captured_step_infos: List[Dict[str, Any]] = []
         invalid_block_details: List[Dict[str, Any]] = []
         per_step_optimizer_wall_seconds_val = 0.0
+        policy_rollout_wall_seconds_val = 0.0
         # Terminal breakdown extracted from the last commit_step's info dict.
         # 0 / 0.0 means the episode never produced a terminal reward (e.g.,
         # early_terminate_on_invalid fired before the last step).
@@ -1187,12 +1189,15 @@ def train_sequential(
                 forced_action = np.asarray(baseline_slice, dtype=np.int64)
                 forced_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
                 forced_padded[:n_active] = forced_action
+                policy_t0 = time.perf_counter()
                 with torch.no_grad():
                     actions_t = torch.from_numpy(forced_padded).to(device).unsqueeze(0)
                     lp_t, _, val_t = policy.evaluate_action(
                         obs_t, actions_t, slot_mask_t, levels_t,
                         baseline_prior_scale=baseline_prior_scale,
+                        truncate_to_current=True,
                     )
+                policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 chosen_eval_info = env.evaluate_step(forced_action.tolist())
                 chosen_action_np = forced_padded
                 chosen_log_prob = float(lp_t.item())
@@ -1325,13 +1330,16 @@ def train_sequential(
 
             for _attempt in range(int(max_rejection_retries)):
                 attempts_this_step += 1
+                policy_t0 = time.perf_counter()
                 with torch.no_grad():
                     action_t, log_prob_t, value_t = policy.sample_action(
                         obs_t, slot_mask_t, levels_t,
                         deterministic=False,
                         action_level_mask=action_level_mask_t,
                         baseline_prior_scale=baseline_prior_scale,
+                        truncate_to_current=True,
                     )
+                policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
                 step_action_try = action_np_try[:n_active].tolist()
                 tup = tuple(int(x) for x in step_action_try)
@@ -1367,13 +1375,16 @@ def train_sequential(
                     fallback_action = np.asarray(baseline_slice, dtype=np.int64)
                     fallback_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
                     fallback_padded[:n_active] = fallback_action
+                    policy_t0 = time.perf_counter()
                     with torch.no_grad():
                         actions_t = torch.from_numpy(fallback_padded).to(device).unsqueeze(0)
                         lp_t, _, val_t = policy.evaluate_action(
                             obs_t, actions_t, slot_mask_t, levels_t,
                             action_level_mask=action_level_mask_t,
                             baseline_prior_scale=baseline_prior_scale,
+                            truncate_to_current=True,
                         )
+                    policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                     chosen_eval_info = env.evaluate_step(fallback_action.tolist())
                     chosen_action_np = fallback_padded
                     chosen_log_prob = float(lp_t.item())
@@ -1578,6 +1589,7 @@ def train_sequential(
             terminal_probe_trial_indices=[list(x) for x in terminal_probe_trial_indices_val],
             terminal_probe_speedup=float(terminal_probe_speedup_val),
             per_step_optimizer_wall_seconds=float(per_step_optimizer_wall_seconds_val),
+            policy_rollout_wall_seconds=float(policy_rollout_wall_seconds_val),
             terminal_cost_eval_wall_seconds=float(terminal_cost_eval_wall_seconds_val),
             terminal_probe_install_wall_seconds=float(terminal_probe_install_wall_seconds_val),
             terminal_probe_clear_wall_seconds=float(terminal_probe_clear_wall_seconds_val),
@@ -2944,6 +2956,7 @@ def run_sequential_via_runner(
                     ],
                     terminal_probe_speedup=float(record.terminal_probe_speedup),
                     per_step_optimizer_wall_seconds=float(record.per_step_optimizer_wall_seconds),
+                    policy_rollout_wall_seconds=float(record.policy_rollout_wall_seconds),
                     terminal_cost_eval_wall_seconds=float(record.terminal_cost_eval_wall_seconds),
                     terminal_probe_install_wall_seconds=float(record.terminal_probe_install_wall_seconds),
                     terminal_probe_clear_wall_seconds=float(record.terminal_probe_clear_wall_seconds),

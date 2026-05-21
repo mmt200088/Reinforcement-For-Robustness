@@ -331,12 +331,25 @@ class BLBStage2SequentialPolicy(nn.Module):
         self._causal_mask_cache[key] = mask
         return mask
 
-    def _build_tokens(self, state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _build_tokens(
+            self,
+            state: torch.Tensor,
+            *,
+            truncate_to_current: bool = False,
+            ) -> Tuple[torch.Tensor, torch.Tensor]:
         static, current_step, prev_actions, prev_signals = self._parse_state(state)
         B = int(state.shape[0])
         H = int(self.cfg.horizon)
         device = state.device
+        seq_len = H
+        if bool(truncate_to_current) and B == 1:
+            seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1
         steps, layers, blocks = self._step_layer_block_indices(device)
+        steps = steps[:seq_len]
+        layers = layers[:seq_len]
+        blocks = blocks[:seq_len]
+        prev_actions = prev_actions[:, :seq_len, :]
+        prev_signals = prev_signals[:, :seq_len, :]
         step_emb = self.embed_step(steps).unsqueeze(0).expand(B, -1, -1)
         layer_emb = self.embed_layer(layers).unsqueeze(0).expand(B, -1, -1)
         block_emb = self.embed_block(blocks).unsqueeze(0).expand(B, -1, -1)
@@ -344,8 +357,8 @@ class BLBStage2SequentialPolicy(nn.Module):
             emb(prev_actions[:, :, slot_idx])
             for slot_idx, emb in enumerate(self.prev_action_embeddings)
         ]
-        static_rep = static.unsqueeze(1).expand(-1, H, -1)
-        is_current = F.one_hot(current_step.clamp(0, H - 1), num_classes=H).to(
+        static_rep = static.unsqueeze(1).expand(-1, seq_len, -1)
+        is_current = F.one_hot(current_step.clamp(0, seq_len - 1), num_classes=seq_len).to(
             dtype=state.dtype,
             device=device,
         ).unsqueeze(-1)
@@ -413,17 +426,22 @@ class BLBStage2SequentialPolicy(nn.Module):
             self,
             state: torch.Tensor,
             baseline_prior_scale: Optional[Any] = None,
+            *,
+            truncate_to_current: bool = False,
             ) -> Tuple[torch.Tensor, torch.Tensor]:
         if state.dim() == 1:
             state = state.unsqueeze(0)
-        tokens, current_step = self._build_tokens(state)
+        tokens, current_step = self._build_tokens(
+            state,
+            truncate_to_current=bool(truncate_to_current),
+        )
         causal_mask = self._get_causal_mask(tokens.size(1), tokens.device)
         x = tokens
         for block in self.gtrxl_blocks:
             x = block(x, attn_mask=causal_mask)
         x = self.ln_final(x)
         batch_idx = torch.arange(x.shape[0], device=x.device)
-        h = x[batch_idx, current_step.clamp(0, self.cfg.horizon - 1)]
+        h = x[batch_idx, current_step.clamp(0, x.size(1) - 1)]
         actor_feat = self.actor_head(h)
         logits = torch.stack([head(actor_feat) for head in self.slot_heads], dim=1)
         logits = logits + self._baseline_prior_logits(
@@ -491,6 +509,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             deterministic: bool = False,
             action_level_mask: Optional[torch.Tensor] = None,
             baseline_prior_scale: Optional[Any] = None,
+            truncate_to_current: bool = False,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample one per-step action.
 
@@ -502,6 +521,7 @@ class BLBStage2SequentialPolicy(nn.Module):
         logits, value = self.forward(
             state,
             baseline_prior_scale=baseline_prior_scale,
+            truncate_to_current=bool(truncate_to_current),
         )
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
@@ -535,6 +555,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             action_level_mask: Optional[torch.Tensor] = None,
             baseline_prior_scale: Optional[Any] = None,
             return_per_slot_entropy: bool = False,
+            truncate_to_current: bool = False,
             ) -> Tuple[torch.Tensor, ...]:
         """Re-evaluate (log_prob, entropy, value) for a given action under the
         current policy. Used by PPO update.
@@ -542,6 +563,7 @@ class BLBStage2SequentialPolicy(nn.Module):
         logits, value = self.forward(
             state,
             baseline_prior_scale=baseline_prior_scale,
+            truncate_to_current=bool(truncate_to_current),
         )
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
