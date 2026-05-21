@@ -523,10 +523,14 @@ Current sequential policy/search design as of 2026-05-21:
   `n_layers=4`, `d_ff=512`, `dropout=0.1`. Inputs include step/layer/block
   embeddings, previous action embeddings, previous optimizer signals, static
   features, and a current-step token marker.
-- Actor output uses per-slot heads: up to 13 slot heads, each producing up to 6
-  level logits. The existing slot mask and per-level `action_level_mask` still
-  define the legal categorical support for each step. The critic is a single
-  value head `Linear(256,64) -> Tanh -> Linear(64,1)`.
+- Actor output uses per-slot heads sized from the live sequential environment:
+  one head per padded `max_step_dim` slot, each producing up to 6 level logits.
+  On the current MRPC/BERT-base server run this is `max_step_dim=24`
+  (`per-slot heads=[24 x 6]` in the startup log). Do not hard-code the older
+  "13 heads" wording; use `step_schedule_max_dim(...)`/`seq_env.max_step_dim`
+  and let the existing slot mask plus per-level `action_level_mask` define the
+  legal categorical support for each step. The critic is a single value head
+  `Linear(256,64) -> Tanh -> Linear(64,1)`.
 - Action heads are orthogonal-initialized with gain `0.01`. Warmstart is no
   longer a permanent learned bias inside the actor head; it is an external
   decaying baseline logit prior, and every transition stores

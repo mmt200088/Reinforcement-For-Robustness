@@ -79,9 +79,9 @@
     </tr>
     <tr>
       <td>Actor</td>
-      <td>最多 13 个 per-slot heads，每个 head 输出最多 6 个 level logits；继续使用 slot/action-level mask。</td>
+      <td>每个 padded step slot 一个 per-slot head，每个 head 输出最多 6 个 level logits；继续使用 slot/action-level mask。当前 MRPC/BERT-base server run 的 live 值是 <code>max_step_dim=24</code>，startup log 显示 <code>per-slot heads=[24×6]</code>。</td>
       <td>保留当前 action-space mask 合约；每个 slot 头可以学到自己的局部分布。</td>
-      <td>每个 slot 的 entropy/lock-in 要单独监控。</td>
+      <td>每个 slot 的 entropy/lock-in 要单独监控；head 数必须跟 <code>seq_env.max_step_dim</code>，不能手写旧的 13。</td>
     </tr>
     <tr>
       <td>Critic</td>
@@ -125,5 +125,45 @@
   <h2>7. 服务器 fresh run 计划</h2>
   <p><code>SERVER_COMMAND.md</code> 仍然只运行第一段 bash，当前指向 <code>bash scripts/stage2_first10k_server_run.sh</code>。脚本会先 <code>git pull --ff-only</code>，失败则 abort；然后跑 server tests、<code>blb_verify_noise_install.py</code>、GPU 检查、1000-episode smoke，smoke PASS 后再跑 10000-episode formal dual-GPU RL。</p>
   <p>正式报告会在服务器 run 完成或失败后，用该 run 的 <code>episodes.jsonl</code>、<code>ppo_updates.jsonl</code>、<code>pareto_frontier.json</code>、GPU CSV 和 monitor summaries 更新。</p>
+
+  <h2>8. 服务器启动实测与修复记录</h2>
+  <table>
+    <tr><th>阶段</th><th>结果</th><th>处理</th></tr>
+    <tr>
+      <td>同步</td>
+      <td>服务器原先 <code>origin</code> 指向旧本地 bundle，只能看到 <code>273049a</code>。</td>
+      <td>本地 push 到 GitHub 后，用 git bundle 把源码提交传到服务器，再用 <code>git fetch</code> + <code>git merge --ff-only</code> 更新；server run 仍通过 <code>git pull --ff-only</code> 保护旧 HEAD。</td>
+    </tr>
+    <tr>
+      <td>server tests</td>
+      <td class="ok">PASS</td>
+      <td><code>tests.test_sequential_smoke.WarmstartFixedRegressionTest</code> + <code>EntCoefScheduleRegressionTest</code>：25/25 pass；<code>test_blb_*.py</code> 合同测试：110/110 pass。</td>
+    </tr>
+    <tr>
+      <td>修复 1</td>
+      <td>torch-side test 替身 policy 没有 <code>return_normalizer</code>。</td>
+      <td><code>sequential_ppo_update</code> 对缺省 normalizer 做 fallback；真实 policy 仍使用自己的 running normalizer。</td>
+    </tr>
+    <tr>
+      <td>修复 2</td>
+      <td>GTrXL trunk 大矩阵 <code>orthogonal_</code> 初始化在服务器 CPU 上太慢。</td>
+      <td>保留 actor per-slot heads 的 <code>orthogonal gain=0.01</code>，GTrXL trunk 改为快速 Xavier 初始化。</td>
+    </tr>
+    <tr>
+      <td>修复 3</td>
+      <td>真实 episode 结束后 frontier seed 记录用了错误变量名 <code>seq_env</code>。</td>
+      <td>改为函数内实际参数 <code>env</code>，并缓存 <code>pending_full_vec</code>。</td>
+    </tr>
+    <tr>
+      <td>当前 smoke</td>
+      <td class="ok">PASS early post-anchor</td>
+      <td>artifact: <code>experiments/server_command_runs/stage2_rl_first10k_curve_20260521_200519</code>。截至 episode 65 monitor 为 PASS：post-anchor P1/P2=0，invalid=0，stability violation=0；双 GPU 均到过约 98% util；episode 71 已出现 P3 且 <code>bits_gain=4</code> 的候选。</td>
+    </tr>
+    <tr>
+      <td>PPO early signal</td>
+      <td class="warn">需要继续监控</td>
+      <td>第一次 PPO update 发生在 anchor 后，<code>approx_kl≈0.185</code> 且触发 <code>kl_early_stop=true</code>；下一次 update 应由 adaptive LR 降速。这个不是 hard failure，但要继续看后续 KL、clip fraction 和 reward rolling mean。</td>
+    </tr>
+  </table>
 </body>
 </html>
