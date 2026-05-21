@@ -1190,7 +1190,7 @@ def train_sequential(
                 forced_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
                 forced_padded[:n_active] = forced_action
                 policy_t0 = time.perf_counter()
-                with torch.no_grad():
+                with torch.inference_mode():
                     actions_t = torch.from_numpy(forced_padded).to(device).unsqueeze(0)
                     lp_t, _, val_t = policy.evaluate_action(
                         obs_t, actions_t, slot_mask_t, levels_t,
@@ -1331,7 +1331,7 @@ def train_sequential(
             for _attempt in range(int(max_rejection_retries)):
                 attempts_this_step += 1
                 policy_t0 = time.perf_counter()
-                with torch.no_grad():
+                with torch.inference_mode():
                     action_t, log_prob_t, value_t = policy.sample_action(
                         obs_t, slot_mask_t, levels_t,
                         deterministic=False,
@@ -1376,7 +1376,7 @@ def train_sequential(
                     fallback_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
                     fallback_padded[:n_active] = fallback_action
                     policy_t0 = time.perf_counter()
-                    with torch.no_grad():
+                    with torch.inference_mode():
                         actions_t = torch.from_numpy(fallback_padded).to(device).unsqueeze(0)
                         lp_t, _, val_t = policy.evaluate_action(
                             obs_t, actions_t, slot_mask_t, levels_t,

@@ -191,6 +191,9 @@ Current implementation facts:
   `terminal_cost_eval_wall_seconds`, `terminal_probe_install_wall_seconds`, and
   `terminal_probe_clear_wall_seconds` so throughput bottlenecks can be
   diagnosed from artifacts instead of guessed from GPU utilization alone.
+- `build_probe_runner(...)` enables CUDA TF32 fast matmul/cudnn for reward
+  probes on Ampere/Ada GPUs. This keeps FP32 tensors and changes only matmul
+  kernel precision/performance, not the BLB action mapping or optimizer path.
 - During rollout collection, `BLBStage2SequentialPolicy` uses a causal-prefix
   fast path (`truncate_to_current=True`) for single-step sampling/evaluation:
   because the GTrXL mask prevents the current step from attending to future

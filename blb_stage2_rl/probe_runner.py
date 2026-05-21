@@ -56,6 +56,29 @@ except Exception:  # pragma: no cover — torch-free import path
 _TRIAL_SEED_MULTIPLIER = 2654435761  # Knuth's multiplicative-hash constant
 
 
+def enable_cuda_reward_probe_fast_math() -> None:
+    """Enable fast FP32 matmul modes that are appropriate for reward probes.
+
+    On Ampere/Ada GPUs, TF32 keeps the tensors in FP32 while using Tensor Core
+    matmul kernels. This is a throughput setting, not a change to the BLB action
+    or Rescale_optimizer semantics. It is process-global and idempotent.
+    """
+    if not torch.cuda.is_available():
+        return
+    try:
+        torch.backends.cuda.matmul.allow_tf32 = True
+    except Exception:
+        pass
+    try:
+        torch.backends.cudnn.allow_tf32 = True
+    except Exception:
+        pass
+    try:
+        torch.set_float32_matmul_precision("high")
+    except Exception:
+        pass
+
+
 def _trial_seed(base_seed: int, trial_idx: int) -> int:
     """Deterministic per-trial seed.
 
@@ -502,6 +525,7 @@ def build_probe_runner(
     if not device_ids:
         raise ValueError("build_probe_runner requires at least one device id")
 
+    enable_cuda_reward_probe_fast_math()
     log = log_fn or (lambda _msg: None)
 
     workers: List[ProbeWorker] = []

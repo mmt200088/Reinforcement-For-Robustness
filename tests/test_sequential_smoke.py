@@ -664,6 +664,8 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             "threading.Thread(target=task",
             "self._for_each_worker(lambda w: w.install(decoded))",
             "self._for_each_worker(clear_one)",
+            "enable_cuda_reward_probe_fast_math",
+            "torch.backends.cuda.matmul.allow_tf32 = True",
         ):
             self.assertIn(needle, src, msg=f"probe_runner.py missing: {needle!r}")
 
@@ -702,6 +704,7 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         ):
             self.assertIn(needle, policy_src, msg=f"sequential_policy.py missing: {needle!r}")
         self.assertIn("truncate_to_current=True", runner_src)
+        self.assertIn("torch.inference_mode()", runner_src)
         self.assertIn("policy_rollout_wall_seconds", runner_src)
 
 
