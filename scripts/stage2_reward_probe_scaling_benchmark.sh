@@ -50,7 +50,7 @@ PY
     echo "================================================================================"
     rm -rf "$persistent_root"
     set +e
-    CUDA_VISIBLE_DEVICES="$device_spec" timeout "$TIMEOUT_SECONDS" \
+    ALLOW_SHORT_RL_BENCHMARK=1 CUDA_VISIBLE_DEVICES="$device_spec" timeout "$TIMEOUT_SECONDS" \
       bash llama_7B_LayerImportance.sh run rl \
         --preset mrpc-blb-stage2-rl \
         --persistent-root "$persistent_root" \

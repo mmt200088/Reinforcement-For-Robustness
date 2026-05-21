@@ -1080,8 +1080,12 @@ else
     if [ "$STAGE2_RL_VARIANT" = "legacy_v2" ]; then
       { [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ] && [ "$S_BLB_V3_WARMSTART_ANCHOR_EPISODES" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_ENABLED" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_MODE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_FILE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" = "false" ]; } || err "stage2_rl_variant=legacy_v2 时不能同时使用 BLB v3 专属参数。"
     fi
-    [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$STAGE1_EPISODES" -ge 170 ] || err "rl 的 Stage-1 回合数至少需要 170。"
-    [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$STAGE2_EPISODES" -ge 170 ] || err "rl 的 Stage-2 回合数至少需要 170。"
+    if [ "${ALLOW_SHORT_RL_BENCHMARK:-false}" = "true" ] || [ "${ALLOW_SHORT_RL_BENCHMARK:-false}" = "1" ]; then
+      echo "警告：ALLOW_SHORT_RL_BENCHMARK 已启用，仅用于短程速度基准；正式 RL 仍应使用 >=170 episode。"
+    else
+      [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$STAGE1_EPISODES" -ge 170 ] || err "rl 的 Stage-1 回合数至少需要 170。"
+      [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$STAGE2_EPISODES" -ge 170 ] || err "rl 的 Stage-2 回合数至少需要 170。"
+    fi
   else
     [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] || err "ga / greedy 模式不再使用 episode 作为搜索预算，请改用 --stage1-search-generations / --stage2-search-generations。"
     is_pos_int "$STAGE1_GENERATIONS" || err "--stage1-search-generations 必须是正整数"
