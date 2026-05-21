@@ -87,6 +87,7 @@ PY
         --preset mrpc-blb-stage2-rl \
         --persistent-root "$persistent_root" \
         --batch-size "$batch_size" \
+        --ppo-update-interval "$BENCH_EPISODES" \
         --stage2-search-episodes "$BENCH_EPISODES" \
         --stage2-rollout-size 60 \
         --stage2-k-trials "$K_TRIALS" \
