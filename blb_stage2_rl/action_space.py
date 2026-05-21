@@ -314,6 +314,14 @@ _BLOCK_NODE_NAME_BY_FIELD: Dict[int, Dict[str, str]] = {
         "gamma_sf":                    "ctpt_gamma",
         # ``wk_sf`` 同时控制 Q/K 两侧 encode（bridge -> ctpt_wq_wk）
         "wk_sf":                       "ctpt_wq_wk",
+        # 2026-05-21 user spec：Q 侧四个 compat-extra 字段（wq / q_mask1 /
+        # q_mask2 / q_mask2_r）也 mirror 到对应的 q/k 共享 graph 节点。
+        # baseline 抽取在 _RO_*_NODE_TO_RL_FIELD[2] 里写两份；max_sfs 校准
+        # 时两个 RL 字段查同一个节点 key，互相一致。
+        "wq_sf":                       "ctpt_wq_wk",
+        "q_mask1_sf":                  "ctpt_rotKT_mask1",
+        "q_mask2_sf":                  "ctpt_rotKT_mask2",
+        "q_mask2_rescale_sf":          "ctct_kt_mask2_rescale",
         # ``wv_sf`` 只控制模型噪声（mrpc graph 无对应节点）
         "wv_sf":                       "ctpt_wv",
         "kt_mask1_sf":                 "ctpt_rotKT_mask1",

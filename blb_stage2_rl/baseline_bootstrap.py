@@ -624,10 +624,14 @@ _RO_ENCODE_NODE_TO_RL_FIELDS: Dict[int, Dict[str, Tuple[str, ...]]] = {
     },
     2: {
         "ctpt_gama1":          ("gamma_sf",),
-        # 2026-05-14：Q 侧动作被并入 K 侧。ctpt_wq_wk 反推到 RL 时只写 wk_sf。
-        "ctpt_wq_wk":          ("wk_sf",),
-        "ctpt_rotKT_mask1":    ("kt_mask1_sf",),
-        "ctpt_rotKT_mask2":    ("kt_mask2_sf",),
+        # 2026-05-21 user spec：从 ctpt_wq_wk 到 ctct_preprocess_qkt（q×k^T）
+        # 这段计算链 q / k 共用 — 主链 ctpt_wq_wk / ctpt_rotKT_mask1 /
+        # ctpt_rotKT_mask2 同时代表 wq=wk、kt_mask1=q_mask1、kt_mask2=q_mask2
+        # 三对绑定的 SF。baseline 抽取要把 RL 字段都写上（之前只写 K 侧，
+        # Q 侧靠 cfg-build 的 binding 碰巧拿对值），现在显式 mirror。
+        "ctpt_wq_wk":          ("wk_sf", "wq_sf"),
+        "ctpt_rotKT_mask1":    ("kt_mask1_sf", "q_mask1_sf"),
+        "ctpt_rotKT_mask2":    ("kt_mask2_sf", "q_mask2_sf"),
         "ctpt_mask":           ("qkt_merge_mask_sf",),
     },
     3: {"ctpt_inv_2n": ("inv_2n_sf",)},
@@ -647,39 +651,45 @@ _RO_ENCODE_NODE_TO_RL_FIELDS: Dict[int, Dict[str, Tuple[str, ...]]] = {
     },
 }
 
-# 在 cut_point_sf 里带 sf_post 的节点 → RL rescale 字段。
+# 在 cut_point_sf 里带 sf_post 的节点 → RL rescale 字段。一个 RO 节点可以
+# 同时映射多个 RL 字段（block 2 的 ctpt_rotKT_mask2 sf_post 同时代表
+# kt_mask2_r 和 q_mask2_r —— q/k 共享段里的同一个 rescale 在 RL 端有两个
+# 绑定的字段）；类型用 Tuple[str, ...]。
 # 2026-05-14 精简：删除大量 RL 动作槽（参见 action_space._BLOCK*_FIELDS 顶部
 # 的注释）。对应的 RO 节点反推现在直接跳过 —— 它们会出现在
 # ``unmapped_rescale_nodes`` 里（baseline 不写回这些字段，cfg 保留 None）。
-_RO_RESCALE_NODE_TO_RL_FIELD: Dict[int, Dict[str, str]] = {
+_RO_RESCALE_NODE_TO_RL_FIELD: Dict[int, Dict[str, Tuple[str, ...]]] = {
     1: {
-        "ctpt_inv_d_1":    "mean_rescale_sf",
-        "ctpt_inv_d_2":    "var_rescale_sf",
+        "ctpt_inv_d_1":    ("mean_rescale_sf",),
+        "ctpt_inv_d_2":    ("var_rescale_sf",),
     },
     2: {
-        "ctpt_gama1":             "gamma_rescale_sf",
-        "ctpt_rotKT_mask2":       "kt_mask2_rescale_sf",
-        "ctpt_mask":              "qkt_merge_mask_rescale_sf",
+        "ctpt_gama1":             ("gamma_rescale_sf",),
+        # 2026-05-21 user spec：ctpt_rotKT_mask2 的 sf_post 在 q/k 共享段里
+        # 同时代表 kt_mask2_r 和 q_mask2_r 两个 RL 字段的 baseline（二者
+        # 始终绑定相等）。
+        "ctpt_rotKT_mask2":       ("kt_mask2_rescale_sf", "q_mask2_rescale_sf"),
+        "ctpt_mask":              ("qkt_merge_mask_rescale_sf",),
     },
     3: {
         # ctct_square_<k> → square_rescale_sf_<k-1>（动作槽位 0..3）。
         # 第 5、6 次平方 (n5/n6) 在 RL 动作上只有 4 个 square 槽，所以多出来的
         # 会被丢弃（让 caller log 一条 warning）。
-        "ctct_square_1": "square_rescale_sf_0",
-        "ctct_square_2": "square_rescale_sf_1",
-        "ctct_square_3": "square_rescale_sf_2",
-        "ctct_square_4": "square_rescale_sf_3",
+        "ctct_square_1": ("square_rescale_sf_0",),
+        "ctct_square_2": ("square_rescale_sf_1",),
+        "ctct_square_3": ("square_rescale_sf_2",),
+        "ctct_square_4": ("square_rescale_sf_3",),
     },
     4: {
-        "ctct_rot_softmax_mul_v": "softmax_v_matmul_rescale_sf",
-        "ctpt_inv_d_1":           "ln_mean_rescale_sf",
-        "ctpt_inv_d_2":           "ln_var_rescale_sf",
+        "ctct_rot_softmax_mul_v": ("softmax_v_matmul_rescale_sf",),
+        "ctpt_inv_d_1":           ("ln_mean_rescale_sf",),
+        "ctpt_inv_d_2":           ("ln_var_rescale_sf",),
     },
     5: {
-        "ctct_xmean_over_std": "normalize_rescale_sf",
-        "ctpt_gamal":          "gamma_rescale_sf",
-        "ctpt_wffn1":          "wffn1_rescale_sf",
-        "ctct_gelu_x2":        "gelu_power_rescale_sf_0",
+        "ctct_xmean_over_std": ("normalize_rescale_sf",),
+        "ctpt_gamal":          ("gamma_rescale_sf",),
+        "ctpt_wffn1":          ("wffn1_rescale_sf",),
+        "ctct_gelu_x2":        ("gelu_power_rescale_sf_0",),
         # 2026-05-21 user spec：``ctpt_gelu_coeff`` 在所有 degree 的 block5
         # baseline 里都是 rescale 点（n=1: sf_post=30；n=2/n=4: sf_post=31），
         # 但之前没有 RL 动作映射，cfg ``gelu_coeff_mul_rescales[-1]`` 强制 None
@@ -687,7 +697,7 @@ _RO_RESCALE_NODE_TO_RL_FIELD: Dict[int, Dict[str, str]] = {
         # ``gelu_coeff_mul_rescale_sf_0`` 为 active slot 驱动这个 rescale；
         # ``_build_block5_action`` 把它的值放到 ``gelu_coeff_mul_rescales[-1]``
         # （optimizer 读 [-1]）；compat-extra 集合也对应移除了 _sf_0。
-        "ctpt_gelu_coeff":     "gelu_coeff_mul_rescale_sf_0",
+        "ctpt_gelu_coeff":     ("gelu_coeff_mul_rescale_sf_0",),
         # ctct_gelu_x4 / ctct_gelu_x3 仍然没有 RL 动作（gelu_power_rescale_sf_1/2 是 compat-extra）。
     },
 }
@@ -785,7 +795,9 @@ def _extract_one_block_layer(
             out.field_baseline_sfs[rl_field] = source_sf
             out.field_kind_in_ro[rl_field] = "fresh"
 
-    # 非第一项里带 sf_post 的 = rescale 动作
+    # 非第一项里带 sf_post 的 = rescale 动作；一个 RO 节点的 sf_post 可能同时
+    # 映射多个 RL 字段（block 2 q/k 共享段的 ctpt_rotKT_mask2 sf_post 同时是
+    # kt_mask2_r 和 q_mask2_r 的 baseline），迭代写入。
     rescale_map = _RO_RESCALE_NODE_TO_RL_FIELD.get(int(block_idx), {})
     for cp in cps[1:]:
         if not isinstance(cp, Mapping):
@@ -796,14 +808,13 @@ def _extract_one_block_layer(
         sf_post = cp.get("sf_post")
         if sf_post is None:
             continue
-        # block 5 的 ctpt_gelu_coeff rescale 在 2026-05-14 精简后不再有 RL 动作
-        # （gelu_coeff_mul_rescale_sf_* 全部删除），落到 unmapped 列表。
-        rl_field = rescale_map.get(name)
-        if rl_field is None:
+        rl_fields = rescale_map.get(name)
+        if not rl_fields:
             out.unmapped_rescale_nodes.append(name)
             continue
-        out.field_baseline_sfs[rl_field] = int(sf_post)
-        out.field_kind_in_ro[rl_field] = "rescale"
+        for rl_field in rl_fields:
+            out.field_baseline_sfs[rl_field] = int(sf_post)
+            out.field_kind_in_ro[rl_field] = "rescale"
 
     # --- propagation_deltas：numeric delta = encode 动作 ---
     encode_map = _RO_ENCODE_NODE_TO_RL_FIELDS.get(int(block_idx), {})

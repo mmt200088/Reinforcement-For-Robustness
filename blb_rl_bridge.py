@@ -428,7 +428,14 @@ def build_block2_cfg_from_action(
         ) -> Block2NoiseConfig:
     """``Block2ActionSpec`` → ``Block2NoiseConfig``。
 
-    被删的 8 个 rescale 槽 + 7 个 rotation flag 在 cfg 上固定为 None / False。
+    Q/K 共享段绑定（2026-05-21 user spec）：
+      * 三个 Q 侧 encode（wq / q_mask1 / q_mask2）已由 ``_build_block2_action``
+        写为 K 侧同值。
+      * ``q_mask2_r`` 也绑到 ``kt_mask2_r`` —— mrpc baseline 里
+        ctpt_rotKT_mask2 sf_post 同时是 kt_mask2_r 和 q_mask2_r 的 baseline，
+        model 必须在 V 侧装同样的 rescale 噪声才能和 optimizer 的链假设对齐。
+        其它没有 baseline 的 rescale 槽（normalize / wk / wq / wv /
+        kt_mask1 / q_mask1 / qkt_matmul）继续保持 None。
     """
     return make_block2_default_config(
         N=int(N),
@@ -451,7 +458,9 @@ def build_block2_cfg_from_action(
         kt_mask2_rescale_sf=action.kt_mask2_rescale_sf,
         wq_rescale_sf=None,
         q_mask1_rescale_sf=None,
-        q_mask2_rescale_sf=None,
+        # 2026-05-21: q_mask2_r 绑定到 kt_mask2_r（共享 graph 节点
+        # ctpt_rotKT_mask2 sf_post）。
+        q_mask2_rescale_sf=action.kt_mask2_rescale_sf,
         wv_rescale_sf=None,
         qkt_matmul_rescale_sf=None,
         qkt_merge_mask_rescale_sf=action.qkt_merge_mask_rescale_sf,
@@ -463,7 +472,8 @@ def build_block2_cfg_from_action(
         rotation_after_wv_rescale=False,
         rotation_after_q_mask1_rescale=False,
         rotation_after_kt_mask1_rescale=False,
-        rotation_after_q_mask2_rescale=False,
+        # q_mask2_r 上的 rotation 跟随 kt_mask2_r（绑定对称）。
+        rotation_after_q_mask2_rescale=action.rotation_after_kt_mask2_rescale,
         rotation_after_kt_mask2_rescale=action.rotation_after_kt_mask2_rescale,
         rotation_after_qkt_matmul_rescale=False,
     )
