@@ -93,13 +93,18 @@ Current Stage-2 RL collapse goal mode:
 - First 10k attempt evidence, 2026-05-20: the `3000/16/radius3` neighbor
   schedule reached reward around 42 but produced a P1 cluster at episodes
   1699-1757 once safe-neighbor reached `radius=2` with 8-9 mutated offsets.
-  Through `radius=1`, P1 was 0 and reward improved. The current Pareto-only
-  follow-up keeps default radius at 1 while opening exploration inside that
-  radius: `ANCHOR_EPISODES=60`, `NEIGHBOR_RAMP=1800`,
-  `NEIGHBOR_MAX_MUTATIONS=12`, `NEIGHBOR_MAX_RADIUS=1`,
-  `ENT_COEF=0.06`, `ENT_RAMP=600`, `WARMSTART_BIAS_GAIN=2.5`.
-  Do not default to radius2; if the P3 Pareto frontier fails to expand during a
-  600-1000 episode smoke, design a separate guarded radius2 experiment.
+  Through `radius=1`, P1 was 0 and reward improved. The current
+  guarded-radius2 follow-up keeps raw safe-neighbor at
+  `NEIGHBOR_MAX_RADIUS=1` with `ANCHOR_EPISODES=60`, `NEIGHBOR_RAMP=1800`,
+  `NEIGHBOR_MAX_MUTATIONS=12`, `ENT_COEF=0.06`, `ENT_RAMP=600`, and
+  `WARMSTART_BIAS_GAIN=2.5`. It enables radius2 only after frontier stall plus
+  clean recent health, using defaults `GUARDED_RADIUS2_ENABLED=1`,
+  `GUARDED_RADIUS2_MIN_EPISODE=1060`,
+  `GUARDED_RADIUS2_STALL_WINDOW=600`,
+  `GUARDED_RADIUS2_MAX_MUTATIONS=4`,
+  `GUARDED_RADIUS2_EPISODE_FRACTION=0.15`, and
+  `GUARDED_RADIUS2_COOLDOWN_EPISODES=300`. Do not replace this with raw
+  default radius2.
 
 ### Server command bridge
 

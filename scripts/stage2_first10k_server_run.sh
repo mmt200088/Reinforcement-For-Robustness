@@ -7,6 +7,7 @@ export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
 export GLUE_LOCAL_DATASET_DIR="${GLUE_LOCAL_DATASET_DIR:-/hy-tmp/glue_data}"
 
 PLANNED_EPISODES="${PLANNED_EPISODES:-10000}"
+SMOKE_EPISODES="${SMOKE_EPISODES:-1000}"
 ANCHOR_EPISODES="${ANCHOR_EPISODES:-60}"
 ROLLOUT_SIZE="${ROLLOUT_SIZE:-60}"
 K_TRIALS="${K_TRIALS:-5}"
@@ -14,6 +15,12 @@ PROBE_SIZE="${PROBE_SIZE:-256}"
 NEIGHBOR_RAMP="${NEIGHBOR_RAMP:-1800}"
 NEIGHBOR_MAX_MUTATIONS="${NEIGHBOR_MAX_MUTATIONS:-12}"
 NEIGHBOR_MAX_RADIUS="${NEIGHBOR_MAX_RADIUS:-1}"
+GUARDED_RADIUS2_ENABLED="${GUARDED_RADIUS2_ENABLED:-1}"
+GUARDED_RADIUS2_MIN_EPISODE="${GUARDED_RADIUS2_MIN_EPISODE:-1060}"
+GUARDED_RADIUS2_STALL_WINDOW="${GUARDED_RADIUS2_STALL_WINDOW:-600}"
+GUARDED_RADIUS2_MAX_MUTATIONS="${GUARDED_RADIUS2_MAX_MUTATIONS:-4}"
+GUARDED_RADIUS2_EPISODE_FRACTION="${GUARDED_RADIUS2_EPISODE_FRACTION:-0.15}"
+GUARDED_RADIUS2_COOLDOWN_EPISODES="${GUARDED_RADIUS2_COOLDOWN_EPISODES:-300}"
 ENT_COEF="${ENT_COEF:-0.06}"
 ENT_RAMP="${ENT_RAMP:-600}"
 WARMSTART_BIAS_GAIN="${WARMSTART_BIAS_GAIN:-2.5}"
@@ -59,12 +66,13 @@ stop_rl_at_dir() {
 
 monitor_once() {
   local phase="$1"
+  local planned="$2"
   python scripts/stage2_first10k_monitor.py \
     --phase "$phase" \
     --artifact-dir "$ARTIFACT_DIR" \
     --stage2-noise "$STAGE2_NOISE" \
     --nvidia-log "$NVS_LOG" \
-    --planned "$PLANNED_EPISODES" \
+    --planned "$planned" \
     --anchor "$ANCHOR_EPISODES" \
     --rollout "$ROLLOUT_SIZE" \
     --horizon 59 \
@@ -110,6 +118,114 @@ stop_with_signal() {
   fi
 }
 
+launch_and_watch_rl() {
+  local label="$1"
+  local planned="$2"
+  local log_file="$3"
+
+  echo ""
+  echo "================================================================================"
+  echo "RL phase: ${label} (${planned} episodes, dual GPU)"
+  echo "================================================================================"
+  set +e
+  CUDA_VISIBLE_DEVICES=0,1 bash llama_7B_LayerImportance.sh run rl \
+    --preset mrpc-blb-stage2-rl \
+    --stage2-search-episodes "$planned" \
+    --stage2-rollout-size "$ROLLOUT_SIZE" \
+    --stage2-k-trials "$K_TRIALS" \
+    --stage2-probe-size "$PROBE_SIZE" \
+    --stage2-save-interval 500 \
+    --stage2-eval-interval 300 \
+    --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
+    --blb-v3-warmstart-neighbor-ramp-episodes "$NEIGHBOR_RAMP" \
+    --blb-v3-warmstart-neighbor-max-mutations "$NEIGHBOR_MAX_MUTATIONS" \
+    --blb-v3-warmstart-neighbor-max-radius "$NEIGHBOR_MAX_RADIUS" \
+    --blb-v3-warmstart-bias-gain "$WARMSTART_BIAS_GAIN" \
+    --blb-v3-guarded-radius2-enabled "$GUARDED_RADIUS2_ENABLED" \
+    --blb-v3-guarded-radius2-min-episode "$GUARDED_RADIUS2_MIN_EPISODE" \
+    --blb-v3-guarded-radius2-stall-window "$GUARDED_RADIUS2_STALL_WINDOW" \
+    --blb-v3-guarded-radius2-max-mutations "$GUARDED_RADIUS2_MAX_MUTATIONS" \
+    --blb-v3-guarded-radius2-episode-fraction "$GUARDED_RADIUS2_EPISODE_FRACTION" \
+    --blb-v3-guarded-radius2-cooldown-episodes "$GUARDED_RADIUS2_COOLDOWN_EPISODES" \
+    --blb-v3-ent-coef "$ENT_COEF" \
+    --blb-v3-ent-coef-ramp-episodes "$ENT_RAMP" \
+    --blb-v3-reward-devices 0,1 \
+    --skip-final-eval \
+    --fresh 2>&1 | tee "${ARTIFACT_DIR}/${log_file}"
+  local launch_rc=${PIPESTATUS[0]}
+  set -e
+  echo "[rl:${label}] launcher rc=$launch_rc"
+  if [ "$launch_rc" -ne 0 ]; then
+    return "$launch_rc"
+  fi
+
+  local rl_pid_file="${PERSIST_ROOT}/rl.pid"
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    [ -s "$rl_pid_file" ] && break
+    sleep 2
+  done
+  if [ ! -s "$rl_pid_file" ]; then
+    echo "[fail:${label}] launcher returned success but did not write $rl_pid_file"
+    return 12
+  fi
+  local run_pid
+  run_pid="$(cat "$rl_pid_file")"
+  echo "[rl:${label}] background pid=$run_pid; online watchdog enabled"
+
+  local last_episodes=-1
+  local last_progress_ts
+  last_progress_ts=$(date +%s)
+  while kill -0 "$run_pid" 2>/dev/null; do
+    local episodes_done=0
+    if [ -f "${STAGE2_NOISE}/progress/diagnostics/episodes.jsonl" ]; then
+      episodes_done=$(wc -l < "${STAGE2_NOISE}/progress/diagnostics/episodes.jsonl" | tr -d ' ')
+    fi
+    copy_artifacts
+    set +e
+    monitor_once live "$planned"
+    local mon_rc=$?
+    set -e
+    echo "[rl-monitor:${label}] pid=$run_pid alive; episodes_jsonl=$episodes_done; monitor_rc=$mon_rc; $(date -Is)"
+    if [ "$mon_rc" -eq 2 ] && [ "$episodes_done" -gt "$ANCHOR_EPISODES" ]; then
+      stop_with_signal "$run_pid" "hard failure reported by ${label} live monitor"
+      break
+    fi
+    if [ "$episodes_done" -gt "$last_episodes" ]; then
+      last_episodes="$episodes_done"
+      last_progress_ts=$(date +%s)
+    elif [ "$episodes_done" -lt "$planned" ]; then
+      local now_ts
+      now_ts=$(date +%s)
+      if [ $((now_ts - last_progress_ts)) -gt 1200 ]; then
+        stop_with_signal "$run_pid" "${label} episodes stalled for more than 20 minutes"
+        break
+      fi
+    fi
+    sleep 60
+  done
+
+  echo "[rl:${label}] background pid=$run_pid exited or was stopped"
+  copy_artifacts
+  set +e
+  monitor_once final "$planned"
+  local final_rc=$?
+  set -e
+  echo "[monitor:${label}] final rc=$final_rc"
+  if [ -f "${ARTIFACT_DIR}/monitor_summary.json" ]; then
+    cp "${ARTIFACT_DIR}/monitor_summary.json" "${ARTIFACT_DIR}/${label}_monitor_summary.json" || true
+  fi
+  if [ -f "${ARTIFACT_DIR}/server_monitor_report.html" ]; then
+    cp "${ARTIFACT_DIR}/server_monitor_report.html" "${ARTIFACT_DIR}/${label}_server_monitor_report.html" || true
+  fi
+  if [ -f "${ARTIFACT_DIR}/episodes.jsonl" ]; then
+    cp "${ARTIFACT_DIR}/episodes.jsonl" "${ARTIFACT_DIR}/${label}_episodes.jsonl" || true
+  fi
+  if [ -f "${ARTIFACT_DIR}/pareto_frontier.json" ]; then
+    cp "${ARTIFACT_DIR}/pareto_frontier.json" "${ARTIFACT_DIR}/${label}_pareto_frontier.json" || true
+  fi
+  return "$final_rc"
+}
+
 stop_rl_at_dir "$PERSIST_ROOT"
 stop_rl_at_dir "${PERSIST_ROOT}_rdv2"
 
@@ -132,6 +248,7 @@ cat > "${ARTIFACT_DIR}/run_manifest.json" <<JSON
   "run_id": "${RUN_ID}",
   "git_head": "$(git rev-parse --short HEAD)",
   "planned_episodes": ${PLANNED_EPISODES},
+  "smoke_episodes": ${SMOKE_EPISODES},
   "anchor_episodes": ${ANCHOR_EPISODES},
   "rollout_size": ${ROLLOUT_SIZE},
   "k_trials": ${K_TRIALS},
@@ -139,6 +256,12 @@ cat > "${ARTIFACT_DIR}/run_manifest.json" <<JSON
   "neighbor_ramp": ${NEIGHBOR_RAMP},
   "neighbor_max_mutations": ${NEIGHBOR_MAX_MUTATIONS},
   "neighbor_max_radius": ${NEIGHBOR_MAX_RADIUS},
+  "guarded_radius2_enabled": ${GUARDED_RADIUS2_ENABLED},
+  "guarded_radius2_min_episode": ${GUARDED_RADIUS2_MIN_EPISODE},
+  "guarded_radius2_stall_window": ${GUARDED_RADIUS2_STALL_WINDOW},
+  "guarded_radius2_max_mutations": ${GUARDED_RADIUS2_MAX_MUTATIONS},
+  "guarded_radius2_episode_fraction": ${GUARDED_RADIUS2_EPISODE_FRACTION},
+  "guarded_radius2_cooldown_episodes": ${GUARDED_RADIUS2_COOLDOWN_EPISODES},
   "ent_coef": ${ENT_COEF},
   "ent_ramp": ${ENT_RAMP},
   "warmstart_bias_gain": ${WARMSTART_BIAS_GAIN},
@@ -155,9 +278,11 @@ python -m unittest tests.test_sequential_smoke.WarmstartFixedRegressionTest test
 TEST1_RC=${PIPESTATUS[0]}
 BLB_STRICT=0 python -m unittest discover -s tests -p "test_blb_*.py" -v 2>&1 | tee "${ARTIFACT_DIR}/test_blb_contracts.log"
 TEST2_RC=${PIPESTATUS[0]}
+python scripts/blb_verify_noise_install.py --mode smoke --profile mrpc --num-layers 12 2>&1 | tee "${ARTIFACT_DIR}/blb_verify_noise_install.log"
+TEST3_RC=${PIPESTATUS[0]}
 set -e
-if [ "$TEST1_RC" -ne 0 ] || [ "$TEST2_RC" -ne 0 ]; then
-  echo "[abort] tests failed: sequential=$TEST1_RC contracts=$TEST2_RC"
+if [ "$TEST1_RC" -ne 0 ] || [ "$TEST2_RC" -ne 0 ] || [ "$TEST3_RC" -ne 0 ]; then
+  echo "[abort] tests failed: sequential=$TEST1_RC contracts=$TEST2_RC install=$TEST3_RC"
   exit 10
 fi
 
@@ -186,99 +311,40 @@ trap "kill $NVS_PID 2>/dev/null || true" EXIT
 
 echo ""
 echo "================================================================================"
-echo "Step 4/6: fresh ${PLANNED_EPISODES}-episode dual-GPU RL run"
+echo "Step 4/6: fresh ${SMOKE_EPISODES}-episode smoke run before formal RL"
 echo "================================================================================"
-set +e
-CUDA_VISIBLE_DEVICES=0,1 bash llama_7B_LayerImportance.sh run rl \
-  --preset mrpc-blb-stage2-rl \
-  --stage2-search-episodes "$PLANNED_EPISODES" \
-  --stage2-rollout-size "$ROLLOUT_SIZE" \
-  --stage2-k-trials "$K_TRIALS" \
-  --stage2-probe-size "$PROBE_SIZE" \
-  --stage2-save-interval 500 \
-  --stage2-eval-interval 300 \
-  --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-  --blb-v3-warmstart-neighbor-ramp-episodes "$NEIGHBOR_RAMP" \
-  --blb-v3-warmstart-neighbor-max-mutations "$NEIGHBOR_MAX_MUTATIONS" \
-  --blb-v3-warmstart-neighbor-max-radius "$NEIGHBOR_MAX_RADIUS" \
-  --blb-v3-warmstart-bias-gain "$WARMSTART_BIAS_GAIN" \
-  --blb-v3-ent-coef "$ENT_COEF" \
-  --blb-v3-ent-coef-ramp-episodes "$ENT_RAMP" \
-  --blb-v3-reward-devices 0,1 \
-  --skip-final-eval \
-  --fresh 2>&1 | tee "${ARTIFACT_DIR}/rl_10000_dual_gpu.log"
-LAUNCH_RC=${PIPESTATUS[0]}
-set -e
-echo "[rl] launcher rc=$LAUNCH_RC"
-if [ "$LAUNCH_RC" -ne 0 ]; then
+launch_and_watch_rl "smoke" "$SMOKE_EPISODES" "rl_smoke_dual_gpu.log"
+SMOKE_RC=$?
+if [ "$SMOKE_RC" -ne 0 ]; then
   kill "$NVS_PID" 2>/dev/null || true
   trap - EXIT
-  exit "$LAUNCH_RC"
+  exit "$SMOKE_RC"
 fi
-
-RL_PID_FILE="${PERSIST_ROOT}/rl.pid"
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-  [ -s "$RL_PID_FILE" ] && break
-  sleep 2
-done
-if [ ! -s "$RL_PID_FILE" ]; then
-  echo "[fail] launcher returned success but did not write $RL_PID_FILE"
-  exit 12
-fi
-RUN_PID="$(cat "$RL_PID_FILE")"
-echo "[rl] background pid=$RUN_PID; online watchdog enabled"
-
-LAST_EPISODES=-1
-LAST_PROGRESS_TS=$(date +%s)
-while kill -0 "$RUN_PID" 2>/dev/null; do
-  EPISODES_DONE=0
-  if [ -f "${STAGE2_NOISE}/progress/diagnostics/episodes.jsonl" ]; then
-    EPISODES_DONE=$(wc -l < "${STAGE2_NOISE}/progress/diagnostics/episodes.jsonl" | tr -d ' ')
-  fi
-  copy_artifacts
-  set +e
-  monitor_once live
-  MON_RC=$?
-  set -e
-  echo "[rl-monitor] pid=$RUN_PID alive; episodes_jsonl=$EPISODES_DONE; monitor_rc=$MON_RC; $(date -Is)"
-  if [ "$MON_RC" -eq 2 ] && [ "$EPISODES_DONE" -gt "$ANCHOR_EPISODES" ]; then
-    stop_with_signal "$RUN_PID" "hard failure reported by live monitor"
-    break
-  fi
-  if [ "$EPISODES_DONE" -gt "$LAST_EPISODES" ]; then
-    LAST_EPISODES="$EPISODES_DONE"
-    LAST_PROGRESS_TS=$(date +%s)
-  elif [ "$EPISODES_DONE" -lt "$PLANNED_EPISODES" ]; then
-    NOW_TS=$(date +%s)
-    if [ $((NOW_TS - LAST_PROGRESS_TS)) -gt 1200 ]; then
-      stop_with_signal "$RUN_PID" "episodes stalled for more than 20 minutes"
-      break
-    fi
-  fi
-  sleep 60
-done
-
-echo "[rl] background pid=$RUN_PID exited or was stopped"
-kill "$NVS_PID" 2>/dev/null || true
-trap - EXIT
 
 echo ""
 echo "================================================================================"
-echo "Step 5/6: final monitor and artifact copy"
+echo "Step 5/6: fresh ${PLANNED_EPISODES}-episode formal dual-GPU RL run"
+echo "================================================================================"
+launch_and_watch_rl "formal" "$PLANNED_EPISODES" "rl_10000_dual_gpu.log"
+FORMAL_RC=$?
+kill "$NVS_PID" 2>/dev/null || true
+trap - EXIT
+if [ "$FORMAL_RC" -ne 0 ]; then
+  exit "$FORMAL_RC"
+fi
+
+echo ""
+echo "================================================================================"
+echo "Step 5.5/6: final artifact copy"
 echo "================================================================================"
 copy_artifacts
-set +e
-monitor_once final
-MONITOR_RC=$?
-set -e
-echo "[monitor] final rc=$MONITOR_RC"
 
 echo ""
 echo "================================================================================"
 echo "Step 6/6: best-effort git artifact publish"
 echo "================================================================================"
 git add -f "$ARTIFACT_DIR" || true
-git commit -m "Add server first-10k RL monitor results" || true
+git commit -m "Add guarded-radius2 first-10k RL monitor results" || true
 git push || true
 
-exit "$MONITOR_RC"
+exit 0

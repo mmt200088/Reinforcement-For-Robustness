@@ -136,6 +136,16 @@ class EpisodeStats:
     safe_neighbor_active: bool = False
     safe_neighbor_mutation_count: int = 0
     safe_neighbor_radius: int = 0
+    exploration_mode: str = ""
+    guarded_radius2_active: bool = False
+    guarded_radius2_recent_frontier_expansions: int = 0
+    guarded_radius2_recent_duplicate_rate: float = 0.0
+    guarded_radius2_recent_dominated_rate: float = 0.0
+    guarded_radius2_cooldown_remaining: int = 0
+    guarded_radius2_safe_offset_count: int = 0
+    guarded_radius2_episode_count: int = 0
+    guarded_radius2_failure_count: int = 0
+    guarded_radius2_frontier_expansion_count: int = 0
     timestamp: float = field(default_factory=time.time)
 
 
@@ -340,6 +350,28 @@ class RLDiagnosticsRecorder:
                 "safe_neighbor_active": bool(episode_stats.safe_neighbor_active),
                 "safe_neighbor_mutation_count": int(episode_stats.safe_neighbor_mutation_count),
                 "safe_neighbor_radius": int(episode_stats.safe_neighbor_radius),
+                "exploration_mode": str(episode_stats.exploration_mode),
+                "guarded_radius2_active": bool(episode_stats.guarded_radius2_active),
+                "guarded_radius2_recent_frontier_expansions": int(
+                    episode_stats.guarded_radius2_recent_frontier_expansions
+                ),
+                "guarded_radius2_recent_duplicate_rate": float(
+                    episode_stats.guarded_radius2_recent_duplicate_rate
+                ),
+                "guarded_radius2_recent_dominated_rate": float(
+                    episode_stats.guarded_radius2_recent_dominated_rate
+                ),
+                "guarded_radius2_cooldown_remaining": int(
+                    episode_stats.guarded_radius2_cooldown_remaining
+                ),
+                "guarded_radius2_safe_offset_count": int(
+                    episode_stats.guarded_radius2_safe_offset_count
+                ),
+                "guarded_radius2_episode_count": int(episode_stats.guarded_radius2_episode_count),
+                "guarded_radius2_failure_count": int(episode_stats.guarded_radius2_failure_count),
+                "guarded_radius2_frontier_expansion_count": int(
+                    episode_stats.guarded_radius2_frontier_expansion_count
+                ),
                 "action_vec": np.asarray(full_action_vec, dtype=int).tolist(),
             }
             if not payload["terminal_pareto_action_hash"]:
@@ -611,6 +643,12 @@ class RLDiagnosticsRecorder:
             "total_reward",
             "safe_neighbor_mutation_count",
             "safe_neighbor_radius",
+            "exploration_mode",
+            "guarded_radius2_active",
+            "guarded_radius2_recent_frontier_expansions",
+            "guarded_radius2_recent_duplicate_rate",
+            "guarded_radius2_recent_dominated_rate",
+            "guarded_radius2_cooldown_remaining",
         ]
         lines = [
             "<!doctype html>",

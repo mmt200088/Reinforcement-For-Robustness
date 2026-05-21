@@ -91,18 +91,36 @@ class ParetoCostArchiveTests(unittest.TestCase):
     def test_dominated_and_duplicate_events_are_bounded(self):
         reward = load_reward_module()
 
-        archive = reward.ParetoCostArchive(max_abs_shaping=0.25)
+        archive = reward.ParetoCostArchive(max_abs_shaping=0.35)
         archive.add("strong", self._p3(fusion_gain=2.0, k_gain=2.0, bits_gain=2.0))
         dominated = archive.add("weak", self._p3(fusion_gain=1.0, k_gain=1.0, bits_gain=1.0))
         duplicate = archive.add("strong", self._p3(fusion_gain=100.0, k_gain=100.0, bits_gain=100.0))
 
         self.assertEqual(dominated.kind, "dominated")
-        self.assertLess(dominated.shaping, 0.0)
-        self.assertGreaterEqual(dominated.shaping, -0.25)
+        self.assertAlmostEqual(dominated.shaping, -0.10, places=6)
         self.assertEqual(duplicate.kind, "duplicate")
-        self.assertLessEqual(duplicate.shaping, 0.0)
-        self.assertGreaterEqual(duplicate.shaping, -0.25)
+        self.assertAlmostEqual(duplicate.shaping, -0.025, places=6)
         self.assertEqual(len(archive.frontier), 1)
+
+    def test_default_pareto_event_shaping_is_stronger_but_tier_safe(self):
+        reward = load_reward_module()
+
+        archive = reward.ParetoCostArchive()
+        first = archive.add("a", self._p3(fusion_gain=1.0, k_gain=1.0, bits_gain=1.0))
+        member = archive.add("b", self._p3(fusion_gain=2.0, k_gain=0.0, bits_gain=1.0))
+        dominated = archive.add("c", self._p3(fusion_gain=0.0, k_gain=0.0, bits_gain=0.0))
+        duplicate = archive.add("a", self._p3(fusion_gain=9.0, k_gain=9.0, bits_gain=9.0))
+
+        self.assertEqual(first.kind, "frontier_expansion")
+        self.assertEqual(member.kind, "frontier_member")
+        self.assertEqual(dominated.kind, "dominated")
+        self.assertEqual(duplicate.kind, "duplicate")
+        self.assertAlmostEqual(first.shaping, 0.20, places=6)
+        self.assertAlmostEqual(member.shaping, 0.05, places=6)
+        self.assertAlmostEqual(dominated.shaping, -0.10, places=6)
+        self.assertAlmostEqual(duplicate.shaping, -0.025, places=6)
+        for event in (first, member, dominated, duplicate):
+            self.assertLessEqual(abs(event.shaping), 0.35)
 
     def test_ignores_typical_normalizers_for_ranking(self):
         reward = load_reward_module()
@@ -162,7 +180,7 @@ class ParetoCostArchiveTests(unittest.TestCase):
 
         self.assertEqual(breakdown.priority, 3)
         self.assertEqual(breakdown.pareto_event_kind, "frontier_expansion")
-        self.assertEqual(breakdown.cost_score, 0.10)
+        self.assertEqual(breakdown.cost_score, 0.20)
         self.assertEqual([entry.action_hash for entry in archive.frontier], ["p3-a"])
 
     def test_compute_reward_excludes_p2_from_cost_and_archive(self):

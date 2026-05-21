@@ -601,6 +601,12 @@ def train(
         blb_v3_warmstart_neighbor_max_mutations: int = None,
         blb_v3_warmstart_neighbor_max_radius: int = None,
         blb_v3_warmstart_neighbor_sampling: bool = None,
+        blb_v3_guarded_radius2_enabled: bool = None,
+        blb_v3_guarded_radius2_min_episode: int = None,
+        blb_v3_guarded_radius2_stall_window: int = None,
+        blb_v3_guarded_radius2_max_mutations: int = None,
+        blb_v3_guarded_radius2_episode_fraction: float = None,
+        blb_v3_guarded_radius2_cooldown_episodes: int = None,
         blb_v3_warmstart_bias_gain: float = None,
         blb_v3_ent_coef: float = None,
         blb_v3_ent_coef_anchor: float = None,
@@ -760,6 +766,12 @@ def train(
         f"blb_v3_warmstart_neighbor_max_mutations: {blb_v3_warmstart_neighbor_max_mutations}\n"
         f"blb_v3_warmstart_neighbor_max_radius: {blb_v3_warmstart_neighbor_max_radius}\n"
         f"blb_v3_warmstart_neighbor_sampling: {blb_v3_warmstart_neighbor_sampling}\n"
+        f"blb_v3_guarded_radius2_enabled: {blb_v3_guarded_radius2_enabled}\n"
+        f"blb_v3_guarded_radius2_min_episode: {blb_v3_guarded_radius2_min_episode}\n"
+        f"blb_v3_guarded_radius2_stall_window: {blb_v3_guarded_radius2_stall_window}\n"
+        f"blb_v3_guarded_radius2_max_mutations: {blb_v3_guarded_radius2_max_mutations}\n"
+        f"blb_v3_guarded_radius2_episode_fraction: {blb_v3_guarded_radius2_episode_fraction}\n"
+        f"blb_v3_guarded_radius2_cooldown_episodes: {blb_v3_guarded_radius2_cooldown_episodes}\n"
         f"blb_v3_warmstart_bias_gain: {blb_v3_warmstart_bias_gain}\n"
         f"blb_v3_ent_coef: {blb_v3_ent_coef}\n"
         f"blb_v3_ent_coef_anchor: {blb_v3_ent_coef_anchor}\n"
@@ -1171,6 +1183,12 @@ def train(
             blb_v3_warmstart_neighbor_max_mutations=blb_v3_warmstart_neighbor_max_mutations,
             blb_v3_warmstart_neighbor_max_radius=blb_v3_warmstart_neighbor_max_radius,
             blb_v3_warmstart_neighbor_sampling=blb_v3_warmstart_neighbor_sampling,
+            blb_v3_guarded_radius2_enabled=blb_v3_guarded_radius2_enabled,
+            blb_v3_guarded_radius2_min_episode=blb_v3_guarded_radius2_min_episode,
+            blb_v3_guarded_radius2_stall_window=blb_v3_guarded_radius2_stall_window,
+            blb_v3_guarded_radius2_max_mutations=blb_v3_guarded_radius2_max_mutations,
+            blb_v3_guarded_radius2_episode_fraction=blb_v3_guarded_radius2_episode_fraction,
+            blb_v3_guarded_radius2_cooldown_episodes=blb_v3_guarded_radius2_cooldown_episodes,
             blb_v3_warmstart_bias_gain=blb_v3_warmstart_bias_gain,
             blb_v3_ent_coef=blb_v3_ent_coef,
             blb_v3_ent_coef_anchor=blb_v3_ent_coef_anchor,

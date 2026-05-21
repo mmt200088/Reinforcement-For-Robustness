@@ -149,6 +149,19 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
     post_returns = [_finite(e.get("total_reward")) for e in post]
     post_safe_rows = [e for e in post if "safe_neighbor_active" in e]
     post_safe = [bool(e.get("safe_neighbor_active", False)) for e in post_safe_rows]
+    guarded_rows = [e for e in episodes if "guarded_radius2_active" in e]
+    guarded_active = [e for e in guarded_rows if bool(e.get("guarded_radius2_active", False))]
+    guarded_failures = [
+        e for e in guarded_active
+        if _episode_priority(e) in (1, 2)
+        or int(e.get("invalid_steps", 0) or 0) > 0
+        or _finite(e.get("terminal_stab_violation")) > 0.0
+        or _finite(e.get("terminal_loss_mean")) >= 99.0
+    ]
+    guarded_expansions = [
+        e for e in guarded_active
+        if str(e.get("terminal_pareto_event_kind", "")) == "frontier_expansion"
+    ]
 
     best_reward = max(returns) if returns else None
     best_episode = None
@@ -318,6 +331,19 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
                 if episodes else None
             ),
         },
+        "guarded_radius2": {
+            "active_count": len(guarded_active),
+            "failure_count": len(guarded_failures),
+            "frontier_expansion_count": len(guarded_expansions),
+            "last_cooldown_remaining": (
+                int(episodes[-1].get("guarded_radius2_cooldown_remaining", 0) or 0)
+                if episodes else None
+            ),
+            "last_safe_offset_count": (
+                int(episodes[-1].get("guarded_radius2_safe_offset_count", 0) or 0)
+                if episodes else None
+            ),
+        },
         "cost": {
             "total_bits_min": min(bits) if bits else None,
             "total_bits_max": max(bits) if bits else None,
@@ -364,6 +390,12 @@ def write_health_csv(path: Path, episodes: List[Dict[str, Any]]) -> None:
         "terminal_stab_excess_loss", "terminal_stab_violation",
         "valid_steps", "invalid_steps", "total_bits",
         "safe_neighbor_active", "safe_neighbor_mutation_count", "safe_neighbor_radius",
+        "exploration_mode", "guarded_radius2_active",
+        "guarded_radius2_recent_frontier_expansions",
+        "guarded_radius2_recent_duplicate_rate",
+        "guarded_radius2_recent_dominated_rate",
+        "guarded_radius2_cooldown_remaining",
+        "guarded_radius2_safe_offset_count",
     ]
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
@@ -376,6 +408,7 @@ def write_report(path: Path, summary: Dict[str, Any]) -> None:
     reward = summary.get("reward", {})
     terminal = summary.get("terminal_metrics", {})
     ppo = summary.get("ppo", {})
+    guarded = summary.get("guarded_radius2", {})
     gpu = summary.get("gpu", {}).get("by_gpu", {})
     rows = [
         ("status", summary.get("status")),
@@ -394,6 +427,11 @@ def write_report(path: Path, summary: Dict[str, Any]) -> None:
         ("safe_neighbor_active_rate", summary.get("safe_neighbor", {}).get("post_anchor_active_rate")),
         ("last_mutation_count", summary.get("safe_neighbor", {}).get("last_mutation_count")),
         ("last_radius", summary.get("safe_neighbor", {}).get("last_radius")),
+        ("guarded_radius2_active_count", guarded.get("active_count")),
+        ("guarded_radius2_failure_count", guarded.get("failure_count")),
+        ("guarded_radius2_frontier_expansion_count", guarded.get("frontier_expansion_count")),
+        ("guarded_radius2_last_cooldown", guarded.get("last_cooldown_remaining")),
+        ("guarded_radius2_last_safe_offset_count", guarded.get("last_safe_offset_count")),
         ("ppo_updates_seen", ppo.get("updates_seen")),
         ("recent_entropy_mean", ppo.get("recent_entropy_mean")),
         ("recent_clip_fraction_mean", ppo.get("recent_clip_fraction_mean")),

@@ -64,6 +64,14 @@ class SequentialTrainConfig:
     warmstart_neighbor_max_mutations: int = 8
     warmstart_neighbor_max_radius: int = 2
     warmstart_mutable_full_offsets: Optional[List[int]] = None
+    guarded_radius2_enabled: bool = False
+    guarded_radius2_min_episode: int = 1060
+    guarded_radius2_stall_window: int = 600
+    guarded_radius2_health_window: int = 100
+    guarded_radius2_max_mutations: int = 4
+    guarded_radius2_episode_fraction: float = 0.15
+    guarded_radius2_cooldown_episodes: int = 300
+    guarded_radius2_min_radius1_successes: int = 3
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +381,191 @@ def _sequential_neighbor_curriculum(
     return max(1, mutations), max(1, radius)
 
 
+@dataclass
+class GuardedRadius2Decision:
+    active: bool = False
+    mode: str = "radius1"
+    radius: int = 1
+    mutation_count: int = 0
+    safe_offsets: Tuple[int, ...] = ()
+    recent_frontier_expansions: int = 0
+    recent_duplicate_rate: float = 0.0
+    recent_dominated_rate: float = 0.0
+    cooldown_remaining: int = 0
+    safe_offset_count: int = 0
+    radius2_episode_count: int = 0
+    radius2_failure_count: int = 0
+    radius2_frontier_expansion_count: int = 0
+    reason: str = ""
+
+
+class GuardedRadius2Controller:
+    """Open radius2 only after radius1 Pareto search stalls and stays healthy."""
+
+    def __init__(
+            self,
+            *,
+            enabled: bool = False,
+            min_episode: int = 1060,
+            stall_window: int = 600,
+            health_window: int = 100,
+            max_mutations: int = 4,
+            episode_fraction: float = 0.15,
+            cooldown_episodes: int = 300,
+            min_radius1_successes: int = 3,
+            ) -> None:
+        self.enabled = bool(enabled)
+        self.min_episode = max(0, int(min_episode))
+        self.stall_window = max(1, int(stall_window))
+        self.health_window = max(1, int(health_window))
+        self.max_mutations = max(1, int(max_mutations))
+        self.episode_fraction = float(np.clip(float(episode_fraction), 0.0, 1.0))
+        self.cooldown_episodes = max(0, int(cooldown_episodes))
+        self.min_radius1_successes = max(1, int(min_radius1_successes))
+        self._history: List[Dict[str, Any]] = []
+        self._offset_successes: Dict[int, int] = {}
+        self._offset_failures: Dict[int, int] = {}
+        self._cooldown_until_episode = -1
+        self.radius2_episode_count = 0
+        self.radius2_failure_count = 0
+        self.radius2_frontier_expansion_count = 0
+
+    def decide(self, *, absolute_episode_idx: int, rng: Any) -> GuardedRadius2Decision:
+        ep = int(absolute_episode_idx)
+        recent = self._history[-self.stall_window:]
+        recent_frontier = sum(
+            1 for row in recent
+            if str(row.get("terminal_pareto_event_kind", "")) == "frontier_expansion"
+        )
+        duplicate_rate = (
+            sum(1 for row in recent if str(row.get("terminal_pareto_event_kind", "")) == "duplicate")
+            / float(len(recent))
+            if recent else 0.0
+        )
+        dominated_rate = (
+            sum(1 for row in recent if str(row.get("terminal_pareto_event_kind", "")) == "dominated")
+            / float(len(recent))
+            if recent else 0.0
+        )
+        safe_offsets = self._safe_offsets()
+        cooldown_remaining = max(0, int(self._cooldown_until_episode - ep + 1))
+        base = {
+            "recent_frontier_expansions": int(recent_frontier),
+            "recent_duplicate_rate": float(duplicate_rate),
+            "recent_dominated_rate": float(dominated_rate),
+            "cooldown_remaining": int(cooldown_remaining),
+            "safe_offset_count": int(len(safe_offsets)),
+            "radius2_episode_count": int(self.radius2_episode_count),
+            "radius2_failure_count": int(self.radius2_failure_count),
+            "radius2_frontier_expansion_count": int(self.radius2_frontier_expansion_count),
+        }
+        if not self.enabled:
+            return GuardedRadius2Decision(reason="disabled", **base)
+        if ep < self.min_episode:
+            return GuardedRadius2Decision(reason="before_min_episode", **base)
+        if cooldown_remaining > 0:
+            return GuardedRadius2Decision(reason="cooldown", **base)
+        if len(self._history) < self.stall_window:
+            return GuardedRadius2Decision(reason="insufficient_history", **base)
+        if recent_frontier >= 1:
+            return GuardedRadius2Decision(reason="frontier_not_stalled", **base)
+        health_recent = self._history[-self.health_window:]
+        if any(bool(row.get("unhealthy", False)) for row in health_recent):
+            return GuardedRadius2Decision(reason="recent_unhealthy", **base)
+        if not safe_offsets:
+            return GuardedRadius2Decision(reason="no_safe_offsets", **base)
+        if self.episode_fraction <= 0.0:
+            return GuardedRadius2Decision(reason="fraction_zero", **base)
+        try:
+            draw = float(rng.random())
+        except Exception:
+            draw = 1.0
+        if draw >= self.episode_fraction:
+            return GuardedRadius2Decision(reason="fraction_skip", **base)
+        return GuardedRadius2Decision(
+            active=True,
+            mode="guarded_radius2",
+            radius=2,
+            mutation_count=min(self.max_mutations, len(safe_offsets)),
+            safe_offsets=tuple(sorted(int(x) for x in safe_offsets)),
+            reason="frontier_stalled_and_healthy",
+            **base,
+        )
+
+    def record_episode(
+            self,
+            *,
+            absolute_episode_idx: int,
+            selected_offsets: Sequence[int],
+            radius: int,
+            terminal_priority: int,
+            invalid_steps: int,
+            early_terminated: bool,
+            terminal_stab_violation: float,
+            terminal_loss_mean: float,
+            terminal_pareto_event_kind: str,
+            ) -> None:
+        offsets = {int(x) for x in (selected_offsets or [])}
+        unhealthy = self._is_unhealthy(
+            terminal_priority=terminal_priority,
+            invalid_steps=invalid_steps,
+            early_terminated=early_terminated,
+            terminal_stab_violation=terminal_stab_violation,
+            terminal_loss_mean=terminal_loss_mean,
+        )
+        if int(radius) == 1 and offsets:
+            target = self._offset_failures if unhealthy else self._offset_successes
+            for offset in offsets:
+                target[offset] = int(target.get(offset, 0)) + 1
+        if int(radius) >= 2:
+            self.radius2_episode_count += 1
+            if unhealthy:
+                self.radius2_failure_count += 1
+                self._cooldown_until_episode = max(
+                    self._cooldown_until_episode,
+                    int(absolute_episode_idx) + self.cooldown_episodes,
+                )
+            if str(terminal_pareto_event_kind) == "frontier_expansion":
+                self.radius2_frontier_expansion_count += 1
+        self._history.append({
+            "episode": int(absolute_episode_idx),
+            "terminal_priority": int(terminal_priority),
+            "invalid_steps": int(invalid_steps),
+            "early_terminated": bool(early_terminated),
+            "terminal_stab_violation": float(terminal_stab_violation),
+            "terminal_loss_mean": float(terminal_loss_mean),
+            "terminal_pareto_event_kind": str(terminal_pareto_event_kind or ""),
+            "unhealthy": bool(unhealthy),
+        })
+
+    def _safe_offsets(self) -> List[int]:
+        out: List[int] = []
+        for offset, success_count in self._offset_successes.items():
+            if int(success_count) < self.min_radius1_successes:
+                continue
+            if int(self._offset_failures.get(int(offset), 0)) != 0:
+                continue
+            out.append(int(offset))
+        return sorted(out)
+
+    @staticmethod
+    def _is_unhealthy(
+            *,
+            terminal_priority: int,
+            invalid_steps: int,
+            early_terminated: bool,
+            terminal_stab_violation: float,
+            terminal_loss_mean: float,
+            ) -> bool:
+        return (
+            int(terminal_priority) in (1, 2)
+            or int(invalid_steps) > 0
+            or bool(early_terminated)
+            or float(terminal_stab_violation) > 0.0
+            or float(terminal_loss_mean) >= 99.0
+        )
+
+
 def _candidate_neighbor_offsets(
         *,
         schedule: Sequence[Any],
@@ -499,6 +692,16 @@ class EpisodeRecord:
     safe_neighbor_active: bool = False
     safe_neighbor_mutation_count: int = 0
     safe_neighbor_radius: int = 0
+    exploration_mode: str = ""
+    guarded_radius2_active: bool = False
+    guarded_radius2_recent_frontier_expansions: int = 0
+    guarded_radius2_recent_duplicate_rate: float = 0.0
+    guarded_radius2_recent_dominated_rate: float = 0.0
+    guarded_radius2_cooldown_remaining: int = 0
+    guarded_radius2_safe_offset_count: int = 0
+    guarded_radius2_episode_count: int = 0
+    guarded_radius2_failure_count: int = 0
+    guarded_radius2_frontier_expansion_count: int = 0
 
 
 def _format_invalid_chain_reason(invalid_chain: Any) -> str:
@@ -614,6 +817,18 @@ def train_sequential(
     mutable_full_offsets = getattr(train_cfg, "warmstart_mutable_full_offsets", None)
     if mutable_full_offsets is not None:
         mutable_full_offsets = [int(x) for x in mutable_full_offsets]
+    guarded_radius2 = GuardedRadius2Controller(
+        enabled=bool(getattr(train_cfg, "guarded_radius2_enabled", False)),
+        min_episode=int(getattr(train_cfg, "guarded_radius2_min_episode", 1060)),
+        stall_window=int(getattr(train_cfg, "guarded_radius2_stall_window", 600)),
+        health_window=int(getattr(train_cfg, "guarded_radius2_health_window", 100)),
+        max_mutations=int(getattr(train_cfg, "guarded_radius2_max_mutations", 4)),
+        episode_fraction=float(getattr(train_cfg, "guarded_radius2_episode_fraction", 0.15)),
+        cooldown_episodes=int(getattr(train_cfg, "guarded_radius2_cooldown_episodes", 300)),
+        min_radius1_successes=int(
+            getattr(train_cfg, "guarded_radius2_min_radius1_successes", 3)
+        ),
+    )
 
     for ep in range(int(train_cfg.total_episodes)):
         absolute_ep = int(absolute_episode_start + ep)
@@ -681,6 +896,7 @@ def train_sequential(
         neighbor_mask_active = False
         neighbor_selected_offsets: Set[int] = set()
         neighbor_radius = 1
+        guarded_decision = GuardedRadius2Decision()
         if (
                 (not force_this_ep)
                 and bool(getattr(train_cfg, "warmstart_neighbor_sampling", True))
@@ -697,18 +913,45 @@ def train_sequential(
                 max_mutations=int(getattr(train_cfg, "warmstart_neighbor_max_mutations", 8)),
                 max_radius=int(getattr(train_cfg, "warmstart_neighbor_max_radius", 2)),
             )
+            base_neighbor_mutations = int(neighbor_mutations)
+            base_neighbor_radius = int(neighbor_radius)
             seed_base = int(train_cfg.seed) if train_cfg.seed is not None else 0
             episode_rng = np.random.default_rng(
                 int((seed_base + absolute_ep * 1_000_003) % (2**32))
             )
             neighbor_mask_active = True
-            neighbor_selected_offsets = _sample_episode_neighbor_offsets(
-                schedule=env.schedule,
-                baseline_action_vec=baseline_action_vec,
-                mutable_full_offsets=mutable_full_offsets,
-                mutation_count=int(neighbor_mutations),
+            guarded_decision = guarded_radius2.decide(
+                absolute_episode_idx=int(absolute_ep),
                 rng=episode_rng,
             )
+            if guarded_decision.active:
+                guarded_offsets = list(int(x) for x in guarded_decision.safe_offsets)
+                neighbor_radius = int(guarded_decision.radius)
+                neighbor_mutations = min(
+                    int(guarded_decision.mutation_count),
+                    int(getattr(train_cfg, "guarded_radius2_max_mutations", 4)),
+                )
+                neighbor_selected_offsets = _sample_episode_neighbor_offsets(
+                    schedule=env.schedule,
+                    baseline_action_vec=baseline_action_vec,
+                    mutable_full_offsets=guarded_offsets,
+                    mutation_count=int(neighbor_mutations),
+                    rng=episode_rng,
+                )
+                if not neighbor_selected_offsets:
+                    guarded_decision.active = False
+                    guarded_decision.mode = "radius1"
+                    guarded_decision.reason = "no_radius2_offsets_sampled"
+            if not guarded_decision.active:
+                neighbor_mutations = int(base_neighbor_mutations)
+                neighbor_radius = int(base_neighbor_radius)
+                neighbor_selected_offsets = _sample_episode_neighbor_offsets(
+                    schedule=env.schedule,
+                    baseline_action_vec=baseline_action_vec,
+                    mutable_full_offsets=mutable_full_offsets,
+                    mutation_count=int(neighbor_mutations),
+                    rng=episode_rng,
+                )
 
         while True:
             spec = env.current_spec()
@@ -773,6 +1016,8 @@ def train_sequential(
                 enriched_info["value"] = value
                 enriched_info["log_prob"] = log_prob
                 enriched_info["forced_baseline"] = True
+                enriched_info["exploration_mode"] = "forced_baseline"
+                enriched_info["guarded_radius2_active"] = False
                 if on_step_end is not None:
                     try:
                         on_step_end(int(ep), int(steps_taken - 1), enriched_info)
@@ -952,6 +1197,10 @@ def train_sequential(
                     int(x) for x in neighbor_selected_offsets
                 )
                 enriched_info["neighbor_radius"] = int(neighbor_radius)
+                enriched_info["exploration_mode"] = str(
+                    guarded_decision.mode if guarded_decision.active else "radius1"
+                )
+                enriched_info["guarded_radius2_active"] = bool(guarded_decision.active)
 
             if on_step_end is not None:
                 try:
@@ -1046,7 +1295,56 @@ def train_sequential(
             safe_neighbor_active=bool(neighbor_mask_active),
             safe_neighbor_mutation_count=int(len(neighbor_selected_offsets)),
             safe_neighbor_radius=int(neighbor_radius if neighbor_mask_active else 0),
+            exploration_mode=(
+                "forced_baseline" if force_this_ep else
+                str(guarded_decision.mode if guarded_decision.active else "radius1")
+            ),
+            guarded_radius2_active=bool(guarded_decision.active),
+            guarded_radius2_recent_frontier_expansions=int(
+                guarded_decision.recent_frontier_expansions
+            ),
+            guarded_radius2_recent_duplicate_rate=float(
+                guarded_decision.recent_duplicate_rate
+            ),
+            guarded_radius2_recent_dominated_rate=float(
+                guarded_decision.recent_dominated_rate
+            ),
+            guarded_radius2_cooldown_remaining=int(guarded_decision.cooldown_remaining),
+            guarded_radius2_safe_offset_count=int(guarded_decision.safe_offset_count),
+            guarded_radius2_episode_count=int(guarded_decision.radius2_episode_count),
+            guarded_radius2_failure_count=int(guarded_decision.radius2_failure_count),
+            guarded_radius2_frontier_expansion_count=int(
+                guarded_decision.radius2_frontier_expansion_count
+            ),
         )
+        guarded_radius2.record_episode(
+            absolute_episode_idx=int(absolute_ep),
+            selected_offsets=sorted(int(x) for x in neighbor_selected_offsets),
+            radius=int(neighbor_radius if neighbor_mask_active else 0),
+            terminal_priority=int(record.terminal_priority),
+            invalid_steps=int(record.invalid_steps),
+            early_terminated=bool(record.early_terminated),
+            terminal_stab_violation=float(record.terminal_stab_violation),
+            terminal_loss_mean=float(record.terminal_loss_mean),
+            terminal_pareto_event_kind=str(record.terminal_pareto_event_kind),
+        )
+        if bool(record.guarded_radius2_active):
+            after_decision = guarded_radius2.decide(
+                absolute_episode_idx=int(absolute_ep + 1),
+                rng=np.random.default_rng(0),
+            )
+            record.guarded_radius2_cooldown_remaining = int(
+                after_decision.cooldown_remaining
+            )
+            record.guarded_radius2_episode_count = int(
+                guarded_radius2.radius2_episode_count
+            )
+            record.guarded_radius2_failure_count = int(
+                guarded_radius2.radius2_failure_count
+            )
+            record.guarded_radius2_frontier_expansion_count = int(
+                guarded_radius2.radius2_frontier_expansion_count
+            )
         episode_records.append(record)
         if on_episode_end is not None:
             on_episode_end(record)
@@ -1708,6 +2006,12 @@ def run_sequential_via_runner(
         f"ramp={int(getattr(train_cfg, 'warmstart_neighbor_ramp_episodes', 0) or train_cfg.total_episodes)}    "
         f"max_mutations={int(getattr(train_cfg, 'warmstart_neighbor_max_mutations', 8))}    "
         f"max_radius={int(getattr(train_cfg, 'warmstart_neighbor_max_radius', 2))}",
+        f"Guarded radius2：enabled={bool(getattr(train_cfg, 'guarded_radius2_enabled', False))}    "
+        f"min_episode={int(getattr(train_cfg, 'guarded_radius2_min_episode', 1060))}    "
+        f"stall_window={int(getattr(train_cfg, 'guarded_radius2_stall_window', 600))}    "
+        f"max_mutations={int(getattr(train_cfg, 'guarded_radius2_max_mutations', 4))}    "
+        f"fraction={float(getattr(train_cfg, 'guarded_radius2_episode_fraction', 0.15)):.3g}    "
+        f"cooldown={int(getattr(train_cfg, 'guarded_radius2_cooldown_episodes', 300))}",
         f"Entropy schedule (anchor → ramp → steady)："
         f"anchor[0..{int(_preview_force_baseline_episodes)}]ep_coef={float(_preview_ent_coef_anchor):.4g} → "
         f"ramp[{int(_preview_force_baseline_episodes)}..{int(_preview_force_baseline_episodes)+int(_preview_ramp)}]ep_coef→{float(train_cfg.ppo.ent_coef):.4g} → "
@@ -1805,6 +2109,20 @@ def run_sequential_via_runner(
             getattr(train_cfg, "warmstart_neighbor_max_radius", 2)
         ),
         warmstart_mutable_full_offsets=list(mutable_neighbor_offsets),
+        guarded_radius2_enabled=bool(getattr(train_cfg, "guarded_radius2_enabled", False)),
+        guarded_radius2_min_episode=int(getattr(train_cfg, "guarded_radius2_min_episode", 1060)),
+        guarded_radius2_stall_window=int(getattr(train_cfg, "guarded_radius2_stall_window", 600)),
+        guarded_radius2_health_window=int(getattr(train_cfg, "guarded_radius2_health_window", 100)),
+        guarded_radius2_max_mutations=int(getattr(train_cfg, "guarded_radius2_max_mutations", 4)),
+        guarded_radius2_episode_fraction=float(
+            getattr(train_cfg, "guarded_radius2_episode_fraction", 0.15)
+        ),
+        guarded_radius2_cooldown_episodes=int(
+            getattr(train_cfg, "guarded_radius2_cooldown_episodes", 300)
+        ),
+        guarded_radius2_min_radius1_successes=int(
+            getattr(train_cfg, "guarded_radius2_min_radius1_successes", 3)
+        ),
     )
 
     episode_returns: List[float] = []
@@ -2054,6 +2372,14 @@ def run_sequential_via_runner(
                     f"radius={int(record.safe_neighbor_radius)}"
                 ),
                 (
+                    f"exploration: mode={record.exploration_mode or 'none'}  "
+                    f"guarded_r2={bool(record.guarded_radius2_active)}  "
+                    f"frontier_expansions@stall={int(record.guarded_radius2_recent_frontier_expansions)}  "
+                    f"dup_rate={float(record.guarded_radius2_recent_duplicate_rate):.3f}  "
+                    f"dom_rate={float(record.guarded_radius2_recent_dominated_rate):.3f}  "
+                    f"cooldown={int(record.guarded_radius2_cooldown_remaining)}"
+                ),
+                (
                     "first_invalid="
                     + (
                         "none"
@@ -2192,6 +2518,14 @@ def run_sequential_via_runner(
                     "safe_neighbor_active": bool(record.safe_neighbor_active),
                     "safe_neighbor_mutation_count": int(record.safe_neighbor_mutation_count),
                     "safe_neighbor_radius": int(record.safe_neighbor_radius),
+                    "exploration_mode": str(record.exploration_mode),
+                    "guarded_radius2_active": bool(record.guarded_radius2_active),
+                    "guarded_radius2_recent_frontier_expansions": int(
+                        record.guarded_radius2_recent_frontier_expansions
+                    ),
+                    "guarded_radius2_cooldown_remaining": int(
+                        record.guarded_radius2_cooldown_remaining
+                    ),
                 },
             )
         except Exception:
@@ -2251,6 +2585,16 @@ def run_sequential_via_runner(
                     safe_neighbor_active=bool(record.safe_neighbor_active),
                     safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count),
                     safe_neighbor_radius=int(record.safe_neighbor_radius),
+                    exploration_mode=str(record.exploration_mode),
+                    guarded_radius2_active=bool(record.guarded_radius2_active),
+                    guarded_radius2_recent_frontier_expansions=int(record.guarded_radius2_recent_frontier_expansions),
+                    guarded_radius2_recent_duplicate_rate=float(record.guarded_radius2_recent_duplicate_rate),
+                    guarded_radius2_recent_dominated_rate=float(record.guarded_radius2_recent_dominated_rate),
+                    guarded_radius2_cooldown_remaining=int(record.guarded_radius2_cooldown_remaining),
+                    guarded_radius2_safe_offset_count=int(record.guarded_radius2_safe_offset_count),
+                    guarded_radius2_episode_count=int(record.guarded_radius2_episode_count),
+                    guarded_radius2_failure_count=int(record.guarded_radius2_failure_count),
+                    guarded_radius2_frontier_expansion_count=int(record.guarded_radius2_frontier_expansion_count),
                 ),
                 full_action_vec=full_vec_now,
                 is_new_best=bool(is_new_best),
@@ -2739,6 +3083,24 @@ def run_sequential_via_runner(
             "blb_v3_sequential_fusion_shaping_coeff": float(seq_env_cfg.fusion_shaping_coeff),
             "blb_v3_sequential_early_terminate_on_invalid": bool(
                 seq_env_cfg.early_terminate_on_invalid
+            ),
+            "blb_v3_guarded_radius2_enabled": bool(
+                getattr(train_cfg, "guarded_radius2_enabled", False)
+            ),
+            "blb_v3_guarded_radius2_min_episode": int(
+                getattr(train_cfg, "guarded_radius2_min_episode", 1060)
+            ),
+            "blb_v3_guarded_radius2_stall_window": int(
+                getattr(train_cfg, "guarded_radius2_stall_window", 600)
+            ),
+            "blb_v3_guarded_radius2_max_mutations": int(
+                getattr(train_cfg, "guarded_radius2_max_mutations", 4)
+            ),
+            "blb_v3_guarded_radius2_episode_fraction": float(
+                getattr(train_cfg, "guarded_radius2_episode_fraction", 0.15)
+            ),
+            "blb_v3_guarded_radius2_cooldown_episodes": int(
+                getattr(train_cfg, "guarded_radius2_cooldown_episodes", 300)
             ),
             "k_trials": int(train_cfg.num_trials_per_step),
             "probe_size": int(getattr(ev, "stage2_probe_size", 256)),

@@ -48,13 +48,16 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `NEIGHBOR_MAX_MUTATIONS=16`, `NEIGHBOR_MAX_RADIUS=3` improved reward into the
   low 42s but hit a P1 cluster around episodes 1699-1757. P1 was 0 through
   radius=1 and appeared when safe-neighbor reached `radius=2` with 8-9 mutated
-  offsets. Current Pareto-only follow-up keeps default radius at 1 but opens
-  exploration inside that radius: `ANCHOR_EPISODES=60`,
-  `NEIGHBOR_RAMP=1800`, `NEIGHBOR_MAX_MUTATIONS=12`,
-  `NEIGHBOR_MAX_RADIUS=1`, `ENT_COEF=0.06`, `ENT_RAMP=600`,
-  `WARMSTART_BIAS_GAIN=2.5`. Do not default to radius2; if the P3 Pareto
-  frontier fails to expand in a 600-1000 episode smoke, design a separate
-  guarded radius2 experiment.
+  offsets. Current guarded-radius2 follow-up still keeps raw safe-neighbor at
+  `NEIGHBOR_MAX_RADIUS=1`, with `ANCHOR_EPISODES=60`,
+  `NEIGHBOR_RAMP=1800`, `NEIGHBOR_MAX_MUTATIONS=12`, `ENT_COEF=0.06`,
+  `ENT_RAMP=600`, and `WARMSTART_BIAS_GAIN=2.5`. It enables radius2 only when
+  the frontier has stalled and recent health is clean: default server settings
+  are `GUARDED_RADIUS2_ENABLED=1`, `GUARDED_RADIUS2_MIN_EPISODE=1060`,
+  `GUARDED_RADIUS2_STALL_WINDOW=600`, `GUARDED_RADIUS2_MAX_MUTATIONS=4`,
+  `GUARDED_RADIUS2_EPISODE_FRACTION=0.15`, and
+  `GUARDED_RADIUS2_COOLDOWN_EPISODES=300`. Do not replace this with raw
+  default radius2.
 - Keep this `AGENTS.md` current as the shared project memory for Codex and
   Claude Code. After each user message that adds or changes project facts,
   workflow rules, run state, architecture notes, or operating constraints,

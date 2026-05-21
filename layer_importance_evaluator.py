@@ -2365,6 +2365,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_warmstart_neighbor_max_mutations=None,
                   blb_v3_warmstart_neighbor_max_radius=None,
                   blb_v3_warmstart_neighbor_sampling=None,
+                  blb_v3_guarded_radius2_enabled=None,
+                  blb_v3_guarded_radius2_min_episode=None,
+                  blb_v3_guarded_radius2_stall_window=None,
+                  blb_v3_guarded_radius2_max_mutations=None,
+                  blb_v3_guarded_radius2_episode_fraction=None,
+                  blb_v3_guarded_radius2_cooldown_episodes=None,
                   blb_v3_warmstart_bias_gain=None,
                   blb_v3_ent_coef=None,
                   blb_v3_ent_coef_anchor=None,
@@ -2838,6 +2844,33 @@ class LayerImportanceEvaluator(TrainerCallback):
                 blb_v3_warmstart_neighbor_sampling,
                 'blb_v3_warmstart_neighbor_sampling',
             )
+        )
+        self.blb_v3_guarded_radius2_enabled = (
+            None if blb_v3_guarded_radius2_enabled in (None, "") else
+            self._coerce_bool_flag(
+                blb_v3_guarded_radius2_enabled,
+                'blb_v3_guarded_radius2_enabled',
+            )
+        )
+        self.blb_v3_guarded_radius2_min_episode = (
+            int(blb_v3_guarded_radius2_min_episode)
+            if blb_v3_guarded_radius2_min_episode not in (None, "") else None
+        )
+        self.blb_v3_guarded_radius2_stall_window = (
+            int(blb_v3_guarded_radius2_stall_window)
+            if blb_v3_guarded_radius2_stall_window not in (None, "") else None
+        )
+        self.blb_v3_guarded_radius2_max_mutations = (
+            int(blb_v3_guarded_radius2_max_mutations)
+            if blb_v3_guarded_radius2_max_mutations not in (None, "") else None
+        )
+        self.blb_v3_guarded_radius2_episode_fraction = (
+            float(blb_v3_guarded_radius2_episode_fraction)
+            if blb_v3_guarded_radius2_episode_fraction not in (None, "") else None
+        )
+        self.blb_v3_guarded_radius2_cooldown_episodes = (
+            int(blb_v3_guarded_radius2_cooldown_episodes)
+            if blb_v3_guarded_radius2_cooldown_episodes not in (None, "") else None
         )
         self.blb_v3_warmstart_bias_gain = (
             float(blb_v3_warmstart_bias_gain)

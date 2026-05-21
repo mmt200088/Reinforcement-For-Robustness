@@ -153,8 +153,8 @@ class RewardWeights:
         stab_tolerance:    stability gate 的容忍百分比；阈值 = baseline.X_std * (1 + tol)
         stab_floor:        stability 阈值的最小绝对值（防 baseline.std≈0 失稳）
         cost_w_fusion / cost_w_k / cost_w_bits:
-                           cost_score 内部 fusion / k / bits 三项的权重
-                           （默认 30:30:1，用户 spec）
+                           仅供未接入 Pareto archive 的 legacy fallback 使用。
+                           sequential Stage-2 RL 的 P3 cost 排名不读取这些权重。
         stab_w_m1 / stab_w_m2 / stab_w_loss:
                            combined_stab_excess 内部三方差的权重（30:30:1）
         # legacy fields kept for backward-compatibility:
@@ -309,11 +309,11 @@ class ParetoCostArchive:
             self,
             *,
             baseline: Optional[BaselineCostStats] = None,
-            max_abs_shaping: float = 0.25,
-            frontier_member_shaping: float = 0.025,
-            duplicate_shaping: float = -0.005,
-            dominated_shaping: float = -0.05,
-            expansion_base_shaping: float = 0.10,
+            max_abs_shaping: float = 0.35,
+            frontier_member_shaping: float = 0.05,
+            duplicate_shaping: float = -0.025,
+            dominated_shaping: float = -0.10,
+            expansion_base_shaping: float = 0.20,
             expansion_removed_bonus: float = 0.05,
             ) -> None:
         self.baseline = baseline
@@ -462,7 +462,7 @@ def compute_reward(
         pareto_archive: Optional[ParetoCostArchive] = None,
         action_hash: Optional[str] = None,
         ) -> RewardBreakdown:
-    """v3 clipped-shaping + tier-bonus reward with m1+m2 gate and 30:30:1 cost weights.
+    """v3 clipped-shaping + tier-bonus reward with m1+m2 hard gates.
 
     Args:
         metrics:           本步 K trials 评估指标（v3 期望 metric1_std / metric2_std
@@ -545,7 +545,7 @@ def compute_reward(
         margin_acc = 0.0
     combined_acc_violation = max(acc_violation_m1, acc_violation_m2)
 
-    # === 2. cost_score with corrected fusion sign and importance weights ===
+    # === 2. Raw cost gains; scalar cost_score is legacy-only unless a Pareto archive is absent. ===
     opt_total_bits = _safe_float(getattr(opt_signals, "total_bits_sum", 0), 0.0)
     fusion_count = _safe_float(getattr(opt_signals, "total_fusion_count", 0), 0.0)
 

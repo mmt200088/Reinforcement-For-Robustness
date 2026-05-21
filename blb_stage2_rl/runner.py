@@ -603,6 +603,14 @@ class BLBStage2TrainConfig:
     warmstart_neighbor_ramp_episodes: Optional[int] = None
     warmstart_neighbor_max_mutations: int = 8
     warmstart_neighbor_max_radius: int = 2
+    guarded_radius2_enabled: bool = False
+    guarded_radius2_min_episode: int = 1060
+    guarded_radius2_stall_window: int = 600
+    guarded_radius2_health_window: int = 100
+    guarded_radius2_max_mutations: int = 4
+    guarded_radius2_episode_fraction: float = 0.15
+    guarded_radius2_cooldown_episodes: int = 300
+    guarded_radius2_min_radius1_successes: int = 3
     disable_warmstart_on_resume: bool = False
     action_mask_enabled: bool = False
     action_mask_mode: str = "none"
@@ -1422,6 +1430,12 @@ class BLBStage2RLRunner:
             "neighbor_max_mutations": int(train_cfg.warmstart_neighbor_max_mutations),
             "neighbor_max_radius": int(train_cfg.warmstart_neighbor_max_radius),
             "neighbor_mutable_slots": int(len(mutable_neighbor_indices)),
+            "guarded_radius2_enabled": bool(train_cfg.guarded_radius2_enabled),
+            "guarded_radius2_min_episode": int(train_cfg.guarded_radius2_min_episode),
+            "guarded_radius2_stall_window": int(train_cfg.guarded_radius2_stall_window),
+            "guarded_radius2_max_mutations": int(train_cfg.guarded_radius2_max_mutations),
+            "guarded_radius2_episode_fraction": float(train_cfg.guarded_radius2_episode_fraction),
+            "guarded_radius2_cooldown_episodes": int(train_cfg.guarded_radius2_cooldown_episodes),
             "cost_probe_actions": [
                 {"name": name, "touched_slots": int(len(touched))}
                 for name, _action, touched in warmstart_cost_probe_actions
@@ -1438,6 +1452,14 @@ class BLBStage2RLRunner:
                 f"生效范围=前 {int(train_cfg.warmstart_neighbor_ramp_episodes or 0)} 个绝对回合（absolute episodes），"
                 f"单回合最多变更槽位={int(train_cfg.warmstart_neighbor_max_mutations)}，"
                 f"最大邻域半径={int(train_cfg.warmstart_neighbor_max_radius)}。"
+            )
+        if bool(train_cfg.guarded_radius2_enabled):
+            log(
+                f"  {bullet} 受控 radius2：min_episode={int(train_cfg.guarded_radius2_min_episode)}，"
+                f"stall_window={int(train_cfg.guarded_radius2_stall_window)}，"
+                f"单回合最多变更槽位={int(train_cfg.guarded_radius2_max_mutations)}，"
+                f"采样比例={float(train_cfg.guarded_radius2_episode_fraction):.3g}，"
+                f"cooldown={int(train_cfg.guarded_radius2_cooldown_episodes)}。"
             )
         if warmstart_cost_probe_actions:
             log(_format_warmstart_cost_probe_log(warmstart_cost_probe_actions))
@@ -2400,6 +2422,12 @@ class BLBStage2RLRunner:
                 "blb_v3_warmstart_neighbor_ramp_episodes": int(train_cfg.warmstart_neighbor_ramp_episodes or 0),
                 "blb_v3_warmstart_neighbor_max_mutations": int(train_cfg.warmstart_neighbor_max_mutations),
                 "blb_v3_warmstart_neighbor_max_radius": int(train_cfg.warmstart_neighbor_max_radius),
+                "blb_v3_guarded_radius2_enabled": bool(train_cfg.guarded_radius2_enabled),
+                "blb_v3_guarded_radius2_min_episode": int(train_cfg.guarded_radius2_min_episode),
+                "blb_v3_guarded_radius2_stall_window": int(train_cfg.guarded_radius2_stall_window),
+                "blb_v3_guarded_radius2_max_mutations": int(train_cfg.guarded_radius2_max_mutations),
+                "blb_v3_guarded_radius2_episode_fraction": float(train_cfg.guarded_radius2_episode_fraction),
+                "blb_v3_guarded_radius2_cooldown_episodes": int(train_cfg.guarded_radius2_cooldown_episodes),
                 "blb_v3_action_mask_enabled": bool(action_mask_meta.get("enabled", False)),
                 "blb_v3_action_mask_mode": str(action_mask_meta.get("mode", "none")),
                 "blb_v3_action_mask_hash": str(action_mask_meta.get("hash", "")),
@@ -2480,6 +2508,10 @@ class BLBStage2RLRunner:
                 ("warmstart_neighbor_ramp_episodes", "blb_v3_warmstart_neighbor_ramp_episodes"),
                 ("warmstart_neighbor_max_mutations", "blb_v3_warmstart_neighbor_max_mutations"),
                 ("warmstart_neighbor_max_radius", "blb_v3_warmstart_neighbor_max_radius"),
+                ("guarded_radius2_min_episode", "blb_v3_guarded_radius2_min_episode"),
+                ("guarded_radius2_stall_window", "blb_v3_guarded_radius2_stall_window"),
+                ("guarded_radius2_max_mutations", "blb_v3_guarded_radius2_max_mutations"),
+                ("guarded_radius2_cooldown_episodes", "blb_v3_guarded_radius2_cooldown_episodes"),
                 ("ent_coef_ramp_episodes", "blb_v3_ent_coef_ramp_episodes"),
                 ("seed", "final_eval_random_seed"),
         ):
@@ -2520,6 +2552,17 @@ class BLBStage2RLRunner:
             cfg.warmstart_neighbor_sampling = str(v).strip().lower() not in (
                 "0", "false", "no", "off",
             )
+        v = getattr(ev, "blb_v3_guarded_radius2_enabled", None)
+        if v not in (None, ""):
+            cfg.guarded_radius2_enabled = str(v).strip().lower() not in (
+                "0", "false", "no", "off",
+            )
+        v = getattr(ev, "blb_v3_guarded_radius2_episode_fraction", None)
+        if v not in (None, ""):
+            try:
+                cfg.guarded_radius2_episode_fraction = float(v)
+            except Exception:
+                pass
         v = getattr(ev, "blb_v3_disable_warmstart_on_resume", None)
         if v not in (None, ""):
             cfg.disable_warmstart_on_resume = str(v).strip().lower() in (
@@ -2622,6 +2665,21 @@ class BLBStage2RLRunner:
         )
         cfg.warmstart_neighbor_max_radius = max(
             1, min(int(cfg.warmstart_neighbor_max_radius), 8),
+        )
+        cfg.guarded_radius2_min_episode = max(0, int(cfg.guarded_radius2_min_episode))
+        cfg.guarded_radius2_stall_window = max(1, int(cfg.guarded_radius2_stall_window))
+        cfg.guarded_radius2_health_window = max(1, int(cfg.guarded_radius2_health_window))
+        cfg.guarded_radius2_max_mutations = max(
+            1, min(int(cfg.guarded_radius2_max_mutations), 16),
+        )
+        cfg.guarded_radius2_episode_fraction = float(
+            np.clip(float(cfg.guarded_radius2_episode_fraction), 0.0, 1.0)
+        )
+        cfg.guarded_radius2_cooldown_episodes = max(
+            0, int(cfg.guarded_radius2_cooldown_episodes),
+        )
+        cfg.guarded_radius2_min_radius1_successes = max(
+            1, int(cfg.guarded_radius2_min_radius1_successes),
         )
         cfg.ent_coef_ramp_episodes = max(
             0, min(int(cfg.ent_coef_ramp_episodes), int(cfg.total_episodes))

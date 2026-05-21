@@ -905,6 +905,46 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         exec(compile(mod, "<sequential_runner_helpers>", "exec"), ns)
         return ns
 
+    def _exec_runner_items(self, *names):
+        """Extract dependency-light functions/classes from sequential_runner."""
+        import ast
+        import math
+        import numpy as np
+        from dataclasses import dataclass, field
+        from pathlib import Path
+        from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple   # noqa: F401
+
+        src = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        wanted = set(names)
+        body = [
+            node for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in wanted
+        ]
+        self.assertEqual(
+            {node.name for node in body},
+            wanted,
+            msg=f"missing helper/class: {sorted(wanted - {node.name for node in body})}",
+        )
+        mod = ast.Module(body=body, type_ignores=[])
+        ast.fix_missing_locations(mod)
+        ns = {
+            "Any": Any,
+            "Dict": Dict,
+            "List": List,
+            "Mapping": Mapping,
+            "Optional": Optional,
+            "Sequence": Sequence,
+            "Set": Set,
+            "Tuple": Tuple,
+            "np": np,
+            "math": math,
+            "dataclass": dataclass,
+            "field": field,
+        }
+        exec(compile(mod, "<sequential_runner_items>", "exec"), ns)
+        return ns
+
     def test_sequential_force_anchor_honors_warmstart_config(self):
         ns = self._exec_runner_helpers("_resolve_sequential_force_baseline_episodes")
         helper = ns["_resolve_sequential_force_baseline_episodes"]
@@ -982,6 +1022,108 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertEqual(set(np.flatnonzero(baseline_only[1]).tolist()), {3})
         self.assertEqual(set(np.flatnonzero(baseline_only[2]).tolist()), {2})
 
+    def test_guarded_radius2_waits_for_stall_and_healthy_history(self):
+        ns = self._exec_runner_items("GuardedRadius2Decision", "GuardedRadius2Controller")
+        Controller = ns["GuardedRadius2Controller"]
+
+        controller = Controller(
+            enabled=True,
+            min_episode=1060,
+            stall_window=600,
+            health_window=100,
+            max_mutations=4,
+            episode_fraction=1.0,
+            cooldown_episodes=300,
+            min_radius1_successes=3,
+        )
+        import numpy as np
+
+        # Not enough history and not past min_episode.
+        decision = controller.decide(absolute_episode_idx=1000, rng=np.random.default_rng(0))
+        self.assertFalse(decision.active)
+        self.assertEqual(decision.mode, "radius1")
+
+        for ep in range(600):
+            event = "dominated"
+            controller.record_episode(
+                absolute_episode_idx=ep,
+                selected_offsets={1, 2, 3},
+                radius=1,
+                terminal_priority=3,
+                invalid_steps=0,
+                early_terminated=False,
+                terminal_stab_violation=0.0,
+                terminal_loss_mean=0.3,
+                terminal_pareto_event_kind=event,
+            )
+        decision = controller.decide(absolute_episode_idx=1060, rng=np.random.default_rng(1))
+        self.assertTrue(decision.active)
+        self.assertEqual(decision.mode, "guarded_radius2")
+        self.assertEqual(decision.radius, 2)
+        self.assertLessEqual(decision.mutation_count, 4)
+        self.assertGreaterEqual(decision.safe_offset_count, 3)
+
+        # A recent frontier expansion means the frontier is not stalled.
+        controller.record_episode(
+            absolute_episode_idx=1060,
+            selected_offsets={1, 2},
+            radius=1,
+            terminal_priority=3,
+            invalid_steps=0,
+            early_terminated=False,
+            terminal_stab_violation=0.0,
+            terminal_loss_mean=0.3,
+            terminal_pareto_event_kind="frontier_expansion",
+        )
+        decision = controller.decide(absolute_episode_idx=1061, rng=np.random.default_rng(2))
+        self.assertFalse(decision.active)
+        self.assertIn("frontier", decision.reason)
+
+    def test_guarded_radius2_cooldown_after_radius2_failure(self):
+        ns = self._exec_runner_items("GuardedRadius2Decision", "GuardedRadius2Controller")
+        Controller = ns["GuardedRadius2Controller"]
+        controller = Controller(
+            enabled=True,
+            min_episode=1060,
+            stall_window=3,
+            health_window=3,
+            max_mutations=4,
+            episode_fraction=1.0,
+            cooldown_episodes=300,
+            min_radius1_successes=3,
+        )
+        import numpy as np
+
+        for ep in range(3):
+            controller.record_episode(
+                absolute_episode_idx=ep,
+                selected_offsets={10, 11},
+                radius=1,
+                terminal_priority=3,
+                invalid_steps=0,
+                early_terminated=False,
+                terminal_stab_violation=0.0,
+                terminal_loss_mean=0.3,
+                terminal_pareto_event_kind="dominated",
+            )
+        self.assertTrue(controller.decide(absolute_episode_idx=1060, rng=np.random.default_rng(3)).active)
+
+        controller.record_episode(
+            absolute_episode_idx=1060,
+            selected_offsets={10},
+            radius=2,
+            terminal_priority=1,
+            invalid_steps=0,
+            early_terminated=False,
+            terminal_stab_violation=0.0,
+            terminal_loss_mean=0.3,
+            terminal_pareto_event_kind="excluded",
+        )
+        decision = controller.decide(absolute_episode_idx=1061, rng=np.random.default_rng(4))
+        self.assertFalse(decision.active)
+        self.assertGreaterEqual(decision.cooldown_remaining, 299)
+        self.assertIn("cooldown", decision.reason)
+
     def test_sequential_ppo_buffer_carries_action_level_mask(self):
         from pathlib import Path
 
@@ -1010,12 +1152,24 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "--blb-v3-warmstart-neighbor-max-mutations",
             "--blb-v3-warmstart-neighbor-max-radius",
             "--blb-v3-warmstart-neighbor-sampling",
+            "--blb-v3-guarded-radius2-enabled",
+            "--blb-v3-guarded-radius2-min-episode",
+            "--blb-v3-guarded-radius2-stall-window",
+            "--blb-v3-guarded-radius2-max-mutations",
+            "--blb-v3-guarded-radius2-episode-fraction",
+            "--blb-v3-guarded-radius2-cooldown-episodes",
             "--blb-v3-warmstart-bias-gain",
             "--blb-v3-ent-coef",
             "--blb-v3-ent-coef-ramp-episodes",
             "blb_v3_warmstart_neighbor_ramp_episodes",
             "blb_v3_warmstart_neighbor_max_mutations",
             "blb_v3_warmstart_neighbor_max_radius",
+            "blb_v3_guarded_radius2_enabled",
+            "blb_v3_guarded_radius2_min_episode",
+            "blb_v3_guarded_radius2_stall_window",
+            "blb_v3_guarded_radius2_max_mutations",
+            "blb_v3_guarded_radius2_episode_fraction",
+            "blb_v3_guarded_radius2_cooldown_episodes",
             "blb_v3_warmstart_bias_gain",
             "blb_v3_ent_coef",
             "blb_v3_ent_coef_ramp_episodes",
@@ -1044,12 +1198,20 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "terminal_fusion_gain: float = 0.0",
             "terminal_pareto_event_kind: str = \"\"",
             "safe_neighbor_active: bool = False",
+            "exploration_mode: str = \"\"",
+            "guarded_radius2_active: bool = False",
+            "guarded_radius2_recent_frontier_expansions: int = 0",
+            "guarded_radius2_recent_duplicate_rate: float = 0.0",
+            "guarded_radius2_recent_dominated_rate: float = 0.0",
+            "guarded_radius2_cooldown_remaining: int = 0",
             "terminal_priority=int(record.terminal_priority)",
             "terminal_metric2_mean=float(record.terminal_metric2_mean)",
             "terminal_stab_violation=float(record.terminal_stab_violation)",
             "terminal_bits_gain=float(record.terminal_bits_gain)",
             "terminal_pareto_event_kind=str(record.terminal_pareto_event_kind)",
             "safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count)",
+            "exploration_mode=str(record.exploration_mode)",
+            "guarded_radius2_active=bool(record.guarded_radius2_active)",
         ):
             self.assertIn(needle, diagnostics + runner_src, msg=f"missing JSONL health field: {needle!r}")
 
@@ -1066,7 +1228,19 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             'ENT_COEF="${ENT_COEF:-0.06}"',
             'ENT_RAMP="${ENT_RAMP:-600}"',
             'WARMSTART_BIAS_GAIN="${WARMSTART_BIAS_GAIN:-2.5}"',
+            'GUARDED_RADIUS2_ENABLED="${GUARDED_RADIUS2_ENABLED:-1}"',
+            'GUARDED_RADIUS2_MIN_EPISODE="${GUARDED_RADIUS2_MIN_EPISODE:-1060}"',
+            'GUARDED_RADIUS2_STALL_WINDOW="${GUARDED_RADIUS2_STALL_WINDOW:-600}"',
+            'GUARDED_RADIUS2_MAX_MUTATIONS="${GUARDED_RADIUS2_MAX_MUTATIONS:-4}"',
+            'GUARDED_RADIUS2_EPISODE_FRACTION="${GUARDED_RADIUS2_EPISODE_FRACTION:-0.15}"',
+            'GUARDED_RADIUS2_COOLDOWN_EPISODES="${GUARDED_RADIUS2_COOLDOWN_EPISODES:-300}"',
             '--blb-v3-warmstart-bias-gain "$WARMSTART_BIAS_GAIN"',
+            '--blb-v3-guarded-radius2-enabled "$GUARDED_RADIUS2_ENABLED"',
+            '--blb-v3-guarded-radius2-min-episode "$GUARDED_RADIUS2_MIN_EPISODE"',
+            '--blb-v3-guarded-radius2-stall-window "$GUARDED_RADIUS2_STALL_WINDOW"',
+            '--blb-v3-guarded-radius2-max-mutations "$GUARDED_RADIUS2_MAX_MUTATIONS"',
+            '--blb-v3-guarded-radius2-episode-fraction "$GUARDED_RADIUS2_EPISODE_FRACTION"',
+            '--blb-v3-guarded-radius2-cooldown-episodes "$GUARDED_RADIUS2_COOLDOWN_EPISODES"',
         ):
             self.assertIn(needle, src)
         self.assertNotIn('NEIGHBOR_MAX_RADIUS="${NEIGHBOR_MAX_RADIUS:-2}"', src)
