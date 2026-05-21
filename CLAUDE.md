@@ -206,6 +206,10 @@ Current implementation facts:
   update bottleneck. Sequential PPO now defaults to `minibatch_size=2048`
   so each 60-episode update processes the same rollout with far fewer GTrXL
   forward/backward passes than the old 128-sample minibatches.
+- Sequential PPO keeps the actor-critic module in eval mode during training.
+  Exploration is the explicit categorical policy distribution; dropout masks
+  are not part of the recorded log-prob distribution and should not add hidden
+  randomness or extra tiny kernels to online rollout/PPO replay.
 - With `K=4` and four GPUs, the split is `[1, 1, 1, 1]`: GPU 0 runs trial 0,
   GPU 1 trial 1, GPU 2 trial 2, and GPU 3 trial 3. Results are returned in
   trial order for existing aggregation.

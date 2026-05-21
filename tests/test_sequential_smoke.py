@@ -709,6 +709,7 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             self.assertIn(needle, policy_src, msg=f"sequential_policy.py missing: {needle!r}")
         self.assertIn("truncate_to_current=True", runner_src)
         self.assertIn("torch.inference_mode()", runner_src)
+        self.assertIn("policy.eval()", runner_src)
         self.assertIn("policy_rollout_wall_seconds", runner_src)
 
 

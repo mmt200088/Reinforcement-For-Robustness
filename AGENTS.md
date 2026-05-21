@@ -240,6 +240,10 @@ Implementation constraints to preserve:
   update bottleneck. Sequential PPO now defaults to `minibatch_size=2048`
   so each 60-episode update processes the same rollout with far fewer GTrXL
   forward/backward passes than the old 128-sample minibatches.
+- Sequential PPO keeps the actor-critic module in eval mode during training.
+  Exploration is the explicit categorical policy distribution; dropout masks
+  are not part of the recorded log-prob distribution and should not add hidden
+  randomness or extra tiny kernels to online rollout/PPO replay.
 - Keep the probe dataset fixed across trials exactly as today. Only the
   independent noise RNG seeds differ per trial.
 - Preserve the invalid-chain shortcut: if `Rescale_optimizer` reports

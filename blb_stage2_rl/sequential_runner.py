@@ -931,6 +931,11 @@ def train_sequential(
     log = logger or logging.getLogger(__name__)
     optimizer = optimizer or torch.optim.Adam(policy.parameters(), lr=train_cfg.ppo.lr)
     buffer = SequentialRolloutBuffer()
+    # PPO's stochasticity should come from the categorical action distribution
+    # and stored log-probs, not from unrecorded dropout masks. Keeping the
+    # actor-critic in eval mode also avoids many tiny dropout kernels in the
+    # 59-step online rollout path; gradients still flow during PPO updates.
+    policy.eval()
 
     # Per-(layer, block) blacklist of action tuples that produced invalid_chain.
     # Survives across episodes within this train_sequential call. If a caller
