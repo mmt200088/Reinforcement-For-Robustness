@@ -900,8 +900,13 @@ def sequential_ppo_update(
         device, gamma=cfg.gamma, lam=cfg.gae_lambda,
         advantage_normalize=False,
     )
-    if bool(getattr(cfg, "normalize_returns", True)):
-        policy.return_normalizer.update(returns)
+    return_normalizer = getattr(policy, "return_normalizer", None)
+    if bool(getattr(cfg, "normalize_returns", True)) and return_normalizer is None:
+        return_normalizer = RunningMeanStd()
+        setattr(policy, "return_normalizer", return_normalizer)
+    normalize_returns = bool(getattr(cfg, "normalize_returns", True)) and return_normalizer is not None
+    if normalize_returns:
+        return_normalizer.update(returns)
     if bool(getattr(cfg, "robust_advantage_norm", True)):
         advantages = _robust_normalize_advantages(
             advantages,
@@ -947,10 +952,10 @@ def sequential_ppo_update(
             unclipped = ratio * adv
             clipped = torch.clamp(ratio, 1.0 - cfg.clip_range, 1.0 + cfg.clip_range) * adv
             policy_loss = -torch.min(unclipped, clipped).mean()
-            if bool(getattr(cfg, "normalize_returns", True)):
-                value_target = policy.return_normalizer.normalize(ret)
-                value_pred = policy.return_normalizer.normalize(value)
-                old_value_pred = policy.return_normalizer.normalize(old_value)
+            if normalize_returns:
+                value_target = return_normalizer.normalize(ret)
+                value_pred = return_normalizer.normalize(value)
+                old_value_pred = return_normalizer.normalize(old_value)
             else:
                 value_target = ret
                 value_pred = value
@@ -1032,8 +1037,8 @@ def sequential_ppo_update(
         "lr": float(current_lr),
         "lr_scale": float(lr_scale),
         "entropy_recovery_delta": metrics_sum["entropy_recovery_delta"] / n_mb,
-        "return_mean": float(policy.return_normalizer.mean),
-        "return_std": float(policy.return_normalizer.std),
+        "return_mean": float(return_normalizer.mean if return_normalizer is not None else 0.0),
+        "return_std": float(return_normalizer.std if return_normalizer is not None else 1.0),
     }
 
 
