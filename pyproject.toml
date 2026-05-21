@@ -22,8 +22,8 @@ classifiers = [
     "Topic :: Security :: Cryptography",
 ]
 dependencies = [
-    "torch>=2.0,<3.0",
-    "transformers>=4.30,<5.0",
+    "torch==2.5.1",
+    "transformers==4.44.2",
     "datasets>=2.10",
     "numpy>=1.22,<2.0",
     "scipy>=1.10",

@@ -12,10 +12,10 @@
 #     blb-rl:latest \
 #     bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 #
-# CUDA / PyTorch base. Pick a tag matching your GPU driver:
-#   12.1 -> driver >= 530   ;   11.8 -> driver >= 520
-# Override at build time:  docker build --build-arg CUDA_TAG=11.8.0 .
-ARG CUDA_TAG=12.1.0
+# CUDA / PyTorch base. The migration target uses CUDA 12.4 and the official
+# PyTorch 2.5.1 cu124 wheel set. Override only when intentionally testing a
+# different server runtime.
+ARG CUDA_TAG=12.4.1
 FROM nvidia/cuda:${CUDA_TAG}-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -43,9 +43,9 @@ WORKDIR /workspace
 # Install PyTorch FIRST from the official CUDA index. This is the wheel
 # that must match the host CUDA driver; pip will resolve transitive
 # requirements (numpy, sympy, etc.) against this torch.
-ARG TORCH_CUDA_CHANNEL=cu121
+ARG TORCH_CUDA_CHANNEL=cu124
 RUN pip install --index-url https://download.pytorch.org/whl/${TORCH_CUDA_CHANNEL} \
-        torch==2.4.* torchvision torchaudio
+        torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1
 
 # Now the rest of the deps (torch is already satisfied).
 COPY requirements.txt /tmp/requirements.txt

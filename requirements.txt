@@ -11,16 +11,18 @@
 # in this repo runs the freeze step automatically inside the build.
 #
 # Notes:
-# - torch wheel is platform-specific (CUDA vs CPU vs MPS). Install torch
-#   FIRST from PyTorch's index, then `pip install -r requirements.txt` for
-#   the rest. The Dockerfile handles that ordering.
+# - torch wheel is platform-specific (CUDA vs CPU vs MPS). For the migration
+#   target, install the CUDA 12.4 wheel set first with:
+#     pip install -r requirements-torch-cu124.txt
+#   then run `pip install -r requirements.txt` for the rest. The Dockerfile and
+#   scripts/setup_cuda124_env.sh handle that ordering.
 # - bitsandbytes is optional and only works on Linux+CUDA (not macOS).
 # - evaluate / accelerate are pulled in transitively by transformers >= 4.30
 #   but pinned here for clarity.
 
 # Core ML stack ------------------------------------------------------------
-torch>=2.0,<3.0
-transformers>=4.30,<5.0
+torch==2.5.1
+transformers==4.44.2
 datasets>=2.10
 numpy>=1.22,<2.0
 scipy>=1.10

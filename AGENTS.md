@@ -133,8 +133,16 @@ Current verified server facts:
 - Runtime/cache env used for successful runs:
   `HF_HOME=/hy-tmp/hf_cache`, `HF_ENDPOINT=https://hf-mirror.com`,
   `HF_HUB_DISABLE_XET=1`, `GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data`.
-- Python environment: system Python 3.11.12 with PyTorch 2.9.1+cu128. The
-  project needed `transformers==4.44.2` because newer 4.57.x rejects
+- Current old-server Python environment was system Python 3.11.12 with
+  PyTorch 2.9.1+cu128.
+- Migration target environment: CUDA 12.4 server with PyTorch pinned to
+  `torch==2.5.1` installed from the official `cu124` wheel index. Runtime
+  should report `torch.__version__ == "2.5.1+cu124"` and
+  `torch.version.cuda == "12.4"`.
+- Use `bash scripts/setup_cuda124_env.sh` on the new server before running
+  experiments. It installs `requirements-torch-cu124.txt`, then
+  `requirements.txt`, runs `pip check`, and verifies CUDA visibility.
+- The project also pins `transformers==4.44.2` because newer 4.57.x rejects
   `TrainingArguments(evaluation_strategy=...)`.
 - GitHub HTTPS transport on this server needs repo-local Git settings:
   `git config --local http.version HTTP/1.1` and

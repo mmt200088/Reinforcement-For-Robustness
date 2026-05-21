@@ -13,28 +13,28 @@
 - Python 3.9–3.12（项目用 3.10/3.11 验证过）
 - Linux + NVIDIA GPU（>= 16 GB 显存推荐）；Mac (Apple Silicon) 上 RL
   本身可以跑但 BERT 训练慢、且 `bitsandbytes` 装不上
-- CUDA driver 与 PyTorch wheel 匹配：CUDA 12.x → PyTorch CUDA 12.1 wheel
+- CUDA driver 与 PyTorch wheel 匹配：迁移目标服务器用 CUDA 12.4，因此默认
+  使用 PyTorch 2.5.1 的 `cu124` wheel。运行时版本会显示为
+  `2.5.1+cu124`；pip 版本约束写 `torch==2.5.1`。
 
 ### 1.2 安装步骤
 
 ```bash
-# 1) 建虚拟环境
+# 推荐：自动创建 .venv，安装 CUDA 12.4 / PyTorch 2.5.1 环境，并做版本检查
+bash scripts/setup_cuda124_env.sh
+
+# 如果需要手动安装，必须先从官方 cu124 index 安装 PyTorch wheel set：
 python3.11 -m venv .venv
 source .venv/bin/activate
-
-# 2) 先单独装 PyTorch（必须从官方 index 装匹配 CUDA 的 wheel）
-pip install --index-url https://download.pytorch.org/whl/cu121 \
-    torch==2.4.* torchvision torchaudio
-
-# 3) 装其余依赖
+pip install -r requirements-torch-cu124.txt
 pip install -r requirements.txt
 
-# 4) 把当前环境冻结成 lockfile（便于回滚 / 复现）
+# 把当前环境冻结成 lockfile（便于回滚 / 复现）
 pip freeze --exclude-editable > requirements-frozen.txt
 
-# 5) 验证安装
+# 验证安装
 python -c "import torch, transformers, numpy; \
-print('torch:', torch.__version__, 'cuda:', torch.cuda.is_available()); \
+print('torch:', torch.__version__, 'cuda_runtime:', torch.version.cuda, 'cuda:', torch.cuda.is_available()); \
 print('transformers:', transformers.__version__)"
 ```
 
@@ -78,7 +78,7 @@ AutoTokenizer.from_pretrained('textattack/bert-base-uncased-MRPC')"
 ### 2.1 构建镜像
 
 ```bash
-# 默认用 CUDA 12.1 base + PyTorch cu121 wheel
+# 默认用 CUDA 12.4 base + PyTorch 2.5.1 cu124 wheel
 docker build -t blb-rl:latest .
 
 # 想要 CUDA 11.8：
@@ -132,7 +132,7 @@ git submodule update --init --recursive
 
 | 现象 | 原因 | 修法 |
 |------|------|------|
-| `torch.cuda.is_available()` 是 False | PyTorch wheel 不匹配 CUDA driver | 重新装匹配的 wheel；`nvidia-smi` 看 driver 版本 |
+| `torch.cuda.is_available()` 是 False | PyTorch wheel 不匹配 CUDA driver，或容器/venv 没看到 GPU | 新服务器默认跑 `bash scripts/setup_cuda124_env.sh`；确认 `torch.version.cuda == "12.4"` 且 `nvidia-smi` 正常 |
 | `bitsandbytes` import 失败 | macOS 或 CUDA driver 太老 | 这是 optional dep，相关代码路径默认不开 |
 | GLUE 下载卡住 | 网络抖动 | 预下载到本地 `GLUE_LOCAL_DATASET_DIR`（见 1.3） |
 | 启动报 `static_skeletons_*.json not found` | Rescale_optimizer 的 baseline 缺 | 不要删 `Rescale_optimizer/configs/<dataset>/` 下的 JSON |
