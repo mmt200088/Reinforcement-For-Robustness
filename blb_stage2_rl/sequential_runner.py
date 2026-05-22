@@ -26,7 +26,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 import numpy as np
 import torch
 
-from .action_mask import ForbiddenActionMask
+from .action_mask import EmpiricalInvalidLevelMask, ForbiddenActionMask
 from .action_space import K_LEVELS
 from .sequential_env import BLBStage2SequentialEnv, SequentialEnvConfig
 from .sequential_policy import (
@@ -72,6 +72,10 @@ class SequentialTrainConfig:
     guarded_radius2_episode_fraction: float = 0.15
     guarded_radius2_cooldown_episodes: int = 300
     guarded_radius2_min_radius1_successes: int = 3
+    empirical_invalid_level_mask_enabled: bool = True
+    empirical_invalid_level_min_samples: int = 3
+    empirical_invalid_level_min_rate: float = 0.80
+    empirical_invalid_level_max_valid: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -847,6 +851,13 @@ class EpisodeRecord:
     guarded_radius2_episode_count: int = 0
     guarded_radius2_failure_count: int = 0
     guarded_radius2_frontier_expansion_count: int = 0
+    samples_rejected_by_mask: int = 0
+    samples_rejected_by_optimizer: int = 0
+    steps_fallen_back_to_baseline: int = 0
+    forbidden_mask_total: int = 0
+    empirical_invalid_level_disabled: int = 0
+    empirical_invalid_level_applied: int = 0
+    rejection_optimizer_wall_seconds: float = 0.0
     baseline_prior_scale: float = 0.0
     base_action_source: str = ""
     proposal_direction: str = ""
@@ -899,6 +910,7 @@ def train_sequential(
         capture_step_infos: bool = False,
         logger: Optional[logging.Logger] = None,
         forbidden_mask: Optional[ForbiddenActionMask] = None,
+        empirical_invalid_mask: Optional[EmpiricalInvalidLevelMask] = None,
         baseline_action_vec: Optional[np.ndarray] = None,
         max_rejection_retries: int = 32,
         force_baseline_episodes: int = 0,
@@ -943,6 +955,23 @@ def train_sequential(
     # so we don't re-discover the same failures.
     if forbidden_mask is None:
         forbidden_mask = ForbiddenActionMask()
+    empirical_invalid_enabled = bool(
+        getattr(train_cfg, "empirical_invalid_level_mask_enabled", True)
+    )
+    if empirical_invalid_enabled and empirical_invalid_mask is None:
+        empirical_invalid_mask = EmpiricalInvalidLevelMask(
+            min_invalid_samples=int(
+                getattr(train_cfg, "empirical_invalid_level_min_samples", 3)
+            ),
+            min_invalid_rate=float(
+                getattr(train_cfg, "empirical_invalid_level_min_rate", 0.80)
+            ),
+            max_valid_samples=int(
+                getattr(train_cfg, "empirical_invalid_level_max_valid", 0)
+            ),
+        )
+    if not empirical_invalid_enabled:
+        empirical_invalid_mask = None
     if baseline_action_vec is not None:
         baseline_action_vec = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1)
     force_baseline_episodes = max(0, int(force_baseline_episodes))
@@ -1042,6 +1071,9 @@ def train_sequential(
         terminal_probe_clear_wall_seconds_val = 0.0
         terminal_probe_install_skipped_val = False
         terminal_probe_clear_skipped_val = False
+        rejection_start = dict(rejection_counters)
+        rejection_optimizer_wall_seconds_val = 0.0
+        empirical_invalid_level_applied_val = 0
         baseline_prior_scale = _resolve_baseline_prior_scale(
             int(absolute_ep),
             anchor_episodes=int(force_baseline_episodes),
@@ -1181,6 +1213,31 @@ def train_sequential(
                     max_num_levels=policy.cfg.max_num_levels,
                     radius=int(neighbor_radius),
                 )
+                if empirical_invalid_mask is not None:
+                    protected_actions: List[List[int]] = []
+                    if baseline_action_vec is not None:
+                        protected_actions.append(
+                            np.asarray(
+                                baseline_action_vec[list(spec.full_vec_offsets)][:n_active],
+                                dtype=np.int64,
+                            ).reshape(-1).tolist()
+                        )
+                    if base_action_vec_for_mask is not None:
+                        protected_actions.append(
+                            np.asarray(
+                                base_action_vec_for_mask[list(spec.full_vec_offsets)][:n_active],
+                                dtype=np.int64,
+                            ).reshape(-1).tolist()
+                        )
+                    before_allowed = int(np.asarray(action_level_mask_np, dtype=bool).sum())
+                    action_level_mask_np = empirical_invalid_mask.apply(
+                        spec.layer_idx,
+                        spec.block_idx,
+                        action_level_mask_np,
+                        protected_actions=protected_actions,
+                    )
+                    after_allowed = int(np.asarray(action_level_mask_np, dtype=bool).sum())
+                    empirical_invalid_level_applied_val += max(0, before_allowed - after_allowed)
                 action_level_mask_t = (
                     torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
                 )
@@ -1204,6 +1261,15 @@ def train_sequential(
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 chosen_eval_info = env.evaluate_step(forced_action.tolist())
+                if empirical_invalid_mask is not None:
+                    if bool(chosen_eval_info.get("valid", False)):
+                        empirical_invalid_mask.record_valid(
+                            spec.layer_idx, spec.block_idx, forced_action.tolist()
+                        )
+                    else:
+                        empirical_invalid_mask.record_invalid(
+                            spec.layer_idx, spec.block_idx, forced_action.tolist()
+                        )
                 chosen_action_np = forced_padded
                 chosen_log_prob = float(lp_t.item())
                 chosen_value = float(val_t.item())
@@ -1355,6 +1421,10 @@ def train_sequential(
 
                 eval_info = env.evaluate_step(step_action_try)
                 if eval_info["valid"]:
+                    if empirical_invalid_mask is not None:
+                        empirical_invalid_mask.record_valid(
+                            spec.layer_idx, spec.block_idx, tup
+                        )
                     chosen_action_np = action_np_try
                     chosen_log_prob = float(log_prob_t.item())
                     chosen_value = float(value_t.item())
@@ -1366,7 +1436,12 @@ def train_sequential(
                 # is NOT counted toward invalid_steps / invalid_block_details —
                 # only ``rejection_counters`` records the diagnostic count.
                 forbidden_mask.add(spec.layer_idx, spec.block_idx, tup)
+                if empirical_invalid_mask is not None:
+                    empirical_invalid_mask.record_invalid(spec.layer_idx, spec.block_idx, tup)
                 rejection_counters["samples_rejected_by_optimizer"] += 1
+                rejection_optimizer_wall_seconds_val += float(
+                    eval_info.get("optimizer_wall_seconds", 0.0) or 0.0
+                )
 
             if chosen_eval_info is None:
                 # Exhausted retries — fall back to the baseline action for this
@@ -1391,6 +1466,15 @@ def train_sequential(
                         )
                     policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                     chosen_eval_info = env.evaluate_step(fallback_action.tolist())
+                    if empirical_invalid_mask is not None:
+                        if bool(chosen_eval_info.get("valid", False)):
+                            empirical_invalid_mask.record_valid(
+                                spec.layer_idx, spec.block_idx, fallback_action.tolist()
+                            )
+                        else:
+                            empirical_invalid_mask.record_invalid(
+                                spec.layer_idx, spec.block_idx, fallback_action.tolist()
+                            )
                     chosen_action_np = fallback_padded
                     chosen_log_prob = float(lp_t.item())
                     chosen_value = float(val_t.item())
@@ -1554,6 +1638,10 @@ def train_sequential(
         empirical_success_rate, empirical_failure_rate = guarded_radius2.offset_rates(
             sorted(int(x) for x in neighbor_selected_offsets)
         )
+        episode_rejections = {
+            key: int(rejection_counters.get(key, 0) - rejection_start.get(key, 0))
+            for key in rejection_counters
+        }
         record = EpisodeRecord(
             episode_idx=int(ep),
             total_reward=float(per_step_sum),
@@ -1624,6 +1712,20 @@ def train_sequential(
             guarded_radius2_frontier_expansion_count=int(
                 guarded_decision.radius2_frontier_expansion_count
             ),
+            samples_rejected_by_mask=int(episode_rejections.get("samples_rejected_by_mask", 0)),
+            samples_rejected_by_optimizer=int(
+                episode_rejections.get("samples_rejected_by_optimizer", 0)
+            ),
+            steps_fallen_back_to_baseline=int(
+                episode_rejections.get("steps_fallen_back_to_baseline", 0)
+            ),
+            forbidden_mask_total=int(forbidden_mask.total()),
+            empirical_invalid_level_disabled=(
+                int(empirical_invalid_mask.total_disabled())
+                if empirical_invalid_mask is not None else 0
+            ),
+            empirical_invalid_level_applied=int(empirical_invalid_level_applied_val),
+            rejection_optimizer_wall_seconds=float(rejection_optimizer_wall_seconds_val),
             baseline_prior_scale=float(baseline_prior_scale),
             base_action_source=str("baseline" if force_this_ep else base_action_source),
             proposal_direction=str("anchor" if force_this_ep else proposal_direction),
@@ -1719,6 +1821,7 @@ def train_sequential(
             if episode_records else 0.0
         ),
         "forbidden_mask": forbidden_mask,
+        "empirical_invalid_mask": empirical_invalid_mask,
         "rejection_counters": dict(rejection_counters),
     }
 
@@ -2359,8 +2462,12 @@ def run_sequential_via_runner(
         f"max_mutations={int(getattr(train_cfg, 'guarded_radius2_max_mutations', 4))}    "
         f"fraction={float(getattr(train_cfg, 'guarded_radius2_episode_fraction', 0.15)):.3g}    "
         f"cooldown={int(getattr(train_cfg, 'guarded_radius2_cooldown_episodes', 300))}",
+        f"Empirical invalid-level mask：enabled={bool(getattr(train_cfg, 'empirical_invalid_level_mask_enabled', True))}    "
+        f"min_invalid={int(getattr(train_cfg, 'empirical_invalid_level_min_samples', 3))}    "
+        f"min_rate={float(getattr(train_cfg, 'empirical_invalid_level_min_rate', 0.80)):.2f}    "
+        f"max_valid={int(getattr(train_cfg, 'empirical_invalid_level_max_valid', 0))}",
         "Non-monotonic cost-boundary exploration：SF/K move 是 proposal；真实方向只由 F1 metric/stability、"
-        "Rescale_optimizer cost signals 和 Pareto archive 事件确认。",
+        "Rescale_optimizer cost signals、adaptive scalar cost 和 diagnostic archive 确认。",
         f"Entropy schedule (anchor → ramp → steady)："
         f"anchor[0..{int(_preview_force_baseline_episodes)}]ep_coef={float(_preview_ent_coef_anchor):.4g} → "
         f"ramp[{int(_preview_force_baseline_episodes)}..{int(_preview_force_baseline_episodes)+int(_preview_ramp)}]ep_coef→{float(train_cfg.ppo.ent_coef):.4g} → "
@@ -2851,13 +2958,18 @@ def run_sequential_via_runner(
                     # Persist the forbidden-action mask so the next resume
                     # doesn't have to re-discover the same invalid tuples.
                     "forbidden_mask_records": forbidden_mask.to_json_records(),
+                    "empirical_invalid_level_mask_records": (
+                        empirical_invalid_mask.to_json_records()
+                        if empirical_invalid_mask is not None else []
+                    ),
                 }
                 tmp = save_path + ".tmp"
                 torch.save(payload, tmp)
                 os.replace(tmp, save_path)
                 log(
                     f"  [checkpoint] 已保存 · 回合 {start_episode + record.episode_idx + 1} "
-                    f"→ {save_path}  ·  {forbidden_mask.summary()}"
+                    f"→ {save_path}  ·  {forbidden_mask.summary()}  ·  "
+                    f"{empirical_invalid_mask.summary() if empirical_invalid_mask is not None else 'empirical_invalid_level_mask=disabled'}"
                 )
             except Exception as exc:
                 log(f"  [save_checkpoint][警告] 保存 {save_path} 失败: {exc}")
@@ -2898,6 +3010,12 @@ def run_sequential_via_runner(
                     "proposal_direction": str(record.proposal_direction),
                     "empirical_offset_success_rate": float(record.empirical_offset_success_rate),
                     "empirical_offset_failure_rate": float(record.empirical_offset_failure_rate),
+                    "samples_rejected_by_mask": int(record.samples_rejected_by_mask),
+                    "samples_rejected_by_optimizer": int(record.samples_rejected_by_optimizer),
+                    "steps_fallen_back_to_baseline": int(record.steps_fallen_back_to_baseline),
+                    "forbidden_mask_total": int(record.forbidden_mask_total),
+                    "empirical_invalid_level_disabled": int(record.empirical_invalid_level_disabled),
+                    "rejection_optimizer_wall_seconds": float(record.rejection_optimizer_wall_seconds),
                 },
             )
         except Exception:
@@ -2981,6 +3099,13 @@ def run_sequential_via_runner(
                     guarded_radius2_episode_count=int(record.guarded_radius2_episode_count),
                     guarded_radius2_failure_count=int(record.guarded_radius2_failure_count),
                     guarded_radius2_frontier_expansion_count=int(record.guarded_radius2_frontier_expansion_count),
+                    samples_rejected_by_mask=int(record.samples_rejected_by_mask),
+                    samples_rejected_by_optimizer=int(record.samples_rejected_by_optimizer),
+                    steps_fallen_back_to_baseline=int(record.steps_fallen_back_to_baseline),
+                    forbidden_mask_total=int(record.forbidden_mask_total),
+                    empirical_invalid_level_disabled=int(record.empirical_invalid_level_disabled),
+                    empirical_invalid_level_applied=int(record.empirical_invalid_level_applied),
+                    rejection_optimizer_wall_seconds=float(record.rejection_optimizer_wall_seconds),
                     baseline_prior_scale=float(record.baseline_prior_scale),
                     base_action_source=str(record.base_action_source),
                     proposal_direction=str(record.proposal_direction),
@@ -3133,6 +3258,17 @@ def run_sequential_via_runner(
     # Forbidden-action mask: starts empty (or rehydrated from checkpoint
     # `forbidden_mask_records` if present in the resumed checkpoint).
     forbidden_mask = ForbiddenActionMask()
+    empirical_invalid_mask = EmpiricalInvalidLevelMask(
+        min_invalid_samples=int(
+            getattr(seq_train_cfg, "empirical_invalid_level_min_samples", 3)
+        ),
+        min_invalid_rate=float(
+            getattr(seq_train_cfg, "empirical_invalid_level_min_rate", 0.80)
+        ),
+        max_valid_samples=int(
+            getattr(seq_train_cfg, "empirical_invalid_level_max_valid", 0)
+        ),
+    ) if bool(getattr(seq_train_cfg, "empirical_invalid_level_mask_enabled", True)) else None
     if effective_resume_path and os.path.isfile(effective_resume_path):
         try:
             _ckpt = torch.load(effective_resume_path, map_location=device)
@@ -3142,6 +3278,25 @@ def run_sequential_via_runner(
                 log(
                     f"  {bullet} 已从 checkpoint 恢复 forbidden_action_mask: "
                     f"{forbidden_mask.summary()}"
+                )
+            empirical_rec = (
+                _ckpt.get("empirical_invalid_level_mask_records")
+                if isinstance(_ckpt, dict) else None
+            )
+            if empirical_rec and empirical_invalid_mask is not None:
+                empirical_invalid_mask = EmpiricalInvalidLevelMask.from_json_records(empirical_rec)
+                empirical_invalid_mask.min_invalid_samples = int(
+                    getattr(seq_train_cfg, "empirical_invalid_level_min_samples", 3)
+                )
+                empirical_invalid_mask.min_invalid_rate = float(
+                    getattr(seq_train_cfg, "empirical_invalid_level_min_rate", 0.80)
+                )
+                empirical_invalid_mask.max_valid_samples = int(
+                    getattr(seq_train_cfg, "empirical_invalid_level_max_valid", 0)
+                )
+                log(
+                    f"  {bullet} 已从 checkpoint 恢复 empirical_invalid_level_mask: "
+                    f"{empirical_invalid_mask.summary()}"
                 )
         except Exception as exc:
             log(f"  [resume][warning] failed to restore forbidden_mask: {exc}")
@@ -3176,6 +3331,7 @@ def run_sequential_via_runner(
         capture_step_infos=False,  # save memory; we surface aggregates instead
         logger=logging.getLogger("blb_stage2_rl.sequential"),
         forbidden_mask=forbidden_mask,
+        empirical_invalid_mask=empirical_invalid_mask,
         baseline_action_vec=baseline_action_vec,
         max_rejection_retries=32,
         force_baseline_episodes=_force_baseline_episodes,

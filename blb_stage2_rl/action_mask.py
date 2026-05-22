@@ -12,6 +12,11 @@ Two related-but-distinct mask abstractions live here:
      known-bad tuples so the policy never sees them again. The two abstractions
      are orthogonal: a slot allow-list constrains the action *space*; the
      forbidden-action set constrains specific *tuples* within that space.
+
+  3. ``EmpiricalInvalidLevelMask`` (added 2026-05-22) — guarded projection from
+     repeated invalid tuples back to per-slot level masks. It only closes a
+     level after enough invalid observations and no contradictory valid
+     evidence, and always preserves protected baseline levels.
 """
 from __future__ import annotations
 
@@ -346,4 +351,158 @@ class ForbiddenActionMask:
             f"forbidden_action_mask total={self.total()} "
             f"(top {len(head)}: {body}"
             + (f"; +{rest} in {len(rows) - len(head)} more)" if rest else ")")
+        )
+
+
+@dataclass
+class EmpiricalInvalidLevelMask:
+    """Learn high-risk per-slot levels from repeated invalid-chain samples.
+
+    ``ForbiddenActionMask`` removes exact tuples, but it still pays sampling
+    and sometimes optimizer cost before a bad region is learned. This helper
+    projects strong empirical evidence back onto the per-step level mask:
+    if a specific ``(layer, block, slot, level)`` has repeatedly appeared in
+    invalid tuples and has not appeared in any valid committed tuple, that
+    level can be hidden from future sampling for the same layer/block/slot.
+
+    The rule is deliberately conservative. It never masks a protected level
+    (normally the static-skeleton baseline, plus the current frontier/base
+    proposal if supplied), and it never leaves a slot with no legal level.
+    """
+
+    min_invalid_samples: int = 3
+    max_valid_samples: int = 0
+    min_invalid_rate: float = 0.80
+    by_key: Dict[_ForbiddenKey, Dict[Tuple[int, int], Dict[str, int]]] = field(default_factory=dict)
+
+    def record(
+            self,
+            layer_idx: int,
+            block_idx: int,
+            action_tuple: Sequence[int],
+            *,
+            valid: bool,
+            ) -> None:
+        bucket = self.by_key.setdefault((int(layer_idx), int(block_idx)), {})
+        field = "valid" if bool(valid) else "invalid"
+        for slot_idx, level_idx in enumerate(action_tuple):
+            key = (int(slot_idx), int(level_idx))
+            stats = bucket.setdefault(key, {"valid": 0, "invalid": 0})
+            stats[field] = int(stats.get(field, 0)) + 1
+
+    def record_valid(self, layer_idx: int, block_idx: int, action_tuple: Sequence[int]) -> None:
+        self.record(layer_idx, block_idx, action_tuple, valid=True)
+
+    def record_invalid(self, layer_idx: int, block_idx: int, action_tuple: Sequence[int]) -> None:
+        self.record(layer_idx, block_idx, action_tuple, valid=False)
+
+    def should_mask_level(self, layer_idx: int, block_idx: int, slot_idx: int, level_idx: int) -> bool:
+        bucket = self.by_key.get((int(layer_idx), int(block_idx)), {})
+        stats = bucket.get((int(slot_idx), int(level_idx)), {})
+        invalid = int(stats.get("invalid", 0) or 0)
+        valid = int(stats.get("valid", 0) or 0)
+        total = invalid + valid
+        if invalid < int(self.min_invalid_samples):
+            return False
+        if valid > int(self.max_valid_samples):
+            return False
+        rate = float(invalid) / float(max(1, total))
+        return rate >= float(self.min_invalid_rate)
+
+    def disabled_levels(self, layer_idx: int, block_idx: int) -> Set[Tuple[int, int]]:
+        bucket = self.by_key.get((int(layer_idx), int(block_idx)), {})
+        out: Set[Tuple[int, int]] = set()
+        for slot_idx, level_idx in bucket:
+            if self.should_mask_level(layer_idx, block_idx, slot_idx, level_idx):
+                out.add((int(slot_idx), int(level_idx)))
+        return out
+
+    def apply(
+            self,
+            layer_idx: int,
+            block_idx: int,
+            action_level_mask: Sequence[Sequence[bool]],
+            *,
+            protected_actions: Sequence[Sequence[int]] = (),
+            ) -> np.ndarray:
+        mask = np.asarray(action_level_mask, dtype=bool).copy()
+        if mask.ndim != 2:
+            raise ValueError("action_level_mask must be a 2-D boolean array")
+        protected: Set[Tuple[int, int]] = set()
+        for action in protected_actions or ():
+            for slot_idx, level_idx in enumerate(action):
+                protected.add((int(slot_idx), int(level_idx)))
+        for slot_idx, level_idx in self.disabled_levels(layer_idx, block_idx):
+            if (slot_idx, level_idx) in protected:
+                continue
+            if 0 <= slot_idx < mask.shape[0] and 0 <= level_idx < mask.shape[1]:
+                mask[slot_idx, level_idx] = False
+        for slot_idx, level_idx in protected:
+            if 0 <= slot_idx < mask.shape[0] and 0 <= level_idx < mask.shape[1]:
+                mask[slot_idx, level_idx] = True
+        for slot_idx in range(mask.shape[0]):
+            if not bool(mask[slot_idx].any()):
+                for protected_slot, protected_level in protected:
+                    if protected_slot == slot_idx and 0 <= protected_level < mask.shape[1]:
+                        mask[slot_idx, protected_level] = True
+                        break
+        return mask
+
+    def total_disabled(self) -> int:
+        return sum(len(self.disabled_levels(li, bi)) for li, bi in self.by_key)
+
+    def to_json_records(self) -> List[Dict[str, object]]:
+        records: List[Dict[str, object]] = []
+        for (li, bi), bucket in sorted(self.by_key.items()):
+            cells = []
+            for (slot_idx, level_idx), stats in sorted(bucket.items()):
+                cells.append({
+                    "slot": int(slot_idx),
+                    "level": int(level_idx),
+                    "valid": int(stats.get("valid", 0) or 0),
+                    "invalid": int(stats.get("invalid", 0) or 0),
+                })
+            records.append({
+                "layer": int(li),
+                "block": int(bi),
+                "cells": cells,
+            })
+        return records
+
+    @classmethod
+    def from_json_records(cls, records: Iterable[Mapping[str, object]]) -> "EmpiricalInvalidLevelMask":
+        out = cls()
+        for row in records or ():
+            li = int(row["layer"])        # type: ignore[arg-type]
+            bi = int(row["block"])        # type: ignore[arg-type]
+            bucket = out.by_key.setdefault((li, bi), {})
+            for cell in row.get("cells", []) or []:              # type: ignore[union-attr]
+                if not isinstance(cell, Mapping):
+                    continue
+                key = (int(cell["slot"]), int(cell["level"]))
+                bucket[key] = {
+                    "valid": int(cell.get("valid", 0) or 0),
+                    "invalid": int(cell.get("invalid", 0) or 0),
+                }
+        return out
+
+    def summary(self, top_n: int = 5) -> str:
+        disabled = []
+        for (li, bi), bucket in sorted(self.by_key.items()):
+            count = sum(
+                1 for slot_idx, level_idx in bucket
+                if self.should_mask_level(li, bi, slot_idx, level_idx)
+            )
+            if count:
+                disabled.append(((li, bi), count))
+        if not disabled:
+            return "empirical_invalid_level_mask=empty"
+        disabled.sort(key=lambda kv: -kv[1])
+        head = disabled[: max(1, int(top_n))]
+        body = "; ".join(f"L{li:02d}-B{bi}={n}" for (li, bi), n in head)
+        rest = sum(n for (_, n) in disabled[len(head):])
+        return (
+            f"empirical_invalid_level_mask disabled={self.total_disabled()} "
+            f"(top {len(head)}: {body}"
+            + (f"; +{rest} in {len(disabled) - len(head)} more)" if rest else ")")
         )

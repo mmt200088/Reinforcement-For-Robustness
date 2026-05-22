@@ -158,6 +158,13 @@ class EpisodeStats:
     guarded_radius2_episode_count: int = 0
     guarded_radius2_failure_count: int = 0
     guarded_radius2_frontier_expansion_count: int = 0
+    samples_rejected_by_mask: int = 0
+    samples_rejected_by_optimizer: int = 0
+    steps_fallen_back_to_baseline: int = 0
+    forbidden_mask_total: int = 0
+    empirical_invalid_level_disabled: int = 0
+    empirical_invalid_level_applied: int = 0
+    rejection_optimizer_wall_seconds: float = 0.0
     baseline_prior_scale: float = 0.0
     base_action_source: str = ""
     proposal_direction: str = ""

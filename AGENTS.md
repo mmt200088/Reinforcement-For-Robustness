@@ -265,6 +265,20 @@ Implementation constraints to preserve:
   Exploration is the explicit categorical policy distribution; dropout masks
   are not part of the recorded log-prob distribution and should not add hidden
   randomness or extra tiny kernels to online rollout/PPO replay.
+- Sequential rollout has two invalid-action filters. `ForbiddenActionMask`
+  still blacklists exact `(layer, block, step-action tuple)` samples after the
+  Rescale optimizer reports `invalid_chain`. The newer
+  `EmpiricalInvalidLevelMask` projects repeated invalid evidence back onto the
+  per-step `action_level_mask`: after a `(layer, block, slot, level)` has enough
+  invalid observations and no valid evidence, future samples hide that level
+  for that same layer/block/slot. It always preserves the static baseline level
+  and the current base/frontier proposal level, so it reduces rejection loops
+  without shortening the action vector or changing policy/critic shapes.
+  `episodes.jsonl` now records `samples_rejected_by_mask`,
+  `samples_rejected_by_optimizer`, `steps_fallen_back_to_baseline`,
+  `forbidden_mask_total`, `empirical_invalid_level_disabled`, and
+  `rejection_optimizer_wall_seconds`; use these before claiming invalid-chain
+  pruning improved speed.
 - GTrXL sequential PPO uses conservative KL-adaptive LR. The default adaptive
   max ratio is capped at `1.25` because the 2026-05-22 four-GPU smoke run
   reached `lr_scale=2.5` (`5e-4` effective LR) and produced a non-finite PPO

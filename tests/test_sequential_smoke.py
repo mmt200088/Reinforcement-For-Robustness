@@ -559,6 +559,9 @@ class ForbiddenActionMaskTest(unittest.TestCase):
             "def to_json_records",
             "def from_json_records",
             "def summary",
+            "class EmpiricalInvalidLevelMask",
+            "def record_invalid",
+            "def apply",
         ):
             self.assertIn(needle, src, msg=f"missing: {needle!r}")
 
@@ -613,6 +616,32 @@ class ForbiddenActionMaskTest(unittest.TestCase):
             m.add(5, 3, (i, 0))
         self.assertIn("total=4", m.summary())
 
+        level_mask = mod.EmpiricalInvalidLevelMask(
+            min_invalid_samples=2,
+            min_invalid_rate=0.8,
+            max_valid_samples=0,
+        )
+        level_mask.record_invalid(0, 1, (1, 2, 3))
+        level_mask.record_invalid(0, 1, (1, 2, 4))
+        base = [[True, True, True, True, True] for _ in range(3)]
+        pruned = level_mask.apply(
+            0,
+            1,
+            base,
+            protected_actions=[(0, 0, 0)],
+        )
+        self.assertFalse(bool(pruned[0, 1]))
+        self.assertFalse(bool(pruned[1, 2]))
+        self.assertTrue(bool(pruned[2, 3]))
+        self.assertTrue(bool(pruned[2, 4]))
+        self.assertTrue(bool(pruned[0, 0]))
+        records = level_mask.to_json_records()
+        reborn_level = mod.EmpiricalInvalidLevelMask.from_json_records(records)
+        reborn_level.min_invalid_samples = 2
+        reborn_level.min_invalid_rate = 0.8
+        reborn_level.max_valid_samples = 0
+        self.assertEqual(reborn_level.total_disabled(), level_mask.total_disabled())
+
 
 class EnvEvalCommitSplitTest(unittest.TestCase):
     """Source-text smoke: sequential_env exposes both evaluate_step and
@@ -641,6 +670,10 @@ class EnvEvalCommitSplitTest(unittest.TestCase):
             "env.commit_step",
             "rejection_counters",
             "steps_fallen_back_to_baseline",
+            "empirical_invalid_mask",
+            "EmpiricalInvalidLevelMask",
+            "samples_rejected_by_optimizer",
+            "rejection_optimizer_wall_seconds",
         ):
             self.assertIn(needle, src, msg=f"missing: {needle!r}")
 
@@ -1344,6 +1377,12 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "guarded_radius2_recent_duplicate_rate: float = 0.0",
             "guarded_radius2_recent_dominated_rate: float = 0.0",
             "guarded_radius2_cooldown_remaining: int = 0",
+            "samples_rejected_by_mask: int = 0",
+            "samples_rejected_by_optimizer: int = 0",
+            "steps_fallen_back_to_baseline: int = 0",
+            "forbidden_mask_total: int = 0",
+            "empirical_invalid_level_disabled: int = 0",
+            "rejection_optimizer_wall_seconds: float = 0.0",
             "terminal_priority=int(record.terminal_priority)",
             "terminal_metric2_mean=float(record.terminal_metric2_mean)",
             "terminal_stab_violation=float(record.terminal_stab_violation)",
@@ -1352,6 +1391,8 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count)",
             "exploration_mode=str(record.exploration_mode)",
             "guarded_radius2_active=bool(record.guarded_radius2_active)",
+            "samples_rejected_by_optimizer=int(record.samples_rejected_by_optimizer)",
+            "rejection_optimizer_wall_seconds=float(record.rejection_optimizer_wall_seconds)",
         ):
             self.assertIn(needle, diagnostics + runner_src, msg=f"missing JSONL health field: {needle!r}")
 

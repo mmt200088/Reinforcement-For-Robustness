@@ -188,6 +188,20 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
         e for e in guarded_active
         if str(e.get("terminal_pareto_event_kind", "")) == "frontier_expansion"
     ]
+    rejected_by_mask = [int(e.get("samples_rejected_by_mask", 0) or 0) for e in episodes]
+    rejected_by_optimizer = [
+        int(e.get("samples_rejected_by_optimizer", 0) or 0) for e in episodes
+    ]
+    fallback_to_baseline = [
+        int(e.get("steps_fallen_back_to_baseline", 0) or 0) for e in episodes
+    ]
+    rejection_optimizer_wall = [
+        _finite(e.get("rejection_optimizer_wall_seconds"))
+        for e in episodes if "rejection_optimizer_wall_seconds" in e
+    ]
+    empirical_disabled = [
+        int(e.get("empirical_invalid_level_disabled", 0) or 0) for e in episodes
+    ]
 
     best_reward = max(returns) if returns else None
     best_episode = None
@@ -427,6 +441,25 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
                 if episodes else None
             ),
         },
+        "invalid_action_rejection": {
+            "samples_rejected_by_mask_total": sum(rejected_by_mask),
+            "samples_rejected_by_optimizer_total": sum(rejected_by_optimizer),
+            "steps_fallen_back_to_baseline_total": sum(fallback_to_baseline),
+            "last_forbidden_mask_total": (
+                int(episodes[-1].get("forbidden_mask_total", 0) or 0)
+                if episodes else 0
+            ),
+            "last_empirical_invalid_level_disabled": (
+                int(episodes[-1].get("empirical_invalid_level_disabled", 0) or 0)
+                if episodes else 0
+            ),
+            "max_empirical_invalid_level_disabled": (
+                max(empirical_disabled) if empirical_disabled else 0
+            ),
+            "rejection_optimizer_wall_seconds_total": (
+                sum(rejection_optimizer_wall) if rejection_optimizer_wall else 0.0
+            ),
+        },
         "cost": {
             "total_bits_min": min(bits) if bits else None,
             "total_bits_max": max(bits) if bits else None,
@@ -485,6 +518,13 @@ def write_health_csv(path: Path, episodes: List[Dict[str, Any]]) -> None:
         "guarded_radius2_recent_dominated_rate",
         "guarded_radius2_cooldown_remaining",
         "guarded_radius2_safe_offset_count",
+        "samples_rejected_by_mask",
+        "samples_rejected_by_optimizer",
+        "steps_fallen_back_to_baseline",
+        "forbidden_mask_total",
+        "empirical_invalid_level_disabled",
+        "empirical_invalid_level_applied",
+        "rejection_optimizer_wall_seconds",
         "baseline_prior_scale",
         "base_action_source",
         "proposal_direction",
@@ -504,6 +544,7 @@ def write_report(path: Path, summary: Dict[str, Any]) -> None:
     terminal = summary.get("terminal_metrics", {})
     ppo = summary.get("ppo", {})
     guarded = summary.get("guarded_radius2", {})
+    rejection = summary.get("invalid_action_rejection", {})
     gpu = summary.get("gpu", {}).get("by_gpu", {})
     reward_probe = summary.get("reward_probe", {})
     rows = [
@@ -528,6 +569,12 @@ def write_report(path: Path, summary: Dict[str, Any]) -> None:
         ("guarded_radius2_frontier_expansion_count", guarded.get("frontier_expansion_count")),
         ("guarded_radius2_last_cooldown", guarded.get("last_cooldown_remaining")),
         ("guarded_radius2_last_safe_offset_count", guarded.get("last_safe_offset_count")),
+        ("rejected_by_mask_total", rejection.get("samples_rejected_by_mask_total")),
+        ("rejected_by_optimizer_total", rejection.get("samples_rejected_by_optimizer_total")),
+        ("fallback_to_baseline_total", rejection.get("steps_fallen_back_to_baseline_total")),
+        ("forbidden_mask_total_last", rejection.get("last_forbidden_mask_total")),
+        ("empirical_invalid_level_disabled_last", rejection.get("last_empirical_invalid_level_disabled")),
+        ("rejection_optimizer_wall_seconds_total", rejection.get("rejection_optimizer_wall_seconds_total")),
         ("ppo_updates_seen", ppo.get("updates_seen")),
         ("recent_entropy_mean", ppo.get("recent_entropy_mean")),
         ("recent_clip_fraction_mean", ppo.get("recent_clip_fraction_mean")),
