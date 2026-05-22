@@ -631,6 +631,11 @@ def train(
         # → BLBStage2Env builds a ProbeRunner that fans K trials across these
         # devices. Empty / single device → single-GPU codepath unchanged.
         blb_v3_reward_devices: str = "",
+        blb_v3_fast_reward_mode_enabled: bool = False,
+        blb_v3_online_k_trials: int = 1,
+        blb_v3_terminal_eval_batch_size: int = 4,
+        blb_v3_promotion_validation_trials: int = 4,
+        blb_v3_promotion_margin_window: float = 0.25,
         final_eval_require_rescale_optimizer: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
@@ -661,6 +666,10 @@ def train(
     blb_v3_sequential_early_terminate_on_invalid = parse_bool_flag(
         blb_v3_sequential_early_terminate_on_invalid,
         "blb_v3_sequential_early_terminate_on_invalid",
+    )
+    blb_v3_fast_reward_mode_enabled = parse_bool_flag(
+        blb_v3_fast_reward_mode_enabled,
+        "blb_v3_fast_reward_mode_enabled",
     )
     # --final_eval_only 语义：只跑 final eval，不跑任何 RL 搜索阶段。
     # 等价于自动设置 skip_stage1_rl=True & skip_noise_rl=True & skip_final_eval=False，
@@ -1208,6 +1217,11 @@ def train(
             blb_v3_sequential_early_terminate_on_invalid=blb_v3_sequential_early_terminate_on_invalid,
             blb_v3_seed=blb_v3_seed,
             blb_v3_reward_devices=blb_v3_reward_devices,
+            blb_v3_fast_reward_mode_enabled=blb_v3_fast_reward_mode_enabled,
+            blb_v3_online_k_trials=blb_v3_online_k_trials,
+            blb_v3_terminal_eval_batch_size=blb_v3_terminal_eval_batch_size,
+            blb_v3_promotion_validation_trials=blb_v3_promotion_validation_trials,
+            blb_v3_promotion_margin_window=blb_v3_promotion_margin_window,
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

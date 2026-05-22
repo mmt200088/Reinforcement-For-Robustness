@@ -11,6 +11,11 @@ SMOKE_EPISODES="${SMOKE_EPISODES:-1000}"
 ANCHOR_EPISODES="${ANCHOR_EPISODES:-60}"
 ROLLOUT_SIZE="${ROLLOUT_SIZE:-60}"
 K_TRIALS="${K_TRIALS:-4}"
+FAST_REWARD_MODE_ENABLED="${FAST_REWARD_MODE_ENABLED:-0}"
+ONLINE_K_TRIALS="${ONLINE_K_TRIALS:-1}"
+TERMINAL_EVAL_BATCH_SIZE="${TERMINAL_EVAL_BATCH_SIZE:-4}"
+PROMOTION_VALIDATION_TRIALS="${PROMOTION_VALIDATION_TRIALS:-4}"
+PROMOTION_MARGIN_WINDOW="${PROMOTION_MARGIN_WINDOW:-0.25}"
 PROBE_SIZE="${PROBE_SIZE:-256}"
 BATCH_SIZE="${BATCH_SIZE:-512}"
 RL_CUDA_VISIBLE_DEVICES="${RL_CUDA_VISIBLE_DEVICES:-0,1,2,3}"
@@ -161,6 +166,11 @@ launch_and_watch_rl() {
     --blb-v3-ent-coef "$ENT_COEF" \
     --blb-v3-ent-coef-ramp-episodes "$ENT_RAMP" \
     --blb-v3-static-invalid-level-mask-enabled 1 \
+    --blb-v3-fast-reward-mode-enabled "$FAST_REWARD_MODE_ENABLED" \
+    --blb-v3-online-k-trials "$ONLINE_K_TRIALS" \
+    --blb-v3-terminal-eval-batch-size "$TERMINAL_EVAL_BATCH_SIZE" \
+    --blb-v3-promotion-validation-trials "$PROMOTION_VALIDATION_TRIALS" \
+    --blb-v3-promotion-margin-window "$PROMOTION_MARGIN_WINDOW" \
     --blb-v3-reward-devices "$REWARD_DEVICES" \
     --skip-final-eval \
     --fresh 2>&1 | tee "${ARTIFACT_DIR}/${log_file}"
@@ -298,6 +308,11 @@ cat > "${ARTIFACT_DIR}/run_manifest.json" <<JSON
   "ent_ramp": ${ENT_RAMP},
   "warmstart_bias_gain": ${WARMSTART_BIAS_GAIN},
   "static_invalid_level_mask_enabled": true,
+  "fast_reward_mode_enabled": "${FAST_REWARD_MODE_ENABLED}",
+  "online_k_trials": ${ONLINE_K_TRIALS},
+  "terminal_eval_batch_size": ${TERMINAL_EVAL_BATCH_SIZE},
+  "promotion_validation_trials": ${PROMOTION_VALIDATION_TRIALS},
+  "promotion_margin_window": ${PROMOTION_MARGIN_WINDOW},
   "max_post_anchor_p12_rate": ${MAX_POST_ANCHOR_P12_RATE},
   "p12_rate_min_post_anchor": ${P12_RATE_MIN_POST_ANCHOR},
   "policy_variant": "blb_v3_sequential_gtrxl_v2scale",

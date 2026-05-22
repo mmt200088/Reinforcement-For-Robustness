@@ -276,6 +276,7 @@ class ProbeRunnerDiagnostics:
     per_worker_trial_indices: List[List[int]] = field(default_factory=list)
     per_worker_trial_seeds: List[List[int]] = field(default_factory=list)
     devices: List[str] = field(default_factory=list)
+    multi_action: bool = False
 
     @property
     def speedup_vs_sequential(self) -> float:
@@ -432,6 +433,106 @@ class ProbeRunner:
             if ti not in results_per_trial:
                 raise RuntimeError(
                     f"probe-runner missing trial {ti} (assignments={assignments})"
+                )
+            ordered.append(results_per_trial[ti])
+        return ordered
+
+    def run_action_trials_once(
+            self,
+            decoded_by_trial: Sequence[ActionDecodeResult],
+            base_seed: int,
+            ) -> List[Tuple[float, float, float]]:
+        """Run one independent trial for each distinct decoded action.
+
+        This is the fast online RL path: instead of evaluating one action with
+        K repeated trials, a rollout batch can hand us up to N completed actions
+        and each GPU evaluates one of them. Results are returned in the same
+        order as ``decoded_by_trial``.
+        """
+        actions = list(decoded_by_trial)
+        k = len(actions)
+        if k == 0:
+            self.last_diagnostics = ProbeRunnerDiagnostics(
+                k=0, wall_seconds=0.0,
+                per_worker_trial_indices=[[] for _ in self.workers],
+                per_worker_trial_seeds=[[] for _ in self.workers],
+                devices=[str(d) for d in self.devices],
+                multi_action=True,
+            )
+            return []
+        if k > len(self.workers):
+            raise ValueError(
+                f"run_action_trials_once received {k} actions for "
+                f"{len(self.workers)} workers"
+            )
+
+        results_per_trial: dict = {}
+        per_worker_seconds: List[float] = [0.0] * len(self.workers)
+        assignments: List[List[int]] = [[] for _ in self.workers]
+        seed_assignments: List[List[int]] = [[] for _ in self.workers]
+        for idx in range(k):
+            assignments[idx].append(idx)
+            seed_assignments[idx].append(_trial_seed(base_seed, idx))
+
+        errors: List[Tuple[int, BaseException]] = []
+        lock = threading.Lock()
+
+        def task(w_idx: int) -> None:
+            if w_idx >= k:
+                return
+            worker = self.workers[w_idx]
+            t0 = time.perf_counter()
+            try:
+                # Each worker installs the decoded cfg for its own action, then
+                # runs exactly one seeded trial for that action.
+                decoded = actions[w_idx]
+                worker.install(decoded)
+                res = worker.run_trial(w_idx, base_seed)
+                with lock:
+                    results_per_trial[w_idx] = res
+            except BaseException as exc:  # noqa: BLE001
+                with lock:
+                    errors.append((w_idx, exc))
+            finally:
+                per_worker_seconds[w_idx] = time.perf_counter() - t0
+
+        wall_t0 = time.perf_counter()
+        if len(self.workers) == 1:
+            task(0)
+        else:
+            threads = [
+                threading.Thread(target=task, args=(i,), daemon=True)
+                for i in range(k)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        wall_elapsed = time.perf_counter() - wall_t0
+
+        self.last_diagnostics = ProbeRunnerDiagnostics(
+            k=k,
+            wall_seconds=float(wall_elapsed),
+            per_worker_seconds=[float(x) for x in per_worker_seconds],
+            per_worker_trial_counts=[len(a) for a in assignments],
+            per_worker_trial_indices=[list(a) for a in assignments],
+            per_worker_trial_seeds=[list(a) for a in seed_assignments],
+            devices=[str(d) for d in self.devices],
+            multi_action=True,
+        )
+
+        if errors:
+            w_idx, exc = errors[0]
+            raise RuntimeError(
+                f"probe-runner multi-action worker {w_idx} "
+                f"(device {self.workers[w_idx].device}) failed: {exc!r}"
+            ) from exc
+
+        ordered: List[Tuple[float, float, float]] = []
+        for ti in range(k):
+            if ti not in results_per_trial:
+                raise RuntimeError(
+                    f"probe-runner missing multi-action trial {ti}"
                 )
             ordered.append(results_per_trial[ti])
         return ordered
@@ -597,8 +698,9 @@ def format_diagnostics_line(diag: ProbeRunnerDiagnostics) -> str:
         f"{dev}:{idxs}"
         for dev, idxs in zip(diag.devices, diag.per_worker_trial_indices)
     )
+    mode = " multi_action=1" if bool(getattr(diag, "multi_action", False)) else ""
     return (
-        f"[probe-runner] k={diag.k} split=[{counts}] devices=[{devs}]  "
+        f"[probe-runner]{mode} k={diag.k} split=[{counts}] devices=[{devs}]  "
         f"wall={diag.wall_seconds:.3f}s worker_seconds=[{ws}]  "
         f"speedup={diag.speedup_vs_sequential:.2f}x  trials=[{trial_map}]"
     )

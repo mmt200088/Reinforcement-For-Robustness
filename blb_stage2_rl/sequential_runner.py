@@ -81,6 +81,11 @@ class SequentialTrainConfig:
     empirical_invalid_level_min_samples: int = 3
     empirical_invalid_level_min_rate: float = 0.80
     empirical_invalid_level_max_valid: int = 0
+    fast_reward_mode_enabled: bool = False
+    online_num_trials_per_step: int = 1
+    terminal_eval_batch_size: int = 4
+    promotion_validation_trials: int = 4
+    promotion_margin_window: float = 0.25
 
 
 # ---------------------------------------------------------------------------
@@ -924,6 +929,75 @@ def _format_invalid_chain_reason(invalid_chain: Any) -> str:
     return "; ".join(parts)
 
 
+def _apply_terminal_info_to_record(
+        record: EpisodeRecord,
+        terminal_reward: float,
+        term_info_dict: Mapping[str, Any],
+        *,
+        cached_reward_hit: bool = False,
+        validation_required: bool = False,
+        ) -> None:
+    """Populate an EpisodeRecord from the base env terminal info dict."""
+    record.terminal_reward = float(terminal_reward)
+    record.total_reward = float(record.per_step_reward_sum + float(terminal_reward))
+    term_breakdown = term_info_dict.get("reward_breakdown")
+    term_metrics = term_info_dict.get("metrics")
+    term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
+    if term_breakdown is not None:
+        record.terminal_priority = int(getattr(term_breakdown, "priority", 0) or 0)
+        record.terminal_stab_excess_m1 = float(getattr(term_breakdown, "stab_excess_m1", 0.0) or 0.0)
+        record.terminal_stab_excess_m2 = float(getattr(term_breakdown, "stab_excess_m2", 0.0) or 0.0)
+        record.terminal_stab_excess_loss = float(getattr(term_breakdown, "stab_excess_loss", 0.0) or 0.0)
+        record.terminal_stab_violation = float(getattr(term_breakdown, "stab_violation", 0.0) or 0.0)
+        record.terminal_bits_gain = float(getattr(term_breakdown, "bits_drop", 0.0) or 0.0)
+        record.terminal_k_gain = float(getattr(term_breakdown, "k_drop", 0.0) or 0.0)
+        record.terminal_fusion_gain = float(getattr(term_breakdown, "fusion_gain", 0.0) or 0.0)
+        record.terminal_cost_score = float(getattr(term_breakdown, "cost_score", 0.0) or 0.0)
+        record.terminal_p3_metric_margin_reward = float(getattr(term_breakdown, "p3_metric_margin_reward", 0.0) or 0.0)
+        record.terminal_cost_fusion_bonus = float(getattr(term_breakdown, "cost_fusion_bonus", 0.0) or 0.0)
+        record.terminal_cost_truncation_bonus = float(getattr(term_breakdown, "cost_truncation_bonus", 0.0) or 0.0)
+        record.terminal_cost_bits_tiebreaker = float(getattr(term_breakdown, "cost_bits_tiebreaker", 0.0) or 0.0)
+        record.terminal_cost_truncation_step_gain = float(getattr(term_breakdown, "cost_truncation_step_gain", 0.0) or 0.0)
+        record.terminal_pareto_event_kind = str(getattr(term_breakdown, "pareto_event_kind", "") or "")
+        record.terminal_pareto_action_hash = str(getattr(term_breakdown, "pareto_action_hash", "") or "")
+        record.terminal_pareto_frontier_removed = int(getattr(term_breakdown, "pareto_frontier_removed", 0) or 0)
+    if term_metrics is not None:
+        record.terminal_loss_mean = float(getattr(term_metrics, "loss_mean", 0.0) or 0.0)
+        record.terminal_loss_std = float(getattr(term_metrics, "loss_std", 0.0) or 0.0)
+        record.terminal_metric1_mean = float(getattr(term_metrics, "metric1_mean", 0.0) or 0.0)
+        record.terminal_metric2_mean = float(getattr(term_metrics, "metric2_mean", 0.0) or 0.0)
+        record.terminal_metric1_std = float(getattr(term_metrics, "metric1_std", 0.0) or 0.0)
+        record.terminal_metric2_std = float(getattr(term_metrics, "metric2_std", 0.0) or 0.0)
+    if isinstance(term_probe_diag, dict):
+        record.terminal_probe_wall_seconds = float(term_probe_diag.get("wall_seconds", 0.0) or 0.0)
+        record.terminal_probe_devices = [str(x) for x in (term_probe_diag.get("devices") or [])]
+        record.terminal_probe_trial_counts = [
+            int(x) for x in (term_probe_diag.get("per_worker_trial_counts") or [])
+        ]
+        record.terminal_probe_trial_indices = [
+            [int(y) for y in (x or [])]
+            for x in (term_probe_diag.get("per_worker_trial_indices") or [])
+        ]
+        record.terminal_probe_speedup = float(
+            term_probe_diag.get("speedup_vs_sequential", 1.0) or 1.0
+        )
+        record.terminal_cost_eval_wall_seconds = float(
+            term_probe_diag.get("cost_eval_wall_seconds", 0.0) or 0.0
+        )
+        record.terminal_probe_install_wall_seconds = float(
+            term_probe_diag.get("probe_install_wall_seconds", 0.0) or 0.0
+        )
+        record.terminal_probe_clear_wall_seconds = float(
+            term_probe_diag.get("probe_clear_wall_seconds", 0.0) or 0.0
+        )
+        record.terminal_probe_install_skipped = bool(term_probe_diag.get("probe_install_skipped", False))
+        record.terminal_probe_clear_skipped = bool(term_probe_diag.get("probe_clear_skipped", False))
+    if cached_reward_hit:
+        record.exploration_mode = f"{record.exploration_mode}|cached_reward_hit"
+    if validation_required:
+        record.exploration_mode = f"{record.exploration_mode}|validation_required"
+
+
 def _protected_step_actions(
         *,
         spec: Any,
@@ -1176,6 +1250,264 @@ def train_sequential(
             getattr(train_cfg, "guarded_radius2_min_radius1_successes", 3)
         ),
     )
+    fast_reward_mode_enabled = bool(
+        getattr(train_cfg, "fast_reward_mode_enabled", False)
+    )
+    online_num_trials_per_step = max(
+        1, int(getattr(train_cfg, "online_num_trials_per_step", 1) or 1)
+    )
+    terminal_eval_batch_size = max(
+        1, int(getattr(train_cfg, "terminal_eval_batch_size", 1) or 1)
+    )
+    promotion_validation_trials = max(
+        1, int(getattr(train_cfg, "promotion_validation_trials", 1) or 1)
+    )
+    promotion_margin_window = float(
+        getattr(train_cfg, "promotion_margin_window", 0.25) or 0.0
+    )
+    if fast_reward_mode_enabled and getattr(env.base, "probe_runner", None) is None:
+        log.warning(
+            "[seqRL] fast_reward_mode_enabled requested without ProbeRunner; "
+            "falling back to the standard terminal reward path"
+        )
+        fast_reward_mode_enabled = False
+    if fast_reward_mode_enabled:
+        terminal_eval_batch_size = min(
+            terminal_eval_batch_size,
+            int(getattr(env.base.probe_runner, "num_workers", terminal_eval_batch_size)),
+        )
+        log.info(
+            "[seqRL] fast reward mode enabled: online_num_trials_per_step=%d "
+            "terminal_eval_batch_size=%d promotion_validation_trials=%d "
+            "promotion_margin_window=%.3f",
+            online_num_trials_per_step,
+            terminal_eval_batch_size,
+            promotion_validation_trials,
+            promotion_margin_window,
+        )
+
+    pending_terminal_drafts: List[Dict[str, Any]] = []
+    terminal_metric_cache: Dict[str, Any] = {}
+    validation_metric_cache: Dict[str, Any] = {}
+    best_online_reward_seen = -float("inf")
+
+    def _finalize_completed_record(draft: Dict[str, Any]) -> None:
+        nonlocal best_online_reward_seen
+        record: EpisodeRecord = draft["record"]
+        absolute_ep_local = int(draft["absolute_ep"])
+        selected_offsets_local = sorted(int(x) for x in draft["selected_offsets"])
+        neighbor_radius_local = int(draft["neighbor_radius"])
+        neighbor_mask_active_local = bool(draft["neighbor_mask_active"])
+        guarded_decision_local: GuardedRadius2Decision = draft["guarded_decision"]
+        pending_full_vec_local = draft.get("pending_full_vec")
+
+        episode_returns.append(float(record.total_reward))
+        best_online_reward_seen = max(best_online_reward_seen, float(record.total_reward))
+        guarded_radius2.record_episode(
+            absolute_episode_idx=int(absolute_ep_local),
+            selected_offsets=selected_offsets_local,
+            radius=int(neighbor_radius_local if neighbor_mask_active_local else 0),
+            terminal_priority=int(record.terminal_priority),
+            invalid_steps=int(record.invalid_steps),
+            early_terminated=bool(record.early_terminated),
+            terminal_stab_violation=float(record.terminal_stab_violation),
+            terminal_loss_mean=float(record.terminal_loss_mean),
+            terminal_pareto_event_kind=str(record.terminal_pareto_event_kind),
+            terminal_fusion_gain=float(record.terminal_fusion_gain),
+            terminal_k_gain=float(record.terminal_k_gain),
+            terminal_bits_gain=float(record.terminal_bits_gain),
+        )
+        if bool(record.guarded_radius2_active):
+            after_decision = guarded_radius2.decide(
+                absolute_episode_idx=int(absolute_ep_local + 1),
+                rng=np.random.default_rng(0),
+            )
+            record.guarded_radius2_cooldown_remaining = int(
+                after_decision.cooldown_remaining
+            )
+            record.guarded_radius2_episode_count = int(
+                guarded_radius2.radius2_episode_count
+            )
+            record.guarded_radius2_failure_count = int(
+                guarded_radius2.radius2_failure_count
+            )
+            record.guarded_radius2_frontier_expansion_count = int(
+                guarded_radius2.radius2_frontier_expansion_count
+            )
+        episode_records.append(record)
+        if (
+                int(record.terminal_priority) == 3
+                and str(record.terminal_pareto_event_kind) in {
+                    "frontier_expansion",
+                    "frontier_member",
+                }
+                and pending_full_vec_local is not None
+        ):
+            frontier_seed_actions.append((
+                int(absolute_ep_local),
+                np.asarray(pending_full_vec_local, dtype=np.int64).copy(),
+            ))
+            if len(frontier_seed_actions) > 64:
+                del frontier_seed_actions[:-64]
+        if on_episode_end is not None:
+            on_episode_end(record)
+
+        if (int(record.episode_idx) + 1) % int(train_cfg.update_every_n_episodes) == 0:
+            current_ent_coef = _resolve_ent_coef_schedule(
+                ep_count_1based=int(absolute_episode_start + int(record.episode_idx) + 1),
+                anchor_episodes=int(force_baseline_episodes),
+                target_ent_coef=float(train_cfg.ppo.ent_coef),
+                anchor_ent_coef=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
+                ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 600)),
+            )
+            metrics = sequential_ppo_update(
+                policy, optimizer, buffer, train_cfg.ppo, device,
+                ent_coef_override=current_ent_coef,
+            )
+            ppo_metric_history.append(metrics)
+            buffer.clear()
+            if on_ppo_update_end is not None:
+                try:
+                    on_ppo_update_end(dict(metrics), int(record.episode_idx) + 1, record)
+                except Exception:
+                    pass
+            if (int(record.episode_idx) + 1) % int(train_cfg.log_every_n_episodes) == 0:
+                log.info(
+                    "[seqRL] ep=%d return=%.3f invalid_steps=%d ppo: %s",
+                    int(record.episode_idx), record.total_reward, record.invalid_steps, metrics,
+                )
+
+    def flush_pending_terminal_drafts(reason: str) -> None:
+        if not pending_terminal_drafts:
+            return
+        drafts = list(pending_terminal_drafts)
+        pending_terminal_drafts.clear()
+        prepared_by_draft: List[Optional[Mapping[str, Any]]] = [None] * len(drafts)
+        uncached_indices: List[int] = []
+        for idx, draft in enumerate(drafts):
+            terminal_vec = np.asarray(draft["terminal_action_vec"], dtype=np.int64)
+            action_key = str(draft.get("terminal_action_hash") or "")
+            if not action_key:
+                from .candidate_store import action_hash as _action_hash
+                action_key = _action_hash(terminal_vec)
+                draft["terminal_action_hash"] = action_key
+            prepared = env.base.prepare_action_for_terminal_probe(terminal_vec)
+            prepared_by_draft[idx] = prepared
+            cached_metrics = terminal_metric_cache.get(action_key)
+            if cached_metrics is not None:
+                result = env.base._finish_prepared_terminal_probe(
+                    prepared,
+                    cached_metrics,
+                    probe_diagnostics={
+                        "fast_reward_mode": True,
+                        "cached_reward_hit": True,
+                        "flush_reason": str(reason),
+                        "online_num_trials_per_step": int(online_num_trials_per_step),
+                        "terminal_eval_batch_size": int(terminal_eval_batch_size),
+                        "validation_required": False,
+                    },
+                    forward_ran=False,
+                )
+                _state, terminal_reward_local, _done, term_info = result
+                draft["terminal_result"] = result
+                buffer.add_reward_at(int(draft["terminal_buffer_index"]), terminal_reward_local)
+                _apply_terminal_info_to_record(
+                    draft["record"], terminal_reward_local, term_info,
+                    cached_reward_hit=True,
+                    validation_required=False,
+                )
+            else:
+                uncached_indices.append(idx)
+
+        for start in range(0, len(uncached_indices), int(terminal_eval_batch_size)):
+            batch_indices = uncached_indices[start:start + int(terminal_eval_batch_size)]
+            prepared_batch = [
+                prepared_by_draft[i] for i in batch_indices
+                if prepared_by_draft[i] is not None
+            ]
+            results = env.base.evaluate_prepared_terminal_batch(
+                prepared_batch,
+                num_trials_per_action=int(online_num_trials_per_step),
+                validation_required=False,
+            )
+            for local_idx, result in enumerate(results):
+                draft_idx = batch_indices[local_idx]
+                draft = drafts[draft_idx]
+                _state, terminal_reward_local, _done, term_info = result
+                draft["terminal_result"] = result
+                buffer.add_reward_at(int(draft["terminal_buffer_index"]), terminal_reward_local)
+                _apply_terminal_info_to_record(
+                    draft["record"], terminal_reward_local, term_info,
+                    cached_reward_hit=False,
+                    validation_required=False,
+                )
+                metrics_obj = term_info.get("metrics")
+                action_key = str(draft.get("terminal_action_hash") or "")
+                if metrics_obj is not None and action_key:
+                    terminal_metric_cache[action_key] = metrics_obj
+
+        for draft_idx, draft in enumerate(drafts):
+            record: EpisodeRecord = draft["record"]
+            action_key = str(draft.get("terminal_action_hash") or "")
+            has_prior_best = bool(math.isfinite(float(best_online_reward_seen)))
+            validation_required = bool(
+                int(record.terminal_priority) == 3
+                and int(promotion_validation_trials) > int(online_num_trials_per_step)
+                and (
+                    str(record.terminal_pareto_event_kind) in {"frontier_expansion", "frontier_member"}
+                    or (
+                        has_prior_best
+                        and float(record.total_reward) >= float(best_online_reward_seen - promotion_margin_window)
+                    )
+                )
+            )
+            if validation_required:
+                cached_validation = validation_metric_cache.get(action_key)
+                prepared = prepared_by_draft[draft_idx]
+                if prepared is None:
+                    prepared = env.base.prepare_action_for_terminal_probe(
+                        np.asarray(draft["terminal_action_vec"], dtype=np.int64)
+                    )
+                if cached_validation is None:
+                    validation_results = env.base.evaluate_prepared_terminal_batch(
+                        [prepared],
+                        num_trials_per_action=int(promotion_validation_trials),
+                        validation_required=True,
+                    )
+                    validation_result = validation_results[0]
+                    _state, validation_reward, _done, validation_info = validation_result
+                    validation_metrics = validation_info.get("metrics")
+                    if validation_metrics is not None and action_key:
+                        validation_metric_cache[action_key] = validation_metrics
+                else:
+                    validation_result = env.base._finish_prepared_terminal_probe(
+                        prepared,
+                        cached_validation,
+                        probe_diagnostics={
+                            "fast_reward_mode": True,
+                            "cached_reward_hit": True,
+                            "validation_required": True,
+                            "promotion_validation": True,
+                        },
+                        forward_ran=False,
+                    )
+                    _state, validation_reward, _done, validation_info = validation_result
+
+                validation_priority = int(
+                    getattr(validation_info.get("reward_breakdown"), "priority", 0) or 0
+                )
+                if validation_priority < int(record.terminal_priority):
+                    delta = float(validation_reward) - float(record.terminal_reward)
+                    buffer.add_reward_at(int(draft["terminal_buffer_index"]), delta)
+                    _apply_terminal_info_to_record(
+                        record, float(validation_reward), validation_info,
+                        cached_reward_hit=False,
+                        validation_required=True,
+                    )
+                elif "|validation_required" not in record.exploration_mode:
+                    record.exploration_mode = f"{record.exploration_mode}|validation_required"
+
+            _finalize_completed_record(draft)
 
     for ep in range(int(train_cfg.total_episodes)):
         absolute_ep = int(absolute_episode_start + ep)
@@ -1236,6 +1568,9 @@ def train_sequential(
         terminal_probe_clear_wall_seconds_val = 0.0
         terminal_probe_install_skipped_val = False
         terminal_probe_clear_skipped_val = False
+        terminal_buffer_index = -1
+        terminal_deferred = False
+        terminal_deferred_action_vec: Optional[np.ndarray] = None
         rejection_start = dict(rejection_counters)
         rejection_optimizer_wall_seconds_val = 0.0
         static_invalid_level_applied_val = 0
@@ -1455,7 +1790,10 @@ def train_sequential(
                 value = chosen_value
                 step_action_for_env = action_np[:n_active].tolist()
 
-                next_obs, reward, done, info = env.commit_step(chosen_eval_info)
+                next_obs, reward, done, info = env.commit_step(
+                    chosen_eval_info,
+                    defer_terminal_forward=bool(fast_reward_mode_enabled),
+                )
                 steps_taken += 1
                 valid = bool(info.get("valid", True))
                 if valid:
@@ -1484,7 +1822,7 @@ def train_sequential(
                         pass
                 if capture_step_infos:
                     captured_step_infos.append(enriched_info)
-                buffer.add(
+                buffer_idx = buffer.add(
                     state=obs,
                     action=action_np,
                     slot_mask=slot_mask_np,
@@ -1496,6 +1834,13 @@ def train_sequential(
                     done=bool(done),
                     baseline_prior_scale=float(baseline_prior_scale),
                 )
+                if done:
+                    terminal_buffer_index = int(buffer_idx)
+                    terminal_deferred = bool(info.get("terminal_deferred", False))
+                    if terminal_deferred:
+                        terminal_deferred_action_vec = np.asarray(
+                            info.get("terminal_action_vec"), dtype=np.int64,
+                        ).copy()
                 per_step_sum += float(reward)
                 if "terminal_reward" in info:
                     terminal_reward = float(info["terminal_reward"])
@@ -1685,7 +2030,10 @@ def train_sequential(
             value = chosen_value
             step_action_for_env = action_np[:n_active].tolist()
 
-            next_obs, reward, done, info = env.commit_step(chosen_eval_info)
+            next_obs, reward, done, info = env.commit_step(
+                chosen_eval_info,
+                defer_terminal_forward=bool(fast_reward_mode_enabled),
+            )
             steps_taken += 1
             valid = bool(info.get("valid", True))
             if valid:
@@ -1747,7 +2095,7 @@ def train_sequential(
             if capture_step_infos:
                 captured_step_infos.append(enriched_info)
 
-            buffer.add(
+            buffer_idx = buffer.add(
                 state=obs,
                 action=action_np,
                 slot_mask=slot_mask_np,
@@ -1759,6 +2107,13 @@ def train_sequential(
                 done=bool(done),
                 baseline_prior_scale=float(baseline_prior_scale),
             )
+            if done:
+                terminal_buffer_index = int(buffer_idx)
+                terminal_deferred = bool(info.get("terminal_deferred", False))
+                if terminal_deferred:
+                    terminal_deferred_action_vec = np.asarray(
+                        info.get("terminal_action_vec"), dtype=np.int64,
+                    ).copy()
             per_step_sum += float(reward)
             if "terminal_reward" in info:
                 terminal_reward = float(info["terminal_reward"])
@@ -1839,7 +2194,6 @@ def train_sequential(
             if done:
                 break
 
-        episode_returns.append(per_step_sum)
         empirical_success_rate, empirical_failure_rate = guarded_radius2.offset_rates(
             sorted(int(x) for x in neighbor_selected_offsets)
         )
@@ -1954,84 +2308,39 @@ def train_sequential(
             empirical_offset_failure_rate=float(empirical_failure_rate),
             frontier_seed_episode=int(frontier_seed_episode),
         )
-        guarded_radius2.record_episode(
-            absolute_episode_idx=int(absolute_ep),
-            selected_offsets=sorted(int(x) for x in neighbor_selected_offsets),
-            radius=int(neighbor_radius if neighbor_mask_active else 0),
-            terminal_priority=int(record.terminal_priority),
-            invalid_steps=int(record.invalid_steps),
-            early_terminated=bool(record.early_terminated),
-            terminal_stab_violation=float(record.terminal_stab_violation),
-            terminal_loss_mean=float(record.terminal_loss_mean),
-            terminal_pareto_event_kind=str(record.terminal_pareto_event_kind),
-            terminal_fusion_gain=float(record.terminal_fusion_gain),
-            terminal_k_gain=float(record.terminal_k_gain),
-            terminal_bits_gain=float(record.terminal_bits_gain),
-        )
-        if bool(record.guarded_radius2_active):
-            after_decision = guarded_radius2.decide(
-                absolute_episode_idx=int(absolute_ep + 1),
-                rng=np.random.default_rng(0),
-            )
-            record.guarded_radius2_cooldown_remaining = int(
-                after_decision.cooldown_remaining
-            )
-            record.guarded_radius2_episode_count = int(
-                guarded_radius2.radius2_episode_count
-            )
-            record.guarded_radius2_failure_count = int(
-                guarded_radius2.radius2_failure_count
-            )
-            record.guarded_radius2_frontier_expansion_count = int(
-                guarded_radius2.radius2_frontier_expansion_count
-            )
-        episode_records.append(record)
         pending_full_vec = getattr(env, "_pending_full_vec", None)
-        if (
-                int(record.terminal_priority) == 3
-                and str(record.terminal_pareto_event_kind) in {
-                    "frontier_expansion",
-                    "frontier_member",
-                }
-                and pending_full_vec is not None
-        ):
-            frontier_seed_actions.append((
-                int(absolute_ep),
-                np.asarray(pending_full_vec, dtype=np.int64).copy(),
-            ))
-            if len(frontier_seed_actions) > 64:
-                del frontier_seed_actions[:-64]
-        if on_episode_end is not None:
-            on_episode_end(record)
+        draft = {
+            "record": record,
+            "absolute_ep": int(absolute_ep),
+            "selected_offsets": sorted(int(x) for x in neighbor_selected_offsets),
+            "neighbor_radius": int(neighbor_radius if neighbor_mask_active else 0),
+            "neighbor_mask_active": bool(neighbor_mask_active),
+            "guarded_decision": guarded_decision,
+            "pending_full_vec": (
+                None if pending_full_vec is None
+                else np.asarray(pending_full_vec, dtype=np.int64).copy()
+            ),
+            "terminal_buffer_index": int(terminal_buffer_index),
+        }
+        if bool(terminal_deferred):
+            if terminal_deferred_action_vec is None or int(terminal_buffer_index) < 0:
+                raise RuntimeError("deferred terminal reward missing action vec or buffer index")
+            draft["terminal_action_vec"] = np.asarray(
+                terminal_deferred_action_vec, dtype=np.int64,
+            ).copy()
+            from .candidate_store import action_hash as _action_hash
+            draft["terminal_action_hash"] = _action_hash(draft["terminal_action_vec"])
+            pending_terminal_drafts.append(draft)
+            if (
+                    len(pending_terminal_drafts) >= int(terminal_eval_batch_size)
+                    or (ep + 1) % int(train_cfg.update_every_n_episodes) == 0
+                    or (ep + 1) >= int(train_cfg.total_episodes)
+            ):
+                flush_pending_terminal_drafts("batch_full_or_update_boundary")
+        else:
+            _finalize_completed_record(draft)
 
-        if (ep + 1) % int(train_cfg.update_every_n_episodes) == 0:
-            # 2026-05-18 hotfix: entropy schedule (see SequentialTrainConfig
-            # docstring). ``ep`` is 0-indexed; the schedule uses 1-indexed
-            # episode count to match the anchor boundary semantics in
-            # ``force_baseline_episodes``.
-            current_ent_coef = _resolve_ent_coef_schedule(
-                ep_count_1based=int(absolute_episode_start + ep + 1),
-                anchor_episodes=int(force_baseline_episodes),
-                target_ent_coef=float(train_cfg.ppo.ent_coef),
-                anchor_ent_coef=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
-                ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 600)),
-            )
-            metrics = sequential_ppo_update(
-                policy, optimizer, buffer, train_cfg.ppo, device,
-                ent_coef_override=current_ent_coef,
-            )
-            ppo_metric_history.append(metrics)
-            buffer.clear()
-            if on_ppo_update_end is not None:
-                try:
-                    on_ppo_update_end(dict(metrics), int(ep + 1), record)
-                except Exception:
-                    pass
-            if (ep + 1) % int(train_cfg.log_every_n_episodes) == 0:
-                log.info(
-                    "[seqRL] ep=%d return=%.3f invalid_steps=%d ppo: %s",
-                    ep, record.total_reward, record.invalid_steps, metrics,
-                )
+    flush_pending_terminal_drafts("train_end")
 
     return {
         "episode_returns": episode_returns,
@@ -2691,6 +3000,11 @@ def run_sequential_via_runner(
         f"min_invalid={int(getattr(train_cfg, 'empirical_invalid_level_min_samples', 3))}    "
         f"min_rate={float(getattr(train_cfg, 'empirical_invalid_level_min_rate', 0.80)):.2f}    "
         f"max_valid={int(getattr(train_cfg, 'empirical_invalid_level_max_valid', 0))}",
+        f"Fast reward mode：enabled={bool(getattr(train_cfg, 'fast_reward_mode_enabled', False))}    "
+        f"online_k={int(getattr(train_cfg, 'online_num_trials_per_step', 1))}    "
+        f"terminal_eval_batch_size={int(getattr(train_cfg, 'terminal_eval_batch_size', 4))}    "
+        f"promotion_validation_trials={int(getattr(train_cfg, 'promotion_validation_trials', 4))}    "
+        f"promotion_margin_window={float(getattr(train_cfg, 'promotion_margin_window', 0.25)):.3g}",
         "Non-monotonic cost-boundary exploration：SF/K move 是 proposal；真实方向只由 F1 metric/stability、"
         "Rescale_optimizer cost signals、adaptive scalar cost 和 diagnostic archive 确认。",
         f"Entropy schedule (anchor → ramp → steady)："
@@ -2810,6 +3124,11 @@ def run_sequential_via_runner(
         static_invalid_level_mask_enabled=bool(
             getattr(train_cfg, "static_invalid_level_mask_enabled", True)
         ),
+        fast_reward_mode_enabled=bool(getattr(train_cfg, "fast_reward_mode_enabled", False)),
+        online_num_trials_per_step=int(getattr(train_cfg, "online_num_trials_per_step", 1)),
+        terminal_eval_batch_size=int(getattr(train_cfg, "terminal_eval_batch_size", 4)),
+        promotion_validation_trials=int(getattr(train_cfg, "promotion_validation_trials", 4)),
+        promotion_margin_window=float(getattr(train_cfg, "promotion_margin_window", 0.25)),
     )
 
     episode_returns: List[float] = []
@@ -2876,6 +3195,11 @@ def run_sequential_via_runner(
         "acc_threshold": float(base_env.acc_threshold),
         "stab_threshold": float(base_env.stab_threshold),
         "static_skeletons_archive": str(ss_baseline_obj.archive_path),
+        "fast_reward_mode_enabled": bool(getattr(train_cfg, "fast_reward_mode_enabled", False)),
+        "online_num_trials_per_step": int(getattr(train_cfg, "online_num_trials_per_step", 1)),
+        "terminal_eval_batch_size": int(getattr(train_cfg, "terminal_eval_batch_size", 4)),
+        "promotion_validation_trials": int(getattr(train_cfg, "promotion_validation_trials", 4)),
+        "promotion_margin_window": float(getattr(train_cfg, "promotion_margin_window", 0.25)),
     })
     try:
         diag_recorder.set_baseline_avg_k(float(baseline.avg_k))

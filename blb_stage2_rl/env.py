@@ -421,6 +421,367 @@ class BLBStage2Env:
         self.sync_degree_vectors_from_model()
         return self._build_state()
 
+    @staticmethod
+    def _metrics_from_trial_results(
+            results: Sequence[Tuple[float, float, float]],
+            ) -> EpisodeMetrics:
+        if not results:
+            return EpisodeMetrics()
+        loss_arr = np.array([float(x[0]) for x in results], dtype=float)
+        m1_arr = np.array([float(x[1]) for x in results], dtype=float)
+        m2_arr = np.array([float(x[2]) for x in results], dtype=float)
+        _LOSS_CAP = 100.0
+        loss_arr = np.nan_to_num(loss_arr, nan=_LOSS_CAP, posinf=_LOSS_CAP, neginf=_LOSS_CAP)
+        loss_arr = np.clip(loss_arr, 0.0, _LOSS_CAP)
+        m1_arr = np.nan_to_num(m1_arr, nan=0.0, posinf=1.0, neginf=0.0)
+        m2_arr = np.nan_to_num(m2_arr, nan=0.0, posinf=1.0, neginf=0.0)
+        return EpisodeMetrics(
+            loss_mean=float(loss_arr.mean()),
+            loss_std=float(loss_arr.std(ddof=0)) if loss_arr.size > 1 else 0.0,
+            metric1_mean=float(m1_arr.mean()),
+            metric2_mean=float(m2_arr.mean()),
+            metric1_std=float(m1_arr.std(ddof=0)) if m1_arr.size > 1 else 0.0,
+            metric2_std=float(m2_arr.std(ddof=0)) if m2_arr.size > 1 else 0.0,
+            loss_max=float(loss_arr.max()),
+            metric1_min=float(m1_arr.min()),
+            metric2_min=float(m2_arr.min()),
+        )
+
+    def _placeholder_metrics_for_invalid(self) -> EpisodeMetrics:
+        placeholder_metric1 = float(self.baseline.metric1_mean or 0.0)
+        if placeholder_metric1 < float(self.acc_threshold):
+            placeholder_metric1 = float(self.acc_threshold)
+        placeholder_metric2 = float(self.baseline.metric2_mean or 0.0)
+        if self.acc_threshold_m2 is not None and placeholder_metric2 < float(self.acc_threshold_m2):
+            placeholder_metric2 = float(self.acc_threshold_m2)
+        placeholder_loss_std = float(self.baseline.loss_std or 0.0)
+        if placeholder_loss_std > float(self.stab_threshold):
+            placeholder_loss_std = float(self.stab_threshold)
+        placeholder_loss_mean = float(self.baseline.loss_mean or 0.0)
+        placeholder_m1_std = float(self.baseline.metric1_std or 0.0)
+        placeholder_m2_std = float(self.baseline.metric2_std or 0.0)
+        return EpisodeMetrics(
+            loss_mean=placeholder_loss_mean,
+            loss_std=placeholder_loss_std,
+            metric1_mean=placeholder_metric1,
+            metric2_mean=placeholder_metric2,
+            metric1_std=placeholder_m1_std,
+            metric2_std=placeholder_m2_std,
+            loss_max=placeholder_loss_mean,
+            metric1_min=placeholder_metric1,
+            metric2_min=placeholder_metric2,
+        )
+
+    def prepare_action_for_terminal_probe(self, action_vec: np.ndarray) -> Dict[str, Any]:
+        """Prepare optimizer-adjusted cfgs for a terminal reward probe.
+
+        This mirrors the pre-forward part of :meth:`step` and exists so the
+        sequential trainer can batch several completed actions onto different
+        GPUs before running model-forward reward probes.
+        """
+        action_vec = np.asarray(action_vec, dtype=int).reshape(-1)
+        if action_vec.size != self.total_action_dim:
+            raise ValueError(
+                f"action_vec dim {action_vec.size} != expected {self.total_action_dim}"
+            )
+        is_optimizer_baseline_action = bool(
+            np.array_equal(action_vec, make_all_max_action_vector(self.num_layers))
+        )
+        action_vec_hash = action_hash(action_vec)
+        degree_sync = self.sync_degree_vectors_from_model()
+        timing: Dict[str, float] = {}
+        cost_t0 = time.perf_counter()
+        cost_eval = evaluate_action_for_cost(
+            action_vec,
+            profile=self.env_cfg.profile,
+            num_layers=self.num_layers,
+            max_sfs=self.max_sfs,
+            rescale_bridge=self.rescale_bridge,
+            gelu_degree=self.gelu_degree,
+            attn_degree=self.attn_degree,
+        )
+        timing["cost_eval_wall_seconds"] = float(time.perf_counter() - cost_t0)
+        decoded = cost_eval.decoded
+        cfgs_dict = cost_eval.cfgs_dict
+        opt_outputs = cost_eval.outputs
+        opt_signals = cost_eval.signals
+        any_invalid = bool(opt_signals.any_invalid)
+        optimizer_invalid_summary = (
+            summarize_optimizer_invalid_outputs(opt_outputs) if any_invalid else ""
+        )
+
+        bridge_invoker = getattr(self.rescale_bridge, "invoker", None)
+        invoker_baselines: Mapping[str, Any] = getattr(bridge_invoker, "baselines", {}) or {}
+        per_config_overrides: Dict[str, List[Tuple[str, str, Any, Any]]] = {}
+        if not any_invalid:
+            for cn, out in opt_outputs.items():
+                try:
+                    block_idx, _profile, layer_idx = parse_config_name(cn)
+                except Exception:
+                    continue
+                if layer_idx < 0:
+                    continue
+                target_cfg = cfgs_dict[f"block{block_idx}"][int(layer_idx)]
+                graph_key, _ = _strip_layer_suffix(cn)
+                baseline_entry = invoker_baselines.get(graph_key)
+                baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
+                rotation_name_map = (self.env_cfg.rotation_name_map or {}).get(
+                    (int(block_idx), str(self.env_cfg.profile)), {}
+                )
+                overrides = apply_optimizer_output_to_cfg(
+                    target_cfg,
+                    output_raw=out.raw,
+                    block_idx=int(block_idx),
+                    graph_key=graph_key,
+                    baseline_skeleton=baseline_skeleton,
+                    rotation_name_map=rotation_name_map,
+                )
+                if int(block_idx) == 2:
+                    overrides = list(overrides) + sync_block2_qk_binding(target_cfg)
+                    overrides = list(overrides) + sync_block2_aux_fresh_binding(target_cfg)
+                elif int(block_idx) == 4:
+                    overrides = list(overrides) + sync_block4_v_mask_binding(target_cfg)
+                elif int(block_idx) == 5:
+                    overrides = list(overrides) + sync_block5_aux_fresh_binding(target_cfg)
+                if overrides:
+                    per_config_overrides[cn] = [
+                        (e.cfg_attr, e.source, e.old_value, e.new_value)
+                        for e in overrides
+                    ]
+
+        info: Dict[str, Any] = {
+            "decoded": decoded,
+            "opt_signals": opt_signals,
+            "opt_outputs_keys": list(opt_outputs.keys()),
+            "invalid": any_invalid,
+            "apply_failed": False,
+            "eval_failed": False,
+            "forward_ran": False,
+            "optimizer_baseline_action": bool(is_optimizer_baseline_action),
+            "optimizer_eval_mode": cost_eval.optimizer_eval_mode,
+            "timing": timing,
+        }
+        if optimizer_invalid_summary:
+            info["optimizer_invalid_summary"] = optimizer_invalid_summary
+        if degree_sync:
+            info["model_degree_sync"] = degree_sync
+        if per_config_overrides:
+            info["optimizer_cfg_overrides"] = per_config_overrides
+
+        return {
+            "action_vec": action_vec,
+            "action_hash": action_vec_hash,
+            "decoded": decoded,
+            "opt_signals": opt_signals,
+            "any_invalid": any_invalid,
+            "requires_forward": not any_invalid,
+            "info": info,
+            "timing": timing,
+        }
+
+    def _finish_prepared_terminal_probe(
+            self,
+            prepared: Mapping[str, Any],
+            metrics: EpisodeMetrics,
+            *,
+            probe_diagnostics: Optional[Mapping[str, Any]] = None,
+            forward_ran: bool = True,
+            eval_error: Optional[str] = None,
+            ) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
+        action_vec = np.asarray(prepared["action_vec"], dtype=int).reshape(-1)
+        opt_signals = prepared["opt_signals"]
+        any_invalid = bool(prepared.get("any_invalid", False))
+        action_vec_hash = str(prepared.get("action_hash", action_hash(action_vec)))
+        info = dict(prepared.get("info") or {})
+        timing = dict(info.get("timing") or {})
+        info["timing"] = timing
+        info["forward_ran"] = bool(forward_ran)
+        if eval_error:
+            info["eval_failed"] = True
+            info["error"] = eval_error
+            any_invalid = True
+        if any_invalid and not bool(forward_ran):
+            info["forward_skipped_reason"] = info.get(
+                "forward_skipped_reason", "any_invalid_chain"
+            )
+        if probe_diagnostics:
+            diag = dict(probe_diagnostics)
+            diag.update(timing)
+            info["probe_diagnostics"] = diag
+
+        breakdown = compute_reward(
+            metrics, opt_signals,
+            action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
+            baseline=self.baseline,
+            weights=self.reward_weights,
+            acc_threshold=self.acc_threshold,
+            acc_threshold_m2=self.acc_threshold_m2,
+            stab_threshold=self.stab_threshold,
+            any_invalid=any_invalid,
+            pareto_archive=self.pareto_cost_archive,
+            action_hash=action_vec_hash,
+        )
+        info["reward_breakdown"] = breakdown
+        info["action_hash"] = action_vec_hash
+        info["metrics"] = metrics
+        info["invalid"] = bool(any_invalid)
+
+        self._step_idx += 1
+        self._last_invalid_rate = 1.0 if any_invalid else 0.0
+        self._last_total_bits_norm = float(opt_signals.total_bits_sum) / max(
+            1.0, float(self.baseline.total_bits_sum)
+        )
+        self._last_fusion_count = float(opt_signals.total_fusion_count)
+        return self._build_state(), float(breakdown.reward), True, info
+
+    def evaluate_prepared_terminal_batch(
+            self,
+            prepared_list: Sequence[Mapping[str, Any]],
+            *,
+            num_trials_per_action: int = 1,
+            validation_required: bool = False,
+            ) -> List[Tuple[np.ndarray, float, bool, Dict[str, Any]]]:
+        """Evaluate prepared terminal candidates, batching distinct actions when possible."""
+        prepared_items = list(prepared_list)
+        if not prepared_items:
+            return []
+        k = max(1, int(num_trials_per_action))
+        out: List[Optional[Tuple[np.ndarray, float, bool, Dict[str, Any]]]] = [None] * len(prepared_items)
+        forward_indices = [
+            i for i, item in enumerate(prepared_items)
+            if bool(item.get("requires_forward", True))
+        ]
+        for i, item in enumerate(prepared_items):
+            if i in forward_indices:
+                continue
+            metrics = self._placeholder_metrics_for_invalid()
+            out[i] = self._finish_prepared_terminal_probe(
+                item, metrics,
+                probe_diagnostics={"fast_reward_mode": True, "validation_required": bool(validation_required)},
+                forward_ran=False,
+            )
+
+        if forward_indices and self.probe_runner is not None and k == 1 and len(forward_indices) >= 2:
+            base_seed = self._derive_probe_base_seed()
+            self._probe_eval_counter += 1
+            decoded_by_trial = [
+                prepared_items[i]["decoded"] for i in forward_indices
+            ]
+            try:
+                trial_results = self.probe_runner.run_action_trials_once(
+                    decoded_by_trial, base_seed=base_seed,
+                )
+                diag_obj = self.probe_runner.last_diagnostics
+                diag = {}
+                if diag_obj is not None:
+                    diag = {
+                        "k": int(diag_obj.k),
+                        "wall_seconds": float(diag_obj.wall_seconds),
+                        "per_worker_seconds": [float(x) for x in diag_obj.per_worker_seconds],
+                        "per_worker_trial_counts": [int(x) for x in diag_obj.per_worker_trial_counts],
+                        "per_worker_trial_indices": [
+                            list(map(int, x)) for x in diag_obj.per_worker_trial_indices
+                        ],
+                        "per_worker_trial_seeds": [
+                            list(map(int, x)) for x in diag_obj.per_worker_trial_seeds
+                        ],
+                        "devices": [str(x) for x in diag_obj.devices],
+                        "speedup_vs_sequential": float(diag_obj.speedup_vs_sequential),
+                        "multi_action": bool(getattr(diag_obj, "multi_action", False)),
+                        "line": format_diagnostics_line(diag_obj),
+                    }
+                diag.update({
+                    "fast_reward_mode": True,
+                    "online_num_trials_per_step": int(k),
+                    "terminal_eval_batch_size": int(len(forward_indices)),
+                    "validation_required": bool(validation_required),
+                    "probe_install_wall_seconds": float(diag.get("wall_seconds", 0.0) or 0.0),
+                    "probe_install_skipped": False,
+                    "probe_clear_wall_seconds": 0.0,
+                    "probe_clear_skipped": True,
+                })
+                for local_idx, result in enumerate(trial_results):
+                    item_idx = forward_indices[local_idx]
+                    metrics = self._metrics_from_trial_results([result])
+                    out[item_idx] = self._finish_prepared_terminal_probe(
+                        prepared_items[item_idx], metrics,
+                        probe_diagnostics=diag,
+                        forward_ran=True,
+                    )
+            except Exception as exc:
+                for item_idx in forward_indices:
+                    metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
+                    out[item_idx] = self._finish_prepared_terminal_probe(
+                        prepared_items[item_idx], metrics,
+                        probe_diagnostics={"fast_reward_mode": True, "validation_required": bool(validation_required)},
+                        forward_ran=False,
+                        eval_error=f"BLB multi-action eval failed: {exc}",
+                    )
+        else:
+            for item_idx in forward_indices:
+                item = prepared_items[item_idx]
+                timing = dict((item.get("info") or {}).get("timing") or {})
+                decoded = item["decoded"]
+                action_vec_hash = str(item["action_hash"])
+                persistent_install = bool(getattr(self.env_cfg, "persistent_probe_install", False))
+                install_skipped = False
+                install_t0 = time.perf_counter()
+                try:
+                    if persistent_install and self._installed_action_hash == action_vec_hash:
+                        install_skipped = True
+                    elif self.probe_runner is not None:
+                        self.probe_runner.install_action(decoded)
+                        self._installed_action_hash = action_vec_hash if persistent_install else None
+                    else:
+                        self.bridge.apply(
+                            block1_cfgs=decoded.block1_cfgs,
+                            block2_cfgs=decoded.block2_cfgs,
+                            block3_cfgs=decoded.block3_cfgs,
+                            block4_cfgs=decoded.block4_cfgs,
+                            block5_cfgs=decoded.block5_cfgs,
+                        )
+                        self._installed_action_hash = action_vec_hash if persistent_install else None
+                    timing["probe_install_wall_seconds"] = float(time.perf_counter() - install_t0)
+                    timing["probe_install_skipped"] = float(1.0 if install_skipped else 0.0)
+                    metrics = self._eval_on_probe(k)
+                    diag = dict(self._last_probe_diagnostics or {})
+                    diag.update(timing)
+                    diag["fast_reward_mode"] = True
+                    diag["online_num_trials_per_step"] = int(k)
+                    diag["terminal_eval_batch_size"] = 1
+                    diag["validation_required"] = bool(validation_required)
+                    clear_t0 = time.perf_counter()
+                    if persistent_install:
+                        timing["probe_clear_wall_seconds"] = 0.0
+                        timing["probe_clear_skipped"] = 1.0
+                    else:
+                        self.clear_installed_blb()
+                        timing["probe_clear_wall_seconds"] = float(time.perf_counter() - clear_t0)
+                        timing["probe_clear_skipped"] = 0.0
+                    diag.update(timing)
+                    out[item_idx] = self._finish_prepared_terminal_probe(
+                        item, metrics,
+                        probe_diagnostics=diag,
+                        forward_ran=True,
+                    )
+                except Exception as exc:
+                    try:
+                        self.clear_installed_blb()
+                    except Exception:
+                        pass
+                    metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
+                    out[item_idx] = self._finish_prepared_terminal_probe(
+                        item, metrics,
+                        probe_diagnostics={
+                            "fast_reward_mode": True,
+                            "validation_required": bool(validation_required),
+                        },
+                        forward_ran=False,
+                        eval_error=f"BLB eval failed: {exc}",
+                    )
+
+        return [x for x in out if x is not None]
+
     def step(
             self,
             action_vec: np.ndarray,

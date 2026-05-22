@@ -767,7 +767,7 @@ class SequentialRolloutBuffer:
             reward: float,
             done: bool,
             baseline_prior_scale: float = 0.0,
-            ) -> None:
+            ) -> int:
         """Append one transition.
 
         Callers that build a per-step NumPy mask can pass
@@ -789,6 +789,14 @@ class SequentialRolloutBuffer:
             done=bool(done),
             baseline_prior_scale=float(baseline_prior_scale),
         ))
+        return len(self._buf) - 1
+
+    def add_reward_at(self, index: int, delta: float) -> None:
+        """Add a delayed reward component to an existing transition."""
+        idx = int(index)
+        if idx < 0 or idx >= len(self._buf):
+            raise IndexError(f"transition index {idx} out of range")
+        self._buf[idx].reward = float(self._buf[idx].reward) + float(delta)
 
     def clear(self) -> None:
         self._buf.clear()

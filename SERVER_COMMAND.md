@@ -11,6 +11,11 @@ PLANNED_EPISODES=60000 \
 SMOKE_EPISODES=1000 \
 BATCH_SIZE=512 \
 K_TRIALS=4 \
+FAST_REWARD_MODE_ENABLED=1 \
+ONLINE_K_TRIALS=1 \
+TERMINAL_EVAL_BATCH_SIZE=4 \
+PROMOTION_VALIDATION_TRIALS=4 \
+PROMOTION_MARGIN_WINDOW=0.25 \
 PROBE_SIZE=256 \
 RL_CUDA_VISIBLE_DEVICES=0,1,2,3 \
 REWARD_DEVICES=0,1,2,3 \
@@ -28,6 +33,7 @@ bash scripts/stage2_first10k_server_run.sh
   - 使用最新 GTrXL Stage-2 sequential policy、adaptive scalar P3 cost reward、non-monotonic empirical proposal sampler、guarded radius2。
   - 默认高保真配置固定 `--stage2-k-trials 4` 和 `--stage2-probe-size 256`；四卡时每张卡跑一个独立噪声 trial。若本地已验证低 probe-size 训练加速配置，可以只在训练搜索阶段降低 `PROBE_SIZE`，最终候选仍要回到 256 probe 做验证。
   - 使用上一轮四卡 benchmark 选出的最快配置：`batch size=512`、`reward_devices=0,1,2,3`。
+  - 本轮启用 fast online reward mode：正式训练在线 reward 用 `ONLINE_K_TRIALS=1`，每批最多 4 个 terminal action 通过 `ProbeRunner.run_action_trials_once(...)` 分配到四张卡，每张卡评估一个不同 action；优秀/边界 P3 候选用 `PROMOTION_VALIDATION_TRIALS=4` 走重复 trial 复验。基线/noisy preflight 和最终 promotable 证据仍保留 K=4 语义。
   - 监控吞吐：至少在运行约 1 小时后统计 episode/hour；后续继续从 `episodes.jsonl` 和 `monitor_live.json` 更新速度。
   - 本轮 P1/P2 判断按用户新标准：post-anchor P1+P2 比例不超过 30% 不停跑；少量 P1/P2 只作为 warning。invalid steps、loss-cap burst、非有限 PPO、四卡 reward-probe 失效仍然是硬失败。
   - 遇到硬失败或明显训练异常时及时停止，不浪费服务器时间；代码 bug 必须回本地修复后再 push、server pull、rerun。

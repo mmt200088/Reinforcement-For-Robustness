@@ -268,6 +268,16 @@ Implementation constraints to preserve:
   `any_invalid`, skip model-forward reward as current code does.
 - Baseline/noisy preflight that calls `_eval_on_probe(k)` should use the same
   multi-GPU runner so baseline std and candidate std have the same semantics.
+- Optional fast online reward mode is for training throughput only. Enable it
+  with `--blb-v3-fast-reward-mode-enabled 1`, `--blb-v3-online-k-trials 1`,
+  `--blb-v3-terminal-eval-batch-size 4`, and
+  `--blb-v3-promotion-validation-trials 4`. The sequential runner defers
+  terminal forward rewards, batches up to four completed actions, and calls
+  `ProbeRunner.run_action_trials_once(...)` so each GPU evaluates a different
+  action/trial. Exact repeated action hashes can reuse cached probe metrics,
+  but reward/duplicate bookkeeping is recomputed. Boundary/high-reward P3
+  candidates are promotion-validated with repeated trials and can have the
+  online reward replaced if validation exposes a lower priority.
 - Keep enough diagnostics to prove all requested cards are used: visible
   devices, worker lines, trial split, per-device elapsed time, and
   `terminal_probe_*` fields in `episodes.jsonl`.

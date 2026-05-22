@@ -251,6 +251,8 @@ class BLBStage2SequentialEnv:
     def commit_step(
             self,
             eval_info: Mapping[str, Any],
+            *,
+            defer_terminal_forward: bool = False,
             ) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
         """Commit a previously-evaluated action: mutate env state, return
         ``(obs, reward, done, info)`` just like :meth:`step` did before the
@@ -362,6 +364,13 @@ class BLBStage2SequentialEnv:
             info["early_terminated"] = True
 
         if done and not self._terminated_early:
+            if bool(defer_terminal_forward):
+                info["terminal_deferred"] = True
+                info["terminal_action_vec"] = np.asarray(
+                    self._pending_full_vec, dtype=np.int64,
+                ).copy()
+                info["defer_terminal_forward"] = True
+                return self.base._build_state(), per_step_reward, True, info
             term_state, term_reward, _term_done, term_info = self.base.step(self._pending_full_vec)
             info["terminal_info"] = term_info
             info["terminal_reward"] = float(term_reward)

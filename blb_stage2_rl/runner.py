@@ -644,6 +644,14 @@ class BLBStage2TrainConfig:
     # parallel. Element 0 must be the primary device (where the env's existing
     # model lives). Wired through --blb-v3-reward-devices "0,1" in the launcher.
     reward_devices: List[int] = field(default_factory=list)
+    # Fast online reward mode: collect terminal actions with K=1 online and
+    # evaluate distinct actions concurrently across reward_devices. Promotion
+    # validation keeps the old repeated-trial path available near the boundary.
+    fast_reward_mode_enabled: bool = False
+    online_num_trials_per_step: int = 1
+    terminal_eval_batch_size: int = 4
+    promotion_validation_trials: int = 4
+    promotion_margin_window: float = 0.25
 
 
 # ---------------------------------------------------------------------------
@@ -2519,6 +2527,9 @@ class BLBStage2RLRunner:
                 ("guarded_radius2_max_mutations", "blb_v3_guarded_radius2_max_mutations"),
                 ("guarded_radius2_cooldown_episodes", "blb_v3_guarded_radius2_cooldown_episodes"),
                 ("ent_coef_ramp_episodes", "blb_v3_ent_coef_ramp_episodes"),
+                ("online_num_trials_per_step", "blb_v3_online_k_trials"),
+                ("terminal_eval_batch_size", "blb_v3_terminal_eval_batch_size"),
+                ("promotion_validation_trials", "blb_v3_promotion_validation_trials"),
                 ("seed", "final_eval_random_seed"),
         ):
             v = getattr(ev, attr_name, None)
@@ -2568,10 +2579,21 @@ class BLBStage2RLRunner:
             cfg.static_invalid_level_mask_enabled = str(v).strip().lower() not in (
                 "0", "false", "no", "off",
             )
+        v = getattr(ev, "blb_v3_fast_reward_mode_enabled", None)
+        if v not in (None, ""):
+            cfg.fast_reward_mode_enabled = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
+            )
         v = getattr(ev, "blb_v3_guarded_radius2_episode_fraction", None)
         if v not in (None, ""):
             try:
                 cfg.guarded_radius2_episode_fraction = float(v)
+            except Exception:
+                pass
+        v = getattr(ev, "blb_v3_promotion_margin_window", None)
+        if v not in (None, ""):
+            try:
+                cfg.promotion_margin_window = float(v)
             except Exception:
                 pass
         v = getattr(ev, "blb_v3_disable_warmstart_on_resume", None)
@@ -2692,6 +2714,10 @@ class BLBStage2RLRunner:
         cfg.guarded_radius2_min_radius1_successes = max(
             1, int(cfg.guarded_radius2_min_radius1_successes),
         )
+        cfg.online_num_trials_per_step = max(1, int(cfg.online_num_trials_per_step))
+        cfg.terminal_eval_batch_size = max(1, int(cfg.terminal_eval_batch_size))
+        cfg.promotion_validation_trials = max(1, int(cfg.promotion_validation_trials))
+        cfg.promotion_margin_window = max(0.0, float(cfg.promotion_margin_window))
         cfg.ent_coef_ramp_episodes = max(
             0, min(int(cfg.ent_coef_ramp_episodes), int(cfg.total_episodes))
         )

@@ -2388,6 +2388,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_sequential_early_terminate_on_invalid=False,
                   blb_v3_seed=None,
                   blb_v3_reward_devices="",
+                  blb_v3_fast_reward_mode_enabled=False,
+                  blb_v3_online_k_trials=1,
+                  blb_v3_terminal_eval_batch_size=4,
+                  blb_v3_promotion_validation_trials=4,
+                  blb_v3_promotion_margin_window=0.25,
                   final_eval_require_rescale_optimizer=False):
         """
         基于 PPO 强化学习的策略搜索器。
@@ -2957,6 +2962,26 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.blb_v3_reward_devices = (
             "" if blb_v3_reward_devices is None else str(blb_v3_reward_devices)
         )
+        self.blb_v3_fast_reward_mode_enabled = self._coerce_bool_flag(
+            blb_v3_fast_reward_mode_enabled,
+            "blb_v3_fast_reward_mode_enabled",
+        )
+        try:
+            self.blb_v3_online_k_trials = max(1, int(blb_v3_online_k_trials))
+        except Exception:
+            self.blb_v3_online_k_trials = 1
+        try:
+            self.blb_v3_terminal_eval_batch_size = max(1, int(blb_v3_terminal_eval_batch_size))
+        except Exception:
+            self.blb_v3_terminal_eval_batch_size = 4
+        try:
+            self.blb_v3_promotion_validation_trials = max(1, int(blb_v3_promotion_validation_trials))
+        except Exception:
+            self.blb_v3_promotion_validation_trials = 4
+        try:
+            self.blb_v3_promotion_margin_window = max(0.0, float(blb_v3_promotion_margin_window))
+        except Exception:
+            self.blb_v3_promotion_margin_window = 0.25
 
     @staticmethod
     def _coerce_bool_flag(raw_value, flag_name):

@@ -1665,6 +1665,48 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertIn('refusing to skip git pull', src)
         self.assertIn('git pull failed or timed out', src)
 
+    def test_fast_multi_actor_reward_mode_is_configurable_and_safe(self):
+        runner = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
+        seq_runner = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        launcher = Path("llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
+        combined = "\n".join([runner, seq_runner, launcher])
+        for needle in (
+            "fast_reward_mode_enabled",
+            "online_num_trials_per_step",
+            "terminal_eval_batch_size",
+            "promotion_validation_trials",
+            "promotion_margin_window",
+            "--blb-v3-fast-reward-mode-enabled",
+            "--blb-v3-online-k-trials",
+            "--blb-v3-terminal-eval-batch-size",
+            "--blb-v3-promotion-validation-trials",
+        ):
+            self.assertIn(needle, combined, msg=f"missing fast reward knob: {needle!r}")
+
+    def test_probe_runner_can_evaluate_distinct_actions_on_distinct_workers(self):
+        src = Path("blb_stage2_rl/probe_runner.py").read_text(encoding="utf-8")
+        for needle in (
+            "run_action_trials_once",
+            "decoded_by_trial",
+            "worker.install(decoded)",
+            "worker.run_trial",
+            "multi_action",
+        ):
+            self.assertIn(needle, src, msg=f"missing multi-action probe support: {needle!r}")
+
+    def test_sequential_fast_mode_defers_terminal_reward_and_revalidates_promotions(self):
+        src = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        for needle in (
+            "defer_terminal_forward",
+            "pending_terminal_drafts",
+            "flush_pending_terminal_drafts",
+            "terminal_buffer_index",
+            "promotion_validation",
+            "cached_reward_hit",
+            "validation_required",
+        ):
+            self.assertIn(needle, src, msg=f"missing deferred terminal fast-mode path: {needle!r}")
+
     def test_first10k_monitor_checks_all_expected_reward_gpus(self):
         import argparse
 

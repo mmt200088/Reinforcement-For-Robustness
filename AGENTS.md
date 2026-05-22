@@ -314,6 +314,18 @@ Implementation constraints to preserve:
 - Baseline/noisy preflight that calls `_eval_on_probe(k)` should use the same
   multi-GPU trial runner so baseline std and candidate std have the same
   semantics.
+- Optional fast online reward mode changes only the online training probe, not
+  baseline calibration or promotable final validation. Enable it with
+  `--blb-v3-fast-reward-mode-enabled 1`, `--blb-v3-online-k-trials 1`,
+  `--blb-v3-terminal-eval-batch-size 4`, and
+  `--blb-v3-promotion-validation-trials 4`. In this mode the sequential runner
+  defers terminal model-forward rewards, accumulates up to four completed
+  actions, and calls `ProbeRunner.run_action_trials_once(...)` so each GPU runs
+  one distinct action/trial. Exact repeated action hashes may reuse cached
+  terminal probe metrics; `compute_reward` still runs again so duplicate
+  frontier/cost bookkeeping remains consistent. Promotion validation reruns
+  selected P3 boundary/high-reward actions with the repeated-trial path and can
+  replace the online reward if validation exposes a lower priority.
 - Keep enough diagnostics to prove all requested cards are used: visible
   devices, reward probe device list, trial split, per-device elapsed time,
   worker lines, and `terminal_probe_*` fields in `episodes.jsonl`.

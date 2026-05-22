@@ -155,6 +155,12 @@ GA / Greedy：
   --blb-v3-action-mask-file PATH          mode=from_file 时读取的 F0 suggested_action_mask.json
   --blb-v3-static-invalid-level-mask-enabled true|false
                                           训练前用 Rescale optimizer 预扫描并屏蔽本地 invalid level
+  --blb-v3-fast-reward-mode-enabled true|false
+                                          在线 K=1、按 terminal batch 把不同 action 分配到多 GPU
+  --blb-v3-online-k-trials N              fast reward mode 在线每 action trial 数（默认 1）
+  --blb-v3-terminal-eval-batch-size N     fast reward mode 每批 terminal action 数
+  --blb-v3-promotion-validation-trials N  边界/优秀候选的重复验证 trial 数
+  --blb-v3-promotion-margin-window FLOAT  触发 promotion validation 的 best reward 窗口
   --blb-v3-sequential-rl true|false       BLB Stage-2 RL 序列决策模式（默认 true，每层每 block 单独决策；
                                             横长 horizon=59；想回退到旧的 577 维单步可传 false 或
                                             --blb-v3-no-sequential-rl）
@@ -219,6 +225,7 @@ err(){ echo "错误：$1" >&2; exit 1; }
 needv(){ [ "$#" -ge 2 ] || err "选项 $1 缺少取值。"; }
 is_pos_int(){ [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
 is_nonneg_int(){ [[ "$1" =~ ^[0-9]+$ ]]; }
+is_bool(){ [[ "$1" =~ ^(1|0|true|false|yes|no|on|off)$ ]]; }
 is_pos_num(){ [[ "$1" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$ ]] && awk -v x="$1" 'BEGIN { exit !((x + 0) > 0) }'; }
 is_nonneg_num(){ [[ "$1" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$ ]] && awk -v x="$1" 'BEGIN { exit !((x + 0) >= 0) }'; }
 ga_total_layers_for_model_type(){
@@ -501,6 +508,11 @@ BLB_V3_ACTION_MASK_MODE="none"; S_BLB_V3_ACTION_MASK_MODE="false"
 BLB_V3_ACTION_MASK_FILE=""; S_BLB_V3_ACTION_MASK_FILE="false"
 BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="0"; S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="false"
 BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED=""; S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED="false"
+BLB_V3_FAST_REWARD_MODE_ENABLED="false"; S_BLB_V3_FAST_REWARD_MODE_ENABLED="false"
+BLB_V3_ONLINE_K_TRIALS="1"; S_BLB_V3_ONLINE_K_TRIALS="false"
+BLB_V3_TERMINAL_EVAL_BATCH_SIZE="4"; S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE="false"
+BLB_V3_PROMOTION_VALIDATION_TRIALS="4"; S_BLB_V3_PROMOTION_VALIDATION_TRIALS="false"
+BLB_V3_PROMOTION_MARGIN_WINDOW="0.25"; S_BLB_V3_PROMOTION_MARGIN_WINDOW="false"
 # Per-block sequential RL (default ON since 2026-05-15). Pass --blb-v3-sequential-rl=false to
 # get back the legacy single-shot 577-dim path.
 BLB_V3_SEQUENTIAL_RL="true"; S_BLB_V3_SEQUENTIAL_RL="false"
@@ -684,6 +696,11 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-action-mask-file) needv "$@"; BLB_V3_ACTION_MASK_FILE="$2"; S_BLB_V3_ACTION_MASK_FILE="true"; shift 2 ;;
     --blb-v3-action-mask-baseline-logit-bonus) needv "$@"; BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="$2"; S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="true"; shift 2 ;;
     --blb-v3-static-invalid-level-mask-enabled) needv "$@"; BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED="$2"; S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED="true"; shift 2 ;;
+    --blb-v3-fast-reward-mode-enabled) needv "$@"; BLB_V3_FAST_REWARD_MODE_ENABLED="$2"; S_BLB_V3_FAST_REWARD_MODE_ENABLED="true"; shift 2 ;;
+    --blb-v3-online-k-trials) needv "$@"; BLB_V3_ONLINE_K_TRIALS="$2"; S_BLB_V3_ONLINE_K_TRIALS="true"; shift 2 ;;
+    --blb-v3-terminal-eval-batch-size) needv "$@"; BLB_V3_TERMINAL_EVAL_BATCH_SIZE="$2"; S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE="true"; shift 2 ;;
+    --blb-v3-promotion-validation-trials) needv "$@"; BLB_V3_PROMOTION_VALIDATION_TRIALS="$2"; S_BLB_V3_PROMOTION_VALIDATION_TRIALS="true"; shift 2 ;;
+    --blb-v3-promotion-margin-window) needv "$@"; BLB_V3_PROMOTION_MARGIN_WINDOW="$2"; S_BLB_V3_PROMOTION_MARGIN_WINDOW="true"; shift 2 ;;
     # Per-block sequential RL knobs (default sequential_rl=true since 2026-05-15)
     --blb-v3-sequential-rl) needv "$@"; BLB_V3_SEQUENTIAL_RL="$2"; S_BLB_V3_SEQUENTIAL_RL="true"; shift 2 ;;
     --blb-v3-no-sequential-rl) BLB_V3_SEQUENTIAL_RL="false"; S_BLB_V3_SEQUENTIAL_RL="true"; shift ;;
@@ -865,6 +882,11 @@ is_pos_int "$BLB_V3_ROLLOUT_SIZE" || err "--stage2-rollout-size 必须是正整�
 [ -z "$BLB_V3_ENT_COEF" ] || is_nonneg_num "$BLB_V3_ENT_COEF" || err "--blb-v3-ent-coef 必须是非负数，当前为：$BLB_V3_ENT_COEF"
 [ -z "$BLB_V3_ENT_COEF_ANCHOR" ] || is_nonneg_num "$BLB_V3_ENT_COEF_ANCHOR" || err "--blb-v3-ent-coef-anchor 必须是非负数，当前为：$BLB_V3_ENT_COEF_ANCHOR"
 [ -z "$BLB_V3_ENT_COEF_RAMP_EPISODES" ] || is_nonneg_int "$BLB_V3_ENT_COEF_RAMP_EPISODES" || err "--blb-v3-ent-coef-ramp-episodes 必须是非负整数，当前为：$BLB_V3_ENT_COEF_RAMP_EPISODES"
+[ "$S_BLB_V3_FAST_REWARD_MODE_ENABLED" = "false" ] || is_bool "$BLB_V3_FAST_REWARD_MODE_ENABLED" || err "--blb-v3-fast-reward-mode-enabled 必须是 true/false"
+[ "$S_BLB_V3_ONLINE_K_TRIALS" = "false" ] || is_pos_int "$BLB_V3_ONLINE_K_TRIALS" || err "--blb-v3-online-k-trials 必须是正整数，当前为：$BLB_V3_ONLINE_K_TRIALS"
+[ "$S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE" = "false" ] || is_pos_int "$BLB_V3_TERMINAL_EVAL_BATCH_SIZE" || err "--blb-v3-terminal-eval-batch-size 必须是正整数，当前为：$BLB_V3_TERMINAL_EVAL_BATCH_SIZE"
+[ "$S_BLB_V3_PROMOTION_VALIDATION_TRIALS" = "false" ] || is_pos_int "$BLB_V3_PROMOTION_VALIDATION_TRIALS" || err "--blb-v3-promotion-validation-trials 必须是正整数，当前为：$BLB_V3_PROMOTION_VALIDATION_TRIALS"
+[ "$S_BLB_V3_PROMOTION_MARGIN_WINDOW" = "false" ] || is_nonneg_num "$BLB_V3_PROMOTION_MARGIN_WINDOW" || err "--blb-v3-promotion-margin-window 必须是非负数，当前为：$BLB_V3_PROMOTION_MARGIN_WINDOW"
 case "$BLB_V3_ACTION_MASK_MODE" in
   ""|none|off|disabled) BLB_V3_ACTION_MASK_MODE="none" ;;
   baseline_only|near_baseline|from_file) BLB_V3_ACTION_MASK_ENABLED="true" ;;
@@ -1499,6 +1521,11 @@ else
       [ -n "$BLB_V3_ACTION_MASK_FILE" ] && CMD+=(--blb_v3_action_mask_file "$BLB_V3_ACTION_MASK_FILE" --blb_v3_action_mask_source "$BLB_V3_ACTION_MASK_FILE")
     fi
     [ "$S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED" = "true" ] && CMD+=(--blb_v3_static_invalid_level_mask_enabled "$BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED")
+    [ "$S_BLB_V3_FAST_REWARD_MODE_ENABLED" = "true" ] && CMD+=(--blb_v3_fast_reward_mode_enabled "$BLB_V3_FAST_REWARD_MODE_ENABLED")
+    [ "$S_BLB_V3_ONLINE_K_TRIALS" = "true" ] && CMD+=(--blb_v3_online_k_trials "$BLB_V3_ONLINE_K_TRIALS")
+    [ "$S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE" = "true" ] && CMD+=(--blb_v3_terminal_eval_batch_size "$BLB_V3_TERMINAL_EVAL_BATCH_SIZE")
+    [ "$S_BLB_V3_PROMOTION_VALIDATION_TRIALS" = "true" ] && CMD+=(--blb_v3_promotion_validation_trials "$BLB_V3_PROMOTION_VALIDATION_TRIALS")
+    [ "$S_BLB_V3_PROMOTION_MARGIN_WINDOW" = "true" ] && CMD+=(--blb_v3_promotion_margin_window "$BLB_V3_PROMOTION_MARGIN_WINDOW")
     # Sequential RL: default ON. Always pass the boolean so users can flip via
     # --blb-v3-no-sequential-rl. Shaping coeffs / early-terminate are only
     # forwarded when user explicitly set them.
@@ -1557,6 +1584,10 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     show "BLB neighbor max radius" "${BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS:-auto}" "$S_BLB_V3_WARMSTART_NEIGHBOR_MAX_RADIUS"
     show "BLB entropy coef" "${BLB_V3_ENT_COEF:-auto}" "$S_BLB_V3_ENT_COEF"
     show "BLB entropy ramp episodes" "${BLB_V3_ENT_COEF_RAMP_EPISODES:-auto}" "$S_BLB_V3_ENT_COEF_RAMP_EPISODES"
+    show "BLB fast reward mode" "$(boolzh "$BLB_V3_FAST_REWARD_MODE_ENABLED")" "$S_BLB_V3_FAST_REWARD_MODE_ENABLED"
+    show "BLB online K trials" "$BLB_V3_ONLINE_K_TRIALS" "$S_BLB_V3_ONLINE_K_TRIALS"
+    show "BLB terminal eval batch" "$BLB_V3_TERMINAL_EVAL_BATCH_SIZE" "$S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE"
+    show "BLB promotion validation trials" "$BLB_V3_PROMOTION_VALIDATION_TRIALS" "$S_BLB_V3_PROMOTION_VALIDATION_TRIALS"
     [ -n "$BLB_V3_SAVE_INTERVAL" ] && show "BLB checkpoint 间隔" "$BLB_V3_SAVE_INTERVAL" "$S_BLB_V3_SAVE_INTERVAL"
     [ -n "$BLB_V3_EVAL_INTERVAL" ] && show "BLB 日志评估间隔" "$BLB_V3_EVAL_INTERVAL" "$S_BLB_V3_EVAL_INTERVAL"
   fi
