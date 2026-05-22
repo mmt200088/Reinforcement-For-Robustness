@@ -491,10 +491,15 @@ experiment reproduction.
    path. Only P3 candidates (accuracy and stability pass) receive cost reward.
    P3 shaping is split into a small metric-margin budget and a cost-led budget
    so extra accuracy margin cannot crowd out cost ranking. Fusion gain and
-   truncation/K gain are interval-style boosts: each +1 fusion or each decoded
-   K-bit unit (derived from average-K gain with default step size `1/59`) gives
-   a clear scalar jump inside the P3 tier. Total bits is a separately clipped
-   weak linear tie-breaker and must stay smaller than a fusion/K tier step.
+   truncation/K gain are interval-style boosts: each +1 fusion or each coarse
+   layer-equivalent K tier (derived from average-K gain with default step size
+   `1/12`) gives a clear scalar jump inside the P3 tier. The `1/12` K tier was
+   chosen after an offline sweep over real 2026-05-23 fast-reward episodes:
+   the older `1/59` single-slot K tier made roughly 27.5% of P3 candidates hit
+   the P3 cost clip too early, while the `1/12` layer-equivalent tier kept
+   saturation near 9% and preserved visible fusion/K ordering. Total bits is a
+   separately clipped weak linear tie-breaker and must stay smaller than a
+   fusion/K tier step.
    `ParetoCostArchive` may still record P3 frontier rows for
    diagnostics/exploration statistics, but Pareto events are not the default PPO
    scalar reward.

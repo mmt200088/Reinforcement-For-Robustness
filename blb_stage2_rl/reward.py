@@ -37,7 +37,7 @@
   P3 budgeted adaptive cost:
     p3_metric_margin = clip(margin_acc, 0, 1) * p3_metric_margin_budget
     fusion_bonus = floor(max(fusion_gain, 0)) * fusion_step_bonus
-    truncation_step_gain = max(k_gain, 0) / k_step_size   # avg-K -> decoded K-bit units
+    truncation_step_gain = max(k_gain, 0) / k_step_size   # avg-K -> coarse K tier units
     k_bonus = floor(truncation_step_gain) * k_step_bonus
     bits_tiebreaker = clip(bits_linear_scale * bits_gain / typical_bits,
                            -bits_tiebreaker_clip, +bits_tiebreaker_clip)
@@ -95,11 +95,11 @@ DEFAULT_COST_W_K = 30.0
 DEFAULT_COST_W_BITS = 1.0
 DEFAULT_P3_METRIC_MARGIN_BUDGET = 0.50
 DEFAULT_P3_COST_BUDGET = 4.50
-DEFAULT_COST_FUSION_STEP_BONUS = 0.50
-DEFAULT_COST_K_STEP_BONUS = 0.50
-DEFAULT_COST_K_STEP_SIZE = 1.0 / 59.0
-DEFAULT_COST_BITS_LINEAR_SCALE = 0.25
-DEFAULT_COST_BITS_TIEBREAKER_CLIP = 0.35
+DEFAULT_COST_FUSION_STEP_BONUS = 0.35
+DEFAULT_COST_K_STEP_BONUS = 0.35
+DEFAULT_COST_K_STEP_SIZE = 1.0 / 12.0
+DEFAULT_COST_BITS_LINEAR_SCALE = 0.10
+DEFAULT_COST_BITS_TIEBREAKER_CLIP = 0.25
 DEFAULT_COST_SCORE_CLIP_MIN = -0.50
 DEFAULT_COST_SCORE_CLIP_MAX = DEFAULT_P3_COST_BUDGET
 DEFAULT_STAB_W_M1 = 30.0
@@ -184,9 +184,11 @@ class RewardWeights:
                            P3 内每新增 1 个 fusion_gain 的区间式奖励。
         cost_k_step_bonus:
                            P3 内每新增 1 个 truncation/K step 的区间式奖励。
-        cost_k_step_size:  ``k_gain`` 是 episode 平均 K drop；默认 1/59 让
-                           一个 sequential step 上的 K 降低 1 档约等于一个
-                           truncation reward unit。
+        cost_k_step_size:  ``k_gain`` 是 episode 平均 K drop；默认 1/12 把
+                           truncation/K 改善按 layer-equivalent 粗粒度分档。
+                           早期 1/59 会把单个 slot 的 K 降低 1 档当成完整
+                           reward unit，真实 60k 前序样本中约 27.5% 的 P3
+                           候选过早打满 cost clip，削弱 fusion/K 的继续排序。
         cost_bits_linear_scale:
                            total_bits 的弱线性权重；它只做细粒度排序。
         cost_bits_tiebreaker_clip:
@@ -499,9 +501,10 @@ def _adaptive_scalar_cost_score(
     """P3-only budgeted adaptive scalar cost reward.
 
     Fusion and truncation/K gains use interval jumps. ``k_gain`` arrives as an
-    average over active K slots, so ``cost_k_step_size`` converts it back to a
-    human-readable decoded K-bit unit count. ``total_bits`` remains a separately
-    clipped weak linear tie-breaker.
+    average over active K slots, so ``cost_k_step_size`` converts it into a
+    coarser layer-equivalent K tier. This keeps truncation comparable to fusion
+    without letting many tiny per-slot K changes saturate the P3 cost budget too
+    early. ``total_bits`` remains a separately clipped weak linear tie-breaker.
     """
     fusion_step = _positive_step_bonus(
         fusion_gain,

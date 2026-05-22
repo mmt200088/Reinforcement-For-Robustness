@@ -181,8 +181,8 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual(breakdown.priority, 3)
         self.assertEqual(breakdown.pareto_event_kind, "frontier_expansion")
         self.assertGreater(breakdown.cost_score, 0.20)
-        self.assertGreaterEqual(breakdown.r_fusion, 1.0)
-        self.assertGreaterEqual(breakdown.r_k, 0.5)
+        self.assertAlmostEqual(breakdown.r_fusion, 0.70, places=6)
+        self.assertGreaterEqual(breakdown.r_k, 4.0)
         self.assertGreater(breakdown.r_bits, 0.0)
         self.assertLess(breakdown.r_bits, reward.DEFAULT_COST_FUSION_STEP_BONUS)
         self.assertAlmostEqual(
@@ -224,15 +224,15 @@ class ParetoCostArchiveTests(unittest.TestCase):
                 metric2_std=0.0,
             ),
             Signals(),
-            action_avg_k=13.0 - (1.0 / 59.0),
+            action_avg_k=13.0 - (1.0 / 12.0),
             baseline=baseline,
             weights=weights,
             action_hash="scalar-a",
         )
 
         self.assertEqual(breakdown.priority, 3)
-        self.assertAlmostEqual(breakdown.r_fusion, 0.5, places=6)
-        self.assertAlmostEqual(breakdown.r_k, 0.5, places=6)
+        self.assertAlmostEqual(breakdown.r_fusion, 0.35, places=6)
+        self.assertAlmostEqual(breakdown.r_k, 0.35, places=6)
         self.assertAlmostEqual(breakdown.cost_truncation_step_gain, 1.0, places=6)
         self.assertGreater(breakdown.r_bits, 0.0)
         self.assertAlmostEqual(
@@ -290,15 +290,15 @@ class ParetoCostArchiveTests(unittest.TestCase):
             )
 
         self.assertAlmostEqual(run(0.99, 0.0).r_fusion, 0.0, places=6)
-        self.assertAlmostEqual(run(1.0, 0.0).r_fusion, 0.5, places=6)
-        self.assertAlmostEqual(run(1.99, 0.0).r_fusion, 0.5, places=6)
-        self.assertAlmostEqual(run(2.0, 0.0).r_fusion, 1.0, places=6)
+        self.assertAlmostEqual(run(1.0, 0.0).r_fusion, 0.35, places=6)
+        self.assertAlmostEqual(run(1.99, 0.0).r_fusion, 0.35, places=6)
+        self.assertAlmostEqual(run(2.0, 0.0).r_fusion, 0.70, places=6)
 
-        one_k = 1.0 / 59.0
+        one_k = 1.0 / 12.0
         self.assertAlmostEqual(run(0.0, one_k * 0.99).r_k, 0.0, places=6)
-        self.assertAlmostEqual(run(0.0, one_k).r_k, 0.5, places=6)
-        self.assertAlmostEqual(run(0.0, one_k * 1.99).r_k, 0.5, places=6)
-        self.assertAlmostEqual(run(0.0, one_k * 2.0).r_k, 1.0, places=6)
+        self.assertAlmostEqual(run(0.0, one_k).r_k, 0.35, places=6)
+        self.assertAlmostEqual(run(0.0, one_k * 1.99).r_k, 0.35, places=6)
+        self.assertAlmostEqual(run(0.0, one_k * 2.0).r_k, 0.70, places=6)
 
         bits_only = run(0.0, 0.0)
         self.assertLessEqual(
