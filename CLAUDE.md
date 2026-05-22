@@ -90,6 +90,13 @@ Current Stage-2 RL collapse goal mode:
   to be clean. Occasional negative reward spikes or isolated P1(acc) episodes
   are acceptable if they do not become frequent or consecutive and the rolling
   reward windows do not collapse.
+- Decision boundary for this goal: make small corrective changes autonomously
+  when the evidence supports them, including hyperparameter tuning, watchdog
+  threshold changes, narrow diagnostic instrumentation, and focused bug fixes
+  that preserve the current architecture and artifacts. Ask the user before
+  major architectural/rewrite decisions, especially changes that invalidate the
+  current Stage-2 setup, replace the reward/search formulation, rewrite large
+  modules, or make earlier artifacts/checkpoints no longer interpretable.
 - First 10k attempt evidence, 2026-05-20: the `3000/16/radius3` neighbor
   schedule reached reward around 42 but produced a P1 cluster at episodes
   1699-1757 once safe-neighbor reached `radius=2` with 8-9 mutated offsets.

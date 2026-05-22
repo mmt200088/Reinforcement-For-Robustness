@@ -44,6 +44,13 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   plateau caused by entropy/clip collapse or an overly narrow safe-neighbor
   curriculum. Treat 60k runs as research evidence, with online watchdog checks
   and follow-up experiments when the curve stalls.
+- Decision boundary for this goal: make small corrective changes autonomously
+  when the evidence supports them, including hyperparameter tuning, watchdog
+  threshold changes, narrow diagnostic instrumentation, and focused bug fixes
+  that preserve the current architecture and artifacts. Ask the user before
+  major architectural/rewrite decisions, especially changes that invalidate the
+  current Stage-2 setup, replace the reward/search formulation, rewrite large
+  modules, or make earlier artifacts/checkpoints no longer interpretable.
 - First 10k attempt evidence, 2026-05-20: `NEIGHBOR_RAMP=3000`,
   `NEIGHBOR_MAX_MUTATIONS=16`, `NEIGHBOR_MAX_RADIUS=3` improved reward into the
   low 42s but hit a P1 cluster around episodes 1699-1757. P1 was 0 through
