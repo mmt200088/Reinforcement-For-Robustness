@@ -39,11 +39,14 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   progress on rolling averages. Occasional negative reward spikes or isolated
   P1(acc) episodes are acceptable research noise if they do not become frequent
   or sustained and the rolling reward windows do not collapse. Hard failures
-  remain: collapse sentinels such as `loss_mean=100`, sustained/high-frequency
-  P1(acc), invalid-step resurgence, a dead GPU reward-probe path, or a long
-  plateau caused by entropy/clip collapse or an overly narrow safe-neighbor
-  curriculum. Treat 60k runs as research evidence, with online watchdog checks
-  and follow-up experiments when the curve stalls.
+  remain: sustained or high-frequency collapse sentinels such as `loss_mean=100`,
+  sustained/high-frequency P1(acc), invalid-step resurgence, a dead GPU
+  reward-probe path, or a long plateau caused by entropy/clip collapse or an
+  overly narrow safe-neighbor curriculum. For the online watchdog, sparse
+  loss-cap spikes should warn, not kill the run; kill only on bursts such as
+  consecutive loss caps or at least 5 loss caps in the latest 100 post-anchor
+  episodes. Treat 60k runs as research evidence, with online watchdog checks and
+  follow-up experiments when the curve stalls.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes

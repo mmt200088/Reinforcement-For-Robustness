@@ -89,7 +89,10 @@ Current Stage-2 RL collapse goal mode:
   frequency/sustain of abnormal episodes, not by requiring every single episode
   to be clean. Occasional negative reward spikes or isolated P1(acc) episodes
   are acceptable if they do not become frequent or consecutive and the rolling
-  reward windows do not collapse.
+  reward windows do not collapse. The online watchdog should treat sparse
+  `loss_mean=100` loss-cap spikes as warnings, not hard failures; hard-stop only
+  on bursts such as consecutive loss caps or at least 5 loss caps in the latest
+  100 post-anchor episodes.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes

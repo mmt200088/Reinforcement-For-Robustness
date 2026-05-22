@@ -1333,8 +1333,8 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertIn('exit "$PULL_RC"', src)
         self.assertNotIn("continuing with current HEAD", src)
 
-    def test_first10k_monitor_tolerates_isolated_loss_cap(self):
-        """User criterion allows isolated spikes; repeated caps still fail."""
+    def test_first10k_monitor_tolerates_sparse_loss_cap_spikes(self):
+        """User criterion allows sparse spikes; bursts or frequent caps still fail."""
         import argparse
 
         monitor = _load_module_standalone(
@@ -1386,19 +1386,31 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             return monitor.build_summary(args)
 
         isolated_dir = write_case({150})
-        repeated_dir = write_case({150, 151})
+        sparse_dir = write_case({150, 210})
+        burst_dir = write_case({150, 151})
+        frequent_dir = write_case({150, 170, 190, 205, 219})
         try:
             isolated = summary_for(isolated_dir)
-            repeated = summary_for(repeated_dir)
+            sparse = summary_for(sparse_dir)
+            burst = summary_for(burst_dir)
+            frequent = summary_for(frequent_dir)
             self.assertFalse(isolated["hard_failures"], isolated["hard_failures"])
             self.assertTrue(isolated["warnings"], isolated)
+            self.assertFalse(sparse["hard_failures"], sparse["hard_failures"])
+            self.assertTrue(sparse["warnings"], sparse)
             self.assertTrue(
-                any("terminal_loss_mean collapse cap" in x for x in repeated["hard_failures"]),
-                repeated["hard_failures"],
+                any("terminal_loss_mean collapse cap" in x for x in burst["hard_failures"]),
+                burst["hard_failures"],
+            )
+            self.assertTrue(
+                any("terminal_loss_mean collapse cap" in x for x in frequent["hard_failures"]),
+                frequent["hard_failures"],
             )
         finally:
             shutil.rmtree(isolated_dir, ignore_errors=True)
-            shutil.rmtree(repeated_dir, ignore_errors=True)
+            shutil.rmtree(sparse_dir, ignore_errors=True)
+            shutil.rmtree(burst_dir, ignore_errors=True)
+            shutil.rmtree(frequent_dir, ignore_errors=True)
 
     def test_sequential_ppo_update_replays_stored_action_level_mask(self):
         import sys

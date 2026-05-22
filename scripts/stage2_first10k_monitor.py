@@ -227,8 +227,10 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
     ]
     if _max_consecutive(post_loss_cap_flags) >= 2:
         hard_failures.append("Repeated terminal_loss_mean collapse cap: >=2 consecutive post-anchor episodes.")
-    if len(post_loss_cap_flags) >= 100 and sum(1 for flag in post_loss_cap_flags[-100:] if flag) >= 2:
-        hard_failures.append("Repeated terminal_loss_mean collapse cap: >=2 episodes in latest 100 post-anchor episodes.")
+    # Sparse loss-cap spikes are expected under the current exploratory policy.
+    # Treat them as hard failures only when they form a burst or become frequent.
+    if len(post_loss_cap_flags) >= 100 and sum(1 for flag in post_loss_cap_flags[-100:] if flag) >= 5:
+        hard_failures.append("Repeated terminal_loss_mean collapse cap: >=5 episodes in latest 100 post-anchor episodes.")
     if post_loss_caps and not any("terminal_loss_mean collapse cap" in item for item in hard_failures):
         warnings.append(f"Observed {len(post_loss_caps)} isolated post-anchor terminal_loss_mean collapse-cap episode(s).")
     if any(_is_nonfinite(e.get("total_reward")) for e in episodes):
