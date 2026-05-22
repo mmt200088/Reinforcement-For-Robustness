@@ -58,7 +58,7 @@ import sys
 import tempfile
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple, Union, runtime_checkable
+from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Sequence, Tuple, Union, runtime_checkable
 
 from function_handler import (
     Block1NoiseConfig,
@@ -344,6 +344,27 @@ class InProcessInvoker:
 
     def __call__(self, config_name: str, payload: Any) -> dict:
         return self._session(str(config_name), payload)
+
+    def replan_variables(
+            self,
+            config_name: str,
+            *,
+            t_new: Optional[Sequence[int]] = None,
+            delta_overrides: Optional[Mapping[str, Any]] = None,
+            ) -> dict:
+        """Direct variable API for the RL hot path.
+
+        ``__call__`` stays as the compatibility surface for callers that still
+        build a JSON-shaped payload.  Sequential RL already runs in-process, so
+        this method avoids the extra payload construction/splitting layer and
+        hands the decoded action variables straight to ``ReplanSession``.
+        """
+        return self._session.replan(
+            str(config_name),
+            t_new=([int(x) for x in t_new] if t_new is not None else None),
+            delta_overrides=delta_overrides,
+            return_dict=True,
+        )
 
 
 class SubprocessInvoker:
@@ -953,6 +974,23 @@ class RescaleOptimizerBridge:
             )
         return dict(self._cfg_mappers[block_name](cfg))
 
+    def _invoke_optimizer(
+            self,
+            *,
+            graph_key: str,
+            payload: Any,
+            t_new: Optional[Sequence[int]],
+            delta_overrides: Mapping[str, Union[int, str]],
+            ) -> dict:
+        direct = getattr(self.invoker, "replan_variables", None)
+        if callable(direct):
+            return direct(
+                str(graph_key),
+                t_new=(list(t_new) if t_new is not None else None),
+                delta_overrides=dict(delta_overrides),
+            )
+        return self.invoker(str(graph_key), payload)
+
     def evaluate(
             self,
             *,
@@ -1026,7 +1064,12 @@ class RescaleOptimizerBridge:
         else:
             self.cache_misses += 1
             # ---- 调 invoker（用 graph_key，不带 _L<i> 后缀） ----
-            raw = self.invoker(graph_key, payload)
+            raw = self._invoke_optimizer(
+                graph_key=graph_key,
+                payload=payload,
+                t_new=effective_t_new,
+                delta_overrides=deltas,
+            )
             if self.cache_max_entries > 0 and isinstance(raw, dict):
                 self._eval_cache[cache_key] = copy.deepcopy(raw)
                 while len(self._eval_cache) > self.cache_max_entries:

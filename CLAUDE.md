@@ -192,6 +192,12 @@ Current implementation facts:
   is enabled after noisy baseline preflight. BLB wrappers/hooks stay installed
   across episodes and `BLBNoiseRLBridge.apply(...)` updates cfgs in place; this
   avoids the old per-episode clear/reinstall churn on four model replicas.
+- RL action to `Rescale_optimizer` training interaction is in-process, not
+  per-action JSON-file IPC. `InProcessInvoker` preloads `ReplanSession`; the
+  hot path calls `replan_variables(...)` with Python `t_new` and
+  `delta_overrides`. `SubprocessInvoker` remains the JSON-file debug path.
+  Keep equivalence tests between the direct variable API and the compatibility
+  payload path before changing this bridge.
 - `ProbeRunner.install_action(...)` and `ProbeRunner.clear(...)` fan setup work
   across workers through threads. `episodes.jsonl` now includes timing fields
   for `policy_rollout_wall_seconds`, `per_step_optimizer_wall_seconds`,

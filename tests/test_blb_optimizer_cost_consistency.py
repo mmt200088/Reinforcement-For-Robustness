@@ -1,6 +1,7 @@
 import json
 import unittest
 from dataclasses import asdict, is_dataclass
+from types import SimpleNamespace
 
 
 def _jsonable(value):
@@ -24,6 +25,9 @@ def _jsonable(value):
 
 
 class BLBOptimizerCostConsistencyTests(unittest.TestCase):
+    def _noise_point(self, sf):
+        return SimpleNamespace(scaling_factor=int(sf))
+
     def _baseline_context(self, num_layers=2):
         from blb_stage2_rl.action_space import (
             build_optimizer_requests,
@@ -116,6 +120,121 @@ class BLBOptimizerCostConsistencyTests(unittest.TestCase):
         mutated_effective = self._mutated(baseline, effective)
         self.assertNotEqual(raw_action_hash(mutated_effective), raw_action_hash(baseline))
         self.assertNotEqual(effective_action_hash(mutated_effective, desc, baseline), baseline_eff)
+
+    def test_direct_inprocess_replan_matches_compat_payload_path(self):
+        try:
+            import torch  # noqa: F401
+        except Exception as exc:
+            self.skipTest(f"torch unavailable for bridge import: {exc}")
+        from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+
+        cfg = SimpleNamespace(
+            softmax_out_fresh=self._noise_point(18),
+            softmax_out_mask_encode=self._noise_point(19),
+            v_fresh=self._noise_point(20),
+            v_mask_encode=self._noise_point(19),
+            softmax_v_matmul_rescale=self._noise_point(18),
+            softmax_v_mask_encode=self._noise_point(19),
+            wo_encode=self._noise_point(19),
+            ln_mean_inv_d_encode=self._noise_point(19),
+            ln_mean_result_rescale=self._noise_point(18),
+            ln_var_inv_d_encode=self._noise_point(19),
+            ln_var_result_rescale=self._noise_point(18),
+        )
+
+        direct_invoker = InProcessInvoker.from_profile(
+            rescale_optimizer_root="Rescale_optimizer",
+            profile="mrpc",
+            include=["block4"],
+        )
+        compat_invoker = InProcessInvoker.from_profile(
+            rescale_optimizer_root="Rescale_optimizer",
+            profile="mrpc",
+            include=["block4"],
+        )
+
+        class CompatOnlyInvoker:
+            baselines = compat_invoker.baselines
+
+            def __call__(self, config_name, payload):
+                return compat_invoker(config_name, payload)
+
+        direct_bridge = RescaleOptimizerBridge(invoker=direct_invoker)
+        compat_bridge = RescaleOptimizerBridge(invoker=CompatOnlyInvoker())
+
+        direct = direct_bridge.evaluate(
+            config_name="block4_L3",
+            block_name="block4",
+            cfg=cfg,
+        )
+        compat = compat_bridge.evaluate(
+            config_name="block4_L3",
+            block_name="block4",
+            cfg=cfg,
+        )
+
+        self.assertEqual(direct.valid, compat.valid)
+        self.assertEqual(direct.total_bits, compat.total_bits)
+        self.assertEqual(direct.fusion_count, compat.fusion_count)
+        self.assertEqual(direct.invalid_chain, compat.invalid_chain)
+        for key in ("delta_overrides", "new_compact_config", "result", "t_new"):
+            self.assertEqual(_jsonable(direct.raw.get(key)), _jsonable(compat.raw.get(key)))
+
+    def test_bridge_prefers_direct_replan_variables_when_available(self):
+        try:
+            import torch  # noqa: F401
+        except Exception as exc:
+            self.skipTest(f"torch unavailable for bridge import: {exc}")
+        from rescale_optimizer_bridge import RescaleOptimizerBridge
+
+        class DirectOnlyInvoker:
+            baselines = {
+                "block4": ([0, 2, 5, 7, 8], [18, 18, 18, 18], [60, 50, 40])
+            }
+
+            def __init__(self):
+                self.calls = []
+
+            def __call__(self, _config_name, _payload):
+                raise AssertionError("compat payload path should not be used")
+
+            def replan_variables(self, config_name, *, t_new=None, delta_overrides=None):
+                self.calls.append((config_name, list(t_new), dict(delta_overrides or {})))
+                return {
+                    "fusion_count": 0,
+                    "valid": True,
+                    "t_new": list(t_new),
+                    "delta_overrides": dict(delta_overrides or {}),
+                    "result": {
+                        "valid": True,
+                        "chain": {"total_bits": 123},
+                        "invalid_chain": None,
+                    },
+                }
+
+        cfg = SimpleNamespace(
+            softmax_out_fresh=self._noise_point(18),
+            softmax_out_mask_encode=self._noise_point(19),
+            v_fresh=self._noise_point(20),
+            v_mask_encode=self._noise_point(19),
+            softmax_v_matmul_rescale=self._noise_point(18),
+            softmax_v_mask_encode=self._noise_point(19),
+            wo_encode=self._noise_point(19),
+            ln_mean_inv_d_encode=self._noise_point(19),
+            ln_mean_result_rescale=self._noise_point(18),
+            ln_var_inv_d_encode=self._noise_point(19),
+            ln_var_result_rescale=self._noise_point(18),
+        )
+        invoker = DirectOnlyInvoker()
+        bridge = RescaleOptimizerBridge(invoker=invoker)
+
+        out = bridge.evaluate(config_name="block4_L0", block_name="block4", cfg=cfg)
+
+        self.assertTrue(out.valid)
+        self.assertEqual(out.total_bits, 123)
+        self.assertEqual(invoker.calls[0][0], "block4")
+        self.assertEqual(invoker.calls[0][1], [18, 18, 18, 18])
+        self.assertIn("ctct_rot_softmax_mul_v", invoker.calls[0][2])
 
 
 if __name__ == "__main__":

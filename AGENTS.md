@@ -198,6 +198,12 @@ Current implementation facts:
   `K=4` and four GPUs, the split is `[1, 1, 1, 1]`: GPU 0 runs trial 0, GPU 1
   trial 1, GPU 2 trial 2, and GPU 3 trial 3, then returns results in trial
   order for the existing aggregation.
+- RL action to `Rescale_optimizer` training interaction is in-process, not
+  per-action JSON-file IPC. `InProcessInvoker` preloads `ReplanSession`; the
+  hot path calls `replan_variables(...)` with Python `t_new` and
+  `delta_overrides`. `SubprocessInvoker` remains the JSON-file debug path.
+  Keep equivalence tests between the direct variable API and the compatibility
+  payload path before changing this bridge.
 - Trial seeds are independent per trial via `probe_runner._trial_seed(...)`.
   Workers seed only their current CUDA device; they must not call
   `torch.cuda.manual_seed_all(...)` inside concurrent worker threads.
