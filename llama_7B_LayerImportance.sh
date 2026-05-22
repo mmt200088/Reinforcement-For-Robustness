@@ -153,6 +153,8 @@ GA / Greedy：
   --blb-v3-action-mask-enabled            启用 BLB v3 action mask / baseline prior
   --blb-v3-action-mask-mode MODE          none|baseline_only|near_baseline|from_file
   --blb-v3-action-mask-file PATH          mode=from_file 时读取的 F0 suggested_action_mask.json
+  --blb-v3-static-invalid-level-mask-enabled true|false
+                                          训练前用 Rescale optimizer 预扫描并屏蔽本地 invalid level
   --blb-v3-sequential-rl true|false       BLB Stage-2 RL 序列决策模式（默认 true，每层每 block 单独决策；
                                             横长 horizon=59；想回退到旧的 577 维单步可传 false 或
                                             --blb-v3-no-sequential-rl）
@@ -498,6 +500,7 @@ BLB_V3_ACTION_MASK_ENABLED="false"; S_BLB_V3_ACTION_MASK_ENABLED="false"
 BLB_V3_ACTION_MASK_MODE="none"; S_BLB_V3_ACTION_MASK_MODE="false"
 BLB_V3_ACTION_MASK_FILE=""; S_BLB_V3_ACTION_MASK_FILE="false"
 BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="0"; S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="false"
+BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED=""; S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED="false"
 # Per-block sequential RL (default ON since 2026-05-15). Pass --blb-v3-sequential-rl=false to
 # get back the legacy single-shot 577-dim path.
 BLB_V3_SEQUENTIAL_RL="true"; S_BLB_V3_SEQUENTIAL_RL="false"
@@ -680,6 +683,7 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-action-mask-mode) needv "$@"; BLB_V3_ACTION_MASK_MODE="$2"; S_BLB_V3_ACTION_MASK_MODE="true"; shift 2 ;;
     --blb-v3-action-mask-file) needv "$@"; BLB_V3_ACTION_MASK_FILE="$2"; S_BLB_V3_ACTION_MASK_FILE="true"; shift 2 ;;
     --blb-v3-action-mask-baseline-logit-bonus) needv "$@"; BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="$2"; S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="true"; shift 2 ;;
+    --blb-v3-static-invalid-level-mask-enabled) needv "$@"; BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED="$2"; S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED="true"; shift 2 ;;
     # Per-block sequential RL knobs (default sequential_rl=true since 2026-05-15)
     --blb-v3-sequential-rl) needv "$@"; BLB_V3_SEQUENTIAL_RL="$2"; S_BLB_V3_SEQUENTIAL_RL="true"; shift 2 ;;
     --blb-v3-no-sequential-rl) BLB_V3_SEQUENTIAL_RL="false"; S_BLB_V3_SEQUENTIAL_RL="true"; shift ;;
@@ -918,7 +922,7 @@ if [ "$SEARCH_ALGORITHM" = "general-rl" ] || [ "$SEARCH_ALGORITHM" = "rl-and-ga-
   { [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; } || err "当前模式不支持 --stage2-fixed-config-* 参数；该参数组仅普通 rl / ga / greedy 可用。"
 fi
 if [ "$SEARCH_ALGORITHM" != "rl" ]; then
-  { [ "$S_STAGE2_RL_VARIANT" = "false" ] && [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ] && [ "$S_BLB_V3_WARMSTART_ANCHOR_EPISODES" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_ENABLED" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_MODE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_FILE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" = "false" ]; } || err "Stage-2 RL variant / BLB 参数仅支持 run rl / --algorithm rl。"
+  { [ "$S_STAGE2_RL_VARIANT" = "false" ] && [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ] && [ "$S_BLB_V3_WARMSTART_ANCHOR_EPISODES" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_ENABLED" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_MODE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_FILE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" = "false" ] && [ "$S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED" = "false" ]; } || err "Stage-2 RL variant / BLB 参数仅支持 run rl / --algorithm rl。"
 fi
 if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$S_GENERAL_ACCURACY_TOLERANCE_RANGE" = "true" ]; then
   err "当前搜索算法不是 general-rl，请不要使用 --general-rl-accuracy-tolerance-range。"
@@ -1078,7 +1082,7 @@ else
     is_pos_num "$STAGE1_LR" || err "--stage1-search-lr 必须是正数"
     is_pos_num "$STAGE2_LR" || err "--stage2-search-lr 必须是正数"
     if [ "$STAGE2_RL_VARIANT" = "legacy_v2" ]; then
-      { [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ] && [ "$S_BLB_V3_WARMSTART_ANCHOR_EPISODES" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_ENABLED" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_MODE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_FILE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" = "false" ]; } || err "stage2_rl_variant=legacy_v2 时不能同时使用 BLB v3 专属参数。"
+      { [ "$S_BLB_V3_ROLLOUT_SIZE" = "false" ] && [ "$S_BLB_V3_EVAL_INTERVAL" = "false" ] && [ "$S_BLB_V3_SAVE_INTERVAL" = "false" ] && [ "$S_BLB_V3_CALIBRATE_BASELINE_SAMPLES" = "false" ] && [ "$S_BLB_V3_WARMSTART_ANCHOR_EPISODES" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_ENABLED" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_MODE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_FILE" = "false" ] && [ "$S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" = "false" ] && [ "$S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED" = "false" ]; } || err "stage2_rl_variant=legacy_v2 时不能同时使用 BLB v3 专属参数。"
     fi
     if [ "${ALLOW_SHORT_RL_BENCHMARK:-false}" = "true" ] || [ "${ALLOW_SHORT_RL_BENCHMARK:-false}" = "1" ]; then
       echo "警告：ALLOW_SHORT_RL_BENCHMARK 已启用，仅用于短程速度基准；正式 RL 仍应使用 >=170 episode。"
@@ -1494,6 +1498,7 @@ else
       CMD+=(--blb_v3_action_mask_baseline_logit_bonus "$BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS")
       [ -n "$BLB_V3_ACTION_MASK_FILE" ] && CMD+=(--blb_v3_action_mask_file "$BLB_V3_ACTION_MASK_FILE" --blb_v3_action_mask_source "$BLB_V3_ACTION_MASK_FILE")
     fi
+    [ "$S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED" = "true" ] && CMD+=(--blb_v3_static_invalid_level_mask_enabled "$BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED")
     # Sequential RL: default ON. Always pass the boolean so users can flip via
     # --blb-v3-no-sequential-rl. Shaping coeffs / early-terminate are only
     # forwarded when user explicitly set them.
@@ -1542,6 +1547,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   show "BLB v3 action mask 模式" "$BLB_V3_ACTION_MASK_MODE" "$S_BLB_V3_ACTION_MASK_MODE"
   if [ -n "$BLB_V3_ACTION_MASK_FILE" ]; then show "BLB v3 action mask 文件" "$BLB_V3_ACTION_MASK_FILE" "$S_BLB_V3_ACTION_MASK_FILE"; fi
   show "BLB v3 baseline logit 加成" "$BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS" "$S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS"
+  [ "$S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED" = "true" ] && show "BLB v3 static invalid-level mask" "$BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED" "$S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED"
   show "PPO 更新间隔" "$PPO_UPDATE_INTERVAL_VAL" "$S_PPO_UPDATE_INTERVAL"
   if [ "$STAGE2_RL_VARIANT" = "blb_v3" ]; then
     show "BLB rollout 大小" "$BLB_V3_ROLLOUT_SIZE" "$S_BLB_V3_ROLLOUT_SIZE"

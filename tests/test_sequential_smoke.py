@@ -1363,6 +1363,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "--blb-v3-warmstart-bias-gain",
             "--blb-v3-ent-coef",
             "--blb-v3-ent-coef-ramp-episodes",
+            "--blb-v3-static-invalid-level-mask-enabled",
             "blb_v3_warmstart_neighbor_ramp_episodes",
             "blb_v3_warmstart_neighbor_max_mutations",
             "blb_v3_warmstart_neighbor_max_radius",
@@ -1375,6 +1376,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "blb_v3_warmstart_bias_gain",
             "blb_v3_ent_coef",
             "blb_v3_ent_coef_ramp_episodes",
+            "blb_v3_static_invalid_level_mask_enabled",
             '("ent_coef_ramp_episodes", "blb_v3_ent_coef_ramp_episodes")',
         ):
             self.assertIn(needle, combined, msg=f"missing 10k curve knob: {needle!r}")
