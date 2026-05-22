@@ -163,6 +163,13 @@ Verified server facts:
   `git config --local protocol.version 0`. Without them, `git pull` can fail
   with `RPC failed; curl 16 Error in the HTTP2 framing layer` and
   `fatal: expected flush after ref listing`.
+- If GitHub HTTPS is temporarily unreachable but the exact pushed commit has
+  already been transferred as a git bundle and fast-forwarded on the server,
+  `scripts/stage2_first10k_server_run.sh` may be launched with
+  `EXPECTED_SOURCE_COMMIT=<commit>` and
+  `ALLOW_VERIFIED_HEAD_WITHOUT_PULL=1`. This fallback is only valid when
+  `git rev-parse HEAD` exactly matches the expected commit; otherwise the
+  script must still abort instead of running a stale checkout.
 
 ### N-GPU / four-GPU reward-probe parallelism
 

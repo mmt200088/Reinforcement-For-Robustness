@@ -1655,6 +1655,16 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertIn("--min-post-anchor-p12-rate-samples", src)
         self.assertIn("--blb-v3-static-invalid-level-mask-enabled 1", src)
 
+    def test_first10k_server_run_can_skip_pull_only_on_verified_head(self):
+        src = Path("scripts/stage2_first10k_server_run.sh").read_text(encoding="utf-8")
+        self.assertIn('ALLOW_VERIFIED_HEAD_WITHOUT_PULL="${ALLOW_VERIFIED_HEAD_WITHOUT_PULL:-0}"', src)
+        self.assertIn('EXPECTED_SOURCE_COMMIT="${EXPECTED_SOURCE_COMMIT:-}"', src)
+        self.assertIn('[ "$ALLOW_VERIFIED_HEAD_WITHOUT_PULL" = "1" ]', src)
+        self.assertIn('current_head="$(git rev-parse HEAD)"', src)
+        self.assertIn('expected_full="$(git rev-parse "$EXPECTED_SOURCE_COMMIT^{commit}")"', src)
+        self.assertIn('refusing to skip git pull', src)
+        self.assertIn('git pull failed or timed out', src)
+
     def test_first10k_monitor_checks_all_expected_reward_gpus(self):
         import argparse
 

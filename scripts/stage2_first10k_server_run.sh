@@ -29,6 +29,8 @@ ENT_RAMP="${ENT_RAMP:-600}"
 WARMSTART_BIAS_GAIN="${WARMSTART_BIAS_GAIN:-1.2}"
 MAX_POST_ANCHOR_P12_RATE="${MAX_POST_ANCHOR_P12_RATE:-0.30}"
 P12_RATE_MIN_POST_ANCHOR="${P12_RATE_MIN_POST_ANCHOR:-100}"
+EXPECTED_SOURCE_COMMIT="${EXPECTED_SOURCE_COMMIT:-}"
+ALLOW_VERIFIED_HEAD_WITHOUT_PULL="${ALLOW_VERIFIED_HEAD_WITHOUT_PULL:-0}"
 
 RUN_ID="stage2_rl_${PLANNED_EPISODES}_curve_$(date +%Y%m%d_%H%M%S)"
 ARTIFACT_DIR="experiments/server_command_runs/${RUN_ID}"
@@ -243,13 +245,32 @@ echo ""
 echo "================================================================================"
 echo "Step 1/6: git pull latest local source changes"
 echo "================================================================================"
-set +e
-timeout 180 git pull --ff-only
-PULL_RC=$?
-set -e
-if [ "$PULL_RC" -ne 0 ]; then
-  echo "[abort] git pull failed or timed out (rc=$PULL_RC); refusing to run on stale HEAD."
-  exit "$PULL_RC"
+current_head="$(git rev-parse HEAD)"
+if [ "$ALLOW_VERIFIED_HEAD_WITHOUT_PULL" = "1" ] && [ -n "$EXPECTED_SOURCE_COMMIT" ]; then
+  expected_full="$(git rev-parse "$EXPECTED_SOURCE_COMMIT^{commit}")"
+  if [ "$current_head" = "$expected_full" ]; then
+    echo "[git] offline verified HEAD = ${current_head:0:7}; skipping remote pull because ALLOW_VERIFIED_HEAD_WITHOUT_PULL=1"
+  else
+    echo "[abort] EXPECTED_SOURCE_COMMIT=$EXPECTED_SOURCE_COMMIT but current HEAD=${current_head:0:7}; refusing to skip git pull."
+    exit 97
+  fi
+else
+  set +e
+  timeout 180 git pull --ff-only
+  PULL_RC=$?
+  set -e
+  if [ "$PULL_RC" -ne 0 ]; then
+    echo "[abort] git pull failed or timed out (rc=$PULL_RC); refusing to run on stale HEAD."
+    exit "$PULL_RC"
+  fi
+  if [ -n "$EXPECTED_SOURCE_COMMIT" ]; then
+    expected_full="$(git rev-parse "$EXPECTED_SOURCE_COMMIT^{commit}")"
+    current_head="$(git rev-parse HEAD)"
+    if [ "$current_head" != "$expected_full" ]; then
+      echo "[abort] git pull succeeded but HEAD=${current_head:0:7}, expected=${expected_full:0:7}."
+      exit 98
+    fi
+  fi
 fi
 echo "[git] HEAD = $(git rev-parse --short HEAD)"
 
