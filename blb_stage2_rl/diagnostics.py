@@ -130,6 +130,11 @@ class EpisodeStats:
     terminal_k_gain: float = 0.0
     terminal_fusion_gain: float = 0.0
     terminal_cost_score: float = 0.0
+    terminal_p3_metric_margin_reward: float = 0.0
+    terminal_cost_fusion_bonus: float = 0.0
+    terminal_cost_truncation_bonus: float = 0.0
+    terminal_cost_bits_tiebreaker: float = 0.0
+    terminal_cost_truncation_step_gain: float = 0.0
     terminal_pareto_event_kind: str = ""
     terminal_pareto_action_hash: str = ""
     terminal_pareto_frontier_removed: int = 0
@@ -376,6 +381,19 @@ class RLDiagnosticsRecorder:
                 "terminal_k_gain": float(episode_stats.terminal_k_gain),
                 "terminal_fusion_gain": float(episode_stats.terminal_fusion_gain),
                 "terminal_cost_score": float(episode_stats.terminal_cost_score),
+                "terminal_p3_metric_margin_reward": float(
+                    episode_stats.terminal_p3_metric_margin_reward
+                ),
+                "terminal_cost_fusion_bonus": float(episode_stats.terminal_cost_fusion_bonus),
+                "terminal_cost_truncation_bonus": float(
+                    episode_stats.terminal_cost_truncation_bonus
+                ),
+                "terminal_cost_bits_tiebreaker": float(
+                    episode_stats.terminal_cost_bits_tiebreaker
+                ),
+                "terminal_cost_truncation_step_gain": float(
+                    episode_stats.terminal_cost_truncation_step_gain
+                ),
                 "terminal_pareto_event_kind": str(episode_stats.terminal_pareto_event_kind),
                 "terminal_pareto_action_hash": str(episode_stats.terminal_pareto_action_hash),
                 "terminal_pareto_frontier_removed": int(episode_stats.terminal_pareto_frontier_removed),
@@ -680,6 +698,11 @@ class RLDiagnosticsRecorder:
             "terminal_k_gain",
             "terminal_bits_gain",
             "terminal_cost_score",
+            "terminal_p3_metric_margin_reward",
+            "terminal_cost_fusion_bonus",
+            "terminal_cost_truncation_bonus",
+            "terminal_cost_bits_tiebreaker",
+            "terminal_cost_truncation_step_gain",
             "terminal_pareto_event_kind",
             "total_bits",
             "total_reward",

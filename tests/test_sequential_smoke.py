@@ -124,6 +124,11 @@ class SequentialArtifactContractsTest(unittest.TestCase):
                     terminal_k_gain=float(ep % 3),
                     terminal_fusion_gain=float(ep),
                     terminal_cost_score=0.10,
+                    terminal_p3_metric_margin_reward=0.05,
+                    terminal_cost_fusion_bonus=0.20,
+                    terminal_cost_truncation_bonus=0.30,
+                    terminal_cost_bits_tiebreaker=0.04,
+                    terminal_cost_truncation_step_gain=1.0,
                     terminal_pareto_event_kind="frontier_expansion",
                     first_invalid_step=(5 if invalid else None),
                     first_invalid_block=(3 if invalid else None),
@@ -1369,6 +1374,11 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "terminal_bits_gain: float = 0.0",
             "terminal_k_gain: float = 0.0",
             "terminal_fusion_gain: float = 0.0",
+            "terminal_p3_metric_margin_reward: float = 0.0",
+            "terminal_cost_fusion_bonus: float = 0.0",
+            "terminal_cost_truncation_bonus: float = 0.0",
+            "terminal_cost_bits_tiebreaker: float = 0.0",
+            "terminal_cost_truncation_step_gain: float = 0.0",
             "terminal_pareto_event_kind: str = \"\"",
             "safe_neighbor_active: bool = False",
             "exploration_mode: str = \"\"",
@@ -1387,6 +1397,11 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "terminal_metric2_mean=float(record.terminal_metric2_mean)",
             "terminal_stab_violation=float(record.terminal_stab_violation)",
             "terminal_bits_gain=float(record.terminal_bits_gain)",
+            "terminal_p3_metric_margin_reward=float(",
+            "terminal_cost_fusion_bonus=float(record.terminal_cost_fusion_bonus)",
+            "terminal_cost_truncation_bonus=float(record.terminal_cost_truncation_bonus)",
+            "terminal_cost_bits_tiebreaker=float(record.terminal_cost_bits_tiebreaker)",
+            "terminal_cost_truncation_step_gain=float(",
             "terminal_pareto_event_kind=str(record.terminal_pareto_event_kind)",
             "safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count)",
             "exploration_mode=str(record.exploration_mode)",
@@ -1750,6 +1765,88 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertTrue(math.isfinite(metrics["value_loss"]))
         self.assertTrue(torch.isfinite(policy.weight).item())
         self.assertLessEqual(policy._ppo_lr_scale, 1.0)
+
+    def test_sequential_ppo_update_handles_budgeted_reward_extremes(self):
+        import math
+        import sys
+
+        torch_mod = sys.modules.get("torch")
+        if torch_mod is not None and not hasattr(getattr(torch_mod, "nn", None), "Module"):
+            for name in list(sys.modules):
+                if name == "torch" or name.startswith("torch."):
+                    del sys.modules[name]
+        try:
+            import torch
+        except Exception as exc:
+            self.skipTest(f"torch unavailable: {exc}")
+        if not hasattr(getattr(torch, "nn", None), "Module"):
+            self.skipTest("real torch.nn.Module unavailable")
+
+        from blb_stage2_rl.sequential_policy import (
+            SequentialPPOConfig,
+            SequentialRolloutBuffer,
+            sequential_ppo_update,
+        )
+        import numpy as np
+
+        class FinitePolicy(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.tensor(0.0))
+                self._ppo_lr_scale = 1.0
+                self._ppo_last_avg_kl = 0.0
+
+            def evaluate_action(
+                    self,
+                    state,
+                    actions,
+                    slot_mask,
+                    per_slot_num_levels,
+                    action_level_mask=None,
+                    baseline_prior_scale=None,
+                    return_per_slot_entropy=False,
+                    ):
+                batch = state.shape[0]
+                logp = self.weight.expand(batch)
+                value = (self.weight * 0.5).expand(batch)
+                entropy_per_slot = torch.ones_like(slot_mask, dtype=torch.float32) * 0.5
+                entropy = entropy_per_slot.sum(dim=-1)
+                if return_per_slot_entropy:
+                    return logp, entropy, value, entropy_per_slot
+                return logp, entropy, value
+
+        buffer = SequentialRolloutBuffer()
+        for reward_value in (-5.0, 20.0, 40.0, 45.0):
+            buffer.add(
+                state=np.array([0.0, 1.0], dtype=np.float32),
+                action=np.array([0, 1], dtype=np.int64),
+                slot_mask=np.array([True, True], dtype=bool),
+                per_slot_num_levels=np.array([3, 3], dtype=np.int64),
+                action_level_mask=np.ones((2, 3), dtype=bool),
+                log_prob=0.0,
+                value=0.0,
+                reward=float(reward_value),
+                done=True,
+                baseline_prior_scale=0.75,
+            )
+        policy = FinitePolicy()
+        optimizer = torch.optim.SGD(policy.parameters(), lr=1.0e-3)
+        metrics = sequential_ppo_update(
+            policy,
+            optimizer,
+            buffer,
+            SequentialPPOConfig(
+                n_epochs=1,
+                minibatch_size=2,
+                ent_coef=0.0,
+                kl_adaptive_max_ratio=1.25,
+            ),
+            torch.device("cpu"),
+        )
+        for key in ("policy_loss", "value_loss", "approx_kl", "lr_scale"):
+            self.assertTrue(math.isfinite(float(metrics[key])), key)
+        self.assertEqual(int(metrics.get("nonfinite_minibatches", 0)), 0)
+        self.assertTrue(torch.isfinite(policy.weight).item())
 
     def test_sequential_ppo_adaptive_lr_cap_is_conservative_for_gtrxl(self):
         from pathlib import Path

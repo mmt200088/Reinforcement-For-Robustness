@@ -454,14 +454,17 @@ experiment reproduction.
    58 otherwise healthy episodes into P2 and pushed rolling300 below 35. Current
    behavior keeps tiny metric std jitter in P3 via a `1e-2` floor while still
    treating materially large metric std as P2.
-   Current cost reward is adaptive scalar in the sequential Stage-2 path. Only
-   P3 candidates (accuracy and stability pass) receive cost reward. Fusion gain
-   and truncation/K gain are interval-style boosts: each +1 fusion or each
-   average-K step (default `1/59`) gives a clear scalar jump inside the P3 tier.
-   Total bits is a weak linear term for tie-breaking and should not dominate
-   fusion or truncation. `ParetoCostArchive` may still record P3 frontier rows
-   for diagnostics/exploration statistics, but Pareto events are not the default
-   PPO scalar reward.
+   Current cost reward is budgeted adaptive scalar in the sequential Stage-2
+   path. Only P3 candidates (accuracy and stability pass) receive cost reward.
+   P3 shaping is split into a small metric-margin budget and a cost-led budget
+   so extra accuracy margin cannot crowd out cost ranking. Fusion gain and
+   truncation/K gain are interval-style boosts: each +1 fusion or each decoded
+   K-bit unit (derived from average-K gain with default step size `1/59`) gives
+   a clear scalar jump inside the P3 tier. Total bits is a separately clipped
+   weak linear tie-breaker and must stay smaller than a fusion/K tier step.
+   `ParetoCostArchive` may still record P3 frontier rows for
+   diagnostics/exploration statistics, but Pareto events are not the default PPO
+   scalar reward.
 7. `Rescale_optimizer` is the source of truth for modulus-chain cost and
    optimizer feasibility diagnostics. `HeuristicStubInvoker` was deleted;
    training and promotable final evals must use real `replan_with_user_actions`

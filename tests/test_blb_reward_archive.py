@@ -181,9 +181,15 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual(breakdown.priority, 3)
         self.assertEqual(breakdown.pareto_event_kind, "frontier_expansion")
         self.assertGreater(breakdown.cost_score, 0.20)
-        self.assertGreaterEqual(breakdown.r_fusion, 1.6)
-        self.assertGreaterEqual(breakdown.r_k, 0.8)
+        self.assertGreaterEqual(breakdown.r_fusion, 1.0)
+        self.assertGreaterEqual(breakdown.r_k, 0.5)
         self.assertGreater(breakdown.r_bits, 0.0)
+        self.assertLess(breakdown.r_bits, reward.DEFAULT_COST_FUSION_STEP_BONUS)
+        self.assertAlmostEqual(
+            breakdown.cost_score,
+            reward.DEFAULT_P3_COST_BUDGET,
+            places=6,
+        )
         self.assertEqual([entry.action_hash for entry in archive.frontier], ["p3-a"])
 
     def test_adaptive_scalar_cost_has_fusion_and_truncation_step_boosts(self):
@@ -225,12 +231,140 @@ class ParetoCostArchiveTests(unittest.TestCase):
         )
 
         self.assertEqual(breakdown.priority, 3)
-        self.assertAlmostEqual(breakdown.r_fusion, 0.8, places=6)
-        self.assertAlmostEqual(breakdown.r_k, 0.8, places=6)
+        self.assertAlmostEqual(breakdown.r_fusion, 0.5, places=6)
+        self.assertAlmostEqual(breakdown.r_k, 0.5, places=6)
+        self.assertAlmostEqual(breakdown.cost_truncation_step_gain, 1.0, places=6)
         self.assertGreater(breakdown.r_bits, 0.0)
         self.assertAlmostEqual(
             breakdown.cost_score,
             breakdown.r_fusion + breakdown.r_k + breakdown.r_bits,
+            places=6,
+        )
+        self.assertGreater(breakdown.p3_metric_margin_reward, 0.0)
+
+    def test_adaptive_scalar_cost_step_boundaries_and_bits_tiebreaker(self):
+        reward = load_reward_module()
+
+        class Signals:
+            any_invalid = False
+            total_bits_sum = 100
+            total_fusion_count = 0
+
+        baseline = reward.BaselineCostStats(
+            total_bits_sum=200,
+            total_fusion_count=0,
+            avg_k=13.0,
+            metric1_mean=0.90,
+            metric2_mean=0.90,
+            metric1_std=0.0,
+            metric2_std=0.0,
+            loss_std=0.0,
+            typical_bits_drop=100.0,
+        )
+        weights = reward.calibrate_weights_from_baseline(baseline)
+        metrics = reward.EpisodeMetrics(
+            loss_mean=0.30,
+            loss_std=0.0,
+            metric1_mean=0.90,
+            metric2_mean=0.90,
+            metric1_std=0.0,
+            metric2_std=0.0,
+        )
+
+        def run(fusion_gain, k_gain):
+            dynamic_signals = type(
+                "DynamicSignals",
+                (),
+                {
+                    "any_invalid": False,
+                    "total_bits_sum": 100,
+                    "total_fusion_count": float(fusion_gain),
+                },
+            )()
+            return reward.compute_reward(
+                metrics,
+                dynamic_signals,
+                action_avg_k=float(baseline.avg_k) - float(k_gain),
+                baseline=baseline,
+                weights=weights,
+            )
+
+        self.assertAlmostEqual(run(0.99, 0.0).r_fusion, 0.0, places=6)
+        self.assertAlmostEqual(run(1.0, 0.0).r_fusion, 0.5, places=6)
+        self.assertAlmostEqual(run(1.99, 0.0).r_fusion, 0.5, places=6)
+        self.assertAlmostEqual(run(2.0, 0.0).r_fusion, 1.0, places=6)
+
+        one_k = 1.0 / 59.0
+        self.assertAlmostEqual(run(0.0, one_k * 0.99).r_k, 0.0, places=6)
+        self.assertAlmostEqual(run(0.0, one_k).r_k, 0.5, places=6)
+        self.assertAlmostEqual(run(0.0, one_k * 1.99).r_k, 0.5, places=6)
+        self.assertAlmostEqual(run(0.0, one_k * 2.0).r_k, 1.0, places=6)
+
+        bits_only = run(0.0, 0.0)
+        self.assertLessEqual(
+            abs(bits_only.r_bits),
+            reward.DEFAULT_COST_BITS_TIEBREAKER_CLIP,
+        )
+        self.assertLess(
+            abs(bits_only.r_bits),
+            reward.DEFAULT_COST_FUSION_STEP_BONUS,
+        )
+
+    def test_p3_high_accuracy_margin_does_not_hide_cost_ordering(self):
+        reward = load_reward_module()
+
+        baseline = reward.BaselineCostStats(
+            total_bits_sum=100,
+            total_fusion_count=0,
+            avg_k=13.0,
+            metric1_mean=0.90,
+            metric2_mean=0.90,
+            metric1_std=0.0,
+            metric2_std=0.0,
+            loss_std=0.0,
+            typical_bits_drop=100.0,
+        )
+        weights = reward.calibrate_weights_from_baseline(baseline)
+        metrics = reward.EpisodeMetrics(
+            loss_mean=0.30,
+            loss_std=0.0,
+            metric1_mean=1.00,
+            metric2_mean=1.00,
+            metric1_std=0.0,
+            metric2_std=0.0,
+        )
+
+        class NoFusion:
+            any_invalid = False
+            total_bits_sum = 100
+            total_fusion_count = 0
+
+        class OneFusion(NoFusion):
+            total_fusion_count = 1
+
+        no_fusion = reward.compute_reward(
+            metrics,
+            NoFusion(),
+            action_avg_k=13.0,
+            baseline=baseline,
+            weights=weights,
+        )
+        one_fusion = reward.compute_reward(
+            metrics,
+            OneFusion(),
+            action_avg_k=13.0,
+            baseline=baseline,
+            weights=weights,
+        )
+
+        self.assertAlmostEqual(
+            no_fusion.p3_metric_margin_reward,
+            reward.DEFAULT_P3_METRIC_MARGIN_BUDGET,
+            places=6,
+        )
+        self.assertAlmostEqual(
+            one_fusion.reward - no_fusion.reward,
+            reward.DEFAULT_COST_FUSION_STEP_BONUS,
             places=6,
         )
 
@@ -319,6 +453,53 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual(breakdown.priority, 1)
         self.assertFalse(breakdown.metric_ok)
         self.assertEqual(breakdown.cost_score, 0.0)
+        self.assertEqual(breakdown.r_fusion, 0.0)
+        self.assertEqual(breakdown.r_k, 0.0)
+        self.assertEqual(breakdown.r_bits, 0.0)
+        self.assertEqual(breakdown.pareto_event_kind, "excluded")
+        self.assertEqual(archive.frontier, ())
+
+    def test_compute_reward_excludes_optimizer_invalid_from_adaptive_scalar_cost(self):
+        reward = load_reward_module()
+
+        class Signals:
+            any_invalid = True
+            total_bits_sum = 1
+            total_fusion_count = 99
+
+        archive = reward.ParetoCostArchive()
+        baseline = reward.BaselineCostStats(
+            total_bits_sum=1000,
+            total_fusion_count=0,
+            avg_k=13.0,
+            metric1_mean=0.90,
+            metric2_mean=0.90,
+            metric1_std=0.0,
+            metric2_std=0.0,
+            loss_std=0.0,
+        )
+        weights = reward.calibrate_weights_from_baseline(baseline)
+        breakdown = reward.compute_reward(
+            reward.EpisodeMetrics(
+                loss_mean=0.30,
+                loss_std=0.0,
+                metric1_mean=0.90,
+                metric2_mean=0.90,
+                metric1_std=0.0,
+                metric2_std=0.0,
+            ),
+            Signals(),
+            action_avg_k=1.0,
+            baseline=baseline,
+            weights=weights,
+            pareto_archive=archive,
+            action_hash="p1-invalid-big-cost",
+        )
+
+        self.assertEqual(breakdown.priority, 1)
+        self.assertTrue(breakdown.invalid)
+        self.assertEqual(breakdown.cost_score, 0.0)
+        self.assertEqual(breakdown.p3_metric_margin_reward, 0.0)
         self.assertEqual(breakdown.r_fusion, 0.0)
         self.assertEqual(breakdown.r_k, 0.0)
         self.assertEqual(breakdown.r_bits, 0.0)

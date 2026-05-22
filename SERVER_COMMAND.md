@@ -45,7 +45,7 @@ bash scripts/stage2_first10k_server_run.sh
   - `--blb-v3-guarded-radius2-cooldown-episodes 300`
 - **长周期判断**：历史经验上，Stage-2 RL 通常需要 50000+ 轮才有有效搜索结论；但如果到 20000 轮后 reward 仍长期没有进入快速增长期，要把它当成需要诊断的搜索/训练异常，而不是简单继续耗时。
 - **同步保护**：脚本中的 `git pull --ff-only` 如果失败或超时会直接 abort，不能继续用旧 HEAD 跑 60000。
-- **Adaptive scalar cost 目标**：P1/P2 不吃任何 cost reward；P3 候选中 `fusion_gain` 每 +1 给明显区间式 boost，truncation/K gain 每跨一个平均 K-step 给同等级 boost，`total_bits` 只给弱线性加分。`ParetoCostArchive` 仍可记录 P3 frontier，用于诊断和 empirical exploration 统计，但不作为默认 PPO scalar reward。
+- **Budgeted adaptive scalar cost 目标**：P1/P2 不吃任何 cost reward；P3 内部将 metric margin 和 cost 分开预算，metric margin 只占小预算，不能挤掉 cost ranking。P3 候选中 `fusion_gain` 每 +1 给明显区间式 boost，truncation/K gain 每跨一个 decoded K-bit unit 给同等级 boost，`total_bits` 只给单独 clip 的弱线性 tie-breaker，不能接近一个 fusion/K tier step。`ParetoCostArchive` 仍可记录 P3 frontier，用于诊断和 empirical exploration 统计，但不作为默认 PPO scalar reward。
 - **Policy/critic 目标**：`BLBStage2SequentialPolicy` 应为 `blb_v3_sequential_gtrxl_v2scale`：causal GTrXL `d_model=256, n_heads=8, n_layers=4, d_ff=512, dropout=0.1`，per-slot heads，单 value head；旧 sequential checkpoint 不兼容，必须 fresh。
 - **PPO 稳定器**：运行日志/`ppo_updates.jsonl` 应包含 approximate KL、KL early stop、adaptive LR scale、return normalizer、per-slot entropy recovery 等新字段。
 - **Non-monotonic 探索目标**：不要把“降低 SF”当成必然靠近边界。SF/K 的 index move 只是 proposal；真实边界方向只能由 F1 model-forward metric/stability、Rescale_optimizer cost signals 和 P3 adaptive scalar cost/diagnostic archive 确认。允许某些 SF/K 反向或横向 move，如果它们满足 P3 并改善 `fusion_gain/k_gain/bits_gain`。

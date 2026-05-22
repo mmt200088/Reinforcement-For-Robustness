@@ -7,12 +7,14 @@
     两者归一化后的均值。
   * 稳定性 gate 看 m1_std、m2_std、loss_std 三个方差，按 30:30:1 加权
     （和指标重要性一致：m1=m2>>loss）。
-  * 顺序 Stage-2 路径的 cost_score 回到 adaptive scalar：
+  * 顺序 Stage-2 路径的 cost_score 回到 budgeted adaptive scalar：
       - 只有 P3（metric_ok 且 stab_ok 且非 invalid）能吃到 cost reward。
+      - P3 内部把 metric margin 和 cost 分开预算：metric 余量只占一个小
+        budget，不能挤掉 cost 优化空间。
       - fusion_count 和 truncation/K reduction 是区间式奖励：多一个 fusion
-        或多一个平均 K-step 改善，都会产生清晰的 scalar jump。
-      - total_bits 是弱线性项，只做细粒度排序，不像 fusion/K 那样形成
-        明显 tier jump。
+        或多一个 decoded K-bit unit 改善，都会产生清晰的 scalar jump。
+      - total_bits 是单独 clip 的弱线性 tie-breaker，不像 fusion/K 那样形成
+        明显 tier jump，也不能靠大 bits_gain 主导 cost ranking。
       - Pareto archive 仍可记录 P3 frontier 用于诊断/探索统计，但不再是
         PPO cost scalar 的来源。
   * 优先级硬序：tier_bonus 0/+20/+40 锁住 metric_ok / stab_ok 三档，
@@ -32,15 +34,23 @@
   combined_stab_excess = (30·norm_m1 + 30·norm_m2 + 1·norm_loss) / 61
   stability_penalty = -lambda_stab · combined_stab_excess
 
-  P3 adaptive cost:
+  P3 budgeted adaptive cost:
+    p3_metric_margin = clip(margin_acc, 0, 1) * p3_metric_margin_budget
     fusion_bonus = floor(max(fusion_gain, 0)) * fusion_step_bonus
-    k_bonus = floor(max(k_gain, 0) / k_step_size) * k_step_bonus
-    bits_linear = bits_linear_scale * bits_gain / typical_bits
+    truncation_step_gain = max(k_gain, 0) / k_step_size   # avg-K -> decoded K-bit units
+    k_bonus = floor(truncation_step_gain) * k_step_bonus
+    bits_tiebreaker = clip(bits_linear_scale * bits_gain / typical_bits,
+                           -bits_tiebreaker_clip, +bits_tiebreaker_clip)
+    cost_score = clip(fusion_bonus + k_bonus + bits_tiebreaker,
+                      cost_score_clip_min, p3_cost_budget)
 
   metric_ok = (acc_violation == 0) AND not invalid
   stab_ok = (combined_stab_excess == 0)
 
-  shaping_raw = margin_acc + invalid_term + (adaptive_cost_score IF P3 ELSE 0) + (stab_penalty IF metric_ok ELSE 0)
+  shaping_raw =
+      P1: margin_acc + invalid_term
+      P2: margin_acc + stab_penalty
+      P3: p3_metric_margin + adaptive_cost_score
   shaping_clipped = clip(shaping_raw, -5, +5)
   tier_bonus = 20·metric_ok + 20·(metric_ok AND stab_ok)
   total = shaping_clipped + tier_bonus
@@ -83,12 +93,15 @@ DEFAULT_BASELINE_AVG_K = 13.0          # 全 max-k baseline 的 avg_k
 DEFAULT_COST_W_FUSION = 30.0
 DEFAULT_COST_W_K = 30.0
 DEFAULT_COST_W_BITS = 1.0
-DEFAULT_COST_FUSION_STEP_BONUS = 0.80
-DEFAULT_COST_K_STEP_BONUS = 0.80
+DEFAULT_P3_METRIC_MARGIN_BUDGET = 0.50
+DEFAULT_P3_COST_BUDGET = 4.50
+DEFAULT_COST_FUSION_STEP_BONUS = 0.50
+DEFAULT_COST_K_STEP_BONUS = 0.50
 DEFAULT_COST_K_STEP_SIZE = 1.0 / 59.0
 DEFAULT_COST_BITS_LINEAR_SCALE = 0.25
-DEFAULT_COST_SCORE_CLIP_MIN = -1.5
-DEFAULT_COST_SCORE_CLIP_MAX = 4.0
+DEFAULT_COST_BITS_TIEBREAKER_CLIP = 0.35
+DEFAULT_COST_SCORE_CLIP_MIN = -0.50
+DEFAULT_COST_SCORE_CLIP_MAX = DEFAULT_P3_COST_BUDGET
 DEFAULT_STAB_W_M1 = 30.0
 DEFAULT_STAB_W_M2 = 30.0
 DEFAULT_STAB_W_LOSS = 1.0
@@ -159,6 +172,11 @@ class RewardWeights:
                            caller 显式传 acc_threshold_m{1,2} 时覆盖该 fallback
         stab_tolerance:    stability gate 的容忍百分比；阈值 = baseline.X_std * (1 + tol)
         stab_floor:        stability 阈值的最小绝对值（防 baseline.std≈0 失稳）
+        p3_metric_margin_budget:
+                           P3 内 accuracy margin 可占的最大 shaping 空间。
+                           该预算故意很小，避免更高精度余量挤掉 cost 优化。
+        p3_cost_budget:    P3 内 cost shaping 的最大空间。fusion/K step bonus
+                           和 bits tie-breaker 的和会 clip 到此预算内。
         cost_w_fusion / cost_w_k / cost_w_bits:
                            旧配置兼容字段；默认 adaptive scalar P3 cost
                            不再读取这些权重。
@@ -171,6 +189,9 @@ class RewardWeights:
                            truncation reward unit。
         cost_bits_linear_scale:
                            total_bits 的弱线性权重；它只做细粒度排序。
+        cost_bits_tiebreaker_clip:
+                           total_bits 弱线性项的独立 clip，保证 bits-only
+                           改善不能接近一个 fusion/K 区间级跳变。
         cost_score_clip_min / max:
                            P3 cost scalar 的独立 clip，仍会再被总 shaping
                            clip 到 [-5,+5]，因此不能跨越 P1/P2 tier。
@@ -192,6 +213,8 @@ class RewardWeights:
     acc_tolerance: float = DEFAULT_ACC_TOLERANCE
     stab_tolerance: float = DEFAULT_STAB_TOLERANCE
     stab_floor: float = DEFAULT_STAB_FLOOR
+    p3_metric_margin_budget: float = DEFAULT_P3_METRIC_MARGIN_BUDGET
+    p3_cost_budget: float = DEFAULT_P3_COST_BUDGET
     cost_w_fusion: float = DEFAULT_COST_W_FUSION
     cost_w_k: float = DEFAULT_COST_W_K
     cost_w_bits: float = DEFAULT_COST_W_BITS
@@ -199,6 +222,7 @@ class RewardWeights:
     cost_k_step_bonus: float = DEFAULT_COST_K_STEP_BONUS
     cost_k_step_size: float = DEFAULT_COST_K_STEP_SIZE
     cost_bits_linear_scale: float = DEFAULT_COST_BITS_LINEAR_SCALE
+    cost_bits_tiebreaker_clip: float = DEFAULT_COST_BITS_TIEBREAKER_CLIP
     cost_score_clip_min: float = DEFAULT_COST_SCORE_CLIP_MIN
     cost_score_clip_max: float = DEFAULT_COST_SCORE_CLIP_MAX
     stab_w_m1: float = DEFAULT_STAB_W_M1
@@ -263,6 +287,7 @@ class RewardBreakdown:
     tier_bonus: float = 0.0
     margin_acc: float = 0.0
     cost_score: float = 0.0
+    p3_metric_margin_reward: float = 0.0
     stability_penalty: float = 0.0
     invalid_term: float = 0.0
     metric_ok: bool = False
@@ -279,6 +304,10 @@ class RewardBreakdown:
     stab_excess_m2: float = 0.0
     stab_excess_loss: float = 0.0
     fusion_gain: float = 0.0
+    cost_fusion_bonus: float = 0.0
+    cost_truncation_bonus: float = 0.0
+    cost_bits_tiebreaker: float = 0.0
+    cost_truncation_step_gain: float = 0.0
     pareto_event_kind: str = ""
     pareto_action_hash: str = ""
     pareto_frontier_removed: int = 0
@@ -467,30 +496,45 @@ def _adaptive_scalar_cost_score(
         bits_norm: float,
         weights: RewardWeights,
         ) -> tuple:
-    """P3-only adaptive scalar cost reward.
+    """P3-only budgeted adaptive scalar cost reward.
 
-    Fusion and truncation/K gains use interval jumps. ``total_bits`` remains a
-    small linear term so it cannot dominate the two cost signals the user wants
-    the policy to actively chase.
+    Fusion and truncation/K gains use interval jumps. ``k_gain`` arrives as an
+    average over active K slots, so ``cost_k_step_size`` converts it back to a
+    human-readable decoded K-bit unit count. ``total_bits`` remains a separately
+    clipped weak linear tie-breaker.
     """
     fusion_step = _positive_step_bonus(
         fusion_gain,
         step_size=1.0,
         step_bonus=float(weights.cost_fusion_step_bonus),
     )
+    k_step_size = max(float(weights.cost_k_step_size), 1.0e-12)
+    truncation_step_gain = max(0.0, float(k_gain)) / k_step_size
     k_step = _positive_step_bonus(
         k_gain,
-        step_size=float(weights.cost_k_step_size),
+        step_size=k_step_size,
         step_bonus=float(weights.cost_k_step_bonus),
     )
-    bits_linear = float(weights.cost_bits_linear_scale) * float(bits_norm)
+    bits_linear_raw = float(weights.cost_bits_linear_scale) * float(bits_norm)
+    bits_linear = float(np.clip(
+        bits_linear_raw,
+        -float(weights.cost_bits_tiebreaker_clip),
+        float(weights.cost_bits_tiebreaker_clip),
+    ))
     raw = float(weights.cost_weight) * (fusion_step + k_step + bits_linear)
     clipped = float(np.clip(
         raw,
         float(weights.cost_score_clip_min),
-        float(weights.cost_score_clip_max),
+        min(float(weights.cost_score_clip_max), float(weights.p3_cost_budget)),
     ))
-    return clipped, fusion_step, k_step, bits_linear
+    return clipped, fusion_step, k_step, bits_linear, truncation_step_gain
+
+
+def _p3_metric_margin_reward(margin_acc: float, weights: RewardWeights) -> float:
+    """Small P3-only margin budget that cannot crowd out cost ranking."""
+    return float(np.clip(float(margin_acc), 0.0, 1.0)) * float(
+        max(0.0, weights.p3_metric_margin_budget)
+    )
 
 
 def _resolve_metric_for_threshold(
@@ -717,8 +761,17 @@ def compute_reward(
         r_fusion_raw = 0.0
         r_k_raw = 0.0
         r_bits_raw = 0.0
+        truncation_step_gain_raw = max(0.0, float(k_gain)) / max(
+            float(weights.cost_k_step_size), 1.0e-12
+        )
     else:
-        cost_score_raw, r_fusion_raw, r_k_raw, r_bits_raw = _adaptive_scalar_cost_score(
+        (
+            cost_score_raw,
+            r_fusion_raw,
+            r_k_raw,
+            r_bits_raw,
+            truncation_step_gain_raw,
+        ) = _adaptive_scalar_cost_score(
             fusion_gain=float(fusion_gain),
             k_gain=float(k_gain),
             bits_gain=float(bits_gain),
@@ -730,16 +783,22 @@ def compute_reward(
     # stricter: it only contributes in P3 (metric_ok AND stab_ok), matching the
     # "accuracy/stability as hard constraints, cost only after both pass" rule.
     effective_cost_score = cost_score_raw if (metric_ok and stab_ok) else 0.0
-    effective_stab_penalty = stability_penalty if metric_ok else 0.0
+    effective_p3_margin = (
+        _p3_metric_margin_reward(margin_acc, weights)
+        if (metric_ok and stab_ok)
+        else 0.0
+    )
+    effective_stab_penalty = stability_penalty if (metric_ok and not stab_ok) else 0.0
     invalid_term = -float(weights.invalid_penalty) if invalid else 0.0
 
     # === 5. shaping (clipped to [-5, +5]) ===
-    shaping_raw = (
-        float(margin_acc)
-        + invalid_term
-        + effective_cost_score
-        + effective_stab_penalty
-    )
+    if metric_ok and stab_ok:
+        # P3 ranking is intentionally cost-led. Accuracy/stability have already
+        # passed their hard gates, so metric margin gets only a small bounded
+        # budget and cannot consume the cost budget through the outer clip.
+        shaping_raw = float(effective_p3_margin) + float(effective_cost_score)
+    else:
+        shaping_raw = float(margin_acc) + invalid_term + effective_stab_penalty
     shaping_clipped = float(
         np.clip(shaping_raw, float(weights.reward_clip_min), float(weights.reward_clip_max))
     )
@@ -767,6 +826,7 @@ def compute_reward(
         tier_bonus=float(tier_bonus),
         margin_acc=float(margin_acc),
         cost_score=float(effective_cost_score),
+        p3_metric_margin_reward=float(effective_p3_margin),
         stability_penalty=float(effective_stab_penalty),
         invalid_term=float(invalid_term),
         metric_ok=bool(metric_ok),
@@ -783,6 +843,12 @@ def compute_reward(
         stab_excess_m2=float(stab_excess_m2),
         stab_excess_loss=float(stab_excess_loss),
         fusion_gain=float(fusion_gain),
+        cost_fusion_bonus=float(r_fusion),
+        cost_truncation_bonus=float(r_k),
+        cost_bits_tiebreaker=float(r_bits),
+        cost_truncation_step_gain=(
+            float(truncation_step_gain_raw) if (metric_ok and stab_ok) else 0.0
+        ),
         pareto_event_kind=str(getattr(pareto_event, "kind", "") or ""),
         pareto_action_hash=str(action_hash or ""),
         pareto_frontier_removed=int(getattr(pareto_event, "removed", 0) or 0),

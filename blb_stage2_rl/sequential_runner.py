@@ -823,6 +823,11 @@ class EpisodeRecord:
     terminal_k_gain: float = 0.0
     terminal_fusion_gain: float = 0.0
     terminal_cost_score: float = 0.0
+    terminal_p3_metric_margin_reward: float = 0.0
+    terminal_cost_fusion_bonus: float = 0.0
+    terminal_cost_truncation_bonus: float = 0.0
+    terminal_cost_bits_tiebreaker: float = 0.0
+    terminal_cost_truncation_step_gain: float = 0.0
     terminal_pareto_event_kind: str = ""
     terminal_pareto_action_hash: str = ""
     terminal_pareto_frontier_removed: int = 0
@@ -1058,6 +1063,11 @@ def train_sequential(
         terminal_k_gain_val = 0.0
         terminal_fusion_gain_val = 0.0
         terminal_cost_score_val = 0.0
+        terminal_p3_metric_margin_reward_val = 0.0
+        terminal_cost_fusion_bonus_val = 0.0
+        terminal_cost_truncation_bonus_val = 0.0
+        terminal_cost_bits_tiebreaker_val = 0.0
+        terminal_cost_truncation_step_gain_val = 0.0
         terminal_pareto_event_kind_val = ""
         terminal_pareto_action_hash_val = ""
         terminal_pareto_frontier_removed_val = 0
@@ -1338,6 +1348,21 @@ def train_sequential(
                     terminal_k_gain_val = float(getattr(term_breakdown, "k_drop", 0.0) or 0.0)
                     terminal_fusion_gain_val = float(getattr(term_breakdown, "fusion_gain", 0.0) or 0.0)
                     terminal_cost_score_val = float(getattr(term_breakdown, "cost_score", 0.0) or 0.0)
+                    terminal_p3_metric_margin_reward_val = float(
+                        getattr(term_breakdown, "p3_metric_margin_reward", 0.0) or 0.0
+                    )
+                    terminal_cost_fusion_bonus_val = float(
+                        getattr(term_breakdown, "cost_fusion_bonus", 0.0) or 0.0
+                    )
+                    terminal_cost_truncation_bonus_val = float(
+                        getattr(term_breakdown, "cost_truncation_bonus", 0.0) or 0.0
+                    )
+                    terminal_cost_bits_tiebreaker_val = float(
+                        getattr(term_breakdown, "cost_bits_tiebreaker", 0.0) or 0.0
+                    )
+                    terminal_cost_truncation_step_gain_val = float(
+                        getattr(term_breakdown, "cost_truncation_step_gain", 0.0) or 0.0
+                    )
                     terminal_pareto_event_kind_val = str(getattr(term_breakdown, "pareto_event_kind", "") or "")
                     terminal_pareto_action_hash_val = str(getattr(term_breakdown, "pareto_action_hash", "") or "")
                     terminal_pareto_frontier_removed_val = int(getattr(term_breakdown, "pareto_frontier_removed", 0) or 0)
@@ -1591,6 +1616,21 @@ def train_sequential(
                 terminal_k_gain_val = float(getattr(term_breakdown, "k_drop", 0.0) or 0.0)
                 terminal_fusion_gain_val = float(getattr(term_breakdown, "fusion_gain", 0.0) or 0.0)
                 terminal_cost_score_val = float(getattr(term_breakdown, "cost_score", 0.0) or 0.0)
+                terminal_p3_metric_margin_reward_val = float(
+                    getattr(term_breakdown, "p3_metric_margin_reward", 0.0) or 0.0
+                )
+                terminal_cost_fusion_bonus_val = float(
+                    getattr(term_breakdown, "cost_fusion_bonus", 0.0) or 0.0
+                )
+                terminal_cost_truncation_bonus_val = float(
+                    getattr(term_breakdown, "cost_truncation_bonus", 0.0) or 0.0
+                )
+                terminal_cost_bits_tiebreaker_val = float(
+                    getattr(term_breakdown, "cost_bits_tiebreaker", 0.0) or 0.0
+                )
+                terminal_cost_truncation_step_gain_val = float(
+                    getattr(term_breakdown, "cost_truncation_step_gain", 0.0) or 0.0
+                )
                 terminal_pareto_event_kind_val = str(getattr(term_breakdown, "pareto_event_kind", "") or "")
                 terminal_pareto_action_hash_val = str(getattr(term_breakdown, "pareto_action_hash", "") or "")
                 terminal_pareto_frontier_removed_val = int(getattr(term_breakdown, "pareto_frontier_removed", 0) or 0)
@@ -1673,6 +1713,11 @@ def train_sequential(
             terminal_k_gain=float(terminal_k_gain_val),
             terminal_fusion_gain=float(terminal_fusion_gain_val),
             terminal_cost_score=float(terminal_cost_score_val),
+            terminal_p3_metric_margin_reward=float(terminal_p3_metric_margin_reward_val),
+            terminal_cost_fusion_bonus=float(terminal_cost_fusion_bonus_val),
+            terminal_cost_truncation_bonus=float(terminal_cost_truncation_bonus_val),
+            terminal_cost_bits_tiebreaker=float(terminal_cost_bits_tiebreaker_val),
+            terminal_cost_truncation_step_gain=float(terminal_cost_truncation_step_gain_val),
             terminal_pareto_event_kind=str(terminal_pareto_event_kind_val),
             terminal_pareto_action_hash=str(terminal_pareto_action_hash_val),
             terminal_pareto_frontier_removed=int(terminal_pareto_frontier_removed_val),
@@ -2489,6 +2534,7 @@ def run_sequential_via_runner(
     start_episode = 0
     best_reward = -float("inf")
     best_action_vec: Optional[np.ndarray] = None
+    best_record: Optional[EpisodeRecord] = None
     if effective_resume_path and os.path.isfile(effective_resume_path):
         try:
             ckpt = torch.load(effective_resume_path, map_location=device)
@@ -2768,7 +2814,7 @@ def run_sequential_via_runner(
         )
 
     def _episode_callback(record: EpisodeRecord) -> None:
-        nonlocal best_reward, best_action_vec
+        nonlocal best_reward, best_action_vec, best_record
         episode_returns.append(float(record.total_reward))
         rollout_avg_window.append(float(record.total_reward))
         rollout_invalid_window.append(int(record.invalid_steps))
@@ -2824,7 +2870,15 @@ def run_sequential_via_runner(
                     f"speedup={float(record.terminal_probe_speedup):.3f}x"
                 ),
                 (
-                    f"pareto_cost: event={record.terminal_pareto_event_kind or 'none'}  "
+                    f"adaptive_cost: score={float(record.terminal_cost_score):+.6f}  "
+                    f"p3_margin={float(record.terminal_p3_metric_margin_reward):+.6f}  "
+                    f"fusion_bonus={float(record.terminal_cost_fusion_bonus):+.6f}  "
+                    f"trunc_bonus={float(record.terminal_cost_truncation_bonus):+.6f}  "
+                    f"bits_tiebreaker={float(record.terminal_cost_bits_tiebreaker):+.6f}  "
+                    f"trunc_units={float(record.terminal_cost_truncation_step_gain):+.3f}"
+                ),
+                (
+                    f"pareto_diag: event={record.terminal_pareto_event_kind or 'none'}  "
                     f"score={float(record.terminal_cost_score):+.6f}  "
                     f"fusion_gain={float(record.terminal_fusion_gain):+.3f}  "
                     f"k_gain={float(record.terminal_k_gain):+.3f}  "
@@ -2904,6 +2958,7 @@ def run_sequential_via_runner(
         if is_new_best:
             best_reward = float(record.total_reward)
             best_action_vec = np.asarray(seq_env._pending_full_vec, dtype=np.int64).copy()
+            best_record = record
             # Episode-new-best banner (v2-style: "回合 N · 训练过程新高")
             _seq_block_title(
                 log,
@@ -2992,6 +3047,19 @@ def run_sequential_via_runner(
                     "terminal_k_gain": float(record.terminal_k_gain),
                     "terminal_fusion_gain": float(record.terminal_fusion_gain),
                     "terminal_cost_score": float(record.terminal_cost_score),
+                    "terminal_p3_metric_margin_reward": float(
+                        record.terminal_p3_metric_margin_reward
+                    ),
+                    "terminal_cost_fusion_bonus": float(record.terminal_cost_fusion_bonus),
+                    "terminal_cost_truncation_bonus": float(
+                        record.terminal_cost_truncation_bonus
+                    ),
+                    "terminal_cost_bits_tiebreaker": float(
+                        record.terminal_cost_bits_tiebreaker
+                    ),
+                    "terminal_cost_truncation_step_gain": float(
+                        record.terminal_cost_truncation_step_gain
+                    ),
                     "terminal_pareto_event_kind": str(record.terminal_pareto_event_kind),
                     "best_reward": float(best_reward),
                     "safe_neighbor_active": bool(record.safe_neighbor_active),
@@ -3069,6 +3137,15 @@ def run_sequential_via_runner(
                     terminal_k_gain=float(record.terminal_k_gain),
                     terminal_fusion_gain=float(record.terminal_fusion_gain),
                     terminal_cost_score=float(record.terminal_cost_score),
+                    terminal_p3_metric_margin_reward=float(
+                        record.terminal_p3_metric_margin_reward
+                    ),
+                    terminal_cost_fusion_bonus=float(record.terminal_cost_fusion_bonus),
+                    terminal_cost_truncation_bonus=float(record.terminal_cost_truncation_bonus),
+                    terminal_cost_bits_tiebreaker=float(record.terminal_cost_bits_tiebreaker),
+                    terminal_cost_truncation_step_gain=float(
+                        record.terminal_cost_truncation_step_gain
+                    ),
                     terminal_pareto_event_kind=str(record.terminal_pareto_event_kind),
                     terminal_pareto_action_hash=str(record.terminal_pareto_action_hash),
                     terminal_pareto_frontier_removed=int(record.terminal_pareto_frontier_removed),
@@ -3474,7 +3551,7 @@ def run_sequential_via_runner(
             "metric2_mean": float(getattr(baseline, "metric2_mean", 0.0) or 0.0),
         }
         weights_summary: Dict[str, Any] = {
-            "design": "v2-style rdv2",
+            "design": "budgeted_adaptive_scalar_p3_cost",
             "cost_weight": float(getattr(weights, "cost_weight", 0.0) or 0.0),
             "lambda_stab": float(getattr(weights, "lambda_stab", 0.0) or 0.0),
             "invalid_penalty": float(getattr(weights, "invalid_penalty", 0.0) or 0.0),
@@ -3483,7 +3560,52 @@ def run_sequential_via_runner(
             "tier_metric_bonus": float(getattr(weights, "tier_metric_bonus", 0.0) or 0.0),
             "tier_stability_bonus": float(getattr(weights, "tier_stability_bonus", 0.0) or 0.0),
             "baseline_metric1": float(getattr(weights, "baseline_metric1", 0.0) or 0.0),
+            "baseline_metric2": float(getattr(weights, "baseline_metric2", 0.0) or 0.0),
+            "cost_reward_mode": str(getattr(weights, "cost_reward_mode", "")),
+            "p3_metric_margin_budget": float(
+                getattr(weights, "p3_metric_margin_budget", 0.0) or 0.0
+            ),
+            "p3_cost_budget": float(getattr(weights, "p3_cost_budget", 0.0) or 0.0),
+            "cost_fusion_step_bonus": float(
+                getattr(weights, "cost_fusion_step_bonus", 0.0) or 0.0
+            ),
+            "cost_k_step_bonus": float(getattr(weights, "cost_k_step_bonus", 0.0) or 0.0),
+            "cost_k_step_size": float(getattr(weights, "cost_k_step_size", 0.0) or 0.0),
+            "cost_bits_linear_scale": float(
+                getattr(weights, "cost_bits_linear_scale", 0.0) or 0.0
+            ),
+            "cost_bits_tiebreaker_clip": float(
+                getattr(weights, "cost_bits_tiebreaker_clip", 0.0) or 0.0
+            ),
+            "cost_score_clip_min": float(getattr(weights, "cost_score_clip_min", 0.0) or 0.0),
+            "cost_score_clip_max": float(getattr(weights, "cost_score_clip_max", 0.0) or 0.0),
         }
+        best_breakdown_for_report: Optional[Dict[str, Any]] = None
+        if best_record is not None:
+            best_breakdown_for_report = {
+                "terminal_priority": int(best_record.terminal_priority),
+                "terminal_reward": float(best_record.terminal_reward),
+                "terminal_cost_score": float(best_record.terminal_cost_score),
+                "terminal_p3_metric_margin_reward": float(
+                    best_record.terminal_p3_metric_margin_reward
+                ),
+                "terminal_cost_fusion_bonus": float(best_record.terminal_cost_fusion_bonus),
+                "terminal_cost_truncation_bonus": float(
+                    best_record.terminal_cost_truncation_bonus
+                ),
+                "terminal_cost_bits_tiebreaker": float(
+                    best_record.terminal_cost_bits_tiebreaker
+                ),
+                "terminal_cost_truncation_step_gain": float(
+                    best_record.terminal_cost_truncation_step_gain
+                ),
+                "terminal_fusion_gain": float(best_record.terminal_fusion_gain),
+                "terminal_k_gain": float(best_record.terminal_k_gain),
+                "terminal_bits_gain": float(best_record.terminal_bits_gain),
+                "terminal_metric1_mean": float(best_record.terminal_metric1_mean),
+                "terminal_metric2_mean": float(best_record.terminal_metric2_mean),
+                "terminal_stab_violation": float(best_record.terminal_stab_violation),
+            }
         report_path = write_blb_final_report(
             blb_progress_dir,
             run_basename=run_basename,
@@ -3492,7 +3614,7 @@ def run_sequential_via_runner(
             completed_episodes=int(start_episode + len(episode_returns)),
             elapsed_sec=float(elapsed),
             best_reward=float(best_reward),
-            best_breakdown=None,
+            best_breakdown=best_breakdown_for_report,
             best_action_vec=(
                 np.asarray(best_action_vec, dtype=int).tolist()
                 if best_action_vec is not None else None
