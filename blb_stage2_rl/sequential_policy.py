@@ -215,6 +215,10 @@ class BLBStage2SequentialPolicy(nn.Module):
             torch.arange(cfg.max_step_dim, dtype=torch.long) * int(cfg.max_num_levels),
             persistent=False,
         )
+        steps, layers, blocks = self._make_step_layer_block_indices(cfg)
+        self.register_buffer("_step_indices", steps, persistent=False)
+        self.register_buffer("_layer_indices", layers, persistent=False)
+        self.register_buffer("_block_indices", blocks, persistent=False)
         self.fc_continuous = nn.Sequential(
             nn.Linear(8, cfg.cont_proj_dim),
             nn.LayerNorm(cfg.cont_proj_dim),
@@ -313,27 +317,36 @@ class BLBStage2SequentialPolicy(nn.Module):
         nn.init.constant_(self.slot_head_bias, 0.0)
 
     # ------------------------------------------------------------------
-    def _step_layer_block_indices(self, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        steps = torch.arange(self.cfg.horizon, device=device, dtype=torch.long)
+    @staticmethod
+    def _make_step_layer_block_indices(
+            cfg: SequentialPolicyConfig,
+            ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        steps = torch.arange(cfg.horizon, dtype=torch.long)
         layers = torch.where(
             steps < 4,
             torch.zeros_like(steps),
             1 + torch.div(steps - 4, 5, rounding_mode="floor"),
         )
         blocks = torch.where(steps < 4, steps + 1, torch.remainder(steps - 4, 5))
-        layers = torch.clamp(layers, min=0, max=max(0, self.cfg.num_layers - 1))
-        blocks = torch.clamp(blocks, min=0, max=max(0, self.cfg.block_count - 1))
+        layers = torch.clamp(layers, min=0, max=max(0, cfg.num_layers - 1))
+        blocks = torch.clamp(blocks, min=0, max=max(0, cfg.block_count - 1))
         return steps, layers, blocks
 
-    def _parse_state(self, state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _step_layer_block_indices(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return self._step_indices, self._layer_indices, self._block_indices
+
+    def _parse_state(
+            self,
+            state: torch.Tensor,
+            *,
+            truncate_to_current: bool = False,
+            ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         B = int(state.shape[0])
         H = int(self.cfg.horizon)
         S = int(self.cfg.max_step_dim)
         device = state.device
         current_step = torch.zeros(B, dtype=torch.long, device=device)
         static = torch.zeros(B, 4, dtype=state.dtype, device=device)
-        prev_actions = torch.zeros(B, H, S, dtype=torch.long, device=device)
-        prev_signals = torch.zeros(B, H, 3, dtype=state.dtype, device=device)
         width = int(state.shape[-1])
         if width >= 4:
             static[:, : min(4, width)] = state[:, : min(4, width)]
@@ -343,9 +356,14 @@ class BLBStage2SequentialPolicy(nn.Module):
             current_step = torch.argmax(step_oh, dim=-1).long()
         cursor += H
         cursor += 5 + 1
+        seq_len = H
+        if bool(truncate_to_current) and B == 1:
+            seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1
+        prev_actions = torch.zeros(B, seq_len, S, dtype=torch.long, device=device)
+        prev_signals = torch.zeros(B, seq_len, 3, dtype=state.dtype, device=device)
         need_actions = H * S
         if width >= cursor + need_actions:
-            raw_actions = state[:, cursor: cursor + need_actions].view(B, H, S)
+            raw_actions = state[:, cursor: cursor + seq_len * S].view(B, seq_len, S)
             prev_actions = torch.round(raw_actions * 8.0).long().clamp(
                 min=0,
                 max=max(0, self.cfg.max_num_levels - 1),
@@ -353,7 +371,7 @@ class BLBStage2SequentialPolicy(nn.Module):
         cursor += need_actions
         need_signals = H * 3
         if width >= cursor + need_signals:
-            prev_signals = state[:, cursor: cursor + need_signals].view(B, H, 3)
+            prev_signals = state[:, cursor: cursor + seq_len * 3].view(B, seq_len, 3)
         return static, current_step, prev_actions, prev_signals
 
     def _get_causal_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
@@ -374,26 +392,21 @@ class BLBStage2SequentialPolicy(nn.Module):
             *,
             truncate_to_current: bool = False,
             ) -> Tuple[torch.Tensor, torch.Tensor]:
-        static, current_step, prev_actions, prev_signals = self._parse_state(state)
+        static, current_step, prev_actions, prev_signals = self._parse_state(
+            state,
+            truncate_to_current=bool(truncate_to_current),
+        )
         B = int(state.shape[0])
-        H = int(self.cfg.horizon)
         device = state.device
-        seq_len = H
-        if bool(truncate_to_current) and B == 1:
-            seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1
-        steps, layers, blocks = self._step_layer_block_indices(device)
+        seq_len = int(prev_actions.shape[1])
+        steps, layers, blocks = self._step_layer_block_indices()
         steps = steps[:seq_len]
         layers = layers[:seq_len]
         blocks = blocks[:seq_len]
-        prev_actions = prev_actions[:, :seq_len, :]
-        prev_signals = prev_signals[:, :seq_len, :]
         step_emb = self.embed_step(steps).unsqueeze(0).expand(B, -1, -1)
         layer_emb = self.embed_layer(layers).unsqueeze(0).expand(B, -1, -1)
         block_emb = self.embed_block(blocks).unsqueeze(0).expand(B, -1, -1)
-        slot_offsets = self._prev_action_slot_offsets[: self.cfg.max_step_dim].to(
-            device=device,
-            dtype=torch.long,
-        )
+        slot_offsets = self._prev_action_slot_offsets[: self.cfg.max_step_dim]
         prev_action_indices = prev_actions + slot_offsets.view(1, 1, -1)
         prev_emb = self.prev_action_embedding(prev_action_indices).reshape(
             B,

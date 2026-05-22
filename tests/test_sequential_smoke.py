@@ -700,6 +700,8 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         for needle in (
             "truncate_to_current: bool = False",
             "seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1",
+            "prev_actions = torch.zeros(B, seq_len, S",
+            "register_buffer(\"_step_indices\"",
             "current_step.clamp(0, x.size(1) - 1)",
             "prev_action_embedding = nn.Embedding",
             "slot_head_weight = nn.Parameter",
@@ -711,6 +713,58 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertIn("torch.inference_mode()", runner_src)
         self.assertIn("policy.eval()", runner_src)
         self.assertIn("policy_rollout_wall_seconds", runner_src)
+
+    def test_truncated_policy_forward_matches_full_causal_prefix(self):
+        try:
+            import numpy as np
+            import torch
+        except Exception as exc:
+            self.skipTest(f"torch/numpy unavailable: {exc}")
+
+        from blb_stage2_rl.sequential_policy import (
+            BLBStage2SequentialPolicy,
+            SequentialPolicyConfig,
+        )
+
+        torch.manual_seed(7)
+        horizon = 10
+        max_step_dim = 6
+        state_dim = 4 + horizon + 5 + 1 + horizon * max_step_dim + horizon * 3
+        cfg = SequentialPolicyConfig(
+            state_dim=state_dim,
+            max_step_dim=max_step_dim,
+            max_num_levels=6,
+            horizon=horizon,
+            num_layers=3,
+            d_model=64,
+            n_heads=4,
+            n_layers=2,
+            d_ff=128,
+            dropout=0.0,
+        )
+        policy = BLBStage2SequentialPolicy(cfg).eval()
+        state = torch.zeros(1, state_dim)
+        current_step = 6
+        state[:, :4] = torch.tensor([[0.5, 0.25, 0.5, 0.1]])
+        state[:, 4 + current_step] = 1.0
+        cursor = 4 + horizon + 5 + 1
+        rng = np.random.default_rng(123)
+        # Fill the entire history area, including future slots. Causal masking
+        # must make the current-step output independent of future entries.
+        actions = rng.integers(0, 6, size=(horizon, max_step_dim)).astype(np.float32)
+        state[:, cursor: cursor + horizon * max_step_dim] = torch.from_numpy(
+            (actions.reshape(-1) / 8.0).astype(np.float32)
+        )
+        cursor += horizon * max_step_dim
+        signals = rng.normal(size=(horizon, 3)).astype(np.float32)
+        state[:, cursor: cursor + horizon * 3] = torch.from_numpy(signals.reshape(-1))
+
+        with torch.inference_mode():
+            full_logits, full_value = policy.forward(state, truncate_to_current=False)
+            trunc_logits, trunc_value = policy.forward(state, truncate_to_current=True)
+
+        self.assertTrue(torch.allclose(trunc_logits, full_logits, atol=1e-5, rtol=1e-5))
+        self.assertTrue(torch.allclose(trunc_value, full_value, atol=1e-5, rtol=1e-5))
 
 
 class RewardDesignV2RegressionTest(unittest.TestCase):

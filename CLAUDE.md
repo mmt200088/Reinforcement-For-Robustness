@@ -213,8 +213,10 @@ Current implementation facts:
 - During rollout collection, `BLBStage2SequentialPolicy` uses a causal-prefix
   fast path (`truncate_to_current=True`) for single-step sampling/evaluation:
   because the GTrXL mask prevents the current step from attending to future
-  tokens, the rollout path only computes tokens `0..current_step`. PPO update
-  batches still use the full-horizon path.
+  tokens, the rollout path only parses and computes tokens `0..current_step`.
+  It also caches fixed step/layer/block index tensors as module buffers instead
+  of rebuilding them every forward. PPO update batches still use the
+  full-horizon path, and reward/action/probe semantics are unchanged.
 - The GTrXL policy keeps per-slot actor heads and slot-specific previous-action
   embeddings, but both are vectorized as parameter/embedding tables rather than
   Python `ModuleList` fan-out. This is a throughput requirement for four-GPU
