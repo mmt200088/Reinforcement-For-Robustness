@@ -27,6 +27,8 @@ GUARDED_RADIUS2_COOLDOWN_EPISODES="${GUARDED_RADIUS2_COOLDOWN_EPISODES:-300}"
 ENT_COEF="${ENT_COEF:-0.06}"
 ENT_RAMP="${ENT_RAMP:-600}"
 WARMSTART_BIAS_GAIN="${WARMSTART_BIAS_GAIN:-1.2}"
+MAX_POST_ANCHOR_P12_RATE="${MAX_POST_ANCHOR_P12_RATE:-0.30}"
+P12_RATE_MIN_POST_ANCHOR="${P12_RATE_MIN_POST_ANCHOR:-100}"
 
 RUN_ID="stage2_rl_${PLANNED_EPISODES}_curve_$(date +%Y%m%d_%H%M%S)"
 ARTIFACT_DIR="experiments/server_command_runs/${RUN_ID}"
@@ -81,7 +83,9 @@ monitor_once() {
     --horizon 59 \
     --k-trials "$K_TRIALS" \
     --probe-size "$PROBE_SIZE" \
-    --expected-reward-devices "$REWARD_DEVICES"
+    --expected-reward-devices "$REWARD_DEVICES" \
+    --max-post-anchor-p12-rate "$MAX_POST_ANCHOR_P12_RATE" \
+    --min-post-anchor-p12-rate-samples "$P12_RATE_MIN_POST_ANCHOR"
 }
 
 copy_artifacts() {
@@ -154,6 +158,7 @@ launch_and_watch_rl() {
     --blb-v3-guarded-radius2-cooldown-episodes "$GUARDED_RADIUS2_COOLDOWN_EPISODES" \
     --blb-v3-ent-coef "$ENT_COEF" \
     --blb-v3-ent-coef-ramp-episodes "$ENT_RAMP" \
+    --blb-v3-static-invalid-level-mask-enabled 1 \
     --blb-v3-reward-devices "$REWARD_DEVICES" \
     --skip-final-eval \
     --fresh 2>&1 | tee "${ARTIFACT_DIR}/${log_file}"
@@ -271,6 +276,9 @@ cat > "${ARTIFACT_DIR}/run_manifest.json" <<JSON
   "ent_coef": ${ENT_COEF},
   "ent_ramp": ${ENT_RAMP},
   "warmstart_bias_gain": ${WARMSTART_BIAS_GAIN},
+  "static_invalid_level_mask_enabled": true,
+  "max_post_anchor_p12_rate": ${MAX_POST_ANCHOR_P12_RATE},
+  "p12_rate_min_post_anchor": ${P12_RATE_MIN_POST_ANCHOR},
   "policy_variant": "blb_v3_sequential_gtrxl_v2scale",
   "baseline_prior_schedule": "1.2 anchor; 1.0->0.45 ep60-600; 0.45->0.15 ep600-2000; 0.15 thereafter",
   "exploration_design": "non-monotonic empirical cost-boundary exploration",

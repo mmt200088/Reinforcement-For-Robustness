@@ -26,7 +26,11 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 import numpy as np
 import torch
 
-from .action_mask import EmpiricalInvalidLevelMask, ForbiddenActionMask
+from .action_mask import (
+    EmpiricalInvalidLevelMask,
+    ForbiddenActionMask,
+    StaticInvalidLevelMask,
+)
 from .action_space import K_LEVELS
 from .sequential_env import BLBStage2SequentialEnv, SequentialEnvConfig
 from .sequential_policy import (
@@ -72,6 +76,7 @@ class SequentialTrainConfig:
     guarded_radius2_episode_fraction: float = 0.15
     guarded_radius2_cooldown_episodes: int = 300
     guarded_radius2_min_radius1_successes: int = 3
+    static_invalid_level_mask_enabled: bool = True
     empirical_invalid_level_mask_enabled: bool = True
     empirical_invalid_level_min_samples: int = 3
     empirical_invalid_level_min_rate: float = 0.80
@@ -341,6 +346,23 @@ def _default_step_level_mask(
                 f"baseline action offset {offset} index {baseline_idx} out of width {dim}"
             )
         mask[slot_idx, baseline_idx] = True
+    return mask
+
+
+def _open_step_level_mask(
+        *,
+        spec: Any,
+        max_step_dim: int,
+        max_num_levels: int,
+        ) -> np.ndarray:
+    """Full legal support for one sequential step before pruning layers apply."""
+    mask = np.zeros((int(max_step_dim), int(max_num_levels)), dtype=bool)
+    for slot_idx, dim in enumerate(spec.slot_dims):
+        if slot_idx >= int(max_step_dim):
+            break
+        width = min(int(dim), int(max_num_levels))
+        if width > 0:
+            mask[slot_idx, :width] = True
     return mask
 
 
@@ -860,6 +882,10 @@ class EpisodeRecord:
     samples_rejected_by_optimizer: int = 0
     steps_fallen_back_to_baseline: int = 0
     forbidden_mask_total: int = 0
+    static_invalid_level_disabled: int = 0
+    static_invalid_level_applied: int = 0
+    static_invalid_level_scan_evaluated: int = 0
+    static_invalid_level_scan_invalid: int = 0
     empirical_invalid_level_disabled: int = 0
     empirical_invalid_level_applied: int = 0
     rejection_optimizer_wall_seconds: float = 0.0
@@ -898,6 +924,127 @@ def _format_invalid_chain_reason(invalid_chain: Any) -> str:
     return "; ".join(parts)
 
 
+def _protected_step_actions(
+        *,
+        spec: Any,
+        n_active: int,
+        baseline_action_vec: Optional[np.ndarray],
+        base_action_vec_for_mask: Optional[np.ndarray],
+        ) -> List[List[int]]:
+    protected_actions: List[List[int]] = []
+    offsets = list(spec.full_vec_offsets)
+    for vec in (baseline_action_vec, base_action_vec_for_mask):
+        if vec is None:
+            continue
+        arr = np.asarray(vec, dtype=np.int64).reshape(-1)
+        protected_actions.append(
+            arr[offsets][:int(n_active)].reshape(-1).astype(np.int64).tolist()
+        )
+    return protected_actions
+
+
+def _precompute_static_invalid_level_mask(
+        *,
+        env: BLBStage2SequentialEnv,
+        baseline_action_vec: Sequence[int],
+        enabled: bool,
+        log_fn: Optional[Callable[[str], None]] = None,
+        bullet: str = "*",
+        ) -> Tuple[StaticInvalidLevelMask, Dict[str, Any]]:
+    """Build an aggressive pre-RL level mask from baseline-prefix checks.
+
+    The scan changes one slot at a time, asks the real optimizer whether the
+    current block remains chain-valid, and records invalid levels. It advances
+    the scan context by committing the baseline action for non-terminal steps
+    only, so it never triggers the terminal model-forward reward probe.
+    """
+    out = StaticInvalidLevelMask()
+    summary: Dict[str, Any] = {
+        "enabled": bool(enabled),
+        "evaluated": 0,
+        "invalid": 0,
+        "disabled": 0,
+        "aborted": False,
+        "reason": "",
+        "elapsed_seconds": 0.0,
+    }
+    if not bool(enabled):
+        return out, summary
+
+    baseline = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1)
+    t0 = time.perf_counter()
+    try:
+        env.reset()
+        horizon = int(env.horizon)
+        for step_idx in range(horizon):
+            spec = env.current_spec()
+            offsets = list(spec.full_vec_offsets)
+            n_active = len(spec.slot_dims)
+            baseline_slice = baseline[offsets][:n_active].astype(np.int64).copy()
+
+            for slot_idx, dim in enumerate(spec.slot_dims):
+                dim_int = int(dim)
+                baseline_idx = int(baseline_slice[slot_idx])
+                for level_idx in range(dim_int):
+                    if int(level_idx) == baseline_idx:
+                        continue
+                    candidate = baseline_slice.copy()
+                    candidate[int(slot_idx)] = int(level_idx)
+                    info = env.evaluate_step(candidate.tolist())
+                    summary["evaluated"] = int(summary["evaluated"]) + 1
+                    if not bool(info.get("valid", False)):
+                        summary["invalid"] = int(summary["invalid"]) + 1
+                        out.add_invalid(
+                            spec.layer_idx,
+                            spec.block_idx,
+                            int(slot_idx),
+                            int(level_idx),
+                            reason=_format_invalid_chain_reason(info.get("invalid_chain")),
+                            config_name=str(info.get("config_name", "")),
+                        )
+
+            if step_idx >= horizon - 1:
+                break
+            baseline_info = env.evaluate_step(baseline_slice.tolist())
+            if not bool(baseline_info.get("valid", False)):
+                summary["aborted"] = True
+                summary["reason"] = (
+                    f"baseline prefix invalid at step={int(step_idx)} "
+                    f"L{int(spec.layer_idx)}-B{int(spec.block_idx)}: "
+                    f"{_format_invalid_chain_reason(baseline_info.get('invalid_chain'))}"
+                )
+                out = StaticInvalidLevelMask()
+                break
+            env.commit_step(baseline_info)
+    except Exception as exc:
+        summary["aborted"] = True
+        summary["reason"] = f"scan_exception: {exc}"
+        out = StaticInvalidLevelMask()
+    finally:
+        summary["elapsed_seconds"] = float(time.perf_counter() - t0)
+        summary["disabled"] = int(out.total_disabled())
+        try:
+            env.reset()
+        except Exception as exc:
+            summary["reset_warning"] = str(exc)
+
+    if log_fn is not None:
+        if bool(summary.get("aborted")):
+            log_fn(
+                f"  {bullet} static invalid-level pre-scan aborted: "
+                f"{summary.get('reason', '')}"
+            )
+        else:
+            log_fn(
+                f"  {bullet} static invalid-level pre-scan: "
+                f"evaluated={int(summary['evaluated'])}, "
+                f"invalid={int(summary['invalid'])}, "
+                f"disabled={int(summary['disabled'])}, "
+                f"elapsed={float(summary['elapsed_seconds']):.2f}s"
+            )
+    return out, summary
+
+
 def train_sequential(
         *,
         env: BLBStage2SequentialEnv,
@@ -915,6 +1062,8 @@ def train_sequential(
         capture_step_infos: bool = False,
         logger: Optional[logging.Logger] = None,
         forbidden_mask: Optional[ForbiddenActionMask] = None,
+        static_invalid_mask: Optional[StaticInvalidLevelMask] = None,
+        static_invalid_scan_summary: Optional[Mapping[str, Any]] = None,
         empirical_invalid_mask: Optional[EmpiricalInvalidLevelMask] = None,
         baseline_action_vec: Optional[np.ndarray] = None,
         max_rejection_retries: int = 32,
@@ -960,6 +1109,12 @@ def train_sequential(
     # so we don't re-discover the same failures.
     if forbidden_mask is None:
         forbidden_mask = ForbiddenActionMask()
+    static_invalid_enabled = bool(
+        getattr(train_cfg, "static_invalid_level_mask_enabled", True)
+    )
+    if not static_invalid_enabled:
+        static_invalid_mask = None
+    static_invalid_scan_summary = dict(static_invalid_scan_summary or {})
     empirical_invalid_enabled = bool(
         getattr(train_cfg, "empirical_invalid_level_mask_enabled", True)
     )
@@ -1083,6 +1238,7 @@ def train_sequential(
         terminal_probe_clear_skipped_val = False
         rejection_start = dict(rejection_counters)
         rejection_optimizer_wall_seconds_val = 0.0
+        static_invalid_level_applied_val = 0
         empirical_invalid_level_applied_val = 0
         baseline_prior_scale = _resolve_baseline_prior_scale(
             int(absolute_ep),
@@ -1223,22 +1379,30 @@ def train_sequential(
                     max_num_levels=policy.cfg.max_num_levels,
                     radius=int(neighbor_radius),
                 )
+            elif static_invalid_mask is not None or empirical_invalid_mask is not None:
+                action_level_mask_np = _open_step_level_mask(
+                    spec=spec,
+                    max_step_dim=policy.cfg.max_step_dim,
+                    max_num_levels=policy.cfg.max_num_levels,
+                )
+            if action_level_mask_np is not None:
+                protected_actions = _protected_step_actions(
+                    spec=spec,
+                    n_active=n_active,
+                    baseline_action_vec=baseline_action_vec,
+                    base_action_vec_for_mask=base_action_vec_for_mask,
+                )
+                if static_invalid_mask is not None:
+                    before_allowed = int(np.asarray(action_level_mask_np, dtype=bool).sum())
+                    action_level_mask_np = static_invalid_mask.apply(
+                        spec.layer_idx,
+                        spec.block_idx,
+                        action_level_mask_np,
+                        protected_actions=protected_actions,
+                    )
+                    after_allowed = int(np.asarray(action_level_mask_np, dtype=bool).sum())
+                    static_invalid_level_applied_val += max(0, before_allowed - after_allowed)
                 if empirical_invalid_mask is not None:
-                    protected_actions: List[List[int]] = []
-                    if baseline_action_vec is not None:
-                        protected_actions.append(
-                            np.asarray(
-                                baseline_action_vec[list(spec.full_vec_offsets)][:n_active],
-                                dtype=np.int64,
-                            ).reshape(-1).tolist()
-                        )
-                    if base_action_vec_for_mask is not None:
-                        protected_actions.append(
-                            np.asarray(
-                                base_action_vec_for_mask[list(spec.full_vec_offsets)][:n_active],
-                                dtype=np.int64,
-                            ).reshape(-1).tolist()
-                        )
                     before_allowed = int(np.asarray(action_level_mask_np, dtype=bool).sum())
                     action_level_mask_np = empirical_invalid_mask.apply(
                         spec.layer_idx,
@@ -1266,6 +1430,7 @@ def train_sequential(
                     actions_t = torch.from_numpy(forced_padded).to(device).unsqueeze(0)
                     lp_t, _, val_t = policy.evaluate_action(
                         obs_t, actions_t, slot_mask_t, levels_t,
+                        action_level_mask=action_level_mask_t,
                         baseline_prior_scale=baseline_prior_scale,
                         truncate_to_current=True,
                     )
@@ -1324,7 +1489,7 @@ def train_sequential(
                     action=action_np,
                     slot_mask=slot_mask_np,
                     per_slot_num_levels=levels_np,
-                    action_level_mask=None,
+                    action_level_mask=action_level_mask_np,
                     log_prob=log_prob,
                     value=value,
                     reward=float(reward),
@@ -1765,6 +1930,17 @@ def train_sequential(
                 episode_rejections.get("steps_fallen_back_to_baseline", 0)
             ),
             forbidden_mask_total=int(forbidden_mask.total()),
+            static_invalid_level_disabled=(
+                int(static_invalid_mask.total_disabled())
+                if static_invalid_mask is not None else 0
+            ),
+            static_invalid_level_applied=int(static_invalid_level_applied_val),
+            static_invalid_level_scan_evaluated=int(
+                static_invalid_scan_summary.get("evaluated", 0) or 0
+            ),
+            static_invalid_level_scan_invalid=int(
+                static_invalid_scan_summary.get("invalid", 0) or 0
+            ),
             empirical_invalid_level_disabled=(
                 int(empirical_invalid_mask.total_disabled())
                 if empirical_invalid_mask is not None else 0
@@ -1866,6 +2042,8 @@ def train_sequential(
             if episode_records else 0.0
         ),
         "forbidden_mask": forbidden_mask,
+        "static_invalid_mask": static_invalid_mask,
+        "static_invalid_scan_summary": dict(static_invalid_scan_summary),
         "empirical_invalid_mask": empirical_invalid_mask,
         "rejection_counters": dict(rejection_counters),
     }
@@ -2507,6 +2685,8 @@ def run_sequential_via_runner(
         f"max_mutations={int(getattr(train_cfg, 'guarded_radius2_max_mutations', 4))}    "
         f"fraction={float(getattr(train_cfg, 'guarded_radius2_episode_fraction', 0.15)):.3g}    "
         f"cooldown={int(getattr(train_cfg, 'guarded_radius2_cooldown_episodes', 300))}",
+        f"Static invalid-level pre-mask：enabled={bool(getattr(train_cfg, 'static_invalid_level_mask_enabled', True))}    "
+        "scan=baseline-prefix one-slot optimizer feasibility",
         f"Empirical invalid-level mask：enabled={bool(getattr(train_cfg, 'empirical_invalid_level_mask_enabled', True))}    "
         f"min_invalid={int(getattr(train_cfg, 'empirical_invalid_level_min_samples', 3))}    "
         f"min_rate={float(getattr(train_cfg, 'empirical_invalid_level_min_rate', 0.80)):.2f}    "
@@ -2627,6 +2807,9 @@ def run_sequential_via_runner(
         guarded_radius2_min_radius1_successes=int(
             getattr(train_cfg, "guarded_radius2_min_radius1_successes", 3)
         ),
+        static_invalid_level_mask_enabled=bool(
+            getattr(train_cfg, "static_invalid_level_mask_enabled", True)
+        ),
     )
 
     episode_returns: List[float] = []
@@ -2687,6 +2870,9 @@ def run_sequential_via_runner(
         "cost_shaping_coeff": float(seq_env_cfg.cost_shaping_coeff),
         "fusion_shaping_coeff": float(seq_env_cfg.fusion_shaping_coeff),
         "early_terminate_on_invalid": bool(seq_env_cfg.early_terminate_on_invalid),
+        "static_invalid_level_mask_enabled": bool(
+            getattr(train_cfg, "static_invalid_level_mask_enabled", True)
+        ),
         "acc_threshold": float(base_env.acc_threshold),
         "stab_threshold": float(base_env.stab_threshold),
         "static_skeletons_archive": str(ss_baseline_obj.archive_path),
@@ -2907,6 +3093,14 @@ def run_sequential_via_runner(
                     f"cooldown={int(record.guarded_radius2_cooldown_remaining)}"
                 ),
                 (
+                    f"invalid_masks: static_disabled={int(record.static_invalid_level_disabled)}  "
+                    f"static_applied={int(record.static_invalid_level_applied)}  "
+                    f"static_scan={int(record.static_invalid_level_scan_invalid)}/"
+                    f"{int(record.static_invalid_level_scan_evaluated)} invalid/evaluated  "
+                    f"empirical_disabled={int(record.empirical_invalid_level_disabled)}  "
+                    f"empirical_applied={int(record.empirical_invalid_level_applied)}"
+                ),
+                (
                     "first_invalid="
                     + (
                         "none"
@@ -3013,6 +3207,11 @@ def run_sequential_via_runner(
                     # Persist the forbidden-action mask so the next resume
                     # doesn't have to re-discover the same invalid tuples.
                     "forbidden_mask_records": forbidden_mask.to_json_records(),
+                    "static_invalid_level_mask_records": (
+                        static_invalid_mask.to_json_records()
+                        if static_invalid_mask is not None else []
+                    ),
+                    "static_invalid_level_scan_summary": dict(static_invalid_scan_summary),
                     "empirical_invalid_level_mask_records": (
                         empirical_invalid_mask.to_json_records()
                         if empirical_invalid_mask is not None else []
@@ -3024,6 +3223,7 @@ def run_sequential_via_runner(
                 log(
                     f"  [checkpoint] 已保存 · 回合 {start_episode + record.episode_idx + 1} "
                     f"→ {save_path}  ·  {forbidden_mask.summary()}  ·  "
+                    f"{static_invalid_mask.summary() if static_invalid_mask is not None else 'static_invalid_level_mask=disabled'}  ·  "
                     f"{empirical_invalid_mask.summary() if empirical_invalid_mask is not None else 'empirical_invalid_level_mask=disabled'}"
                 )
             except Exception as exc:
@@ -3082,6 +3282,14 @@ def run_sequential_via_runner(
                     "samples_rejected_by_optimizer": int(record.samples_rejected_by_optimizer),
                     "steps_fallen_back_to_baseline": int(record.steps_fallen_back_to_baseline),
                     "forbidden_mask_total": int(record.forbidden_mask_total),
+                    "static_invalid_level_disabled": int(record.static_invalid_level_disabled),
+                    "static_invalid_level_applied": int(record.static_invalid_level_applied),
+                    "static_invalid_level_scan_evaluated": int(
+                        record.static_invalid_level_scan_evaluated
+                    ),
+                    "static_invalid_level_scan_invalid": int(
+                        record.static_invalid_level_scan_invalid
+                    ),
                     "empirical_invalid_level_disabled": int(record.empirical_invalid_level_disabled),
                     "rejection_optimizer_wall_seconds": float(record.rejection_optimizer_wall_seconds),
                 },
@@ -3180,6 +3388,14 @@ def run_sequential_via_runner(
                     samples_rejected_by_optimizer=int(record.samples_rejected_by_optimizer),
                     steps_fallen_back_to_baseline=int(record.steps_fallen_back_to_baseline),
                     forbidden_mask_total=int(record.forbidden_mask_total),
+                    static_invalid_level_disabled=int(record.static_invalid_level_disabled),
+                    static_invalid_level_applied=int(record.static_invalid_level_applied),
+                    static_invalid_level_scan_evaluated=int(
+                        record.static_invalid_level_scan_evaluated
+                    ),
+                    static_invalid_level_scan_invalid=int(
+                        record.static_invalid_level_scan_invalid
+                    ),
                     empirical_invalid_level_disabled=int(record.empirical_invalid_level_disabled),
                     empirical_invalid_level_applied=int(record.empirical_invalid_level_applied),
                     rejection_optimizer_wall_seconds=float(record.rejection_optimizer_wall_seconds),
@@ -3335,6 +3551,21 @@ def run_sequential_via_runner(
     # Forbidden-action mask: starts empty (or rehydrated from checkpoint
     # `forbidden_mask_records` if present in the resumed checkpoint).
     forbidden_mask = ForbiddenActionMask()
+    static_invalid_mask = (
+        StaticInvalidLevelMask()
+        if bool(getattr(seq_train_cfg, "static_invalid_level_mask_enabled", True))
+        else None
+    )
+    static_invalid_scan_summary: Dict[str, Any] = {
+        "enabled": bool(static_invalid_mask is not None),
+        "evaluated": 0,
+        "invalid": 0,
+        "disabled": 0,
+        "aborted": False,
+        "reason": "",
+        "elapsed_seconds": 0.0,
+        "source": "none",
+    }
     empirical_invalid_mask = EmpiricalInvalidLevelMask(
         min_invalid_samples=int(
             getattr(seq_train_cfg, "empirical_invalid_level_min_samples", 3)
@@ -3355,6 +3586,20 @@ def run_sequential_via_runner(
                 log(
                     f"  {bullet} 已从 checkpoint 恢复 forbidden_action_mask: "
                     f"{forbidden_mask.summary()}"
+                )
+            static_rec = (
+                _ckpt.get("static_invalid_level_mask_records")
+                if isinstance(_ckpt, dict) else None
+            )
+            if static_rec and static_invalid_mask is not None:
+                static_invalid_mask = StaticInvalidLevelMask.from_json_records(static_rec)
+                static_invalid_scan_summary = dict(
+                    _ckpt.get("static_invalid_level_scan_summary") or {}
+                )
+                static_invalid_scan_summary["source"] = "checkpoint"
+                log(
+                    f"  {bullet} 已从 checkpoint 恢复 static_invalid_level_mask: "
+                    f"{static_invalid_mask.summary()}"
                 )
             empirical_rec = (
                 _ckpt.get("empirical_invalid_level_mask_records")
@@ -3377,6 +3622,16 @@ def run_sequential_via_runner(
                 )
         except Exception as exc:
             log(f"  [resume][warning] failed to restore forbidden_mask: {exc}")
+
+    if static_invalid_mask is not None and static_invalid_mask.total_disabled() == 0:
+        static_invalid_mask, static_invalid_scan_summary = _precompute_static_invalid_level_mask(
+            env=seq_env,
+            baseline_action_vec=baseline_action_vec,
+            enabled=True,
+            log_fn=log,
+            bullet=bullet,
+        )
+        static_invalid_scan_summary["source"] = "baseline_prefix_scan"
 
     # 2026-05-18 (rdv2 hotfix): force first N episodes to use the baseline
     # action so the value function calibrates around +45 (baseline reward)
@@ -3408,6 +3663,8 @@ def run_sequential_via_runner(
         capture_step_infos=False,  # save memory; we surface aggregates instead
         logger=logging.getLogger("blb_stage2_rl.sequential"),
         forbidden_mask=forbidden_mask,
+        static_invalid_mask=static_invalid_mask,
+        static_invalid_scan_summary=static_invalid_scan_summary,
         empirical_invalid_mask=empirical_invalid_mask,
         baseline_action_vec=baseline_action_vec,
         max_rejection_retries=32,

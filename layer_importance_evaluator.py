@@ -2371,6 +2371,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_guarded_radius2_max_mutations=None,
                   blb_v3_guarded_radius2_episode_fraction=None,
                   blb_v3_guarded_radius2_cooldown_episodes=None,
+                  blb_v3_static_invalid_level_mask_enabled=None,
                   blb_v3_warmstart_bias_gain=None,
                   blb_v3_ent_coef=None,
                   blb_v3_ent_coef_anchor=None,
@@ -2871,6 +2872,13 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.blb_v3_guarded_radius2_cooldown_episodes = (
             int(blb_v3_guarded_radius2_cooldown_episodes)
             if blb_v3_guarded_radius2_cooldown_episodes not in (None, "") else None
+        )
+        self.blb_v3_static_invalid_level_mask_enabled = (
+            None if blb_v3_static_invalid_level_mask_enabled in (None, "") else
+            self._coerce_bool_flag(
+                blb_v3_static_invalid_level_mask_enabled,
+                'blb_v3_static_invalid_level_mask_enabled',
+            )
         )
         self.blb_v3_warmstart_bias_gain = (
             float(blb_v3_warmstart_bias_gain)

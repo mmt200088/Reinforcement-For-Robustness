@@ -564,6 +564,8 @@ class ForbiddenActionMaskTest(unittest.TestCase):
             "def to_json_records",
             "def from_json_records",
             "def summary",
+            "class StaticInvalidLevelMask",
+            "def add_invalid",
             "class EmpiricalInvalidLevelMask",
             "def record_invalid",
             "def apply",
@@ -621,6 +623,25 @@ class ForbiddenActionMaskTest(unittest.TestCase):
             m.add(5, 3, (i, 0))
         self.assertIn("total=4", m.summary())
 
+        static_mask = mod.StaticInvalidLevelMask()
+        self.assertTrue(static_mask.add_invalid(0, 1, 0, 1, reason="bad_chain"))
+        self.assertTrue(static_mask.add_invalid(0, 1, 1, 2, reason="bad_chain"))
+        self.assertFalse(static_mask.add_invalid(0, 1, 1, 2, reason="duplicate"))
+        base = [[True, True, True, True, True] for _ in range(3)]
+        pruned_static = static_mask.apply(
+            0,
+            1,
+            base,
+            protected_actions=[(1, 0, 0)],
+        )
+        self.assertTrue(bool(pruned_static[0, 1]))  # protected baseline wins
+        self.assertFalse(bool(pruned_static[1, 2]))
+        self.assertEqual(static_mask.total_disabled(), 2)
+        reborn_static = mod.StaticInvalidLevelMask.from_json_records(
+            static_mask.to_json_records()
+        )
+        self.assertEqual(reborn_static.total_disabled(), static_mask.total_disabled())
+
         level_mask = mod.EmpiricalInvalidLevelMask(
             min_invalid_samples=2,
             min_invalid_rate=0.8,
@@ -669,6 +690,9 @@ class EnvEvalCommitSplitTest(unittest.TestCase):
         src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
         for needle in (
             "ForbiddenActionMask",
+            "StaticInvalidLevelMask",
+            "_precompute_static_invalid_level_mask",
+            "_open_step_level_mask",
             "forbidden_mask.is_forbidden",
             "forbidden_mask.add",
             "env.evaluate_step",
@@ -1532,6 +1556,102 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             shutil.rmtree(sparse_dir, ignore_errors=True)
             shutil.rmtree(burst_dir, ignore_errors=True)
             shutil.rmtree(frequent_dir, ignore_errors=True)
+
+    def test_first10k_monitor_uses_post_anchor_p12_rate_threshold(self):
+        import argparse
+
+        monitor = _load_module_standalone(
+            "scripts/stage2_first10k_monitor.py", "stage2_first10k_monitor_p12_test",
+        )
+
+        def write_case(priority_tail):
+            tmp = Path(tempfile.mkdtemp(prefix="first10k_monitor_p12_"))
+            rows = []
+            for ep in range(120):
+                rows.append({
+                    "episode": ep,
+                    "total_reward": 40.0,
+                    "terminal_reward": 40.0,
+                    "terminal_priority": 3,
+                    "terminal_loss_mean": 0.34,
+                    "terminal_loss_std": 0.003,
+                    "terminal_metric1_mean": 0.87,
+                    "valid_steps": 59,
+                    "invalid_steps": 0,
+                    "total_bits": 14770,
+                    "safe_neighbor_active": False,
+                })
+            for idx, prio in enumerate(priority_tail):
+                ep = 120 + idx
+                rows.append({
+                    "episode": ep,
+                    "total_reward": 37.0 if prio == 3 else -4.0,
+                    "terminal_reward": 37.0 if prio == 3 else -5.0,
+                    "terminal_priority": int(prio),
+                    "terminal_loss_mean": 0.34,
+                    "terminal_loss_std": 0.003,
+                    "terminal_metric1_mean": 0.87,
+                    "valid_steps": 59,
+                    "invalid_steps": 0,
+                    "total_bits": 14770,
+                    "safe_neighbor_active": True,
+                })
+            (tmp / "episodes.jsonl").write_text(
+                "\n".join(json.dumps(row) for row in rows) + "\n",
+                encoding="utf-8",
+            )
+            (tmp / "nvidia.csv").write_text(
+                "timestamp,gpu_idx,util_pct,mem_used_mib\n",
+                encoding="utf-8",
+            )
+            return tmp
+
+        def summary_for(tmp):
+            args = argparse.Namespace(
+                phase="live",
+                artifact_dir=str(tmp),
+                stage2_noise=str(tmp),
+                nvidia_log=str(tmp / "nvidia.csv"),
+                planned=10000,
+                anchor=120,
+                rollout=60,
+                horizon=59,
+                k_trials=4,
+                probe_size=256,
+                expected_reward_devices="",
+                max_post_anchor_p12_rate=0.30,
+                min_post_anchor_p12_rate_samples=100,
+            )
+            return monitor.build_summary(args)
+
+        at_threshold = write_case(([1] * 20) + ([2] * 10) + ([3] * 70))
+        above_threshold = write_case(([1] * 20) + ([2] * 11) + ([3] * 69))
+        try:
+            ok = summary_for(at_threshold)
+            bad = summary_for(above_threshold)
+            self.assertFalse(ok["hard_failures"], ok["hard_failures"])
+            self.assertEqual(ok["priority"]["post_anchor_p12_count"], 30)
+            self.assertAlmostEqual(ok["priority"]["post_anchor_p12_rate"], 0.30)
+            self.assertTrue(
+                any("P1/P2" in item for item in ok["warnings"]),
+                ok["warnings"],
+            )
+            self.assertTrue(
+                any("P1/P2 rate exceeded" in item for item in bad["hard_failures"]),
+                bad["hard_failures"],
+            )
+            self.assertEqual(bad["priority"]["post_anchor_p12_count"], 31)
+        finally:
+            shutil.rmtree(at_threshold, ignore_errors=True)
+            shutil.rmtree(above_threshold, ignore_errors=True)
+
+    def test_first10k_server_run_passes_p12_rate_threshold(self):
+        src = Path("scripts/stage2_first10k_server_run.sh").read_text(encoding="utf-8")
+        self.assertIn('MAX_POST_ANCHOR_P12_RATE="${MAX_POST_ANCHOR_P12_RATE:-0.30}"', src)
+        self.assertIn('P12_RATE_MIN_POST_ANCHOR="${P12_RATE_MIN_POST_ANCHOR:-100}"', src)
+        self.assertIn("--max-post-anchor-p12-rate", src)
+        self.assertIn("--min-post-anchor-p12-rate-samples", src)
+        self.assertIn("--blb-v3-static-invalid-level-mask-enabled 1", src)
 
     def test_first10k_monitor_checks_all_expected_reward_gpus(self):
         import argparse

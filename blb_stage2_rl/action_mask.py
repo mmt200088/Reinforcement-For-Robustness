@@ -13,7 +13,13 @@ Two related-but-distinct mask abstractions live here:
      are orthogonal: a slot allow-list constrains the action *space*; the
      forbidden-action set constrains specific *tuples* within that space.
 
-  3. ``EmpiricalInvalidLevelMask`` (added 2026-05-22) — guarded projection from
+  3. ``StaticInvalidLevelMask`` (added 2026-05-22) — pre-RL projection from
+     a baseline-prefix optimizer feasibility scan back to per-slot level masks.
+     This is intentionally more aggressive than the runtime empirical mask:
+     a level that is invalid in the baseline-prefix one-slot scan is hidden
+     before PPO starts, while preserving protected baseline levels.
+
+  4. ``EmpiricalInvalidLevelMask`` (added 2026-05-22) — guarded projection from
      repeated invalid tuples back to per-slot level masks. It only closes a
      level after enough invalid observations and no contradictory valid
      evidence, and always preserves protected baseline levels.
@@ -349,6 +355,135 @@ class ForbiddenActionMask:
         rest = sum(n for (_, n) in rows[len(head):])
         return (
             f"forbidden_action_mask total={self.total()} "
+            f"(top {len(head)}: {body}"
+            + (f"; +{rest} in {len(rows) - len(head)} more)" if rest else ")")
+        )
+
+
+@dataclass
+class StaticInvalidLevelMask:
+    """Pre-RL per-slot level mask from optimizer feasibility scanning.
+
+    Inspired by COINN-style pre-search pruning: shrink the candidate space
+    before the global optimizer starts, using cheap local feasibility checks.
+    Here the check is intentionally local: each candidate changes one slot on a
+    baseline-prefix action and asks the real ``Rescale_optimizer`` whether that
+    block remains chain-valid. Levels that fail are hidden from PPO sampling.
+
+    This can discard a level that might have become valid under a different
+    prefix. That is the requested tradeoff for this run: fewer invalid-chain
+    retries and a smaller effective action space, while keeping baseline and
+    current proposal levels protected.
+    """
+
+    by_key: Dict[_ForbiddenKey, Dict[Tuple[int, int], Dict[str, object]]] = field(default_factory=dict)
+
+    def add_invalid(
+            self,
+            layer_idx: int,
+            block_idx: int,
+            slot_idx: int,
+            level_idx: int,
+            *,
+            reason: str = "",
+            config_name: str = "",
+            ) -> bool:
+        bucket = self.by_key.setdefault((int(layer_idx), int(block_idx)), {})
+        key = (int(slot_idx), int(level_idx))
+        if key in bucket:
+            return False
+        bucket[key] = {
+            "reason": str(reason or ""),
+            "config_name": str(config_name or ""),
+        }
+        return True
+
+    def disabled_levels(self, layer_idx: int, block_idx: int) -> Set[Tuple[int, int]]:
+        return set(self.by_key.get((int(layer_idx), int(block_idx)), {}).keys())
+
+    def apply(
+            self,
+            layer_idx: int,
+            block_idx: int,
+            action_level_mask: Sequence[Sequence[bool]],
+            *,
+            protected_actions: Sequence[Sequence[int]] = (),
+            ) -> np.ndarray:
+        mask = np.asarray(action_level_mask, dtype=bool).copy()
+        if mask.ndim != 2:
+            raise ValueError("action_level_mask must be a 2-D boolean array")
+        protected: Set[Tuple[int, int]] = set()
+        for action in protected_actions or ():
+            for slot_idx, level_idx in enumerate(action):
+                protected.add((int(slot_idx), int(level_idx)))
+        for slot_idx, level_idx in self.disabled_levels(layer_idx, block_idx):
+            if (slot_idx, level_idx) in protected:
+                continue
+            if 0 <= slot_idx < mask.shape[0] and 0 <= level_idx < mask.shape[1]:
+                mask[slot_idx, level_idx] = False
+        for slot_idx, level_idx in protected:
+            if 0 <= slot_idx < mask.shape[0] and 0 <= level_idx < mask.shape[1]:
+                mask[slot_idx, level_idx] = True
+        for slot_idx in range(mask.shape[0]):
+            if not bool(mask[slot_idx].any()):
+                for protected_slot, protected_level in protected:
+                    if protected_slot == slot_idx and 0 <= protected_level < mask.shape[1]:
+                        mask[slot_idx, protected_level] = True
+                        break
+        return mask
+
+    def total_disabled(self) -> int:
+        return sum(len(bucket) for bucket in self.by_key.values())
+
+    def to_json_records(self) -> List[Dict[str, object]]:
+        records: List[Dict[str, object]] = []
+        for (li, bi), bucket in sorted(self.by_key.items()):
+            cells = []
+            for (slot_idx, level_idx), meta in sorted(bucket.items()):
+                cells.append({
+                    "slot": int(slot_idx),
+                    "level": int(level_idx),
+                    "reason": str(meta.get("reason", "") if isinstance(meta, Mapping) else ""),
+                    "config_name": str(meta.get("config_name", "") if isinstance(meta, Mapping) else ""),
+                })
+            records.append({
+                "layer": int(li),
+                "block": int(bi),
+                "cells": cells,
+            })
+        return records
+
+    @classmethod
+    def from_json_records(cls, records: Iterable[Mapping[str, object]]) -> "StaticInvalidLevelMask":
+        out = cls()
+        for row in records or ():
+            li = int(row["layer"])        # type: ignore[arg-type]
+            bi = int(row["block"])        # type: ignore[arg-type]
+            for cell in row.get("cells", []) or []:              # type: ignore[union-attr]
+                if not isinstance(cell, Mapping):
+                    continue
+                out.add_invalid(
+                    li,
+                    bi,
+                    int(cell["slot"]),
+                    int(cell["level"]),
+                    reason=str(cell.get("reason", "") or ""),
+                    config_name=str(cell.get("config_name", "") or ""),
+                )
+        return out
+
+    def summary(self, top_n: int = 5) -> str:
+        rows = sorted(
+            ((k, len(v)) for k, v in self.by_key.items() if v),
+            key=lambda kv: -kv[1],
+        )
+        if not rows:
+            return "static_invalid_level_mask=empty"
+        head = rows[: max(1, int(top_n))]
+        body = "; ".join(f"L{li:02d}-B{bi}={n}" for (li, bi), n in head)
+        rest = sum(n for (_, n) in rows[len(head):])
+        return (
+            f"static_invalid_level_mask disabled={self.total_disabled()} "
             f"(top {len(head)}: {body}"
             + (f"; +{rest} in {len(rows) - len(head)} more)" if rest else ")")
         )

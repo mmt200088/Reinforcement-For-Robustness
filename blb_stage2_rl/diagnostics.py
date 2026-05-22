@@ -167,6 +167,10 @@ class EpisodeStats:
     samples_rejected_by_optimizer: int = 0
     steps_fallen_back_to_baseline: int = 0
     forbidden_mask_total: int = 0
+    static_invalid_level_disabled: int = 0
+    static_invalid_level_applied: int = 0
+    static_invalid_level_scan_evaluated: int = 0
+    static_invalid_level_scan_invalid: int = 0
     empirical_invalid_level_disabled: int = 0
     empirical_invalid_level_applied: int = 0
     rejection_optimizer_wall_seconds: float = 0.0
@@ -421,6 +425,12 @@ class RLDiagnosticsRecorder:
                 "guarded_radius2_failure_count": int(episode_stats.guarded_radius2_failure_count),
                 "guarded_radius2_frontier_expansion_count": int(
                     episode_stats.guarded_radius2_frontier_expansion_count
+                ),
+                "static_invalid_level_disabled": int(
+                    episode_stats.static_invalid_level_disabled
+                ),
+                "static_invalid_level_applied": int(
+                    episode_stats.static_invalid_level_applied
                 ),
                 "baseline_prior_scale": float(episode_stats.baseline_prior_scale),
                 "base_action_source": str(episode_stats.base_action_source),

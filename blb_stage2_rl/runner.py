@@ -609,6 +609,7 @@ class BLBStage2TrainConfig:
     guarded_radius2_episode_fraction: float = 0.15
     guarded_radius2_cooldown_episodes: int = 300
     guarded_radius2_min_radius1_successes: int = 3
+    static_invalid_level_mask_enabled: bool = True
     disable_warmstart_on_resume: bool = False
     action_mask_enabled: bool = False
     action_mask_mode: str = "none"
@@ -1434,6 +1435,7 @@ class BLBStage2RLRunner:
             "guarded_radius2_max_mutations": int(train_cfg.guarded_radius2_max_mutations),
             "guarded_radius2_episode_fraction": float(train_cfg.guarded_radius2_episode_fraction),
             "guarded_radius2_cooldown_episodes": int(train_cfg.guarded_radius2_cooldown_episodes),
+            "static_invalid_level_mask_enabled": bool(train_cfg.static_invalid_level_mask_enabled),
             "cost_probe_actions": [
                 {"name": name, "touched_slots": int(len(touched))}
                 for name, _action, touched in warmstart_cost_probe_actions
@@ -1458,6 +1460,11 @@ class BLBStage2RLRunner:
                 f"单回合最多变更槽位={int(train_cfg.guarded_radius2_max_mutations)}，"
                 f"采样比例={float(train_cfg.guarded_radius2_episode_fraction):.3g}，"
                 f"cooldown={int(train_cfg.guarded_radius2_cooldown_episodes)}。"
+            )
+        if bool(train_cfg.static_invalid_level_mask_enabled):
+            log(
+                f"  {bullet} 静态 invalid-level 预裁剪：训练开始前做 baseline-prefix "
+                "one-slot Rescale_optimizer 可行性扫描，提前隐藏局部 invalid 的 level。"
             )
         if warmstart_cost_probe_actions:
             log(_format_warmstart_cost_probe_log(warmstart_cost_probe_actions))
@@ -2426,6 +2433,7 @@ class BLBStage2RLRunner:
                 "blb_v3_guarded_radius2_max_mutations": int(train_cfg.guarded_radius2_max_mutations),
                 "blb_v3_guarded_radius2_episode_fraction": float(train_cfg.guarded_radius2_episode_fraction),
                 "blb_v3_guarded_radius2_cooldown_episodes": int(train_cfg.guarded_radius2_cooldown_episodes),
+                "blb_v3_static_invalid_level_mask_enabled": bool(train_cfg.static_invalid_level_mask_enabled),
                 "blb_v3_action_mask_enabled": bool(action_mask_meta.get("enabled", False)),
                 "blb_v3_action_mask_mode": str(action_mask_meta.get("mode", "none")),
                 "blb_v3_action_mask_hash": str(action_mask_meta.get("hash", "")),
@@ -2553,6 +2561,11 @@ class BLBStage2RLRunner:
         v = getattr(ev, "blb_v3_guarded_radius2_enabled", None)
         if v not in (None, ""):
             cfg.guarded_radius2_enabled = str(v).strip().lower() not in (
+                "0", "false", "no", "off",
+            )
+        v = getattr(ev, "blb_v3_static_invalid_level_mask_enabled", None)
+        if v not in (None, ""):
+            cfg.static_invalid_level_mask_enabled = str(v).strip().lower() not in (
                 "0", "false", "no", "off",
             )
         v = getattr(ev, "blb_v3_guarded_radius2_episode_fraction", None)

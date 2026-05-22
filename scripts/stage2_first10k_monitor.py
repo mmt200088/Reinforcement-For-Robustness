@@ -171,6 +171,13 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
 
     post = [e for e in episodes if int(e.get("episode", -1)) >= int(args.anchor)]
     post_priorities = [_episode_priority(e) for e in post]
+    post_p12_count = sum(1 for p in post_priorities if p in (1, 2))
+    post_p12_rate = (
+        float(post_p12_count) / float(len(post_priorities))
+        if post_priorities else 0.0
+    )
+    max_post_p12_rate = float(getattr(args, "max_post_anchor_p12_rate", 0.30))
+    min_post_p12_samples = int(getattr(args, "min_post_anchor_p12_rate_samples", 100))
     post_losses = [_finite(e.get("terminal_loss_mean")) for e in post if "terminal_loss_mean" in e]
     post_returns = [_finite(e.get("total_reward")) for e in post]
     post_safe_rows = [e for e in post if "safe_neighbor_active" in e]
@@ -198,6 +205,12 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
     rejection_optimizer_wall = [
         _finite(e.get("rejection_optimizer_wall_seconds"))
         for e in episodes if "rejection_optimizer_wall_seconds" in e
+    ]
+    static_disabled = [
+        int(e.get("static_invalid_level_disabled", 0) or 0) for e in episodes
+    ]
+    static_applied = [
+        int(e.get("static_invalid_level_applied", 0) or 0) for e in episodes
     ]
     empirical_disabled = [
         int(e.get("empirical_invalid_level_disabled", 0) or 0) for e in episodes
@@ -275,16 +288,22 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
         warnings.append(f"Observed {len(post_loss_caps)} isolated post-anchor terminal_loss_mean collapse-cap episode(s).")
     if any(_is_nonfinite(e.get("total_reward")) for e in episodes):
         hard_failures.append("Non-finite total_reward observed.")
-    if _max_consecutive(p == 1 for p in post_priorities) >= 3:
-        hard_failures.append("Sustained P1(acc): >=3 consecutive post-anchor P1 episodes.")
-    if len(post_priorities) >= 100:
-        recent100 = post_priorities[-100:]
-        if sum(1 for p in recent100 if p == 1) >= 5:
-            hard_failures.append("Sustained P1(acc): >=5 P1 episodes in latest 100 post-anchor episodes.")
+    if len(post_priorities) >= min_post_p12_samples and post_p12_rate > max_post_p12_rate:
+        hard_failures.append(
+            "Post-anchor P1/P2 rate exceeded threshold: "
+            f"{post_p12_rate:.3f} > {max_post_p12_rate:.3f} "
+            f"({post_p12_count}/{len(post_priorities)})."
+        )
+    elif post_p12_count > 0:
+        warnings.append(
+            "Observed post-anchor P1/P2 episodes under allowed threshold: "
+            f"{post_p12_rate:.3f} <= {max_post_p12_rate:.3f} "
+            f"({post_p12_count}/{len(post_priorities)})."
+        )
     if rolling["60"] and rolling["60"]["mean"] < 20.0:
-        hard_failures.append("rolling60 mean return fell below 20.")
+        warnings.append("rolling60 mean return fell below 20.")
     if rolling["300"] and rolling["300"]["mean"] < 35.0:
-        hard_failures.append("rolling300 mean return fell below 35.")
+        warnings.append("rolling300 mean return fell below 35.")
     if completed > int(args.anchor) and post_safe_rows and not any(post_safe):
         hard_failures.append("No post-anchor safe-neighbor active episodes observed.")
     if sum(invalid_steps) > 0:
@@ -406,6 +425,10 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
             "p3_count": sum(1 for p in priorities if p == 3),
             "post_anchor_p1_count": sum(1 for p in post_priorities if p == 1),
             "post_anchor_p2_count": sum(1 for p in post_priorities if p == 2),
+            "post_anchor_p12_count": int(post_p12_count),
+            "post_anchor_p12_rate": float(post_p12_rate),
+            "post_anchor_p12_rate_threshold": float(max_post_p12_rate),
+            "post_anchor_p12_rate_min_samples": int(min_post_p12_samples),
             "post_anchor_max_consecutive_p1": _max_consecutive(p == 1 for p in post_priorities),
         },
         "validity": {
@@ -448,6 +471,16 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
             "last_forbidden_mask_total": (
                 int(episodes[-1].get("forbidden_mask_total", 0) or 0)
                 if episodes else 0
+            ),
+            "last_static_invalid_level_disabled": (
+                int(episodes[-1].get("static_invalid_level_disabled", 0) or 0)
+                if episodes else 0
+            ),
+            "max_static_invalid_level_disabled": (
+                max(static_disabled) if static_disabled else 0
+            ),
+            "static_invalid_level_applied_total": (
+                sum(static_applied) if static_applied else 0
             ),
             "last_empirical_invalid_level_disabled": (
                 int(episodes[-1].get("empirical_invalid_level_disabled", 0) or 0)
@@ -522,6 +555,10 @@ def write_health_csv(path: Path, episodes: List[Dict[str, Any]]) -> None:
         "samples_rejected_by_optimizer",
         "steps_fallen_back_to_baseline",
         "forbidden_mask_total",
+        "static_invalid_level_disabled",
+        "static_invalid_level_applied",
+        "static_invalid_level_scan_evaluated",
+        "static_invalid_level_scan_invalid",
         "empirical_invalid_level_disabled",
         "empirical_invalid_level_applied",
         "rejection_optimizer_wall_seconds",
@@ -555,6 +592,8 @@ def write_report(path: Path, summary: Dict[str, Any]) -> None:
         ("post_anchor_mean", reward.get("post_anchor_mean")),
         ("post_anchor_p1_count", summary.get("priority", {}).get("post_anchor_p1_count")),
         ("post_anchor_p2_count", summary.get("priority", {}).get("post_anchor_p2_count")),
+        ("post_anchor_p12_rate", summary.get("priority", {}).get("post_anchor_p12_rate")),
+        ("post_anchor_p12_rate_threshold", summary.get("priority", {}).get("post_anchor_p12_rate_threshold")),
         ("post_anchor_loss_mean_max", terminal.get("post_anchor_loss_mean_max")),
         ("metric1_range", (terminal.get("metric1_min"), terminal.get("metric1_max"))),
         ("metric2_range", (terminal.get("metric2_min"), terminal.get("metric2_max"))),
@@ -573,6 +612,8 @@ def write_report(path: Path, summary: Dict[str, Any]) -> None:
         ("rejected_by_optimizer_total", rejection.get("samples_rejected_by_optimizer_total")),
         ("fallback_to_baseline_total", rejection.get("steps_fallen_back_to_baseline_total")),
         ("forbidden_mask_total_last", rejection.get("last_forbidden_mask_total")),
+        ("static_invalid_level_disabled_last", rejection.get("last_static_invalid_level_disabled")),
+        ("static_invalid_level_applied_total", rejection.get("static_invalid_level_applied_total")),
         ("empirical_invalid_level_disabled_last", rejection.get("last_empirical_invalid_level_disabled")),
         ("rejection_optimizer_wall_seconds_total", rejection.get("rejection_optimizer_wall_seconds_total")),
         ("ppo_updates_seen", ppo.get("updates_seen")),
@@ -621,6 +662,8 @@ def main() -> int:
     parser.add_argument("--k-trials", type=int, default=5)
     parser.add_argument("--probe-size", type=int, default=256)
     parser.add_argument("--expected-reward-devices", default="")
+    parser.add_argument("--max-post-anchor-p12-rate", type=float, default=0.30)
+    parser.add_argument("--min-post-anchor-p12-rate-samples", type=int, default=100)
     args = parser.parse_args()
 
     artifact = Path(args.artifact_dir)

@@ -265,20 +265,34 @@ Implementation constraints to preserve:
   Exploration is the explicit categorical policy distribution; dropout masks
   are not part of the recorded log-prob distribution and should not add hidden
   randomness or extra tiny kernels to online rollout/PPO replay.
-- Sequential rollout has two invalid-action filters. `ForbiddenActionMask`
+- Sequential rollout has three invalid-action filters, all layered on the
+  per-step `action_level_mask` without shortening the full action vector or
+  changing policy/critic shapes. `StaticInvalidLevelMask` runs once before RL:
+  it performs a baseline-prefix, one-slot-at-a-time `Rescale_optimizer`
+  feasibility scan and hides any `(layer, block, slot, level)` that is locally
+  invalid. This follows the COINN-style idea of shrinking invalid configuration
+  space before global optimization, and is intentionally more aggressive than
+  runtime masking: it may discard combinations that could have become valid
+  under another prefix, which the user accepts to reduce invalid-chain retries.
+  The scan only calls `evaluate_step`; it commits baseline actions only for
+  non-terminal prefix advancement and never commits the terminal step, so it
+  does not trigger the terminal model-forward reward probe. `ForbiddenActionMask`
   still blacklists exact `(layer, block, step-action tuple)` samples after the
-  Rescale optimizer reports `invalid_chain`. The newer
-  `EmpiricalInvalidLevelMask` projects repeated invalid evidence back onto the
-  per-step `action_level_mask`: after a `(layer, block, slot, level)` has enough
-  invalid observations and no valid evidence, future samples hide that level
-  for that same layer/block/slot. It always preserves the static baseline level
-  and the current base/frontier proposal level, so it reduces rejection loops
-  without shortening the action vector or changing policy/critic shapes.
-  `episodes.jsonl` now records `samples_rejected_by_mask`,
-  `samples_rejected_by_optimizer`, `steps_fallen_back_to_baseline`,
-  `forbidden_mask_total`, `empirical_invalid_level_disabled`, and
-  `rejection_optimizer_wall_seconds`; use these before claiming invalid-chain
-  pruning improved speed.
+  optimizer reports `invalid_chain`. `EmpiricalInvalidLevelMask` then projects
+  repeated runtime invalid evidence back onto per-slot levels. Static,
+  empirical, and exact-tuple masks always preserve the static baseline and
+  current base/frontier proposal levels. `episodes.jsonl` records
+  `samples_rejected_by_mask`, `samples_rejected_by_optimizer`,
+  `steps_fallen_back_to_baseline`, `forbidden_mask_total`,
+  `static_invalid_level_disabled`, `static_invalid_level_applied`,
+  `empirical_invalid_level_disabled`, and `rejection_optimizer_wall_seconds`;
+  use these before claiming invalid-chain pruning improved speed.
+- Current 60k watchdog policy after the 2026-05-22 user update: do not hard-stop
+  just because a few P1/P2 episodes appear. Post-anchor P1+P2 is a hard failure
+  only when the rate exceeds 30% after at least 100 post-anchor samples. Sparse
+  P1/P2 should be warnings. Keep other hard stops: invalid-step resurgence,
+  loss-cap bursts, non-finite PPO, dead/no-progress PID, and broken four-GPU
+  reward-probe evidence.
 - GTrXL sequential PPO uses conservative KL-adaptive LR. The default adaptive
   max ratio is capped at `1.25` because the 2026-05-22 four-GPU smoke run
   reached `lr_scale=2.5` (`5e-4` effective LR) and produced a non-finite PPO

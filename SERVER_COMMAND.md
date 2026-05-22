@@ -14,6 +14,8 @@ K_TRIALS=4 \
 PROBE_SIZE=256 \
 RL_CUDA_VISIBLE_DEVICES=0,1,2,3 \
 REWARD_DEVICES=0,1,2,3 \
+MAX_POST_ANCHOR_P12_RATE=0.30 \
+P12_RATE_MIN_POST_ANCHOR=100 \
 bash scripts/stage2_first10k_server_run.sh
 ```
 
@@ -27,6 +29,7 @@ bash scripts/stage2_first10k_server_run.sh
   - 默认高保真配置固定 `--stage2-k-trials 4` 和 `--stage2-probe-size 256`；四卡时每张卡跑一个独立噪声 trial。若本地已验证低 probe-size 训练加速配置，可以只在训练搜索阶段降低 `PROBE_SIZE`，最终候选仍要回到 256 probe 做验证。
   - 使用上一轮四卡 benchmark 选出的最快配置：`batch size=512`、`reward_devices=0,1,2,3`。
   - 监控吞吐：至少在运行约 1 小时后统计 episode/hour；后续继续从 `episodes.jsonl` 和 `monitor_live.json` 更新速度。
+  - 本轮 P1/P2 判断按用户新标准：post-anchor P1+P2 比例不超过 30% 不停跑；少量 P1/P2 只作为 warning。invalid steps、loss-cap burst、非有限 PPO、四卡 reward-probe 失效仍然是硬失败。
   - 遇到硬失败或明显训练异常时及时停止，不浪费服务器时间；代码 bug 必须回本地修复后再 push、server pull、rerun。
 - **本次实验假设**：上一版 Pareto-only 10k 全程 P3、无 invalid、无稳定性失败，但后期 frontier 扩展少，dominated/duplicate 样本占比高，reward 对“可学习的 cost 梯度”不够敏感。当前 run 回到 adaptive scalar P3 cost：fusion_count 和 truncation/K gain 有清晰区间式 reward jump，total_bits 只作为弱线性 tie-breaker；P1/P2 仍完全不能被 cost 抵消。新 run 使用 GTrXL token policy、外部衰减 baseline prior、PPO 稳定器，以及 non-monotonic empirical proposal sampler。历史 raw radius2 曾在 `radius=2, mutations=8/9` 区间触发 P1 cluster，因此仍保持默认 raw `NEIGHBOR_MAX_RADIUS=1`，只在 frontier 停滞且最近健康时打开受控 radius2：
   - `--stage2-search-episodes 60000`
@@ -46,6 +49,7 @@ bash scripts/stage2_first10k_server_run.sh
 - **长周期判断**：历史经验上，Stage-2 RL 通常需要 50000+ 轮才有有效搜索结论；但如果到 20000 轮后 reward 仍长期没有进入快速增长期，要把它当成需要诊断的搜索/训练异常，而不是简单继续耗时。
 - **同步保护**：脚本中的 `git pull --ff-only` 如果失败或超时会直接 abort，不能继续用旧 HEAD 跑 60000。
 - **Budgeted adaptive scalar cost 目标**：P1/P2 不吃任何 cost reward；P3 内部将 metric margin 和 cost 分开预算，metric margin 只占小预算，不能挤掉 cost ranking。P3 候选中 `fusion_gain` 每 +1 给明显区间式 boost，truncation/K gain 每跨一个 decoded K-bit unit 给同等级 boost，`total_bits` 只给单独 clip 的弱线性 tie-breaker，不能接近一个 fusion/K tier step。`ParetoCostArchive` 仍可记录 P3 frontier，用于诊断和 empirical exploration 统计，但不作为默认 PPO scalar reward。
+- **Static invalid-level pre-mask**：训练开始前会做一次 baseline-prefix one-slot Rescale_optimizer 可行性扫描，参考 COINN 先缩小 invalid 配置空间再优化的思想。扫描只调用 `evaluate_step`，最后一步不 `commit_step`，因此不会触发 terminal model-forward；被局部判为 invalid 的 `(layer, block, slot, level)` 会在 PPO 采样前从 `action_level_mask` 隐藏。它比 runtime empirical mask 更 aggressive，允许牺牲一部分可能在其他 prefix 下才合法的组合，以减少 invalid-chain 替换和优化器重试。
 - **Policy/critic 目标**：`BLBStage2SequentialPolicy` 应为 `blb_v3_sequential_gtrxl_v2scale`：causal GTrXL `d_model=256, n_heads=8, n_layers=4, d_ff=512, dropout=0.1`，per-slot heads，单 value head；旧 sequential checkpoint 不兼容，必须 fresh。
 - **PPO 稳定器**：运行日志/`ppo_updates.jsonl` 应包含 approximate KL、KL early stop、adaptive LR scale、return normalizer、per-slot entropy recovery 等新字段。
 - **Non-monotonic 探索目标**：不要把“降低 SF”当成必然靠近边界。SF/K 的 index move 只是 proposal；真实边界方向只能由 F1 model-forward metric/stability、Rescale_optimizer cost signals 和 P3 adaptive scalar cost/diagnostic archive 确认。允许某些 SF/K 反向或横向 move，如果它们满足 P3 并改善 `fusion_gain/k_gain/bits_gain`。
