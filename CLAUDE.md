@@ -217,6 +217,12 @@ Current implementation facts:
   Exploration is the explicit categorical policy distribution; dropout masks
   are not part of the recorded log-prob distribution and should not add hidden
   randomness or extra tiny kernels to online rollout/PPO replay.
+- GTrXL sequential PPO uses conservative KL-adaptive LR. The default adaptive
+  max ratio is capped at `1.25` because the 2026-05-22 four-GPU smoke run
+  reached `lr_scale=2.5` (`5e-4` effective LR) and produced a non-finite PPO
+  update at episode 660. `sequential_ppo_update` now skips non-finite
+  minibatches before backward/step and backs off LR instead of contaminating
+  policy weights.
 - With `K=4` and four GPUs, the split is `[1, 1, 1, 1]`: GPU 0 runs trial 0,
   GPU 1 trial 1, GPU 2 trial 2, and GPU 3 trial 3. Results are returned in
   trial order for existing aggregation.

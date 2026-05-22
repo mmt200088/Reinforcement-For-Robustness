@@ -868,7 +868,8 @@ class SequentialPPOConfig:
     kl_target: float = 0.02
     adaptive_lr_kl: bool = True
     kl_adaptive_min_ratio: float = 0.25
-    kl_adaptive_max_ratio: float = 2.5
+    kl_adaptive_max_ratio: float = 1.25
+    nonfinite_lr_backoff: float = 0.5
     per_slot_entropy_recovery: bool = True
     per_slot_entropy_floor_frac: float = 0.22
     per_slot_entropy_recovery_multiplier: float = 6.0
@@ -988,6 +989,17 @@ def sequential_ppo_update(
                    "clip_fraction": 0.0, "approx_kl": 0.0,
                    "entropy_recovery_delta": 0.0, "n_minibatches": 0}
     kl_early_stop = False
+    nonfinite_minibatches = 0
+
+    def _backoff_after_nonfinite() -> None:
+        nonlocal current_lr, lr_scale
+        min_ratio = float(getattr(cfg, "kl_adaptive_min_ratio", 0.25))
+        backoff = float(getattr(cfg, "nonfinite_lr_backoff", 0.5))
+        lr_scale = float(max(min_ratio, float(lr_scale) * max(0.0, backoff)))
+        policy._ppo_lr_scale = lr_scale
+        current_lr = float(cfg.lr) * lr_scale
+        for group in optimizer.param_groups:
+            group["lr"] = current_lr
 
     for _ in range(int(cfg.n_epochs)):
         np.random.shuffle(indices)
@@ -1061,10 +1073,33 @@ def sequential_ppo_update(
                 - float(getattr(cfg, "per_slot_entropy_recovery_multiplier", 6.0))
                 * entropy_recovery_delta
             )
+            finite_tensors = (
+                new_log_probs,
+                entropy,
+                value,
+                ratio,
+                policy_loss,
+                value_loss,
+                entropy_mean,
+                entropy_recovery_delta,
+                loss,
+            )
+            if not all(bool(torch.isfinite(t).all().item()) for t in finite_tensors):
+                nonfinite_minibatches += 1
+                kl_early_stop = True
+                optimizer.zero_grad(set_to_none=True)
+                _backoff_after_nonfinite()
+                break
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             if cfg.max_grad_norm is not None and cfg.max_grad_norm > 0:
-                torch.nn.utils.clip_grad_norm_(policy.parameters(), cfg.max_grad_norm)
+                grad_norm = torch.nn.utils.clip_grad_norm_(policy.parameters(), cfg.max_grad_norm)
+                if not bool(torch.isfinite(grad_norm).item()):
+                    nonfinite_minibatches += 1
+                    kl_early_stop = True
+                    optimizer.zero_grad(set_to_none=True)
+                    _backoff_after_nonfinite()
+                    break
             optimizer.step()
             with torch.no_grad():
                 clip_frac = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean().item()
@@ -1078,6 +1113,8 @@ def sequential_ppo_update(
             metrics_sum["n_minibatches"] += 1
         n_seen = max(1, int(metrics_sum["n_minibatches"]))
         epoch_avg_kl = metrics_sum["approx_kl"] / float(n_seen)
+        if nonfinite_minibatches > 0:
+            break
         if (
                 bool(getattr(cfg, "use_kl_early_stop", True))
                 and float(epoch_avg_kl) > 1.5 * float(getattr(cfg, "kl_target", 0.02))
@@ -1102,6 +1139,8 @@ def sequential_ppo_update(
         "entropy_recovery_delta": metrics_sum["entropy_recovery_delta"] / n_mb,
         "return_mean": float(return_normalizer.mean if return_normalizer is not None else 0.0),
         "return_std": float(return_normalizer.std if return_normalizer is not None else 1.0),
+        "nonfinite_minibatches": int(nonfinite_minibatches),
+        "nonfinite_update_skipped": bool(nonfinite_minibatches > 0 and metrics_sum["n_minibatches"] == 0),
     }
 
 

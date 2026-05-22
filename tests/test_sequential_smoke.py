@@ -1482,6 +1482,93 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertTrue(all(mask is not None for mask in policy.seen_masks))
         self.assertTrue(torch.equal(policy.seen_masks[0][0], torch.from_numpy(level_mask)))
 
+    def test_sequential_ppo_update_skips_nonfinite_minibatch(self):
+        import math
+        import sys
+
+        torch_mod = sys.modules.get("torch")
+        if torch_mod is not None and not hasattr(getattr(torch_mod, "nn", None), "Module"):
+            for name in list(sys.modules):
+                if name == "torch" or name.startswith("torch."):
+                    del sys.modules[name]
+        try:
+            import torch
+        except Exception as exc:
+            self.skipTest(f"torch unavailable: {exc}")
+        if not hasattr(getattr(torch, "nn", None), "Module"):
+            self.skipTest("real torch.nn.Module unavailable")
+
+        from blb_stage2_rl.sequential_policy import (
+            SequentialPPOConfig,
+            SequentialRolloutBuffer,
+            sequential_ppo_update,
+        )
+        import numpy as np
+
+        class NonfinitePolicy(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.tensor(0.0))
+                self._ppo_lr_scale = 1.0
+                self._ppo_last_avg_kl = 0.0
+
+            def evaluate_action(
+                    self,
+                    state,
+                    actions,
+                    slot_mask,
+                    per_slot_num_levels,
+                    action_level_mask=None,
+                    baseline_prior_scale=None,
+                    return_per_slot_entropy=False,
+                    ):
+                batch = state.shape[0]
+                bad = self.weight.expand(batch) * torch.tensor(float("nan"))
+                entropy_per_slot = torch.ones_like(slot_mask, dtype=torch.float32)
+                if return_per_slot_entropy:
+                    return bad, bad, bad, entropy_per_slot
+                return bad, bad, bad
+
+        buffer = SequentialRolloutBuffer()
+        buffer.add(
+            state=np.array([0.0, 1.0], dtype=np.float32),
+            action=np.array([0, 1], dtype=np.int64),
+            slot_mask=np.array([True, True], dtype=bool),
+            per_slot_num_levels=np.array([3, 3], dtype=np.int64),
+            action_level_mask=np.ones((2, 3), dtype=bool),
+            log_prob=0.0,
+            value=0.0,
+            reward=1.0,
+            done=True,
+            baseline_prior_scale=0.75,
+        )
+        policy = NonfinitePolicy()
+        optimizer = torch.optim.SGD(policy.parameters(), lr=1.0)
+        metrics = sequential_ppo_update(
+            policy,
+            optimizer,
+            buffer,
+            SequentialPPOConfig(
+                n_epochs=1,
+                minibatch_size=1,
+                ent_coef=0.0,
+                kl_adaptive_max_ratio=1.25,
+            ),
+            torch.device("cpu"),
+        )
+        self.assertGreater(metrics["nonfinite_minibatches"], 0)
+        self.assertTrue(metrics["nonfinite_update_skipped"])
+        self.assertTrue(math.isfinite(metrics["policy_loss"]))
+        self.assertTrue(math.isfinite(metrics["value_loss"]))
+        self.assertTrue(torch.isfinite(policy.weight).item())
+        self.assertLessEqual(policy._ppo_lr_scale, 1.0)
+
+    def test_sequential_ppo_adaptive_lr_cap_is_conservative_for_gtrxl(self):
+        from pathlib import Path
+
+        src = Path("blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
+        self.assertIn("kl_adaptive_max_ratio: float = 1.25", src)
+
     def test_sequential_runner_uses_episode_neighbor_offsets(self):
         from pathlib import Path
 
