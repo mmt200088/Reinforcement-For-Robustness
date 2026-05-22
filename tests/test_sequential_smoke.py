@@ -702,6 +702,8 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             "seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1",
             "prev_actions = torch.zeros(B, seq_len, S",
             "register_buffer(\"_step_indices\"",
+            "\"_level_indices\"",
+            "_preferred_prior_template",
             "current_step.clamp(0, x.size(1) - 1)",
             "prev_action_embedding = nn.Embedding",
             "slot_head_weight = nn.Parameter",
@@ -765,6 +767,13 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
 
         self.assertTrue(torch.allclose(trunc_logits, full_logits, atol=1e-5, rtol=1e-5))
         self.assertTrue(torch.allclose(trunc_value, full_value, atol=1e-5, rtol=1e-5))
+
+        preferred = [idx % cfg.max_num_levels for idx in range(cfg.max_step_dim)]
+        policy.apply_preferred_per_step_bias(preferred, gain=1.0)
+        template = policy._preferred_prior_template.detach().cpu()
+        self.assertEqual(float(template.sum().item()), float(cfg.max_step_dim))
+        for slot_idx, level_idx in enumerate(preferred):
+            self.assertEqual(float(template[slot_idx, level_idx].item()), 1.0)
 
 
 class RewardDesignV2RegressionTest(unittest.TestCase):

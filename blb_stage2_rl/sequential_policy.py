@@ -215,6 +215,11 @@ class BLBStage2SequentialPolicy(nn.Module):
             torch.arange(cfg.max_step_dim, dtype=torch.long) * int(cfg.max_num_levels),
             persistent=False,
         )
+        self.register_buffer(
+            "_level_indices",
+            torch.arange(cfg.max_num_levels, dtype=torch.long).view(1, 1, -1),
+            persistent=False,
+        )
         steps, layers, blocks = self._make_step_layer_block_indices(cfg)
         self.register_buffer("_step_indices", steps, persistent=False)
         self.register_buffer("_layer_indices", layers, persistent=False)
@@ -274,6 +279,11 @@ class BLBStage2SequentialPolicy(nn.Module):
         self.register_buffer(
             "_preferred_per_slot_idx",
             torch.full((cfg.max_step_dim,), -1, dtype=torch.long),
+            persistent=False,
+        )
+        self.register_buffer(
+            "_preferred_prior_template",
+            torch.zeros(cfg.max_step_dim, cfg.max_num_levels, dtype=torch.float32),
             persistent=False,
         )
         self._causal_mask_cache: Dict[Tuple[int, torch.device], torch.Tensor] = {}
@@ -450,6 +460,19 @@ class BLBStage2SequentialPolicy(nn.Module):
             )
         return scale.view(batch_size, 1, 1)
 
+    def _refresh_preferred_prior_template(self) -> None:
+        template = torch.zeros_like(self._preferred_prior_template)
+        preferred = self._preferred_per_slot_idx
+        valid = (preferred >= 0) & (preferred < int(self.cfg.max_num_levels))
+        if bool(valid.any()):
+            slot_idx = torch.arange(
+                int(self.cfg.max_step_dim),
+                device=preferred.device,
+                dtype=torch.long,
+            )
+            template[slot_idx[valid], preferred[valid]] = 1.0
+        self._preferred_prior_template.copy_(template)
+
     def _baseline_prior_logits(
             self,
             *,
@@ -464,19 +487,8 @@ class BLBStage2SequentialPolicy(nn.Module):
             device=device,
             dtype=dtype,
         )
-        prior = torch.zeros(
-            batch_size,
-            self.cfg.max_step_dim,
-            self.cfg.max_num_levels,
-            device=device,
-            dtype=dtype,
-        )
-        preferred = self._preferred_per_slot_idx.to(device=device)
-        for slot_idx, lvl in enumerate(preferred.tolist()):
-            lvl = int(lvl)
-            if 0 <= lvl < self.cfg.max_num_levels:
-                prior[:, int(slot_idx), lvl] = scale[:, 0, 0]
-        return prior
+        template = self._preferred_prior_template.to(device=device, dtype=dtype)
+        return template.unsqueeze(0) * scale
 
     def forward(
             self,
@@ -517,6 +529,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             per_slot_num_levels: torch.Tensor,
             max_num_levels: int,
             action_level_mask: Optional[torch.Tensor] = None,
+            level_indices: Optional[torch.Tensor] = None,
             ) -> torch.Tensor:
         """Return additive -inf mask for invalid (slot, level) cells.
 
@@ -527,7 +540,15 @@ class BLBStage2SequentialPolicy(nn.Module):
         Output has shape ``[B, max_step_dim, max_num_levels]``.
         """
         B, S = slot_mask.shape
-        levels_idx = torch.arange(max_num_levels, device=slot_mask.device).view(1, 1, -1).expand(B, S, -1)
+        if level_indices is None:
+            level_indices = torch.arange(
+                max_num_levels,
+                device=slot_mask.device,
+                dtype=torch.long,
+            ).view(1, 1, -1)
+        else:
+            level_indices = level_indices.to(device=slot_mask.device, dtype=torch.long)
+        levels_idx = level_indices[:, :, :max_num_levels].expand(B, S, -1)
         # padding-slot rows are entirely -inf
         slot_alive = slot_mask.unsqueeze(-1).expand(-1, -1, max_num_levels)
         # within an active slot, levels >= num_levels[slot] get -inf
@@ -583,6 +604,7 @@ class BLBStage2SequentialPolicy(nn.Module):
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
             action_level_mask=action_level_mask,
+            level_indices=self._level_indices,
         )
         # collapse padding rows by setting them to a single dummy distribution
         # so torch.distributions doesn't NaN. We then mask-out their log_prob
@@ -625,6 +647,7 @@ class BLBStage2SequentialPolicy(nn.Module):
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
             action_level_mask=action_level_mask,
+            level_indices=self._level_indices,
         )
         safe_logits = torch.where(
             torch.isfinite(logits).any(dim=-1, keepdim=True),
@@ -669,6 +692,7 @@ class BLBStage2SequentialPolicy(nn.Module):
                     )
                 preferred[int(slot_idx)] = int(lvl)
             self._preferred_per_slot_idx.copy_(preferred)
+            self._refresh_preferred_prior_template()
             self.default_prior_scale = float(gain)
 
     def ppo_aux_state_dict(self) -> Dict[str, Any]:
@@ -695,6 +719,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             arr = torch.as_tensor(preferred, dtype=torch.long, device=self._preferred_per_slot_idx.device)
             if arr.numel() == self._preferred_per_slot_idx.numel():
                 self._preferred_per_slot_idx.copy_(arr.view_as(self._preferred_per_slot_idx))
+                self._refresh_preferred_prior_template()
 
 
 # ---------------------------------------------------------------------------

@@ -215,8 +215,11 @@ Current implementation facts:
   because the GTrXL mask prevents the current step from attending to future
   tokens, the rollout path only parses and computes tokens `0..current_step`.
   It also caches fixed step/layer/block index tensors as module buffers instead
-  of rebuilding them every forward. PPO update batches still use the
-  full-horizon path, and reward/action/probe semantics are unchanged.
+  of rebuilding them every forward. The per-slot warmstart-prior one-hot
+  template and level-index mask are cached too, so the online loop avoids a
+  Python slot loop and tiny tensor construction on every decision. PPO update
+  batches still use the full-horizon path, and reward/action/probe semantics
+  are unchanged.
 - The GTrXL policy keeps per-slot actor heads and slot-specific previous-action
   embeddings, but both are vectorized as parameter/embedding tables rather than
   Python `ModuleList` fan-out. This is a throughput requirement for four-GPU
