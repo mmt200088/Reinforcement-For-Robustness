@@ -138,7 +138,7 @@ class ParetoCostArchiveTests(unittest.TestCase):
         self.assertEqual(event.kind, "frontier_expansion")
         self.assertEqual([entry.action_hash for entry in archive.frontier], ["raw-dominates"])
 
-    def test_compute_reward_uses_pareto_event_for_p3_cost(self):
+    def test_compute_reward_uses_adaptive_scalar_for_p3_cost_while_recording_pareto(self):
         reward = load_reward_module()
 
         class Signals:
@@ -180,8 +180,59 @@ class ParetoCostArchiveTests(unittest.TestCase):
 
         self.assertEqual(breakdown.priority, 3)
         self.assertEqual(breakdown.pareto_event_kind, "frontier_expansion")
-        self.assertEqual(breakdown.cost_score, 0.20)
+        self.assertGreater(breakdown.cost_score, 0.20)
+        self.assertGreaterEqual(breakdown.r_fusion, 1.6)
+        self.assertGreaterEqual(breakdown.r_k, 0.8)
+        self.assertGreater(breakdown.r_bits, 0.0)
         self.assertEqual([entry.action_hash for entry in archive.frontier], ["p3-a"])
+
+    def test_adaptive_scalar_cost_has_fusion_and_truncation_step_boosts(self):
+        reward = load_reward_module()
+
+        class Signals:
+            any_invalid = False
+            total_bits_sum = 100
+            total_fusion_count = 1
+
+        baseline = reward.BaselineCostStats(
+            total_bits_sum=120,
+            total_fusion_count=0,
+            avg_k=13.0,
+            metric1_mean=0.90,
+            metric2_mean=0.90,
+            metric1_std=0.0,
+            metric2_std=0.0,
+            loss_std=0.0,
+            typical_bits_drop=120.0,
+            typical_fusion_count=12.0,
+            typical_k_drop=5.0,
+        )
+        weights = reward.calibrate_weights_from_baseline(baseline)
+        breakdown = reward.compute_reward(
+            reward.EpisodeMetrics(
+                loss_mean=0.30,
+                loss_std=0.0,
+                metric1_mean=0.90,
+                metric2_mean=0.90,
+                metric1_std=0.0,
+                metric2_std=0.0,
+            ),
+            Signals(),
+            action_avg_k=13.0 - (1.0 / 59.0),
+            baseline=baseline,
+            weights=weights,
+            action_hash="scalar-a",
+        )
+
+        self.assertEqual(breakdown.priority, 3)
+        self.assertAlmostEqual(breakdown.r_fusion, 0.8, places=6)
+        self.assertAlmostEqual(breakdown.r_k, 0.8, places=6)
+        self.assertGreater(breakdown.r_bits, 0.0)
+        self.assertAlmostEqual(
+            breakdown.cost_score,
+            breakdown.r_fusion + breakdown.r_k + breakdown.r_bits,
+            places=6,
+        )
 
     def test_compute_reward_excludes_p2_from_cost_and_archive(self):
         reward = load_reward_module()
@@ -222,6 +273,55 @@ class ParetoCostArchiveTests(unittest.TestCase):
 
         self.assertEqual(breakdown.priority, 2)
         self.assertEqual(breakdown.cost_score, 0.0)
+        self.assertEqual(breakdown.pareto_event_kind, "excluded")
+        self.assertEqual(breakdown.r_fusion, 0.0)
+        self.assertEqual(breakdown.r_k, 0.0)
+        self.assertEqual(breakdown.r_bits, 0.0)
+        self.assertEqual(archive.frontier, ())
+
+    def test_compute_reward_excludes_p1_from_adaptive_scalar_cost(self):
+        reward = load_reward_module()
+
+        class Signals:
+            any_invalid = False
+            total_bits_sum = 1
+            total_fusion_count = 99
+
+        archive = reward.ParetoCostArchive()
+        baseline = reward.BaselineCostStats(
+            total_bits_sum=1000,
+            total_fusion_count=0,
+            avg_k=13.0,
+            metric1_mean=0.90,
+            metric2_mean=0.90,
+            metric1_std=0.0,
+            metric2_std=0.0,
+            loss_std=0.0,
+        )
+        weights = reward.calibrate_weights_from_baseline(baseline)
+        breakdown = reward.compute_reward(
+            reward.EpisodeMetrics(
+                loss_mean=0.30,
+                loss_std=0.0,
+                metric1_mean=0.10,
+                metric2_mean=0.10,
+                metric1_std=0.0,
+                metric2_std=0.0,
+            ),
+            Signals(),
+            action_avg_k=1.0,
+            baseline=baseline,
+            weights=weights,
+            pareto_archive=archive,
+            action_hash="p1-big-cost",
+        )
+
+        self.assertEqual(breakdown.priority, 1)
+        self.assertFalse(breakdown.metric_ok)
+        self.assertEqual(breakdown.cost_score, 0.0)
+        self.assertEqual(breakdown.r_fusion, 0.0)
+        self.assertEqual(breakdown.r_k, 0.0)
+        self.assertEqual(breakdown.r_bits, 0.0)
         self.assertEqual(breakdown.pareto_event_kind, "excluded")
         self.assertEqual(archive.frontier, ())
 

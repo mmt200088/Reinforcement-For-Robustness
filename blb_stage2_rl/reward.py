@@ -1,4 +1,4 @@
-"""BLB Stage 2 RL 奖励函数（v3：m1+m2 双指标 + Pareto-only P3 cost）。
+"""BLB Stage 2 RL 奖励函数（v3：m1+m2 双指标 + adaptive scalar P3 cost）。
 
 2026-05-20 v3 重写（保留 ADR-007 的 clipped-shaping + tier-bonus 框架）：
 
@@ -7,17 +7,17 @@
     两者归一化后的均值。
   * 稳定性 gate 看 m1_std、m2_std、loss_std 三个方差，按 30:30:1 加权
     （和指标重要性一致：m1=m2>>loss）。
-  * 顺序 Stage-2 路径的 cost_score 改为 Pareto-only：
-      - 只有 P3（metric_ok 且 stab_ok 且非 invalid）进入 cost archive。
-      - objective vector 直接最大化 raw gains：
-        ``fusion_gain = action_fusion - baseline_fusion``、
-        ``k_gain = baseline_avg_k - action_avg_k``、
-        ``bits_gain = baseline_bits - action_bits``。
-      - PPO 仍需要 scalar；scalar 只来自 frontier/dominance/duplicate 事件，
-        不用 ``typical_*`` 或人工加权标量决定 P3 cost 排名。
+  * 顺序 Stage-2 路径的 cost_score 回到 adaptive scalar：
+      - 只有 P3（metric_ok 且 stab_ok 且非 invalid）能吃到 cost reward。
+      - fusion_count 和 truncation/K reduction 是区间式奖励：多一个 fusion
+        或多一个平均 K-step 改善，都会产生清晰的 scalar jump。
+      - total_bits 是弱线性项，只做细粒度排序，不像 fusion/K 那样形成
+        明显 tier jump。
+      - Pareto archive 仍可记录 P3 frontier 用于诊断/探索统计，但不再是
+        PPO cost scalar 的来源。
   * 优先级硬序：tier_bonus 0/+20/+40 锁住 metric_ok / stab_ok 三档，
-    cost_score 总 ≤ 1.0 永远拉不动 tier 边界，所以 cost 不可能压过指标
-    和稳定性 —— 即便所有 cost 维度同时打满。
+    cost_score bounded 且最终 shaping 仍 clip 到 [-5,+5]，所以 cost
+    不可能压过指标和稳定性 —— 即便所有 cost 维度同时打满。
 
 核心公式：
 
@@ -32,13 +32,15 @@
   combined_stab_excess = (30·norm_m1 + 30·norm_m2 + 1·norm_loss) / 61
   stability_penalty = -lambda_stab · combined_stab_excess
 
-  P3 cost_vector = (fusion_gain, k_gain, bits_gain)
-  pareto_event ∈ {frontier_expansion, frontier_member, dominated, duplicate}
+  P3 adaptive cost:
+    fusion_bonus = floor(max(fusion_gain, 0)) * fusion_step_bonus
+    k_bonus = floor(max(k_gain, 0) / k_step_size) * k_step_bonus
+    bits_linear = bits_linear_scale * bits_gain / typical_bits
 
   metric_ok = (acc_violation == 0) AND not invalid
   stab_ok = (combined_stab_excess == 0)
 
-  shaping_raw = margin_acc + invalid_term + (pareto_cost_score IF P3 ELSE 0) + (stab_penalty IF metric_ok ELSE 0)
+  shaping_raw = margin_acc + invalid_term + (adaptive_cost_score IF P3 ELSE 0) + (stab_penalty IF metric_ok ELSE 0)
   shaping_clipped = clip(shaping_raw, -5, +5)
   tier_bonus = 20·metric_ok + 20·(metric_ok AND stab_ok)
   total = shaping_clipped + tier_bonus
@@ -49,8 +51,7 @@ reward range:
   · metric OK + stab OK                          → [+35, +45]
 
 3 个 tier 之间至少差 ~15 reward，PPO 看到的 advantage 信号清晰；同时单 episode 的
-reward 永远 bounded，cost 优化在 metric/stab 都通过后才以 ≤±1 的小幅度差分驱动
-"已经合格" 的候选互相挤名次。
+reward 永远 bounded，cost 优化只在 metric/stab 都通过后驱动候选排序。
 """
 from __future__ import annotations
 
@@ -82,6 +83,12 @@ DEFAULT_BASELINE_AVG_K = 13.0          # 全 max-k baseline 的 avg_k
 DEFAULT_COST_W_FUSION = 30.0
 DEFAULT_COST_W_K = 30.0
 DEFAULT_COST_W_BITS = 1.0
+DEFAULT_COST_FUSION_STEP_BONUS = 0.80
+DEFAULT_COST_K_STEP_BONUS = 0.80
+DEFAULT_COST_K_STEP_SIZE = 1.0 / 59.0
+DEFAULT_COST_BITS_LINEAR_SCALE = 0.25
+DEFAULT_COST_SCORE_CLIP_MIN = -1.5
+DEFAULT_COST_SCORE_CLIP_MAX = 4.0
 DEFAULT_STAB_W_M1 = 30.0
 DEFAULT_STAB_W_M2 = 30.0
 DEFAULT_STAB_W_LOSS = 1.0
@@ -153,8 +160,20 @@ class RewardWeights:
         stab_tolerance:    stability gate 的容忍百分比；阈值 = baseline.X_std * (1 + tol)
         stab_floor:        stability 阈值的最小绝对值（防 baseline.std≈0 失稳）
         cost_w_fusion / cost_w_k / cost_w_bits:
-                           仅供未接入 Pareto archive 的 legacy fallback 使用。
-                           sequential Stage-2 RL 的 P3 cost 排名不读取这些权重。
+                           旧配置兼容字段；默认 adaptive scalar P3 cost
+                           不再读取这些权重。
+        cost_fusion_step_bonus:
+                           P3 内每新增 1 个 fusion_gain 的区间式奖励。
+        cost_k_step_bonus:
+                           P3 内每新增 1 个 truncation/K step 的区间式奖励。
+        cost_k_step_size:  ``k_gain`` 是 episode 平均 K drop；默认 1/59 让
+                           一个 sequential step 上的 K 降低 1 档约等于一个
+                           truncation reward unit。
+        cost_bits_linear_scale:
+                           total_bits 的弱线性权重；它只做细粒度排序。
+        cost_score_clip_min / max:
+                           P3 cost scalar 的独立 clip，仍会再被总 shaping
+                           clip 到 [-5,+5]，因此不能跨越 P1/P2 tier。
         stab_w_m1 / stab_w_m2 / stab_w_loss:
                            combined_stab_excess 内部三方差的权重（30:30:1）
         # legacy fields kept for backward-compatibility:
@@ -176,6 +195,12 @@ class RewardWeights:
     cost_w_fusion: float = DEFAULT_COST_W_FUSION
     cost_w_k: float = DEFAULT_COST_W_K
     cost_w_bits: float = DEFAULT_COST_W_BITS
+    cost_fusion_step_bonus: float = DEFAULT_COST_FUSION_STEP_BONUS
+    cost_k_step_bonus: float = DEFAULT_COST_K_STEP_BONUS
+    cost_k_step_size: float = DEFAULT_COST_K_STEP_SIZE
+    cost_bits_linear_scale: float = DEFAULT_COST_BITS_LINEAR_SCALE
+    cost_score_clip_min: float = DEFAULT_COST_SCORE_CLIP_MIN
+    cost_score_clip_max: float = DEFAULT_COST_SCORE_CLIP_MAX
     stab_w_m1: float = DEFAULT_STAB_W_M1
     stab_w_m2: float = DEFAULT_STAB_W_M2
     stab_w_loss: float = DEFAULT_STAB_W_LOSS
@@ -187,7 +212,7 @@ class RewardWeights:
     priority1_scale: float = DEFAULT_PRIORITY1_SCALE
     priority2_penalty: float = DEFAULT_PRIORITY2_PENALTY
     priority2_scale: float = DEFAULT_PRIORITY2_SCALE
-    cost_reward_mode: str = "differential"
+    cost_reward_mode: str = "adaptive_scalar"
 
 
 def calibrate_weights_from_baseline(
@@ -420,6 +445,54 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
     return v
 
 
+def _positive_step_bonus(value: float, *, step_size: float, step_bonus: float) -> float:
+    """Interval bonus for a positive cost gain.
+
+    ``value`` is already a gain where larger is better. A step bonus is paid
+    only after crossing a full interval; fractional progress is deliberately
+    not rewarded here so fusion/K improvements stand out as discrete jumps.
+    """
+    if not math.isfinite(float(value)) or float(value) <= 0.0:
+        return 0.0
+    step = max(float(step_size), 1.0e-12)
+    units = math.floor(float(value) / step + 1.0e-9)
+    return float(max(0, units)) * float(step_bonus)
+
+
+def _adaptive_scalar_cost_score(
+        *,
+        fusion_gain: float,
+        k_gain: float,
+        bits_gain: float,
+        bits_norm: float,
+        weights: RewardWeights,
+        ) -> tuple:
+    """P3-only adaptive scalar cost reward.
+
+    Fusion and truncation/K gains use interval jumps. ``total_bits`` remains a
+    small linear term so it cannot dominate the two cost signals the user wants
+    the policy to actively chase.
+    """
+    fusion_step = _positive_step_bonus(
+        fusion_gain,
+        step_size=1.0,
+        step_bonus=float(weights.cost_fusion_step_bonus),
+    )
+    k_step = _positive_step_bonus(
+        k_gain,
+        step_size=float(weights.cost_k_step_size),
+        step_bonus=float(weights.cost_k_step_bonus),
+    )
+    bits_linear = float(weights.cost_bits_linear_scale) * float(bits_norm)
+    raw = float(weights.cost_weight) * (fusion_step + k_step + bits_linear)
+    clipped = float(np.clip(
+        raw,
+        float(weights.cost_score_clip_min),
+        float(weights.cost_score_clip_max),
+    ))
+    return clipped, fusion_step, k_step, bits_linear
+
+
 def _resolve_metric_for_threshold(
         metrics: EpisodeMetrics,
         prefer_metric: str = "accuracy",
@@ -477,10 +550,10 @@ def compute_reward(
                            （baseline.X_std*(1+stab_tol)+stab_floor），传入的
                            ``stab_threshold`` 仅 override loss 那一项以兼容老 caller
         any_invalid:       优化器 invalid_chain 显式覆盖；None=直接读 signals
-        pareto_archive:    可选 P3-only cost archive。传入后，P3 cost scalar
-                           只来自 Pareto event shaping，不读取 typical_* 排名。
+        pareto_archive:    可选 P3 cost archive。传入后仍只收 P3 候选，用于
+                           frontier 诊断/探索统计；默认不再决定 PPO scalar。
         action_hash:       Pareto archive 的候选身份；与 pareto_archive 同时传入
-                           才启用 Pareto-only cost shaping。
+                           才记录 P3 frontier 诊断事件。
 
     Returns:
         ``RewardBreakdown``
@@ -561,14 +634,7 @@ def compute_reward(
     fusion_norm = fusion_gain / typical_fusion
     k_norm = k_gain / typical_k
 
-    cost_total_w = float(weights.cost_w_fusion + weights.cost_w_k + weights.cost_w_bits)
-    if cost_total_w <= 0.0:
-        cost_total_w = 1.0
-    cost_score_raw = float(weights.cost_weight) * (
-        float(weights.cost_w_fusion) * fusion_norm
-        + float(weights.cost_w_k) * k_norm
-        + float(weights.cost_w_bits) * bits_norm
-    ) / cost_total_w
+    cost_score_raw = 0.0
 
     # === 3. combined stability_excess (m1_std, m2_std, loss_std) ===
     def _stab_threshold(baseline_std: float) -> float:
@@ -622,12 +688,11 @@ def compute_reward(
     else:
         priority = 3
 
-    # === 4.5. Optional Pareto-only P3 cost shaping ===
-    # Cost must never help P1/P2 candidates. When a Pareto archive is wired
-    # (the sequential Stage-2 path), the three raw gains are only converted to
-    # PPO's required scalar through frontier/dominance events. The weighted
-    # typical_* scalar above is retained as a legacy fallback for code paths
-    # that have not been switched to a stateful archive yet.
+    # === 4.5. Optional Pareto archive diagnostics + adaptive scalar P3 cost ===
+    # Cost must never help P1/P2 candidates. The Pareto archive may still be
+    # wired for diagnostics / frontier-neighbor exploration, but PPO's scalar
+    # cost signal is now adaptive scalar unless weights.cost_reward_mode is
+    # explicitly set to "pareto_only".
     pareto_event: Optional[ParetoCostEvent] = None
     use_pareto = pareto_archive is not None and action_hash is not None
     if use_pareto:
@@ -642,7 +707,24 @@ def compute_reward(
             k_drop=float(k_gain),
         )
         pareto_event = pareto_archive.add(str(action_hash), pareto_candidate)
-        cost_score_raw = float(pareto_event.shaping) if priority == 3 else 0.0
+
+    if str(getattr(weights, "cost_reward_mode", "adaptive_scalar")) == "pareto_only":
+        cost_score_raw = (
+            float(getattr(pareto_event, "shaping", 0.0) or 0.0)
+            if (priority == 3 and pareto_event is not None)
+            else 0.0
+        )
+        r_fusion_raw = 0.0
+        r_k_raw = 0.0
+        r_bits_raw = 0.0
+    else:
+        cost_score_raw, r_fusion_raw, r_k_raw, r_bits_raw = _adaptive_scalar_cost_score(
+            fusion_gain=float(fusion_gain),
+            k_gain=float(k_gain),
+            bits_gain=float(bits_gain),
+            bits_norm=float(bits_norm),
+            weights=weights,
+        )
 
     # Cost & stability only contribute to shaping when metric_ok. Cost is even
     # stricter: it only contributes in P3 (metric_ok AND stab_ok), matching the
@@ -672,15 +754,9 @@ def compute_reward(
     total = float(shaping_clipped + tier_bonus)
 
     # Per-axis raw cost components for downstream diagnostics
-    r_fusion = float(
-        weights.cost_w_fusion * fusion_norm / cost_total_w * weights.cost_weight
-    ) if (metric_ok and stab_ok and not use_pareto) else 0.0
-    r_k = float(
-        weights.cost_w_k * k_norm / cost_total_w * weights.cost_weight
-    ) if (metric_ok and stab_ok and not use_pareto) else 0.0
-    r_bits = float(
-        weights.cost_w_bits * bits_norm / cost_total_w * weights.cost_weight
-    ) if (metric_ok and stab_ok and not use_pareto) else 0.0
+    r_fusion = float(r_fusion_raw) if (metric_ok and stab_ok) else 0.0
+    r_k = float(r_k_raw) if (metric_ok and stab_ok) else 0.0
+    r_bits = float(r_bits_raw) if (metric_ok and stab_ok) else 0.0
 
     return RewardBreakdown(
         reward=float(total),

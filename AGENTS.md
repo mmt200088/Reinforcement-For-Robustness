@@ -433,22 +433,21 @@ experiment reproduction.
    failure.
    Reward v3 uses metric1 + metric2 gates and includes metric1_std/metric2_std in
    the stability gate, but those metric std channels must tolerate normal
-   5-trial MRPC probe quantization. Do not use a tiny `1e-3` metric-std floor:
+   small-K MRPC probe quantization. Historical K=5 evidence remains useful, but
+   current four-GPU runs use K=4. Do not use a tiny `1e-3` metric-std floor:
    the 2026-05-20 reward-v3 run at commit `6f3d618` failed at 345 episodes with
    P1=0, invalid=0, loss-cap=0 solely because normal metric-std jitter dropped
    58 otherwise healthy episodes into P2 and pushed rolling300 below 35. Current
    behavior keeps tiny metric std jitter in P3 via a `1e-2` floor while still
    treating materially large metric std as P2.
-   Current cost reward is Pareto-only in the sequential Stage-2 path: only P3
-   candidates enter `ParetoCostArchive`, whose objective vector maximizes raw
-   `fusion_gain = fusion_count - baseline_fusion_count`,
-   `k_gain = baseline_avg_k - action_avg_k`, and
-   `bits_gain = baseline_total_bits - action_total_bits`. Do not use
-   `typical_bits_drop`, `typical_fusion_count`, or `typical_k_drop` to rank P3
-   cost candidates. PPO still receives a bounded scalar, but that scalar comes
-   from Pareto events: frontier expansion positive, non-dominated frontier
-   member small positive, dominated negative, duplicate near zero/slightly
-   negative.
+   Current cost reward is adaptive scalar in the sequential Stage-2 path. Only
+   P3 candidates (accuracy and stability pass) receive cost reward. Fusion gain
+   and truncation/K gain are interval-style boosts: each +1 fusion or each
+   average-K step (default `1/59`) gives a clear scalar jump inside the P3 tier.
+   Total bits is a weak linear term for tie-breaking and should not dominate
+   fusion or truncation. `ParetoCostArchive` may still record P3 frontier rows
+   for diagnostics/exploration statistics, but Pareto events are not the default
+   PPO scalar reward.
 7. `Rescale_optimizer` is the source of truth for modulus-chain cost and
    optimizer feasibility diagnostics. `HeuristicStubInvoker` was deleted;
    training and promotable final evals must use real `replan_with_user_actions`

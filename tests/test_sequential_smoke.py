@@ -1381,6 +1381,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             '--blb-v3-guarded-radius2-max-mutations "$GUARDED_RADIUS2_MAX_MUTATIONS"',
             '--blb-v3-guarded-radius2-episode-fraction "$GUARDED_RADIUS2_EPISODE_FRACTION"',
             '--blb-v3-guarded-radius2-cooldown-episodes "$GUARDED_RADIUS2_COOLDOWN_EPISODES"',
+            '--expected-reward-devices "$REWARD_DEVICES"',
         ):
             self.assertIn(needle, src)
         self.assertNotIn('NEIGHBOR_MAX_RADIUS="${NEIGHBOR_MAX_RADIUS:-2}"', src)
@@ -1445,6 +1446,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
                 horizon=59,
                 k_trials=5,
                 probe_size=256,
+                expected_reward_devices="",
             )
             return monitor.build_summary(args)
 
@@ -1474,6 +1476,76 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             shutil.rmtree(sparse_dir, ignore_errors=True)
             shutil.rmtree(burst_dir, ignore_errors=True)
             shutil.rmtree(frequent_dir, ignore_errors=True)
+
+    def test_first10k_monitor_checks_all_expected_reward_gpus(self):
+        import argparse
+
+        monitor = _load_module_standalone(
+            "scripts/stage2_first10k_monitor.py", "stage2_first10k_monitor_gpu_test",
+        )
+        tmp = Path(tempfile.mkdtemp(prefix="first10k_monitor_gpu_"))
+        try:
+            row = {
+                "episode": 0,
+                "total_reward": 40.0,
+                "terminal_reward": 40.0,
+                "terminal_priority": 3,
+                "terminal_loss_mean": 0.34,
+                "terminal_loss_std": 0.003,
+                "terminal_metric1_mean": 0.87,
+                "terminal_metric2_mean": 0.87,
+                "valid_steps": 59,
+                "invalid_steps": 0,
+                "total_bits": 14770,
+                "safe_neighbor_active": True,
+                "terminal_probe_devices": ["cuda:0", "cuda:1"],
+                "terminal_probe_trial_counts": [2, 2],
+            }
+            (tmp / "episodes.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+            (tmp / "nvidia.csv").write_text(
+                "timestamp,gpu_idx,util_pct,mem_used_mib\n"
+                "t,0,50,1000\n"
+                "t,1,50,1000\n",
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                phase="final",
+                artifact_dir=str(tmp),
+                stage2_noise=str(tmp),
+                nvidia_log=str(tmp / "nvidia.csv"),
+                planned=1,
+                anchor=0,
+                rollout=60,
+                horizon=59,
+                k_trials=4,
+                probe_size=256,
+                expected_reward_devices="0,1,2,3",
+            )
+            missing = monitor.build_summary(args)
+            self.assertTrue(
+                any("Reward probe devices" in x for x in missing["hard_failures"]),
+                missing["hard_failures"],
+            )
+
+            row["terminal_probe_devices"] = ["cuda:0", "cuda:1", "cuda:2", "cuda:3"]
+            row["terminal_probe_trial_counts"] = [1, 1, 1, 1]
+            (tmp / "episodes.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+            (tmp / "nvidia.csv").write_text(
+                "timestamp,gpu_idx,util_pct,mem_used_mib\n"
+                "t,0,50,1000\n"
+                "t,1,50,1000\n"
+                "t,2,50,1000\n"
+                "t,3,50,1000\n",
+                encoding="utf-8",
+            )
+            ok = monitor.build_summary(args)
+            self.assertFalse(ok["hard_failures"], ok["hard_failures"])
+            self.assertEqual(
+                ok["reward_probe"]["observed_trial_splits"],
+                [[1, 1, 1, 1]],
+            )
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
     def test_sequential_ppo_update_replays_stored_action_level_mask(self):
         import sys

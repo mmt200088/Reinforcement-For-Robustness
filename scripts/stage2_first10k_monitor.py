@@ -117,6 +117,32 @@ def _episode_priority(row: Dict[str, Any]) -> int:
     return 1 if int(row.get("invalid_steps", 0) or 0) > 0 else 3
 
 
+def _parse_expected_devices(spec: str) -> List[str]:
+    if not spec:
+        return []
+    out: List[str] = []
+    for item in str(spec).replace(";", ",").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if item.startswith("cuda:"):
+            out.append(item)
+        else:
+            try:
+                out.append(f"cuda:{int(item)}")
+            except Exception:
+                out.append(item)
+    return out
+
+
+def _expected_trial_split(k_trials: int, device_count: int) -> List[int]:
+    if device_count <= 0:
+        return []
+    base = int(k_trials) // int(device_count)
+    rem = int(k_trials) % int(device_count)
+    return [base + (1 if idx < rem else 0) for idx in range(device_count)]
+
+
 def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
     artifact = Path(args.artifact_dir)
     stage2_noise = Path(args.stage2_noise)
@@ -272,16 +298,51 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
         warnings.append("Recent PPO clip_fraction stayed above 0.5 for two updates.")
 
     gpu = _gpu_stats(Path(args.nvidia_log))
+    expected_devices = _parse_expected_devices(str(getattr(args, "expected_reward_devices", "") or ""))
+    expected_gpu_indices = [
+        dev.split("cuda:", 1)[1]
+        for dev in expected_devices
+        if dev.startswith("cuda:") and dev.split("cuda:", 1)[1].isdigit()
+    ]
+    probe_rows = [
+        e for e in episodes
+        if e.get("terminal_probe_devices") or e.get("terminal_probe_trial_counts")
+    ]
+    observed_device_sets = sorted({
+        tuple(str(x) for x in (e.get("terminal_probe_devices") or []))
+        for e in probe_rows
+        if e.get("terminal_probe_devices")
+    })
+    observed_trial_splits = sorted({
+        tuple(int(x) for x in (e.get("terminal_probe_trial_counts") or []))
+        for e in probe_rows
+        if e.get("terminal_probe_trial_counts")
+    })
     if args.phase == "final":
         by_gpu = gpu.get("by_gpu", {})
-        if len(by_gpu) < 2:
-            hard_failures.append("Fewer than two GPUs observed in nvidia-smi samples.")
-        for idx in ("0", "1"):
+        required_gpu_indices = expected_gpu_indices if expected_gpu_indices else ["0", "1"]
+        if len(by_gpu) < len(required_gpu_indices):
+            hard_failures.append(
+                f"Fewer than expected GPUs observed in nvidia-smi samples: "
+                f"{len(by_gpu)} < {len(required_gpu_indices)}."
+            )
+        for idx in required_gpu_indices:
             info = by_gpu.get(idx, {})
             if _finite(info.get("max_util")) <= 0:
                 hard_failures.append(f"GPU {idx} never showed nonzero utilization.")
             if _finite(info.get("active_sample_rate")) < 0.05:
                 warnings.append(f"GPU {idx} active_sample_rate below 5%.")
+        if expected_devices:
+            expected_set = set(expected_devices)
+            if not any(expected_set.issubset(set(devices)) for devices in observed_device_sets):
+                hard_failures.append(
+                    f"Reward probe devices never included expected set {sorted(expected_set)}."
+                )
+            expected_split = tuple(_expected_trial_split(int(args.k_trials), len(expected_devices)))
+            if expected_split and expected_split not in observed_trial_splits:
+                hard_failures.append(
+                    f"Reward probe trial split never matched expected {list(expected_split)}."
+                )
 
     status = "FAIL" if hard_failures else ("WARN" if warnings else "PASS")
     return {
@@ -297,6 +358,11 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
         "horizon": int(args.horizon),
         "k_trials": int(args.k_trials),
         "probe_size": int(args.probe_size),
+        "reward_probe": {
+            "expected_devices": expected_devices,
+            "observed_device_sets": [list(x) for x in observed_device_sets],
+            "observed_trial_splits": [list(x) for x in observed_trial_splits],
+        },
         "reward": {
             "best_reward": best_reward,
             "best_episode": best_episode,
@@ -439,6 +505,7 @@ def write_report(path: Path, summary: Dict[str, Any]) -> None:
     ppo = summary.get("ppo", {})
     guarded = summary.get("guarded_radius2", {})
     gpu = summary.get("gpu", {}).get("by_gpu", {})
+    reward_probe = summary.get("reward_probe", {})
     rows = [
         ("status", summary.get("status")),
         ("completed_episodes", summary.get("completed_episodes")),
@@ -467,6 +534,7 @@ def write_report(path: Path, summary: Dict[str, Any]) -> None:
         ("recent_approx_kl_mean", ppo.get("recent_approx_kl_mean")),
         ("recent_lr_scale_mean", ppo.get("recent_lr_scale_mean")),
         ("recent_entropy_recovery_mean", ppo.get("recent_entropy_recovery_mean")),
+        ("reward_probe", json.dumps(reward_probe, ensure_ascii=False, indent=2)),
         ("gpu", json.dumps(gpu, ensure_ascii=False, indent=2)),
     ]
     table = "".join(
@@ -505,6 +573,7 @@ def main() -> int:
     parser.add_argument("--horizon", type=int, default=59)
     parser.add_argument("--k-trials", type=int, default=5)
     parser.add_argument("--probe-size", type=int, default=256)
+    parser.add_argument("--expected-reward-devices", default="")
     args = parser.parse_args()
 
     artifact = Path(args.artifact_dir)

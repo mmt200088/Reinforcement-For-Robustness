@@ -2050,10 +2050,8 @@ def run_sequential_via_runner(
     baseline_clean_metric1 = float(baseline_metrics.metric1_mean)
     baseline_clean_metric2 = float(baseline_metrics.metric2_mean)
 
-    # Legacy weighted-cost fallback still has structural normalizers, but the
-    # active sequential reward path below wires ParetoCostArchive into
-    # compute_reward. That archive ranks P3 candidates only by raw
-    # fusion/k/bits gains and deliberately ignores typical_*.
+    # Adaptive scalar cost uses structural normalizers. Fusion and K/truncation
+    # get interval bonuses; total_bits stays a weak linear term.
     baseline.typical_bits_drop = float(
         max(baseline.total_bits_sum / max(int(base_env.num_layers), 1), 1.0)
     )
@@ -2211,10 +2209,13 @@ def run_sequential_via_runner(
         f"static_skeletons archive：{ss_baseline_obj.archive_path}",
     ])
 
+    # Keep the Pareto archive for diagnostics and empirical exploration stats.
+    # It no longer supplies the PPO scalar cost reward unless
+    # RewardWeights.cost_reward_mode is explicitly set to "pareto_only".
     base_env.pareto_cost_archive = ParetoCostArchive(baseline=baseline)
     log(
-        f"  {bullet} Pareto-only cost reward：P1/P2 不入库；P3 用 "
-        f"(fusion_gain, k_gain, bits_gain) frontier/dominance 事件产生 bounded scalar。"
+        f"  {bullet} Adaptive scalar cost reward：P1/P2 不吃 cost；P3 中 "
+        f"fusion/K 使用区间式 boost，total_bits 使用弱线性项；Pareto frontier 仅用于诊断/探索统计。"
     )
 
     # ---------- 5) sequential env + policy ----------

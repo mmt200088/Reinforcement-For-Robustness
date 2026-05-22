@@ -80,7 +80,8 @@ monitor_once() {
     --rollout "$ROLLOUT_SIZE" \
     --horizon 59 \
     --k-trials "$K_TRIALS" \
-    --probe-size "$PROBE_SIZE"
+    --probe-size "$PROBE_SIZE" \
+    --expected-reward-devices "$REWARD_DEVICES"
 }
 
 copy_artifacts() {
