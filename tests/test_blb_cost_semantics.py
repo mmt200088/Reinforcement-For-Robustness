@@ -1,9 +1,22 @@
 import unittest
+import importlib.util
+import sys
+from pathlib import Path
+
+
+def load_candidate_store_module():
+    path = Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "candidate_store.py"
+    spec = importlib.util.spec_from_file_location("candidate_store_under_test", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 class BLBCostSemanticsTests(unittest.TestCase):
     def test_rescale_rank_key_uses_only_total_bits_and_fusion(self):
-        from blb_stage2_rl.candidate_store import rescale_cost_rank_key
+        rescale_cost_rank_key = load_candidate_store_module().rescale_cost_rank_key
 
         base = {
             "rescale_cost": {
@@ -35,7 +48,9 @@ class BLBCostSemanticsTests(unittest.TestCase):
         self.assertEqual(rescale_cost_rank_key(base), rescale_cost_rank_key(changed_debug))
 
     def test_invalid_chain_is_validity_gate_not_numeric_cost(self):
-        from blb_stage2_rl.candidate_store import candidate_rank_key, f0_sort_key
+        store = load_candidate_store_module()
+        candidate_rank_key = store.candidate_rank_key
+        f0_sort_key = store.f0_sort_key
 
         valid_high_cost = {
             "valid": True,
@@ -67,6 +82,43 @@ class BLBCostSemanticsTests(unittest.TestCase):
         self.assertEqual(f0_sort_key(valid_high_cost), (0.0, 9999.0, 99.0))
         self.assertEqual(f0_sort_key(invalid_low_cost), (1.0, 1.0, 0.0))
         self.assertGreater(f0_sort_key(invalid_low_cost), f0_sort_key(valid_high_cost))
+
+    def test_candidate_rank_key_uses_unbounded_p3_cost_rank_without_breaking_priority(self):
+        candidate_rank_key = load_candidate_store_module().candidate_rank_key
+
+        p3_capped_low = {
+            "valid": True,
+            "terminal_priority": 3,
+            "acc_violation": 0.0,
+            "stability_violation": 0.0,
+            "terminal_cost_score": 4.5,
+            "terminal_cost_rank_score": 6.0,
+            "terminal_fusion_gain": 8.0,
+            "terminal_k_gain": 0.5,
+            "terminal_bits_gain": 300.0,
+        }
+        p3_capped_high = {
+            "valid": True,
+            "terminal_priority": 3,
+            "acc_violation": 0.0,
+            "stability_violation": 0.0,
+            "terminal_cost_score": 4.5,
+            "terminal_cost_rank_score": 10.0,
+            "terminal_fusion_gain": 14.0,
+            "terminal_k_gain": 1.2,
+            "terminal_bits_gain": 500.0,
+        }
+        p2_huge_cost = {
+            "valid": True,
+            "terminal_priority": 2,
+            "acc_violation": 0.0,
+            "stability_violation": 0.1,
+            "terminal_cost_score": 4.5,
+            "terminal_cost_rank_score": 999.0,
+        }
+
+        self.assertLess(candidate_rank_key(p3_capped_high), candidate_rank_key(p3_capped_low))
+        self.assertLess(candidate_rank_key(p3_capped_low), candidate_rank_key(p2_huge_cost))
 
     def test_f0_record_splits_rescale_cost_debug_and_mpc_truncation(self):
         from scripts.blb_eval_action import build_f0_candidate_record

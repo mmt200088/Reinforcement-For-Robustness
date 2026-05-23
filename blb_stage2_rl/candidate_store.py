@@ -268,7 +268,52 @@ def candidate_rank_key(record: Mapping[str, Any]) -> Tuple[float, ...]:
     valid = bool(record.get("valid", not bool(record.get("invalid", False))))
     invalid_flag = 0.0 if valid else 1.0
     accuracy_violation = _finite_float(record.get("acc_violation", 0.0), 1.0e9)
-    stability_violation = _finite_float(record.get("stability_violation", 0.0), 1.0e9)
+    stability_violation = _finite_float(
+        record.get("stability_violation", record.get("terminal_stab_violation", 0.0)),
+        1.0e9,
+    )
+    priority_value = record.get("terminal_priority")
+    if priority_value is not None:
+        try:
+            priority = int(priority_value)
+        except (TypeError, ValueError):
+            priority = 0
+        invalid_steps = int(_finite_float(record.get("invalid_steps", 0), 0.0))
+        terminal_reward = _finite_float(record.get("terminal_reward", 0.0), 0.0)
+        total_reward = _finite_float(record.get("total_reward", 0.0), 0.0)
+        metric1 = _finite_float(record.get("terminal_metric1_mean", 0.0), 0.0)
+        metric2 = _finite_float(record.get("terminal_metric2_mean", 0.0), 0.0)
+        if priority == 3 and valid and invalid_steps == 0:
+            return (
+                0.0,
+                -max(0.0, _finite_float(record.get("terminal_cost_rank_score", 0.0), 0.0)),
+                -_finite_float(record.get("terminal_fusion_gain", 0.0), 0.0),
+                -_finite_float(record.get("terminal_k_gain", 0.0), 0.0),
+                -_finite_float(record.get("terminal_bits_gain", 0.0), 0.0),
+                -terminal_reward,
+                -total_reward,
+            )
+        if priority == 2:
+            return (
+                1.0,
+                max(0.0, stability_violation),
+                -metric1,
+                -metric2,
+                -terminal_reward,
+                -total_reward,
+            )
+        if priority == 1:
+            return (
+                2.0,
+                invalid_flag,
+                max(0.0, accuracy_violation),
+                -metric1,
+                -metric2,
+                -terminal_reward,
+                -total_reward,
+            )
+        return (3.0, invalid_flag, -terminal_reward, -total_reward)
+
     cost_value = record.get("normalized_cost", record.get("cost_normalized", record.get("total_bits_norm")))
     if cost_value is not None:
         normalized_cost = _finite_float(cost_value, 1.0e9)

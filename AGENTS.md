@@ -499,7 +499,14 @@ experiment reproduction.
    the P3 cost clip too early, while the `1/12` layer-equivalent tier kept
    saturation near 9% and preserved visible fusion/K ordering. Total bits is a
    separately clipped weak linear tie-breaker and must stay smaller than a
-   fusion/K tier step.
+   fusion/K tier step. The bounded `terminal_cost_score` remains the PPO
+   shaping signal for stability, but it is no longer the only ordering signal:
+   `terminal_cost_rank_score` is P3-only and unbounded, with component fields
+   for fusion, truncation/K, and bits. Best-action selection, top-candidate
+   diagnostics, candidate-store ranking, and promotion/frontier seeds should
+   use hard priority first and then this unbounded rank inside P3. P1/P2 keep
+   `terminal_cost_rank_score=0`, so cost still cannot compensate for accuracy
+   or stability failure.
    `ParetoCostArchive` may still record P3 frontier rows for
    diagnostics/exploration statistics, but Pareto events are not the default PPO
    scalar reward.

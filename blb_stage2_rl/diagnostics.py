@@ -135,6 +135,10 @@ class EpisodeStats:
     terminal_cost_truncation_bonus: float = 0.0
     terminal_cost_bits_tiebreaker: float = 0.0
     terminal_cost_truncation_step_gain: float = 0.0
+    terminal_cost_rank_score: float = 0.0
+    terminal_cost_rank_fusion: float = 0.0
+    terminal_cost_rank_truncation: float = 0.0
+    terminal_cost_rank_bits: float = 0.0
     terminal_pareto_event_kind: str = ""
     terminal_pareto_action_hash: str = ""
     terminal_pareto_frontier_removed: int = 0
@@ -267,7 +271,7 @@ class RLDiagnosticsRecorder:
         self._action_hist: np.ndarray = np.zeros(
             (self.num_slots, self.max_levels), dtype=np.int64,
         )
-        # heap entries: (reward, tiebreaker, payload_dict). min-heap by reward.
+        # heap entries: (rank_key, tiebreaker, payload_dict). min-heap by rank.
         self._top_candidates: List = []
         self._pareto_candidates: List[Dict[str, Any]] = []
         self._pareto_seen_hashes: set = set()
@@ -282,6 +286,47 @@ class RLDiagnosticsRecorder:
         self._baseline_avg_k: Optional[float] = None
         self._baseline_action_vec: Optional[np.ndarray] = None
         self._baseline_slots: Optional[List[Dict[str, Any]]] = None
+
+    @staticmethod
+    def _candidate_rank_key(payload: Mapping[str, Any]) -> tuple:
+        """Higher-is-better runtime candidate rank with P1/P2 hard gated."""
+        try:
+            priority = int(payload.get("terminal_priority", 0) or 0)
+        except Exception:
+            priority = 0
+        try:
+            invalid_steps = int(payload.get("invalid_steps", 0) or 0)
+        except Exception:
+            invalid_steps = 0
+
+        total_reward = float(payload.get("total_reward", 0.0) or 0.0)
+        terminal_reward = float(payload.get("terminal_reward", 0.0) or 0.0)
+        metric1 = float(payload.get("terminal_metric1_mean", 0.0) or 0.0)
+        metric2 = float(payload.get("terminal_metric2_mean", 0.0) or 0.0)
+        stab = float(payload.get("terminal_stab_violation", 0.0) or 0.0)
+
+        if priority == 3 and invalid_steps == 0:
+            return (
+                3.0,
+                float(payload.get("terminal_cost_rank_score", 0.0) or 0.0),
+                float(payload.get("terminal_fusion_gain", 0.0) or 0.0),
+                float(payload.get("terminal_k_gain", 0.0) or 0.0),
+                float(payload.get("terminal_bits_gain", 0.0) or 0.0),
+                terminal_reward,
+                total_reward,
+            )
+        if priority == 2:
+            return (2.0, -max(0.0, stab), metric1, metric2, terminal_reward, total_reward)
+        if priority == 1:
+            return (
+                1.0,
+                -float(max(0, invalid_steps)),
+                metric1,
+                metric2,
+                terminal_reward,
+                total_reward,
+            )
+        return (0.0, terminal_reward, total_reward)
 
     def set_meta(self, meta: Mapping[str, Any]) -> None:
         """Stash run-level metadata that will be embedded in best_action_vec.json
@@ -398,6 +443,12 @@ class RLDiagnosticsRecorder:
                 "terminal_cost_truncation_step_gain": float(
                     episode_stats.terminal_cost_truncation_step_gain
                 ),
+                "terminal_cost_rank_score": float(episode_stats.terminal_cost_rank_score),
+                "terminal_cost_rank_fusion": float(episode_stats.terminal_cost_rank_fusion),
+                "terminal_cost_rank_truncation": float(
+                    episode_stats.terminal_cost_rank_truncation
+                ),
+                "terminal_cost_rank_bits": float(episode_stats.terminal_cost_rank_bits),
                 "terminal_pareto_event_kind": str(episode_stats.terminal_pareto_event_kind),
                 "terminal_pareto_action_hash": str(episode_stats.terminal_pareto_action_hash),
                 "terminal_pareto_frontier_removed": int(episode_stats.terminal_pareto_frontier_removed),
@@ -447,8 +498,10 @@ class RLDiagnosticsRecorder:
             if not payload["terminal_pareto_action_hash"]:
                 payload["terminal_pareto_action_hash"] = _action_vec_hash(payload["action_vec"])
             self._consider_pareto_candidate(payload)
+            rank_key = self._candidate_rank_key(payload)
+            payload["top_candidate_rank_key"] = [float(x) for x in rank_key]
             entry = (
-                float(episode_stats.total_reward),
+                rank_key,
                 self._next_topcand_id,
                 payload,
             )
@@ -482,6 +535,12 @@ class RLDiagnosticsRecorder:
                     "terminal_reward": float(episode_stats.terminal_reward),
                     "valid_steps": int(episode_stats.valid_steps),
                     "invalid_steps": int(episode_stats.invalid_steps),
+                    "terminal_cost_rank_score": float(episode_stats.terminal_cost_rank_score),
+                    "terminal_cost_rank_fusion": float(episode_stats.terminal_cost_rank_fusion),
+                    "terminal_cost_rank_truncation": float(
+                        episode_stats.terminal_cost_rank_truncation
+                    ),
+                    "terminal_cost_rank_bits": float(episode_stats.terminal_cost_rank_bits),
                     "best_reward_so_far": float(best_reward_so_far),
                     "wall_time_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
                     "meta": dict(self._meta),
@@ -579,7 +638,7 @@ class RLDiagnosticsRecorder:
             self.log(f"  [diag][warning] first_invalid_counts.json write failed: {exc}")
         try:
             tmp = self.top_path + ".tmp"
-            sorted_top = sorted(self._top_candidates, key=lambda e: -e[0])
+            sorted_top = sorted(self._top_candidates, key=lambda e: e[0], reverse=True)
             with open(tmp, "w", encoding="utf-8") as f:
                 for rank, entry in enumerate(sorted_top, start=1):
                     out_row = dict(entry[2])
@@ -708,6 +767,10 @@ class RLDiagnosticsRecorder:
             "terminal_k_gain",
             "terminal_bits_gain",
             "terminal_cost_score",
+            "terminal_cost_rank_score",
+            "terminal_cost_rank_fusion",
+            "terminal_cost_rank_truncation",
+            "terminal_cost_rank_bits",
             "terminal_p3_metric_margin_reward",
             "terminal_cost_fusion_bonus",
             "terminal_cost_truncation_bonus",
@@ -821,21 +884,24 @@ class RLDiagnosticsRecorder:
         lines.append(f"## 2. 训练期 Top-{self.top_k} candidates")
         lines.append("")
         lines.append(
-            "**说明**：按 total_reward 排序。每条候选的完整 SF / K 配置（按槽位标签）见 "
-            "`top_candidates.jsonl` 的 `slots` 字段；下面摘要表只列指标。"
+            "**说明**：按 hard-priority + unbounded P3 cost rank 排序。"
+            "P1/P2 不吃 cost；P3 内部先看无上限 cost rank，再看 fusion/K/bits 与 reward。"
+            "每条候选的完整 SF / K 配置见 `top_candidates.jsonl` 的 `slots` 字段。"
         )
         lines.append("")
         lines.append(
-            "| Rank | Episode | total_reward | terminal | per_step_sum | valid | invalid | total_bits | fusion |"
+            "| Rank | Episode | P | cost_rank | total_reward | terminal | per_step_sum | valid | invalid | total_bits | fusion |"
         )
         lines.append(
-            "|-----:|--------:|-------------:|---------:|-------------:|------:|--------:|-----------:|-------:|"
+            "|-----:|--------:|--:|----------:|-------------:|---------:|-------------:|------:|--------:|-----------:|-------:|"
         )
-        topk_sorted = sorted(self._top_candidates, key=lambda e: -e[0])
+        topk_sorted = sorted(self._top_candidates, key=lambda e: e[0], reverse=True)
         for rank, entry in enumerate(topk_sorted, start=1):
             p = entry[2]
             lines.append(
-                f"| {rank} | {p['episode']} | {p['total_reward']:+.4f} | "
+                f"| {rank} | {p['episode']} | {p.get('terminal_priority', 0)} | "
+                f"{float(p.get('terminal_cost_rank_score', 0.0)):+.4f} | "
+                f"{p['total_reward']:+.4f} | "
                 f"{p['terminal_reward']:+.4f} | {p['per_step_sum']:+.4f} | "
                 f"{p['valid_steps']} | {p['invalid_steps']} | "
                 f"{p['total_bits']} | {p['fusion_count']} |"

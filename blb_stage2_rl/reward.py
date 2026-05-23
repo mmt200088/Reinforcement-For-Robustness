@@ -310,6 +310,13 @@ class RewardBreakdown:
     cost_truncation_bonus: float = 0.0
     cost_bits_tiebreaker: float = 0.0
     cost_truncation_step_gain: float = 0.0
+    # Unbounded P3-only ranking signal. PPO still uses bounded cost_score;
+    # candidate selection/archive diagnostics use this to distinguish high-cost
+    # improvements after the PPO shaping budget saturates.
+    cost_rank_score: float = 0.0
+    cost_rank_fusion: float = 0.0
+    cost_rank_truncation: float = 0.0
+    cost_rank_bits: float = 0.0
     pareto_event_kind: str = ""
     pareto_action_hash: str = ""
     pareto_frontier_removed: int = 0
@@ -530,7 +537,18 @@ def _adaptive_scalar_cost_score(
         float(weights.cost_score_clip_min),
         min(float(weights.cost_score_clip_max), float(weights.p3_cost_budget)),
     ))
-    return clipped, fusion_step, k_step, bits_linear, truncation_step_gain
+    cost_rank_score = float(fusion_step + k_step + bits_linear_raw)
+    return (
+        clipped,
+        fusion_step,
+        k_step,
+        bits_linear,
+        truncation_step_gain,
+        cost_rank_score,
+        fusion_step,
+        k_step,
+        bits_linear_raw,
+    )
 
 
 def _p3_metric_margin_reward(margin_acc: float, weights: RewardWeights) -> float:
@@ -755,6 +773,24 @@ def compute_reward(
         )
         pareto_event = pareto_archive.add(str(action_hash), pareto_candidate)
 
+    (
+        _rank_cost_score_raw,
+        _rank_fusion_raw,
+        _rank_k_raw,
+        _rank_bits_clipped_raw,
+        _rank_truncation_step_gain_raw,
+        cost_rank_score_raw,
+        cost_rank_fusion_raw,
+        cost_rank_truncation_raw,
+        cost_rank_bits_raw,
+    ) = _adaptive_scalar_cost_score(
+        fusion_gain=float(fusion_gain),
+        k_gain=float(k_gain),
+        bits_gain=float(bits_gain),
+        bits_norm=float(bits_norm),
+        weights=weights,
+    )
+
     if str(getattr(weights, "cost_reward_mode", "adaptive_scalar")) == "pareto_only":
         cost_score_raw = (
             float(getattr(pareto_event, "shaping", 0.0) or 0.0)
@@ -774,6 +810,10 @@ def compute_reward(
             r_k_raw,
             r_bits_raw,
             truncation_step_gain_raw,
+            _cost_rank_score_unused,
+            _cost_rank_fusion_unused,
+            _cost_rank_truncation_unused,
+            _cost_rank_bits_unused,
         ) = _adaptive_scalar_cost_score(
             fusion_gain=float(fusion_gain),
             k_gain=float(k_gain),
@@ -786,6 +826,12 @@ def compute_reward(
     # stricter: it only contributes in P3 (metric_ok AND stab_ok), matching the
     # "accuracy/stability as hard constraints, cost only after both pass" rule.
     effective_cost_score = cost_score_raw if (metric_ok and stab_ok) else 0.0
+    effective_cost_rank_score = cost_rank_score_raw if (metric_ok and stab_ok) else 0.0
+    effective_cost_rank_fusion = cost_rank_fusion_raw if (metric_ok and stab_ok) else 0.0
+    effective_cost_rank_truncation = (
+        cost_rank_truncation_raw if (metric_ok and stab_ok) else 0.0
+    )
+    effective_cost_rank_bits = cost_rank_bits_raw if (metric_ok and stab_ok) else 0.0
     effective_p3_margin = (
         _p3_metric_margin_reward(margin_acc, weights)
         if (metric_ok and stab_ok)
@@ -852,6 +898,10 @@ def compute_reward(
         cost_truncation_step_gain=(
             float(truncation_step_gain_raw) if (metric_ok and stab_ok) else 0.0
         ),
+        cost_rank_score=float(effective_cost_rank_score),
+        cost_rank_fusion=float(effective_cost_rank_fusion),
+        cost_rank_truncation=float(effective_cost_rank_truncation),
+        cost_rank_bits=float(effective_cost_rank_bits),
         pareto_event_kind=str(getattr(pareto_event, "kind", "") or ""),
         pareto_action_hash=str(action_hash or ""),
         pareto_frontier_removed=int(getattr(pareto_event, "removed", 0) or 0),

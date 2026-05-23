@@ -242,6 +242,120 @@ class ParetoCostArchiveTests(unittest.TestCase):
         )
         self.assertGreater(breakdown.p3_metric_margin_reward, 0.0)
 
+    def test_p3_cost_rank_remains_unbounded_after_ppo_cost_score_clips(self):
+        reward = load_reward_module()
+
+        baseline = reward.BaselineCostStats(
+            total_bits_sum=2000,
+            total_fusion_count=0,
+            avg_k=13.0,
+            metric1_mean=0.90,
+            metric2_mean=0.90,
+            metric1_std=0.0,
+            metric2_std=0.0,
+            loss_std=0.0,
+            typical_bits_drop=1000.0,
+        )
+        weights = reward.calibrate_weights_from_baseline(baseline)
+        metrics = reward.EpisodeMetrics(
+            loss_mean=0.30,
+            loss_std=0.0,
+            metric1_mean=0.90,
+            metric2_mean=0.90,
+            metric1_std=0.0,
+            metric2_std=0.0,
+        )
+
+        def run(fusion_count, action_avg_k, total_bits_sum):
+            signals = type(
+                "Signals", (),
+                {
+                    "any_invalid": False,
+                    "total_bits_sum": float(total_bits_sum),
+                    "total_fusion_count": float(fusion_count),
+                },
+            )()
+            return reward.compute_reward(
+                metrics,
+                signals,
+                action_avg_k=float(action_avg_k),
+                baseline=baseline,
+                weights=weights,
+            )
+
+        capped_low = run(8, 12.50, 1600)
+        capped_high = run(14, 11.80, 1500)
+
+        self.assertAlmostEqual(capped_low.cost_score, reward.DEFAULT_P3_COST_BUDGET)
+        self.assertAlmostEqual(capped_high.cost_score, reward.DEFAULT_P3_COST_BUDGET)
+        self.assertAlmostEqual(capped_low.reward, capped_high.reward)
+        self.assertGreater(capped_high.cost_rank_score, capped_low.cost_rank_score)
+        self.assertGreater(capped_high.cost_rank_fusion, capped_low.cost_rank_fusion)
+        self.assertGreater(capped_high.cost_rank_truncation, capped_low.cost_rank_truncation)
+
+    def test_p1_p2_do_not_receive_p3_cost_rank(self):
+        reward = load_reward_module()
+
+        baseline = reward.BaselineCostStats(
+            total_bits_sum=2000,
+            total_fusion_count=0,
+            avg_k=13.0,
+            metric1_mean=0.90,
+            metric2_mean=0.90,
+            metric1_std=0.0,
+            metric2_std=0.0,
+            loss_std=0.0,
+            typical_bits_drop=1000.0,
+        )
+        weights = reward.calibrate_weights_from_baseline(baseline)
+        huge_cost_signals = type(
+            "Signals", (),
+            {
+                "any_invalid": False,
+                "total_bits_sum": 1000.0,
+                "total_fusion_count": 99.0,
+            },
+        )()
+
+        p1 = reward.compute_reward(
+            reward.EpisodeMetrics(
+                loss_mean=0.30,
+                loss_std=0.0,
+                metric1_mean=0.10,
+                metric2_mean=0.10,
+                metric1_std=0.0,
+                metric2_std=0.0,
+            ),
+            huge_cost_signals,
+            action_avg_k=1.0,
+            baseline=baseline,
+            weights=weights,
+        )
+        p2 = reward.compute_reward(
+            reward.EpisodeMetrics(
+                loss_mean=0.30,
+                loss_std=1.0,
+                metric1_mean=0.90,
+                metric2_mean=0.90,
+                metric1_std=1.0,
+                metric2_std=1.0,
+            ),
+            huge_cost_signals,
+            action_avg_k=1.0,
+            baseline=baseline,
+            weights=weights,
+        )
+
+        self.assertEqual(p1.priority, 1)
+        self.assertEqual(p1.cost_score, 0.0)
+        self.assertEqual(p1.cost_rank_score, 0.0)
+        self.assertLessEqual(p1.reward, 5.0)
+
+        self.assertEqual(p2.priority, 2)
+        self.assertEqual(p2.cost_score, 0.0)
+        self.assertEqual(p2.cost_rank_score, 0.0)
+        self.assertLess(p2.reward, 35.0)
+
     def test_adaptive_scalar_cost_step_boundaries_and_bits_tiebreaker(self):
         reward = load_reward_module()
 

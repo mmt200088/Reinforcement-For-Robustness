@@ -252,6 +252,62 @@ class SequentialArtifactContractsTest(unittest.TestCase):
                     msg=f"frontier row {i} dominates row {j}",
                 )
 
+    def test_top_candidates_use_unbounded_p3_cost_rank(self):
+        import numpy as np
+
+        run_dir = os.path.join(self.tmp, "run_ranked_top")
+        diag = self.diag_mod
+        rec = diag.RLDiagnosticsRecorder(
+            output_dir=run_dir,
+            num_layers=12,
+            num_action_slots=577,
+            max_action_levels=6,
+            top_k=2,
+            log_fn=lambda *_: None,
+        )
+
+        def record(ep, total_reward, cost_rank, fusion_gain):
+            rec.record_episode(
+                episode_stats=diag.EpisodeStats(
+                    episode=ep,
+                    total_reward=float(total_reward),
+                    terminal_reward=45.0,
+                    per_step_sum=float(total_reward - 45.0),
+                    valid_steps=59,
+                    invalid_steps=0,
+                    steps_taken=59,
+                    total_bits=15000,
+                    fusion_count=int(fusion_gain),
+                    first_invalid_step=None,
+                    first_invalid_block=None,
+                    first_invalid_layer=None,
+                    early_terminated=False,
+                    terminal_priority=3,
+                    terminal_cost_score=4.5,
+                    terminal_cost_rank_score=float(cost_rank),
+                    terminal_cost_rank_fusion=float(fusion_gain),
+                    terminal_fusion_gain=float(fusion_gain),
+                    terminal_k_gain=1.0,
+                    terminal_bits_gain=300.0,
+                ),
+                full_action_vec=np.full(577, ep % 6, dtype=int),
+                is_new_best=True,
+                best_reward_so_far=float(total_reward),
+            )
+
+        record(1, 42.20, 6.0, 8.0)
+        record(2, 42.00, 10.0, 14.0)
+        rec.flush_periodic()
+
+        top_path = os.path.join(run_dir, "diagnostics", "top_candidates.jsonl")
+        rows = [
+            json.loads(line)
+            for line in Path(top_path).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        self.assertEqual(rows[0]["episode"], 2)
+        self.assertGreater(rows[0]["terminal_cost_rank_score"], rows[1]["terminal_cost_rank_score"])
+
     # ----------------------------------------------------------------
     # 4. summary.md contains the auto-flag section and at least one auto-flag
     #    (synthetic data has L8-B3 invalid concentration)
@@ -1405,6 +1461,10 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "terminal_cost_truncation_bonus: float = 0.0",
             "terminal_cost_bits_tiebreaker: float = 0.0",
             "terminal_cost_truncation_step_gain: float = 0.0",
+            "terminal_cost_rank_score: float = 0.0",
+            "terminal_cost_rank_fusion: float = 0.0",
+            "terminal_cost_rank_truncation: float = 0.0",
+            "terminal_cost_rank_bits: float = 0.0",
             "terminal_pareto_event_kind: str = \"\"",
             "safe_neighbor_active: bool = False",
             "exploration_mode: str = \"\"",
@@ -1428,6 +1488,10 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "terminal_cost_truncation_bonus=float(record.terminal_cost_truncation_bonus)",
             "terminal_cost_bits_tiebreaker=float(record.terminal_cost_bits_tiebreaker)",
             "terminal_cost_truncation_step_gain=float(",
+            "terminal_cost_rank_score=float(record.terminal_cost_rank_score)",
+            "terminal_cost_rank_fusion=float(record.terminal_cost_rank_fusion)",
+            "terminal_cost_rank_truncation=float(record.terminal_cost_rank_truncation)",
+            "terminal_cost_rank_bits=float(record.terminal_cost_rank_bits)",
             "terminal_pareto_event_kind=str(record.terminal_pareto_event_kind)",
             "safe_neighbor_mutation_count=int(record.safe_neighbor_mutation_count)",
             "exploration_mode=str(record.exploration_mode)",
@@ -1436,6 +1500,66 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
             "rejection_optimizer_wall_seconds=float(record.rejection_optimizer_wall_seconds)",
         ):
             self.assertIn(needle, diagnostics + runner_src, msg=f"missing JSONL health field: {needle!r}")
+
+    def test_p3_best_rank_uses_unbounded_cost_rank_before_total_reward(self):
+        ns = self._exec_runner_items(
+            "EpisodeRecord",
+            "_episode_best_rank_key",
+        )
+        Record = ns["EpisodeRecord"]
+        rank_key = ns["_episode_best_rank_key"]
+
+        capped_lower_cost = Record(
+            episode_idx=1,
+            total_reward=42.20,
+            terminal_reward=45.0,
+            per_step_reward_sum=-2.80,
+            invalid_steps=0,
+            early_terminated=False,
+            steps_taken=59,
+            terminal_priority=3,
+            terminal_cost_score=4.5,
+            terminal_cost_rank_score=6.0,
+            terminal_fusion_gain=8.0,
+            terminal_k_gain=0.5,
+            terminal_bits_gain=300.0,
+        )
+        capped_higher_cost = Record(
+            episode_idx=2,
+            total_reward=42.00,
+            terminal_reward=45.0,
+            per_step_reward_sum=-3.00,
+            invalid_steps=0,
+            early_terminated=False,
+            steps_taken=59,
+            terminal_priority=3,
+            terminal_cost_score=4.5,
+            terminal_cost_rank_score=10.0,
+            terminal_fusion_gain=14.0,
+            terminal_k_gain=1.2,
+            terminal_bits_gain=500.0,
+        )
+        p2_high_cost = Record(
+            episode_idx=3,
+            total_reward=60.0,
+            terminal_reward=25.0,
+            per_step_reward_sum=35.0,
+            invalid_steps=0,
+            early_terminated=False,
+            steps_taken=59,
+            terminal_priority=2,
+            terminal_cost_score=4.5,
+            terminal_cost_rank_score=999.0,
+        )
+
+        self.assertGreater(
+            rank_key(capped_higher_cost),
+            rank_key(capped_lower_cost),
+        )
+        self.assertGreater(
+            rank_key(capped_lower_cost),
+            rank_key(p2_high_cost),
+        )
 
     def test_first10k_server_defaults_avoid_radius2_collapse_region(self):
         """The first failed 10k run showed P1s when radius reached 2."""
