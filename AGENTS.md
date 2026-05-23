@@ -47,6 +47,16 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   consecutive loss caps or at least 5 loss caps in the latest 100 post-anchor
   episodes. Treat 60k runs as research evidence, with online watchdog checks and
   follow-up experiments when the curve stalls.
+- Current 60k completion protocol, added 2026-05-24: when the active
+  `stage2_rl_60000_curve_20260523_082630` run finishes, first copy the full
+  artifact set back locally, extract the best BLB action, run a real BLB final
+  eval for that action, and generate a comprehensive HTML report before
+  launching the next run. That report must include the complete best
+  configuration details, final-eval metrics, full learning curves, throughput,
+  reward/P1/P2/stability/invalid summaries, four-GPU evidence, PPO diagnostics,
+  and cost/frontier progress. Only after that report and final eval are
+  captured should the next 60,000-episode run start from the latest local source
+  commit, currently the unbounded P3 cost-rank selection change.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes

@@ -94,6 +94,14 @@ Current Stage-2 RL collapse goal mode:
   `loss_mean=100` loss-cap spikes as warnings, not hard failures; hard-stop only
   on bursts such as consecutive loss caps or at least 5 loss caps in the latest
   100 post-anchor episodes.
+- When the active 60k run finishes, do not immediately start the next search.
+  First recover the full artifact set, extract the best BLB action, run real BLB
+  final eval on that action, and write a comprehensive HTML report covering the
+  complete best configuration, final-eval metrics, learning curves, throughput,
+  reward/P1/P2/stability/invalid health, four-GPU evidence, PPO diagnostics, and
+  cost/frontier progress. Then launch the next 60,000-episode run from the
+  latest local source commit, currently the unbounded P3 cost-rank selection
+  change.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes
