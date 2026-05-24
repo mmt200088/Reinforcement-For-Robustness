@@ -382,6 +382,16 @@ bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh
 # Resume same parameter combo (auto-detects persistent dir, no --resume-from needed)
 bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl
 
+# Stage-1-only RL (GELU/Softmax polynomial degree search). 6 presets cover
+# {bert-base, bert-large} x {mrpc, sst2, rte}. Each preset sets
+# --mode stage1-only --skip-final-eval, so no Rescale_optimizer / BLB dep.
+bash llama_7B_LayerImportance.sh run rl --preset bert-base-mrpc-stage1-rl --fresh
+bash llama_7B_LayerImportance.sh run rl --preset bert-base-sst2-stage1-rl --fresh
+bash llama_7B_LayerImportance.sh run rl --preset bert-base-rte-stage1-rl  --fresh
+bash llama_7B_LayerImportance.sh run rl --preset bert-large-mrpc-stage1-rl --fresh
+bash llama_7B_LayerImportance.sh run rl --preset bert-large-sst2-stage1-rl --fresh
+bash llama_7B_LayerImportance.sh run rl --preset bert-large-rte-stage1-rl  --fresh
+
 # Final eval — independent module (preferred). Old `llama_7B_LayerImportance.sh eval ...`
 # is now a compatibility shim that delegates to this entrypoint.
 bash Paean/run_final_eval.sh --preset mrpc-final-eval-only
