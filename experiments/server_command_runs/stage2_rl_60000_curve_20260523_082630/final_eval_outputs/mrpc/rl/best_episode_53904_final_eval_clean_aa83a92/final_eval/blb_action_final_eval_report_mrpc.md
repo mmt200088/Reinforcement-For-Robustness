@@ -1,0 +1,1047 @@
+# BLB Action Final Evaluation Report
+
+- dataset: `mrpc`
+- split: `validation_full`
+- selected_source: `blb_action(stage1=json)`
+- repeat_n: `50`
+- rescale_optimizer: `in_process`
+- rescale_optimizer_root: `/hy-tmp/Reinforcement-For-Robustness/Rescale_optimizer`
+- json: `/hy-tmp/Reinforcement-For-Robustness/experiments/server_command_runs/stage2_rl_60000_curve_20260523_082630/final_eval_outputs/mrpc/rl/best_episode_53904_final_eval_clean_aa83a92/final_eval/blb_action_final_eval_results_mrpc.json`
+
+## Baseline
+
+- clean baseline loss: `0.343486`
+- clean baseline Acc.: `0.879902`
+- clean baseline F1: `0.877442`
+
+## Group Comparison
+
+| group | truncation k | effective K positions | loss mean | loss std | Acc. mean | Acc. std | F1 mean | F1 std | time mean ms | total bits | fusion | model cfg verified |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `ActionSelected` | 11,12,13 | 59 | 0.330478 | 0.004528 | 0.872990 | 0.005227 | 0.869625 | 0.005411 | 1767.496 | 14284 | 14 | False |
+
+## Configuration Details
+
+### ActionSelected
+
+- action overrides: `{}`
+- base action: BLB RL baseline action: model-side non-truncation fields use highest selectable action-space SF; Rescale_optimizer mode=cfg_derived.
+- first_input_sf: `0`
+- truncation summary: `11,12,13`; effective positions = `59`; skipped = `[]`
+- model cfg verified before forward: `False`
+- handler active layers match expected: `False`
+- handler cfg object identity match: `True`
+- rescale optimizer: `{'invoker_kind': 'in_process', 'root': '/hy-tmp/Reinforcement-For-Robustness/Rescale_optimizer', 'mode': 'cfg_derived', 'request_count': 59, 'valid_count': 54, 'invalid_count': 5, 't_new_sources': ['cfg_derived']}`
+
+Non-truncation unique scaling factors:
+
+```json
+{
+  "block1": {
+    "gelu_out_fresh": [
+      28,
+      30
+    ],
+    "mean_inv_d_encode": [
+      20
+    ],
+    "mean_result_rescale": [
+      30,
+      32,
+      34
+    ],
+    "var_inv_d_encode": [
+      20
+    ],
+    "var_result_rescale": [
+      34
+    ],
+    "wffn2_encode": [
+      18,
+      20
+    ]
+  },
+  "block2": {
+    "gamma_encode": [
+      20
+    ],
+    "gamma_result_rescale": [
+      29,
+      31
+    ],
+    "inv_std_fresh": [
+      29,
+      31
+    ],
+    "kt_mask1_encode": [
+      13,
+      15
+    ],
+    "kt_mask2_encode": [
+      15
+    ],
+    "kt_mask2_result_rescale": [
+      31
+    ],
+    "q_mask1_encode": [
+      13,
+      15
+    ],
+    "q_mask2_encode": [
+      15
+    ],
+    "q_mask2_result_rescale": [
+      31
+    ],
+    "qkt_merge_mask_encode": [
+      11,
+      13,
+      15
+    ],
+    "qkt_merge_mask_result_rescale": [
+      28
+    ],
+    "wk_encode": [
+      22
+    ],
+    "wq_encode": [
+      22
+    ],
+    "wv_encode": [
+      22
+    ],
+    "x_centered_fresh": [
+      29,
+      31
+    ]
+  },
+  "block3": {
+    "inv_2n_encode": [
+      13,
+      15
+    ],
+    "square_rescales": [
+      27,
+      29,
+      31
+    ],
+    "x_fresh": [
+      26,
+      28
+    ]
+  },
+  "block4": {
+    "ln_mean_inv_d_encode": [
+      18
+    ],
+    "ln_mean_result_rescale": [
+      31
+    ],
+    "ln_var_inv_d_encode": [
+      20
+    ],
+    "ln_var_result_rescale": [
+      28
+    ],
+    "softmax_out_fresh": [
+      33
+    ],
+    "softmax_out_mask_encode": [
+      14
+    ],
+    "softmax_v_mask_encode": [
+      12,
+      14
+    ],
+    "softmax_v_matmul_rescale": [
+      29
+    ],
+    "v_fresh": [
+      23,
+      25
+    ],
+    "v_mask_encode": [
+      14
+    ],
+    "wo_encode": [
+      20,
+      22
+    ]
+  },
+  "block5": {
+    "gamma_encode": [
+      20
+    ],
+    "gamma_result_rescale": [
+      30
+    ],
+    "gelu_coeff_encode": [
+      18
+    ],
+    "gelu_coeff_mul_rescales": [
+      31
+    ],
+    "gelu_power_rescales": [
+      29
+    ],
+    "inv_std_fresh": [
+      29,
+      31
+    ],
+    "normalize_result_rescale": [
+      31
+    ],
+    "wffn1_encode": [
+      22
+    ],
+    "wffn1_result_rescale": [
+      31
+    ],
+    "x_centered_fresh": [
+      29,
+      31
+    ]
+  }
+}
+```
+
+Full noise and truncation configuration:
+
+| path | type | distribution | N | scaling_factor | truncation_k | value | active |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| first_input.fresh | scaling_factor | fresh | 8192 | 0 |  |  | False |
+| layer1.block1.gelu_out_fresh | scaling_factor | fresh | 8192 | 28 |  | 28 | True |
+| layer1.block1.wffn2_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer1.block1.mean_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer1.block1.var_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer1.block1.wffn2_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block1.mean_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer1.block1.square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block1.var_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer1.block1.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer2.block1.gelu_out_fresh | scaling_factor | fresh | 8192 | 28 |  | 28 | True |
+| layer2.block1.wffn2_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer2.block1.mean_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer2.block1.var_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer2.block1.wffn2_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block1.mean_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer2.block1.square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block1.var_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer2.block1.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer3.block1.gelu_out_fresh | scaling_factor | fresh | 8192 | 28 |  | 28 | True |
+| layer3.block1.wffn2_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer3.block1.mean_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer3.block1.var_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer3.block1.wffn2_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block1.mean_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer3.block1.square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block1.var_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer3.block1.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer4.block1.gelu_out_fresh | scaling_factor | fresh | 8192 | 30 |  | 30 | True |
+| layer4.block1.wffn2_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer4.block1.mean_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer4.block1.var_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer4.block1.wffn2_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block1.mean_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer4.block1.square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block1.var_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer4.block1.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer5.block1.gelu_out_fresh | scaling_factor | fresh | 8192 | 28 |  | 28 | True |
+| layer5.block1.wffn2_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer5.block1.mean_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer5.block1.var_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer5.block1.wffn2_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block1.mean_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer5.block1.square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block1.var_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer5.block1.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer6.block1.gelu_out_fresh | scaling_factor | fresh | 8192 | 28 |  | 28 | True |
+| layer6.block1.wffn2_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer6.block1.mean_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer6.block1.var_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer6.block1.wffn2_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block1.mean_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer6.block1.square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block1.var_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer6.block1.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer7.block1.gelu_out_fresh | scaling_factor | fresh | 8192 | 28 |  | 28 | True |
+| layer7.block1.wffn2_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer7.block1.mean_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer7.block1.var_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer7.block1.wffn2_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block1.mean_result_rescale | scaling_factor | rescale | 8192 | 32 |  | 32 | True |
+| layer7.block1.square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block1.var_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer7.block1.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer8.block1.gelu_out_fresh | scaling_factor | fresh | 8192 | 28 |  | 28 | True |
+| layer8.block1.wffn2_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer8.block1.mean_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer8.block1.var_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer8.block1.wffn2_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block1.mean_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer8.block1.square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block1.var_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer8.block1.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer9.block1.gelu_out_fresh | scaling_factor | fresh | 8192 | 28 |  | 28 | True |
+| layer9.block1.wffn2_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer9.block1.mean_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer9.block1.var_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer9.block1.wffn2_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block1.mean_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer9.block1.square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block1.var_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer9.block1.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer10.block1.gelu_out_fresh | scaling_factor | fresh | 8192 | 28 |  | 28 | True |
+| layer10.block1.wffn2_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer10.block1.mean_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer10.block1.var_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer10.block1.wffn2_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block1.mean_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer10.block1.square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block1.var_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer10.block1.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer11.block1.gelu_out_fresh | scaling_factor | fresh | 8192 | 28 |  | 28 | True |
+| layer11.block1.wffn2_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer11.block1.mean_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer11.block1.var_inv_d_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer11.block1.wffn2_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block1.mean_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer11.block1.square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block1.var_result_rescale | scaling_factor | rescale | 8192 | 34 |  | 34 | True |
+| layer11.block1.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer0.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer0.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer0.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer0.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer0.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer0.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer0.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer0.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer0.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer0.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer0.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 11 |  | 11 | True |
+| layer0.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer0.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer0.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer0.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer0.block2.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer1.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer1.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer1.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer1.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer1.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer1.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer1.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer1.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer1.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer1.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer1.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 11 |  | 11 | True |
+| layer1.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer1.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer1.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer1.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer1.block2.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer2.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer2.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer2.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer2.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer2.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer2.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer2.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer2.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer2.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer2.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer2.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 11 |  | 11 | True |
+| layer2.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer2.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer2.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer2.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer2.block2.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer3.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer3.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer3.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer3.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer3.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer3.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer3.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer3.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer3.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer3.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer3.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer3.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer3.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer3.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer3.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer3.block2.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer4.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer4.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer4.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer4.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer4.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer4.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer4.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer4.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer4.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer4.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer4.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 11 |  | 11 | True |
+| layer4.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer4.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer4.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer4.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer4.block2.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer5.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer5.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer5.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer5.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer5.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer5.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer5.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer5.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer5.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer5.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer5.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 11 |  | 11 | True |
+| layer5.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer5.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer5.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer5.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer5.block2.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer6.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 31 |  | 31 | True |
+| layer6.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 31 |  | 31 | True |
+| layer6.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer6.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer6.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer6.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer6.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer6.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer6.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer6.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer6.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 11 |  | 11 | True |
+| layer6.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer6.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer6.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer6.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer6.block2.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer7.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer7.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer7.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer7.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer7.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer7.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer7.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer7.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer7.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer7.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer7.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 11 |  | 11 | True |
+| layer7.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer7.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer7.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer7.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer7.block2.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer8.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer8.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer8.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer8.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer8.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer8.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer8.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer8.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer8.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer8.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer8.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 11 |  | 11 | True |
+| layer8.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer8.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer8.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer8.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer8.block2.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer9.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer9.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer9.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer9.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer9.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer9.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer9.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer9.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer9.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer9.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer9.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 11 |  | 11 | True |
+| layer9.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer9.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer9.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer9.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer9.block2.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer10.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer10.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer10.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer10.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer10.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer10.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer10.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer10.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer10.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer10.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer10.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer10.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer10.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer10.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer10.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer10.block2.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer11.block2.inv_std_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer11.block2.x_centered_fresh | scaling_factor | fresh | 16384 | 29 |  | 29 | True |
+| layer11.block2.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer11.block2.wk_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer11.block2.kt_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer11.block2.kt_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer11.block2.wq_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer11.block2.q_mask1_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer11.block2.q_mask2_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer11.block2.wv_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer11.block2.qkt_merge_mask_encode | scaling_factor | encoding | 16384 | 11 |  | 11 | True |
+| layer11.block2.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block2.gamma_result_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer11.block2.wk_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block2.kt_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block2.kt_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer11.block2.wq_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block2.q_mask1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block2.q_mask2_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer11.block2.wv_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block2.qkt_matmul_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block2.qkt_merge_mask_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer11.block2.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer0.block3.degree | parameter |  |  |  |  | 2 | True |
+| layer0.block3.x_fresh | scaling_factor | fresh | 8192 | 28 |  | 28 | True |
+| layer0.block3.inv_2n_encode | scaling_factor | encoding | 8192 | 13 |  | 13 | True |
+| layer0.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block3.square_rescales[0] | scaling_factor | rescale | 8192 | 29 |  | 29 | True |
+| layer0.block3.square_rescales[1] | scaling_factor | rescale | 8192 | 29 |  | 29 | True |
+| layer0.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer1.block3.degree | parameter |  |  |  |  | 2 | True |
+| layer1.block3.x_fresh | scaling_factor | fresh | 8192 | 26 |  | 26 | True |
+| layer1.block3.inv_2n_encode | scaling_factor | encoding | 8192 | 13 |  | 13 | True |
+| layer1.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block3.square_rescales[0] | scaling_factor | rescale | 8192 | 29 |  | 29 | True |
+| layer1.block3.square_rescales[1] | scaling_factor | rescale | 8192 | 29 |  | 29 | True |
+| layer1.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer2.block3.degree | parameter |  |  |  |  | 5 | True |
+| layer2.block3.x_fresh | scaling_factor | fresh | 16384 | 26 |  | 26 | True |
+| layer2.block3.inv_2n_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer2.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block3.square_rescales[0] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer2.block3.square_rescales[1] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer2.block3.square_rescales[2] | scaling_factor | rescale | 16384 | 27 |  | 27 | True |
+| layer2.block3.square_rescales[3] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer2.block3.square_rescales[4] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer2.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer3.block3.degree | parameter |  |  |  |  | 5 | True |
+| layer3.block3.x_fresh | scaling_factor | fresh | 16384 | 26 |  | 26 | True |
+| layer3.block3.inv_2n_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer3.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block3.square_rescales[0] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer3.block3.square_rescales[1] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer3.block3.square_rescales[2] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer3.block3.square_rescales[3] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer3.block3.square_rescales[4] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer3.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer4.block3.degree | parameter |  |  |  |  | 5 | True |
+| layer4.block3.x_fresh | scaling_factor | fresh | 16384 | 26 |  | 26 | True |
+| layer4.block3.inv_2n_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer4.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block3.square_rescales[0] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer4.block3.square_rescales[1] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer4.block3.square_rescales[2] | scaling_factor | rescale | 16384 | 27 |  | 27 | True |
+| layer4.block3.square_rescales[3] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer4.block3.square_rescales[4] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer4.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer5.block3.degree | parameter |  |  |  |  | 2 | True |
+| layer5.block3.x_fresh | scaling_factor | fresh | 8192 | 26 |  | 26 | True |
+| layer5.block3.inv_2n_encode | scaling_factor | encoding | 8192 | 13 |  | 13 | True |
+| layer5.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block3.square_rescales[0] | scaling_factor | rescale | 8192 | 29 |  | 29 | True |
+| layer5.block3.square_rescales[1] | scaling_factor | rescale | 8192 | 29 |  | 29 | True |
+| layer5.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer6.block3.degree | parameter |  |  |  |  | 5 | True |
+| layer6.block3.x_fresh | scaling_factor | fresh | 16384 | 26 |  | 26 | True |
+| layer6.block3.inv_2n_encode | scaling_factor | encoding | 16384 | 15 |  | 15 | True |
+| layer6.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block3.square_rescales[0] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer6.block3.square_rescales[1] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer6.block3.square_rescales[2] | scaling_factor | rescale | 16384 | 27 |  | 27 | True |
+| layer6.block3.square_rescales[3] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer6.block3.square_rescales[4] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer6.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer7.block3.degree | parameter |  |  |  |  | 2 | True |
+| layer7.block3.x_fresh | scaling_factor | fresh | 8192 | 26 |  | 26 | True |
+| layer7.block3.inv_2n_encode | scaling_factor | encoding | 8192 | 13 |  | 13 | True |
+| layer7.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block3.square_rescales[0] | scaling_factor | rescale | 8192 | 29 |  | 29 | True |
+| layer7.block3.square_rescales[1] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer7.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer8.block3.degree | parameter |  |  |  |  | 5 | True |
+| layer8.block3.x_fresh | scaling_factor | fresh | 16384 | 26 |  | 26 | True |
+| layer8.block3.inv_2n_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer8.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block3.square_rescales[0] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer8.block3.square_rescales[1] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer8.block3.square_rescales[2] | scaling_factor | rescale | 16384 | 27 |  | 27 | True |
+| layer8.block3.square_rescales[3] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer8.block3.square_rescales[4] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer8.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer9.block3.degree | parameter |  |  |  |  | 5 | True |
+| layer9.block3.x_fresh | scaling_factor | fresh | 16384 | 26 |  | 26 | True |
+| layer9.block3.inv_2n_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer9.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block3.square_rescales[0] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer9.block3.square_rescales[1] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer9.block3.square_rescales[2] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer9.block3.square_rescales[3] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer9.block3.square_rescales[4] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer9.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer10.block3.degree | parameter |  |  |  |  | 6 | True |
+| layer10.block3.x_fresh | scaling_factor | fresh | 16384 | 26 |  | 26 | True |
+| layer10.block3.inv_2n_encode | scaling_factor | encoding | 16384 | 13 |  | 13 | True |
+| layer10.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block3.square_rescales[0] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer10.block3.square_rescales[1] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer10.block3.square_rescales[2] | scaling_factor | rescale | 16384 | 27 |  | 27 | True |
+| layer10.block3.square_rescales[3] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer10.block3.square_rescales[4] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer10.block3.square_rescales[5] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer10.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer11.block3.degree | parameter |  |  |  |  | 2 | True |
+| layer11.block3.x_fresh | scaling_factor | fresh | 8192 | 26 |  | 26 | True |
+| layer11.block3.inv_2n_encode | scaling_factor | encoding | 8192 | 13 |  | 13 | True |
+| layer11.block3.x_inv_2n_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block3.square_rescales[0] | scaling_factor | rescale | 8192 | 29 |  | 29 | True |
+| layer11.block3.square_rescales[1] | scaling_factor | rescale | 8192 | 29 |  | 29 | True |
+| layer11.block3.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer0.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer0.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer0.block4.v_fresh | scaling_factor | fresh | 16384 | 25 |  | 25 | True |
+| layer0.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer0.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer0.block4.wo_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer0.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer0.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer0.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer0.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer0.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer0.block4.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer1.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer1.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer1.block4.v_fresh | scaling_factor | fresh | 16384 | 23 |  | 23 | True |
+| layer1.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer1.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 12 |  | 12 | True |
+| layer1.block4.wo_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer1.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer1.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer1.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer1.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer1.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer1.block4.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer2.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer2.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer2.block4.v_fresh | scaling_factor | fresh | 16384 | 23 |  | 23 | True |
+| layer2.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer2.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 12 |  | 12 | True |
+| layer2.block4.wo_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer2.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer2.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer2.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer2.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer2.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer2.block4.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer3.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer3.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer3.block4.v_fresh | scaling_factor | fresh | 16384 | 23 |  | 23 | True |
+| layer3.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer3.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 12 |  | 12 | True |
+| layer3.block4.wo_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer3.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer3.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer3.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer3.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer3.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer3.block4.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer4.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer4.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer4.block4.v_fresh | scaling_factor | fresh | 16384 | 23 |  | 23 | True |
+| layer4.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer4.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 12 |  | 12 | True |
+| layer4.block4.wo_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer4.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer4.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer4.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer4.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer4.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer4.block4.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer5.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer5.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer5.block4.v_fresh | scaling_factor | fresh | 16384 | 23 |  | 23 | True |
+| layer5.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer5.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 12 |  | 12 | True |
+| layer5.block4.wo_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer5.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer5.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer5.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer5.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer5.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer5.block4.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer6.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer6.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer6.block4.v_fresh | scaling_factor | fresh | 16384 | 23 |  | 23 | True |
+| layer6.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer6.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 12 |  | 12 | True |
+| layer6.block4.wo_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer6.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer6.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer6.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer6.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer6.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer6.block4.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer7.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer7.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer7.block4.v_fresh | scaling_factor | fresh | 16384 | 23 |  | 23 | True |
+| layer7.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer7.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 12 |  | 12 | True |
+| layer7.block4.wo_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer7.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer7.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer7.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer7.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer7.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer7.block4.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer8.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer8.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer8.block4.v_fresh | scaling_factor | fresh | 16384 | 23 |  | 23 | True |
+| layer8.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer8.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 12 |  | 12 | True |
+| layer8.block4.wo_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer8.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer8.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer8.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer8.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer8.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer8.block4.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer9.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer9.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer9.block4.v_fresh | scaling_factor | fresh | 16384 | 23 |  | 23 | True |
+| layer9.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer9.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 12 |  | 12 | True |
+| layer9.block4.wo_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer9.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer9.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer9.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer9.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer9.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer9.block4.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer10.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer10.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer10.block4.v_fresh | scaling_factor | fresh | 16384 | 23 |  | 23 | True |
+| layer10.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer10.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 12 |  | 12 | True |
+| layer10.block4.wo_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer10.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer10.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer10.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer10.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer10.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer10.block4.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer11.block4.softmax_out_fresh | scaling_factor | fresh | 16384 | 33 |  | 33 | True |
+| layer11.block4.softmax_out_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer11.block4.v_fresh | scaling_factor | fresh | 16384 | 25 |  | 25 | True |
+| layer11.block4.v_mask_encode | scaling_factor | encoding | 16384 | 14 |  | 14 | True |
+| layer11.block4.softmax_v_mask_encode | scaling_factor | encoding | 16384 | 12 |  | 12 | True |
+| layer11.block4.wo_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer11.block4.ln_mean_inv_d_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer11.block4.ln_var_inv_d_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer11.block4.softmax_out_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block4.v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block4.softmax_v_matmul_rescale | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer11.block4.softmax_v_mask_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block4.wo_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block4.ln_mean_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer11.block4.ln_square_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block4.ln_var_result_rescale | scaling_factor | rescale | 16384 | 28 |  | 28 | True |
+| layer11.block4.output_truncation_k | truncation |  |  |  | 12 | 12 | True |
+| layer0.block5.inv_std_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer0.block5.x_centered_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer0.block5.gamma_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer0.block5.wffn1_encode | scaling_factor | encoding | 8192 | 22 |  | 22 | True |
+| layer0.block5.gelu_degree | parameter |  |  |  |  | 1 | True |
+| layer0.block5.gelu_coeff_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer0.block5.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block5.gamma_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer0.block5.wffn1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer0.block5.gelu_power_rescales | scaling_factor_tuple |  |  |  |  | [] | False |
+| layer0.block5.gelu_coeff_mul_rescales[0] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer0.block5.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer1.block5.inv_std_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer1.block5.x_centered_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer1.block5.gamma_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer1.block5.wffn1_encode | scaling_factor | encoding | 8192 | 22 |  | 22 | True |
+| layer1.block5.gelu_degree | parameter |  |  |  |  | 1 | True |
+| layer1.block5.gelu_coeff_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer1.block5.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block5.gamma_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer1.block5.wffn1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer1.block5.gelu_power_rescales | scaling_factor_tuple |  |  |  |  | [] | False |
+| layer1.block5.gelu_coeff_mul_rescales[0] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer1.block5.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer2.block5.inv_std_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer2.block5.x_centered_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer2.block5.gamma_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer2.block5.wffn1_encode | scaling_factor | encoding | 8192 | 22 |  | 22 | True |
+| layer2.block5.gelu_degree | parameter |  |  |  |  | 1 | True |
+| layer2.block5.gelu_coeff_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer2.block5.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block5.gamma_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer2.block5.wffn1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer2.block5.gelu_power_rescales | scaling_factor_tuple |  |  |  |  | [] | False |
+| layer2.block5.gelu_coeff_mul_rescales[0] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer2.block5.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer3.block5.inv_std_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer3.block5.x_centered_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer3.block5.gamma_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer3.block5.wffn1_encode | scaling_factor | encoding | 8192 | 22 |  | 22 | True |
+| layer3.block5.gelu_degree | parameter |  |  |  |  | 1 | True |
+| layer3.block5.gelu_coeff_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer3.block5.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block5.gamma_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer3.block5.wffn1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer3.block5.gelu_power_rescales | scaling_factor_tuple |  |  |  |  | [] | False |
+| layer3.block5.gelu_coeff_mul_rescales[0] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer3.block5.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer4.block5.inv_std_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer4.block5.x_centered_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer4.block5.gamma_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer4.block5.wffn1_encode | scaling_factor | encoding | 8192 | 22 |  | 22 | True |
+| layer4.block5.gelu_degree | parameter |  |  |  |  | 1 | True |
+| layer4.block5.gelu_coeff_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer4.block5.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block5.gamma_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer4.block5.wffn1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer4.block5.gelu_power_rescales | scaling_factor_tuple |  |  |  |  | [] | False |
+| layer4.block5.gelu_coeff_mul_rescales[0] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer4.block5.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer5.block5.inv_std_fresh | scaling_factor | fresh | 16384 | 31 |  | 31 | True |
+| layer5.block5.x_centered_fresh | scaling_factor | fresh | 16384 | 31 |  | 31 | True |
+| layer5.block5.gamma_encode | scaling_factor | encoding | 16384 | 20 |  | 20 | True |
+| layer5.block5.wffn1_encode | scaling_factor | encoding | 16384 | 22 |  | 22 | True |
+| layer5.block5.gelu_degree | parameter |  |  |  |  | 4 | True |
+| layer5.block5.gelu_coeff_encode | scaling_factor | encoding | 16384 | 18 |  | 18 | True |
+| layer5.block5.normalize_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer5.block5.gamma_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer5.block5.wffn1_result_rescale | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer5.block5.gelu_power_rescales[0] | scaling_factor | rescale | 16384 | 29 |  | 29 | True |
+| layer5.block5.gelu_power_rescales[1] | scaling_factor |  |  |  |  |  | False |
+| layer5.block5.gelu_power_rescales[2] | scaling_factor |  |  |  |  |  | False |
+| layer5.block5.gelu_coeff_mul_rescales[0] | scaling_factor |  |  |  |  |  | False |
+| layer5.block5.gelu_coeff_mul_rescales[1] | scaling_factor |  |  |  |  |  | False |
+| layer5.block5.gelu_coeff_mul_rescales[2] | scaling_factor |  |  |  |  |  | False |
+| layer5.block5.gelu_coeff_mul_rescales[3] | scaling_factor | rescale | 16384 | 31 |  | 31 | True |
+| layer5.block5.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer6.block5.inv_std_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer6.block5.x_centered_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer6.block5.gamma_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer6.block5.wffn1_encode | scaling_factor | encoding | 8192 | 22 |  | 22 | True |
+| layer6.block5.gelu_degree | parameter |  |  |  |  | 1 | True |
+| layer6.block5.gelu_coeff_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer6.block5.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block5.gamma_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer6.block5.wffn1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer6.block5.gelu_power_rescales | scaling_factor_tuple |  |  |  |  | [] | False |
+| layer6.block5.gelu_coeff_mul_rescales[0] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer6.block5.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer7.block5.inv_std_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer7.block5.x_centered_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer7.block5.gamma_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer7.block5.wffn1_encode | scaling_factor | encoding | 8192 | 22 |  | 22 | True |
+| layer7.block5.gelu_degree | parameter |  |  |  |  | 1 | True |
+| layer7.block5.gelu_coeff_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer7.block5.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block5.gamma_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer7.block5.wffn1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer7.block5.gelu_power_rescales | scaling_factor_tuple |  |  |  |  | [] | False |
+| layer7.block5.gelu_coeff_mul_rescales[0] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer7.block5.output_truncation_k | truncation |  |  |  | 13 | 13 | True |
+| layer8.block5.inv_std_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer8.block5.x_centered_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer8.block5.gamma_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer8.block5.wffn1_encode | scaling_factor | encoding | 8192 | 22 |  | 22 | True |
+| layer8.block5.gelu_degree | parameter |  |  |  |  | 1 | True |
+| layer8.block5.gelu_coeff_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer8.block5.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block5.gamma_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer8.block5.wffn1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer8.block5.gelu_power_rescales | scaling_factor_tuple |  |  |  |  | [] | False |
+| layer8.block5.gelu_coeff_mul_rescales[0] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer8.block5.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer9.block5.inv_std_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer9.block5.x_centered_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer9.block5.gamma_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer9.block5.wffn1_encode | scaling_factor | encoding | 8192 | 22 |  | 22 | True |
+| layer9.block5.gelu_degree | parameter |  |  |  |  | 1 | True |
+| layer9.block5.gelu_coeff_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer9.block5.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block5.gamma_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer9.block5.wffn1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer9.block5.gelu_power_rescales | scaling_factor_tuple |  |  |  |  | [] | False |
+| layer9.block5.gelu_coeff_mul_rescales[0] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer9.block5.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer10.block5.inv_std_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer10.block5.x_centered_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer10.block5.gamma_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer10.block5.wffn1_encode | scaling_factor | encoding | 8192 | 22 |  | 22 | True |
+| layer10.block5.gelu_degree | parameter |  |  |  |  | 1 | True |
+| layer10.block5.gelu_coeff_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer10.block5.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block5.gamma_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer10.block5.wffn1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer10.block5.gelu_power_rescales | scaling_factor_tuple |  |  |  |  | [] | False |
+| layer10.block5.gelu_coeff_mul_rescales[0] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer10.block5.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+| layer11.block5.inv_std_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer11.block5.x_centered_fresh | scaling_factor | fresh | 8192 | 29 |  | 29 | True |
+| layer11.block5.gamma_encode | scaling_factor | encoding | 8192 | 20 |  | 20 | True |
+| layer11.block5.wffn1_encode | scaling_factor | encoding | 8192 | 22 |  | 22 | True |
+| layer11.block5.gelu_degree | parameter |  |  |  |  | 1 | True |
+| layer11.block5.gelu_coeff_encode | scaling_factor | encoding | 8192 | 18 |  | 18 | True |
+| layer11.block5.normalize_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block5.gamma_result_rescale | scaling_factor | rescale | 8192 | 30 |  | 30 | True |
+| layer11.block5.wffn1_result_rescale | scaling_factor |  |  |  |  |  | False |
+| layer11.block5.gelu_power_rescales | scaling_factor_tuple |  |  |  |  | [] | False |
+| layer11.block5.gelu_coeff_mul_rescales[0] | scaling_factor | rescale | 8192 | 31 |  | 31 | True |
+| layer11.block5.output_truncation_k | truncation |  |  |  | 11 | 11 | True |
+
