@@ -2359,6 +2359,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_eval_interval=None,
                   blb_v3_save_interval=None,
                   blb_v3_calibrate_baseline_samples=None,
+                  blb_v3_rescale_invoker_kind='in_process',
                   blb_v3_inproc_rescale_optimizer_root=None,
                   blb_v3_warmstart_anchor_episodes=None,
                   blb_v3_warmstart_neighbor_ramp_episodes=None,
@@ -2811,6 +2812,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         # ---------- Stage-2 RL variant 路由（新版 BLB v3 / 旧版 v2 二选一） ----------
         self.stage2_rl_variant = self._coerce_stage2_rl_variant(stage2_rl_variant)
         # BLB v3 training always uses the real in-process Rescale_optimizer path.
+        self.blb_v3_rescale_invoker_kind = str(
+            blb_v3_rescale_invoker_kind or "in_process"
+        ).lower().replace("-", "_")
         self.blb_v3_inproc_rescale_optimizer_root = (
             str(blb_v3_inproc_rescale_optimizer_root)
             if blb_v3_inproc_rescale_optimizer_root not in (None, "") else None

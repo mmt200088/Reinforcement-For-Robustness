@@ -595,6 +595,7 @@ def train(
         blb_v3_eval_interval: int = None,
         blb_v3_save_interval: int = None,
         blb_v3_calibrate_baseline_samples: int = None,
+        blb_v3_rescale_invoker_kind: str = "in_process",
         blb_v3_inproc_rescale_optimizer_root: str = "",
         blb_v3_warmstart_anchor_episodes: int = None,
         blb_v3_warmstart_neighbor_ramp_episodes: int = None,
@@ -770,6 +771,7 @@ def train(
         f"resume_from_checkpoint: {resume_from_checkpoint}\n"
         f"resume_run_dir: {resume_run_dir}\n"
         f"stage2_rl_variant: {stage2_rl_variant}\n"
+        f"blb_v3_rescale_invoker_kind: {blb_v3_rescale_invoker_kind}\n"
         f"blb_v3_inproc_rescale_optimizer_root: {blb_v3_inproc_rescale_optimizer_root}\n"
         f"blb_v3_warmstart_anchor_episodes: {blb_v3_warmstart_anchor_episodes}\n"
         f"blb_v3_warmstart_neighbor_ramp_episodes: {blb_v3_warmstart_neighbor_ramp_episodes}\n"
@@ -1181,6 +1183,7 @@ def train(
             stage2_k_trials=stage2_k_trials,
             stage2_probe_size=stage2_probe_size,
             stage2_rl_variant=stage2_rl_variant,
+            blb_v3_rescale_invoker_kind=blb_v3_rescale_invoker_kind,
             blb_v3_inproc_rescale_optimizer_root=(
                 blb_v3_inproc_rescale_optimizer_root
                 if blb_v3_inproc_rescale_optimizer_root not in (None, "") else None
