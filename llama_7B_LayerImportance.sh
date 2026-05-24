@@ -73,6 +73,7 @@ GA / Greedy：
   --stage2-k-trials INT                Stage-2 稳定性评测噪声试验次数 K（默认 5；每次评测在同一份探针上跑 K 个独立噪声种子）
   --stage2-probe-size INT              Stage-2 稳定性评测探针子集大小（默认 256；用分层采样从验证集中抽取 K 次 trial 共用的固定子集）
   --blb-v3-reward-devices STR          Stage-2 RL 奖励探针并行 GPU 列表（默认空 = 单卡；如 "0,1" → 把 K 次 trial 在两张卡上并行执行）
+  --stage1-rl-devices STR              Stage-1 RL 数据并行采样 GPU 列表（默认空 = 单卡；如 "0,1,2,3" → 4 张卡各采集 PPO_UPDATE_INTERVAL/4 个完整 episode 后再 PPO 更新）
 
 持久化与续训练（rl / ga / greedy 可用）：
   --fresh-start                        从头开始训练（首次运行必须指定）
@@ -483,6 +484,7 @@ STAGE2_RL_VARIANT="blb_v3"; S_STAGE2_RL_VARIANT="false"
 BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT="Rescale_optimizer"
 BLB_V3_SEED=""; S_BLB_V3_SEED="false"
 BLB_V3_REWARD_DEVICES=""; S_BLB_V3_REWARD_DEVICES="false"
+STAGE1_RL_DEVICES=""; S_STAGE1_RL_DEVICES="false"
 RUN_TAG=""; S_RUN_TAG="false"
 BLB_V3_ROLLOUT_SIZE=""; S_BLB_V3_ROLLOUT_SIZE="false"
 BLB_V3_EVAL_INTERVAL=""; S_BLB_V3_EVAL_INTERVAL="false"
@@ -672,6 +674,7 @@ while [ "$#" -gt 0 ]; do
     --stage2-rollout-size|--blb-v3-rollout-size) needv "$@"; BLB_V3_ROLLOUT_SIZE="$2"; S_BLB_V3_ROLLOUT_SIZE="true"; shift 2 ;;
     --blb-v3-seed) needv "$@"; BLB_V3_SEED="$2"; S_BLB_V3_SEED="true"; shift 2 ;;
     --blb-v3-reward-devices) needv "$@"; BLB_V3_REWARD_DEVICES="$2"; S_BLB_V3_REWARD_DEVICES="true"; shift 2 ;;
+    --stage1-rl-devices) needv "$@"; STAGE1_RL_DEVICES="$2"; S_STAGE1_RL_DEVICES="true"; shift 2 ;;
     --run-tag) needv "$@"; RUN_TAG="$2"; S_RUN_TAG="true"; shift 2 ;;
     --stage2-save-interval|--blb-v3-save-interval) needv "$@"; BLB_V3_SAVE_INTERVAL="$2"; S_BLB_V3_SAVE_INTERVAL="true"; shift 2 ;;
     --stage2-eval-interval|--blb-v3-eval-interval) needv "$@"; BLB_V3_EVAL_INTERVAL="$2"; S_BLB_V3_EVAL_INTERVAL="true"; shift 2 ;;
@@ -1495,6 +1498,10 @@ else
     # Two-GPU reward probe parallelism (--blb-v3-reward-devices "0,1")
     if [ -n "$BLB_V3_REWARD_DEVICES" ]; then
       CMD+=(--blb_v3_reward_devices "$BLB_V3_REWARD_DEVICES")
+    fi
+    # Stage-1 RL data-parallel rollout (--stage1-rl-devices "0,1,2,3")
+    if [ -n "$STAGE1_RL_DEVICES" ]; then
+      CMD+=(--stage1_rl_devices "$STAGE1_RL_DEVICES")
     fi
     [ -n "$BLB_V3_EVAL_INTERVAL" ] && CMD+=(--blb_v3_eval_interval "$BLB_V3_EVAL_INTERVAL")
     [ -n "$BLB_V3_SAVE_INTERVAL" ] && CMD+=(--blb_v3_save_interval "$BLB_V3_SAVE_INTERVAL")

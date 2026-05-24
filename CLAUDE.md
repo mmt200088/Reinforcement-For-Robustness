@@ -368,6 +368,76 @@ proactively patch `.py`, launcher, config, or test source files on the server.
 If a server diagnostic discovers a required source fix, document it for the
 local code-editing agent instead of making the canonical change on the server.
 
+### Stage-1 RL data-parallel rollout (2026-05-24)
+
+The Stage-1 RL search (GTrXL PPO over GELU / Softmax polynomial degrees per
+layer) has its own multi-GPU path that mirrors the Stage-2 ProbeRunner pattern
+but parallelizes at a different granularity. Stage-2 parallelizes the K reward
+trials of a single action across GPUs; Stage-1 parallelizes whole episodes.
+
+User-facing config:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 bash llama_7B_LayerImportance.sh run rl \
+  --preset bert-base-mrpc-stage1-rl \
+  --stage1-rl-devices 0,1,2,3 \
+  --fresh
+```
+
+Implementation facts:
+
+- `--stage1-rl-devices` is empty by default → existing single-GPU per-episode
+  loop runs unchanged. With `"0,1,2,3"`, `Stage1ParallelRunner` runs 4 worker
+  threads that each collect `PPO_UPDATE_INTERVAL / num_workers` complete
+  episodes per PPO update window (default 120 / 4 = 30 episodes per worker).
+- Worker 0 reuses the evaluator's primary BERT model (no extra GPU
+  allocation). Workers 1..N-1 deepcopy the BERT model + ReversibleLayerHandler
+  onto their device. Each worker owns its own `TransformerOptEnv` instance so
+  episode-local state (current_layer, gelu_config, prev_episode_metrics) never
+  collides across workers.
+- The GTrXL policy network stays centralized on `cuda:0`. Worker threads
+  transfer per-step state tensors to `cuda:0` for action sampling under a
+  shared lock; lock acquire/release is nanosecond-scale relative to the BERT
+  forward at episode end, so this is the right design. The Categorical sample
+  RNG is seeded per (worker, window, step) under the same lock for
+  reproducibility.
+- The BERT forward triggered by `env.step` at the terminal step routes via the
+  worker's `_stage1_evaluate_on_model(model=replica, handler=replica_handler,
+  device=worker.device, ...)` helper — that is where the parallelism actually
+  wins. The helper is a stateless variant of `stage1_evaluate` that inlines
+  GELU/Softmax install + optional max-SF noise install + cleanup against an
+  explicit (model, handler, device) triple; it skips `self._eval_cache` and
+  `self.current_*_scaling_factors` writes since those are evaluator-level
+  state that would race under concurrent workers.
+- Code layout: `stage1_rl/` package (mirrors `blb_stage2_rl/`) with
+  `parallel_runner.py` (worker + runner + factory + seed helpers +
+  diagnostics) and `__init__.py` exporting the public symbols. Helper methods
+  on `LayerImportanceEvaluator`: `_stage1_collect_episode_in_worker(...)`
+  (per-episode rollout) and `_build_stage1_parallel_runner(...)` (factory
+  called once before the main Stage-1 loop).
+- The central Stage-1 loop in `on_evaluate(...)` branches at the start of
+  each iteration: if the runner is set, refill a stash via
+  `runner.run_window(...)` when empty, pop one rollout per iteration, replay
+  it into the central `RecurrentRolloutBuffer`, and mirror final env state
+  onto the primary env so the existing post-body bookkeeping and PPO update
+  sections run unchanged. Single-GPU path stays bit-for-bit unchanged when
+  `--stage1-rl-devices` is empty.
+- Seed derivation follows Stage-2: `worker_seed = base XOR (worker_idx * P)
+  XOR (window_idx * (P+1))`, `episode_seed = worker_seed XOR (ep_idx *
+  (P+2))` where `P = 2654435761` (Knuth's multiplicative-hash constant). Same
+  base seed reproduces the same rollout sequence per worker per window.
+
+Implementation constraints to preserve (these mirror Stage-2's):
+
+- Preserve one PPO learner, one GTrXL policy, one persistent run directory,
+  one rollout buffer.
+- Do not solve this by running four separate launcher processes; that tests
+  different seeds and does not accelerate a single search.
+- Each worker must explicitly own its model replica + handler on its device;
+  `CUDA_VISIBLE_DEVICES=0,1,2,3` alone is not enough.
+- Multi-GPU is opt-in via `--stage1-rl-devices`. When set with fewer than 2
+  devices, the runner is not built and single-GPU code runs unchanged.
+
 ## Common commands
 
 **All training / evaluation goes through one launcher** (`bash llama_7B_LayerImportance.sh ...`); do not call the underlying `rl_tune*.py` directly. Subcommands and presets:
@@ -391,6 +461,15 @@ bash llama_7B_LayerImportance.sh run rl --preset bert-base-rte-stage1-rl  --fres
 bash llama_7B_LayerImportance.sh run rl --preset bert-large-mrpc-stage1-rl --fresh
 bash llama_7B_LayerImportance.sh run rl --preset bert-large-sst2-stage1-rl --fresh
 bash llama_7B_LayerImportance.sh run rl --preset bert-large-rte-stage1-rl  --fresh
+
+# Stage-1 RL 4-GPU data-parallel rollout (server only; --stage1-rl-devices empty
+# = single-GPU default). With 4 cards, each PPO_UPDATE_INTERVAL (120) window is
+# split as 4 workers x 30 episodes; each worker runs full episodes (12/24 policy
+# steps + 1 BERT forward) on its own GPU + deepcopy'd model replica; gtrxl_net
+# stays centralized on cuda:0. Mirrors Stage-2's --blb-v3-reward-devices pattern.
+CUDA_VISIBLE_DEVICES=0,1,2,3 bash llama_7B_LayerImportance.sh run rl \
+  --preset bert-base-mrpc-stage1-rl --fresh \
+  --stage1-rl-devices 0,1,2,3
 
 # Final eval — independent module (preferred). Old `llama_7B_LayerImportance.sh eval ...`
 # is now a compatibility shim that delegates to this entrypoint.

@@ -632,6 +632,13 @@ def train(
         # → BLBStage2Env builds a ProbeRunner that fans K trials across these
         # devices. Empty / single device → single-GPU codepath unchanged.
         blb_v3_reward_devices: str = "",
+        # 2026-05-24: Stage-1 RL data-parallel rollout. Comma-separated GPU
+        # ids (e.g. "0,1,2,3") → LayerImportanceEvaluator builds a
+        # Stage1ParallelRunner that splits the PPO_UPDATE_INTERVAL window
+        # across these devices (each worker collects N / num_workers
+        # complete episodes per window). Empty / single device → existing
+        # single-GPU per-episode loop unchanged.
+        stage1_rl_devices: str = "",
         blb_v3_fast_reward_mode_enabled: bool = False,
         blb_v3_online_k_trials: int = 1,
         blb_v3_terminal_eval_batch_size: int = 4,
@@ -1220,6 +1227,7 @@ def train(
             blb_v3_sequential_early_terminate_on_invalid=blb_v3_sequential_early_terminate_on_invalid,
             blb_v3_seed=blb_v3_seed,
             blb_v3_reward_devices=blb_v3_reward_devices,
+            stage1_rl_devices=stage1_rl_devices,
             blb_v3_fast_reward_mode_enabled=blb_v3_fast_reward_mode_enabled,
             blb_v3_online_k_trials=blb_v3_online_k_trials,
             blb_v3_terminal_eval_batch_size=blb_v3_terminal_eval_batch_size,

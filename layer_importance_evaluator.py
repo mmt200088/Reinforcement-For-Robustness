@@ -2322,6 +2322,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage2_rl_episodes_specified=False,
                  stage1_rl_lr=None,
                  stage2_rl_lr=None,
+                 stage1_rl_devices="",
                  device='cuda', data_path='stsb', test_data_mm=None,
                  run_output_dir='',
                  final_eval_config_source='search',
@@ -2965,6 +2966,14 @@ class LayerImportanceEvaluator(TrainerCallback):
         # K trials across the listed devices.
         self.blb_v3_reward_devices = (
             "" if blb_v3_reward_devices is None else str(blb_v3_reward_devices)
+        )
+        # 2026-05-24: Stage-1 RL multi-GPU rollout parallelism.
+        # Empty / single device → existing single-GPU per-episode loop.
+        # ``"0,1,2,3"`` → Stage1ParallelRunner runs 4 workers, each collecting
+        # ``PPO_UPDATE_INTERVAL / num_workers`` complete episodes per PPO
+        # update window. See ``stage1_rl/parallel_runner.py``.
+        self.stage1_rl_devices = (
+            "" if stage1_rl_devices is None else str(stage1_rl_devices)
         )
         self.blb_v3_fast_reward_mode_enabled = self._coerce_bool_flag(
             blb_v3_fast_reward_mode_enabled,
@@ -4132,6 +4141,120 @@ class LayerImportanceEvaluator(TrainerCallback):
             gelu_degrees, softmax_degrees, use_train=use_train, split=split,
         )
 
+    def _stage1_evaluate_on_model(self, *, model, handler, device,
+                                   gelu_degrees, softmax_degrees, split_name):
+        """Stateless variant of ``stage1_evaluate`` for an explicit (model,
+        handler, device) triple. Used by the Stage-1 multi-GPU rollout
+        runner so worker N can evaluate on its replica without touching
+        ``self.model`` / ``self.reversible_handler`` / ``self.device``.
+
+        Differences vs ``stage1_evaluate``:
+          * Skips ``self._eval_cache`` (workers compute independently;
+            sharing cache writes across threads is a race risk and the
+            cache benefits the single-GPU sequential path most).
+          * Does NOT write to ``self.current_*_scaling_factors`` state
+            attributes (race risk under concurrent workers).
+          * GELU/Softmax + (optional) max-SF noise install + cleanup are
+            inlined against the passed ``handler``; this mirrors the same
+            handler API calls ``apply_configuration`` /
+            ``apply_input_noise_configuration`` /
+            ``apply_weight_noise_configuration`` /
+            ``clear_input_noise_configuration`` /
+            ``clear_weight_noise_configuration`` make against
+            ``self.reversible_handler``.
+          * The forward loop reuses ``_run_evaluation`` via its
+            ``model`` / ``device`` overrides.
+
+        Returns the same ``(loss, metric1, metric2, time_ms)`` tuple.
+        """
+        if handler is None or model is None or device is None:
+            raise ValueError("_stage1_evaluate_on_model requires explicit model/handler/device")
+        if split_name is None:
+            raise ValueError("_stage1_evaluate_on_model requires explicit split_name")
+
+        handler_layer_name = "model." + self.layers_attribute
+        # 1) GELU/Softmax install (mirrors apply_configuration body, bound to passed handler).
+        model.eval()
+        gelu_map = {d: [] for d in [0, 1, 2, 4]}
+        for idx, deg in enumerate(gelu_degrees):
+            if deg in gelu_map:
+                gelu_map[deg].append(idx)
+        for d in [0, 1, 2, 4]:
+            if gelu_map[d]:
+                handler.replace_layer_gelu(gelu_map[d], handler_layer_name, degree=d)
+        softmax_map = {d: [] for d in range(2, 7)}
+        for idx, deg in enumerate(softmax_degrees):
+            if deg in softmax_map:
+                softmax_map[deg].append(idx)
+        for d in range(2, 7):
+            if softmax_map[d]:
+                handler.replace_layer_softmax(softmax_map[d], handler_layer_name, degree=d)
+
+        # 2) Optional max-SF attention/weight noise install (mirrors evaluate_model_with_attention_noise body).
+        noise_env_enabled = bool(RL_OPT_FLAGS.get("stage1_use_max_scaling_noise_env", False))
+        sf = self._stage1_max_scaling_noise_arrays() if noise_env_enabled else None
+        if noise_env_enabled:
+            # Input noise (per-layer scaling).
+            in_arr = sf["input_noise_scaling_factors"]
+            in_map = {s: [] for s in INPUT_NOISE_ALLOWED_SCALING_FACTORS}
+            for idx, s in enumerate(in_arr):
+                in_map[int(s)].append(idx)
+            for s in INPUT_NOISE_ALLOWED_SCALING_FACTORS:
+                if in_map[s]:
+                    handler.replace_layer_input_noise(
+                        in_map[s], handler_layer_name,
+                        scaling_factor=s, distribution="fresh",
+                    )
+            # Weight noises (wq, wk, wv, wo, wffn1, wffn2).
+            weight_specs = [
+                ("wq",    sf["wq_noise_scaling_factors"],    "replace_layer_query_noise",            WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+                ("wk",    sf["wk_noise_scaling_factors"],    "replace_layer_key_noise",              WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+                ("wv",    sf["wv_noise_scaling_factors"],    "replace_layer_value_noise",            WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+                ("wo",    sf["wo_noise_scaling_factors"],    "replace_layer_attention_output_noise", WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+                ("wffn1", sf["wffn1_noise_scaling_factors"], "replace_layer_ffn1_noise",             WFFN1_NOISE_ALLOWED_SCALING_FACTORS),
+                ("wffn2", sf["wffn2_noise_scaling_factors"], "replace_layer_ffn2_noise",             WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
+            ]
+            for _noise_name, arr, replace_method_name, allowed in weight_specs:
+                replace_fn = getattr(handler, replace_method_name)
+                w_map = {s: [] for s in allowed}
+                for idx, s in enumerate(arr):
+                    if int(s) in w_map:
+                        w_map[int(s)].append(idx)
+                for s in allowed:
+                    if w_map[s]:
+                        replace_fn(
+                            w_map[s], handler_layer_name,
+                            scaling_factor=s, distribution="fresh",
+                        )
+
+        # 3) Forward via the explicit-model/device variant of _run_evaluation.
+        try:
+            dataloader = self.dataloaders[split_name]
+            return self._run_evaluation(
+                dataloader,
+                use_train=(split_name == "train"),
+                split_name=split_name,
+                model=model,
+                device=device,
+            )
+        finally:
+            # 4) Cleanup noise install (mirrors clear_input/weight_noise_configuration bodies).
+            if noise_env_enabled:
+                restore_specs = [
+                    "restore_layer_query_noise",
+                    "restore_layer_key_noise",
+                    "restore_layer_value_noise",
+                    "restore_layer_attention_output_noise",
+                    "restore_layer_ffn1_noise",
+                    "restore_layer_ffn2_noise",
+                ]
+                for restore_method_name in restore_specs:
+                    restore_fn = getattr(handler, restore_method_name)
+                    restore_fn(list(range(self.total_layers)), handler_layer_name)
+                handler.restore_layer_input_noise(
+                    list(range(self.total_layers)), handler_layer_name,
+                )
+
     def stage1_final_evaluate(self, gelu_degrees, softmax_degrees, use_train=False, split=None):
         """Phase-2.5/Phase-3/4 最终评估的统一入口；按独立 flag 决定是否带最大 sf 噪声环境。"""
         if RL_OPT_FLAGS.get("final_eval_use_max_scaling_noise_env", False):
@@ -4919,8 +5042,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             return True
         return False
 
-    def _run_evaluation(self, dataloader, use_train=False, split_name=None):
-        """在当前模型上运行评估循环（不修改配置），用于无近似对照组等。
+    def _run_evaluation(self, dataloader, use_train=False, split_name=None, *,
+                        model=None, device=None):
+        """在指定模型上运行评估循环（不修改配置），用于无近似对照组等。
 
         性能优化（不改变任何数值结果）:
           - 每次 forward 前重新确认 model.eval()；model.to(device) 只在首次调用时执行
@@ -4929,12 +5053,23 @@ class LayerImportanceEvaluator(TrainerCallback):
           - 使用 torch.inference_mode() 替代 no_grad() (禁用版本计数, 更快)
           - 在 GPU 传输前提取 labels, 避免 GPU→CPU 往返
           - non_blocking=True + pin_memory 实现异步 CPU→GPU DMA
+
+        ``model`` / ``device`` overrides let the Stage-1 multi-GPU rollout
+        runner invoke the same forward loop against a per-worker replica
+        without touching ``self.model`` / ``self.device``. Default
+        single-GPU behavior is preserved when both are ``None``.
         """
+        # Resolve which model/device to run against. When the caller doesn't
+        # pass overrides we use the primary state — backward-compatible.
+        _model = self.model if model is None else model
+        _device = self.device if device is None else device
         # Re-assert eval mode on every call; configuration/noise helpers may
         # replace modules between candidate evaluations.
-        self.model.eval()
-        if not self._eval_infra_ready:
-            self.model.to(self.device)
+        _model.eval()
+        # Only the primary path tracks ``_eval_infra_ready`` (workers move
+        # their replica once at construction time).
+        if _model is self.model and not self._eval_infra_ready:
+            _model.to(_device)
             self._eval_infra_ready = True
         total_loss = 0.0
         all_preds, all_labels = [], []
@@ -4951,8 +5086,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 labels = self._normalize_labels_for_metrics(labels_np_raw)
 
                 # 异步 CPU→GPU 传输; 与 pin_memory 配合使用提升数据传输效率
-                batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
-                outputs = self.model(**batch)
+                batch = {k: v.to(_device, non_blocking=True) for k, v in batch.items()}
+                outputs = _model(**batch)
                 if outputs.loss is not None: total_loss += outputs.loss.item()
                 logits = self._normalize_logits_for_metrics(
                     outputs.logits.detach().cpu().numpy(),
@@ -5263,6 +5398,214 @@ class LayerImportanceEvaluator(TrainerCallback):
                     kl_early_stop = True
 
         return last_policy_loss, last_value_loss, last_entropy
+
+    # ------------------------------------------------------------------
+    # Stage-1 multi-GPU rollout (parallel data collection)
+    # ------------------------------------------------------------------
+    # See ``stage1_rl/parallel_runner.py`` for the runner / worker design.
+    # These helpers live on the evaluator because the per-episode body needs
+    # access to ``self._write_step_info`` / ``self.total_layers`` / etc.
+
+    def _stage1_collect_episode_in_worker(self, *, worker, gtrxl_net, gtrxl_lock,
+                                          primary_device, episode_seed):
+        """Run one Stage-1 episode using ``worker``'s BERT replica.
+
+        Thread-safe variant of the per-episode body in ``on_evaluate``'s main
+        loop. The GTrXL forward happens on ``primary_device`` under
+        ``gtrxl_lock`` (so workers serialize on policy access; the lock is
+        nanosecond-scale relative to the BERT forward at episode end). The
+        BERT forward triggered by ``env.step`` at the terminal step runs on
+        ``worker.device`` (different GPU per worker) — that's where the
+        parallelism actually wins.
+
+        Returns an ``EpisodeRollout`` carrying per-step transitions plus
+        per-episode summary metrics for the central bookkeeping.
+        """
+        from stage1_rl.parallel_runner import EpisodeRollout
+
+        env = worker.env
+        state = env.reset()
+
+        # Per-episode action-history accumulators live on the primary device
+        # (the same place gtrxl_net lives). We move them once at episode start
+        # and reuse the buffers throughout.
+        prev_g = torch.zeros((1, 1), dtype=torch.long).to(primary_device)
+        prev_s = torch.zeros((1, 1), dtype=torch.long).to(primary_device)
+
+        seq_cont_feats: List[torch.Tensor] = []
+        seq_layer_indices: List[torch.Tensor] = []
+        seq_prev_g: List[torch.Tensor] = []
+        seq_prev_s: List[torch.Tensor] = []
+        seq_gelu_masks: List[torch.Tensor] = []
+
+        rollout = EpisodeRollout(
+            cont_features=[], layer_indices=[], prev_g_actions=[], prev_s_actions=[],
+            actions_g=[], actions_s=[], logprobs=[], rewards=[], values=[],
+            dones=[], gelu_masks=[],
+            episode_reward=0.0, episode_loss=0.0, episode_metric1=0.0,
+            episode_metric2=0.0, episode_cost=0.0,
+            gelu_config=[], softmax_config=[], final_config_metrics=None,
+            step_infos=[],
+        )
+
+        episode_reward = 0.0
+        for step in range(self.total_layers):
+            N = self.total_layers
+            layer_idx = int(np.argmax(state[0:N]))
+            _loss_budget_idx = 3 * N + 5
+            _m1_budget_idx = 3 * N + 6
+            _m2_budget_idx = 3 * N + 7
+            cont_feat_np = np.array([
+                state[N + 0],
+                state[N + 3],
+                state[N + 4],
+                state[_loss_budget_idx] if len(state) > _loss_budget_idx else 0.0,
+                state[_m1_budget_idx] if len(state) > _m1_budget_idx else 0.0,
+                state[_m2_budget_idx] if len(state) > _m2_budget_idx else 0.0,
+            ], dtype=np.float32)
+
+            cont_feat_t = torch.tensor(cont_feat_np, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(primary_device)
+            layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long).to(primary_device)
+            gelu_mask_np = env.get_gelu_action_mask(layer_idx)
+            gelu_mask_t = torch.tensor(gelu_mask_np, dtype=torch.bool).unsqueeze(0).unsqueeze(0).to(primary_device)
+
+            seq_cont_feats.append(cont_feat_t)
+            seq_layer_indices.append(layer_idx_t)
+            seq_prev_g.append(prev_g)
+            seq_prev_s.append(prev_s)
+            seq_gelu_masks.append(gelu_mask_t)
+
+            full_cont = torch.cat(seq_cont_feats, dim=1)
+            full_layer = torch.cat(seq_layer_indices, dim=1)
+            full_prev_g = torch.cat(seq_prev_g, dim=1)
+            full_prev_s = torch.cat(seq_prev_s, dim=1)
+            full_gelu_mask = torch.cat(seq_gelu_masks, dim=1)
+
+            # Lock-guarded gtrxl_net access. Categorical.sample() uses the
+            # global torch RNG, so seed it under the same lock to keep per-
+            # worker streams independent and reproducible.
+            with gtrxl_lock:
+                torch.manual_seed(int(episode_seed) + step)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed(int(episode_seed) + step)
+                with torch.no_grad():
+                    gelu_action, softmax_action, logprob, value, gelu_probs, softmax_probs = \
+                        gtrxl_net.get_action_and_logprob(
+                            full_cont, full_layer, full_prev_g, full_prev_s,
+                            return_probs=True, gelu_mask=full_gelu_mask,
+                        )
+
+            # env.step at the terminal step routes into the worker's eval
+            # wrapper, which calls self._stage1_evaluate_on_model(...) on
+            # the worker's BERT replica + device. That is the expensive
+            # per-episode work that this entire runner exists to parallelize.
+            next_state, reward, done, info = env.step(gelu_action.item(), softmax_action.item())
+
+            rollout.cont_features.append(torch.tensor(cont_feat_np, dtype=torch.float32))
+            rollout.layer_indices.append(layer_idx)
+            rollout.prev_g_actions.append(int(prev_g.squeeze().item()))
+            rollout.prev_s_actions.append(int(prev_s.squeeze().item()))
+            rollout.actions_g.append(int(gelu_action.item()))
+            rollout.actions_s.append(int(softmax_action.item()))
+            rollout.logprobs.append(logprob.detach().cpu())
+            rollout.rewards.append(float(reward))
+            rollout.values.append(value.detach().cpu())
+            rollout.dones.append(float(done))
+            rollout.gelu_masks.append(gelu_mask_np)
+            rollout.step_infos.append({
+                "episode_id": -1,  # patched by the central loop with the absolute index
+                "layer_index": info["layer_index"],
+                "state_vector": state.tolist(),
+                "curr_gelu_degree": info["curr_gelu_degree"],
+                "curr_softmax_degree": info["curr_softmax_degree"],
+                "gelu_prob_dist": gelu_probs.detach().cpu().numpy().tolist(),
+                "softmax_prob_dist": softmax_probs.detach().cpu().numpy().tolist(),
+                "critic_value": float(value.item()),
+                "accumulated_cost": info["accumulated_cost"],
+                "gelu_config": info["gelu_config"],
+                "softmax_config": info["softmax_config"],
+                "current_lr": None,            # central loop fills in its current schedule values
+                "current_entropy_coef": None,
+            })
+
+            prev_g = gelu_action.reshape(1, 1).to(primary_device)
+            prev_s = softmax_action.reshape(1, 1).to(primary_device)
+
+            episode_reward += reward
+            state = next_state
+
+        rollout.episode_reward = float(episode_reward)
+        rollout.gelu_config = list(env.gelu_config)
+        rollout.softmax_config = list(env.softmax_config)
+        rollout.episode_cost = float(env.accumulated_cost)
+        if env.current_episode_metrics is not None:
+            rollout.episode_loss = float(env.current_episode_metrics["loss"])
+            rollout.episode_metric1 = float(env.current_episode_metrics["metric1"])
+            rollout.episode_metric2 = float(env.current_episode_metrics["metric2"])
+            rollout.final_config_metrics = {
+                "loss": float(env.current_episode_metrics["loss"]),
+                "metric1": float(env.current_episode_metrics["metric1"]),
+                "metric2": float(env.current_episode_metrics["metric2"]),
+                "cost": float(env.current_episode_metrics["cost"]),
+            }
+        return rollout
+
+    def _build_stage1_parallel_runner(self, *, baseline_metrics, base_tot_c,
+                                      constraint_limits, eval_split_name,
+                                      proxy_prev_metrics):
+        """Construct the Stage-1 multi-GPU rollout runner once at training start.
+
+        Returns ``None`` when ``self.stage1_rl_devices`` is empty / has fewer
+        than 2 devices — single-GPU code path stays bit-for-bit unchanged.
+
+        Arguments mirror the per-worker env setup the single-GPU path does
+        inline in ``on_evaluate`` (baseline_metrics, base_tot_c, constraint
+        limits, proxy prev metrics for the differential reward chain).
+        """
+        from stage1_rl.parallel_runner import (
+            build_stage1_parallel_runner,
+            parse_device_ids,
+        )
+
+        device_ids = parse_device_ids(self.stage1_rl_devices)
+        if len(device_ids) < 2:
+            return None
+
+        num_metrics = self.get_num_metrics()
+        total_layers = self.total_layers
+        evaluator_self = self
+
+        def env_factory(model, handler, device, eval_wrapper):
+            env = TransformerOptEnv(
+                total_layers,
+                base_tot_c,
+                baseline_metrics,
+                eval_wrapper,
+                constraint_limits=dict(constraint_limits),
+                num_metrics=num_metrics,
+            )
+            env.prev_episode_metrics = dict(proxy_prev_metrics)
+            return env
+
+        def collect_episode(*, worker, gtrxl_net, gtrxl_lock, primary_device, episode_seed):
+            return evaluator_self._stage1_collect_episode_in_worker(
+                worker=worker,
+                gtrxl_net=gtrxl_net,
+                gtrxl_lock=gtrxl_lock,
+                primary_device=primary_device,
+                episode_seed=episode_seed,
+            )
+
+        return build_stage1_parallel_runner(
+            primary_model=self.model,
+            primary_handler=self.reversible_handler,
+            evaluator=self,
+            env_factory=env_factory,
+            collect_episode_fn=collect_episode,
+            device_ids=device_ids,
+            eval_split_name=eval_split_name,
+            log_fn=self.log,
+        )
 
     def on_evaluate(self, args, state, control, **kwargs):
         self.log("\n" + "="*60)
@@ -5594,7 +5937,44 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "metric2": proxy_base_s,
                 "cost": base_tot_c,
             }
-            
+
+            # ----------------------------------------------------------------
+            # Stage-1 multi-GPU rollout runner (opt-in via --stage1-rl-devices)
+            # ----------------------------------------------------------------
+            # When self.stage1_rl_devices is empty / has fewer than 2 GPUs,
+            # this returns None and the existing single-GPU per-episode loop
+            # runs unchanged. With 4 devices, the runner spawns 4 worker
+            # threads each collecting PPO_UPDATE_INTERVAL/4 episodes per
+            # window (default 120/4 = 30); the central loop pops rollouts
+            # from a per-window stash instead of running the per-step body
+            # inline.
+            _stage1_parallel_runner = self._build_stage1_parallel_runner(
+                baseline_metrics=baseline_metrics,
+                base_tot_c=base_tot_c,
+                constraint_limits={
+                    "loss": float(limit_loss),
+                    "metric1": float(limit_p),
+                    "metric2": float(limit_s),
+                },
+                eval_split_name=(
+                    online_reward_split if USE_VALIDATION_FOR_REWARD else "train"
+                ),
+                proxy_prev_metrics={
+                    "loss": proxy_base_loss,
+                    "metric1": proxy_base_p,
+                    "metric2": proxy_base_s,
+                    "cost": base_tot_c,
+                },
+            )
+            if _stage1_parallel_runner is not None:
+                self.log(
+                    f"  [multi-gpu] Stage-1 rollout enabled: "
+                    f"workers={_stage1_parallel_runner.num_workers} "
+                    f"devices={[str(w.device) for w in _stage1_parallel_runner.workers]} "
+                    f"episodes_per_worker={PPO_UPDATE_INTERVAL // _stage1_parallel_runner.num_workers}"
+                )
+            _stage1_parallel_stash: List[Any] = []  # Filled per PPO update window
+
             buffer = RecurrentRolloutBuffer()  # GTrXL/LSTM 通用的 Episode Buffer
             
             # 记录最优解
@@ -5696,123 +6076,189 @@ class LayerImportanceEvaluator(TrainerCallback):
                 # 动态超参数调度（学习率和熵系数）
                 current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
                 
-                # GTrXL Rollout：环境重置 + SOS标记 + 空token序列
-                state = env.reset()  # (3*N + 8)-dim numpy array, N=self.total_layers
-                prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long).to(self.device)
-                prev_s = torch.tensor([[SOS_TOKEN_SOFTMAX]], dtype=torch.long).to(self.device)
-                
-                # GTrXL：token序列累积器（每步追加，因果掩码自动处理时序依赖）
-                seq_cont_feats = []
-                seq_layer_indices = []
-                seq_prev_g = []
-                seq_prev_s = []
-                seq_gelu_masks = []
-                
-                episode_reward = 0
-                step_infos = []
-                buffer.start_episode()
-                
-                for step in range(self.total_layers):
-                    # 从 (3*N + 8) 维状态中提取输入特征（N = self.total_layers）
-                    # 状态布局（由 TransformerOptEnv._get_state 构造，与 N 严格对齐）：
-                    #   [0     : N     ]  position one-hot
-                    #   [N + 0]           cost_deviation
-                    #   [N + 1]           gelu_norm
-                    #   [N + 2]           softmax_norm
-                    #   [N + 3]           complexity_debt
-                    #   [N + 4]           progress
-                    #   [N+5   : 2N+5]    gelu_history
-                    #   [2N+5  : 3N+5]    softmax_history
-                    #   [3N + 5]          loss_budget
-                    #   [3N + 6]          m1_budget
-                    #   [3N + 7]          m2_budget
-                    N = self.total_layers
-                    layer_idx = int(np.argmax(state[0:N]))
-                    _loss_budget_idx = 3 * N + 5
-                    _m1_budget_idx = 3 * N + 6
-                    _m2_budget_idx = 3 * N + 7
-                    cont_feat_np = np.array([
-                        state[N + 0],  # cost_deviation
-                        state[N + 3],  # complexity_debt
-                        state[N + 4],  # progress
-                        state[_loss_budget_idx] if len(state) > _loss_budget_idx else 0.0,  # loss_budget
-                        state[_m1_budget_idx]   if len(state) > _m1_budget_idx   else 0.0,  # m1_budget
-                        state[_m2_budget_idx]   if len(state) > _m2_budget_idx   else 0.0,  # m2_budget
-                    ], dtype=np.float32)
-                    
-                    cont_feat_t = torch.tensor(cont_feat_np, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device)  # (1,1,6)
-                    layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long).to(self.device)  # (1,1)
-                    
-                    gelu_mask_np = env.get_gelu_action_mask(layer_idx)
-                    gelu_mask_t = torch.tensor(gelu_mask_np, dtype=torch.bool).unsqueeze(0).unsqueeze(0).to(self.device)  # (1,1,4)
-                    
-                    # GTrXL：将当前token追加到序列
-                    seq_cont_feats.append(cont_feat_t)
-                    seq_layer_indices.append(layer_idx_t)
-                    seq_prev_g.append(prev_g)
-                    seq_prev_s.append(prev_s)
-                    seq_gelu_masks.append(gelu_mask_t)
-                    
-                    # 拼接完整序列 (1, step+1, ...)
-                    full_cont = torch.cat(seq_cont_feats, dim=1)
-                    full_layer = torch.cat(seq_layer_indices, dim=1)
-                    full_prev_g = torch.cat(seq_prev_g, dim=1)
-                    full_prev_s = torch.cat(seq_prev_s, dim=1)
-                    full_gelu_mask = torch.cat(seq_gelu_masks, dim=1)
-                    
-                    # GTrXL：因果自注意力推理（无hidden state）
-                    with torch.no_grad():
-                        gelu_action, softmax_action, logprob, value, gelu_probs, softmax_probs = \
-                            gtrxl_net.get_action_and_logprob(
-                                full_cont, full_layer, full_prev_g, full_prev_s,
-                                return_probs=True, gelu_mask=full_gelu_mask
-                            )
-                    
-                    # 执行动作
-                    next_state, reward, done, info = env.step(gelu_action.item(), softmax_action.item())
-                    
-                    # 记录中间结果
-                    step_info = {
-                        'step_global': episode * self.total_layers + step,
-                        'episode_id': episode,
-                        'layer_index': info['layer_index'],
-                        'state_vector': state.tolist(),
-                        'curr_gelu_degree': info['curr_gelu_degree'],
-                        'curr_softmax_degree': info['curr_softmax_degree'],
-                        'gelu_prob_dist': gelu_probs.cpu().numpy().tolist(),
-                        'softmax_prob_dist': softmax_probs.cpu().numpy().tolist(),
-                        'critic_value': value.item(),
-                        'accumulated_cost': info['accumulated_cost'],
-                        'gelu_config': info['gelu_config'],
-                        'softmax_config': info['softmax_config'],
-                        'current_lr': current_lr,
-                        'current_entropy_coef': current_entropy
-                    }
-                    step_infos.append(step_info)
-                    
-                    # 存入RecurrentRolloutBuffer（与LSTM使用相同的Buffer格式）
-                    buffer.add_step(
-                        cont_feat=torch.tensor(cont_feat_np, dtype=torch.float32),
-                        layer_idx=layer_idx,
-                        prev_g=prev_g.squeeze().item(),
-                        prev_s=prev_s.squeeze().item(),
-                        action_g=gelu_action.item(),
-                        action_s=softmax_action.item(),
-                        logprob=logprob.cpu(),
-                        reward=reward,
-                        value=value.cpu(),
-                        done=float(done),
-                        gelu_mask=gelu_mask_np
+                # ----------------------------------------------------------------
+                # Stage-1 multi-GPU rollout pre-fetch (opt-in via --stage1-rl-devices)
+                # ----------------------------------------------------------------
+                # When the runner exists, each PPO update window's episodes are
+                # collected in parallel across the configured GPU devices and
+                # stashed; we just pop one rollout per loop iteration and apply
+                # it to the central buffer + env state so the post-body
+                # bookkeeping and PPO update sections below run unchanged.
+                _handled_via_parallel = False
+                if _stage1_parallel_runner is not None:
+                    if not _stage1_parallel_stash:
+                        _window_idx_for_runner = episode // PPO_UPDATE_INTERVAL
+                        _remaining_total = self.stage1_rl_episodes - episode
+                        _window_size = min(PPO_UPDATE_INTERVAL, _remaining_total)
+                        _eps_per_worker = max(1, _window_size // _stage1_parallel_runner.num_workers)
+                        _rollouts = _stage1_parallel_runner.run_window(
+                            gtrxl_net=gtrxl_net,
+                            episodes_per_worker=_eps_per_worker,
+                            window_idx=_window_idx_for_runner,
+                            base_seed=int(getattr(self, "final_eval_random_seed", 42)),
+                        )
+                        _stage1_parallel_stash.extend(_rollouts)
+                        self.log(
+                            f"  [stage1-rollout] window={_window_idx_for_runner} collected "
+                            f"{len(_rollouts)} episodes across "
+                            f"{_stage1_parallel_runner.num_workers} workers"
+                        )
+                    rollout = _stage1_parallel_stash.pop(0)
+                    # Replay rollout into the central RecurrentRolloutBuffer.
+                    buffer.start_episode()
+                    for _k in range(len(rollout.actions_g)):
+                        buffer.add_step(
+                            cont_feat=rollout.cont_features[_k],
+                            layer_idx=rollout.layer_indices[_k],
+                            prev_g=rollout.prev_g_actions[_k],
+                            prev_s=rollout.prev_s_actions[_k],
+                            action_g=rollout.actions_g[_k],
+                            action_s=rollout.actions_s[_k],
+                            logprob=rollout.logprobs[_k],
+                            reward=rollout.rewards[_k],
+                            value=rollout.values[_k],
+                            done=rollout.dones[_k],
+                            gelu_mask=rollout.gelu_masks[_k],
+                        )
+                    buffer.end_episode()
+                    episode_reward = float(rollout.episode_reward)
+                    step_infos = [dict(_si) for _si in rollout.step_infos]
+                    for _so_idx, _si in enumerate(step_infos):
+                        _si["step_global"] = episode * self.total_layers + _so_idx
+                        _si["episode_id"] = episode
+                        _si["current_lr"] = current_lr
+                        _si["current_entropy_coef"] = current_entropy
+                    # Mirror rollout-final env state onto the primary env so the
+                    # post-body bookkeeping (best tracking, status board, etc.)
+                    # reads consistent values.
+                    env.gelu_config = list(rollout.gelu_config)
+                    env.softmax_config = list(rollout.softmax_config)
+                    env.accumulated_cost = float(rollout.episode_cost)
+                    env.current_episode_metrics = (
+                        dict(rollout.final_config_metrics)
+                        if rollout.final_config_metrics is not None
+                        else None
                     )
-                    
-                    # 更新前一步动作（自回归输入下一步）
-                    prev_g = gelu_action.reshape(1, 1).to(self.device)
-                    prev_s = softmax_action.reshape(1, 1).to(self.device)
-                    
-                    episode_reward += reward
-                    state = next_state
+                    _handled_via_parallel = True
+
+                if not _handled_via_parallel:
+                    # GTrXL Rollout：环境重置 + SOS标记 + 空token序列
+                    state = env.reset()  # (3*N + 8)-dim numpy array, N=self.total_layers
+                    prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long).to(self.device)
+                    prev_s = torch.tensor([[SOS_TOKEN_SOFTMAX]], dtype=torch.long).to(self.device)
                 
-                buffer.end_episode()
+                    # GTrXL：token序列累积器（每步追加，因果掩码自动处理时序依赖）
+                    seq_cont_feats = []
+                    seq_layer_indices = []
+                    seq_prev_g = []
+                    seq_prev_s = []
+                    seq_gelu_masks = []
+                
+                    episode_reward = 0
+                    step_infos = []
+                    buffer.start_episode()
+                
+                    for step in range(self.total_layers):
+                        # 从 (3*N + 8) 维状态中提取输入特征（N = self.total_layers）
+                        # 状态布局（由 TransformerOptEnv._get_state 构造，与 N 严格对齐）：
+                        #   [0     : N     ]  position one-hot
+                        #   [N + 0]           cost_deviation
+                        #   [N + 1]           gelu_norm
+                        #   [N + 2]           softmax_norm
+                        #   [N + 3]           complexity_debt
+                        #   [N + 4]           progress
+                        #   [N+5   : 2N+5]    gelu_history
+                        #   [2N+5  : 3N+5]    softmax_history
+                        #   [3N + 5]          loss_budget
+                        #   [3N + 6]          m1_budget
+                        #   [3N + 7]          m2_budget
+                        N = self.total_layers
+                        layer_idx = int(np.argmax(state[0:N]))
+                        _loss_budget_idx = 3 * N + 5
+                        _m1_budget_idx = 3 * N + 6
+                        _m2_budget_idx = 3 * N + 7
+                        cont_feat_np = np.array([
+                            state[N + 0],  # cost_deviation
+                            state[N + 3],  # complexity_debt
+                            state[N + 4],  # progress
+                            state[_loss_budget_idx] if len(state) > _loss_budget_idx else 0.0,  # loss_budget
+                            state[_m1_budget_idx]   if len(state) > _m1_budget_idx   else 0.0,  # m1_budget
+                            state[_m2_budget_idx]   if len(state) > _m2_budget_idx   else 0.0,  # m2_budget
+                        ], dtype=np.float32)
+                    
+                        cont_feat_t = torch.tensor(cont_feat_np, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device)  # (1,1,6)
+                        layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long).to(self.device)  # (1,1)
+                    
+                        gelu_mask_np = env.get_gelu_action_mask(layer_idx)
+                        gelu_mask_t = torch.tensor(gelu_mask_np, dtype=torch.bool).unsqueeze(0).unsqueeze(0).to(self.device)  # (1,1,4)
+                    
+                        # GTrXL：将当前token追加到序列
+                        seq_cont_feats.append(cont_feat_t)
+                        seq_layer_indices.append(layer_idx_t)
+                        seq_prev_g.append(prev_g)
+                        seq_prev_s.append(prev_s)
+                        seq_gelu_masks.append(gelu_mask_t)
+                    
+                        # 拼接完整序列 (1, step+1, ...)
+                        full_cont = torch.cat(seq_cont_feats, dim=1)
+                        full_layer = torch.cat(seq_layer_indices, dim=1)
+                        full_prev_g = torch.cat(seq_prev_g, dim=1)
+                        full_prev_s = torch.cat(seq_prev_s, dim=1)
+                        full_gelu_mask = torch.cat(seq_gelu_masks, dim=1)
+                    
+                        # GTrXL：因果自注意力推理（无hidden state）
+                        with torch.no_grad():
+                            gelu_action, softmax_action, logprob, value, gelu_probs, softmax_probs = \
+                                gtrxl_net.get_action_and_logprob(
+                                    full_cont, full_layer, full_prev_g, full_prev_s,
+                                    return_probs=True, gelu_mask=full_gelu_mask
+                                )
+                    
+                        # 执行动作
+                        next_state, reward, done, info = env.step(gelu_action.item(), softmax_action.item())
+                    
+                        # 记录中间结果
+                        step_info = {
+                            'step_global': episode * self.total_layers + step,
+                            'episode_id': episode,
+                            'layer_index': info['layer_index'],
+                            'state_vector': state.tolist(),
+                            'curr_gelu_degree': info['curr_gelu_degree'],
+                            'curr_softmax_degree': info['curr_softmax_degree'],
+                            'gelu_prob_dist': gelu_probs.cpu().numpy().tolist(),
+                            'softmax_prob_dist': softmax_probs.cpu().numpy().tolist(),
+                            'critic_value': value.item(),
+                            'accumulated_cost': info['accumulated_cost'],
+                            'gelu_config': info['gelu_config'],
+                            'softmax_config': info['softmax_config'],
+                            'current_lr': current_lr,
+                            'current_entropy_coef': current_entropy
+                        }
+                        step_infos.append(step_info)
+                    
+                        # 存入RecurrentRolloutBuffer（与LSTM使用相同的Buffer格式）
+                        buffer.add_step(
+                            cont_feat=torch.tensor(cont_feat_np, dtype=torch.float32),
+                            layer_idx=layer_idx,
+                            prev_g=prev_g.squeeze().item(),
+                            prev_s=prev_s.squeeze().item(),
+                            action_g=gelu_action.item(),
+                            action_s=softmax_action.item(),
+                            logprob=logprob.cpu(),
+                            reward=reward,
+                            value=value.cpu(),
+                            done=float(done),
+                            gelu_mask=gelu_mask_np
+                        )
+                    
+                        # 更新前一步动作（自回归输入下一步）
+                        prev_g = gelu_action.reshape(1, 1).to(self.device)
+                        prev_s = softmax_action.reshape(1, 1).to(self.device)
+                    
+                        episode_reward += reward
+                        state = next_state
+                
+                    buffer.end_episode()
                 episode_rewards.append(episode_reward)
                 
                 # 收集当前episode的指标
