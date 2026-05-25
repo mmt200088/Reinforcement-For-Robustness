@@ -83,9 +83,11 @@ For future work in this repository, follow the local `karpathy-guidelines` and
 - Stage-1 baseline implementation note, added 2026-05-25: the pure original
   GELU/Softmax baseline is represented in evaluator arrays with degree `-1`,
   which restores the original functions instead of installing polynomial
-  replacements. The Stage-1 reward cost denominator still uses the old
-  high-degree cost reference `gelu=4, softmax=6` so cost savings remain
-  well-defined; do not interpret that cost reference as the metric baseline.
+  replacements. Stage-1 candidate scoring and final evaluation should also be
+  pure plaintext by default, without the historical max-scaling noise
+  environment. The Stage-1 reward cost denominator still uses the old high-degree
+  cost reference `gelu=4, softmax=6` so cost savings remain well-defined; do not
+  interpret that cost reference as the metric baseline.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes

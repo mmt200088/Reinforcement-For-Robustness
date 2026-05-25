@@ -542,14 +542,12 @@ RL_OPT_FLAGS = {
     "use_kl_early_stop": True,
     "kl_target": 0.02,
 
-    # 5) Stage-1 RL 使用 “全部最大 scaling factor” 的噪声环境（而非无噪环境）
-    #    与 Stage-2 噪声搜索的低噪声基线保持一致，避免 Stage-1 学到的配置在
-    #    切到带噪环境后偏离过大。关闭即恢复原本无噪声环境。
-    "stage1_use_max_scaling_noise_env": True,
+    # 5) Stage-1 RL 默认使用纯明文评估环境：原始模型 baseline 与候选
+    #    GELU/Softmax 近似都不叠加 Stage-2 scaling-factor 噪声。
+    "stage1_use_max_scaling_noise_env": False,
 
-    # 6) Stage-1 Phase-2.5 / Phase-3/4 最终评估同样使用最大 scaling factor 噪声环境，
-    #    保持训练-评估环境一致。独立开关，可与 (5) 单独消融。
-    "final_eval_use_max_scaling_noise_env": True,
+    # 6) Stage-1 Phase-2.5 / Phase-3/4 最终评估同样默认纯明文。
+    "final_eval_use_max_scaling_noise_env": False,
 
     # 7) Stage-1 训练结束后写入局部最优检测报告（pruning_search_log.txt）
     "stage1_write_local_optimum_report": True,
