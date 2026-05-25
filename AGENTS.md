@@ -57,6 +57,29 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   and cost/frontier progress. Only after that report and final eval are
   captured should the next 60,000-episode run start from the latest local source
   commit, currently the unbounded P3 cost-rank selection change.
+- Stage-1 post-run queue, added 2026-05-24: after the active Stage-2 60k run
+  finishes and its final eval/report are captured, pull the latest server code
+  that contains the Claude Code Stage-1 changes for BERT-base SST-2/RTE and
+  BERT-large MRPC/SST-2/RTE. Validate Stage-1 only, without changing the Stage-1
+  architecture or RL algorithm unless a concrete runtime bug requires a narrow
+  fix. First run focused smoke/scaling checks for all five Stage-1 tasks
+  (`bert-base` SST-2/RTE and `bert-large` MRPC/SST-2/RTE), verify that each can
+  run correctly, verify real four-GPU parallelism, and compare speed against
+  smaller GPU counts so the four-GPU path is demonstrated rather than assumed.
+  Fix any runtime bugs locally, commit/push, then have the server pull or use
+  the verified-head fallback before retrying. Once the five Stage-1 tasks are
+  proven runnable and four-GPU speed is credible, launch all five full Stage-1
+  RL trainings with PPO update window 120 episodes, learning rate `2e-5`, and
+  50,000 episodes per task. For Stage-1, the baseline is the pure original
+  plaintext model using original GELU and Softmax functions, not the polynomial
+  `gelu=4, softmax=6` baseline. Stage-1 constraints are loss, metric1, and
+  metric2, each at 0.5% relative tolerance: candidate loss must be at most
+  `baseline_loss * 1.005`, and metric1/metric2 must be at least
+  `baseline_metric * 0.995`. After each full Stage-1 task finishes, produce an
+  HTML report with the best GELU/Softmax configuration, full reward curve,
+  loss/metric1/metric2 curves, entropy curve, full-validation final eval for the
+  best configuration, baseline loss/metric1/metric2, and absolute plus
+  percentage deltas versus baseline.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes

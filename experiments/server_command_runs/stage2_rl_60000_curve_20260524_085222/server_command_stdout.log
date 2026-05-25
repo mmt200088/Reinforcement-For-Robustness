@@ -1,0 +1,1667 @@
+[goal] Fresh GTrXL v2-scale Stage-2 BLB RL run for 60000 episodes.
+[goal] Preserve no-collapse safety while reducing baseline lock-in with non-monotonic cost-boundary exploration.
+[goal] Watch KL/LR scale, entropy recovery, empirical offset stats, Pareto progress, and four-GPU reward probe health.
+[stop-rl] Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005: pid=287431 already dead
+[stop-rl] Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005_rdv2: no rl.pid
+
+================================================================================
+Step 1/6: git pull latest local source changes
+================================================================================
+[git] offline verified HEAD = aa83a92; skipping remote pull because ALLOW_VERIFIED_HEAD_WITHOUT_PULL=1
+[git] HEAD = aa83a92
+
+================================================================================
+Step 2/6: local/contract tests on server
+================================================================================
+test_10k_curve_knobs_are_launcher_visible (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_10k_curve_knobs_are_launcher_visible)
+The 10k research loop needs to tune exploration without editing ... ok
+test_baseline_prior_schedule_decays_to_weak_prior (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_baseline_prior_schedule_decays_to_weak_prior) ... ok
+test_episode_jsonl_carries_terminal_health_fields (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_episode_jsonl_carries_terminal_health_fields)
+10k online monitoring must not depend on grepping details text for ... ok
+test_fast_multi_actor_reward_mode_is_configurable_and_safe (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_fast_multi_actor_reward_mode_is_configurable_and_safe) ... ok
+test_first10k_monitor_checks_all_expected_reward_gpus (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_first10k_monitor_checks_all_expected_reward_gpus) ... ok
+test_first10k_monitor_tolerates_sparse_loss_cap_spikes (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_first10k_monitor_tolerates_sparse_loss_cap_spikes)
+User criterion allows sparse spikes; bursts or frequent caps still fail. ... ok
+test_first10k_monitor_uses_post_anchor_p12_rate_threshold (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_first10k_monitor_uses_post_anchor_p12_rate_threshold) ... ok
+test_first10k_server_defaults_avoid_radius2_collapse_region (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_first10k_server_defaults_avoid_radius2_collapse_region)
+The first failed 10k run showed P1s when radius reached 2. ... ok
+test_first10k_server_run_aborts_on_git_pull_failure (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_first10k_server_run_aborts_on_git_pull_failure)
+Server runs must not continue experiments from a stale HEAD. ... ok
+test_first10k_server_run_can_skip_pull_only_on_verified_head (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_first10k_server_run_can_skip_pull_only_on_verified_head) ... ok
+test_first10k_server_run_passes_p12_rate_threshold (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_first10k_server_run_passes_p12_rate_threshold) ... ok
+test_force_baseline_anchor_wired (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_force_baseline_anchor_wired) ... /hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:1029: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_guarded_radius2_cooldown_after_radius2_failure (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_guarded_radius2_cooldown_after_radius2_failure) ... ok
+test_guarded_radius2_waits_for_stall_and_healthy_history (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_guarded_radius2_waits_for_stall_and_healthy_history) ... ok
+test_new_best_logs_inference_metrics (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_new_best_logs_inference_metrics)
+After a new best, the log line should include loss_mean / loss_std / ... /hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:2171: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_noisy_accuracy_threshold_has_probe_granularity_guard (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_noisy_accuracy_threshold_has_probe_granularity_guard) ... ok
+test_p3_best_rank_uses_unbounded_cost_rank_before_total_reward (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_p3_best_rank_uses_unbounded_cost_rank_before_total_reward) ... ok
+test_per_slot_mode_helper_present (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_per_slot_mode_helper_present) ... /hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:1017: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_per_slot_mode_returns_correct_values (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_per_slot_mode_returns_correct_values)
+Quick functional test: given a fake schedule + baseline_vec, ... /hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:1067: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_probe_runner_can_evaluate_distinct_actions_on_distinct_workers (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_probe_runner_can_evaluate_distinct_actions_on_distinct_workers) ... ok
+test_sequential_fast_mode_defers_terminal_reward_and_revalidates_promotions (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_sequential_fast_mode_defers_terminal_reward_and_revalidates_promotions) ... ok
+test_sequential_force_anchor_honors_warmstart_config (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_sequential_force_anchor_honors_warmstart_config) ... ok
+test_sequential_ppo_adaptive_lr_cap_is_conservative_for_gtrxl (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_sequential_ppo_adaptive_lr_cap_is_conservative_for_gtrxl) ... ok
+test_sequential_ppo_buffer_carries_action_level_mask (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_sequential_ppo_buffer_carries_action_level_mask) ... ok
+test_sequential_ppo_update_handles_budgeted_reward_extremes (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_sequential_ppo_update_handles_budgeted_reward_extremes) ... ok
+test_sequential_ppo_update_replays_stored_action_level_mask (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_sequential_ppo_update_replays_stored_action_level_mask) ... ok
+test_sequential_ppo_update_skips_nonfinite_minibatch (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_sequential_ppo_update_skips_nonfinite_minibatch) ... ok
+test_sequential_runner_uses_episode_neighbor_offsets (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_sequential_runner_uses_episode_neighbor_offsets) ... ok
+test_step_level_mask_keeps_unselected_slots_at_baseline (tests.test_sequential_smoke.WarmstartFixedRegressionTest.test_step_level_mask_keeps_unselected_slots_at_baseline) ... ok
+test_diagnostics_table_shows_ent_coef (tests.test_sequential_smoke.EntCoefScheduleRegressionTest.test_diagnostics_table_shows_ent_coef) ... /hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:2300: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/diagnostics.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/diagnostics.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_helper_present_with_expected_signature (tests.test_sequential_smoke.EntCoefScheduleRegressionTest.test_helper_present_with_expected_signature) ... /hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:2192: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_ppo_update_accepts_override_param (tests.test_sequential_smoke.EntCoefScheduleRegressionTest.test_ppo_update_accepts_override_param)
+sequential_ppo_update must accept ent_coef_override kwarg. ... /hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:2213: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_policy.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_policy.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_ppo_update_passes_override (tests.test_sequential_smoke.EntCoefScheduleRegressionTest.test_ppo_update_passes_override) ... /hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:2206: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_schedule_math_anchor_ramp_steady (tests.test_sequential_smoke.EntCoefScheduleRegressionTest.test_schedule_math_anchor_ramp_steady)
+Functional test of the helper. Locks in the three-stage behaviour ... /hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:2245: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_startup_log_describes_schedule (tests.test_sequential_smoke.EntCoefScheduleRegressionTest.test_startup_log_describes_schedule)
+The startup hyperparameter box should print the three-stage ... /hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:2293: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_train_config_defaults (tests.test_sequential_smoke.EntCoefScheduleRegressionTest.test_train_config_defaults)
+SequentialTrainConfig should default to ent_coef_anchor=0 and ... /hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:2225: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/hy-tmp/Reinforcement-For-Robustness/tests/test_sequential_smoke.py:2230: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/runner.py' mode='r' encoding='utf-8'>
+  src2 = open("blb_stage2_rl/runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+
+----------------------------------------------------------------------
+Ran 36 tests in 2.750s
+
+OK
+test_action_bias_raises_baseline_sampling_probability (test_blb_action_mask.BLBActionMaskTests.test_action_bias_raises_baseline_sampling_probability) ... ok
+test_baseline_only_mask_keeps_action_length_and_forces_baseline (test_blb_action_mask.BLBActionMaskTests.test_baseline_only_mask_keeps_action_length_and_forces_baseline) ... ok
+test_evaluate_action_accepts_mask_and_bias_for_legal_action (test_blb_action_mask.BLBActionMaskTests.test_evaluate_action_accepts_mask_and_bias_for_legal_action) ... ok
+test_load_mask_rejects_inactive_slot_opened_to_nonbaseline (test_blb_action_mask.BLBActionMaskTests.test_load_mask_rejects_inactive_slot_opened_to_nonbaseline) ... ok
+test_near_baseline_keeps_inactive_slots_baseline_only (test_blb_action_mask.BLBActionMaskTests.test_near_baseline_keeps_inactive_slots_baseline_only) ... ok
+test_per_dim_entropy_can_report_masked_entropy (test_blb_action_mask.BLBActionMaskTests.test_per_dim_entropy_can_report_masked_entropy) ... ok
+test_policy_sample_and_evaluate_share_masked_logprob (test_blb_action_mask.BLBActionMaskTests.test_policy_sample_and_evaluate_share_masked_logprob) ... ok
+test_ppo_update_passes_mask_and_bias_to_evaluate_action (test_blb_action_mask.BLBActionMaskTests.test_ppo_update_passes_mask_and_bias_to_evaluate_action) ... ok
+test_runner_train_config_reads_action_mask_fields (test_blb_action_mask.BLBActionMaskTests.test_runner_train_config_reads_action_mask_fields) ... ok
+test_canonical_response_may_omit_layer0_block1 (test_blb_baseline_bootstrap.BLBBaselineBootstrapTests.test_canonical_response_may_omit_layer0_block1) ... ok
+test_rejects_invalid_stage1_degree (test_blb_baseline_bootstrap.BLBBaselineBootstrapTests.test_rejects_invalid_stage1_degree) ... ok
+test_rejects_missing_required_non_layer0_block1_entry (test_blb_baseline_bootstrap.BLBBaselineBootstrapTests.test_rejects_missing_required_non_layer0_block1_entry) ... ok
+test_round_trip_response_validation_and_cost_stats (test_blb_baseline_bootstrap.BLBBaselineBootstrapTests.test_round_trip_response_validation_and_cost_stats) ... ok
+test_runner_has_no_static_skeletons_baseline_fallback (test_blb_baseline_bootstrap.BLBBaselineBootstrapTests.test_runner_has_no_static_skeletons_baseline_fallback) ... ok
+test_static_skeletons_block4_wo_rescale_uses_rl_field_name (test_blb_baseline_bootstrap.BLBBaselineBootstrapTests.test_static_skeletons_block4_wo_rescale_uses_rl_field_name) ... ok
+test_static_skeletons_mixed_degree_baseline_decodes_per_layer_sfs (test_blb_baseline_bootstrap.BLBBaselineBootstrapTests.test_static_skeletons_mixed_degree_baseline_decodes_per_layer_sfs) ... ok
+test_candidate_identity_uses_phase1_canonical_context_fields (test_blb_candidate_store_identity.BLBCandidateStoreIdentityTests.test_candidate_identity_uses_phase1_canonical_context_fields) ... ok
+test_candidate_key_binds_action_and_context_hashes (test_blb_candidate_store_identity.BLBCandidateStoreIdentityTests.test_candidate_key_binds_action_and_context_hashes) ... ok
+test_context_lookup_excludes_action_hash_only_legacy_records (test_blb_candidate_store_identity.BLBCandidateStoreIdentityTests.test_context_lookup_excludes_action_hash_only_legacy_records) ... ok
+test_store_records_raw_and_effective_action_identity (test_blb_candidate_store_identity.BLBCandidateStoreIdentityTests.test_store_records_raw_and_effective_action_identity) ... ok
+test_fresh_writes_to_source_field (test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_fresh_writes_to_source_field) ... ok
+test_fused_away_sets_rescale_to_none (test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_fused_away_sets_rescale_to_none) ... ok
+test_invalid_result_short_circuits_no_op (test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_invalid_result_short_circuits_no_op) ... ok
+test_missing_compact_config_no_op (test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_missing_compact_config_no_op) ... ok
+test_non_integer_delta_skipped (test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_non_integer_delta_skipped) ... ok
+test_propagation_delta_writes_to_encode_field (test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_propagation_delta_writes_to_encode_field) ... ok
+test_rescale_post_writes_to_rescale_field (test_blb_chain_integrity.ApplyOptimizerOutputBlock1Test.test_rescale_post_writes_to_rescale_field) ... ok
+test_rotation_flag_resets_when_absent (test_blb_chain_integrity.ApplyOptimizerOutputBlock2RotationTest.test_rotation_flag_resets_when_absent) ... ok
+test_rotation_flag_toggled_on_via_name_map (test_blb_chain_integrity.ApplyOptimizerOutputBlock2RotationTest.test_rotation_flag_toggled_on_via_name_map) ... ok
+test_parse_device_ids_accepts_fire_tuple (test_blb_chain_integrity.ProbeRunnerHelpersTest.test_parse_device_ids_accepts_fire_tuple) ... ok
+test_parse_device_ids_accepts_parenthesized_fire_string (test_blb_chain_integrity.ProbeRunnerHelpersTest.test_parse_device_ids_accepts_parenthesized_fire_string) ... ok
+test_parse_device_ids_basic (test_blb_chain_integrity.ProbeRunnerHelpersTest.test_parse_device_ids_basic) ... ok
+test_parse_device_ids_rejects_garbage (test_blb_chain_integrity.ProbeRunnerHelpersTest.test_parse_device_ids_rejects_garbage) ... ok
+test_split_round_robin_k0 (test_blb_chain_integrity.ProbeRunnerHelpersTest.test_split_round_robin_k0) ... ok
+test_split_round_robin_k4_n4_one_trial_per_gpu (test_blb_chain_integrity.ProbeRunnerHelpersTest.test_split_round_robin_k4_n4_one_trial_per_gpu) ... ok
+test_split_round_robin_k5_n2 (test_blb_chain_integrity.ProbeRunnerHelpersTest.test_split_round_robin_k5_n2) ... ok
+test_split_round_robin_k5_n3 (test_blb_chain_integrity.ProbeRunnerHelpersTest.test_split_round_robin_k5_n3) ... ok
+test_split_round_robin_single_worker (test_blb_chain_integrity.ProbeRunnerHelpersTest.test_split_round_robin_single_worker) ... ok
+test_trial_seed_deterministic (test_blb_chain_integrity.ProbeRunnerHelpersTest.test_trial_seed_deterministic) ... ok
+test_trial_seed_independent_per_trial (test_blb_chain_integrity.ProbeRunnerHelpersTest.test_trial_seed_independent_per_trial) ... ok
+test_runner_handles_k0_gracefully (test_blb_chain_integrity.ProbeRunnerTwoGPUTest.test_runner_handles_k0_gracefully) ... ok
+test_runner_returns_results_in_trial_order (test_blb_chain_integrity.ProbeRunnerTwoGPUTest.test_runner_returns_results_in_trial_order) ... ok
+test_distribution_string_case_insensitive (test_blb_chain_integrity.SampleGaussianLiveReadTest.test_distribution_string_case_insensitive) ... ok
+test_mutating_scaling_factor_changes_noise_variance (test_blb_chain_integrity.SampleGaussianLiveReadTest.test_mutating_scaling_factor_changes_noise_variance) ... ok
+test_none_point_returns_zero_noise (test_blb_chain_integrity.SampleGaussianLiveReadTest.test_none_point_returns_zero_noise) ... ok
+test_action_head_bias_starts_zero (test_blb_chain_integrity.SequentialPolicyInitTest.test_action_head_bias_starts_zero)
+Learned actor biases start zero; caller controls baseline prior. ... ok
+test_action_head_weight_is_small (test_blb_chain_integrity.SequentialPolicyInitTest.test_action_head_weight_is_small)
+Every per-slot head must start near zero so external prior wins. ... ok
+test_value_head_init_standard (test_blb_chain_integrity.SequentialPolicyInitTest.test_value_head_init_standard) ... ok
+test_warmstart_bias_dominates_random_state (test_blb_chain_integrity.SequentialPolicyInitTest.test_warmstart_bias_dominates_random_state)
+With +3.5 warmstart bias and random state, preferred index should ... ok
+test_all_three_pairs_mirrored (test_blb_chain_integrity.SyncBlock2QKBindingTest.test_all_three_pairs_mirrored) ... ok
+test_no_op_when_already_synced (test_blb_chain_integrity.SyncBlock2QKBindingTest.test_no_op_when_already_synced) ... ok
+test_wk_mutation_mirrors_onto_wq (test_blb_chain_integrity.SyncBlock2QKBindingTest.test_wk_mutation_mirrors_onto_wq) ... ok
+test_candidate_rank_key_uses_unbounded_p3_cost_rank_without_breaking_priority (test_blb_cost_semantics.BLBCostSemanticsTests.test_candidate_rank_key_uses_unbounded_p3_cost_rank_without_breaking_priority) ... ok
+test_f0_record_splits_rescale_cost_debug_and_mpc_truncation (test_blb_cost_semantics.BLBCostSemanticsTests.test_f0_record_splits_rescale_cost_debug_and_mpc_truncation) ... ok
+test_invalid_chain_is_validity_gate_not_numeric_cost (test_blb_cost_semantics.BLBCostSemanticsTests.test_invalid_chain_is_validity_gate_not_numeric_cost) ... ok
+test_rescale_rank_key_uses_only_total_bits_and_fusion (test_blb_cost_semantics.BLBCostSemanticsTests.test_rescale_rank_key_uses_only_total_bits_and_fusion) ... ok
+test_parse_degree_scalar_preserves_scalar (test_blb_eval_action_stage1_context.BLBEvalActionStage1ContextTests.test_parse_degree_scalar_preserves_scalar) ... ok
+test_parse_degree_vector_preserves_layerwise_values (test_blb_eval_action_stage1_context.BLBEvalActionStage1ContextTests.test_parse_degree_vector_preserves_layerwise_values) ... ok
+test_parse_degree_vector_rejects_wrong_length (test_blb_eval_action_stage1_context.BLBEvalActionStage1ContextTests.test_parse_degree_vector_rejects_wrong_length) ... ok
+test_scan_stops_when_baseline_is_invalid (test_blb_f0_scan.BLBF0ScanTests.test_scan_stops_when_baseline_is_invalid) ... ok
+test_scan_writes_per_slot_mask_and_rank_fields (test_blb_f0_scan.BLBF0ScanTests.test_scan_writes_per_slot_mask_and_rank_fields) ... ok
+test_feasibility_report_writes_json_and_markdown (test_blb_final_eval_feasibility.BLBFinalEvalFeasibilityTests.test_feasibility_report_writes_json_and_markdown) ... ok
+test_loss_is_report_only_for_formal_feasible (test_blb_final_eval_feasibility.BLBFinalEvalFeasibilityTests.test_loss_is_report_only_for_formal_feasible) ... ok
+test_unknown_threshold_source_never_claims_formal_feasible (test_blb_final_eval_feasibility.BLBFinalEvalFeasibilityTests.test_unknown_threshold_source_never_claims_formal_feasible) ... ok
+test_bridge_prefers_direct_replan_variables_when_available (test_blb_optimizer_cost_consistency.BLBOptimizerCostConsistencyTests.test_bridge_prefers_direct_replan_variables_when_available) ... ok
+test_direct_inprocess_replan_matches_compat_payload_path (test_blb_optimizer_cost_consistency.BLBOptimizerCostConsistencyTests.test_direct_inprocess_replan_matches_compat_payload_path) ... ok
+test_effective_action_hash_ignores_inactive_compat_slots_only (test_blb_optimizer_cost_consistency.BLBOptimizerCostConsistencyTests.test_effective_action_hash_ignores_inactive_compat_slots_only) ... ok
+test_inactive_slots_do_not_change_optimizer_requests (test_blb_optimizer_cost_consistency.BLBOptimizerCostConsistencyTests.test_inactive_slots_do_not_change_optimizer_requests) ... ok
+test_exported_registry_files_match_embedded_payload (test_blb_registry_artifact_consistency.BLBRegistryArtifactConsistencyTests.test_exported_registry_files_match_embedded_payload) ... ok
+test_adaptive_scalar_cost_has_fusion_and_truncation_step_boosts (test_blb_reward_archive.ParetoCostArchiveTests.test_adaptive_scalar_cost_has_fusion_and_truncation_step_boosts) ... ok
+test_adaptive_scalar_cost_step_boundaries_and_bits_tiebreaker (test_blb_reward_archive.ParetoCostArchiveTests.test_adaptive_scalar_cost_step_boundaries_and_bits_tiebreaker) ... ok
+test_compute_reward_excludes_optimizer_invalid_from_adaptive_scalar_cost (test_blb_reward_archive.ParetoCostArchiveTests.test_compute_reward_excludes_optimizer_invalid_from_adaptive_scalar_cost) ... ok
+test_compute_reward_excludes_p1_from_adaptive_scalar_cost (test_blb_reward_archive.ParetoCostArchiveTests.test_compute_reward_excludes_p1_from_adaptive_scalar_cost) ... ok
+test_compute_reward_excludes_p2_from_cost_and_archive (test_blb_reward_archive.ParetoCostArchiveTests.test_compute_reward_excludes_p2_from_cost_and_archive) ... ok
+test_compute_reward_uses_adaptive_scalar_for_p3_cost_while_recording_pareto (test_blb_reward_archive.ParetoCostArchiveTests.test_compute_reward_uses_adaptive_scalar_for_p3_cost_while_recording_pareto) ... ok
+test_default_pareto_event_shaping_is_stronger_but_tier_safe (test_blb_reward_archive.ParetoCostArchiveTests.test_default_pareto_event_shaping_is_stronger_but_tier_safe) ... ok
+test_dominated_and_duplicate_events_are_bounded (test_blb_reward_archive.ParetoCostArchiveTests.test_dominated_and_duplicate_events_are_bounded) ... ok
+test_excludes_p1_and_p2_candidates (test_blb_reward_archive.ParetoCostArchiveTests.test_excludes_p1_and_p2_candidates) ... ok
+test_ignores_typical_normalizers_for_ranking (test_blb_reward_archive.ParetoCostArchiveTests.test_ignores_typical_normalizers_for_ranking) ... ok
+test_keeps_mutually_non_dominated_candidates (test_blb_reward_archive.ParetoCostArchiveTests.test_keeps_mutually_non_dominated_candidates) ... ok
+test_p1_p2_do_not_receive_p3_cost_rank (test_blb_reward_archive.ParetoCostArchiveTests.test_p1_p2_do_not_receive_p3_cost_rank) ... ok
+test_p3_cost_rank_remains_unbounded_after_ppo_cost_score_clips (test_blb_reward_archive.ParetoCostArchiveTests.test_p3_cost_rank_remains_unbounded_after_ppo_cost_score_clips) ... ok
+test_p3_high_accuracy_margin_does_not_hide_cost_ordering (test_blb_reward_archive.ParetoCostArchiveTests.test_p3_high_accuracy_margin_does_not_hide_cost_ordering) ... ok
+test_replaces_dominated_frontier_members (test_blb_reward_archive.ParetoCostArchiveTests.test_replaces_dominated_frontier_members) ... ok
+test_action_description_names_every_noise_point_and_truncation (test_blb_stage2_rl_regressions.BLBActionDescriptionRegressionTests.test_action_description_names_every_noise_point_and_truncation) ... ok
+test_action_candidate_still_runs_model_forward_when_optimizer_invalid (test_blb_stage2_rl_regressions.BLBActionFinalEvalRegressionTests.test_action_candidate_still_runs_model_forward_when_optimizer_invalid) ... ok
+test_full_noise_config_uses_training_first_input_N (test_blb_stage2_rl_regressions.BLBActionFinalEvalRegressionTests.test_full_noise_config_uses_training_first_input_N) ... ok
+test_resolve_base_action_accepts_numpy_arrays_without_truthiness (test_blb_stage2_rl_regressions.BLBActionFinalEvalRegressionTests.test_resolve_base_action_accepts_numpy_arrays_without_truthiness) ... ok
+test_blb_install_log_helper_respects_quiet_env (test_blb_stage2_rl_regressions.BLBInstallLogRegressionTests.test_blb_install_log_helper_respects_quiet_env) ... ok
+test_bridge_baseline_evaluation_bypasses_cfg_derived_payload (test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_bridge_baseline_evaluation_bypasses_cfg_derived_payload) ... ok
+test_env_all_max_action_uses_optimizer_baseline_scoring (test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_env_all_max_action_uses_optimizer_baseline_scoring) ... ok
+test_env_runs_forward_even_when_optimizer_invalid (test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_env_runs_forward_even_when_optimizer_invalid) ... ok
+test_real_mrpc_all_max_baseline_optimizer_outputs_are_valid (test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_real_mrpc_all_max_baseline_optimizer_outputs_are_valid) ... ok
+test_real_mrpc_all_max_cfg_derived_optimizer_outputs_are_valid (test_blb_stage2_rl_regressions.BLBOptimizerBaselineRegressionTests.test_real_mrpc_all_max_cfg_derived_optimizer_outputs_are_valid) ... ok
+test_blb_progress_stays_under_stage2_noise_progress (test_blb_stage2_rl_regressions.BLBPersistencePathRegressionTests.test_blb_progress_stays_under_stage2_noise_progress) ... ok
+test_candidate_store_hash_fidelity_and_rank_key_are_stable (test_blb_stage2_rl_regressions.BLBPlaybookArtifactRegressionTests.test_candidate_store_hash_fidelity_and_rank_key_are_stable) ... ok
+test_f0_eval_all_max_uses_optimizer_baseline_path (test_blb_stage2_rl_regressions.BLBPlaybookArtifactRegressionTests.test_f0_eval_all_max_uses_optimizer_baseline_path) ... ok
+test_f0_eval_record_contains_action_hash_rank_key_and_optimizer_summary (test_blb_stage2_rl_regressions.BLBPlaybookArtifactRegressionTests.test_f0_eval_record_contains_action_hash_rank_key_and_optimizer_summary) ... ok
+test_phase0_preflight_report_names_current_operator_entrypoints (test_blb_stage2_rl_regressions.BLBPlaybookArtifactRegressionTests.test_phase0_preflight_report_names_current_operator_entrypoints) ... ok
+test_registry_export_records_action_values_and_current_slot_count (test_blb_stage2_rl_regressions.BLBPlaybookArtifactRegressionTests.test_registry_export_records_action_values_and_current_slot_count) ... ok
+test_kind_drop_action_changes_only_target_kind_slots (test_blb_stage2_rl_regressions.BLBPolicyWarmstartRegressionTests.test_kind_drop_action_changes_only_target_kind_slots) ... ok
+test_preferred_action_bias_drives_deterministic_sample_to_baseline (test_blb_stage2_rl_regressions.BLBPolicyWarmstartRegressionTests.test_preferred_action_bias_drives_deterministic_sample_to_baseline) ... ok
+test_warmstart_action_mode_expires_by_absolute_episode (test_blb_stage2_rl_regressions.BLBPolicyWarmstartRegressionTests.test_warmstart_action_mode_expires_by_absolute_episode) ... ok
+test_explicit_probe_batch_count_override_still_works (test_blb_stage2_rl_regressions.BLBProbeSizingRegressionTests.test_explicit_probe_batch_count_override_still_works) ... ok
+test_probe_batch_count_covers_requested_probe_size (test_blb_stage2_rl_regressions.BLBProbeSizingRegressionTests.test_probe_batch_count_covers_requested_probe_size) ... ok
+test_baseline_preflight_stability_threshold_uses_noisy_baseline (test_blb_stage2_rl_regressions.BLBRewardRegressionTests.test_baseline_preflight_stability_threshold_uses_noisy_baseline) ... ok
+test_metric_std_sampling_jitter_does_not_drop_stability_tier (test_blb_stage2_rl_regressions.BLBRewardRegressionTests.test_metric_std_sampling_jitter_does_not_drop_stability_tier)
+5-trial MRPC metric std jitter should not masquerade as instability. ... ok
+test_neighbor_indices_use_real_k_order_not_action_index_order (test_blb_stage2_rl_regressions.BLBRewardRegressionTests.test_neighbor_indices_use_real_k_order_not_action_index_order) ... ok
+test_neighborhood_curriculum_expands_slowly (test_blb_stage2_rl_regressions.BLBRewardRegressionTests.test_neighborhood_curriculum_expands_slowly) ... ok
+test_optimizer_invalid_is_cost_layer_after_accuracy_and_stability (test_blb_stage2_rl_regressions.BLBRewardRegressionTests.test_optimizer_invalid_is_cost_layer_after_accuracy_and_stability)
+Priority semantics from ADR-002 preserved under ADR-007 v2-style reward. ... ok
+test_runner_best_selection_uses_hard_constraints_before_reward (test_blb_stage2_rl_regressions.BLBRewardRegressionTests.test_runner_best_selection_uses_hard_constraints_before_reward) ... ok
+test_stage2_noise_log_formatters_use_readable_chinese (test_blb_stage2_rl_regressions.BLBTraceWriterRegressionTests.test_stage2_noise_log_formatters_use_readable_chinese) ... ok
+test_status_board_publishes_live_top_level_fields (test_blb_stage2_rl_regressions.BLBTraceWriterRegressionTests.test_status_board_publishes_live_top_level_fields) ... ok
+test_trace_writer_appends_structured_rollout_rows (test_blb_stage2_rl_regressions.BLBTraceWriterRegressionTests.test_trace_writer_appends_structured_rollout_rows) ... ok
+test_trace_writer_migrates_old_header_after_cost_probe_column_added (test_blb_stage2_rl_regressions.BLBTraceWriterRegressionTests.test_trace_writer_migrates_old_header_after_cost_probe_column_added) ... ok
+test_trace_writer_persists_rollout_eval_diagnostics (test_blb_stage2_rl_regressions.BLBTraceWriterRegressionTests.test_trace_writer_persists_rollout_eval_diagnostics) ... ok
+test_baseline_derived_threshold_uses_all_max_blb_metric (test_blb_threshold_semantics.BLBThresholdSemanticsTests.test_baseline_derived_threshold_uses_all_max_blb_metric) ... ok
+test_explicit_threshold_is_preserved (test_blb_threshold_semantics.BLBThresholdSemanticsTests.test_explicit_threshold_is_preserved) ... ok
+test_absolute_episode_still_anchors_after_resume_before_anchor_end (test_blb_warmstart_resume.BLBWarmstartResumeTests.test_absolute_episode_still_anchors_after_resume_before_anchor_end) ... ok
+test_anchor_is_not_extended_after_absolute_episode_passes_anchor_end (test_blb_warmstart_resume.BLBWarmstartResumeTests.test_anchor_is_not_extended_after_absolute_episode_passes_anchor_end) ... ok
+test_explicit_disable_warmstart_on_resume_turns_anchor_off (test_blb_warmstart_resume.BLBWarmstartResumeTests.test_explicit_disable_warmstart_on_resume_turns_anchor_off) ... ok
+
+----------------------------------------------------------------------
+Ran 121 tests in 4.103s
+
+OK
+wrote /hy-tmp/Reinforcement-For-Robustness/reports/blb_opt/noise_install_verify/smoke_mrpc_20260524T005233Z.html
+
+================================================================================
+Step 3/6: GPU visibility
+================================================================================
+index, name, memory.used [MiB], memory.total [MiB], utilization.gpu [%]
+0, NVIDIA GeForce RTX 4090, 1 MiB, 49140 MiB, 0 %
+1, NVIDIA GeForce RTX 4090, 1 MiB, 49140 MiB, 0 %
+2, NVIDIA GeForce RTX 4090, 1 MiB, 49140 MiB, 0 %
+3, NVIDIA GeForce RTX 4090, 1 MiB, 49140 MiB, 0 %
+[nvidia-smi] visible GPUs = 4
+
+================================================================================
+Step 4/6: fresh 1000-episode smoke run before formal RL
+================================================================================
+
+================================================================================
+RL phase: smoke (1000 episodes, reward GPUs=0,1,2,3, CUDA_VISIBLE_DEVICES=0,1,2,3)
+================================================================================
+已加载预设：mrpc-blb-stage2-rl（/hy-tmp/Reinforcement-For-Robustness/presets/mrpc-blb-stage2-rl.conf）
+⚠ 警告：--fresh-start 将清除已有的 Stage-1 搜索结果，但当前 --skip-stage1-search 跳过了 Stage-1。
+  如果您只想重做 Stage-2 搜索，请不要使用 --fresh-start（直接运行即可自动续训练）。
+  5 秒后继续执行（Ctrl+C 可取消）...
+警告：--fresh-start 指定，正在清除已有持久化目录：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005
+启动配置：
+  搜索算法：普通强化学习（rl）（显式指定）
+  数据集：mrpc（显式指定）
+  模型类型：BERT Base（bert-base）（显式指定）
+  日志文件：blb_stage2_rl.log（显式指定）
+  批大小：512（显式指定）
+  模式目录：Parting Chapter/persistent/rl/bert-base/mrpc（显式指定）
+  运行目录：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005（显式指定）
+  Stage-1 准确度约束：0.005（显式指定）
+  Stage-2 指标约束百分比：0.005（显式指定）
+  Stage-2 稳定性约束百分比：0.005（显式指定）
+  Stage-2 K 次噪声试验：4（显式指定）
+  Stage-2 探针子集大小：256（显式指定）
+  持久化根目录：Parting Chapter/persistent（使用默认值）
+  持久化目录：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005（显式指定）
+  从头训练：是（显式指定）
+  Stage-1 回合数：51000（使用默认值）
+  Stage-2 回合数：1000（显式指定）
+  Stage-2 RL 实现：blb_v3（使用默认值）
+  BLB v3 warmstart anchor episodes：60（显式指定）
+  BLB v3 action mask：否（使用默认值）
+  BLB v3 action mask 模式：none（使用默认值）
+  BLB v3 baseline logit 加成：0（使用默认值）
+  BLB v3 static invalid-level mask：1（显式指定）
+  PPO 更新间隔：120（使用默认值）
+  BLB rollout 大小：60（显式指定）
+  BLB Rescale optimizer：in_process_real (Rescale_optimizer)（使用默认值）
+  BLB neighbor ramp：1800（显式指定）
+  BLB neighbor max mutations：12（显式指定）
+  BLB neighbor max radius：1（显式指定）
+  BLB entropy coef：0.06（显式指定）
+  BLB entropy ramp episodes：600（显式指定）
+  BLB fast reward mode：否（显式指定）
+  BLB online K trials：1（显式指定）
+  BLB terminal eval batch：4（显式指定）
+  BLB promotion validation trials：4（显式指定）
+  BLB checkpoint 间隔：500（显式指定）
+  BLB 日志评估间隔：300（显式指定）
+  Stage-1 学习率：1e-4（使用默认值）
+  Stage-2 学习率：2e-4（显式指定）
+  被动 final_eval 预设：default（显式指定）
+  最终评估来源：搜索结果（search）（显式指定）
+  Stage-2 固定 GELU/Softmax 来源：JSON 文件（json）（显式指定）
+  跳过 Stage-1 搜索：是（显式指定）
+  跳过 Stage-2 搜索：否（使用默认值）
+  跳过最终评估：是（显式指定）
+  仅运行最终评估：否（使用默认值）
+  CUDA_VISIBLE_DEVICES：0,1,2,3（显式指定）
+  实际执行命令（Command）：python rl_tune.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir Parting\ Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005 --batch_size 512 --micro_batch_size 512 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules \[\"q_proj\"\,\ \"k_proj\"\,\ \"v_proj\"\,\ \"up_proj\"\,\ \"down_proj\"\] --stage1_rl_episodes 51000 --stage2_rl_episodes 1000 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified true --ppo_update_interval 120 --use_ist --final_eval_config_source search --final_eval_config_path glue_final_configs_best_ppo.json --manual_stage1_gelu '' --manual_stage1_softmax '' --manual_stage2_noise '' --stage2_fixed_config_source json --stage2_fixed_config_path glue_final_configs_best_ppo.json --stage2_manual_gelu '' --stage2_manual_softmax '' --final_eval_random_seed 42 --final_eval_permutation_trials 0 --final_eval_cost_equivalent_trials 0 --final_eval_budget_equivalent_trials 0 --final_eval_stage1_budget_trials 10 --final_eval_stage2_budget_trials 10 --final_eval_repeat_n 1 --final_eval_preset default --skip_noise_rl false --skip_stage1_rl true --skip_final_eval true --final_eval_only false --resume_run_dir '' --stage1_rl_lr 1e-4 --stage2_rl_lr 2e-4 --stage1_accuracy_tolerance 0.005 --stage2_limit_tolerance 0.005 --stage2_stability_tolerance 0.005 --stage2_k_trials 4 --stage2_probe_size 256 --stage2_rl_variant blb_v3 --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer --blb_v3_rollout_size 60 --blb_v3_reward_devices 0\,1\,2\,3 --blb_v3_eval_interval 300 --blb_v3_save_interval 500 --blb_v3_calibrate_baseline_samples 8 --blb_v3_warmstart_anchor_episodes 60 --blb_v3_warmstart_neighbor_ramp_episodes 1800 --blb_v3_warmstart_neighbor_max_mutations 12 --blb_v3_warmstart_neighbor_max_radius 1 --blb_v3_guarded_radius2_enabled 1 --blb_v3_guarded_radius2_min_episode 1060 --blb_v3_guarded_radius2_stall_window 600 --blb_v3_guarded_radius2_max_mutations 4 --blb_v3_guarded_radius2_episode_fraction 0.15 --blb_v3_guarded_radius2_cooldown_episodes 300 --blb_v3_warmstart_bias_gain 1.2 --blb_v3_ent_coef 0.06 --blb_v3_ent_coef_ramp_episodes 600 --blb_v3_static_invalid_level_mask_enabled 1 --blb_v3_fast_reward_mode_enabled 1 --blb_v3_online_k_trials 1 --blb_v3_terminal_eval_batch_size 4 --blb_v3_promotion_validation_trials 4 --blb_v3_promotion_margin_window 0.25 --blb_v3_sequential_rl true --blb_v3_sequential_invalid_penalty 1.0 --blb_v3_sequential_cost_shaping_coeff 0.05 --blb_v3_sequential_fusion_shaping_coeff 0.0 
+
+已在后台启动。
+  进程号（PID）：419888
+  查看日志：tail -f Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/logs/blb_stage2_rl.log
+  错误摘要：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/logs/error_summary.txt
+  LATEST_RUN_DIR：Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_RUN_DIR
+  LATEST_PID：Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_PID
+  优雅停止（Graceful Stop）：kill -INT 419888
+[rl:smoke] launcher rc=0
+[rl:smoke] background pid=419888; online watchdog enabled
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=0; monitor_rc=0; 2026-05-24T08:52:39+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=52; monitor_rc=0; 2026-05-24T08:53:39+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=104; monitor_rc=0; 2026-05-24T08:54:40+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=140; monitor_rc=0; 2026-05-24T08:55:40+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=180; monitor_rc=0; 2026-05-24T08:56:40+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=225; monitor_rc=0; 2026-05-24T08:57:40+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=272; monitor_rc=0; 2026-05-24T08:58:40+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=316; monitor_rc=0; 2026-05-24T08:59:41+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=360; monitor_rc=0; 2026-05-24T09:00:41+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=408; monitor_rc=0; 2026-05-24T09:01:41+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=452; monitor_rc=0; 2026-05-24T09:02:41+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=504; monitor_rc=0; 2026-05-24T09:03:41+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=552; monitor_rc=0; 2026-05-24T09:04:42+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=601; monitor_rc=0; 2026-05-24T09:05:42+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=660; monitor_rc=0; 2026-05-24T09:06:42+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=716; monitor_rc=0; 2026-05-24T09:07:43+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=768; monitor_rc=0; 2026-05-24T09:08:44+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=820; monitor_rc=0; 2026-05-24T09:09:44+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=868; monitor_rc=0; 2026-05-24T09:10:45+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=912; monitor_rc=0; 2026-05-24T09:11:45+08:00
+[rl-monitor:smoke] pid=419888 alive; episodes_jsonl=960; monitor_rc=0; 2026-05-24T09:12:46+08:00
+[rl:smoke] background pid=419888 exited or was stopped
+[monitor:smoke] final rc=0
+
+================================================================================
+Step 5/6: fresh 60000-episode formal four-GPU RL run
+================================================================================
+
+================================================================================
+RL phase: formal (60000 episodes, reward GPUs=0,1,2,3, CUDA_VISIBLE_DEVICES=0,1,2,3)
+================================================================================
+已加载预设：mrpc-blb-stage2-rl（/hy-tmp/Reinforcement-For-Robustness/presets/mrpc-blb-stage2-rl.conf）
+⚠ 警告：--fresh-start 将清除已有的 Stage-1 搜索结果，但当前 --skip-stage1-search 跳过了 Stage-1。
+  如果您只想重做 Stage-2 搜索，请不要使用 --fresh-start（直接运行即可自动续训练）。
+  5 秒后继续执行（Ctrl+C 可取消）...
+警告：--fresh-start 指定，正在清除已有持久化目录：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005
+启动配置：
+  搜索算法：普通强化学习（rl）（显式指定）
+  数据集：mrpc（显式指定）
+  模型类型：BERT Base（bert-base）（显式指定）
+  日志文件：blb_stage2_rl.log（显式指定）
+  批大小：512（显式指定）
+  模式目录：Parting Chapter/persistent/rl/bert-base/mrpc（显式指定）
+  运行目录：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005（显式指定）
+  Stage-1 准确度约束：0.005（显式指定）
+  Stage-2 指标约束百分比：0.005（显式指定）
+  Stage-2 稳定性约束百分比：0.005（显式指定）
+  Stage-2 K 次噪声试验：4（显式指定）
+  Stage-2 探针子集大小：256（显式指定）
+  持久化根目录：Parting Chapter/persistent（使用默认值）
+  持久化目录：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005（显式指定）
+  从头训练：是（显式指定）
+  Stage-1 回合数：51000（使用默认值）
+  Stage-2 回合数：60000（显式指定）
+  Stage-2 RL 实现：blb_v3（使用默认值）
+  BLB v3 warmstart anchor episodes：60（显式指定）
+  BLB v3 action mask：否（使用默认值）
+  BLB v3 action mask 模式：none（使用默认值）
+  BLB v3 baseline logit 加成：0（使用默认值）
+  BLB v3 static invalid-level mask：1（显式指定）
+  PPO 更新间隔：120（使用默认值）
+  BLB rollout 大小：60（显式指定）
+  BLB Rescale optimizer：in_process_real (Rescale_optimizer)（使用默认值）
+  BLB neighbor ramp：1800（显式指定）
+  BLB neighbor max mutations：12（显式指定）
+  BLB neighbor max radius：1（显式指定）
+  BLB entropy coef：0.06（显式指定）
+  BLB entropy ramp episodes：600（显式指定）
+  BLB fast reward mode：否（显式指定）
+  BLB online K trials：1（显式指定）
+  BLB terminal eval batch：4（显式指定）
+  BLB promotion validation trials：4（显式指定）
+  BLB checkpoint 间隔：500（显式指定）
+  BLB 日志评估间隔：300（显式指定）
+  Stage-1 学习率：1e-4（使用默认值）
+  Stage-2 学习率：2e-4（显式指定）
+  被动 final_eval 预设：default（显式指定）
+  最终评估来源：搜索结果（search）（显式指定）
+  Stage-2 固定 GELU/Softmax 来源：JSON 文件（json）（显式指定）
+  跳过 Stage-1 搜索：是（显式指定）
+  跳过 Stage-2 搜索：否（使用默认值）
+  跳过最终评估：是（显式指定）
+  仅运行最终评估：否（使用默认值）
+  CUDA_VISIBLE_DEVICES：0,1,2,3（显式指定）
+  实际执行命令（Command）：python rl_tune.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir Parting\ Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005 --batch_size 512 --micro_batch_size 512 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules \[\"q_proj\"\,\ \"k_proj\"\,\ \"v_proj\"\,\ \"up_proj\"\,\ \"down_proj\"\] --stage1_rl_episodes 51000 --stage2_rl_episodes 60000 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified true --ppo_update_interval 120 --use_ist --final_eval_config_source search --final_eval_config_path glue_final_configs_best_ppo.json --manual_stage1_gelu '' --manual_stage1_softmax '' --manual_stage2_noise '' --stage2_fixed_config_source json --stage2_fixed_config_path glue_final_configs_best_ppo.json --stage2_manual_gelu '' --stage2_manual_softmax '' --final_eval_random_seed 42 --final_eval_permutation_trials 0 --final_eval_cost_equivalent_trials 0 --final_eval_budget_equivalent_trials 0 --final_eval_stage1_budget_trials 10 --final_eval_stage2_budget_trials 10 --final_eval_repeat_n 1 --final_eval_preset default --skip_noise_rl false --skip_stage1_rl true --skip_final_eval true --final_eval_only false --resume_run_dir '' --stage1_rl_lr 1e-4 --stage2_rl_lr 2e-4 --stage1_accuracy_tolerance 0.005 --stage2_limit_tolerance 0.005 --stage2_stability_tolerance 0.005 --stage2_k_trials 4 --stage2_probe_size 256 --stage2_rl_variant blb_v3 --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer --blb_v3_rollout_size 60 --blb_v3_reward_devices 0\,1\,2\,3 --blb_v3_eval_interval 300 --blb_v3_save_interval 500 --blb_v3_calibrate_baseline_samples 8 --blb_v3_warmstart_anchor_episodes 60 --blb_v3_warmstart_neighbor_ramp_episodes 1800 --blb_v3_warmstart_neighbor_max_mutations 12 --blb_v3_warmstart_neighbor_max_radius 1 --blb_v3_guarded_radius2_enabled 1 --blb_v3_guarded_radius2_min_episode 1060 --blb_v3_guarded_radius2_stall_window 600 --blb_v3_guarded_radius2_max_mutations 4 --blb_v3_guarded_radius2_episode_fraction 0.15 --blb_v3_guarded_radius2_cooldown_episodes 300 --blb_v3_warmstart_bias_gain 1.2 --blb_v3_ent_coef 0.06 --blb_v3_ent_coef_ramp_episodes 600 --blb_v3_static_invalid_level_mask_enabled 1 --blb_v3_fast_reward_mode_enabled 1 --blb_v3_online_k_trials 1 --blb_v3_terminal_eval_batch_size 4 --blb_v3_promotion_validation_trials 4 --blb_v3_promotion_margin_window 0.25 --blb_v3_sequential_rl true --blb_v3_sequential_invalid_penalty 1.0 --blb_v3_sequential_cost_shaping_coeff 0.05 --blb_v3_sequential_fusion_shaping_coeff 0.0 
+
+已在后台启动。
+  进程号（PID）：423496
+  查看日志：tail -f Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/logs/blb_stage2_rl.log
+  错误摘要：Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/logs/error_summary.txt
+  LATEST_RUN_DIR：Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_RUN_DIR
+  LATEST_PID：Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_PID
+  优雅停止（Graceful Stop）：kill -INT 423496
+[rl:formal] launcher rc=0
+[rl:formal] background pid=423496; online watchdog enabled
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=0; monitor_rc=0; 2026-05-24T09:13:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48; monitor_rc=0; 2026-05-24T09:14:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=104; monitor_rc=0; 2026-05-24T09:15:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=152; monitor_rc=0; 2026-05-24T09:16:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=204; monitor_rc=0; 2026-05-24T09:17:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=252; monitor_rc=0; 2026-05-24T09:18:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=300; monitor_rc=0; 2026-05-24T09:19:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=360; monitor_rc=0; 2026-05-24T09:20:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=412; monitor_rc=0; 2026-05-24T09:21:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=468; monitor_rc=0; 2026-05-24T09:22:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=516; monitor_rc=0; 2026-05-24T09:23:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=572; monitor_rc=0; 2026-05-24T09:24:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=620; monitor_rc=0; 2026-05-24T09:25:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=668; monitor_rc=0; 2026-05-24T09:26:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=720; monitor_rc=0; 2026-05-24T09:27:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=780; monitor_rc=0; 2026-05-24T09:28:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=824; monitor_rc=0; 2026-05-24T09:29:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=876; monitor_rc=0; 2026-05-24T09:30:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=927; monitor_rc=0; 2026-05-24T09:31:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=976; monitor_rc=0; 2026-05-24T09:32:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1020; monitor_rc=0; 2026-05-24T09:33:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1080; monitor_rc=0; 2026-05-24T09:34:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1128; monitor_rc=0; 2026-05-24T09:35:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1176; monitor_rc=0; 2026-05-24T09:36:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1224; monitor_rc=0; 2026-05-24T09:37:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1268; monitor_rc=0; 2026-05-24T09:38:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1320; monitor_rc=0; 2026-05-24T09:39:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1380; monitor_rc=0; 2026-05-24T09:41:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1428; monitor_rc=0; 2026-05-24T09:42:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1476; monitor_rc=0; 2026-05-24T09:43:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1524; monitor_rc=0; 2026-05-24T09:44:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1575; monitor_rc=0; 2026-05-24T09:45:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1624; monitor_rc=0; 2026-05-24T09:46:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1680; monitor_rc=0; 2026-05-24T09:47:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1736; monitor_rc=0; 2026-05-24T09:48:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1788; monitor_rc=0; 2026-05-24T09:49:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1832; monitor_rc=0; 2026-05-24T09:50:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1880; monitor_rc=0; 2026-05-24T09:51:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1934; monitor_rc=0; 2026-05-24T09:52:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=1984; monitor_rc=0; 2026-05-24T09:53:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2040; monitor_rc=0; 2026-05-24T09:54:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2096; monitor_rc=0; 2026-05-24T09:55:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2148; monitor_rc=0; 2026-05-24T09:56:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2200; monitor_rc=0; 2026-05-24T09:57:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2248; monitor_rc=0; 2026-05-24T09:58:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2300; monitor_rc=0; 2026-05-24T09:59:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2352; monitor_rc=0; 2026-05-24T10:00:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2400; monitor_rc=0; 2026-05-24T10:01:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2460; monitor_rc=0; 2026-05-24T10:02:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2512; monitor_rc=0; 2026-05-24T10:03:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2560; monitor_rc=0; 2026-05-24T10:04:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2612; monitor_rc=0; 2026-05-24T10:05:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2652; monitor_rc=0; 2026-05-24T10:06:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2704; monitor_rc=0; 2026-05-24T10:07:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2760; monitor_rc=0; 2026-05-24T10:08:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2812; monitor_rc=0; 2026-05-24T10:09:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2860; monitor_rc=0; 2026-05-24T10:10:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2912; monitor_rc=0; 2026-05-24T10:11:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=2956; monitor_rc=0; 2026-05-24T10:12:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3006; monitor_rc=0; 2026-05-24T10:13:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3060; monitor_rc=0; 2026-05-24T10:14:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3120; monitor_rc=0; 2026-05-24T10:15:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3172; monitor_rc=0; 2026-05-24T10:16:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3221; monitor_rc=0; 2026-05-24T10:17:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3272; monitor_rc=0; 2026-05-24T10:18:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3324; monitor_rc=0; 2026-05-24T10:19:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3372; monitor_rc=0; 2026-05-24T10:20:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3424; monitor_rc=0; 2026-05-24T10:21:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3480; monitor_rc=0; 2026-05-24T10:22:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3536; monitor_rc=0; 2026-05-24T10:23:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3587; monitor_rc=0; 2026-05-24T10:24:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3638; monitor_rc=0; 2026-05-24T10:25:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3684; monitor_rc=0; 2026-05-24T10:26:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3740; monitor_rc=0; 2026-05-24T10:27:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3788; monitor_rc=0; 2026-05-24T10:28:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3840; monitor_rc=0; 2026-05-24T10:29:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3900; monitor_rc=0; 2026-05-24T10:30:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=3952; monitor_rc=0; 2026-05-24T10:31:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4000; monitor_rc=0; 2026-05-24T10:32:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4044; monitor_rc=0; 2026-05-24T10:33:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4088; monitor_rc=0; 2026-05-24T10:34:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4140; monitor_rc=0; 2026-05-24T10:35:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4196; monitor_rc=0; 2026-05-24T10:36:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4239; monitor_rc=0; 2026-05-24T10:37:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4281; monitor_rc=0; 2026-05-24T10:38:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4324; monitor_rc=0; 2026-05-24T10:39:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4380; monitor_rc=0; 2026-05-24T10:40:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4431; monitor_rc=0; 2026-05-24T10:41:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4472; monitor_rc=0; 2026-05-24T10:42:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4512; monitor_rc=0; 2026-05-24T10:43:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4560; monitor_rc=0; 2026-05-24T10:44:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4604; monitor_rc=0; 2026-05-24T10:45:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4644; monitor_rc=0; 2026-05-24T10:46:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4687; monitor_rc=0; 2026-05-24T10:47:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4736; monitor_rc=0; 2026-05-24T10:48:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4776; monitor_rc=0; 2026-05-24T10:49:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4816; monitor_rc=0; 2026-05-24T10:50:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4860; monitor_rc=0; 2026-05-24T10:51:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4912; monitor_rc=0; 2026-05-24T10:52:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4952; monitor_rc=0; 2026-05-24T10:53:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=4984; monitor_rc=0; 2026-05-24T10:54:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5031; monitor_rc=0; 2026-05-24T10:55:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5064; monitor_rc=0; 2026-05-24T10:56:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5100; monitor_rc=0; 2026-05-24T10:57:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5148; monitor_rc=0; 2026-05-24T10:58:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5180; monitor_rc=0; 2026-05-24T10:59:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5220; monitor_rc=0; 2026-05-24T11:00:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5263; monitor_rc=0; 2026-05-24T11:01:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5300; monitor_rc=0; 2026-05-24T11:02:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5340; monitor_rc=0; 2026-05-24T11:03:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5384; monitor_rc=0; 2026-05-24T11:04:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5420; monitor_rc=0; 2026-05-24T11:05:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5460; monitor_rc=0; 2026-05-24T11:06:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5504; monitor_rc=0; 2026-05-24T11:07:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5540; monitor_rc=0; 2026-05-24T11:08:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5580; monitor_rc=0; 2026-05-24T11:09:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5620; monitor_rc=0; 2026-05-24T11:10:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5657; monitor_rc=0; 2026-05-24T11:11:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5700; monitor_rc=0; 2026-05-24T11:12:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5748; monitor_rc=0; 2026-05-24T11:13:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5788; monitor_rc=0; 2026-05-24T11:14:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5828; monitor_rc=0; 2026-05-24T11:15:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5876; monitor_rc=0; 2026-05-24T11:16:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5912; monitor_rc=0; 2026-05-24T11:17:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=5952; monitor_rc=0; 2026-05-24T11:18:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6000; monitor_rc=0; 2026-05-24T11:19:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6040; monitor_rc=0; 2026-05-24T11:20:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6072; monitor_rc=0; 2026-05-24T11:21:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6120; monitor_rc=0; 2026-05-24T11:22:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6160; monitor_rc=0; 2026-05-24T11:23:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6196; monitor_rc=0; 2026-05-24T11:24:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6240; monitor_rc=0; 2026-05-24T11:25:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6288; monitor_rc=0; 2026-05-24T11:26:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6326; monitor_rc=0; 2026-05-24T11:27:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6364; monitor_rc=0; 2026-05-24T11:29:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6408; monitor_rc=0; 2026-05-24T11:30:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6444; monitor_rc=0; 2026-05-24T11:31:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6480; monitor_rc=0; 2026-05-24T11:32:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6524; monitor_rc=0; 2026-05-24T11:33:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6564; monitor_rc=0; 2026-05-24T11:34:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6600; monitor_rc=0; 2026-05-24T11:35:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6643; monitor_rc=0; 2026-05-24T11:36:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6676; monitor_rc=0; 2026-05-24T11:37:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6720; monitor_rc=0; 2026-05-24T11:38:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6753; monitor_rc=0; 2026-05-24T11:39:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6788; monitor_rc=0; 2026-05-24T11:40:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6840; monitor_rc=0; 2026-05-24T11:41:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6876; monitor_rc=0; 2026-05-24T11:42:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6916; monitor_rc=0; 2026-05-24T11:43:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=6960; monitor_rc=0; 2026-05-24T11:44:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7000; monitor_rc=0; 2026-05-24T11:45:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7032; monitor_rc=0; 2026-05-24T11:46:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7080; monitor_rc=0; 2026-05-24T11:47:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7120; monitor_rc=0; 2026-05-24T11:48:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7156; monitor_rc=0; 2026-05-24T11:49:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7200; monitor_rc=0; 2026-05-24T11:50:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7241; monitor_rc=0; 2026-05-24T11:51:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7277; monitor_rc=0; 2026-05-24T11:52:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7320; monitor_rc=0; 2026-05-24T11:53:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7364; monitor_rc=0; 2026-05-24T11:54:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7400; monitor_rc=0; 2026-05-24T11:55:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7446; monitor_rc=0; 2026-05-24T11:56:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7496; monitor_rc=0; 2026-05-24T11:57:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7532; monitor_rc=0; 2026-05-24T11:58:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7568; monitor_rc=0; 2026-05-24T11:59:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7616; monitor_rc=0; 2026-05-24T12:00:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7652; monitor_rc=0; 2026-05-24T12:01:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7692; monitor_rc=0; 2026-05-24T12:02:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7740; monitor_rc=0; 2026-05-24T12:03:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7780; monitor_rc=0; 2026-05-24T12:04:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7816; monitor_rc=0; 2026-05-24T12:05:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7860; monitor_rc=0; 2026-05-24T12:06:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7908; monitor_rc=0; 2026-05-24T12:07:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7952; monitor_rc=0; 2026-05-24T12:08:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=7992; monitor_rc=0; 2026-05-24T12:09:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8036; monitor_rc=0; 2026-05-24T12:10:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8072; monitor_rc=0; 2026-05-24T12:11:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8113; monitor_rc=0; 2026-05-24T12:12:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8160; monitor_rc=0; 2026-05-24T12:13:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8204; monitor_rc=0; 2026-05-24T12:14:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8240; monitor_rc=0; 2026-05-24T12:15:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8280; monitor_rc=0; 2026-05-24T12:16:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8332; monitor_rc=0; 2026-05-24T12:17:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8372; monitor_rc=0; 2026-05-24T12:18:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8411; monitor_rc=0; 2026-05-24T12:19:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8456; monitor_rc=0; 2026-05-24T12:20:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8492; monitor_rc=0; 2026-05-24T12:21:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8532; monitor_rc=0; 2026-05-24T12:22:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8580; monitor_rc=0; 2026-05-24T12:23:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8620; monitor_rc=0; 2026-05-24T12:24:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8661; monitor_rc=0; 2026-05-24T12:25:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8704; monitor_rc=0; 2026-05-24T12:26:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8748; monitor_rc=0; 2026-05-24T12:27:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8792; monitor_rc=0; 2026-05-24T12:28:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8832; monitor_rc=0; 2026-05-24T12:29:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8880; monitor_rc=0; 2026-05-24T12:30:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8921; monitor_rc=0; 2026-05-24T12:31:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=8960; monitor_rc=0; 2026-05-24T12:32:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9000; monitor_rc=0; 2026-05-24T12:33:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9044; monitor_rc=0; 2026-05-24T12:34:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9084; monitor_rc=0; 2026-05-24T12:36:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9120; monitor_rc=0; 2026-05-24T12:37:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9172; monitor_rc=0; 2026-05-24T12:38:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9216; monitor_rc=0; 2026-05-24T12:39:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9260; monitor_rc=0; 2026-05-24T12:40:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9300; monitor_rc=0; 2026-05-24T12:41:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9352; monitor_rc=0; 2026-05-24T12:42:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9395; monitor_rc=0; 2026-05-24T12:43:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9428; monitor_rc=0; 2026-05-24T12:44:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9476; monitor_rc=0; 2026-05-24T12:45:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9520; monitor_rc=0; 2026-05-24T12:46:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9559; monitor_rc=0; 2026-05-24T12:47:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9600; monitor_rc=0; 2026-05-24T12:48:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9648; monitor_rc=0; 2026-05-24T12:49:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9688; monitor_rc=0; 2026-05-24T12:50:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9732; monitor_rc=0; 2026-05-24T12:51:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9780; monitor_rc=0; 2026-05-24T12:52:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9824; monitor_rc=0; 2026-05-24T12:53:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9863; monitor_rc=0; 2026-05-24T12:54:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9900; monitor_rc=0; 2026-05-24T12:55:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9948; monitor_rc=0; 2026-05-24T12:56:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=9992; monitor_rc=0; 2026-05-24T12:57:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10028; monitor_rc=0; 2026-05-24T12:58:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10076; monitor_rc=0; 2026-05-24T12:59:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10112; monitor_rc=0; 2026-05-24T13:00:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10152; monitor_rc=0; 2026-05-24T13:01:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10197; monitor_rc=0; 2026-05-24T13:02:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10240; monitor_rc=0; 2026-05-24T13:03:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10276; monitor_rc=0; 2026-05-24T13:04:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10320; monitor_rc=0; 2026-05-24T13:05:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10368; monitor_rc=0; 2026-05-24T13:06:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10414; monitor_rc=0; 2026-05-24T13:07:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10453; monitor_rc=0; 2026-05-24T13:08:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10500; monitor_rc=0; 2026-05-24T13:09:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10544; monitor_rc=0; 2026-05-24T13:10:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10588; monitor_rc=0; 2026-05-24T13:11:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10620; monitor_rc=0; 2026-05-24T13:12:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10668; monitor_rc=0; 2026-05-24T13:13:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10710; monitor_rc=0; 2026-05-24T13:14:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10755; monitor_rc=0; 2026-05-24T13:15:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10800; monitor_rc=0; 2026-05-24T13:16:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10843; monitor_rc=0; 2026-05-24T13:17:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10892; monitor_rc=0; 2026-05-24T13:18:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10924; monitor_rc=0; 2026-05-24T13:19:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=10976; monitor_rc=0; 2026-05-24T13:20:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11012; monitor_rc=0; 2026-05-24T13:21:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11056; monitor_rc=0; 2026-05-24T13:22:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11100; monitor_rc=0; 2026-05-24T13:23:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11148; monitor_rc=0; 2026-05-24T13:24:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11189; monitor_rc=0; 2026-05-24T13:26:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11228; monitor_rc=0; 2026-05-24T13:27:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11280; monitor_rc=0; 2026-05-24T13:28:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11320; monitor_rc=0; 2026-05-24T13:29:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11356; monitor_rc=0; 2026-05-24T13:30:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11400; monitor_rc=0; 2026-05-24T13:31:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11452; monitor_rc=0; 2026-05-24T13:32:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11496; monitor_rc=0; 2026-05-24T13:33:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11532; monitor_rc=0; 2026-05-24T13:34:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11580; monitor_rc=0; 2026-05-24T13:35:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11623; monitor_rc=0; 2026-05-24T13:36:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11664; monitor_rc=0; 2026-05-24T13:37:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11704; monitor_rc=0; 2026-05-24T13:38:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11757; monitor_rc=0; 2026-05-24T13:39:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11796; monitor_rc=0; 2026-05-24T13:40:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11836; monitor_rc=0; 2026-05-24T13:41:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11880; monitor_rc=0; 2026-05-24T13:42:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11920; monitor_rc=0; 2026-05-24T13:43:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=11956; monitor_rc=0; 2026-05-24T13:44:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12000; monitor_rc=0; 2026-05-24T13:45:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12048; monitor_rc=0; 2026-05-24T13:46:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12084; monitor_rc=0; 2026-05-24T13:47:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12124; monitor_rc=0; 2026-05-24T13:48:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12176; monitor_rc=0; 2026-05-24T13:49:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12212; monitor_rc=0; 2026-05-24T13:50:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12254; monitor_rc=0; 2026-05-24T13:51:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12300; monitor_rc=0; 2026-05-24T13:52:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12340; monitor_rc=0; 2026-05-24T13:53:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12384; monitor_rc=0; 2026-05-24T13:54:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12420; monitor_rc=0; 2026-05-24T13:55:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12468; monitor_rc=0; 2026-05-24T13:56:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12504; monitor_rc=0; 2026-05-24T13:57:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12544; monitor_rc=0; 2026-05-24T13:58:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12592; monitor_rc=0; 2026-05-24T13:59:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12636; monitor_rc=0; 2026-05-24T14:00:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12672; monitor_rc=0; 2026-05-24T14:01:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12720; monitor_rc=0; 2026-05-24T14:02:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12760; monitor_rc=0; 2026-05-24T14:03:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12800; monitor_rc=0; 2026-05-24T14:04:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12840; monitor_rc=0; 2026-05-24T14:05:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12892; monitor_rc=0; 2026-05-24T14:06:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12928; monitor_rc=0; 2026-05-24T14:07:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=12968; monitor_rc=0; 2026-05-24T14:08:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13020; monitor_rc=0; 2026-05-24T14:09:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13063; monitor_rc=0; 2026-05-24T14:10:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13104; monitor_rc=0; 2026-05-24T14:12:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13144; monitor_rc=0; 2026-05-24T14:13:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13200; monitor_rc=0; 2026-05-24T14:14:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13244; monitor_rc=0; 2026-05-24T14:15:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13280; monitor_rc=0; 2026-05-24T14:16:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13320; monitor_rc=0; 2026-05-24T14:17:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13368; monitor_rc=0; 2026-05-24T14:18:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13401; monitor_rc=0; 2026-05-24T14:19:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13440; monitor_rc=0; 2026-05-24T14:20:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13488; monitor_rc=0; 2026-05-24T14:21:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13525; monitor_rc=0; 2026-05-24T14:22:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13572; monitor_rc=0; 2026-05-24T14:23:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13618; monitor_rc=0; 2026-05-24T14:24:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13654; monitor_rc=0; 2026-05-24T14:25:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13695; monitor_rc=0; 2026-05-24T14:26:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13740; monitor_rc=0; 2026-05-24T14:27:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13781; monitor_rc=0; 2026-05-24T14:28:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13824; monitor_rc=0; 2026-05-24T14:29:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13866; monitor_rc=0; 2026-05-24T14:30:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13912; monitor_rc=0; 2026-05-24T14:31:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13948; monitor_rc=0; 2026-05-24T14:32:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=13988; monitor_rc=0; 2026-05-24T14:33:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14036; monitor_rc=0; 2026-05-24T14:34:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14076; monitor_rc=0; 2026-05-24T14:35:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14116; monitor_rc=0; 2026-05-24T14:36:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14160; monitor_rc=0; 2026-05-24T14:37:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14208; monitor_rc=0; 2026-05-24T14:38:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14242; monitor_rc=0; 2026-05-24T14:39:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14280; monitor_rc=0; 2026-05-24T14:40:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14328; monitor_rc=0; 2026-05-24T14:41:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14372; monitor_rc=0; 2026-05-24T14:42:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14412; monitor_rc=0; 2026-05-24T14:43:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14460; monitor_rc=0; 2026-05-24T14:44:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14504; monitor_rc=0; 2026-05-24T14:45:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14546; monitor_rc=0; 2026-05-24T14:46:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14582; monitor_rc=0; 2026-05-24T14:47:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14632; monitor_rc=0; 2026-05-24T14:48:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14672; monitor_rc=0; 2026-05-24T14:49:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14715; monitor_rc=0; 2026-05-24T14:50:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14760; monitor_rc=0; 2026-05-24T14:51:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14800; monitor_rc=0; 2026-05-24T14:52:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14840; monitor_rc=0; 2026-05-24T14:54:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14884; monitor_rc=0; 2026-05-24T14:55:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14936; monitor_rc=0; 2026-05-24T14:56:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=14976; monitor_rc=0; 2026-05-24T14:57:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15016; monitor_rc=0; 2026-05-24T14:58:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15060; monitor_rc=0; 2026-05-24T14:59:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15112; monitor_rc=0; 2026-05-24T15:00:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15152; monitor_rc=0; 2026-05-24T15:01:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15190; monitor_rc=0; 2026-05-24T15:02:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15240; monitor_rc=0; 2026-05-24T15:03:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15284; monitor_rc=0; 2026-05-24T15:04:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15328; monitor_rc=0; 2026-05-24T15:05:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15367; monitor_rc=0; 2026-05-24T15:06:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15420; monitor_rc=0; 2026-05-24T15:07:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15456; monitor_rc=0; 2026-05-24T15:08:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15496; monitor_rc=0; 2026-05-24T15:09:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15540; monitor_rc=0; 2026-05-24T15:10:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15592; monitor_rc=0; 2026-05-24T15:11:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15636; monitor_rc=0; 2026-05-24T15:12:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15680; monitor_rc=0; 2026-05-24T15:13:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15720; monitor_rc=0; 2026-05-24T15:14:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15776; monitor_rc=0; 2026-05-24T15:15:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15813; monitor_rc=0; 2026-05-24T15:16:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15856; monitor_rc=0; 2026-05-24T15:17:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15900; monitor_rc=0; 2026-05-24T15:18:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15948; monitor_rc=0; 2026-05-24T15:19:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=15996; monitor_rc=0; 2026-05-24T15:20:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16032; monitor_rc=0; 2026-05-24T15:21:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16080; monitor_rc=0; 2026-05-24T15:22:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16128; monitor_rc=0; 2026-05-24T15:23:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16168; monitor_rc=0; 2026-05-24T15:24:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16212; monitor_rc=0; 2026-05-24T15:25:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16260; monitor_rc=0; 2026-05-24T15:26:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16304; monitor_rc=0; 2026-05-24T15:27:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16348; monitor_rc=0; 2026-05-24T15:28:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16388; monitor_rc=0; 2026-05-24T15:29:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16440; monitor_rc=0; 2026-05-24T15:31:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16484; monitor_rc=0; 2026-05-24T15:32:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16528; monitor_rc=0; 2026-05-24T15:33:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16567; monitor_rc=0; 2026-05-24T15:34:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16620; monitor_rc=0; 2026-05-24T15:35:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16660; monitor_rc=0; 2026-05-24T15:36:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16700; monitor_rc=0; 2026-05-24T15:37:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16740; monitor_rc=0; 2026-05-24T15:38:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16792; monitor_rc=0; 2026-05-24T15:39:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16832; monitor_rc=0; 2026-05-24T15:40:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16872; monitor_rc=0; 2026-05-24T15:41:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16920; monitor_rc=0; 2026-05-24T15:42:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=16960; monitor_rc=0; 2026-05-24T15:43:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17000; monitor_rc=0; 2026-05-24T15:44:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17041; monitor_rc=0; 2026-05-24T15:45:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17096; monitor_rc=0; 2026-05-24T15:46:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17136; monitor_rc=0; 2026-05-24T15:47:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17172; monitor_rc=0; 2026-05-24T15:48:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17220; monitor_rc=0; 2026-05-24T15:49:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17262; monitor_rc=0; 2026-05-24T15:50:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17304; monitor_rc=0; 2026-05-24T15:51:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17341; monitor_rc=0; 2026-05-24T15:52:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17392; monitor_rc=0; 2026-05-24T15:53:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17440; monitor_rc=0; 2026-05-24T15:54:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17480; monitor_rc=0; 2026-05-24T15:55:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17520; monitor_rc=0; 2026-05-24T15:56:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17565; monitor_rc=0; 2026-05-24T15:57:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17604; monitor_rc=0; 2026-05-24T15:58:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17648; monitor_rc=0; 2026-05-24T15:59:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17700; monitor_rc=0; 2026-05-24T16:00:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17744; monitor_rc=0; 2026-05-24T16:01:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17784; monitor_rc=0; 2026-05-24T16:02:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17824; monitor_rc=0; 2026-05-24T16:03:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17871; monitor_rc=0; 2026-05-24T16:05:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17914; monitor_rc=0; 2026-05-24T16:06:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=17956; monitor_rc=0; 2026-05-24T16:07:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18000; monitor_rc=0; 2026-05-24T16:08:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18044; monitor_rc=0; 2026-05-24T16:09:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18084; monitor_rc=0; 2026-05-24T16:10:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18124; monitor_rc=0; 2026-05-24T16:11:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18180; monitor_rc=0; 2026-05-24T16:12:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18220; monitor_rc=0; 2026-05-24T16:13:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18260; monitor_rc=0; 2026-05-24T16:14:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18300; monitor_rc=0; 2026-05-24T16:15:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18355; monitor_rc=0; 2026-05-24T16:16:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18392; monitor_rc=0; 2026-05-24T16:17:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18431; monitor_rc=0; 2026-05-24T16:18:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18480; monitor_rc=0; 2026-05-24T16:19:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18520; monitor_rc=0; 2026-05-24T16:20:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18560; monitor_rc=0; 2026-05-24T16:21:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18600; monitor_rc=0; 2026-05-24T16:22:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18656; monitor_rc=0; 2026-05-24T16:23:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18694; monitor_rc=0; 2026-05-24T16:24:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18736; monitor_rc=0; 2026-05-24T16:25:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18780; monitor_rc=0; 2026-05-24T16:26:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18828; monitor_rc=0; 2026-05-24T16:27:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18868; monitor_rc=0; 2026-05-24T16:28:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18908; monitor_rc=0; 2026-05-24T16:29:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18956; monitor_rc=0; 2026-05-24T16:30:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=18996; monitor_rc=0; 2026-05-24T16:31:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19040; monitor_rc=0; 2026-05-24T16:32:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19088; monitor_rc=0; 2026-05-24T16:33:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19136; monitor_rc=0; 2026-05-24T16:34:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19172; monitor_rc=0; 2026-05-24T16:36:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19216; monitor_rc=0; 2026-05-24T16:37:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19260; monitor_rc=0; 2026-05-24T16:38:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19316; monitor_rc=0; 2026-05-24T16:39:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19356; monitor_rc=0; 2026-05-24T16:40:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19400; monitor_rc=0; 2026-05-24T16:41:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19444; monitor_rc=0; 2026-05-24T16:42:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19496; monitor_rc=0; 2026-05-24T16:43:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19533; monitor_rc=0; 2026-05-24T16:44:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19580; monitor_rc=0; 2026-05-24T16:45:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19620; monitor_rc=0; 2026-05-24T16:46:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19676; monitor_rc=0; 2026-05-24T16:47:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19716; monitor_rc=0; 2026-05-24T16:48:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19752; monitor_rc=0; 2026-05-24T16:49:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19800; monitor_rc=0; 2026-05-24T16:50:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19850; monitor_rc=0; 2026-05-24T16:51:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19892; monitor_rc=0; 2026-05-24T16:52:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19936; monitor_rc=0; 2026-05-24T16:53:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=19980; monitor_rc=0; 2026-05-24T16:54:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20032; monitor_rc=0; 2026-05-24T16:55:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20072; monitor_rc=0; 2026-05-24T16:56:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20113; monitor_rc=0; 2026-05-24T16:57:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20160; monitor_rc=0; 2026-05-24T16:58:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20205; monitor_rc=0; 2026-05-24T16:59:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20244; monitor_rc=0; 2026-05-24T17:00:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20288; monitor_rc=0; 2026-05-24T17:01:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20340; monitor_rc=0; 2026-05-24T17:02:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20384; monitor_rc=0; 2026-05-24T17:04:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20428; monitor_rc=0; 2026-05-24T17:05:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20465; monitor_rc=0; 2026-05-24T17:06:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20508; monitor_rc=0; 2026-05-24T17:07:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20556; monitor_rc=0; 2026-05-24T17:08:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20599; monitor_rc=0; 2026-05-24T17:09:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20640; monitor_rc=0; 2026-05-24T17:10:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20688; monitor_rc=0; 2026-05-24T17:11:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20732; monitor_rc=0; 2026-05-24T17:12:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20776; monitor_rc=0; 2026-05-24T17:13:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20820; monitor_rc=0; 2026-05-24T17:14:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20864; monitor_rc=0; 2026-05-24T17:15:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20903; monitor_rc=0; 2026-05-24T17:16:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=20943; monitor_rc=0; 2026-05-24T17:17:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21000; monitor_rc=0; 2026-05-24T17:18:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21040; monitor_rc=0; 2026-05-24T17:19:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21080; monitor_rc=0; 2026-05-24T17:20:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21124; monitor_rc=0; 2026-05-24T17:21:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21176; monitor_rc=0; 2026-05-24T17:22:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21222; monitor_rc=0; 2026-05-24T17:23:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21260; monitor_rc=0; 2026-05-24T17:24:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21304; monitor_rc=0; 2026-05-24T17:25:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21356; monitor_rc=0; 2026-05-24T17:26:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21400; monitor_rc=0; 2026-05-24T17:27:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21440; monitor_rc=0; 2026-05-24T17:28:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21480; monitor_rc=0; 2026-05-24T17:29:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21528; monitor_rc=0; 2026-05-24T17:31:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21568; monitor_rc=0; 2026-05-24T17:32:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21608; monitor_rc=0; 2026-05-24T17:33:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21660; monitor_rc=0; 2026-05-24T17:34:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21709; monitor_rc=0; 2026-05-24T17:35:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21753; monitor_rc=0; 2026-05-24T17:36:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21796; monitor_rc=0; 2026-05-24T17:37:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21840; monitor_rc=0; 2026-05-24T17:38:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21896; monitor_rc=0; 2026-05-24T17:39:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21940; monitor_rc=0; 2026-05-24T17:40:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=21984; monitor_rc=0; 2026-05-24T17:41:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22028; monitor_rc=0; 2026-05-24T17:42:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22080; monitor_rc=0; 2026-05-24T17:43:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22120; monitor_rc=0; 2026-05-24T17:44:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22160; monitor_rc=0; 2026-05-24T17:45:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22204; monitor_rc=0; 2026-05-24T17:46:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22256; monitor_rc=0; 2026-05-24T17:47:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22304; monitor_rc=0; 2026-05-24T17:48:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22346; monitor_rc=0; 2026-05-24T17:49:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22388; monitor_rc=0; 2026-05-24T17:50:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22440; monitor_rc=0; 2026-05-24T17:51:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22487; monitor_rc=0; 2026-05-24T17:52:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22528; monitor_rc=0; 2026-05-24T17:53:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22572; monitor_rc=0; 2026-05-24T17:54:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22620; monitor_rc=0; 2026-05-24T17:55:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22664; monitor_rc=0; 2026-05-24T17:57:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22708; monitor_rc=0; 2026-05-24T17:58:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22748; monitor_rc=0; 2026-05-24T17:59:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22800; monitor_rc=0; 2026-05-24T18:00:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22848; monitor_rc=0; 2026-05-24T18:01:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22892; monitor_rc=0; 2026-05-24T18:02:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22928; monitor_rc=0; 2026-05-24T18:03:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=22980; monitor_rc=0; 2026-05-24T18:04:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23028; monitor_rc=0; 2026-05-24T18:05:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23072; monitor_rc=0; 2026-05-24T18:06:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23116; monitor_rc=0; 2026-05-24T18:07:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23164; monitor_rc=0; 2026-05-24T18:08:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23215; monitor_rc=0; 2026-05-24T18:09:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23254; monitor_rc=0; 2026-05-24T18:10:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23295; monitor_rc=0; 2026-05-24T18:11:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23340; monitor_rc=0; 2026-05-24T18:12:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23388; monitor_rc=0; 2026-05-24T18:13:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23432; monitor_rc=0; 2026-05-24T18:14:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23476; monitor_rc=0; 2026-05-24T18:15:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23524; monitor_rc=0; 2026-05-24T18:16:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23580; monitor_rc=0; 2026-05-24T18:17:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23622; monitor_rc=0; 2026-05-24T18:18:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23668; monitor_rc=0; 2026-05-24T18:19:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23716; monitor_rc=0; 2026-05-24T18:21:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23764; monitor_rc=0; 2026-05-24T18:22:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23820; monitor_rc=0; 2026-05-24T18:23:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23864; monitor_rc=0; 2026-05-24T18:24:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23904; monitor_rc=0; 2026-05-24T18:25:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=23952; monitor_rc=0; 2026-05-24T18:26:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24000; monitor_rc=0; 2026-05-24T18:27:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24052; monitor_rc=0; 2026-05-24T18:28:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24092; monitor_rc=0; 2026-05-24T18:29:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24136; monitor_rc=0; 2026-05-24T18:30:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24180; monitor_rc=0; 2026-05-24T18:31:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24240; monitor_rc=0; 2026-05-24T18:32:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24280; monitor_rc=0; 2026-05-24T18:33:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24322; monitor_rc=0; 2026-05-24T18:34:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24368; monitor_rc=0; 2026-05-24T18:35:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24420; monitor_rc=0; 2026-05-24T18:36:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24472; monitor_rc=0; 2026-05-24T18:37:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24516; monitor_rc=0; 2026-05-24T18:38:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24556; monitor_rc=0; 2026-05-24T18:39:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24608; monitor_rc=0; 2026-05-24T18:40:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24660; monitor_rc=0; 2026-05-24T18:41:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24708; monitor_rc=0; 2026-05-24T18:42:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24752; monitor_rc=0; 2026-05-24T18:43:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24796; monitor_rc=0; 2026-05-24T18:45:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24840; monitor_rc=0; 2026-05-24T18:46:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24896; monitor_rc=0; 2026-05-24T18:47:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24940; monitor_rc=0; 2026-05-24T18:48:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=24988; monitor_rc=0; 2026-05-24T18:49:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25034; monitor_rc=0; 2026-05-24T18:50:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25083; monitor_rc=0; 2026-05-24T18:51:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25140; monitor_rc=0; 2026-05-24T18:52:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25184; monitor_rc=0; 2026-05-24T18:53:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25231; monitor_rc=0; 2026-05-24T18:54:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25273; monitor_rc=0; 2026-05-24T18:55:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25320; monitor_rc=0; 2026-05-24T18:56:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25376; monitor_rc=0; 2026-05-24T18:57:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25424; monitor_rc=0; 2026-05-24T18:58:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25466; monitor_rc=0; 2026-05-24T18:59:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25504; monitor_rc=0; 2026-05-24T19:00:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25556; monitor_rc=0; 2026-05-24T19:01:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25596; monitor_rc=0; 2026-05-24T19:02:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25640; monitor_rc=0; 2026-05-24T19:03:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25682; monitor_rc=0; 2026-05-24T19:04:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25740; monitor_rc=0; 2026-05-24T19:05:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25784; monitor_rc=0; 2026-05-24T19:06:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25831; monitor_rc=0; 2026-05-24T19:07:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25876; monitor_rc=0; 2026-05-24T19:09:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25920; monitor_rc=0; 2026-05-24T19:10:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=25968; monitor_rc=0; 2026-05-24T19:11:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26008; monitor_rc=0; 2026-05-24T19:12:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26056; monitor_rc=0; 2026-05-24T19:13:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26100; monitor_rc=0; 2026-05-24T19:14:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26159; monitor_rc=0; 2026-05-24T19:15:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26200; monitor_rc=0; 2026-05-24T19:16:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26248; monitor_rc=0; 2026-05-24T19:17:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26288; monitor_rc=0; 2026-05-24T19:18:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26340; monitor_rc=0; 2026-05-24T19:19:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26392; monitor_rc=0; 2026-05-24T19:20:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26440; monitor_rc=0; 2026-05-24T19:21:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26484; monitor_rc=0; 2026-05-24T19:22:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26532; monitor_rc=0; 2026-05-24T19:23:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26580; monitor_rc=0; 2026-05-24T19:24:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26628; monitor_rc=0; 2026-05-24T19:25:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26676; monitor_rc=0; 2026-05-24T19:26:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26719; monitor_rc=0; 2026-05-24T19:27:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26764; monitor_rc=0; 2026-05-24T19:28:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26816; monitor_rc=0; 2026-05-24T19:29:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26864; monitor_rc=0; 2026-05-24T19:31:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26908; monitor_rc=0; 2026-05-24T19:32:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=26956; monitor_rc=0; 2026-05-24T19:33:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27000; monitor_rc=0; 2026-05-24T19:34:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27060; monitor_rc=0; 2026-05-24T19:35:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27108; monitor_rc=0; 2026-05-24T19:36:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27152; monitor_rc=0; 2026-05-24T19:37:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27192; monitor_rc=0; 2026-05-24T19:38:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27240; monitor_rc=0; 2026-05-24T19:39:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27294; monitor_rc=0; 2026-05-24T19:40:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27344; monitor_rc=0; 2026-05-24T19:41:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27392; monitor_rc=0; 2026-05-24T19:42:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27444; monitor_rc=0; 2026-05-24T19:43:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27488; monitor_rc=0; 2026-05-24T19:44:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27540; monitor_rc=0; 2026-05-24T19:45:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27588; monitor_rc=0; 2026-05-24T19:46:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27632; monitor_rc=0; 2026-05-24T19:47:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27676; monitor_rc=0; 2026-05-24T19:48:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27720; monitor_rc=0; 2026-05-24T19:49:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27780; monitor_rc=0; 2026-05-24T19:50:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27828; monitor_rc=0; 2026-05-24T19:51:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27868; monitor_rc=0; 2026-05-24T19:53:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27920; monitor_rc=0; 2026-05-24T19:54:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=27960; monitor_rc=0; 2026-05-24T19:55:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28016; monitor_rc=0; 2026-05-24T19:56:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28065; monitor_rc=0; 2026-05-24T19:57:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28108; monitor_rc=0; 2026-05-24T19:58:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28148; monitor_rc=0; 2026-05-24T19:59:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28200; monitor_rc=0; 2026-05-24T20:00:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28248; monitor_rc=0; 2026-05-24T20:01:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28296; monitor_rc=0; 2026-05-24T20:02:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28340; monitor_rc=0; 2026-05-24T20:03:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28388; monitor_rc=0; 2026-05-24T20:04:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28440; monitor_rc=0; 2026-05-24T20:05:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28487; monitor_rc=0; 2026-05-24T20:06:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28532; monitor_rc=0; 2026-05-24T20:07:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28580; monitor_rc=0; 2026-05-24T20:08:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28628; monitor_rc=0; 2026-05-24T20:09:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28680; monitor_rc=0; 2026-05-24T20:10:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28728; monitor_rc=0; 2026-05-24T20:11:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28772; monitor_rc=0; 2026-05-24T20:12:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28820; monitor_rc=0; 2026-05-24T20:14:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28864; monitor_rc=0; 2026-05-24T20:15:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28920; monitor_rc=0; 2026-05-24T20:16:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=28969; monitor_rc=0; 2026-05-24T20:17:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29020; monitor_rc=0; 2026-05-24T20:18:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29068; monitor_rc=0; 2026-05-24T20:19:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29116; monitor_rc=0; 2026-05-24T20:20:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29160; monitor_rc=0; 2026-05-24T20:21:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29220; monitor_rc=0; 2026-05-24T20:22:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29268; monitor_rc=0; 2026-05-24T20:23:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29312; monitor_rc=0; 2026-05-24T20:24:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29360; monitor_rc=0; 2026-05-24T20:25:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29408; monitor_rc=0; 2026-05-24T20:26:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29460; monitor_rc=0; 2026-05-24T20:27:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29520; monitor_rc=0; 2026-05-24T20:28:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29560; monitor_rc=0; 2026-05-24T20:29:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29603; monitor_rc=0; 2026-05-24T20:30:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29652; monitor_rc=0; 2026-05-24T20:31:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29700; monitor_rc=0; 2026-05-24T20:32:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29752; monitor_rc=0; 2026-05-24T20:34:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29800; monitor_rc=0; 2026-05-24T20:35:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29848; monitor_rc=0; 2026-05-24T20:36:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29888; monitor_rc=0; 2026-05-24T20:37:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29940; monitor_rc=0; 2026-05-24T20:38:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=29992; monitor_rc=0; 2026-05-24T20:39:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30032; monitor_rc=0; 2026-05-24T20:40:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30072; monitor_rc=0; 2026-05-24T20:41:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30120; monitor_rc=0; 2026-05-24T20:42:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30176; monitor_rc=0; 2026-05-24T20:43:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30220; monitor_rc=0; 2026-05-24T20:44:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30269; monitor_rc=0; 2026-05-24T20:45:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30316; monitor_rc=0; 2026-05-24T20:46:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30368; monitor_rc=0; 2026-05-24T20:47:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30420; monitor_rc=0; 2026-05-24T20:48:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30472; monitor_rc=0; 2026-05-24T20:49:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30517; monitor_rc=0; 2026-05-24T20:50:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30564; monitor_rc=0; 2026-05-24T20:51:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30604; monitor_rc=0; 2026-05-24T20:52:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30660; monitor_rc=0; 2026-05-24T20:54:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30708; monitor_rc=0; 2026-05-24T20:55:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30756; monitor_rc=0; 2026-05-24T20:56:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30802; monitor_rc=0; 2026-05-24T20:57:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30844; monitor_rc=0; 2026-05-24T20:58:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30900; monitor_rc=0; 2026-05-24T20:59:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=30956; monitor_rc=0; 2026-05-24T21:00:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31000; monitor_rc=0; 2026-05-24T21:01:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31044; monitor_rc=0; 2026-05-24T21:02:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31088; monitor_rc=0; 2026-05-24T21:03:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31140; monitor_rc=0; 2026-05-24T21:04:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31192; monitor_rc=0; 2026-05-24T21:05:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31236; monitor_rc=0; 2026-05-24T21:06:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31288; monitor_rc=0; 2026-05-24T21:07:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31336; monitor_rc=0; 2026-05-24T21:08:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31381; monitor_rc=0; 2026-05-24T21:09:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31437; monitor_rc=0; 2026-05-24T21:10:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31480; monitor_rc=0; 2026-05-24T21:11:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31528; monitor_rc=0; 2026-05-24T21:13:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31572; monitor_rc=0; 2026-05-24T21:14:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31620; monitor_rc=0; 2026-05-24T21:15:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31676; monitor_rc=0; 2026-05-24T21:16:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31723; monitor_rc=0; 2026-05-24T21:17:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31768; monitor_rc=0; 2026-05-24T21:18:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31816; monitor_rc=0; 2026-05-24T21:19:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31868; monitor_rc=0; 2026-05-24T21:20:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31920; monitor_rc=0; 2026-05-24T21:21:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=31972; monitor_rc=0; 2026-05-24T21:22:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32018; monitor_rc=0; 2026-05-24T21:23:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32068; monitor_rc=0; 2026-05-24T21:24:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32120; monitor_rc=0; 2026-05-24T21:25:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32168; monitor_rc=0; 2026-05-24T21:26:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32220; monitor_rc=0; 2026-05-24T21:27:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32280; monitor_rc=0; 2026-05-24T21:28:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32328; monitor_rc=0; 2026-05-24T21:29:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32372; monitor_rc=0; 2026-05-24T21:30:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32424; monitor_rc=0; 2026-05-24T21:32:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32472; monitor_rc=0; 2026-05-24T21:33:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32520; monitor_rc=0; 2026-05-24T21:34:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32578; monitor_rc=0; 2026-05-24T21:35:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32624; monitor_rc=0; 2026-05-24T21:36:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32676; monitor_rc=0; 2026-05-24T21:37:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32720; monitor_rc=0; 2026-05-24T21:38:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32764; monitor_rc=0; 2026-05-24T21:39:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32820; monitor_rc=0; 2026-05-24T21:40:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32877; monitor_rc=0; 2026-05-24T21:41:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32924; monitor_rc=0; 2026-05-24T21:42:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=32972; monitor_rc=0; 2026-05-24T21:43:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33020; monitor_rc=0; 2026-05-24T21:44:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33064; monitor_rc=0; 2026-05-24T21:45:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33120; monitor_rc=0; 2026-05-24T21:46:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33174; monitor_rc=0; 2026-05-24T21:47:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33216; monitor_rc=0; 2026-05-24T21:48:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33260; monitor_rc=0; 2026-05-24T21:50:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33304; monitor_rc=0; 2026-05-24T21:51:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33360; monitor_rc=0; 2026-05-24T21:52:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33412; monitor_rc=0; 2026-05-24T21:53:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33460; monitor_rc=0; 2026-05-24T21:54:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33508; monitor_rc=0; 2026-05-24T21:55:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33561; monitor_rc=0; 2026-05-24T21:56:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33614; monitor_rc=0; 2026-05-24T21:57:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33664; monitor_rc=0; 2026-05-24T21:58:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33720; monitor_rc=0; 2026-05-24T21:59:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33772; monitor_rc=0; 2026-05-24T22:00:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33824; monitor_rc=0; 2026-05-24T22:01:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33869; monitor_rc=0; 2026-05-24T22:02:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33920; monitor_rc=0; 2026-05-24T22:03:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=33973; monitor_rc=0; 2026-05-24T22:04:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34020; monitor_rc=0; 2026-05-24T22:05:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34080; monitor_rc=0; 2026-05-24T22:07:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34132; monitor_rc=0; 2026-05-24T22:08:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34180; monitor_rc=0; 2026-05-24T22:09:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34228; monitor_rc=0; 2026-05-24T22:10:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34276; monitor_rc=0; 2026-05-24T22:11:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34324; monitor_rc=0; 2026-05-24T22:12:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34380; monitor_rc=0; 2026-05-24T22:13:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34436; monitor_rc=0; 2026-05-24T22:14:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34484; monitor_rc=0; 2026-05-24T22:15:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34528; monitor_rc=0; 2026-05-24T22:16:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34580; monitor_rc=0; 2026-05-24T22:17:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34628; monitor_rc=0; 2026-05-24T22:18:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34680; monitor_rc=0; 2026-05-24T22:19:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34740; monitor_rc=0; 2026-05-24T22:20:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34788; monitor_rc=0; 2026-05-24T22:21:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34844; monitor_rc=0; 2026-05-24T22:22:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34888; monitor_rc=0; 2026-05-24T22:24:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34940; monitor_rc=0; 2026-05-24T22:25:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=34996; monitor_rc=0; 2026-05-24T22:26:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35044; monitor_rc=0; 2026-05-24T22:27:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35100; monitor_rc=0; 2026-05-24T22:28:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35156; monitor_rc=0; 2026-05-24T22:29:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35212; monitor_rc=0; 2026-05-24T22:30:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35268; monitor_rc=0; 2026-05-24T22:31:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35320; monitor_rc=0; 2026-05-24T22:32:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35364; monitor_rc=0; 2026-05-24T22:33:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35420; monitor_rc=0; 2026-05-24T22:34:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35472; monitor_rc=0; 2026-05-24T22:35:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35520; monitor_rc=0; 2026-05-24T22:36:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35580; monitor_rc=0; 2026-05-24T22:37:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35628; monitor_rc=0; 2026-05-24T22:38:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35680; monitor_rc=0; 2026-05-24T22:39:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35732; monitor_rc=0; 2026-05-24T22:41:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35784; monitor_rc=0; 2026-05-24T22:42:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35836; monitor_rc=0; 2026-05-24T22:43:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35892; monitor_rc=0; 2026-05-24T22:44:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=35948; monitor_rc=0; 2026-05-24T22:45:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36000; monitor_rc=0; 2026-05-24T22:46:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36060; monitor_rc=0; 2026-05-24T22:47:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36116; monitor_rc=0; 2026-05-24T22:48:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36172; monitor_rc=0; 2026-05-24T22:49:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36224; monitor_rc=0; 2026-05-24T22:50:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36280; monitor_rc=0; 2026-05-24T22:51:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36332; monitor_rc=0; 2026-05-24T22:52:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36384; monitor_rc=0; 2026-05-24T22:53:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36436; monitor_rc=0; 2026-05-24T22:54:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36488; monitor_rc=0; 2026-05-24T22:55:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36540; monitor_rc=0; 2026-05-24T22:56:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36600; monitor_rc=0; 2026-05-24T22:58:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36658; monitor_rc=0; 2026-05-24T22:59:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36708; monitor_rc=0; 2026-05-24T23:00:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36764; monitor_rc=0; 2026-05-24T23:01:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36812; monitor_rc=0; 2026-05-24T23:02:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36864; monitor_rc=0; 2026-05-24T23:03:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36912; monitor_rc=0; 2026-05-24T23:04:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=36960; monitor_rc=0; 2026-05-24T23:05:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37020; monitor_rc=0; 2026-05-24T23:06:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37076; monitor_rc=0; 2026-05-24T23:07:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37128; monitor_rc=0; 2026-05-24T23:08:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37180; monitor_rc=0; 2026-05-24T23:09:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37232; monitor_rc=0; 2026-05-24T23:10:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37284; monitor_rc=0; 2026-05-24T23:11:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37335; monitor_rc=0; 2026-05-24T23:12:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37384; monitor_rc=0; 2026-05-24T23:14:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37440; monitor_rc=0; 2026-05-24T23:15:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37496; monitor_rc=0; 2026-05-24T23:16:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37544; monitor_rc=0; 2026-05-24T23:17:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37588; monitor_rc=0; 2026-05-24T23:18:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37639; monitor_rc=0; 2026-05-24T23:19:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37692; monitor_rc=0; 2026-05-24T23:20:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37740; monitor_rc=0; 2026-05-24T23:21:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37800; monitor_rc=0; 2026-05-24T23:22:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37852; monitor_rc=0; 2026-05-24T23:23:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37904; monitor_rc=0; 2026-05-24T23:24:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=37952; monitor_rc=0; 2026-05-24T23:25:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38000; monitor_rc=0; 2026-05-24T23:26:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38052; monitor_rc=0; 2026-05-24T23:27:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38103; monitor_rc=0; 2026-05-24T23:29:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38160; monitor_rc=0; 2026-05-24T23:30:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38220; monitor_rc=0; 2026-05-24T23:31:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38268; monitor_rc=0; 2026-05-24T23:32:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38320; monitor_rc=0; 2026-05-24T23:33:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38372; monitor_rc=0; 2026-05-24T23:34:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38417; monitor_rc=0; 2026-05-24T23:35:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38468; monitor_rc=0; 2026-05-24T23:36:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38520; monitor_rc=0; 2026-05-24T23:37:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38576; monitor_rc=0; 2026-05-24T23:38:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38621; monitor_rc=0; 2026-05-24T23:39:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38668; monitor_rc=0; 2026-05-24T23:40:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38716; monitor_rc=0; 2026-05-24T23:41:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38764; monitor_rc=0; 2026-05-24T23:42:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38820; monitor_rc=0; 2026-05-24T23:43:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38868; monitor_rc=0; 2026-05-24T23:45:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38924; monitor_rc=0; 2026-05-24T23:46:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=38976; monitor_rc=0; 2026-05-24T23:47:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39020; monitor_rc=0; 2026-05-24T23:48:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39076; monitor_rc=0; 2026-05-24T23:49:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39124; monitor_rc=0; 2026-05-24T23:50:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39180; monitor_rc=0; 2026-05-24T23:51:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39239; monitor_rc=0; 2026-05-24T23:52:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39292; monitor_rc=0; 2026-05-24T23:53:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39348; monitor_rc=0; 2026-05-24T23:54:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39396; monitor_rc=0; 2026-05-24T23:55:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39448; monitor_rc=0; 2026-05-24T23:56:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39500; monitor_rc=0; 2026-05-24T23:57:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39548; monitor_rc=0; 2026-05-24T23:58:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39604; monitor_rc=0; 2026-05-24T23:59:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39660; monitor_rc=0; 2026-05-25T00:01:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39720; monitor_rc=0; 2026-05-25T00:02:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39772; monitor_rc=0; 2026-05-25T00:03:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39828; monitor_rc=0; 2026-05-25T00:04:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39880; monitor_rc=0; 2026-05-25T00:05:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39932; monitor_rc=0; 2026-05-25T00:06:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=39988; monitor_rc=0; 2026-05-25T00:07:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40036; monitor_rc=0; 2026-05-25T00:08:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40092; monitor_rc=0; 2026-05-25T00:09:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40144; monitor_rc=0; 2026-05-25T00:10:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40200; monitor_rc=0; 2026-05-25T00:11:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40252; monitor_rc=0; 2026-05-25T00:12:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40300; monitor_rc=0; 2026-05-25T00:13:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40356; monitor_rc=0; 2026-05-25T00:14:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40408; monitor_rc=0; 2026-05-25T00:15:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40455; monitor_rc=0; 2026-05-25T00:17:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40500; monitor_rc=0; 2026-05-25T00:18:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40560; monitor_rc=0; 2026-05-25T00:19:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40616; monitor_rc=0; 2026-05-25T00:20:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40668; monitor_rc=0; 2026-05-25T00:21:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40712; monitor_rc=0; 2026-05-25T00:22:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40760; monitor_rc=0; 2026-05-25T00:23:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40812; monitor_rc=0; 2026-05-25T00:24:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40864; monitor_rc=0; 2026-05-25T00:25:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40920; monitor_rc=0; 2026-05-25T00:26:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=40980; monitor_rc=0; 2026-05-25T00:27:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41032; monitor_rc=0; 2026-05-25T00:28:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41088; monitor_rc=0; 2026-05-25T00:29:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41144; monitor_rc=0; 2026-05-25T00:30:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41192; monitor_rc=0; 2026-05-25T00:32:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41244; monitor_rc=0; 2026-05-25T00:33:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41292; monitor_rc=0; 2026-05-25T00:34:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41344; monitor_rc=0; 2026-05-25T00:35:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41400; monitor_rc=0; 2026-05-25T00:36:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41460; monitor_rc=0; 2026-05-25T00:37:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41520; monitor_rc=0; 2026-05-25T00:38:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41572; monitor_rc=0; 2026-05-25T00:39:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41624; monitor_rc=0; 2026-05-25T00:40:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41676; monitor_rc=0; 2026-05-25T00:41:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41728; monitor_rc=0; 2026-05-25T00:42:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41776; monitor_rc=0; 2026-05-25T00:43:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41832; monitor_rc=0; 2026-05-25T00:44:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41884; monitor_rc=0; 2026-05-25T00:45:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41940; monitor_rc=0; 2026-05-25T00:47:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=41996; monitor_rc=0; 2026-05-25T00:48:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42052; monitor_rc=0; 2026-05-25T00:49:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42100; monitor_rc=0; 2026-05-25T00:50:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42156; monitor_rc=0; 2026-05-25T00:51:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42204; monitor_rc=0; 2026-05-25T00:52:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42252; monitor_rc=0; 2026-05-25T00:53:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42308; monitor_rc=0; 2026-05-25T00:54:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42360; monitor_rc=0; 2026-05-25T00:55:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42420; monitor_rc=0; 2026-05-25T00:56:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42476; monitor_rc=0; 2026-05-25T00:57:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42524; monitor_rc=0; 2026-05-25T00:58:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42572; monitor_rc=0; 2026-05-25T00:59:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42624; monitor_rc=0; 2026-05-25T01:01:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42676; monitor_rc=0; 2026-05-25T01:02:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42728; monitor_rc=0; 2026-05-25T01:03:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42780; monitor_rc=0; 2026-05-25T01:04:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42836; monitor_rc=0; 2026-05-25T01:05:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42888; monitor_rc=0; 2026-05-25T01:06:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42944; monitor_rc=0; 2026-05-25T01:07:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=42996; monitor_rc=0; 2026-05-25T01:08:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43044; monitor_rc=0; 2026-05-25T01:09:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43100; monitor_rc=0; 2026-05-25T01:10:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43152; monitor_rc=0; 2026-05-25T01:11:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43200; monitor_rc=0; 2026-05-25T01:12:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43260; monitor_rc=0; 2026-05-25T01:13:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43316; monitor_rc=0; 2026-05-25T01:14:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43364; monitor_rc=0; 2026-05-25T01:16:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43416; monitor_rc=0; 2026-05-25T01:17:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43468; monitor_rc=0; 2026-05-25T01:18:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43520; monitor_rc=0; 2026-05-25T01:19:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43572; monitor_rc=0; 2026-05-25T01:20:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43628; monitor_rc=0; 2026-05-25T01:21:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43680; monitor_rc=0; 2026-05-25T01:22:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43740; monitor_rc=0; 2026-05-25T01:23:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43796; monitor_rc=0; 2026-05-25T01:24:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43844; monitor_rc=0; 2026-05-25T01:25:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43896; monitor_rc=0; 2026-05-25T01:26:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=43948; monitor_rc=0; 2026-05-25T01:27:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44000; monitor_rc=0; 2026-05-25T01:29:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44052; monitor_rc=0; 2026-05-25T01:30:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44104; monitor_rc=0; 2026-05-25T01:31:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44160; monitor_rc=0; 2026-05-25T01:32:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44212; monitor_rc=0; 2026-05-25T01:33:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44264; monitor_rc=0; 2026-05-25T01:34:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44316; monitor_rc=0; 2026-05-25T01:35:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44372; monitor_rc=0; 2026-05-25T01:36:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44428; monitor_rc=0; 2026-05-25T01:37:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44480; monitor_rc=0; 2026-05-25T01:38:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44528; monitor_rc=0; 2026-05-25T01:39:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44584; monitor_rc=0; 2026-05-25T01:40:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44640; monitor_rc=0; 2026-05-25T01:41:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44700; monitor_rc=0; 2026-05-25T01:42:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44760; monitor_rc=0; 2026-05-25T01:44:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44812; monitor_rc=0; 2026-05-25T01:45:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44864; monitor_rc=0; 2026-05-25T01:46:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44920; monitor_rc=0; 2026-05-25T01:47:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=44976; monitor_rc=0; 2026-05-25T01:48:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45028; monitor_rc=0; 2026-05-25T01:49:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45080; monitor_rc=0; 2026-05-25T01:50:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45136; monitor_rc=0; 2026-05-25T01:51:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45192; monitor_rc=0; 2026-05-25T01:52:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45240; monitor_rc=0; 2026-05-25T01:53:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45300; monitor_rc=0; 2026-05-25T01:54:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45360; monitor_rc=0; 2026-05-25T01:55:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45408; monitor_rc=0; 2026-05-25T01:56:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45464; monitor_rc=0; 2026-05-25T01:58:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45516; monitor_rc=0; 2026-05-25T01:59:09+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45564; monitor_rc=0; 2026-05-25T02:00:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45616; monitor_rc=0; 2026-05-25T02:01:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45672; monitor_rc=0; 2026-05-25T02:02:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45720; monitor_rc=0; 2026-05-25T02:03:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45780; monitor_rc=0; 2026-05-25T02:04:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45836; monitor_rc=0; 2026-05-25T02:05:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45892; monitor_rc=0; 2026-05-25T02:06:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=45948; monitor_rc=0; 2026-05-25T02:07:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46000; monitor_rc=0; 2026-05-25T02:08:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46046; monitor_rc=0; 2026-05-25T02:09:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46100; monitor_rc=0; 2026-05-25T02:11:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46152; monitor_rc=0; 2026-05-25T02:12:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46202; monitor_rc=0; 2026-05-25T02:13:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46260; monitor_rc=0; 2026-05-25T02:14:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46320; monitor_rc=0; 2026-05-25T02:15:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46380; monitor_rc=0; 2026-05-25T02:16:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46440; monitor_rc=0; 2026-05-25T02:17:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46492; monitor_rc=0; 2026-05-25T02:18:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46541; monitor_rc=0; 2026-05-25T02:19:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46592; monitor_rc=0; 2026-05-25T02:20:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46648; monitor_rc=0; 2026-05-25T02:21:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46696; monitor_rc=0; 2026-05-25T02:23:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46748; monitor_rc=0; 2026-05-25T02:24:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46804; monitor_rc=0; 2026-05-25T02:25:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46860; monitor_rc=0; 2026-05-25T02:26:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46920; monitor_rc=0; 2026-05-25T02:27:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=46964; monitor_rc=0; 2026-05-25T02:28:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47016; monitor_rc=0; 2026-05-25T02:29:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47070; monitor_rc=0; 2026-05-25T02:30:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47120; monitor_rc=0; 2026-05-25T02:31:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47168; monitor_rc=0; 2026-05-25T02:32:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47220; monitor_rc=0; 2026-05-25T02:33:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47280; monitor_rc=0; 2026-05-25T02:34:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47336; monitor_rc=0; 2026-05-25T02:36:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47392; monitor_rc=0; 2026-05-25T02:37:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47444; monitor_rc=0; 2026-05-25T02:38:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47499; monitor_rc=0; 2026-05-25T02:39:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47552; monitor_rc=0; 2026-05-25T02:40:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47604; monitor_rc=0; 2026-05-25T02:41:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47656; monitor_rc=0; 2026-05-25T02:42:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47704; monitor_rc=0; 2026-05-25T02:43:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47760; monitor_rc=0; 2026-05-25T02:44:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47820; monitor_rc=0; 2026-05-25T02:45:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47876; monitor_rc=0; 2026-05-25T02:46:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47928; monitor_rc=0; 2026-05-25T02:47:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=47976; monitor_rc=0; 2026-05-25T02:49:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48024; monitor_rc=0; 2026-05-25T02:50:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48076; monitor_rc=0; 2026-05-25T02:51:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48124; monitor_rc=0; 2026-05-25T02:52:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48180; monitor_rc=0; 2026-05-25T02:53:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48240; monitor_rc=0; 2026-05-25T02:54:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48296; monitor_rc=0; 2026-05-25T02:55:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48348; monitor_rc=0; 2026-05-25T02:56:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48400; monitor_rc=0; 2026-05-25T02:57:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48452; monitor_rc=0; 2026-05-25T02:58:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48508; monitor_rc=0; 2026-05-25T02:59:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48560; monitor_rc=0; 2026-05-25T03:00:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48612; monitor_rc=0; 2026-05-25T03:02:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48668; monitor_rc=0; 2026-05-25T03:03:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48724; monitor_rc=0; 2026-05-25T03:04:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48780; monitor_rc=0; 2026-05-25T03:05:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48840; monitor_rc=0; 2026-05-25T03:06:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48896; monitor_rc=0; 2026-05-25T03:07:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=48952; monitor_rc=0; 2026-05-25T03:08:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49000; monitor_rc=0; 2026-05-25T03:09:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49052; monitor_rc=0; 2026-05-25T03:10:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49104; monitor_rc=0; 2026-05-25T03:11:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49160; monitor_rc=0; 2026-05-25T03:12:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49215; monitor_rc=0; 2026-05-25T03:14:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49260; monitor_rc=0; 2026-05-25T03:15:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49320; monitor_rc=0; 2026-05-25T03:16:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49380; monitor_rc=0; 2026-05-25T03:17:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49434; monitor_rc=0; 2026-05-25T03:18:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49484; monitor_rc=0; 2026-05-25T03:19:26+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49532; monitor_rc=0; 2026-05-25T03:20:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49584; monitor_rc=0; 2026-05-25T03:21:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49644; monitor_rc=0; 2026-05-25T03:22:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49692; monitor_rc=0; 2026-05-25T03:23:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49744; monitor_rc=0; 2026-05-25T03:24:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49800; monitor_rc=0; 2026-05-25T03:25:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49856; monitor_rc=0; 2026-05-25T03:27:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49916; monitor_rc=0; 2026-05-25T03:28:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=49968; monitor_rc=0; 2026-05-25T03:29:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50020; monitor_rc=0; 2026-05-25T03:30:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50076; monitor_rc=0; 2026-05-25T03:31:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50132; monitor_rc=0; 2026-05-25T03:32:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50180; monitor_rc=0; 2026-05-25T03:33:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50232; monitor_rc=0; 2026-05-25T03:34:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50288; monitor_rc=0; 2026-05-25T03:35:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50340; monitor_rc=0; 2026-05-25T03:36:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50396; monitor_rc=0; 2026-05-25T03:37:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50451; monitor_rc=0; 2026-05-25T03:38:58+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50504; monitor_rc=0; 2026-05-25T03:40:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50564; monitor_rc=0; 2026-05-25T03:41:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50620; monitor_rc=0; 2026-05-25T03:42:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50672; monitor_rc=0; 2026-05-25T03:43:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50732; monitor_rc=0; 2026-05-25T03:44:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50784; monitor_rc=0; 2026-05-25T03:45:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50838; monitor_rc=0; 2026-05-25T03:46:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50892; monitor_rc=0; 2026-05-25T03:47:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=50944; monitor_rc=0; 2026-05-25T03:48:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51000; monitor_rc=0; 2026-05-25T03:49:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51060; monitor_rc=0; 2026-05-25T03:50:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51120; monitor_rc=0; 2026-05-25T03:52:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51180; monitor_rc=0; 2026-05-25T03:53:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51232; monitor_rc=0; 2026-05-25T03:54:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51284; monitor_rc=0; 2026-05-25T03:55:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51344; monitor_rc=0; 2026-05-25T03:56:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51396; monitor_rc=0; 2026-05-25T03:57:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51448; monitor_rc=0; 2026-05-25T03:58:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51500; monitor_rc=0; 2026-05-25T03:59:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51556; monitor_rc=0; 2026-05-25T04:00:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51612; monitor_rc=0; 2026-05-25T04:01:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51668; monitor_rc=0; 2026-05-25T04:02:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51720; monitor_rc=0; 2026-05-25T04:04:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51780; monitor_rc=0; 2026-05-25T04:05:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51840; monitor_rc=0; 2026-05-25T04:06:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51896; monitor_rc=0; 2026-05-25T04:07:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=51944; monitor_rc=0; 2026-05-25T04:08:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52000; monitor_rc=0; 2026-05-25T04:09:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52056; monitor_rc=0; 2026-05-25T04:10:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52108; monitor_rc=0; 2026-05-25T04:11:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52164; monitor_rc=0; 2026-05-25T04:12:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52216; monitor_rc=0; 2026-05-25T04:13:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52268; monitor_rc=0; 2026-05-25T04:14:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52324; monitor_rc=0; 2026-05-25T04:16:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52380; monitor_rc=0; 2026-05-25T04:17:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52440; monitor_rc=0; 2026-05-25T04:18:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52500; monitor_rc=0; 2026-05-25T04:19:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52548; monitor_rc=0; 2026-05-25T04:20:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52602; monitor_rc=0; 2026-05-25T04:21:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52652; monitor_rc=0; 2026-05-25T04:22:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52712; monitor_rc=0; 2026-05-25T04:23:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52764; monitor_rc=0; 2026-05-25T04:24:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52820; monitor_rc=0; 2026-05-25T04:25:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52876; monitor_rc=0; 2026-05-25T04:26:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52928; monitor_rc=0; 2026-05-25T04:28:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=52984; monitor_rc=0; 2026-05-25T04:29:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53040; monitor_rc=0; 2026-05-25T04:30:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53100; monitor_rc=0; 2026-05-25T04:31:15+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53160; monitor_rc=0; 2026-05-25T04:32:20+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53212; monitor_rc=0; 2026-05-25T04:33:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53267; monitor_rc=0; 2026-05-25T04:34:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53324; monitor_rc=0; 2026-05-25T04:35:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53372; monitor_rc=0; 2026-05-25T04:36:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53422; monitor_rc=0; 2026-05-25T04:37:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53476; monitor_rc=0; 2026-05-25T04:38:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53528; monitor_rc=0; 2026-05-25T04:39:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53580; monitor_rc=0; 2026-05-25T04:41:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53639; monitor_rc=0; 2026-05-25T04:42:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53692; monitor_rc=0; 2026-05-25T04:43:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53744; monitor_rc=0; 2026-05-25T04:44:21+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53796; monitor_rc=0; 2026-05-25T04:45:27+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53848; monitor_rc=0; 2026-05-25T04:46:32+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53904; monitor_rc=0; 2026-05-25T04:47:38+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=53956; monitor_rc=0; 2026-05-25T04:48:44+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54004; monitor_rc=0; 2026-05-25T04:49:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54060; monitor_rc=0; 2026-05-25T04:50:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54120; monitor_rc=0; 2026-05-25T04:52:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54178; monitor_rc=0; 2026-05-25T04:53:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54232; monitor_rc=0; 2026-05-25T04:54:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54284; monitor_rc=0; 2026-05-25T04:55:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54344; monitor_rc=0; 2026-05-25T04:56:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54396; monitor_rc=0; 2026-05-25T04:57:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54452; monitor_rc=0; 2026-05-25T04:58:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54502; monitor_rc=0; 2026-05-25T04:59:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54560; monitor_rc=0; 2026-05-25T05:00:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54608; monitor_rc=0; 2026-05-25T05:01:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54668; monitor_rc=0; 2026-05-25T05:03:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54724; monitor_rc=0; 2026-05-25T05:04:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54780; monitor_rc=0; 2026-05-25T05:05:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54840; monitor_rc=0; 2026-05-25T05:06:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54900; monitor_rc=0; 2026-05-25T05:07:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=54952; monitor_rc=0; 2026-05-25T05:08:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55008; monitor_rc=0; 2026-05-25T05:09:33+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55060; monitor_rc=0; 2026-05-25T05:10:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55112; monitor_rc=0; 2026-05-25T05:11:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55172; monitor_rc=0; 2026-05-25T05:12:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55228; monitor_rc=0; 2026-05-25T05:13:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55280; monitor_rc=0; 2026-05-25T05:15:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55336; monitor_rc=0; 2026-05-25T05:16:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55396; monitor_rc=0; 2026-05-25T05:17:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55452; monitor_rc=0; 2026-05-25T05:18:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55508; monitor_rc=0; 2026-05-25T05:19:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55568; monitor_rc=0; 2026-05-25T05:20:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55620; monitor_rc=0; 2026-05-25T05:21:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55680; monitor_rc=0; 2026-05-25T05:22:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55740; monitor_rc=0; 2026-05-25T05:23:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55800; monitor_rc=0; 2026-05-25T05:24:50+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55860; monitor_rc=0; 2026-05-25T05:25:55+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55916; monitor_rc=0; 2026-05-25T05:27:01+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=55972; monitor_rc=0; 2026-05-25T05:28:07+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56032; monitor_rc=0; 2026-05-25T05:29:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56088; monitor_rc=0; 2026-05-25T05:30:18+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56148; monitor_rc=0; 2026-05-25T05:31:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56204; monitor_rc=0; 2026-05-25T05:32:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56260; monitor_rc=0; 2026-05-25T05:33:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56320; monitor_rc=0; 2026-05-25T05:34:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56372; monitor_rc=0; 2026-05-25T05:35:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56424; monitor_rc=0; 2026-05-25T05:36:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56481; monitor_rc=0; 2026-05-25T05:37:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56540; monitor_rc=0; 2026-05-25T05:39:04+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56596; monitor_rc=0; 2026-05-25T05:40:10+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56656; monitor_rc=0; 2026-05-25T05:41:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56716; monitor_rc=0; 2026-05-25T05:42:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56768; monitor_rc=0; 2026-05-25T05:43:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56828; monitor_rc=0; 2026-05-25T05:44:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56888; monitor_rc=0; 2026-05-25T05:45:39+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=56940; monitor_rc=0; 2026-05-25T05:46:45+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57000; monitor_rc=0; 2026-05-25T05:47:51+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57060; monitor_rc=0; 2026-05-25T05:48:56+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57114; monitor_rc=0; 2026-05-25T05:50:02+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57168; monitor_rc=0; 2026-05-25T05:51:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57228; monitor_rc=0; 2026-05-25T05:52:13+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57284; monitor_rc=0; 2026-05-25T05:53:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57340; monitor_rc=0; 2026-05-25T05:54:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57398; monitor_rc=0; 2026-05-25T05:55:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57456; monitor_rc=0; 2026-05-25T05:56:36+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57512; monitor_rc=0; 2026-05-25T05:57:42+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57564; monitor_rc=0; 2026-05-25T05:58:48+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57624; monitor_rc=0; 2026-05-25T05:59:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57680; monitor_rc=0; 2026-05-25T06:00:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57736; monitor_rc=0; 2026-05-25T06:02:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57792; monitor_rc=0; 2026-05-25T06:03:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57848; monitor_rc=0; 2026-05-25T06:04:17+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57900; monitor_rc=0; 2026-05-25T06:05:23+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=57960; monitor_rc=0; 2026-05-25T06:06:29+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58016; monitor_rc=0; 2026-05-25T06:07:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58064; monitor_rc=0; 2026-05-25T06:08:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58116; monitor_rc=0; 2026-05-25T06:09:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58172; monitor_rc=0; 2026-05-25T06:10:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58228; monitor_rc=0; 2026-05-25T06:11:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58284; monitor_rc=0; 2026-05-25T06:13:05+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58340; monitor_rc=0; 2026-05-25T06:14:11+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58396; monitor_rc=0; 2026-05-25T06:15:16+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58452; monitor_rc=0; 2026-05-25T06:16:22+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58508; monitor_rc=0; 2026-05-25T06:17:28+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58564; monitor_rc=0; 2026-05-25T06:18:34+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58624; monitor_rc=0; 2026-05-25T06:19:40+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58680; monitor_rc=0; 2026-05-25T06:20:46+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58740; monitor_rc=0; 2026-05-25T06:21:52+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58800; monitor_rc=0; 2026-05-25T06:22:57+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58860; monitor_rc=0; 2026-05-25T06:24:03+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58920; monitor_rc=0; 2026-05-25T06:25:08+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=58976; monitor_rc=0; 2026-05-25T06:26:14+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59028; monitor_rc=0; 2026-05-25T06:27:19+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59080; monitor_rc=0; 2026-05-25T06:28:25+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59140; monitor_rc=0; 2026-05-25T06:29:31+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59196; monitor_rc=0; 2026-05-25T06:30:37+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59256; monitor_rc=0; 2026-05-25T06:31:43+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59320; monitor_rc=0; 2026-05-25T06:32:49+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59380; monitor_rc=0; 2026-05-25T06:33:54+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59436; monitor_rc=0; 2026-05-25T06:35:00+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59496; monitor_rc=0; 2026-05-25T06:36:06+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59548; monitor_rc=0; 2026-05-25T06:37:12+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59604; monitor_rc=0; 2026-05-25T06:38:24+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59668; monitor_rc=0; 2026-05-25T06:39:30+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59720; monitor_rc=0; 2026-05-25T06:40:35+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59772; monitor_rc=0; 2026-05-25T06:41:41+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59824; monitor_rc=0; 2026-05-25T06:42:47+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59880; monitor_rc=0; 2026-05-25T06:43:53+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=59940; monitor_rc=0; 2026-05-25T06:44:59+08:00
+[rl-monitor:formal] pid=423496 alive; episodes_jsonl=60000; monitor_rc=0; 2026-05-25T06:46:05+08:00
+[rl:formal] background pid=423496 exited or was stopped
+[monitor:formal] final rc=0
+
+================================================================================
+Step 5.5/6: final artifact copy
+================================================================================
+
+================================================================================
+Step 6/6: best-effort git artifact publish
+================================================================================
+Author identity unknown
+
+*** Please tell me who you are.
+
+Run
+
+  git config --global user.email "you@example.com"
+  git config --global user.name "Your Name"
+
+to set your account's default identity.
+Omit --global to set the identity only in this repository.
+
+fatal: unable to auto-detect email address (got 'root@I28ca072f1200a01074.(none)')
+fatal: unable to access 'https://github.com/mmt200088/Reinforcement-For-Robustness.git/': GnuTLS recv error (-110): The TLS connection was non-properly terminated.
