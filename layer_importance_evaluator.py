@@ -73,6 +73,7 @@ GELU_MAP = {0: 4, 1: 2, 2: 1, 3: 1}
 GELU_COST = {4: 3.0, 2: 2.5, 1: 1.0, 0: -1.0}
 SOFTMAX_MAP = {0: 6, 1: 5, 2: 4, 3: 3, 4: 2}
 SOFTMAX_COST = {6: 3.0, 5: 2.5, 4: 2.0, 3: 1.5, 2: 1.0}
+STAGE1_ORIGINAL_FUNCTION_DEGREE = -1
 
 # Action space for the current second-stage RL over transformer-layer x noise.
 # Stage 1 still optimizes GELU/Softmax; Stage 2 keeps them fixed and chooses
@@ -3644,8 +3645,8 @@ class LayerImportanceEvaluator(TrainerCallback):
     ) -> Tuple[float, float, float]:
         """Return ``(total_cost, gelu_cost, softmax_cost)`` proxy cost for a
         Stage-1 GELU/Softmax polynomial degree assignment."""
-        g_c = sum(self.GELU_COST_MAP.get(d, 0) for d in gelu_degrees)
-        s_c = sum(self.SOFTMAX_COST_MAP.get(d, 0) for d in softmax_degrees)
+        g_c = sum(self.GELU_COST_MAP.get(int(d), 0) for d in gelu_degrees)
+        s_c = sum(self.SOFTMAX_COST_MAP.get(int(d), 0) for d in softmax_degrees)
         return g_c + s_c, g_c, s_c
 
     def apply_configuration(
@@ -3665,9 +3666,22 @@ class LayerImportanceEvaluator(TrainerCallback):
         if model is not None:
             model.eval()
         handler_layer_name = "model." + self.layers_attribute
+        original_gelu_layers = [
+            idx for idx, deg in enumerate(gelu_degrees)
+            if int(deg) == STAGE1_ORIGINAL_FUNCTION_DEGREE
+        ]
+        if original_gelu_layers:
+            self.reversible_handler.restore_layer_gelu(original_gelu_layers, handler_layer_name)
+        original_softmax_layers = [
+            idx for idx, deg in enumerate(softmax_degrees)
+            if int(deg) == STAGE1_ORIGINAL_FUNCTION_DEGREE
+        ]
+        if original_softmax_layers:
+            self.reversible_handler.restore_layer_softmax(original_softmax_layers, handler_layer_name)
         # GELU (including degree 0)
         gelu_map = {d: [] for d in [0, 1, 2, 4]} 
         for idx, deg in enumerate(gelu_degrees):
+            deg = int(deg)
             if deg in gelu_map: gelu_map[deg].append(idx)
         for d in [0, 1, 2, 4]:
             if gelu_map[d]:
@@ -3675,6 +3689,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         # Softmax
         softmax_map = {d: [] for d in range(2, 7)}
         for idx, deg in enumerate(softmax_degrees):
+            deg = int(deg)
             if deg in softmax_map: softmax_map[deg].append(idx)
         for d in range(2, 7):
             if softmax_map[d]:
@@ -4175,8 +4190,21 @@ class LayerImportanceEvaluator(TrainerCallback):
         handler_layer_name = "model." + self.layers_attribute
         # 1) GELU/Softmax install (mirrors apply_configuration body, bound to passed handler).
         model.eval()
+        original_gelu_layers = [
+            idx for idx, deg in enumerate(gelu_degrees)
+            if int(deg) == STAGE1_ORIGINAL_FUNCTION_DEGREE
+        ]
+        if original_gelu_layers:
+            handler.restore_layer_gelu(original_gelu_layers, handler_layer_name)
+        original_softmax_layers = [
+            idx for idx, deg in enumerate(softmax_degrees)
+            if int(deg) == STAGE1_ORIGINAL_FUNCTION_DEGREE
+        ]
+        if original_softmax_layers:
+            handler.restore_layer_softmax(original_softmax_layers, handler_layer_name)
         gelu_map = {d: [] for d in [0, 1, 2, 4]}
         for idx, deg in enumerate(gelu_degrees):
+            deg = int(deg)
             if deg in gelu_map:
                 gelu_map[deg].append(idx)
         for d in [0, 1, 2, 4]:
@@ -4184,6 +4212,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 handler.replace_layer_gelu(gelu_map[d], handler_layer_name, degree=d)
         softmax_map = {d: [] for d in range(2, 7)}
         for idx, deg in enumerate(softmax_degrees):
+            deg = int(deg)
             if deg in softmax_map:
                 softmax_map[deg].append(idx)
         for d in range(2, 7):
@@ -4568,6 +4597,12 @@ class LayerImportanceEvaluator(TrainerCallback):
         }
 
     def get_stage1_exact_baseline_configuration(self):
+        return (
+            np.full(self.total_layers, STAGE1_ORIGINAL_FUNCTION_DEGREE, dtype=int),
+            np.full(self.total_layers, STAGE1_ORIGINAL_FUNCTION_DEGREE, dtype=int),
+        )
+
+    def get_stage1_cost_reference_configuration(self):
         return (
             np.full(self.total_layers, 4, dtype=int),
             np.full(self.total_layers, 6, dtype=int),
@@ -5615,9 +5650,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.log("[信息] 第一阶段RL搜索已跳过（--skip-stage1-rl）。")
         self.log("="*60)
 
-        base_gelu = np.full(self.total_layers, 4, dtype=int)
-        base_softmax = np.full(self.total_layers, 6, dtype=int)
-        base_tot_c, base_g_c, base_s_c = self.get_simulated_cost(base_gelu, base_softmax)
+        base_gelu, base_softmax = self.get_stage1_exact_baseline_configuration()
+        cost_ref_gelu, cost_ref_softmax = self.get_stage1_cost_reference_configuration()
+        base_tot_c, base_g_c, base_s_c = self.get_simulated_cost(cost_ref_gelu, cost_ref_softmax)
         num_metrics = self.get_num_metrics()
         base_loss = base_p = base_s = None
         base_loss_train = base_p_train = base_s_train = None
@@ -5654,7 +5689,12 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             self.log(f"基线指标（Baseline Metrics）（训练集Training Set）：")
             self.log(f"  {self._fmt_metrics(base_loss_train, base_p_train, base_s_train)}")
-            self.log(f"  仿真成本（Sim Cost）: {base_tot_c:.2f} (GELU成本G={base_g_c:.2f}, Softmax成本S={base_s_c:.2f})")
+            self.log("  基线配置（Baseline config）: 原始明文 GELU/Softmax（未安装多项式替换）")
+            self.log(
+                f"  成本参考（Cost reference）: GELU=4 / Softmax=6, "
+                f"仿真成本（Sim Cost）={base_tot_c:.2f} "
+                f"(GELU成本G={base_g_c:.2f}, Softmax成本S={base_s_c:.2f})"
+            )
 
             # ==================== 验证集引导（Validation Guided）：计算验证集baseline ====================
             if USE_VALIDATION_FOR_REWARD:

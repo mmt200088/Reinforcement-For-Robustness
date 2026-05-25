@@ -80,6 +80,12 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   loss/metric1/metric2 curves, entropy curve, full-validation final eval for the
   best configuration, baseline loss/metric1/metric2, and absolute plus
   percentage deltas versus baseline.
+- Stage-1 baseline implementation note, added 2026-05-25: the pure original
+  GELU/Softmax baseline is represented in evaluator arrays with degree `-1`,
+  which restores the original functions instead of installing polynomial
+  replacements. The Stage-1 reward cost denominator still uses the old
+  high-degree cost reference `gelu=4, softmax=6` so cost savings remain
+  well-defined; do not interpret that cost reference as the metric baseline.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes
