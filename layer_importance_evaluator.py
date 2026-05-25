@@ -742,10 +742,10 @@ def detect_rl_local_optimum(
 # 3. 更真实的优化目标：实际部署时关心的是在新数据上的表现，而非训练数据
 #
 # 实施策略：
-# - Baseline计算：同时在训练集和验证集上评估，报告两者差异
-# - 奖励计算：使用验证集指标，让Agent优化真实的泛化目标
-# - 约束设定：基于验证集baseline，确保在未见数据上满足性能要求
-USE_VALIDATION_FOR_REWARD = True  # True: 使用验证集计算奖励, False: 使用训练集
+# - Stage-1 baseline、RL reward、候选确认和 final eval 均使用验证集全集
+#   validation_full；过程中不切训练集或 validation proxy。
+# - 约束设定：基于 validation_full baseline。
+USE_VALIDATION_FOR_REWARD = True  # Stage-1 协议要求保持 True
 
 # ==================== 验证集引导搜索配置 ====================
 # [已禁用] 不再将验证集拆分为 val_search_full / val_holdout / val_proxy，统一使用 validation_full。
@@ -3319,20 +3319,20 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.current_val_proxy_subset_id = f"proxy_window_{int(window_index):04d}"
         if self.has_dataset_split("validation_full"):
             return "validation_full"
-        return "train"
+        raise RuntimeError("Stage-1 requires validation_full for reward evaluation; training-set fallback is disabled.")
 
     def get_reward_reference_split_name(self):
         if USE_VALIDATION_FOR_REWARD:
             if self.has_dataset_split("validation_full"):
                 return "validation_full"
-        return "train"
+        raise RuntimeError("Stage-1 requires validation_full as the reward reference split.")
 
     def get_online_reward_split_name(self):
         """Stage-1 在线奖励也统一使用 validation_full（不再切 proxy）。"""
         if USE_VALIDATION_FOR_REWARD:
             if self.has_dataset_split("validation_full"):
                 return "validation_full"
-        return "train"
+        raise RuntimeError("Stage-1 requires validation_full for online reward.")
 
     def _resolve_eval_split(self, use_train=True, split=None):
         if split is not None:
@@ -5678,15 +5678,25 @@ class LayerImportanceEvaluator(TrainerCallback):
                 limit_s = base_s * (1.0 - self.correlation_drop_ratio)
         else:
             # ---------------------------------------------------------
-            # Phase 1: Baseline (使用训练集)
+            # Phase 1: Baseline (validation_full only)
             # ---------------------------------------------------------
-            self.log("\n--- 阶段1（Phase 1）: 建立基线（在训练集上）（Establishing Baseline on Training Set） ---")
+            self.log(
+                "\n--- 阶段1（Phase 1）: 建立基线（验证集全集 validation_full）"
+                "（Establishing Baseline on validation_full） ---"
+            )
+            if reward_reference_split != "validation_full":
+                raise RuntimeError(
+                    f"Stage-1 baseline must use validation_full, got {reward_reference_split!r}."
+                )
 
-            # 使用训练集计算baseline（与 Stage-1 RL 环境保持一致：可选最大 scaling factor 噪声）
-            base_loss_train, base_p_train, base_s_train, base_time_train = self.stage1_evaluate(base_gelu, base_softmax, use_train=True)
+            base_loss_val, base_p_val, base_s_val, base_time_val = self.stage1_evaluate(
+                base_gelu,
+                base_softmax,
+                split=reward_reference_split,
+            )
 
-            self.log(f"基线指标（Baseline Metrics）（训练集Training Set）：")
-            self.log(f"  {self._fmt_metrics(base_loss_train, base_p_train, base_s_train)}")
+            self.log(f"基线指标（Baseline Metrics）（{reward_reference_split}）：")
+            self.log(f"  {self._fmt_metrics(base_loss_val, base_p_val, base_s_val)}")
             self.log("  基线配置（Baseline config）: 原始明文 GELU/Softmax（未安装多项式替换）")
             self.log(
                 f"  成本参考（Cost reference）: GELU=4 / Softmax=6, "
@@ -5694,32 +5704,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"(GELU成本G={base_g_c:.2f}, Softmax成本S={base_s_c:.2f})"
             )
 
-            # ==================== 验证集引导（Validation Guided）：计算验证集baseline ====================
-            if USE_VALIDATION_FOR_REWARD:
-                base_loss_val, base_p_val, base_s_val, base_time_val = self.stage1_evaluate(
-                    base_gelu,
-                    base_softmax,
-                    split=reward_reference_split,
-                )
-                self.log(f"基线指标（Baseline Metrics）（{reward_reference_split} - 用于奖励计算）：")
-                self.log(f"  {self._fmt_metrics(base_loss_val, base_p_val, base_s_val)}")
-
-                # 使用验证集的baseline作为约束基准
-                base_loss = base_loss_val
-                base_p = base_p_val
-                base_s = base_s_val
-            else:
-                # 使用训练集的baseline
-                base_loss = base_loss_train
-                base_p = base_p_train
-                base_s = base_s_train
+            # 使用验证集全集 baseline 作为约束基准
+            base_loss = base_loss_val
+            base_p = base_p_val
+            base_s = base_s_val
 
             # Constraints
             limit_loss = base_loss * (1.0 + self.error_threshold)
             limit_p = base_p * (1.0 - self.correlation_drop_ratio)
             limit_s = base_s * (1.0 - self.correlation_drop_ratio)
 
-            self.log(f"约束条件（Constraints）（基于{'验证集（Validation）' if USE_VALIDATION_FOR_REWARD else '训练集（Training）'}）：")
+            self.log("约束条件（Constraints）（基于验证集全集 validation_full）：")
             self.log(f"  {self._fmt_constraints(limit_loss, limit_p, limit_s)}")
 
         # 供绘图使用：仅 RL 时会填充

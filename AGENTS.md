@@ -88,6 +88,39 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   environment. The Stage-1 reward cost denominator still uses the old high-degree
   cost reference `gelu=4, softmax=6` so cost savings remain well-defined; do not
   interpret that cost reference as the metric baseline.
+- Stage-1 mental model and speed note, added 2026-05-25: Stage-1 is a
+  plaintext-only search over GELU and Softmax polynomial degrees. It should only
+  replace those two functions, using the replacement logic in
+  `function_handler.py`; it should not inject BLB/noise. GELU choices are
+  degrees `1`, `2`, and `4`; Softmax choices are degrees `2`, `3`, `4`, `5`,
+  and `6`. The Stage-1 RL code is in `layer_importance_evaluator.py`, and a
+  BERT-base episode has 12 per-layer decisions. Stage-1 inference tests must use
+  the full validation set (`validation_full`) during both RL reward evaluation
+  and final evaluation; do not switch Stage-1 online reward or final eval to the
+  training set or a validation proxy to improve speed unless the user explicitly
+  changes this protocol. Do not judge Stage-1 throughput from the 12 decisions
+  alone: the required terminal full-validation model-forward pass can dominate
+  runtime. Four-GPU Stage-1 rollout is window-style data parallelism across
+  complete episodes; worker logs and sampled GPU utilization are better evidence
+  than a single instantaneous `nvidia-smi` snapshot.
+- Stage-1 RL algorithm correction, added 2026-05-25: the user clarified that
+  the previously supplied LSTM `PPO_10.py` file was sent by mistake and must
+  not be used as the target Stage-1 algorithm. Do not replace the current
+  Stage-1 main path with that LSTM PPO. Until the user provides the correct
+  target file/commit, keep the current Stage-1 RL algorithm direction as GTrXL
+  PPO while preserving the newer engineering shell: four-GPU data-parallel
+  rollout collection, validation_full-only evaluation, exact original
+  GELU/Softmax metric baseline via degree `-1`, cost reference `gelu=4,
+  softmax=6`, current output/checkpoint/report paths, and the command-line PPO
+  update window override. Stage-1 full runs still use 120 episodes per PPO
+  update unless the user changes that parameter.
+- Stage-1 queue restart, added 2026-05-25: the first `ab9adbb` full Stage-1
+  queue died stale around base_sst2 episode 4800 after the wrapper/training
+  processes disappeared while `status.json` still said `running`. The user
+  requested rerunning all five Stage-1 tasks from scratch and then producing
+  the previously requested per-task HTML reports. Archive stale server state/log
+  directories before relaunching the queue; do not mark report-done markers
+  until each task's final eval/report is complete.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes
