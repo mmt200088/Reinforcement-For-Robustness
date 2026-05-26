@@ -103,6 +103,14 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   runtime. Four-GPU Stage-1 rollout is window-style data parallelism across
   complete episodes; worker logs and sampled GPU utilization are better evidence
   than a single instantaneous `nvidia-smi` snapshot.
+- Validation-only protocol, clarified 2026-05-25: Stage-1 baseline is built on
+  the full validation set, and the entire Stage-1 process must not use the
+  training set for baseline, RL reward evaluation, candidate checks, or final
+  evaluation. Stage-2 follows the same rule: baseline, RL reward/probe
+  evaluation, candidate validation, and final evaluation must use the full
+  validation set rather than the training set. Do not switch either stage to
+  train data, train anchors, sampled train proxies, or validation proxies for
+  speed unless the user explicitly changes this protocol.
 - Stage-1 RL algorithm correction, added 2026-05-25: the user clarified that
   the previously supplied LSTM `PPO_10.py` file was sent by mistake and must
   not be used as the target Stage-1 algorithm. Do not replace the current
@@ -121,6 +129,19 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   the previously requested per-task HTML reports. Archive stale server state/log
   directories before relaunching the queue; do not mark report-done markers
   until each task's final eval/report is complete.
+- Stage-1 base_sst2 completion, added 2026-05-27: the clean `base_sst2` full
+  run from `e0cbedd` completed 50,000 episodes and reached queue
+  `waiting_report`. The final local report is
+  `experiments/server_command_runs/stage1_full_50000_base_sst2_20260525_220047/stage1_base_sst2_final_report.html`.
+  The logged final selected config is the confirmed global/search best
+  (`GELU=[1,1,1,1,1,1,1,4,1,1,1,1]`,
+  `Softmax=[2,2,2,2,2,2,2,2,3,2,2,2]`, cost `26.50`, reward `1.7948`).
+  The checkpoint `best_config` field records the raw PPO reward-best before
+  final post-selection (`Softmax=[2,2,2,3,3,2,2,3,2,3,2,2]`, cost `28.00`,
+  reward `1.8694`), so future per-task reports should prefer
+  `global_best_config`/`search_best_config` or the training completion log for
+  the final selected Stage-1 config, while optionally showing raw reward-best as
+  an audit row.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes
