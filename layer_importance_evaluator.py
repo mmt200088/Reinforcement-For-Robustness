@@ -742,8 +742,8 @@ def detect_rl_local_optimum(
 # 3. 更真实的优化目标：实际部署时关心的是在新数据上的表现，而非训练数据
 #
 # 实施策略：
-# - Stage-1 baseline、RL reward、候选确认和 final eval 均使用验证集全集
-#   validation_full；过程中不切训练集或 validation proxy。
+# - Stage-1 baseline、RL reward 和 final eval 均使用验证集全集
+#   validation_full；过程中不切训练集或 validation proxy，也不做窗口二次确认。
 # - 约束设定：基于 validation_full baseline。
 USE_VALIDATION_FOR_REWARD = True  # Stage-1 协议要求保持 True
 
@@ -3361,20 +3361,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         if incumbent is None:
             return True
 
-        cand_cost = float(candidate["cost"])
-        inc_cost = float(incumbent["cost"])
-        if cand_cost < inc_cost - 1e-8:
-            return True
-        if cand_cost > inc_cost + 1e-8:
-            return False
-
-        cand_loss = float(candidate.get(f"{metric_prefix}_loss", float("inf")))
-        inc_loss = float(incumbent.get(f"{metric_prefix}_loss", float("inf")))
-        if cand_loss < inc_loss - 1e-8:
-            return True
-        if cand_loss > inc_loss + 1e-8:
-            return False
-
         cand_metric_sum = (
             float(candidate.get(f"{metric_prefix}_metric1", -float("inf"))) +
             float(candidate.get(f"{metric_prefix}_metric2", -float("inf")))
@@ -3388,9 +3374,43 @@ class LayerImportanceEvaluator(TrainerCallback):
         if cand_metric_sum < inc_metric_sum - 1e-8:
             return False
 
+        cand_loss = float(candidate.get(f"{metric_prefix}_loss", float("inf")))
+        inc_loss = float(incumbent.get(f"{metric_prefix}_loss", float("inf")))
+        if cand_loss < inc_loss - 1e-8:
+            return True
+        if cand_loss > inc_loss + 1e-8:
+            return False
+
+        cand_cost = float(candidate["cost"])
+        inc_cost = float(incumbent["cost"])
+        if cand_cost < inc_cost - 1e-8:
+            return True
+        if cand_cost > inc_cost + 1e-8:
+            return False
+
         return float(candidate.get("proxy_reward", -float("inf"))) > float(
             incumbent.get("proxy_reward", -float("inf"))
         )
+
+    @staticmethod
+    def _select_stage1_reward_best_config(
+            best_config,
+            best_reward,
+            base_gelu,
+            base_softmax,
+            base_tot_c,
+            ):
+        if best_config is None or best_reward < -50:
+            return {
+                'gelu': base_gelu.copy(),
+                'softmax': base_softmax.copy(),
+                'cost': base_tot_c,
+                'reward': 0,
+            }, True
+        return {
+            k: (v.copy() if isinstance(v, np.ndarray) else v)
+            for k, v in best_config.items()
+        }, False
 
     def _fmt_metrics(self, loss, m1, m2, prefix=""):
         """格式化指标字符串，单指标数据集只显示一个指标"""
@@ -5727,98 +5747,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         search_best_config = None
         global_best_config = None
 
-        def confirm_stage1_candidate(candidate_config, episode_idx, window_idx):
-            nonlocal search_best_config, global_best_config
-
-            if candidate_config is None or not self.has_dataset_split("validation_full"):
-                return
-
-            gelu_arr = np.asarray(candidate_config["gelu"], dtype=int)
-            softmax_arr = np.asarray(candidate_config["softmax"], dtype=int)
-            proxy_reward = float(candidate_config.get("reward", 0.0))
-
-            val_loss, val_p, val_s, _ = self.stage1_evaluate(
-                gelu_arr,
-                softmax_arr,
-                split="validation_full",
-            )
-            val_ok = self._candidate_meets_constraints(
-                val_loss, val_p, val_s,
-                limit_loss, limit_p, limit_s,
-            )
-
-            confirmed_candidate = {
-                "gelu": gelu_arr.copy(),
-                "softmax": softmax_arr.copy(),
-                "cost": float(candidate_config["cost"]),
-                "reward": proxy_reward,
-                "proxy_reward": proxy_reward,
-                "confirmed_episode": int(episode_idx) + 1,
-                "confirmed_window": int(window_idx) + 1,
-                "search_loss": float(val_loss),
-                "search_metric1": float(val_p),
-                "search_metric2": float(val_s),
-                "search_ok": bool(val_ok),
-                "holdout_loss": float(val_loss),
-                "holdout_metric1": float(val_p),
-                "holdout_metric2": float(val_s),
-                "holdout_ok": bool(val_ok),
-            }
-
-            _stage1_confirm_lines = [
-                f"窗口（Window） {window_idx + 1} 候选确认（candidate confirmation）",
-                "[验证集全集 validation_full]",
-                f"  代理奖励: {proxy_reward:.4f}",
-                f"  指标: {self._fmt_metrics(val_loss, val_p, val_s)}",
-                f"  约束通过: {val_ok}",
-            ]
-
-            if USE_TRAIN_ANCHOR and self.has_dataset_split("train_anchor"):
-                anchor_loss, anchor_p, anchor_s, _ = self.evaluate_model(
-                    gelu_arr,
-                    softmax_arr,
-                    split="train_anchor",
-                )
-                confirmed_candidate.update({
-                    "train_anchor_loss": float(anchor_loss),
-                    "train_anchor_metric1": float(anchor_p),
-                    "train_anchor_metric2": float(anchor_s),
-                })
-                _stage1_confirm_lines.append("[训练锚点 TrainAnchor]")
-                _stage1_confirm_lines.append(
-                    f"  指标: {self._fmt_metrics(anchor_loss, anchor_p, anchor_s)}"
-                )
-
-            _log_rounded_box(self.log, _stage1_confirm_lines)
-
-            if val_ok and self._is_better_confirmed_candidate(
-                confirmed_candidate,
-                search_best_config,
-                metric_prefix="search",
-            ):
-                search_best_config = {
-                    k: (v.copy() if isinstance(v, np.ndarray) else v)
-                    for k, v in confirmed_candidate.items()
-                }
-                self.log(
-                    f"    搜索最优（Search-Best）在回合（episode） {episode_idx + 1} 更新: "
-                    f"成本（cost）={search_best_config['cost']:.2f}, 代理奖励（proxy_reward）={search_best_config['proxy_reward']:.4f}"
-                )
-
-            if val_ok and self._is_better_confirmed_candidate(
-                confirmed_candidate,
-                global_best_config,
-                metric_prefix="search",
-            ):
-                global_best_config = {
-                    k: (v.copy() if isinstance(v, np.ndarray) else v)
-                    for k, v in confirmed_candidate.items()
-                }
-                self.log(
-                    f"    全局最优（Global-Best）在回合（episode） {episode_idx + 1} 更新: "
-                    f"成本（cost）={global_best_config['cost']:.2f}, 代理奖励（proxy_reward）={global_best_config['proxy_reward']:.4f}"
-                )
-
         # ---------------------------------------------------------
         # Phase 2: PPO Training
         # ---------------------------------------------------------
@@ -6073,8 +6001,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 best_reward = float(ckpt["best_reward"])
                 best_cost = float(ckpt["best_cost"])
                 best_config = ckpt.get("best_config")
-                search_best_config = ckpt.get("search_best_config")
-                global_best_config = ckpt.get("global_best_config")
+                search_best_config = None
+                global_best_config = None
                 window_best_reward = float(ckpt.get("window_best_reward", float('-inf')))
                 window_best_cost = float(ckpt.get("window_best_cost", float('inf')))
                 window_best_config = ckpt.get("window_best_config")
@@ -6322,9 +6250,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     'reward': episode_reward
                 }
 
-                if episode_reward > window_best_reward or (
-                    episode_reward == window_best_reward and env.accumulated_cost < window_best_cost
-                ):
+                if episode_reward > window_best_reward:
                     window_best_reward = episode_reward
                     window_best_cost = env.accumulated_cost
                     window_best_config = {
@@ -6334,7 +6260,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         'reward': episode_reward,
                     }
                 
-                if episode_reward > best_reward or (episode_reward == best_reward and env.accumulated_cost < best_cost):
+                if episode_reward > best_reward:
                     best_reward = episode_reward
                     best_cost = env.accumulated_cost
                     best_config = final_config.copy()
@@ -6376,15 +6302,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                         _s1_remain = self.stage1_rl_episodes - (episode + 1)
                         _s1_eta = _s1_avg_ep * _s1_remain
                         _s1_best_lines = []
-                        if search_best_config is not None:
+                        if best_config is not None:
                             _s1_best_lines.append(
-                                f"搜索最优得分: {search_best_config.get('proxy_reward', 0):.4f}  "
-                                f"成本: {search_best_config.get('cost', 0):.2f}"
+                                f"Reward-Best: {best_config.get('reward', 0):.4f}  "
+                                f"成本: {best_config.get('cost', 0):.2f}"
                             )
-                            _s1_best_lines.append(f"  GELU:    {list(search_best_config.get('gelu', []))}")
-                            _s1_best_lines.append(f"  Softmax: {list(search_best_config.get('softmax', []))}")
+                            _s1_best_lines.append(f"  GELU:    {list(best_config.get('gelu', []))}")
+                            _s1_best_lines.append(f"  Softmax: {list(best_config.get('softmax', []))}")
                         else:
-                            _s1_best_lines.append("搜索最优: 尚未找到")
+                            _s1_best_lines.append("Reward-Best: 尚未找到")
                         _log_rounded_box(
                             self.log,
                             [
@@ -6427,11 +6353,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                             )
                     stage1_prev_avg_reward[0] = avg_reward
 
-                    confirm_stage1_candidate(
-                        window_best_config,
-                        episode_idx=episode,
-                        window_idx=gtrxl_ppo_update_count - 1,
-                    )
                     window_best_reward = float('-inf')
                     window_best_cost = float('inf')
                     window_best_config = None
@@ -6544,13 +6465,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                     )
                     uninstall_graceful_stop_handler()
                     raise SystemExit(0)
-
-            if window_best_config is not None:
-                confirm_stage1_candidate(
-                    window_best_config,
-                    episode_idx=self.stage1_rl_episodes - 1,
-                    window_idx=gtrxl_ppo_update_count,
-                )
 
             if step_info_chunk_file[0] is not None:
                 step_info_chunk_file[0].close()
@@ -6678,23 +6592,21 @@ class LayerImportanceEvaluator(TrainerCallback):
                 except Exception as _e:
                     self.log(f"  [检测][警告] 局部最优检测失败：{_e}")
 
-            best_config = None
-            if global_best_config is not None:
-                best_config = global_best_config.copy()
-            elif search_best_config is not None:
-                best_config = search_best_config.copy()
-            if best_config is not None:
-                best_reward = max(best_reward, 0.0)
-            
-            # 如果没有找到满足约束的解，使用baseline
-            if best_config is None or best_reward < -50:  # 如果最好的奖励也很差，说明没找到可行解
+            best_config, used_baseline = self._select_stage1_reward_best_config(
+                best_config,
+                best_reward,
+                base_gelu,
+                base_softmax,
+                base_tot_c,
+            )
+
+            if used_baseline:
                 self.log("\n未找到可行解，使用基线配置。")
-                best_config = {
-                    'gelu': base_gelu.copy(),
-                    'softmax': base_softmax.copy(),
-                    'cost': base_tot_c,
-                    'reward': 0
-                }
+            else:
+                self.log(
+                    "\n[Stage-1] 最终配置使用原始 PPO reward-best；"
+                    "GELU/Softmax 为确定性替换，不再按 window 二次评估重排。"
+                )
             
             self.log(f"\n--- PPO训练完成（PPO Training Completed） ---")
             self.log(f"已找到最优配置（通过RL）（Best Configuration Found by RL）：")

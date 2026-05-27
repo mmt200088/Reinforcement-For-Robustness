@@ -136,12 +136,11 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   The logged final selected config is the confirmed global/search best
   (`GELU=[1,1,1,1,1,1,1,4,1,1,1,1]`,
   `Softmax=[2,2,2,2,2,2,2,2,3,2,2,2]`, cost `26.50`, reward `1.7948`).
-  The checkpoint `best_config` field records the raw PPO reward-best before
-  final post-selection (`Softmax=[2,2,2,3,3,2,2,3,2,3,2,2]`, cost `28.00`,
-  reward `1.8694`), so future per-task reports should prefer
-  `global_best_config`/`search_best_config` or the training completion log for
-  the final selected Stage-1 config, while optionally showing raw reward-best as
-  an audit row.
+  Under the old post-selection policy, the checkpoint `best_config` field
+  recorded the raw PPO reward-best before final post-selection
+  (`Softmax=[2,2,2,3,3,2,2,3,2,3,2,2]`, cost `28.00`, reward `1.8694`) and
+  the report showed it as an audit row. The newer Stage-1 selection protocol
+  below supersedes that old reporting preference.
 - Stage-1 base_rte completion, added 2026-05-27: the clean `base_rte` full run
   from server HEAD `6cd198a` completed 50,000 episodes and reached queue
   `waiting_report`. The final local report is
@@ -155,8 +154,19 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `0.7247349620`/`0.7472924188`, passing the 0.5% loss/metric constraints.
   The checkpoint raw reward-best is
   `Softmax=[4,4,2,2,2,3,3,3,3,3,4,4]`, cost `34.50`, reward `1.9017`;
-  it is included as an audit row but should not replace the final
-  global/search-selected config in summaries.
+  it was included as an audit row under the old post-selection policy. The
+  newer Stage-1 selection protocol below supersedes that old reporting
+  preference.
+- Stage-1 selection protocol correction, added 2026-05-27: Stage-1 GELU/Softmax
+  replacement is deterministic, unlike Stage-2 stochastic noise evaluation.
+  Do not repeatedly re-confirm Stage-1 window candidates on validation_full for
+  final selection. The Stage-1 final selected config is now the raw PPO
+  reward-best (`checkpoint["best_config"]`) with no global/search candidate
+  post-selection override. If a deterministic Stage-1 tie-breaker is needed
+  outside raw reward selection, the priority is `metric1 + metric2` first, then
+  lower loss, then lower cost. The earlier `base_sst2` and `base_rte` reports
+  used the old global/search post-selection policy and should be interpreted as
+  pre-correction artifacts.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes
