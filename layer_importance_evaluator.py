@@ -2319,6 +2319,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage2_rl_episodes=40000,
                  stage1_rl_episodes_specified=False,
                  stage2_rl_episodes_specified=False,
+                 stage1_entropy_stop_threshold=None,
                  stage1_rl_lr=None,
                  stage2_rl_lr=None,
                  stage1_rl_devices="",
@@ -2434,6 +2435,15 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.stage2_rl_episodes_specified = self._coerce_bool_flag(
             stage2_rl_episodes_specified, 'stage2_rl_episodes_specified'
         )
+        if stage1_entropy_stop_threshold in (None, ""):
+            self.stage1_entropy_stop_threshold = None
+        else:
+            self.stage1_entropy_stop_threshold = float(stage1_entropy_stop_threshold)
+            if self.stage1_entropy_stop_threshold <= 0:
+                raise ValueError(
+                    "stage1_entropy_stop_threshold must be a positive float "
+                    f"when set, got {stage1_entropy_stop_threshold!r}"
+                )
         
         # ==================== 敏锐度优化PDF：数据集检测与指标选择 ====================
         self.data_path = data_path
@@ -2624,6 +2634,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"[信息] 第一阶段RL回合数（Stage-1 RL episodes）: {self.stage1_rl_episodes} | "
                 f"第二阶段RL回合数（Stage-2 RL episodes）: {self.stage2_rl_episodes}\n"
             )
+            if self.stage1_entropy_stop_threshold is not None:
+                f.write(
+                    "[信息] Stage-1 entropy convergence stop enabled: "
+                    f"entropy < {self.stage1_entropy_stop_threshold:.6f}\n"
+                )
             if self.run_output_dir:
                 f.write(f"[信息] 统一运行输出目录（Unified run output dir）: {self.run_output_dir}\n")
         
@@ -6033,6 +6048,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                     )
 
             _stage1_rl_t0 = time.time()
+            stage1_completed_episodes = int(stage1_resume_start_episode)
+            stage1_stop_reason = "max_episodes"
             for episode in range(stage1_resume_start_episode, self.stage1_rl_episodes):
                 # 动态超参数调度（学习率和熵系数）
                 current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
@@ -6229,6 +6246,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 
                     buffer.end_episode()
                 episode_rewards.append(episode_reward)
+                stage1_completed_episodes = episode + 1
                 
                 # 收集当前episode的指标
                 if hasattr(env, 'current_episode_metrics') and env.current_episode_metrics is not None:
@@ -6286,6 +6304,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                     gtrxl_ppo_update_count += 1
                     buffer.clear()
                     episode_entropies.append(entropy)
+                    stage1_entropy_converged = (
+                        self.stage1_entropy_stop_threshold is not None
+                        and float(entropy) < self.stage1_entropy_stop_threshold
+                    )
                     
                     avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
                     warmup_status = "warmup" if gtrxl_ppo_update_count <= GTRXL_WARMUP_STEPS else "normal"
@@ -6365,7 +6387,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                     window_best_cost = float('inf')
                     window_best_config = None
 
-                    if USE_VALIDATION_FOR_REWARD and (episode + 1) < self.stage1_rl_episodes:
+                    if (not stage1_entropy_converged
+                            and USE_VALIDATION_FOR_REWARD
+                            and (episode + 1) < self.stage1_rl_episodes):
                         next_window_idx = gtrxl_ppo_update_count
                         self.refresh_validation_proxy(
                             window_index=next_window_idx,
@@ -6418,6 +6442,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                         stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                         stage1_warnings=stage1_warnings,
                     )
+
+                    if stage1_entropy_converged:
+                        stage1_stop_reason = "entropy_converged"
+                        self.log(
+                            "\n  [收敛] Stage-1 entropy convergence reached: "
+                            f"entropy={entropy:.4f} < threshold={self.stage1_entropy_stop_threshold:.4f}; "
+                            f"stopping at episode {episode + 1}."
+                        )
+                        break
 
                 # 优雅停止检查：在当前回合结束后强制保存 checkpoint 并退出
                 if is_graceful_stop_requested(stage1_stop_flag_path):
@@ -6484,8 +6517,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.log(f"  ⚠ 共检测到 {len(stage1_warnings)} 次奖励骤降警告，详见: {stage1_warning_file}")
 
             # 训练结束保存最终 Stage-1 checkpoint
-            _s1_final_ep = self.stage1_rl_episodes - 1
-            if self.stage1_rl_episodes > stage1_resume_start_episode:
+            _s1_final_ep = max(stage1_completed_episodes - 1, stage1_resume_start_episode - 1)
+            if stage1_completed_episodes > stage1_resume_start_episode:
                 save_stage1_rl_checkpoint(
                     path=stage1_checkpoint_path,
                     gtrxl_net=gtrxl_net,
@@ -6522,7 +6555,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 update_persistent_metadata_stage(
                     self.run_output_dir, "stage1_search", "completed",
                     extra_fields={
-                        "episodes": int(self.stage1_rl_episodes),
+                        "episodes": int(stage1_completed_episodes),
+                        "completed_episodes": int(stage1_completed_episodes),
+                        "target_episodes": int(self.stage1_rl_episodes),
+                        "stop_reason": stage1_stop_reason,
                         "best_reward": float(best_reward),
                         "best_cost": float(best_cost),
                     },
@@ -6549,7 +6585,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                                 "dropout": float(GTRXL_DROPOUT),
                             },
                             "metadata": {
-                                "trained_episodes": int(self.stage1_rl_episodes),
+                                "trained_episodes": int(stage1_completed_episodes),
                                 "best_reward": float(best_reward),
                                 "best_cost": float(best_cost),
                                 "error_threshold": float(self.error_threshold),
@@ -6574,7 +6610,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         episode_entropies=episode_entropies,
                         best_score_history=None,
                         action_history=None,
-                        window=max(50, int(self.stage1_rl_episodes * 0.1)),
+                        window=max(50, int(max(1, stage1_completed_episodes) * 0.1)),
                     )
                     _report_path = os.path.join(
                         os.path.dirname(self.stage1_step_info_file),

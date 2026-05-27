@@ -508,6 +508,22 @@ def parse_positive_int(raw_value, flag_name):
     return value
 
 
+def parse_optional_positive_float(raw_value, flag_name):
+    if raw_value in (None, ""):
+        return None
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"Invalid positive float for {flag_name}: {raw_value!r}."
+        ) from None
+    if value <= 0:
+        raise ValueError(
+            f"Invalid positive float for {flag_name}: {raw_value!r}."
+        )
+    return value
+
+
 def train(
         # model/data params
         base_model: str = "",  # the only required argument
@@ -554,6 +570,7 @@ def train(
         stage2_rl_episodes: int = 40000,
         stage1_rl_episodes_specified: bool = False,
         stage2_rl_episodes_specified: bool = False,
+        stage1_entropy_stop_threshold: float = None,
         ppo_update_interval: int = 120,  # PPO 更新间隔（episode 数）；同时决定 batch 大小与 details 分块大小
         final_eval_config_source: str = "search",  # search | json | manual | max
         final_eval_config_path: str = "glue_final_configs_best_ppo.json",
@@ -711,6 +728,9 @@ def train(
     ppo_update_interval = parse_positive_int(
         ppo_update_interval, "ppo_update_interval"
     )
+    stage1_entropy_stop_threshold = parse_optional_positive_float(
+        stage1_entropy_stop_threshold, "stage1_entropy_stop_threshold"
+    )
     # 在创建 LayerImportanceEvaluator 之前覆盖 PPO 更新间隔及其派生常量
     import layer_importance_evaluator as _lie
     _lie.set_ppo_update_interval(ppo_update_interval)
@@ -757,6 +777,7 @@ def train(
         f"stage2_rl_episodes: {stage2_rl_episodes}\n"
         f"stage1_rl_episodes_specified: {stage1_rl_episodes_specified}\n"
         f"stage2_rl_episodes_specified: {stage2_rl_episodes_specified}\n"
+        f"stage1_entropy_stop_threshold: {stage1_entropy_stop_threshold}\n"
         f"skip_noise_rl: {skip_noise_rl}\n"
         f"final_eval_repeat_n: {final_eval_repeat_n}\n"
         f"final_eval_preset: {final_eval_preset}\n"
@@ -1156,6 +1177,7 @@ def train(
             stage2_rl_episodes=stage2_rl_episodes,
             stage1_rl_episodes_specified=stage1_rl_episodes_specified,
             stage2_rl_episodes_specified=stage2_rl_episodes_specified,
+            stage1_entropy_stop_threshold=stage1_entropy_stop_threshold,
             run_output_dir=run_output_dir,
             final_eval_config_source=final_eval_config_source,
             final_eval_config_path=final_eval_config_path,

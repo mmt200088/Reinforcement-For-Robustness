@@ -59,6 +59,7 @@ cat <<'EOF'
 普通 RL：
   --stage1-search-episodes N
   --stage2-search-episodes N
+  --stage1-entropy-stop-threshold FLOAT  Stage-1 PPO update 后熵低于该值时正常停止（如 0.1）
   --ppo-update-interval N              每多少 episode 触发一次 PPO 更新（默认 120）；
                                        同时决定每个 details/txt 的回合数（= 3 × N, 默认 360）
 
@@ -408,6 +409,7 @@ MODEL_TYPE="bert-base"; S_MODEL_TYPE="false"
 BATCH_SIZE="16"; S_BATCH_SIZE="false"
 STAGE1_EPISODES="51000"; S_STAGE1_EPISODES="false"
 STAGE2_EPISODES="40000"; S_STAGE2_EPISODES="false"
+STAGE1_ENTROPY_STOP_THRESHOLD=""; S_STAGE1_ENTROPY_STOP_THRESHOLD="false"
 STAGE1_GENERATIONS=""; S_STAGE1_GENERATIONS="false"
 STAGE2_GENERATIONS=""; S_STAGE2_GENERATIONS="false"
 GENERATIONS_PAIR_SPECIFIED="false"
@@ -603,6 +605,7 @@ while [ "$#" -gt 0 ]; do
       shift 2 ;;
     --stage1-search-episodes) needv "$@"; STAGE1_EPISODES="$2"; S_STAGE1_EPISODES="true"; shift 2 ;;
     --stage2-search-episodes) needv "$@"; STAGE2_EPISODES="$2"; S_STAGE2_EPISODES="true"; shift 2 ;;
+    --stage1-entropy-stop-threshold) needv "$@"; STAGE1_ENTROPY_STOP_THRESHOLD="$2"; S_STAGE1_ENTROPY_STOP_THRESHOLD="true"; shift 2 ;;
     --stage1-search-generations) needv "$@"; STAGE1_GENERATIONS="$2"; S_STAGE1_GENERATIONS="true"; shift 2 ;;
     --stage2-search-generations) needv "$@"; STAGE2_GENERATIONS="$2"; S_STAGE2_GENERATIONS="true"; shift 2 ;;
     --stage1-search-lr) needv "$@"; STAGE1_LR="$2"; S_STAGE1_LR="true"; shift 2 ;;
@@ -860,6 +863,7 @@ is_nonneg_int "$STAGE2_BUDGET_TRIALS" || err "--stage2-budget-trials 必须是�
 # 准确度约束参数校验
 is_pos_num "$STAGE1_ACCURACY_TOLERANCE" || err "--stage1-accuracy-tolerance 必须是正数，当前为：$STAGE1_ACCURACY_TOLERANCE"
 awk -v x="$STAGE1_ACCURACY_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage1-accuracy-tolerance 必须 < 1（百分比形式如 0.005 表示 0.5%），当前为：$STAGE1_ACCURACY_TOLERANCE"
+[ -z "$STAGE1_ENTROPY_STOP_THRESHOLD" ] || is_pos_num "$STAGE1_ENTROPY_STOP_THRESHOLD" || err "--stage1-entropy-stop-threshold 必须是正数，当前为：$STAGE1_ENTROPY_STOP_THRESHOLD"
 is_pos_num "$STAGE2_LIMIT_TOLERANCE" || err "--stage2-limit-tolerance 必须是正数，当前为：$STAGE2_LIMIT_TOLERANCE"
 awk -v x="$STAGE2_LIMIT_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-limit-tolerance 必须 < 1（百分比形式如 0.05 表示 5%），当前为：$STAGE2_LIMIT_TOLERANCE"
 is_pos_num "$STAGE2_STABILITY_TOLERANCE" || err "--stage2-stability-tolerance 必须是正数，当前为：$STAGE2_STABILITY_TOLERANCE"
@@ -1503,6 +1507,9 @@ else
     if [ -n "$STAGE1_RL_DEVICES" ]; then
       CMD+=(--stage1_rl_devices "$STAGE1_RL_DEVICES")
     fi
+    if [ -n "$STAGE1_ENTROPY_STOP_THRESHOLD" ]; then
+      CMD+=(--stage1_entropy_stop_threshold "$STAGE1_ENTROPY_STOP_THRESHOLD")
+    fi
     [ -n "$BLB_V3_EVAL_INTERVAL" ] && CMD+=(--blb_v3_eval_interval "$BLB_V3_EVAL_INTERVAL")
     [ -n "$BLB_V3_SAVE_INTERVAL" ] && CMD+=(--blb_v3_save_interval "$BLB_V3_SAVE_INTERVAL")
     [ -n "$BLB_V3_CALIBRATE_BASELINE_SAMPLES" ] && CMD+=(--blb_v3_calibrate_baseline_samples "$BLB_V3_CALIBRATE_BASELINE_SAMPLES")
@@ -1599,6 +1606,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     [ -n "$BLB_V3_EVAL_INTERVAL" ] && show "BLB 日志评估间隔" "$BLB_V3_EVAL_INTERVAL" "$S_BLB_V3_EVAL_INTERVAL"
   fi
   show "Stage-1 学习率" "$STAGE1_LR" "$S_STAGE1_LR"
+  [ -n "$STAGE1_ENTROPY_STOP_THRESHOLD" ] && show "Stage-1 熵收敛阈值" "$STAGE1_ENTROPY_STOP_THRESHOLD" "$S_STAGE1_ENTROPY_STOP_THRESHOLD"
   show "Stage-2 学习率" "$STAGE2_LR" "$S_STAGE2_LR"
   show "被动 final_eval 预设" "$FINAL_EVAL_PRESET" "$S_FINAL_EVAL_PRESET"
   show "最终评估来源" "$(srczh "$FINAL_EVAL_SOURCE")" "$S_FINAL_EVAL_SOURCE"

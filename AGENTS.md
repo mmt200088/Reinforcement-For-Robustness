@@ -178,6 +178,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   should log per-worker wall times and an estimated speedup line for future
   speed checks. The pre-fix active `large_mrpc` partial run should be treated as
   superseded once the SOS-fix queue is relaunched.
+- Stage-1 queue change, added 2026-05-28: after the active corrected
+  `large_mrpc` run finishes and its final eval/report are captured, do not launch
+  `large_sst2` or `large_rte`. Because Stage-1 final selection changed to raw
+  PPO reward-best with no candidate-window or repeated full-validation
+  post-selection, rerun the earlier BERT-base `base_sst2` and `base_rte` tasks
+  fresh from the corrected code. These reruns should use Stage-1 only, the same
+  validation_full protocol and four-GPU rollout settings, and entropy convergence
+  stopping: stop cleanly at a PPO update once policy entropy is below `0.1`
+  rather than treating a fixed episode count as the success criterion.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes
