@@ -1,0 +1,152 @@
+{
+  "created_at": "2026-05-27T15:02:33+0800",
+  "dataset": "rte",
+  "model": "bert-base",
+  "protocol": "stage1_plaintext_validation_full_only",
+  "metrics": {
+    "metric1": "Accuracy",
+    "metric2": "Accuracy"
+  },
+  "items": [
+    {
+      "gelu": [
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "softmax": [
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "label": "pure_original_plaintext_baseline",
+      "loss": 0.7333006262779236,
+      "metric1": 0.7256317689530686,
+      "metric2": 0.7256317689530686,
+      "avg_batch_ms": 2054.5291900634766,
+      "wall_seconds": 2.0617926120758057,
+      "split": "validation_full"
+    },
+    {
+      "gelu": [
+        1,
+        1,
+        1,
+        4,
+        4,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "softmax": [
+        4,
+        3,
+        2,
+        2,
+        2,
+        3,
+        3,
+        2,
+        3,
+        3,
+        4,
+        3
+      ],
+      "label": "final_selected_search_best",
+      "loss": 0.7247349619865417,
+      "metric1": 0.7472924187725631,
+      "metric2": 0.7472924187725631,
+      "avg_batch_ms": 852.9093265533447,
+      "wall_seconds": 0.9651954174041748,
+      "split": "validation_full",
+      "cost": 33.0,
+      "reward": 1.8529146749774927,
+      "confirmed_episode": 38040,
+      "confirmed_window": 317,
+      "delta_vs_baseline": {
+        "loss_abs": -0.008565664291381836,
+        "loss_pct": -1.168097228398579,
+        "metric1_abs": 0.02166064981949456,
+        "metric1_pct": 2.985074626865658,
+        "metric2_abs": 0.02166064981949456,
+        "metric2_pct": 2.985074626865658
+      },
+      "constraints_pass": true
+    },
+    {
+      "gelu": [
+        1,
+        1,
+        1,
+        4,
+        4,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "softmax": [
+        4,
+        4,
+        2,
+        2,
+        2,
+        3,
+        3,
+        3,
+        3,
+        3,
+        4,
+        4
+      ],
+      "label": "checkpoint_raw_reward_best",
+      "loss": 0.716346800327301,
+      "metric1": 0.7545126353790613,
+      "metric2": 0.7545126353790613,
+      "avg_batch_ms": 703.7947177886963,
+      "wall_seconds": 0.8523087501525879,
+      "split": "validation_full",
+      "cost": 34.5,
+      "reward": 1.9017322717427958,
+      "delta_vs_baseline": {
+        "loss_abs": -0.01695382595062256,
+        "loss_pct": -2.3119884728145634,
+        "metric1_abs": 0.028880866425992746,
+        "metric1_pct": 3.9800995024875663,
+        "metric2_abs": 0.028880866425992746,
+        "metric2_pct": 3.9800995024875663
+      },
+      "constraints_pass": true
+    }
+  ],
+  "constraints": {
+    "loss_max": 0.7369671294093131,
+    "metric1_min": 0.7220036101083033,
+    "metric2_min": 0.7220036101083033
+  }
+}

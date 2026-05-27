@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stage-1 base_rte Final Report</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #17202a; background: #f7f9fb; }
+h1, h2 { margin: 0 0 12px; }
+section { margin: 24px 0; padding: 20px; background: #fff; border: 1px solid #d8dee6; border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { border-bottom: 1px solid #e6ebf0; padding: 8px; text-align: left; vertical-align: top; }
+th { background: #eef3f8; }
+code { background: #eef3f8; padding: 2px 4px; border-radius: 4px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.card { border: 1px solid #d8dee6; border-radius: 8px; padding: 12px; background: #fbfcfe; }
+.value { font-size: 22px; font-weight: 700; }
+img { max-width: 100%; border: 1px solid #d8dee6; border-radius: 6px; background: #fff; }
+</style>
+</head>
+<body>
+<h1>Stage-1 base_rte Final Report</h1>
+<p>Protocol: pure-original plaintext baseline and all Stage-1 reward/final-eval checks use <code>validation_full</code> only. No train split, proxy split, or max-scaling noise environment is used for the reported final eval.</p>
+
+<section>
+<h2>Run Summary</h2>
+<div class="grid">
+<div class="card"><div>Task</div><div class="value">bert-base / RTE</div></div>
+<div class="card"><div>Episodes</div><div class="value">50000</div></div>
+<div class="card"><div>Validation full size</div><div class="value">277</div></div>
+<div class="card"><div>Server HEAD</div><div class="value">6cd198a</div></div>
+<div class="card"><div>Devices</div><div class="value">cuda:0..cuda:3</div></div>
+<div class="card"><div>Report created</div><div class="value">2026-05-27T15:02:33+0800</div></div>
+</div>
+</section>
+
+<section>
+<h2>Best Config</h2>
+<table><tbody><tr><td>final selected GELU</td><td>[1, 1, 1, 4, 4, 1, 1, 1, 1, 1, 1, 1]</td></tr>
+<tr><td>final selected Softmax</td><td>[4, 3, 2, 2, 2, 3, 3, 2, 3, 3, 4, 3]</td></tr>
+<tr><td>final selected cost</td><td>33.00</td></tr>
+<tr><td>final selected reward</td><td>1.852915</td></tr>
+<tr><td>confirmed episode</td><td>38040</td></tr>
+<tr><td>raw reward-best GELU</td><td>[1, 1, 1, 4, 4, 1, 1, 1, 1, 1, 1, 1]</td></tr>
+<tr><td>raw reward-best Softmax</td><td>[4, 4, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4]</td></tr>
+<tr><td>raw reward-best cost</td><td>34.50</td></tr>
+<tr><td>raw reward-best reward</td><td>1.901732</td></tr></tbody></table>
+<p>Selection note: checkpoint best_config is raw PPO reward-best; final selected config comes from global/search best logged at training completion</p>
+</section>
+
+<section>
+<h2>Full-Validation Metrics</h2>
+<table>
+<thead><tr><th>Config</th><th>Loss</th><th>Accuracy</th><th>Accuracy</th><th>Loss delta</th><th>Loss delta %</th><th>Constraints pass</th></tr></thead>
+<tbody><tr><td>baseline</td><td>0.733301</td><td>0.725632</td><td>0.725632</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td>final selected</td><td>0.724735</td><td>0.747292</td><td>0.747292</td><td>-0.008566</td><td>-1.168%</td><td>True</td></tr>
+<tr><td>raw reward-best</td><td>0.716347</td><td>0.754513</td><td>0.754513</td><td>-0.016954</td><td>-2.312%</td><td>True</td></tr></tbody>
+</table>
+<p>Constraints: loss <= 0.736967, metric1 >= 0.722004, metric2 >= 0.722004.</p>
+</section>
+
+<section>
+<h2>Training Curves</h2>
+<p>The PNGs below are the full 50,000-episode Stage-1 training curves produced by the run.</p>
+<h3>Reward / Loss / Metrics</h3>
+<img src="stage1/ppo_training_curve.png" alt="Stage-1 reward loss metric curves">
+<h3>Entropy</h3>
+<img src="stage1/ppo_entropy_curve.png" alt="Stage-1 entropy curve">
+</section>
+
+<section>
+<h2>Curve Statistics</h2>
+<table>
+<thead><tr><th>Series</th><th>N</th><th>Min</th><th>Mean</th><th>P50</th><th>P95</th><th>Last</th><th>Last1000 mean</th></tr></thead>
+<tbody><tr><td>reward</td><td>50000</td><td>-2.800465</td><td>0.611457</td><td>0.589509</td><td>1.752107</td><td>1.727244</td><td>1.732843</td></tr>
+<tr><td>loss</td><td>50000</td><td>0.704365</td><td>0.754637</td><td>0.755205</td><td>0.794361</td><td>0.729995</td><td>0.722574</td></tr>
+<tr><td>metric1</td><td>50000</td><td>0.678700</td><td>0.724424</td><td>0.722022</td><td>0.747292</td><td>0.743682</td><td>0.744390</td></tr>
+<tr><td>metric2</td><td>50000</td><td>0.678700</td><td>0.724424</td><td>0.722022</td><td>0.747292</td><td>0.743682</td><td>0.744390</td></tr>
+<tr><td>entropy</td><td>416</td><td>0.709582</td><td>1.971927</td><td>2.010419</td><td>2.708008</td><td>0.721496</td><td>1.971927</td></tr></tbody>
+</table>
+</section>
+
+<section>
+<h2>Evidence</h2>
+<ul>
+<li>Queue status reached <code>waiting_report</code> after clean <code>base_rte</code> completion.</li>
+<li>Training log contains <code>validation_full</code> dataset protocol, baseline, constraints, and online reward lines.</li>
+<li>Training log contains four Stage-1 rollout workers on <code>cuda:0</code>, <code>cuda:1</code>, <code>cuda:2</code>, and <code>cuda:3</code>.</li>
+<li><code>stage1/pruning_search_log.txt</code> reports no local-optimum warning.</li>
+</ul>
+</section>
+
+<section>
+<h2>Artifacts</h2>
+<table><tbody>
+<tr><td>HTML report</td><td><code>experiments/server_command_runs/stage1_full_50000_base_rte_20260527_015842/stage1_base_rte_final_report.html</code></td></tr>
+<tr><td>Final eval JSON</td><td><code>experiments/server_command_runs/stage1_full_50000_base_rte_20260527_015842/stage1/final_eval_best_vs_baseline.json</code></td></tr>
+<tr><td>Training curves</td><td><code>stage1/ppo_training_curve.png</code>, <code>stage1/ppo_entropy_curve.png</code></td></tr>
+</tbody></table>
+</section>
+</body>
+</html>

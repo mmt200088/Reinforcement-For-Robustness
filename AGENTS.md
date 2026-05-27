@@ -142,6 +142,21 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `global_best_config`/`search_best_config` or the training completion log for
   the final selected Stage-1 config, while optionally showing raw reward-best as
   an audit row.
+- Stage-1 base_rte completion, added 2026-05-27: the clean `base_rte` full run
+  from server HEAD `6cd198a` completed 50,000 episodes and reached queue
+  `waiting_report`. The final local report is
+  `experiments/server_command_runs/stage1_full_50000_base_rte_20260527_015842/stage1_base_rte_final_report.html`.
+  The final selected global/search best is
+  `GELU=[1,1,1,4,4,1,1,1,1,1,1,1]`,
+  `Softmax=[4,3,2,2,2,3,3,2,3,3,4,3]`, cost `33.00`, reward `1.8529`,
+  confirmed at episode `38040`. Full-validation final eval on
+  `validation_full` size `277` gave baseline loss/accuracy
+  `0.7333006263`/`0.7256317690` and selected loss/accuracy
+  `0.7247349620`/`0.7472924188`, passing the 0.5% loss/metric constraints.
+  The checkpoint raw reward-best is
+  `Softmax=[4,4,2,2,2,3,3,3,3,3,4,4]`, cost `34.50`, reward `1.9017`;
+  it is included as an audit row but should not replace the final
+  global/search-selected config in summaries.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes
