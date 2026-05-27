@@ -5482,8 +5482,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         # Per-episode action-history accumulators live on the primary device
         # (the same place gtrxl_net lives). We move them once at episode start
         # and reuse the buffers throughout.
-        prev_g = torch.zeros((1, 1), dtype=torch.long).to(primary_device)
-        prev_s = torch.zeros((1, 1), dtype=torch.long).to(primary_device)
+        prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long).to(primary_device)
+        prev_s = torch.tensor([[SOS_TOKEN_SOFTMAX]], dtype=torch.long).to(primary_device)
 
         seq_cont_feats: List[torch.Tensor] = []
         seq_layer_indices: List[torch.Tensor] = []
@@ -6059,6 +6059,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                             base_seed=int(getattr(self, "final_eval_random_seed", 42)),
                         )
                         _stage1_parallel_stash.extend(_rollouts)
+                        from stage1_rl.parallel_runner import format_diagnostics_line
+
+                        if _stage1_parallel_runner.last_diagnostics is not None:
+                            self.log(
+                                "  " + format_diagnostics_line(
+                                    _stage1_parallel_runner.last_diagnostics
+                                )
+                            )
                         self.log(
                             f"  [stage1-rollout] window={_window_idx_for_runner} collected "
                             f"{len(_rollouts)} episodes across "

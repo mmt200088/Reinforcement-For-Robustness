@@ -167,6 +167,17 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   lower loss, then lower cost. The earlier `base_sst2` and `base_rte` reports
   used the old global/search post-selection policy and should be interpreted as
   pre-correction artifacts.
+- Stage-1 large_mrpc speed/parallelism note, added 2026-05-27: the
+  `large_mrpc` full run speed around 1.6k episodes/hour is broadly consistent
+  with the earlier 4-GPU smoke result of about 2.1 seconds/episode. It is slower
+  than BERT-base primarily because BERT-large has 24 transformer layers and a
+  much heavier validation_full model-forward pass. The Stage-1 parallel rollout
+  worker path now initializes previous GELU/Softmax actions with the same SOS
+  tokens as the serial path, so BERT-large and BERT-base use the same PPO
+  rollout semantics except for model size/adaptation. Parallel rollout windows
+  should log per-worker wall times and an estimated speedup line for future
+  speed checks. The pre-fix active `large_mrpc` partial run should be treated as
+  superseded once the SOS-fix queue is relaunched.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes
