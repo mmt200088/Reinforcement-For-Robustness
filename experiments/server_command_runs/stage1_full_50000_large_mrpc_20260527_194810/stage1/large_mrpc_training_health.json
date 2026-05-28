@@ -1,0 +1,403 @@
+{
+  "created_at": "2026-05-29T00:25:38.696419+08:00",
+  "server_head": "cdcc42b",
+  "run_dir": "/hy-tmp/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-large/mrpc/s1t0.005_s2t0.05_s2st0.05",
+  "status": "waiting_report",
+  "selection_protocol": "raw_reward_best",
+  "completed_episodes": 50000,
+  "checkpoint_best_config": {
+    "gelu": [
+      1,
+      1,
+      2,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      2,
+      2,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "softmax": [
+      2,
+      3,
+      3,
+      2,
+      3,
+      3,
+      6,
+      5,
+      2,
+      5,
+      3,
+      6,
+      3,
+      3,
+      2,
+      2,
+      3,
+      2,
+      3,
+      5,
+      3,
+      2,
+      3,
+      3
+    ],
+    "cost": 67.0,
+    "reward": 3.3508951602630903
+  },
+  "best_reward": 3.3508951602630903,
+  "best_cost": 67.0,
+  "curve_stats": {
+    "reward": {
+      "n": 50000,
+      "min": -4.7259637765470766,
+      "max": 3.3508951602630903,
+      "mean": 1.4647907249870513,
+      "p01": -3.2878398884191578,
+      "p05": -1.0681344683505336,
+      "p50": 1.7143907825027556,
+      "p95": 2.976312411037082,
+      "p99": 3.1245273703773573,
+      "last": 3.090021268990238,
+      "last500_mean": 2.915934601529779,
+      "last1000_mean": 2.9273690760999087
+    },
+    "loss": {
+      "n": 50000,
+      "min": 1.1939640045166016,
+      "max": 1.9133522510528564,
+      "mean": 1.4422824287343026,
+      "p01": 1.280967674255371,
+      "p05": 1.3193632066249847,
+      "p50": 1.4411195516586304,
+      "p95": 1.5687940537929534,
+      "p99": 1.6264339530467988,
+      "last": 1.3362785577774048,
+      "last500_mean": 1.347522808790207,
+      "last1000_mean": 1.3457435468435288
+    },
+    "metric1": {
+      "n": 50000,
+      "min": 0.8308823529411765,
+      "max": 0.9044117647058824,
+      "mean": 0.8772024509803922,
+      "p01": 0.8578431372549019,
+      "p05": 0.8651960784313726,
+      "p50": 0.8774509803921569,
+      "p95": 0.8897058823529411,
+      "p99": 0.8921568627450981,
+      "last": 0.8848039215686274,
+      "last500_mean": 0.8850882352941176,
+      "last1000_mean": 0.8851470588235294
+    },
+    "metric2": {
+      "n": 50000,
+      "min": 0.831057023712003,
+      "max": 0.902186042107176,
+      "mean": 0.8742824486967968,
+      "p01": 0.8566381428940698,
+      "p05": 0.8624343368955015,
+      "p50": 0.87442208717397,
+      "p95": 0.8854466650708847,
+      "p99": 0.8894914367130936,
+      "last": 0.8824438878925193,
+      "last500_mean": 0.8817374635828082,
+      "last1000_mean": 0.8818352088676407
+    },
+    "entropy": {
+      "n": 416,
+      "min": 1.304771900177002,
+      "max": 2.708001136779785,
+      "mean": 2.358838439274293,
+      "p01": 1.3252706408500672,
+      "p05": 1.3551118075847626,
+      "p50": 2.5322632789611816,
+      "p95": 2.7079893350601196,
+      "p99": 2.7079989910125732,
+      "last": 1.3434909582138062
+    }
+  },
+  "rollout": {
+    "windows": 417,
+    "last_window": {
+      "window": 416,
+      "eps_per_worker": 20,
+      "counts": [
+        20,
+        20,
+        20,
+        20
+      ],
+      "wall_seconds": 142.001,
+      "speedup": 3.89
+    },
+    "mean_speedup": 3.917242206235012,
+    "min_speedup": 3.83,
+    "max_speedup": 3.99,
+    "last_speedup": 3.89,
+    "four_worker_evidence_tail": [
+      {
+        "window": 412,
+        "eps_per_worker": 30,
+        "counts": [
+          30,
+          30,
+          30,
+          30
+        ],
+        "wall_seconds": 219.935,
+        "speedup": 3.85
+      },
+      {
+        "window": 413,
+        "eps_per_worker": 30,
+        "counts": [
+          30,
+          30,
+          30,
+          30
+        ],
+        "wall_seconds": 207.847,
+        "speedup": 3.9
+      },
+      {
+        "window": 414,
+        "eps_per_worker": 30,
+        "counts": [
+          30,
+          30,
+          30,
+          30
+        ],
+        "wall_seconds": 214.579,
+        "speedup": 3.88
+      },
+      {
+        "window": 415,
+        "eps_per_worker": 30,
+        "counts": [
+          30,
+          30,
+          30,
+          30
+        ],
+        "wall_seconds": 208.718,
+        "speedup": 3.88
+      },
+      {
+        "window": 416,
+        "eps_per_worker": 20,
+        "counts": [
+          20,
+          20,
+          20,
+          20
+        ],
+        "wall_seconds": 142.001,
+        "speedup": 3.89
+      }
+    ]
+  },
+  "log_progress": {
+    "max_logged_episode": 49920,
+    "last_logged_episode": 49920,
+    "last_reward_line": [
+      "2.9377",
+      "-0.1750",
+      "0.0070",
+      "1.3435"
+    ],
+    "done_markers": [
+      "  [完成] Stage-1 最终 checkpoint 已保存 → Parting Chapter/persistent/rl/bert-large/mrpc/s1t0.005_s2t0.05_s2st0.05/stage1/stage1_rl_checkpoint.pt",
+      "--- PPO训练完成（PPO Training Completed） ---",
+      "配置评估完成（Configuration evaluation finished）。"
+    ]
+  },
+  "final_eval": {
+    "created_at": "2026-05-29T00:22:55.058845+08:00",
+    "dataset": "mrpc",
+    "model": "bert-large",
+    "base_model": "yoshitomo-matsubara/bert-large-uncased-mrpc",
+    "protocol": "stage1_plaintext_validation_full_only",
+    "selection_protocol": "raw_reward_best",
+    "server_head": "cdcc42b",
+    "metrics": {
+      "metric1": "Acc.",
+      "metric2": "F1"
+    },
+    "settings": {
+      "batch_size": 512,
+      "validation_full_size": 408,
+      "stage1_accuracy_tolerance": 0.005,
+      "cuda_visible_devices": "0"
+    },
+    "checkpoint": {
+      "path": "/hy-tmp/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-large/mrpc/s1t0.005_s2t0.05_s2st0.05/stage1/stage1_rl_checkpoint.pt",
+      "completed_episodes": 50000,
+      "best_reward": 3.3508951602630903,
+      "best_cost": 67.0,
+      "version": 1
+    },
+    "items": [
+      {
+        "label": "pure_original_plaintext_baseline",
+        "gelu": [
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "softmax": [
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "loss": 1.4342708587646484,
+        "metric1": 0.8799019607843137,
+        "metric2": 0.8756547374194433,
+        "avg_batch_ms": 2112.8225326538086,
+        "wall_seconds": 2.121157169342041,
+        "split": "validation_full",
+        "gelu_cost": 0.0,
+        "softmax_cost": 0.0
+      },
+      {
+        "label": "checkpoint_raw_reward_best",
+        "gelu": [
+          1,
+          1,
+          2,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          2,
+          2,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "softmax": [
+          2,
+          3,
+          3,
+          2,
+          3,
+          3,
+          6,
+          5,
+          2,
+          5,
+          3,
+          6,
+          3,
+          3,
+          2,
+          2,
+          3,
+          2,
+          3,
+          5,
+          3,
+          2,
+          3,
+          3
+        ],
+        "cost": 67.0,
+        "reward": 3.3508951602630903,
+        "selection_protocol": "raw_reward_best",
+        "loss": 1.2522128820419312,
+        "metric1": 0.8970588235294118,
+        "metric2": 0.8950905296607657,
+        "avg_batch_ms": 2673.9304065704346,
+        "wall_seconds": 3.667538642883301,
+        "split": "validation_full",
+        "gelu_cost": 28.5,
+        "softmax_cost": 38.5,
+        "delta_vs_baseline": {
+          "loss_abs": -0.18205797672271729,
+          "loss_pct": -12.69341670091001,
+          "metric1_abs": 0.01715686274509809,
+          "metric1_pct": 1.949860724233989,
+          "metric2_abs": 0.019435792241322414,
+          "metric2_pct": 2.2195725564849615
+        },
+        "constraints_pass": true
+      }
+    ],
+    "constraints": {
+      "loss": 1.4414422130584714,
+      "metric1": 0.8755024509803921,
+      "metric2": 0.8712764637323461
+    }
+  }
+}

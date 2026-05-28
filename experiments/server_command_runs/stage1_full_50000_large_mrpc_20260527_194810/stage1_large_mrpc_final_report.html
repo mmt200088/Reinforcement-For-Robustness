@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Stage-1 large_mrpc Final Report</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 32px; color: #1f2933; background: #f7f8fa; }
+main { max-width: 1180px; margin: 0 auto; }
+section { background: #fff; border: 1px solid #d9dee7; border-radius: 8px; padding: 20px 24px; margin: 16px 0; }
+h1 { margin: 0 0 8px; font-size: 28px; }
+h2 { margin: 0 0 14px; font-size: 20px; }
+.small { color: #657080; font-size: 13px; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+pre { white-space: pre-wrap; background: #f1f3f6; padding: 12px; border-radius: 6px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; border-bottom: 1px solid #e3e7ee; padding: 8px 10px; vertical-align: top; }
+th { background: #eef2f6; font-weight: 650; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.kpi { background: #f9fafb; border: 1px solid #e3e7ee; border-radius: 6px; padding: 12px; }
+.kpi b { display:block; font-size: 13px; color:#657080; margin-bottom:4px; }
+.kpi span { font-size: 22px; }
+img { max-width: 100%; border: 1px solid #d9dee7; border-radius: 6px; background: white; }
+.ok { color: #116b39; font-weight: 700; }
+</style></head><body><main>
+<h1>Stage-1 Full RL Final Report: BERT-large MRPC</h1>
+<p class="small">Run directory: <code>experiments/server_command_runs/stage1_full_50000_large_mrpc_20260527_194810</code><br>
+Created: 2026-05-29T00:28:02.755811+08:00 · server head during training/final-eval: <code>cdcc42b</code> · protocol: <code>validation_full</code> only · selection: <code>raw_reward_best</code></p>
+<section><h2>Result</h2>
+<div class="grid">
+<div class="kpi"><b>Completed episodes</b><span>50000</span></div>
+<div class="kpi"><b>Best reward</b><span>3.3509</span></div>
+<div class="kpi"><b>Best cost</b><span>67.00</span></div>
+<div class="kpi"><b>Constraint status</b><span class="ok">PASS</span></div>
+</div>
+
+<table><thead><tr><th>Item</th><th>Loss</th><th>Accuracy</th><th>F1</th><th>Cost</th><th>Reward</th><th>Constraints</th></tr></thead>
+<tbody>
+<tr><td>Pure original baseline</td><td>1.434271</td><td>0.879902</td><td>0.875655</td><td>original</td><td>n/a</td><td>reference</td></tr>
+<tr><td>Raw PPO reward-best</td><td>1.252213</td><td>0.897059</td><td>0.895091</td><td>67.00</td><td>3.350895</td><td>yes</td></tr>
+<tr><td>Delta vs baseline</td><td>-0.182058 (-12.693%)</td><td>0.017157 (+1.950%)</td><td>0.019436 (+2.220%)</td><td></td><td></td><td></td></tr>
+</tbody></table>
+<p class="small">Constraint limits: loss <= 1.441442, accuracy >= 0.875502, F1 >= 0.871276. The baseline is pure original plaintext GELU/Softmax represented by degree -1 for every BERT-large layer.</p>
+</section>
+<section><h2>Selected Config</h2>
+<table><tbody>
+<tr><td>GELU</td><td><code>[1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]</code></td></tr>
+<tr><td>Softmax</td><td><code>[2, 3, 3, 2, 3, 3, 6, 5, 2, 5, 3, 6, 3, 3, 2, 2, 3, 2, 3, 5, 3, 2, 3, 3]</code></td></tr>
+<tr><td>GELU cost</td><td>28.50</td></tr>
+<tr><td>Softmax cost</td><td>38.50</td></tr>
+<tr><td>Raw PPO reward-best source</td><td><code>stage1/stage1_rl_checkpoint.pt::best_config</code></td></tr>
+</tbody></table>
+</section>
+<section><h2>Learning Curves</h2>
+<p><img src="stage1/ppo_training_curve.png" alt="PPO training reward/loss/metric curves"></p>
+<p><img src="stage1/ppo_entropy_curve.png" alt="PPO entropy curve"></p>
+<table><thead><tr><th>Series</th><th>N</th><th>Min</th><th>Max</th><th>Mean</th><th>P50</th><th>P95</th><th>P99</th><th>Last</th><th>Last500 mean</th><th>Last1000 mean</th></tr></thead><tbody>
+
+<tr><td>Reward</td><td>50000</td><td>-4.725964</td><td>3.350895</td><td>1.464791</td><td>1.714391</td><td>2.976312</td><td>3.124527</td><td>3.090021</td><td>2.915935</td><td>2.927369</td></tr>
+
+<tr><td>Loss</td><td>50000</td><td>1.193964</td><td>1.913352</td><td>1.442282</td><td>1.441120</td><td>1.568794</td><td>1.626434</td><td>1.336279</td><td>1.347523</td><td>1.345744</td></tr>
+
+<tr><td>Metric1 Accuracy</td><td>50000</td><td>0.830882</td><td>0.904412</td><td>0.877202</td><td>0.877451</td><td>0.889706</td><td>0.892157</td><td>0.884804</td><td>0.885088</td><td>0.885147</td></tr>
+
+<tr><td>Metric2 F1</td><td>50000</td><td>0.831057</td><td>0.902186</td><td>0.874282</td><td>0.874422</td><td>0.885447</td><td>0.889491</td><td>0.882444</td><td>0.881737</td><td>0.881835</td></tr>
+
+<tr><td>Entropy</td><td>416</td><td>1.304772</td><td>2.708001</td><td>2.358838</td><td>2.532263</td><td>2.707989</td><td>2.707999</td><td>1.343491</td><td>n/a</td><td>n/a</td></tr>
+</tbody></table>
+</section>
+<section><h2>Four-GPU Evidence</h2>
+<div class="grid">
+<div class="kpi"><b>Rollout windows</b><span>417</span></div>
+<div class="kpi"><b>Mean speedup</b><span>3.92x</span></div>
+<div class="kpi"><b>Speedup range</b><span>3.83x-3.99x</span></div>
+<div class="kpi"><b>Last speedup</b><span>3.89x</span></div>
+</div>
+<table><thead><tr><th>Window</th><th>Episodes/worker</th><th>Counts</th><th>Wall seconds</th><th>Speedup</th></tr></thead><tbody><tr><td>412</td><td>30</td><td>[30, 30, 30, 30]</td><td>219.935</td><td>3.85x</td></tr>
+<tr><td>413</td><td>30</td><td>[30, 30, 30, 30]</td><td>207.847</td><td>3.90x</td></tr>
+<tr><td>414</td><td>30</td><td>[30, 30, 30, 30]</td><td>214.579</td><td>3.88x</td></tr>
+<tr><td>415</td><td>30</td><td>[30, 30, 30, 30]</td><td>208.718</td><td>3.88x</td></tr>
+<tr><td>416</td><td>20</td><td>[20, 20, 20, 20]</td><td>142.001</td><td>3.89x</td></tr>
+</tbody></table>
+</section>
+<section><h2>Artifacts</h2>
+<table><tbody>
+<tr><td>HTML report</td><td><code>experiments/server_command_runs/stage1_full_50000_large_mrpc_20260527_194810/stage1_large_mrpc_final_report.html</code></td></tr>
+<tr><td>Compact summary JSON</td><td><code>experiments/server_command_runs/stage1_full_50000_large_mrpc_20260527_194810/stage1_large_mrpc_final_summary.json</code></td></tr>
+<tr><td>Final eval JSON</td><td><code>experiments/server_command_runs/stage1_full_50000_large_mrpc_20260527_194810/stage1/final_eval_best_vs_baseline.json</code></td></tr>
+<tr><td>Training health JSON</td><td><code>experiments/server_command_runs/stage1_full_50000_large_mrpc_20260527_194810/stage1/large_mrpc_training_health.json</code></td></tr>
+<tr><td>Training log tail</td><td><code>experiments/server_command_runs/stage1_full_50000_large_mrpc_20260527_194810/stage1/stage1_full_large_mrpc_log_tail.txt</code></td></tr>
+</tbody></table>
+</section>
+</main></body></html>

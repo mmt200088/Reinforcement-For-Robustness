@@ -189,6 +189,20 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   should log per-worker wall times and an estimated speedup line for future
   speed checks. The pre-fix active `large_mrpc` partial run should be treated as
   superseded once the SOS-fix queue is relaunched.
+- Stage-1 large_mrpc completion, added 2026-05-29: the corrected `large_mrpc`
+  full run from server HEAD `cdcc42b` completed 50,000 episodes and reached
+  queue `waiting_report`. The final local report is
+  `experiments/server_command_runs/stage1_full_50000_large_mrpc_20260527_194810/stage1_large_mrpc_final_report.html`.
+  The final selected config is the raw PPO reward-best from
+  `checkpoint["best_config"]`: `GELU=[1,1,2,1,1,1,1,1,1,1,2,2,1,1,1,1,1,1,1,1,1,1,1,1]`,
+  `Softmax=[2,3,3,2,3,3,6,5,2,5,3,6,3,3,2,2,3,2,3,5,3,2,3,3]`,
+  cost `67.00`, reward `3.3509`. Full-validation final eval on
+  `validation_full` size `408` gave baseline loss/Accuracy/F1
+  `1.4342708588`/`0.8799019608`/`0.8756547374` and selected
+  loss/Accuracy/F1 `1.2522128820`/`0.8970588235`/`0.8950905297`, passing the
+  0.5% loss/metric constraints. Four-worker rollout evidence covered `417`
+  windows with mean speedup about `3.92x`; the last partial window ran
+  `[20,20,20,20]` episodes across `cuda:0..cuda:3` at `3.89x`.
 - Stage-1 queue change, added 2026-05-28: after the active corrected
   `large_mrpc` run finishes and its final eval/report are captured, do not launch
   `large_sst2` or `large_rte`. Because Stage-1 final selection changed to raw
