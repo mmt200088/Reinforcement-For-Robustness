@@ -103,6 +103,17 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   runtime. Four-GPU Stage-1 rollout is window-style data parallelism across
   complete episodes; worker logs and sampled GPU utilization are better evidence
   than a single instantaneous `nvidia-smi` snapshot.
+- Stage-1 reward boundary-search update, added 2026-05-28: future Stage-1 RL
+  launches after the active `large_mrpc` run must use the latest commit with
+  the revised Stage-1 reward. Differential metric reward is behind
+  `STAGE1_ENABLE_DIFFERENTIAL_REWARD` and defaults off; do not enable it unless
+  the user explicitly asks. Dense per-step reward is now monotonic cost saving
+  only, with no expected-cost-track bonus around GELU2/Softmax4 (`4.5`
+  cost/layer), so the policy is free to search below that soft point. Keep the
+  terminal log-barrier reward after constraints are satisfied because the user
+  wants the safety-margin effect retained. The intended objective is constrained
+  boundary search: satisfy full-validation loss/metric limits, then push cost
+  as low as the constraints allow.
 - Validation-only protocol, clarified 2026-05-25: Stage-1 baseline is built on
   the full validation set, and the entire Stage-1 process must not use the
   training set for baseline, RL reward evaluation, candidate checks, or final

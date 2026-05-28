@@ -387,7 +387,9 @@ REWARD_NORMALIZATION_SCALE = 20.0  # 固定缩放因子（将-100量级缩放到
 VALUE_CLIP_RANGE = 0.2  # 价值函数裁剪范围，与PPO_EPS_CLIP保持一致
 
 # ==================== Transformer 7.2: 预算偏离度中间奖励配置 ====================
-BUDGET_DEVIATION_SCALE = 0.05  # 预算偏离度奖励缩放系数
+# Kept for checkpoint/config compatibility only. Stage-1 dense reward no longer
+# pays an expected-cost-track bonus, so cost search is not anchored to 4.5/layer.
+BUDGET_DEVIATION_SCALE = 0.05
 
 # ==================== PPO 7.1: 运行时回报归一化配置 ====================
 RUNNING_REWARD_HISTORY_SIZE = 100  # 滑动窗口大小
@@ -482,6 +484,9 @@ CLASSIFICATION_DATASETS = ['mrpc', 'mnli', 'sst2', 'cola', 'qnli', 'rte', 'wnli'
 
 # ==================== 敏锐度优化PDF：差分奖励与对数障碍配置 ====================
 # 优化方案二：信号放大与差分奖励重构
+STAGE1_ENABLE_DIFFERENTIAL_REWARD = os.environ.get(
+    "STAGE1_ENABLE_DIFFERENTIAL_REWARD", "0"
+).strip().lower() in {"1", "true", "yes", "on"}
 DIFF_REWARD_SCALE_ACC = 50.0       # 精度差分奖励缩放因子
 DIFF_REWARD_POWER = 0.5            # 根号变换指数（放大微小信号）
 LOG_BARRIER_VIOLATION_SCALE = 10.0  # 违反约束时的指数惩罚系数
@@ -2100,45 +2105,19 @@ class TransformerOptEnv:
     
     def _compute_dense_step_reward(self, gelu_degree, softmax_degree):
         """
-        策略一（3.1）+ Transformer 7.2：计算稠密化中间奖励
-        包含两部分：
-        1. 基于当前层成本节约的即时反馈
-        2. 基于预算偏离度的轨道引导奖励（Transformer 7.2）
+        策略一（3.1）：计算稠密化中间奖励。
+
+        Dense reward is intentionally monotonic in per-layer cost saving. The
+        old expected-cost-track bonus made the policy mildly prefer staying near
+        GELU2/Softmax4 (4.5 cost/layer), which conflicts with boundary-searching
+        for the lowest feasible cost.
         """
         step_cost = GELU_COST[gelu_degree] + SOFTMAX_COST[softmax_degree]
         
         # 1. 策略一（3.1）：相对于最大成本的节约比例
         cost_saving = (self.max_cost_per_layer - step_cost) / self.max_cost_per_layer
         cost_reward = REWARD_DENSE_SCALE * cost_saving
-        
-        # 2. Transformer 7.2：基于预算偏离度的中间奖励
-        # 计算当前应处于的"理想"累积成本（假设每层选中间阶数）
-        # 在执行当前动作后，current_layer 还未 +1，所以理想成本是 (current_layer + 1) * expected_cost_per_layer
-        layers_completed = self.current_layer + 1  # 包括当前层
-        expected_cost_so_far = layers_completed * self.expected_cost_per_layer
-        
-        # 计算实际累积成本（包括当前层的成本）
-        actual_cost_so_far = self.accumulated_cost + step_cost
-        
-        # 预算偏离度：正值表示超预算（贵了），负值表示省预算（便宜了）
-        if expected_cost_so_far > 0:
-            budget_deviation = (actual_cost_so_far - expected_cost_so_far) / expected_cost_so_far
-        else:
-            budget_deviation = 0.0
-        
-        # 偏离度奖励：偏离越小（越接近0）越好，给予小的正向奖励
-        # 使用负的绝对值偏离度，使智能体倾向于保持在预算轨道附近
-        # 但同时允许省钱（负偏离），所以对省钱方向给予较小惩罚
-        if budget_deviation <= 0:
-            # 省钱（低于预算）：轻微奖励，但不要奖励太多以免过于保守
-            budget_reward = BUDGET_DEVIATION_SCALE * (1.0 - abs(budget_deviation) * 0.5)
-        else:
-            # 超预算：给予惩罚，偏离越大惩罚越重
-            budget_reward = -BUDGET_DEVIATION_SCALE * budget_deviation
-        
-        # 合并两部分奖励
-        dense_reward = cost_reward + budget_reward
-        return dense_reward
+        return cost_reward
     
     def step(self, gelu_action_idx, softmax_action_idx):
         """执行动作，返回(next_state, reward, done, info)"""
@@ -2195,10 +2174,10 @@ class TransformerOptEnv:
     
     def _compute_final_reward(self):
         """
-        敏锐度优化PDF：差分奖励 + 对数障碍函数 + 解耦奖励
+        敏锐度优化PDF：约束障碍函数 + 可选差分奖励 + 解耦奖励
         
         实现要点：
-        1. 差分精度奖励（信号放大）：使用0.5次幂放大微小变化
+        1. 差分精度奖励默认关闭；可用 STAGE1_ENABLE_DIFFERENTIAL_REWARD=1 打开
         2. 对数障碍惩罚（约束敏感性）：Log-Barrier函数
         3. 成本奖励：相对于基线的节省
         4. 返回分离的成本/精度奖励（用于双头Critic）
@@ -2218,27 +2197,29 @@ class TransformerOptEnv:
             'cost': self.accumulated_cost
         }
         
-        # ==================== 敏锐度优化PDF 4.1：差分精度奖励 ====================
-        # 1. 计算与上一episode的差值
-        delta_loss = self.prev_episode_metrics['loss'] - loss  # 正值表示loss变小（改善）
-        delta_m1 = m1 - self.prev_episode_metrics['metric1']   # 正值表示metric变大（改善）
-        delta_m2 = m2 - self.prev_episode_metrics['metric2']   # 正值表示metric变大（改善）
-        
-        # 2. 使用根号变换放大微小信号（敏锐度优化PDF 4.1）
-        # 例如: 1e-4 -> 1e-2，信号强度提升100倍
-        def amplify_signal(delta):
-            sign = 1.0 if delta >= 0 else -1.0
-            return sign * (abs(delta) ** DIFF_REWARD_POWER) * DIFF_REWARD_SCALE_ACC
-        
-        r_loss_diff = amplify_signal(delta_loss)
-        r_m1_diff = amplify_signal(delta_m1)
-        r_m2_diff = amplify_signal(delta_m2)
-        
-        # 综合精度差分奖励（根据指标数量调整分母）
-        if self.num_metrics == 1:
-            r_accuracy_diff = (r_loss_diff + r_m1_diff) / 2.0
-        else:
-            r_accuracy_diff = (r_loss_diff + r_m1_diff + r_m2_diff) / 3.0
+        r_accuracy_diff = 0.0
+        if STAGE1_ENABLE_DIFFERENTIAL_REWARD:
+            # ==================== 敏锐度优化PDF 4.1：差分精度奖励 ====================
+            # 1. 计算与上一episode的差值
+            delta_loss = self.prev_episode_metrics['loss'] - loss  # 正值表示loss变小（改善）
+            delta_m1 = m1 - self.prev_episode_metrics['metric1']   # 正值表示metric变大（改善）
+            delta_m2 = m2 - self.prev_episode_metrics['metric2']   # 正值表示metric变大（改善）
+
+            # 2. 使用根号变换放大微小信号（敏锐度优化PDF 4.1）
+            # 例如: 1e-4 -> 1e-2，信号强度提升100倍
+            def amplify_signal(delta):
+                sign = 1.0 if delta >= 0 else -1.0
+                return sign * (abs(delta) ** DIFF_REWARD_POWER) * DIFF_REWARD_SCALE_ACC
+
+            r_loss_diff = amplify_signal(delta_loss)
+            r_m1_diff = amplify_signal(delta_m1)
+            r_m2_diff = amplify_signal(delta_m2)
+
+            # 综合精度差分奖励（根据指标数量调整分母）
+            if self.num_metrics == 1:
+                r_accuracy_diff = (r_loss_diff + r_m1_diff) / 2.0
+            else:
+                r_accuracy_diff = (r_loss_diff + r_m1_diff + r_m2_diff) / 3.0
         
         # ==================== 敏锐度优化PDF 4.2：对数障碍约束奖励 ====================
         def log_barrier_reward(curr_value, limit_value, is_upper_bound=True):
@@ -2279,7 +2260,7 @@ class TransformerOptEnv:
         r_cost = cost_saving * REWARD_COST_WEIGHT
         
         # ==================== 综合奖励（用于双头Critic） ====================
-        # 精度奖励 = 差分奖励 + 约束奖励
+        # 精度奖励 = 约束奖励 + 可选差分奖励（默认关闭）
         r_accuracy = r_accuracy_diff + r_constraint
         
         # 总奖励

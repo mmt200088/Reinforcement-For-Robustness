@@ -386,6 +386,13 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 bash llama_7B_LayerImportance.sh run rl \
 
 Implementation facts:
 
+- As of 2026-05-28, Stage-1 differential metric reward is behind
+  `STAGE1_ENABLE_DIFFERENTIAL_REWARD` and defaults off. Leave it off for
+  queued reruns unless the user explicitly asks. Dense per-step reward is
+  monotonic cost saving only; the old expected-cost-track bonus around
+  GELU2/Softmax4 (`4.5` cost/layer) was removed so low-cost boundary search is
+  not pulled toward that soft point. Keep the terminal log-barrier safety-margin
+  reward.
 - `--stage1-rl-devices` is empty by default → existing single-GPU per-episode
   loop runs unchanged. With `"0,1,2,3"`, `Stage1ParallelRunner` runs 4 worker
   threads that each collect `PPO_UPDATE_INTERVAL / num_workers` complete
