@@ -7,6 +7,7 @@
 
 ```bash
 set -uo pipefail
+export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}."
 TS=$(date +%Y%m%d_%H%M%S)
 OUT="experiments/server_command_runs/stage1_approx_reuse_${TS}"
 mkdir -p "$OUT"
