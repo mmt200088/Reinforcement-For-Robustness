@@ -1,0 +1,158 @@
+{
+  "source_commit": "73e6a8f",
+  "report": "experiments/server_command_runs/stage1_accel_plaintext_validation_20260529_1603/stage1_accel_plaintext_validation_report.html",
+  "server_success_dir": "/hy-tmp/Reinforcement-For-Robustness-stage1-validation/experiments/server_command_runs/stage1_approx_reuse_20260529_155140_pythonpath_paean",
+  "bert_large": {
+    "device": "cuda:0",
+    "model_type": "bert-large",
+    "num_layers": 24,
+    "num_episodes_timed": 12,
+    "warmup": 2,
+    "batch_size": 16,
+    "seq_len": 96,
+    "identical_logits": true,
+    "logit_mismatches": 0,
+    "max_abs_logit_diff": 0.0,
+    "reuse_on": {
+      "install_ms_mean": 0.826037828422462,
+      "forward_ms_mean": 130.6613538375435,
+      "total_ms_mean": 131.48739166596593,
+      "softmax_rebuilds": 24,
+      "gelu_rebuilds": 71
+    },
+    "reuse_off": {
+      "install_ms_mean": 463.2630346653362,
+      "forward_ms_mean": 153.69951666798443,
+      "total_ms_mean": 616.9625513333207,
+      "softmax_rebuilds": 336,
+      "gelu_rebuilds": 336
+    },
+    "episode_speedup": 4.69218031870819,
+    "install_speedup": 560.8254473648739,
+    "cache_engaged": true,
+    "timestamp": "2026-05-29T15:52:10"
+  },
+  "bert_base": {
+    "device": "cuda:0",
+    "model_type": "bert-base",
+    "num_layers": 12,
+    "num_episodes_timed": 16,
+    "warmup": 2,
+    "batch_size": 24,
+    "seq_len": 96,
+    "identical_logits": true,
+    "logit_mismatches": 0,
+    "max_abs_logit_diff": 0.0,
+    "reuse_on": {
+      "install_ms_mean": 0.48134287135326304,
+      "forward_ms_mean": 76.90462537357234,
+      "total_ms_mean": 77.3859682449256,
+      "softmax_rebuilds": 12,
+      "gelu_rebuilds": 36
+    },
+    "reuse_off": {
+      "install_ms_mean": 176.01327237935038,
+      "forward_ms_mean": 108.98118518525735,
+      "total_ms_mean": 284.9944575646077,
+      "softmax_rebuilds": 216,
+      "gelu_rebuilds": 216
+    },
+    "episode_speedup": 3.682766579370098,
+    "install_speedup": 365.67129764382076,
+    "cache_engaged": true,
+    "timestamp": "2026-05-29T15:52:24"
+  },
+  "plaintext_repeat": {
+    "task": "sst2",
+    "model_name": "textattack/bert-base-uncased-SST-2",
+    "device": "cuda:0",
+    "dataset_split": "validation",
+    "dataset_size": 872,
+    "batch_size": 512,
+    "repeats": 3,
+    "gelu_config": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+    ],
+    "softmax_config": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "noise_state_after_stage1_install": {
+      "input_noise_layers": 0,
+      "softmax_value_noise_layers": 0,
+      "projection_noise_layers": 0,
+      "block1_noise_layers": 0,
+      "block2_noise_layers": 0,
+      "block3_noise_layers": 0,
+      "block4_noise_layers": 0,
+      "block5_noise_layers": 0,
+      "first_input_noise_layers": 0
+    },
+    "no_stage2_noise_hooks_installed": true,
+    "runs": [
+      {
+        "loss": 0.2826771079947095,
+        "accuracy": 0.9231651376146789,
+        "total": 872,
+        "repeat_index": 0
+      },
+      {
+        "loss": 0.2826771079947095,
+        "accuracy": 0.9231651376146789,
+        "total": 872,
+        "repeat_index": 1
+      },
+      {
+        "loss": 0.2826771079947095,
+        "accuracy": 0.9231651376146789,
+        "total": 872,
+        "repeat_index": 2
+      }
+    ],
+    "max_loss_abs_diff": 0.0,
+    "max_accuracy_abs_diff": 0.0,
+    "identical_metrics": true,
+    "finite_metrics": true
+  },
+  "queue_status": {
+    "dataset": "sst2",
+    "entropy_stop_threshold": 0.1,
+    "head": "73e6a8f",
+    "message": "legacy pid still running; source synced for unbounded resume if needed: Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/logs/stage1_full_base_sst2_entropy0p1.log",
+    "model": "bert-base",
+    "pid": "344583",
+    "preset": "bert-base-sst2-stage1-rl",
+    "queue_plan": "finish_current_base_sst2_then_base_rte_entropy_unbounded_73e6a8f_no_large_followups",
+    "report_marker": "/hy-tmp/stage1_full_50000_state/report_done_base_sst2_entropy0p1_73e6a8f",
+    "selection_protocol": "raw_reward_best",
+    "source_sync_commit": "73e6a8f",
+    "stage1_episode_limit": "unbounded_until_entropy",
+    "stage1_episode_safety_cap": null,
+    "status": "running",
+    "stop_protocol": "entropy_lt_0.1",
+    "tag": "base_sst2",
+    "updated": "2026-05-29T16:04:28+08:00"
+  },
+  "conclusion": "PASS"
+}
