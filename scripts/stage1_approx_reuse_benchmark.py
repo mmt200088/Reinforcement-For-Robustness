@@ -205,6 +205,11 @@ def main():
         "episode_speedup": speedup,
         "install_speedup": (statistics.mean(slow_install) / statistics.mean(fast_install)
                             if statistics.mean(fast_install) > 0 else float("nan")),
+        # Proof the reuse path actually engaged across the changing per-episode
+        # configs: reuse rebuilds each layer at most once, vs once-per-episode
+        # without it. If this is False the cache silently did nothing.
+        "cache_engaged": (handler_fast._approx_softmax_rebuilds <= n_layers
+                          and handler_fast._approx_softmax_rebuilds < handler_slow._approx_softmax_rebuilds),
         "timestamp": datetime.now().isoformat(timespec="seconds"),
     }
 
@@ -221,6 +226,8 @@ def main():
           f"{summary['install_speedup']:.2f}x)")
     print(f"  softmax rebuilds      : ON={handler_fast._approx_softmax_rebuilds} "
           f"OFF={handler_slow._approx_softmax_rebuilds}")
+    print(f"  cache engaged         : {summary['cache_engaged']} "
+          f"(reuse rebuilds each layer <= once across changing configs)")
 
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)

@@ -155,6 +155,58 @@ class Stage1ApproxReuseBitIdentityTest(unittest.TestCase):
         self.assertLessEqual(handler_fast._approx_softmax_rebuilds, n_layers)
         self.assertLess(handler_fast._approx_softmax_rebuilds, handler_slow._approx_softmax_rebuilds)
 
+    def test_real_apply_configuration_engages_cache_and_is_identical(self):
+        """Drive the REAL ``LayerImportanceEvaluator.apply_configuration`` (the
+        single-GPU Stage-1 RL install path) across a schedule of self-selected
+        configs, proving the cache engages on the production code (not just the
+        test mirror) and that results stay bit-identical to reconstruct-every-call.
+
+        The multi-GPU worker path (``_stage1_evaluate_on_model``) uses a
+        character-for-character identical install block on a per-worker handler,
+        so this also covers its cache engagement."""
+        try:
+            import layer_importance_evaluator as lie
+        except Exception as exc:  # pragma: no cover - heavy import, env-dependent
+            self.skipTest(f"layer_importance_evaluator import failed: {exc}")
+        from types import SimpleNamespace
+
+        base = _build_tiny_model()
+        model_fast = copy.deepcopy(base)
+        model_slow = copy.deepcopy(base)
+        h_fast = ReversibleLayerHandler(model_fast)
+        h_fast.reuse_approx_modules = True
+        h_slow = ReversibleLayerHandler(model_slow)
+        h_slow.reuse_approx_modules = False  # original reconstruct-every-call reference
+
+        # apply_configuration only touches self.model / self.reversible_handler /
+        # self.layers_attribute — a SimpleNamespace stand-in exercises the real code.
+        self_fast = SimpleNamespace(model=model_fast, reversible_handler=h_fast,
+                                    layers_attribute="bert.encoder.layer")
+        self_slow = SimpleNamespace(model=model_slow, reversible_handler=h_slow,
+                                    layers_attribute="bert.encoder.layer")
+
+        batch = _fixed_batch()
+        with torch.inference_mode():
+            for step, (gelu, softmax) in enumerate(self.SCHEDULE):
+                lie.LayerImportanceEvaluator.apply_configuration(self_fast, gelu, softmax)
+                lie.LayerImportanceEvaluator.apply_configuration(self_slow, gelu, softmax)
+                model_fast.eval()
+                model_slow.eval()
+                out_fast = model_fast(**batch).logits
+                out_slow = model_slow(**batch).logits
+                self.assertTrue(
+                    torch.equal(out_fast, out_slow),
+                    msg=(f"[real apply_configuration] step {step} gelu={gelu} "
+                         f"softmax={softmax}: logits differ"),
+                )
+
+        n_layers = 3
+        n_configs = len(self.SCHEDULE)
+        # Reconstruct-every-call reference rebuilds every config.
+        self.assertEqual(h_slow._approx_softmax_rebuilds, n_layers * n_configs)
+        # Real fast path engages: each layer reconstructed at most once.
+        self.assertLessEqual(h_fast._approx_softmax_rebuilds, n_layers)
+
     def test_fresh_equivalence_guard_blocks_reuse_when_hook_present(self):
         """If a BLB-style per-instance hook is present, reuse must fall back to
         reconstruct (so the BLB Stage-2 path is never silently changed)."""
