@@ -2080,16 +2080,36 @@ class PolynomialGELU(nn.Module):
         super().__init__()
         self.coeff = GELU_COEEF[degree]  # 正向系数
         self.degree = degree
-        
+        # Lazily-built {(sign, device, dtype): coeff Tensor}. Plain dict (not a
+        # registered buffer) so it stays out of state_dict; keyed by device so a
+        # module moved to a new device rebuilds correctly.
+        self._coeff_cache = {}
+
+    def _coeff_tensor(self, sign: int, device, dtype) -> Tensor:
+        key = (sign, device, dtype)
+        t = self._coeff_cache.get(key)
+        if t is None:
+            t = torch.tensor(self.coeff[sign], device=device, dtype=dtype)
+            self._coeff_cache[key] = t
+        return t
+
+    def _poly(self, x: Tensor, sign: int) -> Tensor:
+        # Bit-identical to the module-level ``polynomial(x, self.coeff, sign)``
+        # but the coeff tensor is cached per (sign, device, dtype) instead of
+        # being rebuilt (host->device copy) on every forward call.
+        coeff_tensor = self._coeff_tensor(sign, x.device, x.dtype)
+        powers = torch.stack([x.pow(i) for i in range(len(self.coeff[sign]))], dim=-1)
+        return (powers * coeff_tensor).sum(dim=-1)
+
     def forward(self, x: Tensor) -> Tensor:
 
         if self.degree == 0:
             # Degree 0: skip piecewise comparison, directly use [-2.7, 0] interval polynomial
-            return polynomial(x, self.coeff, 1)
+            return self._poly(x, 1)
 
-        y0 = torch.zeros_like(x, dtype=x.dtype, device=x.device) 
-        y1 = polynomial(x, self.coeff, 1)
-        y2 = polynomial(x, self.coeff, 0)
+        y0 = torch.zeros_like(x, dtype=x.dtype, device=x.device)
+        y1 = self._poly(x, 1)
+        y2 = self._poly(x, 0)
         y3 = x
         
         # 创建与x相同设备和类型的输出张量
@@ -2561,6 +2581,25 @@ class ReversibleLayerHandler:
             "wffn2": {},
         }
         self.original_softmax_value_noise = {}
+        # --- Approx-module reuse caches (Stage-1 GELU/Softmax degree search) ---
+        # During the Stage-1 degree search the BERT weights are frozen (only the
+        # GTrXL policy is trained) and the policy can only pick approximation
+        # degrees (GELU_MAP/SOFTMAX_MAP never expose the "original" sentinel -1),
+        # so replace_layer_softmax / replace_layer_gelu run every episode but
+        # restore_* never does. Rebuilding a fresh BertSelfAttentionWithAproximation
+        # per layer per episode (CPU kaiming-init of Q/K/V Linears + state_dict
+        # copy + device transfer) is pure overhead that cannot change the forward
+        # result, because a module that copied the frozen weights once stays
+        # bit-identical to one rebuilt every call. Cache the modules and only
+        # update the degree in place. Reuse is gated on the cached module still
+        # being "fresh-equivalent" (see _approx_attn_is_fresh_equivalent) so the
+        # BLB Stage-2 path — which installs extra per-instance hooks after
+        # replace_* — always falls back to the original reconstruct path.
+        self.reuse_approx_modules = True
+        self._approx_softmax_cache = {}   # {layer_idx: BertSelfAttentionWithAproximation}
+        self._approx_gelu_cache = {}      # {(layer_idx, degree): PolynomialGELU}
+        self._approx_softmax_rebuilds = 0  # diagnostics: full reconstruct count
+        self._approx_gelu_rebuilds = 0     # diagnostics: full PolynomialGELU build count
         # GPT-2 fused Q/K/V state: {layer_idx: {"query"/"key"/"value": (sf, distribution)}}
         self._gpt2_qkv_state = {}
         # Wrapped c_attn registry so we install the proxy forward only once per layer.
@@ -2593,6 +2632,24 @@ class ReversibleLayerHandler:
         self.blb_first_input_noise_state = {}
         self.backup_model = copy.deepcopy(model)  # 完整模型备份
     
+    @staticmethod
+    def _approx_attn_is_fresh_equivalent(module) -> bool:
+        """True iff ``module`` is bit-identical to a freshly constructed
+        ``BertSelfAttentionWithAproximation``: no block-3 instance override of
+        ``approximation_exponential``, no softmax/value noise state, and no BLB
+        per-instance hooks. Only then is "reuse the cached module + update the
+        degree" equivalent to reconstructing it from scratch."""
+        if "approximation_exponential" in vars(module):
+            return False  # block-3 installed an instance-level exp override
+        if getattr(module, "_softmax_value_noise_state", None) is not None:
+            return False
+        for hook in ("_block2_q_bsgs_hook", "_block2_kt_bsgs_hook",
+                     "_block2_qkt_merge_hook", "_block4_softmax_out_hook",
+                     "_block4_v_hook", "_block4_softmax_v_hook"):
+            if getattr(module, hook, None) is not None:
+                return False
+        return True
+
     def replace_layer_gelu(self, layer_indices=None, layer_name="model.model.layers", degree=1):
         """替换指定层的GELU函数 (BERT: intermediate.intermediate_act_fn; GPT-2: mlp.act)"""
         act_path = self._paths["gelu_act"]
@@ -2604,7 +2661,23 @@ class ReversibleLayerHandler:
                     }
                 orig_act = _get_attr_path(layer, act_path)
                 orig_training = getattr(orig_act, "training", layer.training)
-                new_act = PolynomialGELU(degree=degree)
+                # Reuse a cached PolynomialGELU for this (layer, degree). The
+                # module is stateless apart from a lazily-built coeff-tensor
+                # cache, so reusing it across episodes is bit-identical and skips
+                # rebuilding the coeff tensor on every forward. Keyed per
+                # (layer, degree) — not per degree — so modules stay un-shared
+                # across layers and the BLB block-5 per-instance forward wrap
+                # cannot leak between layers. Skip the cache if a wrap was
+                # installed (instance-level ``forward``).
+                cached = (self._approx_gelu_cache.get((i, degree))
+                          if self.reuse_approx_modules else None)
+                if cached is not None and "forward" not in vars(cached):
+                    new_act = cached
+                else:
+                    new_act = PolynomialGELU(degree=degree)
+                    self._approx_gelu_rebuilds += 1
+                    if self.reuse_approx_modules:
+                        self._approx_gelu_cache[(i, degree)] = new_act
                 new_act.train(bool(orig_training))
                 _set_attr_path(layer, act_path, new_act)
 
@@ -2636,7 +2709,23 @@ class ReversibleLayerHandler:
                         'attention': eval("layer."+ attention_name)
                     }
 
-                # 应用新函数
+                # Fast path: reuse the cached approx-attention module for this
+                # layer and only update its degree. Bit-identical to a fresh
+                # reconstruct because the BERT weights are frozen during the
+                # degree search, so the cached module (which copied them once)
+                # carries the same weight bits a reconstruct would re-copy.
+                # Gated on the cached module still being installed AND
+                # fresh-equivalent, so non-Stage-1 callers (BLB Stage-2 installs
+                # per-instance hooks after this) fall back to reconstruct.
+                cached = self._approx_softmax_cache.get(i) if self.reuse_approx_modules else None
+                if (cached is not None
+                        and layer.attention.self is cached
+                        and self._approx_attn_is_fresh_equivalent(cached)):
+                    cached.degree = degree
+                    cached.lower_bound = Exp_bound[degree]
+                    continue
+
+                # 应用新函数 (full reconstruct — original behavior)
                 orig_self = layer.attention.self
                 orig_sd = orig_self.state_dict()
                 new_attn = BertSelfAttentionWithAproximation(
@@ -2653,6 +2742,9 @@ class ReversibleLayerHandler:
                 )
                 new_attn.train(orig_self.training)
                 layer.attention.self = new_attn
+                self._approx_softmax_rebuilds += 1
+                if self.reuse_approx_modules:
+                    self._approx_softmax_cache[i] = new_attn
 
         print(f"已替换 {len(layer_indices)} 层的Softmax函数（Softmax function）")
     
