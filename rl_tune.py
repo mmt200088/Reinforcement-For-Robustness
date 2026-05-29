@@ -508,6 +508,16 @@ def parse_positive_int(raw_value, flag_name):
     return value
 
 
+def parse_stage1_episode_limit(raw_value, flag_name):
+    """Parse Stage-1 episode budget; 0/-1 means unbounded until entropy stop."""
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"Invalid integer for {flag_name}: {raw_value!r}."
+        ) from None
+
+
 def parse_optional_positive_float(raw_value, flag_name):
     if raw_value in (None, ""):
         return None
@@ -719,7 +729,7 @@ def train(
     )
     batch_size = parse_positive_int(batch_size, "batch_size")
     micro_batch_size = parse_positive_int(micro_batch_size, "micro_batch_size")
-    stage1_rl_episodes = parse_positive_int(
+    stage1_rl_episodes = parse_stage1_episode_limit(
         stage1_rl_episodes, "stage1_rl_episodes"
     )
     stage2_rl_episodes = parse_positive_int(
@@ -731,6 +741,11 @@ def train(
     stage1_entropy_stop_threshold = parse_optional_positive_float(
         stage1_entropy_stop_threshold, "stage1_entropy_stop_threshold"
     )
+    if stage1_rl_episodes <= 0 and stage1_entropy_stop_threshold is None:
+        raise ValueError(
+            "stage1_rl_episodes <= 0 means unbounded Stage-1 training and "
+            "requires stage1_entropy_stop_threshold"
+        )
     # 在创建 LayerImportanceEvaluator 之前覆盖 PPO 更新间隔及其派生常量
     import layer_importance_evaluator as _lie
     _lie.set_ppo_update_interval(ppo_update_interval)

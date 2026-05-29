@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import time
 import copy
+import itertools
 import math
 import sys
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
@@ -547,17 +548,16 @@ RL_OPT_FLAGS = {
     "use_kl_early_stop": True,
     "kl_target": 0.02,
 
-    # 5) Stage-1 RL 默认使用纯明文评估环境：原始模型 baseline 与候选
-    #    GELU/Softmax 近似都不叠加 Stage-2 scaling-factor 噪声。
+    # 5) Legacy switches retained for old checkpoint metadata compatibility.
+    #    Active Stage-1 train/final-eval code ignores these and is always
+    #    plaintext-only: GELU/Softmax replacement, no Stage-2 scaling-factor noise.
     "stage1_use_max_scaling_noise_env": False,
-
-    # 6) Stage-1 Phase-2.5 / Phase-3/4 最终评估同样默认纯明文。
     "final_eval_use_max_scaling_noise_env": False,
 
-    # 7) Stage-1 训练结束后写入局部最优检测报告（pruning_search_log.txt）
+    # 6) Stage-1 训练结束后写入局部最优检测报告（pruning_search_log.txt）
     "stage1_write_local_optimum_report": True,
 
-    # 8) Stage-1 可迁移 policy/critic：
+    # 7) Stage-1 可迁移 policy/critic：
     #    - save_portable_policy=True 时，训练结束在 run dir 写出 stage1_policy.pt
     #      （仅含 net state_dict + 架构超参 + metadata，便于跨任务/跨数据集迁移）；
     #    - pretrained_policy_path=None 表示不加载；设为某个 stage1_policy.pt 路径
@@ -2404,18 +2404,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         # 配置未变时可安全跳过重复调用 (例如同一配置同时评估 train 和 test 两个 split 的情况)
         # 结果 bit-identical, 因为模型状态仅由 (gelu, softmax) 决定
         self._last_applied_config = None
-        self.stage1_rl_episodes = self._coerce_positive_int(
-            stage1_rl_episodes, 'stage1_rl_episodes'
-        )
-        self.stage2_rl_episodes = self._coerce_positive_int(
-            stage2_rl_episodes, 'stage2_rl_episodes'
-        )
-        self.stage1_rl_episodes_specified = self._coerce_bool_flag(
-            stage1_rl_episodes_specified, 'stage1_rl_episodes_specified'
-        )
-        self.stage2_rl_episodes_specified = self._coerce_bool_flag(
-            stage2_rl_episodes_specified, 'stage2_rl_episodes_specified'
-        )
         if stage1_entropy_stop_threshold in (None, ""):
             self.stage1_entropy_stop_threshold = None
         else:
@@ -2425,6 +2413,35 @@ class LayerImportanceEvaluator(TrainerCallback):
                     "stage1_entropy_stop_threshold must be a positive float "
                     f"when set, got {stage1_entropy_stop_threshold!r}"
                 )
+        try:
+            _stage1_episode_limit_raw = int(stage1_rl_episodes)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"stage1_rl_episodes must be an integer, got {stage1_rl_episodes!r}"
+            ) from exc
+        self.stage1_rl_unbounded_until_entropy = _stage1_episode_limit_raw <= 0
+        if self.stage1_rl_unbounded_until_entropy:
+            if self.stage1_entropy_stop_threshold is None:
+                raise ValueError(
+                    "stage1_rl_episodes <= 0 means unbounded Stage-1 training "
+                    "and requires stage1_entropy_stop_threshold"
+                )
+            self.stage1_rl_episodes = _stage1_episode_limit_raw
+            self.stage1_rl_episode_limit = None
+        else:
+            self.stage1_rl_episodes = self._coerce_positive_int(
+                stage1_rl_episodes, 'stage1_rl_episodes'
+            )
+            self.stage1_rl_episode_limit = int(self.stage1_rl_episodes)
+        self.stage2_rl_episodes = self._coerce_positive_int(
+            stage2_rl_episodes, 'stage2_rl_episodes'
+        )
+        self.stage1_rl_episodes_specified = self._coerce_bool_flag(
+            stage1_rl_episodes_specified, 'stage1_rl_episodes_specified'
+        )
+        self.stage2_rl_episodes_specified = self._coerce_bool_flag(
+            stage2_rl_episodes_specified, 'stage2_rl_episodes_specified'
+        )
         
         # ==================== 敏锐度优化PDF：数据集检测与指标选择 ====================
         self.data_path = data_path
@@ -2605,6 +2622,11 @@ class LayerImportanceEvaluator(TrainerCallback):
             else:
                 f.write(_log_header + "\n")
         with open(self.log_file, "a", encoding="utf-8") as f:
+            _stage1_episode_desc = (
+                f"unbounded until entropy < {self.stage1_entropy_stop_threshold:.6f}"
+                if self.stage1_rl_unbounded_until_entropy
+                else str(self.stage1_rl_episodes)
+            )
             f.write(
                 f"[信息] Stage-1 PPO学习率（LR）从 stage1_rl_lr={self.stage1_rl_lr_raw!r} 解析为 -> "
                 f"{self.stage1_ppo_lr_initial:.6g} ({self.stage1_ppo_lr_mode}) | "
@@ -2612,7 +2634,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"{self.stage2_ppo_lr_initial:.6g} ({self.stage2_ppo_lr_mode})\n"
             )
             f.write(
-                f"[信息] 第一阶段RL回合数（Stage-1 RL episodes）: {self.stage1_rl_episodes} | "
+                f"[信息] 第一阶段RL回合数（Stage-1 RL episodes）: {_stage1_episode_desc} | "
                 f"第二阶段RL回合数（Stage-2 RL episodes）: {self.stage2_rl_episodes}\n"
             )
             if self.stage1_entropy_stop_threshold is not None:
@@ -2625,7 +2647,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         
         # ==================== 策略二：动态超参数调度状态 ====================
         self.current_episode = 0
-        self.total_episodes = self.stage1_rl_episodes
+        self.total_episodes = self.stage1_rl_episode_limit or PPO_MAX_EPISODES
         self.current_entropy_coef = PPO_ENTROPY_INITIAL
         self.current_lr = self.stage1_ppo_lr_initial
         
@@ -2717,6 +2739,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         if self.skip_stage1_rl and (
             self.stage1_rl_episodes_specified
+            or self.stage1_rl_unbounded_until_entropy
             or self.stage1_rl_episodes != PPO_MAX_EPISODES
         ):
             raise ValueError(
@@ -2735,6 +2758,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         if (
             (not self.skip_stage1_rl)
             and self.search_algorithm != "ga"
+            and not self.stage1_rl_unbounded_until_entropy
             and self.stage1_rl_episodes < PPO_UPDATE_INTERVAL
         ):
             raise ValueError(
@@ -3624,6 +3648,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 ]
             f.write("\n".join(header_lines))
         with open(self.noise_log_file, "a", encoding="utf-8") as f:
+            _stage1_episode_desc = (
+                f"unbounded until entropy < {self.stage1_entropy_stop_threshold:.6f}"
+                if self.stage1_rl_unbounded_until_entropy
+                else str(self.stage1_rl_episodes)
+            )
             f.write(
                 "【学习率配置】\n"
                 f"  - 一阶段 PPO 学习率（Stage-1 PPO LR）：raw={self.stage1_rl_lr_raw!r} -> "
@@ -3633,7 +3662,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
             f.write(
                 "【训练轮数配置】\n"
-                f"  - 一阶段 RL 回合数（stage-1 episodes）：{self.stage1_rl_episodes}\n"
+                f"  - 一阶段 RL 回合数（stage-1 episodes）：{_stage1_episode_desc}\n"
                 f"  - 二阶段噪声 RL 回合数（stage-2 episodes）：{self.stage2_rl_episodes}\n"
             )
             if self.run_output_dir:
@@ -4130,9 +4159,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 self.clear_input_noise_configuration()
 
     # ---------------------------------------------------------------------
-    # Stage-1 RL 评估包装：可选使用 “全部最大 scaling factor” 的噪声环境。
-    # 由 RL_OPT_FLAGS["stage1_use_max_scaling_noise_env"] 控制；
-    # 关闭则等价于直接调用 evaluate_model（旧无噪声行为）。
+    # Historical helper for legacy diagnostics. The active Stage-1 train/eval
+    # path is plaintext-only and must not install Stage-2 noise hooks.
     # ---------------------------------------------------------------------
     def _stage1_max_scaling_noise_arrays(self):
         max_in = max(INPUT_NOISE_ALLOWED_SCALING_FACTORS)
@@ -4150,22 +4178,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         }
 
     def stage1_evaluate(self, gelu_degrees, softmax_degrees, use_train=True, split=None):
-        """Stage-1 统一评估入口；按 flag 决定是否带最大 scaling factor 噪声环境。"""
-        if RL_OPT_FLAGS.get("stage1_use_max_scaling_noise_env", False):
-            sf = self._stage1_max_scaling_noise_arrays()
-            return self.evaluate_model_with_attention_noise(
-                gelu_degrees,
-                softmax_degrees,
-                input_noise_scaling_factors=sf["input_noise_scaling_factors"],
-                wq_noise_scaling_factors=sf["wq_noise_scaling_factors"],
-                wk_noise_scaling_factors=sf["wk_noise_scaling_factors"],
-                wv_noise_scaling_factors=sf["wv_noise_scaling_factors"],
-                wo_noise_scaling_factors=sf["wo_noise_scaling_factors"],
-                wffn1_noise_scaling_factors=sf["wffn1_noise_scaling_factors"],
-                wffn2_noise_scaling_factors=sf["wffn2_noise_scaling_factors"],
-                use_train=use_train,
-                split=split,
-            )
+        """Stage-1 scoring is plaintext-only: replace GELU/Softmax, no BLB noise."""
         return self.evaluate_model(
             gelu_degrees, softmax_degrees, use_train=use_train, split=split,
         )
@@ -4183,14 +4196,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             cache benefits the single-GPU sequential path most).
           * Does NOT write to ``self.current_*_scaling_factors`` state
             attributes (race risk under concurrent workers).
-          * GELU/Softmax + (optional) max-SF noise install + cleanup are
-            inlined against the passed ``handler``; this mirrors the same
-            handler API calls ``apply_configuration`` /
-            ``apply_input_noise_configuration`` /
-            ``apply_weight_noise_configuration`` /
-            ``clear_input_noise_configuration`` /
-            ``clear_weight_noise_configuration`` make against
-            ``self.reversible_handler``.
+          * GELU/Softmax install is inlined against the passed ``handler``.
+            Stage-1 worker scoring is plaintext-only and intentionally never
+            installs Stage-2 noise hooks.
           * The forward loop reuses ``_run_evaluation`` via its
             ``model`` / ``device`` overrides.
 
@@ -4233,88 +4241,18 @@ class LayerImportanceEvaluator(TrainerCallback):
             if softmax_map[d]:
                 handler.replace_layer_softmax(softmax_map[d], handler_layer_name, degree=d)
 
-        # 2) Optional max-SF attention/weight noise install (mirrors evaluate_model_with_attention_noise body).
-        noise_env_enabled = bool(RL_OPT_FLAGS.get("stage1_use_max_scaling_noise_env", False))
-        sf = self._stage1_max_scaling_noise_arrays() if noise_env_enabled else None
-        if noise_env_enabled:
-            # Input noise (per-layer scaling).
-            in_arr = sf["input_noise_scaling_factors"]
-            in_map = {s: [] for s in INPUT_NOISE_ALLOWED_SCALING_FACTORS}
-            for idx, s in enumerate(in_arr):
-                in_map[int(s)].append(idx)
-            for s in INPUT_NOISE_ALLOWED_SCALING_FACTORS:
-                if in_map[s]:
-                    handler.replace_layer_input_noise(
-                        in_map[s], handler_layer_name,
-                        scaling_factor=s, distribution="fresh",
-                    )
-            # Weight noises (wq, wk, wv, wo, wffn1, wffn2).
-            weight_specs = [
-                ("wq",    sf["wq_noise_scaling_factors"],    "replace_layer_query_noise",            WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
-                ("wk",    sf["wk_noise_scaling_factors"],    "replace_layer_key_noise",              WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
-                ("wv",    sf["wv_noise_scaling_factors"],    "replace_layer_value_noise",            WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
-                ("wo",    sf["wo_noise_scaling_factors"],    "replace_layer_attention_output_noise", WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
-                ("wffn1", sf["wffn1_noise_scaling_factors"], "replace_layer_ffn1_noise",             WFFN1_NOISE_ALLOWED_SCALING_FACTORS),
-                ("wffn2", sf["wffn2_noise_scaling_factors"], "replace_layer_ffn2_noise",             WEIGHT_NOISE_ALLOWED_SCALING_FACTORS),
-            ]
-            for _noise_name, arr, replace_method_name, allowed in weight_specs:
-                replace_fn = getattr(handler, replace_method_name)
-                w_map = {s: [] for s in allowed}
-                for idx, s in enumerate(arr):
-                    if int(s) in w_map:
-                        w_map[int(s)].append(idx)
-                for s in allowed:
-                    if w_map[s]:
-                        replace_fn(
-                            w_map[s], handler_layer_name,
-                            scaling_factor=s, distribution="fresh",
-                        )
-
-        # 3) Forward via the explicit-model/device variant of _run_evaluation.
-        try:
-            dataloader = self.dataloaders[split_name]
-            return self._run_evaluation(
-                dataloader,
-                use_train=(split_name == "train"),
-                split_name=split_name,
-                model=model,
-                device=device,
-            )
-        finally:
-            # 4) Cleanup noise install (mirrors clear_input/weight_noise_configuration bodies).
-            if noise_env_enabled:
-                restore_specs = [
-                    "restore_layer_query_noise",
-                    "restore_layer_key_noise",
-                    "restore_layer_value_noise",
-                    "restore_layer_attention_output_noise",
-                    "restore_layer_ffn1_noise",
-                    "restore_layer_ffn2_noise",
-                ]
-                for restore_method_name in restore_specs:
-                    restore_fn = getattr(handler, restore_method_name)
-                    restore_fn(list(range(self.total_layers)), handler_layer_name)
-                handler.restore_layer_input_noise(
-                    list(range(self.total_layers)), handler_layer_name,
-                )
+        # 2) Forward via the explicit-model/device variant of _run_evaluation.
+        dataloader = self.dataloaders[split_name]
+        return self._run_evaluation(
+            dataloader,
+            use_train=(split_name == "train"),
+            split_name=split_name,
+            model=model,
+            device=device,
+        )
 
     def stage1_final_evaluate(self, gelu_degrees, softmax_degrees, use_train=False, split=None):
-        """Phase-2.5/Phase-3/4 最终评估的统一入口；按独立 flag 决定是否带最大 sf 噪声环境。"""
-        if RL_OPT_FLAGS.get("final_eval_use_max_scaling_noise_env", False):
-            sf = self._stage1_max_scaling_noise_arrays()
-            return self.evaluate_model_with_attention_noise(
-                gelu_degrees,
-                softmax_degrees,
-                input_noise_scaling_factors=sf["input_noise_scaling_factors"],
-                wq_noise_scaling_factors=sf["wq_noise_scaling_factors"],
-                wk_noise_scaling_factors=sf["wk_noise_scaling_factors"],
-                wv_noise_scaling_factors=sf["wv_noise_scaling_factors"],
-                wo_noise_scaling_factors=sf["wo_noise_scaling_factors"],
-                wffn1_noise_scaling_factors=sf["wffn1_noise_scaling_factors"],
-                wffn2_noise_scaling_factors=sf["wffn2_noise_scaling_factors"],
-                use_train=use_train,
-                split=split,
-            )
+        """Stage-1 final eval is plaintext-only: GELU/Softmax replacement, no BLB noise."""
         return self.evaluate_model(
             gelu_degrees, softmax_degrees, use_train=use_train, split=split,
         )
@@ -5941,7 +5879,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             window_best_cost = float('inf')
             window_best_config = None
             
-            self.total_episodes = self.stage1_rl_episodes
+            self.total_episodes = self.stage1_rl_episode_limit or PPO_MAX_EPISODES
             self._reset_runtime_ppo_state()
 
             # ============================
@@ -6018,20 +5956,35 @@ class LayerImportanceEvaluator(TrainerCallback):
                 # 续训锚点：新 chunk 从「已完成回合 + 1」起编号，确保跨 PPO_UPDATE_INTERVAL
                 # 变化时 details/ 文件名区间连续，不与旧 run 的 chunk 边界产生"错位"。
                 step_info_chunk_anchor[0] = stage1_resume_start_episode
-                self.log(
-                    f"  已恢复至回合 {stage1_resume_start_episode}，"
-                    f"将从回合 {stage1_resume_start_episode + 1} 继续训练至 {self.stage1_rl_episodes}"
-                )
-                if stage1_resume_start_episode >= self.stage1_rl_episodes:
+                if self.stage1_rl_unbounded_until_entropy:
+                    self.log(
+                        f"  已恢复至回合 {stage1_resume_start_episode}，"
+                        f"将从回合 {stage1_resume_start_episode + 1} 继续训练至 "
+                        f"entropy < {self.stage1_entropy_stop_threshold:.6f}"
+                    )
+                else:
+                    self.log(
+                        f"  已恢复至回合 {stage1_resume_start_episode}，"
+                        f"将从回合 {stage1_resume_start_episode + 1} 继续训练至 {self.stage1_rl_episodes}"
+                    )
+                if (
+                    self.stage1_rl_episode_limit is not None
+                    and stage1_resume_start_episode >= self.stage1_rl_episode_limit
+                ):
                     self.log(
                         f"  ⚠ checkpoint 已完成 {stage1_resume_start_episode} 回合，"
-                        f"目标回合数 {self.stage1_rl_episodes} 无需追加训练。"
+                        f"目标回合数 {self.stage1_rl_episode_limit} 无需追加训练。"
                     )
 
             _stage1_rl_t0 = time.time()
             stage1_completed_episodes = int(stage1_resume_start_episode)
             stage1_stop_reason = "max_episodes"
-            for episode in range(stage1_resume_start_episode, self.stage1_rl_episodes):
+            _stage1_episode_iter = (
+                itertools.count(stage1_resume_start_episode)
+                if self.stage1_rl_unbounded_until_entropy
+                else range(stage1_resume_start_episode, self.stage1_rl_episode_limit)
+            )
+            for episode in _stage1_episode_iter:
                 # 动态超参数调度（学习率和熵系数）
                 current_lr, current_entropy = self.update_hyperparameters(optimizer, episode)
                 
@@ -6047,8 +6000,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 if _stage1_parallel_runner is not None:
                     if not _stage1_parallel_stash:
                         _window_idx_for_runner = episode // PPO_UPDATE_INTERVAL
-                        _remaining_total = self.stage1_rl_episodes - episode
-                        _window_size = min(PPO_UPDATE_INTERVAL, _remaining_total)
+                        if self.stage1_rl_unbounded_until_entropy:
+                            _window_size = PPO_UPDATE_INTERVAL
+                        else:
+                            _remaining_total = self.stage1_rl_episode_limit - episode
+                            _window_size = min(PPO_UPDATE_INTERVAL, _remaining_total)
                         _eps_per_worker = max(1, _window_size // _stage1_parallel_runner.num_workers)
                         _rollouts = _stage1_parallel_runner.run_window(
                             gtrxl_net=gtrxl_net,
@@ -6305,13 +6261,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                     )
 
                     # 进度条（每 N 次 PPO 更新或最后一次更新时输出）
+                    _stage1_reached_episode_cap = (
+                        self.stage1_rl_episode_limit is not None
+                        and episode + 1 >= self.stage1_rl_episode_limit
+                    )
                     if (gtrxl_ppo_update_count % NOISE_RL_PROGRESS_BOX_PPO_INTERVAL == 0
-                            or episode + 1 >= self.stage1_rl_episodes):
+                            or _stage1_reached_episode_cap):
                         _s1_elapsed = time.time() - _stage1_rl_t0
                         _s1_done = episode + 1 - stage1_resume_start_episode
                         _s1_avg_ep = _s1_elapsed / max(_s1_done, 1)
-                        _s1_remain = self.stage1_rl_episodes - (episode + 1)
-                        _s1_eta = _s1_avg_ep * _s1_remain
                         _s1_best_lines = []
                         if best_config is not None:
                             _s1_best_lines.append(
@@ -6322,16 +6280,37 @@ class LayerImportanceEvaluator(TrainerCallback):
                             _s1_best_lines.append(f"  Softmax: {list(best_config.get('softmax', []))}")
                         else:
                             _s1_best_lines.append("Reward-Best: 尚未找到")
-                        _log_rounded_box(
-                            self.log,
-                            [
-                                f"Stage-1 RL 进度 · 回合 {episode + 1} / {self.stage1_rl_episodes}",
-                                _progress_bar(episode + 1, self.stage1_rl_episodes),
+                        if self.stage1_rl_unbounded_until_entropy:
+                            _s1_progress_title = (
+                                f"Stage-1 RL 进度 · 回合 {episode + 1} / entropy<"
+                                f"{self.stage1_entropy_stop_threshold:.4f}"
+                            )
+                            _s1_progress_lines = [
+                                "进度: unbounded until entropy convergence",
+                                *_s1_best_lines,
+                                f"已用时: {_fmt_elapsed(_s1_elapsed)}  "
+                                f"平均每回合: {_fmt_elapsed(_s1_avg_ep)}  "
+                                f"PPO 更新: {gtrxl_ppo_update_count} 次",
+                            ]
+                        else:
+                            _s1_remain = self.stage1_rl_episode_limit - (episode + 1)
+                            _s1_eta = _s1_avg_ep * _s1_remain
+                            _s1_progress_title = (
+                                f"Stage-1 RL 进度 · 回合 {episode + 1} / {self.stage1_rl_episode_limit}"
+                            )
+                            _s1_progress_lines = [
+                                _progress_bar(episode + 1, self.stage1_rl_episode_limit),
                                 *_s1_best_lines,
                                 f"已用时: {_fmt_elapsed(_s1_elapsed)}  "
                                 f"预计剩余: {_fmt_elapsed(_s1_eta)}  "
                                 f"预计完成: {_fmt_eta_finish(_s1_eta)}  "
                                 f"PPO 更新: {gtrxl_ppo_update_count} 次",
+                            ]
+                        _log_rounded_box(
+                            self.log,
+                            [
+                                _s1_progress_title,
+                                *_s1_progress_lines,
                             ],
                             indent="  ",
                         )
@@ -6370,7 +6349,10 @@ class LayerImportanceEvaluator(TrainerCallback):
 
                     if (not stage1_entropy_converged
                             and USE_VALIDATION_FOR_REWARD
-                            and (episode + 1) < self.stage1_rl_episodes):
+                            and (
+                                self.stage1_rl_unbounded_until_entropy
+                                or (episode + 1) < self.stage1_rl_episode_limit
+                            )):
                         next_window_idx = gtrxl_ppo_update_count
                         self.refresh_validation_proxy(
                             window_index=next_window_idx,
@@ -6476,7 +6458,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                             self.run_output_dir, "stage1_search", "in_progress",
                             extra_fields={
                                 "completed_episodes": episode + 1,
-                                "total_episodes": int(self.stage1_rl_episodes),
+                                "total_episodes": (
+                                    None
+                                    if self.stage1_rl_unbounded_until_entropy
+                                    else int(self.stage1_rl_episode_limit)
+                                ),
                                 "stopped_by": "graceful_stop",
                             },
                         )
@@ -6538,7 +6524,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                     extra_fields={
                         "episodes": int(stage1_completed_episodes),
                         "completed_episodes": int(stage1_completed_episodes),
-                        "target_episodes": int(self.stage1_rl_episodes),
+                        "target_episodes": (
+                            None
+                            if self.stage1_rl_unbounded_until_entropy
+                            else int(self.stage1_rl_episode_limit)
+                        ),
                         "stop_reason": stage1_stop_reason,
                         "best_reward": float(best_reward),
                         "best_cost": float(best_cost),

@@ -59,7 +59,8 @@ cat <<'EOF'
 普通 RL：
   --stage1-search-episodes N
   --stage2-search-episodes N
-  --stage1-entropy-stop-threshold FLOAT  Stage-1 PPO update 后熵低于该值时正常停止（如 0.1）
+  --stage1-entropy-stop-threshold FLOAT  Stage-1 PPO update 后熵低于该值时正常停止（如 0.1）；
+                                          --stage1-search-episodes <=0 时表示一直训练到该阈值
   --ppo-update-interval N              每多少 episode 触发一次 PPO 更新（默认 120）；
                                        同时决定每个 details/txt 的回合数（= 3 × N, 默认 360）
 
@@ -226,6 +227,7 @@ EOF
 err(){ echo "错误：$1" >&2; exit 1; }
 needv(){ [ "$#" -ge 2 ] || err "选项 $1 缺少取值。"; }
 is_pos_int(){ [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
+is_int(){ [[ "$1" =~ ^-?[0-9]+$ ]]; }
 is_nonneg_int(){ [[ "$1" =~ ^[0-9]+$ ]]; }
 is_bool(){ [[ "$1" =~ ^(1|0|true|false|yes|no|on|off)$ ]]; }
 is_pos_num(){ [[ "$1" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$ ]] && awk -v x="$1" 'BEGIN { exit !((x + 0) > 0) }'; }
@@ -1106,7 +1108,16 @@ else
   _EARLY_PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${_EARLY_CONSTRAINT_SLUG}"
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] || err "rl 模式不使用 GA 代数参数，请移除 --stage1-search-generations / --stage2-search-generations。"
-    is_pos_int "$STAGE1_EPISODES" || err "--stage1-search-episodes 必须是正整数"
+    _stage1_unbounded_entropy_stop="false"
+    if is_pos_int "$STAGE1_EPISODES"; then
+      :
+    elif is_int "$STAGE1_EPISODES" && [ "$STAGE1_EPISODES" -le 0 ]; then
+      [ "$SKIP_STAGE1_SEARCH" = "false" ] || err "--stage1-search-episodes must be positive when Stage-1 is skipped"
+      [ -n "$STAGE1_ENTROPY_STOP_THRESHOLD" ] || err "--stage1-search-episodes <= 0 requires --stage1-entropy-stop-threshold"
+      _stage1_unbounded_entropy_stop="true"
+    else
+      err "--stage1-search-episodes 必须是整数；--stage1-search-episodes <= 0 requires --stage1-entropy-stop-threshold"
+    fi
     is_pos_int "$STAGE2_EPISODES" || err "--stage2-search-episodes 必须是正整数"
     is_pos_num "$STAGE1_LR" || err "--stage1-search-lr 必须是正数"
     is_pos_num "$STAGE2_LR" || err "--stage2-search-lr 必须是正数"
@@ -1116,7 +1127,7 @@ else
     if [ "${ALLOW_SHORT_RL_BENCHMARK:-false}" = "true" ] || [ "${ALLOW_SHORT_RL_BENCHMARK:-false}" = "1" ]; then
       echo "警告：ALLOW_SHORT_RL_BENCHMARK 已启用，仅用于短程速度基准；正式 RL 仍应使用 >=170 episode。"
     else
-      [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$STAGE1_EPISODES" -ge 170 ] || err "rl 的 Stage-1 回合数至少需要 170。"
+      [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$_stage1_unbounded_entropy_stop" = "true" ] || [ "$STAGE1_EPISODES" -ge 170 ] || err "rl 的 Stage-1 回合数至少需要 170。"
       [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$STAGE2_EPISODES" -ge 170 ] || err "rl 的 Stage-2 回合数至少需要 170。"
     fi
   else

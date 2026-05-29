@@ -114,6 +114,20 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   wants the safety-margin effect retained. The intended objective is constrained
   boundary search: satisfy full-validation loss/metric limits, then push cost
   as low as the constraints allow.
+- Stage-1 entropy-stop budget update, added 2026-05-29: entropy-convergence
+  runs must not treat a finite episode count as a success cap. Use
+  `--stage1-search-episodes 0` together with
+  `--stage1-entropy-stop-threshold 0.1` to run Stage-1 unbounded until the PPO
+  policy entropy drops below the threshold. If an older finite-cap Stage-1 run
+  such as the `base_sst2` run from `7352cd3` reaches 50,000 episodes without
+  the `Stage-1 entropy convergence reached` marker, do not accept that as
+  completion; resume from the existing Stage-1 checkpoint on the newer
+  unbounded code without `--fresh`. Before launching any new Stage-1 training
+  process, validate the Claude Code Stage-1 inference acceleration work and
+  confirm deterministic pure Stage-1 plaintext inference with a fixed
+  GELU/Softmax configuration. Stage-1 training and final Stage-1 checks must
+  not add Stage-2/BLB noise; they should only replace GELU and Softmax in
+  plaintext inference unless the user explicitly changes that protocol.
 - Validation-only protocol, clarified 2026-05-25: Stage-1 baseline is built on
   the full validation set, and the entire Stage-1 process must not use the
   training set for baseline, RL reward evaluation, candidate checks, or final
