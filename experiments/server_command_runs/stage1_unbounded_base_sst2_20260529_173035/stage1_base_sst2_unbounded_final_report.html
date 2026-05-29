@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Stage-1 Unbounded Base SST-2 Final Report</title>
+  <style>
+    :root { color-scheme: light; --ink:#17202a; --muted:#667085; --line:#d0d5dd; --good:#067647; --bad:#b42318; --panel:#f8fafc; --accent:#175cd3; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; color:var(--ink); background:white; }
+    main { max-width:1180px; margin:0 auto; padding:32px 28px 56px; }
+    h1 { font-size:30px; margin:0 0 8px; letter-spacing:0; }
+    h2 { margin:30px 0 12px; font-size:20px; }
+    h3 { margin:22px 0 10px; font-size:16px; }
+    p { line-height:1.52; }
+    .muted { color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin:18px 0; }
+    .card { border:1px solid var(--line); border-radius:8px; padding:14px 16px; background:var(--panel); }
+    .card strong { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
+    .card span { font-size:20px; font-weight:650; }
+    table { width:100%; border-collapse:collapse; margin:12px 0 18px; font-size:14px; }
+    th, td { text-align:left; border-bottom:1px solid var(--line); padding:9px 8px; vertical-align:top; }
+    th { background:#f2f4f7; font-weight:650; }
+    code { font-family:"SFMono-Regular",Consolas,monospace; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+    pre { background:#101828; color:#f2f4f7; padding:14px; border-radius:8px; overflow:auto; font-size:12px; line-height:1.45; }
+    .pass { color:var(--good); font-weight:700; }
+    .fail { color:var(--bad); font-weight:700; }
+    .imggrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; align-items:start; }
+    figure { margin:0; border:1px solid var(--line); border-radius:8px; padding:12px; }
+    figure img { max-width:100%; display:block; }
+    figcaption { color:var(--muted); font-size:13px; margin-top:8px; }
+    .note { border-left:4px solid var(--accent); padding:10px 12px; background:#eff6ff; margin:18px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Stage-1 Unbounded Base SST-2 Final Report</h1>
+  <p class="muted">Generated 2026-05-29T22:01:59.027331+08:00. This report covers the resumed unbounded Stage-1 entropy run after the legacy 50,000-episode cap was removed.</p>
+
+  <div class="grid">
+    <div class="card"><strong>Status</strong><span>waiting_report</span></div>
+    <div class="card"><strong>Completed episodes</strong><span>65280</span></div>
+    <div class="card"><strong>Final entropy</strong><span>0.0959</span></div>
+    <div class="card"><strong>Constraint result</strong><span class="pass">PASS</span></div>
+    <div class="card"><strong>Best cost</strong><span>26.00</span></div>
+    <div class="card"><strong>Best reward</strong><span>1.266679</span></div>
+  </div>
+
+  <div class="note">The selected configuration is the checkpoint raw PPO reward-best. No global/search post-selection override was applied.</div>
+
+  <h2>Run Protocol</h2>
+  <table>
+    <tr><th>Item</th><th>Value</th></tr>
+    <tr><td>Model / dataset</td><td>bert-base / sst2</td></tr>
+    <tr><td>Source sync commit</td><td><code>73e6a8f</code></td></tr>
+    <tr><td>Server git HEAD</td><td><code>7352cd3</code> (server source was overlay-synced to the source sync commit)</td></tr>
+    <tr><td>Selection protocol</td><td><code>raw_reward_best</code></td></tr>
+    <tr><td>Stop protocol</td><td><code>entropy_lt_0.1</code>, threshold 0.1000</td></tr>
+    <tr><td>Episode limit</td><td><code>unbounded_until_entropy</code>, safety cap None</td></tr>
+    <tr><td>Validation protocol</td><td><code>stage1_plaintext_validation_full_only</code>, split <code>validation_full</code>, size 872</td></tr>
+    <tr><td>Report marker</td><td><code>/hy-tmp/stage1_full_50000_state/report_done_base_sst2_entropy0p1_73e6a8f</code></td></tr>
+  </table>
+
+  <h2>Best Configuration</h2>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>GELU degrees</td><td><code>[1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1]</code></td></tr>
+    <tr><td>Softmax degrees</td><td><code>[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]</code></td></tr>
+    <tr><td>Cost</td><td>26.0000</td></tr>
+    <tr><td>Reward</td><td>1.26667900</td></tr>
+  </table>
+
+  <h2>Full Validation Final Eval</h2>
+  <table>
+    <tr><th>Metric</th><th>Baseline original plaintext</th><th>Selected config</th><th>Delta abs</th><th>Delta pct</th><th>Constraint</th><th>Status</th></tr>
+    <tr><th>Loss</th><td>0.2818579718</td><td>0.2803423208</td><td>-0.0015156510</td><td>-0.5377%</td><td>0.2832672616</td><td class="pass">pass</td></tr>
+    <tr><th>Metric1 / Accuracy</th><td>0.9243119266</td><td>0.9231651376</td><td>-0.0011467890</td><td>-0.1241%</td><td>0.9196903670</td><td class="pass">pass</td></tr>
+    <tr><th>Metric2 / Accuracy</th><td>0.9243119266</td><td>0.9231651376</td><td>-0.0011467890</td><td>-0.1241%</td><td>0.9196903670</td><td class="pass">pass</td></tr>
+  </table>
+
+  <h2>Plaintext Stage-1 Noise Check</h2>
+  <p>Both baseline and selected final eval installed only Stage-1 GELU/Softmax replacements. Stage-2/BLB noise hook counts were zero.</p>
+  <table>
+    <tr><th>Eval item</th><th>No Stage-2 hooks</th><th>Total noise hooks</th><th>Hook counts</th></tr>
+    <tr><th>Baseline</th><td>True</td><td>0</td><td><code>{&quot;block1_noise_layers&quot;: 0, &quot;block2_noise_layers&quot;: 0, &quot;block3_noise_layers&quot;: 0, &quot;block4_noise_layers&quot;: 0, &quot;block5_noise_layers&quot;: 0, &quot;first_input_noise_layers&quot;: 0, &quot;input_noise_layers&quot;: 0, &quot;projection_noise_layers&quot;: 0, &quot;softmax_value_noise_layers&quot;: 0}</code></td></tr><tr><th>Selected</th><td>True</td><td>0</td><td><code>{&quot;block1_noise_layers&quot;: 0, &quot;block2_noise_layers&quot;: 0, &quot;block3_noise_layers&quot;: 0, &quot;block4_noise_layers&quot;: 0, &quot;block5_noise_layers&quot;: 0, &quot;first_input_noise_layers&quot;: 0, &quot;input_noise_layers&quot;: 0, &quot;projection_noise_layers&quot;: 0, &quot;softmax_value_noise_layers&quot;: 0}</code></td></tr>
+  </table>
+
+  <h2>Learning Curves</h2>
+  <div class="imggrid">
+    <figure><img src="stage1/ppo_training_curve.png" alt="PPO training curve"><figcaption>Reward, loss, and metric training curve artifact.</figcaption></figure>
+    <figure><img src="stage1/ppo_entropy_curve.png" alt="PPO entropy curve"><figcaption>Policy entropy curve showing stop below 0.1.</figcaption></figure>
+  </div>
+
+  <h3>Final Progress Tail</h3>
+  <table>
+    <tr><th>Episode</th><th>Avg reward</th><th>Policy loss</th><th>Value loss</th><th>Entropy</th></tr>
+    <tr><td>61800</td><td>1.0790</td><td>-0.1794</td><td>0.0021</td><td>0.1970</td></tr><tr><td>61920</td><td>1.0779</td><td>-0.1620</td><td>0.0040</td><td>0.1998</td></tr><tr><td>62040</td><td>1.0772</td><td>0.2818</td><td>0.0146</td><td>0.1955</td></tr><tr><td>62160</td><td>1.0821</td><td>0.3081</td><td>0.0146</td><td>0.1834</td></tr><tr><td>62280</td><td>1.0794</td><td>-0.2273</td><td>0.0015</td><td>0.1885</td></tr><tr><td>62400</td><td>1.0800</td><td>0.0124</td><td>0.0015</td><td>0.1829</td></tr><tr><td>62520</td><td>1.0822</td><td>-0.0551</td><td>0.0018</td><td>0.1809</td></tr><tr><td>62640</td><td>1.0789</td><td>-0.1883</td><td>0.0018</td><td>0.1815</td></tr><tr><td>62760</td><td>1.0770</td><td>-0.0645</td><td>0.0024</td><td>0.1793</td></tr><tr><td>62880</td><td>1.0834</td><td>-0.1104</td><td>0.0031</td><td>0.1765</td></tr><tr><td>63000</td><td>1.0799</td><td>-0.3668</td><td>0.0020</td><td>0.1759</td></tr><tr><td>63120</td><td>1.0782</td><td>-0.2917</td><td>0.0019</td><td>0.1713</td></tr><tr><td>63240</td><td>1.0788</td><td>1.3820</td><td>0.0449</td><td>0.1650</td></tr><tr><td>63360</td><td>1.0791</td><td>0.7610</td><td>0.0245</td><td>0.1705</td></tr><tr><td>63480</td><td>1.0823</td><td>0.7227</td><td>0.0283</td><td>0.1626</td></tr><tr><td>63600</td><td>1.0801</td><td>-0.3062</td><td>0.0017</td><td>0.1658</td></tr><tr><td>63720</td><td>1.0836</td><td>-0.2444</td><td>0.0018</td><td>0.1522</td></tr><tr><td>63840</td><td>1.0846</td><td>0.5404</td><td>0.0138</td><td>0.1491</td></tr><tr><td>63960</td><td>1.0850</td><td>-0.1798</td><td>0.0033</td><td>0.1438</td></tr><tr><td>64080</td><td>1.0835</td><td>-0.2185</td><td>0.0019</td><td>0.1388</td></tr><tr><td>64200</td><td>1.0891</td><td>0.0973</td><td>0.0037</td><td>0.1324</td></tr><tr><td>64320</td><td>1.0801</td><td>-0.2730</td><td>0.0036</td><td>0.1480</td></tr><tr><td>64440</td><td>1.0844</td><td>0.4044</td><td>0.0191</td><td>0.1333</td></tr><tr><td>64560</td><td>1.0842</td><td>-0.0199</td><td>0.0047</td><td>0.1403</td></tr><tr><td>64680</td><td>1.0849</td><td>-0.2980</td><td>0.0016</td><td>0.1371</td></tr><tr><td>64800</td><td>1.0846</td><td>0.2766</td><td>0.0163</td><td>0.1239</td></tr><tr><td>64920</td><td>1.0853</td><td>-0.2852</td><td>0.0013</td><td>0.1226</td></tr><tr><td>65040</td><td>1.0823</td><td>-0.2333</td><td>0.0019</td><td>0.1190</td></tr><tr><td>65160</td><td>1.0893</td><td>-0.2533</td><td>0.0018</td><td>0.1028</td></tr><tr><td>65280</td><td>1.0901</td><td>-0.1578</td><td>0.0029</td><td>0.0959</td></tr>
+  </table>
+
+  <h2>Four-GPU Rollout Evidence</h2>
+  <p>The final windows show four workers on cuda:0..cuda:3 with 30 episodes each and roughly 3.8x-3.95x window speedups.</p>
+  <pre>  [stage1-rollout] window=532 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=105.079s worker_seconds=[100.391, 104.615, 102.643, 105.076]  speedup=3.93x
+  [stage1-rollout] window=532 collected 120 episodes across 4 workers
+  [stage1-rollout] window=533 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=109.167s worker_seconds=[99.611, 109.165, 106.396, 104.999]  speedup=3.85x
+  [stage1-rollout] window=533 collected 120 episodes across 4 workers
+  [stage1-rollout] window=534 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=106.735s worker_seconds=[98.890, 105.639, 106.734, 106.672]  speedup=3.92x
+  [stage1-rollout] window=534 collected 120 episodes across 4 workers
+  [stage1-rollout] window=535 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=106.312s worker_seconds=[101.326, 104.187, 106.310, 105.560]  speedup=3.93x
+  [stage1-rollout] window=535 collected 120 episodes across 4 workers
+  [stage1-rollout] window=536 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=108.047s worker_seconds=[100.856, 108.045, 106.497, 104.303]  speedup=3.88x
+  [stage1-rollout] window=536 collected 120 episodes across 4 workers
+  [stage1-rollout] window=537 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=104.618s worker_seconds=[96.257, 104.617, 100.210, 103.872]  speedup=3.87x
+  [stage1-rollout] window=537 collected 120 episodes across 4 workers
+  [stage1-rollout] window=538 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=108.482s worker_seconds=[101.191, 106.209, 105.779, 108.480]  speedup=3.89x
+  [stage1-rollout] window=538 collected 120 episodes across 4 workers
+  [stage1-rollout] window=539 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=108.013s worker_seconds=[103.902, 106.466, 106.316, 108.010]  speedup=3.93x
+  [stage1-rollout] window=539 collected 120 episodes across 4 workers
+  [stage1-rollout] window=540 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=107.984s worker_seconds=[100.324, 105.014, 103.721, 107.981]  speedup=3.86x
+  [stage1-rollout] window=540 collected 120 episodes across 4 workers
+  [stage1-rollout] window=541 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=107.194s worker_seconds=[100.334, 107.193, 105.355, 99.464]  speedup=3.85x
+  [stage1-rollout] window=541 collected 120 episodes across 4 workers
+  [stage1-rollout] window=542 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=105.511s worker_seconds=[98.141, 104.792, 105.508, 103.747]  speedup=3.91x
+  [stage1-rollout] window=542 collected 120 episodes across 4 workers
+  [stage1-rollout] window=543 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=110.045s worker_seconds=[103.747, 110.043, 105.780, 103.744]  speedup=3.85x
+  [stage1-rollout] window=543 collected 120 episodes across 4 workers</pre>
+
+  <h2>Training Health</h2>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Stop marker found</td><td class="pass">True</td></tr>
+    <tr><td>Final progress</td><td><code>{&quot;avg_reward&quot;: 1.0901, &quot;entropy&quot;: 0.0959, &quot;episode&quot;: 65280, &quot;policy_loss&quot;: -0.1578, &quot;value_loss&quot;: 0.0029}</code></td></tr>
+    <tr><td>Progress points captured</td><td>128</td></tr>
+    <tr><td>Checkpoint mtime</td><td>2026-05-29 21:26:43 +0800</td></tr>
+  </table>
+
+  <h2>Log Tail</h2>
+  <h3>Run Log Tail</h3>
+  <pre>function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 12 层的GELU函数（GELU function）
+已替换 11 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 12 层的GELU函数（GELU function）
+已替换 11 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 12 层的GELU函数（GELU function）
+已替换 11 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 12 层的GELU函数（GELU function）
+已替换 11 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 12 层的GELU函数（GELU function）
+已替换 10 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 12 层的GELU函数（GELU function）
+已替换 11 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 12 层的GELU函数（GELU function）
+已替换 11 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 12 层的GELU函数（GELU function）
+已替换 11 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 12 层的GELU函数（GELU function）
+已替换 11 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 12 层的GELU函数（GELU function）
+已替换 11 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 12 层的GELU函数（GELU function）
+已替换 10 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+  [stage1-rollout] window=543 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=110.045s worker_seconds=[103.747, 110.043, 105.780, 103.744]  speedup=3.85x
+  [stage1-rollout] window=543 collected 120 episodes across 4 workers
+  ╭──────────────────────────────────────────────────────────────╮
+  │ 回合（Episode） 65280                                          │
+  │ 平均奖励: 1.0901, 策略损失: -0.1578, 价值损失: 0.0029, 熵: 0.0959       │
+  │ [GTrXL调度] LR: 0.000020, 熵系数: 0.012000, 更新次数: #544 (normal) │
+  ╰──────────────────────────────────────────────────────────────╯
+
+  [收敛] Stage-1 entropy convergence reached: entropy=0.0959 &lt; threshold=0.1000; stopping at episode 65280.
+  [完成] Stage-1 最终 checkpoint 已保存 → Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/stage1/stage1_rl_checkpoint.pt
+  [迁移] 可迁移 policy/critic 已保存 → Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/stage1/stage1_policy.pt
+  [迁移] 用法：在新任务/新约束下，将 RL_OPT_FLAGS[&#x27;stage1_pretrained_policy_path&#x27;] 设为该路径即可作为 base policy 继续训练。
+  [检测] 局部最优检测报告 → Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/stage1/pruning_search_log.txt
+  [检测] [OK] best_stuck(13055ep_no_improve)
+
+[Stage-1] 最终配置使用原始 PPO reward-best；GELU/Softmax 为确定性替换，不再按 window 二次评估重排。
+
+--- PPO训练完成（PPO Training Completed） ---
+已找到最优配置（通过RL）（Best Configuration Found by RL）：
+  GELU配置: [1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1]
+  Softmax配置: [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+  成本（Cost）: 26.00, 奖励（Reward）: 1.2667
+PPO训练曲线已保存至（PPO training curves saved to）: Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/stage1/ppo_training_curve.png
+PPO熵曲线已保存至（PPO entropy curve saved to）: Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/stage1/ppo_entropy_curve.png
+
+============================================================
+最终评估报告（FINAL EVALUATION REPORT）（验证集）
+============================================================
+
+[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。
+
+[信息] 统一最终评估已跳过（--skip-final-eval）。
+
+配置评估完成（Configuration evaluation finished）。
+  [best_policy] 已复制 Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/stage1/stage1_policy.pt → Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/best_policy/stage1_policy.pt
+
+100%|██████████| 1/1 [3:55:51&lt;00:00, 14151.24s/it]
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+Round 0, Final evaluation loss: 0.281857967376709
+
+ If there&#x27;s a warning about missing keys above, please disregard :)
+NFO ncclCommInitAll comm 0x130f2740 rank 0 nranks 4 cudaDev 0 nvmlDev 0 busId 1000 commId 0xd5ee0fbaaccd0b93 - Init COMPLETE
+I28ca072f1200a01074:448156:448368 [0] NCCL INFO Init timings - ncclCommInitAll: rank 0 nranks 4 total 0.48 (kernels 0.43, alloc 0.00, bootstrap 0.00, allgathers 0.00, topo 0.03, graphs 0.00, connections 0.02, rest 0.00)
+I28ca072f1200a01074:448156:448383 [1] NCCL INFO Channel 00 : 1[1] -&gt; 2[2] via SHM/direct/direct
+I28ca072f1200a01074:448156:448382 [2] NCCL INFO Channel 00 : 2[2] -&gt; 3[3] via SHM/direct/direct
+I28ca072f1200a01074:448156:448384 [0] NCCL INFO Channel 00 : 0[0] -&gt; 1[1] via SHM/direct/direct
+I28ca072f1200a01074:448156:448381 [3] NCCL INFO Channel 00 : 3[3] -&gt; 0[0] via SHM/direct/direct
+I28ca072f1200a01074:448156:448383 [1] NCCL INFO Channel 01 : 1[1] -&gt; 2[2] via SHM/direct/direct
+I28ca072f1200a01074:448156:448382 [2] NCCL INFO Channel 01 : 2[2] -&gt; 3[3] via SHM/direct/direct
+I28ca072f1200a01074:448156:448384 [0] NCCL INFO Channel 01 : 0[0] -&gt; 1[1] via SHM/direct/direct
+I28ca072f1200a01074:448156:448381 [3] NCCL INFO Channel 01 : 3[3] -&gt; 0[0] via SHM/direct/direct
+I28ca072f1200a01074:448156:448383 [1] NCCL INFO Channel 02 : 1[1] -&gt; 2[2] via SHM/direct/direct
+I28ca072f1200a01074:448156:448382 [2] NCCL INFO Channel 02 : 2[2] -&gt; 3[3] via SHM/direct/direct
+I28ca072f1200a01074:448156:448384 [0] NCCL INFO Channel 02 : 0[0] -&gt; 1[1] via SHM/direct/direct
+I28ca072f1200a01074:448156:448381 [3] NCCL INFO Channel 02 : 3[3] -&gt; 0[0] via SHM/direct/direct
+I28ca072f1200a01074:448156:448383 [1] NCCL INFO Channel 03 : 1[1] -&gt; 2[2] via SHM/direct/direct
+I28ca072f1200a01074:448156:448382 [2] NCCL INFO Channel 03 : 2[2] -&gt; 3[3] via SHM/direct/direct
+I28ca072f1200a01074:448156:448384 [0] NCCL INFO Channel 03 : 0[0] -&gt; 1[1] via SHM/direct/direct
+I28ca072f1200a01074:448156:448381 [3] NCCL INFO Channel 03 : 3[3] -&gt; 0[0] via SHM/direct/direct
+I28ca072f1200a01074:448156:448381 [3] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+I28ca072f1200a01074:448156:448382 [2] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+I28ca072f1200a01074:448156:448384 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+I28ca072f1200a01074:448156:448383 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+</pre>
+  <h3>Master Log Tail</h3>
+  <pre>[2026-05-27T19:48:10+08:00] launching large_mrpc preset=bert-large-mrpc-stage1-rl selection=raw_reward_best
+[2026-05-27T19:48:10+08:00] running large_mrpc pid=207045 run_log=Parting Chapter/persistent/rl/bert-large/mrpc/s1t0.005_s2t0.05_s2st0.05/logs/stage1_full_large_mrpc_50000.log
+[2026-05-28T00:30:17+08:00] attached to existing large_mrpc pid=207045; waiting for training completion
+[2026-05-28T00:30:17+08:00] attached to existing large_mrpc pid=207045; waiting for training completion
+[2026-05-28T11:52:26+08:00] attached to existing large_mrpc pid=207045; waiting for training completion
+[2026-05-28T23:59:33+08:00] completed large_mrpc; waiting for report marker /hy-tmp/stage1_full_50000_state/report_done_large_mrpc
+[2026-05-29T00:34:34+08:00] report marker observed for large_mrpc
+[2026-05-29T00:34:34+08:00] pulling corrected Stage-1 boundary-search reward source before BERT-base reruns
+[2026-05-29T00:46:34+08:00] source already verified at 7352cd3 via git bundle fallback; skipping HTTPS pull
+[2026-05-29T00:46:34+08:00] launching base_sst2 preset=bert-base-sst2-stage1-rl selection=raw_reward_best entropy_stop&lt;0.1 marker=/hy-tmp/stage1_full_50000_state/report_done_base_sst2_entropy0p1_7352cd3 differential_reward=off
+[2026-05-29T00:46:40+08:00] running base_sst2 pid=344583 run_log=Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/logs/stage1_full_base_sst2_entropy0p1.log
+[2026-05-29T16:02:28+08:00] attached to current base_sst2 pid=344583; will resume unbounded if it exits without entropy marker
+[2026-05-29T17:30:35+08:00] legacy base_sst2 completed without entropy convergence; resuming from persistent checkpoint on 73e6a8f with no episode cap
+[2026-05-29T17:30:35+08:00] launching base_sst2 preset=bert-base-sst2-stage1-rl source_sync=73e6a8f entropy_stop&lt;0.1 episodes=unbounded marker=/hy-tmp/stage1_full_50000_state/report_done_base_sst2_entropy0p1_73e6a8f fresh_flag=resume
+[2026-05-29T17:30:36+08:00] running base_sst2 pid=448156 run_log=Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/logs/stage1_full_base_sst2_entropy0p1.log
+[2026-05-29T21:26:53+08:00] completed base_sst2 with entropy convergence; waiting for report marker /hy-tmp/stage1_full_50000_state/report_done_base_sst2_entropy0p1_73e6a8f
+</pre>
+
+  <h2>Artifacts</h2>
+  <table>
+    <tr><th>Artifact</th><th>Path</th></tr>
+    <tr><td>Summary JSON</td><td><code>stage1_base_sst2_unbounded_final_summary.json</code></td></tr>
+    <tr><td>Final eval JSON</td><td><code>stage1/final_eval_best_vs_baseline.json</code></td></tr>
+    <tr><td>Checkpoint summary</td><td><code>stage1/base_sst2_checkpoint_summary.json</code></td></tr>
+    <tr><td>Training health</td><td><code>stage1/base_sst2_training_health.json</code></td></tr>
+  </table>
+</main>
+</body>
+</html>

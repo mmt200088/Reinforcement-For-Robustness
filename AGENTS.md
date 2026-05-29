@@ -192,6 +192,22 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   lower loss, then lower cost. The earlier `base_sst2` and `base_rte` reports
   used the old global/search post-selection policy and should be interpreted as
   pre-correction artifacts.
+- Stage-1 unbounded base_sst2 completion, added 2026-05-29: after the old
+  50,000-episode capped `7352cd3` run failed to reach entropy convergence, the
+  queue was source-synced to `73e6a8f` and resumed from the existing checkpoint
+  with `--stage1-search-episodes 0` and `--stage1-entropy-stop-threshold 0.1`.
+  The resumed run reached entropy convergence at episode `65280` with final
+  entropy `0.0959`. The final local report is
+  `experiments/server_command_runs/stage1_unbounded_base_sst2_20260529_173035/stage1_base_sst2_unbounded_final_report.html`.
+  The final selected config is the raw PPO reward-best:
+  `GELU=[1,1,1,1,1,1,1,4,1,1,1,1]`,
+  `Softmax=[2,2,2,2,2,2,2,2,2,2,2,2]`, cost `26.00`, reward
+  `1.2666790039`. Full-validation final eval on `validation_full` size `872`
+  gave baseline original-plaintext loss/accuracy
+  `0.2818579718`/`0.9243119266` and selected loss/accuracy
+  `0.2803423208`/`0.9231651376`, passing the 0.5% loss/metric constraints.
+  The final eval recorded zero Stage-2/BLB noise hooks for both baseline and
+  selected config, confirming Stage-1 plaintext-only semantics.
 - Stage-1 large_mrpc speed/parallelism note, added 2026-05-27: the
   `large_mrpc` full run speed around 1.6k episodes/hour is broadly consistent
   with the earlier 4-GPU smoke result of about 2.1 seconds/episode. It is slower

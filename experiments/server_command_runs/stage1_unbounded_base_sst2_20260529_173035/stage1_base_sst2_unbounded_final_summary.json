@@ -1,0 +1,105 @@
+{
+  "created_at": "2026-05-29T22:01:59.027331+08:00",
+  "run_tag": "stage1_unbounded_base_sst2_20260529_173035",
+  "model": "bert-base",
+  "dataset": "sst2",
+  "source_sync_commit": "73e6a8f",
+  "server_git_head": "7352cd3",
+  "status": "waiting_report",
+  "report_marker": "/hy-tmp/stage1_full_50000_state/report_done_base_sst2_entropy0p1_73e6a8f",
+  "selection_protocol": "raw_reward_best",
+  "stop_protocol": "entropy_lt_0.1",
+  "stage1_episode_limit": "unbounded_until_entropy",
+  "completed_episodes": 65280,
+  "final_entropy": 0.0959,
+  "entropy_stop_threshold": 0.1,
+  "best_reward": 1.2666790038741302,
+  "best_cost": 26.0,
+  "best_config": {
+    "gelu": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      4,
+      1,
+      1,
+      1,
+      1
+    ],
+    "softmax": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ]
+  },
+  "baseline": {
+    "loss": 0.2818579717513618,
+    "metric1": 0.9243119266055045,
+    "metric2": 0.9243119266055045,
+    "accuracy": 0.9243119266055045,
+    "validation_full_size": 872
+  },
+  "selected": {
+    "loss": 0.28034232078342264,
+    "metric1": 0.9231651376146789,
+    "metric2": 0.9231651376146789,
+    "accuracy": 0.9231651376146789,
+    "cost": 26.0,
+    "reward": 1.2666790038741302,
+    "constraints_pass": true,
+    "delta_vs_baseline": {
+      "loss_abs": -0.0015156509679391528,
+      "loss_pct": -0.5377357108338838,
+      "metric1_abs": -0.0011467889908256534,
+      "metric1_pct": -0.12406947890818486,
+      "metric2_abs": -0.0011467889908256534,
+      "metric2_pct": -0.12406947890818486
+    }
+  },
+  "constraints": {
+    "loss": 0.28326726161011856,
+    "metric1": 0.919690366972477,
+    "metric2": 0.919690366972477
+  },
+  "stage1_plaintext_no_stage2_noise": {
+    "baseline_no_noise": true,
+    "selected_no_noise": true,
+    "baseline_noise_state": {
+      "input_noise_layers": 0,
+      "softmax_value_noise_layers": 0,
+      "projection_noise_layers": 0,
+      "block1_noise_layers": 0,
+      "block2_noise_layers": 0,
+      "block3_noise_layers": 0,
+      "block4_noise_layers": 0,
+      "block5_noise_layers": 0,
+      "first_input_noise_layers": 0
+    },
+    "selected_noise_state": {
+      "input_noise_layers": 0,
+      "softmax_value_noise_layers": 0,
+      "projection_noise_layers": 0,
+      "block1_noise_layers": 0,
+      "block2_noise_layers": 0,
+      "block3_noise_layers": 0,
+      "block4_noise_layers": 0,
+      "block5_noise_layers": 0,
+      "first_input_noise_layers": 0
+    }
+  },
+  "four_worker_rollout_evidence_tail_lines": 80,
+  "training_progress_tail_points": 80
+}
