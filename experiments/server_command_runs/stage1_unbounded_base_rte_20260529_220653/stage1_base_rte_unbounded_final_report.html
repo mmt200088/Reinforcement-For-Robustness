@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stage-1 Unbounded Base RTE Final Report</title>
+<style>
+:root { color-scheme: light; --bg:#f7f8fb; --text:#17202a; --muted:#536272; --line:#d8dee9; --head:#0f172a; --accent:#0b6bcb; --pass:#0f7a3b; --warn:#a15c00; --panel:#ffffff; }
+body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; background:var(--bg); color:var(--text); line-height:1.48; }
+main { max-width:1160px; margin:0 auto; padding:28px 22px 48px; }
+h1 { margin:0 0 8px; font-size:28px; letter-spacing:0; color:var(--head); }
+h2 { margin:28px 0 10px; font-size:19px; letter-spacing:0; color:var(--head); }
+h3 { margin:18px 0 8px; font-size:15px; letter-spacing:0; color:var(--head); }
+p { margin:8px 0; color:var(--muted); }
+.note { border-left:4px solid var(--accent); padding:10px 12px; background:#eef6ff; color:#1f3f63; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin:16px 0; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; }
+.metric { font-size:23px; font-weight:700; color:var(--head); }
+.label { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; margin:10px 0 16px; }
+th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; font-size:13px; }
+th { background:#edf1f7; color:#233044; font-weight:650; }
+tr:last-child td { border-bottom:none; }
+code { background:#eef1f5; padding:1px 4px; border-radius:4px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.92em; }
+pre { background:#111827; color:#e5e7eb; padding:12px; overflow:auto; border-radius:8px; font-size:12px; max-height:360px; }
+.pass { color:var(--pass); font-weight:700; }
+.warn { color:var(--warn); font-weight:700; }
+img { max-width:100%; border:1px solid var(--line); border-radius:8px; background:white; }
+.small { font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Stage-1 Unbounded Base RTE Final Report</h1>
+  <p class="small">Generated from GPUShare artifacts for <code>stage1_unbounded_base_rte_20260529_220653</code>.</p>
+  <div class="note">The selected configuration is the checkpoint raw PPO reward-best. No global/search post-selection override was applied.</div>
+
+  <div class="grid">
+    <div class="card"><div class="label">Completion</div><div class="metric">88320</div><p>episodes, entropy 0.0935 &lt; 0.1000</p></div>
+    <div class="card"><div class="label">Reward best</div><div class="metric">1.1101</div><p>cost 31.50 / reference 72.00</p></div>
+    <div class="card"><div class="label">Selected accuracy</div><div class="metric">0.7329</div><p>+0.9950% vs original plaintext baseline</p></div>
+    <div class="card"><div class="label">Noise hooks</div><div class="metric">0</div><p>Stage-2/BLB hooks before/after final eval</p></div>
+  </div>
+
+  <h2>Run Protocol</h2>
+  <table>
+    <tr><th>Item</th><th>Value</th></tr>
+    <tr><td>Model / dataset</td><td>bert-base / rte</td></tr>
+    <tr><td>Source sync commit</td><td><code>73e6a8f</code></td></tr>
+    <tr><td>Server git HEAD</td><td><code>73e6a8f</code> (overlay-synced source recorded separately)</td></tr>
+    <tr><td>Selection protocol</td><td><code>raw_reward_best</code></td></tr>
+    <tr><td>Stop protocol</td><td><code>entropy_lt_0.1</code>, threshold 0.1000</td></tr>
+    <tr><td>Episode limit</td><td><code>unbounded_until_entropy</code>, safety cap None</td></tr>
+    <tr><td>Validation protocol</td><td><code>stage1_plaintext_validation_full_only</code>, split <code>validation_full</code>, size 277</td></tr>
+    <tr><td>Report marker</td><td><code>/hy-tmp/stage1_full_50000_state/report_done_base_rte_entropy0p1_73e6a8f</code></td></tr>
+  </table>
+
+  <h2>Best Configuration</h2>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>GELU degrees</td><td><code>[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]</code></td></tr>
+    <tr><td>Softmax degrees</td><td><code>[4, 4, 3, 2, 2, 3, 3, 3, 3, 3, 4, 5]</code></td></tr>
+    <tr><td>Cost</td><td>31.5000</td></tr>
+    <tr><td>Reward</td><td>1.11008802</td></tr>
+  </table>
+
+  <h2>Full Validation Final Eval</h2>
+  <table>
+    <tr><th>Metric</th><th>Baseline original plaintext</th><th>Selected config</th><th>Delta abs</th><th>Delta pct</th><th>Constraint</th><th>Status</th></tr>
+    <tr><th>Loss</th><td>0.7333006263</td><td>0.7335297465</td><td>+0.0002291203</td><td>+0.0312%</td><td>0.7369671294</td><td class="pass">pass</td></tr>
+    <tr><th>Metric1 / Accuracy</th><td>0.7256317690</td><td>0.7328519856</td><td>+0.0072202166</td><td>+0.9950%</td><td>0.7220036101</td><td class="pass">pass</td></tr>
+    <tr><th>Metric2 / Accuracy</th><td>0.7256317690</td><td>0.7328519856</td><td>+0.0072202166</td><td>+0.9950%</td><td>0.7220036101</td><td class="pass">pass</td></tr>
+  </table>
+
+  <h2>Plaintext Stage-1 Noise Check</h2>
+  <p>Both final evals installed only Stage-1 GELU/Softmax replacements. Stage-2/BLB and legacy noise hook counts stayed at zero before and after each eval.</p>
+  <table>
+    <tr><th>Eval item</th><th>No Stage-2 hooks</th><th>Total hooks after eval</th><th>Hook counts</th></tr>
+    <tr><th>Baseline</th><td>True</td><td>0</td><td><code>{&#x27;legacy&#x27;: {&#x27;input&#x27;: 0, &#x27;softmax_value&#x27;: 0, &#x27;query&#x27;: 0, &#x27;key&#x27;: 0, &#x27;value&#x27;: 0, &#x27;wo&#x27;: 0, &#x27;wffn1&#x27;: 0, &#x27;wffn2&#x27;: 0}, &#x27;blb&#x27;: {&#x27;block1&#x27;: 0, &#x27;block2&#x27;: 0, &#x27;block3&#x27;: 0, &#x27;block4&#x27;: 0, &#x27;block5&#x27;: 0, &#x27;first_input&#x27;: 0}, &#x27;total&#x27;: 0}</code></td></tr>
+    <tr><th>Selected</th><td>True</td><td>0</td><td><code>{&#x27;legacy&#x27;: {&#x27;input&#x27;: 0, &#x27;softmax_value&#x27;: 0, &#x27;query&#x27;: 0, &#x27;key&#x27;: 0, &#x27;value&#x27;: 0, &#x27;wo&#x27;: 0, &#x27;wffn1&#x27;: 0, &#x27;wffn2&#x27;: 0}, &#x27;blb&#x27;: {&#x27;block1&#x27;: 0, &#x27;block2&#x27;: 0, &#x27;block3&#x27;: 0, &#x27;block4&#x27;: 0, &#x27;block5&#x27;: 0, &#x27;first_input&#x27;: 0}, &#x27;total&#x27;: 0}</code></td></tr>
+  </table>
+
+  <h2>Learning Curves</h2>
+  <h3>Reward / Loss / Metrics</h3>
+  <img src="stage1/ppo_training_curve.png" alt="PPO training curve">
+  <h3>Policy Entropy</h3>
+  <img src="stage1/ppo_entropy_curve.png" alt="PPO entropy curve">
+
+  <h2>Training Health</h2>
+  <table>
+    <tr><th>Field</th><th>Value</th></tr>
+    <tr><td>Stop marker found</td><td class="pass">True</td></tr>
+    <tr><td>Completion marker found</td><td class="pass">True</td></tr>
+    <tr><td>Final progress</td><td><code>{&#x27;episode&#x27;: 88320, &#x27;avg_reward&#x27;: 1.066, &#x27;policy_loss&#x27;: -0.1846, &#x27;value_loss&#x27;: 0.0006, &#x27;entropy&#x27;: 0.0935}</code></td></tr>
+    <tr><td>Progress points captured</td><td>736</td></tr>
+    <tr><td>Checkpoint size</td><td>6406423 bytes</td></tr>
+  </table>
+
+  <h2>Recent Progress Points</h2>
+  <table>
+    <tr><th>Episode</th><th>Avg reward</th><th>Policy loss</th><th>Value loss</th><th>Entropy</th></tr>
+    <tr><td>85560</td><td>1.0652</td><td>-0.1051</td><td>0.0007</td><td>0.1255</td></tr><tr><td>85680</td><td>1.0612</td><td>-0.0456</td><td>0.0007</td><td>0.1184</td></tr><tr><td>85800</td><td>1.0647</td><td>-0.1071</td><td>0.0042</td><td>0.1381</td></tr><tr><td>85920</td><td>1.0673</td><td>-0.0390</td><td>0.0006</td><td>0.1140</td></tr><tr><td>86040</td><td>1.0678</td><td>0.0997</td><td>0.0006</td><td>0.1188</td></tr><tr><td>86160</td><td>1.0670</td><td>0.0713</td><td>0.0006</td><td>0.1137</td></tr><tr><td>86280</td><td>1.0642</td><td>-0.0573</td><td>0.0010</td><td>0.1033</td></tr><tr><td>86400</td><td>1.0645</td><td>-0.1691</td><td>0.0006</td><td>0.1059</td></tr><tr><td>86520</td><td>1.0638</td><td>-0.2216</td><td>0.0004</td><td>0.1080</td></tr><tr><td>86640</td><td>1.0679</td><td>-0.0750</td><td>0.0011</td><td>0.1159</td></tr><tr><td>86760</td><td>1.0673</td><td>-0.1241</td><td>0.0008</td><td>0.1018</td></tr><tr><td>86880</td><td>1.0679</td><td>0.0275</td><td>0.0005</td><td>0.1168</td></tr><tr><td>87000</td><td>1.0672</td><td>-0.0716</td><td>0.0011</td><td>0.1076</td></tr><tr><td>87120</td><td>1.0628</td><td>-0.1116</td><td>0.0005</td><td>0.1132</td></tr><tr><td>87240</td><td>1.0680</td><td>-0.0778</td><td>0.0006</td><td>0.1058</td></tr><tr><td>87360</td><td>1.0675</td><td>-0.0747</td><td>0.0006</td><td>0.1122</td></tr><tr><td>87480</td><td>1.0626</td><td>-0.1638</td><td>0.0006</td><td>0.1123</td></tr><tr><td>87600</td><td>1.0682</td><td>-0.0877</td><td>0.0007</td><td>0.1098</td></tr><tr><td>87720</td><td>1.0683</td><td>0.0231</td><td>0.0007</td><td>0.1063</td></tr><tr><td>87840</td><td>1.0670</td><td>-0.0570</td><td>0.0006</td><td>0.1013</td></tr><tr><td>87960</td><td>1.0674</td><td>0.0538</td><td>0.0007</td><td>0.1061</td></tr><tr><td>88080</td><td>1.0678</td><td>0.0534</td><td>0.0007</td><td>0.1094</td></tr><tr><td>88200</td><td>1.0669</td><td>0.0053</td><td>0.0006</td><td>0.1035</td></tr><tr><td>88320</td><td>1.0660</td><td>-0.1846</td><td>0.0006</td><td>0.0935</td></tr>
+  </table>
+
+  <h2>Four-GPU Rollout Evidence</h2>
+  <p>The training log records four complete episode workers per PPO window with devices <code>cuda:0..cuda:3</code>, 30 episodes per worker, and recent window speedup around 3.8x-3.9x.</p>
+  <pre>[stage1-rollout] window=720 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=52.119s worker_seconds=[48.533, 51.960, 52.117, 51.708]  speedup=3.92x
+[stage1-rollout] window=721 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=51.392s worker_seconds=[48.815, 51.391, 51.169, 50.825]  speedup=3.93x
+[stage1-rollout] window=722 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=51.221s worker_seconds=[46.198, 49.500, 51.220, 49.696]  speedup=3.84x
+[stage1-rollout] window=723 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=50.544s worker_seconds=[46.628, 50.014, 50.542, 50.184]  speedup=3.90x
+[stage1-rollout] window=724 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=53.588s worker_seconds=[48.963, 51.746, 52.667, 53.584]  speedup=3.86x
+[stage1-rollout] window=725 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=51.102s worker_seconds=[46.136, 50.274, 51.100, 49.420]  speedup=3.85x
+[stage1-rollout] window=726 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=51.486s worker_seconds=[49.417, 50.279, 48.790, 51.483]  speedup=3.88x
+[stage1-rollout] window=727 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=53.442s worker_seconds=[50.837, 53.441, 52.858, 52.556]  speedup=3.92x
+[stage1-rollout] window=728 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=52.428s worker_seconds=[49.177, 52.427, 50.740, 50.945]  speedup=3.88x
+[stage1-rollout] window=729 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=51.112s worker_seconds=[46.423, 50.324, 50.048, 51.109]  speedup=3.87x
+[stage1-rollout] window=730 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=51.977s worker_seconds=[49.238, 50.919, 51.024, 51.974]  speedup=3.91x
+[stage1-rollout] window=731 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=50.378s worker_seconds=[46.442, 50.377, 50.074, 49.570]  speedup=3.90x
+[stage1-rollout] window=732 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=49.598s worker_seconds=[45.709, 49.597, 48.698, 49.159]  speedup=3.89x
+[stage1-rollout] window=733 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=53.418s worker_seconds=[49.340, 53.417, 52.044, 51.210]  speedup=3.86x
+[stage1-rollout] window=734 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=52.240s worker_seconds=[49.179, 51.255, 52.238, 52.122]  speedup=3.92x
+[stage1-rollout] window=735 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=50.120s worker_seconds=[45.916, 49.737, 50.118, 49.203]  speedup=3.89x</pre>
+
+  <h2>Log Tail</h2>
+  <h3>Run Log Tail</h3>
+  <pre>已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 8 层的Softmax函数（Softmax function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+  [stage1-rollout] window=735 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=50.120s worker_seconds=[45.916, 49.737, 50.118, 49.203]  speedup=3.89x
+  [stage1-rollout] window=735 collected 120 episodes across 4 workers
+  ╭──────────────────────────────────────────────────────────────╮
+  │ 回合（Episode） 88320                                          │
+  │ 平均奖励: 1.0660, 策略损失: -0.1846, 价值损失: 0.0006, 熵: 0.0935       │
+  │ [GTrXL调度] LR: 0.000020, 熵系数: 0.012000, 更新次数: #736 (normal) │
+  ╰──────────────────────────────────────────────────────────────╯
+
+  [收敛] Stage-1 entropy convergence reached: entropy=0.0935 &lt; threshold=0.1000; stopping at episode 88320.
+  [完成] Stage-1 最终 checkpoint 已保存 → Parting Chapter/persistent/rl/bert-base/rte/s1t0.005_s2t0.05_s2st0.05/stage1/stage1_rl_checkpoint.pt
+  [迁移] 可迁移 policy/critic 已保存 → Parting Chapter/persistent/rl/bert-base/rte/s1t0.005_s2t0.05_s2st0.05/stage1/stage1_policy.pt
+  [迁移] 用法：在新任务/新约束下，将 RL_OPT_FLAGS[&#x27;stage1_pretrained_policy_path&#x27;] 设为该路径即可作为 base policy 继续训练。
+  [检测] 局部最优检测报告 → Parting Chapter/persistent/rl/bert-base/rte/s1t0.005_s2t0.05_s2st0.05/stage1/pruning_search_log.txt
+  [检测] [OK] best_stuck(17663ep_no_improve)
+
+[Stage-1] 最终配置使用原始 PPO reward-best；GELU/Softmax 为确定性替换，不再按 window 二次评估重排。
+
+--- PPO训练完成（PPO Training Completed） ---
+已找到最优配置（通过RL）（Best Configuration Found by RL）：
+  GELU配置: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  Softmax配置: [4, 4, 3, 2, 2, 3, 3, 3, 3, 3, 4, 5]
+  成本（Cost）: 31.50, 奖励（Reward）: 1.1101
+PPO训练曲线已保存至（PPO training curves saved to）: Parting Chapter/persistent/rl/bert-base/rte/s1t0.005_s2t0.05_s2st0.05/stage1/ppo_training_curve.png
+PPO熵曲线已保存至（PPO entropy curve saved to）: Parting Chapter/persistent/rl/bert-base/rte/s1t0.005_s2t0.05_s2st0.05/stage1/ppo_entropy_curve.png
+
+============================================================
+最终评估报告（FINAL EVALUATION REPORT）（验证集）
+============================================================
+
+[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。
+
+[信息] 统一最终评估已跳过（--skip-final-eval）。
+
+配置评估完成（Configuration evaluation finished）。
+  [best_policy] 已复制 Parting Chapter/persistent/rl/bert-base/rte/s1t0.005_s2t0.05_s2st0.05/stage1/stage1_policy.pt → Parting Chapter/persistent/rl/bert-base/rte/s1t0.005_s2t0.05_s2st0.05/best_policy/stage1_policy.pt
+
+100%|██████████| 1/1 [11:31:31&lt;00:00, 41491.02s/it]
+已替换 12 层的GELU函数（GELU function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 6 层的Softmax函数（Softmax function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+Round 0, Final evaluation loss: 0.7339390516281128
+
+ If there&#x27;s a warning about missing keys above, please disregard :)
+L INFO ncclCommInitAll comm 0x37646160 rank 2 nranks 4 cudaDev 2 nvmlDev 2 busId 81000 commId 0x3e4aa74a6e097812 - Init COMPLETE
+I28ca072f1200a01074:477654:477892 [2] NCCL INFO Init timings - ncclCommInitAll: rank 2 nranks 4 total 0.64 (kernels 0.58, alloc 0.01, bootstrap 0.00, allgathers 0.00, topo 0.03, graphs 0.00, connections 0.01, rest 0.01)
+I28ca072f1200a01074:477654:477903 [3] NCCL INFO Channel 00 : 3[3] -&gt; 0[0] via SHM/direct/direct
+I28ca072f1200a01074:477654:477904 [2] NCCL INFO Channel 00 : 2[2] -&gt; 3[3] via SHM/direct/direct
+I28ca072f1200a01074:477654:477905 [1] NCCL INFO Channel 00 : 1[1] -&gt; 2[2] via SHM/direct/direct
+I28ca072f1200a01074:477654:477903 [3] NCCL INFO Channel 01 : 3[3] -&gt; 0[0] via SHM/direct/direct
+I28ca072f1200a01074:477654:477906 [0] NCCL INFO Channel 00 : 0[0] -&gt; 1[1] via SHM/direct/direct
+I28ca072f1200a01074:477654:477904 [2] NCCL INFO Channel 01 : 2[2] -&gt; 3[3] via SHM/direct/direct
+I28ca072f1200a01074:477654:477905 [1] NCCL INFO Channel 01 : 1[1] -&gt; 2[2] via SHM/direct/direct
+I28ca072f1200a01074:477654:477903 [3] NCCL INFO Channel 02 : 3[3] -&gt; 0[0] via SHM/direct/direct
+I28ca072f1200a01074:477654:477906 [0] NCCL INFO Channel 01 : 0[0] -&gt; 1[1] via SHM/direct/direct
+I28ca072f1200a01074:477654:477904 [2] NCCL INFO Channel 02 : 2[2] -&gt; 3[3] via SHM/direct/direct
+I28ca072f1200a01074:477654:477905 [1] NCCL INFO Channel 02 : 1[1] -&gt; 2[2] via SHM/direct/direct
+I28ca072f1200a01074:477654:477903 [3] NCCL INFO Channel 03 : 3[3] -&gt; 0[0] via SHM/direct/direct
+I28ca072f1200a01074:477654:477906 [0] NCCL INFO Channel 02 : 0[0] -&gt; 1[1] via SHM/direct/direct
+I28ca072f1200a01074:477654:477904 [2] NCCL INFO Channel 03 : 2[2] -&gt; 3[3] via SHM/direct/direct
+I28ca072f1200a01074:477654:477905 [1] NCCL INFO Channel 03 : 1[1] -&gt; 2[2] via SHM/direct/direct
+I28ca072f1200a01074:477654:477906 [0] NCCL INFO Channel 03 : 0[0] -&gt; 1[1] via SHM/direct/direct
+I28ca072f1200a01074:477654:477903 [3] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+I28ca072f1200a01074:477654:477904 [2] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+I28ca072f1200a01074:477654:477906 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+I28ca072f1200a01074:477654:477905 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+</pre>
+  <h3>Master Log Tail</h3>
+  <pre>[2026-05-27T19:48:10+08:00] launching large_mrpc preset=bert-large-mrpc-stage1-rl selection=raw_reward_best
+[2026-05-27T19:48:10+08:00] running large_mrpc pid=207045 run_log=Parting Chapter/persistent/rl/bert-large/mrpc/s1t0.005_s2t0.05_s2st0.05/logs/stage1_full_large_mrpc_50000.log
+[2026-05-28T00:30:17+08:00] attached to existing large_mrpc pid=207045; waiting for training completion
+[2026-05-28T00:30:17+08:00] attached to existing large_mrpc pid=207045; waiting for training completion
+[2026-05-28T11:52:26+08:00] attached to existing large_mrpc pid=207045; waiting for training completion
+[2026-05-28T23:59:33+08:00] completed large_mrpc; waiting for report marker /hy-tmp/stage1_full_50000_state/report_done_large_mrpc
+[2026-05-29T00:34:34+08:00] report marker observed for large_mrpc
+[2026-05-29T00:34:34+08:00] pulling corrected Stage-1 boundary-search reward source before BERT-base reruns
+[2026-05-29T00:46:34+08:00] source already verified at 7352cd3 via git bundle fallback; skipping HTTPS pull
+[2026-05-29T00:46:34+08:00] launching base_sst2 preset=bert-base-sst2-stage1-rl selection=raw_reward_best entropy_stop&lt;0.1 marker=/hy-tmp/stage1_full_50000_state/report_done_base_sst2_entropy0p1_7352cd3 differential_reward=off
+[2026-05-29T00:46:40+08:00] running base_sst2 pid=344583 run_log=Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/logs/stage1_full_base_sst2_entropy0p1.log
+[2026-05-29T16:02:28+08:00] attached to current base_sst2 pid=344583; will resume unbounded if it exits without entropy marker
+[2026-05-29T17:30:35+08:00] legacy base_sst2 completed without entropy convergence; resuming from persistent checkpoint on 73e6a8f with no episode cap
+[2026-05-29T17:30:35+08:00] launching base_sst2 preset=bert-base-sst2-stage1-rl source_sync=73e6a8f entropy_stop&lt;0.1 episodes=unbounded marker=/hy-tmp/stage1_full_50000_state/report_done_base_sst2_entropy0p1_73e6a8f fresh_flag=resume
+[2026-05-29T17:30:36+08:00] running base_sst2 pid=448156 run_log=Parting Chapter/persistent/rl/bert-base/sst2/s1t0.005_s2t0.05_s2st0.05/logs/stage1_full_base_sst2_entropy0p1.log
+[2026-05-29T21:26:53+08:00] completed base_sst2 with entropy convergence; waiting for report marker /hy-tmp/stage1_full_50000_state/report_done_base_sst2_entropy0p1_73e6a8f
+[2026-05-29T22:06:53+08:00] report marker observed for base_sst2
+[2026-05-29T22:06:53+08:00] launching base_rte preset=bert-base-rte-stage1-rl source_sync=73e6a8f entropy_stop&lt;0.1 episodes=unbounded marker=/hy-tmp/stage1_full_50000_state/report_done_base_rte_entropy0p1_73e6a8f fresh_flag=fresh
+[2026-05-29T22:06:59+08:00] running base_rte pid=477654 run_log=Parting Chapter/persistent/rl/bert-base/rte/s1t0.005_s2t0.05_s2st0.05/logs/stage1_full_base_rte_entropy0p1.log
+[2026-05-30T09:39:47+08:00] completed base_rte with entropy convergence; waiting for report marker /hy-tmp/stage1_full_50000_state/report_done_base_rte_entropy0p1_73e6a8f
+</pre>
+  <h3>Pruning Search Log</h3>
+  <pre>=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===
+[信息] Stage-1 PPO学习率（LR）从 stage1_rl_lr=None 解析为 -&gt; 5e-05 (default) | Stage-2 PPO学习率（LR）从 stage2_rl_lr=None 解析为 -&gt; 5e-05 (default)
+[信息] 第一阶段RL回合数（Stage-1 RL episodes）: 170 | 第二阶段RL回合数（Stage-2 RL episodes）: 170
+[信息] 统一运行输出目录（Unified run output dir）: /hy-tmp/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-base/rte/s1t0.005_s2t0.05_s2st0.05
+</pre>
+  <h3>Final Eval Log</h3>
+  <pre>/usr/local/lib/python3.11/dist-packages/transformers/tokenization_utils_base.py:1601: FutureWarning: `clean_up_tokenization_spaces` was not set. It will be set to `True` by default. This behavior will be depracted in transformers v4.45, and will be then set to `False` by default. For more details check this issue: https://github.com/huggingface/transformers/issues/31884
+  warnings.warn(
+[dataset] task=&#x27;rte&#x27; → route=hf_remote endpoint=nyu-mll/glue
+[信息] 数据集（Dataset）&#x27;rte&#x27; 检测为 CLASSIFICATION 任务
+[信息] 使用指标（Using metrics）: Accuracy
+[数据集协议（Dataset Protocol）] 完整验证集（validation_full）=277  （统一使用 validation_full，不再拆分 search/holdout/proxy）
+已恢复 12 层的原始GELU函数（original GELU function）
+已替换 12 层的GELU函数（GELU function）
+已替换 2 层的Softmax函数（Softmax function）
+已替换 6 层的Softmax函数（Softmax function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+{
+  &quot;created_at&quot;: &quot;2026-05-30T14:40:11+0800&quot;,
+  &quot;model&quot;: &quot;bert-base&quot;,
+  &quot;dataset&quot;: &quot;rte&quot;,
+  &quot;source_sync_commit&quot;: &quot;73e6a8f&quot;,
+  &quot;selection_protocol&quot;: &quot;raw_reward_best&quot;,
+  &quot;stop_protocol&quot;: &quot;entropy_lt_0.1&quot;,
+  &quot;stage1_episode_limit&quot;: &quot;unbounded_until_entropy&quot;,
+  &quot;completed_episodes&quot;: 88320,
+  &quot;final_entropy&quot;: 0.09349501132965088,
+  &quot;entropy_stop_threshold&quot;: 0.1,
+  &quot;best_config&quot;: {
+    &quot;gelu&quot;: [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    &quot;softmax&quot;: [
+      4,
+      4,
+      3,
+      2,
+      2,
+      3,
+      3,
+      3,
+      3,
+      3,
+      4,
+      5
+    ]
+  },
+  &quot;best_reward&quot;: 1.1100880188998261,
+  &quot;best_cost&quot;: 31.5,
+  &quot;cost_reference&quot;: {
+    &quot;gelu&quot;: [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+    ],
+    &quot;softmax&quot;: [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    &quot;cost&quot;: 72.0
+  },
+  &quot;baseline&quot;: {
+    &quot;name&quot;: &quot;baseline_original_plaintext&quot;,
+    &quot;loss&quot;: 0.7333006262779236,
+    &quot;metric1&quot;: 0.7256317689530686,
+    &quot;metric2&quot;: 0.7256317689530686,
+    &quot;accuracy&quot;: 0.7256317689530686,
+    &quot;time_ms&quot;: 1321.0570812225342,
+    &quot;wall_seconds&quot;: 1.325066328048706,
+    &quot;noise_before&quot;: {
+      &quot;legacy&quot;: {
+        &quot;input&quot;: 0,
+        &quot;softmax_value&quot;: 0,
+        &quot;query&quot;: 0,
+        &quot;key&quot;: 0,
+        &quot;value&quot;: 0,
+        &quot;wo&quot;: 0,
+        &quot;wffn1&quot;: 0,
+        &quot;wffn2&quot;: 0
+      },
+      &quot;blb&quot;: {
+        &quot;block1&quot;: 0,
+        &quot;block2&quot;: 0,
+        &quot;block3&quot;: 0,
+        &quot;block4&quot;: 0,
+        &quot;block5&quot;: 0,
+        &quot;first_input&quot;: 0
+      },
+      &quot;total&quot;: 0
+    },
+    &quot;noise_after&quot;: {
+      &quot;legacy&quot;: {
+        &quot;input&quot;: 0,
+        &quot;softmax_value&quot;: 0,
+        &quot;query&quot;: 0,
+        &quot;key&quot;: 0,
+        &quot;value&quot;: 0,
+        &quot;wo&quot;: 0,
+        &quot;wffn1&quot;: 0,
+        &quot;wffn2&quot;: 0
+      },
+      &quot;blb&quot;: {
+        &quot;block1&quot;: 0,
+        &quot;block2&quot;: 0,
+        &quot;block3&quot;: 0,
+        &quot;block4&quot;: 0,
+        &quot;block5&quot;: 0,
+        &quot;first_input&quot;: 0
+      },
+      &quot;total&quot;: 0
+    },
+    &quot;gelu&quot;: [
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1
+    ],
+    &quot;softmax&quot;: [
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1
+    ]
+  },
+  &quot;selected&quot;: {
+    &quot;name&quot;: &quot;selected_raw_reward_best_plaintext&quot;,
+    &quot;loss&quot;: 0.7335297465324402,
+    &quot;metric1&quot;: 0.7328519855595668,
+    &quot;metric2&quot;: 0.7328519855595668,
+    &quot;accuracy&quot;: 0.7328519855595668,
+    &quot;time_ms&quot;: 774.9602794647217,
+    &quot;wall_seconds&quot;: 0.8875458240509033,
+    &quot;noise_before&quot;: {
+      &quot;legacy&quot;: {
+        &quot;input&quot;: 0,
+        &quot;softmax_value&quot;: 0,
+        &quot;query&quot;: 0,
+        &quot;key&quot;: 0,
+        &quot;value&quot;: 0,
+        &quot;wo&quot;: 0,
+        &quot;wffn1&quot;: 0,
+        &quot;wffn2&quot;: 0
+      },
+      &quot;blb&quot;: {
+        &quot;block1&quot;: 0,
+        &quot;block2&quot;: 0,
+        &quot;block3&quot;: 0,
+        &quot;block4&quot;: 0,
+        &quot;block5&quot;: 0,
+        &quot;first_input&quot;: 0
+      },
+      &quot;total&quot;: 0
+    },
+    &quot;noise_after&quot;: {
+      &quot;legacy&quot;: {
+        &quot;input&quot;: 0,
+        &quot;softmax_value&quot;: 0,
+        &quot;query&quot;: 0,
+        &quot;key&quot;: 0,
+        &quot;value&quot;: 0,
+        &quot;wo&quot;: 0,
+        &quot;wffn1&quot;: 0,
+        &quot;wffn2&quot;: 0
+      },
+      &quot;blb&quot;: {
+        &quot;block1&quot;: 0,
+        &quot;block2&quot;: 0,
+        &quot;block3&quot;: 0,
+        &quot;block4&quot;: 0,
+        &quot;block5&quot;: 0,
+        &quot;first_input&quot;: 0
+      },
+      &quot;total&quot;: 0
+    },
+    &quot;gelu&quot;: [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    &quot;softmax&quot;: [
+      4,
+      4,
+      3,
+      2,
+      2,
+      3,
+      3,
+      3,
+      3,
+      3,
+      4,
+      5
+    ],
+    &quot;cost&quot;: 31.5,
+    &quot;reward&quot;: 1.1100880188998261,
+    &quot;constraints_pass&quot;: true,
+    &quot;delta_vs_baseline&quot;: {
+      &quot;loss_abs&quot;: 0.00022912025451660156,
+      &quot;loss_pct&quot;: 0.031245064616890722,
+      &quot;metric1_abs&quot;: 0.0072202166064981865,
+      &quot;metric1_pct&quot;: 0.9950248756218895,
+      &quot;metric2_abs&quot;: 0.0072202166064981865,
+      &quot;metric2_pct&quot;: 0.9950248756218895
+    }
+  },
+  &quot;constraints&quot;: {
+    &quot;loss&quot;: 0.7369671294093131,
+    &quot;metric1&quot;: 0.7220036101083033,
+    &quot;metric2&quot;: 0.7220036101083033
+  },
+  &quot;validation_full_size&quot;: 277,
+  &quot;stage1_plaintext_no_stage2_noise&quot;: {
+    &quot;flags&quot;: {
+      &quot;stage1_use_max_scaling_noise_env&quot;: false,
+      &quot;final_eval_use_max_scaling_noise_env&quot;: false,
+      &quot;STAGE1_ENABLE_DIFFERENTIAL_REWARD&quot;: &quot;0&quot;
+    },
+    &quot;baseline_no_noise&quot;: true,
+    &quot;selected_no_noise&quot;: true,
+    &quot;baseline_noise_state&quot;: {
+      &quot;legacy&quot;: {
+        &quot;input&quot;: 0,
+        &quot;softmax_value&quot;: 0,
+        &quot;query&quot;: 0,
+        &quot;key&quot;: 0,
+        &quot;value&quot;: 0,
+        &quot;wo&quot;: 0,
+        &quot;wffn1&quot;: 0,
+        &quot;wffn2&quot;: 0
+      },
+      &quot;blb&quot;: {
+        &quot;block1&quot;: 0,
+        &quot;block2&quot;: 0,
+        &quot;block3&quot;: 0,
+        &quot;block4&quot;: 0,
+        &quot;block5&quot;: 0,
+        &quot;first_input&quot;: 0
+      },
+      &quot;total&quot;: 0
+    },
+    &quot;selected_noise_state&quot;: {
+      &quot;legacy&quot;: {
+        &quot;input&quot;: 0,
+        &quot;softmax_value&quot;: 0,
+        &quot;query&quot;: 0,
+        &quot;key&quot;: 0,
+        &quot;value&quot;: 0,
+        &quot;wo&quot;: 0,
+        &quot;wffn1&quot;: 0,
+        &quot;wffn2&quot;: 0
+      },
+      &quot;blb&quot;: {
+        &quot;block1&quot;: 0,
+        &quot;block2&quot;: 0,
+        &quot;block3&quot;: 0,
+        &quot;block4&quot;: 0,
+        &quot;block5&quot;: 0,
+        &quot;first_input&quot;: 0
+      },
+      &quot;total&quot;: 0
+    }
+  },
+  &quot;ppo_update_interval&quot;: 120
+}
+</pre>
+
+  <h2>Artifacts</h2>
+  <table>
+    <tr><th>Artifact</th><th>Path</th></tr>
+    <tr><td>Summary JSON</td><td><code>stage1_base_rte_unbounded_final_summary.json</code></td></tr>
+    <tr><td>Final eval JSON</td><td><code>stage1/final_eval_best_vs_baseline.json</code></td></tr>
+    <tr><td>Checkpoint summary</td><td><code>stage1/base_rte_checkpoint_summary.json</code></td></tr>
+    <tr><td>Training health</td><td><code>stage1/base_rte_training_health.json</code></td></tr>
+    <tr><td>PPO curves</td><td><code>stage1/ppo_training_curve.png</code>, <code>stage1/ppo_entropy_curve.png</code></td></tr>
+  </table>
+</main>
+</body>
+</html>

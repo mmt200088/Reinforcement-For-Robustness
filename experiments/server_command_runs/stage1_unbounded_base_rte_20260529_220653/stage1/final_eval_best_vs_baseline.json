@@ -1,0 +1,302 @@
+{
+  "created_at": "2026-05-30T14:40:11+0800",
+  "model": "bert-base",
+  "dataset": "rte",
+  "source_sync_commit": "73e6a8f",
+  "selection_protocol": "raw_reward_best",
+  "stop_protocol": "entropy_lt_0.1",
+  "stage1_episode_limit": "unbounded_until_entropy",
+  "completed_episodes": 88320,
+  "final_entropy": 0.09349501132965088,
+  "entropy_stop_threshold": 0.1,
+  "best_config": {
+    "gelu": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "softmax": [
+      4,
+      4,
+      3,
+      2,
+      2,
+      3,
+      3,
+      3,
+      3,
+      3,
+      4,
+      5
+    ]
+  },
+  "best_reward": 1.1100880188998261,
+  "best_cost": 31.5,
+  "cost_reference": {
+    "gelu": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+    ],
+    "softmax": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "cost": 72.0
+  },
+  "baseline": {
+    "name": "baseline_original_plaintext",
+    "loss": 0.7333006262779236,
+    "metric1": 0.7256317689530686,
+    "metric2": 0.7256317689530686,
+    "accuracy": 0.7256317689530686,
+    "time_ms": 1321.0570812225342,
+    "wall_seconds": 1.325066328048706,
+    "noise_before": {
+      "legacy": {
+        "input": 0,
+        "softmax_value": 0,
+        "query": 0,
+        "key": 0,
+        "value": 0,
+        "wo": 0,
+        "wffn1": 0,
+        "wffn2": 0
+      },
+      "blb": {
+        "block1": 0,
+        "block2": 0,
+        "block3": 0,
+        "block4": 0,
+        "block5": 0,
+        "first_input": 0
+      },
+      "total": 0
+    },
+    "noise_after": {
+      "legacy": {
+        "input": 0,
+        "softmax_value": 0,
+        "query": 0,
+        "key": 0,
+        "value": 0,
+        "wo": 0,
+        "wffn1": 0,
+        "wffn2": 0
+      },
+      "blb": {
+        "block1": 0,
+        "block2": 0,
+        "block3": 0,
+        "block4": 0,
+        "block5": 0,
+        "first_input": 0
+      },
+      "total": 0
+    },
+    "gelu": [
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1
+    ],
+    "softmax": [
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1
+    ]
+  },
+  "selected": {
+    "name": "selected_raw_reward_best_plaintext",
+    "loss": 0.7335297465324402,
+    "metric1": 0.7328519855595668,
+    "metric2": 0.7328519855595668,
+    "accuracy": 0.7328519855595668,
+    "time_ms": 774.9602794647217,
+    "wall_seconds": 0.8875458240509033,
+    "noise_before": {
+      "legacy": {
+        "input": 0,
+        "softmax_value": 0,
+        "query": 0,
+        "key": 0,
+        "value": 0,
+        "wo": 0,
+        "wffn1": 0,
+        "wffn2": 0
+      },
+      "blb": {
+        "block1": 0,
+        "block2": 0,
+        "block3": 0,
+        "block4": 0,
+        "block5": 0,
+        "first_input": 0
+      },
+      "total": 0
+    },
+    "noise_after": {
+      "legacy": {
+        "input": 0,
+        "softmax_value": 0,
+        "query": 0,
+        "key": 0,
+        "value": 0,
+        "wo": 0,
+        "wffn1": 0,
+        "wffn2": 0
+      },
+      "blb": {
+        "block1": 0,
+        "block2": 0,
+        "block3": 0,
+        "block4": 0,
+        "block5": 0,
+        "first_input": 0
+      },
+      "total": 0
+    },
+    "gelu": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "softmax": [
+      4,
+      4,
+      3,
+      2,
+      2,
+      3,
+      3,
+      3,
+      3,
+      3,
+      4,
+      5
+    ],
+    "cost": 31.5,
+    "reward": 1.1100880188998261,
+    "constraints_pass": true,
+    "delta_vs_baseline": {
+      "loss_abs": 0.00022912025451660156,
+      "loss_pct": 0.031245064616890722,
+      "metric1_abs": 0.0072202166064981865,
+      "metric1_pct": 0.9950248756218895,
+      "metric2_abs": 0.0072202166064981865,
+      "metric2_pct": 0.9950248756218895
+    }
+  },
+  "constraints": {
+    "loss": 0.7369671294093131,
+    "metric1": 0.7220036101083033,
+    "metric2": 0.7220036101083033
+  },
+  "validation_full_size": 277,
+  "stage1_plaintext_no_stage2_noise": {
+    "flags": {
+      "stage1_use_max_scaling_noise_env": false,
+      "final_eval_use_max_scaling_noise_env": false,
+      "STAGE1_ENABLE_DIFFERENTIAL_REWARD": "0"
+    },
+    "baseline_no_noise": true,
+    "selected_no_noise": true,
+    "baseline_noise_state": {
+      "legacy": {
+        "input": 0,
+        "softmax_value": 0,
+        "query": 0,
+        "key": 0,
+        "value": 0,
+        "wo": 0,
+        "wffn1": 0,
+        "wffn2": 0
+      },
+      "blb": {
+        "block1": 0,
+        "block2": 0,
+        "block3": 0,
+        "block4": 0,
+        "block5": 0,
+        "first_input": 0
+      },
+      "total": 0
+    },
+    "selected_noise_state": {
+      "legacy": {
+        "input": 0,
+        "softmax_value": 0,
+        "query": 0,
+        "key": 0,
+        "value": 0,
+        "wo": 0,
+        "wffn1": 0,
+        "wffn2": 0
+      },
+      "blb": {
+        "block1": 0,
+        "block2": 0,
+        "block3": 0,
+        "block4": 0,
+        "block5": 0,
+        "first_input": 0
+      },
+      "total": 0
+    }
+  },
+  "ppo_update_interval": 120
+}

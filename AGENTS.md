@@ -208,6 +208,23 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `0.2803423208`/`0.9231651376`, passing the 0.5% loss/metric constraints.
   The final eval recorded zero Stage-2/BLB noise hooks for both baseline and
   selected config, confirming Stage-1 plaintext-only semantics.
+- Stage-1 unbounded base_rte completion, added 2026-05-30: the fresh
+  `73e6a8f` base_rte run used `--stage1-search-episodes 0`,
+  `--stage1-entropy-stop-threshold 0.1`, raw PPO reward-best selection,
+  validation_full-only reward/final evaluation, four-GPU Stage-1 rollout, and
+  pure plaintext Stage-1 semantics with no Stage-2/BLB noise. It reached
+  entropy convergence at episode `88320` with final entropy `0.0935`. The
+  final local report is
+  `experiments/server_command_runs/stage1_unbounded_base_rte_20260529_220653/stage1_base_rte_unbounded_final_report.html`.
+  The final selected config is the raw PPO reward-best:
+  `GELU=[1,1,1,1,1,1,1,1,1,1,1,1]`,
+  `Softmax=[4,4,3,2,2,3,3,3,3,3,4,5]`, cost `31.50`, reward
+  `1.1100880189`. Full-validation final eval on `validation_full` size `277`
+  gave baseline original-plaintext loss/accuracy
+  `0.7333006263`/`0.7256317690` and selected loss/accuracy
+  `0.7335297465`/`0.7328519856`, passing the 0.5% loss/metric constraints.
+  The final eval recorded zero Stage-2/BLB noise hooks for both baseline and
+  selected config, confirming Stage-1 plaintext-only semantics.
 - Stage-1 large_mrpc speed/parallelism note, added 2026-05-27: the
   `large_mrpc` full run speed around 1.6k episodes/hour is broadly consistent
   with the earlier 4-GPU smoke result of about 2.1 seconds/episode. It is slower
