@@ -7286,6 +7286,19 @@ class LayerImportanceEvaluator(TrainerCallback):
                         limit_p=noise_limit_p,
                         limit_s=noise_limit_s,
                     )
+                elif getattr(self, "decoupled_layout", False):
+                    # 解耦（2026-06-01）：训练完成只写基础快照（Stage-1:
+                    # _maybe_snapshot_decoupled_stage1_record；Stage-2:
+                    # blb_stage2_rl.runner 的 record 归档）。重型同-cost 51 组 final-eval
+                    # 改由独立工具触发（Paean/run_final_eval.sh --stage stage1|stage2
+                    # --record-dir ...），不在训练末自动跑，以免把 Rescale_optimizer /
+                    # GLUE 链耦合进训练收尾。见
+                    # docs/superpowers/specs/2026-05-30-decoupled-standalone-final-eval-design.md。
+                    self.log(
+                        "[解耦] 跳过训练末自动 final-eval；如需重型同-cost 对比，"
+                        "请用独立 final-eval 工具（--stage stage1|stage2 --record-dir ...）。"
+                    )
+                    final_eval_result = None
                 else:
                     from Paean.embedded import run_embedded_final_eval
 
