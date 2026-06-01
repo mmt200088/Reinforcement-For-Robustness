@@ -105,6 +105,16 @@ def run_embedded_final_eval(
     if should_run_blb_action_eval:
         from .blb_action_eval import BLBActionFinalEvaluationModule
 
+        # The BLB path's "random_count" was previously a stand-in for the
+        # legacy perm/cost/budget family counts; the SF-K-first comparison
+        # uses --cost-match-count (default 50). If the user explicitly turned
+        # on legacy random groups via --random + non-zero perm/cost/budget
+        # trials, treat that as a request to also pull a same-cost random
+        # group. ``cost_match_count`` is the source of truth from now on.
+        random_enabled = bool(
+            settings.random_enabled
+            or settings.cost_match_count > 0
+        )
         runner = BLBActionFinalEvaluationModule(
             evaluator=evaluator,
             config_source="search",
@@ -112,7 +122,7 @@ def run_embedded_final_eval(
             manual_stage1_gelu=None,
             manual_stage1_softmax=None,
             random_seed=settings.random_seed,
-            random_enabled=True,
+            random_enabled=random_enabled,
             random_count=(
                 settings.perm_trials
                 + settings.cost_trials
@@ -125,6 +135,10 @@ def run_embedded_final_eval(
             action_config_path=settings.action_config,
             action_ranges=settings.action_ranges,
             action_fixed=settings.action_fixed,
+            cost_match_count=settings.cost_match_count,
+            cost_match_max_attempts=settings.cost_match_max_attempts,
+            glue_submission_enabled=settings.glue_submission_enabled,
+            glue_submission_seed=settings.glue_submission_seed,
         )
         return runner.run(
             search_best_stage1=search_best_stage1,

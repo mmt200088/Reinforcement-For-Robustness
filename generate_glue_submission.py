@@ -1023,6 +1023,18 @@ def main():
                         help="Path to JSON config with GELU/Softmax configurations per task")
     parser.add_argument("--noise_config", type=str, default=None,
                         help="Path to JSON config with noise scaling factor configurations per task")
+    parser.add_argument("--blb_action_config", type=str, default=None,
+                        help="Path to BLB action JSON (slot-form schema_version=blb_v3_slots_human_v1, "
+                             "or any schema accepted by Paean.action_grid.load_action_grid_config). "
+                             "When set, the script switches to the BLB Stage-2 submission path: the "
+                             "task chosen via --blb_task is run with the decoded BLB action installed "
+                             "(via BLBNoiseRLBridge); every other GLUE task runs the textattack baseline "
+                             "(original GELU + exp, no noise).")
+    parser.add_argument("--blb_task", type=str, default=None,
+                        help="Which GLUE task the BLB action was trained for (e.g. mrpc). "
+                             "Required when --blb_action_config is set.")
+    parser.add_argument("--blb_seed", type=int, default=42,
+                        help="Random seed for reproducible BLB-noise sampling (default: 42).")
     parser.add_argument("--output_dir", type=str, default="run",
                         help="Output sub-directory name; final path will be "
                              "glue_submission/<output_dir> (default: run)")
@@ -1053,6 +1065,42 @@ def main():
                              "gpt-2 (openai-community/gpt2, 12 layers, uses freshly "
                              "initialized classification head — fine-tune before use).")
     args = parser.parse_args()
+
+    # BLB action path (new): switches the whole submission to the BLB Stage-2
+    # noise pipeline for the named task, runs every other task on baseline.
+    if args.blb_action_config is not None:
+        if args.blb_task is None:
+            parser.error("--blb_task is required when --blb_action_config is set")
+        if args.config is not None or args.noise_config is not None:
+            parser.error(
+                "--blb_action_config is mutually exclusive with --config / --noise_config "
+                "(the BLB pipeline derives its own GELU/Softmax degrees from the JSON)."
+            )
+        normalized_output_dir = os.path.normpath(args.output_dir)
+        already_under_glue_submission = (
+            normalized_output_dir == "glue_submission"
+            or normalized_output_dir.startswith(f"glue_submission{os.sep}")
+        )
+        if os.path.isabs(args.output_dir) or already_under_glue_submission:
+            final_output_dir = normalized_output_dir
+        else:
+            final_output_dir = os.path.join("glue_submission", normalized_output_dir)
+        summary = generate_blb_glue_submission(
+            action_config_path=args.blb_action_config,
+            blb_task=args.blb_task,
+            model_type=args.model_type,
+            output_dir=final_output_dir,
+            seed=int(args.blb_seed),
+            device=args.device,
+            allow_cpu=bool(args.allow_cpu),
+            max_length=int(args.max_length),
+            batch_size=int(args.batch_size),
+        )
+        print(json.dumps({k: v for k, v in summary.items() if k != "failures"}, indent=2))
+        if summary.get("failures"):
+            print(f"\nFailures: {summary['failures']}")
+            sys.exit(1)
+        return
 
     if not args.no_approx and args.config is None:
         parser.error("--config is required when not using --no_approx")
@@ -1259,6 +1307,374 @@ def main():
     else:
         print("\nSome checks failed or placeholders were used. "
               "Please verify the output files before submitting.")
+
+
+def _seed_all_for_reproducibility(seed: int) -> None:
+    import random as _random
+
+    seed = int(seed) & 0xFFFFFFFF
+    _random.seed(seed)
+    np.random.seed(seed)
+    try:
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except Exception:
+        pass
+
+
+def _process_blb_task(
+        *,
+        task_name: str,
+        task_config: dict,
+        action_vec: np.ndarray,
+        profile: str,
+        gelu_degrees,
+        softmax_degrees,
+        output_dir: str,
+        device,
+        max_length: int = 128,
+        batch_size: int = 16,
+        ) -> None:
+    """Mirror of ``process_task`` for BLB action vectors.
+
+    Installs BLB Stage-2 noise via :class:`BLBNoiseRLBridge` after running
+    ``Rescale_optimizer`` over the decoded cfgs. Uses ``apply_approx_configuration``
+    for the GELU/Softmax polynomial degrees that came alongside the BLB action.
+    """
+    if _DATASETS_IMPORT_ERROR is not None:
+        raise ImportError(
+            "The 'datasets' package is required for GLUE submission generation."
+        ) from _DATASETS_IMPORT_ERROR
+    if _TRANSFORMERS_IMPORT_ERROR is not None:
+        raise ImportError(
+            "The 'transformers' package is required for GLUE submission generation."
+        ) from _TRANSFORMERS_IMPORT_ERROR
+
+    from blb_rl_bridge import BLBNoiseRLBridge
+    from blb_stage2_rl.action_space import (
+        action_vector_to_cfgs as _action_vector_to_cfgs,
+        load_max_sfs as _load_max_sfs,
+    )
+
+    print(f"\n{'=' * 60}")
+    print(f"Task: {task_name.upper()} (BLB action path)")
+    print(f"  GELU:    {list(gelu_degrees)}")
+    print(f"  Softmax: {list(softmax_degrees)}")
+    print(f"  BLB profile: {profile}, action_length={int(np.asarray(action_vec).size)}")
+    print(f"{'=' * 60}")
+
+    model_name = task_config['model_name']
+    print(f"  Loading model: {model_name}")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token if tokenizer.eos_token else "[PAD]"
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_name,
+        num_labels=task_config['num_labels'],
+        pad_token_id=tokenizer.pad_token_id,
+        trust_remote_code=True,
+    )
+    model.to(device)
+
+    model_id2label = None
+    if hasattr(model.config, 'id2label') and model.config.id2label:
+        model_id2label = {int(k): str(v) for k, v in model.config.id2label.items()}
+        print(f"  Model label mapping: {model_id2label}")
+    else:
+        print("  [Warning] model.config.id2label missing; falling back to TASK_REGISTRY label_map")
+
+    handler = ReversibleLayerHandler(model)
+    layers_attr = detect_layer_attribute(model)
+    num_layers = len(eval('model.' + layers_attr))
+    print(f"  Layers: {layers_attr} ({num_layers} layers)")
+
+    # Stage 1 approximation (BLB action only encodes Stage-2 noise; GELU /
+    # Softmax degrees come from the accompanying stage1 ladder).
+    assert len(gelu_degrees) == num_layers, (
+        f"GELU config length ({len(gelu_degrees)}) != model layers ({num_layers})"
+    )
+    assert len(softmax_degrees) == num_layers, (
+        f"Softmax config length ({len(softmax_degrees)}) != model layers ({num_layers})"
+    )
+    apply_approx_configuration(handler, layers_attr, list(gelu_degrees), list(softmax_degrees))
+
+    # Mirror Paean.blb_action_eval._run_single_blb_eval: decode action → cfgs
+    # → BLBNoiseRLBridge.apply. The final-eval probe does NOT call
+    # apply_optimizer_output_to_cfg (it installs the action-decoded cfgs
+    # directly), so GLUE submission stays consistent with the metrics the
+    # 50× repeat eval reports.
+    max_sfs = _load_max_sfs(str(profile))
+    decoded = _action_vector_to_cfgs(
+        action_vec=np.asarray(action_vec, dtype=int),
+        max_sfs=max_sfs,
+        num_layers=int(num_layers),
+        gelu_degree=np.asarray(gelu_degrees, dtype=int),
+        attn_degree=np.asarray(softmax_degrees, dtype=int),
+    )
+    noise_bridge = BLBNoiseRLBridge(handler, layers_attribute="model." + layers_attr)
+    noise_bridge.apply(
+        block1_cfgs=decoded.block1_cfgs,
+        block2_cfgs=decoded.block2_cfgs,
+        block3_cfgs=decoded.block3_cfgs,
+        block4_cfgs=decoded.block4_cfgs,
+        block5_cfgs=decoded.block5_cfgs,
+    )
+
+    model.to(device)
+    model.eval()
+
+    print(f"  Loading GLUE test set: {task_config['glue_name']}")
+    data = load_dataset("nyu-mll/glue", task_config['glue_name'])
+    data_collator = DataCollatorWithPadding(
+        tokenizer=tokenizer,
+        padding="max_length",
+        max_length=max_length,
+        return_tensors="pt",
+        pad_to_multiple_of=8,
+    )
+    test_splits = task_config['test_split']
+    output_files = task_config['output_file']
+    try:
+        if isinstance(test_splits, list):
+            for split_name, out_file in zip(test_splits, output_files):
+                print(f"  Processing split: {split_name}")
+                test_data = tokenize_and_prepare(
+                    data[split_name], tokenizer, task_config['input_cols'], max_length,
+                )
+                dataloader = DataLoader(
+                    test_data, batch_size=batch_size, shuffle=False, collate_fn=data_collator,
+                )
+                logits = run_inference(model, dataloader, device)
+                predictions = logits_to_predictions(logits, task_config, task_name, model_id2label)
+                write_tsv(os.path.join(output_dir, out_file), predictions)
+        else:
+            test_data = tokenize_and_prepare(
+                data[test_splits], tokenizer, task_config['input_cols'], max_length,
+            )
+            dataloader = DataLoader(
+                test_data, batch_size=batch_size, shuffle=False, collate_fn=data_collator,
+            )
+            logits = run_inference(model, dataloader, device)
+            predictions = logits_to_predictions(logits, task_config, task_name, model_id2label)
+            write_tsv(os.path.join(output_dir, output_files), predictions)
+    finally:
+        try:
+            noise_bridge.clear()
+        except Exception:
+            pass
+        try:
+            handler.backup_model = None
+        except Exception:
+            pass
+        del handler
+        model.to('cpu')
+        del model
+        import gc as _gc
+        _gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
+def generate_blb_glue_submission(
+        *,
+        action_config_path: str,
+        blb_task: str,
+        model_type: str = "bert-base",
+        output_dir: str = "glue_submission",
+        seed: int = 42,
+        profile: str = "",
+        gelu_degree=None,
+        softmax_degree=None,
+        device: str = "auto",
+        allow_cpu: bool = False,
+        max_length: int = 128,
+        batch_size: int = 16,
+        log_fn=None,
+        ) -> dict:
+    """Generate a GLUE submission zip for a BLB Stage-2 action.
+
+    The ``blb_task`` task uses the BLB-decoded action installed via
+    :class:`BLBNoiseRLBridge`. Every other task runs the textattack baseline
+    (original GELU + exp, no noise) so the submission zip is complete.
+    """
+    log_fn = log_fn or print
+    if not os.path.isfile(action_config_path):
+        raise FileNotFoundError(f"BLB action config not found: {action_config_path}")
+    payload = json.loads(open(action_config_path, "r", encoding="utf-8-sig").read())
+
+    # Resolve effective profile + Stage 1 degrees from caller args; fall back
+    # to the JSON file if the caller did not supply them.
+    profile = str(profile or payload.get("profile") or blb_task)
+    gelu_list = list(gelu_degree) if gelu_degree is not None else (
+        list(payload.get("gelu_degree") or [])
+    )
+    softmax_list = list(softmax_degree) if softmax_degree is not None else (
+        list(payload.get("attn_degree") or payload.get("softmax_degree") or [])
+    )
+    if not gelu_list or not softmax_list:
+        raise ValueError(
+            "BLB GLUE submission requires Stage-1 GELU + Softmax degrees. "
+            "Either pass gelu_degree/softmax_degree or include them under "
+            "'gelu_degree'/'attn_degree' in the action config JSON."
+        )
+
+    # Resolve the BLB action vec via the canonical loader (handles slot-form,
+    # base+overrides, and flat action_vec schemas).
+    from Paean.action_grid import load_action_grid_config
+    num_layers_hint = int(payload.get("num_layers") or len(gelu_list))
+    grid_cfg = load_action_grid_config(
+        action_config_path,
+        num_layers_hint=num_layers_hint,
+        profile=str(profile),
+        gelu_degree=gelu_list,
+        attn_degree=softmax_list,
+    )
+    if grid_cfg.base_action_vec is None:
+        raise ValueError(
+            "BLB GLUE submission requires a concrete action vector in the JSON "
+            "(slots/base+overrides/action_vec). Got config without a base."
+        )
+    if isinstance(grid_cfg.base_action_vec, str):
+        from blb_stage2_rl.action_space import (
+            make_all_max_action_vector as _all_max,
+            make_all_min_action_vector as _all_min,
+        )
+        text = grid_cfg.base_action_vec.lower()
+        if text in ("max", "all-max", "all_max", "blb-baseline", "blb_baseline",
+                    "rescale-baseline", "rescale_baseline"):
+            action_vec = _all_max(num_layers_hint).astype(int)
+        elif text in ("min", "all-min", "all_min"):
+            action_vec = _all_min(num_layers_hint).astype(int)
+        else:
+            raise ValueError(f"BLB GLUE: unsupported base action sentinel '{text}'")
+    else:
+        action_vec = np.asarray(grid_cfg.base_action_vec, dtype=int)
+
+    # Resolve device with the same policy as ``main``: GPU-first, optional CPU.
+    requested = str(device or "auto").lower()
+    if requested == "auto":
+        if torch.cuda.is_available():
+            device_resolved = "cuda"
+        elif allow_cpu:
+            device_resolved = "cpu"
+            log_fn("[Device] auto -> cpu (CUDA unavailable, allow_cpu=True)")
+        else:
+            raise RuntimeError(
+                "CUDA unavailable and allow_cpu=False; GLUE inference on CPU is "
+                "extremely slow. Re-call with allow_cpu=True to override."
+            )
+    elif requested.startswith("cuda"):
+        if not torch.cuda.is_available():
+            if allow_cpu:
+                log_fn(f"[Warning] {requested} requested but CUDA unavailable; falling back to CPU.")
+                device_resolved = "cpu"
+            else:
+                raise RuntimeError(
+                    f"{requested} requested but CUDA unavailable. Set allow_cpu=True to override."
+                )
+        else:
+            device_resolved = requested
+    else:
+        device_resolved = requested
+
+    output_dir = os.path.abspath(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    remove_stale_submission_files(output_dir)
+
+    blb_task = str(blb_task).strip().lower()
+    if blb_task not in TASK_REGISTRY:
+        raise KeyError(f"Unknown BLB task '{blb_task}'; valid tasks: {sorted(TASK_REGISTRY)}")
+
+    log_fn(f"[BLB GLUE] model_type={model_type}, blb_task={blb_task}, profile={profile}")
+    log_fn(f"[BLB GLUE] output_dir={output_dir}, device={device_resolved}, seed={seed}")
+    log_fn(f"[BLB GLUE] action_config={action_config_path}")
+
+    _seed_all_for_reproducibility(int(seed))
+
+    failures = []
+    skips = []
+    # 1) Inference on the BLB-trained task with the BLB action installed.
+    blb_cfg = dict(TASK_REGISTRY[blb_task])
+    if model_type == "bert-large" and blb_task in BERT_LARGE_MODEL_NAMES:
+        blb_cfg['model_name'] = BERT_LARGE_MODEL_NAMES[blb_task]
+    elif model_type == "gpt-2" and blb_task in GPT2_MODEL_NAMES:
+        blb_cfg['model_name'] = GPT2_MODEL_NAMES[blb_task]
+    try:
+        _process_blb_task(
+            task_name=blb_task,
+            task_config=blb_cfg,
+            action_vec=action_vec,
+            profile=str(profile),
+            gelu_degrees=gelu_list,
+            softmax_degrees=softmax_list,
+            output_dir=output_dir,
+            device=device_resolved,
+            max_length=int(max_length),
+            batch_size=int(batch_size),
+        )
+    except Exception as exc:
+        failures.append((blb_task, type(exc).__name__, str(exc)))
+        log_fn(f"[Error] BLB task '{blb_task}' failed: {type(exc).__name__}: {exc}")
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    # 2) Baseline inference for every other GLUE task (original GELU + exp,
+    # no noise). MNLI implies AX (AX uses the MNLI model on the diagnostic set).
+    other_tasks = [
+        name for name in sorted(TASK_REGISTRY.keys())
+        if name != blb_task
+    ]
+    # de-dup mnli/ax pair: AX always uses the MNLI checkpoint, so we still need
+    # to enumerate it separately for the test split.
+    for task_name in other_tasks:
+        task_cfg = dict(TASK_REGISTRY[task_name])
+        if model_type == "bert-large":
+            if task_name not in BERT_LARGE_MODEL_NAMES:
+                log_fn(f"[Warning] '{task_name}' has no bert-large checkpoint; "
+                       "will be filled with placeholders.")
+                skips.append((task_name, "unsupported_model_checkpoint"))
+                continue
+            task_cfg['model_name'] = BERT_LARGE_MODEL_NAMES[task_name]
+        elif model_type == "gpt-2":
+            if task_name not in GPT2_MODEL_NAMES:
+                log_fn(f"[Warning] '{task_name}' has no gpt-2 checkpoint; will be filled with placeholders.")
+                skips.append((task_name, "unsupported_model_checkpoint"))
+                continue
+            task_cfg['model_name'] = GPT2_MODEL_NAMES[task_name]
+        try:
+            process_task(
+                task_name, task_cfg, gelu_degrees=None, softmax_degrees=None,
+                noise_config=None, output_dir=output_dir, device=device_resolved,
+                max_length=int(max_length), batch_size=int(batch_size),
+                no_approx=True, no_noise=True,
+            )
+        except Exception as exc:
+            failures.append((task_name, type(exc).__name__, str(exc)))
+            log_fn(f"[Error] Baseline task '{task_name}' failed: {type(exc).__name__}: {exc}")
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    placeholder_files = fill_missing_submission_files(output_dir)
+    ok = verify_outputs(output_dir)
+    zip_path = create_submission_zip(output_dir)
+
+    summary = {
+        "zip_path": zip_path,
+        "output_dir": output_dir,
+        "blb_task": blb_task,
+        "model_type": model_type,
+        "profile": str(profile),
+        "seed": int(seed),
+        "failures": [
+            {"task": name, "exc_type": etype, "message": msg}
+            for name, etype, msg in failures
+        ],
+        "skipped": [{"task": name, "reason": reason} for name, reason in skips],
+        "placeholder_files": list(sorted(placeholder_files or [])),
+        "verify_ok": bool(ok),
+    }
+    return summary
 
 
 if __name__ == "__main__":

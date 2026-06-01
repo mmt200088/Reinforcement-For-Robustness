@@ -836,6 +836,27 @@ class SequentialRolloutBuffer:
         returns = advantages + values
         return returns, advantages
 
+    def grpo_advantages(
+            self,
+            *,
+            eps: float = 1e-4,
+            outlier_clip: float = 0.0,
+            ) -> np.ndarray:
+        """Per-step group-relative (GRPO) advantage, aligned with ``to_tensors``.
+
+        Outcome-supervised: each episode's total (summed) reward is normalized
+        across the whole update window (the GRPO "group" -- every episode starts
+        from the same frozen model + static_skeletons baseline) and broadcast to
+        every step of that episode. No critic / GAE. See
+        ``grpo_common.grpo_per_step_advantages``.
+        """
+        from grpo_common import grpo_per_step_advantages
+        rewards = [t.reward for t in self._buf]
+        dones = [t.done for t in self._buf]
+        return grpo_per_step_advantages(
+            rewards, dones, eps=float(eps), outlier_clip=float(outlier_clip),
+        )
+
     def to_tensors(
             self,
             device: torch.device,
@@ -1185,6 +1206,206 @@ def sequential_ppo_update(
         "entropy_recovery_delta": metrics_sum["entropy_recovery_delta"] / n_mb,
         "return_mean": float(return_normalizer.mean if return_normalizer is not None else 0.0),
         "return_std": float(return_normalizer.std if return_normalizer is not None else 1.0),
+        "nonfinite_minibatches": int(nonfinite_minibatches),
+        "nonfinite_update_skipped": bool(nonfinite_minibatches > 0 and metrics_sum["n_minibatches"] == 0),
+    }
+
+
+def sequential_grpo_update(
+        policy: BLBStage2SequentialPolicy,
+        reference_policy: Optional[BLBStage2SequentialPolicy],
+        optimizer: torch.optim.Optimizer,
+        buffer: SequentialRolloutBuffer,
+        cfg: SequentialPPOConfig,
+        device: torch.device,
+        ent_coef_override: Optional[float] = None,
+        kl_beta: float = 0.04,
+        ) -> dict:
+    """Run a GRPO-clip update over the buffer's transitions.
+
+    Minimal swap of PPO's advantage estimator (2026-05-31 PPO->GRPO design):
+
+    * **advantage** = group-relative episode return -- the update window IS the
+      group (every episode starts from the same frozen model + static_skeletons
+      baseline), broadcast to all of an episode's steps. No GAE, no critic.
+    * **no value loss** -- the critic head is left untrained (gets no gradient).
+    * **+ ``kl_beta`` * KL(policy || reference)** via the unbiased k3 estimator
+      ``exp(Δ)-Δ-1`` (Δ = ref_logp - new_logp) against a frozen reference snapshot.
+
+    The clipped surrogate, entropy bonus, per-slot entropy recovery, KL-adaptive
+    LR, early stop, and warmstart-prior replay all match
+    :func:`sequential_ppo_update` exactly. The returned metrics keep the same
+    keys as PPO (``value_loss``/``return_mean``/... reported as 0) plus
+    ``kl_ref``/``kl_beta`` so existing logging/diagnostics keep working.
+    """
+    empty = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
+             "clip_fraction": 0.0, "n_samples": 0, "ent_coef": 0.0,
+             "approx_kl": 0.0, "kl_early_stop": False,
+             "lr": float(cfg.lr), "lr_scale": 1.0,
+             "entropy_recovery_delta": 0.0, "return_mean": 0.0, "return_std": 1.0,
+             "kl_ref": 0.0, "kl_beta": float(kl_beta),
+             "nonfinite_minibatches": 0, "nonfinite_update_skipped": False}
+    if len(buffer) == 0:
+        return empty
+    effective_ent_coef = (
+        float(cfg.ent_coef) if ent_coef_override is None else float(ent_coef_override)
+    )
+
+    (
+        states, actions, slot_masks, levels, level_masks,
+        old_log_probs, _old_values, _returns, _gae_adv, prior_scales,
+    ) = buffer.to_tensors(
+        device, gamma=cfg.gamma, lam=cfg.gae_lambda, advantage_normalize=False,
+    )
+    # GRPO group-relative advantage (window = group) replaces GAE entirely.
+    adv_np = buffer.grpo_advantages(
+        outlier_clip=float(getattr(cfg, "adv_outlier_clip", 6.0)),
+    )
+    advantages = torch.from_numpy(
+        np.ascontiguousarray(adv_np, dtype=np.float32)
+    ).to(device)
+
+    n = states.shape[0]
+    indices = np.arange(n)
+    current_lr, lr_scale = _apply_adaptive_kl_lr(policy, optimizer, cfg)
+    use_ref = reference_policy is not None and float(kl_beta) > 0.0
+
+    metrics_sum = {"policy_loss": 0.0, "entropy": 0.0, "clip_fraction": 0.0,
+                   "approx_kl": 0.0, "kl_ref": 0.0,
+                   "entropy_recovery_delta": 0.0, "n_minibatches": 0}
+    kl_early_stop = False
+    nonfinite_minibatches = 0
+
+    def _backoff_after_nonfinite() -> None:
+        nonlocal current_lr, lr_scale
+        min_ratio = float(getattr(cfg, "kl_adaptive_min_ratio", 0.25))
+        backoff = float(getattr(cfg, "nonfinite_lr_backoff", 0.5))
+        lr_scale = float(max(min_ratio, float(lr_scale) * max(0.0, backoff)))
+        policy._ppo_lr_scale = lr_scale
+        current_lr = float(cfg.lr) * lr_scale
+        for group in optimizer.param_groups:
+            group["lr"] = current_lr
+
+    for _ in range(int(cfg.n_epochs)):
+        np.random.shuffle(indices)
+        mb_size = max(1, int(cfg.minibatch_size))
+        for start in range(0, n, mb_size):
+            end = min(n, start + mb_size)
+            mb = torch.from_numpy(indices[start:end]).long().to(device)
+            mb_states = states.index_select(0, mb)
+            mb_actions = actions.index_select(0, mb)
+            mb_slot_masks = slot_masks.index_select(0, mb)
+            mb_levels = levels.index_select(0, mb)
+            mb_level_masks = (
+                None if level_masks is None else level_masks.index_select(0, mb)
+            )
+            mb_prior = prior_scales.index_select(0, mb)
+            new_log_probs, entropy, _value, entropy_per_slot = policy.evaluate_action(
+                mb_states, mb_actions, mb_slot_masks, mb_levels,
+                action_level_mask=mb_level_masks,
+                baseline_prior_scale=mb_prior,
+                return_per_slot_entropy=True,
+            )
+            old_lp = old_log_probs.index_select(0, mb)
+            adv = advantages.index_select(0, mb)
+            ratio = torch.exp(new_log_probs - old_lp)
+            unclipped = ratio * adv
+            clipped = torch.clamp(ratio, 1.0 - cfg.clip_range, 1.0 + cfg.clip_range) * adv
+            policy_loss = -torch.min(unclipped, clipped).mean()
+
+            # reference-policy KL (k3 unbiased estimator), frozen reference.
+            if use_ref:
+                with torch.no_grad():
+                    ref_out = reference_policy.evaluate_action(
+                        mb_states, mb_actions, mb_slot_masks, mb_levels,
+                        action_level_mask=mb_level_masks,
+                        baseline_prior_scale=mb_prior,
+                        return_per_slot_entropy=False,
+                    )
+                ref_log_probs = ref_out[0]
+                delta = ref_log_probs - new_log_probs
+                kl_ref = (torch.exp(delta) - delta - 1.0).mean()
+            else:
+                kl_ref = torch.zeros((), device=device)
+
+            entropy_mean = entropy.mean()
+            entropy_recovery_delta = torch.zeros((), device=device)
+            if bool(getattr(cfg, "per_slot_entropy_recovery", True)):
+                msk = mb_slot_masks.float()
+                lvl = mb_levels.float().clamp_min(1.0)
+                entropy_floor = (
+                    float(getattr(cfg, "per_slot_entropy_floor_frac", 0.22))
+                    * torch.log(lvl) * msk
+                )
+                entropy_deficit = torch.relu(entropy_floor - entropy_per_slot) * msk
+                denom = torch.clamp(msk.sum(), min=1.0)
+                entropy_recovery_delta = entropy_deficit.sum() / denom
+            loss = (
+                policy_loss
+                - effective_ent_coef * entropy_mean
+                - float(getattr(cfg, "per_slot_entropy_recovery_multiplier", 6.0))
+                * entropy_recovery_delta
+                + float(kl_beta) * kl_ref
+            )
+            finite_tensors = (new_log_probs, entropy, ratio, policy_loss,
+                              entropy_mean, entropy_recovery_delta, kl_ref, loss)
+            if not all(bool(torch.isfinite(t).all().item()) for t in finite_tensors):
+                nonfinite_minibatches += 1
+                kl_early_stop = True
+                optimizer.zero_grad(set_to_none=True)
+                _backoff_after_nonfinite()
+                break
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            if cfg.max_grad_norm is not None and cfg.max_grad_norm > 0:
+                grad_norm = torch.nn.utils.clip_grad_norm_(policy.parameters(), cfg.max_grad_norm)
+                if not bool(torch.isfinite(grad_norm).item()):
+                    nonfinite_minibatches += 1
+                    kl_early_stop = True
+                    optimizer.zero_grad(set_to_none=True)
+                    _backoff_after_nonfinite()
+                    break
+            optimizer.step()
+            with torch.no_grad():
+                clip_frac = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean().item()
+                approx_kl = (old_lp - new_log_probs).mean().item()
+            metrics_sum["policy_loss"] += float(policy_loss.item())
+            metrics_sum["entropy"] += float(entropy_mean.item())
+            metrics_sum["clip_fraction"] += float(clip_frac)
+            metrics_sum["approx_kl"] += float(approx_kl)
+            metrics_sum["kl_ref"] += float(kl_ref.detach().item())
+            metrics_sum["entropy_recovery_delta"] += float(entropy_recovery_delta.detach().item())
+            metrics_sum["n_minibatches"] += 1
+        n_seen = max(1, int(metrics_sum["n_minibatches"]))
+        epoch_avg_kl = metrics_sum["approx_kl"] / float(n_seen)
+        if nonfinite_minibatches > 0:
+            break
+        if (
+                bool(getattr(cfg, "use_kl_early_stop", True))
+                and float(epoch_avg_kl) > 1.5 * float(getattr(cfg, "kl_target", 0.02))
+        ):
+            kl_early_stop = True
+            break
+
+    n_mb = max(1, metrics_sum["n_minibatches"])
+    avg_kl = metrics_sum["approx_kl"] / n_mb
+    policy._ppo_last_avg_kl = float(avg_kl)
+    return {
+        "policy_loss": metrics_sum["policy_loss"] / n_mb,
+        "value_loss": 0.0,
+        "entropy": metrics_sum["entropy"] / n_mb,
+        "clip_fraction": metrics_sum["clip_fraction"] / n_mb,
+        "approx_kl": float(avg_kl),
+        "kl_ref": metrics_sum["kl_ref"] / n_mb,
+        "kl_beta": float(kl_beta),
+        "kl_early_stop": bool(kl_early_stop),
+        "n_samples": int(n),
+        "ent_coef": float(effective_ent_coef),
+        "lr": float(current_lr),
+        "lr_scale": float(lr_scale),
+        "entropy_recovery_delta": metrics_sum["entropy_recovery_delta"] / n_mb,
+        "return_mean": 0.0,
+        "return_std": 1.0,
         "nonfinite_minibatches": int(nonfinite_minibatches),
         "nonfinite_update_skipped": bool(nonfinite_minibatches > 0 and metrics_sum["n_minibatches"] == 0),
     }

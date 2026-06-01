@@ -9,7 +9,6 @@
 配套文档：
 - [GLOBALS.md](GLOBALS.md) — 全局常量 / 写死路径 / 跨文件耦合点清单
 - [REORG_PLAN.md](REORG_PLAN.md) — 下一步（Phase 2）的目录重构计划
-- [STATUS.md](STATUS.md) — 由 `tools/status_board.py` 生成的 RL/GA/General-RL/Compare 任务进度总板
 
 ---
 
@@ -26,11 +25,10 @@ Local_program/
 │   ├── ARCHITECTURE.md    # 本文件
 │   ├── GLOBALS.md         # 全局部件清单
 │   ├── REORG_PLAN.md      # Phase-2 目录重构方案
-│   ├── STATUS.md          # 自动生成的进度总板（tools/status_board.py）
 │   └── assets/            # 论文、结构图、Excel 等参考资料
 │
 ├── tools/                 ★ 新：辅助工具（非训练核心逻辑）
-│   └── status_board.py    # 扫描 rl_results/ 生成进度总板
+│   └── experiments_log.py # 跨运行实验登记 + index.md 重建
 │
 ├── presets/               # bash 脚本使用的 .conf 预设
 ├── tests/                 # pytest 测试（import 路径基于项目根）
@@ -117,7 +115,31 @@ Local_program/
 
 ## 4. 结果目录命名规则
 
-### 4.1 持久化（可续）训练：`Parting Chapter/persistent/`
+### 4.0 解耦后 canonical RL（2026-06-01，新）：`Parting Chapter/stage{1,2}/`
+
+canonical RL（`run rl --mode stage1-only|stage2-only`）已与旧 `persistent/` slug 布局
+解耦，改用**每个微调模型+数据集 combo 一个扁平工作目录**：
+
+```
+Parting Chapter/
+├── stage1/
+│   ├── bert base mrpc/          # 工作目录，产物直接落这；约束在 metadata.json
+│   │   ├── stage1_rl_checkpoint.pt / ppo_*_curve.png / metadata.json / COMPLETED
+│   └── record/
+│       └── bert base mrpc 1 20260530/   # 完成归档：final_config/final_eval/curves/report/metadata
+└── stage2/                        # 同形；工作目录内部用 progress/
+    ├── bert base mrpc/ (progress/ …)
+    └── record/ …
+```
+
+- combo = `{model_type '-'→' '} {dataset}`（带空格，如 `bert base mrpc`）；run-id = `{combo} {N} {YYYYMMDD}`。
+- `run rl` 必须显式 `--mode stage1-only|stage2-only`；链式 `train/eval/search-only` 报错。
+- Stage-2 默认从 `stage1/record/`（最大 N，或 `--stage1-run-id`）读前置 Stage-1。
+- 约束 `s1t/s2t/s2st` 进 `metadata.json`（不在路径里），续训时不一致则报错要求 `--fresh`。
+- 唯一事实来源：`config/run_layout.py`。spec：`docs/superpowers/specs/2026-05-30-decouple-stage1-stage2-persistence-design.md`。
+- 旧 `persistent/` 布局（下方 §4.1）GA/greedy/general/compare/legacy 继续沿用，不迁移。
+
+### 4.1 持久化（可续）训练（GA/greedy/general/compare/legacy）：`Parting Chapter/persistent/`
 
 ```
 Parting Chapter/persistent/{algorithm}/{model_type}/{dataset}/{accuracy_slug}/
@@ -140,7 +162,7 @@ Parting Chapter/runs/compare/rl_vs_ga/{dataset}/
   LATEST_COMPARE_RUN_DIR
   comp_1/, comp_2/, ..., 20260413_213848_pid1143993/
     children/rl/, children/ga/        # 分别是 RL 和 GA 子 run 的产物
-    meta/compare_final_status.json    # 完成后状态（status_board 用这个）
+    meta/compare_final_status.json    # 完成后状态
     meta/compare_metadata.json        # 数据集/模型/base_model
     meta/compare_status.json          # 运行中状态
     meta/compare.pid
@@ -149,8 +171,6 @@ Parting Chapter/runs/compare/rl_vs_ga/{dataset}/
     reports/stage{1,2}_compare_plot_{dataset}.png
     reports/stage{1,2}_compare_summary_{dataset}.json
 ```
-
-`status_board.py` 把这些 meta/reports 聚合成总板。
 
 ---
 
@@ -215,14 +235,13 @@ Parting Chapter/runs/compare/rl_vs_ga/{dataset}/
 所以 Phase 1 选择的路径是：**不动核心 .py**，先
 - 建 `config/` 聚合路径 / 常量（新代码可用，旧代码先不改）
 - 建 `docs/` 放所有人类可读文档
-- 建 `tools/status_board.py` 做进度总板
 - 写好 Phase-2 的挪移计划 [REORG_PLAN.md](REORG_PLAN.md)，等你确认后再动核心模块
 
 ---
 
 ## 7. 快速上手一些常见任务
 
-- **查看当前各个任务跑到哪了**：`python tools/status_board.py`
+- **查看当前各个任务跑到哪了**：看 `experiments/index.md`（`python tools/experiments_log.py rebuild` 重建）或 `Parting Chapter/stage{1,2}/record/` 归档；也可以直接让 agent 帮你整理 / 查找各次训练结果
 - **改一个全局路径**：先去 [GLOBALS.md](GLOBALS.md) 搜一下，看看几个文件里都有它；Phase 1 还得一处一处改，Phase 3 会变成只改 `config/paths.py`
 - **新加一个 GLUE 任务**：搜 `TASK_REGISTRY`，至少 4 个模块要同步加
 - **停掉正在跑的 Stage-2 RL**：在对应 `rl_results/noise_rl_progress/.../` 或持久化目录里 `touch STOP_RL`

@@ -2674,7 +2674,8 @@ class ReversibleLayerHandler:
                 if cached is not None and "forward" not in vars(cached):
                     new_act = cached
                 else:
-                    new_act = PolynomialGELU(degree=degree)
+                    # degree 0 = ReLU（用 ReLU 替换 GELU）；其余 degree 用多项式 GELU。
+                    new_act = nn.ReLU() if int(degree) == 0 else PolynomialGELU(degree=degree)
                     self._approx_gelu_rebuilds += 1
                     if self.reuse_approx_modules:
                         self._approx_gelu_cache[(i, degree)] = new_act

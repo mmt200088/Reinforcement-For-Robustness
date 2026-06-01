@@ -7,13 +7,13 @@ So Stage-1's parallelism is **data-parallel rollout collection**: each of
 the N GPUs runs ``episodes_per_worker`` complete episodes (per-layer policy
 decisions + final eval) independently. After all workers finish, the
 per-episode rollouts merge into the central ``RecurrentRolloutBuffer`` and
-one PPO update happens on the shared GTrXL policy.
+one PPO update happens on the shared Stage-1 policy.
 
 Design (mirrors Stage-2 conventions where they fit):
 
-* **One PPO learner, one action stream.** Caller owns the GTrXL network on
+* **One PPO learner, one action stream.** Caller owns the Stage-1 policy on
   the primary device. Worker threads transfer state tensors to that device
-  for action sampling under a lock; the GTrXL forward is tiny so lock
+  for action sampling under a lock; the policy forward is tiny so lock
   serialization is negligible.
 * **Worker 0 reuses the evaluator's primary model.** No extra GPU memory.
 * **Workers 1..N-1 deepcopy the BERT model onto their device** plus their
@@ -130,15 +130,13 @@ class EpisodeRollout:
     Field names match ``RecurrentRolloutBuffer._current`` so the caller can
     splat directly via ``buffer.episodes.append(rollout.to_buffer_dict())``.
 
-    Tensor fields stay on CPU; the GTrXL PPO update path moves the whole
+    Tensor fields stay on CPU; the Stage-1 PPO update path moves the whole
     buffer to the target device via ``RecurrentRolloutBuffer.get_batch``.
     """
     cont_features: List[torch.Tensor]
     layer_indices: List[int]
     prev_g_actions: List[int]
-    prev_s_actions: List[int]
     actions_g: List[int]
-    actions_s: List[int]
     logprobs: List[torch.Tensor]
     rewards: List[float]
     values: List[torch.Tensor]
@@ -162,9 +160,7 @@ class EpisodeRollout:
             "cont_features": list(self.cont_features),
             "layer_indices": list(self.layer_indices),
             "prev_g_actions": list(self.prev_g_actions),
-            "prev_s_actions": list(self.prev_s_actions),
             "actions_g": list(self.actions_g),
-            "actions_s": list(self.actions_s),
             "logprobs": list(self.logprobs),
             "rewards": list(self.rewards),
             "values": list(self.values),
@@ -246,7 +242,7 @@ class Stage1ParallelRunner:
         self._collect_episode = collect_episode_fn
         self._log = log_fn or (lambda _msg: None)
         self.last_diagnostics: Optional[Stage1ParallelRunnerDiagnostics] = None
-        # The GTrXL lock is owned by the runner so multiple windows reuse it
+        # The policy lock is owned by the runner so multiple windows reuse it
         # (cheap; lock acquire/release are nanosecond-scale ops).
         self._gtrxl_lock = threading.Lock()
 
@@ -381,8 +377,8 @@ def build_stage1_parallel_runner(
                             helpers without circular import).
         device_ids:         e.g. ``[0, 1, 2, 3]``. ``device_ids[0]`` is the
                             primary device.
-        eval_split_name:    Dataloader split used for the per-episode reward
-                            (``"train"`` / proxy / ``"validation_full"``).
+        eval_split_name:    Dataloader split used for the per-episode reward.
+                            Stage-1 protocol uses ``"validation_full"``.
         log_fn:             Optional log sink; defaults to silent.
 
     Raises:

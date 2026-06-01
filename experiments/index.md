@@ -1,26 +1,22 @@
 # Experiments index
 
-_Auto-generated from `/hy-tmp/Reinforcement-For-Robustness/experiments/registry.jsonl` on 2026-05-19T21:34:56+08:00. Edit `notes` field in registry.jsonl to annotate a run; rerun `python3 tools/experiments_log.py rebuild` to refresh._
+_Auto-generated from `/var/folders/4k/w3ccv4d14m964xjmws95x39h0000gn/T/blb_smoke_vslyituc/registry.jsonl` on 2026-05-23T17:48:11+08:00. Edit `notes` field in registry.jsonl to annotate a run; rerun `python3 tools/experiments_log.py rebuild` to refresh._
 
-- Total registered run_ids: **5**
-- By status: complete=5
-- By dataset: mrpc=5
+- Total registered run_ids: **1**
+- By status: complete=1
+- By dataset: mrpc=1
 
 ## Best so far (per dataset)
 
 | Dataset | Best reward | Final loss | Final metric1 | Run ID |
 |---|---:|---:|---:|---|
-| mrpc | +38.1492 |  |  | `s1t0.005_s2t0.005_s` |
+| mrpc | +0.4200 | 0.4000 | 0.8000 | `20260516_smoke_pid1` |
 
 ## All runs (most recent first)
 
 | Run ID | Dataset | Algo | Preset | Seed | Status | Time | Best | Loss | Metric1 | Git | Persistent |
 |---|---|---|---|---:|---|---:|---:|---:|---:|---|---|
-| s1t0.005_s2t0.005_s | mrpc | rl | Stage-1 config (json) | 42 | complete | 0.10h | +37.7616 |  |  | `⚠dirty` | `progress` |
-| s1t0.005_s2t0.005_s | mrpc | rl | Stage-1 config (json) | 42 | complete | 0.16h | +37.9960 |  |  | `⚠dirty` | `progress` |
-| s1t0.005_s2t0.005_s | mrpc | rl | Stage-1 config (json) | 42 | complete | 0.16h | +37.7616 |  |  | `⚠dirty` | `progress` |
-| s1t0.005_s2t0.005_s | mrpc | rl | Stage-1 config (json) | 42 | complete | 0.16h | +38.1492 |  |  | `⚠dirty` | `progress` |
-| s1t0.005_s2t0.005_s | mrpc | rl | Stage-1 config (json) | 42 | complete | 7.84h | -117.9821 |  |  | `⚠dirty` | `progress` |
+| 20260516_smoke_pid1 | mrpc | rl | smoke-test | 42 | complete | 0.03h | +0.4200 | 0.4000 | 0.8000 | `⚠dirty` | `fake` |
 
 ---
 

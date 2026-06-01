@@ -500,16 +500,27 @@ bash llama_7B_LayerImportance.sh general train --general-rl-tasks mrpc,cola,rte,
 
 **Paean final-eval module** (`Paean/run_final_eval.{sh,py}`) is now the standalone final-eval entrypoint, separate from training. Knobs:
 - Presets live in `Paean/presets/` (`mrpc-final-eval-only.conf`, `mrpc-blb-action-range.conf`, `mrpc-blb-max-final-eval.conf`, `mrpc-blb-baseline-truncation-sweep.conf`, `mrpc-blb-baseline-fixed.conf`, `default.conf`).
-- Standalone mode does NOT generate random/perm/equiv/budget controls unless you pass `--random`; the `--perm-trials` / `--cost-trials` / `--budget-trials` defaults are `0` here (training-triggered passive final-eval still defaults to `10` each).
 - `--action-config PATH` loads a BLB action JSON; `--range NAME=v1,v2,...` (repeatable) expands a cartesian grid; `--action-fixed NAME=v` (repeatable) pins a slot. Names support global / per-block / per-layer selectors (`truncation=…`, `block3.truncation=…`, `layer2.block5.wffn1_sf=…`).
 - Outputs land under `Paean/outputs/{dataset}/{algorithm}/{run}/final_eval/` by default.
 - Passive (training-end) final-eval is configured via `--final-eval-preset NAME` (resolved against `Paean/presets/`); training-side `--random-seed` / `--budget` / `--final-eval-repeat` do NOT control it.
 
-**Status board** (aggregates running RL/GA/general/compare jobs into one markdown):
+**BLB Stage-2 final eval (new 2026-05-24).** When the run produces a BLB action vec (`blb_v3_best_action_vec`) — auto-detected by `embedded.run_embedded_final_eval` and the launcher's `--action-config` path — `Paean/blb_action_eval.BLBActionFinalEvaluationModule` runs:
+1. **Selected action** evaluated `--repeat` times (default 50) on `validation_full`; mean/std of loss + metric1 + metric2 reported.
+2. **Cost-matched random group** (`--cost-match-count`, default 50) of additional random BLB action vecs whose Rescale_optimizer cost matches the selected anchor on all three axes (`total_bits_sum`, `total_fusion_count`, `sum_truncation_k`). Rejection sampling capped by `--cost-match-max-attempts` (default 5000); invalid + cost-mismatch + cheap `sum_k` pre-filter draws all count toward the cap. Each accepted candidate evaluated `--repeat` times on `validation_full`. Sampler lives in `Paean.action_grid.build_cost_matched_random_action_candidates`; sum-k pre-filter uses `blb_stage2_rl.action_space.sum_truncation_k_in_action`.
+3. **Report**: Markdown table (selected + random, mean±std + cost columns), 4-panel bar chart (loss/metric1/bits/time), and a new mean×std scatter plot (`blb_action_final_eval_scatter_<dataset>.png`) overlaying selected vs random. Comparison summary + sampling diagnostics emit into `blb_action_final_eval_results_<dataset>.json`.
+4. **GLUE submission** auto-generated when `--glue-submission` (default on) into `<final_eval_dir>/glue_submission/{TASK.tsv, submission.zip, blb_action_used.json}`. Only the BLB-trained task uses the BLB action via `BLBNoiseRLBridge`; all other GLUE tasks run the textattack baseline (original GELU + exp, no noise). Disable with `--no-glue-submission`. Seed via `--glue-submission-seed` (default 42).
 
+**BLB GLUE submission can also be triggered manually** without going through final eval:
 ```bash
-python tools/status_board.py --write-md   # rewrites docs/STATUS.md
+python generate_glue_submission.py \
+  --blb_action_config Paean/action_configs/manual_blb_v3_overrides_template.json \
+  --blb_task mrpc \
+  --output_dir glue_blb_mrpc \
+  --model_type bert-base
 ```
+Reads the action JSON via `Paean.action_grid.load_action_grid_config` (any schema: full slots, base+overrides, flat action_vec). Stage-1 GELU/Softmax degrees come from the JSON's `gelu_degree` / `attn_degree` fields (auto-trigger writes them; manual users supply them).
+
+**Manual action JSON templates** live at `Paean/action_configs/manual_blb_v3_overrides_template.json` (sparse base+overrides, easiest starting point) and `manual_blb_v3_full_slots_template.json` (full slots form — copy `blb_stage2_best_action_full.json` from a training run and prune).
 
 **Long-term research workflow** (added 2026-05-16; see HTML guide §11 for prose):
 
@@ -694,10 +705,11 @@ Field-level details live in the registry, not here, but the conceptual scope of 
 - **Block 5** — LayerNorm tail + Wffn1 + GELU polynomial chain. High-order GELU coefficient/power rescales become inactive at low GELU degree.
 - **first-input fresh** — DEPRECATED (2026-05). Originally a layer-0 input fresh slot; since the first HE config is now treated as lossless, this slot stays in the action vector for backward compat but `effective=False` and is not installed.
 
-### Persistent directories (two distinct trees)
+### Persistent directories (three trees now)
 
-- **Old stage-2 RL + Stage-1 RL + GA + general-RL**: `Parting Chapter/persistent/{algorithm}/{model}/{dataset}/{accuracy_slug}/...` (`accuracy_slug` is e.g. `s1t0.005_s2t0.05_s2st0.05`). Same parameters → same dir → auto-resume. See `docs/ARCHITECTURE.md` §4.
-- **BLB Stage-2 RL (blb_v3)**: `Parting Chapter/persistent/{algorithm}/{model}/{dataset}/{accuracy_slug}/blb_stage2/progress/`. The runner overrides `evaluator.noise_stage_progress_dir` at the start of `run()` so all BLB checkpoints / status board / curves / final report land inside the active persistent run directory. See `resolve_blb_persistence_dir()` in `blb_stage2_rl/runner.py`.
+- **Decoupled canonical RL (NEW, 2026-06-01 — `--mode stage1-only` / `--mode stage2-only`)**: `Parting Chapter/stage{1,2}/{combo}/` — flattened, **one working dir per fine-tuned-model+dataset combo** (`combo` = `"{model_type with '-'→' '} {dataset}"`, e.g. `bert base mrpc`, with spaces). Stage-1 products land directly under the combo dir; Stage-2 under `…/{combo}/progress/`. Completed runs archive read-only to `Parting Chapter/stage{1,2}/record/{combo} {N} {YYYYMMDD}/` (`final_config.json` + basic-single-eval `final_eval.json` + curves + `report.md` + `metadata.json`); a `COMPLETED` marker lands in the working dir. Constraints (`s1t/s2t/s2st`) live in `metadata.json` (not the path), with a resume-time mismatch guard (→ `--fresh`). Stage-2 reads its prerequisite Stage-1 degrees from `stage1/record/` (max-`N`, or `--stage1-run-id`; `--stage2-fixed-config` JSON overrides — one Stage-2 binds to exactly one Stage-1). **`run rl` REQUIRES an explicit `--mode`**; chained `train`/`eval`/`search-only` error with guidance. Root follows the `Parting Chapter` ↔ `GRPO Chapter` swap. SSOT: `config/run_layout.py`. Spec: `docs/superpowers/specs/2026-05-30-decouple-stage1-stage2-persistence-design.md` (§12 = locked grilled refinements). Final-eval is decoupled — completion writes only a basic snapshot; the heavy same-cost comparison is a separate standalone tool.
+- **Legacy `persistent/` tree (GA / greedy / general-RL / compare / legacy v2 Stage-2)**: `Parting Chapter/persistent/{algorithm}/{model}/{dataset}/{accuracy_slug}/...` (`accuracy_slug` e.g. `s1t0.005_s2t0.05_s2st0.05`). Same parameters → same dir → auto-resume. **Unchanged** by the decoupling; existing data stays readable (no migration). See `docs/ARCHITECTURE.md` §4.
+- **BLB Stage-2 RL dir resolution**: `resolve_blb_persistence_dir()` now branches — decoupled → `…/stage2/{combo}/progress/`, legacy → `…/{accuracy_slug}/blb_stage2/progress/`. The runner overrides `evaluator.noise_stage_progress_dir` at the start of `run()` so all BLB checkpoints / status board / curves / report land inside the active run dir.
 
 In each BLB run dir you'll find (all SF/K-first since 2026-05-16):
 
@@ -816,7 +828,7 @@ The runner's "final eval" path must install the actual BLB best action (decode �
 ## Conventions worth knowing
 
 - **Don't directly call `rl_tune*.py`**. The launcher does conflict checks (e.g. `legacy_v2` rejects BLB-only flags), generates the persistent slug, and creates `LATEST_PID` / `LATEST_RUN_DIR` markers under `Parting Chapter/persistent/`.
-- **First time for a parameter combo always needs `--fresh`**. The launcher refuses to start otherwise to prevent accidental overwrites.
+- **First time for a parameter combo always needs `--fresh`** — EXCEPT the decoupled canonical RL path (`--mode stage1-only` / `stage2-only`), where the first run of a combo starts automatically; there `--fresh` only wipes an in-progress or already-`COMPLETED` working dir. GA / greedy / general-RL / legacy still require `--fresh` on first run.
 - **MC repeated evaluation, not single trial.** Multi-trial probe (sampling RNG independent of `torch.manual_seed`) + per-slot entropy logging beat single-shot rewards. A single noise trial is not evidence.
 - **Warmstart toward all-max baseline.** Action space is huge; uniform-random rollouts produce mostly invalid candidates. Bias the actor toward each slot's all-max index at init — this constrains the *prior*, not the search.
 - **GLUE network instability.** `rl_tune.py` honors `GLUE_LOCAL_DATASET_DIR` / `GLUE_DATASET_DIR` / `DatasetDict.save_to_disk` dirs / local parquet / HF cache `local_files_only=True` fallback. Pre-stage data and `export GLUE_LOCAL_DATASET_DIR=...` before remote long runs.

@@ -88,21 +88,95 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   environment. The Stage-1 reward cost denominator still uses the old high-degree
   cost reference `gelu=4, softmax=6` so cost savings remain well-defined; do not
   interpret that cost reference as the metric baseline.
-- Stage-1 mental model and speed note, added 2026-05-25: Stage-1 is a
-  plaintext-only search over GELU and Softmax polynomial degrees. It should only
-  replace those two functions, using the replacement logic in
-  `function_handler.py`; it should not inject BLB/noise. GELU choices are
-  degrees `1`, `2`, and `4`; Softmax choices are degrees `2`, `3`, `4`, `5`,
-  and `6`. The Stage-1 RL code is in `layer_importance_evaluator.py`, and a
-  BERT-base episode has 12 per-layer decisions. Stage-1 inference tests must use
-  the full validation set (`validation_full`) during both RL reward evaluation
-  and final evaluation; do not switch Stage-1 online reward or final eval to the
-  training set or a validation proxy to improve speed unless the user explicitly
-  changes this protocol. Do not judge Stage-1 throughput from the 12 decisions
-  alone: the required terminal full-validation model-forward pass can dominate
-  runtime. Four-GPU Stage-1 rollout is window-style data parallelism across
-  complete episodes; worker logs and sampled GPU utilization are better evidence
-  than a single instantaneous `nvidia-smi` snapshot.
+- Stage-1 mental model and speed note, updated 2026-05-31: Stage-1 is a
+  plaintext-only search over per-layer GELU replacement choices. It should only
+  replace GELU and the fixed Softmax approximation through
+  `function_handler.py`; it should not inject BLB/noise. Current Stage-1 RL only
+  decides GELU. Softmax is no longer an action and is fixed to degree `6` for
+  every layer. GELU choices are degrees `4`, `2`, `1`, and `0`, where degree
+  `0` means replacing GELU with ReLU. The Stage-1 RL code is in
+  `layer_importance_evaluator.py`, and a BERT-base episode has 12 per-layer
+  GELU decisions. Stage-1 inference tests must use the full validation set
+  (`validation_full`) during both RL reward evaluation and final evaluation; do
+  not switch Stage-1 online reward or final eval to the training set or a
+  validation proxy to improve speed unless the user explicitly changes this
+  protocol. Do not judge Stage-1 throughput from the 12 decisions alone: the
+  required terminal full-validation model-forward pass can dominate runtime.
+  Four-GPU Stage-1 rollout is window-style data parallelism across complete
+  episodes; worker logs and sampled GPU utilization are better evidence than a
+  single instantaneous `nvidia-smi` snapshot.
+- Stage-1 PPO vs GRPO MRPC comparison, added 2026-05-31: run BERT-base MRPC
+  Stage-1 twice, first PPO then GRPO, both to entropy convergence with
+  `--stage1-search-episodes 0`, `--stage1-entropy-stop-threshold 0.1`,
+  `--stage1-accuracy-tolerance 0.001`, `--stage1-search-lr 2e-5`,
+  `--ppo-update-interval 120`, and `--stage1-rl-devices 0,1,2,3`. PPO output
+  belongs under
+  `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.05_s2st0.05`;
+  GRPO output belongs under
+  `GRPO Chapter/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.05_s2st0.05`.
+  Current server monitor log root:
+  `/hy-tmp/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526`.
+  PPO PID `638501` is running first; wrapper PID `639985` waits for PPO exit
+  before launching fresh GRPO. After both finish, build an HTML report comparing
+  wall-clock speed, reward/loss/metric/entropy curves, final GELU configs, and
+  full-validation inference metrics for baseline/PPO/GRPO with percentage
+  deltas versus the original plaintext baseline.
+- Stage-1 GRPO MRPC current snapshot, added 2026-06-01: while the GRPO run was
+  still active, a snapshot report was generated at
+  `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/grpo_current_snapshot_20260601_164215/stage1_mrpc_grpo_current_result_report.html`.
+  The snapshot checkpoint had `112320` completed episodes, `936` GRPO updates,
+  entropy `0.6420237422` above the `0.1` stop threshold, and best reward
+  `0.7910256242` first reached at episode `27271`. Current reward-best config
+  is `GELU=[0,1,0,1,1,1,1,1,1,1,1,0]`, Softmax fixed to degree `6` in every
+  layer, cost `42.00`. Deterministic validation_full inference gave original
+  baseline loss/accuracy/F1 `0.3462543786`/`0.8774509804`/`0.8744220872` and
+  GRPO current-best loss/accuracy/F1
+  `0.3330092728`/`0.8799019608`/`0.8797757292`; this is a running snapshot, not
+  final entropy-converged GRPO evidence.
+- Stage-1 PPO vs GRPO MRPC comparison completion, added 2026-06-01: by user
+  request, the active GRPO process `705245` was stopped after visual convergence
+  rather than waiting for the configured `entropy < 0.1` stop. The code's
+  official stop threshold remains `0.1`; for the comparison report, GRPO runtime
+  is measured at the first `entropy < 0.6` point, which occurred at update
+  `337`, episode `40440`, entropy `0.5758088231`, with interpolated elapsed
+  time `6.9782` hours. The final stopped checkpoint had `116520` episodes and
+  `971` updates. GRPO reward-best was first selected at episode `27271`:
+  `GELU=[0,1,0,1,1,1,1,1,1,1,1,0]`, Softmax all `6`, cost `42.00`, reward
+  `0.7910256242`. The final comparison report is
+  `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/stage1_mrpc_ppo_vs_grpo_comparison_report_20260601_172333.html`.
+- Stage-1 grouped plaintext inference check, added 2026-05-30: BERT-base MRPC
+  validation_full was evaluated with Softmax degree 6 for every layer and four
+  GELU variants. The local report is
+  `experiments/server_command_runs/stage1_group_inference_mrpc_20260530_165907/stage1_group_inference_mrpc_report.html`.
+  Results on 408 validation examples were: GELU degree 1 loss `0.3512777090`,
+  accuracy `0.8799019608`, weighted F1 `0.8777671950`; GELU degree 2 loss
+  `0.3460941315`, accuracy `0.8725490196`, weighted F1 `0.8693989707`; GELU
+  degree 4 loss `0.3434863985`, accuracy `0.8799019608`, weighted F1
+  `0.8774415001`; GELU replaced by ReLU loss `0.8100994229`, accuracy
+  `0.3161764706`, weighted F1 `0.1519060138`. This was a pure Stage-1
+  plaintext inference test: no BLB bridge, no Stage-2 noise, and no Stage-2
+  configuration was used.
+- Stage-1 layerwise ReLU plaintext inference check, added 2026-05-30:
+  BERT-base MRPC validation_full was evaluated with Softmax degree 6 in every
+  layer, GELU degree 4 in all non-target layers, and exactly one layer's GELU
+  replaced by ReLU per group. The local report is
+  `experiments/server_command_runs/stage1_layerwise_relu_mrpc_20260530_170734/stage1_layerwise_relu_mrpc_report.html`.
+  Results for target ReLU layer 0..11 were: L0 loss `0.3352130055`, accuracy
+  `0.8774509804`, weighted F1 `0.8760590106`; L1 loss `0.3441292346`,
+  accuracy `0.8872549020`, weighted F1 `0.8859742898`; L2 loss
+  `0.3209853172`, accuracy `0.8897058824`, weighted F1 `0.8885879653`; L3
+  loss `0.3437007368`, accuracy `0.8676470588`, weighted F1 `0.8670759166`;
+  L4 loss `0.3642531335`, accuracy `0.8627450980`, weighted F1
+  `0.8557755617`; L5 loss `0.3494089246`, accuracy `0.8578431373`, weighted
+  F1 `0.8500977999`; L6 loss `0.3281662464`, accuracy `0.8676470588`,
+  weighted F1 `0.8661437315`; L7 loss `0.3290436566`, accuracy `0.8602941176`,
+  weighted F1 `0.8617458367`; L8 loss `0.4215985239`, accuracy `0.8014705882`,
+  weighted F1 `0.8080592745`; L9 loss `0.3363590539`, accuracy `0.8627450980`,
+  weighted F1 `0.8593527376`; L10 loss `0.3407069147`, accuracy
+  `0.8651960784`, weighted F1 `0.8608544155`; L11 loss `0.3356979489`,
+  accuracy `0.8799019608`, weighted F1 `0.8774415001`. This was also a pure
+  Stage-1 plaintext inference test with no BLB bridge, no Stage-2 noise, and no
+  Stage-2 configuration.
 - Stage-1 reward boundary-search update, added 2026-05-28: future Stage-1 RL
   launches after the active `large_mrpc` run must use the latest commit with
   the revised Stage-1 reward. Differential metric reward is behind
@@ -259,6 +333,19 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   validation_full protocol and four-GPU rollout settings, and entropy convergence
   stopping: stop cleanly at a PPO update once policy entropy is below `0.1`
   rather than treating a fixed episode count as the success criterion.
+- Stage-1 MRPC PPO-best metric check, added 2026-06-01: the diagnostic
+  validation_full report at
+  `experiments/server_command_runs/stage1_original_vs_ppo_best_vs_all4_mrpc_20260601_141846/stage1_original_vs_ppo_best_vs_all4_mrpc_report.html`
+  compared original GELU/Softmax, PPO best
+  `GELU=[0,1,1,1,1,1,1,1,1,0,1,0]` with Softmax fixed at `6`, and
+  all-`GELU=4`/all-`Softmax=6`. Original and PPO best have identical aggregate
+  `m1=0.8774509804`, `m2=0.8744220872`, prediction counts, and confusion
+  matrix `[[94,35],[15,264]]`, but not identical per-sample predictions
+  (`26/408` predictions differ). The metric computation is consistent with the
+  confusion matrix; do not interpret equal m1/m2 as proof that the two configs
+  predict the same examples. All4/All6 scored `m1=0.8799019608`,
+  `m2=0.8774415001`, loss `0.3434863985`, while PPO best had lower loss
+  `0.3370108604`.
 - Decision boundary for this goal: make small corrective changes autonomously
   when the evidence supports them, including hyperparameter tuning, watchdog
   threshold changes, narrow diagnostic instrumentation, and focused bug fixes
@@ -729,6 +816,18 @@ experiment reproduction.
 8. The first HE config is treated as lossless. Layer 0 Block 1 is reserved in
    the action vector but not installed; `first_input_sf` is a deprecated
    compatibility tail slot and is not installed.
+9. Stage-2 config is strictly bound to one Stage-1 config. The Stage-1 GELU
+   degree and Softmax degree chosen per layer fully determine the shape of
+   Stage-2 Block 3 (softmax exp approximation, graph key `block3_exp_n<softmax>`)
+   and Block 5 (GELU polynomial chain, graph key `block5_n<gelu>`). One Stage-1
+   config maps to many possible Stage-2 configs; one Stage-2 config maps to
+   exactly one Stage-1 config, never multiple. Stage-2 is "stage 2" because it
+   takes the plaintext model selected by Stage-1, converts it into a CKKS+MPC
+   ciphertext model, then optimizes that ciphertext model. A Stage-2 result is
+   therefore meaningless without its prerequisite Stage-1 config: every Stage-2
+   record / final-eval must carry the Stage-1 config it was built on, and any
+   cost-matched Stage-2 sampling holds that Stage-1 config fixed (only Stage-2
+   cost varies).
 
 ## Current BLB Action Space
 
@@ -805,7 +904,6 @@ python scripts/blb_f0_scan_feasible_domain.py ...
 python scripts/blb_orphan_slot_audit.py --profile mrpc
 python scripts/blb_verify_noise_install.py --mode smoke --profile mrpc --num-layers 12
 python scripts/blb_make_run_manifest.py ...
-python tools/status_board.py --write-md
 ```
 
 The registry exporter is the authority for action-index mapping, effective
@@ -1016,6 +1114,37 @@ stage2_noise/progress/
 
 Older docs that mention `blb_stage2/progress/` are stale for current code.
 
+**Decoupling IMPLEMENTED 2026-06-01 (local, py_compile/bash-n/torch-free verified;
+behavioral verification pending on the server).** Stage-1 and Stage-2 RL are split
+into separate, never-chained runs with one **flattened** working dir per combo (no
+constraint-slug): `Parting Chapter/stage1/{combo}/` (products directly inside) and
+`Parting Chapter/stage2/{combo}/` (`…/progress/` inside), where
+`combo = {model_type with '-'→' '} {dataset}` (e.g. `bert base mrpc`, spaces
+intended). Constraint tolerances live in `metadata.json` (with a resume-time
+mismatch guard → `--fresh`). On completion each stage best-effort snapshots
+`final_config.json` + basic-single-eval `final_eval.json` + curves + `report.md` +
+`metadata.json` into `Parting Chapter/stage{1,2}/record/{combo} {N} {YYYYMMDD}/`
+(`N` = existing combo records + 1; run-id e.g. `bert base rte 1 20260530`) and
+writes a `COMPLETED` marker in the working dir. Stage-2 reads its prerequisite
+Stage-1 degrees from `stage1/record/` (max-N or `--stage1-run-id`,
+`--stage2-fixed-config` JSON overrides) and its record stores BOTH the action and
+that Stage-1 config (Critical Mental Model #9). **`run rl` REQUIRES an explicit
+`--mode stage1-only`/`stage2-only`**; chained `train`/`eval`/`search-only` error
+with guidance; the `eval` SUBcommand (→ Paean standalone final-eval) is untouched.
+Final-eval auto-trigger is removed — completion writes only a basic snapshot; the
+heavy same-cost comparison is a separate standalone tool (its own spec). Root
+follows the `Parting Chapter`↔`GRPO Chapter` swap. SSOT for the layout:
+`config/run_layout.py`. GA/greedy/general/compare and legacy v2 keep the old
+`persistent/{algorithm}/{model}/{dataset}/{accuracy_slug}/` layout (no migration).
+Spec (§12 = locked grilled refinements):
+`docs/superpowers/specs/2026-05-30-decouple-stage1-stage2-persistence-design.md`.
+Key code: launcher `llama_7B_LayerImportance.sh` (rl branch + `DECOUPLED_LAYOUT` +
+`--stage1-run-id` + constraint guard), `rl_tune.py` (threads `decoupled_layout`/
+`stage1_run_id`), `layer_importance_evaluator.py`
+(`resolve_run_output_layout(flattened=…)`, `_resolve_stage1_degrees_from_record`,
+`_maybe_snapshot_decoupled_stage1_record`), `blb_stage2_rl/runner.py`
+(`resolve_blb_persistence_dir` flatten + Stage-2 snapshot).
+
 ## Candidate Evidence and Fidelity
 
 The active promotion ladder is:
@@ -1063,6 +1192,23 @@ Standalone Paean mode does not run random/permutation/equivalent/budget
 controls unless requested. The passive training-end preset `Paean/presets/default.conf`
 does enable random comparison groups.
 
+**In-progress final-eval decoupling (design APPROVED 2026-05-30, NOT yet
+implemented).** Final-eval is becoming a standalone full-validation tool,
+decoupled from training (the training-end auto-trigger
+`Paean/embedded.run_embedded_final_eval` is removed; training completion only
+snapshots config + curves + a basic single-eval metric into the `record`). Two
+separate tools write under `Paean/stage1/{combo} {N} {YYYYMMDD}/` and
+`Paean/stage2/{combo} {N} {YYYYMMDD}/` (flat numbered dirs, independent
+"final-eval 序号"; replaces `Paean/outputs/.../final_eval/`). Input:
+`--stage stage1|stage2 --record-dir <path>` (or `--run-id`) pointing at a Parting
+Chapter `record` run. Stage-1 FE: 50 same-(stage1)-cost RL-domain peer configs +
+the selected, 1 eval each on validation_full, no noise / no stage2, 3 sorted-bar
+plots (loss/m1/m2, selected highlighted). Stage-2 FE (adapts
+`BLBActionFinalEvaluationModule`): Stage-1 held FIXED to the record's prerequisite
+Stage-1, 50 same-(stage2)-cost VALID peers + selected, `--repeat` (default 50)
+trials each, 6 sorted-bar plots (loss/m1/m2 + their std). Spec:
+`docs/superpowers/specs/2026-05-30-decoupled-standalone-final-eval-design.md`.
+
 ## Block Scope
 
 - Block 1: post-FFN/GELU output, Wffn2, LayerNorm mean/variance head. Not
@@ -1088,6 +1234,18 @@ in prose comments.
 - Warmstart toward the static-skeleton baseline is a prior, not a restriction.
 - GLUE loading is flaky over network. Prefer local caches via
   `GLUE_LOCAL_DATASET_DIR`, `GLUE_DATASET_DIR`, HF cache, or saved parquet.
+- Stage-1-only GLUE submission packages for the 2026-06-01 BERT-base MRPC
+  PPO/GRPO comparison were generated under
+  `experiments/server_command_runs/glue_stage1_ppo_grpo_mrpc_submission_20260601_180334/`.
+  The generated zips are
+  `ppo_stage1_submission/submission.zip` and
+  `grpo_stage1_submission/submission.zip`. MRPC is real test-set inference;
+  the other GLUE TSVs are official-format placeholders because the selected
+  Stage-1 configs are MRPC-specific. The run used only Stage-1 GELU/Softmax
+  replacement configs, no `--noise_config`, no `--blb_action_config`, and no
+  Stage-2/BLB noise. The current `generate_glue_submission.py` Stage-1 helper
+  must include GELU degree `0` when applying configs; degree `0` is ReLU via
+  `ReversibleLayerHandler.replace_layer_gelu`.
 - Console logs may pass through GBK on Windows. Keep console-facing text robust;
   file logs are UTF-8.
 - Do not add broad artifact patterns to `.gitignore` blindly. Many reports and

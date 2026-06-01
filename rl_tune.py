@@ -605,11 +605,20 @@ def train(
         final_eval_action_config: str = "",
         final_eval_action_ranges: str = "",
         final_eval_action_fixed: str = "",
+        # Same-cost random comparison group for the BLB Stage-2 final eval.
+        final_eval_cost_match_count: int = 50,
+        final_eval_cost_match_max_attempts: int = 5000,
+        # Auto-generate a GLUE benchmark submission zip after final eval.
+        final_eval_glue_submission_enabled: bool = True,
+        final_eval_glue_submission_seed: int = 42,
         skip_noise_rl: bool = False,
         skip_stage1_rl: bool = False,
         skip_final_eval: bool = False,
         final_eval_only: bool = False,
         resume_run_dir: str = "",
+        # 2026-06-01 解耦：新输出布局开关 + stage2-only 的前置 Stage-1 record 选择。
+        decoupled_layout: bool = False,
+        stage1_run_id: str = "",
         # accuracy constraint params
         stage1_accuracy_tolerance: float = None,
         stage2_limit_tolerance: float = None,
@@ -671,6 +680,30 @@ def train(
         blb_v3_terminal_eval_batch_size: int = 4,
         blb_v3_promotion_validation_trials: int = 4,
         blb_v3_promotion_margin_window: float = 0.25,
+        # 2026-05-27: 4-sub-stage Stage-2 RL (opt-in). When True, trains one
+        # block per sub-stage in --blb_v3_substage_block_order; blocks listed
+        # in --blb_v3_substage_frozen_blocks stay at static_skeletons baseline
+        # (block 3 by design). See blb_stage2_rl/substage_runner.py.
+        blb_v3_substage_mode: bool = False,
+        blb_v3_substage_block_order: str = "1,2,4,5",
+        blb_v3_substage_frozen_blocks: str = "3",
+        blb_v3_substage_episodes_each: int = 15000,
+        blb_v3_substage_promotion_top_k: int = 5,
+        blb_v3_substage_promotion_trials: int = 8,
+        # 2026-05-27: COINN-style OSR pre-prune (opt-in). When osr_results_path
+        # is set, the runner either loads existing OSR results from that path
+        # or runs a fresh scan saving to that path; the resulting mask is
+        # applied alongside the existing 3 masks. osr_scan_only=True exits
+        # after the scan (use for the OSR-only preset).
+        blb_v3_osr_results_path: str = "",
+        blb_v3_osr_scan_only: bool = False,
+        blb_v3_osr_num_combo_samples: int = 300,
+        blb_v3_osr_allow_fingerprint_mismatch: bool = False,
+        # RL algorithm select (2026-05-31 PPO->GRPO). Single knob for BOTH stages.
+        # "ppo" (default) keeps the existing PPO; "grpo" uses the group-relative
+        # update + frozen-reference KL. grpo_kl_beta weights the reference-KL term.
+        rl_algo: str = "ppo",
+        grpo_kl_beta: float = 0.04,
         final_eval_require_rescale_optimizer: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
@@ -686,11 +719,15 @@ def train(
     skip_stage1_rl = parse_bool_flag(skip_stage1_rl, "skip_stage1_rl")
     skip_final_eval = parse_bool_flag(skip_final_eval, "skip_final_eval")
     final_eval_only = parse_bool_flag(final_eval_only, "final_eval_only")
+    decoupled_layout = parse_bool_flag(decoupled_layout, "decoupled_layout")
     final_eval_random_enabled = parse_bool_flag(
         final_eval_random_enabled, "final_eval_random_enabled"
     )
     final_eval_require_rescale_optimizer = parse_bool_flag(
         final_eval_require_rescale_optimizer, "final_eval_require_rescale_optimizer"
+    )
+    final_eval_glue_submission_enabled = parse_bool_flag(
+        final_eval_glue_submission_enabled, "final_eval_glue_submission_enabled"
     )
     blb_v3_action_mask_enabled = parse_bool_flag(
         blb_v3_action_mask_enabled, "blb_v3_action_mask_enabled"
@@ -705,6 +742,16 @@ def train(
     blb_v3_fast_reward_mode_enabled = parse_bool_flag(
         blb_v3_fast_reward_mode_enabled,
         "blb_v3_fast_reward_mode_enabled",
+    )
+    blb_v3_substage_mode = parse_bool_flag(
+        blb_v3_substage_mode, "blb_v3_substage_mode"
+    )
+    blb_v3_osr_scan_only = parse_bool_flag(
+        blb_v3_osr_scan_only, "blb_v3_osr_scan_only"
+    )
+    blb_v3_osr_allow_fingerprint_mismatch = parse_bool_flag(
+        blb_v3_osr_allow_fingerprint_mismatch,
+        "blb_v3_osr_allow_fingerprint_mismatch",
     )
     # --final_eval_only 语义：只跑 final eval，不跑任何 RL 搜索阶段。
     # 等价于自动设置 skip_stage1_rl=True & skip_noise_rl=True & skip_final_eval=False，
@@ -789,10 +836,10 @@ def train(
         f"manual_stage1_softmax: {manual_stage1_softmax}\n"
         f"manual_stage2_noise: {manual_stage2_noise}\n"
         f"stage1_rl_episodes: {stage1_rl_episodes}\n"
+        f"stage1_entropy_stop_threshold: {stage1_entropy_stop_threshold}\n"
         f"stage2_rl_episodes: {stage2_rl_episodes}\n"
         f"stage1_rl_episodes_specified: {stage1_rl_episodes_specified}\n"
         f"stage2_rl_episodes_specified: {stage2_rl_episodes_specified}\n"
-        f"stage1_entropy_stop_threshold: {stage1_entropy_stop_threshold}\n"
         f"skip_noise_rl: {skip_noise_rl}\n"
         f"final_eval_repeat_n: {final_eval_repeat_n}\n"
         f"final_eval_preset: {final_eval_preset}\n"
@@ -1213,12 +1260,18 @@ def train(
             final_eval_action_config=final_eval_action_config,
             final_eval_action_ranges=final_eval_action_ranges,
             final_eval_action_fixed=final_eval_action_fixed,
+            final_eval_cost_match_count=final_eval_cost_match_count,
+            final_eval_cost_match_max_attempts=final_eval_cost_match_max_attempts,
+            final_eval_glue_submission_enabled=final_eval_glue_submission_enabled,
+            final_eval_glue_submission_seed=final_eval_glue_submission_seed,
             final_eval_require_rescale_optimizer=final_eval_require_rescale_optimizer,
             skip_noise_rl=skip_noise_rl,
             skip_stage1_rl=skip_stage1_rl,
             skip_final_eval=skip_final_eval,
             final_eval_only=final_eval_only,
             resume_run_dir=resume_run_dir,
+            decoupled_layout=decoupled_layout,
+            stage1_run_id=stage1_run_id,
             data_path=data_path,
             test_data_mm=val_data_mm,
             stage1_accuracy_tolerance=stage1_accuracy_tolerance,
@@ -1270,6 +1323,18 @@ def train(
             blb_v3_terminal_eval_batch_size=blb_v3_terminal_eval_batch_size,
             blb_v3_promotion_validation_trials=blb_v3_promotion_validation_trials,
             blb_v3_promotion_margin_window=blb_v3_promotion_margin_window,
+            blb_v3_substage_mode=blb_v3_substage_mode,
+            blb_v3_substage_block_order=blb_v3_substage_block_order,
+            blb_v3_substage_frozen_blocks=blb_v3_substage_frozen_blocks,
+            blb_v3_substage_episodes_each=blb_v3_substage_episodes_each,
+            blb_v3_substage_promotion_top_k=blb_v3_substage_promotion_top_k,
+            blb_v3_substage_promotion_trials=blb_v3_substage_promotion_trials,
+            blb_v3_osr_results_path=blb_v3_osr_results_path,
+            blb_v3_osr_scan_only=blb_v3_osr_scan_only,
+            blb_v3_osr_num_combo_samples=blb_v3_osr_num_combo_samples,
+            blb_v3_osr_allow_fingerprint_mismatch=blb_v3_osr_allow_fingerprint_mismatch,
+            rl_algo=rl_algo,
+            grpo_kl_beta=grpo_kl_beta,
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

@@ -6,7 +6,7 @@
 - 所有值应与现有模块里写死的值保持**完全一致**；如果发现不一致，说明那里就是
   bug，请在各模块里修复后再更新这里。
 - Phase-1 阶段各模块仍然使用自己写死的字符串，本文件只作为**单一事实来源文档**
-  以及给新代码（``tools/status_board.py``、新实验脚本等）使用的入口。
+  以及给新代码（新实验脚本等）使用的入口。
 
 单一事实来源（Single Source of Truth）映射表见 ``docs/GLOBALS.md``。
 """
@@ -88,6 +88,33 @@ PERSISTENT_STAGE2_DETAILS_SUBDIR: str = "details"
 PERSISTENT_STAGE2_PROGRESS_SUBDIR: str = "progress"
 
 PRUNING_SEARCH_LOG_FILENAME: str = "pruning_search_log.txt"
+
+
+# ---------------------------------------------------------------------------
+# 解耦后的 RL 输出布局（2026-06-01）
+#
+# 与上面 ``persistent/`` 旧布局**并存**：旧布局给 GA / greedy / general-rl /
+# compare / legacy v2 Stage-2 继续使用；新布局只给 canonical RL Stage-1 +
+# canonical blb_v3 Stage-2 用。新布局把两阶段拆到 ``Parting Chapter`` 下的
+# ``stage1/`` 和 ``stage2/`` 顶层目录，每个微调模型+数据集 combo 只维护一个
+# **扁平**工作目录（产物直接落在 ``stage{1,2}/{combo}/`` 下），并在
+# ``stage{1,2}/record/{combo} {N} {YYYYMMDD}/`` 归档每次完成的运行。
+# 唯一事实来源（路径/编号逻辑）见 ``config/run_layout.py``。
+# ---------------------------------------------------------------------------
+
+STAGE1_SUBDIR: str = "stage1"
+"""新布局顶层 Stage-1 目录名：``Parting Chapter/stage1/...``（与旧的
+``PERSISTENT_STAGE1_SUBDIR`` 字符串相同但语义不同——后者是单次运行内部子目录）。"""
+
+STAGE2_SUBDIR: str = "stage2"
+"""新布局顶层 Stage-2 目录名：``Parting Chapter/stage2/...``。"""
+
+RECORD_SUBDIR: str = "record"
+"""新布局每阶段下的归档目录名：``Parting Chapter/stage{1,2}/record/...``。"""
+
+COMPLETED_MARKER_FILENAME: str = "COMPLETED"
+"""放在 ``stage{1,2}/{combo}/`` 下的完成标记文件名；存在即表示该工作目录里的
+运行已完成（已归档进 record/）。普通再次启动会因此报错，需 ``--fresh`` 重开。"""
 
 
 # ---------------------------------------------------------------------------

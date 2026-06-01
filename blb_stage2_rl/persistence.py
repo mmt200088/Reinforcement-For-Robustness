@@ -41,6 +41,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 BLB_STATUS_FILENAME = "blb_stage2_status.json"
 BLB_TRAINING_CURVE_PNG = "blb_stage2_training_curve.png"
 BLB_TRAINING_CURVE_NPZ = "blb_stage2_training_curve.npz"
+BLB_REWARD_PAPER_PNG = "blb_stage2_reward_paper.png"
+BLB_REWARD_PAPER_PDF = "blb_stage2_reward_paper.pdf"
 BLB_FINAL_REPORT_MD = "blb_stage2_report.md"
 BLB_ERROR_TXT = "blb_stage2_error.txt"
 BLB_EPISODE_TRACE_CSV = "blb_stage2_episode_trace.csv"
@@ -655,21 +657,59 @@ class BLBStatusBoard:
 # ---------------------------------------------------------------------------
 # 训练曲线
 # ---------------------------------------------------------------------------
+def _ema_smooth(values, window):
+    """Symmetric exponential moving average. ``window`` controls decay.
+
+    Used for the paper-style reward plot. Empty input → empty output.
+    """
+    import numpy as _np
+
+    arr = _np.asarray(list(values), dtype=float)
+    if arr.size == 0:
+        return arr
+    if window <= 1:
+        return arr.copy()
+    alpha = 2.0 / (float(window) + 1.0)
+    out = _np.empty_like(arr)
+    out[0] = arr[0]
+    for i in range(1, arr.size):
+        out[i] = alpha * arr[i] + (1.0 - alpha) * out[i - 1]
+    return out
+
+
 def write_training_curves(
         persistence_dir: str,
         *,
         episode_returns: Sequence[float],
         best_reward_curve: Optional[Sequence[float]] = None,
         ppo_loss_curve: Optional[Sequence[float]] = None,
+        substage_boundaries: Optional[Sequence[int]] = None,
+        substage_labels: Optional[Sequence[str]] = None,
+        ema_window: int = 200,
         log_fn=None,
         ) -> Dict[str, str]:
     """把训练曲线写成 PNG（matplotlib 可用时）+ NPZ（无脑兜底）。
 
+    Emits two PNGs:
+      * ``blb_stage2_training_curve.png`` (legacy 3-panel diagnostic)
+      * ``blb_stage2_reward_paper.png`` (single-panel paper-ready style)
+        + matching ``.pdf`` for vector inclusion.
+
+    Args:
+        substage_boundaries: optional list of episode indices (1-indexed) where
+            sub-stages switch. The paper plot draws a vertical guide line at
+            each boundary and labels it with the matching ``substage_labels``
+            entry.
+        substage_labels: labels printed at each boundary (e.g. ``"Sub-stage 2:
+            Block 2"``). Pass the same length as ``substage_boundaries``.
+        ema_window: window for the EMA smoothing line (paper plot foreground).
+
     Returns:
-        ``{"png": <png_path or "">, "npz": <npz_path or "">}``
+        ``{"png": <png_path or "">, "npz": <npz_path or "">,
+            "paper_png": <paper_path or "">, "paper_pdf": <paper_pdf or "">}``
     """
     log = log_fn or (lambda _msg: None)
-    out = {"png": "", "npz": ""}
+    out = {"png": "", "npz": "", "paper_png": "", "paper_pdf": ""}
     os.makedirs(persistence_dir, exist_ok=True)
 
     # NPZ 总是写（最稳）
@@ -731,6 +771,68 @@ def write_training_curves(
         out["png"] = png_path
     except Exception as exc:
         log(f"  [BLB曲线][信息] 跳过 PNG（matplotlib 不可用 / 渲染失败）：{exc}")
+
+    # Paper-style single-panel plot. Convention: gray raw trace alpha=0.3,
+    # bold EMA-smoothed foreground, optional best-so-far dashed line, and
+    # vertical guides at sub-stage boundaries. Intended for direct inclusion
+    # in publications; separate from the multi-panel diagnostic above.
+    try:
+        if episode_returns:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            import numpy as _np
+
+            paper_png = os.path.join(persistence_dir, BLB_REWARD_PAPER_PNG)
+            paper_pdf = os.path.join(persistence_dir, BLB_REWARD_PAPER_PDF)
+            raw = _np.asarray(episode_returns, dtype=float)
+            xs = _np.arange(1, raw.size + 1)
+            smoothed = _ema_smooth(raw, int(max(2, ema_window)))
+
+            fig, ax = plt.subplots(figsize=(6.5, 3.6))
+            ax.plot(xs, raw, color="#888888", linewidth=0.5, alpha=0.35,
+                    label="raw episode return")
+            ax.plot(xs, smoothed, color="#1f77b4", linewidth=1.8,
+                    label=f"EMA (window={int(ema_window)})")
+            if best_reward_curve and len(best_reward_curve) == raw.size:
+                ax.plot(
+                    xs,
+                    _np.asarray(best_reward_curve, dtype=float),
+                    color="#ff7f0e",
+                    linewidth=1.0,
+                    linestyle="--",
+                    label="best so far",
+                )
+            if substage_boundaries:
+                ymin, ymax = ax.get_ylim()
+                label_y = ymax - 0.05 * (ymax - ymin)
+                labels = list(substage_labels or [])
+                for i, b in enumerate(substage_boundaries):
+                    if b is None or int(b) <= 1 or int(b) >= raw.size:
+                        continue
+                    ax.axvline(int(b), color="#666666", linewidth=0.7,
+                               linestyle=":", alpha=0.7)
+                    if i < len(labels):
+                        ax.text(int(b), label_y, f" {labels[i]}",
+                                fontsize=7, color="#444444",
+                                rotation=90, va="top", ha="left")
+            ax.set_xlabel("Episode")
+            ax.set_ylabel("Episodic Return")
+            ax.grid(True, alpha=0.15, linestyle="-", linewidth=0.5)
+            ax.legend(loc="best", fontsize=8, frameon=False)
+            for spine in ("top", "right"):
+                ax.spines[spine].set_visible(False)
+            fig.tight_layout()
+            fig.savefig(paper_png, dpi=200)
+            try:
+                fig.savefig(paper_pdf)
+                out["paper_pdf"] = paper_pdf
+            except Exception as exc:
+                log(f"  [BLB曲线][信息] 跳过 paper PDF：{exc}")
+            plt.close(fig)
+            out["paper_png"] = paper_png
+    except Exception as exc:
+        log(f"  [BLB曲线][信息] 跳过 paper PNG：{exc}")
     return out
 
 

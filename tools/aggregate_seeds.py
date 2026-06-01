@@ -51,7 +51,13 @@ class SeedRow:
 
 
 def _find_persistent_dir(run_tag: str) -> Optional[str]:
-    """Walk the persistent root looking for a slug ending in ``__<run_tag>``."""
+    """Walk the persistent root looking for a slug ending in ``__<run_tag>``.
+
+    注：这是给旧 ``persistent/`` 多 seed sweep（``--run-tag``）用的。解耦后新布局
+    （2026-06-01）每个 combo 只一个工作目录，多次运行归档到
+    ``Parting Chapter/stage{1,2}/record/{combo} N date/``（按 N 编号，不是 run_tag
+    seed），不走这条 glob；如需聚合解耦 record，请按 combo + N 直接读 record 目录。
+    """
     root = "Parting Chapter/persistent"
     if not os.path.isdir(root):
         return None

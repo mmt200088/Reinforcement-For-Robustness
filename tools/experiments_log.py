@@ -147,6 +147,7 @@ def register(
         best_reward: Optional[float] = None,
         final_eval: Optional[Mapping[str, Any]] = None,
         persistent_dir: str = "",
+        record_dir: str = "",
         artifact_paths: Optional[Mapping[str, str]] = None,
         notes: str = "",
         registry_path: str = REGISTRY_REL,
@@ -174,6 +175,8 @@ def register(
         "best_reward": (float(best_reward) if best_reward is not None else None),
         "final_eval": dict(final_eval) if final_eval else None,
         "persistent_dir": str(persistent_dir),
+        # 解耦布局（2026-06-01）：完成时归档的 record 目录（stage{1,2}/record/{combo N date}）。
+        "record_dir": str(record_dir),
         "artifact_paths": dict(artifact_paths) if artifact_paths else {},
         "notes": str(notes),
     }
@@ -211,7 +214,9 @@ def _md_row(r: Mapping[str, Any]) -> str:
     final_loss = final.get("loss") if isinstance(final, dict) else None
     final_m1 = final.get("metric1") if isinstance(final, dict) else None
     dir_short = ""
-    if r.get("persistent_dir"):
+    if r.get("record_dir"):
+        dir_short = str(r["record_dir"]).rstrip("/").split("/")[-1]
+    elif r.get("persistent_dir"):
         dir_short = str(r["persistent_dir"]).split("/")[-1]
     elapsed_h = (float(r.get("elapsed_sec", 0) or 0) / 3600.0)
     git_flag = "⚠dirty" if r.get("git_dirty") else r.get("git_commit", "")

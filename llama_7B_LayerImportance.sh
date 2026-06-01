@@ -37,11 +37,13 @@ cat <<'EOF'
   --batch-size N
 
 高层动作：
-  --mode train               默认：按算法执行搜索，并保留最终评估
-  --mode eval                兼容路径：只运行统一最终评估；新 eval 子命令会直接转交给独立 final_eval
-  --mode stage2-only         跳过 Stage-1 搜索，只运行 Stage-2 搜索；若提供 --config，会自动作为 Stage-2 固定 GELU/Softmax 来源
-  --mode stage1-only         跳过 Stage-2 搜索，只运行 Stage-1 搜索（最终评估需要 --config 回退 Stage-2）
-  --mode search-only         运行搜索但跳过统一最终评估
+  --mode stage1-only         【run rl 必选其一】只运行 Stage-1 搜索，写 Parting Chapter/stage1/{combo}/
+  --mode stage2-only         【run rl 必选其一】只运行 Stage-2 搜索，写 Parting Chapter/stage2/{combo}/；
+                             前置 Stage-1 默认从 stage1/record/（最大 N，或 --stage1-run-id）读取
+  --mode train / eval / search-only
+                             链式模式已移除（2026-06-01 解耦）。run rl 必须显式 stage1-only / stage2-only。
+                             最终评估请用独立工具：'eval' 子命令转交 Paean，或后续独立 final-eval。
+                             注：GA / greedy / general-rl 仍沿用旧的 --mode train/eval/stage*-only 语义。
 
 预算简写：
   --episodes S1,S2           RL：设置 Stage-1 / Stage-2 episode 数；也可传单个 N 表示两阶段相同
@@ -58,6 +60,9 @@ cat <<'EOF'
 
 普通 RL：
   --stage1-search-episodes N
+  --stage1-entropy-stop-threshold FLOAT
+                                       Stage-1 中 N=0 表示不设 episode 上限，直到
+                                       PPO/GRPO update 后 entropy <= threshold 停止
   --stage2-search-episodes N
   --stage1-entropy-stop-threshold FLOAT  Stage-1 PPO update 后熵低于该值时正常停止（如 0.1）；
                                           --stage1-search-episodes <=0 时表示一直训练到该阈值
@@ -82,7 +87,11 @@ GA / Greedy：
   --fresh-stage1                       仅重置 Stage-1 数据（保留 Stage-2）
   --fresh-stage2                       仅重置 Stage-2 数据（保留 Stage-1）
   --persistent-root PATH               持久化根目录（默认 Parting Chapter/persistent；
-                                       所有 preset 共用同一根，便于 status_board / compare 聚合）
+                                       所有 preset 共用同一根，便于 compare / experiments_log 聚合）
+  --rl-algo {ppo,grpo}                 Stage-1/Stage-2 RL 算法（默认 ppo）。grpo：组相对优势
+                                       （update 窗口即 group）+ 冻结 reference KL；输出目录改为
+                                       GRPO Chapter（内部结构与 Parting Chapter 相同）。
+  --grpo-kl-beta FLOAT                 GRPO reference-KL 权重（默认 0.04；仅 --rl-algo grpo 生效）
 
 普通 RL / GA / Greedy 共用：
   --skip-stage1-search
@@ -106,6 +115,9 @@ GA / Greedy：
   --stage1-budget-trials N              final-eval-only: Stage1Budget 随机配置数量（默认 10；预设可覆盖）
   --stage2-budget-trials N              final-eval-only: Stage2Budget 随机配置数量（默认 10；预设可覆盖）
   --resume-from PATH
+  --stage1-run-id "NAME"               仅 run rl --mode stage2-only：指定要读的 Stage-1 record 目录名
+                                       （如 "bert base mrpc 2 20260530"）。缺省取该 combo 最大 N 的 record。
+                                       也可用 --stage2-fixed-config PATH 显式覆盖（走 JSON）。
 
 对比实验专用（仅 rl-and-ga-compare 可用）：
   --compare-config-mode persistent|direct  默认 persistent；direct 是高级模式，需要显式提供四个 JSON
@@ -458,6 +470,10 @@ GENERAL_ACCURACY_TOLERANCES=""; S_GENERAL_ACCURACY_TOLERANCES="false"
 GENERAL_ACCURACY_TOLERANCE_RANGE=""; S_GENERAL_ACCURACY_TOLERANCE_RANGE="false"
 PERSISTENT_ROOT="Parting Chapter/persistent"; S_PERSISTENT_ROOT="false"
 RUNS_ROOT="Parting Chapter/runs"
+# 2026-05-31 PPO->GRPO: RL algorithm select (single knob, both stages). "grpo"
+# also redirects the output tree to "GRPO Chapter" (same internal structure).
+RL_ALGO="ppo"; S_RL_ALGO="false"
+GRPO_KL_BETA="0.04"; S_GRPO_KL_BETA="false"
 RL_COMPARE_SKIP_STAGE1_SEARCH="false"; S_RL_COMPARE_SKIP_STAGE1_SEARCH="false"
 GA_COMPARE_SKIP_STAGE1_SEARCH="false"; S_GA_COMPARE_SKIP_STAGE1_SEARCH="false"
 RL_COMPARE_FINAL_EVAL_SOURCE="search"; S_RL_COMPARE_FINAL_EVAL_SOURCE="false"
@@ -479,6 +495,8 @@ GA_COMPARE_STAGE1_ACCURACY_TOLERANCE=""; S_GA_COMPARE_STAGE1_ACCURACY_TOLERANCE=
 GA_COMPARE_STAGE2_LIMIT_TOLERANCE=""; S_GA_COMPARE_STAGE2_LIMIT_TOLERANCE="false"
 GA_COMPARE_STAGE2_STABILITY_TOLERANCE=""; S_GA_COMPARE_STAGE2_STABILITY_TOLERANCE="false"
 RESUME_FROM=""; S_RESUME_FROM="false"
+STAGE1_RUN_ID=""; S_STAGE1_RUN_ID="false"   # 解耦 stage2-only：指定要读的 stage1 record（缺省取最大 N）
+DECOUPLED_LAYOUT="false"                     # 解耦 RL 新布局开关（仅 SEARCH_ALGORITHM=rl 置 true）
 STAGE1_ACCURACY_TOLERANCE="0.005"; S_STAGE1_ACCURACY_TOLERANCE="false"
 STAGE2_LIMIT_TOLERANCE="0.05"; S_STAGE2_LIMIT_TOLERANCE="false"
 STAGE2_STABILITY_TOLERANCE="0.05"; S_STAGE2_STABILITY_TOLERANCE="false"
@@ -526,6 +544,24 @@ BLB_V3_SEQUENTIAL_INVALID_PENALTY="1.0"; S_BLB_V3_SEQUENTIAL_INVALID_PENALTY="fa
 BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="0.05"; S_BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="false"
 BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF="0.0"; S_BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF="false"
 BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="false"; S_BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="false"
+# 2026-05-27: 4-sub-stage Stage-2 RL (opt-in). When --blb-v3-substage-mode=true,
+# the runner trains block 1→2→4→5 in 4 fresh GTrXL rounds; block 3 stays at
+# static_skeletons baseline. See blb_stage2_rl/substage_runner.py.
+BLB_V3_SUBSTAGE_MODE="false"; S_BLB_V3_SUBSTAGE_MODE="false"
+BLB_V3_SUBSTAGE_BLOCK_ORDER="1,2,4,5"; S_BLB_V3_SUBSTAGE_BLOCK_ORDER="false"
+BLB_V3_SUBSTAGE_FROZEN_BLOCKS="3"; S_BLB_V3_SUBSTAGE_FROZEN_BLOCKS="false"
+BLB_V3_SUBSTAGE_EPISODES_EACH="15000"; S_BLB_V3_SUBSTAGE_EPISODES_EACH="false"
+BLB_V3_SUBSTAGE_PROMOTION_TOP_K="5"; S_BLB_V3_SUBSTAGE_PROMOTION_TOP_K="false"
+BLB_V3_SUBSTAGE_PROMOTION_TRIALS="8"; S_BLB_V3_SUBSTAGE_PROMOTION_TRIALS="false"
+# 2026-05-27: COINN-style OSR pre-prune (opt-in). When --blb-v3-osr-results-path
+# is set, the runner loads existing osr_results.json or runs a fresh scan and
+# saves to the same path. With --blb-v3-osr-scan-only true, the runner exits
+# after scan (use with the OSR-only preset to scan on one server then train
+# on another).
+BLB_V3_OSR_RESULTS_PATH=""; S_BLB_V3_OSR_RESULTS_PATH="false"
+BLB_V3_OSR_SCAN_ONLY="false"; S_BLB_V3_OSR_SCAN_ONLY="false"
+BLB_V3_OSR_NUM_COMBO_SAMPLES="300"; S_BLB_V3_OSR_NUM_COMBO_SAMPLES="false"
+BLB_V3_OSR_ALLOW_FINGERPRINT_MISMATCH="false"; S_BLB_V3_OSR_ALLOW_FINGERPRINT_MISMATCH="false"
 FRESH_START="false"; S_FRESH_START="false"
 FRESH_STAGE1="false"; S_FRESH_STAGE1="false"
 FRESH_STAGE2="false"; S_FRESH_STAGE2="false"
@@ -643,6 +679,8 @@ while [ "$#" -gt 0 ]; do
     --stage1-budget-trials) needv "$@"; STAGE1_BUDGET_TRIALS="$2"; S_STAGE1_BUDGET_TRIALS="true"; shift 2 ;;
     --stage2-budget-trials) needv "$@"; STAGE2_BUDGET_TRIALS="$2"; S_STAGE2_BUDGET_TRIALS="true"; shift 2 ;;
     --persistent-root) needv "$@"; PERSISTENT_ROOT="$2"; S_PERSISTENT_ROOT="true"; shift 2 ;;
+    --rl-algo) needv "$@"; RL_ALGO="$2"; S_RL_ALGO="true"; shift 2 ;;
+    --grpo-kl-beta) needv "$@"; GRPO_KL_BETA="$2"; S_GRPO_KL_BETA="true"; shift 2 ;;
     --general-rl-mode) needv "$@"; GENERAL_MODE="$2"; S_GENERAL_MODE="true"; shift 2 ;;
     --general-rl-tasks) needv "$@"; GENERAL_TASKS="$2"; S_GENERAL_TASKS="true"; shift 2 ;;
     --general-rl-rounds) needv "$@"; GENERAL_ROUNDS="$2"; S_GENERAL_ROUNDS="true"; shift 2 ;;
@@ -670,6 +708,7 @@ while [ "$#" -gt 0 ]; do
     --ga-compare-stage2-limit-tolerance) needv "$@"; GA_COMPARE_STAGE2_LIMIT_TOLERANCE="$2"; S_GA_COMPARE_STAGE2_LIMIT_TOLERANCE="true"; shift 2 ;;
     --ga-compare-stage2-stability-tolerance) needv "$@"; GA_COMPARE_STAGE2_STABILITY_TOLERANCE="$2"; S_GA_COMPARE_STAGE2_STABILITY_TOLERANCE="true"; shift 2 ;;
     --resume-from) needv "$@"; RESUME_FROM="$2"; S_RESUME_FROM="true"; shift 2 ;;
+    --stage1-run-id) needv "$@"; STAGE1_RUN_ID="$2"; S_STAGE1_RUN_ID="true"; shift 2 ;;
     --stage1-accuracy-tolerance) needv "$@"; STAGE1_ACCURACY_TOLERANCE="$2"; S_STAGE1_ACCURACY_TOLERANCE="true"; shift 2 ;;
     --stage2-limit-tolerance) needv "$@"; STAGE2_LIMIT_TOLERANCE="$2"; S_STAGE2_LIMIT_TOLERANCE="true"; shift 2 ;;
     --stage2-stability-tolerance) needv "$@"; STAGE2_STABILITY_TOLERANCE="$2"; S_STAGE2_STABILITY_TOLERANCE="true"; shift 2 ;;
@@ -716,6 +755,18 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-sequential-cost-shaping-coeff) needv "$@"; BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="$2"; S_BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="true"; shift 2 ;;
     --blb-v3-sequential-fusion-shaping-coeff) needv "$@"; BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF="$2"; S_BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF="true"; shift 2 ;;
     --blb-v3-sequential-early-terminate-on-invalid) BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="true"; S_BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="true"; shift ;;
+    # 4-sub-stage Stage-2 RL (2026-05-27, opt-in)
+    --blb-v3-substage-mode) needv "$@"; BLB_V3_SUBSTAGE_MODE="$2"; S_BLB_V3_SUBSTAGE_MODE="true"; shift 2 ;;
+    --blb-v3-substage-block-order) needv "$@"; BLB_V3_SUBSTAGE_BLOCK_ORDER="$2"; S_BLB_V3_SUBSTAGE_BLOCK_ORDER="true"; shift 2 ;;
+    --blb-v3-substage-frozen-blocks) needv "$@"; BLB_V3_SUBSTAGE_FROZEN_BLOCKS="$2"; S_BLB_V3_SUBSTAGE_FROZEN_BLOCKS="true"; shift 2 ;;
+    --blb-v3-substage-episodes-each) needv "$@"; BLB_V3_SUBSTAGE_EPISODES_EACH="$2"; S_BLB_V3_SUBSTAGE_EPISODES_EACH="true"; shift 2 ;;
+    --blb-v3-substage-promotion-top-k) needv "$@"; BLB_V3_SUBSTAGE_PROMOTION_TOP_K="$2"; S_BLB_V3_SUBSTAGE_PROMOTION_TOP_K="true"; shift 2 ;;
+    --blb-v3-substage-promotion-trials) needv "$@"; BLB_V3_SUBSTAGE_PROMOTION_TRIALS="$2"; S_BLB_V3_SUBSTAGE_PROMOTION_TRIALS="true"; shift 2 ;;
+    # OSR pre-prune (2026-05-27, opt-in)
+    --blb-v3-osr-results-path) needv "$@"; BLB_V3_OSR_RESULTS_PATH="$2"; S_BLB_V3_OSR_RESULTS_PATH="true"; shift 2 ;;
+    --blb-v3-osr-scan-only) needv "$@"; BLB_V3_OSR_SCAN_ONLY="$2"; S_BLB_V3_OSR_SCAN_ONLY="true"; shift 2 ;;
+    --blb-v3-osr-num-combo-samples) needv "$@"; BLB_V3_OSR_NUM_COMBO_SAMPLES="$2"; S_BLB_V3_OSR_NUM_COMBO_SAMPLES="true"; shift 2 ;;
+    --blb-v3-osr-allow-fingerprint-mismatch) needv "$@"; BLB_V3_OSR_ALLOW_FINGERPRINT_MISMATCH="$2"; S_BLB_V3_OSR_ALLOW_FINGERPRINT_MISMATCH="true"; shift 2 ;;
     --fresh-start|--fresh) FRESH_START="true"; S_FRESH_START="true"; shift ;;
     --fresh-stage1) FRESH_STAGE1="true"; S_FRESH_STAGE1="true"; shift ;;
     --fresh-stage2) FRESH_STAGE2="true"; S_FRESH_STAGE2="true"; shift ;;
@@ -729,6 +780,16 @@ SEARCH_ALGORITHM="$(printf '%s' "$SEARCH_ALGORITHM" | tr '[:upper:]' '[:lower:]'
 MODEL_TYPE="$(printf '%s' "$MODEL_TYPE" | tr '[:upper:]' '[:lower:]')"
 RUN_MODE="$(printf '%s' "$RUN_MODE" | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
 FINAL_EVAL_SOURCE="$(printf '%s' "$FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
+RL_ALGO="$(printf '%s' "$RL_ALGO" | tr '[:upper:]' '[:lower:]')"
+case "$RL_ALGO" in ppo|grpo) ;; *) err "--rl-algo 必须是 ppo 或 grpo，得到：$RL_ALGO" ;; esac
+# 2026-05-31 PPO->GRPO: GRPO runs land in a separate "GRPO Chapter" tree with the
+# SAME internal structure as "Parting Chapter". Swap the roots here (only when the
+# user didn't explicitly pass --persistent-root) so every downstream persistent/run
+# path inherits it. PPO mode is byte-for-byte unchanged.
+if [ "$RL_ALGO" = "grpo" ]; then
+  [ "$S_PERSISTENT_ROOT" = "true" ] || PERSISTENT_ROOT="GRPO Chapter/persistent"
+  RUNS_ROOT="GRPO Chapter/runs"
+fi
 STAGE2_FIXED_CONFIG_SOURCE="$(printf '%s' "$STAGE2_FIXED_CONFIG_SOURCE" | tr '[:upper:]' '[:lower:]')"
 GENERAL_MODE="$(printf '%s' "$GENERAL_MODE" | tr '[:upper:]' '[:lower:]')"
 RL_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$RL_COMPARE_FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
@@ -831,6 +892,22 @@ case "$STAGE2_FIXED_CONFIG_SOURCE" in ""|stage1_result|search|json|manual) ;; *)
 # search 是 infer 的别名
 case "$GENERAL_MODE" in train|infer|search) ;; *) err "general-rl 模式必须是 train、search 或 infer，当前为：$GENERAL_MODE" ;; esac
 [ "$GENERAL_MODE" = "infer" ] && GENERAL_MODE="search"
+
+# ===== 解耦后的 canonical RL（2026-06-01）=====
+# run rl 现在必须显式 --mode stage1-only / stage2-only；链式 train/eval/search-only 已移除。
+# 链式最终评估也移除：完成时各 stage 自己写 basic snapshot 到 record/，重型同-cost
+# final-eval 改为独立工具。这里置 DECOUPLED_LAYOUT 并 SKIP_FINAL_EVAL，绕过下游链式校验。
+if [ "$SEARCH_ALGORITHM" = "rl" ]; then
+  case "$RUN_MODE" in
+    stage1-only|stage2-only) : ;;
+    *) err "run rl 现在必须显式指定 --mode stage1-only 或 --mode stage2-only。链式 train / eval / search-only 已移除：Stage-1 与 Stage-2 各自独立运行（各自独立的持久化目录 + record 归档）。最终评估请用独立工具（'eval' 子命令转交 Paean，或后续独立 final-eval）。" ;;
+  esac
+  if [ "$S_FRESH_STAGE1" = "true" ] || [ "$S_FRESH_STAGE2" = "true" ]; then
+    err "解耦后每个 stage 是独立运行，--fresh-stage1 / --fresh-stage2 已移除。请在对应 --mode 下用 --fresh 重开该 stage。"
+  fi
+  DECOUPLED_LAYOUT="true"
+  SKIP_FINAL_EVAL="true"
+fi
 
 if [ "$FINAL_EVAL_ONLY" = "true" ]; then
   SKIP_STAGE1_SEARCH="true"
@@ -1154,7 +1231,8 @@ else
     else
       [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ] || err "只有 --stage2-fixed-config-source=manual 时才能提供 --stage2-manual-gelu / --stage2-manual-softmax。"
     fi
-    if [ "$SKIP_STAGE1_SEARCH" = "true" ] && [ "$STAGE2_FIXED_CONFIG_SOURCE" = "stage1_result" ]; then
+    if [ "$DECOUPLED_LAYOUT" != "true" ] && [ "$SKIP_STAGE1_SEARCH" = "true" ] && [ "$STAGE2_FIXED_CONFIG_SOURCE" = "stage1_result" ]; then
+      # 解耦 RL 的 stage2-only 从 stage1/record/ 读前置 Stage-1（见 Python 端），不走这条同目录 stage1_result 检查。
       _HAS_S1_CKPT="false"
       case "$SEARCH_ALGORITHM" in
         rl) [ -f "${_EARLY_PERSISTENT_DIR}/stage1/stage1_rl_checkpoint.pt" ] && _HAS_S1_CKPT="true" ;;
@@ -1171,7 +1249,8 @@ else
       [ "$SEARCH_ALGORITHM" != "rl" ] || [ "$FAM" != "ga" ] || err "已选择 rl，但 Stage-2 固定 GELU/Softmax 的 JSON 配置看起来属于 GA 家族：$STAGE2_FIXED_CONFIG"
     fi
   fi
-  if [ "$FINAL_EVAL_SOURCE" = "search" ]; then
+  if [ "$DECOUPLED_LAYOUT" != "true" ] && [ "$FINAL_EVAL_SOURCE" = "search" ]; then
+    # 解耦 RL 不跑链式最终评估（完成时各 stage 写 basic snapshot；重型同-cost eval 是独立工具），整段 search 回退校验跳过。
     if [ "$FINAL_EVAL_ONLY" != "true" ] && [ "$SKIP_STAGE1_SEARCH" = "true" ] && { [ "$SKIP_NOISE_SEARCH" = "false" ] || [ "$SKIP_FINAL_EVAL" = "false" ]; }; then
       [ -f "$FINAL_EVAL_CONFIG" ] || err "--final-eval-source=search 且跳过 Stage-1 时，需要 --final-eval-config 提供 Stage-1 回退配置。未找到文件：$FINAL_EVAL_CONFIG"
     fi
@@ -1249,8 +1328,38 @@ fi
 USE_PERSISTENT="false"
 PERSISTENT_DIR=""
 
-if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARCH_ALGORITHM" = "greedy" ]; then
-  # RL / GA / Greedy 使用持久化目录：基于(算法、模型、数据集、约束参数)确定性生成
+if [ "$SEARCH_ALGORITHM" = "rl" ]; then
+  # ===== 解耦后新布局（2026-06-01）：Parting Chapter/stage{1,2}/{combo}（扁平），约束进 metadata =====
+  # 仅 canonical RL 走这条；GA / greedy / general-rl / compare 仍用旧 persistent/ 布局。
+  USE_PERSISTENT="true"
+  _RL_STAGE_NUM=1; [ "$RUN_MODE" = "stage2-only" ] && _RL_STAGE_NUM=2
+  _RL_LAYOUT_ROOT="$(dirname "$PERSISTENT_ROOT")"          # Parting Chapter / GRPO Chapter
+  _RL_COMBO="${MODEL_TYPE//-/ } ${DATASET}"                # bert-base mrpc -> "bert base mrpc"
+  PERSISTENT_DIR="${_RL_LAYOUT_ROOT}/stage${_RL_STAGE_NUM}/${_RL_COMBO}"
+  _COMPLETED_MARKER="${PERSISTENT_DIR}/COMPLETED"
+  if [ "$FRESH_START" = "true" ]; then
+    if [ -d "$PERSISTENT_DIR" ]; then
+      echo "警告：--fresh 指定，正在清除已有工作目录：$PERSISTENT_DIR"
+      rm -rf "$PERSISTENT_DIR"
+    fi
+    mkdir -p "${PERSISTENT_DIR}/logs"
+  elif [ -f "$_COMPLETED_MARKER" ]; then
+    err "该 combo 的 stage${_RL_STAGE_NUM} 运行已完成（已归档进 ${_RL_LAYOUT_ROOT}/stage${_RL_STAGE_NUM}/record/）。如需重新训练请加 --fresh。工作目录：$PERSISTENT_DIR"
+  elif [ -d "$PERSISTENT_DIR" ] && [ -f "${PERSISTENT_DIR}/metadata.json" ]; then
+    echo "检测到进行中的工作目录：$PERSISTENT_DIR"
+    echo "自动进入续训练模式（如需从头训练请加 --fresh）。"
+    if [ "$S_RESUME_FROM" = "false" ]; then
+      RESUME_FROM="$PERSISTENT_DIR"; S_RESUME_FROM="true"
+    fi
+  else
+    echo "首次运行该 combo 的 stage${_RL_STAGE_NUM}（解耦布局首次运行无需 --fresh），新建工作目录：$PERSISTENT_DIR"
+    mkdir -p "${PERSISTENT_DIR}/logs"
+  fi
+  RUN_ROOT="$PERSISTENT_DIR"
+  RUN_GROUP_DIR="$(dirname "$PERSISTENT_DIR")"
+  LATEST_BASE_DIR="$RUN_GROUP_DIR"
+elif [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARCH_ALGORITHM" = "greedy" ]; then
+  # GA / Greedy 使用旧持久化目录：基于(算法、模型、数据集、约束参数)确定性生成
   USE_PERSISTENT="true"
   PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${CONSTRAINT_SLUG}"
 
@@ -1458,6 +1567,25 @@ METAEOF
 METAEOF
     fi
   else
+    # 解耦 RL 续训练：先做约束一致性守卫（不同约束不静默续训练），再更新时间戳/计数。
+    if [ "$DECOUPLED_LAYOUT" = "true" ] && command -v python3 &>/dev/null; then
+      python3 - "$_META_FILE" "$STAGE1_ACCURACY_TOLERANCE" "$STAGE2_LIMIT_TOLERANCE" "$STAGE2_STABILITY_TOLERANCE" <<'PYGUARD' || err "检测到当前约束与已持久化工作目录的 metadata 不一致（见上方 CONSTRAINT_MISMATCH）。不同约束不会静默续训练，请加 --fresh 重开该 stage，或改回原约束。工作目录：$PERSISTENT_DIR"
+import json, sys
+from config import run_layout as _rl
+meta_path, s1, s2, s2s = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+with open(meta_path) as f:
+    m = json.load(f)
+cur = {
+    "stage1_accuracy_tolerance": float(s1),
+    "stage2_limit_tolerance": float(s2),
+    "stage2_stability_tolerance": float(s2s),
+}
+msg = _rl.constraint_mismatch(m, cur)
+if msg:
+    sys.stderr.write("CONSTRAINT_MISMATCH: " + msg + "\n")
+    sys.exit(1)
+PYGUARD
+    fi
     # 更新已有 metadata 的时间戳和计数
     if command -v python3 &>/dev/null; then
       python3 -c "
@@ -1506,6 +1634,8 @@ else
     [ "$SKIP_STAGE1_SEARCH" = "true" ] && RL_STAGE1_EPISODES_SPECIFIED="false"
     [ "$SKIP_NOISE_SEARCH" = "true" ] && RL_STAGE2_EPISODES_SPECIFIED="false"
     CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE" --stage2_rl_variant "$STAGE2_RL_VARIANT" --blb_v3_inproc_rescale_optimizer_root "$BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT" --blb_v3_rollout_size "$BLB_V3_ROLLOUT_SIZE")
+    # 解耦布局开关 + stage2-only 的 stage1 record 选择（仅 rl）。
+    CMD+=(--decoupled_layout "$DECOUPLED_LAYOUT" --stage1_run_id "$STAGE1_RUN_ID")
     # Optional multi-seed override (when --blb-v3-seed provided)
     if [ -n "$BLB_V3_SEED" ]; then
       CMD+=(--blb_v3_seed "$BLB_V3_SEED")
@@ -1559,6 +1689,19 @@ else
     [ "$S_BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF" = "true" ] && CMD+=(--blb_v3_sequential_cost_shaping_coeff "$BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF")
     [ "$S_BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF" = "true" ] && CMD+=(--blb_v3_sequential_fusion_shaping_coeff "$BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF")
     [ "$S_BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID" = "true" ] && CMD+=(--blb_v3_sequential_early_terminate_on_invalid "$BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID")
+    # 4-sub-stage knobs (only forwarded when user set them)
+    CMD+=(--rl_algo "$RL_ALGO" --grpo_kl_beta "$GRPO_KL_BETA")
+    [ "$S_BLB_V3_SUBSTAGE_MODE" = "true" ] && CMD+=(--blb_v3_substage_mode "$BLB_V3_SUBSTAGE_MODE")
+    [ "$S_BLB_V3_SUBSTAGE_BLOCK_ORDER" = "true" ] && CMD+=(--blb_v3_substage_block_order "$BLB_V3_SUBSTAGE_BLOCK_ORDER")
+    [ "$S_BLB_V3_SUBSTAGE_FROZEN_BLOCKS" = "true" ] && CMD+=(--blb_v3_substage_frozen_blocks "$BLB_V3_SUBSTAGE_FROZEN_BLOCKS")
+    [ "$S_BLB_V3_SUBSTAGE_EPISODES_EACH" = "true" ] && CMD+=(--blb_v3_substage_episodes_each "$BLB_V3_SUBSTAGE_EPISODES_EACH")
+    [ "$S_BLB_V3_SUBSTAGE_PROMOTION_TOP_K" = "true" ] && CMD+=(--blb_v3_substage_promotion_top_k "$BLB_V3_SUBSTAGE_PROMOTION_TOP_K")
+    [ "$S_BLB_V3_SUBSTAGE_PROMOTION_TRIALS" = "true" ] && CMD+=(--blb_v3_substage_promotion_trials "$BLB_V3_SUBSTAGE_PROMOTION_TRIALS")
+    # OSR pre-prune knobs (only forwarded when user sets them)
+    [ "$S_BLB_V3_OSR_RESULTS_PATH" = "true" ] && CMD+=(--blb_v3_osr_results_path "$BLB_V3_OSR_RESULTS_PATH")
+    [ "$S_BLB_V3_OSR_SCAN_ONLY" = "true" ] && CMD+=(--blb_v3_osr_scan_only "$BLB_V3_OSR_SCAN_ONLY")
+    [ "$S_BLB_V3_OSR_NUM_COMBO_SAMPLES" = "true" ] && CMD+=(--blb_v3_osr_num_combo_samples "$BLB_V3_OSR_NUM_COMBO_SAMPLES")
+    [ "$S_BLB_V3_OSR_ALLOW_FINGERPRINT_MISMATCH" = "true" ] && CMD+=(--blb_v3_osr_allow_fingerprint_mismatch "$BLB_V3_OSR_ALLOW_FINGERPRINT_MISMATCH")
   else
     CMD=(python rl_tune_genetic.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --use_ist --search_backend "$SEARCH_ALGORITHM" --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE")
     [ "$S_STAGE1_GENERATIONS" = "true" ] && CMD+=(--stage1_ga_generations "$STAGE1_GENERATIONS" --stage1_ga_generations_specified "true")
@@ -1576,6 +1719,7 @@ show "批大小" "$BATCH_SIZE" "$S_BATCH_SIZE"
 show "模式目录" "$RUN_GROUP_DIR" "true"
 show "运行目录" "$RUN_ROOT" "true"
 if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARCH_ALGORITHM" = "greedy" ]; then
+  show "Stage-1 回合数" "$STAGE1_EPISODES" "$S_STAGE1_EPISODES"
   show "Stage-1 准确度约束" "$STAGE1_ACCURACY_TOLERANCE" "$S_STAGE1_ACCURACY_TOLERANCE"
   show "Stage-2 指标约束百分比" "$STAGE2_LIMIT_TOLERANCE" "$S_STAGE2_LIMIT_TOLERANCE"
   show "Stage-2 稳定性约束百分比" "$STAGE2_STABILITY_TOLERANCE" "$S_STAGE2_STABILITY_TOLERANCE"

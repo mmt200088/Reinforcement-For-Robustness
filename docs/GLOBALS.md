@@ -12,6 +12,12 @@
 > **集中化入口**：[config/paths.py](../config/paths.py) 和 [config/constants.py](../config/constants.py)
 > 已经把"应该集中"的内容聚合进去了，但 Phase-1 阶段**只是文档性质的同步**——
 > 各模块里仍然保留自己的定义。Phase-3 会把各模块改成从 `config/` 导入。
+>
+> **解耦 RL 输出布局（2026-06-01）的 SSOT 是 [config/run_layout.py](../config/run_layout.py)**：
+> `Parting Chapter/stage{1,2}/{combo}/`（扁平工作目录）+ `stage{1,2}/record/{combo} N date/`
+> （完成归档）的所有路径/编号/combo 命名/COMPLETED 标记/约束守卫逻辑都在此唯一定义；
+> 配套常量 `STAGE1_SUBDIR` / `STAGE2_SUBDIR` / `RECORD_SUBDIR` / `COMPLETED_MARKER_FILENAME`
+> 在 `config/paths.py`。旧 `persistent/` slug 布局（GA/greedy/general/compare/legacy）不变。
 
 ---
 
@@ -57,9 +63,9 @@
 | 文件名 | 用途 | 生产者 | 消费者 |
 |---|---|---|---|
 | `LATEST_PID` | 记录最近一次训练进程 PID | `layer_importance_evaluator`（update_persistent_metadata_stage） | `rl_ga_compare_runner`（process guard） |
-| `LATEST_RUN_DIR` | 最近一次运行目录名 | 同上 | 同上 + `status_board.py` |
+| `LATEST_RUN_DIR` | 最近一次运行目录名 | 同上 | 同上 |
 | `LATEST_COMPARE_PID` | 对比运行 PID | `rl_ga_compare_runner` | 同上 |
-| `LATEST_COMPARE_RUN_DIR` | 对比运行目录 | 同上 | `status_board.py` |
+| `LATEST_COMPARE_RUN_DIR` | 对比运行目录 | 同上 | — |
 
 ### A.4 checkpoint / 持久化文件名
 
@@ -200,7 +206,7 @@ RL_DATASET_SPLIT_SEED = 42
 
 **生产者**：`layer_importance_evaluator.update_persistent_metadata_stage`、
 `genetic_search_module`（GA 分支）、`noise_rl_module_v2`（Stage-2 分支）
-**消费者**：`rl_ga_compare_runner`（判断是否跳过）、`status_board.py`
+**消费者**：`rl_ga_compare_runner`（判断是否跳过）
 
 ### C.2 `compare_final_status.json`
 
@@ -209,7 +215,7 @@ RL_DATASET_SPLIT_SEED = 42
 `stage{1,2}_report_path`。
 
 **生产者**：`rl_ga_compare_runner`
-**消费者**：`status_board.py`
+**消费者**：—（原 `status_board.py` 已移除）
 
 ### C.3 `NOISE_KEYS` 顺序（已在 B.2 提过）
 

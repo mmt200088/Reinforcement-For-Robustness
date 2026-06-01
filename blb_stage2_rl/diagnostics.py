@@ -871,7 +871,9 @@ class RLDiagnosticsRecorder:
             f"- 最近 50 回合 mean terminal reward: **{np.mean(last50_term):+.4f}**"
         )
         lines.append(
-            f"- 最近 50 回合 mean invalid 子步数: **{np.mean(last50_inv):.2f}** / 59"
+            # horizon = 3 + (L-1)*4 (C 2026-05-30: block 3 removed from schedule)
+            f"- 最近 50 回合 mean invalid 子步数: **{np.mean(last50_inv):.2f}** / "
+            f"{3 + (self.num_layers - 1) * 4}"
         )
         lines.append(f"- 训练期 best reward: **{best_so_far:+.4f}**")
         lines.append(f"- 训练期 worst reward: **{worst_so_far:+.4f}**")
@@ -1105,7 +1107,7 @@ class RLDiagnosticsRecorder:
         if last50 and float(np.mean(last50_inv)) > 30:
             flags.append(
                 f"⚠ **invalid 子步偏多**：最近 50 回合 mean invalid="
-                f"{np.mean(last50_inv):.1f}/59 (>30)。"
+                f"{np.mean(last50_inv):.1f}/{3 + (self.num_layers - 1) * 4} (>30)。"
                 "建议：检查 stage1 GELU/Softmax degree 是否过低、或 max_sfs 表损坏。"
             )
         if self._first_invalid_counts:

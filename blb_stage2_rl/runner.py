@@ -110,7 +110,11 @@ def resolve_blb_persistence_dir(evaluator) -> str:
     """
     run_dir = str(getattr(evaluator, "run_output_dir", "") or "").strip()
     if run_dir:
-        out = os.path.join(run_dir, "stage2_noise", "progress")
+        if getattr(evaluator, "decoupled_layout", False):
+            # 解耦扁平布局：stage2 工作目录直接放 progress/（无 stage2_noise/ 嵌套）。
+            out = os.path.join(run_dir, "progress")
+        else:
+            out = os.path.join(run_dir, "stage2_noise", "progress")
     else:
         repo_root = _resolve_repo_root()
         out = os.path.join(
@@ -572,6 +576,12 @@ class BLBStage2TrainConfig:
     stab_threshold: float = float("inf")
     # PPO
     ppo: PPOConfig = field(default_factory=PPOConfig)
+    # RL algorithm select (2026-05-31 PPO->GRPO). "ppo" keeps the existing
+    # critic+GAE update; "grpo" uses the group-relative (window=group) update
+    # with a frozen-reference KL. grpo_kl_beta weights that KL term. Single knob
+    # for both stages; forwarded into SequentialTrainConfig by the runner.
+    rl_algo: str = "ppo"
+    grpo_kl_beta: float = 0.04
     # 环境
     # Bumped 3→5 on 2026-05-18: 3 trials gave loss_std a ~50% sampling error,
     # making one outlier trial blow up the std and trip priority-2 (stability)
@@ -652,6 +662,31 @@ class BLBStage2TrainConfig:
     terminal_eval_batch_size: int = 4
     promotion_validation_trials: int = 4
     promotion_margin_window: float = 0.25
+    # ---- 4-sub-stage mode (opt-in 2026-05-27) -----------------------------
+    # When ``substage_mode`` is True, ``BLBStage2RLRunner.run`` dispatches to
+    # ``substage_runner.run_substage_via_runner`` instead of the legacy
+    # per-block sequential path. Each sub-stage trains one block in
+    # ``substage_block_order``; ``substage_frozen_blocks`` lists blocks that
+    # are pinned to the ``static_skeletons`` baseline throughout (block 3 by
+    # design). See ``substage_runner.py`` for the budget allocator
+    # (progressive re-baseline with hard floor at ``acc_orig - tol``).
+    substage_mode: bool = False
+    substage_block_order: List[int] = field(default_factory=lambda: [1, 2, 4, 5])
+    substage_frozen_blocks: List[int] = field(default_factory=lambda: [3])
+    substage_episodes_each: int = 15000
+    substage_promotion_top_k: int = 5
+    substage_promotion_trials: int = 8
+    # ---- COINN-style OSR pre-prune (opt-in 2026-05-27) ---------------------
+    # Empty osr_results_path → no OSR layer (legacy behaviour). When set, the
+    # runner loads existing results from PATH, or runs a fresh scan saving to
+    # PATH if absent. When ``osr_scan_only`` is True, training exits after the
+    # scan; otherwise the scan results are applied as an extra mask in the
+    # PPO retry loop, alongside the existing three (Static / Empirical /
+    # Forbidden) masks. See blb_stage2_rl/osr.py for details.
+    osr_results_path: str = ""
+    osr_scan_only: bool = False
+    osr_num_combo_samples: int = 300
+    osr_allow_fingerprint_mismatch: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -701,6 +736,21 @@ class BLBStage2RLRunner:
         # Dispatch to the sequential runner before the heavy single-shot setup
         # so the two paths stay genuinely independent. The single-shot loop
         # below is reachable only when ``train_cfg.sequential_rl`` is False.
+        # 2026-05-27: 4-sub-stage path takes priority over the per-block
+        # sequential one when explicitly enabled. Both are sequential at heart;
+        # substage_mode further restricts each "round" to one block (block 3
+        # frozen) so GTrXL focuses on layer-to-layer relations.
+        if bool(getattr(train_cfg, "substage_mode", False)):
+            from .substage_runner import run_substage_via_runner
+            return run_substage_via_runner(
+                runner=self,
+                train_cfg=train_cfg,
+                fixed_gelu=fixed_gelu,
+                fixed_softmax=fixed_softmax,
+                fixed_label=fixed_label,
+                fixed_source=fixed_source,
+                resume_checkpoint_path=resume_checkpoint_path,
+            )
         if bool(getattr(train_cfg, "sequential_rl", False)):
             from .sequential_runner import run_sequential_via_runner
             return run_sequential_via_runner(
@@ -2274,6 +2324,100 @@ class BLBStage2RLRunner:
             log(f"  [警告] 写最终报告失败：{exc}")
         status.set_phase("已完成")
 
+        # 2026-06-01 解耦：stage2-only 完成 -> 归档进 stage2/record/ 并打 COMPLETED（best-effort，
+        # 任何异常只记日志，绝不让训练在收尾处崩溃）。一个 stage2 record 严格绑定其前置 stage1。
+        if getattr(ev, "decoupled_layout", False) and best_action_vec is not None:
+            try:
+                import datetime as _dt
+                from config import run_layout as _rl
+                _wd = os.path.normpath(str(getattr(ev, "run_output_dir", "") or ""))   # <root>/stage2/<combo>
+                if _wd and _wd != ".":
+                    _combo = os.path.basename(_wd)
+                    _root = os.path.dirname(os.path.dirname(_wd))
+                    _bd = best_breakdown_dict if isinstance(best_breakdown_dict, dict) else {}
+
+                    def _g(*keys):
+                        for _k in keys:
+                            if _k in _bd and _bd[_k] is not None:
+                                try:
+                                    return float(_bd[_k])
+                                except Exception:
+                                    return _bd[_k]
+                        return None
+
+                    _paths = best_action_description_paths or {}
+                    _final_config = {
+                        "stage": 2,
+                        "combo": _combo,
+                        "profile": str(train_cfg.profile),
+                        "num_layers": int(ev.total_layers),
+                        "blb_v3_best_action_vec": best_action_vec.tolist(),
+                        # 前置 Stage-1（一个 stage2 严格绑定一个 stage1）。
+                        "gelu_degree_per_layer": np.asarray(fixed_gelu, dtype=int).tolist(),
+                        "softmax_degree_per_layer": np.asarray(fixed_softmax, dtype=int).tolist(),
+                        "best_action_readable_json": _paths.get("json", ""),
+                        "best_action_readable_md": _paths.get("md", ""),
+                    }
+                    _final_eval = {
+                        "source": "training_best_mean_of_K_trials",
+                        "note": "basic snapshot (训练记录的 K 次 MC 噪声 trial 最优档); "
+                                "重型同-cost 组对比见独立 final-eval 工具。",
+                        "best_reward": float(best_reward) if np.isfinite(best_reward) else None,
+                        "loss": _g("loss_mean", "loss"),
+                        "metric1": _g("metric1_mean", "metric1"),
+                        "metric2": _g("metric2_mean", "metric2"),
+                        "cost": {
+                            "total_bits_sum": _g("total_bits_sum", "total_bits"),
+                            "total_fusion_count": _g("total_fusion_count", "fusion_count"),
+                            "sum_truncation_k": _g("sum_truncation_k", "sum_k"),
+                            "avg_k": _g("avg_k"),
+                        },
+                        "baseline_cost": {
+                            "total_bits_sum": int(baseline.total_bits_sum),
+                            "total_fusion_count": int(baseline.total_fusion_count),
+                            "avg_k": float(baseline.avg_k),
+                            "loss_mean": float(getattr(baseline, "loss_mean", 0.0)),
+                            "metric1_mean": float(getattr(baseline, "metric1_mean", 0.0)),
+                        },
+                        "breakdown": _bd,
+                    }
+                    _metadata = {
+                        "stage": 2,
+                        "combo": _combo,
+                        "profile": str(train_cfg.profile),
+                        "data_path": getattr(ev, "data_path", ""),
+                        "completed_at": _dt.datetime.now().isoformat(),
+                        "episodes": int(train_cfg.total_episodes),
+                        "stage1_run_id": getattr(ev, "stage1_run_id", ""),
+                        "stage2_limit_tolerance": getattr(ev, "stage2_limit_tolerance", None),
+                        "stage2_stability_tolerance": getattr(ev, "stage2_stability_tolerance", None),
+                    }
+                    _report_md = (
+                        f"# Stage-2 record: {_combo}\n\n"
+                        f"- profile: {train_cfg.profile}, num_layers: {ev.total_layers}\n"
+                        f"- best_reward: {best_reward}\n"
+                        f"- prerequisite Stage-1 gelu: {np.asarray(fixed_gelu, dtype=int).tolist()}\n"
+                        f"- prerequisite Stage-1 softmax: {np.asarray(fixed_softmax, dtype=int).tolist()}\n"
+                        f"- best action readable: {_paths.get('md', '')}\n"
+                    )
+                    _curves = [
+                        os.path.join(blb_progress_dir, "blb_stage2_training_curve.png"),
+                        _paths.get("json", ""),
+                        _paths.get("md", ""),
+                    ]
+                    _rdir, _rid, _n = _rl.snapshot_decoupled_record(
+                        2, _combo, _wd,
+                        final_config=_final_config,
+                        final_eval=_final_eval,
+                        metadata=_metadata,
+                        curve_paths=[p for p in _curves if p],
+                        report_md=_report_md,
+                        root=_root,
+                    )
+                    log(f"  {bullet} [解耦] Stage-2 已归档进 record → {_rdir}（COMPLETED 已标记）")
+            except Exception as _snap_exc:
+                log(f"  [解耦][警告] Stage-2 record 归档失败（不影响训练结果）：{_snap_exc}")
+
         # ---------- 10) 还原模型到干净的多项式近似态（不带 BLB 噪声） ----------
         try:
             for restore_name in (
@@ -2539,6 +2683,17 @@ class BLBStage2RLRunner:
                 setattr(cfg, cfg_field, int(v))
             except Exception:
                 pass
+        # RL algorithm select (2026-05-31 PPO->GRPO): str / float, not int-coercible
+        # so set explicitly (mirrors the warmstart_bias_gain float pattern below).
+        _rl_algo = getattr(ev, "rl_algo", None)
+        if _rl_algo not in (None, ""):
+            cfg.rl_algo = str(_rl_algo).strip().lower()
+        v = getattr(ev, "grpo_kl_beta", None)
+        if v not in (None, ""):
+            try:
+                cfg.grpo_kl_beta = max(0.0, float(v))
+            except Exception:
+                pass
         v = getattr(ev, "blb_v3_warmstart_bias_gain", None)
         if v not in (None, ""):
             try:
@@ -2629,6 +2784,61 @@ class BLBStage2RLRunner:
         if v not in (None, ""):
             cfg.sequential_rl = str(v).strip().lower() not in (
                 "0", "false", "no", "off",
+            )
+        # 4-sub-stage mode (opt-in 2026-05-27). When set, takes priority over
+        # sequential_rl in BLBStage2RLRunner.run dispatch.
+        v = getattr(ev, "blb_v3_substage_mode", None)
+        if v not in (None, ""):
+            cfg.substage_mode = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
+            )
+        v = getattr(ev, "blb_v3_substage_block_order", None)
+        if v not in (None, ""):
+            try:
+                cfg.substage_block_order = [int(x) for x in str(v).split(",") if str(x).strip()]
+            except Exception:
+                pass
+        v = getattr(ev, "blb_v3_substage_frozen_blocks", None)
+        if v not in (None, ""):
+            try:
+                cfg.substage_frozen_blocks = [int(x) for x in str(v).split(",") if str(x).strip()]
+            except Exception:
+                pass
+        v = getattr(ev, "blb_v3_substage_episodes_each", None)
+        if v not in (None, ""):
+            try:
+                cfg.substage_episodes_each = int(v)
+            except Exception:
+                pass
+        v = getattr(ev, "blb_v3_substage_promotion_top_k", None)
+        if v not in (None, ""):
+            try:
+                cfg.substage_promotion_top_k = int(v)
+            except Exception:
+                pass
+        v = getattr(ev, "blb_v3_substage_promotion_trials", None)
+        if v not in (None, ""):
+            try:
+                cfg.substage_promotion_trials = int(v)
+            except Exception:
+                pass
+        # OSR pre-prune flags (2026-05-27 opt-in).
+        v = getattr(ev, "blb_v3_osr_results_path", None)
+        if v not in (None, ""):
+            cfg.osr_results_path = str(v)
+        v = getattr(ev, "blb_v3_osr_scan_only", None)
+        if v not in (None, ""):
+            cfg.osr_scan_only = str(v).strip().lower() in ("1", "true", "yes", "on")
+        v = getattr(ev, "blb_v3_osr_num_combo_samples", None)
+        if v not in (None, ""):
+            try:
+                cfg.osr_num_combo_samples = max(0, int(v))
+            except Exception:
+                pass
+        v = getattr(ev, "blb_v3_osr_allow_fingerprint_mismatch", None)
+        if v not in (None, ""):
+            cfg.osr_allow_fingerprint_mismatch = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
             )
         for cfg_field, attr_name, caster in (
                 ("sequential_invalid_penalty", "blb_v3_sequential_invalid_penalty", float),

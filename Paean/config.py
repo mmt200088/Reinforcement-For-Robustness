@@ -56,6 +56,10 @@ class FinalEvalSettings:
     manual_stage1_gelu: str = ""
     manual_stage1_softmax: str = ""
     manual_stage2_noise: str = ""
+    cost_match_count: int = 50
+    cost_match_max_attempts: int = 5000
+    glue_submission_enabled: bool = True
+    glue_submission_seed: int = 42
     dry_run: bool = False
     foreground: bool = False
 
@@ -153,6 +157,47 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rescale-invoker-kind", "--blb-rescale-invoker-kind", dest="blb_rescale_invoker_kind", default="heuristic")
     parser.add_argument("--rescale-optimizer-root", "--blb-rescale-optimizer-root", dest="blb_rescale_optimizer_root", default="")
     parser.add_argument("--require-rescale-optimizer", dest="require_rescale_optimizer", action="store_true")
+    parser.add_argument(
+        "--cost-match-count",
+        dest="cost_match_count",
+        type=int,
+        default=50,
+        help=(
+            "Number of cost-matched random BLB action configs to draw and evaluate "
+            "alongside the selected action (default 50). Set 0 to disable the "
+            "same-cost comparison group even when --random is on."
+        ),
+    )
+    parser.add_argument(
+        "--cost-match-max-attempts",
+        dest="cost_match_max_attempts",
+        type=int,
+        default=5000,
+        help=(
+            "Maximum number of random draws (incl. invalid + cost-mismatch) before "
+            "the sampler stops trying to reach --cost-match-count. Default 5000."
+        ),
+    )
+    parser.add_argument(
+        "--glue-submission",
+        dest="glue_submission_enabled",
+        action="store_true",
+        default=True,
+        help="Generate a GLUE submission zip for the selected BLB action after final eval (default on).",
+    )
+    parser.add_argument(
+        "--no-glue-submission",
+        dest="glue_submission_enabled",
+        action="store_false",
+        help="Disable the post-final-eval GLUE submission generation.",
+    )
+    parser.add_argument(
+        "--glue-submission-seed",
+        dest="glue_submission_seed",
+        type=int,
+        default=42,
+        help="RNG seed used for reproducible BLB-noise sampling during GLUE inference (default 42).",
+    )
     parser.add_argument("--foreground", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser
@@ -266,6 +311,10 @@ def parse_final_eval_settings(
         manual_stage1_gelu=ns.manual_stage1_gelu,
         manual_stage1_softmax=ns.manual_stage1_softmax,
         manual_stage2_noise=ns.manual_stage2_noise,
+        cost_match_count=int(ns.cost_match_count),
+        cost_match_max_attempts=int(ns.cost_match_max_attempts),
+        glue_submission_enabled=bool(ns.glue_submission_enabled),
+        glue_submission_seed=int(ns.glue_submission_seed),
         dry_run=bool(ns.dry_run),
         foreground=bool(ns.foreground),
     )
@@ -315,6 +364,15 @@ def validate_settings(
         raise ValueError("--stage2-k-trials must be positive")
     if settings.stage2_probe_size <= 0:
         raise ValueError("--stage2-probe-size must be positive")
+    if settings.cost_match_count < 0:
+        raise ValueError("--cost-match-count must be non-negative")
+    if settings.cost_match_max_attempts < 0:
+        raise ValueError("--cost-match-max-attempts must be non-negative")
+    if settings.cost_match_count > settings.cost_match_max_attempts:
+        raise ValueError(
+            "--cost-match-count cannot exceed --cost-match-max-attempts "
+            f"(got {settings.cost_match_count} > {settings.cost_match_max_attempts})"
+        )
     if settings.source == "json" and settings.config and not Path(settings.config).is_file():
         raise FileNotFoundError(f"final_eval JSON config does not exist: {settings.config}")
     if require_resume_for_search and settings.source == "search" and not settings.resume_from:

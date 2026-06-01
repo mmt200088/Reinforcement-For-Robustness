@@ -33,7 +33,7 @@ Local_program/
 ├── docs/                             # 已在 Phase 1 引入
 │
 ├── tools/                            # 已在 Phase 1 引入
-│   └── status_board.py
+│   └── experiments_log.py
 │
 ├── rlga/                            ★ 新：核心算法包
 │   ├── __init__.py

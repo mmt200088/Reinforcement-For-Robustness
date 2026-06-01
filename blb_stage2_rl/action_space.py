@@ -573,18 +573,20 @@ def per_layer_field_offsets() -> List[Tuple[int, str, str]]:
 # ---------------------------------------------------------------------------
 # Per-block sequential step schedule (for the sequential RL formulation).
 #
-# Episode order:
+# Episode order (C, 2026-05-30: block 3 excluded from the decided schedule):
 #   step 1:  layer 0, block 2  (+ first_input fresh)   -- layer 0 has no block 1
-#   step 2:  layer 0, block 3
-#   step 3:  layer 0, block 4
-#   step 4:  layer 0, block 5
-#   step 5:  layer 1, block 1
-#   step 6:  layer 1, block 2
+#   step 2:  layer 0, block 4                           -- block 3 skipped
+#   step 3:  layer 0, block 5
+#   step 4:  layer 1, block 1
+#   step 5:  layer 1, block 2
+#   step 6:  layer 1, block 4                           -- block 3 skipped
 #   ...
-#   step 4 + (L-1)*5: layer L-1, block 5
+#   step 3 + (L-1)*4: layer L-1, block 5
 #
-# Total horizon for L layers = 4 + (L-1)*5
-# For L=12 -> horizon = 59.
+# Total horizon for L layers = 3 + (L-1)*4
+# For L=12 -> horizon = 47 (was 59 when block 3 was decided).
+# Block 3's slots remain in the legacy full action vector (frozen at the
+# static_skeletons baseline); only the decided schedule drops them.
 #
 # first_input fresh (legacy "tail" slot in the action vector) is decided
 # alongside layer 0 block 2 to avoid an extra horizon=0 step. It still occupies
@@ -624,8 +626,12 @@ class BlockStepSpec:
 
 
 # layer 0 lives without block 1 -- the layer-0 input goes straight into block 2.
-_LAYER0_BLOCK_ORDER: Tuple[int, ...] = (2, 3, 4, 5)
-_LAYER_GE_1_BLOCK_ORDER: Tuple[int, ...] = (1, 2, 3, 4, 5)
+# C (2026-05-30): block 3 (softmax exp approx) is no longer an RL decision, so it is
+# excluded from the decided schedule (no block_idx==3 step). The legacy full action
+# vector still KEEPS block 3's slots, frozen at the static_skeletons baseline;
+# _BLOCK3_FIELDS / build_block3_cfg_from_action stay defined but unused by the schedule.
+_LAYER0_BLOCK_ORDER: Tuple[int, ...] = (2, 4, 5)
+_LAYER_GE_1_BLOCK_ORDER: Tuple[int, ...] = (1, 2, 4, 5)
 
 _BLOCK_GRAPH_KEY_TEMPLATE = {
     1: "block1_{profile}",
@@ -637,14 +643,18 @@ _BLOCK_GRAPH_KEY_TEMPLATE = {
 
 
 def horizon_for_num_layers(num_layers: int) -> int:
-    """Sequential episode horizon = 4 (layer 0) + (L-1) * 5.
+    """Sequential episode horizon (C, 2026-05-30: block 3 excluded from schedule).
 
-    For L=12 this is 59 steps. The first step also writes first_input fresh.
+    Block 3 is no longer a decided step, so:
+      - layer 0 has 3 steps (B2, B4, B5)
+      - layers 1..L-1 have 4 steps each (B1, B2, B4, B5)
+    giving horizon = 3 + (L-1) * 4. For L=12 this is 47 steps (was 59 with block 3).
+    The first step (layer 0, block 2) also writes first_input fresh.
     """
     L = int(num_layers)
     if L < 1:
         raise ValueError(f"num_layers must be >= 1, got {L}")
-    return 4 + (L - 1) * 5
+    return 3 + (L - 1) * 4
 
 
 def _full_vec_offset_for_block(num_layers: int, layer_idx: int, block_idx: int) -> int:
@@ -1580,6 +1590,32 @@ def make_all_min_action_vector(num_layers: int) -> np.ndarray:
     return np.zeros(len(dims), dtype=int)
 
 
+def _gather_effective_k_values_in_action(
+        action_vec: np.ndarray,
+        num_layers: int,
+        ) -> List[int]:
+    arr = np.asarray(action_vec, dtype=int).reshape(-1)
+    layer_dim = len(layer_dims())
+    k_positions: List[int] = []
+    cursor_in_layer = 0
+    for b in (1, 2, 3, 4, 5):
+        spec = _BLOCK_SPECS[b]
+        for _fname, kind, _max in spec.fields:
+            if kind == "K":
+                k_positions.append(cursor_in_layer)
+            cursor_in_layer += 1
+    ks: List[int] = []
+    for li in range(int(num_layers)):
+        # 首层 Block 1 K 被强制 None；其它 block 的 K 仍生效
+        for j, p in enumerate(k_positions):
+            if li == 0 and j == 0:
+                continue
+            slot = li * layer_dim + p
+            idx = int(arr[slot])
+            ks.append(int(K_LEVELS[idx]))
+    return ks
+
+
 def avg_truncation_k_in_action(
         action_vec: np.ndarray,
         num_layers: int,
@@ -1588,32 +1624,23 @@ def avg_truncation_k_in_action(
 
     用于 reward 中的 ``k_drop = baseline.avg_k - avg_k``。
     """
-    arr = np.asarray(action_vec, dtype=int).reshape(-1)
-    dims_list = layer_dims()
-    layer_dim = len(dims_list)
-    # 单层 block_dims + cumulative offset 构造 K 槽位的全局位置
-    k_positions: List[int] = []
-    cursor_in_layer = 0
-    for b in (1, 2, 3, 4, 5):
-        spec = _BLOCK_SPECS[b]
-        # K 字段必为 spec.fields 最后一个
-        for fname, kind, _max in spec.fields:
-            if kind == "K":
-                k_positions.append(cursor_in_layer)
-            cursor_in_layer += 1
-    # 遍历每层
-    ks: List[float] = []
-    for li in range(int(num_layers)):
-        # 首层 Block 1 K 被强制 None；其它 block 的 K 仍生效
-        for j, p in enumerate(k_positions):
-            if li == 0 and j == 0:
-                continue
-            slot = li * layer_dim + p
-            idx = int(arr[slot])
-            ks.append(float(K_LEVELS[idx]))
+    ks = _gather_effective_k_values_in_action(action_vec, num_layers)
     if not ks:
         return 0.0
     return float(np.mean(ks))
+
+
+def sum_truncation_k_in_action(
+        action_vec: np.ndarray,
+        num_layers: int,
+        ) -> int:
+    """Sum of decoded truncation-k values across all effective K slots.
+
+    Lets cost-matched random samplers do an integer equality pre-filter
+    before paying for a Rescale_optimizer call (mean comparisons would
+    need an explicit tolerance).
+    """
+    return int(sum(_gather_effective_k_values_in_action(action_vec, num_layers)))
 
 
 # ---------------------------------------------------------------------------

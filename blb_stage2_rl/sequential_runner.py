@@ -38,6 +38,7 @@ from .sequential_policy import (
     SequentialPolicyConfig,
     SequentialPPOConfig,
     SequentialRolloutBuffer,
+    sequential_grpo_update,
     sequential_ppo_update,
     step_to_mask_and_levels,
 )
@@ -50,6 +51,12 @@ class SequentialTrainConfig:
     log_every_n_episodes: int = 4
     seed: Optional[int] = None
     ppo: SequentialPPOConfig = field(default_factory=SequentialPPOConfig)
+    # 2026-05-31 PPO->GRPO: select the RL update algorithm. "ppo" (default) keeps
+    # sequential_ppo_update; "grpo" uses sequential_grpo_update (group-relative
+    # advantage from the update window, no critic, + frozen-reference KL).
+    # grpo_kl_beta weights the reference-KL term.
+    rl_algo: str = "ppo"
+    grpo_kl_beta: float = 0.04
     # 2026-05-18 (warmstart-sampling hotfix): the PPO entropy bonus was
     # actively undoing the forced-baseline anchor — entropy rose 6.48 →
     # 9.21 across the 3 anchor PPO updates, so the policy ended *more*
@@ -1179,6 +1186,7 @@ def train_sequential(
         *,
         env: BLBStage2SequentialEnv,
         policy: BLBStage2SequentialPolicy,
+        reference_policy: Optional[BLBStage2SequentialPolicy] = None,
         train_cfg: Optional[SequentialTrainConfig] = None,
         device: Optional[torch.device] = None,
         optimizer: Optional[torch.optim.Optimizer] = None,
@@ -1195,6 +1203,11 @@ def train_sequential(
         static_invalid_mask: Optional[StaticInvalidLevelMask] = None,
         static_invalid_scan_summary: Optional[Mapping[str, Any]] = None,
         empirical_invalid_mask: Optional[EmpiricalInvalidLevelMask] = None,
+        # OSR pre-prune mask (opt-in, 2026-05-27). Lives alongside the three
+        # masks above; populated by ``blb_stage2_rl.osr.run_osr_scan`` before
+        # RL starts (sidecar preset writes ``osr_results.json``). When None,
+        # the training loop behaves exactly as before.
+        osr_mask: Optional["OSRPrePruneMask"] = None,
         baseline_action_vec: Optional[np.ndarray] = None,
         max_rejection_retries: int = 32,
         force_baseline_episodes: int = 0,
@@ -1430,10 +1443,17 @@ def train_sequential(
                 anchor_ent_coef=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
                 ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 600)),
             )
-            metrics = sequential_ppo_update(
-                policy, optimizer, buffer, train_cfg.ppo, device,
-                ent_coef_override=current_ent_coef,
-            )
+            if str(getattr(train_cfg, "rl_algo", "ppo")).lower() == "grpo":
+                metrics = sequential_grpo_update(
+                    policy, reference_policy, optimizer, buffer, train_cfg.ppo, device,
+                    ent_coef_override=current_ent_coef,
+                    kl_beta=float(getattr(train_cfg, "grpo_kl_beta", 0.04)),
+                )
+            else:
+                metrics = sequential_ppo_update(
+                    policy, optimizer, buffer, train_cfg.ppo, device,
+                    ent_coef_override=current_ent_coef,
+                )
             ppo_metric_history.append(metrics)
             buffer.clear()
             if on_ppo_update_end is not None:
@@ -1826,6 +1846,13 @@ def train_sequential(
                     )
                     after_allowed = int(np.asarray(action_level_mask_np, dtype=bool).sum())
                     empirical_invalid_level_applied_val += max(0, before_allowed - after_allowed)
+                if osr_mask is not None:
+                    action_level_mask_np = osr_mask.apply_per_slot(
+                        spec.layer_idx,
+                        spec.block_idx,
+                        action_level_mask_np,
+                        protected_actions=protected_actions,
+                    )
                 action_level_mask_t = (
                     torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
                 )
@@ -2044,6 +2071,13 @@ def train_sequential(
                 if forbidden_mask.is_forbidden(spec.layer_idx, spec.block_idx, tup):
                     rejection_counters["samples_rejected_by_mask"] += 1
                     continue   # cheap re-sample, no optimizer call
+                # OSR per-combo blacklist (pre-prune): same short-circuit as
+                # ForbiddenActionMask, but populated by the offline OSR scan
+                # instead of runtime experience.
+                if osr_mask is not None and osr_mask.is_combo_pruned(
+                        spec.layer_idx, spec.block_idx, tup):
+                    rejection_counters["samples_rejected_by_mask"] += 1
+                    continue
 
                 eval_info = env.evaluate_step(step_action_try)
                 if eval_info["valid"]:
@@ -3133,6 +3167,7 @@ def run_sequential_via_runner(
         log(f"  {bullet} 检测到已存在 live checkpoint，自动 resume: {save_path}")
 
     start_episode = 0
+    resumed_reference_state = None  # GRPO frozen-reference state restored from ckpt
     best_reward = -float("inf")
     best_rank_key: Tuple[float, ...] = tuple()
     best_action_vec: Optional[np.ndarray] = None
@@ -3153,6 +3188,7 @@ def run_sequential_via_runner(
                     policy.load_state_dict(ckpt["policy"])
                 if "policy_ppo_aux" in ckpt:
                     policy.load_ppo_aux_state_dict(ckpt.get("policy_ppo_aux"))
+                resumed_reference_state = ckpt.get("grpo_reference_policy")
                 if "optimizer" in ckpt:
                     optimizer.load_state_dict(ckpt["optimizer"])
                 start_episode = int(ckpt.get("episode", 0))
@@ -3182,7 +3218,28 @@ def run_sequential_via_runner(
         except Exception as exc:
             log(f"  [resume][warning] failed to resume from {effective_resume_path}: {exc}")
 
-    status.set_phase("PPO 训练 (sequential per-block)")
+    # ---------- 6b) GRPO frozen reference policy ----------
+    # GRPO (2026-05-31) adds a KL penalty to a FROZEN reference = the policy at
+    # GRPO start. Snapshot it here (after construction + warmstart + resume) so the
+    # KL anchor is stable across the run; on resume, restore the ORIGINAL frozen
+    # reference from the checkpoint rather than re-snapshotting the already-trained
+    # policy (which would move the anchor). PPO mode leaves reference_policy=None.
+    reference_policy = None
+    if str(getattr(train_cfg, "rl_algo", "ppo")).lower() == "grpo":
+        reference_policy = BLBStage2SequentialPolicy(policy_cfg).to(device)
+        if resumed_reference_state is not None:
+            reference_policy.load_state_dict(resumed_reference_state)
+            log(f"  {bullet} GRPO: restored frozen reference policy from checkpoint")
+        else:
+            reference_policy.load_state_dict(policy.state_dict())
+            log(f"  {bullet} GRPO: snapshotted frozen reference policy at GRPO start")
+        reference_policy.eval()
+        for _p in reference_policy.parameters():
+            _p.requires_grad_(False)
+
+    status.set_phase(
+        f"{str(getattr(train_cfg, 'rl_algo', 'ppo')).upper()} 训练 (sequential per-block)"
+    )
 
     # ---------- 7) sequential training loop ----------
     ppo = SequentialPPOConfig(
@@ -3205,6 +3262,8 @@ def run_sequential_via_runner(
         log_every_n_episodes=max(1, int(train_cfg.rollout_size)),
         seed=int(train_cfg.seed),
         ppo=ppo,
+        rl_algo=str(getattr(train_cfg, "rl_algo", "ppo")),
+        grpo_kl_beta=float(getattr(train_cfg, "grpo_kl_beta", 0.04)),
         ent_coef_anchor=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
         ent_coef_ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 600)),
         absolute_episode_start=int(start_episode),
@@ -3645,6 +3704,12 @@ def run_sequential_via_runner(
                 payload = {
                     "policy": policy.state_dict(),
                     "policy_ppo_aux": policy.ppo_aux_state_dict(),
+                    # GRPO frozen reference (None in PPO mode) so resume restores
+                    # the ORIGINAL KL anchor rather than re-snapshotting.
+                    "grpo_reference_policy": (
+                        reference_policy.state_dict()
+                        if reference_policy is not None else None
+                    ),
                     "optimizer": optimizer.state_dict(),
                     "episode": int(start_episode + record.episode_idx + 1),
                     "best_reward": float(best_reward),
@@ -4115,6 +4180,7 @@ def run_sequential_via_runner(
     seq_result = train_sequential(
         env=seq_env,
         policy=policy,
+        reference_policy=reference_policy,
         train_cfg=seq_train_cfg,
         device=device,
         optimizer=optimizer,

@@ -14,6 +14,7 @@ from blb_stage2_rl.action_space import (
     avg_truncation_k_in_action,
     build_optimizer_requests,
     load_max_sfs,
+    sum_truncation_k_in_action,
 )
 from blb_stage2_rl.feasibility import build_final_eval_feasibility
 from final_evaluation_module import UnifiedFinalEvaluationModule
@@ -25,7 +26,14 @@ from rescale_optimizer_bridge import (
     load_baseline_archive,
 )
 
-from .action_grid import build_action_candidates, build_random_action_candidates, coerce_spec_list
+from .action_grid import (
+    ActionCandidate,
+    CostMatchedSamplingDiagnostics,
+    build_action_candidates,
+    build_cost_matched_random_action_candidates,
+    build_random_action_candidates,
+    coerce_spec_list,
+)
 
 
 class BLBActionFinalEvaluationModule:
@@ -52,6 +60,10 @@ class BLBActionFinalEvaluationModule:
         action_config_path: str = "",
         action_ranges=(),
         action_fixed=(),
+        cost_match_count: int = 50,
+        cost_match_max_attempts: int = 5000,
+        glue_submission_enabled: bool = True,
+        glue_submission_seed: int = 42,
     ):
         self.evaluator = evaluator
         self.config_source = (config_source or "search").lower()
@@ -62,6 +74,10 @@ class BLBActionFinalEvaluationModule:
         self.random_enabled = bool(random_enabled)
         self.random_count = max(0, int(random_count))
         self.repeat_n = max(1, int(repeat_n))
+        self.cost_match_count = max(0, int(cost_match_count))
+        self.cost_match_max_attempts = max(0, int(cost_match_max_attempts))
+        self.glue_submission_enabled = bool(glue_submission_enabled)
+        self.glue_submission_seed = int(glue_submission_seed)
         default_results_dir = getattr(
             evaluator, "final_eval_dir", os.path.join("rl_results", "final_eval")
         )
@@ -119,24 +135,16 @@ class BLBActionFinalEvaluationModule:
         opt_softmax = np.asarray(opt_softmax, dtype=int)
 
         base_action = self._resolve_base_action(search_best_stage2)
-        if self.random_enabled:
-            candidates = build_random_action_candidates(
-                num_layers=total_layers,
-                count=self.random_count,
-                seed=self.random_seed,
-                base_action_vec=base_action,
-                fixed_specs=self.action_fixed,
-                profile=profile,
-            )
-        else:
-            candidates = build_action_candidates(
-                num_layers=total_layers,
-                profile=profile,
-                base_action_vec=base_action,
-                fixed_specs=self.action_fixed,
-                range_specs=self.action_ranges,
-                action_config_path=self.action_config_path,
-            )
+        # Always build the "selected" candidate first via the grid/config path —
+        # this anchors the cost target for cost-matched random sampling below.
+        selected_candidates = build_action_candidates(
+            num_layers=total_layers,
+            profile=profile,
+            base_action_vec=base_action,
+            fixed_specs=self.action_fixed,
+            range_specs=self.action_ranges,
+            action_config_path=self.action_config_path,
+        )
 
         metric_names = ev.get_metric_short_names()
         num_metrics = ev.get_num_metrics()
@@ -149,7 +157,9 @@ class BLBActionFinalEvaluationModule:
             f"mode={self.rescale_optimizer_mode}"
         )
         ev.log(
-            f"action_candidates={len(candidates)} random_enabled={self.random_enabled} "
+            f"selected_candidates={len(selected_candidates)} "
+            f"random_enabled={self.random_enabled} "
+            f"cost_match_count={self.cost_match_count} "
             f"repeat={self.repeat_n}"
         )
         if self.action_ranges:
@@ -168,9 +178,12 @@ class BLBActionFinalEvaluationModule:
             baseline_result["s"],
         )
 
-        results = []
-        for idx, candidate in enumerate(candidates, start=1):
-            ev.log(f"\n--- BLB action candidate {idx}/{len(candidates)}: {candidate.name} ---")
+        # ---- Evaluate selected candidates first ----
+        selected_results: List[Dict[str, Any]] = []
+        for idx, candidate in enumerate(selected_candidates, start=1):
+            ev.log(
+                f"\n--- BLB selected candidate {idx}/{len(selected_candidates)}: {candidate.name} ---"
+            )
             result = self._evaluate_action_candidate(
                 name=candidate.name,
                 action_vec=candidate.action_vec,
@@ -179,15 +192,82 @@ class BLBActionFinalEvaluationModule:
                 softmax=opt_softmax,
                 report_constraints=report_constraints,
             )
-            results.append(result)
+            selected_results.append(result)
             ev.log(
                 f"  {candidate.name}: Loss={result['loss']:.4f}, "
                 f"{metric_names[0]}={result['p']:.4f}"
                 + (f", {metric_names[1]}={result['s']:.4f}" if num_metrics > 1 else "")
-                + f", avg_k={result['avg_truncation_k']:.2f}, bits={result['total_bits_sum']}"
+                + f", avg_k={result['avg_truncation_k']:.2f}, bits={result['total_bits_sum']}, "
+                f"fusion={result['total_fusion_count']}"
             )
 
+        # ---- Generate cost-matched random candidates based on first selected ----
+        cost_match_diagnostics: Optional[CostMatchedSamplingDiagnostics] = None
+        random_results: List[Dict[str, Any]] = []
+        if self.random_enabled and self.cost_match_count > 0 and selected_results:
+            anchor = selected_results[0]
+            anchor_action = np.asarray(selected_candidates[0].action_vec, dtype=int)
+            target_total_bits = int(anchor["total_bits_sum"])
+            target_total_fusion = int(anchor["total_fusion_count"])
+            target_sum_k = sum_truncation_k_in_action(anchor_action, total_layers)
+            ev.log(
+                "\n--- Cost-matched random sampling ---\n"
+                f"  anchor: {selected_candidates[0].name} "
+                f"(total_bits={target_total_bits}, total_fusion={target_total_fusion}, "
+                f"sum_k={target_sum_k}, avg_k={anchor['avg_truncation_k']:.3f})\n"
+                f"  target: {self.cost_match_count} matched configs, "
+                f"max {self.cost_match_max_attempts} attempts"
+            )
+            max_sfs_table = load_max_sfs(profile)
+            random_candidates, cost_match_diagnostics = (
+                build_cost_matched_random_action_candidates(
+                    num_layers=total_layers,
+                    profile=profile,
+                    selected_action_vec=anchor_action,
+                    selected_total_bits=target_total_bits,
+                    selected_total_fusion=target_total_fusion,
+                    selected_sum_k=target_sum_k,
+                    bridge=self.rescale_bridge,
+                    max_sfs=max_sfs_table,
+                    gelu_degree=opt_gelu,
+                    attn_degree=opt_softmax,
+                    seed=self.random_seed,
+                    count=self.cost_match_count,
+                    max_attempts=self.cost_match_max_attempts,
+                    fixed_specs=self.action_fixed,
+                    log_fn=ev.log,
+                )
+            )
+            for idx, candidate in enumerate(random_candidates, start=1):
+                ev.log(
+                    f"\n--- BLB random candidate {idx}/{len(random_candidates)}: "
+                    f"{candidate.name} ---"
+                )
+                result = self._evaluate_action_candidate(
+                    name=candidate.name,
+                    action_vec=candidate.action_vec,
+                    overrides=candidate.overrides,
+                    gelu=opt_gelu,
+                    softmax=opt_softmax,
+                    report_constraints=report_constraints,
+                )
+                random_results.append(result)
+                ev.log(
+                    f"  {candidate.name}: Loss={result['loss']:.4f}, "
+                    f"{metric_names[0]}={result['p']:.4f}"
+                    + (f", {metric_names[1]}={result['s']:.4f}" if num_metrics > 1 else "")
+                    + f", avg_k={result['avg_truncation_k']:.2f}, bits={result['total_bits_sum']}, "
+                    f"fusion={result['total_fusion_count']}"
+                )
+
+        results = selected_results + random_results
         self._attach_relative_metrics(baseline_result, results)
+        comparison_summary = self._summarize_selected_vs_random(
+            selected_results=selected_results,
+            random_results=random_results,
+            num_metrics=num_metrics,
+        )
+        cost_match_payload = self._cost_match_diagnostics_to_dict(cost_match_diagnostics)
         summary_path = self._save_results_json(
             selected_source=f"blb_action(stage1={stage1_source})",
             baseline_stage1_gelu=baseline_stage1_gelu,
@@ -201,22 +281,40 @@ class BLBActionFinalEvaluationModule:
                 "limit_primary_metric": float(limit_p),
                 "limit_secondary_metric": float(limit_s),
             },
+            comparison_summary=comparison_summary,
+            cost_match_diagnostics=cost_match_payload,
         )
         text_path = self._save_results_markdown(
             json_path=summary_path,
             selected_source=f"blb_action(stage1={stage1_source})",
             baseline_result=baseline_result,
             candidate_results=results,
+            comparison_summary=comparison_summary,
+            cost_match_diagnostics=cost_match_payload,
         )
         plot_path = self._save_results_plot(candidate_results=results)
+        scatter_path = self._save_scatter_plot(
+            selected_results=selected_results,
+            random_results=random_results,
+        )
         ev.log(f"BLB action final-eval summary saved to: {summary_path}")
         ev.log(f"BLB action final-eval text report saved to: {text_path}")
         if plot_path:
             ev.log(f"BLB action final-eval plot saved to: {plot_path}")
+        if scatter_path:
+            ev.log(f"BLB action scatter plot saved to: {scatter_path}")
+
+        glue_payload = self._maybe_run_glue_submission(
+            selected_candidate=selected_candidates[0] if selected_candidates else None,
+            selected_result=selected_results[0] if selected_results else None,
+            opt_gelu=opt_gelu,
+            opt_softmax=opt_softmax,
+            profile=profile,
+        )
 
         ev.apply_configuration(opt_gelu, opt_softmax)
         self._clear_all_noise()
-        best = results[0] if results else None
+        best = selected_results[0] if selected_results else None
         return {
             "selected_source": f"blb_action(stage1={stage1_source})",
             "opt_gelu": opt_gelu,
@@ -225,11 +323,15 @@ class BLBActionFinalEvaluationModule:
             "baseline_result": baseline_result,
             "optimized_result": best,
             "candidate_results": results,
-            "random_results": results[1:] if self.random_enabled else [],
-            "random_summary": {},
+            "selected_results": selected_results,
+            "random_results": random_results,
+            "random_summary": comparison_summary or {},
+            "cost_match_diagnostics": cost_match_payload,
             "summary_path": summary_path,
             "text_report_path": text_path,
             "plot_path": plot_path,
+            "scatter_path": scatter_path,
+            "glue_submission": glue_payload,
             "variance_plot_path": None,
         }
 
@@ -926,6 +1028,8 @@ class BLBActionFinalEvaluationModule:
         selected_source: str,
         baseline_result,
         candidate_results,
+        comparison_summary: Optional[Dict[str, Any]] = None,
+        cost_match_diagnostics: Optional[Dict[str, Any]] = None,
     ) -> str:
         metric_names = self.evaluator.get_metric_short_names()
         primary = metric_names[0] if metric_names else "metric1"
@@ -951,13 +1055,32 @@ class BLBActionFinalEvaluationModule:
             f"- clean baseline {primary}: `{baseline_result['p']:.6f}`",
             f"- clean baseline {secondary}: `{baseline_result['s']:.6f}`",
             "",
+        ]
+        if cost_match_diagnostics:
+            lines.extend([
+                "## Cost-Matched Random Sampling",
+                "",
+                f"- target total_bits_sum: `{cost_match_diagnostics.get('target_total_bits')}`",
+                f"- target total_fusion_count: `{cost_match_diagnostics.get('target_total_fusion')}`",
+                f"- target sum_truncation_k: `{cost_match_diagnostics.get('target_sum_k')}`",
+                f"- requested: `{cost_match_diagnostics.get('requested_count')}` configs",
+                f"- accepted: `{cost_match_diagnostics.get('accepted')}` configs in "
+                f"`{cost_match_diagnostics.get('attempts')}`/`{cost_match_diagnostics.get('max_attempts')}` attempts",
+                f"- rejection breakdown: invalid=`{cost_match_diagnostics.get('invalid')}`, "
+                f"cost_mismatch=`{cost_match_diagnostics.get('cost_mismatch')}`, "
+                f"avg_k_prefilter=`{cost_match_diagnostics.get('avg_k_prefilter_skipped')}`",
+                "",
+            ])
+        if comparison_summary:
+            lines.extend(self._comparison_summary_markdown(comparison_summary, primary, secondary))
+        lines.extend([
             "## Group Comparison",
             "",
             "| group | truncation k | effective K positions | loss mean | loss std | "
             f"{primary} mean | {primary} std | {secondary} mean | {secondary} std | "
             "time mean ms | total bits | fusion | model cfg verified |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
-        ]
+        ])
         for result in candidate_results:
             trunc = result.get("config_details", {}).get("truncation", {})
             unique_k = self._unique_truncation_label(trunc)
@@ -1107,6 +1230,8 @@ class BLBActionFinalEvaluationModule:
         baseline_result,
         candidate_results,
         selection_constraints,
+        comparison_summary: Optional[Dict[str, Any]] = None,
+        cost_match_diagnostics: Optional[Dict[str, Any]] = None,
     ):
         output = {
             "dataset": self.evaluator.dataset_key,
@@ -1122,11 +1247,15 @@ class BLBActionFinalEvaluationModule:
             "constraints": {"selection": selection_constraints},
             "baseline": self._json_ready(baseline_result),
             "candidate_results": [self._json_ready(r) for r in candidate_results],
+            "comparison_summary": self._json_ready(comparison_summary or {}),
+            "cost_match_diagnostics": self._json_ready(cost_match_diagnostics or {}),
             "evaluation_protocol": {
-                "version": 1,
-                "mode": "blb_action_grid",
+                "version": 2,
+                "mode": "blb_action_grid_cost_matched",
                 "candidate_count": int(len(candidate_results)),
                 "random_groups": "enabled" if self.random_enabled else "disabled",
+                "cost_match_count": int(self.cost_match_count),
+                "cost_match_max_attempts": int(self.cost_match_max_attempts),
                 "action_ranges": list(self.action_ranges),
                 "action_fixed": list(self.action_fixed),
                 "repeat_n": int(self.repeat_n),
@@ -1139,6 +1268,374 @@ class BLBActionFinalEvaluationModule:
         with open(output_path, "w", encoding="utf-8") as fh:
             json.dump(output, fh, indent=2)
         return output_path
+
+    # ------------------------------------------------------------------
+    # Comparison helpers (selected vs random) + new outputs
+    # ------------------------------------------------------------------
+
+    def _cost_match_diagnostics_to_dict(
+            self, diag: Optional[CostMatchedSamplingDiagnostics]
+            ) -> Dict[str, Any]:
+        if diag is None:
+            return {}
+        return {
+            "target_total_bits": int(diag.target_total_bits),
+            "target_total_fusion": int(diag.target_total_fusion),
+            "target_sum_k": int(diag.target_sum_k),
+            "accepted": int(diag.accepted),
+            "attempts": int(diag.attempts),
+            "invalid": int(diag.invalid),
+            "cost_mismatch": int(diag.cost_mismatch),
+            "avg_k_prefilter_skipped": int(diag.avg_k_prefilter_skipped),
+            "max_attempts": int(diag.max_attempts),
+            "requested_count": int(diag.requested_count),
+        }
+
+    def _summarize_selected_vs_random(
+            self,
+            *,
+            selected_results: List[Dict[str, Any]],
+            random_results: List[Dict[str, Any]],
+            num_metrics: int,
+            ) -> Dict[str, Any]:
+        if not selected_results and not random_results:
+            return {}
+
+        def _field_stats(rows: List[Dict[str, Any]], key: str) -> Dict[str, float]:
+            vals = np.asarray([float(r.get(key, 0.0)) for r in rows], dtype=float)
+            if vals.size == 0:
+                return {"n": 0}
+            return {
+                "n": int(vals.size),
+                "mean": float(vals.mean()),
+                "std": float(vals.std(ddof=0)),
+                "min": float(vals.min()),
+                "max": float(vals.max()),
+            }
+
+        anchor = selected_results[0] if selected_results else None
+        random_count = len(random_results)
+        summary: Dict[str, Any] = {
+            "selected_count": int(len(selected_results)),
+            "random_count": int(random_count),
+        }
+        if anchor is not None:
+            summary["selected_anchor"] = {
+                "name": str(anchor.get("name", "selected")),
+                "loss_mean": float(anchor.get("loss", 0.0)),
+                "loss_std": float(anchor.get("loss_std", 0.0)),
+                "metric1_mean": float(anchor.get("p", 0.0)),
+                "metric1_std": float(anchor.get("p_std", 0.0)),
+                "metric2_mean": float(anchor.get("s", 0.0)),
+                "metric2_std": float(anchor.get("s_std", 0.0)),
+                "total_bits_sum": int(anchor.get("total_bits_sum", 0)),
+                "total_fusion_count": int(anchor.get("total_fusion_count", 0)),
+                "avg_truncation_k": float(anchor.get("avg_truncation_k", 0.0)),
+            }
+        if random_results:
+            summary["random_stats"] = {
+                "loss_mean": _field_stats(random_results, "loss"),
+                "loss_std": _field_stats(random_results, "loss_std"),
+                "metric1_mean": _field_stats(random_results, "p"),
+                "metric1_std": _field_stats(random_results, "p_std"),
+                "metric2_mean": _field_stats(random_results, "s"),
+                "metric2_std": _field_stats(random_results, "s_std"),
+            }
+        if anchor is not None and random_results:
+            # Rank percentiles: where does the selected anchor sit among randoms?
+            def _percentile_rank(values: List[float], target: float, higher_is_better: bool):
+                arr = np.asarray(values, dtype=float)
+                if arr.size == 0:
+                    return None
+                if higher_is_better:
+                    rank = int((arr < float(target)).sum())  # number worse than target
+                else:
+                    rank = int((arr > float(target)).sum())
+                return {
+                    "rank_better_than_selected": int(rank),
+                    "out_of": int(arr.size),
+                    "percentile": float(rank) / float(arr.size) if arr.size else None,
+                }
+
+            metric_rows = [float(r.get("p", 0.0)) for r in random_results]
+            loss_rows = [float(r.get("loss", 0.0)) for r in random_results]
+            summary["anchor_rank_vs_random"] = {
+                "metric1_higher_better": _percentile_rank(metric_rows, float(anchor.get("p", 0.0)), True),
+                "loss_lower_better": _percentile_rank(loss_rows, float(anchor.get("loss", 0.0)), False),
+            }
+            if num_metrics > 1:
+                metric2_rows = [float(r.get("s", 0.0)) for r in random_results]
+                summary["anchor_rank_vs_random"]["metric2_higher_better"] = _percentile_rank(
+                    metric2_rows, float(anchor.get("s", 0.0)), True
+                )
+        return summary
+
+    def _comparison_summary_markdown(
+            self,
+            summary: Dict[str, Any],
+            primary: str,
+            secondary: str,
+            ) -> List[str]:
+        lines: List[str] = []
+        anchor = summary.get("selected_anchor") or {}
+        stats = summary.get("random_stats") or {}
+        if not anchor and not stats:
+            return lines
+        lines.extend(["## Selected vs Cost-Matched Random Comparison", ""])
+        if anchor:
+            lines.append(
+                f"- selected (`{anchor.get('name')}`): "
+                f"loss={anchor.get('loss_mean', 0.0):.6f} ± {anchor.get('loss_std', 0.0):.6f}, "
+                f"{primary}={anchor.get('metric1_mean', 0.0):.6f} ± {anchor.get('metric1_std', 0.0):.6f}, "
+                f"{secondary}={anchor.get('metric2_mean', 0.0):.6f} ± {anchor.get('metric2_std', 0.0):.6f}, "
+                f"total_bits={anchor.get('total_bits_sum')}, "
+                f"fusion={anchor.get('total_fusion_count')}, "
+                f"avg_k={anchor.get('avg_truncation_k', 0.0):.3f}"
+            )
+        if stats:
+            lines.extend([
+                "",
+                "| stat | loss mean | loss std | "
+                f"{primary} mean | {primary} std | {secondary} mean | {secondary} std |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ])
+            n_random = int(summary.get("random_count", 0))
+            lines.append(
+                f"| random (n={n_random}) mean | "
+                f"{stats.get('loss_mean', {}).get('mean', 0.0):.6f} | "
+                f"{stats.get('loss_std', {}).get('mean', 0.0):.6f} | "
+                f"{stats.get('metric1_mean', {}).get('mean', 0.0):.6f} | "
+                f"{stats.get('metric1_std', {}).get('mean', 0.0):.6f} | "
+                f"{stats.get('metric2_mean', {}).get('mean', 0.0):.6f} | "
+                f"{stats.get('metric2_std', {}).get('mean', 0.0):.6f} |"
+            )
+            lines.append(
+                f"| random std (across cfgs) | "
+                f"{stats.get('loss_mean', {}).get('std', 0.0):.6f} | "
+                f"{stats.get('loss_std', {}).get('std', 0.0):.6f} | "
+                f"{stats.get('metric1_mean', {}).get('std', 0.0):.6f} | "
+                f"{stats.get('metric1_std', {}).get('std', 0.0):.6f} | "
+                f"{stats.get('metric2_mean', {}).get('std', 0.0):.6f} | "
+                f"{stats.get('metric2_std', {}).get('std', 0.0):.6f} |"
+            )
+            lines.append(
+                f"| random min | "
+                f"{stats.get('loss_mean', {}).get('min', 0.0):.6f} | "
+                f"{stats.get('loss_std', {}).get('min', 0.0):.6f} | "
+                f"{stats.get('metric1_mean', {}).get('min', 0.0):.6f} | "
+                f"{stats.get('metric1_std', {}).get('min', 0.0):.6f} | "
+                f"{stats.get('metric2_mean', {}).get('min', 0.0):.6f} | "
+                f"{stats.get('metric2_std', {}).get('min', 0.0):.6f} |"
+            )
+            lines.append(
+                f"| random max | "
+                f"{stats.get('loss_mean', {}).get('max', 0.0):.6f} | "
+                f"{stats.get('loss_std', {}).get('max', 0.0):.6f} | "
+                f"{stats.get('metric1_mean', {}).get('max', 0.0):.6f} | "
+                f"{stats.get('metric1_std', {}).get('max', 0.0):.6f} | "
+                f"{stats.get('metric2_mean', {}).get('max', 0.0):.6f} | "
+                f"{stats.get('metric2_std', {}).get('max', 0.0):.6f} |"
+            )
+        rank = summary.get("anchor_rank_vs_random") or {}
+        if rank:
+            lines.extend(["", "### Anchor rank vs random group", ""])
+            for key, item in rank.items():
+                if not item:
+                    continue
+                lines.append(
+                    f"- `{key}`: selected is better than "
+                    f"`{item.get('rank_better_than_selected')}` / `{item.get('out_of')}` random configs "
+                    f"(percentile=`{item.get('percentile'):.3f}`)"
+                )
+        lines.append("")
+        return lines
+
+    def _save_scatter_plot(
+            self,
+            *,
+            selected_results: List[Dict[str, Any]],
+            random_results: List[Dict[str, Any]],
+            ) -> Optional[str]:
+        if not selected_results and not random_results:
+            return None
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except Exception as exc:
+            self.evaluator.log(f"  [scatter][warning] matplotlib unavailable: {exc}")
+            return None
+
+        metric_names = self.evaluator.get_metric_short_names()
+        primary = metric_names[0] if metric_names else "metric1"
+        num_metrics = self.evaluator.get_num_metrics()
+
+        def _xs_ys(rows: List[Dict[str, Any]]):
+            xs = [float(r.get("p", 0.0)) for r in rows]
+            ys = [float(r.get("p_std", 0.0)) for r in rows]
+            return xs, ys
+
+        sel_x, sel_y = _xs_ys(selected_results)
+        rnd_x, rnd_y = _xs_ys(random_results)
+
+        ncols = 2 if num_metrics > 1 else 1
+        fig, axes = plt.subplots(1, ncols, figsize=(6 * ncols, 5))
+        if ncols == 1:
+            axes = [axes]
+
+        ax = axes[0]
+        if rnd_x:
+            ax.scatter(rnd_x, rnd_y, c="#888888", alpha=0.6, label=f"random (n={len(rnd_x)})", marker="o")
+        if sel_x:
+            ax.scatter(sel_x, sel_y, c="#e15759", s=120, label="selected", marker="*", edgecolors="black")
+        ax.set_xlabel(f"{primary} mean")
+        ax.set_ylabel(f"{primary} std (across repeat_n)")
+        ax.set_title(f"{primary}: mean × std")
+        ax.legend(loc="best")
+        ax.grid(alpha=0.25)
+
+        if ncols > 1:
+            secondary = metric_names[1]
+            ax2 = axes[1]
+            rnd2_x = [float(r.get("s", 0.0)) for r in random_results]
+            rnd2_y = [float(r.get("s_std", 0.0)) for r in random_results]
+            sel2_x = [float(r.get("s", 0.0)) for r in selected_results]
+            sel2_y = [float(r.get("s_std", 0.0)) for r in selected_results]
+            if rnd2_x:
+                ax2.scatter(rnd2_x, rnd2_y, c="#888888", alpha=0.6, label=f"random (n={len(rnd2_x)})", marker="o")
+            if sel2_x:
+                ax2.scatter(sel2_x, sel2_y, c="#e15759", s=120, label="selected", marker="*", edgecolors="black")
+            ax2.set_xlabel(f"{secondary} mean")
+            ax2.set_ylabel(f"{secondary} std (across repeat_n)")
+            ax2.set_title(f"{secondary}: mean × std")
+            ax2.legend(loc="best")
+            ax2.grid(alpha=0.25)
+
+        fig.tight_layout()
+        path = os.path.join(
+            self.results_dir,
+            f"blb_action_final_eval_scatter_{self.evaluator.dataset_key}.png",
+        )
+        fig.savefig(path, dpi=160)
+        plt.close(fig)
+        return path
+
+    # ------------------------------------------------------------------
+    # Optional auto-trigger of GLUE submission for the selected BLB action
+    # ------------------------------------------------------------------
+
+    def _maybe_run_glue_submission(
+            self,
+            *,
+            selected_candidate: Optional[ActionCandidate],
+            selected_result: Optional[Dict[str, Any]],
+            opt_gelu: np.ndarray,
+            opt_softmax: np.ndarray,
+            profile: str,
+            ) -> Dict[str, Any]:
+        if not self.glue_submission_enabled:
+            return {"enabled": False, "skipped_reason": "disabled_by_settings"}
+        if selected_candidate is None or selected_result is None:
+            return {"enabled": True, "skipped_reason": "no_selected_candidate"}
+        try:
+            from generate_glue_submission import generate_blb_glue_submission
+        except Exception as exc:
+            self.evaluator.log(
+                f"  [glue][warning] cannot import generate_blb_glue_submission: {exc}"
+            )
+            return {"enabled": True, "skipped_reason": f"import_error: {exc}"}
+
+        glue_dir = os.path.join(self.results_dir, "glue_submission")
+        os.makedirs(glue_dir, exist_ok=True)
+        # Persist the BLB action as a slot-form JSON the generator can load
+        # without depending on training-side artifacts.
+        action_json_path = os.path.join(glue_dir, "blb_action_used.json")
+        self._dump_action_to_slots_json(
+            path=action_json_path,
+            action_vec=np.asarray(selected_candidate.action_vec, dtype=int),
+            profile=profile,
+            opt_gelu=opt_gelu,
+            opt_softmax=opt_softmax,
+            anchor_name=str(selected_candidate.name),
+        )
+
+        try:
+            payload = generate_blb_glue_submission(
+                action_config_path=action_json_path,
+                blb_task=str(self.evaluator.dataset_key),
+                model_type=str(getattr(self.evaluator, "model_type", "bert-base")),
+                output_dir=glue_dir,
+                seed=int(self.glue_submission_seed),
+                profile=profile,
+                gelu_degree=np.asarray(opt_gelu, dtype=int).tolist(),
+                softmax_degree=np.asarray(opt_softmax, dtype=int).tolist(),
+                log_fn=self.evaluator.log,
+            )
+        except Exception as exc:
+            self.evaluator.log(f"  [glue][error] submission failed: {exc}")
+            return {"enabled": True, "error": str(exc), "output_dir": glue_dir}
+
+        zip_path = payload.get("zip_path")
+        if zip_path:
+            self.evaluator.log(f"  [glue] submission zip ready: {zip_path}")
+        return {
+            "enabled": True,
+            "output_dir": glue_dir,
+            "action_config_path": action_json_path,
+            "blb_task": str(self.evaluator.dataset_key),
+            "seed": int(self.glue_submission_seed),
+            **{k: v for k, v in payload.items() if k != "log"},
+        }
+
+    def _dump_action_to_slots_json(
+            self,
+            *,
+            path: str,
+            action_vec: np.ndarray,
+            profile: str,
+            opt_gelu: np.ndarray,
+            opt_softmax: np.ndarray,
+            anchor_name: str,
+            ) -> None:
+        try:
+            from blb_stage2_rl.action_io import action_vec_to_slots_list
+            from blb_stage2_rl.action_space import describe_action_vector
+        except ImportError:
+            return
+        max_sfs = load_max_sfs(profile)
+        num_layers = int(self.evaluator.total_layers)
+        slots = action_vec_to_slots_list(
+            np.asarray(action_vec, dtype=int),
+            max_sfs=max_sfs,
+            num_layers=num_layers,
+            gelu_degree=np.asarray(opt_gelu, dtype=int),
+            attn_degree=np.asarray(opt_softmax, dtype=int),
+            profile=str(profile),
+        )
+        # describe_action_vector emits the full records list including
+        # location / operation / N — useful for the human reader.
+        description = describe_action_vector(
+            np.asarray(action_vec, dtype=int),
+            max_sfs=max_sfs,
+            num_layers=num_layers,
+            gelu_degree=np.asarray(opt_gelu, dtype=int),
+            attn_degree=np.asarray(opt_softmax, dtype=int),
+            profile=str(profile),
+        )
+        payload = {
+            "schema_version": "blb_v3_slots_human_v1",
+            "label": str(anchor_name),
+            "profile": str(profile),
+            "num_layers": int(num_layers),
+            "action_length": int(np.asarray(action_vec, dtype=int).size),
+            "gelu_degree": np.asarray(opt_gelu, dtype=int).tolist(),
+            "attn_degree": np.asarray(opt_softmax, dtype=int).tolist(),
+            "action_vec": np.asarray(action_vec, dtype=int).tolist(),
+            "slots": slots,
+            "records": description.get("records", []),
+        }
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, ensure_ascii=False)
 
     @staticmethod
     def _attach_relative_metrics(baseline, results):

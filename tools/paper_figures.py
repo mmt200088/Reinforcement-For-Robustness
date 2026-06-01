@@ -165,8 +165,17 @@ def load_run(run_dir: str, label: str = "") -> RunData:
     # The blb_stage2/progress/ subtree is where everything lives.
     progress_dir = os.path.join(run_dir, "blb_stage2", "progress")
     if not os.path.isdir(progress_dir):
-        # Some old runs may have everything directly under run_dir.
-        progress_dir = run_dir
+        # 候选顺序：解耦扁平布局 stage2/{combo}/progress/ → 旧 stage2_noise/progress/
+        # → 最后回退到 run_dir 本身（很老的 run）。
+        for _cand in (
+            os.path.join(run_dir, "progress"),
+            os.path.join(run_dir, "stage2_noise", "progress"),
+        ):
+            if os.path.isdir(_cand):
+                progress_dir = _cand
+                break
+        else:
+            progress_dir = run_dir
 
     diag = os.path.join(progress_dir, "diagnostics")
     episodes = _read_jsonl(os.path.join(diag, "episodes.jsonl"))

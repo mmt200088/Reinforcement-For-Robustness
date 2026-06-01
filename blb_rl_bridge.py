@@ -209,15 +209,15 @@ class BLBNoiseRLBridge:
                 for li in layer_indices:
                     self._installed.setdefault(int(li), set()).add(block_name)
 
-        # ---------- 3) Block 3 / 5：cfg_per_layer 路径（degree-aware） ----------
-        if block3_cfgs:
-            self.handler.replace_layer_block3_noise(
-                layer_indices=list(block3_cfgs.keys()),
-                layer_name=self.layers_attribute,
-                cfg_per_layer=dict(block3_cfgs),
-            )
-            for li in block3_cfgs:
-                self._installed.setdefault(int(li), set()).add("block3")
+        # ---------- 3) Block 5：cfg_per_layer 路径（degree-aware） ----------
+        # C (2026-05-30): block 3 (softmax exp approx) noise is intentionally NOT
+        # installed. Block 3 is removed from the RL search and frozen at the
+        # static_skeletons baseline, so the model forward runs softmax WITHOUT any
+        # block-3 CKKS noise. ``self.handler.replace_layer_block3_noise`` is kept
+        # (it may be re-enabled later) but never called here; ``block3_cfgs`` is
+        # accepted for API compatibility and deliberately ignored. Applying this
+        # uniformly to baseline + candidates keeps the noise floor consistent.
+        _ = block3_cfgs
 
         if block5_cfgs:
             self.handler.replace_layer_block5_noise(

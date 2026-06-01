@@ -44,8 +44,8 @@ from rescale_optimizer_bridge import (
 from .action_space import (
     BlockStepSpec,
     action_vector_to_cfgs,
-    empty_full_action_vec,
     horizon_for_num_layers,
+    make_all_max_action_vector,
     splice_step_action_into_full_vec,
     step_schedule,
     step_schedule_max_dim,
@@ -120,8 +120,12 @@ class BLBStage2SequentialEnv:
         self._schedule: List[BlockStepSpec] = []
         self._rebuild_schedule()
 
-        # Per-episode mutable state
-        self._pending_full_vec = empty_full_action_vec(self.num_layers)
+        # Per-episode mutable state. C (2026-05-30): seed the accumulator with the
+        # all-max (== static_skeletons baseline) vector, not all-min. Any slot never
+        # written by a decided step — i.e. all of block 3, which is excluded from the
+        # schedule — therefore stays frozen at its baseline. Decided blocks (1,2,4,5)
+        # overwrite their own slots each step, so this only changes block 3.
+        self._pending_full_vec = make_all_max_action_vector(self.num_layers)
         self._step_idx: int = 0
         self._prev_actions: List[List[int]] = []
         self._prev_signals: List[Dict[str, float]] = []
@@ -158,7 +162,9 @@ class BLBStage2SequentialEnv:
         # degree sync) to the base env, then start a fresh accumulator.
         self.base.reset(seed=seed)
         self._rebuild_schedule()
-        self._pending_full_vec = empty_full_action_vec(self.num_layers)
+        # C (2026-05-30): baseline-seed so block 3 (excluded from the schedule)
+        # stays frozen at the static_skeletons baseline; decided blocks overwrite.
+        self._pending_full_vec = make_all_max_action_vector(self.num_layers)
         self._step_idx = 0
         self._prev_actions = []
         self._prev_signals = []

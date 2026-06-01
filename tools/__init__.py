@@ -11,7 +11,6 @@ Modules:
   - ``aggregate_seeds``    — multi-seed run aggregator (mean ± std)
   - ``paper_figures``      — paper-friendly figure generator
   - ``validate_preset``    — preset .conf typo / unknown-flag detector
-  - ``status_board``       — running RL/GA/general/compare job aggregator (legacy)
 
 The ``tools/run_multi_seed.sh`` shell driver lives alongside but is not
 importable (it shells out to the launcher with --blb-v3-seed / --run-tag).

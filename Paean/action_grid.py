@@ -13,12 +13,15 @@ from blb_stage2_rl.action_space import (
     K_LEVELS,
     NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
     action_dims_for_config,
+    action_vector_to_cfgs,
+    build_optimizer_requests,
     layer_dims,
     load_max_sfs,
     make_all_max_action_vector,
     make_all_min_action_vector,
     per_layer_field_offsets,
     sf_from,
+    sum_truncation_k_in_action,
 )
 
 
@@ -281,6 +284,149 @@ def build_random_action_candidates(
             )
         )
     return out
+
+
+@dataclass(frozen=True)
+class CostMatchedSamplingDiagnostics:
+    """Counters describing one cost-matched-random sampling run.
+
+    All counters are mutually exclusive sums; ``attempts == invalid + cost_mismatch + accepted``.
+    """
+    target_total_bits: int
+    target_total_fusion: int
+    target_sum_k: int
+    accepted: int
+    attempts: int
+    invalid: int
+    cost_mismatch: int
+    avg_k_prefilter_skipped: int
+    max_attempts: int
+    requested_count: int
+
+
+def build_cost_matched_random_action_candidates(
+    *,
+    num_layers: int,
+    profile: str,
+    selected_action_vec: Sequence[int],
+    selected_total_bits: int,
+    selected_total_fusion: int,
+    selected_sum_k: int,
+    bridge,
+    max_sfs,
+    gelu_degree,
+    attn_degree,
+    seed: int,
+    count: int = 50,
+    max_attempts: int = 5000,
+    fixed_specs: Sequence[str] = (),
+    log_fn=None,
+) -> Tuple[List[ActionCandidate], CostMatchedSamplingDiagnostics]:
+    """Reject-sample random action vectors whose Rescale_optimizer cost matches
+    ``selected_*`` exactly on all three dimensions:
+    ``(total_bits_sum, total_fusion_count, sum_truncation_k)``.
+
+    Each attempt — even ones discarded by the cheap pre-filter — counts toward
+    ``max_attempts`` per user spec. Invalid (modulus chain) draws also count.
+    Accepted draws are returned in attempt order; the caller is responsible
+    for prepending the selected action as the comparison anchor.
+    """
+    dims = np.asarray(action_dims_for_config(num_layers), dtype=int)
+    rng = np.random.default_rng(int(seed))
+    accepted: List[ActionCandidate] = []
+    invalid_n = 0
+    mismatch_n = 0
+    prefilter_n = 0
+    attempts = 0
+
+    fixed_overrides: Dict[str, int] = {}
+    for spec in fixed_specs or ():
+        selector, values = parse_action_spec(spec)
+        if len(values) != 1:
+            raise ValueError(f"fixed action spec must contain exactly one value: {spec!r}")
+        fixed_overrides[_canonical_selector_name(selector)] = int(values[0])
+
+    def _apply_fixed(vec: np.ndarray) -> None:
+        if not fixed_overrides:
+            return
+        for spec in fixed_specs or ():
+            selector, values = parse_action_spec(spec)
+            _set_selector_value(vec, num_layers, max_sfs, selector, int(values[0]))
+
+    while len(accepted) < int(count) and attempts < int(max_attempts):
+        attempts += 1
+        vec = rng.integers(low=0, high=dims, size=dims.shape[0], dtype=np.int64)
+        if fixed_overrides:
+            _apply_fixed(vec)
+        # Cheap pre-filter: sum_k can be computed directly from the action.
+        sum_k = sum_truncation_k_in_action(vec, int(num_layers))
+        if int(sum_k) != int(selected_sum_k):
+            prefilter_n += 1
+            continue
+        # Decode + optimizer call (this is the expensive bit).
+        decoded = action_vector_to_cfgs(
+            action_vec=vec,
+            max_sfs=max_sfs,
+            num_layers=int(num_layers),
+            gelu_degree=np.asarray(gelu_degree, dtype=int),
+            attn_degree=np.asarray(attn_degree, dtype=int),
+        )
+        try:
+            requests = build_optimizer_requests(profile, decoded.cfgs_dict())
+            outputs = bridge.evaluate_blocks(requests)
+        except Exception as exc:
+            invalid_n += 1
+            if log_fn is not None:
+                log_fn(f"  [cost-match][attempt {attempts}] optimizer error: {exc}")
+            continue
+        # Aggregate (import locally to avoid pulling rescale_optimizer_bridge
+        # into action_grid's import chain at module load time).
+        from rescale_optimizer_bridge import aggregate_optimizer_signals as _agg
+        signals = _agg(outputs)
+        if bool(signals.any_invalid):
+            invalid_n += 1
+            continue
+        if int(signals.total_bits_sum) != int(selected_total_bits):
+            mismatch_n += 1
+            continue
+        if int(signals.total_fusion_count) != int(selected_total_fusion):
+            mismatch_n += 1
+            continue
+        accepted.append(ActionCandidate(
+            name=f"ActionRandomSameCost_{len(accepted) + 1:03d}",
+            action_vec=vec,
+            overrides={"sampling": "cost_matched_random", "attempt": int(attempts)},
+        ))
+
+    diagnostics = CostMatchedSamplingDiagnostics(
+        target_total_bits=int(selected_total_bits),
+        target_total_fusion=int(selected_total_fusion),
+        target_sum_k=int(selected_sum_k),
+        accepted=int(len(accepted)),
+        attempts=int(attempts),
+        invalid=int(invalid_n),
+        cost_mismatch=int(mismatch_n),
+        avg_k_prefilter_skipped=int(prefilter_n),
+        max_attempts=int(max_attempts),
+        requested_count=int(count),
+    )
+    if log_fn is not None:
+        log_fn(
+            "  [cost-match] sampling done: "
+            f"accepted={diagnostics.accepted}/{count} "
+            f"attempts={diagnostics.attempts}/{max_attempts} "
+            f"invalid={diagnostics.invalid} "
+            f"cost_mismatch={diagnostics.cost_mismatch} "
+            f"avg_k_prefilter_skipped={diagnostics.avg_k_prefilter_skipped}"
+        )
+        if diagnostics.accepted < int(count):
+            log_fn(
+                "  [cost-match][warning] reached max_attempts before filling "
+                f"count={count}. Consider raising --cost-match-max-attempts or "
+                f"loosening cost match (current targets: total_bits={selected_total_bits}, "
+                f"total_fusion={selected_total_fusion}, sum_k={selected_sum_k})."
+            )
+    return accepted, diagnostics
 
 
 def parse_action_spec(spec: str) -> Tuple[str, Tuple[int, ...]]:
