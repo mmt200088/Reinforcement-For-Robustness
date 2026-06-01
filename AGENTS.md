@@ -1246,6 +1246,16 @@ in prose comments.
   Stage-2/BLB noise. The current `generate_glue_submission.py` Stage-1 helper
   must include GELU degree `0` when applying configs; degree `0` is ReLU via
   `ReversibleLayerHandler.replace_layer_gelu`.
+- Stage-1 PPO vs GRPO advantage report for the 2026-06-01 BERT-base MRPC
+  comparison is at
+  `experiments/server_command_runs/stage1_mrpc_ppo_grpo_advantages_20260601_200615/stage1_ppo_vs_grpo_advantages_report.html`.
+  It includes same-script deterministic `validation_full` eval for original
+  baseline, PPO best, and GRPO best. The key interpretation is: PPO is safer
+  for the current GLUE official submission candidate because it converged
+  faster and had lower test-distribution drift; GRPO found a stronger
+  validation reward/loss/weighted-F1 point, but current MRPC `metric2` is
+  weighted F1 rather than GLUE positive-class F1, which explains why GRPO can
+  look good on the Stage-1 reward metric while being riskier for official GLUE.
 - Console logs may pass through GBK on Windows. Keep console-facing text robust;
   file logs are UTF-8.
 - Do not add broad artifact patterns to `.gitignore` blindly. Many reports and
