@@ -15,7 +15,6 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from rescale_optimizer import (  # noqa: E402
     ReplanSession,
-    SUPPORTED_GELU_GRAPH_DEGREES,
     graph_key_for_stage1,
     iter_stage2_graph_targets,
     replan_from_variables,
@@ -80,34 +79,10 @@ def test_single_shot_call() -> bool:
     )
 
 
-def test_block5_n0_replan_call() -> bool:
-    print("test_block5_n0_replan_call")
-    root = REPO_ROOT
-    archive = root / "configs" / "mrpc" / "static_skeletons_mrpc.json"
-    cfg = root / "configs" / "mrpc" / "block5_n0.json"
-    session = ReplanSession.from_profile(profile="mrpc", include=["block5_n0"])
-    baseline = session.baselines["block5_n0"]
-    out = replan_from_variables(
-        config_path=cfg,
-        baseline_archive=archive,
-        config_name="block5_n0",
-        t_new=baseline.t_baseline,
-        delta_overrides={"ctpt_wffn1": 22},
-    )
-    return (
-        _check("degree 0 supported", 0 in SUPPORTED_GELU_GRAPH_DEGREES)
-        and _check("session includes block5_n0", session.graph_keys == ["block5_n0"])
-        and _check("returns dict", isinstance(out, dict))
-        and _check("valid", out["valid"] is True)
-        and _check("compact config included", "new_compact_config" in out)
-        and _check("delta applied", out["result"]["applied_delta_overrides"].get("ctpt_wffn1") == 22)
-    )
-
-
 def test_stage1_mapping() -> bool:
     print("test_stage1_mapping")
     stage1 = {
-        "gelu_degree_per_layer": [0, 1, 4],
+        "gelu_degree_per_layer": [1, 1, 4],
         "softmax_degree_per_layer": [2, 5, 6],
     }
     targets = iter_stage2_graph_targets(
@@ -121,7 +96,6 @@ def test_stage1_mapping() -> bool:
         and _check("block3 layer1", graph_key_for_stage1(
             dataset="mrpc", block=3, layer=1, stage1_config=stage1,
         ) == "block3_exp_n5")
-        and _check("block5 layer0 degree0", keys[(5, 0)] == "block5_n0")
         and _check("block5 layer2", keys[(5, 2)] == "block5_n4")
     )
 
@@ -147,7 +121,6 @@ def main() -> int:
         test_session_baseline_call,
         test_session_rich_payload_call,
         test_single_shot_call,
-        test_block5_n0_replan_call,
         test_stage1_mapping,
         test_stage1_short_keys_mapping,
     ]

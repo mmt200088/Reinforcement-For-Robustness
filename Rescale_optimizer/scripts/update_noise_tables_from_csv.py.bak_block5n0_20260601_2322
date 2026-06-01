@@ -15,7 +15,7 @@ Mapping into the config:
 
 Per-config N choice (defaults configurable below):
 
-    EIGHT_K_BASES = {"block1", "block3_exp_n2", "block5_n0", "block5_n1"}
+    EIGHT_K_BASES = {"block1", "block3_exp_n2", "block5_n1"}
         -> N = 8192
     All others      -> N = 16384
 
@@ -55,7 +55,7 @@ DEFAULT_CSV = Path(
 )
 DEFAULT_DIRS = [REPO / "configs/wnli", REPO / "configs/mrpc"]
 
-EIGHT_K_BASES = {"block1", "block3_exp_n2", "block5_n0", "block5_n1"}
+EIGHT_K_BASES = {"block1", "block3_exp_n2", "block5_n1"}
 
 SF_MIN_DEFAULT = 12
 SF_MAX_DEFAULT = 60

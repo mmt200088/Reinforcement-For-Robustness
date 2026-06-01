@@ -21,7 +21,6 @@ from .graph import NodeType, RescaleGraph, propagate_scale
 from .replan import ReplanInputs, ReplanResult, replan_with_user_actions
 
 DeltaValue = Union[int, str]
-SUPPORTED_GELU_GRAPH_DEGREES = {0, 1, 2, 4}
 
 
 @dataclass(frozen=True)
@@ -584,10 +583,7 @@ def graph_key_for_stage1(
     layer: int,
     stage1_config: Mapping[str, Sequence[int]],
 ) -> str:
-    """Map BLB Stage-1 per-layer degrees to a Rescale_optimizer graph key.
-
-    For block 5, GELU degree 0 is the ReLU-replacement graph ``block5_n0``.
-    """
+    """Map BLB Stage-1 per-layer degrees to a Rescale_optimizer graph key."""
 
     def _degrees(long_key: str, short_key: str) -> Sequence[int]:
         values = stage1_config.get(long_key)
@@ -609,13 +605,7 @@ def graph_key_for_stage1(
         return "block4"
     if block == 5:
         degrees = _degrees("gelu_degree_per_layer", "gelu")
-        degree = int(degrees[layer])
-        if degree not in SUPPORTED_GELU_GRAPH_DEGREES:
-            raise ValueError(
-                f"unsupported block5 GELU degree {degree}; "
-                f"supported={sorted(SUPPORTED_GELU_GRAPH_DEGREES)}"
-            )
-        return f"block5_n{degree}"
+        return f"block5_n{int(degrees[layer])}"
     raise ValueError(f"block must be 1..5, got {block}")
 
 
@@ -652,7 +642,6 @@ __all__ = [
     "BaselineRecord",
     "DeltaValue",
     "ReplanSession",
-    "SUPPORTED_GELU_GRAPH_DEGREES",
     "build_new_compact_config",
     "build_replan_output_dict",
     "graph_key_for_stage1",
