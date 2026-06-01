@@ -181,14 +181,12 @@ PROBE_POINTS = [
     'ln1_var_sum',
     'ln1_var',
     'ln1_invstd',
-    'ln1_norm',
     'ln2_mean_sum',
     'ln2_mean',
     'ln2_diff_sq',
     'ln2_var_sum',
     'ln2_var',
     'ln2_invstd',
-    'ln2_norm',
 ]
 
 GLOBAL_PROBES = {'input_ids', 'after_embed'}
@@ -229,14 +227,12 @@ PROBE_DISPLAY = {
     'ln1_var_sum':  'LN₁ Σ(xᵢ−μ)²',
     'ln1_var':      'LN₁ Variance',
     'ln1_invstd':   'LN₁ 1/σ',
-    'ln1_norm':     'LN₁ (xᵢ−μ)/σ',
     'ln2_mean_sum': 'LN₂ Σxᵢ (mean sum)',
     'ln2_mean':     'LN₂ μ = Σxᵢ/D',
     'ln2_diff_sq':  'LN₂ (xᵢ−μ)²',
     'ln2_var_sum':  'LN₂ Σ(xᵢ−μ)²',
     'ln2_var':      'LN₂ Variance',
     'ln2_invstd':   'LN₂ 1/σ',
-    'ln2_norm':     'LN₂ (xᵢ−μ)/σ',
 }
 
 
@@ -276,14 +272,12 @@ PROBE_HIST_RANGE = {
     'ln1_var_sum':  (0.0, 5000.0, 300),
     'ln1_var':      (0.0, 10.0, 300),
     'ln1_invstd':   (0.0, 20.0, 300),
-    'ln1_norm':     (-10.0, 10.0, 300),
     'ln2_mean_sum': (-2000.0, 2000.0, 300),
     'ln2_mean':     (-3.0, 3.0, 300),
     'ln2_diff_sq':  (0.0, 50.0, 300),
     'ln2_var_sum':  (0.0, 5000.0, 300),
     'ln2_var':      (0.0, 10.0, 300),
     'ln2_invstd':   (0.0, 20.0, 300),
-    'ln2_norm':     (-10.0, 10.0, 300),
 }
 
 PROBE_COLORS = {
@@ -322,14 +316,12 @@ PROBE_COLORS = {
     'ln1_var_sum':  '#ffe119',
     'ln1_var':      '#bfef45',
     'ln1_invstd':   '#aaffc3',
-    'ln1_norm':     '#469990',
     'ln2_mean_sum': '#3cb44b',
     'ln2_mean':     '#808000',
     'ln2_diff_sq':  '#42d4f4',
     'ln2_var_sum':  '#4363d8',
     'ln2_var':      '#911eb4',
     'ln2_invstd':   '#f032e6',
-    'ln2_norm':     '#000075',
 }
 
 # ==================== Magnitude-histogram configuration ====================
@@ -596,14 +588,13 @@ def _make_qkv_pre_bias_hook(layer, ne, q):
 def _make_ln_internals_pre_hook(ln_prefix, layer, q):
     """Pre-hook on LayerNorm that computes and enqueues internal intermediates.
 
-    Captures seven tensors:
+    Captures six tensors:
       {ln_prefix}_mean_sum — Σxᵢ              (shape [B, S])
       {ln_prefix}_mean     — μ = Σxᵢ / D      (shape [B, S])
       {ln_prefix}_diff_sq  — (xᵢ − μ)²        (shape [B, S, D], per-element)
       {ln_prefix}_var_sum  — Σ(xᵢ − μ)²       (shape [B, S])
       {ln_prefix}_var      — (1/D) Σ(xᵢ − μ)² (shape [B, S])
       {ln_prefix}_invstd   — 1 / √(var + ε)    (shape [B, S])
-      {ln_prefix}_norm     — (xᵢ − μ) / σ      (shape [B, S, D])
     """
     def hook(mod, inp):
         x = inp[0].detach().float()
@@ -616,8 +607,7 @@ def _make_ln_internals_pre_hook(ln_prefix, layer, q):
         # Per-row mean μ = Σxᵢ / D
         _enqueue(f'{ln_prefix}_mean', layer, mean.squeeze(-1), q)
 
-        centered = x - mean
-        diff_sq = centered.pow(2)
+        diff_sq = (x - mean).pow(2)
         # Per-element squared deviation (xᵢ − μ)²; keeps the full hidden dim
         _enqueue(f'{ln_prefix}_diff_sq', layer, diff_sq, q)
 
@@ -629,9 +619,6 @@ def _make_ln_internals_pre_hook(ln_prefix, layer, q):
 
         invstd = torch.rsqrt(var + eps)
         _enqueue(f'{ln_prefix}_invstd', layer, invstd, q)
-
-        norm = centered * invstd.unsqueeze(-1)
-        _enqueue(f'{ln_prefix}_norm', layer, norm, q)
     return hook
 
 

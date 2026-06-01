@@ -59,7 +59,7 @@
 
   "_vectors_doc": "Per-cut-point vectors of length M+1 = 8 (c_0..c_7).",
 
-  "amplitude_budgets":  [15, 15, 15, 15, 15, 15, 15, 15],
+  "amplitude_budgets":  [10, 10, 10, 10, 10, 10, 10, 5],
 
   "amplitude_profiles": [
     { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e1, 1e2, 1e3] },
@@ -69,11 +69,11 @@
     { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e1, 1e2, 1e3] },
     { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e1, 1e2, 1e3] },
     { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e1, 1e2, 1e3] },
-    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e1, 1e2, 1e3] }
+    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-3, 1e0, 1e1, 1e2, 1e3] }
   ],
 
   "snr_requirements": [
-    { "percentile": 0.8, "max_relative_error": 0.01 },
+    { "percentile": 0.8, "max_relative_error": 0.001 },
     { "percentile": 0.8, "max_relative_error": 0.001 },
     { "percentile": 0.8, "max_relative_error": 0.001 },
     { "percentile": 0.8, "max_relative_error": 0.001 },

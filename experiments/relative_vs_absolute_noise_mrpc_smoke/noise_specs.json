@@ -1,0 +1,50 @@
+[
+  {
+    "method": "relative",
+    "tau": 0.0,
+    "coverage": 0.8,
+    "sigma_rel": 0.0,
+    "sigma_abs": 0.0,
+    "abs_p_coverage": 0.0
+  },
+  {
+    "method": "absolute_matched_abs_p",
+    "tau": 0.0,
+    "coverage": 0.8,
+    "sigma_rel": 0.0,
+    "sigma_abs": 0.0,
+    "abs_p_coverage": 0.0
+  },
+  {
+    "method": "absolute_global_re",
+    "tau": 0.0,
+    "coverage": 0.8,
+    "sigma_rel": 0.0,
+    "sigma_abs": 0.0,
+    "abs_p_coverage": 0.0
+  },
+  {
+    "method": "relative",
+    "tau": 0.1,
+    "coverage": 0.8,
+    "sigma_rel": 0.07803041460723789,
+    "sigma_abs": 0.0,
+    "abs_p_coverage": 0.06696689022513792
+  },
+  {
+    "method": "absolute_matched_abs_p",
+    "tau": 0.1,
+    "coverage": 0.8,
+    "sigma_rel": 0.0,
+    "sigma_abs": 0.05225454209224898,
+    "abs_p_coverage": 0.06696689022513792
+  },
+  {
+    "method": "absolute_global_re",
+    "tau": 0.1,
+    "coverage": 0.8,
+    "sigma_rel": 0.0,
+    "sigma_abs": 0.018530644214727165,
+    "abs_p_coverage": 0.0237479761039336
+  }
+]

@@ -59,11 +59,11 @@
 
   "_vectors_doc": "Per-cut-point vectors of length M+1 = 8 (c_0..c_7). c_0 (rot_softmax) uses a tightened amplitude at p=0.2 (1e-5) because softmax outputs are small positive probabilities; this raises its baseline sf to keep SNR. c_M uses a tighter amplitude profile.",
 
-  "amplitude_budgets":  [15, 20, 20, 20, 20, 20, 20, 15],
+  "amplitude_budgets":  [15, 15, 15, 15, 15, 15, 15, 5],
 
   "amplitude_profiles": [
     { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-3, 1e0, 1e2, 1e3, 1e5] },
-    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e2, 1e3, 1e5] },
+    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-3, 1e0, 1e2, 1e3, 1e5] },
     { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e2, 1e3, 1e5] },
     { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e2, 1e3, 1e5] },
     { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e2, 1e3, 1e5] },

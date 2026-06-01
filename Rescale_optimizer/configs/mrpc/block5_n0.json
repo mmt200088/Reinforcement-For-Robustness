@@ -1,0 +1,32 @@
+{
+  "_description": "Block 5 method 0 (M=3): ReLU/GELU-0 replacement block from the referenced graph. Topology: c_0 = 1/std (source, fresh); c_1 = ct*ct (1/std * x-mean) -- symmetric (s -> 2*s); c_2 = ct*pt (gamal, sf=20); c_3 = ct*pt (Wffn1, sf=22) -> gelu_out/relu_out. No GELU polynomial coefficient multiplication and no GELU self-squaring. The final Gs rotation has zero scale delta and is accounted in the terminal Wffn1 segment for cost.",
+  "global": {"h_sf": 2, "q_legal_min": 30, "q_legal_max": 60},
+  "optimization": {"cost_params": {"lambda_0": 1.0, "lambda_1": 0.1, "alpha": 1.0, "beta": 0.05}, "q_head_bits": 60, "q_tail_bits": 60, "max_best_first_expansions": 64},
+  "_noise_table_doc": "Measured noise from noise_inf_table.csv (N=8192). Columns: rescale<-B_rs, fresh<-B_fresh. sf range 12..60 step 1. sf in [12,46] from CSV; sf in [47,60] extrapolated by halving per +1 bit.",
+  "noise_table": {
+    "rescale": {"12": 2.180198, "13": 1.090099, "14": 0.5450495, "15": 0.2725247, "16": 0.1362624, "17": 0.06813119, "18": 0.03406559, "19": 0.0170328, "20": 0.008516398, "21": 0.004258199, "22": 0.0021291, "23": 0.00106455, "24": 0.0005322749, "25": 0.0002661374, "26": 0.0001330687, "27": 6.653436e-05, "28": 3.326718e-05, "29": 1.663359e-05, "30": 8.316795e-06, "31": 4.158398e-06, "32": 2.079199e-06, "33": 1.039599e-06, "34": 5.197997e-07, "35": 2.598998e-07, "36": 1.299499e-07, "37": 6.497496e-08, "38": 3.248748e-08, "39": 1.624374e-08, "40": 8.12187e-09, "41": 4.060935e-09, "42": 2.030468e-09, "43": 1.015234e-09, "44": 5.076169e-10, "45": 2.538084e-10, "46": 1.269042e-10, "47": 6.34521e-11, "48": 3.172605e-11, "49": 1.586302e-11, "50": 7.931512e-12, "51": 3.965756e-12, "52": 1.982878e-12, "53": 9.914391e-13, "54": 4.957195e-13, "55": 2.478598e-13, "56": 1.239299e-13, "57": 6.196494e-14, "58": 3.098247e-14, "59": 1.549124e-14, "60": 7.745618e-15},
+    "fresh": {"12": 2.187316, "13": 1.093658, "14": 0.5468291, "15": 0.2734146, "16": 0.1367073, "17": 0.06835364, "18": 0.03417682, "19": 0.01708841, "20": 0.008544205, "21": 0.004272102, "22": 0.002136051, "23": 0.001068026, "24": 0.0005340128, "25": 0.0002670064, "26": 0.0001335032, "27": 6.67516e-05, "28": 3.33758e-05, "29": 1.66879e-05, "30": 8.34395e-06, "31": 4.171975e-06, "32": 2.085988e-06, "33": 1.042994e-06, "34": 5.214969e-07, "35": 2.607484e-07, "36": 1.303742e-07, "37": 6.518711e-08, "38": 3.259356e-08, "39": 1.629678e-08, "40": 8.148389e-09, "41": 4.074194e-09, "42": 2.037097e-09, "43": 1.018549e-09, "44": 5.092743e-10, "45": 2.546371e-10, "46": 1.273186e-10, "47": 6.36593e-11, "48": 3.182965e-11, "49": 1.591482e-11, "50": 7.957412e-12, "51": 3.978706e-12, "52": 1.989353e-12, "53": 9.946766e-13, "54": 4.973383e-13, "55": 2.486691e-13, "56": 1.243346e-13, "57": 6.216729e-14, "58": 3.108364e-14, "59": 1.554182e-14, "60": 7.770911e-15}
+  },
+  "defaults": {"op_type": "rescale"},
+  "_vectors_doc": "Per-cut-point vectors of length M+1 = 4 (c_0..c_3). c_M uses the tighter output amplitude profile.",
+  "amplitude_budgets": [15, 15, 15, 10],
+  "amplitude_profiles": [
+    {"percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [0.0001, 0.01, 1.0, 100.0, 1000.0, 100000.0]},
+    {"percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [0.0001, 0.01, 1.0, 100.0, 1000.0, 100000.0]},
+    {"percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [0.0001, 0.01, 1.0, 100.0, 1000.0, 100000.0]},
+    {"percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [0.01, 0.01, 100.0, 100.0, 100.0, 100.0]}
+  ],
+  "snr_requirements": [
+    {"percentile": 0.8, "max_relative_error": 0.001},
+    {"percentile": 0.8, "max_relative_error": 0.001},
+    {"percentile": 0.8, "max_relative_error": 0.001},
+    {"percentile": 0.8, "max_relative_error": 0.001}
+  ],
+  "source": {"_comment": "c_0 = 1/std -- initial ciphertext at sf = 30 (= t_base 28 + h_sf 2). The counterpart x-mean (also ct @ sf=30) is implicit in the first symmetric CT*CT.", "name": "inv_std", "scale_delta_bits": 0, "op_type": "fresh"},
+  "stages": [
+    {"_comment": "stage 0 -> c_1: ct*ct (1/std * x-mean). Symmetric semantics: s -> 2*s.", "nodes": [], "cut_point": {"name": "ctct_xmean_over_std", "type": "CTCT_MUL", "scale_delta_bits": 0, "count": 1, "cost_slope": 1.0, "cost_intercept": 12.0}},
+    {"_comment": "stage 1 -> c_2: ct*pt with gamal plaintext (sf = 20).", "nodes": [], "cut_point": {"name": "ctpt_gamal", "type": "CTPT_MUL", "scale_delta_bits": 20, "count": 1, "cost_slope": 0.5, "cost_intercept": 8.0}},
+    {"_comment": "stage 2 -> c_3 = c_M: Bs rotation (1x), ct*pt with Wffn1 plaintext (sf = 22), and terminal Gs rotation (1x, zero scale delta); output is gelu_out/relu_out for n0.", "nodes": [{"name": "rot_bs_wffn1", "type": "ROTATION", "count": 1, "scale_delta_bits": 0, "cost_slope": 0.5, "cost_intercept": 6.0}, {"name": "rot_gs_after_wffn1", "type": "ROTATION", "count": 1, "scale_delta_bits": 0, "cost_slope": 0.5, "cost_intercept": 6.0}], "cut_point": {"name": "ctpt_wffn1", "type": "CTPT_MUL", "scale_delta_bits": 22, "count": 1, "cost_slope": 0.5, "cost_intercept": 8.0}}
+  ],
+  "dummy_sink": {"name": "dummy_sink", "amplitude_budget_bits": 0}
+}

@@ -59,16 +59,16 @@
 
   "_vectors_doc": "Per-cut-point vectors of length M+1 = 8 (c_0..c_7). Homogeneous profiles / SNRs for simplicity. Adjust per cut-point freely.",
 
-  "amplitude_budgets":  [20, 20, 20, 20, 20, 20, 20, 20],
+  "amplitude_budgets":  [10, 10, 10, 10, 10, 10, 10, 8],
 
   "amplitude_profiles": [
+    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-1, 1e0, 1e2, 1e3, 1e5] },
     { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e2, 1e3, 1e5] },
-    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e2, 1e3, 1e5] },
-    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e2, 1e3, 1e5] },
-    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e2, 1e3, 1e5] },
-    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e2, 1e3, 1e5] },
-    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e2, 1e3, 1e5] },
-    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-2, 1e0, 1e2, 1e3, 1e5] },
+    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-1, 1e0, 1e2, 1e3, 1e5] },
+    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-1, 1e0, 1e2, 1e3, 1e5] },
+    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-1, 1e0, 1e2, 1e3, 1e5] },
+    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-1, 1e0, 1e2, 1e3, 1e5] },
+    { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-1, 1e0, 1e2, 1e3, 1e5] },
     { "percentiles": [0.1, 0.2, 0.5, 0.8, 0.9, 0.99], "values": [1e-4, 1e-1, 1e0, 1e2, 1e3, 1e5] }
   ],
 
