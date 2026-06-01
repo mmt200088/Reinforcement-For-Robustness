@@ -225,13 +225,13 @@
     {
       "config_name": "block5_n1",
       "success": true,
-      "skeleton": [0, 2, 4, 5],
+      "skeleton": [0, 1, 4, 5],
       "cut_point_sf": [
-        {"i": 0, "name": "x_mean", "type": "SOURCE", "sf": 27},
-        {"i": 1, "name": "ctct_xmean_over_std", "type": "CTCT_MUL", "sf": 54},
-        {"i": 2, "name": "ctpt_gamal", "type": "CTPT_MUL", "sf_pre": 74, "sf_post": 27, "drop": 47},
-        {"i": 3, "name": "ctpt_wffn1", "type": "CTPT_MUL", "sf": 49},
-        {"i": 4, "name": "ctpt_gelu_coeff", "type": "CTPT_MUL", "sf_pre": 69, "sf_post": 30, "drop": 39}
+        {"i": 0, "name": "x_mean", "type": "SOURCE", "sf": 28},
+        {"i": 1, "name": "ctct_xmean_over_std", "type": "CTCT_MUL", "sf_pre": 56, "sf_post": 26, "drop": 30},
+        {"i": 2, "name": "ctpt_gamal", "type": "CTPT_MUL", "sf": 46},
+        {"i": 3, "name": "ctpt_wffn1", "type": "CTPT_MUL", "sf": 68},
+        {"i": 4, "name": "ctpt_gelu_coeff", "type": "CTPT_MUL", "sf_pre": 88, "sf_post": 29, "drop": 59}
       ],
       "propagation_deltas": [
         {"node_id": 1, "name": "ctct_xmean_over_std", "type": "CTCT_MUL", "delta": "x2"},
@@ -240,13 +240,11 @@
         {"node_id": 6, "name": "ctpt_gelu_coeff", "type": "CTPT_MUL", "delta": 20}
       ],
       "modulus_chain": {
-        "drop_order": [60, 47, 39, 60],
-        "seal_order": [60, 39, 47, 60],
-        "total_bits": 206
+        "drop_order": [60, 30, 59, 60],
+        "seal_order": [60, 59, 30, 60],
+        "total_bits": 209
       },
-      "effective_rotations": [
-        {"node_id": 3, "name": "rot_bs_wffn1", "after_cut_point": 2, "sf": 27, "count": 1}
-      ]
+      "effective_rotations": []
     },
     {
       "config_name": "block5_n2",
