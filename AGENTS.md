@@ -1267,6 +1267,14 @@ in prose comments.
   probe correctly maps ReLU layers 0/4/8 to valid `block5_n0`, but its degree-1
   layers 1/5/9 are still invalid under all-max action settings; treat that as a
   separate degree-1/search-space issue, not a failure of the degree-0 path.
+  Follow-up server verification at commit `f1c8ebc` added `[1c]` and passed at
+  `experiments/server_command_runs/stage2_degree0_verify_20260602_192644/`:
+  `contract_gate_exit=0` across `168` BLB tests, `degree0_tests_exit=0`,
+  `bridge_derivation_exit=0`, and all three full noise-install commands exited
+  `0`. This confirms the bridge actively auto-derives `t_new` from the live
+  skeleton (`BridgeDerivesT_newFromSkeletonTest` passed), rather than relying on
+  the static fallback table as the source of truth. The same three user-facing
+  HTML paths under `reports/html_reports/` were refreshed from this run.
 
 ## Conventions
 
