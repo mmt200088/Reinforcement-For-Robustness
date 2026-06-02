@@ -110,6 +110,22 @@ class SkeletonStageMapTest(unittest.TestCase):
         self.assertIn("normalize_rescale_sf", active)
         self.assertNotIn("gamma_rescale_sf", active)
 
+    def test_complete_chain_is_fully_mapped(self):
+        # The SSOT must cover EVERY cut-point of every COMPLETE chain (not just
+        # the nodes the current skeleton selects), so any skeleton subset — and
+        # any future RO regen — maps without gaps. A new RO node fails here loudly.
+        cfgs = ssm.load_profile_configs(str(_RO_ROOT), "mrpc")
+        self.assertTrue(cfgs, "no per-graph configs found under configs/mrpc/")
+        for graph_key, cfg in cfgs.items():
+            bidx = ssm._block_idx_for_graph(graph_key)
+            self.assertIsNotNone(bidx, f"cannot classify graph {graph_key}")
+            missing = ssm.unmapped_full_chain_nodes(bidx, cfg)
+            self.assertEqual(
+                missing, [],
+                f"{graph_key}: full-chain nodes {missing} are not in the SSOT node "
+                "map — extend _NODE_MAP to keep the automation complete",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
