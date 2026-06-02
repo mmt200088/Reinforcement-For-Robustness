@@ -1247,6 +1247,26 @@ in prose comments.
   `blb_stage2_rl/skeleton_stage_map.py`, `baseline_bootstrap.py`,
   `action_space.py`, and `rescale_optimizer_bridge.py` derived from the current
   static skeletons archive.
+- Stage-2 degree-0 server verification, added 2026-06-02: the real passing
+  server validation is commit `8c63fe1`, not the earlier `70c561a` attempt.
+  `70c561a` passed the shell command but exposed that `make_config_name()` used
+  `getattr(... ) or 4`, so valid GELU degree `0` was silently named as
+  `block5_n4` and the full HTML did not actually exercise `block5_n0`.
+  `8c63fe1` preserves degree zero in config names and adds a regression test
+  proving `action_vector_to_cfgs(..., gelu_degree=[0])` builds a
+  `block5_n0_L0` optimizer request. Server verification at
+  `experiments/server_command_runs/stage2_degree0_verify_20260602_184748/`
+  passed: `contract_gate_exit=0` across `166` BLB tests,
+  `degree0_tests_exit=0`, and all three full noise-install commands exited
+  `0`. The user-facing HTML copies are under `reports/html_reports/` as
+  `20260602_stage2_degree0_noise_install_mixed.html`,
+  `20260602_stage2_degree0_noise_install_allrelu.html`, and
+  `20260602_stage2_degree0_noise_install_normal.html`. In the final HTML,
+  all-ReLU maps all 12 layers to `block5_n0` with `valid=True`; the normal
+  all-GELU4 run has block2/block4/block5_n4 valid across all layers. The mixed
+  probe correctly maps ReLU layers 0/4/8 to valid `block5_n0`, but its degree-1
+  layers 1/5/9 are still invalid under all-max action settings; treat that as a
+  separate degree-1/search-space issue, not a failure of the degree-0 path.
 
 ## Conventions
 

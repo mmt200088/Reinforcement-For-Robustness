@@ -1,0 +1,9 @@
+HEAD=8c63fe1999e752945ce5ab6d4c9f743efb90a70f
+contract_gate_exit=0        (0 = no failures/errors across the whole BLB suite)
+degree0_tests_exit=0       (0 = degree-0 RO contract + baseline extraction pass)
+noise_install_mixed_exit=0  (0 = degree-0 cfg-build + block5_n0 cost ran without crash)
+noise_install_allrelu_exit=0
+noise_install_normal_exit=0 (0 = skeleton-driven block2/4/5 cfg-build + cost ran)
+output_dir=experiments/server_command_runs/stage2_degree0_verify_20260602_184748
+--- block2/block4 per-config valid lines (normal run; must be valid=True) ---
+--- block5_n0 per-config valid lines (mixed run) ---
