@@ -598,7 +598,10 @@ def default_block5_cfg_to_delta(cfg: Block5NoiseConfig) -> Dict[str, Union[int, 
         deltas["ctct_gelu_x2"] = "x2"
     if cfg.gelu_degree >= 4:
         deltas["ctct_gelu_x4"] = "x2"
-    deltas["ctpt_gelu_coeff"] = int(cfg.gelu_coeff_encode.scaling_factor)
+    if int(cfg.gelu_degree) >= 1:
+        # degree 0 = ReLU：block5_n0 graph 没有 ctpt_gelu_coeff 节点（无多项式系数），
+        # 所以 degree 0 不发这个 delta（与 replan_actions_block5_n0.json 对齐）。
+        deltas["ctpt_gelu_coeff"] = int(cfg.gelu_coeff_encode.scaling_factor)
     return deltas
 
 
@@ -759,6 +762,17 @@ DEFAULT_CFG_TO_T_NEW_MAP: Dict[str, Tuple[_SkelEntry, ...]] = {
         _SkelEntry("softmax_v_matmul_rescale"),
         _SkelEntry("ln_mean_result_rescale"),
         _SkelEntry("ln_var_result_rescale"),
+    ),
+    # --- block 5 (n=0, ReLU): ReplanSession 实测 skeleton=[0, 1, 3, 4]，
+    #     t_baseline=[30, 30, 30]（3 槽）。ReLU 无多项式 GELU 节点，rescale 点
+    #     只有 normalize + wffn1：
+    #   i=0 (inv_std, SOURCE)     → x_centered_fresh（两个 fresh 绑定相等）
+    #   i=1 (ctct_xmean_over_std) → normalize_result_rescale
+    #   i=3 (ctpt_wffn1)          → wffn1_result_rescale
+    "block5_n0": (
+        _SkelEntry("x_centered_fresh"),
+        _SkelEntry("normalize_result_rescale"),
+        _SkelEntry("wffn1_result_rescale"),
     ),
     # --- block 5 (n=1): skeleton=[0, 2, 4, 5]
     #   i=0 (x_mean)            → x_centered_fresh

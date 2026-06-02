@@ -1763,7 +1763,8 @@ class Block5NoiseConfig:
     """BLB Block 5 噪声配置。
 
     Block 5 范围：post-attn LN tail (rsqrt 之后) → Wffn1 → GELU 多项式近似。
-    GELU 部分仅支持 degree ∈ {1, 2, 4}（按 BLB Figure 10 / 用户 spec）。
+    GELU 部分支持 degree ∈ {0, 1, 2, 4}（按 BLB Figure 10 / 用户 spec）；
+    degree 0 = ReLU（block5_n0 graph，无多项式 GELU 噪声，只有 LN tail + Wffn1）。
 
     必选 (2 fresh + 2 encode + 1 GELU coeff encode)：
         inv_std_fresh:        fresh   on 1/std (Block 4→5 边界 ct)
@@ -1834,9 +1835,9 @@ def make_block5_default_config(
     """构建 Block 5 噪声配置。
 
     Args:
-        gelu_degree:  GELU 多项式 degree ∈ {1, 2, 4}
+        gelu_degree:  GELU degree ∈ {0, 1, 2, 4}（0=ReLU，无多项式 GELU 噪声）
         N:            CKKS 多项式阶。None = 按 degree 自动选
-                      （degree=1 → 8192，degree∈{2,4} → 16384）
+                      （degree∈{0,1} → 8192，degree∈{2,4} → 16384）
         gelu_power_rescale_sfs:    长度 == degree-1；
                                    degree=1: ()；degree=2: (x²,)；degree=4: (x²,x³,x⁴)
         gelu_coeff_mul_rescale_sfs: 长度 == degree；按 c_1·x, c_2·x², ... 顺序
@@ -1846,10 +1847,11 @@ def make_block5_default_config(
     σ² 严禁写死。
     """
     deg = int(gelu_degree)
-    if deg not in (1, 2, 4):
-        raise ValueError(f"Block 5 GELU degree 必须 ∈ {{1, 2, 4}}, got {deg}")
+    if deg not in (0, 1, 2, 4):
+        raise ValueError(f"Block 5 GELU degree 必须 ∈ {{0, 1, 2, 4}}, got {deg}")
     if N is None:
-        N = 8192 if deg == 1 else 16384
+        # degree 0 (ReLU) 与 degree 1 同属 8K base → N=8192；degree∈{2,4} → 16384
+        N = 8192 if deg <= 1 else 16384
 
     cfg = Block5NoiseConfig(
         inv_std_fresh=NoisePoint("fresh", int(inv_std_fresh_sf), int(N)),
@@ -1870,7 +1872,8 @@ def make_block5_default_config(
     if wffn1_rescale_sf is not None:
         cfg.wffn1_result_rescale = NoisePoint("rescale", int(wffn1_rescale_sf), int(N))
 
-    expected_power_len = deg - 1
+    # degree 0 (ReLU) / degree 1 都没有 power rescale（degree-1 → 0；degree-0 → 0）
+    expected_power_len = max(0, deg - 1)
     if not gelu_power_rescale_sfs:
         cfg.gelu_power_rescales = tuple(None for _ in range(expected_power_len))
     else:
@@ -4008,12 +4011,19 @@ class ReversibleLayerHandler:
                 continue
 
             gelu_module = layer.intermediate.intermediate_act_fn
-            if not isinstance(gelu_module, PolynomialGELU):
+            # degree 0 = ReLU（replace_layer_gelu 装的是 nn.ReLU）：block5_n0 graph
+            # 没有多项式 GELU 节点，只装 LN tail + Wffn1 噪声，GELU forward 不包裹。
+            is_relu_layer = isinstance(gelu_module, nn.ReLU)
+            if is_relu_layer:
+                layer_degree = 0
+            elif isinstance(gelu_module, PolynomialGELU):
+                layer_degree = int(gelu_module.degree)
+            else:
                 raise RuntimeError(
-                    f"layer {i} 的 intermediate.intermediate_act_fn 不是 PolynomialGELU，"
-                    f"无法安装 Block 5 GELU 噪声。请先 replace_layer_gelu 安装多项式 GELU。"
+                    f"layer {i} 的 intermediate.intermediate_act_fn 既不是 PolynomialGELU "
+                    f"也不是 nn.ReLU(degree 0)，无法安装 Block 5 噪声。"
+                    f"请先 replace_layer_gelu 安装多项式 GELU 或 ReLU。"
                 )
-            layer_degree = int(gelu_module.degree)
 
             if cfg_per_layer is not None:
                 if i not in cfg_per_layer:
@@ -4058,10 +4068,13 @@ class ReversibleLayerHandler:
             )
 
             # ---- 3. GELU 多项式：替换 forward ----
-            stored_gelu_forward = self.original_block5_gelu.get(i)
-            if stored_gelu_forward is None or getattr(stored_gelu_forward, "__self__", None) is not gelu_module:
-                self.original_block5_gelu[i] = gelu_module.forward
-            gelu_module.forward = _make_block5_gelu_forward(gelu_module, this_cfg)
+            # ReLU 层 (degree 0) 跳过 —— block5_n0 graph 无 GELU 多项式噪声节点，
+            # 不包裹 GELU forward（restore 时 original_block5_gelu 没该 key 也安全）。
+            if not is_relu_layer:
+                stored_gelu_forward = self.original_block5_gelu.get(i)
+                if stored_gelu_forward is None or getattr(stored_gelu_forward, "__self__", None) is not gelu_module:
+                    self.original_block5_gelu[i] = gelu_module.forward
+                gelu_module.forward = _make_block5_gelu_forward(gelu_module, this_cfg)
 
             self.block5_cfg_per_layer[i] = this_cfg
             installed_summary.append((i, layer_degree))

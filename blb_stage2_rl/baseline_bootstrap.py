@@ -51,7 +51,9 @@ REQUEST_FILENAME_FMT = "baseline_request_{dataset}.json"
 RESPONSE_FILENAME_FMT = "baseline_response_{dataset}.json"
 
 # Stage-1 取值范围（与协议第 2 节一致）
-ALLOWED_GELU_DEGREES = (1, 2, 4)
+# degree 0 = ReLU（用 ReLU 替换 GELU）；对应 block5_n0 graph（无多项式 GELU 节点，
+# 只有 LN tail + Wffn1）。2026-06-02 起 Stage-2 支持 degree 0。
+ALLOWED_GELU_DEGREES = (0, 1, 2, 4)
 ALLOWED_SOFTMAX_DEGREES = (2, 3, 4, 5, 6)
 
 
@@ -613,7 +615,12 @@ _RO_SOURCE_NODE_TO_RL_FIELD: Dict[int, Dict[str, str]] = {
     2: {"inv_std":     "inv_std_fresh_sf"},
     3: {"X":           "x_fresh_sf"},
     4: {"rot_softmax": "softmax_out_fresh_sf"},
-    5: {"x_mean":      "x_centered_fresh_sf"},
+    # block5 SOURCE：n1/n2/n4 命名为 "x_mean"（即 x_centered 操作数）；degree 0
+    # 的 block5_n0 graph 把 SOURCE 命名为 "inv_std"（1/std 操作数）。两个 fresh
+    # 操作数 SF 通过 "x2" 旁节点强制相等（且 RL 端 inv_std_fresh 绑定 x_centered），
+    # 所以无论 RO 标成哪个名字，SOURCE.sf 都写入 x_centered_fresh_sf。
+    5: {"x_mean":      "x_centered_fresh_sf",
+        "inv_std":     "x_centered_fresh_sf"},
 }
 
 _RO_ENCODE_NODE_TO_RL_FIELDS: Dict[int, Dict[str, Tuple[str, ...]]] = {
@@ -898,7 +905,7 @@ def load_static_skeletons_baseline(
         rescale_optimizer_root: ``Rescale_optimizer`` 仓库根目录
         dataset:                GLUE 任务名（mrpc / cola / ...）
         num_layers:             模型 encoder 层数
-        gelu_per_layer:         长度 num_layers，元素 ∈ {1, 2, 4}
+        gelu_per_layer:         长度 num_layers，元素 ∈ {0, 1, 2, 4}（0=ReLU）
         softmax_per_layer:      长度 num_layers，元素 ∈ {2, 3, 4, 5, 6}
         archive_path:           手动指定 archive 路径；缺省自动拼
 

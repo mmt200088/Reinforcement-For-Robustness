@@ -378,7 +378,8 @@ def _block_default_N(block_idx: int, gelu_degree: int = 4, attn_degree: int = 4)
     """返回 block 默认使用的 CKKS 多项式阶 N（与 ``make_block*_default_config`` 一致）。"""
     if block_idx == 1:
         return 8192
-    if block_idx == 5 and int(gelu_degree) == 1:
+    # degree 0 (ReLU) 与 degree 1 一样用 N=8192（block5_n0 / block5_n1 同属 8K base）
+    if block_idx == 5 and int(gelu_degree) <= 1:
         return 8192
     if block_idx == 3 and int(attn_degree) == 2:
         return 8192
@@ -985,8 +986,9 @@ def _build_block5_action(
       所以只有 [-1] 位置真正进 optimizer。
     """
     deg = int(gelu_degree)
-    # block5 GELU degree 仅支持 {1, 2, 4}
-    if deg not in (1, 2, 4):
+    # block5 GELU degree 支持 {0, 1, 2, 4}（0=ReLU→block5_n0，无多项式 GELU 噪声）。
+    # 其它杂散值钳到最近的合法 degree（>=4→4, ==3→2, <=0 留 0 让 ReLU 分支生效）。
+    if deg not in (0, 1, 2, 4):
         deg = 4 if deg >= 4 else (2 if deg >= 2 else 1)
     # RL 只控制 ``gelu_power_rescale_sf_0``（x²，degree>=2 时启用）；x³/x⁴ 在
     # mrpc graph 里被折掉，不上 skeleton。
@@ -1402,6 +1404,10 @@ def _is_action_field_effective(
             slot = 0
         if slot >= int(gelu_degree):
             return False, f"GELU degree {int(gelu_degree)} does not use this coefficient-rescale slot"
+    # degree 0 = ReLU：block5_n0 graph 无 GELU 多项式系数 encode（ctpt_gelu_coeff）。
+    # 该 slot 的动作既不进模型噪声（ReLU 跳过 GELU 安装）也不进 optimizer cost，故无效。
+    if int(block_idx) == 5 and str(field_name) == "gelu_coeff_sf" and int(gelu_degree) == 0:
+        return False, "GELU degree 0 (ReLU) has no polynomial coefficient encode"
     return True, ""
 
 
