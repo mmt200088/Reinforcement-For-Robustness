@@ -29,6 +29,16 @@ echo "=== [1b] degree-0 test file alone (explicit, easy to read) ==="
 BLB_STRICT=0 python -m unittest tests.test_blb_degree0_stage2 -v 2>&1 | tee "$OUT/degree0_tests.log"
 G1B=${PIPESTATUS[0]}
 
+echo "=== [1c] PROVE the bridge auto-derives t_new from the live skeleton ==="
+# BridgeDerivesT_newFromSkeletonTest asserts _derive_t_new_table_from_invoker on a
+# real InProcessInvoker returns the skeleton-derived map (block2 kt_mask1/qkt_matmul,
+# block4 ln_square, block5_n1 normalize) — i.e. the auto-adapt is the ACTIVE source,
+# not the (now also-correct) static DEFAULT_CFG_TO_T_NEW_MAP fallback.
+BLB_STRICT=0 python -m unittest \
+  tests.test_blb_skeleton_stage_map.BridgeDerivesT_newFromSkeletonTest -v 2>&1 \
+  | tee "$OUT/bridge_derivation.log"
+G1C=${PIPESTATUS[0]}
+
 echo "=== [2/3] noise-install full verify: MIXED degree-0 stage-1 (layers 0/4/8 = ReLU) ==="
 # Drives action_vector_to_cfgs(gelu has 0) -> build_block5_cfg_from_action ->
 # make_block5_default_config(gelu_degree=0) -> bridge.evaluate_blocks (block5_n0
@@ -60,6 +70,7 @@ G4=${PIPESTATUS[0]}
   echo "HEAD=$(git rev-parse HEAD)"
   echo "contract_gate_exit=$G1        (0 = no failures/errors across the whole BLB suite)"
   echo "degree0_tests_exit=$G1B       (0 = degree-0 RO contract + baseline extraction pass)"
+  echo "bridge_derivation_exit=$G1C   (0 = bridge auto-derives t_new from live skeleton; auto-adapt ACTIVE)"
   echo "noise_install_mixed_exit=$G2  (0 = degree-0 cfg-build + block5_n0 cost ran without crash)"
   echo "noise_install_allrelu_exit=$G3"
   echo "noise_install_normal_exit=$G4 (0 = skeleton-driven block2/4/5 cfg-build + cost ran)"
