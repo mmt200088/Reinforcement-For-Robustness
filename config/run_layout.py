@@ -7,7 +7,7 @@
 布局（与旧的 ``persistent/`` 并存，旧布局留给 GA/greedy/general/compare/legacy
 v2）::
 
-    <root>/                                 ← root 一般是 "Parting Chapter"（GRPO 时 "GRPO Chapter"）
+    <root>/                                 ← root 一般是 "Parting Chapter"
     ├── stage1/
     │   ├── bert base mrpc/                 ← 每个 combo 一个**扁平**工作目录（产物直接落这）
     │   │   ├── stage1_rl_checkpoint.pt
@@ -27,8 +27,8 @@ v2）::
   这样能在没有重型依赖的环境里跑单测。
 - combo 名字带空格，按用户指定：``{model_type 把 '-' 换成 ' '} {dataset}``。
 - run-id = ``{combo} {N} {YYYYMMDD}``，``N`` 是该 combo 在 record/ 下已有条目数 + 1。
-- root 默认 ``Parting Chapter``；GRPO 走 ``GRPO Chapter``。调用方一般传
-  ``dirname(PERSISTENT_ROOT)`` 进来（``Parting Chapter/persistent`` -> ``Parting Chapter``）。
+- root 默认 ``Parting Chapter``。调用方一般传 ``dirname(PERSISTENT_ROOT)`` 进来
+  （``Parting Chapter/persistent`` -> ``Parting Chapter``）。
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ from config.paths import (
     STAGE2_SUBDIR,
 )
 
-# 默认根目录（``Parting Chapter``）。GRPO 时调用方传 ``GRPO Chapter``。
+# 默认根目录（``Parting Chapter``）。
 DEFAULT_ROOT: str = RL_RESULTS_ROOT
 
 # 参与 resume 一致性校验的约束键（写进 metadata.json）。

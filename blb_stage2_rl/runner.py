@@ -85,6 +85,16 @@ from .baseline_bootstrap import (
 )
 
 
+def _normalize_supported_rl_algo(value: Any, *, context: str = "rl_algo") -> str:
+    algo = str(value or "ppo").strip().lower()
+    if algo != "ppo":
+        raise ValueError(
+            "GRPO has been disabled for this project after the PPO-vs-GRPO "
+            f"MRPC generalization study. {context} must be 'ppo', got {value!r}."
+        )
+    return "ppo"
+
+
 BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = "blb_stage2_rl_checkpoint_live.pt"
 BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = "blb_stage2_rl_checkpoint_final.pt"
 BLB_STAGE2_BEST_CFG_FILENAME = "blb_stage2_best_cfg.pkl"
@@ -576,12 +586,16 @@ class BLBStage2TrainConfig:
     stab_threshold: float = float("inf")
     # PPO
     ppo: PPOConfig = field(default_factory=PPOConfig)
-    # RL algorithm select (2026-05-31 PPO->GRPO). "ppo" keeps the existing
-    # critic+GAE update; "grpo" uses the group-relative (window=group) update
-    # with a frozen-reference KL. grpo_kl_beta weights that KL term. Single knob
-    # for both stages; forwarded into SequentialTrainConfig by the runner.
+    # PPO-only. Legacy fields remain so old checkpoints/presets deserialize,
+    # but any non-PPO value is rejected at construction and runner handoff.
     rl_algo: str = "ppo"
-    grpo_kl_beta: float = 0.04
+    grpo_kl_beta: float = 0.0
+
+    def __post_init__(self) -> None:
+        self.rl_algo = _normalize_supported_rl_algo(
+            self.rl_algo, context="BLBStage2TrainConfig.rl_algo"
+        )
+        self.grpo_kl_beta = 0.0
     # 环境
     # Bumped 3→5 on 2026-05-18: 3 trials gave loss_std a ~50% sampling error,
     # making one outlier trial blow up the std and trip priority-2 (stability)
@@ -2683,17 +2697,14 @@ class BLBStage2RLRunner:
                 setattr(cfg, cfg_field, int(v))
             except Exception:
                 pass
-        # RL algorithm select (2026-05-31 PPO->GRPO): str / float, not int-coercible
-        # so set explicitly (mirrors the warmstart_bias_gain float pattern below).
+        # PPO-only guard. Keep this explicit so evaluator/preset values cannot
+        # re-enable the removed GRPO path.
         _rl_algo = getattr(ev, "rl_algo", None)
         if _rl_algo not in (None, ""):
-            cfg.rl_algo = str(_rl_algo).strip().lower()
-        v = getattr(ev, "grpo_kl_beta", None)
-        if v not in (None, ""):
-            try:
-                cfg.grpo_kl_beta = max(0.0, float(v))
-            except Exception:
-                pass
+            cfg.rl_algo = _normalize_supported_rl_algo(
+                _rl_algo, context="evaluator.rl_algo"
+            )
+        cfg.grpo_kl_beta = 0.0
         v = getattr(ev, "blb_v3_warmstart_bias_gain", None)
         if v not in (None, ""):
             try:

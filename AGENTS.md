@@ -105,7 +105,8 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   Four-GPU Stage-1 rollout is window-style data parallelism across complete
   episodes; worker logs and sampled GPU utilization are better evidence than a
   single instantaneous `nvidia-smi` snapshot.
-- Stage-1 PPO vs GRPO MRPC comparison, added 2026-05-31: run BERT-base MRPC
+- Stage-1 PPO vs GRPO MRPC comparison, added 2026-05-31; superseded
+  2026-06-02: run BERT-base MRPC
   Stage-1 twice, first PPO then GRPO, both to entropy convergence with
   `--stage1-search-episodes 0`, `--stage1-entropy-stop-threshold 0.1`,
   `--stage1-accuracy-tolerance 0.001`, `--stage1-search-lr 2e-5`,
@@ -121,6 +122,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   wall-clock speed, reward/loss/metric/entropy curves, final GELU configs, and
   full-validation inference metrics for baseline/PPO/GRPO with percentage
   deltas versus the original plaintext baseline.
+- GRPO retirement, added 2026-06-02: project experiments and follow-up analysis
+  showed that GRPO is not suitable for this task, especially because the MRPC
+  validation proxy looked slightly better while official/test generalization was
+  materially worse than PPO/baseline. GRPO must not be used for new Stage-1 or
+  Stage-2 RL runs. Normal entrypoints must reject `--rl-algo grpo`; the
+  launcher must not route to `GRPO Chapter`; Python evaluator/runner configs
+  must accept only `ppo`. Historical GRPO reports, checkpoints, helper math, and
+  analysis artifacts may remain for auditability, but they are not active
+  training choices.
 - Stage-1 GRPO MRPC current snapshot, added 2026-06-01: while the GRPO run was
   still active, a snapshot report was generated at
   `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/grpo_current_snapshot_20260601_164215/stage1_mrpc_grpo_current_result_report.html`.
@@ -1145,8 +1155,9 @@ that Stage-1 config (Critical Mental Model #9). **`run rl` REQUIRES an explicit
 with guidance; the `eval` SUBcommand (→ Paean standalone final-eval) is untouched.
 Final-eval auto-trigger is removed — completion writes only a basic snapshot; the
 heavy same-cost comparison is a separate standalone tool (its own spec). Root
-follows the `Parting Chapter`↔`GRPO Chapter` swap. SSOT for the layout:
-`config/run_layout.py`. GA/greedy/general/compare and legacy v2 keep the old
+remains `Parting Chapter`; the old `GRPO Chapter` routing is retired with the
+GRPO entrypoints. SSOT for the layout: `config/run_layout.py`.
+GA/greedy/general/compare and legacy v2 keep the old
 `persistent/{algorithm}/{model}/{dataset}/{accuracy_slug}/` layout (no migration).
 Spec (§12 = locked grilled refinements):
 `docs/superpowers/specs/2026-05-30-decouple-stage1-stage2-persistence-design.md`.

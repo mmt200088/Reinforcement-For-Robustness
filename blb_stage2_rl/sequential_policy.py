@@ -1238,6 +1238,10 @@ def sequential_grpo_update(
     keys as PPO (``value_loss``/``return_mean``/... reported as 0) plus
     ``kl_ref``/``kl_beta`` so existing logging/diagnostics keep working.
     """
+    raise RuntimeError(
+        "GRPO has been disabled for this project after the PPO-vs-GRPO "
+        "MRPC generalization study. Use sequential_ppo_update instead."
+    )
     empty = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
              "clip_fraction": 0.0, "n_samples": 0, "ent_coef": 0.0,
              "approx_kl": 0.0, "kl_early_stop": False,

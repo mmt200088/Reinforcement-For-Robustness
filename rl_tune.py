@@ -699,11 +699,12 @@ def train(
         blb_v3_osr_scan_only: bool = False,
         blb_v3_osr_num_combo_samples: int = 300,
         blb_v3_osr_allow_fingerprint_mismatch: bool = False,
-        # RL algorithm select (2026-05-31 PPO->GRPO). Single knob for BOTH stages.
-        # "ppo" (default) keeps the existing PPO; "grpo" uses the group-relative
-        # update + frozen-reference KL. grpo_kl_beta weights the reference-KL term.
+        # PPO is the only supported RL algorithm. The GRPO experiment path is
+        # permanently disabled for this project after the MRPC validation/test
+        # mismatch study; keep the argument only so old invocations fail with a
+        # clear error instead of silently changing behavior.
         rl_algo: str = "ppo",
-        grpo_kl_beta: float = 0.04,
+        grpo_kl_beta: float = 0.0,
         final_eval_require_rescale_optimizer: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
@@ -726,6 +727,12 @@ def train(
     final_eval_require_rescale_optimizer = parse_bool_flag(
         final_eval_require_rescale_optimizer, "final_eval_require_rescale_optimizer"
     )
+    rl_algo = str(rl_algo or "ppo").strip().lower()
+    if rl_algo != "ppo":
+        raise ValueError(
+            "GRPO has been disabled for this project after the PPO-vs-GRPO "
+            "MRPC generalization study. Use rl_algo='ppo'."
+        )
     final_eval_glue_submission_enabled = parse_bool_flag(
         final_eval_glue_submission_enabled, "final_eval_glue_submission_enabled"
     )

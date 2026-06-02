@@ -1,7 +1,7 @@
-"""Torch-free unit tests for the shared GRPO advantage helpers (grpo_common).
+"""Torch-free tests for historical GRPO helper math.
 
-These exercise the group-relative normalization math directly (numpy only), so
-they run on a torch-free dev box as well as in CI.
+GRPO is no longer selectable from project entrypoints. These tests keep the old
+helper module auditable without implying it is a supported training algorithm.
 """
 import math
 from pathlib import Path

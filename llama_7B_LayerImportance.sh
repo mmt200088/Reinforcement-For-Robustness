@@ -62,7 +62,7 @@ cat <<'EOF'
   --stage1-search-episodes N
   --stage1-entropy-stop-threshold FLOAT
                                        Stage-1 中 N=0 表示不设 episode 上限，直到
-                                       PPO/GRPO update 后 entropy <= threshold 停止
+                                       PPO update 后 entropy <= threshold 停止
   --stage2-search-episodes N
   --stage1-entropy-stop-threshold FLOAT  Stage-1 PPO update 后熵低于该值时正常停止（如 0.1）；
                                           --stage1-search-episodes <=0 时表示一直训练到该阈值
@@ -88,10 +88,8 @@ GA / Greedy：
   --fresh-stage2                       仅重置 Stage-2 数据（保留 Stage-1）
   --persistent-root PATH               持久化根目录（默认 Parting Chapter/persistent；
                                        所有 preset 共用同一根，便于 compare / experiments_log 聚合）
-  --rl-algo {ppo,grpo}                 Stage-1/Stage-2 RL 算法（默认 ppo）。grpo：组相对优势
-                                       （update 窗口即 group）+ 冻结 reference KL；输出目录改为
-                                       GRPO Chapter（内部结构与 Parting Chapter 相同）。
-  --grpo-kl-beta FLOAT                 GRPO reference-KL 权重（默认 0.04；仅 --rl-algo grpo 生效）
+  --rl-algo {ppo}                      Stage-1/Stage-2 RL 算法。GRPO 已在本项目中永久禁用。
+  --grpo-kl-beta FLOAT                 已废弃；GRPO 已禁用，传入该参数会报错。
 
 普通 RL / GA / Greedy 共用：
   --skip-stage1-search
@@ -470,10 +468,10 @@ GENERAL_ACCURACY_TOLERANCES=""; S_GENERAL_ACCURACY_TOLERANCES="false"
 GENERAL_ACCURACY_TOLERANCE_RANGE=""; S_GENERAL_ACCURACY_TOLERANCE_RANGE="false"
 PERSISTENT_ROOT="Parting Chapter/persistent"; S_PERSISTENT_ROOT="false"
 RUNS_ROOT="Parting Chapter/runs"
-# 2026-05-31 PPO->GRPO: RL algorithm select (single knob, both stages). "grpo"
-# also redirects the output tree to "GRPO Chapter" (same internal structure).
+# PPO is the only supported RL algorithm. GRPO was evaluated and then disabled
+# for this project; keep the old flags only to fail fast with a clear message.
 RL_ALGO="ppo"; S_RL_ALGO="false"
-GRPO_KL_BETA="0.04"; S_GRPO_KL_BETA="false"
+GRPO_KL_BETA="0.0"; S_GRPO_KL_BETA="false"
 RL_COMPARE_SKIP_STAGE1_SEARCH="false"; S_RL_COMPARE_SKIP_STAGE1_SEARCH="false"
 GA_COMPARE_SKIP_STAGE1_SEARCH="false"; S_GA_COMPARE_SKIP_STAGE1_SEARCH="false"
 RL_COMPARE_FINAL_EVAL_SOURCE="search"; S_RL_COMPARE_FINAL_EVAL_SOURCE="false"
@@ -781,15 +779,8 @@ MODEL_TYPE="$(printf '%s' "$MODEL_TYPE" | tr '[:upper:]' '[:lower:]')"
 RUN_MODE="$(printf '%s' "$RUN_MODE" | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
 FINAL_EVAL_SOURCE="$(printf '%s' "$FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
 RL_ALGO="$(printf '%s' "$RL_ALGO" | tr '[:upper:]' '[:lower:]')"
-case "$RL_ALGO" in ppo|grpo) ;; *) err "--rl-algo 必须是 ppo 或 grpo，得到：$RL_ALGO" ;; esac
-# 2026-05-31 PPO->GRPO: GRPO runs land in a separate "GRPO Chapter" tree with the
-# SAME internal structure as "Parting Chapter". Swap the roots here (only when the
-# user didn't explicitly pass --persistent-root) so every downstream persistent/run
-# path inherits it. PPO mode is byte-for-byte unchanged.
-if [ "$RL_ALGO" = "grpo" ]; then
-  [ "$S_PERSISTENT_ROOT" = "true" ] || PERSISTENT_ROOT="GRPO Chapter/persistent"
-  RUNS_ROOT="GRPO Chapter/runs"
-fi
+case "$RL_ALGO" in ppo) ;; *) err "GRPO 已在本项目中永久禁用；--rl-algo 只能是 ppo，得到：$RL_ALGO" ;; esac
+[ "$S_GRPO_KL_BETA" = "false" ] || err "GRPO 已在本项目中永久禁用；不要再传 --grpo-kl-beta。"
 STAGE2_FIXED_CONFIG_SOURCE="$(printf '%s' "$STAGE2_FIXED_CONFIG_SOURCE" | tr '[:upper:]' '[:lower:]')"
 GENERAL_MODE="$(printf '%s' "$GENERAL_MODE" | tr '[:upper:]' '[:lower:]')"
 RL_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$RL_COMPARE_FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
@@ -1333,7 +1324,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   # 仅 canonical RL 走这条；GA / greedy / general-rl / compare 仍用旧 persistent/ 布局。
   USE_PERSISTENT="true"
   _RL_STAGE_NUM=1; [ "$RUN_MODE" = "stage2-only" ] && _RL_STAGE_NUM=2
-  _RL_LAYOUT_ROOT="$(dirname "$PERSISTENT_ROOT")"          # Parting Chapter / GRPO Chapter
+  _RL_LAYOUT_ROOT="$(dirname "$PERSISTENT_ROOT")"          # Parting Chapter
   _RL_COMBO="${MODEL_TYPE//-/ } ${DATASET}"                # bert-base mrpc -> "bert base mrpc"
   PERSISTENT_DIR="${_RL_LAYOUT_ROOT}/stage${_RL_STAGE_NUM}/${_RL_COMBO}"
   _COMPLETED_MARKER="${PERSISTENT_DIR}/COMPLETED"
@@ -1690,7 +1681,7 @@ else
     [ "$S_BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF" = "true" ] && CMD+=(--blb_v3_sequential_fusion_shaping_coeff "$BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF")
     [ "$S_BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID" = "true" ] && CMD+=(--blb_v3_sequential_early_terminate_on_invalid "$BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID")
     # 4-sub-stage knobs (only forwarded when user set them)
-    CMD+=(--rl_algo "$RL_ALGO" --grpo_kl_beta "$GRPO_KL_BETA")
+    CMD+=(--rl_algo "$RL_ALGO")
     [ "$S_BLB_V3_SUBSTAGE_MODE" = "true" ] && CMD+=(--blb_v3_substage_mode "$BLB_V3_SUBSTAGE_MODE")
     [ "$S_BLB_V3_SUBSTAGE_BLOCK_ORDER" = "true" ] && CMD+=(--blb_v3_substage_block_order "$BLB_V3_SUBSTAGE_BLOCK_ORDER")
     [ "$S_BLB_V3_SUBSTAGE_FROZEN_BLOCKS" = "true" ] && CMD+=(--blb_v3_substage_frozen_blocks "$BLB_V3_SUBSTAGE_FROZEN_BLOCKS")

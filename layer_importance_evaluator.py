@@ -2364,7 +2364,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_osr_num_combo_samples=300,
                   blb_v3_osr_allow_fingerprint_mismatch=False,
                   rl_algo="ppo",
-                  grpo_kl_beta=0.04,
+                  grpo_kl_beta=0.0,
                   final_eval_require_rescale_optimizer=False):
         """
         基于 PPO 强化学习的策略搜索器。
@@ -2693,17 +2693,16 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.final_eval_glue_submission_seed = int(final_eval_glue_submission_seed)
         self.final_eval_require_rescale_optimizer = self._coerce_bool_flag(
             final_eval_require_rescale_optimizer, 'final_eval_require_rescale_optimizer')
-        # RL algorithm select (2026-05-31 PPO->GRPO). Single knob for BOTH stages:
-        # "ppo" keeps ppo_update_gtrxl / sequential_ppo_update; "grpo" uses the
-        # group-relative (window=group) update + frozen-reference KL. The Stage-2
-        # runner copies these onto BLBStage2TrainConfig.
+        # PPO is now the only supported RL algorithm. GRPO is deliberately
+        # rejected at the evaluator boundary so Stage-1 and Stage-2 cannot enter
+        # the experimental group-relative path from CLI, presets, or resumes.
         self.rl_algo = str(rl_algo or "ppo").strip().lower()
-        if self.rl_algo not in ("ppo", "grpo"):
-            raise ValueError(f"rl_algo must be 'ppo' or 'grpo', got {rl_algo!r}")
-        try:
-            self.grpo_kl_beta = max(0.0, float(grpo_kl_beta))
-        except Exception:
-            self.grpo_kl_beta = 0.04
+        if self.rl_algo != "ppo":
+            raise ValueError(
+                "GRPO has been disabled for this project after the PPO-vs-GRPO "
+                f"MRPC generalization study. Use rl_algo='ppo', got {rl_algo!r}."
+            )
+        self.grpo_kl_beta = 0.0
         self.skip_stage1_rl = self._coerce_bool_flag(skip_stage1_rl, 'skip_stage1_rl')
         self.skip_noise_rl = self._coerce_bool_flag(skip_noise_rl, 'skip_noise_rl')
         self.skip_final_eval = self._coerce_bool_flag(skip_final_eval, 'skip_final_eval')
@@ -5627,6 +5626,10 @@ class LayerImportanceEvaluator(TrainerCallback):
         Warmup LR、clip、最小熵约束、梯度裁剪、KL early-stop 与 PPO 完全一致。
         返回 (policy_loss, value_loss=0.0, entropy)，与 ppo_update_gtrxl 同形以便调度。
         """
+        raise RuntimeError(
+            "GRPO has been disabled for this project after the PPO-vs-GRPO "
+            "MRPC generalization study. Use ppo_update_gtrxl instead."
+        )
         from grpo_common import grpo_group_normalize
         if entropy_coef is None:
             entropy_coef = self.get_current_entropy_coef()
@@ -6338,38 +6341,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                         f"目标回合数 {self.stage1_rl_episode_limit} 无需追加训练。"
                     )
 
-            # ---------- GRPO frozen reference (Stage-1) ----------
-            # GRPO (2026-05-31) anchors the policy to a FROZEN reference = the net
-            # at GRPO start. Snapshot here (after construction + pretrained-load +
-            # resume). Persist as a sidecar next to the checkpoint so a resume
-            # restores the ORIGINAL anchor instead of re-snapshotting the trained
-            # net. PPO mode leaves stage1_reference_net=None (no extra network).
+            # GRPO is disabled for this project. Keep no Stage-1 reference policy;
+            # updates below always use PPO.
             stage1_reference_net = None
-            if self.rl_algo == "grpo":
-                import copy as _copy
-                _ref_sidecar = os.path.join(
-                    os.path.dirname(stage1_checkpoint_path), "stage1_grpo_reference.pt"
-                )
-                stage1_reference_net = _copy.deepcopy(gtrxl_net)
-                if os.path.isfile(_ref_sidecar):
-                    try:
-                        _ref_state = torch.load(
-                            _ref_sidecar, map_location=self.device, weights_only=False
-                        )
-                        stage1_reference_net.load_state_dict(_ref_state)
-                        self.log(f"  [GRPO] 已从 sidecar 恢复冻结 reference：{_ref_sidecar}")
-                    except Exception as _e:
-                        self.log(f"  [GRPO][警告] reference sidecar 加载失败（{_e}）；改用当前快照")
-                else:
-                    try:
-                        os.makedirs(os.path.dirname(_ref_sidecar) or ".", exist_ok=True)
-                        torch.save(stage1_reference_net.state_dict(), _ref_sidecar)
-                        self.log(f"  [GRPO] 已快照冻结 reference 并写入 sidecar：{_ref_sidecar}")
-                    except Exception as _e:
-                        self.log(f"  [GRPO][警告] reference sidecar 保存失败（{_e}）")
-                stage1_reference_net.eval()
-                for _p in stage1_reference_net.parameters():
-                    _p.requires_grad_(False)
 
             _stage1_rl_t0 = time.time()
             stage1_completed_episodes = int(stage1_resume_start_episode)
@@ -6595,21 +6569,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                     self.log(f"    GELU配置: {env.gelu_config}")
                     self.log(f"    Softmax配置: {env.softmax_config}")
                 
-                # GTrXL PPO/GRPO 更新（因果自注意力 + GRU门控）
+                # GTrXL PPO 更新（因果自注意力 + GRU门控）
                 if (episode + 1) % PPO_UPDATE_INTERVAL == 0:
-                    if self.rl_algo == "grpo":
-                        policy_loss, value_loss, entropy = self.grpo_update_gtrxl(
-                            gtrxl_net, stage1_reference_net, optimizer, buffer, self.device,
-                            entropy_coef=current_entropy,
-                            ppo_update_step=gtrxl_ppo_update_count,
-                            kl_beta=self.grpo_kl_beta,
-                        )
-                    else:
-                        policy_loss, value_loss, entropy = self.ppo_update_gtrxl(
-                            gtrxl_net, optimizer, buffer, self.device,
-                            entropy_coef=current_entropy,
-                            ppo_update_step=gtrxl_ppo_update_count
-                        )
+                    policy_loss, value_loss, entropy = self.ppo_update_gtrxl(
+                        gtrxl_net, optimizer, buffer, self.device,
+                        entropy_coef=current_entropy,
+                        ppo_update_step=gtrxl_ppo_update_count
+                    )
                     gtrxl_ppo_update_count += 1
                     buffer.clear()
                     episode_entropies.append(entropy)
