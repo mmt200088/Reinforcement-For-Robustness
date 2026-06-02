@@ -39,11 +39,22 @@ python scripts/blb_verify_noise_install.py --mode full --profile mrpc --num-laye
   --out "$OUT/noise_install_mixed.html" 2>&1 | tee "$OUT/noise_install_mixed.log"
 G2=${PIPESTATUS[0]}
 
-echo "=== [3/3] noise-install full verify: ALL-ReLU stage-1 (every layer degree 0) ==="
+echo "=== [3/4] noise-install full verify: ALL-ReLU stage-1 (every layer degree 0) ==="
 python scripts/blb_verify_noise_install.py --mode full --profile mrpc --num-layers 12 \
   --stage1 '{"gelu_degree_per_layer":[0,0,0,0,0,0,0,0,0,0,0,0],"softmax_degree_per_layer":[2,2,2,2,2,2,2,2,2,2,2,2]}' \
   --out "$OUT/noise_install_allrelu.html" 2>&1 | tee "$OUT/noise_install_allrelu.log"
 G3=${PIPESTATUS[0]}
+
+echo "=== [4/4] noise-install full verify: NORMAL stage-1 (all gelu=4, softmax 2..5) ==="
+# Exercises the skeleton-driven wiring on block2/block4 (degree-independent) +
+# block5_n4: action_vector_to_cfgs -> _build_block{2,4,5}_action (active rescales
+# from skeleton_stage_map) -> bridge.evaluate_blocks (SSOT t_new). block2 should
+# install kt_mask1/qkt_matmul rescales (not kt_mask2/qkt_merge_mask), block4 should
+# install ln_square (not ln_var) — and every block must stay valid.
+python scripts/blb_verify_noise_install.py --mode full --profile mrpc --num-layers 12 \
+  --stage1 '{"gelu_degree_per_layer":[4,4,4,4,4,4,4,4,4,4,4,4],"softmax_degree_per_layer":[2,3,4,5,2,3,4,5,2,3,4,5]}' \
+  --out "$OUT/noise_install_normal.html" 2>&1 | tee "$OUT/noise_install_normal.log"
+G4=${PIPESTATUS[0]}
 
 {
   echo "HEAD=$(git rev-parse HEAD)"
@@ -51,19 +62,28 @@ G3=${PIPESTATUS[0]}
   echo "degree0_tests_exit=$G1B       (0 = degree-0 RO contract + baseline extraction pass)"
   echo "noise_install_mixed_exit=$G2  (0 = degree-0 cfg-build + block5_n0 cost ran without crash)"
   echo "noise_install_allrelu_exit=$G3"
+  echo "noise_install_normal_exit=$G4 (0 = skeleton-driven block2/4/5 cfg-build + cost ran)"
   echo "output_dir=$OUT"
-  echo "--- block5_n0 per-config valid/cost lines (mixed run) ---"
-  grep -iE "block5_n0|block5_n|\"valid\"|valid=|invalid|degree" "$OUT/noise_install_mixed.log" | head -50
+  echo "--- block2/block4 per-config valid lines (normal run; must be valid=True) ---"
+  grep -iE "block2|block4|\"valid\"|valid=|invalid" "$OUT/noise_install_normal.log" | head -40
+  echo "--- block5_n0 per-config valid lines (mixed run) ---"
+  grep -iE "block5_n0|block5_n|\"valid\"|valid=|invalid" "$OUT/noise_install_mixed.log" | head -40
 } | tee "$OUT/SUMMARY.txt"
 echo "=== DONE -> $OUT ==="
 ```
 
 ## metadata
 
-- **任务**：验证本地新加的 **Stage-2 degree-0 (ReLU / block5_n0) 支持**（commit `2f9862e`）。
-  Stage-1 某层 GELU degree=0 表示「用 ReLU 替换 GELU」，对应 Stage-2 图是
-  `block5_n0`（只有 LN tail + Wffn1，无多项式 GELU 节点）。此前 Stage-2 没有
-  degree-0 路径，任何含 degree-0 的 Stage-1 都会让 Stage-2 失败。
+- **任务**：验证两件本地改动 ——
+  1. **Stage-2 degree-0 (ReLU / block5_n0) 支持**（commit `2f9862e`）：Stage-1 某层
+     GELU degree=0 = 用 ReLU 替换 GELU，对应 `block5_n0`（只有 LN tail + Wffn1）。
+  2. **skeleton 驱动的映射 SSOT**（commits `878ba7e` / `c8f43d7`）：把 baseline 动作
+     选取、RL 动作 active 槽、bridge t_new 三处从「写死表」改成「对照 RO 完整计算链条
+     + 当前 skeleton 自动派生」。2026 skeleton 重生成把 block2 的 rescale 点移到
+     `rotKT_mask1`/`preprocess_qkt`、block4 移到 `ctct_square`((X−μ)²)、block5_n1 移到
+     `xmean_over_std`(normalize)；旧写死表已漂移，现在自动跟随。
+  - 关键不变式：每个 graph 的派生 t_new 长度 == ReplanSession `t_baseline`，完整链条
+    全部节点都已映射（完备性守卫），block2/block4 的 active 槽随 skeleton 改变。
 - **改了什么**（4 源文件 + 1 新测试，全部本地 torch-free 验证过）：
   - `blb_stage2_rl/baseline_bootstrap.py`：`ALLOWED_GELU_DEGREES=(0,1,2,4)`；block5
     SOURCE 映射补 `inv_std`（n0 的 SOURCE 节点名是 `inv_std` 不是 `x_mean`）→
