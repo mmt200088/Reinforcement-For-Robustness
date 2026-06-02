@@ -172,6 +172,26 @@ class Degree0BaselineExtractionTest(unittest.TestCase):
         self.assertEqual(bl.unmapped_rescale_nodes, [])
         self.assertEqual(bl.unmapped_propagation_nodes, [])
 
+    def test_degree0_action_decode_builds_block5_n0_request(self):
+        from blb_stage2_rl.action_space import (
+            action_vector_to_cfgs,
+            build_optimizer_requests,
+            load_max_sfs,
+            make_all_max_action_vector,
+        )
+
+        decoded = action_vector_to_cfgs(
+            make_all_max_action_vector(num_layers=1),
+            load_max_sfs("mrpc"),
+            num_layers=1,
+            gelu_degree=[0],
+            attn_degree=[2],
+        )
+        requests = build_optimizer_requests("mrpc", decoded.cfgs_dict())
+
+        self.assertIn("block5_n0_L0", requests)
+        self.assertNotIn("block5_n4_L0", requests)
+
 
 if __name__ == "__main__":
     unittest.main()

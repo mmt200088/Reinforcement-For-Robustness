@@ -1757,12 +1757,14 @@ def make_config_name(profile: str, block_idx: int, layer_idx: int, cfg: object =
     if block_idx in (1, 2):
         graph_key = f"block{block_idx}_{str(profile)}"
     elif block_idx == 3:
-        degree = int(getattr(cfg, "degree", 4) or 4)
+        raw_degree = getattr(cfg, "degree", 4)
+        degree = 4 if raw_degree is None else int(raw_degree)
         graph_key = f"block3_exp_n{degree}"
     elif block_idx == 4:
         graph_key = "block4"
     elif block_idx == 5:
-        degree = int(getattr(cfg, "gelu_degree", 4) or 4)
+        raw_degree = getattr(cfg, "gelu_degree", 4)
+        degree = 4 if raw_degree is None else int(raw_degree)
         graph_key = f"block5_n{degree}"
     else:
         graph_key = f"block{block_idx}_{str(profile)}"
