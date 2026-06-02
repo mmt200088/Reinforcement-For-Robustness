@@ -603,112 +603,12 @@ def static_skeletons_graph_key(
 # ---------------------------------------------------------------------------
 # RO 节点名 ↔ RL 字段名映射
 # ---------------------------------------------------------------------------
-# 三张表，对应 cut_point_sf 第一项 (SOURCE) / propagation_deltas (encode) /
-# cut_point_sf 内带 sf_post 的项 (rescale)。同一个 RO 节点名可能既在 propagation
-# 又在 cut_point，对应不同的 RL 字段（encode vs rescale），所以分开。
-#
-# Block 2 / Block 4 有几个 RL 字段共享一个 RO 节点：
-#   block2: ctpt_wq_wk → 只写 wk_sf（2026-05-14 起 wq_sf 已与 wk_sf 绑定，不再独立）
-#   block4: ctpt_mask2 → 同时写 softmax_out_mask_sf 和 v_mask_sf
-
-_RO_SOURCE_NODE_TO_RL_FIELD: Dict[int, Dict[str, str]] = {
-    1: {"gelu_out":    "gelu_out_sf"},
-    2: {"inv_std":     "inv_std_fresh_sf"},
-    3: {"X":           "x_fresh_sf"},
-    4: {"rot_softmax": "softmax_out_fresh_sf"},
-    # block5 SOURCE：n1/n2/n4 命名为 "x_mean"（即 x_centered 操作数）；degree 0
-    # 的 block5_n0 graph 把 SOURCE 命名为 "inv_std"（1/std 操作数）。两个 fresh
-    # 操作数 SF 通过 "x2" 旁节点强制相等（且 RL 端 inv_std_fresh 绑定 x_centered），
-    # 所以无论 RO 标成哪个名字，SOURCE.sf 都写入 x_centered_fresh_sf。
-    5: {"x_mean":      "x_centered_fresh_sf",
-        "inv_std":     "x_centered_fresh_sf"},
-}
-
-_RO_ENCODE_NODE_TO_RL_FIELDS: Dict[int, Dict[str, Tuple[str, ...]]] = {
-    1: {
-        "ctpt_ffn2":      ("wffn2_sf",),
-        "ctpt_inv_d_1":   ("mean_inv_d_sf",),
-        "ctpt_inv_d_2":   ("var_inv_d_sf",),
-    },
-    2: {
-        "ctpt_gama1":          ("gamma_sf",),
-        # 2026-05-21 user spec：从 ctpt_wq_wk 到 ctct_preprocess_qkt（q×k^T）
-        # 这段计算链 q / k 共用 — 主链 ctpt_wq_wk / ctpt_rotKT_mask1 /
-        # ctpt_rotKT_mask2 同时代表 wq=wk、kt_mask1=q_mask1、kt_mask2=q_mask2
-        # 三对绑定的 SF。baseline 抽取要把 RL 字段都写上（之前只写 K 侧，
-        # Q 侧靠 cfg-build 的 binding 碰巧拿对值），现在显式 mirror。
-        "ctpt_wq_wk":          ("wk_sf", "wq_sf"),
-        "ctpt_rotKT_mask1":    ("kt_mask1_sf", "q_mask1_sf"),
-        "ctpt_rotKT_mask2":    ("kt_mask2_sf", "q_mask2_sf"),
-        "ctpt_mask":           ("qkt_merge_mask_sf",),
-    },
-    3: {"ctpt_inv_2n": ("inv_2n_sf",)},
-    4: {
-        "ctpt_mask2":             ("softmax_out_mask_sf", "v_mask_sf"),    # shared
-        "ctpt_mask":              ("softmax_v_mask_sf",),
-        "ctpt_wo_attnout":        ("wo_sf",),
-        "ctpt_inv_d_1":           ("ln_mean_inv_d_sf",),
-        "ctpt_inv_d_2":           ("ln_var_inv_d_sf",),
-        # ctct_rot_softmax_mul_v 出现在 propagation_deltas 里但 delta=39 不是
-        # encode 而是该 CTCT_MUL 操作的 SF 增量；不对应 RL encode 槽位。
-    },
-    5: {
-        "ctpt_gamal":      ("gamma_sf",),
-        "ctpt_wffn1":      ("wffn1_sf",),
-        "ctpt_gelu_coeff": ("gelu_coeff_sf",),
-    },
-}
-
-# 在 cut_point_sf 里带 sf_post 的节点 → RL rescale 字段。一个 RO 节点可以
-# 同时映射多个 RL 字段（block 2 的 ctpt_rotKT_mask2 sf_post 同时代表
-# kt_mask2_r 和 q_mask2_r —— q/k 共享段里的同一个 rescale 在 RL 端有两个
-# 绑定的字段）；类型用 Tuple[str, ...]。
-# 2026-05-14 精简：删除大量 RL 动作槽（参见 action_space._BLOCK*_FIELDS 顶部
-# 的注释）。对应的 RO 节点反推现在直接跳过 —— 它们会出现在
-# ``unmapped_rescale_nodes`` 里（baseline 不写回这些字段，cfg 保留 None）。
-_RO_RESCALE_NODE_TO_RL_FIELD: Dict[int, Dict[str, Tuple[str, ...]]] = {
-    1: {
-        "ctpt_inv_d_1":    ("mean_rescale_sf",),
-        "ctpt_inv_d_2":    ("var_rescale_sf",),
-    },
-    2: {
-        "ctpt_gama1":             ("gamma_rescale_sf",),
-        # 2026-05-21 user spec：ctpt_rotKT_mask2 的 sf_post 在 q/k 共享段里
-        # 同时代表 kt_mask2_r 和 q_mask2_r 两个 RL 字段的 baseline（二者
-        # 始终绑定相等）。
-        "ctpt_rotKT_mask2":       ("kt_mask2_rescale_sf", "q_mask2_rescale_sf"),
-        "ctpt_mask":              ("qkt_merge_mask_rescale_sf",),
-    },
-    3: {
-        # ctct_square_<k> → square_rescale_sf_<k-1>（动作槽位 0..3）。
-        # 第 5、6 次平方 (n5/n6) 在 RL 动作上只有 4 个 square 槽，所以多出来的
-        # 会被丢弃（让 caller log 一条 warning）。
-        "ctct_square_1": ("square_rescale_sf_0",),
-        "ctct_square_2": ("square_rescale_sf_1",),
-        "ctct_square_3": ("square_rescale_sf_2",),
-        "ctct_square_4": ("square_rescale_sf_3",),
-    },
-    4: {
-        "ctct_rot_softmax_mul_v": ("softmax_v_matmul_rescale_sf",),
-        "ctpt_inv_d_1":           ("ln_mean_rescale_sf",),
-        "ctpt_inv_d_2":           ("ln_var_rescale_sf",),
-    },
-    5: {
-        "ctct_xmean_over_std": ("normalize_rescale_sf",),
-        "ctpt_gamal":          ("gamma_rescale_sf",),
-        "ctpt_wffn1":          ("wffn1_rescale_sf",),
-        "ctct_gelu_x2":        ("gelu_power_rescale_sf_0",),
-        # 2026-05-21 user spec：``ctpt_gelu_coeff`` 在所有 degree 的 block5
-        # baseline 里都是 rescale 点（n=1: sf_post=30；n=2/n=4: sf_post=31），
-        # 但之前没有 RL 动作映射，cfg ``gelu_coeff_mul_rescales[-1]`` 强制 None
-        # → optimizer t_new fallback 到 baseline。现在 promote
-        # ``gelu_coeff_mul_rescale_sf_0`` 为 active slot 驱动这个 rescale；
-        # ``_build_block5_action`` 把它的值放到 ``gelu_coeff_mul_rescales[-1]``
-        # （optimizer 读 [-1]）；compat-extra 集合也对应移除了 _sf_0。
-        "ctpt_gelu_coeff":     ("gelu_coeff_mul_rescale_sf_0",),
-        # ctct_gelu_x4 / ctct_gelu_x3 仍然没有 RL 动作（gelu_power_rescale_sf_1/2 是 compat-extra）。
-    },
-}
+# The SOURCE / encode / rescale node→RL-field tables that used to live here are
+# now the single source of truth in ``skeleton_stage_map`` (the complete-chain
+# SSOT). Extraction above reads them via ``_ssm.source_rl_field`` /
+# ``_ssm.encode_rl_fields`` / ``_ssm.rescale_rl_fields`` so a skeleton regen
+# auto-propagates. ``_RO_X2_AUX_FRESH_FIELD`` below is the one piece the SSOT
+# does not model (the "x2" aux fresh inferred from SOURCE.sf), so it stays.
 
 
 # 2026-05-21 user spec：``"x2"`` CTCT_MUL 旁节点的语义是"两个 fresh 操作数 SF

@@ -1348,49 +1348,27 @@ def make_slot_label(
 # model nor the optimizer's modulus-chain math. ``describe_action_vector`` /
 # ``effective_action_hash`` use this to mark them inactive.
 _COMPAT_EXTRA_FIELDS: Dict[int, frozenset] = {
-    1: frozenset({"wffn2_rescale_sf", "square_rescale_sf"}),
+    # BINDINGS + BOUND rescale slots only. Whether a FREE rescale slot is
+    # effective now follows the live skeleton (skeleton_stage_map active set, via
+    # the "R"-kind check in _is_action_field_effective), so free rescale slots
+    # are no longer hard-listed here and a skeleton regen auto-updates them.
+    1: frozenset(),
     2: frozenset({
-        # Q-side encodes (bound to K-side; cfg uses wk_sf / kt_mask*_sf)
-        "wq_sf", "q_mask1_sf", "q_mask2_sf",
-        # 2026-05-20 user spec: Wv has no Rescale_optimizer node in block2's
-        # graph and no observable cost impact, so the RL action for it is
-        # removed (slot stays in the action vector for back-compat, cfg field
-        # gets a fixed value in _build_block2_action).
-        "wv_sf",
-        # 2026-05-21 user spec: ``x_centered_fresh_sf`` is the "x2" side of
-        # ctct_x_mean_over_std — its SF MUST equal inv_std_fresh.sf (SOURCE)
-        # for the optimizer's "x2" assumption to hold. The two slots collapse
-        # to ONE action (driven by inv_std_fresh_sf); x_centered_fresh_sf
-        # stays in the action vector for back-compat but is bound and inactive.
-        "x_centered_fresh_sf",
-        # rescales not on the mrpc baseline skeleton (cfg fields fixed None)
-        "normalize_rescale_sf", "wk_rescale_sf", "wq_rescale_sf",
-        "wv_rescale_sf", "kt_mask1_rescale_sf", "q_mask1_rescale_sf",
-        "q_mask2_rescale_sf", "qkt_matmul_rescale_sf",
+        # Q-side encodes bound to K-side; Wv has no RO node; x_centered bound to
+        # inv_std ("x2" side of ctct_x_mean_over_std).
+        "wq_sf", "q_mask1_sf", "q_mask2_sf", "wv_sf", "x_centered_fresh_sf",
+        # Q-side / Wq / Wv rescales are bound to K-side or non-existent — never a
+        # free slot regardless of skeleton (the q_mask*_r values mirror kt_mask*_r).
+        "wq_rescale_sf", "wv_rescale_sf", "q_mask1_rescale_sf", "q_mask2_rescale_sf",
     }),
-    3: frozenset({"x_inv_2n_rescale_sf"}),
+    3: frozenset(),
     4: frozenset({
-        # 2026-05-20 user spec: block4's graph has ONE mask2 node that is
-        # shared between the softmax_out side and the V side. RL now exposes
-        # ONE active slot (``softmax_out_mask_sf``); ``v_mask_sf`` stays in
-        # the action vector for back-compat but is *bound* — cfg uses the
-        # softmax_out_mask SF for both, and the optimizer's write-back is
-        # mirrored via ``sync_block4_v_mask_binding``.
-        "v_mask_sf",
-        "softmax_out_mask_rescale_sf", "v_mask_rescale_sf",
-        "softmax_v_mask_rescale_sf", "wo_rescale_sf", "ln_square_rescale_sf",
+        # v_mask is bound to softmax_out_mask (one shared mask2 node) — encode + rescale.
+        "v_mask_sf", "v_mask_rescale_sf",
     }),
     5: frozenset({
-        # 2026-05-21 user spec: mirror of block 2. ``inv_std_fresh_sf`` is the
-        # "x2" side of ctct_xmean_over_std (whose SOURCE is x_centered_fresh),
-        # so the two collapse to ONE action driven by x_centered_fresh_sf.
+        # inv_std_fresh bound to x_centered_fresh ("x2" side of ctct_xmean_over_std).
         "inv_std_fresh_sf",
-        "gelu_power_rescale_sf_1", "gelu_power_rescale_sf_2",
-        # 2026-05-21: gelu_coeff_mul_rescale_sf_0 PROMOTED to active —
-        # it drives cfg.gelu_coeff_mul_rescales[-1] (last entry, which the
-        # optimizer reads). The other three coeff_mul slots stay compat-extra.
-        "gelu_coeff_mul_rescale_sf_1",
-        "gelu_coeff_mul_rescale_sf_2", "gelu_coeff_mul_rescale_sf_3",
     }),
 }
 
@@ -1448,8 +1426,24 @@ def _graph_key_for(block_idx: int, gelu_degree: int = 4, attn_degree: int = 4,
 def active_rescale_rl_fields(block_idx: int, gelu_degree: int = 4, attn_degree: int = 4,
                              profile: str = "mrpc") -> frozenset:
     """Active rescale RL slots for the graph this (block, degree) maps to."""
-    return _load_active_rescale_sets().get(
-        _graph_key_for(block_idx, gelu_degree, attn_degree, profile), frozenset())
+    sets = _load_active_rescale_sets()
+    gk = _graph_key_for(block_idx, gelu_degree, attn_degree, profile)
+    if gk in sets:
+        return sets[gk]
+    # Only mrpc has skeleton data; block1/2 graph keys embed the profile, so a
+    # display-time profile like "default" falls back to the mrpc graph.
+    return sets.get(_graph_key_for(block_idx, gelu_degree, attn_degree, "mrpc"), frozenset())
+
+
+def _field_kind(block_idx: int, field_name: str) -> Optional[str]:
+    """RL action-field kind ("F"/"W"/"M"/"S"/"R"/"K") from the block field spec."""
+    spec = _BLOCK_SPECS.get(int(block_idx))
+    if spec is None:
+        return None
+    for fname, kind, _default in spec.fields:
+        if fname == str(field_name):
+            return kind
+    return None
 
 
 def _is_action_field_effective(
@@ -1459,6 +1453,7 @@ def _is_action_field_effective(
         field_name: str,
         attn_degree: int,
         gelu_degree: int,
+        profile: str = "mrpc",
         ) -> Tuple[bool, str]:
     # Layer 0 has no upstream FFN2 → block 1 noise is *not* installed at all,
     # even though the action vector reserves slots for it (so the policy net
@@ -1475,27 +1470,17 @@ def _is_action_field_effective(
             "compat-extra slot retained for action-vector back-compat; cfg field "
             "is forced None / bound elsewhere so this action value has no effect"
         )
-    if int(block_idx) == 3 and str(field_name).startswith("square_rescale_sf_"):
-        try:
-            slot = int(str(field_name).rsplit("_", 1)[-1])
-        except Exception:
-            slot = 0
-        if slot >= max(1, int(attn_degree)):
-            return False, f"softmax degree {int(attn_degree)} does not use this square-rescale slot"
-    if int(block_idx) == 5 and str(field_name).startswith("gelu_power_rescale_sf_"):
-        try:
-            slot = int(str(field_name).rsplit("_", 1)[-1])
-        except Exception:
-            slot = 0
-        if slot >= max(0, int(gelu_degree) - 1):
-            return False, f"GELU degree {int(gelu_degree)} does not use this power-rescale slot"
-    if int(block_idx) == 5 and str(field_name).startswith("gelu_coeff_mul_rescale_sf_"):
-        try:
-            slot = int(str(field_name).rsplit("_", 1)[-1])
-        except Exception:
-            slot = 0
-        if slot >= int(gelu_degree):
-            return False, f"GELU degree {int(gelu_degree)} does not use this coefficient-rescale slot"
+    # Rescale "R" slots: effective iff the CURRENT skeleton selects this rescale
+    # point (skeleton_stage_map active set). This replaces the old per-block
+    # degree gates (block3 square / block5 power / block5 coeff-mul) with one
+    # skeleton-driven rule, so report effectiveness auto-follows a regen. Bound
+    # rescale slots are already filtered above by _COMPAT_EXTRA_FIELDS.
+    if _field_kind(int(block_idx), str(field_name)) == "R":
+        active = active_rescale_rl_fields(
+            int(block_idx), gelu_degree=int(gelu_degree),
+            attn_degree=int(attn_degree), profile=str(profile))
+        if str(field_name) not in active:
+            return False, "not a rescale stage on the current skeleton"
     # degree 0 = ReLU：block5_n0 graph 无 GELU 多项式系数 encode（ctpt_gelu_coeff）。
     # 该 slot 的动作既不进模型噪声（ReLU 跳过 GELU 安装）也不进 optimizer cost，故无效。
     if int(block_idx) == 5 and str(field_name) == "gelu_coeff_sf" and int(gelu_degree) == 0:
@@ -1557,6 +1542,7 @@ def describe_action_vector(
                 field_name=field_name,
                 attn_degree=li_attn_degree,
                 gelu_degree=li_gelu_degree,
+                profile=str(profile),
             )
             # Layer-0 block-1 noise is *not installed* (the first HE config is
             # treated as lossless). The decoded ``value`` for these slots is a
