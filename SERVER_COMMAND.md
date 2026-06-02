@@ -13,126 +13,63 @@ export HF_ENDPOINT=https://hf-mirror.com
 export HF_HUB_DISABLE_XET=1
 export GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 TS=$(date +%Y%m%d_%H%M%S)
-OUT="experiments/server_command_runs/stage2_degree0_verify_${TS}"
+OUT="experiments/server_command_runs/fusion_map_build_${TS}"
 mkdir -p "$OUT"
 echo "HEAD=$(git rev-parse HEAD)" | tee "$OUT/commit.txt"
 
-echo "=== [1/3] full BLB contract gate (regression + degree-0 tests, WITH torch) ==="
-# On the server torch IS available, so the 25 torch-import 'errors' seen locally
-# become real runs. test_blb_degree0_stage2.py (new) runs both classes here:
-#   - Degree0RescaleOptimizerContractTest (block5_n0 valid; +gelu_coeff rejected)
-#   - Degree0BaselineExtractionTest (real-archive degree-0 baseline extraction)
-BLB_STRICT=0 python -m unittest discover -s tests -p "test_blb_*.py" -v 2>&1 | tee "$OUT/contract_gate.log"
+echo "=== [1/3] fusion-count map unit tests (torch-free core; runs under torch here too) ==="
+python tests/test_blb_fusion_count_map.py -v 2>&1 | tee "$OUT/fusion_unit.log"
 G1=${PIPESTATUS[0]}
 
-echo "=== [1b] degree-0 test file alone (explicit, easy to read) ==="
-BLB_STRICT=0 python -m unittest tests.test_blb_degree0_stage2 -v 2>&1 | tee "$OUT/degree0_tests.log"
-G1B=${PIPESTATUS[0]}
-
-echo "=== [1c] PROVE the bridge auto-derives t_new from the live skeleton ==="
-# BridgeDerivesT_newFromSkeletonTest asserts _derive_t_new_table_from_invoker on a
-# real InProcessInvoker returns the skeleton-derived map (block2 kt_mask1/qkt_matmul,
-# block4 ln_square, block5_n1 normalize) — i.e. the auto-adapt is the ACTIVE source,
-# not the (now also-correct) static DEFAULT_CFG_TO_T_NEW_MAP fallback.
-BLB_STRICT=0 python -m unittest \
-  tests.test_blb_skeleton_stage_map.BridgeDerivesT_newFromSkeletonTest -v 2>&1 \
-  | tee "$OUT/bridge_derivation.log"
-G1C=${PIPESTATUS[0]}
-
-echo "=== [2/3] noise-install full verify: MIXED degree-0 stage-1 (layers 0/4/8 = ReLU) ==="
-# Drives action_vector_to_cfgs(gelu has 0) -> build_block5_cfg_from_action ->
-# make_block5_default_config(gelu_degree=0) -> bridge.evaluate_blocks (block5_n0
-# cost) -> apply_optimizer_output_to_cfg, all under REAL torch. softmax kept at 2
-# (block3_exp_n2 has a successful baseline; n6 does not).
-python scripts/blb_verify_noise_install.py --mode full --profile mrpc --num-layers 12 \
-  --stage1 '{"gelu_degree_per_layer":[0,1,2,4,0,1,2,4,0,1,2,4],"softmax_degree_per_layer":[2,2,2,2,2,2,2,2,2,2,2,2]}' \
-  --out "$OUT/noise_install_mixed.html" 2>&1 | tee "$OUT/noise_install_mixed.log"
+echo "=== [2/3] BUILD all 7 block-type fusion-count maps (real replan, multi-core) ==="
+# Enumerates effective chain slots per block-type, runs real Rescale_optimizer
+# replan, groups by realized fusion_count, keeps the minimum-installed-noise set
+# (option 0 == baseline by construction). Needs torch (cfg dataclasses live in
+# function_handler) but NO model forward / GLUE. Writes maps into the repo:
+#   blb_stage2_rl/fusion_maps/mrpc/{block1_mrpc,block2_mrpc,block4,block5_n0,n1,n2,n4}.json
+python scripts/blb_build_fusion_count_map.py --profile mrpc \
+  --out-dir blb_stage2_rl/fusion_maps/mrpc \
+  --report "$OUT/fusion_map_build.html" \
+  --workers "$(nproc)" 2>&1 | tee "$OUT/build.log"
 G2=${PIPESTATUS[0]}
+cp -f blb_stage2_rl/fusion_maps/mrpc/_summary.json "$OUT/_summary.json" 2>/dev/null || true
 
-echo "=== [3/4] noise-install full verify: ALL-ReLU stage-1 (every layer degree 0) ==="
-python scripts/blb_verify_noise_install.py --mode full --profile mrpc --num-layers 12 \
-  --stage1 '{"gelu_degree_per_layer":[0,0,0,0,0,0,0,0,0,0,0,0],"softmax_degree_per_layer":[2,2,2,2,2,2,2,2,2,2,2,2]}' \
-  --out "$OUT/noise_install_allrelu.html" 2>&1 | tee "$OUT/noise_install_allrelu.log"
-G3=${PIPESTATUS[0]}
-
-echo "=== [4/4] noise-install full verify: NORMAL stage-1 (all gelu=4, softmax 2..5) ==="
-# Exercises the skeleton-driven wiring on block2/block4 (degree-independent) +
-# block5_n4: action_vector_to_cfgs -> _build_block{2,4,5}_action (active rescales
-# from skeleton_stage_map) -> bridge.evaluate_blocks (SSOT t_new). block2 should
-# install kt_mask1/qkt_matmul rescales (not kt_mask2/qkt_merge_mask), block4 should
-# install ln_square (not ln_var) — and every block must stay valid.
-python scripts/blb_verify_noise_install.py --mode full --profile mrpc --num-layers 12 \
-  --stage1 '{"gelu_degree_per_layer":[4,4,4,4,4,4,4,4,4,4,4,4],"softmax_degree_per_layer":[2,3,4,5,2,3,4,5,2,3,4,5]}' \
-  --out "$OUT/noise_install_normal.html" 2>&1 | tee "$OUT/noise_install_normal.log"
-G4=${PIPESTATUS[0]}
-
+echo "=== [3/3] SUMMARY ==="
 {
   echo "HEAD=$(git rev-parse HEAD)"
-  echo "contract_gate_exit=$G1        (0 = no failures/errors across the whole BLB suite)"
-  echo "degree0_tests_exit=$G1B       (0 = degree-0 RO contract + baseline extraction pass)"
-  echo "bridge_derivation_exit=$G1C   (0 = bridge auto-derives t_new from live skeleton; auto-adapt ACTIVE)"
-  echo "noise_install_mixed_exit=$G2  (0 = degree-0 cfg-build + block5_n0 cost ran without crash)"
-  echo "noise_install_allrelu_exit=$G3"
-  echo "noise_install_normal_exit=$G4 (0 = skeleton-driven block2/4/5 cfg-build + cost ran)"
-  echo "output_dir=$OUT"
-  echo "--- block2/block4 per-config valid lines (normal run; must be valid=True) ---"
-  grep -iE "block2|block4|\"valid\"|valid=|invalid" "$OUT/noise_install_normal.log" | head -40
-  echo "--- block5_n0 per-config valid lines (mixed run) ---"
-  grep -iE "block5_n0|block5_n|\"valid\"|valid=|invalid" "$OUT/noise_install_mixed.log" | head -40
+  echo "fusion_unit_exit=$G1   (0 = torch-free map/NoiseOrder/grouping unit tests pass)"
+  echo "build_exit=$G2         (0 = all 7 block-type maps built without crash)"
+  echo "--- per-type options / fusion_counts / K-independence (F0 gate) ---"
+  grep -E "^  block|^max_num_options|WARN" "$OUT/build.log" | tail -40
+  echo "--- map files written ---"
+  ls -la blb_stage2_rl/fusion_maps/mrpc/ 2>/dev/null
 } | tee "$OUT/SUMMARY.txt"
-echo "=== DONE -> $OUT ==="
+echo "=== DONE -> $OUT ; maps in blb_stage2_rl/fusion_maps/mrpc/ ==="
 ```
 
 ## metadata
 
-- **任务**：验证两件本地改动 ——
-  1. **Stage-2 degree-0 (ReLU / block5_n0) 支持**（commit `2f9862e`）：Stage-1 某层
-     GELU degree=0 = 用 ReLU 替换 GELU，对应 `block5_n0`（只有 LN tail + Wffn1）。
-  2. **skeleton 驱动的映射 SSOT**（commits `878ba7e` / `c8f43d7`）：把 baseline 动作
-     选取、RL 动作 active 槽、bridge t_new 三处从「写死表」改成「对照 RO 完整计算链条
-     + 当前 skeleton 自动派生」。2026 skeleton 重生成把 block2 的 rescale 点移到
-     `rotKT_mask1`/`preprocess_qkt`、block4 移到 `ctct_square`((X−μ)²)、block5_n1 移到
-     `xmean_over_std`(normalize)；旧写死表已漂移，现在自动跟随。
-  - 关键不变式：每个 graph 的派生 t_new 长度 == ReplanSession `t_baseline`，完整链条
-    全部节点都已映射（完备性守卫），block2/block4 的 active 槽随 skeleton 改变。
-- **改了什么**（4 源文件 + 1 新测试，全部本地 torch-free 验证过）：
-  - `blb_stage2_rl/baseline_bootstrap.py`：`ALLOWED_GELU_DEGREES=(0,1,2,4)`；block5
-    SOURCE 映射补 `inv_std`（n0 的 SOURCE 节点名是 `inv_std` 不是 `x_mean`）→
-    `x_centered_fresh_sf`。
-  - `rescale_optimizer_bridge.py`：`ctpt_gelu_coeff` delta 加 `degree>=1` 门控
-    （degree 0 不能发，否则 RO 判 invalid）；`DEFAULT_CFG_TO_T_NEW_MAP` 新增
-    `block5_n0`（x_centered_fresh, normalize_result_rescale, wffn1_result_rescale）。
-  - `blb_stage2_rl/action_space.py`：`_build_block5_action` 不再把 degree 0 钳成 1；
-    `_block_default_N` block5 `<=1→N=8192`；`gelu_coeff_sf` 在 degree 0 标无效。
-  - `function_handler.py`：`make_block5_default_config` 放开 degree 0；
-    `replace_layer_block5_noise` 识别 `nn.ReLU` → 只装 LN tail+Wffn1、跳过 GELU 包裹。
-  - `tests/test_blb_degree0_stage2.py`：RO 契约 + 真实 archive 抽取回归测试。
-- **本次三步验证**：
-  1. **全量 BLB 契约门** `test_blb_*.py`：服务器有 torch，本地那 25 个 torch-import
-     error 在此变成真实运行；新测试 `test_blb_degree0_stage2` 的两个 class 都会跑
-     （RO 契约 + 真实 archive degree-0 baseline 抽取）。成功标准：0 failures / 0 errors。
-  2. **noise-install full（混合 degree-0 stage-1）**：layers 0/4/8 = ReLU。真实 torch
-     下跑通 `action_vector_to_cfgs(含 degree 0)` → `make_block5_default_config(0)` →
-     `bridge.evaluate_blocks`（block5_n0 成本）→ `apply_optimizer_output_to_cfg`，
-     并枚举 degree-0 cfg 的噪声点。产出 HTML。softmax 用 2（`block3_exp_n2` 有成功
-     baseline；n6 没有）。
-  3. **noise-install full（全 ReLU stage-1）**：12 层全 degree 0，压一遍全 n0 路径。
-- **成功标准**：
-  - `contract_gate_exit=0` 且 `degree0_tests_exit=0`（degree-0 RO 契约 + baseline
-    抽取通过；全套无回归）。
-  - `noise_install_mixed_exit=0` / `noise_install_allrelu_exit=0`（degree-0 的
-    cfg 构造 + block5_n0 成本在真实 torch 下不崩）。
-  - HTML / 日志里 block5_n0 的 per-config `valid=true`（degree-0 层成本链合法）。
-- **主要输出**：`experiments/server_command_runs/stage2_degree0_verify_<timestamp>/`
-  - `SUMMARY.txt`（各步 exit code + block5_n0 valid/cost 摘要）
-  - `contract_gate.log` / `degree0_tests.log`
-  - `noise_install_mixed.{log,html}` / `noise_install_allrelu.{log,html}`
-- **本轮范围说明**：本命令在真实 torch 下覆盖 degree-0 的 **cfg 构造 + 成本 +
-  baseline + 噪声点枚举 + 全量回归**。`replace_layer_block5_noise` 的 **模型前向
-  ReLU 安装分支**（一个简单的 `isinstance(nn.ReLU)` 分支）本轮未由真实模型 forward
-  覆盖——它最自然的验证方式是一次带 degree-0 stage-1 的真实 Stage-2 RL 跑；等本轮
-  通过后再单独安排（或在下一次 Stage-1 RL 选出 degree 0 后由 Stage-2 自然触发）。
-- **协议**：服务器只 `git pull`、运行、产出/`push` artifacts；源码改动都在本地完成
-  并经 git 同步，不在服务器改源码。把 `SUMMARY.txt` + 两个 HTML + 日志 push 回来。
-- **若 FAIL**：把失败日志带回本地分析定位，本地修复后再 push、server pull、rerun。
+- **任务**：构建 Stage-2 **fusion-count 映射表**（设计 `docs/superpowers/specs/2026-06-03-stage2-fusion-count-action-design.md`，
+  计划 `docs/superpowers/plans/2026-06-03-stage2-fusion-count-action.md` 的 Task 1–4）。
+- **背景**：把 Stage-2 RL 每个 block 的动作从「24 个 per-slot SF 头」改成「`(fusion_option, K)`」。
+  `fusion_option` 由这张离线映射表展开成现有 full SF vec。本命令只负责**离线构建映射表**；
+  运行期接入（policy/env/runner）是后续 Task 5–7，等本表建好回传后再做。
+- **构建逻辑**（每种 block-type，共 7 种，block3 冻结不建）：
+  1. 复用 runner 的 `load_static_skeletons_baseline` + `static_skeletons_baseline_to_action` 取**校准过的
+     max_sfs** + baseline（保证 decode 与运行期一致，避开通用 `load_max_sfs` 的 degree-1 假象）。
+  2. 枚举 effective chain 槽（rescale 永远枚举；其余槽做整轴探针，证明不改 `(fusion_count,total_bits)` 的钉在 max=最小噪声）。
+  3. 每组合走**真实 replan** → 跳过 invalid → `apply_optimizer_output_to_cfg` → 算 **post-override 实际安装方差**。
+  4. 按 realized `fusion_count` 分组，每组取最小安装方差集（按安装方案去重），**option 0 强制=baseline**。
+- **成功标准（F0 门槛，spec §8）**：
+  - `fusion_unit_exit=0` 且 `build_exit=0`。
+  - 每种 block-type 都建出 `>=1` 个 option，且 option 0 是 baseline（builder 内部断言 baseline 还原 all-max，否则报错停）。
+  - 人工核对 SUMMARY：每种类型 `#options` 不应病态大（几~几十为宜），`fusion_counts` 一般应 `>=2`；
+    `K-indep=True`（K 不改 fusion）。若 `#options` 病态大或 `fusion_counts` 只有 1 个，**停下复审**而非硬跑。
+- **产物**：
+  - 映射 JSON：`blb_stage2_rl/fusion_maps/mrpc/*.json`（**入 git**，运行期直接读）。
+  - 报告/日志：`experiments/server_command_runs/fusion_map_build_<ts>/`（`SUMMARY.txt` / `build.log` / `fusion_map_build.html`）。
+- **回传**：把 `blb_stage2_rl/fusion_maps/mrpc/*.json` + `_summary.json` + `$OUT/` 报告 commit & push 回
+  `origin/jk_standard_rl`，本地 pull。
+- **协议**：服务器只 `git pull`、运行、产出/`push` artifacts；源码改动都在本地完成并经 git 同步，不在服务器改源码。
+- **若 FAIL / 门槛异常**：把 `build.log` + `SUMMARY.txt` 带回本地分析定位，本地修复后再 push、server pull、rerun。
 ```
