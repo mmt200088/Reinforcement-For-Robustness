@@ -1239,11 +1239,11 @@ in prose comments.
 - Stage-2 degree-0 / skeleton-SSOT cleanup note, added 2026-06-02: Claude Code
   noted two residual display/cleanup items after the `00871c3` validation
   command was prepared. `_is_action_field_effective` / `_COMPAT_EXTRA_FIELDS`
-  are only used by `describe_action_vector` display/logging and may still show
-  old Block-2/Block-4 active-slot assumptions; this is not the runtime cost or
-  noise-install source of truth. Three deprecated baseline tables are still
-  defined but unreferenced. Treat both as follow-up cleanup unless a current
-  runtime path is proven to read them. The correctness path should follow
+  were originally only used by `describe_action_vector` display/logging and
+  could show old Block-2/Block-4 active-slot assumptions; three deprecated
+  baseline tables were also defined but unreferenced. Claude's cleanup commit
+  `f6b91ba` made report/effectiveness display skeleton-driven and dropped those
+  dead baseline tables. The correctness path should follow
   `blb_stage2_rl/skeleton_stage_map.py`, `baseline_bootstrap.py`,
   `action_space.py`, and `rescale_optimizer_bridge.py` derived from the current
   static skeletons archive.
@@ -1275,6 +1275,12 @@ in prose comments.
   skeleton (`BridgeDerivesT_newFromSkeletonTest` passed), rather than relying on
   the static fallback table as the source of truth. The same three user-facing
   HTML paths under `reports/html_reports/` were refreshed from this run.
+  Final cleanup verification at commit `f6b91ba` passed at
+  `experiments/server_command_runs/stage2_degree0_verify_20260602_220145/`:
+  `contract_gate_exit=0` across `168` BLB tests, `degree0_tests_exit=0`,
+  `bridge_derivation_exit=0`, and all three full noise-install commands exited
+  `0`. This validates the report/effective-field cleanup under the torch-backed
+  contract gate.
 
 ## Conventions
 
