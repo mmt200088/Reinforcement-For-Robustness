@@ -1032,8 +1032,10 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
             )
         )
 
-        bridge.evaluate_blocks(requests)
-        outputs = bridge.evaluate_baseline_blocks(requests)
+        outputs = {
+            config_name: bridge.evaluate_baseline(config_name=config_name)
+            for config_name in requests
+        }
         signals = aggregate_optimizer_signals(outputs)
 
         self.assertFalse(signals.any_invalid, signals.invalid_chains)

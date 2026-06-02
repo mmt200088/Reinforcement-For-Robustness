@@ -52,6 +52,22 @@ def _html_escape(s: Any) -> str:
     return html.escape(str(s), quote=True)
 
 
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return item()
+        except Exception:
+            return value
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Noise variance table — extracted via AST from function_handler.py so we
 # don't need torch at script load time.
@@ -529,8 +545,9 @@ def write_full_html(
     parts.append("<section><h2>Inputs</h2><ul>")
     parts.append(f"<li>profile: <code>{_html_escape(args.profile)}</code></li>")
     parts.append(f"<li>num_layers: {int(args.num_layers)}</li>")
-    parts.append(f"<li>Stage-1: <pre>{_html_escape(json.dumps(stage1, indent=2))}</pre></li>")
-    parts.append(f"<li>action_vector ({len(list(action_vec))} indices): <pre>{_html_escape(json.dumps(list(action_vec)))}</pre></li>")
+    action_indices = [int(x) for x in action_vec]
+    parts.append(f"<li>Stage-1: <pre>{_html_escape(json.dumps(_json_safe(stage1), indent=2))}</pre></li>")
+    parts.append(f"<li>action_vector ({len(action_indices)} indices): <pre>{_html_escape(json.dumps(action_indices))}</pre></li>")
     parts.append("</ul></section>")
 
     parts.append("<section><h2>Aggregate signals</h2><ul>")
@@ -594,7 +611,7 @@ def write_full_html(
         compact = r.get("compact") or {}
         if compact:
             parts.append("<h4>Optimizer return — new_compact_config</h4>")
-            parts.append(f"<pre>{_html_escape(json.dumps(compact, indent=2)[:5000])}</pre>")
+            parts.append(f"<pre>{_html_escape(json.dumps(_json_safe(compact), indent=2)[:5000])}</pre>")
         parts.append("</details>")
     parts.append("</section>")
     parts.append("</main></body></html>")

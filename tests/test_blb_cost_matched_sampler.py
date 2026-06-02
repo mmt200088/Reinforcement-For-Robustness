@@ -70,14 +70,14 @@ class _PerfectMatchBridge:
 
     def evaluate_blocks(self, requests):
         self.call_count += 1
-        return {
-            k: _StubOutput(
-                fusion_count=self.target_fusion,
-                total_bits=self.target_bits,
+        outputs = {}
+        for idx, k in enumerate(sorted(requests.keys())):
+            outputs[k] = _StubOutput(
+                fusion_count=self.target_fusion if idx == 0 else 0,
+                total_bits=self.target_bits if idx == 0 else 0,
                 valid=True,
             )
-            for k in requests.keys()
-        }
+        return outputs
 
 
 class _AlwaysInvalidBridge:
