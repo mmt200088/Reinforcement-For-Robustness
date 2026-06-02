@@ -406,6 +406,18 @@ Collaboration protocol for future Codex + Claude Code work:
   pull.
 - If a server-side run exposes a code bug, document the diagnosis and reproduce
   the real fix locally; do not keep a server-side source patch as canonical.
+- If Claude Code modifies local source and the handoff/memory update is missing,
+  Codex must detect it with `git status`, `git diff`, `git log`, and remote
+  comparison before launching server work. Treat unexpected local commits or
+  dirty source files as user/Claude edits, review them rather than overwriting
+  them, and only let the server run after the local tree and git history make
+  the intended source state explicit.
+- Before any server run after local or Claude Code edits, verify the sync
+  boundary explicitly: local source changes are committed and pushed; server
+  source is a pull/fast-forward or verified bundle of that commit; generated
+  server artifacts/results are pushed or copied back; local then pulls or
+  imports those results. Do not accept "server has the fix" as canonical unless
+  that exact source is represented locally and in git.
 
 ### Server Command Bridge
 
@@ -1224,10 +1236,29 @@ trials each, 6 sorted-bar plots (loss/m1/m2 + their std). Spec:
 Field-level truth lives in `action_space.py` plus registry export artifacts, not
 in prose comments.
 
+- Stage-2 degree-0 / skeleton-SSOT cleanup note, added 2026-06-02: Claude Code
+  noted two residual display/cleanup items after the `00871c3` validation
+  command was prepared. `_is_action_field_effective` / `_COMPAT_EXTRA_FIELDS`
+  are only used by `describe_action_vector` display/logging and may still show
+  old Block-2/Block-4 active-slot assumptions; this is not the runtime cost or
+  noise-install source of truth. Three deprecated baseline tables are still
+  defined but unreferenced. Treat both as follow-up cleanup unless a current
+  runtime path is proven to read them. The correctness path should follow
+  `blb_stage2_rl/skeleton_stage_map.py`, `baseline_bootstrap.py`,
+  `action_space.py`, and `rescale_optimizer_bridge.py` derived from the current
+  static skeletons archive.
+
 ## Conventions
 
 - Prefer launcher/preset workflows. The launcher validates skip-mode conflicts,
   builds persistent slugs, and writes `LATEST_PID`/`LATEST_RUN_DIR` markers.
+- Put user-facing HTML reports created by Codex under `reports/html_reports/`
+  with clear date-prefixed names such as
+  `YYYYMMDD_stage1_mrpc_ppo_vs_grpo_comparison.html`. Keep helper scripts,
+  notebooks, and temporary code out of that folder; the folder should contain
+  HTML deliverables only. When an HTML report is first produced elsewhere for
+  experiment provenance, also copy or move the final HTML into this central
+  folder before reporting it to the user.
 - Use `--mode train|eval|stage2-only|stage1-only|search-only` instead of
   manually mixing skip flags.
 - Multi-trial evaluation is required. A single noise trial is not evidence.
@@ -1256,6 +1287,16 @@ in prose comments.
   validation reward/loss/weighted-F1 point, but current MRPC `metric2` is
   weighted F1 rather than GLUE positive-class F1, which explains why GRPO can
   look good on the Stage-1 reward metric while being riskier for official GLUE.
+- Stage-1 PPO/GRPO MRPC generalization analysis report, added 2026-06-01, is at
+  `experiments/server_command_runs/stage1_mrpc_generalization_analysis_20260601_232710/stage1_ppo_grpo_generalization_analysis.html`.
+  It argues that the GRPO validation/test mismatch is primarily metric-proxy
+  mismatch plus validation selection bias: GRPO improves validation
+  loss/accuracy/weighted F1 but lowers validation positive-class F1 and shifts
+  MRPC test predictions toward class 0. PPO's better generalization is not
+  proven luck-free, but current evidence favors a conservative near-baseline
+  behavior explanation because PPO lowers validation loss while preserving
+  aggregate validation classification metrics and keeps test prediction priors
+  close to the original baseline.
 - Console logs may pass through GBK on Windows. Keep console-facing text robust;
   file logs are UTF-8.
 - Do not add broad artifact patterns to `.gitignore` blindly. Many reports and

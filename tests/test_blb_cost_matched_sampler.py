@@ -146,14 +146,18 @@ class CostMatchedSamplerTests(unittest.TestCase):
 
     def test_perfect_match_bridge_fills_count_quickly(self):
         from Paean.action_grid import build_cost_matched_random_action_candidates
+        from blb_stage2_rl.action_space import action_dims_for_config, sum_truncation_k_in_action
+        import numpy as np
 
         ctx = self._build_context(num_layers=4)
-        # Pick a target sum_k the sampler can plausibly hit: use the per-K mean
-        # (each K slot picks from {8, 9, 11, 13, 10, 12}, mean 10.5; with
-        # 4*5-1=19 effective K slots the per-vec sum_k ≈ 199.5). We allow the
-        # pre-filter to skip a lot of draws but still expect at least one hit
-        # within the attempt budget for a balanced anchor.
-        target_sum_k = 200
+        # Pick a target the deterministic seed is guaranteed to hit: the first
+        # random draw used by the sampler. This keeps the test about acceptance
+        # logic instead of relying on the probability mass of one sum_k bucket.
+        dims = np.asarray(action_dims_for_config(ctx["num_layers"]), dtype=int)
+        first_draw = np.random.default_rng(7).integers(
+            low=0, high=dims, size=dims.shape[0], dtype=np.int64,
+        )
+        target_sum_k = int(sum_truncation_k_in_action(first_draw, ctx["num_layers"]))
         target_bits = 1500
         target_fusion = 6
         bridge = _PerfectMatchBridge(target_bits=target_bits, target_fusion=target_fusion)

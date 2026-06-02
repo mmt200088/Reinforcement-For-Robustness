@@ -713,16 +713,16 @@ DEFAULT_CFG_TO_T_NEW_MAP: Dict[str, Tuple[_SkelEntry, ...]] = {
         _SkelEntry("mean_result_rescale"),
         _SkelEntry("var_result_rescale"),
     ),
-    # --- block 2 (mrpc): skeleton=[0, 2, 5, 7, 8]
+    # --- block 2 (mrpc): current static_skeletons selects:
     #   i=0 (inv_std)         → cfg.inv_std_fresh
-    #   i=2 (ctpt_gama1)      → γ rescale
-    #   i=5 (ctpt_rotKT_mask2)→ kt_mask2 rescale
-    #   i=7 (ctpt_mask)       → qkt_merge_mask rescale
+    #   i=2 (ctpt_gama1)      → gamma rescale
+    #   i=4 (ctpt_rotKT_mask1)→ kt_mask1/q_mask1 rescale
+    #   i=6 (ctct_preprocess_qkt) → qkt matmul rescale
     "block2_mrpc": (
         _SkelEntry("inv_std_fresh"),
         _SkelEntry("gamma_result_rescale"),
-        _SkelEntry("kt_mask2_result_rescale"),
-        _SkelEntry("qkt_merge_mask_result_rescale"),
+        _SkelEntry("kt_mask1_result_rescale"),
+        _SkelEntry("qkt_matmul_result_rescale"),
     ),
     # --- block 3 (mrpc, exp_n<degree>): skeleton=[0, 2..(2+deg-1), dummy]
     #   i=0          → cfg.x_fresh
@@ -764,16 +764,16 @@ DEFAULT_CFG_TO_T_NEW_MAP: Dict[str, Tuple[_SkelEntry, ...]] = {
         _SkelEntry("square_rescales", 3),
         _SkelEntry("square_rescales", 3),
     ),
-    # --- block 4: skeleton=[0, 2, 5, 7, 8]
+    # --- block 4: current static_skeletons selects:
     #   i=0  (rot_softmax)             → softmax_out_fresh
     #   i=2  (ctct_rot_softmax_mul_v)  → softmax_v_matmul_rescale
     #   i=5  (ctpt_inv_d_1)            → ln_mean_result_rescale
-    #   i=7  (ctpt_inv_d_2)            → ln_var_result_rescale
+    #   i=6  (ctct_square)             → ln_square_result_rescale
     "block4": (
         _SkelEntry("softmax_out_fresh"),
         _SkelEntry("softmax_v_matmul_rescale"),
         _SkelEntry("ln_mean_result_rescale"),
-        _SkelEntry("ln_var_result_rescale"),
+        _SkelEntry("ln_square_result_rescale"),
     ),
     # --- block 5 (n=0, ReLU): ReplanSession 实测 skeleton=[0, 1, 3, 4]，
     #     t_baseline=[30, 30, 30]（3 槽）。ReLU 无多项式 GELU 节点，rescale 点
@@ -786,13 +786,13 @@ DEFAULT_CFG_TO_T_NEW_MAP: Dict[str, Tuple[_SkelEntry, ...]] = {
         _SkelEntry("normalize_result_rescale"),
         _SkelEntry("wffn1_result_rescale"),
     ),
-    # --- block 5 (n=1): skeleton=[0, 2, 4, 5]
+    # --- block 5 (n=1): current static_skeletons selects:
     #   i=0 (x_mean)            → x_centered_fresh
-    #   i=2 (ctpt_gamal)        → gamma_result_rescale
+    #   i=1 (ctct_xmean_over_std) → normalize_result_rescale
     #   i=4 (ctpt_gelu_coeff)   → gelu_coeff_mul_rescales[-1]（深度最大的那个 coeff·x^k）
     "block5_n1": (
         _SkelEntry("x_centered_fresh"),
-        _SkelEntry("gamma_result_rescale"),
+        _SkelEntry("normalize_result_rescale"),
         _SkelEntry("gelu_coeff_mul_rescales", -1),
     ),
     # --- block 5 (n=2): skeleton=[0, 1, 3, 5, 6]

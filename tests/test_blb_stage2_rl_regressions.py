@@ -1016,7 +1016,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         )
 
         gelu_degree = [1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1]
-        attn_degree = [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 6, 2]
+        attn_degree = [2, 2, 5, 5, 5, 2, 5, 2, 5, 5, 5, 2]
         decoded = action_vector_to_cfgs(
             make_all_max_action_vector(num_layers=12),
             load_max_sfs("mrpc"),

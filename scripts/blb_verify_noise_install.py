@@ -367,7 +367,7 @@ def run_full(args: argparse.Namespace) -> Path:
     if gelu is None or softmax is None:
         raise ValueError("stage1 config must specify both gelu / softmax degree per layer")
 
-    max_sfs = load_max_sfs(profile=profile, num_layers=num_layers)
+    max_sfs = load_max_sfs(profile=profile)
     if args.action_file:
         action_doc = json.loads(Path(args.action_file).read_text(encoding="utf-8"))
         action_vec = list(action_doc.get("action_indices") or action_doc.get("action") or [])
