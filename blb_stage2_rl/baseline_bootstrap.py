@@ -38,6 +38,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 
 from .reward import BaselineCostStats
+from . import skeleton_stage_map as _ssm
 
 
 # ---------------------------------------------------------------------------
@@ -790,8 +791,9 @@ def _extract_one_block_layer(
     source_entry = cps[0] if isinstance(cps[0], Mapping) else {}
     source_sf: Optional[int] = None
     if str(source_entry.get("type", "")) == "SOURCE":
-        src_name = str(source_entry.get("name", ""))
-        rl_field = _RO_SOURCE_NODE_TO_RL_FIELD.get(int(block_idx), {}).get(src_name)
+        # SOURCE → block fresh field, name-agnostic (block5's source is named
+        # x_mean or inv_std depending on the graph; both map to x_centered_fresh).
+        rl_field = _ssm.source_rl_field(int(block_idx))
         sf = source_entry.get("sf")
         if sf is not None:
             try:
@@ -805,7 +807,6 @@ def _extract_one_block_layer(
     # 非第一项里带 sf_post 的 = rescale 动作；一个 RO 节点的 sf_post 可能同时
     # 映射多个 RL 字段（block 2 q/k 共享段的 ctpt_rotKT_mask2 sf_post 同时是
     # kt_mask2_r 和 q_mask2_r 的 baseline），迭代写入。
-    rescale_map = _RO_RESCALE_NODE_TO_RL_FIELD.get(int(block_idx), {})
     for cp in cps[1:]:
         if not isinstance(cp, Mapping):
             continue
@@ -815,7 +816,9 @@ def _extract_one_block_layer(
         sf_post = cp.get("sf_post")
         if sf_post is None:
             continue
-        rl_fields = rescale_map.get(name)
+        # node → RL rescale field(s) via the complete-chain SSOT (auto-adapts
+        # when a skeleton regen moves which cut-points carry sf_post).
+        rl_fields = _ssm.rescale_rl_fields(int(block_idx), name)
         if not rl_fields:
             out.unmapped_rescale_nodes.append(name)
             continue
@@ -824,7 +827,6 @@ def _extract_one_block_layer(
             out.field_kind_in_ro[rl_field] = "rescale"
 
     # --- propagation_deltas：numeric delta = encode 动作 ---
-    encode_map = _RO_ENCODE_NODE_TO_RL_FIELDS.get(int(block_idx), {})
     pd_delta_by_name: Dict[str, Any] = {}
     for pd in entry.get("propagation_deltas") or []:
         if not isinstance(pd, Mapping):
@@ -835,7 +837,8 @@ def _extract_one_block_layer(
             pd_delta_by_name[name] = delta
         if not isinstance(delta, (int, float)):
             continue   # "x2" 是平方乘 2，不是 encode 动作
-        rl_fields = encode_map.get(name)
+        # node → RL encode field(s) via the complete-chain SSOT.
+        rl_fields = _ssm.encode_rl_fields(int(block_idx), name)
         if not rl_fields:
             out.unmapped_propagation_nodes.append(name)
             continue

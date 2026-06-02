@@ -415,6 +415,14 @@ class Block2ActionSpec:
     gamma_rescale_sf: Optional[int] = None
     kt_mask2_rescale_sf: Optional[int] = None
     qkt_merge_mask_rescale_sf: Optional[int] = None
+    # Skeleton-selected rescales (set by _build_block2_action iff on the current
+    # skeleton — the 2026 regen moved these onto the chain). None = off.
+    normalize_rescale_sf: Optional[int] = None
+    wk_rescale_sf: Optional[int] = None
+    kt_mask1_rescale_sf: Optional[int] = None
+    q_mask1_rescale_sf: Optional[int] = None
+    q_mask2_rescale_sf: Optional[int] = None
+    qkt_matmul_rescale_sf: Optional[int] = None
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
     # Rotation 候选点：仅保留与未删 rescale 绑定的两项。
@@ -451,18 +459,19 @@ def build_block2_cfg_from_action(
         q_mask2_sf=int(action.q_mask2_sf),
         wv_sf=int(action.wv_sf),
         qkt_merge_mask_sf=int(action.qkt_merge_mask_sf),
-        normalize_rescale_sf=None,
+        # Rescales follow whatever the current skeleton selected (set on the
+        # action by _build_block2_action via skeleton_stage_map). q-side fields
+        # are already bound equal to their k-side counterparts there.
+        normalize_rescale_sf=action.normalize_rescale_sf,
         gamma_rescale_sf=action.gamma_rescale_sf,
-        wk_rescale_sf=None,
-        kt_mask1_rescale_sf=None,
+        wk_rescale_sf=action.wk_rescale_sf,
+        kt_mask1_rescale_sf=action.kt_mask1_rescale_sf,
         kt_mask2_rescale_sf=action.kt_mask2_rescale_sf,
         wq_rescale_sf=None,
-        q_mask1_rescale_sf=None,
-        # 2026-05-21: q_mask2_r 绑定到 kt_mask2_r（共享 graph 节点
-        # ctpt_rotKT_mask2 sf_post）。
-        q_mask2_rescale_sf=action.kt_mask2_rescale_sf,
+        q_mask1_rescale_sf=action.q_mask1_rescale_sf,
+        q_mask2_rescale_sf=action.q_mask2_rescale_sf,
         wv_rescale_sf=None,
-        qkt_matmul_rescale_sf=None,
+        qkt_matmul_rescale_sf=action.qkt_matmul_rescale_sf,
         qkt_merge_mask_rescale_sf=action.qkt_merge_mask_rescale_sf,
         output_truncation_k=action.output_truncation_k,
         output_truncation_mode=action.output_truncation_mode,
@@ -538,6 +547,8 @@ class Block4ActionSpec:
     softmax_v_matmul_rescale_sf: Optional[int] = None
     ln_mean_rescale_sf: Optional[int] = None
     ln_var_rescale_sf: Optional[int] = None
+    # post-attn LN (X−μ)² rescale (on the current skeleton after the 2026 regen).
+    ln_square_rescale_sf: Optional[int] = None
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
     # Rotation 候选点：仅保留 softmax_v_matmul_rescale 后的 rotation
@@ -568,7 +579,7 @@ def build_block4_cfg_from_action(
         softmax_v_mask_rescale_sf=None,
         wo_rescale_sf=None,
         ln_mean_rescale_sf=action.ln_mean_rescale_sf,
-        ln_square_rescale_sf=None,
+        ln_square_rescale_sf=action.ln_square_rescale_sf,
         ln_var_rescale_sf=action.ln_var_rescale_sf,
         output_truncation_k=action.output_truncation_k,
         output_truncation_mode=action.output_truncation_mode,

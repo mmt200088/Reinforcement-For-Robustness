@@ -299,6 +299,36 @@ def unmapped_full_chain_nodes(block_idx: int, config: Mapping[str, Any]) -> List
     return missing
 
 
+# ---------------------------------------------------------------------------
+# Public per-node helpers (consumed by baseline extraction + action build so
+# they share this one source). All node-name agnostic where the chain allows.
+# ---------------------------------------------------------------------------
+def source_rl_field(block_idx: int) -> Optional[str]:
+    """RL fresh action slot for a block's SOURCE (cut_point_sf[0]), name-agnostic."""
+    return _SOURCE_RL_FIELD.get(int(block_idx))
+
+
+def rescale_rl_fields(block_idx: int, node_name: str) -> Tuple[str, ...]:
+    """RL rescale slots a cut-point drives when selected (primary + bound). ()=unmapped."""
+    b = _node_binding(int(block_idx), str(node_name))
+    if b is None or b.rescale_rl_field is None:
+        return ()
+    return (b.rescale_rl_field,) + tuple(b.rescale_bound_rl_fields)
+
+
+def encode_rl_fields(block_idx: int, node_name: str) -> Tuple[str, ...]:
+    """RL encode slots a CTPT_MUL cut-point drives (primary + bound). ()=none/unmapped."""
+    b = _node_binding(int(block_idx), str(node_name))
+    if b is None or b.encode_rl_field is None:
+        return ()
+    return (b.encode_rl_field,) + tuple(b.encode_bound_rl_fields)
+
+
+def active_rescale_rl_fields(block_idx: int, archive_entry: Mapping[str, Any]) -> frozenset:
+    """Set of RL rescale slots that are active stages on this graph's skeleton."""
+    return frozenset(derive_stage_plan(int(block_idx), "", archive_entry).active_rescale_rl_fields)
+
+
 def load_profile_configs(rescale_optimizer_root: str, profile: str) -> Dict[str, Mapping[str, Any]]:
     """Load every ``configs/<profile>/<graph>.json`` (excluding static_skeletons)."""
     cfg_dir = os.path.join(os.path.abspath(str(rescale_optimizer_root)), "configs", str(profile))

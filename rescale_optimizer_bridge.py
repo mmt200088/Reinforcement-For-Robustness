@@ -342,6 +342,18 @@ class InProcessInvoker:
             for k, rec in self._session.baselines.items()
         }
 
+    @property
+    def archive_entries(self) -> Dict[str, dict]:
+        """``{graph_key: archive_entry}`` — the raw static_skeletons entry per
+        graph (carries ``cut_point_sf`` with names + sf_post). Lets the bridge
+        derive t_new from the ACTUAL skeleton via skeleton_stage_map instead of a
+        hard-coded table. Absent on StubInvoker → bridge keeps the static table."""
+        return {
+            k: dict(rec.archive_entry)
+            for k, rec in self._session.baselines.items()
+            if getattr(rec, "archive_entry", None) is not None
+        }
+
     def __call__(self, config_name: str, payload: Any) -> dict:
         return self._session(str(config_name), payload)
 
@@ -885,6 +897,38 @@ def cfg_to_t_new_from_table(
     return out
 
 
+def _derive_t_new_table_from_invoker(invoker: Any) -> Dict[str, Tuple[_SkelEntry, ...]]:
+    """Derive ``{graph_key: (_SkelEntry, ...)}`` from the invoker's REAL skeletons.
+
+    Uses ``invoker.archive_entries`` (the static_skeletons cut_point_sf per graph)
+    + ``skeleton_stage_map`` so the t_new ordering follows whatever the current
+    skeleton selects. Returns ``{}`` when the invoker has no archive entries
+    (StubInvoker) or the SSOT can't be imported, so the caller keeps
+    ``DEFAULT_CFG_TO_T_NEW_MAP``. Graphs with an unmapped rescale node are skipped
+    (fall back to the static table for those).
+    """
+    try:
+        archive = invoker.archive_entries
+    except Exception:
+        archive = None
+    if not archive:
+        return {}
+    try:
+        from blb_stage2_rl import skeleton_stage_map as _ssm
+    except Exception:
+        return {}
+    out: Dict[str, Tuple[_SkelEntry, ...]] = {}
+    for gk, plan in _ssm.build_stage_plans(dict(archive)).items():
+        if plan.unmapped_rescale_nodes:
+            continue
+        entries = tuple(
+            _SkelEntry(cf, ti) for (cf, ti) in plan.t_new_entries if cf is not None
+        )
+        if len(entries) == len(plan.t_new_entries):
+            out[gk] = entries
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 主桥接
 # ---------------------------------------------------------------------------
@@ -942,10 +986,14 @@ class RescaleOptimizerBridge:
         if cfg_to_delta_overrides:
             for k, fn in cfg_to_delta_overrides.items():
                 self._cfg_mappers[str(k)] = fn
-        # cfg → t_new 映射（per graph_key）
+        # cfg → t_new 映射（per graph_key）。``DEFAULT_CFG_TO_T_NEW_MAP`` is the
+        # static fallback; when the invoker exposes the real skeletons we DERIVE
+        # the map from the actual cut_point_sf so a skeleton regen auto-propagates.
         self._cfg_to_t_new_table: Dict[str, Tuple[_SkelEntry, ...]] = {
             k: tuple(v) for k, v in DEFAULT_CFG_TO_T_NEW_MAP.items()
         }
+        for gk, entries in _derive_t_new_table_from_invoker(invoker).items():
+            self._cfg_to_t_new_table[gk] = entries
         if cfg_to_t_new_overrides:
             for k, v in cfg_to_t_new_overrides.items():
                 self._cfg_to_t_new_table[str(k)] = tuple(v)

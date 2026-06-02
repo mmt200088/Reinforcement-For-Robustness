@@ -853,6 +853,7 @@ def _build_block1_action(
 def _build_block2_action(
         layer_idx: int,
         layer_field_values: Dict[str, object],
+        profile: str = "mrpc",
         ) -> Block2ActionSpec:
     """精简后的 Block 2 动作构造。
 
@@ -877,6 +878,15 @@ def _build_block2_action(
     wk_sf = int(layer_field_values["wk_sf"])
     kt_mask1_sf = int(layer_field_values["kt_mask1_sf"])
     kt_mask2_sf = int(layer_field_values["kt_mask2_sf"])
+    # Which rescale points the CURRENT block2 skeleton selected (auto via SSOT).
+    # Q-side rescales are bound equal to their K-side action when active.
+    active = active_rescale_rl_fields(2, profile=profile)
+
+    def _rsc(name: str) -> Optional[int]:
+        return _optional_int(layer_field_values[name]) if name in active else None
+
+    kt_mask1_r = _rsc("kt_mask1_rescale_sf")
+    kt_mask2_r = _rsc("kt_mask2_rescale_sf")
     return Block2ActionSpec(
         inv_std_fresh_sf=inv_std_fresh_sf,
         # x_centered_fresh 绑定到 inv_std_fresh（一同决定）。
@@ -892,9 +902,16 @@ def _build_block2_action(
         kt_mask2_sf=kt_mask2_sf,
         q_mask2_sf=kt_mask2_sf,
         qkt_merge_mask_sf=int(layer_field_values["qkt_merge_mask_sf"]),
-        gamma_rescale_sf=_optional_int(layer_field_values["gamma_rescale_sf"]),
-        kt_mask2_rescale_sf=_optional_int(layer_field_values["kt_mask2_rescale_sf"]),
-        qkt_merge_mask_rescale_sf=_optional_int(layer_field_values["qkt_merge_mask_rescale_sf"]),
+        # Rescales: set iff on the current skeleton (skeleton_stage_map active set).
+        gamma_rescale_sf=_rsc("gamma_rescale_sf"),
+        normalize_rescale_sf=_rsc("normalize_rescale_sf"),
+        wk_rescale_sf=_rsc("wk_rescale_sf"),
+        kt_mask1_rescale_sf=kt_mask1_r,
+        q_mask1_rescale_sf=(kt_mask1_r if "q_mask1_rescale_sf" in active else None),
+        kt_mask2_rescale_sf=kt_mask2_r,
+        q_mask2_rescale_sf=(kt_mask2_r if "q_mask2_rescale_sf" in active else None),
+        qkt_matmul_rescale_sf=_rsc("qkt_matmul_rescale_sf"),
+        qkt_merge_mask_rescale_sf=_rsc("qkt_merge_mask_rescale_sf"),
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
     )
 
@@ -937,6 +954,7 @@ def _build_block3_action(
 def _build_block4_action(
         layer_idx: int,
         layer_field_values: Dict[str, object],
+        profile: str = "mrpc",
         ) -> Block4ActionSpec:
     """精简后的 Block 4 动作构造。
 
@@ -950,6 +968,13 @@ def _build_block4_action(
     也对得上 baseline。``_COMPAT_EXTRA_FIELDS[4]`` 把 ``v_mask_sf`` 标成 inactive。
     """
     shared_mask2_sf = int(layer_field_values["softmax_out_mask_sf"])
+    # Rescales follow the current block4 skeleton (auto via SSOT): the 2026 regen
+    # put the 3rd LN-tail rescale on ctct_square ((X−μ)²) instead of ln_var.
+    active = active_rescale_rl_fields(4, profile=profile)
+
+    def _rsc(name: str) -> Optional[int]:
+        return _optional_int(layer_field_values[name]) if name in active else None
+
     return Block4ActionSpec(
         softmax_out_fresh_sf=int(layer_field_values["softmax_out_fresh_sf"]),
         softmax_out_mask_sf=shared_mask2_sf,
@@ -960,9 +985,10 @@ def _build_block4_action(
         wo_sf=int(layer_field_values["wo_sf"]),
         ln_mean_inv_d_sf=int(layer_field_values["ln_mean_inv_d_sf"]),
         ln_var_inv_d_sf=int(layer_field_values["ln_var_inv_d_sf"]),
-        softmax_v_matmul_rescale_sf=_optional_int(layer_field_values["softmax_v_matmul_rescale_sf"]),
-        ln_mean_rescale_sf=_optional_int(layer_field_values["ln_mean_rescale_sf"]),
-        ln_var_rescale_sf=_optional_int(layer_field_values["ln_var_rescale_sf"]),
+        softmax_v_matmul_rescale_sf=_rsc("softmax_v_matmul_rescale_sf"),
+        ln_mean_rescale_sf=_rsc("ln_mean_rescale_sf"),
+        ln_var_rescale_sf=_rsc("ln_var_rescale_sf"),
+        ln_square_rescale_sf=_rsc("ln_square_rescale_sf"),
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
     )
 
@@ -971,6 +997,7 @@ def _build_block5_action(
         layer_idx: int,
         layer_field_values: Dict[str, object],
         gelu_degree: int,
+        profile: str = "mrpc",
         ) -> Block5ActionSpec:
     """Block 5 动作构造。
 
@@ -1005,6 +1032,14 @@ def _build_block5_action(
         gelu_coeff_mul_rescale_sfs = tuple([None] * (deg - 1) + [coeff_rescale_sf])
     # x_centered_fresh / inv_std_fresh 绑定 —— x_centered 主导（block5 SOURCE）
     x_centered_fresh_sf = int(layer_field_values["x_centered_fresh_sf"])
+    # LN-tail rescales (normalize / gamma / wffn1) follow this degree's skeleton
+    # (auto via SSOT): e.g. block5_n1 has no wffn1 rescale, gamma is never a
+    # rescale on any block5 skeleton. gelu power/coeff stay degree-driven above.
+    active = active_rescale_rl_fields(5, gelu_degree=deg, profile=profile)
+
+    def _rsc(name: str) -> Optional[int]:
+        return _optional_int(layer_field_values[name]) if name in active else None
+
     return Block5ActionSpec(
         gelu_degree=deg,
         # inv_std_fresh 绑定 = x_centered_fresh
@@ -1013,9 +1048,9 @@ def _build_block5_action(
         gamma_sf=int(layer_field_values["gamma_sf"]),
         wffn1_sf=int(layer_field_values["wffn1_sf"]),
         gelu_coeff_sf=int(layer_field_values["gelu_coeff_sf"]),
-        normalize_rescale_sf=_optional_int(layer_field_values["normalize_rescale_sf"]),
-        gamma_rescale_sf=_optional_int(layer_field_values["gamma_rescale_sf"]),
-        wffn1_rescale_sf=_optional_int(layer_field_values["wffn1_rescale_sf"]),
+        normalize_rescale_sf=_rsc("normalize_rescale_sf"),
+        gamma_rescale_sf=_rsc("gamma_rescale_sf"),
+        wffn1_rescale_sf=_rsc("wffn1_rescale_sf"),
         gelu_power_rescale_sfs=gelu_power_rescale_sfs,
         gelu_coeff_mul_rescale_sfs=gelu_coeff_mul_rescale_sfs,
         output_truncation_k=int(layer_field_values["output_truncation_k"]),
@@ -1358,6 +1393,63 @@ _COMPAT_EXTRA_FIELDS: Dict[int, frozenset] = {
         "gelu_coeff_mul_rescale_sf_2", "gelu_coeff_mul_rescale_sf_3",
     }),
 }
+
+
+# ---------------------------------------------------------------------------
+# Skeleton-driven active rescale slots (consumes skeleton_stage_map SSOT so a
+# skeleton regen auto-changes which rescale slots are active / installed).
+# ---------------------------------------------------------------------------
+_ACTIVE_RESCALE_SETS_CACHE: Optional[Dict[str, frozenset]] = None
+
+
+def _load_active_rescale_sets() -> Dict[str, frozenset]:
+    """``{graph_key: frozenset(active rescale RL fields)}`` derived from the real
+    ``static_skeletons`` via :mod:`skeleton_stage_map`. Cached. Empty on any
+    failure (a working run loads the same archive for cost/baseline, so an empty
+    map here only happens when the run would already have aborted upstream)."""
+    global _ACTIVE_RESCALE_SETS_CACHE
+    if _ACTIVE_RESCALE_SETS_CACHE is None:
+        out: Dict[str, frozenset] = {}
+        try:
+            import os
+            import json
+            from . import skeleton_stage_map as _ssm
+            ro_root = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "Rescale_optimizer",
+            )
+            arch_path = os.path.join(ro_root, "configs", "mrpc", "static_skeletons_mrpc.json")
+            with open(arch_path, "r", encoding="utf-8") as f:
+                archive = json.load(f)
+            for gk, plan in _ssm.build_stage_plans_from_archive(archive).items():
+                out[gk] = frozenset(plan.active_rescale_rl_fields)
+        except Exception:
+            out = {}
+        _ACTIVE_RESCALE_SETS_CACHE = out
+    return _ACTIVE_RESCALE_SETS_CACHE
+
+
+def _graph_key_for(block_idx: int, gelu_degree: int = 4, attn_degree: int = 4,
+                   profile: str = "mrpc") -> str:
+    b = int(block_idx)
+    if b == 1:
+        return f"block1_{profile}"
+    if b == 2:
+        return f"block2_{profile}"
+    if b == 3:
+        return f"block3_exp_n{int(attn_degree)}"
+    if b == 4:
+        return "block4"
+    if b == 5:
+        return f"block5_n{int(gelu_degree)}"
+    return ""
+
+
+def active_rescale_rl_fields(block_idx: int, gelu_degree: int = 4, attn_degree: int = 4,
+                             profile: str = "mrpc") -> frozenset:
+    """Active rescale RL slots for the graph this (block, degree) maps to."""
+    return _load_active_rescale_sets().get(
+        _graph_key_for(block_idx, gelu_degree, attn_degree, profile), frozenset())
 
 
 def _is_action_field_effective(
