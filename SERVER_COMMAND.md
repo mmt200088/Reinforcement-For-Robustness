@@ -25,12 +25,16 @@ ls -la blb_stage2_rl/fusion_maps/mrpc/ 2>&1 | tee -a "$OUT/SUMMARY_pre.txt"
 echo "=== [1/2] F1 SMOKE: fusion-count Stage-2 RL, ~300 episodes, 4 GPU ==="
 # Validates the fusion runtime path end-to-end: env/policy(max_step_dim=2)/open-mask/
 # forced-baseline anchor (option0,K=baseline)/(option,K)->block SF expansion->replan->
-# terminal forward+reward. Stage-2-only reads Stage-1 degrees from a Stage-1 record
-# (any record works — the map covers gelu {0,1,2,4}; block3 is frozen). If no Stage-1
-# record exists, see metadata note (run a short Stage-1 first, or pass --stage2-fixed-config).
+# terminal forward+reward. PIN Stage-1 degrees manually (gelu=4 => block5_n4 [map-covered],
+# softmax=2 => block3_exp_n2 [valid]) so the run does NOT depend on an existing Stage-1
+# record and SIDESTEPS the unrelated block3_exp_n6=success:false prerequisite bug that
+# the 20260603_190037 run hit (an auto-selected record used softmax=6, which the current
+# static_skeletons cannot baseline). This isolates the fusion runtime for validation.
 CUDA_VISIBLE_DEVICES=0,1,2,3 timeout 3600 bash llama_7B_LayerImportance.sh run rl \
   --mode stage2-only \
   --preset mrpc-blb-stage2-rl \
+  --stage2-manual-gelu '[4,4,4,4,4,4,4,4,4,4,4,4]' \
+  --stage2-manual-softmax '[2,2,2,2,2,2,2,2,2,2,2,2]' \
   --blb-v3-fusion-count-action 1 \
   --stage2-search-episodes 300 \
   --stage2-k-trials 4 \
@@ -83,9 +87,10 @@ echo "=== DONE -> $OUT ==="
   6. reward 不是常数 `-150`、不出现持续 `loss_mean=100` 坍塌；anchor 期（前 ~60 episode）best 应贴近 baseline。
   7. `episodes.jsonl` 有逐 episode 记录、reward/priority 正常推进。
 - **若失败**：把 `smoke.log` + `SUMMARY.txt`（+ `episodes.jsonl` 若有）带回本地。常见两类：
-  - **fusion-path bug**（AttributeError/KeyError 等）→ 本地修对应分支，push，rerun。这是这次 smoke 的主要目的。
-  - **前置条件**（无 Stage-1 record / `--mode` / 解耦路径）→ 与 fusion 代码无关；服务器可先跑一个短 Stage-1
-    （`run rl --mode stage1-only --preset bert-base-mrpc-stage1-rl --fresh`，几百 episode）产出 record，再跑本 smoke；
-    或把报错带回，我改用 `--stage2-fixed-config` 固定 stage-1 degrees。
+  - **fusion-path bug**（AttributeError/KeyError 等，尤其 `FusionStepSpec ... slot_dims/full_vec_offsets`）→ 本地修对应分支，push，rerun。**这是本 smoke 的主要目的。**
+  - 本轮已用 `--stage2-manual-gelu/-softmax` 固定 degrees，绕开了上一轮（20260603_190037）的前置 bug
+    （`block3_exp_n6=success:false`，某 Stage-1 record 用了 softmax=6，当前 static_skeletons 无法 baseline n6）。
+    该 n6 问题是**独立的预存数据 bug**（2026 skeleton 重生成把 n6 弄成 success=false；`_old` 里 n6 是成功的、
+    total_bits=330），与 fusion 代码无关——本地另议（要么修复/重建 n6，要么把 Stage-1 softmax 上限收到 5）。
 - **协议**：服务器只 `git pull`、运行、产出/`push`/回传 artifacts；源码改动都在本地。把 `$OUT/` 回传本地。
 ```
