@@ -3056,6 +3056,11 @@ def run_sequential_via_runner(
         )
     seq_env = BLBStage2SequentialEnv(base_env=base_env, env_cfg=seq_env_cfg, fusion_map=fusion_map)
 
+    # Checkpoint variant: fusion-mode policies have a different shape (max_step_dim=2),
+    # so tag them so a per-slot checkpoint sharing the same persistent dir is rejected
+    # cleanly on resume instead of failing with a torch shape-mismatch.
+    seq_rl_variant = SEQ_RL_VARIANT + ("_fusioncount_v1" if fusion_map is not None else "")
+
     torch.manual_seed(int(train_cfg.seed))
     np.random.seed(int(train_cfg.seed) % (2**32))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -3233,10 +3238,10 @@ def run_sequential_via_runner(
         try:
             ckpt = torch.load(effective_resume_path, map_location=device)
             ckpt_variant = str(ckpt.get("rl_variant", "") or "")
-            if ckpt_variant and ckpt_variant != SEQ_RL_VARIANT:
+            if ckpt_variant and ckpt_variant != seq_rl_variant:
                 log(
                     f"  [resume][warning] checkpoint at {effective_resume_path} "
-                    f"has rl_variant={ckpt_variant!r} (expected {SEQ_RL_VARIANT!r}); "
+                    f"has rl_variant={ckpt_variant!r} (expected {seq_rl_variant!r}); "
                     f"skipping load to avoid policy-shape mismatch. Training will "
                     f"start fresh."
                 )
@@ -3385,7 +3390,7 @@ def run_sequential_via_runner(
         "profile": str(train_cfg.profile),
         "fixed_label": str(fixed_label),
         "fixed_source": str(fixed_source),
-        "rl_variant": SEQ_RL_VARIANT,
+        "rl_variant": seq_rl_variant,
         "total_episodes_planned": int(total_episodes_planned),
         "rollout_size": int(train_cfg.rollout_size),
         "save_interval": int(train_cfg.save_interval),
@@ -3746,7 +3751,7 @@ def run_sequential_via_runner(
                         best_action_vec.tolist() if best_action_vec is not None else None
                     ),
                     "best_rank_key": [float(x) for x in best_rank_key],
-                    "rl_variant": SEQ_RL_VARIANT,
+                    "rl_variant": seq_rl_variant,
                     # Persist the forbidden-action mask so the next resume
                     # doesn't have to re-discover the same invalid tuples.
                     "forbidden_mask_records": forbidden_mask.to_json_records(),
@@ -4569,7 +4574,7 @@ def run_sequential_via_runner(
         "blb_v3_best_reward": float(best_reward),
         "blb_v3_profile": str(train_cfg.profile),
         "blb_v3_total_episodes": int(train_cfg.total_episodes),
-        "rl_variant": SEQ_RL_VARIANT,
+        "rl_variant": seq_rl_variant,
         "sequential_diagnostics": {
             "horizon": int(seq_env.horizon),
             "max_step_dim": int(seq_env.max_step_dim),
