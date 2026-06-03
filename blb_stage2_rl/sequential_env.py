@@ -44,8 +44,11 @@ from rescale_optimizer_bridge import (
 from .action_space import (
     BlockStepSpec,
     action_vector_to_cfgs,
+    expand_fusion_step_action,
+    fusion_step_schedule,
     horizon_for_num_layers,
     make_all_max_action_vector,
+    splice_fusion_step_into_full_vec,
     splice_step_action_into_full_vec,
     step_schedule,
     step_schedule_max_dim,
@@ -108,13 +111,17 @@ class BLBStage2SequentialEnv:
             *,
             base_env: BLBStage2Env,
             env_cfg: Optional[SequentialEnvConfig] = None,
+            fusion_map: Optional[Any] = None,
             ):
         self.base = base_env
         self.cfg = env_cfg or SequentialEnvConfig()
         self.num_layers = int(base_env.num_layers)
         self.profile = str(base_env.env_cfg.profile)
         self.horizon = horizon_for_num_layers(self.num_layers)
-        self._max_step_dim = step_schedule_max_dim(self.num_layers)
+        # Fusion-count mode: each step decides (fusion_option, K) (2 slots) via the
+        # offline map, instead of all per-slot SF heads. None => legacy per-slot mode.
+        self._fusion_map = fusion_map
+        self._max_step_dim = 2 if fusion_map is not None else step_schedule_max_dim(self.num_layers)
         # Schedule depends on per-layer Stage-1 degrees; rebuild on reset to
         # pick up any model degree changes.
         self._schedule: List[BlockStepSpec] = []
@@ -192,17 +199,29 @@ class BLBStage2SequentialEnv:
             raise RuntimeError("episode already terminated; call reset() before evaluate_step()")
         spec = self.current_spec()
         action = np.asarray(per_step_action, dtype=int).reshape(-1)
-        if action.size != len(spec.slot_dims):
-            raise ValueError(
-                f"step {spec.step_idx} expects {len(spec.slot_dims)} slots, got {action.size}"
-            )
 
         # Use a fresh copy of the accumulator so the persistent vec only changes
         # in commit_step(). Important: we still need the previously-committed
         # earlier blocks visible to action_vector_to_cfgs, hence the copy
         # rather than a zero-vec.
         temp_vec = self._pending_full_vec.copy()
-        splice_step_action_into_full_vec(temp_vec, spec, action)
+        if self._fusion_map is not None:
+            # Fusion mode: action == (fusion_option_id, k_index). Expand to this
+            # block's full SF slot vector via the offline map, then splice it at
+            # the block's offsets. Everything downstream (decode, replan, override,
+            # reward) is identical to per-slot mode (spec fields are shared).
+            if action.size != 2:
+                raise ValueError(
+                    f"fusion step {spec.step_idx} expects 2 slots (option, K), got {action.size}"
+                )
+            block_vec = expand_fusion_step_action(spec, self._fusion_map, int(action[0]), int(action[1]))
+            splice_fusion_step_into_full_vec(temp_vec, spec, block_vec)
+        else:
+            if action.size != len(spec.slot_dims):
+                raise ValueError(
+                    f"step {spec.step_idx} expects {len(spec.slot_dims)} slots, got {action.size}"
+                )
+            splice_step_action_into_full_vec(temp_vec, spec, action)
 
         decoded = action_vector_to_cfgs(
             temp_vec,
@@ -426,12 +445,21 @@ class BLBStage2SequentialEnv:
             return [int(x) for x in arr]
         attn = _broadcast(self.base.attn_degree, 4)
         gelu = _broadcast(self.base.gelu_degree, 4)
-        self._schedule = step_schedule(
-            self.num_layers,
-            profile=self.profile,
-            attn_degree_per_layer=attn,
-            gelu_degree_per_layer=gelu,
-        )
+        if self._fusion_map is not None:
+            self._schedule = fusion_step_schedule(
+                self.num_layers,
+                self._fusion_map,
+                profile=self.profile,
+                attn_degree_per_layer=attn,
+                gelu_degree_per_layer=gelu,
+            )
+        else:
+            self._schedule = step_schedule(
+                self.num_layers,
+                profile=self.profile,
+                attn_degree_per_layer=attn,
+                gelu_degree_per_layer=gelu,
+            )
 
     def _record_step(
             self,

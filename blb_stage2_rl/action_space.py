@@ -800,6 +800,126 @@ def empty_full_action_vec(num_layers: int) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
+# Fusion-count action schedule (opt-in; see fusion_count_map / spec 2026-06-03)
+#
+# Same (layer, block) order as ``step_schedule`` (block 3 already excluded), but
+# each step decides just two categoricals: a fusion-count OPTION (resolved to a
+# full per-block SF vector via the offline fusion map) and a separate K. The
+# policy is the SAME GTrXL instantiated with max_step_dim=2.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class FusionStepSpec:
+    """One (layer, block) step in the fusion-count episode.
+
+    The per-step action is ``(fusion_option_id, k_index)``:
+      * slot 0 = fusion option, ``fusion_num_options`` levels (1 for a degenerate
+        block-type like block1/block4 that can only reach fusion 0);
+      * slot 1 = K, ``k_num_levels`` (== LEVELS_K) levels.
+    ``block_full_vec_offsets`` are the legacy-577-vec offsets of this block's
+    slots (the fusion map's expanded block vector is spliced there).
+    """
+    step_idx: int
+    layer_idx: int
+    block_idx: int
+    graph_key_suffix: str          # fusion-map key: block1_mrpc / block2_mrpc / block4 / block5_n{deg}
+    fusion_num_options: int
+    k_num_levels: int
+    k_slot_index: int              # within-block index of the K slot
+    block_num_slots: int
+    block_full_vec_offsets: Tuple[int, ...]
+    terminal: bool
+
+
+def fusion_step_schedule(
+        num_layers: int,
+        fusion_map: Any,
+        *,
+        profile: str = "mrpc",
+        attn_degree_per_layer: Optional[Sequence[int]] = None,
+        gelu_degree_per_layer: Optional[Sequence[int]] = None,
+        ) -> List[FusionStepSpec]:
+    """Build the fusion-count decision schedule by annotating ``step_schedule``
+    with per-step fusion-map geometry. ``fusion_map`` is a
+    :class:`blb_stage2_rl.fusion_count_map.FusionCountMap` (duck-typed)."""
+    base = step_schedule(
+        int(num_layers), profile=str(profile),
+        attn_degree_per_layer=attn_degree_per_layer,
+        gelu_degree_per_layer=gelu_degree_per_layer,
+    )
+    out: List[FusionStepSpec] = []
+    for s in base:
+        gk = s.graph_key_suffix
+        if gk not in fusion_map.graphs:
+            raise KeyError(
+                f"fusion map has no graph '{gk}' (step {s.step_idx}, layer {s.layer_idx}, "
+                f"block {s.block_idx}); built graphs: {sorted(fusion_map.graphs)}"
+            )
+        block_num_slots = int(fusion_map.graphs[gk].block_num_slots)
+        # s.full_vec_offsets lists this block's contiguous slot offsets first, then
+        # (step 0 only) the deprecated first_input fresh slot — which fusion mode
+        # leaves at its baseline. Take the block's own slots.
+        block_offsets = tuple(int(o) for o in s.full_vec_offsets[:block_num_slots])
+        if len(block_offsets) != block_num_slots:
+            raise RuntimeError(
+                f"step {s.step_idx} block {s.block_idx}: {len(block_offsets)} offsets != "
+                f"map block_num_slots {block_num_slots}"
+            )
+        out.append(FusionStepSpec(
+            step_idx=s.step_idx,
+            layer_idx=s.layer_idx,
+            block_idx=s.block_idx,
+            graph_key_suffix=gk,
+            fusion_num_options=int(fusion_map.num_options(gk)),
+            k_num_levels=int(LEVELS_K),
+            k_slot_index=int(fusion_map.k_slot_index(gk)),
+            block_num_slots=block_num_slots,
+            block_full_vec_offsets=block_offsets,
+            terminal=bool(s.terminal),
+        ))
+    return out
+
+
+def fusion_step_schedule_dims(fusion_map: Any) -> Tuple[int, int]:
+    """``(max_step_dim, max_num_levels)`` for instantiating the policy in fusion
+    mode: 2 slots per step (fusion option, K); the shared level grid must fit both
+    the widest option list and the K levels."""
+    return 2, max(int(fusion_map.max_num_options()), int(LEVELS_K))
+
+
+def fusion_step_slot_levels(spec: FusionStepSpec) -> List[int]:
+    """Per-slot legal level counts for this step: [fusion options, K levels]."""
+    return [int(spec.fusion_num_options), int(spec.k_num_levels)]
+
+
+def expand_fusion_step_action(
+        spec: FusionStepSpec,
+        fusion_map: Any,
+        option_id: int,
+        k_index: int,
+        ) -> np.ndarray:
+    """Resolve ``(fusion_option_id, k_index)`` to this block's full SF slot vector
+    (length ``block_num_slots``), with the separately-decided K spliced in."""
+    return fusion_map.expand(spec.graph_key_suffix, int(option_id), int(k_index))
+
+
+def splice_fusion_step_into_full_vec(
+        full_vec: np.ndarray,
+        spec: FusionStepSpec,
+        expanded_block_vec: Sequence[int],
+        ) -> np.ndarray:
+    """Write an expanded per-block SF vector into the legacy 577-dim vec at this
+    block's offsets. Returns ``full_vec`` for chaining."""
+    arr = np.asarray(expanded_block_vec, dtype=int).reshape(-1)
+    if arr.size != len(spec.block_full_vec_offsets):
+        raise ValueError(
+            f"step {spec.step_idx} expects {len(spec.block_full_vec_offsets)} block slots, got {arr.size}"
+        )
+    for offset, val in zip(spec.block_full_vec_offsets, arr.tolist()):
+        full_vec[int(offset)] = int(val)
+    return full_vec
+
+
+# ---------------------------------------------------------------------------
 # action vector → cfgs
 # ---------------------------------------------------------------------------
 @dataclass

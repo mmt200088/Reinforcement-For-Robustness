@@ -24,6 +24,16 @@ import fusion_enum
 
 import noise_tables
 
+# action_space pulls torch (cfg dataclasses live in function_handler); guard it so
+# this file still imports on a torch-free box. FusionScheduleTest runs on the server.
+try:
+    import action_space as _aspace
+
+    _ASPACE_OK = True
+except Exception:
+    _aspace = None
+    _ASPACE_OK = False
+
 
 class NoiseOrderTest(unittest.TestCase):
     def test_summed_installed_variance_sums_table_values(self):
@@ -198,6 +208,58 @@ class ActiveRescalePremiseTest(unittest.TestCase):
             self.assertIn(gk, plans, f"{gk} missing from skeleton plans")
             active = set(plans[gk].active_rescale_rl_fields)
             self.assertTrue(active, f"{gk}: no active rescale RL fields — fusion map would have no rescale lever")
+
+
+@unittest.skipUnless(_ASPACE_OK, "action_space not importable (no torch on this box)")
+class FusionScheduleTest(unittest.TestCase):
+    """Fusion-mode step schedule over the real canonical maps (server-run)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = fcm.FusionCountMap.load("mrpc")
+        cls.sched = _aspace.fusion_step_schedule(
+            12,
+            cls.m,
+            profile="mrpc",
+            gelu_degree_per_layer=[4] * 12,
+            attn_degree_per_layer=[2] * 12,
+        )
+
+    def test_horizon_matches_step_schedule(self):
+        self.assertEqual(len(self.sched), _aspace.horizon_for_num_layers(12))  # 47, block 3 excluded
+
+    def test_dims_are_two_slots(self):
+        md, mnl = _aspace.fusion_step_schedule_dims(self.m)
+        self.assertEqual(md, 2)
+        self.assertEqual(mnl, max(self.m.max_num_options(), _aspace.LEVELS_K))
+
+    def test_degenerate_blocks_single_option(self):
+        for s in self.sched:
+            if s.block_idx in (1, 4):
+                self.assertEqual(s.fusion_num_options, 1, f"block{s.block_idx} should be degenerate")
+            else:  # block 2 / block5_n4 each have 2 options
+                self.assertEqual(s.fusion_num_options, 2)
+            self.assertEqual(s.k_num_levels, _aspace.LEVELS_K)
+
+    def test_block_offsets_contiguous_and_sized(self):
+        for s in self.sched:
+            offs = list(s.block_full_vec_offsets)
+            self.assertEqual(len(offs), s.block_num_slots)
+            self.assertEqual(offs, list(range(offs[0], offs[0] + s.block_num_slots)))
+
+    def test_expand_matches_map(self):
+        s = next(s for s in self.sched if s.block_idx == 2)
+        got = _aspace.expand_fusion_step_action(s, self.m, 1, 3)
+        exp = self.m.expand(s.graph_key_suffix, 1, 3)
+        self.assertEqual(list(got), list(exp))
+
+    def test_splice_writes_block_slots(self):
+        s = next(s for s in self.sched if s.block_idx == 2)
+        full = _aspace.empty_full_action_vec(12)
+        blk = _aspace.expand_fusion_step_action(s, self.m, 0, 3)
+        _aspace.splice_fusion_step_into_full_vec(full, s, blk)
+        for off, v in zip(s.block_full_vec_offsets, blk, strict=True):
+            self.assertEqual(int(full[off]), int(v))
 
 
 if __name__ == "__main__":
