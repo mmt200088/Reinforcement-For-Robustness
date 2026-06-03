@@ -892,10 +892,11 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
             model=TinyModel(),
             probe_batches=[probe],
             rescale_bridge=bridge,
-            # 4 blocks (block2..5) * 100 bits each — layer-0 block1 is no longer
-            # installed (the first HE config is treated as lossless), so the
-            # all-max baseline reports 4 valid blocks, not 5.
-            baseline=BaselineCostStats(total_bits_sum=400, total_fusion_count=0, avg_k=13.0),
+            # 3 blocks (block2/4/5) * 100 bits each — layer-0 block1 is not installed
+            # (first HE config is lossless) AND block 3 is removed (frozen, excluded
+            # from baseline + cost, 2026-06-03), so the all-max baseline reports 3
+            # valid blocks. Matches build_optimizer_requests, which now skips block 3.
+            baseline=BaselineCostStats(total_bits_sum=300, total_fusion_count=0, avg_k=13.0),
             reward_weights=RewardWeights(),
             acc_threshold=0.5,
             stab_threshold=10.0,
@@ -1039,9 +1040,9 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         signals = aggregate_optimizer_signals(outputs)
 
         self.assertFalse(signals.any_invalid, signals.invalid_chains)
-        # 5 blocks * 12 layers - 1 = 59 (layer-0 block 1 is no longer installed:
-        # the first HE config is treated as lossless, aligned with Rescale_optimizer).
-        self.assertEqual(signals.valid_block_count, 59)
+        # 4 blocks * 12 layers - 1 = 47 (block 3 removed from baseline+cost, 2026-06-03;
+        # layer-0 block 1 is not installed — the first HE config is treated as lossless).
+        self.assertEqual(signals.valid_block_count, 47)
         self.assertEqual(signals.invalid_block_count, 0)
 
     def test_real_mrpc_all_max_cfg_derived_optimizer_outputs_are_valid(self):
@@ -1076,9 +1077,9 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         signals = aggregate_optimizer_signals(outputs)
 
         self.assertFalse(signals.any_invalid, signals.invalid_chains)
-        # 5 blocks * 12 layers - 1 = 59 (layer-0 block 1 is no longer installed:
-        # the first HE config is treated as lossless, aligned with Rescale_optimizer).
-        self.assertEqual(signals.valid_block_count, 59)
+        # 4 blocks * 12 layers - 1 = 47 (block 3 removed from baseline+cost, 2026-06-03;
+        # layer-0 block 1 is not installed — the first HE config is treated as lossless).
+        self.assertEqual(signals.valid_block_count, 47)
         self.assertEqual(signals.invalid_block_count, 0)
         self.assertEqual(
             outputs["block4_L0"].raw["delta_overrides"]["ctct_rot_softmax_mul_v"],
