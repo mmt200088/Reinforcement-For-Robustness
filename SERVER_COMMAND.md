@@ -108,7 +108,7 @@ run_one() {
   local pid=""
 
   write_status "launching" "$task" "$preset" "" "$launch_log" "" "" "starting launcher"
-  {
+  (
     echo "=== TASK $task preset=$preset start $(date -Is) ==="
     echo "source_commit=$SOURCE_COMMIT"
     printf 'command='
@@ -130,7 +130,7 @@ run_one() {
     launcher_rc=$?
     echo "launcher_rc=$launcher_rc"
     exit "$launcher_rc"
-  } > "$launch_log" 2>&1
+  ) > "$launch_log" 2>&1
   local launcher_rc=$?
   if [ "$launcher_rc" -ne 0 ]; then
     write_status "failed" "$task" "$preset" "" "$launch_log" "" "" "launcher failed rc=$launcher_rc"
@@ -139,6 +139,11 @@ run_one() {
 
   pid=$(extract_after_colon "进程号（PID）" "$launch_log")
   train_log=$(sed -n "s/.*查看日志：tail -f \\(.*\\)$/\\1/p" "$launch_log" | tail -1)
+  local latest_pid_file
+  latest_pid_file=$(extract_after_colon "LATEST_PID" "$launch_log")
+  if [ -z "$pid" ] && [ -n "$latest_pid_file" ] && [ -f "$latest_pid_file" ]; then
+    pid=$(cat "$latest_pid_file")
+  fi
   local latest_run_file
   latest_run_file=$(extract_after_colon "LATEST_RUN_DIR" "$launch_log")
   if [ -n "$latest_run_file" ] && [ -f "$latest_run_file" ]; then

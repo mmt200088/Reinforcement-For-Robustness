@@ -219,8 +219,13 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   advancing or declaring completion. The first launch from `adcc507` exposed a
   launcher bug: `S_BLB_V3_FUSION_COUNT_ACTION` was parsed/forwarded but not
   initialized, so `set -u` aborted before Stage-1 training. This was fixed
-  locally by initializing the fusion-count flag pair; rerun the queue from the
-  fixed source. Do not use GRPO for any queue item.
+  locally by initializing the fusion-count flag pair. The next launch from the
+  fixed source started `base_rte`, but the queue wrapper exited immediately
+  after the launcher because `SERVER_COMMAND.md` used `{ ...; exit "$rc"; }`
+  inside `run_one`, which exits the wrapper shell rather than only the
+  redirected launcher block. Use a subshell `( ...; exit "$rc" )` and keep
+  `LATEST_PID`/`LATEST_RUN_DIR` fallback parsing so the queue can monitor and
+  advance. Do not use GRPO for any queue item.
 - Stage-1 GRPO MRPC current snapshot, added 2026-06-01: while the GRPO run was
   still active, a snapshot report was generated at
   `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/grpo_current_snapshot_20260601_164215/stage1_mrpc_grpo_current_result_report.html`.
