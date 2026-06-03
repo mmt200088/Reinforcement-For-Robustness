@@ -57,6 +57,79 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   and cost/frontier progress. Only after that report and final eval are
   captured should the next 60,000-episode run start from the latest local source
   commit, currently the unbounded P3 cost-rank selection change.
+- Stage-2 fusion-count map build status, updated 2026-06-03: commit `ea27408`
+  fixed the builder-side enum domain so rescale slots enumerate only SF choices
+  (`index 1..levels-1`) and never `index 0`/`None`, preserving the CKKS rule
+  that RL should not decide whether a must-exist rescale operation occurs.
+  Commit `41ce2f3` then fixed two generated-map artifact issues: option
+  `slots` now contain SF/K-first values, and `FusionCountMap.load()` skips
+  sidecars such as `_summary.json`. The clean server rerun at
+  `experiments/server_command_runs/fusion_map_build_20260603_142923/` had
+  `fusion_unit_exit=0` and `build_exit=0`, with non-empty active-rescale sets,
+  `K-indep=True`, option 0 equal to the all-max baseline for all seven MRPC
+  block maps, and non-empty `slots` for every option. `block1_mrpc` and
+  `block4` are accepted true degeneracies with one option and `fusion=[0]`;
+  the other five block maps have two options with `fusion=[0,1]`. Codex left
+  these generated maps in the run's `fusion_maps_snapshot/` rather than
+  promoting them to canonical `blb_stage2_rl/fusion_maps/mrpc/`; promote only
+  after the follow-up artifact commit/review step.
+- Stage-2 fusion-count runtime smoke status, added 2026-06-03: commit
+  `18b2975` was packaged from the local verified source into a server temporary
+  run directory and executed with the active `SERVER_COMMAND.md` fusion-count F1
+  smoke. Because the server main worktree had no `Parting Chapter/stage1/record`
+  artifact, Codex added a minimal temporary Stage-1 record in that temp run
+  directory only (`gelu=[4]*12`, `softmax=[6]*12`) to satisfy `stage2-only`
+  prerequisite loading; this was not a source edit. The clean rerun artifacts
+  are in
+  `experiments/server_command_runs/fusion_smoke_20260603_190037/`. The server
+  passed all 20 `tests/test_blb_fusion_count_map.py` tests, including the
+  torch-backed fusion-schedule tests that are skipped locally. The launcher
+  started background PID `1108319`; Codex monitored that PID after the launcher
+  returned because `smoke_exit=0` only means the launcher succeeded. The real
+  background run exited before reaching `Fusion-count action ENABLED`, before
+  four-GPU reward-probe engagement, and before writing `episodes.jsonl`. The
+  blocker is a pre-fusion baseline handoff error:
+  `Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json` lacks
+  `block3_exp_n6@layer=0..11`, while Stage-2 now fixes Softmax degree to `6`.
+  Treat this as a static skeleton/archive compatibility issue to fix locally
+  and rerun; do not treat the end-to-end fusion-count runtime path as verified
+  or failed past that precondition yet.
+- Stage-2 fusion-count manual-degree rerun status, added 2026-06-03: commit
+  `48ff2c8` changed the F1 smoke command to pass
+  `--stage2-manual-gelu [4]*12` and `--stage2-manual-softmax [2]*12`, intending
+  to bypass Stage-1 record lookup and the independent `block3_exp_n6` archive
+  issue. Codex reran that command from a clean local `git archive` package on
+  the server; artifacts are in
+  `experiments/server_command_runs/fusion_smoke_20260603_191937/`. Server-side
+  `tests/test_blb_fusion_count_map.py` again passed all 20 tests. The launcher
+  command clearly passed `stage2_fixed_config_source=manual`, GELU all 4, and
+  Softmax all 2, but the real background run still failed before reaching
+  `Fusion-count action ENABLED`: `_resolve_stage2_fixed_stage1_config()` built
+  its resolver from `final_eval_config_source=search`, entered
+  `_resolve_stage1_degrees_from_record()`, and raised `FileNotFoundError` for
+  missing `Parting Chapter/stage1/record`. Treat this as a manual fixed-config
+  plumbing bug, not a fusion-count runtime failure. Fix locally so
+  `stage2_fixed_config_source=manual/json` actually bypasses Stage-1 record
+  resolution for Stage-2, then rerun the same F1 smoke.
+- Stage-2 block3-removal rerun status, added 2026-06-03: commit `385c4a6`
+  removed Block 3 from Stage-2 baseline bootstrap and optimizer requests. Codex
+  reran the active `SERVER_COMMAND.md` from a clean local `git archive`
+  package on the server, with a temporary Stage-1 record only inside the server
+  temp package to satisfy `stage2-only` prerequisite lookup. Artifacts are in
+  `experiments/server_command_runs/fusion_smoke_20260603_221900/`.
+  `contract_gate_exit=1`: `test_blb_*.py` still has three failing assertions
+  after block3 removal (`valid_block_count` expected `59` but actual is `47` in
+  two tests, and all-max `bits_drop` expected `0.0` but actual is `100.0` in
+  one test). Do not call the contract gate clean until those expectations or
+  underlying semantics are fixed locally and rerun. The fusion-count runtime
+  smoke itself completed 300 episodes with `smoke_exit=0`, printed
+  `Fusion-count action ENABLED`, engaged four reward-probe workers on
+  `cuda:0..3`, wrote 300 `episodes.jsonl` rows, had zero invalid steps, zero
+  `loss_mean=100` collapse sentinels, all terminal priority `P3`, fusion count
+  in `[0,14]`, and last-20 probe speedup about `3.99x`. This verifies the
+  runtime path passed the previous `block3_exp_n6` and fixed-config handoff
+  blockers, but the source line still needs contract-gate cleanup before it is
+  considered fully verified.
 - Stage-1 post-run queue, added 2026-05-24: after the active Stage-2 60k run
   finishes and its final eval/report are captured, pull the latest server code
   that contains the Claude Code Stage-1 changes for BERT-base SST-2/RTE and
@@ -131,6 +204,19 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   must accept only `ppo`. Historical GRPO reports, checkpoints, helper math, and
   analysis artifacts may remain for auditability, but they are not active
   training choices.
+- Stage-1 PPO convergence queue, added 2026-06-03: by user request, keep the
+  server busy with a fresh Stage-1 PPO queue for BERT-base RTE, BERT-base
+  SST-2, BERT-large MRPC, BERT-large RTE, and BERT-large SST-2. Use the existing
+  stage1-only presets, `--rl-algo ppo`, `--stage1-search-episodes 0`,
+  `--stage1-entropy-stop-threshold 0.1`, `--stage1-rl-devices 0,1,2,3`,
+  `--stage1-search-lr 2e-5`, `--ppo-update-interval 120`, and the preset
+  `--stage1-accuracy-tolerance 0.005` unless the user changes it. Run the
+  tasks serially so each training job can use all four GPUs. The
+  `SERVER_COMMAND.md` bridge now launches a background queue wrapper under
+  `/hy-tmp/stage1_ppo_queue_entropy0p1_<ts>/`; monitor `status.json`,
+  `events.log`, `logs/*_launch.log`, each parsed training log, the actual
+  training PID, and the `Stage-1 entropy convergence reached` marker before
+  advancing or declaring completion. Do not use GRPO for any queue item.
 - Stage-1 GRPO MRPC current snapshot, added 2026-06-01: while the GRPO run was
   still active, a snapshot report was generated at
   `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/grpo_current_snapshot_20260601_164215/stage1_mrpc_grpo_current_result_report.html`.
