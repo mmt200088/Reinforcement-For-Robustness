@@ -755,6 +755,7 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-sequential-early-terminate-on-invalid) BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="true"; S_BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="true"; shift ;;
     # 4-sub-stage Stage-2 RL (2026-05-27, opt-in)
     --blb-v3-substage-mode) needv "$@"; BLB_V3_SUBSTAGE_MODE="$2"; S_BLB_V3_SUBSTAGE_MODE="true"; shift 2 ;;
+    --blb-v3-fusion-count-action) needv "$@"; BLB_V3_FUSION_COUNT_ACTION="$2"; S_BLB_V3_FUSION_COUNT_ACTION="true"; shift 2 ;;
     --blb-v3-substage-block-order) needv "$@"; BLB_V3_SUBSTAGE_BLOCK_ORDER="$2"; S_BLB_V3_SUBSTAGE_BLOCK_ORDER="true"; shift 2 ;;
     --blb-v3-substage-frozen-blocks) needv "$@"; BLB_V3_SUBSTAGE_FROZEN_BLOCKS="$2"; S_BLB_V3_SUBSTAGE_FROZEN_BLOCKS="true"; shift 2 ;;
     --blb-v3-substage-episodes-each) needv "$@"; BLB_V3_SUBSTAGE_EPISODES_EACH="$2"; S_BLB_V3_SUBSTAGE_EPISODES_EACH="true"; shift 2 ;;
@@ -1683,6 +1684,7 @@ else
     # 4-sub-stage knobs (only forwarded when user set them)
     CMD+=(--rl_algo "$RL_ALGO")
     [ "$S_BLB_V3_SUBSTAGE_MODE" = "true" ] && CMD+=(--blb_v3_substage_mode "$BLB_V3_SUBSTAGE_MODE")
+    [ "$S_BLB_V3_FUSION_COUNT_ACTION" = "true" ] && CMD+=(--blb_v3_fusion_count_action "$BLB_V3_FUSION_COUNT_ACTION")
     [ "$S_BLB_V3_SUBSTAGE_BLOCK_ORDER" = "true" ] && CMD+=(--blb_v3_substage_block_order "$BLB_V3_SUBSTAGE_BLOCK_ORDER")
     [ "$S_BLB_V3_SUBSTAGE_FROZEN_BLOCKS" = "true" ] && CMD+=(--blb_v3_substage_frozen_blocks "$BLB_V3_SUBSTAGE_FROZEN_BLOCKS")
     [ "$S_BLB_V3_SUBSTAGE_EPISODES_EACH" = "true" ] && CMD+=(--blb_v3_substage_episodes_each "$BLB_V3_SUBSTAGE_EPISODES_EACH")

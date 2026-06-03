@@ -1419,23 +1419,35 @@ def sequential_grpo_update(
 # Convenience: derive (slot_mask, per_slot_num_levels) for one BlockStepSpec
 # ---------------------------------------------------------------------------
 
+def _spec_slot_num_levels(spec) -> list:
+    """Per-slot legal level counts for one step, for either spec type.
+
+    Fusion mode: a FusionStepSpec has 2 slots = (fusion option, K). Legacy
+    per-slot mode: a BlockStepSpec exposes per-slot ``slot_dims``.
+    """
+    if hasattr(spec, "fusion_num_options"):
+        return [int(spec.fusion_num_options), int(spec.k_num_levels)]
+    return [int(d) for d in spec.slot_dims]
+
+
 def step_to_mask_and_levels(
-        spec,        # BlockStepSpec from action_space
+        spec,        # BlockStepSpec or FusionStepSpec from action_space
         max_step_dim: int,
         max_num_levels: int,
         ) -> Tuple[np.ndarray, np.ndarray]:
     """Return (slot_mask[max_step_dim] bool, per_slot_num_levels[max_step_dim] int).
 
-    Active slots = slot_dims of this spec, padded to max_step_dim with zeros.
-    Per-slot num_levels = each slot's num_levels (clamped to max_num_levels).
+    Active slots = this spec's slot levels, padded to max_step_dim with zeros.
+    Per-slot num_levels = each slot's level count (must be <= max_num_levels).
     """
-    n = len(spec.slot_dims)
+    per_slot = _spec_slot_num_levels(spec)
+    n = len(per_slot)
     if n > max_step_dim:
         raise ValueError(f"step has {n} slots > max_step_dim={max_step_dim}")
     slot_mask = np.zeros(max_step_dim, dtype=bool)
     slot_mask[:n] = True
     levels = np.zeros(max_step_dim, dtype=np.int64)
-    for i, d in enumerate(spec.slot_dims):
+    for i, d in enumerate(per_slot):
         if int(d) > max_num_levels:
             raise ValueError(
                 f"slot {i} has {d} levels > max_num_levels={max_num_levels}"

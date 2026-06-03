@@ -690,6 +690,12 @@ class BLBStage2TrainConfig:
     substage_episodes_each: int = 15000
     substage_promotion_top_k: int = 5
     substage_promotion_trials: int = 8
+    # ---- Fusion-count action (opt-in 2026-06-03) --------------------------
+    # When True, the sequential RL path decides per block (fusion_option, K) via
+    # the offline blb_stage2_rl/fusion_maps/<profile>/ map instead of all per-slot
+    # SF heads. Disables safe-neighbor / guarded-radius2 / invalid masks (the map
+    # holds only valid configs). Mutually exclusive with substage_mode.
+    fusion_count_action: bool = False
     # ---- COINN-style OSR pre-prune (opt-in 2026-05-27) ---------------------
     # Empty osr_results_path → no OSR layer (legacy behaviour). When set, the
     # runner loads existing results from PATH, or runs a fresh scan saving to
@@ -2802,6 +2808,15 @@ class BLBStage2RLRunner:
         if v not in (None, ""):
             cfg.substage_mode = str(v).strip().lower() in (
                 "1", "true", "yes", "on",
+            )
+        v = getattr(ev, "blb_v3_fusion_count_action", None)
+        if v not in (None, ""):
+            cfg.fusion_count_action = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
+            )
+        if bool(getattr(cfg, "fusion_count_action", False)) and bool(getattr(cfg, "substage_mode", False)):
+            raise ValueError(
+                "blb_v3_fusion_count_action and blb_v3_substage_mode are mutually exclusive"
             )
         v = getattr(ev, "blb_v3_substage_block_order", None)
         if v not in (None, ""):

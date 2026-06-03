@@ -2359,6 +2359,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_substage_episodes_each=15000,
                   blb_v3_substage_promotion_top_k=5,
                   blb_v3_substage_promotion_trials=8,
+                  blb_v3_fusion_count_action=False,
                   blb_v3_osr_results_path="",
                   blb_v3_osr_scan_only=False,
                   blb_v3_osr_num_combo_samples=300,
@@ -3029,6 +3030,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         # into BLBStage2TrainConfig.substage_* fields.
         self.blb_v3_substage_mode = self._coerce_bool_flag(
             blb_v3_substage_mode, 'blb_v3_substage_mode',
+        )
+        self.blb_v3_fusion_count_action = self._coerce_bool_flag(
+            blb_v3_fusion_count_action, 'blb_v3_fusion_count_action',
         )
         self.blb_v3_substage_block_order = str(blb_v3_substage_block_order or "1,2,4,5")
         self.blb_v3_substage_frozen_blocks = str(blb_v3_substage_frozen_blocks or "3")

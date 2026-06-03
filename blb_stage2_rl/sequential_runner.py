@@ -382,7 +382,12 @@ def _open_step_level_mask(
         ) -> np.ndarray:
     """Full legal support for one sequential step before pruning layers apply."""
     mask = np.zeros((int(max_step_dim), int(max_num_levels)), dtype=bool)
-    for slot_idx, dim in enumerate(spec.slot_dims):
+    # Fusion mode: FusionStepSpec exposes (fusion_num_options, k_num_levels).
+    if hasattr(spec, "fusion_num_options"):
+        per_slot = [int(spec.fusion_num_options), int(spec.k_num_levels)]
+    else:
+        per_slot = [int(d) for d in spec.slot_dims]
+    for slot_idx, dim in enumerate(per_slot):
         if slot_idx >= int(max_step_dim):
             break
         width = min(int(dim), int(max_num_levels))
@@ -1804,6 +1809,7 @@ def train_sequential(
 
         while True:
             spec = env.current_spec()
+            fusion_mode = hasattr(spec, "fusion_num_options")
             slot_mask_np, levels_np = step_to_mask_and_levels(
                 spec, policy.cfg.max_step_dim, policy.cfg.max_num_levels,
             )
@@ -1813,7 +1819,16 @@ def train_sequential(
             n_active = int(slot_mask_np.sum())
             action_level_mask_np: Optional[np.ndarray] = None
             action_level_mask_t = None
-            if neighbor_mask_active and base_action_vec_for_mask is not None:
+            if fusion_mode:
+                # Fusion mode: the offline map holds only valid SF configs, so the
+                # legal support is just the open per-slot mask. Invalid / near-baseline
+                # / OSR pruning are all disabled in fusion mode.
+                action_level_mask_np = _open_step_level_mask(
+                    spec=spec,
+                    max_step_dim=policy.cfg.max_step_dim,
+                    max_num_levels=policy.cfg.max_num_levels,
+                )
+            elif neighbor_mask_active and base_action_vec_for_mask is not None:
                 action_level_mask_np = _build_step_level_mask(
                     spec=spec,
                     baseline_action_vec=base_action_vec_for_mask,
@@ -1828,7 +1843,7 @@ def train_sequential(
                     max_step_dim=policy.cfg.max_step_dim,
                     max_num_levels=policy.cfg.max_num_levels,
                 )
-            if action_level_mask_np is not None:
+            if action_level_mask_np is not None and not fusion_mode:
                 protected_actions = _protected_step_actions(
                     spec=spec,
                     n_active=n_active,
@@ -1865,14 +1880,26 @@ def train_sequential(
                 action_level_mask_t = (
                     torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
                 )
+            elif action_level_mask_np is not None:
+                # fusion mode: open mask passes straight through (no pruning)
+                action_level_mask_t = (
+                    torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
+                )
 
             # -- Forced-baseline anchor short-circuit --
             # Skip sampling + rejection-loop entirely; commit the baseline
             # action slice. Value/log_prob come from `policy.evaluate_action`
             # against the CURRENT policy so PPO gradients are well-defined.
             if force_this_ep and baseline_action_vec is not None:
-                baseline_slice = baseline_action_vec[list(spec.full_vec_offsets)][:n_active]
-                forced_action = np.asarray(baseline_slice, dtype=np.int64)
+                if fusion_mode:
+                    # fusion baseline action = (option 0 == all-max baseline, baseline K)
+                    from .action_space import _baseline_k_index_for_block
+                    forced_action = np.asarray(
+                        [0, int(_baseline_k_index_for_block(spec.block_idx))], dtype=np.int64
+                    )
+                else:
+                    baseline_slice = baseline_action_vec[list(spec.full_vec_offsets)][:n_active]
+                    forced_action = np.asarray(baseline_slice, dtype=np.int64)
                 forced_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
                 forced_padded[:n_active] = forced_action
                 policy_t0 = time.perf_counter()
@@ -3014,7 +3041,20 @@ def run_sequential_via_runner(
         fusion_shaping_coeff=float(getattr(train_cfg, "sequential_fusion_shaping_coeff", 0.0)),
         early_terminate_on_invalid=bool(getattr(train_cfg, "sequential_early_terminate_on_invalid", False)),
     )
-    seq_env = BLBStage2SequentialEnv(base_env=base_env, env_cfg=seq_env_cfg)
+    # Fusion-count action mode (opt-in, 2026-06-03): each step decides
+    # (fusion_option, K) via the offline map instead of all per-slot SF heads.
+    # Disables safe-neighbor / guarded-radius2 (no SF-locality in option space);
+    # the map holds only valid configs so invalid masks are unnecessary.
+    fusion_map = None
+    if bool(getattr(train_cfg, "fusion_count_action", False)):
+        from .fusion_count_map import FusionCountMap
+        fusion_map = FusionCountMap.load(str(train_cfg.profile))
+        train_cfg.warmstart_neighbor_sampling = False
+        log(
+            f"  {bullet} Fusion-count action ENABLED：map graphs={len(fusion_map.graphs)}, "
+            f"max_options={fusion_map.max_num_options()}；safe-neighbor/radius2 已停用"
+        )
+    seq_env = BLBStage2SequentialEnv(base_env=base_env, env_cfg=seq_env_cfg, fusion_map=fusion_map)
 
     torch.manual_seed(int(train_cfg.seed))
     np.random.seed(int(train_cfg.seed) % (2**32))
@@ -3022,7 +3062,7 @@ def run_sequential_via_runner(
     policy_cfg = SequentialPolicyConfig(
         state_dim=int(seq_env.state_dim),
         max_step_dim=int(seq_env.max_step_dim),
-        max_num_levels=6,
+        max_num_levels=(max(6, int(fusion_map.max_num_options())) if fusion_map is not None else 6),
         horizon=int(seq_env.horizon),
         num_layers=int(ev.total_layers),
     )
@@ -3053,12 +3093,17 @@ def run_sequential_via_runner(
     if bool(train_cfg.warmstart_baseline_bias):
         try:
             from .action_space import LEVELS_F
-            preferred = _compute_per_slot_mode_preferred(
-                schedule=seq_env.schedule,
-                baseline_action_vec=baseline_action_vec,
-                max_step_dim=policy_cfg.max_step_dim,
-                fallback_idx=int(LEVELS_F) - 1,
-            )
+            if fusion_map is not None:
+                # fusion: slot 0 = option (baseline == option 0), slot 1 = K (baseline index)
+                from .action_space import _baseline_k_index_for_block
+                preferred = [0, int(_baseline_k_index_for_block(1))]
+            else:
+                preferred = _compute_per_slot_mode_preferred(
+                    schedule=seq_env.schedule,
+                    baseline_action_vec=baseline_action_vec,
+                    max_step_dim=policy_cfg.max_step_dim,
+                    fallback_idx=int(LEVELS_F) - 1,
+                )
             policy.apply_preferred_per_step_bias(
                 preferred,
                 gain=float(train_cfg.warmstart_bias_gain),
@@ -4061,9 +4106,12 @@ def run_sequential_via_runner(
     # Forbidden-action mask: starts empty (or rehydrated from checkpoint
     # `forbidden_mask_records` if present in the resumed checkpoint).
     forbidden_mask = ForbiddenActionMask()
+    # Fusion mode: the offline map holds only valid configs, so invalid-level
+    # masks (and their per-slot feasibility scan, which assumes BlockStepSpec) are
+    # both unnecessary and incompatible — disable them.
     static_invalid_mask = (
         StaticInvalidLevelMask()
-        if bool(getattr(seq_train_cfg, "static_invalid_level_mask_enabled", True))
+        if (bool(getattr(seq_train_cfg, "static_invalid_level_mask_enabled", True)) and fusion_map is None)
         else None
     )
     static_invalid_scan_summary: Dict[str, Any] = {
@@ -4086,7 +4134,7 @@ def run_sequential_via_runner(
         max_valid_samples=int(
             getattr(seq_train_cfg, "empirical_invalid_level_max_valid", 0)
         ),
-    ) if bool(getattr(seq_train_cfg, "empirical_invalid_level_mask_enabled", True)) else None
+    ) if (bool(getattr(seq_train_cfg, "empirical_invalid_level_mask_enabled", True)) and fusion_map is None) else None
     if effective_resume_path and os.path.isfile(effective_resume_path):
         try:
             _ckpt = torch.load(effective_resume_path, map_location=device)
