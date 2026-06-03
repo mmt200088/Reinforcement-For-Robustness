@@ -1914,6 +1914,12 @@ def build_optimizer_requests(
             block_idx = int(str(block_name)[5:])
         except ValueError:
             continue
+        if int(block_idx) == 3:
+            # block 3 (softmax exp approx) is frozen and fully excluded (2026-06-03):
+            # not RL-decided, not installed (bridge skips it), and not sent to
+            # Rescale_optimizer so the baseline (which also drops block 3) and the
+            # action cost stay consistent without it.
+            continue
         for layer_idx, cfg in layer_cfgs.items():
             if int(block_idx) == 1 and int(layer_idx) == 0:
                 # 语义对齐：layer-0 block1 不发给 RO。
