@@ -44,6 +44,8 @@
 - **chain 槽**（进 replan，影响 `valid/fusion_count/total_bits`）：t_new 的 fresh/rescale（来自 `skeleton_stage_map`）+ `default_block{n}_cfg_to_delta` 实际读的 encode 字段。**这些参与枚举**。
 - **model-only 槽**（不进 replan，如 block2 `wv_sf`）：固定在 **max-SF（=最小噪声、且不改 fusion/cost）**，不进枚举。
 
+> ⚠️ **rescale(R) 槽只枚举 SF 值（action index 1..levels-1），绝不枚举 index 0（=None=「丢掉这个 rescale」）。** 依据 CKKS 心智模型（CLAUDE.md 第 2 条）：RL 永不决定一个 must-exist 操作是否发生——rescale 点是固定的，**是否融合由优化器**根据 SF schedule 决定，不是 RL 显式提 None。2026-06-03 的 block1 崩溃正是因为枚举了 index 0：RL「丢掉」rescale 被优化器接受成一个「同 bits、更低噪声」的配置，反而支配了 all-max baseline。剔掉 index 0 后 all-max baseline 自然成为最低 fusion 的全局最小方差配置。（其余非 R 槽的 index 0 是合法的最低 SF，照常枚举。）实测识别 model-only 用整轴探针自动完成。
+
 > ⚠️ encode delta **确实影响 fusion_count**（CTPT_MUL 把 SF 累加进模数链，改变某 rescale 能否被融合）。所以不能只枚举 cut_point；chain 槽里的 encode 必须进笛卡尔积。
 >
 > K 不进枚举（独立第二决策），枚举时固定在 baseline K。
@@ -66,8 +68,8 @@ NoiseOrder.total_variance(installed_plan) -> float   # 越小越「噪声最小�
 1. 枚举每个 chain 配置 → `replan` → `(valid, fusion_count)`；丢弃 invalid。
 2. valid 配置按 **realized `fusion_count`** 分组。
 3. 每组取 **最小 `NoiseOrder.total_variance`**；保留所有达到该最小值的**不同安装后 cfg**（按安装后 cfg 去重——安装方案完全相同则等价，只留一个；总方差相同但安装方案不同则都保留，即你说的「并列噪声最小都要采用」）。容差用极小 epsilon 容浮点误差。
-4. **option 排序（关键约束）**：**option 0 由构造强制 = baseline（all-max SF 配置）**——all-max 是全局最小方差配置，必落在它所属 fusion_count 组的 min-noise 集里（baseline 恒 valid），builder 显式把它放到 index 0；其余 option 再按 `(fusion_count 升序, total_variance 升序, total_bits 升序, 字典序)` 排在后面。**不依赖「all-max=最低 fusion_count」这个未保证的假设**。这样 warmstart 的统一 `preferred=[0, baseline_K_idx]` 对每种 block-type 都直接成立（见 §4.3）。
-   - builder 必须断言 baseline 配置（每个 effective chain 槽取 max 档 + model-only max-SF）经 replan 后 valid，且其 SF 切片 == `make_all_max_action_vector` 的对应切片，否则报错停。
+4. **option 排序**：全部 kept option 按 `(fusion_count 升序, total_variance 升序, total_bits 升序, 字典序)` 排序，option_id = 排序位次。**因为 rescale 不枚举 None（见 §3.2），all-max baseline 就是最低 fusion + 全局最小方差的配置 → 自然排到 option 0**，无需特殊强制。`group_min_noise_options` 末尾**断言 option 0 == baseline**（守卫：若某非 baseline 配置达到了更低 fusion 或更低安装方差，立即报错——说明心智模型被打破，需重查噪声偏序/枚举域）。warmstart 的统一 `preferred=[0, baseline_K_idx]` 因此对每种 block-type 都成立（见 §4.3）。
+   - builder 仍断言 baseline 配置（每个 effective chain 槽取 max 档、rescale 取 max SF、model-only max-SF）经 replan 后 valid，且其 SF 切片 == `make_all_max_action_vector` 的对应切片。
 
 `option = (fusion_count, tie_index)`（你举例的 `x-y`）。policy 的动作 = 该 block-type option 列表中的 index。
 

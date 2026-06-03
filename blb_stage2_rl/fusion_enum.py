@@ -89,20 +89,12 @@ def group_min_noise_options(
         for tie_idx, m in enumerate(uniq):
             kept.append((m, tie_idx))
 
-    baseline_entry = next(((m, t) for (m, t) in kept if tuple(m.action_indices) == baseline_key), None)
-    if baseline_entry is None:
-        raise ValueError(
-            "baseline action vector not found among the kept minimum-noise configs — "
-            "baseline must be valid and the global minimum-variance config (spec §3.4)"
-        )
-    others = [(m, t) for (m, t) in kept if tuple(m.action_indices) != baseline_key]
-    others.sort(
-        key=lambda mt: (mt[0].fusion_count, mt[0].total_variance, mt[0].total_bits, tuple(mt[0].action_indices))
-    )
-
-    ordered = [baseline_entry, *others]
+    # Order globally by (fusion asc, variance asc, bits asc, lexicographic). With
+    # rescale-None excluded from the enumeration, the all-max baseline is the
+    # lowest-fusion, globally-minimum-variance config, so it sorts to option 0.
+    kept.sort(key=lambda mt: (mt[0].fusion_count, mt[0].total_variance, mt[0].total_bits, tuple(mt[0].action_indices)))
     options: List[Dict[str, Any]] = []
-    for opt_id, (m, tie_idx) in enumerate(ordered):
+    for opt_id, (m, tie_idx) in enumerate(kept):
         options.append(
             {
                 "option_id": int(opt_id),
@@ -113,6 +105,15 @@ def group_min_noise_options(
                 "slots": dict(m.slots),
                 "action_indices": [int(x) for x in m.action_indices],
             }
+        )
+    # Loud guard: option 0 must be the baseline. A failure means a non-baseline
+    # config reached lower fusion or lower installed variance than all-max — i.e.
+    # the "baseline = lowest-fusion minimum-noise" invariant broke (re-examine the
+    # noise order or the enumeration domain).
+    if options and tuple(options[0]["action_indices"]) != baseline_key:
+        raise ValueError(
+            f"option 0 {options[0]['action_indices']} != baseline {list(baseline_key)}: the all-max baseline "
+            "is not the lowest-fusion minimum-noise config (expected after excluding rescale-None from the enum)."
         )
     return options
 
@@ -152,6 +153,7 @@ class BlockTypeBuildContext:
     baseline_block_indices: Tuple[int, ...]
     enum_positions: List[int] = field(default_factory=list)
     enum_levels: List[int] = field(default_factory=list)
+    enum_choices: List[List[int]] = field(default_factory=list)
     pinned_positions: List[int] = field(default_factory=list)
     active_rescale_fields: List[str] = field(default_factory=list)
 
@@ -372,11 +374,20 @@ def prepare_block_type_context(
         raise RuntimeError(f"{graph_key}: baseline (all-max) block config is invalid under replan")
     base_key = (base_res["fusion_count"], base_res["total_bits"])
 
-    # Classify each effective non-K slot: enumerate rescales always; for the
-    # rest, full single-axis scan — pin at baseline (max) iff every level leaves
-    # (fusion_count, total_bits) unchanged (slot affects only its own noise, so
-    # its minimum-noise value is the max-SF baseline). Robust to non-monotonic
-    # effects because it scans every level, not just one probe.
+    # Classify each effective non-K slot.
+    #
+    # Rescale (R) slots: enumerate SF VALUES ONLY (action indices 1..levels-1),
+    # never index 0 (= None = "drop this rescale"). Per the CKKS mental model
+    # (CLAUDE.md item 2) RL never decides whether a must-exist operation happens —
+    # the rescale points are fixed; the optimizer decides fusion via its response
+    # to the SF schedule. Enumerating index 0 let RL "drop" a rescale, which the
+    # optimizer honoured into a strictly-lower-noise / same-bits config that
+    # dominated the all-max baseline (2026-06-03 block1 crash).
+    #
+    # Non-rescale (F/W/M/S) slots: full single-axis scan — pin at baseline (max)
+    # iff every level leaves (fusion_count, total_bits) unchanged (the slot then
+    # affects only its own noise, so its minimum-noise value is the max-SF
+    # baseline). Scans every level, so it is robust to non-monotonic effects.
     for pos, (fname, kind, _maxsf) in enumerate(fields):
         if kind == "K":
             continue
@@ -392,8 +403,10 @@ def prepare_block_type_context(
             continue
         levels = int(NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[kind])
         if kind == "R":
+            choices = list(range(1, levels))  # SF values only; exclude 0 (=None/drop)
             ctx.enum_positions.append(pos)
-            ctx.enum_levels.append(levels)
+            ctx.enum_choices.append(choices)
+            ctx.enum_levels.append(len(choices))
             continue
         constant = True
         for lvl in range(levels):
@@ -408,8 +421,10 @@ def prepare_block_type_context(
         if constant:
             ctx.pinned_positions.append(pos)
         else:
+            choices = list(range(levels))
             ctx.enum_positions.append(pos)
-            ctx.enum_levels.append(levels)
+            ctx.enum_choices.append(choices)
+            ctx.enum_levels.append(len(choices))
     return ctx
 
 
@@ -423,8 +438,7 @@ def enumerate_shard(
     """Enumerate this worker's stride of the chain-slot cartesian product."""
     base_block = np.asarray(ctx.baseline_block_indices, dtype=int)
     out: List[EvaluatedConfig] = []
-    ranges = [range(n) for n in ctx.enum_levels]
-    for i, combo in enumerate(itertools.product(*ranges)):
+    for i, combo in enumerate(itertools.product(*ctx.enum_choices)):
         if (i % int(num_shards)) != int(shard_idx):
             continue
         block = base_block.copy()
