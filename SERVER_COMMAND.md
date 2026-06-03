@@ -60,11 +60,15 @@ echo "=== DONE -> $OUT ; maps in blb_stage2_rl/fusion_maps/mrpc/ ==="
   2. 枚举 effective chain 槽（rescale 永远枚举；其余槽做整轴探针，证明不改 `(fusion_count,total_bits)` 的钉在 max=最小噪声）。
   3. 每组合走**真实 replan** → 跳过 invalid → `apply_optimizer_output_to_cfg` → 算 **post-override 实际安装方差**。
   4. 按 realized `fusion_count` 分组，每组取最小安装方差集（按安装方案去重），**option 0 强制=baseline**。
+- **本次是 RE-RUN（修了一个真 bug）**：上一轮（20260603_013841）build_exit=0 但 block1_mrpc / block4 塌成
+  `#options=1 fusion=[0]`。根因：`action_space._load_active_rescale_sets()` 用 `__file__`-相对路径找
+  `Rescale_optimizer` 并**静默吞掉失败返回 {}**，在服务器 temp-dir verified-source 布局下命中，导致**所有 rescale 槽被判无效、从不枚举**（enum_total 无 4 因子即证据），fusion 自然只能是 0。已在本地修：builder 用**显式 ro_root** 预热 active-rescale 缓存 + 缺失即**报错停**（不再静默出错图），并在每类型日志新增 `rescales=[...]` 诊断。
 - **成功标准（F0 门槛，spec §8）**：
   - `fusion_unit_exit=0` 且 `build_exit=0`。
   - 每种 block-type 都建出 `>=1` 个 option，且 option 0 是 baseline（builder 内部断言 baseline 还原 all-max，否则报错停）。
-  - 人工核对 SUMMARY：每种类型 `#options` 不应病态大（几~几十为宜），`fusion_counts` 一般应 `>=2`；
-    `K-indep=True`（K 不改 fusion）。若 `#options` 病态大或 `fusion_counts` 只有 1 个，**停下复审**而非硬跑。
+  - **每类型日志的 `rescales=[...]` 必须非空**（block1=2、block2=4、block4=3、block5_n0=2…）；若某类型 `rescales=[]` 会直接报错停。
+  - 人工核对 SUMMARY：每种类型 `#options` 不应病态大（几~几十为宜），修复后 `fusion_counts` 应普遍变丰富（不再只有 `[0]`）；
+    `K-indep=True`（K 不改 fusion）。若 `#options` 病态大或某类型仍只有 1 个 `fusion_count`，**停下复审**而非硬跑。
 - **产物**：
   - 映射 JSON：`blb_stage2_rl/fusion_maps/mrpc/*.json`（**入 git**，运行期直接读）。
   - 报告/日志：`experiments/server_command_runs/fusion_map_build_<ts>/`（`SUMMARY.txt` / `build.log` / `fusion_map_build.html`）。

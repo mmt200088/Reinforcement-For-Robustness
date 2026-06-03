@@ -158,5 +158,27 @@ class GroupMinNoiseOptionsTest(unittest.TestCase):
             fusion_enum.group_min_noise_options(self.evaluated, (9, 9, 9))
 
 
+class ActiveRescalePremiseTest(unittest.TestCase):
+    """Every RL block-type must derive >=1 active rescale RL field from the real
+    skeleton archive. This is the premise the builder's loud guard enforces — if
+    it is ever empty, the fusion-count map loses its rescale lever and fusion
+    collapses to a single option (the 2026-06-03 server build hit exactly that via
+    action_space's silently-empty __file__-relative cache; the builder now seeds
+    the cache from the explicit ro_root)."""
+
+    def test_seven_block_types_have_active_rescales(self):
+        import json
+
+        import skeleton_stage_map as ssm
+
+        arch_path = _RO_ROOT / "configs" / "mrpc" / "static_skeletons_mrpc.json"
+        archive = json.loads(arch_path.read_text(encoding="utf-8"))
+        plans = ssm.build_stage_plans_from_archive(archive)
+        for gk in ["block1_mrpc", "block2_mrpc", "block4", "block5_n0", "block5_n1", "block5_n2", "block5_n4"]:
+            self.assertIn(gk, plans, f"{gk} missing from skeleton plans")
+            active = set(plans[gk].active_rescale_rl_fields)
+            self.assertTrue(active, f"{gk}: no active rescale RL fields — fusion map would have no rescale lever")
+
+
 if __name__ == "__main__":
     unittest.main()

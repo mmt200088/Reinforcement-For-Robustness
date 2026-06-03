@@ -174,6 +174,7 @@ def build_one_block_type(
         "block_num_slots": ctx.block_num_slots,
         "options": options,
         "build_meta": {
+            "active_rescale_fields": ctx.active_rescale_fields,
             "enum_positions": ctx.enum_positions,
             "pinned_positions": ctx.pinned_positions,
             "enum_total_combos": total_combos,
@@ -249,7 +250,9 @@ def main() -> int:
         m = res["build_meta"]
         print(
             f"  -> options={m['num_options']} fusion_counts={m['fusion_counts']} "
-            f"valid={m['valid_configs']}/{m['enum_total_combos']} pinned={len(m['pinned_positions'])} "
+            f"valid={m['valid_configs']}/{m['enum_total_combos']} "
+            f"rescales={len(m['active_rescale_fields'])}{m['active_rescale_fields']} "
+            f"pinned={len(m['pinned_positions'])} "
             f"K-indep={m['k_independence']['k_independent']} wall={m['wall_seconds']}s",
             flush=True,
         )

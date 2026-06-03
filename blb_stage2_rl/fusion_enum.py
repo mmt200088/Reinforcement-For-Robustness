@@ -153,6 +153,7 @@ class BlockTypeBuildContext:
     enum_positions: List[int] = field(default_factory=list)
     enum_levels: List[int] = field(default_factory=list)
     pinned_positions: List[int] = field(default_factory=list)
+    active_rescale_fields: List[str] = field(default_factory=list)
 
     def enum_total(self) -> int:
         total = 1
@@ -267,6 +268,10 @@ def prepare_block_type_context(
     non-K slots to enumerate (vs pin at max). Uses the SAME calibrated max_sfs
     path as the runner so decoded SFs match runtime (avoids the generic
     ``load_max_sfs`` mismatch that makes degree-1 all-max look invalid)."""
+    import json as _json
+    import os as _os
+
+    import action_space as _action_space
     from action_space import (
         _BLOCK_SPECS,
         NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
@@ -276,6 +281,11 @@ def prepare_block_type_context(
     )
 
     from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+
+    try:
+        from skeleton_stage_map import build_stage_plans_from_archive as _build_stage_plans
+    except ImportError:
+        from blb_stage2_rl.skeleton_stage_map import build_stage_plans_from_archive as _build_stage_plans
 
     try:
         from baseline_bootstrap import (
@@ -311,6 +321,25 @@ def prepare_block_type_context(
     baseline_entry = (getattr(invoker, "baselines", {}) or {}).get(graph_key)
     baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
 
+    # Seed action_space's active-rescale cache from the EXPLICIT ro_root, so R-slot
+    # effectiveness never depends on action_space's __file__-relative archive load
+    # (``_load_active_rescale_sets`` silently returns {} on any path failure — the
+    # server temp-dir build hit exactly that, judged every rescale non-effective,
+    # never enumerated rescales, and produced rescale-free maps with fusion stuck
+    # at 0). The bootstrap above already proved this ro_root resolves the archive.
+    _arch_path = _os.path.join(str(rescale_optimizer_root), "configs", str(profile), f"static_skeletons_{profile}.json")
+    with open(_arch_path, encoding="utf-8") as _f:
+        _archive = _json.load(_f)
+    _action_space._ACTIVE_RESCALE_SETS_CACHE = {
+        gk: frozenset(p.active_rescale_rl_fields) for gk, p in _build_stage_plans(_archive).items()
+    }
+    active_rescale_fields = sorted(_action_space._ACTIVE_RESCALE_SETS_CACHE.get(graph_key, ()))
+    if not active_rescale_fields:
+        raise RuntimeError(
+            f"{graph_key}: no active rescale slots derived from {_arch_path}; the fusion-count map "
+            "would have no rescale lever (fusion stuck at 0). Check the archive / rescale_optimizer_root."
+        )
+
     fields = _BLOCK_SPECS[int(block_idx)].fields
     block_num_slots = len(fields)
     block_offset = _full_vec_offset_for_block(int(num_layers), int(ref_layer), int(block_idx))
@@ -334,6 +363,7 @@ def prepare_block_type_context(
         attn_per_layer=attn_per_layer,
         baseline_skeleton=baseline_skeleton,
         baseline_block_indices=tuple(int(x) for x in baseline_full[block_offset : block_offset + block_num_slots]),
+        active_rescale_fields=active_rescale_fields,
     )
 
     base_block = np.asarray(ctx.baseline_block_indices, dtype=int)
