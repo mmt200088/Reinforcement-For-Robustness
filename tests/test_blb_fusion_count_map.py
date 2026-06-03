@@ -100,6 +100,20 @@ class FusionMapLoaderTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             fcm.FusionCountMap.from_payload(bad)
 
+    def test_load_skips_summary_sidecar(self):
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            d = pathlib.Path(td) / "fusion_maps" / "mrpc"
+            d.mkdir(parents=True)
+            (d / "block1_mrpc.json").write_text(json.dumps(_toy_payload()["graphs"]["block1_mrpc"]), encoding="utf-8")
+            # sidecar with no graph_key — load must skip it, not crash
+            (d / "_summary.json").write_text(json.dumps({"profile": "mrpc", "max_num_options": 2}), encoding="utf-8")
+            m = fcm.FusionCountMap.load("mrpc", root=td)
+            self.assertEqual(sorted(m.graphs), ["block1_mrpc"])
+            self.assertEqual(m.num_options("block1_mrpc"), 2)
+
 
 class GroupMinNoiseOptionsTest(unittest.TestCase):
     """Pure grouping/ordering core (torch-free).

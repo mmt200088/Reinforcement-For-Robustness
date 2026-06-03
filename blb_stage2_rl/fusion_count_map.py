@@ -141,7 +141,11 @@ class FusionCountMap:
         merged: dict = {"profile": profile, "graphs": {}, "max_num_options": 0}
         mx = 0
         for path in sorted(map_dir.glob("*.json")):
+            if path.name.startswith("_"):
+                continue  # skip non-graph sidecars like _summary.json
             g = json.loads(path.read_text(encoding="utf-8"))
+            if "graph_key" not in g:
+                continue
             merged["graphs"][str(g["graph_key"])] = g
             mx = max(mx, len(g["options"]))
         if not merged["graphs"]:

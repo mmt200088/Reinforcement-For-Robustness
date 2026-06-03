@@ -57,23 +57,27 @@ echo "=== DONE -> $OUT ; maps in blb_stage2_rl/fusion_maps/mrpc/ ==="
 - **构建逻辑**（每种 block-type，共 7 种，block3 冻结不建）：
   1. 复用 runner 的 `load_static_skeletons_baseline` + `static_skeletons_baseline_to_action` 取**校准过的
      max_sfs** + baseline（保证 decode 与运行期一致，避开通用 `load_max_sfs` 的 degree-1 假象）。
-  2. 枚举 effective chain 槽（rescale 永远枚举；其余槽做整轴探针，证明不改 `(fusion_count,total_bits)` 的钉在 max=最小噪声）。
+  2. 枚举 effective chain 槽（**rescale 只枚举 SF 值 index 1..levels-1，绝不枚举 index 0=None=丢操作**，依据心智模型第 2 条；其余槽做整轴探针，不改 `(fusion_count,total_bits)` 的钉在 max=最小噪声）。
   3. 每组合走**真实 replan** → 跳过 invalid → `apply_optimizer_output_to_cfg` → 算 **post-override 实际安装方差**。
-  4. 按 realized `fusion_count` 分组，每组取最小安装方差集（按安装方案去重），**option 0 强制=baseline**。
-- **本次是 RE-RUN（修了一个真 bug）**：上一轮（20260603_013841）build_exit=0 但 block1_mrpc / block4 塌成
-  `#options=1 fusion=[0]`。根因：`action_space._load_active_rescale_sets()` 用 `__file__`-相对路径找
-  `Rescale_optimizer` 并**静默吞掉失败返回 {}**，在服务器 temp-dir verified-source 布局下命中，导致**所有 rescale 槽被判无效、从不枚举**（enum_total 无 4 因子即证据），fusion 自然只能是 0。已在本地修：builder 用**显式 ro_root** 预热 active-rescale 缓存 + 缺失即**报错停**（不再静默出错图），并在每类型日志新增 `rescales=[...]` 诊断。
+  4. 按 realized `fusion_count` 分组，每组取最小安装方差集（按安装方案去重），按 `(fusion,var,bits,lex)` 排序，all-max baseline 自然落 option 0（守卫断言）。
+- **本次是第 3 轮 RE-RUN（修两处：一处补全产物、一处真 bug）**：
+  - 前两轮已修：① active-rescale 缓存空（`__file__` 路径在服务器 temp-dir 布局下静默吞错）→ 改用显式 ro_root 预热 + 报错停；
+    ② 枚举了 rescale index 0(None) 让 RL「丢 rescale」，被优化器接受成支配 baseline 的配置 → 已排除 index 0。
+  - 本轮新修：③ `decode_block_slots` 之前用动作字段名读 cfg 属性（名字对不上）→ 每个 option 的 `slots` 都是 `{}`，本轮改用 `_field_level_values` 按动作 index 直接解 SF，**slots 现在应有值**；④ `FusionCountMap.load` 现在跳过 `_*.json` sidecar（防 `_summary.json` 撑爆加载）。
+  - **block1_mrpc / block4 单 option（fusion=[0]）是已确认的真实退化**（穷举 1485/2025、40320/91125 个 valid 配置全 fusion=0），用户已接受；不是 bug。
 - **成功标准（F0 门槛，spec §8）**：
   - `fusion_unit_exit=0` 且 `build_exit=0`。
   - 每种 block-type 都建出 `>=1` 个 option，且 option 0 是 baseline（builder 内部断言 baseline 还原 all-max，否则报错停）。
-  - **每类型日志的 `rescales=[...]` 必须非空**（block1=2、block2=4、block4=3、block5_n0=2…）；若某类型 `rescales=[]` 会直接报错停。
-  - 人工核对 SUMMARY：每种类型 `#options` 不应病态大（几~几十为宜），修复后 `fusion_counts` 应普遍变丰富（不再只有 `[0]`）；
-    `K-indep=True`（K 不改 fusion）。若 `#options` 病态大或某类型仍只有 1 个 `fusion_count`，**停下复审**而非硬跑。
+  - **每类型日志的 `rescales=[...]` 非空**（block1=2、block2=4、block4=3、block5_n0=2…）；为空会报错停。
+  - **预期结果（已确认，不是 stop 条件）**：block1_mrpc / block4 = `#options=1 fusion=[0]`（真实退化）；其余 5 类 = `#options=2 fusion=[0,1]`。`K-indep=True`。
+  - 本轮额外检查：随便打开一个 `block*.json`，每个 option 的 `slots` 字段**应非空**（如 `{"gelu_out_sf":30,...}`）——这是本轮 ③ 的修复点。
+  - 仅当出现**新异常**（某类型 option 病态大、option 0 != baseline 触发守卫报错、build 崩）才停下复审。
 - **产物**：
-  - 映射 JSON：`blb_stage2_rl/fusion_maps/mrpc/*.json`（**入 git**，运行期直接读）。
+  - 映射 JSON：`blb_stage2_rl/fusion_maps/mrpc/*.json`（运行期直接读）。
   - 报告/日志：`experiments/server_command_runs/fusion_map_build_<ts>/`（`SUMMARY.txt` / `build.log` / `fusion_map_build.html`）。
-- **回传**：把 `blb_stage2_rl/fusion_maps/mrpc/*.json` + `_summary.json` + `$OUT/` 报告 commit & push 回
-  `origin/jk_standard_rl`，本地 pull。
+- **回传（本轮按「Claude 本地提升」走，因服务器 GitHub 推送不稳）**：把 `blb_stage2_rl/fusion_maps/mrpc/*.json`
+  连同 `$OUT/` 报告**回传到本地**（如放进 `$OUT/fusion_maps_snapshot/`），由本地 Claude 把 7 个 `block*.json` 提升到
+  canonical `blb_stage2_rl/fusion_maps/mrpc/` 并 commit/push（不含 `_summary.json`）。服务器不必自己 commit map。
 - **协议**：服务器只 `git pull`、运行、产出/`push` artifacts；源码改动都在本地完成并经 git 同步，不在服务器改源码。
 - **若 FAIL / 门槛异常**：把 `build.log` + `SUMMARY.txt` 带回本地分析定位，本地修复后再 push、server pull、rerun。
 ```

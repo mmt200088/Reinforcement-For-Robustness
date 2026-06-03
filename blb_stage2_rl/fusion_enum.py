@@ -5,8 +5,9 @@ Two layers:
 * **Pure core** (torch-free, locally testable): :func:`group_min_noise_options`
   takes already-evaluated per-block SF configs and produces the ordered option
   list — group by realized ``fusion_count``, keep the minimum-installed-noise set
-  per group (dedup by installed plan), force ``option 0 = baseline`` by
-  construction.
+  per group (dedup by installed plan), order by (fusion, variance, bits, lex) so
+  the all-max baseline lands at option 0 (it is the lowest-fusion global minimum
+  once rescale-None is excluded from the enumeration).
 
 * **Enumeration driver** (server-only): :func:`build_block_type` enumerates the
   effective-chain slots of one block-type, runs real ``replan`` + optimizer
@@ -62,8 +63,9 @@ def group_min_noise_options(
     noise_tol: float = 1e-18,
 ) -> List[Dict[str, Any]]:
     """Group valid configs by ``fusion_count``; per group keep the minimum-noise
-    set (within ``noise_tol``, deduped by installed plan); return ordered options
-    with ``option 0 == baseline`` by construction (spec §3.4).
+    set (within ``noise_tol``, deduped by installed plan); order by (fusion,
+    variance, bits, lex). The all-max baseline is the lowest-fusion global minimum
+    (rescale-None excluded), so it lands at option 0; a guard asserts this (spec §3.4).
     """
     baseline_key = tuple(int(x) for x in baseline_action_indices)
 
@@ -492,26 +494,43 @@ def check_k_independence(
 
 
 def decode_block_slots(ctx: BlockTypeBuildContext, block_indices: Sequence[int]) -> Dict[str, int]:
-    """SF/K-first human view {field_name: decoded SF} for one block config —
-    used to populate the final options' ``slots`` (kept options only)."""
-    from action_space import _BLOCK_SPECS, action_vector_to_cfgs
+    """SF/K-first human view {action_field_name: decoded SF} for one block config.
 
-    full = ctx.baseline_full.copy()
-    full[ctx.block_offset : ctx.block_offset + ctx.block_num_slots] = np.asarray(block_indices, dtype=int)
-    decoded = action_vector_to_cfgs(
-        full,
-        ctx.max_sfs,
-        num_layers=ctx.num_layers,
-        gelu_degree=ctx.gelu_per_layer,
-        attn_degree=ctx.attn_per_layer,
+    Decodes each effective non-K slot's action index straight to its scaling
+    factor via ``_field_level_values`` (the canonical per-slot decode, using the
+    calibrated max_sfs). This avoids the action-field-name vs cfg-attr-name
+    mismatch that previously left ``slots`` empty.
+    """
+    from action_space import (
+        _BLOCK_SPECS,
+        NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
+        _block_default_N,
+        _field_level_values,
+        _is_action_field_effective,
     )
-    cfg = decoded.cfgs_dict()[f"block{ctx.block_idx}"][ctx.ref_layer]
+
+    gelu = int(ctx.gelu_per_layer[ctx.ref_layer])
+    attn = int(ctx.attn_per_layer[ctx.ref_layer])
+    N = int(_block_default_N(ctx.block_idx, gelu_degree=gelu, attn_degree=attn))
     slots: Dict[str, int] = {}
-    for fname, kind, _m in _BLOCK_SPECS[ctx.block_idx].fields:
+    for pos, (fname, kind, _m) in enumerate(_BLOCK_SPECS[ctx.block_idx].fields):
         if kind == "K":
             continue
-        value = getattr(cfg, fname, None)
-        sf = getattr(value, "scaling_factor", None)
+        eff, _why = _is_action_field_effective(
+            layer_idx=ctx.ref_layer,
+            block_idx=ctx.block_idx,
+            field_name=str(fname),
+            attn_degree=attn,
+            gelu_degree=gelu,
+            profile=ctx.profile,
+        )
+        if not eff:
+            continue
+        idx = int(block_indices[pos])
+        max_sf = int(ctx.max_sfs.get(ctx.block_idx, str(fname), layer_idx=ctx.ref_layer))
+        levels = int(NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[kind])
+        vals = _field_level_values(kind=kind, levels=levels, max_sf=max_sf, N=N)
+        sf = vals[idx] if 0 <= idx < len(vals) else None
         if sf is not None:
             slots[str(fname)] = int(sf)
     return slots
