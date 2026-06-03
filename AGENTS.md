@@ -225,7 +225,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   inside `run_one`, which exits the wrapper shell rather than only the
   redirected launcher block. Use a subshell `( ...; exit "$rc" )` and keep
   `LATEST_PID`/`LATEST_RUN_DIR` fallback parsing so the queue can monitor and
-  advance. Do not use GRPO for any queue item.
+  advance. Updated 2026-06-04: the user wants each Stage-1 task summarized
+  promptly before launching the next task, so do not let the queue auto-advance
+  past a completed task without report generation. The current server state is
+  `base_rte` running from verified temp source
+  `/hy-tmp/RFR_stage1_queue_8d1bc9b_mLConE/src`, state directory
+  `/hy-tmp/stage1_ppo_queue_entropy0p1_20260603_225253`, training PID
+  `1116097`; its queue wrapper was intentionally paused so completion can be
+  handled as `waiting_report` before launching `base_sst2`. Do not use GRPO for
+  any queue item.
 - Stage-1 GRPO MRPC current snapshot, added 2026-06-01: while the GRPO run was
   still active, a snapshot report was generated at
   `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/grpo_current_snapshot_20260601_164215/stage1_mrpc_grpo_current_result_report.html`.
