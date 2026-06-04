@@ -54,13 +54,16 @@ def _utcnow_slug() -> str:
     return dt.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
 
 
-def _enumerate_shard_worker(payload: Dict[str, Any]) -> List[Tuple]:
+def _enumerate_shard_worker(payload: Dict[str, Any]) -> Tuple[int, List[Tuple]]:
     """multiprocessing worker: build context + enumerate one shard.
 
-    Returns a list of plain tuples (picklable) for EvaluatedConfig fields.
-    Each worker rebuilds its own context (ReplanSession is not picklable); the
-    slot classification is deterministic, so every worker enumerates the same
-    product and the ``i % num_shards`` stride is consistent.
+    Returns ``(num_valid_seen, reduced_tuples)``. ``reduced_tuples`` is this shard's
+    per-fusion_count minimum-variance set (plain picklable tuples) — NOT all valid
+    configs, so a worker returns O(distinct min-var signatures) rows even for
+    block4's ~3e8/96 stride (the full list would OOM / blow pickle). Each worker
+    rebuilds its own context (ReplanSession is not picklable); the slot
+    classification is deterministic, so every worker enumerates the same product
+    and the ``i % num_shards`` stride is consistent.
     """
     import fusion_count_map as fcm
     import fusion_enum
@@ -75,13 +78,13 @@ def _enumerate_shard_worker(payload: Dict[str, Any]) -> List[Tuple]:
         num_layers=payload["num_layers"],
         ref_layer=payload["ref_layer"],
     )
-    ecs = fusion_enum.enumerate_shard(
+    ecs, num_valid = fusion_enum.enumerate_shard(
         ctx,
         shard_idx=payload["shard_idx"],
         num_shards=payload["num_shards"],
         noise_order=fcm.SummedInstalledVariance(),
     )
-    return [
+    return num_valid, [
         (ec.action_indices, ec.fusion_count, ec.total_bits, ec.total_variance, ec.installed_signature) for ec in ecs
     ]
 
@@ -198,9 +201,13 @@ def build_one_block_type(
             shard_results = pool.map(_enumerate_shard_worker, payloads)
     elapsed = time.time() - t0
 
-    # Merge shards into EvaluatedConfig list for the pure grouping core.
+    # Merge shards' reduced sets into one EvaluatedConfig list for the pure grouping
+    # core; each shard already kept only its per-fusion min-variance superset, so
+    # this list is small even when num_valid_total is hundreds of millions.
     evaluated = []
-    for shard in shard_results:
+    num_valid_total = 0
+    for num_valid, shard in shard_results:
+        num_valid_total += int(num_valid)
         for ai, fc, tb, tv, sig in shard:
             evaluated.append(
                 fusion_enum.EvaluatedConfig(
@@ -237,7 +244,8 @@ def build_one_block_type(
             "enum_positions": ctx.enum_positions,
             "pinned_positions": ctx.pinned_positions,
             "enum_total_combos": total_combos,
-            "valid_configs": len(evaluated),
+            "valid_configs": num_valid_total,
+            "kept_configs": len(evaluated),
             "num_options": len(options),
             "fusion_counts": fusion_counts,
             "wall_seconds": round(elapsed, 2),

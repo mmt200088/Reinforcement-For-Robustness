@@ -198,9 +198,11 @@ class ExternalCostThreadingTest(unittest.TestCase):
 class RealMapIntegrationTest(unittest.TestCase):
     """End-to-end against the committed mrpc maps + reward.FUSION_COST_W weights.
 
-    Validates the block1/block4 fusion-degeneracy that the design relies on is real
-    (max_fusion==0 from the actual maps), and that a realistic 47-block episode
-    normalizes to [0, 1] with MAX_ACTUAL == 4630.
+    Map-AGNOSTIC: block1/block4 are fusion-degenerate under the old shallow maps
+    (max_fusion==0) but fusable under the deeper 10-level maps (max_fusion==1).
+    MAX_ACTUAL is computed dynamically from each block's actual max_fusion, so these
+    tests assert the self-normalizing invariants (cost_norm 0 at baseline, 1 at max
+    saving) + a dynamically-expected MAX_ACTUAL, holding for BOTH map versions.
     """
 
     @classmethod
@@ -210,19 +212,27 @@ class RealMapIntegrationTest(unittest.TestCase):
     def _max_fusion(self, graph_key):
         return max((int(o.fusion_count) for o in self.fmap.options(graph_key)), default=0)
 
-    def test_block1_block4_degenerate_block2_block5_fusable(self):
-        self.assertEqual(self._max_fusion("block1_mrpc"), 0)   # degenerate (K-only)
-        self.assertEqual(self._max_fusion("block4"), 0)        # degenerate (K-only)
-        self.assertEqual(self._max_fusion("block2_mrpc"), 1)   # fusable
-        self.assertEqual(self._max_fusion("block5_n4"), 1)     # fusable
+    _SCHED = ((1, "block1_mrpc", 11), (2, "block2_mrpc", 12), (4, "block4", 12), (5, "block5_n4", 12))
+
+    def test_block2_block5_fusable_and_all_maps_load(self):
+        # block2 / block5_n4 fuse under any map version; block1/block4 are {0 or 1}.
+        self.assertGreaterEqual(self._max_fusion("block2_mrpc"), 1)
+        self.assertGreaterEqual(self._max_fusion("block5_n4"), 1)
+        self.assertIn(self._max_fusion("block1_mrpc"), (0, 1))
+        self.assertIn(self._max_fusion("block4"), (0, 1))
+
+    def _expected_max_actual(self):
+        total = 0.0
+        for blk, gk, n in self._SCHED:
+            if self._max_fusion(gk) > 0:
+                total += rwd.FUSION_COST_W[blk] * n
+            total += rwd.TRUNC_COST_W * n
+        return total
 
     def _schedule_choices(self, *, fusion_count_of, k_value):
         """47-block mrpc schedule: 11 block1 (L1-11) + 12 each of block2/4/5."""
         choices = []
-        for blk, gk, n in (
-            (1, "block1_mrpc", 11), (2, "block2_mrpc", 12),
-            (4, "block4", 12), (5, "block5_n4", 12),
-        ):
+        for blk, gk, n in self._SCHED:
             mf = self._max_fusion(gk)
             for _ in range(n):
                 choices.append(fusion_cost.BlockChoice(
@@ -238,7 +248,7 @@ class RealMapIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(len(choices), 47)
         self.assertEqual(res.cost_norm, 0.0)
-        self.assertAlmostEqual(res.max_actual, 4630.0)
+        self.assertAlmostEqual(res.max_actual, self._expected_max_actual())
 
     def test_max_saving_episode_normalizes_to_one(self):
         choices = self._schedule_choices(fusion_count_of=lambda mf: mf, k_value=8)
@@ -246,7 +256,7 @@ class RealMapIntegrationTest(unittest.TestCase):
             choices, fusion_w=rwd.FUSION_COST_W, trunc_w=rwd.TRUNC_COST_W,
         )
         self.assertAlmostEqual(res.cost_norm, 1.0)
-        self.assertAlmostEqual(res.max_actual, 4630.0)
+        self.assertAlmostEqual(res.max_actual, self._expected_max_actual())
 
 
 class PinClassificationCriterionTest(unittest.TestCase):
@@ -280,6 +290,56 @@ class PinClassificationCriterionTest(unittest.TestCase):
 
     def test_invalid_level_breaks_pin(self):
         self.assertTrue(fusion_enum._level_breaks_pin({"valid": False}, (0, 100)))
+
+
+class ShardedReduceEquivalenceTest(unittest.TestCase):
+    """The streaming per-shard `_MinNoiseReducer` (OOM fix for block4's ~3e8 valid
+    configs) must produce the SAME options as batch grouping over every valid config.
+    """
+
+    def _make_configs(self):
+        import random
+
+        rng = random.Random(1234)
+        EC = fusion_enum.EvaluatedConfig
+        cfgs = [EC((9, 9, 9), 0, 100, 1.0, (-1,), {})]  # baseline: fc0, global-min var
+        # explicit fc=1 ties at the fc=1 minimum (distinct signatures, all kept).
+        cfgs += [EC((1, 2, 3), 1, 90, 1.2, (-2,), {}),
+                 EC((3, 2, 1), 1, 95, 1.2, (-3,), {}),
+                 EC((2, 1, 3), 1, 88, 1.2, (-4,), {})]
+        for i in range(3000):
+            ai = tuple(rng.randint(0, 9) for _ in range(3))
+            fc = rng.choice([0, 1, 1, 2])
+            cfgs.append(EC(ai, fc, rng.randint(80, 120), round(rng.uniform(1.5, 5.0), 6), (i,), {}))
+        return cfgs[0].action_indices, cfgs
+
+    @staticmethod
+    def _keys(options):
+        return [(o["fusion_count"], round(o["total_variance"], 9), tuple(o["action_indices"])) for o in options]
+
+    def test_sharded_matches_batch(self):
+        baseline, cfgs = self._make_configs()
+        batch = fusion_enum.group_min_noise_options(cfgs, baseline)
+        k = 7
+        reducers = [fusion_enum._MinNoiseReducer() for _ in range(k)]
+        for i, ec in enumerate(cfgs):
+            reducers[i % k].add(ec)
+        merged = []
+        for r in reducers:
+            merged.extend(r.results())
+        sharded = fusion_enum.group_min_noise_options(merged, baseline)
+        self.assertEqual(self._keys(batch), self._keys(sharded))
+        # the fc=1 minimum has 3 tied members; all must survive both paths.
+        fc1_batch = [o for o in batch if o["fusion_count"] == 1]
+        self.assertEqual(len(fc1_batch), 3)
+
+    def test_reducer_counts_and_shrinks(self):
+        _baseline, cfgs = self._make_configs()
+        r = fusion_enum._MinNoiseReducer()
+        for ec in cfgs:
+            r.add(ec)
+        self.assertEqual(r.num_valid, len(cfgs))  # true count preserved
+        self.assertLess(len(r.results()), len(cfgs))  # kept set is small
 
 
 @unittest.skipUnless(_HAS_ASP, "action_space requires torch (server contract gate)")

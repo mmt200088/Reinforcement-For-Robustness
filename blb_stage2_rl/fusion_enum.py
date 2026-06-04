@@ -120,6 +120,56 @@ def group_min_noise_options(
     return options
 
 
+class _MinNoiseReducer:
+    """Streaming per-``fusion_count`` minimum-installed-variance reducer.
+
+    Used INSIDE each shard worker so it retains only O(distinct min-variance
+    signatures) configs instead of all its valid configs — block4's ~3e8 valid
+    configs across 96 workers would otherwise OOM the box and blow multiprocessing
+    pickle traffic. Keeps, per fusion_count, the configs within ``noise_tol`` of the
+    running minimum (deduped by installed_signature, cheapest bits), resetting that
+    fusion_count's set when a strictly-lower minimum (> tol below) appears.
+
+    Soundness: the union of all shards' kept sets is a SUPERSET of the global
+    minimum-variance set. A globally-at-min config c (variance ≤ G+tol) sits in some
+    shard whose running min, when c is processed, is ≥ the shard's final min ≥ G, so
+    c is within tol of the running min → kept; and no later config can reset it
+    (any resetting config d has d.var >= shard_min >= G >= c.var - tol, so d cannot be
+    > tol below the running min that c established). The final
+    ``group_min_noise_options`` over the union therefore reproduces the exact result
+    of grouping every valid config.
+    """
+
+    def __init__(self, noise_tol: float = 1e-18) -> None:
+        self.noise_tol = float(noise_tol)
+        self.num_valid = 0  # total configs seen (diagnostic; the kept set is small)
+        self._min: Dict[int, float] = {}
+        self._by_sig: Dict[int, Dict[Hashable, EvaluatedConfig]] = {}
+
+    def add(self, ec: EvaluatedConfig) -> None:
+        self.num_valid += 1
+        fc = int(ec.fusion_count)
+        cur = self._min.get(fc)
+        if cur is None or ec.total_variance < cur - self.noise_tol:
+            # strictly new minimum (or first) → this fc's old kept set is now > tol
+            # above the new min and is discarded.
+            self._min[fc] = ec.total_variance
+            self._by_sig[fc] = {ec.installed_signature: ec}
+            return
+        if ec.total_variance <= cur + self.noise_tol:
+            self._min[fc] = min(cur, ec.total_variance)
+            bucket = self._by_sig[fc]
+            prev = bucket.get(ec.installed_signature)
+            if prev is None or (ec.total_bits, ec.action_indices) < (prev.total_bits, prev.action_indices):
+                bucket[ec.installed_signature] = ec
+
+    def results(self) -> List[EvaluatedConfig]:
+        out: List[EvaluatedConfig] = []
+        for bucket in self._by_sig.values():
+            out.extend(bucket.values())
+        return out
+
+
 def _level_breaks_pin(probe_result: Mapping[str, Any], base_key: Tuple[int, int]) -> bool:
     """One probed slot level forces ENUMERATION (the slot cannot be pinned) iff it
     is invalid or changes the baseline ``(fusion_count, total_bits)``.
@@ -466,10 +516,20 @@ def enumerate_shard(
     shard_idx: int,
     num_shards: int,
     noise_order: Any,
-) -> List[EvaluatedConfig]:
-    """Enumerate this worker's stride of the chain-slot cartesian product."""
+    noise_tol: float = 1e-18,
+) -> Tuple[List[EvaluatedConfig], int]:
+    """Enumerate this worker's stride of the chain-slot cartesian product, returning
+    ``(per-fusion_count minimum-installed-variance set, num_valid_seen)``.
+
+    The streaming :class:`_MinNoiseReducer` means a worker holds O(distinct min-var
+    signatures) configs, not all its valid configs — mandatory for block4 (~3e8
+    valid across 96 workers would OOM the box + blow pickle traffic). The reduced
+    set is a superset of the global minimum, so the main-process
+    ``group_min_noise_options`` over all shards' sets is still exact. ``num_valid``
+    is returned separately so the build still reports the true valid count.
+    """
     base_block = np.asarray(ctx.baseline_block_indices, dtype=int)
-    out: List[EvaluatedConfig] = []
+    reducer = _MinNoiseReducer(noise_tol=float(noise_tol))
     for i, combo in enumerate(itertools.product(*ctx.enum_choices)):
         if (i % int(num_shards)) != int(shard_idx):
             continue
@@ -480,7 +540,7 @@ def enumerate_shard(
         if not res.get("valid"):
             continue
         points = res["points"]
-        out.append(
+        reducer.add(
             EvaluatedConfig(
                 action_indices=tuple(int(x) for x in block),
                 fusion_count=int(res["fusion_count"]),
@@ -490,7 +550,7 @@ def enumerate_shard(
                 slots={},
             )
         )
-    return out
+    return reducer.results(), reducer.num_valid
 
 
 def degeneracy_probe(
