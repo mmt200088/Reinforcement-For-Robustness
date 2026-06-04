@@ -120,6 +120,26 @@ def group_min_noise_options(
     return options
 
 
+def _level_breaks_pin(probe_result: Mapping[str, Any], base_key: Tuple[int, int]) -> bool:
+    """One probed slot level forces ENUMERATION (the slot cannot be pinned) iff it
+    is invalid or changes the baseline ``(fusion_count, total_bits)``.
+
+    The ``total_bits`` half is a build-time over-enumeration PROXY, NOT a reward
+    term (bits left the reward 2026-06-03). It is required for soundness: fusion is
+    driven by the JOINT lowering of several non-rescale encode SFs (committed
+    ground-truth maps: each block's fusion>0 option lowers 2-4 encodes together
+    while all rescales stay at baseline). No single encode moves fusion alone, so a
+    fusion-only predicate returns False for every one of them, pins them all, and
+    the map collapses to fusion={0}. Lowering any encode SF lowers total_bits, so
+    the (fusion, bits) predicate keeps every such encode enumerated; the cartesian
+    product over enumerated slots then recovers the joint fusion configs. See
+    ``prepare_block_type_context`` for the full rationale.
+    """
+    if not probe_result.get("valid"):
+        return True
+    return (int(probe_result["fusion_count"]), int(probe_result["total_bits"])) != tuple(base_key)
+
+
 # ---------------------------------------------------------------------------
 # Enumeration driver (server-only; torch + Rescale_optimizer imported lazily)
 # ---------------------------------------------------------------------------
@@ -374,7 +394,7 @@ def prepare_block_type_context(
     base_res = _eval_block(ctx, base_block)
     if not base_res.get("valid"):
         raise RuntimeError(f"{graph_key}: baseline (all-max) block config is invalid under replan")
-    base_fc = int(base_res["fusion_count"])
+    base_key = (int(base_res["fusion_count"]), int(base_res["total_bits"]))
 
     # Classify each effective non-K slot.
     #
@@ -386,15 +406,21 @@ def prepare_block_type_context(
     # optimizer honoured into a strictly-lower-noise / same-bits config that
     # dominated the all-max baseline (2026-06-03 block1 crash).
     #
-    # Non-rescale (F/W/M/S) slots: full single-axis scan — pin at baseline (max)
-    # iff every level leaves the realized ``fusion_count`` unchanged. 2026-06-04:
-    # relaxed from "(fusion_count, total_bits) unchanged" to fusion_count only —
-    # total_bits is no longer in the reward, so a slot that moves only bits (not
-    # fusion) doesn't need enumerating; its minimum-noise value is the max-SF
-    # baseline anyway, so pinning it there gives identical kept options far cheaper
-    # (this is what makes the uniform 10-level action space build feasible). A slot
-    # that moves fusion at ANY level is still enumerated (no fusion omission). Scans
-    # every level, so it is robust to non-monotonic effects.
+    # Non-rescale (F/W/M/S) slots: single-axis scan — pin at baseline (max) iff
+    # every level keeps the baseline ``(fusion_count, total_bits)``. The total_bits
+    # half is a build-time over-enumeration PROXY, not a reward term (bits left the
+    # reward 2026-06-03). It is REQUIRED for soundness: the committed ground-truth
+    # maps show every block's fusion>0 option is reached by lowering 2-4 non-rescale
+    # ENCODE SFs *jointly* while ALL rescales stay at baseline (e.g. block2 fc=1 =
+    # {inv_std_fresh 28->20, gamma 20->16, wk 22->16}; every block5_n* the same).
+    # No single encode moves fusion alone, so a fusion-only solo-probe pins every
+    # one of them and the map collapses to fusion={0} — the 2026-06-04 relaxation
+    # did exactly that and is REVERTED here. Because lowering any encode SF lowers
+    # total_bits, the (fusion, bits) probe keeps all such encodes in the enumerated
+    # set, and the downstream cartesian product over enumerated slots recovers the
+    # joint fusion configs. Pinning is thus restricted to slots that move NEITHER
+    # fusion nor bits (effectively inert). Scans every level (robust to non-monotone
+    # effects). Do NOT re-relax this to fusion-only without enumerating slots jointly.
     for pos, (fname, kind, _maxsf) in enumerate(fields):
         if kind == "K":
             continue
@@ -421,8 +447,7 @@ def prepare_block_type_context(
                 continue
             probe = base_block.copy()
             probe[pos] = lvl
-            pres = _eval_block(ctx, probe)
-            if (not pres.get("valid")) or int(pres["fusion_count"]) != base_fc:
+            if _level_breaks_pin(_eval_block(ctx, probe), base_key):
                 constant = False
                 break
         if constant:
@@ -466,6 +491,62 @@ def enumerate_shard(
             )
         )
     return out
+
+
+def degeneracy_probe(
+    ctx: BlockTypeBuildContext,
+    *,
+    num_random: int = 2000,
+    seed: int = 0,
+) -> Dict[str, Any]:
+    """Cheap evidence that a block-type is fusion-degenerate over its enumerated
+    grid — for blocks too large to enumerate fully.
+
+    The (fusion, total_bits) classification deliberately over-enumerates encodes
+    that move bits but not fusion (e.g. block4's ~1e6 encode combos that, per the
+    near-exhaustive committed map, never fuse). When such a block exceeds the build
+    budget, this probe decides whether the all-max baseline is its only option.
+
+    Evaluates the all-MIN-SF corner (the maximally-fused config under the monotone
+    "lower SF => more fusion" structure of rescale fusion — pulling EVERY lever to
+    its deepest level) plus ``num_random`` uniform samples of the enumerated
+    cartesian product. ``degenerate`` is True iff every valid probe keeps the
+    baseline ``fusion_count``. A True result is strong (the corner maximally fuses);
+    a False result is conclusive (a concrete fusing config exists) and must block
+    any degenerate shortcut.
+    """
+    base_block = np.asarray(ctx.baseline_block_indices, dtype=int)
+    base_res = _eval_block(ctx, base_block)
+    base_fc = int(base_res["fusion_count"]) if base_res.get("valid") else None
+
+    def _with(combo: Sequence[int]) -> np.ndarray:
+        blk = base_block.copy()
+        for pos, lvl in zip(ctx.enum_positions, combo, strict=True):
+            blk[pos] = int(lvl)
+        return blk
+
+    corner = [ch[0] for ch in ctx.enum_choices]  # deepest level of every enum slot
+    corner_res = _eval_block(ctx, _with(corner))
+    rng = np.random.default_rng(int(seed))
+    probes = [corner] + [[int(rng.choice(ch)) for ch in ctx.enum_choices] for _ in range(int(num_random))]
+
+    fusion_seen: set = set()
+    checked = 0
+    for combo in probes:
+        r = _eval_block(ctx, _with(combo))
+        if r.get("valid"):
+            fusion_seen.add(int(r["fusion_count"]))
+            checked += 1
+    degenerate = (base_fc is not None) and fusion_seen.issubset({base_fc})
+    return {
+        "degenerate": bool(degenerate),
+        "base_fc": base_fc,
+        "fusion_seen": sorted(fusion_seen),
+        "corner_valid": bool(corner_res.get("valid")),
+        "corner_fusion": int(corner_res["fusion_count"]) if corner_res.get("valid") else None,
+        "samples_checked": int(checked),
+        "num_random": int(num_random),
+    }
 
 
 def check_k_independence(

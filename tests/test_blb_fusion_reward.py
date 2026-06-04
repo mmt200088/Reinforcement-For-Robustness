@@ -19,6 +19,7 @@ for _p in (str(_REPO_ROOT), str(_BLB_DIR)):
 
 import fusion_cost
 import fusion_count_map as fcm
+import fusion_enum
 import reward as rwd
 
 try:  # action_space transitively imports torch (blb_rl_bridge) — skip locally if absent
@@ -246,6 +247,39 @@ class RealMapIntegrationTest(unittest.TestCase):
         )
         self.assertAlmostEqual(res.cost_norm, 1.0)
         self.assertAlmostEqual(res.max_actual, 4630.0)
+
+
+class PinClassificationCriterionTest(unittest.TestCase):
+    """Locks the (fusion_count, total_bits) pin criterion in fusion_enum.
+
+    Fusion is driven by the JOINT lowering of several non-rescale encode SFs
+    (committed maps: block2 fc=1 = inv_std_fresh+gamma+wk lowered together). Probed
+    ALONE from baseline, each such encode keeps fusion_count but lowers total_bits.
+    A fusion-only criterion pins all of them and the map collapses to fusion={0};
+    the (fusion, bits) criterion keeps them enumerated. Regression guard against the
+    2026-06-04 relaxation that was reverted after server ground-truth proved the
+    joint structure.
+    """
+
+    def test_joint_encode_kept_by_bits_proxy(self):
+        base_key = (0, 100)
+        # an encode lowered alone: fusion UNCHANGED (it is only a joint lever), but
+        # total_bits drops -> the (fusion, bits) probe must force enumeration.
+        probe = {"valid": True, "fusion_count": 0, "total_bits": 96}
+        self.assertTrue(fusion_enum._level_breaks_pin(probe, base_key))
+        # the latent bug it guards: fusion alone is unchanged, so a fusion-only
+        # predicate would (wrongly) keep the slot pinnable.
+        self.assertEqual(int(probe["fusion_count"]), base_key[0])
+
+    def test_truly_inert_slot_is_pinnable(self):
+        # moves neither fusion nor bits -> safe to pin at baseline (min noise).
+        self.assertFalse(fusion_enum._level_breaks_pin({"valid": True, "fusion_count": 0, "total_bits": 100}, (0, 100)))
+
+    def test_fusion_change_breaks_pin(self):
+        self.assertTrue(fusion_enum._level_breaks_pin({"valid": True, "fusion_count": 1, "total_bits": 100}, (0, 100)))
+
+    def test_invalid_level_breaks_pin(self):
+        self.assertTrue(fusion_enum._level_breaks_pin({"valid": False}, (0, 100)))
 
 
 @unittest.skipUnless(_HAS_ASP, "action_space requires torch (server contract gate)")

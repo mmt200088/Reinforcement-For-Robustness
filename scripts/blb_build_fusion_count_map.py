@@ -97,6 +97,8 @@ def build_one_block_type(
     num_layers: int,
     ref_layer: int,
     workers: int,
+    max_enum_combos: int = 0,
+    degeneracy_probe_samples: int = 2000,
 ) -> Dict[str, Any]:
     import fusion_enum
 
@@ -114,6 +116,63 @@ def build_one_block_type(
     )
     total_combos = ctx.enum_total()
     num_shards = max(1, int(workers))
+
+    # Budget guard: the sound (fusion, total_bits) classification enumerates every
+    # fusion-relevant encode JOINTLY, so the deep 10-level grid can be huge for a
+    # block with many encodes (block4 ~ 7e8 combos ~ tens of hours), even though
+    # such a block is usually fusion-DEGENERATE (the encodes move bits but not
+    # fusion). NOTE: we cannot just keep the existing committed map — its
+    # action_indices use the OLD per-slot level convention and would mis-decode
+    # under the new uniform-10 decode. Instead run a degeneracy probe (all-min
+    # corner + random samples); if nothing fuses, emit a correct new-convention
+    # baseline-only map cheaply; if any config fuses, REFUSE to shortcut.
+    if max_enum_combos and total_combos > int(max_enum_combos):
+        probe = fusion_enum.degeneracy_probe(ctx, num_random=int(degeneracy_probe_samples))
+        if not probe["degenerate"]:
+            raise RuntimeError(
+                f"{graph_key}: enum_total {total_combos} > budget {max_enum_combos} AND the degeneracy probe "
+                f"found fusion {probe['fusion_seen']} (base_fc={probe['base_fc']}) — refusing to emit a shortcut "
+                f"map. Raise --max-enum-combos to build it fully, or reduce the action level count."
+            )
+        baseline_indices = [int(x) for x in ctx.baseline_block_indices]
+        options = [
+            {
+                "option_id": 0,
+                "fusion_count": int(probe["base_fc"]),
+                "tie_index": 0,
+                "total_variance": 0.0,
+                "total_bits": 0,
+                "slots": fusion_enum.decode_block_slots(ctx, baseline_indices),
+                "action_indices": baseline_indices,
+            }
+        ]
+        k_indep = fusion_enum.check_k_independence(ctx, sample_configs=[baseline_indices])
+        return {
+            "graph_key": graph_key,
+            "profile": profile,
+            "block_idx": block_idx,
+            "gelu_degree": gelu_degree,
+            "attn_degree": attn_degree,
+            "k_slot_index": ctx.k_slot_index,
+            "block_num_slots": ctx.block_num_slots,
+            "options": options,
+            "over_budget_degenerate": True,
+            "build_meta": {
+                "active_rescale_fields": ctx.active_rescale_fields,
+                "enum_positions": ctx.enum_positions,
+                "pinned_positions": ctx.pinned_positions,
+                "enum_total_combos": total_combos,
+                "valid_configs": 1,
+                "num_options": 1,
+                "fusion_counts": [int(probe["base_fc"])],
+                "wall_seconds": 0.0,
+                "workers": 0,
+                "budget": int(max_enum_combos),
+                "over_budget_degenerate": True,
+                "degeneracy_probe": probe,
+                "k_independence": k_indep,
+            },
+        }
 
     payloads = [
         {
@@ -221,6 +280,19 @@ def main() -> int:
     ap.add_argument("--ref-layer", type=int, default=1)
     ap.add_argument("--workers", type=int, default=max(1, (mp.cpu_count() or 2) - 1))
     ap.add_argument("--only", default="", help="comma list of graph_keys to build (default: all 7)")
+    ap.add_argument(
+        "--max-enum-combos",
+        type=int,
+        default=0,
+        help="for any block-type whose enumerated cartesian product exceeds this, run a degeneracy probe "
+        "instead of the full build (emits a baseline-only map if degenerate, else raises); 0 = unlimited",
+    )
+    ap.add_argument(
+        "--degeneracy-probe-samples",
+        type=int,
+        default=2000,
+        help="random samples (plus the all-min corner) used by the over-budget degeneracy probe",
+    )
     ap.add_argument("--report", default="")
     args = ap.parse_args()
 
@@ -243,11 +315,23 @@ def main() -> int:
             num_layers=args.num_layers,
             ref_layer=args.ref_layer,
             workers=args.workers,
+            max_enum_combos=args.max_enum_combos,
+            degeneracy_probe_samples=args.degeneracy_probe_samples,
         )
         results.append(res)
+        m = res["build_meta"]
         max_num_options = max(max_num_options, len(res["options"]))
         (out_dir / f"{graph_key}.json").write_text(json.dumps(res, indent=2), encoding="utf-8")
-        m = res["build_meta"]
+        if res.get("over_budget_degenerate"):
+            pr = m["degeneracy_probe"]
+            print(
+                f"  -> OVER-BUDGET DEGENERATE: enum_total={m['enum_total_combos']} > {m['budget']}; "
+                f"probe base_fc={pr['base_fc']} corner_fusion={pr['corner_fusion']} "
+                f"fusion_seen={pr['fusion_seen']} samples={pr['samples_checked']} "
+                f"-> wrote baseline-only map (new index convention)",
+                flush=True,
+            )
+            continue
         print(
             f"  -> options={m['num_options']} fusion_counts={m['fusion_counts']} "
             f"valid={m['valid_configs']}/{m['enum_total_combos']} "
@@ -271,9 +355,10 @@ def main() -> int:
     print(f"max_num_options={max_num_options}")
     for r in results:
         m = r["build_meta"]
+        tag = " [over-budget degenerate probe]" if r.get("over_budget_degenerate") else ""
         print(
             f"  {r['graph_key']}: #options={m['num_options']} fusion={m['fusion_counts']} "
-            f"K-indep={m['k_independence']['k_independent']}"
+            f"K-indep={m['k_independence']['k_independent']}{tag}"
         )
     bad_k = [r["graph_key"] for r in results if not r["build_meta"]["k_independence"]["k_independent"]]
     if bad_k:
