@@ -20,6 +20,17 @@ def _method_region(name: str) -> str:
 
 
 class Stage1SelectionSemanticsTest(unittest.TestCase):
+    def test_stage1_rl_masks_degree_zero_relu_action(self):
+        text = _source_text()
+        self.assertIn(
+            "STAGE1_GELU_ACTION_MASK = np.array([True, True, True, False], dtype=bool)",
+            text,
+        )
+
+        region = _method_region("get_gelu_action_mask")
+        self.assertIn("return STAGE1_GELU_ACTION_MASK.copy()", region)
+        self.assertNotIn("return np.array([True, True, True, True]", region)
+
     def test_stage1_final_selection_keeps_raw_reward_best_config(self):
         text = _source_text()
         marker = "# ---- 局部最优检测：写入 pruning_search_log.txt ----"

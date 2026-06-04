@@ -67,11 +67,13 @@ import hashlib
 
 # ==================== PPO 常量与配置定义 ====================
 # 动作映射表
-# GELU head 有四个动作。第4个动作 (idx 3) 现在是 degree 0 = ReLU（用 ReLU 替换
-# 模型中的 GELU），不再是被永久 mask 的占位。Stage-1 RL 只对每层 gelu 决策；
-# softmax 不再是动作，每层固定 degree 6（SOFTMAX_MAP 保留供固定/兼容用）。
+# GELU head 保持四个 logits 以兼容旧 checkpoint / buffer 形状，但 Stage-1 RL
+# 只允许 idx 0/1/2 -> degree 4/2/1。idx 3 -> degree 0 (ReLU) 保留给历史
+# 配置与手工 eval 解码，训练采样时永久 mask。softmax 不再是动作，每层固定
+# degree 6（SOFTMAX_MAP 保留供固定/兼容用）。
 GELU_MAP = {0: 4, 1: 2, 2: 1, 3: 0}
 GELU_COST = {4: 3.0, 2: 2.5, 1: 1.0, 0: -1.0}
+STAGE1_GELU_ACTION_MASK = np.array([True, True, True, False], dtype=bool)
 SOFTMAX_MAP = {0: 6, 1: 5, 2: 4, 3: 3, 4: 2}
 SOFTMAX_COST = {6: 3.0, 5: 2.5, 4: 2.0, 3: 1.5, 2: 1.0}
 # A (2026-05-30): softmax 不再是 Stage-1 动作；每层固定为该 degree（成本为常数）。
@@ -1963,12 +1965,13 @@ class TransformerOptEnv:
         """
         返回指定层的 GELU 动作掩码 (4-dim bool)。
         True = 该动作可选, False = 被禁止。
-        动作索引: 0=degree4, 1=degree2, 2=degree1, 3=degree0(ReLU)；四个动作全部可选。
+        动作索引: 0=degree4, 1=degree2, 2=degree1, 3=degree0(ReLU)。
+        Stage-1 RL 当前禁用 degree 0；idx 3 保留给历史配置与手工 eval。
         
         如果 layer_idx 为 None，使用 self.current_layer。
         """
         del layer_idx
-        return np.array([True, True, True, True], dtype=bool)
+        return STAGE1_GELU_ACTION_MASK.copy()
     
     def _get_state(self):
         """

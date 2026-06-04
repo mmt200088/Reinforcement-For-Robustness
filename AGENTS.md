@@ -161,14 +161,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   environment. The Stage-1 reward cost denominator still uses the old high-degree
   cost reference `gelu=4, softmax=6` so cost savings remain well-defined; do not
   interpret that cost reference as the metric baseline.
-- Stage-1 mental model and speed note, updated 2026-05-31: Stage-1 is a
+- Stage-1 mental model and speed note, updated 2026-06-04: Stage-1 is a
   plaintext-only search over per-layer GELU replacement choices. It should only
   replace GELU and the fixed Softmax approximation through
   `function_handler.py`; it should not inject BLB/noise. Current Stage-1 RL only
   decides GELU. Softmax is no longer an action and is fixed to degree `6` for
-  every layer. GELU choices are degrees `4`, `2`, `1`, and `0`, where degree
-  `0` means replacing GELU with ReLU. The Stage-1 RL code is in
-  `layer_importance_evaluator.py`, and a BERT-base episode has 12 per-layer
+  every layer. GELU training choices are degrees `4`, `2`, and `1`; degree `0`
+  / ReLU is now disabled for Stage-1 RL sampling and retained only for
+  historical configs or manual evaluation compatibility. The Stage-1 RL code is
+  in `layer_importance_evaluator.py`, and a BERT-base episode has 12 per-layer
   GELU decisions. Stage-1 inference tests must use the full validation set
   (`validation_full`) during both RL reward evaluation and final evaluation; do
   not switch Stage-1 online reward or final eval to the training set or a
