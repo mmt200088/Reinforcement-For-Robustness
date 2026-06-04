@@ -271,7 +271,9 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   and `large_sst2` processes were killed. Remaining order after `base_mrpc` is
   `base_rte`, `base_sst2`, `large_mrpc`, `large_rte`, `large_sst2`. Continue
   one task at a time, build and commit/push each compact HTML report before
-  launching the next task, and do not use GRPO.
+  launching the next task, and do not use GRPO. Explicit user reminder,
+  2026-06-04: when the active BERT-base MRPC Stage-1 run completes, build its
+  HTML report first and return the local report path before moving on.
 - Stage-1 GRPO MRPC current snapshot, added 2026-06-01: while the GRPO run was
   still active, a snapshot report was generated at
   `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/grpo_current_snapshot_20260601_164215/stage1_mrpc_grpo_current_result_report.html`.
