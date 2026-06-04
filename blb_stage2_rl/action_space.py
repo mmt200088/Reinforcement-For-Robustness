@@ -66,10 +66,17 @@ from function_handler import (
 # ---------------------------------------------------------------------------
 # 全局常量：每类噪声的离散挡位数（与 spec §4.1 对齐）
 # ---------------------------------------------------------------------------
-LEVELS_W = 5         # weight encode (5 挡：max-8 .. max)
-LEVELS_MS = 3        # mask / scalar encode (3 挡：max-4 .. max)
-LEVELS_R = 4         # rescale (4 挡：max-6 .. max)
-LEVELS_F = 5         # fresh (5 挡：max-8 .. max)
+LEVELS_W = 5         # weight encode (5 挡，step-2：max-8 .. max)
+LEVELS_MS = 3        # mask / scalar encode (3 挡，step-2：max-4 .. max)
+# Rescale slots are the fusion lever: lowering a rescale's target SF is what makes
+# Rescale_optimizer fuse. 2026-06-04 deepened from 4 to 15 to surface more fusion
+# counts (the old 3-value sweep max-4..max only ever reached fusion 0/1). step-1
+# (see _rescale_sf_from_index) gives idx0=None + idx1..14 = max-13..max; _snap_to_table
+# floors any value below the noise table at SF=10 (low-max_sf rescales get duplicate
+# SF=10 entries that the build dedups by installed-noise signature). Non-rescale kinds
+# stay step-2 and unchanged so their range/build-cost are untouched.
+LEVELS_R = 15        # rescale (step-1 deep sweep, snap floors at SF=10)
+LEVELS_F = 5         # fresh (5 挡，step-2：max-8 .. max)
 
 # Truncation K 挡位默认扩展为 6 档，但保持旧 checkpoint / 旧 action vector 的
 # index 语义：0/1/2/3 仍然解码为 8/9/11/13，新挡位 10/12 追加在后面。
@@ -389,23 +396,30 @@ def _block_default_N(block_idx: int, gelu_degree: int = 4, attn_degree: int = 4)
 # ---------------------------------------------------------------------------
 # action index ↔ scaling factor 转换
 # ---------------------------------------------------------------------------
-def sf_from(idx: int, max_sf: int, levels: int) -> int:
-    """``sf_from(idx, max, levels) = max - 2 * (levels - 1 - idx)``。
+def sf_from(idx: int, max_sf: int, levels: int, step: int = 2) -> int:
+    """``sf_from(idx, max, levels, step) = max - step * (levels - 1 - idx)``。
 
-    例如 levels=5, max=30 → idx 0..4 ↔ {22, 24, 26, 28, 30}（与 spec 一致）。
+    例如 step=2, levels=5, max=30 → idx 0..4 ↔ {22, 24, 26, 28, 30}（非 rescale 默认）。
+    rescale 槽用 step=1（更细、向下更深，见 :func:`_rescale_sf_from_index`）。
+
+    可能反推出低于噪声表下限的值（如 step-1 深扫 + 低 max_sf），由 ``_snap_to_table``
+    在调用处钳到表内最近的合法 SF（≤ 该值，找不到回退到表里最小值，当前为 10）。
     """
     idx = int(idx)
     levels = int(levels)
     if idx < 0 or idx >= levels:
         raise ValueError(f"action idx {idx} out of [0, {levels})")
-    return int(max_sf) - 2 * (levels - 1 - idx)
+    return int(max_sf) - int(step) * (levels - 1 - idx)
 
 
 def _rescale_sf_from_index(idx: int, max_sf: int) -> Optional[int]:
+    # idx 0 = None (rescale dropped — never selected by RL / the fusion builder, per
+    # CLAUDE.md item 2). idx 1..LEVELS_R-1 sweep SF with step-1 for a deep downward
+    # range (the fusion lever); _snap_to_table floors at SF=10 downstream.
     idx = int(idx)
     if idx <= 0:
         return None
-    return sf_from(idx, int(max_sf), LEVELS_R)
+    return sf_from(idx, int(max_sf), LEVELS_R, step=1)
 
 
 def _optional_int(value: object) -> Optional[int]:

@@ -15,16 +15,14 @@ export GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 
 TS=$(date +%Y%m%d_%H%M%S)
-OUT="experiments/server_command_runs/stage2_fusion_reward_${TS}"
+OUT="experiments/server_command_runs/stage2_fusion_deepR_${TS}"
 mkdir -p "$OUT"
 SOURCE_COMMIT=$(git rev-parse HEAD)
 echo "HEAD=$SOURCE_COMMIT" | tee "$OUT/commit.txt"
 nvidia-smi -L 2>/dev/null | tee "$OUT/gpus.txt" || true
+nproc 2>/dev/null | tee "$OUT/nproc.txt" || true
 
-# ---- Phase 0: what stage-1 records exist (stage2-only needs one for bert-base mrpc) ----
-{ echo "=== stage1 records ==="; ls -la "Parting Chapter"/stage1/record/ 2>/dev/null || echo "(no stage1 record dir)"; } | tee "$OUT/stage1_records.txt"
-
-# ---- Phase 1: full contract gate (torch) + fusion reward tests; record rc, do NOT abort ----
+# ---- Phase 1: contract gate (validates the new step-1 deep-rescale decode + no regressions) ----
 echo "=== contract gate $(date -Is) ===" | tee "$OUT/test_gate.log"
 BLB_STRICT=0 python3 -m unittest discover -s tests -p "test_blb_*.py" -v >> "$OUT/test_gate.log" 2>&1
 echo "contract_gate_rc=$?" | tee -a "$OUT/test_gate.log"
@@ -32,7 +30,24 @@ python3 -m unittest tests.test_blb_fusion_reward -v >> "$OUT/test_gate.log" 2>&1
 echo "fusion_reward_test_rc=$?" | tee -a "$OUT/test_gate.log"
 tail -n 40 "$OUT/test_gate.log" | tee "$OUT/test_gate_tail.log"
 
-# ---- Phase 2: real fusion-count Stage-2 RL smoke with the NEW reward (K=4, 4-GPU) ----
+# ---- Phase 2: REBUILD the 7 fusion-count maps with the deepened rescale sweep (preprocessing) ----
+WK=$(nproc 2>/dev/null || echo 16)
+echo "=== rebuild fusion maps (workers=$WK) $(date -Is) ===" | tee "$OUT/build.log"
+python3 scripts/blb_build_fusion_count_map.py --profile mrpc \
+  --out-dir blb_stage2_rl/fusion_maps/mrpc \
+  --report "$OUT/fusion_map_build.html" --workers "$WK" >> "$OUT/build.log" 2>&1
+echo "build_rc=$?" | tee -a "$OUT/build.log"
+tail -n 40 "$OUT/build.log" | tee "$OUT/build_tail.log"
+# summarize the NEW maps — did fusion counts get richer than the old [0]/[0,1]?
+python3 - <<'PY' | tee "$OUT/map_summary.txt"
+import json, glob, os
+for p in sorted(glob.glob("blb_stage2_rl/fusion_maps/mrpc/*.json")):
+    d=json.load(open(p)); fc=[o["fusion_count"] for o in d["options"]]; bm=d.get("build_meta",{})
+    print(f"{os.path.basename(p):16s} #opt={len(d['options']):3d} fusion_counts={sorted(set(fc))} "
+          f"enum_total={bm.get('enum_total_combos')} valid={bm.get('valid_configs')} wall={bm.get('wall_seconds')}")
+PY
+
+# ---- Phase 3: real fusion-count Stage-2 RL smoke with the NEW maps + NEW reward (K=4, 4-GPU) ----
 echo "=== fusion stage2 smoke $(date -Is) ===" | tee "$OUT/train.log"
 bash llama_7B_LayerImportance.sh run rl \
   --mode stage2-only \
@@ -46,57 +61,46 @@ bash llama_7B_LayerImportance.sh run rl \
   --fresh >> "$OUT/train.log" 2>&1
 echo "train_rc=$?" | tee -a "$OUT/train.log"
 
-# ---- Phase 3: collect artifacts for local inspection ----
+# ---- Phase 4: collect artifacts ----
 PROG=$(ls -dt "Parting Chapter"/stage2/*/progress 2>/dev/null | head -1)
-{
-  echo "HEAD=$SOURCE_COMMIT"
-  echo "out_dir=$OUT"
-  echo "progress_dir=$PROG"
-} | tee "$OUT/SUMMARY.txt"
+{ echo "HEAD=$SOURCE_COMMIT"; echo "out_dir=$OUT"; echo "progress_dir=$PROG"; } | tee "$OUT/SUMMARY.txt"
 if [ -n "${PROG:-}" ] && [ -d "$PROG" ]; then
   cp -f "$PROG"/blb_stage2_status.json "$OUT/" 2>/dev/null || true
   cp -f "$PROG"/blb_stage2_report.md "$OUT/" 2>/dev/null || true
   cp -f "$PROG"/blb_stage2_best_action_full.json "$OUT/" 2>/dev/null || true
-  cp -f "$PROG"/blb_stage2_baseline_action_full.json "$OUT/" 2>/dev/null || true
   cp -f "$PROG"/blb_stage2_error.txt "$OUT/" 2>/dev/null || true
-  cp -f "$PROG"/warning.txt "$OUT/" 2>/dev/null || true
   cp -rf "$PROG"/diagnostics "$OUT/diagnostics" 2>/dev/null || true
   tail -n 3000 "$PROG"/diagnostics/episodes.jsonl > "$OUT/episodes_tail.jsonl" 2>/dev/null || true
 fi
 tail -n 500 "$OUT/train.log" > "$OUT/train_tail.log" 2>/dev/null || true
-# quick markers for triage
 { echo "=== markers ==="; grep -nE "Fusion-count action ENABLED|fast-reward|num_trials_per_step|reward probe enabled|trial split|警告|warning|Traceback|Error|loss_mean=100|invalid_steps" "$OUT/train.log" | head -80; } | tee "$OUT/markers.txt" || true
 echo "=== done $(date -Is) ===" | tee -a "$OUT/SUMMARY.txt"
 
-# ---- Phase 4: push artifacts back so local can pull + inspect ----
+# ---- Phase 5: push the rebuilt maps + artifacts back ----
 git config --local http.version HTTP/1.1 2>/dev/null || true
 git config --local protocol.version 0 2>/dev/null || true
-git add "$OUT" 2>/dev/null || true
-git -c user.email=server@run -c user.name=server commit -q -m "Stage-2 fusion reward smoke artifacts ${TS}" 2>/dev/null || true
+git add blb_stage2_rl/fusion_maps/mrpc/*.json "$OUT" 2>/dev/null || true
+git -c user.email=server@run -c user.name=server commit -q -m "Rebuild fusion maps (deep rescale) + stage2 smoke artifacts ${TS}" 2>/dev/null || true
 git push origin jk_standard_rl 2>&1 | tail -3 || true
-echo "=== Stage-2 fusion reward validation finished ==="
+echo "=== Stage-2 deep-rescale rebuild + smoke finished ==="
 ```
 
 ## metadata
 
-- **任务（取代之前的 Stage-1 PPO 队列）**：真实验证 2026-06-04 的 Stage-2 fusion-count
-  **动作 + reward 大改**。两段：
-  1. **契约门**：`BLB_STRICT=0 python -m unittest discover -s tests -p "test_blb_*.py"`
-     （含需要 torch 的 `test_blb_action_mask` / `test_blb_stage2_rl_regressions`，捕捉 reward
-     改动在 torch 路径下的回归）+ 新增 `tests/test_blb_fusion_reward.py`（含对真实
-     committed 融合图的集成测试）。记录 rc，不因失败中止。
-  2. **真实 fusion Stage-2 smoke**：`run rl --mode stage2-only --preset mrpc-blb-stage2-rl
-     --blb-v3-fusion-count-action 1 --stage2-k-trials 4 --blb-v3-reward-devices 0,1,2,3
-     --stage2-search-episodes 600 --fresh`，新 reward（per-block 加权 P3 cost、total_bits
-     删除、K=4 跨卡 std 门、warmstart 2.5）。
-- **前置**：stage2-only 需要 bert-base mrpc 的 Stage-1 record（之前的 fusion smoke 用到过，
-  应已存在；Phase 0 会把 `Parting Chapter/stage1/record/` 列出来，若缺会在 train.log 报错）。
-- **要回看的信号**（local 会据此检查 bug）：契约门全绿；train.log 出现
-  `Fusion-count action ENABLED`、四卡 probe、`fast-reward ... disabled`、K=4 trial split；
-  `episodes_tail.jsonl` 里 reward 分三档（P1≈[-5,0]/P2≈[15,25]/P3≈[40,45]），cost 只在 P3、
-  随 fusion/K 节省变化（看 `cost_score`/`fusion_cost_norm`），P2 由 std 触发（`stab_violation`>0），
-  无 `loss_mean=100` 坍塌 / 无 `invalid_steps` 异常 / 无 Traceback。
-- **产出**：`experiments/server_command_runs/stage2_fusion_reward_<ts>/`（commit.txt、test_gate.log、
-  train.log、train_tail.log、markers.txt、status.json、report.md、episodes_tail.jsonl、diagnostics/）。
-  命令末尾尝试 commit+push 回 `jk_standard_rl`（best-effort）。
-- **协议**：服务器只 `git pull`、运行、产出/回传 artifacts；源码改动都在本地。
+- **任务**：验证 2026-06-04 的 rescale 档位加深（step-1、LEVELS_R=15、snap 到 SF=10），三段：
+  1. **契约门**：`test_blb_*.py`（含 torch 的 action_space 测试 → 验证新 decode；`RescaleDecodeExpansionTest`
+     断言 idx14→max_sf、idx1→max-13、低 max_sf snap 到 10、非 rescale step-2 不变）+ fusion reward 测试。记录 rc，不中止。
+  2. **重建 7 张融合图**（预处理）：`blb_build_fusion_count_map.py --profile mrpc`，rescale 槽现在从 3 值扫到 ~14 值
+     （step-1），其余枚举槽不变。预计整体 ~1-1.5h（block2/block4/block5_n4 各 ~21-23 min）。`map_summary.txt` 看
+     fusion_counts 是否比旧的 `[0]`/`[0,1]` 更丰富。**builder 的 option0==baseline 断言会守住新 decode 的 baseline 不变性**。
+  3. **真实 fusion Stage-2 smoke**（用新图 + 新 reward，K=4，4 卡，600 episode）。
+- **重要**：600 episode 只是**查 bug / 能否正确运行**的 smoke，RL 一般要几万轮才有起色，这里**不**评判训练曲线是否优秀。
+- **要回看的信号**：契约门全绿；`map_summary.txt` 里至少部分 block 的 fusion_counts 变多（验证加深 rescale 确实带来更多 fusion）；
+  train.log 出现 `Fusion-count action ENABLED`、四卡 K=4 probe、`fast-reward disabled`；`episodes_tail.jsonl` reward 分三档、
+  cost 只在 P3、P2 由 std 触发；无 `loss_mean=100` 坍塌 / 无 Traceback / 无 invalid 爆发。
+- **前置**：stage2-only 需要 bert-base mrpc 的 Stage-1 record（之前 smoke 用过，应已存在）。
+- **产出**：`experiments/server_command_runs/stage2_fusion_deepR_<ts>/`（test_gate.log、build.log、map_summary.txt、
+  fusion_map_build.html、train.log、markers.txt、status.json、report.md、episodes_tail.jsonl、diagnostics/）+ 重建后的
+  `blb_stage2_rl/fusion_maps/mrpc/*.json`。命令末尾 commit+push 回 `jk_standard_rl`（含新图，best-effort）。
+- **协议**：服务器只 `git pull`、运行、产出/回传 artifacts（图是生成物，非手改源码）；源码改动都在本地。
+```
