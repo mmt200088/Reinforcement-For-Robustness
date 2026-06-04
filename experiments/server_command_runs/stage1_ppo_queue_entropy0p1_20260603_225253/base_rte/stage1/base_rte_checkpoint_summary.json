@@ -1,0 +1,61 @@
+{
+  "keys": [
+    "version",
+    "completed_episodes",
+    "gtrxl_net_state_dict",
+    "optimizer_state_dict",
+    "gtrxl_ppo_update_count",
+    "episode_rewards",
+    "episode_losses",
+    "episode_metric1s",
+    "episode_metric2s",
+    "episode_entropies",
+    "best_reward",
+    "best_cost",
+    "best_config",
+    "search_best_config",
+    "global_best_config",
+    "window_best_reward",
+    "window_best_cost",
+    "window_best_config",
+    "ev_runtime_state",
+    "stage1_prev_avg_reward",
+    "stage1_warnings"
+  ],
+  "completed_episodes": 37200,
+  "best_config": {
+    "gelu": [
+      0,
+      0,
+      1,
+      1,
+      0,
+      1,
+      2,
+      1,
+      0,
+      0,
+      1,
+      0
+    ],
+    "softmax": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "cost": 37.5,
+    "reward": 0.9572798015810453
+  },
+  "best_reward": 0.9572798015810453,
+  "best_cost": 37.5,
+  "final_entropy": null
+}

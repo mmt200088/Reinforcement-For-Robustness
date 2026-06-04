@@ -1,0 +1,500 @@
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+  [stage1-rollout] window=308 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=43.857s worker_seconds=[41.062, 43.856, 42.688, 42.781]  speedup=3.89x
+  [stage1-rollout] window=308 collected 120 episodes across 4 workers
+  ╭──────────────────────────────────────────────────────────────╮
+  │ 回合（Episode） 37080                                          │
+  │ 平均奖励: 0.9222, 策略损失: -0.1013, 价值损失: 0.0022, 熵: 0.1008       │
+  │ [GTrXL调度] LR: 0.000012, 熵系数: 0.015344, 更新次数: #309 (warmup) │
+  ╰──────────────────────────────────────────────────────────────╯
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 4 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 6 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 2 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 4 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 6 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 4 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 6 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+已替换 5 层的GELU函数（GELU function）
+已替换 7 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+  [stage1-rollout] window=309 eps_per_worker=30  devices=[cuda:0, cuda:1, cuda:2, cuda:3] counts=[30, 30, 30, 30]  wall=44.007s worker_seconds=[41.951, 43.189, 43.364, 44.004]  speedup=3.92x
+  [stage1-rollout] window=309 collected 120 episodes across 4 workers
+  ╭──────────────────────────────────────────────────────────────╮
+  │ 回合（Episode） 37200                                          │
+  │ 平均奖励: 0.9244, 策略损失: -0.2130, 价值损失: 0.0021, 熵: 0.0988       │
+  │ [GTrXL调度] LR: 0.000012, 熵系数: 0.015125, 更新次数: #310 (warmup) │
+  ╰──────────────────────────────────────────────────────────────╯
+  ╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Stage-1 RL 进度 · 回合 37200 / entropy<0.1000                                                                                                                               │
+  │ 进度: unbounded until entropy convergence                                                                                                                                 │
+  │ Reward-Best: 0.9573  成本: 37.50                                                                                                                                          │
+  │   GELU:    [np.int64(0), np.int64(0), np.int64(1), np.int64(1), np.int64(0), np.int64(1), np.int64(2), np.int64(1), np.int64(0), np.int64(0), np.int64(1), np.int64(0)] │
+  │   Softmax: [np.int64(6), np.int64(6), np.int64(6), np.int64(6), np.int64(6), np.int64(6), np.int64(6), np.int64(6), np.int64(6), np.int64(6), np.int64(6), np.int64(6)] │
+  │ 已用时: 4h32m25s  平均每回合: 0m00s  PPO 更新: 310 次                                                                                                                              │
+  ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+Stage-1 entropy convergence reached: entropy=0.098812 <= threshold=0.100000 at episode 37200
+  ⚠ 共检测到 6 次奖励骤降警告，详见: Parting Chapter/stage1/bert base rte/warning.txt
+  [完成] Stage-1 最终 checkpoint 已保存 → Parting Chapter/stage1/bert base rte/stage1_rl_checkpoint.pt
+  [迁移] 可迁移 policy/critic 已保存 → Parting Chapter/stage1/bert base rte/stage1_policy.pt
+  [迁移] 用法：在新任务/新约束下，将 RL_OPT_FLAGS['stage1_pretrained_policy_path'] 设为该路径即可作为 base policy 继续训练。
+  [检测] 局部最优检测报告 → Parting Chapter/stage1/bert base rte/pruning_search_log.txt
+  [检测] [OK] no warning signals
+
+[Stage-1] 最终配置使用原始 PPO reward-best；GELU/Softmax 为确定性替换，不再按 window 二次评估重排。
+
+--- PPO训练完成（PPO Training Completed） ---
+已找到最优配置（通过RL）（Best Configuration Found by RL）：
+  GELU配置: [0, 0, 1, 1, 0, 1, 2, 1, 0, 0, 1, 0]
+  Softmax配置: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  成本（Cost）: 37.50, 奖励（Reward）: 0.9573
+PPO训练曲线已保存至（PPO training curves saved to）: Parting Chapter/stage1/bert base rte/ppo_training_curve.png
+PPO熵曲线已保存至（PPO entropy curve saved to）: Parting Chapter/stage1/bert base rte/ppo_entropy_curve.png
+  [解耦] Stage-1 已归档进 record → Parting Chapter/stage1/record/bert base rte 1 20260604（COMPLETED 已标记）
+
+============================================================
+最终评估报告（FINAL EVALUATION REPORT）（验证集）
+============================================================
+
+[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。
+
+[信息] 统一最终评估已跳过（--skip-final-eval）。
+
+配置评估完成（Configuration evaluation finished）。
+  [best_policy] 已复制 Parting Chapter/stage1/bert base rte/stage1_policy.pt → Parting Chapter/stage1/bert base rte/best_policy/stage1_policy.pt
+100%|██████████| 1/1 [4:32:29<00:00, 16349.85s/it]
+已替换 6 层的GELU函数（GELU function）
+已替换 5 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+Round 0, Final evaluation loss: 0.7339390516281128
+
+ If there's a warning about missing keys above, please disregard :)
+loc 0.01, bootstrap 0.00, allgathers 0.01, topo 0.03, graphs 0.00, connections 0.02, rest 0.07)
+I28ca072f1200a01074:1116097:1116311 [2] NCCL INFO ncclCommInitAll comm 0x3c2d3ca0 rank 2 nranks 4 cudaDev 2 nvmlDev 2 busId 81000 commId 0xb21fbab23d226ed - Init COMPLETE
+I28ca072f1200a01074:1116097:1116311 [2] NCCL INFO Init timings - ncclCommInitAll: rank 2 nranks 4 total 0.54 (kernels 0.41, alloc 0.01, bootstrap 0.00, allgathers 0.00, topo 0.03, graphs 0.00, connections 0.02, rest 0.07)
+I28ca072f1200a01074:1116097:1116324 [1] NCCL INFO Channel 00 : 1[1] -> 2[2] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116322 [3] NCCL INFO Channel 00 : 3[3] -> 0[0] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116323 [2] NCCL INFO Channel 00 : 2[2] -> 3[3] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116325 [0] NCCL INFO Channel 00 : 0[0] -> 1[1] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116324 [1] NCCL INFO Channel 01 : 1[1] -> 2[2] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116322 [3] NCCL INFO Channel 01 : 3[3] -> 0[0] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116323 [2] NCCL INFO Channel 01 : 2[2] -> 3[3] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116325 [0] NCCL INFO Channel 01 : 0[0] -> 1[1] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116324 [1] NCCL INFO Channel 02 : 1[1] -> 2[2] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116322 [3] NCCL INFO Channel 02 : 3[3] -> 0[0] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116323 [2] NCCL INFO Channel 02 : 2[2] -> 3[3] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116325 [0] NCCL INFO Channel 02 : 0[0] -> 1[1] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116324 [1] NCCL INFO Channel 03 : 1[1] -> 2[2] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116322 [3] NCCL INFO Channel 03 : 3[3] -> 0[0] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116323 [2] NCCL INFO Channel 03 : 2[2] -> 3[3] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116325 [0] NCCL INFO Channel 03 : 0[0] -> 1[1] via SHM/direct/direct
+I28ca072f1200a01074:1116097:1116325 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+I28ca072f1200a01074:1116097:1116322 [3] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+I28ca072f1200a01074:1116097:1116323 [2] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+I28ca072f1200a01074:1116097:1116324 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
