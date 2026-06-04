@@ -130,6 +130,31 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   runtime path passed the previous `block3_exp_n6` and fixed-config handoff
   blockers, but the source line still needs contract-gate cleanup before it is
   considered fully verified.
+- Stage-2 fusion full-build rerun, added 2026-06-04: Claude Code pushed
+  `5ed03df`, which streams per-shard min-noise reduction so the full `block4`
+  729M-combination fusion-map build should not retain hundreds of GB of valid
+  configs in memory. The same commit made reward tests map-version agnostic
+  because the deeper 10-level enumeration can activate real fusion for
+  `block1_mrpc` and `block4`; dynamic reward normalization should now use the
+  map-derived max fusion choices instead of assuming the old `4630` maximum or
+  block1/block4 degeneracy. Codex launched the active `SERVER_COMMAND.md` from
+  verified temp source snapshot `5ed03df` at
+  `/hy-tmp/server_command_stage2_fusion_fullbuild_5ed03df_20260604_233625`.
+  The server main worktree was still dirty/stale and GitHub fetch hung, so the
+  run uses a local-source archive fallback. Because the temp snapshot has no
+  decoupled MRPC Stage-1 record, Codex seeded a minimal temp-only
+  `Parting Chapter/stage1/record/bert base mrpc 1 20260604/final_config.json`
+  from `glue_final_configs_best_ppo.json` so the final `stage2-only` smoke can
+  resolve GELU degrees; this is a run prerequisite artifact, not a source edit.
+  The first launch mis-extracted the fenced bash block from the prose header and
+  exited immediately; the relaunch extracted the first bash block after
+  `## ▶ active command`. Contract gate then passed (`214` tests OK,
+  `contract_gate_rc=0`), and Phase 2 began building the six cheaper maps with
+  `--workers 96`. Monitor
+  `experiments/server_command_runs/stage2_fusion_fullbuild_20260604_233648/`
+  for `build_feasible_rc`, `build_block4_rc`, `map_summary.txt`,
+  `soundness_audit.txt` with `superset_pass=True`, and smoke markers including
+  `Fusion-count action ENABLED`.
 - Stage-1 post-run queue, added 2026-05-24: after the active Stage-2 60k run
   finishes and its final eval/report are captured, pull the latest server code
   that contains the Claude Code Stage-1 changes for BERT-base SST-2/RTE and
@@ -235,6 +260,18 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `1116097`; its queue wrapper was intentionally paused so completion can be
   handled as `waiting_report` before launching `base_sst2`. Do not use GRPO for
   any queue item.
+- Stage-1 no-degree0 PPO queue update, added 2026-06-04: after the user decided
+  degree `0` / ReLU likely caused RTE overfitting, Stage-1 RL sampling was
+  changed in local commit `f85c77e` so `STAGE1_GELU_ACTION_MASK` is
+  `[True, True, True, False]`. Server source snapshot
+  `/hy-tmp/stage1_no_degree0_queue_f85c77e_20260604_201520/src` verified that
+  mask and is running a fresh serial PPO queue. Only `base_mrpc` PID `1248929`
+  should be running; the accidental wrapper that launched the remaining tasks
+  was stopped, and extra `base_rte`, `base_sst2`, `large_mrpc`, `large_rte`,
+  and `large_sst2` processes were killed. Remaining order after `base_mrpc` is
+  `base_rte`, `base_sst2`, `large_mrpc`, `large_rte`, `large_sst2`. Continue
+  one task at a time, build and commit/push each compact HTML report before
+  launching the next task, and do not use GRPO.
 - Stage-1 GRPO MRPC current snapshot, added 2026-06-01: while the GRPO run was
   still active, a snapshot report was generated at
   `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/grpo_current_snapshot_20260601_164215/stage1_mrpc_grpo_current_result_report.html`.
