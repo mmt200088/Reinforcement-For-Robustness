@@ -1,0 +1,102 @@
+{
+  "run_root": "/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155",
+  "source_commit": "064500c477275f3d1a07dcae8b18701e56eb7c12",
+  "packages": {
+    "baseline_original": {
+      "dir": "/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155/baseline_stage1_original_submission",
+      "zip": "/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155/baseline_stage1_original_submission/submission.zip",
+      "files": {
+        "MRPC.tsv": {
+          "path": "/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155/baseline_stage1_original_submission/MRPC.tsv",
+          "line_count": 1726,
+          "header": "index\tprediction",
+          "label_counts": {
+            "0": 501,
+            "1": 1224
+          },
+          "sha256": "38ef9dd50a0f9dca0dd4c305a397721acb7bf1f62b468628e55698028834c33a",
+          "errors": [],
+          "ok": true
+        },
+        "RTE.tsv": {
+          "path": "/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155/baseline_stage1_original_submission/RTE.tsv",
+          "line_count": 3001,
+          "header": "index\tprediction",
+          "label_counts": {
+            "entailment": 2088,
+            "not_entailment": 912
+          },
+          "sha256": "6e083f5480c12abd07bdcd5e3063e8d58fa519d8993ed1c56bf41879c4df2a07",
+          "errors": [],
+          "ok": true
+        }
+      },
+      "zip_member_count": 11,
+      "zip_has_mrpc_rte": true,
+      "zip_members": [
+        "AX.tsv",
+        "CoLA.tsv",
+        "MNLI-m.tsv",
+        "MNLI-mm.tsv",
+        "MRPC.tsv",
+        "QNLI.tsv",
+        "QQP.tsv",
+        "RTE.tsv",
+        "SST-2.tsv",
+        "STS-B.tsv",
+        "WNLI.tsv"
+      ],
+      "ok_mrpc_rte": true
+    },
+    "stage1_best": {
+      "dir": "/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155/best_stage1_ppo_submission",
+      "zip": "/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155/best_stage1_ppo_submission/submission.zip",
+      "files": {
+        "MRPC.tsv": {
+          "path": "/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155/best_stage1_ppo_submission/MRPC.tsv",
+          "line_count": 1726,
+          "header": "index\tprediction",
+          "label_counts": {
+            "0": 497,
+            "1": 1228
+          },
+          "sha256": "39d40f47c009f009305ea07fd52c35e5d276d17f9b46e8ae8bffb8fc65435e54",
+          "errors": [],
+          "ok": true
+        },
+        "RTE.tsv": {
+          "path": "/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155/best_stage1_ppo_submission/RTE.tsv",
+          "line_count": 3001,
+          "header": "index\tprediction",
+          "label_counts": {
+            "entailment": 1942,
+            "not_entailment": 1058
+          },
+          "sha256": "37cc9cf5316077378e24f2351489f9347bf24e7c6d0e22af0b1cb14ada42d085",
+          "errors": [],
+          "ok": true
+        }
+      },
+      "zip_member_count": 11,
+      "zip_has_mrpc_rte": true,
+      "zip_members": [
+        "AX.tsv",
+        "CoLA.tsv",
+        "MNLI-m.tsv",
+        "MNLI-mm.tsv",
+        "MRPC.tsv",
+        "QNLI.tsv",
+        "QQP.tsv",
+        "RTE.tsv",
+        "SST-2.tsv",
+        "STS-B.tsv",
+        "WNLI.tsv"
+      ],
+      "ok_mrpc_rte": true
+    }
+  },
+  "best_vs_baseline_prediction_diffs": {
+    "MRPC.tsv": 90,
+    "RTE.tsv": 624
+  }
+}

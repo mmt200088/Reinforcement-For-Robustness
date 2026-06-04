@@ -1,0 +1,12 @@
+RUN_ROOT=/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155
+source_commit=064500c477275f3d1a07dcae8b18701e56eb7c12
+baseline_zip=/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155/baseline_stage1_original_submission/submission.zip
+best_zip=/hy-tmp/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155/best_stage1_ppo_submission/submission.zip
+[baseline_original] ok_mrpc_rte=True zip_members=11 zip_has_mrpc_rte=True
+  MRPC.tsv: lines=1726 labels={'0': 501, '1': 1224} ok=True sha256=38ef9dd50a0f9dca
+  RTE.tsv: lines=3001 labels={'entailment': 2088, 'not_entailment': 912} ok=True sha256=6e083f5480c12abd
+[stage1_best] ok_mrpc_rte=True zip_members=11 zip_has_mrpc_rte=True
+  MRPC.tsv: lines=1726 labels={'0': 497, '1': 1228} ok=True sha256=39d40f47c009f009
+  RTE.tsv: lines=3001 labels={'entailment': 1942, 'not_entailment': 1058} ok=True sha256=37cc9cf531607737
+best_vs_baseline_diff[MRPC.tsv]=90
+best_vs_baseline_diff[RTE.tsv]=624

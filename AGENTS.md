@@ -1425,6 +1425,20 @@ in prose comments.
   Stage-2/BLB noise. The current `generate_glue_submission.py` Stage-1 helper
   must include GELU degree `0` when applying configs; degree `0` is ReLU via
   `ReversibleLayerHandler.replace_layer_gelu`.
+- Stage-1-only GLUE submission packages for the 2026-06-04 BERT-base MRPC/RTE
+  best-vs-baseline official test submission check were generated under
+  `experiments/server_command_runs/glue_stage1_best_vs_baseline_mrpc_rte_20260604_111155/`.
+  This run used source commit `064500c`, where `generate_glue_submission.py`
+  now natively applies GELU degree `0` as ReLU instead of silently ignoring it.
+  The best package is `best_stage1_ppo_submission/submission.zip` and uses
+  MRPC GELU `[0,1,1,1,1,1,1,1,1,0,1,0]`, RTE GELU
+  `[0,0,1,1,0,1,2,1,0,0,1,0]`, and Softmax degree `6` for every layer, with
+  no Stage-2/BLB noise. The baseline package is
+  `baseline_stage1_original_submission/submission.zip` and uses
+  `--no_approx --no_noise`, i.e. original GELU/Softmax functions. MRPC/RTE zip
+  contents were locally re-verified: MRPC has `1726` lines and labels `0/1`;
+  RTE has `3001` lines and labels `entailment/not_entailment`; both packages
+  include MRPC/RTE in the zip and are not placeholder-only for those tasks.
 - Stage-1 PPO vs GRPO advantage report for the 2026-06-01 BERT-base MRPC
   comparison is at
   `experiments/server_command_runs/stage1_mrpc_ppo_grpo_advantages_20260601_200615/stage1_ppo_vs_grpo_advantages_report.html`.
