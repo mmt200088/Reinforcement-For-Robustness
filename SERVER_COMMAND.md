@@ -15,7 +15,7 @@ export GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 
 TS=$(date +%Y%m%d_%H%M%S)
-OUT="experiments/server_command_runs/stage2_fusion_deepR_${TS}"
+OUT="experiments/server_command_runs/stage2_fusion_hybrid10_${TS}"
 mkdir -p "$OUT"
 SOURCE_COMMIT=$(git rev-parse HEAD)
 echo "HEAD=$SOURCE_COMMIT" | tee "$OUT/commit.txt"
@@ -87,12 +87,14 @@ echo "=== Stage-2 deep-rescale rebuild + smoke finished ==="
 
 ## metadata
 
-- **任务**：验证 2026-06-04 的 rescale 档位加深（step-1、LEVELS_R=15、snap 到 SF=10），三段：
-  1. **契约门**：`test_blb_*.py`（含 torch 的 action_space 测试 → 验证新 decode；`RescaleDecodeExpansionTest`
-     断言 idx14→max_sf、idx1→max-13、低 max_sf snap 到 10、非 rescale step-2 不变）+ fusion reward 测试。记录 rc，不中止。
-  2. **重建 7 张融合图**（预处理）：`blb_build_fusion_count_map.py --profile mrpc`，rescale 槽现在从 3 值扫到 ~14 值
-     （step-1），其余枚举槽不变。预计整体 ~1-1.5h（block2/block4/block5_n4 各 ~21-23 min）。`map_summary.txt` 看
-     fusion_counts 是否比旧的 `[0]`/`[0,1]` 更丰富。**builder 的 option0==baseline 断言会守住新 decode 的 baseline 不变性**。
+- **任务**：验证 2026-06-04 的 10 档 hybrid 档位 + N=16384 + 放宽 pinning，三段：
+  1. **契约门**：`test_blb_*.py`（含 torch 的 action_space 测试；`HybridDecodeTest` 断言全 SF 槽 10 档、
+     baseline 30→30,28,26,24,22,20,19,18,17,16、rescale idx0=None / max idx→baseline、低 baseline-SF snap 到 10、
+     `_block_default_N` 恒 16384）+ fusion reward 测试。记录 rc，不中止。
+  2. **重建 7 张融合图**（预处理）：`blb_build_fusion_count_map.py --profile mrpc`。全 SF 槽 10 档 hybrid（顶部 step-2、
+     底部 step-1，到 baseline-14），**pinning 放宽成只看 fusion_count**（total_bits 已移出 reward）→ 只枚举真正影响
+     fusion 的槽（rescale + 少数 source），其余钉在 baseline SF → build 应回到 ~分钟级。`map_summary.txt` 看
+     fusion_counts 是否比旧的 `[0]`/`[0,1]` 更丰富。**builder 的 option0==baseline 断言守住 baseline 不变性**。
   3. **真实 fusion Stage-2 smoke**（用新图 + 新 reward，K=4，4 卡，600 episode）。
 - **重要**：600 episode 只是**查 bug / 能否正确运行**的 smoke，RL 一般要几万轮才有起色，这里**不**评判训练曲线是否优秀。
 - **要回看的信号**：契约门全绿；`map_summary.txt` 里至少部分 block 的 fusion_counts 变多（验证加深 rescale 确实带来更多 fusion）；

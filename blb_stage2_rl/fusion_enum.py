@@ -374,7 +374,7 @@ def prepare_block_type_context(
     base_res = _eval_block(ctx, base_block)
     if not base_res.get("valid"):
         raise RuntimeError(f"{graph_key}: baseline (all-max) block config is invalid under replan")
-    base_key = (base_res["fusion_count"], base_res["total_bits"])
+    base_fc = int(base_res["fusion_count"])
 
     # Classify each effective non-K slot.
     #
@@ -387,9 +387,14 @@ def prepare_block_type_context(
     # dominated the all-max baseline (2026-06-03 block1 crash).
     #
     # Non-rescale (F/W/M/S) slots: full single-axis scan — pin at baseline (max)
-    # iff every level leaves (fusion_count, total_bits) unchanged (the slot then
-    # affects only its own noise, so its minimum-noise value is the max-SF
-    # baseline). Scans every level, so it is robust to non-monotonic effects.
+    # iff every level leaves the realized ``fusion_count`` unchanged. 2026-06-04:
+    # relaxed from "(fusion_count, total_bits) unchanged" to fusion_count only —
+    # total_bits is no longer in the reward, so a slot that moves only bits (not
+    # fusion) doesn't need enumerating; its minimum-noise value is the max-SF
+    # baseline anyway, so pinning it there gives identical kept options far cheaper
+    # (this is what makes the uniform 10-level action space build feasible). A slot
+    # that moves fusion at ANY level is still enumerated (no fusion omission). Scans
+    # every level, so it is robust to non-monotonic effects.
     for pos, (fname, kind, _maxsf) in enumerate(fields):
         if kind == "K":
             continue
@@ -417,7 +422,7 @@ def prepare_block_type_context(
             probe = base_block.copy()
             probe[pos] = lvl
             pres = _eval_block(ctx, probe)
-            if (not pres.get("valid")) or (pres["fusion_count"], pres["total_bits"]) != base_key:
+            if (not pres.get("valid")) or int(pres["fusion_count"]) != base_fc:
                 constant = False
                 break
         if constant:

@@ -66,17 +66,18 @@ from function_handler import (
 # ---------------------------------------------------------------------------
 # 全局常量：每类噪声的离散挡位数（与 spec §4.1 对齐）
 # ---------------------------------------------------------------------------
-LEVELS_W = 5         # weight encode (5 挡，step-2：max-8 .. max)
-LEVELS_MS = 3        # mask / scalar encode (3 挡，step-2：max-4 .. max)
-# Rescale slots are the fusion lever: lowering a rescale's target SF is what makes
-# Rescale_optimizer fuse. 2026-06-04 deepened from 4 to 15 to surface more fusion
-# counts (the old 3-value sweep max-4..max only ever reached fusion 0/1). step-1
-# (see _rescale_sf_from_index) gives idx0=None + idx1..14 = max-13..max; _snap_to_table
-# floors any value below the noise table at SF=10 (low-max_sf rescales get duplicate
-# SF=10 entries that the build dedups by installed-noise signature). Non-rescale kinds
-# stay step-2 and unchanged so their range/build-cost are untouched.
-LEVELS_R = 15        # rescale (step-1 deep sweep, snap floors at SF=10)
-LEVELS_F = 5         # fresh (5 挡，step-2：max-8 .. max)
+# 2026-06-04: all SF kinds use a uniform 10-level HYBRID downward sweep anchored at
+# the slot's BASELINE SF (= calibrated max_sf, NOT the noise-table max=46): the top 5
+# levels step by 2 (coarse, near baseline), the bottom 5 step by 1 (fine), reaching
+# baseline-14. e.g. baseline 30 → 30,28,26,24,22,20,19,18,17,16 (see ``sf_from``).
+# ``_snap_to_table`` floors any decoded SF below the noise table (min SF=10); a slot
+# whose baseline SF is low gets duplicate SF=10 levels the fusion builder dedups by
+# installed-noise signature. K stays ``K_LEVELS``. The noise variance comes from the
+# N=16384 column for every slot (see ``_block_default_N``).
+LEVELS_W = 10        # weight encode
+LEVELS_MS = 10       # mask / scalar encode
+LEVELS_R = 10        # rescale (idx0=None; idx1..9 sweep SF, hybrid step)
+LEVELS_F = 10        # fresh
 
 # Truncation K 挡位默认扩展为 6 档，但保持旧 checkpoint / 旧 action vector 的
 # index 语义：0/1/2/3 仍然解码为 8/9/11/13，新挡位 10/12 追加在后面。
@@ -382,44 +383,48 @@ _BLOCK_NODE_NAME_BY_FIELD: Dict[int, Dict[str, str]] = {
 # Block N 选取（与 ``make_block*_default_config`` 推荐一致）
 # ---------------------------------------------------------------------------
 def _block_default_N(block_idx: int, gelu_degree: int = 4, attn_degree: int = 4) -> int:
-    """返回 block 默认使用的 CKKS 多项式阶 N（与 ``make_block*_default_config`` 一致）。"""
-    if block_idx == 1:
-        return 8192
-    # degree 0 (ReLU) 与 degree 1 一样用 N=8192（block5_n0 / block5_n1 同属 8K base）
-    if block_idx == 5 and int(gelu_degree) <= 1:
-        return 8192
-    if block_idx == 3 and int(attn_degree) == 2:
-        return 8192
+    """噪声表 N（决定 noise variance 查表 + snap 范围）。
+
+    2026-06-04（用户指定）：N=8192 暂时不用，所有 block 的所有槽都统一查 N=16384 的噪声表。
+    （只影响安装的 noise variance / snap；Rescale_optimizer 的 modulus-chain N 仍由其图定义，
+    不受此影响。）原先 block1 / block5_n0,n1 / block3@attn2 用 8192——如需恢复差异化 N，改这里。
+    """
     return 16384
 
 
 # ---------------------------------------------------------------------------
 # action index ↔ scaling factor 转换
 # ---------------------------------------------------------------------------
-def sf_from(idx: int, max_sf: int, levels: int, step: int = 2) -> int:
-    """``sf_from(idx, max, levels, step) = max - step * (levels - 1 - idx)``。
+def sf_from(idx: int, max_sf: int, levels: int) -> int:
+    """Hybrid downward sweep from ``max_sf`` (= the slot's BASELINE SF, not the table max).
 
-    例如 step=2, levels=5, max=30 → idx 0..4 ↔ {22, 24, 26, 28, 30}（非 rescale 默认）。
-    rescale 槽用 step=1（更细、向下更深，见 :func:`_rescale_sf_from_index`）。
+    The top half of the levels step by 2 (coarse, near baseline); the bottom half step
+    by 1 (fine, far from baseline). For the canonical 10-level slot this gives
+    ``idx 9..0 → max_sf, -2, -4, -6, -8, -10, -11, -12, -13, -14`` (e.g. max_sf=30 →
+    30,28,26,24,22,20,19,18,17,16).
 
-    可能反推出低于噪声表下限的值（如 step-1 深扫 + 低 max_sf），由 ``_snap_to_table``
-    在调用处钳到表内最近的合法 SF（≤ 该值，找不到回退到表里最小值，当前为 10）。
+    May return a value below the noise-table minimum for a low-baseline-SF slot;
+    callers wrap with ``_snap_to_table`` which floors it at the table min (SF=10).
     """
     idx = int(idx)
     levels = int(levels)
     if idx < 0 or idx >= levels:
         raise ValueError(f"action idx {idx} out of [0, {levels})")
-    return int(max_sf) - int(step) * (levels - 1 - idx)
+    n_fine = (levels - 1) // 2          # step-1 intervals at the bottom
+    n_coarse = (levels - 1) - n_fine    # step-2 intervals at the top
+    dist = (levels - 1) - idx           # 0 at idx = max (baseline SF)
+    offset = 2 * dist if dist <= n_coarse else 2 * n_coarse + (dist - n_coarse)
+    return int(max_sf) - int(offset)
 
 
 def _rescale_sf_from_index(idx: int, max_sf: int) -> Optional[int]:
     # idx 0 = None (rescale dropped — never selected by RL / the fusion builder, per
-    # CLAUDE.md item 2). idx 1..LEVELS_R-1 sweep SF with step-1 for a deep downward
-    # range (the fusion lever); _snap_to_table floors at SF=10 downstream.
+    # CLAUDE.md item 2). idx 1..LEVELS_R-1 sweep SF via the hybrid decode; _snap_to_table
+    # floors at SF=10 downstream.
     idx = int(idx)
     if idx <= 0:
         return None
-    return sf_from(idx, int(max_sf), LEVELS_R, step=1)
+    return sf_from(idx, int(max_sf), LEVELS_R)
 
 
 def _optional_int(value: object) -> Optional[int]:

@@ -249,41 +249,46 @@ class RealMapIntegrationTest(unittest.TestCase):
 
 
 @unittest.skipUnless(_HAS_ASP, "action_space requires torch (server contract gate)")
-class RescaleDecodeExpansionTest(unittest.TestCase):
-    """2026-06-04: rescale slots deepened to 15 levels, step-1, snap-floored at SF=10;
-    non-rescale decode (step-2) unchanged; baseline (max idx -> max_sf) unchanged."""
+class HybridDecodeTest(unittest.TestCase):
+    """2026-06-04: all SF kinds use a uniform 10-level hybrid sweep from baseline SF
+    (top 5 step-2, bottom 5 step-1, reaching baseline-14); N forced to 16384."""
 
-    def test_levels_r_is_15(self):
-        self.assertEqual(_asp.LEVELS_R, 15)
+    def test_all_sf_kinds_are_10_levels(self):
+        self.assertEqual(_asp.LEVELS_F, 10)
+        self.assertEqual(_asp.LEVELS_W, 10)
+        self.assertEqual(_asp.LEVELS_MS, 10)
+        self.assertEqual(_asp.LEVELS_R, 10)
 
-    def test_rescale_step1_deep_sweep_raw(self):
-        # idx 0 = None (drop, never enumerated); idx 14 (max) -> max_sf; step-1.
+    def test_hybrid_sweep_matches_user_example(self):
+        # baseline 30 -> 30,28,26,24,22,20,19,18,17,16 (idx 9..0).
+        got = [_asp.sf_from(i, 30, 10) for i in range(9, -1, -1)]
+        self.assertEqual(got, [30, 28, 26, 24, 22, 20, 19, 18, 17, 16])
+
+    def test_rescale_idx0_none_max_idx_is_baseline(self):
         self.assertIsNone(_asp._rescale_sf_from_index(0, 30))
-        self.assertEqual(_asp._rescale_sf_from_index(14, 30), 30)   # max idx -> max_sf
-        self.assertEqual(_asp._rescale_sf_from_index(1, 30), 17)    # 30 - 1*(15-1-1)=30-13
-        self.assertEqual(_asp._rescale_sf_from_index(7, 30), 23)    # 30 - (14-7)=23
-
-    def test_field_level_values_rescale_snapped_to_floor(self):
-        vals = _asp._field_level_values(kind="R", levels=_asp.LEVELS_R, max_sf=30, N=8192)
-        self.assertEqual(len(vals), 15)
-        self.assertIsNone(vals[0])
-        self.assertEqual(vals[14], 30)
-        self.assertEqual(vals[1], 17)
-        # low max_sf: idx 1..4 decode below 10 -> snapped to the table floor (10).
-        vlow = _asp._field_level_values(kind="R", levels=_asp.LEVELS_R, max_sf=20, N=8192)
-        self.assertTrue(all((v is None) or (int(v) >= 10) for v in vlow))
-        self.assertEqual(vlow[1], 10)    # 20-13=7 -> snap 10
-        self.assertEqual(vlow[14], 20)   # max idx -> max_sf
-
-    def test_non_rescale_decode_unchanged_step2(self):
-        # F kind keeps step-2 at its current 5 levels: max=30 -> {22,24,26,28,30}.
-        vals = _asp._field_level_values(kind="F", levels=_asp.LEVELS_F, max_sf=30, N=8192)
-        self.assertEqual([int(v) for v in vals], [22, 24, 26, 28, 30])
-
-    def test_baseline_max_index_still_decodes_to_max_sf(self):
-        # make_all_max sets R slots to LEVELS_R-1 -> must still decode to max_sf
-        # so option0 == baseline holds in the fusion-map builder.
+        self.assertEqual(_asp._rescale_sf_from_index(9, 30), 30)   # max idx -> baseline SF
+        self.assertEqual(_asp._rescale_sf_from_index(1, 30), 17)   # offset 13
+        # baseline invariant: max idx decodes to max_sf so option0 == baseline.
         self.assertEqual(_asp._rescale_sf_from_index(_asp.LEVELS_R - 1, 27), 27)
+
+    def test_field_level_values_rescale_and_fresh(self):
+        r = _asp._field_level_values(kind="R", levels=_asp.LEVELS_R, max_sf=30, N=16384)
+        self.assertEqual(len(r), 10)
+        self.assertIsNone(r[0])
+        self.assertEqual([int(v) for v in r[1:]], [17, 18, 19, 20, 22, 24, 26, 28, 30])
+        f = _asp._field_level_values(kind="F", levels=_asp.LEVELS_F, max_sf=30, N=16384)
+        self.assertEqual([int(v) for v in f], [16, 17, 18, 19, 20, 22, 24, 26, 28, 30])
+
+    def test_low_baseline_sf_snaps_to_floor(self):
+        # baseline SF 14 (mask): the deep levels fall below 10 -> snapped to 10.
+        vlow = _asp._field_level_values(kind="F", levels=_asp.LEVELS_F, max_sf=14, N=16384)
+        self.assertTrue(all(int(v) >= 10 for v in vlow))
+        self.assertEqual(int(vlow[-1]), 14)   # max idx -> baseline SF
+
+    def test_block_default_N_forced_to_16384(self):
+        for b in (1, 2, 3, 4, 5):
+            self.assertEqual(_asp._block_default_N(b, gelu_degree=0, attn_degree=2), 16384)
+            self.assertEqual(_asp._block_default_N(b, gelu_degree=4, attn_degree=4), 16384)
 
 
 if __name__ == "__main__":
