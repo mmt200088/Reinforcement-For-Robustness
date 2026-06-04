@@ -1,0 +1,191 @@
+"""Torch-free tests for the Stage-2 fusion-count reward redesign (2026-06-03).
+
+Covers the pure per-block weighted cost helper (``fusion_cost``) and the
+``external_cost`` threading in ``reward.compute_reward``. Both modules are torch-free
+and imported by bare name with ``blb_stage2_rl/`` on ``sys.path`` (the package
+``__init__`` pulls torch, which the local box lacks).
+"""
+from __future__ import annotations
+
+import pathlib
+import sys
+import unittest
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
+for _p in (str(_REPO_ROOT), str(_BLB_DIR)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import fusion_cost
+import reward as rwd
+
+# Spec weights: block1:block2:block4:block5:truncation = 80:150:130:40:50.
+FW = {1: 80.0, 2: 150.0, 4: 130.0, 5: 40.0}
+TW = 50.0
+
+
+class _Sig:
+    """Minimal opt_signals stand-in."""
+    any_invalid = False
+    total_bits_sum = 100
+    total_fusion_count = 0
+
+
+def _baseline():
+    return rwd.BaselineCostStats(
+        total_bits_sum=200, total_fusion_count=0, avg_k=13.0,
+        loss_mean=0.3, loss_std=0.01,
+        metric1_mean=0.85, metric2_mean=0.85,
+        metric1_std=0.01, metric2_std=0.01,
+        typical_bits_drop=50, typical_fusion_count=1, typical_k_drop=2,
+    )
+
+
+def _weights():
+    return rwd.RewardWeights(baseline_metric1=0.85, baseline_metric2=0.85)
+
+
+def _bc(block_idx, fusion_count, max_fusion, k_value, graph_key="g"):
+    return fusion_cost.BlockChoice(
+        block_idx=block_idx,
+        graph_key=graph_key,
+        fusion_count=fusion_count,
+        max_fusion=max_fusion,
+        k_value=k_value,
+    )
+
+
+class FusionCostSavingTest(unittest.TestCase):
+    def test_baseline_zero_saving(self):
+        # All option 0 (fusion_count=0) + K=max(13) => zero saving.
+        choices = [
+            _bc(2, 0, 1, 13),
+            _bc(5, 0, 1, 13),
+            _bc(1, 0, 0, 13),
+            _bc(4, 0, 0, 13),
+        ]
+        res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
+        self.assertEqual(res.cost_norm, 0.0)
+        self.assertEqual(res.cost_rank, 0.0)
+        # denom = block2 fusion 150 + block5 fusion 40 + 4 * trunc 50 = 390.
+        self.assertAlmostEqual(res.max_actual, 390.0)
+
+    def test_full_saving_normalizes_to_one(self):
+        # fusion_count == max_fusion AND K=min(8) on every fusable lever.
+        choices = [
+            _bc(2, 1, 1, 8),
+            _bc(5, 1, 1, 8),
+            _bc(1, 0, 0, 8),
+            _bc(4, 0, 0, 8),
+        ]
+        res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
+        self.assertAlmostEqual(res.cost_norm, 1.0)
+        self.assertAlmostEqual(res.cost_rank, 390.0)
+
+    def test_block1_block4_fusion_inert(self):
+        # max_fusion==0 => fusion weight never contributes (even with a bogus count),
+        # and the 80/130 fusion weights are absent from the normalizer.
+        choices = [_bc(1, 99, 0, 8), _bc(4, 99, 0, 8)]
+        res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
+        self.assertAlmostEqual(res.max_actual, 100.0)  # 2 * trunc only, no 80/130
+        self.assertAlmostEqual(res.cost_rank, 100.0)   # 2 * (50 * trunc_saving=1)
+        for pb in res.per_block:
+            self.assertEqual(pb["fusion_contrib"], 0.0)
+            self.assertEqual(pb["fusion_saving"], 0.0)
+
+    def test_trunc_saving_linear(self):
+        # K=13 -> 0, K=8 -> 1, midpoint K=10.5 not in levels; check K=11 -> (13-11)/5.
+        choices = [_bc(2, 0, 1, 11)]
+        res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
+        # actual = 50 * (13-11)/5 = 50 * 0.4 = 20 ; denom = 150 (fusion) + 50 = 200.
+        self.assertAlmostEqual(res.cost_rank, 20.0)
+        self.assertAlmostEqual(res.max_actual, 200.0)
+        self.assertAlmostEqual(res.cost_norm, 0.1)
+
+    def test_rank_monotonic_in_fusion(self):
+        base = [_bc(2, 0, 1, 13)]
+        more = [_bc(2, 1, 1, 13)]
+        r0 = fusion_cost.compute_fusion_cost_saving(base, fusion_w=FW, trunc_w=TW)
+        r1 = fusion_cost.compute_fusion_cost_saving(more, fusion_w=FW, trunc_w=TW)
+        self.assertGreater(r1.cost_rank, r0.cost_rank)
+        self.assertAlmostEqual(r1.cost_rank - r0.cost_rank, 150.0)
+
+    def test_precomputed_max_actual_used(self):
+        choices = [_bc(2, 1, 1, 8)]
+        res = fusion_cost.compute_fusion_cost_saving(
+            choices, fusion_w=FW, trunc_w=TW, max_actual=400.0
+        )
+        # actual = 150 + 50 = 200 ; norm = 200/400 = 0.5.
+        self.assertAlmostEqual(res.cost_norm, 0.5)
+        self.assertAlmostEqual(res.max_actual, 400.0)
+
+
+class ExternalCostThreadingTest(unittest.TestCase):
+    def test_weight_constants_match_spec(self):
+        self.assertEqual(rwd.FUSION_COST_W, {1: 80.0, 2: 150.0, 4: 130.0, 5: 40.0})
+        self.assertEqual(rwd.TRUNC_COST_W, 50.0)
+        self.assertEqual((rwd.K_MAX_BITS, rwd.K_MIN_BITS), (13, 8))
+
+    def test_p3_uses_external_cost(self):
+        # accuracy ok (m == baseline) + stability ok (std 0) => P3; external cost used.
+        metrics = rwd.EpisodeMetrics(
+            loss_mean=0.3, loss_std=0.0,
+            metric1_mean=0.85, metric2_mean=0.85,
+            metric1_std=0.0, metric2_std=0.0,
+        )
+        bd = rwd.compute_reward(
+            metrics, _Sig(), action_avg_k=13.0, baseline=_baseline(), weights=_weights(),
+            external_cost_score=3.0, external_cost_rank=999.0,
+        )
+        self.assertEqual(bd.priority, 3)
+        self.assertAlmostEqual(bd.cost_score, 3.0)
+        self.assertAlmostEqual(bd.cost_rank_score, 999.0)
+        self.assertGreater(bd.reward, 40.0)  # tier +40 floor + margin + cost
+
+    def test_external_cost_clipped_to_budget(self):
+        metrics = rwd.EpisodeMetrics(
+            loss_mean=0.3, loss_std=0.0,
+            metric1_mean=0.85, metric2_mean=0.85,
+            metric1_std=0.0, metric2_std=0.0,
+        )
+        w = _weights()
+        bd = rwd.compute_reward(
+            metrics, _Sig(), action_avg_k=13.0, baseline=_baseline(), weights=w,
+            external_cost_score=999.0, external_cost_rank=999.0,
+        )
+        self.assertAlmostEqual(bd.cost_score, float(w.p3_cost_budget))  # clipped
+
+    def test_p1_ignores_external_cost(self):
+        # accuracy fail (m below threshold) => P1; external cost must not contribute.
+        metrics = rwd.EpisodeMetrics(
+            loss_mean=2.0, loss_std=0.0,
+            metric1_mean=0.50, metric2_mean=0.50,
+            metric1_std=0.0, metric2_std=0.0,
+        )
+        bd = rwd.compute_reward(
+            metrics, _Sig(), action_avg_k=13.0, baseline=_baseline(), weights=_weights(),
+            external_cost_score=3.0, external_cost_rank=999.0,
+        )
+        self.assertEqual(bd.priority, 1)
+        self.assertEqual(bd.cost_score, 0.0)
+        self.assertEqual(bd.cost_rank_score, 0.0)
+        self.assertLessEqual(bd.reward, 0.0)
+
+    def test_none_external_cost_preserves_legacy_path(self):
+        # Without external cost the old aggregate path still produces a P3 reward.
+        metrics = rwd.EpisodeMetrics(
+            loss_mean=0.3, loss_std=0.0,
+            metric1_mean=0.85, metric2_mean=0.85,
+            metric1_std=0.0, metric2_std=0.0,
+        )
+        bd = rwd.compute_reward(
+            metrics, _Sig(), action_avg_k=13.0, baseline=_baseline(), weights=_weights(),
+        )
+        self.assertEqual(bd.priority, 3)
+        # legacy path: cost_score comes from the aggregate scalar (no exception).
+        self.assertIsInstance(bd.cost_score, float)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -195,6 +195,11 @@ def _seq_fmt_eta_finish(eta_seconds: float) -> str:
 SEQ_PROGRESS_BOX_PPO_INTERVAL = 5
 SEQ_RL_VARIANT = "blb_v3_sequential_gtrxl_v2scale"
 
+# Fusion-count warmstart (2026-06-03): the option space is tiny, so bias the
+# baseline (fusion=0 / K=max) prior harder than the per-slot default (1.2) so
+# cold-start sits at baseline and explores outward.
+FUSION_WARMSTART_BIAS_GAIN = 2.5
+
 
 def _resolve_ent_coef_schedule(
         *,
@@ -3054,6 +3059,22 @@ def run_sequential_via_runner(
             f"  {bullet} Fusion-count action ENABLED：map graphs={len(fusion_map.graphs)}, "
             f"max_options={fusion_map.max_num_options()}；safe-neighbor/radius2 已停用"
         )
+        # 2026-06-03 fusion reward: the P2 stability gate needs the per-episode std,
+        # which requires >=2 trials. Warn on K<2 and force the fast-reward online-K=1
+        # deferral off so each episode (and the noisy baseline preflight) runs a real
+        # multi-trial probe (use --stage2-k-trials 4 + --blb-v3-reward-devices 0,1,2,3).
+        if int(getattr(train_cfg, "num_trials_per_step", 4)) < 2:
+            log(
+                f"  {bullet} [fusion][warning] num_trials_per_step="
+                f"{int(getattr(train_cfg, 'num_trials_per_step', 0))} < 2 — stability std "
+                "gate needs >=2 trials; pass --stage2-k-trials 4 for the 4-trial probe."
+            )
+        if bool(getattr(train_cfg, "fast_reward_mode_enabled", False)):
+            train_cfg.fast_reward_mode_enabled = False
+            log(
+                f"  {bullet} [fusion] fast-reward (online-K=1) disabled so every episode "
+                "gets a real K-trial stability std."
+            )
     seq_env = BLBStage2SequentialEnv(base_env=base_env, env_cfg=seq_env_cfg, fusion_map=fusion_map)
 
     # Checkpoint variant: fusion-mode policies have a different shape (max_step_dim=2),
@@ -3109,9 +3130,15 @@ def run_sequential_via_runner(
                     max_step_dim=policy_cfg.max_step_dim,
                     fallback_idx=int(LEVELS_F) - 1,
                 )
+            warmstart_gain = float(train_cfg.warmstart_bias_gain)
+            if fusion_map is not None:
+                # Tiny fusion action space (<=2 options x 6 K per block): pull the
+                # baseline (fusion=0 / K=max) prior up so cold-start sits at baseline
+                # and explores outward (user spec 2026-06-03).
+                warmstart_gain = max(warmstart_gain, FUSION_WARMSTART_BIAS_GAIN)
             policy.apply_preferred_per_step_bias(
                 preferred,
-                gain=float(train_cfg.warmstart_bias_gain),
+                gain=warmstart_gain,
             )
             warmstart_applied = True
             preferred_summary = (

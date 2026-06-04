@@ -785,8 +785,17 @@ class BLBStage2Env:
     def step(
             self,
             action_vec: np.ndarray,
+            *,
+            external_cost_score: Optional[float] = None,
+            external_cost_rank: Optional[float] = None,
             ) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
-        """单步 episode：装噪声 → forward → 计算 reward → 还原噪声。"""
+        """单步 episode：装噪声 → forward → 计算 reward → 还原噪声。
+
+        ``external_cost_score`` / ``external_cost_rank``：fusion-count 路径专用。
+        sequential_env 终局把 per-block 加权 cost 节省算好传进来，只在最终 valid
+        reward（P3）里替掉聚合 fusion/K/bits cost。非 fusion 调用保持 None ⇒ 旧路径。
+        invalid 分支必为 P1，compute_reward 不读 cost，故无需透传。
+        """
         action_vec = np.asarray(action_vec, dtype=int).reshape(-1)
         if action_vec.size != self.total_action_dim:
             raise ValueError(
@@ -1108,6 +1117,8 @@ class BLBStage2Env:
             any_invalid=any_invalid,
             pareto_archive=self.pareto_cost_archive,
             action_hash=action_vec_hash,
+            external_cost_score=external_cost_score,
+            external_cost_rank=external_cost_rank,
         )
 
         info["reward_breakdown"] = breakdown

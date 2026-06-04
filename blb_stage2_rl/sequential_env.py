@@ -42,6 +42,7 @@ from rescale_optimizer_bridge import (
 )
 
 from .action_space import (
+    K_LEVELS,
     BlockStepSpec,
     action_vector_to_cfgs,
     expand_fusion_step_action,
@@ -54,6 +55,8 @@ from .action_space import (
     step_schedule_max_dim,
 )
 from .env import BLBStage2Env
+from .fusion_cost import BlockChoice, compute_fusion_cost_saving
+from .reward import FUSION_COST_W, TRUNC_COST_W
 
 
 @dataclass
@@ -138,6 +141,10 @@ class BLBStage2SequentialEnv:
         self._prev_signals: List[Dict[str, float]] = []
         self._prev_per_step_overrides: List[Dict[str, Any]] = []
         self._terminated_early: bool = False
+        # Fusion-count mode: per-block (option, K) choices accumulated across the
+        # episode, consumed at the terminal step to compute the per-block weighted
+        # P3 cost saving (reward.FUSION_COST_W / TRUNC_COST_W). Empty in per-slot mode.
+        self._fusion_choices: List[BlockChoice] = []
 
     # ------------------------------------------------------------------
     # public surface
@@ -177,6 +184,7 @@ class BLBStage2SequentialEnv:
         self._prev_signals = []
         self._prev_per_step_overrides = []
         self._terminated_early = False
+        self._fusion_choices = []
         return self._build_obs()
 
     def evaluate_step(
@@ -199,6 +207,7 @@ class BLBStage2SequentialEnv:
             raise RuntimeError("episode already terminated; call reset() before evaluate_step()")
         spec = self.current_spec()
         action = np.asarray(per_step_action, dtype=int).reshape(-1)
+        fusion_choice: Optional[BlockChoice] = None
 
         # Use a fresh copy of the accumulator so the persistent vec only changes
         # in commit_step(). Important: we still need the previously-committed
@@ -216,6 +225,22 @@ class BLBStage2SequentialEnv:
                 )
             block_vec = expand_fusion_step_action(spec, self._fusion_map, int(action[0]), int(action[1]))
             splice_fusion_step_into_full_vec(temp_vec, spec, block_vec)
+            # Record the per-block (fusion_count, max_fusion, K) for the terminal
+            # weighted-cost reward. Use the MAP's declared option fusion_count
+            # (what the policy chose), not the optimizer's re-derived value.
+            _opts = self._fusion_map.options(spec.graph_key_suffix)
+            _oid = int(action[0])
+            _chosen_fusion = int(_opts[_oid].fusion_count) if 0 <= _oid < len(_opts) else 0
+            _max_fusion = max((int(o.fusion_count) for o in _opts), default=0)
+            _kidx = int(action[1])
+            _kval = int(K_LEVELS[_kidx]) if 0 <= _kidx < len(K_LEVELS) else int(K_LEVELS[-1])
+            fusion_choice = BlockChoice(
+                block_idx=int(spec.block_idx),
+                graph_key=str(spec.graph_key_suffix),
+                fusion_count=_chosen_fusion,
+                max_fusion=_max_fusion,
+                k_value=_kval,
+            )
         else:
             if action.size != len(spec.slot_dims):
                 raise ValueError(
@@ -256,6 +281,7 @@ class BLBStage2SequentialEnv:
                 "bridge_error": str(exc),
                 "config_name": config_name,
                 "optimizer_wall_seconds": optimizer_wall,
+                "fusion_choice": fusion_choice,
             }
         optimizer_wall = float(time.perf_counter() - optimizer_t0)
 
@@ -271,6 +297,7 @@ class BLBStage2SequentialEnv:
             "invalid_chain": out.invalid_chain,
             "config_name": config_name,
             "optimizer_wall_seconds": optimizer_wall,
+            "fusion_choice": fusion_choice,
         }
 
     def commit_step(
@@ -322,6 +349,11 @@ class BLBStage2SequentialEnv:
             spec, action,
             valid=valid, total_bits=total_bits, fusion_count=fusion_count,
         )
+        # Fusion mode: accumulate this block's (option, K) choice for the terminal
+        # per-block weighted cost. One entry per committed block step.
+        _fc = eval_info.get("fusion_choice")
+        if _fc is not None:
+            self._fusion_choices.append(_fc)
 
         per_step_reward = 0.0
         if not valid:
@@ -396,7 +428,23 @@ class BLBStage2SequentialEnv:
                 ).copy()
                 info["defer_terminal_forward"] = True
                 return self.base._build_state(), per_step_reward, True, info
-            term_state, term_reward, _term_done, term_info = self.base.step(self._pending_full_vec)
+            ext_score: Optional[float] = None
+            ext_rank: Optional[float] = None
+            if self._fusion_map is not None and self._fusion_choices:
+                res = compute_fusion_cost_saving(
+                    self._fusion_choices, fusion_w=FUSION_COST_W, trunc_w=TRUNC_COST_W,
+                )
+                budget = float(getattr(self.base.reward_weights, "p3_cost_budget", 4.5))
+                ext_score = float(res.cost_norm) * budget
+                ext_rank = float(res.cost_rank)
+                info["fusion_cost_norm"] = float(res.cost_norm)
+                info["fusion_cost_rank"] = float(res.cost_rank)
+                info["fusion_cost_max_actual"] = float(res.max_actual)
+            term_state, term_reward, _term_done, term_info = self.base.step(
+                self._pending_full_vec,
+                external_cost_score=ext_score,
+                external_cost_rank=ext_rank,
+            )
             info["terminal_info"] = term_info
             info["terminal_reward"] = float(term_reward)
             return term_state, per_step_reward + float(term_reward), True, info

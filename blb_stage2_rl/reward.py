@@ -106,6 +106,21 @@ DEFAULT_STAB_W_M1 = 30.0
 DEFAULT_STAB_W_M2 = 30.0
 DEFAULT_STAB_W_LOSS = 1.0
 
+# ---------------------------------------------------------------------------
+# Fusion-count action P3 cost (2026-06-03 redesign; ADR-008 follow-up).
+# ---------------------------------------------------------------------------
+# Per-block-TYPE fusion weights + a per-block truncation weight (user ratio
+# block1:block2:block4:block5:truncation = 80:150:130:40:50). These drive the
+# pure helper ``blb_stage2_rl.fusion_cost.compute_fusion_cost_saving``; the result
+# enters ``compute_reward`` as ``external_cost_score`` (bounded P3 cost factor) +
+# ``external_cost_rank`` (unbounded ranking). ``total_bits`` is intentionally NOT
+# part of the fusion reward scalar. With the current mrpc maps block1/block4 are
+# fusion-degenerate, so their 80/130 weights are inert (those blocks tune only K).
+FUSION_COST_W = {1: 80.0, 2: 150.0, 4: 130.0, 5: 40.0}
+TRUNC_COST_W = 50.0
+K_MAX_BITS = 13
+K_MIN_BITS = 8
+
 # Tolerances driving the per-metric thresholds. ``acc_tolerance`` is the
 # relative drop you allow from baseline.metric{i}_mean (0.5% by default —
 # matches the 2026-05-18 noisy-baseline preflight constant in sequential_runner).
@@ -599,6 +614,8 @@ def compute_reward(
         any_invalid: Optional[bool] = None,
         pareto_archive: Optional[ParetoCostArchive] = None,
         action_hash: Optional[str] = None,
+        external_cost_score: Optional[float] = None,
+        external_cost_rank: Optional[float] = None,
         ) -> RewardBreakdown:
     """v3 clipped-shaping + tier-bonus reward with m1+m2 hard gates.
 
@@ -619,6 +636,11 @@ def compute_reward(
                            frontier 诊断/探索统计；默认不再决定 PPO scalar。
         action_hash:       Pareto archive 的候选身份；与 pareto_archive 同时传入
                            才记录 P3 frontier 诊断事件。
+        external_cost_score: fusion-count 路径专用。调用方（env + fusion map）算好的
+                           per-block 加权 cost 节省（已是 [0, p3_cost_budget] 量级的有界
+                           标量），非 None 时直接替掉聚合 fusion/K/bits cost_score；
+                           仅在 P3（metric_ok 且 stab_ok）生效，total_bits 不参与。
+        external_cost_rank: 对应的无界排序值（候选/前沿排序用，永不进 PPO 标量）。
 
     Returns:
         ``RewardBreakdown``
@@ -821,6 +843,26 @@ def compute_reward(
             bits_norm=float(bits_norm),
             weights=weights,
         )
+
+    # Fusion-count action path: the P3 cost is a per-block weighted saving computed
+    # outside (action_space + fusion map), passed in as external_cost_score (already a
+    # bounded [0, p3_cost_budget] scalar) + external_cost_rank (unbounded ranking). It
+    # replaces the aggregate fusion/K/bits scalar; total_bits is not part of the fusion
+    # reward. Injected here, before the P3 gate below, so it still only fires in P3.
+    if external_cost_score is not None:
+        cost_score_raw = float(np.clip(
+            float(external_cost_score), 0.0, float(weights.p3_cost_budget)
+        ))
+        cost_rank_score_raw = (
+            float(external_cost_rank) if external_cost_rank is not None else 0.0
+        )
+        r_fusion_raw = 0.0
+        r_k_raw = 0.0
+        r_bits_raw = 0.0
+        truncation_step_gain_raw = 0.0
+        cost_rank_fusion_raw = 0.0
+        cost_rank_truncation_raw = 0.0
+        cost_rank_bits_raw = 0.0
 
     # Cost & stability only contribute to shaping when metric_ok. Cost is even
     # stricter: it only contributes in P3 (metric_ok AND stab_ok), matching the

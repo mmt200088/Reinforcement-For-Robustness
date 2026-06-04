@@ -65,12 +65,25 @@ opt-in flag `--blb-v3-fusion-count-action`，与 substage 互斥。
 - 若某 block-type 的 option 数病态大或只有 1 个 fusion_count，重审 builder。
 - skeleton 再生成 → 重建 map（builder 的 baseline=option0 断言会守住正确性）。
 
+## Follow-up: reward redesign (2026-06-03)
+
+动作改成 fusion-count 之后，reward 也跟着改（ADR-007 硬优先级框架不变，只换 P3 cost 内核）：
+P3 cost 从「聚合 fusion/K/bits tiebreaker」改成「per-block-type 加权 fusion+truncation 节省」
+（`reward.FUSION_COST_W=80:150:130:40:50` + `TRUNC_COST_W=50`，归一化后吃 `p3_cost_budget`），
+`total_bits` 从 reward 标量删除，K=4 跨卡 std 稳定性门重新启用，warmstart 偏置加强到 2.5。
+这正好把上面 "Negative" 里 block1/block4 fusion 退化的事实显式编码进 reward（它们的 80/130 在
+当前图里 inert，不进 `MAX_ACTUAL`）。详见 reward spec / plan（下）。不是新 ADR：策略形状不变、
+硬优先级框架沿用 ADR-007，故无需 `SEQ_RL_VARIANT` bump。
+
 ## References
 
 - Linked code: `blb_stage2_rl/fusion_count_map.py`, `blb_stage2_rl/fusion_enum.py`,
   `scripts/blb_build_fusion_count_map.py`, `blb_stage2_rl/action_space.py`
   (`fusion_step_schedule` / `expand_fusion_step_action`), `blb_stage2_rl/sequential_env.py`,
-  `blb_stage2_rl/sequential_runner.py` (fusion branch).
-- Spec: `docs/superpowers/specs/2026-06-03-stage2-fusion-count-action-design.md`
-- Plan: `docs/superpowers/plans/2026-06-03-stage2-fusion-count-action.md`
+  `blb_stage2_rl/sequential_runner.py` (fusion branch). Reward: `blb_stage2_rl/fusion_cost.py`,
+  `blb_stage2_rl/reward.py` (`external_cost_score`/`external_cost_rank`).
+- Spec: `docs/superpowers/specs/2026-06-03-stage2-fusion-count-action-design.md`;
+  reward spec `docs/superpowers/specs/2026-06-03-stage2-fusion-count-reward-design.md`.
+- Plan: `docs/superpowers/plans/2026-06-03-stage2-fusion-count-action.md`;
+  reward plan `docs/superpowers/plans/2026-06-03-stage2-fusion-count-reward.md`.
 - Related: ADR-001 (per-block sequential PPO), ADR-002/007 (reward), ADR-006 (F0/F1/F4 ladder).
