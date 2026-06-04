@@ -1,0 +1,40 @@
+test_explicit_threshold_is_preserved (test_blb_threshold_semantics.BLBThresholdSemanticsTests.test_explicit_threshold_is_preserved) ... ok
+test_absolute_episode_still_anchors_after_resume_before_anchor_end (test_blb_warmstart_resume.BLBWarmstartResumeTests.test_absolute_episode_still_anchors_after_resume_before_anchor_end) ... ok
+test_anchor_is_not_extended_after_absolute_episode_passes_anchor_end (test_blb_warmstart_resume.BLBWarmstartResumeTests.test_anchor_is_not_extended_after_absolute_episode_passes_anchor_end) ... ok
+test_explicit_disable_warmstart_on_resume_turns_anchor_off (test_blb_warmstart_resume.BLBWarmstartResumeTests.test_explicit_disable_warmstart_on_resume_turns_anchor_off) ... ok
+
+----------------------------------------------------------------------
+Ran 212 tests in 2.907s
+
+OK
+contract_gate_rc=0
+test_external_cost_clipped_to_budget (tests.test_blb_fusion_reward.ExternalCostThreadingTest.test_external_cost_clipped_to_budget) ... ok
+test_none_external_cost_preserves_legacy_path (tests.test_blb_fusion_reward.ExternalCostThreadingTest.test_none_external_cost_preserves_legacy_path) ... ok
+test_p1_ignores_external_cost (tests.test_blb_fusion_reward.ExternalCostThreadingTest.test_p1_ignores_external_cost) ... ok
+test_p3_uses_external_cost (tests.test_blb_fusion_reward.ExternalCostThreadingTest.test_p3_uses_external_cost) ... ok
+test_weight_constants_match_spec (tests.test_blb_fusion_reward.ExternalCostThreadingTest.test_weight_constants_match_spec) ... ok
+test_baseline_zero_saving (tests.test_blb_fusion_reward.FusionCostSavingTest.test_baseline_zero_saving) ... ok
+test_block1_block4_fusion_inert (tests.test_blb_fusion_reward.FusionCostSavingTest.test_block1_block4_fusion_inert) ... ok
+test_full_saving_normalizes_to_one (tests.test_blb_fusion_reward.FusionCostSavingTest.test_full_saving_normalizes_to_one) ... ok
+test_precomputed_max_actual_used (tests.test_blb_fusion_reward.FusionCostSavingTest.test_precomputed_max_actual_used) ... ok
+test_rank_monotonic_in_fusion (tests.test_blb_fusion_reward.FusionCostSavingTest.test_rank_monotonic_in_fusion) ... ok
+test_trunc_saving_linear (tests.test_blb_fusion_reward.FusionCostSavingTest.test_trunc_saving_linear) ... ok
+test_all_sf_kinds_are_10_levels (tests.test_blb_fusion_reward.HybridDecodeTest.test_all_sf_kinds_are_10_levels) ... ok
+test_block_default_N_forced_to_16384 (tests.test_blb_fusion_reward.HybridDecodeTest.test_block_default_N_forced_to_16384) ... ok
+test_field_level_values_rescale_and_fresh (tests.test_blb_fusion_reward.HybridDecodeTest.test_field_level_values_rescale_and_fresh) ... ok
+test_hybrid_sweep_matches_user_example (tests.test_blb_fusion_reward.HybridDecodeTest.test_hybrid_sweep_matches_user_example) ... ok
+test_low_baseline_sf_snaps_to_floor (tests.test_blb_fusion_reward.HybridDecodeTest.test_low_baseline_sf_snaps_to_floor) ... ok
+test_rescale_idx0_none_max_idx_is_baseline (tests.test_blb_fusion_reward.HybridDecodeTest.test_rescale_idx0_none_max_idx_is_baseline) ... ok
+test_fusion_change_breaks_pin (tests.test_blb_fusion_reward.PinClassificationCriterionTest.test_fusion_change_breaks_pin) ... ok
+test_invalid_level_breaks_pin (tests.test_blb_fusion_reward.PinClassificationCriterionTest.test_invalid_level_breaks_pin) ... ok
+test_joint_encode_kept_by_bits_proxy (tests.test_blb_fusion_reward.PinClassificationCriterionTest.test_joint_encode_kept_by_bits_proxy) ... ok
+test_truly_inert_slot_is_pinnable (tests.test_blb_fusion_reward.PinClassificationCriterionTest.test_truly_inert_slot_is_pinnable) ... ok
+test_baseline_episode_zero_saving (tests.test_blb_fusion_reward.RealMapIntegrationTest.test_baseline_episode_zero_saving) ... ok
+test_block1_block4_degenerate_block2_block5_fusable (tests.test_blb_fusion_reward.RealMapIntegrationTest.test_block1_block4_degenerate_block2_block5_fusable) ... ok
+test_max_saving_episode_normalizes_to_one (tests.test_blb_fusion_reward.RealMapIntegrationTest.test_max_saving_episode_normalizes_to_one) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 0.002s
+
+OK
+fusion_reward_test_rc=0

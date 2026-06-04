@@ -1,0 +1,16 @@
+=== rebuild fusion maps (workers=96, budget=100M) 2026-06-04T19:19:16+08:00 ===
+[build] block1_mrpc (block1, gelu=4, attn=2) ...
+  -> options=2 fusion_counts=[0, 1] valid=464361/810000 rescales=2['mean_rescale_sf', 'var_rescale_sf'] pinned=0 K-indep=True wall=54.23s
+[build] block2_mrpc (block2, gelu=4, attn=2) ...
+  -> options=2 fusion_counts=[0, 1] valid=54172618/72900000 rescales=4['gamma_rescale_sf', 'kt_mask1_rescale_sf', 'q_mask1_rescale_sf', 'qkt_matmul_rescale_sf'] pinned=1 K-indep=True wall=4856.13s
+[build] block4 (block4, gelu=4, attn=2) ...
+Traceback (most recent call last):
+  File "/hy-tmp/server_command_stage2_fusion_soundpin_874737d_20260604_191906/src/scripts/blb_build_fusion_count_map.py", line 370, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/hy-tmp/server_command_stage2_fusion_soundpin_874737d_20260604_191906/src/scripts/blb_build_fusion_count_map.py", line 308, in main
+    res = build_one_block_type(
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/server_command_stage2_fusion_soundpin_874737d_20260604_191906/src/scripts/blb_build_fusion_count_map.py", line 132, in build_one_block_type
+    raise RuntimeError(
+RuntimeError: block4: enum_total 729000000 > budget 100000000 AND the degeneracy probe found fusion [0, 1] (base_fc=0) — refusing to emit a shortcut map. Raise --max-enum-combos to build it fully, or reduce the action level count.
