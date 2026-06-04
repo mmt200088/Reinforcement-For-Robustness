@@ -70,7 +70,7 @@ GLUE 基准测试提交文件生成器
   }
 
 取值范围：
-  GELU degree ∈ {1, 2, 4}；Softmax degree ∈ {2, 3, 4, 5, 6}。
+  GELU degree ∈ {0, 1, 2, 4}，其中 0 表示 ReLU；Softmax degree ∈ {2, 3, 4, 5, 6}。
   x ∈ {22, 24, 26, 28, 30}；wq/wk/wv/wo/wffn2 ∈ {14, 16, 18, 20, 22}；
   wffn1 ∈ {16, 18, 20, 22, 24}。噪声数值越大 → 隐私保护越强。
 
@@ -433,18 +433,22 @@ def detect_layer_attribute(model):
 
 def apply_approx_configuration(handler, layers_attribute, gelu_degrees, softmax_degrees):
     handler_layer_name = "model." + layers_attribute
-    gelu_map = {d: [] for d in [1, 2, 4]}
+    gelu_map = {d: [] for d in [0, 1, 2, 4]}
     for idx, deg in enumerate(gelu_degrees):
-        if deg in gelu_map:
-            gelu_map[deg].append(idx)
-    for d in [1, 2, 4]:
+        deg_int = int(deg)
+        if deg_int not in gelu_map:
+            raise ValueError(f"Unsupported Stage-1 GELU degree: {deg_int}")
+        gelu_map[deg_int].append(idx)
+    for d in [0, 1, 2, 4]:
         if gelu_map[d]:
             handler.replace_layer_gelu(gelu_map[d], handler_layer_name, degree=d)
 
     softmax_map = {d: [] for d in range(2, 7)}
     for idx, deg in enumerate(softmax_degrees):
-        if deg in softmax_map:
-            softmax_map[deg].append(idx)
+        deg_int = int(deg)
+        if deg_int not in softmax_map:
+            raise ValueError(f"Unsupported Stage-1 Softmax degree: {deg_int}")
+        softmax_map[deg_int].append(idx)
     for d in range(2, 7):
         if softmax_map[d]:
             handler.replace_layer_softmax(softmax_map[d], handler_layer_name, degree=d)
@@ -880,19 +884,29 @@ def process_task(task_name, task_config, gelu_degrees, softmax_degrees,
                     1 for L in layers_obj
                     if isinstance(getattr(getattr(L, 'mlp', None), 'act', None), PolynomialGELU)
                 )
+                applied_relu = sum(
+                    1 for L in layers_obj
+                    if isinstance(getattr(getattr(L, 'mlp', None), 'act', None), torch.nn.ReLU)
+                )
                 applied_sm = 0  # softmax approximation not supported on GPT-2
                 print(f"  [Verify] PolynomialGELU layers: {applied_gelu}/{len(layers_obj)}, "
+                      f"ReLU layers: {applied_relu}/{len(layers_obj)}, "
                       f"ApproxSoftmax layers: N/A (GPT-2, Stage 1 disabled)")
             else:
                 applied_gelu = sum(
                     1 for L in layers_obj
                     if isinstance(L.intermediate.intermediate_act_fn, PolynomialGELU)
                 )
+                applied_relu = sum(
+                    1 for L in layers_obj
+                    if isinstance(L.intermediate.intermediate_act_fn, torch.nn.ReLU)
+                )
                 applied_sm = sum(
                     1 for L in layers_obj
                     if isinstance(L.attention.self, BertSelfAttentionWithAproximation)
                 )
                 print(f"  [Verify] PolynomialGELU layers: {applied_gelu}/{len(layers_obj)}, "
+                      f"ReLU layers: {applied_relu}/{len(layers_obj)}, "
                       f"ApproxSoftmax layers: {applied_sm}/{len(layers_obj)}")
         if not no_noise:
             verify_noise_configuration(handler, noise_config, num_layers)
