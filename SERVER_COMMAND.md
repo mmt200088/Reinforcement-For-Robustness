@@ -6,27 +6,7 @@
 ## ▶ active command
 
 ```bash
-set -euo pipefail
-export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}."
-export HF_HOME=/hy-tmp/hf_cache
-export HF_ENDPOINT=https://hf-mirror.com
-export HF_HUB_DISABLE_XET=1
-export GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
-TS=$(date +%Y%m%d_%H%M%S)
-OUT="experiments/server_command_runs/stage1_ppo_queue_entropy0p1_${TS}"
-STATE="/hy-tmp/stage1_ppo_queue_entropy0p1_${TS}"
-mkdir -p "$OUT" "$STATE/logs"
-SOURCE_COMMIT=$(git rev-parse HEAD)
-{
-  echo "HEAD=$SOURCE_COMMIT"
-  echo "OUT=$OUT"
-  echo "STATE=$STATE"
-} | tee "$OUT/commit.txt"
-
-cat > "$STATE/stage1_ppo_queue.sh" <<'QUEUE'
-#!/usr/bin/env bash
-set -u -o pipefail
-
+set -uo pipefail
 export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}."
 export HF_HOME=/hy-tmp/hf_cache
 export HF_ENDPOINT=https://hf-mirror.com
@@ -34,216 +14,89 @@ export HF_HUB_DISABLE_XET=1
 export GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 
-: "${STATE_DIR:?missing STATE_DIR}"
-: "${OUT_DIR:?missing OUT_DIR}"
-: "${SOURCE_COMMIT:?missing SOURCE_COMMIT}"
+TS=$(date +%Y%m%d_%H%M%S)
+OUT="experiments/server_command_runs/stage2_fusion_reward_${TS}"
+mkdir -p "$OUT"
+SOURCE_COMMIT=$(git rev-parse HEAD)
+echo "HEAD=$SOURCE_COMMIT" | tee "$OUT/commit.txt"
+nvidia-smi -L 2>/dev/null | tee "$OUT/gpus.txt" || true
 
-TASKS=(
-  "base_rte|bert-base-rte-stage1-rl"
-  "base_sst2|bert-base-sst2-stage1-rl"
-  "large_mrpc|bert-large-mrpc-stage1-rl"
-  "large_rte|bert-large-rte-stage1-rl"
-  "large_sst2|bert-large-sst2-stage1-rl"
-)
+# ---- Phase 0: what stage-1 records exist (stage2-only needs one for bert-base mrpc) ----
+{ echo "=== stage1 records ==="; ls -la "Parting Chapter"/stage1/record/ 2>/dev/null || echo "(no stage1 record dir)"; } | tee "$OUT/stage1_records.txt"
 
-write_status() {
-  local phase="$1"
-  local task="${2:-}"
-  local preset="${3:-}"
-  local pid="${4:-}"
-  local launch_log="${5:-}"
-  local train_log="${6:-}"
-  local run_dir="${7:-}"
-  local message="${8:-}"
-  python3 - "$STATE_DIR/status.json" \
-    "$phase" "$task" "$preset" "$pid" "$launch_log" "$train_log" "$run_dir" "$message" <<'PY'
-import datetime
-import json
-import sys
+# ---- Phase 1: full contract gate (torch) + fusion reward tests; record rc, do NOT abort ----
+echo "=== contract gate $(date -Is) ===" | tee "$OUT/test_gate.log"
+BLB_STRICT=0 python3 -m unittest discover -s tests -p "test_blb_*.py" -v >> "$OUT/test_gate.log" 2>&1
+echo "contract_gate_rc=$?" | tee -a "$OUT/test_gate.log"
+python3 -m unittest tests.test_blb_fusion_reward -v >> "$OUT/test_gate.log" 2>&1
+echo "fusion_reward_test_rc=$?" | tee -a "$OUT/test_gate.log"
+tail -n 40 "$OUT/test_gate.log" | tee "$OUT/test_gate_tail.log"
 
-path, phase, task, preset, pid, launch_log, train_log, run_dir, message = sys.argv[1:10]
-payload = {
-    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    "source_commit": "__SOURCE_COMMIT__",
-    "phase": phase,
-    "task": task,
-    "preset": preset,
-    "training_pid": pid,
-    "launch_log": launch_log,
-    "training_log": train_log,
-    "run_dir": run_dir,
-    "message": message,
-}
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(payload, f, indent=2, ensure_ascii=False)
-    f.write("\n")
-PY
-  python3 - "$STATE_DIR/status.json" "$SOURCE_COMMIT" <<'PY'
-import json
-import sys
+# ---- Phase 2: real fusion-count Stage-2 RL smoke with the NEW reward (K=4, 4-GPU) ----
+echo "=== fusion stage2 smoke $(date -Is) ===" | tee "$OUT/train.log"
+bash llama_7B_LayerImportance.sh run rl \
+  --mode stage2-only \
+  --preset mrpc-blb-stage2-rl \
+  --blb-v3-fusion-count-action 1 \
+  --stage2-k-trials 4 \
+  --stage2-probe-size 256 \
+  --batch-size 512 \
+  --blb-v3-reward-devices 0,1,2,3 \
+  --stage2-search-episodes 600 \
+  --fresh >> "$OUT/train.log" 2>&1
+echo "train_rc=$?" | tee -a "$OUT/train.log"
 
-path, source_commit = sys.argv[1:3]
-with open(path, "r", encoding="utf-8") as f:
-    payload = json.load(f)
-payload["source_commit"] = source_commit
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(payload, f, indent=2, ensure_ascii=False)
-    f.write("\n")
-PY
-  cp -f "$STATE_DIR/status.json" "$OUT_DIR/status.json" 2>/dev/null || true
-}
-
-extract_after_colon() {
-  local pattern="$1"
-  local file="$2"
-  sed -n "s/.*${pattern}：\\(.*\\)$/\\1/p" "$file" | tail -1
-}
-
-run_one() {
-  local task="$1"
-  local preset="$2"
-  local launch_log="$STATE_DIR/logs/${task}_launch.log"
-  local train_log=""
-  local run_dir=""
-  local pid=""
-
-  write_status "launching" "$task" "$preset" "" "$launch_log" "" "" "starting launcher"
-  (
-    echo "=== TASK $task preset=$preset start $(date -Is) ==="
-    echo "source_commit=$SOURCE_COMMIT"
-    printf 'command='
-    printf '%q ' bash llama_7B_LayerImportance.sh run rl \
-      --preset "$preset" \
-      --stage1-search-episodes 0 \
-      --stage1-entropy-stop-threshold 0.1 \
-      --stage1-rl-devices 0,1,2,3 \
-      --rl-algo ppo \
-      --fresh
-    printf '\n'
-    bash llama_7B_LayerImportance.sh run rl \
-      --preset "$preset" \
-      --stage1-search-episodes 0 \
-      --stage1-entropy-stop-threshold 0.1 \
-      --stage1-rl-devices 0,1,2,3 \
-      --rl-algo ppo \
-      --fresh
-    launcher_rc=$?
-    echo "launcher_rc=$launcher_rc"
-    exit "$launcher_rc"
-  ) > "$launch_log" 2>&1
-  local launcher_rc=$?
-  if [ "$launcher_rc" -ne 0 ]; then
-    write_status "failed" "$task" "$preset" "" "$launch_log" "" "" "launcher failed rc=$launcher_rc"
-    return "$launcher_rc"
-  fi
-
-  pid=$(extract_after_colon "进程号（PID）" "$launch_log")
-  train_log=$(sed -n "s/.*查看日志：tail -f \\(.*\\)$/\\1/p" "$launch_log" | tail -1)
-  local latest_pid_file
-  latest_pid_file=$(extract_after_colon "LATEST_PID" "$launch_log")
-  if [ -z "$pid" ] && [ -n "$latest_pid_file" ] && [ -f "$latest_pid_file" ]; then
-    pid=$(cat "$latest_pid_file")
-  fi
-  local latest_run_file
-  latest_run_file=$(extract_after_colon "LATEST_RUN_DIR" "$launch_log")
-  if [ -n "$latest_run_file" ] && [ -f "$latest_run_file" ]; then
-    run_dir=$(cat "$latest_run_file")
-  fi
-  if [ -z "$pid" ]; then
-    write_status "failed" "$task" "$preset" "" "$launch_log" "$train_log" "$run_dir" "could not parse training pid"
-    return 90
-  fi
-
-  write_status "running" "$task" "$preset" "$pid" "$launch_log" "$train_log" "$run_dir" "training pid running"
-  echo "$task|$preset|$pid|$launch_log|$train_log|$run_dir" >> "$STATE_DIR/task_pids.tsv"
-
-  while kill -0 "$pid" 2>/dev/null; do
-    sleep 60
-    write_status "running" "$task" "$preset" "$pid" "$launch_log" "$train_log" "$run_dir" "training pid still running"
-  done
-
-  sleep 10
-  cp -f "$launch_log" "$OUT_DIR/${task}_launch.log" 2>/dev/null || true
-  [ -n "$train_log" ] && [ -f "$train_log" ] && tail -300 "$train_log" > "$OUT_DIR/${task}_train_tail.log" || true
-
-  if [ -n "$train_log" ] && [ -f "$train_log" ] && grep -q "Stage-1 entropy convergence reached" "$train_log"; then
-    write_status "completed" "$task" "$preset" "$pid" "$launch_log" "$train_log" "$run_dir" "entropy convergence reached"
-    echo "TASK_COMPLETED $task $(date -Is)" >> "$STATE_DIR/events.log"
-    return 0
-  fi
-
-  if [ -n "$run_dir" ] && [ -f "$run_dir/COMPLETED" ]; then
-    write_status "completed" "$task" "$preset" "$pid" "$launch_log" "$train_log" "$run_dir" "COMPLETED marker present"
-    echo "TASK_COMPLETED_MARKER $task $(date -Is)" >> "$STATE_DIR/events.log"
-    return 0
-  fi
-
-  write_status "failed" "$task" "$preset" "$pid" "$launch_log" "$train_log" "$run_dir" "training exited without entropy convergence marker"
-  return 91
-}
-
-main() {
-  echo "queue_start=$(date -Is)" | tee "$STATE_DIR/events.log"
-  echo "source_commit=$SOURCE_COMMIT" | tee -a "$STATE_DIR/events.log"
-  write_status "starting" "" "" "" "" "" "" "queue starting"
-  for spec in "${TASKS[@]}"; do
-    IFS='|' read -r task preset <<< "$spec"
-    run_one "$task" "$preset"
-    rc=$?
-    if [ "$rc" -ne 0 ]; then
-      echo "queue_failed task=$task rc=$rc time=$(date -Is)" | tee -a "$STATE_DIR/events.log"
-      write_status "failed" "$task" "$preset" "" "$STATE_DIR/logs/${task}_launch.log" "" "" "queue stopped on task failure rc=$rc"
-      cp -f "$STATE_DIR/status.json" "$OUT_DIR/status.json" 2>/dev/null || true
-      cp -f "$STATE_DIR/events.log" "$OUT_DIR/events.log" 2>/dev/null || true
-      exit "$rc"
-    fi
-  done
-  echo "queue_completed=$(date -Is)" | tee -a "$STATE_DIR/events.log"
-  write_status "completed" "" "" "" "" "" "" "all tasks completed"
-  cp -f "$STATE_DIR/status.json" "$OUT_DIR/status.json" 2>/dev/null || true
-  cp -f "$STATE_DIR/events.log" "$OUT_DIR/events.log" 2>/dev/null || true
-}
-
-main "$@"
-QUEUE
-
-chmod +x "$STATE/stage1_ppo_queue.sh"
-STATE_DIR="$STATE" OUT_DIR="$OUT" SOURCE_COMMIT="$SOURCE_COMMIT" \
-  nohup bash "$STATE/stage1_ppo_queue.sh" > "$STATE/logs/queue_wrapper.log" 2>&1 &
-QUEUE_PID=$!
-echo "$QUEUE_PID" > "$STATE/queue.pid"
+# ---- Phase 3: collect artifacts for local inspection ----
+PROG=$(ls -dt "Parting Chapter"/stage2/*/progress 2>/dev/null | head -1)
 {
   echo "HEAD=$SOURCE_COMMIT"
-  echo "queue_pid=$QUEUE_PID"
-  echo "state_dir=$STATE"
   echo "out_dir=$OUT"
-  echo "tasks=base_rte,base_sst2,large_mrpc,large_rte,large_sst2"
-  echo "algorithm=ppo"
-  echo "stage1_search_episodes=0"
-  echo "stage1_entropy_stop_threshold=0.1"
-  echo "stage1_rl_devices=0,1,2,3"
-  echo "fresh=true"
-  echo "status_json=$STATE/status.json"
-  echo "wrapper_log=$STATE/logs/queue_wrapper.log"
+  echo "progress_dir=$PROG"
 } | tee "$OUT/SUMMARY.txt"
-echo "=== Stage-1 PPO convergence queue launched ==="
+if [ -n "${PROG:-}" ] && [ -d "$PROG" ]; then
+  cp -f "$PROG"/blb_stage2_status.json "$OUT/" 2>/dev/null || true
+  cp -f "$PROG"/blb_stage2_report.md "$OUT/" 2>/dev/null || true
+  cp -f "$PROG"/blb_stage2_best_action_full.json "$OUT/" 2>/dev/null || true
+  cp -f "$PROG"/blb_stage2_baseline_action_full.json "$OUT/" 2>/dev/null || true
+  cp -f "$PROG"/blb_stage2_error.txt "$OUT/" 2>/dev/null || true
+  cp -f "$PROG"/warning.txt "$OUT/" 2>/dev/null || true
+  cp -rf "$PROG"/diagnostics "$OUT/diagnostics" 2>/dev/null || true
+  tail -n 3000 "$PROG"/diagnostics/episodes.jsonl > "$OUT/episodes_tail.jsonl" 2>/dev/null || true
+fi
+tail -n 500 "$OUT/train.log" > "$OUT/train_tail.log" 2>/dev/null || true
+# quick markers for triage
+{ echo "=== markers ==="; grep -nE "Fusion-count action ENABLED|fast-reward|num_trials_per_step|reward probe enabled|trial split|警告|warning|Traceback|Error|loss_mean=100|invalid_steps" "$OUT/train.log" | head -80; } | tee "$OUT/markers.txt" || true
+echo "=== done $(date -Is) ===" | tee -a "$OUT/SUMMARY.txt"
+
+# ---- Phase 4: push artifacts back so local can pull + inspect ----
+git config --local http.version HTTP/1.1 2>/dev/null || true
+git config --local protocol.version 0 2>/dev/null || true
+git add "$OUT" 2>/dev/null || true
+git -c user.email=server@run -c user.name=server commit -q -m "Stage-2 fusion reward smoke artifacts ${TS}" 2>/dev/null || true
+git push origin jk_standard_rl 2>&1 | tail -3 || true
+echo "=== Stage-2 fusion reward validation finished ==="
 ```
 
 ## metadata
 
-- **任务**：启动 Stage-1 PPO 收敛队列，串行运行
-  `bert-base-rte-stage1-rl`、`bert-base-sst2-stage1-rl`、
-  `bert-large-mrpc-stage1-rl`、`bert-large-rte-stage1-rl`、
-  `bert-large-sst2-stage1-rl`。
-- **算法**：只用 PPO。GRPO 已永久禁用，命令显式传 `--rl-algo ppo`。
-- **停止条件**：每个任务都用 `--stage1-search-episodes 0` 和
-  `--stage1-entropy-stop-threshold 0.1`，即不设 episode 上限，PPO update 后
-  policy entropy 低于 `0.1` 才算收敛完成。
-- **运行方式**：队列 wrapper 写到 `/hy-tmp/stage1_ppo_queue_entropy0p1_<ts>/`，
-  服务器 agent 启动后立即返回；wrapper 解析每个 launcher 输出的训练 PID，
-  轮询该 PID，看到 `Stage-1 entropy convergence reached` 或 `COMPLETED`
-  marker 后启动下一个任务。
-- **状态文件**：`/hy-tmp/stage1_ppo_queue_entropy0p1_<ts>/status.json`、
-  `events.log`、`logs/*_launch.log` 和 `queue_wrapper.log`。本地同步摘要在
-  `experiments/server_command_runs/stage1_ppo_queue_entropy0p1_<ts>/SUMMARY.txt`。
-- **协议**：服务器只 `git pull`、运行、产出/回传 artifacts；源码改动都在本地。把 `$OUT/` 回传本地。
+- **任务（取代之前的 Stage-1 PPO 队列）**：真实验证 2026-06-04 的 Stage-2 fusion-count
+  **动作 + reward 大改**。两段：
+  1. **契约门**：`BLB_STRICT=0 python -m unittest discover -s tests -p "test_blb_*.py"`
+     （含需要 torch 的 `test_blb_action_mask` / `test_blb_stage2_rl_regressions`，捕捉 reward
+     改动在 torch 路径下的回归）+ 新增 `tests/test_blb_fusion_reward.py`（含对真实
+     committed 融合图的集成测试）。记录 rc，不因失败中止。
+  2. **真实 fusion Stage-2 smoke**：`run rl --mode stage2-only --preset mrpc-blb-stage2-rl
+     --blb-v3-fusion-count-action 1 --stage2-k-trials 4 --blb-v3-reward-devices 0,1,2,3
+     --stage2-search-episodes 600 --fresh`，新 reward（per-block 加权 P3 cost、total_bits
+     删除、K=4 跨卡 std 门、warmstart 2.5）。
+- **前置**：stage2-only 需要 bert-base mrpc 的 Stage-1 record（之前的 fusion smoke 用到过，
+  应已存在；Phase 0 会把 `Parting Chapter/stage1/record/` 列出来，若缺会在 train.log 报错）。
+- **要回看的信号**（local 会据此检查 bug）：契约门全绿；train.log 出现
+  `Fusion-count action ENABLED`、四卡 probe、`fast-reward ... disabled`、K=4 trial split；
+  `episodes_tail.jsonl` 里 reward 分三档（P1≈[-5,0]/P2≈[15,25]/P3≈[40,45]），cost 只在 P3、
+  随 fusion/K 节省变化（看 `cost_score`/`fusion_cost_norm`），P2 由 std 触发（`stab_violation`>0），
+  无 `loss_mean=100` 坍塌 / 无 `invalid_steps` 异常 / 无 Traceback。
+- **产出**：`experiments/server_command_runs/stage2_fusion_reward_<ts>/`（commit.txt、test_gate.log、
+  train.log、train_tail.log、markers.txt、status.json、report.md、episodes_tail.jsonl、diagnostics/）。
+  命令末尾尝试 commit+push 回 `jk_standard_rl`（best-effort）。
+- **协议**：服务器只 `git pull`、运行、产出/回传 artifacts；源码改动都在本地。

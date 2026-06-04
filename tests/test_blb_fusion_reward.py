@@ -18,6 +18,7 @@ for _p in (str(_REPO_ROOT), str(_BLB_DIR)):
         sys.path.insert(0, _p)
 
 import fusion_cost
+import fusion_count_map as fcm
 import reward as rwd
 
 # Spec weights: block1:block2:block4:block5:truncation = 80:150:130:40:50.
@@ -185,6 +186,60 @@ class ExternalCostThreadingTest(unittest.TestCase):
         self.assertEqual(bd.priority, 3)
         # legacy path: cost_score comes from the aggregate scalar (no exception).
         self.assertIsInstance(bd.cost_score, float)
+
+
+class RealMapIntegrationTest(unittest.TestCase):
+    """End-to-end against the committed mrpc maps + reward.FUSION_COST_W weights.
+
+    Validates the block1/block4 fusion-degeneracy that the design relies on is real
+    (max_fusion==0 from the actual maps), and that a realistic 47-block episode
+    normalizes to [0, 1] with MAX_ACTUAL == 4630.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fmap = fcm.FusionCountMap.load("mrpc")
+
+    def _max_fusion(self, graph_key):
+        return max((int(o.fusion_count) for o in self.fmap.options(graph_key)), default=0)
+
+    def test_block1_block4_degenerate_block2_block5_fusable(self):
+        self.assertEqual(self._max_fusion("block1_mrpc"), 0)   # degenerate (K-only)
+        self.assertEqual(self._max_fusion("block4"), 0)        # degenerate (K-only)
+        self.assertEqual(self._max_fusion("block2_mrpc"), 1)   # fusable
+        self.assertEqual(self._max_fusion("block5_n4"), 1)     # fusable
+
+    def _schedule_choices(self, *, fusion_count_of, k_value):
+        """47-block mrpc schedule: 11 block1 (L1-11) + 12 each of block2/4/5."""
+        choices = []
+        for blk, gk, n in (
+            (1, "block1_mrpc", 11), (2, "block2_mrpc", 12),
+            (4, "block4", 12), (5, "block5_n4", 12),
+        ):
+            mf = self._max_fusion(gk)
+            for _ in range(n):
+                choices.append(fusion_cost.BlockChoice(
+                    block_idx=blk, graph_key=gk,
+                    fusion_count=fusion_count_of(mf), max_fusion=mf, k_value=k_value,
+                ))
+        return choices
+
+    def test_baseline_episode_zero_saving(self):
+        choices = self._schedule_choices(fusion_count_of=lambda mf: 0, k_value=13)
+        res = fusion_cost.compute_fusion_cost_saving(
+            choices, fusion_w=rwd.FUSION_COST_W, trunc_w=rwd.TRUNC_COST_W,
+        )
+        self.assertEqual(len(choices), 47)
+        self.assertEqual(res.cost_norm, 0.0)
+        self.assertAlmostEqual(res.max_actual, 4630.0)
+
+    def test_max_saving_episode_normalizes_to_one(self):
+        choices = self._schedule_choices(fusion_count_of=lambda mf: mf, k_value=8)
+        res = fusion_cost.compute_fusion_cost_saving(
+            choices, fusion_w=rwd.FUSION_COST_W, trunc_w=rwd.TRUNC_COST_W,
+        )
+        self.assertAlmostEqual(res.cost_norm, 1.0)
+        self.assertAlmostEqual(res.max_actual, 4630.0)
 
 
 if __name__ == "__main__":
