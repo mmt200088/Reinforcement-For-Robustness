@@ -274,6 +274,23 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   launching the next task, and do not use GRPO. Explicit user reminder,
   2026-06-04: when the active BERT-base MRPC Stage-1 run completes, build its
   HTML report first and return the local report path before moving on.
+- Stage-1 no-degree0 base_mrpc completion, added 2026-06-05: the first fresh
+  no-degree0 PPO task reached entropy convergence at episode `33000` with final
+  entropy `0.099288`, `275` PPO updates, and raw reward-best
+  `GELU=[1,1,1,1,1,1,1,1,2,1,1,1]`, Softmax fixed to all `6`, cost `49.50`,
+  reward `0.537386`, first seen at episode `19812`. The compact report and
+  artifacts were committed/pushed in `d47bc80`; the HTML report is
+  `reports/html_reports/20260605_stage1_base_mrpc_no_degree0_ppo_final.html`.
+  Deterministic `validation_full` eval on 408 MRPC examples gave original
+  plaintext baseline loss/accuracy/weighted-F1
+  `0.3462543786`/`0.8774509804`/`0.8744220872`, PPO-best
+  `0.3459055424`/`0.8750000000`/`0.8737330273`, and all4/all6 reference
+  `0.3434863985`/`0.8799019608`/`0.8774415001`. After this report was pushed,
+  Codex launched fresh `base_rte` from the same verified `f85c77e` server
+  source; current PID is `1354001`, output directory is
+  `/hy-tmp/stage1_no_degree0_queue_f85c77e_20260604_201520/src/Parting Chapter/stage1/bert base rte`,
+  and remaining order is `base_sst2`, `large_mrpc`, `large_rte`,
+  `large_sst2`.
 - Stage-1 GRPO MRPC current snapshot, added 2026-06-01: while the GRPO run was
   still active, a snapshot report was generated at
   `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/grpo_current_snapshot_20260601_164215/stage1_mrpc_grpo_current_result_report.html`.
