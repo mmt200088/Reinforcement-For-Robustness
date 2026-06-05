@@ -291,6 +291,18 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `/hy-tmp/stage1_no_degree0_queue_f85c77e_20260604_201520/src/Parting Chapter/stage1/bert base rte`,
   and remaining order is `base_sst2`, `large_mrpc`, `large_rte`,
   `large_sst2`.
+- Stage-1 no-degree0 strict MRPC rerun, added 2026-06-05: after reviewing the
+  first no-degree0 BERT-base MRPC report, the user requested changing the
+  Stage-1 metric constraint to `0%` and rerunning. Codex stopped the temporary
+  `base_rte` run before using the GPUs for the strict MRPC rerun. The first
+  strict launch attempt showed that `llama_7B_LayerImportance.sh` still
+  rejected `--stage1-accuracy-tolerance 0.0` as non-positive, even though the
+  Python evaluator accepts a zero tolerance. The local launcher validation now
+  treats Stage-1 accuracy tolerance as non-negative while still requiring it to
+  be `< 1`. Run the strict rerun fresh from a verified source snapshot with
+  `--stage1-accuracy-tolerance 0.0`, `--stage1-search-episodes 0`,
+  `--stage1-entropy-stop-threshold 0.1`, `--stage1-rl-devices 0,1,2,3`, and
+  `--rl-algo ppo`.
 - Stage-1 GRPO MRPC current snapshot, added 2026-06-01: while the GRPO run was
   still active, a snapshot report was generated at
   `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/grpo_current_snapshot_20260601_164215/stage1_mrpc_grpo_current_result_report.html`.

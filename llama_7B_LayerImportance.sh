@@ -933,7 +933,7 @@ is_nonneg_int "$STAGE1_BUDGET_TRIALS" || err "--stage1-budget-trials 必须是�
 is_nonneg_int "$STAGE2_BUDGET_TRIALS" || err "--stage2-budget-trials 必须是非负整数，当前为：$STAGE2_BUDGET_TRIALS"
 [ -z "$RESUME_FROM" ] || [ -d "$RESUME_FROM" ] || err "--resume-from 指定的目录不存在：$RESUME_FROM"
 # 准确度约束参数校验
-is_pos_num "$STAGE1_ACCURACY_TOLERANCE" || err "--stage1-accuracy-tolerance 必须是正数，当前为：$STAGE1_ACCURACY_TOLERANCE"
+is_nonneg_num "$STAGE1_ACCURACY_TOLERANCE" || err "--stage1-accuracy-tolerance 必须是非负数，当前为：$STAGE1_ACCURACY_TOLERANCE"
 awk -v x="$STAGE1_ACCURACY_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage1-accuracy-tolerance 必须 < 1（百分比形式如 0.005 表示 0.5%），当前为：$STAGE1_ACCURACY_TOLERANCE"
 [ -z "$STAGE1_ENTROPY_STOP_THRESHOLD" ] || is_pos_num "$STAGE1_ENTROPY_STOP_THRESHOLD" || err "--stage1-entropy-stop-threshold 必须是正数，当前为：$STAGE1_ENTROPY_STOP_THRESHOLD"
 is_pos_num "$STAGE2_LIMIT_TOLERANCE" || err "--stage2-limit-tolerance 必须是正数，当前为：$STAGE2_LIMIT_TOLERANCE"
