@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MRPC Stage-1 Strict-0 Best vs Baseline: Test Predictions and Train Metrics</title>
+<style>
+:root { color-scheme: light; --ink:#172033; --muted:#5b6578; --line:#d7dce5; --band:#f5f7fb; --accent:#145da0; --good:#137333; --warn:#9a5b00; }
+body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,"Noto Sans SC",sans-serif; color:var(--ink); background:white; }
+main { max-width:1160px; margin:0 auto; padding:32px 24px 56px; }
+h1 { font-size:28px; margin:0 0 8px; letter-spacing:0; }
+h2 { font-size:20px; margin:30px 0 12px; border-bottom:1px solid var(--line); padding-bottom:8px; }
+h3 { font-size:16px; margin:20px 0 8px; }
+p { line-height:1.62; color:var(--muted); margin:8px 0; }
+.meta, .note { background:var(--band); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin:16px 0; }
+.note strong { color:var(--warn); }
+table { width:100%; border-collapse:collapse; margin:12px 0 20px; font-size:14px; }
+th, td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+th { background:#eef2f8; font-weight:650; }
+code { background:#eef2f8; padding:1px 5px; border-radius:4px; }
+.grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:14px 0; }
+.card { border:1px solid var(--line); border-radius:8px; padding:14px 16px; background:#fff; }
+.card .label { color:var(--muted); font-size:13px; }
+.card .value { font-size:24px; margin-top:6px; font-weight:700; }
+.good { color:var(--good); }
+.warn { color:var(--warn); }
+.small { font-size:13px; color:var(--muted); }
+pre { white-space:pre-wrap; background:#f7f9fc; border:1px solid var(--line); border-radius:8px; padding:12px; overflow:auto; }
+@media (max-width:760px) { .grid { grid-template-columns:1fr; } main { padding:24px 14px 42px; } table { font-size:13px; } }
+</style>
+</head>
+<body>
+<main>
+<h1>MRPC 当前 Stage-1 最优配置 vs 原函数 Baseline</h1>
+<p>对比对象：最新 strict-0 Stage-1 PPO 找到的 MRPC 配置 <code>GELU=[1,2,1,1,1,1,1,1,2,1,1,1]</code>、<code>Softmax=[6]*12</code>，以及原始 GELU + 原始 Softmax/exp baseline。</p>
+<div class="note"><strong>测试集说明：</strong>GLUE 官方 MRPC test split 本地没有公开标签，因此本报告不能给 test accuracy/F1/loss。这里的“测试集结果”是两组官方 test submission 预测的分布、哈希和逐样本差异统计。训练集有标签，所以训练集部分给真实 loss、Accuracy、Weighted F1。</div>
+<div class="meta">
+<p><b>Server runroot:</b> <code>/hy-tmp/mrpc_stage1_strict0_test_train_compare_20260605_221023</code></p>
+<p><b>Source snapshot:</b> <code>ae6f4acd2c9f739821de1e9a64b9eaee4d3ad53a</code></p>
+<p><b>Created at:</b> <code>2026-06-05T22:28:12+0800</code></p>
+</div>
+
+<h2>一眼结论</h2>
+<div class="grid">
+  <div class="card"><div class="label">Test 预测一致率</div><div class="value">97.6232%</div><div class="small">1684 / 1725</div></div>
+  <div class="card"><div class="label">Test 预测差异</div><div class="value">41</div><div class="small">占 2.3768%</div></div>
+  <div class="card"><div class="label">Train loss 改善</div><div class="value good">1.7687%</div><div class="small">best 相对 baseline</div></div>
+</div>
+<p>训练集上 best 配置相对原函数 baseline：loss 更低，Accuracy 和 Weighted F1 也略高，但提升很小；test split 上两者预测高度一致，只改变了 41 个样本的标签。</p>
+
+<h2>训练集有标签指标</h2>
+<table>
+<thead><tr><th>组别</th><th>样本数</th><th>Loss</th><th>Accuracy</th><th>Weighted F1</th><th>预测分布</th></tr></thead>
+<tbody>
+<tr><td>Baseline 原函数</td><td>3668</td><td>0.1173972209</td><td>0.9653762268</td><td>0.9653421659</td><td><code>{&quot;1&quot;: 2483, &quot;0&quot;: 1185}</code></td></tr>
+<tr><td>Stage-1 strict-0 best</td><td>3668</td><td>0.1153208612</td><td>0.9656488550</td><td>0.9656856971</td><td><code>{&quot;1&quot;: 2464, &quot;0&quot;: 1204}</code></td></tr>
+</tbody>
+</table>
+<table>
+<thead><tr><th>指标</th><th>绝对变化 best - baseline</th><th>百分比变化</th><th>方向解释</th></tr></thead>
+<tbody>
+<tr><td>Loss</td><td>-0.0020763597</td><td class="good">+1.768662%</td><td>loss 越低越好；这里显示的是改善百分比。</td></tr>
+<tr><td>Accuracy</td><td>+0.0002726281</td><td class="good">+0.028241%</td><td>越高越好。</td></tr>
+<tr><td>Weighted F1</td><td>+0.0003435312</td><td class="good">+0.035586%</td><td>越高越好。</td></tr>
+</tbody>
+</table>
+
+<h2>GLUE Test 预测对比</h2>
+<table>
+<thead><tr><th>项目</th><th>Baseline 原函数</th><th>Stage-1 strict-0 best</th></tr></thead>
+<tbody>
+<tr><td>MRPC.tsv 行数</td><td>1726（含 header）</td><td>1726（含 header）</td></tr>
+<tr><td>预测分布</td><td><code>{&quot;1&quot;: 1224, &quot;0&quot;: 501}</code></td><td><code>{&quot;1&quot;: 1203, &quot;0&quot;: 522}</code></td></tr>
+<tr><td>MRPC.tsv sha256</td><td><code>38ef9dd50a0f9dca0dd4c305a397721acb7bf1f62b468628e55698028834c33a</code></td><td><code>afa4163a187971901d6da19df35a11a21b028f401373e9ad30722d10349e2a88</code></td></tr>
+<tr><td>submission.zip sha256</td><td><code>e5dd304631db9752011e55dc4b1f9cfb93c054c37dfd34bbbca84d9f95588933</code></td><td><code>538cef508c1890cd90e57988ae40b960d1c3e12628ff09fe786e252a8a963c4e</code></td></tr>
+</tbody>
+</table>
+<h3>Test 预测转移矩阵</h3>
+<table>
+<thead><tr><th>Baseline → Best</th><th>样本数</th><th>占 test 比例</th></tr></thead>
+<tbody><tr><td>0-&gt;0</td><td>491</td><td>28.4638%</td></tr><tr><td>0-&gt;1</td><td>10</td><td>0.5797%</td></tr><tr><td>1-&gt;0</td><td>31</td><td>1.7971%</td></tr><tr><td>1-&gt;1</td><td>1193</td><td>69.1594%</td></tr></tbody>
+</table>
+<h3>前 40 个差异样本索引</h3>
+<table>
+<thead><tr><th>index</th><th>Baseline prediction</th><th>Best prediction</th></tr></thead>
+<tbody><tr><td>3</td><td>1</td><td>0</td></tr><tr><td>21</td><td>1</td><td>0</td></tr><tr><td>31</td><td>1</td><td>0</td></tr><tr><td>54</td><td>0</td><td>1</td></tr><tr><td>66</td><td>1</td><td>0</td></tr><tr><td>80</td><td>1</td><td>0</td></tr><tr><td>96</td><td>1</td><td>0</td></tr><tr><td>101</td><td>0</td><td>1</td></tr><tr><td>120</td><td>1</td><td>0</td></tr><tr><td>207</td><td>1</td><td>0</td></tr><tr><td>227</td><td>1</td><td>0</td></tr><tr><td>266</td><td>1</td><td>0</td></tr><tr><td>291</td><td>0</td><td>1</td></tr><tr><td>331</td><td>0</td><td>1</td></tr><tr><td>351</td><td>0</td><td>1</td></tr><tr><td>405</td><td>1</td><td>0</td></tr><tr><td>427</td><td>1</td><td>0</td></tr><tr><td>568</td><td>1</td><td>0</td></tr><tr><td>597</td><td>1</td><td>0</td></tr><tr><td>602</td><td>1</td><td>0</td></tr><tr><td>651</td><td>1</td><td>0</td></tr><tr><td>703</td><td>1</td><td>0</td></tr><tr><td>714</td><td>0</td><td>1</td></tr><tr><td>858</td><td>0</td><td>1</td></tr><tr><td>883</td><td>1</td><td>0</td></tr><tr><td>945</td><td>1</td><td>0</td></tr><tr><td>978</td><td>1</td><td>0</td></tr><tr><td>1039</td><td>0</td><td>1</td></tr><tr><td>1056</td><td>1</td><td>0</td></tr><tr><td>1143</td><td>1</td><td>0</td></tr><tr><td>1325</td><td>1</td><td>0</td></tr><tr><td>1339</td><td>1</td><td>0</td></tr><tr><td>1383</td><td>0</td><td>1</td></tr><tr><td>1442</td><td>1</td><td>0</td></tr><tr><td>1463</td><td>1</td><td>0</td></tr><tr><td>1493</td><td>1</td><td>0</td></tr><tr><td>1494</td><td>1</td><td>0</td></tr><tr><td>1575</td><td>1</td><td>0</td></tr><tr><td>1593</td><td>1</td><td>0</td></tr><tr><td>1639</td><td>0</td><td>1</td></tr></tbody>
+</table>
+
+<h2>配置</h2>
+<table>
+<thead><tr><th>组别</th><th>GELU</th><th>Softmax</th><th>Stage-2 / noise</th></tr></thead>
+<tbody>
+<tr><td>Baseline</td><td>原始函数</td><td>原始函数 / exp</td><td>关闭</td></tr>
+<tr><td>Stage-1 strict-0 best</td><td><code>[1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]</code></td><td><code>[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]</code></td><td>关闭</td></tr>
+</tbody>
+</table>
+
+<h2>本地文件</h2>
+<table>
+<thead><tr><th>文件</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>experiments/server_command_runs/mrpc_stage1_strict0_test_train_compare_20260605_221023/results.json</code></td><td>原始指标和统计。</td></tr>
+<tr><td><code>experiments/server_command_runs/mrpc_stage1_strict0_test_train_compare_20260605_221023/submission_baseline/MRPC.tsv</code></td><td>Baseline test 预测。</td></tr>
+<tr><td><code>experiments/server_command_runs/mrpc_stage1_strict0_test_train_compare_20260605_221023/submission_best/MRPC.tsv</code></td><td>Stage-1 strict-0 best test 预测。</td></tr>
+</tbody>
+</table>
+</main>
+</body>
+</html>
