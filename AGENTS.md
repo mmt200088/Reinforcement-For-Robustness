@@ -302,7 +302,18 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   be `< 1`. Run the strict rerun fresh from a verified source snapshot with
   `--stage1-accuracy-tolerance 0.0`, `--stage1-search-episodes 0`,
   `--stage1-entropy-stop-threshold 0.1`, `--stage1-rl-devices 0,1,2,3`, and
-  `--rl-algo ppo`.
+  `--rl-algo ppo`. Commit `41a0b32` was packaged into verified temp source
+  `/hy-tmp/stage1_no_degree0_mrpc_strict0_41a0b32_20260605_123543/src` and
+  launched fresh as PID `1358171`. The launch log is
+  `/hy-tmp/stage1_no_degree0_mrpc_strict0_41a0b32_20260605_123543/logs/base_mrpc_strict0_launch.log`,
+  the training log is
+  `/hy-tmp/stage1_no_degree0_mrpc_strict0_41a0b32_20260605_123543/src/Parting Chapter/stage1/bert base mrpc/logs/stage1_rl.log`,
+  and status is tracked at
+  `/hy-tmp/stage1_no_degree0_mrpc_strict0_41a0b32_20260605_123543/state/status.json`.
+  Initial log evidence confirms validation_full baseline
+  loss/accuracy/F1 `0.346254`/`0.877451`/`0.874422`, strict constraints
+  `loss <= 0.3463`, `Accuracy >= 0.8775`, `F1 >= 0.8744`, and four
+  Stage-1 rollout workers on `cuda:0..3`.
 - Stage-1 GRPO MRPC current snapshot, added 2026-06-01: while the GRPO run was
   still active, a snapshot report was generated at
   `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/grpo_current_snapshot_20260601_164215/stage1_mrpc_grpo_current_result_report.html`.
