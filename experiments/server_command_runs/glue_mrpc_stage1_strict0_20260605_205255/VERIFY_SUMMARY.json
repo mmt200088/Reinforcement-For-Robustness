@@ -1,0 +1,121 @@
+{
+  "runroot": "/hy-tmp/glue_mrpc_stage1_strict0_20260605_205255",
+  "output": "/hy-tmp/glue_mrpc_stage1_strict0_20260605_205255/submission",
+  "zip": "/hy-tmp/glue_mrpc_stage1_strict0_20260605_205255/submission/submission.zip",
+  "zip_exists": true,
+  "files": {
+    "AX.tsv": {
+      "lines": 1105,
+      "head": [
+        "index\tprediction",
+        "0\tentailment",
+        "1\tentailment"
+      ],
+      "sha256": "fcf7122fd9bc8f819fd4deb3e86b8e944a601331e3b67a1a19f31836c072b4ef"
+    },
+    "CoLA.tsv": {
+      "lines": 1064,
+      "head": [
+        "index\tprediction",
+        "0\t0",
+        "1\t0"
+      ],
+      "sha256": "37b3cc6e37e646992b00c1f9c0c65411197141dc6ed13b097b242cfec1e50937"
+    },
+    "MNLI-m.tsv": {
+      "lines": 9797,
+      "head": [
+        "index\tprediction",
+        "0\tentailment",
+        "1\tentailment"
+      ],
+      "sha256": "17935e4ff34d1108c5efd6cdf588de60155d6a06a3389cb1607bfc415b014f02"
+    },
+    "MNLI-mm.tsv": {
+      "lines": 9848,
+      "head": [
+        "index\tprediction",
+        "0\tentailment",
+        "1\tentailment"
+      ],
+      "sha256": "f7d3cda70d128e613a52a565b0f95cb4a79731d6488172fc485390803a8fb24e"
+    },
+    "MRPC.tsv": {
+      "lines": 1726,
+      "head": [
+        "index\tprediction",
+        "0\t1",
+        "1\t1"
+      ],
+      "sha256": "afa4163a187971901d6da19df35a11a21b028f401373e9ad30722d10349e2a88"
+    },
+    "QNLI.tsv": {
+      "lines": 5464,
+      "head": [
+        "index\tprediction",
+        "0\tentailment",
+        "1\tentailment"
+      ],
+      "sha256": "2042c7024705a1df47fe720d7e14e545035355bb7c6ce8f2f5ea21bbe18eca5c"
+    },
+    "QQP.tsv": {
+      "lines": 390966,
+      "head": [
+        "index\tprediction",
+        "0\t0",
+        "1\t0"
+      ],
+      "sha256": "4925a196c8150b33763a6db7a37223aa11df02082db74ed9254a526529b53a98"
+    },
+    "RTE.tsv": {
+      "lines": 3001,
+      "head": [
+        "index\tprediction",
+        "0\tentailment",
+        "1\tentailment"
+      ],
+      "sha256": "014f4a265175c1998fa8eb059ef00efdd9ac27c8507bb4c4f22110aebcc62235"
+    },
+    "SST-2.tsv": {
+      "lines": 1822,
+      "head": [
+        "index\tprediction",
+        "0\t0",
+        "1\t0"
+      ],
+      "sha256": "40a122775baffaf0e23b5cc643700ab27c9eda50e1f3806d3ffa37c9ae00d10e"
+    },
+    "STS-B.tsv": {
+      "lines": 1380,
+      "head": [
+        "index\tprediction",
+        "0\t0.000",
+        "1\t0.000"
+      ],
+      "sha256": "20217b5577e50cc7862085ae6affe4f0cb42ee770a3c9a7e93ab21d1de4e9f7a"
+    },
+    "WNLI.tsv": {
+      "lines": 147,
+      "head": [
+        "index\tprediction",
+        "0\t0",
+        "1\t0"
+      ],
+      "sha256": "fe55f37962c062cfdd558bad3cb87d6f3b5da5257560e0c17d02cd8fb30a72a0"
+    }
+  },
+  "zip_sha256": "574069f346de89b27bc61bb2942803fac5765e60b3f27eaa8c9a1fc26cd6dedf",
+  "zip_names": [
+    "AX.tsv",
+    "CoLA.tsv",
+    "MNLI-m.tsv",
+    "MNLI-mm.tsv",
+    "MRPC.tsv",
+    "QNLI.tsv",
+    "QQP.tsv",
+    "RTE.tsv",
+    "SST-2.tsv",
+    "STS-B.tsv",
+    "WNLI.tsv"
+  ]
+}
