@@ -1,0 +1,23 @@
+=== build 6 cheaper maps (workers=96) 2026-06-04T23:36:56+08:00 ===
+[build] block1_mrpc (block1, gelu=4, attn=2) ...
+  -> options=2 fusion_counts=[0, 1] valid=464361/810000 rescales=2['mean_rescale_sf', 'var_rescale_sf'] pinned=0 K-indep=True wall=67.82s
+[build] block2_mrpc (block2, gelu=4, attn=2) ...
+  -> options=2 fusion_counts=[0, 1] valid=54172618/72900000 rescales=4['gamma_rescale_sf', 'kt_mask1_rescale_sf', 'q_mask1_rescale_sf', 'qkt_matmul_rescale_sf'] pinned=1 K-indep=True wall=5562.27s
+[build] block5_n0 (block5, gelu=0, attn=2) ...
+  -> options=2 fusion_counts=[0, 1] valid=71012/81000 rescales=2['normalize_rescale_sf', 'wffn1_rescale_sf'] pinned=0 K-indep=True wall=15.86s
+[build] block5_n1 (block5, gelu=1, attn=2) ...
+  -> options=2 fusion_counts=[0, 1] valid=611301/810000 rescales=2['gelu_coeff_mul_rescale_sf_0', 'normalize_rescale_sf'] pinned=0 K-indep=True wall=69.04s
+[build] block5_n2 (block5, gelu=2, attn=2) ...
+  -> options=3 fusion_counts=[0, 1, 2] valid=5053365/7290000 rescales=3['gelu_coeff_mul_rescale_sf_0', 'normalize_rescale_sf', 'wffn1_rescale_sf'] pinned=0 K-indep=True wall=536.58s
+[build] block5_n4 (block5, gelu=4, attn=2) ...
+  -> options=3 fusion_counts=[0, 1, 2] valid=47206298/65610000 rescales=4['gelu_coeff_mul_rescale_sf_0', 'gelu_power_rescale_sf_0', 'normalize_rescale_sf', 'wffn1_rescale_sf'] pinned=0 K-indep=True wall=4532.11s
+
+=== SUMMARY ===
+max_num_options=6
+  block1_mrpc: #options=2 fusion=[0, 1] K-indep=True
+  block2_mrpc: #options=2 fusion=[0, 1] K-indep=True
+  block5_n0: #options=2 fusion=[0, 1] K-indep=True
+  block5_n1: #options=2 fusion=[0, 1] K-indep=True
+  block5_n2: #options=3 fusion=[0, 1, 2] K-indep=True
+  block5_n4: #options=3 fusion=[0, 1, 2] K-indep=True
+build_feasible_rc=0

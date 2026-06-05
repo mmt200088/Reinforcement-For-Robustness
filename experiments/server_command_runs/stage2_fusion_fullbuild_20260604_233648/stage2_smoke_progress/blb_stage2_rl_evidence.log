@@ -1,0 +1,18 @@
+== fusion enable evidence ==
+441:  * Fusion-count action ENABLED：map graphs=7, max_options=3；safe-neighbor/radius2 已停用
+== final summary evidence ==
+3496:    平均 valid steps=47.00/47  ·  平均 invalid=0.00  ·  当前 rank-best reward=+38.0065  ·  rank_key=[3.0, 0.0, 0.0, 0.0, 0.0, 40.5, 38.00654336602143]
+9263:    平均 valid steps=47.00/47  ·  平均 invalid=0.00  ·  当前 rank-best reward=+38.0065  ·  rank_key=[3.0, 0.0, 0.0, 0.0, 0.0, 40.5, 38.00654336602143]
+19796:    平均 valid steps=47.00/47  ·  平均 invalid=0.00  ·  当前 rank-best reward=+39.5306  ·  rank_key=[3.0, 2430.0, 17.0, 1.2203389830508478, 442.0, 41.845504221181045, 39.53063430157344]
+28445:    平均 valid steps=47.00/47  ·  平均 invalid=0.00  ·  当前 rank-best reward=+39.5306  ·  rank_key=[3.0, 2430.0, 17.0, 1.2203389830508478, 442.0, 41.845504221181045, 39.53063430157344]
+38035:    平均 valid steps=47.00/47  ·  平均 invalid=0.00  ·  当前 rank-best reward=+39.7372  ·  rank_key=[3.0, 2480.0, 14.0, 1.5593220338983045, 380.0, 42.07264133221358, 39.73719386291553]
+46688:    平均 valid steps=47.00/47  ·  平均 invalid=0.00  ·  当前 rank-best reward=+39.7372  ·  rank_key=[3.0, 2480.0, 14.0, 1.5593220338983045, 380.0, 42.07264133221358, 39.73719386291553]
+55337:    平均 valid steps=47.00/47  ·  平均 invalid=0.00  ·  当前 rank-best reward=+39.7372  ·  rank_key=[3.0, 2480.0, 14.0, 1.5593220338983045, 380.0, 42.07264133221358, 39.73719386291553]
+63984:    平均 valid steps=47.00/47  ·  平均 invalid=0.00  ·  当前 rank-best reward=+39.7372  ·  rank_key=[3.0, 2480.0, 14.0, 1.5593220338983045, 380.0, 42.07264133221358, 39.73719386291553]
+72631:    平均 valid steps=47.00/47  ·  平均 invalid=0.00  ·  当前 rank-best reward=+39.7372  ·  rank_key=[3.0, 2480.0, 14.0, 1.5593220338983045, 380.0, 42.07264133221358, 39.73719386291553]
+81280:    平均 valid steps=47.00/47  ·  平均 invalid=0.00  ·  当前 rank-best reward=+39.7372  ·  rank_key=[3.0, 2480.0, 14.0, 1.5593220338983045, 380.0, 42.07264133221358, 39.73719386291553]
+81293:  PPO 训练结束（Sequential PPO training completed）
+81297:  · 完成回合数：600（计划 600）
+81299:  · 最近 10 回合 invalid 率：0.0%
+81300:  · 训练期 rank-best reward：+39.7372
+== error grep ==

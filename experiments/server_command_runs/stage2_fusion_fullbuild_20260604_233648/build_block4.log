@@ -1,0 +1,8 @@
+=== build block4 FULL (workers=96) 2026-06-05T02:36:44+08:00 ===
+[build] block4 (block4, gelu=4, attn=2) ...
+  -> options=2 fusion_counts=[0, 1] valid=453400421/729000000 rescales=3['ln_mean_rescale_sf', 'ln_square_rescale_sf', 'softmax_v_matmul_rescale_sf'] pinned=1 K-indep=True wall=45846.83s
+
+=== SUMMARY ===
+max_num_options=6
+  block4: #options=2 fusion=[0, 1] K-indep=True
+build_block4_rc=0
