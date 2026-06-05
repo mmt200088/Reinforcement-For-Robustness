@@ -236,8 +236,11 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   stage1-only presets, `--rl-algo ppo`, `--stage1-search-episodes 0`,
   `--stage1-entropy-stop-threshold 0.1`, `--stage1-rl-devices 0,1,2,3`,
   `--stage1-search-lr 2e-5`, `--ppo-update-interval 120`, and the preset
-  `--stage1-accuracy-tolerance 0.005` unless the user changes it. Run the
-  tasks serially so each training job can use all four GPUs. The
+  `--stage1-accuracy-tolerance 0.005` unless the user changes it. Updated
+  2026-06-05: the user changed the standing Stage-1 RL launch rule; all future
+  Stage-1 RL launches must use `--stage1-accuracy-tolerance 0.0` unless the
+  user explicitly changes it again. Run the tasks serially so each training job
+  can use all four GPUs. The
   `SERVER_COMMAND.md` bridge now launches a background queue wrapper under
   `/hy-tmp/stage1_ppo_queue_entropy0p1_<ts>/`; monitor `status.json`,
   `events.log`, `logs/*_launch.log`, each parsed training log, the actual
@@ -313,7 +316,10 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   Initial log evidence confirms validation_full baseline
   loss/accuracy/F1 `0.346254`/`0.877451`/`0.874422`, strict constraints
   `loss <= 0.3463`, `Accuracy >= 0.8775`, `F1 >= 0.8744`, and four
-  Stage-1 rollout workers on `cuda:0..3`.
+  Stage-1 rollout workers on `cuda:0..3`. After this strict MRPC report is
+  complete, resume `base_rte`, `base_sst2`, `large_mrpc`, `large_rte`, and
+  `large_sst2` one at a time with the same `--stage1-accuracy-tolerance 0.0`
+  rule.
 - Stage-1 GRPO MRPC current snapshot, added 2026-06-01: while the GRPO run was
   still active, a snapshot report was generated at
   `experiments/server_command_runs/stage1_mrpc_ppo_then_grpo_entropy0p1_tol0p001_20260531_161526/grpo_current_snapshot_20260601_164215/stage1_mrpc_grpo_current_result_report.html`.
