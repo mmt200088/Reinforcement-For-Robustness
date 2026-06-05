@@ -11,7 +11,7 @@
       "option_id": 0,
       "fusion_count": 0,
       "tie_index": 0,
-      "total_variance": 4.152227201928805e-09,
+      "total_variance": 1.96938963462628e-09,
       "total_bits": 213,
       "slots": {
         "gelu_out_sf": 30,
@@ -22,38 +22,12 @@
         "var_rescale_sf": 27
       },
       "action_indices": [
-        9,
-        9,
-        9,
-        9,
-        9,
-        9,
-        0,
-        0,
-        3
-      ]
-    },
-    {
-      "option_id": 1,
-      "fusion_count": 1,
-      "tie_index": 0,
-      "total_variance": 1.6109776680471247e-05,
-      "total_bits": 179,
-      "slots": {
-        "gelu_out_sf": 22,
-        "wffn2_sf": 14,
-        "mean_inv_d_sf": 14,
-        "var_inv_d_sf": 14,
-        "mean_rescale_sf": 22,
-        "var_rescale_sf": 27
-      },
-      "action_indices": [
-        5,
-        6,
-        6,
-        6,
-        5,
-        9,
+        4,
+        4,
+        2,
+        2,
+        3,
+        3,
         0,
         0,
         3
@@ -74,20 +48,18 @@
       5
     ],
     "pinned_positions": [],
-    "enum_total_combos": 810000,
-    "valid_configs": 464361,
-    "kept_configs": 192,
-    "num_options": 2,
+    "enum_total_combos": 2025,
+    "valid_configs": 1485,
+    "num_options": 1,
     "fusion_counts": [
-      0,
-      1
+      0
     ],
-    "wall_seconds": 67.82,
+    "wall_seconds": 8.64,
     "workers": 96,
     "k_independence": {
       "k_independent": true,
       "violations": [],
-      "samples_checked": 2
+      "samples_checked": 1
     }
   }
 }

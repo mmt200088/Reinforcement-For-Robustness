@@ -155,6 +155,26 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   for `build_feasible_rc`, `build_block4_rc`, `map_summary.txt`,
   `soundness_audit.txt` with `superset_pass=True`, and smoke markers including
   `Fusion-count action ENABLED`.
+- Stage-2 fusion full-build result, added 2026-06-05: the `5ed03df`
+  full-build server run completed from the verified temp snapshot. Contract
+  gate passed (`214` tests, `contract_gate_rc=0`). The six cheaper maps built
+  successfully (`build_feasible_rc=0`): block1/block2/block5_n0/block5_n1 have
+  `fusion_counts=[0,1]`, block5_n2/block5_n4 have `fusion_counts=[0,1,2]`.
+  The full block4 build also passed (`build_block4_rc=0`) after enumerating
+  `453400421/729000000` valid configs in `45846.83s`, producing
+  `fusion_counts=[0,1]`. The 600-episode Stage-2 smoke did run the fusion-count
+  branch (`Fusion-count action ENABLED: map graphs=7, max_options=3`), completed
+  all `600/600` episodes, had `valid steps=47.00/47`, `invalid=0.00`,
+  `recent invalid rate=0.0%`, and final training rank-best reward `+39.7372`.
+  Do not treat the packaging as fully clean: the server-side push failed and
+  the wrapper's `map_summary.txt` / `soundness_audit.txt` generation failed
+  with `KeyError: 'options'` on sidecar/map parsing, so `map_summary.txt` is
+  empty and `soundness_audit.txt` is absent. Codex pulled the generated
+  canonical maps into `blb_stage2_rl/fusion_maps/mrpc/` and compact logs into
+  `experiments/server_command_runs/stage2_fusion_fullbuild_20260604_233648/`,
+  including a local robust `map_summary_local.txt` and smoke evidence log. The
+  remaining work is a local fix to the wrapper/audit parser, not a rerun of the
+  expensive map build unless the parser fix reveals a real map issue.
 - Stage-1 post-run queue, added 2026-05-24: after the active Stage-2 60k run
   finishes and its final eval/report are captured, pull the latest server code
   that contains the Claude Code Stage-1 changes for BERT-base SST-2/RTE and

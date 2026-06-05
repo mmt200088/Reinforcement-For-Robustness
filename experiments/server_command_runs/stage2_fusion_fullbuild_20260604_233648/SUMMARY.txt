@@ -1,0 +1,4 @@
+HEAD=8edbd1a9d4e5bfd416ae108180f302531cad5507
+out_dir=experiments/server_command_runs/stage2_fusion_fullbuild_20260604_233648
+progress_dir=
+=== done 2026-06-05T15:23:55+08:00 ===
