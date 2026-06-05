@@ -696,6 +696,14 @@ class BLBStage2TrainConfig:
     # SF heads. Disables safe-neighbor / guarded-radius2 / invalid masks (the map
     # holds only valid configs). Mutually exclusive with substage_mode.
     fusion_count_action: bool = False
+    # Fusion-mode block-granularity safe-neighbor curriculum (additive 2026-06-05).
+    # Default ON: gently widens how many blocks may leave the baseline (option 0,
+    # baseline K) each episode, dissolving to the unrestricted open mask after the
+    # ramp (so the full action space stays reachable). Set False for the A/B
+    # control group (unrestricted from the start, the pre-2026-06-05 behaviour).
+    fusion_neighbor_curriculum_enabled: bool = True
+    fusion_neighbor_ramp_episodes: int = 0
+    fusion_neighbor_max_radius: int = 6
     # ---- COINN-style OSR pre-prune (opt-in 2026-05-27) ---------------------
     # Empty osr_results_path → no OSR layer (legacy behaviour). When set, the
     # runner loads existing results from PATH, or runs a fresh scan saving to
@@ -2812,6 +2820,11 @@ class BLBStage2RLRunner:
         v = getattr(ev, "blb_v3_fusion_count_action", None)
         if v not in (None, ""):
             cfg.fusion_count_action = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
+            )
+        v = getattr(ev, "blb_v3_fusion_neighbor_curriculum", None)
+        if v not in (None, ""):
+            cfg.fusion_neighbor_curriculum_enabled = str(v).strip().lower() in (
                 "1", "true", "yes", "on",
             )
         if bool(getattr(cfg, "fusion_count_action", False)) and bool(getattr(cfg, "substage_mode", False)):

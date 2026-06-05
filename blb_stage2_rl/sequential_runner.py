@@ -31,7 +31,13 @@ from .action_mask import (
     ForbiddenActionMask,
     StaticInvalidLevelMask,
 )
-from .action_space import K_LEVELS
+from .action_space import K_LEVELS, _baseline_k_index_for_block
+from .fusion_curriculum import (
+    FUSION_NEIGHBOR_RAMP_FRACTION,
+    build_fusion_step_level_mask,
+    fusion_block_curriculum,
+    select_mutable_step_indices,
+)
 from .sequential_env import BLBStage2SequentialEnv, SequentialEnvConfig
 from .sequential_policy import (
     BLBStage2SequentialPolicy,
@@ -88,6 +94,16 @@ class SequentialTrainConfig:
     warmstart_neighbor_max_mutations: int = 12
     warmstart_neighbor_max_radius: int = 1
     warmstart_mutable_full_offsets: Optional[List[int]] = None
+    # Fusion-mode block-granularity safe-neighbor curriculum (additive 2026-06-05).
+    # Per-slot safe-neighbor does not apply in fusion mode (the action is per-block
+    # (option, K), not per-SF-slot). This curriculum instead gently widens how many
+    # of the H blocks may leave the baseline (option 0, baseline K) each episode.
+    # It reaches "all blocks, full radius" (== unrestricted open mask) by the end of
+    # the ramp, so it is a pure warmup that dissolves — the full action space stays
+    # reachable. ``fusion_neighbor_ramp_episodes`` 0 → derive 0.5 * total_episodes.
+    fusion_neighbor_curriculum_enabled: bool = True
+    fusion_neighbor_ramp_episodes: int = 0
+    fusion_neighbor_max_radius: int = 6
     guarded_radius2_enabled: bool = False
     guarded_radius2_min_episode: int = 1060
     guarded_radius2_stall_window: int = 600
@@ -1812,6 +1828,46 @@ def train_sequential(
                 "empirical_bidirectional_radius1"
             )
 
+        # --- fusion-mode block-granularity safe-neighbor curriculum ---
+        # Per-slot safe-neighbor is off in fusion mode. Instead, each episode lets
+        # only a growing subset of the H blocks leave the baseline (option 0,
+        # baseline K); the rest are pinned. The mutable subset is random per
+        # episode (so every block gets explored), and both the subset size and the
+        # per-block radius widen to fully-open by the end of the ramp. This gives
+        # PPO a discriminating gradient before the 47-block joint space opens,
+        # without ever permanently masking a config.
+        episode_fusion_mode = getattr(env, "_fusion_map", None) is not None
+        fusion_curriculum_active = False
+        fusion_curriculum_open = False
+        fusion_mutable_steps: Set[int] = set()
+        fusion_neighbor_radius = 1
+        if (
+                episode_fusion_mode
+                and bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", True))
+                and not force_this_ep
+        ):
+            fc_seed = int(train_cfg.seed) if train_cfg.seed is not None else 0
+            fc_rng = np.random.default_rng(
+                int((fc_seed + absolute_ep * 2_654_435_761) % (2**32))
+            )
+            fc_open, fc_num_mutable, fusion_neighbor_radius = fusion_block_curriculum(
+                absolute_episode_idx=int(absolute_ep),
+                anchor_episodes=int(force_baseline_episodes),
+                ramp_episodes=int(
+                    getattr(train_cfg, "fusion_neighbor_ramp_episodes", 0)
+                    or int(train_cfg.total_episodes)
+                    or 1
+                ),
+                horizon=int(env.horizon),
+                max_radius=int(getattr(train_cfg, "fusion_neighbor_max_radius", 6)),
+            )
+            fusion_curriculum_active = True
+            fusion_curriculum_open = bool(fc_open)
+            if not fc_open:
+                fusion_mutable_steps = select_mutable_step_indices(
+                    rng=fc_rng, horizon=int(env.horizon), num_mutable=int(fc_num_mutable),
+                )
+
         while True:
             spec = env.current_spec()
             fusion_mode = hasattr(spec, "fusion_num_options")
@@ -1826,13 +1882,28 @@ def train_sequential(
             action_level_mask_t = None
             if fusion_mode:
                 # Fusion mode: the offline map holds only valid SF configs, so the
-                # legal support is just the open per-slot mask. Invalid / near-baseline
-                # / OSR pruning are all disabled in fusion mode.
-                action_level_mask_np = _open_step_level_mask(
-                    spec=spec,
-                    max_step_dim=policy.cfg.max_step_dim,
-                    max_num_levels=policy.cfg.max_num_levels,
-                )
+                # legal support is the open per-slot mask. Invalid / OSR pruning are
+                # disabled. When the block-granularity safe-neighbor curriculum is
+                # active (and not yet fully open), most blocks are pinned to baseline
+                # and only the episode's selected blocks may move within a widening
+                # neighborhood; the curriculum dissolves to the open mask after ramp.
+                if fusion_curriculum_active and not fusion_curriculum_open:
+                    action_level_mask_np = build_fusion_step_level_mask(
+                        fusion_num_options=int(spec.fusion_num_options),
+                        k_num_levels=int(spec.k_num_levels),
+                        k_level_values=list(K_LEVELS),
+                        mutable=(int(spec.step_idx) in fusion_mutable_steps),
+                        radius=int(fusion_neighbor_radius),
+                        baseline_k_index=int(_baseline_k_index_for_block(int(spec.block_idx))),
+                        max_step_dim=policy.cfg.max_step_dim,
+                        max_num_levels=policy.cfg.max_num_levels,
+                    )
+                else:
+                    action_level_mask_np = _open_step_level_mask(
+                        spec=spec,
+                        max_step_dim=policy.cfg.max_step_dim,
+                        max_num_levels=policy.cfg.max_num_levels,
+                    )
             elif neighbor_mask_active and base_action_vec_for_mask is not None:
                 action_level_mask_np = _build_step_level_mask(
                     spec=spec,
@@ -1898,7 +1969,6 @@ def train_sequential(
             if force_this_ep and baseline_action_vec is not None:
                 if fusion_mode:
                     # fusion baseline action = (option 0 == all-max baseline, baseline K)
-                    from .action_space import _baseline_k_index_for_block
                     forced_action = np.asarray(
                         [0, int(_baseline_k_index_for_block(spec.block_idx))], dtype=np.int64
                     )
@@ -2434,9 +2504,20 @@ def train_sequential(
             terminal_probe_clear_wall_seconds=float(terminal_probe_clear_wall_seconds_val),
             terminal_probe_install_skipped=bool(terminal_probe_install_skipped_val),
             terminal_probe_clear_skipped=bool(terminal_probe_clear_skipped_val),
-            safe_neighbor_active=bool(neighbor_mask_active),
-            safe_neighbor_mutation_count=int(len(neighbor_selected_offsets)),
-            safe_neighbor_radius=int(neighbor_radius if neighbor_mask_active else 0),
+            safe_neighbor_active=bool(
+                (fusion_curriculum_active and not fusion_curriculum_open)
+                if episode_fusion_mode else neighbor_mask_active
+            ),
+            safe_neighbor_mutation_count=int(
+                len(fusion_mutable_steps) if episode_fusion_mode
+                else len(neighbor_selected_offsets)
+            ),
+            safe_neighbor_radius=int(
+                (fusion_neighbor_radius
+                 if (fusion_curriculum_active and not fusion_curriculum_open) else 0)
+                if episode_fusion_mode
+                else (neighbor_radius if neighbor_mask_active else 0)
+            ),
             exploration_mode=(
                 "forced_baseline" if force_this_ep else
                 str(guarded_decision.mode if guarded_decision.active else "radius1")
@@ -3050,14 +3131,24 @@ def run_sequential_via_runner(
     # (fusion_option, K) via the offline map instead of all per-slot SF heads.
     # Disables safe-neighbor / guarded-radius2 (no SF-locality in option space);
     # the map holds only valid configs so invalid masks are unnecessary.
+    # Resolve the fusion block-curriculum ramp once (0 → 0.5 * total_episodes) so
+    # both the console banner and seq_train_cfg below use the same concrete value.
+    _fc_curriculum_on = bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", True))
+    _fc_ramp = int(getattr(train_cfg, "fusion_neighbor_ramp_episodes", 0) or 0)
+    if _fc_ramp <= 0:
+        _fc_ramp = max(1, int(FUSION_NEIGHBOR_RAMP_FRACTION * int(train_cfg.total_episodes)))
     fusion_map = None
     if bool(getattr(train_cfg, "fusion_count_action", False)):
         from .fusion_count_map import FusionCountMap
         fusion_map = FusionCountMap.load(str(train_cfg.profile))
+        # Per-slot safe-neighbor / guarded-radius2 stay off in fusion mode; the
+        # block-granularity curriculum below is the fusion-mode replacement.
         train_cfg.warmstart_neighbor_sampling = False
         log(
             f"  {bullet} Fusion-count action ENABLED：map graphs={len(fusion_map.graphs)}, "
-            f"max_options={fusion_map.max_num_options()}；safe-neighbor/radius2 已停用"
+            f"max_options={fusion_map.max_num_options()}；per-slot radius2 停用，"
+            f"block 粒度 safe-neighbor curriculum "
+            f"{'启用（ramp=' + str(_fc_ramp) + ' ep 后全开，全空间可达）' if _fc_curriculum_on else '停用（对照组：全开）'}"
         )
         # 2026-06-03 fusion reward: the P2 stability gate needs the per-episode std,
         # which requires >=2 trials. Warn on K<2 and force the fast-reward online-K=1
@@ -3121,7 +3212,6 @@ def run_sequential_via_runner(
             from .action_space import LEVELS_F
             if fusion_map is not None:
                 # fusion: slot 0 = option (baseline == option 0), slot 1 = K (baseline index)
-                from .action_space import _baseline_k_index_for_block
                 preferred = [0, int(_baseline_k_index_for_block(1))]
             else:
                 preferred = _compute_per_slot_mode_preferred(
@@ -3347,6 +3437,9 @@ def run_sequential_via_runner(
             getattr(train_cfg, "warmstart_neighbor_max_radius", 2)
         ),
         warmstart_mutable_full_offsets=list(mutable_neighbor_offsets),
+        fusion_neighbor_curriculum_enabled=bool(_fc_curriculum_on),
+        fusion_neighbor_ramp_episodes=int(_fc_ramp),
+        fusion_neighbor_max_radius=int(getattr(train_cfg, "fusion_neighbor_max_radius", 6)),
         guarded_radius2_enabled=bool(getattr(train_cfg, "guarded_radius2_enabled", False)),
         guarded_radius2_min_episode=int(getattr(train_cfg, "guarded_radius2_min_episode", 1060)),
         guarded_radius2_stall_window=int(getattr(train_cfg, "guarded_radius2_stall_window", 600)),

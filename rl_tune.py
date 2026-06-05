@@ -686,6 +686,7 @@ def train(
         # (block 3 by design). See blb_stage2_rl/substage_runner.py.
         blb_v3_substage_mode: bool = False,
         blb_v3_fusion_count_action: bool = False,
+        blb_v3_fusion_neighbor_curriculum: bool = True,
         blb_v3_substage_block_order: str = "1,2,4,5",
         blb_v3_substage_frozen_blocks: str = "3",
         blb_v3_substage_episodes_each: int = 15000,
@@ -756,6 +757,9 @@ def train(
     )
     blb_v3_fusion_count_action = parse_bool_flag(
         blb_v3_fusion_count_action, "blb_v3_fusion_count_action"
+    )
+    blb_v3_fusion_neighbor_curriculum = parse_bool_flag(
+        blb_v3_fusion_neighbor_curriculum, "blb_v3_fusion_neighbor_curriculum"
     )
     blb_v3_osr_scan_only = parse_bool_flag(
         blb_v3_osr_scan_only, "blb_v3_osr_scan_only"
@@ -1336,6 +1340,7 @@ def train(
             blb_v3_promotion_margin_window=blb_v3_promotion_margin_window,
             blb_v3_substage_mode=blb_v3_substage_mode,
             blb_v3_fusion_count_action=blb_v3_fusion_count_action,
+            blb_v3_fusion_neighbor_curriculum=blb_v3_fusion_neighbor_curriculum,
             blb_v3_substage_block_order=blb_v3_substage_block_order,
             blb_v3_substage_frozen_blocks=blb_v3_substage_frozen_blocks,
             blb_v3_substage_episodes_each=blb_v3_substage_episodes_each,
