@@ -16,7 +16,6 @@ sys.path.insert(0, str(REPO_ROOT))
 from rescale_optimizer import (  # noqa: E402
     ReplanSession,
     SUPPORTED_GELU_GRAPH_DEGREES,
-    default_allowed_fusion_pairs_for_graph,
     graph_key_for_stage1,
     iter_stage2_graph_targets,
     replan_from_variables,
@@ -143,36 +142,6 @@ def test_stage1_short_keys_mapping() -> bool:
     )
 
 
-def test_default_fusion_policy_mapping() -> bool:
-    print("test_default_fusion_policy_mapping")
-    return (
-        _check("block1 no legal fusion", default_allowed_fusion_pairs_for_graph("block1_mrpc") == [])
-        and _check("block2 first-second only", default_allowed_fusion_pairs_for_graph("block2_mrpc") == [(1, 2)])
-        and _check("block4 first-second only", default_allowed_fusion_pairs_for_graph("block4") == [(1, 2)])
-        and _check("block5 n1 first-second only", default_allowed_fusion_pairs_for_graph("block5_n1") == [(1, 2)])
-        and _check("block5 n2 first-second only", default_allowed_fusion_pairs_for_graph("block5_n2") == [(1, 2)])
-        and _check("block5 n4 first-second only", default_allowed_fusion_pairs_for_graph("block5_n4") == [(1, 2)])
-        and _check("unknown keeps legacy all-adjacent", default_allowed_fusion_pairs_for_graph("block3_exp_n2") is None)
-    )
-
-
-def test_session_payload_allowed_fusion_pairs() -> bool:
-    print("test_session_payload_allowed_fusion_pairs")
-    session = ReplanSession.from_profile(profile="mrpc", include=["block5_n1"])
-    baseline = session.baselines["block5_n1"]
-    out = session(
-        "block5_n1",
-        {
-            "t_new": baseline.t_baseline,
-            "allowed_fusion_pairs": [[1, 2]],
-        },
-    )
-    return (
-        _check("valid", out["valid"] is True)
-        and _check("allowed pairs echoed", out["allowed_fusion_pairs"] == [[1, 2]])
-    )
-
-
 def main() -> int:
     tests = [
         test_session_baseline_call,
@@ -181,8 +150,6 @@ def main() -> int:
         test_block5_n0_replan_call,
         test_stage1_mapping,
         test_stage1_short_keys_mapping,
-        test_default_fusion_policy_mapping,
-        test_session_payload_allowed_fusion_pairs,
     ]
     passed = 0
     for test in tests:

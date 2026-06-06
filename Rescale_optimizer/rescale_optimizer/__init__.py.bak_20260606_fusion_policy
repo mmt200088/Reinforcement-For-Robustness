@@ -71,18 +71,14 @@ from .replan import (
 )
 from .replan_interface import (
     BaselineRecord,
-    DEFAULT_FUSION_POLICY,
-    FusionPair,
     ReplanSession,
     SUPPORTED_GELU_GRAPH_DEGREES,
     build_new_compact_config,
     build_replan_output_dict,
-    default_allowed_fusion_pairs_for_graph,
     graph_key_for_stage1,
     iter_stage2_graph_targets,
     load_static_skeleton_baselines,
     replan_from_variables,
-    resolve_allowed_fusion_pairs,
     split_replan_payload,
 )
 
@@ -112,10 +108,9 @@ __all__ = [
     # replan (what-if + fusion-tolerant feasibility)
     "FusionEvent", "ReplanInputs", "ReplanResult", "replan_with_user_actions",
     # high-level variable/return-value replan interface
-    "BaselineRecord", "DEFAULT_FUSION_POLICY", "FusionPair", "ReplanSession",
-    "SUPPORTED_GELU_GRAPH_DEGREES", "build_new_compact_config",
-    "build_replan_output_dict", "default_allowed_fusion_pairs_for_graph",
-    "graph_key_for_stage1",
+    "BaselineRecord", "ReplanSession", "SUPPORTED_GELU_GRAPH_DEGREES",
+    "build_new_compact_config",
+    "build_replan_output_dict", "graph_key_for_stage1",
     "iter_stage2_graph_targets", "load_static_skeleton_baselines",
-    "replan_from_variables", "resolve_allowed_fusion_pairs", "split_replan_payload",
+    "replan_from_variables", "split_replan_payload",
 ]

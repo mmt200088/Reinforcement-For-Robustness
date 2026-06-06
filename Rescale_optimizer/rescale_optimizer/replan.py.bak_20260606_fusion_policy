@@ -122,12 +122,6 @@ class ReplanInputs:
     #: This lets users co-optimize stage t and per-op propagation deltas.
     delta_overrides: Optional[Dict[str, Union[int, str]]] = None
 
-    #: Optional legal rescale-fusion pairs, using 1-indexed stage positions.
-    #: For example, [(1, 2)] means only the first and second rescale
-    #: stages may be fused. None keeps the legacy behaviour where any
-    #: adjacent pair is considered; [] disables fusion entirely.
-    allowed_fusion_pairs: Optional[Sequence[Tuple[int, int]]] = None
-
 
 @dataclass
 class FusionEvent:
@@ -314,47 +308,12 @@ def _apply_delta_overrides(
 # ---------------------------------------------------------------------------
 
 
-def _normalize_allowed_fusion_pairs(
-    allowed_fusion_pairs: Optional[Sequence[Tuple[int, int]]],
-) -> Optional[set[Tuple[int, int]]]:
-    if allowed_fusion_pairs is None:
-        return None
-
-    out: set[Tuple[int, int]] = set()
-    for raw_pair in allowed_fusion_pairs:
-        if len(raw_pair) != 2:
-            raise ValueError(f"allowed fusion pair must have length 2, got {raw_pair!r}")
-        a, b = int(raw_pair[0]), int(raw_pair[1])
-        if a == b:
-            raise ValueError(f"allowed fusion pair cannot fuse a stage with itself: {raw_pair!r}")
-        if a > b:
-            a, b = b, a
-        out.add((a, b))
-    return out
-
-
-def _is_fusion_boundary_allowed(
-    allowed_pairs: Optional[set[Tuple[int, int]]],
-    left_group: Sequence[int],
-    right_group: Sequence[int],
-) -> bool:
-    if allowed_pairs is None:
-        return True
-    if not allowed_pairs:
-        return False
-    a, b = int(left_group[-1]), int(right_group[0])
-    if a > b:
-        a, b = b, a
-    return (a, b) in allowed_pairs
-
-
 def _fuse_chain(
     skeleton: Sequence[int],
     q_bits: Sequence[int],
     t_vec: Sequence[int],
     q_min: int,
     q_max: int,
-    allowed_fusion_pairs: Optional[Sequence[Tuple[int, int]]] = None,
 ) -> Tuple[bool, List[int], List[int], List[int], List[FusionEvent], Optional[ModulusChain]]:
     """
     Apply rescale-fusion until no q < q_min remains, OR until fusion is
@@ -365,11 +324,6 @@ def _fuse_chain(
     skeleton : list of int, length R+2 (with trailing dummy-sink)
     q_bits   : list of int, length R     — initial drop bits per stage
     t_vec    : list of int, length R+1  — post-rescale scales (or source)
-    allowed_fusion_pairs : optional list of 1-indexed original stage pairs.
-        ``None`` keeps the legacy all-adjacent behaviour; ``[]`` disables
-        fusion.  After a fusion, later decisions still use the original
-        stage boundary, so allowing only ``(1, 2)`` cannot accidentally permit
-        a second fusion across the new shifted ``(1, 2)`` boundary.
 
     Returns
     -------
@@ -403,11 +357,6 @@ def _fuse_chain(
     q = list(q_bits)
     t = list(t_vec)
     events: List[FusionEvent] = []
-    allowed_pairs = _normalize_allowed_fusion_pairs(allowed_fusion_pairs)
-    # Each q slot tracks the original stage ids it has absorbed.  This keeps
-    # legal-fusion decisions tied to the baseline graph, not to shifted indices
-    # after an earlier fusion.
-    stage_groups: List[List[int]] = [[r] for r in range(1, len(q) + 1)]
 
     # ``r`` is the 1-indexed stage; q_bits index is r-1
     while True:
@@ -429,22 +378,10 @@ def _fuse_chain(
         # into the LATER neighbour's slot, position 不变).
         side = None
         idx_neighbour = -1
-        if (
-            r_bad < len(q)
-            and _is_fusion_boundary_allowed(
-                allowed_pairs, stage_groups[r_bad - 1], stage_groups[r_bad]
-            )
-            and (q[r_bad] + small) <= q_max
-        ):
+        if r_bad < len(q) and (q[r_bad] + small) <= q_max:
             side = "next"
             idx_neighbour = r_bad   # 0-indexed in q
-        elif (
-            r_bad > 1
-            and _is_fusion_boundary_allowed(
-                allowed_pairs, stage_groups[r_bad - 2], stage_groups[r_bad - 1]
-            )
-            and (q[r_bad - 2] + small) <= q_max
-        ):
+        elif r_bad > 1 and (q[r_bad - 2] + small) <= q_max:
             side = "prev"
             idx_neighbour = r_bad - 2
 
@@ -456,9 +393,7 @@ def _fuse_chain(
             before = q[idx_neighbour]
             after = before + small
             q[idx_neighbour] = after
-            stage_groups[idx_neighbour] = stage_groups[r_bad - 1] + stage_groups[idx_neighbour]
             del q[r_bad - 1]
-            del stage_groups[r_bad - 1]
             # remove the rescale at s_{r_bad} from the skeleton
             del skel[r_bad]
             # remove t at the rescale-r_bad point: t had length R+1,
@@ -474,9 +409,7 @@ def _fuse_chain(
             before = q[idx_neighbour]
             after = before + small
             q[idx_neighbour] = after
-            stage_groups[idx_neighbour] = stage_groups[idx_neighbour] + stage_groups[r_bad - 1]
             del q[r_bad - 1]
-            del stage_groups[r_bad - 1]
             # the small q' is at position r_bad in the skeleton; its
             # rescale step is removed.
             del skel[r_bad]
@@ -610,23 +543,9 @@ def replan_with_user_actions(
         )
 
     # run fusion
-    try:
-        valid, new_skel, q_after, t_after, events, bad = _fuse_chain(
-            skeleton, q_initial, list(inputs.t_new), q_min, q_max,
-            allowed_fusion_pairs=inputs.allowed_fusion_pairs,
-        )
-    except ValueError as e:
-        return ReplanResult(
-            valid=False,
-            skeleton=skeleton,
-            chain=None,
-            q_initial=q_initial,
-            q_final=q_initial,
-            t_final=list(inputs.t_new),
-            delta_q_vs_baseline=delta_q,
-            applied_delta_overrides=applied_delta_overrides,
-            message=f"fusion policy failed: {e}",
-        )
+    valid, new_skel, q_after, t_after, events, bad = _fuse_chain(
+        skeleton, q_initial, list(inputs.t_new), q_min, q_max,
+    )
 
     if valid:
         chain_final = ModulusChain(

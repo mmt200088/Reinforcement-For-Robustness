@@ -329,5 +329,6 @@
         {"node_id": 5, "name": "rot_gs_wffn1", "after_cut_point": 3, "sf": 31, "count": 1}
       ]
     }
-  ]
+  ],
+  "running command": "python scripts/batch_run_configs.py   --configs-dir configs/mrpc   --out configs/mrpc/static_skeletons_mrpc.json   --log-level WARNING"
 }

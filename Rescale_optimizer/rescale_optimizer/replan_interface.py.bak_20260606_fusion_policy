@@ -21,20 +21,7 @@ from .graph import NodeType, RescaleGraph, propagate_scale
 from .replan import ReplanInputs, ReplanResult, replan_with_user_actions
 
 DeltaValue = Union[int, str]
-FusionPair = Tuple[int, int]
-DEFAULT_FUSION_POLICY = "default"
 SUPPORTED_GELU_GRAPH_DEGREES = {0, 1, 2, 4}
-
-_DEFAULT_ALLOWED_FUSION_PAIRS: Dict[str, List[FusionPair]] = {
-    "block1_mrpc": [],
-    "block1_wnli": [],
-    "block2_mrpc": [(1, 2)],
-    "block2_wnli": [(1, 2)],
-    "block4": [(1, 2)],
-    "block5_n1": [(1, 2)],
-    "block5_n2": [(1, 2)],
-    "block5_n4": [(1, 2)],
-}
 
 
 @dataclass(frozen=True)
@@ -65,84 +52,22 @@ def _normalize_delta_overrides(
     return {str(k): _parse_delta_value(v) for k, v in delta_overrides.items()}
 
 
-def _normalize_allowed_fusion_pairs(raw: Any) -> Optional[List[FusionPair]]:
-    if raw is None or raw == "all":
-        return None
-    if raw == DEFAULT_FUSION_POLICY:
-        raise ValueError("omit allowed_fusion_pairs to use the graph default policy")
-    if raw == "none":
-        return []
-    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
-        raise ValueError(
-            "allowed_fusion_pairs must be a list of [stage_a, stage_b] pairs, "
-            "'all', 'none', or omitted for the default policy"
-        )
-
-    out: List[FusionPair] = []
-    for pair in raw:
-        if not isinstance(pair, Sequence) or isinstance(pair, (str, bytes)) or len(pair) != 2:
-            raise ValueError(f"allowed fusion pair must be [stage_a, stage_b], got {pair!r}")
-        a, b = int(pair[0]), int(pair[1])
-        if a == b:
-            raise ValueError(f"allowed fusion pair cannot fuse a stage with itself: {pair!r}")
-        if a > b:
-            a, b = b, a
-        out.append((a, b))
-    return out
-
-
-def default_allowed_fusion_pairs_for_graph(graph_key: str) -> Optional[List[FusionPair]]:
-    key = str(graph_key)
-    if key in _DEFAULT_ALLOWED_FUSION_PAIRS:
-        return list(_DEFAULT_ALLOWED_FUSION_PAIRS[key])
-    return None
-
-
-def resolve_allowed_fusion_pairs(
-    graph_key: str,
-    allowed_fusion_pairs: Any = DEFAULT_FUSION_POLICY,
-) -> Optional[List[FusionPair]]:
-    if allowed_fusion_pairs == DEFAULT_FUSION_POLICY:
-        return default_allowed_fusion_pairs_for_graph(graph_key)
-    return _normalize_allowed_fusion_pairs(allowed_fusion_pairs)
-
-
-def _fusion_pairs_to_json(allowed_fusion_pairs: Optional[Sequence[FusionPair]]) -> Optional[List[List[int]]]:
-    if allowed_fusion_pairs is None:
-        return None
-    return [[int(a), int(b)] for a, b in allowed_fusion_pairs]
-
-
-def split_replan_payload(
-    payload: Any,
-    *,
-    include_allowed_fusion_pairs: bool = False,
-):
+def split_replan_payload(payload: Any) -> Tuple[Optional[List[int]], Dict[str, DeltaValue]]:
     """Split an invoker payload into ``(t_new, delta_overrides)``.
 
     Supports two shapes:
 
     * ``{"t_new": [...], "delta_overrides": {...}}`` for the variable API.
     * ``{"node_name": delta, ...}`` for backward-compatible bare deltas.
-    * optionally ``{"allowed_fusion_pairs": [[1, 2], ...]}`` for legal
-      rescale-fusion boundaries; omit it to use the graph default policy.
     """
 
     if payload is None:
-        base = (None, {})
-        return (*base, DEFAULT_FUSION_POLICY) if include_allowed_fusion_pairs else base
+        return None, {}
     if not isinstance(payload, Mapping):
         raise TypeError(f"payload must be a mapping, got {type(payload).__name__}")
 
     keys = set(payload.keys())
-    structured_keys = {
-        "t_new",
-        "delta_overrides",
-        "propagation_deltas",
-        "allowed_fusion_pairs",
-        "fusion_pairs",
-    }
-    if keys & structured_keys:
+    if keys & {"t_new", "delta_overrides", "propagation_deltas"}:
         t_raw = payload.get("t_new")
         t_new = [int(x) for x in t_raw] if t_raw is not None else None
         deltas: Dict[str, Any] = {}
@@ -159,16 +84,9 @@ def split_replan_payload(
                 if not isinstance(row, Mapping) or "name" not in row or "delta" not in row:
                     raise ValueError("each propagation_deltas item must have {name, delta}")
                 deltas[str(row["name"])] = row["delta"]
-        allowed = DEFAULT_FUSION_POLICY
-        if "allowed_fusion_pairs" in payload:
-            allowed = _normalize_allowed_fusion_pairs(payload.get("allowed_fusion_pairs"))
-        elif "fusion_pairs" in payload:
-            allowed = _normalize_allowed_fusion_pairs(payload.get("fusion_pairs"))
-        base = (t_new, _normalize_delta_overrides(deltas))
-        return (*base, allowed) if include_allowed_fusion_pairs else base
+        return t_new, _normalize_delta_overrides(deltas)
 
-    base = (None, _normalize_delta_overrides(payload))
-    return (*base, DEFAULT_FUSION_POLICY) if include_allowed_fusion_pairs else base
+    return None, _normalize_delta_overrides(payload)
 
 
 def load_static_skeleton_baselines(path: Union[str, Path]) -> Dict[str, BaselineRecord]:
@@ -386,7 +304,6 @@ def build_replan_output_dict(
     q_bits_baseline: Optional[Sequence[int]],
     t_new: Sequence[int],
     delta_overrides: Optional[Mapping[str, Any]] = None,
-    allowed_fusion_pairs: Optional[Sequence[FusionPair]] = None,
     config_path: Optional[Union[str, Path]] = None,
     output_config_name: Optional[str] = None,
     metadata: Optional[Mapping[str, Any]] = None,
@@ -409,7 +326,6 @@ def build_replan_output_dict(
         },
         "t_new": [int(x) for x in t_new],
         "delta_overrides": dict(deltas),
-        "allowed_fusion_pairs": _fusion_pairs_to_json(allowed_fusion_pairs),
         "result": {
             "valid": bool(result.valid),
             "message": str(result.message),
@@ -457,7 +373,6 @@ def replan_from_variables(
     baseline_archive: Optional[Union[str, Path]] = None,
     config_name: Optional[str] = None,
     delta_overrides: Optional[Mapping[str, Any]] = None,
-    allowed_fusion_pairs: Any = DEFAULT_FUSION_POLICY,
     return_dict: bool = True,
     include_compact: bool = True,
     output_config_name: Optional[str] = None,
@@ -501,7 +416,6 @@ def replan_from_variables(
     )
     t_new_eff = [int(x) for x in t_new]
     deltas = _normalize_delta_overrides(delta_overrides)
-    fusion_pairs = resolve_allowed_fusion_pairs(graph_key, allowed_fusion_pairs)
 
     result = replan_with_user_actions(
         graph,
@@ -510,7 +424,6 @@ def replan_from_variables(
             t_baseline=t_base,
             t_new=t_new_eff,
             delta_overrides=(deltas or None),
-            allowed_fusion_pairs=fusion_pairs,
         ),
         baseline_q_bits=q_base,
     )
@@ -525,7 +438,6 @@ def replan_from_variables(
         q_bits_baseline=q_base,
         t_new=t_new_eff,
         delta_overrides=deltas,
-        allowed_fusion_pairs=fusion_pairs,
         config_path=cfg_path,
         output_config_name=output_config_name,
         metadata=metadata,
@@ -594,7 +506,6 @@ class ReplanSession:
         *,
         t_new: Optional[Sequence[int]] = None,
         delta_overrides: Optional[Mapping[str, Any]] = None,
-        allowed_fusion_pairs: Any = DEFAULT_FUSION_POLICY,
         return_dict: bool = True,
         include_compact: bool = True,
         output_config_name: Optional[str] = None,
@@ -621,7 +532,6 @@ class ReplanSession:
             skeleton.append(graph.dummy_sink_index)
         t_eff = [int(x) for x in (t_new if t_new is not None else baseline.t_baseline)]
         deltas = _normalize_delta_overrides(delta_overrides)
-        fusion_pairs = resolve_allowed_fusion_pairs(key, allowed_fusion_pairs)
 
         result = replan_with_user_actions(
             graph,
@@ -630,7 +540,6 @@ class ReplanSession:
                 t_baseline=list(baseline.t_baseline),
                 t_new=t_eff,
                 delta_overrides=(deltas or None),
-                allowed_fusion_pairs=fusion_pairs,
             ),
             baseline_q_bits=list(baseline.q_bits_baseline),
         )
@@ -648,7 +557,6 @@ class ReplanSession:
             q_bits_baseline=baseline.q_bits_baseline,
             t_new=t_eff,
             delta_overrides=deltas,
-            allowed_fusion_pairs=fusion_pairs,
             config_path=self.configs.get(key),
             output_config_name=output_config_name,
             metadata=metadata,
@@ -660,14 +568,11 @@ class ReplanSession:
     def __call__(self, graph_key: str, payload: Any) -> Dict[str, Any]:
         """Compatibility invoker: ``session(graph_key, payload) -> dict``."""
 
-        t_new, delta_overrides, allowed_fusion_pairs = split_replan_payload(
-            payload, include_allowed_fusion_pairs=True
-        )
+        t_new, delta_overrides = split_replan_payload(payload)
         return self.replan(
             graph_key,
             t_new=t_new,
             delta_overrides=delta_overrides,
-            allowed_fusion_pairs=allowed_fusion_pairs,
             return_dict=True,
         )
 
@@ -745,18 +650,14 @@ def iter_stage2_graph_targets(
 
 __all__ = [
     "BaselineRecord",
-    "DEFAULT_FUSION_POLICY",
     "DeltaValue",
-    "FusionPair",
     "ReplanSession",
     "SUPPORTED_GELU_GRAPH_DEGREES",
     "build_new_compact_config",
     "build_replan_output_dict",
-    "default_allowed_fusion_pairs_for_graph",
     "graph_key_for_stage1",
     "iter_stage2_graph_targets",
     "load_static_skeleton_baselines",
     "replan_from_variables",
-    "resolve_allowed_fusion_pairs",
     "split_replan_payload",
 ]

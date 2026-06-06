@@ -1,7 +1,7 @@
 {
   "coverage": 0.8,
   "quantile_percent": 20,
-  "pooled_q20": 0.1509190966880636,
+  "pooled_q20": 0.14671208307684766,
   "nodes": {
     "after_embed:all": {
       "probe": "after_embed",
@@ -31,559 +31,559 @@
       "probe": "attn_output",
       "layer": "0",
       "count": 360579072.0,
-      "q20_abs": 0.029410613710274633
+      "q20_abs": 0.02536298844330508
     },
     "post_attn_ln:0": {
       "probe": "post_attn_ln",
       "layer": "0",
       "count": 360579072.0,
-      "q20_abs": 0.15134348475383574
+      "q20_abs": 0.15148615482236247
     },
     "gelu_input:0": {
       "probe": "gelu_input",
       "layer": "0",
       "count": 1442316288.0,
-      "q20_abs": 1.1134263926904715
+      "q20_abs": 1.1168264718962737
     },
     "ffn2_output:0": {
       "probe": "ffn2_output",
       "layer": "0",
       "count": 360579072.0,
-      "q20_abs": 0.1364916049938777
+      "q20_abs": 0.05907344396098725
     },
     "post_ffn_ln:0": {
       "probe": "post_ffn_ln",
       "layer": "0",
       "count": 360579072.0,
-      "q20_abs": 0.11400615462920972
+      "q20_abs": 0.12367508173833097
     },
     "query_proj:1": {
       "probe": "query_proj",
       "layer": "1",
       "count": 360579072.0,
-      "q20_abs": 0.15054581199214928
+      "q20_abs": 0.1776113364793519
     },
     "key_proj:1": {
       "probe": "key_proj",
       "layer": "1",
       "count": 360579072.0,
-      "q20_abs": 0.15141285255427178
+      "q20_abs": 0.18152872774378684
     },
     "value_proj:1": {
       "probe": "value_proj",
       "layer": "1",
       "count": 360579072.0,
-      "q20_abs": 0.10814173140122814
+      "q20_abs": 0.11878835173723822
     },
     "attn_output:1": {
       "probe": "attn_output",
       "layer": "1",
       "count": 360579072.0,
-      "q20_abs": 0.0318820591622255
+      "q20_abs": 0.0356415842306255
     },
     "post_attn_ln:1": {
       "probe": "post_attn_ln",
       "layer": "1",
       "count": 360579072.0,
-      "q20_abs": 0.1418719691464039
+      "q20_abs": 0.14297744262995543
     },
     "gelu_input:1": {
       "probe": "gelu_input",
       "layer": "1",
       "count": 1442316288.0,
-      "q20_abs": 0.8140885566437159
+      "q20_abs": 0.545266651963802
     },
     "ffn2_output:1": {
       "probe": "ffn2_output",
       "layer": "1",
       "count": 360579072.0,
-      "q20_abs": 0.10474487407379583
+      "q20_abs": 0.13698603023060774
     },
     "post_ffn_ln:1": {
       "probe": "post_ffn_ln",
       "layer": "1",
       "count": 360579072.0,
-      "q20_abs": 0.11583290082478745
+      "q20_abs": 0.07425900109134076
     },
     "query_proj:2": {
       "probe": "query_proj",
       "layer": "2",
       "count": 360579072.0,
-      "q20_abs": 0.15026913637603845
+      "q20_abs": 0.128268525419217
     },
     "key_proj:2": {
       "probe": "key_proj",
       "layer": "2",
       "count": 360579072.0,
-      "q20_abs": 0.15056636590768396
+      "q20_abs": 0.1322139979025029
     },
     "value_proj:2": {
       "probe": "value_proj",
       "layer": "2",
       "count": 360579072.0,
-      "q20_abs": 0.11103113672264729
+      "q20_abs": 0.1045724182313117
     },
     "attn_output:2": {
       "probe": "attn_output",
       "layer": "2",
       "count": 360579072.0,
-      "q20_abs": 0.03064576304113138
+      "q20_abs": 0.026265540760309777
     },
     "post_attn_ln:2": {
       "probe": "post_attn_ln",
       "layer": "2",
       "count": 360579072.0,
-      "q20_abs": 0.13743214239717352
+      "q20_abs": 0.12851225836511906
     },
     "gelu_input:2": {
       "probe": "gelu_input",
       "layer": "2",
       "count": 1442316288.0,
-      "q20_abs": 1.1068263325980372
+      "q20_abs": 0.9758466429169982
     },
     "ffn2_output:2": {
       "probe": "ffn2_output",
       "layer": "2",
       "count": 360579072.0,
-      "q20_abs": 0.057443576859629246
+      "q20_abs": 0.08712056329405866
     },
     "post_ffn_ln:2": {
       "probe": "post_ffn_ln",
       "layer": "2",
       "count": 360579072.0,
-      "q20_abs": 0.11060187088608864
+      "q20_abs": 0.10627199017546558
     },
     "query_proj:3": {
       "probe": "query_proj",
       "layer": "3",
       "count": 360579072.0,
-      "q20_abs": 0.152491818447419
+      "q20_abs": 0.14924598146143464
     },
     "key_proj:3": {
       "probe": "key_proj",
       "layer": "3",
       "count": 360579072.0,
-      "q20_abs": 0.1543849741700537
+      "q20_abs": 0.15434395925697725
     },
     "value_proj:3": {
       "probe": "value_proj",
       "layer": "3",
       "count": 360579072.0,
-      "q20_abs": 0.1123652695552456
+      "q20_abs": 0.1083857651230195
     },
     "attn_output:3": {
       "probe": "attn_output",
       "layer": "3",
       "count": 360579072.0,
-      "q20_abs": 0.027686302307802984
+      "q20_abs": 0.025112597222117793
     },
     "post_attn_ln:3": {
       "probe": "post_attn_ln",
       "layer": "3",
       "count": 360579072.0,
-      "q20_abs": 0.13339752159406468
+      "q20_abs": 0.1315058482295614
     },
     "gelu_input:3": {
       "probe": "gelu_input",
       "layer": "3",
       "count": 1442316288.0,
-      "q20_abs": 1.0270233076845543
+      "q20_abs": 0.8578285404081413
     },
     "ffn2_output:3": {
       "probe": "ffn2_output",
       "layer": "3",
       "count": 360579072.0,
-      "q20_abs": 0.07327353208863698
+      "q20_abs": 0.06738723301776404
     },
     "post_ffn_ln:3": {
       "probe": "post_ffn_ln",
       "layer": "3",
       "count": 360579072.0,
-      "q20_abs": 0.11391488030659998
+      "q20_abs": 0.11383140402198544
     },
     "query_proj:4": {
       "probe": "query_proj",
       "layer": "4",
       "count": 360579072.0,
-      "q20_abs": 0.15941889924451455
+      "q20_abs": 0.15771873551871732
     },
     "key_proj:4": {
       "probe": "key_proj",
       "layer": "4",
       "count": 360579072.0,
-      "q20_abs": 0.1594280267669197
+      "q20_abs": 0.15847250487307765
     },
     "value_proj:4": {
       "probe": "value_proj",
       "layer": "4",
       "count": 360579072.0,
-      "q20_abs": 0.118504124102249
+      "q20_abs": 0.11664623887216352
     },
     "attn_output:4": {
       "probe": "attn_output",
       "layer": "4",
       "count": 360579072.0,
-      "q20_abs": 0.042297652069064905
+      "q20_abs": 0.03558433894253323
     },
     "post_attn_ln:4": {
       "probe": "post_attn_ln",
       "layer": "4",
       "count": 360579072.0,
-      "q20_abs": 0.1303481842947906
+      "q20_abs": 0.1297046144991324
     },
     "gelu_input:4": {
       "probe": "gelu_input",
       "layer": "4",
       "count": 1442316288.0,
-      "q20_abs": 0.9991923264429768
+      "q20_abs": 0.7887632690690465
     },
     "ffn2_output:4": {
       "probe": "ffn2_output",
       "layer": "4",
       "count": 360579072.0,
-      "q20_abs": 0.06331145999906483
+      "q20_abs": 0.06492064371468285
     },
     "post_ffn_ln:4": {
       "probe": "post_ffn_ln",
       "layer": "4",
       "count": 360579072.0,
-      "q20_abs": 0.11517294201749066
+      "q20_abs": 0.1141630411538209
     },
     "query_proj:5": {
       "probe": "query_proj",
       "layer": "5",
       "count": 360579072.0,
-      "q20_abs": 0.17040244218916048
+      "q20_abs": 0.16890717386974094
     },
     "key_proj:5": {
       "probe": "key_proj",
       "layer": "5",
       "count": 360579072.0,
-      "q20_abs": 0.17568751949718034
+      "q20_abs": 0.17437092360259743
     },
     "value_proj:5": {
       "probe": "value_proj",
       "layer": "5",
       "count": 360579072.0,
-      "q20_abs": 0.11849082317827506
+      "q20_abs": 0.11732545760763592
     },
     "attn_output:5": {
       "probe": "attn_output",
       "layer": "5",
       "count": 360579072.0,
-      "q20_abs": 0.0653550671867121
+      "q20_abs": 0.053751133769794616
     },
     "post_attn_ln:5": {
       "probe": "post_attn_ln",
       "layer": "5",
       "count": 360579072.0,
-      "q20_abs": 0.13268884333541142
+      "q20_abs": 0.13117019949110625
     },
     "gelu_input:5": {
       "probe": "gelu_input",
       "layer": "5",
       "count": 1442316288.0,
-      "q20_abs": 0.6494676518211068
+      "q20_abs": 0.5792173446303037
     },
     "ffn2_output:5": {
       "probe": "ffn2_output",
       "layer": "5",
       "count": 360579072.0,
-      "q20_abs": 0.06892988258661482
+      "q20_abs": 0.06740257762717906
     },
     "post_ffn_ln:5": {
       "probe": "post_ffn_ln",
       "layer": "5",
       "count": 360579072.0,
-      "q20_abs": 0.12140194591666055
+      "q20_abs": 0.12056292528423802
     },
     "query_proj:6": {
       "probe": "query_proj",
       "layer": "6",
       "count": 360579072.0,
-      "q20_abs": 0.17563579610669602
+      "q20_abs": 0.17596543398997122
     },
     "key_proj:6": {
       "probe": "key_proj",
       "layer": "6",
       "count": 360579072.0,
-      "q20_abs": 0.181431201357564
+      "q20_abs": 0.18111023387631395
     },
     "value_proj:6": {
       "probe": "value_proj",
       "layer": "6",
       "count": 360579072.0,
-      "q20_abs": 0.12141786171152197
+      "q20_abs": 0.11949808834253535
     },
     "attn_output:6": {
       "probe": "attn_output",
       "layer": "6",
       "count": 360579072.0,
-      "q20_abs": 0.04053988561976447
+      "q20_abs": 0.044977951493399226
     },
     "post_attn_ln:6": {
       "probe": "post_attn_ln",
       "layer": "6",
       "count": 360579072.0,
-      "q20_abs": 0.1324720513555579
+      "q20_abs": 0.1317748089141285
     },
     "gelu_input:6": {
       "probe": "gelu_input",
       "layer": "6",
       "count": 1442316288.0,
-      "q20_abs": 1.0004317739323845
+      "q20_abs": 0.7484794700624313
     },
     "ffn2_output:6": {
       "probe": "ffn2_output",
       "layer": "6",
       "count": 360579072.0,
-      "q20_abs": 0.05150606643414794
+      "q20_abs": 0.057391170698949966
     },
     "post_ffn_ln:6": {
       "probe": "post_ffn_ln",
       "layer": "6",
       "count": 360579072.0,
-      "q20_abs": 0.12433400040182234
+      "q20_abs": 0.12370893146464614
     },
     "query_proj:7": {
       "probe": "query_proj",
       "layer": "7",
       "count": 360579072.0,
-      "q20_abs": 0.17936877911977034
+      "q20_abs": 0.1792360232227968
     },
     "key_proj:7": {
       "probe": "key_proj",
       "layer": "7",
       "count": 360579072.0,
-      "q20_abs": 0.18777960071358957
+      "q20_abs": 0.18659948641996585
     },
     "value_proj:7": {
       "probe": "value_proj",
       "layer": "7",
       "count": 360579072.0,
-      "q20_abs": 0.1167092719175137
+      "q20_abs": 0.11604984943242279
     },
     "attn_output:7": {
       "probe": "attn_output",
       "layer": "7",
       "count": 360579072.0,
-      "q20_abs": 0.0430787872142482
+      "q20_abs": 0.041366345379443815
     },
     "post_attn_ln:7": {
       "probe": "post_attn_ln",
       "layer": "7",
       "count": 360579072.0,
-      "q20_abs": 0.13487825433991577
+      "q20_abs": 0.13406473903199
     },
     "gelu_input:7": {
       "probe": "gelu_input",
       "layer": "7",
       "count": 1442316288.0,
-      "q20_abs": 0.7083348554996591
+      "q20_abs": 0.6460943842336637
     },
     "ffn2_output:7": {
       "probe": "ffn2_output",
       "layer": "7",
       "count": 360579072.0,
-      "q20_abs": 0.05201482055256157
+      "q20_abs": 0.049443416010869205
     },
     "post_ffn_ln:7": {
       "probe": "post_ffn_ln",
       "layer": "7",
       "count": 360579072.0,
-      "q20_abs": 0.12687992618473087
+      "q20_abs": 0.12638227288363577
     },
     "query_proj:8": {
       "probe": "query_proj",
       "layer": "8",
       "count": 360579072.0,
-      "q20_abs": 0.1794000089640338
+      "q20_abs": 0.1789485174172438
     },
     "key_proj:8": {
       "probe": "key_proj",
       "layer": "8",
       "count": 360579072.0,
-      "q20_abs": 0.17972353114151873
+      "q20_abs": 0.17898743853725801
     },
     "value_proj:8": {
       "probe": "value_proj",
       "layer": "8",
       "count": 360579072.0,
-      "q20_abs": 0.1256043275239953
+      "q20_abs": 0.12514300924910488
     },
     "attn_output:8": {
       "probe": "attn_output",
       "layer": "8",
       "count": 360579072.0,
-      "q20_abs": 0.04792300213699757
+      "q20_abs": 0.051499215494392125
     },
     "post_attn_ln:8": {
       "probe": "post_attn_ln",
       "layer": "8",
       "count": 360579072.0,
-      "q20_abs": 0.1357302244211792
+      "q20_abs": 0.13524426516701693
     },
     "gelu_input:8": {
       "probe": "gelu_input",
       "layer": "8",
       "count": 1442316288.0,
-      "q20_abs": 0.574184432482619
+      "q20_abs": 0.5341495003435964
     },
     "ffn2_output:8": {
       "probe": "ffn2_output",
       "layer": "8",
       "count": 360579072.0,
-      "q20_abs": 0.06007199678833736
+      "q20_abs": 0.060073615636205474
     },
     "post_ffn_ln:8": {
       "probe": "post_ffn_ln",
       "layer": "8",
       "count": 360579072.0,
-      "q20_abs": 0.1304767816315331
+      "q20_abs": 0.13115356003270226
     },
     "query_proj:9": {
       "probe": "query_proj",
       "layer": "9",
       "count": 360579072.0,
-      "q20_abs": 0.1841214923508773
+      "q20_abs": 0.1849706232057573
     },
     "key_proj:9": {
       "probe": "key_proj",
       "layer": "9",
       "count": 360579072.0,
-      "q20_abs": 0.1819726025752269
+      "q20_abs": 0.18262033374741538
     },
     "value_proj:9": {
       "probe": "value_proj",
       "layer": "9",
       "count": 360579072.0,
-      "q20_abs": 0.12612445083881357
+      "q20_abs": 0.12648026333749143
     },
     "attn_output:9": {
       "probe": "attn_output",
       "layer": "9",
       "count": 360579072.0,
-      "q20_abs": 0.053299373444265136
+      "q20_abs": 0.0590080696628886
     },
     "post_attn_ln:9": {
       "probe": "post_attn_ln",
       "layer": "9",
       "count": 360579072.0,
-      "q20_abs": 0.13529752067757025
+      "q20_abs": 0.13516935324966073
     },
     "gelu_input:9": {
       "probe": "gelu_input",
       "layer": "9",
       "count": 1442316288.0,
-      "q20_abs": 0.6180086995374745
+      "q20_abs": 0.6276321074224687
     },
     "ffn2_output:9": {
       "probe": "ffn2_output",
       "layer": "9",
       "count": 360579072.0,
-      "q20_abs": 0.04407133324330826
+      "q20_abs": 0.029531630346975722
     },
     "post_ffn_ln:9": {
       "probe": "post_ffn_ln",
       "layer": "9",
       "count": 360579072.0,
-      "q20_abs": 0.1246232192509699
+      "q20_abs": 0.11777491266623055
     },
     "query_proj:10": {
       "probe": "query_proj",
       "layer": "10",
       "count": 360579072.0,
-      "q20_abs": 0.17479504537988377
+      "q20_abs": 0.1656654268894611
     },
     "key_proj:10": {
       "probe": "key_proj",
       "layer": "10",
       "count": 360579072.0,
-      "q20_abs": 0.17821684879019015
+      "q20_abs": 0.14916949249107053
     },
     "value_proj:10": {
       "probe": "value_proj",
       "layer": "10",
       "count": 360579072.0,
-      "q20_abs": 0.11887393870601008
+      "q20_abs": 0.11141919903215478
     },
     "attn_output:10": {
       "probe": "attn_output",
       "layer": "10",
       "count": 360579072.0,
-      "q20_abs": 0.03696506578127809
+      "q20_abs": 0.062422859698850655
     },
     "post_attn_ln:10": {
       "probe": "post_attn_ln",
       "layer": "10",
       "count": 360579072.0,
-      "q20_abs": 0.13424412751747286
+      "q20_abs": 0.13624961708802166
     },
     "gelu_input:10": {
       "probe": "gelu_input",
       "layer": "10",
       "count": 1442316288.0,
-      "q20_abs": 0.5133690408097319
+      "q20_abs": 0.4151072495374647
     },
     "ffn2_output:10": {
       "probe": "ffn2_output",
       "layer": "10",
       "count": 360579072.0,
-      "q20_abs": 0.0345318041080671
+      "q20_abs": 0.06126126241446681
     },
     "post_ffn_ln:10": {
       "probe": "post_ffn_ln",
       "layer": "10",
       "count": 360579072.0,
-      "q20_abs": 0.12490957712638585
+      "q20_abs": 0.10755488597298016
     },
     "query_proj:11": {
       "probe": "query_proj",
       "layer": "11",
       "count": 360579072.0,
-      "q20_abs": 0.18535135444856785
+      "q20_abs": 0.18325419054829273
     },
     "key_proj:11": {
       "probe": "key_proj",
       "layer": "11",
       "count": 360579072.0,
-      "q20_abs": 0.1749019222916236
+      "q20_abs": 0.13712776112157365
     },
     "value_proj:11": {
       "probe": "value_proj",
       "layer": "11",
       "count": 360579072.0,
-      "q20_abs": 0.1265584481617086
+      "q20_abs": 0.10943060373687044
     },
     "attn_output:11": {
       "probe": "attn_output",
       "layer": "11",
       "count": 360579072.0,
-      "q20_abs": 0.03286971702350488
+      "q20_abs": 0.050884343187622576
     },
     "post_attn_ln:11": {
       "probe": "post_attn_ln",
       "layer": "11",
       "count": 360579072.0,
-      "q20_abs": 0.13097490643208673
+      "q20_abs": 0.13485737520054128
     },
     "gelu_input:11": {
       "probe": "gelu_input",
       "layer": "11",
       "count": 1442316288.0,
-      "q20_abs": 0.3029811466821547
+      "q20_abs": 0.2567397794269575
     },
     "ffn2_output:11": {
       "probe": "ffn2_output",
       "layer": "11",
       "count": 360579072.0,
-      "q20_abs": 0.06320960703222558
+      "q20_abs": 0.023210958793791675
     },
     "post_ffn_ln:11": {
       "probe": "post_ffn_ln",
       "layer": "11",
       "count": 360579072.0,
-      "q20_abs": 0.10405982760337529
+      "q20_abs": 0.10577353821527372
     }
   }
 }

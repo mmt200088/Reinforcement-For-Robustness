@@ -66,11 +66,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from rescale_optimizer import (
-    DEFAULT_FUSION_POLICY,
     ReplanInputs,
     load_graph_from_json,
     replan_with_user_actions,
-    resolve_allowed_fusion_pairs,
 )
 from rescale_optimizer.feasibility import build_feasibility_dag
 from rescale_optimizer.graph import NodeType, propagate_scale
@@ -268,34 +266,6 @@ def _load_delta_overrides_with_actions(
     # Explicit CLI/file overrides take precedence.
     merged.update(_load_delta_overrides(args))
     return merged
-
-
-def _load_allowed_fusion_pairs_with_actions(
-    args: argparse.Namespace,
-    actions_doc: Dict[str, Any],
-    graph_key: str,
-) -> Optional[List[Tuple[int, int]]]:
-    raw: Any = DEFAULT_FUSION_POLICY
-
-    if "fusion_policy" in actions_doc:
-        raw = actions_doc["fusion_policy"]
-    if "allowed_fusion_pairs" in actions_doc:
-        raw = actions_doc["allowed_fusion_pairs"]
-    elif "fusion_pairs" in actions_doc:
-        raw = actions_doc["fusion_pairs"]
-
-    if args.fusion_policy != DEFAULT_FUSION_POLICY:
-        raw = args.fusion_policy
-    if args.allowed_fusion_pair:
-        raw = [[int(a), int(b)] for a, b in args.allowed_fusion_pair]
-
-    return resolve_allowed_fusion_pairs(graph_key, raw)
-
-
-def _fusion_pairs_to_json(allowed_fusion_pairs: Optional[List[Tuple[int, int]]]):
-    if allowed_fusion_pairs is None:
-        return None
-    return [[int(a), int(b)] for a, b in allowed_fusion_pairs]
 
 
 def _extract_current_propagation_deltas(graph) -> List[Dict[str, Any]]:
@@ -533,23 +503,6 @@ def _build_argparser() -> argparse.ArgumentParser:
               "{node_name: delta, ...} or "
               "{'propagation_deltas':[{'name':..., 'delta':...}, ...]}."),
     )
-    p.add_argument(
-        "--fusion-policy",
-        choices=[DEFAULT_FUSION_POLICY, "all", "none"],
-        default=DEFAULT_FUSION_POLICY,
-        help=("Legal fusion policy override. default uses graph_key-specific policy; "
-              "all keeps legacy adjacent fusion; none disables fusion."),
-    )
-    p.add_argument(
-        "--allowed-fusion-pair",
-        nargs=2,
-        type=int,
-        action="append",
-        default=None,
-        metavar=("STAGE_A", "STAGE_B"),
-        help=("Allow one original 1-indexed rescale-stage pair to fuse. "
-              "May be repeated and overrides --fusion-policy/actions-file."),
-    )
     return p
 
 
@@ -598,21 +551,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     except ValueError as e:
         print(f"bad delta overrides: {e}", file=sys.stderr)
         return 1
-    graph_key = args.config_name or cfg_path.stem
-    try:
-        allowed_fusion_pairs = _load_allowed_fusion_pairs_with_actions(
-            args, actions_doc, graph_key
-        )
-    except ValueError as e:
-        print(f"bad allowed fusion pairs: {e}", file=sys.stderr)
-        return 1
 
     inputs = ReplanInputs(
         skeleton=skeleton,
         t_baseline=t_baseline,
         t_new=t_new,
         delta_overrides=delta_overrides or None,
-        allowed_fusion_pairs=allowed_fusion_pairs,
     )
 
     result = replan_with_user_actions(graph, inputs, baseline_q_bits=baseline_q_bits)
@@ -624,7 +568,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_doc: Dict[str, Any] = {
             "config_path": str(cfg_path),
-            "config_name": graph_key,
+            "config_name": (args.config_name or cfg_path.stem),
             "valid": result.valid,
             "fusion_count": result.fusion_count,
             "actions_file": args.actions_file,
@@ -635,7 +579,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             },
             "t_new": t_new,
             "delta_overrides": delta_overrides,
-            "allowed_fusion_pairs": _fusion_pairs_to_json(allowed_fusion_pairs),
             "result": {
                 "valid": result.valid,
                 "message": result.message,
@@ -674,7 +617,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ),
             },
         }
-        compact = _build_new_compact_config(graph, graph_key, result)
+        compact = _build_new_compact_config(graph, (args.config_name or cfg_path.stem), result)
         if compact is not None:
             compact["fusion_count"] = result.fusion_count
             out_doc["new_compact_config"] = compact
