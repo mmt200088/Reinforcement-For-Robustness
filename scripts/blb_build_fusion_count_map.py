@@ -16,7 +16,7 @@ Usage:
         --report reports/blb_opt/fusion_maps/build_<ts>.html --workers 16
     # local small dry-run (torch needed):
     python scripts/blb_build_fusion_count_map.py --profile mrpc \
-        --only block1_mrpc,block5_n0 --out-dir /tmp/fm --workers 4
+        --only block1_mrpc,block5_n1 --out-dir /tmp/fm --workers 4
 """
 
 from __future__ import annotations
@@ -39,11 +39,14 @@ for _p in (str(REPO_ROOT / "blb_stage2_rl"), str(REPO_ROOT / "Rescale_optimizer"
 
 # (graph_key, block_idx, gelu_degree, attn_degree). attn=2 keeps the bootstrap's
 # block3 baseline valid (block3_exp_n2 exists); it does not affect block1/2/4/5.
+# block5_n0 (GELU degree 0 / ReLU) is disabled since 2026-06-06 (Stage-1 stopped
+# sampling degree 0); it is no longer built. The committed block5_n0.json map is
+# kept as dormant data and FusionCountMap.load still loads it, but a degree-0 layer
+# is rejected upstream at baseline_bootstrap, so the fusion schedule never requests it.
 BLOCK_TYPES: List[Tuple[str, int, int, int]] = [
     ("block1_mrpc", 1, 4, 2),
     ("block2_mrpc", 2, 4, 2),
     ("block4", 4, 4, 2),
-    ("block5_n0", 5, 0, 2),
     ("block5_n1", 5, 1, 2),
     ("block5_n2", 5, 2, 2),
     ("block5_n4", 5, 4, 2),

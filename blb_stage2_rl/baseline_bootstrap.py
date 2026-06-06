@@ -52,9 +52,11 @@ REQUEST_FILENAME_FMT = "baseline_request_{dataset}.json"
 RESPONSE_FILENAME_FMT = "baseline_response_{dataset}.json"
 
 # Stage-1 取值范围（与协议第 2 节一致）
-# degree 0 = ReLU（用 ReLU 替换 GELU）；对应 block5_n0 graph（无多项式 GELU 节点，
-# 只有 LN tail + Wffn1）。2026-06-02 起 Stage-2 支持 degree 0。
-ALLOWED_GELU_DEGREES = (0, 1, 2, 4)
+# degree 0 = ReLU（用 ReLU 替换 GELU）→ block5_n0 graph（无多项式 GELU 节点，只有
+# LN tail + Wffn1）。2026-06-02 起 Stage-2 曾支持 degree 0；2026-06-06 起 **关闭**：
+# Stage-1 已停止采样 degree 0（f85c77e），Stage-2 在此入口拒绝 degree-0 层。block5_n0
+# 的解码 / RO 契约 / handler 仍保留为 dormant（历史配置 / 手工 eval / 一行回退即可恢复）。
+ALLOWED_GELU_DEGREES = (1, 2, 4)
 ALLOWED_SOFTMAX_DEGREES = (2, 3, 4, 5, 6)
 
 
@@ -94,8 +96,13 @@ def _validate_stage1(
         )
     bad_gelu = [int(d) for d in gelu_per_layer if int(d) not in ALLOWED_GELU_DEGREES]
     if bad_gelu:
+        hint = (
+            " Degree 0 (ReLU / block5_n0) is disabled for Stage-2 since 2026-06-06;"
+            " the block5_n0 path is retained only as dormant decode for historical/manual eval."
+            if 0 in bad_gelu else ""
+        )
         raise ValueError(
-            f"gelu_degree_per_layer contains values outside {ALLOWED_GELU_DEGREES}: {bad_gelu}"
+            f"gelu_degree_per_layer contains values outside {ALLOWED_GELU_DEGREES}: {bad_gelu}.{hint}"
         )
     bad_sm = [int(d) for d in softmax_per_layer if int(d) not in ALLOWED_SOFTMAX_DEGREES]
     if bad_sm:
@@ -808,7 +815,7 @@ def load_static_skeletons_baseline(
         rescale_optimizer_root: ``Rescale_optimizer`` 仓库根目录
         dataset:                GLUE 任务名（mrpc / cola / ...）
         num_layers:             模型 encoder 层数
-        gelu_per_layer:         长度 num_layers，元素 ∈ {0, 1, 2, 4}（0=ReLU）
+        gelu_per_layer:         长度 num_layers，元素 ∈ {1, 2, 4}（degree 0/ReLU 已于 2026-06-06 关闭）
         softmax_per_layer:      长度 num_layers，元素 ∈ {2, 3, 4, 5, 6}
         archive_path:           手动指定 archive 路径；缺省自动拼
 

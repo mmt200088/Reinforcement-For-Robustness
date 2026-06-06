@@ -1,29 +1,25 @@
-"""Degree-0 (ReLU) Stage-2 support contract tests.
+"""Degree-0 (ReLU) Stage-2: DISABLED at the entry, decode kept DORMANT.
 
 Background
 ----------
-Stage-1 may pick GELU degree 0 for a layer, which means "replace GELU with
-ReLU" (``replace_layer_gelu`` installs ``nn.ReLU``). The corresponding Stage-2
-graph is ``block5_n0`` (LN tail + Wffn1 only — no polynomial GELU nodes). Until
-2026-06-02 Stage-2 had no degree-0 handling and would fail whenever a layer's
-GELU degree was 0. This file pins the degree-0 wiring so it cannot silently
-regress:
+GELU degree 0 = "replace GELU with ReLU"; its Stage-2 graph is ``block5_n0``
+(LN tail + Wffn1 only — no polynomial GELU nodes). Stage-2 gained degree-0
+support on 2026-06-02, but Stage-1 stopped sampling degree 0 (``f85c77e``) and
+on **2026-06-06 Stage-2 disabled it too**: ``ALLOWED_GELU_DEGREES`` dropped 0,
+so ``load_static_skeletons_baseline`` rejects a degree-0 layer loudly at the
+bootstrap entry (both per-slot and fusion runners hit it). The block5_n0 decode
+/ RO contract / handler are *kept dormant* (historical configs, manual eval, and
+a one-line revert if degree 0 returns). This file pins BOTH facts:
 
-* :class:`Degree0RescaleOptimizerContractTest` — torch-free. Talks to the real
-  ``Rescale_optimizer`` package directly and proves the cost path the bridge
-  feeds for a degree-0 baseline is accepted (``valid=True``), and that sending
-  the polynomial ``ctpt_gelu_coeff`` delta to ``block5_n0`` is rejected (which
-  is exactly why ``default_block5_cfg_to_delta`` must gate it off for degree 0).
-  Runs everywhere, including the torch-free local/CI lanes.
+* :class:`Degree0RescaleOptimizerContractTest` — torch-free. The dormant
+  block5_n0 RO contract still holds: the real ``Rescale_optimizer`` accepts the
+  degree-0 baseline payload and rejects a stray ``ctpt_gelu_coeff`` delta.
 
-* :class:`Degree0BaselineExtractionTest` — needs the ``blb_stage2_rl`` package
-  (its ``__init__`` pulls torch), so it is guarded + skips when torch is
-  missing. Reads the REAL ``static_skeletons_mrpc.json`` and checks the
-  degree-0 baseline extraction (graph_key, source ``inv_std`` → x_centered
-  mapping, the two n0 rescales, no GELU-coeff field, no unmapped nodes).
-
-The model-forward install path (``replace_layer_block5_noise`` ReLU branch)
-needs a real BERT model and is exercised by the server smoke run, not here.
+* :class:`Degree0DisabledAtEntryTest` — needs ``blb_stage2_rl`` (torch), so it is
+  guarded + skips without torch. Asserts ``ALLOWED_GELU_DEGREES`` excludes 0 and
+  that a degree-0 layer raises at ``load_static_skeletons_baseline``, while the
+  dormant action-decode still composes a ``block5_n0`` request when fed degree 0
+  directly (proving the decode is retained, not deleted).
 """
 from __future__ import annotations
 
@@ -57,7 +53,7 @@ _RO_SKIP = (
 
 @unittest.skipUnless(_RO_AVAILABLE, _RO_SKIP)
 class Degree0RescaleOptimizerContractTest(unittest.TestCase):
-    """The block5_n0 graph must accept the bridge's degree-0 payload."""
+    """Dormant block5_n0 RO contract — kept valid for re-enable / manual eval."""
 
     @classmethod
     def setUpClass(cls):
@@ -130,49 +126,35 @@ _BB_SKIP = (
 
 
 @unittest.skipUnless(_BB_AVAILABLE, _BB_SKIP)
-class Degree0BaselineExtractionTest(unittest.TestCase):
-    """Real-archive baseline extraction for a degree-0 (ReLU) layer."""
+class Degree0DisabledAtEntryTest(unittest.TestCase):
+    """Degree 0 is rejected at the Stage-2 bootstrap entry; decode stays dormant."""
 
-    def test_allowed_gelu_degrees_includes_zero(self):
-        self.assertIn(0, ALLOWED_GELU_DEGREES)
+    def test_allowed_gelu_degrees_excludes_zero(self):
+        self.assertNotIn(0, ALLOWED_GELU_DEGREES)
+        self.assertEqual(tuple(ALLOWED_GELU_DEGREES), (1, 2, 4))
 
-    def test_block5_n0_baseline_extraction(self):
-        if not (_RO_ROOT / "configs" / "mrpc" / "static_skeletons_mrpc.json").exists():
-            self.skipTest("mrpc static_skeletons archive not present")
+    def test_degree0_layer_rejected_at_bootstrap(self):
+        # A degree-0 layer must now abort loudly at the universal Stage-2 entry
+        # (both per-slot and fusion runners call load_static_skeletons_baseline).
         num_layers = 12
-        # Layer 0 = ReLU (degree 0); softmax kept at 2 (block3_exp_n2 has a
-        # successful baseline, unlike n6).
         gelu = [0] + [1] * (num_layers - 1)
         softmax = [2] * num_layers
-        base = load_static_skeletons_baseline(
-            rescale_optimizer_root=str(_RO_ROOT),
-            dataset="mrpc",
-            num_layers=num_layers,
-            gelu_per_layer=gelu,
-            softmax_per_layer=softmax,
-        )
-        self.assertEqual(base.aggregate_invalid_block_count, 0)
-        self.assertEqual(base.missing_block_layer, [])
+        with self.assertRaises(ValueError) as ctx:
+            load_static_skeletons_baseline(
+                rescale_optimizer_root=str(_RO_ROOT),
+                dataset="mrpc",
+                num_layers=num_layers,
+                gelu_per_layer=gelu,
+                softmax_per_layer=softmax,
+            )
+        msg = str(ctx.exception)
+        self.assertIn("0", msg)
+        self.assertIn("disabled", msg.lower())
 
-        bl = base.per_block_layer[(5, 0)]
-        self.assertEqual(bl.graph_key, "block5_n0")
-        fields = bl.field_baseline_sfs
-        # Source node is named "inv_std" in the n0 graph (not "x_mean"); the
-        # baseline must still populate x_centered_fresh_sf from it.
-        self.assertEqual(fields.get("x_centered_fresh_sf"), 30,
-                         f"x_centered_fresh_sf missing/wrong for n0: {fields}")
-        # The two n0 rescales (normalize + wffn1) must be present.
-        self.assertIn("normalize_rescale_sf", fields)
-        self.assertIn("wffn1_rescale_sf", fields)
-        # ReLU has no polynomial GELU coefficient encode / rescale.
-        self.assertNotIn("gelu_coeff_sf", fields)
-        self.assertNotIn("gelu_coeff_mul_rescale_sf_0", fields)
-        self.assertNotIn("gelu_power_rescale_sf_0", fields)
-        # Everything in the n0 skeleton mapped to an RL field — no leftovers.
-        self.assertEqual(bl.unmapped_rescale_nodes, [])
-        self.assertEqual(bl.unmapped_propagation_nodes, [])
-
-    def test_degree0_action_decode_builds_block5_n0_request(self):
+    def test_degree0_action_decode_still_builds_block5_n0_request(self):
+        # Dormant decode: the action_space path (NOT gated by ALLOWED_GELU_DEGREES)
+        # still composes a block5_n0 request when fed degree 0 directly, proving the
+        # decode is retained for manual eval / a one-line re-enable — not deleted.
         from blb_stage2_rl.action_space import (
             action_vector_to_cfgs,
             build_optimizer_requests,
