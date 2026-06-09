@@ -1,0 +1,9 @@
+{
+  "stage1_accuracy_tolerance": 0.0,
+  "stage2_limit_tolerance": 0.05,
+  "stage2_stability_tolerance": 0.05,
+  "stage2_k_trials": 5,
+  "stage2_probe_size": 256,
+  "dataset": "rte",
+  "search_algorithm": "rl"
+}

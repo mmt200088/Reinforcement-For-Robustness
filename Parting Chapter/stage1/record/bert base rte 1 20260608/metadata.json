@@ -1,0 +1,8 @@
+{
+  "stage": 1,
+  "combo": "bert base rte",
+  "data_path": "rte",
+  "completed_at": "2026-06-08T01:32:16.148606",
+  "episodes": 43800,
+  "stage1_accuracy_tolerance": null
+}
