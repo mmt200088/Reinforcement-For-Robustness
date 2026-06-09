@@ -115,15 +115,15 @@
       7
     ],
     "enum_total_combos": 72900000,
-    "valid_configs": 47173644,
-    "kept_configs": 32,
+    "valid_configs": 54172618,
+    "kept_configs": 192,
     "num_options": 2,
     "fusion_counts": [
       0,
       1
     ],
-    "wall_seconds": 15092.82,
-    "workers": 16,
+    "wall_seconds": 5562.27,
+    "workers": 96,
     "k_independence": {
       "k_independent": true,
       "violations": [],

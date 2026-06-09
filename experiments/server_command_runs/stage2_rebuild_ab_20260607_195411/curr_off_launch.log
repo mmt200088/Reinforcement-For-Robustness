@@ -1,0 +1,58 @@
+已加载预设：mrpc-blb-stage2-rl（/var/tmp/root-home/Reinforcement-For-Robustness/presets/mrpc-blb-stage2-rl.conf）
+启动配置：
+  搜索算法：普通强化学习（rl）（显式指定）
+  数据集：mrpc（显式指定）
+  模型类型：BERT Base（bert-base）（显式指定）
+  日志文件：blb_stage2_rl.log（显式指定）
+  批大小：512（显式指定）
+  模式目录：Parting Chapter/stage2（显式指定）
+  运行目录：Parting Chapter/stage2/bert base mrpc（显式指定）
+  Stage-1 回合数：51000（使用默认值）
+  Stage-1 准确度约束：0.005（显式指定）
+  Stage-2 指标约束百分比：0.005（显式指定）
+  Stage-2 稳定性约束百分比：0.005（显式指定）
+  Stage-2 K 次噪声试验：4（显式指定）
+  Stage-2 探针子集大小：256（显式指定）
+  持久化根目录：Parting Chapter/persistent（使用默认值）
+  持久化目录：Parting Chapter/stage2/bert base mrpc（显式指定）
+  从头训练：是（显式指定）
+  Stage-1 回合数：51000（使用默认值）
+  Stage-2 回合数：6000（显式指定）
+  Stage-2 RL 实现：blb_v3（使用默认值）
+  BLB v3 warmstart anchor episodes：80（显式指定）
+  BLB v3 action mask：否（使用默认值）
+  BLB v3 action mask 模式：none（使用默认值）
+  BLB v3 baseline logit 加成：0（使用默认值）
+  PPO 更新间隔：120（使用默认值）
+  BLB rollout 大小：60（显式指定）
+  BLB Rescale optimizer：in_process_real (Rescale_optimizer)（使用默认值）
+  BLB neighbor ramp：auto（使用默认值）
+  BLB neighbor max mutations：auto（使用默认值）
+  BLB neighbor max radius：auto（使用默认值）
+  BLB entropy coef：auto（使用默认值）
+  BLB entropy ramp episodes：auto（使用默认值）
+  BLB fast reward mode：否（使用默认值）
+  BLB online K trials：1（使用默认值）
+  BLB terminal eval batch：4（使用默认值）
+  BLB promotion validation trials：4（使用默认值）
+  BLB checkpoint 间隔：200（显式指定）
+  BLB 日志评估间隔：100（显式指定）
+  Stage-1 学习率：1e-4（使用默认值）
+  Stage-2 学习率：2e-4（显式指定）
+  被动 final_eval 预设：default（显式指定）
+  最终评估来源：搜索结果（search）（显式指定）
+  Stage-2 固定 GELU/Softmax 来源：JSON 文件（json）（使用默认值）
+  跳过 Stage-1 搜索：是（显式指定）
+  跳过 Stage-2 搜索：否（使用默认值）
+  跳过最终评估：是（使用默认值）
+  仅运行最终评估：否（使用默认值）
+  CUDA_VISIBLE_DEVICES：0（显式指定）
+  实际执行命令（Command）：python rl_tune.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir Parting\ Chapter/stage2/bert\ base\ mrpc --batch_size 512 --micro_batch_size 512 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules \[\"q_proj\"\,\ \"k_proj\"\,\ \"v_proj\"\,\ \"up_proj\"\,\ \"down_proj\"\] --stage1_rl_episodes 51000 --stage2_rl_episodes 6000 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified true --ppo_update_interval 120 --use_ist --final_eval_config_source search --final_eval_config_path glue_final_configs_best_ppo.json --manual_stage1_gelu '' --manual_stage1_softmax '' --manual_stage2_noise '' --stage2_fixed_config_source json --stage2_fixed_config_path glue_final_configs_best_ppo.json --stage2_manual_gelu '' --stage2_manual_softmax '' --final_eval_random_seed 42 --final_eval_permutation_trials 0 --final_eval_cost_equivalent_trials 0 --final_eval_budget_equivalent_trials 0 --final_eval_stage1_budget_trials 10 --final_eval_stage2_budget_trials 10 --final_eval_repeat_n 1 --final_eval_preset default --skip_noise_rl false --skip_stage1_rl true --skip_final_eval true --final_eval_only false --resume_run_dir '' --stage1_rl_lr 1e-4 --stage2_rl_lr 2e-4 --stage1_accuracy_tolerance 0.005 --stage2_limit_tolerance 0.005 --stage2_stability_tolerance 0.005 --stage2_k_trials 4 --stage2_probe_size 256 --stage2_rl_variant blb_v3 --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer --blb_v3_rollout_size 60 --decoupled_layout true --stage1_run_id '' --blb_v3_reward_devices 0 --blb_v3_eval_interval 100 --blb_v3_save_interval 200 --blb_v3_calibrate_baseline_samples 8 --blb_v3_warmstart_anchor_episodes 80 --blb_v3_sequential_rl true --blb_v3_sequential_invalid_penalty 1.0 --blb_v3_sequential_cost_shaping_coeff 0.05 --blb_v3_sequential_fusion_shaping_coeff 0.0 --rl_algo ppo --blb_v3_fusion_count_action 1 --blb_v3_fusion_neighbor_curriculum 0 
+
+已在后台启动。
+  进程号（PID）：904938
+  查看日志：tail -f Parting Chapter/stage2/bert base mrpc/logs/blb_stage2_rl.log
+  错误摘要：Parting Chapter/stage2/bert base mrpc/logs/error_summary.txt
+  LATEST_RUN_DIR：Parting Chapter/stage2/LATEST_RUN_DIR
+  LATEST_PID：Parting Chapter/stage2/LATEST_PID
+  优雅停止（Graceful Stop）：kill -INT 904938

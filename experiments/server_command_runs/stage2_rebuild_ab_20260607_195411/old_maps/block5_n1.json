@@ -11,15 +11,15 @@
       "option_id": 0,
       "fusion_count": 0,
       "tie_index": 0,
-      "total_variance": 2.669498642156283e-09,
-      "total_bits": 213,
+      "total_variance": 4.451188231208873e-09,
+      "total_bits": 209,
       "slots": {
-        "x_centered_fresh_sf": 31,
+        "x_centered_fresh_sf": 28,
         "gamma_sf": 20,
         "wffn1_sf": 22,
         "gelu_coeff_sf": 20,
-        "normalize_rescale_sf": 28,
-        "gelu_coeff_mul_rescale_sf_0": 31
+        "normalize_rescale_sf": 26,
+        "gelu_coeff_mul_rescale_sf_0": 29
       },
       "action_indices": [
         9,
@@ -44,21 +44,21 @@
       "option_id": 1,
       "fusion_count": 1,
       "tie_index": 0,
-      "total_variance": 4.367266683423018e-06,
+      "total_variance": 1.1345467109179677e-05,
       "total_bits": 179,
       "slots": {
-        "x_centered_fresh_sf": 21,
-        "gamma_sf": 16,
-        "wffn1_sf": 16,
+        "x_centered_fresh_sf": 22,
+        "gamma_sf": 14,
+        "wffn1_sf": 14,
         "gelu_coeff_sf": 16,
-        "normalize_rescale_sf": 28,
-        "gelu_coeff_mul_rescale_sf_0": 31
+        "normalize_rescale_sf": 26,
+        "gelu_coeff_mul_rescale_sf_0": 29
       },
       "action_indices": [
         9,
-        4,
-        7,
         6,
+        6,
+        5,
         7,
         9,
         0,
@@ -89,15 +89,15 @@
     ],
     "pinned_positions": [],
     "enum_total_combos": 810000,
-    "valid_configs": 578743,
-    "kept_configs": 32,
+    "valid_configs": 611301,
+    "kept_configs": 192,
     "num_options": 2,
     "fusion_counts": [
       0,
       1
     ],
-    "wall_seconds": 164.45,
-    "workers": 16,
+    "wall_seconds": 69.04,
+    "workers": 96,
     "k_independence": {
       "k_independent": true,
       "violations": [],

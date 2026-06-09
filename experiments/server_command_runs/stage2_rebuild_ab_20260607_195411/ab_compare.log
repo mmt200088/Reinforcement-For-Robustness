@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/var/tmp/root-home/Reinforcement-For-Robustness/scripts/blb_fusion_ab_compare.py", line 266, in <module>
+    main()
+  File "/var/tmp/root-home/Reinforcement-For-Robustness/scripts/blb_fusion_ab_compare.py", line 243, in main
+    ea, eb = load_episodes(args.run_a), load_episodes(args.run_b)
+  File "/var/tmp/root-home/Reinforcement-For-Robustness/scripts/blb_fusion_ab_compare.py", line 43, in load_episodes
+    raise FileNotFoundError(f"no episodes.jsonl under {run_dir}")
+FileNotFoundError: no episodes.jsonl under experiments/server_command_runs/stage2_rebuild_ab_20260607_195411/curr_on/run

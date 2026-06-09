@@ -1,0 +1,7 @@
+RO 导入 OK；DEFAULT_FUSION_POLICY = default
+  默认融合对 block1_mrpc  = []
+  默认融合对 block2_mrpc  = [(1, 2)]
+  默认融合对 block4       = [(1, 2)]
+  默认融合对 block5_n1    = [(1, 2)]
+  默认融合对 block5_n2    = [(1, 2)]
+  默认融合对 block5_n4    = [(1, 2)]
