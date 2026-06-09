@@ -40,6 +40,50 @@ SKEL="Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json"
 MAPS_DIR="blb_stage2_rl/fusion_maps/mrpc"
 CANON_STAGE2="Parting Chapter/stage2"          # 解耦 stage2：LATEST_PID/RUN_DIR 落在这里；combo=bert base mrpc
 
+# ============================================================================
+# [stageA] 先验证 Stage-1 多卡修复（commit 15c16ad / a1cf152）：
+#   ① 正确性：结果与卡数无关 —— 1卡 vs N卡，每个 PPO 窗口的 rollout_sig 必须逐字相同。
+#   ② 加速：ep/h，看 N 卡是否贴近 N 倍（旧的只有 ~2x）。
+# 短跑 RTE bert-base，两次同 seed(默认42)。非致命：这段出问题也不挡后面的 A/B。
+# ============================================================================
+( set +e
+S1OUT="$OUT/stage1_ngpu_validate"; mkdir -p "$S1OUT"; S1EP=1200; S1STAGE="Parting Chapter/stage1"
+run_stage1 () {
+  local tag="$1" devs="$2" pid rundir t0 t1
+  echo "-------- [stageA] $tag devices=$devs episodes=$S1EP --------"
+  CUDA_VISIBLE_DEVICES="$devs" bash llama_7B_LayerImportance.sh run rl \
+    --preset bert-base-rte-stage1-rl --stage1-rl-devices "$devs" \
+    --stage1-search-episodes "$S1EP" --fresh 2>&1 | tee "$S1OUT/${tag}_launch.log"
+  sleep 12
+  pid="$(cat "$S1STAGE/LATEST_PID" 2>/dev/null || true)"
+  rundir="$(cat "$S1STAGE/LATEST_RUN_DIR" 2>/dev/null || true)"
+  [ -z "$pid" ] && { echo "[stageA][warn] $tag 没拿到 PID,看 ${tag}_launch.log"; return 1; }
+  t0=$(date +%s); while kill -0 "$pid" 2>/dev/null; do sleep 30; done; t1=$(date +%s)
+  echo "$((t1 - t0))" > "$S1OUT/${tag}_walltime_s.txt"
+  # rollout_sig 由 parallel_runner 每窗打印；grep 出 (window,sig) 并规范化排序去重再比对
+  grep -rhoE "window=[0-9]+ episodes=[0-9]+ rollout_sig=[0-9a-f]+" "$rundir" 2>/dev/null \
+    | sort -u > "$S1OUT/${tag}_sigs.txt" || true
+  cp -rf "$rundir/logs" "$S1OUT/${tag}_logs" 2>/dev/null || true
+  [ -n "$rundir" ] && [[ "$rundir" == *"/stage1/"*rte* ]] && [ -d "$rundir" ] && rm -rf "$rundir"
+}
+run_stage1 g1 0
+run_stage1 gN "$DEVS"
+echo "==== [stageA] 判读 ====" | tee "$S1OUT/verdict.txt"
+if [ -s "$S1OUT/g1_sigs.txt" ] && diff "$S1OUT/g1_sigs.txt" "$S1OUT/gN_sigs.txt" > "$S1OUT/sig_diff.txt" 2>&1; then
+  echo "[stageA][PASS] 1卡与N卡 rollout_sig 逐窗完全相同 → 结果与卡数无关 ✓" | tee -a "$S1OUT/verdict.txt"
+else
+  echo "[stageA][FAIL] rollout_sig 不一致或为空 → 看 sig_diff.txt 与 g1_sigs.txt/gN_sigs.txt" | tee -a "$S1OUT/verdict.txt"
+fi
+g1s=$(cat "$S1OUT/g1_walltime_s.txt" 2>/dev/null || echo 0)
+gNs=$(cat "$S1OUT/gN_walltime_s.txt" 2>/dev/null || echo 0)
+python3 -c "
+g1=$g1s; gN=$gNs; ep=$S1EP; nd=len('$DEVS'.split(','))
+print(f'1-GPU : {ep/(g1/3600):.0f} ep/h ({g1}s)') if g1>0 else print('1-GPU : n/a')
+print(f'{nd}-GPU : {ep/(gN/3600):.0f} ep/h ({gN}s)  speedup={g1/gN:.2f}x (ideal {nd}x)') if (g1>0 and gN>0) else print('N-GPU : n/a')
+" | tee -a "$S1OUT/verdict.txt"
+echo "==== [stageA] done -> $S1OUT ===="
+) || echo "[stageA][warn] Stage-1 验证段异常,继续跑 A/B"
+
 echo "==================== [phase0] 同步 + 接口自检 ===================="
 git rev-parse HEAD | tee "$OUT/HEAD.txt"
 git log --oneline -5
