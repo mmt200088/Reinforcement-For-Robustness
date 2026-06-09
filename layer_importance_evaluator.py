@@ -5500,7 +5500,21 @@ class LayerImportanceEvaluator(TrainerCallback):
             current_lr = self.ppo_lr_initial * warmup_factor
             for param_group in optimizer.param_groups:
                 param_group['lr'] = current_lr
-        
+
+        # GPU-count-independent update: the per-device rollout seeding leaves the
+        # default CUDA RNG in a state that depends on HOW MANY workers seeded it,
+        # so reseed deterministically by (base_seed, update_step) — both invariant
+        # to GPU count — before any policy forward below. No-op if evaluate_actions
+        # is dropout-free; if it isn't, this keeps the update identical across GPU
+        # counts. (GRPO update path would need the same reseed if --rl-algo grpo.)
+        _u_seed = (
+            int(getattr(self, "final_eval_random_seed", 42))
+            ^ (int(ppo_update_step) * 2654435761)
+        ) & 0x7FFFFFFFFFFFFFFF
+        torch.manual_seed(_u_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(_u_seed)
+
         (cont_features, layer_indices, prev_g_actions,
          actions_g, old_logprobs, rewards, values, dones, gelu_masks) = buffer.get_batch(device)
         
@@ -5759,30 +5773,37 @@ class LayerImportanceEvaluator(TrainerCallback):
     # These helpers live on the evaluator because the per-episode body needs
     # access to ``self._write_step_info`` / ``self.total_layers`` / etc.
 
-    def _stage1_collect_episode_in_worker(self, *, worker, gtrxl_net, gtrxl_lock,
-                                          primary_device, episode_seed):
-        """Run one Stage-1 episode using ``worker``'s BERT replica.
+    def _stage1_collect_episode_in_worker(self, *, worker, episode_seed):
+        """Run one Stage-1 episode entirely on ``worker``'s own GPU.
 
-        Thread-safe variant of the per-episode body in ``on_evaluate``'s main
-        loop. The GTrXL forward happens on ``primary_device`` under
-        ``gtrxl_lock`` (so workers serialize on policy access; the lock is
-        nanosecond-scale relative to the BERT forward at episode end). The
-        BERT forward triggered by ``env.step`` at the terminal step runs on
-        ``worker.device`` (different GPU per worker) — that's where the
-        parallelism actually wins.
+        Both the GTrXL policy rollout AND the terminal BERT forward run on
+        ``worker.device`` using ``worker.gtrxl_replica`` (a per-worker eval-mode
+        copy of the central policy, weight-synced each window). There is NO
+        shared policy + lock, so workers no longer serialize on policy access —
+        that is the speedup. Determinism is preserved: the action sample is
+        seeded from the worker's own device RNG with the GLOBAL-episode-index
+        ``episode_seed`` from the runner, and CUDA Philox is device-independent,
+        so episode ``g`` samples the same action on any GPU / any GPU count.
 
         Returns an ``EpisodeRollout`` carrying per-step transitions plus
         per-episode summary metrics for the central bookkeeping.
         """
         from stage1_rl.parallel_runner import EpisodeRollout
 
+        device = worker.device
+        policy = worker.gtrxl_replica
+        if device.type == "cuda":
+            # Make this thread's current CUDA device the worker's GPU so the
+            # per-step ``torch.cuda.manual_seed`` seeds THIS device's generator,
+            # isolated from other workers' devices (no global-RNG race, no lock).
+            torch.cuda.set_device(device)
+
         env = worker.env
         state = env.reset()
 
-        # Per-episode action-history accumulators live on the primary device
-        # (the same place gtrxl_net lives). We move them once at episode start
-        # and reuse the buffers throughout.
-        prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long).to(primary_device)
+        # Per-episode action-history accumulators live on the worker's device
+        # (where its policy replica lives).
+        prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long).to(device)
 
         seq_cont_feats: List[torch.Tensor] = []
         seq_layer_indices: List[torch.Tensor] = []
@@ -5807,10 +5828,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             # offsets into the flat state, whose layout changed when softmax left).
             cont_feat_np = env.get_policy_cont_features()
 
-            cont_feat_t = torch.tensor(cont_feat_np, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(primary_device)
-            layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long).to(primary_device)
+            cont_feat_t = torch.tensor(cont_feat_np, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
+            layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long).to(device)
             gelu_mask_np = env.get_gelu_action_mask(layer_idx)
-            gelu_mask_t = torch.tensor(gelu_mask_np, dtype=torch.bool).unsqueeze(0).unsqueeze(0).to(primary_device)
+            gelu_mask_t = torch.tensor(gelu_mask_np, dtype=torch.bool).unsqueeze(0).unsqueeze(0).to(device)
 
             seq_cont_feats.append(cont_feat_t)
             seq_layer_indices.append(layer_idx_t)
@@ -5822,19 +5843,20 @@ class LayerImportanceEvaluator(TrainerCallback):
             full_prev_g = torch.cat(seq_prev_g, dim=1)
             full_gelu_mask = torch.cat(seq_gelu_masks, dim=1)
 
-            # Lock-guarded gtrxl_net access. Categorical.sample() uses the
-            # global torch RNG, so seed it under the same lock to keep per-
-            # worker streams independent and reproducible.
-            with gtrxl_lock:
+            # Per-worker replica on the worker's own device — NO lock. Seed the
+            # worker's device RNG so Categorical.sample() is reproducible and,
+            # because CUDA Philox is device-independent, draws the identical
+            # action any other GPU would for this (global episode, step).
+            if device.type == "cuda":
+                torch.cuda.manual_seed(int(episode_seed) + step)
+            else:
                 torch.manual_seed(int(episode_seed) + step)
-                if torch.cuda.is_available():
-                    torch.cuda.manual_seed(int(episode_seed) + step)
-                with torch.no_grad():
-                    gelu_action, logprob, value, gelu_probs = \
-                        gtrxl_net.get_action_and_logprob(
-                            full_cont, full_layer, full_prev_g,
-                            return_probs=True, gelu_mask=full_gelu_mask,
-                        )
+            with torch.no_grad():
+                gelu_action, logprob, value, gelu_probs = \
+                    policy.get_action_and_logprob(
+                        full_cont, full_layer, full_prev_g,
+                        return_probs=True, gelu_mask=full_gelu_mask,
+                    )
 
             # env.step at the terminal step routes into the worker's eval
             # wrapper, which calls self._stage1_evaluate_on_model(...) on
@@ -5866,7 +5888,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "current_entropy_coef": None,
             })
 
-            prev_g = gelu_action.reshape(1, 1).to(primary_device)
+            prev_g = gelu_action.reshape(1, 1).to(device)
 
             episode_reward += reward
             state = next_state
@@ -5926,12 +5948,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             env.prev_episode_metrics = dict(proxy_prev_metrics)
             return env
 
-        def collect_episode(*, worker, gtrxl_net, gtrxl_lock, primary_device, episode_seed):
+        def collect_episode(*, worker, episode_seed):
             return evaluator_self._stage1_collect_episode_in_worker(
                 worker=worker,
-                gtrxl_net=gtrxl_net,
-                gtrxl_lock=gtrxl_lock,
-                primary_device=primary_device,
                 episode_seed=episode_seed,
             )
 

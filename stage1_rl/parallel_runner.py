@@ -33,6 +33,7 @@ Design (mirrors Stage-2 conventions where they fit):
 from __future__ import annotations
 
 import copy
+import hashlib
 import threading
 import time
 from dataclasses import dataclass, field
@@ -175,6 +176,7 @@ class Stage1RolloutWorker:
     env: Any                          # TransformerOptEnv with the per-worker eval wrapper
     eval_split_name: str              # which dataloader split (e.g. "train" / proxy)
     role: str = "primary"             # "primary" (worker 0) | "replica"
+    gtrxl_replica: Optional[nn.Module] = None  # per-worker eval policy on .device
 
 
 # ---------------------------------------------------------------------------
@@ -219,19 +221,38 @@ class Stage1ParallelRunner:
         # The episode-collection routine is supplied by the caller (lives in
         # layer_importance_evaluator.py so it can read all of the existing
         # private state — RL_OPT_FLAGS, _write_step_info, etc. — without
-        # circular import.) Signature:
-        #   collect_episode_fn(worker, gtrxl_net, gtrxl_lock, primary_device,
-        #                      episode_seed) -> EpisodeRollout
+        # circular import.) Signature: collect_episode_fn(worker, episode_seed).
         self._collect_episode = collect_episode_fn
         self._log = log_fn or (lambda _msg: None)
         self.last_diagnostics: Optional[Stage1ParallelRunnerDiagnostics] = None
-        # The policy lock is owned by the runner so multiple windows reuse it
-        # (cheap; lock acquire/release are nanosecond-scale ops).
-        self._gtrxl_lock = threading.Lock()
 
     @property
     def num_workers(self) -> int:
         return len(self.workers)
+
+    def _sync_policy_replicas(self, gtrxl_net: nn.Module) -> None:
+        """Give every worker its own eval-mode copy of the central policy on its
+        own device (built once, then weight-synced each window).
+
+        The policy is frozen during a window's collection (PPO updates the
+        central net only afterwards), so per-worker replicas remove the old
+        shared-policy lock WITHOUT changing what gets sampled: episode ``g``
+        draws the same action on any device (identical weights + global-index
+        seed + device-independent CUDA Philox). This is the speedup — the 12-step
+        GTrXL rollout now runs on each worker's GPU in parallel instead of
+        serializing through one lock on ``cuda:0``.
+        """
+        for w in self.workers:
+            if w.gtrxl_replica is None:
+                if w.device == self.primary_device:
+                    replica = copy.deepcopy(gtrxl_net).to(w.device)
+                else:
+                    with torch.cuda.device(w.device):
+                        replica = copy.deepcopy(gtrxl_net).to(w.device)
+                w.gtrxl_replica = replica
+            else:
+                w.gtrxl_replica.load_state_dict(gtrxl_net.state_dict())
+            w.gtrxl_replica.eval()
 
     def run_window(
             self,
@@ -252,6 +273,10 @@ class Stage1ParallelRunner:
         if total_episodes <= 0:
             return []
 
+        # Build/refresh each worker's own eval-mode policy replica (frozen for
+        # this window) so the rollout runs lock-free — one policy per GPU.
+        self._sync_policy_replicas(gtrxl_net)
+
         n_workers = len(self.workers)
         assignments = assign_global_episodes(total_episodes, n_workers)
         results: List[Optional[EpisodeRollout]] = [None] * total_episodes
@@ -268,9 +293,6 @@ class Stage1ParallelRunner:
                     ep_seed = derive_episode_seed(base_seed, window_idx, g)
                     rollout = self._collect_episode(
                         worker=worker,
-                        gtrxl_net=gtrxl_net,
-                        gtrxl_lock=self._gtrxl_lock,
-                        primary_device=self.primary_device,
                         episode_seed=ep_seed,
                     )
                     results[g] = rollout
@@ -317,6 +339,15 @@ class Stage1ParallelRunner:
             per_worker_episode_counts=[len(a) for a in assignments],
             devices=[str(w.device) for w in self.workers],
         )
+
+        # Determinism signature over the window's rollouts in GLOBAL order: a hash
+        # of every episode's (actions, rewards). The 1-GPU-vs-N-GPU harness diffs
+        # these — identical sequences prove the rollout is GPU-count-independent.
+        sig = hashlib.sha1(
+            repr([(r.actions_g, r.rewards) for r in flat]).encode("utf-8")
+        ).hexdigest()[:16]
+        self._log(f"[stage1-rollout] window={window_idx} episodes={len(flat)} rollout_sig={sig}")
+
         return flat
 
 
