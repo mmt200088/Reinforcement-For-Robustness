@@ -11,21 +11,26 @@ export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 
 # ============================================================================
-# 背景（本地已逐项核对，见 metadata）：
-#   1) Stage-1 重跑：gelu 现在 {1,2}，无 degree-0（approx_per_dataset.json 已更新；
-#      stage2 实际从 stage1/record/.../final_config.json 读，softmax 固定 6）。
-#   2) replan 改了：新增 per-graph 默认融合策略 _DEFAULT_ALLOWED_FUSION_PAIRS
-#      （block1=[] 完全禁融合，其余=[(1,2)] 只允许 (1,2) 这一对融合）。
-#      ── 调用接口未变：ReplanSession.replan 签名 / 返回键不变；build 与 runtime
-#         都不显式传 allowed_fusion_pairs，都吃同一个新默认 → 两者一致。
-#      ── 但 replan「结果」会变（同一动作的 realized fusion_count 变），所以：
-#         必须重建 fusion 图 + 重新自动推导 baseline 动作，才能跑 A/B。
-# 本脚本一条龙：同步/接口自检 → 重建 fusion 图(幂等+门禁) → 图门禁 → A/B(启动即
-# 自动推 baseline，这步同时验证「自动化代码」) → 对比报告。
+# 上一轮（stage2_rebuild_ab_20260607_195411）结果：fusion 图已全部按新 replan 重建并
+# 提交（1ad078c：block1=(1,[0]) K-only、block5_n2/n4 从[0,1,2]→[0,1]，图门禁通过），
+# 但 A/B 两组都在启动瞬间崩溃：
+#   FileNotFoundError: 未找到 combo='bert base mrpc' 的 Stage-1 record（Parting Chapter/stage1/record）
+# 根因：解耦 stage2 从 stage1/record/<combo>/final_config.json 读前置 Stage-1 degrees，
+# 但服务器上 MRPC 的 stage1/record 不存在（最近一次 Stage-1 跑的是 RTE；MRPC 新 degrees
+# 只写进了 approx_per_dataset.json，没归档成解耦 record）。错误提示里的 --stage2-fixed-config
+# 是死代码（rl_tune 参数未接线）。本轮修复：用已提交的 approx_per_dataset.json 里的 MRPC
+# degrees 合成出那条 Stage-1 record（gelu [1,2,1,1,1,1,1,1,2,1,1,1] / softmax [6]*12），再跑 A/B。
+# 这是服务器侧「生成产物」，不动任何训练源码。
+# 流程：同步/接口自检 → (图已建好,默认跳过) → 图门禁 → 合成缺失的 Stage-1 record → A/B → 对比。
 # ----------------------------------------------------------------------------
 EPISODES=6000        # A/B 规模：6000 足够跑完课程全生命周期(ramp 0.5×=3000 收, 3000-6000 全开)；里程碑级改 60000
-REBUILD_MAPS=1       # 1=按新 replan 重建 fusion 图；0=跳过(仅当确认 fusion_maps 已是新策略时)
+REBUILD_MAPS=0       # 图已按新 replan 建好且提交(1ad078c) → 默认跳过。只有 skeleton 再变才改回 1。
 WORKERS="$( n=$(nproc 2>/dev/null || echo 8); echo $(( n > 16 ? 16 : n )) )"   # 图构建是 CPU 活，不占 GPU
+# 自动探测可用 GPU（上一轮 A/B 只看到 device 0）：用实际有的卡，K=卡数(封顶8)，1-卡也能跑。
+NGPU="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"; [ -z "$NGPU" ] && NGPU=1; [ "$NGPU" -lt 1 ] && NGPU=1
+DEVS="$(seq -s, 0 $((NGPU-1)))"           # 0  或  0,1,2,3 ...
+KTRIALS="$NGPU"; [ "$KTRIALS" -gt 8 ] && KTRIALS=8
+echo "[gpu] 探测到 $NGPU 张卡 -> CUDA_VISIBLE_DEVICES=$DEVS, stage2-k-trials=$KTRIALS"
 # ============================================================================
 
 TS=$(date +%Y%m%d_%H%M%S)
@@ -110,6 +115,28 @@ for f in sorted(glob.glob(new+"/*.json")):
 PY
 cp -a "$MAPS_DIR" "$OUT/new_maps"
 
+echo "==================== [phase2.5] 合成缺失的 MRPC Stage-1 record（修上一轮 A/B 启动崩溃根因）===================="
+# 解耦 stage2 从 stage1/record/<combo>/final_config.json 读前置 Stage-1 degrees；服务器上 MRPC 的
+# 这条 record 不存在（最近 Stage-1 跑的是 RTE）。从已提交的 approx_per_dataset.json 合成它（真实结果，非假跑）。
+python3 - <<'PY' 2>&1 | tee "$OUT/stage1_record_synth.txt" || { echo "[FATAL] Stage-1 record 合成失败"; exit 1; }
+import json, os, glob, datetime
+rec_root = "Parting Chapter/stage1/record"; combo = "bert base mrpc"
+existing = [d for d in glob.glob(os.path.join(rec_root, combo + " *")) if os.path.isdir(d)]
+if existing:
+    print("[skip] 已存在真实 Stage-1 record，不覆盖：", [os.path.basename(d) for d in existing]); raise SystemExit(0)
+ap = json.load(open("Model_analysis/configs/approx_per_dataset.json"))
+s1 = ap["mrpc"]["stage1"]; gelu = [int(x) for x in s1["gelu"]]; softmax = [int(x) for x in s1["softmax"]]
+assert 0 not in gelu, f"degree-0 不应出现: {gelu}"
+date = datetime.datetime.now().strftime("%Y%m%d")
+rec_dir = os.path.join(rec_root, f"{combo} 1 {date}")   # run_layout 约定 run_id = "{combo} {N} {YYYYMMDD}"
+os.makedirs(rec_dir, exist_ok=True)
+cfg = {"gelu_degree_per_layer": gelu, "softmax_degree_per_layer": softmax,
+       "_synthesized_from": "Model_analysis/configs/approx_per_dataset.json",
+       "_note": "MRPC Stage-1 final config (real result); synthesized into decoupled record so stage2 can resolve it."}
+json.dump(cfg, open(os.path.join(rec_dir, "final_config.json"), "w"), ensure_ascii=False, indent=2)
+print("[ok] 合成 Stage-1 record:", rec_dir, "| gelu =", gelu, "| softmax =", softmax)
+PY
+
 echo "==================== [phase3] curriculum A/B（curr_on=加课程 / curr_off=不加；启动即自动推 baseline）===================="
 # A/B 唯一变量：--blb-v3-fusion-neighbor-curriculum 1/0。其余(preset/seed/K/probe/新图/新 baseline)全一致。
 # 顺序跑，每组独占 4 卡 K=4。每组启动时 runner 用 static_skeletons_baseline_to_action 自动推 baseline
@@ -123,15 +150,15 @@ copy_run_artifacts () {     # 解耦 run dir 是 combo 目录，BLB 产物在 {c
 run_variant () {
   local tag="$1" curr="$2"
   echo "-------------------- [A/B] variant=$tag curriculum=$curr episodes=$EPISODES --------------------"
-  CUDA_VISIBLE_DEVICES=0,1,2,3 bash llama_7B_LayerImportance.sh run rl \
+  CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
     --preset mrpc-blb-stage2-rl \
     --blb-v3-fusion-count-action 1 \
     --blb-v3-fusion-neighbor-curriculum "$curr" \
     --stage2-search-episodes "$EPISODES" \
-    --stage2-k-trials 4 \
+    --stage2-k-trials "$KTRIALS" \
     --stage2-probe-size 256 \
     --batch-size 512 \
-    --blb-v3-reward-devices 0,1,2,3 \
+    --blb-v3-reward-devices "$DEVS" \
     --fresh 2>&1 | tee "$OUT/${tag}_launch.log"
   sleep 12   # 启动器后台 nohup 立刻返回；PID/run dir 写在 <stage2>/LATEST_{PID,RUN_DIR}
   local pid rundir
