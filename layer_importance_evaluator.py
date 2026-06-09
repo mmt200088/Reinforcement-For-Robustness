@@ -5892,8 +5892,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                                       proxy_prev_metrics):
         """Construct the Stage-1 multi-GPU rollout runner once at training start.
 
-        Returns ``None`` when ``self.stage1_rl_devices`` is empty / has fewer
-        than 2 devices — single-GPU code path stays bit-for-bit unchanged.
+        Returns ``None`` only when ``self.stage1_rl_devices`` is empty (then the
+        legacy single-GPU central loop runs). Pass an explicit device list — even
+        a single id like ``0`` — to take the global-seeded rollout path, which
+        produces identical results for any GPU count (1, 4, 5, ...).
 
         Arguments mirror the per-worker env setup the single-GPU path does
         inline in ``on_evaluate`` (baseline_metrics, base_tot_c, constraint
@@ -5905,7 +5907,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
 
         device_ids = parse_device_ids(self.stage1_rl_devices)
-        if len(device_ids) < 2:
+        if len(device_ids) < 1:
             return None
 
         num_metrics = self.get_num_metrics()
@@ -6186,13 +6188,14 @@ class LayerImportanceEvaluator(TrainerCallback):
             # ----------------------------------------------------------------
             # Stage-1 multi-GPU rollout runner (opt-in via --stage1-rl-devices)
             # ----------------------------------------------------------------
-            # When self.stage1_rl_devices is empty / has fewer than 2 GPUs,
-            # this returns None and the existing single-GPU per-episode loop
-            # runs unchanged. With 4 devices, the runner spawns 4 worker
-            # threads each collecting PPO_UPDATE_INTERVAL/4 episodes per
-            # window (default 120/4 = 30); the central loop pops rollouts
-            # from a per-window stash instead of running the per-step body
-            # inline.
+            # When self.stage1_rl_devices is empty this returns None and the
+            # legacy single-GPU per-episode loop runs. With an explicit device
+            # list (>=1 id) the runner spawns one worker thread per GPU; each
+            # window's episodes are seeded by GLOBAL index and returned in global
+            # order, so results are identical for any GPU count (pass
+            # --stage1-rl-devices 0 on a 1-GPU box to match a 4/5-GPU run). The
+            # central loop pops rollouts from a per-window stash instead of
+            # running the per-step body inline.
             _stage1_parallel_runner = self._build_stage1_parallel_runner(
                 baseline_metrics=baseline_metrics,
                 base_tot_c=base_tot_c,
@@ -6219,6 +6222,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                     f"episodes_per_worker={PPO_UPDATE_INTERVAL // _stage1_parallel_runner.num_workers}"
                 )
             _stage1_parallel_stash: List[Any] = []  # Filled per PPO update window
+            _stage1_parallel_window_t0 = None
+            _stage1_parallel_window_idx = None
+            _stage1_parallel_collect_seconds = 0.0
+            _stage1_parallel_replay_seconds = 0.0
+            _stage1_parallel_detail_seconds = 0.0
 
             buffer = RecurrentRolloutBuffer()  # GTrXL/LSTM 通用的 Episode Buffer
             
@@ -6385,12 +6393,22 @@ class LayerImportanceEvaluator(TrainerCallback):
                         else:
                             _remaining_total = self.stage1_rl_episode_limit - episode
                             _window_size = min(PPO_UPDATE_INTERVAL, _remaining_total)
-                        _eps_per_worker = max(1, _window_size // _stage1_parallel_runner.num_workers)
+                        _stage1_parallel_window_t0 = time.time()
+                        _stage1_parallel_window_idx = _window_idx_for_runner
+                        _stage1_parallel_replay_seconds = 0.0
+                        _stage1_parallel_detail_seconds = 0.0
+                        _stage1_parallel_collect_t0 = time.time()
+                        # Seed by GLOBAL episode index + return rollouts in global
+                        # order, so this window's episodes are identical for any
+                        # GPU count (no per-worker seed / worker-major ordering).
                         _rollouts = _stage1_parallel_runner.run_window(
                             gtrxl_net=gtrxl_net,
-                            episodes_per_worker=_eps_per_worker,
+                            total_episodes=_window_size,
                             window_idx=_window_idx_for_runner,
                             base_seed=int(getattr(self, "final_eval_random_seed", 42)),
+                        )
+                        _stage1_parallel_collect_seconds = (
+                            time.time() - _stage1_parallel_collect_t0
                         )
                         _stage1_parallel_stash.extend(_rollouts)
                         from stage1_rl.parallel_runner import format_diagnostics_line
@@ -6407,6 +6425,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                             f"{_stage1_parallel_runner.num_workers} workers"
                         )
                     rollout = _stage1_parallel_stash.pop(0)
+                    _stage1_parallel_replay_t0 = time.time()
                     # Replay rollout into the central RecurrentRolloutBuffer.
                     buffer.start_episode()
                     for _k in range(len(rollout.actions_g)):
@@ -6439,6 +6458,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                         dict(rollout.final_config_metrics)
                         if rollout.final_config_metrics is not None
                         else None
+                    )
+                    _stage1_parallel_replay_seconds += (
+                        time.time() - _stage1_parallel_replay_t0
                     )
                     _handled_via_parallel = True
 
@@ -6547,12 +6569,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                 # 更新运行时回报统计量
                 self.update_reward_statistics(episode_reward)
                 
+                _stage1_detail_t0 = time.time()
                 chunk_f = _open_stage1_chunk(episode + 1)
                 chunk_f.write(f"--- 回合（Episode） {episode + 1} (奖励Reward={episode_reward:.4f}) ---\n")
                 for si in step_infos:
                     self._write_step_info(si, chunk_f)
                     chunk_f.write("\n")
                 chunk_f.flush()
+                if _handled_via_parallel:
+                    _stage1_parallel_detail_seconds += (
+                        time.time() - _stage1_detail_t0
+                    )
                 
                 # 检查是否为最优解
                 final_config = {
@@ -6582,11 +6609,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                 
                 # GTrXL PPO 更新（因果自注意力 + GRU门控）
                 if (episode + 1) % PPO_UPDATE_INTERVAL == 0:
+                    _stage1_ppo_update_t0 = time.time()
                     policy_loss, value_loss, entropy = self.ppo_update_gtrxl(
                         gtrxl_net, optimizer, buffer, self.device,
                         entropy_coef=current_entropy,
                         ppo_update_step=gtrxl_ppo_update_count
                     )
+                    _stage1_ppo_update_seconds = time.time() - _stage1_ppo_update_t0
                     gtrxl_ppo_update_count += 1
                     buffer.clear()
                     episode_entropies.append(entropy)
@@ -6594,6 +6623,51 @@ class LayerImportanceEvaluator(TrainerCallback):
                         self.stage1_entropy_stop_threshold is not None
                         and float(entropy) < self.stage1_entropy_stop_threshold
                     )
+                    if (
+                            _stage1_parallel_runner is not None
+                            and _stage1_parallel_window_t0 is not None
+                            and _stage1_parallel_window_idx is not None):
+                        _stage1_parallel_total_seconds = (
+                            time.time() - _stage1_parallel_window_t0
+                        )
+                        _stage1_parallel_window_episodes = (
+                            len(_stage1_parallel_runner.workers)
+                            * int(_stage1_parallel_runner.last_diagnostics.episodes_per_worker)
+                            if _stage1_parallel_runner.last_diagnostics is not None
+                            else PPO_UPDATE_INTERVAL
+                        )
+                        _stage1_parallel_known_seconds = (
+                            _stage1_parallel_collect_seconds
+                            + _stage1_parallel_replay_seconds
+                            + _stage1_parallel_detail_seconds
+                            + _stage1_ppo_update_seconds
+                        )
+                        _stage1_parallel_other_seconds = max(
+                            0.0,
+                            _stage1_parallel_total_seconds - _stage1_parallel_known_seconds,
+                        )
+                        _stage1_parallel_ep_per_hour = (
+                            _stage1_parallel_window_episodes
+                            / max(_stage1_parallel_total_seconds, 1e-9)
+                            * 3600.0
+                        )
+                        self.log(
+                            "  [stage1-rollout-total] "
+                            f"window={_stage1_parallel_window_idx} "
+                            f"episodes={_stage1_parallel_window_episodes} "
+                            f"total={_stage1_parallel_total_seconds:.3f}s "
+                            f"collect={_stage1_parallel_collect_seconds:.3f}s "
+                            f"replay={_stage1_parallel_replay_seconds:.3f}s "
+                            f"detail={_stage1_parallel_detail_seconds:.3f}s "
+                            f"ppo_update={_stage1_ppo_update_seconds:.3f}s "
+                            f"other={_stage1_parallel_other_seconds:.3f}s "
+                            f"throughput={_stage1_parallel_ep_per_hour:.1f}ep/h"
+                        )
+                        _stage1_parallel_window_t0 = None
+                        _stage1_parallel_window_idx = None
+                        _stage1_parallel_collect_seconds = 0.0
+                        _stage1_parallel_replay_seconds = 0.0
+                        _stage1_parallel_detail_seconds = 0.0
                     
                     avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
                     warmup_status = "warmup" if gtrxl_ppo_update_count <= GTRXL_WARMUP_STEPS else "normal"

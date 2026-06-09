@@ -20,9 +20,9 @@ from .parallel_runner import (
     Stage1ParallelRunner,
     Stage1ParallelRunnerDiagnostics,
     Stage1RolloutWorker,
+    assign_global_episodes,
     build_stage1_parallel_runner,
     derive_episode_seed,
-    derive_worker_seed,
     format_diagnostics_line,
     parse_device_ids,
 )
@@ -32,9 +32,9 @@ __all__ = [
     "Stage1ParallelRunner",
     "Stage1ParallelRunnerDiagnostics",
     "Stage1RolloutWorker",
+    "assign_global_episodes",
     "build_stage1_parallel_runner",
     "derive_episode_seed",
-    "derive_worker_seed",
     "format_diagnostics_line",
     "parse_device_ids",
 ]

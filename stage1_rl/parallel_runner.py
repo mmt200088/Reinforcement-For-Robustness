@@ -22,11 +22,13 @@ Design (mirrors Stage-2 conventions where they fit):
   collides across workers.
 * **Threaded fan-out.** BERT forward releases the GIL, so a single Python
   process with N threads saturates N GPUs. No multiprocessing overhead.
-* **Deterministic seeding.** ``derive_worker_seed`` + ``derive_episode_seed``
-  follow Stage-2's Knuth-hash convention so reruns repro bit-identically.
-* **Single-device fallback.** A 1-worker runner is just a thin wrapper that
-  still drives the shared PPO update path; callers should normally only
-  build the runner when ``len(device_ids) >= 2``.
+* **GPU-count-independent seeding.** ``derive_episode_seed(base, window, g)``
+  is keyed on the GLOBAL episode index ``g`` (not on the worker), and rollouts
+  are returned in global order, so a window runs the identical seeded episodes
+  in the identical order for any GPU count — results don't change with #GPUs.
+* **Single-device path.** A 1-worker runner drives the same global-seeded path,
+  so ``--stage1-rl-devices 0`` on a 1-GPU box reproduces what 4 GPUs produce.
+  Build the runner whenever ``len(device_ids) >= 1``.
 """
 from __future__ import annotations
 
@@ -40,6 +42,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from .seed_utils import assign_global_episodes, derive_episode_seed
+
 # Defer the heavy import so this module is importable in torch-free CI without
 # pulling transformers / function_handler at module load.
 try:
@@ -50,30 +54,9 @@ except Exception as _exc:  # pragma: no cover — only matters on import-broken 
     _HANDLER_IMPORT_ERROR = _exc
 
 
-# ---------------------------------------------------------------------------
-# Seed derivation (matches Stage-2's _trial_seed style)
-# ---------------------------------------------------------------------------
-
-_WORKER_SEED_MULTIPLIER = 2654435761  # Knuth's multiplicative-hash constant
-
-
-def derive_worker_seed(base_seed: int, worker_idx: int, window_idx: int) -> int:
-    """Per-(worker, window) seed.
-
-    Two workers in the same PPO window get independent streams; the same
-    worker across windows also gets fresh streams so successive 30-episode
-    chunks don't repeat. Bit-identical reruns reproduce the same seed.
-    """
-    h = int(base_seed) & 0x7FFFFFFFFFFFFFFF
-    h ^= int(worker_idx) * _WORKER_SEED_MULTIPLIER
-    h ^= int(window_idx) * (_WORKER_SEED_MULTIPLIER + 1)
-    return int(h & 0x7FFFFFFFFFFFFFFF)
-
-
-def derive_episode_seed(worker_seed: int, episode_idx: int) -> int:
-    """Per-episode seed within a worker's window slice."""
-    h = int(worker_seed) ^ (int(episode_idx) * (_WORKER_SEED_MULTIPLIER + 2))
-    return int(h & 0x7FFFFFFFFFFFFFFF)
+# Seed derivation + global-episode assignment live in the torch-free
+# ``seed_utils`` module (imported above) so the GPU-count-independence contract
+# is unit-testable without torch. See ``stage1_rl/seed_utils.py``.
 
 
 # ---------------------------------------------------------------------------
@@ -254,37 +237,35 @@ class Stage1ParallelRunner:
             self,
             *,
             gtrxl_net: nn.Module,
-            episodes_per_worker: int,
+            total_episodes: int,
             window_idx: int,
             base_seed: int,
     ) -> List[EpisodeRollout]:
-        """Collect ``num_workers * episodes_per_worker`` episodes in parallel.
+        """Collect ``total_episodes`` episodes for one PPO window, in parallel.
 
-        Returns rollouts **in worker-major order**: rollouts[0..n-1] are
-        worker 0's first..nth episode, rollouts[n..2n-1] are worker 1's,
-        and so on. The caller decides how to interleave them when filling
-        the central ``RecurrentRolloutBuffer``; the natural choice is
-        round-robin so the buffer's GAE / advantage normalization sees a
-        consistent ordering across windows.
+        Returns rollouts in **global episode order** ``[0 .. total_episodes-1]``,
+        independent of how many workers ran them: episode ``g`` is always seeded
+        by ``derive_episode_seed(base_seed, window_idx, g)`` and stored at index
+        ``g``. So filling the central buffer from this list yields identical
+        ordering — and identical PPO updates — for any GPU count.
         """
-        if episodes_per_worker <= 0:
+        if total_episodes <= 0:
             return []
 
-        results: List[List[Optional[EpisodeRollout]]] = [
-            [None] * episodes_per_worker for _ in self.workers
-        ]
-        per_worker_wall: List[float] = [0.0] * len(self.workers)
+        n_workers = len(self.workers)
+        assignments = assign_global_episodes(total_episodes, n_workers)
+        results: List[Optional[EpisodeRollout]] = [None] * total_episodes
+        per_worker_wall: List[float] = [0.0] * n_workers
         threads: List[threading.Thread] = []
         errors: List[Tuple[int, BaseException]] = []
         errors_lock = threading.Lock()
 
         def worker_thread(w_idx: int) -> None:
             worker = self.workers[w_idx]
-            worker_seed = derive_worker_seed(base_seed, w_idx, window_idx)
             t0 = time.time()
             try:
-                for ep_idx in range(episodes_per_worker):
-                    ep_seed = derive_episode_seed(worker_seed, ep_idx)
+                for g in assignments[w_idx]:
+                    ep_seed = derive_episode_seed(base_seed, window_idx, g)
                     rollout = self._collect_episode(
                         worker=worker,
                         gtrxl_net=gtrxl_net,
@@ -292,7 +273,7 @@ class Stage1ParallelRunner:
                         primary_device=self.primary_device,
                         episode_seed=ep_seed,
                     )
-                    results[w_idx][ep_idx] = rollout
+                    results[g] = rollout
             except BaseException as exc:  # noqa: BLE001 — propagate any failure
                 with errors_lock:
                     errors.append((w_idx, exc))
@@ -300,7 +281,7 @@ class Stage1ParallelRunner:
                 per_worker_wall[w_idx] = time.time() - t0
 
         wall_t0 = time.time()
-        for w_idx in range(len(self.workers)):
+        for w_idx in range(n_workers):
             t = threading.Thread(
                 target=worker_thread,
                 args=(w_idx,),
@@ -320,21 +301,20 @@ class Stage1ParallelRunner:
             raise exc
 
         flat: List[EpisodeRollout] = []
-        for w_results in results:
-            for r in w_results:
-                if r is None:
-                    raise RuntimeError(
-                        "internal: worker returned no rollout for a slot "
-                        "without raising; this should be unreachable"
-                    )
-                flat.append(r)
+        for g, r in enumerate(results):
+            if r is None:
+                raise RuntimeError(
+                    f"internal: no rollout for global episode {g} without raising; "
+                    "this should be unreachable"
+                )
+            flat.append(r)
 
         self.last_diagnostics = Stage1ParallelRunnerDiagnostics(
             window_idx=window_idx,
-            episodes_per_worker=episodes_per_worker,
+            episodes_per_worker=(total_episodes // n_workers if n_workers else 0),
             wall_seconds=wall_seconds,
             per_worker_seconds=list(per_worker_wall),
-            per_worker_episode_counts=[episodes_per_worker] * len(self.workers),
+            per_worker_episode_counts=[len(a) for a in assignments],
             devices=[str(w.device) for w in self.workers],
         )
         return flat
