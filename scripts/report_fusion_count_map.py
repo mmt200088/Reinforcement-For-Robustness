@@ -1,0 +1,654 @@
+#!/usr/bin/env python3
+"""Generate a human-readable MRPC fusion-count map report and fixed actions.
+
+The script intentionally avoids importing ``blb_stage2_rl`` because local
+developer machines used for report generation may not have torch installed.
+It reads the map JSON artifacts and parses the action slot table from
+``action_space.py`` as data.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import html
+import json
+from collections import Counter, OrderedDict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ACTION_SPACE_PATH = REPO_ROOT / "blb_stage2_rl" / "action_space.py"
+DEFAULT_MAP_DIR = REPO_ROOT / "blb_stage2_rl" / "fusion_maps" / "mrpc"
+
+K_LEVELS = (8, 9, 11, 13, 10, 12)
+BASELINE_K_INDEX = K_LEVELS.index(13)
+LEVELS_BY_KIND = {"F": 10, "W": 10, "M": 10, "S": 10, "R": 10, "K": len(K_LEVELS)}
+FIRST_INPUT_LEVELS = 5
+
+DEFAULT_GELU = [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
+DEFAULT_SOFTMAX = [6] * 12
+
+
+def _json_list(raw: str, *, default: Sequence[int], name: str) -> List[int]:
+    text = str(raw or "").strip()
+    if not text:
+        return [int(v) for v in default]
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{name} must be a JSON list: {exc}") from exc
+    if not isinstance(payload, list):
+        raise SystemExit(f"{name} must be a JSON list")
+    return [int(v) for v in payload]
+
+
+def _parse_block_fields() -> Dict[int, List[Tuple[str, str, int]]]:
+    tree = ast.parse(ACTION_SPACE_PATH.read_text(encoding="utf-8-sig"))
+    out: Dict[int, List[Tuple[str, str, int]]] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            continue
+        name = node.targets[0].id
+        if not (name.startswith("_BLOCK") and name.endswith("_FIELDS")):
+            continue
+        block_txt = name[len("_BLOCK") : -len("_FIELDS")]
+        if not block_txt.isdigit():
+            continue
+        if not isinstance(node.value, ast.Call):
+            continue
+        fields_node = None
+        for kw in node.value.keywords:
+            if kw.arg == "fields":
+                fields_node = kw.value
+                break
+        if fields_node is None:
+            continue
+        fields = ast.literal_eval(fields_node)
+        out[int(block_txt)] = [
+            (str(fname), str(kind), int(max_sf))
+            for fname, kind, max_sf in fields
+        ]
+    missing = [b for b in (1, 2, 3, 4, 5) if b not in out]
+    if missing:
+        raise RuntimeError(f"failed to parse action_space block fields: missing {missing}")
+    return out
+
+
+def _load_maps(map_dir: Path) -> "OrderedDict[str, dict]":
+    graphs: "OrderedDict[str, dict]" = OrderedDict()
+    for path in sorted(map_dir.glob("*.json")):
+        if path.name.startswith("._") or path.name.startswith("_"):
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, Mapping) or "graph_key" not in payload or "options" not in payload:
+            continue
+        graphs[str(payload["graph_key"])] = dict(payload)
+    if not graphs:
+        raise RuntimeError(f"no fusion-count maps found under {map_dir}")
+    return graphs
+
+
+def _block_offsets(fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]]) -> Dict[int, int]:
+    out: Dict[int, int] = {}
+    cursor = 0
+    for block_idx in (1, 2, 3, 4, 5):
+        out[block_idx] = cursor
+        cursor += len(fields_by_block[block_idx])
+    return out
+
+
+def _layer_width(fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]]) -> int:
+    return sum(len(fields_by_block[b]) for b in (1, 2, 3, 4, 5))
+
+
+def _make_all_max_action(fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]], num_layers: int) -> List[int]:
+    dims: List[int] = []
+    for _layer in range(int(num_layers)):
+        for block_idx in (1, 2, 3, 4, 5):
+            dims.extend(LEVELS_BY_KIND[kind] for _fname, kind, _max_sf in fields_by_block[block_idx])
+    dims.append(FIRST_INPUT_LEVELS)
+    action = [int(d) - 1 for d in dims]
+    width = _layer_width(fields_by_block)
+    offsets = _block_offsets(fields_by_block)
+    for layer_idx in range(int(num_layers)):
+        base = layer_idx * width
+        for block_idx in (1, 2, 3, 4, 5):
+            block_base = base + offsets[block_idx]
+            for local_idx, (_fname, kind, _max_sf) in enumerate(fields_by_block[block_idx]):
+                if kind == "K":
+                    action[block_base + local_idx] = BASELINE_K_INDEX
+    return action
+
+
+def _graph_key(block_idx: int, profile: str, gelu_degree: int, softmax_degree: int) -> str:
+    if int(block_idx) == 1:
+        return f"block1_{profile}"
+    if int(block_idx) == 2:
+        return f"block2_{profile}"
+    if int(block_idx) == 3:
+        return f"block3_exp_n{int(softmax_degree)}"
+    if int(block_idx) == 4:
+        return "block4"
+    if int(block_idx) == 5:
+        return f"block5_n{int(gelu_degree)}"
+    raise ValueError(f"unknown block_idx={block_idx}")
+
+
+def _schedule(num_layers: int, profile: str, gelu: Sequence[int], softmax: Sequence[int]) -> List[dict]:
+    out: List[dict] = []
+    step_idx = 0
+    for layer_idx in range(int(num_layers)):
+        block_order = (2, 4, 5) if layer_idx == 0 else (1, 2, 4, 5)
+        for block_idx in block_order:
+            out.append({
+                "step_idx": step_idx,
+                "layer_idx": layer_idx,
+                "block_idx": block_idx,
+                "graph_key": _graph_key(block_idx, profile, gelu[layer_idx], softmax[layer_idx]),
+            })
+            step_idx += 1
+    return out
+
+
+def _choose_option(graph: Mapping[str, Any], target: str | int) -> Tuple[int, int, bool]:
+    options = list(graph.get("options", []))
+    if not options:
+        raise ValueError(f"graph {graph.get('graph_key')} has no options")
+    by_count: Dict[int, List[dict]] = {}
+    for option in options:
+        by_count.setdefault(int(option["fusion_count"]), []).append(option)
+    if target == "max":
+        count = max(by_count)
+    else:
+        count = int(target)
+        if count not in by_count:
+            count = max(c for c in by_count if c <= count) if any(c <= count for c in by_count) else min(by_count)
+    candidates = sorted(by_count[count], key=lambda x: (int(x.get("option_id", 0)), float(x.get("total_bits", 0.0))))
+    option_id = int(candidates[0]["option_id"])
+    clamped = target != "max" and int(target) != count
+    return option_id, count, bool(clamped)
+
+
+def _option_by_id(graph: Mapping[str, Any], option_id: int) -> Mapping[str, Any]:
+    for option in graph.get("options", []):
+        if int(option.get("option_id")) == int(option_id):
+            return option
+    raise KeyError(f"graph {graph.get('graph_key')} has no option {option_id}")
+
+
+def _splice_group_action(
+    *,
+    fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]],
+    graphs: Mapping[str, Mapping[str, Any]],
+    num_layers: int,
+    schedule: Sequence[Mapping[str, Any]],
+    option_by_graph: Mapping[str, int],
+) -> List[int]:
+    action = _make_all_max_action(fields_by_block, num_layers)
+    width = _layer_width(fields_by_block)
+    offsets = _block_offsets(fields_by_block)
+    for step in schedule:
+        graph_key = str(step["graph_key"])
+        graph = graphs[graph_key]
+        block_idx = int(step["block_idx"])
+        layer_idx = int(step["layer_idx"])
+        option = _option_by_id(graph, int(option_by_graph[graph_key]))
+        block_action = [int(v) for v in option.get("action_indices", [])]
+        k_slot_index = int(graph["k_slot_index"])
+        if 0 <= k_slot_index < len(block_action):
+            block_action[k_slot_index] = BASELINE_K_INDEX
+        expected = len(fields_by_block[block_idx])
+        if len(block_action) != expected:
+            raise RuntimeError(
+                f"{graph_key}: action_indices len {len(block_action)} != block{block_idx} field count {expected}"
+            )
+        start = layer_idx * width + offsets[block_idx]
+        action[start : start + expected] = block_action
+    return action
+
+
+def _slot_label(block_idx: int, kind: str, field: str) -> str:
+    return f"B{int(block_idx)}.{kind}.{field}"
+
+
+def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Mapping[str, Any]]) -> List[dict]:
+    graph_order = list(graphs.keys())
+    occurrence_counts = Counter(str(s["graph_key"]) for s in schedule)
+
+    specs: List[dict] = []
+    for name, target in (
+        ("all_fusion0", 0),
+        ("all_fusion1_available", 1),
+        ("all_fusionmax", "max"),
+    ):
+        option_by_graph = {}
+        count_by_graph = {}
+        clamped_graphs = []
+        for graph_key in graph_order:
+            opt, count, clamped = _choose_option(graphs[graph_key], target)
+            option_by_graph[graph_key] = opt
+            count_by_graph[graph_key] = count
+            if clamped:
+                clamped_graphs.append(graph_key)
+        specs.append({
+            "name": name,
+            "family": "global",
+            "target": target,
+            "option_by_graph": option_by_graph,
+            "fusion_count_by_graph": count_by_graph,
+            "clamped_graphs": clamped_graphs,
+            "occurrence_counts": dict(occurrence_counts),
+        })
+
+    for graph_key in graph_order:
+        option_by_graph = {}
+        count_by_graph = {}
+        for candidate in graph_order:
+            target = "max" if candidate == graph_key else 0
+            opt, count, _clamped = _choose_option(graphs[candidate], target)
+            option_by_graph[candidate] = opt
+            count_by_graph[candidate] = count
+        specs.append({
+            "name": f"one_hot_{graph_key}",
+            "family": "one_hot",
+            "target_graph": graph_key,
+            "no_op": occurrence_counts.get(graph_key, 0) == 0 or count_by_graph.get(graph_key, 0) == 0,
+            "option_by_graph": option_by_graph,
+            "fusion_count_by_graph": count_by_graph,
+            "occurrence_counts": dict(occurrence_counts),
+        })
+    return specs
+
+
+def _write_action_configs(
+    *,
+    output_dir: Path,
+    fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]],
+    graphs: Mapping[str, Mapping[str, Any]],
+    num_layers: int,
+    schedule: Sequence[Mapping[str, Any]],
+    group_specs: Sequence[Mapping[str, Any]],
+    profile: str,
+    gelu: Sequence[int],
+    softmax: Sequence[int],
+) -> Dict[str, str]:
+    action_dir = output_dir / "action_configs"
+    action_dir.mkdir(parents=True, exist_ok=True)
+    paths: Dict[str, str] = {}
+    for spec in group_specs:
+        name = str(spec["name"])
+        action = _splice_group_action(
+            fields_by_block=fields_by_block,
+            graphs=graphs,
+            num_layers=num_layers,
+            schedule=schedule,
+            option_by_graph=spec["option_by_graph"],
+        )
+        payload = {
+            "schema_version": "fusion_count_fixed_action_v1",
+            "num_layers": int(num_layers),
+            "profile": str(profile),
+            "gelu_degree": [int(v) for v in gelu],
+            "attn_degree": [int(v) for v in softmax],
+            "base_action": "fusion_count_map_expanded_with_baseline_k",
+            "k_levels": list(K_LEVELS),
+            "baseline_k_index": int(BASELINE_K_INDEX),
+            "group": dict(spec),
+            "action_vec": action,
+        }
+        path = action_dir / f"{name}.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        paths[name] = str(path)
+    return paths
+
+
+def _graph_occurrences(schedule: Sequence[Mapping[str, Any]]) -> Dict[str, List[int]]:
+    out: Dict[str, List[int]] = {}
+    for step in schedule:
+        out.setdefault(str(step["graph_key"]), []).append(int(step["layer_idx"]))
+    return {k: sorted(set(v)) for k, v in sorted(out.items())}
+
+
+def _option_slot_summary(
+    graph: Mapping[str, Any],
+    fields: Sequence[Tuple[str, str, int]],
+    option: Mapping[str, Any],
+    base_option: Mapping[str, Any],
+) -> dict:
+    action = [int(v) for v in option.get("action_indices", [])]
+    base_action = [int(v) for v in base_option.get("action_indices", [])]
+    slots = {str(k): int(v) for k, v in dict(option.get("slots", {})).items()}
+    base_slots = {str(k): int(v) for k, v in dict(base_option.get("slots", {})).items()}
+    rows = []
+    changed_raw = []
+    changed_real = []
+    added_real = []
+    removed_real = []
+    for idx, (field, kind, _max_sf) in enumerate(fields):
+        raw = int(action[idx])
+        base_raw = int(base_action[idx])
+        value = None
+        if kind == "K":
+            value = K_LEVELS[raw] if 0 <= raw < len(K_LEVELS) else None
+            real_status = "truncation_k"
+        elif field in slots:
+            value = int(slots[field])
+            real_status = "real_replan_slot"
+        else:
+            real_status = "not_in_replan_slots"
+        if raw != base_raw:
+            changed_raw.append({
+                "slot_index": idx,
+                "field": field,
+                "kind": kind,
+                "base_action_index": base_raw,
+                "action_index": raw,
+            })
+        if field in slots and base_slots.get(field) != slots[field]:
+            changed_real.append({
+                "slot_index": idx,
+                "field": field,
+                "kind": kind,
+                "base_value": base_slots.get(field),
+                "value": slots[field],
+            })
+        if field in slots and field not in base_slots:
+            added_real.append(field)
+        if field not in slots and field in base_slots:
+            removed_real.append(field)
+        rows.append({
+            "slot_index": idx,
+            "label": _slot_label(int(graph["block_idx"]), kind, field),
+            "field": field,
+            "kind": kind,
+            "action_index": raw,
+            "base_action_index": base_raw,
+            "decoded_value": value,
+            "real_status": real_status,
+            "changed_raw_vs_fusion0": raw != base_raw,
+            "changed_real_vs_fusion0": field in slots and base_slots.get(field) != slots[field],
+        })
+    return {
+        "option_id": int(option["option_id"]),
+        "fusion_count": int(option["fusion_count"]),
+        "total_bits": float(option.get("total_bits", 0.0)),
+        "total_variance": float(option.get("total_variance", 0.0)),
+        "changed_raw_slots_vs_fusion0": changed_raw,
+        "changed_real_slots_vs_fusion0": changed_real,
+        "added_real_slots_vs_fusion0": added_real,
+        "removed_real_slots_vs_fusion0": removed_real,
+        "slot_rows": rows,
+        "real_slots": slots,
+    }
+
+
+def _build_report_payload(
+    *,
+    graphs: Mapping[str, Mapping[str, Any]],
+    fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]],
+    schedule: Sequence[Mapping[str, Any]],
+    group_specs: Sequence[Mapping[str, Any]],
+    action_config_paths: Mapping[str, str],
+    profile: str,
+    gelu: Sequence[int],
+    softmax: Sequence[int],
+) -> dict:
+    occurrences = _graph_occurrences(schedule)
+    graph_payload = []
+    for graph_key, graph in graphs.items():
+        block_idx = int(graph["block_idx"])
+        fields = fields_by_block[block_idx]
+        options = sorted(graph.get("options", []), key=lambda o: int(o["option_id"]))
+        base = _option_by_id(graph, 0)
+        graph_payload.append({
+            "graph_key": graph_key,
+            "block_idx": block_idx,
+            "gelu_degree": graph.get("gelu_degree"),
+            "attn_degree": graph.get("attn_degree"),
+            "k_slot_index": int(graph["k_slot_index"]),
+            "block_num_slots": int(graph["block_num_slots"]),
+            "available_fusion_counts": sorted({int(o["fusion_count"]) for o in options}),
+            "current_schedule_layers": occurrences.get(graph_key, []),
+            "current_schedule_occurrences": int(len(occurrences.get(graph_key, []))),
+            "options": [
+                _option_slot_summary(graph, fields, option, base)
+                for option in options
+            ],
+        })
+    return {
+        "schema_version": "fusion_count_map_report_v1",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "profile": profile,
+        "num_layers": len(gelu),
+        "stage1_gelu": [int(v) for v in gelu],
+        "stage1_softmax": [int(v) for v in softmax],
+        "k_levels": list(K_LEVELS),
+        "baseline_k_index": BASELINE_K_INDEX,
+        "baseline_k_value": K_LEVELS[BASELINE_K_INDEX],
+        "schedule_occurrences": occurrences,
+        "graphs": graph_payload,
+        "eval_group_specs": [dict(g) for g in group_specs],
+        "action_config_paths": dict(action_config_paths),
+        "interpretation_note": (
+            "fusion_count is the Rescale_optimizer/replan measured fusion count for an option. "
+            "The map does not store a separate 'slot was fused away' flag; this report therefore "
+            "shows the full raw action slots, the real replan slots, and the real slot changes "
+            "relative to fusion_count=0."
+        ),
+    }
+
+
+def _fmt_layers(layers: Sequence[int]) -> str:
+    if not layers:
+        return "unused"
+    return ", ".join(f"L{int(v)}" for v in layers)
+
+
+def _html_table(headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> str:
+    out = ["<table>", "<thead><tr>"]
+    for h in headers:
+        out.append(f"<th>{html.escape(str(h))}</th>")
+    out.append("</tr></thead><tbody>")
+    for row in rows:
+        out.append("<tr>")
+        for cell in row:
+            if isinstance(cell, str) and cell.startswith("<"):
+                out.append(f"<td>{cell}</td>")
+            else:
+                out.append(f"<td>{html.escape(str(cell))}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+def _render_html(payload: Mapping[str, Any]) -> str:
+    graph_rows = []
+    for graph in payload["graphs"]:
+        graph_rows.append([
+            graph["graph_key"],
+            f"B{graph['block_idx']}",
+            ",".join(str(v) for v in graph["available_fusion_counts"]),
+            graph["block_num_slots"],
+            graph["k_slot_index"],
+            graph["current_schedule_occurrences"],
+            _fmt_layers(graph["current_schedule_layers"]),
+        ])
+
+    group_rows = []
+    for group in payload["eval_group_specs"]:
+        name = str(group["name"])
+        no_op = "yes" if group.get("no_op") else ""
+        counts = ", ".join(f"{k}:{v}" for k, v in group["fusion_count_by_graph"].items())
+        opts = ", ".join(f"{k}:opt{v}" for k, v in group["option_by_graph"].items())
+        group_rows.append([name, group.get("family", ""), no_op, counts, opts])
+
+    parts = [
+        "<!doctype html>",
+        "<html><head><meta charset='utf-8'>",
+        "<title>MRPC Fusion Count Map Report</title>",
+        "<style>",
+        "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:32px;color:#1f2933;background:#fbfcfd}",
+        "h1,h2,h3{color:#111827} .meta{color:#52606d} table{border-collapse:collapse;width:100%;margin:14px 0;background:white}",
+        "th,td{border:1px solid #d9e2ec;padding:7px 9px;text-align:left;vertical-align:top;font-size:13px}",
+        "th{background:#eef2f7}.pill{display:inline-block;padding:2px 7px;border-radius:6px;background:#e0f2fe;color:#075985;font-size:12px}",
+        ".warn{background:#fff7ed;border-left:4px solid #fb923c;padding:10px 12px;margin:12px 0}.changed{color:#9a3412;font-weight:600}",
+        "code{background:#eef2f7;padding:1px 4px;border-radius:4px}.section{margin-top:28px}",
+        "</style></head><body>",
+        "<h1>MRPC Fusion Count Map Report</h1>",
+        f"<p class='meta'>Generated: {html.escape(str(payload['generated_at_utc']))}</p>",
+        "<div class='warn'>"
+        "说明：<code>fusion_count</code> 是 replan/Rescale_optimizer 对该 option 的实测融合次数。"
+        "当前 map 不保存“某个槽位被融合删除”的单独标志；因此本报告同时列出 raw action 槽位、"
+        "真正进入 replan 的 real slots，以及相对 fusion_count=0 的 real slot 变化。"
+        "</div>",
+        "<h2>Stage-1 / Schedule Context</h2>",
+        _html_table(
+            ["profile", "GELU", "Softmax", "K levels", "baseline K"],
+            [[
+                payload["profile"],
+                json.dumps(payload["stage1_gelu"]),
+                json.dumps(payload["stage1_softmax"]),
+                json.dumps(payload["k_levels"]),
+                payload["baseline_k_value"],
+            ]],
+        ),
+        "<h2>Block Fusion Count Summary</h2>",
+        _html_table(
+            ["graph/block", "block", "fusion counts", "slot count", "K slot", "occurrences", "layers"],
+            graph_rows,
+        ),
+        "<h2>Server Evaluation Groups Prepared</h2>",
+        _html_table(["group", "family", "no-op", "fusion count by graph", "option by graph"], group_rows),
+    ]
+
+    for graph in payload["graphs"]:
+        parts.append(f"<div class='section'><h2>{html.escape(graph['graph_key'])}</h2>")
+        parts.append(
+            f"<p class='meta'>Block B{graph['block_idx']} | available fusion_count="
+            f"{graph['available_fusion_counts']} | current layers={html.escape(_fmt_layers(graph['current_schedule_layers']))}</p>"
+        )
+        option_rows = []
+        for option in graph["options"]:
+            changed_real = option["changed_real_slots_vs_fusion0"]
+            changed_raw = option["changed_raw_slots_vs_fusion0"]
+            real_txt = "<br>".join(
+                html.escape(f"{r['field']}: {r['base_value']} -> {r['value']}")
+                for r in changed_real
+            ) or "none"
+            raw_txt = "<br>".join(
+                html.escape(f"{r['slot_index']} {r['field']}: idx {r['base_action_index']} -> {r['action_index']}")
+                for r in changed_raw
+            ) or "none"
+            option_rows.append([
+                option["option_id"],
+                option["fusion_count"],
+                f"{option['total_bits']:.0f}",
+                f"{option['total_variance']:.6g}",
+                f"<span class='changed'>{real_txt}</span>" if changed_real else real_txt,
+                f"<span class='changed'>{raw_txt}</span>" if changed_raw else raw_txt,
+            ])
+        parts.append(_html_table(
+            ["option", "fusion_count", "total_bits", "total_variance", "real slot changes vs fc0", "raw action changes vs fc0"],
+            option_rows,
+        ))
+        for option in graph["options"]:
+            parts.append(f"<h3>Option {option['option_id']} / fusion_count {option['fusion_count']}</h3>")
+            slot_rows = []
+            for row in option["slot_rows"]:
+                slot_rows.append([
+                    row["slot_index"],
+                    row["label"],
+                    row["action_index"],
+                    row["decoded_value"] if row["decoded_value"] is not None else "",
+                    row["real_status"],
+                    "yes" if row["changed_raw_vs_fusion0"] else "",
+                    "yes" if row["changed_real_vs_fusion0"] else "",
+                ])
+            parts.append(_html_table(
+                ["slot", "true slot label", "action index", "real value/K", "status", "raw changed", "real changed"],
+                slot_rows,
+            ))
+        parts.append("</div>")
+
+    parts.extend(["</body></html>"])
+    return "\n".join(parts)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--map-dir", default=str(DEFAULT_MAP_DIR))
+    parser.add_argument("--output-dir", default="experiments/server_command_runs/fusion_count_map_action_eval_20260610")
+    parser.add_argument("--html", default="reports/html_reports/20260610_mrpc_fusion_count_map_slots.html")
+    parser.add_argument("--json", default="")
+    parser.add_argument("--profile", default="mrpc")
+    parser.add_argument("--gelu", default=json.dumps(DEFAULT_GELU))
+    parser.add_argument("--softmax", default=json.dumps(DEFAULT_SOFTMAX))
+    args = parser.parse_args()
+
+    map_dir = Path(args.map_dir)
+    if not map_dir.is_absolute():
+        map_dir = REPO_ROOT / map_dir
+    output_dir = Path(args.output_dir)
+    if not output_dir.is_absolute():
+        output_dir = REPO_ROOT / output_dir
+    html_path = Path(args.html)
+    if not html_path.is_absolute():
+        html_path = REPO_ROOT / html_path
+    json_path = Path(args.json) if args.json else output_dir / "fusion_count_map_report.json"
+    if not json_path.is_absolute():
+        json_path = REPO_ROOT / json_path
+
+    gelu = _json_list(args.gelu, default=DEFAULT_GELU, name="--gelu")
+    softmax = _json_list(args.softmax, default=DEFAULT_SOFTMAX, name="--softmax")
+    if len(gelu) != len(softmax):
+        raise SystemExit("GELU and Softmax degree lists must have equal length")
+
+    fields_by_block = _parse_block_fields()
+    graphs = _load_maps(map_dir)
+    schedule = _schedule(len(gelu), args.profile, gelu, softmax)
+    missing = sorted({s["graph_key"] for s in schedule if s["graph_key"] not in graphs})
+    if missing:
+        raise SystemExit(f"fusion map missing graph(s) required by current schedule: {missing}")
+
+    groups = _group_specs(graphs, schedule)
+    action_paths = _write_action_configs(
+        output_dir=output_dir,
+        fields_by_block=fields_by_block,
+        graphs=graphs,
+        num_layers=len(gelu),
+        schedule=schedule,
+        group_specs=groups,
+        profile=args.profile,
+        gelu=gelu,
+        softmax=softmax,
+    )
+    payload = _build_report_payload(
+        graphs=graphs,
+        fields_by_block=fields_by_block,
+        schedule=schedule,
+        group_specs=groups,
+        action_config_paths=action_paths,
+        profile=args.profile,
+        gelu=gelu,
+        softmax=softmax,
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    html_path.write_text(_render_html(payload), encoding="utf-8")
+    print(json.dumps({
+        "html": str(html_path),
+        "json": str(json_path),
+        "action_config_dir": str(output_dir / "action_configs"),
+        "action_configs": action_paths,
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
