@@ -343,25 +343,39 @@ class ShardedReduceEquivalenceTest(unittest.TestCase):
 
 
 @unittest.skipUnless(_HAS_ASP, "action_space requires torch (server contract gate)")
-class HybridDecodeTest(unittest.TestCase):
-    """2026-06-04: all SF kinds use a uniform 10-level hybrid sweep from baseline SF
-    (top 5 step-2, bottom 5 step-1, reaching baseline-14); N forced to 16384."""
+class UniformDecodeTest(unittest.TestCase):
+    """2026-06-10 (supersedes the 2026-06-04 hybrid 2/1 sweep): all SF kinds use a
+    UNIFORM step-2 downward sweep from the baseline SF, floored at MIN_SF_FLOOR=12;
+    floor-clamped duplicate levels are not enumerable (``distinct_sf_level_indices``).
+    N forced to 16384."""
 
     def test_all_sf_kinds_are_10_levels(self):
         self.assertEqual(_asp.LEVELS_F, 10)
         self.assertEqual(_asp.LEVELS_W, 10)
         self.assertEqual(_asp.LEVELS_MS, 10)
         self.assertEqual(_asp.LEVELS_R, 10)
+        self.assertEqual(_asp.MIN_SF_FLOOR, 12)
 
-    def test_hybrid_sweep_matches_user_example(self):
-        # baseline 30 -> 30,28,26,24,22,20,19,18,17,16 (idx 9..0).
+    def test_uniform_sweep_matches_user_spec(self):
+        # baseline 30 -> 30,28,26,24,22,20,18,16,14,12 (idx 9..0, uniform step 2).
         got = [_asp.sf_from(i, 30, 10) for i in range(9, -1, -1)]
-        self.assertEqual(got, [30, 28, 26, 24, 22, 20, 19, 18, 17, 16])
+        self.assertEqual(got, [30, 28, 26, 24, 22, 20, 18, 16, 14, 12])
+
+    def test_floor_clamps_but_never_lifts_baseline(self):
+        # baseline 16: deep levels clamp at 12 (duplicates appear).
+        self.assertEqual([_asp.sf_from(i, 16, 10) for i in range(9, -1, -1)],
+                         [16, 14, 12, 12, 12, 12, 12, 12, 12, 12])
+        # baseline below the floor: every level == baseline (frozen slot);
+        # option0==baseline must hold for ANY dataset / calibrated baseline.
+        self.assertEqual({_asp.sf_from(i, 11, 10) for i in range(10)}, {11})
+        # odd baseline: odd values, floored at 12 (13-2=11 -> 12).
+        self.assertEqual([_asp.sf_from(i, 13, 10) for i in range(9, -1, -1)],
+                         [13, 12, 12, 12, 12, 12, 12, 12, 12, 12])
 
     def test_rescale_idx0_none_max_idx_is_baseline(self):
         self.assertIsNone(_asp._rescale_sf_from_index(0, 30))
         self.assertEqual(_asp._rescale_sf_from_index(9, 30), 30)   # max idx -> baseline SF
-        self.assertEqual(_asp._rescale_sf_from_index(1, 30), 17)   # offset 13
+        self.assertEqual(_asp._rescale_sf_from_index(1, 30), 14)   # uniform: 30 - 2*8
         # baseline invariant: max idx decodes to max_sf so option0 == baseline.
         self.assertEqual(_asp._rescale_sf_from_index(_asp.LEVELS_R - 1, 27), 27)
 
@@ -369,15 +383,44 @@ class HybridDecodeTest(unittest.TestCase):
         r = _asp._field_level_values(kind="R", levels=_asp.LEVELS_R, max_sf=30, N=16384)
         self.assertEqual(len(r), 10)
         self.assertIsNone(r[0])
-        self.assertEqual([int(v) for v in r[1:]], [17, 18, 19, 20, 22, 24, 26, 28, 30])
+        self.assertEqual([int(v) for v in r[1:]], [14, 16, 18, 20, 22, 24, 26, 28, 30])
         f = _asp._field_level_values(kind="F", levels=_asp.LEVELS_F, max_sf=30, N=16384)
-        self.assertEqual([int(v) for v in f], [16, 17, 18, 19, 20, 22, 24, 26, 28, 30])
+        self.assertEqual([int(v) for v in f], [12, 14, 16, 18, 20, 22, 24, 26, 28, 30])
 
-    def test_low_baseline_sf_snaps_to_floor(self):
-        # baseline SF 14 (mask): the deep levels fall below 10 -> snapped to 10.
+    def test_low_baseline_sf_floored_at_12(self):
         vlow = _asp._field_level_values(kind="F", levels=_asp.LEVELS_F, max_sf=14, N=16384)
-        self.assertTrue(all(int(v) >= 10 for v in vlow))
+        self.assertTrue(all(int(v) >= 12 for v in vlow))
         self.assertEqual(int(vlow[-1]), 14)   # max idx -> baseline SF
+
+    def test_distinct_level_indices_drop_sub_floor_levels(self):
+        # baseline 30: arithmetic sequence reaches exactly 12 -> all 10 enumerable.
+        self.assertEqual(
+            _asp.distinct_sf_level_indices(kind="F", levels=10, max_sf=30, N=16384),
+            list(range(10)),
+        )
+        # baseline 16: sequence 16,14,12 then <12 -> 3 levels.
+        d16 = _asp.distinct_sf_level_indices(kind="F", levels=10, max_sf=16, N=16384)
+        self.assertEqual(d16, [7, 8, 9])
+        self.assertEqual(sorted(_asp.sf_from(i, 16, 10) for i in d16), [12, 14, 16])
+        # ODD baseline 27: sequence stops at 13 — NO pseudo-12 level (the clamp
+        # in sf_from is defensive only; a clamped level is not selectable).
+        d27 = _asp.distinct_sf_level_indices(kind="F", levels=10, max_sf=27, N=16384)
+        self.assertEqual(d27, [2, 3, 4, 5, 6, 7, 8, 9])
+        self.assertEqual(sorted(_asp.sf_from(i, 27, 10) for i in d27),
+                         [13, 15, 17, 19, 21, 23, 25, 27])
+        # baseline 13: next level 11 < 12 -> only the baseline survives.
+        self.assertEqual(
+            _asp.distinct_sf_level_indices(kind="F", levels=10, max_sf=13, N=16384), [9],
+        )
+        # baseline below floor: exactly one enumerable level (the baseline).
+        self.assertEqual(
+            _asp.distinct_sf_level_indices(kind="F", levels=10, max_sf=11, N=16384), [9],
+        )
+        # R: idx0 (None/drop) never enumerable; baseline level kept.
+        dr = _asp.distinct_sf_level_indices(kind="R", levels=10, max_sf=30, N=16384)
+        self.assertNotIn(0, dr)
+        self.assertIn(9, dr)
+        self.assertEqual(len(dr), 9)
 
     def test_block_default_N_forced_to_16384(self):
         for b in (1, 2, 3, 4, 5):

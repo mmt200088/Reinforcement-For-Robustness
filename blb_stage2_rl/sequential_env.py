@@ -248,12 +248,17 @@ class BLBStage2SequentialEnv:
                 )
             splice_step_action_into_full_vec(temp_vec, spec, action)
 
+        # only=(layer, block): this per-step replan consumes exactly one cfg;
+        # decoding all 12 layers x 4 blocks per step was the dominant python
+        # cost of the 47-step rollout. Per-(layer, block) decode independence
+        # makes the consumed cfg bit-identical to the full decode's.
         decoded = action_vector_to_cfgs(
             temp_vec,
             self.base.max_sfs,
             num_layers=self.num_layers,
             gelu_degree=self.base.gelu_degree,
             attn_degree=self.base.attn_degree,
+            only=(int(spec.layer_idx), int(spec.block_idx)),
         )
         cfgs_by_block = decoded.cfgs_dict()
         block_cfg = cfgs_by_block[f"block{spec.block_idx}"][spec.layer_idx]

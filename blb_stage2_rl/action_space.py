@@ -66,14 +66,20 @@ from function_handler import (
 # ---------------------------------------------------------------------------
 # 全局常量：每类噪声的离散挡位数（与 spec §4.1 对齐）
 # ---------------------------------------------------------------------------
-# 2026-06-04: all SF kinds use a uniform 10-level HYBRID downward sweep anchored at
-# the slot's BASELINE SF (= calibrated max_sf, NOT the noise-table max=46): the top 5
-# levels step by 2 (coarse, near baseline), the bottom 5 step by 1 (fine), reaching
-# baseline-14. e.g. baseline 30 → 30,28,26,24,22,20,19,18,17,16 (see ``sf_from``).
-# ``_snap_to_table`` floors any decoded SF below the noise table (min SF=10); a slot
-# whose baseline SF is low gets duplicate SF=10 levels the fusion builder dedups by
-# installed-noise signature. K stays ``K_LEVELS``. The noise variance comes from the
-# N=16384 column for every slot (see ``_block_default_N``).
+# 2026-06-10 (supersedes the 2026-06-04 hybrid 2/1 sweep): all SF kinds use a
+# UNIFORM step-2 downward sweep anchored at the slot's BASELINE SF (= calibrated
+# max_sf, NOT the noise-table max=46), with every level floored at
+# ``MIN_SF_FLOOR=12``: idx levels-1..0 → baseline, -2, -4, …, -2*(levels-1).
+# e.g. baseline 30 → 30,28,26,24,22,20,18,16,14,12. A low-baseline slot's deep
+# levels clamp to the floor and DUPLICATE (e.g. baseline 16 → 16,14,12,12,…);
+# the fusion builder enumerates only DISTINCT decoded values per slot, so the
+# clamped 档位 are never selected/enumerated — a slot may therefore contribute
+# fewer than 10 distinct levels, and a baseline below the floor contributes
+# exactly one (frozen at baseline, keeping option0==baseline for ANY dataset /
+# baseline). ``_snap_to_table`` still guards table membership (no-op for the
+# integer 10..46 table). K stays ``K_LEVELS``. The noise variance comes from
+# the N=16384 column for every slot (see ``_block_default_N``).
+MIN_SF_FLOOR = 12    # lowest selectable SF for any slot (user spec 2026-06-10)
 LEVELS_W = 10        # weight encode
 LEVELS_MS = 10       # mask / scalar encode
 LEVELS_R = 10        # rescale (idx0=None; idx1..9 sweep SF, hybrid step)
@@ -396,31 +402,32 @@ def _block_default_N(block_idx: int, gelu_degree: int = 4, attn_degree: int = 4)
 # action index ↔ scaling factor 转换
 # ---------------------------------------------------------------------------
 def sf_from(idx: int, max_sf: int, levels: int) -> int:
-    """Hybrid downward sweep from ``max_sf`` (= the slot's BASELINE SF, not the table max).
+    """Uniform step-2 downward sweep from ``max_sf`` (= the slot's BASELINE SF,
+    not the table max), floored at ``MIN_SF_FLOOR``.
 
-    The top half of the levels step by 2 (coarse, near baseline); the bottom half step
-    by 1 (fine, far from baseline). For the canonical 10-level slot this gives
-    ``idx 9..0 → max_sf, -2, -4, -6, -8, -10, -11, -12, -13, -14`` (e.g. max_sf=30 →
-    30,28,26,24,22,20,19,18,17,16).
-
-    May return a value below the noise-table minimum for a low-baseline-SF slot;
-    callers wrap with ``_snap_to_table`` which floors it at the table min (SF=10).
+    2026-06-10 (supersedes the hybrid 2/1 sweep): ``idx levels-1..0 → max_sf,
+    -2, -4, …, -2*(levels-1)`` (e.g. max_sf=30 → 30,28,26,24,22,20,18,16,14,12),
+    with every level clamped at ``max(MIN_SF_FLOOR, …)`` — but never above the
+    baseline itself, so a baseline below the floor decodes every level to the
+    baseline (frozen slot) and ``option0 == baseline`` holds for any dataset /
+    calibrated baseline. Clamped levels duplicate; selection-side code (the
+    fusion builder's distinct-value enumeration) must not pick them — see
+    ``distinct_sf_level_indices``.
     """
     idx = int(idx)
     levels = int(levels)
     if idx < 0 or idx >= levels:
         raise ValueError(f"action idx {idx} out of [0, {levels})")
-    n_fine = (levels - 1) // 2          # step-1 intervals at the bottom
-    n_coarse = (levels - 1) - n_fine    # step-2 intervals at the top
     dist = (levels - 1) - idx           # 0 at idx = max (baseline SF)
-    offset = 2 * dist if dist <= n_coarse else 2 * n_coarse + (dist - n_coarse)
-    return int(max_sf) - int(offset)
+    value = int(max_sf) - 2 * dist
+    floor_eff = min(int(MIN_SF_FLOOR), int(max_sf))
+    return max(value, floor_eff)
 
 
 def _rescale_sf_from_index(idx: int, max_sf: int) -> Optional[int]:
     # idx 0 = None (rescale dropped — never selected by RL / the fusion builder, per
-    # CLAUDE.md item 2). idx 1..LEVELS_R-1 sweep SF via the hybrid decode; _snap_to_table
-    # floors at SF=10 downstream.
+    # CLAUDE.md item 2). idx 1..LEVELS_R-1 sweep SF via the uniform step-2 decode
+    # (floored at MIN_SF_FLOOR); _snap_to_table guards table membership downstream.
     idx = int(idx)
     if idx <= 0:
         return None
@@ -1276,6 +1283,7 @@ def action_vector_to_cfgs(
         num_layers: int,
         gelu_degree: object = 4,
         attn_degree: object = 4,
+        only: Optional[Tuple[int, int]] = None,
         ) -> ActionDecodeResult:
     """``MultiDiscrete`` 风格动作向量 → 每层 5 个 BLB block cfg + first_input SF。
 
@@ -1283,6 +1291,11 @@ def action_vector_to_cfgs(
         action_vec:    1D ndarray，长度 == ``sum(action_dims_for_config(num_layers))``
         max_sfs:       ``load_max_sfs(profile)`` 加载的 max SF 表
         num_layers:    模型层数 L
+        only:          可选 ``(layer_idx, block_idx)``。给定时只解码/构造该层该
+                       block 的 cfg（每个 (layer, block) 的解码彼此独立，结果与
+                       全量解码中的同一项逐位一致）——sequential per-block replan
+                       与 fusion 图枚举的热路径只消费一个 cfg，全量解码（12 层 ×
+                       全 block）是它们的主要耗时。None = 原全量行为，逐位不变。
         gelu_degree:   Block 5 GELU 多项式 degree (1/2/4)；首层并不影响（每层独立）
         attn_degree:   Block 3 softmax 多项式 degree (1..6)
 
@@ -1300,6 +1313,13 @@ def action_vector_to_cfgs(
     layer_dim_list = layer_dims()
     layer_dim = len(layer_dim_list)
 
+    only_layer: Optional[int] = None
+    only_block: Optional[int] = None
+    if only is not None:
+        only_layer, only_block = int(only[0]), int(only[1])
+        if not (0 <= only_layer < int(num_layers)) or only_block not in (1, 2, 3, 4, 5):
+            raise ValueError(f"only={only!r} out of range (num_layers={num_layers})")
+
     block1_cfgs: Dict[int, Block1NoiseConfig] = {}
     block2_cfgs: Dict[int, Block2NoiseConfig] = {}
     block3_cfgs: Dict[int, Block3NoiseConfig] = {}
@@ -1307,7 +1327,7 @@ def action_vector_to_cfgs(
     block5_cfgs: Dict[int, Block5NoiseConfig] = {}
     per_layer_values: List[Dict[str, object]] = []
 
-    for li in range(int(num_layers)):
+    for li in (range(int(num_layers)) if only_layer is None else (only_layer,)):
         li_gelu_degree = _degree_for_layer(
             gelu_degree,
             li,
@@ -1334,6 +1354,8 @@ def action_vector_to_cfgs(
             slot_count = len(spec.fields)
             sub = layer_action[offset:offset + slot_count]
             offset += slot_count
+            if only_block is not None and b != only_block:
+                continue
             layer_block_values[b] = _decode_block_field_values(
                 layer_idx=li,
                 block_idx=b,
@@ -1347,33 +1369,38 @@ def action_vector_to_cfgs(
         # Block 1：首层 block1 不安装（用户语义：layer 0 没有上游 FFN2，第一个 HE
         # 配置无损 —— 与 Rescale_optimizer 对齐）。保留 action 向量槽位但不构造 cfg，
         # 这样下游 (bridge.apply / build_optimizer_requests) 自然跳过 layer 0 block1。
-        if li == 0:
-            pass  # block1_cfgs 故意不写 layer 0，下游用 .get(0) / dict-not-in 判断
-        else:
-            b1 = _build_block1_action(li, layer_block_values[1], is_first_layer=False)
-            block1_cfgs[li] = build_block1_cfg_from_action(
-                b1, N=_block_default_N(1, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
-            )
+        if only_block in (None, 1):
+            if li == 0:
+                pass  # block1_cfgs 故意不写 layer 0，下游用 .get(0) / dict-not-in 判断
+            else:
+                b1 = _build_block1_action(li, layer_block_values[1], is_first_layer=False)
+                block1_cfgs[li] = build_block1_cfg_from_action(
+                    b1, N=_block_default_N(1, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
+                )
         # Block 2
-        b2 = _build_block2_action(li, layer_block_values[2])
-        block2_cfgs[li] = build_block2_cfg_from_action(
-            b2, N=_block_default_N(2, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
-        )
+        if only_block in (None, 2):
+            b2 = _build_block2_action(li, layer_block_values[2])
+            block2_cfgs[li] = build_block2_cfg_from_action(
+                b2, N=_block_default_N(2, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
+            )
         # Block 3 (degree-aware)
-        b3 = _build_block3_action(li, layer_block_values[3], attn_degree=li_attn_degree)
-        block3_cfgs[li] = build_block3_cfg_from_action(
-            b3, N=_block_default_N(3, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
-        )
+        if only_block in (None, 3):
+            b3 = _build_block3_action(li, layer_block_values[3], attn_degree=li_attn_degree)
+            block3_cfgs[li] = build_block3_cfg_from_action(
+                b3, N=_block_default_N(3, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
+            )
         # Block 4
-        b4 = _build_block4_action(li, layer_block_values[4])
-        block4_cfgs[li] = build_block4_cfg_from_action(
-            b4, N=_block_default_N(4, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
-        )
+        if only_block in (None, 4):
+            b4 = _build_block4_action(li, layer_block_values[4])
+            block4_cfgs[li] = build_block4_cfg_from_action(
+                b4, N=_block_default_N(4, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
+            )
         # Block 5 (gelu degree-aware)
-        b5 = _build_block5_action(li, layer_block_values[5], gelu_degree=li_gelu_degree)
-        block5_cfgs[li] = build_block5_cfg_from_action(
-            b5, N=_block_default_N(5, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
-        )
+        if only_block in (None, 5):
+            b5 = _build_block5_action(li, layer_block_values[5], gelu_degree=li_gelu_degree)
+            block5_cfgs[li] = build_block5_cfg_from_action(
+                b5, N=_block_default_N(5, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
+            )
 
     # 尾部 first_input_sf：语义已废弃（"第一个 HE 配置无损"，不再注入 layer 0
     # input 端的 fresh 噪声）。保留槽位以维持 policy 网络 shape 与旧 checkpoint
@@ -1425,6 +1452,41 @@ def _field_level_values(
         int(_snap_to_table(sf_from(idx, int(max_sf), int(levels)), int(N)))
         for idx in range(int(levels))
     ]
+
+
+def distinct_sf_level_indices(
+        *,
+        kind: str,
+        levels: int,
+        max_sf: Optional[int],
+        N: int,
+        ) -> List[int]:
+    """Enumerable action indices for one SF slot under the uniform step-2 grid.
+
+    Selection rule (2026-06-10 user spec): the slot's 档位 are the strict
+    arithmetic sequence ``baseline, baseline-2, baseline-4, …``; an index is
+    selectable iff its UNCLAMPED value is ≥ ``MIN_SF_FLOOR`` (the floor-clamped
+    duplicates ``sf_from`` returns defensively are "不满足要求的档位" and are
+    never enumerated — e.g. baseline 27 stops at 13, no pseudo-12 level). The
+    baseline level (top index) is always selectable, so a baseline below the
+    floor contributes exactly one frozen level and ``option0 == baseline``
+    holds for any dataset / calibrated baseline. For R slots, idx 0 (= None =
+    drop the rescale) is excluded as always (mental-model item 2). ``N`` is
+    accepted for signature symmetry with ``_field_level_values`` (the integer
+    10..46 noise table makes snapping a no-op on this grid). Returns ascending.
+    """
+    del N  # table membership is guaranteed on this grid; kept for symmetry
+    levels = int(levels)
+    base = int(max_sf) if max_sf is not None else 0
+    kept: List[int] = []
+    for idx in range(levels - 1, -1, -1):
+        if str(kind) == "R" and idx == 0:
+            continue
+        dist = (levels - 1) - idx
+        raw = base - 2 * dist
+        if dist == 0 or raw >= int(MIN_SF_FLOOR):
+            kept.append(int(idx))
+    return sorted(kept)
 
 
 def _operation_name(block_idx: int, field_name: str, kind: str) -> str:

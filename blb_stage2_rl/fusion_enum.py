@@ -288,12 +288,16 @@ def _eval_block(ctx: BlockTypeBuildContext, block_indices: Sequence[int]) -> Dic
 
     full = ctx.baseline_full.copy()
     full[ctx.block_offset : ctx.block_offset + ctx.block_num_slots] = np.asarray(block_indices, dtype=int)
+    # only=(ref_layer, block): the enumeration consumes exactly one cfg, and the
+    # full 12-layer decode dominated per-combo cost (the replan itself is sub-ms).
+    # Per-(layer, block) decode independence makes this bit-identical.
     decoded = action_vector_to_cfgs(
         full,
         ctx.max_sfs,
         num_layers=ctx.num_layers,
         gelu_degree=ctx.gelu_per_layer,
         attn_degree=ctx.attn_per_layer,
+        only=(int(ctx.ref_layer), int(ctx.block_idx)),
     )
     cfg = decoded.cfgs_dict()[f"block{ctx.block_idx}"][ctx.ref_layer]
     out = ctx.bridge.evaluate(
@@ -352,6 +356,7 @@ def prepare_block_type_context(
         _block_default_N,
         _full_vec_offset_for_block,
         _is_action_field_effective,
+        distinct_sf_level_indices,
     )
 
     from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
@@ -485,14 +490,22 @@ def prepare_block_type_context(
         if not eff:
             continue
         levels = int(NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[kind])
+        # 2026-06-10 grid: enumerate only DISTINCT decoded values per slot
+        # (uniform step-2, floor MIN_SF_FLOOR=12). Floor-clamped duplicate
+        # levels decode to identical cfgs → identical replans; dropping them
+        # here is the grid's selection rule (and removes redundant replans).
+        # R slots additionally exclude idx 0 (= None/drop) as before.
+        field_max_sf = int(ctx.max_sfs.get(int(block_idx), str(fname), layer_idx=int(ref_layer)))
+        distinct = distinct_sf_level_indices(
+            kind=str(kind), levels=levels, max_sf=field_max_sf, N=int(ctx.N_block),
+        )
         if kind == "R":
-            choices = list(range(1, levels))  # SF values only; exclude 0 (=None/drop)
             ctx.enum_positions.append(pos)
-            ctx.enum_choices.append(choices)
-            ctx.enum_levels.append(len(choices))
+            ctx.enum_choices.append(list(distinct))
+            ctx.enum_levels.append(len(distinct))
             continue
         constant = True
-        for lvl in range(levels):
+        for lvl in distinct:
             if lvl == int(base_block[pos]):
                 continue
             probe = base_block.copy()
@@ -503,10 +516,9 @@ def prepare_block_type_context(
         if constant:
             ctx.pinned_positions.append(pos)
         else:
-            choices = list(range(levels))
             ctx.enum_positions.append(pos)
-            ctx.enum_choices.append(choices)
-            ctx.enum_levels.append(len(choices))
+            ctx.enum_choices.append(list(distinct))
+            ctx.enum_levels.append(len(distinct))
     return ctx
 
 
