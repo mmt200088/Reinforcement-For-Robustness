@@ -180,6 +180,13 @@ def _option_by_id(graph: Mapping[str, Any], option_id: int) -> Mapping[str, Any]
     raise KeyError(f"graph {graph.get('graph_key')} has no option {option_id}")
 
 
+def _option_id_for_step(step: Mapping[str, Any], option_by_graph: Mapping[str, int], option_by_step: Mapping[str, int] | None = None) -> int:
+    step_key = str(step["step_idx"])
+    if option_by_step and step_key in option_by_step:
+        return int(option_by_step[step_key])
+    return int(option_by_graph[str(step["graph_key"])])
+
+
 def _splice_group_action(
     *,
     fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]],
@@ -187,6 +194,7 @@ def _splice_group_action(
     num_layers: int,
     schedule: Sequence[Mapping[str, Any]],
     option_by_graph: Mapping[str, int],
+    option_by_step: Mapping[str, int] | None = None,
 ) -> List[int]:
     action = _make_all_max_action(fields_by_block, num_layers)
     width = _layer_width(fields_by_block)
@@ -196,7 +204,7 @@ def _splice_group_action(
         graph = graphs[graph_key]
         block_idx = int(step["block_idx"])
         layer_idx = int(step["layer_idx"])
-        option = _option_by_id(graph, int(option_by_graph[graph_key]))
+        option = _option_by_id(graph, _option_id_for_step(step, option_by_graph, option_by_step))
         block_action = [int(v) for v in option.get("action_indices", [])]
         k_slot_index = int(graph["k_slot_index"])
         if 0 <= k_slot_index < len(block_action):
@@ -271,6 +279,7 @@ def _splice_group_slots(
     graphs: Mapping[str, Mapping[str, Any]],
     schedule: Sequence[Mapping[str, Any]],
     option_by_graph: Mapping[str, int],
+    option_by_step: Mapping[str, int] | None = None,
 ) -> List[dict]:
     entries: List[dict] = []
     for step in schedule:
@@ -278,7 +287,7 @@ def _splice_group_slots(
         graph = graphs[graph_key]
         block_idx = int(step["block_idx"])
         layer_idx = int(step["layer_idx"])
-        option = _option_by_id(graph, int(option_by_graph[graph_key]))
+        option = _option_by_id(graph, _option_id_for_step(step, option_by_graph, option_by_step))
         slot_values = _bound_slot_values(block_idx, option.get("slots", {}))
         if not slot_values:
             continue
@@ -349,6 +358,55 @@ def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Map
             "fusion_count_by_graph": count_by_graph,
             "occurrence_counts": dict(occurrence_counts),
         })
+
+    option_by_graph = {}
+    count_by_graph = {}
+    for graph_key in graph_order:
+        target = "max" if graph_key == "block2_mrpc" or graph_key.startswith("block5_") else 0
+        opt, count, _clamped = _choose_option(graphs[graph_key], target)
+        option_by_graph[graph_key] = opt
+        count_by_graph[graph_key] = count
+    specs.append({
+        "name": "block2_block5_all_layers_fusionmax",
+        "family": "combined",
+        "target_graphs": [g for g in graph_order if g == "block2_mrpc" or g.startswith("block5_")],
+        "option_by_graph": option_by_graph,
+        "fusion_count_by_graph": count_by_graph,
+        "occurrence_counts": dict(occurrence_counts),
+    })
+
+    block4_graph = graphs.get("block4")
+    if block4_graph is not None:
+        b4_max_opt, b4_max_count, _clamped = _choose_option(block4_graph, "max")
+        for name, layers in (
+            ("block4_fusionmax_1_layer", [0]),
+            ("block4_fusionmax_2_layers", [0, 6]),
+            ("block4_fusionmax_4_layers", [0, 3, 6, 9]),
+        ):
+            base_options = {}
+            base_counts = {}
+            for graph_key in graph_order:
+                opt, count, _ = _choose_option(graphs[graph_key], 0)
+                base_options[graph_key] = opt
+                base_counts[graph_key] = count
+            option_by_step = {
+                str(step["step_idx"]): int(b4_max_opt)
+                for step in schedule
+                if str(step["graph_key"]) == "block4" and int(step["layer_idx"]) in set(layers)
+            }
+            specs.append({
+                "name": name,
+                "family": "partial_block4",
+                "target_graph": "block4",
+                "selected_layers": [int(v) for v in layers],
+                "option_by_graph": base_options,
+                "option_by_step": option_by_step,
+                "fusion_count_by_graph": {
+                    **base_counts,
+                    "block4_selected_layers": int(b4_max_count),
+                },
+                "occurrence_counts": dict(occurrence_counts),
+            })
     return specs
 
 
@@ -375,12 +433,14 @@ def _write_action_configs(
             num_layers=num_layers,
             schedule=schedule,
             option_by_graph=spec["option_by_graph"],
+            option_by_step=spec.get("option_by_step"),
         )
         slots = _splice_group_slots(
             fields_by_block=fields_by_block,
             graphs=graphs,
             schedule=schedule,
             option_by_graph=spec["option_by_graph"],
+            option_by_step=spec.get("option_by_step"),
         )
         payload = {
             "schema_version": "fusion_count_fixed_action_v1",
@@ -585,7 +645,15 @@ def _render_html(payload: Mapping[str, Any]) -> str:
         no_op = "yes" if group.get("no_op") else ""
         counts = ", ".join(f"{k}:{v}" for k, v in group["fusion_count_by_graph"].items())
         opts = ", ".join(f"{k}:opt{v}" for k, v in group["option_by_graph"].items())
-        group_rows.append([name, group.get("family", ""), no_op, counts, opts])
+        details = ""
+        if group.get("selected_layers"):
+            details = "layers=" + ",".join(f"L{int(v)}" for v in group["selected_layers"])
+        if group.get("target_graphs"):
+            details = "graphs=" + ",".join(str(v) for v in group["target_graphs"])
+        if group.get("option_by_step"):
+            step_txt = ",".join(f"s{k}:opt{v}" for k, v in sorted(group["option_by_step"].items(), key=lambda kv: int(kv[0])))
+            details = (details + "; " if details else "") + step_txt
+        group_rows.append([name, group.get("family", ""), no_op, details, counts, opts])
 
     parts = [
         "<!doctype html>",
@@ -623,7 +691,7 @@ def _render_html(payload: Mapping[str, Any]) -> str:
             graph_rows,
         ),
         "<h2>Server Evaluation Groups Prepared</h2>",
-        _html_table(["group", "family", "no-op", "fusion count by graph", "option by graph"], group_rows),
+        _html_table(["group", "family", "no-op", "details", "fusion count by graph", "option by graph"], group_rows),
     ]
 
     for graph in payload["graphs"]:
