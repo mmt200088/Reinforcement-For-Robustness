@@ -92,6 +92,31 @@ def _enumerate_shard_worker(payload: Dict[str, Any]) -> Tuple[int, List[Tuple]]:
     ]
 
 
+def _fast_range_payloads(
+    template: Any, total: int, num_shards: int, *, profile: str, ro_root: str,
+) -> List[Dict[str, Any]]:
+    """Contiguous [start, stop) rank ranges covering [0, total) exactly once."""
+    n = max(1, int(num_shards))
+    base = int(total) // n
+    rem = int(total) % n
+    payloads: List[Dict[str, Any]] = []
+    cursor = 0
+    for s in range(n):
+        count = base + (1 if s < rem else 0)
+        if count <= 0:
+            continue
+        payloads.append({
+            "template": template,
+            "start": cursor,
+            "stop": cursor + count,
+            "profile": str(profile),
+            "ro_root": str(ro_root),
+        })
+        cursor += count
+    assert cursor == int(total)
+    return payloads
+
+
 def build_one_block_type(
     graph_key: str,
     block_idx: int,
@@ -105,6 +130,9 @@ def build_one_block_type(
     workers: int,
     max_enum_combos: int = 0,
     degeneracy_probe_samples: int = 2000,
+    enum_path: str = "fast",
+    fast_verify_random: int = 64,
+    shards_per_worker: int = 8,
 ) -> Dict[str, Any]:
     import fusion_enum
 
@@ -180,50 +208,145 @@ def build_one_block_type(
             },
         }
 
-    payloads = [
-        {
-            "graph_key": graph_key,
-            "block_idx": block_idx,
-            "gelu_degree": gelu_degree,
-            "attn_degree": attn_degree,
-            "profile": profile,
-            "ro_root": ro_root,
-            "num_layers": num_layers,
-            "ref_layer": ref_layer,
-            "shard_idx": s,
-            "num_shards": num_shards,
-        }
-        for s in range(num_shards)
-    ]
-
-    t0 = time.time()
-    if num_shards == 1:
-        shard_results = [_enumerate_shard_worker(payloads[0])]
-    else:
-        with mp.get_context("spawn").Pool(processes=num_shards) as pool:
-            shard_results = pool.map(_enumerate_shard_worker, payloads)
-    elapsed = time.time() - t0
-
-    # Merge shards' reduced sets into one EvaluatedConfig list for the pure grouping
-    # core; each shard already kept only its per-fusion min-variance superset, so
-    # this list is small even when num_valid_total is hundreds of millions.
-    evaluated = []
+    fast_meta: Dict[str, Any] = {}
+    evaluated: List[Any] = []
+    evaluated_golden: List[Any] = []
     num_valid_total = 0
-    for num_valid, shard in shard_results:
-        num_valid_total += int(num_valid)
-        for ai, fc, tb, tv, sig in shard:
+    num_valid_golden = 0
+    t0 = time.time()
+
+    if enum_path in ("fast", "both"):
+        # ---- direct-replan fast path (template golden-derived + verified) ----
+        import fusion_enum_fast
+        template = fusion_enum_fast.build_fast_template(ctx)
+        vres = fusion_enum_fast.verify_template(
+            template, ctx, num_random=int(fast_verify_random),
+        )
+        print(
+            f"  [fast] template OK: {len(template.points)} point specs, "
+            f"golden-vs-fast verified on {vres['checked']} probes "
+            f"(baseline + corner + {vres['num_random']} random)",
+            flush=True,
+        )
+        n_shards = max(1, int(workers) * max(1, int(shards_per_worker)))
+        n_shards = min(n_shards, max(1, total_combos))
+        payloads = _fast_range_payloads(
+            template, total_combos, n_shards, profile=profile, ro_root=ro_root,
+        )
+        rows_all: List[Tuple] = []
+        done = 0
+        t_fast = time.time()
+        last_log = t_fast
+        if len(payloads) == 1:
+            nv, rows, _w, cnt = fusion_enum_fast.enumerate_range_worker(payloads[0])
+            num_valid_total += int(nv)
+            rows_all.extend(rows)
+            done += cnt
+        else:
+            with mp.get_context("spawn").Pool(processes=int(workers)) as pool:
+                for nv, rows, _w, cnt in pool.imap_unordered(
+                    fusion_enum_fast.enumerate_range_worker, payloads
+                ):
+                    num_valid_total += int(nv)
+                    rows_all.extend(rows)
+                    done += int(cnt)
+                    now = time.time()
+                    if now - last_log >= 30 or done == total_combos:
+                        rate = done / max(1e-9, now - t_fast)
+                        eta = (total_combos - done) / max(1e-9, rate)
+                        print(
+                            f"  [fast] {done}/{total_combos} "
+                            f"({done / total_combos:.1%}) "
+                            f"rate={rate:,.0f} combos/s eta={eta / 60:.1f}min",
+                            flush=True,
+                        )
+                        last_log = now
+        for ai, fc, tb, tv, sig in rows_all:
             evaluated.append(
                 fusion_enum.EvaluatedConfig(
-                    action_indices=tuple(ai),
-                    fusion_count=int(fc),
-                    total_bits=int(tb),
-                    total_variance=float(tv),
-                    installed_signature=sig,
-                    slots={},
+                    action_indices=tuple(ai), fusion_count=int(fc),
+                    total_bits=int(tb), total_variance=float(tv),
+                    installed_signature=sig, slots={},
                 )
             )
+        fast_meta = {
+            "enum_path": enum_path,
+            "fast_verified_probes": int(vres["checked"]),
+            "fast_shards": len(payloads),
+            "fast_wall_seconds": round(time.time() - t_fast, 2),
+        }
+
+    if enum_path in ("golden", "both"):
+        # ---- original cfg-path enumeration (stride shards) ----
+        payloads_g = [
+            {
+                "graph_key": graph_key,
+                "block_idx": block_idx,
+                "gelu_degree": gelu_degree,
+                "attn_degree": attn_degree,
+                "profile": profile,
+                "ro_root": ro_root,
+                "num_layers": num_layers,
+                "ref_layer": ref_layer,
+                "shard_idx": s,
+                "num_shards": num_shards,
+            }
+            for s in range(num_shards)
+        ]
+        if num_shards == 1:
+            shard_results = [_enumerate_shard_worker(payloads_g[0])]
+        else:
+            with mp.get_context("spawn").Pool(processes=num_shards) as pool:
+                shard_results = pool.map(_enumerate_shard_worker, payloads_g)
+        for num_valid, shard in shard_results:
+            num_valid_golden += int(num_valid)
+            for ai, fc, tb, tv, sig in shard:
+                evaluated_golden.append(
+                    fusion_enum.EvaluatedConfig(
+                        action_indices=tuple(ai), fusion_count=int(fc),
+                        total_bits=int(tb), total_variance=float(tv),
+                        installed_signature=sig, slots={},
+                    )
+                )
+        if enum_path == "golden":
+            evaluated = evaluated_golden
+            num_valid_total = num_valid_golden
+
+    elapsed = time.time() - t0
 
     options = fusion_enum.group_min_noise_options(evaluated, ctx.baseline_block_indices)
+
+    if enum_path == "both":
+        # FULL cross-validation: the two paths' final option lists must agree
+        # exactly (variance compared with float-sum-order tolerance only).
+        if int(num_valid_golden) != int(num_valid_total):
+            raise RuntimeError(
+                f"{graph_key}: enum-path mismatch: valid fast={num_valid_total} "
+                f"golden={num_valid_golden}"
+            )
+        options_golden = fusion_enum.group_min_noise_options(
+            evaluated_golden, ctx.baseline_block_indices,
+        )
+        if len(options) != len(options_golden):
+            raise RuntimeError(
+                f"{graph_key}: enum-path mismatch: {len(options)} fast options vs "
+                f"{len(options_golden)} golden"
+            )
+        for a, b in zip(options, options_golden):
+            same = (
+                a["action_indices"] == b["action_indices"]
+                and a["fusion_count"] == b["fusion_count"]
+                and a["total_bits"] == b["total_bits"]
+                and a["tie_index"] == b["tie_index"]
+                and abs(a["total_variance"] - b["total_variance"])
+                <= 1e-12 * max(1.0, abs(b["total_variance"]))
+            )
+            if not same:
+                raise RuntimeError(
+                    f"{graph_key}: enum-path option mismatch: fast={a} golden={b}"
+                )
+        fast_meta["both_paths_identical"] = True
+        print(f"  [both] fast == golden on all {len(options)} options ✓", flush=True)
     # Fill SF/K-first slot view for the kept options only.
     for opt in options:
         opt["slots"] = fusion_enum.decode_block_slots(ctx, opt["action_indices"])
@@ -252,8 +375,9 @@ def build_one_block_type(
             "num_options": len(options),
             "fusion_counts": fusion_counts,
             "wall_seconds": round(elapsed, 2),
-            "workers": num_shards,
+            "workers": int(workers),
             "k_independence": k_indep,
+            **fast_meta,
         },
     }
 
@@ -290,6 +414,28 @@ def main() -> int:
     ap.add_argument("--num-layers", type=int, default=12)
     ap.add_argument("--ref-layer", type=int, default=1)
     ap.add_argument("--workers", type=int, default=max(1, (mp.cpu_count() or 2) - 1))
+    ap.add_argument(
+        "--enum-path",
+        choices=("fast", "golden", "both"),
+        default="fast",
+        help="fast = direct-replan hot loop (template golden-derived + verified, default); "
+        "golden = original cfg-path enumeration; both = run BOTH and require the final "
+        "option lists to match exactly (full cross-validation — use on small block-types)",
+    )
+    ap.add_argument(
+        "--fast-verify-random",
+        type=int,
+        default=64,
+        help="random combos (plus baseline + all-min corner) cross-checked golden-vs-fast "
+        "before a fast enumeration starts; any mismatch aborts the build",
+    )
+    ap.add_argument(
+        "--shards-per-worker",
+        type=int,
+        default=8,
+        help="fast path splits the combo space into workers*this contiguous rank ranges "
+        "(better load balance + progress/ETA granularity)",
+    )
     ap.add_argument("--only", default="", help="comma list of graph_keys to build (default: all 7)")
     ap.add_argument(
         "--max-enum-combos",
@@ -327,6 +473,9 @@ def main() -> int:
             ref_layer=args.ref_layer,
             workers=args.workers,
             max_enum_combos=args.max_enum_combos,
+            enum_path=args.enum_path,
+            fast_verify_random=args.fast_verify_random,
+            shards_per_worker=args.shards_per_worker,
             degeneracy_probe_samples=args.degeneracy_probe_samples,
         )
         results.append(res)

@@ -24,7 +24,9 @@ DEFAULT_MAP_DIR = REPO_ROOT / "blb_stage2_rl" / "fusion_maps" / "mrpc"
 
 K_LEVELS = (8, 9, 11, 13, 10, 12)
 BASELINE_K_INDEX = K_LEVELS.index(13)
-LEVELS_BY_KIND = {"F": 10, "W": 10, "M": 10, "S": 10, "R": 10, "K": len(K_LEVELS)}
+# Keep in lockstep with action_space.LEVELS_* (this script stays torch-free so
+# it mirrors the literal): 15-level uniform step-1 grid since 2026-06-11.
+LEVELS_BY_KIND = {"F": 15, "W": 15, "M": 15, "S": 15, "R": 15, "K": len(K_LEVELS)}
 FIRST_INPUT_LEVELS = 5
 
 DEFAULT_GELU = [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]

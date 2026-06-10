@@ -53,3 +53,4 @@ Proposed → Accepted → (Superseded by ADR-XXX | Deprecated)
 | 007 | v2-style clipped-shaping + tier-bonus reward      | Accepted              | 2026-05-18 |
 | 008 | Per-block fusion-count action（vs 逐槽 SF）        | Accepted              | 2026-06-03 |
 | 009 | Stage-2 确定性播种 + episode 并行（均匀档位部分当日撤回，保持 hybrid） | Accepted（D3 撤回） | 2026-06-10 |
+| 010 | step-1×15 SF 档位 + 直连 replan 快枚举（金vs快等价门禁） | Accepted | 2026-06-11 |

@@ -3,7 +3,7 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (Stage-2 episode 并行 1卡vs N卡 确定性门禁 → PASS 自动接 60k 长跑；档位已回退 hybrid，已提交图直接有效)
+## ▶ active command  (step-1×15 新档位全量重建 fusion 图[直连 replan 快路径+等价门禁] → Stage-2 1卡vsN卡 确定性门禁 → PASS 自动接 60k)
 
 ```bash
 set -uo pipefail
@@ -11,25 +11,33 @@ export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 
 # ============================================================================
-# 本轮（2026-06-10）顺序执行：
-#  ⓪ SF 档位规则已按用户决定回退到 2026-06-04 hybrid（前5档间隔2、后5档间隔1、
-#    无 12 下限、每槽固定 10 档）→ 已提交的 6 张 fusion 图（1ad078c，hybrid 解码+
-#    新 replan 策略下构建）恢复有效，REBUILD_MAPS=0 跳过重建。保留的纯加速：
-#    only= 单块解码 + builder 同值档预去重（结果等价，仅影响 valid_configs 计数）。
-#  ① Stage-2 多卡重构为 episode 级并行（--stage2-rl-devices，K 与卡数解耦固定=5；
-#    噪声/策略/更新全按全局 episode 播种）→ 1卡 vs N卡 短跑对拍：逐窗 rollout_sig 必须
-#    逐字相同 + episodes.jsonl 数值逐项相同，并实测加速比。
-#  ② 门禁 PASS → 自动启动 60000-episode curriculum-ON fusion 长跑（里程碑）。
+# 本轮（2026-06-11）顺序执行：
+#  ⓪ SF 档位改为「统一间隔1、最多15档、无下限」（用户 spec）→ 旧图 action_indices
+#    语义作废，REBUILD_MAPS=1 必须全量重建（--max-enum-combos 0，不走捷径）。
+#  ① 枚举提速到极致（结果零妥协）：
+#     - 直连 replan 快路径（fusion_enum_fast）：跳过 cfg 对象/bridge 缓存 deepcopy/
+#       输出回写等全部中介，每组合 ≈0.10ms（本地实测；金路径 ≈10×）。模板由金路径
+#       自动派生（逐槽两档探测 + sync 哨兵发现 Q/K 镜像），构建前强制做
+#       baseline+corner+随机 的金vs快逐字段等价门禁，任何不一致直接 FATAL。
+#     - block1 / block5_n1 用 --enum-path both：两条路径各自全量枚举，最终选项列表
+#       必须逐项相等（最强交叉验证，分钟级）。其余大图用 fast + 128 随机对拍。
+#     - WORKERS 放开到 nproc-2（此前 16 的封顶是误留；replan 是纯 CPU 整数运算，
+#       GPU 帮不上——要上 GPU 只能重写成本真值源，正确性红线不允许）。
+#     - 预计 @64核: block1 ~6s, b5_n1 ~1min(both), b5_n2 ~2min, block2 ~6min,
+#       b5_n4 ~25min, block4 ~2h；构建日志每 30s 打进度+ETA。
+#  ② Stage-2 episode 并行 1卡 vs N卡 确定性门禁（同 seed 300ep；逐窗 rollout_sig
+#    逐字相同 + episodes.jsonl 数值逐项相同 + 加速比实测）。
+#  ③ 门禁 PASS → 自动启动 60000-episode curriculum-ON fusion 长跑（里程碑）。
 # 失败处理：任一 FATAL 即停（不烧 60k 预算）；门禁 FAIL 时回传对拍证据。
 # ----------------------------------------------------------------------------
-REBUILD_MAPS=0       # 档位已回退 hybrid → 已提交图有效；只有 skeleton/decode 再变才改 1
+REBUILD_MAPS=1       # step-1×15 新档位 → 旧图作废，必须全量重建
 GATE_EPISODES=300    # 门禁短跑规模：anchor80 + 220 post，5 个 PPO 窗口
 LONG_EPISODES=60000  # 门禁通过后的里程碑长跑
 KTRIALS=5            # K 固定为 5（与卡数解耦——这是确定性要求的一部分，勿改回 K=NGPU）
-WORKERS="$( n=$(nproc 2>/dev/null || echo 8); echo $(( n > 16 ? 16 : n )) )"
+WORKERS="$( n=$(nproc 2>/dev/null || echo 8); m=$(( n - 2 )); [ "$m" -lt 1 ] && m=1; [ "$m" -gt 128 ] && m=128; echo "$m" )"
 NGPU="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"; [ -z "$NGPU" ] && NGPU=1; [ "$NGPU" -lt 1 ] && NGPU=1
 DEVS="$(seq -s, 0 $((NGPU-1)))"
-echo "[gpu] 探测到 $NGPU 张卡 -> DEVS=$DEVS, K=$KTRIALS(固定)"
+echo "[gpu] 探测到 $NGPU 张卡 -> DEVS=$DEVS, K=$KTRIALS(固定); 枚举 WORKERS=$WORKERS (nproc=$(nproc 2>/dev/null || echo '?'))"
 # ============================================================================
 
 TS=$(date +%Y%m%d_%H%M%S)
@@ -46,11 +54,18 @@ import rescale_optimizer as r
 print("RO 导入 OK；DEFAULT_FUSION_POLICY =", r.DEFAULT_FUSION_POLICY)
 import sys; sys.path.insert(0, "blb_stage2_rl")
 import action_space as asp
-assert not hasattr(asp, "MIN_SF_FLOOR"), "floor-12 应已回退"
-assert [asp.sf_from(i, 30, 10) for i in range(9, -1, -1)] == [30,28,26,24,22,20,19,18,17,16]
-assert asp.distinct_sf_level_indices(kind="F", levels=10, max_sf=20, N=16384) == [0,5,6,7,8,9]
-assert asp.distinct_sf_level_indices(kind="R", levels=10, max_sf=30, N=16384) == list(range(1,10))
-print("hybrid 档位规则已恢复（前5档间隔2/后5档间隔1/固定10档）+ 同值档预去重 OK")
+assert not hasattr(asp, "MIN_SF_FLOOR"), "无下限（user spec）"
+assert asp.LEVELS_F == asp.LEVELS_W == asp.LEVELS_MS == asp.LEVELS_R == 15
+assert [asp.sf_from(i, 30, 15) for i in range(14, -1, -1)] == list(range(30, 15, -1))
+assert asp.distinct_sf_level_indices(kind="F", levels=15, max_sf=20, N=16384) == [0] + list(range(5, 15))
+assert asp.distinct_sf_level_indices(kind="R", levels=15, max_sf=30, N=16384) == list(range(1, 15))
+print("step-1×15 档位规则 OK（间隔1/最多15档/无下限/同值档预去重）")
+import fusion_enum_fast as fef
+import itertools
+lens = [3, 4, 5]
+full = list(itertools.product(*[range(n) for n in lens]))
+assert [tuple(c) for c in fef.iter_combo_range(lens, 7, 31)] == full[7:31]
+print("fusion_enum_fast unranking OK")
 from seed_utils import derive_probe_seed, derive_policy_step_seed, PREFLIGHT_EPISODE
 print("stage2 seed_utils OK; preflight episode =", PREFLIGHT_EPISODE)
 PY
@@ -73,22 +88,25 @@ json.dump({"gelu_degree_per_layer": gelu, "softmax_degree_per_layer": softmax,
 print("[ok] 合成 Stage-1 record:", rec_dir, "| gelu =", gelu)
 PY
 
-echo "==================== [phase1] fusion 图重建（本轮跳过：档位已回退 hybrid，已提交图有效）===================="
+echo "==================== [phase1] step-1×15 全量重建 fusion 图（直连 replan 快路径 + 等价门禁）===================="
 cp -a "$MAPS_DIR" "$OUT/old_maps" 2>/dev/null || true
 if [ "$REBUILD_MAPS" = 1 ]; then
-  # 仅在确实重建时才清空图目录（54295ba 原把 rm -rf 放在守卫外——REBUILD_MAPS=0
-  # 时会把有效的已提交图删掉、让图门禁 FATAL；现移入守卫内）。
+  # 仅在确实重建时才清空图目录（rm -rf 必须留在守卫内，防误删有效图）。
   rm -rf "$MAPS_DIR"
   mkdir -p "$MAPS_DIR"
-  # 全部完整构建（--max-enum-combos 0）：去重档位 + only= 单块解码后组合数应大幅缩小；
-  # 逐图计时写日志。block4 若超过 2 小时仍未出结果，看 build_block4.log 的 enum_total。
-  for gk in block1_mrpc block2_mrpc block5_n1 block5_n2 block5_n4 block4; do
-    echo "[maps] building $gk ..."
+  # 全量枚举（--max-enum-combos 0，不走捷径）。小图 both = 金/快两路各自全量、
+  # 最终选项必须逐项相等（最强交叉验证）；大图 fast + 128 随机金vs快对拍门禁
+  #（不一致即 FATAL）。小图在前：交叉验证先趟雷，大图不白跑。
+  for gk in block1_mrpc block5_n1 block5_n2 block2_mrpc block5_n4 block4; do
+    EPATH="fast"
+    case "$gk" in block1_mrpc|block5_n1) EPATH="both" ;; esac
+    echo "[maps] building $gk (enum-path=$EPATH, workers=$WORKERS) ..."
     python scripts/blb_build_fusion_count_map.py --profile mrpc --only "$gk" \
       --out-dir "$MAPS_DIR" --rescale-optimizer-root Rescale_optimizer \
       --num-layers 12 --workers "$WORKERS" --max-enum-combos 0 \
-      > "$OUT/build_${gk}.log" 2>&1 || { echo "[FATAL] fusion 图 $gk 构建失败，见 build_${gk}.log"; tail -20 "$OUT/build_${gk}.log"; exit 1; }
-    grep -E "options=|wall=" "$OUT/build_${gk}.log" | tail -2
+      --enum-path "$EPATH" --fast-verify-random 128 \
+      > "$OUT/build_${gk}.log" 2>&1 || { echo "[FATAL] fusion 图 $gk 构建失败，见 build_${gk}.log"; tail -30 "$OUT/build_${gk}.log"; exit 1; }
+    grep -E "\[fast\] template OK|\[both\] fast == golden|options=|wall=|rate=" "$OUT/build_${gk}.log" | tail -4
   done
 fi
 
@@ -235,23 +253,24 @@ ls -la "$OUT"
 
 ## metadata
 
-### 本次目标（2026-06-10）
+### 本次目标（2026-06-11）
 
-1. **SF 档位规则已回退 hybrid**（用户决定：前 5 档间隔 2、后 5 档间隔 1、无 12 下限、每槽固定 10 档）→ **已提交的 6 张 fusion 图直接有效，本轮不重建**（REBUILD_MAPS=0；保留的纯加速 = only= 单块解码 + builder 同值档预去重，结果等价）。图门禁照跑作保险。
-2. **Stage-2 episode 级并行的确定性门禁**：同 seed 短跑 300 ep，`--stage2-rl-devices 0` vs `0..N-1`，要求逐窗 `rollout_sig` 逐字相同 + `episodes.jsonl` 数值逐项相同（这是"任意卡数结果一致"的实证），同时给出实测加速比（预期 5 卡 ≈4.5–4.8×，旧 K-split 只有 ~2.9×）。
-3. **门禁 PASS 自动接 60k 里程碑长跑**（curriculum ON、K=5 固定、episode 并行全卡）。
+1. **step-1×15 新档位全量重建 6 张 fusion 图**（间隔 1、最多 15 档、无下限、`--max-enum-combos 0` 全量）。总组合 ≈3–6×10⁹（block4 ≤4.9e9、b5_n4 ≈9.1e8、block2 ≤2.1e8、其余小），用直连 replan 快路径（本地实测 **0.099ms/组合**，金路径 ≈10×）+ WORKERS=nproc-2。
+2. **枚举正确性门禁（多层）**：① 模板派生自检（逐槽两档探测的接线必须恒等于解码 SF）；② 每图构建前 baseline+corner+128 随机 金vs快逐字段对拍，不一致 FATAL；③ block1/block5_n1 用 `--enum-path both` 金/快**双全量**、最终选项逐项相等；④ 图门禁 option0==baseline。
+3. **Stage-2 episode 并行确定性门禁**（同 seed 300ep，1卡 vs N卡逐窗 rollout_sig + episodes.jsonl 数值逐项对比 + 加速比）。
+4. **门禁 PASS 自动接 60k 里程碑长跑**（curriculum ON、K=5 固定、episode 并行全卡）。
 
-### 与上一轮的差异
+### 关键事实（给人看的）
 
-- `--blb-v3-reward-devices`（K-split）不再使用；新旗标 `--stage2-rl-devices`（互斥）。
-- `KTRIALS` 不再 = NGPU，**固定 5**——K=NGPU 的旧约定本身就让不同卡数跑出不同结果。
-- 噪声播种从「os.urandom 真随机」改为「(run_seed, 全局episode, trial) 键控」；preflight 也键控（PREFLIGHT_EPISODE=-1）。同 seed 复跑可复现。
-- 比较器已修复（P2 上报 + 搜索进展判读）；上一轮 A/B 的正确结论是 **curriculum ON 胜**（best P3 40.62@ep5315 vs OFF 40.16@ep855，OFF 探索坍缩）。
-- 2026-06-10 当日曾切换到"统一间隔2/下限12"档位，**已按用户决定回退**——decode 与图均为 hybrid 原状。
+- "JSON 中介"在训练/枚举路径本来就不存在（那是 debug 用 SubprocessInvoker）；真正被砍掉的中介是 **cfg 对象往返 + bridge 每调用的 cache-key/deepcopy**（枚举组合全唯一,缓存永 miss）。
+- **GPU 不适用于枚举**：replan 是纯 Python 整数模数链规划（顺序算法），上 GPU 等于重写成本真值源——正确性红线不允许；并行宽度的正确杠杆是 CPU 进程数（旧命令误封顶 16,现放开 nproc-2,封顶 128）。
+- `--blb-v3-reward-devices`（K-split）不再使用；`--stage2-rl-devices`（互斥）；`KTRIALS` 固定 5；噪声/策略/更新按 (seed, 全局episode, …) 键控,preflight=-1。
+- 比较器判读已修复;上一轮 A/B 正确结论 = **curriculum ON 胜**（best P3 40.62@ep5315 vs OFF 40.16@ep855,OFF 探索坍缩）。
 
 ### 预期产物
 
-- `$OUT/selfcheck.txt`（hybrid 档位断言 + seed_utils）+ `map_gate.txt`（option0==baseline 保险）
+- `$OUT/selfcheck.txt`（step-1×15 断言 + unranking + seed_utils）
+- `$OUT/build_<gk>.log` ×6（[fast] template OK / [both] fast==golden / 进度 rate/ETA / options）+ `old_maps/`+`new_maps/` + `map_gate.txt`
 - `$OUT/stage2_ngpu_gate/`：g1/gN sigs、sig_diff、episodes.jsonl ×2、verdict.txt（PASS/FAIL + ep/h + speedup）
 - `$OUT/long60k/run/`（diagnostics 全套，无 .pt）+ `long60k_health.log`（每 30 分钟滚动健康）
 
