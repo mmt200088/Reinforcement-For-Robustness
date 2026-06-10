@@ -1,0 +1,111 @@
+{
+  "graph_key": "block5_n2",
+  "profile": "mrpc",
+  "block_idx": 5,
+  "gelu_degree": 2,
+  "attn_degree": 2,
+  "k_slot_index": 15,
+  "block_num_slots": 16,
+  "options": [
+    {
+      "option_id": 0,
+      "fusion_count": 0,
+      "tie_index": 0,
+      "total_variance": 2.5708599994083115e-09,
+      "total_bits": 244,
+      "slots": {
+        "x_centered_fresh_sf": 31,
+        "gamma_sf": 20,
+        "wffn1_sf": 22,
+        "gelu_coeff_sf": 20,
+        "normalize_rescale_sf": 31,
+        "wffn1_rescale_sf": 31,
+        "gelu_coeff_mul_rescale_sf_0": 31
+      },
+      "action_indices": [
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        0,
+        9,
+        0,
+        0,
+        0,
+        9,
+        0,
+        0,
+        0,
+        3
+      ]
+    },
+    {
+      "option_id": 1,
+      "fusion_count": 1,
+      "tie_index": 0,
+      "total_variance": 1.70657022888581e-08,
+      "total_bits": 230,
+      "slots": {
+        "x_centered_fresh_sf": 25,
+        "gamma_sf": 20,
+        "wffn1_sf": 20,
+        "gelu_coeff_sf": 20,
+        "normalize_rescale_sf": 31,
+        "wffn1_rescale_sf": 31,
+        "gelu_coeff_mul_rescale_sf_0": 31
+      },
+      "action_indices": [
+        9,
+        6,
+        9,
+        8,
+        9,
+        9,
+        0,
+        9,
+        0,
+        0,
+        0,
+        9,
+        0,
+        0,
+        0,
+        3
+      ]
+    }
+  ],
+  "build_meta": {
+    "active_rescale_fields": [
+      "gelu_coeff_mul_rescale_sf_0",
+      "normalize_rescale_sf",
+      "wffn1_rescale_sf"
+    ],
+    "enum_positions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      7,
+      11
+    ],
+    "pinned_positions": [],
+    "enum_total_combos": 1093500,
+    "valid_configs": 591282,
+    "kept_configs": 32,
+    "num_options": 2,
+    "fusion_counts": [
+      0,
+      1
+    ],
+    "wall_seconds": 26.93,
+    "workers": 16,
+    "k_independence": {
+      "k_independent": true,
+      "violations": [],
+      "samples_checked": 2
+    }
+  }
+}

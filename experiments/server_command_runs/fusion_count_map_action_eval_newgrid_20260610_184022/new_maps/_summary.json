@@ -1,0 +1,45 @@
+{
+  "profile": "mrpc",
+  "max_num_options": 6,
+  "graph_keys": [
+    "block4"
+  ],
+  "per_type": {
+    "block4": {
+      "active_rescale_fields": [
+        "ln_mean_rescale_sf",
+        "ln_square_rescale_sf",
+        "softmax_v_matmul_rescale_sf"
+      ],
+      "enum_positions": [
+        0,
+        1,
+        2,
+        4,
+        5,
+        7,
+        8,
+        9,
+        15
+      ],
+      "pinned_positions": [
+        6
+      ],
+      "enum_total_combos": 6123600,
+      "valid_configs": 1590950,
+      "kept_configs": 32,
+      "num_options": 2,
+      "fusion_counts": [
+        0,
+        1
+      ],
+      "wall_seconds": 117.21,
+      "workers": 16,
+      "k_independence": {
+        "k_independent": true,
+        "violations": [],
+        "samples_checked": 2
+      }
+    }
+  }
+}

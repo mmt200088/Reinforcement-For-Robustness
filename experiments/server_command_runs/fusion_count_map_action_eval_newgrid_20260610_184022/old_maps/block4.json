@@ -1,0 +1,123 @@
+{
+  "graph_key": "block4",
+  "profile": "mrpc",
+  "block_idx": 4,
+  "gelu_degree": 4,
+  "attn_degree": 2,
+  "k_slot_index": 16,
+  "block_num_slots": 17,
+  "options": [
+    {
+      "option_id": 0,
+      "fusion_count": 0,
+      "tie_index": 0,
+      "total_variance": 1.526802187966286e-05,
+      "total_bits": 264,
+      "slots": {
+        "softmax_out_fresh_sf": 35,
+        "v_fresh_sf": 25,
+        "softmax_out_mask_sf": 14,
+        "softmax_v_mask_sf": 14,
+        "ln_mean_inv_d_sf": 20,
+        "ln_var_inv_d_sf": 20,
+        "wo_sf": 22,
+        "softmax_v_matmul_rescale_sf": 31,
+        "ln_mean_rescale_sf": 31,
+        "ln_square_rescale_sf": 31
+      },
+      "action_indices": [
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        9,
+        3
+      ]
+    },
+    {
+      "option_id": 1,
+      "fusion_count": 1,
+      "tie_index": 0,
+      "total_variance": 0.004751785419899105,
+      "total_bits": 211,
+      "slots": {
+        "softmax_out_fresh_sf": 21,
+        "v_fresh_sf": 17,
+        "softmax_out_mask_sf": 10,
+        "softmax_v_mask_sf": 10,
+        "ln_mean_inv_d_sf": 12,
+        "ln_var_inv_d_sf": 20,
+        "wo_sf": 11,
+        "softmax_v_matmul_rescale_sf": 31,
+        "ln_mean_rescale_sf": 31,
+        "ln_square_rescale_sf": 31
+      },
+      "action_indices": [
+        0,
+        5,
+        0,
+        9,
+        0,
+        5,
+        9,
+        3,
+        9,
+        9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        9,
+        3
+      ]
+    }
+  ],
+  "build_meta": {
+    "active_rescale_fields": [
+      "ln_mean_rescale_sf",
+      "ln_square_rescale_sf",
+      "softmax_v_matmul_rescale_sf"
+    ],
+    "enum_positions": [
+      0,
+      1,
+      2,
+      4,
+      5,
+      7,
+      8,
+      9,
+      15
+    ],
+    "pinned_positions": [
+      6
+    ],
+    "enum_total_combos": 729000000,
+    "valid_configs": 139295361,
+    "kept_configs": 32,
+    "num_options": 2,
+    "fusion_counts": [
+      0,
+      1
+    ],
+    "wall_seconds": 136533.77,
+    "workers": 16,
+    "k_independence": {
+      "k_independent": true,
+      "violations": [],
+      "samples_checked": 2
+    }
+  }
+}
