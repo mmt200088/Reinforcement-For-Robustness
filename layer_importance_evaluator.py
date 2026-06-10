@@ -2351,6 +2351,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_sequential_early_terminate_on_invalid=False,
                   blb_v3_seed=None,
                   blb_v3_reward_devices="",
+                  stage2_rl_devices="",
                   blb_v3_fast_reward_mode_enabled=False,
                   blb_v3_online_k_trials=1,
                   blb_v3_terminal_eval_batch_size=4,
@@ -3009,6 +3010,15 @@ class LayerImportanceEvaluator(TrainerCallback):
         # update window. See ``stage1_rl/parallel_runner.py``.
         self.stage1_rl_devices = (
             "" if stage1_rl_devices is None else str(stage1_rl_devices)
+        )
+        # 2026-06-10: Stage-2 RL episode-parallel rollout (fusion mode only).
+        # Empty → legacy serial loop / --blb-v3-reward-devices K-split.
+        # ``"0,1,2,3,4"`` → Stage2ParallelRunner workers each run complete
+        # episodes (rollout + replan + serial K-trial probe) on their own
+        # model replica with global-episode seeding (1-GPU == N-GPU results).
+        # See ``blb_stage2_rl/parallel_runner.py``.
+        self.stage2_rl_devices = (
+            "" if stage2_rl_devices is None else str(stage2_rl_devices)
         )
         self.blb_v3_fast_reward_mode_enabled = self._coerce_bool_flag(
             blb_v3_fast_reward_mode_enabled,

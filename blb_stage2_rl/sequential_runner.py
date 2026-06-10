@@ -1249,6 +1249,11 @@ def train_sequential(
         baseline_action_vec: Optional[np.ndarray] = None,
         max_rejection_retries: int = 32,
         force_baseline_episodes: int = 0,
+        # Episode-parallel rollout (fusion mode only): a Stage2ParallelRunner.
+        # When set, episodes are collected window-by-window across its workers
+        # (global-episode seeding, global-order assembly) and the serial loop
+        # below is bypassed. None → legacy behavior bit-for-bit.
+        parallel_runner: Optional[Any] = None,
         ) -> Dict[str, object]:
     """Train ``policy`` on ``env`` with sequential PPO.
 
@@ -1485,6 +1490,19 @@ def train_sequential(
                 anchor_ent_coef=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
                 ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 600)),
             )
+            if parallel_runner is not None:
+                # Deterministic pre-update reseed: the minibatch shuffle in
+                # sequential_ppo_update consumes the global numpy RNG; keying
+                # it by (seed, update_idx) keeps the UPDATE identical for any
+                # GPU count (worker rollouts no longer advance these streams).
+                from .seed_utils import derive_update_seed
+                _update_seed = derive_update_seed(
+                    int(train_cfg.seed or 0), len(ppo_metric_history),
+                )
+                torch.manual_seed(int(_update_seed))
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(int(_update_seed))
+                np.random.seed(int(_update_seed) % (2**32))
             metrics = sequential_ppo_update(
                 policy, optimizer, buffer, train_cfg.ppo, device,
                 ent_coef_override=current_ent_coef,
@@ -1638,6 +1656,80 @@ def train_sequential(
                     record.exploration_mode = f"{record.exploration_mode}|validation_required"
 
             _finalize_completed_record(draft)
+
+    # ---------- Episode-parallel branch (fusion mode; bypasses the serial loop) ----------
+    if parallel_runner is not None:
+        if fast_reward_mode_enabled:
+            raise RuntimeError(
+                "episode-parallel rollout is incompatible with fast reward mode"
+            )
+        if baseline_action_vec is None:
+            raise RuntimeError(
+                "episode-parallel rollout requires baseline_action_vec"
+            )
+        total = int(train_cfg.total_episodes)
+        upd = max(1, int(train_cfg.update_every_n_episodes))
+        for window_start in range(0, total, upd):
+            n_window = min(upd, total - window_start)
+            outcomes = parallel_runner.run_window(
+                policy=policy,
+                train_cfg=train_cfg,
+                window_rel_start=int(window_start),
+                num_episodes=int(n_window),
+                absolute_episode_start=int(absolute_episode_start),
+                base_seed=int(train_cfg.seed or 0),
+                baseline_action_vec=baseline_action_vec,
+                force_baseline_episodes=int(force_baseline_episodes),
+                forbidden_mask=forbidden_mask,
+                max_rejection_retries=int(max_rejection_retries),
+            )
+            # Main-thread assembly in GLOBAL episode order: replay transitions
+            # into the shared buffer, then run the unchanged finalize path
+            # (bookkeeping, callbacks, PPO update at window boundaries).
+            for oc in outcomes:
+                terminal_buffer_index = -1
+                for tr in oc.transitions:
+                    buffer_idx = buffer.add(**tr)
+                    if bool(tr.get("done")):
+                        terminal_buffer_index = int(buffer_idx)
+                rejection_counters["steps_committed_valid"] += int(oc.record.valid_step_count)
+                rejection_counters["samples_rejected_by_mask"] += int(
+                    oc.record.samples_rejected_by_mask
+                )
+                rejection_counters["samples_rejected_by_optimizer"] += int(
+                    oc.record.samples_rejected_by_optimizer
+                )
+                rejection_counters["steps_fallen_back_to_baseline"] += int(
+                    oc.record.steps_fallen_back_to_baseline
+                )
+                if oc.record.exploration_mode == "forced_baseline":
+                    rejection_counters["steps_forced_to_baseline_anchor"] += int(
+                        oc.record.steps_taken
+                    )
+                _finalize_completed_record({
+                    "record": oc.record,
+                    "absolute_ep": int(oc.absolute_ep),
+                    "selected_offsets": [],
+                    "neighbor_radius": 0,
+                    "neighbor_mask_active": False,
+                    "guarded_decision": GuardedRadius2Decision(),
+                    "pending_full_vec": oc.pending_full_vec,
+                    "terminal_buffer_index": int(terminal_buffer_index),
+                })
+        return {
+            "episode_returns": episode_returns,
+            "episode_records": episode_records,
+            "ppo_metrics": ppo_metric_history,
+            "final_invalid_rate": (
+                float(np.mean([r.invalid_steps > 0 for r in episode_records[-10:]]))
+                if episode_records else 0.0
+            ),
+            "forbidden_mask": forbidden_mask,
+            "static_invalid_mask": static_invalid_mask,
+            "static_invalid_scan_summary": dict(static_invalid_scan_summary),
+            "empirical_invalid_mask": empirical_invalid_mask,
+            "rejection_counters": dict(rejection_counters),
+        }
 
     for ep in range(int(train_cfg.total_episodes)):
         absolute_ep = int(absolute_episode_start + ep)
@@ -2988,6 +3080,19 @@ def run_sequential_via_runner(
     noisy_baseline_metric2_std = 0.0
     noisy_baseline_loss_mean = float(baseline.loss_mean)
     preflight_ok = False
+    # Episode-parallel deterministic mode: key the preflight probe noise too
+    # (reserved pseudo-episode -1) so the calibrated acc/stab thresholds are
+    # identical for any GPU count and across reruns. Legacy mode (flag unset)
+    # keeps the true-random preflight bit-for-bit.
+    if list(getattr(train_cfg, "stage2_rl_devices", []) or []):
+        from .seed_utils import PREFLIGHT_EPISODE, derive_probe_seed
+        base_env.probe_noise_seed = derive_probe_seed(
+            int(getattr(train_cfg, "seed", 42) or 42), PREFLIGHT_EPISODE,
+        )
+        log(
+            f"  {bullet} [stage2-parallel] deterministic preflight probe seed = "
+            f"{base_env.probe_noise_seed}"
+        )
     try:
         base_env.reset(seed=int(train_cfg.seed))
         _, _preflight_reward, _, preflight_info = base_env.step(baseline_action_vec)
@@ -3167,6 +3272,57 @@ def run_sequential_via_runner(
                 "gets a real K-trial stability std."
             )
     seq_env = BLBStage2SequentialEnv(base_env=base_env, env_cfg=seq_env_cfg, fusion_map=fusion_map)
+
+    # ---------- 5.05) Episode-parallel rollout (fusion mode, opt-in 2026-06-10) ----------
+    # --stage2-rl-devices "0,1,2,3,4" → N workers each run COMPLETE episodes
+    # (policy rollout + per-step replan + serial K-trial probe) on their own
+    # model replica; mirrors Stage-1's validated data-parallel pattern and
+    # replaces the K-split probe parallelism for fusion mode. Empty → legacy
+    # serial loop unchanged. Even a single id ("0") routes through the new
+    # deterministic path so a 1-GPU run reproduces an N-GPU run bit-for-bit.
+    stage2_parallel_runner = None
+    stage2_rl_devices = [int(x) for x in (getattr(train_cfg, "stage2_rl_devices", []) or [])]
+    if stage2_rl_devices:
+        if fusion_map is None:
+            raise RuntimeError(
+                "--stage2-rl-devices requires the fusion-count action "
+                "(--blb-v3-fusion-count-action 1); the per-slot path keeps the "
+                "legacy loop / --blb-v3-reward-devices K-split."
+            )
+        if reward_devices and len(reward_devices) >= 2:
+            raise RuntimeError(
+                "--stage2-rl-devices and --blb-v3-reward-devices are mutually "
+                "exclusive: episode-parallel runs the K trials serially on each "
+                "worker's own GPU."
+            )
+        if bool(getattr(train_cfg, "fast_reward_mode_enabled", False)):
+            raise RuntimeError(
+                "--stage2-rl-devices is incompatible with fast reward mode "
+                "(online-K=1 deferral); fusion mode needs the real K-trial std."
+            )
+        from .parallel_runner import build_stage2_parallel_runner
+        stage2_parallel_runner = build_stage2_parallel_runner(
+            primary_seq_env=seq_env,
+            device_ids=stage2_rl_devices,
+            layers_attribute="model." + ev.layers_attribute,
+            is_regression=bool(getattr(ev, "is_regression", False)),
+            bridge_factory=lambda: runner._build_rescale_bridge(train_cfg, log=log),
+            seq_env_cfg=seq_env_cfg,
+            fusion_map=fusion_map,
+            log_fn=lambda m: log(f"  {m}"),
+        )
+        # Persistent install per worker model: hooks stay installed across
+        # episodes (cfg updates in place) — same optimization the K-split path
+        # enables, now worker-local. Safe here because every worker deepcopied
+        # a CLEAN model (preflight ran install→clear before this point).
+        for _w in stage2_parallel_runner.workers:
+            _w.seq_env.base.env_cfg.persistent_probe_install = True
+        log(
+            f"  {bullet} [stage2-parallel] episode-parallel rollout ENABLED: "
+            f"devices={stage2_rl_devices} workers={stage2_parallel_runner.num_workers} "
+            f"K={int(train_cfg.num_trials_per_step)} trials serial per worker; "
+            f"global-episode seeding (policy/probe/update streams)"
+        )
 
     # Checkpoint variant: fusion-mode policies have a different shape (max_step_dim=2),
     # so tag them so a per-slot checkpoint sharing the same persistent dir is rejected
@@ -4352,6 +4508,7 @@ def run_sequential_via_runner(
         baseline_action_vec=baseline_action_vec,
         max_rejection_retries=32,
         force_baseline_episodes=_force_baseline_episodes,
+        parallel_runner=stage2_parallel_runner,
     )
     elapsed = float(time.time() - t_start)
     status.set_phase("已完成")

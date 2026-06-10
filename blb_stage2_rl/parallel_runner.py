@@ -1,0 +1,819 @@
+"""Stage-2 episode-parallel rollout (fusion-count mode only, 2026-06-10).
+
+Mirrors the validated ``stage1_rl/parallel_runner.py`` pattern at the same
+granularity: N workers (one per GPU) each run *complete* episodes — GTrXL
+policy rollout on their own policy replica, per-step ``ReplanSession`` calls,
+and the terminal K-trial reward probe run *serially* on their own model
+replica — while one PPO learner on the primary device consumes the rollouts
+in GLOBAL episode order. This replaces (for fusion mode) the older K-split
+scheme where N GPUs only parallelized the K probe trials of one action
+(~2.9x on 5 GPUs); whole-episode parallelism removes the serial GTrXL
+rollout + install/bookkeeping from the critical path and decouples K from
+the GPU count.
+
+GPU-count-independence contract (the user's hard requirement):
+
+* every random draw is keyed by the GLOBAL episode index via
+  ``blb_stage2_rl/seed_utils.py`` — policy sampling per (episode, step,
+  attempt) on the worker device's CUDA Philox generator (device-independent
+  streams), probe noise per (episode, trial) via
+  ``function_handler.reseed_noise_rng_for_device`` (replacing the legacy
+  wall-clock/eval-counter seed that made runs irreproducible);
+* episode→worker assignment is balanced contiguous chunks of global indices
+  (``assign_global_episodes``) and results are returned in GLOBAL order, so
+  the PPO update sees the same buffer for any worker count;
+* fusion mode has no cross-episode mask / frontier-seed state (the offline
+  fusion map is all-valid; per-slot masks are disabled), which is what makes
+  strict 1-GPU == N-GPU achievable at this granularity. If the optimizer
+  ever reports an invalid fusion action (broken map), the worker falls back
+  to baseline and logs loudly — that anomaly is the one case that can break
+  bit-identity and must be investigated.
+
+Scope guard: per-slot (non-fusion) mode keeps the legacy serial loop and the
+K-split ``--blb-v3-reward-devices`` path untouched.
+"""
+
+from __future__ import annotations
+
+import copy
+from dataclasses import dataclass
+import hashlib
+import threading
+import time
+from typing import Any, Callable, Dict, List, Optional
+
+import numpy as np
+import torch
+
+from function_handler import ReversibleLayerHandler
+
+from .action_space import K_LEVELS, _baseline_k_index_for_block
+from .env import BLBStage2Env
+from .fusion_curriculum import (
+    build_fusion_step_level_mask,
+    fusion_block_curriculum,
+    select_mutable_step_indices,
+)
+from .probe_runner import (
+    _move_probe_batch_to_device,
+    enable_cuda_reward_probe_fast_math,
+)
+from .seed_utils import (
+    assign_global_episodes,
+    derive_policy_step_seed,
+    derive_probe_seed,
+)
+from .sequential_env import BLBStage2SequentialEnv
+from .sequential_policy import step_to_mask_and_levels
+from .sequential_runner import (
+    EpisodeRecord,
+    _open_step_level_mask,
+    _resolve_baseline_prior_scale,
+)
+
+try:
+    from blb_rl_bridge import BLBNoiseRLBridge
+except Exception:  # pragma: no cover — torch-free import path
+    BLBNoiseRLBridge = None  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# Episode outcome — everything the main thread needs to replay one episode
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FusionEpisodeOutcome:
+    """One worker-collected episode, ready for main-thread assembly.
+
+    ``transitions`` entries are kwargs for ``SequentialRolloutBuffer.add``
+    (numpy arrays + python scalars only — no CUDA tensors cross threads).
+    """
+    rel_ep: int
+    absolute_ep: int
+    transitions: List[Dict[str, Any]]
+    record: EpisodeRecord
+    pending_full_vec: Optional[np.ndarray]
+    invalid_anomaly: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Terminal-info snapshot (mirror of the inline extraction in train_sequential)
+# ---------------------------------------------------------------------------
+
+_BREAKDOWN_FIELDS = (
+    ("terminal_priority", "priority", int, 0),
+    ("terminal_stab_excess_m1", "stab_excess_m1", float, 0.0),
+    ("terminal_stab_excess_m2", "stab_excess_m2", float, 0.0),
+    ("terminal_stab_excess_loss", "stab_excess_loss", float, 0.0),
+    ("terminal_stab_violation", "stab_violation", float, 0.0),
+    ("terminal_bits_gain", "bits_drop", float, 0.0),
+    ("terminal_k_gain", "k_drop", float, 0.0),
+    ("terminal_fusion_gain", "fusion_gain", float, 0.0),
+    ("terminal_cost_score", "cost_score", float, 0.0),
+    ("terminal_p3_metric_margin_reward", "p3_metric_margin_reward", float, 0.0),
+    ("terminal_cost_fusion_bonus", "cost_fusion_bonus", float, 0.0),
+    ("terminal_cost_truncation_bonus", "cost_truncation_bonus", float, 0.0),
+    ("terminal_cost_bits_tiebreaker", "cost_bits_tiebreaker", float, 0.0),
+    ("terminal_cost_truncation_step_gain", "cost_truncation_step_gain", float, 0.0),
+    ("terminal_cost_rank_score", "cost_rank_score", float, 0.0),
+    ("terminal_cost_rank_fusion", "cost_rank_fusion", float, 0.0),
+    ("terminal_cost_rank_truncation", "cost_rank_truncation", float, 0.0),
+    ("terminal_cost_rank_bits", "cost_rank_bits", float, 0.0),
+    ("terminal_pareto_event_kind", "pareto_event_kind", str, ""),
+    ("terminal_pareto_action_hash", "pareto_action_hash", str, ""),
+    ("terminal_pareto_frontier_removed", "pareto_frontier_removed", int, 0),
+)
+
+_METRIC_FIELDS = (
+    ("terminal_loss_mean", "loss_mean"),
+    ("terminal_loss_std", "loss_std"),
+    ("terminal_metric1_mean", "metric1_mean"),
+    ("terminal_metric2_mean", "metric2_mean"),
+    ("terminal_metric1_std", "metric1_std"),
+    ("terminal_metric2_std", "metric2_std"),
+)
+
+
+def _update_terminal_snapshot(snapshot: Dict[str, Any], info: Dict[str, Any]) -> None:
+    """Overwrite ``snapshot`` from ``info['terminal_info']`` when present.
+
+    Field-for-field mirror of the inline extraction in
+    ``train_sequential`` (sequential_runner.py) so EpisodeRecords from the
+    parallel path are indistinguishable from serial ones.
+    """
+    term_info_dict = info.get("terminal_info") or {}
+    term_breakdown = term_info_dict.get("reward_breakdown")
+    term_metrics = term_info_dict.get("metrics")
+    term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
+    if term_breakdown is not None:
+        for rec_key, attr, cast, default in _BREAKDOWN_FIELDS:
+            snapshot[rec_key] = cast(getattr(term_breakdown, attr, default) or default)
+    if term_metrics is not None:
+        for rec_key, attr in _METRIC_FIELDS:
+            snapshot[rec_key] = float(getattr(term_metrics, attr, 0.0) or 0.0)
+    if isinstance(term_probe_diag, dict) and term_probe_diag:
+        snapshot["terminal_probe_wall_seconds"] = float(
+            term_probe_diag.get("wall_seconds", 0.0) or 0.0
+        )
+        snapshot["terminal_probe_devices"] = [
+            str(x) for x in (term_probe_diag.get("devices") or [])
+        ]
+        snapshot["terminal_probe_trial_counts"] = [
+            int(x) for x in (term_probe_diag.get("per_worker_trial_counts") or [])
+        ]
+        snapshot["terminal_probe_trial_indices"] = [
+            [int(y) for y in (x or [])]
+            for x in (term_probe_diag.get("per_worker_trial_indices") or [])
+        ]
+        snapshot["terminal_probe_speedup"] = float(
+            term_probe_diag.get("speedup_vs_sequential", 1.0) or 1.0
+        )
+        snapshot["terminal_cost_eval_wall_seconds"] = float(
+            term_probe_diag.get("cost_eval_wall_seconds", 0.0) or 0.0
+        )
+        snapshot["terminal_probe_install_wall_seconds"] = float(
+            term_probe_diag.get("probe_install_wall_seconds", 0.0) or 0.0
+        )
+        snapshot["terminal_probe_clear_wall_seconds"] = float(
+            term_probe_diag.get("probe_clear_wall_seconds", 0.0) or 0.0
+        )
+        snapshot["terminal_probe_install_skipped"] = bool(
+            term_probe_diag.get("probe_install_skipped", False)
+        )
+        snapshot["terminal_probe_clear_skipped"] = bool(
+            term_probe_diag.get("probe_clear_skipped", False)
+        )
+
+
+def _default_terminal_snapshot() -> Dict[str, Any]:
+    snap: Dict[str, Any] = {}
+    for rec_key, _attr, cast, default in _BREAKDOWN_FIELDS:
+        snap[rec_key] = cast(default)
+    for rec_key, _attr in _METRIC_FIELDS:
+        snap[rec_key] = 0.0
+    snap.update(
+        terminal_probe_wall_seconds=0.0,
+        terminal_probe_devices=[],
+        terminal_probe_trial_counts=[],
+        terminal_probe_trial_indices=[],
+        terminal_probe_speedup=1.0,
+        terminal_cost_eval_wall_seconds=0.0,
+        terminal_probe_install_wall_seconds=0.0,
+        terminal_probe_clear_wall_seconds=0.0,
+        terminal_probe_install_skipped=False,
+        terminal_probe_clear_skipped=False,
+    )
+    return snap
+
+
+# ---------------------------------------------------------------------------
+# Worker-side fusion episode collection
+# ---------------------------------------------------------------------------
+
+def collect_fusion_episode(
+        *,
+        seq_env: BLBStage2SequentialEnv,
+        policy: Any,
+        device: torch.device,
+        train_cfg: Any,
+        rel_ep: int,
+        absolute_ep: int,
+        base_seed: int,
+        baseline_action_vec: np.ndarray,
+        force_baseline_episodes: int,
+        forbidden_mask: Any,
+        max_rejection_retries: int = 32,
+        log_fn: Optional[Callable[[str], None]] = None,
+        ) -> FusionEpisodeOutcome:
+    """Collect ONE fusion-mode episode on ``seq_env``/``policy``/``device``.
+
+    Faithful to the fusion-active path of ``train_sequential`` (forced
+    anchor, block-granularity curriculum, open mask, terminal extraction),
+    with the legacy global-RNG-stream sampling replaced by per-(episode,
+    step, attempt) device seeding and the probe noise keyed per (episode,
+    trial) via ``BLBStage2Env.probe_noise_seed``.
+    """
+    log = log_fn or (lambda _m: None)
+    env = seq_env
+    assert getattr(env, "_fusion_map", None) is not None, (
+        "collect_fusion_episode requires fusion-count mode"
+    )
+
+    obs = env.reset(seed=None)
+    env.base.probe_noise_seed = derive_probe_seed(int(base_seed), int(absolute_ep))
+
+    per_step_sum = 0.0
+    terminal_reward = 0.0
+    invalid_steps = 0
+    valid_step_count = 0
+    total_bits_sum = 0
+    fusion_count_sum = 0
+    first_invalid: Optional[Dict[str, int]] = None
+    early_terminated = False
+    steps_taken = 0
+    invalid_block_details: List[Dict[str, Any]] = []
+    per_step_optimizer_wall_seconds_val = 0.0
+    policy_rollout_wall_seconds_val = 0.0
+    rejection_optimizer_wall_seconds_val = 0.0
+    samples_rejected_by_mask = 0
+    samples_rejected_by_optimizer = 0
+    steps_fallen_back_to_baseline = 0
+    invalid_anomaly = False
+    snapshot = _default_terminal_snapshot()
+    transitions: List[Dict[str, Any]] = []
+
+    baseline_prior_scale = _resolve_baseline_prior_scale(
+        int(absolute_ep),
+        anchor_episodes=int(force_baseline_episodes),
+    )
+    force_this_ep = (
+        int(force_baseline_episodes) > 0
+        and int(absolute_ep) < int(force_baseline_episodes)
+    )
+
+    # --- fusion block-granularity safe-neighbor curriculum (mirror of the
+    # serial loop; fc_rng is already keyed by the absolute episode index) ---
+    fusion_curriculum_active = False
+    fusion_curriculum_open = False
+    fusion_mutable_steps: set = set()
+    fusion_neighbor_radius = 1
+    if (
+            bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", True))
+            and not force_this_ep
+    ):
+        fc_seed = int(train_cfg.seed) if train_cfg.seed is not None else 0
+        fc_rng = np.random.default_rng(
+            int((fc_seed + absolute_ep * 2_654_435_761) % (2**32))
+        )
+        fc_open, fc_num_mutable, fusion_neighbor_radius = fusion_block_curriculum(
+            absolute_episode_idx=int(absolute_ep),
+            anchor_episodes=int(force_baseline_episodes),
+            ramp_episodes=int(
+                getattr(train_cfg, "fusion_neighbor_ramp_episodes", 0)
+                or int(train_cfg.total_episodes)
+                or 1
+            ),
+            horizon=int(env.horizon),
+            max_radius=int(getattr(train_cfg, "fusion_neighbor_max_radius", 6)),
+        )
+        fusion_curriculum_active = True
+        fusion_curriculum_open = bool(fc_open)
+        if not fc_open:
+            fusion_mutable_steps = select_mutable_step_indices(
+                rng=fc_rng, horizon=int(env.horizon), num_mutable=int(fc_num_mutable),
+            )
+
+    while True:
+        spec = env.current_spec()
+        slot_mask_np, levels_np = step_to_mask_and_levels(
+            spec, policy.cfg.max_step_dim, policy.cfg.max_num_levels,
+        )
+        obs_t = torch.from_numpy(obs).float().to(device).unsqueeze(0)
+        slot_mask_t = torch.from_numpy(slot_mask_np).to(device).unsqueeze(0)
+        levels_t = torch.from_numpy(levels_np).to(device).unsqueeze(0)
+        n_active = int(slot_mask_np.sum())
+
+        if fusion_curriculum_active and not fusion_curriculum_open:
+            action_level_mask_np = build_fusion_step_level_mask(
+                fusion_num_options=int(spec.fusion_num_options),
+                k_num_levels=int(spec.k_num_levels),
+                k_level_values=list(K_LEVELS),
+                mutable=(int(spec.step_idx) in fusion_mutable_steps),
+                radius=int(fusion_neighbor_radius),
+                baseline_k_index=int(_baseline_k_index_for_block(int(spec.block_idx))),
+                max_step_dim=policy.cfg.max_step_dim,
+                max_num_levels=policy.cfg.max_num_levels,
+            )
+        else:
+            action_level_mask_np = _open_step_level_mask(
+                spec=spec,
+                max_step_dim=policy.cfg.max_step_dim,
+                max_num_levels=policy.cfg.max_num_levels,
+            )
+        action_level_mask_t = (
+            torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
+        )
+
+        chosen_action_np: Optional[np.ndarray] = None
+        chosen_log_prob = 0.0
+        chosen_value = 0.0
+        chosen_eval_info: Optional[Dict[str, Any]] = None
+
+        if force_this_ep:
+            # Forced-baseline anchor: fusion baseline = (option 0, baseline K).
+            forced_action = np.asarray(
+                [0, int(_baseline_k_index_for_block(spec.block_idx))], dtype=np.int64
+            )
+            forced_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
+            forced_padded[:n_active] = forced_action[:n_active]
+            policy_t0 = time.perf_counter()
+            with torch.inference_mode():
+                actions_t = torch.from_numpy(forced_padded).to(device).unsqueeze(0)
+                lp_t, _, val_t = policy.evaluate_action(
+                    obs_t, actions_t, slot_mask_t, levels_t,
+                    action_level_mask=action_level_mask_t,
+                    baseline_prior_scale=baseline_prior_scale,
+                    truncate_to_current=True,
+                )
+            policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
+            chosen_eval_info = env.evaluate_step(forced_action.tolist())
+            chosen_action_np = forced_padded
+            chosen_log_prob = float(lp_t.item())
+            chosen_value = float(val_t.item())
+        else:
+            action_np_try: Optional[np.ndarray] = None
+            log_prob_t = value_t = None
+            eval_info: Optional[Dict[str, Any]] = None
+            for attempt in range(int(max_rejection_retries)):
+                seed = derive_policy_step_seed(
+                    int(base_seed), int(absolute_ep), int(spec.step_idx), int(attempt),
+                )
+                if device.type == "cuda":
+                    torch.cuda.manual_seed(int(seed))
+                else:
+                    torch.manual_seed(int(seed))
+                policy_t0 = time.perf_counter()
+                with torch.inference_mode():
+                    action_t, log_prob_t, value_t = policy.sample_action(
+                        obs_t, slot_mask_t, levels_t,
+                        deterministic=False,
+                        action_level_mask=action_level_mask_t,
+                        baseline_prior_scale=baseline_prior_scale,
+                        truncate_to_current=True,
+                    )
+                policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
+                action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
+                step_action_try = action_np_try[:n_active].tolist()
+                tup = tuple(int(x) for x in step_action_try)
+
+                if forbidden_mask is not None and forbidden_mask.is_forbidden(
+                        spec.layer_idx, spec.block_idx, tup):
+                    samples_rejected_by_mask += 1
+                    continue
+
+                eval_info = env.evaluate_step(step_action_try)
+                if eval_info["valid"]:
+                    chosen_action_np = action_np_try
+                    chosen_log_prob = float(log_prob_t.item())
+                    chosen_value = float(value_t.item())
+                    chosen_eval_info = eval_info
+                    break
+
+                # Should be unreachable with an all-valid fusion map: this is
+                # the one event that can break 1==N (mask becomes stateful).
+                invalid_anomaly = True
+                if forbidden_mask is not None:
+                    forbidden_mask.add(spec.layer_idx, spec.block_idx, tup)
+                samples_rejected_by_optimizer += 1
+                rejection_optimizer_wall_seconds_val += float(
+                    eval_info.get("optimizer_wall_seconds", 0.0) or 0.0
+                )
+                log(
+                    f"[stage2-parallel][ANOMALY] invalid fusion action at "
+                    f"ep={absolute_ep} L{spec.layer_idx}-B{spec.block_idx} "
+                    f"tup={tup} — fusion map should be all-valid; "
+                    f"1-GPU==N-GPU no longer guaranteed for this run"
+                )
+
+            if chosen_eval_info is None:
+                fallback_action = np.asarray(
+                    [0, int(_baseline_k_index_for_block(spec.block_idx))],
+                    dtype=np.int64,
+                )
+                fallback_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
+                fallback_padded[:n_active] = fallback_action[:n_active]
+                policy_t0 = time.perf_counter()
+                with torch.inference_mode():
+                    actions_t = torch.from_numpy(fallback_padded).to(device).unsqueeze(0)
+                    lp_t, _, val_t = policy.evaluate_action(
+                        obs_t, actions_t, slot_mask_t, levels_t,
+                        action_level_mask=action_level_mask_t,
+                        baseline_prior_scale=baseline_prior_scale,
+                        truncate_to_current=True,
+                    )
+                policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
+                chosen_eval_info = env.evaluate_step(fallback_action.tolist())
+                chosen_action_np = fallback_padded
+                chosen_log_prob = float(lp_t.item())
+                chosen_value = float(val_t.item())
+                steps_fallen_back_to_baseline += 1
+
+        assert chosen_action_np is not None and chosen_eval_info is not None
+        step_action_for_env = chosen_action_np[:n_active].tolist()
+
+        next_obs, reward, done, info = env.commit_step(
+            chosen_eval_info,
+            defer_terminal_forward=False,
+        )
+        steps_taken += 1
+        valid = bool(info.get("valid", True))
+        if valid:
+            valid_step_count += 1
+        else:
+            if first_invalid is None:
+                first_invalid = {
+                    "step": int(info.get("step", steps_taken - 1)),
+                    "block_idx": int(info.get("block_idx", 0)),
+                    "layer_idx": int(info.get("layer_idx", 0)),
+                }
+            invalid_block_details.append({
+                "step": int(info.get("step", steps_taken - 1)),
+                "layer": int(info.get("layer_idx", 0)),
+                "block": int(info.get("block_idx", 0)),
+                "graph_key": str(info.get("graph_key", "")),
+                "reason": "parallel_commit_invalid",
+                "rejected_by": "commit",
+                "action_tuple": list(int(x) for x in step_action_for_env),
+            })
+        total_bits_sum += int(info.get("total_bits", 0))
+        fusion_count_sum += int(info.get("fusion_count", 0))
+        per_step_optimizer_wall_seconds_val += float(
+            info.get("optimizer_wall_seconds", 0.0) or 0.0
+        )
+        if info.get("early_terminated"):
+            early_terminated = True
+
+        transitions.append(dict(
+            state=obs,
+            action=chosen_action_np,
+            slot_mask=slot_mask_np,
+            per_slot_num_levels=levels_np,
+            action_level_mask=action_level_mask_np,
+            log_prob=float(chosen_log_prob),
+            value=float(chosen_value),
+            reward=float(reward),
+            done=bool(done),
+            baseline_prior_scale=float(baseline_prior_scale),
+        ))
+        per_step_sum += float(reward)
+        if "terminal_reward" in info:
+            terminal_reward = float(info["terminal_reward"])
+        _update_terminal_snapshot(snapshot, info)
+
+        obs = next_obs
+        if done:
+            break
+
+    record = EpisodeRecord(
+        episode_idx=int(rel_ep),
+        total_reward=float(per_step_sum),
+        terminal_reward=float(terminal_reward),
+        per_step_reward_sum=float(per_step_sum - terminal_reward),
+        invalid_steps=int(invalid_steps),
+        early_terminated=bool(early_terminated),
+        steps_taken=int(steps_taken),
+        valid_step_count=int(valid_step_count),
+        total_bits_sum_over_steps=int(total_bits_sum),
+        fusion_count_sum_over_steps=int(fusion_count_sum),
+        first_invalid_step=(int(first_invalid["step"]) if first_invalid else None),
+        first_invalid_block=(int(first_invalid["block_idx"]) if first_invalid else None),
+        first_invalid_layer=(int(first_invalid["layer_idx"]) if first_invalid else None),
+        step_infos=[],
+        invalid_block_details=invalid_block_details,
+        terminal_priority=int(snapshot["terminal_priority"]),
+        terminal_loss_mean=float(snapshot["terminal_loss_mean"]),
+        terminal_loss_std=float(snapshot["terminal_loss_std"]),
+        terminal_metric1_mean=float(snapshot["terminal_metric1_mean"]),
+        terminal_metric2_mean=float(snapshot["terminal_metric2_mean"]),
+        terminal_metric1_std=float(snapshot["terminal_metric1_std"]),
+        terminal_metric2_std=float(snapshot["terminal_metric2_std"]),
+        terminal_stab_excess_m1=float(snapshot["terminal_stab_excess_m1"]),
+        terminal_stab_excess_m2=float(snapshot["terminal_stab_excess_m2"]),
+        terminal_stab_excess_loss=float(snapshot["terminal_stab_excess_loss"]),
+        terminal_stab_violation=float(snapshot["terminal_stab_violation"]),
+        terminal_bits_gain=float(snapshot["terminal_bits_gain"]),
+        terminal_k_gain=float(snapshot["terminal_k_gain"]),
+        terminal_fusion_gain=float(snapshot["terminal_fusion_gain"]),
+        terminal_cost_score=float(snapshot["terminal_cost_score"]),
+        terminal_p3_metric_margin_reward=float(snapshot["terminal_p3_metric_margin_reward"]),
+        terminal_cost_fusion_bonus=float(snapshot["terminal_cost_fusion_bonus"]),
+        terminal_cost_truncation_bonus=float(snapshot["terminal_cost_truncation_bonus"]),
+        terminal_cost_bits_tiebreaker=float(snapshot["terminal_cost_bits_tiebreaker"]),
+        terminal_cost_truncation_step_gain=float(snapshot["terminal_cost_truncation_step_gain"]),
+        terminal_cost_rank_score=float(snapshot["terminal_cost_rank_score"]),
+        terminal_cost_rank_fusion=float(snapshot["terminal_cost_rank_fusion"]),
+        terminal_cost_rank_truncation=float(snapshot["terminal_cost_rank_truncation"]),
+        terminal_cost_rank_bits=float(snapshot["terminal_cost_rank_bits"]),
+        terminal_pareto_event_kind=str(snapshot["terminal_pareto_event_kind"]),
+        terminal_pareto_action_hash=str(snapshot["terminal_pareto_action_hash"]),
+        terminal_pareto_frontier_removed=int(snapshot["terminal_pareto_frontier_removed"]),
+        terminal_probe_wall_seconds=float(snapshot["terminal_probe_wall_seconds"]),
+        terminal_probe_devices=list(snapshot["terminal_probe_devices"]),
+        terminal_probe_trial_counts=list(snapshot["terminal_probe_trial_counts"]),
+        terminal_probe_trial_indices=[list(x) for x in snapshot["terminal_probe_trial_indices"]],
+        terminal_probe_speedup=float(snapshot["terminal_probe_speedup"]),
+        per_step_optimizer_wall_seconds=float(per_step_optimizer_wall_seconds_val),
+        policy_rollout_wall_seconds=float(policy_rollout_wall_seconds_val),
+        terminal_cost_eval_wall_seconds=float(snapshot["terminal_cost_eval_wall_seconds"]),
+        terminal_probe_install_wall_seconds=float(snapshot["terminal_probe_install_wall_seconds"]),
+        terminal_probe_clear_wall_seconds=float(snapshot["terminal_probe_clear_wall_seconds"]),
+        terminal_probe_install_skipped=bool(snapshot["terminal_probe_install_skipped"]),
+        terminal_probe_clear_skipped=bool(snapshot["terminal_probe_clear_skipped"]),
+        safe_neighbor_active=bool(fusion_curriculum_active and not fusion_curriculum_open),
+        safe_neighbor_mutation_count=int(len(fusion_mutable_steps)),
+        safe_neighbor_radius=int(
+            fusion_neighbor_radius
+            if (fusion_curriculum_active and not fusion_curriculum_open) else 0
+        ),
+        exploration_mode=("forced_baseline" if force_this_ep else "radius1"),
+        guarded_radius2_active=False,
+        guarded_radius2_recent_frontier_expansions=0,
+        guarded_radius2_recent_duplicate_rate=0.0,
+        guarded_radius2_recent_dominated_rate=0.0,
+        guarded_radius2_cooldown_remaining=0,
+        guarded_radius2_safe_offset_count=0,
+        guarded_radius2_episode_count=0,
+        guarded_radius2_failure_count=0,
+        guarded_radius2_frontier_expansion_count=0,
+        samples_rejected_by_mask=int(samples_rejected_by_mask),
+        samples_rejected_by_optimizer=int(samples_rejected_by_optimizer),
+        steps_fallen_back_to_baseline=int(steps_fallen_back_to_baseline),
+        forbidden_mask_total=int(forbidden_mask.total() if forbidden_mask is not None else 0),
+        static_invalid_level_disabled=0,
+        static_invalid_level_applied=0,
+        static_invalid_level_scan_evaluated=0,
+        static_invalid_level_scan_invalid=0,
+        empirical_invalid_level_disabled=0,
+        empirical_invalid_level_applied=0,
+        rejection_optimizer_wall_seconds=float(rejection_optimizer_wall_seconds_val),
+        baseline_prior_scale=float(baseline_prior_scale),
+        base_action_source="baseline",
+        proposal_direction=("anchor" if force_this_ep else "none"),
+        empirical_offset_success_rate=0.0,
+        empirical_offset_failure_rate=0.0,
+        frontier_seed_episode=-1,
+    )
+
+    pending_full_vec = getattr(env, "_pending_full_vec", None)
+    return FusionEpisodeOutcome(
+        rel_ep=int(rel_ep),
+        absolute_ep=int(absolute_ep),
+        transitions=transitions,
+        record=record,
+        pending_full_vec=(
+            None if pending_full_vec is None
+            else np.asarray(pending_full_vec, dtype=np.int64).copy()
+        ),
+        invalid_anomaly=bool(invalid_anomaly),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Worker + runner
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Stage2FusionWorker:
+    """Per-GPU state: replicated model/handler/bridge/env (+ policy replica)."""
+    device: torch.device
+    seq_env: BLBStage2SequentialEnv
+    role: str = "primary"  # "primary" (worker 0, reuses the env) or "replica"
+    policy_replica: Optional[Any] = None  # eval-mode copy, refreshed per window
+
+
+class Stage2ParallelRunner:
+    """Window-parallel whole-episode collection for fusion-mode Stage-2 RL.
+
+    ``run_window`` collects ``num_episodes`` complete episodes split across
+    workers in balanced contiguous chunks of GLOBAL indices and returns the
+    outcomes in GLOBAL order, plus a per-window ``rollout_sig`` (sha1 over
+    every episode's actions/rewards/terminal metrics) for the 1-vs-N
+    determinism harness.
+    """
+
+    def __init__(
+            self,
+            *,
+            workers: List[Stage2FusionWorker],
+            log_fn: Optional[Callable[[str], None]] = None,
+            ):
+        if not workers:
+            raise ValueError("Stage2ParallelRunner requires at least one worker")
+        self.workers = workers
+        self.log = log_fn or (lambda _m: None)
+
+    @property
+    def num_workers(self) -> int:
+        return len(self.workers)
+
+    def _sync_policy_replicas(self, policy: Any) -> None:
+        primary_device = next(policy.parameters()).device
+        for w in self.workers:
+            if w.device == primary_device:
+                replica = copy.deepcopy(policy)
+            else:
+                with torch.cuda.device(w.device):
+                    replica = copy.deepcopy(policy).to(w.device)
+            replica.eval()
+            w.policy_replica = replica
+
+    def run_window(
+            self,
+            *,
+            policy: Any,
+            train_cfg: Any,
+            window_rel_start: int,
+            num_episodes: int,
+            absolute_episode_start: int,
+            base_seed: int,
+            baseline_action_vec: np.ndarray,
+            force_baseline_episodes: int,
+            forbidden_mask: Any,
+            max_rejection_retries: int = 32,
+            ) -> List[FusionEpisodeOutcome]:
+        self._sync_policy_replicas(policy)
+        n = int(num_episodes)
+        assignments = assign_global_episodes(n, self.num_workers)
+        results: List[Optional[FusionEpisodeOutcome]] = [None] * n
+        errors: List[BaseException] = []
+
+        def _worker_main(w_idx: int) -> None:
+            worker = self.workers[w_idx]
+            try:
+                if worker.device.type == "cuda":
+                    torch.cuda.set_device(worker.device)
+                for g in assignments[w_idx]:
+                    rel_ep = int(window_rel_start + g)
+                    absolute_ep = int(absolute_episode_start + rel_ep)
+                    results[g] = collect_fusion_episode(
+                        seq_env=worker.seq_env,
+                        policy=worker.policy_replica,
+                        device=worker.device,
+                        train_cfg=train_cfg,
+                        rel_ep=rel_ep,
+                        absolute_ep=absolute_ep,
+                        base_seed=int(base_seed),
+                        baseline_action_vec=baseline_action_vec,
+                        force_baseline_episodes=int(force_baseline_episodes),
+                        forbidden_mask=forbidden_mask,
+                        max_rejection_retries=int(max_rejection_retries),
+                        log_fn=self.log,
+                    )
+            except BaseException as exc:  # surface worker crashes to the main thread
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=_worker_main, args=(i,), daemon=True)
+            for i in range(self.num_workers)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        if errors:
+            raise RuntimeError(
+                f"stage2 parallel rollout worker failed: {errors[0]!r}"
+            ) from errors[0]
+        flat = [r for r in results if r is not None]
+        if len(flat) != n:
+            raise RuntimeError(
+                f"stage2 parallel rollout lost episodes: got {len(flat)}/{n}"
+            )
+
+        sig_payload = [
+            (
+                oc.absolute_ep,
+                [t["action"].tolist() for t in oc.transitions],
+                [t["reward"] for t in oc.transitions],
+                float(oc.record.terminal_reward),
+                int(oc.record.terminal_priority),
+                float(oc.record.terminal_loss_mean),
+                float(oc.record.terminal_metric1_mean),
+            )
+            for oc in flat
+        ]
+        sig = hashlib.sha1(repr(sig_payload).encode("utf-8")).hexdigest()[:16]
+        # ``workers=`` goes LAST so the 1-vs-N harness can grep the
+        # worker-count-independent prefix ``window_start=.. episodes=..
+        # rollout_sig=..`` and diff it byte-for-byte across GPU counts.
+        self.log(
+            f"[stage2-rollout] window_start={int(window_rel_start)} "
+            f"episodes={n} rollout_sig={sig} workers={self.num_workers}"
+        )
+        return flat
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
+def build_stage2_parallel_runner(
+        *,
+        primary_seq_env: BLBStage2SequentialEnv,
+        device_ids: List[int],
+        layers_attribute: str,
+        is_regression: bool,
+        bridge_factory: Callable[[], Any],
+        seq_env_cfg: Any,
+        fusion_map: Any,
+        log_fn: Optional[Callable[[str], None]] = None,
+        ) -> Stage2ParallelRunner:
+    """One worker per device id; worker 0 reuses the primary env stack.
+
+    Must be called AFTER baseline cost calibration + noisy preflight so the
+    replicated ``BLBStage2Env``s inherit the final thresholds / baseline /
+    reward weights (shared read-only references).
+    """
+    if BLBNoiseRLBridge is None:
+        raise RuntimeError(
+            "blb_rl_bridge import failed earlier; cannot build the Stage-2 "
+            "episode-parallel runner."
+        )
+    if not device_ids:
+        raise ValueError("build_stage2_parallel_runner requires at least one device id")
+
+    log = log_fn or (lambda _m: None)
+    enable_cuda_reward_probe_fast_math()
+
+    primary_base = primary_seq_env.base
+    workers: List[Stage2FusionWorker] = [
+        Stage2FusionWorker(
+            device=torch.device(f"cuda:{int(device_ids[0])}"),
+            seq_env=primary_seq_env,
+            role="primary",
+        )
+    ]
+    log(f"[stage2-parallel] worker 0: cuda:{int(device_ids[0])} (primary, reusing env)")
+
+    for d in device_ids[1:]:
+        device = torch.device(f"cuda:{int(d)}")
+        t0 = time.perf_counter()
+        with torch.cuda.device(device):
+            replica = copy.deepcopy(primary_base.model)
+            replica = replica.to(device)
+            replica.eval()
+            replica_handler = ReversibleLayerHandler(replica)
+            replica_batches = [
+                _move_probe_batch_to_device(b, device)
+                for b in primary_base.probe_batches
+            ]
+            replica_env = BLBStage2Env(
+                handler=replica_handler,
+                model=replica,
+                probe_batches=replica_batches,
+                rescale_bridge=bridge_factory(),
+                baseline=primary_base.baseline,
+                reward_weights=primary_base.reward_weights,
+                acc_threshold=float(primary_base.acc_threshold),
+                stab_threshold=float(primary_base.stab_threshold),
+                max_sfs=primary_base.max_sfs,
+                num_layers=int(primary_base.num_layers),
+                gelu_degree=primary_base.gelu_degree,
+                attn_degree=primary_base.attn_degree,
+                layers_attribute=layers_attribute,
+                is_regression=bool(is_regression),
+                env_cfg=copy.copy(primary_base.env_cfg),
+                acc_threshold_m2=primary_base.acc_threshold_m2,
+            )
+            replica_env.pareto_cost_archive = None
+            replica_env.sync_degree_vectors_from_model()
+            replica_seq = BLBStage2SequentialEnv(
+                base_env=replica_env, env_cfg=seq_env_cfg, fusion_map=fusion_map,
+            )
+        workers.append(Stage2FusionWorker(device=device, seq_env=replica_seq, role="replica"))
+        log(
+            f"[stage2-parallel] worker {len(workers) - 1}: {device} "
+            f"(deepcopy replica, {time.perf_counter() - t0:.1f}s)"
+        )
+
+    return Stage2ParallelRunner(workers=workers, log_fn=log)

@@ -675,6 +675,13 @@ def train(
         # complete episodes per window). Empty / single device → existing
         # single-GPU per-episode loop unchanged.
         stage1_rl_devices: str = "",
+        # 2026-06-10: Stage-2 RL episode-parallel rollout (fusion mode only).
+        # Comma-separated GPU ids (e.g. "0,1,2,3,4") → N workers each run
+        # complete episodes (policy rollout + per-step replan + serial
+        # K-trial reward probe) on their own model replica, with global-
+        # episode seeding so results are identical for any GPU count.
+        # Mutually exclusive with blb_v3_reward_devices. Empty → legacy loop.
+        stage2_rl_devices: str = "",
         blb_v3_fast_reward_mode_enabled: bool = False,
         blb_v3_online_k_trials: int = 1,
         blb_v3_terminal_eval_batch_size: int = 4,
@@ -1333,6 +1340,7 @@ def train(
             blb_v3_seed=blb_v3_seed,
             blb_v3_reward_devices=blb_v3_reward_devices,
             stage1_rl_devices=stage1_rl_devices,
+            stage2_rl_devices=stage2_rl_devices,
             blb_v3_fast_reward_mode_enabled=blb_v3_fast_reward_mode_enabled,
             blb_v3_online_k_trials=blb_v3_online_k_trials,
             blb_v3_terminal_eval_batch_size=blb_v3_terminal_eval_batch_size,

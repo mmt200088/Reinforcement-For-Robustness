@@ -668,6 +668,11 @@ class BLBStage2TrainConfig:
     # parallel. Element 0 must be the primary device (where the env's existing
     # model lives). Wired through --blb-v3-reward-devices "0,1" in the launcher.
     reward_devices: List[int] = field(default_factory=list)
+    # Episode-parallel rollout devices (--stage2-rl-devices, fusion mode only,
+    # 2026-06-10): N workers each run complete episodes (rollout + replan +
+    # serial K-trial probe) on their own model replica with global-episode
+    # seeding. Mutually exclusive with reward_devices. Empty → legacy loop.
+    stage2_rl_devices: List[int] = field(default_factory=list)
     # Fast online reward mode: collect terminal actions with K=1 online and
     # evaluate distinct actions concurrently across reward_devices. Promotion
     # validation keeps the old repeated-trial path available near the boundary.
@@ -2679,6 +2684,12 @@ class BLBStage2RLRunner:
         parsed = parse_device_ids(spec)
         if parsed:
             cfg.reward_devices = parsed
+        # 4c) stage2_rl_devices: --stage2-rl-devices "0,1,2,3,4" → episode-
+        # parallel rollout (fusion mode). Same Fire string/tuple parsing.
+        spec2 = getattr(ev, "stage2_rl_devices", None)
+        parsed2 = parse_device_ids(spec2)
+        if parsed2:
+            cfg.stage2_rl_devices = parsed2
         # 5) BLB v3 always uses the real in-process Rescale_optimizer.  Legacy
         # invoker selection attributes are deliberately ignored.
         root = getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)

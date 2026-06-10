@@ -235,6 +235,13 @@ class BLBStage2Env:
         # Counter for derive_probe_base_seed; bumped every action eval so two
         # consecutive actions in the same episode get different seed streams.
         self._probe_eval_counter: int = 0
+        # Deterministic probe noise (2026-06-10, episode-parallel path): when
+        # set (derived from (run_seed, global_episode) by the runner), the K
+        # probe trials run serially on this env's device with the dedicated
+        # noise generator reseeded per trial — no wall clock, no global RNG
+        # mutation, identical results for any GPU count / trial scheduling.
+        # None (default) keeps the legacy true-random behavior bit-for-bit.
+        self.probe_noise_seed: Optional[int] = None
 
         self.action_dims = action_dims_for_config(self.num_layers)
         self.total_action_dim = len(self.action_dims)
@@ -1164,6 +1171,12 @@ class BLBStage2Env:
         """
         k = max(1, int(k_trials))
 
+        # Deterministic episode-parallel path: keyed noise, own-device only,
+        # NO global RNG save/restore (set_rng_state_all from concurrent worker
+        # threads would clobber sibling workers' freshly-seeded generators).
+        if self.probe_noise_seed is not None and self.probe_runner is None:
+            return self._eval_on_probe_deterministic(k)
+
         # 保存外层 RNG 状态以避免污染
         cpu_rng = torch.get_rng_state()
         cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
@@ -1264,6 +1277,92 @@ class BLBStage2Env:
                 torch.cuda.set_rng_state_all(cuda_rng)
             np.random.set_state(np_rng)
 
+        return self._aggregate_probe_trials(
+            per_trial_loss, per_trial_metric1, per_trial_metric2,
+        )
+
+    def _eval_on_probe_deterministic(self, k: int) -> EpisodeMetrics:
+        """K serial trials on this env's device with keyed noise seeds.
+
+        Trial ``t`` reseeds ONLY this device's dedicated noise generator with
+        ``probe_noise_seed XOR (t * KNUTH)`` (the same mix as
+        ``probe_runner._trial_seed``), so the injected CKKS/MPC noise depends
+        on (run_seed, global_episode, trial) alone: identical on 1 GPU and on
+        any worker of an N-GPU run (CUDA Philox is device-independent), and
+        reproducible across reruns. Touches no global RNG → safe for
+        concurrent episode-parallel workers.
+        """
+        from function_handler import reseed_noise_rng_for_device
+
+        base_seed = int(self.probe_noise_seed)
+        per_trial_loss: List[float] = []
+        per_trial_metric1: List[float] = []
+        per_trial_metric2: List[float] = []
+        probe_wall_start = time.perf_counter()
+        was_training = self.model.training
+        self.model.eval()
+        try:
+            with torch.inference_mode():
+                for trial_idx in range(int(k)):
+                    seed = int(
+                        (base_seed ^ (trial_idx * 2654435761)) & 0x7FFFFFFFFFFFFFFF
+                    )
+                    reseed_noise_rng_for_device(self._device, seed)
+
+                    losses, m1s, m2s = [], [], []
+                    for batch in self.probe_batches:
+                        kwargs: Dict[str, torch.Tensor] = {
+                            "input_ids": batch.input_ids,
+                            "attention_mask": batch.attention_mask,
+                            "labels": batch.labels,
+                        }
+                        if batch.token_type_ids is not None:
+                            kwargs["token_type_ids"] = batch.token_type_ids
+                        outputs = self.model(**kwargs)
+                        logits = outputs.logits if hasattr(outputs, "logits") else outputs[1]
+                        loss, m1, m2 = _compute_metrics_on_batch(
+                            logits, batch.labels, is_regression=self.is_regression,
+                        )
+                        losses.append(loss)
+                        m1s.append(m1)
+                        m2s.append(m2)
+
+                    if losses:
+                        per_trial_loss.append(float(np.mean(losses)))
+                        per_trial_metric1.append(float(np.mean(m1s)))
+                        per_trial_metric2.append(float(np.mean(m2s)))
+        finally:
+            if was_training:
+                self.model.train()
+        wall_elapsed = time.perf_counter() - probe_wall_start
+        self._last_probe_diagnostics = {
+            "k": int(k),
+            "wall_seconds": float(wall_elapsed),
+            "per_worker_seconds": [float(wall_elapsed)],
+            "per_worker_trial_counts": [int(k)],
+            "per_worker_trial_indices": [list(range(int(k)))],
+            "per_worker_trial_seeds": [[
+                int((base_seed ^ (t * 2654435761)) & 0x7FFFFFFFFFFFFFFF)
+                for t in range(int(k))
+            ]],
+            "devices": [str(self._device)],
+            "speedup_vs_sequential": 1.0,
+            "deterministic_probe_seed": int(base_seed),
+            "line": (
+                f"[probe-deterministic] k={int(k)} device={self._device} "
+                f"base_seed={base_seed} wall={wall_elapsed:.3f}s"
+            ),
+        }
+        return self._aggregate_probe_trials(
+            per_trial_loss, per_trial_metric1, per_trial_metric2,
+        )
+
+    def _aggregate_probe_trials(
+            self,
+            per_trial_loss: List[float],
+            per_trial_metric1: List[float],
+            per_trial_metric2: List[float],
+            ) -> EpisodeMetrics:
         if not per_trial_loss:
             return EpisodeMetrics()
 

@@ -139,6 +139,23 @@ def reseed_noise_rng(seed: Optional[int] = None) -> None:
             g.manual_seed(int(seed))
 
 
+def reseed_noise_rng_for_device(device, seed: int) -> None:
+    """只重播种 ``device`` 自己的噪声 generator（不动其它 device、不动全局模式）。
+
+    Stage-2 确定性 probe 路径（2026-06-10）用它在每个 trial 开始前把本卡的
+    噪声流定到 ``(run_seed, global_episode, trial)`` 派生的种子上：
+    CUDA Philox 与设备无关，同一种子在任何卡上产生同一噪声序列，因此 1 卡
+    与 N 卡（以及任何 trial→卡 的调度）逐位一致。worker 线程各自持有不同
+    device，只触碰自己的 generator —— 与并发的其它 worker 无竞态。
+    """
+    key = str(device)
+    g = _NOISE_GENERATORS.get(key)
+    if g is None:
+        g = torch.Generator(device=device)
+        _NOISE_GENERATORS[key] = g
+    g.manual_seed(int(seed))
+
+
 # ---------------------------------------------------------------------------
 # Helpers shared by BERT and GPT-2 code paths.
 # ---------------------------------------------------------------------------
