@@ -627,6 +627,10 @@ class BLBActionFinalEvaluationModule:
             str(k): int(v)
             for k, v in dict(group.get("option_by_graph", {})).items()
         }
+        option_by_step = {
+            str(k): int(v)
+            for k, v in dict(group.get("option_by_step", {})).items()
+        } if isinstance(group.get("option_by_step"), Mapping) else {}
         schedule = step_schedule(
             int(num_layers),
             profile=str(profile),
@@ -635,12 +639,16 @@ class BLBActionFinalEvaluationModule:
         )
         for step in schedule:
             graph_key = str(step.graph_key_suffix)
-            if graph_key not in option_by_graph:
+            step_key = str(int(step.step_idx))
+            if step_key in option_by_step:
+                option_id = int(option_by_step[step_key])
+            elif graph_key in option_by_graph:
+                option_id = int(option_by_graph[graph_key])
+            else:
                 continue
             graph = fusion_map.graphs.get(graph_key)
             if graph is None:
                 raise KeyError(f"fusion map missing graph {graph_key!r}")
-            option_id = int(option_by_graph[graph_key])
             option = None
             for candidate in graph.options:
                 if int(candidate.option_id) == option_id:
