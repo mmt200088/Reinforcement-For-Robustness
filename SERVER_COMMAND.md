@@ -72,6 +72,8 @@ PY
 
 echo "==================== [phase1] 新档位重建 fusion 图（必跑，旧图作废）===================="
 cp -a "$MAPS_DIR" "$OUT/old_maps" 2>/dev/null || true
+rm -rf "$MAPS_DIR"
+mkdir -p "$MAPS_DIR"
 if [ "$REBUILD_MAPS" = 1 ]; then
   # 全部完整构建（--max-enum-combos 0）：去重档位 + only= 单块解码后组合数应大幅缩小；
   # 逐图计时写日志。block4 若超过 2 小时仍未出结果，看 build_block4.log 的 enum_total。
