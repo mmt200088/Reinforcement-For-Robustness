@@ -215,6 +215,94 @@ def _slot_label(block_idx: int, kind: str, field: str) -> str:
     return f"B{int(block_idx)}.{kind}.{field}"
 
 
+def _short_field_label(field_name: str, kind: str) -> str:
+    if str(kind) == "K":
+        return ""
+    field = str(field_name)
+    if field.startswith("square_rescale_sf_"):
+        return "sq" + field.rsplit("_", 1)[-1]
+    if field.startswith("gelu_power_rescale_sf_"):
+        return "gp" + field.rsplit("_", 1)[-1]
+    if field.startswith("gelu_coeff_mul_rescale_sf_"):
+        return "gc" + field.rsplit("_", 1)[-1]
+    if field.endswith("_rescale_sf"):
+        return field[: -len("_rescale_sf")] + "_r"
+    if field.endswith("_sf"):
+        return field[: -len("_sf")]
+    return field
+
+
+def _canonical_slot_label(layer_idx: int, block_idx: int, kind: str, field: str) -> str:
+    base = f"L{int(layer_idx)}.B{int(block_idx)}.{str(kind)}"
+    short = _short_field_label(field, kind)
+    return base if not short else f"{base}.{short}"
+
+
+def _bound_slot_values(block_idx: int, slots: Mapping[str, Any]) -> Dict[str, Any]:
+    """Expand action-space bindings so slot-form configs replay map options.
+
+    Fusion maps store the real optimizer-facing slot values sparsely.  The
+    executable action config starts from the legacy per-block action_indices and
+    then overlays these values; bound compat slots must be overlaid too, or the
+    decoded cfg can drift from the map option that was actually audited.
+    """
+    out = {str(k): v for k, v in dict(slots or {}).items()}
+    if int(block_idx) == 2:
+        if "inv_std_fresh_sf" in out:
+            out.setdefault("x_centered_fresh_sf", out["inv_std_fresh_sf"])
+        if "wk_sf" in out:
+            out.setdefault("wq_sf", out["wk_sf"])
+        if "kt_mask1_sf" in out:
+            out.setdefault("q_mask1_sf", out["kt_mask1_sf"])
+        if "kt_mask2_sf" in out:
+            out.setdefault("q_mask2_sf", out["kt_mask2_sf"])
+    elif int(block_idx) == 4:
+        if "softmax_out_mask_sf" in out:
+            out.setdefault("v_mask_sf", out["softmax_out_mask_sf"])
+    elif int(block_idx) == 5:
+        if "x_centered_fresh_sf" in out:
+            out.setdefault("inv_std_fresh_sf", out["x_centered_fresh_sf"])
+    return out
+
+
+def _splice_group_slots(
+    *,
+    fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]],
+    graphs: Mapping[str, Mapping[str, Any]],
+    schedule: Sequence[Mapping[str, Any]],
+    option_by_graph: Mapping[str, int],
+) -> List[dict]:
+    entries: List[dict] = []
+    for step in schedule:
+        graph_key = str(step["graph_key"])
+        graph = graphs[graph_key]
+        block_idx = int(step["block_idx"])
+        layer_idx = int(step["layer_idx"])
+        option = _option_by_id(graph, int(option_by_graph[graph_key]))
+        slot_values = _bound_slot_values(block_idx, option.get("slots", {}))
+        if not slot_values:
+            continue
+        field_kinds = {
+            str(field): str(kind)
+            for field, kind, _max_sf in fields_by_block[block_idx]
+        }
+        for field_name, value in sorted(slot_values.items()):
+            kind = field_kinds.get(str(field_name))
+            if kind is None:
+                continue
+            if kind == "K":
+                entries.append({
+                    "label": _canonical_slot_label(layer_idx, block_idx, kind, field_name),
+                    "truncation_bits": int(value),
+                })
+            else:
+                entries.append({
+                    "label": _canonical_slot_label(layer_idx, block_idx, kind, field_name),
+                    "scaling_factor": value,
+                })
+    return entries
+
+
 def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Mapping[str, Any]]) -> List[dict]:
     graph_order = list(graphs.keys())
     occurrence_counts = Counter(str(s["graph_key"]) for s in schedule)
@@ -288,17 +376,30 @@ def _write_action_configs(
             schedule=schedule,
             option_by_graph=spec["option_by_graph"],
         )
+        slots = _splice_group_slots(
+            fields_by_block=fields_by_block,
+            graphs=graphs,
+            schedule=schedule,
+            option_by_graph=spec["option_by_graph"],
+        )
         payload = {
             "schema_version": "fusion_count_fixed_action_v1",
             "num_layers": int(num_layers),
             "profile": str(profile),
             "gelu_degree": [int(v) for v in gelu],
             "attn_degree": [int(v) for v in softmax],
-            "base_action": "fusion_count_map_expanded_with_baseline_k",
+            "base": action,
+            "base_action": "legacy_fusion_count_map_action_indices_with_baseline_k",
             "k_levels": list(K_LEVELS),
             "baseline_k_index": int(BASELINE_K_INDEX),
             "group": dict(spec),
-            "action_vec": action,
+            "slots": slots,
+            "legacy_action_vec": action,
+            "execution_note": (
+                "Use slots + base to execute this config. legacy_action_vec is "
+                "kept for audit only because map action_indices can drift from "
+                "the current action-space SF tables."
+            ),
         }
         path = action_dir / f"{name}.json"
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

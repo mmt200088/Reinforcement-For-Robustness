@@ -65,6 +65,199 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
 
         self.assertTrue(np.array_equal(resolved, action))
 
+    def test_action_candidate_applies_replan_cfg_before_model_forward(self):
+        import Paean.blb_action_eval as mod
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+        from rescale_optimizer_bridge import CfgOverrideEntry, RescaleOptimizerOutput
+
+        class FakeCfg:
+            def __init__(self):
+                self.marker = "action_decoded"
+
+        class FakeDecoded:
+            def __init__(self):
+                self.first_input_sf = 0
+                self.block1_cfgs = {}
+                self.block2_cfgs = {0: FakeCfg()}
+                self.block3_cfgs = {}
+                self.block4_cfgs = {}
+                self.block5_cfgs = {}
+
+            def cfgs_dict(self):
+                return {
+                    "block1": self.block1_cfgs,
+                    "block2": self.block2_cfgs,
+                    "block3": self.block3_cfgs,
+                    "block4": self.block4_cfgs,
+                    "block5": self.block5_cfgs,
+                }
+
+        class FakeEvaluator:
+            total_layers = 1
+            dataset_key = "mrpc"
+
+            def get_simulated_cost(self, _gelu, _softmax):
+                return 10.0, 4.0, 6.0
+
+        fake_decoded = FakeDecoded()
+        signals = type(
+            "Signals",
+            (),
+            {
+                "any_invalid": False,
+                "total_bits_sum": 237,
+                "total_fusion_count": 1,
+                "invalid_block_count": 0,
+                "valid_block_count": 1,
+            },
+        )()
+        outputs = {
+            "block2_mrpc_L0": RescaleOptimizerOutput(
+                config_name="block2_mrpc_L0",
+                fusion_count=1,
+                total_bits=237,
+                invalid_chain=None,
+                valid=True,
+                raw={"result": {"valid": True}, "new_compact_config": {"unit": True}},
+            )
+        }
+
+        old_action_vector_to_cfgs = mod.action_vector_to_cfgs
+        old_load_max_sfs = mod.load_max_sfs
+        old_apply_optimizer_output_to_cfg = mod.apply_optimizer_output_to_cfg
+        old_avg_truncation_k_in_action = mod.avg_truncation_k_in_action
+        try:
+            mod.action_vector_to_cfgs = lambda **_kwargs: fake_decoded
+            mod.load_max_sfs = lambda _profile: {}
+            mod.avg_truncation_k_in_action = lambda *_args, **_kwargs: 13.0
+
+            def fake_apply_optimizer_output_to_cfg(cfg, **_kwargs):
+                self.assertEqual(cfg.marker, "action_decoded")
+                cfg.marker = "replan_applied"
+                return [
+                    CfgOverrideEntry(
+                        cfg_attr="marker",
+                        graph_node="unit",
+                        source="unit_replan",
+                        old_value="action_decoded",
+                        new_value="replan_applied",
+                    )
+                ]
+
+            mod.apply_optimizer_output_to_cfg = fake_apply_optimizer_output_to_cfg
+
+            runner = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
+            runner.evaluator = FakeEvaluator()
+            runner.repeat_n = 1
+            runner.rescale_optimizer_mode = "cfg_derived"
+            runner.rescale_invoker_kind = "stub"
+            runner.rescale_optimizer_root = ""
+            runner.rescale_bridge = type(
+                "Bridge",
+                (),
+                {"invoker": type("Invoker", (), {"baselines": {"block2_mrpc": ([0], [], [])}})()},
+            )()
+            runner._optimizer_outputs = lambda _profile, _cfgs_dict: (outputs, signals)
+            runner._config_details = lambda decoded, *_args: {
+                "marker_seen_by_details": decoded.block2_cfgs[0].marker
+            }
+            runner._build_feasibility_report = lambda **kwargs: {
+                "feasible": bool(kwargs["apply_ok"]),
+                "diagnostic_feasible": bool(kwargs["apply_ok"]),
+                "strict_feasible": bool(kwargs["apply_ok"]),
+            }
+
+            marker_seen_by_forward = {}
+
+            def fake_run_blb_eval(decoded, **_kwargs):
+                marker_seen_by_forward["value"] = decoded.block2_cfgs[0].marker
+                return (
+                    {
+                        "loss": 0.25,
+                        "p": 0.875,
+                        "s": 0.8,
+                        "time_ms": 12.0,
+                        "install_verification": {"ok": True},
+                    },
+                    None,
+                )
+
+            runner._run_blb_eval = fake_run_blb_eval
+
+            result = runner._evaluate_action_candidate(
+                name="candidate",
+                action_vec=np.zeros(1, dtype=int),
+                overrides={},
+                gelu=np.ones(1, dtype=int),
+                softmax=np.ones(1, dtype=int) * 2,
+                report_constraints={},
+            )
+        finally:
+            mod.action_vector_to_cfgs = old_action_vector_to_cfgs
+            mod.load_max_sfs = old_load_max_sfs
+            mod.apply_optimizer_output_to_cfg = old_apply_optimizer_output_to_cfg
+            mod.avg_truncation_k_in_action = old_avg_truncation_k_in_action
+
+        self.assertEqual(marker_seen_by_forward["value"], "replan_applied")
+        self.assertTrue(result["replan_application"]["model_uses_replan_config"])
+        self.assertEqual(result["replan_application"]["applied_config_count"], 1)
+        self.assertEqual(result["config_details"]["marker_seen_by_details"], "replan_applied")
+
+    def test_model_installation_verification_matches_current_blb_bridge_semantics(self):
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+        class FakeDecoded:
+            pass
+
+        class FakeHandler:
+            def __init__(self, decoded):
+                self.block1_cfg_per_layer = {1: decoded.block1_cfgs[1]}
+                self.block2_cfg_per_layer = dict(decoded.block2_cfgs)
+                self.block3_cfg_per_layer = {}
+                self.block4_cfg_per_layer = dict(decoded.block4_cfgs)
+                self.block5_cfg_per_layer = dict(decoded.block5_cfgs)
+
+            def get_active_blb_noise_layers(self):
+                return {
+                    "block1": {1},
+                    "block2": {0, 1},
+                    "block3": set(),
+                    "block4": {0, 1},
+                    "block5": {0, 1},
+                    "first_input": set(),
+                }
+
+        class FakeBridge:
+            def installed_layers(self):
+                return {
+                    0: {"block2", "block4", "block5"},
+                    1: {"block1", "block2", "block4", "block5"},
+                }
+
+        decoded = FakeDecoded()
+        decoded.block1_cfgs = {1: object()}
+        decoded.block2_cfgs = {0: object(), 1: object()}
+        decoded.block3_cfgs = {0: object(), 1: object()}
+        decoded.block4_cfgs = {0: object(), 1: object()}
+        decoded.block5_cfgs = {0: object(), 1: object()}
+
+        runner = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
+        runner.evaluator = type(
+            "Evaluator",
+            (),
+            {
+                "total_layers": 2,
+                "reversible_handler": FakeHandler(decoded),
+            },
+        )()
+
+        result = runner._verify_model_installation(FakeBridge(), decoded)
+
+        self.assertTrue(result["model_will_use_selected_cfg"])
+        self.assertEqual(result["expected_active_layers"]["block1"], [1])
+        self.assertEqual(result["expected_active_layers"]["block3"], [])
+        self.assertEqual(result["expected_active_layers"]["first_input"], [])
+
     def test_action_candidate_still_runs_model_forward_when_optimizer_invalid(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
         from blb_stage2_rl.action_space import make_all_max_action_vector

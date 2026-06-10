@@ -3,17 +3,29 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
 from blb_rl_bridge import BLBNoiseRLBridge
 from blb_stage2_rl.action_space import (
+    ActionDecodeResult,
     BLB_FIRST_INPUT_N,
+    _build_block1_action,
+    _build_block2_action,
+    _build_block4_action,
+    _build_block5_action,
+    _decode_block_field_values,
     action_vector_to_cfgs,
     avg_truncation_k_in_action,
+    build_block1_cfg_from_action,
+    build_block2_cfg_from_action,
+    build_block4_cfg_from_action,
+    build_block5_cfg_from_action,
     build_optimizer_requests,
     load_max_sfs,
+    parse_config_name,
+    step_schedule,
     sum_truncation_k_in_action,
 )
 from blb_stage2_rl.feasibility import build_final_eval_feasibility
@@ -22,8 +34,14 @@ from rescale_optimizer_bridge import (
     InProcessInvoker,
     RescaleOptimizerBridge,
     SubprocessInvoker,
+    _strip_layer_suffix,
     aggregate_optimizer_signals,
+    apply_optimizer_output_to_cfg,
     load_baseline_archive,
+    sync_block2_aux_fresh_binding,
+    sync_block2_qk_binding,
+    sync_block4_v_mask_binding,
+    sync_block5_aux_fresh_binding,
 )
 
 from .action_grid import (
@@ -188,6 +206,7 @@ class BLBActionFinalEvaluationModule:
                 name=candidate.name,
                 action_vec=candidate.action_vec,
                 overrides=candidate.overrides,
+                metadata=candidate.metadata,
                 gelu=opt_gelu,
                 softmax=opt_softmax,
                 report_constraints=report_constraints,
@@ -247,6 +266,7 @@ class BLBActionFinalEvaluationModule:
                     name=candidate.name,
                     action_vec=candidate.action_vec,
                     overrides=candidate.overrides,
+                    metadata=candidate.metadata,
                     gelu=opt_gelu,
                     softmax=opt_softmax,
                     report_constraints=report_constraints,
@@ -363,21 +383,40 @@ class BLBActionFinalEvaluationModule:
             "time_ms": float(t),
         }
 
-    def _evaluate_action_candidate(self, *, name, action_vec, overrides, gelu, softmax, report_constraints):
+    def _evaluate_action_candidate(
+            self,
+            *,
+            name,
+            action_vec,
+            overrides,
+            gelu,
+            softmax,
+            report_constraints,
+            metadata=None,
+            ):
         ev = self.evaluator
         total_layers = int(ev.total_layers)
         profile = str(getattr(ev, "dataset_key", "default") or "default")
         max_sfs = load_max_sfs(profile)
-        decoded = action_vector_to_cfgs(
-            action_vec=np.asarray(action_vec, dtype=int),
+        metadata = dict(metadata or {})
+        decoded = self._decode_action_candidate(
+            action_vec=action_vec,
+            metadata=metadata,
             max_sfs=max_sfs,
             num_layers=total_layers,
-            gelu_degree=np.asarray(gelu, dtype=int),
-            attn_degree=np.asarray(softmax, dtype=int),
+            gelu=gelu,
+            softmax=softmax,
+            profile=profile,
         )
 
         cfgs_dict = decoded.cfgs_dict()
         opt_outputs, opt_signals = self._optimizer_outputs(profile, cfgs_dict)
+        replan_application = self._apply_optimizer_outputs_to_decoded(
+            profile=profile,
+            decoded=decoded,
+            cfgs_dict=cfgs_dict,
+            opt_outputs=opt_outputs,
+        )
         skipped_forward = False
         single, repeat = self._run_blb_eval(decoded, gelu=gelu, softmax=softmax)
         if repeat is not None:
@@ -408,10 +447,16 @@ class BLBActionFinalEvaluationModule:
             "invalid_block_count": int(opt_signals.invalid_block_count),
             "valid_block_count": int(opt_signals.valid_block_count),
             "any_invalid": bool(opt_signals.any_invalid),
+            "action_metadata": self._json_ready(metadata),
+            "fusion_group_diagnostics": self._fusion_group_diagnostics(
+                metadata=metadata or {},
+                opt_signals=opt_signals,
+            ),
             "avg_truncation_k": float(avg_truncation_k_in_action(action_vec, total_layers)),
             "action_overrides": dict(overrides or {}),
             "action_vec": np.asarray(action_vec, dtype=int).copy(),
             "config_details": self._config_details(decoded, action_vec, overrides, opt_outputs),
+            "replan_application": replan_application,
             "rescale_optimizer": {
                 "invoker_kind": str(getattr(self, "rescale_invoker_kind", "unknown")),
                 "root": str(getattr(self, "rescale_optimizer_root", "") or ""),
@@ -449,7 +494,7 @@ class BLBActionFinalEvaluationModule:
             report_constraints=report_constraints,
             optimizer_valid=not bool(opt_signals.any_invalid),
             decode_ok=True,
-            apply_ok=True,
+            apply_ok=bool(replan_application.get("model_uses_replan_config", False)),
             eval_ok=True,
         )
         result["final_eval_feasibility"] = feasibility
@@ -505,6 +550,378 @@ class BLBActionFinalEvaluationModule:
         requests = build_optimizer_requests(profile, cfgs_dict)
         outputs = bridge.evaluate_blocks(requests)
         return outputs, aggregate_optimizer_signals(outputs)
+
+    def _decode_action_candidate(
+            self,
+            *,
+            action_vec,
+            metadata: Mapping[str, Any],
+            max_sfs,
+            num_layers: int,
+            gelu,
+            softmax,
+            profile: str,
+            ):
+        if str(metadata.get("schema_version", "")) == "fusion_count_fixed_action_v1":
+            return self._decode_fusion_count_fixed_action(
+                action_vec=action_vec,
+                metadata=metadata,
+                max_sfs=max_sfs,
+                num_layers=int(num_layers),
+                gelu=gelu,
+                softmax=softmax,
+                profile=str(profile),
+            )
+        return action_vector_to_cfgs(
+            action_vec=np.asarray(action_vec, dtype=int),
+            max_sfs=max_sfs,
+            num_layers=int(num_layers),
+            gelu_degree=np.asarray(gelu, dtype=int),
+            attn_degree=np.asarray(softmax, dtype=int),
+        )
+
+    def _decode_fusion_count_fixed_action(
+            self,
+            *,
+            action_vec,
+            metadata: Mapping[str, Any],
+            max_sfs,
+            num_layers: int,
+            gelu,
+            softmax,
+            profile: str,
+            ) -> ActionDecodeResult:
+        group = metadata.get("group")
+        if not isinstance(group, Mapping) or not isinstance(group.get("option_by_graph"), Mapping):
+            raise ValueError("fusion_count_fixed_action_v1 requires group.option_by_graph metadata")
+
+        base_raw = None
+        for key in ("legacy_action_vec", "base", "action_vec"):
+            value = metadata.get(key)
+            if isinstance(value, (list, tuple, np.ndarray)):
+                base_raw = value
+                break
+        if base_raw is None:
+            base_raw = action_vec
+        base_arr = np.asarray(base_raw, dtype=int).reshape(-1)
+        gelu_arr = np.asarray(gelu, dtype=int).reshape(-1)
+        softmax_arr = np.asarray(softmax, dtype=int).reshape(-1)
+
+        decoded = action_vector_to_cfgs(
+            action_vec=base_arr,
+            max_sfs=max_sfs,
+            num_layers=int(num_layers),
+            gelu_degree=gelu_arr,
+            attn_degree=softmax_arr,
+        )
+
+        try:
+            from blb_stage2_rl.fusion_count_map import FusionCountMap
+            fusion_map = FusionCountMap.load(str(profile))
+        except Exception as exc:
+            raise RuntimeError(
+                f"failed to load fusion-count map for profile={profile!r}: {exc}"
+            ) from exc
+
+        option_by_graph = {
+            str(k): int(v)
+            for k, v in dict(group.get("option_by_graph", {})).items()
+        }
+        schedule = step_schedule(
+            int(num_layers),
+            profile=str(profile),
+            attn_degree_per_layer=softmax_arr.tolist(),
+            gelu_degree_per_layer=gelu_arr.tolist(),
+        )
+        for step in schedule:
+            graph_key = str(step.graph_key_suffix)
+            if graph_key not in option_by_graph:
+                continue
+            graph = fusion_map.graphs.get(graph_key)
+            if graph is None:
+                raise KeyError(f"fusion map missing graph {graph_key!r}")
+            option_id = int(option_by_graph[graph_key])
+            option = None
+            for candidate in graph.options:
+                if int(candidate.option_id) == option_id:
+                    option = candidate
+                    break
+            if option is None:
+                raise KeyError(f"fusion map graph {graph_key!r} has no option {option_id}")
+
+            block_offsets = (
+                step.full_vec_offsets[:-1]
+                if bool(step.includes_first_input)
+                else step.full_vec_offsets
+            )
+            action_slice = base_arr[list(block_offsets)]
+            layer_idx = int(step.layer_idx)
+            block_idx = int(step.block_idx)
+            gelu_degree = int(gelu_arr[layer_idx] if gelu_arr.size > 1 else gelu_arr[0])
+            softmax_degree = int(softmax_arr[layer_idx] if softmax_arr.size > 1 else softmax_arr[0])
+            field_values = _decode_block_field_values(
+                layer_idx,
+                block_idx,
+                np.asarray(action_slice, dtype=int),
+                max_sfs,
+                attn_degree=softmax_degree,
+                gelu_degree=gelu_degree,
+            )
+            for field_name, value in dict(option.slots).items():
+                field_values[str(field_name)] = int(value)
+
+            if block_idx == 1:
+                decoded.block1_cfgs[layer_idx] = build_block1_cfg_from_action(
+                    _build_block1_action(
+                        layer_idx,
+                        field_values,
+                        is_first_layer=(layer_idx == 0),
+                    )
+                )
+            elif block_idx == 2:
+                decoded.block2_cfgs[layer_idx] = build_block2_cfg_from_action(
+                    _build_block2_action(layer_idx, field_values, profile=str(profile))
+                )
+            elif block_idx == 4:
+                decoded.block4_cfgs[layer_idx] = build_block4_cfg_from_action(
+                    _build_block4_action(layer_idx, field_values, profile=str(profile))
+                )
+            elif block_idx == 5:
+                decoded.block5_cfgs[layer_idx] = build_block5_cfg_from_action(
+                    _build_block5_action(
+                        layer_idx,
+                        field_values,
+                        gelu_degree=gelu_degree,
+                        profile=str(profile),
+                    )
+                )
+        return decoded
+
+    def _apply_optimizer_outputs_to_decoded(
+            self,
+            *,
+            profile: str,
+            decoded,
+            cfgs_dict,
+            opt_outputs,
+            ) -> Dict[str, Any]:
+        """Apply Rescale_optimizer/replan results to cfgs before model forward.
+
+        ``action_vector_to_cfgs`` produces the action-proposed BLB cfgs.  The
+        true executable cfg is the optimizer's ``new_compact_config`` mirrored
+        back into those cfg objects.  Stage-2 training already does this in
+        ``BLBStage2Env.step``; final-eval must do the same before
+        ``BLBNoiseRLBridge.apply`` installs noise wrappers.
+        """
+        bridge = getattr(self, "rescale_bridge", None)
+        invoker = getattr(bridge, "invoker", None)
+        invoker_baselines: Mapping[str, Any] = getattr(invoker, "baselines", {}) or {}
+        per_config: Dict[str, Dict[str, Any]] = {}
+        invalid_count = 0
+        missing_compact_count = 0
+        missing_cfg_count = 0
+        apply_error_count = 0
+        applied_count = 0
+        override_total = 0
+
+        batch_has_invalid = any(
+            not bool(getattr(out, "valid", False))
+            for out in (opt_outputs or {}).values()
+        )
+        if batch_has_invalid:
+            for config_name, out in (opt_outputs or {}).items():
+                valid = bool(getattr(out, "valid", False))
+                if not valid:
+                    invalid_count += 1
+                per_config[str(config_name)] = {
+                    "valid": valid,
+                    "applied": False,
+                    "override_count": 0,
+                    "overrides": [],
+                    "skipped_reason": (
+                        "optimizer_invalid"
+                        if not valid
+                        else "optimizer_invalid_batch"
+                    ),
+                }
+            return {
+                "applied_before_forward": False,
+                "model_uses_replan_config": False,
+                "expected_config_count": int(len(opt_outputs or {})),
+                "applied_config_count": 0,
+                "invalid_config_count": int(invalid_count),
+                "missing_compact_config_count": 0,
+                "missing_decoded_cfg_count": 0,
+                "apply_error_count": 0,
+                "override_total": 0,
+                "per_config": per_config,
+            }
+
+        for config_name, out in (opt_outputs or {}).items():
+            name = str(config_name)
+            raw = getattr(out, "raw", {}) or {}
+            valid = bool(getattr(out, "valid", False))
+            record: Dict[str, Any] = {
+                "valid": valid,
+                "applied": False,
+                "override_count": 0,
+                "overrides": [],
+            }
+            if not valid:
+                invalid_count += 1
+                record["skipped_reason"] = "optimizer_invalid"
+                per_config[name] = record
+                continue
+            if not isinstance(raw, Mapping) or not isinstance(raw.get("new_compact_config"), Mapping):
+                missing_compact_count += 1
+                record["skipped_reason"] = "missing_new_compact_config"
+                per_config[name] = record
+                continue
+
+            try:
+                block_idx, _cfg_profile, layer_idx = parse_config_name(name)
+            except Exception as exc:
+                apply_error_count += 1
+                record["skipped_reason"] = "parse_config_name_failed"
+                record["error"] = str(exc)
+                per_config[name] = record
+                continue
+            if int(layer_idx) < 0:
+                missing_cfg_count += 1
+                record["skipped_reason"] = "missing_layer_suffix"
+                per_config[name] = record
+                continue
+
+            block_key = f"block{int(block_idx)}"
+            block_cfgs = cfgs_dict.get(block_key, {}) if isinstance(cfgs_dict, Mapping) else {}
+            target_cfg = block_cfgs.get(int(layer_idx))
+            if target_cfg is None:
+                missing_cfg_count += 1
+                record["skipped_reason"] = "decoded_cfg_missing"
+                record["block"] = block_key
+                record["layer"] = int(layer_idx)
+                per_config[name] = record
+                continue
+
+            graph_key, _ = _strip_layer_suffix(name)
+            baseline_entry = invoker_baselines.get(graph_key)
+            baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
+            rotation_name_map = self._rotation_name_map_for(int(block_idx), str(profile))
+            try:
+                overrides = apply_optimizer_output_to_cfg(
+                    target_cfg,
+                    output_raw=raw,
+                    block_idx=int(block_idx),
+                    graph_key=graph_key,
+                    baseline_skeleton=baseline_skeleton,
+                    rotation_name_map=rotation_name_map,
+                )
+                if int(block_idx) == 2:
+                    overrides = list(overrides) + sync_block2_qk_binding(target_cfg)
+                    overrides = list(overrides) + sync_block2_aux_fresh_binding(target_cfg)
+                elif int(block_idx) == 4:
+                    overrides = list(overrides) + sync_block4_v_mask_binding(target_cfg)
+                elif int(block_idx) == 5:
+                    overrides = list(overrides) + sync_block5_aux_fresh_binding(target_cfg)
+            except Exception as exc:
+                apply_error_count += 1
+                record["skipped_reason"] = "apply_optimizer_output_to_cfg_failed"
+                record["error"] = str(exc)
+                per_config[name] = record
+                continue
+
+            override_rows = [
+                {
+                    "cfg_attr": str(e.cfg_attr),
+                    "graph_node": e.graph_node,
+                    "source": str(e.source),
+                    "old_value": e.old_value,
+                    "new_value": e.new_value,
+                }
+                for e in overrides
+            ]
+            applied_count += 1
+            override_total += len(override_rows)
+            record.update(
+                {
+                    "applied": True,
+                    "block": block_key,
+                    "layer": int(layer_idx),
+                    "graph_key": graph_key,
+                    "baseline_skeleton_available": bool(baseline_skeleton),
+                    "rotation_name_map_available": bool(rotation_name_map),
+                    "override_count": int(len(override_rows)),
+                    "overrides": override_rows,
+                }
+            )
+            per_config[name] = record
+
+        expected = len(opt_outputs or {})
+        fully_applied = (
+            expected == applied_count
+            and invalid_count == 0
+            and missing_compact_count == 0
+            and missing_cfg_count == 0
+            and apply_error_count == 0
+        )
+        return {
+            "applied_before_forward": True,
+            "model_uses_replan_config": bool(fully_applied),
+            "expected_config_count": int(expected),
+            "applied_config_count": int(applied_count),
+            "invalid_config_count": int(invalid_count),
+            "missing_compact_config_count": int(missing_compact_count),
+            "missing_decoded_cfg_count": int(missing_cfg_count),
+            "apply_error_count": int(apply_error_count),
+            "override_total": int(override_total),
+            "per_config": per_config,
+        }
+
+    def _rotation_name_map_for(self, block_idx: int, profile: str) -> Mapping[str, str]:
+        raw = (
+            getattr(self.evaluator, "blb_v3_rotation_name_map", None)
+            or getattr(self.evaluator, "rotation_name_map", None)
+            or {}
+        )
+        if not isinstance(raw, Mapping):
+            return {}
+        direct = raw.get((int(block_idx), str(profile)))
+        if isinstance(direct, Mapping):
+            return direct
+        nested = raw.get(int(block_idx)) or raw.get(str(block_idx))
+        if isinstance(nested, Mapping):
+            profiled = nested.get(str(profile))
+            if isinstance(profiled, Mapping):
+                return profiled
+            if all(isinstance(k, str) for k in nested.keys()):
+                return nested
+        return {}
+
+    @staticmethod
+    def _fusion_group_diagnostics(*, metadata: Mapping[str, Any], opt_signals) -> Dict[str, Any]:
+        group = metadata.get("group") if isinstance(metadata, Mapping) else None
+        if not isinstance(group, Mapping):
+            return {}
+        by_graph = group.get("fusion_count_by_graph") or {}
+        counts = group.get("occurrence_counts") or {}
+        declared_total = 0
+        declared_by_graph: Dict[str, int] = {}
+        if isinstance(by_graph, Mapping):
+            for graph_key, fusion_count in by_graph.items():
+                occurrences = 1
+                if isinstance(counts, Mapping):
+                    occurrences = int(counts.get(graph_key, 1))
+                value = int(fusion_count) * int(occurrences)
+                declared_by_graph[str(graph_key)] = value
+                declared_total += value
+        realized_total = int(getattr(opt_signals, "total_fusion_count", 0))
+        return {
+            "group_name": str(group.get("name", "")),
+            "declared_total_fusion_count": int(declared_total),
+            "realized_total_fusion_count": int(realized_total),
+            "declared_by_graph": declared_by_graph,
+            "matches_realized_total": bool(int(declared_total) == int(realized_total)),
+        }
 
     def _build_rescale_bridge(self, profile: str) -> Tuple[RescaleOptimizerBridge, str, str]:
         ev = self.evaluator
@@ -614,12 +1031,15 @@ class BLBActionFinalEvaluationModule:
         total_layers = int(ev.total_layers)
         expected_all = set(range(total_layers))
         expected = {
-            "block1": expected_all,
+            # Mirror BLBNoiseRLBridge.apply semantics:
+            #   * layer-0 block1 is intentionally absent,
+            #   * block3 and first_input noise are deprecated/frozen and not installed.
+            "block1": set(range(1, total_layers)),
             "block2": expected_all,
-            "block3": expected_all,
+            "block3": set(),
             "block4": expected_all,
             "block5": expected_all,
-            "first_input": {0},
+            "first_input": set(),
         }
         active = {}
         getter = getattr(ev.reversible_handler, "get_active_blb_noise_layers", None)
@@ -633,7 +1053,7 @@ class BLBActionFinalEvaluationModule:
             all(k in bridge_installed.get(i, set()) for i in v)
             for k, v in expected.items()
         )
-        identity_match = self._handler_cfg_identity_match(decoded)
+        identity_match = self._handler_cfg_identity_match(decoded, expected)
         return {
             "checked_before_forward": True,
             "handler_active_layers": active_json,
@@ -644,12 +1064,17 @@ class BLBActionFinalEvaluationModule:
             "model_will_use_selected_cfg": bool(handler_match and bridge_match and identity_match),
         }
 
-    def _handler_cfg_identity_match(self, decoded) -> bool:
+    def _handler_cfg_identity_match(self, decoded, expected_layers_by_block: Optional[Mapping[str, set]] = None) -> bool:
         handler = self.evaluator.reversible_handler
         for block_name in ("block1", "block2", "block3", "block4", "block5"):
             expected = getattr(decoded, f"{block_name}_cfgs")
             installed = getattr(handler, f"{block_name}_cfg_per_layer", {})
+            expected_layers = None
+            if expected_layers_by_block is not None:
+                expected_layers = set(expected_layers_by_block.get(block_name, set()))
             for layer_idx, cfg in expected.items():
+                if expected_layers is not None and int(layer_idx) not in expected_layers:
+                    continue
                 if installed.get(layer_idx) is not cfg:
                     return False
         return True
@@ -1078,13 +1503,14 @@ class BLBActionFinalEvaluationModule:
             "",
             "| group | truncation k | effective K positions | loss mean | loss std | "
             f"{primary} mean | {primary} std | {secondary} mean | {secondary} std | "
-            "time mean ms | total bits | fusion | model cfg verified |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+            "time mean ms | total bits | fusion | replan applied | model cfg verified |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
         ])
         for result in candidate_results:
             trunc = result.get("config_details", {}).get("truncation", {})
             unique_k = self._unique_truncation_label(trunc)
             verify = result.get("install_verification", {}).get("model_will_use_selected_cfg", False)
+            replan_ok = result.get("replan_application", {}).get("model_uses_replan_config", False)
             lines.append(
                 f"| `{result['name']}` | {unique_k} | "
                 f"{int(trunc.get('effective_position_count', 0))} | "
@@ -1092,7 +1518,7 @@ class BLBActionFinalEvaluationModule:
                 f"{float(result['p']):.6f} | {float(result.get('p_std', 0.0)):.6f} | "
                 f"{float(result['s']):.6f} | {float(result.get('s_std', 0.0)):.6f} | "
                 f"{float(result['time_ms']):.3f} | {int(result['total_bits_sum'])} | "
-                f"{int(result['total_fusion_count'])} | {verify} |"
+                f"{int(result['total_fusion_count'])} | {replan_ok} | {verify} |"
             )
 
         lines.extend(["", "## Configuration Details", ""])
@@ -1100,6 +1526,8 @@ class BLBActionFinalEvaluationModule:
             details = result.get("config_details", {})
             trunc = details.get("truncation", {})
             verify = result.get("install_verification", {})
+            replan_application = result.get("replan_application", {})
+            fusion_group = result.get("fusion_group_diagnostics", {})
             lines.extend([
                 f"### {result['name']}",
                 "",
@@ -1110,6 +1538,9 @@ class BLBActionFinalEvaluationModule:
                 f"effective positions = `{trunc.get('effective_position_count', 0)}`; "
                 f"skipped = `{trunc.get('skipped_positions', [])}`",
                 f"- model cfg verified before forward: `{verify.get('model_will_use_selected_cfg', False)}`",
+                f"- replan cfg applied before forward: `{replan_application.get('model_uses_replan_config', False)}`",
+                f"- replan application summary: `{ {k: v for k, v in replan_application.items() if k != 'per_config'} }`",
+                f"- fusion group diagnostics: `{fusion_group}`",
                 f"- handler active layers match expected: `{verify.get('handler_active_layers_match_expected', False)}`",
                 f"- handler cfg object identity match: `{verify.get('handler_cfg_objects_match_decoded_cfgs', False)}`",
                 f"- rescale optimizer: `{result.get('rescale_optimizer', {})}`",

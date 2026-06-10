@@ -3,9 +3,9 @@ from __future__ import annotations
 import itertools
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -30,6 +30,7 @@ class ActionCandidate:
     name: str
     action_vec: np.ndarray
     overrides: Dict[str, int]
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ class ActionGridConfig:
     base_action_vec: Optional[np.ndarray]
     fixed_specs: Tuple[str, ...]
     range_specs: Tuple[str, ...]
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 def coerce_spec_list(raw_value) -> Tuple[str, ...]:
@@ -152,8 +154,21 @@ def load_action_grid_config(
         cfg_gelu = payload.get("gelu_degree", gelu_degree)
         cfg_attn = payload.get("attn_degree", attn_degree)
         max_sfs = _load_max_sfs(cfg_profile)
+        slot_payload = dict(payload)
+        if "base" not in slot_payload:
+            for base_key in ("base_action_vec", "base_action"):
+                base_value = payload.get(base_key)
+                if isinstance(base_value, (list, tuple, str)):
+                    slot_payload["base"] = base_value
+                    break
+        # ``slots_payload_to_action_vec`` keeps legacy ``action_vec`` support
+        # for old configs, but this branch has already selected the slot-form
+        # schema.  Remove flat-vector fallbacks so real slots cannot be shadowed
+        # by stale map action indices.
+        for stale_key in ("action_vec", "base_action_vec", "base_action"):
+            slot_payload.pop(stale_key, None)
         vec, coercion_notes = slots_payload_to_action_vec(
-            payload,
+            slot_payload,
             max_sfs=max_sfs,
             num_layers=int(num_layers),
             gelu_degree=cfg_gelu,
@@ -186,11 +201,45 @@ def load_action_grid_config(
 
     fixed_specs = tuple(_mapping_to_specs(payload.get("fixed", {}) or {}))
     range_specs = tuple(_mapping_to_specs(payload.get("ranges", {}) or payload.get("range", {}) or {}))
+    metadata = _extract_action_config_metadata(payload, path=path, num_layers=num_layers)
     return ActionGridConfig(
         base_action_vec=base_action_vec,
         fixed_specs=fixed_specs,
         range_specs=range_specs,
+        metadata=metadata,
     )
+
+
+def _extract_action_config_metadata(
+        payload: Mapping[str, object],
+        *,
+        path: Path,
+        num_layers: int,
+        ) -> Dict[str, Any]:
+    """Keep non-action metadata alongside the selected candidate.
+
+    Fusion-count fixed-action configs store the semantic option choices under
+    ``group``.  The flat ``action_vec`` is still the executable input, but final
+    eval reports need the original group metadata to compare declared map
+    choices with the realized optimizer/replan result.
+    """
+    metadata: Dict[str, Any] = {
+        "source_path": str(path),
+        "num_layers": int(num_layers),
+    }
+    for key in (
+        "schema_version",
+        "profile",
+        "group",
+        "base",
+        "action_vec",
+        "legacy_action_vec",
+        "rescale_optimizer_mode",
+        "optimizer_mode",
+    ):
+        if key in payload:
+            metadata[key] = payload[key]
+    return metadata
 
 
 def build_action_candidates(
@@ -231,7 +280,14 @@ def build_action_candidates(
         _set_selector_value(base, num_layers, max_sfs, selector, int(values[0]))
 
     if not ranges:
-        return [ActionCandidate(name="ActionSelected", action_vec=base.copy(), overrides={})]
+        return [
+            ActionCandidate(
+                name="ActionSelected",
+                action_vec=base.copy(),
+                overrides={},
+                metadata=(dict(config.metadata) if config is not None else {}),
+            )
+        ]
 
     parsed_ranges = []
     for spec in ranges:
@@ -250,7 +306,14 @@ def build_action_candidates(
         label = "ActionGrid_" + "_".join(f"{k}{v}" for k, v in overrides.items())
         if len(label) > 96:
             label = f"ActionGrid_{idx:03d}"
-        candidates.append(ActionCandidate(name=label, action_vec=vec, overrides=overrides))
+        candidates.append(
+            ActionCandidate(
+                name=label,
+                action_vec=vec,
+                overrides=overrides,
+                metadata=(dict(config.metadata) if config is not None else {}),
+            )
+        )
     return candidates
 
 

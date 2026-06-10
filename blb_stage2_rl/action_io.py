@@ -424,9 +424,9 @@ def slots_list_to_action_vec(
     else:
         base_choice = str(base or "max").strip().lower()
         if base_choice in ("max", "all-max", "all_max"):
-            vec = make_all_max_action_vector(int(num_layers), max_sfs=max_sfs).astype(np.int64)
+            vec = make_all_max_action_vector(int(num_layers)).astype(np.int64)
         elif base_choice in ("min", "all-min", "all_min"):
-            vec = make_all_min_action_vector(int(num_layers), max_sfs=max_sfs).astype(np.int64)
+            vec = make_all_min_action_vector(int(num_layers)).astype(np.int64)
         else:
             raise ValueError(f"unknown base {base!r}; expected 'max' or 'min'")
 

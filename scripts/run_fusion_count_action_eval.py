@@ -58,15 +58,29 @@ def _load_action_configs(action_dir: Path) -> List[dict]:
             continue
         payload = json.loads(path.read_text(encoding="utf-8"))
         action = payload.get("action_vec")
-        if not isinstance(action, list):
+        slots = payload.get("slots")
+        base = payload.get("base")
+        legacy = payload.get("legacy_action_vec")
+        has_executable_slots = isinstance(slots, (list, dict))
+        has_executable_vec = isinstance(action, list)
+        if not (has_executable_slots or has_executable_vec):
             continue
         group = payload.get("group") or {}
         name = str(group.get("name") or path.stem)
+        hash_payload = (
+            {
+                "slots": slots,
+                "base": base,
+                "legacy_action_vec": legacy,
+            }
+            if has_executable_slots
+            else [int(v) for v in action]
+        )
         configs.append({
             "name": name,
             "path": path,
             "payload": payload,
-            "action_hash": _json_hash([int(v) for v in action]),
+            "action_hash": _json_hash(hash_payload),
             "group": group,
         })
     if not configs:
