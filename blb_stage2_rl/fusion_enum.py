@@ -490,11 +490,14 @@ def prepare_block_type_context(
         if not eff:
             continue
         levels = int(NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[kind])
-        # 2026-06-10 grid: enumerate only DISTINCT decoded values per slot
-        # (uniform step-2, floor MIN_SF_FLOOR=12). Floor-clamped duplicate
-        # levels decode to identical cfgs → identical replans; dropping them
-        # here is the grid's selection rule (and removes redundant replans).
-        # R slots additionally exclude idx 0 (= None/drop) as before.
+        # Acceleration (result-equivalent): enumerate only DISTINCT decoded
+        # values per slot. Under the hybrid sweep a low-baseline slot's deep
+        # levels all snap to the table-min SF=10 and decode to identical cfgs
+        # → identical replans; the lowest index per value is kept, which is
+        # exactly the lex-min representative the post-eval installed-signature
+        # dedup would have selected, so the emitted options (incl. their
+        # action_indices) match a full enumeration — only the valid_configs
+        # diagnostic count shrinks. R slots exclude idx 0 (= None/drop).
         field_max_sf = int(ctx.max_sfs.get(int(block_idx), str(fname), layer_idx=int(ref_layer)))
         distinct = distinct_sf_level_indices(
             kind=str(kind), levels=levels, max_sf=field_max_sf, N=int(ctx.N_block),

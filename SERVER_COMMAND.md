@@ -3,7 +3,7 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (新档位重建 fusion 图 → Stage-2 episode 并行 1卡vs N卡 确定性门禁 → PASS 自动接 60k 长跑)
+## ▶ active command  (Stage-2 episode 并行 1卡vs N卡 确定性门禁 → PASS 自动接 60k 长跑；档位已回退 hybrid，已提交图直接有效)
 
 ```bash
 set -uo pipefail
@@ -11,16 +11,18 @@ export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 
 # ============================================================================
-# 本轮（2026-06-10）三件事，顺序执行：
-#  ① SF 档位规则改了（统一间隔2、下限12、按基线裁档）→ 旧 fusion 图的 action_indices
-#    语义全部作废 → REBUILD_MAPS=1 必须重建（新增 only= 单块解码 + 去重档位，应当快很多）。
-#  ② Stage-2 多卡重构为 episode 级并行（--stage2-rl-devices，K 与卡数解耦固定=5；
+# 本轮（2026-06-10）顺序执行：
+#  ⓪ SF 档位规则已按用户决定回退到 2026-06-04 hybrid（前5档间隔2、后5档间隔1、
+#    无 12 下限、每槽固定 10 档）→ 已提交的 6 张 fusion 图（1ad078c，hybrid 解码+
+#    新 replan 策略下构建）恢复有效，REBUILD_MAPS=0 跳过重建。保留的纯加速：
+#    only= 单块解码 + builder 同值档预去重（结果等价，仅影响 valid_configs 计数）。
+#  ① Stage-2 多卡重构为 episode 级并行（--stage2-rl-devices，K 与卡数解耦固定=5；
 #    噪声/策略/更新全按全局 episode 播种）→ 1卡 vs N卡 短跑对拍：逐窗 rollout_sig 必须
 #    逐字相同 + episodes.jsonl 数值逐项相同，并实测加速比。
-#  ③ 门禁 PASS → 自动启动 60000-episode curriculum-ON fusion 长跑（里程碑）。
-# 失败处理：①②任一 FATAL 即停（不烧 60k 预算）；门禁 FAIL 时回传对拍证据。
+#  ② 门禁 PASS → 自动启动 60000-episode curriculum-ON fusion 长跑（里程碑）。
+# 失败处理：任一 FATAL 即停（不烧 60k 预算）；门禁 FAIL 时回传对拍证据。
 # ----------------------------------------------------------------------------
-REBUILD_MAPS=1       # 档位规则变更 → 旧图作废，必须重建
+REBUILD_MAPS=0       # 档位已回退 hybrid → 已提交图有效；只有 skeleton/decode 再变才改 1
 GATE_EPISODES=300    # 门禁短跑规模：anchor80 + 220 post，5 个 PPO 窗口
 LONG_EPISODES=60000  # 门禁通过后的里程碑长跑
 KTRIALS=5            # K 固定为 5（与卡数解耦——这是确定性要求的一部分，勿改回 K=NGPU）
@@ -43,11 +45,12 @@ python3 - <<'PY' 2>&1 | tee "$OUT/selfcheck.txt" || { echo "[FATAL] 自检失败
 import rescale_optimizer as r
 print("RO 导入 OK；DEFAULT_FUSION_POLICY =", r.DEFAULT_FUSION_POLICY)
 import sys; sys.path.insert(0, "blb_stage2_rl")
-from action_space import MIN_SF_FLOOR, sf_from, distinct_sf_level_indices
-assert MIN_SF_FLOOR == 12
-assert [sf_from(i, 30, 10) for i in range(9, -1, -1)] == [30,28,26,24,22,20,18,16,14,12]
-assert distinct_sf_level_indices(kind="F", levels=10, max_sf=27, N=16384) == [2,3,4,5,6,7,8,9]
-print("新档位规则（统一间隔2 / 下限12 / 奇数基线无伪12档）OK")
+import action_space as asp
+assert not hasattr(asp, "MIN_SF_FLOOR"), "floor-12 应已回退"
+assert [asp.sf_from(i, 30, 10) for i in range(9, -1, -1)] == [30,28,26,24,22,20,19,18,17,16]
+assert asp.distinct_sf_level_indices(kind="F", levels=10, max_sf=20, N=16384) == [0,5,6,7,8,9]
+assert asp.distinct_sf_level_indices(kind="R", levels=10, max_sf=30, N=16384) == list(range(1,10))
+print("hybrid 档位规则已恢复（前5档间隔2/后5档间隔1/固定10档）+ 同值档预去重 OK")
 from seed_utils import derive_probe_seed, derive_policy_step_seed, PREFLIGHT_EPISODE
 print("stage2 seed_utils OK; preflight episode =", PREFLIGHT_EPISODE)
 PY
@@ -70,7 +73,7 @@ json.dump({"gelu_degree_per_layer": gelu, "softmax_degree_per_layer": softmax,
 print("[ok] 合成 Stage-1 record:", rec_dir, "| gelu =", gelu)
 PY
 
-echo "==================== [phase1] 新档位重建 fusion 图（必跑，旧图作废）===================="
+echo "==================== [phase1] fusion 图重建（本轮跳过：档位已回退 hybrid，已提交图有效）===================="
 cp -a "$MAPS_DIR" "$OUT/old_maps" 2>/dev/null || true
 rm -rf "$MAPS_DIR"
 mkdir -p "$MAPS_DIR"
@@ -232,7 +235,7 @@ ls -la "$OUT"
 
 ### 本次目标（2026-06-10）
 
-1. **新 SF 档位规则下重建 6 张 fusion 图**（统一间隔 2、下限 12、按基线裁档；旧图 action_indices 语义作废）。
+1. **SF 档位规则已回退 hybrid**（用户决定：前 5 档间隔 2、后 5 档间隔 1、无 12 下限、每槽固定 10 档）→ **已提交的 6 张 fusion 图直接有效，本轮不重建**（REBUILD_MAPS=0；保留的纯加速 = only= 单块解码 + builder 同值档预去重，结果等价）。图门禁照跑作保险。
 2. **Stage-2 episode 级并行的确定性门禁**：同 seed 短跑 300 ep，`--stage2-rl-devices 0` vs `0..N-1`，要求逐窗 `rollout_sig` 逐字相同 + `episodes.jsonl` 数值逐项相同（这是"任意卡数结果一致"的实证），同时给出实测加速比（预期 5 卡 ≈4.5–4.8×，旧 K-split 只有 ~2.9×）。
 3. **门禁 PASS 自动接 60k 里程碑长跑**（curriculum ON、K=5 固定、episode 并行全卡）。
 
@@ -242,10 +245,11 @@ ls -la "$OUT"
 - `KTRIALS` 不再 = NGPU，**固定 5**——K=NGPU 的旧约定本身就让不同卡数跑出不同结果。
 - 噪声播种从「os.urandom 真随机」改为「(run_seed, 全局episode, trial) 键控」；preflight 也键控（PREFLIGHT_EPISODE=-1）。同 seed 复跑可复现。
 - 比较器已修复（P2 上报 + 搜索进展判读）；上一轮 A/B 的正确结论是 **curriculum ON 胜**（best P3 40.62@ep5315 vs OFF 40.16@ep855，OFF 探索坍缩）。
+- 2026-06-10 当日曾切换到"统一间隔2/下限12"档位，**已按用户决定回退**——decode 与图均为 hybrid 原状。
 
 ### 预期产物
 
-- `$OUT/build_<gk>.log` ×6 + `new_maps/` + `map_gate.txt`（新旧 n_opt/fusion/enum_total 对照）
+- `$OUT/selfcheck.txt`（hybrid 档位断言 + seed_utils）+ `map_gate.txt`（option0==baseline 保险）
 - `$OUT/stage2_ngpu_gate/`：g1/gN sigs、sig_diff、episodes.jsonl ×2、verdict.txt（PASS/FAIL + ep/h + speedup）
 - `$OUT/long60k/run/`（diagnostics 全套，无 .pt）+ `long60k_health.log`（每 30 分钟滚动健康）
 

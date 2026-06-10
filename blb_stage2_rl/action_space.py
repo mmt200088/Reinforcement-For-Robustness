@@ -66,20 +66,19 @@ from function_handler import (
 # ---------------------------------------------------------------------------
 # 全局常量：每类噪声的离散挡位数（与 spec §4.1 对齐）
 # ---------------------------------------------------------------------------
-# 2026-06-10 (supersedes the 2026-06-04 hybrid 2/1 sweep): all SF kinds use a
-# UNIFORM step-2 downward sweep anchored at the slot's BASELINE SF (= calibrated
-# max_sf, NOT the noise-table max=46), with every level floored at
-# ``MIN_SF_FLOOR=12``: idx levels-1..0 → baseline, -2, -4, …, -2*(levels-1).
-# e.g. baseline 30 → 30,28,26,24,22,20,18,16,14,12. A low-baseline slot's deep
-# levels clamp to the floor and DUPLICATE (e.g. baseline 16 → 16,14,12,12,…);
-# the fusion builder enumerates only DISTINCT decoded values per slot, so the
-# clamped 档位 are never selected/enumerated — a slot may therefore contribute
-# fewer than 10 distinct levels, and a baseline below the floor contributes
-# exactly one (frozen at baseline, keeping option0==baseline for ANY dataset /
-# baseline). ``_snap_to_table`` still guards table membership (no-op for the
-# integer 10..46 table). K stays ``K_LEVELS``. The noise variance comes from
-# the N=16384 column for every slot (see ``_block_default_N``).
-MIN_SF_FLOOR = 12    # lowest selectable SF for any slot (user spec 2026-06-10)
+# 2026-06-04: all SF kinds use a uniform 10-level HYBRID downward sweep anchored at
+# the slot's BASELINE SF (= calibrated max_sf, NOT the noise-table max=46): the top 5
+# levels step by 2 (coarse, near baseline), the bottom 5 step by 1 (fine), reaching
+# baseline-14. e.g. baseline 30 → 30,28,26,24,22,20,19,18,17,16 (see ``sf_from``).
+# ``_snap_to_table`` floors any decoded SF below the noise table (min SF=10); a slot
+# whose baseline SF is low gets duplicate SF=10 levels — the fusion builder skips
+# them pre-enumeration via ``distinct_sf_level_indices`` (result-equivalent: a
+# duplicate-value level decodes to the identical cfg; the lowest index per value is
+# kept, matching the lex-min representative the post-eval signature dedup keeps) and
+# still dedups by installed-noise signature as before. K stays ``K_LEVELS``. The
+# noise variance comes from the N=16384 column for every slot (``_block_default_N``).
+# (2026-06-10: a uniform step-2 / floor-12 grid was tried and REVERTED the same day
+# per user decision — every slot keeps the fixed 10-level hybrid sweep.)
 LEVELS_W = 10        # weight encode
 LEVELS_MS = 10       # mask / scalar encode
 LEVELS_R = 10        # rescale (idx0=None; idx1..9 sweep SF, hybrid step)
@@ -402,32 +401,31 @@ def _block_default_N(block_idx: int, gelu_degree: int = 4, attn_degree: int = 4)
 # action index ↔ scaling factor 转换
 # ---------------------------------------------------------------------------
 def sf_from(idx: int, max_sf: int, levels: int) -> int:
-    """Uniform step-2 downward sweep from ``max_sf`` (= the slot's BASELINE SF,
-    not the table max), floored at ``MIN_SF_FLOOR``.
+    """Hybrid downward sweep from ``max_sf`` (= the slot's BASELINE SF, not the table max).
 
-    2026-06-10 (supersedes the hybrid 2/1 sweep): ``idx levels-1..0 → max_sf,
-    -2, -4, …, -2*(levels-1)`` (e.g. max_sf=30 → 30,28,26,24,22,20,18,16,14,12),
-    with every level clamped at ``max(MIN_SF_FLOOR, …)`` — but never above the
-    baseline itself, so a baseline below the floor decodes every level to the
-    baseline (frozen slot) and ``option0 == baseline`` holds for any dataset /
-    calibrated baseline. Clamped levels duplicate; selection-side code (the
-    fusion builder's distinct-value enumeration) must not pick them — see
-    ``distinct_sf_level_indices``.
+    The top half of the levels step by 2 (coarse, near baseline); the bottom half step
+    by 1 (fine, far from baseline). For the canonical 10-level slot this gives
+    ``idx 9..0 → max_sf, -2, -4, -6, -8, -10, -11, -12, -13, -14`` (e.g. max_sf=30 →
+    30,28,26,24,22,20,19,18,17,16).
+
+    May return a value below the noise-table minimum for a low-baseline-SF slot;
+    callers wrap with ``_snap_to_table`` which floors it at the table min (SF=10).
     """
     idx = int(idx)
     levels = int(levels)
     if idx < 0 or idx >= levels:
         raise ValueError(f"action idx {idx} out of [0, {levels})")
+    n_fine = (levels - 1) // 2          # step-1 intervals at the bottom
+    n_coarse = (levels - 1) - n_fine    # step-2 intervals at the top
     dist = (levels - 1) - idx           # 0 at idx = max (baseline SF)
-    value = int(max_sf) - 2 * dist
-    floor_eff = min(int(MIN_SF_FLOOR), int(max_sf))
-    return max(value, floor_eff)
+    offset = 2 * dist if dist <= n_coarse else 2 * n_coarse + (dist - n_coarse)
+    return int(max_sf) - int(offset)
 
 
 def _rescale_sf_from_index(idx: int, max_sf: int) -> Optional[int]:
     # idx 0 = None (rescale dropped — never selected by RL / the fusion builder, per
-    # CLAUDE.md item 2). idx 1..LEVELS_R-1 sweep SF via the uniform step-2 decode
-    # (floored at MIN_SF_FLOOR); _snap_to_table guards table membership downstream.
+    # CLAUDE.md item 2). idx 1..LEVELS_R-1 sweep SF via the hybrid decode; _snap_to_table
+    # floors at SF=10 downstream.
     idx = int(idx)
     if idx <= 0:
         return None
@@ -1461,32 +1459,33 @@ def distinct_sf_level_indices(
         max_sf: Optional[int],
         N: int,
         ) -> List[int]:
-    """Enumerable action indices for one SF slot under the uniform step-2 grid.
+    """Enumeration acceleration: one action index per DISTINCT decoded value.
 
-    Selection rule (2026-06-10 user spec): the slot's 档位 are the strict
-    arithmetic sequence ``baseline, baseline-2, baseline-4, …``; an index is
-    selectable iff its UNCLAMPED value is ≥ ``MIN_SF_FLOOR`` (the floor-clamped
-    duplicates ``sf_from`` returns defensively are "不满足要求的档位" and are
-    never enumerated — e.g. baseline 27 stops at 13, no pseudo-12 level). The
-    baseline level (top index) is always selectable, so a baseline below the
-    floor contributes exactly one frozen level and ``option0 == baseline``
-    holds for any dataset / calibrated baseline. For R slots, idx 0 (= None =
-    drop the rescale) is excluded as always (mental-model item 2). ``N`` is
-    accepted for signature symmetry with ``_field_level_values`` (the integer
-    10..46 noise table makes snapping a no-op on this grid). Returns ascending.
+    Under the hybrid sweep, a low-baseline slot's deep levels all snap to the
+    noise-table minimum (SF=10) and decode to IDENTICAL cfgs → identical
+    replans. The fusion builder skips those duplicates pre-enumeration instead
+    of replanning each and deduping post-eval. Result-equivalent by
+    construction: for each duplicated value the LOWEST index is kept, which is
+    exactly the lex-min representative the post-eval installed-signature dedup
+    (min bits, then lex-min action vector) would have selected — the emitted
+    option set, including its ``action_indices``, matches a full enumeration;
+    only the ``valid_configs`` build diagnostic shrinks. The action space
+    itself is untouched (every slot keeps its fixed 10 indices). For R slots,
+    idx 0 (= None = drop the rescale) is excluded as always (mental-model
+    item 2). Returns ascending.
     """
-    del N  # table membership is guaranteed on this grid; kept for symmetry
-    levels = int(levels)
-    base = int(max_sf) if max_sf is not None else 0
+    vals = _field_level_values(kind=str(kind), levels=int(levels), max_sf=max_sf, N=int(N))
     kept: List[int] = []
-    for idx in range(levels - 1, -1, -1):
-        if str(kind) == "R" and idx == 0:
+    seen: set = set()
+    for idx in range(int(levels)):
+        v = vals[idx]
+        if v is None:
+            continue  # R idx0 = drop — never enumerable
+        if v in seen:
             continue
-        dist = (levels - 1) - idx
-        raw = base - 2 * dist
-        if dist == 0 or raw >= int(MIN_SF_FLOOR):
-            kept.append(int(idx))
-    return sorted(kept)
+        seen.add(v)
+        kept.append(int(idx))
+    return kept
 
 
 def _operation_name(block_idx: int, field_name: str, kind: str) -> str:

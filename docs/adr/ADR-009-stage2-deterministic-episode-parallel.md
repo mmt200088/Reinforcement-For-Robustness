@@ -1,10 +1,15 @@
 # ADR-009: Stage-2 deterministic seeding + episode-parallel rollout + uniform SF grid
 
 Date: 2026-06-10
-Status: Accepted (user-approved in the 2026-06-10 grill session)
+Status: Decisions 1–2 Accepted; Decision 3 (uniform SF grid) WITHDRAWN the same
+day per user decision — the 2026-06-04 hybrid 2/1 sweep stays in force (fixed
+10 levels per slot, no SF floor beyond the noise-table min). No map was ever
+built under the uniform grid, so the committed (hybrid-built) fusion maps
+remain valid. The result-equivalent accelerations introduced alongside it
+(``action_vector_to_cfgs(only=(layer, block))`` + the builder's
+duplicate-value level pre-dedup, re-expressed for the hybrid decode) are KEPT.
 Supersedes: the K-split-only multi-GPU scheme of the "N-GPU / four-GPU reward-probe
-parallelism" era for fusion mode (the K-split path itself stays available); the
-2026-06-04 hybrid 2/1 SF sweep (part of ADR-008's decode notes).
+parallelism" era for fusion mode (the K-split path itself stays available).
 
 ## Context
 
@@ -61,18 +66,22 @@ Three independent findings forced this decision:
    `terminal_metric_cache` is not consulted in this mode (cached values are not
    reproducible under per-episode noise keys; cost of always re-evaluating
    ≈1.5%). Expected ≈4.5–4.8× on 5 GPUs (residual = the serial PPO update).
-3. **Uniform SF grid with a hard floor** (`action_space.MIN_SF_FLOOR = 12`):
-   `sf_from` decodes `baseline − 2·dist`, clamped defensively at
-   `min(12, baseline)`; `distinct_sf_level_indices` defines the SELECTABLE
-   levels as the strict arithmetic sequence members ≥ 12 (baseline always
-   selectable; odd baselines stop above the floor — no pseudo-12 level; a
-   baseline below the floor contributes exactly one frozen level), so
-   `option0 == baseline` holds for any calibrated baseline. The fusion map
-   builder enumerates only selectable levels, and `_eval_block` /
+3. **[WITHDRAWN same day — user decision]** ~~Uniform SF grid with a hard
+   floor (`MIN_SF_FLOOR = 12`)~~. The 2026-06-04 hybrid 2/1 sweep stays in
+   force: fixed 10 levels per slot (top 5 step-2, bottom 5 step-1, reaching
+   baseline-14), `_snap_to_table` flooring at the noise-table min SF=10. No
+   map was built under the uniform grid, so the committed hybrid-built maps
+   remain valid (no rebuild needed). What survives from this work item, both
+   result-equivalent accelerations: `_eval_block` /
    `BLBStage2SequentialEnv.evaluate_step` decode only the consumed
-   `(layer, block)` via `action_vector_to_cfgs(..., only=...)` — bit-identical
-   per-(L,B) output, large enumeration/rollout speedup. All committed fusion
-   maps built under the old decode are STALE and must be rebuilt.
+   `(layer, block)` via `action_vector_to_cfgs(..., only=...)` (per-(L,B)
+   decode independence → bit-identical output; the full 12-layer decode, not
+   the sub-ms replan, dominated the hot paths), and the builder skips
+   duplicate-value (snap-floored) levels pre-enumeration via
+   `distinct_sf_level_indices` (the lowest index per value is kept — exactly
+   the lex-min representative the post-eval installed-signature dedup would
+   keep, so the emitted options match a full enumeration; only the
+   `valid_configs` diagnostic shrinks).
 
 ## Consequences
 
@@ -81,8 +90,9 @@ Three independent findings forced this decision:
   `--stage2-rl-devices 0` and `0,…,N-1`).
 * Old runs (true-random noise, K=NGPU) are statistically comparable but not
   reproducible; the 2026-06-10 A/B remains valid evidence.
-* Fusion maps must be rebuilt whenever `sf_from` / `MIN_SF_FLOOR` / the level
-  count changes (the map stores action indices).
+* Fusion maps must be rebuilt whenever `sf_from` / the level count changes
+  (the map stores action indices). With decision 3 withdrawn, the committed
+  hybrid-built maps (1ad078c) stay valid as-is.
 * If a fusion map ever yields an invalid action at runtime, the worker logs
   `[ANOMALY]` and falls back to baseline — that event voids the 1==N guarantee
   for the run and means the map is broken; the server gate fails on it.
