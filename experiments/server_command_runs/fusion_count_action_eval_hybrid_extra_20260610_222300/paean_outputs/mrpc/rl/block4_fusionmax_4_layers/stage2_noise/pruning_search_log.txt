@@ -1,0 +1,33 @@
+================================================================================
+【二阶段噪声 RL 日志】二阶段噪声 RL 日志开始（Stage-2 noise RL log started）
+================================================================================
+【学习率配置】
+  - 一阶段 PPO 学习率（Stage-1 PPO LR）：raw=0.0001 -> 0.0001（直接指定（direct））
+  - 二阶段 PPO 学习率（Stage-2 PPO LR）：raw=0.0001 -> 0.0001（直接指定（direct））
+【训练轮数配置】
+  - 一阶段 RL 回合数（stage-1 episodes）：51000
+  - 二阶段噪声 RL 回合数（stage-2 episodes）：40000
+【输出目录】
+  - 本次运行根目录（run_output_dir）：/hy-tmp/fusion_count_action_eval_hybrid_extra_0995eae_20260610_222300/src/experiments/server_command_runs/fusion_count_action_eval_hybrid_extra_20260610_222300/paean_outputs/mrpc/rl/block4_fusionmax_4_layers
+
+[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。
+
+============================================================
+PHASE: BLB ACTION FINAL EVALUATION (validation_full)
+CONFIG_SOURCE=manual  STAGE1_SOURCE=manual
+RESCALE_OPTIMIZER=in_process root=/hy-tmp/fusion_count_action_eval_hybrid_extra_0995eae_20260610_222300/src/Rescale_optimizer mode=cfg_derived
+selected_candidates=1 random_enabled=True cost_match_count=50 repeat=5
+============================================================
+
+--- BLB selected candidate 1/1: ActionSelected ---
+  ActionSelected: Loss=0.3789, Acc.=0.8618, F1=0.8607, avg_k=13.00, bits=11069, fusion=4
+
+--- Cost-matched random sampling ---
+  anchor: ActionSelected (total_bits=11069, total_fusion=4, sum_k=767, avg_k=13.000)
+  target: 50 matched configs, max 5000 attempts
+  [cost-match] sampling done: accepted=0/50 attempts=5000/5000 invalid=0 cost_mismatch=0 avg_k_prefilter_skipped=5000
+  [cost-match][warning] reached max_attempts before filling count=50. Consider raising --cost-match-max-attempts or loosening cost match (current targets: total_bits=11069, total_fusion=4, sum_k=767).
+BLB action final-eval summary saved to: /hy-tmp/fusion_count_action_eval_hybrid_extra_0995eae_20260610_222300/src/experiments/server_command_runs/fusion_count_action_eval_hybrid_extra_20260610_222300/paean_outputs/mrpc/rl/block4_fusionmax_4_layers/final_eval/blb_action_final_eval_results_mrpc.json
+BLB action final-eval text report saved to: /hy-tmp/fusion_count_action_eval_hybrid_extra_0995eae_20260610_222300/src/experiments/server_command_runs/fusion_count_action_eval_hybrid_extra_20260610_222300/paean_outputs/mrpc/rl/block4_fusionmax_4_layers/final_eval/blb_action_final_eval_report_mrpc.md
+BLB action final-eval plot saved to: /hy-tmp/fusion_count_action_eval_hybrid_extra_0995eae_20260610_222300/src/experiments/server_command_runs/fusion_count_action_eval_hybrid_extra_20260610_222300/paean_outputs/mrpc/rl/block4_fusionmax_4_layers/final_eval/blb_action_final_eval_plot_mrpc.png
+BLB action scatter plot saved to: /hy-tmp/fusion_count_action_eval_hybrid_extra_0995eae_20260610_222300/src/experiments/server_command_runs/fusion_count_action_eval_hybrid_extra_20260610_222300/paean_outputs/mrpc/rl/block4_fusionmax_4_layers/final_eval/blb_action_final_eval_scatter_mrpc.png
