@@ -48,6 +48,46 @@ class ComboRangeTest(unittest.TestCase):
     def test_no_enum_slots_single_empty_combo(self):
         self.assertEqual([tuple(c) for c in fef.iter_combo_range([], 0, 1)], [()])
 
+    def test_derived_delta_uses_current_slot_sfs(self):
+        class FakeSession:
+            def __init__(self):
+                self.last_deltas = None
+
+            def replan(self, graph_key, *, t_new, delta_overrides, return_dict):
+                self.last_deltas = dict(delta_overrides)
+                return {
+                    "valid": True,
+                    "fusion_count": 0,
+                    "new_compact_config": {},
+                    "result": {"valid": True, "chain": {"total_bits": 123}},
+                }
+
+        tpl = fef.FastEnumTemplate(
+            graph_key="fake_block4",
+            block_idx=4,
+            n_block=16384,
+            baseline_t_new=[30],
+            baseline_deltas={"ctct_rot_softmax_mul_v": 52, "other": 17},
+            skeleton_node_ids=[0],
+            slot_t_targets=[[], []],
+            slot_d_targets=[[], ["other"]],
+            slot_choice_sfs=[[30, 24, 18], [22, 16, 12]],
+            enum_positions=[1, 2],
+            enum_choices=[[0, 1, 2], [0, 1, 2]],
+            baseline_block_indices=[0, 0, 0],
+            derived_deltas=[
+                fef.DerivedDeltaSpec(
+                    node="ctct_rot_softmax_mul_v",
+                    terms=[fef.DeltaTermSpec(slot_idx=0), fef.DeltaTermSpec(slot_idx=1)],
+                )
+            ],
+        )
+        sess = FakeSession()
+        res = fef.eval_combo_fast(tpl, sess, [1, 2])
+        self.assertTrue(res["valid"])
+        self.assertEqual(sess.last_deltas["ctct_rot_softmax_mul_v"], 24 + 12)
+        self.assertEqual(sess.last_deltas["other"], 12)
+
 
 @unittest.skipUnless(_SESSION is not None, "in-repo Rescale_optimizer unavailable")
 class LiveSessionFastEvalTest(unittest.TestCase):

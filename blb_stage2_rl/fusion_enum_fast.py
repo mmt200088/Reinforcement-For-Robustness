@@ -125,6 +125,26 @@ class PointSpec:
 
 
 @dataclass
+class DeltaTermSpec:
+    """One term in a derived propagation delta.
+
+    Most graph deltas are fed by a single action slot. Block4 has one compound
+    CTCT delta, ``ctct_rot_softmax_mul_v``, whose value is the accumulated SF of
+    two inputs (V fresh + mask2). That must be recomputed from the current combo
+    instead of treated as a single-slot identity target.
+    """
+
+    slot_idx: int = -1
+    const_sf: int = 0
+
+
+@dataclass
+class DerivedDeltaSpec:
+    node: str
+    terms: List[DeltaTermSpec]
+
+
+@dataclass
 class FastEnumTemplate:
     graph_key: str
     block_idx: int
@@ -140,6 +160,7 @@ class FastEnumTemplate:
     enum_choices: List[List[int]]            # action indices per slot
     baseline_block_indices: List[int]
     points: List[PointSpec] = field(default_factory=list)
+    derived_deltas: List[DerivedDeltaSpec] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +216,14 @@ def eval_combo_fast(
             t_new[ti] = sf
         for dk in template.slot_d_targets[e]:
             deltas[dk] = sf
+    for spec in template.derived_deltas:
+        total = 0
+        for term in spec.terms:
+            if int(term.slot_idx) >= 0:
+                total += int(sf_by_slot[int(term.slot_idx)])
+            else:
+                total += int(term.const_sf)
+        deltas[str(spec.node)] = int(total)
 
     raw = session.replan(
         template.graph_key, t_new=t_new, delta_overrides=deltas, return_dict=True,
@@ -407,6 +436,12 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
     slot_d_targets: List[List[str]] = []
     slot_choice_sfs: List[List[int]] = []
     attr_to_slot: Dict[str, int] = {}
+    field_to_slot: Dict[str, int] = {}
+    derived_delta_names = (
+        {"ctct_rot_softmax_mul_v"}
+        if blk == 4 and "ctct_rot_softmax_mul_v" in d0
+        else set()
+    )
 
     for e in range(n_slots):
         pos = int(ctx.enum_positions[e])
@@ -416,6 +451,7 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
         vals = _field_level_values(kind=str(kind), levels=levels, max_sf=max_sf, N=int(ctx.N_block))
         choice_sfs = [int(vals[idx]) for idx in ctx.enum_choices[e]]
         slot_choice_sfs.append(choice_sfs)
+        field_to_slot[str(fname)] = int(e)
 
         probe_levels = [c for c in ctx.enum_choices[e] if c != base_block[pos]][:2]
         if not probe_levels:
@@ -429,7 +465,10 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
             t_v, d_v = _inputs(cfg_v)
             expect = int(vals[int(lvl)])
             tt = [i for i in range(len(t0)) if t_v[i] != t0[i]]
-            dd = [k for k in d0 if d_v.get(k) != d0[k]]
+            dd = [
+                k for k in d0
+                if k not in derived_delta_names and d_v.get(k) != d0[k]
+            ]
             for i in tt:
                 if int(t_v[i]) != expect:
                     raise RuntimeError(
@@ -530,6 +569,31 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
         else:
             points.append(PointSpec(kind="const", distribution=dist, N=N, const_sf=sf))
 
+    derived_deltas: List[DerivedDeltaSpec] = []
+    if blk == 4 and "ctct_rot_softmax_mul_v" in d0:
+        def _term(field_name: str, cfg_attr: str) -> DeltaTermSpec:
+            slot = int(field_to_slot.get(field_name, -1))
+            if slot >= 0:
+                return DeltaTermSpec(slot_idx=slot)
+            point = getattr(base_cfg, cfg_attr, None)
+            if point is None or not hasattr(point, "scaling_factor"):
+                raise RuntimeError(
+                    f"{graph}: cannot derive ctct_rot_softmax_mul_v term {field_name}/{cfg_attr}"
+                )
+            return DeltaTermSpec(slot_idx=-1, const_sf=int(point.scaling_factor))
+
+        # ``default_block4_cfg_to_delta`` defines this as
+        # SF(v_fresh) + SF(v_mask_encode). action_space binds v_mask_encode to
+        # softmax_out_mask_encode, so the RL-visible second term is
+        # ``softmax_out_mask_sf``.
+        derived_deltas.append(DerivedDeltaSpec(
+            node="ctct_rot_softmax_mul_v",
+            terms=[
+                _term("v_fresh_sf", "v_fresh"),
+                _term("softmax_out_mask_sf", "softmax_out_mask_encode"),
+            ],
+        ))
+
     return FastEnumTemplate(
         graph_key=graph,
         block_idx=blk,
@@ -544,6 +608,7 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
         enum_choices=[[int(c) for c in ch] for ch in ctx.enum_choices],
         baseline_block_indices=list(int(x) for x in ctx.baseline_block_indices),
         points=points,
+        derived_deltas=derived_deltas,
     )
 
 
