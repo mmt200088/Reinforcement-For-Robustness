@@ -52,3 +52,4 @@ Proposed → Accepted → (Superseded by ADR-XXX | Deprecated)
 | 006 | F0 / F1 / F4 三级 fidelity ladder（去掉 F2/F3）   | Accepted              | 2026-05-16 |
 | 007 | v2-style clipped-shaping + tier-bonus reward      | Accepted              | 2026-05-18 |
 | 008 | Per-block fusion-count action（vs 逐槽 SF）        | Accepted              | 2026-06-03 |
+| 009 | Stage-2 确定性播种 + episode 并行 + 均匀 SF 档位   | Accepted              | 2026-06-10 |
