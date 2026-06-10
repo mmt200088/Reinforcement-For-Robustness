@@ -1,0 +1,4 @@
+==== [stageA] 判读 ====
+[stageA][PASS] 1卡与N卡 rollout_sig 逐窗完全相同 → 结果与卡数无关 ✓
+1-GPU : 4800 ep/h (900s)
+5-GPU : 18000 ep/h (240s)  speedup=3.75x (ideal 5x)

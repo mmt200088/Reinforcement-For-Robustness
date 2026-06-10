@@ -1,0 +1,34 @@
+{
+  "label_a": "curriculum ON",
+  "label_b": "curriculum OFF",
+  "summary_a": {
+    "n_total": 6000,
+    "n_post": 5920,
+    "best_reward": 40.615822293816905,
+    "post_p1": 0.06266891891891892,
+    "post_p3": 0.8261824324324324,
+    "post_loss_cap": 0.0,
+    "post_mean_reward": 34.36993830071155,
+    "post_mean_fusion": 9.079391891891891,
+    "tail_p1": 0.02702702702702703,
+    "tail_p3": 0.9653716216216216,
+    "tail_mean_reward": 38.81723835082623,
+    "tail_mean_fusion": 15.50929054054054,
+    "tail_mean_m1": 0.8658671611064195
+  },
+  "summary_b": {
+    "n_total": 6000,
+    "n_post": 5920,
+    "best_reward": 40.15517833901901,
+    "post_p1": 0.03902027027027027,
+    "post_p3": 0.8501689189189189,
+    "post_loss_cap": 0.0,
+    "post_mean_reward": 35.04910321851141,
+    "post_mean_fusion": 3.0381756756756757,
+    "tail_p1": 0.0,
+    "tail_p3": 1.0,
+    "tail_mean_reward": 38.906049678074346,
+    "tail_mean_fusion": 0.0,
+    "tail_mean_m1": 0.8664821315456084
+  }
+}

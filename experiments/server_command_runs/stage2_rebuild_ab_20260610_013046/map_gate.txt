@@ -1,0 +1,19 @@
+FusionCountMap.load('mrpc') OK — 所有图 option0==baseline。
+
+图           新(n_opt, fusion_counts)        旧(n_opt, fusion_counts)
+  block1_mrpc.json (1, [0])                     —
+  block2_mrpc.json (2, [0, 1])                  —
+  block4.json      (2, [0, 1])                  —
+  block5_n0.json   (2, [0, 1])                  —
+  block5_n1.json   (2, [0, 1])                  —
+  block5_n2.json   (2, [0, 1])                  —
+  block5_n4.json   (2, [0, 1])                  —
+
+[新 replan 策略对 fusion 图的影响]
+  block1_mrpc.json 旧=(1, [0])  新=(1, [0])
+  block2_mrpc.json 旧=(2, [0, 1])  新=(2, [0, 1])
+  block4.json      旧=(2, [0, 1])  新=(2, [0, 1])
+  block5_n0.json   旧=(2, [0, 1])  新=(2, [0, 1])
+  block5_n1.json   旧=(2, [0, 1])  新=(2, [0, 1])
+  block5_n2.json   旧=(2, [0, 1])  新=(2, [0, 1])
+  block5_n4.json   旧=(2, [0, 1])  新=(2, [0, 1])
