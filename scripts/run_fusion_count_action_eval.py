@@ -54,6 +54,8 @@ def _json_hash(payload: Any) -> str:
 def _load_action_configs(action_dir: Path) -> List[dict]:
     configs = []
     for path in sorted(action_dir.glob("*.json")):
+        if path.name.startswith("._") or path.name.startswith("_"):
+            continue
         payload = json.loads(path.read_text(encoding="utf-8"))
         action = payload.get("action_vec")
         if not isinstance(action, list):
