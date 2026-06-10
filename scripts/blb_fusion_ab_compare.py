@@ -94,16 +94,31 @@ def summarize(eps: List[Dict[str, Any]], anchor: int) -> Dict[str, Any]:
     rewards = [float(r.get("total_reward", 0.0) or 0.0) for r in eps]
     tail = post[-max(1, len(post) // 5):] if post else []  # final ~20% post-anchor
     tail_pr = [int(r.get("terminal_priority", 0) or 0) for r in tail]
+    # Search progress: the project's goal is the best hard-priority P3 config,
+    # so track the best P3 (valid) episode reward AND where it was found —
+    # a run whose best all sits in the first third and whose tail fusion≈0
+    # has stopped searching, no matter how nice its tail mean reward looks.
+    p3_rows = [
+        (float(r.get("total_reward", 0.0) or 0.0), int(r.get("episode", 0) or 0))
+        for r in post  # post-anchor only: the forced-baseline anchor is not "found"
+        if int(r.get("terminal_priority", 0) or 0) == 3
+        and int(r.get("invalid_steps", 0) or 0) == 0
+    ]
+    best_p3_reward, best_p3_episode = (max(p3_rows) if p3_rows else (0.0, -1))
     return {
         "n_total": len(eps),
         "n_post": len(post),
         "best_reward": max(rewards) if rewards else 0.0,
+        "best_p3_reward": float(best_p3_reward),
+        "best_p3_episode": int(best_p3_episode),
         "post_p1": _frac([p == 1 for p in pr]),
+        "post_p2": _frac([p == 2 for p in pr]),
         "post_p3": _frac([p == 3 for p in pr]),
         "post_loss_cap": _frac([float(r.get("terminal_loss_mean", 0.0) or 0.0) >= LOSS_CAP for r in post]),
         "post_mean_reward": _mean([float(r.get("total_reward", 0.0) or 0.0) for r in post]),
         "post_mean_fusion": _mean([float(r.get("fusion_count", 0) or 0) for r in post]),
         "tail_p1": _frac([p == 1 for p in tail_pr]),
+        "tail_p2": _frac([p == 2 for p in tail_pr]),
         "tail_p3": _frac([p == 3 for p in tail_pr]),
         "tail_mean_reward": _mean([float(r.get("total_reward", 0.0) or 0.0) for r in tail]),
         "tail_mean_fusion": _mean([float(r.get("fusion_count", 0) or 0) for r in tail]),
@@ -161,9 +176,41 @@ def _verdict(sa: Dict[str, Any], sb: Dict[str, Any], la: str, lb: str) -> str:
                 f"P3={sa['tail_p3']:.0%}) while <b>{lb}</b> collapses (tail P1={sb['tail_p1']:.0%}, "
                 f"loss-cap={sb['post_loss_cap']:.0%}).")
     if a_healthy and not b_collapsed:
-        return (f"⚠️ Both runs avoided collapse — curriculum may be unnecessary at this scale "
-                f"(A tail P1={sa['tail_p1']:.0%}, B tail P1={sb['tail_p1']:.0%}). Compare final "
-                f"cost: A reward={sa['tail_mean_reward']:.2f} vs B={sb['tail_mean_reward']:.2f}.")
+        # Both avoided ACCURACY collapse → judge by SEARCH PROGRESS, not tail
+        # mean reward. The goal is the best hard-priority P3 config; a tail
+        # parked at fusion≈0 means the policy retreated to baseline
+        # (exploration collapse) — that *raises* tail mean reward (no P1 tax)
+        # while ending the search. The 2026-06-10 6k A/B is the canonical
+        # example: OFF had the better tail mean but found all its best
+        # candidates before ep 1000 and adopted 0 fusions thereafter, while
+        # ON kept improving through the end with ~15 fusions/episode.
+        a_best = float(sa.get("best_p3_reward", 0.0))
+        b_best = float(sb.get("best_p3_reward", 0.0))
+        a_ep = int(sa.get("best_p3_episode", -1))
+        b_ep = int(sb.get("best_p3_episode", -1))
+        winner_label = la if a_best >= b_best else lb
+        notes = []
+        for s, lbl in ((sa, la), (sb, lb)):
+            n_tot = max(1, int(s.get("n_total", 0)))
+            stalled = (
+                float(s.get("tail_mean_fusion", 0.0)) < 0.5
+                and 0 <= int(s.get("best_p3_episode", -1)) < n_tot // 3
+            )
+            if stalled:
+                notes.append(
+                    f"<b>{lbl}</b> shows exploration collapse: tail fusion≈0 and its best "
+                    f"P3 was found in the first third (ep {int(s.get('best_p3_episode', -1))}) "
+                    f"— the higher tail mean is the safety of parking at baseline, not progress"
+                )
+        return (
+            f"🔎 Both runs avoided accuracy collapse → verdict by SEARCH PROGRESS "
+            f"(best P3 reward + when it was found; tail mean reward is only a safety metric): "
+            f"<b>{winner_label}</b> wins — best P3 {a_best:.2f}@ep{a_ep} ({la}) vs "
+            f"{b_best:.2f}@ep{b_ep} ({lb}); tail fusion {la}={sa['tail_mean_fusion']:.1f} / "
+            f"{lb}={sb['tail_mean_fusion']:.1f}; tail P2 {la}={sa.get('tail_p2', 0.0):.0%} / "
+            f"{lb}={sb.get('tail_p2', 0.0):.0%}."
+            + ((" " + "; ".join(notes) + ".") if notes else "")
+        )
     if not a_healthy and b_collapsed:
         return (f"❌ Curriculum did not fully prevent collapse (A tail P1={sa['tail_p1']:.0%}). "
                 f"Needs a longer ramp or tighter radius schedule.")
@@ -191,12 +238,16 @@ def render_html(la, lb, sa, sb, wa, wb, pngs, ba, bb) -> str:
         "<table><tr><th>metric</th><th>" + la + "</th><th>" + lb + "</th></tr>"
         + _sum_row("episodes", "n_total", "{:d}")
         + _sum_row("best reward", "best_reward", "{:.2f}")
+        + _sum_row("best P3 reward (valid)", "best_p3_reward", "{:.2f}")
+        + _sum_row("best P3 found @ episode", "best_p3_episode", "{:d}")
         + _sum_row("post-anchor mean reward", "post_mean_reward", "{:.2f}")
         + _sum_row("post-anchor P1(acc) rate", "post_p1", "{:.1%}")
+        + _sum_row("post-anchor P2(stab) rate", "post_p2", "{:.1%}")
         + _sum_row("post-anchor P3(cost) rate", "post_p3", "{:.1%}")
         + _sum_row("post-anchor loss-cap rate", "post_loss_cap", "{:.1%}")
         + _sum_row("post-anchor mean fusion", "post_mean_fusion", "{:.2f}")
         + _sum_row("final-20% P1 rate", "tail_p1", "{:.1%}")
+        + _sum_row("final-20% P2 rate", "tail_p2", "{:.1%}")
         + _sum_row("final-20% P3 rate", "tail_p3", "{:.1%}")
         + _sum_row("final-20% mean reward", "tail_mean_reward", "{:.2f}")
         + _sum_row("final-20% mean metric1", "tail_mean_m1", "{:.3f}")
