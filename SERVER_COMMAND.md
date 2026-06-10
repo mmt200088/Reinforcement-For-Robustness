@@ -75,9 +75,11 @@ PY
 
 echo "==================== [phase1] fusion 图重建（本轮跳过：档位已回退 hybrid，已提交图有效）===================="
 cp -a "$MAPS_DIR" "$OUT/old_maps" 2>/dev/null || true
-rm -rf "$MAPS_DIR"
-mkdir -p "$MAPS_DIR"
 if [ "$REBUILD_MAPS" = 1 ]; then
+  # 仅在确实重建时才清空图目录（54295ba 原把 rm -rf 放在守卫外——REBUILD_MAPS=0
+  # 时会把有效的已提交图删掉、让图门禁 FATAL；现移入守卫内）。
+  rm -rf "$MAPS_DIR"
+  mkdir -p "$MAPS_DIR"
   # 全部完整构建（--max-enum-combos 0）：去重档位 + only= 单块解码后组合数应大幅缩小；
   # 逐图计时写日志。block4 若超过 2 小时仍未出结果，看 build_block4.log 的 enum_total。
   for gk in block1_mrpc block2_mrpc block5_n1 block5_n2 block5_n4 block4; do
