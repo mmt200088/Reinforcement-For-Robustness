@@ -41,7 +41,7 @@ class ComboRangeTest(unittest.TestCase):
         total = 60
         edges = [0, 13, 14, 40, 60]
         seen = []
-        for a, b in zip(edges, edges[1:]):
+        for a, b in zip(edges, edges[1:]):  # pairwise; uneven lengths intended (py3.9-safe)
             seen.extend(tuple(c) for c in fef.iter_combo_range(lens, a, b))
         self.assertEqual(seen, list(itertools.product(*[range(n) for n in lens])))
 
@@ -129,7 +129,8 @@ class LiveSessionFastEvalTest(unittest.TestCase):
                 fef.PointSpec(kind="source", distribution="fresh", N=16384, slot_idx=0, const_sf=28),
                 fef.PointSpec(kind="rescale", distribution="rescale", N=16384, skel_pos=1, slot_idx=-1, const_sf=28),
                 fef.PointSpec(kind="rescale", distribution="rescale", N=16384, skel_pos=4, slot_idx=-1, const_sf=28),
-                fef.PointSpec(kind="encode", distribution="encoding", N=16384, node="ctpt_gama1", slot_idx=1, const_sf=20),
+                fef.PointSpec(kind="encode", distribution="encoding", N=16384,
+                              node="ctpt_gama1", slot_idx=1, const_sf=20),
                 fef.PointSpec(kind="slot", distribution="encoding", N=16384, slot_idx=1),
                 fef.PointSpec(kind="const", distribution="encoding", N=16384, const_sf=18),
             ],

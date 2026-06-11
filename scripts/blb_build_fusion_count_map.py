@@ -332,7 +332,7 @@ def build_one_block_type(
                 f"{graph_key}: enum-path mismatch: {len(options)} fast options vs "
                 f"{len(options_golden)} golden"
             )
-        for a, b in zip(options, options_golden):
+        for a, b in zip(options, options_golden, strict=True):
             same = (
                 a["action_indices"] == b["action_indices"]
                 and a["fusion_count"] == b["fusion_count"]

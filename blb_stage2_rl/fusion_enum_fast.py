@@ -493,7 +493,7 @@ def build_fast_template(ctx: Any) -> FastEnumTemplate:
                     f"{graph}: slot {fname}: cfg point count changed across decode "
                     f"({len(pts_v)} vs {len(pts0)})"
                 )
-            for (attr, sf, _dist, _N), (attr0, sf0, _d0_, _N0) in zip(pts_v, pts0):
+            for (attr, sf, _dist, _N), (attr0, sf0, _dist0, _N0) in zip(pts_v, pts0, strict=True):
                 if attr != attr0:
                     raise RuntimeError(f"{graph}: cfg point layout changed across decode ({attr} vs {attr0})")
                 if sf != sf0:
