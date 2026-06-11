@@ -762,6 +762,7 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-substage-mode) needv "$@"; BLB_V3_SUBSTAGE_MODE="$2"; S_BLB_V3_SUBSTAGE_MODE="true"; shift 2 ;;
     --blb-v3-fusion-count-action) needv "$@"; BLB_V3_FUSION_COUNT_ACTION="$2"; S_BLB_V3_FUSION_COUNT_ACTION="true"; shift 2 ;;
     --blb-v3-fusion-neighbor-curriculum) needv "$@"; BLB_V3_FUSION_NEIGHBOR_CURRICULUM="$2"; S_BLB_V3_FUSION_NEIGHBOR_CURRICULUM="true"; shift 2 ;;
+    --blb-v3-fusion-probe-interval) needv "$@"; BLB_V3_FUSION_PROBE_INTERVAL="$2"; S_BLB_V3_FUSION_PROBE_INTERVAL="true"; shift 2 ;;
     --blb-v3-substage-block-order) needv "$@"; BLB_V3_SUBSTAGE_BLOCK_ORDER="$2"; S_BLB_V3_SUBSTAGE_BLOCK_ORDER="true"; shift 2 ;;
     --blb-v3-substage-frozen-blocks) needv "$@"; BLB_V3_SUBSTAGE_FROZEN_BLOCKS="$2"; S_BLB_V3_SUBSTAGE_FROZEN_BLOCKS="true"; shift 2 ;;
     --blb-v3-substage-episodes-each) needv "$@"; BLB_V3_SUBSTAGE_EPISODES_EACH="$2"; S_BLB_V3_SUBSTAGE_EPISODES_EACH="true"; shift 2 ;;
@@ -1696,6 +1697,7 @@ else
     [ "$S_BLB_V3_SUBSTAGE_MODE" = "true" ] && CMD+=(--blb_v3_substage_mode "$BLB_V3_SUBSTAGE_MODE")
     [ "$S_BLB_V3_FUSION_COUNT_ACTION" = "true" ] && CMD+=(--blb_v3_fusion_count_action "$BLB_V3_FUSION_COUNT_ACTION")
     [ "$S_BLB_V3_FUSION_NEIGHBOR_CURRICULUM" = "true" ] && CMD+=(--blb_v3_fusion_neighbor_curriculum "$BLB_V3_FUSION_NEIGHBOR_CURRICULUM")
+    [ "$S_BLB_V3_FUSION_PROBE_INTERVAL" = "true" ] && CMD+=(--blb_v3_fusion_probe_interval "$BLB_V3_FUSION_PROBE_INTERVAL")
     [ "$S_BLB_V3_SUBSTAGE_BLOCK_ORDER" = "true" ] && CMD+=(--blb_v3_substage_block_order "$BLB_V3_SUBSTAGE_BLOCK_ORDER")
     [ "$S_BLB_V3_SUBSTAGE_FROZEN_BLOCKS" = "true" ] && CMD+=(--blb_v3_substage_frozen_blocks "$BLB_V3_SUBSTAGE_FROZEN_BLOCKS")
     [ "$S_BLB_V3_SUBSTAGE_EPISODES_EACH" = "true" ] && CMD+=(--blb_v3_substage_episodes_each "$BLB_V3_SUBSTAGE_EPISODES_EACH")

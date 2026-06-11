@@ -686,6 +686,12 @@ class BLBStage2SequentialPolicy(nn.Module):
             preferred = torch.full_like(self._preferred_per_slot_idx, -1)
             for slot_idx, lvl in enumerate(preferred_per_slot_idx):
                 lvl = int(lvl)
+                if lvl == -1:
+                    # -1 == no prior on this slot (the internal sentinel).
+                    # ADR-011: fusion mode uses this for the option slot so the
+                    # decayed-but-permanent baseline prior stops pulling the
+                    # 2-way fusion choice back to option 0 after the anchor.
+                    continue
                 if lvl < 0 or lvl >= self.cfg.max_num_levels:
                     raise ValueError(
                         f"preferred index {lvl} out of range [0, {self.cfg.max_num_levels})"

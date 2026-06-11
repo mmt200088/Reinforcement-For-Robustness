@@ -56,7 +56,7 @@ from .action_space import (
 )
 from .env import BLBStage2Env
 from .fusion_cost import BlockChoice, compute_fusion_cost_saving
-from .reward import FUSION_COST_W, TRUNC_COST_W
+from .reward import FUSION_COST_BUDGET_FRACTION, FUSION_COST_W, TRUNC_COST_W
 
 
 @dataclass
@@ -440,9 +440,22 @@ class BLBStage2SequentialEnv:
                     self._fusion_choices, fusion_w=FUSION_COST_W, trunc_w=TRUNC_COST_W,
                 )
                 budget = float(getattr(self.base.reward_weights, "p3_cost_budget", 4.5))
-                ext_score = float(res.cost_norm) * budget
+                # ADR-011 (2026-06-11): split the budget so the K pot cannot
+                # dilute the fusion signal — each component normalized over its
+                # own maximum. Old shared form (cost_norm * budget) made one
+                # block5 fusion worth +0.029: invisible to PPO, and the 60k run
+                # collapsed to fusion=0 despite block2/block5 fusion being
+                # metric-free in offline group eval.
+                fusion_budget = budget * float(FUSION_COST_BUDGET_FRACTION)
+                trunc_budget = budget - fusion_budget
+                ext_score = (
+                    float(res.fusion_norm) * fusion_budget
+                    + float(res.trunc_norm) * trunc_budget
+                )
                 ext_rank = float(res.cost_rank)
                 info["fusion_cost_norm"] = float(res.cost_norm)
+                info["fusion_cost_fusion_norm"] = float(res.fusion_norm)
+                info["fusion_cost_trunc_norm"] = float(res.trunc_norm)
                 info["fusion_cost_rank"] = float(res.cost_rank)
                 info["fusion_cost_max_actual"] = float(res.max_actual)
             term_state, term_reward, _term_done, term_info = self.base.step(

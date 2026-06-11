@@ -52,10 +52,24 @@ class BlockChoice:
 
 @dataclass
 class FusionCostResult:
-    """Output of :func:`compute_fusion_cost_saving`."""
+    """Output of :func:`compute_fusion_cost_saving`.
+
+    ``fusion_norm`` / ``trunc_norm`` are the two components normalized over their
+    OWN maxima (2026-06-11, ADR-011): the 60k run showed that under a single
+    shared normalization the K pot (47 x 50 weight) diluted the fusion signal to
+    invisibility (one block5 fusion = +0.029 reward), so the caller now budgets
+    the two components separately. ``cost_norm`` (shared normalization) is kept
+    for diagnostics/back-compat; ``cost_rank`` is unchanged.
+    """
     cost_norm: float
     cost_rank: float
     max_actual: float
+    fusion_norm: float = 0.0
+    trunc_norm: float = 0.0
+    fusion_actual: float = 0.0
+    trunc_actual: float = 0.0
+    fusion_max_actual: float = 0.0
+    trunc_max_actual: float = 0.0
     per_block: List[Dict[str, Any]] = field(default_factory=list)
 
 
@@ -108,6 +122,10 @@ def compute_fusion_cost_saving(
     normalization stable across episodes; if ``None`` it is derived from ``choices``.
     """
     actual = 0.0
+    fusion_actual = 0.0
+    trunc_actual = 0.0
+    fusion_max = 0.0
+    trunc_max = 0.0
     per_block: List[Dict[str, Any]] = []
     for c in choices:
         fs = _fusion_saving(c.fusion_count, c.max_fusion)
@@ -116,6 +134,11 @@ def compute_fusion_cost_saving(
         f_contrib = w_f * fs
         t_contrib = float(trunc_w) * ts
         actual += f_contrib + t_contrib
+        fusion_actual += f_contrib
+        trunc_actual += t_contrib
+        if int(c.max_fusion) > 0:
+            fusion_max += w_f
+        trunc_max += float(trunc_w)
         per_block.append({
             "block_idx": int(c.block_idx),
             "graph_key": str(c.graph_key),
@@ -134,9 +157,21 @@ def compute_fusion_cost_saving(
         else max_actual_for_choices(choices, fusion_w=fusion_w, trunc_w=trunc_w)
     )
     cost_norm = min(1.0, max(0.0, actual / denom)) if denom > 0.0 else 0.0
+    fusion_norm = (
+        min(1.0, max(0.0, fusion_actual / fusion_max)) if fusion_max > 0.0 else 0.0
+    )
+    trunc_norm = (
+        min(1.0, max(0.0, trunc_actual / trunc_max)) if trunc_max > 0.0 else 0.0
+    )
     return FusionCostResult(
         cost_norm=float(cost_norm),
         cost_rank=float(actual),
         max_actual=float(denom),
+        fusion_norm=float(fusion_norm),
+        trunc_norm=float(trunc_norm),
+        fusion_actual=float(fusion_actual),
+        trunc_actual=float(trunc_actual),
+        fusion_max_actual=float(fusion_max),
+        trunc_max_actual=float(trunc_max),
         per_block=per_block,
     )

@@ -120,6 +120,14 @@ FUSION_COST_W = {1: 80.0, 2: 150.0, 4: 130.0, 5: 40.0}
 TRUNC_COST_W = 50.0
 K_MAX_BITS = 13
 K_MIN_BITS = 8
+# 2026-06-11 (ADR-011): the P3 cost budget is SPLIT between the fusion and
+# truncation components, each normalized over its OWN maximum, instead of one
+# shared normalization. The 60k fusion run proved the shared pot lets K savings
+# (47 blocks x 50) dilute the fusion signal to invisibility (one block5 fusion
+# = +0.029 of a 4.5 budget) while the zero-noise baseline wins P3 outright —
+# the policy then rationally collapses to fusion=0. Fusion gets the larger
+# slice because harvesting fusion IS the point of the fusion-count action.
+FUSION_COST_BUDGET_FRACTION = 2.0 / 3.0
 
 # Tolerances driving the per-metric thresholds. ``acc_tolerance`` is the
 # relative drop you allow from baseline.metric{i}_mean (0.5% by default —

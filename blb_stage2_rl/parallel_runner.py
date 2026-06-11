@@ -52,6 +52,7 @@ from .env import BLBStage2Env
 from .fusion_curriculum import (
     build_fusion_step_level_mask,
     fusion_block_curriculum,
+    fusion_probe_target_block,
     select_mutable_step_indices,
 )
 from .probe_runner import (
@@ -270,6 +271,17 @@ def collect_fusion_episode(
         int(force_baseline_episodes) > 0
         and int(absolute_ep) < int(force_baseline_episodes)
     )
+    # Scheduled forced-fusion probe (ADR-011): pure function of the absolute
+    # episode index -> identical across workers (1==N preserved). Probe
+    # episodes force fusion option 1 on one rotating block type at baseline K
+    # under the OPEN mask, scored normally.
+    fusion_probe_block: Optional[int] = None
+    if not force_this_ep:
+        fusion_probe_block = fusion_probe_target_block(
+            int(absolute_ep),
+            anchor_episodes=int(force_baseline_episodes),
+            interval=int(getattr(train_cfg, "fusion_probe_interval", 200)),
+        )
 
     # --- fusion block-granularity safe-neighbor curriculum (mirror of the
     # serial loop; fc_rng is already keyed by the absolute episode index) ---
@@ -280,6 +292,7 @@ def collect_fusion_episode(
     if (
             bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", True))
             and not force_this_ep
+            and fusion_probe_block is None
     ):
         fc_seed = int(train_cfg.seed) if train_cfg.seed is not None else 0
         fc_rng = np.random.default_rng(
@@ -339,10 +352,19 @@ def collect_fusion_episode(
         chosen_value = 0.0
         chosen_eval_info: Optional[Dict[str, Any]] = None
 
-        if force_this_ep:
+        if force_this_ep or fusion_probe_block is not None:
             # Forced-baseline anchor: fusion baseline = (option 0, baseline K).
+            # Probe (ADR-011): fusion option 1 on the target block type, baseline
+            # K everywhere — valid by construction (the map holds only valid cfgs).
+            opt_idx = 0
+            if (
+                    fusion_probe_block is not None
+                    and int(spec.block_idx) == int(fusion_probe_block)
+                    and int(getattr(spec, "fusion_num_options", 1)) > 1
+            ):
+                opt_idx = 1
             forced_action = np.asarray(
-                [0, int(_baseline_k_index_for_block(spec.block_idx))], dtype=np.int64
+                [opt_idx, int(_baseline_k_index_for_block(spec.block_idx))], dtype=np.int64
             )
             forced_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
             forced_padded[:n_active] = forced_action[:n_active]
@@ -555,7 +577,11 @@ def collect_fusion_episode(
             fusion_neighbor_radius
             if (fusion_curriculum_active and not fusion_curriculum_open) else 0
         ),
-        exploration_mode=("forced_baseline" if force_this_ep else "radius1"),
+        exploration_mode=(
+            "forced_baseline" if force_this_ep else
+            (f"forced_fusion_probe_b{int(fusion_probe_block)}"
+             if fusion_probe_block is not None else "radius1")
+        ),
         guarded_radius2_active=False,
         guarded_radius2_recent_frontier_expansions=0,
         guarded_radius2_recent_duplicate_rate=0.0,
@@ -577,8 +603,13 @@ def collect_fusion_episode(
         empirical_invalid_level_applied=0,
         rejection_optimizer_wall_seconds=float(rejection_optimizer_wall_seconds_val),
         baseline_prior_scale=float(baseline_prior_scale),
-        base_action_source="baseline",
-        proposal_direction=("anchor" if force_this_ep else "none"),
+        base_action_source=(
+            "fusion_probe" if fusion_probe_block is not None else "baseline"
+        ),
+        proposal_direction=(
+            "anchor" if force_this_ep else
+            ("fusion_probe" if fusion_probe_block is not None else "none")
+        ),
         empirical_offset_success_rate=0.0,
         empirical_offset_failure_rate=0.0,
         frontier_seed_episode=-1,

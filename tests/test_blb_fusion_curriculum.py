@@ -213,5 +213,58 @@ class FullSpaceReachabilityTest(unittest.TestCase):
         np.testing.assert_array_equal(union, _open_mask(n_opts, n_k))
 
 
+class FusionProbeScheduleTest(unittest.TestCase):
+    """Scheduled forced-fusion probes (ADR-011) — determinism + rotation.
+
+    The probe decision must be a pure function of the absolute episode index so
+    that episode-parallel workers reach identical decisions (1==N invariant),
+    and the rotation must visit every fusable block type.
+    """
+
+    def test_anchor_episodes_never_probe(self):
+        for ep in range(0, 60):
+            # callers only consult the helper post-anchor, but rel<0 must be None
+            self.assertIsNone(
+                fcur.fusion_probe_target_block(ep - 60, anchor_episodes=60, interval=200)
+            )
+
+    def test_rotation_block2_block5_block4(self):
+        got = [
+            fcur.fusion_probe_target_block(60 + i * 200, anchor_episodes=60, interval=200)
+            for i in range(6)
+        ]
+        self.assertEqual(got, [2, 5, 4, 2, 5, 4])
+
+    def test_non_multiple_episodes_are_none(self):
+        for off in (1, 7, 199, 201):
+            self.assertIsNone(
+                fcur.fusion_probe_target_block(60 + off, anchor_episodes=60, interval=200)
+            )
+
+    def test_interval_zero_disables(self):
+        self.assertIsNone(
+            fcur.fusion_probe_target_block(60, anchor_episodes=60, interval=0)
+        )
+
+    def test_pure_function_of_episode_index(self):
+        # determinism across "workers": same args -> same answer, every call.
+        for ep in range(0, 2000, 37):
+            a = fcur.fusion_probe_target_block(ep, anchor_episodes=60, interval=200)
+            b = fcur.fusion_probe_target_block(ep, anchor_episodes=60, interval=200)
+            self.assertEqual(a, b)
+
+    def test_probe_frequency_is_sparse(self):
+        # 60k episodes / interval 200 -> 300 probes (0.5% overhead), 100 per type.
+        probes = [
+            fcur.fusion_probe_target_block(ep, anchor_episodes=60, interval=200)
+            for ep in range(60, 60060)
+        ]
+        hits = [x for x in probes if x is not None]
+        self.assertEqual(len(hits), 300)
+        self.assertEqual(hits.count(2), 100)
+        self.assertEqual(hits.count(5), 100)
+        self.assertEqual(hits.count(4), 100)
+
+
 if __name__ == "__main__":
     unittest.main()

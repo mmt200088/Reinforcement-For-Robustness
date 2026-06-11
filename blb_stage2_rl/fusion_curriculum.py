@@ -137,3 +137,36 @@ def select_mutable_step_indices(
     k = max(1, min(int(num_mutable), horizon))
     sel = rng.choice(horizon, size=k, replace=False)
     return {int(x) for x in np.atleast_1d(sel)}
+
+
+# ---- scheduled forced-fusion probes (2026-06-11, ADR-011) -------------------
+# The 60k fusion run collapsed to fusion=0: after the curriculum ramp the policy
+# never sampled fusion>0 again (436 attempts in 60k, ~all before ep 2000), even
+# though offline group eval shows block2/block5 fusion is metric-free. Probes are
+# the standing re-exploration mechanism: every ``interval`` post-anchor episodes,
+# ONE episode forces fusion option 1 on every block of ONE block type (rotating
+# block2 -> block5 -> block4) at baseline K, scored normally, so PPO keeps
+# receiving fresh on-policy evidence of fusion's true value forever. The decision
+# is a pure function of the absolute episode index -> deterministic and identical
+# across episode-parallel workers (1==N preserved).
+FUSION_PROBE_BLOCK_ROTATION: Tuple[int, ...] = (2, 5, 4)
+
+
+def fusion_probe_target_block(
+        absolute_episode_idx: int,
+        *,
+        anchor_episodes: int,
+        interval: int,
+        rotation: Sequence[int] = FUSION_PROBE_BLOCK_ROTATION,
+        ) -> int | None:
+    """Block type forced to fusion option 1 this episode, or None (normal ep).
+
+    ``interval <= 0`` disables probes. The first post-anchor episode (rel == 0)
+    is a probe so evidence starts flowing immediately after the anchor.
+    """
+    if int(interval) <= 0 or not rotation:
+        return None
+    rel = int(absolute_episode_idx) - int(anchor_episodes)
+    if rel < 0 or rel % int(interval) != 0:
+        return None
+    return int(rotation[(rel // int(interval)) % len(rotation)])

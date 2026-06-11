@@ -129,6 +129,79 @@ class FusionCostSavingTest(unittest.TestCase):
         self.assertAlmostEqual(res.max_actual, 400.0)
 
 
+class BudgetSplitComponentsTest(unittest.TestCase):
+    """ADR-011: fusion / truncation components normalized over their OWN maxima.
+
+    The 60k fusion run collapsed to fusion=0 partly because the shared
+    normalization let the K pot (47 x 50) dilute one block5 fusion to +0.029
+    reward. The split components let the env budget them separately.
+    """
+
+    def test_components_zero_at_baseline(self):
+        choices = [_bc(2, 0, 1, 13), _bc(5, 0, 1, 13), _bc(4, 0, 0, 13)]
+        res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
+        self.assertEqual(res.fusion_norm, 0.0)
+        self.assertEqual(res.trunc_norm, 0.0)
+        # fusion max counts only fusable levers (block2 + block5); trunc max = 3 blocks.
+        self.assertAlmostEqual(res.fusion_max_actual, 190.0)
+        self.assertAlmostEqual(res.trunc_max_actual, 150.0)
+
+    def test_fusion_only_moves_fusion_norm(self):
+        choices = [_bc(2, 1, 1, 13), _bc(5, 0, 1, 13)]
+        res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
+        self.assertAlmostEqual(res.fusion_actual, 150.0)
+        self.assertAlmostEqual(res.fusion_norm, 150.0 / 190.0)
+        self.assertEqual(res.trunc_norm, 0.0)
+
+    def test_k_only_moves_trunc_norm(self):
+        choices = [_bc(2, 0, 1, 8), _bc(5, 0, 1, 13)]
+        res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
+        self.assertEqual(res.fusion_norm, 0.0)
+        self.assertAlmostEqual(res.trunc_actual, 50.0)
+        self.assertAlmostEqual(res.trunc_norm, 0.5)
+
+    def test_both_full_saturate_to_one(self):
+        choices = [_bc(2, 1, 1, 8), _bc(5, 1, 1, 8)]
+        res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
+        self.assertAlmostEqual(res.fusion_norm, 1.0)
+        self.assertAlmostEqual(res.trunc_norm, 1.0)
+
+    def test_fusion_degenerate_schedule_has_zero_fusion_max(self):
+        # all-block1/block4 schedule: no fusion lever anywhere -> fusion_norm
+        # pinned 0 with no division blowup.
+        choices = [_bc(1, 0, 0, 8), _bc(4, 0, 0, 8)]
+        res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
+        self.assertEqual(res.fusion_max_actual, 0.0)
+        self.assertEqual(res.fusion_norm, 0.0)
+        self.assertAlmostEqual(res.trunc_norm, 1.0)
+
+    def test_split_budget_marginal_fusion_visible(self):
+        # mrpc-47-like schedule: 12x block2 + 12x block4 + 12x block5 fusable,
+        # 11x block1 K-only (47 blocks). With budget 4.5 split 2/3 fusion:
+        # one block5 flip must be worth >= 0.03 and one block2 flip >= 0.1.
+        baseline = (
+            [_bc(2, 0, 1, 13) for _ in range(12)]
+            + [_bc(4, 0, 1, 13) for _ in range(12)]
+            + [_bc(5, 0, 1, 13) for _ in range(12)]
+            + [_bc(1, 0, 0, 13) for _ in range(11)]
+        )
+        one_b5 = list(baseline)
+        one_b5[24] = _bc(5, 1, 1, 13)
+        one_b2 = list(baseline)
+        one_b2[0] = _bc(2, 1, 1, 13)
+        budget = 4.5
+        frac = rwd.FUSION_COST_BUDGET_FRACTION
+        def score(ch):
+            r = fusion_cost.compute_fusion_cost_saving(ch, fusion_w=FW, trunc_w=TW)
+            return r.fusion_norm * budget * frac + r.trunc_norm * budget * (1 - frac)
+        self.assertAlmostEqual(score(baseline), 0.0)
+        # fusion max = 12*150 + 12*130 + 12*40 = 3840
+        self.assertAlmostEqual(score(one_b5), 40.0 / 3840.0 * 3.0)
+        self.assertGreaterEqual(score(one_b5), 0.03)
+        self.assertAlmostEqual(score(one_b2), 150.0 / 3840.0 * 3.0)
+        self.assertGreaterEqual(score(one_b2), 0.1)
+
+
 class ExternalCostThreadingTest(unittest.TestCase):
     def test_weight_constants_match_spec(self):
         self.assertEqual(rwd.FUSION_COST_W, {1: 80.0, 2: 150.0, 4: 130.0, 5: 40.0})

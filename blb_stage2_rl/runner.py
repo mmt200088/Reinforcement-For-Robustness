@@ -709,6 +709,11 @@ class BLBStage2TrainConfig:
     fusion_neighbor_curriculum_enabled: bool = True
     fusion_neighbor_ramp_episodes: int = 0
     fusion_neighbor_max_radius: int = 6
+    # Scheduled forced-fusion probes (ADR-011 2026-06-11): every N post-anchor
+    # episodes one episode forces fusion option 1 on one rotating block type
+    # (block2 -> block5 -> block4) at baseline K, keeping fresh on-policy
+    # fusion evidence flowing after the curriculum dissolves. 0 disables.
+    fusion_probe_interval: int = 200
     # ---- COINN-style OSR pre-prune (opt-in 2026-05-27) ---------------------
     # Empty osr_results_path → no OSR layer (legacy behaviour). When set, the
     # runner loads existing results from PATH, or runs a fresh scan saving to
@@ -2838,6 +2843,12 @@ class BLBStage2RLRunner:
             cfg.fusion_neighbor_curriculum_enabled = str(v).strip().lower() in (
                 "1", "true", "yes", "on",
             )
+        v = getattr(ev, "blb_v3_fusion_probe_interval", None)
+        if v not in (None, ""):
+            try:
+                cfg.fusion_probe_interval = int(v)
+            except Exception:
+                pass
         if bool(getattr(cfg, "fusion_count_action", False)) and bool(getattr(cfg, "substage_mode", False)):
             raise ValueError(
                 "blb_v3_fusion_count_action and blb_v3_substage_mode are mutually exclusive"
