@@ -1,0 +1,20 @@
+{
+  "html": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/reports/html_reports/20260611_mrpc_fusion_count_map_slots_newenum_resume_20260611_013605.html",
+  "json": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/fusion_count_map_report.json",
+  "action_config_dir": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs",
+  "action_configs": {
+    "all_fusion0": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/all_fusion0.json",
+    "all_fusion1_available": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/all_fusion1_available.json",
+    "all_fusionmax": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/all_fusionmax.json",
+    "one_hot_block1_mrpc": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/one_hot_block1_mrpc.json",
+    "one_hot_block2_mrpc": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/one_hot_block2_mrpc.json",
+    "one_hot_block4": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/one_hot_block4.json",
+    "one_hot_block5_n1": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/one_hot_block5_n1.json",
+    "one_hot_block5_n2": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/one_hot_block5_n2.json",
+    "one_hot_block5_n4": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/one_hot_block5_n4.json",
+    "block2_block5_all_layers_fusionmax": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/block2_block5_all_layers_fusionmax.json",
+    "block4_fusionmax_1_layer": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/block4_fusionmax_1_layer.json",
+    "block4_fusionmax_2_layers": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/block4_fusionmax_2_layers.json",
+    "block4_fusionmax_4_layers": "/hy-tmp/fusion_count_newenum_513a1ff_20260611_005952/src/experiments/server_command_runs/fusion_count_newenum_eval_20260611_010156/action_configs/action_configs/block4_fusionmax_4_layers.json"
+  }
+}
