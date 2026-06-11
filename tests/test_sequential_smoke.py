@@ -964,6 +964,24 @@ class RewardDesignV2RegressionTest(unittest.TestCase):
                 msg=f"line {line_no}: _rdv2 still in active code: {line!r}",
             )
 
+    def test_stage2_stability_tolerance_allows_large_slack(self):
+        """ADR-011 uses --stage2-stability-tolerance 5.0 for 500% std slack.
+
+        Unlike metric degradation tolerances, stability tolerance is a
+        multiplier in threshold = baseline_std * (1 + tol), so values above 1
+        are valid and must pass launcher validation.
+        """
+        src = open("llama_7B_LayerImportance.sh", encoding="utf-8").read()
+        self.assertIn("可设 5.0 表示 500%", src)
+        self.assertIn(
+            'is_pos_num "$STAGE2_STABILITY_TOLERANCE"',
+            src,
+        )
+        self.assertNotIn(
+            "--stage2-stability-tolerance 必须 < 1",
+            src,
+        )
+
     def test_episode_record_has_terminal_priority_and_metrics(self):
         src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
         for needle in (

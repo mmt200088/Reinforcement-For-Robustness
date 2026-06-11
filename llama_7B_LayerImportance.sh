@@ -76,7 +76,7 @@ GA / Greedy：
 准确度约束参数（rl / ga / greedy / rl-and-ga-compare 可用）：
   --stage1-accuracy-tolerance FLOAT    Stage-1 指标约束百分比（默认 0.005 即 0.5%）
   --stage2-limit-tolerance FLOAT       Stage-2 指标约束百分比（以 baseline 为基准，默认 0.05 即 5%；loss 允许上浮 5%、metric 允许下降 5%）
-  --stage2-stability-tolerance FLOAT   Stage-2 稳定性约束百分比（以 baseline 探针的 std 为基准，默认 0.05 即 5%）
+  --stage2-stability-tolerance FLOAT   Stage-2 稳定性约束倍率（以 baseline 探针的 std 为基准，默认 0.05 即 5%；可设 5.0 表示 500%）
   --stage2-k-trials INT                Stage-2 稳定性评测噪声试验次数 K（默认 5；每次评测在同一份探针上跑 K 个独立噪声种子）
   --stage2-probe-size INT              Stage-2 稳定性评测探针子集大小（默认 256；用分层采样从验证集中抽取 K 次 trial 共用的固定子集）
   --blb-v3-reward-devices STR          Stage-2 RL 奖励探针并行 GPU 列表（默认空 = 单卡；如 "0,1" → 把 K 次 trial 在两张卡上并行执行）
@@ -945,7 +945,6 @@ awk -v x="$STAGE1_ACCURACY_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || er
 is_pos_num "$STAGE2_LIMIT_TOLERANCE" || err "--stage2-limit-tolerance 必须是正数，当前为：$STAGE2_LIMIT_TOLERANCE"
 awk -v x="$STAGE2_LIMIT_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-limit-tolerance 必须 < 1（百分比形式如 0.05 表示 5%），当前为：$STAGE2_LIMIT_TOLERANCE"
 is_pos_num "$STAGE2_STABILITY_TOLERANCE" || err "--stage2-stability-tolerance 必须是正数，当前为：$STAGE2_STABILITY_TOLERANCE"
-awk -v x="$STAGE2_STABILITY_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-stability-tolerance 必须 < 1（百分比形式如 0.05 表示 5%），当前为：$STAGE2_STABILITY_TOLERANCE"
 is_pos_int "$STAGE2_K_TRIALS" || err "--stage2-k-trials 必须是正整数，当前为：$STAGE2_K_TRIALS"
 is_pos_int "$STAGE2_PROBE_SIZE" || err "--stage2-probe-size 必须是正整数，当前为：$STAGE2_PROBE_SIZE"
 is_pos_int "$PPO_UPDATE_INTERVAL_VAL" || err "--ppo-update-interval 必须是正整数，当前为：$PPO_UPDATE_INTERVAL_VAL"
