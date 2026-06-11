@@ -1,0 +1,3610 @@
+{
+  "schema_version": "fusion_count_fixed_action_v1",
+  "num_layers": 12,
+  "profile": "mrpc",
+  "gelu_degree": [
+    1,
+    2,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    2,
+    1,
+    1,
+    1
+  ],
+  "attn_degree": [
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
+  ],
+  "base": [
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    0,
+    6,
+    0,
+    14,
+    11,
+    5,
+    14,
+    3,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    14,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    0,
+    6,
+    0,
+    14,
+    11,
+    5,
+    14,
+    3,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    0,
+    6,
+    0,
+    14,
+    11,
+    5,
+    14,
+    3,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    14,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    0,
+    6,
+    0,
+    14,
+    11,
+    5,
+    14,
+    3,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    4
+  ],
+  "base_action": "legacy_fusion_count_map_action_indices_with_baseline_k",
+  "k_levels": [
+    8,
+    9,
+    11,
+    13,
+    10,
+    12
+  ],
+  "baseline_k_index": 3,
+  "group": {
+    "name": "trial2_block4_random_fusionmax_4_layers",
+    "family": "partial_block4_random",
+    "target_graph": "block4",
+    "random_seed": 2026061102,
+    "selected_layer_count": 4,
+    "selected_layers": [
+      0,
+      2,
+      6,
+      10
+    ],
+    "option_by_graph": {
+      "block1_mrpc": 0,
+      "block2_mrpc": 0,
+      "block4": 0,
+      "block5_n0": 0,
+      "block5_n1": 0,
+      "block5_n2": 0,
+      "block5_n4": 0
+    },
+    "option_by_step": {
+      "1": 1,
+      "9": 1,
+      "25": 1,
+      "41": 1
+    },
+    "fusion_count_by_graph": {
+      "block1_mrpc": 0,
+      "block2_mrpc": 0,
+      "block4": 0,
+      "block5_n0": 0,
+      "block5_n1": 0,
+      "block5_n2": 0,
+      "block5_n4": 0,
+      "block4_selected_layers": 4,
+      "block4_fusion_per_selected_layer": 1
+    },
+    "occurrence_counts": {
+      "block1_mrpc": 11,
+      "block2_mrpc": 12,
+      "block4": 12,
+      "block5_n1": 10,
+      "block5_n2": 2
+    }
+  },
+  "slots": [
+    {
+      "label": "L0.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L0.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L0.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L0.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L0.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L0.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L0.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L0.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L0.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L0.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L0.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L0.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L0.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L0.B4.S.ln_mean_inv_d",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L0.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L0.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L0.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L0.B4.F.softmax_out_fresh",
+      "scaling_factor": 21
+    },
+    {
+      "label": "L0.B4.M.softmax_out_mask",
+      "scaling_factor": 10
+    },
+    {
+      "label": "L0.B4.M.softmax_v_mask",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L0.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L0.B4.F.v_fresh",
+      "scaling_factor": 17
+    },
+    {
+      "label": "L0.B4.M.v_mask",
+      "scaling_factor": 10
+    },
+    {
+      "label": "L0.B4.W.wo",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L0.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L0.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L0.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L0.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L0.B5.R.normalize_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L0.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L0.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L1.B1.F.gelu_out",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L1.B1.S.mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L1.B1.R.mean_r",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L1.B1.S.var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L1.B1.R.var_r",
+      "scaling_factor": 27
+    },
+    {
+      "label": "L1.B1.W.wffn2",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L1.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L1.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L1.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L1.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L1.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L1.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L1.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L1.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L1.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L1.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L1.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L1.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L1.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L1.B4.S.ln_mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L1.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L1.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L1.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L1.B4.F.softmax_out_fresh",
+      "scaling_factor": 35
+    },
+    {
+      "label": "L1.B4.M.softmax_out_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L1.B4.M.softmax_v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L1.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L1.B4.F.v_fresh",
+      "scaling_factor": 25
+    },
+    {
+      "label": "L1.B4.M.v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L1.B4.W.wo",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L1.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L1.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L1.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L1.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L1.B5.R.normalize_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L1.B5.R.wffn1_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L1.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L1.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L2.B1.F.gelu_out",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L2.B1.S.mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L2.B1.R.mean_r",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L2.B1.S.var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L2.B1.R.var_r",
+      "scaling_factor": 27
+    },
+    {
+      "label": "L2.B1.W.wffn2",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L2.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L2.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L2.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L2.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L2.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L2.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L2.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L2.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L2.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L2.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L2.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L2.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L2.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L2.B4.S.ln_mean_inv_d",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L2.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L2.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L2.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L2.B4.F.softmax_out_fresh",
+      "scaling_factor": 21
+    },
+    {
+      "label": "L2.B4.M.softmax_out_mask",
+      "scaling_factor": 10
+    },
+    {
+      "label": "L2.B4.M.softmax_v_mask",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L2.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L2.B4.F.v_fresh",
+      "scaling_factor": 17
+    },
+    {
+      "label": "L2.B4.M.v_mask",
+      "scaling_factor": 10
+    },
+    {
+      "label": "L2.B4.W.wo",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L2.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L2.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L2.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L2.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L2.B5.R.normalize_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L2.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L2.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L3.B1.F.gelu_out",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L3.B1.S.mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L3.B1.R.mean_r",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L3.B1.S.var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L3.B1.R.var_r",
+      "scaling_factor": 27
+    },
+    {
+      "label": "L3.B1.W.wffn2",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L3.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L3.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L3.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L3.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L3.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L3.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L3.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L3.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L3.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L3.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L3.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L3.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L3.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L3.B4.S.ln_mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L3.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L3.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L3.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L3.B4.F.softmax_out_fresh",
+      "scaling_factor": 35
+    },
+    {
+      "label": "L3.B4.M.softmax_out_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L3.B4.M.softmax_v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L3.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L3.B4.F.v_fresh",
+      "scaling_factor": 25
+    },
+    {
+      "label": "L3.B4.M.v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L3.B4.W.wo",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L3.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L3.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L3.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L3.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L3.B5.R.normalize_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L3.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L3.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L4.B1.F.gelu_out",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L4.B1.S.mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L4.B1.R.mean_r",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L4.B1.S.var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L4.B1.R.var_r",
+      "scaling_factor": 27
+    },
+    {
+      "label": "L4.B1.W.wffn2",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L4.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L4.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L4.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L4.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L4.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L4.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L4.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L4.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L4.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L4.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L4.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L4.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L4.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L4.B4.S.ln_mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L4.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L4.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L4.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L4.B4.F.softmax_out_fresh",
+      "scaling_factor": 35
+    },
+    {
+      "label": "L4.B4.M.softmax_out_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L4.B4.M.softmax_v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L4.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L4.B4.F.v_fresh",
+      "scaling_factor": 25
+    },
+    {
+      "label": "L4.B4.M.v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L4.B4.W.wo",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L4.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L4.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L4.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L4.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L4.B5.R.normalize_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L4.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L4.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L5.B1.F.gelu_out",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L5.B1.S.mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L5.B1.R.mean_r",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L5.B1.S.var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L5.B1.R.var_r",
+      "scaling_factor": 27
+    },
+    {
+      "label": "L5.B1.W.wffn2",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L5.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L5.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L5.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L5.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L5.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L5.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L5.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L5.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L5.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L5.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L5.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L5.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L5.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L5.B4.S.ln_mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L5.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L5.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L5.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L5.B4.F.softmax_out_fresh",
+      "scaling_factor": 35
+    },
+    {
+      "label": "L5.B4.M.softmax_out_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L5.B4.M.softmax_v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L5.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L5.B4.F.v_fresh",
+      "scaling_factor": 25
+    },
+    {
+      "label": "L5.B4.M.v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L5.B4.W.wo",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L5.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L5.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L5.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L5.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L5.B5.R.normalize_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L5.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L5.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L6.B1.F.gelu_out",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L6.B1.S.mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L6.B1.R.mean_r",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L6.B1.S.var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L6.B1.R.var_r",
+      "scaling_factor": 27
+    },
+    {
+      "label": "L6.B1.W.wffn2",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L6.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L6.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L6.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L6.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L6.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L6.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L6.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L6.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L6.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L6.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L6.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L6.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L6.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L6.B4.S.ln_mean_inv_d",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L6.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L6.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L6.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L6.B4.F.softmax_out_fresh",
+      "scaling_factor": 21
+    },
+    {
+      "label": "L6.B4.M.softmax_out_mask",
+      "scaling_factor": 10
+    },
+    {
+      "label": "L6.B4.M.softmax_v_mask",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L6.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L6.B4.F.v_fresh",
+      "scaling_factor": 17
+    },
+    {
+      "label": "L6.B4.M.v_mask",
+      "scaling_factor": 10
+    },
+    {
+      "label": "L6.B4.W.wo",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L6.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L6.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L6.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L6.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L6.B5.R.normalize_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L6.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L6.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L7.B1.F.gelu_out",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L7.B1.S.mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L7.B1.R.mean_r",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L7.B1.S.var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L7.B1.R.var_r",
+      "scaling_factor": 27
+    },
+    {
+      "label": "L7.B1.W.wffn2",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L7.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L7.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L7.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L7.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L7.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L7.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L7.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L7.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L7.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L7.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L7.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L7.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L7.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L7.B4.S.ln_mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L7.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L7.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L7.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L7.B4.F.softmax_out_fresh",
+      "scaling_factor": 35
+    },
+    {
+      "label": "L7.B4.M.softmax_out_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L7.B4.M.softmax_v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L7.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L7.B4.F.v_fresh",
+      "scaling_factor": 25
+    },
+    {
+      "label": "L7.B4.M.v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L7.B4.W.wo",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L7.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L7.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L7.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L7.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L7.B5.R.normalize_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L7.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L7.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L8.B1.F.gelu_out",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L8.B1.S.mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L8.B1.R.mean_r",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L8.B1.S.var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L8.B1.R.var_r",
+      "scaling_factor": 27
+    },
+    {
+      "label": "L8.B1.W.wffn2",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L8.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L8.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L8.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L8.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L8.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L8.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L8.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L8.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L8.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L8.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L8.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L8.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L8.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L8.B4.S.ln_mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L8.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L8.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L8.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L8.B4.F.softmax_out_fresh",
+      "scaling_factor": 35
+    },
+    {
+      "label": "L8.B4.M.softmax_out_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L8.B4.M.softmax_v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L8.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L8.B4.F.v_fresh",
+      "scaling_factor": 25
+    },
+    {
+      "label": "L8.B4.M.v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L8.B4.W.wo",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L8.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L8.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L8.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L8.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L8.B5.R.normalize_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L8.B5.R.wffn1_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L8.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L8.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L9.B1.F.gelu_out",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L9.B1.S.mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L9.B1.R.mean_r",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L9.B1.S.var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L9.B1.R.var_r",
+      "scaling_factor": 27
+    },
+    {
+      "label": "L9.B1.W.wffn2",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L9.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L9.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L9.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L9.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L9.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L9.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L9.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L9.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L9.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L9.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L9.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L9.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L9.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L9.B4.S.ln_mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L9.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L9.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L9.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L9.B4.F.softmax_out_fresh",
+      "scaling_factor": 35
+    },
+    {
+      "label": "L9.B4.M.softmax_out_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L9.B4.M.softmax_v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L9.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L9.B4.F.v_fresh",
+      "scaling_factor": 25
+    },
+    {
+      "label": "L9.B4.M.v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L9.B4.W.wo",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L9.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L9.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L9.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L9.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L9.B5.R.normalize_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L9.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L9.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L10.B1.F.gelu_out",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L10.B1.S.mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L10.B1.R.mean_r",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L10.B1.S.var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L10.B1.R.var_r",
+      "scaling_factor": 27
+    },
+    {
+      "label": "L10.B1.W.wffn2",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L10.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L10.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L10.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L10.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L10.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L10.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L10.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L10.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L10.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L10.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L10.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L10.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L10.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L10.B4.S.ln_mean_inv_d",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L10.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L10.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L10.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L10.B4.F.softmax_out_fresh",
+      "scaling_factor": 21
+    },
+    {
+      "label": "L10.B4.M.softmax_out_mask",
+      "scaling_factor": 10
+    },
+    {
+      "label": "L10.B4.M.softmax_v_mask",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L10.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L10.B4.F.v_fresh",
+      "scaling_factor": 17
+    },
+    {
+      "label": "L10.B4.M.v_mask",
+      "scaling_factor": 10
+    },
+    {
+      "label": "L10.B4.W.wo",
+      "scaling_factor": 11
+    },
+    {
+      "label": "L10.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L10.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L10.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L10.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L10.B5.R.normalize_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L10.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L10.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L11.B1.F.gelu_out",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L11.B1.S.mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L11.B1.R.mean_r",
+      "scaling_factor": 30
+    },
+    {
+      "label": "L11.B1.S.var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L11.B1.R.var_r",
+      "scaling_factor": 27
+    },
+    {
+      "label": "L11.B1.W.wffn2",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L11.B2.R.gamma_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L11.B2.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L11.B2.F.inv_std_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L11.B2.R.kt_mask1_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L11.B2.M.kt_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L11.B2.M.kt_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L11.B2.M.q_mask1",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L11.B2.M.q_mask2",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L11.B2.R.qkt_matmul_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L11.B2.M.qkt_merge_mask",
+      "scaling_factor": 15
+    },
+    {
+      "label": "L11.B2.W.wk",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L11.B2.W.wq",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L11.B2.F.x_centered_fresh",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L11.B4.S.ln_mean_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L11.B4.R.ln_mean_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L11.B4.R.ln_square_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L11.B4.S.ln_var_inv_d",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L11.B4.F.softmax_out_fresh",
+      "scaling_factor": 35
+    },
+    {
+      "label": "L11.B4.M.softmax_out_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L11.B4.M.softmax_v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L11.B4.R.softmax_v_matmul_r",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L11.B4.F.v_fresh",
+      "scaling_factor": 25
+    },
+    {
+      "label": "L11.B4.M.v_mask",
+      "scaling_factor": 14
+    },
+    {
+      "label": "L11.B4.W.wo",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L11.B5.M.gamma",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L11.B5.R.gc0",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L11.B5.M.gelu_coeff",
+      "scaling_factor": 20
+    },
+    {
+      "label": "L11.B5.F.inv_std_fresh",
+      "scaling_factor": 31
+    },
+    {
+      "label": "L11.B5.R.normalize_r",
+      "scaling_factor": 28
+    },
+    {
+      "label": "L11.B5.W.wffn1",
+      "scaling_factor": 22
+    },
+    {
+      "label": "L11.B5.F.x_centered_fresh",
+      "scaling_factor": 31
+    }
+  ],
+  "legacy_action_vec": [
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    0,
+    6,
+    0,
+    14,
+    11,
+    5,
+    14,
+    3,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    14,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    0,
+    6,
+    0,
+    14,
+    11,
+    5,
+    14,
+    3,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    0,
+    6,
+    0,
+    14,
+    11,
+    5,
+    14,
+    3,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    14,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    0,
+    6,
+    0,
+    14,
+    11,
+    5,
+    14,
+    3,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    14,
+    14,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    3,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    0,
+    0,
+    0,
+    0,
+    0,
+    14,
+    0,
+    0,
+    0,
+    3,
+    4
+  ],
+  "execution_note": "Use slots + base to execute this config. legacy_action_vec is kept for audit only because map action_indices can drift from the current action-space SF tables."
+}
