@@ -40,6 +40,8 @@ REBUILD_MAPS=0       # 图在 2026-06-11 已按 step-1×15 重建并 push（本�
 GATE_EPISODES=300    # 门禁短跑规模：anchor80 + 220 post，5 个 PPO 窗口
 LONG_EPISODES=60000  # 门禁通过后的里程碑长跑
 KTRIALS=5            # K 固定为 5（与卡数解耦——这是确定性要求的一部分，勿改回 K=NGPU）
+ANCHOR_EPISODES=80   # 与 mrpc-blb-stage2-rl preset 保持一致；探针从 anchor 后第一个 episode 开始
+FUSION_PROBE_INTERVAL=200
 WORKERS="$( n=$(nproc 2>/dev/null || echo 8); m=$(( n - 2 )); [ "$m" -lt 1 ] && m=1; [ "$m" -gt 128 ] && m=128; echo "$m" )"
 NGPU="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"; [ -z "$NGPU" ] && NGPU=1; [ "$NGPU" -lt 1 ] && NGPU=1
 DEVS="$(seq -s, 0 $((NGPU-1)))"
@@ -76,10 +78,10 @@ from seed_utils import derive_probe_seed, derive_policy_step_seed, PREFLIGHT_EPI
 print("stage2 seed_utils OK; preflight episode =", PREFLIGHT_EPISODE)
 # ---- ADR-011 断言：预算拆分 + fusion 探针 + 先验解除 ----
 import fusion_curriculum as fcur
-assert fcur.fusion_probe_target_block(60, anchor_episodes=60, interval=200) == 2
-assert fcur.fusion_probe_target_block(260, anchor_episodes=60, interval=200) == 5
-assert fcur.fusion_probe_target_block(460, anchor_episodes=60, interval=200) == 4
-assert fcur.fusion_probe_target_block(61, anchor_episodes=60, interval=200) is None
+assert fcur.fusion_probe_target_block(80, anchor_episodes=80, interval=200) == 2
+assert fcur.fusion_probe_target_block(280, anchor_episodes=80, interval=200) == 5
+assert fcur.fusion_probe_target_block(480, anchor_episodes=80, interval=200) == 4
+assert fcur.fusion_probe_target_block(81, anchor_episodes=80, interval=200) is None
 import fusion_cost, reward as rwd
 assert abs(rwd.FUSION_COST_BUDGET_FRACTION - 2.0/3.0) < 1e-12
 ch = [fusion_cost.BlockChoice(2, "block2_mrpc", 1, 1, 13)]
@@ -163,9 +165,10 @@ run_gate () {   # tag, visible devs, --stage2-rl-devices 值
     --stage2-probe-size 256 \
     --batch-size 512 \
     --stage2-rl-devices "$devspec" \
+    --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
     --stage2-stability-tolerance 5.0 \
     --stage2-limit-tolerance 0.005 \
-    --blb-v3-fusion-probe-interval 200 \
+    --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
     --fresh 2>&1 | tee "$GOUT/${tag}_launch.log"
   sleep 12
   pid="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
@@ -212,7 +215,7 @@ except FileNotFoundError as e:
     print("[gate][FAIL] episodes.jsonl 缺失:", e); raise SystemExit(2)
 PY
 [ $? -ne 0 ] && GATE_PASS=0
-# ADR-011 探针出现性：300ep 门禁里 ep60(b2)/ep260(b5) 必须是 forced_fusion_probe
+# ADR-011 探针出现性：300ep 门禁里 anchor(b2)/anchor+interval(b5) 必须是 forced_fusion_probe
 # 且 fusion_count>=10（block2/block5 各 12 层全开;若图实现导致个别层无融合,>=10 兜底）
 python3 - <<PY 2>&1 | tee -a "$GOUT/verdict.txt"
 import json
@@ -220,7 +223,9 @@ eps = {}
 for l in open("$GOUT/gN_episodes.jsonl"):
     d = json.loads(l); eps[int(d.get("episode", -1))] = d
 ok = True
-for ep, blk in ((60, "b2"), (260, "b5")):
+anchor = int("$ANCHOR_EPISODES")
+interval = int("$FUSION_PROBE_INTERVAL")
+for ep, blk in ((anchor, "b2"), (anchor + interval, "b5")):
     d = eps.get(ep)
     mode = str(d.get("exploration_mode", "")) if d else "<missing>"
     fc = int(d.get("fusion_count", -1)) if d else -1
@@ -251,9 +256,10 @@ CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
   --stage2-probe-size 256 \
   --batch-size 512 \
   --stage2-rl-devices "$DEVS" \
+  --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
   --stage2-stability-tolerance 5.0 \
   --stage2-limit-tolerance 0.005 \
-  --blb-v3-fusion-probe-interval 200 \
+  --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
   --fresh 2>&1 | tee "$OUT/long60k_launch.log"
 sleep 12
 PID60="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
