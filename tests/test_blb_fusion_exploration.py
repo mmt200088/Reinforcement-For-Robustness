@@ -61,7 +61,6 @@ class ExplorationEpsilonMixtureTest(unittest.TestCase):
             for _ in range(trials):
                 a, _, _ = pol.sample_action(
                     obs, slot_mask, levels, deterministic=False,
-                    baseline_prior_scale=1.0,
                 )
                 n1 += int(a[0, 0].item() == 1)
         # mixture: P(opt1) = (1-eps)*~0 + eps*(1/2) = 0.25
