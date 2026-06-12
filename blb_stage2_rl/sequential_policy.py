@@ -552,6 +552,7 @@ class BLBStage2SequentialPolicy(nn.Module):
         Output has shape ``[B, max_step_dim, max_num_levels]``.
         """
         B, S = slot_mask.shape
+        slot_mask_bool = slot_mask.to(dtype=torch.bool)
         if level_indices is None:
             level_indices = torch.arange(
                 max_num_levels,
@@ -562,7 +563,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             level_indices = level_indices.to(device=slot_mask.device, dtype=torch.long)
         levels_idx = level_indices[:, :, :max_num_levels].expand(B, S, -1)
         # padding-slot rows are entirely -inf
-        slot_alive = slot_mask.unsqueeze(-1).expand(-1, -1, max_num_levels)
+        slot_alive = slot_mask_bool.unsqueeze(-1).expand(-1, -1, max_num_levels)
         # within an active slot, levels >= num_levels[slot] get -inf
         level_valid = levels_idx < per_slot_num_levels.unsqueeze(-1)
         valid = slot_alive & level_valid
@@ -583,7 +584,7 @@ class BLBStage2SequentialPolicy(nn.Module):
                     f"broadcastable to {(B, S, max_num_levels)}"
                 ) from exc
             valid = valid & extra_mask
-            if (slot_mask & ~valid.any(dim=-1)).any():
+            if (slot_mask_bool & ~valid.any(dim=-1)).any():
                 raise ValueError("action_level_mask leaves an active slot with no allowed levels")
         mask = torch.zeros_like(valid, dtype=torch.float32)
         mask = mask.masked_fill(~valid, float("-inf"))
