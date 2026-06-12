@@ -3389,6 +3389,7 @@ def run_sequential_via_runner(
             seq_env_cfg=seq_env_cfg,
             fusion_map=fusion_map,
             log_fn=lambda m: log(f"  {m}"),
+            workers_per_device=int(getattr(train_cfg, "stage2_workers_per_device", 1)),
         )
         # Persistent install per worker model: hooks stay installed across
         # episodes (cfg updates in place) — same optimization the K-split path

@@ -673,6 +673,11 @@ class BLBStage2TrainConfig:
     # serial K-trial probe) on their own model replica with global-episode
     # seeding. Mutually exclusive with reward_devices. Empty → legacy loop.
     stage2_rl_devices: List[int] = field(default_factory=list)
+    # Workers per device for episode-parallel rollout (2026-06-12): >1 overlaps
+    # one worker's CPU rollout/bookkeeping with a sibling's GPU-bound probe on
+    # the same card. Results stay byte-identical for any value (per-device RNG
+    # atomic-unit locks; episode results depend only on the global index).
+    stage2_workers_per_device: int = 1
     # Fast online reward mode: collect terminal actions with K=1 online and
     # evaluate distinct actions concurrently across reward_devices. Promotion
     # validation keeps the old repeated-trial path available near the boundary.
@@ -2698,6 +2703,12 @@ class BLBStage2RLRunner:
         parsed2 = parse_device_ids(spec2)
         if parsed2:
             cfg.stage2_rl_devices = parsed2
+        v = getattr(ev, "stage2_workers_per_device", None)
+        if v not in (None, ""):
+            try:
+                cfg.stage2_workers_per_device = max(1, int(v))
+            except Exception:
+                pass
         # 5) BLB v3 always uses the real in-process Rescale_optimizer.  Legacy
         # invoker selection attributes are deliberately ignored.
         root = getattr(ev, "blb_v3_inproc_rescale_optimizer_root", None)

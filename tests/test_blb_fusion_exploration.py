@@ -159,5 +159,36 @@ class BorderlineRetestUnitTest(unittest.TestCase):
         self.assertFalse(first & retest)
 
 
+@unittest.skipUnless(_HAS_TORCH, "torch unavailable")
+class WorkersPerDeviceTest(unittest.TestCase):
+    """2026-06-12 workers-per-device: assignment expansion + config default."""
+
+    def test_expansion_interleaved(self):
+        from blb_stage2_rl.parallel_runner import expand_device_ids_for_workers
+        self.assertEqual(
+            expand_device_ids_for_workers([0, 1, 2, 3, 4], 2),
+            [0, 1, 2, 3, 4, 0, 1, 2, 3, 4],
+        )
+        # wpd=1 must be the identity (bit-for-bit pre-change behavior)
+        self.assertEqual(expand_device_ids_for_workers([0, 1], 1), [0, 1])
+        self.assertEqual(expand_device_ids_for_workers([3], 4), [3, 3, 3, 3])
+        # worker 0 stays on device_ids[0] for any wpd
+        for wpd in (1, 2, 3):
+            self.assertEqual(expand_device_ids_for_workers([2, 0, 1], wpd)[0], 2)
+
+    def test_chunk_assignment_covers_all_episodes_any_worker_count(self):
+        from blb_stage2_rl.seed_utils import assign_global_episodes
+        for n, w in ((60, 10), (60, 5), (60, 7), (300, 10), (1, 10)):
+            chunks = assign_global_episodes(n, w)
+            flat = [g for c in chunks for g in c]
+            self.assertEqual(sorted(flat), list(range(n)), (n, w))
+            # contiguous chunks in worker order (global-order reassembly)
+            self.assertEqual(flat, sorted(flat), (n, w))
+
+    def test_config_default_is_one_worker_per_device(self):
+        from blb_stage2_rl.runner import BLBStage2TrainConfig
+        self.assertEqual(BLBStage2TrainConfig().stage2_workers_per_device, 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

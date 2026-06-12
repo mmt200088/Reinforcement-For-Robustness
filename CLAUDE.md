@@ -218,6 +218,20 @@ frontier state); per-slot mode keeps the legacy serial loop + K-split, and
 the duplicate-action `terminal_metric_cache` is not consulted in the new mode.
 A worker logging `[stage2-parallel][ANOMALY]` (invalid fusion action) voids
 the 1==N guarantee and means the map is broken — the server gate fails on it.
+**2026-06-12 workers-per-device** (`--stage2-workers-per-device`, default 1 =
+bit-identical old behavior): profile of the 2nd 60k showed per-episode wall =
+probe 2.69s (78%, GPU-bound K=5 serial trials) + rollout 0.74s (21%, CPU-heavy)
++ replan 0.009s, window straggler only 2.8%; running 2 workers per GPU overlaps
+one worker's CPU rollout/bookkeeping with the sibling's GPU probe (~1.3-1.4×
+expected). Same-device workers share the device's default CUDA generator and
+its dedicated noise generator, so the two RNG-consuming atomic units hold a
+shared per-device lock: (manual_seed → sample_action) and (reseed_noise → one
+full probe-trial forward) — trials interleave across siblings at trial
+granularity with unchanged per-trial noise streams, so results stay
+byte-identical for ANY worker count (the gate's g1=1-worker vs gN=2/GPU
+byte-diff validates both the device-count and worker-count invariances).
+Memory ≈2×4GB/GPU. Probe-batching K trials into one forward and bf16/compile
+were evaluated and REJECTED (they touch noise semantics / training numerics).
 
 Current implementation facts:
 

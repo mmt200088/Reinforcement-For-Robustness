@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import copy
+import contextlib
 import math
 import os
 import random
@@ -14,6 +15,9 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 import numpy as np
 import torch
+
+# Reusable no-op context for the single-worker-per-device path.
+_NULL_CTX = contextlib.nullcontext()
 
 from blb_rl_bridge import BLBNoiseRLBridge
 from rescale_optimizer_bridge import (
@@ -252,6 +256,11 @@ class BLBStage2Env:
         # mutation, identical results for any GPU count / trial scheduling.
         # None (default) keeps the legacy true-random behavior bit-for-bit.
         self.probe_noise_seed: Optional[int] = None
+        # Per-DEVICE lock shared by same-device episode-parallel workers
+        # (workers-per-device > 1, 2026-06-12): each probe trial's
+        # (reseed_noise -> full forward) is an RNG-consuming atomic unit on
+        # the device's dedicated noise generator. None / uncontended = no-op.
+        self.probe_device_lock: Optional[Any] = None
 
         self.action_dims = action_dims_for_config(self.num_layers)
         self.total_action_dim = len(self.action_dims)
@@ -1379,9 +1388,18 @@ class BLBStage2Env:
         any worker of an N-GPU run (CUDA Philox is device-independent), and
         reproducible across reruns. Touches no global RNG → safe for
         concurrent episode-parallel workers.
+
+        With workers-per-device > 1 the dedicated noise generator is shared
+        by same-device siblings, so each trial's (reseed -> forward) runs
+        under ``probe_device_lock`` — trials interleave across workers at
+        trial granularity with identical per-trial noise streams regardless
+        of interleaving order.
         """
         from function_handler import reseed_noise_rng_for_device
 
+        lock = self.probe_device_lock
+        if lock is None:
+            lock = _NULL_CTX
         base_seed = int(self.probe_noise_seed)
         per_trial_loss: List[float] = []
         per_trial_metric1: List[float] = []
@@ -1395,25 +1413,26 @@ class BLBStage2Env:
                     seed = int(
                         (base_seed ^ (trial_idx * 2654435761)) & 0x7FFFFFFFFFFFFFFF
                     )
-                    reseed_noise_rng_for_device(self._device, seed)
+                    with lock:
+                        reseed_noise_rng_for_device(self._device, seed)
 
-                    losses, m1s, m2s = [], [], []
-                    for batch in self.probe_batches:
-                        kwargs: Dict[str, torch.Tensor] = {
-                            "input_ids": batch.input_ids,
-                            "attention_mask": batch.attention_mask,
-                            "labels": batch.labels,
-                        }
-                        if batch.token_type_ids is not None:
-                            kwargs["token_type_ids"] = batch.token_type_ids
-                        outputs = self.model(**kwargs)
-                        logits = outputs.logits if hasattr(outputs, "logits") else outputs[1]
-                        loss, m1, m2 = _compute_metrics_on_batch(
-                            logits, batch.labels, is_regression=self.is_regression,
-                        )
-                        losses.append(loss)
-                        m1s.append(m1)
-                        m2s.append(m2)
+                        losses, m1s, m2s = [], [], []
+                        for batch in self.probe_batches:
+                            kwargs: Dict[str, torch.Tensor] = {
+                                "input_ids": batch.input_ids,
+                                "attention_mask": batch.attention_mask,
+                                "labels": batch.labels,
+                            }
+                            if batch.token_type_ids is not None:
+                                kwargs["token_type_ids"] = batch.token_type_ids
+                            outputs = self.model(**kwargs)
+                            logits = outputs.logits if hasattr(outputs, "logits") else outputs[1]
+                            loss, m1, m2 = _compute_metrics_on_batch(
+                                logits, batch.labels, is_regression=self.is_regression,
+                            )
+                            losses.append(loss)
+                            m1s.append(m1)
+                            m2s.append(m2)
 
                     if losses:
                         per_trial_loss.append(float(np.mean(losses)))

@@ -34,6 +34,15 @@ export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE
 #     优势 ≈ +1.4 而非被基线 K 抵消的 +0.07。轮换改为 b2→b5(剔除必死的 b4)。
 #   ④ ε 探索下限(policy 混合分布，采样与 PPO 回放同分布)：option 槽 0.05、
 #     K 槽 0.02 → 策略永远不能在 fusion 选择上变成确定性(根治 entropy=0 冻结)。
+#   ⑤ 提速（2026-06-12，画像驱动）：上轮 60k 实测每 episode 墙钟 = 探针 2.69s
+#     (78%) + rollout 0.74s (21%) + replan 0.009s；窗口负载不均仅 2.8%；PPO
+#     更新 ≈1.4h/13.85h。最大安全收益 = 每卡 2 个 worker（episode 结果只依赖
+#     全局序号→worker 指派无关，正是 1==N 的根基）：一个 worker 的 CPU 侧
+#     rollout/簿记与同卡兄弟的 GPU 探针重叠。两个 RNG 原子单元加同卡锁：
+#     (manual_seed→sample) 与 (reseed_noise→单个 trial forward)，交错顺序不
+#     影响各 trial 噪声流。默认 1（与旧行为逐位一致）；gN 门禁与 60k 用 2，
+#     g1 保持 1 worker 作参照——同一条 byte-diff 同时验证卡数与 worker 数两个
+#     不变量。预期 ~1.3-1.4×（13.5h → ~10h）。
 # 容忍度沿用用户 spec：stability 500% + 指标 0.5%。
 # 顺序：phase0 自检(ADR-012 断言+三件测试) → phase2 图门禁(REBUILD_MAPS=0) →
 # phaseG 1卡vsN卡确定性门禁(探针出现性判读改为动态检测——上轮发现 gate 与长跑
@@ -121,6 +130,13 @@ stc = _STC()
 assert abs(stc.fusion_exploration_epsilon - 0.05) < 1e-12
 assert abs(stc.fusion_exploration_epsilon_k - 0.02) < 1e-12
 print("ADR-012 复测/ε 默认值断言 OK")
+# ---- workers-per-device（2026-06-12 提速）断言 ----
+from blb_stage2_rl.parallel_runner import expand_device_ids_for_workers
+assert expand_device_ids_for_workers([0, 1, 2, 3, 4], 2) == [0, 1, 2, 3, 4, 0, 1, 2, 3, 4]
+assert expand_device_ids_for_workers([0, 1], 1) == [0, 1]   # wpd=1 == 旧行为
+from blb_stage2_rl.runner import BLBStage2TrainConfig as _BTC
+assert _BTC().stage2_workers_per_device == 1
+print("workers-per-device 断言 OK（默认 1 = 旧行为；gN/60k 用 2）")
 PY
 echo "==================== [phase0b] ADR-012 单元测试（torch 在位：ε混合/复测/近界档/轮换） ===================="
 for f in test_blb_fusion_curriculum test_blb_fusion_reward test_blb_fusion_exploration; do
@@ -191,13 +207,14 @@ cp -a "$MAPS_DIR" "$OUT/new_maps"
 
 echo "==================== [phaseG] Stage-2 episode 并行确定性门禁：1卡 vs ${NGPU}卡 ===================="
 GOUT="$OUT/stage2_ngpu_gate"; mkdir -p "$GOUT"
-run_gate () {   # tag, visible devs, --stage2-rl-devices 值
-  local tag="$1" vis="$2" devspec="$3" pid rundir t0 t1
-  echo "-------- [gate] $tag CUDA_VISIBLE_DEVICES=$vis stage2-rl-devices=$devspec episodes=$GATE_EPISODES --------"
+run_gate () {   # tag, visible devs, --stage2-rl-devices 值, workers-per-device
+  local tag="$1" vis="$2" devspec="$3" wpd="${4:-1}" pid rundir t0 t1
+  echo "-------- [gate] $tag CUDA_VISIBLE_DEVICES=$vis stage2-rl-devices=$devspec wpd=$wpd episodes=$GATE_EPISODES --------"
   CUDA_VISIBLE_DEVICES="$vis" bash llama_7B_LayerImportance.sh run rl \
     --preset mrpc-blb-stage2-rl \
     --blb-v3-fusion-count-action 1 \
     --blb-v3-fusion-neighbor-curriculum 1 \
+    --stage2-workers-per-device "$wpd" \
     --stage2-search-episodes "$GATE_EPISODES" \
     --stage2-k-trials "$KTRIALS" \
     --stage2-probe-size 256 \
@@ -223,8 +240,10 @@ run_gate () {   # tag, visible devs, --stage2-rl-devices 值
   [ -n "$diag" ] && cp "$diag" "$GOUT/${tag}_episodes.jsonl"
   if [ -n "$rundir" ] && [[ "$rundir" == *"/stage2/"*mrpc* ]] && [ -d "$rundir" ]; then rm -rf "$rundir"; fi
 }
-run_gate g1 0       0          || { echo "[FATAL] 门禁 g1 失败"; exit 1; }
-run_gate gN "$DEVS" "$DEVS"    || { echo "[FATAL] 门禁 gN 失败"; exit 1; }
+# g1 = 最简参照（1 worker 总量）；gN = 生产配置（N 卡 × 2 worker/卡）。
+# 同一条 byte-diff 同时验证「卡数无关」与「worker 数无关」两个不变量。
+run_gate g1 0       0       1  || { echo "[FATAL] 门禁 g1 失败"; exit 1; }
+run_gate gN "$DEVS" "$DEVS" 2  || { echo "[FATAL] 门禁 gN 失败"; exit 1; }
 
 echo "==== [gate] 判读 ====" | tee "$GOUT/verdict.txt"
 GATE_PASS=1
@@ -306,6 +325,7 @@ CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
   --stage2-limit-tolerance 0.005 \
   --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
   --blb-v3-fusion-exploration-epsilon 0.05 \
+  --stage2-workers-per-device 2 \
   --fresh 2>&1 | tee "$OUT/long60k_launch.log"
 sleep 12
 PID60="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
@@ -361,6 +381,7 @@ ls -la "$OUT"
 - **探针正常计分**：probe-v2 走采样分支 + 目标槽覆写 + evaluate_action 重算 log_prob/value；动作来自全有效图必 valid。
 - **近界渐变不破硬优先级**：priority 仍为 1，best 选择/候选排序的 tuple rank 不变；渐变只作用于 PPO 标量，且上限 35 < P3 下限 40（cost 永远不能补偿精度违规——mental-model item 7 保持）。
 - `--blb-v3-reward-devices`（K-split）不再使用；`--stage2-rl-devices`（互斥）；`KTRIALS` 固定 5；噪声/策略/更新/复测按 (seed, 全局episode, …) 键控。
+- **workers-per-device（提速，画像驱动）**：上轮实测探针占 78%（GPU-bound）、rollout 21%（CPU 重）→ `--stage2-workers-per-device 2` 让同卡两 worker 互相掩盖空隙；RNG 原子单元（seed→sample、reseed→trial forward）持同卡锁，trial 级交错不改变各自噪声流 → 任意 worker 数结果逐字节一致（gN 用 2 vs g1 用 1 的 byte-diff 直接验证）。显存 ≈2×4GB/卡 ≪ 32GB。预期 60k 13.5h→~10h。straggler 实测仅 2.8%（不做动态分配）；PPO 更新 1.4h 维持现状（改数值精度有训练语义风险，不动）。
 
 ### 预期产物
 

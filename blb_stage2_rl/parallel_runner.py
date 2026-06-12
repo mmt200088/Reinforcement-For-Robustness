@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
+import contextlib
 import hashlib
 import threading
 import time
@@ -46,6 +47,9 @@ import numpy as np
 import torch
 
 from function_handler import ReversibleLayerHandler
+
+# Reusable no-op context for the uncontended (1 worker/device) path.
+_NULL_LOCK = contextlib.nullcontext()
 
 from .action_space import K_LEVELS, _baseline_k_index_for_block
 from .env import BLBStage2Env
@@ -225,6 +229,7 @@ def collect_fusion_episode(
         forbidden_mask: Any,
         max_rejection_retries: int = 32,
         log_fn: Optional[Callable[[str], None]] = None,
+        device_lock: Optional[threading.Lock] = None,
         ) -> FusionEpisodeOutcome:
     """Collect ONE fusion-mode episode on ``seq_env``/``policy``/``device``.
 
@@ -390,19 +395,24 @@ def collect_fusion_episode(
                 seed = derive_policy_step_seed(
                     int(base_seed), int(absolute_ep), int(spec.step_idx), int(attempt),
                 )
-                if device.type == "cuda":
-                    torch.cuda.manual_seed(int(seed))
-                else:
-                    torch.manual_seed(int(seed))
                 policy_t0 = time.perf_counter()
-                with torch.inference_mode():
-                    action_t, log_prob_t, value_t = policy.sample_action(
-                        obs_t, slot_mask_t, levels_t,
-                        deterministic=False,
-                        action_level_mask=action_level_mask_t,
-                        baseline_prior_scale=baseline_prior_scale,
-                        truncate_to_current=True,
-                    )
+                # (manual_seed -> sample) must be atomic per DEVICE: with
+                # workers-per-device > 1 a sibling worker's reseed between our
+                # seed and our categorical draw would corrupt determinism.
+                lock_ctx = device_lock if device_lock is not None else _NULL_LOCK
+                with lock_ctx:
+                    if device.type == "cuda":
+                        torch.cuda.manual_seed(int(seed))
+                    else:
+                        torch.manual_seed(int(seed))
+                    with torch.inference_mode():
+                        action_t, log_prob_t, value_t = policy.sample_action(
+                            obs_t, slot_mask_t, levels_t,
+                            deterministic=False,
+                            action_level_mask=action_level_mask_t,
+                            baseline_prior_scale=baseline_prior_scale,
+                            truncate_to_current=True,
+                        )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
                 if (
@@ -666,6 +676,14 @@ class Stage2FusionWorker:
     seq_env: BLBStage2SequentialEnv
     role: str = "primary"  # "primary" (worker 0, reuses the env) or "replica"
     policy_replica: Optional[Any] = None  # eval-mode copy, refreshed per window
+    # Shared per-DEVICE lock (2026-06-12 workers-per-device): two workers on
+    # the same GPU share that device's default CUDA generator (policy
+    # sampling) and its dedicated noise generator (probe trials), so the two
+    # RNG-consuming atomic units — (manual_seed -> sample) and
+    # (reseed_noise -> one full probe trial forward) — are serialized through
+    # this lock. With one worker per device the lock is uncontended and the
+    # behavior is bit-identical to before.
+    device_lock: Optional[threading.Lock] = None
 
 
 class Stage2ParallelRunner:
@@ -745,6 +763,7 @@ class Stage2ParallelRunner:
                         forbidden_mask=forbidden_mask,
                         max_rejection_retries=int(max_rejection_retries),
                         log_fn=self.log,
+                        device_lock=worker.device_lock,
                     )
             except BaseException as exc:  # surface worker crashes to the main thread
                 errors.append(exc)
@@ -794,6 +813,22 @@ class Stage2ParallelRunner:
 # Factory
 # ---------------------------------------------------------------------------
 
+def expand_device_ids_for_workers(
+        device_ids: List[int],
+        workers_per_device: int,
+        ) -> List[int]:
+    """Worker -> device assignment list (2026-06-12 workers-per-device).
+
+    Interleaved expansion ([0,1,2] x 2 -> [0,1,2,0,1,2]) so worker indices
+    0..D-1 stay on distinct devices (worker 0 remains the primary on
+    device_ids[0]). Episode results are functions of the GLOBAL episode index
+    alone (ADR-009), so ANY worker count / assignment yields byte-identical
+    results — the 1-vs-N gate validates this directly.
+    """
+    wpd = max(1, int(workers_per_device))
+    return [int(d) for _ in range(wpd) for d in device_ids]
+
+
 def build_stage2_parallel_runner(
         *,
         primary_seq_env: BLBStage2SequentialEnv,
@@ -804,8 +839,15 @@ def build_stage2_parallel_runner(
         seq_env_cfg: Any,
         fusion_map: Any,
         log_fn: Optional[Callable[[str], None]] = None,
+        workers_per_device: int = 1,
         ) -> Stage2ParallelRunner:
-    """One worker per device id; worker 0 reuses the primary env stack.
+    """One worker per assignment entry; worker 0 reuses the primary env stack.
+
+    ``workers_per_device > 1`` runs multiple workers per GPU to overlap one
+    worker's CPU-side rollout/bookkeeping with a sibling's GPU-bound probe
+    (the 60k profile: probe 2.69s = 78%% of episode wall, rollout 0.74s = 21%%).
+    RNG-consuming atomic units are serialized through a shared per-device
+    lock, so results stay byte-identical for any worker count.
 
     Must be called AFTER baseline cost calibration + noisy preflight so the
     replicated ``BLBStage2Env``s inherit the final thresholds / baseline /
@@ -822,17 +864,24 @@ def build_stage2_parallel_runner(
     log = log_fn or (lambda _m: None)
     enable_cuda_reward_probe_fast_math()
 
+    assignment = expand_device_ids_for_workers(device_ids, workers_per_device)
+    device_locks: Dict[int, threading.Lock] = {
+        int(d): threading.Lock() for d in set(assignment)
+    }
+
     primary_base = primary_seq_env.base
     workers: List[Stage2FusionWorker] = [
         Stage2FusionWorker(
-            device=torch.device(f"cuda:{int(device_ids[0])}"),
+            device=torch.device(f"cuda:{int(assignment[0])}"),
             seq_env=primary_seq_env,
             role="primary",
+            device_lock=device_locks[int(assignment[0])],
         )
     ]
-    log(f"[stage2-parallel] worker 0: cuda:{int(device_ids[0])} (primary, reusing env)")
+    primary_base.probe_device_lock = device_locks[int(assignment[0])]
+    log(f"[stage2-parallel] worker 0: cuda:{int(assignment[0])} (primary, reusing env)")
 
-    for d in device_ids[1:]:
+    for d in assignment[1:]:
         device = torch.device(f"cuda:{int(d)}")
         t0 = time.perf_counter()
         with torch.cuda.device(device):
@@ -867,10 +916,21 @@ def build_stage2_parallel_runner(
             replica_seq = BLBStage2SequentialEnv(
                 base_env=replica_env, env_cfg=seq_env_cfg, fusion_map=fusion_map,
             )
-        workers.append(Stage2FusionWorker(device=device, seq_env=replica_seq, role="replica"))
+        replica_env.probe_device_lock = device_locks[int(d)]
+        workers.append(Stage2FusionWorker(
+            device=device, seq_env=replica_seq, role="replica",
+            device_lock=device_locks[int(d)],
+        ))
         log(
             f"[stage2-parallel] worker {len(workers) - 1}: {device} "
             f"(deepcopy replica, {time.perf_counter() - t0:.1f}s)"
         )
 
+    per_dev = {d: assignment.count(d) for d in sorted(set(assignment))}
+    if int(workers_per_device) > 1:
+        log(
+            f"[stage2-parallel] workers-per-device={int(workers_per_device)} -> "
+            f"{len(assignment)} workers, per-device counts {per_dev} "
+            f"(per-device RNG atomic-unit locks active)"
+        )
     return Stage2ParallelRunner(workers=workers, log_fn=log)
