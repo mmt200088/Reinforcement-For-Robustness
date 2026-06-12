@@ -1,0 +1,5 @@
+RO 导入 OK；DEFAULT_FUSION_POLICY = default
+step-1×15 档位规则 OK（间隔1/最多15档/无下限/同值档预去重）
+fusion_enum_fast unranking OK
+stage2 seed_utils OK; preflight episode = -1
+ADR-011 fusion 觅取修复（预算拆分/探针轮换）断言 OK
