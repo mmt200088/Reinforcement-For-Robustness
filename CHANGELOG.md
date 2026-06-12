@@ -21,6 +21,25 @@ When in doubt, check the linked commit's full message for surgical details.
 
 ---
 
+## [Unreleased] — 2026-06-13
+
+### Changed
+- **Stage-1 eval acceleration (bert-large focus)**: TF32 fast matmul enabled
+  for Stage-1 scoring (same `enable_cuda_reward_probe_fast_math` setting the
+  Stage-2 reward probe has used since 2026-05); `PolynomialGELU._poly` is now
+  Horner (no more (deg+1)× stacked-powers intermediate on the FFN-wide
+  activation); `approximation_exponential` (BERT + GPT-2) uses repeated
+  squaring instead of a scalar `powf` kernel; `_run_evaluation` defers all
+  GPU→CPU syncs to one point after the forward loop (bit-identical, locked by
+  `tests/test_stage1_eval_accel.py`).
+- **Stage-1 multi-GPU worker eval cache** (`stage1_rl/eval_cache.py`):
+  the worker path now shares a lock-protected deterministic eval cache, so
+  repeated (gelu, softmax) configs skip the whole install + forward. Exact
+  same floats on hit → `rollout_sig` / GPU-count-independence unaffected.
+  Per-window hit-rate logged as `[stage1-rollout] … eval_cache hits=…`.
+
+---
+
 ## [Unreleased] — 2026-05-16
 
 ### Infra

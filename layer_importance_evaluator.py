@@ -2396,6 +2396,12 @@ class LayerImportanceEvaluator(TrainerCallback):
         # 模型在 eval 模式 + no_grad + dataloader shuffle=False + 无随机性 → 相同配置评估结果必然一致
         # 相同配置的重复评估可直接复用缓存结果，不会改变任何数值结果
         self._eval_cache = {}
+        # 多 GPU worker 路径的共享版缓存（带锁）：worker 的 Stage-1 明文评估同样是
+        # (gelu, softmax, split) 的确定性函数，重复配置可整体跳过 install + forward。
+        # 命中返回的是先前算出的同一组浮点数 → 对 rollout_sig / 1==N 完全透明。
+        # 仅 Stage-1 明文评估可用；任何带噪声采样的评估路径不得使用。
+        from stage1_rl.eval_cache import Stage1EvalCache
+        self._stage1_worker_eval_cache = Stage1EvalCache()
         # Track one-time device placement; eval mode is re-asserted before each forward.
         self._eval_infra_ready = False
         # 记录上一次已应用的 (gelu_degrees, softmax_degrees); apply_configuration 是幂等的,
@@ -4465,6 +4471,18 @@ class LayerImportanceEvaluator(TrainerCallback):
         if split_name is None:
             raise ValueError("_stage1_evaluate_on_model requires explicit split_name")
 
+        # Shared lock-protected cache: Stage-1 plaintext scoring is a
+        # deterministic function of (gelu, softmax, split) — frozen weights,
+        # eval mode, shuffle=False, no noise — so a repeated config returns
+        # the exact floats a worker computed before (identical reward stream
+        # for any GPU count). See stage1_rl/eval_cache.py for the contract.
+        _shared_cache = getattr(self, "_stage1_worker_eval_cache", None)
+        if _shared_cache is not None:
+            _cache_key = _shared_cache.make_key(gelu_degrees, softmax_degrees, split_name)
+            _cached = _shared_cache.get(_cache_key)
+            if _cached is not None:
+                return _cached
+
         handler_layer_name = "model." + self.layers_attribute
         # 1) GELU/Softmax install (mirrors apply_configuration body, bound to passed handler).
         model.eval()
@@ -4499,13 +4517,16 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         # 2) Forward via the explicit-model/device variant of _run_evaluation.
         dataloader = self.dataloaders[split_name]
-        return self._run_evaluation(
+        result = self._run_evaluation(
             dataloader,
             use_train=(split_name == "train"),
             split_name=split_name,
             model=model,
             device=device,
         )
+        if _shared_cache is not None:
+            _shared_cache.put(_cache_key, result)
+        return result
 
     def stage1_final_evaluate(self, gelu_degrees, softmax_degrees, use_train=False, split=None):
         """Stage-1 final eval is plaintext-only: GELU/Softmax replacement, no BLB noise."""
@@ -5326,6 +5347,13 @@ class LayerImportanceEvaluator(TrainerCallback):
         all_preds, all_labels = [], []
         _use_cuda = torch.cuda.is_available()
         _t0 = time.time()
+        # 延迟同步：循环内不做任何 GPU→CPU 拷贝（旧版每 batch 的 loss.item() +
+        # logits.cpu() 各强制一次同步，阻塞了下一个 batch 的 kernel 提交）。
+        # 改为暂存 GPU 张量，循环结束后按原顺序逐 batch 转换 —— 每个 batch 的
+        # 数组、loss 的 float64 累加顺序与旧实现完全一致（bit-identical）。
+        _batch_losses = []          # 每 batch 的 0-dim GPU loss（或 None 跳过）
+        _batch_logits = []          # 每 batch 的 GPU logits
+        _batch_labels = []          # 每 batch 的 CPU labels（已 normalize）
         with torch.inference_mode():
             for batch in dataloader:
                 # 在 GPU 传输前直接从 CPU 读取 labels, 避免 labels 被多余地发到 GPU 再拷回 CPU
@@ -5339,9 +5367,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                 # 异步 CPU→GPU 传输; 与 pin_memory 配合使用提升数据传输效率
                 batch = {k: v.to(_device, non_blocking=True) for k, v in batch.items()}
                 outputs = _model(**batch)
-                if outputs.loss is not None: total_loss += outputs.loss.item()
+                _batch_losses.append(
+                    outputs.loss.detach() if outputs.loss is not None else None
+                )
+                _batch_logits.append(outputs.logits.detach())
+                _batch_labels.append(labels)
+            # 单一同步点：所有 forward 已提交后再做 D2H 转换。
+            for _loss_t, _logits_t, labels in zip(_batch_losses, _batch_logits, _batch_labels):
+                if _loss_t is not None:
+                    total_loss += _loss_t.item()
                 logits = self._normalize_logits_for_metrics(
-                    outputs.logits.detach().cpu().numpy(),
+                    _logits_t.cpu().numpy(),
                     expected_batch_size=len(labels),
                 )
                 all_preds.extend(logits.tolist())
@@ -6039,6 +6075,23 @@ class LayerImportanceEvaluator(TrainerCallback):
                     f"Stage-1 baseline must use validation_full, got {reward_reference_split!r}."
                 )
 
+            # Stage-1 评估是 matmul 主导的 fp32 BERT forward（bert-large 尤甚）。
+            # 启用与 Stage-2 reward probe 完全相同的 TF32 设置（process-global、
+            # 幂等；张量仍是 FP32，仅 matmul kernel 走 Tensor Core）。在 baseline
+            # 评估之前启用，保证 baseline 与所有候选在同一 kernel 精度下可比。
+            try:
+                from blb_stage2_rl.probe_runner import (
+                    enable_cuda_reward_probe_fast_math,
+                )
+                enable_cuda_reward_probe_fast_math()
+                if torch.cuda.is_available():
+                    self.log(
+                        "  [stage1-eval] TF32 fast matmul enabled"
+                        "（与 Stage-2 reward probe 同一设置）"
+                    )
+            except Exception as _tf32_exc:
+                self.log(f"  [stage1-eval] TF32 enable skipped: {_tf32_exc!r}")
+
             base_loss_val, base_p_val, base_s_val, base_time_val = self.stage1_evaluate(
                 base_gelu,
                 base_softmax,
@@ -6468,6 +6521,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                             f"{len(_rollouts)} episodes across "
                             f"{_stage1_parallel_runner.num_workers} workers"
                         )
+                        _shared_eval_cache = getattr(
+                            self, "_stage1_worker_eval_cache", None
+                        )
+                        if _shared_eval_cache is not None:
+                            self.log(
+                                f"  [stage1-rollout] window={_window_idx_for_runner} "
+                                + _shared_eval_cache.stats_line()
+                            )
                     rollout = _stage1_parallel_stash.pop(0)
                     _stage1_parallel_replay_t0 = time.time()
                     # Replay rollout into the central RecurrentRolloutBuffer.

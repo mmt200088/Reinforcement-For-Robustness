@@ -426,6 +426,34 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 bash llama_7B_LayerImportance.sh run rl \
 
 Implementation facts:
 
+- **2026-06-13 Stage-1 eval acceleration (bert-large was ~28h/50k on the old
+  code).** Per-episode scoring = full `validation_full` fp32 forward; four
+  layered speedups, all correctness-locked by
+  `tests/test_stage1_eval_accel.py`: (1) TF32 fast matmul enabled at Stage-1
+  baseline setup (reuses `probe_runner.enable_cuda_reward_probe_fast_math`,
+  the exact setting Stage-2 reward probes adopted — process-global,
+  kernel-precision only); (2) shared lock-protected worker eval cache
+  (`stage1_rl/eval_cache.py`) — Stage-1 plaintext scoring is a deterministic
+  function of `(gelu, softmax, split)`, so repeated configs (dominant once
+  entropy decays) skip install+forward and return the exact same floats →
+  `rollout_sig`/1==N untouched; per-window `eval_cache hits=…` log line.
+  NEVER use this cache for any noise-sampling eval. (3) `PolynomialGELU._poly`
+  = Horner (the old stacked-powers form materialized a (deg+1)× intermediate
+  on the 4096-wide FFN activation), `approximation_exponential` = repeated
+  squaring (BERT + GPT-2 helpers; block3/block5 NOISE variants intentionally
+  untouched — their per-power noise injection points are semantic);
+  (4) `_run_evaluation` defers per-batch `loss.item()`/`logits.cpu()` syncs
+  to a single post-loop point (bit-identical accumulation order). Poly/exp
+  rewrites shift logits at ~1e-7 (same math, different fp association) —
+  within every gate's noise floor but reward values are not bit-comparable
+  across this commit. bert-large run guidance: `--stage1-rl-devices` all
+  cards + `--batch-size 128` (batch size IS the eval batch size; raising it
+  changes only `avg_loss`'s mean-of-batch-means weighting, applied
+  consistently to baseline and candidates; padding-width invariance of the
+  approx softmax under the additive -10000 mask is unit-locked).
+  Workers-per-device for Stage-1 was evaluated and REJECTED: the episode is
+  ~90% GPU-bound terminal forward (unlike Stage-2's 78/21 probe/rollout
+  split), so sibling overlap buys <1.1× for real RNG-lock complexity.
 - As of 2026-05-28, Stage-1 differential metric reward is behind
   `STAGE1_ENABLE_DIFFERENTIAL_REWARD` and defaults off. Leave it off for
   queued reruns unless the user explicitly asks. Dense per-step reward is
