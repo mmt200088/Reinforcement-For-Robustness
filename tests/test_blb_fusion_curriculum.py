@@ -228,12 +228,14 @@ class FusionProbeScheduleTest(unittest.TestCase):
                 fcur.fusion_probe_target_block(ep - 60, anchor_episodes=60, interval=200)
             )
 
-    def test_rotation_block2_block5_block4(self):
+    def test_rotation_block2_block5(self):
+        # ADR-012: block4 dropped from the rotation (a 12-layer block4 fusion
+        # probe is a guaranteed accuracy fail and only taught anti-fusion).
         got = [
             fcur.fusion_probe_target_block(60 + i * 200, anchor_episodes=60, interval=200)
             for i in range(6)
         ]
-        self.assertEqual(got, [2, 5, 4, 2, 5, 4])
+        self.assertEqual(got, [2, 5, 2, 5, 2, 5])
 
     def test_non_multiple_episodes_are_none(self):
         for off in (1, 7, 199, 201):
@@ -254,16 +256,16 @@ class FusionProbeScheduleTest(unittest.TestCase):
             self.assertEqual(a, b)
 
     def test_probe_frequency_is_sparse(self):
-        # 60k episodes / interval 200 -> 300 probes (0.5% overhead), 100 per type.
+        # 60k episodes / interval 200 -> 300 probes (0.5% overhead), 150 per type.
         probes = [
             fcur.fusion_probe_target_block(ep, anchor_episodes=60, interval=200)
             for ep in range(60, 60060)
         ]
         hits = [x for x in probes if x is not None]
         self.assertEqual(len(hits), 300)
-        self.assertEqual(hits.count(2), 100)
-        self.assertEqual(hits.count(5), 100)
-        self.assertEqual(hits.count(4), 100)
+        self.assertEqual(hits.count(2), 150)
+        self.assertEqual(hits.count(5), 150)
+        self.assertEqual(hits.count(4), 0)
 
 
 if __name__ == "__main__":

@@ -144,6 +144,16 @@ class BLBStage2EnvConfig:
     """``BLBStage2Env`` 的运行参数。"""
     profile: str = "default"
     num_trials_per_step: int = 3            # spec §5.3 推荐 3 次取 std
+    # ADR-012 borderline retest (2026-06-12): a metric fail whose worst
+    # per-channel deficit is within reward_weights.near_miss_band gets ONE
+    # fresh re-measurement with multiplier x num_trials_per_step trials
+    # (salted deterministic probe seed); the retest verdict replaces the
+    # first. The 2nd 60k showed ~8% of fusion-era episodes were borderline
+    # probe-quantization P1s (m1 a hair under threshold, ZERO catastrophic) —
+    # a stochastic -46 hammer that killed all fusion exploration. Only active
+    # on the deterministic probe path (probe_noise_seed set).
+    borderline_retest_enabled: bool = True
+    borderline_retest_trials_multiplier: int = 2
     probe_batch_count: int = 4              # 每次 trial 跑多少 mini-batch
     deterministic_eval: bool = False
     rotation_name_map: Optional[Mapping[Tuple[int, str], Mapping[str, str]]] = None
@@ -1061,6 +1071,7 @@ class BLBStage2Env:
         try:
             metrics = self._eval_on_probe(self.env_cfg.num_trials_per_step)
             info["forward_ran"] = True
+            metrics = self._maybe_borderline_retest(metrics, info)
             if self._last_probe_diagnostics:
                 diag = dict(self._last_probe_diagnostics)
                 diag.update(timing)
@@ -1162,6 +1173,83 @@ class BLBStage2Env:
     # ------------------------------------------------------------------
     # 评估子集 forward（单层 K-trials）
     # ------------------------------------------------------------------
+    def _acc_worst_deficit_norm(self, metrics: EpisodeMetrics) -> float:
+        """Worst per-channel accuracy deficit normalized by |baseline - thr|.
+
+        0.0 when both gates pass (or thresholds aren't calibrated yet, e.g.
+        during the noisy baseline preflight). Mirrors the ADR-012 near-miss
+        coordinate in reward.compute_reward.
+        """
+        worst = 0.0
+        floor = float(getattr(self.reward_weights, "margin_denom_floor", 1e-6) or 1e-6)
+        for m, thr, base in (
+                (float(metrics.metric1_mean),
+                 self.acc_threshold,
+                 float(getattr(self.reward_weights, "baseline_metric1", 0.0) or 0.0)),
+                (float(metrics.metric2_mean),
+                 self.acc_threshold_m2,
+                 float(getattr(self.reward_weights, "baseline_metric2", 0.0) or 0.0)),
+        ):
+            if thr is None:
+                continue
+            thr_f = float(thr)
+            if not (math.isfinite(thr_f) and math.isfinite(m) and abs(base) > floor):
+                continue
+            denom = max(abs(base - thr_f), floor)
+            d = (thr_f - m) / denom
+            if d > 0.0:
+                worst = max(worst, d)
+        return float(worst)
+
+    def _maybe_borderline_retest(
+            self,
+            metrics: EpisodeMetrics,
+            info: Dict[str, Any],
+            ) -> EpisodeMetrics:
+        """ADR-012: re-measure borderline metric fails with fresh trials.
+
+        With a 256-sample probe, m1 is quantized (~0.004/sample, std ~0.0018):
+        a config whose TRUE accuracy is within tolerance still lands below the
+        threshold a few % of the time, eating the P1 hammer. One fresh
+        re-measurement at 2x trials drops that false-fail rate quadratically
+        while true violators keep failing. The retest verdict REPLACES the
+        first measurement. Deterministic: the retest probe seed is a salt of
+        the episode-keyed probe_noise_seed, so it is identical for any GPU
+        count (1==N preserved). No-op when the deficit is zero, beyond the
+        near-miss band, on the legacy random-probe path, or when disabled.
+        """
+        if not bool(getattr(self.env_cfg, "borderline_retest_enabled", False)):
+            return metrics
+        if self.probe_noise_seed is None or self.probe_runner is not None:
+            return metrics
+        band = float(getattr(self.reward_weights, "near_miss_band", 0.0) or 0.0)
+        if band <= 0.0:
+            return metrics
+        deficit = self._acc_worst_deficit_norm(metrics)
+        if deficit <= 0.0 or deficit > band:
+            return metrics
+        mult = max(1, int(getattr(self.env_cfg, "borderline_retest_trials_multiplier", 2)))
+        retest_k = mult * max(1, int(self.env_cfg.num_trials_per_step))
+        first_seed = int(self.probe_noise_seed)
+        # Golden-ratio salt -> a disjoint deterministic trial-seed stream.
+        self.probe_noise_seed = int(
+            (first_seed ^ 0x9E3779B97F4A7C15) & 0x7FFFFFFFFFFFFFFF
+        )
+        try:
+            retest_metrics = self._eval_on_probe(retest_k)
+        finally:
+            self.probe_noise_seed = first_seed
+        info["borderline_retest"] = {
+            "first_metric1_mean": float(metrics.metric1_mean),
+            "first_metric2_mean": float(metrics.metric2_mean),
+            "first_deficit_norm": float(deficit),
+            "retest_trials": int(retest_k),
+            "retest_metric1_mean": float(retest_metrics.metric1_mean),
+            "retest_metric2_mean": float(retest_metrics.metric2_mean),
+            "retest_deficit_norm": float(self._acc_worst_deficit_norm(retest_metrics)),
+        }
+        return retest_metrics
+
     def _eval_on_probe(self, k_trials: int) -> EpisodeMetrics:
         """在 ``self.probe_batches`` 上跑 k_trials 次（独立 RNG），返回 EpisodeMetrics。
 

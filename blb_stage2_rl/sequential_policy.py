@@ -286,6 +286,18 @@ class BLBStage2SequentialPolicy(nn.Module):
             torch.zeros(cfg.max_step_dim, cfg.max_num_levels, dtype=torch.float32),
             persistent=False,
         )
+        # ADR-012 per-slot exploration floor (fusion mode). Mixture sampling
+        # pi' = (1-eps)*pi + eps*Uniform(masked support) is the TRUE policy
+        # for those slots — sample_action AND evaluate_action (PPO replay) use
+        # the same mixture, so log-prob ratios stay consistent. Guarantees the
+        # policy can never become deterministic on the fusion option choice
+        # (the 2nd 60k ended at entropy 0.000 / clip 0.000 — frozen for the
+        # last 18k episodes). Zeros (default) = exact pre-ADR-012 behavior.
+        self.register_buffer(
+            "_slot_exploration_epsilon",
+            torch.zeros(cfg.max_step_dim, dtype=torch.float32),
+            persistent=False,
+        )
         self._causal_mask_cache: Dict[Tuple[int, torch.device], torch.Tensor] = {}
         self._init_weights()
 
@@ -614,7 +626,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             logits,
             torch.zeros_like(logits),
         )
-        dist = torch.distributions.Categorical(logits=safe_logits)
+        dist = self._action_dist(logits, safe_logits)
         if deterministic:
             actions = torch.argmax(safe_logits, dim=-1)
         else:
@@ -654,7 +666,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             logits,
             torch.zeros_like(logits),
         )
-        dist = torch.distributions.Categorical(logits=safe_logits)
+        dist = self._action_dist(logits, safe_logits)
         actions_long = actions.long()
         log_prob_per_slot = dist.log_prob(actions_long) * slot_mask.float()
         log_prob = log_prob_per_slot.sum(dim=-1)
@@ -663,6 +675,44 @@ class BLBStage2SequentialPolicy(nn.Module):
         if return_per_slot_entropy:
             return log_prob, entropy, value, entropy_per_slot
         return log_prob, entropy, value
+
+    def set_slot_exploration_epsilon(self, eps_per_slot) -> None:
+        """Install the ADR-012 per-slot exploration floor (0 = off)."""
+        eps = torch.as_tensor(list(eps_per_slot), dtype=torch.float32)
+        if eps.numel() != self.cfg.max_step_dim:
+            raise ValueError(
+                f"eps length {eps.numel()} != max_step_dim {self.cfg.max_step_dim}"
+            )
+        if bool((eps < 0).any()) or bool((eps >= 1).any()):
+            raise ValueError("exploration epsilon must be in [0, 1)")
+        with torch.no_grad():
+            self._slot_exploration_epsilon.copy_(eps.to(self._slot_exploration_epsilon.device))
+
+    def _action_dist(
+            self,
+            logits: torch.Tensor,
+            safe_logits: torch.Tensor,
+            ) -> torch.distributions.Categorical:
+        """Categorical over masked logits, with the ADR-012 epsilon mixture.
+
+        ``logits`` still carries -inf on masked levels (defines the uniform
+        support); ``safe_logits`` is the NaN-safe version used for softmax.
+        With all epsilons 0 this reduces exactly to Categorical(safe_logits).
+        """
+        eps = self._slot_exploration_epsilon
+        if float(eps.max().item()) <= 0.0:
+            return torch.distributions.Categorical(logits=safe_logits)
+        probs = torch.softmax(safe_logits, dim=-1)
+        allowed = torch.isfinite(logits).float()
+        denom = allowed.sum(dim=-1, keepdim=True)
+        # padding rows (no allowed level) fall back to all-uniform; their
+        # log-prob contribution is masked out by slot_mask downstream.
+        uniform = torch.where(
+            denom > 0, allowed / denom.clamp(min=1.0),
+            torch.full_like(allowed, 1.0 / float(allowed.shape[-1])),
+        )
+        e = eps.view(1, -1, 1).to(probs.dtype)
+        return torch.distributions.Categorical(probs=(1.0 - e) * probs + e * uniform)
 
     def apply_preferred_per_step_bias(
             self,

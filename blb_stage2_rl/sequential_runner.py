@@ -112,6 +112,13 @@ class SequentialTrainConfig:
     # collapse. 0 disables. Decision is a pure function of the absolute
     # episode index (deterministic; identical across episode-parallel workers).
     fusion_probe_interval: int = 200
+    # ADR-012 exploration floor (fusion mode): mixture sampling on the fusion
+    # OPTION slot (and a smaller floor on the K slot) so the policy can never
+    # become deterministic on the 2-way fusion choice — the 2nd 60k ended with
+    # entropy 0.000 / clip 0.000 (frozen policy) and zero on-policy fusion
+    # samples for the last 43.5k episodes. 0 disables.
+    fusion_exploration_epsilon: float = 0.05
+    fusion_exploration_epsilon_k: float = 0.02
     guarded_radius2_enabled: bool = False
     guarded_radius2_min_episode: int = 1060
     guarded_radius2_stall_window: int = 600
@@ -223,6 +230,9 @@ SEQ_RL_VARIANT = "blb_v3_sequential_gtrxl_v2scale"
 # baseline (fusion=0 / K=max) prior harder than the per-slot default (1.2) so
 # cold-start sits at baseline and explores outward.
 FUSION_WARMSTART_BIAS_GAIN = 2.5
+# ADR-012: default K-slot exploration floor (option-slot floor is the
+# fusion_exploration_epsilon config field; this one is the paired K default).
+FUSION_EXPLORATION_EPSILON_K = 0.02
 
 
 def _resolve_ent_coef_schedule(
@@ -1937,11 +1947,15 @@ def train_sequential(
         # PPO a discriminating gradient before the 47-block joint space opens,
         # without ever permanently masking a config.
         episode_fusion_mode = getattr(env, "_fusion_map", None) is not None
-        # Scheduled forced-fusion probe (ADR-011): a pure function of the
-        # absolute episode index, so it is deterministic and identical in the
-        # episode-parallel workers. Probe episodes force fusion option 1 on one
-        # block type at baseline K, scored normally, under the OPEN mask (the
-        # forced option may sit outside the curriculum's restricted mask).
+        # Scheduled forced-fusion probe (ADR-011, redesigned ADR-012): a pure
+        # function of the absolute episode index, so it is deterministic and
+        # identical in the episode-parallel workers. Probe episodes force ONLY
+        # the target block type's fusion option to 1; K and every other block
+        # follow the CURRENT policy under the normal curriculum mask (the
+        # target option level is injected into the mask), so the probe is a
+        # clean "what if you ALSO fused block-type T" counterfactual on top of
+        # the policy — the old baseline-K forcing cancelled the fusion gain
+        # against learned deep-K savings and made probes useless or negative.
         fusion_probe_block: Optional[int] = None
         if episode_fusion_mode and not force_this_ep:
             fusion_probe_block = fusion_probe_target_block(
@@ -1957,7 +1971,6 @@ def train_sequential(
                 episode_fusion_mode
                 and bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", True))
                 and not force_this_ep
-                and fusion_probe_block is None
         ):
             fc_seed = int(train_cfg.seed) if train_cfg.seed is not None else 0
             fc_rng = np.random.default_rng(
@@ -2017,6 +2030,15 @@ def train_sequential(
                         max_step_dim=policy.cfg.max_step_dim,
                         max_num_levels=policy.cfg.max_num_levels,
                     )
+                if (
+                        fusion_probe_block is not None
+                        and int(spec.block_idx) == int(fusion_probe_block)
+                        and int(spec.fusion_num_options) > 1
+                        and action_level_mask_np is not None
+                ):
+                    # ADR-012 probe: make the forced option level legal even
+                    # when the curriculum pins this block to baseline.
+                    action_level_mask_np[0, 1] = True
             elif neighbor_mask_active and base_action_vec_for_mask is not None:
                 action_level_mask_np = _build_step_level_mask(
                     spec=spec,
@@ -2079,23 +2101,11 @@ def train_sequential(
             # Skip sampling + rejection-loop entirely; commit the baseline
             # action slice. Value/log_prob come from `policy.evaluate_action`
             # against the CURRENT policy so PPO gradients are well-defined.
-            probe_step = bool(fusion_mode and fusion_probe_block is not None)
-            if (force_this_ep and baseline_action_vec is not None) or probe_step:
+            if force_this_ep and baseline_action_vec is not None:
                 if fusion_mode:
-                    # anchor: (option 0 == all-max baseline, baseline K).
-                    # probe (ADR-011): fusion option 1 on the target block type,
-                    # baseline K elsewhere — valid by construction (the offline
-                    # map holds only valid configs).
-                    opt_idx = 0
-                    if (
-                            probe_step
-                            and int(spec.block_idx) == int(fusion_probe_block)
-                            and int(getattr(spec, "fusion_num_options", 1)) > 1
-                    ):
-                        opt_idx = 1
+                    # fusion baseline action = (option 0 == all-max baseline, baseline K)
                     forced_action = np.asarray(
-                        [opt_idx, int(_baseline_k_index_for_block(spec.block_idx))],
-                        dtype=np.int64,
+                        [0, int(_baseline_k_index_for_block(spec.block_idx))], dtype=np.int64
                     )
                 else:
                     baseline_slice = baseline_action_vec[list(spec.full_vec_offsets)][:n_active]
@@ -2125,8 +2135,7 @@ def train_sequential(
                 chosen_action_np = forced_padded
                 chosen_log_prob = float(lp_t.item())
                 chosen_value = float(val_t.item())
-                if force_this_ep:
-                    rejection_counters["steps_forced_to_baseline_anchor"] += 1
+                rejection_counters["steps_forced_to_baseline_anchor"] += 1
 
                 action_np = chosen_action_np
                 log_prob = chosen_log_prob
@@ -2152,18 +2161,11 @@ def train_sequential(
                 enriched_info["reward"] = float(reward)
                 enriched_info["value"] = value
                 enriched_info["log_prob"] = log_prob
-                enriched_info["forced_baseline"] = bool(force_this_ep)
-                enriched_info["exploration_mode"] = (
-                    "forced_baseline" if force_this_ep
-                    else f"forced_fusion_probe_b{int(fusion_probe_block)}"
-                )
+                enriched_info["forced_baseline"] = True
+                enriched_info["exploration_mode"] = "forced_baseline"
                 enriched_info["baseline_prior_scale"] = float(baseline_prior_scale)
-                enriched_info["base_action_source"] = (
-                    "baseline" if force_this_ep else "fusion_probe"
-                )
-                enriched_info["proposal_direction"] = (
-                    "anchor" if force_this_ep else "fusion_probe"
-                )
+                enriched_info["base_action_source"] = "baseline"
+                enriched_info["proposal_direction"] = "anchor"
                 enriched_info["guarded_radius2_active"] = False
                 if on_step_end is not None:
                     try:
@@ -2309,6 +2311,33 @@ def train_sequential(
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
+                if (
+                        fusion_mode
+                        and fusion_probe_block is not None
+                        and int(spec.block_idx) == int(fusion_probe_block)
+                        and int(spec.fusion_num_options) > 1
+                        and int(action_np_try[0]) != 1
+                ):
+                    # ADR-012 probe: force ONLY the target block's option to 1;
+                    # K (and everything else) keeps the policy's own sample.
+                    # Re-evaluate log_prob/value for the modified action under
+                    # the same mask so PPO ratios stay well-defined.
+                    action_np_try = action_np_try.copy()
+                    action_np_try[0] = 1
+                    policy_t1 = time.perf_counter()
+                    with torch.inference_mode():
+                        actions_fix_t = (
+                            torch.from_numpy(action_np_try).to(device).unsqueeze(0)
+                        )
+                        log_prob_t, _probe_ent, value_t = policy.evaluate_action(
+                            obs_t, actions_fix_t, slot_mask_t, levels_t,
+                            action_level_mask=action_level_mask_t,
+                            baseline_prior_scale=baseline_prior_scale,
+                            truncate_to_current=True,
+                        )
+                    policy_rollout_wall_seconds_val += float(
+                        time.perf_counter() - policy_t1
+                    )
                 step_action_try = action_np_try[:n_active].tolist()
                 tup = tuple(int(x) for x in step_action_try)
 
@@ -3392,6 +3421,23 @@ def run_sequential_via_runner(
     policy = BLBStage2SequentialPolicy(policy_cfg).to(device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=float(train_cfg.ppo.lr))
 
+    if fusion_map is not None:
+        # ADR-012 exploration floor: slot 0 = fusion option, slot 1 = K.
+        _eps_opt = float(getattr(train_cfg, "fusion_exploration_epsilon", 0.05) or 0.0)
+        _eps_k = float(
+            getattr(train_cfg, "fusion_exploration_epsilon_k", FUSION_EXPLORATION_EPSILON_K)
+            or 0.0
+        )
+        if _eps_opt > 0.0 or _eps_k > 0.0:
+            policy.set_slot_exploration_epsilon(
+                [_eps_opt, _eps_k] + [0.0] * (policy_cfg.max_step_dim - 2)
+            )
+            log(
+                f"  [fusion][adr-012] exploration floor installed: "
+                f"option eps={_eps_opt:g}, K eps={_eps_k:g} "
+                f"(mixture replayed identically in PPO update)"
+            )
+
     # Warmstart: bias every action head row toward the BASELINE-indexed slot.
     # 2026-05-18 (rdv2 hotfix): the earlier ``[LEVELS_F - 1] * max_step_dim
     # = [4]*13`` formula was wrong for 8/13 slot positions. The per-step slot
@@ -3653,6 +3699,12 @@ def run_sequential_via_runner(
         fusion_neighbor_ramp_episodes=int(_fc_ramp),
         fusion_neighbor_max_radius=int(getattr(train_cfg, "fusion_neighbor_max_radius", 6)),
         fusion_probe_interval=int(getattr(train_cfg, "fusion_probe_interval", 200)),
+        fusion_exploration_epsilon=float(
+            getattr(train_cfg, "fusion_exploration_epsilon", 0.05)
+        ),
+        fusion_exploration_epsilon_k=float(
+            getattr(train_cfg, "fusion_exploration_epsilon_k", FUSION_EXPLORATION_EPSILON_K)
+        ),
         guarded_radius2_enabled=bool(getattr(train_cfg, "guarded_radius2_enabled", False)),
         guarded_radius2_min_episode=int(getattr(train_cfg, "guarded_radius2_min_episode", 1060)),
         guarded_radius2_stall_window=int(getattr(train_cfg, "guarded_radius2_stall_window", 600)),

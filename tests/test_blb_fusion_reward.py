@@ -129,6 +129,103 @@ class FusionCostSavingTest(unittest.TestCase):
         self.assertAlmostEqual(res.max_actual, 400.0)
 
 
+class NearMissGradedTierTest(unittest.TestCase):
+    """ADR-012: graded near-miss tier replaces the P1 cliff near the threshold.
+
+    2nd-60k forensics: ALL 1226 on-policy fusion P1s were borderline
+    (m1 in [0.833, 0.858], zero catastrophic) — each ate the full -46 cliff,
+    making expected fusion advantage ~-3.8 despite a +0.1 true P3 advantage.
+    The graded band keeps priority=1 (selection/rank unchanged) but the PPO
+    scalar slopes from cap(35) at deficit->0 to floor(15) at deficit=band,
+    then falls back to the old cliff beyond the band.
+    """
+
+    BASE_M1 = 0.8672
+    THR = 0.858
+
+    def _reward(self, m1):
+        w = rwd.RewardWeights(baseline_metric1=self.BASE_M1, baseline_metric2=self.BASE_M1)
+        base = rwd.BaselineCostStats(
+            total_bits_sum=1000, total_fusion_count=0, avg_k=13.0,
+            loss_mean=0.34, loss_std=0.002, metric1_mean=self.BASE_M1,
+            metric2_mean=self.BASE_M1, metric1_std=0.001, metric2_std=0.001,
+        )
+
+        class _Opt:
+            any_invalid = False
+            total_bits_sum = 1000
+            total_fusion_count = 0
+
+        m = rwd.EpisodeMetrics(
+            loss_mean=0.34, loss_std=0.002, metric1_mean=m1, metric2_mean=m1,
+            metric1_std=0.001, metric2_std=0.001,
+        )
+        return rwd.compute_reward(
+            m, _Opt(), action_avg_k=13.0, baseline=base, weights=w,
+            acc_threshold=self.THR, acc_threshold_m2=self.THR, stab_threshold=0.05,
+            external_cost_score=0.0, external_cost_rank=0.0,
+        )
+
+    def test_pass_unaffected(self):
+        b = self._reward(self.BASE_M1)
+        self.assertEqual(b.priority, 3)
+        self.assertFalse(b.near_miss)
+        self.assertGreaterEqual(b.reward, 40.0)
+
+    def test_tiny_miss_graded_not_cliff(self):
+        b = self._reward(0.8570)   # ~1 probe quantum below thr
+        self.assertEqual(b.priority, 1)        # selection semantics unchanged
+        self.assertTrue(b.near_miss)
+        self.assertGreater(b.reward, 25.0)     # nowhere near the -5 cliff
+        self.assertLess(b.reward, 40.0)        # strictly below ANY P3
+
+    def test_grading_monotonic_in_deficit(self):
+        rewards = [self._reward(m1).reward for m1 in (0.857, 0.854, 0.851, 0.849)]
+        self.assertEqual(rewards, sorted(rewards, reverse=True))
+
+    def test_beyond_band_keeps_cliff(self):
+        b = self._reward(0.830)
+        self.assertEqual(b.priority, 1)
+        self.assertFalse(b.near_miss)
+        self.assertLess(b.reward, 0.0)
+
+    def test_catastrophic_keeps_cliff(self):
+        b = self._reward(0.32)
+        self.assertFalse(b.near_miss)
+        self.assertLess(b.reward, -4.0)
+
+    def test_invalid_never_near_miss(self):
+        w = rwd.RewardWeights(baseline_metric1=self.BASE_M1, baseline_metric2=self.BASE_M1)
+        base = rwd.BaselineCostStats(
+            total_bits_sum=1000, total_fusion_count=0, avg_k=13.0,
+            loss_mean=0.34, loss_std=0.002, metric1_mean=self.BASE_M1,
+            metric2_mean=self.BASE_M1, metric1_std=0.001, metric2_std=0.001,
+        )
+
+        class _Opt:
+            any_invalid = True
+            total_bits_sum = 1000
+            total_fusion_count = 0
+
+        m = rwd.EpisodeMetrics(
+            loss_mean=0.34, loss_std=0.002, metric1_mean=0.857, metric2_mean=0.857,
+            metric1_std=0.001, metric2_std=0.001,
+        )
+        b = rwd.compute_reward(
+            m, _Opt(), action_avg_k=13.0, baseline=base, weights=w,
+            acc_threshold=self.THR, acc_threshold_m2=self.THR, stab_threshold=0.05,
+        )
+        self.assertFalse(b.near_miss)
+        self.assertLess(b.reward, 0.0)
+
+    def test_near_miss_below_every_p3(self):
+        # max near-miss (deficit -> 0+) must stay under min P3 (tier 40 + >=0).
+        nm = self._reward(self.THR - 1e-5)
+        p3_floor = self._reward(self.THR + 1e-5)
+        self.assertTrue(nm.near_miss)
+        self.assertLess(nm.reward, p3_floor.reward)
+
+
 class BudgetSplitComponentsTest(unittest.TestCase):
     """ADR-011: fusion / truncation components normalized over their OWN maxima.
 

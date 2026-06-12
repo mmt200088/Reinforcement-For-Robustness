@@ -240,6 +240,21 @@ class RewardWeights:
     stab_floor: float = DEFAULT_STAB_FLOOR
     p3_metric_margin_budget: float = DEFAULT_P3_METRIC_MARGIN_BUDGET
     p3_cost_budget: float = DEFAULT_P3_COST_BUDGET
+    # ADR-012 graded near-miss tier (2026-06-12). The 2nd 60k run proved the
+    # P1 cliff (-46 vs P3) makes the accuracy-boundary region unnavigable:
+    # every fusion-era episode whose 256-sample probe landed a hair below the
+    # acc threshold ate the full cliff (8.4% of fusion attempts; ALL of them
+    # borderline m1>=0.83, ZERO catastrophic), so expected fusion advantage was
+    # +0.117 - 0.084*46 ~= -3.8 and the policy rationally killed fusion. A
+    # metric fail that is NOT invalid and whose worst per-channel deficit is
+    # within ``near_miss_band`` (in units of |baseline - threshold|) now earns
+    # a graded tier between cap (deficit -> 0) and floor (deficit = band)
+    # instead of the cliff. Priority stays 1 (selection/rank semantics are
+    # untouched - a near-miss can never beat ANY P3 in either rank or scalar:
+    # cap 35 < P3 floor 40). Deeper fails keep the old cliff.
+    near_miss_tier_cap: float = 35.0
+    near_miss_tier_floor: float = 15.0
+    near_miss_band: float = 1.0
     cost_w_fusion: float = DEFAULT_COST_W_FUSION
     cost_w_k: float = DEFAULT_COST_W_K
     cost_w_bits: float = DEFAULT_COST_W_BITS
@@ -317,6 +332,10 @@ class RewardBreakdown:
     invalid_term: float = 0.0
     metric_ok: bool = False
     stab_ok: bool = False
+    # ADR-012: graded near-miss (metric fail within near_miss_band of the
+    # threshold, not invalid) — priority stays 1, tier is graded not cliff.
+    near_miss: bool = False
+    acc_worst_deficit_norm: float = 0.0
     # v3 per-axis breakdown (helpful for diagnostics / artifacts)
     acc_violation_m1: float = 0.0
     acc_violation_m2: float = 0.0
@@ -712,6 +731,14 @@ def compute_reward(
         # legacy callers that just want the tier_bonus path still work.
         margin_acc = 0.0
     combined_acc_violation = max(acc_violation_m1, acc_violation_m2)
+    # ADR-012: worst per-channel deficit normalized by that channel's
+    # |baseline - threshold| width — the near-miss grading coordinate.
+    _deficits = []
+    if m1_active:
+        _deficits.append(acc_violation_m1 / denom_m1)
+    if m2_active:
+        _deficits.append(acc_violation_m2 / denom_m2)
+    acc_worst_deficit_norm = max(_deficits) if _deficits else 0.0
 
     # === 2. Raw cost gains; scalar cost_score is legacy-only unless a Pareto archive is absent. ===
     opt_total_bits = _safe_float(getattr(opt_signals, "total_bits_sum", 0), 0.0)
@@ -904,10 +931,26 @@ def compute_reward(
 
     # === 6. tier_bonus (hard-priority via large jumps; +20/+40 dominates cost) ===
     tier_bonus = 0.0
+    near_miss = False
     if metric_ok:
         tier_bonus += float(weights.tier_metric_bonus)
         if stab_ok:
             tier_bonus += float(weights.tier_stability_bonus)
+    elif (
+            not invalid
+            and combined_acc_violation > 0.0
+            and float(weights.near_miss_band) > 0.0
+            and acc_worst_deficit_norm <= float(weights.near_miss_band)
+    ):
+        # ADR-012 graded near-miss: smooth the accuracy boundary so PPO can
+        # navigate it ("back off a notch") instead of fleeing the whole
+        # region. Stays strictly below the P3 floor (tier 40 + shaping >= 0);
+        # priority stays 1 so selection / candidate ranking are unchanged.
+        near_miss = True
+        cap = float(weights.near_miss_tier_cap)
+        floor = float(weights.near_miss_tier_floor)
+        frac = acc_worst_deficit_norm / float(weights.near_miss_band)
+        tier_bonus += cap - (cap - floor) * float(np.clip(frac, 0.0, 1.0))
 
     total = float(shaping_clipped + tier_bonus)
 
@@ -930,6 +973,8 @@ def compute_reward(
         invalid_term=float(invalid_term),
         metric_ok=bool(metric_ok),
         stab_ok=bool(stab_ok),
+        near_miss=bool(near_miss),
+        acc_worst_deficit_norm=float(acc_worst_deficit_norm),
         # v3 per-axis breakdown
         acc_violation_m1=float(acc_violation_m1),
         acc_violation_m2=float(acc_violation_m2),

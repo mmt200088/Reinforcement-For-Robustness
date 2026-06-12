@@ -271,10 +271,12 @@ def collect_fusion_episode(
         int(force_baseline_episodes) > 0
         and int(absolute_ep) < int(force_baseline_episodes)
     )
-    # Scheduled forced-fusion probe (ADR-011): pure function of the absolute
-    # episode index -> identical across workers (1==N preserved). Probe
-    # episodes force fusion option 1 on one rotating block type at baseline K
-    # under the OPEN mask, scored normally.
+    # Scheduled forced-fusion probe (ADR-011, redesigned ADR-012): pure
+    # function of the absolute episode index -> identical across workers
+    # (1==N preserved). Probe episodes force ONLY the target block type's
+    # fusion option to 1; K and all other blocks follow the CURRENT policy
+    # under the normal curriculum mask (target option level injected into the
+    # mask) — a clean "what if you ALSO fused block-type T" counterfactual.
     fusion_probe_block: Optional[int] = None
     if not force_this_ep:
         fusion_probe_block = fusion_probe_target_block(
@@ -292,7 +294,6 @@ def collect_fusion_episode(
     if (
             bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", True))
             and not force_this_ep
-            and fusion_probe_block is None
     ):
         fc_seed = int(train_cfg.seed) if train_cfg.seed is not None else 0
         fc_rng = np.random.default_rng(
@@ -343,6 +344,14 @@ def collect_fusion_episode(
                 max_step_dim=policy.cfg.max_step_dim,
                 max_num_levels=policy.cfg.max_num_levels,
             )
+        if (
+                fusion_probe_block is not None
+                and int(spec.block_idx) == int(fusion_probe_block)
+                and int(spec.fusion_num_options) > 1
+        ):
+            # ADR-012 probe: make the forced option level legal even when the
+            # curriculum pins this block to baseline.
+            action_level_mask_np[0, 1] = True
         action_level_mask_t = (
             torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
         )
@@ -352,19 +361,10 @@ def collect_fusion_episode(
         chosen_value = 0.0
         chosen_eval_info: Optional[Dict[str, Any]] = None
 
-        if force_this_ep or fusion_probe_block is not None:
+        if force_this_ep:
             # Forced-baseline anchor: fusion baseline = (option 0, baseline K).
-            # Probe (ADR-011): fusion option 1 on the target block type, baseline
-            # K everywhere — valid by construction (the map holds only valid cfgs).
-            opt_idx = 0
-            if (
-                    fusion_probe_block is not None
-                    and int(spec.block_idx) == int(fusion_probe_block)
-                    and int(getattr(spec, "fusion_num_options", 1)) > 1
-            ):
-                opt_idx = 1
             forced_action = np.asarray(
-                [opt_idx, int(_baseline_k_index_for_block(spec.block_idx))], dtype=np.int64
+                [0, int(_baseline_k_index_for_block(spec.block_idx))], dtype=np.int64
             )
             forced_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
             forced_padded[:n_active] = forced_action[:n_active]
@@ -405,6 +405,32 @@ def collect_fusion_episode(
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
+                if (
+                        fusion_probe_block is not None
+                        and int(spec.block_idx) == int(fusion_probe_block)
+                        and int(spec.fusion_num_options) > 1
+                        and int(action_np_try[0]) != 1
+                ):
+                    # ADR-012 probe: force ONLY the target block's option to 1;
+                    # K keeps the policy's own sample. Re-evaluate
+                    # log_prob/value for the modified action under the same
+                    # mask so PPO ratios stay well-defined.
+                    action_np_try = action_np_try.copy()
+                    action_np_try[0] = 1
+                    policy_t1 = time.perf_counter()
+                    with torch.inference_mode():
+                        actions_fix_t = (
+                            torch.from_numpy(action_np_try).to(device).unsqueeze(0)
+                        )
+                        log_prob_t, _probe_ent, value_t = policy.evaluate_action(
+                            obs_t, actions_fix_t, slot_mask_t, levels_t,
+                            action_level_mask=action_level_mask_t,
+                            baseline_prior_scale=baseline_prior_scale,
+                            truncate_to_current=True,
+                        )
+                    policy_rollout_wall_seconds_val += float(
+                        time.perf_counter() - policy_t1
+                    )
                 step_action_try = action_np_try[:n_active].tolist()
                 tup = tuple(int(x) for x in step_action_try)
 

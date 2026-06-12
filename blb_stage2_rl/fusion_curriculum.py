@@ -139,17 +139,26 @@ def select_mutable_step_indices(
     return {int(x) for x in np.atleast_1d(sel)}
 
 
-# ---- scheduled forced-fusion probes (2026-06-11, ADR-011) -------------------
-# The 60k fusion run collapsed to fusion=0: after the curriculum ramp the policy
-# never sampled fusion>0 again (436 attempts in 60k, ~all before ep 2000), even
-# though offline group eval shows block2/block5 fusion is metric-free. Probes are
-# the standing re-exploration mechanism: every ``interval`` post-anchor episodes,
-# ONE episode forces fusion option 1 on every block of ONE block type (rotating
-# block2 -> block5 -> block4) at baseline K, scored normally, so PPO keeps
-# receiving fresh on-policy evidence of fusion's true value forever. The decision
-# is a pure function of the absolute episode index -> deterministic and identical
-# across episode-parallel workers (1==N preserved).
-FUSION_PROBE_BLOCK_ROTATION: Tuple[int, ...] = (2, 5, 4)
+# ---- scheduled forced-fusion probes (ADR-011, redesigned by ADR-012) --------
+# Standing re-exploration: every ``interval`` post-anchor episodes, ONE episode
+# forces fusion option 1 on every block of ONE rotating block type, scored
+# normally, so PPO keeps receiving fresh evidence of fusion's value even after
+# the policy's fusion logits collapse. The decision is a pure function of the
+# absolute episode index -> deterministic and identical across episode-parallel
+# workers (1==N preserved).
+#
+# ADR-012 (2026-06-12) — two corrections from the 2nd 60k run's forensics:
+# (a) probes no longer force baseline K (the collector samples K and all
+#     non-target blocks from the CURRENT policy, only the target block's
+#     option is forced): forcing baseline K cancelled the fusion gain against
+#     the policy's learned deep-K savings (b2 probe net +0.07, b5 probe net
+#     -0.86 — the b5 probe was teaching that fusion is BAD);
+# (b) block4 is dropped from the rotation: a 12-layer block4 fusion probe is
+#     a guaranteed accuracy fail (-46, observed 100/100 in the 2nd 60k) and
+#     only taught anti-fusion generalization. Selective per-layer block4
+#     fusion is left to on-policy epsilon exploration under the graded
+#     near-miss boundary (reward.near_miss_*).
+FUSION_PROBE_BLOCK_ROTATION: Tuple[int, ...] = (2, 5)
 
 
 def fusion_probe_target_block(

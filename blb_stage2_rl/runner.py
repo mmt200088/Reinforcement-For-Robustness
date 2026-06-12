@@ -714,6 +714,9 @@ class BLBStage2TrainConfig:
     # (block2 -> block5 -> block4) at baseline K, keeping fresh on-policy
     # fusion evidence flowing after the curriculum dissolves. 0 disables.
     fusion_probe_interval: int = 200
+    # ADR-012 exploration floor for the fusion option / K slots (0 disables).
+    fusion_exploration_epsilon: float = 0.05
+    fusion_exploration_epsilon_k: float = 0.02
     # ---- COINN-style OSR pre-prune (opt-in 2026-05-27) ---------------------
     # Empty osr_results_path → no OSR layer (legacy behaviour). When set, the
     # runner loads existing results from PATH, or runs a fresh scan saving to
@@ -2847,6 +2850,12 @@ class BLBStage2RLRunner:
         if v not in (None, ""):
             try:
                 cfg.fusion_probe_interval = int(v)
+            except Exception:
+                pass
+        v = getattr(ev, "blb_v3_fusion_exploration_epsilon", None)
+        if v not in (None, ""):
+            try:
+                cfg.fusion_exploration_epsilon = float(v)
             except Exception:
                 pass
         if bool(getattr(cfg, "fusion_count_action", False)) and bool(getattr(cfg, "substage_mode", False)):

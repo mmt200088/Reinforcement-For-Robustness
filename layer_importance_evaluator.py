@@ -2366,6 +2366,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_fusion_count_action=False,
                   blb_v3_fusion_neighbor_curriculum=True,
                   blb_v3_fusion_probe_interval=200,
+                  blb_v3_fusion_exploration_epsilon=0.05,
                   blb_v3_osr_results_path="",
                   blb_v3_osr_scan_only=False,
                   blb_v3_osr_num_combo_samples=300,
@@ -3056,6 +3057,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.blb_v3_fusion_probe_interval = int(blb_v3_fusion_probe_interval)
         except Exception:
             self.blb_v3_fusion_probe_interval = 200
+        try:
+            self.blb_v3_fusion_exploration_epsilon = float(blb_v3_fusion_exploration_epsilon)
+        except Exception:
+            self.blb_v3_fusion_exploration_epsilon = 0.05
         self.blb_v3_substage_block_order = str(blb_v3_substage_block_order or "1,2,4,5")
         self.blb_v3_substage_frozen_blocks = str(blb_v3_substage_frozen_blocks or "3")
         try:

@@ -3,7 +3,7 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (ADR-011 fusion 觅取修复：预算拆分+先验解除+强制fusion探针+容忍度放宽 → 确定性门禁 → PASS 自动接 60k)
+## ▶ active command  (ADR-012 边界与探索修复：近界渐变档+边缘复测+policy-K探针+ε下限 → 确定性门禁 → PASS 自动接 60k)
 
 ```bash
 set -uo pipefail
@@ -11,32 +11,35 @@ export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 
 # ============================================================================
-# 本轮（2026-06-11，ADR-011）：修复上一轮 60k 的 fusion=0 坍缩后重跑。
-# 上轮诊断（episodes.jsonl 60000 条 + Codex 组别测试）：
-#   - fusion>0 在 60k 中只被尝试 436 次（几乎全在 ep<2000），课程结束后归零；
-#   - P3&fusion==0 最佳 39.41 > P3&fusion>0 最佳 38.18 —— 奖励结构本身偏爱
-#     零融合基线，策略"按奖励行事"地放弃 fusion；
-#   - 而离线组别测试证明 block2/block5 融合几乎免费（one_hot_block2 loss
-#     0.3837@fusion12、block5_n1 0.3835@fusion10，均 ≤ 基线 0.3846），仅
-#     block4 12 层全融合有害（loss 0.62 → 会被 P1 硬门拦住）。
-# 本轮四项修复（代码已在本提交内，图无需重建）：
-#   ① P3 成本预算拆分：fusion 独占 2/3（按 fusion 自身最大值归一），K 1/3 ——
-#     K 池(47×50)不再稀释 fusion 信号（单 block2 翻转 +0.117、block5 +0.031，
-#     block2+block5 全融合 +1.78 ≫ P3 margin 上限 0.5，融合严格占优）。
-#   ② warmstart 先验解除 fusion 槽偏置（旧 preferred=0 永不衰减到零,一直把
-#     2 选 1 的 fusion 槽拽回 option0）；K 槽先验保留。
-#   ③ 周期性强制 fusion 探针：anchor 后每 200 ep 强制 1 个 episode 对单一
-#     block 类型(轮换 b2→b5→b4)全开 fusion=1@基线K,正常计分 → PPO 永远有
-#     新鲜的 on-policy fusion 证据,logits 坍缩也能复活（纯 episode 序号函数,
-#     确定性,1==N 不受影响;60k 共 300 个探针 ≈0.5% 开销）。
-#   ④ 容忍度放宽（用户 spec）：stability 500% (--stage2-stability-tolerance 5.0,
-#     并修复了 v3 m1/m2 std 通道不吃该 flag 的 bug)、指标 0.5%
-#     (--stage2-limit-tolerance 0.005) —— 消灭发现期 15% 的 P2 失败税。
-# 顺序：phase0 自检（含 ADR-011 新断言）→ phase2 图门禁（沿用现有 step-1×15 图,
-# REBUILD_MAPS=0 不重建）→ phaseG 1卡vsN卡确定性门禁(含探针出现性判读) →
-# PASS 自动接 60k。失败处理：任一 FATAL 即停；门禁 FAIL 回传对拍证据。
+# 本轮（2026-06-12，ADR-012）：第 2 次 60k 仍收敛到 fusion=0，但取证完全改写了结论：
+#   - 拆分预算有效：on-policy fusion episode 对同期无融合邻居的优势全程为正
+#     (+0.05~+0.19，每阶段、单翻转/多翻转都正)；
+#   - 真凶 = P1 悬崖税：1327 个 P1 里 1226 个全是 fusion episode 的"边缘型"
+#     (m1∈[0.833,0.858]，0 个灾难型；无融合 episode 整个 60k 只有 1 个 P1)。
+#     fusion+深K 把真实 m1 推到容忍度边界，256 样本探针的抽样噪声(σ≈0.0018)
+#     把它概率性砸进 -46 悬崖：期望优势 = +0.117 − 8.4%×46 ≈ −3.8 → 策略理性弃疗；
+#   - 三类探针全部失效：b2 被强制基线 K 抵消(净+0.07)、b5 净 −0.86(负面教材!)、
+#     b4 恒 −46×100 次(反 fusion 泛化)；
+#   - upd≈700 起 entropy=0.000 / clip=0.000：策略完全冻结，最后 18k episode 纯浪费。
+# 本轮四项修复（ADR-012，代码已在本提交内；图无需重建）：
+#   ① 近界渐变档(reward.near_miss_*)：非 invalid 的指标失败若最差通道亏损
+#     ≤1×|baseline−阈值| 宽度，tier 从悬崖改为 35→15 线性渐变(典型上轮 P1 从
+#     −7 → ~26.6)；priority 仍是 1(选择/排名语义不变；渐变上限 35 < P3 下限 40，
+#     P3 永远压住近界)。带外/灾难型保留旧悬崖。
+#   ② 边缘复测(env.borderline_retest)：边缘指标失败用盐化确定性种子做一次
+#     2×trials 全新复测，复测结论替代首测 → 概率性误杀率平方级下降，真违规
+#     照样挂。只在确定性探针路径生效(probe_noise_seed)，1==N 不受影响。
+#   ③ 探针 v2：只强制目标块类型的 option=1；K 与其它块全部跟随当前策略+课程
+#     (目标 option 档注入 mask)→ 探针变成"在当前策略上追加融合"的干净反事实，
+#     优势 ≈ +1.4 而非被基线 K 抵消的 +0.07。轮换改为 b2→b5(剔除必死的 b4)。
+#   ④ ε 探索下限(policy 混合分布，采样与 PPO 回放同分布)：option 槽 0.05、
+#     K 槽 0.02 → 策略永远不能在 fusion 选择上变成确定性(根治 entropy=0 冻结)。
+# 容忍度沿用用户 spec：stability 500% + 指标 0.5%。
+# 顺序：phase0 自检(ADR-012 断言+三件测试) → phase2 图门禁(REBUILD_MAPS=0) →
+# phaseG 1卡vsN卡确定性门禁(探针出现性判读改为动态检测——上轮发现 gate 与长跑
+# anchor 不同) → PASS 自动接 60k。
 # ----------------------------------------------------------------------------
-REBUILD_MAPS=0       # 图在 2026-06-11 已按 step-1×15 重建并 push（本轮只改 RL 代码，动作→SF 解码未变）
+REBUILD_MAPS=0       # 图在 2026-06-11 已按 step-1×15 重建并 push（本两轮只改 RL 代码，动作→SF 解码未变）
 GATE_EPISODES=300    # 门禁短跑规模：anchor80 + 220 post，5 个 PPO 窗口
 LONG_EPISODES=60000  # 门禁通过后的里程碑长跑
 KTRIALS=5            # K 固定为 5（与卡数解耦——这是确定性要求的一部分，勿改回 K=NGPU）
@@ -76,19 +79,54 @@ assert [tuple(c) for c in fef.iter_combo_range(lens, 7, 31)] == full[7:31]
 print("fusion_enum_fast unranking OK")
 from seed_utils import derive_probe_seed, derive_policy_step_seed, PREFLIGHT_EPISODE
 print("stage2 seed_utils OK; preflight episode =", PREFLIGHT_EPISODE)
-# ---- ADR-011 断言：预算拆分 + fusion 探针 + 先验解除 ----
+# ---- ADR-011/012 断言：预算拆分 + 探针轮换(2,5) + 近界渐变 + 复测 + ε ----
 import fusion_curriculum as fcur
+assert fcur.FUSION_PROBE_BLOCK_ROTATION == (2, 5), "ADR-012: b4 必须已剔除"
 assert fcur.fusion_probe_target_block(80, anchor_episodes=80, interval=200) == 2
 assert fcur.fusion_probe_target_block(280, anchor_episodes=80, interval=200) == 5
-assert fcur.fusion_probe_target_block(480, anchor_episodes=80, interval=200) == 4
+assert fcur.fusion_probe_target_block(480, anchor_episodes=80, interval=200) == 2
 assert fcur.fusion_probe_target_block(81, anchor_episodes=80, interval=200) is None
 import fusion_cost, reward as rwd
 assert abs(rwd.FUSION_COST_BUDGET_FRACTION - 2.0/3.0) < 1e-12
 ch = [fusion_cost.BlockChoice(2, "block2_mrpc", 1, 1, 13)]
 r = fusion_cost.compute_fusion_cost_saving(ch, fusion_w=rwd.FUSION_COST_W, trunc_w=rwd.TRUNC_COST_W)
 assert abs(r.fusion_norm - 1.0) < 1e-12 and r.trunc_norm == 0.0
-print("ADR-011 fusion 觅取修复（预算拆分/探针轮换）断言 OK")
+w = rwd.RewardWeights()
+assert (w.near_miss_tier_cap, w.near_miss_tier_floor, w.near_miss_band) == (35.0, 15.0, 1.0)
+base = rwd.BaselineCostStats(total_bits_sum=1000, total_fusion_count=0, avg_k=13.0,
+                             loss_mean=0.34, loss_std=0.002, metric1_mean=0.8672,
+                             metric2_mean=0.8672, metric1_std=0.001, metric2_std=0.001)
+w2 = rwd.RewardWeights(baseline_metric1=0.8672, baseline_metric2=0.8672)
+class _O:
+    any_invalid = False; total_bits_sum = 1000; total_fusion_count = 0
+def _r(m1):
+    m = rwd.EpisodeMetrics(loss_mean=0.34, loss_std=0.002, metric1_mean=m1,
+                           metric2_mean=m1, metric1_std=0.001, metric2_std=0.001)
+    return rwd.compute_reward(m, _O(), action_avg_k=13.0, baseline=base, weights=w2,
+                              acc_threshold=0.858, acc_threshold_m2=0.858,
+                              stab_threshold=0.05, external_cost_score=0.0,
+                              external_cost_rank=0.0)
+bnm = _r(0.8540)   # 上轮典型边缘 P1
+assert bnm.priority == 1 and bnm.near_miss and 20.0 < bnm.reward < 35.0
+assert _r(0.8672).reward >= 40.0 > bnm.reward                  # P3 永远压住近界
+assert _r(0.3200).reward < -4.0 and not _r(0.3200).near_miss   # 灾难型保留悬崖
+print("ADR-012 近界渐变档断言 OK（上轮典型边缘P1 -7 -> %.1f）" % bnm.reward)
+import sys as _sys
+_sys.path.insert(0, ".")
+from blb_stage2_rl.env import BLBStage2EnvConfig
+ec = BLBStage2EnvConfig()
+assert ec.borderline_retest_enabled and ec.borderline_retest_trials_multiplier == 2
+from blb_stage2_rl.sequential_runner import SequentialTrainConfig as _STC
+stc = _STC()
+assert abs(stc.fusion_exploration_epsilon - 0.05) < 1e-12
+assert abs(stc.fusion_exploration_epsilon_k - 0.02) < 1e-12
+print("ADR-012 复测/ε 默认值断言 OK")
 PY
+echo "==================== [phase0b] ADR-012 单元测试（torch 在位：ε混合/复测/近界档/轮换） ===================="
+for f in test_blb_fusion_curriculum test_blb_fusion_reward test_blb_fusion_exploration; do
+  python3 "tests/${f}.py" > "$OUT/unittest_${f}.log" 2>&1 || { echo "[FATAL] ${f} 失败"; tail -20 "$OUT/unittest_${f}.log"; exit 1; }
+  tail -1 "$OUT/unittest_${f}.log"
+done
 # 前置 Stage-1 record（缺失则从已提交 degrees 合成；幂等）
 python3 - <<'PY' 2>&1 | tee "$OUT/stage1_record_synth.txt" || { echo "[FATAL] Stage-1 record 处理失败"; exit 1; }
 import json, os, glob, datetime
@@ -169,6 +207,7 @@ run_gate () {   # tag, visible devs, --stage2-rl-devices 值
     --stage2-stability-tolerance 5.0 \
     --stage2-limit-tolerance 0.005 \
     --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
+    --blb-v3-fusion-exploration-epsilon 0.05 \
     --fresh 2>&1 | tee "$GOUT/${tag}_launch.log"
   sleep 12
   pid="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
@@ -215,23 +254,29 @@ except FileNotFoundError as e:
     print("[gate][FAIL] episodes.jsonl 缺失:", e); raise SystemExit(2)
 PY
 [ $? -ne 0 ] && GATE_PASS=0
-# ADR-011 探针出现性：300ep 门禁里 anchor(b2)/anchor+interval(b5) 必须是 forced_fusion_probe
-# 且 fusion_count>=10（block2/block5 各 12 层全开;若图实现导致个别层无融合,>=10 兜底）
+# ADR-012 探针出现性（动态检测，anchor 无关——上轮发现 gate 与长跑 anchor 不同）：
+# 300ep 门禁内必须出现 >=2 个 forced_fusion_probe episode；前两个目标依次是
+# b2、b5（轮换 2->5，b4 已剔除），且各自 fusion_count>=12（目标块 12 层全部
+# 强制 option1；probe-v2 下其余块跟随策略+课程，只增不减）。
 python3 - <<PY 2>&1 | tee -a "$GOUT/verdict.txt"
 import json
-eps = {}
+probes = []
 for l in open("$GOUT/gN_episodes.jsonl"):
-    d = json.loads(l); eps[int(d.get("episode", -1))] = d
-ok = True
-anchor = int("$ANCHOR_EPISODES")
-interval = int("$FUSION_PROBE_INTERVAL")
-for ep, blk in ((anchor, "b2"), (anchor + interval, "b5")):
-    d = eps.get(ep)
-    mode = str(d.get("exploration_mode", "")) if d else "<missing>"
-    fc = int(d.get("fusion_count", -1)) if d else -1
-    good = mode.startswith("forced_fusion_probe_") and fc >= 10
-    ok = ok and good
-    print(f"[gate] probe@ep{ep}: mode={mode} fusion_count={fc} -> {'OK' if good else 'FAIL'} (期望 {blk}, fc>=10)")
+    d = json.loads(l)
+    mode = str(d.get("exploration_mode", ""))
+    if mode.startswith("forced_fusion_probe_"):
+        probes.append((int(d.get("episode", -1)), mode, int(d.get("fusion_count", -1))))
+probes.sort()
+print(f"[gate] forced_fusion_probe episodes in gate run: {probes}")
+ok = len(probes) >= 2
+if ok:
+    (e1, m1, f1), (e2, m2, f2) = probes[0], probes[1]
+    ok = (
+        m1.endswith("_b2") and f1 >= 12
+        and m2.endswith("_b5") and f2 >= 12
+        and (e2 - e1) == int("$FUSION_PROBE_INTERVAL")
+    )
+print(f"[gate] probe presence/rotation/fc check: {'OK' if ok else 'FAIL'}")
 raise SystemExit(0 if ok else 2)
 PY
 [ $? -ne 0 ] && { GATE_PASS=0; echo "[gate][FAIL] fusion 探针未按计划出现" | tee -a "$GOUT/verdict.txt"; }
@@ -260,6 +305,7 @@ CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
   --stage2-stability-tolerance 5.0 \
   --stage2-limit-tolerance 0.005 \
   --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
+  --blb-v3-fusion-exploration-epsilon 0.05 \
   --fresh 2>&1 | tee "$OUT/long60k_launch.log"
 sleep 12
 PID60="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
@@ -301,36 +347,37 @@ ls -la "$OUT"
 
 ## metadata
 
-### 本次目标（2026-06-11，ADR-011 fusion 觅取修复重跑）
+### 本次目标（2026-06-12，ADR-012 边界与探索修复重跑）
 
-1. **背景**：上一轮 60k（artifacts `stage2_grid_gate_60k_20260611_031751`）确定性门禁 PASS（1==5 逐字一致、3.62×），但搜索结果坍缩到 fusion=0；Codex 组别测试证明 block2/block5 融合几乎免费。根因 = 奖励里 K 池稀释 fusion 信号 + P3 偏爱零噪声基线 + warmstart 先验永久拽回 option0 + 课程结束后无再探索机制 + 0.5% stability 门的 15% 失败税。
-2. **本提交的四项修复**（详见 ADR-011 / CLAUDE.md）：P3 预算拆分（fusion 2/3 独占）；fusion 槽先验解除；每 200ep 强制 fusion 探针（b2→b5→b4 轮换，确定性，不破 1==N）；容忍度放宽 stability 500% / 指标 0.5%（并修复 m1/m2 std 通道不吃 CLI flag 的 bug）。
-3. **流程**：REBUILD_MAPS=0（图沿用 step-1×15 已提交版本，动作→SF 解码未变）→ 自检（含 ADR-011 断言）→ 图门禁 → 1卡vsN卡确定性门禁（300ep；新增探针出现性判读：ep60=b2、ep260=b5、fusion_count≥10）→ PASS 自动接 60k。
-4. **60k 观察重点**：探针 episode 的 reward 是否高于邻近零融合 episode（应高 ~1-2）；P3 episode 的 fusion_count 是否随训练增长（目标 ≥24=block2+block5 全开）；block4 的 fusion 是否被策略学会选择性少开（≤4 层无害）；P1/P2 占比是否因容忍度放宽而下降。
+1. **背景**：第 2 次 60k（artifacts `stage2_grid_gate_60k_20260612_004130`）门禁 PASS、跑满 60000，但仍收敛到 fusion=0。取证改写结论：ADR-011 的预算拆分**有效**（on-policy fusion 优势全程为正 +0.05~+0.19），真凶是 **P1 悬崖税**——1327 个 P1 中 1226 个是 fusion episode 的边缘型（m1∈[0.833,0.858]，0 个灾难型；无融合 episode 仅 1 个 P1），fusion+深K 把真实 m1 推到容忍度边界，256 样本探针噪声(σ≈0.0018)概率性把它砸进 −46 悬崖，期望优势 −3.8。叠加：b2 探针被强制基线 K 抵消（净 +0.07）、b5 探针净 −0.86（负面教材）、b4 探针 100/100 P1（反 fusion 泛化）、upd≈700 起 entropy=0.000/clip=0.000（策略冻结 18k episode）。
+2. **本提交四项修复**（ADR-012；详见 `docs/adr/ADR-012-*.md`）：①近界渐变档（near_miss tier 35→15，典型上轮 P1 −7→约 26.6；priority 仍 1，P3 下限 40 永远压住）；②边缘复测（盐化确定性种子 2×trials 全新复测替代首测，误杀率平方级下降，1==N 保持）；③探针 v2（只强制目标块 option=1，K+其余块跟随当前策略+课程；轮换 b2→b5，b4 剔除）；④ε 探索下限（option 槽 0.05 / K 槽 0.02 混合分布，采样与 PPO 回放同分布，根治 entropy=0 冻结）。
+3. **流程**：REBUILD_MAPS=0 → 自检（ADR-012 断言+3 件单测，torch 在位）→ 图门禁 → 1卡vsN卡确定性门禁（探针出现性判读改为动态检测：前两个探针 = b2、b5，fc≥12，间隔=interval）→ PASS 自动接 60k（容忍度沿用 5.0/0.005）。
+4. **60k 观察重点**：①探针 episode 的 reward 应明显高于邻近 episode（b2 探针 ≈ +1.4，不再被基线 K 抵消）；②on-policy fusion 尝试不应再在中途归零（ε 下限 + 渐变档保证）；③entropy 永不为 0、clip_fraction 不长期为 0；④P3 episode 的 fusion_count 应随训练增长（理论最优 ≈ b2+b5 全开 24 个 fusion + 适度 K，reward ≈ 41+）；⑤`borderline_retest` 字段出现率与翻转率（复测改判比例）；⑥near_miss(P1) 占比可接受（渐变档下它是探索成本，不是事故）。
 
 ### 关键事实（给人看的）
 
-- **新奖励算术**（mrpc-47，预算 4.5 拆 3.0 fusion + 1.5 K，fusion 自身最大值 3840）：单 block2 翻转 +0.117、单 block4 +0.102、单 block5 +0.031；block2+block5 全融合 +1.78；K 全开仅 +1.5（旧方案 K 单独可吃满 1.71 ≈ 24 融合的 1.66，融合对 reward 最大化是冗余的——这正是坍缩根因）。P3 margin 上限 0.5 压不过融合收益。
-- **探针正常计分**：probe episode 走 forced 分支（开放 mask 下 evaluate_action，PPO-sound，与 anchor 同机制）；动作来自全有效图,必 valid,不会触发 [ANOMALY]。block4 探针(12 层全开)预期 P1——这是真实负证据,留给策略学"少开 block4"。
-- `--blb-v3-reward-devices`（K-split）不再使用；`--stage2-rl-devices`（互斥）；`KTRIALS` 固定 5；噪声/策略/更新按 (seed, 全局episode, …) 键控,preflight=-1。
-- 图门禁/枚举链路与上轮一致（step-1×15 + fusion_enum_fast 金vs快门禁）；本轮零图改动。
+- **新期望优势算术**（修复后）：从收敛态翻转 1 个 b2 fusion = +0.117，其 P1 误杀税 ≈ 0.2%×6 ≈ 0.01（复测+渐变档双保险）→ 净 +0.1 量级，PPO 可学。b2+b5 全融合 +1.78 ≫ P3 margin 上限 0.5；K 单独 ≤1.5，fusion 是登顶 P3 的必经之路。
+- **ε 混合是真策略分布**：sample 与 evaluate（含 PPO 回放）用同一混合，log-prob 比率良定；eps=0 时逐位还原旧分布（单测锁定）。
+- **探针正常计分**：probe-v2 走采样分支 + 目标槽覆写 + evaluate_action 重算 log_prob/value；动作来自全有效图必 valid。
+- **近界渐变不破硬优先级**：priority 仍为 1，best 选择/候选排序的 tuple rank 不变；渐变只作用于 PPO 标量，且上限 35 < P3 下限 40（cost 永远不能补偿精度违规——mental-model item 7 保持）。
+- `--blb-v3-reward-devices`（K-split）不再使用；`--stage2-rl-devices`（互斥）；`KTRIALS` 固定 5；噪声/策略/更新/复测按 (seed, 全局episode, …) 键控。
 
 ### 预期产物
 
-- `$OUT/selfcheck.txt`（step-1×15 断言 + unranking + seed_utils）
-- `$OUT/build_<gk>.log` ×6（[fast] template OK / [both] fast==golden / 进度 rate/ETA / options）+ `old_maps/`+`new_maps/` + `map_gate.txt`
-- `$OUT/stage2_ngpu_gate/`：g1/gN sigs、sig_diff、episodes.jsonl ×2、verdict.txt（PASS/FAIL + ep/h + speedup）
-- `$OUT/long60k/run/`（diagnostics 全套，无 .pt）+ `long60k_health.log`（每 30 分钟滚动健康）
+- `$OUT/selfcheck.txt`（ADR-012 断言）+ `unittest_*.log` ×3
+- `$OUT/map_gate.txt`、`$OUT/stage2_ngpu_gate/`（g1/gN sigs、sig_diff、episodes.jsonl ×2、verdict.txt 含动态探针判读）
+- `$OUT/long60k/run/`（diagnostics 全套，无 .pt）+ `long60k_health.log`
 
 ### 幂等 / 安全
 
-- Stage-1 record 合成幂等（已存在则跳过）。门禁两跑各自 `--fresh` 且拷出产物后清工作目录。
-- 60k 用 `--fresh` 从头跑；若 agent 会话中断，训练进程(nohup)继续，下次触发可只做产物回收。
+- Stage-1 record 合成幂等。门禁两跑各自 `--fresh` 且拷出产物后清工作目录。
+- 60k 用 `--fresh`；若 agent 会话中断，训练进程(nohup)继续，下次触发只做产物回收。
 - 门禁任何 FAIL 都不启动 60k。
 
 ### 历史（已完成，供参考）
 
-- 2026-06-11：step-1×15 全量重建 6 图 + 确定性门禁 PASS（1==5 逐字、3.62×）+ 60k 跑完但 fusion=0 坍缩（artifacts `stage2_grid_gate_60k_20260611_031751`，诊断→本轮 ADR-011）。
+- 2026-06-12：ADR-011 修复后第 2 次 60k 跑满（artifacts `stage2_grid_gate_60k_20260612_004130`，1==5 PASS、3.62×、4333 ep/h）仍 fusion=0 → 取证定位 P1 悬崖税/探针 K 抵消/entropy 冻结 → 本轮 ADR-012。
+- 2026-06-11：step-1×15 全量重建 6 图 + 确定性门禁 PASS（1==5 逐字、3.62×）+ 第 1 次 60k fusion=0 坍缩（artifacts `stage2_grid_gate_60k_20260611_031751`，诊断→ADR-011）。
 - 2026-06-10：5 卡 A/B 完成（artifacts `stage2_rebuild_ab_20260610_013046`，提交 0457fc0）；stageA Stage-1 1vs5 确定性 PASS、3.75×。
 - 2026-06-07~09：fusion 图按新 replan 策略重建（1ad078c）；A/B 启动崩溃修复（c16d0f7：合成 MRPC Stage-1 record）；Stage-1 多卡确定性+提速（a1cf152/15c16ad）。
 - 2026-06-05~06：fusion 课程上线（ed797b1）、degree-0 停用（469474d）、RO 默认融合策略（957ff7a 轮）。
