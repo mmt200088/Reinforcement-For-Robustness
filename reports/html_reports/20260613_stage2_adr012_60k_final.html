@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Stage-2 ADR-012 60k Final</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:32px;line-height:1.45;color:#17202a;background:#f7f8fa}
+main{max-width:1180px;margin:auto;background:white;padding:28px;border:1px solid #d8dee9;border-radius:8px}
+h1{margin-top:0} .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0}
+.card{border:1px solid #d8dee9;border-radius:8px;padding:12px;background:#fbfcfe} .k{font-size:12px;color:#5b677a} .v{font-size:22px;font-weight:700}
+table{border-collapse:collapse;width:100%;font-size:13px;margin:12px 0} th,td{border:1px solid #d8dee9;padding:7px;text-align:right} th:first-child,td:first-child{text-align:left} th{background:#eef2f7}
+.warn{background:#fff4e5;border:1px solid #f0b35a;padding:12px;border-radius:8px} pre{white-space:pre-wrap;background:#f3f5f7;padding:12px;border-radius:6px;overflow:auto}
+a{color:#0b5cad}
+</style></head><body><main>
+<h1>Stage-2 ADR-012 60k Final Report</h1>
+<p>Run bundle: <code>experiments/server_command_runs/stage2_grid_gate_60k_20260612_191530</code></p>
+<div class="grid">
+<div class="card"><div class="k">Episodes</div><div class="v">60,000</div></div>
+<div class="card"><div class="k">Elapsed</div><div class="v">17h00m42s</div></div>
+<div class="card"><div class="k">Best Reward</div><div class="v">40.8054</div></div>
+<div class="card"><div class="k">Final Entropy</div><div class="v">1.8028</div></div>
+</div>
+<div class="warn"><strong>结论：</strong>本轮 60k 完成且没有 invalid/loss-cap 崩溃；但后 20k 全部进入 P1，fusion_count 稳定在约 35，平均回报约 -6.95。也就是说 ADR-012 解决了 no-fusion / entropy=0 问题，但把搜索推到了过度 fusion 的 P1 区域，最终策略没有回到健康 P3 区间。</div>
+<h2>Gate Evidence</h2><pre>==== [gate] 判读 ====
+[gate][PASS] rollout_sig 逐窗逐字相同（1卡 == 5卡）
+[gate] episodes.jsonl 数值逐项对比: PASS（完全一致）  n=300/300
+[gate] forced_fusion_probe episodes in gate run: [(80, &#x27;forced_fusion_probe_b2&#x27;, 12), (280, &#x27;forced_fusion_probe_b5&#x27;, 25)]
+[gate] probe presence/rotation/fc check: OK
+1-GPU : 857 ep/h (1260s)
+5-GPU : 3000 ep/h (360s)  speedup=3.50x (ideal 5x)
+</pre>
+<h2>Rolling Windows</h2>
+<table><thead><tr><th>window</th><th>P1</th><th>P2</th><th>P3</th><th>fusion_avg</th><th>fusion_gt0</th><th>reward_avg</th><th>reward_max</th><th>invalid</th><th>loss_cap</th></tr></thead><tbody><tr><td>100</td><td>100</td><td>0</td><td>0</td><td>35.210</td><td>100</td><td>-6.953</td><td>-6.941</td><td>0</td><td>0</td></tr>
+<tr><td>1000</td><td>1000</td><td>0</td><td>0</td><td>35.127</td><td>1000</td><td>-6.949</td><td>-5.490</td><td>0</td><td>0</td></tr>
+<tr><td>5000</td><td>5000</td><td>0</td><td>0</td><td>35.128</td><td>5000</td><td>-6.949</td><td>-3.942</td><td>0</td><td>0</td></tr>
+<tr><td>10000</td><td>10000</td><td>0</td><td>0</td><td>35.109</td><td>10000</td><td>-6.949</td><td>-3.942</td><td>0</td><td>0</td></tr>
+<tr><td>20000</td><td>20000</td><td>0</td><td>0</td><td>35.106</td><td>20000</td><td>-6.949</td><td>-3.149</td><td>0</td><td>0</td></tr>
+<tr><td>40000</td><td>39362</td><td>13</td><td>625</td><td>31.642</td><td>40000</td><td>-4.959</td><td>40.805</td><td>0</td><td>0</td></tr>
+<tr><td>60000</td><td>45242</td><td>116</td><td>14642</td><td>24.021</td><td>59180</td><td>6.912</td><td>40.805</td><td>0</td><td>0</td></tr></tbody></table>
+<h2>Best Candidate</h2>
+<ul>
+<li>Best episode by reward: <strong>20880</strong></li>
+<li>Priority: <strong>P3</strong>; fusion_count: <strong>22</strong>; reward: <strong>40.8054</strong></li>
+<li>Training rank-best in diagnostics: <strong>+40.6863</strong>, episode <strong>28689</strong>, fusion_count <strong>25</strong>.</li>
+</ul>
+<h2>Forced Fusion Probes (last 12)</h2>
+<table><thead><tr><th>episode</th><th>mode</th><th>fusion_count</th><th>reward</th><th>priority</th></tr></thead><tbody><tr><td>57680</td><td>forced_fusion_probe_b2</td><td>34</td><td>-6.964</td><td>1</td></tr>
+<tr><td>57880</td><td>forced_fusion_probe_b5</td><td>35</td><td>-6.960</td><td>1</td></tr>
+<tr><td>58080</td><td>forced_fusion_probe_b2</td><td>36</td><td>-6.941</td><td>1</td></tr>
+<tr><td>58280</td><td>forced_fusion_probe_b5</td><td>36</td><td>-6.941</td><td>1</td></tr>
+<tr><td>58480</td><td>forced_fusion_probe_b2</td><td>36</td><td>-6.941</td><td>1</td></tr>
+<tr><td>58680</td><td>forced_fusion_probe_b5</td><td>36</td><td>-6.941</td><td>1</td></tr>
+<tr><td>58880</td><td>forced_fusion_probe_b2</td><td>36</td><td>-6.941</td><td>1</td></tr>
+<tr><td>59080</td><td>forced_fusion_probe_b5</td><td>35</td><td>-6.950</td><td>1</td></tr>
+<tr><td>59280</td><td>forced_fusion_probe_b2</td><td>35</td><td>-6.959</td><td>1</td></tr>
+<tr><td>59480</td><td>forced_fusion_probe_b5</td><td>35</td><td>-6.950</td><td>1</td></tr>
+<tr><td>59680</td><td>forced_fusion_probe_b2</td><td>35</td><td>-6.960</td><td>1</td></tr>
+<tr><td>59880</td><td>forced_fusion_probe_b5</td><td>36</td><td>-6.941</td><td>1</td></tr></tbody></table>
+<h2>PPO Last Update</h2>
+<pre>{
+  &quot;update&quot;: 1000,
+  &quot;completed_episodes&quot;: 60000,
+  &quot;policy_loss&quot;: -0.007041337165153689,
+  &quot;value_loss&quot;: 4.025138284507395e-06,
+  &quot;entropy&quot;: 1.802758793036143,
+  &quot;clip_fraction&quot;: 0.04878472222222222,
+  &quot;n_samples&quot;: 2820,
+  &quot;window_mean_return&quot;: -6.953790107182244,
+  &quot;window_max_return&quot;: -6.94147774268742,
+  &quot;window_min_return&quot;: -7.003444807880292,
+  &quot;window_mean_invalid&quot;: 0.0,
+  &quot;best_reward_so_far&quot;: 40.68628848216761,
+  &quot;elapsed_sec&quot;: 61242.47515678406,
+  &quot;ent_coef&quot;: 0.02,
+  &quot;approx_kl&quot;: 0.0039332759566605095,
+  &quot;kl_early_stop&quot;: false,
+  &quot;lr&quot;: 0.00025,
+  &quot;lr_scale&quot;: 1.25,
+  &quot;entropy_recovery_delta&quot;: 0.013553084784911738,
+  &quot;return_mean&quot;: 6.399634779003835,
+  &quot;return_std&quot;: 15.10156889562893,
+  &quot;timestamp&quot;: 1781326387.2625694
+}</pre>
+<h2>Artifacts</h2>
+<ul>
+<li><a href="../../experiments/server_command_runs/stage2_grid_gate_60k_20260612_191530/long60k/run/diagnostics/diagnostics_summary.md">diagnostics_summary.md</a></li>
+<li><a href="../../experiments/server_command_runs/stage2_grid_gate_60k_20260612_191530/long60k/run/diagnostics/episodes.jsonl.gz">episodes.jsonl.gz</a> <span style="color:#5b677a">(raw file kept locally after extraction)</span></li>
+<li><a href="../../experiments/server_command_runs/stage2_grid_gate_60k_20260612_191530/long60k/run/diagnostics/ppo_updates.jsonl">ppo_updates.jsonl</a></li>
+<li><a href="../../experiments/server_command_runs/stage2_grid_gate_60k_20260612_191530/long60k/run/blb_stage2_best_action_full.md">best action full description</a></li>
+<li><a href="../../experiments/server_command_runs/stage2_grid_gate_60k_20260612_191530/long60k/run/blb_stage2_training_curve.png">training curve PNG</a></li>
+<li><a href="../../experiments/server_command_runs/stage2_grid_gate_60k_20260612_191530/stage2_ngpu_gate/verdict.txt">1GPU vs 5GPU gate verdict</a></li>
+</ul>
+</main></body></html>
