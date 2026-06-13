@@ -21,6 +21,40 @@ When in doubt, check the linked commit's full message for surgical details.
 
 ---
 
+## [Unreleased] — 2026-06-13 (pm2)
+
+### Added
+- **Stage-2 RL outputs aligned with Stage-1** (图片 / 中间结果 / 细节输出 / 归档).
+  The default *sequential* Stage-2 path early-returns before the decoupled
+  archive block in `runner.py`, so finished Stage-2 runs were missing the
+  `record/` archive, `metadata.json`, `COMPLETED` marker, `final_config.json` /
+  `final_eval.json`, a Stage-1-style training curve, an entropy curve, and a
+  local-optimum detection report that Stage-1 produces. `run_sequential_via_runner`
+  now (gated on `ev.decoupled_layout`): upgrades `blb_stage2_training_curve.png`
+  to the Stage-1 multi-panel style (Reward / Loss / metric1 / metric2 /
+  fusion_count / avg_K, each raw + Moving Avg + Baseline) + a separate
+  `blb_stage2_entropy_curve.png`; writes `blb_stage2_search_log.txt` (Stage-1
+  `pruning_search_log.txt` format); archives into
+  `Parting Chapter/stage2/record/{combo N date}/` + `COMPLETED` + combo-level
+  `metadata.json` + `best_policy/` — matching Stage-1.
+- `rl_local_optimum.py` (torch-free): `detect_rl_local_optimum` moved here from
+  `layer_importance_evaluator.py` (re-exported there → Stage-1 +
+  `noise_rl_module_v2` unchanged) + a `write_local_optimum_report` helper.
+- `scripts/blb_regen_stage2_outputs.py`: offline (torch-free) regenerator that
+  rebuilds the upgraded curves + entropy + detection report from a finished run's
+  `diagnostics/episodes.jsonl(.gz)` + `ppo_updates.jsonl`. Backfills history and
+  gives local eyeball verification without a server run.
+- `tests/test_blb_stage2_outputs.py`: torch-free coverage (upgraded curve fn +
+  back-compat, detection report, regenerator plain/gz, stage-2 archive shape).
+
+### Changed
+- `persistence.write_training_curves` gained optional per-episode series +
+  `baselines` + `entropy_series`/`entropy_episodes`; absent → degrades to the
+  legacy reward panel (back-compat). New constants `BLB_ENTROPY_CURVE_PNG`,
+  `BLB_SEARCH_LOG_TXT`.
+
+---
+
 ## [Unreleased] — 2026-06-13 (pm)
 
 ### Changed

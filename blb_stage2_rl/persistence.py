@@ -43,7 +43,9 @@ BLB_TRAINING_CURVE_PNG = "blb_stage2_training_curve.png"
 BLB_TRAINING_CURVE_NPZ = "blb_stage2_training_curve.npz"
 BLB_REWARD_PAPER_PNG = "blb_stage2_reward_paper.png"
 BLB_REWARD_PAPER_PDF = "blb_stage2_reward_paper.pdf"
+BLB_ENTROPY_CURVE_PNG = "blb_stage2_entropy_curve.png"
 BLB_FINAL_REPORT_MD = "blb_stage2_report.md"
+BLB_SEARCH_LOG_TXT = "blb_stage2_search_log.txt"
 BLB_ERROR_TXT = "blb_stage2_error.txt"
 BLB_EPISODE_TRACE_CSV = "blb_stage2_episode_trace.csv"
 
@@ -677,12 +679,83 @@ def _ema_smooth(values, window):
     return out
 
 
+def _moving_average(values, window):
+    """Trailing simple moving average (matches Stage-1's ``Moving Avg (N)`` line).
+
+    Returns ``(x_indices, ma_values)`` where ``x_indices`` are 1-based episode
+    positions aligned to the trailing window end. Empty / too-short input →
+    two empty arrays.
+    """
+    import numpy as _np
+
+    arr = _np.asarray(list(values), dtype=float)
+    n = arr.size
+    w = int(max(1, window))
+    if n == 0:
+        return _np.array([], dtype=float), _np.array([], dtype=float)
+    if w <= 1 or n < w:
+        return _np.arange(1, n + 1), arr.copy()
+    ma = _np.convolve(arr, _np.ones(w, dtype=float) / w, mode="valid")
+    xs = _np.arange(w, n + 1)
+    return xs, ma
+
+
+def _stage1_style_panel(ax, raw, *, color, ma_color, ma_window, title,
+                        ylabel, baseline=None, baseline_label="Baseline"):
+    """Draw one Stage-1-style panel: raw (alpha) + Moving Avg + optional Baseline.
+
+    Mirrors ``layer_importance_evaluator``'s 3-panel convention so Stage-2 curves
+    are visually identical in style. ASCII titles only (matplotlib default font
+    has no CJK glyphs; Chinese lives in the markdown report).
+    """
+    import numpy as _np
+
+    arr = _np.asarray(list(raw), dtype=float)
+    if arr.size == 0:
+        ax.set_title(title)
+        ax.set_ylabel(ylabel)
+        return
+    xs = _np.arange(1, arr.size + 1)
+    ax.plot(xs, arr, label="raw", alpha=0.4, color=color, linewidth=0.7)
+    ma_x, ma_y = _moving_average(arr, ma_window)
+    if ma_y.size:
+        ax.plot(ma_x, ma_y, label=f"Moving Avg ({int(ma_window)})",
+                linewidth=2.0, color=ma_color)
+    if baseline is not None:
+        try:
+            ax.axhline(float(baseline), color="#666666", linestyle="--",
+                       linewidth=1.0, alpha=0.8, label=baseline_label)
+        except Exception:
+            pass
+    ax.set_xlabel("episode")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best", fontsize=8)
+
+
 def write_training_curves(
         persistence_dir: str,
         *,
         episode_returns: Sequence[float],
         best_reward_curve: Optional[Sequence[float]] = None,
         ppo_loss_curve: Optional[Sequence[float]] = None,
+        # Stage-1-parity per-episode series (all optional → back-compat). When
+        # provided, the multi-panel PNG mirrors Stage-1's Reward/Loss/metric1/
+        # metric2 panels (raw + Moving Avg + Baseline) plus Stage-2-specific
+        # fusion_count / avg_K cost panels.
+        episode_losses: Optional[Sequence[float]] = None,
+        episode_metric1s: Optional[Sequence[float]] = None,
+        episode_metric2s: Optional[Sequence[float]] = None,
+        episode_fusion_counts: Optional[Sequence[float]] = None,
+        episode_avg_ks: Optional[Sequence[float]] = None,
+        baselines: Optional[Mapping[str, float]] = None,
+        metric1_name: str = "metric1",
+        metric2_name: str = "metric2",
+        # Entropy curve (separate PNG, mirrors Stage-1 ppo_entropy_curve.png).
+        entropy_series: Optional[Sequence[float]] = None,
+        entropy_episodes: Optional[Sequence[float]] = None,
+        ma_window: Optional[int] = None,
         substage_boundaries: Optional[Sequence[int]] = None,
         substage_labels: Optional[Sequence[str]] = None,
         ema_window: int = 200,
@@ -690,87 +763,155 @@ def write_training_curves(
         ) -> Dict[str, str]:
     """把训练曲线写成 PNG（matplotlib 可用时）+ NPZ（无脑兜底）。
 
-    Emits two PNGs:
-      * ``blb_stage2_training_curve.png`` (legacy 3-panel diagnostic)
-      * ``blb_stage2_reward_paper.png`` (single-panel paper-ready style)
-        + matching ``.pdf`` for vector inclusion.
+    Emits (when the matching data is provided):
+      * ``blb_stage2_training_curve.png`` — Stage-1 风格多联图：Reward / Loss /
+        metric1 / metric2 / fusion_count / avg_K，每联 raw + Moving Avg +
+        Baseline 参考线。只给 ``episode_returns`` 时退化为单联 reward（向后兼容
+        旧 legacy 调用方）。
+      * ``blb_stage2_entropy_curve.png`` — 独立熵曲线（镜像 Stage-1
+        ``ppo_entropy_curve.png``），需提供 ``entropy_series``。
+      * ``blb_stage2_reward_paper.png`` (+ ``.pdf``) — 单联 paper-ready reward。
 
     Args:
-        substage_boundaries: optional list of episode indices (1-indexed) where
-            sub-stages switch. The paper plot draws a vertical guide line at
-            each boundary and labels it with the matching ``substage_labels``
-            entry.
-        substage_labels: labels printed at each boundary (e.g. ``"Sub-stage 2:
-            Block 2"``). Pass the same length as ``substage_boundaries``.
-        ema_window: window for the EMA smoothing line (paper plot foreground).
+        episode_losses / episode_metric1s / episode_metric2s /
+        episode_fusion_counts / episode_avg_ks: 每回合序列（与 ``episode_returns``
+            等长），提供哪几个就画哪几联。
+        baselines: ``{"loss":..,"metric1":..,"metric2":..,"avg_k":..}`` 各联的
+            baseline 参考线（fusion 的 baseline 恒为 0）。
+        entropy_series / entropy_episodes: 每次 PPO 更新的策略熵 + 对应的
+            completed-episode x 轴。
+        ma_window: Moving Avg 窗口（None → 按总回合数自适应）。
+        substage_boundaries / substage_labels / ema_window: paper 图用。
 
     Returns:
-        ``{"png": <png_path or "">, "npz": <npz_path or "">,
-            "paper_png": <paper_path or "">, "paper_pdf": <paper_pdf or "">}``
+        ``{"png", "npz", "paper_png", "paper_pdf", "entropy_png"}``（缺省为 ""）。
     """
     log = log_fn or (lambda _msg: None)
-    out = {"png": "", "npz": "", "paper_png": "", "paper_pdf": ""}
+    out = {"png": "", "npz": "", "paper_png": "", "paper_pdf": "", "entropy_png": ""}
     os.makedirs(persistence_dir, exist_ok=True)
+
+    def _has(seq):
+        return seq is not None and len(list(seq)) > 0
+
+    _bl = dict(baselines or {})
+    n_ep = len(list(episode_returns)) if episode_returns is not None else 0
+    if ma_window is None:
+        ma_window = max(10, n_ep // 200) if n_ep else 10
 
     # NPZ 总是写（最稳）
     try:
         import numpy as _np
+
+        def _arr(seq):
+            return _np.asarray(list(seq), dtype=float) if _has(seq) else _np.array([], dtype=float)
+
         npz_path = os.path.join(persistence_dir, BLB_TRAINING_CURVE_NPZ)
         _np.savez(
             npz_path,
-            episode_returns=_np.asarray(episode_returns, dtype=float),
-            best_reward_curve=(_np.asarray(best_reward_curve, dtype=float) if best_reward_curve else _np.array([], dtype=float)),
-            ppo_loss_curve=(_np.asarray(ppo_loss_curve, dtype=float) if ppo_loss_curve else _np.array([], dtype=float)),
+            episode_returns=_arr(episode_returns),
+            best_reward_curve=_arr(best_reward_curve),
+            ppo_loss_curve=_arr(ppo_loss_curve),
+            episode_losses=_arr(episode_losses),
+            episode_metric1s=_arr(episode_metric1s),
+            episode_metric2s=_arr(episode_metric2s),
+            episode_fusion_counts=_arr(episode_fusion_counts),
+            episode_avg_ks=_arr(episode_avg_ks),
+            entropy_series=_arr(entropy_series),
+            entropy_episodes=_arr(entropy_episodes),
         )
         out["npz"] = npz_path
     except Exception as exc:
         log(f"  [BLB曲线][警告] 写 NPZ 失败：{exc}")
 
-    # PNG 视 matplotlib 是否可用
+    # ---- 多联训练曲线（Stage-1 风格：raw + Moving Avg + Baseline）----
+    # 标题/坐标统一用 ASCII：matplotlib 默认 DejaVu Sans 不含 CJK 字形，写中文会
+    # 触发一堆 UserWarning 且 PNG 上变成方框。中文说明在 markdown 报告里给。
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         png_path = os.path.join(persistence_dir, BLB_TRAINING_CURVE_PNG)
-        n_panels = 1 + (1 if best_reward_curve else 0) + (1 if ppo_loss_curve else 0)
-        fig, axes = plt.subplots(n_panels, 1, figsize=(10, 3 * n_panels), squeeze=False)
-        ax_idx = 0
-        # 标题/坐标统一用 ASCII：matplotlib 默认 DejaVu Sans 不含 CJK 字形，
-        # 写中文会触发一堆 UserWarning 且 PNG 上变成方框。中文说明在 markdown
-        # 报告里给。
-        ax = axes[ax_idx, 0]
-        if episode_returns:
-            ax.plot(range(1, len(episode_returns) + 1), episode_returns, linewidth=0.8, label="episode return")
-            ax.set_xlabel("episode")
-            ax.set_ylabel("return")
-            ax.set_title("BLB Stage 2 RL: per-episode reward")
-            ax.grid(True, alpha=0.3)
-            ax.legend()
-        ax_idx += 1
-        if best_reward_curve:
-            ax = axes[ax_idx, 0]
-            ax.plot(range(1, len(best_reward_curve) + 1), best_reward_curve, color="tab:orange", linewidth=1.0, label="best reward so far")
-            ax.set_xlabel("episode")
-            ax.set_ylabel("best reward")
-            ax.set_title("Best reward over training")
-            ax.grid(True, alpha=0.3)
-            ax.legend()
-            ax_idx += 1
-        if ppo_loss_curve:
-            ax = axes[ax_idx, 0]
-            ax.plot(range(1, len(ppo_loss_curve) + 1), ppo_loss_curve, color="tab:red", linewidth=1.0, label="policy_loss")
-            ax.set_xlabel("PPO update")
-            ax.set_ylabel("loss")
-            ax.set_title("PPO policy loss")
-            ax.grid(True, alpha=0.3)
-            ax.legend()
-            ax_idx += 1
-        fig.tight_layout()
+
+        # (raw_series, color, ma_color, title, ylabel, baseline_value)
+        panels = []
+        if _has(episode_returns):
+            panels.append((episode_returns, "tab:blue", "darkblue",
+                           "Episode Reward", "reward", None))
+        if _has(episode_losses):
+            panels.append((episode_losses, "tab:red", "darkred",
+                           "Loss (lower is better)", "loss", _bl.get("loss")))
+        if _has(episode_metric1s):
+            panels.append((episode_metric1s, "tab:green", "darkgreen",
+                           f"{metric1_name} (higher is better)", metric1_name,
+                           _bl.get("metric1")))
+        if _has(episode_metric2s):
+            panels.append((episode_metric2s, "tab:purple", "darkviolet",
+                           f"{metric2_name} (higher is better)", metric2_name,
+                           _bl.get("metric2")))
+        if _has(episode_fusion_counts):
+            panels.append((episode_fusion_counts, "tab:brown", "saddlebrown",
+                           "Fusion count per episode", "fusion_count", 0.0))
+        if _has(episode_avg_ks):
+            panels.append((episode_avg_ks, "tab:cyan", "teal",
+                           "avg K (truncation bits, lower=cheaper)", "avg_K",
+                           _bl.get("avg_k")))
+        if not panels and _has(ppo_loss_curve):
+            # legacy single-shot fallback: nothing per-episode but PPO loss given.
+            panels.append((ppo_loss_curve, "tab:red", "darkred",
+                           "PPO policy loss", "loss", None))
+
+        n_panels = max(1, len(panels))
+        fig, axes = plt.subplots(n_panels, 1, figsize=(10, 3 * n_panels),
+                                 squeeze=False)
+        for i, (raw, color, ma_color, title, ylabel, baseline) in enumerate(panels):
+            _stage1_style_panel(
+                axes[i, 0], raw, color=color, ma_color=ma_color,
+                ma_window=ma_window, title=title, ylabel=ylabel, baseline=baseline,
+            )
+        fig.suptitle("BLB Stage-2 RL Training Curves", fontsize=12,
+                     fontweight="bold")
+        fig.tight_layout(rect=(0, 0, 1, 0.985))
         fig.savefig(png_path, dpi=150)
         plt.close(fig)
         out["png"] = png_path
     except Exception as exc:
-        log(f"  [BLB曲线][信息] 跳过 PNG（matplotlib 不可用 / 渲染失败）：{exc}")
+        log(f"  [BLB曲线][信息] 跳过多联 PNG（matplotlib 不可用 / 渲染失败）：{exc}")
+
+    # ---- 独立熵曲线（镜像 Stage-1 ppo_entropy_curve.png）----
+    try:
+        if _has(entropy_series):
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            import numpy as _np
+
+            ent = _np.asarray(list(entropy_series), dtype=float)
+            if _has(entropy_episodes) and len(list(entropy_episodes)) == ent.size:
+                ex = _np.asarray(list(entropy_episodes), dtype=float)
+                xlabel = "Episode (at PPO update)"
+            else:
+                ex = _np.arange(1, ent.size + 1)
+                xlabel = "PPO update"
+            ent_png = os.path.join(persistence_dir, BLB_ENTROPY_CURVE_PNG)
+            ent_w = int(max(2, min(int(ma_window), max(2, ent.size // 20))))
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(ex, ent, marker=".", markersize=2, linewidth=0.6,
+                    color="#1f9e9e", alpha=0.75, label="Policy Entropy")
+            _, ma_y = _moving_average(ent, ent_w)
+            if ma_y.size:
+                ax.plot(ex[ent.size - ma_y.size:], ma_y, linewidth=2.0,
+                        color="darkgreen", label=f"Moving Avg ({ent_w})")
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("Entropy")
+            ax.set_title("PPO Training: Policy Entropy over Episodes")
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc="best", fontsize=9)
+            fig.tight_layout()
+            fig.savefig(ent_png, dpi=150)
+            plt.close(fig)
+            out["entropy_png"] = ent_png
+    except Exception as exc:
+        log(f"  [BLB曲线][信息] 跳过熵曲线 PNG：{exc}")
 
     # Paper-style single-panel plot. Convention: gray raw trace alpha=0.3,
     # bold EMA-smoothed foreground, optional best-so-far dashed line, and

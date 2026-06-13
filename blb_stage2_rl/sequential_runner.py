@@ -4883,19 +4883,238 @@ def run_sequential_via_runner(
         bullet=bullet,
     )
 
-    # ---------- 8) Training curve PNG/NPZ ----------
+    # ---------- 8) Training curves (Stage-1 风格) + entropy + 健康检测报告 ----------
+    # 每回合并列序列从 in-memory ``episode_records`` 取（与 diagnostics/episodes.jsonl
+    # 逐字一致：record_episode(fusion_count=record.fusion_count_sum_over_steps)）。
+    # 跨 resume 的完整历史曲线用 scripts/blb_regen_stage2_outputs.py 离线重建。
+    _records = seq_result.get("episode_records", []) or []
+    _ep_returns = [float(getattr(r, "total_reward", 0.0) or 0.0) for r in _records] or list(episode_returns)
+    _ep_losses = [float(getattr(r, "terminal_loss_mean", 0.0) or 0.0) for r in _records]
+    _ep_m1 = [float(getattr(r, "terminal_metric1_mean", 0.0) or 0.0) for r in _records]
+    _ep_m2 = [float(getattr(r, "terminal_metric2_mean", 0.0) or 0.0) for r in _records]
+    _ep_fusion = [float(getattr(r, "fusion_count_sum_over_steps", 0) or 0) for r in _records]
+    _base_avg_k = float(getattr(baseline, "avg_k", 13.0) or 13.0)
+    _ep_avgk = [_base_avg_k - float(getattr(r, "terminal_k_gain", 0.0) or 0.0) for r in _records]
+    _pri = [int(getattr(r, "terminal_priority", 0) or 0) for r in _records]
+    _ppo_metrics = seq_result.get("ppo_metrics", []) or []
+    _ent = [float(m.get("entropy")) for m in _ppo_metrics if m.get("entropy") is not None]
+    _ent_eps = [float(m.get("completed_episodes", 0) or 0) for m in _ppo_metrics if m.get("entropy") is not None]
     try:
         curve_paths = write_training_curves(
             blb_progress_dir,
-            episode_returns=episode_returns,
-            best_reward_curve=[float(best_reward)] * len(episode_returns) if episode_returns else [],
-            ppo_loss_curve=[float(m.get("policy_loss", 0.0)) for m in seq_result.get("ppo_metrics", [])],
+            episode_returns=_ep_returns,
+            episode_losses=_ep_losses or None,
+            episode_metric1s=_ep_m1 or None,
+            episode_metric2s=_ep_m2 or None,
+            episode_fusion_counts=_ep_fusion or None,
+            episode_avg_ks=_ep_avgk or None,
+            baselines={
+                "loss": float(getattr(baseline, "loss_mean", 0.0) or 0.0),
+                "metric1": float(getattr(baseline, "metric1_mean", 0.0) or 0.0),
+                "metric2": float(getattr(baseline, "metric2_mean", 0.0) or 0.0),
+                "avg_k": _base_avg_k,
+            },
+            entropy_series=_ent or None,
+            entropy_episodes=_ent_eps or None,
             log_fn=log,
         )
         if curve_paths.get("png"):
             log(f"  {bullet} 训练曲线 PNG → {curve_paths['png']}")
+        if curve_paths.get("entropy_png"):
+            log(f"  {bullet} 熵曲线 PNG → {curve_paths['entropy_png']}")
     except Exception as exc:
         log(f"  [警告] 写训练曲线失败：{exc}")
+
+    # 8.1) 局部最优 / 健康检测报告（Stage-1 同款 pruning_search_log.txt 版式）。
+    try:
+        from rl_local_optimum import write_local_optimum_report
+        from .persistence import BLB_SEARCH_LOG_TXT
+        write_local_optimum_report(
+            os.path.join(blb_progress_dir, BLB_SEARCH_LOG_TXT),
+            episode_returns=_ep_returns,
+            episode_entropies=_ent or None,
+            best_score_history=None,
+            completed_episodes=int(start_episode + len(episode_returns)),
+            title="BLB Stage-2 RL",
+            extra_lines=[
+                "",
+                "--- 优先级分布（priority histogram）---",
+                f"  P1(acc):  {sum(1 for p in _pri if p == 1)}",
+                f"  P2(stab): {sum(1 for p in _pri if p == 2)}",
+                f"  P3(cost): {sum(1 for p in _pri if p == 3)}",
+            ],
+            log_fn=log,
+        )
+    except Exception as exc:
+        log(f"  [警告] 写检测报告失败：{exc}")
+
+    # ---------- 8.5) 解耦归档 + best_policy（对齐 Stage-1）----------
+    # 2026-06-01 解耦：sequential stage2-only 完成 → 归档进 stage2/record/{combo N date}/
+    # 并打 COMPLETED；同时把最优 policy 汇总到 best_policy/。这段以前只存在于 legacy
+    # 单发路径（runner.py），sequential 提前 return 永远到不了，导致 Stage-2 工作目录
+    # 缺 record/ / COMPLETED / final_config / final_eval（与 Stage-1 不对齐）。
+    # best-effort：任何异常只记日志，绝不让收尾处崩训练。
+    if getattr(ev, "decoupled_layout", False) and best_action_vec is not None:
+        try:
+            import datetime as _dt
+            import json as _json
+            import shutil as _shutil
+            from config import run_layout as _rl
+            from .persistence import (
+                BLB_TRAINING_CURVE_PNG,
+                BLB_ENTROPY_CURVE_PNG,
+                BLB_REWARD_PAPER_PNG,
+                BLB_FINAL_REPORT_MD,
+                BLB_SEARCH_LOG_TXT,
+            )
+
+            _wd = os.path.normpath(str(getattr(ev, "run_output_dir", "") or ""))  # <root>/stage2/<combo>
+            if _wd and _wd != ".":
+                _combo = os.path.basename(_wd)
+                _root = os.path.dirname(os.path.dirname(_wd))
+                _bd = best_breakdown_for_report if isinstance(best_breakdown_for_report, dict) else {}
+                _paths = best_action_description_paths or {}
+
+                def _bk(attr, default=None):
+                    return (float(getattr(best_record, attr)) if best_record is not None
+                            and getattr(best_record, attr, None) is not None else default)
+
+                _final_config = {
+                    "stage": 2,
+                    "combo": _combo,
+                    "profile": str(train_cfg.profile),
+                    "num_layers": int(ev.total_layers),
+                    "blb_v3_best_action_vec": np.asarray(best_action_vec, dtype=int).tolist(),
+                    # 前置 Stage-1（一个 stage2 严格绑定一个 stage1）。
+                    "gelu_degree_per_layer": np.asarray(fixed_gelu, dtype=int).tolist(),
+                    "softmax_degree_per_layer": np.asarray(fixed_softmax, dtype=int).tolist(),
+                    "best_action_readable_json": _paths.get("json", ""),
+                    "best_action_readable_md": _paths.get("md", ""),
+                }
+                _final_eval = {
+                    "source": "training_best_mean_of_K_trials",
+                    "note": "basic snapshot (训练记录的 K 次 MC 噪声 trial 最优档); "
+                            "重型同-cost 组对比见独立 final-eval 工具。",
+                    "best_reward": float(best_reward) if np.isfinite(best_reward) else None,
+                    "loss": _bk("terminal_loss_mean"),
+                    "metric1": _bk("terminal_metric1_mean"),
+                    "metric2": _bk("terminal_metric2_mean"),
+                    "cost": {
+                        "total_bits_sum": (int(getattr(best_record, "total_bits_sum_over_steps", 0) or 0)
+                                           if best_record is not None else None),
+                        "total_fusion_count": (int(getattr(best_record, "fusion_count_sum_over_steps", 0) or 0)
+                                               if best_record is not None else None),
+                        "avg_k": ((_base_avg_k - _bk("terminal_k_gain", 0.0))
+                                  if best_record is not None else None),
+                    },
+                    "baseline_cost": {
+                        "total_bits_sum": int(baseline.total_bits_sum),
+                        "total_fusion_count": int(baseline.total_fusion_count),
+                        "avg_k": float(baseline.avg_k),
+                        "loss_mean": float(getattr(baseline, "loss_mean", 0.0)),
+                        "metric1_mean": float(getattr(baseline, "metric1_mean", 0.0)),
+                        "metric2_mean": float(getattr(baseline, "metric2_mean", 0.0)),
+                    },
+                    "breakdown": _bd,
+                }
+                _metadata = {
+                    "stage": 2,
+                    "combo": _combo,
+                    "profile": str(train_cfg.profile),
+                    "data_path": getattr(ev, "data_path", ""),
+                    "completed_at": _dt.datetime.now().isoformat(),
+                    "episodes": int(start_episode + len(episode_returns)),
+                    "stage1_run_id": getattr(ev, "stage1_run_id", ""),
+                    "stage2_limit_tolerance": getattr(ev, "stage2_limit_tolerance", None),
+                    "stage2_stability_tolerance": getattr(ev, "stage2_stability_tolerance", None),
+                }
+                _report_md = (
+                    f"# Stage-2 record: {_combo}\n\n"
+                    f"- profile: {train_cfg.profile}, num_layers: {ev.total_layers}\n"
+                    f"- best_reward: {best_reward}\n"
+                    f"- prerequisite Stage-1 gelu: {np.asarray(fixed_gelu, dtype=int).tolist()}\n"
+                    f"- prerequisite Stage-1 softmax: {np.asarray(fixed_softmax, dtype=int).tolist()}\n"
+                    f"- best action readable: {_paths.get('md', '')}\n"
+                )
+                _curves = [
+                    os.path.join(blb_progress_dir, BLB_TRAINING_CURVE_PNG),
+                    os.path.join(blb_progress_dir, BLB_ENTROPY_CURVE_PNG),
+                    os.path.join(blb_progress_dir, BLB_REWARD_PAPER_PNG),
+                    os.path.join(blb_progress_dir, BLB_FINAL_REPORT_MD),
+                    os.path.join(blb_progress_dir, BLB_SEARCH_LOG_TXT),
+                    _paths.get("json", ""),
+                    _paths.get("md", ""),
+                ]
+                _rdir, _rid, _n = _rl.snapshot_decoupled_record(
+                    2, _combo, _wd,
+                    final_config=_final_config,
+                    final_eval=_final_eval,
+                    metadata=_metadata,
+                    curve_paths=[p for p in _curves if p],
+                    report_md=_report_md,
+                    root=_root,
+                )
+                log(f"  {bullet} [解耦] Stage-2 已归档进 record → {_rdir}（COMPLETED 已标记）")
+
+                # 工作目录 metadata.json（对齐 Stage-1：算法 / 约束 / 阶段状态 / run_count）。
+                # Stage-1 由 launcher 在启动时建基础字段、完成时更新 stage_status；解耦
+                # sequential Stage-2 走不到那条 launcher 分支，这里自给自足地建/并入一份。
+                try:
+                    _meta_path = os.path.join(_wd, "metadata.json")
+                    _existing = {}
+                    if os.path.isfile(_meta_path):
+                        try:
+                            with open(_meta_path, encoding="utf-8") as _ef:
+                                _existing = _json.load(_ef) or {}
+                        except Exception:
+                            _existing = {}
+                    _now = _dt.datetime.now().isoformat()
+                    _existing.setdefault("algorithm", "rl")
+                    _existing.setdefault("model_type", str(getattr(ev, "model_type", "bert-base")))
+                    _existing.setdefault("dataset", str(train_cfg.profile))
+                    _existing.setdefault("created_at", _now)
+                    _existing.setdefault("run_count", 1)
+                    _existing["last_updated_at"] = _now
+                    _existing["stage2_limit_tolerance"] = getattr(ev, "stage2_limit_tolerance", None)
+                    _existing["stage2_stability_tolerance"] = getattr(ev, "stage2_stability_tolerance", None)
+                    _existing["stage2_k_trials"] = int(getattr(train_cfg, "num_trials_per_step", 0) or 0)
+                    _existing["stage2_probe_size"] = int(getattr(ev, "stage2_probe_size", 256) or 256)
+                    _ss = _existing.setdefault("stage_status", {})
+                    _ss["stage2_search"] = "completed"
+                    _sd = _existing.setdefault("stage_detail", {})
+                    _sd.setdefault("stage2_search", {}).update({
+                        "episodes": int(start_episode + len(episode_returns)),
+                        "best_reward": float(best_reward) if np.isfinite(best_reward) else None,
+                        "record_id": _rid,
+                    })
+                    with open(_meta_path, "w", encoding="utf-8") as _mf:
+                        _json.dump(_existing, _mf, ensure_ascii=False, indent=2)
+                    log(f"  {bullet} [解耦] 工作目录 metadata.json 已更新 → {_meta_path}")
+                except Exception as _me:
+                    log(f"  [解耦][警告] 工作目录 metadata.json 写入失败：{_me}")
+
+                # best_policy/ 目录（对齐 Stage-1：policy + 约束元数据）。
+                try:
+                    _bp_dir = os.path.join(_wd, "best_policy")
+                    os.makedirs(_bp_dir, exist_ok=True)
+                    if save_path and os.path.isfile(save_path):
+                        _shutil.copy2(save_path, os.path.join(_bp_dir, "blb_stage2_policy.pt"))
+                    with open(os.path.join(_bp_dir, "constraint_metadata.json"), "w",
+                              encoding="utf-8") as _bf:
+                        _json.dump({
+                            "profile": str(train_cfg.profile),
+                            "stage2_limit_tolerance": getattr(ev, "stage2_limit_tolerance", None),
+                            "stage2_stability_tolerance": getattr(ev, "stage2_stability_tolerance", None),
+                            "stage2_k_trials": int(getattr(train_cfg, "num_trials_per_step", 0) or 0),
+                            "stage2_probe_size": int(getattr(ev, "stage2_probe_size", 256) or 256),
+                            "search_algorithm": "rl",
+                            "rl_variant": str(getattr(train_cfg, "rl_variant", "") or ""),
+                        }, _bf, ensure_ascii=False, indent=2)
+                    log(f"  {bullet} [best_policy] 已汇总 → {_bp_dir}")
+                except Exception as _bpe:
+                    log(f"  [best_policy][警告] 汇总失败：{_bpe}")
+        except Exception as _snap_exc:
+            log(f"  [解耦][警告] Stage-2 record 归档失败（不影响训练结果）：{_snap_exc}")
 
     # ---------- 9) Restore handler to clean polynomial-only state ----------
     try:
