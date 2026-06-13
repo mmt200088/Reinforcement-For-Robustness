@@ -144,7 +144,12 @@ class NearMissGradedTierTest(unittest.TestCase):
     THR = 0.858
 
     def _reward(self, m1):
-        w = rwd.RewardWeights(baseline_metric1=self.BASE_M1, baseline_metric2=self.BASE_M1)
+        # ADR-013: the near-miss tier is now the legacy fallback (the log-barrier
+        # supersedes it by default); test it explicitly with the barrier off.
+        w = rwd.RewardWeights(
+            baseline_metric1=self.BASE_M1, baseline_metric2=self.BASE_M1,
+            acc_barrier_enabled=False,
+        )
         base = rwd.BaselineCostStats(
             total_bits_sum=1000, total_fusion_count=0, avg_k=13.0,
             loss_mean=0.34, loss_std=0.002, metric1_mean=self.BASE_M1,
@@ -195,7 +200,10 @@ class NearMissGradedTierTest(unittest.TestCase):
         self.assertLess(b.reward, -4.0)
 
     def test_invalid_never_near_miss(self):
-        w = rwd.RewardWeights(baseline_metric1=self.BASE_M1, baseline_metric2=self.BASE_M1)
+        w = rwd.RewardWeights(
+            baseline_metric1=self.BASE_M1, baseline_metric2=self.BASE_M1,
+            acc_barrier_enabled=False,
+        )
         base = rwd.BaselineCostStats(
             total_bits_sum=1000, total_fusion_count=0, avg_k=13.0,
             loss_mean=0.34, loss_std=0.002, metric1_mean=self.BASE_M1,

@@ -884,6 +884,10 @@ class EpisodeRecord:
     valid_step_count: int = 0
     total_bits_sum_over_steps: int = 0
     fusion_count_sum_over_steps: int = 0
+    # 2026-06-13: per-block-TYPE fusion split (diagnostic only).
+    fusion_count_b2: int = 0
+    fusion_count_b4: int = 0
+    fusion_count_b5: int = 0
     first_invalid_step: Optional[int] = None
     first_invalid_block: Optional[int] = None
     first_invalid_layer: Optional[int] = None
@@ -1056,6 +1060,12 @@ def _apply_terminal_info_to_record(
     """Populate an EpisodeRecord from the base env terminal info dict."""
     record.terminal_reward = float(terminal_reward)
     record.total_reward = float(record.per_step_reward_sum + float(terminal_reward))
+    # 2026-06-13: per-block-type fusion split (sequential_env mirrors it into
+    # terminal_info). Diagnostic only; absent on non-fusion/legacy paths.
+    if "fusion_count_b2" in term_info_dict:
+        record.fusion_count_b2 = int(term_info_dict.get("fusion_count_b2", 0) or 0)
+        record.fusion_count_b4 = int(term_info_dict.get("fusion_count_b4", 0) or 0)
+        record.fusion_count_b5 = int(term_info_dict.get("fusion_count_b5", 0) or 0)
     term_breakdown = term_info_dict.get("reward_breakdown")
     term_metrics = term_info_dict.get("metrics")
     term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
@@ -4258,6 +4268,9 @@ def run_sequential_via_runner(
                     steps_taken=int(record.steps_taken),
                     total_bits=int(record.total_bits_sum_over_steps),
                     fusion_count=int(record.fusion_count_sum_over_steps),
+                    fusion_count_b2=int(record.fusion_count_b2),
+                    fusion_count_b4=int(record.fusion_count_b4),
+                    fusion_count_b5=int(record.fusion_count_b5),
                     first_invalid_step=(
                         int(record.first_invalid_step)
                         if record.first_invalid_step is not None else None

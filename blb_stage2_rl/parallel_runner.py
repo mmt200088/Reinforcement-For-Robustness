@@ -147,6 +147,12 @@ def _update_terminal_snapshot(snapshot: Dict[str, Any], info: Dict[str, Any]) ->
     parallel path are indistinguishable from serial ones.
     """
     term_info_dict = info.get("terminal_info") or {}
+    # 2026-06-13: per-block-type fusion split (diagnostic), mirrored into
+    # terminal_info by sequential_env so the parallel snapshot matches serial.
+    if "fusion_count_b2" in term_info_dict:
+        snapshot["fusion_count_b2"] = int(term_info_dict.get("fusion_count_b2", 0) or 0)
+        snapshot["fusion_count_b4"] = int(term_info_dict.get("fusion_count_b4", 0) or 0)
+        snapshot["fusion_count_b5"] = int(term_info_dict.get("fusion_count_b5", 0) or 0)
     term_breakdown = term_info_dict.get("reward_breakdown")
     term_metrics = term_info_dict.get("metrics")
     term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
@@ -207,6 +213,9 @@ def _default_terminal_snapshot() -> Dict[str, Any]:
         terminal_probe_clear_wall_seconds=0.0,
         terminal_probe_install_skipped=False,
         terminal_probe_clear_skipped=False,
+        fusion_count_b2=0,
+        fusion_count_b4=0,
+        fusion_count_b5=0,
     )
     return snap
 
@@ -563,6 +572,9 @@ def collect_fusion_episode(
         valid_step_count=int(valid_step_count),
         total_bits_sum_over_steps=int(total_bits_sum),
         fusion_count_sum_over_steps=int(fusion_count_sum),
+        fusion_count_b2=int(snapshot["fusion_count_b2"]),
+        fusion_count_b4=int(snapshot["fusion_count_b4"]),
+        fusion_count_b5=int(snapshot["fusion_count_b5"]),
         first_invalid_step=(int(first_invalid["step"]) if first_invalid else None),
         first_invalid_block=(int(first_invalid["block_idx"]) if first_invalid else None),
         first_invalid_layer=(int(first_invalid["layer_idx"]) if first_invalid else None),

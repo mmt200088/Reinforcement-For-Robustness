@@ -458,11 +458,33 @@ class BLBStage2SequentialEnv:
                 info["fusion_cost_trunc_norm"] = float(res.trunc_norm)
                 info["fusion_cost_rank"] = float(res.cost_rank)
                 info["fusion_cost_max_actual"] = float(res.max_actual)
+            # Per-block-TYPE fusion breakdown (2026-06-13): the 3rd-60k hot
+            # collapse was driven by runaway block4 fusion (paid 130/fuse but
+            # the most accuracy-toxic). Recording b2/b4/b5 separately makes
+            # "which block type is over-fusing" a one-glance read in
+            # episodes.jsonl / the health log instead of a re-derivation.
+            _fusion_by_type = {2: 0, 4: 0, 5: 0}
+            if self._fusion_choices:
+                for _fc in self._fusion_choices:
+                    _bi = int(_fc.block_idx)
+                    if _bi in _fusion_by_type:
+                        _fusion_by_type[_bi] += int(_fc.fusion_count)
+                info["fusion_count_b2"] = int(_fusion_by_type[2])
+                info["fusion_count_b4"] = int(_fusion_by_type[4])
+                info["fusion_count_b5"] = int(_fusion_by_type[5])
             term_state, term_reward, _term_done, term_info = self.base.step(
                 self._pending_full_vec,
                 external_cost_score=ext_score,
                 external_cost_rank=ext_rank,
             )
+            # Mirror the per-block-type split into terminal_info so BOTH the
+            # serial (_apply_terminal_info_to_record) and parallel
+            # (_update_terminal_snapshot) record builders, which read
+            # info['terminal_info'], pick it up identically.
+            if isinstance(term_info, dict) and self._fusion_choices:
+                term_info["fusion_count_b2"] = int(_fusion_by_type[2])
+                term_info["fusion_count_b4"] = int(_fusion_by_type[4])
+                term_info["fusion_count_b5"] = int(_fusion_by_type[5])
             info["terminal_info"] = term_info
             info["terminal_reward"] = float(term_reward)
             return term_state, per_step_reward + float(term_reward), True, info

@@ -21,6 +21,27 @@ When in doubt, check the linked commit's full message for surgical details.
 
 ---
 
+## [Unreleased] — 2026-06-13 (pm)
+
+### Changed
+- **Stage-2 fusion reward: Stage-1-style log-barrier accuracy boundary**
+  (ADR-013). The 3rd 60k run collapsed HOT (fusion ran away 1.4→35, accuracy
+  destroyed, back half frozen at -6.95). `reward.accuracy_margin_barrier`
+  replaces ADR-012's near-miss tier (P1) and the linear P3 metric-margin (P3)
+  with the two-piece log-barrier from Stage-1: a steep ≤0 restoring penalty as
+  the margin thins (→ interior reward peak at positive-margin headroom, no
+  overshoot) and a continuous monotone violated region (→ recovery gradient, no
+  flat cliff floor). Cost weights unchanged (80:150:130:40); the barrier is the
+  sole restoring force. `MARGIN_REF` (default 0.25 ≈ 1.8 probe-σ) is the
+  aggressiveness knob. Priority / rank-key / selection bit-identical; item 7 and
+  1==N preserved. `acc_barrier_enabled=False` restores the ADR-012 path. Locked
+  by `tests/test_blb_log_barrier_reward.py`.
+- **Per-block-type fusion diagnostics**: `fusion_count_b2/b4/b5` now recorded in
+  `episodes.jsonl` (both serial and episode-parallel paths) so a runaway block
+  type (e.g. the accuracy-toxic block4) is a one-glance read.
+
+---
+
 ## [Unreleased] — 2026-06-13
 
 ### Changed

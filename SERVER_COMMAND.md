@@ -3,7 +3,7 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (ADR-012 边界与探索修复：近界渐变档+边缘复测+policy-K探针+ε下限 → 确定性门禁 → PASS 自动接 60k)
+## ▶ active command  (ADR-013 Stage-1 式 log-barrier 精度边界（取代近界档+线性P3 margin）→ 确定性门禁 → PASS 自动接 60k + 崩溃 watchdog)
 
 ```bash
 set -uo pipefail
@@ -11,30 +11,32 @@ export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 
 # ============================================================================
-# 本轮（2026-06-12，ADR-012）：第 2 次 60k 仍收敛到 fusion=0，但取证完全改写了结论：
-#   - 拆分预算有效：on-policy fusion episode 对同期无融合邻居的优势全程为正
-#     (+0.05~+0.19，每阶段、单翻转/多翻转都正)；
-#   - 真凶 = P1 悬崖税：1327 个 P1 里 1226 个全是 fusion episode 的"边缘型"
-#     (m1∈[0.833,0.858]，0 个灾难型；无融合 episode 整个 60k 只有 1 个 P1)。
-#     fusion+深K 把真实 m1 推到容忍度边界，256 样本探针的抽样噪声(σ≈0.0018)
-#     把它概率性砸进 -46 悬崖：期望优势 = +0.117 − 8.4%×46 ≈ −3.8 → 策略理性弃疗；
-#   - 三类探针全部失效：b2 被强制基线 K 抵消(净+0.07)、b5 净 −0.86(负面教材!)、
-#     b4 恒 −46×100 次(反 fusion 泛化)；
-#   - upd≈700 起 entropy=0.000 / clip=0.000：策略完全冻结，最后 18k episode 纯浪费。
-# 本轮四项修复（ADR-012，代码已在本提交内；图无需重建）：
-#   ① 近界渐变档(reward.near_miss_*)：非 invalid 的指标失败若最差通道亏损
-#     ≤1×|baseline−阈值| 宽度，tier 从悬崖改为 35→15 线性渐变(典型上轮 P1 从
-#     −7 → ~26.6)；priority 仍是 1(选择/排名语义不变；渐变上限 35 < P3 下限 40，
-#     P3 永远压住近界)。带外/灾难型保留旧悬崖。
-#   ② 边缘复测(env.borderline_retest)：边缘指标失败用盐化确定性种子做一次
-#     2×trials 全新复测，复测结论替代首测 → 概率性误杀率平方级下降，真违规
-#     照样挂。只在确定性探针路径生效(probe_noise_seed)，1==N 不受影响。
-#   ③ 探针 v2：只强制目标块类型的 option=1；K 与其它块全部跟随当前策略+课程
-#     (目标 option 档注入 mask)→ 探针变成"在当前策略上追加融合"的干净反事实，
-#     优势 ≈ +1.4 而非被基线 K 抵消的 +0.07。轮换改为 b2→b5(剔除必死的 b4)。
-#   ④ ε 探索下限(policy 混合分布，采样与 PPO 回放同分布)：option 槽 0.05、
-#     K 槽 0.02 → 策略永远不能在 fusion 选择上变成确定性(根治 entropy=0 冻结)。
-#   ⑤ 提速（2026-06-12，画像驱动）：上轮 60k 实测每 episode 墙钟 = 探针 2.69s
+# 本轮（2026-06-13，ADR-013）：第 3 次 60k（artifacts stage2_grid_gate_60k_20260612_191530，
+# ADR-012 全开）翻转成「热崩溃」——与前两次「冷崩溃 fusion=0」完全相反：
+#   - fusion 单调爬升 1.4→35，metric1 单调跌 0.866→0.690（分箱：ep0 fus1.4/P3 → ep12k
+#     fus11.7/P1 1240 → ep21k fus19.8/P1 2694 → ep30k fus31.8/P1 3000 reward-6.94 →
+#     ep33k+ fus35.1/m0.690 冻结平在 -6.95 直到 ep60000）；后 30k 回合(50% 的跑)纯浪费；
+#   - 但 hard-priority 选择仍救回 ep20880 = fusion 22 / P3 / reward 40.8 > 无融合上限 39.5
+#     （余量仅 0.0003 = 刀刃、亚 σ）；搜索能找到好配置，只是不在最优点稳定。
+#   - 根因：ADR-012 的近界渐变档把"越界"几乎变免费(-7→15-35)，叠加单调 fusion 成本激励
+#     (block4 @130 = 最毁精度却付第二高) + ~1.3% 精度预算被 fusion 和深 K 共同吃掉 → 策略
+#     沿 fusion 轴一路上滑、无回正力，最后掉进平坦无梯度盆地(全 P1、reward 平、ε 太弱爬不回)。
+# 本轮修复（ADR-013；用户选 log-barrier 方向 + 保持成本权重 80:150:130:40 → barrier 独自
+# 对抗 block4 的 130；详见 docs/adr/ADR-013-*.md；图无需重建——解码/档位未变）：
+#   ① Stage-1 式两段 log-barrier (reward.accuracy_margin_barrier，移植自
+#     layer_importance_evaluator.py:log_barrier_reward)。取代近界档(P1)+线性 P3 margin(P3)。
+#     mu=最差通道带符号余量(|baseline−阈值| 单位)。满足侧 0≤mu<MARGIN_REF: SAT·(log(mu+eps)
+#     −log(REF+eps)) ≤0，mu→0 斜率→∞ ⇒ cost(fusion)+barrier 在正余量处出现内点峰值(不冲过)；
+#     mu≥REF ⇒ 0(成本说了算)。违反侧 mu<0: b0−VIO·(−mu) 连续+线性(整个崩溃深度无平台)
+#     ⇒ 恢复梯度(3rd-60k 缺的就是这个)。下限 −10。
+#   ② MARGIN_REF=0.25 (≈1.8 探针 σ) = 激进度旋钮(代码默认；过保守/过激可在
+#     RewardWeights 调，sweep {0.15,0.25,0.35})；acc_barrier_enabled 开关(False=回 ADR-012)。
+#   ③ 不变量：barrier 只改 PPO 标量 → priority/rank-key/选择逐位不变；违反侧 < P3 下限 40
+#     且 P1 不吃 cost ⇒ item7；纯 metrics 函数 ⇒ 1==N；invalid 仍走 legacy invalid_term。
+#   ④ 保留 ADR-012 的边缘复测(给 barrier 读的余量降噪，更重要了)、ε 下限、policy-K 探针。
+#   ⑤ 新增 per-block-type fusion(b2/b4/b5) 入 episodes.jsonl + 健康日志；崩溃 watchdog(持续
+#     P3≈0 → 杀进程；best 已周期 checkpoint，安全网，barrier 正常时永不触发)。
+#   ⑥ 提速（2026-06-12，画像驱动，沿用）：上轮 60k 实测每 episode 墙钟 = 探针 2.69s
 #     (78%) + rollout 0.74s (21%) + replan 0.009s；窗口负载不均仅 2.8%；PPO
 #     更新 ≈1.4h/13.85h。最大安全收益 = 每卡 2 个 worker（episode 结果只依赖
 #     全局序号→worker 指派无关，正是 1==N 的根基）：一个 worker 的 CPU 侧
@@ -44,9 +46,9 @@ export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE
 #     g1 保持 1 worker 作参照——同一条 byte-diff 同时验证卡数与 worker 数两个
 #     不变量。预期 ~1.3-1.4×（13.5h → ~10h）。
 # 容忍度沿用用户 spec：stability 500% + 指标 0.5%。
-# 顺序：phase0 自检(ADR-012 断言+三件测试) → phase2 图门禁(REBUILD_MAPS=0) →
-# phaseG 1卡vsN卡确定性门禁(探针出现性判读改为动态检测——上轮发现 gate 与长跑
-# anchor 不同) → PASS 自动接 60k。
+# 顺序：phase0 自检(ADR-013 barrier 端到端峰值/恢复梯度/item7 断言 + ADR-012 legacy 断言
+# + 四件测试含 test_blb_log_barrier_reward) → phase2 图门禁(REBUILD_MAPS=0) →
+# phaseG 1卡vsN卡确定性门禁(探针出现性动态检测) → PASS 自动接 60k（带崩溃 watchdog）。
 # ----------------------------------------------------------------------------
 REBUILD_MAPS=0       # 图在 2026-06-11 已按 step-1×15 重建并 push（本两轮只改 RL 代码，动作→SF 解码未变）
 GATE_EPISODES=300    # 门禁短跑规模：anchor80 + 220 post，5 个 PPO 窗口
@@ -105,7 +107,8 @@ assert (w.near_miss_tier_cap, w.near_miss_tier_floor, w.near_miss_band) == (35.0
 base = rwd.BaselineCostStats(total_bits_sum=1000, total_fusion_count=0, avg_k=13.0,
                              loss_mean=0.34, loss_std=0.002, metric1_mean=0.8672,
                              metric2_mean=0.8672, metric1_std=0.001, metric2_std=0.001)
-w2 = rwd.RewardWeights(baseline_metric1=0.8672, baseline_metric2=0.8672)
+# ADR-013: barrier 现在默认开启并取代近界档；此处用 acc_barrier_enabled=False 验证 legacy 路径仍在。
+w2 = rwd.RewardWeights(baseline_metric1=0.8672, baseline_metric2=0.8672, acc_barrier_enabled=False)
 class _O:
     any_invalid = False; total_bits_sum = 1000; total_fusion_count = 0
 def _r(m1):
@@ -115,11 +118,47 @@ def _r(m1):
                               acc_threshold=0.858, acc_threshold_m2=0.858,
                               stab_threshold=0.05, external_cost_score=0.0,
                               external_cost_rank=0.0)
-bnm = _r(0.8540)   # 上轮典型边缘 P1
+bnm = _r(0.8540)   # legacy 近界 P1
 assert bnm.priority == 1 and bnm.near_miss and 20.0 < bnm.reward < 35.0
 assert _r(0.8672).reward >= 40.0 > bnm.reward                  # P3 永远压住近界
 assert _r(0.3200).reward < -4.0 and not _r(0.3200).near_miss   # 灾难型保留悬崖
-print("ADR-012 近界渐变档断言 OK（上轮典型边缘P1 -7 -> %.1f）" % bnm.reward)
+print("ADR-012 近界渐变档(legacy, barrier off)断言 OK（边缘P1 -7 -> %.1f）" % bnm.reward)
+# ---- ADR-013 断言：Stage-1 式 log-barrier（默认开启，取代近界档+线性 P3 margin）----
+wb = rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871)
+assert wb.acc_barrier_enabled and abs(wb.acc_barrier_margin_ref - 0.25) < 1e-12
+assert rwd.accuracy_margin_barrier(0.25, wb) == 0.0                       # headroom 外归零
+assert rwd.accuracy_margin_barrier(0.05, wb) < rwd.accuracy_margin_barrier(0.20, wb) < 0.0  # 回正力
+assert rwd.accuracy_margin_barrier(-5.0, wb) < rwd.accuracy_margin_barrier(-0.1, wb)        # 违反区有梯度
+assert rwd.accuracy_margin_barrier(-1e4, wb) == wb.acc_barrier_floor      # 下限
+baseB = rwd.BaselineCostStats(total_bits_sum=11285, total_fusion_count=0, avg_k=13.0,
+                              loss_mean=0.37, loss_std=0.01, metric1_mean=0.871, metric2_mean=0.871,
+                              metric1_std=0.002, metric2_std=0.002, typical_bits_drop=1000,
+                              typical_fusion_count=24, typical_k_drop=5)
+def _rb(f):
+    m1 = 0.871 - 0.0052 * f * (0.6 + 0.4 * f / 35.0)
+    m = rwd.EpisodeMetrics(loss_mean=0.37, loss_std=0.01, metric1_mean=m1, metric2_mean=m1,
+                           metric1_std=0.002, metric2_std=0.002)
+    class _OB:
+        any_invalid = False; total_bits_sum = 11285 - 30 * f; total_fusion_count = f
+    return rwd.compute_reward(m, _OB(), action_avg_k=13.0, baseline=baseB, weights=wb,
+                              acc_threshold=0.858, acc_threshold_m2=0.858,
+                              external_cost_score=min(3.0, 3.0 * f / 36.0), external_cost_rank=float(f))
+sweep = [(f,) + (lambda rb: (rb.reward, rb.priority, rb.worst_signed_margin))(_rb(f)) for f in range(36)]
+peak = max(sweep, key=lambda r: r[1])
+assert 0 < peak[0] < 35 and peak[2] == 3 and peak[3] > 0.0, f"峰值必须是正余量内点 P3: {peak}"
+assert peak[1] > sweep[0][1], "fusion 必须被采纳（峰值 > 零融合基线）"
+viol = [r[1] for r in sweep if r[2] == 1]
+assert viol and all(viol[i] > viol[i+1] for i in range(len(viol)-1)), "违反区必须单调（恢复梯度）"
+assert _rb(0).priority == 3
+worst_p3 = _rb(0).reward
+hi_cost_p1 = rwd.compute_reward(
+    rwd.EpisodeMetrics(loss_mean=0.37, loss_std=0.01, metric1_mean=0.8579, metric2_mean=0.8579,
+                       metric1_std=0.002, metric2_std=0.002),
+    type("OB", (), {"any_invalid": False, "total_bits_sum": 9000, "total_fusion_count": 24})(),
+    action_avg_k=8.0, baseline=baseB, weights=wb, acc_threshold=0.858, acc_threshold_m2=0.858,
+    external_cost_score=4.5, external_cost_rank=24.0).reward
+assert hi_cost_p1 < worst_p3, "item7：高 cost 的 P1 仍 < 任意 P3"
+print("ADR-013 log-barrier 断言 OK：内点峰值 fusion=%d reward=%.2f margin=%.2f；违反区有恢复梯度" % (peak[0], peak[1], peak[3]))
 import sys as _sys
 _sys.path.insert(0, ".")
 from blb_stage2_rl.env import BLBStage2EnvConfig
@@ -138,8 +177,8 @@ from blb_stage2_rl.runner import BLBStage2TrainConfig as _BTC
 assert _BTC().stage2_workers_per_device == 1
 print("workers-per-device 断言 OK（默认 1 = 旧行为；gN/60k 用 2）")
 PY
-echo "==================== [phase0b] ADR-012 单元测试（torch 在位：ε混合/复测/近界档/轮换） ===================="
-for f in test_blb_fusion_curriculum test_blb_fusion_reward test_blb_fusion_exploration; do
+echo "==================== [phase0b] ADR-012/013 单元测试（torch 在位：log-barrier/ε混合/复测/近界档/轮换） ===================="
+for f in test_blb_fusion_curriculum test_blb_fusion_reward test_blb_fusion_exploration test_blb_log_barrier_reward; do
   python3 "tests/${f}.py" > "$OUT/unittest_${f}.log" 2>&1 || { echo "[FATAL] ${f} 失败"; tail -20 "$OUT/unittest_${f}.log"; exit 1; }
   tail -1 "$OUT/unittest_${f}.log"
 done
@@ -332,22 +371,51 @@ PID60="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
 RUN60="$(cat "${CANON_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
 [ -z "$PID60" ] && { echo "[FATAL] 60k 启动失败，看 long60k_launch.log"; exit 1; }
 echo "PID=$PID60  run_dir=$RUN60  started=$(date -Is)" | tee "$OUT/long60k_RUNNING.txt"
-# 监控循环：每 30 分钟记录健康快照（rolling reward / P1 P2 P3 / fusion / 进度）
+# 监控循环：每 30 分钟记录健康快照（rolling reward / P1 P2 P3 / fusion + per-type b2/b4/b5 / 进度）
+# 兼 ADR-013 崩溃 watchdog：barrier 本应根除热崩溃，但作为安全网——若连续 ≥COLLAPSE_PATIENCE
+# 个滚动窗口 P3 占比 < COLLAPSE_P3_FLOOR（=持续无 P3 的死亡签名，3rd-60k 后 30k 回合就是如此），
+# 则 KILL 训练进程（sequential 路径不检查 STOP_RL，故用 SIGTERM→SIGKILL；best/diagnostics 已周期性
+# 原子写盘，杀掉只丢最近 <200 回合的可恢复状态，对已坍缩的跑毫无损失）。判据基于 P3 占比而非 P1
+# 率，规避 ADR-012 "near-miss P1 不计" 放走真崩溃的漏洞。健康曲线正常（有 P3）时永不触发。
 DIAG60=""; for _i in 1 2 3 4 5; do DIAG60=$(find "$RUN60" -type f -name episodes.jsonl 2>/dev/null | head -1); [ -n "$DIAG60" ] && break; sleep 60; done
+COLLAPSE_P3_FLOOR=0.02      # 窗口 P3 占比低于此即记一次"坍缩窗口"
+COLLAPSE_PATIENCE=12        # 连续 12 个 30min 窗口（~6h、>3000 anchor 后回合）全坍缩 → 停止
+COLLAPSE_STREAK_FILE="$OUT/collapse_streak.txt"; echo 0 > "$COLLAPSE_STREAK_FILE"
 while kill -0 "$PID60" 2>/dev/null; do
   sleep 1800
-  python3 - <<PY >> "$OUT/long60k_health.log" 2>&1 || true
-import json, datetime, collections
+  WD_VERDICT=$(COLLAPSE_P3_FLOOR="$COLLAPSE_P3_FLOOR" COLLAPSE_PATIENCE="$COLLAPSE_PATIENCE" \
+  STREAK_FILE="$COLLAPSE_STREAK_FILE" \
+  python3 - <<PY 2>>"$OUT/long60k_health.log"
+import json, datetime, collections, os
 try:
     eps=[json.loads(l) for l in open("$DIAG60")][-600:]
     pr=collections.Counter(int(e.get("terminal_priority",0) or 0) for e in eps)
-    rw=sum(float(e.get("total_reward",0) or 0) for e in eps)/max(1,len(eps))
-    fu=sum(float(e.get("fusion_count",0) or 0) for e in eps)/max(1,len(eps))
+    n=max(1,len(eps))
+    rw=sum(float(e.get("total_reward",0) or 0) for e in eps)/n
+    fu=sum(float(e.get("fusion_count",0) or 0) for e in eps)/n
+    b2=sum(float(e.get("fusion_count_b2",0) or 0) for e in eps)/n
+    b4=sum(float(e.get("fusion_count_b4",0) or 0) for e in eps)/n
+    b5=sum(float(e.get("fusion_count_b5",0) or 0) for e in eps)/n
     last=eps[-1].get("episode") if eps else -1
-    print(f"{datetime.datetime.now().isoformat()} ep={last} rolling600: reward={rw:.3f} P1={pr.get(1,0)} P2={pr.get(2,0)} P3={pr.get(3,0)} fusion={fu:.2f}")
+    p3_frac=pr.get(3,0)/n
+    import sys
+    sys.stderr.write(f"{datetime.datetime.now().isoformat()} ep={last} rolling600: reward={rw:.3f} "
+          f"P1={pr.get(1,0)} P2={pr.get(2,0)} P3={pr.get(3,0)} fusion={fu:.2f} (b2={b2:.1f} b4={b4:.1f} b5={b5:.1f})\n")
+    floor=float(os.environ["COLLAPSE_P3_FLOOR"]); patience=int(os.environ["COLLAPSE_PATIENCE"])
+    sf=os.environ["STREAK_FILE"]
+    streak=int(open(sf).read().strip() or 0) if os.path.exists(sf) else 0
+    streak = streak + 1 if (last >= 600 and p3_frac < floor) else 0
+    open(sf,"w").write(str(streak))
+    print("COLLAPSE" if streak >= patience else "OK")
 except Exception as e:
-    print(datetime.datetime.now().isoformat(), "health probe error:", e)
+    import sys; sys.stderr.write(f"{datetime.datetime.now().isoformat()} health probe error: {e}\n"); print("OK")
 PY
+)
+  if [ "$WD_VERDICT" = "COLLAPSE" ]; then
+    echo "[watchdog][COLLAPSE] P3<${COLLAPSE_P3_FLOOR} 连续 ${COLLAPSE_PATIENCE} 窗口 → 终止 PID=$PID60（best 已 checkpoint）" | tee -a "$OUT/long60k_health.log" | tee -a "$OUT/long60k_RUNNING.txt"
+    kill -TERM "$PID60" 2>/dev/null || true; sleep 60; kill -KILL "$PID60" 2>/dev/null || true
+    break
+  fi
 done
 echo "[60k] training process exited at $(date -Is)" | tee -a "$OUT/long60k_RUNNING.txt"
 # 回收产物（不含 .pt 大件）
@@ -367,27 +435,27 @@ ls -la "$OUT"
 
 ## metadata
 
-### 本次目标（2026-06-12，ADR-012 边界与探索修复重跑）
+### 本次目标（2026-06-13，ADR-013 Stage-1 式 log-barrier 精度边界）
 
-1. **背景**：第 2 次 60k（artifacts `stage2_grid_gate_60k_20260612_004130`）门禁 PASS、跑满 60000，但仍收敛到 fusion=0。取证改写结论：ADR-011 的预算拆分**有效**（on-policy fusion 优势全程为正 +0.05~+0.19），真凶是 **P1 悬崖税**——1327 个 P1 中 1226 个是 fusion episode 的边缘型（m1∈[0.833,0.858]，0 个灾难型；无融合 episode 仅 1 个 P1），fusion+深K 把真实 m1 推到容忍度边界，256 样本探针噪声(σ≈0.0018)概率性把它砸进 −46 悬崖，期望优势 −3.8。叠加：b2 探针被强制基线 K 抵消（净 +0.07）、b5 探针净 −0.86（负面教材）、b4 探针 100/100 P1（反 fusion 泛化）、upd≈700 起 entropy=0.000/clip=0.000（策略冻结 18k episode）。
-2. **本提交四项修复**（ADR-012；详见 `docs/adr/ADR-012-*.md`）：①近界渐变档（near_miss tier 35→15，典型上轮 P1 −7→约 26.6；priority 仍 1，P3 下限 40 永远压住）；②边缘复测（盐化确定性种子 2×trials 全新复测替代首测，误杀率平方级下降，1==N 保持）；③探针 v2（只强制目标块 option=1，K+其余块跟随当前策略+课程；轮换 b2→b5，b4 剔除）；④ε 探索下限（option 槽 0.05 / K 槽 0.02 混合分布，采样与 PPO 回放同分布，根治 entropy=0 冻结）。
-3. **流程**：REBUILD_MAPS=0 → 自检（ADR-012 断言+3 件单测，torch 在位）→ 图门禁 → 1卡vsN卡确定性门禁（探针出现性判读改为动态检测：前两个探针 = b2、b5，fc≥12，间隔=interval）→ PASS 自动接 60k（容忍度沿用 5.0/0.005）。
-4. **60k 观察重点**：①探针 episode 的 reward 应明显高于邻近 episode（b2 探针 ≈ +1.4，不再被基线 K 抵消）；②on-policy fusion 尝试不应再在中途归零（ε 下限 + 渐变档保证）；③entropy 永不为 0、clip_fraction 不长期为 0；④P3 episode 的 fusion_count 应随训练增长（理论最优 ≈ b2+b5 全开 24 个 fusion + 适度 K，reward ≈ 41+）；⑤`borderline_retest` 字段出现率与翻转率（复测改判比例）；⑥near_miss(P1) 占比可接受（渐变档下它是探索成本，不是事故）。
+1. **背景**：第 3 次 60k（artifacts `stage2_grid_gate_60k_20260612_191530`，ADR-012 全开）门禁 PASS、跑满 60000，但**翻转成「热崩溃」**（与前两次冷崩溃相反）：fusion 单调 1.4→35、metric1 0.866→0.690、后 30k 回合冻结平在 reward -6.95（全 P1、零梯度）。但 hard-priority 选择仍救回 ep20880 = fusion 22 / P3 / reward 40.8 > 无融合上限 39.5（余量 0.0003=刀刃/亚 σ）。根因：ADR-012 近界渐变档把越界变近免费(-7→15-35)，叠加单调 fusion 成本(block4 @130 最毁精度却付第二高) + ~1.3% 精度预算被 fusion+深K 共同吃掉 → 无回正力一路上滑、掉进平坦无梯度盆地。
+2. **本提交修复**（ADR-013；详见 `docs/adr/ADR-013-*.md`；用户选 log-barrier + 保持成本权重）：① Stage-1 式两段 log-barrier `reward.accuracy_margin_barrier` 取代近界档(P1)+线性 P3 margin(P3)——满足侧近界陡降 ⇒ cost+barrier 在正余量出现内点峰值(不冲过)；违反侧线性单调 ⇒ 恢复梯度(根治冻结)；② MARGIN_REF=0.25(≈1.8σ headroom)=激进度旋钮；③ priority/rank/选择逐位不变 + item7 + 1==N 保持；④ 保留 ADR-012 复测/ε/policy-K 探针；⑤ per-block-type fusion 诊断 + 崩溃 watchdog。
+3. **流程**：REBUILD_MAPS=0 → 自检（ADR-013 barrier 端到端断言 + ADR-012 legacy 断言 + 4 件单测含 `test_blb_log_barrier_reward`，torch 在位）→ 图门禁 → 1卡vsN卡确定性门禁（探针出现性动态检测）→ PASS 自动接 60k（容忍度沿用 5.0/0.005，wpd 2，带崩溃 watchdog）。
+4. **60k 判读重点**（reward 跨 ADR-013 不可比；判形状不判绝对值）：①曲线是**正常 RL 曲线、不再 ep30000 后冻结**；②fusion 稳定在某个**正余量**水平（不是 0 也不是 35），健康日志的 `fusion=` 不再单调冲顶；③P3 占比保持 >0（watchdog 不触发）；④`fusion_count_b2/b4/b5` 看是否某块类型(尤其 b4)异常爬升；⑤best ≥ 无融合上限 39.5；⑥entropy/clip 不长期为 0。**若稳定最优只采纳少量 fusion（barrier 留了 ~1.8σ 余量、合理），可把 MARGIN_REF 调小（0.15）再跑——这是预期内的激进度权衡，不是失败。**
 
 ### 关键事实（给人看的）
 
-- **新期望优势算术**（修复后）：从收敛态翻转 1 个 b2 fusion = +0.117，其 P1 误杀税 ≈ 0.2%×6 ≈ 0.01（复测+渐变档双保险）→ 净 +0.1 量级，PPO 可学。b2+b5 全融合 +1.78 ≫ P3 margin 上限 0.5；K 单独 ≤1.5，fusion 是登顶 P3 的必经之路。
-- **ε 混合是真策略分布**：sample 与 evaluate（含 PPO 回放）用同一混合，log-prob 比率良定；eps=0 时逐位还原旧分布（单测锁定）。
-- **探针正常计分**：probe-v2 走采样分支 + 目标槽覆写 + evaluate_action 重算 log_prob/value；动作来自全有效图必 valid。
-- **近界渐变不破硬优先级**：priority 仍为 1，best 选择/候选排序的 tuple rank 不变；渐变只作用于 PPO 标量，且上限 35 < P3 下限 40（cost 永远不能补偿精度违规——mental-model item 7 保持）。
+- **log-barrier 为何根治两种崩溃**：satisfied 侧斜率 SAT/mu→∞ 当 mu→0 ⇒ cost(随 fusion 升)+barrier 必在正余量内点出现峰值 → 不会冲过(治热崩溃)；violated 侧线性不平台 ⇒ 任何深度都有指回可行域的梯度 → 能爬回(治"无恢复")。冷崩溃(不 fuse)也被同一峰值机制解决：峰值 > 零融合基线。
+- **成本权重未动**（用户决定 80:150:130:40）：barrier 是唯一回正力，足以压住 block4 的 130（峰值在正余量处 ⇒ 不会一路 fuse 到 block4 毁精度区）。
+- **barrier 不破硬优先级**：priority/rank-key/选择逐位不变；barrier 只改 PPO 标量；violated 段恒 < P3 下限 40 且 P1 不吃 cost ⇒ item7 保持。纯 metrics 函数 ⇒ 1==N 不受影响。`acc_barrier_enabled=False` 回退 ADR-012。
+- **崩溃 watchdog**：sequential 路径不检查 STOP_RL，故 watchdog 用 SIGTERM→SIGKILL（best/diagnostics 已周期原子写盘，杀掉只丢最近 <200 回合可恢复态）。判据 = 连续 12 个 30min 窗口 P3 占比 <2%（持续无 P3 的死亡签名）；健康曲线有 P3 时永不触发。
 - `--blb-v3-reward-devices`（K-split）不再使用；`--stage2-rl-devices`（互斥）；`KTRIALS` 固定 5；噪声/策略/更新/复测按 (seed, 全局episode, …) 键控。
-- **workers-per-device（提速，画像驱动）**：上轮实测探针占 78%（GPU-bound）、rollout 21%（CPU 重）→ `--stage2-workers-per-device 2` 让同卡两 worker 互相掩盖空隙；RNG 原子单元（seed→sample、reseed→trial forward）持同卡锁，trial 级交错不改变各自噪声流 → 任意 worker 数结果逐字节一致（gN 用 2 vs g1 用 1 的 byte-diff 直接验证）。显存 ≈2×4GB/卡 ≪ 32GB。预期 60k 13.5h→~10h。straggler 实测仅 2.8%（不做动态分配）；PPO 更新 1.4h 维持现状（改数值精度有训练语义风险，不动）。
+- **workers-per-device（提速，画像驱动）**：探针占 78%（GPU-bound）、rollout 21%（CPU 重）→ `--stage2-workers-per-device 2` 让同卡两 worker 互相掩盖空隙；RNG 原子单元持同卡锁，trial 级交错不改变各自噪声流 → 任意 worker 数结果逐字节一致（gN 用 2 vs g1 用 1 的 byte-diff 直接验证）。预期 60k 13.5h→~10h。
 
 ### 预期产物
 
-- `$OUT/selfcheck.txt`（ADR-012 断言）+ `unittest_*.log` ×3
+- `$OUT/selfcheck.txt`（ADR-013 barrier + ADR-012 legacy 断言）+ `unittest_*.log` ×4（含 log_barrier）
 - `$OUT/map_gate.txt`、`$OUT/stage2_ngpu_gate/`（g1/gN sigs、sig_diff、episodes.jsonl ×2、verdict.txt 含动态探针判读）
-- `$OUT/long60k/run/`（diagnostics 全套，无 .pt）+ `long60k_health.log`
+- `$OUT/long60k/run/`（diagnostics 全套，无 .pt）+ `long60k_health.log`（含 per-type fusion + watchdog 状态）+ `collapse_streak.txt`
 
 ### 幂等 / 安全
 
@@ -397,7 +465,8 @@ ls -la "$OUT"
 
 ### 历史（已完成，供参考）
 
-- 2026-06-12：ADR-011 修复后第 2 次 60k 跑满（artifacts `stage2_grid_gate_60k_20260612_004130`，1==5 PASS、3.62×、4333 ep/h）仍 fusion=0 → 取证定位 P1 悬崖税/探针 K 抵消/entropy 冻结 → 本轮 ADR-012。
+- 2026-06-13：ADR-012 修复后第 3 次 60k 跑满（artifacts `stage2_grid_gate_60k_20260612_191530`，1==5 PASS、3.5×）翻转成**热崩溃**（fusion 1.4→35、后 30k 冻结 -6.95）→ 诊断 = 近界档拆刹车 + 单调 fusion 激励无回正力 + 平崖无恢复梯度 → 本轮 ADR-013 log-barrier。
+- 2026-06-12：ADR-011 修复后第 2 次 60k 跑满（artifacts `stage2_grid_gate_60k_20260612_004130`，1==5 PASS、3.62×、4333 ep/h）仍 fusion=0 → 取证定位 P1 悬崖税/探针 K 抵消/entropy 冻结 → ADR-012（near-miss tier 被 013 取代）。
 - 2026-06-11：step-1×15 全量重建 6 图 + 确定性门禁 PASS（1==5 逐字、3.62×）+ 第 1 次 60k fusion=0 坍缩（artifacts `stage2_grid_gate_60k_20260611_031751`，诊断→ADR-011）。
 - 2026-06-10：5 卡 A/B 完成（artifacts `stage2_rebuild_ab_20260610_013046`，提交 0457fc0）；stageA Stage-1 1vs5 确定性 PASS、3.75×。
 - 2026-06-07~09：fusion 图按新 replan 策略重建（1ad078c）；A/B 启动崩溃修复（c16d0f7：合成 MRPC Stage-1 record）；Stage-1 多卡确定性+提速（a1cf152/15c16ad）。

@@ -129,6 +129,48 @@ K_MIN_BITS = 8
 # slice because harvesting fusion IS the point of the fusion-count action.
 FUSION_COST_BUDGET_FRACTION = 2.0 / 3.0
 
+# ---------------------------------------------------------------------------
+# ADR-013 (2026-06-13): Stage-1-style two-piece log-barrier on the accuracy
+# margin. REPLACES the ADR-012 graded near-miss tier (P1 shaping) AND the
+# linear ``_p3_metric_margin_reward`` (P3 shaping). The 3rd 60k run
+# (stage2_grid_gate_60k_20260612_191530) collapsed HOT: fusion marched
+# monotonically 1.4 -> 35, metric1 0.866 -> 0.690, and the back half of the
+# run froze flat at -6.95 (every episode catastrophic P1) because nothing
+# created a restoring force at the feasible frontier and the cliff floor had
+# no gradient to climb back from. Stage-1's log-barrier
+# (layer_importance_evaluator.py:log_barrier_reward) is the proven shape:
+#
+#   satisfied (mu >= 0): SAT * (log(mu+eps) - log(MARGIN_REF+eps)), penalty
+#       ONLY below the headroom MARGIN_REF, 0 beyond. Its slope SAT/mu -> inf
+#       as mu -> 0, so cost(fusion) + barrier(margin) has an interior peak at
+#       a POSITIVE margin -> the policy is pushed back instead of overshooting.
+#   violated  (mu <  0): a smooth monotone descent (continuous at mu=0, no
+#       flat plateau over the realistic collapse depth) so a collapsed policy
+#       always sees a gradient toward feasibility -> recovery.
+#
+# ``mu`` is the worst per-channel SIGNED margin in |baseline - threshold|
+# units (same coordinate as the old near_miss_band). MARGIN_REF ~= 2-3x the
+# probe-noise sigma so the stable optimum lands where the 256-sample probe can
+# actually resolve it (the 3rd-60k optimum sat at margin 0.0003 << sigma 0.0018
+# -> a coin flip). Selection / priority / rank-key are UNCHANGED (barrier only
+# rewrites the PPO scalar); violated barrier stays < the P3 tier floor so cost
+# can never offset an accuracy violation (mental-model item 7).
+# MARGIN_REF is THE aggressiveness knob: a probe-noise safety buffer ABOVE the
+# (already 0.5%-tolerance-adjusted) accuracy threshold, in |baseline-threshold|
+# units where one probe sigma ~= 0.14 of that unit (sigma 0.0018 / denom 0.013
+# for mrpc). The stable optimum sits ~at MARGIN_REF, so 0.25 ~= 1.8 sigma. Lower
+# it for more aggressive fusion (closer to the boundary, more borderline-P1
+# noise — the 3rd-60k optimum at margin ~0.02 was sub-sigma, a coin flip); raise
+# it for a safer lower-fusion point. Server sweep range: {0.15, 0.25, 0.35}.
+# Stably reaching the knife-edge 22-fusion regime is a probe-resolution problem
+# (bigger probe), not a barrier-tuning one.
+DEFAULT_ACC_BARRIER_ENABLED = True
+DEFAULT_ACC_BARRIER_SAT_SCALE = 0.5      # satisfied-side restoring-force strength
+DEFAULT_ACC_BARRIER_MARGIN_REF = 0.25    # headroom target (|baseline-thr| units, ~1.8 sigma)
+DEFAULT_ACC_BARRIER_VIO_SCALE = 0.30     # violated-side slope (recovery gradient)
+DEFAULT_ACC_BARRIER_FLOOR = -10.0        # lower bound (below realistic collapse depth)
+DEFAULT_ACC_BARRIER_EPS = 1.0e-3
+
 # Tolerances driving the per-metric thresholds. ``acc_tolerance`` is the
 # relative drop you allow from baseline.metric{i}_mean (0.5% by default —
 # matches the 2026-05-18 noisy-baseline preflight constant in sequential_runner).
@@ -255,6 +297,16 @@ class RewardWeights:
     near_miss_tier_cap: float = 35.0
     near_miss_tier_floor: float = 15.0
     near_miss_band: float = 1.0
+    # ADR-013 (2026-06-13): Stage-1-style log-barrier accuracy margin. When
+    # ``acc_barrier_enabled`` (default), this REPLACES the near_miss_* tier
+    # (P1) and the linear p3_metric_margin (P3). Set False to fall back to the
+    # ADR-012 near-miss path (kept for the NearMissGradedTierTest A/B).
+    acc_barrier_enabled: bool = DEFAULT_ACC_BARRIER_ENABLED
+    acc_barrier_sat_scale: float = DEFAULT_ACC_BARRIER_SAT_SCALE
+    acc_barrier_margin_ref: float = DEFAULT_ACC_BARRIER_MARGIN_REF
+    acc_barrier_vio_scale: float = DEFAULT_ACC_BARRIER_VIO_SCALE
+    acc_barrier_floor: float = DEFAULT_ACC_BARRIER_FLOOR
+    acc_barrier_eps: float = DEFAULT_ACC_BARRIER_EPS
     cost_w_fusion: float = DEFAULT_COST_W_FUSION
     cost_w_k: float = DEFAULT_COST_W_K
     cost_w_bits: float = DEFAULT_COST_W_BITS
@@ -336,6 +388,13 @@ class RewardBreakdown:
     # threshold, not invalid) — priority stays 1, tier is graded not cliff.
     near_miss: bool = False
     acc_worst_deficit_norm: float = 0.0
+    # ADR-013: Stage-1-style log-barrier accuracy term (diagnostics). Exactly
+    # one is non-zero per episode: sat (mu>=0, the P2/P3 restoring penalty) or
+    # vio (mu<0, the P1 recovery-gradient penalty). worst_signed_margin is the
+    # barrier coordinate (>=0 feasible w/ headroom, <0 violated).
+    acc_barrier_sat: float = 0.0
+    acc_barrier_vio: float = 0.0
+    worst_signed_margin: float = 0.0
     # v3 per-axis breakdown (helpful for diagnostics / artifacts)
     acc_violation_m1: float = 0.0
     acc_violation_m2: float = 0.0
@@ -600,6 +659,49 @@ def _p3_metric_margin_reward(margin_acc: float, weights: RewardWeights) -> float
     )
 
 
+def accuracy_margin_barrier(worst_signed_margin: float, weights: RewardWeights) -> float:
+    """ADR-013 Stage-1-style two-piece log-barrier on the accuracy margin.
+
+    ``worst_signed_margin`` (``mu``) is the worst per-channel signed margin in
+    ``|baseline - threshold|`` units: ``mu >= 0`` means feasible (with that
+    much headroom), ``mu < 0`` means the accuracy constraint is violated by
+    that much.
+
+    Returns a value in ``[acc_barrier_floor, 0]``:
+
+    * **mu >= MARGIN_REF** (comfortable headroom) -> ``0`` (no penalty; cost
+      reward alone decides among comfortable P3 configs).
+    * **0 <= mu < MARGIN_REF** -> ``SAT*(log(mu+eps) - log(MARGIN_REF+eps))``,
+      a NEGATIVE restoring penalty that steepens (slope ``SAT/mu`` -> inf) as
+      the margin thins. Combined with the rising cost reward this puts the
+      reward peak at a positive interior margin -> the policy is pushed back
+      from the boundary instead of overshooting it.
+    * **mu < 0** -> a continuous monotone descent ``b0 - VIO*(-mu)`` where
+      ``b0`` is the satisfied-side value at ``mu=0`` (continuity). Linear (not
+      exp) so it never flattens over the realistic collapse depth: a collapsed
+      policy always sees a gradient toward feasibility -> recovery, which the
+      flat ``-6.95`` cliff of the 3rd-60k run did not provide.
+
+    The output stays <= 0 (and is clamped >= ``acc_barrier_floor``), so when it
+    feeds the P1 shaping it is always far below the P3 tier floor (item 7), and
+    when it feeds the P3 shaping it only ever reduces (never inflates) the
+    cost-led ranking.
+    """
+    mu = float(worst_signed_margin)
+    eps = float(weights.acc_barrier_eps)
+    ref = float(weights.acc_barrier_margin_ref)
+    sat = float(weights.acc_barrier_sat_scale)
+    floor = float(weights.acc_barrier_floor)
+    log_ref = math.log(ref + eps)
+    if mu >= 0.0:
+        raw = sat * (math.log(mu + eps) - log_ref)
+        val = min(0.0, raw)          # penalty only below headroom; 0 beyond
+    else:
+        b0 = sat * (math.log(eps) - log_ref)            # satisfied-side value at mu=0
+        val = b0 - float(weights.acc_barrier_vio_scale) * (-mu)
+    return max(floor, val)
+
+
 def _resolve_metric_for_threshold(
         metrics: EpisodeMetrics,
         prefer_metric: str = "accuracy",
@@ -739,6 +841,16 @@ def compute_reward(
     if m2_active:
         _deficits.append(acc_violation_m2 / denom_m2)
     acc_worst_deficit_norm = max(_deficits) if _deficits else 0.0
+
+    # ADR-013: worst per-channel SIGNED normalized margin (>=0 feasible w/
+    # headroom, <0 violated) — the log-barrier coordinate. Uses the same
+    # |baseline - threshold| normalization as the deficit/near_miss_band.
+    _signed_margins = []
+    if m1_active:
+        _signed_margins.append(margin_m1)
+    if m2_active:
+        _signed_margins.append(margin_m2)
+    worst_signed_margin = min(_signed_margins) if _signed_margins else 0.0
 
     # === 2. Raw cost gains; scalar cost_score is legacy-only unless a Pareto archive is absent. ===
     opt_total_bits = _safe_float(getattr(opt_signals, "total_bits_sum", 0), 0.0)
@@ -917,35 +1029,64 @@ def compute_reward(
     effective_stab_penalty = stability_penalty if (metric_ok and not stab_ok) else 0.0
     invalid_term = -float(weights.invalid_penalty) if invalid else 0.0
 
-    # === 5. shaping (clipped to [-5, +5]) ===
-    if metric_ok and stab_ok:
-        # P3 ranking is intentionally cost-led. Accuracy/stability have already
-        # passed their hard gates, so metric margin gets only a small bounded
-        # budget and cannot consume the cost budget through the outer clip.
-        shaping_raw = float(effective_p3_margin) + float(effective_cost_score)
+    # === 5. shaping ===
+    _clip_min = float(weights.reward_clip_min)
+    _clip_max = float(weights.reward_clip_max)
+    acc_barrier_sat = 0.0
+    acc_barrier_vio = 0.0
+    near_miss = False
+    # Barrier handles the non-invalid accuracy dimension; invalid episodes keep
+    # the legacy invalid_term shaping (their metrics are unreliable — the model
+    # forward is skipped on an invalid chain).
+    barrier_on = bool(getattr(weights, "acc_barrier_enabled", False)) and not invalid
+    if barrier_on:
+        # ADR-013: Stage-1-style log-barrier replaces both the linear P3 margin
+        # and the ADR-012 near-miss/cliff. Satisfied side (P2/P3) is a <=0
+        # restoring penalty below MARGIN_REF; violated side (P1) is a smooth
+        # monotone descent with a recovery gradient.
+        _barrier = accuracy_margin_barrier(worst_signed_margin, weights)
+        if worst_signed_margin >= 0.0:
+            acc_barrier_sat = _barrier
+        else:
+            acc_barrier_vio = _barrier
+        if metric_ok and stab_ok:            # P3: barrier (<=0) + cost-led ranking
+            shaping_raw = float(acc_barrier_sat) + float(effective_cost_score)
+            shaping_clipped = float(np.clip(shaping_raw, _clip_min, _clip_max))
+        elif metric_ok and not stab_ok:      # P2: barrier (<=0) + stability penalty
+            shaping_raw = float(acc_barrier_sat) + float(effective_stab_penalty)
+            shaping_clipped = float(np.clip(shaping_raw, _clip_min, _clip_max))
+        else:                                # P1 (accuracy violated, not invalid)
+            # Clamp to the barrier floor (NOT -5) so the violated region keeps
+            # its monotone gradient — the missing recovery path of the 3rd 60k.
+            shaping_raw = float(acc_barrier_vio)
+            shaping_clipped = float(
+                np.clip(shaping_raw, float(weights.acc_barrier_floor), 0.0)
+            )
     else:
-        shaping_raw = float(margin_acc) + invalid_term + effective_stab_penalty
-    shaping_clipped = float(
-        np.clip(shaping_raw, float(weights.reward_clip_min), float(weights.reward_clip_max))
-    )
+        # Legacy ADR-012 path (near-miss tier + linear P3 margin) — also the
+        # invalid-episode path.
+        if metric_ok and stab_ok:
+            shaping_raw = float(effective_p3_margin) + float(effective_cost_score)
+        else:
+            shaping_raw = float(margin_acc) + invalid_term + effective_stab_penalty
+        shaping_clipped = float(np.clip(shaping_raw, _clip_min, _clip_max))
 
     # === 6. tier_bonus (hard-priority via large jumps; +20/+40 dominates cost) ===
     tier_bonus = 0.0
-    near_miss = False
     if metric_ok:
         tier_bonus += float(weights.tier_metric_bonus)
         if stab_ok:
             tier_bonus += float(weights.tier_stability_bonus)
     elif (
-            not invalid
+            not barrier_on
+            and not invalid
             and combined_acc_violation > 0.0
             and float(weights.near_miss_band) > 0.0
             and acc_worst_deficit_norm <= float(weights.near_miss_band)
     ):
-        # ADR-012 graded near-miss: smooth the accuracy boundary so PPO can
-        # navigate it ("back off a notch") instead of fleeing the whole
-        # region. Stays strictly below the P3 floor (tier 40 + shaping >= 0);
-        # priority stays 1 so selection / candidate ranking are unchanged.
+        # ADR-012 graded near-miss (only when the barrier is disabled — the
+        # barrier provides its own smooth P1 shaping, no tier on top). Stays
+        # strictly below the P3 floor; priority stays 1 so selection is unchanged.
         near_miss = True
         cap = float(weights.near_miss_tier_cap)
         floor = float(weights.near_miss_tier_floor)
@@ -968,13 +1109,18 @@ def compute_reward(
         tier_bonus=float(tier_bonus),
         margin_acc=float(margin_acc),
         cost_score=float(effective_cost_score),
-        p3_metric_margin_reward=float(effective_p3_margin),
+        # When the barrier is on it replaces the linear P3 margin; report 0 so
+        # the field never double-counts what is actually in ``total``.
+        p3_metric_margin_reward=(0.0 if barrier_on else float(effective_p3_margin)),
         stability_penalty=float(effective_stab_penalty),
         invalid_term=float(invalid_term),
         metric_ok=bool(metric_ok),
         stab_ok=bool(stab_ok),
         near_miss=bool(near_miss),
         acc_worst_deficit_norm=float(acc_worst_deficit_norm),
+        acc_barrier_sat=float(acc_barrier_sat),
+        acc_barrier_vio=float(acc_barrier_vio),
+        worst_signed_margin=float(worst_signed_margin),
         # v3 per-axis breakdown
         acc_violation_m1=float(acc_violation_m1),
         acc_violation_m2=float(acc_violation_m2),

@@ -115,6 +115,12 @@ class EpisodeStats:
     first_invalid_block: Optional[int]
     first_invalid_layer: Optional[int]
     early_terminated: bool
+    # 2026-06-13: per-block-TYPE fusion split (b2/b4/b5) so a runaway block
+    # type (e.g. the accuracy-toxic block4 in the 3rd-60k hot collapse) is a
+    # one-glance read instead of a re-derivation from the slot vector.
+    fusion_count_b2: int = 0
+    fusion_count_b4: int = 0
+    fusion_count_b5: int = 0
     terminal_priority: int = 0
     terminal_loss_mean: float = 0.0
     terminal_loss_std: float = 0.0
