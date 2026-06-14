@@ -116,6 +116,13 @@ _BREAKDOWN_FIELDS = (
     ("terminal_fusion_gain", "fusion_gain", float, 0.0),
     ("terminal_cost_score", "cost_score", float, 0.0),
     ("terminal_p3_metric_margin_reward", "p3_metric_margin_reward", float, 0.0),
+    # ADR-014 DEBUG: barrier/margin (mirror serial _apply_terminal_info_to_record).
+    ("terminal_worst_signed_margin", "worst_signed_margin", float, 0.0),
+    ("terminal_acc_barrier_sat", "acc_barrier_sat", float, 0.0),
+    ("terminal_acc_barrier_vio", "acc_barrier_vio", float, 0.0),
+    ("terminal_near_miss", "near_miss", bool, False),
+    ("terminal_margin_m1", "margin_m1", float, 0.0),
+    ("terminal_margin_m2", "margin_m2", float, 0.0),
     ("terminal_cost_fusion_bonus", "cost_fusion_bonus", float, 0.0),
     ("terminal_cost_truncation_bonus", "cost_truncation_bonus", float, 0.0),
     ("terminal_cost_bits_tiebreaker", "cost_bits_tiebreaker", float, 0.0),
@@ -153,6 +160,14 @@ def _update_terminal_snapshot(snapshot: Dict[str, Any], info: Dict[str, Any]) ->
         snapshot["fusion_count_b2"] = int(term_info_dict.get("fusion_count_b2", 0) or 0)
         snapshot["fusion_count_b4"] = int(term_info_dict.get("fusion_count_b4", 0) or 0)
         snapshot["fusion_count_b5"] = int(term_info_dict.get("fusion_count_b5", 0) or 0)
+    # ADR-014 DEBUG: fusion cost shape (raw vs saturated), mirror of serial path.
+    if "fusion_cost_fusion_norm" in term_info_dict:
+        snapshot["terminal_fusion_norm_raw"] = float(
+            term_info_dict.get("fusion_cost_fusion_norm", 0.0) or 0.0
+        )
+        snapshot["terminal_fusion_norm_saturated"] = float(
+            term_info_dict.get("fusion_cost_fusion_norm_saturated", 0.0) or 0.0
+        )
     term_breakdown = term_info_dict.get("reward_breakdown")
     term_metrics = term_info_dict.get("metrics")
     term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
@@ -216,6 +231,8 @@ def _default_terminal_snapshot() -> Dict[str, Any]:
         fusion_count_b2=0,
         fusion_count_b4=0,
         fusion_count_b5=0,
+        terminal_fusion_norm_raw=0.0,
+        terminal_fusion_norm_saturated=0.0,
     )
     return snap
 
@@ -596,6 +613,14 @@ def collect_fusion_episode(
         terminal_fusion_gain=float(snapshot["terminal_fusion_gain"]),
         terminal_cost_score=float(snapshot["terminal_cost_score"]),
         terminal_p3_metric_margin_reward=float(snapshot["terminal_p3_metric_margin_reward"]),
+        terminal_worst_signed_margin=float(snapshot["terminal_worst_signed_margin"]),
+        terminal_acc_barrier_sat=float(snapshot["terminal_acc_barrier_sat"]),
+        terminal_acc_barrier_vio=float(snapshot["terminal_acc_barrier_vio"]),
+        terminal_near_miss=bool(snapshot["terminal_near_miss"]),
+        terminal_margin_m1=float(snapshot["terminal_margin_m1"]),
+        terminal_margin_m2=float(snapshot["terminal_margin_m2"]),
+        terminal_fusion_norm_raw=float(snapshot["terminal_fusion_norm_raw"]),
+        terminal_fusion_norm_saturated=float(snapshot["terminal_fusion_norm_saturated"]),
         terminal_cost_fusion_bonus=float(snapshot["terminal_cost_fusion_bonus"]),
         terminal_cost_truncation_bonus=float(snapshot["terminal_cost_truncation_bonus"]),
         terminal_cost_bits_tiebreaker=float(snapshot["terminal_cost_bits_tiebreaker"]),

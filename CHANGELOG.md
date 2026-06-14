@@ -21,6 +21,36 @@ When in doubt, check the linked commit's full message for surgical details.
 
 ---
 
+## [Unreleased] — 2026-06-14
+
+### Changed
+- **Stage-2 fusion reward: structural anti-runaway (concave fusion cost)**
+  (ADR-014). The 4th 60k (ADR-013 log-barrier, `4e3aec0`) STILL collapsed HOT —
+  fusion ran away 8→35, watchdog-killed at 40320. Root: the fusion-regime probe
+  std (~0.0155) exceeds the feasibility margin (~0.013), so the barrier headroom
+  (MARGIN_REF 0.25) was noise-drowned while the LINEAR fusion cost was a
+  deterministic monotone incentive that won. Fix (probe size/K kept): make the
+  fusion cost CONCAVE/saturating (`fusion_cost.saturate_fusion`,
+  `FUSION_SATURATION_TAU=0.15`) so its marginal value → ~0 past a healthy knee
+  (~fusion 8); raise `DEFAULT_ACC_BARRIER_MARGIN_REF` 0.25→0.5. Together
+  `cost(fusion)+barrier(margin)` peaks at a moderate POSITIVE margin (max fusion
+  no longer optimal). Item 7 / 1==N / priority / rank-key preserved; reward NOT
+  comparable across this ADR. Locked by `tests/test_blb_fusion_saturation.py`.
+
+### Added
+- **Collapse-debug instrumentation** (ADR-014 part B). The ADR-013 barrier/margin
+  was a black box (computed, never persisted). Now `worst_signed_margin` (mu),
+  `acc_barrier_sat/vio`, `near_miss`, `margin_m1/m2`, `fusion_norm_raw/saturated`,
+  `fusion_count_b2/b4/b5` reach `episodes.jsonl`; a rolling-health log
+  (`blb_stage2_health.log`, P1/P2/P3 + fusion + per-block + margin) is written in
+  the repo (was server-bash only); a `blb_stage2_diagnostics_curve.png`
+  (priority / fusion / margin / reward-components / noise-vs-margin) and a
+  collapse-attribution section (`rl_local_optimum.attribute_collapse` → HOT/COLD +
+  onset) are emitted; the offline regenerator replays all of it from any run's
+  `episodes.jsonl`.
+
+---
+
 ## [Unreleased] — 2026-06-13 (pm2)
 
 ### Added

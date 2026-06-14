@@ -27,6 +27,7 @@ does not dilute the normalization.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Sequence
 
@@ -65,12 +66,40 @@ class FusionCostResult:
     cost_rank: float
     max_actual: float
     fusion_norm: float = 0.0
+    # ADR-014 (2026-06-14): concave/saturating transform of ``fusion_norm`` used
+    # for the PPO cost scalar (anti-runaway). ``fusion_norm`` stays RAW (linear,
+    # for diagnostics); the caller scales ``fusion_norm_saturated`` by the budget
+    # so marginal fusion reward → ~0 past a healthy knee. ``tau<=0`` => identical
+    # to ``fusion_norm`` (back-compat / saturation off).
+    fusion_norm_saturated: float = 0.0
     trunc_norm: float = 0.0
     fusion_actual: float = 0.0
     trunc_actual: float = 0.0
     fusion_max_actual: float = 0.0
     trunc_max_actual: float = 0.0
     per_block: List[Dict[str, Any]] = field(default_factory=list)
+
+
+def saturate_fusion(x: float, tau: float) -> float:
+    """Concave saturating transform on ``x in [0, 1]`` (anti-runaway, ADR-014).
+
+    ``sat(0)=0``, ``sat(1)=1``, with a steep initial slope that flattens past a
+    knee controlled by ``tau`` (smaller ``tau`` saturates earlier). Used to turn
+    the LINEAR weighted fusion saving into one with diminishing returns: each
+    additional fused block adds less reward, so the deterministic monotone fusion
+    incentive no longer pushes the policy past a healthy fusion level into the
+    noisy accuracy boundary (the 4th-60k hot collapse, fusion 8→35).
+
+    ``tau <= 0`` => identity (saturation off; bit-for-bit back-compat).
+    """
+    x = min(1.0, max(0.0, float(x)))
+    t = float(tau)
+    if t <= 0.0:
+        return x
+    denom = 1.0 - math.exp(-1.0 / t)
+    if denom <= 0.0:
+        return x
+    return (1.0 - math.exp(-x / t)) / denom
 
 
 def _fusion_saving(fusion_count: int, max_fusion: int) -> float:
@@ -113,6 +142,7 @@ def compute_fusion_cost_saving(
         k_max: int = K_MAX_BITS,
         k_min: int = K_MIN_BITS,
         max_actual: float | None = None,
+        fusion_saturation_tau: float = 0.0,
         ) -> FusionCostResult:
     """Per-block weighted fusion + truncation saving.
 
@@ -163,11 +193,13 @@ def compute_fusion_cost_saving(
     trunc_norm = (
         min(1.0, max(0.0, trunc_actual / trunc_max)) if trunc_max > 0.0 else 0.0
     )
+    fusion_norm_saturated = saturate_fusion(fusion_norm, fusion_saturation_tau)
     return FusionCostResult(
         cost_norm=float(cost_norm),
         cost_rank=float(actual),
         max_actual=float(denom),
         fusion_norm=float(fusion_norm),
+        fusion_norm_saturated=float(fusion_norm_saturated),
         trunc_norm=float(trunc_norm),
         fusion_actual=float(fusion_actual),
         trunc_actual=float(trunc_actual),

@@ -56,4 +56,5 @@ Proposed → Accepted → (Superseded by ADR-XXX | Deprecated)
 | 010 | step-1×15 SF 档位 + 直连 replan 快枚举（金vs快等价门禁） | Accepted | 2026-06-11 |
 | 011 | Fusion 觅取奖励（P3 预算拆分）+ 周期性强制 fusion 探针 | Accepted（探针设计被 012 取代） | 2026-06-11 |
 | 012 | 可导航精度边界（近界渐变+边缘复测）+ ε 探索下限 + policy-K 探针 | Accepted（near-miss tier 被 013 取代） | 2026-06-12 |
-| 013 | Stage-1 式 log-barrier 精度边界（取代 near-miss tier + 线性 P3 margin） | Accepted | 2026-06-13 |
+| 013 | Stage-1 式 log-barrier 精度边界（取代 near-miss tier + 线性 P3 margin） | Accepted（barrier 仍用，被 014 补强） | 2026-06-13 |
+| 014 | 结构性反失控 fusion 成本（饱和）+ 崩溃调试落盘（被 4th-60k 热崩溃触发） | Accepted | 2026-06-14 |

@@ -187,6 +187,61 @@ def format_local_optimum_report(
     return "\n".join(lines) + "\n"
 
 
+def attribute_collapse(
+    *,
+    priority: Sequence[int],
+    fusion_count: Optional[Sequence[float]] = None,
+    worst_signed_margin: Optional[Sequence[float]] = None,
+    window: int = 600,
+    p3_floor: float = 0.1,
+):
+    """Locate collapse onset and classify HOT (over-fusion) vs COLD (no fusion).
+
+    A Stage-2 hot collapse (the 3rd/4th 60k) shows rolling P3 falling to ~0 while
+    fusion ran AWAY and the accuracy margin went negative; a cold collapse shows
+    P3 fine-ish but fusion stuck at ~0. This pins WHEN it happened and WHY from
+    the per-episode series, so the failure is read, not guessed. Returns a list
+    of human-readable lines (Chinese) appended to the detection report.
+    """
+    lines: List[str] = ["", "--- 崩溃归因（collapse attribution）---"]
+    pri = [int(p) for p in priority]
+    n = len(pri)
+    if n < 80:
+        lines.append(f"  样本不足（n={n}），无法归因。")
+        return lines
+    # Real 60k runs use the full ``window`` (600); short runs scale down so a
+    # mid-run collapse is still detectable (n//4 keeps several windows in view).
+    w = int(min(window, max(20, n // 4)))
+    p3 = np.array([1.0 if p == 3 else 0.0 for p in pri], dtype=float)
+    onset = None
+    for i in range(w, n + 1):
+        if float(p3[i - w:i].mean()) < p3_floor:
+            onset = i
+            break
+    if onset is None:
+        lines.append(f"  未检测到崩溃（rolling{w} P3 始终 ≥ {p3_floor:.0%}）。")
+        return lines
+    fc = np.asarray(list(fusion_count), dtype=float) if (fusion_count is not None and len(list(fusion_count)) == n) else None
+    mu = np.asarray(list(worst_signed_margin), dtype=float) if (worst_signed_margin is not None and len(list(worst_signed_margin)) == n) else None
+    lines.append(f"  崩溃起点（rolling{w} P3 首次 < {p3_floor:.0%}）: episode≈{onset}")
+    verdict = "未知"
+    if fc is not None:
+        early = float(fc[:w].mean())
+        at_onset = float(fc[max(0, onset - w):onset].mean())
+        final = float(fc[-w:].mean())
+        lines.append(f"  fusion 均值: 早期 {early:.2f} → 起点 {at_onset:.2f} → 末段 {final:.2f}")
+        if at_onset > early + 2.0 or final > early + 4.0:
+            verdict = "HOT（过度融合 / over-fusion）"
+        elif final <= early + 1.0 and early < 2.0:
+            verdict = "COLD（几乎不融合 / no fusion）"
+        else:
+            verdict = "MIXED / 其他"
+    if mu is not None:
+        lines.append(f"  margin(mu) 均值: 早期 {float(mu[:w].mean()):.4f} → 起点 {float(mu[max(0, onset - w):onset].mean()):.4f} → 末段 {float(mu[-w:].mean()):.4f}")
+    lines.append(f"  判定: {verdict}")
+    return lines
+
+
 def write_local_optimum_report(
     report_path: str,
     *,
@@ -197,11 +252,15 @@ def write_local_optimum_report(
     window: Optional[int] = None,
     title: str = "RL",
     extra_lines: Optional[Sequence[str]] = None,
+    priority: Optional[Sequence[int]] = None,
+    fusion_count: Optional[Sequence[float]] = None,
+    worst_signed_margin: Optional[Sequence[float]] = None,
     log_fn=None,
 ) -> str:
     """计算检测判据并写出 Stage-1 同款检测报告文件。返回写出的路径（失败返回 ""）。
 
-    best-effort：任何异常只记日志，不抛出（收尾处绝不因写报告而崩训练）。
+    若提供 ``priority`` (+ 可选 ``fusion_count`` / ``worst_signed_margin``)，追加一段
+    崩溃归因（起点 + HOT/COLD 判定）。best-effort：任何异常只记日志，不抛出。
     """
     log = log_fn or (lambda _msg: None)
     try:
@@ -215,11 +274,18 @@ def write_local_optimum_report(
             action_history=None,
             window=window,
         )
+        all_extra = list(extra_lines or [])
+        if priority is not None:
+            all_extra.extend(attribute_collapse(
+                priority=priority,
+                fusion_count=fusion_count,
+                worst_signed_margin=worst_signed_margin,
+            ))
         text = format_local_optimum_report(
             diag,
             title=title,
             completed_episodes=completed_episodes if completed_episodes is not None else n,
-            extra_lines=extra_lines,
+            extra_lines=all_extra,
         )
         os.makedirs(os.path.dirname(os.path.abspath(report_path)) or ".", exist_ok=True)
         with open(report_path, "w", encoding="utf-8") as f:

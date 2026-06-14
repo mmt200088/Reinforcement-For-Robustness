@@ -919,6 +919,20 @@ class EpisodeRecord:
     terminal_fusion_gain: float = 0.0
     terminal_cost_score: float = 0.0
     terminal_p3_metric_margin_reward: float = 0.0
+    # ADR-014 (2026-06-14) DEBUG: the ADR-013 barrier/margin quantities were
+    # computed in RewardBreakdown but never persisted -> the failing mechanism
+    # was a black box (had to infer noise>margin from metric_std). Persist them
+    # per-episode so the next collapse is READ, not guessed. worst_signed_margin
+    # (=mu) is the barrier input; acc_barrier_sat/vio are its outputs;
+    # fusion_norm_raw vs _saturated shows the anti-runaway saturation in action.
+    terminal_worst_signed_margin: float = 0.0
+    terminal_acc_barrier_sat: float = 0.0
+    terminal_acc_barrier_vio: float = 0.0
+    terminal_near_miss: bool = False
+    terminal_margin_m1: float = 0.0
+    terminal_margin_m2: float = 0.0
+    terminal_fusion_norm_raw: float = 0.0
+    terminal_fusion_norm_saturated: float = 0.0
     terminal_cost_fusion_bonus: float = 0.0
     terminal_cost_truncation_bonus: float = 0.0
     terminal_cost_bits_tiebreaker: float = 0.0
@@ -1066,6 +1080,12 @@ def _apply_terminal_info_to_record(
         record.fusion_count_b2 = int(term_info_dict.get("fusion_count_b2", 0) or 0)
         record.fusion_count_b4 = int(term_info_dict.get("fusion_count_b4", 0) or 0)
         record.fusion_count_b5 = int(term_info_dict.get("fusion_count_b5", 0) or 0)
+    # ADR-014 DEBUG: fusion cost shape (raw vs saturated) mirrored from the env.
+    if "fusion_cost_fusion_norm" in term_info_dict:
+        record.terminal_fusion_norm_raw = float(term_info_dict.get("fusion_cost_fusion_norm", 0.0) or 0.0)
+        record.terminal_fusion_norm_saturated = float(
+            term_info_dict.get("fusion_cost_fusion_norm_saturated", 0.0) or 0.0
+        )
     term_breakdown = term_info_dict.get("reward_breakdown")
     term_metrics = term_info_dict.get("metrics")
     term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
@@ -1080,6 +1100,13 @@ def _apply_terminal_info_to_record(
         record.terminal_fusion_gain = float(getattr(term_breakdown, "fusion_gain", 0.0) or 0.0)
         record.terminal_cost_score = float(getattr(term_breakdown, "cost_score", 0.0) or 0.0)
         record.terminal_p3_metric_margin_reward = float(getattr(term_breakdown, "p3_metric_margin_reward", 0.0) or 0.0)
+        # ADR-014 DEBUG: persist the barrier/margin (were a black box).
+        record.terminal_worst_signed_margin = float(getattr(term_breakdown, "worst_signed_margin", 0.0) or 0.0)
+        record.terminal_acc_barrier_sat = float(getattr(term_breakdown, "acc_barrier_sat", 0.0) or 0.0)
+        record.terminal_acc_barrier_vio = float(getattr(term_breakdown, "acc_barrier_vio", 0.0) or 0.0)
+        record.terminal_near_miss = bool(getattr(term_breakdown, "near_miss", False))
+        record.terminal_margin_m1 = float(getattr(term_breakdown, "margin_m1", 0.0) or 0.0)
+        record.terminal_margin_m2 = float(getattr(term_breakdown, "margin_m2", 0.0) or 0.0)
         record.terminal_cost_fusion_bonus = float(getattr(term_breakdown, "cost_fusion_bonus", 0.0) or 0.0)
         record.terminal_cost_truncation_bonus = float(getattr(term_breakdown, "cost_truncation_bonus", 0.0) or 0.0)
         record.terminal_cost_bits_tiebreaker = float(getattr(term_breakdown, "cost_bits_tiebreaker", 0.0) or 0.0)
@@ -2939,6 +2966,7 @@ def run_sequential_via_runner(
         BLBRewardCrashWatcher,
         BLBStatusBoard,
         BLBStepDetailsWriter,
+        write_diagnostic_curves,
         write_training_curves,
     )
     from .runner import (
@@ -4302,6 +4330,14 @@ def run_sequential_via_runner(
                     terminal_p3_metric_margin_reward=float(
                         record.terminal_p3_metric_margin_reward
                     ),
+                    terminal_worst_signed_margin=float(record.terminal_worst_signed_margin),
+                    terminal_acc_barrier_sat=float(record.terminal_acc_barrier_sat),
+                    terminal_acc_barrier_vio=float(record.terminal_acc_barrier_vio),
+                    terminal_near_miss=bool(record.terminal_near_miss),
+                    terminal_margin_m1=float(record.terminal_margin_m1),
+                    terminal_margin_m2=float(record.terminal_margin_m2),
+                    terminal_fusion_norm_raw=float(record.terminal_fusion_norm_raw),
+                    terminal_fusion_norm_saturated=float(record.terminal_fusion_norm_saturated),
                     terminal_cost_fusion_bonus=float(record.terminal_cost_fusion_bonus),
                     terminal_cost_truncation_bonus=float(record.terminal_cost_truncation_bonus),
                     terminal_cost_bits_tiebreaker=float(record.terminal_cost_bits_tiebreaker),
@@ -4943,10 +4979,37 @@ def run_sequential_via_runner(
                 f"  P2(stab): {sum(1 for p in _pri if p == 2)}",
                 f"  P3(cost): {sum(1 for p in _pri if p == 3)}",
             ],
+            priority=_pri,
+            fusion_count=[float(getattr(r, "fusion_count_sum_over_steps", 0) or 0) for r in _records],
+            worst_signed_margin=[float(getattr(r, "terminal_worst_signed_margin", 0.0) or 0.0) for r in _records],
             log_fn=log,
         )
     except Exception as exc:
         log(f"  [警告] 写检测报告失败：{exc}")
+
+    # 8.2) 崩溃诊断曲线（ADR-014）：reward 分解 / fusion-vs-feasibility / 噪声 vs 余量。
+    try:
+        def _rc(attr):
+            return [float(getattr(r, attr, 0.0) or 0.0) for r in _records]
+        diag_curve = write_diagnostic_curves(
+            blb_progress_dir,
+            priority=_pri,
+            fusion_count=[float(getattr(r, "fusion_count_sum_over_steps", 0) or 0) for r in _records],
+            fusion_b2=[float(getattr(r, "fusion_count_b2", 0) or 0) for r in _records],
+            fusion_b4=[float(getattr(r, "fusion_count_b4", 0) or 0) for r in _records],
+            fusion_b5=[float(getattr(r, "fusion_count_b5", 0) or 0) for r in _records],
+            worst_signed_margin=_rc("terminal_worst_signed_margin"),
+            acc_barrier_sat=_rc("terminal_acc_barrier_sat"),
+            acc_barrier_vio=_rc("terminal_acc_barrier_vio"),
+            cost_score=_rc("terminal_cost_score"),
+            p3_metric_margin=_rc("terminal_p3_metric_margin_reward"),
+            metric1_std=_rc("terminal_metric1_std"),
+            log_fn=log,
+        )
+        if diag_curve.get("diagnostics_png"):
+            log(f"  {bullet} 崩溃诊断曲线 PNG → {diag_curve['diagnostics_png']}")
+    except Exception as exc:
+        log(f"  [警告] 写诊断曲线失败：{exc}")
 
     # ---------- 8.5) 解耦归档 + best_policy（对齐 Stage-1）----------
     # 2026-06-01 解耦：sequential stage2-only 完成 → 归档进 stage2/record/{combo N date}/
@@ -4963,6 +5026,7 @@ def run_sequential_via_runner(
             from .persistence import (
                 BLB_TRAINING_CURVE_PNG,
                 BLB_ENTROPY_CURVE_PNG,
+                BLB_DIAGNOSTIC_CURVE_PNG,
                 BLB_REWARD_PAPER_PNG,
                 BLB_FINAL_REPORT_MD,
                 BLB_SEARCH_LOG_TXT,
@@ -5039,6 +5103,7 @@ def run_sequential_via_runner(
                 _curves = [
                     os.path.join(blb_progress_dir, BLB_TRAINING_CURVE_PNG),
                     os.path.join(blb_progress_dir, BLB_ENTROPY_CURVE_PNG),
+                    os.path.join(blb_progress_dir, BLB_DIAGNOSTIC_CURVE_PNG),
                     os.path.join(blb_progress_dir, BLB_REWARD_PAPER_PNG),
                     os.path.join(blb_progress_dir, BLB_FINAL_REPORT_MD),
                     os.path.join(blb_progress_dir, BLB_SEARCH_LOG_TXT),

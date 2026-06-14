@@ -88,9 +88,26 @@ def _read_episodes(progress_dir: str):
     f = _open_jsonl(progress_dir, "episodes.jsonl")
     series = {k: [] for k in (
         "returns", "losses", "metric1s", "metric2s", "fusion", "k_gain", "priority",
+        # ADR-014 debug fields (absent on pre-2026-06-14 runs -> stay empty).
+        "fusion_b2", "fusion_b4", "fusion_b5", "worst_signed_margin",
+        "acc_barrier_sat", "acc_barrier_vio", "cost_score", "p3_metric_margin",
+        "metric1_std",
     )}
+    present: set = set()
+    series["_present"] = present  # type: ignore[assignment]
     if f is None:
         return series
+    _extra = (
+        ("fusion_b2", "fusion_count_b2"),
+        ("fusion_b4", "fusion_count_b4"),
+        ("fusion_b5", "fusion_count_b5"),
+        ("worst_signed_margin", "terminal_worst_signed_margin"),
+        ("acc_barrier_sat", "terminal_acc_barrier_sat"),
+        ("acc_barrier_vio", "terminal_acc_barrier_vio"),
+        ("cost_score", "terminal_cost_score"),
+        ("p3_metric_margin", "terminal_p3_metric_margin_reward"),
+        ("metric1_std", "terminal_metric1_std"),
+    )
     with f:
         for line in f:
             line = line.strip()
@@ -110,6 +127,10 @@ def _read_episodes(progress_dir: str):
             series["fusion"].append(float(d.get("fusion_count", 0) or 0))
             series["k_gain"].append(float(d.get("terminal_k_gain", 0.0) or 0.0))
             series["priority"].append(int(d.get("terminal_priority", 0) or 0))
+            for key, jkey in _extra:
+                if jkey in d:
+                    present.add(key)
+                series[key].append(float(d.get(jkey, 0.0) or 0.0))
     return series
 
 
@@ -218,6 +239,33 @@ def main(argv=None):
         if v:
             print(f"[regen]   {k:11s} → {v}  ({os.path.getsize(v)} bytes)")
 
+    # ADR-014 崩溃诊断曲线（仅当 episodes.jsonl 带新调试字段时才有内容）。
+    present = ep.get("_present", set())
+
+    def _opt(key):
+        return ep[key] if key in present else None
+
+    diag_curve = persistence.write_diagnostic_curves(
+        out_dir,
+        priority=ep["priority"],
+        fusion_count=ep["fusion"],
+        fusion_b2=_opt("fusion_b2"),
+        fusion_b4=_opt("fusion_b4"),
+        fusion_b5=_opt("fusion_b5"),
+        worst_signed_margin=_opt("worst_signed_margin"),
+        acc_barrier_sat=_opt("acc_barrier_sat"),
+        acc_barrier_vio=_opt("acc_barrier_vio"),
+        cost_score=_opt("cost_score"),
+        p3_metric_margin=_opt("p3_metric_margin"),
+        metric1_std=_opt("metric1_std"),
+        log_fn=print,
+    )
+    if diag_curve.get("diagnostics_png"):
+        print(f"[regen]   diagnostics → {diag_curve['diagnostics_png']}  "
+              f"({os.path.getsize(diag_curve['diagnostics_png'])} bytes)")
+    elif not present:
+        print("[regen]   diagnostics → skipped (run predates ADR-014 debug fields)")
+
     # 局部最优 / 健康检测报告（Stage-1 同款版式）。
     report_path = rl_local_optimum.write_local_optimum_report(
         os.path.join(out_dir, persistence.BLB_SEARCH_LOG_TXT),
@@ -233,6 +281,9 @@ def main(argv=None):
             f"  P2(stab): {sum(1 for p in ep['priority'] if p == 2)}",
             f"  P3(cost): {sum(1 for p in ep['priority'] if p == 3)}",
         ],
+        priority=ep["priority"],
+        fusion_count=ep["fusion"],
+        worst_signed_margin=_opt("worst_signed_margin"),
         log_fn=print,
     )
     if report_path:

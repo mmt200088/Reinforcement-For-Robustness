@@ -56,7 +56,12 @@ from .action_space import (
 )
 from .env import BLBStage2Env
 from .fusion_cost import BlockChoice, compute_fusion_cost_saving
-from .reward import FUSION_COST_BUDGET_FRACTION, FUSION_COST_W, TRUNC_COST_W
+from .reward import (
+    FUSION_COST_BUDGET_FRACTION,
+    FUSION_COST_W,
+    FUSION_SATURATION_TAU,
+    TRUNC_COST_W,
+)
 
 
 @dataclass
@@ -436,8 +441,19 @@ class BLBStage2SequentialEnv:
             ext_score: Optional[float] = None
             ext_rank: Optional[float] = None
             if self._fusion_map is not None and self._fusion_choices:
+                # ADR-014 (2026-06-14): concave/saturating fusion cost. The 4th
+                # 60k collapsed because the LINEAR fusion reward + noise-drowned
+                # barrier let fusion run away 8->35. ``saturate_fusion`` flattens
+                # the marginal fusion reward past a healthy knee (~fusion 8), so
+                # the PPO scalar uses ``fusion_norm_saturated`` while ``fusion_norm``
+                # stays RAW for diagnostics. tau=0 reproduces ADR-013 exactly.
+                fusion_tau = float(getattr(
+                    self.base.reward_weights, "fusion_saturation_tau",
+                    FUSION_SATURATION_TAU,
+                ))
                 res = compute_fusion_cost_saving(
                     self._fusion_choices, fusion_w=FUSION_COST_W, trunc_w=TRUNC_COST_W,
+                    fusion_saturation_tau=fusion_tau,
                 )
                 budget = float(getattr(self.base.reward_weights, "p3_cost_budget", 4.5))
                 # ADR-011 (2026-06-11): split the budget so the K pot cannot
@@ -449,12 +465,14 @@ class BLBStage2SequentialEnv:
                 fusion_budget = budget * float(FUSION_COST_BUDGET_FRACTION)
                 trunc_budget = budget - fusion_budget
                 ext_score = (
-                    float(res.fusion_norm) * fusion_budget
+                    float(res.fusion_norm_saturated) * fusion_budget
                     + float(res.trunc_norm) * trunc_budget
                 )
                 ext_rank = float(res.cost_rank)
                 info["fusion_cost_norm"] = float(res.cost_norm)
                 info["fusion_cost_fusion_norm"] = float(res.fusion_norm)
+                info["fusion_cost_fusion_norm_saturated"] = float(res.fusion_norm_saturated)
+                info["fusion_saturation_tau"] = float(fusion_tau)
                 info["fusion_cost_trunc_norm"] = float(res.trunc_norm)
                 info["fusion_cost_rank"] = float(res.cost_rank)
                 info["fusion_cost_max_actual"] = float(res.max_actual)
@@ -485,6 +503,14 @@ class BLBStage2SequentialEnv:
                 term_info["fusion_count_b2"] = int(_fusion_by_type[2])
                 term_info["fusion_count_b4"] = int(_fusion_by_type[4])
                 term_info["fusion_count_b5"] = int(_fusion_by_type[5])
+                # ADR-014 DEBUG: mirror the fusion cost shape (raw vs saturated)
+                # so the record builders persist it from terminal_info too.
+                if "fusion_cost_fusion_norm" in info:
+                    term_info["fusion_cost_fusion_norm"] = float(info["fusion_cost_fusion_norm"])
+                if "fusion_cost_fusion_norm_saturated" in info:
+                    term_info["fusion_cost_fusion_norm_saturated"] = float(
+                        info["fusion_cost_fusion_norm_saturated"]
+                    )
             info["terminal_info"] = term_info
             info["terminal_reward"] = float(term_reward)
             return term_state, per_step_reward + float(term_reward), True, info

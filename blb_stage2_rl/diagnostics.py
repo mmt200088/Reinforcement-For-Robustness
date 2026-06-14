@@ -137,6 +137,19 @@ class EpisodeStats:
     terminal_fusion_gain: float = 0.0
     terminal_cost_score: float = 0.0
     terminal_p3_metric_margin_reward: float = 0.0
+    # ADR-014 (2026-06-14) DEBUG: ADR-013 barrier/margin, now persisted (was a
+    # black box). worst_signed_margin=mu (barrier input); acc_barrier_sat/vio
+    # (outputs); margin_m1/m2 (per-channel); fusion_norm_raw vs _saturated shows
+    # the anti-runaway saturation. These make a collapse diagnosable from
+    # episodes.jsonl alone.
+    terminal_worst_signed_margin: float = 0.0
+    terminal_acc_barrier_sat: float = 0.0
+    terminal_acc_barrier_vio: float = 0.0
+    terminal_near_miss: bool = False
+    terminal_margin_m1: float = 0.0
+    terminal_margin_m2: float = 0.0
+    terminal_fusion_norm_raw: float = 0.0
+    terminal_fusion_norm_saturated: float = 0.0
     terminal_cost_fusion_bonus: float = 0.0
     terminal_cost_truncation_bonus: float = 0.0
     terminal_cost_bits_tiebreaker: float = 0.0
@@ -268,6 +281,11 @@ class RLDiagnosticsRecorder:
         self.first_inv_path = os.path.join(self.output_dir, "first_invalid_counts.json")
         self.action_hist_path = os.path.join(self.output_dir, "action_histogram.npz")
         self.summary_md_path = os.path.join(self.output_dir, "diagnostics_summary.md")
+        # ADR-014 (2026-06-14): in-repo rolling-health log. The 4th-60k collapse
+        # trajectory (rolling600 P1/P2/P3 + fusion + margin) was only computed by
+        # a server-side bash script (long60k_health.log) — invisible in the repo.
+        # This makes it a reproducible artifact in the run dir.
+        self.health_log_path = os.path.join(self.output_dir, "blb_stage2_health.log")
         self.best_json_path = os.path.join(self.output_dir, "best_action_vec.json")
         self.baseline_slots_path = os.path.join(self.output_dir, "baseline_action_vec.json")
 
@@ -286,6 +304,13 @@ class RLDiagnosticsRecorder:
         self._all_episode_returns: List[float] = []
         self._all_invalid_counts: List[int] = []
         self._all_terminal: List[float] = []
+        # ADR-014: rolling-health accumulators (priority / fusion / margin).
+        self._all_priority: List[int] = []
+        self._all_fusion: List[int] = []
+        self._all_fusion_b2: List[int] = []
+        self._all_fusion_b4: List[int] = []
+        self._all_fusion_b5: List[int] = []
+        self._all_margin: List[float] = []
         self._ppo_history: List[PPOUpdateStats] = []
         self._t_start = time.time()
         self._meta: Dict[str, Any] = {}
@@ -392,6 +417,13 @@ class RLDiagnosticsRecorder:
         self._all_episode_returns.append(float(episode_stats.total_reward))
         self._all_invalid_counts.append(int(episode_stats.invalid_steps))
         self._all_terminal.append(float(episode_stats.terminal_reward))
+        # ADR-014 rolling-health accumulators.
+        self._all_priority.append(int(episode_stats.terminal_priority))
+        self._all_fusion.append(int(episode_stats.fusion_count))
+        self._all_fusion_b2.append(int(episode_stats.fusion_count_b2))
+        self._all_fusion_b4.append(int(episode_stats.fusion_count_b4))
+        self._all_fusion_b5.append(int(episode_stats.fusion_count_b5))
+        self._all_margin.append(float(episode_stats.terminal_worst_signed_margin))
         self._last_episode_stats = episode_stats
 
         # 3) first-invalid counter
@@ -671,6 +703,44 @@ class RLDiagnosticsRecorder:
             self._write_summary_md()
         except Exception as exc:
             self.log(f"  [diag][warning] diagnostics_summary.md write failed: {exc}")
+        try:
+            self._write_health_log()
+        except Exception as exc:
+            self.log(f"  [diag][warning] blb_stage2_health.log write failed: {exc}")
+
+    def _write_health_log(self, window: int = 600) -> None:
+        """Append one rolling-window health line to ``blb_stage2_health.log``.
+
+        Mirrors the server-side ``long60k_health.log`` format so the collapse
+        trajectory (P1/P2/P3 + fusion + per-block + margin over a rolling window)
+        is a reproducible in-repo artifact: the smoking gun for a hot collapse is
+        ``fusion`` rising while ``P3`` falls and ``margin`` goes negative.
+        """
+        n = len(self._all_episode_returns)
+        if n == 0:
+            return
+        w = min(int(window), n)
+
+        def _tm(xs: List[float]) -> float:
+            t = xs[-w:]
+            return (sum(t) / len(t)) if t else 0.0
+
+        pri = self._all_priority[-w:]
+        p1 = sum(1 for p in pri if int(p) == 1)
+        p2 = sum(1 for p in pri if int(p) == 2)
+        p3 = sum(1 for p in pri if int(p) == 3)
+        line = (
+            f"{time.strftime('%Y-%m-%dT%H:%M:%S')} ep={n} rolling{w}: "
+            f"reward={_tm(self._all_episode_returns):.3f} "
+            f"P1={p1} P2={p2} P3={p3} "
+            f"fusion={_tm([float(x) for x in self._all_fusion]):.2f} "
+            f"(b2={_tm([float(x) for x in self._all_fusion_b2]):.1f} "
+            f"b4={_tm([float(x) for x in self._all_fusion_b4]):.1f} "
+            f"b5={_tm([float(x) for x in self._all_fusion_b5]):.1f}) "
+            f"margin={_tm(self._all_margin):.4f}"
+        )
+        with open(self.health_log_path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
 
     def finalize(self) -> None:
         """Flush + leave behind the summary in its final form."""

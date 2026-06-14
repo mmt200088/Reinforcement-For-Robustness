@@ -160,6 +160,7 @@ class RegeneratorEndToEndTest(unittest.TestCase):
         rows = []
         for i in range(300):
             collapsed = i > 150
+            fz = min(35, i // 5)
             rows.append({
                 "episode": i,
                 "per_step_sum": -2.0,
@@ -167,9 +168,20 @@ class RegeneratorEndToEndTest(unittest.TestCase):
                 "terminal_loss_mean": (0.37 if not collapsed else 0.6),
                 "terminal_metric1_mean": (0.87 if not collapsed else 0.70),
                 "terminal_metric2_mean": (0.86 if not collapsed else 0.69),
-                "fusion_count": min(35, i // 5),
+                "fusion_count": fz,
                 "terminal_k_gain": 2.0,
                 "terminal_priority": (3 if not collapsed else 1),
+                # ADR-014 debug fields (the regenerator should plot diagnostics
+                # + emit collapse attribution from these).
+                "fusion_count_b2": fz // 3,
+                "fusion_count_b4": fz // 3,
+                "fusion_count_b5": fz // 3,
+                "terminal_worst_signed_margin": (0.6 - 0.05 * fz),
+                "terminal_acc_barrier_sat": (-0.1 if not collapsed else 0.0),
+                "terminal_acc_barrier_vio": (0.0 if not collapsed else -3.0),
+                "terminal_cost_score": min(3.0, 0.1 * fz),
+                "terminal_p3_metric_margin_reward": (0.3 if not collapsed else 0.0),
+                "terminal_metric1_std": 0.0155,
             })
         ep_path = os.path.join(diag, "episodes.jsonl")
         if gz:
@@ -213,9 +225,15 @@ class RegeneratorEndToEndTest(unittest.TestCase):
             if HAVE_MPL:
                 self.assertTrue(_nonempty_file(os.path.join(out_dir, "blb_stage2_training_curve.png")))
                 self.assertTrue(_nonempty_file(os.path.join(out_dir, "blb_stage2_entropy_curve.png")))
-            # search log reflects the synthetic hot collapse + priority histogram.
+            # search log reflects the synthetic hot collapse + priority histogram
+            # + ADR-014 collapse attribution (HOT verdict from the runaway fusion).
             text = open(os.path.join(out_dir, "blb_stage2_search_log.txt"), encoding="utf-8").read()
             self.assertIn("P3(cost)", text)
+            self.assertIn("崩溃归因", text)
+            self.assertIn("HOT", text)
+            # diagnostics curve emitted from the ADR-014 debug fields.
+            if HAVE_MPL:
+                self.assertTrue(_nonempty_file(os.path.join(out_dir, "blb_stage2_diagnostics_curve.png")))
 
     def test_regenerator_gzip_jsonl(self):
         with tempfile.TemporaryDirectory() as d:
@@ -270,6 +288,78 @@ class DecoupledArchiveShapeTest(unittest.TestCase):
             with open(os.path.join(rdir, "final_config.json"), encoding="utf-8") as f:
                 self.assertEqual(json.load(f)["stage"], 2)
             self.assertEqual(n, 1)
+
+
+class DiagnosticCurvesTest(unittest.TestCase):
+    """ADR-014 ``write_diagnostic_curves`` (collapse diagnostics PNG)."""
+
+    def test_emits_png_with_full_series(self):
+        if not HAVE_MPL:
+            self.skipTest("matplotlib not installed")
+        n = 400
+        fz = [min(35, i // 10) for i in range(n)]
+        with tempfile.TemporaryDirectory() as d:
+            out = persistence.write_diagnostic_curves(
+                d,
+                priority=[3 if f < 12 else 1 for f in fz],
+                fusion_count=fz,
+                fusion_b2=[f / 3 for f in fz], fusion_b4=[f / 3 for f in fz],
+                fusion_b5=[f / 3 for f in fz],
+                worst_signed_margin=[0.6 - 0.05 * f for f in fz],
+                acc_barrier_sat=[-0.1] * n, acc_barrier_vio=[0.0] * n,
+                cost_score=[min(3.0, 0.1 * f) for f in fz],
+                p3_metric_margin=[0.3] * n, metric1_std=[0.0155] * n,
+                rolling_window=100,
+            )
+            self.assertTrue(_nonempty_file(out["diagnostics_png"]))
+
+    def test_no_data_is_safe(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = persistence.write_diagnostic_curves(d, priority=None, fusion_count=None)
+            self.assertEqual(out["diagnostics_png"], "")
+
+
+class PersistedDebugFieldsTest(unittest.TestCase):
+    """ADR-014 B1: barrier/margin + per-block fusion reach episodes.jsonl, and
+    the rolling-health log is written (the previously black-box mechanism)."""
+
+    def test_episode_stats_round_trip_and_health_log(self):
+        diag = _load_standalone("blb_diag_test", "blb_stage2_rl/diagnostics.py")
+        with tempfile.TemporaryDirectory() as d:
+            rec = diag.RLDiagnosticsRecorder(
+                output_dir=d, num_layers=12, num_action_slots=47, max_action_levels=6)
+            for ep in range(4):
+                st = diag.EpisodeStats(
+                    episode=ep, total_reward=40 - ep, terminal_reward=42 - ep,
+                    per_step_sum=-2.0, valid_steps=47, invalid_steps=0, steps_taken=47,
+                    total_bits=10000, fusion_count=ep * 4,
+                    first_invalid_step=None, first_invalid_block=None,
+                    first_invalid_layer=None, early_terminated=False,
+                    fusion_count_b2=ep, fusion_count_b4=ep, fusion_count_b5=ep,
+                    terminal_priority=(3 if ep < 2 else 1),
+                    terminal_worst_signed_margin=0.5 - 0.2 * ep,
+                    terminal_acc_barrier_sat=-0.1 * ep, terminal_acc_barrier_vio=0.0,
+                    terminal_near_miss=False, terminal_margin_m1=0.5 - 0.2 * ep,
+                    terminal_margin_m2=0.6 - 0.2 * ep,
+                    terminal_fusion_norm_raw=ep / 11.0,
+                    terminal_fusion_norm_saturated=min(1.0, (ep / 11.0) / 0.15))
+                rec.record_episode(episode_stats=st, full_action_vec=None,
+                                   is_new_best=(ep == 0), best_reward_so_far=40.0)
+            rec.flush_periodic()
+            last = open(os.path.join(d, "diagnostics", "episodes.jsonl"),
+                        encoding="utf-8").read().strip().splitlines()[-1]
+            j = json.loads(last)
+            for k in ("terminal_worst_signed_margin", "terminal_acc_barrier_sat",
+                      "terminal_acc_barrier_vio", "terminal_near_miss",
+                      "terminal_margin_m1", "terminal_margin_m2",
+                      "terminal_fusion_norm_raw", "terminal_fusion_norm_saturated"):
+                self.assertIn(k, j, f"episodes.jsonl missing {k}")
+            # rolling-health log written with the expected columns.
+            hp = os.path.join(d, "diagnostics", "blb_stage2_health.log")
+            self.assertTrue(_nonempty_file(hp))
+            line = open(hp, encoding="utf-8").read().strip()
+            for token in ("rolling", "P1=", "P3=", "fusion=", "margin="):
+                self.assertIn(token, line)
 
 
 if __name__ == "__main__":

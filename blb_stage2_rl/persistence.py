@@ -44,6 +44,7 @@ BLB_TRAINING_CURVE_NPZ = "blb_stage2_training_curve.npz"
 BLB_REWARD_PAPER_PNG = "blb_stage2_reward_paper.png"
 BLB_REWARD_PAPER_PDF = "blb_stage2_reward_paper.pdf"
 BLB_ENTROPY_CURVE_PNG = "blb_stage2_entropy_curve.png"
+BLB_DIAGNOSTIC_CURVE_PNG = "blb_stage2_diagnostics_curve.png"
 BLB_FINAL_REPORT_MD = "blb_stage2_report.md"
 BLB_SEARCH_LOG_TXT = "blb_stage2_search_log.txt"
 BLB_ERROR_TXT = "blb_stage2_error.txt"
@@ -974,6 +975,162 @@ def write_training_curves(
             out["paper_png"] = paper_png
     except Exception as exc:
         log(f"  [BLB曲线][信息] 跳过 paper PNG：{exc}")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 崩溃诊断曲线（ADR-014）：reward 分解 / fusion-vs-feasibility / 噪声 vs 余量
+# ---------------------------------------------------------------------------
+def write_diagnostic_curves(
+        persistence_dir: str,
+        *,
+        priority: Optional[Sequence[int]] = None,
+        fusion_count: Optional[Sequence[float]] = None,
+        fusion_b2: Optional[Sequence[float]] = None,
+        fusion_b4: Optional[Sequence[float]] = None,
+        fusion_b5: Optional[Sequence[float]] = None,
+        worst_signed_margin: Optional[Sequence[float]] = None,
+        acc_barrier_sat: Optional[Sequence[float]] = None,
+        acc_barrier_vio: Optional[Sequence[float]] = None,
+        cost_score: Optional[Sequence[float]] = None,
+        fusion_gain: Optional[Sequence[float]] = None,
+        p3_metric_margin: Optional[Sequence[float]] = None,
+        metric1_std: Optional[Sequence[float]] = None,
+        rolling_window: int = 600,
+        ma_window: Optional[int] = None,
+        log_fn=None,
+        ) -> Dict[str, str]:
+    """Stage-2 崩溃诊断多联图（``blb_stage2_diagnostics_curve.png``）。
+
+    把「为什么崩」做成一眼可读的图，而不是从最终结果猜（4th-60k 痛点）：
+
+      1. Priority mix (rolling) —— P1/P2/P3 占比。P3→0 = 崩溃。
+      2. Fusion (rolling)      —— 总 fusion + per-block b2/b4/b5。失控时单调冲顶。
+      3. Accuracy margin mu    —— ``worst_signed_margin`` raw + MA + 0 线。越界 = mu<0。
+      4. Reward components      —— barrier_sat / barrier_vio / cost_score / p3_margin。
+      5. Probe noise vs margin —— metric1_std vs |mu|。σ>余量 = barrier 失效根因。
+
+    panels 1+2+3 一起读就是 smoking gun：fusion↑ → mu↓ → P3→0。所有入参可选，
+    给哪条画哪条。``rolling_window`` 用于 priority/fusion 的滚动均值。
+    """
+    log = log_fn or (lambda _msg: None)
+    out = {"diagnostics_png": ""}
+    os.makedirs(persistence_dir, exist_ok=True)
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import numpy as _np
+
+        def _arr(seq):
+            return _np.asarray(list(seq), dtype=float) if (seq is not None and len(list(seq)) > 0) else None
+
+        def _roll(seq):
+            a = _arr(seq)
+            if a is None:
+                return None, None
+            return _moving_average(a, int(max(1, min(rolling_window, a.size))))
+
+        pri = _arr(priority)
+        n = pri.size if pri is not None else (
+            _arr(fusion_count).size if _arr(fusion_count) is not None else 0)
+        if n == 0:
+            log("  [诊断曲线][信息] 无数据，跳过。")
+            return out
+        if ma_window is None:
+            ma_window = max(10, n // 200)
+
+        panels = []  # list of (draw_fn, title)
+
+        # Panel 1: priority mix (rolling fractions)
+        if pri is not None:
+            def _p1(ax):
+                for val, color, lbl in ((3, "tab:green", "P3 (cost)"),
+                                        (2, "tab:orange", "P2 (stab)"),
+                                        (1, "tab:red", "P1 (acc)")):
+                    ind = (pri == val).astype(float)
+                    x, y = _moving_average(ind, int(max(1, min(rolling_window, ind.size))))
+                    if y.size:
+                        ax.plot(x, y, color=color, linewidth=1.5, label=lbl)
+                ax.set_ylim(-0.02, 1.02)
+                ax.set_ylabel("fraction")
+            panels.append((_p1, f"Priority mix (rolling {rolling_window}) — P3->0 = collapse"))
+
+        # Panel 2: fusion total + per-block (rolling)
+        if _arr(fusion_count) is not None:
+            def _p2(ax):
+                for seq, color, lbl in ((fusion_count, "black", "fusion total"),
+                                        (fusion_b2, "tab:blue", "b2"),
+                                        (fusion_b4, "tab:red", "b4"),
+                                        (fusion_b5, "tab:green", "b5")):
+                    x, y = _roll(seq)
+                    if y is not None and y.size:
+                        lw = 1.8 if lbl == "fusion total" else 1.0
+                        ax.plot(x, y, color=color, linewidth=lw, label=lbl)
+                ax.set_ylabel("fused blocks")
+            panels.append((_p2, f"Fusion (rolling {rolling_window}) — runaway if monotone to cap"))
+
+        # Panel 3: accuracy margin mu (raw + MA + zero line)
+        if _arr(worst_signed_margin) is not None:
+            def _p3(ax):
+                a = _arr(worst_signed_margin)
+                xs = _np.arange(1, a.size + 1)
+                ax.plot(xs, a, color="#888888", alpha=0.35, linewidth=0.6, label="mu (raw)")
+                mx, my = _moving_average(a, ma_window)
+                if my.size:
+                    ax.plot(mx, my, color="tab:purple", linewidth=1.8, label=f"MA ({ma_window})")
+                ax.axhline(0.0, color="tab:red", linestyle="--", linewidth=1.0, label="feasibility (mu=0)")
+                ax.set_ylabel("worst signed margin")
+            panels.append((_p3, "Accuracy margin mu (|baseline-thr| units) — mu<0 = P1"))
+
+        # Panel 4: reward components (MA)
+        if any(_arr(s) is not None for s in (acc_barrier_sat, acc_barrier_vio, cost_score, p3_metric_margin)):
+            def _p4(ax):
+                for seq, color, lbl in ((acc_barrier_sat, "tab:purple", "barrier_sat"),
+                                        (acc_barrier_vio, "tab:red", "barrier_vio"),
+                                        (cost_score, "tab:green", "cost_score"),
+                                        (p3_metric_margin, "tab:orange", "p3_margin")):
+                    a = _arr(seq)
+                    if a is None:
+                        continue
+                    mx, my = _moving_average(a, ma_window)
+                    if my.size:
+                        ax.plot(mx, my, color=color, linewidth=1.3, label=lbl)
+                ax.set_ylabel("reward component")
+            panels.append((_p4, f"Reward components (MA {ma_window})"))
+
+        # Panel 5: probe noise vs margin
+        if _arr(metric1_std) is not None and _arr(worst_signed_margin) is not None:
+            def _p5(ax):
+                s = _arr(metric1_std)
+                mu = _np.abs(_arr(worst_signed_margin))
+                sx, sy = _moving_average(s, ma_window)
+                mmx, mmy = _moving_average(mu, ma_window)
+                if sy.size:
+                    ax.plot(sx, sy, color="tab:red", linewidth=1.5, label="metric1_std (MA)")
+                if mmy.size:
+                    ax.plot(mmx, mmy, color="tab:blue", linewidth=1.5, label="|mu| (MA)")
+                ax.set_ylabel("magnitude")
+            panels.append((_p5, "Probe noise vs |margin| — std > margin => barrier noise-drowned"))
+
+        if not panels:
+            return out
+        fig, axes = plt.subplots(len(panels), 1, figsize=(11, 2.7 * len(panels)), squeeze=False)
+        for i, (draw, title) in enumerate(panels):
+            ax = axes[i, 0]
+            draw(ax)
+            ax.set_xlabel("episode")
+            ax.set_title(title, fontsize=10)
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc="best", fontsize=8)
+        fig.suptitle("BLB Stage-2 RL Collapse Diagnostics", fontsize=12, fontweight="bold")
+        fig.tight_layout(rect=(0, 0, 1, 0.99))
+        png = os.path.join(persistence_dir, BLB_DIAGNOSTIC_CURVE_PNG)
+        fig.savefig(png, dpi=150)
+        plt.close(fig)
+        out["diagnostics_png"] = png
+    except Exception as exc:
+        log(f"  [诊断曲线][信息] 跳过（matplotlib 不可用 / 渲染失败）：{exc}")
     return out
 
 

@@ -3,7 +3,7 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (ADR-013 Stage-1 式 log-barrier 精度边界（取代近界档+线性P3 margin）→ 确定性门禁 → PASS 自动接 60k + 崩溃 watchdog)
+## ▶ active command  (ADR-014 结构性反失控 fusion 成本（饱和）+ 崩溃调试落盘 → 确定性门禁 → PASS 自动接 60k + 崩溃 watchdog)
 
 ```bash
 set -uo pipefail
@@ -11,7 +11,30 @@ export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 
 # ============================================================================
-# 本轮（2026-06-13，ADR-013）：第 3 次 60k（artifacts stage2_grid_gate_60k_20260612_191530，
+# 本轮（2026-06-14，ADR-014）：第 4 次 60k（artifacts stage2_grid_gate_60k_20260613_175503，
+# ADR-013 log-barrier 全开，commit 4e3aec0）**依然热崩溃**——watchdog 在 40320/60000 杀停
+# （P3<2% 连续 12 窗）。fusion 单调 1→10(健康)→13(P1 飙)→35(全 P1 冻结)，从不稳定；熵未归零
+# = 过度融合塑形，非探索死亡。根因（实证）：最佳点 terminal_metric1_std≈0.0155 > 可行余量
+# (baseline 0.871−阈值 0.858 = 0.013)，是 ADR-013 校准 MARGIN_REF=0.25 所用 0.0018 基线 σ 的
+# ~8.6× → barrier headroom 被噪声淹没、形不成可测吸引子，而 LINEAR fusion 成本是确定性单调激励 →
+# 压倒 barrier → 失控。+ ADR-013 的 barrier/margin（mu、acc_barrier_*）算了却从未落进 episodes.jsonl
+# = 黑箱 = 用户「只能靠最终结果猜」。修复（用户选：结构性反失控 + barrier 调参；**保持成本权重 +
+# 探针 size/K 不变** → 必须在现有噪声下生效；详见 docs/adr/ADR-014-*.md）：
+#   ① fusion 成本饱和化（fusion_cost.saturate_fusion，FUSION_SATURATION_TAU=0.15）：边际 fusion 奖励
+#     在拐点 ~fusion8（低于噪声边界 10-13）后→~0；陡起(不冷崩)+ 平尾(不热崩)；tau≤0=恒等=ADR-013。
+#     env 用 fusion_norm_saturated 缩放预算；raw 保留作诊断。
+#   ② MARGIN_REF 0.25→0.5。①+② ⇒ cost(fusion)+barrier 在中等正余量出现内点峰值（max fusion 不最优）。
+#     稳定最优会比刀刃 27 少（留可分辨 headroom，是稳定的 WIN 而非退步）。旋钮：FUSION_SATURATION_TAU /
+#     acc_barrier_margin_ref。
+#   ③ 崩溃调试落盘：mu/acc_barrier_sat/vio/near_miss/margin_m1/m2/fusion_norm_raw/saturated +
+#     fusion_count_b2/b4/b5 入 episodes.jsonl；blb_stage2_health.log（repo 内 rolling600 P1/P2/P3+
+#     fusion+per-block+margin，把原服务器 bash 轨迹搬进 repo）；blb_stage2_diagnostics_curve.png；
+#     attribute_collapse(HOT/COLD+起点) 入 search_log；离线再生器复盘。
+#   ④ 不变量：饱和/barrier 只改 PPO 标量 + 纯确定函数 → priority/rank/选择逐位不变 + item7 + 1==N。
+#   reward 跨 ADR-014 不可比。判 60k 成功：曲线不崩 + fusion 稳在中等正余量(非 0 非 35) + P3 持续>0 +
+#   best ≥ 无融合上限——**现在可直接从 health 日志 + 诊断曲线 + 落盘的 mu 读出（不用猜）**。
+# ----------------------------------------------------------------------------
+# 【历史】上轮（2026-06-13，ADR-013）：第 3 次 60k（artifacts stage2_grid_gate_60k_20260612_191530，
 # ADR-012 全开）翻转成「热崩溃」——与前两次「冷崩溃 fusion=0」完全相反：
 #   - fusion 单调爬升 1.4→35，metric1 单调跌 0.866→0.690（分箱：ep0 fus1.4/P3 → ep12k
 #     fus11.7/P1 1240 → ep21k fus19.8/P1 2694 → ep30k fus31.8/P1 3000 reward-6.94 →
@@ -124,9 +147,10 @@ assert _r(0.8672).reward >= 40.0 > bnm.reward                  # P3 永远压住
 assert _r(0.3200).reward < -4.0 and not _r(0.3200).near_miss   # 灾难型保留悬崖
 print("ADR-012 近界渐变档(legacy, barrier off)断言 OK（边缘P1 -7 -> %.1f）" % bnm.reward)
 # ---- ADR-013 断言：Stage-1 式 log-barrier（默认开启，取代近界档+线性 P3 margin）----
+# ADR-014：MARGIN_REF 0.25→0.5（4th-60k 融合区探针 σ≈0.0155 是基线 σ 的 ~8.6×，0.25 亚 σ）。
 wb = rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871)
-assert wb.acc_barrier_enabled and abs(wb.acc_barrier_margin_ref - 0.25) < 1e-12
-assert rwd.accuracy_margin_barrier(0.25, wb) == 0.0                       # headroom 外归零
+assert wb.acc_barrier_enabled and abs(wb.acc_barrier_margin_ref - 0.5) < 1e-12
+assert rwd.accuracy_margin_barrier(0.5, wb) == 0.0                        # headroom 外归零
 assert rwd.accuracy_margin_barrier(0.05, wb) < rwd.accuracy_margin_barrier(0.20, wb) < 0.0  # 回正力
 assert rwd.accuracy_margin_barrier(-5.0, wb) < rwd.accuracy_margin_barrier(-0.1, wb)        # 违反区有梯度
 assert rwd.accuracy_margin_barrier(-1e4, wb) == wb.acc_barrier_floor      # 下限
@@ -159,6 +183,42 @@ hi_cost_p1 = rwd.compute_reward(
     external_cost_score=4.5, external_cost_rank=24.0).reward
 assert hi_cost_p1 < worst_p3, "item7：高 cost 的 P1 仍 < 任意 P3"
 print("ADR-013 log-barrier 断言 OK：内点峰值 fusion=%d reward=%.2f margin=%.2f；违反区有恢复梯度" % (peak[0], peak[1], peak[3]))
+# ---- ADR-014 断言：结构性反失控 fusion 成本（饱和）+ 黑箱落盘 ----
+import blb_stage2_rl.fusion_cost as _fc
+assert abs(rwd.FUSION_SATURATION_TAU - 0.15) < 1e-12
+assert abs(wb.fusion_saturation_tau - 0.15) < 1e-12
+assert _fc.saturate_fusion(0.5, 0.0) == 0.5 and _fc.saturate_fusion(1.0, 0.15) == 1.0  # 关=恒等; 端点
+# 凹性：边际递减（反失控核心）；过拐点边际 ≪ 起点边际
+_sat = [_fc.saturate_fusion(i / 40.0, 0.15) for i in range(41)]
+_slp = [_sat[i + 1] - _sat[i] for i in range(40)]
+assert all(_slp[i] >= _slp[i + 1] - 1e-12 for i in range(39)) and _slp[-1] < 0.1 * _slp[0]
+assert _fc.saturate_fusion(0.23, 0.15) > 0.7   # ~fusion8 已达 ~80%
+# 饱和后 cost(fusion)+barrier 仍在中等正余量出现内点峰值（max fusion 不最优）
+def _rbs(f):  # 用真实 fusion_norm_saturated（凹）替换线性 cost
+    fn = f / 35.0
+    fns = _fc.saturate_fusion(fn, 0.15)
+    m1 = 0.871 - 0.0052 * f * (0.6 + 0.4 * f / 35.0)
+    m = rwd.EpisodeMetrics(loss_mean=0.37, loss_std=0.01, metric1_mean=m1, metric2_mean=m1,
+                           metric1_std=0.002, metric2_std=0.002)
+    class _OB:
+        any_invalid = False; total_bits_sum = 11285 - 30 * f; total_fusion_count = f
+    return rwd.compute_reward(m, _OB(), action_avg_k=13.0, baseline=baseB, weights=wb,
+                              acc_threshold=0.858, acc_threshold_m2=0.858,
+                              external_cost_score=fns * (wb.p3_cost_budget * rwd.FUSION_COST_BUDGET_FRACTION),
+                              external_cost_rank=float(f))
+_sw = [(f, _rbs(f).reward, _rbs(f).priority, _rbs(f).worst_signed_margin) for f in range(36)]
+_pk = max(_sw, key=lambda r: r[1])
+assert 0 < _pk[0] < 35 and _pk[2] == 3 and _pk[3] > 0.0, f"饱和后峰值仍须正余量内点 P3: {_pk}"
+assert _sw[-1][1] < _pk[1], "max fusion 不能最优"
+# B1：barrier/margin/per-block fusion 已落进 episodes.jsonl 的 EpisodeStats schema
+import dataclasses as _dc
+from blb_stage2_rl.diagnostics import EpisodeStats as _ES
+_esf = {f.name for f in _dc.fields(_ES)}
+for _k in ("terminal_worst_signed_margin", "terminal_acc_barrier_sat", "terminal_acc_barrier_vio",
+           "terminal_near_miss", "terminal_margin_m1", "terminal_margin_m2",
+           "terminal_fusion_norm_raw", "terminal_fusion_norm_saturated"):
+    assert _k in _esf, f"EpisodeStats 缺 ADR-014 调试字段 {_k}"
+print("ADR-014 断言 OK：饱和凹性 + 内点峰值 fusion=%d reward=%.2f margin=%.2f + episodes.jsonl 黑箱字段齐全" % (_pk[0], _pk[1], _pk[3]))
 import sys as _sys
 _sys.path.insert(0, ".")
 from blb_stage2_rl.env import BLBStage2EnvConfig
@@ -178,7 +238,7 @@ assert _BTC().stage2_workers_per_device == 1
 print("workers-per-device 断言 OK（默认 1 = 旧行为；gN/60k 用 2）")
 PY
 echo "==================== [phase0b] ADR-012/013 单元测试（torch 在位：log-barrier/ε混合/复测/近界档/轮换） ===================="
-for f in test_blb_fusion_curriculum test_blb_fusion_reward test_blb_fusion_exploration test_blb_log_barrier_reward; do
+for f in test_blb_fusion_curriculum test_blb_fusion_reward test_blb_fusion_exploration test_blb_log_barrier_reward test_blb_fusion_saturation test_blb_stage2_outputs; do
   python3 "tests/${f}.py" > "$OUT/unittest_${f}.log" 2>&1 || { echo "[FATAL] ${f} 失败"; tail -20 "$OUT/unittest_${f}.log"; exit 1; }
   tail -1 "$OUT/unittest_${f}.log"
 done

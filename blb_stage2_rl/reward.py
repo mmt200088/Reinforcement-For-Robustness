@@ -129,6 +129,22 @@ K_MIN_BITS = 8
 # slice because harvesting fusion IS the point of the fusion-count action.
 FUSION_COST_BUDGET_FRACTION = 2.0 / 3.0
 
+# ADR-014 (2026-06-14): STRUCTURAL anti-runaway. The 4th 60k (ADR-013 barrier,
+# 4e3aec0) STILL collapsed HOT — fusion marched monotonically 8 -> 35, all P1,
+# watchdog-killed at 40320. Root cause: the probe's metric std in the fusion
+# regime (~0.0155 at the best point) EXCEEDS the feasibility margin (~0.013),
+# ~8.6x the 0.0018 baseline sigma ADR-013 calibrated MARGIN_REF against. So the
+# log-barrier's headroom is noise-drowned and cannot form a measurable restoring
+# attractor, while the LINEAR fusion cost reward is deterministic & monotone and
+# wins. Fix (user-approved, probe size/K kept unchanged): make the fusion cost
+# CONCAVE/saturating so its marginal reward -> ~0 past a healthy knee (~fusion 8,
+# safely below the noisy boundary ~10-13). ``saturate_fusion`` in fusion_cost.py
+# does ``(1-exp(-x/tau))/(1-exp(-1/tau))`` on ``fusion_norm`` in [0,1]; tau=0.15
+# gives ~80% of the fusion reward by fusion_norm~0.23 (fusion ~8), steep initial
+# slope (still pulls UP to the knee -> no cold collapse) then flat (no incentive
+# to over-fuse -> no hot collapse). tau<=0 disables it (bit-for-bit ADR-013).
+FUSION_SATURATION_TAU = 0.15
+
 # ---------------------------------------------------------------------------
 # ADR-013 (2026-06-13): Stage-1-style two-piece log-barrier on the accuracy
 # margin. REPLACES the ADR-012 graded near-miss tier (P1 shaping) AND the
@@ -166,7 +182,12 @@ FUSION_COST_BUDGET_FRACTION = 2.0 / 3.0
 # (bigger probe), not a barrier-tuning one.
 DEFAULT_ACC_BARRIER_ENABLED = True
 DEFAULT_ACC_BARRIER_SAT_SCALE = 0.5      # satisfied-side restoring-force strength
-DEFAULT_ACC_BARRIER_MARGIN_REF = 0.25    # headroom target (|baseline-thr| units, ~1.8 sigma)
+# ADR-014: raised 0.25 -> 0.5. The 4th-60k fusion-regime probe sigma (~0.0155)
+# is ~8.6x the 0.0018 baseline sigma ADR-013 assumed, so 0.25 headroom was
+# sub-sigma (a coin flip). A larger headroom makes the restoring penalty kick in
+# earlier; together with the concave fusion saturation (FUSION_SATURATION_TAU)
+# the stable point sits at a moderate, probe-resolvable positive margin.
+DEFAULT_ACC_BARRIER_MARGIN_REF = 0.5     # headroom target (|baseline-thr| units)
 DEFAULT_ACC_BARRIER_VIO_SCALE = 0.30     # violated-side slope (recovery gradient)
 DEFAULT_ACC_BARRIER_FLOOR = -10.0        # lower bound (below realistic collapse depth)
 DEFAULT_ACC_BARRIER_EPS = 1.0e-3
@@ -307,6 +328,11 @@ class RewardWeights:
     acc_barrier_vio_scale: float = DEFAULT_ACC_BARRIER_VIO_SCALE
     acc_barrier_floor: float = DEFAULT_ACC_BARRIER_FLOOR
     acc_barrier_eps: float = DEFAULT_ACC_BARRIER_EPS
+    # ADR-014 (2026-06-14): concave/saturating transform on the fusion cost
+    # (anti-runaway). The fusion-count env (sequential_env) reads this and feeds
+    # it to fusion_cost.compute_fusion_cost_saving; the saturated fusion_norm is
+    # what scales the P3 budget. 0 disables (bit-for-bit ADR-013).
+    fusion_saturation_tau: float = FUSION_SATURATION_TAU
     cost_w_fusion: float = DEFAULT_COST_W_FUSION
     cost_w_k: float = DEFAULT_COST_W_K
     cost_w_bits: float = DEFAULT_COST_W_BITS
