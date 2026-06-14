@@ -1,0 +1,7 @@
+==== [gate] 判读 ====
+[gate][PASS] rollout_sig 逐窗逐字相同（1卡 == 5卡）
+[gate] episodes.jsonl 数值逐项对比: PASS（完全一致）  n=300/300
+[gate] forced_fusion_probe episodes in gate run: [(80, 'forced_fusion_probe_b2', 12), (280, 'forced_fusion_probe_b5', 25)]
+[gate] probe presence/rotation/fc check: OK
+1-GPU : 857 ep/h (1260s)
+5-GPU : 2842 ep/h (380s)  speedup=3.32x (ideal 5x)
