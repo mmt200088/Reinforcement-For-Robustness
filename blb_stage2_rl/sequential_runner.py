@@ -89,6 +89,21 @@ class SequentialTrainConfig:
     # mass on baseline; the ramp then re-enables exploration gradually.
     ent_coef_anchor: float = 0.0
     ent_coef_ramp_episodes: int = 600
+    # ADR-015 (2026-06-14): Stage-1 cosine entropy schedule (default for the
+    # rebuild). "cosine" = high→low (start high, plateau, cosine-decay, no
+    # anchor) — the Stage-1 exploration the user asked us to port; "anchor_ramp"
+    # = the legacy low→high schedule. See _resolve_cosine_ent_coef_schedule.
+    ent_coef_schedule: str = "cosine"
+    ent_coef_cosine_start: float = 0.05
+    ent_coef_cosine_end: float = 0.001
+    ent_coef_cosine_plateau: float = 0.25
+    ent_coef_cosine_lower_bound: float = 0.012
+    # ADR-015: reward design. "continuous" (Stage-1-style bounded log-barrier +
+    # std stability, no tiers) gates off the ADR-011/012 exploration patches
+    # (baseline anchor / warmstart prior / fusion probes / epsilon floor /
+    # neighbor curriculum) which were tuned for the tiered reward. "tiered"
+    # restores the ADR-014 path + those patches.
+    reward_design: str = "continuous"
     absolute_episode_start: int = 0
     warmstart_neighbor_sampling: bool = True
     warmstart_neighbor_ramp_episodes: int = 0
@@ -270,6 +285,37 @@ def _resolve_ent_coef_schedule(
         return target
     progress = (ep - anchor) / float(ramp)   # in (0, 1)
     return anchor_val + (target - anchor_val) * float(progress)
+
+
+def _resolve_cosine_ent_coef_schedule(
+        ep_count_1based: int,
+        total_episodes: int,
+        *,
+        start: float = 0.05,
+        end: float = 0.001,
+        plateau_ratio: float = 0.25,
+        lower_bound: float = 0.012,
+        ) -> float:
+    """ADR-015 Stage-1-style cosine entropy schedule (port of
+    layer_importance_evaluator.update_hyperparameters + RL_OPT_FLAGS).
+
+    Starts HIGH (``start``) and stays there for the first ``plateau_ratio`` of
+    training (充分探索), then cosine-decays to ``end``, floored at ``lower_bound``.
+    This REPLACES the fusion-mode anchor+ramp schedule (which started at 0 during
+    the baseline anchor then ramped UP — the opposite of exploration and a root of
+    the "初始策略/探索" problem). No baseline anchor here: the small all-valid
+    (option,K) space wants high-entropy exploration from episode 1.
+    """
+    total = max(1, int(total_episodes))
+    progress = float(ep_count_1based) / float(total)
+    plateau = min(1.0, max(0.0, float(plateau_ratio)))
+    if progress <= plateau:
+        val = float(start)
+    else:
+        t = (progress - plateau) / max(1e-8, 1.0 - plateau)
+        t = min(1.0, max(0.0, t))
+        val = float(end) + 0.5 * (float(start) - float(end)) * (1.0 + math.cos(math.pi * t))
+    return max(float(lower_bound), float(val))
 
 
 def _resolve_baseline_prior_scale(
@@ -1538,13 +1584,25 @@ def train_sequential(
             on_episode_end(record)
 
         if (int(record.episode_idx) + 1) % int(train_cfg.update_every_n_episodes) == 0:
-            current_ent_coef = _resolve_ent_coef_schedule(
-                ep_count_1based=int(absolute_episode_start + int(record.episode_idx) + 1),
-                anchor_episodes=int(force_baseline_episodes),
-                target_ent_coef=float(train_cfg.ppo.ent_coef),
-                anchor_ent_coef=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
-                ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 600)),
-            )
+            _ep_1based = int(absolute_episode_start + int(record.episode_idx) + 1)
+            if str(getattr(train_cfg, "ent_coef_schedule", "anchor_ramp")) == "cosine":
+                # ADR-015: Stage-1 cosine schedule (high→low, no anchor).
+                current_ent_coef = _resolve_cosine_ent_coef_schedule(
+                    _ep_1based,
+                    int(train_cfg.total_episodes),
+                    start=float(getattr(train_cfg, "ent_coef_cosine_start", 0.05)),
+                    end=float(getattr(train_cfg, "ent_coef_cosine_end", 0.001)),
+                    plateau_ratio=float(getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)),
+                    lower_bound=float(getattr(train_cfg, "ent_coef_cosine_lower_bound", 0.012)),
+                )
+            else:
+                current_ent_coef = _resolve_ent_coef_schedule(
+                    ep_count_1based=_ep_1based,
+                    anchor_episodes=int(force_baseline_episodes),
+                    target_ent_coef=float(train_cfg.ppo.ent_coef),
+                    anchor_ent_coef=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
+                    ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 600)),
+                )
             if parallel_runner is not None:
                 # Deterministic pre-update reseed: the minibatch shuffle in
                 # sequential_ppo_update consumes the global numpy RNG; keying
@@ -3242,6 +3300,20 @@ def run_sequential_via_runner(
     # not just the env-level loss_std gate below.
     weights.stab_tolerance = float(stability_tol)
 
+    # ADR-015: continuous bounded reward (Stage-1 design + std stability). The
+    # reward_design flows from train_cfg (default "continuous"); when on, it gates
+    # OFF the ADR-011/012 exploration patches (baseline anchor / warmstart prior /
+    # fusion probes / epsilon floor / neighbor curriculum) that were tuned for the
+    # tiered reward and replaced by cosine-entropy + strict-stability + strict
+    # selection. saturation is already off (tau=0).
+    weights.reward_design = str(getattr(train_cfg, "reward_design", "continuous"))
+    _continuous = weights.reward_design == "continuous"
+    log(
+        f"  {bullet} [ADR-015] reward_design={weights.reward_design}"
+        + ("（连续有界 reward + 严格稳定性刹车 + Stage-1 cosine 熵 + 严格可行性选择；"
+           "已关 anchor/warmstart/probe/ε/curriculum）" if _continuous else "（tiered 回滚路径）")
+    )
+
     user_acc_threshold = float(base_env.acc_threshold)
     if not (np.isfinite(user_acc_threshold) and user_acc_threshold > 0.0):
         # Default: floor the gate at (noisy baseline accuracy − tolerance) so
@@ -3355,7 +3427,10 @@ def run_sequential_via_runner(
     # the map holds only valid configs so invalid masks are unnecessary.
     # Resolve the fusion block-curriculum ramp once (0 → 0.5 * total_episodes) so
     # both the console banner and seq_train_cfg below use the same concrete value.
-    _fc_curriculum_on = bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", True))
+    _fc_curriculum_on = (
+        False if _continuous
+        else bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", True))
+    )
     _fc_ramp = int(getattr(train_cfg, "fusion_neighbor_ramp_episodes", 0) or 0)
     if _fc_ramp <= 0:
         _fc_ramp = max(1, int(FUSION_NEIGHBOR_RAMP_FRACTION * int(train_cfg.total_episodes)))
@@ -3462,8 +3537,12 @@ def run_sequential_via_runner(
 
     if fusion_map is not None:
         # ADR-012 exploration floor: slot 0 = fusion option, slot 1 = K.
-        _eps_opt = float(getattr(train_cfg, "fusion_exploration_epsilon", 0.05) or 0.0)
-        _eps_k = float(
+        # ADR-015: OFF under the continuous reward (cosine entropy is the
+        # exploration mechanism now; the ε floor was a tiered-reward patch).
+        _eps_opt = 0.0 if _continuous else float(
+            getattr(train_cfg, "fusion_exploration_epsilon", 0.05) or 0.0
+        )
+        _eps_k = 0.0 if _continuous else float(
             getattr(train_cfg, "fusion_exploration_epsilon_k", FUSION_EXPLORATION_EPSILON_K)
             or 0.0
         )
@@ -3518,7 +3597,13 @@ def run_sequential_via_runner(
                     fallback_idx=int(LEVELS_F) - 1,
                 )
             warmstart_gain = float(train_cfg.warmstart_bias_gain)
-            if fusion_map is not None:
+            if _continuous:
+                # ADR-015: no baseline warmstart prior — the policy starts from
+                # high-entropy (cosine) exploration over the small all-valid
+                # (option,K) space, NOT anchored to fusion=0 (the baseline anchor
+                # was a root of the cold-collapse / "初始策略" problem).
+                warmstart_gain = 0.0
+            elif fusion_map is not None:
                 # Tiny fusion action space (<=2 options x 6 K per block): pull the
                 # baseline (fusion=0 / K=max) prior up so cold-start sits at baseline
                 # and explores outward (user spec 2026-06-03).
@@ -3737,13 +3822,21 @@ def run_sequential_via_runner(
         fusion_neighbor_curriculum_enabled=bool(_fc_curriculum_on),
         fusion_neighbor_ramp_episodes=int(_fc_ramp),
         fusion_neighbor_max_radius=int(getattr(train_cfg, "fusion_neighbor_max_radius", 6)),
-        fusion_probe_interval=int(getattr(train_cfg, "fusion_probe_interval", 200)),
-        fusion_exploration_epsilon=float(
+        # ADR-015: probes / ε floor OFF under the continuous reward (tiered patches).
+        fusion_probe_interval=(0 if _continuous else int(getattr(train_cfg, "fusion_probe_interval", 200))),
+        fusion_exploration_epsilon=(0.0 if _continuous else float(
             getattr(train_cfg, "fusion_exploration_epsilon", 0.05)
-        ),
-        fusion_exploration_epsilon_k=float(
+        )),
+        fusion_exploration_epsilon_k=(0.0 if _continuous else float(
             getattr(train_cfg, "fusion_exploration_epsilon_k", FUSION_EXPLORATION_EPSILON_K)
-        ),
+        )),
+        # ADR-015: Stage-1 cosine entropy schedule + continuous reward design.
+        ent_coef_schedule=str(getattr(train_cfg, "ent_coef_schedule", "cosine")),
+        ent_coef_cosine_start=float(getattr(train_cfg, "ent_coef_cosine_start", 0.05)),
+        ent_coef_cosine_end=float(getattr(train_cfg, "ent_coef_cosine_end", 0.001)),
+        ent_coef_cosine_plateau=float(getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)),
+        ent_coef_cosine_lower_bound=float(getattr(train_cfg, "ent_coef_cosine_lower_bound", 0.012)),
+        reward_design=str(getattr(train_cfg, "reward_design", "continuous")),
         guarded_radius2_enabled=bool(getattr(train_cfg, "guarded_radius2_enabled", False)),
         guarded_radius2_min_episode=int(getattr(train_cfg, "guarded_radius2_min_episode", 1060)),
         guarded_radius2_stall_window=int(getattr(train_cfg, "guarded_radius2_stall_window", 600)),
@@ -4641,7 +4734,12 @@ def run_sequential_via_runner(
     # `reports/stage2_rl/bug_reports/2026-05-18_stage2_rl_rdv2_negative_reward_startup/`.
     # The fallback is now exactly 60 episodes, matching the non-monotonic
     # boundary-search curriculum.
-    _force_baseline_episodes = _resolve_sequential_force_baseline_episodes(train_cfg)
+    # ADR-015: no baseline anchor under the continuous reward — the small
+    # all-valid (option,K) space wants high-entropy cosine exploration from
+    # episode 1, not a forced-baseline (fusion=0) warmup that biases the policy.
+    _force_baseline_episodes = (
+        0 if _continuous else _resolve_sequential_force_baseline_episodes(train_cfg)
+    )
     log(
         f"  {bullet} 强制 baseline 锚点（forced-baseline anchor）: "
         f"前 {_force_baseline_episodes} 个 episode 直接执行 baseline action，"
@@ -4722,6 +4820,27 @@ def run_sequential_via_runner(
     # both files use the SF/K-first schema.
     from .action_space import describe_action_vector as _describe_action_vector
     from .persistence import write_action_description_files as _write_action_description_files
+    # ADR-015: STRICT feasibility selection (port of Stage-1's
+    # _select_stage1_reward_best_config). The reported best must STRICTLY satisfy
+    # accuracy AND stability (terminal_priority == 3 under the strict std gate). If
+    # the search never found a feasible candidate, fall back to the baseline (which
+    # is feasible by construction: fusion=0, no added instability) rather than
+    # reporting an infeasible "best" — exactly what Stage-1 does. This is what the
+    # user means by "找出的最优配置严格满足精度+稳定性约束".
+    best_fallback_to_baseline = False
+    _best_priority = int(getattr(best_record, "terminal_priority", 0)) if best_record is not None else 0
+    if _best_priority != 3:
+        best_fallback_to_baseline = True
+        log(
+            f"  {bullet} [ADR-015] 全程无 P3（严格 acc+stab 可行）候选（best priority="
+            f"{_best_priority}）→ best 回退 baseline（baseline 按构造可行）"
+        )
+        if baseline_action_vec is not None:
+            best_action_vec = np.asarray(baseline_action_vec, dtype=np.int64).copy()
+        best_record = None
+        best_rank_key = tuple()
+        best_reward = 0.0  # baseline harvests no cost saving in the continuous reward
+
     best_action_description_paths: Dict[str, str] = {}
     baseline_action_description_paths: Dict[str, str] = {}
     try:

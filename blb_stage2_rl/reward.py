@@ -145,6 +145,33 @@ FUSION_COST_BUDGET_FRACTION = 2.0 / 3.0
 # to over-fuse -> no hot collapse). tau<=0 disables it (bit-for-bit ADR-013).
 FUSION_SATURATION_TAU = 0.15
 
+# ADR-015 (2026-06-14): CONTINUOUS bounded reward — a faithful port of Stage-1's
+# `_compute_final_reward` design plus the original Stage-2's std-based stability
+# constraint, replacing the tier 0/+20/+40 structure. The 4 collapses all share
+# the same disease: at the feasibility boundary the policy straddles tiers and the
+# reward swings ±40 (the user's "变化幅度太大"), and the 500% stability tolerance
+# made the stability gate vacuous ("没看到稳定性约束"). Stage-1 avoids this with a
+# SMOOTH reward = accuracy log-barrier + cost, normalized + clipped to [-5,+5]; we
+# add a stability log-barrier (the original Stage-2's std constraint). Hard priority
+# (item 7) holds via WEIGHTING — a violated barrier (-VIO·exp) dwarfs the P3-gated
+# cost — plus strict feasibility selection, NOT via tiers. The strict std gate also
+# doubles as the principled anti-runaway brake: high fusion/deep-K raises std past
+# the threshold → P2 (not P3) → no cost reward → fusion cannot run away (retires
+# the ADR-014 saturation hack). ``reward_design="tiered"`` restores the ADR-014
+# path (kept for A/B + rollback). Constants mirror Stage-1
+# (layer_importance_evaluator.py:480-396).
+DEFAULT_REWARD_DESIGN = "continuous"
+CONT_BARRIER_VIOLATION_SCALE = 10.0    # Stage-1 LOG_BARRIER_VIOLATION_SCALE
+CONT_BARRIER_STEEPNESS = 20.0          # Stage-1 LOG_BARRIER_VIOLATION_STEEPNESS
+CONT_BARRIER_SATISFACTION_SCALE = 0.5  # Stage-1 LOG_BARRIER_SATISFACTION_SCALE
+CONT_REWARD_NORM = 20.0                # Stage-1 REWARD_NORMALIZATION_SCALE
+CONT_W_ACC = 1.0                       # accuracy-barrier weight in raw
+CONT_W_STAB = 1.0                      # stability-barrier weight (= acc; both hard constraints)
+# Max positive a fully-feasible (P3) config earns from cost saving (cost_frac∈[0,1]
+# × this), added AFTER /NORM so the feasible reward is cost-led like Stage-1's
+# (whose feasible reward ≈ cost_saving∈[0,1]). Kept < CLIP_MAX so P3 stays bounded.
+CONT_W_COST = 4.0
+
 # ---------------------------------------------------------------------------
 # ADR-013 (2026-06-13): Stage-1-style two-piece log-barrier on the accuracy
 # margin. REPLACES the ADR-012 graded near-miss tier (P1 shaping) AND the
@@ -328,11 +355,23 @@ class RewardWeights:
     acc_barrier_vio_scale: float = DEFAULT_ACC_BARRIER_VIO_SCALE
     acc_barrier_floor: float = DEFAULT_ACC_BARRIER_FLOOR
     acc_barrier_eps: float = DEFAULT_ACC_BARRIER_EPS
-    # ADR-014 (2026-06-14): concave/saturating transform on the fusion cost
-    # (anti-runaway). The fusion-count env (sequential_env) reads this and feeds
-    # it to fusion_cost.compute_fusion_cost_saving; the saturated fusion_norm is
-    # what scales the P3 budget. 0 disables (bit-for-bit ADR-013).
-    fusion_saturation_tau: float = FUSION_SATURATION_TAU
+    # ADR-014 concave/saturating fusion cost — RETIRED by ADR-015 (default 0 =
+    # off). The continuous reward's strict std stability gate is now the
+    # principled anti-runaway brake (high fusion → high std → P2 → no cost
+    # reward), so the saturation hack is no longer needed. The saturate_fusion
+    # code stays dormant (tau=0 = identity) for the tiered A/B rollback path.
+    fusion_saturation_tau: float = 0.0
+    # ADR-015 (2026-06-14): continuous bounded reward (Stage-1 design + std
+    # stability). "continuous" (default) = smooth log-barrier reward clipped to
+    # [-5,+5], NO tiers; "tiered" = the ADR-014 path (kept for A/B + rollback).
+    reward_design: str = DEFAULT_REWARD_DESIGN
+    cont_barrier_violation_scale: float = CONT_BARRIER_VIOLATION_SCALE
+    cont_barrier_steepness: float = CONT_BARRIER_STEEPNESS
+    cont_barrier_satisfaction_scale: float = CONT_BARRIER_SATISFACTION_SCALE
+    cont_reward_norm: float = CONT_REWARD_NORM
+    cont_w_acc: float = CONT_W_ACC
+    cont_w_stab: float = CONT_W_STAB
+    cont_w_cost: float = CONT_W_COST
     cost_w_fusion: float = DEFAULT_COST_W_FUSION
     cost_w_k: float = DEFAULT_COST_W_K
     cost_w_bits: float = DEFAULT_COST_W_BITS
@@ -420,6 +459,9 @@ class RewardBreakdown:
     # barrier coordinate (>=0 feasible w/ headroom, <0 violated).
     acc_barrier_sat: float = 0.0
     acc_barrier_vio: float = 0.0
+    # ADR-015: continuous-reward stability barrier (mean Stage-1 log-barrier over
+    # the loss/m1/m2 std margins). Diagnostics only; 0 in the tiered path.
+    stab_barrier: float = 0.0
     worst_signed_margin: float = 0.0
     # v3 per-axis breakdown (helpful for diagnostics / artifacts)
     acc_violation_m1: float = 0.0
@@ -726,6 +768,65 @@ def accuracy_margin_barrier(worst_signed_margin: float, weights: RewardWeights) 
         b0 = sat * (math.log(eps) - log_ref)            # satisfied-side value at mu=0
         val = b0 - float(weights.acc_barrier_vio_scale) * (-mu)
     return max(floor, val)
+
+
+def stage1_log_barrier(margin: float, weights: RewardWeights) -> float:
+    """ADR-015 Stage-1-style log-barrier on ONE signed normalized margin.
+
+    Faithful port of ``layer_importance_evaluator.log_barrier_reward``:
+      * ``margin >= 0`` (satisfied): ``SAT * log(margin + 1e-5)`` — diminishing
+        reward for extra headroom (can be slightly negative for margin < 1).
+      * ``margin < 0`` (violated): ``-VIO * exp(-margin * STEEPNESS)`` — a smooth
+        exponential penalty that grows steeply as the violation deepens (the
+        exponent is clamped so it never overflows; the caller's reward clip then
+        bounds it to ``reward_clip_min``).
+    Same shape for the accuracy AND stability constraints (the original Stage-2
+    used an std-based stability penalty; here it is a log-barrier for symmetry).
+    """
+    m = float(margin)
+    if not math.isfinite(m):
+        m = -1.0e9
+    if m < 0.0:
+        expo = min(50.0, (-m) * float(weights.cont_barrier_steepness))
+        return -float(weights.cont_barrier_violation_scale) * math.exp(expo)
+    return float(weights.cont_barrier_satisfaction_scale) * math.log(m + 1.0e-5)
+
+
+def _continuous_reward(
+        *,
+        acc_margins: Sequence[float],
+        std_margins: Sequence[float],
+        effective_cost_score: float,
+        invalid: bool,
+        weights: RewardWeights,
+        ) -> tuple:
+    """ADR-015 continuous bounded reward (Stage-1 design + std stability).
+
+    ``raw = W_acc*mean(acc_barrier) + W_stab*mean(stab_barrier)``; the scalar is
+    ``clip(raw/NORM + W_cost*cost_frac, CLIP_MIN, CLIP_MAX)`` where ``cost_frac``
+    is the P3-gated saving in ``[0,1]`` (0 unless both gates pass upstream). Hard
+    priority / item 7 holds because a violated barrier ``-VIO*exp`` (per channel)
+    dwarfs ``W_cost`` once divided by ``NORM`` and clipped — a violation always
+    pins the scalar at ``CLIP_MIN`` while cost can only lift a fully-feasible
+    config by at most ``W_cost``. Returns ``(scalar, acc_barrier, stab_barrier)``.
+    """
+    clip_min = float(weights.reward_clip_min)
+    clip_max = float(weights.reward_clip_max)
+    norm = float(weights.cont_reward_norm) or 1.0
+    if invalid:
+        # Invalid chain: the model forward is skipped, metrics are unreliable, so
+        # treat it as a hard violation pinned at the floor (bounded, like the rest).
+        return float(clip_min), float(-weights.cont_barrier_violation_scale), 0.0
+    acc_vals = [stage1_log_barrier(m, weights) for m in acc_margins]
+    stab_vals = [stage1_log_barrier(m, weights) for m in std_margins]
+    acc_b = (sum(acc_vals) / len(acc_vals)) if acc_vals else 0.0
+    stab_b = (sum(stab_vals) / len(stab_vals)) if stab_vals else 0.0
+    barrier_raw = float(weights.cont_w_acc) * acc_b + float(weights.cont_w_stab) * stab_b
+    cost_frac = float(np.clip(
+        float(effective_cost_score) / max(float(weights.p3_cost_budget), 1e-8), 0.0, 1.0,
+    ))
+    scalar = barrier_raw / norm + float(weights.cont_w_cost) * cost_frac
+    return float(np.clip(scalar, clip_min, clip_max)), float(acc_b), float(stab_b)
 
 
 def _resolve_metric_for_threshold(
@@ -1061,6 +1162,7 @@ def compute_reward(
     acc_barrier_sat = 0.0
     acc_barrier_vio = 0.0
     near_miss = False
+    stab_barrier = 0.0  # ADR-015 continuous-reward stability barrier (diagnostics)
     # Barrier handles the non-invalid accuracy dimension; invalid episodes keep
     # the legacy invalid_term shaping (their metrics are unreliable — the model
     # forward is skipped on an invalid chain).
@@ -1121,6 +1223,47 @@ def compute_reward(
 
     total = float(shaping_clipped + tier_bonus)
 
+    # === ADR-015: CONTINUOUS reward override (replaces the tier total) ===
+    # When reward_design="continuous" (default), the smooth log-barrier reward
+    # supersedes the tier 0/+20/+40 structure: accuracy log-barrier + stability
+    # log-barrier + P3-gated cost, all clipped to [-5,+5] (Stage-1's design + the
+    # original Stage-2's std stability). The tiered total above is computed but
+    # discarded (cheap); priority / cost gating / breakdown share the same path.
+    # Hard priority (item 7) holds via weighting: a violated barrier pins the
+    # scalar at CLIP_MIN while cost can only lift a fully-feasible config by W_cost.
+    if str(getattr(weights, "reward_design", "tiered")) == "continuous":
+        def _std_margin(observed: float, threshold: float, denom: float) -> float:
+            if not math.isfinite(observed):
+                return -1.0e9
+            return (float(threshold) - float(observed)) / max(
+                abs(float(denom)), float(weights.stab_floor)
+            )
+        _acc_margins = []
+        if m1_active:
+            _acc_margins.append(margin_m1)
+        if m2_active:
+            _acc_margins.append(margin_m2)
+        _std_margins = [
+            _std_margin(m1_std, stab_thr_m1, denom_m1_std),
+            _std_margin(m2_std, stab_thr_m2, denom_m2_std),
+            _std_margin(loss_std, stab_thr_loss, denom_loss_std),
+        ]
+        _scalar, _acc_b, _stab_b = _continuous_reward(
+            acc_margins=_acc_margins,
+            std_margins=_std_margins,
+            effective_cost_score=effective_cost_score,
+            invalid=invalid,
+            weights=weights,
+        )
+        acc_barrier_sat = _acc_b if worst_signed_margin >= 0.0 else 0.0
+        acc_barrier_vio = _acc_b if worst_signed_margin < 0.0 else 0.0
+        stab_barrier = float(_stab_b)
+        near_miss = False
+        tier_bonus = 0.0
+        shaping_raw = float(_scalar)
+        shaping_clipped = float(_scalar)
+        total = float(_scalar)
+
     # Per-axis raw cost components for downstream diagnostics
     r_fusion = float(r_fusion_raw) if (metric_ok and stab_ok) else 0.0
     r_k = float(r_k_raw) if (metric_ok and stab_ok) else 0.0
@@ -1146,6 +1289,7 @@ def compute_reward(
         acc_worst_deficit_norm=float(acc_worst_deficit_norm),
         acc_barrier_sat=float(acc_barrier_sat),
         acc_barrier_vio=float(acc_barrier_vio),
+        stab_barrier=float(stab_barrier),
         worst_signed_margin=float(worst_signed_margin),
         # v3 per-axis breakdown
         acc_violation_m1=float(acc_violation_m1),

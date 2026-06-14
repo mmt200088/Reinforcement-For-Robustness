@@ -21,6 +21,31 @@ When in doubt, check the linked commit's full message for surgical details.
 
 ---
 
+## [Unreleased] — 2026-06-14 (pm)
+
+### Changed
+- **Stage-2 fusion reward rebuild: continuous bounded reward + strict stability**
+  (ADR-015). After 4 collapses the user asked to stop patching and port the two
+  proven designs. Studied Stage-1 (`_compute_final_reward`: continuous log-barrier
+  + cost, /20, clip[-5,5]; cosine entropy; strict `_candidate_meets_constraints`)
+  and the original Stage-2 (`_compute_terminal_reward_mc`: std-based stability
+  constraint). New default `reward_design="continuous"`: `stage1_log_barrier`
+  accuracy + stability barriers + P3-gated cost, normalized + clipped to [-5,+5],
+  NO tiers — bounded amplitude + continuous across the feasibility boundary (vs the
+  tier ±40 jumps). A **strict std stability gate** (run with a strict
+  `--stage2-stability-tolerance`, not 500%) is the principled anti-runaway brake
+  (high fusion → high std → P2 → no cost reward); the ADR-014 saturation is retired
+  (`fusion_saturation_tau` default 0). **Strict feasibility selection** (port of
+  Stage-1): the reported best must strictly satisfy accuracy AND stability or falls
+  back to baseline. **Stage-1 cosine entropy** (0.05→0.001, 25% plateau, lower-bound
+  0.012) replaces the low→high anchor+ramp, and the ADR-011/012 exploration patches
+  (baseline anchor / warmstart prior / fusion probes / ε floor / curriculum) are
+  gated off under continuous. item 7 / 1==N / checkpoint-compat preserved; reward
+  NOT comparable across ADR-015; `reward_design="tiered"` restores ADR-014.
+  Locked by `tests/test_blb_continuous_reward.py`.
+
+---
+
 ## [Unreleased] — 2026-06-14
 
 ### Changed

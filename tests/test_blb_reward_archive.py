@@ -445,6 +445,7 @@ class ParetoCostArchiveTests(unittest.TestCase):
         # ADR-013: legacy linear P3 metric-margin path (barrier off); the
         # cost-ordering invariant this test checks is unchanged by the barrier.
         weights.acc_barrier_enabled = False
+        weights.reward_design = "tiered"  # ADR-015: this asserts the tiered path
         metrics = reward.EpisodeMetrics(
             loss_mean=0.30,
             loss_std=0.0,

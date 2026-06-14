@@ -658,6 +658,17 @@ class BLBStage2TrainConfig:
     # docstring in blb_stage2_rl/sequential_runner.py for full rationale.
     ent_coef_anchor: float = 0.0
     ent_coef_ramp_episodes: int = 600
+    # ADR-015 (2026-06-14): continuous bounded reward + Stage-1 cosine entropy
+    # (the rebuild defaults). reward_design="continuous" gates off the ADR-011/012
+    # exploration patches; ent_coef_schedule="cosine" replaces the low→high
+    # anchor+ramp with Stage-1's high→low cosine. Set reward_design="tiered" +
+    # ent_coef_schedule="anchor_ramp" to restore the ADR-014 path (A/B / rollback).
+    reward_design: str = "continuous"
+    ent_coef_schedule: str = "cosine"
+    ent_coef_cosine_start: float = 0.05
+    ent_coef_cosine_end: float = 0.001
+    ent_coef_cosine_plateau: float = 0.25
+    ent_coef_cosine_lower_bound: float = 0.012
     # force_baseline_episodes: 0 -> use auto-default 60 inside
     # run_sequential_via_runner. Surfaced here so a preset can pin a
     # specific anchor length without relying on the auto-default.

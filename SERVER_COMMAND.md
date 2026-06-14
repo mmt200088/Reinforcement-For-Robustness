@@ -3,7 +3,7 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (ADR-014 结构性反失控 fusion 成本（饱和）+ 崩溃调试落盘 → 确定性门禁 → PASS 自动接 60k + 崩溃 watchdog)
+## ▶ active command  (ADR-015 连续有界 reward（移植 Stage-1）+ 严格稳定性刹车 + Stage-1 cosine 探索 + 严格可行性选择 → 门禁 → 60k)
 
 ```bash
 set -uo pipefail
@@ -131,7 +131,7 @@ base = rwd.BaselineCostStats(total_bits_sum=1000, total_fusion_count=0, avg_k=13
                              loss_mean=0.34, loss_std=0.002, metric1_mean=0.8672,
                              metric2_mean=0.8672, metric1_std=0.001, metric2_std=0.001)
 # ADR-013: barrier 现在默认开启并取代近界档；此处用 acc_barrier_enabled=False 验证 legacy 路径仍在。
-w2 = rwd.RewardWeights(baseline_metric1=0.8672, baseline_metric2=0.8672, acc_barrier_enabled=False)
+w2 = rwd.RewardWeights(baseline_metric1=0.8672, baseline_metric2=0.8672, acc_barrier_enabled=False, reward_design="tiered")
 class _O:
     any_invalid = False; total_bits_sum = 1000; total_fusion_count = 0
 def _r(m1):
@@ -148,7 +148,8 @@ assert _r(0.3200).reward < -4.0 and not _r(0.3200).near_miss   # 灾难型保留
 print("ADR-012 近界渐变档(legacy, barrier off)断言 OK（边缘P1 -7 -> %.1f）" % bnm.reward)
 # ---- ADR-013 断言：Stage-1 式 log-barrier（默认开启，取代近界档+线性 P3 margin）----
 # ADR-014：MARGIN_REF 0.25→0.5（4th-60k 融合区探针 σ≈0.0155 是基线 σ 的 ~8.6×，0.25 亚 σ）。
-wb = rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871)
+# ADR-015：默认 reward_design 翻成 "continuous"；ADR-013/014 断言走 tiered 回滚路径，故 pin。
+wb = rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871, reward_design="tiered")
 assert wb.acc_barrier_enabled and abs(wb.acc_barrier_margin_ref - 0.5) < 1e-12
 assert rwd.accuracy_margin_barrier(0.5, wb) == 0.0                        # headroom 外归零
 assert rwd.accuracy_margin_barrier(0.05, wb) < rwd.accuracy_margin_barrier(0.20, wb) < 0.0  # 回正力
@@ -219,6 +220,37 @@ for _k in ("terminal_worst_signed_margin", "terminal_acc_barrier_sat", "terminal
            "terminal_fusion_norm_raw", "terminal_fusion_norm_saturated"):
     assert _k in _esf, f"EpisodeStats 缺 ADR-014 调试字段 {_k}"
 print("ADR-014 断言 OK：饱和凹性 + 内点峰值 fusion=%d reward=%.2f margin=%.2f + episodes.jsonl 黑箱字段齐全" % (_pk[0], _pk[1], _pk[3]))
+# ---- ADR-015 断言：连续有界 reward（默认）+ 边界连续 + item7 + 严格稳定性刹车 ----
+assert rwd.RewardWeights().reward_design == "continuous"   # 重建是默认
+wc = rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871, stab_tolerance=0.2)  # continuous（默认）
+THRc = 0.858
+def _rc(m1, std=0.002, fusion=0, cost=0.0, invalid=False):
+    met = rwd.EpisodeMetrics(loss_mean=0.37, loss_std=std, metric1_mean=m1, metric2_mean=m1, metric1_std=std, metric2_std=std)
+    class _OB: any_invalid=invalid; total_bits_sum=11285-30*fusion; total_fusion_count=fusion
+    return rwd.compute_reward(met, _OB(), action_avg_k=13.0, baseline=baseB, weights=wc,
+                             acc_threshold=THRc, acc_threshold_m2=THRc, external_cost_score=cost, external_cost_rank=float(fusion))
+# 有界 [-5,5]
+_cont = [_rc(0.871,fusion=8,cost=2.0), _rc(THRc-0.001,fusion=8,cost=2.0), _rc(0.70,fusion=24,cost=4.5),
+         _rc(0.871,std=0.05,fusion=8,cost=2.0), _rc(0.871,invalid=True)]
+assert all(-5.0001 <= b.reward <= 5.0001 for b in _cont), "continuous reward 必须有界 [-5,5]"
+# 跨可行边界连续（无 ±40 跳）
+_gap = abs(_rc(THRc+0.0005,fusion=6,cost=1.5).reward - _rc(THRc-0.0005,fusion=6,cost=1.5).reward)
+assert _gap < 8.0, f"continuous 边界 gap 应远小于 tiered ±40：{_gap}"
+# item7：高 cost 的 P1 < P3
+assert _rc(0.70,fusion=24,cost=4.5).reward < _rc(0.871,fusion=4,cost=1.0).reward
+# 严格稳定性刹车：高 std → P2（非 P3），拿不到 cost
+_hi = _rc(0.871, std=0.05, fusion=8, cost=2.0)
+assert _hi.priority == 2 and not _hi.stab_ok and _hi.metric_ok, "高 std 必须落 P2（稳定性刹车）"
+# 严格稳定性收紧：fusion 区 std≈0.015 在 500% 容忍下通过、20% 下被拒
+assert rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871, stab_tolerance=5.0, reward_design="continuous") is not None
+_loose = _rc(0.871, std=0.015, fusion=8); 
+wc2 = rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871, stab_tolerance=5.0)
+def _rc2(): 
+    met = rwd.EpisodeMetrics(loss_mean=0.37, loss_std=0.015, metric1_mean=0.871, metric2_mean=0.871, metric1_std=0.015, metric2_std=0.015)
+    class _OB: any_invalid=False; total_bits_sum=11285; total_fusion_count=8
+    return rwd.compute_reward(met, _OB(), action_avg_k=13.0, baseline=baseB, weights=wc2, acc_threshold=THRc, acc_threshold_m2=THRc)
+assert _rc2().stab_ok and not _loose.stab_ok, "500% 容忍空门 vs 20% 严格门"
+print("ADR-015 断言 OK：连续有界（gap=%.2f<8） + item7 + 严格稳定性刹车（高 std→P2）+ 默认 continuous" % _gap)
 import sys as _sys
 _sys.path.insert(0, ".")
 from blb_stage2_rl.env import BLBStage2EnvConfig
@@ -238,7 +270,7 @@ assert _BTC().stage2_workers_per_device == 1
 print("workers-per-device 断言 OK（默认 1 = 旧行为；gN/60k 用 2）")
 PY
 echo "==================== [phase0b] ADR-012/013 单元测试（torch 在位：log-barrier/ε混合/复测/近界档/轮换） ===================="
-for f in test_blb_fusion_curriculum test_blb_fusion_reward test_blb_fusion_exploration test_blb_log_barrier_reward test_blb_fusion_saturation test_blb_stage2_outputs; do
+for f in test_blb_fusion_curriculum test_blb_fusion_reward test_blb_fusion_exploration test_blb_log_barrier_reward test_blb_fusion_saturation test_blb_stage2_outputs test_blb_continuous_reward; do
   python3 "tests/${f}.py" > "$OUT/unittest_${f}.log" 2>&1 || { echo "[FATAL] ${f} 失败"; tail -20 "$OUT/unittest_${f}.log"; exit 1; }
   tail -1 "$OUT/unittest_${f}.log"
 done
@@ -320,7 +352,7 @@ run_gate () {   # tag, visible devs, --stage2-rl-devices 值, workers-per-device
     --batch-size 512 \
     --stage2-rl-devices "$devspec" \
     --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-    --stage2-stability-tolerance 5.0 \
+    --stage2-stability-tolerance 0.2 \
     --stage2-limit-tolerance 0.005 \
     --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
     --blb-v3-fusion-exploration-epsilon 0.05 \
@@ -420,7 +452,7 @@ CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
   --batch-size 512 \
   --stage2-rl-devices "$DEVS" \
   --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-  --stage2-stability-tolerance 5.0 \
+  --stage2-stability-tolerance 0.2 \
   --stage2-limit-tolerance 0.005 \
   --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
   --blb-v3-fusion-exploration-epsilon 0.05 \

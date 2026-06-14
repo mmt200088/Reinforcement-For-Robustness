@@ -51,7 +51,10 @@ def _baseline():
 
 
 def _weights():
-    return rwd.RewardWeights(baseline_metric1=0.85, baseline_metric2=0.85)
+    # ADR-015 flipped the default reward to "continuous"; these tests assert the
+    # TIERED P3≈40 behavior, so pin tiered (continuous has its own test file).
+    return rwd.RewardWeights(baseline_metric1=0.85, baseline_metric2=0.85,
+                             reward_design="tiered")
 
 
 def _bc(block_idx, fusion_count, max_fusion, k_value, graph_key="g"):
@@ -148,7 +151,7 @@ class NearMissGradedTierTest(unittest.TestCase):
         # supersedes it by default); test it explicitly with the barrier off.
         w = rwd.RewardWeights(
             baseline_metric1=self.BASE_M1, baseline_metric2=self.BASE_M1,
-            acc_barrier_enabled=False,
+            acc_barrier_enabled=False, reward_design="tiered",
         )
         base = rwd.BaselineCostStats(
             total_bits_sum=1000, total_fusion_count=0, avg_k=13.0,
@@ -202,7 +205,7 @@ class NearMissGradedTierTest(unittest.TestCase):
     def test_invalid_never_near_miss(self):
         w = rwd.RewardWeights(
             baseline_metric1=self.BASE_M1, baseline_metric2=self.BASE_M1,
-            acc_barrier_enabled=False,
+            acc_barrier_enabled=False, reward_design="tiered",
         )
         base = rwd.BaselineCostStats(
             total_bits_sum=1000, total_fusion_count=0, avg_k=13.0,
