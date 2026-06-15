@@ -184,6 +184,47 @@ class DeterminismTest(unittest.TestCase):
         self.assertEqual(a, b)
 
 
+class LossMeanGateTest(unittest.TestCase):
+    """2026-06-15 (user spec "loss 也是" 越低越好): loss_mean is a LOWER-better hard
+    constraint in the continuous path — it may RISE by acc_tolerance (mirrors
+    m1/m2 being allowed to DROP), folds into the performance gate (P1 on
+    violation), and is gated OFF in the tiered rollback (bit-identical)."""
+
+    def _r(self, design, loss_mean, std=0.002):
+        w = _weights(reward_design=design)
+        met = R.EpisodeMetrics(loss_mean=loss_mean, loss_std=std,
+                               metric1_mean=BASELINE_M, metric2_mean=BASELINE_M,
+                               metric1_std=std, metric2_std=std)
+
+        class _OB:
+            any_invalid = False
+            total_bits_sum = 11285
+            total_fusion_count = 8
+
+        return R.compute_reward(met, _OB(), action_avg_k=13.0, baseline=_baseline(),
+                                weights=w, acc_threshold=THR, acc_threshold_m2=THR)
+
+    def test_continuous_gates_loss_mean(self):
+        # baseline loss 0.37, allow +0.5% rise -> thr 0.37185
+        self.assertTrue(self._r("continuous", 0.370).loss_ok)   # at baseline
+        self.assertTrue(self._r("continuous", 0.371).loss_ok)   # within tol
+        bad = self._r("continuous", 0.40)                       # ~8% rise
+        self.assertFalse(bad.loss_ok)
+        self.assertFalse(bad.metric_ok)                         # loss folds into perf gate
+        self.assertEqual(bad.priority, 1)                       # P1 (performance violation)
+
+    def test_continuous_loss_is_lower_better_not_multiplied(self):
+        # A loss DROP (better) is always fine; loss is never required to rise.
+        self.assertTrue(self._r("continuous", 0.10).loss_ok)
+
+    def test_tiered_does_not_gate_loss_mean(self):
+        # tiered rollback: loss_mean never gated (bit-identical to pre-2026-06-15).
+        r = self._r("tiered", 5.0)
+        self.assertTrue(r.loss_ok)        # inactive -> reported ok
+        self.assertTrue(r.metric_ok)      # huge loss does NOT flip the gate
+        self.assertEqual(r.priority, 3)
+
+
 class FusionSweepBrakeTest(unittest.TestCase):
     """As fusion rises, std rises (fusion adds noise); the reward must peak at a
     feasible LOW-noise fusion level and the high-fusion (high-std) tail must be

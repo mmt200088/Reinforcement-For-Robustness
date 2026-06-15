@@ -30,7 +30,7 @@ When in doubt, check the linked commit's full message for surgical details.
   + cost, /20, clip[-5,5]; cosine entropy; strict `_candidate_meets_constraints`)
   and the original Stage-2 (`_compute_terminal_reward_mc`: std-based stability
   constraint). New default `reward_design="continuous"`: `stage1_log_barrier`
-  accuracy + stability barriers + P3-gated cost, normalized + clipped to [-5,+5],
+  performance + stability barriers + P3-gated cost, normalized + clipped to [-5,+5],
   NO tiers — bounded amplitude + continuous across the feasibility boundary (vs the
   tier ±40 jumps). A **std-multiplier stability gate** (`thr = max(baseline.X_std ×
   tol, floor)`; `tol` is a MULTIPLIER, not fractional slack — code default 1.2 = the
@@ -38,7 +38,13 @@ When in doubt, check the linked commit's full message for surgical details.
   LENIENT (`--stage2-stability-tolerance 5.0` = 5×, since the user's std requirement
   isn't strict — 500% is a real gate, NOT vacuous: std > 5× baseline still → P2 → no
   cost reward). The PRIMARY anti-runaway is the bounded continuous reward + the 0.5%
-  accuracy gate + strict selection. The ADR-014 saturation is retired
+  accuracy gate + strict selection. The performance gate covers m1/m2 means
+  (higher-better, ≤`limit_tolerance` drop) AND **`loss_mean`** (lower-better,
+  ≤`limit_tolerance` rise — 2026-06-15 user "loss 也是", folded into
+  `metric_ok`/priority, mirroring Stage-1's loss/m1/m2; each margin in its own
+  direction so a higher-better mean is never multiplied by the std tolerance —
+  the "1.2↔0.8" trap). loss_mean gating is continuous-only (`loss_threshold`
+  plumbed env→reward; tiered rollback unchanged). The ADR-014 saturation is retired
   (`fusion_saturation_tau` default 0). **Strict feasibility selection** (port of
   Stage-1): the reported best must strictly satisfy accuracy AND stability or falls
   back to baseline. **Stage-1 cosine entropy** (0.05→0.001, 25% plateau, lower-bound

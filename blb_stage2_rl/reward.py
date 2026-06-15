@@ -451,6 +451,10 @@ class RewardBreakdown:
     invalid_term: float = 0.0
     metric_ok: bool = False
     stab_ok: bool = False
+    # 2026-06-15: loss_mean lower-better gate (continuous path only). True when
+    # loss_mean is within tolerance (or the gate is inactive). Folded into
+    # metric_ok in the continuous path; diagnostics elsewhere.
+    loss_ok: bool = True
     # ADR-012: graded near-miss (metric fail within near_miss_band of the
     # threshold, not invalid) — priority stays 1, tier is graded not cliff.
     near_miss: bool = False
@@ -869,6 +873,7 @@ def compute_reward(
         acc_threshold: Optional[float] = None,
         acc_threshold_m2: Optional[float] = None,
         stab_threshold: Optional[float] = None,
+        loss_threshold: Optional[float] = None,
         any_invalid: Optional[bool] = None,
         pareto_archive: Optional[ParetoCostArchive] = None,
         action_hash: Optional[str] = None,
@@ -886,6 +891,10 @@ def compute_reward(
         weights:           ``RewardWeights``；None ⇒ v3 默认值
         acc_threshold:     m1 硬阈值；None ⇒ 由 baseline.metric1_mean * (1-tol) 派生
         acc_threshold_m2:  m2 硬阈值；None ⇒ 由 baseline.metric2_mean * (1-tol) 派生
+        loss_threshold:    loss_mean 硬阈值（越低越好；2026-06-15 user spec：loss 也是
+                           lower-better）。None ⇒ 由 baseline.loss_mean * (1 + acc_tolerance)
+                           派生（允许上浮 tol）。仅在 reward_design="continuous" 且 loss
+                           baseline 已校准时生效；tiered 回滚路径不门控 loss_mean（逐位不变）。
         stab_threshold:    loss_std 阈值；v3 中 m1_std/m2_std/loss_std 各自有阈值
                            （baseline.X_std*(1+stab_tol)+stab_floor），传入的
                            ``stab_threshold`` 仅 override loss 那一项以兼容老 caller
@@ -954,6 +963,35 @@ def compute_reward(
         margin_m2 = 0.0
         acc_violation_m2 = 0.0
 
+    # loss_mean hard constraint (LOWER-better) — 2026-06-15 user spec ("loss 也是"
+    # 越低越好), aligning with Stage-1's loss/m1/m2 joint constraint. ONLY active in
+    # the continuous reward path (the tiered rollback keeps its m1/m2-only gate
+    # bit-identical) and only when the loss baseline is calibrated. Threshold lets
+    # loss RISE by acc_tolerance (mirrors launcher "loss 允许上浮"); the accuracy gate
+    # lets m1/m2 DROP. So the SAME limit_tolerance (0.5%) bounds both, in each
+    # quantity's own direction — i.e. for higher-better metrics "1.2" would be "0.8";
+    # here we never multiply a higher-better mean by the std tolerance.
+    _continuous_design = str(getattr(weights, "reward_design", "tiered")) == "continuous"
+    baseline_loss_mean = _safe_float(getattr(baseline, "loss_mean", 0.0), 0.0)
+    loss_mean_active = _continuous_design and (
+        abs(baseline_loss_mean) > float(weights.margin_denom_floor)
+    )
+    if loss_mean_active:
+        loss_mean_val = _safe_float(metrics.loss_mean, 0.0)
+        if loss_threshold is not None and math.isfinite(float(loss_threshold)):
+            thr_loss_mean = float(loss_threshold)
+        else:
+            thr_loss_mean = baseline_loss_mean * (1.0 + float(weights.acc_tolerance))
+        denom_loss_mean = max(
+            abs(thr_loss_mean - baseline_loss_mean), float(weights.margin_denom_floor)
+        )
+        margin_loss_mean = (thr_loss_mean - loss_mean_val) / denom_loss_mean  # lower-better
+        loss_mean_violation = max(0.0, loss_mean_val - thr_loss_mean)
+    else:
+        margin_loss_mean = 0.0
+        loss_mean_violation = 0.0
+    loss_mean_ok = (loss_mean_violation == 0.0)
+
     active_metric_count = (1 if m1_active else 0) + (1 if m2_active else 0)
     if active_metric_count > 0:
         margin_acc = (margin_m1 + margin_m2) / float(active_metric_count)
@@ -961,7 +999,9 @@ def compute_reward(
         # Neither baseline calibrated; fall back to "no margin signal" so
         # legacy callers that just want the tier_bonus path still work.
         margin_acc = 0.0
-    combined_acc_violation = max(acc_violation_m1, acc_violation_m2)
+    # loss_mean_violation is 0 unless the continuous loss gate is active, so this
+    # stays bit-identical for the tiered path.
+    combined_acc_violation = max(acc_violation_m1, acc_violation_m2, loss_mean_violation)
     # ADR-012: worst per-channel deficit normalized by that channel's
     # |baseline - threshold| width — the near-miss grading coordinate.
     _deficits = []
@@ -979,6 +1019,8 @@ def compute_reward(
         _signed_margins.append(margin_m1)
     if m2_active:
         _signed_margins.append(margin_m2)
+    if loss_mean_active:
+        _signed_margins.append(margin_loss_mean)
     worst_signed_margin = min(_signed_margins) if _signed_margins else 0.0
 
     # === 2. Raw cost gains; scalar cost_score is legacy-only unless a Pareto archive is absent. ===
@@ -1256,6 +1298,10 @@ def compute_reward(
             _acc_margins.append(margin_m1)
         if m2_active:
             _acc_margins.append(margin_m2)
+        if loss_mean_active:
+            # loss_mean (lower-better) joins the performance barrier, mirroring
+            # Stage-1's loss/m1/m2 log-barrier group.
+            _acc_margins.append(margin_loss_mean)
         _std_margins = [
             _std_margin(m1_std, stab_thr_m1, denom_m1_std),
             _std_margin(m2_std, stab_thr_m2, denom_m2_std),
@@ -1298,6 +1344,7 @@ def compute_reward(
         invalid_term=float(invalid_term),
         metric_ok=bool(metric_ok),
         stab_ok=bool(stab_ok),
+        loss_ok=bool(loss_mean_ok),
         near_miss=bool(near_miss),
         acc_worst_deficit_norm=float(acc_worst_deficit_norm),
         acc_barrier_sat=float(acc_barrier_sat),

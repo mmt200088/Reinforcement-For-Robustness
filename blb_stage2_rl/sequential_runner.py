@@ -3338,6 +3338,15 @@ def run_sequential_via_runner(
             probe_size=int(getattr(ev, "stage2_probe_size", 256)),
         )
 
+    # 2026-06-15 (user spec): loss_mean is also a hard constraint (LOWER-better),
+    # aligning with Stage-1's loss/m1/m2 joint gate. Threshold lets the noisy
+    # baseline loss RISE by the SAME limit_tolerance the accuracy gate allows m1/m2
+    # to DROP — i.e. "loss 允许上浮 0.5%". Relative form (loss has no discrete
+    # probe-quantization, so no one-sample guard). Only consumed when
+    # reward_design="continuous"; the tiered rollback ignores it.
+    if base_env.loss_threshold is None:
+        base_env.loss_threshold = float(noisy_baseline_loss_mean) * (1.0 + float(allowed_acc_drop))
+
     user_stab_threshold = float(base_env.stab_threshold)
     stab_calib_summary = ""
     if not np.isfinite(user_stab_threshold):
@@ -3360,11 +3369,16 @@ def run_sequential_via_runner(
         f"loss_std(noisy)={noisy_baseline_loss_std:.4f}  "
         f"loss_mean(noisy)={noisy_baseline_loss_mean:.4f}"
     )
+    _loss_thr_disp = (
+        f"{base_env.loss_threshold:.4f}" if base_env.loss_threshold is not None else "None"
+    )
     log(
         f"  {bullet} 校准后硬约束阈值（calibrated gates）："
         f"acc_threshold={base_env.acc_threshold:.4f}  "
+        f"loss_threshold={_loss_thr_disp}  "
         f"stab_threshold={base_env.stab_threshold:.4f}  "
-        f"(limit_tol={allowed_acc_drop:.4f}, stab_tol={stability_tol:.4f})"
+        f"(limit_tol={allowed_acc_drop:.4f}, stab_tol={stability_tol:.4f}; "
+        f"loss 越低越好，允许上浮 limit_tol；m1/m2 越高越好，允许下降 limit_tol；std 越低越好，× stab_tol)"
     )
     if stab_calib_summary:
         log(f"  {bullet} 稳定阈值校准来源（stab calibration source）：{stab_calib_summary}")

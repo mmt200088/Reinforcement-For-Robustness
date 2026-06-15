@@ -257,7 +257,20 @@ assert _stab_at(5.0, 0.03).stab_ok, "stab_tolerance=5.0 → thr=baseline_std×5=
 assert not _stab_at(1.2, 0.03).stab_ok, "stab_tolerance=1.2 → thr=baseline_std×1.2=0.012，std=0.03 应被拒（严格门）"
 # 证明 5.0 非空门：std 抬到 0.06 仍被 5.0× 拒
 assert not _stab_at(5.0, 0.06).stab_ok, "stab_tolerance=5.0 仍是真门：std=0.06 > thr 0.05 应被拒"
-print("ADR-015 断言 OK：连续有界（gap=%.2f<8） + item7 + 严格稳定性=倍率门（5.0× 宽松但非空门 / 1.2× 严格）+ 默认 continuous" % _gap)
+# loss_mean 硬约束（2026-06-15 user spec "loss 也是" 越低越好；允许上浮 limit_tol；
+# continuous 门控、tiered 不门控）。baseB.loss_mean=0.37，loss_threshold=0.37×1.005=0.37185。
+def _rc_loss(design, loss_mean):
+    w = rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871, stab_tolerance=5.0, reward_design=design)
+    met = rwd.EpisodeMetrics(loss_mean=loss_mean, loss_std=0.002, metric1_mean=0.871, metric2_mean=0.871, metric1_std=0.002, metric2_std=0.002)
+    class _OB: any_invalid=False; total_bits_sum=11285; total_fusion_count=8
+    return rwd.compute_reward(met, _OB(), action_avg_k=13.0, baseline=baseB, weights=w, acc_threshold=THRc, acc_threshold_m2=THRc)
+assert _rc_loss("continuous", 0.371).loss_ok, "continuous: loss 在 +0.5% 容忍内应过"
+_lbad = _rc_loss("continuous", 0.40)
+assert (not _lbad.loss_ok) and (not _lbad.metric_ok) and _lbad.priority == 1, "continuous: loss 上浮超界应落 P1（折进性能门）"
+assert _rc_loss("continuous", 0.10).loss_ok, "loss 越低越好：loss 下降必过"
+_ltier = _rc_loss("tiered", 5.0)
+assert _ltier.loss_ok and _ltier.metric_ok and _ltier.priority == 3, "tiered: loss_mean 不门控（逐位不变）"
+print("ADR-015 断言 OK：连续有界（gap=%.2f<8） + item7 + 严格稳定性=倍率门（5.0× 宽松但非空门 / 1.2× 严格）+ loss_mean 越低越好硬门（continuous 门控 / tiered 不门控）+ 默认 continuous" % _gap)
 import sys as _sys
 _sys.path.insert(0, ".")
 from blb_stage2_rl.env import BLBStage2EnvConfig

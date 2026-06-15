@@ -70,8 +70,16 @@ accuracy gate + strict selection carry the anti-runaway.
 `clip(raw/NORM + W_cost·cost_frac, -5, +5)`. `stage1_log_barrier(margin)` is a
 faithful port of Stage-1's: satisfied `SAT·log(margin+eps)`, violated
 `-VIO·exp(-margin·STEEP)` (exponent clamped, then the clip bounds it). The
-accuracy barrier runs over the active metric margins; the stability barrier over
-the signed std margins `(thr-std)/|thr-baseline|`. `cost_frac` is the P3-gated
+accuracy (performance) barrier runs over the active metric margins — m1/m2 means
+(higher-better, allowed to DROP ≤ `limit_tolerance`) AND `loss_mean` (lower-better,
+allowed to RISE ≤ `limit_tolerance`; 2026-06-15 user spec "loss 也是", mirroring
+Stage-1's loss/m1/m2 joint constraint and folded into `metric_ok`/priority). Each
+quantity's margin is computed in ITS OWN direction, so a higher-better mean is
+never multiplied by the std tolerance (the "1.2 ↔ 0.8" trap). The stability barrier
+runs over the signed std margins `(thr-std)/|thr-baseline|` where
+`thr = baseline.X_std × stab_tolerance` (a MULTIPLIER). `loss_mean` gating is
+continuous-only; the tiered rollback keeps its m1/m2-only gate bit-identical.
+`cost_frac` is the P3-gated
 fusion saving in `[0,1]`. Constants mirror Stage-1 (VIO=10, STEEP=20, SAT=0.5,
 NORM=20; W_acc=W_stab=1, W_cost=4). **No tiers** — hard priority / item 7 holds via
 WEIGHTING (a violated barrier pins the scalar at CLIP_MIN while cost can only lift
