@@ -1,0 +1,12 @@
+/usr/local/lib/python3.11/dist-packages/transformers/utils/hub.py:127: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+RO 导入 OK；DEFAULT_FUSION_POLICY = default
+step-1×15 档位规则 OK（间隔1/最多15档/无下限/同值档预去重）
+fusion_enum_fast unranking OK
+stage2 seed_utils OK; preflight episode = -1
+ADR-012 近界渐变档(legacy, barrier off)断言 OK（边缘P1 -7 -> 26.6）
+ADR-013 log-barrier 断言 OK：内点峰值 fusion=2 reward=40.17 margin=0.50；违反区有恢复梯度
+ADR-014 断言 OK：饱和凹性 + 内点峰值 fusion=2 reward=40.95 margin=0.50 + episodes.jsonl 黑箱字段齐全
+ADR-015 断言 OK：连续有界（gap=2.00<8） + item7 + 严格稳定性=倍率门（5.0× 宽松但非空门 / 1.2× 严格）+ loss_mean 越低越好硬门（continuous 门控 / tiered 不门控）+ 默认 continuous
+ADR-012 复测/ε 默认值断言 OK
+workers-per-device 断言 OK（默认 1 = 旧行为；gN/60k 用 2）

@@ -1,0 +1,12 @@
+/usr/local/lib/python3.11/dist-packages/transformers/utils/hub.py:127: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+FusionCountMap.load('mrpc') OK — 所有图 option0==baseline。
+
+图              新(n_opt, fusion, enum_total)          旧(n_opt, fusion, enum_total)
+  block1_mrpc.json (1, [0], 3913140)                    (1, [0], 3913140)
+  block2_mrpc.json (2, [0, 1], 211891680)               (2, [0, 1], 211891680)
+  block4.json      (2, [0, 1], 2207205000)              (2, [0, 1], 2207205000)
+  block5_n0.json   (2, [0, 1], 81000)                   (2, [0, 1], 81000)
+  block5_n1.json   (2, [0, 1], 4624620)                 (2, [0, 1], 4624620)
+  block5_n2.json   (2, [0, 1], 64744680)                (2, [0, 1], 64744680)
+  block5_n4.json   (2, [0, 1], 906425520)               (2, [0, 1], 906425520)

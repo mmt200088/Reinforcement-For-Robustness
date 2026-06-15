@@ -1,0 +1,23 @@
+test_continuous_at_boundary (__main__.BarrierHelperShapeTest.test_continuous_at_boundary) ... ok
+test_floor_clamped (__main__.BarrierHelperShapeTest.test_floor_clamped) ... ok
+test_margin_ref_moves_the_penalty_onset (__main__.BarrierHelperShapeTest.test_margin_ref_moves_the_penalty_onset) ... ok
+test_restoring_force_below_headroom (__main__.BarrierHelperShapeTest.test_restoring_force_below_headroom)
+Satisfied side: strictly decreasing toward the boundary (mu -> 0). ... ok
+test_violated_monotone_no_plateau (__main__.BarrierHelperShapeTest.test_violated_monotone_no_plateau)
+Violated side keeps a gradient over the whole realistic depth — the ... ok
+test_zero_beyond_headroom (__main__.BarrierHelperShapeTest.test_zero_beyond_headroom) ... ok
+test_barrier_is_pure_function_of_metrics (__main__.DeterminismTest.test_barrier_is_pure_function_of_metrics) ... ok
+test_invalid_uses_legacy_term_not_barrier (__main__.HardPriorityPreservedTest.test_invalid_uses_legacy_term_not_barrier) ... ok
+test_item7_violation_below_every_p3 (__main__.HardPriorityPreservedTest.test_item7_violation_below_every_p3)
+No accuracy-violated (P1) episode can ever out-score ANY P3, so cost ... ok
+test_p1_never_gets_cost (__main__.HardPriorityPreservedTest.test_p1_never_gets_cost) ... ok
+test_priority_unchanged_by_barrier (__main__.HardPriorityPreservedTest.test_priority_unchanged_by_barrier) ... ok
+test_peak_beats_baseline (__main__.InteriorPeakTest.test_peak_beats_baseline) ... ok
+test_peak_is_interior_and_positive_margin (__main__.InteriorPeakTest.test_peak_is_interior_and_positive_margin) ... ok
+test_reward_declines_past_peak (__main__.InteriorPeakTest.test_reward_declines_past_peak) ... ok
+test_violated_region_has_recovery_gradient (__main__.InteriorPeakTest.test_violated_region_has_recovery_gradient) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.009s
+
+OK

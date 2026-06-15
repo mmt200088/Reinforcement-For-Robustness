@@ -1,0 +1,137 @@
+{
+  "graph_key": "block2_mrpc",
+  "profile": "mrpc",
+  "block_idx": 2,
+  "gelu_degree": 4,
+  "attn_degree": 2,
+  "k_slot_index": 22,
+  "block_num_slots": 23,
+  "options": [
+    {
+      "option_id": 0,
+      "fusion_count": 0,
+      "tie_index": 0,
+      "total_variance": 6.360233383562417e-06,
+      "total_bits": 263,
+      "slots": {
+        "inv_std_fresh_sf": 28,
+        "gamma_sf": 20,
+        "wk_sf": 22,
+        "kt_mask1_sf": 15,
+        "kt_mask2_sf": 15,
+        "qkt_merge_mask_sf": 15,
+        "gamma_rescale_sf": 28,
+        "kt_mask1_rescale_sf": 28,
+        "qkt_matmul_rescale_sf": 28
+      },
+      "action_indices": [
+        14,
+        14,
+        14,
+        14,
+        14,
+        14,
+        14,
+        14,
+        14,
+        0,
+        0,
+        14,
+        14,
+        14,
+        0,
+        0,
+        0,
+        0,
+        14,
+        14,
+        0,
+        14,
+        3
+      ]
+    },
+    {
+      "option_id": 1,
+      "fusion_count": 1,
+      "tie_index": 0,
+      "total_variance": 1.1679359934146184e-05,
+      "total_bits": 238,
+      "slots": {
+        "inv_std_fresh_sf": 21,
+        "gamma_sf": 15,
+        "wk_sf": 16,
+        "kt_mask1_sf": 15,
+        "kt_mask2_sf": 15,
+        "qkt_merge_mask_sf": 15,
+        "gamma_rescale_sf": 28,
+        "kt_mask1_rescale_sf": 28,
+        "qkt_matmul_rescale_sf": 28
+      },
+      "action_indices": [
+        7,
+        14,
+        9,
+        8,
+        14,
+        14,
+        14,
+        14,
+        14,
+        0,
+        0,
+        14,
+        14,
+        14,
+        0,
+        0,
+        0,
+        0,
+        14,
+        14,
+        0,
+        14,
+        3
+      ]
+    }
+  ],
+  "build_meta": {
+    "active_rescale_fields": [
+      "gamma_rescale_sf",
+      "kt_mask1_rescale_sf",
+      "q_mask1_rescale_sf",
+      "qkt_matmul_rescale_sf"
+    ],
+    "enum_positions": [
+      0,
+      2,
+      3,
+      5,
+      6,
+      8,
+      18,
+      21
+    ],
+    "pinned_positions": [
+      7
+    ],
+    "enum_total_combos": 211891680,
+    "valid_configs": 125221598,
+    "kept_configs": 1641,
+    "num_options": 2,
+    "fusion_counts": [
+      0,
+      1
+    ],
+    "wall_seconds": 227.29,
+    "workers": 128,
+    "k_independence": {
+      "k_independent": true,
+      "violations": [],
+      "samples_checked": 2
+    },
+    "enum_path": "fast",
+    "fast_verified_probes": 130,
+    "fast_shards": 1024,
+    "fast_wall_seconds": 227.22
+  }
+}

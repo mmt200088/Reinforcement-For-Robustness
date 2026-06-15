@@ -1,0 +1,20 @@
+test_all_bounded_in_clip_range (__main__.BoundedAndContinuousTest.test_all_bounded_in_clip_range) ... ok
+test_continuous_across_feasibility_boundary (__main__.BoundedAndContinuousTest.test_continuous_across_feasibility_boundary) ... ok
+test_tiered_still_jumps (__main__.BoundedAndContinuousTest.test_tiered_still_jumps) ... ok
+test_default_is_continuous (__main__.ContinuousDefaultTest.test_default_is_continuous) ... ok
+test_same_inputs_same_reward (__main__.DeterminismTest.test_same_inputs_same_reward) ... ok
+test_peak_is_feasible_not_max_fusion (__main__.FusionSweepBrakeTest.test_peak_is_feasible_not_max_fusion) ... ok
+test_p1_with_huge_cost_below_p3 (__main__.HardPriorityItem7Test.test_p1_with_huge_cost_below_p3) ... ok
+test_p2_gets_no_cost_below_p3 (__main__.HardPriorityItem7Test.test_p2_gets_no_cost_below_p3) ... ok
+test_continuous_gates_loss_mean (__main__.LossMeanGateTest.test_continuous_gates_loss_mean) ... ok
+test_continuous_loss_is_lower_better_not_multiplied (__main__.LossMeanGateTest.test_continuous_loss_is_lower_better_not_multiplied) ... ok
+test_tiered_does_not_gate_loss_mean (__main__.LossMeanGateTest.test_tiered_does_not_gate_loss_mean) ... ok
+test_labels (__main__.PriorityLabelTest.test_labels) ... ok
+test_high_std_is_p2_not_p3 (__main__.StabilityBrakeTest.test_high_std_is_p2_not_p3) ... ok
+test_low_std_feasible_is_p3 (__main__.StabilityBrakeTest.test_low_std_feasible_is_p3) ... ok
+test_strict_tolerance_tightens_gate (__main__.StabilityBrakeTest.test_strict_tolerance_tightens_gate) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.006s
+
+OK
