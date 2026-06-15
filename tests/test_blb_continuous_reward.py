@@ -185,10 +185,13 @@ class DeterminismTest(unittest.TestCase):
 
 
 class LossMeanGateTest(unittest.TestCase):
-    """2026-06-15 (user spec "loss 也是" 越低越好): loss_mean is a LOWER-better hard
-    constraint in the continuous path — it may RISE by acc_tolerance (mirrors
-    m1/m2 being allowed to DROP), folds into the performance gate (P1 on
-    violation), and is gated OFF in the tiered rollback (bit-identical)."""
+    """2026-06-15 (determinism): loss_mean is a LOWER-better diagnostic in the reward
+    (``loss_ok``, computed against the CLEAN deterministic baseline so it is
+    byte-identical across GPU counts) but it does NOT feed metric_ok / priority /
+    the reward scalar — the noisy loss reference is not cross-GPU-deterministic
+    (unlike DISCRETE accuracy), so a continuous loss term in the per-episode reward
+    breaks 1==N. The HARD loss constraint is enforced at strict feasibility SELECTION
+    instead (sequential_runner). The tiered rollback never computes loss_ok."""
 
     def _r(self, design, loss_mean, std=0.002):
         w = _weights(reward_design=design)
@@ -204,24 +207,28 @@ class LossMeanGateTest(unittest.TestCase):
         return R.compute_reward(met, _OB(), action_avg_k=13.0, baseline=_baseline(),
                                 weights=w, acc_threshold=THR, acc_threshold_m2=THR)
 
-    def test_continuous_gates_loss_mean(self):
-        # baseline loss 0.37, allow +0.5% rise -> thr 0.37185
-        self.assertTrue(self._r("continuous", 0.370).loss_ok)   # at baseline
-        self.assertTrue(self._r("continuous", 0.371).loss_ok)   # within tol
-        bad = self._r("continuous", 0.40)                       # ~8% rise
-        self.assertFalse(bad.loss_ok)
-        self.assertFalse(bad.metric_ok)                         # loss folds into perf gate
-        self.assertEqual(bad.priority, 1)                       # P1 (performance violation)
+    def test_loss_does_NOT_affect_priority_or_metric_ok(self):
+        # A high loss with OK accuracy + stability stays P3 (loss not in the gate).
+        bad_loss = self._r("continuous", 0.40)   # ~8% loss rise
+        self.assertTrue(bad_loss.metric_ok)      # accuracy gate unaffected by loss
+        self.assertEqual(bad_loss.priority, 3)   # still P3 (loss is selection-only)
 
-    def test_continuous_loss_is_lower_better_not_multiplied(self):
-        # A loss DROP (better) is always fine; loss is never required to rise.
-        self.assertTrue(self._r("continuous", 0.10).loss_ok)
+    def test_loss_ok_diagnostic_tracks_clean_baseline(self):
+        # loss_ok is a deterministic diagnostic vs CLEAN baseline (0.37) × (1+0.5%).
+        self.assertTrue(self._r("continuous", 0.370).loss_ok)   # within tol
+        self.assertFalse(self._r("continuous", 0.40).loss_ok)   # exceeds clean+0.5%
+        self.assertTrue(self._r("continuous", 0.10).loss_ok)    # lower is fine
 
-    def test_tiered_does_not_gate_loss_mean(self):
-        # tiered rollback: loss_mean never gated (bit-identical to pre-2026-06-15).
+    def test_loss_ok_same_reward_regardless_of_loss(self):
+        # Because loss is out of the scalar, the reward is identical for two configs
+        # that differ ONLY in loss_mean (the determinism-relevant property).
+        self.assertEqual(self._r("continuous", 0.370).reward,
+                         self._r("continuous", 0.40).reward)
+
+    def test_tiered_loss_ok_default_true(self):
+        # tiered rollback: loss gate inactive, loss_ok defaults True, priority by m1/m2/std.
         r = self._r("tiered", 5.0)
-        self.assertTrue(r.loss_ok)        # inactive -> reported ok
-        self.assertTrue(r.metric_ok)      # huge loss does NOT flip the gate
+        self.assertTrue(r.loss_ok)
         self.assertEqual(r.priority, 3)
 
 

@@ -963,14 +963,14 @@ def compute_reward(
         margin_m2 = 0.0
         acc_violation_m2 = 0.0
 
-    # loss_mean hard constraint (LOWER-better) — 2026-06-15 user spec ("loss 也是"
-    # 越低越好), aligning with Stage-1's loss/m1/m2 joint constraint. ONLY active in
-    # the continuous reward path (the tiered rollback keeps its m1/m2-only gate
-    # bit-identical) and only when the loss baseline is calibrated. Threshold lets
-    # loss RISE by acc_tolerance (mirrors launcher "loss 允许上浮"); the accuracy gate
-    # lets m1/m2 DROP. So the SAME limit_tolerance (0.5%) bounds both, in each
-    # quantity's own direction — i.e. for higher-better metrics "1.2" would be "0.8";
-    # here we never multiply a higher-better mean by the std tolerance.
+    # loss_mean (LOWER-better) diagnostic — 2026-06-15. The user wants loss as a
+    # hard constraint, but the NOISY loss reference is not byte-identical across GPU
+    # counts (unlike DISCRETE accuracy), so a continuous loss term in the per-episode
+    # reward/priority breaks 1==N. The hard loss constraint is therefore enforced at
+    # strict feasibility SELECTION (sequential_runner, vs the per-run noisy
+    # loss_threshold). Here ``loss_ok`` is only a DETERMINISTIC diagnostic computed
+    # against the CLEAN baseline (byte-identical across GPU counts → safe to log),
+    # and it does NOT feed metric_ok / priority / the reward scalar.
     _continuous_design = str(getattr(weights, "reward_design", "tiered")) == "continuous"
     baseline_loss_mean = _safe_float(getattr(baseline, "loss_mean", 0.0), 0.0)
     loss_mean_active = _continuous_design and (
@@ -978,19 +978,10 @@ def compute_reward(
     )
     if loss_mean_active:
         loss_mean_val = _safe_float(metrics.loss_mean, 0.0)
-        if loss_threshold is not None and math.isfinite(float(loss_threshold)):
-            thr_loss_mean = float(loss_threshold)
-        else:
-            thr_loss_mean = baseline_loss_mean * (1.0 + float(weights.acc_tolerance))
-        denom_loss_mean = max(
-            abs(thr_loss_mean - baseline_loss_mean), float(weights.margin_denom_floor)
-        )
-        margin_loss_mean = (thr_loss_mean - loss_mean_val) / denom_loss_mean  # lower-better
-        loss_mean_violation = max(0.0, loss_mean_val - thr_loss_mean)
+        thr_loss_mean_diag = baseline_loss_mean * (1.0 + float(weights.acc_tolerance))
+        loss_mean_ok = (loss_mean_val <= thr_loss_mean_diag)
     else:
-        margin_loss_mean = 0.0
-        loss_mean_violation = 0.0
-    loss_mean_ok = (loss_mean_violation == 0.0)
+        loss_mean_ok = True
 
     active_metric_count = (1 if m1_active else 0) + (1 if m2_active else 0)
     if active_metric_count > 0:
@@ -999,9 +990,13 @@ def compute_reward(
         # Neither baseline calibrated; fall back to "no margin signal" so
         # legacy callers that just want the tier_bonus path still work.
         margin_acc = 0.0
-    # loss_mean_violation is 0 unless the continuous loss gate is active, so this
-    # stays bit-identical for the tiered path.
-    combined_acc_violation = max(acc_violation_m1, acc_violation_m2, loss_mean_violation)
+    # 2026-06-15 (determinism): loss_mean is NOT folded into the per-episode gate.
+    # The noisy preflight loss reference is not byte-identical across GPU counts
+    # (unlike DISCRETE accuracy), so a continuous loss margin in the per-episode
+    # reward/priority breaks 1==N. loss_mean is enforced at strict feasibility
+    # SELECTION instead (sequential_runner), using the recorded byte-identical
+    # episode loss vs the per-run loss_threshold. loss_mean_ok stays a diagnostic.
+    combined_acc_violation = max(acc_violation_m1, acc_violation_m2)
     # ADR-012: worst per-channel deficit normalized by that channel's
     # |baseline - threshold| width — the near-miss grading coordinate.
     _deficits = []
@@ -1019,8 +1014,8 @@ def compute_reward(
         _signed_margins.append(margin_m1)
     if m2_active:
         _signed_margins.append(margin_m2)
-    if loss_mean_active:
-        _signed_margins.append(margin_loss_mean)
+    # loss_mean intentionally excluded from the per-episode barrier (see determinism
+    # note at combined_acc_violation): its noisy reference is not cross-GPU-identical.
     worst_signed_margin = min(_signed_margins) if _signed_margins else 0.0
 
     # === 2. Raw cost gains; scalar cost_score is legacy-only unless a Pareto archive is absent. ===
@@ -1298,10 +1293,8 @@ def compute_reward(
             _acc_margins.append(margin_m1)
         if m2_active:
             _acc_margins.append(margin_m2)
-        if loss_mean_active:
-            # loss_mean (lower-better) joins the performance barrier, mirroring
-            # Stage-1's loss/m1/m2 log-barrier group.
-            _acc_margins.append(margin_loss_mean)
+        # loss_mean excluded from the continuous barrier scalar (determinism: its
+        # noisy reference is not cross-GPU-identical). Enforced at strict selection.
         _std_margins = [
             _std_margin(m1_std, stab_thr_m1, denom_m1_std),
             _std_margin(m2_std, stab_thr_m2, denom_m2_std),

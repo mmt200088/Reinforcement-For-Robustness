@@ -4837,10 +4837,21 @@ def run_sequential_via_runner(
     # user means by "找出的最优配置严格满足精度+稳定性约束".
     best_fallback_to_baseline = False
     _best_priority = int(getattr(best_record, "terminal_priority", 0)) if best_record is not None else 0
-    if _best_priority != 3:
+    # 2026-06-15: loss_mean is enforced HERE (strict selection), not in the
+    # per-episode reward — its noisy reference is not cross-GPU-deterministic, so
+    # gating it per-episode breaks 1==N. At selection the recorded loss is
+    # byte-identical and the per-run loss_threshold is fixed, so this check is
+    # deterministic within a run. The reported best must satisfy loss ≤ baseline×(1+tol).
+    _loss_thr = getattr(base_env, "loss_threshold", None)
+    _best_loss = float(getattr(best_record, "terminal_loss_mean", float("inf"))) if best_record is not None else float("inf")
+    _best_loss_ok = (_loss_thr is None) or (np.isfinite(_best_loss) and _best_loss <= float(_loss_thr) + 1e-12)
+    if _best_priority != 3 or not _best_loss_ok:
         best_fallback_to_baseline = True
+        _why = "无 P3（严格 acc+stab 可行）候选" if _best_priority != 3 else (
+            f"best loss_mean={_best_loss:.4f} > loss_threshold={float(_loss_thr):.4f}（loss 越低越好硬约束）"
+        )
         log(
-            f"  {bullet} [ADR-015] 全程无 P3（严格 acc+stab 可行）候选（best priority="
+            f"  {bullet} [ADR-015] {_why}（best priority="
             f"{_best_priority}）→ best 回退 baseline（baseline 按构造可行）"
         )
         if baseline_action_vec is not None:

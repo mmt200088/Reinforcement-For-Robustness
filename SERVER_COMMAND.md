@@ -186,8 +186,10 @@ assert hi_cost_p1 < worst_p3, "item7：高 cost 的 P1 仍 < 任意 P3"
 print("ADR-013 log-barrier 断言 OK：内点峰值 fusion=%d reward=%.2f margin=%.2f；违反区有恢复梯度" % (peak[0], peak[1], peak[3]))
 # ---- ADR-014 断言：结构性反失控 fusion 成本（饱和）+ 黑箱落盘 ----
 import blb_stage2_rl.fusion_cost as _fc
-assert abs(rwd.FUSION_SATURATION_TAU - 0.15) < 1e-12
-assert abs(wb.fusion_saturation_tau - 0.15) < 1e-12
+assert abs(rwd.FUSION_SATURATION_TAU - 0.15) < 1e-12   # ADR-014 reference constant kept
+# ADR-015: RewardWeights default fusion_saturation_tau retired to 0.0 (saturation off
+# under continuous reward). The function still works with an explicit tau (below).
+assert abs(wb.fusion_saturation_tau - 0.0) < 1e-12
 assert _fc.saturate_fusion(0.5, 0.0) == 0.5 and _fc.saturate_fusion(1.0, 0.15) == 1.0  # 关=恒等; 端点
 # 凹性：边际递减（反失控核心）；过拐点边际 ≪ 起点边际
 _sat = [_fc.saturate_fusion(i / 40.0, 0.15) for i in range(41)]
@@ -424,10 +426,12 @@ except FileNotFoundError as e:
     print("[gate][FAIL] episodes.jsonl 缺失:", e); raise SystemExit(2)
 PY
 [ $? -ne 0 ] && GATE_PASS=0
-# ADR-012 探针出现性（动态检测，anchor 无关——上轮发现 gate 与长跑 anchor 不同）：
-# 300ep 门禁内必须出现 >=2 个 forced_fusion_probe episode；前两个目标依次是
-# b2、b5（轮换 2->5，b4 已剔除），且各自 fusion_count>=12（目标块 12 层全部
-# 强制 option1；probe-v2 下其余块跟随策略+课程，只增不减）。
+# 2026-06-15 (ADR-015): forced-fusion probes are an ADR-011/012 patch for the TIERED
+# reward. Under reward_design="continuous" (the rebuild's default) the runner gates
+# probes OFF (fusion_probe_interval=0, along with anchor/warmstart/ε/curriculum), so
+# expecting probe episodes is STALE. This is now an INFORMATIONAL report only — their
+# absence under continuous is correct and must NOT fail the gate. (If a future tiered
+# A/B run is gated, re-enable the strict rotation/fc check below.)
 python3 - <<PY 2>&1 | tee -a "$GOUT/verdict.txt"
 import json
 probes = []
@@ -437,19 +441,9 @@ for l in open("$GOUT/gN_episodes.jsonl"):
     if mode.startswith("forced_fusion_probe_"):
         probes.append((int(d.get("episode", -1)), mode, int(d.get("fusion_count", -1))))
 probes.sort()
-print(f"[gate] forced_fusion_probe episodes in gate run: {probes}")
-ok = len(probes) >= 2
-if ok:
-    (e1, m1, f1), (e2, m2, f2) = probes[0], probes[1]
-    ok = (
-        m1.endswith("_b2") and f1 >= 12
-        and m2.endswith("_b5") and f2 >= 12
-        and (e2 - e1) == int("$FUSION_PROBE_INTERVAL")
-    )
-print(f"[gate] probe presence/rotation/fc check: {'OK' if ok else 'FAIL'}")
-raise SystemExit(0 if ok else 2)
+print(f"[gate][info] forced_fusion_probe episodes: {probes} "
+      f"(expected EMPTY under ADR-015 continuous — probes gated off)")
 PY
-[ $? -ne 0 ] && { GATE_PASS=0; echo "[gate][FAIL] fusion 探针未按计划出现" | tee -a "$GOUT/verdict.txt"; }
 g1s=$(cat "$GOUT/g1_walltime_s.txt" 2>/dev/null || echo 0); gNs=$(cat "$GOUT/gN_walltime_s.txt" 2>/dev/null || echo 0)
 python3 -c "
 g1=$g1s; gN=$gNs; ep=$GATE_EPISODES; nd=$NGPU
