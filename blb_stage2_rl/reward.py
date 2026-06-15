@@ -28,7 +28,7 @@
   acc_violation = max(0, acc_thr_m1 - m1, acc_thr_m2 - m2)
   margin_acc = ((m1 - thr_m1)/denom_m1 + (m2 - thr_m2)/denom_m2) / 2
 
-  stab_thr_X = baseline.X_std * (1 + stab_tolerance) + stab_floor   # X ∈ {m1,m2,loss}
+  stab_thr_X = max(baseline.X_std * stab_tolerance, stab_floor)     # X ∈ {m1,m2,loss}; tol is a MULTIPLIER
   excess_X = max(0, X_std - stab_thr_X)
   norm_X = excess_X / max(baseline.X_std, stab_floor)
   combined_stab_excess = (30·norm_m1 + 30·norm_m2 + 1·norm_loss) / 61
@@ -222,14 +222,16 @@ DEFAULT_ACC_BARRIER_EPS = 1.0e-3
 # Tolerances driving the per-metric thresholds. ``acc_tolerance`` is the
 # relative drop you allow from baseline.metric{i}_mean (0.5% by default —
 # matches the 2026-05-18 noisy-baseline preflight constant in sequential_runner).
-# ``stab_tolerance`` is the relative slack you allow above baseline.X_std before
-# declaring an excess. ``stab_floor`` is deliberately 1e-2, not 1e-3: MRPC
+# ``stab_tolerance`` is a MULTIPLIER on baseline.X_std (2026-06-15 user spec):
+# the per-metric std constraint is ``baseline.X_std × tol`` (tol=1.0 → 100% =
+# baseline std; tol=5.0 → 5×, deliberately lenient but a REAL gate, never
+# vacuous). ``stab_floor`` is deliberately 1e-2, not 1e-3: MRPC
 # metric1/metric2 are estimated from only 5 stochastic probe trials over a small
 # validation subset, so their standard deviations are quantized by a few samples.
 # A 1e-3 floor made normal sampling jitter randomly remove the +20 stability
 # tier and collapse rolling reward averages without any accuracy/loss failure.
 DEFAULT_ACC_TOLERANCE = 0.005
-DEFAULT_STAB_TOLERANCE = 0.5
+DEFAULT_STAB_TOLERANCE = 1.2
 DEFAULT_STAB_FLOOR = 1.0e-2
 
 # Legacy fields kept for any caller / log line that still references them.
@@ -283,7 +285,7 @@ class RewardWeights:
         baseline_metric2:  baseline metric2 的 margin denominator 来源
         acc_tolerance:     metric_ok 的容忍百分比；阈值 = baseline_X * (1 - tol)
                            caller 显式传 acc_threshold_m{1,2} 时覆盖该 fallback
-        stab_tolerance:    stability gate 的容忍百分比；阈值 = baseline.X_std * (1 + tol)
+        stab_tolerance:    stability gate 的倍率（MULTIPLIER）；阈值 = baseline.X_std × tol
         stab_floor:        stability 阈值的最小绝对值（防 baseline.std≈0 失稳）
         p3_metric_margin_budget:
                            P3 内 accuracy margin 可占的最大 shaping 空间。
@@ -999,7 +1001,18 @@ def compute_reward(
 
     # === 3. combined stability_excess (m1_std, m2_std, loss_std) ===
     def _stab_threshold(baseline_std: float) -> float:
-        return float(baseline_std) * (1.0 + float(weights.stab_tolerance)) + float(weights.stab_floor)
+        # 2026-06-15 (user spec): ``stab_tolerance`` is a MULTIPLIER on the
+        # baseline std — the per-metric std constraint is ``baseline.X_std × tol``
+        # (tol=1.0 → 100% = baseline; tol=5.0 → 5×, a deliberately LENIENT but
+        # real gate, not an empty one). Was ``baseline_std·(1+tol)+floor``
+        # (fractional-slack semantics), which both mislabeled a lenient 6× setting
+        # as "vacuous" and broke the "× value" interpretation. ``stab_floor`` is
+        # kept only as an absolute minimum for the degenerate near-zero-baseline
+        # (probe-quantization) case; set it to 0 for a pure multiplier.
+        return max(
+            float(baseline_std) * float(weights.stab_tolerance),
+            float(weights.stab_floor),
+        )
 
     stab_thr_m1 = _stab_threshold(baseline.metric1_std)
     stab_thr_m2 = _stab_threshold(baseline.metric2_std)

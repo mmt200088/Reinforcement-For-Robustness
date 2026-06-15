@@ -76,7 +76,7 @@ GA / Greedy：
 准确度约束参数（rl / ga / greedy / rl-and-ga-compare 可用）：
   --stage1-accuracy-tolerance FLOAT    Stage-1 指标约束百分比（默认 0.005 即 0.5%）
   --stage2-limit-tolerance FLOAT       Stage-2 指标约束百分比（以 baseline 为基准，默认 0.05 即 5%；loss 允许上浮 5%、metric 允许下降 5%）
-  --stage2-stability-tolerance FLOAT   Stage-2 稳定性约束倍率（以 baseline 探针的 std 为基准，默认 0.05 即 5%；可设 5.0 表示 500%）
+  --stage2-stability-tolerance FLOAT   Stage-2 稳定性约束倍率（BLB-RL：阈值 = baseline 探针 std × 该值；默认 1.2 即 1.2×；可设 5.0 表示 5×/500% 的宽松门。GA/greedy 路径仍按 fraction 解释）
   --stage2-k-trials INT                Stage-2 稳定性评测噪声试验次数 K（默认 5；每次评测在同一份探针上跑 K 个独立噪声种子）
   --stage2-probe-size INT              Stage-2 稳定性评测探针子集大小（默认 256；用分层采样从验证集中抽取 K 次 trial 共用的固定子集）
   --blb-v3-reward-devices STR          Stage-2 RL 奖励探针并行 GPU 列表（默认空 = 单卡；如 "0,1" → 把 K 次 trial 在两张卡上并行执行）
@@ -498,7 +498,7 @@ STAGE1_RUN_ID=""; S_STAGE1_RUN_ID="false"   # 解耦 stage2-only：指定要读�
 DECOUPLED_LAYOUT="false"                     # 解耦 RL 新布局开关（仅 SEARCH_ALGORITHM=rl 置 true）
 STAGE1_ACCURACY_TOLERANCE="0.005"; S_STAGE1_ACCURACY_TOLERANCE="false"
 STAGE2_LIMIT_TOLERANCE="0.05"; S_STAGE2_LIMIT_TOLERANCE="false"
-STAGE2_STABILITY_TOLERANCE="0.05"; S_STAGE2_STABILITY_TOLERANCE="false"
+STAGE2_STABILITY_TOLERANCE="1.2"; S_STAGE2_STABILITY_TOLERANCE="false"
 STAGE2_K_TRIALS="5"; S_STAGE2_K_TRIALS="false"
 STAGE2_PROBE_SIZE="256"; S_STAGE2_PROBE_SIZE="false"
 STAGE2_RL_VARIANT="blb_v3"; S_STAGE2_RL_VARIANT="false"

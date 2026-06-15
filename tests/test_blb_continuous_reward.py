@@ -43,7 +43,7 @@ BASELINE_M = 0.871
 
 def _weights(**kw):
     base = dict(baseline_metric1=BASELINE_M, baseline_metric2=BASELINE_M,
-                stab_tolerance=0.2)  # strict 20% std slack (ADR-015 default-ish)
+                stab_tolerance=1.2)  # MULTIPLIER on baseline std (2026-06-15): thr = baseline.X_std × tol; 1.2 = original Stage-2's 1.2×
     base.update(kw)
     return R.RewardWeights(**base)
 
@@ -135,15 +135,38 @@ class StabilityBrakeTest(unittest.TestCase):
         self.assertTrue(b.stab_ok and b.metric_ok)
 
     def test_strict_tolerance_tightens_gate(self):
-        # The 4th-60k fusion std (~0.0155) is exactly where tolerance bites:
-        # thr = baseline_std*(1+tol) + stab_floor(0.01). For baseline_std=0.002:
-        # tol=5.0 → 0.022 (passes 0.015), tol=0.2 → 0.0124 (FAILS 0.015). So the
-        # 500% tolerance was the toothless gate; a strict tolerance restores the
-        # constraint (and the anti-runaway brake).
-        loose = _reward(0.871, std=0.015, fusion=8, weights=_weights(stab_tolerance=5.0))
-        strict = _reward(0.871, std=0.015, fusion=8, weights=_weights(stab_tolerance=0.2))
-        self.assertTrue(loose.stab_ok)        # 0.015 < 0.002*(1+5)+0.01 = 0.022
-        self.assertFalse(strict.stab_ok)      # 0.015 > 0.002*(1+0.2)+0.01 = 0.0124
+        # 2026-06-15 (user spec): stab_tolerance is a MULTIPLIER on baseline std —
+        # thr = max(baseline.X_std × tol, stab_floor). Use baseline std=0.01 so the
+        # multiplier (not the 0.01 floor) decides the gate, then show 5.0(=5×) is a
+        # LENIENT but real gate while 1.2(=1.2×) is strict. Crucially 5.0 is NOT
+        # vacuous: a high-enough std still fails it.
+        big_std_baseline = R.BaselineCostStats(
+            total_bits_sum=11285, total_fusion_count=0, avg_k=13.0,
+            loss_mean=0.37, loss_std=0.01, metric1_mean=BASELINE_M, metric2_mean=BASELINE_M,
+            metric1_std=0.01, metric2_std=0.01, typical_bits_drop=1000,
+            typical_fusion_count=24, typical_k_drop=5,
+        )
+
+        def _stab_at(tol, obs):
+            met = R.EpisodeMetrics(loss_mean=0.37, loss_std=obs, metric1_mean=0.871,
+                                   metric2_mean=0.871, metric1_std=obs, metric2_std=obs)
+
+            class _OB:
+                any_invalid = False
+                total_bits_sum = 11285
+                total_fusion_count = 8
+
+            return R.compute_reward(
+                met, _OB(), action_avg_k=13.0, baseline=big_std_baseline,
+                weights=_weights(stab_tolerance=tol),
+                acc_threshold=THR, acc_threshold_m2=THR,
+            )
+
+        # std=0.03: 5.0×(thr=0.05) passes, 1.2×(thr=0.012) rejects.
+        self.assertTrue(_stab_at(5.0, 0.03).stab_ok)    # 0.03 < 0.01*5 = 0.05
+        self.assertFalse(_stab_at(1.2, 0.03).stab_ok)   # 0.03 > 0.01*1.2 = 0.012
+        # 5.0 is a real gate, not vacuous: std=0.06 > 0.05 still fails.
+        self.assertFalse(_stab_at(5.0, 0.06).stab_ok)   # 0.06 > 0.01*5 = 0.05
 
 
 class PriorityLabelTest(unittest.TestCase):

@@ -32,9 +32,13 @@ When in doubt, check the linked commit's full message for surgical details.
   constraint). New default `reward_design="continuous"`: `stage1_log_barrier`
   accuracy + stability barriers + P3-gated cost, normalized + clipped to [-5,+5],
   NO tiers — bounded amplitude + continuous across the feasibility boundary (vs the
-  tier ±40 jumps). A **strict std stability gate** (run with a strict
-  `--stage2-stability-tolerance`, not 500%) is the principled anti-runaway brake
-  (high fusion → high std → P2 → no cost reward); the ADR-014 saturation is retired
+  tier ±40 jumps). A **std-multiplier stability gate** (`thr = max(baseline.X_std ×
+  tol, floor)`; `tol` is a MULTIPLIER, not fractional slack — code default 1.2 = the
+  original Stage-2's 1.2×) feeds the barrier + priority + selection; the run keeps it
+  LENIENT (`--stage2-stability-tolerance 5.0` = 5×, since the user's std requirement
+  isn't strict — 500% is a real gate, NOT vacuous: std > 5× baseline still → P2 → no
+  cost reward). The PRIMARY anti-runaway is the bounded continuous reward + the 0.5%
+  accuracy gate + strict selection. The ADR-014 saturation is retired
   (`fusion_saturation_tau` default 0). **Strict feasibility selection** (port of
   Stage-1): the reported best must strictly satisfy accuracy AND stability or falls
   back to baseline. **Stage-1 cosine entropy** (0.05→0.001, 25% plateau, lower-bound

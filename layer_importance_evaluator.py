@@ -2464,7 +2464,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         #   limit: loss 允许上浮 tol, metric 允许下降 tol
         #   stability: std 允许上浮 tol（baseline 探针的纯噪声采样方差）
         self.stage2_limit_tolerance = float(stage2_limit_tolerance) if stage2_limit_tolerance is not None else 0.05
-        self.stage2_stability_tolerance = float(stage2_stability_tolerance) if stage2_stability_tolerance is not None else 0.05
+        # 2026-06-15: MULTIPLIER on baseline std (stab_threshold = baseline.X_std × tol),
+        # not fractional slack. Default 1.2 mirrors the original Stage-2 1.2× gate.
+        self.stage2_stability_tolerance = float(stage2_stability_tolerance) if stage2_stability_tolerance is not None else 1.2
         # Stage-2 稳定性评测：K 次噪声 trial 在同一份固定分层探针上评测
         #   stage2_k_trials: 噪声 trial 次数（K）
         #   stage2_probe_size: 探针子集大小

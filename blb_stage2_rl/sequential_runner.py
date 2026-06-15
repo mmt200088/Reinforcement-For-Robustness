@@ -3291,7 +3291,7 @@ def run_sequential_via_runner(
     # stage2_stability_tolerance), which the launcher feeds from the preset
     # (defaults 0.005 / 0.005 in mrpc-blb-stage2-rl.conf).
     allowed_acc_drop = max(0.0, float(getattr(ev, "stage2_limit_tolerance", 0.05)))
-    stability_tol = max(0.0, float(getattr(ev, "stage2_stability_tolerance", 0.05)))
+    stability_tol = max(0.0, float(getattr(ev, "stage2_stability_tolerance", 1.2)))
     # 2026-06-11 fix: the v3 per-channel stability gates (m1_std / m2_std /
     # loss_std inside compute_reward) derive their thresholds from
     # weights.stab_tolerance, which silently stayed at the dataclass default
@@ -3341,23 +3341,17 @@ def run_sequential_via_runner(
     user_stab_threshold = float(base_env.stab_threshold)
     stab_calib_summary = ""
     if not np.isfinite(user_stab_threshold):
-        # 2026-05-18 (rdv2): v2 公式 = baseline_loss_std × (1 + tolerance).
-        # 之前一版尝试用 5 个均匀随机 action 的 loss_std P90 做 dynamic
-        # threshold，但 577-dim 均匀随机几乎必然 invalid_chain（report
-        # `2026-05-18_dynamic_stab_calibration_fallback` 印证：25 次 0 个 valid），
-        # 校准失败回落到 0.05，问题没改。
-        #
-        # 现在 reward 是 v2-style **soft** penalty + clipped + tier_bonus
-        # （见 reward.py / ADR-007），即使 stab_excess 很大也只贡献 -5 给 shaping，
-        # 不会让 reward 跌到 -150。所以 stab_threshold 设紧一点没关系，stab_ok
-        # 偶尔达到就拿 +20 额外 tier_bonus，达不到就拿 +20 (metric_ok)，cost
-        # 信号继续可见。
-        derived = noisy_baseline_loss_std * (1.0 + stability_tol)
+        # 2026-06-15 (user spec): stab_tolerance 是 baseline std 的**倍率**
+        # （MULTIPLIER），不是 fractional slack。stab_threshold = noisy baseline
+        # loss_std × tol（tol=1.2 → 1.2×，对齐原始 Stage-2；tol=5.0 → 5×，宽松但
+        # 仍是真门，不会变空）。曾用 ×(1+tol) 的 fractional-slack 口径，既把宽松
+        # 的 6× 误标成"空门"，又破坏了"× 值"的语义。
+        derived = noisy_baseline_loss_std * stability_tol
         base_env.stab_threshold = float(max(derived, 0.01))
         stab_calib_summary = (
-            f"v2 formula: noisy_baseline_loss_std={noisy_baseline_loss_std:.4f} × "
-            f"(1 + tol={stability_tol:.4f}) → stab_threshold = {base_env.stab_threshold:.4f}  "
-            f"(soft cap under clipped+tier reward; ADR-007)"
+            f"multiplier formula: noisy_baseline_loss_std={noisy_baseline_loss_std:.4f} × "
+            f"tol={stability_tol:.4f} → stab_threshold = {base_env.stab_threshold:.4f}  "
+            f"(ADR-015 continuous reward + strict-stability brake)"
         )
 
     log(

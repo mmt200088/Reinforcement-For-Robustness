@@ -1,7 +1,19 @@
 # ADR-015: Continuous bounded reward + strict stability brake (port of Stage-1 + original Stage-2)
 
-Date: 2026-06-14
+Date: 2026-06-14 (stability-gate framing corrected 2026-06-15)
 Status: Accepted
+
+> **2026-06-15 correction.** An earlier draft called `--stage2-stability-tolerance
+> 5.0` (500%) a "vacuous gate" and implemented the threshold as
+> `baseline_std·(1+tol) + floor` (fractional slack). Per user spec the std gate is
+> a **MULTIPLIER**: `thr = max(baseline.X_std × tol, stab_floor)`. So tol=5.0 → 5×
+> baseline std — a deliberately LENIENT but **real** gate (a config with std > 5×
+> baseline still fails it), tol=1.2 → the original Stage-2's 1.2×. 500% is not
+> vacuous; the user's std requirement simply isn't strict, and >100% is meaningful.
+> The principled anti-runaway is therefore primarily the continuous bounded reward
+> (an accuracy violation is clipped to −5, no ±40 jumps) + the strict 0.5% accuracy
+> gate + strict feasibility selection; the std multiplier is a tunable secondary
+> constraint the user runs lenient (5.0×). Sections below are corrected accordingly.
 Supersedes: the reward SHAPING of ADR-011/012/013/014 (split budget, near-miss
 tier, log-barrier-on-margin tier add-on, fusion saturation) and the tier 0/+20/+40
 structure inherited from `noise_rl_module_v2`. KEEPS: the fusion-count action +
@@ -26,23 +38,30 @@ What the study found (the three designs, by function):
 | | Stage-1 `_compute_final_reward` | Original Stage-2 `_compute_terminal_reward_mc` | current fusion Stage-2 |
 |---|---|---|---|
 | reward | continuous log-barrier(loss,m1,m2)+cost, **/20, clip[-5,5]** | margin perf/violation+cost+**std stability**, clip±5 **+tiers 0/20/40** | tiers + ADR patches; amplitude [-7,+45] |
-| stability | none (N/A) | **strict std gate** (`stability_base_std_tolerance=1.2`), only when metric_ok | gate present but `--stage2-stability-tolerance 5.0` (500%) → vacuous |
-| selection | **strict `_candidate_meets_constraints`** (loss/m1/m2) + rank metric→loss→cost, else baseline | hard-priority | hard-priority rank, but P3's stab gate was vacuous |
+| stability | none (N/A) | **std gate** (`stability_base_std_tolerance=1.2`, a 1.2× MULTIPLIER), only when metric_ok | gate present but threshold was mis-implemented as `(1+tol)+floor` fractional slack |
+| selection | **strict `_candidate_meets_constraints`** (loss/m1/m2) + rank metric→loss→cost, else baseline | hard-priority | hard-priority rank without strict feasibility fallback |
 | exploration | cosine entropy 0.05→0.001 (25% plateau, lower-bound 0.012, recovery 25×, KL-stop 0.02) | — | baseline anchor + decaying prior + curriculum |
 
 Root-cause → complaint map: ① amplitude = the tier ±40 jumps at the feasibility
-boundary (Stage-1 avoids them by being CONTINUOUS); ② "no stability" = the 500%
-tolerance made the gate vacuous; ③ "doesn't strictly satisfy" = no strict
-feasibility selection; ④ exploration/initial-policy = the baseline anchor (which
-biases the policy toward fusion=0 and is opposite of Stage-1's high-entropy start).
-Key insight: a STRICT std gate naturally rejects high-fusion/deep-K configs (whose
-std is ~8× baseline) → they fall to P2 → get no cost reward → fusion cannot run
-away. So strict stability is the principled anti-runaway brake (cleaner than the
-ADR-014 saturation hack).
+boundary (Stage-1 avoids them by being CONTINUOUS); ② "no stability" = the std
+gate's threshold was mis-implemented as `(1+tol)+floor` fractional slack rather
+than a `baseline_std × tol` multiplier, and there was no strict feasibility
+selection wiring it into the reported best; ③ "doesn't strictly satisfy" = no
+strict feasibility selection; ④ exploration/initial-policy = the baseline anchor
+(which biases the policy toward fusion=0 and is opposite of Stage-1's high-entropy
+start). Key insight: the principled anti-runaway is the continuous bounded reward
+(an accuracy violation is clipped to −5; there is no longer a ±40 cliff a single
+fusion can fall off) + the strict 0.5% accuracy gate + strict feasibility
+selection. The std gate is a real `baseline_std × tol` multiplier the user runs
+LENIENT (5.0× — their std requirement isn't strict); it still catches a
+runaway-std config (std > 5× baseline → P2 → no cost reward) but it is not the
+primary brake. This is cleaner than the ADR-014 saturation hack.
 
-User decisions: **(Q1)** continuous bounded reward (no tiers); **(Q2)** strict
-stability = the principled brake, retiring the ADR-014 saturation + the accreted
-exploration patches.
+User decisions: **(Q1)** continuous bounded reward (no tiers); **(Q2)** a real
+(principled) std-multiplier gate wired into priority + selection, retiring the
+ADR-014 saturation + the accreted exploration patches. The user runs the gate
+lenient (`--stage2-stability-tolerance 5.0` = 5×), so the reward bounding +
+accuracy gate + strict selection carry the anti-runaway.
 
 ## Decision
 
@@ -60,12 +79,17 @@ a fully-feasible config by ≤ W_cost) plus strict selection. The result is boun
 to ~[-5,+5] and CONTINUOUS across the feasibility boundary (locked by
 `tests/test_blb_continuous_reward.py`: boundary gap < 8 vs the tiered path's > 20).
 
-### 2. Strict stability = anti-runaway brake
-The std gate (already `std ≤ baseline_std·(1+tol) + stab_floor`) feeds both the
-continuous stab_barrier AND the priority. The run uses a STRICT tolerance (e.g.
-0.2 = 20%, the original Stage-2's 1.2×), not 500%. High fusion → high std → P2 →
-no cost reward → no runaway. The ADR-014 `fusion_saturation_tau` default is set to
-0 (retired; saturate_fusion stays dormant for the tiered rollback).
+### 2. Std-multiplier stability gate (real, tunable, runs lenient)
+The std gate is `std ≤ max(baseline.X_std × tol, stab_floor)` — `tol` is a
+**MULTIPLIER** on the noisy-baseline std (2026-06-15 user spec), not fractional
+slack. It feeds both the continuous stab_barrier AND the priority. The run uses a
+LENIENT `--stage2-stability-tolerance 5.0` (= 5× baseline std) because the user's
+std requirement isn't strict; tol=1.2 reproduces the original Stage-2's 1.2× if a
+tighter gate is wanted. Even at 5× the gate is real: a config with std > 5×
+baseline → P2 → no cost reward, so a runaway-std solution still can't harvest cost.
+The primary anti-runaway, though, is §1's bounded reward + the strict accuracy gate
++ §3's strict selection. The ADR-014 `fusion_saturation_tau` default is set to 0
+(retired; saturate_fusion stays dormant for the tiered rollback).
 
 ### 3. Strict feasibility selection + baseline fallback (`sequential_runner.py`)
 Port of Stage-1's `_select_stage1_reward_best_config`: the reported best must be
@@ -94,11 +118,11 @@ all-valid (option,K) space wants high-entropy exploration from episode 1.
 ## Consequences
 - Judge the next 60k by Stage-1's standard: a smooth small-amplitude (~[-5,5])
   reward curve; the reported best STRICTLY satisfies accuracy + stability (or is
-  an explicit baseline fallback); fusion stabilizes at a strictly-feasible level
-  (which may be modest — that is the honest result of a strict stability
-  constraint, and the user explicitly prefers strict satisfaction over maximal
-  fusion). The ADR-014 health log / diagnostics curve / persisted mu make all of
-  this readable.
-- If strict stability leaves too little fusion harvest, the lever is the run's
-  `--stage2-stability-tolerance` (loosen toward 1.x) — a deliberate, visible
-  trade, not a hidden one.
+  an explicit baseline fallback). With the lenient 5× std gate, fusion is mainly
+  bounded by the 0.5% accuracy gate (not stability); it stabilizes at a
+  strictly-feasible level, which may be modest — the honest result of strict
+  feasibility selection, which the user prefers over maximal fusion. The ADR-014
+  health log / diagnostics curve / persisted mu make all of this readable.
+- The std gate is a tunable knob: tighten `--stage2-stability-tolerance` toward
+  1.2× to make stability bite harder, or keep it lenient (5×) if accuracy is the
+  binding constraint — a deliberate, visible trade, not a hidden one.

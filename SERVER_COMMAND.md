@@ -222,7 +222,7 @@ for _k in ("terminal_worst_signed_margin", "terminal_acc_barrier_sat", "terminal
 print("ADR-014 断言 OK：饱和凹性 + 内点峰值 fusion=%d reward=%.2f margin=%.2f + episodes.jsonl 黑箱字段齐全" % (_pk[0], _pk[1], _pk[3]))
 # ---- ADR-015 断言：连续有界 reward（默认）+ 边界连续 + item7 + 严格稳定性刹车 ----
 assert rwd.RewardWeights().reward_design == "continuous"   # 重建是默认
-wc = rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871, stab_tolerance=0.2)  # continuous（默认）
+wc = rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871, stab_tolerance=1.2)  # continuous（默认）；stab_tolerance = baseline std 的倍率
 THRc = 0.858
 def _rc(m1, std=0.002, fusion=0, cost=0.0, invalid=False):
     met = rwd.EpisodeMetrics(loss_mean=0.37, loss_std=std, metric1_mean=m1, metric2_mean=m1, metric1_std=std, metric2_std=std)
@@ -241,16 +241,23 @@ assert _rc(0.70,fusion=24,cost=4.5).reward < _rc(0.871,fusion=4,cost=1.0).reward
 # 严格稳定性刹车：高 std → P2（非 P3），拿不到 cost
 _hi = _rc(0.871, std=0.05, fusion=8, cost=2.0)
 assert _hi.priority == 2 and not _hi.stab_ok and _hi.metric_ok, "高 std 必须落 P2（稳定性刹车）"
-# 严格稳定性收紧：fusion 区 std≈0.015 在 500% 容忍下通过、20% 下被拒
-assert rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871, stab_tolerance=5.0, reward_design="continuous") is not None
-_loose = _rc(0.871, std=0.015, fusion=8); 
-wc2 = rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871, stab_tolerance=5.0)
-def _rc2(): 
-    met = rwd.EpisodeMetrics(loss_mean=0.37, loss_std=0.015, metric1_mean=0.871, metric2_mean=0.871, metric1_std=0.015, metric2_std=0.015)
+# 严格稳定性 = 倍率门（2026-06-15 user spec）：阈值 = baseline.X_std × tol（非 fractional slack）。
+# 用 baseline std=0.01 让倍率而非 floor(0.01) 决定门限，证明 5.0(=5×) 宽松但仍是真门、1.2(=1.2×) 严格。
+_baseS = rwd.BaselineCostStats(total_bits_sum=11285, total_fusion_count=0, avg_k=13.0,
+                               loss_mean=0.37, loss_std=0.01, metric1_mean=0.871, metric2_mean=0.871,
+                               metric1_std=0.01, metric2_std=0.01, typical_bits_drop=1000,
+                               typical_fusion_count=24, typical_k_drop=5)
+def _stab_at(tol, obs):
+    w = rwd.RewardWeights(baseline_metric1=0.871, baseline_metric2=0.871, stab_tolerance=tol, reward_design="continuous")
+    met = rwd.EpisodeMetrics(loss_mean=0.37, loss_std=obs, metric1_mean=0.871, metric2_mean=0.871, metric1_std=obs, metric2_std=obs)
     class _OB: any_invalid=False; total_bits_sum=11285; total_fusion_count=8
-    return rwd.compute_reward(met, _OB(), action_avg_k=13.0, baseline=baseB, weights=wc2, acc_threshold=THRc, acc_threshold_m2=THRc)
-assert _rc2().stab_ok and not _loose.stab_ok, "500% 容忍空门 vs 20% 严格门"
-print("ADR-015 断言 OK：连续有界（gap=%.2f<8） + item7 + 严格稳定性刹车（高 std→P2）+ 默认 continuous" % _gap)
+    return rwd.compute_reward(met, _OB(), action_avg_k=13.0, baseline=_baseS, weights=w, acc_threshold=THRc, acc_threshold_m2=THRc)
+# std=0.03：5.0×(thr=0.05) 通过、1.2×(thr=0.012) 拒绝 → 5.0 宽松但真门（非空门）
+assert _stab_at(5.0, 0.03).stab_ok, "stab_tolerance=5.0 → thr=baseline_std×5=0.05，std=0.03 应通过（宽松但真门，非空门）"
+assert not _stab_at(1.2, 0.03).stab_ok, "stab_tolerance=1.2 → thr=baseline_std×1.2=0.012，std=0.03 应被拒（严格门）"
+# 证明 5.0 非空门：std 抬到 0.06 仍被 5.0× 拒
+assert not _stab_at(5.0, 0.06).stab_ok, "stab_tolerance=5.0 仍是真门：std=0.06 > thr 0.05 应被拒"
+print("ADR-015 断言 OK：连续有界（gap=%.2f<8） + item7 + 严格稳定性=倍率门（5.0× 宽松但非空门 / 1.2× 严格）+ 默认 continuous" % _gap)
 import sys as _sys
 _sys.path.insert(0, ".")
 from blb_stage2_rl.env import BLBStage2EnvConfig
@@ -352,7 +359,7 @@ run_gate () {   # tag, visible devs, --stage2-rl-devices 值, workers-per-device
     --batch-size 512 \
     --stage2-rl-devices "$devspec" \
     --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-    --stage2-stability-tolerance 0.2 \
+    --stage2-stability-tolerance 5.0 \
     --stage2-limit-tolerance 0.005 \
     --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
     --blb-v3-fusion-exploration-epsilon 0.05 \
@@ -452,7 +459,7 @@ CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
   --batch-size 512 \
   --stage2-rl-devices "$DEVS" \
   --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-  --stage2-stability-tolerance 0.2 \
+  --stage2-stability-tolerance 5.0 \
   --stage2-limit-tolerance 0.005 \
   --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
   --blb-v3-fusion-exploration-epsilon 0.05 \
