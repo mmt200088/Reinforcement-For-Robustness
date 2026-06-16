@@ -93,7 +93,19 @@ MAPS_DIR="blb_stage2_rl/fusion_maps/mrpc"
 CANON_STAGE2="Parting Chapter/stage2"
 
 echo "==================== [phase0] 同步自检 ===================="
-git rev-parse HEAD > "$OUT/HEAD.txt" 2>&1; cat "$OUT/HEAD.txt"; git log --oneline -5
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git rev-parse HEAD > "$OUT/HEAD.txt"
+  cat "$OUT/HEAD.txt"
+  git log --oneline -5
+else
+  if [ -f SOURCE_SYNC_COMMIT.txt ]; then
+    cat SOURCE_SYNC_COMMIT.txt > "$OUT/HEAD.txt"
+  else
+    echo "unknown-source-snapshot" > "$OUT/HEAD.txt"
+  fi
+  cat "$OUT/HEAD.txt"
+  echo "[info] non-git source snapshot; using SOURCE_SYNC_COMMIT.txt"
+fi
 python3 - <<'PY' 2>&1 | tee "$OUT/selfcheck.txt" || { echo "[FATAL] 自检失败"; exit 1; }
 import rescale_optimizer as r
 print("RO 导入 OK；DEFAULT_FUSION_POLICY =", r.DEFAULT_FUSION_POLICY)
