@@ -161,16 +161,31 @@ FUSION_SATURATION_TAU = 0.15
 # path (kept for A/B + rollback). Constants mirror Stage-1
 # (layer_importance_evaluator.py:480-396).
 DEFAULT_REWARD_DESIGN = "continuous"
-CONT_BARRIER_VIOLATION_SCALE = 10.0    # Stage-1 LOG_BARRIER_VIOLATION_SCALE
-CONT_BARRIER_STEEPNESS = 20.0          # Stage-1 LOG_BARRIER_VIOLATION_STEEPNESS
+CONT_BARRIER_VIOLATION_SCALE = 10.0    # invalid-case diagnostic magnitude (line ~826)
+# ADR-016 (2026-06-16): the violated barrier is now LINEAR in the violation depth,
+# not -VIO*exp(-m*STEEP). The exponential exploded → the reward clip flattened it to
+# -5 for ANY margin < ~-0.25, so a mild violation (m1=0.84) and a catastrophic one
+# (m1=0.63) earned the SAME -5 → zero recovery gradient → the 5th 60k froze in deep
+# P1 at max fusion. A linear penalty gives a CONSTANT recovery gradient across the
+# realistic violation range so a milder violation always scores strictly higher and
+# the policy can climb back. STEEPNESS is retained only for the legacy/tiered refs.
+CONT_BARRIER_STEEPNESS = 20.0          # (unused by the continuous violated branch since ADR-016)
+CONT_BARRIER_VIOLATION_SLOPE = 4.0     # ADR-016 linear violation slope (per unit margin); calibrated by replay
 CONT_BARRIER_SATISFACTION_SCALE = 0.5  # Stage-1 LOG_BARRIER_SATISFACTION_SCALE
 CONT_REWARD_NORM = 20.0                # Stage-1 REWARD_NORMALIZATION_SCALE
 CONT_W_ACC = 1.0                       # accuracy-barrier weight in raw
 CONT_W_STAB = 1.0                      # stability-barrier weight (= acc; both hard constraints)
 # Max positive a fully-feasible (P3) config earns from cost saving (cost_frac∈[0,1]
-# × this), added AFTER /NORM so the feasible reward is cost-led like Stage-1's
-# (whose feasible reward ≈ cost_saving∈[0,1]). Kept < CLIP_MAX so P3 stays bounded.
+# × headroom × this), added AFTER /NORM. Kept < CLIP_MAX so P3 stays bounded.
 CONT_W_COST = 4.0
+# ADR-016: the cost reward is scaled by the worst-margin HEADROOM so the optimum sits
+# at a SAFE positive margin, not the knife-edge boundary. headroom = clip(worst_margin
+# / MARGIN_REF, 0, 1): full cost only at margin >= MARGIN_REF; ramps smoothly to 0 as
+# the worst margin -> 0 (the boundary), so pushing fusion toward the boundary loses
+# cost reward -> a restoring force -> a stable interior optimum (no cliff, no runaway).
+# Calibrated by the offline reward-landscape replay so the peak lands at a healthy
+# moderate fusion.
+CONT_COST_HEADROOM_MARGIN_REF = 1.0
 
 # ---------------------------------------------------------------------------
 # ADR-013 (2026-06-13): Stage-1-style two-piece log-barrier on the accuracy
@@ -369,11 +384,13 @@ class RewardWeights:
     reward_design: str = DEFAULT_REWARD_DESIGN
     cont_barrier_violation_scale: float = CONT_BARRIER_VIOLATION_SCALE
     cont_barrier_steepness: float = CONT_BARRIER_STEEPNESS
+    cont_barrier_violation_slope: float = CONT_BARRIER_VIOLATION_SLOPE
     cont_barrier_satisfaction_scale: float = CONT_BARRIER_SATISFACTION_SCALE
     cont_reward_norm: float = CONT_REWARD_NORM
     cont_w_acc: float = CONT_W_ACC
     cont_w_stab: float = CONT_W_STAB
     cont_w_cost: float = CONT_W_COST
+    cont_cost_headroom_margin_ref: float = CONT_COST_HEADROOM_MARGIN_REF
     cost_w_fusion: float = DEFAULT_COST_W_FUSION
     cost_w_k: float = DEFAULT_COST_W_K
     cost_w_bits: float = DEFAULT_COST_W_BITS
@@ -793,8 +810,15 @@ def stage1_log_barrier(margin: float, weights: RewardWeights) -> float:
     if not math.isfinite(m):
         m = -1.0e9
     if m < 0.0:
-        expo = min(50.0, (-m) * float(weights.cont_barrier_steepness))
-        return -float(weights.cont_barrier_violation_scale) * math.exp(expo)
+        # ADR-016: LINEAR violation penalty (was -VIO*exp(-m*STEEP), which exploded
+        # → the reward clip flattened it to clip_min for ANY margin < ~-0.25, so a
+        # mild violation and a catastrophic one scored identically → zero recovery
+        # gradient → the policy froze in deep P1 at max fusion). Linear in the
+        # violation depth gives a CONSTANT recovery gradient across the realistic
+        # violation range, so a milder violation always scores strictly higher and
+        # the policy can climb back toward feasibility. Bounded below only by the
+        # caller's reward clip (which now only engages at extreme depth).
+        return float(weights.cont_barrier_violation_slope) * m  # m<0 → negative; deeper → lower
     return float(weights.cont_barrier_satisfaction_scale) * math.log(m + 1.0e-5)
 
 
@@ -831,7 +855,20 @@ def _continuous_reward(
     cost_frac = float(np.clip(
         float(effective_cost_score) / max(float(weights.p3_cost_budget), 1e-8), 0.0, 1.0,
     ))
-    scalar = barrier_raw / norm + float(weights.cont_w_cost) * cost_frac
+    # ADR-016: scale the cost reward by the worst-margin HEADROOM so the optimum sits
+    # at a SAFE positive margin, not the knife-edge boundary. In the feasible region
+    # the cost lure used to dominate the (tiny, /NORM) barrier (cost≈2.4 ≫ barrier≈
+    # 0.02), pulling fusion right up to the boundary; then P3-gating cliffed cost to 0
+    # there. headroom smoothly takes the cost to 0 as the worst margin → 0, so pushing
+    # fusion toward the boundary loses cost reward → a restoring force → a stable
+    # interior optimum (no cliff, no runaway). worst margin < 0 → headroom = 0 → cost
+    # = 0 (item 7: a violation never earns cost, on top of the upstream P3-gate).
+    all_margins = list(acc_margins) + list(std_margins)
+    worst_overall = min(all_margins) if all_margins else 0.0
+    headroom = float(np.clip(
+        worst_overall / max(float(weights.cont_cost_headroom_margin_ref), 1e-8), 0.0, 1.0,
+    ))
+    scalar = barrier_raw / norm + float(weights.cont_w_cost) * cost_frac * headroom
     return float(np.clip(scalar, clip_min, clip_max)), float(acc_b), float(stab_b)
 
 

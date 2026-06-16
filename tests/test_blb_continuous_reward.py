@@ -253,5 +253,64 @@ class FusionSweepBrakeTest(unittest.TestCase):
         self.assertEqual(rewards[-1][1].priority, 2)
 
 
+class ADR016LandscapeTest(unittest.TestCase):
+    """2026-06-16 ADR-016: the continuous reward must have (1) a recovery gradient in
+    the violated region (a milder violation scores strictly HIGHER than a deeper one
+    — the old -VIO*exp form clipped both to a flat -5 → the 5th 60k froze), and (2) an
+    INTERIOR peak at a feasible moderate fusion with a restoring force past it (the
+    old cost lure dominated → ran fusion to max), via the headroom-scaled cost (cost
+    fades smoothly to 0 as the margin → 0, so there is no P3-gate cliff)."""
+
+    def _cont(self, margin, cost_frac, w):
+        # P3-gating upstream: cost only enters when the config is feasible (margin>=0).
+        eff = cost_frac * w.p3_cost_budget if margin >= 0.0 else 0.0
+        scalar, _acc_b, _stab_b = R._continuous_reward(
+            acc_margins=[margin], std_margins=[10.0],  # std comfortably satisfied
+            effective_cost_score=eff, invalid=False, weights=w,
+        )
+        return scalar
+
+    def test_violated_region_has_recovery_gradient(self):
+        w = _weights()
+        mild = self._cont(-2.0, 0.0, w)   # ~m1=0.84 in the real run
+        deep = self._cont(-20.0, 0.0, w)  # ~m1=0.63 (catastrophic) in the real run
+        self.assertGreater(mild, deep + 0.5, "milder violation must score strictly higher (recovery gradient)")
+        self.assertGreaterEqual(deep, -5.0001)  # still bounded
+        # the OLD -VIO*exp form would clip BOTH to -5 (no gradient) — guard against regress
+        self.assertNotAlmostEqual(mild, deep, places=2)
+
+    def test_interior_peak_not_max_fusion(self):
+        # Synthetic fusion sweep: cost_frac rises with fusion; margin falls and crosses
+        # 0 near f~17 (mirrors the real run). Reward must PEAK at a feasible moderate
+        # fusion and be clearly LOWER at max fusion (the anti-runaway restoring force).
+        w = _weights()
+        rewards = []
+        for f in range(0, 37):
+            cost_frac = min(1.0, f / 30.0)
+            margin = 3.0 - 0.18 * f          # >0 for f<~16.7, <0 beyond
+            rewards.append((f, self._cont(margin, cost_frac, w)))
+        peak_f, peak_r = max(rewards, key=lambda fr: fr[1])
+        self.assertLess(peak_f, 30, "peak must be interior, not max fusion")
+        self.assertGreater(peak_f, 2, "peak must not collapse to ~zero fusion")
+        self.assertLess(rewards[-1][1], peak_r - 1.0, "max fusion must be clearly worse than the peak")
+        # monotone decline from the peak to max fusion (a real restoring force)
+        self.assertLess(rewards[34][1], rewards[18][1])
+
+    def test_headroom_removes_the_boundary_cliff(self):
+        # Crossing the feasibility boundary must NOT be a big reward cliff: the
+        # headroom fades the cost to ~0 just inside, so reward(+) ≈ reward(-).
+        w = _weights()
+        just_in = self._cont(0.05, 1.0, w)
+        just_out = self._cont(-0.05, 1.0, w)
+        self.assertLess(abs(just_in - just_out), 1.0, "no knife-edge cliff at the boundary")
+
+    def test_bounded_and_item7_preserved(self):
+        w = _weights()
+        vals = [self._cont(m, c, w) for m in (-20, -2, 0.0, 1.0, 3.0) for c in (0.0, 1.0)]
+        self.assertTrue(all(-5.0001 <= v <= 5.0001 for v in vals))
+        # any violated config (cost forced full but gated off) < a feasible one
+        self.assertLess(self._cont(-2.0, 1.0, w), self._cont(2.0, 0.5, w))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

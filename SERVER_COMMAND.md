@@ -266,13 +266,32 @@ def _rc_loss(design, loss_mean):
     met = rwd.EpisodeMetrics(loss_mean=loss_mean, loss_std=0.002, metric1_mean=0.871, metric2_mean=0.871, metric1_std=0.002, metric2_std=0.002)
     class _OB: any_invalid=False; total_bits_sum=11285; total_fusion_count=8
     return rwd.compute_reward(met, _OB(), action_avg_k=13.0, baseline=baseB, weights=w, acc_threshold=THRc, acc_threshold_m2=THRc)
-assert _rc_loss("continuous", 0.371).loss_ok, "continuous: loss 在 +0.5% 容忍内应过"
+assert _rc_loss("continuous", 0.371).loss_ok, "continuous: loss 在 +0.5% 容忍内 loss_ok"
+# 2026-06-15 确定性修复：loss_mean 不进逐 episode priority/metric_ok（带噪 loss 跨卡数不确定，会破 1==N）；
+# loss_ok 仅是对 CLEAN 基线的确定性诊断；硬 loss 约束在严格选择处用 noisy 阈值执行。
 _lbad = _rc_loss("continuous", 0.40)
-assert (not _lbad.loss_ok) and (not _lbad.metric_ok) and _lbad.priority == 1, "continuous: loss 上浮超界应落 P1（折进性能门）"
-assert _rc_loss("continuous", 0.10).loss_ok, "loss 越低越好：loss 下降必过"
+assert (not _lbad.loss_ok) and _lbad.metric_ok and _lbad.priority == 3, "continuous: loss 超界仅 loss_ok=False（不改 metric_ok/priority，确定性）"
+assert _rc_loss("continuous", 0.10).loss_ok, "loss 越低越好：loss 下降 loss_ok 必 True"
 _ltier = _rc_loss("tiered", 5.0)
 assert _ltier.loss_ok and _ltier.metric_ok and _ltier.priority == 3, "tiered: loss_mean 不门控（逐位不变）"
-print("ADR-015 断言 OK：连续有界（gap=%.2f<8） + item7 + 严格稳定性=倍率门（5.0× 宽松但非空门 / 1.2× 严格）+ loss_mean 越低越好硬门（continuous 门控 / tiered 不门控）+ 默认 continuous" % _gap)
+print("ADR-015 断言 OK：连续有界（gap=%.2f<8） + item7 + 严格稳定性=倍率门（5.0× 宽松但非空门 / 1.2× 严格）+ loss_ok 确定性诊断（不进 priority）+ 默认 continuous" % _gap)
+# ---- ADR-016 断言：headroom cost（消刀刃+内点峰）+ 线性违反恢复梯度（止冻死，修第5次60k fusion 失控）----
+def _cont016(margin, cost_frac):
+    eff = cost_frac * wc.p3_cost_budget if margin >= 0.0 else 0.0
+    s, _ab, _sb = rwd._continuous_reward(acc_margins=[margin], std_margins=[10.0], effective_cost_score=eff, invalid=False, weights=wc)
+    return s
+# (1) 违反区恢复梯度：轻微违反 > 灾难违反（旧 −VIO·exp 把两者都压平 −5 → 冻死）
+assert _cont016(-2.0, 0.0) > _cont016(-20.0, 0.0) + 0.5, "ADR-016: 违反区需有恢复梯度（mild > deep，非平 −5）"
+# (2) 内点峰：合成 fusion 扫描（cost↑ / margin↓ 过零）→ 峰在中等 fusion、非 max、非 0
+_sw = [(f, _cont016(3.0 - 0.18 * f, min(1.0, f / 30.0))) for f in range(0, 37)]
+_pf, _pr = max(_sw, key=lambda x: x[1])
+assert 2 < _pf < 30, "ADR-016: reward 峰必为内点（非 max-fusion 失控、非 0-fusion 冷崩）"
+assert _sw[-1][1] < _pr - 1.0, "ADR-016: max fusion 必明显劣于峰（回正力，旧 reward 反而单调上爬）"
+# (3) 无刀刃：headroom 让 cost 在边界平滑→0（旧 P3 门 cliff ~9）
+assert abs(_cont016(0.05, 1.0) - _cont016(-0.05, 1.0)) < 1.0, "ADR-016: 跨边界无刀刃 cliff"
+# (4) 有界
+assert all(-5.0001 <= _cont016(m, c) <= 5.0001 for m in (-20, -2, 0.0, 1.0, 3.0) for c in (0.0, 1.0)), "ADR-016: 仍有界[−5,5]"
+print("ADR-016 断言 OK：内点峰@f=%d（R=%.2f）+ 恢复梯度（mild %.2f > deep %.2f）+ 无刀刃 + 有界" % (_pf, _pr, _cont016(-2.0, 0.0), _cont016(-20.0, 0.0)))
 import sys as _sys
 _sys.path.insert(0, ".")
 from blb_stage2_rl.env import BLBStage2EnvConfig

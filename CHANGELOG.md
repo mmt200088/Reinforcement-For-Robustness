@@ -21,6 +21,35 @@ When in doubt, check the linked commit's full message for surgical details.
 
 ---
 
+## [Unreleased] — 2026-06-16
+
+### Fixed
+- **Stage-2 fusion runaway / hot-collapse (ADR-016): headroom-coupled cost + linear
+  recovery gradient.** ADR-015's continuous reward ran as the 5th 60k (1==N gate
+  PASSED — the determinism fix held) but STILL hot-collapsed (watchdog killed at
+  42180/60000, "12 windows P3<2%"; fusion ratcheted to max 36, reward froze at
+  −6.941). Code+data forensics found three compounding mechanisms: (1) the cost lure
+  dominated the feasible region (`W_cost=4` ≫ `W_acc=1`; satisfied barrier
+  `0.5·log(margin)/20`≈−0.02 ≪ cost≈2.4) → policy pushed fusion to the accuracy
+  knife-edge; (2) P3-gated cost cliffed 2.4→0 at the boundary; (3) the violated
+  barrier `−10·exp(−margin·20)` saturated → clip flattened it to −5 for ANY margin
+  < ~−0.25, so a mild violation (m1=0.84) and a catastrophic one (m1=0.63) earned
+  the SAME −5 → zero recovery gradient → an overshoot was permanent. Fix:
+  (A) `_continuous_reward` scales cost by the worst-margin **headroom**
+  (`clip(min(margins)/CONT_COST_HEADROOM_MARGIN_REF,0,1)`) → cost fades smoothly to 0
+  at the boundary (no cliff) and is 0 in violation (item 7) → a restoring force →
+  a stable interior optimum at a SAFE margin; (B) `stage1_log_barrier` violated
+  branch is now **linear** (`CONT_BARRIER_VIOLATION_SLOPE·m`) → a constant recovery
+  gradient so the policy can climb back out of P1. Constants calibrated by an offline
+  reward-landscape replay over the 5th run's real 42180 episodes (peak@fusion≈18,
+  monotone decline past it, recovery gradient verified). Bounded[−5,5] / item 7 /
+  1==N / checkpoint-compat preserved; reward NOT comparable across ADR-016.
+  `reward_design="tiered"` untouched. Locks
+  `tests/test_blb_continuous_reward.py::ADR016LandscapeTest`. See
+  `docs/adr/ADR-016-headroom-cost-and-recovery-gradient.md`.
+
+---
+
 ## [Unreleased] — 2026-06-14 (pm)
 
 ### Changed

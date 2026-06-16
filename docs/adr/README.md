@@ -58,4 +58,5 @@ Proposed → Accepted → (Superseded by ADR-XXX | Deprecated)
 | 012 | 可导航精度边界（近界渐变+边缘复测）+ ε 探索下限 + policy-K 探针 | Accepted（near-miss tier 被 013 取代） | 2026-06-12 |
 | 013 | Stage-1 式 log-barrier 精度边界（取代 near-miss tier + 线性 P3 margin） | Accepted（barrier 仍用，被 014 补强） | 2026-06-13 |
 | 014 | 结构性反失控 fusion 成本（饱和）+ 崩溃调试落盘（被 4th-60k 热崩溃触发） | Accepted（饱和被 015 退役；调试落盘保留） | 2026-06-14 |
-| 015 | 连续有界 reward（移植 Stage-1）+ std 倍率稳定性门（baseline_std×tol，移植原始 Stage-2，跑宽松 5×）+ Stage-1 cosine 探索 + 严格可行性选择 | Accepted | 2026-06-14（稳定性门 06-15 更正为倍率） |
+| 015 | 连续有界 reward（移植 Stage-1）+ std 倍率稳定性门（baseline_std×tol，移植原始 Stage-2，跑宽松 5×）+ Stage-1 cosine 探索 + 严格可行性选择 | Accepted（reward 塑形被 016 精修） | 2026-06-14（稳定性门 06-15 更正为倍率） |
+| 016 | headroom 耦合 cost（消刀刃+稳定内点最优）+ 线性违反恢复梯度（止冻死）—— 修 ADR-015 第5次60k 的 fusion 失控热崩溃；离线地形回放标定 | Accepted | 2026-06-16 |
