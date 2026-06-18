@@ -213,7 +213,6 @@ class BLBStage2Env:
             env_cfg: Optional[BLBStage2EnvConfig] = None,
             probe_runner: Optional[ProbeRunner] = None,
             acc_threshold_m2: Optional[float] = None,
-            loss_threshold: Optional[float] = None,
             ):
         self.handler = handler
         self.model = model
@@ -229,11 +228,12 @@ class BLBStage2Env:
             float(acc_threshold_m2) if acc_threshold_m2 is not None else None
         )
         self.stab_threshold = float(stab_threshold)
-        # 2026-06-15: loss_mean lower-better hard threshold (continuous reward
-        # only). None ⇒ compute_reward derives baseline.loss_mean * (1 + tol).
-        self.loss_threshold: Optional[float] = (
-            float(loss_threshold) if loss_threshold is not None else None
-        )
+        # 2026-06-15: loss_mean lower-better hard threshold. Set post-construction by
+        # sequential_runner (noisy baseline × (1+limit_tol)) and read ONLY by its
+        # strict-feasibility selection — loss is a deterministic selection-only gate,
+        # NOT a per-episode reward term (ADR-016 / the 77ffdc0 determinism fix), so it
+        # is not threaded into compute_reward.
+        self.loss_threshold: Optional[float] = None
         self.max_sfs = max_sfs
         self.num_layers = int(num_layers)
         self.gelu_degree = self._normalize_degree_vector(gelu_degree, default=4, name="gelu_degree")
@@ -649,7 +649,6 @@ class BLBStage2Env:
             acc_threshold=self.acc_threshold,
             acc_threshold_m2=self.acc_threshold_m2,
             stab_threshold=self.stab_threshold,
-            loss_threshold=self.loss_threshold,
             any_invalid=any_invalid,
             pareto_archive=self.pareto_cost_archive,
             action_hash=action_vec_hash,
@@ -1005,7 +1004,6 @@ class BLBStage2Env:
                 acc_threshold=self.acc_threshold,
                 acc_threshold_m2=self.acc_threshold_m2,
                 stab_threshold=self.stab_threshold,
-                loss_threshold=self.loss_threshold,
                 any_invalid=True,
                 pareto_archive=self.pareto_cost_archive,
                 action_hash=action_vec_hash,
@@ -1065,7 +1063,6 @@ class BLBStage2Env:
                 acc_threshold=self.acc_threshold,
                 acc_threshold_m2=self.acc_threshold_m2,
                 stab_threshold=self.stab_threshold,
-                loss_threshold=self.loss_threshold,
                 any_invalid=True,
                 pareto_archive=self.pareto_cost_archive,
                 action_hash=action_vec_hash,
@@ -1110,7 +1107,6 @@ class BLBStage2Env:
                 acc_threshold=self.acc_threshold,
                 acc_threshold_m2=self.acc_threshold_m2,
                 stab_threshold=self.stab_threshold,
-                loss_threshold=self.loss_threshold,
                 any_invalid=True,
                 pareto_archive=self.pareto_cost_archive,
                 action_hash=action_vec_hash,
@@ -1151,7 +1147,6 @@ class BLBStage2Env:
             acc_threshold=self.acc_threshold,
             acc_threshold_m2=self.acc_threshold_m2,
             stab_threshold=self.stab_threshold,
-            loss_threshold=self.loss_threshold,
             any_invalid=any_invalid,
             pareto_archive=self.pareto_cost_archive,
             action_hash=action_vec_hash,

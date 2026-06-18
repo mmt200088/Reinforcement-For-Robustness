@@ -168,8 +168,7 @@ CONT_BARRIER_VIOLATION_SCALE = 10.0    # invalid-case diagnostic magnitude (line
 # (m1=0.63) earned the SAME -5 → zero recovery gradient → the 5th 60k froze in deep
 # P1 at max fusion. A linear penalty gives a CONSTANT recovery gradient across the
 # realistic violation range so a milder violation always scores strictly higher and
-# the policy can climb back. STEEPNESS is retained only for the legacy/tiered refs.
-CONT_BARRIER_STEEPNESS = 20.0          # (unused by the continuous violated branch since ADR-016)
+# the policy can climb back.
 CONT_BARRIER_VIOLATION_SLOPE = 4.0     # ADR-016 linear violation slope (per unit margin); calibrated by replay
 CONT_BARRIER_SATISFACTION_SCALE = 0.5  # Stage-1 LOG_BARRIER_SATISFACTION_SCALE
 CONT_REWARD_NORM = 20.0                # Stage-1 REWARD_NORMALIZATION_SCALE
@@ -383,7 +382,6 @@ class RewardWeights:
     # [-5,+5], NO tiers; "tiered" = the ADR-014 path (kept for A/B + rollback).
     reward_design: str = DEFAULT_REWARD_DESIGN
     cont_barrier_violation_scale: float = CONT_BARRIER_VIOLATION_SCALE
-    cont_barrier_steepness: float = CONT_BARRIER_STEEPNESS
     cont_barrier_violation_slope: float = CONT_BARRIER_VIOLATION_SLOPE
     cont_barrier_satisfaction_scale: float = CONT_BARRIER_SATISFACTION_SCALE
     cont_reward_norm: float = CONT_REWARD_NORM
@@ -833,12 +831,13 @@ def _continuous_reward(
     """ADR-015 continuous bounded reward (Stage-1 design + std stability).
 
     ``raw = W_acc*mean(acc_barrier) + W_stab*mean(stab_barrier)``; the scalar is
-    ``clip(raw/NORM + W_cost*cost_frac, CLIP_MIN, CLIP_MAX)`` where ``cost_frac``
-    is the P3-gated saving in ``[0,1]`` (0 unless both gates pass upstream). Hard
-    priority / item 7 holds because a violated barrier ``-VIO*exp`` (per channel)
-    dwarfs ``W_cost`` once divided by ``NORM`` and clipped — a violation always
-    pins the scalar at ``CLIP_MIN`` while cost can only lift a fully-feasible
-    config by at most ``W_cost``. Returns ``(scalar, acc_barrier, stab_barrier)``.
+    ``clip(raw/NORM + W_cost*cost_frac*headroom, CLIP_MIN, CLIP_MAX)``. ``cost_frac``
+    is the P3-gated saving in ``[0,1]``; ``headroom = clip(worst_margin/MARGIN_REF,
+    0, 1)`` (ADR-016) fades the cost to 0 as the worst margin → 0 and is 0 in
+    violation. Hard priority / item 7 holds two ways: a violation drives the worst
+    margin < 0 ⇒ headroom = 0 ⇒ NO cost, and the violated barrier (linear,
+    ``SLOPE*m`` per channel) is negative ⇒ a violation always scores below any
+    fully-feasible config. Returns ``(scalar, acc_barrier, stab_barrier)``.
     """
     clip_min = float(weights.reward_clip_min)
     clip_max = float(weights.reward_clip_max)
@@ -863,8 +862,7 @@ def _continuous_reward(
     # fusion toward the boundary loses cost reward → a restoring force → a stable
     # interior optimum (no cliff, no runaway). worst margin < 0 → headroom = 0 → cost
     # = 0 (item 7: a violation never earns cost, on top of the upstream P3-gate).
-    all_margins = list(acc_margins) + list(std_margins)
-    worst_overall = min(all_margins) if all_margins else 0.0
+    worst_overall = min((*acc_margins, *std_margins), default=0.0)
     headroom = float(np.clip(
         worst_overall / max(float(weights.cont_cost_headroom_margin_ref), 1e-8), 0.0, 1.0,
     ))
@@ -910,7 +908,6 @@ def compute_reward(
         acc_threshold: Optional[float] = None,
         acc_threshold_m2: Optional[float] = None,
         stab_threshold: Optional[float] = None,
-        loss_threshold: Optional[float] = None,
         any_invalid: Optional[bool] = None,
         pareto_archive: Optional[ParetoCostArchive] = None,
         action_hash: Optional[str] = None,
@@ -928,10 +925,6 @@ def compute_reward(
         weights:           ``RewardWeights``；None ⇒ v3 默认值
         acc_threshold:     m1 硬阈值；None ⇒ 由 baseline.metric1_mean * (1-tol) 派生
         acc_threshold_m2:  m2 硬阈值；None ⇒ 由 baseline.metric2_mean * (1-tol) 派生
-        loss_threshold:    loss_mean 硬阈值（越低越好；2026-06-15 user spec：loss 也是
-                           lower-better）。None ⇒ 由 baseline.loss_mean * (1 + acc_tolerance)
-                           派生（允许上浮 tol）。仅在 reward_design="continuous" 且 loss
-                           baseline 已校准时生效；tiered 回滚路径不门控 loss_mean（逐位不变）。
         stab_threshold:    loss_std 阈值；v3 中 m1_std/m2_std/loss_std 各自有阈值
                            （baseline.X_std*(1+stab_tol)+stab_floor），传入的
                            ``stab_threshold`` 仅 override loss 那一项以兼容老 caller
