@@ -185,6 +185,58 @@ class SequentialGTrXLBlock(nn.Module):
         ff_out = self.ff(self.ln2(x))
         return self.gate2(x, ff_out)
 
+    def forward_incremental(
+            self,
+            x_t: torch.Tensor,
+            k_cache: Optional[torch.Tensor] = None,
+            v_cache: Optional[torch.Tensor] = None,
+            ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """KV-cached incremental forward for ONE new (causal-latest) token.
+
+        2026-06-19 speedup (NOT byte-identical — user dropped 1==N): the rollout's
+        autoregressive sampling recomputes the full prefix 0..t at every step t via
+        ``forward`` (O(H^2) total). This computes ONLY the new token t against cached
+        K/V from tokens 0..t-1, turning the rollout's GTrXL cost into O(H). It
+        reimplements ``nn.MultiheadAttention``'s math (so it reuses the exact trained
+        weights: ``in_proj_weight``/``in_proj_bias`` split [W_q;W_k;W_v], the
+        1/sqrt(d_head) scale, head reshape, ``out_proj``) because nn.MHA recomputes
+        ``in_proj`` on key/value every call and exposes no K/V cache. Token t is the
+        causal-latest, so it attends to ALL cached tokens (no mask needed) — exactly
+        row t of ``forward``'s causal attention. Output matches ``forward`` row t
+        within float (verified by tests/test_blb_kvcache_rollout.py). Assumes eval
+        mode (no dropout) — the policy runs in eval mode during rollout/PPO replay.
+
+        ``x_t``: ``[B, 1, d_model]``. ``k_cache``/``v_cache``: ``[B, n_heads, t, d_head]``
+        or None. Returns ``(out_t [B,1,d_model], k_cache' , v_cache')`` (caches grown
+        to length t+1).
+        """
+        attn = self.attn
+        d_model = int(attn.embed_dim)
+        n_heads = int(attn.num_heads)
+        d_head = d_model // n_heads
+        B = int(x_t.shape[0])
+        norm_x_t = self.ln1(x_t)                                   # [B,1,d_model]
+        qkv = F.linear(norm_x_t, attn.in_proj_weight, attn.in_proj_bias)  # [B,1,3*d_model]
+        q_t, k_t, v_t = qkv.chunk(3, dim=-1)                       # each [B,1,d_model]
+
+        def _to_heads(z: torch.Tensor) -> torch.Tensor:
+            return z.view(B, 1, n_heads, d_head).transpose(1, 2)   # [B,n_heads,1,d_head]
+
+        q_t = _to_heads(q_t)
+        k_t = _to_heads(k_t)
+        v_t = _to_heads(v_t)
+        k_cache = k_t if k_cache is None else torch.cat([k_cache, k_t], dim=2)  # [B,n_heads,t+1,d_head]
+        v_cache = v_t if v_cache is None else torch.cat([v_cache, v_t], dim=2)
+        scores = torch.matmul(q_t, k_cache.transpose(-2, -1)) / math.sqrt(d_head)  # [B,n_heads,1,t+1]
+        weights = torch.softmax(scores, dim=-1)
+        ctx = torch.matmul(weights, v_cache)                      # [B,n_heads,1,d_head]
+        ctx = ctx.transpose(1, 2).reshape(B, 1, d_model)          # [B,1,d_model]
+        attn_out = attn.out_proj(ctx)                             # exact nn.MHA out_proj (weight+bias)
+        x = self.gate1(x_t, attn_out)
+        ff_out = self.ff(self.ln2(x))
+        out_t = self.gate2(x, ff_out)
+        return out_t, k_cache, v_cache
+
 
 class BLBStage2SequentialPolicy(nn.Module):
     """v2-scale GTrXL actor + critic over per-step decisions.
