@@ -233,6 +233,28 @@ byte-diff validates both the device-count and worker-count invariances).
 Memory ≈2×4GB/GPU. Probe-batching K trials into one forward and bf16/compile
 were evaluated and REJECTED (they touch noise semantics / training numerics).
 
+**2026-06-19 KV-cache rollout** (`--blb-v3-kv-cache-rollout`, default OFF;
+episode-parallel fusion path only). The data-measured profile shows rollout is
+NOT 21% but ~42% of the per-episode wall (the 78/21 figure above predates the
+5th-60k profile): the GTrXL sampling loop rebuilt tokens `0..t` and ran the full
+forward every step (O(H²)). The KV-cache path (`SequentialGTrXLBlock.forward_incremental`
++ `IncrementalRolloutCache` + `commit_kv_cache` in `sequential_policy.py`; threaded
+through `collect_fusion_episode`) makes it O(H). **This is the FIRST throughput
+change that is NOT byte-identical — the user explicitly dropped the 1==N
+requirement for it** (2026-06-19), because `nn.MultiheadAttention` exposes no K/V
+cache and recomputes in_proj on key/value, so caching forces a hand-written
+attention reimpl that matches the trained weights' math but only within float
+(~1e-6, far below the K=5 probe σ~1e-3). So the 1==N byte-diff gate does NOT
+apply to this path; correctness is enforced by `tests/test_blb_kvcache_rollout.py`
+(incremental==full forward within 1e-5: block, token-builder, end-to-end rollout)
+which a wrong reimpl FAILS on the server before any real run. Two cache-invalidation
+subtleties handled by the fixup pass (re-append token i from obs_{i+1} after
+commit): the `is_current` one-hot flip and the `prev_actions[t]` placeholder→committed
+transition, both finalizing at the step i→i+1 boundary. Default-off ⇒ zero change
+to current runs (incl. PPO replay / serial path / non-fusion). PENDING server
+validation (self-test + ~1-2k-episode A/B: reward/P3/fusion distribution match +
+rollout wall-time) before the default is flipped ON; bf16/compile stay rejected.
+
 Current implementation facts:
 
 - `--stage2-k-trials` controls the number of Stage-2 reward noise trials and
