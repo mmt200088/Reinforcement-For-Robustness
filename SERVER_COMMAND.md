@@ -3,7 +3,57 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (ADR-015 连续有界 reward（移植 Stage-1）+ 严格稳定性刹车 + Stage-1 cosine 探索 + 严格可行性选择 → 门禁 → 60k)
+## ▶ active command  (KV-cache rollout 验证：自检门禁 + 生产规模等价/测速基准)
+
+```bash
+set -uo pipefail
+export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
+export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
+
+# ============================================================================
+# 2026-06-19 KV-cache rollout 提速（commit 1eec624 基础 + c253f92 集成，默认 OFF）。
+# 这是第一个**非 byte-identical** 的提速——用户已显式放弃 1==N（nn.MHA 无 K/V cache
+# 接口，缓存必须手写 attention，复用同一训练权重但浮点 ~1e-6 非逐位）。所以 1==N 字节门禁
+# 对这条路不适用；正确性靠"自检 + 生产规模等价"，加速只在 policy 的逐步 GTrXL 前向
+# （env/replan/probe 全不变）。本命令是**非破坏验证**（绝不 --fresh 清 canonical Stage-2
+# best），跑完看 selftest.txt + benchmark.txt 的 max|diff| 与 speedup。
+# 注意：reward 60k 主线命令已保留在下方 "⏸ on-deck"；验证满意后手动把它的 bash 块
+# 移回本文件第一个 ```bash 块（或在它上面加 --blb-v3-kv-cache-rollout 1）。
+# ============================================================================
+TS=$(date +%Y%m%d_%H%M%S)
+OUT="experiments/server_command_runs/stage2_kvcache_validate_${TS}"
+mkdir -p "$OUT"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git rev-parse HEAD > "$OUT/HEAD.txt"; cat "$OUT/HEAD.txt"; git log --oneline -3
+fi
+
+echo "==================== [phase0] KV-cache 自检门禁（不掉质量的真证据）===================="
+# 增量前向 == 全前向（block / _build_token_at / 端到端 rollout logits+value），<1e-5。
+# 错的实现在这里就挂 → 绝不进真跑 → 不会静默掉质量。
+python3 -m unittest tests.test_blb_kvcache_rollout -v 2>&1 | tee "$OUT/selftest.txt"
+grep -qE "^OK" "$OUT/selftest.txt" || { echo "[FATAL] KV-cache 自检失败"; exit 1; }
+# 确认 torch 在、测试真跑了（6 个全 skip = torch 缺失 = 门禁无效）
+if grep -qE "skipped=6" "$OUT/selftest.txt"; then
+  echo "[FATAL] 自检被全部 skip（torch 不可用）— 门禁无效，禁止上真跑"; exit 1
+fi
+echo "[phase0] PASS"
+
+echo "==================== [phaseB] 生产规模 等价 + 测速基准（非破坏）===================="
+# 同 seed 下逐步断言 OFF==ON（logits/value/argmax 动作）+ 计时 OFF(O(H²)) vs ON(O(H))。
+# 比"跑 1-2k episodes 比噪声分布"更强（数学等价、不被 K=5 探针噪声淹没）且不碰持久目录。
+NGPU="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"; [ -z "$NGPU" ] && NGPU=1
+DEV0="$([ "$NGPU" -ge 1 ] && echo cuda || echo cpu)"
+CUDA_VISIBLE_DEVICES=0 python3 scripts/blb_kvcache_benchmark.py \
+  --episodes 200 --horizon 59 --tol 1e-4 --device "$DEV0" 2>&1 | tee "$OUT/benchmark.txt"
+grep -qE "equivalence PASS" "$OUT/benchmark.txt" || { echo "[FATAL] 生产规模等价失败"; exit 1; }
+
+echo "==================== [DONE] KV-cache 验证通过 ===================="
+echo "证据目录：$OUT （selftest.txt 自检；benchmark.txt 含 max|diff| 与 rollout speedup）"
+echo "下一步：speedup 满意后，把 reward 60k 命令带 --blb-v3-kv-cache-rollout 1 上线，"
+echo "或翻默认 BLBStage2TrainConfig.kv_cache_rollout_enabled=True（另起 commit）。"
+```
+
+## ⏸ on-deck — ADR-016 reward 60k（KV-cache 验证完，把下面这个 ```bash 块移回上面成为第一个 ```bash 块）  (ADR-015 连续有界 reward（移植 Stage-1）+ 严格稳定性刹车 + Stage-1 cosine 探索 + 严格可行性选择 → 门禁 → 60k)
 
 ```bash
 set -uo pipefail
