@@ -725,6 +725,13 @@ class BLBStage2TrainConfig:
     fusion_neighbor_curriculum_enabled: bool = True
     fusion_neighbor_ramp_episodes: int = 0
     fusion_neighbor_max_radius: int = 6
+    # KV-cache rollout fast path (2026-06-19; episode-parallel fusion path only).
+    # NOT byte-identical (user dropped the 1==N requirement to unlock real
+    # speedups) — the incremental forward reimplements nn.MHA math, so it matches
+    # the full forward within float (~1e-5), not bit-for-bit. Default OFF: enable
+    # only after the server runs tests/test_blb_kvcache_rollout.py (the
+    # equivalence gate) + a before/after reward-curve quality check.
+    kv_cache_rollout_enabled: bool = False
     # Scheduled forced-fusion probes (ADR-011 2026-06-11): every N post-anchor
     # episodes one episode forces fusion option 1 on one rotating block type
     # (block2 -> block5 -> block4) at baseline K, keeping fresh on-policy
@@ -2866,6 +2873,11 @@ class BLBStage2RLRunner:
         v = getattr(ev, "blb_v3_fusion_neighbor_curriculum", None)
         if v not in (None, ""):
             cfg.fusion_neighbor_curriculum_enabled = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
+            )
+        v = getattr(ev, "blb_v3_kv_cache_rollout", None)
+        if v not in (None, ""):
+            cfg.kv_cache_rollout_enabled = str(v).strip().lower() in (
                 "1", "true", "yes", "on",
             )
         v = getattr(ev, "blb_v3_fusion_probe_interval", None)

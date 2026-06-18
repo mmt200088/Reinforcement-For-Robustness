@@ -274,6 +274,17 @@ def collect_fusion_episode(
     obs = env.reset(seed=None)
     env.base.probe_noise_seed = derive_probe_seed(int(base_seed), int(absolute_ep))
 
+    # KV-cache rollout fast path (2026-06-19; opt-in, NOT byte-identical —
+    # user dropped 1==N). One cache per episode, owned here (never shared
+    # across episodes/workers). Disabled -> kv_cache stays None and every
+    # policy call below is byte-for-byte the original full-prefix forward.
+    kv_cache = (
+        policy.new_rollout_cache()
+        if bool(getattr(train_cfg, "kv_cache_rollout_enabled", False))
+        and hasattr(policy, "new_rollout_cache")
+        else None
+    )
+
     per_step_sum = 0.0
     terminal_reward = 0.0
     invalid_steps = 0
@@ -407,6 +418,7 @@ def collect_fusion_episode(
                     action_level_mask=action_level_mask_t,
                     baseline_prior_scale=baseline_prior_scale,
                     truncate_to_current=True,
+                    kv_cache=kv_cache,
                 )
             policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
             chosen_eval_info = env.evaluate_step(forced_action.tolist())
@@ -438,6 +450,7 @@ def collect_fusion_episode(
                             action_level_mask=action_level_mask_t,
                             baseline_prior_scale=baseline_prior_scale,
                             truncate_to_current=True,
+                            kv_cache=kv_cache,
                         )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
@@ -463,6 +476,7 @@ def collect_fusion_episode(
                             action_level_mask=action_level_mask_t,
                             baseline_prior_scale=baseline_prior_scale,
                             truncate_to_current=True,
+                            kv_cache=kv_cache,
                         )
                     policy_rollout_wall_seconds_val += float(
                         time.perf_counter() - policy_t1
@@ -514,6 +528,7 @@ def collect_fusion_episode(
                         action_level_mask=action_level_mask_t,
                         baseline_prior_scale=baseline_prior_scale,
                         truncate_to_current=True,
+                        kv_cache=kv_cache,
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 chosen_eval_info = env.evaluate_step(fallback_action.tolist())
@@ -529,6 +544,16 @@ def collect_fusion_episode(
             chosen_eval_info,
             defer_terminal_forward=False,
         )
+        if kv_cache is not None and not done:
+            # Fixup: the just-committed token (step spec.step_idx) is is_current=0
+            # with its committed action/signal exactly at position spec.step_idx
+            # of next_obs (the obs for the NEXT step). Append it so the next
+            # step's current pass attends to the real prefix. Terminal step
+            # (done) has no successor and next_obs is the base terminal state.
+            policy_fix_t0 = time.perf_counter()
+            next_obs_t = torch.from_numpy(next_obs).float().to(device).unsqueeze(0)
+            policy.commit_kv_cache(next_obs_t, int(spec.step_idx), kv_cache)
+            policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_fix_t0)
         steps_taken += 1
         valid = bool(info.get("valid", True))
         if valid:

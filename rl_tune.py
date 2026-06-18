@@ -694,6 +694,7 @@ def train(
         blb_v3_substage_mode: bool = False,
         blb_v3_fusion_count_action: bool = False,
         blb_v3_fusion_neighbor_curriculum: bool = True,
+        blb_v3_kv_cache_rollout: bool = False,
         blb_v3_fusion_probe_interval: int = 200,
         blb_v3_fusion_exploration_epsilon: float = 0.05,
         stage2_workers_per_device: int = 1,
@@ -770,6 +771,9 @@ def train(
     )
     blb_v3_fusion_neighbor_curriculum = parse_bool_flag(
         blb_v3_fusion_neighbor_curriculum, "blb_v3_fusion_neighbor_curriculum"
+    )
+    blb_v3_kv_cache_rollout = parse_bool_flag(
+        blb_v3_kv_cache_rollout, "blb_v3_kv_cache_rollout"
     )
     blb_v3_osr_scan_only = parse_bool_flag(
         blb_v3_osr_scan_only, "blb_v3_osr_scan_only"
@@ -1352,6 +1356,7 @@ def train(
             blb_v3_substage_mode=blb_v3_substage_mode,
             blb_v3_fusion_count_action=blb_v3_fusion_count_action,
             blb_v3_fusion_neighbor_curriculum=blb_v3_fusion_neighbor_curriculum,
+            blb_v3_kv_cache_rollout=blb_v3_kv_cache_rollout,
             blb_v3_fusion_probe_interval=blb_v3_fusion_probe_interval,
             blb_v3_fusion_exploration_epsilon=blb_v3_fusion_exploration_epsilon,
             stage2_workers_per_device=stage2_workers_per_device,

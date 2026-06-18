@@ -765,6 +765,7 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-substage-mode) needv "$@"; BLB_V3_SUBSTAGE_MODE="$2"; S_BLB_V3_SUBSTAGE_MODE="true"; shift 2 ;;
     --blb-v3-fusion-count-action) needv "$@"; BLB_V3_FUSION_COUNT_ACTION="$2"; S_BLB_V3_FUSION_COUNT_ACTION="true"; shift 2 ;;
     --blb-v3-fusion-neighbor-curriculum) needv "$@"; BLB_V3_FUSION_NEIGHBOR_CURRICULUM="$2"; S_BLB_V3_FUSION_NEIGHBOR_CURRICULUM="true"; shift 2 ;;
+    --blb-v3-kv-cache-rollout) needv "$@"; BLB_V3_KV_CACHE_ROLLOUT="$2"; S_BLB_V3_KV_CACHE_ROLLOUT="true"; shift 2 ;;
     --blb-v3-fusion-probe-interval) needv "$@"; BLB_V3_FUSION_PROBE_INTERVAL="$2"; S_BLB_V3_FUSION_PROBE_INTERVAL="true"; shift 2 ;;
     --blb-v3-fusion-exploration-epsilon) needv "$@"; BLB_V3_FUSION_EXPLORATION_EPSILON="$2"; S_BLB_V3_FUSION_EXPLORATION_EPSILON="true"; shift 2 ;;
     --stage2-workers-per-device) needv "$@"; STAGE2_WORKERS_PER_DEVICE="$2"; S_STAGE2_WORKERS_PER_DEVICE="true"; shift 2 ;;
@@ -1701,6 +1702,7 @@ else
     [ "$S_BLB_V3_SUBSTAGE_MODE" = "true" ] && CMD+=(--blb_v3_substage_mode "$BLB_V3_SUBSTAGE_MODE")
     [ "$S_BLB_V3_FUSION_COUNT_ACTION" = "true" ] && CMD+=(--blb_v3_fusion_count_action "$BLB_V3_FUSION_COUNT_ACTION")
     [ "$S_BLB_V3_FUSION_NEIGHBOR_CURRICULUM" = "true" ] && CMD+=(--blb_v3_fusion_neighbor_curriculum "$BLB_V3_FUSION_NEIGHBOR_CURRICULUM")
+    [ "$S_BLB_V3_KV_CACHE_ROLLOUT" = "true" ] && CMD+=(--blb_v3_kv_cache_rollout "$BLB_V3_KV_CACHE_ROLLOUT")
     [ "$S_BLB_V3_FUSION_PROBE_INTERVAL" = "true" ] && CMD+=(--blb_v3_fusion_probe_interval "$BLB_V3_FUSION_PROBE_INTERVAL")
     [ "$S_BLB_V3_FUSION_EXPLORATION_EPSILON" = "true" ] && CMD+=(--blb_v3_fusion_exploration_epsilon "$BLB_V3_FUSION_EXPLORATION_EPSILON")
     [ "$S_STAGE2_WORKERS_PER_DEVICE" = "true" ] && CMD+=(--stage2_workers_per_device "$STAGE2_WORKERS_PER_DEVICE")

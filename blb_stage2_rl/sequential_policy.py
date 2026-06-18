@@ -238,6 +238,28 @@ class SequentialGTrXLBlock(nn.Module):
         return out_t, k_cache, v_cache
 
 
+class IncrementalRolloutCache:
+    """Per-episode K/V cache for the GTrXL rollout fast path.
+
+    2026-06-19 speedup (NOT byte-identical — user dropped 1==N). One ``(k, v)``
+    entry per GTrXL block, holding the COMMITTED tokens ``0..length-1`` (each
+    with ``is_current=0`` and its committed action/optimizer-signal). The
+    current step's token is folded in TRANSIENTLY by the incremental forward
+    (discarded), then re-appended with its committed form via
+    :meth:`BLBStage2SequentialPolicy.commit_kv_cache` after the env commit.
+
+    Lifecycle: one cache per episode, NOT shared across episodes or workers
+    (each ``collect_fusion_episode`` owns its own). Reset == new instance.
+    """
+
+    __slots__ = ("k", "v", "length")
+
+    def __init__(self, n_blocks: int) -> None:
+        self.k: List[Optional[torch.Tensor]] = [None] * int(n_blocks)
+        self.v: List[Optional[torch.Tensor]] = [None] * int(n_blocks)
+        self.length: int = 0
+
+
 class BLBStage2SequentialPolicy(nn.Module):
     """v2-scale GTrXL actor + critic over per-step decisions.
 
@@ -497,6 +519,110 @@ class BLBStage2SequentialPolicy(nn.Module):
         token_input = torch.cat([step_emb, layer_emb, block_emb, prev_emb, cont_proj], dim=-1)
         return self.input_proj(token_input), current_step
 
+    def _build_token_at(self, state: torch.Tensor, position: int) -> torch.Tensor:
+        """Build the single GTrXL input token at ``position``.
+
+        Equal to ``_build_tokens(state)[:, position, :]`` (within float;
+        equivalence is unit-locked in tests/test_blb_kvcache_rollout.py). The
+        ``is_current`` flag is derived from ``position == current_step`` read
+        from the state itself, so the SAME helper yields both the is_current=1
+        "current" token (from the current obs) and the is_current=0 "committed"
+        token (from the NEXT obs at the just-committed position). Used by the
+        KV-cache rollout fast path only; the batched ``_build_tokens`` stays the
+        source of truth for the full forward / PPO replay.
+        """
+        if state.dim() == 1:
+            state = state.unsqueeze(0)
+        static, current_step, prev_actions, prev_signals = self._parse_state(
+            state, truncate_to_current=False,
+        )
+        B = int(state.shape[0])
+        p = int(position)
+        S = int(self.cfg.max_step_dim)
+        steps, layers, blocks = self._step_layer_block_indices()
+        step_emb = self.embed_step(steps[p:p + 1]).expand(B, -1)
+        layer_emb = self.embed_layer(layers[p:p + 1]).expand(B, -1)
+        block_emb = self.embed_block(blocks[p:p + 1]).expand(B, -1)
+        slot_offsets = self._prev_action_slot_offsets[:S]
+        prev_action_idx = prev_actions[:, p, :] + slot_offsets.view(1, -1)
+        prev_emb = self.prev_action_embedding(prev_action_idx).reshape(
+            B, S * self.cfg.prev_action_embed_dim,
+        )
+        is_current = (current_step == p).to(dtype=state.dtype).view(B, 1)
+        cont = torch.cat([static, prev_signals[:, p, :], is_current], dim=-1)
+        cont_proj = self.fc_continuous(cont)
+        token_input = torch.cat([step_emb, layer_emb, block_emb, prev_emb, cont_proj], dim=-1)
+        return self.input_proj(token_input).unsqueeze(1)
+
+    def new_rollout_cache(self) -> "IncrementalRolloutCache":
+        """Fresh per-episode KV-cache for the rollout fast path."""
+        return IncrementalRolloutCache(len(self.gtrxl_blocks))
+
+    def _forward_incremental_current(
+            self,
+            state: torch.Tensor,
+            baseline_prior_scale: Optional[Any],
+            kv_cache: "IncrementalRolloutCache",
+            ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """KV-cached current-step forward (== the truncate_to_current full
+        forward for the current token, within float).
+
+        Reads the committed prefix (tokens 0..length-1) from ``kv_cache``,
+        builds ONLY the current token, runs it through each block against the
+        cached K/V, and applies the same actor/critic tail as :meth:`forward`.
+        The current token's K/V is folded in transiently (the grown caches are
+        discarded) — it is re-appended in its committed form by
+        :meth:`commit_kv_cache` after the env commit.
+        """
+        _static, current_step, _pa, _ps = self._parse_state(
+            state, truncate_to_current=False,
+        )
+        pos = int(current_step.reshape(-1)[0].item())
+        x_t = self._build_token_at(state, pos)
+        for blk, kc, vc in zip(self.gtrxl_blocks, kv_cache.k, kv_cache.v, strict=True):
+            x_t, _k, _v = blk.forward_incremental(x_t, kc, vc)
+        x_t = self.ln_final(x_t)
+        h = x_t[:, 0]
+        actor_feat = self.actor_head(h)
+        logits = torch.einsum("ba,sla->bsl", actor_feat, self.slot_head_weight)
+        logits = logits + self.slot_head_bias.unsqueeze(0)
+        logits = logits + self._baseline_prior_logits(
+            batch_size=int(logits.shape[0]),
+            device=logits.device,
+            dtype=logits.dtype,
+            baseline_prior_scale=baseline_prior_scale,
+        )
+        value = self.value_head(h).squeeze(-1)
+        return logits, value
+
+    def commit_kv_cache(
+            self,
+            next_state: torch.Tensor,
+            position: int,
+            kv_cache: "IncrementalRolloutCache",
+            ) -> None:
+        """Append the just-committed token to the persistent cache.
+
+        Call once after each NON-terminal ``env.commit_step`` with the
+        observation for the NEXT step: at ``position`` (the step just decided)
+        ``next_state`` carries is_current=0 + the committed action/signal, i.e.
+        token ``position``'s permanent form. Runs it through every block,
+        growing each block's K/V cache by one.
+        """
+        if next_state.dim() == 1:
+            next_state = next_state.unsqueeze(0)
+        with torch.inference_mode():
+            x_t = self._build_token_at(next_state, int(position))
+            new_k: List[Optional[torch.Tensor]] = []
+            new_v: List[Optional[torch.Tensor]] = []
+            for blk, kc, vc in zip(self.gtrxl_blocks, kv_cache.k, kv_cache.v, strict=True):
+                x_t, kc2, vc2 = blk.forward_incremental(x_t, kc, vc)
+                new_k.append(kc2)
+                new_v.append(vc2)
+            kv_cache.k = new_k
+            kv_cache.v = new_v
+            kv_cache.length += 1
+
     def _coerce_prior_scale(
             self,
             baseline_prior_scale: Optional[Any],
@@ -560,9 +686,18 @@ class BLBStage2SequentialPolicy(nn.Module):
             baseline_prior_scale: Optional[Any] = None,
             *,
             truncate_to_current: bool = False,
+            kv_cache: Optional["IncrementalRolloutCache"] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor]:
         if state.dim() == 1:
             state = state.unsqueeze(0)
+        if kv_cache is not None and bool(truncate_to_current):
+            # Rollout fast path (2026-06-19): O(H) incremental forward over the
+            # cached prefix instead of the O(H^2) full-prefix rebuild. kv_cache
+            # is None everywhere except the rollout loop, so the full forward
+            # (PPO replay / tests / serial path) is byte-for-byte unchanged.
+            return self._forward_incremental_current(
+                state, baseline_prior_scale, kv_cache,
+            )
         tokens, current_step = self._build_tokens(
             state,
             truncate_to_current=bool(truncate_to_current),
@@ -653,6 +788,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             action_level_mask: Optional[torch.Tensor] = None,
             baseline_prior_scale: Optional[Any] = None,
             truncate_to_current: bool = False,
+            kv_cache: Optional["IncrementalRolloutCache"] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample one per-step action.
 
@@ -665,6 +801,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             state,
             baseline_prior_scale=baseline_prior_scale,
             truncate_to_current=bool(truncate_to_current),
+            kv_cache=kv_cache,
         )
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
@@ -700,14 +837,17 @@ class BLBStage2SequentialPolicy(nn.Module):
             baseline_prior_scale: Optional[Any] = None,
             return_per_slot_entropy: bool = False,
             truncate_to_current: bool = False,
+            kv_cache: Optional["IncrementalRolloutCache"] = None,
             ) -> Tuple[torch.Tensor, ...]:
         """Re-evaluate (log_prob, entropy, value) for a given action under the
-        current policy. Used by PPO update.
+        current policy. Used by PPO update (full path) and the rollout
+        re-eval/anchor/fallback sites (with ``kv_cache`` for the fast path).
         """
         logits, value = self.forward(
             state,
             baseline_prior_scale=baseline_prior_scale,
             truncate_to_current=bool(truncate_to_current),
+            kv_cache=kv_cache,
         )
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,

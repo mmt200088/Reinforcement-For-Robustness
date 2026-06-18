@@ -2243,6 +2243,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_substage_promotion_trials=8,
                   blb_v3_fusion_count_action=False,
                   blb_v3_fusion_neighbor_curriculum=True,
+                  blb_v3_kv_cache_rollout=False,
                   blb_v3_fusion_probe_interval=200,
                   blb_v3_fusion_exploration_epsilon=0.05,
                   stage2_workers_per_device=1,
@@ -2939,6 +2940,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
         self.blb_v3_fusion_neighbor_curriculum = self._coerce_bool_flag(
             blb_v3_fusion_neighbor_curriculum, 'blb_v3_fusion_neighbor_curriculum',
+        )
+        self.blb_v3_kv_cache_rollout = self._coerce_bool_flag(
+            blb_v3_kv_cache_rollout, 'blb_v3_kv_cache_rollout',
         )
         try:
             self.blb_v3_fusion_probe_interval = int(blb_v3_fusion_probe_interval)
