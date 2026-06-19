@@ -351,6 +351,15 @@ def build_one_block_type(
     for opt in options:
         opt["slots"] = fusion_enum.decode_block_slots(ctx, opt["action_indices"])
 
+    # 加大精度 (precision boost, 2026-06-19): raise each non-zero-fusion option's
+    # short modulus primes to q_max at minimum installed noise (replan-verified),
+    # rewriting it as a boosted explicit-SF option. No-op for fc=0 options,
+    # block-types without a registered ChainTopology, or options already all-q_max.
+    options = fusion_enum.boost_options_for_block(ctx, options)
+    n_boosted = sum(1 for o in options if o.get("boosted"))
+    if n_boosted:
+        print(f"  [boost] 加大精度: {n_boosted}/{len(options)} options raised to all-q_max", flush=True)
+
     # K-independence self-check on a small sample of options.
     sample = [opt["action_indices"] for opt in options[: min(8, len(options))]]
     k_indep = fusion_enum.check_k_independence(ctx, sample_configs=sample)

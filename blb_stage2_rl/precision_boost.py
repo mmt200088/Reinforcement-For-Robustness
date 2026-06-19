@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import itertools
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 DEFAULT_Q_MAX = 60
 
@@ -114,6 +114,8 @@ class ReplanProbe:
     q_initial: Tuple[int, ...]  # per pre-fusion stage (one per rescale)
     q_final: Tuple[int, ...]  # per post-fusion stage
     fusions: Tuple[dict, ...] = ()
+    extra: Any = None  # opaque payload for noise_fn (e.g. installed points) — lets
+    #                    replan_fn and noise_fn share one evaluation (no double replan).
 
 
 @dataclass(frozen=True)

@@ -5,14 +5,13 @@ each ``step()`` decides ONE (layer, block) pair instead of the whole 577-dim
 action vector at once.
 
 Decision schedule (L=12):
-    step  0:  layer 0, block 2  (+ first_input fresh)
-    step  1:  layer 0, block 3
-    step  2:  layer 0, block 4
-    step  3:  layer 0, block 5
-    step  4:  layer 1, block 1
-    step  5:  layer 1, block 2
+    step  0:  layer 0, block 2
+    step  1:  layer 0, block 4
+    step  2:  layer 0, block 5
+    step  3:  layer 1, block 1
+    step  4:  layer 1, block 2
     ...
-    step 58:  layer 11, block 5      (terminal)
+    step 46:  layer 11, block 5      (terminal)
 
 Reward: dense per-block ReplanSession-derived cost signal at every step,
 plus the full base-env reward (accuracy + stability + total cost) at the
@@ -42,9 +41,13 @@ from rescale_optimizer_bridge import (
 )
 
 from .action_space import (
+    _BLOCK_SPECS,
+    _block_default_N,
+    _degree_for_layer,
     K_LEVELS,
     BlockStepSpec,
     action_vector_to_cfgs,
+    build_block_cfg_from_field_values,
     expand_fusion_step_action,
     fusion_step_schedule,
     horizon_for_num_layers,
@@ -267,6 +270,33 @@ class BLBStage2SequentialEnv:
         )
         cfgs_by_block = decoded.cfgs_dict()
         block_cfg = cfgs_by_block[f"block{spec.block_idx}"][spec.layer_idx]
+
+        # 加大精度 boosted option: above-baseline SF has no action_index, so the
+        # grid decode above used the (in-grid) base SFs. Rebuild this block's cfg
+        # SF-direct from the option's explicit field_values, with the separately
+        # decided K spliced in. Everything downstream (replan/override/install) is
+        # unchanged. Non-boosted options never enter this branch.
+        if self._fusion_map is not None:
+            _opt_obj = _opts[_oid] if 0 <= _oid < len(_opts) else None
+            if _opt_obj is not None and getattr(_opt_obj, "boosted", False) and _opt_obj.explicit_field_values:
+                fv = dict(_opt_obj.explicit_field_values)
+                k_field = _BLOCK_SPECS[int(spec.block_idx)].fields[
+                    int(self._fusion_map.k_slot_index(spec.graph_key_suffix))
+                ][0]
+                fv[k_field] = int(_kval)
+                deg_g = _degree_for_layer(
+                    self.base.gelu_degree, int(spec.layer_idx), self.num_layers,
+                    default=4, name="gelu_degree",
+                )
+                deg_a = _degree_for_layer(
+                    self.base.attn_degree, int(spec.layer_idx), self.num_layers,
+                    default=4, name="attn_degree",
+                )
+                block_cfg = build_block_cfg_from_field_values(
+                    int(spec.block_idx), int(spec.layer_idx), fv,
+                    N=int(_block_default_N(int(spec.block_idx), gelu_degree=deg_g, attn_degree=deg_a)),
+                    gelu_degree=deg_g, attn_degree=deg_a,
+                )
         config_name = f"{spec.graph_key_suffix}_L{spec.layer_idx}"
 
         optimizer_t0 = time.perf_counter()

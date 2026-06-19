@@ -331,6 +331,142 @@ def _eval_block(ctx: BlockTypeBuildContext, block_indices: Sequence[int]) -> Dic
     }
 
 
+def _eval_block_from_field_values(ctx: "BlockTypeBuildContext", field_values: Mapping[str, Any]) -> Dict[str, Any]:
+    """Like ``_eval_block`` but builds the cfg SF-direct from explicit
+    ``field_values`` (above-baseline SF allowed) — the precision boost evaluator.
+    Returns valid / fusion_count / total_bits / q_initial / q_final / fusions /
+    points (the chain fields come straight from the real replan result)."""
+    from action_space import build_block_cfg_from_field_values
+
+    from rescale_optimizer_bridge import (
+        apply_optimizer_output_to_cfg,
+        sync_block2_aux_fresh_binding,
+        sync_block2_qk_binding,
+        sync_block4_v_mask_binding,
+        sync_block5_aux_fresh_binding,
+    )
+
+    li_gelu = int(ctx.gelu_per_layer[ctx.ref_layer])
+    li_attn = int(ctx.attn_per_layer[ctx.ref_layer])
+    cfg = build_block_cfg_from_field_values(
+        int(ctx.block_idx), int(ctx.ref_layer), dict(field_values),
+        N=int(ctx.N_block), gelu_degree=li_gelu, attn_degree=li_attn,
+    )
+    out = ctx.bridge.evaluate(
+        config_name=f"{ctx.graph_key}_L{ctx.ref_layer}",
+        block_name=f"block{ctx.block_idx}",
+        cfg=cfg,
+    )
+    if not bool(out.valid):
+        return {"valid": False}
+    apply_optimizer_output_to_cfg(
+        cfg, output_raw=out.raw, block_idx=int(ctx.block_idx), graph_key=ctx.graph_key,
+        baseline_skeleton=ctx.baseline_skeleton, rotation_name_map=None,
+    )
+    if ctx.block_idx == 2:
+        sync_block2_qk_binding(cfg)
+        sync_block2_aux_fresh_binding(cfg)
+    elif ctx.block_idx == 4:
+        sync_block4_v_mask_binding(cfg)
+    elif ctx.block_idx == 5:
+        sync_block5_aux_fresh_binding(cfg)
+    points = _installed_noise_points(cfg, out.raw, ctx.N_block)
+    r = (out.raw or {}).get("result", {}) or {}
+    return {
+        "valid": True,
+        "fusion_count": int(out.fusion_count),
+        "total_bits": int(out.total_bits),
+        "q_initial": tuple(int(x) for x in r.get("q_initial", ())),
+        "q_final": tuple(int(x) for x in r.get("q_final", ())),
+        "fusions": tuple(r.get("fusions", ())),
+        "points": points,
+    }
+
+
+def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Apply the precision boost ("加大精度") to each non-zero-fusion option.
+
+    For every option with ``fusion_count != 0`` whose block-type has a registered
+    ``ChainTopology``: raise its short modulus primes to ``q_max`` at minimum
+    installed noise (``precision_boost.boost_option``, replan-verified), and rewrite
+    the option as a boosted explicit-SF option (``boosted=True`` +
+    ``explicit_field_values``). Options with no topology, no short prime, or no
+    valid all-``q_max`` candidate are left unchanged. ``option0`` (fc=0) is never
+    touched. Mutates + returns ``options``.
+    """
+    try:
+        import fusion_count_map as _fcm
+        import precision_boost as _pb
+    except ImportError:
+        from . import fusion_count_map as _fcm, precision_boost as _pb
+
+    from action_space import _decode_block_field_values
+
+    topo = _pb.TOPOLOGIES.get(ctx.graph_key)
+    if topo is None:
+        return options  # block-type topology not registered yet (e.g. block4/5 TBD)
+    noise_order = _fcm.SummedInstalledVariance()
+    li_gelu = int(ctx.gelu_per_layer[ctx.ref_layer])
+    li_attn = int(ctx.attn_per_layer[ctx.ref_layer])
+
+    def _make_probe(slots: Mapping[str, Any]) -> Any:
+        r = _eval_block_from_field_values(ctx, slots)
+        if not r.get("valid"):
+            return _pb.ReplanProbe(valid=False, fusion_count=0, q_initial=(), q_final=())
+        return _pb.ReplanProbe(
+            valid=True, fusion_count=int(r["fusion_count"]),
+            q_initial=r["q_initial"], q_final=r["q_final"], fusions=r["fusions"],
+            extra=r["points"],
+        )
+
+    def _noise(_slots: Mapping[str, Any], probe: Any) -> float:
+        return float(noise_order.total_variance(probe.extra))
+
+    for opt in options:
+        if int(opt.get("fusion_count", 0)) == 0:
+            continue
+        base_fv_raw = _decode_block_field_values(
+            layer_idx=int(ctx.ref_layer), block_idx=int(ctx.block_idx),
+            action_slice=np.asarray(opt["action_indices"], dtype=int),
+            max_sfs=ctx.max_sfs, attn_degree=li_attn, gelu_degree=li_gelu,
+        )
+        # keep ints (incl. output_truncation_k); drop inactive-rescale None fields
+        # (their _build_block*_action reads are guarded by the active set).
+        base_fv = {k: int(v) for k, v in base_fv_raw.items() if v is not None}
+        res = _pb.boost_option(
+            topology=topo, base_slots=base_fv,
+            replan_fn=_make_probe, noise_fn=_noise, q_max=int(topo.q_max),
+        )
+        if res is None:
+            continue
+        final = _eval_block_from_field_values(ctx, res.boosted_slots)
+        # hard build-time guard: a stored boost MUST be valid, keep fusion_count,
+        # and have every prime at q_max (the boost_option contract — re-checked
+        # here against an independent replan so a broken topology aborts the build).
+        if (
+            not final.get("valid")
+            or int(final.get("fusion_count", -1)) != int(opt["fusion_count"])
+            or any(int(q) != int(topo.q_max) for q in final.get("q_final", ()))
+        ):
+            raise RuntimeError(
+                f"{ctx.graph_key}: precision boost produced an inconsistent option "
+                f"(fc={final.get('fusion_count')} q_final={final.get('q_final')} "
+                f"expected fc={opt['fusion_count']} all={topo.q_max}); aborting build"
+            )
+        opt["boosted"] = True
+        opt["explicit_field_values"] = {k: int(v) for k, v in res.boosted_slots.items()}
+        opt["total_variance"] = float(res.total_variance)
+        opt["total_bits"] = int(final.get("total_bits", opt.get("total_bits", 0)))
+        opt["boost_description"] = str(res.description)
+        # refresh the human SF view for the topology's named slots
+        slots_view = opt.get("slots") or {}
+        for node in topo.nodes:
+            if node.cfg_field and node.cfg_field in res.boosted_slots and node.cfg_field in slots_view:
+                slots_view[node.cfg_field] = int(res.boosted_slots[node.cfg_field])
+        opt["slots"] = slots_view
+    return options
+
+
 def prepare_block_type_context(
     *,
     graph_key: str,
