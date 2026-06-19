@@ -1,0 +1,147 @@
+"""Tests for the fusion-option precision boost ("加大精度") — block2.
+
+Two lanes:
+  * CandidateGenTest — pure structural core (torch-free AND rescale_optimizer-free):
+    construct a ReplanProbe by hand and assert short-prime detection + the exact
+    4 candidate placements the design specifies for block2 fc=1.
+  * BoostReplanTest — drives boost_option through the REAL ReplanSession (the cost
+    source of truth): every candidate is replan-verified, exactly 4 reach all-q_max
+    with fusion_count preserved, and the boosted option's chain is 60/60.
+    Skipped where rescale_optimizer can't be imported.
+
+See docs/superpowers/specs/2026-06-19-stage2-precision-boost-design.md.
+"""
+
+import pathlib
+import sys
+import unittest
+
+_REPO = pathlib.Path(__file__).resolve().parents[1]
+for p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+import precision_boost as pb  # noqa: E402
+
+# block2 mrpc fc=1 option (the committed fusion map's option 1).
+BASE2 = {
+    "inv_std_fresh_sf": 21,
+    "gamma_sf": 15,
+    "wk_sf": 16,
+    "kt_mask1_sf": 15,
+    "kt_mask2_sf": 15,
+    "qkt_merge_mask_sf": 15,
+    "gamma_rescale_sf": 28,
+    "kt_mask1_rescale_sf": 28,
+    "qkt_matmul_rescale_sf": 28,
+}
+
+
+def _block2_fc1_probe() -> pb.ReplanProbe:
+    # q_initial [29,31,58], fuse stage 1 into next -> q_final [60,58].
+    return pb.ReplanProbe(
+        valid=True, fusion_count=1,
+        q_initial=(29, 31, 58), q_final=(60, 58),
+        fusions=({"fused_position": 1, "fused_into": "next", "small_q": 29},),
+    )
+
+
+class CandidateGenTest(unittest.TestCase):
+    def test_short_prime_detection(self):
+        # the 58 is post-fusion stage 1 == pre-fusion rescale idx 2, deficit 2.
+        self.assertEqual(pb.find_short_primes(_block2_fc1_probe(), 60), [(2, 2)])
+
+    def test_no_short_prime_when_all_qmax(self):
+        probe = pb.ReplanProbe(True, 1, (60, 60), (60, 60), ())
+        self.assertEqual(pb.find_short_primes(probe, 60), [])
+
+    def test_exactly_four_candidates(self):
+        short = pb.find_short_primes(_block2_fc1_probe(), 60)
+        cands = pb.generate_candidates(pb.BLOCK2_MRPC_TOPOLOGY, BASE2, short)
+        got = sorted(tuple(sorted(c.edits.items())) for c in cands)
+        expect = sorted([
+            # (a) same segment, before the qkt ×2 (c=1 → +1 SF → +2 bits), no comp
+            (("kt_mask2_sf", 16),),
+            # (b) gamma in seg1: +1, compensate BOTH rescales between it and target
+            (("gamma_rescale_sf", 29), ("gamma_sf", 16), ("kt_mask1_rescale_sf", 29)),
+            # (c) wk in seg2: +1, compensate kt_mask1_rescale
+            (("kt_mask1_rescale_sf", 29), ("wk_sf", 17)),
+            # (d) kt_mask1 in seg2: +1, compensate kt_mask1_rescale
+            (("kt_mask1_rescale_sf", 29), ("kt_mask1_sf", 16)),
+        ])
+        self.assertEqual(got, expect)
+
+    def test_qkt_merge_is_not_a_candidate(self):
+        # qkt_merge feeds the fixed q_tail (after the last rescale) — never fills a
+        # short prime, so it must never appear in any candidate edit.
+        cands = pb.generate_candidates(
+            pb.BLOCK2_MRPC_TOPOLOGY, BASE2, pb.find_short_primes(_block2_fc1_probe(), 60),
+        )
+        self.assertTrue(all("qkt_merge_mask_sf" not in c.edits for c in cands))
+
+
+@unittest.skipUnless(
+    __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    "rescale_optimizer required",
+)
+class BoostReplanTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from rescale_optimizer import ReplanSession  # noqa: E402
+        cls.S = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "Rescale_optimizer"))
+
+    def _replan_fn(self, slots):
+        t_new = [
+            slots["inv_std_fresh_sf"], slots["gamma_rescale_sf"],
+            slots["kt_mask1_rescale_sf"], slots["qkt_matmul_rescale_sf"],
+        ]
+        deltas = {
+            "ctct_x_mean_over_std": "x2",
+            "ctpt_gama1": slots["gamma_sf"],
+            "ctpt_wq_wk": slots["wk_sf"],
+            "ctpt_rotKT_mask1": slots["kt_mask1_sf"],
+            "ctpt_rotKT_mask2": slots["kt_mask2_sf"],
+            "ctct_preprocess_qkt": "x2",
+            "ctpt_mask": slots["qkt_merge_mask_sf"],
+        }
+        r = self.S.replan("block2_mrpc", t_new=t_new, delta_overrides=deltas, return_dict=True)["result"]
+        return pb.ReplanProbe(
+            valid=bool(r["valid"]), fusion_count=len(r["fusions"]),
+            q_initial=tuple(int(x) for x in r["q_initial"]),
+            q_final=tuple(int(x) for x in r["q_final"]),
+            fusions=tuple(r["fusions"]),
+        )
+
+    @staticmethod
+    def _noise_fn(slots, _probe):
+        import noise_tables
+        encs = ("gamma_sf", "wk_sf", "kt_mask1_sf", "kt_mask2_sf", "qkt_merge_mask_sf")
+        v = noise_tables.variance(16384, slots["inv_std_fresh_sf"], "fresh")
+        for k in encs:
+            v += noise_tables.variance(16384, slots[k], "encoding")
+        return v
+
+    def test_base_chain_matches_design(self):
+        probe = self._replan_fn(BASE2)
+        self.assertEqual(probe.q_initial, (29, 31, 58))
+        self.assertEqual(probe.q_final, (60, 58))
+        self.assertEqual(probe.fusion_count, 1)
+
+    def test_boost_reaches_all_qmax(self):
+        res = pb.boost_option(
+            topology=pb.BLOCK2_MRPC_TOPOLOGY, base_slots=BASE2,
+            replan_fn=self._replan_fn, noise_fn=self._noise_fn, q_max=60,
+        )
+        self.assertIsNotNone(res)
+        self.assertEqual(res.base_q_final, (60, 58))
+        self.assertTrue(all(q == 60 for q in res.boosted_q_final))
+        # exactly the 4 designed placements pass replan-verify (the spurious
+        # qkt_merge+2 structural candidate, if any, never reaches all-60).
+        self.assertEqual(res.candidates_valid, 4)
+        # the boosted option preserves fusion_count and raises >= 1 SF above base.
+        self.assertEqual(self._replan_fn(res.boosted_slots).fusion_count, 1)
+        self.assertTrue(any(res.boosted_slots[k] > BASE2[k] for k in BASE2))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
