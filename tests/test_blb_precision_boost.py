@@ -143,5 +143,59 @@ class BoostReplanTest(unittest.TestCase):
         self.assertTrue(any(res.boosted_slots[k] > BASE2[k] for k in BASE2))
 
 
+def _cfg_sf_projection(cfg):
+    """Stable (field, scaling_factor) projection of a block NoiseConfig — for
+    comparing two cfgs built different ways without relying on dataclass __eq__."""
+    out = {}
+    for name in vars(cfg):
+        val = getattr(cfg, name)
+        for i, pt in enumerate(val if isinstance(val, tuple) else (val,)):
+            sf = getattr(pt, "scaling_factor", None)
+            if sf is not None:
+                out[f"{name}[{i}]" if isinstance(val, tuple) else name] = int(sf)
+    return out
+
+
+@unittest.skipUnless(
+    __import__("importlib").util.find_spec("torch") is not None
+    and __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    "torch + rescale_optimizer required",
+)
+class SFDirectEquivalenceTest(unittest.TestCase):
+    """The SF-direct cfg builder MUST match the index path on an IN-GRID config
+    (so boosting only differs where SFs go above baseline). Server-side gate for
+    build_block_cfg_from_field_values — a drift here would silently corrupt every
+    boosted option. torch + rescale_optimizer required (skipped locally)."""
+
+    def test_sf_direct_matches_index_path_block2(self):
+        from action_space import (
+            _decode_block_field_values,
+            action_vector_to_cfgs,
+            build_block_cfg_from_field_values,
+        )
+        import fusion_enum
+        import numpy as np
+        ctx = fusion_enum.prepare_block_type_context(
+            graph_key="block2_mrpc", block_idx=2, gelu_degree=4, attn_degree=2,
+            profile="mrpc", rescale_optimizer_root=str(_REPO / "Rescale_optimizer"),
+            num_layers=12, ref_layer=1,
+        )
+        base_indices = list(ctx.baseline_block_indices)
+        full = ctx.baseline_full.copy()
+        full[ctx.block_offset: ctx.block_offset + ctx.block_num_slots] = base_indices
+        cfg_idx = action_vector_to_cfgs(
+            full, ctx.max_sfs, num_layers=ctx.num_layers,
+            gelu_degree=ctx.gelu_per_layer, attn_degree=ctx.attn_per_layer,
+            only=(ctx.ref_layer, 2),
+        ).cfgs_dict()["block2"][ctx.ref_layer]
+        fv = _decode_block_field_values(
+            layer_idx=ctx.ref_layer, block_idx=2, action_slice=np.asarray(base_indices, dtype=int),
+            max_sfs=ctx.max_sfs, attn_degree=2, gelu_degree=4,
+        )
+        fv = {k: int(v) for k, v in fv.items() if v is not None}
+        cfg_dir = build_block_cfg_from_field_values(2, ctx.ref_layer, fv, N=ctx.N_block, gelu_degree=4, attn_degree=2)
+        self.assertEqual(_cfg_sf_projection(cfg_idx), _cfg_sf_projection(cfg_dir))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
