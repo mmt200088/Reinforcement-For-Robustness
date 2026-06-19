@@ -598,7 +598,7 @@ def per_layer_field_offsets() -> List[Tuple[int, str, str]]:
 # Per-block sequential step schedule (for the sequential RL formulation).
 #
 # Episode order (C, 2026-05-30: block 3 excluded from the decided schedule):
-#   step 1:  layer 0, block 2  (+ first_input fresh)   -- layer 0 has no block 1
+#   step 1:  layer 0, block 2                          -- layer 0 has no block 1
 #   step 2:  layer 0, block 4                           -- block 3 skipped
 #   step 3:  layer 0, block 5
 #   step 4:  layer 1, block 1
@@ -612,9 +612,9 @@ def per_layer_field_offsets() -> List[Tuple[int, str, str]]:
 # Block 3's slots remain in the legacy full action vector (frozen at the
 # static_skeletons baseline); only the decided schedule drops them.
 #
-# first_input fresh (legacy "tail" slot in the action vector) is decided
-# alongside layer 0 block 2 to avoid an extra horizon=0 step. It still occupies
-# its same position at the end of the full action vector.
+# first_input fresh is a deprecated legacy tail slot. It still occupies its old
+# position in the full action vector for compatibility, but no sequential RL
+# step decides it and model/final-eval installation ignores it.
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -628,11 +628,11 @@ class BlockStepSpec:
         slot_dims:       num_levels for each slot decided at this step.
         slot_field_names: corresponding _BLOCK{N}_FIELDS field names.
         slot_kinds:      "F"/"W"/"M"/"S"/"R"/"K".
-        full_vec_offsets: index into the legacy 577-dim action vector where
+        full_vec_offsets: index into the legacy full action vector where
                           each slot's value should be written.
-        includes_first_input: True for step_idx==0 only (folded into layer-0
-                              block-2). When True, the LAST entry of slot_dims
-                              etc. is the first_input fresh slot.
+        includes_first_input: legacy flag retained for compatibility. Always
+                              False; first_input fresh is deprecated and must
+                              not be a sequential RL decision.
         graph_key:       e.g. "block2_mrpc" -- the Rescale_optimizer graph that
                          scores this block (independent of layer).
         terminal:        True for the last step in the episode.
@@ -673,7 +673,8 @@ def horizon_for_num_layers(num_layers: int) -> int:
       - layer 0 has 3 steps (B2, B4, B5)
       - layers 1..L-1 have 4 steps each (B1, B2, B4, B5)
     giving horizon = 3 + (L-1) * 4. For L=12 this is 47 steps (was 59 with block 3).
-    The first step (layer 0, block 2) also writes first_input fresh.
+    The legacy first_input fresh tail slot is no longer a decision; it remains
+    frozen at the baseline placeholder and is ignored by model installation.
     """
     L = int(num_layers)
     if L < 1:
@@ -726,7 +727,6 @@ def step_schedule(
     L = int(num_layers)
     horizon = horizon_for_num_layers(L)
     out: List[BlockStepSpec] = []
-    fi_offset = _full_vec_first_input_offset(L)
     step_idx = 0
     for layer_idx in range(L):
         block_order = _LAYER0_BLOCK_ORDER if layer_idx == 0 else _LAYER_GE_1_BLOCK_ORDER
@@ -742,12 +742,6 @@ def step_schedule(
                 slot_field_names.append(fname)
                 slot_kinds.append(kind)
                 full_vec_offsets.append(block_base + slot_local_idx)
-            includes_first = (step_idx == 0)
-            if includes_first:
-                slot_dims.append(LEVELS_FIRST_INPUT)
-                slot_field_names.append("__first_input_sf__")
-                slot_kinds.append("F")
-                full_vec_offsets.append(fi_offset)
             # graph key suffix
             if b == 3:
                 deg = (
@@ -775,7 +769,7 @@ def step_schedule(
                 slot_field_names=tuple(slot_field_names),
                 slot_kinds=tuple(slot_kinds),
                 full_vec_offsets=tuple(full_vec_offsets),
-                includes_first_input=includes_first,
+                includes_first_input=False,
                 graph_key_suffix=gk,
                 terminal=(step_idx == horizon - 1),
             ))
@@ -878,9 +872,8 @@ def fusion_step_schedule(
                 f"block {s.block_idx}); built graphs: {sorted(fusion_map.graphs)}"
             )
         block_num_slots = int(fusion_map.graphs[gk].block_num_slots)
-        # s.full_vec_offsets lists this block's contiguous slot offsets first, then
-        # (step 0 only) the deprecated first_input fresh slot — which fusion mode
-        # leaves at its baseline. Take the block's own slots.
+        # s.full_vec_offsets lists only this block's contiguous slot offsets.
+        # The deprecated first_input fresh tail is not part of any fusion step.
         block_offsets = tuple(int(o) for o in s.full_vec_offsets[:block_num_slots])
         if len(block_offsets) != block_num_slots:
             raise RuntimeError(
@@ -1411,6 +1404,45 @@ def action_vector_to_cfgs(
         first_input_sf=0,
         per_layer_field_values=per_layer_values,
     )
+
+
+def build_block_cfg_from_field_values(
+        block_idx: int,
+        layer_idx: int,
+        field_values: Dict[str, object],
+        *,
+        N: int,
+        gelu_degree: int = 4,
+        attn_degree: int = 4,
+        ) -> object:
+    """SF-direct block-cfg builder (bypasses the down-sweep grid).
+
+    ``action_vector_to_cfgs`` decodes action *indices* → field_values (via the
+    baseline-anchored grid, which cannot represent above-baseline SF) → cfg. The
+    precision-boost ("加大精度") produces *above-baseline* explicit SFs, so its
+    boosted options are stored as explicit ``field_values`` and built here,
+    reusing the SAME ``_build_block{N}_action`` + ``build_block{N}_cfg_from_action``
+    as the index path (so an in-grid field_values yields a byte-identical cfg —
+    asserted server-side). ``field_values`` must carry every key the block's
+    ``_build_block{N}_action`` reads (i.e. a full per-block decoded field_values).
+    """
+    fv = dict(field_values)
+    b = int(block_idx)
+    if b == 1:
+        spec = _build_block1_action(int(layer_idx), fv, is_first_layer=(int(layer_idx) == 0))
+        return build_block1_cfg_from_action(
+            spec, N=_block_default_N(1, gelu_degree=gelu_degree, attn_degree=attn_degree) if N is None else int(N),
+        )
+    if b == 2:
+        spec = _build_block2_action(int(layer_idx), fv)
+        return build_block2_cfg_from_action(spec, N=int(N))
+    if b == 4:
+        spec = _build_block4_action(int(layer_idx), fv)
+        return build_block4_cfg_from_action(spec, N=int(N))
+    if b == 5:
+        spec = _build_block5_action(int(layer_idx), fv, gelu_degree=int(gelu_degree))
+        return build_block5_cfg_from_action(spec, N=int(N))
+    raise ValueError(f"build_block_cfg_from_field_values: unsupported block_idx {block_idx}")
 
 
 def _action_distribution_for_kind(kind: str) -> str:

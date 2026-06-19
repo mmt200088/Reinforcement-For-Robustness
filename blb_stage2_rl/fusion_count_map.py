@@ -85,6 +85,14 @@ class FusionOption:
     total_bits: int
     slots: Dict[str, int]  # field -> decoded SF (human/SF-first view)
     action_indices: List[int]
+    # Precision boost ("加大精度", 2026-06-19): a non-zero-fusion option whose short
+    # modulus primes were raised to q_max. Boosted SFs go ABOVE the slot grid's
+    # baseline, so they cannot be expressed as ``action_indices`` — the option
+    # carries the FULL explicit per-block field_values instead, and the env builds
+    # the cfg SF-direct (``action_space.build_block_cfg_from_field_values``). Empty
+    # / boosted=False ⇒ the legacy index path is used, byte-for-byte unchanged.
+    boosted: bool = False
+    explicit_field_values: Dict[str, int] = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -111,6 +119,11 @@ class FusionCountMap:
             total_bits=int(o["total_bits"]),
             slots={str(k): int(v) for k, v in dict(o.get("slots", {})).items()},
             action_indices=[int(x) for x in o["action_indices"]],
+            boosted=bool(o.get("boosted", False)),
+            explicit_field_values=(
+                {str(k): int(v) for k, v in dict(o["explicit_field_values"]).items()}
+                if o.get("explicit_field_values") else None
+            ),
         )
 
     @classmethod
