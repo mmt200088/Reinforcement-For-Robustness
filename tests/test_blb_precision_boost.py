@@ -393,6 +393,125 @@ class Block5N2BoostReplanTest(unittest.TestCase):
             self.assertEqual(probe.fusion_count, 1)
 
 
+# block5 n=4 mrpc fc=1 option (the committed block5_n4.json option 1).
+BASE5N4 = {
+    "x_centered_fresh_sf": 26,
+    "gamma_sf": 19,
+    "wffn1_sf": 20,
+    "gelu_coeff_sf": 20,
+    "normalize_rescale_sf": 31,
+    "wffn1_rescale_sf": 31,
+    "gelu_power_rescale_sf_0": 31,
+    "gelu_coeff_mul_rescale_sf_0": 31,
+}
+
+
+class Block5N4CandidateGenTest(unittest.TestCase):
+    """block5_n4 fc=1: TWO ×2 between the before-encodes and the short prime
+    (gamma/wffn1 are c=2 → 4 bits/SF), and TWO short primes after fusion (31 and
+    51) — only the LAST (51) is boosted, the middle 31 is left."""
+
+    @staticmethod
+    def _probe():
+        # q_initial [21,39,31,51], fuse 1&2 -> q_final [60,31,51].
+        return pb.ReplanProbe(
+            valid=True, fusion_count=1,
+            q_initial=(21, 39, 31, 51), q_final=(60, 31, 51),
+            fusions=({"fused_position": 1, "fused_into": "next", "small_q": 21},),
+        )
+
+    def test_two_short_primes_detected(self):
+        # both the middle 31 (pre-idx 2) and the trailing 51 (pre-idx 3) are short.
+        self.assertEqual(pb.find_short_primes(self._probe(), 60), [(2, 29), (3, 9)])
+
+    def test_last_prime_fills_to_60(self):
+        # the trailing 51 reaches 60 (the c=0 gelu_coeff gives the odd bit).
+        self.assertEqual(pb.short_prime_fill(pb.BLOCK5_N4_MRPC_TOPOLOGY, (3, 9)), 9)
+
+    def test_six_candidates_double_x2(self):
+        cands = pb.generate_candidates(pb.BLOCK5_N4_MRPC_TOPOLOGY, BASE5N4, [(3, 9)])
+        # 4·(a_gamma+a_wffn1) + a_coeff == 9 → a_g+a_w ∈ {0,1,2}: 1+2+3 = 6.
+        self.assertEqual(len(cands), 6)
+        # a before-encode (c=2) cascade-compensates BOTH wffn1_rescale and
+        # gelu_power_rescale through the two doublings.
+        comp = [c for c in cands if c.edits.get("gamma_sf", 19) > 19]
+        self.assertTrue(comp)
+        for c in comp:
+            self.assertIn("wffn1_rescale_sf", c.edits)
+            self.assertIn("gelu_power_rescale_sf_0", c.edits)
+
+
+@unittest.skipUnless(
+    __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    "rescale_optimizer required",
+)
+class Block5N4BoostReplanTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from rescale_optimizer import ReplanSession  # noqa: E402
+        cls.S = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "Rescale_optimizer"))
+
+    def _replan_fn(self, slots):
+        t_new = [
+            slots["x_centered_fresh_sf"], slots["normalize_rescale_sf"],
+            slots["wffn1_rescale_sf"], slots["gelu_power_rescale_sf_0"],
+            slots["gelu_coeff_mul_rescale_sf_0"],
+        ]
+        deltas = {
+            "ctct_xmean_over_std": "x2",
+            "ctpt_gamal": slots["gamma_sf"],
+            "ctpt_wffn1": slots["wffn1_sf"],
+            "ctct_gelu_x2": "x2",
+            "ctct_gelu_x4": "x2",
+            "ctpt_gelu_coeff": slots["gelu_coeff_sf"],
+        }
+        r = self.S.replan("block5_n4", t_new=t_new, delta_overrides=deltas, return_dict=True)["result"]
+        return pb.ReplanProbe(
+            valid=bool(r["valid"]), fusion_count=len(r["fusions"]),
+            q_initial=tuple(int(x) for x in r["q_initial"]),
+            q_final=tuple(int(x) for x in r["q_final"]),
+            fusions=tuple(r["fusions"]),
+        )
+
+    @staticmethod
+    def _noise_fn(slots, _probe):
+        import noise_tables
+        return sum(
+            noise_tables.variance(16384, slots[k], "encoding")
+            for k in ("gamma_sf", "wffn1_sf", "gelu_coeff_sf")
+        )
+
+    def test_base_chain_matches_design(self):
+        probe = self._replan_fn(BASE5N4)
+        self.assertEqual(probe.q_initial, (21, 39, 31, 51))
+        self.assertEqual(probe.q_final, (60, 31, 51))
+
+    def test_boost_last_prime_only(self):
+        res = pb.boost_option(
+            topology=pb.BLOCK5_N4_MRPC_TOPOLOGY, base_slots=BASE5N4,
+            replan_fn=self._replan_fn, noise_fn=self._noise_fn, q_max=60,
+        )
+        self.assertIsNotNone(res)
+        self.assertEqual(res.base_q_final, (60, 31, 51))
+        # the LAST prime (51) -> 60; the middle 31 is intentionally left.
+        self.assertEqual(res.boosted_q_final, (60, 31, 60))
+        self.assertEqual(res.candidates_valid, res.candidates_tried)
+        self.assertEqual(self._replan_fn(res.boosted_slots).fusion_count, 1)
+
+    def test_user_worked_examples_valid(self):
+        # case1 (all-after +9), case3 8+1, case3 4+5 — all reach (60,31,60).
+        for slots in (
+            {**BASE5N4, "gelu_coeff_sf": 29},
+            {**BASE5N4, "gamma_sf": 21, "gelu_coeff_sf": 21,
+             "wffn1_rescale_sf": 33, "gelu_power_rescale_sf_0": 35},
+            {**BASE5N4, "gamma_sf": 20, "gelu_coeff_sf": 25,
+             "wffn1_rescale_sf": 32, "gelu_power_rescale_sf_0": 33},
+        ):
+            probe = self._replan_fn(slots)
+            self.assertEqual(probe.q_final, (60, 31, 60))
+            self.assertEqual(probe.fusion_count, 1)
+
+
 def _cfg_sf_projection(cfg):
     """Stable (field, scaling_factor) projection of a block NoiseConfig — for
     comparing two cfgs built different ways without relying on dataclass __eq__."""
@@ -417,7 +536,7 @@ class SFDirectEquivalenceTest(unittest.TestCase):
     build_block_cfg_from_field_values — a drift here would silently corrupt every
     boosted option. torch + rescale_optimizer required (skipped locally)."""
 
-    def _assert_sf_direct_matches(self, graph_key, block_idx):
+    def _assert_sf_direct_matches(self, graph_key, block_idx, gelu_degree=4):
         from action_space import (
             _decode_block_field_values,
             action_vector_to_cfgs,
@@ -426,10 +545,12 @@ class SFDirectEquivalenceTest(unittest.TestCase):
         import fusion_enum
         import numpy as np
         ctx = fusion_enum.prepare_block_type_context(
-            graph_key=graph_key, block_idx=block_idx, gelu_degree=4, attn_degree=2,
+            graph_key=graph_key, block_idx=block_idx, gelu_degree=gelu_degree, attn_degree=2,
             profile="mrpc", rescale_optimizer_root=str(_REPO / "Rescale_optimizer"),
             num_layers=12, ref_layer=1,
         )
+        deg_g = int(ctx.gelu_per_layer[ctx.ref_layer])
+        deg_a = int(ctx.attn_per_layer[ctx.ref_layer])
         base_indices = list(ctx.baseline_block_indices)
         full = ctx.baseline_full.copy()
         full[ctx.block_offset: ctx.block_offset + ctx.block_num_slots] = base_indices
@@ -440,11 +561,11 @@ class SFDirectEquivalenceTest(unittest.TestCase):
         ).cfgs_dict()[f"block{block_idx}"][ctx.ref_layer]
         fv = _decode_block_field_values(
             layer_idx=ctx.ref_layer, block_idx=block_idx, action_slice=np.asarray(base_indices, dtype=int),
-            max_sfs=ctx.max_sfs, attn_degree=2, gelu_degree=4,
+            max_sfs=ctx.max_sfs, attn_degree=deg_a, gelu_degree=deg_g,
         )
         fv = {k: int(v) for k, v in fv.items() if v is not None}
         cfg_dir = build_block_cfg_from_field_values(
-            block_idx, ctx.ref_layer, fv, N=ctx.N_block, gelu_degree=4, attn_degree=2,
+            block_idx, ctx.ref_layer, fv, N=ctx.N_block, gelu_degree=deg_g, attn_degree=deg_a,
         )
         self.assertEqual(_cfg_sf_projection(cfg_idx), _cfg_sf_projection(cfg_dir))
 
@@ -456,7 +577,10 @@ class SFDirectEquivalenceTest(unittest.TestCase):
         self._assert_sf_direct_matches("block4", 4)
 
     def test_sf_direct_matches_index_path_block5_n2(self):
-        self._assert_sf_direct_matches("block5_n2", 5)
+        self._assert_sf_direct_matches("block5_n2", 5, gelu_degree=2)
+
+    def test_sf_direct_matches_index_path_block5_n4(self):
+        self._assert_sf_direct_matches("block5_n4", 5, gelu_degree=4)
 
 
 if __name__ == "__main__":

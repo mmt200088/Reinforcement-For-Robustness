@@ -158,10 +158,35 @@ BLOCK5_N2_MRPC_TOPOLOGY = ChainTopology(
     ),
 )
 
+# block5 n=4 (mrpc) — validated against block5_n4.json fc=1 and real replan
+# (q_initial [21,39,31,51] → fuse 1&2 → q_final [60,31,51]). TWO ×2 (ctct_gelu_x2,
+# ctct_gelu_x4) sit between the before-encodes and the short prime, so gamma/wffn1
+# have c=2 (bit-weight 4 — 4 bits/SF) and the compensation must propagate through
+# both doublings (forward-simulated). The short prime is the LAST one (51 → 60);
+# the intermediate 31 (gelu_power) is left as-is (user spec). gelu_coeff (after
+# both ×2) has c=0 (weight 1) → makes the odd deficit 9 reach 60.
+BLOCK5_N4_MRPC_TOPOLOGY = ChainTopology(
+    graph_key="block5_n4",
+    nodes=(
+        ChainNode("fresh", "x_centered_fresh_sf"),
+        ChainNode("x2"),  # ctct_xmean_over_std (initial ×2, off-limits)
+        ChainNode("rescale", "normalize_rescale_sf"),  # fuses away
+        ChainNode("encode", "gamma_sf", addable=True),
+        ChainNode("encode", "wffn1_sf", addable=True),
+        ChainNode("rescale", "wffn1_rescale_sf"),  # fused prime
+        ChainNode("x2"),  # ctct_gelu_x2 (off-limits)
+        ChainNode("rescale", "gelu_power_rescale_sf_0"),  # prime 3 (31) — kept, compensated
+        ChainNode("x2"),  # ctct_gelu_x4 (off-limits)
+        ChainNode("encode", "gelu_coeff_sf", addable=True),  # after both ×2 → c=0
+        ChainNode("rescale", "gelu_coeff_mul_rescale_sf_0"),  # R_target (short prime 4)
+    ),
+)
+
 TOPOLOGIES: Dict[str, ChainTopology] = {
     "block2_mrpc": BLOCK2_MRPC_TOPOLOGY,
     "block4": BLOCK4_MRPC_TOPOLOGY,
     "block5_n2": BLOCK5_N2_MRPC_TOPOLOGY,
+    "block5_n4": BLOCK5_N4_MRPC_TOPOLOGY,
 }
 
 
@@ -355,6 +380,43 @@ def _enumerate_distributions(
     return out
 
 
+def _simulate_rescale_edits(
+        topology: ChainTopology,
+        base_slots: Mapping[str, int],
+        dist: Mapping[str, int],
+        target_pos: int,
+        ) -> Tuple[Dict[str, int], int]:
+    """Forward "delta" simulation: walk the chain accumulating ``delta`` (how much
+    the scale rose vs base), and at every rescale BEFORE ``target_pos`` set
+    ``sf_post += delta`` so that rescale's prime stays at its base value (keeps
+    the whole fusion structure intact). A ``×2`` doubles ``delta`` (so an encode
+    upstream of N doublings contributes ``2**N`` bits to the short prime, and the
+    compensation of an intermediate rescale picks up that amplification — block5_n4
+    has TWO doublings, which a flat "sum upstream additions" rule got wrong).
+
+    Returns ``({rescale_field: new_sf_post}, short_fill)`` where ``short_fill`` is
+    the ``delta`` reaching ``target_pos`` (the bits the short prime gains).
+
+    Binding note: a bound encode (``binding_multiplier=2``) adds its chain delta
+    at the encode position; this is exact only when no ``×2`` sits between the two
+    bound graph nodes (true for block4's ``softmax_out_mask``/``v_mask``).
+    """
+    edits: Dict[str, int] = {}
+    delta = 0
+    for pos in range(int(target_pos)):
+        node = topology.nodes[pos]
+        if node.kind == "x2":
+            delta *= 2
+        elif node.kind == "encode" and node.addable and node.cfg_field:
+            a = int(dist.get(node.cfg_field, 0))
+            if a:
+                delta += int(node.binding_multiplier) * a
+        elif node.kind == "rescale" and node.cfg_field and delta:
+            edits[node.cfg_field] = int(base_slots[node.cfg_field]) + delta
+        # fresh / additive_ctct / non-addable encode: delta unchanged
+    return edits, delta
+
+
 def _candidates_for_short_prime(
         topology: ChainTopology,
         base_slots: Mapping[str, int],
@@ -363,21 +425,18 @@ def _candidates_for_short_prime(
     """All candidate edit-sets that fill ONE short prime to its max.
 
     Distributes ``max_fill`` bits across the addable encodes by their per-SF bit
-    weight (``binding_multiplier * 2**c_i``), and cascade-compensates every
-    rescale before ``R_target`` by the CHAIN-weighted (``binding_multiplier``)
-    additions upstream of it. Mixed ``c_i`` (block5_n2: an encode after the ×2
-    has weight 1, ones before have weight 2) is handled directly — no uniform-c
-    restriction — so an odd deficit can be filled exactly.
+    weight (``binding_multiplier * 2**c_i``), then forward-simulates the rescale
+    ``sf_post`` compensations (``_simulate_rescale_edits``) so every prime before
+    the short one stays constant through any number of ``×2`` doublings. Mixed
+    ``c_i`` (an encode after the ×2 has weight 1, ones before have weight ≥2) is
+    handled directly — no uniform-c restriction — so an odd deficit can be filled
+    exactly when a weight-1 encode exists (block5_n2/n4 reach 60; block4 stops at 59).
     """
     geo = _resolve_geometry(topology, int(short_prime[0]))
     max_fill = short_prime_fill(topology, short_prime)
     if geo is None or geo.r_pre_pos is None or max_fill is None:
         return []
-    bit_weights = _addable_bit_weights(geo)  # (field, bit_weight, pos)
-    weighted = [(f, w) for f, w, _pos in bit_weights]
-    pos_of = {f: pos for f, _w, pos in bit_weights}
-    # chain multiplier (NOT the bit weight) — what a rescale's sf_post absorbs.
-    chain_mult_of = {f: m for (f, m, _c, _pos) in geo.addable}
+    weighted = [(f, w) for f, w, _pos in _addable_bit_weights(geo)]
 
     out: List[Candidate] = []
     for dist in _enumerate_distributions(weighted, max_fill):
@@ -391,18 +450,10 @@ def _candidates_for_short_prime(
             edits[f] = new_sf
         if not ok:
             continue
-        # Cascade compensation: every rescale strictly before R_target keeps its
-        # prime constant by absorbing the chain-weighted additions UPSTREAM of it
-        # (its pre rises by that, its sf_post rises by the same). This preserves
-        # the whole fusion structure → the candidate stays at the same
-        # fusion_count, and the headroom flows through to the short prime. Fused
-        # rescales install no noise, so this never changes the objective.
-        for r_field, r_pos in geo.rescales_before:
-            upstream = sum(
-                chain_mult_of[f] * int(dist.get(f, 0)) for f in dist if pos_of[f] < r_pos
-            )
-            if upstream > 0:
-                edits[r_field] = int(base_slots[r_field]) + upstream
+        rescale_edits, fill = _simulate_rescale_edits(topology, base_slots, dist, geo.target_pos)
+        if fill != max_fill:
+            continue  # sanity: the bit-weighted budget must match the chain sim
+        edits.update(rescale_edits)
         if not edits:
             continue
         desc = "+".join(f"{f}:{dist[f]}" for f in sorted(dist))
@@ -456,23 +507,31 @@ def boost_option(
         noise_fn: Callable[[Dict[str, int], ReplanProbe], float],
         q_max: int = DEFAULT_Q_MAX,
         ) -> Optional[BoostResult]:
-    """Raise every fillable short prime of ``base_slots`` as high as possible
+    """Raise the LAST short prime of ``base_slots`` as high as possible
     (≤ ``q_max``) at minimum installed noise.
 
-    Returns the min-noise boosted slots (same ``fusion_count``, each short prime
-    at its computed max, replan-valid), or ``None`` if the base has no fillable
-    short prime or no candidate verifies (caller keeps the original option).
+    Only the prime at the final rescale (the one feeding ``q_tail``) is boosted —
+    per the user spec, intermediate short primes are left as-is (block5_n4 keeps
+    its middle ``31`` while raising the trailing ``51`` to ``60``). Returns the
+    min-noise boosted slots (same ``fusion_count``, replan-valid), or ``None`` if
+    the last prime is not short/fillable or no candidate verifies (caller keeps
+    the original option).
     """
     base = replan_fn(dict(base_slots))
     if not base.valid:
         return None
     base_fc = int(base.fusion_count)
     base_sum = sum(int(x) for x in base.q_final)
+    # the last rescale is the highest pre-fusion rescale index in the topology.
+    last_rescale_idx = len(topology.rescale_positions()) - 1
     shorts = find_short_primes(base, q_max)
-    fillable = [sp for sp in shorts if short_prime_fill(topology, sp) is not None]
+    fillable = [
+        sp for sp in shorts
+        if int(sp[0]) == last_rescale_idx and short_prime_fill(topology, sp) is not None
+    ]
     if not fillable:
         return None
-    total_fill = sum(int(short_prime_fill(topology, sp)) for sp in fillable)
+    total_fill = int(short_prime_fill(topology, fillable[0]))
     candidates = generate_candidates(topology, base_slots, fillable)
     best: Optional[BoostResult] = None
     n_valid = 0
