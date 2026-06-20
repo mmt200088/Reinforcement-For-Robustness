@@ -1,6 +1,7 @@
 # Stage-2 Fusion-Option Precision Boost ("加大精度") — design
 
-Status: approved mechanism (2026-06-19). Rollout: **block2 first**, then block4, block5.
+Status: approved mechanism (2026-06-19). Rollout: **block2 done**, **block4 done**, block5 next.
+(block2 + block4 are implemented + locally verified vs real replan; the server rebuilds the maps.)
 
 ## 1. Problem & rationale
 
@@ -57,14 +58,32 @@ re-fuse + verify. For each short prime (stage `s`, deficit `Δ = q_max − q_fin
     rescales (compensate each); post-fusion they may be merged (compensate the fused one) — equivalent.
 - **Off-limits placement:** any `ctct`/×2 node and the first side-node (the input ×2).
 - **Multiple short primes:** generate candidates that fill **all** short primes jointly.
+- **Fill-to-max, not always `q_max`.** A short prime fed through `c` `×2` doublings is raised by
+  `2**c · S` where `S = floor(deficit / 2**c)` (the budget, in chain-accumulation units). It reaches
+  `q_max` only when `deficit` is divisible by `2**c`. block2 fc=1: `deficit=2, c=1 → S=1 → 60`. block4
+  fc=1: `deficit=29, c=1 → S=14 → 59` (an odd 60 is unreachable: `2×(integer)` can't be odd).
+- **Distribute `S` by minimum noise.** `S` is spread across the addable upstream encodes; block2's
+  single placement is the `S=1` case, block4's `S=14` is a real partition. A **binding multiplier**
+  handles a shared-SF node (block4 `softmax_out_mask` is bound to `v_mask` → +1 SF costs 2 of `S`).
+- **Cascade compensation (the rule actually used):** every rescale strictly before `R_target` absorbs
+  the chain-weighted additions **upstream of it** (`sf_post += that`), keeping *every* intermediate
+  prime — hence the whole fusion structure — constant. So every budget distribution stays at the same
+  `fusion_count` and is replan-valid; fused rescales install no noise, so this never perturbs the
+  objective. (A "compensate only the rescale before the ×2" variant drops valid candidates: block2's
+  `gamma` would make two 30-primes that replan refuses to fuse, since fusion triggers only on a prime
+  below `q_min`.)
+- **Off-limits placement:** any `×2`/`fresh` node, and any encode after `R_target` (feeds the fixed
+  `q_tail`: block2 `qkt_merge`, block4 `ln_var`).
 - **Verify + cost every candidate via real replan:** keep only `{valid ∧ fusion_count unchanged ∧
-  q_final all == q_max}`; noise = Σ installed-point variance (`SummedInstalledVariance`, same as enum).
-  The **min-noise** survivor wins. (Noise-increasing fills — e.g. lowering a rescale `sf_post` — lose
-  automatically; no need to forbid them.)
-- **Fallback:** if no valid all-`q_max` candidate exists, keep the original option unchanged (log it).
+  Σ q_final == base + total_fill}`; noise = Σ installed-point variance (`SummedInstalledVariance`,
+  same as enum). The **min-noise** survivor wins. (Noise-increasing fills lose automatically.)
+- **Multiple short primes:** cartesian of per-prime candidates with conflict-free merged edits.
+- **Fallback:** if no fillable short prime or no candidate verifies, keep the original option (log it).
 
-Worked example (block2 fc=1), the 4 candidates = `{kt_mask2 (no-comp, before the qkt ×2, +1 SF→+2 bit)`,
-`gamma (+comp on the rescales between it and stage 3)`, `wk (+comp)`, `kt_mask1 (+comp)}`; min-noise wins.
+Worked example (block2 fc=1), the 4 candidates = `{kt_mask2 (no-comp, between R_pre and the qkt ×2)`,
+`gamma`, `wk`, `kt_mask1` (cascade-comp)}`; `S=1`, min-noise wins (kt_mask2).
+Worked example (block4 fc=1): `S=14` distributed over `{softmax_out_mask (×2 cost), softmax_v_mask, wo,
+ln_mean}`, `ln_mean_rescale.sf_post += 14`; 372 distributions, all reach `[60,59]`, min-noise wins.
 
 ## 4. Per-block ChainTopology ("按 block 写死，不写死 SF/位置")
 
@@ -87,11 +106,28 @@ encode kt_mask2 (ctpt_rotKT_mask2 / kt_mask2_encode) ─┐ segment 3
 encode qkt_merge (ctpt_mask / qkt_merge_mask_encode)  │
 rescale qkt_matmul_rescale  ← short prime here        ┘
 ```
-**Q/K binding:** bumping `kt_mask1_rescale` (or `wk`) must mirror to the Q side via
-`sync_block2_qk_binding` (K-side is authoritative). Any boosted cfg must run the block2 sync.
+**Q/K binding:** `wk`/`kt_mask1_rescale` mirror to the Q side via `_build_block2_action` (and
+`sync_block2_qk_binding`); the SF-direct build inherits this, so the boost sets only the K-side slot.
 
-block4 / block5 topologies: TBD when we get there (same contract; `default_block4/5_cfg_to_delta`
-already give the node→cfg-field wiring).
+**block4 topology (validated against block4.json fc=1 + real replan):**
+```
+fresh(softmax_out_fresh, off-limits)
+encode softmax_out_mask (ctpt_mask2)        ── addable, binding ×2 (bound to v_mask)
+additive_ctct ctct_rot_softmax_mul_v        ── += v_fresh + v_mask  (NOT a doubling; off-limits)
+rescale softmax_v_matmul_rescale            ── fuses away
+encode softmax_v_mask (ctpt_mask)           ── addable
+encode wo (ctpt_wo_attnout)                 ── addable
+encode ln_mean (ctpt_inv_d_1)               ── addable
+rescale ln_mean_rescale                     ── R_pre (fused prime)
+×2 ctct_square (LN (X−μ)², off-limits)
+rescale ln_square_rescale  ← short prime here
+encode ln_var (ctpt_inv_d_2)                ── after R_target → feeds q_tail, off-limits
+```
+`q_initial [27,33,31] → fuse 1&2 → q_final [60,31]`; the `31` fills to `59` (deficit 29 odd). The
+`softmax_out_mask → v_mask` binding (`_build_block4_action`, `sync_block4_v_mask_binding`) makes
+`softmax_out_mask` cost 2/SF and is inherited by the SF-direct build (sets only `softmax_out_mask_sf`).
+
+block5 topology: TBD next (same contract; `default_block5_cfg_to_delta` gives the wiring).
 
 ## 5. Data model + runtime (decision: explicit-SF option)
 
