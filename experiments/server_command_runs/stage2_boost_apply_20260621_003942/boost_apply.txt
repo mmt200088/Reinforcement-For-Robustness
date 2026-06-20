@@ -1,0 +1,26 @@
+
+=== block2_mrpc ===
+  opt 0 fc=0 bits=263 var=6.360e-06
+  opt 1 fc=1 bits=240 var=9.772e-06  BOOSTED (kt_mask1_sf:1)
+  -> 1/2 options boosted
+  wrote /hy-tmp/rfr_server_command_a1921b2_20260621_003919/src/blb_stage2_rl/fusion_maps/mrpc/block2_mrpc.json
+
+=== block4 ===
+  opt 0 fc=0 bits=264 var=1.527e-05
+  opt 1 fc=1 bits=239 var=5.098e-04  BOOSTED (ln_mean_inv_d_sf:2+softmax_out_mask_sf:4+softmax_v_mask_sf:2+wo_sf:2)
+  -> 1/2 options boosted
+  wrote /hy-tmp/rfr_server_command_a1921b2_20260621_003919/src/blb_stage2_rl/fusion_maps/mrpc/block4.json
+
+=== block5_n2 ===
+  opt 0 fc=0 bits=244 var=2.571e-09
+  opt 1 fc=1 bits=240 var=3.977e-09  BOOSTED (gamma_sf:2+gelu_coeff_sf:3+wffn1_sf:1)
+  -> 1/2 options boosted
+  wrote /hy-tmp/rfr_server_command_a1921b2_20260621_003919/src/blb_stage2_rl/fusion_maps/mrpc/block5_n2.json
+
+=== block5_n4 ===
+  opt 0 fc=0 bits=275 var=2.572e-09
+  opt 1 fc=1 bits=271 var=5.200e-09  BOOSTED (gamma_sf:1+gelu_coeff_sf:1+wffn1_sf:1)
+  -> 1/2 options boosted
+  wrote /hy-tmp/rfr_server_command_a1921b2_20260621_003919/src/blb_stage2_rl/fusion_maps/mrpc/block5_n4.json
+
+[done] precision boost applied

@@ -1,0 +1,254 @@
+diff --git a/blb_stage2_rl/fusion_maps/mrpc/block2_mrpc.json b/blb_stage2_rl/fusion_maps/mrpc/block2_mrpc.json
+index 8f61f77..777d000 100644
+--- a/blb_stage2_rl/fusion_maps/mrpc/block2_mrpc.json
++++ b/blb_stage2_rl/fusion_maps/mrpc/block2_mrpc.json
+@@ -54,17 +54,17 @@
+       "option_id": 1,
+       "fusion_count": 1,
+       "tie_index": 0,
+-      "total_variance": 1.1679359934146184e-05,
+-      "total_bits": 238,
++      "total_variance": 9.771779502168158e-06,
++      "total_bits": 240,
+       "slots": {
+         "inv_std_fresh_sf": 21,
+         "gamma_sf": 15,
+         "wk_sf": 16,
+-        "kt_mask1_sf": 15,
++        "kt_mask1_sf": 16,
+         "kt_mask2_sf": 15,
+         "qkt_merge_mask_sf": 15,
+         "gamma_rescale_sf": 28,
+-        "kt_mask1_rescale_sf": 28,
++        "kt_mask1_rescale_sf": 29,
+         "qkt_matmul_rescale_sf": 28
+       },
+       "action_indices": [
+@@ -91,7 +91,27 @@
+         0,
+         14,
+         3
+-      ]
++      ],
++      "boosted": true,
++      "explicit_field_values": {
++        "inv_std_fresh_sf": 21,
++        "x_centered_fresh_sf": 28,
++        "gamma_sf": 15,
++        "wk_sf": 16,
++        "wv_sf": 22,
++        "kt_mask1_sf": 16,
++        "kt_mask2_sf": 15,
++        "qkt_merge_mask_sf": 15,
++        "gamma_rescale_sf": 28,
++        "wq_sf": 22,
++        "q_mask1_sf": 15,
++        "q_mask2_sf": 15,
++        "kt_mask1_rescale_sf": 29,
++        "q_mask1_rescale_sf": 28,
++        "qkt_matmul_rescale_sf": 28,
++        "output_truncation_k": 13
++      },
++      "boost_description": "kt_mask1_sf:1"
+     }
+   ],
+   "build_meta": {
+@@ -132,6 +152,7 @@
+     "enum_path": "fast",
+     "fast_verified_probes": 130,
+     "fast_shards": 1024,
+-    "fast_wall_seconds": 227.22
++    "fast_wall_seconds": 227.22,
++    "precision_boost_applied": true
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/blb_stage2_rl/fusion_maps/mrpc/block4.json b/blb_stage2_rl/fusion_maps/mrpc/block4.json
+index ec1d1c2..d4a4e77 100644
+--- a/blb_stage2_rl/fusion_maps/mrpc/block4.json
++++ b/blb_stage2_rl/fusion_maps/mrpc/block4.json
+@@ -49,18 +49,18 @@
+       "option_id": 1,
+       "fusion_count": 1,
+       "tie_index": 0,
+-      "total_variance": 0.004019363970781401,
+-      "total_bits": 211,
++      "total_variance": 0.0005098423001575246,
++      "total_bits": 239,
+       "slots": {
+         "softmax_out_fresh_sf": 21,
+         "v_fresh_sf": 17,
+-        "softmax_out_mask_sf": 10,
+-        "softmax_v_mask_sf": 11,
+-        "ln_mean_inv_d_sf": 11,
++        "softmax_out_mask_sf": 14,
++        "softmax_v_mask_sf": 13,
++        "ln_mean_inv_d_sf": 13,
+         "ln_var_inv_d_sf": 20,
+-        "wo_sf": 11,
+-        "softmax_v_matmul_rescale_sf": 31,
+-        "ln_mean_rescale_sf": 31,
++        "wo_sf": 13,
++        "softmax_v_matmul_rescale_sf": 39,
++        "ln_mean_rescale_sf": 45,
+         "ln_square_rescale_sf": 31
+       },
+       "action_indices": [
+@@ -81,7 +81,23 @@
+         0,
+         14,
+         3
+-      ]
++      ],
++      "boosted": true,
++      "explicit_field_values": {
++        "softmax_out_fresh_sf": 21,
++        "v_fresh_sf": 17,
++        "softmax_out_mask_sf": 14,
++        "v_mask_sf": 14,
++        "softmax_v_mask_sf": 13,
++        "ln_mean_inv_d_sf": 13,
++        "ln_var_inv_d_sf": 20,
++        "wo_sf": 13,
++        "softmax_v_matmul_rescale_sf": 39,
++        "ln_mean_rescale_sf": 45,
++        "ln_square_rescale_sf": 31,
++        "output_truncation_k": 13
++      },
++      "boost_description": "ln_mean_inv_d_sf:2+softmax_out_mask_sf:4+softmax_v_mask_sf:2+wo_sf:2"
+     }
+   ],
+   "build_meta": {
+@@ -122,6 +138,7 @@
+     "enum_path": "fast",
+     "fast_verified_probes": 130,
+     "fast_shards": 1024,
+-    "fast_wall_seconds": 1694.68
++    "fast_wall_seconds": 1694.68,
++    "precision_boost_applied": true
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/blb_stage2_rl/fusion_maps/mrpc/block5_n2.json b/blb_stage2_rl/fusion_maps/mrpc/block5_n2.json
+index 4ae996a..58432da 100644
+--- a/blb_stage2_rl/fusion_maps/mrpc/block5_n2.json
++++ b/blb_stage2_rl/fusion_maps/mrpc/block5_n2.json
+@@ -45,15 +45,15 @@
+       "option_id": 1,
+       "fusion_count": 1,
+       "tie_index": 0,
+-      "total_variance": 1.0790533830664807e-08,
+-      "total_bits": 231,
++      "total_variance": 3.977054079518059e-09,
++      "total_bits": 240,
+       "slots": {
+         "x_centered_fresh_sf": 26,
+-        "gamma_sf": 19,
+-        "wffn1_sf": 20,
+-        "gelu_coeff_sf": 20,
++        "gamma_sf": 21,
++        "wffn1_sf": 21,
++        "gelu_coeff_sf": 23,
+         "normalize_rescale_sf": 31,
+-        "wffn1_rescale_sf": 31,
++        "wffn1_rescale_sf": 34,
+         "gelu_coeff_mul_rescale_sf_0": 31
+       },
+       "action_indices": [
+@@ -73,7 +73,20 @@
+         0,
+         0,
+         3
+-      ]
++      ],
++      "boosted": true,
++      "explicit_field_values": {
++        "inv_std_fresh_sf": 31,
++        "x_centered_fresh_sf": 26,
++        "gamma_sf": 21,
++        "wffn1_sf": 21,
++        "gelu_coeff_sf": 23,
++        "normalize_rescale_sf": 31,
++        "wffn1_rescale_sf": 34,
++        "gelu_coeff_mul_rescale_sf_0": 31,
++        "output_truncation_k": 13
++      },
++      "boost_description": "gamma_sf:2+gelu_coeff_sf:3+wffn1_sf:1"
+     }
+   ],
+   "build_meta": {
+@@ -110,6 +123,7 @@
+     "enum_path": "fast",
+     "fast_verified_probes": 130,
+     "fast_shards": 1024,
+-    "fast_wall_seconds": 62.6
++    "fast_wall_seconds": 62.6,
++    "precision_boost_applied": true
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/blb_stage2_rl/fusion_maps/mrpc/block5_n4.json b/blb_stage2_rl/fusion_maps/mrpc/block5_n4.json
+index 0c0c390..45cc350 100644
+--- a/blb_stage2_rl/fusion_maps/mrpc/block5_n4.json
++++ b/blb_stage2_rl/fusion_maps/mrpc/block5_n4.json
+@@ -46,16 +46,16 @@
+       "option_id": 1,
+       "fusion_count": 1,
+       "tie_index": 0,
+-      "total_variance": 1.0792150858262184e-08,
+-      "total_bits": 262,
++      "total_variance": 5.199572597207077e-09,
++      "total_bits": 271,
+       "slots": {
+         "x_centered_fresh_sf": 26,
+-        "gamma_sf": 19,
+-        "wffn1_sf": 20,
+-        "gelu_coeff_sf": 20,
++        "gamma_sf": 20,
++        "wffn1_sf": 21,
++        "gelu_coeff_sf": 21,
+         "normalize_rescale_sf": 31,
+-        "wffn1_rescale_sf": 31,
+-        "gelu_power_rescale_sf_0": 31,
++        "wffn1_rescale_sf": 33,
++        "gelu_power_rescale_sf_0": 35,
+         "gelu_coeff_mul_rescale_sf_0": 31
+       },
+       "action_indices": [
+@@ -75,7 +75,21 @@
+         0,
+         0,
+         3
+-      ]
++      ],
++      "boosted": true,
++      "explicit_field_values": {
++        "inv_std_fresh_sf": 31,
++        "x_centered_fresh_sf": 26,
++        "gamma_sf": 20,
++        "wffn1_sf": 21,
++        "gelu_coeff_sf": 21,
++        "normalize_rescale_sf": 31,
++        "wffn1_rescale_sf": 33,
++        "gelu_power_rescale_sf_0": 35,
++        "gelu_coeff_mul_rescale_sf_0": 31,
++        "output_truncation_k": 13
++      },
++      "boost_description": "gamma_sf:1+gelu_coeff_sf:1+wffn1_sf:1"
+     }
+   ],
+   "build_meta": {
+@@ -114,6 +128,7 @@
+     "enum_path": "fast",
+     "fast_verified_probes": 130,
+     "fast_shards": 1024,
+-    "fast_wall_seconds": 610.02
++    "fast_wall_seconds": 610.02,
++    "precision_boost_applied": true
+   }
+-}
+\ No newline at end of file
++}

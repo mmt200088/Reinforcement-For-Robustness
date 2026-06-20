@@ -1,8 +1,8 @@
 {
-  "graph_key": "block5_n2",
+  "graph_key": "block5_n1",
   "profile": "mrpc",
   "block_idx": 5,
-  "gelu_degree": 2,
+  "gelu_degree": 1,
   "attn_degree": 2,
   "k_slot_index": 15,
   "block_num_slots": 16,
@@ -11,15 +11,14 @@
       "option_id": 0,
       "fusion_count": 0,
       "tie_index": 0,
-      "total_variance": 2.5708599994083115e-09,
-      "total_bits": 244,
+      "total_variance": 2.669498642156283e-09,
+      "total_bits": 213,
       "slots": {
         "x_centered_fresh_sf": 31,
         "gamma_sf": 20,
         "wffn1_sf": 22,
         "gelu_coeff_sf": 20,
-        "normalize_rescale_sf": 31,
-        "wffn1_rescale_sf": 31,
+        "normalize_rescale_sf": 28,
         "gelu_coeff_mul_rescale_sf_0": 31
       },
       "action_indices": [
@@ -30,7 +29,7 @@
         14,
         14,
         0,
-        14,
+        0,
         0,
         0,
         0,
@@ -45,26 +44,25 @@
       "option_id": 1,
       "fusion_count": 1,
       "tie_index": 0,
-      "total_variance": 3.977054079518059e-09,
-      "total_bits": 240,
+      "total_variance": 2.7608254943917373e-06,
+      "total_bits": 180,
       "slots": {
-        "x_centered_fresh_sf": 26,
-        "gamma_sf": 21,
-        "wffn1_sf": 21,
-        "gelu_coeff_sf": 23,
-        "normalize_rescale_sf": 31,
-        "wffn1_rescale_sf": 34,
+        "x_centered_fresh_sf": 22,
+        "gamma_sf": 15,
+        "wffn1_sf": 16,
+        "gelu_coeff_sf": 16,
+        "normalize_rescale_sf": 28,
         "gelu_coeff_mul_rescale_sf_0": 31
       },
       "action_indices": [
         14,
+        5,
         9,
-        13,
-        12,
-        14,
+        8,
+        10,
         14,
         0,
-        14,
+        0,
         0,
         0,
         0,
@@ -73,27 +71,13 @@
         0,
         0,
         3
-      ],
-      "boosted": true,
-      "explicit_field_values": {
-        "inv_std_fresh_sf": 31,
-        "x_centered_fresh_sf": 26,
-        "gamma_sf": 21,
-        "wffn1_sf": 21,
-        "gelu_coeff_sf": 23,
-        "normalize_rescale_sf": 31,
-        "wffn1_rescale_sf": 34,
-        "gelu_coeff_mul_rescale_sf_0": 31,
-        "output_truncation_k": 13
-      },
-      "boost_description": "gamma_sf:2+gelu_coeff_sf:3+wffn1_sf:1"
+      ]
     }
   ],
   "build_meta": {
     "active_rescale_fields": [
       "gelu_coeff_mul_rescale_sf_0",
-      "normalize_rescale_sf",
-      "wffn1_rescale_sf"
+      "normalize_rescale_sf"
     ],
     "enum_positions": [
       1,
@@ -101,29 +85,28 @@
       3,
       4,
       5,
-      7,
       11
     ],
     "pinned_positions": [],
-    "enum_total_combos": 64744680,
-    "valid_configs": 45243207,
-    "kept_configs": 1459,
+    "enum_total_combos": 4624620,
+    "valid_configs": 2756449,
+    "kept_configs": 1250,
     "num_options": 2,
     "fusion_counts": [
       0,
       1
     ],
-    "wall_seconds": 62.66,
+    "wall_seconds": 38.96,
     "workers": 128,
     "k_independence": {
       "k_independent": true,
       "violations": [],
       "samples_checked": 2
     },
-    "enum_path": "fast",
+    "enum_path": "both",
     "fast_verified_probes": 130,
     "fast_shards": 1024,
-    "fast_wall_seconds": 62.6,
-    "precision_boost_applied": true
+    "fast_wall_seconds": 5.1,
+    "both_paths_identical": true
   }
 }

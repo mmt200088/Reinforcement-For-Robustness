@@ -46,16 +46,16 @@
       "option_id": 1,
       "fusion_count": 1,
       "tie_index": 0,
-      "total_variance": 5.199572597207077e-09,
-      "total_bits": 271,
+      "total_variance": 1.0792150858262184e-08,
+      "total_bits": 262,
       "slots": {
         "x_centered_fresh_sf": 26,
-        "gamma_sf": 20,
-        "wffn1_sf": 21,
-        "gelu_coeff_sf": 21,
+        "gamma_sf": 19,
+        "wffn1_sf": 20,
+        "gelu_coeff_sf": 20,
         "normalize_rescale_sf": 31,
-        "wffn1_rescale_sf": 33,
-        "gelu_power_rescale_sf_0": 35,
+        "wffn1_rescale_sf": 31,
+        "gelu_power_rescale_sf_0": 31,
         "gelu_coeff_mul_rescale_sf_0": 31
       },
       "action_indices": [
@@ -75,21 +75,7 @@
         0,
         0,
         3
-      ],
-      "boosted": true,
-      "explicit_field_values": {
-        "inv_std_fresh_sf": 31,
-        "x_centered_fresh_sf": 26,
-        "gamma_sf": 20,
-        "wffn1_sf": 21,
-        "gelu_coeff_sf": 21,
-        "normalize_rescale_sf": 31,
-        "wffn1_rescale_sf": 33,
-        "gelu_power_rescale_sf_0": 35,
-        "gelu_coeff_mul_rescale_sf_0": 31,
-        "output_truncation_k": 13
-      },
-      "boost_description": "gamma_sf:1+gelu_coeff_sf:1+wffn1_sf:1"
+      ]
     }
   ],
   "build_meta": {
@@ -128,7 +114,6 @@
     "enum_path": "fast",
     "fast_verified_probes": 130,
     "fast_shards": 1024,
-    "fast_wall_seconds": 610.02,
-    "precision_boost_applied": true
+    "fast_wall_seconds": 610.02
   }
 }

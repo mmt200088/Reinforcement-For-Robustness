@@ -1,8 +1,8 @@
 {
-  "graph_key": "block5_n4",
+  "graph_key": "block5_n2",
   "profile": "mrpc",
   "block_idx": 5,
-  "gelu_degree": 4,
+  "gelu_degree": 2,
   "attn_degree": 2,
   "k_slot_index": 15,
   "block_num_slots": 16,
@@ -11,8 +11,8 @@
       "option_id": 0,
       "fusion_count": 0,
       "tie_index": 0,
-      "total_variance": 2.5724770270056877e-09,
-      "total_bits": 275,
+      "total_variance": 2.5708599994083115e-09,
+      "total_bits": 244,
       "slots": {
         "x_centered_fresh_sf": 31,
         "gamma_sf": 20,
@@ -20,7 +20,6 @@
         "gelu_coeff_sf": 20,
         "normalize_rescale_sf": 31,
         "wffn1_rescale_sf": 31,
-        "gelu_power_rescale_sf_0": 31,
         "gelu_coeff_mul_rescale_sf_0": 31
       },
       "action_indices": [
@@ -32,7 +31,7 @@
         14,
         0,
         14,
-        14,
+        0,
         0,
         0,
         14,
@@ -46,16 +45,15 @@
       "option_id": 1,
       "fusion_count": 1,
       "tie_index": 0,
-      "total_variance": 5.199572597207077e-09,
-      "total_bits": 271,
+      "total_variance": 1.0790533830664807e-08,
+      "total_bits": 231,
       "slots": {
         "x_centered_fresh_sf": 26,
-        "gamma_sf": 20,
-        "wffn1_sf": 21,
-        "gelu_coeff_sf": 21,
+        "gamma_sf": 19,
+        "wffn1_sf": 20,
+        "gelu_coeff_sf": 20,
         "normalize_rescale_sf": 31,
-        "wffn1_rescale_sf": 33,
-        "gelu_power_rescale_sf_0": 35,
+        "wffn1_rescale_sf": 31,
         "gelu_coeff_mul_rescale_sf_0": 31
       },
       "action_indices": [
@@ -67,7 +65,7 @@
         14,
         0,
         14,
-        14,
+        0,
         0,
         0,
         14,
@@ -75,27 +73,12 @@
         0,
         0,
         3
-      ],
-      "boosted": true,
-      "explicit_field_values": {
-        "inv_std_fresh_sf": 31,
-        "x_centered_fresh_sf": 26,
-        "gamma_sf": 20,
-        "wffn1_sf": 21,
-        "gelu_coeff_sf": 21,
-        "normalize_rescale_sf": 31,
-        "wffn1_rescale_sf": 33,
-        "gelu_power_rescale_sf_0": 35,
-        "gelu_coeff_mul_rescale_sf_0": 31,
-        "output_truncation_k": 13
-      },
-      "boost_description": "gamma_sf:1+gelu_coeff_sf:1+wffn1_sf:1"
+      ]
     }
   ],
   "build_meta": {
     "active_rescale_fields": [
       "gelu_coeff_mul_rescale_sf_0",
-      "gelu_power_rescale_sf_0",
       "normalize_rescale_sf",
       "wffn1_rescale_sf"
     ],
@@ -106,19 +89,18 @@
       4,
       5,
       7,
-      8,
       11
     ],
     "pinned_positions": [],
-    "enum_total_combos": 906425520,
-    "valid_configs": 191327542,
-    "kept_configs": 1340,
+    "enum_total_combos": 64744680,
+    "valid_configs": 45243207,
+    "kept_configs": 1459,
     "num_options": 2,
     "fusion_counts": [
       0,
       1
     ],
-    "wall_seconds": 610.07,
+    "wall_seconds": 62.66,
     "workers": 128,
     "k_independence": {
       "k_independent": true,
@@ -128,7 +110,6 @@
     "enum_path": "fast",
     "fast_verified_probes": 130,
     "fast_shards": 1024,
-    "fast_wall_seconds": 610.02,
-    "precision_boost_applied": true
+    "fast_wall_seconds": 62.6
   }
 }

@@ -49,18 +49,18 @@
       "option_id": 1,
       "fusion_count": 1,
       "tie_index": 0,
-      "total_variance": 0.0005098423001575246,
-      "total_bits": 239,
+      "total_variance": 0.004019363970781401,
+      "total_bits": 211,
       "slots": {
         "softmax_out_fresh_sf": 21,
         "v_fresh_sf": 17,
-        "softmax_out_mask_sf": 14,
-        "softmax_v_mask_sf": 13,
-        "ln_mean_inv_d_sf": 13,
+        "softmax_out_mask_sf": 10,
+        "softmax_v_mask_sf": 11,
+        "ln_mean_inv_d_sf": 11,
         "ln_var_inv_d_sf": 20,
-        "wo_sf": 13,
-        "softmax_v_matmul_rescale_sf": 39,
-        "ln_mean_rescale_sf": 45,
+        "wo_sf": 11,
+        "softmax_v_matmul_rescale_sf": 31,
+        "ln_mean_rescale_sf": 31,
         "ln_square_rescale_sf": 31
       },
       "action_indices": [
@@ -81,23 +81,7 @@
         0,
         14,
         3
-      ],
-      "boosted": true,
-      "explicit_field_values": {
-        "softmax_out_fresh_sf": 21,
-        "v_fresh_sf": 17,
-        "softmax_out_mask_sf": 14,
-        "v_mask_sf": 14,
-        "softmax_v_mask_sf": 13,
-        "ln_mean_inv_d_sf": 13,
-        "ln_var_inv_d_sf": 20,
-        "wo_sf": 13,
-        "softmax_v_matmul_rescale_sf": 39,
-        "ln_mean_rescale_sf": 45,
-        "ln_square_rescale_sf": 31,
-        "output_truncation_k": 13
-      },
-      "boost_description": "ln_mean_inv_d_sf:2+softmax_out_mask_sf:4+softmax_v_mask_sf:2+wo_sf:2"
+      ]
     }
   ],
   "build_meta": {
@@ -138,7 +122,6 @@
     "enum_path": "fast",
     "fast_verified_probes": 130,
     "fast_shards": 1024,
-    "fast_wall_seconds": 1694.68,
-    "precision_boost_applied": true
+    "fast_wall_seconds": 1694.68
   }
 }
