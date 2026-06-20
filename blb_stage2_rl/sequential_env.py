@@ -153,6 +153,11 @@ class BLBStage2SequentialEnv:
         # episode, consumed at the terminal step to compute the per-block weighted
         # P3 cost saving (reward.FUSION_COST_W / TRUNC_COST_W). Empty in per-slot mode.
         self._fusion_choices: List[BlockChoice] = []
+        # 加大精度: per-(block_idx, layer_idx) explicit boosted field_values (incl. the
+        # decided K) for committed boosted fusion options. Passed to the terminal
+        # model-forward so the noise install uses the BOOSTED SFs, not the
+        # index-decoded pre-boost ones (the index vec cannot carry above-baseline SF).
+        self._boosted_overrides: Dict[Tuple[int, int], Dict[str, int]] = {}
 
     # ------------------------------------------------------------------
     # public surface
@@ -193,6 +198,7 @@ class BLBStage2SequentialEnv:
         self._prev_per_step_overrides = []
         self._terminated_early = False
         self._fusion_choices = []
+        self._boosted_overrides = {}
         return self._build_obs()
 
     def evaluate_step(
@@ -216,6 +222,11 @@ class BLBStage2SequentialEnv:
         spec = self.current_spec()
         action = np.asarray(per_step_action, dtype=int).reshape(-1)
         fusion_choice: Optional[BlockChoice] = None
+        # 加大精度: explicit boosted SFs (with the decided K) for this block, if
+        # the chosen fusion option is a boosted one. Captured here so commit_step
+        # can carry it to the TERMINAL model-forward install (the index-only
+        # _pending_full_vec cannot represent the above-baseline boosted SFs).
+        boosted_field_values: Optional[Dict[str, int]] = None
 
         # Use a fresh copy of the accumulator so the persistent vec only changes
         # in commit_step(). Important: we still need the previously-committed
@@ -297,6 +308,7 @@ class BLBStage2SequentialEnv:
                     N=int(_block_default_N(int(spec.block_idx), gelu_degree=deg_g, attn_degree=deg_a)),
                     gelu_degree=deg_g, attn_degree=deg_a,
                 )
+                boosted_field_values = fv
         config_name = f"{spec.graph_key_suffix}_L{spec.layer_idx}"
 
         optimizer_t0 = time.perf_counter()
@@ -338,6 +350,7 @@ class BLBStage2SequentialEnv:
             "config_name": config_name,
             "optimizer_wall_seconds": optimizer_wall,
             "fusion_choice": fusion_choice,
+            "boosted_field_values": boosted_field_values,
         }
 
     def commit_step(
@@ -394,6 +407,12 @@ class BLBStage2SequentialEnv:
         _fc = eval_info.get("fusion_choice")
         if _fc is not None:
             self._fusion_choices.append(_fc)
+        # 加大精度: if this committed block chose a boosted fusion option, remember its
+        # explicit boosted SFs so the terminal model forward installs noise at the
+        # BOOSTED SFs (the index-only _pending_full_vec can't represent them).
+        _bfv = eval_info.get("boosted_field_values")
+        if _bfv:
+            self._boosted_overrides[(int(spec.block_idx), int(spec.layer_idx))] = dict(_bfv)
 
         per_step_reward = 0.0
         if not valid:
@@ -462,6 +481,16 @@ class BLBStage2SequentialEnv:
 
         if done and not self._terminated_early:
             if bool(defer_terminal_forward):
+                # NOTE: the deferred (fast-reward) terminal install consumes only
+                # terminal_action_vec (indices), which CANNOT carry boosted SFs.
+                # Fusion mode force-disables fast-reward, so boosted options never
+                # take this path; guard so a future fusion+defer combo fails loud
+                # instead of silently installing pre-boost noise.
+                if self._boosted_overrides:
+                    raise RuntimeError(
+                        "deferred terminal forward is incompatible with 加大精度 boosted "
+                        "options (index vec can't carry boosted SFs); disable fast-reward."
+                    )
                 info["terminal_deferred"] = True
                 info["terminal_action_vec"] = np.asarray(
                     self._pending_full_vec, dtype=np.int64,
@@ -524,6 +553,7 @@ class BLBStage2SequentialEnv:
                 self._pending_full_vec,
                 external_cost_score=ext_score,
                 external_cost_rank=ext_rank,
+                boosted_overrides=(dict(self._boosted_overrides) or None),
             )
             # Mirror the per-block-type split into terminal_info so BOTH the
             # serial (_apply_terminal_info_to_record) and parallel

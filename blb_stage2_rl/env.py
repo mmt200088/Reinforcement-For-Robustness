@@ -820,6 +820,7 @@ class BLBStage2Env:
             *,
             external_cost_score: Optional[float] = None,
             external_cost_rank: Optional[float] = None,
+            boosted_overrides: Optional[Mapping[Tuple[int, int], Mapping[str, int]]] = None,
             ) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
         """单步 episode：装噪声 → forward → 计算 reward → 还原噪声。
 
@@ -827,6 +828,12 @@ class BLBStage2Env:
         sequential_env 终局把 per-block 加权 cost 节省算好传进来，只在最终 valid
         reward（P3）里替掉聚合 fusion/K/bits cost。非 fusion 调用保持 None ⇒ 旧路径。
         invalid 分支必为 P1，compute_reward 不读 cost，故无需透传。
+
+        ``boosted_overrides``：加大精度专用。``{(block_idx, layer_idx): {field: sf}}``
+        —— 选中的 boosted fusion option 的显式 SF（含选定 K）。因为 ``action_vec`` 只能
+        携带网格动作索引、表达不了高于 baseline 的 boosted SF，这里把对应 (block, layer)
+        的 cfg 用 SF-direct 重建，使 **本次 forward 真正安装的噪声是加大精度之后的动作组**
+        （cost replan / optimizer override / 装噪声 全部基于 boosted cfg）。None ⇒ 旧路径。
         """
         action_vec = np.asarray(action_vec, dtype=int).reshape(-1)
         if action_vec.size != self.total_action_dim:
@@ -849,6 +856,7 @@ class BLBStage2Env:
             rescale_bridge=self.rescale_bridge,
             gelu_degree=self.gelu_degree,
             attn_degree=self.attn_degree,
+            boosted_overrides=boosted_overrides,
         )
         timing["cost_eval_wall_seconds"] = float(time.perf_counter() - cost_t0)
         decoded = cost_eval.decoded

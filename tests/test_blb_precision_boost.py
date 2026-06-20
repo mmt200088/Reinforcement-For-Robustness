@@ -582,6 +582,50 @@ class SFDirectEquivalenceTest(unittest.TestCase):
     def test_sf_direct_matches_index_path_block5_n4(self):
         self._assert_sf_direct_matches("block5_n4", 5, gelu_degree=4)
 
+    def test_boosted_overrides_reach_the_installed_cfg(self):
+        # THE end-to-end guarantee the user asked for: when RL picks a boosted
+        # fusion option, the cfg that the model installs noise from (the one
+        # evaluate_action_for_cost feeds to replan + bridge.apply) must carry the
+        # BOOSTED SFs, not the index-decoded pre-boost ones. Here we drive
+        # evaluate_action_for_cost with a boosted_override and assert the returned
+        # cfg reflects it (above-baseline kt_mask2 SF that has NO action index).
+        from action_space import _decode_block_field_values
+        import fusion_enum
+        import numpy as np
+        from optimizer_cost import evaluate_action_for_cost
+        ctx = fusion_enum.prepare_block_type_context(
+            graph_key="block2_mrpc", block_idx=2, gelu_degree=4, attn_degree=2,
+            profile="mrpc", rescale_optimizer_root=str(_REPO / "Rescale_optimizer"),
+            num_layers=12, ref_layer=1,
+        )
+        li = int(ctx.ref_layer)
+        fv = _decode_block_field_values(
+            layer_idx=li, block_idx=2,
+            action_slice=np.asarray(ctx.baseline_block_indices, dtype=int),
+            max_sfs=ctx.max_sfs, attn_degree=2, gelu_degree=4,
+        )
+        fv = {k: int(v) for k, v in fv.items() if v is not None}
+        base_kt2 = int(fv["kt_mask2_sf"])
+        boosted_kt2 = base_kt2 + 1  # above-baseline → no action index exists for it
+        fv["kt_mask2_sf"] = boosted_kt2
+
+        ev = evaluate_action_for_cost(
+            ctx.baseline_full, profile="mrpc", num_layers=ctx.num_layers,
+            max_sfs=ctx.max_sfs, rescale_bridge=ctx.bridge,
+            gelu_degree=ctx.gelu_per_layer, attn_degree=ctx.attn_per_layer,
+            boosted_overrides={(2, li): fv},
+        )
+        installed_cfg = ev.cfgs_dict["block2"][li]
+        # the cfg that feeds replan + the model noise install carries the boost.
+        self.assertEqual(int(installed_cfg.kt_mask2_encode.scaling_factor), boosted_kt2)
+        # without the override the same slot would be the pre-boost baseline SF.
+        ev0 = evaluate_action_for_cost(
+            ctx.baseline_full, profile="mrpc", num_layers=ctx.num_layers,
+            max_sfs=ctx.max_sfs, rescale_bridge=ctx.bridge,
+            gelu_degree=ctx.gelu_per_layer, attn_degree=ctx.attn_per_layer,
+        )
+        self.assertEqual(int(ev0.cfgs_dict["block2"][li].kt_mask2_encode.scaling_factor), base_kt2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
