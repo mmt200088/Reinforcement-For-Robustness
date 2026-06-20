@@ -441,17 +441,23 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
             continue
         final = _eval_block_from_field_values(ctx, res.boosted_slots)
         # hard build-time guard: a stored boost MUST be valid, keep fusion_count,
-        # and have every prime at q_max (the boost_option contract — re-checked
-        # here against an independent replan so a broken topology aborts the build).
+        # and reproduce boost_option's OWN replan-verified boosted chain under an
+        # INDEPENDENT replan (so a broken topology / serialization drift aborts the
+        # build). NOTE: the boosted chain is NOT always all-q_max — block4's short
+        # prime structurally maxes at 59 (odd deficit, no after-×2 weight-1 encode),
+        # so check against res.boosted_q_final (the achieved max fill, which
+        # boost_option already pins to base_sum + short_prime_fill), NOT q_max.
+        final_qf = tuple(int(q) for q in final.get("q_final", ()))
+        expected_qf = tuple(int(q) for q in res.boosted_q_final)
         if (
             not final.get("valid")
             or int(final.get("fusion_count", -1)) != int(opt["fusion_count"])
-            or any(int(q) != int(topo.q_max) for q in final.get("q_final", ()))
+            or final_qf != expected_qf
         ):
             raise RuntimeError(
                 f"{ctx.graph_key}: precision boost produced an inconsistent option "
-                f"(fc={final.get('fusion_count')} q_final={final.get('q_final')} "
-                f"expected fc={opt['fusion_count']} all={topo.q_max}); aborting build"
+                f"(fc={final.get('fusion_count')} q_final={final_qf} "
+                f"expected fc={opt['fusion_count']} q_final={expected_qf}); aborting build"
             )
         opt["boosted"] = True
         opt["explicit_field_values"] = {k: int(v) for k, v in res.boosted_slots.items()}

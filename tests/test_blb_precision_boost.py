@@ -627,5 +627,61 @@ class SFDirectEquivalenceTest(unittest.TestCase):
         self.assertEqual(int(ev0.cfgs_dict["block2"][li].kt_mask2_encode.scaling_factor), base_kt2)
 
 
+@unittest.skipUnless(
+    __import__("importlib").util.find_spec("torch") is not None
+    and __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    "torch + rescale_optimizer required",
+)
+class BoostOptionsForBlockGuardTest(unittest.TestCase):
+    """The builder/apply integration guard (``fusion_enum.boost_options_for_block``)
+    must ACCEPT block4's legitimate ``(60, 59)``: its short prime structurally maxes
+    at 59, not q_max=60 (odd deficit, no after-×2 weight-1 encode). Regression for
+    the guard that wrongly required every prime == q_max and aborted the block4 map
+    apply with "inconsistent option ... q_final=(60, 59) expected all=60". The
+    per-block ``BoostReplanTest`` classes call ``boost_option`` directly and never
+    hit this guard, so this exercises the missing integration path against the real
+    committed maps. torch + rescale_optimizer required (skipped locally)."""
+
+    def _ctx_and_options(self, graph_key, block_idx, gelu_degree):
+        import json
+
+        import fusion_enum
+        ctx = fusion_enum.prepare_block_type_context(
+            graph_key=graph_key, block_idx=block_idx, gelu_degree=gelu_degree, attn_degree=2,
+            profile="mrpc", rescale_optimizer_root=str(_REPO / "Rescale_optimizer"),
+            num_layers=12, ref_layer=1,
+        )
+        path = _REPO / "blb_stage2_rl" / "fusion_maps" / "mrpc" / f"{graph_key}.json"
+        options = json.loads(path.read_text(encoding="utf-8"))["options"]
+        return ctx, options
+
+    def test_block4_apply_accepts_59(self):
+        import fusion_enum
+        ctx, options = self._ctx_and_options("block4", 4, 4)
+        # under the old all-q_max guard this RAISED RuntimeError("inconsistent option").
+        boosted = fusion_enum.boost_options_for_block(ctx, options)
+        nz = [o for o in boosted if int(o.get("fusion_count", 0)) != 0]
+        self.assertTrue(nz, "block4 must have a non-zero-fusion option to boost")
+        self.assertTrue(
+            all(o.get("boosted") and o.get("explicit_field_values") for o in nz),
+            "block4 fc!=0 option must be boosted with explicit_field_values",
+        )
+        # the boosted chain is (60, 59) — the achieved max fill, NOT all q_max=60.
+        final = fusion_enum._eval_block_from_field_values(ctx, nz[0]["explicit_field_values"])
+        self.assertTrue(final.get("valid"))
+        self.assertEqual(tuple(int(q) for q in final["q_final"]), (60, 59))
+
+    def test_qmax_block_still_boosts(self):
+        # block2 reaches all q_max=60; the guard fix must NOT regress the all-q_max
+        # blocks (they must still be accepted and boosted).
+        import fusion_enum
+        ctx, options = self._ctx_and_options("block2_mrpc", 2, 4)
+        boosted = fusion_enum.boost_options_for_block(ctx, options)
+        nz = [o for o in boosted if int(o.get("fusion_count", 0)) != 0]
+        self.assertTrue(nz and all(o.get("boosted") for o in nz))
+        final = fusion_enum._eval_block_from_field_values(ctx, nz[0]["explicit_field_values"])
+        self.assertEqual(tuple(int(q) for q in final["q_final"]), (60, 60))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

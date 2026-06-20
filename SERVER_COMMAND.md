@@ -3,22 +3,25 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (加大精度 重跑：修 2 个 import/KeyError bug 后跑通单测并落 4 张 boost map；KV-cache 已判 NOT EFFECTIVE)
+## ▶ active command  (加大精度 重跑 v2：修 block4 一致性门禁 + active 文本断坏；跑通单测并落 4 张 boost map)
 
-> **KV-cache 提速已在上轮服务器验证完毕 → NOT EFFECTIVE**（artifacts `stage2_speedup_boost_validate_20260620_200739`：
-> 自检等价 PASS、不掉质量，但 OFF 298.23ms vs ON 495.31ms/episode = **0.60x（反而更慢）**。原因：
-> H≈47-59 的短序列上，手写 attention 的小张量 kernel-launch 开销压过了 O(H²)→O(H) 的 FLOP 收益。
-> 结论：**保持 `--blb-v3-kv-cache-rollout` 默认 OFF，不进 60k**（特性本就默认 OFF，零风险）。下方
-> KV-cache 端到端 A/B on-deck 已相应标记为已解决/跳过。
+> **本轮修两件事（本地改、已 push）：**
 >
-> 本 active 只做仍未完成的 **[B] 加大精度（precision boost）**：上轮 [B0] 单测 2 个 ERROR 阻断了 [B1] 落 map。
-> 本轮修复（本地改、已 push）：
->   1. `test_boosted_overrides_reach_the_installed_cfg`：`optimizer_cost.py` 用相对导入 `from .action_space`，
->      顶层导入时报 `attempted relative import with no known parent package` → 加 sibling（`fusion_enum.py`）
->      同款 `try: import X / except ImportError: from . import X` 双导入兼容。
->   2. `test_sf_direct_matches_index_path_block5_n2`：boosted/SF-direct 路径会丢掉 None 字段（block5_n2 无
->      `gelu_power_rescale_sf_0`），`_build_block5_action` 无条件取键→KeyError → 改 `.get()`（缺键=None=index 路径同值）。
->   这是**真实生产 bug**：RL 一旦选中 boosted block5_n2，运行时重建 cfg 必崩——修复同时让真实 boosted 选项可安装。
+> **① block4 落 map 门禁误报（真实 bug）**：上轮 [B0] 单测 28/28 全过，但 [B1] 落 map 在 block4 抛
+> `RuntimeError: block4 ... q_final=(60,59) expected all=60`。根因：`boost_options_for_block` 的 apply
+> 门禁写死「每个 prime 必须 == q_max=60」，但 block4 的短质数**结构上只能到 59**（deficit 29 是奇数，
+> 且 ×2 之后没有 weight-1 的 encode → 只有偶数 bit-weight → 填不到 60；这在 `test_boost_reaches_max_fill_59`
+> / CLAUDE.md / memory 里都写明了）。`boost_option` 本身正确（`boosted_q_final=(60,59)` 是 replan 验证过的
+> 最大填充），错的是门禁的「全 ==q_max」假设——它从没被测试覆盖（28 个测试都直接调 `boost_option`，不走
+> `boost_options_for_block`）。修复：门禁改为核对独立 re-replan 是否复现 `res.boosted_q_final`（而非 q_max），
+> 并新增回归测试直接驱动 `boost_options_for_block`（block4 必须接受 59、block2 仍达 60）。
+>
+> **② active 文本断坏**：上轮我用 `unicode_escape` 拼接 SERVER_COMMAND 时把 `全`/`共`（含 0x85 字节）解码成
+> U+0085 (NEL 换行符)，第二次“修复”又复用了损坏的 bash 块 → 中文行和 Python f-string 被 NEL 断成两行 →
+> SyntaxError。本轮整段重写 active（干净 UTF-8，bash 全英文、Python heredoc 纯 ASCII，杜绝多字节断行）。
+>
+> **KV-cache 提速已判 NOT EFFECTIVE**（上轮 0.60x，ON 比 OFF 慢）→ 保持默认 OFF、不进 60k；端到端 A/B on-deck 已跳过。
+> 本 active 只做 [B] 加大精度：[B0] 单测 → [B1] 落 4 张 boost map → [B2] 落盘后复验 → 回传 boosted maps。
 
 ```bash
 set -uo pipefail
@@ -32,26 +35,26 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git rev-parse HEAD > "$OUT/HEAD.txt"; cat "$OUT/HEAD.txt"; git log --oneline -4
 fi
 
-echo "#################### [B] å å¤§ç²¾åº¦ éªè¯ä¸è½ map ####################"
-echo "==================== [B0] åæµï¼block2/4/5_n2/5_n4 + SF-direct==index + boostedâinstalled cfgï¼çå® replan/torchï¼===================="
+echo "#################### [B] precision boost: tests + apply to maps ####################"
+echo "==================== [B0] unit tests (block2/4/5_n2/5_n4 + SF-direct==index + boosted->installed + boost_options_for_block guard; real replan/torch) ===================="
 python3 -m unittest tests.test_blb_precision_boost -v 2>&1 | tee "$OUT/boost_selftest.txt"
-grep -qE "^OK" "$OUT/boost_selftest.txt" || { echo "[FATAL] å å¤§ç²¾åº¦åæµå¤±è´¥ â ä¸è½ map"; exit 1; }
-# æå¡å¨æ torch+ROï¼28 é¡¹åºå¨è·ãè¥ skipped>=4 è¯´æ torch/RO ç¼ºå¤± â SF-direct==index ç­ä»·é¨ç¦æ æï¼ç¦æ­¢è½ mapã
+grep -qE "^OK" "$OUT/boost_selftest.txt" || { echo "[FATAL] precision-boost unit tests failed - not applying maps"; exit 1; }
+# server has torch+RO: all tests should run. skipped>=4 => torch/RO missing => equivalence gate void => do NOT apply.
 if grep -qE "skipped=([4-9]|[0-9]{2,})" "$OUT/boost_selftest.txt"; then
-  echo "[FATAL] SF-direct==index / boostedâinstalled ç­ä»·æµè¯è¢« skipï¼torch/RO ç¼ºå¤±ï¼â é¨ç¦æ æï¼ç¦æ­¢è½ map"; exit 1; fi
-echo "[B0] PASSï¼å« SF-direct==index + boostedâinstalled cfg ç­ä»·é¨ç¦ï¼"
+  echo "[FATAL] equivalence/guard tests skipped (torch/RO missing) - gate void, not applying maps"; exit 1; fi
+echo "[B0] PASS"
 
-echo "==================== [B1] å¯¹å·²æäº¤ map åºç¨ boostï¼block2/4/5_n2/5_n4ï¼ç§çº§ï¼ç­ä»· builder æ«æ­¥ï¼===================="
+echo "==================== [B1] apply boost to committed maps (block2/4/5_n2/5_n4; seconds, == builder final step) ===================="
 cp -a blb_stage2_rl/fusion_maps/mrpc "$OUT/old_maps" 2>/dev/null || true
 python3 scripts/blb_apply_precision_boost.py --profile mrpc 2>&1 | tee "$OUT/boost_apply.txt"
-grep -qE "options boosted" "$OUT/boost_apply.txt" || { echo "[FATAL] boost æªåºç¨"; exit 1; }
+grep -qE "options boosted" "$OUT/boost_apply.txt" || { echo "[FATAL] boost not applied"; exit 1; }
 
-echo "==================== [B2] è½çåå¤éªï¼map ä»å¯ load + option0==baseline + boosted éé¡¹å¸¦ explicit_field_values ===================="
-python3 - <<'PY' 2>&1 | tee "$OUT/boost_verify.txt" || { echo "[FATAL] boost å map å¤éªå¤±è´¥"; exit 1; }
+echo "==================== [B2] post-write re-verify: maps still load + option0==baseline + boosted options carry explicit_field_values ===================="
+python3 - <<'PY' 2>&1 | tee "$OUT/boost_verify.txt" || { echo "[FATAL] post-boost map verify failed"; exit 1; }
 import json, glob, os
 from blb_stage2_rl.fusion_count_map import FusionCountMap
 FusionCountMap.load("mrpc")
-print("FusionCountMap.load('mrpc') OK â ææå¾ä»å¯å è½½ï¼option0==baselineã")
+print("FusionCountMap.load('mrpc') OK - all maps still load, option0==baseline.")
 nb = 0
 for f in sorted(glob.glob("blb_stage2_rl/fusion_maps/mrpc/*.json")):
     b = os.path.basename(f)
@@ -60,17 +63,17 @@ for f in sorted(glob.glob("blb_stage2_rl/fusion_maps/mrpc/*.json")):
     d = json.load(open(f))
     bs = [o for o in d["options"] if o.get("boosted")]
     for o in bs:
-        assert o.get("explicit_field_values"), f"{b} boosted éé¡¹ç¼º explicit_field_values"
+        assert o.get("explicit_field_values"), b + " boosted option missing explicit_field_values"
     nb += len(bs)
-    print(f"  {b:16s} options={len(d['options'])} boosted={len(bs)}")
-print(f"[ok] å± {nb} ä¸ª boosted éé¡¹ï¼åå¸¦ explicit_field_valuesã")
+    print("  %-16s options=%d boosted=%d" % (b, len(d["options"]), len(bs)))
+print("[ok] %d boosted options total, all carry explicit_field_values." % nb)
 PY
 
 echo "#################### [DONE] ####################"
-echo "boosted åç map åæ´ï¼"; git status --short blb_stage2_rl/fusion_maps/ | tee "$OUT/boost_map_diff.txt"
-echo "è¯æ®ç®å½ï¼$OUTï¼boost_selftest / boost_apply / boost_verify / boost_map_diff / old_mapsï¼"
-echo "è¯·æ $OUT ä¸è¯æ® + æ¹å¨åç blb_stage2_rl/fusion_maps/mrpc/*.json ä¸å¹¶ git add/commit/push åä¼ ã"
-echo "KV-cache å·²å¤ NOT EFFECTIVE â ä¿æé»è®¤ OFFï¼ä¸ä¸æ­¥èµ° on-deck ç ADR-016 reward 60kï¼ä¸å¸¦ kv-cache flagï¼ã"
+echo "boosted map changes:"; git status --short blb_stage2_rl/fusion_maps/ | tee "$OUT/boost_map_diff.txt"
+echo "evidence dir: $OUT (boost_selftest / boost_apply / boost_verify / boost_map_diff / old_maps)"
+echo "Please git add/commit/push the evidence in $OUT and the changed blb_stage2_rl/fusion_maps/mrpc/*.json."
+echo "KV-cache already NOT EFFECTIVE -> keep default OFF; next is on-deck ADR-016 reward 60k (no kv-cache flag)."
 ```
 
 ## ⏸ on-deck — KV-cache 端到端吞吐 A/B（**已解决/跳过** — 前向基准已判 NOT EFFECTIVE）
