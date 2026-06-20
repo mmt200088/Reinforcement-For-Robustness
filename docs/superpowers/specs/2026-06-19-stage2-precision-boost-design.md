@@ -1,8 +1,9 @@
 # Stage-2 Fusion-Option Precision Boost ("加大精度") — design
 
-Status: approved mechanism (2026-06-19). Rollout: **block2 done**, **block4 done**, **block5_n2 done**
-(block5_n1 needs no boost — already 60/60/60; block5_n4 TBD). All implemented + locally verified vs
-real replan; the server rebuilds the maps.
+Status: approved mechanism (2026-06-19). Rollout: **block2 / block4 / block5_n2 / block5_n4 all done**
+(block5_n1 needs no boost — already 60/60/60). All implemented + locally verified vs real replan; the
+server rebuilds the maps. block5_n4 generalized the compensation to a forward delta-simulation (handles
+≥2 ×2 doublings) and added "boost only the LAST short prime" (its middle 31 is left as-is).
 
 ## 1. Problem & rationale
 
@@ -146,7 +147,27 @@ rescale gelu_coeff_mul_rescale_sf_0  ← short prime here
 needs **both channels**: `gelu_coeff` (c=0, +1 bit/SF) for the odd bit, `gamma`/`wffn1` (c=1, +2 bit/SF,
 cascade-compensating `wffn1_rescale`) for the rest. block5_n1 needs no boost (already 60/60/60).
 
-block5_n4: TBD next (same contract; `default_block5_cfg_to_delta` gives the degree-4 wiring).
+**block5_n4 topology (validated against block5_n4.json fc=1 + real replan):**
+```
+fresh(x_centered_fresh, off-limits) ; ×2 ctct_xmean_over_std (off-limits)
+rescale normalize_rescale                   ── fuses away
+encode gamma / encode wffn1                  ── addable, bit-weight 4 (c=2)
+rescale wffn1_rescale                        ── fused prime
+×2 ctct_gelu_x2 (off-limits)
+rescale gelu_power_rescale_sf_0              ── prime 3 (31): KEPT, compensated, NOT boosted
+×2 ctct_gelu_x4 (off-limits)
+encode gelu_coeff (ctpt_gelu_coeff)          ── addable, bit-weight 1 (c=0, after BOTH ×2)
+rescale gelu_coeff_mul_rescale_sf_0  ← short prime here (the LAST one)
+```
+`q_initial [21,39,31,51] → fuse 1&2 → q_final [60,31,51]`. **Two** new things vs block5_n2:
+(1) **two ×2** before the short prime → gamma/wffn1 are c=2 (4 bits/SF) and the compensation must
+propagate through both doublings — done by a **forward delta-simulation** (`_simulate_rescale_edits`:
+delta doubles at each ×2; each pre-target rescale's `sf_post += delta` to keep its base prime). This
+replaced the flat "sum upstream additions" cascade (correct only for ≤1 doubling) and reproduces the
+user's `93→33` + `66→35`. (2) **two short primes** (31 and 51) — only the **last** (51, feeding q_tail)
+is boosted to 60; the middle 31 is intentionally kept (`boost_option` selects the final rescale's
+short prime only). The c=0 `gelu_coeff` supplies the odd bit so deficit 9 reaches 60 (candidates =
+the user's `0+9 / 4+5 / 8+1`).
 
 ## 5. Data model + runtime (decision: explicit-SF option)
 
