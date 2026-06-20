@@ -1,7 +1,8 @@
 # Stage-2 Fusion-Option Precision Boost ("加大精度") — design
 
-Status: approved mechanism (2026-06-19). Rollout: **block2 done**, **block4 done**, block5 next.
-(block2 + block4 are implemented + locally verified vs real replan; the server rebuilds the maps.)
+Status: approved mechanism (2026-06-19). Rollout: **block2 done**, **block4 done**, **block5_n2 done**
+(block5_n1 needs no boost — already 60/60/60; block5_n4 TBD). All implemented + locally verified vs
+real replan; the server rebuilds the maps.
 
 ## 1. Problem & rationale
 
@@ -123,11 +124,29 @@ rescale ln_mean_rescale                     ── R_pre (fused prime)
 rescale ln_square_rescale  ← short prime here
 encode ln_var (ctpt_inv_d_2)                ── after R_target → feeds q_tail, off-limits
 ```
-`q_initial [27,33,31] → fuse 1&2 → q_final [60,31]`; the `31` fills to `59` (deficit 29 odd). The
-`softmax_out_mask → v_mask` binding (`_build_block4_action`, `sync_block4_v_mask_binding`) makes
-`softmax_out_mask` cost 2/SF and is inherited by the SF-direct build (sets only `softmax_out_mask_sf`).
+`q_initial [27,33,31] → fuse 1&2 → q_final [60,31]`; the `31` fills to `59` (deficit 29 odd, and every
+addable encode is before the ×2 → only even bit-weights). The `softmax_out_mask → v_mask` binding
+(`_build_block4_action`, `sync_block4_v_mask_binding`) makes `softmax_out_mask` cost 2/SF and is
+inherited by the SF-direct build (sets only `softmax_out_mask_sf`).
 
-block5 topology: TBD next (same contract; `default_block5_cfg_to_delta` gives the wiring).
+**block5_n2 topology (validated against block5_n2.json fc=1 + real replan):**
+```
+fresh(x_centered_fresh, off-limits; bound initial-×2 operand)
+×2 ctct_xmean_over_std (initial ×2, off-limits)
+rescale normalize_rescale                   ── fuses away
+encode gamma (ctpt_gamal)                   ── addable, bit-weight 2 (c=1)
+encode wffn1 (ctpt_wffn1)                    ── addable, bit-weight 2 (c=1)
+rescale wffn1_rescale                        ── R_pre (fused prime)
+×2 ctct_gelu_x2 (off-limits)
+encode gelu_coeff (ctpt_gelu_coeff)          ── addable, bit-weight 1 (c=0, AFTER the ×2)
+rescale gelu_coeff_mul_rescale_sf_0  ← short prime here
+```
+`q_initial [21,39,51] → fuse 1&2 → q_final [60,51]`; the `51` fills to **60** (deficit 9 odd, but the
+`gelu_coeff` encode after the ×2 has bit-weight 1 → an odd fill is reachable). This is the case that
+needs **both channels**: `gelu_coeff` (c=0, +1 bit/SF) for the odd bit, `gamma`/`wffn1` (c=1, +2 bit/SF,
+cascade-compensating `wffn1_rescale`) for the rest. block5_n1 needs no boost (already 60/60/60).
+
+block5_n4: TBD next (same contract; `default_block5_cfg_to_delta` gives the degree-4 wiring).
 
 ## 5. Data model + runtime (decision: explicit-SF option)
 
