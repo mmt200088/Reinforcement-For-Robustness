@@ -137,9 +137,31 @@ BLOCK4_MRPC_TOPOLOGY = ChainTopology(
     ),
 )
 
+# block5 n=2 (mrpc) — validated against block5_n2.json fc=1 and real replan
+# (q_initial [21,39,51] → fuse 1&2 → q_final [60,51]). The short prime (51) has an
+# encode (gelu_coeff) AFTER the ctct_gelu_x2 ×2 (c=0, weight 1), so an ODD deficit
+# (9) can be filled exactly → 60 (unlike block4). x_centered_fresh is the bound
+# initial ×2 operand (off-limits, like block2's). n=1 needs no boost (its fused
+# chain is already 60/60/60), so it has no topology and the builder leaves it.
+BLOCK5_N2_MRPC_TOPOLOGY = ChainTopology(
+    graph_key="block5_n2",
+    nodes=(
+        ChainNode("fresh", "x_centered_fresh_sf"),
+        ChainNode("x2"),  # ctct_xmean_over_std (initial ×2, off-limits)
+        ChainNode("rescale", "normalize_rescale_sf"),  # fuses away
+        ChainNode("encode", "gamma_sf", addable=True),
+        ChainNode("encode", "wffn1_sf", addable=True),
+        ChainNode("rescale", "wffn1_rescale_sf"),  # R_pre (fused prime)
+        ChainNode("x2"),  # ctct_gelu_x2 (off-limits)
+        ChainNode("encode", "gelu_coeff_sf", addable=True),  # after the ×2 → c=0
+        ChainNode("rescale", "gelu_coeff_mul_rescale_sf_0"),  # R_target (short prime)
+    ),
+)
+
 TOPOLOGIES: Dict[str, ChainTopology] = {
     "block2_mrpc": BLOCK2_MRPC_TOPOLOGY,
     "block4": BLOCK4_MRPC_TOPOLOGY,
+    "block5_n2": BLOCK5_N2_MRPC_TOPOLOGY,
 }
 
 
@@ -257,17 +279,47 @@ def _resolve_geometry(topology: ChainTopology, pre_rescale_idx: int) -> Optional
     )
 
 
-def short_prime_fill(topology: ChainTopology, short_prime: Tuple[int, int]) -> Optional[Tuple[int, int]]:
-    """Return ``(budget_S, fill_bits)`` for one short prime, or None if not
-    fillable. ``fill_bits = 2**c * S`` is how much the prime is raised."""
+def _addable_bit_weights(geo: "_Geometry") -> List[Tuple[str, int, int]]:
+    """``[(cfg_field, bit_weight, position), ...]`` for each addable encode.
+
+    ``bit_weight = binding_multiplier * 2**c_i`` is how many bits one SF of that
+    encode adds to the short prime: it passes through ``c_i`` ``×2`` doublings on
+    the way, and a bound encode (binding_multiplier=2) moves two graph nodes. An
+    encode AFTER the ×2 has ``c_i=0`` (weight 1) → it can fill an ODD deficit
+    (block5_n2 reaches 60 this way; block4 has no such encode and stops at 59).
+    """
+    return [(f, m * (2 ** c_i), pos) for (f, m, c_i, pos) in geo.addable]
+
+
+def _max_reachable_fill(bit_weights: Sequence[int], deficit: int) -> int:
+    """Largest ``Σ w_i·a_i ≤ deficit`` (a_i ≥ 0, unlimited) — the coin problem.
+    With a weight-1 encode this is ``deficit``; with only even weights it is the
+    largest even ``≤ deficit``."""
+    if deficit <= 0:
+        return 0
+    reach = [False] * (deficit + 1)
+    reach[0] = True
+    for v in range(1, deficit + 1):
+        for w in bit_weights:
+            if 0 < w <= v and reach[v - w]:
+                reach[v] = True
+                break
+    for v in range(deficit, -1, -1):
+        if reach[v]:
+            return v
+    return 0
+
+
+def short_prime_fill(topology: ChainTopology, short_prime: Tuple[int, int]) -> Optional[int]:
+    """Max bits one short prime can be raised (≤ its deficit), or None if not
+    fillable. ``current + fill ≤ q_max``; equals the deficit when an odd fill is
+    reachable, else the largest even ≤ deficit."""
     geo = _resolve_geometry(topology, int(short_prime[0]))
     if geo is None or geo.r_pre_pos is None or not geo.addable:
         return None
-    deficit = int(short_prime[1])
-    S = deficit // (2 ** geo.c)
-    if S <= 0:
-        return None
-    return S, S * (2 ** geo.c)
+    weights = [w for _f, w, _pos in _addable_bit_weights(geo)]
+    fill = _max_reachable_fill(weights, int(short_prime[1]))
+    return fill if fill > 0 else None
 
 
 def _enumerate_distributions(
@@ -308,28 +360,27 @@ def _candidates_for_short_prime(
         base_slots: Mapping[str, int],
         short_prime: Tuple[int, int],
         ) -> List[Candidate]:
-    """All min-noise-candidate edit-sets that fill ONE short prime to its max.
+    """All candidate edit-sets that fill ONE short prime to its max.
 
-    Distributes the budget ``S`` across the addable upstream encodes (weighted by
-    binding multiplier), with ``R_pre.sf_post`` compensated by the chain-weighted
-    total of the additions strictly before ``R_pre``.
+    Distributes ``max_fill`` bits across the addable encodes by their per-SF bit
+    weight (``binding_multiplier * 2**c_i``), and cascade-compensates every
+    rescale before ``R_target`` by the CHAIN-weighted (``binding_multiplier``)
+    additions upstream of it. Mixed ``c_i`` (block5_n2: an encode after the ×2
+    has weight 1, ones before have weight 2) is handled directly — no uniform-c
+    restriction — so an odd deficit can be filled exactly.
     """
     geo = _resolve_geometry(topology, int(short_prime[0]))
-    fill = short_prime_fill(topology, short_prime)
-    if geo is None or geo.r_pre_pos is None or fill is None:
+    max_fill = short_prime_fill(topology, short_prime)
+    if geo is None or geo.r_pre_pos is None or max_fill is None:
         return []
-    S, _fill_bits = fill
-    # only uniform-c encodes participate (all reach the prime at the same 2**c
-    # rate); a different-c encode would need a separate budget axis (none today).
-    uniform = [(f, m, pos) for (f, m, c_i, pos) in geo.addable if c_i == geo.c]
-    if not uniform:
-        return []
-    weighted = [(f, m) for f, m, _pos in uniform]
-    pos_of = {f: pos for f, _m, pos in uniform}
-    mult_of = {f: m for f, m, _pos in uniform}
+    bit_weights = _addable_bit_weights(geo)  # (field, bit_weight, pos)
+    weighted = [(f, w) for f, w, _pos in bit_weights]
+    pos_of = {f: pos for f, _w, pos in bit_weights}
+    # chain multiplier (NOT the bit weight) — what a rescale's sf_post absorbs.
+    chain_mult_of = {f: m for (f, m, _c, _pos) in geo.addable}
 
     out: List[Candidate] = []
-    for dist in _enumerate_distributions(weighted, S):
+    for dist in _enumerate_distributions(weighted, max_fill):
         edits: Dict[str, int] = {}
         ok = True
         for f, a in dist.items():
@@ -348,7 +399,7 @@ def _candidates_for_short_prime(
         # rescales install no noise, so this never changes the objective.
         for r_field, r_pos in geo.rescales_before:
             upstream = sum(
-                mult_of[f] * int(dist.get(f, 0)) for f in dist if pos_of[f] < r_pos
+                chain_mult_of[f] * int(dist.get(f, 0)) for f in dist if pos_of[f] < r_pos
             )
             if upstream > 0:
                 edits[r_field] = int(base_slots[r_field]) + upstream
@@ -421,7 +472,7 @@ def boost_option(
     fillable = [sp for sp in shorts if short_prime_fill(topology, sp) is not None]
     if not fillable:
         return None
-    total_fill = sum(int(short_prime_fill(topology, sp)[1]) for sp in fillable)
+    total_fill = sum(int(short_prime_fill(topology, sp)) for sp in fillable)
     candidates = generate_candidates(topology, base_slots, fillable)
     best: Optional[BoostResult] = None
     n_valid = 0

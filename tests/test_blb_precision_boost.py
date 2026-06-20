@@ -181,9 +181,9 @@ class Block4CandidateGenTest(unittest.TestCase):
     def test_short_prime_and_fill(self):
         sp = pb.find_short_primes(self._probe(), 60)
         self.assertEqual(sp, [(2, 29)])
-        # S=floor(29/2)=14, fill=2*14=28 → prime 31 -> 59 (NOT 60: can't reach,
-        # 60 would need an odd pre-rescale that 2x cannot produce).
-        self.assertEqual(pb.short_prime_fill(pb.BLOCK4_MRPC_TOPOLOGY, sp[0]), (14, 28))
+        # fill=28 → prime 31 -> 59 (NOT 60: all addable encodes are before the ×2
+        # → even bit-weights only → an odd 29-bit fill is unreachable).
+        self.assertEqual(pb.short_prime_fill(pb.BLOCK4_MRPC_TOPOLOGY, sp[0]), 28)
 
     def test_budget_double_counts_softmax_out_mask(self):
         cands = pb.generate_candidates(pb.BLOCK4_MRPC_TOPOLOGY, BASE4, [(2, 29)])
@@ -282,6 +282,117 @@ class Block4BoostReplanTest(unittest.TestCase):
         self.assertEqual(probe.fusion_count, 1)
 
 
+# block5 n=2 mrpc fc=1 option (the committed block5_n2.json option 1).
+BASE5 = {
+    "x_centered_fresh_sf": 26,
+    "gamma_sf": 19,
+    "wffn1_sf": 20,
+    "gelu_coeff_sf": 20,
+    "normalize_rescale_sf": 31,
+    "wffn1_rescale_sf": 31,
+    "gelu_coeff_mul_rescale_sf_0": 31,
+}
+
+
+class Block5N2CandidateGenTest(unittest.TestCase):
+    """block5_n2 fc=1: the short prime (51) has an addable encode (gelu_coeff)
+    AFTER the ctct_gelu_x2 ×2 (bit-weight 1), so the odd deficit 9 is filled
+    EXACTLY → 60 (block4 had no such encode and stopped at 59)."""
+
+    @staticmethod
+    def _probe():
+        # q_initial [21,39,51], fuse stage 1 into next -> q_final [60,51].
+        return pb.ReplanProbe(
+            valid=True, fusion_count=1,
+            q_initial=(21, 39, 51), q_final=(60, 51),
+            fusions=({"fused_position": 1, "fused_into": "next", "small_q": 21},),
+        )
+
+    def test_short_prime_fills_to_60(self):
+        sp = pb.find_short_primes(self._probe(), 60)
+        self.assertEqual(sp, [(2, 9)])
+        # max_fill == deficit (9) because the c=0 gelu_coeff encode (weight 1)
+        # makes every integer fill reachable.
+        self.assertEqual(pb.short_prime_fill(pb.BLOCK5_N2_MRPC_TOPOLOGY, sp[0]), 9)
+
+    def test_candidate_count_and_mixed_channels(self):
+        cands = pb.generate_candidates(pb.BLOCK5_N2_MRPC_TOPOLOGY, BASE5, [(2, 9)])
+        # Σ (2·a_gamma + 2·a_wffn1 + 1·a_coeff) == 9 → a_coeff odd; 15 solutions.
+        self.assertEqual(len(cands), 15)
+        # the all-after candidate (gelu_coeff +9, no rescale comp).
+        all_after = [c for c in cands if c.edits.get("gelu_coeff_sf") == 29]
+        self.assertEqual(len(all_after), 1)
+        self.assertEqual(set(all_after[0].edits), {"gelu_coeff_sf"})
+        # an encode before the wffn1 ×2 cascade-compensates wffn1_rescale.
+        comp = [c for c in cands if c.edits.get("gamma_sf", 19) > 19]
+        self.assertTrue(comp and all("wffn1_rescale_sf" in c.edits for c in comp))
+
+
+@unittest.skipUnless(
+    __import__("importlib").util.find_spec("rescale_optimizer") is not None,
+    "rescale_optimizer required",
+)
+class Block5N2BoostReplanTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from rescale_optimizer import ReplanSession  # noqa: E402
+        cls.S = ReplanSession.from_profile(profile="mrpc", root=str(_REPO / "Rescale_optimizer"))
+
+    def _replan_fn(self, slots):
+        t_new = [
+            slots["x_centered_fresh_sf"], slots["normalize_rescale_sf"],
+            slots["wffn1_rescale_sf"], slots["gelu_coeff_mul_rescale_sf_0"],
+        ]
+        deltas = {
+            "ctct_xmean_over_std": "x2",
+            "ctpt_gamal": slots["gamma_sf"],
+            "ctpt_wffn1": slots["wffn1_sf"],
+            "ctct_gelu_x2": "x2",
+            "ctpt_gelu_coeff": slots["gelu_coeff_sf"],
+        }
+        r = self.S.replan("block5_n2", t_new=t_new, delta_overrides=deltas, return_dict=True)["result"]
+        return pb.ReplanProbe(
+            valid=bool(r["valid"]), fusion_count=len(r["fusions"]),
+            q_initial=tuple(int(x) for x in r["q_initial"]),
+            q_final=tuple(int(x) for x in r["q_final"]),
+            fusions=tuple(r["fusions"]),
+        )
+
+    @staticmethod
+    def _noise_fn(slots, _probe):
+        import noise_tables
+        return sum(
+            noise_tables.variance(16384, slots[k], "encoding")
+            for k in ("gamma_sf", "wffn1_sf", "gelu_coeff_sf")
+        )
+
+    def test_base_chain_matches_design(self):
+        probe = self._replan_fn(BASE5)
+        self.assertEqual(probe.q_initial, (21, 39, 51))
+        self.assertEqual(probe.q_final, (60, 51))
+
+    def test_boost_reaches_60(self):
+        res = pb.boost_option(
+            topology=pb.BLOCK5_N2_MRPC_TOPOLOGY, base_slots=BASE5,
+            replan_fn=self._replan_fn, noise_fn=self._noise_fn, q_max=60,
+        )
+        self.assertIsNotNone(res)
+        self.assertEqual(res.base_q_final, (60, 51))
+        self.assertEqual(res.boosted_q_final, (60, 60))  # reaches q_max exactly
+        self.assertEqual(res.candidates_valid, res.candidates_tried)
+        self.assertEqual(self._replan_fn(res.boosted_slots).fusion_count, 1)
+
+    def test_user_worked_examples_valid(self):
+        # case1 (all on gelu_coeff +9) and case3 (6+3) both reach 60.
+        for slots in (
+            {**BASE5, "gelu_coeff_sf": 29},
+            {**BASE5, "gamma_sf": 21, "wffn1_sf": 21, "gelu_coeff_sf": 23, "wffn1_rescale_sf": 34},
+        ):
+            probe = self._replan_fn(slots)
+            self.assertEqual(probe.q_final, (60, 60))
+            self.assertEqual(probe.fusion_count, 1)
+
+
 def _cfg_sf_projection(cfg):
     """Stable (field, scaling_factor) projection of a block NoiseConfig — for
     comparing two cfgs built different ways without relying on dataclass __eq__."""
@@ -343,6 +454,9 @@ class SFDirectEquivalenceTest(unittest.TestCase):
     def test_sf_direct_matches_index_path_block4(self):
         # also exercises the softmax_out_mask → v_mask binding through both paths.
         self._assert_sf_direct_matches("block4", 4)
+
+    def test_sf_direct_matches_index_path_block5_n2(self):
+        self._assert_sf_direct_matches("block5_n2", 5)
 
 
 if __name__ == "__main__":
