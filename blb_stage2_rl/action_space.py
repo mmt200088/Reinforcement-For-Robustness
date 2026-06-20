@@ -1155,13 +1155,17 @@ def _build_block5_action(
         deg = 4 if deg >= 4 else (2 if deg >= 2 else 1)
     # RL 只控制 ``gelu_power_rescale_sf_0``（x²，degree>=2 时启用）；x³/x⁴ 在
     # mrpc graph 里被折掉，不上 skeleton。
-    power_sf_0 = _optional_int(layer_field_values["gelu_power_rescale_sf_0"]) if deg >= 2 else None
+    # ``.get`` (not ``[]``): the index path passes a COMPLETE field_values (key
+    # present, possibly None), but the SF-direct / boosted path omits inactive
+    # keys — e.g. block5_n2 has no ``gelu_power_rescale_sf_0`` at all. Missing ==
+    # None == the index path's None, so both routes build the identical cfg.
+    power_sf_0 = _optional_int(layer_field_values.get("gelu_power_rescale_sf_0")) if deg >= 2 else None
     gelu_power_rescale_sfs: Tuple[Optional[int], ...] = (
         () if deg <= 1 else tuple([power_sf_0] + [None] * (deg - 2))
     )
     # gelu_coeff_mul_rescale_sf_0 → cfg.gelu_coeff_mul_rescales[-1]
     # （tuple 其它位置固定 None；optimizer 只读 [-1]）
-    coeff_rescale_sf = _optional_int(layer_field_values["gelu_coeff_mul_rescale_sf_0"])
+    coeff_rescale_sf = _optional_int(layer_field_values.get("gelu_coeff_mul_rescale_sf_0"))
     if deg <= 0:
         gelu_coeff_mul_rescale_sfs: Tuple[Optional[int], ...] = ()
     else:

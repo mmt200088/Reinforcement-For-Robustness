@@ -3,93 +3,85 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (KV-cache 提速验证（含 speedup 有效性门禁）+ 加大精度 测试与落 map)
+## ▶ active command  (加大精度 重跑：修 2 个 import/KeyError bug 后跑通单测并落 4 张 boost map；KV-cache 已判 NOT EFFECTIVE)
+
+> **KV-cache 提速已在上轮服务器验证完毕 → NOT EFFECTIVE**（artifacts `stage2_speedup_boost_validate_20260620_200739`：
+> 自检等价 PASS、不掉质量，但 OFF 298.23ms vs ON 495.31ms/episode = **0.60x（反而更慢）**。原因：
+> H≈47-59 的短序列上，手写 attention 的小张量 kernel-launch 开销压过了 O(H²)→O(H) 的 FLOP 收益。
+> 结论：**保持 `--blb-v3-kv-cache-rollout` 默认 OFF，不进 60k**（特性本就默认 OFF，零风险）。下方
+> KV-cache 端到端 A/B on-deck 已相应标记为已解决/跳过。
+>
+> 本 active 只做仍未完成的 **[B] 加大精度（precision boost）**：上轮 [B0] 单测 2 个 ERROR 阻断了 [B1] 落 map。
+> 本轮修复（本地改、已 push）：
+>   1. `test_boosted_overrides_reach_the_installed_cfg`：`optimizer_cost.py` 用相对导入 `from .action_space`，
+>      顶层导入时报 `attempted relative import with no known parent package` → 加 sibling（`fusion_enum.py`）
+>      同款 `try: import X / except ImportError: from . import X` 双导入兼容。
+>   2. `test_sf_direct_matches_index_path_block5_n2`：boosted/SF-direct 路径会丢掉 None 字段（block5_n2 无
+>      `gelu_power_rescale_sf_0`），`_build_block5_action` 无条件取键→KeyError → 改 `.get()`（缺键=None=index 路径同值）。
+>   这是**真实生产 bug**：RL 一旦选中 boosted block5_n2，运行时重建 cfg 必崩——修复同时让真实 boosted 选项可安装。
 
 ```bash
 set -uo pipefail
 export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 
-# ============================================================================
-# 本命令做两件事，都非破坏（不 --fresh 清 canonical Stage-2 best；reward 60k 主线在
-# 下方 "⏸ on-deck"，验证完手动移回第一个 ```bash 块）：
-#   [A] KV-cache rollout 提速（commit 1eec624+c253f92，默认 OFF）——用户要求**完全验证
-#       加速相较加速前确有效果**。非 byte-identical（nn.MHA 无 K/V 接口→手写 attention，
-#       复用同一训练权重，浮点 ~1e-6 非逐位；用户已放弃 1==N）。加速只在 policy 逐步 GTrXL
-#       前向（env/replan/probe 全不变）。证据 = 自检等价(不掉质量) + 生产规模 OFF vs ON 测速，
-#       且对 speedup 设**硬门禁**（ON 必须明显快于 OFF，否则判失败）。
-#   [B] 加大精度（precision boost，block2/4/5_n2/5_n4）——把每个非零 fusion 的短质数抬到最大
-#       (≤q_max) 的最小噪声动作组。boost 是枚举后的后处理，对已提交 map 直接应用 == builder
-#       全量重建的末步（秒级，免去 block4 全枚举 ~1h）。先单测(真实 replan)再落 map。
-# ============================================================================
 TS=$(date +%Y%m%d_%H%M%S)
-OUT="experiments/server_command_runs/stage2_speedup_boost_validate_${TS}"
+OUT="experiments/server_command_runs/stage2_boost_apply_${TS}"
 mkdir -p "$OUT"
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git rev-parse HEAD > "$OUT/HEAD.txt"; cat "$OUT/HEAD.txt"; git log --oneline -4
 fi
-NGPU="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"; [ -z "$NGPU" ] && NGPU=1
-DEV0="$([ "$NGPU" -ge 1 ] && echo cuda || echo cpu)"
 
-echo "#################### [A] KV-cache 提速验证 ####################"
-echo "==================== [A0] 自检门禁：增量前向 == 全前向（不掉质量）===================="
-python3 -m unittest tests.test_blb_kvcache_rollout -v 2>&1 | tee "$OUT/kvcache_selftest.txt"
-grep -qE "^OK" "$OUT/kvcache_selftest.txt" || { echo "[FATAL] KV-cache 自检失败"; exit 1; }
-# torch 缺失会把 6 个测试全 skip → 门禁无效，禁止放行
-if grep -qE "skipped=6" "$OUT/kvcache_selftest.txt"; then
-  echo "[FATAL] KV-cache 自检全 skip（torch 不可用）— 门禁无效"; exit 1; fi
-echo "[A0] PASS"
-
-echo "==================== [A1] 生产规模 等价 + 测速（OFF vs ON）===================="
-# 真实 fusion policy(H=59,d=256,4层) 同 seed 逐步断言 OFF==ON(logits/value/argmax) + 计时。
-CUDA_VISIBLE_DEVICES=0 python3 scripts/blb_kvcache_benchmark.py \
-  --episodes 300 --horizon 59 --tol 1e-4 --device "$DEV0" 2>&1 | tee "$OUT/kvcache_benchmark.txt"
-# 等价(正确性)是硬门禁——不掉质量是前提。
-grep -qE "equivalence PASS" "$OUT/kvcache_benchmark.txt" || { echo "[FATAL] 生产规模等价失败"; exit 1; }
-# speedup 有效性 = 清晰 VERDICT（不退出，避免挡住 [B]；GPU 上小张量 launch 开销可能让
-# 实测加速低于 FLOP 分析——无论结果如何都明确报出来，这就是"完全验证加速是否有效果"）。
-SPEEDUP="$(grep -oE 'speedup=[0-9.]+x' "$OUT/kvcache_benchmark.txt" | tail -1 | tr -dc '0-9.')"
-[ -z "$SPEEDUP" ] && SPEEDUP=0
-if python3 -c "import sys;sys.exit(0 if float('$SPEEDUP')>=1.2 else 1)"; then
-  KV_VERDICT="EFFECTIVE (rollout-forward speedup ${SPEEDUP}x >= 1.2x)"
-elif python3 -c "import sys;sys.exit(0 if float('$SPEEDUP')>1.02 else 1)"; then
-  KV_VERDICT="MARGINAL (${SPEEDUP}x — likely small-tensor launch overhead on GPU)"
-else
-  KV_VERDICT="NOT EFFECTIVE (${SPEEDUP}x — do NOT enable --blb-v3-kv-cache-rollout)"
-fi
-echo "[A] DONE — 等价 PASS（不掉质量）；加速 VERDICT = $KV_VERDICT"
-
-echo "#################### [B] 加大精度 验证与落 map ####################"
-echo "==================== [B0] 单测：block2/4/5_n2/5_n4 + SF-direct==index（真实 replan）===================="
+echo "#################### [B] å å¤§ç²¾åº¦ éªè¯ä¸è½ map ####################"
+echo "==================== [B0] åæµï¼block2/4/5_n2/5_n4 + SF-direct==index + boostedâinstalled cfgï¼çå® replan/torchï¼===================="
 python3 -m unittest tests.test_blb_precision_boost -v 2>&1 | tee "$OUT/boost_selftest.txt"
-grep -qE "^OK" "$OUT/boost_selftest.txt" || { echo "[FATAL] 加大精度单测失败"; exit 1; }
-# SF-direct 等价(4个)需要 torch；若全 skip 说明 torch 缺失
+grep -qE "^OK" "$OUT/boost_selftest.txt" || { echo "[FATAL] å å¤§ç²¾åº¦åæµå¤±è´¥ â ä¸è½ map"; exit 1; }
+# æå¡å¨æ torch+ROï¼28 é¡¹åºå¨è·ãè¥ skipped>=4 è¯´æ torch/RO ç¼ºå¤± â SF-direct==index ç­ä»·é¨ç¦æ æï¼ç¦æ­¢è½ mapã
 if grep -qE "skipped=([4-9]|[0-9]{2,})" "$OUT/boost_selftest.txt"; then
-  echo "[WARN] 部分 boost 测试被 skip（torch/RO 缺失？）——检查上面计数"; fi
-echo "[B0] PASS"
+  echo "[FATAL] SF-direct==index / boostedâinstalled ç­ä»·æµè¯è¢« skipï¼torch/RO ç¼ºå¤±ï¼â é¨ç¦æ æï¼ç¦æ­¢è½ map"; exit 1; fi
+echo "[B0] PASSï¼å« SF-direct==index + boostedâinstalled cfg ç­ä»·é¨ç¦ï¼"
 
-echo "==================== [B1] 对已提交 map 应用 boost（block2/4/5_n2/5_n4）===================="
+echo "==================== [B1] å¯¹å·²æäº¤ map åºç¨ boostï¼block2/4/5_n2/5_n4ï¼ç§çº§ï¼ç­ä»· builder æ«æ­¥ï¼===================="
+cp -a blb_stage2_rl/fusion_maps/mrpc "$OUT/old_maps" 2>/dev/null || true
 python3 scripts/blb_apply_precision_boost.py --profile mrpc 2>&1 | tee "$OUT/boost_apply.txt"
-grep -qE "options boosted" "$OUT/boost_apply.txt" || { echo "[FATAL] boost 未应用"; exit 1; }
-echo "boosted 后的 map 变更："; git status --short blb_stage2_rl/fusion_maps/ | tee "$OUT/boost_map_diff.txt"
+grep -qE "options boosted" "$OUT/boost_apply.txt" || { echo "[FATAL] boost æªåºç¨"; exit 1; }
 
-echo "#################### [DONE] 汇总 ####################"
-echo "[A] KV-cache 加速：等价 PASS（不掉质量）；VERDICT = $KV_VERDICT"
-echo "[B] 加大精度：单测 PASS；boost 已落 4 张 map（block2/4/5_n2/5_n4）"
-echo "证据目录：$OUT"
-echo "  - kvcache_selftest.txt / kvcache_benchmark.txt（max|diff| 与 speedup=${SPEEDUP}x）"
-echo "  - boost_selftest.txt / boost_apply.txt / boost_map_diff.txt"
-echo "请把 $OUT 下证据 + 改动后的 blb_stage2_rl/fusion_maps/*.json 一并 git add/commit/push 回传。"
-echo "下一步：若 [A] VERDICT 为 EFFECTIVE，reward 60k 可用带 --blb-v3-kv-cache-rollout 1 的命令"
-echo "（下方 on-deck）上线；否则保持默认 OFF，只享用 [B] 的 boost map。"
+echo "==================== [B2] è½çåå¤éªï¼map ä»å¯ load + option0==baseline + boosted éé¡¹å¸¦ explicit_field_values ===================="
+python3 - <<'PY' 2>&1 | tee "$OUT/boost_verify.txt" || { echo "[FATAL] boost å map å¤éªå¤±è´¥"; exit 1; }
+import json, glob, os
+from blb_stage2_rl.fusion_count_map import FusionCountMap
+FusionCountMap.load("mrpc")
+print("FusionCountMap.load('mrpc') OK â ææå¾ä»å¯å è½½ï¼option0==baselineã")
+nb = 0
+for f in sorted(glob.glob("blb_stage2_rl/fusion_maps/mrpc/*.json")):
+    b = os.path.basename(f)
+    if b.startswith("_"):
+        continue
+    d = json.load(open(f))
+    bs = [o for o in d["options"] if o.get("boosted")]
+    for o in bs:
+        assert o.get("explicit_field_values"), f"{b} boosted éé¡¹ç¼º explicit_field_values"
+    nb += len(bs)
+    print(f"  {b:16s} options={len(d['options'])} boosted={len(bs)}")
+print(f"[ok] å± {nb} ä¸ª boosted éé¡¹ï¼åå¸¦ explicit_field_valuesã")
+PY
+
+echo "#################### [DONE] ####################"
+echo "boosted åç map åæ´ï¼"; git status --short blb_stage2_rl/fusion_maps/ | tee "$OUT/boost_map_diff.txt"
+echo "è¯æ®ç®å½ï¼$OUTï¼boost_selftest / boost_apply / boost_verify / boost_map_diff / old_mapsï¼"
+echo "è¯·æ $OUT ä¸è¯æ® + æ¹å¨åç blb_stage2_rl/fusion_maps/mrpc/*.json ä¸å¹¶ git add/commit/push åä¼ ã"
+echo "KV-cache å·²å¤ NOT EFFECTIVE â ä¿æé»è®¤ OFFï¼ä¸ä¸æ­¥èµ° on-deck ç ADR-016 reward 60kï¼ä¸å¸¦ kv-cache flagï¼ã"
 ```
 
-## ⏸ on-deck — KV-cache 端到端吞吐 A/B（真实短跑 OFF vs ON；上面 [A] 判 EFFECTIVE 后再人工跑）
+## ⏸ on-deck — KV-cache 端到端吞吐 A/B（**已解决/跳过** — 前向基准已判 NOT EFFECTIVE）
 
-> 这是真实 fusion 训练短跑（**会 --fresh 工作目录**），所以单独 on-deck、由人工移到第一个 ```bash 块触发。
-> 同 seed 跑 OFF 与 ON 各 ~1500 episode，比 episodes.jsonl 的 reward/优先级/fusion 分布（质量应一致，
-> 路径浮点等价非逐位）+ per-episode rollout 墙钟（端到端加速）。比 [A] 的前向基准多一层"真模型探针在环
-> 时加速是否仍成立"的确认。
+> **跳过理由**：KV-cache 的前向基准（上轮 [A1]）已实测 ON 比 OFF **慢**（0.60x，OFF 298ms vs ON 495ms/
+> episode）。端到端 A/B 只会再确认这层"真模型探针在环时仍更慢"，无收益、白耗 GPU 工时。
+> KV-cache 保持默认 OFF，**不进 60k**。下方脚本仅留作参考；若未来想重启 KV-cache 路（如换更长 horizon /
+> CUDA graphs 摊薄 launch 开销）再人工移到第一个 ```bash 块。
+>
+> （原说明）真实 fusion 训练短跑（**会 --fresh 工作目录**），同 seed 跑 OFF 与 ON 各 ~1500 episode，
+> 比 episodes.jsonl 的 reward/优先级/fusion 分布（质量应一致，路径浮点等价非逐位）+ per-episode rollout 墙钟。
 
 ```bash
 set -uo pipefail
