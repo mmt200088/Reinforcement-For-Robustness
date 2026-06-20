@@ -1,0 +1,86 @@
+2d92ce72d06fb8a7397d87f212123107a41fd521
+2d92ce7 server snapshot 14e5707877bef73de68223c4c2cbef957d264e00
+#################### [A] KV-cache 提速验证 ####################
+==================== [A0] 自检门禁：增量前向 == 全前向（不掉质量）====================
+test_cache_lifecycle_no_contamination (tests.test_blb_kvcache_rollout.KVCacheBlockEquivalenceTest.test_cache_lifecycle_no_contamination) ... ok
+test_incremental_matches_full_forward (tests.test_blb_kvcache_rollout.KVCacheBlockEquivalenceTest.test_incremental_matches_full_forward) ... ok
+test_matches_across_head_dims (tests.test_blb_kvcache_rollout.KVCacheBlockEquivalenceTest.test_matches_across_head_dims) ... ok
+test_build_token_at_matches_build_tokens (tests.test_blb_kvcache_rollout.PolicyIncrementalRolloutEquivalenceTest.test_build_token_at_matches_build_tokens) ... ok
+test_incremental_rollout_matches_full_forward (tests.test_blb_kvcache_rollout.PolicyIncrementalRolloutEquivalenceTest.test_incremental_rollout_matches_full_forward) ... ok
+test_sample_action_value_matches_full (tests.test_blb_kvcache_rollout.PolicyIncrementalRolloutEquivalenceTest.test_sample_action_value_matches_full) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.198s
+
+OK
+[A0] PASS
+==================== [A1] 生产规模 等价 + 测速（OFF vs ON）====================
+[kvcache-bench] device=cuda horizon=59 d_model=256 n_layers=4 tol=0.0001
+[kvcache-bench] equivalence: max|logit_diff|=1.19e-07 max|value_diff|=8.23e-06 argmax_mismatches=0
+[kvcache-bench] equivalence PASS — KV-cache is quality-neutral within float.
+[kvcache-bench] rollout-forward per episode (H=59 steps): OFF=298.23 ms  ON=495.31 ms  speedup=0.60x
+[kvcache-bench] DONE (this measures ONLY the policy GTrXL forward; env/replan/probe are unchanged).
+[A] DONE — 等价 PASS（不掉质量）；加速 VERDICT = NOT EFFECTIVE (0.60x — do NOT enable --blb-v3-kv-cache-rollout)
+#################### [B] 加大精度 验证与落 map ####################
+==================== [B0] 单测：block2/4/5_n2/5_n4 + SF-direct==index（真实 replan）====================
+test_all_softmax_distribution_is_valid (tests.test_blb_precision_boost.Block4BoostReplanTest.test_all_softmax_distribution_is_valid) ... ok
+test_base_chain_matches_design (tests.test_blb_precision_boost.Block4BoostReplanTest.test_base_chain_matches_design) ... ok
+test_boost_reaches_max_fill_59 (tests.test_blb_precision_boost.Block4BoostReplanTest.test_boost_reaches_max_fill_59) ... ok
+test_budget_double_counts_softmax_out_mask (tests.test_blb_precision_boost.Block4CandidateGenTest.test_budget_double_counts_softmax_out_mask) ... ok
+test_ln_var_is_not_a_candidate (tests.test_blb_precision_boost.Block4CandidateGenTest.test_ln_var_is_not_a_candidate) ... ok
+test_short_prime_and_fill (tests.test_blb_precision_boost.Block4CandidateGenTest.test_short_prime_and_fill) ... ok
+test_base_chain_matches_design (tests.test_blb_precision_boost.Block5N2BoostReplanTest.test_base_chain_matches_design) ... ok
+test_boost_reaches_60 (tests.test_blb_precision_boost.Block5N2BoostReplanTest.test_boost_reaches_60) ... ok
+test_user_worked_examples_valid (tests.test_blb_precision_boost.Block5N2BoostReplanTest.test_user_worked_examples_valid) ... ok
+test_candidate_count_and_mixed_channels (tests.test_blb_precision_boost.Block5N2CandidateGenTest.test_candidate_count_and_mixed_channels) ... ok
+test_short_prime_fills_to_60 (tests.test_blb_precision_boost.Block5N2CandidateGenTest.test_short_prime_fills_to_60) ... ok
+test_base_chain_matches_design (tests.test_blb_precision_boost.Block5N4BoostReplanTest.test_base_chain_matches_design) ... ok
+test_boost_last_prime_only (tests.test_blb_precision_boost.Block5N4BoostReplanTest.test_boost_last_prime_only) ... ok
+test_user_worked_examples_valid (tests.test_blb_precision_boost.Block5N4BoostReplanTest.test_user_worked_examples_valid) ... ok
+test_last_prime_fills_to_60 (tests.test_blb_precision_boost.Block5N4CandidateGenTest.test_last_prime_fills_to_60) ... ok
+test_six_candidates_double_x2 (tests.test_blb_precision_boost.Block5N4CandidateGenTest.test_six_candidates_double_x2) ... ok
+test_two_short_primes_detected (tests.test_blb_precision_boost.Block5N4CandidateGenTest.test_two_short_primes_detected) ... ok
+test_base_chain_matches_design (tests.test_blb_precision_boost.BoostReplanTest.test_base_chain_matches_design) ... ok
+test_boost_reaches_all_qmax (tests.test_blb_precision_boost.BoostReplanTest.test_boost_reaches_all_qmax) ... ok
+test_exactly_four_candidates (tests.test_blb_precision_boost.CandidateGenTest.test_exactly_four_candidates) ... ok
+test_no_short_prime_when_all_qmax (tests.test_blb_precision_boost.CandidateGenTest.test_no_short_prime_when_all_qmax) ... ok
+test_qkt_merge_is_not_a_candidate (tests.test_blb_precision_boost.CandidateGenTest.test_qkt_merge_is_not_a_candidate) ... ok
+test_short_prime_detection (tests.test_blb_precision_boost.CandidateGenTest.test_short_prime_detection) ... ok
+test_boosted_overrides_reach_the_installed_cfg (tests.test_blb_precision_boost.SFDirectEquivalenceTest.test_boosted_overrides_reach_the_installed_cfg) ... ERROR
+test_sf_direct_matches_index_path_block2 (tests.test_blb_precision_boost.SFDirectEquivalenceTest.test_sf_direct_matches_index_path_block2) ... ok
+test_sf_direct_matches_index_path_block4 (tests.test_blb_precision_boost.SFDirectEquivalenceTest.test_sf_direct_matches_index_path_block4) ... ok
+test_sf_direct_matches_index_path_block5_n2 (tests.test_blb_precision_boost.SFDirectEquivalenceTest.test_sf_direct_matches_index_path_block5_n2) ... ERROR
+test_sf_direct_matches_index_path_block5_n4 (tests.test_blb_precision_boost.SFDirectEquivalenceTest.test_sf_direct_matches_index_path_block5_n4) ... ok
+
+======================================================================
+ERROR: test_boosted_overrides_reach_the_installed_cfg (tests.test_blb_precision_boost.SFDirectEquivalenceTest.test_boosted_overrides_reach_the_installed_cfg)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_server_command_14e5707_20260620_200144/src/tests/test_blb_precision_boost.py", line 595, in test_boosted_overrides_reach_the_installed_cfg
+    from optimizer_cost import evaluate_action_for_cost
+  File "/hy-tmp/rfr_server_command_14e5707_20260620_200144/src/blb_stage2_rl/optimizer_cost.py", line 11, in <module>
+    from .action_space import (
+ImportError: attempted relative import with no known parent package
+
+======================================================================
+ERROR: test_sf_direct_matches_index_path_block5_n2 (tests.test_blb_precision_boost.SFDirectEquivalenceTest.test_sf_direct_matches_index_path_block5_n2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_server_command_14e5707_20260620_200144/src/tests/test_blb_precision_boost.py", line 580, in test_sf_direct_matches_index_path_block5_n2
+    self._assert_sf_direct_matches("block5_n2", 5, gelu_degree=2)
+  File "/hy-tmp/rfr_server_command_14e5707_20260620_200144/src/tests/test_blb_precision_boost.py", line 567, in _assert_sf_direct_matches
+    cfg_dir = build_block_cfg_from_field_values(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_server_command_14e5707_20260620_200144/src/blb_stage2_rl/action_space.py", line 1443, in build_block_cfg_from_field_values
+    spec = _build_block5_action(int(layer_idx), fv, gelu_degree=int(gelu_degree))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_server_command_14e5707_20260620_200144/src/blb_stage2_rl/action_space.py", line 1158, in _build_block5_action
+    power_sf_0 = _optional_int(layer_field_values["gelu_power_rescale_sf_0"]) if deg >= 2 else None
+                               ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'gelu_power_rescale_sf_0'
+
+----------------------------------------------------------------------
+Ran 28 tests in 2.243s
+
+FAILED (errors=2)
+[FATAL] 加大精度单测失败
