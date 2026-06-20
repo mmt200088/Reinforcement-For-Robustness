@@ -84,6 +84,61 @@ echo "下一步：若 [A] VERDICT 为 EFFECTIVE，reward 60k 可用带 --blb-v3-
 echo "（下方 on-deck）上线；否则保持默认 OFF，只享用 [B] 的 boost map。"
 ```
 
+## ⏸ on-deck — KV-cache 端到端吞吐 A/B（真实短跑 OFF vs ON；上面 [A] 判 EFFECTIVE 后再人工跑）
+
+> 这是真实 fusion 训练短跑（**会 --fresh 工作目录**），所以单独 on-deck、由人工移到第一个 ```bash 块触发。
+> 同 seed 跑 OFF 与 ON 各 ~1500 episode，比 episodes.jsonl 的 reward/优先级/fusion 分布（质量应一致，
+> 路径浮点等价非逐位）+ per-episode rollout 墙钟（端到端加速）。比 [A] 的前向基准多一层"真模型探针在环
+> 时加速是否仍成立"的确认。
+
+```bash
+set -uo pipefail
+export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
+export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
+TS=$(date +%Y%m%d_%H%M%S)
+OUT="experiments/server_command_runs/stage2_kvcache_ab_${TS}"; mkdir -p "$OUT"
+EPISODES_AB=1500
+KTRIALS=5; ANCHOR_EPISODES=80; FUSION_PROBE_INTERVAL=200
+NGPU="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"; [ -z "$NGPU" ] && NGPU=1
+DEVS="$(seq -s, 0 $((NGPU-1)))"
+CANON_STAGE2="Parting Chapter/stage2"
+
+run_ab () {   # $1 = tag (off/on), $2 = kv flag (0/1)
+  local tag="$1"; local kv="$2"
+  echo "==================== [A/B] $tag : --blb-v3-kv-cache-rollout $kv ===================="
+  CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
+    --preset mrpc-blb-stage2-rl \
+    --blb-v3-fusion-count-action 1 \
+    --blb-v3-fusion-neighbor-curriculum 1 \
+    --stage2-search-episodes "$EPISODES_AB" \
+    --stage2-k-trials "$KTRIALS" --stage2-probe-size 256 --batch-size 512 \
+    --stage2-rl-devices "$DEVS" \
+    --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
+    --stage2-stability-tolerance 5.0 --stage2-limit-tolerance 0.005 \
+    --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
+    --blb-v3-fusion-exploration-epsilon 0.05 \
+    --stage2-workers-per-device 2 \
+    --blb-v3-kv-cache-rollout "$kv" \
+    --fresh 2>&1 | tee "$OUT/${tag}_launch.log"
+  sleep 12
+  local pid; pid="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
+  echo "[A/B] $tag pid=$pid — waiting for completion…"
+  if [ -n "$pid" ]; then while kill -0 "$pid" 2>/dev/null; do sleep 30; done; fi
+  local rundir; rundir="$(cat "${CANON_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
+  local ep; ep="$(ls "$rundir"/diagnostics/episodes.jsonl 2>/dev/null || ls "$CANON_STAGE2"/*/progress/diagnostics/episodes.jsonl 2>/dev/null | tail -1)"
+  cp "$ep" "$OUT/${tag}_episodes.jsonl"
+  echo "[A/B] $tag episodes.jsonl -> $OUT/${tag}_episodes.jsonl ($(wc -l < "$OUT/${tag}_episodes.jsonl") lines)"
+}
+
+run_ab off 0
+run_ab on  1
+echo "==================== [A/B] 对比 ===================="
+python3 scripts/blb_kvcache_ab_compare.py \
+  --off "$OUT/off_episodes.jsonl" --on "$OUT/on_episodes.jsonl" 2>&1 | tee "$OUT/ab_verdict.txt"
+echo "证据目录：$OUT （off/on episodes + ab_verdict.txt）。请 git add/commit/push 回传。"
+echo "结论看 ab_verdict.txt：质量须 MATCHED；speedup 给出端到端 rollout 墙钟加速。"
+```
+
 ## ⏸ on-deck — ADR-016 reward 60k（KV-cache 验证完，把下面这个 ```bash 块移回上面成为第一个 ```bash 块）  (ADR-015 连续有界 reward（移植 Stage-1）+ 严格稳定性刹车 + Stage-1 cosine 探索 + 严格可行性选择 → 门禁 → 60k)
 
 ```bash
