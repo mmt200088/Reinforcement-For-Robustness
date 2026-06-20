@@ -1,0 +1,4 @@
+  File "<stdin>", line 16
+    print(f"[ok] å
+          ^
+SyntaxError: unterminated string literal (detected at line 16)
