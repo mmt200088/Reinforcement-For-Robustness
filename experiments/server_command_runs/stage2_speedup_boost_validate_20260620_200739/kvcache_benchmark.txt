@@ -1,0 +1,5 @@
+[kvcache-bench] device=cuda horizon=59 d_model=256 n_layers=4 tol=0.0001
+[kvcache-bench] equivalence: max|logit_diff|=1.19e-07 max|value_diff|=8.23e-06 argmax_mismatches=0
+[kvcache-bench] equivalence PASS — KV-cache is quality-neutral within float.
+[kvcache-bench] rollout-forward per episode (H=59 steps): OFF=298.23 ms  ON=495.31 ms  speedup=0.60x
+[kvcache-bench] DONE (this measures ONLY the policy GTrXL forward; env/replan/probe are unchanged).
