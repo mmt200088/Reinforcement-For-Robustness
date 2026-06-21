@@ -1,0 +1,31 @@
+==============================================================================
+Stage-2 fusion rollout forward profiler
+  device=cuda  torch=2.9.1+cu128
+  policy: d_model=256 heads=8 layers=4 d_ff=512 | H=59 S=2 L=6 state_dim=364
+  params=5.33M
+==============================================================================
+
+[per-step policy-side breakdown, B=1, median ms]
+  obs host-build (from_numpy+.to) :    0.042 ms
+  forward_and_mask (truncate=True):    4.886 ms  <-- batched
+  sample_from_logits             :    0.582 ms
+  forward share of policy-side step:  88.7%
+
+[per-episode FORWARD wall, median, symmetric cuda.sync]
+  serial (B=1, truncate=True) per-episode = 281.603 ms (this is the OFF baseline; B-independent)
+
+    B |   batched(trunc) |  speedup | batched(noTrunc) |  speedup | trunc gain
+  ----------------------------------------------------------------------------
+    1 |       281.715ms |    1.00x |       285.078ms |    0.99x |      1.01x
+    2 |       142.244ms |    1.98x |       142.603ms |    1.97x |      1.00x
+    4 |        71.676ms |    3.93x |        71.776ms |    3.92x |      1.00x
+    8 |        35.920ms |    7.84x |        35.714ms |    7.88x |      0.99x
+   16 |        18.198ms |   15.47x |        18.528ms |   15.20x |      1.02x
+   32 |         9.263ms |   30.40x |         9.328ms |   30.19x |      1.01x
+
+==============================================================================
+real operating B = rollout_size(32) / (NGPU * workers_per_device):
+  4 GPUs x2 -> B~=4 ; 5 GPUs x2 -> B~=3
+  batched(trunc) forward speedup at B=4: 3.93x
+  VERDICT: forward IS batch-amortizable at the real B -> batching is the right lever; run the corrected end-to-end A/B to confirm episode-level gain.
+==============================================================================
