@@ -552,6 +552,12 @@ BLB_V3_FUSION_COUNT_ACTION="false"; S_BLB_V3_FUSION_COUNT_ACTION="false"
 BLB_V3_FUSION_NEIGHBOR_CURRICULUM="false"; S_BLB_V3_FUSION_NEIGHBOR_CURRICULUM="false"
 BLB_V3_FUSION_PROBE_INTERVAL="200"; S_BLB_V3_FUSION_PROBE_INTERVAL="false"
 BLB_V3_FUSION_EXPLORATION_EPSILON="0.05"; S_BLB_V3_FUSION_EXPLORATION_EPSILON="false"
+# KV-cache rollout (2026-06-19): rollout-throughput knob, fusion episode-parallel path only.
+# DEFAULT OFF — server-measured 0.60x (SLOWER) on the short H~47-59 GTrXL rollout (small-tensor
+# kernel-launch overhead swamps the O(H^2)->O(H) FLOP win), NOT EFFECTIVE, kept out of the 60k.
+# MUST be initialized here so the launcher never inherits a stale value / seen-flag from the
+# environment (only an explicit --blb-v3-kv-cache-rollout should turn it on).
+BLB_V3_KV_CACHE_ROLLOUT="false"; S_BLB_V3_KV_CACHE_ROLLOUT="false"
 STAGE2_WORKERS_PER_DEVICE="1"; S_STAGE2_WORKERS_PER_DEVICE="false"
 BLB_V3_SUBSTAGE_BLOCK_ORDER="1,2,4,5"; S_BLB_V3_SUBSTAGE_BLOCK_ORDER="false"
 BLB_V3_SUBSTAGE_FROZEN_BLOCKS="3"; S_BLB_V3_SUBSTAGE_FROZEN_BLOCKS="false"
