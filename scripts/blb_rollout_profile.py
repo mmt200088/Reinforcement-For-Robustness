@@ -16,14 +16,15 @@ the SAME cuda.synchronize discipline:
   * batched per-episode = H forwards on [B, state_dim]/B (truncate_to_current=True)
   * batched(no-trunc)   = the OLD buggy path (truncate_to_current=False, full H)
 
-It prints, for B in {1,2,4,8,16,32}: the per-episode forward wall and the
+It prints, for the requested B values: the per-episode forward wall and the
 serial/batched speedup, plus the truncate-vs-no-truncate delta and a per-stage
 breakdown (obs host-build / forward / sample) so the forward's share of the
 policy-side rollout step is explicit.
 
 DECISION RULE printed at the end:
-  * real operating point is B ~= rollout_size(32) / (NGPU * workers_per_device).
-    On 4 GPUs x2 that is B~=4. Read the speedup AT THAT B, not the B=32 best case.
+  * real operating point is B ~= rollout_size / (NGPU * workers_per_device).
+    Pass the same rollout_size / GPU count / workers-per-device as the real A/B.
+    Read the speedup AT THAT B, not the largest-B best case.
   * if batched(trunc) gives a clear (>~1.5x) per-episode forward speedup at the
     real B, batching is the right lever and a corrected A/B should confirm it
     end-to-end; if it is ~1.0x, the forward is not batch-amortizable in this
@@ -31,7 +32,7 @@ DECISION RULE printed at the end:
 
 torch-required -> runs on the GPU/CPU-torch server (no torch locally).
 Usage:
-  python3 scripts/blb_rollout_profile.py [--repeat 5] [--batches 1,2,4,8,16,32]
+  python3 scripts/blb_rollout_profile.py --rollout-size 60 --gpus 4 --workers-per-device 2
 """
 
 import argparse
@@ -54,6 +55,10 @@ def main() -> int:
     ap.add_argument("--rollout-size", type=int, default=32,
                     help="PPO window (BLBStage2TrainConfig.rollout_size) for the "
                          "real-B note")
+    ap.add_argument("--gpus", type=int, default=None,
+                    help="GPU count used by the real A/B; defaults to visible CUDA devices")
+    ap.add_argument("--workers-per-device", type=int, default=2,
+                    help="workers per GPU used by the real A/B")
     args = ap.parse_args()
 
     if not _have_torch():
@@ -72,6 +77,13 @@ def main() -> int:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     is_cuda = device.type == "cuda"
+    gpu_count = (
+        int(args.gpus)
+        if args.gpus is not None
+        else (int(torch.cuda.device_count()) if is_cuda else 1)
+    )
+    gpu_count = max(1, gpu_count)
+    workers_per_device = max(1, int(args.workers_per_device))
 
     def sync():
         if is_cuda:
@@ -200,21 +212,23 @@ def main() -> int:
 
     # --- verdict at the real operating point ---
     print("\n" + "=" * 78)
-    real_b_4 = max(1, round(args.rollout_size / 8))   # 4 GPUs x 2 workers
-    real_b_5 = max(1, round(args.rollout_size / 10))  # 5 GPUs x 2 workers
-    print(f"real operating B = rollout_size({args.rollout_size}) / (NGPU * workers_per_device):")
-    print(f"  4 GPUs x2 -> B~={real_b_4} ; 5 GPUs x2 -> B~={real_b_5}")
+    real_b = max(1, round(args.rollout_size / (gpu_count * workers_per_device)))
+    print("real operating B = rollout_size / (NGPU * workers_per_device):")
+    print(
+        f"  rollout_size={args.rollout_size} NGPU={gpu_count} "
+        f"workers_per_device={workers_per_device} -> B~={real_b}"
+    )
 
     def speedup_at(target):
         best = min(rows, key=lambda r: abs(r[0] - target))
         return best[0], best[2]
 
-    b4, sp4 = speedup_at(real_b_4)
-    print(f"  batched(trunc) forward speedup at B={b4}: {sp4:.2f}x")
-    if sp4 >= 1.5:
+    b_real, sp_real = speedup_at(real_b)
+    print(f"  batched(trunc) forward speedup at nearest measured B={b_real}: {sp_real:.2f}x")
+    if sp_real >= 1.5:
         print("  VERDICT: forward IS batch-amortizable at the real B -> batching is the "
               "right lever; run the corrected end-to-end A/B to confirm episode-level gain.")
-    elif sp4 > 1.1:
+    elif sp_real > 1.1:
         print("  VERDICT: MARGINAL forward gain at the real B -> end-to-end episode gain "
               "likely small (forward is only part of the episode); decide via the A/B.")
     else:
