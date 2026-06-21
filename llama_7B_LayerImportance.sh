@@ -558,6 +558,13 @@ BLB_V3_FUSION_EXPLORATION_EPSILON="0.05"; S_BLB_V3_FUSION_EXPLORATION_EPSILON="f
 # MUST be initialized here so the launcher never inherits a stale value / seen-flag from the
 # environment (only an explicit --blb-v3-kv-cache-rollout should turn it on).
 BLB_V3_KV_CACHE_ROLLOUT="false"; S_BLB_V3_KV_CACHE_ROLLOUT="false"
+# Batched lockstep rollout (2026-06-21): batches the per-step GTrXL forward across
+# a worker's episodes (launch amortized ~B×) — the REAL rollout speedup (KV-cache
+# was the wrong lever for the launch-bound H<=59 forward). DEFAULT OFF until the
+# server batch-invariance self-test + speed A/B validate it. --blb-v3-rollout-profile
+# adds cuda-synced per-step timing (diagnostic). Init here so neither leaks from env.
+BLB_V3_BATCHED_ROLLOUT="false"; S_BLB_V3_BATCHED_ROLLOUT="false"
+BLB_V3_ROLLOUT_PROFILE="false"; S_BLB_V3_ROLLOUT_PROFILE="false"
 STAGE2_WORKERS_PER_DEVICE="1"; S_STAGE2_WORKERS_PER_DEVICE="false"
 BLB_V3_SUBSTAGE_BLOCK_ORDER="1,2,4,5"; S_BLB_V3_SUBSTAGE_BLOCK_ORDER="false"
 BLB_V3_SUBSTAGE_FROZEN_BLOCKS="3"; S_BLB_V3_SUBSTAGE_FROZEN_BLOCKS="false"
@@ -772,6 +779,8 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-fusion-count-action) needv "$@"; BLB_V3_FUSION_COUNT_ACTION="$2"; S_BLB_V3_FUSION_COUNT_ACTION="true"; shift 2 ;;
     --blb-v3-fusion-neighbor-curriculum) needv "$@"; BLB_V3_FUSION_NEIGHBOR_CURRICULUM="$2"; S_BLB_V3_FUSION_NEIGHBOR_CURRICULUM="true"; shift 2 ;;
     --blb-v3-kv-cache-rollout) needv "$@"; BLB_V3_KV_CACHE_ROLLOUT="$2"; S_BLB_V3_KV_CACHE_ROLLOUT="true"; shift 2 ;;
+    --blb-v3-batched-rollout) needv "$@"; BLB_V3_BATCHED_ROLLOUT="$2"; S_BLB_V3_BATCHED_ROLLOUT="true"; shift 2 ;;
+    --blb-v3-rollout-profile) needv "$@"; BLB_V3_ROLLOUT_PROFILE="$2"; S_BLB_V3_ROLLOUT_PROFILE="true"; shift 2 ;;
     --blb-v3-fusion-probe-interval) needv "$@"; BLB_V3_FUSION_PROBE_INTERVAL="$2"; S_BLB_V3_FUSION_PROBE_INTERVAL="true"; shift 2 ;;
     --blb-v3-fusion-exploration-epsilon) needv "$@"; BLB_V3_FUSION_EXPLORATION_EPSILON="$2"; S_BLB_V3_FUSION_EXPLORATION_EPSILON="true"; shift 2 ;;
     --stage2-workers-per-device) needv "$@"; STAGE2_WORKERS_PER_DEVICE="$2"; S_STAGE2_WORKERS_PER_DEVICE="true"; shift 2 ;;
@@ -1709,6 +1718,8 @@ else
     [ "$S_BLB_V3_FUSION_COUNT_ACTION" = "true" ] && CMD+=(--blb_v3_fusion_count_action "$BLB_V3_FUSION_COUNT_ACTION")
     [ "$S_BLB_V3_FUSION_NEIGHBOR_CURRICULUM" = "true" ] && CMD+=(--blb_v3_fusion_neighbor_curriculum "$BLB_V3_FUSION_NEIGHBOR_CURRICULUM")
     [ "$S_BLB_V3_KV_CACHE_ROLLOUT" = "true" ] && CMD+=(--blb_v3_kv_cache_rollout "$BLB_V3_KV_CACHE_ROLLOUT")
+    [ "$S_BLB_V3_BATCHED_ROLLOUT" = "true" ] && CMD+=(--blb_v3_batched_rollout "$BLB_V3_BATCHED_ROLLOUT")
+    [ "$S_BLB_V3_ROLLOUT_PROFILE" = "true" ] && CMD+=(--blb_v3_rollout_profile "$BLB_V3_ROLLOUT_PROFILE")
     [ "$S_BLB_V3_FUSION_PROBE_INTERVAL" = "true" ] && CMD+=(--blb_v3_fusion_probe_interval "$BLB_V3_FUSION_PROBE_INTERVAL")
     [ "$S_BLB_V3_FUSION_EXPLORATION_EPSILON" = "true" ] && CMD+=(--blb_v3_fusion_exploration_epsilon "$BLB_V3_FUSION_EXPLORATION_EPSILON")
     [ "$S_STAGE2_WORKERS_PER_DEVICE" = "true" ] && CMD+=(--stage2_workers_per_device "$STAGE2_WORKERS_PER_DEVICE")

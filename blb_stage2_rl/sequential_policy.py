@@ -827,6 +827,119 @@ class BLBStage2SequentialPolicy(nn.Module):
         log_prob = log_prob_per_slot.sum(dim=-1)
         return actions, log_prob, value
 
+    # ------------------------------------------------------------------
+    # Batched-rollout sampling (2026-06-21). Splits the forward (action-
+    # INDEPENDENT, batched once per step across episodes) from the per-row
+    # seeded sample / log-prob (works on the precomputed logits). The sampler is
+    # batch- and device-invariant by construction: the only randomness is
+    # ``_seeded_slot_uniforms`` (numpy default_rng per row seed), so a row's draw
+    # is identical for ANY batch size / GPU count. Distribution is unchanged
+    # (Categorical over masked logits incl. the ADR-012 eps mixture), so log_prob
+    # here and in ``evaluate_action`` (PPO replay) stay consistent. NOT byte-
+    # identical to the old global-manual_seed + multinomial path (different draw
+    # algorithm) — a deliberate, distribution-equivalent re-seeding.
+    @torch.inference_mode()
+    def forward_and_mask(
+            self,
+            state: torch.Tensor,
+            slot_mask: torch.Tensor,
+            per_slot_num_levels: torch.Tensor,
+            *,
+            action_level_mask: Optional[torch.Tensor] = None,
+            baseline_prior_scale: Optional[Any] = None,
+            truncate_to_current: bool = False,
+            kv_cache: Optional["IncrementalRolloutCache"] = None,
+            ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """One forward + additive logit mask, WITHOUT sampling.
+
+        Returns ``(masked_logits, safe_logits, value)``. The batched rollout
+        driver calls this ONCE per step over ``[B, state_dim]`` (all episodes at
+        the same step), then per row calls :meth:`sample_from_logits` /
+        :meth:`logprob_from_logits` on the (action-independent) logits.
+        """
+        logits, value = self.forward(
+            state,
+            baseline_prior_scale=baseline_prior_scale,
+            truncate_to_current=bool(truncate_to_current),
+            kv_cache=kv_cache,
+        )
+        logits = logits + self._build_logit_mask(
+            slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
+            action_level_mask=action_level_mask,
+            level_indices=self._level_indices,
+        )
+        safe_logits = torch.where(
+            torch.isfinite(logits).any(dim=-1, keepdim=True),
+            logits,
+            torch.zeros_like(logits),
+        )
+        return logits, safe_logits, value
+
+    @staticmethod
+    def _seeded_slot_uniforms(
+            row_seeds: Sequence[int],
+            n_slots: int,
+            device: torch.device,
+            ) -> torch.Tensor:
+        """``[B, n_slots]`` uniforms in ``[0, 1)``; row b drawn from
+        ``numpy.random.default_rng(row_seeds[b])``. CPU/numpy + per-row seed →
+        deterministic and INVARIANT to batch size and GPU count (the property the
+        batched rollout's float-equivalence gate rests on)."""
+        seeds = [int(s) for s in row_seeds]
+        u = np.empty((len(seeds), int(n_slots)), dtype=np.float64)
+        for b, s in enumerate(seeds):
+            u[b] = np.random.default_rng(s).random(int(n_slots))
+        return torch.from_numpy(u).to(device=device, dtype=torch.float32)
+
+    @torch.inference_mode()
+    def sample_from_logits(
+            self,
+            logits: torch.Tensor,
+            safe_logits: torch.Tensor,
+            slot_mask: torch.Tensor,
+            row_seeds: Sequence[int],
+            ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Per-row seeded categorical sample via inverse-CDF on the masked probs.
+
+        ``logits``/``safe_logits``/``slot_mask`` are ``[B, ...]`` from
+        :meth:`forward_and_mask`; ``row_seeds`` is length B. Returns
+        ``(actions [B, max_step_dim] long, log_prob [B])``. Masked levels have
+        prob 0 (flat cdf) so are never drawn; ``right=True`` makes ``u==0`` pick
+        the first POSITIVE-prob level (never a masked level-0).
+        """
+        dist = self._action_dist(logits, safe_logits)
+        probs = dist.probs                                       # [B, S, L]
+        _B, _S, L = probs.shape
+        u = self._seeded_slot_uniforms(row_seeds, _S, probs.device).unsqueeze(-1)  # [B,S,1]
+        cdf = torch.cumsum(probs, dim=-1)                        # [B,S,L] non-decreasing
+        actions = (
+            torch.searchsorted(cdf, u, right=True).squeeze(-1).clamp_(max=L - 1).long()
+        )                                                        # [B, S]
+        log_prob = (dist.log_prob(actions) * slot_mask.float()).sum(dim=-1)  # [B]
+        return actions, log_prob
+
+    @torch.inference_mode()
+    def logprob_from_logits(
+            self,
+            logits: torch.Tensor,
+            safe_logits: torch.Tensor,
+            slot_mask: torch.Tensor,
+            actions: torch.Tensor,
+            *,
+            return_entropy: bool = False,
+            ) -> Tuple[torch.Tensor, ...]:
+        """log_prob (and optional entropy) of a GIVEN action from precomputed
+        logits (no forward) — for the forced-anchor / fusion-probe / fallback
+        sites that override the sampled action. Same dist as
+        :meth:`sample_from_logits`."""
+        dist = self._action_dist(logits, safe_logits)
+        a = actions.long()
+        log_prob = (dist.log_prob(a) * slot_mask.float()).sum(dim=-1)
+        if return_entropy:
+            entropy = (dist.entropy() * slot_mask.float()).sum(dim=-1)
+            return log_prob, entropy
+        return (log_prob,)
+
     def evaluate_action(
             self,
             state: torch.Tensor,

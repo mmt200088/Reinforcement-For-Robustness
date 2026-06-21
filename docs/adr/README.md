@@ -60,3 +60,4 @@ Proposed → Accepted → (Superseded by ADR-XXX | Deprecated)
 | 014 | 结构性反失控 fusion 成本（饱和）+ 崩溃调试落盘（被 4th-60k 热崩溃触发） | Accepted（饱和被 015 退役；调试落盘保留） | 2026-06-14 |
 | 015 | 连续有界 reward（移植 Stage-1）+ std 倍率稳定性门（baseline_std×tol，移植原始 Stage-2，跑宽松 5×）+ Stage-1 cosine 探索 + 严格可行性选择 | Accepted（reward 塑形被 016 精修） | 2026-06-14（稳定性门 06-15 更正为倍率） |
 | 016 | headroom 耦合 cost（消刀刃+稳定内点最优）+ 线性违反恢复梯度（止冻死）—— 修 ADR-015 第5次60k 的 fusion 失控热崩溃；离线地形回放标定 | Accepted | 2026-06-16 |
+| 017 | 批量 episode rollout（每步合批 forward 摊薄 launch；批不变 seeded 采样；取代 KV-cache rollout 这个错杠杆）—— 浮点等价非逐位，待服务器批不变自检+加速 A/B | Accepted（待服务器验证） | 2026-06-21 |

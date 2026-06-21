@@ -3,25 +3,19 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (加大精度 重跑 v2：修 block4 一致性门禁 + active 文本断坏；跑通单测并落 4 张 boost map)
+## ▶ active command  (批量 episode rollout 提速验证：批不变自检（硬门）+ OFF-vs-ON 端到端 A/B（质量一致 + 实测加速）)
 
-> **本轮修两件事（本地改、已 push）：**
+> **背景**：KV-cache rollout 已判 NOT EFFECTIVE（0.60x，更慢）——它是错的杠杆（H≤59 的 forward 是 launch-bound
+> 而非 FLOP-bound，且每步两次 forward）。**真正的加速 = 批量 episode rollout**（ADR-017）：把同一 worker 的多条
+> episode 同步推进、每步**合批做一次 GTrXL forward**，把 launch+host 开销摊薄到 B 条上。采样改为**批不变的 seeded
+> 逆 CDF**（numpy(seed) 噪声，分布不变、PPO 自洽、无需 device-lock），KV-cache 退役。
 >
-> **① block4 落 map 门禁误报（真实 bug）**：上轮 [B0] 单测 28/28 全过，但 [B1] 落 map 在 block4 抛
-> `RuntimeError: block4 ... q_final=(60,59) expected all=60`。根因：`boost_options_for_block` 的 apply
-> 门禁写死「每个 prime 必须 == q_max=60」，但 block4 的短质数**结构上只能到 59**（deficit 29 是奇数，
-> 且 ×2 之后没有 weight-1 的 encode → 只有偶数 bit-weight → 填不到 60；这在 `test_boost_reaches_max_fill_59`
-> / CLAUDE.md / memory 里都写明了）。`boost_option` 本身正确（`boosted_q_final=(60,59)` 是 replan 验证过的
-> 最大填充），错的是门禁的「全 ==q_max」假设——它从没被测试覆盖（28 个测试都直接调 `boost_option`，不走
-> `boost_options_for_block`）。修复：门禁改为核对独立 re-replan 是否复现 `res.boosted_q_final`（而非 q_max），
-> 并新增回归测试直接驱动 `boost_options_for_block`（block4 必须接受 59、block2 仍达 60）。
+> **诚实交代**：批量 GEMM 与逐条差 ~1e-6 → 与 KV-cache 一样**放弃逐位 1==N**（用户已两次确认为提速放弃）。门变为：
+> (A0) 批不变自检（B=1 vs B=W 同 logits 同种子 → 动作/logprob 逐位一致；分布正确；masked 档不被采）——**硬门**；
+> (A1) OFF-vs-ON 端到端短跑：质量分布一致（浮点等价）+ per-episode 墙钟**实测更快**（EFFECTIVE 判定）。
+> 默认 OFF，本验证通过后才在 60k 用 `--blb-v3-batched-rollout 1`。
 >
-> **② active 文本断坏**：上轮我用 `unicode_escape` 拼接 SERVER_COMMAND 时把 `全`/`共`（含 0x85 字节）解码成
-> U+0085 (NEL 换行符)，第二次“修复”又复用了损坏的 bash 块 → 中文行和 Python f-string 被 NEL 断成两行 →
-> SyntaxError。本轮整段重写 active（干净 UTF-8，bash 全英文、Python heredoc 纯 ASCII，杜绝多字节断行）。
->
-> **KV-cache 提速已判 NOT EFFECTIVE**（上轮 0.60x，ON 比 OFF 慢）→ 保持默认 OFF、不进 60k；端到端 A/B on-deck 已跳过。
-> 本 active 只做 [B] 加大精度：[B0] 单测 → [B1] 落 4 张 boost map → [B2] 落盘后复验 → 回传 boosted maps。
+> **加大精度（precision boost）已于 06-21 在服务器落盘完成**（commit d104ad9，4 张 map 全 boost、复验通过）——本 active 与它无关。
 
 ```bash
 set -uo pipefail
@@ -29,51 +23,66 @@ export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
 
 TS=$(date +%Y%m%d_%H%M%S)
-OUT="experiments/server_command_runs/stage2_boost_apply_${TS}"
-mkdir -p "$OUT"
+OUT="experiments/server_command_runs/stage2_batched_rollout_validate_${TS}"; mkdir -p "$OUT"
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git rev-parse HEAD > "$OUT/HEAD.txt"; cat "$OUT/HEAD.txt"; git log --oneline -4
 fi
+EPISODES_AB=1500
+KTRIALS=5; ANCHOR_EPISODES=80; FUSION_PROBE_INTERVAL=200
+NGPU="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"; [ -z "$NGPU" ] && NGPU=1
+DEVS="$(seq -s, 0 $((NGPU-1)))"
+CANON_STAGE2="Parting Chapter/stage2"
 
-echo "#################### [B] precision boost: tests + apply to maps ####################"
-echo "==================== [B0] unit tests (block2/4/5_n2/5_n4 + SF-direct==index + boosted->installed + boost_options_for_block guard; real replan/torch) ===================="
-python3 -m unittest tests.test_blb_precision_boost -v 2>&1 | tee "$OUT/boost_selftest.txt"
-grep -qE "^OK" "$OUT/boost_selftest.txt" || { echo "[FATAL] precision-boost unit tests failed - not applying maps"; exit 1; }
-# server has torch+RO: all tests should run. skipped>=4 => torch/RO missing => equivalence gate void => do NOT apply.
-if grep -qE "skipped=([4-9]|[0-9]{2,})" "$OUT/boost_selftest.txt"; then
-  echo "[FATAL] equivalence/guard tests skipped (torch/RO missing) - gate void, not applying maps"; exit 1; fi
-echo "[B0] PASS"
+echo "#################### [A0] batch-invariance self-test (HARD GATE) ####################"
+python3 -m unittest tests.test_blb_batched_rollout -v 2>&1 | tee "$OUT/batched_selftest.txt"
+grep -qE "^OK" "$OUT/batched_selftest.txt" || { echo "[FATAL] batched rollout self-test failed"; exit 1; }
+# torch missing => all 5 skip => gate void
+if grep -qE "skipped=[0-9]+" "$OUT/batched_selftest.txt" && ! grep -qE "Ran ([1-9][0-9]*) test" "$OUT/batched_selftest.txt"; then
+  echo "[FATAL] self-test ran 0 / all skipped (torch missing) - gate void"; exit 1; fi
+if grep -qE "OK \(skipped=5\)|skipped=5\)" "$OUT/batched_selftest.txt"; then
+  echo "[FATAL] all 5 batched tests skipped (torch missing) - gate void"; exit 1; fi
+echo "[A0] PASS"
 
-echo "==================== [B1] apply boost to committed maps (block2/4/5_n2/5_n4; seconds, == builder final step) ===================="
-cp -a blb_stage2_rl/fusion_maps/mrpc "$OUT/old_maps" 2>/dev/null || true
-python3 scripts/blb_apply_precision_boost.py --profile mrpc 2>&1 | tee "$OUT/boost_apply.txt"
-grep -qE "options boosted" "$OUT/boost_apply.txt" || { echo "[FATAL] boost not applied"; exit 1; }
+echo "#################### [A1] OFF vs ON end-to-end A/B (quality + speed) ####################"
+run_ab () {   # $1 = tag (off/on), $2 = batched flag (0/1), $3 = profile flag (0/1)
+  local tag="$1"; local batched="$2"; local profile="$3"
+  echo "==================== [A/B] $tag : --blb-v3-batched-rollout $batched ===================="
+  CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
+    --preset mrpc-blb-stage2-rl \
+    --blb-v3-fusion-count-action 1 \
+    --blb-v3-fusion-neighbor-curriculum 1 \
+    --stage2-search-episodes "$EPISODES_AB" \
+    --stage2-k-trials "$KTRIALS" --stage2-probe-size 256 --batch-size 512 \
+    --stage2-rl-devices "$DEVS" \
+    --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
+    --stage2-stability-tolerance 5.0 --stage2-limit-tolerance 0.005 \
+    --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
+    --blb-v3-fusion-exploration-epsilon 0.05 \
+    --stage2-workers-per-device 2 \
+    --blb-v3-batched-rollout "$batched" \
+    --blb-v3-rollout-profile "$profile" \
+    --fresh 2>&1 | tee "$OUT/${tag}_launch.log"
+  sleep 12
+  local pid; pid="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
+  echo "[A/B] $tag pid=$pid - waiting for completion..."
+  if [ -n "$pid" ]; then while kill -0 "$pid" 2>/dev/null; do sleep 30; done; fi
+  local rundir; rundir="$(cat "${CANON_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
+  local ep; ep="$(ls "$rundir"/diagnostics/episodes.jsonl 2>/dev/null || ls "$CANON_STAGE2"/*/progress/diagnostics/episodes.jsonl 2>/dev/null | tail -1)"
+  cp "$ep" "$OUT/${tag}_episodes.jsonl"
+  echo "[A/B] $tag episodes.jsonl -> $OUT/${tag}_episodes.jsonl ($(wc -l < "$OUT/${tag}_episodes.jsonl") lines)"
+}
 
-echo "==================== [B2] post-write re-verify: maps still load + option0==baseline + boosted options carry explicit_field_values ===================="
-python3 - <<'PY' 2>&1 | tee "$OUT/boost_verify.txt" || { echo "[FATAL] post-boost map verify failed"; exit 1; }
-import json, glob, os
-from blb_stage2_rl.fusion_count_map import FusionCountMap
-FusionCountMap.load("mrpc")
-print("FusionCountMap.load('mrpc') OK - all maps still load, option0==baseline.")
-nb = 0
-for f in sorted(glob.glob("blb_stage2_rl/fusion_maps/mrpc/*.json")):
-    b = os.path.basename(f)
-    if b.startswith("_"):
-        continue
-    d = json.load(open(f))
-    bs = [o for o in d["options"] if o.get("boosted")]
-    for o in bs:
-        assert o.get("explicit_field_values"), b + " boosted option missing explicit_field_values"
-    nb += len(bs)
-    print("  %-16s options=%d boosted=%d" % (b, len(d["options"]), len(bs)))
-print("[ok] %d boosted options total, all carry explicit_field_values." % nb)
-PY
+run_ab off 0 0
+run_ab on  1 1
+echo "==================== [A/B] compare ===================="
+python3 scripts/blb_kvcache_ab_compare.py \
+  --off "$OUT/off_episodes.jsonl" --on "$OUT/on_episodes.jsonl" 2>&1 | tee "$OUT/ab_verdict.txt"
 
 echo "#################### [DONE] ####################"
-echo "boosted map changes:"; git status --short blb_stage2_rl/fusion_maps/ | tee "$OUT/boost_map_diff.txt"
-echo "evidence dir: $OUT (boost_selftest / boost_apply / boost_verify / boost_map_diff / old_maps)"
-echo "Please git add/commit/push the evidence in $OUT and the changed blb_stage2_rl/fusion_maps/mrpc/*.json."
-echo "KV-cache already NOT EFFECTIVE -> keep default OFF; next is on-deck ADR-016 reward 60k (no kv-cache flag)."
+echo "evidence dir: $OUT (batched_selftest / off|on_episodes.jsonl / ab_verdict.txt)"
+echo "Read ab_verdict.txt: quality must be MATCHED (float-equivalent); speedup gives the per-episode rollout wall improvement."
+echo "If EFFECTIVE + MATCHED -> flip --blb-v3-batched-rollout 1 in the reward 60k (on-deck) and run it."
+echo "Please git add/commit/push $OUT back."
 ```
 
 ## ⏸ on-deck — KV-cache 端到端吞吐 A/B（**已解决/跳过** — 前向基准已判 NOT EFFECTIVE）

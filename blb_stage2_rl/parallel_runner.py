@@ -41,7 +41,7 @@ import contextlib
 import hashlib
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import numpy as np
 import torch
@@ -241,7 +241,7 @@ def _default_terminal_snapshot() -> Dict[str, Any]:
 # Worker-side fusion episode collection
 # ---------------------------------------------------------------------------
 
-def collect_fusion_episode(
+def _fusion_episode_generator(
         *,
         seq_env: BLBStage2SequentialEnv,
         policy: Any,
@@ -255,35 +255,42 @@ def collect_fusion_episode(
         forbidden_mask: Any,
         max_rejection_retries: int = 32,
         log_fn: Optional[Callable[[str], None]] = None,
-        device_lock: Optional[threading.Lock] = None,
-        ) -> FusionEpisodeOutcome:
-    """Collect ONE fusion-mode episode on ``seq_env``/``policy``/``device``.
+        ):
+    """Generator form of ONE fusion-mode episode (2026-06-21 batched rollout).
 
-    Faithful to the fusion-active path of ``train_sequential`` (forced
-    anchor, block-granularity curriculum, open mask, terminal extraction),
-    with the legacy global-RNG-stream sampling replaced by per-(episode,
-    step, attempt) device seeding and the probe noise keyed per (episode,
-    trial) via ``BLBStage2Env.probe_noise_seed``.
+    Yields the per-step forward inputs ``(obs_t, slot_mask_t, levels_t,
+    action_level_mask_t, baseline_prior_scale)`` and receives ``(logits,
+    safe_logits, value)`` via ``.send(...)``. Because the GTrXL logits are
+    action-INDEPENDENT, ONE yield per step suffices — sampling, the forced
+    anchor, the fusion probe, rejection retries and the fallback all reuse the
+    same logits (no extra forwards). The DRIVER decides whether that forward runs
+    inline (``collect_fusion_episode``, B=1) or batched across episodes
+    (``collect_fusion_episodes_batched``, B=W); the per-episode logic here is
+    identical either way, which is what makes the two float-equivalent. Sampling
+    is the batch-/device-invariant seeded sampler (``policy.sample_from_logits``)
+    so no global-RNG device lock is needed; the terminal probe still serializes
+    on ``env.probe_device_lock``. Returns the ``FusionEpisodeOutcome`` as the
+    generator's ``StopIteration.value``.
     """
     log = log_fn or (lambda _m: None)
     env = seq_env
     assert getattr(env, "_fusion_map", None) is not None, (
-        "collect_fusion_episode requires fusion-count mode"
+        "fusion episode generator requires fusion-count mode"
     )
 
     obs = env.reset(seed=None)
-    env.base.probe_noise_seed = derive_probe_seed(int(base_seed), int(absolute_ep))
+    # probe_noise_seed is set right before each commit_step (below), NOT here: the
+    # batched driver shares ONE base_env across B episodes, so a setup-time write
+    # would be clobbered by the last episode's setup. Setting it per-step-before-
+    # commit keeps it this episode's seed at the (serial) terminal probe. For the
+    # serial driver (dedicated base) the value is identical to the old setup-time
+    # write, so serial behavior is unchanged.
 
-    # KV-cache rollout fast path (2026-06-19; opt-in, NOT byte-identical —
-    # user dropped 1==N). One cache per episode, owned here (never shared
-    # across episodes/workers). Disabled -> kv_cache stays None and every
-    # policy call below is byte-for-byte the original full-prefix forward.
-    kv_cache = (
-        policy.new_rollout_cache()
-        if bool(getattr(train_cfg, "kv_cache_rollout_enabled", False))
-        and hasattr(policy, "new_rollout_cache")
-        else None
-    )
+    # 2026-06-21: the per-step GTrXL forward is hoisted to the DRIVER (yield
+    # below) so it can be batched across episodes. The KV-cache fast path
+    # (2026-06-19) is retired — it was the wrong lever (server-measured 0.60x:
+    # the H<=59 forward is launch-bound, not FLOP-bound), superseded by the
+    # batched forward which amortizes launches across B episodes.
 
     per_step_sum = 0.0
     terminal_reward = 0.0
@@ -398,9 +405,20 @@ def collect_fusion_episode(
             torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
         )
 
+        # ONE action-independent forward per step — the driver runs it (inline
+        # for the serial wrapper, batched across episodes for the batched driver)
+        # and sends back this row's (masked logits, safe logits, value). All of
+        # the sample / forced / probe / rejection / fallback logic below reuses
+        # these logits (no further forwards).
+        _policy_t0 = time.perf_counter()
+        logits_t, safe_logits_t, value_t = yield (
+            obs_t, slot_mask_t, levels_t, action_level_mask_t, baseline_prior_scale,
+        )
+        policy_rollout_wall_seconds_val += float(time.perf_counter() - _policy_t0)
+
         chosen_action_np: Optional[np.ndarray] = None
         chosen_log_prob = 0.0
-        chosen_value = 0.0
+        chosen_value = float(value_t.reshape(-1)[0].item())
         chosen_eval_info: Optional[Dict[str, Any]] = None
 
         if force_this_ep:
@@ -410,21 +428,13 @@ def collect_fusion_episode(
             )
             forced_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
             forced_padded[:n_active] = forced_action[:n_active]
-            policy_t0 = time.perf_counter()
-            with torch.inference_mode():
-                actions_t = torch.from_numpy(forced_padded).to(device).unsqueeze(0)
-                lp_t, _, val_t = policy.evaluate_action(
-                    obs_t, actions_t, slot_mask_t, levels_t,
-                    action_level_mask=action_level_mask_t,
-                    baseline_prior_scale=baseline_prior_scale,
-                    truncate_to_current=True,
-                    kv_cache=kv_cache,
-                )
-            policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
+            actions_t = torch.from_numpy(forced_padded).to(device).unsqueeze(0)
+            (lp_t,) = policy.logprob_from_logits(
+                logits_t, safe_logits_t, slot_mask_t, actions_t,
+            )
             chosen_eval_info = env.evaluate_step(forced_action.tolist())
             chosen_action_np = forced_padded
             chosen_log_prob = float(lp_t.item())
-            chosen_value = float(val_t.item())
         else:
             action_np_try: Optional[np.ndarray] = None
             log_prob_t = value_t = None
@@ -433,26 +443,13 @@ def collect_fusion_episode(
                 seed = derive_policy_step_seed(
                     int(base_seed), int(absolute_ep), int(spec.step_idx), int(attempt),
                 )
-                policy_t0 = time.perf_counter()
-                # (manual_seed -> sample) must be atomic per DEVICE: with
-                # workers-per-device > 1 a sibling worker's reseed between our
-                # seed and our categorical draw would corrupt determinism.
-                lock_ctx = device_lock if device_lock is not None else _NULL_LOCK
-                with lock_ctx:
-                    if device.type == "cuda":
-                        torch.cuda.manual_seed(int(seed))
-                    else:
-                        torch.manual_seed(int(seed))
-                    with torch.inference_mode():
-                        action_t, log_prob_t, value_t = policy.sample_action(
-                            obs_t, slot_mask_t, levels_t,
-                            deterministic=False,
-                            action_level_mask=action_level_mask_t,
-                            baseline_prior_scale=baseline_prior_scale,
-                            truncate_to_current=True,
-                            kv_cache=kv_cache,
-                        )
-                policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
+                # Seeded inverse-CDF sample on the (action-independent) logits —
+                # batch-/device-invariant, lock-free (no global manual_seed). A
+                # rejection retry just re-draws with attempt+1 from the SAME
+                # logits (no re-forward).
+                action_t, log_prob_t = policy.sample_from_logits(
+                    logits_t, safe_logits_t, slot_mask_t, [int(seed)],
+                )
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
                 if (
                         fusion_probe_block is not None
@@ -466,20 +463,11 @@ def collect_fusion_episode(
                     # mask so PPO ratios stay well-defined.
                     action_np_try = action_np_try.copy()
                     action_np_try[0] = 1
-                    policy_t1 = time.perf_counter()
-                    with torch.inference_mode():
-                        actions_fix_t = (
-                            torch.from_numpy(action_np_try).to(device).unsqueeze(0)
-                        )
-                        log_prob_t, _probe_ent, value_t = policy.evaluate_action(
-                            obs_t, actions_fix_t, slot_mask_t, levels_t,
-                            action_level_mask=action_level_mask_t,
-                            baseline_prior_scale=baseline_prior_scale,
-                            truncate_to_current=True,
-                            kv_cache=kv_cache,
-                        )
-                    policy_rollout_wall_seconds_val += float(
-                        time.perf_counter() - policy_t1
+                    actions_fix_t = (
+                        torch.from_numpy(action_np_try).to(device).unsqueeze(0)
+                    )
+                    (log_prob_t,) = policy.logprob_from_logits(
+                        logits_t, safe_logits_t, slot_mask_t, actions_fix_t,
                     )
                 step_action_try = action_np_try[:n_active].tolist()
                 tup = tuple(int(x) for x in step_action_try)
@@ -493,7 +481,6 @@ def collect_fusion_episode(
                 if eval_info["valid"]:
                     chosen_action_np = action_np_try
                     chosen_log_prob = float(log_prob_t.item())
-                    chosen_value = float(value_t.item())
                     chosen_eval_info = eval_info
                     break
 
@@ -520,40 +507,26 @@ def collect_fusion_episode(
                 )
                 fallback_padded = np.zeros(policy.cfg.max_step_dim, dtype=np.int64)
                 fallback_padded[:n_active] = fallback_action[:n_active]
-                policy_t0 = time.perf_counter()
-                with torch.inference_mode():
-                    actions_t = torch.from_numpy(fallback_padded).to(device).unsqueeze(0)
-                    lp_t, _, val_t = policy.evaluate_action(
-                        obs_t, actions_t, slot_mask_t, levels_t,
-                        action_level_mask=action_level_mask_t,
-                        baseline_prior_scale=baseline_prior_scale,
-                        truncate_to_current=True,
-                        kv_cache=kv_cache,
-                    )
-                policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
+                actions_t = torch.from_numpy(fallback_padded).to(device).unsqueeze(0)
+                (lp_t,) = policy.logprob_from_logits(
+                    logits_t, safe_logits_t, slot_mask_t, actions_t,
+                )
                 chosen_eval_info = env.evaluate_step(fallback_action.tolist())
                 chosen_action_np = fallback_padded
                 chosen_log_prob = float(lp_t.item())
-                chosen_value = float(val_t.item())
                 steps_fallen_back_to_baseline += 1
 
         assert chosen_action_np is not None and chosen_eval_info is not None
         step_action_for_env = chosen_action_np[:n_active].tolist()
 
+        # Set this episode's probe noise seed right before commit_step so a
+        # SHARED base_env (batched driver) uses THIS row's seed at the (serial)
+        # terminal probe — see the note at episode start.
+        env.base.probe_noise_seed = derive_probe_seed(int(base_seed), int(absolute_ep))
         next_obs, reward, done, info = env.commit_step(
             chosen_eval_info,
             defer_terminal_forward=False,
         )
-        if kv_cache is not None and not done:
-            # Fixup: the just-committed token (step spec.step_idx) is is_current=0
-            # with its committed action/signal exactly at position spec.step_idx
-            # of next_obs (the obs for the NEXT step). Append it so the next
-            # step's current pass attends to the real prefix. Terminal step
-            # (done) has no successor and next_obs is the base terminal state.
-            policy_fix_t0 = time.perf_counter()
-            next_obs_t = torch.from_numpy(next_obs).float().to(device).unsqueeze(0)
-            policy.commit_kv_cache(next_obs_t, int(spec.step_idx), kv_cache)
-            policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_fix_t0)
         steps_taken += 1
         valid = bool(info.get("valid", True))
         if valid:
@@ -727,6 +700,138 @@ def collect_fusion_episode(
     )
 
 
+def collect_fusion_episode(
+        *,
+        seq_env: BLBStage2SequentialEnv,
+        policy: Any,
+        device: torch.device,
+        train_cfg: Any,
+        rel_ep: int,
+        absolute_ep: int,
+        base_seed: int,
+        baseline_action_vec: np.ndarray,
+        force_baseline_episodes: int,
+        forbidden_mask: Any,
+        max_rejection_retries: int = 32,
+        log_fn: Optional[Callable[[str], None]] = None,
+        device_lock: Optional[threading.Lock] = None,
+        ) -> FusionEpisodeOutcome:
+    """Collect ONE fusion-mode episode (serial: the generator with its per-step
+    forward run INLINE, B=1). Backward-compatible signature/behavior — the only
+    change vs the pre-2026-06-21 path is the batch-invariant seeded sampler.
+    ``device_lock`` is retained for call-site compatibility but unused: the seeded
+    sampler is lock-free and the terminal probe serializes on
+    ``env.probe_device_lock``.
+    """
+    del device_lock  # seeded sampling needs no global-RNG lock (see generator)
+    gen = _fusion_episode_generator(
+        seq_env=seq_env, policy=policy, device=device, train_cfg=train_cfg,
+        rel_ep=rel_ep, absolute_ep=absolute_ep, base_seed=base_seed,
+        baseline_action_vec=baseline_action_vec,
+        force_baseline_episodes=force_baseline_episodes,
+        forbidden_mask=forbidden_mask, max_rejection_retries=max_rejection_retries,
+        log_fn=log_fn,
+    )
+    try:
+        req = next(gen)
+        while True:
+            obs_t, slot_mask_t, levels_t, alm_t, prior = req
+            logits, safe_logits, value = policy.forward_and_mask(
+                obs_t, slot_mask_t, levels_t,
+                action_level_mask=alm_t, baseline_prior_scale=prior,
+                truncate_to_current=True,
+            )
+            req = gen.send((logits, safe_logits, value))
+    except StopIteration as stop:
+        return stop.value
+
+
+def collect_fusion_episodes_batched(
+        *,
+        seq_envs: Sequence[BLBStage2SequentialEnv],
+        policy: Any,
+        device: torch.device,
+        train_cfg: Any,
+        window_rel_eps: Sequence[int],
+        absolute_eps: Sequence[int],
+        base_seed: int,
+        baseline_action_vec: np.ndarray,
+        force_baseline_episodes: int,
+        forbidden_mask: Any,
+        max_rejection_retries: int = 32,
+        log_fn: Optional[Callable[[str], None]] = None,
+        profile: bool = False,
+        ) -> List[FusionEpisodeOutcome]:
+    """Collect B fusion episodes in LOCKSTEP, batching the per-step GTrXL forward
+    across all B (the launch-bound rollout cost amortized ~B×).
+
+    All episodes share the episode-INDEPENDENT step schedule, so they have an
+    identical horizon and advance one step together — at each step the B current
+    obs are stacked into one ``[B, state_dim]`` forward. Per-row sampling, env
+    stepping (replan) and the terminal probe stay per episode (the probe is
+    already the optimized K-trial path and cannot share a forward across distinct
+    noise configs). Float-equivalent to B serial ``collect_fusion_episode`` calls
+    (batched GEMM differs ~1e-6), NOT byte-identical -> gated by the batch-
+    invariance self-test, not the old 1==N byte-diff. ``profile`` adds
+    cuda-synced forward timing (the authoritative rollout wall for A/B).
+    """
+    B = len(seq_envs)
+    if B == 0:
+        return []
+    gens = [
+        _fusion_episode_generator(
+            seq_env=seq_envs[e], policy=policy, device=device, train_cfg=train_cfg,
+            rel_ep=int(window_rel_eps[e]), absolute_ep=int(absolute_eps[e]),
+            base_seed=base_seed, baseline_action_vec=baseline_action_vec,
+            force_baseline_episodes=force_baseline_episodes,
+            forbidden_mask=forbidden_mask,
+            max_rejection_retries=max_rejection_retries, log_fn=log_fn,
+        )
+        for e in range(B)
+    ]
+    outcomes: List[Optional[FusionEpisodeOutcome]] = [None] * B
+    pending: Dict[int, Any] = {e: next(g) for e, g in enumerate(gens)}
+    active = list(range(B))
+    fwd_wall = 0.0
+    while active:
+        obs_B = torch.cat([pending[e][0] for e in active], dim=0)
+        sm_B = torch.cat([pending[e][1] for e in active], dim=0)
+        lv_B = torch.cat([pending[e][2] for e in active], dim=0)
+        alm_B = torch.cat([pending[e][3] for e in active], dim=0)
+        prior_B = torch.tensor(
+            [float(pending[e][4]) for e in active],
+            device=device, dtype=torch.float32,
+        )
+        if profile and device.type == "cuda":
+            torch.cuda.synchronize()
+        _t0 = time.perf_counter()
+        logits_B, safe_B, value_B = policy.forward_and_mask(
+            obs_B, sm_B, lv_B,
+            action_level_mask=alm_B, baseline_prior_scale=prior_B,
+            truncate_to_current=False,
+        )
+        if profile and device.type == "cuda":
+            torch.cuda.synchronize()
+        fwd_wall += float(time.perf_counter() - _t0)
+        nxt: List[int] = []
+        for i, e in enumerate(active):
+            try:
+                pending[e] = gens[e].send(
+                    (logits_B[i:i + 1], safe_B[i:i + 1], value_B[i:i + 1])
+                )
+                nxt.append(e)
+            except StopIteration as stop:
+                outcomes[e] = stop.value
+        active = nxt
+    # attribute the (shared) batched forward wall evenly across episodes so
+    # episodes.jsonl's policy_rollout_wall_seconds reflects the amortized cost.
+    per_ep = fwd_wall / float(B)
+    for oc in outcomes:
+        if oc is not None:
+            oc.record.policy_rollout_wall_seconds = float(per_ep)
+    return [oc for oc in outcomes if oc is not None]
+
+
 # ---------------------------------------------------------------------------
 # Worker + runner
 # ---------------------------------------------------------------------------
@@ -763,11 +868,17 @@ class Stage2ParallelRunner:
             *,
             workers: List[Stage2FusionWorker],
             log_fn: Optional[Callable[[str], None]] = None,
+            seq_env_cfg: Any = None,
+            fusion_map: Any = None,
             ):
         if not workers:
             raise ValueError("Stage2ParallelRunner requires at least one worker")
         self.workers = workers
         self.log = log_fn or (lambda _m: None)
+        # Needed to build B SequentialEnv contexts per worker for batched rollout
+        # (all share the worker's base_env / model — no extra model copies).
+        self._seq_env_cfg = seq_env_cfg
+        self._fusion_map = fusion_map
 
     @property
     def num_workers(self) -> int:
@@ -783,6 +894,29 @@ class Stage2ParallelRunner:
                     replica = copy.deepcopy(policy).to(w.device)
             replica.eval()
             w.policy_replica = replica
+
+    def _worker_batch_envs(
+            self,
+            worker: Stage2FusionWorker,
+            n: int,
+            ) -> List[BLBStage2SequentialEnv]:
+        """``n`` SequentialEnv rollout contexts for one worker, ALL sharing the
+        worker's base_env (model) — NO extra model copies. Row 0 reuses the
+        worker's existing env; the rest are fresh accumulators over the same base.
+        Sharing is safe because per-step rollout mutates only each env's own
+        accumulator, and the terminal probe (the only base mutation) runs serially
+        per row within this worker's single thread (probe_noise_seed is set
+        per-step-before-commit, so the shared base carries the right seed).
+        """
+        base = worker.seq_env.base
+        envs: List[BLBStage2SequentialEnv] = [worker.seq_env]
+        for _ in range(1, int(n)):
+            envs.append(BLBStage2SequentialEnv(
+                base_env=base,
+                env_cfg=self._seq_env_cfg,
+                fusion_map=self._fusion_map,
+            ))
+        return envs
 
     def run_window(
             self,
@@ -804,29 +938,59 @@ class Stage2ParallelRunner:
         results: List[Optional[FusionEpisodeOutcome]] = [None] * n
         errors: List[BaseException] = []
 
+        batched = bool(getattr(train_cfg, "batched_rollout_enabled", False))
+        profile = bool(getattr(train_cfg, "rollout_profile", False))
+
         def _worker_main(w_idx: int) -> None:
             worker = self.workers[w_idx]
             try:
                 if worker.device.type == "cuda":
                     torch.cuda.set_device(worker.device)
-                for g in assignments[w_idx]:
-                    rel_ep = int(window_rel_start + g)
-                    absolute_ep = int(absolute_episode_start + rel_ep)
-                    results[g] = collect_fusion_episode(
-                        seq_env=worker.seq_env,
+                my_eps = list(assignments[w_idx])
+                if not my_eps:
+                    return
+                if batched and len(my_eps) > 1:
+                    # Batched lockstep rollout (2026-06-21): one GTrXL forward per
+                    # step across all this worker's episodes (launch amortized).
+                    rel_eps = [int(window_rel_start + g) for g in my_eps]
+                    abs_eps = [int(absolute_episode_start + r) for r in rel_eps]
+                    envs = self._worker_batch_envs(worker, len(my_eps))
+                    outs = collect_fusion_episodes_batched(
+                        seq_envs=envs,
                         policy=worker.policy_replica,
                         device=worker.device,
                         train_cfg=train_cfg,
-                        rel_ep=rel_ep,
-                        absolute_ep=absolute_ep,
+                        window_rel_eps=rel_eps,
+                        absolute_eps=abs_eps,
                         base_seed=int(base_seed),
                         baseline_action_vec=baseline_action_vec,
                         force_baseline_episodes=int(force_baseline_episodes),
                         forbidden_mask=forbidden_mask,
                         max_rejection_retries=int(max_rejection_retries),
                         log_fn=self.log,
-                        device_lock=worker.device_lock,
+                        profile=profile,
                     )
+                    for g, oc in zip(my_eps, outs, strict=True):
+                        results[g] = oc
+                else:
+                    for g in my_eps:
+                        rel_ep = int(window_rel_start + g)
+                        absolute_ep = int(absolute_episode_start + rel_ep)
+                        results[g] = collect_fusion_episode(
+                            seq_env=worker.seq_env,
+                            policy=worker.policy_replica,
+                            device=worker.device,
+                            train_cfg=train_cfg,
+                            rel_ep=rel_ep,
+                            absolute_ep=absolute_ep,
+                            base_seed=int(base_seed),
+                            baseline_action_vec=baseline_action_vec,
+                            force_baseline_episodes=int(force_baseline_episodes),
+                            forbidden_mask=forbidden_mask,
+                            max_rejection_retries=int(max_rejection_retries),
+                            log_fn=self.log,
+                            device_lock=worker.device_lock,
+                        )
             except BaseException as exc:  # surface worker crashes to the main thread
                 errors.append(exc)
 
@@ -995,4 +1159,6 @@ def build_stage2_parallel_runner(
             f"{len(assignment)} workers, per-device counts {per_dev} "
             f"(per-device RNG atomic-unit locks active)"
         )
-    return Stage2ParallelRunner(workers=workers, log_fn=log)
+    return Stage2ParallelRunner(
+        workers=workers, log_fn=log, seq_env_cfg=seq_env_cfg, fusion_map=fusion_map,
+    )

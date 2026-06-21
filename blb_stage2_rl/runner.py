@@ -732,6 +732,17 @@ class BLBStage2TrainConfig:
     # only after the server runs tests/test_blb_kvcache_rollout.py (the
     # equivalence gate) + a before/after reward-curve quality check.
     kv_cache_rollout_enabled: bool = False
+    # Batched lockstep rollout (2026-06-21; episode-parallel fusion path only):
+    # advance a worker's episodes in LOCKSTEP with ONE GTrXL forward per step
+    # across them (the launch-bound rollout cost amortized ~B×). NOT byte-
+    # identical (batched GEMM differs ~1e-6 from per-episode) — gated by the
+    # batch-invariance self-test, not the old 1==N byte-diff. Default OFF: enable
+    # after the server self-test + a before/after speed A/B. Supersedes the
+    # (retired) KV-cache rollout, which was the wrong lever for the launch-bound
+    # H<=59 forward (server-measured 0.60x = slower).
+    batched_rollout_enabled: bool = False
+    # cuda-synced per-step rollout profiling (diagnostic only; adds syncs).
+    rollout_profile: bool = False
     # Scheduled forced-fusion probes (ADR-011 2026-06-11): every N post-anchor
     # episodes one episode forces fusion option 1 on one rotating block type
     # (block2 -> block5 -> block4) at baseline K, keeping fresh on-policy
@@ -1266,6 +1277,7 @@ class BLBStage2RLRunner:
             idx for idx, record in enumerate(baseline_records)
             if idx < len(action_dim_by_index)
             and bool(record.get("effective", True))
+            and str(record.get("block", "")) != "first_input"
             and int(action_dim_by_index[idx]) > 1
         ]
         if action_mask is not None:
@@ -1700,7 +1712,6 @@ class BLBStage2RLRunner:
                 slot_logits: List[torch.Tensor] = []
                 for layer_split in policy._split_layer_logits(pf.layer_logits_flat):
                     slot_logits.extend(layer_split)
-                slot_logits.append(pf.first_input_logits)
                 for slot_idx in chosen:
                     dim = int(action_dim_by_index[int(slot_idx)])
                     allowed = _allowed_neighbor_indices(
@@ -2878,6 +2889,16 @@ class BLBStage2RLRunner:
         v = getattr(ev, "blb_v3_kv_cache_rollout", None)
         if v not in (None, ""):
             cfg.kv_cache_rollout_enabled = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
+            )
+        v = getattr(ev, "blb_v3_batched_rollout", None)
+        if v not in (None, ""):
+            cfg.batched_rollout_enabled = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
+            )
+        v = getattr(ev, "blb_v3_rollout_profile", None)
+        if v not in (None, ""):
+            cfg.rollout_profile = str(v).strip().lower() in (
                 "1", "true", "yes", "on",
             )
         v = getattr(ev, "blb_v3_fusion_probe_interval", None)
