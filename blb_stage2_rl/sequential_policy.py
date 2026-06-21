@@ -453,8 +453,17 @@ class BLBStage2SequentialPolicy(nn.Module):
         cursor += H
         cursor += 5 + 1
         seq_len = H
-        if bool(truncate_to_current) and B == 1:
-            seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1
+        if bool(truncate_to_current):
+            # Causal-prefix fast path. Truncate to the batch-max current step:
+            # every row's current-step logits depend only on tokens
+            # 0..current_step (the causal mask zeroes any later token), so
+            # including up to max(current_step) over the batch is exact for ALL
+            # rows. In the lockstep batched rollout (2026-06-21) all B rows share
+            # the same current_step, so this processes ~t+1 tokens/step instead of
+            # the full H — the per-step token work the old ``B == 1`` guard kept
+            # batched rollout from amortizing. For B == 1 this is identical to the
+            # previous single-element behavior.
+            seq_len = int(current_step.detach().clamp(0, H - 1).max().item()) + 1
         prev_actions = torch.zeros(B, seq_len, S, dtype=torch.long, device=device)
         prev_signals = torch.zeros(B, seq_len, 3, dtype=state.dtype, device=device)
         need_actions = H * S

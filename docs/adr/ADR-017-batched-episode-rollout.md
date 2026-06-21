@@ -87,3 +87,36 @@ for more amortization.
   in `collect_fusion_episode` is removed; the flag stays default-OFF as inert).
 - PPO update / replay path unchanged (each episode is still one trajectory). Item-7 / reward
   shaping unaffected (this is a throughput change). Checkpoints unaffected.
+
+## Amendment 2026-06-21 (round-1 A/B was confounded; two real bugs fixed)
+
+The first server A/B (artifacts `stage2_batched_rollout_validate_20260621_185832`, commit
+`d9e4777`) reported **quality MATCHED but speedup 0.97× (NOT EFFECTIVE)**. That verdict was **not
+trustworthy** — the experiment was confounded, and the batched path had a real perf bug:
+
+1. **Asymmetric measurement.** The A/B ran OFF with `--blb-v3-rollout-profile 0` (the serial
+   forward timer is async / undercounts) and ON with `1` (an explicit `cuda.synchronize()` around
+   the batched forward). The two `policy_rollout_wall_seconds` numbers measured different things,
+   so 0.97× could not detect a real speedup either way. **Fix:** `collect_fusion_episode` now
+   takes a `profile` flag and applies the same `cuda.synchronize()`; the A/B runs **both** sides
+   `profile=1`.
+2. **Batched path disabled truncation.** `_parse_state` gated the causal-prefix truncation to
+   `B == 1`, so the batched driver ran with `truncate_to_current=False` — processing all `H=59`
+   tokens every step versus the serial path's ~`t+1`. That ~2.4× extra token work per step
+   partially cancels the `B×` launch amortization. In lockstep all `B` rows share `current_step`,
+   so truncation is exact (the causal mask zeroes tokens `> current_step`). **Fix:** `_parse_state`
+   truncates to the batch-max `current_step` for any `B`; the batched driver uses
+   `truncate_to_current=True`. Locked by `test_truncate_batched_equals_full_lockstep`
+   (truncated == full forward within 1e-4 for `B>1`).
+
+**Process fix (the meta-cause, shared with KV-cache):** neither KV-cache nor the first batched
+A/B first *proved, in isolation under symmetric sync*, that the per-step forward is the dominant
+rollout cost and that batching reduces it. ADR-017 (and the KV-cache plan) required that
+profiling and it was skipped both times → wasted server rounds. Added
+`scripts/blb_rollout_profile.py`: a torch-only micro-benchmark (no model / Rescale_optimizer /
+GLUE) that builds the real production policy and measures per-episode forward wall **serial vs
+batched(B) vs batched-no-truncate** under symmetric `cuda.synchronize()`, sweeping `B` and
+printing the speedup **at the real operating point** `B ≈ rollout_size(32) / (NGPU ×
+workers_per_device) ≈ 4`. SERVER_COMMAND now runs the profiler as the **decisive** step before the
+A/B; if the forward is `~1.0×` at the real `B`, batching is the wrong lever (like KV-cache) and is
+abandoned without spending a 60k.

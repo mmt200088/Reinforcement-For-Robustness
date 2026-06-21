@@ -715,13 +715,17 @@ def collect_fusion_episode(
         max_rejection_retries: int = 32,
         log_fn: Optional[Callable[[str], None]] = None,
         device_lock: Optional[threading.Lock] = None,
+        profile: bool = False,
         ) -> FusionEpisodeOutcome:
     """Collect ONE fusion-mode episode (serial: the generator with its per-step
     forward run INLINE, B=1). Backward-compatible signature/behavior — the only
     change vs the pre-2026-06-21 path is the batch-invariant seeded sampler.
     ``device_lock`` is retained for call-site compatibility but unused: the seeded
     sampler is lock-free and the terminal probe serializes on
-    ``env.probe_device_lock``.
+    ``env.probe_device_lock``. ``profile`` adds cuda-synced forward timing so the
+    serial ``policy_rollout_wall_seconds`` is measured the SAME way the batched
+    driver measures its forward (symmetric OFF-vs-ON A/B; without it OFF would be
+    timed async and ON synced).
     """
     del device_lock  # seeded sampling needs no global-RNG lock (see generator)
     gen = _fusion_episode_generator(
@@ -732,15 +736,20 @@ def collect_fusion_episode(
         forbidden_mask=forbidden_mask, max_rejection_retries=max_rejection_retries,
         log_fn=log_fn,
     )
+    sync = bool(profile) and device.type == "cuda"
     try:
         req = next(gen)
         while True:
             obs_t, slot_mask_t, levels_t, alm_t, prior = req
+            if sync:
+                torch.cuda.synchronize()
             logits, safe_logits, value = policy.forward_and_mask(
                 obs_t, slot_mask_t, levels_t,
                 action_level_mask=alm_t, baseline_prior_scale=prior,
                 truncate_to_current=True,
             )
+            if sync:
+                torch.cuda.synchronize()
             req = gen.send((logits, safe_logits, value))
     except StopIteration as stop:
         return stop.value
@@ -808,7 +817,11 @@ def collect_fusion_episodes_batched(
         logits_B, safe_B, value_B = policy.forward_and_mask(
             obs_B, sm_B, lv_B,
             action_level_mask=alm_B, baseline_prior_scale=prior_B,
-            truncate_to_current=False,
+            # Lockstep => all B rows share current_step => the causal-prefix
+            # truncation is exact AND processes only ~t+1 tokens/step (matching
+            # the serial path), which is what actually lets the batched forward
+            # amortize the launch/dispatch cost instead of paying full-H work.
+            truncate_to_current=True,
         )
         if profile and device.type == "cuda":
             torch.cuda.synchronize()
@@ -990,6 +1003,7 @@ class Stage2ParallelRunner:
                             max_rejection_retries=int(max_rejection_retries),
                             log_fn=self.log,
                             device_lock=worker.device_lock,
+                            profile=profile,
                         )
             except BaseException as exc:  # surface worker crashes to the main thread
                 errors.append(exc)

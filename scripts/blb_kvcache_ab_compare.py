@@ -74,8 +74,16 @@ def main() -> int:
     roll_speedup = (off_roll["median"] / on_roll["median"]) if on_roll["median"] else float("nan")
     print(f"     rollout speedup (OFF/ON median) = {roll_speedup:.2f}x")
 
-    # --- end-to-end per-episode wall (if logged) ---
-    for k in ("episode_wall_seconds", "terminal_probe_install_wall_seconds"):
+    # --- full per-episode wall breakdown (if logged): forward (above) is only
+    # one part; print the optimizer/replan + probe parts too so the rollout
+    # speedup can be read in episode-level context (a big forward speedup that is
+    # a small share of the episode → small end-to-end gain). ---
+    for k in (
+            "per_step_optimizer_wall_seconds",   # replan (env step)
+            "terminal_probe_wall_seconds",       # K-trial reward probe (usually dominant)
+            "terminal_probe_install_wall_seconds",
+            "episode_wall_seconds",
+    ):
         o, n = _stat(_col(off, k)), _stat(_col(on, k))
         if o["n"] and n["n"]:
             sp = (o["median"] / n["median"]) if n["median"] else float("nan")

@@ -188,6 +188,43 @@ class BatchedRolloutSamplerTest(unittest.TestCase):
             self.assertTrue(torch.allclose(val_B[e:e + 1], val_1, atol=1e-4),
                             f"row {e} value drift > 1e-4 batched vs per-row")
 
+    def test_truncate_batched_equals_full_lockstep(self):
+        # 2026-06-21 fix: the causal-prefix truncation used to be gated to B==1,
+        # so the batched rollout paid full-H token work every step. In lockstep
+        # all rows share current_step, so truncate_to_current=True must give the
+        # SAME current-step logits/value as truncate_to_current=False for B>1.
+        torch = self.torch
+        import numpy as np
+        B = 4
+        S = self.S
+        H = int(self.cfg.horizon)
+        sd = int(self.cfg.state_dim)
+        rng = np.random.default_rng(11)
+        for t in (0, 1, H // 2, H - 1):  # several lockstep current-steps
+            states = []
+            for _ in range(B):
+                a = (rng.random(sd).astype(np.float32)) * 0.1
+                a[4:4 + H] = 0.0
+                a[4 + t] = 1.0  # current_step = t for ALL rows (lockstep)
+                states.append(torch.from_numpy(a))
+            obs_B = torch.stack(states, dim=0)
+            slot_mask = torch.ones(B, S, dtype=torch.bool)
+            levels = torch.full((B, S), int(self.cfg.max_num_levels), dtype=torch.long)
+            lg_full, _, val_full = self.policy.forward_and_mask(
+                obs_B, slot_mask, levels, truncate_to_current=False,
+            )
+            lg_tr, _, val_tr = self.policy.forward_and_mask(
+                obs_B, slot_mask, levels, truncate_to_current=True,
+            )
+            self.assertTrue(
+                torch.allclose(lg_full, lg_tr, atol=1e-4),
+                f"truncate logits drift > 1e-4 at lockstep step t={t}",
+            )
+            self.assertTrue(
+                torch.allclose(val_full, val_tr, atol=1e-4),
+                f"truncate value drift > 1e-4 at lockstep step t={t}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

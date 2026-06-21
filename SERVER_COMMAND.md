@@ -3,19 +3,28 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (批量 episode rollout 提速验证：批不变自检（硬门）+ OFF-vs-ON 端到端 A/B（质量一致 + 实测加速）)
+## ▶ active command  (批量 rollout 提速：修复后再验证 — 隔离 profiler（关键证据）+ 批不变自检（硬门）+ 对称 OFF-vs-ON A/B)
 
-> **背景**：KV-cache rollout 已判 NOT EFFECTIVE（0.60x，更慢）——它是错的杠杆（H≤59 的 forward 是 launch-bound
-> 而非 FLOP-bound，且每步两次 forward）。**真正的加速 = 批量 episode rollout**（ADR-017）：把同一 worker 的多条
-> episode 同步推进、每步**合批做一次 GTrXL forward**，把 launch+host 开销摊薄到 B 条上。采样改为**批不变的 seeded
-> 逆 CDF**（numpy(seed) 噪声，分布不变、PPO 自洽、无需 device-lock），KV-cache 退役。
+> **上轮（06-21, d9e4777, artifacts stage2_batched_rollout_validate_20260621_185832）的 NOT EFFECTIVE 结论被推翻**：
+> A/B 报「质量 MATCHED + speedup 0.97x」，但该判定**测量被污染、不可信**——OFF 用 `--blb-v3-rollout-profile 0`
+> （forward 异步计时、低估）对比 ON 用 `1`（每步 `cuda.synchronize` 同步计时），**两边量的根本不是同一个东西**；
+> 且批量路径当时用 `truncate_to_current=False`（每步过完整 H=59 个 token），而串行用 `True`（仅 ~t+1 个）——
+> 批量白做 ~2.4× 的 token 工作，把 B× 的 launch 摊薄吃掉了。lockstep 下所有行共享 current_step，截断本就合法，
+> 却被 `_parse_state` 的 `B==1` 门禁误关。**不是 codex 误报**（它忠实跑了被我写歪的实验），是我实现 + 实验设计的 bug。
 >
-> **诚实交代**：批量 GEMM 与逐条差 ~1e-6 → 与 KV-cache 一样**放弃逐位 1==N**（用户已两次确认为提速放弃）。门变为：
-> (A0) 批不变自检（B=1 vs B=W 同 logits 同种子 → 动作/logprob 逐位一致；分布正确；masked 档不被采）——**硬门**；
-> (A1) OFF-vs-ON 端到端短跑：质量分布一致（浮点等价）+ per-episode 墙钟**实测更快**（EFFECTIVE 判定）。
-> 默认 OFF，本验证通过后才在 60k 用 `--blb-v3-batched-rollout 1`。
+> **本轮修复（commit 见 HEAD.txt）**：① 批量 forward 启用 lockstep 截断（`_parse_state` 放开 B>1，用 batch-max
+> current_step；新增 `test_truncate_batched_equals_full_lockstep` 锁定 == 全量 forward）；② 测量对称化（串行加
+> profile-gated sync，A/B 两边都 profile=1）；③ 新增隔离 profiler `scripts/blb_rollout_profile.py`——**不需要模型/
+> RO/GLUE**，用真实生产 policy（d_model=256/4层/H=59）在对称同步下直接量「每 episode forward 墙钟：串行 vs 批量(B)」，
+> 在真实工作点 B≈4（window 32 / NGPU×2 worker）给出加速天花板 + 截断收益 + forward 占 policy 步的比例。
 >
-> **加大精度（precision boost）已于 06-21 在服务器落盘完成**（commit d104ad9，4 张 map 全 boost、复验通过）——本 active 与它无关。
+> **判定流程**：[A0] 批不变自检（硬门）→ [P] profiler（**关键隔离证据**：forward 在真实 B 到底能否被批量摊薄；
+> 这是前两次（KV-cache + 首版批量）都跳过、导致白跑 60k/A-B 的那一步）→ [A1] 对称 OFF-vs-ON 端到端 A/B（质量浮点
+> 等价 + per-episode forward/optimizer/probe 全分解墙钟）。三者一致 EFFECTIVE+MATCHED 才在 60k 用
+> `--blb-v3-batched-rollout 1`；profiler 在真实 B 若 ~1.0x 则与 KV-cache 同理诚实放弃、保留多卡/wpd 路。
+>
+> **诚实交代**：批量 GEMM 与逐条差 ~1e-6 → 与 KV-cache 一样**放弃逐位 1==N**（用户已多次确认为提速放弃）。
+> **加大精度（precision boost）已于 06-21 落盘完成**（commit d104ad9，4 张 map 全 boost）——本 active 与它无关。
 
 ```bash
 set -uo pipefail
@@ -36,15 +45,23 @@ CANON_STAGE2="Parting Chapter/stage2"
 echo "#################### [A0] batch-invariance self-test (HARD GATE) ####################"
 python3 -m unittest tests.test_blb_batched_rollout -v 2>&1 | tee "$OUT/batched_selftest.txt"
 grep -qE "^OK" "$OUT/batched_selftest.txt" || { echo "[FATAL] batched rollout self-test failed"; exit 1; }
-# torch missing => all 5 skip => gate void
-if grep -qE "skipped=[0-9]+" "$OUT/batched_selftest.txt" && ! grep -qE "Ran ([1-9][0-9]*) test" "$OUT/batched_selftest.txt"; then
-  echo "[FATAL] self-test ran 0 / all skipped (torch missing) - gate void"; exit 1; fi
-if grep -qE "OK \(skipped=5\)|skipped=5\)" "$OUT/batched_selftest.txt"; then
-  echo "[FATAL] all 5 batched tests skipped (torch missing) - gate void"; exit 1; fi
+# torch must be present: require >=1 test that actually RAN (prints "... ok").
+# All-skipped (torch missing) prints only "... skipped" -> gate void. Count-agnostic
+# (the file now has 6 tests incl. the new truncate==full lockstep lock).
+grep -qE "\.\.\. ok$" "$OUT/batched_selftest.txt" || { echo "[FATAL] no batched test actually ran (torch missing => all skipped) - gate void"; exit 1; }
 echo "[A0] PASS"
 
-echo "#################### [A1] OFF vs ON end-to-end A/B (quality + speed) ####################"
+echo "#################### [P] isolated rollout-forward profiler (DECISIVE evidence) ####################"
+# The step KV-cache + the first batched A/B both skipped: does batching the
+# per-step GTrXL forward actually reduce per-episode forward wall at the REAL B,
+# under SYMMETRIC sync? No model / RO / GLUE needed.
+python3 scripts/blb_rollout_profile.py --rollout-size 32 2>&1 | tee "$OUT/rollout_profile.txt"
+echo "[P] read VERDICT in rollout_profile.txt: forward speedup AT THE REAL B (~4)."
+
+echo "#################### [A1] symmetric OFF vs ON end-to-end A/B (quality + speed) ####################"
 run_ab () {   # $1 = tag (off/on), $2 = batched flag (0/1), $3 = profile flag (0/1)
+              # NOTE: both off and on run profile=1 so policy_rollout_wall_seconds is
+              # measured the SAME (cuda-synced) way on both sides (fixes the 06-21 confound).
   local tag="$1"; local batched="$2"; local profile="$3"
   echo "==================== [A/B] $tag : --blb-v3-batched-rollout $batched ===================="
   CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
@@ -72,16 +89,23 @@ run_ab () {   # $1 = tag (off/on), $2 = batched flag (0/1), $3 = profile flag (0
   echo "[A/B] $tag episodes.jsonl -> $OUT/${tag}_episodes.jsonl ($(wc -l < "$OUT/${tag}_episodes.jsonl") lines)"
 }
 
-run_ab off 0 0
-run_ab on  1 1
+run_ab off 0 1   # batched OFF, profile ON (symmetric measurement)
+run_ab on  1 1   # batched ON,  profile ON
 echo "==================== [A/B] compare ===================="
 python3 scripts/blb_kvcache_ab_compare.py \
   --off "$OUT/off_episodes.jsonl" --on "$OUT/on_episodes.jsonl" 2>&1 | tee "$OUT/ab_verdict.txt"
 
 echo "#################### [DONE] ####################"
-echo "evidence dir: $OUT (batched_selftest / off|on_episodes.jsonl / ab_verdict.txt)"
-echo "Read ab_verdict.txt: quality must be MATCHED (float-equivalent); speedup gives the per-episode rollout wall improvement."
-echo "If EFFECTIVE + MATCHED -> flip --blb-v3-batched-rollout 1 in the reward 60k (on-deck) and run it."
+echo "evidence dir: $OUT (batched_selftest / rollout_profile.txt / off|on_episodes.jsonl / ab_verdict.txt)"
+echo "DECIDE in this order:"
+echo " 1) rollout_profile.txt  : forward speedup at the REAL B (~4). This is the ceiling."
+echo " 2) ab_verdict.txt       : quality must be MATCHED (float-equivalent); policy_rollout_wall_seconds"
+echo "    speedup is now apples-to-apples (both profile=1). The full breakdown (optimizer/probe) shows"
+echo "    how much a forward speedup matters at the EPISODE level."
+echo "If profiler shows real per-episode forward speedup at B~4 AND A1 is EFFECTIVE+MATCHED ->"
+echo "  flip --blb-v3-batched-rollout 1 in the reward 60k (on-deck) and run it."
+echo "If profiler is ~1.0x at B~4 -> batching the forward is the wrong lever (like KV-cache);"
+echo "  keep it default-OFF, report NOT EFFECTIVE, do NOT spend the 60k on it."
 echo "Please git add/commit/push $OUT back."
 ```
 
