@@ -107,8 +107,9 @@ class BatchedRolloutSamplerTest(unittest.TestCase):
         a_a, _ = self.policy.sample_from_logits(logits, safe, slot_mask, [42])
         a_b, _ = self.policy.sample_from_logits(logits, safe, slot_mask, [42])
         self.assertTrue(self.torch.equal(a_a, a_b), "same seed must reproduce the action")
+        # actions is [1, S]; take row 0 -> a flat (a0, a1, ...) hashable tuple.
         seen = {
-            tuple(self.policy.sample_from_logits(logits, safe, slot_mask, [s])[0].tolist())
+            tuple(self.policy.sample_from_logits(logits, safe, slot_mask, [s])[0][0].tolist())
             for s in range(200)
         }
         self.assertGreater(len(seen), 1, "different seeds should explore >1 action")
