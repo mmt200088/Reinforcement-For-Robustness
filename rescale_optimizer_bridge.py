@@ -1567,7 +1567,19 @@ def apply_optimizer_output_to_cfg(
                         ))
             continue
 
-        if cpt is None:
+        # A baseline rescale position is "fused away" when the optimizer's
+        # cut_point for it carries no real post-rescale scale. The optimizer
+        # signals this two ways and BOTH must null the cfg rescale field (no
+        # rescale happens there => no rescale noise may be installed):
+        #   * the node is absent from cut_point_sf (cpt is None); or
+        #   * the node is kept as a PASSTHROUGH — present with `sf` (the
+        #     accumulated scale flowing through) but no `sf_post` key (no drop).
+        #     A fused rescale takes this passthrough form, e.g. block4 fc=1 keeps
+        #     ctct_rot_softmax_mul_v with sf=66 and no sf_post while its 27-prime
+        #     fuses into the next stage; only the surviving stages carry sf_post.
+        # Read straight from cut_point_sf, so the fused location is detected
+        # automatically for ANY modulus chain — never hard-coded.
+        if cpt is None or cpt.get("sf_post") is None:
             # Baseline rescale position fused away — disable cfg rescale field.
             if tuple_index is None:
                 old_val = getattr(cfg, cfg_field, None)
