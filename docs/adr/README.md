@@ -60,4 +60,5 @@ Proposed → Accepted → (Superseded by ADR-XXX | Deprecated)
 | 014 | 结构性反失控 fusion 成本（饱和）+ 崩溃调试落盘（被 4th-60k 热崩溃触发） | Accepted（饱和被 015 退役；调试落盘保留） | 2026-06-14 |
 | 015 | 连续有界 reward（移植 Stage-1）+ std 倍率稳定性门（baseline_std×tol，移植原始 Stage-2，跑宽松 5×）+ Stage-1 cosine 探索 + 严格可行性选择 | Accepted（reward 塑形被 016 精修） | 2026-06-14（稳定性门 06-15 更正为倍率） |
 | 016 | headroom 耦合 cost（消刀刃+稳定内点最优）+ 线性违反恢复梯度（止冻死）—— 修 ADR-015 第5次60k 的 fusion 失控热崩溃；离线地形回放标定 | Accepted | 2026-06-16 |
-| 017 | 批量 episode rollout（每步合批 forward 摊薄 launch；批不变 seeded 采样；取代 KV-cache rollout 这个错杠杆）—— 浮点等价非逐位，待服务器批不变自检+加速 A/B | Accepted（待服务器验证） | 2026-06-21 |
+| 017 | 批量 episode rollout（每步合批 forward 摊薄 launch；批不变 seeded 采样；取代 KV-cache rollout 这个错杠杆）—— 浮点等价非逐位，待服务器批不变自检+加速 A/B | **Rejected / Reverted by ADR-018** | 2026-06-21 |
+| 018 | 撤销 rollout 提速实验（KV-cache + 批量）—— 两者服务器实测端到端均无效（KV-cache 0.60× 更慢；批量 1.00×，因 K=5 终端 probe 才是关键路径且 rollout 已与同卡 sibling probe 重叠），且都放弃了逐位 1==N；恢复原始确定性串行 rollout | Accepted | 2026-06-22 |

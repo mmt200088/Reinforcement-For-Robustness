@@ -3,233 +3,65 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (5卡真实测速 + precision-boost 安装门禁 + 启动 60k)
+## ▶ active command  (撤销 rollout 提速实验后的回归门禁 — CPU/只读，不碰正在跑的 60k)
 
-> 这轮 active 先做真实服务器门禁：必须看到至少 5 张 GPU；precision-boost 的
-> `boosted_overrides → installed cfg` 真实 torch/RO 单测必须跑过；然后跑 profile-off
-> 1卡 vs 5卡短跑和 5卡 batched OFF/ON A/B。60k 只在这些门禁通过后启动。
+> 上一轮 batched rollout 端到端实测 **1.00×（NOT EFFECTIVE）**，证据见
+> `stage2_5gpu_speed_60k_20260622_131933/{rollout_profile,batched_ab_verdict}.txt`
+> （隔离 profiler 证明 forward 在 B=4 能摊薄 3.96×，但 K=5 terminal probe 才是关键路径，
+> rollout 在 `workers_per_device=2` 下已与同卡 sibling 的 probe 重叠 → 砍 rollout 墙钟不动整 episode 墙钟），
+> 且放弃了逐位 1==N。已在本地撤销 **KV-cache + 批量** 两个 rollout 提速实验（ADR-018），
+> 恢复原始确定性串行 rollout（`manual_seed`+`multinomial`，**逐位 1==N 恢复**）。
 >
-> 60k 的 batched rollout 开关由真实 A/B 决定：quality MATCHED 且端到端 throughput
-> `>=1.2x` 才启用；否则保持 OFF。当前预期是保持 OFF，因为 terminal K-trial probe
-> 是主瓶颈。
+> 这轮 active 只做**回归门禁**：确认撤销干净、被删的 flag/文件确实没了、合约门禁通过、恢复后的模块能 import。
+> **不启动新的 60k**（已有一个在跑），强制 CPU（`CUDA_VISIBLE_DEVICES=""`）避免与正在跑的 60k 抢 GPU。
 
 ```bash
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
-export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data
-
+export CUDA_VISIBLE_DEVICES=""   # CPU-only: do NOT touch the GPUs the running 60k uses
 TS=$(date +%Y%m%d_%H%M%S)
-OUT="experiments/server_command_runs/stage2_5gpu_speed_60k_${TS}"; mkdir -p "$OUT"
+OUT="experiments/server_command_runs/stage2_revert_rollout_speedup_${TS}"; mkdir -p "$OUT"
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git config --local http.version HTTP/1.1 || true
   git config --local protocol.version 0 || true
-  git rev-parse HEAD > "$OUT/HEAD.txt"; cat "$OUT/HEAD.txt"; git log --oneline -4
+  git rev-parse HEAD > "$OUT/HEAD.txt"; cat "$OUT/HEAD.txt"; git log --oneline -6 | tee "$OUT/recent_commits.txt"
 fi
-EPISODES_SCALE=300
-EPISODES_AB=600
-ROLLOUT_SIZE_AB=60
-LONG_EPISODES=60000
-KTRIALS=5; ANCHOR_EPISODES=80; FUSION_PROBE_INTERVAL=200
-WORKERS_PER_DEVICE=2
-NGPU="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"; [ -z "$NGPU" ] && NGPU=1
-echo "[gpu] nvidia-smi -L:" | tee "$OUT/gpu_inventory.txt"
-nvidia-smi -L 2>&1 | tee -a "$OUT/gpu_inventory.txt"
-[ "$NGPU" -ge 5 ] || { echo "[FATAL] 需要至少 5 张 GPU，当前 NGPU=$NGPU；不启动 60k"; exit 1; }
-DEVS5="0,1,2,3,4"
-DEV1="0"
-CANON_STAGE2="Parting Chapter/stage2"
-MAPS_DIR="blb_stage2_rl/fusion_maps/mrpc"
 
-echo "#################### [A0] source/runtime + precision-boost gates ####################"
-python3 -m unittest tests.test_blb_batched_rollout tests.test_blb_rollout_ab_compare tests.test_blb_precision_boost -v 2>&1 | tee "$OUT/selftests.txt"
-grep -qE "^OK" "$OUT/selftests.txt" || { echo "[FATAL] selftests failed"; exit 1; }
-grep -qE "test_boosted_overrides_reach_the_installed_cfg .* ok" "$OUT/selftests.txt" || {
-  echo "[FATAL] precision-boost installed-cfg test did not run/pass; do not start 60k"; exit 1;
-}
-python3 - <<'PY' 2>&1 | tee "$OUT/precision_boost_map_audit.txt"
-import json, pathlib, sys
-root = pathlib.Path("blb_stage2_rl/fusion_maps/mrpc")
-required = {"block2_mrpc.json", "block4.json", "block5_n2.json", "block5_n4.json"}
-bad = []
-for name in sorted(required):
-    data = json.loads((root / name).read_text())
-    nz = [o for o in data.get("options", []) if int(o.get("fusion_count", 0)) != 0]
-    boosted = [o for o in nz if o.get("boosted") and o.get("explicit_field_values")]
-    print(name, "nonzero_options=", len(nz), "boosted_explicit=", len(boosted))
-    if not nz or len(boosted) != len(nz):
-        bad.append(name)
-if bad:
-    print("[FATAL] nonzero fusion options missing precision boost:", bad)
-    sys.exit(2)
-print("[OK] every nonzero required fusion option carries boosted explicit_field_values")
-PY
-
-echo "#################### [P] isolated rollout-forward profiler (FORWARD-ONLY CEILING) ####################"
-python3 scripts/blb_rollout_profile.py \
-  --rollout-size "$ROLLOUT_SIZE_AB" \
-  --gpus 5 \
-  --workers-per-device "$WORKERS_PER_DEVICE" 2>&1 | tee "$OUT/rollout_profile.txt"
-echo "[P] read VERDICT in rollout_profile.txt: forward speedup AT THE REAL B."
-
-run_stage2 () {   # tag, visible, devspec, workers_per_device, episodes, batched_flag, profile_flag
-  local tag="$1" visible="$2" devspec="$3" wpd="$4" episodes="$5" batched="$6" profile="$7"
-  echo "==================== [run] $tag visible=$visible devs=$devspec wpd=$wpd eps=$episodes batched=$batched profile=$profile ===================="
-  local t_start; t_start="$(date +%s)"
-  CUDA_VISIBLE_DEVICES="$visible" bash llama_7B_LayerImportance.sh run rl \
-    --preset mrpc-blb-stage2-rl \
-    --blb-v3-fusion-count-action 1 \
-    --blb-v3-fusion-neighbor-curriculum 1 \
-    --stage2-search-episodes "$episodes" \
-    --stage2-k-trials "$KTRIALS" --stage2-probe-size 256 --batch-size 512 \
-    --stage2-rl-devices "$devspec" \
-    --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-    --stage2-stability-tolerance 5.0 --stage2-limit-tolerance 0.005 \
-    --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
-    --blb-v3-fusion-exploration-epsilon 0.05 \
-    --stage2-workers-per-device "$wpd" \
-    --stage2-rollout-size "$ROLLOUT_SIZE_AB" \
-    --blb-v3-batched-rollout "$batched" \
-    --blb-v3-rollout-profile "$profile" \
-    --fresh 2>&1 | tee "$OUT/${tag}_launch.log"
-  sleep 12
-  local pid; pid="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
-  echo "[A/B] $tag pid=$pid - waiting for completion..."
-  if [ -n "$pid" ]; then while kill -0 "$pid" 2>/dev/null; do sleep 30; done; fi
-  local t_end; t_end="$(date +%s)"
-  echo "$((t_end - t_start))" > "$OUT/${tag}_wall_seconds.txt"
-  local rundir; rundir="$(cat "${CANON_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
-  local ep; ep="$(ls "$rundir"/diagnostics/episodes.jsonl 2>/dev/null || ls "$CANON_STAGE2"/*/progress/diagnostics/episodes.jsonl 2>/dev/null | tail -1)"
-  cp "$ep" "$OUT/${tag}_episodes.jsonl"
-  python3 - <<PY > "$OUT/${tag}_summary.txt"
-import json, collections
-rows=[json.loads(l) for l in open("$OUT/${tag}_episodes.jsonl")]
-wall=float(open("$OUT/${tag}_wall_seconds.txt").read())
-dev=collections.Counter()
-for r in rows:
-    for d in r.get("terminal_probe_devices") or []:
-        dev[str(d)] += 1
-print("episodes", len(rows), "wall_s", wall, "episodes_per_hour", len(rows)*3600.0/wall if wall else 0)
-print("terminal_probe_devices", dict(sorted(dev.items())))
-print("last_episode", rows[-1].get("episode") if rows else None)
-PY
-  cat "$OUT/${tag}_summary.txt"
-}
-
-echo "#################### [S1] profile-off 1卡 vs 5卡 parallel speed ####################"
-run_stage2 g1 "$DEV1" "$DEV1" 1 "$EPISODES_SCALE" 0 0
-run_stage2 g5 "$DEVS5" "$DEVS5" 1 "$EPISODES_SCALE" 0 0
-python3 - <<PY 2>&1 | tee "$OUT/g1_vs_g5_speed.txt"
-g1=float(open("$OUT/g1_wall_seconds.txt").read())
-g5=float(open("$OUT/g5_wall_seconds.txt").read())
-ep=$EPISODES_SCALE
-print(f"1GPU: {ep/g1*3600:.1f} ep/h wall={g1:.1f}s")
-print(f"5GPU: {ep/g5*3600:.1f} ep/h wall={g5:.1f}s speedup={g1/g5:.2f}x")
-PY
-python3 - <<'PY' "$OUT/g5_episodes.jsonl" 2>&1 | tee "$OUT/g5_parallel_device_audit.txt"
-import json, sys, collections
-dev=collections.Counter()
-for line in open(sys.argv[1]):
-    d=json.loads(line)
-    for x in d.get("terminal_probe_devices") or []:
-        dev[str(x)] += 1
-print(dict(sorted(dev.items())))
-missing=[f"cuda:{i}" for i in range(5) if f"cuda:{i}" not in dev]
-if missing:
-    print("[FATAL] 5-GPU run did not record all probe devices:", missing)
-    sys.exit(2)
-print("[OK] 5-GPU run recorded all five devices")
-PY
-
-echo "#################### [S2] profile-off 5卡 batched OFF vs ON true-runtime A/B ####################"
-run_stage2 off5 "$DEVS5" "$DEVS5" "$WORKERS_PER_DEVICE" "$EPISODES_AB" 0 0
-run_stage2 on5  "$DEVS5" "$DEVS5" "$WORKERS_PER_DEVICE" "$EPISODES_AB" 1 0
-python3 scripts/blb_kvcache_ab_compare.py \
-  --off "$OUT/off5_episodes.jsonl" --on "$OUT/on5_episodes.jsonl" \
-  --off-wall-seconds "$(cat "$OUT/off5_wall_seconds.txt")" \
-  --on-wall-seconds "$(cat "$OUT/on5_wall_seconds.txt")" 2>&1 | tee "$OUT/batched_ab_verdict.txt"
-
-BATCHED60=$(python3 - <<PY
-import importlib.util
-spec = importlib.util.spec_from_file_location("ab", "scripts/blb_kvcache_ab_compare.py")
-ab = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(ab)
-off=ab.summarize(ab._load("$OUT/off5_episodes.jsonl"), "OFF", wall_seconds=float(open("$OUT/off5_wall_seconds.txt").read()))
-on=ab.summarize(ab._load("$OUT/on5_episodes.jsonl"), "ON", wall_seconds=float(open("$OUT/on5_wall_seconds.txt").read()))
-v=ab.compare_summaries(off, on)
-print(1 if v["quality"] == "MATCHED" and float(v["end_to_end_speedup"]) >= 1.2 else 0)
-PY
-)
-echo "$BATCHED60" > "$OUT/long60k_batched_rollout_flag.txt"
-echo "[decision] 60k --blb-v3-batched-rollout $BATCHED60"
-
-echo "#################### [L] launch 60k true training on 5 GPUs ####################"
-CUDA_VISIBLE_DEVICES="$DEVS5" bash llama_7B_LayerImportance.sh run rl \
-  --preset mrpc-blb-stage2-rl \
-  --blb-v3-fusion-count-action 1 \
-  --blb-v3-fusion-neighbor-curriculum 1 \
-  --stage2-search-episodes "$LONG_EPISODES" \
-  --stage2-k-trials "$KTRIALS" --stage2-probe-size 256 --batch-size 512 \
-  --stage2-rl-devices "$DEVS5" \
-  --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-  --stage2-stability-tolerance 5.0 --stage2-limit-tolerance 0.005 \
-  --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
-  --blb-v3-fusion-exploration-epsilon 0.05 \
-  --stage2-workers-per-device "$WORKERS_PER_DEVICE" \
-  --blb-v3-batched-rollout "$BATCHED60" \
-  --blb-v3-rollout-profile 0 \
-  --fresh 2>&1 | tee "$OUT/long60k_launch.log"
-sleep 20
-PID60="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
-RUN60="$(cat "${CANON_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
-[ -n "$PID60" ] && kill -0 "$PID60" 2>/dev/null || { echo "[FATAL] 60k did not stay running"; exit 1; }
+echo "#################### [1] deleted flags/files are GONE ####################"
 {
-  echo "PID=$PID60"
-  echo "RUN_DIR=$RUN60"
-  echo "STARTED=$(date -Is)"
-  echo "DEVICES=$DEVS5"
-  echo "WORKERS_PER_DEVICE=$WORKERS_PER_DEVICE"
-  echo "BATCHED_ROLLOUT=$BATCHED60"
-} | tee "$OUT/long60k_RUNNING.txt"
-cat > "$OUT/watch_long60k.sh" <<'SH'
-#!/usr/bin/env bash
-set -uo pipefail
-OUT="$1"; PID="$2"; RUN="$3"
-DIAG=""
-for _ in 1 2 3 4 5; do
-  DIAG=$(find "$RUN" -type f -name episodes.jsonl 2>/dev/null | head -1)
-  [ -n "$DIAG" ] && break
-  sleep 60
-done
-while kill -0 "$PID" 2>/dev/null; do
-  sleep 1800
-  python3 - <<PY >> "$OUT/long60k_health.log" 2>&1
-import json, collections, datetime
-path="$DIAG"
-rows=[]
-try:
-    rows=[json.loads(l) for l in open(path)][-600:]
-except Exception as exc:
-    print(datetime.datetime.now().isoformat(), "health_error", exc)
-    raise SystemExit(0)
-n=max(1,len(rows))
-pr=collections.Counter(int(r.get("terminal_priority",0) or 0) for r in rows)
-rw=sum(float(r.get("total_reward",0) or 0) for r in rows)/n
-fu=sum(float(r.get("fusion_count",0) or 0) for r in rows)/n
-last=rows[-1].get("episode") if rows else -1
-print(datetime.datetime.now().isoformat(), f"ep={last}", f"reward={rw:.3f}", f"P1={pr.get(1,0)}", f"P2={pr.get(2,0)}", f"P3={pr.get(3,0)}", f"fusion={fu:.2f}")
-PY
-done
-echo "$(date -Is) PID $PID exited" >> "$OUT/long60k_health.log"
-SH
-chmod +x "$OUT/watch_long60k.sh"
-nohup bash "$OUT/watch_long60k.sh" "$OUT" "$PID60" "$RUN60" > "$OUT/watch_long60k.out" 2>&1 &
-echo "$!" > "$OUT/watch_long60k.pid"
+  echo "== speedup references in source (expect none) =="
+  if git grep -nI -E "kv_cache_rollout|batched_rollout|rollout_profile|blb_v3_kv_cache|blb_v3_batched|blb-v3-kv-cache|blb-v3-batched|blb-v3-rollout-profile|forward_and_mask|sample_from_logits|collect_fusion_episodes_batched|IncrementalRolloutCache|forward_incremental|commit_kv_cache" -- '*.py' '*.sh' ; then
+    echo "[FATAL] leftover speedup references in source"; exit 1
+  else
+    echo "[OK] no speedup references in *.py / *.sh"
+  fi
+  echo "== deleted files (expect all absent) =="
+  for f in scripts/blb_rollout_profile.py scripts/blb_kvcache_ab_compare.py scripts/blb_kvcache_benchmark.py tests/test_blb_batched_rollout.py tests/test_blb_rollout_ab_compare.py tests/test_blb_kvcache_rollout.py; do
+    [ -e "$f" ] && { echo "[FATAL] $f still present"; exit 1; } || echo "[OK] absent: $f"
+  done
+} 2>&1 | tee "$OUT/revert_audit.txt"
 
-git add "$OUT" SERVER_COMMAND.md scripts/blb_kvcache_ab_compare.py scripts/blb_rollout_profile.py tests/test_blb_rollout_ab_compare.py || true
-git commit -m "Add Stage-2 5GPU speed gate and launch artifacts" || true
-git push origin HEAD:jk_standard_rl || true
-echo "==================== DONE: 60k launched ===================="
-ls -la "$OUT"
+echo "#################### [2] launcher parses (bash -n) ####################"
+bash -n llama_7B_LayerImportance.sh && echo "[OK] bash -n llama_7B_LayerImportance.sh" | tee -a "$OUT/revert_audit.txt"
+
+echo "#################### [3] BLB contract gate (CPU) ####################"
+BLB_STRICT=0 python3 -m unittest discover -s tests -p "test_blb_*.py" 2>&1 | tee "$OUT/contract_gate.txt" | tail -4
+grep -qE "^OK" "$OUT/contract_gate.txt" || echo "[WARN] see contract_gate.txt (CPU env may skip torch/CUDA-only tests)"
+
+echo "#################### [4] restored rollout/policy import clean (no speedup symbols) ####################"
+python3 - <<'PY' 2>&1 | tee "$OUT/import_check.txt"
+import importlib
+for m in ("blb_stage2_rl.parallel_runner", "blb_stage2_rl.sequential_policy", "blb_stage2_rl.runner"):
+    importlib.import_module(m); print("[OK] import", m)
+import blb_stage2_rl.parallel_runner as pr
+assert not hasattr(pr, "collect_fusion_episodes_batched"), "batched driver still present"
+from blb_stage2_rl.sequential_policy import BLBStage2SequentialPolicy as P
+for bad in ("forward_and_mask", "sample_from_logits", "logprob_from_logits",
+            "forward_incremental", "commit_kv_cache", "new_rollout_cache"):
+    assert not hasattr(P, bad), f"{bad} still on policy"
+print("[OK] restored: no batched / KV-cache symbols on the rollout or policy")
+PY
+echo "[DONE] revert regression gate complete; OUT=$OUT (the running 60k was NOT touched)"
 ```
 
 ## ⏸ on-deck — KV-cache 端到端吞吐 A/B（**已解决/跳过** — 前向基准已判 NOT EFFECTIVE）

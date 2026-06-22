@@ -233,27 +233,26 @@ byte-diff validates both the device-count and worker-count invariances).
 Memory ≈2×4GB/GPU. Probe-batching K trials into one forward and bf16/compile
 were evaluated and REJECTED (they touch noise semantics / training numerics).
 
-**2026-06-19 KV-cache rollout** (`--blb-v3-kv-cache-rollout`, default OFF;
-episode-parallel fusion path only). The data-measured profile shows rollout is
-NOT 21% but ~42% of the per-episode wall (the 78/21 figure above predates the
-5th-60k profile): the GTrXL sampling loop rebuilt tokens `0..t` and ran the full
-forward every step (O(H²)). The KV-cache path (`SequentialGTrXLBlock.forward_incremental`
-+ `IncrementalRolloutCache` + `commit_kv_cache` in `sequential_policy.py`; threaded
-through `collect_fusion_episode`) makes it O(H). **This is the FIRST throughput
-change that is NOT byte-identical — the user explicitly dropped the 1==N
-requirement for it** (2026-06-19), because `nn.MultiheadAttention` exposes no K/V
-cache and recomputes in_proj on key/value, so caching forces a hand-written
-attention reimpl that matches the trained weights' math but only within float
-(~1e-6, far below the K=5 probe σ~1e-3). So the 1==N byte-diff gate does NOT
-apply to this path; correctness is enforced by `tests/test_blb_kvcache_rollout.py`
-(incremental==full forward within 1e-5: block, token-builder, end-to-end rollout)
-which a wrong reimpl FAILS on the server before any real run. Two cache-invalidation
-subtleties handled by the fixup pass (re-append token i from obs_{i+1} after
-commit): the `is_current` one-hot flip and the `prev_actions[t]` placeholder→committed
-transition, both finalizing at the step i→i+1 boundary. Default-off ⇒ zero change
-to current runs (incl. PPO replay / serial path / non-fusion). PENDING server
-validation (self-test + ~1-2k-episode A/B: reward/P3/fusion distribution match +
-rollout wall-time) before the default is flipped ON; bf16/compile stay rejected.
+**Rollout-speedup attempts — TRIED, MEASURED INEFFECTIVE, REMOVED 2026-06-22 (ADR-018).**
+Two attempts to speed up the episode-parallel fusion rollout were built, server-validated,
+and then **reverted** because they cost result-determinism for no end-to-end gain:
+(1) **KV-cache incremental forward** (`--blb-v3-kv-cache-rollout`, 06-19) — server-measured
+**0.60× (SLOWER)**: at H≤59/d_model=256 the GTrXL forward is launch-bound, not FLOP-bound, so
+O(H²)→O(H) buys nothing while the hand-written attention adds kernels; it also dropped bit-exact
+1==N. (2) **Batched lockstep rollout** (`--blb-v3-batched-rollout`, 06-21, ADR-017) — the isolated
+forward profiler confirmed the forward *does* batch (3.96× at B=4), but end-to-end throughput was
+**1.0000× (NOT EFFECTIVE)**: the K=5 terminal probe (~58% of the episode) is the critical path and
+the rollout already **overlaps** with the sibling worker's probe under `--stage2-workers-per-device 2`,
+so shrinking rollout wall-time doesn't shrink episode wall-time. It also dropped bit-exact 1==N
+(batched GEMM ~1e-6 + a sampler RNG swap that changed reward comparability on the default serial path).
+Both were removed: `parallel_runner.py`/`sequential_policy.py` restored to their pre-speedup state
+(original deterministic serial rollout, `torch.manual_seed`+`multinomial` sampler, **bit-exact 1==N
+restored**); the three flags (`--blb-v3-kv-cache-rollout`, `--blb-v3-batched-rollout`,
+`--blb-v3-rollout-profile`) and the KV-cache/batched scaffolding + their tests/scripts are deleted.
+The real per-episode bottleneck is the terminal probe, which is **already** K-split across GPUs;
+further Stage-2 throughput work should target the probe, not the rollout. bf16/compile stay rejected.
+See ADR-018. Evidence: `experiments/server_command_runs/stage2_5gpu_speed_60k_20260622_131933/`
+(`rollout_profile.txt`, `batched_ab_verdict.txt`).
 
 Current implementation facts:
 

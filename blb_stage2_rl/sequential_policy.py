@@ -185,80 +185,6 @@ class SequentialGTrXLBlock(nn.Module):
         ff_out = self.ff(self.ln2(x))
         return self.gate2(x, ff_out)
 
-    def forward_incremental(
-            self,
-            x_t: torch.Tensor,
-            k_cache: Optional[torch.Tensor] = None,
-            v_cache: Optional[torch.Tensor] = None,
-            ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """KV-cached incremental forward for ONE new (causal-latest) token.
-
-        2026-06-19 speedup (NOT byte-identical — user dropped 1==N): the rollout's
-        autoregressive sampling recomputes the full prefix 0..t at every step t via
-        ``forward`` (O(H^2) total). This computes ONLY the new token t against cached
-        K/V from tokens 0..t-1, turning the rollout's GTrXL cost into O(H). It
-        reimplements ``nn.MultiheadAttention``'s math (so it reuses the exact trained
-        weights: ``in_proj_weight``/``in_proj_bias`` split [W_q;W_k;W_v], the
-        1/sqrt(d_head) scale, head reshape, ``out_proj``) because nn.MHA recomputes
-        ``in_proj`` on key/value every call and exposes no K/V cache. Token t is the
-        causal-latest, so it attends to ALL cached tokens (no mask needed) — exactly
-        row t of ``forward``'s causal attention. Output matches ``forward`` row t
-        within float (verified by tests/test_blb_kvcache_rollout.py). Assumes eval
-        mode (no dropout) — the policy runs in eval mode during rollout/PPO replay.
-
-        ``x_t``: ``[B, 1, d_model]``. ``k_cache``/``v_cache``: ``[B, n_heads, t, d_head]``
-        or None. Returns ``(out_t [B,1,d_model], k_cache' , v_cache')`` (caches grown
-        to length t+1).
-        """
-        attn = self.attn
-        d_model = int(attn.embed_dim)
-        n_heads = int(attn.num_heads)
-        d_head = d_model // n_heads
-        B = int(x_t.shape[0])
-        norm_x_t = self.ln1(x_t)                                   # [B,1,d_model]
-        qkv = F.linear(norm_x_t, attn.in_proj_weight, attn.in_proj_bias)  # [B,1,3*d_model]
-        q_t, k_t, v_t = qkv.chunk(3, dim=-1)                       # each [B,1,d_model]
-
-        def _to_heads(z: torch.Tensor) -> torch.Tensor:
-            return z.view(B, 1, n_heads, d_head).transpose(1, 2)   # [B,n_heads,1,d_head]
-
-        q_t = _to_heads(q_t)
-        k_t = _to_heads(k_t)
-        v_t = _to_heads(v_t)
-        k_cache = k_t if k_cache is None else torch.cat([k_cache, k_t], dim=2)  # [B,n_heads,t+1,d_head]
-        v_cache = v_t if v_cache is None else torch.cat([v_cache, v_t], dim=2)
-        scores = torch.matmul(q_t, k_cache.transpose(-2, -1)) / math.sqrt(d_head)  # [B,n_heads,1,t+1]
-        weights = torch.softmax(scores, dim=-1)
-        ctx = torch.matmul(weights, v_cache)                      # [B,n_heads,1,d_head]
-        ctx = ctx.transpose(1, 2).reshape(B, 1, d_model)          # [B,1,d_model]
-        attn_out = attn.out_proj(ctx)                             # exact nn.MHA out_proj (weight+bias)
-        x = self.gate1(x_t, attn_out)
-        ff_out = self.ff(self.ln2(x))
-        out_t = self.gate2(x, ff_out)
-        return out_t, k_cache, v_cache
-
-
-class IncrementalRolloutCache:
-    """Per-episode K/V cache for the GTrXL rollout fast path.
-
-    2026-06-19 speedup (NOT byte-identical — user dropped 1==N). One ``(k, v)``
-    entry per GTrXL block, holding the COMMITTED tokens ``0..length-1`` (each
-    with ``is_current=0`` and its committed action/optimizer-signal). The
-    current step's token is folded in TRANSIENTLY by the incremental forward
-    (discarded), then re-appended with its committed form via
-    :meth:`BLBStage2SequentialPolicy.commit_kv_cache` after the env commit.
-
-    Lifecycle: one cache per episode, NOT shared across episodes or workers
-    (each ``collect_fusion_episode`` owns its own). Reset == new instance.
-    """
-
-    __slots__ = ("k", "v", "length")
-
-    def __init__(self, n_blocks: int) -> None:
-        self.k: List[Optional[torch.Tensor]] = [None] * int(n_blocks)
-        self.v: List[Optional[torch.Tensor]] = [None] * int(n_blocks)
-        self.length: int = 0
-
 
 class BLBStage2SequentialPolicy(nn.Module):
     """v2-scale GTrXL actor + critic over per-step decisions.
@@ -453,17 +379,8 @@ class BLBStage2SequentialPolicy(nn.Module):
         cursor += H
         cursor += 5 + 1
         seq_len = H
-        if bool(truncate_to_current):
-            # Causal-prefix fast path. Truncate to the batch-max current step:
-            # every row's current-step logits depend only on tokens
-            # 0..current_step (the causal mask zeroes any later token), so
-            # including up to max(current_step) over the batch is exact for ALL
-            # rows. In the lockstep batched rollout (2026-06-21) all B rows share
-            # the same current_step, so this processes ~t+1 tokens/step instead of
-            # the full H — the per-step token work the old ``B == 1`` guard kept
-            # batched rollout from amortizing. For B == 1 this is identical to the
-            # previous single-element behavior.
-            seq_len = int(current_step.detach().clamp(0, H - 1).max().item()) + 1
+        if bool(truncate_to_current) and B == 1:
+            seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1
         prev_actions = torch.zeros(B, seq_len, S, dtype=torch.long, device=device)
         prev_signals = torch.zeros(B, seq_len, 3, dtype=state.dtype, device=device)
         need_actions = H * S
@@ -528,110 +445,6 @@ class BLBStage2SequentialPolicy(nn.Module):
         token_input = torch.cat([step_emb, layer_emb, block_emb, prev_emb, cont_proj], dim=-1)
         return self.input_proj(token_input), current_step
 
-    def _build_token_at(self, state: torch.Tensor, position: int) -> torch.Tensor:
-        """Build the single GTrXL input token at ``position``.
-
-        Equal to ``_build_tokens(state)[:, position, :]`` (within float;
-        equivalence is unit-locked in tests/test_blb_kvcache_rollout.py). The
-        ``is_current`` flag is derived from ``position == current_step`` read
-        from the state itself, so the SAME helper yields both the is_current=1
-        "current" token (from the current obs) and the is_current=0 "committed"
-        token (from the NEXT obs at the just-committed position). Used by the
-        KV-cache rollout fast path only; the batched ``_build_tokens`` stays the
-        source of truth for the full forward / PPO replay.
-        """
-        if state.dim() == 1:
-            state = state.unsqueeze(0)
-        static, current_step, prev_actions, prev_signals = self._parse_state(
-            state, truncate_to_current=False,
-        )
-        B = int(state.shape[0])
-        p = int(position)
-        S = int(self.cfg.max_step_dim)
-        steps, layers, blocks = self._step_layer_block_indices()
-        step_emb = self.embed_step(steps[p:p + 1]).expand(B, -1)
-        layer_emb = self.embed_layer(layers[p:p + 1]).expand(B, -1)
-        block_emb = self.embed_block(blocks[p:p + 1]).expand(B, -1)
-        slot_offsets = self._prev_action_slot_offsets[:S]
-        prev_action_idx = prev_actions[:, p, :] + slot_offsets.view(1, -1)
-        prev_emb = self.prev_action_embedding(prev_action_idx).reshape(
-            B, S * self.cfg.prev_action_embed_dim,
-        )
-        is_current = (current_step == p).to(dtype=state.dtype).view(B, 1)
-        cont = torch.cat([static, prev_signals[:, p, :], is_current], dim=-1)
-        cont_proj = self.fc_continuous(cont)
-        token_input = torch.cat([step_emb, layer_emb, block_emb, prev_emb, cont_proj], dim=-1)
-        return self.input_proj(token_input).unsqueeze(1)
-
-    def new_rollout_cache(self) -> "IncrementalRolloutCache":
-        """Fresh per-episode KV-cache for the rollout fast path."""
-        return IncrementalRolloutCache(len(self.gtrxl_blocks))
-
-    def _forward_incremental_current(
-            self,
-            state: torch.Tensor,
-            baseline_prior_scale: Optional[Any],
-            kv_cache: "IncrementalRolloutCache",
-            ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """KV-cached current-step forward (== the truncate_to_current full
-        forward for the current token, within float).
-
-        Reads the committed prefix (tokens 0..length-1) from ``kv_cache``,
-        builds ONLY the current token, runs it through each block against the
-        cached K/V, and applies the same actor/critic tail as :meth:`forward`.
-        The current token's K/V is folded in transiently (the grown caches are
-        discarded) — it is re-appended in its committed form by
-        :meth:`commit_kv_cache` after the env commit.
-        """
-        _static, current_step, _pa, _ps = self._parse_state(
-            state, truncate_to_current=False,
-        )
-        pos = int(current_step.reshape(-1)[0].item())
-        x_t = self._build_token_at(state, pos)
-        for blk, kc, vc in zip(self.gtrxl_blocks, kv_cache.k, kv_cache.v, strict=True):
-            x_t, _k, _v = blk.forward_incremental(x_t, kc, vc)
-        x_t = self.ln_final(x_t)
-        h = x_t[:, 0]
-        actor_feat = self.actor_head(h)
-        logits = torch.einsum("ba,sla->bsl", actor_feat, self.slot_head_weight)
-        logits = logits + self.slot_head_bias.unsqueeze(0)
-        logits = logits + self._baseline_prior_logits(
-            batch_size=int(logits.shape[0]),
-            device=logits.device,
-            dtype=logits.dtype,
-            baseline_prior_scale=baseline_prior_scale,
-        )
-        value = self.value_head(h).squeeze(-1)
-        return logits, value
-
-    def commit_kv_cache(
-            self,
-            next_state: torch.Tensor,
-            position: int,
-            kv_cache: "IncrementalRolloutCache",
-            ) -> None:
-        """Append the just-committed token to the persistent cache.
-
-        Call once after each NON-terminal ``env.commit_step`` with the
-        observation for the NEXT step: at ``position`` (the step just decided)
-        ``next_state`` carries is_current=0 + the committed action/signal, i.e.
-        token ``position``'s permanent form. Runs it through every block,
-        growing each block's K/V cache by one.
-        """
-        if next_state.dim() == 1:
-            next_state = next_state.unsqueeze(0)
-        with torch.inference_mode():
-            x_t = self._build_token_at(next_state, int(position))
-            new_k: List[Optional[torch.Tensor]] = []
-            new_v: List[Optional[torch.Tensor]] = []
-            for blk, kc, vc in zip(self.gtrxl_blocks, kv_cache.k, kv_cache.v, strict=True):
-                x_t, kc2, vc2 = blk.forward_incremental(x_t, kc, vc)
-                new_k.append(kc2)
-                new_v.append(vc2)
-            kv_cache.k = new_k
-            kv_cache.v = new_v
-            kv_cache.length += 1
-
     def _coerce_prior_scale(
             self,
             baseline_prior_scale: Optional[Any],
@@ -695,18 +508,9 @@ class BLBStage2SequentialPolicy(nn.Module):
             baseline_prior_scale: Optional[Any] = None,
             *,
             truncate_to_current: bool = False,
-            kv_cache: Optional["IncrementalRolloutCache"] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor]:
         if state.dim() == 1:
             state = state.unsqueeze(0)
-        if kv_cache is not None and bool(truncate_to_current):
-            # Rollout fast path (2026-06-19): O(H) incremental forward over the
-            # cached prefix instead of the O(H^2) full-prefix rebuild. kv_cache
-            # is None everywhere except the rollout loop, so the full forward
-            # (PPO replay / tests / serial path) is byte-for-byte unchanged.
-            return self._forward_incremental_current(
-                state, baseline_prior_scale, kv_cache,
-            )
         tokens, current_step = self._build_tokens(
             state,
             truncate_to_current=bool(truncate_to_current),
@@ -797,7 +601,6 @@ class BLBStage2SequentialPolicy(nn.Module):
             action_level_mask: Optional[torch.Tensor] = None,
             baseline_prior_scale: Optional[Any] = None,
             truncate_to_current: bool = False,
-            kv_cache: Optional["IncrementalRolloutCache"] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample one per-step action.
 
@@ -810,7 +613,6 @@ class BLBStage2SequentialPolicy(nn.Module):
             state,
             baseline_prior_scale=baseline_prior_scale,
             truncate_to_current=bool(truncate_to_current),
-            kv_cache=kv_cache,
         )
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
@@ -836,119 +638,6 @@ class BLBStage2SequentialPolicy(nn.Module):
         log_prob = log_prob_per_slot.sum(dim=-1)
         return actions, log_prob, value
 
-    # ------------------------------------------------------------------
-    # Batched-rollout sampling (2026-06-21). Splits the forward (action-
-    # INDEPENDENT, batched once per step across episodes) from the per-row
-    # seeded sample / log-prob (works on the precomputed logits). The sampler is
-    # batch- and device-invariant by construction: the only randomness is
-    # ``_seeded_slot_uniforms`` (numpy default_rng per row seed), so a row's draw
-    # is identical for ANY batch size / GPU count. Distribution is unchanged
-    # (Categorical over masked logits incl. the ADR-012 eps mixture), so log_prob
-    # here and in ``evaluate_action`` (PPO replay) stay consistent. NOT byte-
-    # identical to the old global-manual_seed + multinomial path (different draw
-    # algorithm) — a deliberate, distribution-equivalent re-seeding.
-    @torch.inference_mode()
-    def forward_and_mask(
-            self,
-            state: torch.Tensor,
-            slot_mask: torch.Tensor,
-            per_slot_num_levels: torch.Tensor,
-            *,
-            action_level_mask: Optional[torch.Tensor] = None,
-            baseline_prior_scale: Optional[Any] = None,
-            truncate_to_current: bool = False,
-            kv_cache: Optional["IncrementalRolloutCache"] = None,
-            ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """One forward + additive logit mask, WITHOUT sampling.
-
-        Returns ``(masked_logits, safe_logits, value)``. The batched rollout
-        driver calls this ONCE per step over ``[B, state_dim]`` (all episodes at
-        the same step), then per row calls :meth:`sample_from_logits` /
-        :meth:`logprob_from_logits` on the (action-independent) logits.
-        """
-        logits, value = self.forward(
-            state,
-            baseline_prior_scale=baseline_prior_scale,
-            truncate_to_current=bool(truncate_to_current),
-            kv_cache=kv_cache,
-        )
-        logits = logits + self._build_logit_mask(
-            slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
-            action_level_mask=action_level_mask,
-            level_indices=self._level_indices,
-        )
-        safe_logits = torch.where(
-            torch.isfinite(logits).any(dim=-1, keepdim=True),
-            logits,
-            torch.zeros_like(logits),
-        )
-        return logits, safe_logits, value
-
-    @staticmethod
-    def _seeded_slot_uniforms(
-            row_seeds: Sequence[int],
-            n_slots: int,
-            device: torch.device,
-            ) -> torch.Tensor:
-        """``[B, n_slots]`` uniforms in ``[0, 1)``; row b drawn from
-        ``numpy.random.default_rng(row_seeds[b])``. CPU/numpy + per-row seed →
-        deterministic and INVARIANT to batch size and GPU count (the property the
-        batched rollout's float-equivalence gate rests on)."""
-        seeds = [int(s) for s in row_seeds]
-        u = np.empty((len(seeds), int(n_slots)), dtype=np.float64)
-        for b, s in enumerate(seeds):
-            u[b] = np.random.default_rng(s).random(int(n_slots))
-        return torch.from_numpy(u).to(device=device, dtype=torch.float32)
-
-    @torch.inference_mode()
-    def sample_from_logits(
-            self,
-            logits: torch.Tensor,
-            safe_logits: torch.Tensor,
-            slot_mask: torch.Tensor,
-            row_seeds: Sequence[int],
-            ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Per-row seeded categorical sample via inverse-CDF on the masked probs.
-
-        ``logits``/``safe_logits``/``slot_mask`` are ``[B, ...]`` from
-        :meth:`forward_and_mask`; ``row_seeds`` is length B. Returns
-        ``(actions [B, max_step_dim] long, log_prob [B])``. Masked levels have
-        prob 0 (flat cdf) so are never drawn; ``right=True`` makes ``u==0`` pick
-        the first POSITIVE-prob level (never a masked level-0).
-        """
-        dist = self._action_dist(logits, safe_logits)
-        probs = dist.probs                                       # [B, S, L]
-        _B, _S, L = probs.shape
-        u = self._seeded_slot_uniforms(row_seeds, _S, probs.device).unsqueeze(-1)  # [B,S,1]
-        cdf = torch.cumsum(probs, dim=-1)                        # [B,S,L] non-decreasing
-        actions = (
-            torch.searchsorted(cdf, u, right=True).squeeze(-1).clamp_(max=L - 1).long()
-        )                                                        # [B, S]
-        log_prob = (dist.log_prob(actions) * slot_mask.float()).sum(dim=-1)  # [B]
-        return actions, log_prob
-
-    @torch.inference_mode()
-    def logprob_from_logits(
-            self,
-            logits: torch.Tensor,
-            safe_logits: torch.Tensor,
-            slot_mask: torch.Tensor,
-            actions: torch.Tensor,
-            *,
-            return_entropy: bool = False,
-            ) -> Tuple[torch.Tensor, ...]:
-        """log_prob (and optional entropy) of a GIVEN action from precomputed
-        logits (no forward) — for the forced-anchor / fusion-probe / fallback
-        sites that override the sampled action. Same dist as
-        :meth:`sample_from_logits`."""
-        dist = self._action_dist(logits, safe_logits)
-        a = actions.long()
-        log_prob = (dist.log_prob(a) * slot_mask.float()).sum(dim=-1)
-        if return_entropy:
-            entropy = (dist.entropy() * slot_mask.float()).sum(dim=-1)
-            return log_prob, entropy
-        return (log_prob,)
-
     def evaluate_action(
             self,
             state: torch.Tensor,
@@ -959,17 +648,14 @@ class BLBStage2SequentialPolicy(nn.Module):
             baseline_prior_scale: Optional[Any] = None,
             return_per_slot_entropy: bool = False,
             truncate_to_current: bool = False,
-            kv_cache: Optional["IncrementalRolloutCache"] = None,
             ) -> Tuple[torch.Tensor, ...]:
         """Re-evaluate (log_prob, entropy, value) for a given action under the
-        current policy. Used by PPO update (full path) and the rollout
-        re-eval/anchor/fallback sites (with ``kv_cache`` for the fast path).
+        current policy. Used by PPO update.
         """
         logits, value = self.forward(
             state,
             baseline_prior_scale=baseline_prior_scale,
             truncate_to_current=bool(truncate_to_current),
-            kv_cache=kv_cache,
         )
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,

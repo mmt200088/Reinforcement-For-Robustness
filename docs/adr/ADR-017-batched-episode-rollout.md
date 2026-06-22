@@ -1,6 +1,12 @@
 # ADR-017: Batched episode rollout (replaces KV-cache rollout)
 
-- **Status**: Accepted (pending server validation: batch-invariance self-test + speed A/B)
+- **Status**: **Rejected / Reverted 2026-06-22 — see ADR-018.** Server validation
+  (artifacts `stage2_5gpu_speed_60k_20260622_131933`) found the batched forward
+  *does* amortize in isolation (3.96× at B=4) but end-to-end throughput was
+  **1.0000× (NOT EFFECTIVE)**: the K=5 terminal probe is the critical path and the
+  rollout already overlaps the sibling worker's probe under `workers_per_device=2`,
+  so shrinking rollout wall-time does not shrink episode wall-time. The change was
+  reverted (it cost bit-exact 1==N for no end-to-end gain). Kept as history.
 - **Date**: 2026-06-21
 - **Supersedes**: the KV-cache rollout (`--blb-v3-kv-cache-rollout`, 2026-06-19) — retired, kept default-OFF.
 
