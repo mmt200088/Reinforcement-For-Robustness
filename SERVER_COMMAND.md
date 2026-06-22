@@ -3,65 +3,44 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (撤销 rollout 提速实验后的回归门禁 — CPU/只读，不碰正在跑的 60k)
+## ▶ active command  (验证 fused-rescale 噪声安装修复 — CPU/只读，不碰正在跑的 60k)
 
-> 上一轮 batched rollout 端到端实测 **1.00×（NOT EFFECTIVE）**，证据见
-> `stage2_5gpu_speed_60k_20260622_131933/{rollout_profile,batched_ab_verdict}.txt`
-> （隔离 profiler 证明 forward 在 B=4 能摊薄 3.96×，但 K=5 terminal probe 才是关键路径，
-> rollout 在 `workers_per_device=2` 下已与同卡 sibling 的 probe 重叠 → 砍 rollout 墙钟不动整 episode 墙钟），
-> 且放弃了逐位 1==N。已在本地撤销 **KV-cache + 批量** 两个 rollout 提速实验（ADR-018），
-> 恢复原始确定性串行 rollout（`manual_seed`+`multinomial`，**逐位 1==N 恢复**）。
+> 修复 (commit c6ee25e): 被融合掉的 rescale 槽位之前仍被装进了模型噪声。优化器把被融合的
+> 节点保留为 PASSTHROUGH（带 `sf` 累积尺度、无 `sf_post`），而 apply_optimizer_output_to_cfg
+> 之前只按 `cpt is None`（节点缺失）判融合，漏掉了 passthrough 形态 → 融合点照样装噪声。
+> 现按「cut_point 无真实 sf_post = 融合」自动识别（直接读优化器输出，任意模数链通用，不写死）。
 >
-> 这轮 active 只做**回归门禁**：确认撤销干净、被删的 flag/文件确实没了、合约门禁通过、恢复后的模块能 import。
-> **不启动新的 60k**（已有一个在跑），强制 CPU（`CUDA_VISIBLE_DEVICES=""`）避免与正在跑的 60k 抢 GPU。
+> 这轮 active 只做门禁（CPU、replan-only、不做 model forward、不碰 GPU / 正在跑的 60k）：
+> 新回归测试（block2/4/5_n2/5_n4 真 replan）+ precision-boost 回归 必须全过。
 
 ```bash
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export CUDA_VISIBLE_DEVICES=""   # CPU-only: do NOT touch the GPUs the running 60k uses
 TS=$(date +%Y%m%d_%H%M%S)
-OUT="experiments/server_command_runs/stage2_revert_rollout_speedup_${TS}"; mkdir -p "$OUT"
+OUT="experiments/server_command_runs/stage2_fused_rescale_fix_${TS}"; mkdir -p "$OUT"
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git config --local http.version HTTP/1.1 || true
   git config --local protocol.version 0 || true
-  git rev-parse HEAD > "$OUT/HEAD.txt"; cat "$OUT/HEAD.txt"; git log --oneline -6 | tee "$OUT/recent_commits.txt"
+  git rev-parse HEAD > "$OUT/HEAD.txt"; cat "$OUT/HEAD.txt"; git log --oneline -3 | tee "$OUT/recent_commits.txt"
 fi
 
-echo "#################### [1] deleted flags/files are GONE ####################"
-{
-  echo "== speedup references in source (expect none) =="
-  if git grep -nI -E "kv_cache_rollout|batched_rollout|rollout_profile|blb_v3_kv_cache|blb_v3_batched|blb-v3-kv-cache|blb-v3-batched|blb-v3-rollout-profile|forward_and_mask|sample_from_logits|collect_fusion_episodes_batched|IncrementalRolloutCache|forward_incremental|commit_kv_cache" -- '*.py' '*.sh' ; then
-    echo "[FATAL] leftover speedup references in source"; exit 1
-  else
-    echo "[OK] no speedup references in *.py / *.sh"
-  fi
-  echo "== deleted files (expect all absent) =="
-  for f in scripts/blb_rollout_profile.py scripts/blb_kvcache_ab_compare.py scripts/blb_kvcache_benchmark.py tests/test_blb_batched_rollout.py tests/test_blb_rollout_ab_compare.py tests/test_blb_kvcache_rollout.py; do
-    [ -e "$f" ] && { echo "[FATAL] $f still present"; exit 1; } || echo "[OK] absent: $f"
-  done
-} 2>&1 | tee "$OUT/revert_audit.txt"
+echo "#################### [1] fused-rescale install regression (REAL replan, all fused block types) ####################"
+python3 -m unittest tests.test_blb_fused_rescale_install -v 2>&1 | tee "$OUT/fused_rescale_test.txt"
+grep -qE "(^OK|^OK )" "$OUT/fused_rescale_test.txt" || { echo "[FATAL] fused-rescale regression failed"; exit 1; }
+grep -qE "Ran 4 tests" "$OUT/fused_rescale_test.txt" || { echo "[FATAL] expected 4 tests"; exit 1; }
+if grep -q "skipped" "$OUT/fused_rescale_test.txt"; then
+  echo "[FATAL] tests SKIPPED - rescale_optimizer_bridge (torch) or rescale_optimizer not importable on server"; exit 1
+fi
 
-echo "#################### [2] launcher parses (bash -n) ####################"
-bash -n llama_7B_LayerImportance.sh && echo "[OK] bash -n llama_7B_LayerImportance.sh" | tee -a "$OUT/revert_audit.txt"
+echo "#################### [2] precision-boost regression (REAL replan) ####################"
+python3 -m unittest tests.test_blb_precision_boost -v 2>&1 | tee "$OUT/precision_boost_test.txt"
+grep -qE "(^OK|^OK )" "$OUT/precision_boost_test.txt" || { echo "[FATAL] precision-boost regression failed"; exit 1; }
 
-echo "#################### [3] BLB contract gate (CPU) ####################"
-BLB_STRICT=0 python3 -m unittest discover -s tests -p "test_blb_*.py" 2>&1 | tee "$OUT/contract_gate.txt" | tail -4
-grep -qE "^OK" "$OUT/contract_gate.txt" || echo "[WARN] see contract_gate.txt (CPU env may skip torch/CUDA-only tests)"
-
-echo "#################### [4] restored rollout/policy import clean (no speedup symbols) ####################"
-python3 - <<'PY' 2>&1 | tee "$OUT/import_check.txt"
-import importlib
-for m in ("blb_stage2_rl.parallel_runner", "blb_stage2_rl.sequential_policy", "blb_stage2_rl.runner"):
-    importlib.import_module(m); print("[OK] import", m)
-import blb_stage2_rl.parallel_runner as pr
-assert not hasattr(pr, "collect_fusion_episodes_batched"), "batched driver still present"
-from blb_stage2_rl.sequential_policy import BLBStage2SequentialPolicy as P
-for bad in ("forward_and_mask", "sample_from_logits", "logprob_from_logits",
-            "forward_incremental", "commit_kv_cache", "new_rollout_cache"):
-    assert not hasattr(P, bad), f"{bad} still on policy"
-print("[OK] restored: no batched / KV-cache symbols on the rollout or policy")
-PY
-echo "[DONE] revert regression gate complete; OUT=$OUT (the running 60k was NOT touched)"
+echo "[DONE] fused-rescale fix validated on the server; OUT=$OUT (the running 60k was NOT touched)."
+echo "[NOTE] this fix CHANGES the installed noise for FUSION options (removes the spurious"
+echo "       rescale noise at fused points). The in-flight 60k (batched OFF, OLD install) keeps"
+echo "       its OLD noise; restart it only if you want the corrected fusion install in that run."
 ```
 
 ## ⏸ on-deck — KV-cache 端到端吞吐 A/B（**已解决/跳过** — 前向基准已判 NOT EFFECTIVE）
