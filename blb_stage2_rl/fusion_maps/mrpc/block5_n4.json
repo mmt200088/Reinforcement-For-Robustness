@@ -46,17 +46,17 @@
       "option_id": 1,
       "fusion_count": 1,
       "tie_index": 0,
-      "total_variance": 5.199572597207077e-09,
+      "total_variance": 3.722761680693287e-09,
       "total_bits": 271,
       "slots": {
         "x_centered_fresh_sf": 26,
-        "gamma_sf": 20,
-        "wffn1_sf": 21,
-        "gelu_coeff_sf": 21,
+        "gamma_sf": 21,
+        "wffn1_sf": 22,
+        "gelu_coeff_sf": 25,
         "normalize_rescale_sf": 31,
-        "wffn1_rescale_sf": 33,
-        "gelu_power_rescale_sf_0": 35,
-        "gelu_coeff_mul_rescale_sf_0": 31
+        "wffn1_rescale_sf": 35,
+        "gelu_power_rescale_sf_0": 39,
+        "gelu_coeff_mul_rescale_sf_0": 43
       },
       "action_indices": [
         14,
@@ -80,16 +80,18 @@
       "explicit_field_values": {
         "inv_std_fresh_sf": 31,
         "x_centered_fresh_sf": 26,
-        "gamma_sf": 20,
-        "wffn1_sf": 21,
-        "gelu_coeff_sf": 21,
+        "gamma_sf": 21,
+        "wffn1_sf": 22,
+        "gelu_coeff_sf": 25,
         "normalize_rescale_sf": 31,
-        "wffn1_rescale_sf": 33,
-        "gelu_power_rescale_sf_0": 35,
-        "gelu_coeff_mul_rescale_sf_0": 31,
+        "wffn1_rescale_sf": 35,
+        "gelu_power_rescale_sf_0": 39,
+        "gelu_coeff_mul_rescale_sf_0": 43,
         "output_truncation_k": 13
       },
-      "boost_description": "gamma_sf:1+gelu_coeff_sf:1+wffn1_sf:1"
+      "boost_description": "p1:gamma_sf:1+gelu_coeff_sf:1+wffn1_sf:1; p2:final_encode=0,sf_post=43,gamma_sf:1+gelu_coeff_sf:4+wffn1_sf:1",
+      "output_sf": 43,
+      "output_sf_config_ceiling": 43
     }
   ],
   "build_meta": {
@@ -129,6 +131,7 @@
     "fast_verified_probes": 130,
     "fast_shards": 1024,
     "fast_wall_seconds": 610.02,
-    "precision_boost_applied": true
+    "precision_boost_applied": true,
+    "precision_boost_phase2_applied": true
   }
 }
