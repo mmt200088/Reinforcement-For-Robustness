@@ -65,10 +65,15 @@ RO = "Rescale_optimizer"
 TARGETS = {"block2_mrpc": 46, "block4": 53, "block5_n1": 46, "block5_n2": 43, "block5_n4": 43}
 mdir = pathlib.Path("blb_stage2_rl/fusion_maps/mrpc")
 bad = 0
+# Runtime loader must accept the whole profile (from_payload also validates
+# option0==baseline). load() takes a PROFILE NAME, not a per-file path — calling
+# it per-file with str(p) raised FileNotFoundError and aborted the gate before
+# commit/push.
+FusionCountMap.load("mrpc")
+print("[ok] FusionCountMap.load('mrpc') accepted all maps (option0==baseline)")
 for gk, want in TARGETS.items():
     p = mdir / f"{gk}.json"
     payload = json.loads(p.read_text())
-    FusionCountMap.load(str(p))  # runtime loader must accept it
     topo = pb.TOPOLOGIES[gk]
     tgt = pb.effective_output_target(topo, pb.target_output_sf(gk, profile="mrpc", root=RO))
     assert tgt == want, f"{gk}: effective target {tgt} != expected {want}"

@@ -45,6 +45,19 @@ def _resolve(path: str | os.PathLike[str]) -> Path:
     return p if p.is_absolute() else REPO_ROOT / p
 
 
+def _json_int_list(raw: str | None, *, default: Sequence[int], name: str) -> List[int]:
+    text = str(raw or "").strip()
+    if not text:
+        return [int(v) for v in default]
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{name} must be a JSON list: {exc}") from exc
+    if not isinstance(payload, list):
+        raise SystemExit(f"{name} must be a JSON list")
+    return [int(v) for v in payload]
+
+
 def _json_hash(payload: Any) -> str:
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -109,6 +122,8 @@ def _run_one(
     output_root: Path,
     repeat: int,
     batch_size: int,
+    stage1_gelu: Sequence[int],
+    stage1_softmax: Sequence[int],
     rescale_optimizer_root: str,
     force: bool,
     env: Mapping[str, str],
@@ -138,9 +153,9 @@ def _run_one(
         "--source",
         "manual",
         "--manual-stage1-gelu",
-        json.dumps(DEFAULT_STAGE1_GELU),
+        json.dumps([int(v) for v in stage1_gelu]),
         "--manual-stage1-softmax",
-        json.dumps(DEFAULT_STAGE1_SOFTMAX),
+        json.dumps([int(v) for v in stage1_softmax]),
         "--manual-stage2-noise",
         json.dumps(DEFAULT_MANUAL_NOISE, separators=(",", ":")),
         "--action-config",
@@ -218,6 +233,8 @@ def _build_combined(
     configs: Sequence[Mapping[str, Any]],
     output_root: Path,
     map_report: Mapping[str, Any],
+    stage1_gelu: Sequence[int],
+    stage1_softmax: Sequence[int],
 ) -> dict:
     result_by_hash: Dict[str, dict] = {}
     canonical_by_hash: Dict[str, str] = {}
@@ -258,7 +275,9 @@ def _build_combined(
         "evaluation_protocol": {
             "split": "validation_full",
             "baseline": "original plaintext, original GELU/Softmax, no BLB noise",
-            "stage2_groups": "latest MRPC Stage-1 GELU with Softmax=[6]*12, fixed baseline K, only fusion-count options varied",
+            "stage2_groups": "manual Stage-1 GELU/Softmax, fixed baseline K, only fusion-count options varied",
+            "manual_stage1_gelu": [int(v) for v in stage1_gelu],
+            "manual_stage1_softmax": [int(v) for v in stage1_softmax],
             "unique_action_runs": len(result_by_hash),
             "requested_group_count": len(configs),
         },
@@ -372,6 +391,8 @@ def main() -> int:
     parser.add_argument("--output-html", default=str(DEFAULT_HTML))
     parser.add_argument("--repeat", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--stage1-gelu", default=json.dumps(DEFAULT_STAGE1_GELU))
+    parser.add_argument("--stage1-softmax", default=json.dumps(DEFAULT_STAGE1_SOFTMAX))
     parser.add_argument("--rescale-optimizer-root", default="Rescale_optimizer")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--skip-run", action="store_true", help="Only collect existing Paean result JSON files.")
@@ -385,6 +406,10 @@ def main() -> int:
     configs = _load_action_configs(action_dir)
     unique = _unique_configs(configs)
     print(f"[info] requested groups={len(configs)} unique action vectors={len(unique)}")
+    stage1_gelu = _json_int_list(args.stage1_gelu, default=DEFAULT_STAGE1_GELU, name="--stage1-gelu")
+    stage1_softmax = _json_int_list(args.stage1_softmax, default=DEFAULT_STAGE1_SOFTMAX, name="--stage1-softmax")
+    if len(stage1_gelu) != len(stage1_softmax):
+        raise SystemExit("--stage1-gelu and --stage1-softmax must have equal length")
 
     env = dict(os.environ)
     env.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -395,13 +420,21 @@ def main() -> int:
                 output_root=output_root,
                 repeat=int(args.repeat),
                 batch_size=int(args.batch_size),
+                stage1_gelu=stage1_gelu,
+                stage1_softmax=stage1_softmax,
                 rescale_optimizer_root=str(args.rescale_optimizer_root),
                 force=bool(args.force),
                 env=env,
             )
 
     map_report = json.loads(map_report_path.read_text(encoding="utf-8"))
-    combined = _build_combined(configs=configs, output_root=output_root, map_report=map_report)
+    combined = _build_combined(
+        configs=configs,
+        output_root=output_root,
+        map_report=map_report,
+        stage1_gelu=stage1_gelu,
+        stage1_softmax=stage1_softmax,
+    )
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_html.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(combined, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
