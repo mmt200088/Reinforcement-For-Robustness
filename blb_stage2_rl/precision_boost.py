@@ -55,6 +55,35 @@ MAX_ENCODE_SF = 46
 
 
 # ---------------------------------------------------------------------------
+# Phase 2 ("二阶段加大精度") — raise the final OUTPUT scale to its ceiling
+# ---------------------------------------------------------------------------
+# The final mask encode (the one feeding q_tail) may be LOWERED to shift its
+# precision onto the last rescale's sf_post, but never below this floor (user
+# spec: "20最多减少到15...这个约束是写死的").
+FINAL_ENCODE_MIN = 15
+
+
+def target_output_sf(graph_key: str, profile: str, root: str) -> int:
+    """The phase-2 output-SF ceiling for one block type, read from its
+    Rescale_optimizer config: ``q_tail_bits - amplitude_budgets[-1] - h_sf``.
+
+    General, not hardcoded — a changed JSON yields a changed target (the config
+    file is ``<root>/configs/<profile>/<graph_key>.json``; the file name matches
+    the graph key for every block type, e.g. ``block2_mrpc`` / ``block4`` /
+    ``block5_n2``)."""
+    import json as _json
+    import os as _os
+
+    path = _os.path.join(str(root), "configs", str(profile), f"{graph_key}.json")
+    with open(path, encoding="utf-8") as fh:
+        cfg = _json.load(fh)
+    q_tail = int(cfg["optimization"]["q_tail_bits"])
+    h_sf = int(cfg["global"]["h_sf"])
+    amp_last = int(cfg["amplitude_budgets"][-1])
+    return q_tail - amp_last - h_sf
+
+
+# ---------------------------------------------------------------------------
 # Per-block chain topology (hardcoded per block, NOT per SF/position)
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
@@ -182,9 +211,31 @@ BLOCK5_N4_MRPC_TOPOLOGY = ChainTopology(
     ),
 )
 
+# block5 n=1 (mrpc) — NO phase-1 boost (its fused chain is already all-q_max, no short
+# prime), but it DOES get phase-2: raise the output scale (the last rescale's sf_post —
+# no final encode) toward the ceiling. Degree-1 GELU is linear (c_0 + c_1·x), so there is
+# NO gelu ×2 after the normalize ×2 → gamma/wffn1/gelu_coeff are all c=0 (weight 1) with no
+# intermediate rescale between them and the last rescale (distribution needs no
+# compensation). x_centered_fresh stays off-limits (its bound aux fresh would cost 2 noise
+# points for the same chain bit a weight-1 encode supplies with 1 → never min-noise).
+# Validated against real replan (q_initial [16,44] → fuse → q_final [60]).
+BLOCK5_N1_MRPC_TOPOLOGY = ChainTopology(
+    graph_key="block5_n1",
+    nodes=(
+        ChainNode("fresh", "x_centered_fresh_sf"),
+        ChainNode("x2"),  # ctct_xmean_over_std (initial ×2, off-limits)
+        ChainNode("rescale", "normalize_rescale_sf"),  # fuses away
+        ChainNode("encode", "gamma_sf", addable=True),
+        ChainNode("encode", "wffn1_sf", addable=True),
+        ChainNode("encode", "gelu_coeff_sf", addable=True),
+        ChainNode("rescale", "gelu_coeff_mul_rescale_sf_0"),  # R_target (last / output)
+    ),
+)
+
 TOPOLOGIES: Dict[str, ChainTopology] = {
     "block2_mrpc": BLOCK2_MRPC_TOPOLOGY,
     "block4": BLOCK4_MRPC_TOPOLOGY,
+    "block5_n1": BLOCK5_N1_MRPC_TOPOLOGY,
     "block5_n2": BLOCK5_N2_MRPC_TOPOLOGY,
     "block5_n4": BLOCK5_N4_MRPC_TOPOLOGY,
 }
@@ -204,6 +255,8 @@ class ReplanProbe:
     fusions: Tuple[dict, ...] = ()
     extra: Any = None  # opaque payload for noise_fn (e.g. installed points) — lets
     #                    replan_fn and noise_fn share one evaluation (no double replan).
+    t_final: Tuple[int, ...] = ()  # achieved per-rescale sf_post (phase 2 reads
+    #                    t_final[-1] = the last rescale's sf_post to check the output scale).
 
 
 @dataclass(frozen=True)
@@ -497,6 +550,139 @@ def generate_candidates(
 
 
 # ---------------------------------------------------------------------------
+# Phase 2 candidate generation (raise the final OUTPUT scale to the ceiling)
+# ---------------------------------------------------------------------------
+def _last_rescale_and_final_encode(topology: ChainTopology) -> Tuple[int, str, Optional[str]]:
+    """``(last_rescale_idx, last_rescale_field, final_encode_field_or_None)``.
+
+    The "last node SF" is ``last_rescale.sf_post + final_encode_SF``. The final
+    encode is the encode node AFTER the last rescale (the one feeding q_tail);
+    block2/block4 have one (``qkt_merge_mask`` / ``ln_var_inv_d``), block5 has
+    none (the last rescale IS the last node)."""
+    rpos = topology.rescale_positions()
+    last_idx = len(rpos) - 1
+    last_pos = rpos[last_idx]
+    last_field = str(topology.nodes[last_pos].cfg_field)
+    final_field: Optional[str] = None
+    for p in range(last_pos + 1, len(topology.nodes)):
+        n = topology.nodes[p]
+        if n.kind == "encode" and n.cfg_field:
+            final_field = n.cfg_field
+            break
+    return last_idx, last_field, final_field
+
+
+def effective_output_target(
+        topology: ChainTopology,
+        config_target: int,
+        max_installed_sf: int = MAX_ENCODE_SF,
+        ) -> int:
+    """The achievable output-SF target after the install cap.
+
+    The output is ``last_rescale.sf_post (+ final_encode)``, and BOTH are installed
+    noise points capped at ``max_installed_sf`` (46). So the max installable output
+    is ``46`` for a block with no final encode (the single rescale carries it all —
+    block5), or ``2*46`` for one with a final encode (split across two points). The
+    config ceiling (``q_tail - amplitude - h_sf``) can exceed that — block5_n1's is
+    48 — so clamp to what the model can actually install. Only no-final-encode
+    blocks above 46 are affected (block5_n1: 48 → 46); everyone else is unchanged."""
+    _last_idx, _last_field, final_field = _last_rescale_and_final_encode(topology)
+    ceiling = int(max_installed_sf) * (2 if final_field is not None else 1)
+    return min(int(config_target), ceiling)
+
+
+def generate_phase2_candidates(
+        topology: ChainTopology,
+        base_slots: Mapping[str, int],
+        target_output_sf: int,
+        base_last_prime: int,
+        q_max: int = DEFAULT_Q_MAX,
+        max_installed_sf: int = MAX_ENCODE_SF,
+        ) -> List[Candidate]:
+    """All candidate edit-sets that raise the final output scale to
+    ``target_output_sf`` (== ``last_rescale.sf_post + final_encode``).
+
+    The composition is parameterized by the final encode SF: it may rise OR fall
+    (down to the hardcoded floor ``FINAL_ENCODE_MIN``), with
+    ``sf_post = target − final_encode`` taking the remainder. Raising ``sf_post``
+    needs the pre-scale entering the last rescale to rise; that rise is supplied
+    by the upstream encodes (REUSING the phase-1 geometry: bit-weights through the
+    ``×2`` doublings + ``_simulate_rescale_edits`` compensation of every earlier
+    prime), maximizing the last prime ``≤ q_max`` (== ``min noise`` on the
+    upstream encodes). Each ``final_encode`` × upstream-distribution is a distinct
+    candidate; the driver replan-verifies and keeps the minimum-noise one.
+
+    Blocks with no final encode (block5) get ``final_encode = 0`` → the whole
+    target lands on ``sf_post``.
+
+    HARD install cap: the model's noise table tops out at ``max_installed_sf``
+    (46), so any composition whose installed encode/rescale SF would exceed it
+    (notably a compensation rescale already near the ceiling — block4's
+    ``ln_mean_rescale`` sits at 45) is DROPPED. The last prime is kept as high as
+    possible (per the user spec); no lower-prime fallback is generated, so a
+    final-encode value that can only be reached via an over-cap compensation is
+    simply unavailable for that block.
+    """
+    last_idx, last_field, final_field = _last_rescale_and_final_encode(topology)
+    geo = _resolve_geometry(topology, last_idx)
+    if geo is None:
+        return []
+    base_sf_post = int(base_slots[last_field])
+    base_final = int(base_slots[final_field]) if final_field else 0
+    delta = int(target_output_sf) - (base_sf_post + base_final)
+    if delta <= 0:
+        return []
+    weighted = [(f, w) for f, w, _pos in _addable_bit_weights(geo)]
+    weights = [w for _f, w in weighted]
+
+    # final_encode range: down to the floor, up to base+delta (so sf_post >= base
+    # → the pre-scale only ever rises, sourced from upstream). No final encode →
+    # the single value 0 (whole target on sf_post).
+    if final_field is None:
+        fe_values: Sequence[int] = (0,)
+    else:
+        fe_values = range(FINAL_ENCODE_MIN, base_final + delta + 1)
+
+    out: List[Candidate] = []
+    seen = set()
+    for fe in fe_values:
+        sf_post_target = int(target_output_sf) - int(fe)
+        if sf_post_target < base_sf_post or sf_post_target > q_max:
+            continue
+        if final_field is not None and int(fe) > MAX_ENCODE_SF:
+            continue
+        sf_post_rise = sf_post_target - base_sf_post
+        # bits of pre-scale needed to hold sf_post_rise AND lift the prime to q_max.
+        budget = sf_post_rise + (int(q_max) - int(base_last_prime))
+        max_fill = _max_reachable_fill(weights, budget) if (weights and budget > 0) else 0
+        dists = _enumerate_distributions(weighted, max_fill) if (weighted and max_fill > 0) else [{}]
+        for dist in dists:
+            edits: Dict[str, int] = {}
+            for f, a in dist.items():
+                edits[str(f)] = int(base_slots[f]) + int(a)
+            rescale_edits, fill = _simulate_rescale_edits(topology, base_slots, dist, geo.target_pos)
+            if fill != max_fill:
+                continue
+            edits.update(rescale_edits)
+            edits[last_field] = sf_post_target
+            if final_field is not None:
+                edits[final_field] = int(fe)
+            # HARD install cap: every installed encode/rescale SF must be table-
+            # representable (<= max_installed_sf). Drops over-cap compensations
+            # (e.g. block4's ln_mean_rescale past 46) with no lower-prime fallback.
+            if any(int(v) > int(max_installed_sf) for v in edits.values()):
+                continue
+            key = tuple(sorted(edits.items()))
+            if key in seen:
+                continue
+            seen.add(key)
+            up = "+".join(f"{f}:{dist[f]}" for f in sorted(dist))
+            desc = f"final_encode={fe},sf_post={sf_post_target}" + (f",{up}" if up else "")
+            out.append(Candidate(edits=edits, description=desc))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Boost driver
 # ---------------------------------------------------------------------------
 def boost_option(
@@ -555,6 +741,89 @@ def boost_option(
                 description=cand.description,
                 base_q_final=tuple(int(x) for x in base.q_final),
                 boosted_q_final=tuple(int(x) for x in probe.q_final),
+                candidates_tried=len(candidates),
+                candidates_valid=0,
+            )
+    if best is not None:
+        best.candidates_valid = n_valid
+    return best
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 boost driver
+# ---------------------------------------------------------------------------
+@dataclass
+class Phase2Result:
+    boosted_slots: Dict[str, int]
+    total_variance: float
+    description: str
+    output_sf: int
+    base_q_final: Tuple[int, ...]
+    boosted_q_final: Tuple[int, ...]
+    candidates_tried: int
+    candidates_valid: int
+
+
+def boost_option_phase2(
+        *,
+        topology: ChainTopology,
+        base_slots: Dict[str, int],
+        target_output_sf: int,
+        replan_fn: Callable[[Dict[str, int]], ReplanProbe],
+        noise_fn: Callable[[Dict[str, int], ReplanProbe], float],
+        q_max: int = DEFAULT_Q_MAX,
+        ) -> Optional["Phase2Result"]:
+    """Raise the final OUTPUT scale of ``base_slots`` (a phase-1-boosted option)
+    to ``target_output_sf`` at minimum installed noise.
+
+    The output scale is ``last_rescale.sf_post + final_encode_SF``. Candidates
+    (``generate_phase2_candidates``) split the gain between the final encode (which
+    may drop to ``FINAL_ENCODE_MIN``) and the last rescale's ``sf_post`` (sourced
+    upstream, last prime maximized). Each is replan-verified — valid, same
+    ``fusion_count``, every PRIOR prime unchanged, and the achieved output
+    (``t_final[-1] + final_encode``) equal to the target — and the minimum-noise
+    survivor wins. Returns ``None`` if the output is already at/above target or no
+    candidate verifies (caller keeps the phase-1 option)."""
+    base = replan_fn(dict(base_slots))
+    if not base.valid or not base.q_final:
+        return None
+    base_fc = int(base.fusion_count)
+    base_qf = tuple(int(x) for x in base.q_final)
+    base_last_prime = base_qf[-1]
+    base_prior = base_qf[:-1]
+    _last_idx, _last_field, final_field = _last_rescale_and_final_encode(topology)
+    # clamp the requested target to what the model can install (block5_n1: 48 → 46).
+    target = effective_output_target(topology, int(target_output_sf), int(MAX_ENCODE_SF))
+
+    candidates = generate_phase2_candidates(
+        topology, base_slots, target, base_last_prime, q_max=int(q_max),
+        max_installed_sf=int(MAX_ENCODE_SF),
+    )
+    best: Optional[Phase2Result] = None
+    n_valid = 0
+    for cand in candidates:
+        slots = dict(base_slots)
+        slots.update(cand.edits)
+        probe = replan_fn(slots)
+        if not probe.valid or int(probe.fusion_count) != base_fc or not probe.t_final:
+            continue
+        qf = tuple(int(x) for x in probe.q_final)
+        if qf[:-1] != base_prior:
+            continue  # a prior prime moved — phase 2 must not disturb earlier stages
+        fe = int(slots[final_field]) if final_field else 0
+        out_sf = int(probe.t_final[-1]) + fe
+        if out_sf != target:
+            continue  # replan snapped the sf_post — output missed the (clamped) target
+        n_valid += 1
+        var = float(noise_fn(slots, probe))
+        if best is None or var < best.total_variance:
+            best = Phase2Result(
+                boosted_slots=slots,
+                total_variance=var,
+                description=cand.description,
+                output_sf=out_sf,
+                base_q_final=base_qf,
+                boosted_q_final=qf,
                 candidates_tried=len(candidates),
                 candidates_valid=0,
             )

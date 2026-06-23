@@ -3,44 +3,102 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (验证 fused-rescale 噪声安装修复 — CPU/只读，不碰正在跑的 60k)
+## ▶ active command  (二阶段加大精度 phase-2 — 门禁 + 应用到 committed maps；CPU/replan-only，不碰正在跑的 60k)
 
-> 修复 (commit c6ee25e): 被融合掉的 rescale 槽位之前仍被装进了模型噪声。优化器把被融合的
-> 节点保留为 PASSTHROUGH（带 `sf` 累积尺度、无 `sf_post`），而 apply_optimizer_output_to_cfg
-> 之前只按 `cpt is None`（节点缺失）判融合，漏掉了 passthrough 形态 → 融合点照样装噪声。
-> 现按「cut_point 无真实 sf_post = 融合」自动识别（直接读优化器输出，任意模数链通用，不写死）。
+> 二阶段「加大精度」：一阶段把中间短素数顶到 q_max；二阶段再把**最后一个节点的输出 SF**
+> （= 最后一个 rescale 的 sf_post + 末尾 encode 的 SF）顶到上限
+> `target = q_tail_bits - amplitude_budgets[-1] - h_sf`（从 `Rescale_optimizer/configs/<profile>/<graph_key>.json`
+> 读，不写死）。提升量在「末尾 encode」与「最后 rescale sf_post」之间分配（末尾 encode 可降到硬下限 15），
+> sf_post 上抬所需的前置尺度按一阶段方式分发到上游、最后素数尽量保持高位；**所有装噪点 ≤46**（噪声表上限，
+> 超过模型装不进去）；replan 校验后取**噪声最小**的组合。block2 43->46 / block4 51->53 / block5_n2,n4 31->43。
 >
-> 这轮 active 只做门禁（CPU、replan-only、不做 model forward、不碰 GPU / 正在跑的 60k）：
-> 新回归测试（block2/4/5_n2/5_n4 真 replan）+ precision-boost 回归 必须全过。
+> 本轮 active（CPU、replan-only、不做 model forward、不碰 GPU / 正在跑的 60k）：
+> 1) fused-rescale 回归（apply 依赖它把被融合 rescale 排除在装噪点外）；
+> 2) phase-1+phase-2 precision-boost 回归（block2/4/5_n2/5_n4 真 replan）；
+> 3) 把 phase-1+phase-2 应用到 committed fusion maps（boost_options_for_block 现含两阶段），
+>    硬 guard 校验 output==target / 上游素数不变 / fusion 不变 / 全部 ≤46；
+> 4) 校验 maps 可被 FusionCountMap.load 加载、option0==baseline、boosted output_sf==target；
+> 5) git commit + push 回传更新后的 4 张 maps。
+> 注：更新 maps 不会让正在跑的 60k 崩（它启动时已把 maps 读进内存）；要让 60k 用上 phase-2，需重启。
 
 ```bash
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export CUDA_VISIBLE_DEVICES=""   # CPU-only: do NOT touch the GPUs the running 60k uses
 TS=$(date +%Y%m%d_%H%M%S)
-OUT="experiments/server_command_runs/stage2_fused_rescale_fix_${TS}"; mkdir -p "$OUT"
+OUT="experiments/server_command_runs/stage2_precision_boost_phase2_${TS}"; mkdir -p "$OUT"
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git config --local http.version HTTP/1.1 || true
   git config --local protocol.version 0 || true
   git rev-parse HEAD > "$OUT/HEAD.txt"; cat "$OUT/HEAD.txt"; git log --oneline -3 | tee "$OUT/recent_commits.txt"
 fi
 
-echo "#################### [1] fused-rescale install regression (REAL replan, all fused block types) ####################"
-python3 -m unittest tests.test_blb_fused_rescale_install -v 2>&1 | tee "$OUT/fused_rescale_test.txt"
-grep -qE "(^OK|^OK )" "$OUT/fused_rescale_test.txt" || { echo "[FATAL] fused-rescale regression failed"; exit 1; }
-grep -qE "Ran 4 tests" "$OUT/fused_rescale_test.txt" || { echo "[FATAL] expected 4 tests"; exit 1; }
-if grep -q "skipped" "$OUT/fused_rescale_test.txt"; then
-  echo "[FATAL] tests SKIPPED - rescale_optimizer_bridge (torch) or rescale_optimizer not importable on server"; exit 1
-fi
+echo "#################### [1] fused-rescale install regression (apply depends on it) ####################"
+python3 -m unittest tests.test_blb_fused_rescale_install -v 2>&1 | tee "$OUT/t_fused.txt"
+grep -qE "^OK" "$OUT/t_fused.txt" || { echo "[FATAL] fused-rescale regression failed"; exit 1; }
+grep -q "skipped" "$OUT/t_fused.txt" && { echo "[FATAL] fused-rescale tests SKIPPED (torch/rescale_optimizer not importable)"; exit 1; } || true
 
-echo "#################### [2] precision-boost regression (REAL replan) ####################"
-python3 -m unittest tests.test_blb_precision_boost -v 2>&1 | tee "$OUT/precision_boost_test.txt"
-grep -qE "(^OK|^OK )" "$OUT/precision_boost_test.txt" || { echo "[FATAL] precision-boost regression failed"; exit 1; }
+echo "#################### [2] precision-boost phase-1 + phase-2 regression (REAL replan) ####################"
+python3 -m unittest tests.test_blb_precision_boost tests.test_blb_precision_boost_phase2 -v 2>&1 | tee "$OUT/t_boost.txt"
+grep -qE "^OK" "$OUT/t_boost.txt" || { echo "[FATAL] precision-boost regression failed"; exit 1; }
+grep -q "skipped" "$OUT/t_boost.txt" && { echo "[FATAL] precision-boost tests SKIPPED (torch/rescale_optimizer not importable on server)"; exit 1; } || true
 
-echo "[DONE] fused-rescale fix validated on the server; OUT=$OUT (the running 60k was NOT touched)."
-echo "[NOTE] this fix CHANGES the installed noise for FUSION options (removes the spurious"
-echo "       rescale noise at fused points). The in-flight 60k (batched OFF, OLD install) keeps"
-echo "       its OLD noise; restart it only if you want the corrected fusion install in that run."
+echo "#################### [3] dry-run apply (phase-1 + phase-2) ####################"
+python3 scripts/blb_apply_precision_boost.py --dry-run 2>&1 | tee "$OUT/apply_dryrun.txt"
+
+echo "#################### [4] REAL apply to committed maps (hard guard inside) ####################"
+python3 scripts/blb_apply_precision_boost.py 2>&1 | tee "$OUT/apply.txt"
+grep -q "precision boost applied" "$OUT/apply.txt" || { echo "[FATAL] apply did not finish"; exit 1; }
+
+echo "#################### [5] verify maps load + option0==baseline + boosted output_sf==target ####################"
+python3 - <<'PY' 2>&1 | tee "$OUT/verify.txt"
+import json, pathlib, sys
+sys.path[:0] = [".", "blb_stage2_rl", "Rescale_optimizer"]
+import precision_boost as pb
+from fusion_count_map import FusionCountMap
+RO = "Rescale_optimizer"
+# achieved output (install-clamped): block5_n1 config ceiling is 48 but a single
+# output rescale caps at 46 (no final encode to split) -> 46.
+TARGETS = {"block2_mrpc": 46, "block4": 53, "block5_n1": 46, "block5_n2": 43, "block5_n4": 43}
+mdir = pathlib.Path("blb_stage2_rl/fusion_maps/mrpc")
+bad = 0
+for gk, want in TARGETS.items():
+    p = mdir / f"{gk}.json"
+    payload = json.loads(p.read_text())
+    FusionCountMap.load(str(p))  # runtime loader must accept it
+    topo = pb.TOPOLOGIES[gk]
+    tgt = pb.effective_output_target(topo, pb.target_output_sf(gk, profile="mrpc", root=RO))
+    assert tgt == want, f"{gk}: effective target {tgt} != expected {want}"
+    for o in payload["options"]:
+        fc = int(o.get("fusion_count", 0))
+        if fc == 0:
+            if o.get("boosted"):
+                print(f"[BAD] {gk} option0 (baseline) must NOT be boosted"); bad += 1
+            continue
+        if not o.get("boosted") or not o.get("explicit_field_values"):
+            print(f"[BAD] {gk} fc={fc} not boosted"); bad += 1; continue
+        if int(o.get("output_sf", -1)) != tgt:
+            print(f"[BAD] {gk} fc={fc} output_sf={o.get('output_sf')} != target {tgt}"); bad += 1
+        fv = o["explicit_field_values"]
+        over = [(n.cfg_field, fv[n.cfg_field]) for n in topo.nodes
+                if n.cfg_field and n.kind in ("fresh","encode","rescale")
+                and n.cfg_field in fv and int(fv[n.cfg_field]) > 46]
+        if over:
+            print(f"[BAD] {gk} fc={fc} installed SF over 46: {over}"); bad += 1
+        print(f"[OK] {gk} fc={fc} output_sf={o['output_sf']} ({o.get('boost_description','')})")
+print("VERIFY_OK" if bad == 0 else f"VERIFY_FAIL ({bad} problems)")
+sys.exit(0 if bad == 0 else 1)
+PY
+grep -q "VERIFY_OK" "$OUT/verify.txt" || { echo "[FATAL] map verification failed"; exit 1; }
+
+echo "#################### [6] commit + push updated maps ####################"
+git add blb_stage2_rl/fusion_maps/mrpc/*.json
+git commit -m "Apply phase-2 precision boost to fusion maps (output SF -> ceiling)" || echo "[note] nothing to commit"
+git push origin HEAD 2>&1 | tee "$OUT/push.txt" || echo "[note] push failed; maps are committed locally on the server, push manually"
+
+echo "[DONE] phase-2 precision boost applied + verified; OUT=$OUT (the running 60k was NOT touched)."
+echo "[NOTE] phase-2 raises FUSION options' output SF -> changes installed noise for fusion options."
+echo "       The in-flight 60k keeps its OLD maps in memory; RESTART it to pick up phase-2."
 ```
 
 ## ⏸ on-deck — KV-cache 端到端吞吐 A/B（**已解决/跳过** — 前向基准已判 NOT EFFECTIVE）
@@ -79,7 +137,7 @@ run_ab () {   # $1 = tag (off/on), $2 = kv flag (0/1)
     --stage2-stability-tolerance 5.0 --stage2-limit-tolerance 0.005 \
     --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
     --blb-v3-fusion-exploration-epsilon 0.05 \
-    --stage2-workers-per-device 2 \
+    --stage2-workers-per-device 1 \
     --blb-v3-kv-cache-rollout "$kv" \
     --fresh 2>&1 | tee "$OUT/${tag}_launch.log"
   sleep 12
@@ -418,7 +476,7 @@ assert expand_device_ids_for_workers([0, 1, 2, 3, 4], 2) == [0, 1, 2, 3, 4, 0, 1
 assert expand_device_ids_for_workers([0, 1], 1) == [0, 1]   # wpd=1 == 旧行为
 from blb_stage2_rl.runner import BLBStage2TrainConfig as _BTC
 assert _BTC().stage2_workers_per_device == 1
-print("workers-per-device 断言 OK（默认 1 = 旧行为；gN/60k 用 2）")
+print("workers-per-device 断言 OK（默认 1；gN/60k 用 worker policy + dynamic assignment）")
 PY
 echo "==================== [phase0b] ADR-012/013 单元测试（torch 在位：log-barrier/ε混合/复测/近界档/轮换） ===================="
 for f in test_blb_fusion_curriculum test_blb_fusion_reward test_blb_fusion_exploration test_blb_log_barrier_reward test_blb_fusion_saturation test_blb_stage2_outputs test_blb_continuous_reward; do
@@ -492,6 +550,7 @@ GOUT="$OUT/stage2_ngpu_gate"; mkdir -p "$GOUT"
 run_gate () {   # tag, visible devs, --stage2-rl-devices 值, workers-per-device
   local tag="$1" vis="$2" devspec="$3" wpd="${4:-1}" pid rundir t0 t1
   echo "-------- [gate] $tag CUDA_VISIBLE_DEVICES=$vis stage2-rl-devices=$devspec wpd=$wpd episodes=$GATE_EPISODES --------"
+  BLB_STAGE2_POLICY_DEVICE=worker BLB_STAGE2_DYNAMIC_ASSIGNMENT=1 \
   CUDA_VISIBLE_DEVICES="$vis" bash llama_7B_LayerImportance.sh run rl \
     --preset mrpc-blb-stage2-rl \
     --blb-v3-fusion-count-action 1 \
@@ -525,7 +584,7 @@ run_gate () {   # tag, visible devs, --stage2-rl-devices 值, workers-per-device
 # g1 = 最简参照（1 worker 总量）；gN = 生产配置（N 卡 × 2 worker/卡）。
 # 同一条 byte-diff 同时验证「卡数无关」与「worker 数无关」两个不变量。
 run_gate g1 0       0       1  || { echo "[FATAL] 门禁 g1 失败"; exit 1; }
-run_gate gN "$DEVS" "$DEVS" 2  || { echo "[FATAL] 门禁 gN 失败"; exit 1; }
+run_gate gN "$DEVS" "$DEVS" 1  || { echo "[FATAL] 门禁 gN 失败"; exit 1; }
 
 echo "==== [gate] 判读 ====" | tee "$GOUT/verdict.txt"
 GATE_PASS=1
@@ -585,6 +644,7 @@ if [ "$GATE_PASS" != 1 ]; then
 fi
 
 echo "==================== [phase60k] 门禁 PASS → 启动 ${LONG_EPISODES}-episode curriculum-ON fusion 长跑 ===================="
+BLB_STAGE2_POLICY_DEVICE=worker BLB_STAGE2_DYNAMIC_ASSIGNMENT=1 \
 CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
   --preset mrpc-blb-stage2-rl \
   --blb-v3-fusion-count-action 1 \
@@ -599,7 +659,7 @@ CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
   --stage2-limit-tolerance 0.005 \
   --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
   --blb-v3-fusion-exploration-epsilon 0.05 \
-  --stage2-workers-per-device 2 \
+  --stage2-workers-per-device 1 \
   --fresh 2>&1 | tee "$OUT/long60k_launch.log"
 sleep 12
 PID60="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
@@ -684,7 +744,7 @@ ls -la "$OUT"
 - **barrier 不破硬优先级**：priority/rank-key/选择逐位不变；barrier 只改 PPO 标量；violated 段恒 < P3 下限 40 且 P1 不吃 cost ⇒ item7 保持。纯 metrics 函数 ⇒ 1==N 不受影响。`acc_barrier_enabled=False` 回退 ADR-012。
 - **崩溃 watchdog**：sequential 路径不检查 STOP_RL，故 watchdog 用 SIGTERM→SIGKILL（best/diagnostics 已周期原子写盘，杀掉只丢最近 <200 回合可恢复态）。判据 = 连续 12 个 30min 窗口 P3 占比 <2%（持续无 P3 的死亡签名）；健康曲线有 P3 时永不触发。
 - `--blb-v3-reward-devices`（K-split）不再使用；`--stage2-rl-devices`（互斥）；`KTRIALS` 固定 5；噪声/策略/更新/复测按 (seed, 全局episode, …) 键控。
-- **workers-per-device（提速，画像驱动）**：探针占 78%（GPU-bound）、rollout 21%（CPU 重）→ `--stage2-workers-per-device 2` 让同卡两 worker 互相掩盖空隙；RNG 原子单元持同卡锁，trial 级交错不改变各自噪声流 → 任意 worker 数结果逐字节一致（gN 用 2 vs g1 用 1 的 byte-diff 直接验证）。预期 60k 13.5h→~10h。
+- **workers-per-device / scheduling（提速，画像驱动）**：2026-06-23 profile-off A/B 结果显示最优稳定配置是 `--stage2-workers-per-device 1` + `BLB_STAGE2_POLICY_DEVICE=worker` + `BLB_STAGE2_DYNAMIC_ASSIGNMENT=1`，1GPU/5GPU 效果与 PPO updates matched，端到端约 `3.535x`。`wpd=2` 会把同卡 terminal probe 均值抬到约 `5.6s/episode`，端到端降到约 `2.804x`；CPU-policy 单卡绝对吞吐也低于 worker-policy 5GPU。因此默认 60k 与确定性门禁使用上述最优配置，CPU-policy / static assignment / wpd=2 仅作为显式 override 的诊断候选。
 
 ### 预期产物
 

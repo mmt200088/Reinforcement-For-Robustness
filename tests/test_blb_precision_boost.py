@@ -633,14 +633,13 @@ class SFDirectEquivalenceTest(unittest.TestCase):
     "torch + rescale_optimizer required",
 )
 class BoostOptionsForBlockGuardTest(unittest.TestCase):
-    """The builder/apply integration guard (``fusion_enum.boost_options_for_block``)
-    must ACCEPT block4's legitimate ``(60, 59)``: its short prime structurally maxes
-    at 59, not q_max=60 (odd deficit, no after-×2 weight-1 encode). Regression for
-    the guard that wrongly required every prime == q_max and aborted the block4 map
-    apply with "inconsistent option ... q_final=(60, 59) expected all=60". The
-    per-block ``BoostReplanTest`` classes call ``boost_option`` directly and never
-    hit this guard, so this exercises the missing integration path against the real
-    committed maps. torch + rescale_optimizer required (skipped locally)."""
+    """The builder/apply integration guard (``fusion_enum.boost_options_for_block``),
+    now phase-1 + phase-2. Exercises the FULL builder path against the real committed
+    maps (the per-block ``BoostReplanTest`` classes call ``boost_option`` directly and
+    never hit it). Phase 2 raises the final OUTPUT scale to its config-derived ceiling
+    and may LIFT the last prime (block4 59→60), so assertions are on output==target +
+    prior-prime preservation + the ≤46 install cap, not an exact last prime.
+    torch + rescale_optimizer required (skipped locally)."""
 
     def _ctx_and_options(self, graph_key, block_idx, gelu_degree):
         import json
@@ -655,32 +654,47 @@ class BoostOptionsForBlockGuardTest(unittest.TestCase):
         options = json.loads(path.read_text(encoding="utf-8"))["options"]
         return ctx, options
 
-    def test_block4_apply_accepts_59(self):
+    def _assert_phase2(self, graph_key, block_idx, gelu_degree, expected_target, prior_prime):
         import fusion_enum
-        ctx, options = self._ctx_and_options("block4", 4, 4)
-        # under the old all-q_max guard this RAISED RuntimeError("inconsistent option").
+        import precision_boost as pbm
+        ctx, options = self._ctx_and_options(graph_key, block_idx, gelu_degree)
         boosted = fusion_enum.boost_options_for_block(ctx, options)
         nz = [o for o in boosted if int(o.get("fusion_count", 0)) != 0]
-        self.assertTrue(nz, "block4 must have a non-zero-fusion option to boost")
-        self.assertTrue(
-            all(o.get("boosted") and o.get("explicit_field_values") for o in nz),
-            "block4 fc!=0 option must be boosted with explicit_field_values",
-        )
-        # the boosted chain is (60, 59) — the achieved max fill, NOT all q_max=60.
-        final = fusion_enum._eval_block_from_field_values(ctx, nz[0]["explicit_field_values"])
-        self.assertTrue(final.get("valid"))
-        self.assertEqual(tuple(int(q) for q in final["q_final"]), (60, 59))
+        self.assertTrue(nz, f"{graph_key} must have a non-zero-fusion option to boost")
+        for o in nz:
+            self.assertTrue(o.get("boosted") and o.get("explicit_field_values"))
+            # phase 2 reached the config-derived output ceiling.
+            self.assertEqual(int(o["output_sf"]), expected_target)
+            fv = o["explicit_field_values"]
+            final = fusion_enum._eval_block_from_field_values(ctx, fv)
+            self.assertTrue(final.get("valid"))
+            qf = tuple(int(q) for q in final["q_final"])
+            self.assertEqual(qf[:-1], prior_prime, f"{graph_key}: prior primes changed")
+            self.assertGreaterEqual(qf[-1], 59)  # last prime kept high (q_max or q_max-1)
+            # every installed encode/rescale SF is table-representable (model-installable).
+            topo = pbm.TOPOLOGIES[graph_key]
+            for n in topo.nodes:
+                if n.cfg_field and n.kind in ("fresh", "encode", "rescale") and n.cfg_field in fv:
+                    self.assertLessEqual(int(fv[n.cfg_field]), 46, f"{graph_key}.{n.cfg_field} over cap")
 
-    def test_qmax_block_still_boosts(self):
-        # block2 reaches all q_max=60; the guard fix must NOT regress the all-q_max
-        # blocks (they must still be accepted and boosted).
-        import fusion_enum
-        ctx, options = self._ctx_and_options("block2_mrpc", 2, 4)
-        boosted = fusion_enum.boost_options_for_block(ctx, options)
-        nz = [o for o in boosted if int(o.get("fusion_count", 0)) != 0]
-        self.assertTrue(nz and all(o.get("boosted") for o in nz))
-        final = fusion_enum._eval_block_from_field_values(ctx, nz[0]["explicit_field_values"])
-        self.assertEqual(tuple(int(q) for q in final["q_final"]), (60, 60))
+    def test_block2_phase2_reaches_46(self):
+        self._assert_phase2("block2_mrpc", 2, 4, expected_target=46, prior_prime=(60,))
+
+    def test_block4_phase2_reaches_53(self):
+        # block4's short prime maxes at 59; phase 2 may lift the last prime to 60.
+        self._assert_phase2("block4", 4, 4, expected_target=53, prior_prime=(60,))
+
+    def test_block5_n2_phase2_reaches_43(self):
+        self._assert_phase2("block5_n2", 5, 2, expected_target=43, prior_prime=(60,))
+
+    def test_block5_n4_phase2_reaches_43(self):
+        # block5_n4 keeps its middle prime (31) from phase 1.
+        self._assert_phase2("block5_n4", 5, 4, expected_target=43, prior_prime=(60, 31))
+
+    def test_block5_n1_phase2_clamps_48_to_46(self):
+        # block5_n1 has NO phase-1 boost; phase-2's config ceiling is 48 but a single
+        # output rescale install-clamps to 46. q_final is a single prime → no prior prime.
+        self._assert_phase2("block5_n1", 5, 1, expected_target=46, prior_prime=())
 
 
 if __name__ == "__main__":

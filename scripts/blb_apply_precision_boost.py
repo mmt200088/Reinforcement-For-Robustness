@@ -1,18 +1,21 @@
-"""Apply the fusion-option precision boost ("加大精度") to the committed maps.
+"""Apply the fusion-option precision boost ("加大精度", phase 1 + phase 2) to the
+committed maps.
 
 The boost (``fusion_enum.boost_options_for_block``) is a POST-enumeration step:
 the builder runs ``enum → group_min_noise_options → boost_options_for_block``.
-The committed ``blb_stage2_rl/fusion_maps/<profile>/*.json`` were built before the
-boost existed, so they hold the pre-boost (enum→group) options. Re-running the
-full enumeration just to apply a deterministic post-process would cost ~minutes
-to ~1h (block4); since the boost only transforms the already-grouped options, this
-script loads each committed map, applies the boost to its options, and rewrites it
-— byte-equivalent to a full builder rebuild's final step, but in seconds.
+``boost_options_for_block`` now chains BOTH stages — phase 1 raises the
+intermediate short primes, phase 2 raises the final output scale to its
+config-derived ceiling — so this one script applies both. The committed
+``blb_stage2_rl/fusion_maps/<profile>/*.json`` were built before phase 2 existed
+(they hold phase-1-only options); re-running the full enumeration just to apply a
+deterministic post-process would cost ~minutes to ~1h (block4), so this script
+loads each committed map, re-derives the boost from each option's ``action_indices``
+(the pre-boost base — never rewritten), and rewrites it — byte-equivalent to a
+full builder rebuild's final step, but in seconds.
 
 Needs torch + rescale_optimizer (the boost builds real cfgs and replan-verifies);
 run on the server. Idempotent: re-running on an already-boosted map re-derives the
-same boosted options (the base SFs come from each option's action_indices, which
-the boost never rewrites).
+same phase-1+phase-2 options.
 """
 from __future__ import annotations
 
@@ -27,11 +30,13 @@ for p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimiz
         sys.path.insert(0, p)
 
 # (graph_key, block_idx, gelu_degree, attn_degree) for each boostable block-type.
-# Mirrors scripts/blb_build_fusion_count_map.py's BLOCK_TYPES degrees; block5_n1
-# is intentionally absent (its fused chain is already 60/60/60 → no boost).
+# Mirrors scripts/blb_build_fusion_count_map.py's BLOCK_TYPES degrees. block5_n1 gets
+# NO phase-1 boost (its fused chain is already all-q_max) but DOES get phase-2 (raise
+# the output scale toward the ceiling, install-clamped to 46).
 BOOST_TARGETS = [
     ("block2_mrpc", 2, 4, 2),
     ("block4", 4, 4, 2),
+    ("block5_n1", 5, 1, 2),
     ("block5_n2", 5, 2, 2),
     ("block5_n4", 5, 4, 2),
 ]
@@ -74,14 +79,17 @@ def main() -> int:
         for o in options:
             tag = ""
             if o.get("boosted"):
-                tag = f"  BOOSTED ({o.get('boost_description', '')})"
+                tag = (f"  BOOSTED out_sf={o.get('output_sf', '?')} "
+                       f"({o.get('boost_description', '')})")
             print(f"  opt {o['option_id']} fc={o['fusion_count']} bits={o['total_bits']} "
                   f"var={o['total_variance']:.3e}{tag}")
         print(f"  -> {n_boosted}/{len(options)} options boosted")
 
         if not args.dry_run:
             payload["options"] = options
-            payload.setdefault("build_meta", {})["precision_boost_applied"] = True
+            meta = payload.setdefault("build_meta", {})
+            meta["precision_boost_applied"] = True
+            meta["precision_boost_phase2_applied"] = True
             path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
             print(f"  wrote {path}")
     print("\n[done] precision boost applied" + (" (dry-run)" if args.dry_run else ""))

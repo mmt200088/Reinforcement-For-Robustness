@@ -223,6 +223,7 @@ class BlockTypeBuildContext:
     attn_per_layer: List[int]
     baseline_skeleton: List[Any]
     baseline_block_indices: Tuple[int, ...]
+    rescale_optimizer_root: str = ""
     enum_positions: List[int] = field(default_factory=list)
     enum_levels: List[int] = field(default_factory=list)
     enum_choices: List[List[int]] = field(default_factory=list)
@@ -378,6 +379,7 @@ def _eval_block_from_field_values(ctx: "BlockTypeBuildContext", field_values: Ma
         "total_bits": int(out.total_bits),
         "q_initial": tuple(int(x) for x in r.get("q_initial", ())),
         "q_final": tuple(int(x) for x in r.get("q_final", ())),
+        "t_final": tuple(int(x) for x in r.get("t_final", ())),
         "fusions": tuple(r.get("fusions", ())),
         "points": points,
     }
@@ -386,13 +388,20 @@ def _eval_block_from_field_values(ctx: "BlockTypeBuildContext", field_values: Ma
 def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Apply the precision boost ("加大精度") to each non-zero-fusion option.
 
-    For every option with ``fusion_count != 0`` whose block-type has a registered
-    ``ChainTopology``: raise its short modulus primes to ``q_max`` at minimum
-    installed noise (``precision_boost.boost_option``, replan-verified), and rewrite
-    the option as a boosted explicit-SF option (``boosted=True`` +
-    ``explicit_field_values``). Options with no topology, no short prime, or no
-    valid all-``q_max`` candidate are left unchanged. ``option0`` (fc=0) is never
-    touched. Mutates + returns ``options``.
+    Two stages, chained, for every option with ``fusion_count != 0`` whose
+    block-type has a registered ``ChainTopology``:
+
+    * **Phase 1** (``precision_boost.boost_option``): raise the intermediate short
+      modulus primes as high as possible (``≤ q_max``) at minimum installed noise.
+    * **Phase 2** (``precision_boost.boost_option_phase2``): on top of phase 1,
+      raise the final OUTPUT scale (``last_rescale.sf_post + final_encode``) to its
+      ceiling ``target = q_tail_bits - amplitude_budgets[-1] - h_sf`` (read from the
+      block's RO config), again at minimum installed noise.
+
+    The option is rewritten as a boosted explicit-SF option (``boosted=True`` +
+    ``explicit_field_values``). Options with no topology / no short prime / already
+    at target are left at whatever the earlier stage(s) produced (or unchanged).
+    ``option0`` (fc=0) is never touched. Mutates + returns ``options``.
     """
     try:
         import fusion_count_map as _fcm
@@ -408,6 +417,9 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
     noise_order = _fcm.SummedInstalledVariance()
     li_gelu = int(ctx.gelu_per_layer[ctx.ref_layer])
     li_attn = int(ctx.attn_per_layer[ctx.ref_layer])
+    # phase-2 output-SF ceiling (general; from the block's RO config).
+    target_out = _pb.target_output_sf(ctx.graph_key, ctx.profile, ctx.rescale_optimizer_root)
+    _last_idx, _last_field, final_field = _pb._last_rescale_and_final_encode(topo)
 
     def _make_probe(slots: Mapping[str, Any]) -> Any:
         r = _eval_block_from_field_values(ctx, slots)
@@ -416,7 +428,7 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
         return _pb.ReplanProbe(
             valid=True, fusion_count=int(r["fusion_count"]),
             q_initial=r["q_initial"], q_final=r["q_final"], fusions=r["fusions"],
-            extra=r["points"],
+            extra=r["points"], t_final=r["t_final"],
         )
 
     def _noise(_slots: Mapping[str, Any], probe: Any) -> float:
@@ -433,42 +445,73 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
         # keep ints (incl. output_truncation_k); drop inactive-rescale None fields
         # (their _build_block*_action reads are guarded by the active set).
         base_fv = {k: int(v) for k, v in base_fv_raw.items() if v is not None}
-        res = _pb.boost_option(
+
+        # --- phase 1: raise the intermediate short primes ---
+        res1 = _pb.boost_option(
             topology=topo, base_slots=base_fv,
             replan_fn=_make_probe, noise_fn=_noise, q_max=int(topo.q_max),
         )
-        if res is None:
-            continue
-        final = _eval_block_from_field_values(ctx, res.boosted_slots)
+        base_p2 = dict(res1.boosted_slots) if res1 is not None else dict(base_fv)
+
+        # --- phase 2: raise the final output scale to its ceiling ---
+        res2 = _pb.boost_option_phase2(
+            topology=topo, base_slots=base_p2, target_output_sf=int(target_out),
+            replan_fn=_make_probe, noise_fn=_noise, q_max=int(topo.q_max),
+        )
+        if res1 is None and res2 is None:
+            continue  # nothing to boost — leave the option as-is
+
+        final_slots = dict(res2.boosted_slots) if res2 is not None else base_p2
+        expected_qf = tuple(int(q) for q in (res2.boosted_q_final if res2 is not None else res1.boosted_q_final))
+        boosted_var = float(res2.total_variance if res2 is not None else res1.total_variance)
+        # the achievable output target (clamped to the install cap — block5_n1: 48→46).
+        eff_target = _pb.effective_output_target(topo, int(target_out), int(_pb.MAX_ENCODE_SF))
+        descr = "; ".join(
+            d for d in (
+                (f"p1:{res1.description}" if res1 is not None else None),
+                (f"p2:{res2.description}" if res2 is not None else None),
+            ) if d
+        )
+
+        final = _eval_block_from_field_values(ctx, final_slots)
         # hard build-time guard: a stored boost MUST be valid, keep fusion_count,
-        # and reproduce boost_option's OWN replan-verified boosted chain under an
-        # INDEPENDENT replan (so a broken topology / serialization drift aborts the
-        # build). NOTE: the boosted chain is NOT always all-q_max — block4's short
-        # prime structurally maxes at 59 (odd deficit, no after-×2 weight-1 encode),
-        # so check against res.boosted_q_final (the achieved max fill, which
-        # boost_option already pins to base_sum + short_prime_fill), NOT q_max.
+        # reproduce the chain under an INDEPENDENT replan, hit the phase-2 output
+        # ceiling, and install nowhere above the noise-table max (so the model can
+        # actually realize it). Any drift aborts the build.
         final_qf = tuple(int(q) for q in final.get("q_final", ()))
-        expected_qf = tuple(int(q) for q in res.boosted_q_final)
+        final_tf = tuple(int(q) for q in final.get("t_final", ()))
+        out_sf = (final_tf[-1] if final_tf else 0) + (int(final_slots[final_field]) if final_field else 0)
+        over_cap = [
+            (n.cfg_field, int(final_slots[n.cfg_field]))
+            for n in topo.nodes
+            if n.cfg_field and n.kind in ("fresh", "encode", "rescale")
+            and n.cfg_field in final_slots and int(final_slots[n.cfg_field]) > int(_pb.MAX_ENCODE_SF)
+        ]
         if (
             not final.get("valid")
             or int(final.get("fusion_count", -1)) != int(opt["fusion_count"])
             or final_qf != expected_qf
+            or (res2 is not None and out_sf != int(eff_target))
+            or over_cap
         ):
             raise RuntimeError(
                 f"{ctx.graph_key}: precision boost produced an inconsistent option "
-                f"(fc={final.get('fusion_count')} q_final={final_qf} "
+                f"(fc={final.get('fusion_count')} q_final={final_qf} out_sf={out_sf} "
+                f"eff_target={eff_target} config_target={target_out} over_cap={over_cap} "
                 f"expected fc={opt['fusion_count']} q_final={expected_qf}); aborting build"
             )
         opt["boosted"] = True
-        opt["explicit_field_values"] = {k: int(v) for k, v in res.boosted_slots.items()}
-        opt["total_variance"] = float(res.total_variance)
+        opt["explicit_field_values"] = {k: int(v) for k, v in final_slots.items()}
+        opt["total_variance"] = boosted_var
         opt["total_bits"] = int(final.get("total_bits", opt.get("total_bits", 0)))
-        opt["boost_description"] = str(res.description)
+        opt["boost_description"] = descr
+        opt["output_sf"] = int(out_sf)              # achieved (install-clamped)
+        opt["output_sf_config_ceiling"] = int(target_out)  # q_tail - amplitude - h_sf
         # refresh the human SF view for the topology's named slots
         slots_view = opt.get("slots") or {}
         for node in topo.nodes:
-            if node.cfg_field and node.cfg_field in res.boosted_slots and node.cfg_field in slots_view:
-                slots_view[node.cfg_field] = int(res.boosted_slots[node.cfg_field])
+            if node.cfg_field and node.cfg_field in final_slots and node.cfg_field in slots_view:
+                slots_view[node.cfg_field] = int(final_slots[node.cfg_field])
         opt["slots"] = slots_view
     return options
 
@@ -584,6 +627,7 @@ def prepare_block_type_context(
         attn_per_layer=attn_per_layer,
         baseline_skeleton=baseline_skeleton,
         baseline_block_indices=tuple(int(x) for x in baseline_full[block_offset : block_offset + block_num_slots]),
+        rescale_optimizer_root=str(rescale_optimizer_root),
         active_rescale_fields=active_rescale_fields,
     )
 
