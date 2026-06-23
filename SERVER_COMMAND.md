@@ -17,8 +17,11 @@
 > 2) phase-1+phase-2 precision-boost 回归（block2/4/5_n2/5_n4 真 replan）；
 > 3) 把 phase-1+phase-2 应用到 committed fusion maps（boost_options_for_block 现含两阶段），
 >    硬 guard 校验 output==target / 上游素数不变 / fusion 不变 / 全部 ≤46；
-> 4) 校验 maps 可被 FusionCountMap.load 加载、option0==baseline、boosted output_sf==target；
-> 5) git commit + push 回传更新后的 4 张 maps。
+> 4) 校验 maps 内容：可被 FusionCountMap.load 加载、option0==baseline、boosted output_sf==target、全部 ≤46；
+> 5) 校验**运行时安装路径**（真实 maps，驱动 BLBStage2Env.step 的 evaluate_action_for_cost(boosted)
+>    → apply_optimizer_output_to_cfg + sync_block*）：Q1 送入模型的是 phase-2 boosted 组（装入精度高于网格解码）、
+>    Q2 该组 rescale 被模数链融合置空（rescale_fused_away）—— 这正是用户要确保的两点；
+> 6) git commit + push 回传更新后的 maps + 该校验脚本。
 > 注：更新 maps 不会让正在跑的 60k 崩（它启动时已把 maps 读进内存）；要让 60k 用上 phase-2，需重启。
 
 ```bash
@@ -91,8 +94,19 @@ sys.exit(0 if bad == 0 else 1)
 PY
 grep -q "VERIFY_OK" "$OUT/verify.txt" || { echo "[FATAL] map verification failed"; exit 1; }
 
+echo "#################### [5b] verify RUNTIME install path on the REAL maps: model gets the boosted group (Q1) + its rescale is fused-away (Q2) ####################"
+# step [5] checks MAP CONTENTS (output_sf==target, <=46). This drives the exact
+# BLBStage2Env.step path (evaluate_action_for_cost(boosted) -> apply_optimizer_output_to_cfg
+# + sync_block*) on each committed boosted option and asserts: Q1 the installed cfg
+# carries the boosted (phase-2, higher-precision) group not the in-grid decode; Q2
+# a rescale is nulled (rescale_fused_away) for every fusing option.
+python3 scripts/blb_verify_boosted_install.py \
+  --profile mrpc --rescale-optimizer-root Rescale_optimizer \
+  --maps-dir blb_stage2_rl/fusion_maps/mrpc 2>&1 | tee "$OUT/verify_install.txt"
+grep -q "VERIFY_OK" "$OUT/verify_install.txt" || { echo "[FATAL] runtime install-path verification failed (Q1 boosted-install / Q2 fused-rescale)"; exit 1; }
+
 echo "#################### [6] commit + push updated maps ####################"
-git add blb_stage2_rl/fusion_maps/mrpc/*.json
+git add blb_stage2_rl/fusion_maps/mrpc/*.json scripts/blb_verify_boosted_install.py
 git commit -m "Apply phase-2 precision boost to fusion maps (output SF -> ceiling)" || echo "[note] nothing to commit"
 git push origin HEAD 2>&1 | tee "$OUT/push.txt" || echo "[note] push failed; maps are committed locally on the server, push manually"
 
