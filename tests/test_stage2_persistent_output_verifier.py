@@ -11,10 +11,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _write_minimal_progress(progress_dir: Path, *, include_live_summary: bool = True) -> None:
+def _write_minimal_progress(
+        progress_dir: Path,
+        *,
+        include_live_summary: bool = True,
+        details_dir: Path | None = None,
+) -> None:
     progress_dir.mkdir(parents=True, exist_ok=True)
     (progress_dir / "diagnostics").mkdir()
-    (progress_dir / "details").mkdir()
+    details_dir = details_dir or (progress_dir / "details")
+    details_dir.mkdir(parents=True, exist_ok=True)
 
     (progress_dir / "blb_stage2_status.json").write_text(
         json.dumps(
@@ -48,7 +54,7 @@ def _write_minimal_progress(progress_dir: Path, *, include_live_summary: bool = 
         "# diagnostics\n",
         encoding="utf-8",
     )
-    (progress_dir / "details" / "noise_ppo_step_info_1-3.txt").write_text(
+    (details_dir / "noise_ppo_step_info_1-3.txt").write_text(
         "episode details\n",
         encoding="utf-8",
     )
@@ -81,6 +87,37 @@ class Stage2PersistentOutputVerifierTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("VERIFY_OK", result.stdout)
         self.assertIn("blb_stage2_live_summary.md", result.stdout)
+
+    def test_verifier_accepts_details_sibling_of_progress_dir(self):
+        with tempfile.TemporaryDirectory(prefix="stage2_verify_real_layout_") as td:
+            run_dir = Path(td) / "persistent" / "rl" / "bert-base" / "mrpc" / "s1t0.001_s2t0.001_s2st3.0__smoke"
+            progress_dir = run_dir / "stage2_noise" / "progress"
+            _write_minimal_progress(
+                progress_dir,
+                details_dir=run_dir / "stage2_noise" / "details",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/verify_stage2_persistent_outputs.py",
+                    "--run-dir",
+                    str(run_dir),
+                    "--min-episodes",
+                    "3",
+                    "--min-ppo-updates",
+                    "1",
+                    "--require-png",
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("VERIFY_OK", result.stdout)
+        self.assertIn("details files=1", result.stdout)
 
     def test_verifier_fails_when_live_summary_is_missing(self):
         with tempfile.TemporaryDirectory(prefix="stage2_verify_bad_") as td:

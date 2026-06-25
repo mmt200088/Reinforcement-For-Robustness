@@ -12,7 +12,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 def _count_jsonl(path: Path) -> int:
@@ -74,10 +74,41 @@ def _parse_status(path: Path, failures: list[str]) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _latest_detail_files(details_dir: Path) -> Iterable[Path]:
-    if not details_dir.is_dir():
-        return []
-    return sorted(p for p in details_dir.iterdir() if p.is_file())
+def _detail_dir_candidates(progress: Path, args: argparse.Namespace) -> list[Path]:
+    candidates: list[Path] = []
+    if args.run_dir:
+        run_dir = Path(args.run_dir)
+        candidates.extend(
+            [
+                run_dir / "stage2_noise" / "details",
+                run_dir / "details",
+            ]
+        )
+    candidates.extend(
+        [
+            progress / "details",
+            progress.parent / "details",
+        ]
+    )
+
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(candidate)
+    return unique
+
+
+def _latest_detail_files(progress: Path, args: argparse.Namespace) -> tuple[list[Path], list[Path]]:
+    detail_dirs = _detail_dir_candidates(progress, args)
+    existing_dirs = [p for p in detail_dirs if p.is_dir()]
+    files: list[Path] = []
+    for details_dir in existing_dirs:
+        files.extend(p for p in details_dir.iterdir() if p.is_file())
+    return sorted(files), existing_dirs
 
 
 def verify(args: argparse.Namespace) -> int:
@@ -138,11 +169,12 @@ def verify(args: argparse.Namespace) -> int:
         except Exception as exc:
             failures.append(f"cannot parse diagnostics/ppo_updates.jsonl: {exc}")
 
-    detail_files = list(_latest_detail_files(progress / "details"))
+    detail_files, detail_dirs = _latest_detail_files(progress, args)
     if args.require_details and not detail_files:
-        failures.append("missing detail batch files under details/")
+        failures.append("missing detail batch files under stage2_noise/details or progress/details")
     elif detail_files:
-        successes.append(f"details files={len(detail_files)}")
+        detail_dir_list = ", ".join(str(p) for p in detail_dirs)
+        successes.append(f"details files={len(detail_files)} ({detail_dir_list})")
 
     print(f"progress_dir={progress}")
     print(f"completed_episodes={completed}")
