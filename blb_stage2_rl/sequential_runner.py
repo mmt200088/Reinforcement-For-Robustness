@@ -5067,6 +5067,16 @@ def run_sequential_via_runner(
 
     best_action_description_paths: Dict[str, str] = {}
     baseline_action_description_paths: Dict[str, str] = {}
+    # 加大精度 handoff: in fusion-count mode the persisted best_action_vec is a flat
+    # grid-index vector that CANNOT carry the precision boost (boosted SFs live in
+    # the option's explicit_field_values, above the grid). Reconstruct the per-step
+    # fusion (option, K) selection from the flat vec + the in-memory training map so
+    # the standalone validation-set final eval and the GLUE submission replay the
+    # EXACT boosted config the RL search selected (the same config the training
+    # terminal probe installed via _boosted_overrides). Without this, both install
+    # PRE-boost (noisier) noise — a config RL never optimized.
+    best_fusion_group: Optional[Dict[str, Any]] = None
+    best_fusion_fixed_path: str = ""
     try:
         baseline_desc = _describe_action_vector(
             baseline_action_vec,
@@ -5109,6 +5119,35 @@ def run_sequential_via_runner(
                 log(f"  {bullet} 最优动作可读说明 → {best_action_description_paths['md']}")
         except Exception as exc:
             log(f"  [persist][warning] best action description write failed: {exc}")
+
+    # 加大精度 handoff (fusion-count mode only): persist a fusion_count_fixed_action_v1
+    # config so downstream eval/submission replay the boosted option, not pre-boost.
+    if fusion_map is not None and best_action_vec is not None:
+        try:
+            from .fusion_fixed_action import build_fusion_fixed_config
+            best_fusion_cfg = build_fusion_fixed_config(
+                np.asarray(best_action_vec, dtype=int),
+                profile=str(train_cfg.profile),
+                num_layers=int(ev.total_layers),
+                gelu=np.asarray(fixed_gelu, dtype=int),
+                softmax=np.asarray(fixed_softmax, dtype=int),
+                fusion_map=fusion_map,
+                source="blb_v3_sequential_runtime_best",
+            )
+            best_fusion_group = best_fusion_cfg.get("group")
+            best_fusion_fixed_path = os.path.join(
+                blb_progress_dir, "blb_stage2_best_action_fusion_fixed.json",
+            )
+            with open(best_fusion_fixed_path, "w", encoding="utf-8") as _fh:
+                json.dump(best_fusion_cfg, _fh, ensure_ascii=False, indent=2)
+            _summ = best_fusion_cfg.get("summary", {})
+            log(
+                f"  {bullet} 最优动作 fusion-fixed 配置（含 boost 还原）→ {best_fusion_fixed_path}"
+                f"  (fusion={_summ.get('total_fusion_count')}, "
+                f"boosted_options={_summ.get('boosted_option_count')})"
+            )
+        except Exception as exc:
+            log(f"  [persist][warning] fusion-fixed best action write failed: {exc}")
 
     # Refresh status board's best block with the human-readable slot view too.
     try:
@@ -5397,6 +5436,11 @@ def run_sequential_via_runner(
                     "softmax_degree_per_layer": np.asarray(fixed_softmax, dtype=int).tolist(),
                     "best_action_readable_json": _paths.get("json", ""),
                     "best_action_readable_md": _paths.get("md", ""),
+                    # 加大精度: fusion (option, K) per step so a re-eval from this
+                    # archive replays the boosted config (None ⇒ per-slot run).
+                    "blb_v3_fusion_count_action": bool(best_fusion_group is not None),
+                    "blb_v3_best_action_group": best_fusion_group,
+                    "blb_v3_best_action_fusion_fixed_path": best_fusion_fixed_path,
                 }
                 _final_eval = {
                     "source": "training_best_mean_of_K_trials",
@@ -5600,6 +5644,12 @@ def run_sequential_via_runner(
         ),
         "blb_v3_best_reward": float(best_reward),
         "blb_v3_profile": str(train_cfg.profile),
+        # 加大精度 handoff: fusion-count mode carries the reconstructed per-step
+        # (option, K) selection so the embedded/standalone final eval replays the
+        # boosted config (None for per-slot runs ⇒ the default index decode path).
+        "blb_v3_fusion_count_action": bool(fusion_map is not None),
+        "blb_v3_best_action_group": best_fusion_group,
+        "blb_v3_best_action_fusion_fixed_path": best_fusion_fixed_path,
         "blb_v3_total_episodes": int(train_cfg.total_episodes),
         "rl_variant": seq_rl_variant,
         "sequential_diagnostics": {

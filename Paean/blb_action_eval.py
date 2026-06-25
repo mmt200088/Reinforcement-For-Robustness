@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,6 @@ import numpy as np
 from blb_rl_bridge import BLBNoiseRLBridge
 from blb_stage2_rl.action_space import (
     ActionDecodeResult,
-    BLB_FIRST_INPUT_N,
     _build_block1_action,
     _build_block2_action,
     _build_block4_action,
@@ -29,6 +29,7 @@ from blb_stage2_rl.action_space import (
     sum_truncation_k_in_action,
 )
 from blb_stage2_rl.feasibility import build_final_eval_feasibility
+from blb_stage2_rl.fusion_fixed_action import select_fusion_eval_metadata
 from final_evaluation_module import UnifiedFinalEvaluationModule
 from rescale_optimizer_bridge import (
     InProcessInvoker,
@@ -163,6 +164,42 @@ class BLBActionFinalEvaluationModule:
             range_specs=self.action_ranges,
             action_config_path=self.action_config_path,
         )
+
+        # 加大精度 handoff: in fusion-count mode the trained best is a flat grid-index
+        # vector; reattach the per-step fusion (option, K) selection so the boosted
+        # config is replayed (decode → _decode_fusion_count_fixed_action → boosted
+        # explicit_field_values), matching the training terminal probe. Persisted
+        # group (from the runner) is preferred; otherwise it is reconstructed from
+        # the vector + the committed map. Only the trained best (== base_action) is
+        # touched — cost-matched random candidates keep the default index decode.
+        fusion_count_action = bool(
+            isinstance(search_best_stage2, dict)
+            and search_best_stage2.get("blb_v3_fusion_count_action")
+        )
+        fusion_group = (
+            search_best_stage2.get("blb_v3_best_action_group")
+            if isinstance(search_best_stage2, dict) else None
+        )
+        if (fusion_count_action or fusion_group is not None) and base_action is not None:
+            patched: List[ActionCandidate] = []
+            for cand in selected_candidates:
+                try:
+                    md = select_fusion_eval_metadata(
+                        action_vec=cand.action_vec,
+                        base_action=base_action,
+                        existing_metadata=cand.metadata,
+                        fusion_group=fusion_group,
+                        fusion_count_action=fusion_count_action,
+                        profile=profile,
+                        num_layers=total_layers,
+                        gelu=opt_gelu,
+                        softmax=opt_softmax,
+                    )
+                    patched.append(dataclasses.replace(cand, metadata=md))
+                except Exception as exc:
+                    ev.log(f"  [blb-eval][warning] fusion metadata resolve failed for {cand.name}: {exc}")
+                    patched.append(cand)
+            selected_candidates = patched
 
         metric_names = ev.get_metric_short_names()
         num_metrics = ev.get_num_metrics()
@@ -592,8 +629,15 @@ class BLBActionFinalEvaluationModule:
             profile: str,
             ) -> ActionDecodeResult:
         group = metadata.get("group")
-        if not isinstance(group, Mapping) or not isinstance(group.get("option_by_graph"), Mapping):
-            raise ValueError("fusion_count_fixed_action_v1 requires group.option_by_graph metadata")
+        if not isinstance(group, Mapping):
+            raise ValueError("fusion_count_fixed_action_v1 requires group metadata")
+        raw_option_by_graph = group.get("option_by_graph")
+        raw_option_by_step = group.get("option_by_step")
+        if not isinstance(raw_option_by_graph, Mapping) and not isinstance(raw_option_by_step, Mapping):
+            raise ValueError(
+                "fusion_count_fixed_action_v1 requires group.option_by_step or "
+                "group.option_by_graph metadata"
+            )
 
         base_raw = None
         for key in ("legacy_action_vec", "base", "action_vec"):
@@ -625,12 +669,12 @@ class BLBActionFinalEvaluationModule:
 
         option_by_graph = {
             str(k): int(v)
-            for k, v in dict(group.get("option_by_graph", {})).items()
+            for k, v in dict(raw_option_by_graph or {}).items()
         }
         option_by_step = {
             str(k): int(v)
-            for k, v in dict(group.get("option_by_step", {})).items()
-        } if isinstance(group.get("option_by_step"), Mapping) else {}
+            for k, v in dict(raw_option_by_step or {}).items()
+        }
         schedule = step_schedule(
             int(num_layers),
             profile=str(profile),
@@ -675,8 +719,31 @@ class BLBActionFinalEvaluationModule:
                 attn_degree=softmax_degree,
                 gelu_degree=gelu_degree,
             )
-            for field_name, value in dict(option.slots).items():
+            k_field_name = None
+            selected_k_value = None
+            graph_meta = fusion_map.graphs.get(graph_key)
+            if graph_meta is not None:
+                try:
+                    k_field_name = str(
+                        step.slot_field_names[int(graph_meta.k_slot_index)]
+                    )
+                    selected_k_value = field_values.get(k_field_name)
+                except Exception:
+                    k_field_name = None
+                    selected_k_value = None
+            option_fields = (
+                option.explicit_field_values
+                if bool(getattr(option, "boosted", False)) and option.explicit_field_values
+                else option.slots
+            )
+            for field_name, value in dict(option_fields).items():
                 field_values[str(field_name)] = int(value)
+            if k_field_name is not None and selected_k_value is not None:
+                field_values[str(k_field_name)] = int(selected_k_value)
+            if decoded.per_layer_field_values and 0 <= layer_idx < len(decoded.per_layer_field_values):
+                layer_values = decoded.per_layer_field_values[layer_idx]
+                if isinstance(layer_values, dict):
+                    layer_values[f"block{block_idx}"] = dict(field_values)
 
             if block_idx == 1:
                 decoded.block1_cfgs[layer_idx] = build_block1_cfg_from_action(
@@ -1095,7 +1162,6 @@ class BLBActionFinalEvaluationModule:
                 f"{self.rescale_optimizer_mode}."
             ),
             "truncation": self._truncation_summary(decoded),
-            "first_input_sf": int(decoded.first_input_sf),
             "non_truncation_unique_scaling_factors": self._non_truncation_sf_summary(decoded),
             "full_noise_config": self._full_noise_config(decoded),
             "action_overrides": dict(overrides or {}),
@@ -1163,26 +1229,7 @@ class BLBActionFinalEvaluationModule:
 
     @staticmethod
     def _full_noise_config(decoded) -> Dict[str, Any]:
-        # NOTE: first_input fresh noise is DEPRECATED (2026-05): the first HE
-        # config is treated as lossless, so this entry is kept for backward
-        # compatibility (and so the markdown table column remains stable) but
-        # ``active=False`` and the value is not installed by ``bridge.apply``.
-        entries = [
-            {
-                "path": "first_input.fresh",
-                "type": "scaling_factor",
-                "layer": None,
-                "block": "first_input",
-                "point": "fresh",
-                "distribution": "fresh",
-                "N": BLB_FIRST_INPUT_N,
-                "scaling_factor": int(getattr(decoded, "first_input_sf", 0) or 0),
-                "truncation_k": None,
-                "value": None,
-                "active": False,
-                "note": "first_input fresh deprecated; not installed",
-            }
-        ]
+        entries = []
 
         for block_name in ("block1", "block2", "block3", "block4", "block5"):
             cfgs = getattr(decoded, f"{block_name}_cfgs")
@@ -1541,7 +1588,6 @@ class BLBActionFinalEvaluationModule:
                 "",
                 f"- action overrides: `{result.get('action_overrides', {})}`",
                 f"- base action: {details.get('base_action', '')}",
-                f"- first_input_sf: `{details.get('first_input_sf')}`",
                 f"- truncation summary: `{self._unique_truncation_label(trunc)}`; "
                 f"effective positions = `{trunc.get('effective_position_count', 0)}`; "
                 f"skipped = `{trunc.get('skipped_positions', [])}`",
@@ -1986,17 +2032,38 @@ class BLBActionFinalEvaluationModule:
 
         glue_dir = os.path.join(self.results_dir, "glue_submission")
         os.makedirs(glue_dir, exist_ok=True)
-        # Persist the BLB action as a slot-form JSON the generator can load
-        # without depending on training-side artifacts.
         action_json_path = os.path.join(glue_dir, "blb_action_used.json")
-        self._dump_action_to_slots_json(
-            path=action_json_path,
-            action_vec=np.asarray(selected_candidate.action_vec, dtype=int),
-            profile=profile,
-            opt_gelu=opt_gelu,
-            opt_softmax=opt_softmax,
-            anchor_name=str(selected_candidate.name),
-        )
+        # 加大精度 handoff: if the selected candidate is a fusion run, persist a
+        # fusion_count_fixed_action_v1 config (carries group.option_by_step + the
+        # Stage-1 ladder) so the generator replays the BOOSTED config + override —
+        # the same config this final eval just scored. A slot-form JSON (from the
+        # flat vec) would silently drop the boost. Per-slot runs fall back to slots.
+        cand_meta = selected_candidate.metadata or {}
+        if str(cand_meta.get("schema_version", "")) == "fusion_count_fixed_action_v1":
+            fusion_fixed_cfg = {
+                "schema_version": "fusion_count_fixed_action_v1",
+                "profile": str(profile),
+                "num_layers": int(self.evaluator.total_layers),
+                "source": "blb_final_eval_selected_best",
+                "anchor_name": str(selected_candidate.name),
+                "action_vec": np.asarray(selected_candidate.action_vec, dtype=int).tolist(),
+                "gelu_degree": np.asarray(opt_gelu, dtype=int).tolist(),
+                "attn_degree": np.asarray(opt_softmax, dtype=int).tolist(),
+                "group": cand_meta.get("group"),
+            }
+            with open(action_json_path, "w", encoding="utf-8") as _fh:
+                json.dump(fusion_fixed_cfg, _fh, ensure_ascii=False, indent=2)
+        else:
+            # Persist the BLB action as a slot-form JSON the generator can load
+            # without depending on training-side artifacts.
+            self._dump_action_to_slots_json(
+                path=action_json_path,
+                action_vec=np.asarray(selected_candidate.action_vec, dtype=int),
+                profile=profile,
+                opt_gelu=opt_gelu,
+                opt_softmax=opt_softmax,
+                anchor_name=str(selected_candidate.name),
+            )
 
         try:
             payload = generate_blb_glue_submission(

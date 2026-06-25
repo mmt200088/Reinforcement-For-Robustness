@@ -1337,6 +1337,80 @@ def _seed_all_for_reproducibility(seed: int) -> None:
         pass
 
 
+def _decode_blb_action_for_glue(
+        *,
+        action_vec,
+        fusion_metadata,
+        profile: str,
+        gelu_degrees,
+        softmax_degrees,
+        max_sfs,
+        ):
+    """Decode a Stage-2 action into installable BLB cfgs for GLUE submission,
+    REPLAYING the precision boost and applying the Rescale_optimizer override.
+
+    This is the parity guarantee: the flat ``action_vec`` cannot carry the boost
+    (above-grid SFs live in the option's ``explicit_field_values``), so for a
+    fusion run we decode the ``fusion_count_fixed_action_v1`` metadata via the SAME
+    methods the validation-set final eval uses (``BLBActionFinalEvaluationModule``),
+    then apply ``apply_optimizer_output_to_cfg`` (fused rescales → None) the same
+    way. Reusing the methods (via a lightweight shim, the pattern the unit tests
+    use) guarantees byte-for-byte agreement with final eval + the training probe —
+    no second, drift-prone copy of the install pipeline.
+
+    ``fusion_metadata is None`` ⇒ legacy per-slot / non-fusion path (index decode,
+    no override), preserved for back-compat.
+    """
+    import numpy as _np
+
+    if fusion_metadata is None:
+        from blb_stage2_rl.action_space import action_vector_to_cfgs as _avc
+        return _avc(
+            action_vec=_np.asarray(action_vec, dtype=int),
+            max_sfs=max_sfs,
+            num_layers=int(len(gelu_degrees)),
+            gelu_degree=_np.asarray(gelu_degrees, dtype=int),
+            attn_degree=_np.asarray(softmax_degrees, dtype=int),
+        )
+
+    from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+    from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Rescale_optimizer")
+    invoker = InProcessInvoker.from_profile(rescale_optimizer_root=root, profile=str(profile))
+    bridge = RescaleOptimizerBridge(invoker=invoker)
+
+    # Lightweight shim so the final-eval methods run without a full evaluator:
+    # decode uses no self-state; the override loop needs only rescale_bridge and
+    # the rotation-name-map resolver (evaluator=None ⇒ {} rotation map, matching a
+    # final-eval evaluator that has no rotation map configured).
+    shim = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
+    shim.evaluator = None
+    shim.rescale_bridge = bridge
+    shim.rescale_invoker_kind = "in_process"
+    shim.rescale_optimizer_root = root
+
+    num_layers = int(len(gelu_degrees))
+    decoded = shim._decode_action_candidate(
+        action_vec=_np.asarray(action_vec, dtype=int),
+        metadata=fusion_metadata,
+        max_sfs=max_sfs,
+        num_layers=num_layers,
+        gelu=_np.asarray(gelu_degrees, dtype=int),
+        softmax=_np.asarray(softmax_degrees, dtype=int),
+        profile=str(profile),
+    )
+    cfgs_dict = decoded.cfgs_dict()
+    opt_outputs, _opt_signals = shim._optimizer_outputs(str(profile), cfgs_dict)
+    shim._apply_optimizer_outputs_to_decoded(
+        profile=str(profile),
+        decoded=decoded,
+        cfgs_dict=cfgs_dict,
+        opt_outputs=opt_outputs,
+    )
+    return decoded
+
+
 def _process_blb_task(
         *,
         task_name: str,
@@ -1349,6 +1423,7 @@ def _process_blb_task(
         device,
         max_length: int = 128,
         batch_size: int = 16,
+        fusion_metadata=None,
         ) -> None:
     """Mirror of ``process_task`` for BLB action vectors.
 
@@ -1366,10 +1441,7 @@ def _process_blb_task(
         ) from _TRANSFORMERS_IMPORT_ERROR
 
     from blb_rl_bridge import BLBNoiseRLBridge
-    from blb_stage2_rl.action_space import (
-        action_vector_to_cfgs as _action_vector_to_cfgs,
-        load_max_sfs as _load_max_sfs,
-    )
+    from blb_stage2_rl.action_space import load_max_sfs as _load_max_sfs
 
     print(f"\n{'=' * 60}")
     print(f"Task: {task_name.upper()} (BLB action path)")
@@ -1413,18 +1485,20 @@ def _process_blb_task(
     )
     apply_approx_configuration(handler, layers_attr, list(gelu_degrees), list(softmax_degrees))
 
-    # Mirror Paean.blb_action_eval._run_single_blb_eval: decode action → cfgs
-    # → BLBNoiseRLBridge.apply. The final-eval probe does NOT call
-    # apply_optimizer_output_to_cfg (it installs the action-decoded cfgs
-    # directly), so GLUE submission stays consistent with the metrics the
-    # 50× repeat eval reports.
+    # Decode action → cfgs → BLBNoiseRLBridge.apply, REPLAYING the precision boost
+    # and applying the Rescale_optimizer override (fused rescales → None) for a
+    # fusion run, exactly like Paean.blb_action_eval's validation-set final eval and
+    # the training terminal probe. The fusion path reuses the final-eval methods
+    # (single source of truth) so the submitted config == the RL-selected config.
+    # Non-fusion (fusion_metadata None) keeps the legacy index decode.
     max_sfs = _load_max_sfs(str(profile))
-    decoded = _action_vector_to_cfgs(
+    decoded = _decode_blb_action_for_glue(
         action_vec=np.asarray(action_vec, dtype=int),
+        fusion_metadata=fusion_metadata,
+        profile=str(profile),
+        gelu_degrees=gelu_degrees,
+        softmax_degrees=softmax_degrees,
         max_sfs=max_sfs,
-        num_layers=int(num_layers),
-        gelu_degree=np.asarray(gelu_degrees, dtype=int),
-        attn_degree=np.asarray(softmax_degrees, dtype=int),
     )
     noise_bridge = BLBNoiseRLBridge(handler, layers_attribute="model." + layers_attr)
     noise_bridge.apply(
@@ -1516,6 +1590,20 @@ def generate_blb_glue_submission(
     if not os.path.isfile(action_config_path):
         raise FileNotFoundError(f"BLB action config not found: {action_config_path}")
     payload = json.loads(open(action_config_path, "r", encoding="utf-8-sig").read())
+
+    # 加大精度 handoff: a fusion_count_fixed_action_v1 config carries the per-step
+    # fusion (option, K) selection. Pass it through so the BLB task replays the
+    # boosted config + Rescale_optimizer override (parity with final eval). A flat
+    # slot/index config (legacy / per-slot run) leaves this None.
+    fusion_metadata = None
+    if str(payload.get("schema_version", "")) == "fusion_count_fixed_action_v1":
+        _group = payload.get("group")
+        if isinstance(_group, dict):
+            fusion_metadata = {
+                "schema_version": "fusion_count_fixed_action_v1",
+                "group": _group,
+            }
+            log_fn("[BLB GLUE] fusion_count_fixed_action_v1 detected → replaying boosted config")
 
     # Resolve effective profile + Stage 1 degrees from caller args; fall back
     # to the JSON file if the caller did not supply them.
@@ -1626,6 +1714,7 @@ def generate_blb_glue_submission(
             device=device_resolved,
             max_length=int(max_length),
             batch_size=int(batch_size),
+            fusion_metadata=fusion_metadata,
         )
     except Exception as exc:
         failures.append((blb_task, type(exc).__name__, str(exc)))
