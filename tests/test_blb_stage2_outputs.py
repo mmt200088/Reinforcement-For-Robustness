@@ -4,7 +4,7 @@ Covers the three pieces added to bring Stage-2 RL artifacts to parity with
 Stage-1 RL:
 
   1. ``persistence.write_training_curves`` — Stage-1-style multi-panel curve
-     (Reward / Loss / metric1 / metric2 / fusion / avg_K) + separate entropy
+     (Reward / Loss / metric1 / metric2) + separate entropy
      curve, with optional series (back-compat with the legacy call).
   2. ``rl_local_optimum.{detect_rl_local_optimum, write_local_optimum_report}``
      — the local-optimum / health detection report (Stage-1 pruning_search_log
@@ -90,6 +90,55 @@ class UpgradedCurvesTest(unittest.TestCase):
             self.assertEqual(os.path.basename(out["entropy_png"]),
                              "blb_stage2_entropy_curve.png")
 
+    def test_main_curve_uses_stage1_style_renderer_without_cost_panels(self):
+        calls = []
+
+        def fake_renderer(*, out_path, reward, loss, metric1, metric2,
+                          baseline_loss=None, baseline_metric1=None,
+                          baseline_metric2=None, metric1_name="metric1",
+                          metric2_name=None, title_suffix="", moving_average_window=None):
+            calls.append({
+                "out_path": out_path,
+                "reward": list(reward),
+                "loss": list(loss),
+                "metric1": list(metric1),
+                "metric2": list(metric2) if metric2 is not None else None,
+                "baseline_loss": baseline_loss,
+                "baseline_metric1": baseline_metric1,
+                "baseline_metric2": baseline_metric2,
+                "metric1_name": metric1_name,
+                "metric2_name": metric2_name,
+                "title_suffix": title_suffix,
+                "moving_average_window": moving_average_window,
+            })
+            with open(out_path, "wb") as f:
+                f.write(b"fake png")
+            return out_path
+
+        old = persistence.save_stage1_style_training_curve
+        persistence.save_stage1_style_training_curve = fake_renderer
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                out = persistence.write_training_curves(d, **self._full_kwargs(n=40))
+                self.assertTrue(_nonempty_file(out["png"]))
+        finally:
+            persistence.save_stage1_style_training_curve = old
+
+        self.assertEqual(len(calls), 1)
+        call = calls[0]
+        self.assertEqual(os.path.basename(call["out_path"]),
+                         "blb_stage2_training_curve.png")
+        self.assertEqual(len(call["reward"]), 40)
+        self.assertEqual(len(call["loss"]), 40)
+        self.assertEqual(len(call["metric1"]), 40)
+        self.assertEqual(len(call["metric2"]), 40)
+        self.assertEqual(call["baseline_loss"], 0.30)
+        self.assertEqual(call["baseline_metric1"], 0.87)
+        self.assertEqual(call["baseline_metric2"], 0.86)
+        self.assertEqual(call["metric1_name"], "metric1")
+        self.assertEqual(call["metric2_name"], "metric2")
+        self.assertEqual(call["moving_average_window"], 24)
+
     def test_legacy_minimal_backcompat(self):
         # The old call (only returns + best + ppo_loss, no per-episode series)
         # must still work; entropy curve simply absent.
@@ -150,6 +199,60 @@ class DetectionReportTest(unittest.TestCase):
                                          window=300)
         self.assertFalse(diag["likely_local_optimum"])
         self.assertIn("[OK]", diag["summary"])
+
+
+class StatusBoardLiveSummaryTest(unittest.TestCase):
+    def test_status_board_flushes_human_readable_live_summary(self):
+        with tempfile.TemporaryDirectory() as d:
+            board = persistence.BLBStatusBoard(
+                d,
+                total_episodes=240,
+                profile="mrpc",
+                run_basename="s1t0.001_s2t0.001_s2st3.0",
+            )
+            board.set_phase("训练中")
+            board.set_best(
+                best_reward=1.25,
+                best_action_vec=[1, 2, 3],
+                best_breakdown={"priority": 3, "fusion_count": 36},
+                best_episode=118,
+            )
+            board.update_after_episode(
+                120,
+                -30.0,
+                breakdown={
+                    "priority": 1,
+                    "invalid": False,
+                    "terminal_loss_mean": 0.34,
+                    "terminal_metric1_mean": 0.88,
+                    "terminal_metric2_mean": 0.87,
+                    "fusion_count": 24,
+                },
+            )
+            board.update_after_ppo_update(
+                1,
+                {
+                    "policy_loss": 0.25,
+                    "value_loss": 1.5,
+                    "entropy": 2.0,
+                    "clip_fraction": 0.1,
+                    "window_mean_return": -12.0,
+                    "window_mean_invalid": 0.0,
+                },
+            )
+
+            summary_path = os.path.join(d, "blb_stage2_live_summary.md")
+            self.assertTrue(_nonempty_file(summary_path))
+            with open(summary_path, encoding="utf-8") as f:
+                text = f.read()
+
+        self.assertIn("# BLB Stage-2 RL Live Summary", text)
+        self.assertIn("Episode: 120 / 240", text)
+        self.assertIn("PPO updates: 1", text)
+        self.assertIn("Best reward: +1.250000", text)
+        self.assertIn("Last priority: 1", text)
+        self.assertIn("policy_loss", text)
+        self.assertIn("diagnostics/episodes.jsonl", text)
 
 
 class RegeneratorEndToEndTest(unittest.TestCase):

@@ -127,7 +127,7 @@ echo "       The in-flight 60k keeps its OLD maps in memory; RESTART it to pick 
 > KV-cache 保持默认 OFF，**不进 60k**。下方脚本仅留作参考；若未来想重启 KV-cache 路（如换更长 horizon /
 > CUDA graphs 摊薄 launch 开销）再人工移到第一个 ```bash 块。
 >
-> （原说明）真实 fusion 训练短跑（**会 --fresh 工作目录**），同 seed 跑 OFF 与 ON 各 ~1500 episode，
+> （原说明）真实 fusion 训练短跑（会 `--fresh` 各自的 tagged persistent 工作目录，不碰正式 60k canonical slug），同 seed 跑 OFF 与 ON 各 ~1500 episode，
 > 比 episodes.jsonl 的 reward/优先级/fusion 分布（质量应一致，路径浮点等价非逐位）+ per-episode rollout 墙钟。
 
 ```bash
@@ -140,33 +140,42 @@ EPISODES_AB=1500
 KTRIALS=5; ANCHOR_EPISODES=80; FUSION_PROBE_INTERVAL=200
 NGPU="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"; [ -z "$NGPU" ] && NGPU=1
 DEVS="$(seq -s, 0 $((NGPU-1)))"
-CANON_STAGE2="Parting Chapter/stage2"
+CANON_STAGE2_GROUP="Parting Chapter/persistent/rl/bert-base/mrpc"
+CANON_STAGE2="${CANON_STAGE2_GROUP}/s1t0.001_s2t0.001_s2st3.0"
 
 run_ab () {   # $1 = tag (off/on), $2 = kv flag (0/1)
-  local tag="$1"; local kv="$2"
+  local tag="$1"; local kv="$2"; local run_tag="ab_${tag}_${TS}"
+  local rundir="${CANON_STAGE2_GROUP}/s1t0.001_s2t0.001_s2st3.0__${run_tag}"
   echo "==================== [A/B] $tag : --blb-v3-kv-cache-rollout $kv ===================="
   CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
     --preset mrpc-blb-stage2-rl \
+    --run-tag "ab_${tag}_${TS}" \
     --blb-v3-fusion-count-action 1 \
     --blb-v3-fusion-neighbor-curriculum 1 \
     --stage2-search-episodes "$EPISODES_AB" \
     --stage2-k-trials "$KTRIALS" --stage2-probe-size 256 --batch-size 512 \
     --stage2-rl-devices "$DEVS" \
     --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-    --stage2-stability-tolerance 5.0 --stage2-limit-tolerance 0.005 \
+    --stage2-fixed-config-source json --stage2-fixed-config glue_final_configs_best_ppo.json \
+    --stage2-stability-tolerance 3.0 --stage2-limit-tolerance 0.001 \
     --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
     --blb-v3-fusion-exploration-epsilon 0.05 \
     --stage2-workers-per-device 1 \
     --blb-v3-kv-cache-rollout "$kv" \
     --fresh 2>&1 | tee "$OUT/${tag}_launch.log"
   sleep 12
-  local pid; pid="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
+  local pid; pid="$(cat "${rundir}/run.pid" 2>/dev/null || cat "${rundir}/rl.pid" 2>/dev/null || true)"
   echo "[A/B] $tag pid=$pid — waiting for completion…"
   if [ -n "$pid" ]; then while kill -0 "$pid" 2>/dev/null; do sleep 30; done; fi
-  local rundir; rundir="$(cat "${CANON_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
-  local ep; ep="$(ls "$rundir"/diagnostics/episodes.jsonl 2>/dev/null || ls "$CANON_STAGE2"/*/progress/diagnostics/episodes.jsonl 2>/dev/null | tail -1)"
+  local ep; ep="$(ls "$rundir"/stage2_noise/progress/diagnostics/episodes.jsonl 2>/dev/null | tail -1)"
+  [ -n "$ep" ] || { echo "[A/B][FATAL] $tag episodes.jsonl missing under persistent dir: $rundir"; return 1; }
   cp "$ep" "$OUT/${tag}_episodes.jsonl"
   echo "[A/B] $tag episodes.jsonl -> $OUT/${tag}_episodes.jsonl ($(wc -l < "$OUT/${tag}_episodes.jsonl") lines)"
+  python3 scripts/verify_stage2_persistent_outputs.py \
+    --run-dir "$rundir" \
+    --min-episodes "$EPISODES_AB" \
+    --min-ppo-updates 1 \
+    --require-png 2>&1 | tee "$OUT/${tag}_persistent_verify.txt"
 }
 
 run_ab off 0
@@ -243,7 +252,7 @@ export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE
 #     影响各 trial 噪声流。默认 1（与旧行为逐位一致）；gN 门禁与 60k 用 2，
 #     g1 保持 1 worker 作参照——同一条 byte-diff 同时验证卡数与 worker 数两个
 #     不变量。预期 ~1.3-1.4×（13.5h → ~10h）。
-# 容忍度沿用用户 spec：stability 500% + 指标 0.5%。
+# 容忍度沿用用户当前 spec：stability 300% + 指标 0.1%。
 # 顺序：phase0 自检(ADR-013 barrier 端到端峰值/恢复梯度/item7 断言 + ADR-012 legacy 断言
 # + 四件测试含 test_blb_log_barrier_reward) → phase2 图门禁(REBUILD_MAPS=0) →
 # phaseG 1卡vsN卡确定性门禁(探针出现性动态检测) → PASS 自动接 60k（带崩溃 watchdog）。
@@ -265,7 +274,8 @@ OUT="experiments/server_command_runs/stage2_grid_gate_60k_${TS}"
 mkdir -p "$OUT"
 SKEL="Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json"
 MAPS_DIR="blb_stage2_rl/fusion_maps/mrpc"
-CANON_STAGE2="Parting Chapter/stage2"
+CANON_STAGE2_GROUP="Parting Chapter/persistent/rl/bert-base/mrpc"
+CANON_STAGE2="${CANON_STAGE2_GROUP}/s1t0.001_s2t0.001_s2st3.0"
 
 echo "==================== [phase0] 同步自检 ===================="
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -567,11 +577,14 @@ cp -a "$MAPS_DIR" "$OUT/new_maps"
 echo "==================== [phaseG] Stage-2 episode 并行确定性门禁：1卡 vs ${NGPU}卡 ===================="
 GOUT="$OUT/stage2_ngpu_gate"; mkdir -p "$GOUT"
 run_gate () {   # tag, visible devs, --stage2-rl-devices 值, workers-per-device
-  local tag="$1" vis="$2" devspec="$3" wpd="${4:-1}" pid rundir t0 t1
+  local tag="$1" vis="$2" devspec="$3" wpd="${4:-1}" pid rundir t0 t1 run_tag
+  run_tag="gate_${tag}_${TS}"
+  rundir="${CANON_STAGE2_GROUP}/s1t0.001_s2t0.001_s2st3.0__${run_tag}"
   echo "-------- [gate] $tag CUDA_VISIBLE_DEVICES=$vis stage2-rl-devices=$devspec wpd=$wpd episodes=$GATE_EPISODES --------"
   BLB_STAGE2_POLICY_DEVICE=worker BLB_STAGE2_DYNAMIC_ASSIGNMENT=1 \
   CUDA_VISIBLE_DEVICES="$vis" bash llama_7B_LayerImportance.sh run rl \
     --preset mrpc-blb-stage2-rl \
+    --run-tag "gate_${tag}_${TS}" \
     --blb-v3-fusion-count-action 1 \
     --blb-v3-fusion-neighbor-curriculum 1 \
     --stage2-workers-per-device "$wpd" \
@@ -581,14 +594,15 @@ run_gate () {   # tag, visible devs, --stage2-rl-devices 值, workers-per-device
     --batch-size 512 \
     --stage2-rl-devices "$devspec" \
     --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-    --stage2-stability-tolerance 5.0 \
-    --stage2-limit-tolerance 0.005 \
+    --stage2-fixed-config-source json \
+    --stage2-fixed-config glue_final_configs_best_ppo.json \
+    --stage2-stability-tolerance 3.0 \
+    --stage2-limit-tolerance 0.001 \
     --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
     --blb-v3-fusion-exploration-epsilon 0.05 \
     --fresh 2>&1 | tee "$GOUT/${tag}_launch.log"
   sleep 12
-  pid="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
-  rundir="$(cat "${CANON_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
+  pid="$(cat "${rundir}/run.pid" 2>/dev/null || cat "${rundir}/rl.pid" 2>/dev/null || true)"
   [ -z "$pid" ] && { echo "[gate][FATAL] $tag 没拿到 PID"; return 1; }
   t0=$(date +%s); while kill -0 "$pid" 2>/dev/null; do sleep 20; done; t1=$(date +%s)
   echo "$((t1 - t0))" > "$GOUT/${tag}_walltime_s.txt"
@@ -598,7 +612,11 @@ run_gate () {   # tag, visible devs, --stage2-rl-devices 值, workers-per-device
   grep -rh "\[ANOMALY\]" "$rundir" 2>/dev/null > "$GOUT/${tag}_anomaly.txt" || true
   local diag; diag=$(find "$rundir" -type f -name episodes.jsonl 2>/dev/null | head -1)
   [ -n "$diag" ] && cp "$diag" "$GOUT/${tag}_episodes.jsonl"
-  if [ -n "$rundir" ] && [[ "$rundir" == *"/stage2/"*mrpc* ]] && [ -d "$rundir" ]; then rm -rf "$rundir"; fi
+  python3 scripts/verify_stage2_persistent_outputs.py \
+    --run-dir "$rundir" \
+    --min-episodes "$GATE_EPISODES" \
+    --min-ppo-updates 1 \
+    --require-png 2>&1 | tee "$GOUT/${tag}_persistent_verify.txt"
 }
 # g1 = 最简参照（1 worker 总量）；gN = 生产配置（N 卡 × 2 worker/卡）。
 # 同一条 byte-diff 同时验证「卡数无关」与「worker 数无关」两个不变量。
@@ -674,17 +692,29 @@ CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
   --batch-size 512 \
   --stage2-rl-devices "$DEVS" \
   --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-  --stage2-stability-tolerance 5.0 \
-  --stage2-limit-tolerance 0.005 \
+  --stage2-fixed-config-source json \
+  --stage2-fixed-config glue_final_configs_best_ppo.json \
+  --stage2-stability-tolerance 3.0 \
+  --stage2-limit-tolerance 0.001 \
   --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
   --blb-v3-fusion-exploration-epsilon 0.05 \
   --stage2-workers-per-device 1 \
   --fresh 2>&1 | tee "$OUT/long60k_launch.log"
 sleep 12
-PID60="$(cat "${CANON_STAGE2}/LATEST_PID" 2>/dev/null || true)"
-RUN60="$(cat "${CANON_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
+PID60="$(cat "${CANON_STAGE2_GROUP}/LATEST_PID" 2>/dev/null || true)"
+RUN60="$(cat "${CANON_STAGE2_GROUP}/LATEST_RUN_DIR" 2>/dev/null || true)"
 [ -z "$PID60" ] && { echo "[FATAL] 60k 启动失败，看 long60k_launch.log"; exit 1; }
 echo "PID=$PID60  run_dir=$RUN60  started=$(date -Is)" | tee "$OUT/long60k_RUNNING.txt"
+for _i in 1 2 3 4 5; do
+  if python3 scripts/verify_stage2_persistent_outputs.py \
+    --run-dir "$RUN60" \
+    --min-episodes 1 \
+    --min-ppo-updates 0 \
+    2>&1 | tee "$OUT/long60k_start_persistent_verify.txt"; then
+    break
+  fi
+  sleep 60
+done
 # 监控循环：每 30 分钟记录健康快照（rolling reward / P1 P2 P3 / fusion + per-type b2/b4/b5 / 进度）
 # 兼 ADR-013 崩溃 watchdog：barrier 本应根除热崩溃，但作为安全网——若连续 ≥COLLAPSE_PATIENCE
 # 个滚动窗口 P3 占比 < COLLAPSE_P3_FLOOR（=持续无 P3 的死亡签名，3rd-60k 后 30k 回合就是如此），
@@ -740,6 +770,13 @@ copy_run_artifacts () {
   else rsync -a --exclude='*.pt' --exclude='__pycache__' "$rundir/" "$dest/"; fi
 }
 [ -n "$RUN60" ] && [ -d "$RUN60" ] && copy_run_artifacts "$RUN60" "$OUT/long60k/run"
+if [ -n "$RUN60" ] && [ -d "$RUN60" ]; then
+  python3 scripts/verify_stage2_persistent_outputs.py \
+    --run-dir "$RUN60" \
+    --min-episodes "$LONG_EPISODES" \
+    --min-ppo-updates 1 \
+    --require-png 2>&1 | tee "$OUT/long60k_persistent_verify.txt" || true
+fi
 tail -5 "$OUT/long60k_health.log" 2>/dev/null || true
 
 echo "==================== DONE ===================="
@@ -773,7 +810,9 @@ ls -la "$OUT"
 
 ### 幂等 / 安全
 
-- Stage-1 record 合成幂等。门禁两跑各自 `--fresh` 且拷出产物后清工作目录。
+- Stage-1 record 合成幂等。门禁短跑各自 `--run-tag gate_${tag}_${TS}` + `--fresh`，保留在
+  `Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st3.0__gate_*`，
+  不覆盖正式 60k canonical slug。
 - 60k 用 `--fresh`；若 agent 会话中断，训练进程(nohup)继续，下次触发只做产物回收。
 - 门禁任何 FAIL 都不启动 60k。
 

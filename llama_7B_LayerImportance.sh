@@ -38,8 +38,9 @@ cat <<'EOF'
 
 高层动作：
   --mode stage1-only         【run rl 必选其一】只运行 Stage-1 搜索，写 Parting Chapter/stage1/{combo}/
-  --mode stage2-only         【run rl 必选其一】只运行 Stage-2 搜索，写 Parting Chapter/stage2/{combo}/；
-                             前置 Stage-1 默认从 stage1/record/（最大 N，或 --stage1-run-id）读取
+  --mode stage2-only         【run rl 必选其一】只运行 Stage-2 搜索，正式结果写
+                             Parting Chapter/persistent/rl/{model}/{dataset}/{constraint_slug}/stage2_noise/progress/；
+                             前置 Stage-1 请用 --stage2-fixed-config-source json/manual 显式指定
   --mode train / eval / search-only
                              链式模式已移除（2026-06-01 解耦）。run rl 必须显式 stage1-only / stage2-only。
                              最终评估请用独立工具：'eval' 子命令转交 Paean，或后续独立 final-eval。
@@ -495,7 +496,7 @@ GA_COMPARE_STAGE2_LIMIT_TOLERANCE=""; S_GA_COMPARE_STAGE2_LIMIT_TOLERANCE="false
 GA_COMPARE_STAGE2_STABILITY_TOLERANCE=""; S_GA_COMPARE_STAGE2_STABILITY_TOLERANCE="false"
 RESUME_FROM=""; S_RESUME_FROM="false"
 STAGE1_RUN_ID=""; S_STAGE1_RUN_ID="false"   # 解耦 stage2-only：指定要读的 stage1 record（缺省取最大 N）
-DECOUPLED_LAYOUT="false"                     # 解耦 RL 新布局开关（仅 SEARCH_ALGORITHM=rl 置 true）
+DECOUPLED_LAYOUT="false"                     # RL Stage-1 record 布局开关；正式 Stage-2 RL 保持 false
 STAGE1_ACCURACY_TOLERANCE="0.005"; S_STAGE1_ACCURACY_TOLERANCE="false"
 STAGE2_LIMIT_TOLERANCE="0.05"; S_STAGE2_LIMIT_TOLERANCE="false"
 STAGE2_STABILITY_TOLERANCE="1.2"; S_STAGE2_STABILITY_TOLERANCE="false"
@@ -897,10 +898,11 @@ case "$STAGE2_FIXED_CONFIG_SOURCE" in ""|stage1_result|search|json|manual) ;; *)
 case "$GENERAL_MODE" in train|infer|search) ;; *) err "general-rl 模式必须是 train、search 或 infer，当前为：$GENERAL_MODE" ;; esac
 [ "$GENERAL_MODE" = "infer" ] && GENERAL_MODE="search"
 
-# ===== 解耦后的 canonical RL（2026-06-01）=====
+# ===== canonical RL（2026-06-01 解耦；2026-06-25 Stage-2 正式结果回到 persistent/rl）=====
 # run rl 现在必须显式 --mode stage1-only / stage2-only；链式 train/eval/search-only 已移除。
 # 链式最终评估也移除：完成时各 stage 自己写 basic snapshot 到 record/，重型同-cost
-# final-eval 改为独立工具。这里置 DECOUPLED_LAYOUT 并 SKIP_FINAL_EVAL，绕过下游链式校验。
+# final-eval 改为独立工具。Stage-1 仍使用解耦 record 布局；Stage-2 正式 RL
+# 使用旧 persistent/rl 约束 slug 布局，保证训练中间结果和回传都来自同一持久化目录。
 if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   case "$RUN_MODE" in
     stage1-only|stage2-only) : ;;
@@ -909,7 +911,11 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   if [ "$S_FRESH_STAGE1" = "true" ] || [ "$S_FRESH_STAGE2" = "true" ]; then
     err "解耦后每个 stage 是独立运行，--fresh-stage1 / --fresh-stage2 已移除。请在对应 --mode 下用 --fresh 重开该 stage。"
   fi
-  DECOUPLED_LAYOUT="true"
+  if [ "$RUN_MODE" = "stage1-only" ]; then
+    DECOUPLED_LAYOUT="true"
+  else
+    DECOUPLED_LAYOUT="false"
+  fi
   SKIP_FINAL_EVAL="true"
 fi
 
@@ -1332,31 +1338,56 @@ USE_PERSISTENT="false"
 PERSISTENT_DIR=""
 
 if [ "$SEARCH_ALGORITHM" = "rl" ]; then
-  # ===== 解耦后新布局（2026-06-01）：Parting Chapter/stage{1,2}/{combo}（扁平），约束进 metadata =====
-  # 仅 canonical RL 走这条；GA / greedy / general-rl / compare 仍用旧 persistent/ 布局。
+  # ===== RL 布局 =====
+  # Stage-1 仍写 Parting Chapter/stage1/{combo}/ 并归档 record。
+  # Stage-2 正式训练写 Parting Chapter/persistent/rl/{model}/{dataset}/{constraint_slug}/，
+  # 其 BLB 中间结果落在 stage2_noise/progress/，便于统一续训和回传。
   USE_PERSISTENT="true"
-  _RL_STAGE_NUM=1; [ "$RUN_MODE" = "stage2-only" ] && _RL_STAGE_NUM=2
-  _RL_LAYOUT_ROOT="$(dirname "$PERSISTENT_ROOT")"          # Parting Chapter
   _RL_COMBO="${MODEL_TYPE//-/ } ${DATASET}"                # bert-base mrpc -> "bert base mrpc"
-  PERSISTENT_DIR="${_RL_LAYOUT_ROOT}/stage${_RL_STAGE_NUM}/${_RL_COMBO}"
-  _COMPLETED_MARKER="${PERSISTENT_DIR}/COMPLETED"
-  if [ "$FRESH_START" = "true" ]; then
-    if [ -d "$PERSISTENT_DIR" ]; then
-      echo "警告：--fresh 指定，正在清除已有工作目录：$PERSISTENT_DIR"
-      rm -rf "$PERSISTENT_DIR"
-    fi
-    mkdir -p "${PERSISTENT_DIR}/logs"
-  elif [ -f "$_COMPLETED_MARKER" ]; then
-    err "该 combo 的 stage${_RL_STAGE_NUM} 运行已完成（已归档进 ${_RL_LAYOUT_ROOT}/stage${_RL_STAGE_NUM}/record/）。如需重新训练请加 --fresh。工作目录：$PERSISTENT_DIR"
-  elif [ -d "$PERSISTENT_DIR" ] && [ -f "${PERSISTENT_DIR}/metadata.json" ]; then
-    echo "检测到进行中的工作目录：$PERSISTENT_DIR"
-    echo "自动进入续训练模式（如需从头训练请加 --fresh）。"
-    if [ "$S_RESUME_FROM" = "false" ]; then
-      RESUME_FROM="$PERSISTENT_DIR"; S_RESUME_FROM="true"
+  if [ "$RUN_MODE" = "stage1-only" ]; then
+    _RL_STAGE_NUM=1
+    _RL_LAYOUT_ROOT="$(dirname "$PERSISTENT_ROOT")"          # Parting Chapter
+    PERSISTENT_DIR="${_RL_LAYOUT_ROOT}/stage${_RL_STAGE_NUM}/${_RL_COMBO}"
+    _COMPLETED_MARKER="${PERSISTENT_DIR}/COMPLETED"
+    if [ "$FRESH_START" = "true" ]; then
+      if [ -d "$PERSISTENT_DIR" ]; then
+        echo "警告：--fresh 指定，正在清除已有工作目录：$PERSISTENT_DIR"
+        rm -rf "$PERSISTENT_DIR"
+      fi
+      mkdir -p "${PERSISTENT_DIR}/logs"
+    elif [ -f "$_COMPLETED_MARKER" ]; then
+      err "该 combo 的 stage${_RL_STAGE_NUM} 运行已完成（已归档进 ${_RL_LAYOUT_ROOT}/stage${_RL_STAGE_NUM}/record/）。如需重新训练请加 --fresh。工作目录：$PERSISTENT_DIR"
+    elif [ -d "$PERSISTENT_DIR" ] && [ -f "${PERSISTENT_DIR}/metadata.json" ]; then
+      echo "检测到进行中的工作目录：$PERSISTENT_DIR"
+      echo "自动进入续训练模式（如需从头训练请加 --fresh）。"
+      if [ "$S_RESUME_FROM" = "false" ]; then
+        RESUME_FROM="$PERSISTENT_DIR"; S_RESUME_FROM="true"
+      fi
+    else
+      echo "首次运行该 combo 的 stage${_RL_STAGE_NUM}（解耦布局首次运行无需 --fresh），新建工作目录：$PERSISTENT_DIR"
+      mkdir -p "${PERSISTENT_DIR}/logs"
     fi
   else
-    echo "首次运行该 combo 的 stage${_RL_STAGE_NUM}（解耦布局首次运行无需 --fresh），新建工作目录：$PERSISTENT_DIR"
-    mkdir -p "${PERSISTENT_DIR}/logs"
+    PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${CONSTRAINT_SLUG}"
+    _COMPLETED_MARKER="${PERSISTENT_DIR}/COMPLETED"
+    if [ "$FRESH_START" = "true" ]; then
+      if [ -d "$PERSISTENT_DIR" ]; then
+        echo "警告：--fresh 指定，正在清除已有 Stage-2 RL 持久化目录：$PERSISTENT_DIR"
+        rm -rf "$PERSISTENT_DIR"
+      fi
+      mkdir -p "${PERSISTENT_DIR}/logs" "${PERSISTENT_DIR}/stage2_noise/progress"
+    elif [ -f "$_COMPLETED_MARKER" ]; then
+      err "该参数组合的 Stage-2 RL 已完成。如需重新训练请加 --fresh。工作目录：$PERSISTENT_DIR"
+    elif [ -d "$PERSISTENT_DIR" ] && [ -f "${PERSISTENT_DIR}/metadata.json" ]; then
+      echo "检测到 Stage-2 RL 持久化目录：$PERSISTENT_DIR"
+      echo "自动进入续训练模式（如需从头训练请加 --fresh）。"
+      if [ "$S_RESUME_FROM" = "false" ]; then
+        RESUME_FROM="$PERSISTENT_DIR"; S_RESUME_FROM="true"
+      fi
+    else
+      echo "首次运行该参数组合的 Stage-2 RL（持久化布局首次运行无需 --fresh），新建工作目录：$PERSISTENT_DIR"
+      mkdir -p "${PERSISTENT_DIR}/logs" "${PERSISTENT_DIR}/stage2_noise/progress"
+    fi
   fi
   RUN_ROOT="$PERSISTENT_DIR"
   RUN_GROUP_DIR="$(dirname "$PERSISTENT_DIR")"
@@ -1570,8 +1601,8 @@ METAEOF
 METAEOF
     fi
   else
-    # 解耦 RL 续训练：先做约束一致性守卫（不同约束不静默续训练），再更新时间戳/计数。
-    if [ "$DECOUPLED_LAYOUT" = "true" ] && command -v python3 &>/dev/null; then
+    # RL 续训练：先做约束一致性守卫（不同约束不静默续训练），再更新时间戳/计数。
+    if [ "$SEARCH_ALGORITHM" = "rl" ] && command -v python3 &>/dev/null; then
       python3 - "$_META_FILE" "$STAGE1_ACCURACY_TOLERANCE" "$STAGE2_LIMIT_TOLERANCE" "$STAGE2_STABILITY_TOLERANCE" <<'PYGUARD' || err "检测到当前约束与已持久化工作目录的 metadata 不一致（见上方 CONSTRAINT_MISMATCH）。不同约束不会静默续训练，请加 --fresh 重开该 stage，或改回原约束。工作目录：$PERSISTENT_DIR"
 import json, sys
 from config import run_layout as _rl

@@ -7,8 +7,9 @@ BLB Stage 2 RL 是最终版本，需要把这些项目操作类的输出补齐�
 
 本模块提供四件事：
 
-  1. ``BLBStatusBoard``      ── 训练期间持续刷新 ``blb_stage2_status.json``，
-                                 同时累积 episode_returns / 训练曲线数据。
+  1. ``BLBStatusBoard``      ── 训练期间持续刷新 ``blb_stage2_status.json`` 和
+                                 ``blb_stage2_live_summary.md``，同时累积
+                                 episode_returns / 训练曲线数据。
   2. ``write_training_curves`` ── 训练结束（或周期性）把曲线写成 PNG。matplotlib
                                   缺失时安全降级为只写 numpy/CSV。
   3. ``write_blb_final_report`` ── 训练结束时写一份中文 markdown 报告，
@@ -37,6 +38,8 @@ import traceback
 from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from training_curve_plot import save_stage1_style_training_curve
+
 
 BLB_STATUS_FILENAME = "blb_stage2_status.json"
 BLB_TRAINING_CURVE_PNG = "blb_stage2_training_curve.png"
@@ -46,6 +49,7 @@ BLB_REWARD_PAPER_PDF = "blb_stage2_reward_paper.pdf"
 BLB_ENTROPY_CURVE_PNG = "blb_stage2_entropy_curve.png"
 BLB_DIAGNOSTIC_CURVE_PNG = "blb_stage2_diagnostics_curve.png"
 BLB_FINAL_REPORT_MD = "blb_stage2_report.md"
+BLB_LIVE_SUMMARY_MD = "blb_stage2_live_summary.md"
 BLB_SEARCH_LOG_TXT = "blb_stage2_search_log.txt"
 BLB_ERROR_TXT = "blb_stage2_error.txt"
 BLB_EPISODE_TRACE_CSV = "blb_stage2_episode_trace.csv"
@@ -121,6 +125,110 @@ def _atomic_json_dump(path: str, obj: Any) -> None:
         except OSError:
             pass
         raise
+
+
+def _atomic_text_dump(path: str, text: str) -> None:
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=".blb_live_", suffix=".tmp", dir=parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(str(text))
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _fmt_live_number(value: Any, *, signed: bool = False) -> str:
+    try:
+        val = float(value)
+    except Exception:
+        return "n/a"
+    if not math.isfinite(val):
+        return "n/a"
+    return f"{val:+.6f}" if signed else f"{val:.6f}"
+
+
+def _render_live_summary_markdown(state: Mapping[str, Any]) -> str:
+    completed = int(state.get("completed_episodes", 0) or 0)
+    total = int(state.get("total_episodes", 0) or 0)
+    pct = (100.0 * completed / total) if total > 0 else 0.0
+    recent = [float(x) for x in (state.get("recent_returns") or [])]
+    recent_mean = sum(recent) / len(recent) if recent else None
+    best = state.get("best") if isinstance(state.get("best"), Mapping) else {}
+    last = state.get("last_breakdown") if isinstance(state.get("last_breakdown"), Mapping) else {}
+    ppo = state.get("ppo_last_metrics") if isinstance(state.get("ppo_last_metrics"), Mapping) else {}
+
+    lines = [
+        "# BLB Stage-2 RL Live Summary",
+        "",
+        f"- Run: `{state.get('run_basename') or ''}`",
+        f"- Profile: `{state.get('profile') or ''}`",
+        f"- Phase: {state.get('phase') or 'n/a'}",
+        f"- Updated at: {state.get('updated_at') or state.get('last_update') or 'n/a'}",
+        f"- Elapsed seconds: {_fmt_live_number(state.get('elapsed_sec'))}",
+        f"- Episode: {completed} / {total} ({pct:.2f}%)",
+        f"- PPO updates: {int(state.get('ppo_update_count', 0) or 0)}",
+        "",
+        "## Reward",
+        "",
+        f"- Last reward: {_fmt_live_number(state.get('last_reward'), signed=True)}",
+        f"- Recent reward mean: {_fmt_live_number(recent_mean, signed=True)}",
+        f"- Best reward: {_fmt_live_number(best.get('reward'), signed=True)}",
+        f"- Best episode: {best.get('episode') if best.get('episode') is not None else 'n/a'}",
+        f"- Last priority: {state.get('last_priority') if state.get('last_priority') is not None else 'n/a'}",
+        f"- Last invalid: {state.get('last_invalid') if state.get('last_invalid') is not None else 'n/a'}",
+        "",
+        "## Last Terminal Metrics",
+        "",
+    ]
+    for key in (
+        "terminal_loss_mean",
+        "terminal_metric1_mean",
+        "terminal_metric2_mean",
+        "terminal_stab_violation",
+        "fusion_count",
+        "terminal_k_gain",
+        "terminal_fusion_gain",
+    ):
+        if key in last:
+            lines.append(f"- `{key}`: {last.get(key)}")
+
+    lines.extend(["", "## Last PPO Update", ""])
+    for key in (
+        "policy_loss",
+        "value_loss",
+        "entropy",
+        "clip_fraction",
+        "window_mean_return",
+        "window_mean_invalid",
+        "approx_kl",
+        "lr",
+        "ent_coef",
+    ):
+        if key in ppo:
+            lines.append(f"- `{key}`: {ppo.get(key)}")
+
+    lines.extend([
+        "",
+        "## Key Artifacts",
+        "",
+        f"- Status JSON: `{BLB_STATUS_FILENAME}`",
+        f"- Live summary: `{BLB_LIVE_SUMMARY_MD}`",
+        "- Episodes: `diagnostics/episodes.jsonl`",
+        "- PPO updates: `diagnostics/ppo_updates.jsonl`",
+        "- Diagnostics summary: `diagnostics/diagnostics_summary.md`",
+        "- Details batches: `details/`",
+        f"- Training curve: `{BLB_TRAINING_CURVE_PNG}`",
+        f"- Entropy curve: `{BLB_ENTROPY_CURVE_PNG}`",
+        f"- Final report: `{BLB_FINAL_REPORT_MD}`",
+        "",
+    ])
+    return "\n".join(lines)
 
 
 def _to_jsonable(obj: Any) -> Any:
@@ -646,6 +754,19 @@ class BLBStatusBoard:
             self._state["best_reward"] = best.get("reward")
             self._state["best_episode"] = best.get("episode")
             _atomic_json_dump(self._path, self._state)
+            try:
+                _atomic_text_dump(
+                    os.path.join(self._dir, BLB_LIVE_SUMMARY_MD),
+                    _render_live_summary_markdown(self._state),
+                )
+            except Exception as exc:
+                try:
+                    self._log(
+                        f"  [BLB状态板][警告] 写 "
+                        f"{os.path.join(self._dir, BLB_LIVE_SUMMARY_MD)} 失败：{exc}"
+                    )
+                except Exception:
+                    pass
         except Exception as exc:
             try:
                 self._log(f"  [BLB状态板][警告] 写 {self._path} 失败：{exc}")
@@ -741,10 +862,10 @@ def write_training_curves(
         episode_returns: Sequence[float],
         best_reward_curve: Optional[Sequence[float]] = None,
         ppo_loss_curve: Optional[Sequence[float]] = None,
-        # Stage-1-parity per-episode series (all optional → back-compat). When
-        # provided, the multi-panel PNG mirrors Stage-1's Reward/Loss/metric1/
-        # metric2 panels (raw + Moving Avg + Baseline) plus Stage-2-specific
-        # fusion_count / avg_K cost panels.
+        # Stage-1-parity per-episode series (all optional -> back-compat). When
+        # provided, the main PNG mirrors Stage-1's Reward/Loss/metric1/metric2
+        # panels exactly (raw + Moving Avg + Baseline). Stage-2-specific cost
+        # diagnostics stay out of the main training curve.
         episode_losses: Optional[Sequence[float]] = None,
         episode_metric1s: Optional[Sequence[float]] = None,
         episode_metric2s: Optional[Sequence[float]] = None,
@@ -766,17 +887,17 @@ def write_training_curves(
 
     Emits (when the matching data is provided):
       * ``blb_stage2_training_curve.png`` — Stage-1 风格多联图：Reward / Loss /
-        metric1 / metric2 / fusion_count / avg_K，每联 raw + Moving Avg +
-        Baseline 参考线。只给 ``episode_returns`` 时退化为单联 reward（向后兼容
-        旧 legacy 调用方）。
+        metric1 / metric2，每联 raw + Moving Avg + Baseline 参考线。只给
+        ``episode_returns`` 时退化为单联 reward（向后兼容旧 legacy 调用方）。
       * ``blb_stage2_entropy_curve.png`` — 独立熵曲线（镜像 Stage-1
         ``ppo_entropy_curve.png``），需提供 ``entropy_series``。
       * ``blb_stage2_reward_paper.png`` (+ ``.pdf``) — 单联 paper-ready reward。
 
     Args:
-        episode_losses / episode_metric1s / episode_metric2s /
-        episode_fusion_counts / episode_avg_ks: 每回合序列（与 ``episode_returns``
-            等长），提供哪几个就画哪几联。
+        episode_losses / episode_metric1s / episode_metric2s: 每回合序列（与
+            ``episode_returns`` 等长），主训练曲线按 Stage-1 版式绘制这些核心联。
+        episode_fusion_counts / episode_avg_ks: 仍写入 NPZ，供诊断/离线报告使用，
+            但不进入 ``blb_stage2_training_curve.png``。
         baselines: ``{"loss":..,"metric1":..,"metric2":..,"avg_k":..}`` 各联的
             baseline 参考线（fusion 的 baseline 恒为 0）。
         entropy_series / entropy_episodes: 每次 PPO 更新的策略熵 + 对应的
@@ -796,6 +917,7 @@ def write_training_curves(
 
     _bl = dict(baselines or {})
     n_ep = len(list(episode_returns)) if episode_returns is not None else 0
+    requested_ma_window = ma_window
     if ma_window is None:
         ma_window = max(10, n_ep // 200) if n_ep else 10
 
@@ -824,57 +946,37 @@ def write_training_curves(
     except Exception as exc:
         log(f"  [BLB曲线][警告] 写 NPZ 失败：{exc}")
 
-    # ---- 多联训练曲线（Stage-1 风格：raw + Moving Avg + Baseline）----
+    # ---- 主训练曲线（Stage-1 风格：Reward / Loss / metric1 / metric2）----
     # 标题/坐标统一用 ASCII：matplotlib 默认 DejaVu Sans 不含 CJK 字形，写中文会
     # 触发一堆 UserWarning 且 PNG 上变成方框。中文说明在 markdown 报告里给。
     try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
         png_path = os.path.join(persistence_dir, BLB_TRAINING_CURVE_PNG)
-
-        # (raw_series, color, ma_color, title, ylabel, baseline_value)
-        panels = []
         if _has(episode_returns):
-            panels.append((episode_returns, "tab:blue", "darkblue",
-                           "Episode Reward", "reward", None))
-        if _has(episode_losses):
-            panels.append((episode_losses, "tab:red", "darkred",
-                           "Loss (lower is better)", "loss", _bl.get("loss")))
-        if _has(episode_metric1s):
-            panels.append((episode_metric1s, "tab:green", "darkgreen",
-                           f"{metric1_name} (higher is better)", metric1_name,
-                           _bl.get("metric1")))
-        if _has(episode_metric2s):
-            panels.append((episode_metric2s, "tab:purple", "darkviolet",
-                           f"{metric2_name} (higher is better)", metric2_name,
-                           _bl.get("metric2")))
-        if _has(episode_fusion_counts):
-            panels.append((episode_fusion_counts, "tab:brown", "saddlebrown",
-                           "Fusion count per episode", "fusion_count", 0.0))
-        if _has(episode_avg_ks):
-            panels.append((episode_avg_ks, "tab:cyan", "teal",
-                           "avg K (truncation bits, lower=cheaper)", "avg_K",
-                           _bl.get("avg_k")))
-        if not panels and _has(ppo_loss_curve):
-            # legacy single-shot fallback: nothing per-episode but PPO loss given.
-            panels.append((ppo_loss_curve, "tab:red", "darkred",
-                           "PPO policy loss", "loss", None))
-
-        n_panels = max(1, len(panels))
-        fig, axes = plt.subplots(n_panels, 1, figsize=(10, 3 * n_panels),
-                                 squeeze=False)
-        for i, (raw, color, ma_color, title, ylabel, baseline) in enumerate(panels):
-            _stage1_style_panel(
-                axes[i, 0], raw, color=color, ma_color=ma_color,
-                ma_window=ma_window, title=title, ylabel=ylabel, baseline=baseline,
+            out["png"] = save_stage1_style_training_curve(
+                out_path=png_path,
+                reward=episode_returns,
+                loss=episode_losses if _has(episode_losses) else None,
+                metric1=episode_metric1s if _has(episode_metric1s) else None,
+                metric2=episode_metric2s if _has(episode_metric2s) else None,
+                baseline_loss=_bl.get("loss"),
+                baseline_metric1=_bl.get("metric1"),
+                baseline_metric2=_bl.get("metric2"),
+                metric1_name=metric1_name,
+                metric2_name=metric2_name if _has(episode_metric2s) else None,
+                title_suffix="",
+                moving_average_window=(
+                    int(requested_ma_window) if requested_ma_window is not None else 24
+                ),
             )
-        fig.suptitle("BLB Stage-2 RL Training Curves", fontsize=12,
-                     fontweight="bold")
-        fig.tight_layout(rect=(0, 0, 1, 0.985))
-        fig.savefig(png_path, dpi=150)
-        plt.close(fig)
-        out["png"] = png_path
+        elif _has(ppo_loss_curve):
+            out["png"] = save_stage1_style_training_curve(
+                out_path=png_path,
+                reward=ppo_loss_curve,
+                title_suffix="",
+                moving_average_window=(
+                    int(requested_ma_window) if requested_ma_window is not None else 24
+                ),
+            )
     except Exception as exc:
         log(f"  [BLB曲线][信息] 跳过多联 PNG（matplotlib 不可用 / 渲染失败）：{exc}")
 

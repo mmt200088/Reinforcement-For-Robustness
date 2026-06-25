@@ -1336,6 +1336,7 @@ stage2_noise/progress/
 - `blb_stage2_rl_checkpoint_final.pt`
 - `blb_stage2_best_cfg.pkl`
 - `blb_stage2_status.json`
+- `blb_stage2_live_summary.md`
 - `blb_stage2_training_curve.npz`
 - `blb_stage2_training_curve.png`
 - `blb_stage2_report.md`
@@ -1345,21 +1346,52 @@ stage2_noise/progress/
 
 Older docs that mention `blb_stage2/progress/` are stale for current code.
 
-**Decoupling IMPLEMENTED 2026-06-01 (local, py_compile/bash-n/torch-free verified;
-behavioral verification pending on the server).** Stage-1 and Stage-2 RL are split
-into separate, never-chained runs with one **flattened** working dir per combo (no
-constraint-slug): `Parting Chapter/stage1/{combo}/` (products directly inside) and
-`Parting Chapter/stage2/{combo}/` (`…/progress/` inside), where
+**Formal Stage-2 RL persistence rule, updated 2026-06-25.** Future Stage-2 RL
+training and monitoring must use the old constraint-slug persistent layout, not
+agent-created temp training directories and not the historical flattened
+`Parting Chapter/stage2/{combo}/` output. For the current MRPC 60k spec the
+canonical root is:
+
+```text
+Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st3.0/
+```
+
+The live artifacts to return to the user are under
+`stage2_noise/progress/` inside that root, especially
+`blb_stage2_status.json`, `blb_stage2_live_summary.md`,
+`blb_stage2_training_curve.png`, diagnostics JSONL, details batches,
+checkpoint files, and reports. `LATEST_PID` and
+`LATEST_RUN_DIR` are written one level above the slug:
+`Parting Chapter/persistent/rl/bert-base/mrpc/`. Stage-2 runs should pass the
+fixed Stage-1 config explicitly (`--stage2-fixed-config-source json/manual`);
+do not rely on a same-directory Stage-1 checkpoint in this formal path.
+Short diagnostic RL runs (A/B, 1-GPU-vs-N-GPU gates, probe sweeps) must still
+use this persistent group, but with `--run-tag` so they create sibling slugs
+such as `s1t0.001_s2t0.001_s2st3.0__gate_gN_<timestamp>` and cannot overwrite
+the formal 60k canonical slug.
+The `mrpc-blb-stage2-rl` preset defaults to this current formal constraint
+slug (`stage1_accuracy_tolerance=0.001`, `stage2_limit_tolerance=0.001`,
+`stage2_stability_tolerance=3.0`); command-line overrides remain allowed but
+must be deliberate because they create a different persistent slug.
+Use `python3 scripts/verify_stage2_persistent_outputs.py --run-dir <slug>`
+after any Stage-2 RL smoke, gate, or long run to prove the live status,
+human-readable summary, diagnostics JSONL, details batches, and Stage-1-style
+curves are present before reporting results.
+
+**Stage-1 decoupling IMPLEMENTED 2026-06-01 (local, py_compile/bash-n/torch-free
+verified; behavioral verification pending on the server).** Stage-1 RL remains a
+separate, never-chained run with one **flattened** working dir per combo (no
+constraint-slug): `Parting Chapter/stage1/{combo}/`, where
 `combo = {model_type with '-'→' '} {dataset}` (e.g. `bert base mrpc`, spaces
-intended). Constraint tolerances live in `metadata.json` (with a resume-time
-mismatch guard → `--fresh`). On completion each stage best-effort snapshots
-`final_config.json` + basic-single-eval `final_eval.json` + curves + `report.md` +
-`metadata.json` into `Parting Chapter/stage{1,2}/record/{combo} {N} {YYYYMMDD}/`
-(`N` = existing combo records + 1; run-id e.g. `bert base rte 1 20260530`) and
-writes a `COMPLETED` marker in the working dir. Stage-2 reads its prerequisite
-Stage-1 degrees from `stage1/record/` (max-N or `--stage1-run-id`,
-`--stage2-fixed-config` JSON overrides) and its record stores BOTH the action and
-that Stage-1 config (Critical Mental Model #9). **`run rl` REQUIRES an explicit
+intended). Historical Stage-2 flattened directories may exist for older runs, but
+they are not the formal Stage-2 RL output target after 2026-06-25. Constraint
+tolerances live in `metadata.json` (with a resume-time mismatch guard →
+`--fresh`). On completion each stage best-effort snapshots `final_config.json` +
+basic-single-eval `final_eval.json` + curves + `report.md` + `metadata.json` into
+`Parting Chapter/stage{1,2}/record/{combo} {N} {YYYYMMDD}/` (`N` = existing combo
+records + 1; run-id e.g. `bert base rte 1 20260530`) and writes a `COMPLETED`
+marker in the working dir. Stage-2 records must store BOTH the action and that
+Stage-1 config (Critical Mental Model #9). **`run rl` REQUIRES an explicit
 `--mode stage1-only`/`stage2-only`**; chained `train`/`eval`/`search-only` error
 with guidance; the `eval` SUBcommand (→ Paean standalone final-eval) is untouched.
 Final-eval auto-trigger is removed — completion writes only a basic snapshot; the

@@ -1034,6 +1034,39 @@ class EpisodeRecord:
     frontier_seed_episode: int = -1
 
 
+def _attach_pending_full_vec_for_callback(
+        record: EpisodeRecord,
+        pending_full_vec: Optional[np.ndarray],
+        ) -> None:
+    """Attach the action vector collected with this episode to ``record``.
+
+    Episode-parallel workers have independent ``BLBStage2SequentialEnv``
+    instances. The primary env's ``_pending_full_vec`` can therefore be stale
+    for records collected by replica workers, so callback/diagnostic code must
+    prefer the per-outcome vector attached here.
+    """
+    if pending_full_vec is None:
+        return
+    setattr(
+        record,
+        "_pending_full_vec_for_callback",
+        np.asarray(pending_full_vec, dtype=np.int64).copy(),
+    )
+
+
+def _record_full_vec_for_callback(
+        record: EpisodeRecord,
+        seq_env: BLBStage2SequentialEnv,
+        ) -> Optional[np.ndarray]:
+    record_full_vec = getattr(record, "_pending_full_vec_for_callback", None)
+    if record_full_vec is not None:
+        return np.asarray(record_full_vec, dtype=np.int64)
+    pending = getattr(seq_env, "_pending_full_vec", None)
+    if pending is None:
+        return None
+    return np.asarray(pending, dtype=np.int64).copy()
+
+
 def _episode_best_rank_key(record: Any) -> Tuple[float, ...]:
     """Hard-priority best-action ranking with unbounded P3 cost tie-breaks."""
     try:
@@ -1445,6 +1478,8 @@ def train_sequential(
     episode_returns: List[float] = []
     episode_records: List[EpisodeRecord] = []
     ppo_metric_history: List[Dict[str, float]] = []
+    ppo_update_wall_seconds_accum = 0.0
+    episode_callback_wall_seconds_accum = 0.0
     frontier_seed_actions: List[Tuple[int, np.ndarray]] = []
 
     if train_cfg.seed is not None:
@@ -1511,6 +1546,8 @@ def train_sequential(
 
     def _finalize_completed_record(draft: Dict[str, Any]) -> None:
         nonlocal best_online_reward_seen, best_online_cost_rank_seen
+        nonlocal ppo_update_wall_seconds_accum
+        nonlocal episode_callback_wall_seconds_accum
         record: EpisodeRecord = draft["record"]
         absolute_ep_local = int(draft["absolute_ep"])
         selected_offsets_local = sorted(int(x) for x in draft["selected_offsets"])
@@ -1580,8 +1617,15 @@ def train_sequential(
             ))
             if len(frontier_seed_actions) > 64:
                 del frontier_seed_actions[:-64]
+        _attach_pending_full_vec_for_callback(record, pending_full_vec_local)
         if on_episode_end is not None:
-            on_episode_end(record)
+            episode_callback_t0 = time.perf_counter()
+            try:
+                on_episode_end(record)
+            finally:
+                episode_callback_wall_seconds_accum += float(
+                    time.perf_counter() - episode_callback_t0
+                )
 
         if (int(record.episode_idx) + 1) % int(train_cfg.update_every_n_episodes) == 0:
             _ep_1based = int(absolute_episode_start + int(record.episode_idx) + 1)
@@ -1616,10 +1660,14 @@ def train_sequential(
                 if torch.cuda.is_available():
                     torch.cuda.manual_seed_all(int(_update_seed))
                 np.random.seed(int(_update_seed) % (2**32))
+            ppo_update_t0 = time.perf_counter()
             metrics = sequential_ppo_update(
                 policy, optimizer, buffer, train_cfg.ppo, device,
                 ent_coef_override=current_ent_coef,
             )
+            ppo_update_wall = float(time.perf_counter() - ppo_update_t0)
+            metrics["ppo_update_wall_seconds"] = float(ppo_update_wall)
+            ppo_update_wall_seconds_accum += float(ppo_update_wall)
             ppo_metric_history.append(metrics)
             buffer.clear()
             if on_ppo_update_end is not None:
@@ -1784,6 +1832,9 @@ def train_sequential(
         upd = max(1, int(train_cfg.update_every_n_episodes))
         for window_start in range(0, total, upd):
             n_window = min(upd, total - window_start)
+            window_t0 = time.perf_counter()
+            ppo_wall_before = float(ppo_update_wall_seconds_accum)
+            callback_wall_before = float(episode_callback_wall_seconds_accum)
             outcomes = parallel_runner.run_window(
                 policy=policy,
                 train_cfg=train_cfg,
@@ -1796,15 +1847,21 @@ def train_sequential(
                 forbidden_mask=forbidden_mask,
                 max_rejection_retries=int(max_rejection_retries),
             )
+            collect_wall = float(time.perf_counter() - window_t0)
+            assembly_t0 = time.perf_counter()
+            buffer_add_wall = 0.0
+            finalize_wall = 0.0
             # Main-thread assembly in GLOBAL episode order: replay transitions
             # into the shared buffer, then run the unchanged finalize path
             # (bookkeeping, callbacks, PPO update at window boundaries).
             for oc in outcomes:
                 terminal_buffer_index = -1
+                buffer_t0 = time.perf_counter()
                 for tr in oc.transitions:
                     buffer_idx = buffer.add(**tr)
                     if bool(tr.get("done")):
                         terminal_buffer_index = int(buffer_idx)
+                buffer_add_wall += float(time.perf_counter() - buffer_t0)
                 rejection_counters["steps_committed_valid"] += int(oc.record.valid_step_count)
                 rejection_counters["samples_rejected_by_mask"] += int(
                     oc.record.samples_rejected_by_mask
@@ -1819,6 +1876,7 @@ def train_sequential(
                     rejection_counters["steps_forced_to_baseline_anchor"] += int(
                         oc.record.steps_taken
                     )
+                finalize_t0 = time.perf_counter()
                 _finalize_completed_record({
                     "record": oc.record,
                     "absolute_ep": int(oc.absolute_ep),
@@ -1829,6 +1887,27 @@ def train_sequential(
                     "pending_full_vec": oc.pending_full_vec,
                     "terminal_buffer_index": int(terminal_buffer_index),
                 })
+                finalize_wall += float(time.perf_counter() - finalize_t0)
+            assembly_wall = float(time.perf_counter() - assembly_t0)
+            ppo_update_wall = float(ppo_update_wall_seconds_accum - ppo_wall_before)
+            episode_callback_wall = float(
+                episode_callback_wall_seconds_accum - callback_wall_before
+            )
+            finalize_other_wall = max(
+                0.0,
+                float(finalize_wall) - float(ppo_update_wall) - float(episode_callback_wall),
+            )
+            log.info(
+                f"  [stage2-rollout-timing] window_start={int(window_start)} "
+                f"episodes={int(n_window)} collect_total_s={collect_wall:.3f} "
+                f"assembly_update_s={assembly_wall:.3f} "
+                f"buffer_add_s={buffer_add_wall:.3f} "
+                f"finalize_update_s={finalize_wall:.3f} "
+                f"episode_callback_s={episode_callback_wall:.3f} "
+                f"finalize_other_s={finalize_other_wall:.3f} "
+                f"ppo_update_s={ppo_update_wall:.3f} "
+                f"window_total_s={float(time.perf_counter() - window_t0):.3f}"
+            )
         return {
             "episode_returns": episode_returns,
             "episode_records": episode_records,
@@ -3870,6 +3949,8 @@ def run_sequential_via_runner(
     )
 
     episode_returns: List[float] = []
+    live_episode_records: List[EpisodeRecord] = []
+    live_ppo_metrics: List[Dict[str, Any]] = []
     total_episodes_planned = int(train_cfg.total_episodes)
     rollout_avg_window: List[float] = []
     rollout_invalid_window: List[int] = []
@@ -4064,10 +4145,12 @@ def run_sequential_via_runner(
     def _episode_callback(record: EpisodeRecord) -> None:
         nonlocal best_reward, best_rank_key, best_action_vec, best_record
         episode_returns.append(float(record.total_reward))
+        live_episode_records.append(record)
         rollout_avg_window.append(float(record.total_reward))
         rollout_invalid_window.append(int(record.invalid_steps))
         rollout_valid_window.append(int(record.valid_step_count))
         rollout_terminal_window.append(float(record.terminal_reward))
+        record_full_vec = _record_full_vec_for_callback(record, seq_env)
 
         # Per-episode details file (details/noise_ppo_step_info_<start>-<end>.txt).
         # Mirrors what legacy noise_rl_module_v2 wrote: one record per episode with
@@ -4223,7 +4306,10 @@ def run_sequential_via_runner(
         if is_new_best:
             best_rank_key = tuple(current_rank_key)
             best_reward = float(record.total_reward)
-            best_action_vec = np.asarray(seq_env._pending_full_vec, dtype=np.int64).copy()
+            best_action_vec = (
+                None if record_full_vec is None
+                else np.asarray(record_full_vec, dtype=np.int64).copy()
+            )
             best_record = record
             # Episode-new-best banner (v2-style: "回合 N · 训练过程新高")
             _seq_block_title(
@@ -4258,9 +4344,10 @@ def run_sequential_via_runner(
                 f"total_bits={record.total_bits_sum_over_steps}  "
                 f"fusion={record.fusion_count_sum_over_steps}"
             )
-            log("  " + bullet + " 当前 best action（decoded slots；不输出 action index）：")
-            for snippet_line in _format_best_action_slots(best_action_vec):
-                log("      " + snippet_line)
+            if best_action_vec is not None:
+                log("  " + bullet + " 当前 best action（decoded slots；不输出 action index）：")
+                for snippet_line in _format_best_action_slots(best_action_vec):
+                    log("      " + snippet_line)
 
         # Periodic checkpoint
         if (record.episode_idx + 1) % int(train_cfg.save_interval) == 0:
@@ -4381,11 +4468,6 @@ def run_sequential_via_runner(
         # The recorder owns its own try/except internally; we still wrap to keep
         # training resilient if the dataclass schema ever drifts.
         try:
-            full_vec_now = (
-                np.asarray(seq_env._pending_full_vec, dtype=np.int64).copy()
-                if getattr(seq_env, "_pending_full_vec", None) is not None
-                else None
-            )
             diag_recorder.record_episode(
                 episode_stats=EpisodeStats(
                     episode=int(start_episode + record.episode_idx),
@@ -4501,7 +4583,10 @@ def run_sequential_via_runner(
                     empirical_offset_failure_rate=float(record.empirical_offset_failure_rate),
                     frontier_seed_episode=int(record.frontier_seed_episode),
                 ),
-                full_action_vec=full_vec_now,
+                full_action_vec=(
+                    None if record_full_vec is None
+                    else np.asarray(record_full_vec, dtype=np.int64)
+                ),
                 is_new_best=bool(is_new_best),
                 best_reward_so_far=float(best_reward),
             )
@@ -4519,6 +4604,81 @@ def run_sequential_via_runner(
             except Exception as exc:
                 log(f"  [diag][warning] flush_periodic failed: {exc}")
 
+    def _write_live_training_curves(
+            *,
+            completed_episodes: int,
+            force: bool = False,
+            ) -> None:
+        # live_curve_refresh: keep Stage-2's in-flight curve in the same
+        # Stage-1-style format as the final curve, without redrawing every PPO
+        # update. Default cadence: every progress box (5 PPO updates) and final.
+        if not force and ppo_update_counter[0] % SEQ_PROGRESS_BOX_PPO_INTERVAL != 0:
+            return
+        records = list(live_episode_records)
+        if not records:
+            return
+        try:
+            ep_returns = [
+                float(getattr(r, "total_reward", 0.0) or 0.0)
+                for r in records
+            ]
+            ep_losses = [
+                float(getattr(r, "terminal_loss_mean", 0.0) or 0.0)
+                for r in records
+            ]
+            ep_m1 = [
+                float(getattr(r, "terminal_metric1_mean", 0.0) or 0.0)
+                for r in records
+            ]
+            ep_m2 = [
+                float(getattr(r, "terminal_metric2_mean", 0.0) or 0.0)
+                for r in records
+            ]
+            ep_fusion = [
+                float(getattr(r, "fusion_count_sum_over_steps", 0) or 0)
+                for r in records
+            ]
+            base_avg_k = float(getattr(baseline, "avg_k", 13.0) or 13.0)
+            ep_avgk = [
+                base_avg_k - float(getattr(r, "terminal_k_gain", 0.0) or 0.0)
+                for r in records
+            ]
+            ent = [
+                float(m.get("entropy"))
+                for m in live_ppo_metrics
+                if m.get("entropy") is not None
+            ]
+            ent_eps = [
+                float(m.get("completed_episodes", 0) or 0)
+                for m in live_ppo_metrics
+                if m.get("entropy") is not None
+            ]
+            curve_paths = write_training_curves(
+                blb_progress_dir,
+                episode_returns=ep_returns,
+                episode_losses=ep_losses or None,
+                episode_metric1s=ep_m1 or None,
+                episode_metric2s=ep_m2 or None,
+                episode_fusion_counts=ep_fusion or None,
+                episode_avg_ks=ep_avgk or None,
+                baselines={
+                    "loss": float(getattr(baseline, "loss_mean", 0.0) or 0.0),
+                    "metric1": float(getattr(baseline, "metric1_mean", 0.0) or 0.0),
+                    "metric2": float(getattr(baseline, "metric2_mean", 0.0) or 0.0),
+                    "avg_k": base_avg_k,
+                },
+                entropy_series=ent or None,
+                entropy_episodes=ent_eps or None,
+                log_fn=log,
+            )
+            if curve_paths.get("png"):
+                log(
+                    f"  [live_curve_refresh] Stage-1-style curve refreshed "
+                    f"@ episode {int(completed_episodes)} → {curve_paths['png']}"
+                )
+        except Exception as exc:
+            log(f"  [live_curve_refresh][warning] failed: {exc}")
+
     def _ppo_update_end_callback(
             metrics: Dict[str, float],
             completed_episodes: int,
@@ -4533,6 +4693,9 @@ def run_sequential_via_runner(
         avg_inv = float(np.mean(rollout_invalid_window)) if rollout_invalid_window else 0.0
         avg_valid = float(np.mean(rollout_valid_window)) if rollout_valid_window else 0.0
         avg_term = float(np.mean(rollout_terminal_window)) if rollout_terminal_window else 0.0
+        is_last_update = (
+            start_episode + completed_episodes >= total_episodes_planned
+        )
         # Wall-clock timestamp helps correlate window summaries with ops events
         # (kill -USR1, OOM, GPU thermals) when reading the log days later. Cost
         # is negligible compared to the PPO update itself.
@@ -4592,6 +4755,51 @@ def run_sequential_via_runner(
         except Exception as exc:
             log(f"  [diag][warning] record_ppo_update failed: {exc}")
 
+        try:
+            status.update_after_ppo_update(
+                int(ppo_update_counter[0]),
+                {
+                    "completed_episodes": int(start_episode + completed_episodes),
+                    "policy_loss": float(metrics.get("policy_loss", 0.0)),
+                    "value_loss": float(metrics.get("value_loss", 0.0)),
+                    "entropy": float(metrics.get("entropy", 0.0)),
+                    "clip_fraction": float(metrics.get("clip_fraction", 0.0)),
+                    "n_samples": int(metrics.get("n_samples", 0)),
+                    "window_mean_return": float(avg_ret),
+                    "window_max_return": float(max_ret),
+                    "window_min_return": float(min_ret),
+                    "window_mean_invalid": float(avg_inv),
+                    "best_reward_so_far": float(best_reward),
+                    "elapsed_sec": float(time.time() - t_start),
+                    "ent_coef": float(metrics.get("ent_coef", 0.0)),
+                    "approx_kl": float(metrics.get("approx_kl", 0.0)),
+                    "kl_early_stop": bool(metrics.get("kl_early_stop", False)),
+                    "lr": float(metrics.get("lr", optimizer.param_groups[0]["lr"])),
+                    "lr_scale": float(metrics.get("lr_scale", 1.0)),
+                    "entropy_recovery_delta": float(
+                        metrics.get("entropy_recovery_delta", 0.0)
+                    ),
+                    "return_mean": float(metrics.get("return_mean", 0.0)),
+                    "return_std": float(metrics.get("return_std", 1.0)),
+                },
+            )
+        except Exception as exc:
+            log(f"  [status][warning] update_after_ppo_update failed: {exc}")
+
+        live_ppo_metrics.append({
+            "completed_episodes": int(start_episode + completed_episodes),
+            "policy_loss": float(metrics.get("policy_loss", 0.0)),
+            "value_loss": float(metrics.get("value_loss", 0.0)),
+            "entropy": float(metrics.get("entropy", 0.0)),
+            "clip_fraction": float(metrics.get("clip_fraction", 0.0)),
+            "window_mean_return": float(avg_ret),
+            "window_mean_invalid": float(avg_inv),
+        })
+        _write_live_training_curves(
+            completed_episodes=int(start_episode + completed_episodes),
+            force=bool(is_last_update),
+        )
+
         # Reward-crash watcher: compare this PPO rollout's mean return to the
         # previous rollout's. If it dropped > drop_threshold (default 0.3), an
         # entry is appended to <noise_root>/warning.txt pointing at the current
@@ -4616,9 +4824,6 @@ def run_sequential_via_runner(
 
         # Periodic big progress box (every SEQ_PROGRESS_BOX_PPO_INTERVAL updates,
         # or on the last update of the run).
-        is_last_update = (
-            start_episode + completed_episodes >= total_episodes_planned
-        )
         if (
             ppo_update_counter[0] % SEQ_PROGRESS_BOX_PPO_INTERVAL == 0
             or is_last_update
