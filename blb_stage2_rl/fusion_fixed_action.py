@@ -38,7 +38,13 @@ from typing import Any, Dict, List, Sequence
 import numpy as np
 
 
-def match_option_id(*, action_slice: Sequence[int], graph: Any, graph_key: str = "") -> int:
+def match_option_id(
+        *,
+        action_slice: Sequence[int],
+        graph: Any,
+        graph_key: str = "",
+        slot_dims: Sequence[int] | None = None,
+        ) -> int:
     """Return the unique fusion ``option_id`` whose ``action_indices`` equal
     ``action_slice`` on every non-K slot.
 
@@ -64,6 +70,22 @@ def match_option_id(*, action_slice: Sequence[int], graph: Any, graph_key: str =
         if same_non_k:
             matches.append(int(option.option_id))
     if not matches:
+        if slot_dims is not None:
+            dims = np.asarray(slot_dims, dtype=int).reshape(-1)
+            if dims.size == arr.size:
+                legacy_all_max = all(
+                    int(arr[i]) == int(dims[i]) - 1
+                    for i in range(arr.size)
+                    if i != k_slot
+                )
+                if legacy_all_max:
+                    baseline = [
+                        int(option.option_id)
+                        for option in graph.options
+                        if int(option.option_id) == 0
+                    ]
+                    if len(baseline) == 1:
+                        return 0
         raise ValueError(
             f"could not match fusion option for graph={graph_key!r} slice={arr.tolist()}"
         )
@@ -115,7 +137,10 @@ def reconstruct_fusion_group(
             raise KeyError(f"fusion map missing graph {graph_key!r}")
         action_slice = action_arr[list(step.full_vec_offsets)]
         option_id = match_option_id(
-            action_slice=action_slice, graph=graph, graph_key=graph_key,
+            action_slice=action_slice,
+            graph=graph,
+            graph_key=graph_key,
+            slot_dims=getattr(step, "slot_dims", None),
         )
         option = next(o for o in graph.options if int(o.option_id) == int(option_id))
         k_index = int(action_slice[int(graph.k_slot_index)])

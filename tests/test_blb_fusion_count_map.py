@@ -124,6 +124,21 @@ class FusionMapLoaderTest(unittest.TestCase):
             self.assertEqual(sorted(m.graphs), ["block1_mrpc"])
             self.assertEqual(m.num_options("block1_mrpc"), 2)
 
+    def test_load_skips_macos_appledouble_sidecar(self):
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            d = pathlib.Path(td) / "fusion_maps" / "mrpc"
+            d.mkdir(parents=True)
+            (d / "block1_mrpc.json").write_text(json.dumps(_toy_payload()["graphs"]["block1_mrpc"]), encoding="utf-8")
+            (d / "._block1_mrpc.json").write_bytes(
+                b"\x00\x05\x16\x07\x00\x02\x00\x00Mac OS X        \x00\x02\x00\x00\x00\xa3"
+            )
+            m = fcm.FusionCountMap.load("mrpc", root=td)
+            self.assertEqual(sorted(m.graphs), ["block1_mrpc"])
+            self.assertEqual(m.num_options("block1_mrpc"), 2)
+
 
 class GroupMinNoiseOptionsTest(unittest.TestCase):
     """Pure grouping/ordering core (torch-free).

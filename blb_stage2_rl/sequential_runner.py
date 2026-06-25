@@ -26,6 +26,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 import numpy as np
 import torch
 
+from rl_data_points import RLDataPointWriter
+
 from .action_mask import (
     EmpiricalInvalidLevelMask,
     ForbiddenActionMask,
@@ -3977,6 +3979,25 @@ def run_sequential_via_runner(
             profile=str(train_cfg.profile),
         )
 
+    _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _stage2_run_source = (
+        str(getattr(ev, "run_output_dir", "") or "").strip()
+        or os.path.dirname(os.path.normpath(blb_progress_dir))
+        or f"stage2-{train_cfg.profile}"
+    )
+    try:
+        _stage2_run_id = os.path.relpath(_stage2_run_source, _repo_root)
+    except ValueError:
+        _stage2_run_id = str(_stage2_run_source)
+    stage2_data_writer = RLDataPointWriter(
+        root_dir=os.path.join(_repo_root, "rl_training_data_points"),
+        run_id=_stage2_run_id,
+        stage="stage2",
+        model_type=str(getattr(ev, "model_type", "bert-base") or "bert-base"),
+        dataset=str(train_cfg.profile),
+    )
+    log(f"  {bullet} [data-points] Stage-2 structured RL data → {stage2_data_writer.run_dir}")
+
     diag_recorder = RLDiagnosticsRecorder(
         output_dir=blb_progress_dir,
         num_layers=int(ev.total_layers),
@@ -3985,6 +4006,7 @@ def run_sequential_via_runner(
         top_k=20,
         log_fn=log,
         slots_view_builder=_slots_view_builder,
+        data_point_writer=stage2_data_writer,
     )
     # Provide the static_skeletons baseline so top-K rows in the summary
     # can show *diffs* against it (which slots actually changed vs baseline).

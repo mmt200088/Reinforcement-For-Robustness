@@ -45,6 +45,18 @@ Do not directly patch source code on the server except for emergency inspection
 or a throwaway diagnostic that will not be kept. Any real fix must be applied
 locally, pushed to git, then pulled by the server.
 
+RL training data persistence rule:
+
+- Every Stage-1 and Stage-2 RL run must mirror raw data points into the
+  project-root `rl_training_data_points/` tree, classified by stage, model,
+  dataset, and run id. The structured data must be sufficient to redraw paper
+  figures without rerunning training: manifest/config/baselines/constraints,
+  per-step data when available, per-episode reward/metric/cost/action records,
+  PPO update diagnostics, throughput/parallelism fields, best-so-far state, and
+  final summary. Treat PNG/NPZ curves as inspection artifacts only. Do not
+  launch new RL training with the structured writer disabled unless the user
+  explicitly waives this requirement.
+
 Collaboration protocol for future Codex + Claude Code work:
 
 - Codex and Claude Code may both help modify this repository, but canonical

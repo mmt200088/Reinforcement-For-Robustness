@@ -86,19 +86,31 @@ class GlueBoostInstallTest(unittest.TestCase):
             attn_degree=np.asarray(softmax, dtype=int),
         )
 
-        def _sf_sum(cfg_obj):
-            total = 0
-            for attr in vars(cfg_obj).values():
-                sf = getattr(attr, "scaling_factor", None)
-                if isinstance(sf, (int, float)):
-                    total += int(sf)
-            return total
+        decoded_block2 = decoded.block2_cfgs[1]
+        preboost_block2 = preboost.block2_cfgs[1]
 
-        boosted_sf_sum = _sf_sum(decoded.block2_cfgs[1])
-        preboost_sf_sum = _sf_sum(preboost.block2_cfgs[1])
-        self.assertGreater(
-            boosted_sf_sum, preboost_sf_sum,
-            "GLUE decode did not install the boosted (higher-SF) block2 config",
+        # Do not compare the sum of all SFs: fusion intentionally removes some
+        # rescale points (None), which can lower the total even while the
+        # effective boosted points are installed at higher precision.
+        boosted_fields = [
+            "kt_mask1_result_rescale",
+            "q_mask1_result_rescale",
+            "qkt_matmul_result_rescale",
+            "qkt_merge_mask_encode",
+        ]
+        higher_fields = []
+        for field in boosted_fields:
+            boosted_sf = getattr(getattr(decoded_block2, field), "scaling_factor", None)
+            preboost_sf = getattr(getattr(preboost_block2, field), "scaling_factor", None)
+            if boosted_sf is not None and preboost_sf is not None and int(boosted_sf) > int(preboost_sf):
+                higher_fields.append(field)
+        self.assertTrue(
+            higher_fields,
+            "GLUE decode did not install any effective boosted block2 SF above pre-boost",
+        )
+        self.assertIsNone(
+            getattr(decoded_block2.gamma_result_rescale, "scaling_factor", None),
+            "GLUE decode did not preserve fused-away block2 gamma rescale",
         )
 
 

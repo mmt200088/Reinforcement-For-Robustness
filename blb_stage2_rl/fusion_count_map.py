@@ -154,8 +154,8 @@ class FusionCountMap:
         merged: dict = {"profile": profile, "graphs": {}, "max_num_options": 0}
         mx = 0
         for path in sorted(map_dir.glob("*.json")):
-            if path.name.startswith("_"):
-                continue  # skip non-graph sidecars like _summary.json
+            if path.name.startswith(("_", ".")):
+                continue  # skip non-graph / macOS sidecars like _summary.json or ._block.json
             g = json.loads(path.read_text(encoding="utf-8"))
             if "graph_key" not in g:
                 continue

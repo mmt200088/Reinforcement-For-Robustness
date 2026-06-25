@@ -61,6 +61,7 @@ from noise_rl_module_v2 import (
     _log_rounded_box,
     _progress_bar,
 )
+from rl_data_points import RLDataPointWriter
 import os
 import random
 import hashlib
@@ -5818,6 +5819,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "episode_id": -1,  # patched by the central loop with the absolute index
                 "layer_index": info["layer_index"],
                 "state_vector": state.tolist(),
+                "gelu_action_index": int(gelu_action.item()),
+                "gelu_action_degree": int(GELU_MAP[int(gelu_action.item())]),
+                "step_reward": float(reward),
+                "done": bool(done),
+                "logprob": float(logprob.detach().cpu().item()),
                 "curr_gelu_degree": info["curr_gelu_degree"],
                 "curr_softmax_degree": info["curr_softmax_degree"],
                 "gelu_prob_dist": gelu_probs.detach().cpu().numpy().tolist(),
@@ -6161,6 +6167,73 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "metric2": proxy_base_s,
                 "cost": base_tot_c,
             }
+
+            _stage1_model_type = (
+                "bert-large" if int(self.total_layers) == 24
+                else "bert-base" if int(self.total_layers) == 12
+                else f"layers-{int(self.total_layers)}"
+            )
+            _stage1_run_source = (
+                self.run_output_dir
+                or os.path.dirname(self.stage1_step_info_file)
+                or f"{_stage1_model_type}-{self.data_path}"
+            )
+            try:
+                _stage1_run_id = os.path.relpath(_stage1_run_source, os.getcwd())
+            except ValueError:
+                _stage1_run_id = str(_stage1_run_source)
+            stage1_data_writer = RLDataPointWriter(
+                root_dir="rl_training_data_points",
+                run_id=_stage1_run_id,
+                stage="stage1",
+                model_type=_stage1_model_type,
+                dataset=str(self.data_path),
+            )
+            stage1_data_writer.write_manifest({
+                "source_run_output_dir": self.run_output_dir,
+                "stage1_step_info_file": self.stage1_step_info_file,
+                "total_layers": int(self.total_layers),
+                "search_algorithm": self.search_algorithm,
+                "rl_algo": self.rl_algo,
+                "stage1_episodes_requested": (
+                    None
+                    if self.stage1_rl_unbounded_until_entropy
+                    else int(self.stage1_rl_episode_limit)
+                ),
+                "stage1_unbounded_until_entropy": bool(self.stage1_rl_unbounded_until_entropy),
+                "stage1_entropy_stop_threshold": self.stage1_entropy_stop_threshold,
+                "ppo_update_interval": int(PPO_UPDATE_INTERVAL),
+                "ppo_lr_initial": float(self.stage1_ppo_lr_initial),
+                "stage1_rl_devices": self.stage1_rl_devices,
+                "random_seed": int(getattr(self, "final_eval_random_seed", 42)),
+                "baseline": {
+                    "loss": float(base_loss),
+                    "metric1": float(base_p),
+                    "metric2": float(base_s),
+                    "cost_reference": float(base_tot_c),
+                    "gelu": np.asarray(base_gelu, dtype=int).tolist(),
+                    "softmax": np.asarray(base_softmax, dtype=int).tolist(),
+                },
+                "constraints": {
+                    "loss_max": float(limit_loss),
+                    "metric1_min": float(limit_p),
+                    "metric2_min": float(limit_s),
+                    "stage1_accuracy_tolerance": float(self.error_threshold),
+                    "stage1_metric_tolerance": float(self.correlation_drop_ratio),
+                },
+                "cost_reference": {
+                    "gelu": np.asarray(cost_ref_gelu, dtype=int).tolist(),
+                    "softmax": np.asarray(cost_ref_softmax, dtype=int).tolist(),
+                },
+                "action_space": {
+                    "gelu_map": GELU_MAP,
+                    "gelu_action_mask": STAGE1_GELU_ACTION_MASK.tolist(),
+                    "fixed_softmax_degree": int(FIXED_SOFTMAX_DEGREE),
+                },
+            })
+            self.log(
+                f"  [data-points] Stage-1 structured RL data → {stage1_data_writer.run_dir}"
+            )
 
             # ----------------------------------------------------------------
             # Stage-1 multi-GPU rollout runner (opt-in via --stage1-rl-devices)
@@ -6506,6 +6579,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                             'episode_id': episode,
                             'layer_index': info['layer_index'],
                             'state_vector': state.tolist(),
+                            'gelu_action_index': int(gelu_action.item()),
+                            'gelu_action_degree': int(GELU_MAP[int(gelu_action.item())]),
+                            'step_reward': float(reward),
+                            'done': bool(done),
+                            'logprob': float(logprob.detach().cpu().item()),
                             'curr_gelu_degree': info['curr_gelu_degree'],
                             'curr_softmax_degree': info['curr_softmax_degree'],
                             'gelu_prob_dist': gelu_probs.cpu().numpy().tolist(),
@@ -6560,6 +6638,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 for si in step_infos:
                     self._write_step_info(si, chunk_f)
                     chunk_f.write("\n")
+                    stage1_data_writer.write_step(si)
                 chunk_f.flush()
                 if _handled_via_parallel:
                     _stage1_parallel_detail_seconds += (
@@ -6584,13 +6663,51 @@ class LayerImportanceEvaluator(TrainerCallback):
                         'reward': episode_reward,
                     }
                 
-                if episode_reward > best_reward:
+                _stage1_is_new_best = bool(episode_reward > best_reward)
+                if _stage1_is_new_best:
                     best_reward = episode_reward
                     best_cost = env.accumulated_cost
                     best_config = final_config.copy()
                     self.log(f"  回合（Episode） {episode+1}: 新最优！（New Best!） 奖励（Reward）={episode_reward:.4f}, 成本（Cost）={env.accumulated_cost:.2f}")
                     self.log(f"    GELU配置: {env.gelu_config}")
                     self.log(f"    Softmax配置: {env.softmax_config}")
+
+                _episode_metrics = (
+                    dict(env.current_episode_metrics)
+                    if getattr(env, "current_episode_metrics", None) is not None
+                    else {
+                        "loss": base_loss,
+                        "metric1": base_p,
+                        "metric2": base_s,
+                        "cost": env.accumulated_cost,
+                    }
+                )
+                stage1_data_writer.write_episode({
+                    "episode": int(episode + 1),
+                    "episode_zero_based": int(episode),
+                    "reward": float(episode_reward),
+                    "loss": float(_episode_metrics["loss"]),
+                    "metric1": float(_episode_metrics["metric1"]),
+                    "metric2": float(_episode_metrics["metric2"]),
+                    "cost": float(env.accumulated_cost),
+                    "gelu": np.asarray(env.gelu_config, dtype=int).tolist(),
+                    "softmax": np.asarray(env.softmax_config, dtype=int).tolist(),
+                    "current_lr": float(current_lr),
+                    "current_entropy_coef": float(current_entropy),
+                    "reward_mean": float(self.reward_mean),
+                    "reward_std": float(self.reward_std),
+                    "is_new_best": _stage1_is_new_best,
+                    "best_reward_so_far": float(best_reward),
+                    "best_cost_so_far": float(best_cost),
+                    "best_gelu_so_far": (
+                        np.asarray(best_config["gelu"], dtype=int).tolist()
+                        if best_config is not None else None
+                    ),
+                    "best_softmax_so_far": (
+                        np.asarray(best_config["softmax"], dtype=int).tolist()
+                        if best_config is not None else None
+                    ),
+                })
                 
                 # GTrXL PPO 更新（因果自注意力 + GRU门控）
                 if (episode + 1) % PPO_UPDATE_INTERVAL == 0:
@@ -6608,6 +6725,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         self.stage1_entropy_stop_threshold is not None
                         and float(entropy) < self.stage1_entropy_stop_threshold
                     )
+                    _stage1_parallel_update_payload = None
                     if (
                             _stage1_parallel_runner is not None
                             and _stage1_parallel_window_t0 is not None
@@ -6636,6 +6754,23 @@ class LayerImportanceEvaluator(TrainerCallback):
                             / max(_stage1_parallel_total_seconds, 1e-9)
                             * 3600.0
                         )
+                        _stage1_parallel_update_payload = {
+                            "window": int(_stage1_parallel_window_idx),
+                            "episodes": int(_stage1_parallel_window_episodes),
+                            "total_seconds": float(_stage1_parallel_total_seconds),
+                            "collect_seconds": float(_stage1_parallel_collect_seconds),
+                            "replay_seconds": float(_stage1_parallel_replay_seconds),
+                            "detail_seconds": float(_stage1_parallel_detail_seconds),
+                            "ppo_update_seconds": float(_stage1_ppo_update_seconds),
+                            "other_seconds": float(_stage1_parallel_other_seconds),
+                            "throughput_ep_per_hour": float(_stage1_parallel_ep_per_hour),
+                        }
+                        if _stage1_parallel_runner.last_diagnostics is not None:
+                            _diag = _stage1_parallel_runner.last_diagnostics
+                            _stage1_parallel_update_payload["worker_seconds"] = list(_diag.per_worker_seconds)
+                            _stage1_parallel_update_payload["worker_episode_counts"] = list(_diag.per_worker_episode_counts)
+                            _stage1_parallel_update_payload["devices"] = list(_diag.devices)
+                            _stage1_parallel_update_payload["speedup_vs_sequential"] = float(_diag.speedup_vs_sequential)
                         self.log(
                             "  [stage1-rollout-total] "
                             f"window={_stage1_parallel_window_idx} "
@@ -6655,6 +6790,20 @@ class LayerImportanceEvaluator(TrainerCallback):
                         _stage1_parallel_detail_seconds = 0.0
                     
                     avg_reward = np.mean(episode_rewards[-PPO_UPDATE_INTERVAL:])
+                    stage1_data_writer.write_ppo_update({
+                        "update": int(gtrxl_ppo_update_count),
+                        "episode": int(episode + 1),
+                        "policy_loss": float(policy_loss),
+                        "value_loss": float(value_loss),
+                        "entropy": float(entropy),
+                        "avg_reward": float(avg_reward),
+                        "current_lr": float(optimizer.param_groups[0]["lr"]),
+                        "current_entropy_coef": float(current_entropy),
+                        "best_reward_so_far": float(best_reward),
+                        "best_cost_so_far": float(best_cost),
+                        "buffer_episodes": int(PPO_UPDATE_INTERVAL),
+                        "parallel": _stage1_parallel_update_payload,
+                    })
                     warmup_status = "warmup" if gtrxl_ppo_update_count <= GTRXL_WARMUP_STEPS else "normal"
                     _log_rounded_box(
                         self.log,
@@ -6818,6 +6967,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         and entropy <= self.stage1_entropy_stop_threshold
                     ):
                         stage1_entropy_converged = True
+                        stage1_stop_reason = "entropy_converged"
                         self.log(
                             "Stage-1 entropy convergence reached: "
                             f"entropy={entropy:.6f} <= threshold={self.stage1_entropy_stop_threshold:.6f} "
@@ -6872,6 +7022,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                         stage1_warnings=stage1_warnings,
                     )
                     consume_stop_flag_file(stage1_stop_flag_path)
+                    stage1_data_writer.write_summary({
+                        "status": "stopped",
+                        "stop_reason": "graceful_stop",
+                        "completed_episodes": int(episode + 1),
+                        "best_reward": float(best_reward),
+                        "best_cost": float(best_cost),
+                        "best_config": best_config,
+                    })
+                    stage1_data_writer.close()
                     if self.run_output_dir:
                         update_persistent_metadata_stage(
                             self.run_output_dir, "stage1_search", "in_progress",
@@ -6953,6 +7112,24 @@ class LayerImportanceEvaluator(TrainerCallback):
                         "best_cost": float(best_cost),
                     },
                 )
+            stage1_data_writer.write_summary({
+                "status": "completed",
+                "stop_reason": stage1_stop_reason,
+                "completed_episodes": int(stage1_completed_episodes),
+                "target_episodes": (
+                    None
+                    if self.stage1_rl_unbounded_until_entropy
+                    else int(self.stage1_rl_episode_limit)
+                ),
+                "ppo_updates": int(gtrxl_ppo_update_count),
+                "best_reward": float(best_reward),
+                "best_cost": float(best_cost),
+                "best_config": best_config,
+                "warnings": stage1_warnings,
+                "episode_count": len(episode_rewards),
+                "entropy_points": len(episode_entropies),
+            })
+            stage1_data_writer.close()
 
             # ---- (可迁移) 保存独立的 portable policy 文件，仅含权重 + 元数据 ----
             if RL_OPT_FLAGS.get("stage1_save_portable_policy", False):

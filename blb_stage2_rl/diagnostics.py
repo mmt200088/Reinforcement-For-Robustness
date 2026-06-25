@@ -249,6 +249,7 @@ class RLDiagnosticsRecorder:
             log_fn=None,
             slots_view_builder=None,
             schema_version: str = "blb_v3_slots_human_v1",
+            data_point_writer=None,
             ) -> None:
         """Long-term diagnostics recorder.
 
@@ -271,6 +272,7 @@ class RLDiagnosticsRecorder:
         self.log = log_fn or (lambda _msg: None)
         self._slots_view_builder = slots_view_builder
         self.schema_version = str(schema_version)
+        self._data_point_writer = data_point_writer
 
         self.episodes_path = os.path.join(self.output_dir, "episodes.jsonl")
         self.ppo_updates_path = os.path.join(self.output_dir, "ppo_updates.jsonl")
@@ -363,6 +365,27 @@ class RLDiagnosticsRecorder:
         """Stash run-level metadata that will be embedded in best_action_vec.json
         and the summary header (profile, fixed_label, hyperparams, etc.)."""
         self._meta = dict(meta or {})
+        if self._data_point_writer is not None:
+            try:
+                self._data_point_writer.write_manifest({
+                    "source_diagnostics_dir": self.output_dir,
+                    "num_layers": int(self.num_layers),
+                    "num_action_slots": int(self.num_slots),
+                    "max_action_levels": int(self.max_levels),
+                    "top_k": int(self.top_k),
+                    "schema_version": self.schema_version,
+                    "meta": dict(self._meta),
+                    "files": {
+                        "episodes": self.episodes_path,
+                        "ppo_updates": self.ppo_updates_path,
+                        "top_candidates": self.top_path,
+                        "pareto_frontier": self.pareto_jsonl_path,
+                        "summary": self.summary_md_path,
+                        "health_log": self.health_log_path,
+                    },
+                })
+            except Exception as exc:
+                self.log(f"  [diag][warning] structured data manifest write failed: {exc}")
 
     def set_baseline_avg_k(self, value: float) -> None:
         try:
@@ -412,6 +435,18 @@ class RLDiagnosticsRecorder:
                 f.write(json.dumps(episode_stats.__dict__, ensure_ascii=False, default=str) + "\n")
         except Exception as exc:
             self.log(f"  [diag][warning] episodes.jsonl write failed: {exc}")
+        if self._data_point_writer is not None:
+            try:
+                mirror_payload = dict(episode_stats.__dict__)
+                mirror_payload["is_new_best"] = bool(is_new_best)
+                mirror_payload["best_reward_so_far"] = float(best_reward_so_far)
+                if full_action_vec is not None:
+                    mirror_payload["full_action_vec"] = (
+                        np.asarray(full_action_vec, dtype=int).reshape(-1).tolist()
+                    )
+                self._data_point_writer.write_episode(mirror_payload)
+            except Exception as exc:
+                self.log(f"  [diag][warning] structured episode write failed: {exc}")
 
         # 2) accumulate stats
         self._all_episode_returns.append(float(episode_stats.total_reward))
@@ -660,6 +695,11 @@ class RLDiagnosticsRecorder:
                 f.write(json.dumps(stats.__dict__, ensure_ascii=False, default=str) + "\n")
         except Exception as exc:
             self.log(f"  [diag][warning] ppo_updates.jsonl write failed: {exc}")
+        if self._data_point_writer is not None:
+            try:
+                self._data_point_writer.write_ppo_update(dict(stats.__dict__))
+            except Exception as exc:
+                self.log(f"  [diag][warning] structured ppo update write failed: {exc}")
         self._ppo_history.append(stats)
 
     def flush_periodic(self) -> None:
@@ -745,6 +785,27 @@ class RLDiagnosticsRecorder:
     def finalize(self) -> None:
         """Flush + leave behind the summary in its final form."""
         self.flush_periodic()
+        if self._data_point_writer is not None:
+            try:
+                last_episode = (
+                    dict(self._last_episode_stats.__dict__)
+                    if self._last_episode_stats is not None
+                    else None
+                )
+                self._data_point_writer.write_summary({
+                    "status": "completed",
+                    "episode_count": int(len(self._all_episode_returns)),
+                    "ppo_update_count": int(len(self._ppo_history)),
+                    "meta": dict(self._meta),
+                    "last_episode": last_episode,
+                    "diagnostics_dir": self.output_dir,
+                    "diagnostics_summary": self.summary_md_path,
+                    "top_candidates": self.top_path,
+                    "pareto_frontier": self.pareto_jsonl_path,
+                })
+                self._data_point_writer.close()
+            except Exception as exc:
+                self.log(f"  [diag][warning] structured summary write failed: {exc}")
 
     # ------------------------------------------------------------------
     # Summary.md writer

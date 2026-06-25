@@ -68,6 +68,24 @@ class MatchOptionIdTest(unittest.TestCase):
             1,
         )
 
+    def test_matches_legacy_all_max_baseline_with_slot_dims(self):
+        # A legacy all-max full action vector encodes rescale slots as their max
+        # grid index, while the fusion-count baseline option keeps fused-away /
+        # absent rescales at idx0=None. When the slice is exactly all-max, it is
+        # still an unambiguous baseline option.
+        slot_dims = [15] * int(self.graph.block_num_slots)
+        slot_dims[int(self.graph.k_slot_index)] = 5
+        legacy_all_max = np.asarray([d - 1 for d in slot_dims], dtype=int)
+        self.assertEqual(
+            ffa.match_option_id(
+                action_slice=legacy_all_max,
+                graph=self.graph,
+                graph_key="block2_mrpc",
+                slot_dims=slot_dims,
+            ),
+            0,
+        )
+
     def test_raises_on_no_match(self):
         bad = np.full(self.graph.block_num_slots, 99, dtype=int)
         with self.assertRaises(ValueError):

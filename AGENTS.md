@@ -19,6 +19,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   the user. When asking, include the recommended answer.
 - For coding tasks, implement only what was requested and verify with the
   narrowest meaningful command or test.
+- All Stage-1 and Stage-2 RL runs must mirror raw training data points to the
+  project-root `rl_training_data_points/` tree, classified by stage, model,
+  dataset, and run id. Persist enough structured JSON/JSONL to redraw paper
+  figures without rerunning training: manifest/config/baselines/constraints,
+  per-step data when available, per-episode rewards/metrics/cost/action
+  choices, PPO update diagnostics, throughput/parallelism fields, best-so-far
+  state, and final summary. PNG/NPZ outputs are inspection artifacts only; do
+  not launch new RL training with this structured writer disabled unless the
+  user explicitly waives the requirement.
 - For the current Stage-2 RL collapse task, operate in goal mode rather than
   one-shot bugfix mode. The goal is not just "tests pass"; RL must train after
   the anchor without collapse, the reward curve must look like a normal RL
