@@ -405,6 +405,15 @@ def get_input_noise_variance_by_N(
         )
     table = NOISE_VARIANCE_TABLE_BY_N[N]
     if scaling_factor not in table:
+        # A scaling factor ABOVE the table max installs no measurable noise: var(46)
+        # is ~2.8e-25 and each +1 SF is ~x0.25, so var(>46) is far below fp precision
+        # (var(49)~4e-27). Return 0.0 (no noise) so the precision boost can push an
+        # installed point past the table max (e.g. block4's ln_mean_rescale -> 49)
+        # instead of crashing. A point BELOW the table min is still an error (that
+        # low-SF / high-noise regime must be snapped to the table min upstream, never
+        # silently dropped). Mirrors noise_tables.variance.
+        if scaling_factor > max(table):
+            return 0.0
         raise ValueError(
             f"Unsupported scaling_factor={scaling_factor} for N={N}. "
             f"Supported: {NOISE_TABLE_ALLOWED_SCALING_FACTORS_BY_N[N]}"

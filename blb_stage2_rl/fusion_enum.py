@@ -464,8 +464,8 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
         final_slots = dict(res2.boosted_slots) if res2 is not None else base_p2
         expected_qf = tuple(int(q) for q in (res2.boosted_q_final if res2 is not None else res1.boosted_q_final))
         boosted_var = float(res2.total_variance if res2 is not None else res1.total_variance)
-        # the achievable output target (clamped to the install cap — block5_n1: 48→46).
-        eff_target = _pb.effective_output_target(topo, int(target_out), int(_pb.MAX_ENCODE_SF))
+        # the achievable output target (clamped only at q_max now — block5_n1 reaches 48).
+        eff_target = _pb.effective_output_target(topo, int(target_out), int(topo.q_max))
         descr = "; ".join(
             d for d in (
                 (f"p1:{res1.description}" if res1 is not None else None),
@@ -476,8 +476,9 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
         final = _eval_block_from_field_values(ctx, final_slots)
         # hard build-time guard: a stored boost MUST be valid, keep fusion_count,
         # reproduce the chain under an INDEPENDENT replan, hit the phase-2 output
-        # ceiling, and install nowhere above the noise-table max (so the model can
-        # actually realize it). Any drift aborts the build.
+        # ceiling, and install nowhere above the modulus limit q_max (points in
+        # (46, q_max] install no noise; only >q_max is a real modulus violation).
+        # Any drift aborts the build.
         final_qf = tuple(int(q) for q in final.get("q_final", ()))
         final_tf = tuple(int(q) for q in final.get("t_final", ()))
         out_sf = (final_tf[-1] if final_tf else 0) + (int(final_slots[final_field]) if final_field else 0)
@@ -485,7 +486,7 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
             (n.cfg_field, int(final_slots[n.cfg_field]))
             for n in topo.nodes
             if n.cfg_field and n.kind in ("fresh", "encode", "rescale")
-            and n.cfg_field in final_slots and int(final_slots[n.cfg_field]) > int(_pb.MAX_ENCODE_SF)
+            and n.cfg_field in final_slots and int(final_slots[n.cfg_field]) > int(topo.q_max)
         ]
         if (
             not final.get("valid")

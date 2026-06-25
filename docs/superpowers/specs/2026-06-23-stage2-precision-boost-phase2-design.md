@@ -62,7 +62,14 @@ Raise `output_sf` by `Δ = target - base_output`. Parameterize by the final enco
 The minimum-installed-noise survivor (same `SummedInstalledVariance` metric as the fusion-count enum and
 phase 1) becomes the option's `explicit_field_values`.
 
-## 3. The ≤46 install cap (hard constraint)
+## 3. The ≤46 install cap (hard constraint) — SUPERSEDED by ADR-019 (2026-06-25)
+
+> **SUPERSEDED**: ADR-019 makes a scaling factor above the noise-table max (46) install
+> **no noise** (var(49)≈4e-27 ≪ fp precision), so the install limit is now q_max (60), not 46.
+> The two block-specific consequences below NO LONGER hold: block4's final encode (1/d) DOES
+> decrease to 15 (`ln_mean_rescale`→49 installs no noise; lower total noise than the increase
+> route), and block5_n1 reaches its full ceiling 48 (not clamped to 46). The section is kept
+> for historical context; read ADR-019 for the current behavior.
 
 The model's noise install (`function_handler.get_input_noise_variance_by_N`) **raises** for any SF above
 the noise table's max (**46**) — encodes, fresh, AND rescales. So every installed point in a phase-2

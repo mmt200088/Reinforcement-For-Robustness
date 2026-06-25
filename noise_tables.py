@@ -66,8 +66,21 @@ ALLOWED_SCALING_FACTORS_BY_N: Dict[int, Tuple[int, ...]] = {
 
 
 def variance(N: int, scaling_factor: int, distribution: str) -> float:
-    """Variance for ``N(0, var)`` at the given (N, scale_bits, distribution)."""
+    """Variance for ``N(0, var)`` at the given (N, scale_bits, distribution).
+
+    A scaling factor ABOVE the table max installs no measurable noise: var(46) is
+    ~2.8e-25 and each +1 SF is ~x0.25, so var(>46) is far below fp precision
+    (var(49)~4e-27). Such a point is treated as 0 (no noise) — matching
+    ``function_handler.get_input_noise_variance_by_N`` — so the precision boost can
+    push an installed point past the table max instead of being blocked by it. SF
+    BELOW the table min stays a KeyError (that regime is snapped to the table min
+    upstream and never looked up here).
+    """
+    n, sf, dist = int(N), int(scaling_factor), str(distribution).lower()
+    tbl = NOISE_VARIANCE_TABLE_BY_N.get(n)
+    if tbl is not None and tbl and sf > max(tbl):
+        return 0.0
     try:
-        return float(NOISE_VARIANCE_TABLE_BY_N[int(N)][int(scaling_factor)][str(distribution).lower()])
+        return float(NOISE_VARIANCE_TABLE_BY_N[n][sf][dist])
     except KeyError as exc:  # pragma: no cover - defensive
         raise KeyError(f"no noise variance for N={N}, sf={scaling_factor}, dist={distribution!r}") from exc

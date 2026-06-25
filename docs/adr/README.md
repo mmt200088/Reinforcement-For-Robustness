@@ -62,3 +62,4 @@ Proposed → Accepted → (Superseded by ADR-XXX | Deprecated)
 | 016 | headroom 耦合 cost（消刀刃+稳定内点最优）+ 线性违反恢复梯度（止冻死）—— 修 ADR-015 第5次60k 的 fusion 失控热崩溃；离线地形回放标定 | Accepted | 2026-06-16 |
 | 017 | 批量 episode rollout（每步合批 forward 摊薄 launch；批不变 seeded 采样；取代 KV-cache rollout 这个错杠杆）—— 浮点等价非逐位，待服务器批不变自检+加速 A/B | **Rejected / Reverted by ADR-018** | 2026-06-21 |
 | 018 | 撤销 rollout 提速实验（KV-cache + 批量）—— 两者服务器实测端到端均无效（KV-cache 0.60× 更慢；批量 1.00×，因 K=5 终端 probe 才是关键路径且 rollout 已与同卡 sibling probe 重叠），且都放弃了逐位 1==N；恢复原始确定性串行 rollout | Accepted | 2026-06-22 |
+| 019 | SF>46（噪声表上限）装噪点当 0（噪声可忽略，var(49)≈4e-27≪fp 精度）→ 把 phase-2 加大精度的 ≤46 install cap 开到 q_max=60 —— block4 的 1/d 终于能降到 15（噪声反而更低）、block5_n1 达 48；确定性/1==N 不变；反转 2026-06-23 phase-2 设计 §3 的硬 cap | Accepted | 2026-06-25 |

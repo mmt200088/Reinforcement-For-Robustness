@@ -9,15 +9,16 @@
 > （= 最后一个 rescale 的 sf_post + 末尾 encode 的 SF）顶到上限
 > `target = q_tail_bits - amplitude_budgets[-1] - h_sf`（从 `Rescale_optimizer/configs/<profile>/<graph_key>.json`
 > 读，不写死）。提升量在「末尾 encode」与「最后 rescale sf_post」之间分配（末尾 encode 可降到硬下限 15），
-> sf_post 上抬所需的前置尺度按一阶段方式分发到上游、最后素数尽量保持高位；**所有装噪点 ≤46**（噪声表上限，
-> 超过模型装不进去）；replan 校验后取**噪声最小**的组合。block2 43->46 / block4 51->53 / block5_n2,n4 31->43。
+> sf_post 上抬所需的前置尺度按一阶段方式分发到上游、最后素数尽量保持高位；**装噪点可到 q_max=60**
+> （ADR: SF>46 噪声可忽略 → 当 0 不装；只有 >60 才是模数违例）；replan 校验后取**噪声最小**的组合。
+> block2 43->46 / block4 51->53（1/d 降到 15，ln_mean_rescale 49 不装噪）/ block5_n1 31->48 / block5_n2,n4 31->43。
 >
 > 本轮 active（CPU、replan-only、不做 model forward、不碰 GPU / 正在跑的 60k）：
 > 1) fused-rescale 回归（apply 依赖它把被融合 rescale 排除在装噪点外）；
 > 2) phase-1+phase-2 precision-boost 回归（block2/4/5_n2/5_n4 真 replan）；
 > 3) 把 phase-1+phase-2 应用到 committed fusion maps（boost_options_for_block 现含两阶段），
->    硬 guard 校验 output==target / 上游素数不变 / fusion 不变 / 全部 ≤46；
-> 4) 校验 maps 内容：可被 FusionCountMap.load 加载、option0==baseline、boosted output_sf==target、全部 ≤46；
+>    硬 guard 校验 output==target / 上游素数不变 / fusion 不变 / 全部 ≤q_max(60)；
+> 4) 校验 maps 内容：可被 FusionCountMap.load 加载、option0==baseline、boosted output_sf==target、全部 ≤q_max(60)；
 > 5) 校验**运行时安装路径**（真实 maps，驱动 BLBStage2Env.step 的 evaluate_action_for_cost(boosted)
 >    → apply_optimizer_output_to_cfg + sync_block*）：Q1 送入模型的是 phase-2 boosted 组（装入精度高于网格解码）、
 >    Q2 该组 rescale 被模数链融合置空（rescale_fused_away）—— 这正是用户要确保的两点；
@@ -60,9 +61,10 @@ sys.path[:0] = [".", "blb_stage2_rl", "Rescale_optimizer"]
 import precision_boost as pb
 from fusion_count_map import FusionCountMap
 RO = "Rescale_optimizer"
-# achieved output (install-clamped): block5_n1 config ceiling is 48 but a single
-# output rescale caps at 46 (no final encode to split) -> 46.
-TARGETS = {"block2_mrpc": 46, "block4": 53, "block5_n1": 46, "block5_n2": 43, "block5_n4": 43}
+# achieved output: since the ADR (SF>46 = no noise), install points run up to q_max=60,
+# so block5_n1 reaches its full config ceiling 48 (no longer clamped to 46). block4's
+# decrease route pushes ln_mean_rescale to 49 (>46 = no noise).
+TARGETS = {"block2_mrpc": 46, "block4": 53, "block5_n1": 48, "block5_n2": 43, "block5_n4": 43}
 mdir = pathlib.Path("blb_stage2_rl/fusion_maps/mrpc")
 bad = 0
 # Runtime loader must accept the whole profile (from_payload also validates
@@ -88,11 +90,13 @@ for gk, want in TARGETS.items():
         if int(o.get("output_sf", -1)) != tgt:
             print(f"[BAD] {gk} fc={fc} output_sf={o.get('output_sf')} != target {tgt}"); bad += 1
         fv = o["explicit_field_values"]
+        # install points may run up to q_max=60 now (>46 = no noise); only >60 is a
+        # modulus violation. topo.q_max is the per-block ceiling.
         over = [(n.cfg_field, fv[n.cfg_field]) for n in topo.nodes
                 if n.cfg_field and n.kind in ("fresh","encode","rescale")
-                and n.cfg_field in fv and int(fv[n.cfg_field]) > 46]
+                and n.cfg_field in fv and int(fv[n.cfg_field]) > int(topo.q_max)]
         if over:
-            print(f"[BAD] {gk} fc={fc} installed SF over 46: {over}"); bad += 1
+            print(f"[BAD] {gk} fc={fc} installed SF over q_max: {over}"); bad += 1
         print(f"[OK] {gk} fc={fc} output_sf={o['output_sf']} ({o.get('boost_description','')})")
 print("VERIFY_OK" if bad == 0 else f"VERIFY_FAIL ({bad} problems)")
 sys.exit(0 if bad == 0 else 1)

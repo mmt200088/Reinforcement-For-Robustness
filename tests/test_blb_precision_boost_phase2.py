@@ -25,9 +25,58 @@ for p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+import noise_tables as nt  # noqa: E402  (torch-free: parses function_handler text)
 import precision_boost as pb  # noqa: E402
 
 _RO_ROOT = str(_REPO / "Rescale_optimizer")
+
+
+class AboveTableNoiseSemanticsTest(unittest.TestCase):
+    """SF above the noise-table max installs NO noise. var(46)~2.8e-25 and each +1
+    SF is ~x0.25, so var(>46) is far below fp precision (var(49)~4e-27) — treating
+    it as 0 is exact to machine precision. Lets the precision boost push an
+    installed point past 46 (e.g. block4's ln_mean_rescale to 49) instead of being
+    blocked. SF BELOW the table min stays an error (that regime is snapped upstream)."""
+
+    def test_variance_above_table_max_is_zero(self):
+        N = 16384
+        tbl_max = max(nt.NOISE_VARIANCE_TABLE_BY_N[N])
+        for sf in (tbl_max + 1, tbl_max + 3, 60):
+            for dist in ("encoding", "fresh", "rescale"):
+                self.assertEqual(nt.variance(N, sf, dist), 0.0, f"sf={sf} dist={dist}")
+
+    def test_variance_within_table_unchanged(self):
+        N = 16384
+        self.assertGreater(nt.variance(N, max(nt.NOISE_VARIANCE_TABLE_BY_N[N]), "encoding"), 0.0)
+        self.assertGreater(nt.variance(N, 20, "fresh"), 0.0)
+
+    def test_variance_below_table_min_still_raises(self):
+        N = 16384
+        below = min(nt.NOISE_VARIANCE_TABLE_BY_N[N]) - 1
+        with self.assertRaises(KeyError):
+            nt.variance(N, below, "encoding")
+
+
+@unittest.skipUnless(
+    __import__("importlib").util.find_spec("torch") is not None,
+    "torch required (function_handler imports torch)",
+)
+class FunctionHandlerAboveTableTest(unittest.TestCase):
+    """The MODEL-FORWARD install path mirrors noise_tables: SF above the table max
+    returns 0.0 (no noise) instead of raising; SF below the min still raises. Server
+    only (function_handler imports torch)."""
+
+    def test_get_input_noise_variance_by_N_above_max_is_zero(self):
+        import function_handler as fh
+        N = 16384
+        tbl_max = max(fh.NOISE_VARIANCE_TABLE_BY_N[N])
+        for sf in (tbl_max + 1, tbl_max + 3, 60):
+            for dist in ("encoding", "fresh", "rescale"):
+                self.assertEqual(fh.get_input_noise_variance_by_N(sf, dist, N), 0.0)
+        # within table unchanged; below min still raises.
+        self.assertGreater(fh.get_input_noise_variance_by_N(tbl_max, "encoding", N), 0.0)
+        with self.assertRaises(ValueError):
+            fh.get_input_noise_variance_by_N(min(fh.NOISE_VARIANCE_TABLE_BY_N[N]) - 1, "encoding", N)
 
 
 class TargetOutputSFTest(unittest.TestCase):
@@ -113,20 +162,21 @@ class Phase2CandidateGenTest(unittest.TestCase):
         self.assertTrue(self._by_field(cands, ln_var_inv_d_sf=15, ln_square_rescale_sf=38))
         self.assertTrue(all(c.edits["ln_var_inv_d_sf"] >= 15 for c in cands))  # hard floor
 
-    def test_block4_install_cap_excludes_uninstallable_decrease(self):
-        # With the real cap (46), block4's ln_mean_rescale (already 45) has only ~1
-        # bit of headroom, so raising sf_post past ~33 is uninstallable → the final
-        # encode can NOT drop below its base (20); only the increase methods survive.
+    def test_block4_decrease_available_under_default_cap(self):
+        # ADR (SF>46 = no noise): the default install cap is now q_max=60, not 46.
+        # block4's decrease route (final encode -> 15, sf_post -> 38, ln_mean_rescale
+        # -> 49) is generated even with the DEFAULT cap; installed points may exceed
+        # 46 (up to q_max). Only the hard final-encode floor 15 binds now.
         cands = pb.generate_phase2_candidates(
             pb.BLOCK4_MRPC_TOPOLOGY, BASE4_P1, target_output_sf=53, base_last_prime=59,
         )
         self.assertTrue(cands)
         for c in cands:
             self.assertEqual(c.edits["ln_square_rescale_sf"] + c.edits["ln_var_inv_d_sf"], 53)
-            self.assertLessEqual(max(c.edits.values()), 46, f"over-cap install in {c.edits}")
-            self.assertGreaterEqual(c.edits["ln_var_inv_d_sf"], 20)  # never decreases (uninstallable)
-        # the all-final-encode method (ln_var 20 -> 22) is still available.
-        self.assertTrue(self._by_field(cands, ln_var_inv_d_sf=22, ln_square_rescale_sf=31))
+            self.assertLessEqual(max(c.edits.values()), 60, f"over q_max in {c.edits}")
+            self.assertGreaterEqual(c.edits["ln_var_inv_d_sf"], 15)  # only the hard floor binds
+        # the decrease-to-15 route (ln_mean_rescale -> 49, >46 = no noise) is available.
+        self.assertTrue(self._by_field(cands, ln_var_inv_d_sf=15, ln_square_rescale_sf=38))
 
     def test_generality_composition_adapts_to_chain_change(self):
         # The user's automation requirement: nothing is hardcoded to the committed
@@ -176,21 +226,28 @@ BASE5N1 = {
 
 
 class EffectiveTargetTest(unittest.TestCase):
-    """The config ceiling (q_tail - amplitude - h_sf) can exceed what the model can
-    install (every point <=46). block5_n1's output is a single rescale (no final encode
-    to split), so its 48 clamps to 46; final-encode blocks split across two <=46 points."""
+    """Install points may now run up to q_max=60 (>46 = no noise), so the only clamp
+    is the modulus limit, not 46. Every mrpc config ceiling (<=53, n1's 48) is <= the
+    no-final-encode ceiling (60), so NONE are clamped — block5_n1 now reaches its full
+    48 (was clamped to 46 under the old <=46 install cap)."""
 
-    def test_effective_target_clamps_only_n1(self):
+    def test_effective_target_no_longer_clamped_below_qmax(self):
         cases = {
             "block2_mrpc": (pb.BLOCK2_MRPC_TOPOLOGY, 46, 46),
             "block4": (pb.BLOCK4_MRPC_TOPOLOGY, 53, 53),
-            "block5_n1": (pb.BLOCK5_N1_MRPC_TOPOLOGY, 48, 46),  # 48 -> 46 (clamped)
+            "block5_n1": (pb.BLOCK5_N1_MRPC_TOPOLOGY, 48, 48),  # 48 reached (was 46)
             "block5_n2": (pb.BLOCK5_N2_MRPC_TOPOLOGY, 43, 43),
             "block5_n4": (pb.BLOCK5_N4_MRPC_TOPOLOGY, 43, 43),
         }
         for gk, (topo, cfg, eff) in cases.items():
             self.assertEqual(pb.target_output_sf(gk, "mrpc", _RO_ROOT), cfg, f"{gk} config")
             self.assertEqual(pb.effective_output_target(topo, cfg), eff, f"{gk} effective")
+
+    def test_effective_target_still_clamps_above_qmax(self):
+        # a (hypothetical) config beyond q_max IS still clamped — to q_max for a
+        # no-final-encode block, 2*q_max for a final-encode block.
+        self.assertEqual(pb.effective_output_target(pb.BLOCK5_N1_MRPC_TOPOLOGY, 999), 60)
+        self.assertEqual(pb.effective_output_target(pb.BLOCK4_MRPC_TOPOLOGY, 999), 120)
 
 
 def _noise_fn_for(topology):
@@ -315,8 +372,9 @@ class Phase2BoostReplanTest(unittest.TestCase):
                         best = v if best is None else min(best, v)
                 self.assertIsNotNone(best)
                 self.assertLessEqual(res.total_variance, best + 1e-18, f"{gk}: not the min-noise composition")
-                # every installed point in the chosen composition is table-representable.
-                self.assertLessEqual(max(int(v) for v in res.boosted_slots.values()), 46)
+                # every installed point stays within the modulus limit q_max (points
+                # in (46, 60] install with no noise; >60 would be a modulus violation).
+                self.assertLessEqual(max(int(v) for v in res.boosted_slots.values()), 60)
 
     def test_phase2_target_is_not_hardcoded(self):
         # generality: feed a DIFFERENT (non-config) target and the driver hits it,
@@ -332,18 +390,19 @@ class Phase2BoostReplanTest(unittest.TestCase):
             p = self._probe2(res.boosted_slots)
             self.assertEqual(int(p.t_final[-1]) + int(res.boosted_slots["qkt_merge_mask_sf"]), tgt)
 
-    def test_block4_install_cap_blocks_the_user_special_case(self):
-        # The user's worked example (ln_var 20->15, sf_post 31->38) needs +8 of
-        # pre-scale through the single x2, i.e. ln_mean_rescale 45 -> 49 — above the
-        # noise-table max 46, so the MODEL cannot install it. Document that here:
-        # replan accepts it (cost is fine) but the install SF exceeds 46.
+    def test_block4_user_special_case_now_installable(self):
+        # The user's worked example (ln_var 20->15, sf_post 31->38) needs ln_mean_rescale
+        # 45 -> 49. Under the ADR (SF>46 = no noise), 49 IS now installable (its noise is
+        # negligible), so this decrease route is the realized block4 phase-2 result.
         slots = dict(BASE4_P1)
         slots.update({"ln_var_inv_d_sf": 15, "ln_square_rescale_sf": 38,
                       "ln_mean_inv_d_sf": 17, "ln_mean_rescale_sf": 49})
         p = self._probe4(slots)
         self.assertTrue(p.valid)                       # the modulus chain is valid...
-        self.assertEqual(int(p.q_final[-1]), 60)       # ...and the last prime reaches 60
-        self.assertGreater(int(p.t_final[1]), 46)      # ...but ln_mean_rescale > 46 → uninstallable
+        self.assertEqual(int(p.q_final[-1]), 60)       # ...the last prime reaches 60...
+        self.assertEqual(int(p.t_final[-1]) + 15, 53)  # ...and the output reaches the target 53
+        self.assertGreater(int(p.t_final[1]), 46)      # ln_mean_rescale > 46 ...
+        self.assertEqual(nt.variance(16384, int(p.t_final[1]), "rescale"), 0.0)  # ...installs no noise
 
 
 if __name__ == "__main__":

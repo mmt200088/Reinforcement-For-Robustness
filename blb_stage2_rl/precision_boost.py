@@ -575,17 +575,18 @@ def _last_rescale_and_final_encode(topology: ChainTopology) -> Tuple[int, str, O
 def effective_output_target(
         topology: ChainTopology,
         config_target: int,
-        max_installed_sf: int = MAX_ENCODE_SF,
+        max_installed_sf: int = DEFAULT_Q_MAX,
         ) -> int:
-    """The achievable output-SF target after the install cap.
+    """The achievable output-SF target after the install limit.
 
-    The output is ``last_rescale.sf_post (+ final_encode)``, and BOTH are installed
-    noise points capped at ``max_installed_sf`` (46). So the max installable output
-    is ``46`` for a block with no final encode (the single rescale carries it all —
-    block5), or ``2*46`` for one with a final encode (split across two points). The
-    config ceiling (``q_tail - amplitude - h_sf``) can exceed that — block5_n1's is
-    48 — so clamp to what the model can actually install. Only no-final-encode
-    blocks above 46 are affected (block5_n1: 48 → 46); everyone else is unchanged."""
+    The output is ``last_rescale.sf_post (+ final_encode)``. Since the ADR (SF>46 =
+    no noise), an installed point may run up to the modulus limit ``max_installed_sf``
+    (q_max=60, NOT the noise-table max 46 — points in (46, 60] just install no noise).
+    So the max installable output is ``q_max`` for a block with no final encode (the
+    single rescale carries it all — block5), or ``2*q_max`` for one with a final
+    encode. Every mrpc config ceiling (``q_tail - amplitude - h_sf``; <=53, n1's 48)
+    is <= q_max, so none are clamped — block5_n1 now reaches its full 48 (was clamped
+    to 46 under the old <=46 install cap). The clamp only bites a config beyond q_max."""
     _last_idx, _last_field, final_field = _last_rescale_and_final_encode(topology)
     ceiling = int(max_installed_sf) * (2 if final_field is not None else 1)
     return min(int(config_target), ceiling)
@@ -597,7 +598,7 @@ def generate_phase2_candidates(
         target_output_sf: int,
         base_last_prime: int,
         q_max: int = DEFAULT_Q_MAX,
-        max_installed_sf: int = MAX_ENCODE_SF,
+        max_installed_sf: int = DEFAULT_Q_MAX,
         ) -> List[Candidate]:
     """All candidate edit-sets that raise the final output scale to
     ``target_output_sf`` (== ``last_rescale.sf_post + final_encode``).
@@ -615,13 +616,13 @@ def generate_phase2_candidates(
     Blocks with no final encode (block5) get ``final_encode = 0`` → the whole
     target lands on ``sf_post``.
 
-    HARD install cap: the model's noise table tops out at ``max_installed_sf``
-    (46), so any composition whose installed encode/rescale SF would exceed it
-    (notably a compensation rescale already near the ceiling — block4's
-    ``ln_mean_rescale`` sits at 45) is DROPPED. The last prime is kept as high as
-    possible (per the user spec); no lower-prime fallback is generated, so a
-    final-encode value that can only be reached via an over-cap compensation is
-    simply unavailable for that block.
+    Install limit: since the ADR (SF>46 = no noise), an installed point may run up to
+    ``max_installed_sf`` = the modulus limit q_max (60), NOT the noise-table max 46 —
+    a point in (46, 60] just installs no noise (negligible). So a composition whose
+    compensation pushes e.g. block4's ``ln_mean_rescale`` to 49 is now KEPT (it was
+    DROPPED under the old <=46 cap, which is why block4's final encode could not drop
+    below its base). Only points beyond q_max (a real modulus violation, also rejected
+    by replan) are dropped; no lower-prime fallback is generated.
     """
     last_idx, last_field, final_field = _last_rescale_and_final_encode(topology)
     geo = _resolve_geometry(topology, last_idx)
@@ -649,7 +650,7 @@ def generate_phase2_candidates(
         sf_post_target = int(target_output_sf) - int(fe)
         if sf_post_target < base_sf_post or sf_post_target > q_max:
             continue
-        if final_field is not None and int(fe) > MAX_ENCODE_SF:
+        if final_field is not None and int(fe) > max_installed_sf:
             continue
         sf_post_rise = sf_post_target - base_sf_post
         # bits of pre-scale needed to hold sf_post_rise AND lift the prime to q_max.
@@ -667,9 +668,9 @@ def generate_phase2_candidates(
             edits[last_field] = sf_post_target
             if final_field is not None:
                 edits[final_field] = int(fe)
-            # HARD install cap: every installed encode/rescale SF must be table-
-            # representable (<= max_installed_sf). Drops over-cap compensations
-            # (e.g. block4's ln_mean_rescale past 46) with no lower-prime fallback.
+            # Install limit: every installed SF must be <= max_installed_sf (q_max).
+            # Points in (46, q_max] install no noise (negligible); only > q_max is a
+            # modulus violation (also rejected by replan). No lower-prime fallback.
             if any(int(v) > int(max_installed_sf) for v in edits.values()):
                 continue
             key = tuple(sorted(edits.items()))
@@ -792,12 +793,13 @@ def boost_option_phase2(
     base_last_prime = base_qf[-1]
     base_prior = base_qf[:-1]
     _last_idx, _last_field, final_field = _last_rescale_and_final_encode(topology)
-    # clamp the requested target to what the model can install (block5_n1: 48 → 46).
-    target = effective_output_target(topology, int(target_output_sf), int(MAX_ENCODE_SF))
+    # clamp the requested target to the install limit q_max (block5_n1 now reaches 48;
+    # only a config beyond q_max would clamp). Points in (46, q_max] install no noise.
+    target = effective_output_target(topology, int(target_output_sf), int(q_max))
 
     candidates = generate_phase2_candidates(
         topology, base_slots, target, base_last_prime, q_max=int(q_max),
-        max_installed_sf=int(MAX_ENCODE_SF),
+        max_installed_sf=int(q_max),
     )
     best: Optional[Phase2Result] = None
     n_valid = 0

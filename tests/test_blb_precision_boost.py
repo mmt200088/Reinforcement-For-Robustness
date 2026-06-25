@@ -671,11 +671,12 @@ class BoostOptionsForBlockGuardTest(unittest.TestCase):
             qf = tuple(int(q) for q in final["q_final"])
             self.assertEqual(qf[:-1], prior_prime, f"{graph_key}: prior primes changed")
             self.assertGreaterEqual(qf[-1], 59)  # last prime kept high (q_max or q_max-1)
-            # every installed encode/rescale SF is table-representable (model-installable).
+            # every installed encode/rescale SF stays within the modulus limit q_max
+            # (points in (46, q_max] install no noise; >q_max would be a modulus violation).
             topo = pbm.TOPOLOGIES[graph_key]
             for n in topo.nodes:
                 if n.cfg_field and n.kind in ("fresh", "encode", "rescale") and n.cfg_field in fv:
-                    self.assertLessEqual(int(fv[n.cfg_field]), 46, f"{graph_key}.{n.cfg_field} over cap")
+                    self.assertLessEqual(int(fv[n.cfg_field]), int(topo.q_max), f"{graph_key}.{n.cfg_field} over q_max")
 
     def test_block2_phase2_reaches_46(self):
         self._assert_phase2("block2_mrpc", 2, 4, expected_target=46, prior_prime=(60,))
@@ -691,10 +692,11 @@ class BoostOptionsForBlockGuardTest(unittest.TestCase):
         # block5_n4 keeps its middle prime (31) from phase 1.
         self._assert_phase2("block5_n4", 5, 4, expected_target=43, prior_prime=(60, 31))
 
-    def test_block5_n1_phase2_clamps_48_to_46(self):
-        # block5_n1 has NO phase-1 boost; phase-2's config ceiling is 48 but a single
-        # output rescale install-clamps to 46. q_final is a single prime → no prior prime.
-        self._assert_phase2("block5_n1", 5, 1, expected_target=46, prior_prime=())
+    def test_block5_n1_phase2_reaches_48(self):
+        # block5_n1 has NO phase-1 boost; phase-2's config ceiling is 48. Under the ADR
+        # (SF>46 = no noise) its single output rescale reaches the full 48 (was clamped
+        # to 46 under the old <=46 install cap). q_final is a single prime → no prior prime.
+        self._assert_phase2("block5_n1", 5, 1, expected_target=48, prior_prime=())
 
 
 if __name__ == "__main__":
