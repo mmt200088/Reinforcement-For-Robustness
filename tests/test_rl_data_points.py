@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from rl_data_points import RLDataPointWriter, to_jsonable
+from rl_data_points import RLDataPointWriter, make_unique_run_id, to_jsonable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -52,9 +52,27 @@ class RLDataPointWriterTest(unittest.TestCase):
         value = {"a": np.int64(3), "b": [np.float32(1.5), np.array([2, 4])]}
         self.assertEqual(to_jsonable(value), {"a": 3, "b": [1.5, [2, 4]]})
 
+    def test_make_unique_run_id_preserves_base_and_separates_invocations(self):
+        first = make_unique_run_id(
+            "Parting Chapter/stage1/bert large mrpc",
+            started_at="2026-06-26T01:00:00Z",
+            pid=123,
+        )
+        second = make_unique_run_id(
+            "Parting Chapter/stage1/bert large mrpc",
+            started_at="2026-06-26T01:00:01Z",
+            pid=124,
+        )
+
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.startswith("Parting_Chapter_stage1_bert_large_mrpc__"))
+        self.assertIn("20260626T010000Z", first)
+        self.assertIn("pid123", first)
+
     def test_stage1_loop_integrates_structured_data_writer(self):
         source = (REPO_ROOT / "layer_importance_evaluator.py").read_text()
         self.assertIn("RLDataPointWriter", source)
+        self.assertIn("make_unique_run_id", source)
         self.assertIn("stage1_data_writer.write_step", source)
         self.assertIn("stage1_data_writer.write_episode", source)
         self.assertIn("stage1_data_writer.write_ppo_update", source)

@@ -9,7 +9,9 @@ under the repository root.
 from __future__ import annotations
 
 import json
+import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, TextIO
 
@@ -40,6 +42,24 @@ def _safe_slug(raw: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(raw).strip())
     slug = slug.strip("._-")
     return slug or "run"
+
+
+def make_unique_run_id(
+    base_run_id: str,
+    *,
+    started_at: Any = None,
+    pid: Optional[int] = None,
+) -> str:
+    """Return a readable run id that is unique per process invocation."""
+    if started_at is None:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    elif isinstance(started_at, datetime):
+        dt = started_at.astimezone(timezone.utc) if started_at.tzinfo else started_at
+        stamp = dt.strftime("%Y%m%dT%H%M%S%fZ")
+    else:
+        stamp = re.sub(r"[^A-Za-z0-9]+", "", str(started_at).strip()) or "time"
+    proc = os.getpid() if pid is None else int(pid)
+    return f"{_safe_slug(base_run_id)}__{stamp}__pid{proc}"
 
 
 class RLDataPointWriter:

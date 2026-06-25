@@ -61,7 +61,7 @@ from noise_rl_module_v2 import (
     _log_rounded_box,
     _progress_bar,
 )
-from rl_data_points import RLDataPointWriter
+from rl_data_points import RLDataPointWriter, make_unique_run_id
 import os
 import random
 import hashlib
@@ -6179,9 +6179,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 or f"{_stage1_model_type}-{self.data_path}"
             )
             try:
-                _stage1_run_id = os.path.relpath(_stage1_run_source, os.getcwd())
+                _stage1_run_id_base = os.path.relpath(_stage1_run_source, os.getcwd())
             except ValueError:
-                _stage1_run_id = str(_stage1_run_source)
+                _stage1_run_id_base = str(_stage1_run_source)
+            _stage1_run_id = make_unique_run_id(_stage1_run_id_base)
             stage1_data_writer = RLDataPointWriter(
                 root_dir="rl_training_data_points",
                 run_id=_stage1_run_id,
@@ -6191,6 +6192,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
             stage1_data_writer.write_manifest({
                 "source_run_output_dir": self.run_output_dir,
+                "source_data_run_id_base": _stage1_run_id_base,
                 "stage1_step_info_file": self.stage1_step_info_file,
                 "total_layers": int(self.total_layers),
                 "search_algorithm": self.search_algorithm,

@@ -26,7 +26,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 import numpy as np
 import torch
 
-from rl_data_points import RLDataPointWriter
+from rl_data_points import RLDataPointWriter, make_unique_run_id
 
 from .action_mask import (
     EmpiricalInvalidLevelMask,
@@ -3986,9 +3986,10 @@ def run_sequential_via_runner(
         or f"stage2-{train_cfg.profile}"
     )
     try:
-        _stage2_run_id = os.path.relpath(_stage2_run_source, _repo_root)
+        _stage2_run_id_base = os.path.relpath(_stage2_run_source, _repo_root)
     except ValueError:
-        _stage2_run_id = str(_stage2_run_source)
+        _stage2_run_id_base = str(_stage2_run_source)
+    _stage2_run_id = make_unique_run_id(_stage2_run_id_base)
     stage2_data_writer = RLDataPointWriter(
         root_dir=os.path.join(_repo_root, "rl_training_data_points"),
         run_id=_stage2_run_id,
@@ -4016,6 +4017,7 @@ def run_sequential_via_runner(
         log(f"  [diag][warning] set_baseline_action_vec failed: {exc}")
     diag_recorder.set_meta({
         "profile": str(train_cfg.profile),
+        "source_data_run_id_base": _stage2_run_id_base,
         "fixed_label": str(fixed_label),
         "fixed_source": str(fixed_source),
         "rl_variant": seq_rl_variant,
