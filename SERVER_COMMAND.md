@@ -3,7 +3,88 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (二阶段加大精度 phase-2 — ADR-019 **重新 apply**：旧 ≤46 maps 已过期，用开放的 cap 重新生成；CPU/replan-only，不碰正在跑的 60k)
+## ▶ active command  (boost handoff 校验门禁 — 确保 RL 选中的 boosted 配置在 验证集 final eval + GLUE 都装上；CPU-only，不碰正在跑的 60k)
+
+> 校验 commit `187db50d` 的修复。此前 boost **只在 RL 训练期**装上（env `_boosted_overrides` SF-direct 重建）；
+> 持久化的 best 是扁平网格**索引**向量，携带不了 boost（boosted SF 高于网格、只存在 option 的
+> `explicit_field_values`），导致**验证集 final eval** 与 **GLUE 提交**都装 **pre-boost**（更吵）噪声 ——
+> 被评估/提交的 ≠ RL 选中的。修复后三处一致（fusion→模数链融合→二阶段 boost→正确槽位装噪，训练/验证/GLUE 同一套）。
+>
+> 本门禁（CPU、replan/单测 only、不碰 GPU / 正在跑的 60k）：
+> 1) boost-handoff torch-gated 测试（torch 在位 → **必须 PASS 且不能 SKIP**）：
+>    `test_blb_fusion_fixed_action`（匹配器 + 元数据解析）、`test_blb_final_eval_fusion_fixed_action`（final eval 还原 boost）、
+>    `test_blb_glue_boost_install`（GLUE 解码装入的 boosted block2 SF 和 > pre-boost）；
+> 2) 在真实 committed best 上跑 `blb_make_fusion_fixed_action_config.py` 回填 fusion-fixed 配置，并校验可被
+>    `FusionCountMap.load` 加载、`option_by_step` 覆盖全部步（best-effort：旧 best 若 stage1 不匹配只告警，[1] 才是权威门）；
+> 3) commit/push 回传证据 + 回填的 fusion-fixed JSON。
+>
+> 注：**不启动 60k**。当前正在跑的 60k 建立在旧代码/旧图上（早于 fused-rescale 修复 / phase-2 boost / ADR-019 / 本 handoff 修复），
+> 其结果在旧（有缺陷）配置上；要拿正确结果需在最新 commit 上**重启**一轮 60k（会自动持久化 group → final eval/GLUE 自动用 boosted）。
+> 那是单独的、更重的触发（会杀掉正在跑的旧 60k），确认后再设。
+
+```bash
+set -euo pipefail
+export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
+export CUDA_VISIBLE_DEVICES=""   # CPU-only: do NOT touch the GPUs the running 60k uses
+TS=$(date +%Y%m%d_%H%M%S)
+OUT="experiments/server_command_runs/stage2_boost_handoff_gate_${TS}"; mkdir -p "$OUT"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git config --local http.version HTTP/1.1 || true
+  git config --local protocol.version 0 || true
+  git rev-parse HEAD > "$OUT/HEAD.txt"; cat "$OUT/HEAD.txt"; git log --oneline -3 | tee "$OUT/recent_commits.txt"
+fi
+
+echo "#################### [1] boost-handoff tests (torch present -> MUST run, not skip) ####################"
+python3 -m unittest tests.test_blb_fusion_fixed_action tests.test_blb_final_eval_fusion_fixed_action tests.test_blb_glue_boost_install -v 2>&1 | tee "$OUT/t_handoff.txt"
+grep -qE "^OK" "$OUT/t_handoff.txt" || { echo "[FATAL] handoff tests failed"; exit 1; }
+grep -q "test_decode_helper_installs_boosted_block2_output" "$OUT/t_handoff.txt" || { echo "[FATAL] glue boost-install test name not seen in -v output"; exit 1; }
+grep -q "skipped" "$OUT/t_handoff.txt" && { echo "[FATAL] handoff tests SKIPPED (torch/rescale_optimizer not importable -> boost replay NOT validated)"; exit 1; } || true
+
+echo "#################### [2] reconstruct + backfill fusion-fixed config from a committed best (real artifact; best-effort) ####################"
+BEST="Parting Chapter/stage2/bert base mrpc/progress/diagnostics/best_action_vec.json"
+if [ -f "$BEST" ]; then
+  GELU=$(python3 -c "import json;a=json.load(open('Model_analysis/configs/approx_per_dataset.json'));print(json.dumps([int(x) for x in a['mrpc']['stage1']['gelu']]))")
+  SOFTMAX="[6,6,6,6,6,6,6,6,6,6,6,6]"
+  echo "[2] gelu=$GELU softmax=$SOFTMAX"
+  if python3 scripts/blb_make_fusion_fixed_action_config.py \
+       --input "$BEST" --output "$OUT/best_action_fusion_fixed.json" \
+       --profile mrpc --num-layers 12 --gelu "$GELU" --softmax "$SOFTMAX" 2>&1 | tee "$OUT/reconstruct.txt"; then
+    OUTDIR="$OUT" python3 - <<'PY' 2>&1 | tee "$OUT/reconstruct_verify.txt" || echo "[2][warn] verify raised (non-fatal)"
+import json, os, sys
+sys.path[:0] = [".", "blb_stage2_rl", "Rescale_optimizer"]
+from fusion_count_map import FusionCountMap
+from action_space import step_schedule
+cfg = json.load(open(os.path.join(os.environ["OUTDIR"], "best_action_fusion_fixed.json")))
+assert cfg.get("schema_version") == "fusion_count_fixed_action_v1", "bad schema"
+FusionCountMap.load("mrpc")
+obs = cfg["group"]["option_by_step"]
+sch = step_schedule(12, profile="mrpc",
+                    attn_degree_per_layer=[int(x) for x in cfg["attn_degree"]],
+                    gelu_degree_per_layer=[int(x) for x in cfg["gelu_degree"]])
+missing = [s.step_idx for s in sch if str(s.step_idx) not in obs]
+assert not missing, f"option_by_step missing steps: {missing}"
+print(f"[ok] option_by_step covers all {len(sch)} fusion steps")
+print(f"[info] total_fusion_count={cfg['summary']['total_fusion_count']} boosted_options={cfg['summary']['boosted_option_count']}")
+print("RECONSTRUCT_OK")
+PY
+  else
+    echo "[2][warn] reconstruction failed (likely stage1 mismatch for this old best); [1] already validated the code path"
+  fi
+else
+  echo "[2][skip] committed best not found at: $BEST (fresh checkout); [1] already validated the code path"
+fi
+
+echo "#################### [3] commit + push proof ####################"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git add "$OUT" 2>/dev/null || true
+  git commit -m "Boost-handoff gate: validate RL-selected boosted config reaches final eval + GLUE" || echo "[note] nothing to commit"
+  git push origin HEAD 2>&1 | tee "$OUT/push.txt" || echo "[note] push failed; commit is local on the server, push manually"
+fi
+echo "[DONE] boost-handoff validated; OUT=$OUT (the running 60k was NOT touched)."
+echo "[NEXT] the corrected 60k (boosted maps + all fixes + auto-persisted group) is a separate heavier trigger that will KILL the stale running 60k; confirm before launching."
+```
+
+## ✅ done — 二阶段加大精度 phase-2 (ADR-019 **重新 apply**：已执行并 push；下方 ```bash 块已过时，仅留存供追溯，服务器只跑最上面那个块)
 
 > **本轮是重新 apply（ADR-019）**：上一轮 `b0c18e3f` 已用**旧 ≤46 install cap** 把 phase-2 apply 进了
 > committed maps（block4 1/d=21、block5_n1=46）。ADR-019 把那条 cap 打开了（SF>46 噪声可忽略 → 当 0 不装，
