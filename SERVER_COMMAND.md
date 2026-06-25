@@ -3,15 +3,21 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (二阶段加大精度 phase-2 — 门禁 + 应用到 committed maps；CPU/replan-only，不碰正在跑的 60k)
+## ▶ active command  (二阶段加大精度 phase-2 — ADR-019 **重新 apply**：旧 ≤46 maps 已过期，用开放的 cap 重新生成；CPU/replan-only，不碰正在跑的 60k)
 
+> **本轮是重新 apply（ADR-019）**：上一轮 `b0c18e3f` 已用**旧 ≤46 install cap** 把 phase-2 apply 进了
+> committed maps（block4 1/d=21、block5_n1=46）。ADR-019 把那条 cap 打开了（SF>46 噪声可忽略 → 当 0 不装，
+> 装噪点可到 q_max=60），所以那批 maps 现在**过期**，要用开放的 cap 重新生成。apply 是幂等的
+> （`boost_options_for_block` 每次从 `action_indices` 网格基重新推导，不读旧 `explicit_field_values`），所以直接
+> 重跑即覆盖为新结果。
+>
 > 二阶段「加大精度」：一阶段把中间短素数顶到 q_max；二阶段再把**最后一个节点的输出 SF**
 > （= 最后一个 rescale 的 sf_post + 末尾 encode 的 SF）顶到上限
 > `target = q_tail_bits - amplitude_budgets[-1] - h_sf`（从 `Rescale_optimizer/configs/<profile>/<graph_key>.json`
 > 读，不写死）。提升量在「末尾 encode」与「最后 rescale sf_post」之间分配（末尾 encode 可降到硬下限 15），
 > sf_post 上抬所需的前置尺度按一阶段方式分发到上游、最后素数尽量保持高位；**装噪点可到 q_max=60**
-> （ADR: SF>46 噪声可忽略 → 当 0 不装；只有 >60 才是模数违例）；replan 校验后取**噪声最小**的组合。
-> block2 43->46 / block4 51->53（1/d 降到 15，ln_mean_rescale 49 不装噪）/ block5_n1 31->48 / block5_n2,n4 31->43。
+> （ADR-019: SF>46 噪声可忽略 → 当 0 不装；只有 >60 才是模数违例）；replan 校验后取**噪声最小**的组合。
+> block2 43->46 / block4 51->53（**1/d 降到 15**、ln_mean_rescale 49 不装噪、总噪声更低）/ block5_n1 31->**48** / block5_n2,n4 31->43。
 >
 > 本轮 active（CPU、replan-only、不做 model forward、不碰 GPU / 正在跑的 60k）：
 > 1) fused-rescale 回归（apply 依赖它把被融合 rescale 排除在装噪点外）；
@@ -73,6 +79,7 @@ bad = 0
 # commit/push.
 FusionCountMap.load("mrpc")
 print("[ok] FusionCountMap.load('mrpc') accepted all maps (option0==baseline)")
+over46_total = 0  # ADR-019 proof: the opened cap must realize >=1 boosted point in (46, q_max]
 for gk, want in TARGETS.items():
     p = mdir / f"{gk}.json"
     payload = json.loads(p.read_text())
@@ -97,7 +104,18 @@ for gk, want in TARGETS.items():
                 and n.cfg_field in fv and int(fv[n.cfg_field]) > int(topo.q_max)]
         if over:
             print(f"[BAD] {gk} fc={fc} installed SF over q_max: {over}"); bad += 1
+        over46_total += sum(1 for n in topo.nodes
+                            if n.cfg_field and n.kind in ("fresh", "encode", "rescale")
+                            and n.cfg_field in fv and 46 < int(fv[n.cfg_field]) <= int(topo.q_max))
         print(f"[OK] {gk} fc={fc} output_sf={o['output_sf']} ({o.get('boost_description','')})")
+# ADR-019 took effect proof: if NO boosted point installs above 46, the maps are the
+# stale <=46 phase-2 (re-apply did not pick up the opened cap) -> fail loudly.
+if over46_total < 1:
+    print("[BAD] ADR-019 NOT realized: no boosted install point in (46, q_max] — maps look "
+          "like the stale <=46 phase-2 (e.g. block4 1/d still 21); re-apply did not take effect")
+    bad += 1
+else:
+    print(f"[ok] ADR-019 confirmed: {over46_total} boosted install point(s) in (46, q_max] (e.g. block4 ln_mean_rescale=49)")
 print("VERIFY_OK" if bad == 0 else f"VERIFY_FAIL ({bad} problems)")
 sys.exit(0 if bad == 0 else 1)
 PY
