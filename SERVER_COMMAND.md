@@ -3,7 +3,170 @@
 > **协议**：服务器 agent 监听本文件 → 提取**第一个 ```bash 代码块** → 在仓库根目录 `bash` 执行。
 > 本地这边改一次 + push，远端下次同步 / 触发就会按新命令跑。下方 metadata 段只是给人看的，agent 不解析。
 
-## ▶ active command  (boost handoff 校验门禁 — 确保 RL 选中的 boosted 配置在 验证集 final eval + GLUE 都装上；CPU-only，不碰正在跑的 60k)
+## ▶ active command  (其余 5 个微调模型：build + 加大精度 fusion maps + 校验，60k 之前的全部内容；CPU-only，不碰正在跑的 60k)
+
+> 把 `bert base mrpc` 已有的「60k 之前」全部内容跑到其余 5 个微调模型上：
+> **rte / sst2（bert-base）+ mrpc_large / rte_large / sst2_large（bert-large，24 层）**。
+> 借此实测「加大精度 / 找 baseline / fusion-count map」等适配工作能否真的泛化到其他数据集 / bert-large。
+> commit `1b26e77` 已把 build + 加大精度泛化到任意 profile（block2 图键 profile 后缀解析、build/apply 按 profile
+> 派生图键、apply 加 --num-layers）。本地已 torch-free 证实：6 个 profile 的 block2/block4/block5 链结构逐字一致、
+> ReplanSession.from_profile 全部可加载、target 一致（46/53/48/43/43）、block2 boost 端到端到 (60,60)、stage1
+> degree 全 ∈{1,2,4}。完整 build（需 torch 在位，但 CPU/replan、不动 GPU）放服务器。
+>
+> 本轮（CPU-only、replan/单测、不碰 GPU / 正在跑的 60k）：
+> 0) profile 无关代码门禁（torch 在位 → 必须 PASS 不能 SKIP）：多 profile topology 解析 + 加大精度 phase-1/2 +
+>    fused-rescale + boost-handoff 测试；
+> 1) 逐 profile：build fusion maps（fast 路 + 64 随机 golden 交叉校验）→ apply 加大精度（phase-1+2）→ 校验 maps
+>    （FusionCountMap.load / option0==baseline / boosted output_sf==target / ≤q_max=60 / ADR-019 >46 装噪点）→
+>    运行时安装路径校验（Q1 装入 boosted 组、Q2 融合 rescale 置空）→ 合成 stage1 record（从 approx_per_dataset.json，
+>    一个 stage2 绑定一个 stage1）；
+> 2) commit + push 5 个 profile 的 maps + stage1 records + 证据。
+> **不跑 60k、不跑 GPU 短训**（RL 训练循环是 profile 无关代码，mrpc 已验证；本轮只产出 + 校验各 profile 的专属产物）。
+> 跑完每个 profile 即可像 bert base mrpc 一样启动各自的 60k（届时单独触发）。
+
+```bash
+set -uo pipefail
+export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
+export CUDA_VISIBLE_DEVICES=""   # CPU-only: build/boost/verify are replan-based; do NOT touch the running 60k's GPUs
+TS=$(date +%Y%m%d_%H%M%S)
+OUT="experiments/server_command_runs/stage2_other5_profiles_${TS}"; mkdir -p "$OUT"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git config --local http.version HTTP/1.1 || true
+  git config --local protocol.version 0 || true
+  git rev-parse HEAD > "$OUT/HEAD.txt"; cat "$OUT/HEAD.txt"; git log --oneline -3 | tee "$OUT/recent_commits.txt"
+fi
+
+echo "#################### [0] profile-independent code gate (torch present -> MUST run, not skip) ####################"
+python3 -m unittest -v \
+  tests.test_blb_precision_boost_multiprofile \
+  tests.test_blb_precision_boost tests.test_blb_precision_boost_phase2 \
+  tests.test_blb_fused_rescale_install \
+  tests.test_blb_fusion_fixed_action tests.test_blb_final_eval_fusion_fixed_action tests.test_blb_glue_boost_install \
+  2>&1 | tee "$OUT/t_code.txt"
+grep -qE "^OK" "$OUT/t_code.txt" || { echo "[FATAL] code gate failed"; exit 1; }
+grep -q "skipped" "$OUT/t_code.txt" && { echo "[FATAL] code gate SKIPPED tests (torch/rescale_optimizer not importable)"; exit 1; } || true
+
+PROFILES="rte sst2 mrpc_large rte_large sst2_large"
+fail=0
+for pf in $PROFILES; do
+  case "$pf" in *_large) NL=24;; *) NL=12;; esac
+  MAPS="blb_stage2_rl/fusion_maps/$pf"
+  pout="$OUT/$pf"; mkdir -p "$pout"
+  echo "######################## [$pf] (num_layers=$NL) ########################"
+
+  echo "---- [$pf] 1. build fusion maps ----"
+  python3 scripts/blb_build_fusion_count_map.py --profile "$pf" --out-dir "$MAPS" \
+    --rescale-optimizer-root Rescale_optimizer --num-layers "$NL" 2>&1 | tee "$pout/build.txt"
+  miss=0
+  for gk in "block1_$pf" "block2_$pf" block4 block5_n1 block5_n2 block5_n4; do
+    [ -f "$MAPS/$gk.json" ] || { echo "[FATAL][$pf] build missing $gk.json"; miss=1; }
+  done
+  [ "$miss" = 0 ] || { fail=1; continue; }
+
+  echo "---- [$pf] 2. apply precision boost (phase-1 + phase-2) ----"
+  python3 scripts/blb_apply_precision_boost.py --profile "$pf" --maps-dir "$MAPS" --num-layers "$NL" 2>&1 | tee "$pout/boost.txt"
+  grep -q "precision boost applied" "$pout/boost.txt" || { echo "[FATAL][$pf] boost did not finish"; fail=1; continue; }
+
+  echo "---- [$pf] 3. verify maps (load / option0==baseline / output_sf==target / <=q_max / ADR-019) ----"
+  PROFILE="$pf" python3 - <<'PY' 2>&1 | tee "$pout/verify.txt"
+import json, os, pathlib, sys
+sys.path[:0] = [".", "blb_stage2_rl", "Rescale_optimizer"]
+import precision_boost as pb
+from fusion_count_map import FusionCountMap
+pf = os.environ["PROFILE"]; RO = "Rescale_optimizer"
+TARGETS = {f"block2_{pf}": 46, "block4": 53, "block5_n1": 48, "block5_n2": 43, "block5_n4": 43}
+mdir = pathlib.Path(f"blb_stage2_rl/fusion_maps/{pf}")
+bad = 0
+FusionCountMap.load(pf)
+print(f"[ok] FusionCountMap.load('{pf}') accepted all maps (option0==baseline)")
+over46 = 0
+for gk, want in TARGETS.items():
+    p = mdir / f"{gk}.json"
+    if not p.exists():
+        print(f"[BAD] {gk}: map file missing"); bad += 1; continue
+    payload = json.loads(p.read_text())
+    topo = pb.topology_for_graph_key(gk)
+    if topo is None:
+        print(f"[BAD] {gk}: no topology resolved"); bad += 1; continue
+    tgt = pb.effective_output_target(topo, pb.target_output_sf(gk, profile=pf, root=RO), int(topo.q_max))
+    if tgt != want:
+        print(f"[BAD] {gk}: effective target {tgt} != expected {want}"); bad += 1
+    for o in payload["options"]:
+        fc = int(o.get("fusion_count", 0))
+        if fc == 0:
+            if o.get("boosted"):
+                print(f"[BAD] {gk} option0 (baseline) must NOT be boosted"); bad += 1
+            continue
+        if not o.get("boosted") or not o.get("explicit_field_values"):
+            print(f"[BAD] {gk} fc={fc} not boosted"); bad += 1; continue
+        if int(o.get("output_sf", -1)) != tgt:
+            print(f"[BAD] {gk} fc={fc} output_sf={o.get('output_sf')} != target {tgt}"); bad += 1
+        fv = o["explicit_field_values"]
+        over = [(n.cfg_field, fv[n.cfg_field]) for n in topo.nodes
+                if n.cfg_field and n.kind in ("fresh", "encode", "rescale")
+                and n.cfg_field in fv and int(fv[n.cfg_field]) > int(topo.q_max)]
+        if over:
+            print(f"[BAD] {gk} fc={fc} installed SF over q_max: {over}"); bad += 1
+        over46 += sum(1 for n in topo.nodes
+                      if n.cfg_field and n.kind in ("fresh", "encode", "rescale")
+                      and n.cfg_field in fv and 46 < int(fv[n.cfg_field]) <= int(topo.q_max))
+        print(f"[OK] {gk} fc={fc} output_sf={o['output_sf']} ({o.get('boost_description', '')})")
+if over46 < 1:
+    print("[BAD] ADR-019 NOT realized: no boosted install point in (46, q_max]"); bad += 1
+else:
+    print(f"[ok] ADR-019 confirmed: {over46} boosted install point(s) in (46, q_max]")
+print("VERIFY_OK" if bad == 0 else f"VERIFY_FAIL ({bad} problems)")
+sys.exit(0 if bad == 0 else 1)
+PY
+  grep -q "VERIFY_OK" "$pout/verify.txt" || { echo "[FATAL][$pf] map verification failed"; fail=1; continue; }
+
+  echo "---- [$pf] 4. runtime install-path verify (Q1 boosted-install / Q2 fused-rescale) ----"
+  python3 scripts/blb_verify_boosted_install.py --profile "$pf" \
+    --rescale-optimizer-root Rescale_optimizer --maps-dir "$MAPS" --num-layers "$NL" 2>&1 | tee "$pout/verify_install.txt"
+  grep -q "VERIFY_OK" "$pout/verify_install.txt" || { echo "[FATAL][$pf] runtime install verify failed"; fail=1; continue; }
+
+  echo "---- [$pf] 5. synth Stage-1 record (one stage2 binds one stage1) ----"
+  PROFILE="$pf" python3 - <<'PY' 2>&1 | tee "$pout/stage1.txt"
+import json, os, glob, datetime
+pf = os.environ["PROFILE"]
+model = "bert large" if pf.endswith("_large") else "bert base"
+dataset = pf[:-6] if pf.endswith("_large") else pf
+combo = f"{model} {dataset}"
+ap = json.load(open("Model_analysis/configs/approx_per_dataset.json"))
+s1 = ap[pf]["stage1"]; gelu = [int(x) for x in s1["gelu"]]; softmax = [int(x) for x in s1["softmax"]]
+assert 0 not in gelu, f"degree-0 not allowed: {gelu}"
+rec_root = "Parting Chapter/stage1/record"
+existing = [d for d in glob.glob(os.path.join(rec_root, combo + " *")) if os.path.isdir(d)]
+if existing:
+    print("[skip] stage1 record exists:", [os.path.basename(d) for d in existing]); raise SystemExit(0)
+date = datetime.datetime.now().strftime("%Y%m%d")
+rec_dir = os.path.join(rec_root, f"{combo} 1 {date}")
+os.makedirs(rec_dir, exist_ok=True)
+json.dump({"gelu_degree_per_layer": gelu, "softmax_degree_per_layer": softmax,
+           "_synthesized_from": "Model_analysis/configs/approx_per_dataset.json"},
+          open(os.path.join(rec_dir, "final_config.json"), "w"), ensure_ascii=False, indent=2)
+print("[ok] synth stage1 record:", rec_dir, "| gelu =", gelu)
+PY
+  echo "[$pf] DONE (built + boosted + verified)"
+done
+
+echo "#################### [2] commit + push maps + stage1 records ####################"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  for pf in $PROFILES; do git add "blb_stage2_rl/fusion_maps/$pf" 2>/dev/null || true; done
+  git add "Parting Chapter/stage1/record" "$OUT" 2>/dev/null || true
+  git commit -m "Build + precision-boost fusion maps for the other 5 fine-tuned profiles" || echo "[note] nothing to commit"
+  git push origin HEAD 2>&1 | tee "$OUT/push.txt" || echo "[note] push failed; commit is local on the server, push manually"
+fi
+
+if [ "$fail" = 0 ]; then
+  echo "[DONE] all 5 profiles built + boosted + verified; OUT=$OUT (the running 60k was NOT touched)."
+  echo "[NEXT] each profile is now ready for its own 60k (boosted maps + stage1 record); launch per-profile separately."
+else
+  echo "[FAIL] one or more profiles failed; see $OUT/<profile>/*.txt"; exit 1
+fi
+```
+
+## ✅ done — boost handoff 校验门禁（已折进上面新门禁的 [0]；下方 ```bash 块已过时，仅留存，服务器只跑最上面那个块）
 
 > 校验 commit `187db50d` 的修复。此前 boost **只在 RL 训练期**装上（env `_boosted_overrides` SF-direct 重建）；
 > 持久化的 best 是扁平网格**索引**向量，携带不了 boost（boosted SF 高于网格、只存在 option 的
