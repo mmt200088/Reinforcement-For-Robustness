@@ -115,6 +115,24 @@ TASK_REGISTRY = {
         'dataset_name': 'nyu-mll/glue', 'dataset_config': 'wnli',
         'num_labels': 2, 'input_cols': ('sentence1', 'sentence2'),
     },
+    'mrpc_large': {
+        'arch': 'bert', 'num_layers': 24,
+        'model_name': 'yoshitomo-matsubara/bert-large-uncased-mrpc',
+        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'mrpc',
+        'num_labels': 2, 'input_cols': ('sentence1', 'sentence2'),
+    },
+    'rte_large': {
+        'arch': 'bert', 'num_layers': 24,
+        'model_name': 'yoshitomo-matsubara/bert-large-uncased-rte',
+        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'rte',
+        'num_labels': 2, 'input_cols': ('sentence1', 'sentence2'),
+    },
+    'sst2_large': {
+        'arch': 'bert', 'num_layers': 24,
+        'model_name': 'yoshitomo-matsubara/bert-large-uncased-sst2',
+        'dataset_name': 'nyu-mll/glue', 'dataset_config': 'sst2',
+        'num_labels': 2, 'input_cols': ('sentence',),
+    },
     # ---- BERT-Large (GLUE classification, post-norm, 24 layers) ----
     'bl_cola': {
         'arch': 'bert', 'num_layers': 24,
