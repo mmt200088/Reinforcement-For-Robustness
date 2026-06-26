@@ -43,14 +43,26 @@ for _p in (str(REPO_ROOT / "blb_stage2_rl"), str(REPO_ROOT / "Rescale_optimizer"
 # sampling degree 0); it is no longer built. The committed block5_n0.json map is
 # kept as dormant data and FusionCountMap.load still loads it, but a degree-0 layer
 # is rejected upstream at baseline_bootstrap, so the fusion schedule never requests it.
-BLOCK_TYPES: List[Tuple[str, int, int, int]] = [
-    ("block1_mrpc", 1, 4, 2),
-    ("block2_mrpc", 2, 4, 2),
-    ("block4", 4, 4, 2),
-    ("block5_n1", 5, 1, 2),
-    ("block5_n2", 5, 2, 2),
-    ("block5_n4", 5, 4, 2),
-]
+def block_types_for_profile(profile: str) -> List[Tuple[str, int, int, int]]:
+    """``(graph_key, block_idx, gelu_degree, attn_degree)`` per buildable block-type
+    for ``profile``. block1 / block2 graph keys are profile-suffixed
+    (``block1_<profile>`` / ``block2_<profile>``); block4 / block5_n* are shared
+    names. This generalizes the build to any fine-tuned profile (mrpc / rte / sst2
+    and their ``_large`` variants) — the chain STRUCTURE is profile-independent, only
+    the per-profile static_skeletons SF values differ."""
+    p = str(profile)
+    return [
+        (f"block1_{p}", 1, 4, 2),
+        (f"block2_{p}", 2, 4, 2),
+        ("block4", 4, 4, 2),
+        ("block5_n1", 5, 1, 2),
+        ("block5_n2", 5, 2, 2),
+        ("block5_n4", 5, 4, 2),
+    ]
+
+
+# Back-compat default (mrpc); main() rebuilds this per --profile.
+BLOCK_TYPES: List[Tuple[str, int, int, int]] = block_types_for_profile("mrpc")
 
 
 def _utcnow_slug() -> str:
@@ -463,7 +475,7 @@ def main() -> int:
     args = ap.parse_args()
 
     only = {s.strip() for s in args.only.split(",") if s.strip()}
-    targets = [bt for bt in BLOCK_TYPES if (not only or bt[0] in only)]
+    targets = [bt for bt in block_types_for_profile(args.profile) if (not only or bt[0] in only)]
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

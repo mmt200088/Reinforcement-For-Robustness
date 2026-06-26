@@ -411,9 +411,13 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
 
     from action_space import _decode_block_field_values
 
-    topo = _pb.TOPOLOGIES.get(ctx.graph_key)
+    # Resolve via the generalizing helper: block2's key is profile-suffixed
+    # (block2_<profile>) but its chain structure is profile-independent, so any
+    # block2_* maps to the shared block2 topology. block4/block5_n* match exactly;
+    # block1/block3/block5_n0 return None (never boosted) -> options left as-is.
+    topo = _pb.topology_for_graph_key(ctx.graph_key)
     if topo is None:
-        return options  # block-type topology not registered yet (e.g. block4/5 TBD)
+        return options  # block-type topology not registered (block1 fusion-degenerate / block3 frozen)
     noise_order = _fcm.SummedInstalledVariance()
     li_gelu = int(ctx.gelu_per_layer[ctx.ref_layer])
     li_attn = int(ctx.attn_per_layer[ctx.ref_layer])

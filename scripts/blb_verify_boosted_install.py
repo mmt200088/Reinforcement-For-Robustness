@@ -61,8 +61,15 @@ from rescale_optimizer_bridge import (  # noqa: E402
     sync_block5_aux_fresh_binding,
 )
 
-# Degenerate / dormant maps carry no boosted fusion option to install.
-_SKIP_GRAPH_KEYS = {"block1_mrpc", "block5_n0"}
+# Degenerate / dormant maps carry no boosted fusion option to install. block1's
+# key is profile-suffixed (block1_<profile>) and is fusion-degenerate (never
+# boosted); block5_n0 is the dormant degree-0 map.
+_SKIP_GRAPH_KEYS = {"block5_n0"}
+
+
+def _is_skipped_graph_key(graph_key: str) -> bool:
+    gk = str(graph_key)
+    return gk in _SKIP_GRAPH_KEYS or gk.startswith("block1_")
 
 
 def _cfg_sf_projection(cfg) -> dict:
@@ -212,8 +219,8 @@ def main() -> int:
             gk = json.loads(p.read_text(encoding="utf-8")).get("graph_key", p.stem)
         except Exception:
             gk = p.stem
-        if gk in _SKIP_GRAPH_KEYS:
-            print(f"[skip] {gk}: degenerate/dormant map")
+        if _is_skipped_graph_key(gk):
+            print(f"[skip] {gk}: degenerate/dormant map (no boosted fusion option)")
             continue
         c, pr = verify_map(p, args.profile, args.rescale_optimizer_root, args.num_layers)
         total_checked += c

@@ -241,6 +241,32 @@ TOPOLOGIES: Dict[str, ChainTopology] = {
 }
 
 
+def topology_for_graph_key(graph_key: str) -> Optional[ChainTopology]:
+    """Resolve a Rescale_optimizer graph key to its boost topology, generalizing
+    across fine-tuned profiles.
+
+    block4 / block5_n* keys are profile-agnostic and match ``TOPOLOGIES`` exactly.
+    block2's key is profile-suffixed (``block2_<profile>``), but its modulus-chain
+    STRUCTURE is profile-independent (the ``cut_point_sf`` / ``propagation_deltas``
+    node lists are byte-identical across mrpc / rte / sst2 + their ``_large``
+    variants — only the SF values differ), so every ``block2_*`` resolves to the
+    shared block2 topology. The topology is used for structure only (nodes, q_max,
+    last-rescale lookup); replan always runs against the caller's profile-correct
+    ``ctx.graph_key``, so reusing the block2 structure across profiles is safe.
+
+    Returns ``None`` for keys with no topology (block1 — fusion-degenerate, never
+    boosted; block3 — frozen; block5_n0 — degree-0 disabled), so the boost leaves
+    those options untouched.
+    """
+    gk = str(graph_key)
+    topo = TOPOLOGIES.get(gk)
+    if topo is not None:
+        return topo
+    if gk.startswith("block2_"):
+        return BLOCK2_MRPC_TOPOLOGY
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Replan probe (injected) + candidate model
 # ---------------------------------------------------------------------------

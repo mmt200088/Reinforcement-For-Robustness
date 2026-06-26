@@ -30,16 +30,24 @@ for p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimiz
         sys.path.insert(0, p)
 
 # (graph_key, block_idx, gelu_degree, attn_degree) for each boostable block-type.
-# Mirrors scripts/blb_build_fusion_count_map.py's BLOCK_TYPES degrees. block5_n1 gets
-# NO phase-1 boost (its fused chain is already all-q_max) but DOES get phase-2 (raise
-# the output scale toward the ceiling, install-clamped to 46).
-BOOST_TARGETS = [
-    ("block2_mrpc", 2, 4, 2),
-    ("block4", 4, 4, 2),
-    ("block5_n1", 5, 1, 2),
-    ("block5_n2", 5, 2, 2),
-    ("block5_n4", 5, 4, 2),
-]
+# Mirrors scripts/blb_build_fusion_count_map.py's block_types_for_profile degrees.
+# block5_n1 gets NO phase-1 boost (its fused chain is already all-q_max) but DOES get
+# phase-2 (raise the output scale toward the ceiling; install limit is q_max=60 since
+# ADR-019). block2's graph key is profile-suffixed (block2_<profile>); block4 /
+# block5_n* are shared names — so this generalizes to any fine-tuned profile.
+def boost_targets_for_profile(profile: str):
+    p = str(profile)
+    return [
+        (f"block2_{p}", 2, 4, 2),
+        ("block4", 4, 4, 2),
+        ("block5_n1", 5, 1, 2),
+        ("block5_n2", 5, 2, 2),
+        ("block5_n4", 5, 4, 2),
+    ]
+
+
+# Back-compat default (mrpc); main() rebuilds this per --profile.
+BOOST_TARGETS = boost_targets_for_profile("mrpc")
 
 
 def main() -> int:
@@ -47,6 +55,9 @@ def main() -> int:
     ap.add_argument("--profile", default="mrpc")
     ap.add_argument("--maps-dir", default=str(_REPO / "blb_stage2_rl" / "fusion_maps" / "mrpc"))
     ap.add_argument("--rescale-optimizer-root", default=str(_REPO / "Rescale_optimizer"))
+    ap.add_argument("--num-layers", type=int, default=12,
+                    help="transformer layers (12 bert-base / 24 bert-large); matches the build")
+    ap.add_argument("--ref-layer", type=int, default=1, help="reference layer for the block-type context")
     ap.add_argument("--only", default="", help="comma list of graph_keys (default: all boostable)")
     ap.add_argument("--dry-run", action="store_true", help="report, do not rewrite JSON")
     args = ap.parse_args()
@@ -56,7 +67,7 @@ def main() -> int:
     only = {s.strip() for s in args.only.split(",") if s.strip()}
     maps_dir = pathlib.Path(args.maps_dir)
     rc = 0
-    for graph_key, block_idx, gelu, attn in BOOST_TARGETS:
+    for graph_key, block_idx, gelu, attn in boost_targets_for_profile(args.profile):
         if only and graph_key not in only:
             continue
         path = maps_dir / f"{graph_key}.json"
@@ -71,7 +82,7 @@ def main() -> int:
         ctx = fusion_enum.prepare_block_type_context(
             graph_key=graph_key, block_idx=block_idx, gelu_degree=gelu, attn_degree=attn,
             profile=args.profile, rescale_optimizer_root=args.rescale_optimizer_root,
-            num_layers=12, ref_layer=1,
+            num_layers=int(args.num_layers), ref_layer=int(args.ref_layer),
         )
         options = fusion_enum.boost_options_for_block(ctx, options)
         n_boosted = sum(1 for o in options if o.get("boosted"))
