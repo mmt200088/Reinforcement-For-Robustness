@@ -227,13 +227,34 @@ def build_one_block_type(
     num_valid_golden = 0
     t0 = time.time()
 
+    # The fast path uses a golden-DERIVED template; verify_template cross-checks it
+    # golden-vs-fast on random combos. The template assumes the installed-point SET
+    # is captured by per-slot probes, which can miss a point whose install depends on
+    # a COMBINATION of slots (rte block5_n1: golden installs an extra rescale@15 the
+    # template omits). On such a mismatch, fall back to the golden cfg-path
+    # enumeration (the source of truth) for THIS block-type instead of aborting the
+    # whole build. ``--enum-path both`` still requires an exact golden-vs-fast match.
+    effective_enum_path = enum_path
+    fast_fallback_reason = ""
     if enum_path in ("fast", "both"):
-        # ---- direct-replan fast path (template golden-derived + verified) ----
         import fusion_enum_fast
         template = fusion_enum_fast.build_fast_template(ctx)
-        vres = fusion_enum_fast.verify_template(
-            template, ctx, num_random=int(fast_verify_random),
-        )
+        try:
+            vres = fusion_enum_fast.verify_template(
+                template, ctx, num_random=int(fast_verify_random),
+            )
+        except RuntimeError as exc:
+            if enum_path != "fast":
+                raise  # 'both' must cross-validate exactly; a mismatch is a real failure
+            fast_fallback_reason = str(exc)
+            effective_enum_path = "golden"
+            print(
+                f"  [fast] template verify FAILED -> falling back to golden for "
+                f"{graph_key}: {exc}",
+                flush=True,
+            )
+    if effective_enum_path in ("fast", "both"):
+        # ---- direct-replan fast path (template golden-derived + verified) ----
         print(
             f"  [fast] template OK: {len(template.points)} point specs, "
             f"golden-vs-fast verified on {vres['checked']} probes "
@@ -288,7 +309,7 @@ def build_one_block_type(
             "fast_wall_seconds": round(time.time() - t_fast, 2),
         }
 
-    if enum_path in ("golden", "both"):
+    if effective_enum_path in ("golden", "both"):
         # ---- original cfg-path enumeration (stride shards) ----
         payloads_g = [
             {
@@ -320,7 +341,7 @@ def build_one_block_type(
                         installed_signature=sig, slots={},
                     )
                 )
-        if enum_path == "golden":
+        if effective_enum_path == "golden":
             evaluated = evaluated_golden
             num_valid_total = num_valid_golden
 
@@ -402,6 +423,9 @@ def build_one_block_type(
             "wall_seconds": round(elapsed, 2),
             "workers": int(workers),
             "k_independence": k_indep,
+            "enum_path_requested": enum_path,
+            "enum_path_effective": effective_enum_path,
+            "fast_fallback_reason": fast_fallback_reason,
             **fast_meta,
         },
     }
