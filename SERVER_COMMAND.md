@@ -84,7 +84,7 @@ python3 -m unittest -v \
   tests.test_blb_fusion_fixed_action tests.test_blb_final_eval_fusion_fixed_action tests.test_blb_glue_boost_install \
   2>&1 | tee "$OUT/t_code.txt"
 grep -qE "^OK" "$OUT/t_code.txt" || { echo "[FATAL] code gate failed"; exit 1; }
-grep -q "skipped" "$OUT/t_code.txt" && { echo "[FATAL] code gate SKIPPED tests (torch/rescale_optimizer not importable)"; exit 1; } || true
+grep -qE "^OK \\(skipped=[1-9][0-9]*\\)" "$OUT/t_code.txt" && { echo "[FATAL] code gate SKIPPED tests (torch/rescale_optimizer not importable)"; exit 1; } || true
 
 PROFILES="rte sst2 mrpc_large rte_large sst2_large"
 fail=0
