@@ -309,8 +309,8 @@ def build_one_block_type(
             "fast_wall_seconds": round(time.time() - t_fast, 2),
         }
 
-    if effective_enum_path in ("golden", "both"):
-        # ---- original cfg-path enumeration (stride shards) ----
+    def _run_golden_enum() -> Tuple[List[Any], int]:
+        """Full cfg-path (golden = source of truth) enumeration → (evaluated, num_valid)."""
         payloads_g = [
             {
                 "graph_key": graph_key,
@@ -331,26 +331,68 @@ def build_one_block_type(
         else:
             with mp.get_context("spawn").Pool(processes=num_shards) as pool:
                 shard_results = pool.map(_enumerate_shard_worker, payloads_g)
+        ev_g: List[Any] = []
+        nv_g = 0
         for num_valid, shard in shard_results:
-            num_valid_golden += int(num_valid)
+            nv_g += int(num_valid)
             for ai, fc, tb, tv, sig in shard:
-                evaluated_golden.append(
+                ev_g.append(
                     fusion_enum.EvaluatedConfig(
                         action_indices=tuple(ai), fusion_count=int(fc),
                         total_bits=int(tb), total_variance=float(tv),
                         installed_signature=sig, slots={},
                     )
                 )
+        return ev_g, nv_g
+
+    if effective_enum_path in ("golden", "both"):
+        # ---- original cfg-path enumeration (stride shards) ----
+        evaluated_golden, num_valid_golden = _run_golden_enum()
         if effective_enum_path == "golden":
             evaluated = evaluated_golden
             num_valid_total = num_valid_golden
 
-    elapsed = time.time() - t0
+    def _group(ev: List[Any]) -> List[Dict[str, Any]]:
+        return fusion_enum.group_min_noise_options(
+            ev, ctx.baseline_block_indices,
+            baseline_installed_signature=ctx.baseline_installed_signature,
+        )
 
-    options = fusion_enum.group_min_noise_options(
-        evaluated, ctx.baseline_block_indices,
-        baseline_installed_signature=ctx.baseline_installed_signature,
-    )
+    options = _group(evaluated)
+
+    # Golden self-consistency on the KEPT options when the FAST path produced them.
+    # verify_template cross-checks RANDOM combos golden-vs-fast, but the fast
+    # template (golden-DERIVED from per-slot probes) can mis-feed replan for a
+    # specific combo it never probed — e.g. the rte/sst2 block2 fc=1 option whose
+    # three SF-irrelevant rescales decode to the lex-min SF (15): golden classifies
+    # that config as fusion 0 (the low rescales stop the chain fusing), but the fast
+    # path stored it as fusion 1, so the precision boost could not raise its
+    # non-fusing base to the output target (build emitted output_sf=43, gate wants
+    # 46). The kept options are few + deterministic, so golden-re-checking exactly
+    # them catches the escape -> full golden fallback (source of truth); the real
+    # fusing option then boosts to the target. block4 (canonical rescales) and the
+    # already-golden block5_n* are unaffected; only the buggy block-type pays the
+    # golden enumeration cost.
+    if effective_enum_path == "fast":
+        kept_problems = fusion_enum.verify_kept_options_golden(ctx, options)
+        if kept_problems:
+            reason = "; ".join(f"opt{oid}: {msg}" for oid, msg in kept_problems)
+            print(
+                f"  [fast] KEPT-OPTION golden check FAILED -> falling back to golden "
+                f"for {graph_key}: {reason}",
+                flush=True,
+            )
+            fast_fallback_reason = (
+                (fast_fallback_reason + " | " if fast_fallback_reason else "")
+                + f"kept-option golden mismatch: {reason}"
+            )
+            effective_enum_path = "golden"
+            evaluated_golden, num_valid_golden = _run_golden_enum()
+            evaluated = evaluated_golden
+            num_valid_total = num_valid_golden
+            options = _group(evaluated)
+
+    elapsed = time.time() - t0
 
     if enum_path == "both":
         # FULL cross-validation: the two paths' final option lists must agree

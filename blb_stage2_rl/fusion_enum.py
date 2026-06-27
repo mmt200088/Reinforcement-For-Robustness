@@ -154,6 +154,55 @@ def group_min_noise_options(
     return options
 
 
+def verify_kept_options_golden(
+    ctx: Any,
+    options: Sequence[Mapping[str, Any]],
+    *,
+    eval_fn: Any = None,
+) -> List[Tuple[Any, str]]:
+    """Golden self-consistency check on the KEPT options. Returns
+    ``[(option_id, reason), ...]`` for every option whose claimed
+    ``(valid, fusion_count, total_bits)`` is NOT reproduced by a real golden
+    cfg-path replan of its decoded ``action_indices``.
+
+    Why this exists (in addition to ``fusion_enum_fast.verify_template``): the
+    fast direct-replan template is golden-DERIVED from per-slot probes, so a slot
+    interaction it does not capture can make it feed ``replan`` a different
+    ``(t_new, delta_overrides)`` than golden for SOME combos — yielding a wrong
+    ``fusion_count``/``total_bits`` on exactly that combo. ``verify_template``'s
+    RANDOM probes can miss it: the rte/sst2 block2 fc=1 option whose three
+    SF-irrelevant rescales decode to the lex-min SF (15) is a config golden
+    classifies as fusion 0 (those low rescales stop the chain fusing — confirmed
+    by real replan), but the fast path stored it as fusion 1, so it became the
+    kept fc=1 representative and the precision boost could not raise that
+    non-fusing base to the output target. The kept options are FEW and
+    DETERMINISTIC, so golden-re-checking exactly them catches the escape; the
+    builder falls back to a full golden enumeration (the source of truth) on a
+    non-empty result. ``eval_fn(ctx, action_indices) -> {valid, fusion_count,
+    total_bits, ...}`` defaults to the golden :func:`_eval_block` (needs torch +
+    Rescale_optimizer; injected as a mock in tests).
+    """
+    ev = eval_fn or _eval_block
+    problems: List[Tuple[Any, str]] = []
+    for opt in options:
+        oid = opt.get("option_id")
+        g = ev(ctx, list(opt["action_indices"]))
+        if not g.get("valid"):
+            problems.append(
+                (oid, f"golden replan INVALID for kept option (claimed fusion_count={opt.get('fusion_count')})")
+            )
+            continue
+        if int(g["fusion_count"]) != int(opt["fusion_count"]):
+            problems.append(
+                (oid, f"fusion_count golden={int(g['fusion_count'])} != enumerated={int(opt['fusion_count'])}")
+            )
+        if int(g["total_bits"]) != int(opt["total_bits"]):
+            problems.append(
+                (oid, f"total_bits golden={int(g['total_bits'])} != enumerated={int(opt['total_bits'])}")
+            )
+    return problems
+
+
 class _MinNoiseReducer:
     """Streaming per-``fusion_count`` minimum-installed-variance reducer.
 

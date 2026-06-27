@@ -12,7 +12,7 @@
 > 派生图键、apply 加 --num-layers）。本地已 torch-free 证实：6 个 profile 的 block2/block4/block5 链结构逐字一致、
 > ReplanSession.from_profile 全部可加载、target 一致（46/53/48/43/43）、block2 boost 端到端到 (60,60)、stage1
 > degree 全 ∈{1,2,4}。完整 build（需 torch 在位，但 CPU/replan、不动 GPU）放服务器。
-> **两次服务器 build 失败已修（源码包必须包含到 `8499ba6`；codex 手动上传，git 无权限）：**
+> **三次服务器 build 失败已修（源码包必须包含到最新 commit，含本轮 block2 kept-option 修复；codex 手动上传，git 无权限）：**
 > 1. `5aad064` — rte **block2** 的 `option 0 != baseline` 误报：3 个 rescale 槽(gamma/kt_mask1/qkt_matmul,anchor SF 28,
 >    枚举 SF 15..28 都 ≥ 表下限 10)在 fusion=0 下**不注入噪声**(SF 只管模数链合法性)→ 所有档位装同样噪声 → 去重留了
 >    字典序最小 idx1,而 baseline 用 idx14 → 装的噪声一致、原始索引不同 → 旧守卫按索引比较误报。修复:group_min_noise_options
@@ -20,11 +20,21 @@
 > 2. `8499ba6` — rte **block5_n1** 的 `fast-path mismatch`:fast 路的 golden-派生模板(per-slot 探针)漏了一个**依赖槽位组合**
 >    的 rescale 安装点(golden 装 rescale@15,fast 没装)→ verify_template 抓到。修复:verify 失败时**回退到 golden 枚举**
 >    (参考真值)重跑该 block-type,不再中止;`--fast-verify-random` 调到 512 提高抓取率。
+> 3. **本轮** — rte/sst2 **block2** 的 `output_sf=43 != target 46`：fast 路把一个**真实 fusion=0** 的配置(fc=1 option 的 3 个
+>    SF-无关 rescale 解码到 lex-min SF 15 — 低 sf_post 让链**不再融合**,real replan 实测 fc=0)**误标成 fusion 1**,成了 fc=1
+>    的留存代表;非融合 base 无法被加大精度抬到输出上限(故 43≠46)。verify_template 的**随机**探针没撞上这个确定性的 kept
+>    combo(block2 过了 512 探针)。本地已 torch-free 证实:正确 t_new(含 rescale)下 (15,15,15)=fc0、所有 39 个**真** fc=1
+>    配置(含 lex-min (15,28,26))加大精度**全部到 46**;问题只在 fast 误分类。**block4(rescale 在 baseline idx14,与 mrpc 逐字一致)
+>    与已 golden 的 block5_n* 不受影响。** 修复:build 在分组后对 **KEPT options** 做 golden 自洽复核(声称的 fusion_count/total_bits
+>    必须被 real golden replan 复现),不符 → 对该 block-type **golden 全量兜底**(参考真值;只有出问题的 block2 付 golden 时间)。
+>    (`blb_stage2_rl/fusion_enum.py::verify_kept_options_golden` + `scripts/blb_build_fusion_count_map.py` 接线;
+>     单测 `tests/test_blb_fusion_kept_option_verify.py`。)
 >
 > 本轮（CPU-only、replan/单测、不碰 GPU / 正在跑的 60k）：
 > 0) profile 无关代码门禁（torch 在位 → 必须 PASS 不能 SKIP）：多 profile topology 解析 + 加大精度 phase-1/2 +
 >    fused-rescale + boost-handoff 测试；
-> 1) 逐 profile：build fusion maps（fast 路 + 64 随机 golden 交叉校验）→ apply 加大精度（phase-1+2）→ 校验 maps
+> 1) 逐 profile：build fusion maps（fast 路 + 512 随机 golden 交叉校验 + **kept-option golden 自洽复核** → block2 等会自动
+>    golden 兜底）→ apply 加大精度（phase-1+2）→ 校验 maps
 >    （FusionCountMap.load / option0==baseline / boosted output_sf==target / ≤q_max=60 / ADR-019 >46 装噪点）→
 >    运行时安装路径校验（Q1 装入 boosted 组、Q2 融合 rescale 置空）→ 合成 stage1 record（从 approx_per_dataset.json，
 >    一个 stage2 绑定一个 stage1）；
@@ -49,6 +59,7 @@ python3 -m unittest -v \
   tests.test_blb_precision_boost_multiprofile \
   tests.test_blb_precision_boost tests.test_blb_precision_boost_phase2 \
   tests.test_blb_fused_rescale_install \
+  tests.test_blb_fusion_enum_baseline tests.test_blb_fusion_kept_option_verify \
   tests.test_blb_fusion_fixed_action tests.test_blb_final_eval_fusion_fixed_action tests.test_blb_glue_boost_install \
   2>&1 | tee "$OUT/t_code.txt"
 grep -qE "^OK" "$OUT/t_code.txt" || { echo "[FATAL] code gate failed"; exit 1; }
