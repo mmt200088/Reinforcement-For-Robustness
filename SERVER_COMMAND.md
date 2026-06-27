@@ -12,7 +12,7 @@
 > 派生图键、apply 加 --num-layers）。本地已 torch-free 证实：6 个 profile 的 block2/block4/block5 链结构逐字一致、
 > ReplanSession.from_profile 全部可加载、target 一致（46/53/48/43/43）、block2 boost 端到端到 (60,60)、stage1
 > degree 全 ∈{1,2,4}。完整 build（需 torch 在位，但 CPU/replan、不动 GPU）放服务器。
-> **三次服务器 build 失败已修（源码包必须包含到最新 commit，含本轮 block2 kept-option 修复；codex 手动上传，git 无权限）：**
+> **三次服务器 build 失败已修（源码包必须包含到 `bfde5d3`，含本轮 block2 kept-option 修复；codex 手动上传，git 无权限）：**
 > 1. `5aad064` — rte **block2** 的 `option 0 != baseline` 误报：3 个 rescale 槽(gamma/kt_mask1/qkt_matmul,anchor SF 28,
 >    枚举 SF 15..28 都 ≥ 表下限 10)在 fusion=0 下**不注入噪声**(SF 只管模数链合法性)→ 所有档位装同样噪声 → 去重留了
 >    字典序最小 idx1,而 baseline 用 idx14 → 装的噪声一致、原始索引不同 → 旧守卫按索引比较误报。修复:group_min_noise_options
