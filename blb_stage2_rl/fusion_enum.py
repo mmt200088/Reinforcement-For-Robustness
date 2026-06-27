@@ -70,12 +70,23 @@ def group_min_noise_options(
 
     ``baseline_installed_signature``: the all-max baseline's installed-noise digest.
     When option 0's raw indices differ from ``baseline_action_indices`` BUT install
-    the identical noise (same signature), option 0 IS the baseline — the difference
-    is a collapsed low-baseline slot whose levels all snap to the same SF, so the
-    distinct-value enumeration kept the lex-min representative index instead of the
-    baseline's max index. Such an option 0 is rewritten to the canonical baseline
-    indices (so ``make_all_max_action_vector`` / runtime baseline detection stay
-    consistent). A genuine installed-plan difference still raises.
+    the identical noise (same signature), option 0 IS the baseline — the differing
+    slot(s) are ones whose SF does NOT change the installed noise, so the build's
+    min-noise dedup kept the lex-min representative index instead of the baseline's
+    max index. Two ways this happens (both seen across the fine-tuned profiles):
+
+      * an SF-IRRELEVANT rescale — a rescale that injects no Gaussian noise in this
+        config (its SF only affects modulus-chain validity, not an installed point):
+        every SF level installs the identical noise, so the dedup's lex-min tie-break
+        keeps idx 1 while the baseline uses idx 14 (the actual rte block2 case —
+        gamma/kt_mask1/qkt_matmul rescales, anchor SF 28, levels 15..28, none below
+        the noise-table min); and
+      * a COLLAPSED low-baseline slot whose levels all snap to the same table-min SF,
+        so the distinct-value enumeration has only the lex-min representative.
+
+    Either way option 0 is rewritten to the canonical baseline indices (so
+    ``make_all_max_action_vector`` / runtime baseline detection stay consistent). A
+    genuine installed-plan difference (different signature) still raises.
     """
     baseline_key = tuple(int(x) for x in baseline_action_indices)
 
@@ -129,10 +140,11 @@ def group_min_noise_options(
             and int(options[0]["fusion_count"]) == 0
             and opt0_sig == baseline_installed_signature
         ):
-            # Result-equivalent to the baseline (identical installed noise plan): a
-            # collapsed low-baseline slot made the distinct-value enum keep the
-            # lex-min index instead of the baseline's max index. Rewrite to the
-            # canonical baseline indices so the map's option 0 == all-max baseline.
+            # Result-equivalent to the baseline (identical installed noise plan):
+            # an SF-irrelevant rescale (no injected noise → all SF levels install
+            # the same) or a collapsed low-baseline slot made the min-noise dedup
+            # keep the lex-min index instead of the baseline's max index. Rewrite to
+            # the canonical baseline indices so the map's option 0 == all-max baseline.
             options[0]["action_indices"] = [int(x) for x in baseline_key]
         else:
             raise ValueError(

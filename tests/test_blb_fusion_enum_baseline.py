@@ -1,15 +1,17 @@
-"""group_min_noise_options must treat a collapsed-baseline-slot option 0 as the
-baseline by RESULT-EQUIVALENCE, not raw action indices.
+"""group_min_noise_options must treat an option 0 that installs the SAME noise as
+the baseline as the baseline by RESULT-EQUIVALENCE, not raw action indices.
 
-When a profile's block has a rescale slot whose baseline SF is at (or below) the
-noise-table min, every one of that slot's 15 levels snaps to the same SF, so the
-distinct-value enumeration keeps only the lex-min representative index (idx 1 for a
-rescale; idx 0 = None is excluded). The all-max baseline uses idx 14 there. They
-decode to the IDENTICAL cfg (same installed_signature) but differ in raw indices,
-so the strict "option 0 == baseline" guard wrongly failed (it broke the rte build:
-block2_rte option 0 had idx 1 at three collapsed rescale slots vs the baseline's
-idx 14). mrpc never hit it because its block2 rescale baselines are above the table
-min.
+This broke the rte build: block2_rte option 0 had idx 1 at three RESCALE slots
+(gamma_rescale / kt_mask1_rescale / qkt_matmul_rescale) while the all-max baseline
+used idx 14, so the strict "option 0 == baseline" raw-index guard wrongly failed.
+
+The actual cause is an SF-IRRELEVANT rescale: those rescales (calibrated anchor SF
+28, enumerated levels SF 15..28 — NONE below the noise-table min 10) inject no
+Gaussian noise in the fusion=0 baseline (their SF only affects modulus-chain
+validity). Every SF level therefore installs the identical noise, so the min-noise
+dedup kept the lex-min representative index (idx 1; idx 0 = None excluded) instead
+of the baseline's idx 14. mrpc never hit it. A COLLAPSED low-baseline slot (levels
+all snap to the table-min SF) is the other way this can happen; the fix handles both.
 
 Fix: when option 0 is result-equivalent to the baseline (its installed_signature
 matches the baseline's), rewrite option 0's indices to the canonical baseline so the
