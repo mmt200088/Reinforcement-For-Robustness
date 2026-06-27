@@ -12,11 +12,14 @@
 > 派生图键、apply 加 --num-layers）。本地已 torch-free 证实：6 个 profile 的 block2/block4/block5 链结构逐字一致、
 > ReplanSession.from_profile 全部可加载、target 一致（46/53/48/43/43）、block2 boost 端到端到 (60,60)、stage1
 > degree 全 ∈{1,2,4}。完整 build（需 torch 在位，但 CPU/replan、不动 GPU）放服务器。
-> **commit `5aad064`（2026-06-27）修了第一次服务器 build 在 rte block2 的失败**：rte 的 block2 有 rescale 槽
-> baseline SF 低到表下限，15 档全 snap 同 SF → 枚举只留 lex-min 代表 idx（rescale 的 idx 1），而 baseline 用
-> idx 14 → 解码同一 cfg 但原始索引不同，旧守卫按索引比较误报 `option 0 != baseline`。修复：group_min_noise_options
-> 拿 baseline 的 installed_signature，option0 与之结果等价时改写成 baseline 索引（真不同才报错）。通用，处理任意
-> block / profile 的同类 collapse。**服务器源码包必须包含 `5aad064`（codex 手动上传源码，git 无权限）。**
+> **两次服务器 build 失败已修（源码包必须包含到 `8499ba6`；codex 手动上传，git 无权限）：**
+> 1. `5aad064` — rte **block2** 的 `option 0 != baseline` 误报：3 个 rescale 槽(gamma/kt_mask1/qkt_matmul,anchor SF 28,
+>    枚举 SF 15..28 都 ≥ 表下限 10)在 fusion=0 下**不注入噪声**(SF 只管模数链合法性)→ 所有档位装同样噪声 → 去重留了
+>    字典序最小 idx1,而 baseline 用 idx14 → 装的噪声一致、原始索引不同 → 旧守卫按索引比较误报。修复:group_min_noise_options
+>    拿 baseline 的 installed_signature,option0 与之结果等价就改写成 baseline 索引(真不同才报错)。
+> 2. `8499ba6` — rte **block5_n1** 的 `fast-path mismatch`:fast 路的 golden-派生模板(per-slot 探针)漏了一个**依赖槽位组合**
+>    的 rescale 安装点(golden 装 rescale@15,fast 没装)→ verify_template 抓到。修复:verify 失败时**回退到 golden 枚举**
+>    (参考真值)重跑该 block-type,不再中止;`--fast-verify-random` 调到 512 提高抓取率。
 >
 > 本轮（CPU-only、replan/单测、不碰 GPU / 正在跑的 60k）：
 > 0) profile 无关代码门禁（torch 在位 → 必须 PASS 不能 SKIP）：多 profile topology 解析 + 加大精度 phase-1/2 +
@@ -60,8 +63,13 @@ for pf in $PROFILES; do
   echo "######################## [$pf] (num_layers=$NL) ########################"
 
   echo "---- [$pf] 1. build fusion maps ----"
+  # --fast-verify-random 512: more golden-vs-fast probes -> higher chance to catch a
+  # fast-template miss BEFORE the full enum (the template can miss a combination-
+  # dependent installed point). On a caught mismatch the build now FALLS BACK to the
+  # golden cfg-path enum for that block-type (commit 8499ba6) instead of aborting.
   python3 scripts/blb_build_fusion_count_map.py --profile "$pf" --out-dir "$MAPS" \
-    --rescale-optimizer-root Rescale_optimizer --num-layers "$NL" 2>&1 | tee "$pout/build.txt"
+    --rescale-optimizer-root Rescale_optimizer --num-layers "$NL" \
+    --fast-verify-random 512 2>&1 | tee "$pout/build.txt"
   miss=0
   for gk in "block1_$pf" "block2_$pf" block4 block5_n1 block5_n2 block5_n4; do
     [ -f "$MAPS/$gk.json" ] || { echo "[FATAL][$pf] build missing $gk.json"; miss=1; }
