@@ -326,7 +326,10 @@ def build_one_block_type(
 
     elapsed = time.time() - t0
 
-    options = fusion_enum.group_min_noise_options(evaluated, ctx.baseline_block_indices)
+    options = fusion_enum.group_min_noise_options(
+        evaluated, ctx.baseline_block_indices,
+        baseline_installed_signature=ctx.baseline_installed_signature,
+    )
 
     if enum_path == "both":
         # FULL cross-validation: the two paths' final option lists must agree
@@ -338,6 +341,7 @@ def build_one_block_type(
             )
         options_golden = fusion_enum.group_min_noise_options(
             evaluated_golden, ctx.baseline_block_indices,
+            baseline_installed_signature=ctx.baseline_installed_signature,
         )
         if len(options) != len(options_golden):
             raise RuntimeError(

@@ -1,0 +1,84 @@
+"""group_min_noise_options must treat a collapsed-baseline-slot option 0 as the
+baseline by RESULT-EQUIVALENCE, not raw action indices.
+
+When a profile's block has a rescale slot whose baseline SF is at (or below) the
+noise-table min, every one of that slot's 15 levels snaps to the same SF, so the
+distinct-value enumeration keeps only the lex-min representative index (idx 1 for a
+rescale; idx 0 = None is excluded). The all-max baseline uses idx 14 there. They
+decode to the IDENTICAL cfg (same installed_signature) but differ in raw indices,
+so the strict "option 0 == baseline" guard wrongly failed (it broke the rte build:
+block2_rte option 0 had idx 1 at three collapsed rescale slots vs the baseline's
+idx 14). mrpc never hit it because its block2 rescale baselines are above the table
+min.
+
+Fix: when option 0 is result-equivalent to the baseline (its installed_signature
+matches the baseline's), rewrite option 0's indices to the canonical baseline so the
+runtime baseline detection (make_all_max_action_vector) stays consistent; a genuine
+installed-plan difference still raises (the guard keeps its protective value).
+
+Torch-free: group_min_noise_options + EvaluatedConfig are pure.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import sys
+import unittest
+
+_REPO = pathlib.Path(__file__).resolve().parents[1]
+for _p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import fusion_enum as fe
+
+
+def _ec(action_indices, fusion_count, total_bits, total_variance, sig):
+    return fe.EvaluatedConfig(
+        action_indices=tuple(action_indices),
+        fusion_count=int(fusion_count),
+        total_bits=int(total_bits),
+        total_variance=float(total_variance),
+        installed_signature=sig,
+        slots={},
+    )
+
+
+class GroupMinNoiseBaselineEquivalenceTest(unittest.TestCase):
+    def test_result_equivalent_option0_rewritten_to_baseline(self):
+        # option 0 (enum distinct-rep) uses idx 1 at a collapsed slot; baseline uses
+        # idx 14. Same installed_signature -> rewrite to baseline indices, no raise.
+        ec0 = _ec((14, 14, 1), 0, 100, 1.0, "S0")
+        ec1 = _ec((14, 10, 1), 1, 90, 2.0, "S1")
+        opts = fe.group_min_noise_options(
+            [ec0, ec1], (14, 14, 14), baseline_installed_signature="S0",
+        )
+        self.assertEqual(opts[0]["fusion_count"], 0)
+        self.assertEqual(opts[0]["action_indices"], [14, 14, 14])  # rewritten
+        self.assertEqual(opts[1]["fusion_count"], 1)
+
+    def test_exact_match_unchanged(self):
+        # mrpc case: option 0 already equals the baseline -> untouched.
+        ec0 = _ec((14, 14, 14), 0, 100, 1.0, "S0")
+        opts = fe.group_min_noise_options(
+            [ec0], (14, 14, 14), baseline_installed_signature="S0",
+        )
+        self.assertEqual(opts[0]["action_indices"], [14, 14, 14])
+
+    def test_genuinely_different_option0_still_raises(self):
+        # option 0 has a DIFFERENT installed plan than the baseline -> real bug.
+        ec0 = _ec((14, 14, 1), 0, 100, 1.0, "DIFFERENT")
+        with self.assertRaises(ValueError):
+            fe.group_min_noise_options(
+                [ec0], (14, 14, 14), baseline_installed_signature="S0",
+            )
+
+    def test_no_signature_keeps_strict_index_guard(self):
+        # Back-compat: without the baseline signature, an index mismatch still raises.
+        ec0 = _ec((14, 14, 1), 0, 100, 1.0, "S0")
+        with self.assertRaises(ValueError):
+            fe.group_min_noise_options([ec0], (14, 14, 14))
+
+
+if __name__ == "__main__":
+    unittest.main()

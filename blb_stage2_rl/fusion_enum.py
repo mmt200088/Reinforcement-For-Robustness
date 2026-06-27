@@ -61,11 +61,21 @@ def group_min_noise_options(
     baseline_action_indices: Sequence[int],
     *,
     noise_tol: float = 1e-18,
+    baseline_installed_signature: Hashable = None,
 ) -> List[Dict[str, Any]]:
     """Group valid configs by ``fusion_count``; per group keep the minimum-noise
     set (within ``noise_tol``, deduped by installed plan); order by (fusion,
     variance, bits, lex). The all-max baseline is the lowest-fusion global minimum
     (rescale-None excluded), so it lands at option 0; a guard asserts this (spec §3.4).
+
+    ``baseline_installed_signature``: the all-max baseline's installed-noise digest.
+    When option 0's raw indices differ from ``baseline_action_indices`` BUT install
+    the identical noise (same signature), option 0 IS the baseline — the difference
+    is a collapsed low-baseline slot whose levels all snap to the same SF, so the
+    distinct-value enumeration kept the lex-min representative index instead of the
+    baseline's max index. Such an option 0 is rewritten to the canonical baseline
+    indices (so ``make_all_max_action_vector`` / runtime baseline detection stay
+    consistent). A genuine installed-plan difference still raises.
     """
     baseline_key = tuple(int(x) for x in baseline_action_indices)
 
@@ -113,10 +123,22 @@ def group_min_noise_options(
     # the "baseline = lowest-fusion minimum-noise" invariant broke (re-examine the
     # noise order or the enumeration domain).
     if options and tuple(options[0]["action_indices"]) != baseline_key:
-        raise ValueError(
-            f"option 0 {options[0]['action_indices']} != baseline {list(baseline_key)}: the all-max baseline "
-            "is not the lowest-fusion minimum-noise config (expected after excluding rescale-None from the enum)."
-        )
+        opt0_sig = kept[0][0].installed_signature
+        if (
+            baseline_installed_signature is not None
+            and int(options[0]["fusion_count"]) == 0
+            and opt0_sig == baseline_installed_signature
+        ):
+            # Result-equivalent to the baseline (identical installed noise plan): a
+            # collapsed low-baseline slot made the distinct-value enum keep the
+            # lex-min index instead of the baseline's max index. Rewrite to the
+            # canonical baseline indices so the map's option 0 == all-max baseline.
+            options[0]["action_indices"] = [int(x) for x in baseline_key]
+        else:
+            raise ValueError(
+                f"option 0 {options[0]['action_indices']} != baseline {list(baseline_key)}: the all-max baseline "
+                "is not the lowest-fusion minimum-noise config (expected after excluding rescale-None from the enum)."
+            )
     return options
 
 
@@ -229,6 +251,10 @@ class BlockTypeBuildContext:
     enum_choices: List[List[int]] = field(default_factory=list)
     pinned_positions: List[int] = field(default_factory=list)
     active_rescale_fields: List[str] = field(default_factory=list)
+    # installed-noise digest of the all-max baseline block config; lets
+    # group_min_noise_options accept a result-equivalent option 0 whose collapsed
+    # low-baseline slot uses the lex-min index instead of the baseline's max index.
+    baseline_installed_signature: Hashable = None
 
     def enum_total(self) -> int:
         total = 1
@@ -641,6 +667,10 @@ def prepare_block_type_context(
     if not base_res.get("valid"):
         raise RuntimeError(f"{graph_key}: baseline (all-max) block config is invalid under replan")
     base_key = (int(base_res["fusion_count"]), int(base_res["total_bits"]))
+    # Record the baseline's installed-noise digest so group_min_noise_options can
+    # recognise a result-equivalent option 0 (collapsed low-baseline slot → lex-min
+    # index) and rewrite it to the canonical baseline indices instead of failing.
+    ctx.baseline_installed_signature = _installed_signature(base_res["points"])
 
     # Classify each effective non-K slot.
     #
