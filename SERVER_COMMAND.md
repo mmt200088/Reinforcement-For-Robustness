@@ -12,6 +12,11 @@
 > 派生图键、apply 加 --num-layers）。本地已 torch-free 证实：6 个 profile 的 block2/block4/block5 链结构逐字一致、
 > ReplanSession.from_profile 全部可加载、target 一致（46/53/48/43/43）、block2 boost 端到端到 (60,60)、stage1
 > degree 全 ∈{1,2,4}。完整 build（需 torch 在位，但 CPU/replan、不动 GPU）放服务器。
+> **commit `5aad064`（2026-06-27）修了第一次服务器 build 在 rte block2 的失败**：rte 的 block2 有 rescale 槽
+> baseline SF 低到表下限，15 档全 snap 同 SF → 枚举只留 lex-min 代表 idx（rescale 的 idx 1），而 baseline 用
+> idx 14 → 解码同一 cfg 但原始索引不同，旧守卫按索引比较误报 `option 0 != baseline`。修复：group_min_noise_options
+> 拿 baseline 的 installed_signature，option0 与之结果等价时改写成 baseline 索引（真不同才报错）。通用，处理任意
+> block / profile 的同类 collapse。**服务器源码包必须包含 `5aad064`（codex 手动上传源码，git 无权限）。**
 >
 > 本轮（CPU-only、replan/单测、不碰 GPU / 正在跑的 60k）：
 > 0) profile 无关代码门禁（torch 在位 → 必须 PASS 不能 SKIP）：多 profile topology 解析 + 加大精度 phase-1/2 +
