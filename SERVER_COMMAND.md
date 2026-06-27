@@ -60,7 +60,7 @@
 > 本轮(CPU-only、replan/单测、不碰 GPU / 正在跑的 60k):0) 代码门禁(含 canonicalize + kept-option 新测试,必须 PASS
 > 不能 SKIP)→ 逐 profile build maps(fast + 512 随机 golden 交叉 + kept-option golden 自洽,block2 boost 经 canonicalize
 > 到 46)→ apply 加大精度 → 校验 maps(load / option0==baseline / boosted output_sf==target / ≤q_max / ADR-019)→
-> 运行时安装路径校验(Q1/Q2)→ 合成 stage1 record → commit/push。**不跑 60k**。源码包须含 **canonicalize 修复 commit**。
+> 运行时安装路径校验(Q1/Q2)→ 合成 stage1 record → commit/push。**不跑 60k**。源码包须含 **`e659f49`**(canonicalize 修复)。
 
 ```bash
 set -uo pipefail
