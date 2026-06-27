@@ -525,6 +525,22 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
     def _noise(_slots: Mapping[str, Any], probe: Any) -> float:
         return float(noise_order.total_variance(probe.extra))
 
+    def _sig(probe: Any) -> Any:
+        return _installed_signature(probe.extra)
+
+    # Baseline SF for each topology rescale (the value the runtime t_new uses when
+    # the rescale's cfg field is None). Used to canonicalize noise-irrelevant
+    # rescales whose action decode sits below baseline (see canonicalize_*).
+    rescale_baseline_sfs: Dict[str, int] = {}
+    for _node in topo.nodes:
+        if _node.kind == "rescale" and _node.cfg_field:
+            try:
+                rescale_baseline_sfs[_node.cfg_field] = int(
+                    ctx.max_sfs.get(int(ctx.block_idx), _node.cfg_field, layer_idx=int(ctx.ref_layer))
+                )
+            except Exception:  # field absent from the calibrated table — skip (no canonicalization)
+                pass
+
     for opt in options:
         if int(opt.get("fusion_count", 0)) == 0:
             continue
@@ -536,6 +552,17 @@ def boost_options_for_block(ctx: "BlockTypeBuildContext", options: List[Dict[str
         # keep ints (incl. output_truncation_k); drop inactive-rescale None fields
         # (their _build_block*_action reads are guarded by the active set).
         base_fv = {k: int(v) for k, v in base_fv_raw.items() if v is not None}
+
+        # Align the boost base with the RUNTIME chain: a noise-irrelevant topology
+        # rescale (None at runtime → t_new uses its baseline sf_post) may decode here
+        # to a below-baseline SF (the dedup kept a lex-min noise-tie representative);
+        # the boost would then replan a lower-precision chain than the runtime
+        # installs and stall the output below the ceiling (block2 rte/sst2 fc=1:
+        # rescales decode to SF 15 → boost 43; baseline 28 → 46, fc + installed
+        # signature identical — server-confirmed). Reset such rescales to baseline.
+        base_fv = _pb.canonicalize_noise_irrelevant_rescales(
+            base_fv, topo, rescale_baseline_sfs, probe_fn=_make_probe, sig_fn=_sig,
+        )
 
         # --- phase 1: raise the intermediate short primes ---
         res1 = _pb.boost_option(

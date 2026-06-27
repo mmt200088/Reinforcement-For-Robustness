@@ -267,6 +267,55 @@ def topology_for_graph_key(graph_key: str) -> Optional[ChainTopology]:
     return None
 
 
+def canonicalize_noise_irrelevant_rescales(
+        base_slots: Mapping[str, int],
+        topology: ChainTopology,
+        baseline_sfs: Mapping[str, int],
+        *,
+        probe_fn: Callable[[Dict[str, int]], Any],
+        sig_fn: Callable[[Any], Any],
+        ) -> Dict[str, int]:
+    """Reset each topology rescale in ``base_slots`` to its baseline SF when doing
+    so preserves ``(valid, fusion_count, installed-noise signature)`` — i.e. the
+    rescale is NOISE-IRRELEVANT and the chain is unchanged at runtime.
+
+    Why the boost needs this (server-confirmed, block2 rte/sst2 fc=1): some
+    topology rescales are NOT noise-install points at runtime — their cfg field is
+    ``None``, so the bridge's ``t_new`` falls back to the baseline ``sf_post`` and
+    the runtime replan is INSENSITIVE to their action SF. But the boost decodes them
+    (``_decode_block_field_values``) to their raw action SF, which can sit BELOW
+    baseline (the dedup keeps a lex-min representative of a noise-tie). The boost
+    then replans a lower-precision chain than the runtime installs and cannot raise
+    the output to the ceiling (decode SF 15 → boost stalls at 43; baseline 28 → 46;
+    both replan identically at runtime, ``t_new=[..,28,28,28]``). Resetting such a
+    rescale to baseline aligns the boost base with the runtime.
+
+    The guard (same fusion_count + identical installed signature) leaves a genuinely
+    noise-relevant rescale untouched — raising its ``sf_post`` would move an
+    installed point and change the signature, so the trial is rejected. Already-at-
+    or-above-baseline rescales are skipped. Pure: ``probe_fn(slots) -> probe`` (with
+    ``.valid`` / ``.fusion_count``) and ``sig_fn(probe) -> hashable`` are injected.
+    """
+    base0 = probe_fn(dict(base_slots))
+    if not getattr(base0, "valid", False):
+        return dict(base_slots)
+    sig0 = sig_fn(base0)
+    fc0 = int(base0.fusion_count)
+    out: Dict[str, int] = dict(base_slots)
+    for node in topology.nodes:
+        if node.kind != "rescale" or not node.cfg_field or node.cfg_field not in out:
+            continue
+        bsf = baseline_sfs.get(node.cfg_field)
+        if bsf is None or int(out[node.cfg_field]) >= int(bsf):
+            continue
+        trial = dict(out)
+        trial[node.cfg_field] = int(bsf)
+        tp = probe_fn(trial)
+        if getattr(tp, "valid", False) and int(tp.fusion_count) == fc0 and sig_fn(tp) == sig0:
+            out = trial
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Replan probe (injected) + candidate model
 # ---------------------------------------------------------------------------

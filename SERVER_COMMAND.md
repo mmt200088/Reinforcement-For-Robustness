@@ -44,45 +44,23 @@
 
 ---
 
-## ▶ active command  (聚焦诊断：block2 boost `output_sf=43` 的 ground truth；秒级 CPU-only，不碰 60k)
+## ▶ active command  (5-profile build + 加大精度 + 校验；**block2 boost fix 已就位**；CPU-only，不碰 60k)
 
-> **第 3 轮 build 反馈推翻了我的诊断,需要服务器真实数据再定 fix。** codex 手动跑 `verify_kept_options_golden`
-> 发现:留存的 fc=1 option 的 **golden `_eval_block` 实测就是 fc=1**(不是 fast 误分类!),只有 boost **之后**的
-> total_bits 不符(240 vs 238,属加精度正常)。所以 `bfde5d3` 的 golden-fallback 对此 bug 是 **no-op**(boost 前比对
-> 通过)——**真正的 bug 在 boost 本身**:同样是真实 fc=1,mrpc(rescale 在 baseline idx14)boost 到 46,而 rte/sst2
-> (rescale 在 lex-min idx1)只到 43。我两次 torch-free 复现都与真实解码不符(Q/K 绑定 / active 集 / t_new 派生里有我
-> 没看到的交互),所以**先拿服务器 ground truth**:真实解码出的 cfg rescale SF、bridge 派生的 t_new、golden fc/q_final、
-> boost 的 base 与产出,并直接测"把 3 个 rescale 槽规范化到 baseline idx"是否**保 fc + 保噪声且 boost 到 46**(=fix 假设)。
-> 秒级(`prepare_block_type_context` 只做轻量探针,不做全枚举),不碰正在跑的 60k。把输出**原样回传**给 Claude。
-
-```bash
-set -uo pipefail
-export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
-export CUDA_VISIBLE_DEVICES=""
-TS=$(date +%Y%m%d_%H%M%S)
-OUT="experiments/server_command_runs/block2_boost_diag_${TS}"; mkdir -p "$OUT"
-git rev-parse HEAD > "$OUT/HEAD.txt" 2>/dev/null && cat "$OUT/HEAD.txt" || true
-
-# rte: pass the known kept fc=1 option indices (no full build needed; ctx setup is light).
-AI_RTE="7,14,9,8,14,14,14,14,1,0,0,14,14,14,0,0,0,0,1,14,0,1,3"
-echo "######## rte block2 ########"
-python3 scripts/blb_diag_block2_boost.py --profile rte \
-  --rescale-optimizer-root Rescale_optimizer --num-layers 12 \
-  --action-indices "$AI_RTE" 2>&1 | tee "$OUT/diag_rte.txt"
-
-echo "######## sst2 block2 (same chain, same failure expected) ########"
-python3 scripts/blb_diag_block2_boost.py --profile sst2 \
-  --rescale-optimizer-root Rescale_optimizer --num-layers 12 \
-  --action-indices "$AI_RTE" 2>&1 | tee "$OUT/diag_sst2.txt"
-
-echo "######## DONE — paste diag_rte.txt + diag_sst2.txt back to Claude ########"
-```
-
----
-
-## (paused) full 5-profile build — re-enable after the block2 boost fix lands
-
-> 下面这条是被暂停的完整 5-profile build；上面的诊断跑完、Claude 定了真 fix 后再恢复为 active。
+> **block2 `output_sf=43` 已定位+修复(诊断 `block2_boost_diag_20260627_230610` 确认):** 真正的 bug 在 boost——
+> 三个 rescale 槽(gamma/kt_mask1/qkt_matmul)在**运行时 cfg 里是 None**(噪声非激活点),bridge 的 `cfg→t_new`
+> 回退到 baseline(t_new=`[21,28,28,28]`),运行时对它们的 action SF **完全不敏感**(as-built 与 canonical 的 golden
+> 结果逐字相同:fc=1 / bits=238 / 同 signature)。但 boost 用 `_decode_block_field_values` 拿到**原始 SF 15**去 replan
+> → 低精度链 → 卡在 43。诊断实证:把这三个槽规范化到 baseline(28)→ boost 到 **46**,且 **fc + installed-noise
+> signature 都不变**。修复 `precision_boost.canonicalize_noise_irrelevant_rescales`(只在保 fc+保 signature 时把噪声无关
+> rescale 复位到 baseline,对噪声相关 rescale 由守卫保护不动)+ `fusion_enum.boost_options_for_block` 接线;
+> 单测 `tests/test_blb_boost_rescale_canonicalize.py`(6,torch-free)。`bfde5d3` 的 kept-option golden 复核保留(无害的
+> 防御性检查,catch 真·fc 误分类)。**build 的 [3] verify maps 步骤会自校验 block2 boosted `output_sf==46`**——若仍 ≠46
+> 即 fix 未生效,门禁会 FATAL,不会白跑后续。
+>
+> 本轮(CPU-only、replan/单测、不碰 GPU / 正在跑的 60k):0) 代码门禁(含 canonicalize + kept-option 新测试,必须 PASS
+> 不能 SKIP)→ 逐 profile build maps(fast + 512 随机 golden 交叉 + kept-option golden 自洽,block2 boost 经 canonicalize
+> 到 46)→ apply 加大精度 → 校验 maps(load / option0==baseline / boosted output_sf==target / ≤q_max / ADR-019)→
+> 运行时安装路径校验(Q1/Q2)→ 合成 stage1 record → commit/push。**不跑 60k**。源码包须含 **canonicalize 修复 commit**。
 
 ```bash
 set -uo pipefail
@@ -102,6 +80,7 @@ python3 -m unittest -v \
   tests.test_blb_precision_boost tests.test_blb_precision_boost_phase2 \
   tests.test_blb_fused_rescale_install \
   tests.test_blb_fusion_enum_baseline tests.test_blb_fusion_kept_option_verify \
+  tests.test_blb_boost_rescale_canonicalize \
   tests.test_blb_fusion_fixed_action tests.test_blb_final_eval_fusion_fixed_action tests.test_blb_glue_boost_install \
   2>&1 | tee "$OUT/t_code.txt"
 grep -qE "^OK" "$OUT/t_code.txt" || { echo "[FATAL] code gate failed"; exit 1; }
