@@ -42,6 +42,48 @@
 > **不跑 60k、不跑 GPU 短训**（RL 训练循环是 profile 无关代码，mrpc 已验证；本轮只产出 + 校验各 profile 的专属产物）。
 > 跑完每个 profile 即可像 bert base mrpc 一样启动各自的 60k（届时单独触发）。
 
+---
+
+## ▶ active command  (聚焦诊断：block2 boost `output_sf=43` 的 ground truth；秒级 CPU-only，不碰 60k)
+
+> **第 3 轮 build 反馈推翻了我的诊断,需要服务器真实数据再定 fix。** codex 手动跑 `verify_kept_options_golden`
+> 发现:留存的 fc=1 option 的 **golden `_eval_block` 实测就是 fc=1**(不是 fast 误分类!),只有 boost **之后**的
+> total_bits 不符(240 vs 238,属加精度正常)。所以 `bfde5d3` 的 golden-fallback 对此 bug 是 **no-op**(boost 前比对
+> 通过)——**真正的 bug 在 boost 本身**:同样是真实 fc=1,mrpc(rescale 在 baseline idx14)boost 到 46,而 rte/sst2
+> (rescale 在 lex-min idx1)只到 43。我两次 torch-free 复现都与真实解码不符(Q/K 绑定 / active 集 / t_new 派生里有我
+> 没看到的交互),所以**先拿服务器 ground truth**:真实解码出的 cfg rescale SF、bridge 派生的 t_new、golden fc/q_final、
+> boost 的 base 与产出,并直接测"把 3 个 rescale 槽规范化到 baseline idx"是否**保 fc + 保噪声且 boost 到 46**(=fix 假设)。
+> 秒级(`prepare_block_type_context` 只做轻量探针,不做全枚举),不碰正在跑的 60k。把输出**原样回传**给 Claude。
+
+```bash
+set -uo pipefail
+export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
+export CUDA_VISIBLE_DEVICES=""
+TS=$(date +%Y%m%d_%H%M%S)
+OUT="experiments/server_command_runs/block2_boost_diag_${TS}"; mkdir -p "$OUT"
+git rev-parse HEAD > "$OUT/HEAD.txt" 2>/dev/null && cat "$OUT/HEAD.txt" || true
+
+# rte: pass the known kept fc=1 option indices (no full build needed; ctx setup is light).
+AI_RTE="7,14,9,8,14,14,14,14,1,0,0,14,14,14,0,0,0,0,1,14,0,1,3"
+echo "######## rte block2 ########"
+python3 scripts/blb_diag_block2_boost.py --profile rte \
+  --rescale-optimizer-root Rescale_optimizer --num-layers 12 \
+  --action-indices "$AI_RTE" 2>&1 | tee "$OUT/diag_rte.txt"
+
+echo "######## sst2 block2 (same chain, same failure expected) ########"
+python3 scripts/blb_diag_block2_boost.py --profile sst2 \
+  --rescale-optimizer-root Rescale_optimizer --num-layers 12 \
+  --action-indices "$AI_RTE" 2>&1 | tee "$OUT/diag_sst2.txt"
+
+echo "######## DONE — paste diag_rte.txt + diag_sst2.txt back to Claude ########"
+```
+
+---
+
+## (paused) full 5-profile build — re-enable after the block2 boost fix lands
+
+> 下面这条是被暂停的完整 5-profile build；上面的诊断跑完、Claude 定了真 fix 后再恢复为 active。
+
 ```bash
 set -uo pipefail
 export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
