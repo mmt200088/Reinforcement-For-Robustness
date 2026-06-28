@@ -51,8 +51,11 @@ from action_space import parse_config_name  # noqa: E402
 import fusion_enum  # noqa: E402
 import numpy as np  # noqa: E402
 from optimizer_cost import evaluate_action_for_cost  # noqa: E402
+from optimizer_output_introspect import fused_skeleton_positions  # noqa: E402
 
 from rescale_optimizer_bridge import (  # noqa: E402
+    _extract_sf_from_cfg,
+    _SkelEntry,
     _strip_layer_suffix,
     apply_optimizer_output_to_cfg,
     sync_block2_aux_fresh_binding,
@@ -90,11 +93,15 @@ def _cfg_sf_projection(cfg) -> dict:
 
 def _install_and_inspect(ev, ctx):
     """Run env.step's optimizer write-back loop on the target (block, layer) and
-    return ``(installed_cfg, override_entries)``. Faithful to BLBStage2Env.step."""
+    return ``(installed_cfg, override_entries, fused_still_installed)``. Faithful to
+    BLBStage2Env.step. ``fused_still_installed`` = the cfg attrs at FUSED skeleton
+    rescale positions that STILL carry an installed noise point after the write-back
+    (the c6ee25e invariant violation; empty when correct)."""
     invoker = getattr(ctx.bridge, "invoker", None)
     invoker_baselines = getattr(invoker, "baselines", {}) or {}
     target_cfg = None
     overrides: list = []
+    fused_still_installed: list = []
     for cn, out in ev.outputs.items():
         block_idx, _profile, layer_idx = parse_config_name(cn)
         if layer_idx < 0 or block_idx != int(ctx.block_idx) or layer_idx != int(ctx.ref_layer):
@@ -117,8 +124,22 @@ def _install_and_inspect(ev, ctx):
             ov = list(ov) + sync_block4_v_mask_binding(cfg)
         elif int(block_idx) == 5:
             ov = list(ov) + sync_block5_aux_fresh_binding(cfg)
+        # Q2 invariant (direct): every rescale the optimizer FUSED AWAY must install
+        # NO noise. apply_optimizer_output_to_cfg already nulls them; verify it held
+        # by checking the cfg field at each fused skeleton position is None. This
+        # passes a block whose fused rescale is structurally non-installed (block2's
+        # gamma rescale — None via active-set, nothing to null, no override) and
+        # still FAILS a real regression (a fused rescale left installed).
+        compact = out.raw.get("new_compact_config") if isinstance(out.raw, dict) else None
+        skel = ctx.bridge._cfg_to_t_new_table.get(graph_key, ())
+        specs = [(se.cfg_field, se.tuple_index) for se in skel]
+        for cfg_field, tuple_index in fused_skeleton_positions(compact or {}, baseline_skeleton, specs):
+            if _extract_sf_from_cfg(cfg, _SkelEntry(cfg_field, tuple_index)) is not None:
+                fused_still_installed.append(
+                    cfg_field if tuple_index is None else f"{cfg_field}[{tuple_index}]"
+                )
         target_cfg, overrides = cfg, list(ov)
-    return target_cfg, overrides
+    return target_cfg, overrides, fused_still_installed
 
 
 def _evaluate(ctx, action_indices, boosted_overrides=None):
@@ -165,8 +186,8 @@ def verify_map(path: pathlib.Path, profile: str, ro_root: str, num_layers: int) 
 
         ev_b = _evaluate(ctx, action_indices, boosted_overrides={(block_idx, int(ctx.ref_layer)): explicit})
         ev_p = _evaluate(ctx, action_indices, boosted_overrides=None)
-        cfg_b, ov_b = _install_and_inspect(ev_b, ctx)
-        cfg_p, _ov_p = _install_and_inspect(ev_p, ctx)
+        cfg_b, ov_b, fused_still_installed = _install_and_inspect(ev_b, ctx)
+        cfg_p, _ov_p, _fp = _install_and_inspect(ev_p, ctx)
         if cfg_b is None or cfg_p is None:
             print(f"[BAD] {graph_key} opt{oid}: target cfg not found in optimizer outputs")
             problems += 1
@@ -180,24 +201,33 @@ def verify_map(path: pathlib.Path, profile: str, ro_root: str, num_layers: int) 
         # Q1: the model installs the BOOSTED (phase-2, higher-precision) group,
         # not the plain in-grid decode of the same option.
         q1 = sum_b > sum_p
-        # Q2: when the option fuses, at least one rescale is nulled (fusion
-        # processing applied to the installed group). Read straight off the
-        # optimizer write-back overrides.
+        # Q2 (invariant, direct): every rescale the optimizer FUSED AWAY must
+        # install NO noise in the boosted group. We check the cfg field at each
+        # fused skeleton position is None (``fused_still_installed`` lists any that
+        # are NOT). This is correct where the old "count rescale_fused_away
+        # overrides" proxy false-failed: block2's fused rescale (gama1 /
+        # gamma_result_rescale) is structurally a NON-install point at runtime
+        # (None via the active-set filter — only the V-side kt_mask2/q_mask2
+        # rescales install), so the optimizer fuses it but there is nothing to
+        # null → no override, yet the invariant holds (no fused rescale installs
+        # noise). A genuine regression (a fused rescale left installed) populates
+        # ``fused_still_installed`` → still caught. ``fused`` overrides are kept for
+        # the [OK] diagnostic only.
         fused = [e for e in ov_b if getattr(e, "source", "") == "rescale_fused_away"]
-        q2 = (fc < 1) or (len(fused) >= 1)
+        q2 = (fc < 1) or (len(fused_still_installed) == 0)
 
         if not q1:
             print(f"[BAD] {graph_key} opt{oid}: Q1 FAIL — installed boosted sum {sum_b} "
                   f"!> in-grid sum {sum_p} (model not getting the boosted group)")
             problems += 1
         if not q2:
-            print(f"[BAD] {graph_key} opt{oid}: Q2 FAIL — fusion_count={fc} but NO rescale "
-                  f"nulled (rescale_fused_away) in the installed group")
+            print(f"[BAD] {graph_key} opt{oid}: Q2 FAIL — fusion_count={fc} but a FUSED rescale "
+                  f"still installs noise: {fused_still_installed} (should be nulled)")
             problems += 1
         if q1 and q2:
             print(f"[OK] {graph_key} opt{oid}: Q1 boosted-install sum {sum_p}->{sum_b} "
-                  f"(+{sum_b - sum_p}); Q2 fused rescales={len(fused)} "
-                  f"({', '.join(e.cfg_attr for e in fused) or 'n/a'})")
+                  f"(+{sum_b - sum_p}); Q2 no fused rescale installs noise "
+                  f"(nulled overrides={len(fused)}: {', '.join(e.cfg_attr for e in fused) or 'n/a'})")
         checked += 1
     return checked, problems
 
