@@ -57,10 +57,20 @@
 > 防御性检查,catch 真·fc 误分类)。**build 的 [3] verify maps 步骤会自校验 block2 boosted `output_sf==46`**——若仍 ≠46
 > 即 fix 未生效,门禁会 FATAL,不会白跑后续。
 >
-> 本轮(CPU-only、replan/单测、不碰 GPU / 正在跑的 60k):0) 代码门禁(含 canonicalize + kept-option 新测试,必须 PASS
-> 不能 SKIP)→ 逐 profile build maps(fast + 512 随机 golden 交叉 + kept-option golden 自洽,block2 boost 经 canonicalize
-> 到 46)→ apply 加大精度 → 校验 maps(load / option0==baseline / boosted output_sf==target / ≤q_max / ADR-019)→
-> 运行时安装路径校验(Q1/Q2)→ 合成 stage1 record → commit/push。**不跑 60k**。源码包须含 **`e659f49`**(canonicalize 修复)。
+> **第 5 轮服务器反馈:`e659f49` 的核心修复已服务器验证生效(5 profile block2 `output_sf=46`,map verify 全 VERIFY_OK,
+> ADR-019 confirmed),但 [4] 运行时安装校验的 Q2 对 block2 假阳性失败。** 已修(`fced1ed`):block2 fc=1 融合的是 gama1
+> (`gamma_result_rescale`,passthrough 无 sf_post),而它在运行时本就是 None(active-set 过滤,非噪声点;只有 V 侧
+> kt_mask2/q_mask2 装 rescale 噪声)→ apply 无可置空 → 旧 Q2"数 `rescale_fused_away` override ≥1"判据假失败。**不变量
+> (融合 rescale 不装噪声)成立**(gama1 是 None;若它真被装,apply 会置空并记 override,override 缺席恰证明它从未被装)。修复:
+> 新 torch-free `optimizer_output_introspect.fused_skeleton_positions` 从 replan compact 定位所有融合位置,Q2 **直接校验**这些
+> 位置的 cfg 字段为 None(`fused_still_installed` 为空)——block2/block4/block5 全过,真回归(融合 rescale 仍被装)仍能抓到;
+> c6ee25e 的正确性另有 `test_blb_fused_rescale_install.py` 守护。单测 `tests/test_blb_optimizer_output_introspect.py`(6)。
+>
+> 本轮(CPU-only、replan/单测、不碰 GPU / 正在跑的 60k):0) 代码门禁(含 canonicalize + kept-option + introspect 新测试,
+> 必须 PASS 不能 SKIP)→ 逐 profile build maps(fast + 512 随机 golden 交叉 + kept-option golden 自洽,block2 boost 经
+> canonicalize 到 46)→ apply 加大精度 → 校验 maps(load / option0==baseline / boosted output_sf==target / ≤q_max / ADR-019)→
+> 运行时安装路径校验(Q1/Q2,block2 现应通过)→ 合成 stage1 record → commit/push。**不跑 60k**。源码包须含 **`fced1ed`**
+> (canonicalize `e659f49` + Q2 `fced1ed`)。
 
 ```bash
 set -uo pipefail
@@ -80,7 +90,7 @@ python3 -m unittest -v \
   tests.test_blb_precision_boost tests.test_blb_precision_boost_phase2 \
   tests.test_blb_fused_rescale_install \
   tests.test_blb_fusion_enum_baseline tests.test_blb_fusion_kept_option_verify \
-  tests.test_blb_boost_rescale_canonicalize \
+  tests.test_blb_boost_rescale_canonicalize tests.test_blb_optimizer_output_introspect \
   tests.test_blb_fusion_fixed_action tests.test_blb_final_eval_fusion_fixed_action tests.test_blb_glue_boost_install \
   2>&1 | tee "$OUT/t_code.txt"
 grep -qE "^OK" "$OUT/t_code.txt" || { echo "[FATAL] code gate failed"; exit 1; }
