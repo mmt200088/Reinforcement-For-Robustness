@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 import statistics
 import sys
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 ROLLOUT_RE = re.compile(
     r"\[stage1-rollout\]\s+"
@@ -74,7 +74,7 @@ def _safe_div(numer: float, denom: float) -> float | None:
     return float(numer) / float(denom)
 
 
-def parse_log_text(text: str) -> dict[str, Any]:
+def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
     rollout_windows: list[dict[str, Any]] = []
     totals: list[dict[str, Any]] = []
     cache_rows: list[dict[str, Any]] = []
@@ -82,7 +82,7 @@ def parse_log_text(text: str) -> dict[str, Any]:
     devices_seen: set[str] = set()
     warnings: list[str] = []
 
-    for line in str(text or "").splitlines():
+    for line in lines:
         rollout_match = ROLLOUT_RE.search(line)
         if rollout_match:
             devices = _split_csv(rollout_match.group("devices"))
@@ -179,6 +179,16 @@ def parse_log_text(text: str) -> dict[str, Any]:
     }
 
 
+def parse_log_text(text: str) -> dict[str, Any]:
+    return parse_log_lines(str(text or "").splitlines())
+
+
+def _iter_log_lines(paths: Sequence[str]) -> Iterable[str]:
+    for path in paths:
+        with Path(path).open(encoding="utf-8", errors="replace") as handle:
+            yield from handle
+
+
 def render_markdown(summary: Mapping[str, Any]) -> str:
     lines = [
         "# Stage-1 Parallel Report",
@@ -240,8 +250,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
-    text = "\n".join(Path(path).read_text(encoding="utf-8", errors="replace") for path in args.log)
-    summary = parse_log_text(text)
+    summary = parse_log_lines(_iter_log_lines(args.log))
     markdown = render_markdown(summary)
     if args.out_json:
         Path(args.out_json).write_text(

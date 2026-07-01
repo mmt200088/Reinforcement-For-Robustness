@@ -44,6 +44,27 @@ class Stage1ParallelReportTest(unittest.TestCase):
         self.assertEqual(summary["component_seconds"]["collect"], 182.0)
         self.assertAlmostEqual(summary["component_share"]["collect"], 182.0 / 220.0)
 
+    def test_parse_log_lines_accepts_single_pass_iterable(self):
+        report = _load_report_module()
+
+        class SinglePassLines:
+            def __init__(self):
+                self.iterated = False
+
+            def __iter__(self):
+                if self.iterated:
+                    raise AssertionError("log lines were iterated more than once")
+                self.iterated = True
+                yield from SAMPLE_LOG.splitlines()
+
+        summary = report.parse_log_lines(SinglePassLines())
+
+        self.assertEqual(summary["windows"], 2)
+        self.assertEqual(summary["total_episodes"], 120)
+        self.assertEqual(summary["worker_episode_counts_by_device"], {"cuda:0": 60, "cuda:1": 60})
+        self.assertAlmostEqual(summary["throughput_ep_per_hour"], 1963.6363636)
+        self.assertEqual(summary["eval_cache"]["hit_rate"], 0.25)
+
     def test_cli_writes_json_and_markdown(self):
         report = _load_report_module()
 

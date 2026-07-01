@@ -169,6 +169,11 @@ Markdown for server 1GPU vs 4GPU evidence. Existing
 no longer contains `SOS_TOKEN_SOFTMAX`; this optimization pass did not modify
 that core file.
 
+Progress 2026-07-02: `scripts/stage1_parallel_report.py` now parses Stage-1
+training logs from a single-pass line iterator, and
+`scripts/optimization_evidence_bundle.py` streams Stage-1 log files into that
+parser instead of concatenating all logs into one large in-memory string.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:
@@ -361,8 +366,9 @@ verification outputs into one manifest/index, with optional `--tar-gz` archive
 output. This reduces server post-run manual stitching before evidence
 promotion. The project audit artifact scan now walks each artifact root once
 instead of once per pattern, reducing post-run evidence packaging overhead on
-large `experiments/` trees. Actual server A/B artifact pullback is still
-pending.
+large `experiments/` trees. Stage-1 logs and Stage-2 episode diagnostics are
+now streamed by the evidence tools, reducing peak memory during long-run bundle
+generation. Actual server A/B artifact pullback is still pending.
 
 - [ ] **Step 3: Commit/push source and evidence**
 

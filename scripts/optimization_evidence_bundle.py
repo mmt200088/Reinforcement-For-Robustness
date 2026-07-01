@@ -120,12 +120,17 @@ def _run_server_snapshot(args: argparse.Namespace, root: Path, out_dir: Path) ->
     }
 
 
+def _iter_log_lines(paths: Sequence[str]):
+    for path in paths:
+        with Path(path).open(encoding="utf-8", errors="replace") as handle:
+            yield from handle
+
+
 def _run_stage1_report(logs: Sequence[str], out_dir: Path) -> dict[str, Any] | None:
     if not logs:
         return None
     mod = _load_script_module("stage1_parallel_report", SCRIPT_DIR / "stage1_parallel_report.py")
-    text = "\n".join(Path(path).read_text(encoding="utf-8", errors="replace") for path in logs)
-    report = mod.parse_log_text(text)
+    report = mod.parse_log_lines(_iter_log_lines(logs))
     json_path = out_dir / "stage1_parallel_report.json"
     md_path = out_dir / "stage1_parallel_report.md"
     _write_json(json_path, report)
