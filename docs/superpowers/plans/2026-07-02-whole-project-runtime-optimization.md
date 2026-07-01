@@ -125,6 +125,11 @@ for pre-run GPU inventory/utilization, CPU/load, and git dirty-state evidence.
 `scripts/optimization_evidence_bundle.py` now includes this snapshot in every
 bundle.
 
+Progress 2026-07-02: `scripts/server_resource_snapshot.py` now parses offline
+`nvidia-smi` CSV input from a line iterator instead of `Path.read_text()`,
+keeping server evidence capture memory-bounded if a sampled GPU log is supplied
+instead of a tiny one-shot inventory.
+
 - [x] **Step 3: Verify**
 
 Run:

@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Sequence
+from typing import Any, Iterable, Sequence
 
 
 def _int_from_text(value: object, default: int = 0) -> int:
@@ -29,9 +29,9 @@ def _int_from_text(value: object, default: int = 0) -> int:
         return int(default)
 
 
-def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
+def parse_nvidia_smi_lines(lines: Iterable[str]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for raw_line in str(text or "").splitlines():
+    for raw_line in lines:
         line = raw_line.strip()
         if not line:
             continue
@@ -48,6 +48,10 @@ def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
+    return parse_nvidia_smi_lines(str(text or "").splitlines())
 
 
 def _run_command(cmd: Sequence[str], *, cwd: Path | None = None) -> str:
@@ -126,10 +130,11 @@ def _gpu_summary(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
 def collect_snapshot(root: str | Path, *, nvidia_smi_csv: str | Path | None = None) -> dict[str, Any]:
     root_path = Path(root).resolve()
     if nvidia_smi_csv:
-        smi_text = Path(nvidia_smi_csv).read_text(encoding="utf-8", errors="replace")
+        with Path(nvidia_smi_csv).open(encoding="utf-8", errors="replace") as handle:
+            gpus = parse_nvidia_smi_lines(handle)
     else:
         smi_text = _query_nvidia_smi()
-    gpus = parse_nvidia_smi_csv(smi_text)
+        gpus = parse_nvidia_smi_csv(smi_text)
     return {
         "schema": "server_resource_snapshot_v1",
         "created_at": datetime.now(timezone.utc).isoformat(),

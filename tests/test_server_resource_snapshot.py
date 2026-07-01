@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT_PATH = REPO_ROOT / "scripts" / "server_resource_snapshot.py"
@@ -67,6 +68,31 @@ class ServerResourceSnapshotTest(unittest.TestCase):
             self.assertIn("# Server Resource Snapshot", markdown)
             self.assertIn("GPU count: 2", markdown)
             self.assertIn("idle GPUs: 1", markdown)
+
+    def test_collect_snapshot_streams_offline_gpu_csv(self):
+        snap = _load_snapshot_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            smi = root / "nvidia_smi.csv"
+            smi.write_text(
+                "0, NVIDIA A100-SXM4-40GB, 40960, 1024, 57\n"
+                "1, NVIDIA A100-SXM4-40GB, 40960, 0, 0\n",
+                encoding="utf-8",
+            )
+
+            original_read_text = Path.read_text
+
+            def guarded_read_text(path, *args, **kwargs):
+                if Path(path) == smi:
+                    raise AssertionError("offline GPU CSV should be streamed")
+                return original_read_text(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "read_text", guarded_read_text):
+                snapshot = snap.collect_snapshot(root, nvidia_smi_csv=smi)
+
+            self.assertEqual(snapshot["gpu_summary"]["gpu_count"], 2)
+            self.assertEqual(snapshot["gpu_summary"]["idle_gpu_count"], 1)
 
 
 if __name__ == "__main__":
