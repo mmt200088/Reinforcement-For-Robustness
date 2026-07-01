@@ -48,6 +48,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   core Stage-2 RL algorithm files unless the user explicitly coordinates the
   handoff; prefer low-conflict launcher, gate, profiling, reporting, or
   server-orchestration changes for now.
+- Holistic optimization scope, added 2026-07-02: do not repeatedly optimize one
+  visible hotspot while ignoring the rest of the project. Before substantial
+  efficiency work, build or refresh a whole-flow map covering launcher/presets,
+  Stage-1 plaintext RL and evaluation, Stage-2 BLB RL/reward probes, fusion-map
+  and Rescale_optimizer replan paths, Paean/final evaluation, structured data
+  capture, reports, server bridge, and artifact sync. Reason about ordering,
+  dependencies, shared artifacts, and handoff contracts, then choose
+  optimizations by end-to-end wall-clock impact and hardware utilization rather
+  than by isolated local speedups.
 - All Stage-1 and Stage-2 RL runs must mirror raw training data points to the
   project-root `rl_training_data_points/` tree, classified by stage, model,
   dataset, and run id. Persist enough structured JSON/JSONL to redraw paper
