@@ -135,8 +135,10 @@ python3 -m ruff check scripts/launcher_gpu_audit.py tests/test_launcher_gpu_audi
 - Modify: `stage1_rl/eval_cache.py`
 - Modify: `stage1_rl/parallel_runner.py`
 - Modify: `layer_importance_evaluator.py`
+- Create: `scripts/stage1_parallel_report.py`
 - Test: `tests/test_stage1_eval_accel.py`
 - Test: `tests/test_stage1_parallel_semantics.py`
+- Test: `tests/test_stage1_parallel_report.py`
 
 - [ ] **Step 1: Baseline current behavior**
 
@@ -151,6 +153,14 @@ python3 -m unittest tests.test_stage1_eval_accel tests.test_stage1_parallel_sema
 Add Stage-1 window diagnostics for cache hit rate, worker wall seconds,
 model-forward wall seconds, and report-write wall seconds. Write them to the
 existing Stage-1 log/status path, not to a new hot-path report.
+
+Progress 2026-07-02: added torch-free `scripts/stage1_parallel_report.py` to
+summarize existing Stage-1 rollout/cache/component timing logs into JSON and
+Markdown for server 1GPU vs 4GPU evidence. Existing
+`tests.test_stage1_parallel_semantics` currently fails against the dirty
+`layer_importance_evaluator.py` worktree because `_stage1_collect_episode_in_worker`
+no longer contains `SOS_TOKEN_SOFTMAX`; this optimization pass did not modify
+that core file.
 
 - [ ] **Step 3: Optimize only proven redundant work**
 
