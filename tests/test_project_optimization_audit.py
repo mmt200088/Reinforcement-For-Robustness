@@ -33,6 +33,7 @@ class ProjectOptimizationAuditTest(unittest.TestCase):
             _touch(root / "presets" / "mrpc-blb-stage2-rl.conf", "--stage2-rl-variant\nblb_v3\n")
             _touch(root / "layer_importance_evaluator.py", "")
             _touch(root / "stage1_rl" / "parallel_runner.py", "")
+            _touch(root / "scripts" / "stage1_parallel_report.py", "")
             _touch(root / "blb_stage2_rl" / "parallel_runner.py", "")
             _touch(root / "blb_stage2_rl" / "probe_runner.py", "")
             _touch(root / "Rescale_optimizer" / "rescale_optimizer" / "replan_interface.py", "")
@@ -50,6 +51,13 @@ class ProjectOptimizationAuditTest(unittest.TestCase):
         self.assertEqual(launcher["present_files"], 2)
         self.assertEqual(launcher["missing_files"], 2)
         self.assertTrue(launcher["files"][0]["present"])
+        stage1 = report["flow_stages"][1]
+        self.assertTrue(
+            any(
+                item["path"] == "scripts/stage1_parallel_report.py" and item["present"]
+                for item in stage1["files"]
+            )
+        )
         self.assertEqual(report["summary"]["total_flow_stages"], 6)
         self.assertGreater(report["summary"]["missing_files"], 0)
 

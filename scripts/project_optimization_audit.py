@@ -38,6 +38,7 @@ FLOW_STAGES: list[dict[str, Any]] = [
             "stage1_rl/parallel_runner.py",
             "stage1_rl/eval_cache.py",
             "function_handler.py",
+            "scripts/stage1_parallel_report.py",
         ],
         "optimization_surfaces": [
             "validation_full forward reuse",
@@ -228,6 +229,7 @@ def build_project_audit(
         "artifact_summary": summarize_artifacts(root_path, artifact_roots),
         "next_steps": [
             "Run this audit before and after performance work.",
+            "Use stage1_parallel_report.py for Stage-1 rollout/cache timing evidence.",
             "Use gpu_utilization_report.py for run-level GPU evidence.",
             "Use stage2_ngpu_ab_compare.py before promoting Stage-2 GPU defaults.",
             "Keep report rendering off the training hot path when possible.",
