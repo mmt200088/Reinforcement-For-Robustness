@@ -384,6 +384,12 @@ large `experiments/` trees. Stage-1 logs and Stage-2 episode diagnostics are
 now streamed by the evidence tools, reducing peak memory during long-run bundle
 generation. Actual server A/B artifact pullback is still pending.
 
+Progress 2026-07-02: `scripts/blb_make_run_manifest.py` now hashes the
+canonical Rescale_optimizer source/config subset by streaming file chunks
+instead of calling `Path.read_bytes()` for every `.py`/`.json` file. This keeps
+Trust-0 manifest generation memory-bounded for larger optimizer/config trees
+while preserving the manifest hash format.
+
 - [ ] **Step 3: Commit/push source and evidence**
 
 Never leave canonical source changes only on the server.

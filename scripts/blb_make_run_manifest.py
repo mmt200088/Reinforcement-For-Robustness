@@ -5,10 +5,10 @@ import argparse
 import hashlib
 import json
 import os
+from pathlib import Path
 import platform
 import subprocess
 import sys
-from pathlib import Path
 from typing import Any, Dict, Iterable, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +38,12 @@ def _file_sha256(path: Path) -> str | None:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _update_hash_from_file(h: Any, path: Path) -> None:
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(chunk)
 
 
 def _dir_sha256(path: Path) -> str | None:
@@ -104,7 +110,7 @@ def _canonical_rescale_optimizer_hash(root_text: str | None, profile: str) -> st
             rel = file_path.as_posix()
         h.update(rel.encode("utf-8"))
         h.update(b"\0")
-        h.update(file_path.read_bytes())
+        _update_hash_from_file(h, file_path)
         h.update(b"\0")
     return h.hexdigest()
 
