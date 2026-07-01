@@ -31,6 +31,7 @@ class ProjectOptimizationAuditTest(unittest.TestCase):
             root = Path(td)
             _touch(root / "llama_7B_LayerImportance.sh", "#!/usr/bin/env bash\n")
             _touch(root / "presets" / "mrpc-blb-stage2-rl.conf", "--stage2-rl-variant\nblb_v3\n")
+            _touch(root / "scripts" / "server_resource_snapshot.py", "")
             _touch(root / "layer_importance_evaluator.py", "")
             _touch(root / "stage1_rl" / "parallel_runner.py", "")
             _touch(root / "scripts" / "stage1_parallel_report.py", "")
@@ -49,9 +50,15 @@ class ProjectOptimizationAuditTest(unittest.TestCase):
             ["launcher", "stage1", "stage2", "rescale", "paean", "artifacts"],
         )
         launcher = report["flow_stages"][0]
-        self.assertEqual(launcher["present_files"], 2)
+        self.assertEqual(launcher["present_files"], 3)
         self.assertEqual(launcher["missing_files"], 2)
         self.assertTrue(launcher["files"][0]["present"])
+        self.assertTrue(
+            any(
+                item["path"] == "scripts/server_resource_snapshot.py" and item["present"]
+                for item in launcher["files"]
+            )
+        )
         stage1 = report["flow_stages"][1]
         self.assertTrue(
             any(

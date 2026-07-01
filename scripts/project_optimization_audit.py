@@ -22,6 +22,7 @@ FLOW_STAGES: list[dict[str, Any]] = [
             "presets/mrpc-blb-stage2-rl.conf",
             "Paean/run_final_eval.sh",
             "SERVER_COMMAND.md",
+            "scripts/server_resource_snapshot.py",
         ],
         "optimization_surfaces": [
             "GPU flag forwarding",
@@ -230,6 +231,7 @@ def build_project_audit(
         "artifact_summary": summarize_artifacts(root_path, artifact_roots),
         "next_steps": [
             "Run this audit before and after performance work.",
+            "Use server_resource_snapshot.py before expensive server runs.",
             "Use stage1_parallel_report.py for Stage-1 rollout/cache timing evidence.",
             "Use gpu_utilization_report.py for run-level GPU evidence.",
             "Use optimization_evidence_bundle.py to package server evidence before promotion.",

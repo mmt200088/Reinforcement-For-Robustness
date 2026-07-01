@@ -101,8 +101,10 @@ git commit -m "Add whole-project optimization plan and audit"
 **Files:**
 
 - Modify: `scripts/launcher_gpu_audit.py`
+- Create: `scripts/server_resource_snapshot.py`
 - Modify: `llama_7B_LayerImportance.sh`
 - Test: `tests/test_launcher_gpu_audit.py`
+- Test: `tests/test_server_resource_snapshot.py`
 - Test: `tests/test_stage2_persistent_launcher.py`
 
 - [x] **Step 1: Extend tests**
@@ -117,6 +119,11 @@ Add tests for these cases:
 
 Keep default behavior non-fatal. Add strict failure only through
 `RFR_GPU_AUDIT_STRICT=1`.
+
+Progress 2026-07-02: added torch-free `scripts/server_resource_snapshot.py`
+for pre-run GPU inventory/utilization, CPU/load, and git dirty-state evidence.
+`scripts/optimization_evidence_bundle.py` now includes this snapshot in every
+bundle.
 
 - [x] **Step 3: Verify**
 
@@ -320,6 +327,7 @@ python3 -m unittest tests.test_rl_data_points tests.test_stage2_persistent_outpu
 
 - Modify: `SERVER_COMMAND.md`
 - Use: `scripts/project_optimization_audit.py`
+- Use: `scripts/server_resource_snapshot.py`
 - Use: `scripts/gpu_utilization_report.py`
 - Use: `scripts/stage1_parallel_report.py`
 - Use: `scripts/optimization_evidence_bundle.py`

@@ -100,6 +100,24 @@ def _run_project_audit(root: Path, out_dir: Path, artifact_roots: Sequence[str])
     }
 
 
+def _run_server_snapshot(args: argparse.Namespace, root: Path, out_dir: Path) -> dict[str, Any]:
+    mod = _load_script_module("server_resource_snapshot", SCRIPT_DIR / "server_resource_snapshot.py")
+    report = mod.collect_snapshot(
+        root,
+        nvidia_smi_csv=args.nvidia_smi_csv or None,
+    )
+    json_path = out_dir / "server_resource_snapshot.json"
+    md_path = out_dir / "server_resource_snapshot.md"
+    _write_json(json_path, report)
+    _write_text(md_path, mod.render_markdown(report))
+    return {
+        "json": json_path.name,
+        "markdown": md_path.name,
+        "gpu_summary": report.get("gpu_summary", {}),
+        "git": report.get("git", {}),
+    }
+
+
 def _run_stage1_report(logs: Sequence[str], out_dir: Path) -> dict[str, Any] | None:
     if not logs:
         return None
@@ -180,7 +198,12 @@ def render_index(manifest: dict[str, Any]) -> str:
     if manifest.get("git_commit"):
         lines.append(f"Git commit: `{manifest['git_commit']}`")
     lines.extend(["", "## Reports"])
-    for section in ("project_audit", "stage1_parallel_report", "stage2_gpu_utilization_report"):
+    for section in (
+        "server_resource_snapshot",
+        "project_audit",
+        "stage1_parallel_report",
+        "stage2_gpu_utilization_report",
+    ):
         payload = manifest.get(section)
         if not payload:
             continue
@@ -217,6 +240,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "warnings": [],
     }
 
+    manifest["server_resource_snapshot"] = _run_server_snapshot(args, root, out_dir)
     manifest["project_audit"] = _run_project_audit(root, out_dir, args.artifact_root)
     stage1_report = _run_stage1_report(args.stage1_log, out_dir)
     if stage1_report:
