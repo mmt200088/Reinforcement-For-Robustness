@@ -39,6 +39,7 @@ class ProjectOptimizationAuditTest(unittest.TestCase):
             _touch(root / "Rescale_optimizer" / "rescale_optimizer" / "replan_interface.py", "")
             _touch(root / "Paean" / "run_final_eval.py", "")
             _touch(root / "rl_data_points.py", "")
+            _touch(root / "scripts" / "optimization_evidence_bundle.py", "")
 
             report = audit.build_project_audit(root)
 
@@ -59,6 +60,13 @@ class ProjectOptimizationAuditTest(unittest.TestCase):
             )
         )
         self.assertEqual(report["summary"]["total_flow_stages"], 6)
+        artifacts = report["flow_stages"][-1]
+        self.assertTrue(
+            any(
+                item["path"] == "scripts/optimization_evidence_bundle.py" and item["present"]
+                for item in artifacts["files"]
+            )
+        )
         self.assertGreater(report["summary"]["missing_files"], 0)
 
     def test_artifact_summary_counts_known_runtime_evidence_files(self):

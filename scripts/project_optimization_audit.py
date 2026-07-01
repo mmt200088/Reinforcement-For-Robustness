@@ -103,6 +103,7 @@ FLOW_STAGES: list[dict[str, Any]] = [
         "files": [
             "rl_data_points.py",
             "scripts/verify_stage2_persistent_outputs.py",
+            "scripts/optimization_evidence_bundle.py",
             "tools/paper_figures.py",
             "experiments/index.md",
         ],
@@ -231,6 +232,7 @@ def build_project_audit(
             "Run this audit before and after performance work.",
             "Use stage1_parallel_report.py for Stage-1 rollout/cache timing evidence.",
             "Use gpu_utilization_report.py for run-level GPU evidence.",
+            "Use optimization_evidence_bundle.py to package server evidence before promotion.",
             "Use stage2_ngpu_ab_compare.py before promoting Stage-2 GPU defaults.",
             "Keep report rendering off the training hot path when possible.",
         ],

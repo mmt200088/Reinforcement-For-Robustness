@@ -284,9 +284,11 @@ the same fixed action before/after.
 
 - Modify: `rl_data_points.py`
 - Modify: `scripts/verify_stage2_persistent_outputs.py`
+- Create: `scripts/optimization_evidence_bundle.py`
 - Modify report generators under `reports/` or `tools/`
 - Test: `tests/test_rl_data_points.py`
 - Test: `tests/test_stage2_persistent_output_verifier.py`
+- Test: `tests/test_optimization_evidence_bundle.py`
 
 - [x] **Step 1: Protect data completeness**
 
@@ -319,6 +321,8 @@ python3 -m unittest tests.test_rl_data_points tests.test_stage2_persistent_outpu
 - Modify: `SERVER_COMMAND.md`
 - Use: `scripts/project_optimization_audit.py`
 - Use: `scripts/gpu_utilization_report.py`
+- Use: `scripts/stage1_parallel_report.py`
+- Use: `scripts/optimization_evidence_bundle.py`
 - Use: `scripts/stage2_ngpu_ab_compare.py`
 
 - [ ] **Step 1: Write one server command per promoted optimization**
@@ -336,6 +340,13 @@ Each command must record:
 
 Import compact summaries into `experiments/server_command_runs/` or
 `reports/html_reports/` as appropriate.
+
+Progress 2026-07-02: added torch-free
+`scripts/optimization_evidence_bundle.py`, which packages project audit,
+Stage-1 parallel timing, Stage-2 GPU utilization, and Stage-2 persistent
+verification outputs into one manifest/index. This reduces server post-run
+manual stitching before evidence promotion; actual server A/B artifact pullback
+is still pending.
 
 - [ ] **Step 3: Commit/push source and evidence**
 
