@@ -18,6 +18,12 @@ import sys
 from typing import Any, Iterable, Mapping, Sequence
 
 LOW_UTIL_THRESHOLD_PCT = 10.0
+HOT_PATH_TIMING_FIELDS = (
+    "jsonl_write_wall_seconds",
+    "report_render_wall_seconds",
+    "diagnostics_write_wall_seconds",
+    "episode_callback_wall_seconds",
+)
 
 
 def _device_sort_key(device: str) -> tuple[int, int | str]:
@@ -113,6 +119,37 @@ def _int_list(value: object) -> list[int]:
         if parsed is not None:
             out.append(int(parsed))
     return out
+
+
+def _per_device_probe_walls(
+    row: Mapping[str, Any],
+    devices: Sequence[str],
+    fallback_wall_seconds: float | None,
+) -> dict[str, float]:
+    mapped = row.get("terminal_probe_wall_seconds_by_device")
+    if isinstance(mapped, Mapping):
+        out: dict[str, float] = {}
+        for raw_device, raw_value in mapped.items():
+            device = normalize_device_token(raw_device)
+            value = _float_value(raw_value)
+            if device and value is not None:
+                out[device] = value
+        if out:
+            return out
+
+    listed = row.get("terminal_probe_device_wall_seconds")
+    if isinstance(listed, list) and len(listed) == len(devices):
+        out = {}
+        for device, raw_value in zip(devices, listed):  # noqa: B905 - lengths checked above for py39.
+            value = _float_value(raw_value)
+            if value is not None:
+                out[device] = value
+        if out:
+            return out
+
+    if fallback_wall_seconds is None:
+        return {}
+    return {device: fallback_wall_seconds for device in devices}
 
 
 def _series_stats(values: Sequence[float]) -> dict[str, float | int | None]:
@@ -211,6 +248,9 @@ def summarize_run(
     recommendations: list[str] = []
     terminal_probe_wall: list[float] = []
     policy_rollout_wall: list[float] = []
+    probe_episode_counts: collections.Counter[str] = collections.Counter()
+    probe_wall_by_device: dict[str, list[float]] = collections.defaultdict(list)
+    hot_path_timings: dict[str, list[float]] = collections.defaultdict(list)
     mismatched_trial_rows = 0
 
     for row in rows:
@@ -219,6 +259,8 @@ def summarize_run(
         if devices:
             used_devices.update(devices)
             device_sets.add(tuple(devices))
+            for device in devices:
+                probe_episode_counts[device] += 1
         if counts:
             trial_splits.add(tuple(counts))
         if devices and counts:
@@ -231,9 +273,16 @@ def summarize_run(
         probe_s = _float_value(row.get("terminal_probe_wall_seconds"))
         if probe_s is not None:
             terminal_probe_wall.append(probe_s)
+        if devices:
+            for device, wall_s in _per_device_probe_walls(row, devices, probe_s).items():
+                probe_wall_by_device[device].append(wall_s)
         policy_s = _float_value(row.get("policy_rollout_wall_seconds"))
         if policy_s is not None:
             policy_rollout_wall.append(policy_s)
+        for field in HOT_PATH_TIMING_FIELDS:
+            value = _float_value(row.get(field))
+            if value is not None:
+                hot_path_timings[field].append(value)
 
     visible = parse_device_spec(visible_devices)
     if not visible:
@@ -265,11 +314,20 @@ def summarize_run(
         "visible_devices": sorted(visible, key=_device_sort_key),
         "used_probe_devices": sorted_used,
         "idle_visible_devices": idle_visible,
+        "probe_episode_counts_by_device": dict(sorted(probe_episode_counts.items(), key=lambda item: _device_sort_key(item[0]))),
         "probe_trial_counts_by_device": dict(sorted(trial_counts.items(), key=lambda item: _device_sort_key(item[0]))),
+        "probe_wall_seconds_by_device": {
+            device: _series_stats(values)
+            for device, values in sorted(probe_wall_by_device.items(), key=lambda item: _device_sort_key(item[0]))
+        },
         "probe_device_sets": [list(item) for item in sorted(device_sets, key=lambda item: (_device_sort_key(item[0]) if item else (9, ""), item))],
         "probe_trial_splits": [list(item) for item in sorted(trial_splits)],
         "terminal_probe_wall_seconds": _series_stats(terminal_probe_wall),
         "policy_rollout_wall_seconds": _series_stats(policy_rollout_wall),
+        "hot_path_wall_seconds": {
+            field: _series_stats(values)
+            for field, values in sorted(hot_path_timings.items())
+        },
         "gpu_utilization": gpu_utilization,
         "warnings": warnings,
         "recommendations": sorted(set(recommendations)),
@@ -296,6 +354,28 @@ def render_markdown(summary: Mapping[str, Any]) -> str:
     lines.append(f"Terminal probe mean seconds: {probe_stats.get('mean')}")
     lines.append(f"Policy rollout mean seconds: {policy_stats.get('mean')}")
     lines.append("")
+    lines.append("## Probe Wall By Device")
+    wall_by_device = summary.get("probe_wall_seconds_by_device") or {}
+    episodes_by_device = summary.get("probe_episode_counts_by_device") or {}
+    if wall_by_device:
+        for device, stats in wall_by_device.items():
+            lines.append(
+                f"- {device}: episodes={episodes_by_device.get(device, 0)}, "
+                f"mean_s={stats.get('mean')}, min_s={stats.get('min')}, "
+                f"max_s={stats.get('max')}"
+            )
+    else:
+        lines.append("- none")
+    lines.append("")
+    hot_path = summary.get("hot_path_wall_seconds") or {}
+    if hot_path:
+        lines.append("## Hot Path Timing")
+        for field, stats in hot_path.items():
+            lines.append(
+                f"- {field}: count={stats.get('count')}, mean_s={stats.get('mean')}, "
+                f"max_s={stats.get('max')}"
+            )
+        lines.append("")
     lines.append("## Trial Balance")
     counts = summary.get("probe_trial_counts_by_device") or {}
     if counts:

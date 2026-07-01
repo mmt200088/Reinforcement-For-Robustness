@@ -29,7 +29,7 @@
 - Create: `tests/test_project_optimization_audit.py`
 - Verify: `docs/superpowers/specs/2026-07-02-whole-project-runtime-optimization-design.md`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create tests that build a temporary mini-repo with representative files:
 
@@ -59,7 +59,7 @@ python3 -m unittest tests.test_project_optimization_audit -v
 
 Expected before implementation: FAIL because the script does not exist.
 
-- [ ] **Step 2: Implement the audit tool**
+- [x] **Step 2: Implement the audit tool**
 
 Implement these functions:
 
@@ -77,7 +77,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 The tool must be stdlib-only, deterministic, and safe on a dirty worktree. It
 must not import torch or training modules.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run:
 
@@ -89,7 +89,7 @@ python3 -m ruff check scripts/project_optimization_audit.py tests/test_project_o
 
 Expected: all pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add scripts/project_optimization_audit.py tests/test_project_optimization_audit.py docs/superpowers/specs/2026-07-02-whole-project-runtime-optimization-design.md docs/superpowers/plans/2026-07-02-whole-project-runtime-optimization.md
@@ -105,7 +105,7 @@ git commit -m "Add whole-project optimization plan and audit"
 - Test: `tests/test_launcher_gpu_audit.py`
 - Test: `tests/test_stage2_persistent_launcher.py`
 
-- [ ] **Step 1: Extend tests**
+- [x] **Step 1: Extend tests**
 
 Add tests for these cases:
 
@@ -113,12 +113,12 @@ Add tests for these cases:
 - Stage-2 `--stage2-rl-devices` and `--blb-v3-reward-devices` disagree.
 - `RFR_GPU_AUDIT_STRICT=1` fails only when warnings exist.
 
-- [ ] **Step 2: Implement warnings only**
+- [x] **Step 2: Implement warnings only**
 
 Keep default behavior non-fatal. Add strict failure only through
 `RFR_GPU_AUDIT_STRICT=1`.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run:
 
@@ -188,6 +188,13 @@ Ensure reports include:
 - replan wall mean.
 - JSONL write/report render wall time when present.
 
+Progress 2026-07-02: `scripts/gpu_utilization_report.py` now reports
+per-device probe episode counts, per-device terminal probe wall statistics,
+global policy rollout wall statistics, and optional JSONL/report hot-path wall
+fields when they are present in `episodes.jsonl`. Remaining evidence work:
+add replan wall means to the A/B comparison path without touching Stage-2 RL
+core during concurrent edits.
+
 - [ ] **Step 2: Do not change core RL during concurrent edits**
 
 Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.
@@ -243,7 +250,7 @@ Use server only for large fusion-map wall-clock evidence.
 - Test: `tests/test_final_eval_layout.py`
 - Test: `tests/test_blb_final_eval_feasibility.py`
 
-- [ ] **Step 1: Add final-eval plan diagnostics**
+- [x] **Step 1: Add final-eval plan diagnostics**
 
 Expose how many configs, repeats, random controls, and expected model loads a
 Paean run will perform before launch.

@@ -39,7 +39,9 @@ class GpuUtilizationReportTest(unittest.TestCase):
                         "terminal_probe_devices": ["cuda:0", "cuda:1"],
                         "terminal_probe_trial_counts": [2, 2],
                         "terminal_probe_wall_seconds": 1.5,
+                        "terminal_probe_device_wall_seconds": [1.0, 2.0],
                         "policy_rollout_wall_seconds": 0.5,
+                        "jsonl_write_wall_seconds": 0.1,
                     },
                     {
                         "episode": 1,
@@ -47,6 +49,7 @@ class GpuUtilizationReportTest(unittest.TestCase):
                         "terminal_probe_trial_counts": [4],
                         "terminal_probe_wall_seconds": 2.5,
                         "policy_rollout_wall_seconds": 0.25,
+                        "report_render_wall_seconds": 0.3,
                     },
                 ],
             )
@@ -61,10 +64,15 @@ class GpuUtilizationReportTest(unittest.TestCase):
         self.assertEqual(summary["used_probe_devices"], ["cuda:0", "cuda:1"])
         self.assertEqual(summary["idle_visible_devices"], ["cuda:2", "cuda:3"])
         self.assertEqual(summary["probe_trial_counts_by_device"], {"cuda:0": 6, "cuda:1": 2})
+        self.assertEqual(summary["probe_episode_counts_by_device"], {"cuda:0": 2, "cuda:1": 1})
+        self.assertEqual(summary["probe_wall_seconds_by_device"]["cuda:0"]["mean"], 1.75)
+        self.assertEqual(summary["probe_wall_seconds_by_device"]["cuda:1"]["mean"], 2.0)
         self.assertEqual(summary["probe_device_sets"], [["cuda:0"], ["cuda:0", "cuda:1"]])
         self.assertEqual(summary["probe_trial_splits"], [[2, 2], [4]])
         self.assertEqual(summary["terminal_probe_wall_seconds"]["mean"], 2.0)
         self.assertEqual(summary["policy_rollout_wall_seconds"]["mean"], 0.375)
+        self.assertEqual(summary["hot_path_wall_seconds"]["jsonl_write_wall_seconds"]["mean"], 0.1)
+        self.assertEqual(summary["hot_path_wall_seconds"]["report_render_wall_seconds"]["mean"], 0.3)
         self.assertTrue(
             any("visible GPUs were not used by terminal probes" in item for item in summary["warnings"])
         )
@@ -147,6 +155,8 @@ class GpuUtilizationReportTest(unittest.TestCase):
             markdown = out_md.read_text(encoding="utf-8")
             self.assertIn("# GPU Utilization Report", markdown)
             self.assertIn("Used probe devices: cuda:0, cuda:1", markdown)
+            self.assertIn("## Probe Wall By Device", markdown)
+            self.assertIn("- cuda:0: episodes=1", markdown)
 
 
 if __name__ == "__main__":
