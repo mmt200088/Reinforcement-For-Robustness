@@ -10,9 +10,38 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
+import sys
 from typing import Any
+
+REQUIRED_EPISODE_FIELDS = (
+    "episode",
+    "total_reward",
+    "terminal_reward",
+    "valid_steps",
+    "invalid_steps",
+    "total_bits",
+    "fusion_count",
+    "terminal_priority",
+    "terminal_loss_mean",
+    "terminal_metric1_mean",
+    "terminal_metric2_mean",
+    "policy_rollout_wall_seconds",
+    "per_step_optimizer_wall_seconds",
+)
+
+REQUIRED_PPO_UPDATE_FIELDS = (
+    "update",
+    "completed_episodes",
+    "policy_loss",
+    "value_loss",
+    "entropy",
+    "clip_fraction",
+    "n_samples",
+    "window_mean_return",
+    "best_reward_so_far",
+    "elapsed_sec",
+)
 
 
 def _count_jsonl(path: Path) -> int:
@@ -24,6 +53,35 @@ def _count_jsonl(path: Path) -> int:
             json.loads(line)
             n += 1
     return n
+
+
+def _count_jsonl_with_required_fields(path: Path, required_fields: tuple[str, ...], label: str) -> tuple[int, list[str]]:
+    n = 0
+    failures: list[str] = []
+    missing_examples: list[str] = []
+    missing_row_count = 0
+    with path.open("r", encoding="utf-8") as f:
+        for line_no, line in enumerate(f, start=1):
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            n += 1
+            if not isinstance(payload, dict):
+                failures.append(f"{label}:{line_no} is not a JSON object")
+                continue
+            missing = [field for field in required_fields if field not in payload]
+            if missing:
+                missing_row_count += 1
+                if len(missing_examples) < 3:
+                    missing_examples.append(
+                        f"line {line_no}: {', '.join(missing)}"
+                    )
+    if missing_row_count:
+        failures.append(
+            f"{label} missing required fields in {missing_row_count} rows "
+            f"({'; '.join(missing_examples)})"
+        )
+    return n, failures
 
 
 def _resolve_progress_dir(args: argparse.Namespace) -> Path:
@@ -148,24 +206,34 @@ def verify(args: argparse.Namespace) -> int:
     episodes_path = progress / "diagnostics" / "episodes.jsonl"
     if episodes_path.is_file():
         try:
-            n_episode_rows = _count_jsonl(episodes_path)
+            n_episode_rows, field_failures = _count_jsonl_with_required_fields(
+                episodes_path,
+                REQUIRED_EPISODE_FIELDS,
+                "episodes.jsonl",
+            )
             successes.append(f"episodes.jsonl rows={n_episode_rows}")
             if n_episode_rows < int(args.min_episodes):
                 failures.append(
                     f"episodes.jsonl rows {n_episode_rows} < required {int(args.min_episodes)}"
                 )
+            failures.extend(field_failures)
         except Exception as exc:
             failures.append(f"cannot parse diagnostics/episodes.jsonl: {exc}")
 
     ppo_path = progress / "diagnostics" / "ppo_updates.jsonl"
     if ppo_path.is_file():
         try:
-            n_ppo_rows = _count_jsonl(ppo_path)
+            n_ppo_rows, field_failures = _count_jsonl_with_required_fields(
+                ppo_path,
+                REQUIRED_PPO_UPDATE_FIELDS,
+                "ppo_updates.jsonl",
+            )
             successes.append(f"ppo_updates.jsonl rows={n_ppo_rows}")
             if n_ppo_rows < int(args.min_ppo_updates):
                 failures.append(
                     f"ppo_updates.jsonl rows {n_ppo_rows} < required {int(args.min_ppo_updates)}"
                 )
+            failures.extend(field_failures)
         except Exception as exc:
             failures.append(f"cannot parse diagnostics/ppo_updates.jsonl: {exc}")
 

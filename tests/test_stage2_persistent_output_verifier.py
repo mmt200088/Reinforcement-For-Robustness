@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -43,11 +42,45 @@ def _write_minimal_progress(
     (progress_dir / "blb_stage2_training_curve.png").write_bytes(b"png")
     (progress_dir / "blb_stage2_entropy_curve.png").write_bytes(b"png")
     (progress_dir / "diagnostics" / "episodes.jsonl").write_text(
-        "\n".join(json.dumps({"episode": i, "total_reward": float(i)}) for i in range(3)) + "\n",
+        "\n".join(
+            json.dumps(
+                {
+                    "episode": i,
+                    "total_reward": float(i),
+                    "terminal_reward": float(i) / 2.0,
+                    "valid_steps": 47,
+                    "invalid_steps": 0,
+                    "total_bits": 123,
+                    "fusion_count": 1,
+                    "terminal_priority": 3,
+                    "terminal_loss_mean": 0.35,
+                    "terminal_metric1_mean": 0.88,
+                    "terminal_metric2_mean": 0.87,
+                    "policy_rollout_wall_seconds": 0.2,
+                    "per_step_optimizer_wall_seconds": 0.1,
+                }
+            )
+            for i in range(3)
+        )
+        + "\n",
         encoding="utf-8",
     )
     (progress_dir / "diagnostics" / "ppo_updates.jsonl").write_text(
-        json.dumps({"update": 1, "completed_episodes": 3, "entropy": 1.0}) + "\n",
+        json.dumps(
+            {
+                "update": 1,
+                "completed_episodes": 3,
+                "policy_loss": 0.1,
+                "value_loss": 0.2,
+                "entropy": 1.0,
+                "clip_fraction": 0.01,
+                "n_samples": 141,
+                "window_mean_return": 1.0,
+                "best_reward_so_far": 2.0,
+                "elapsed_sec": 12.0,
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
     (progress_dir / "diagnostics" / "diagnostics_summary.md").write_text(
@@ -145,6 +178,35 @@ class Stage2PersistentOutputVerifierTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("blb_stage2_live_summary.md", result.stdout + result.stderr)
         self.assertIn("VERIFY_FAIL", result.stdout + result.stderr)
+
+    def test_verifier_fails_when_episode_required_fields_are_missing(self):
+        with tempfile.TemporaryDirectory(prefix="stage2_verify_missing_fields_") as td:
+            run_dir = Path(td) / "persistent" / "rl" / "bert-base" / "mrpc" / "s1t0.001_s2t0.001_s2st3.0__smoke"
+            progress_dir = run_dir / "stage2_noise" / "progress"
+            _write_minimal_progress(progress_dir)
+            (progress_dir / "diagnostics" / "episodes.jsonl").write_text(
+                json.dumps({"episode": 0, "total_reward": 1.0}) + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/verify_stage2_persistent_outputs.py",
+                    "--run-dir",
+                    str(run_dir),
+                    "--min-episodes",
+                    "1",
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("episodes.jsonl missing required fields", result.stdout + result.stderr)
+        self.assertIn("terminal_reward", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

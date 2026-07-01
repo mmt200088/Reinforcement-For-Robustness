@@ -288,10 +288,16 @@ the same fixed action before/after.
 - Test: `tests/test_rl_data_points.py`
 - Test: `tests/test_stage2_persistent_output_verifier.py`
 
-- [ ] **Step 1: Protect data completeness**
+- [x] **Step 1: Protect data completeness**
 
 Add tests that fail if required structured fields are dropped from Stage-1 or
 Stage-2 mirrored data.
+
+Progress 2026-07-02: strengthened
+`scripts/verify_stage2_persistent_outputs.py` so Stage-2 persistent verification
+fails when `episodes.jsonl` or `ppo_updates.jsonl` drops required reward,
+metric, cost, action-summary, PPO, or timing fields. This did not modify the
+dirty `rl_data_points.py` worktree file.
 
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
