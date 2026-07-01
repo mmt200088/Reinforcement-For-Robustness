@@ -223,6 +223,11 @@ single-pass row summarizer instead of loading every episode into memory first.
 This keeps report generation and evidence bundling lightweight for 60k+ episode
 Stage-2 runs while preserving the existing CLI output shape.
 
+Progress 2026-07-02: `scripts/gpu_utilization_report.py` now summarizes
+optional `nvidia-smi` CSV samples with running per-device aggregates instead of
+keeping every utilization sample in memory before computing means and maxima.
+This keeps GPU evidence reports memory-bounded for long server sampling logs.
+
 Progress 2026-07-02: extracted the reward-probe scaling benchmark postprocessor
 from `scripts/stage2_reward_probe_scaling_benchmark.sh` into
 `scripts/stage2_reward_probe_scaling_report.py`. The new report script is

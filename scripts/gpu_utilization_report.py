@@ -196,7 +196,15 @@ def _load_nvidia_smi_csv(path: str | Path | None) -> dict[str, dict[str, float |
     csv_path = Path(path)
     if not csv_path.is_file():
         raise FileNotFoundError(f"nvidia-smi CSV not found: {csv_path}")
-    samples: dict[str, list[tuple[float, float | None]]] = collections.defaultdict(list)
+    samples: dict[str, dict[str, float | int]] = collections.defaultdict(
+        lambda: {
+            "samples": 0,
+            "util_sum": 0.0,
+            "max_util_pct": 0.0,
+            "active_samples": 0,
+            "max_memory_mib": 0.0,
+        }
+    )
     with csv_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         for raw_row in reader:
@@ -226,18 +234,24 @@ def _load_nvidia_smi_csv(path: str | Path | None) -> dict[str, dict[str, float |
             util_pct = _float_value(util)
             mem_mib = _float_value(mem)
             if device and util_pct is not None:
-                samples[device].append((float(util_pct), mem_mib))
+                stats = samples[device]
+                stats["samples"] = int(stats["samples"]) + 1
+                stats["util_sum"] = float(stats["util_sum"]) + float(util_pct)
+                stats["max_util_pct"] = max(float(stats["max_util_pct"]), float(util_pct))
+                if float(util_pct) > 0.0:
+                    stats["active_samples"] = int(stats["active_samples"]) + 1
+                if mem_mib is not None:
+                    stats["max_memory_mib"] = max(float(stats["max_memory_mib"]), float(mem_mib))
     summary: dict[str, dict[str, float | int]] = {}
     for device in sorted(samples, key=_device_sort_key):
-        util_values = [item[0] for item in samples[device]]
-        mem_values = [item[1] for item in samples[device] if item[1] is not None]
-        active = [value for value in util_values if value > 0.0]
+        stats = samples[device]
+        sample_count = int(stats["samples"])
         summary[device] = {
-            "samples": len(util_values),
-            "mean_util_pct": float(statistics.mean(util_values)),
-            "max_util_pct": float(max(util_values)),
-            "active_sample_rate": float(len(active) / len(util_values)),
-            "max_memory_mib": float(max(mem_values)) if mem_values else 0.0,
+            "samples": sample_count,
+            "mean_util_pct": float(stats["util_sum"]) / float(sample_count),
+            "max_util_pct": float(stats["max_util_pct"]),
+            "active_sample_rate": float(stats["active_samples"]) / float(sample_count),
+            "max_memory_mib": float(stats["max_memory_mib"]),
         }
     return summary
 

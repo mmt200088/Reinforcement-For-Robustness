@@ -119,6 +119,35 @@ class GpuUtilizationReportTest(unittest.TestCase):
         self.assertEqual(summary["gpu_utilization"]["cuda:1"]["active_sample_rate"], 0.5)
         self.assertTrue(any("cuda:1 max utilization 3.0%" in item for item in summary["warnings"]))
 
+    def test_nvidia_smi_csv_summary_uses_running_aggregates(self):
+        report = _load_report_module()
+        original_mean = report.statistics.mean
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            smi = root / "nvidia_smi.csv"
+            smi.write_text(
+                "timestamp,index,utilization.gpu,memory.used\n"
+                "2026/07/02 00:00:00.000,0,20 %,1000 MiB\n"
+                "2026/07/02 00:00:01.000,0,40 %,1500 MiB\n",
+                encoding="utf-8",
+            )
+
+            def fail_mean(_values):
+                raise AssertionError("nvidia-smi summary should not materialize samples for statistics.mean")
+
+            try:
+                report.statistics.mean = fail_mean
+                summary = report._load_nvidia_smi_csv(smi)
+            finally:
+                report.statistics.mean = original_mean
+
+        self.assertEqual(summary["cuda:0"]["samples"], 2)
+        self.assertEqual(summary["cuda:0"]["mean_util_pct"], 30.0)
+        self.assertEqual(summary["cuda:0"]["max_util_pct"], 40.0)
+        self.assertEqual(summary["cuda:0"]["active_sample_rate"], 1.0)
+        self.assertEqual(summary["cuda:0"]["max_memory_mib"], 1500.0)
+
     def test_summarizes_rows_from_single_pass_iterable(self):
         report = _load_report_module()
 
