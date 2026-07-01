@@ -65,6 +65,14 @@ def _logical_device_list(count: int) -> str:
     return ",".join(str(i) for i in range(max(0, int(count))))
 
 
+def _unique_device_count(devices: Sequence[str]) -> int:
+    return len({str(device) for device in devices})
+
+
+def _device_set(devices: Sequence[str]) -> set[str]:
+    return {str(device) for device in devices}
+
+
 def _is_rl_stage(run_mode: str, stage_name: str) -> bool:
     return _normalise(run_mode).lower().replace("_", "-") == stage_name
 
@@ -92,12 +100,20 @@ def audit_launch(
     logical = _logical_device_list(visible_count)
     warnings: List[str] = []
     if _is_rl_stage(run_mode, "stage1-only"):
-        if not parse_device_spec(stage1_rl_devices):
+        stage1_devices = parse_device_spec(stage1_rl_devices)
+        if not stage1_devices:
             warnings.append(
                 f"{visible_count} GPUs are visible, but Stage-1 RL has no "
                 f"--stage1-rl-devices setting. Consider "
                 f"--stage1-rl-devices {logical} so rollout collection uses all "
                 "visible GPUs."
+            )
+        elif _unique_device_count(stage1_devices) < visible_count:
+            warnings.append(
+                f"Stage-1 RL uses {_unique_device_count(stage1_devices)} of "
+                f"{visible_count} visible GPUs via --stage1-rl-devices. "
+                f"Consider --stage1-rl-devices {logical} unless the unused "
+                "GPUs are intentionally reserved."
             )
         return warnings
 
@@ -117,6 +133,35 @@ def audit_launch(
             "or episode collection does not silently fall back to one GPU."
         )
         return warnings
+
+    if (
+        stage2_devices
+        and reward_devices
+        and _device_set(stage2_devices) != _device_set(reward_devices)
+    ):
+        warnings.append(
+            "Stage-2 device flags disagree: --stage2-rl-devices uses "
+            f"{','.join(stage2_devices)}, but --blb-v3-reward-devices uses "
+            f"{','.join(reward_devices)}. This can be correct for diagnostics, "
+            "but it often leaves part of the server idle or makes speed "
+            "evidence hard to compare."
+        )
+
+    if stage2_devices and _unique_device_count(stage2_devices) < visible_count:
+        warnings.append(
+            f"Stage-2 episode workers use {_unique_device_count(stage2_devices)} "
+            f"of {visible_count} visible GPUs via --stage2-rl-devices. "
+            f"Consider --stage2-rl-devices {logical} unless the unused GPUs "
+            "are intentionally reserved."
+        )
+
+    if reward_devices and _unique_device_count(reward_devices) < visible_count:
+        warnings.append(
+            f"Stage-2 reward probes use {_unique_device_count(reward_devices)} "
+            f"of {visible_count} visible GPUs via --blb-v3-reward-devices. "
+            f"Consider --blb-v3-reward-devices {logical} unless the unused GPUs "
+            "are intentionally reserved."
+        )
 
     if reward_devices:
         try:
