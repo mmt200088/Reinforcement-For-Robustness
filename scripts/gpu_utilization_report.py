@@ -24,6 +24,12 @@ HOT_PATH_TIMING_FIELDS = (
     "diagnostics_write_wall_seconds",
     "episode_callback_wall_seconds",
 )
+REPLAN_TIMING_FIELDS = (
+    "replan_wall_seconds",
+    "per_step_optimizer_wall_seconds",
+    "rejection_optimizer_wall_seconds",
+    "terminal_cost_eval_wall_seconds",
+)
 
 
 def _device_sort_key(device: str) -> tuple[int, int | str]:
@@ -178,6 +184,14 @@ def _first_present(row: Mapping[str, str], keys: Sequence[str]) -> str | None:
     return None
 
 
+def _first_float(row: Mapping[str, Any], keys: Sequence[str]) -> float | None:
+    for key in keys:
+        value = _float_value(row.get(key))
+        if value is not None:
+            return value
+    return None
+
+
 def _load_nvidia_smi_csv(path: str | Path | None) -> dict[str, dict[str, float | int]]:
     if not path:
         return {}
@@ -248,6 +262,7 @@ def summarize_run(
     recommendations: list[str] = []
     terminal_probe_wall: list[float] = []
     policy_rollout_wall: list[float] = []
+    replan_wall: list[float] = []
     probe_episode_counts: collections.Counter[str] = collections.Counter()
     probe_wall_by_device: dict[str, list[float]] = collections.defaultdict(list)
     hot_path_timings: dict[str, list[float]] = collections.defaultdict(list)
@@ -279,6 +294,9 @@ def summarize_run(
         policy_s = _float_value(row.get("policy_rollout_wall_seconds"))
         if policy_s is not None:
             policy_rollout_wall.append(policy_s)
+        replan_s = _first_float(row, REPLAN_TIMING_FIELDS)
+        if replan_s is not None:
+            replan_wall.append(replan_s)
         for field in HOT_PATH_TIMING_FIELDS:
             value = _float_value(row.get(field))
             if value is not None:
@@ -324,6 +342,7 @@ def summarize_run(
         "probe_trial_splits": [list(item) for item in sorted(trial_splits)],
         "terminal_probe_wall_seconds": _series_stats(terminal_probe_wall),
         "policy_rollout_wall_seconds": _series_stats(policy_rollout_wall),
+        "replan_wall_seconds": _series_stats(replan_wall),
         "hot_path_wall_seconds": {
             field: _series_stats(values)
             for field, values in sorted(hot_path_timings.items())
@@ -351,8 +370,10 @@ def render_markdown(summary: Mapping[str, Any]) -> str:
     ]
     probe_stats = summary.get("terminal_probe_wall_seconds") or {}
     policy_stats = summary.get("policy_rollout_wall_seconds") or {}
+    replan_stats = summary.get("replan_wall_seconds") or {}
     lines.append(f"Terminal probe mean seconds: {probe_stats.get('mean')}")
     lines.append(f"Policy rollout mean seconds: {policy_stats.get('mean')}")
+    lines.append(f"Replan/optimizer mean seconds: {replan_stats.get('mean')}")
     lines.append("")
     lines.append("## Probe Wall By Device")
     wall_by_device = summary.get("probe_wall_seconds_by_device") or {}

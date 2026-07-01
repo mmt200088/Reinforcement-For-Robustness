@@ -178,7 +178,7 @@ defaults.
 - Test: `tests/test_gpu_utilization_report.py`
 - Test: `tests/test_stage2_parallel_runner.py`
 
-- [ ] **Step 1: Strengthen evidence tools**
+- [x] **Step 1: Strengthen evidence tools**
 
 Ensure reports include:
 
@@ -190,12 +190,11 @@ Ensure reports include:
 
 Progress 2026-07-02: `scripts/gpu_utilization_report.py` now reports
 per-device probe episode counts, per-device terminal probe wall statistics,
-global policy rollout wall statistics, and optional JSONL/report hot-path wall
-fields when they are present in `episodes.jsonl`. Remaining evidence work:
-add replan wall means to the A/B comparison path without touching Stage-2 RL
-core during concurrent edits.
+global policy rollout wall statistics, replan/optimizer wall statistics, and
+optional JSONL/report hot-path wall fields when they are present in
+`episodes.jsonl`.
 
-- [ ] **Step 2: Do not change core RL during concurrent edits**
+- [x] **Step 2: Do not change core RL during concurrent edits**
 
 Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.
 

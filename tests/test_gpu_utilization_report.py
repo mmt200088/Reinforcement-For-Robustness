@@ -41,6 +41,7 @@ class GpuUtilizationReportTest(unittest.TestCase):
                         "terminal_probe_wall_seconds": 1.5,
                         "terminal_probe_device_wall_seconds": [1.0, 2.0],
                         "policy_rollout_wall_seconds": 0.5,
+                        "per_step_optimizer_wall_seconds": 0.2,
                         "jsonl_write_wall_seconds": 0.1,
                     },
                     {
@@ -49,6 +50,7 @@ class GpuUtilizationReportTest(unittest.TestCase):
                         "terminal_probe_trial_counts": [4],
                         "terminal_probe_wall_seconds": 2.5,
                         "policy_rollout_wall_seconds": 0.25,
+                        "replan_wall_seconds": 0.4,
                         "report_render_wall_seconds": 0.3,
                     },
                 ],
@@ -71,6 +73,7 @@ class GpuUtilizationReportTest(unittest.TestCase):
         self.assertEqual(summary["probe_trial_splits"], [[2, 2], [4]])
         self.assertEqual(summary["terminal_probe_wall_seconds"]["mean"], 2.0)
         self.assertEqual(summary["policy_rollout_wall_seconds"]["mean"], 0.375)
+        self.assertAlmostEqual(summary["replan_wall_seconds"]["mean"], 0.3)
         self.assertEqual(summary["hot_path_wall_seconds"]["jsonl_write_wall_seconds"]["mean"], 0.1)
         self.assertEqual(summary["hot_path_wall_seconds"]["report_render_wall_seconds"]["mean"], 0.3)
         self.assertTrue(
@@ -157,6 +160,7 @@ class GpuUtilizationReportTest(unittest.TestCase):
             self.assertIn("Used probe devices: cuda:0, cuda:1", markdown)
             self.assertIn("## Probe Wall By Device", markdown)
             self.assertIn("- cuda:0: episodes=1", markdown)
+            self.assertIn("Replan/optimizer mean seconds:", markdown)
 
 
 if __name__ == "__main__":
