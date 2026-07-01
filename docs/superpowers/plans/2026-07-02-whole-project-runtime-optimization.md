@@ -274,6 +274,12 @@ second read/parse of the same `static_skeletons_<profile>.json` archive during
 session construction. This reduces repeated worker/session setup overhead in
 Rescale/fusion-map paths without changing replan semantics.
 
+Progress 2026-07-02: `scripts/report_fusion_count_map.py` now filters fusion
+map candidates by block-map filename before opening JSON files, so post-build
+sidecars such as `map_summary.json` are not parsed as maps. This keeps fusion
+map reporting focused on real `block*.json` maps and avoids unnecessary
+sidecar reads after large server builds.
+
 - [ ] **Step 3: Verify**
 
 Run:

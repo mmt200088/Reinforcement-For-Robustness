@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import argparse
 import ast
-import html
-import json
 from collections import Counter, OrderedDict
 from datetime import datetime, timezone
+import html
+import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ACTION_SPACE_PATH = REPO_ROOT / "blb_stage2_rl" / "action_space.py"
@@ -80,10 +79,10 @@ def _parse_block_fields() -> Dict[int, List[Tuple[str, str, int]]]:
     return out
 
 
-def _load_maps(map_dir: Path) -> "OrderedDict[str, dict]":
-    graphs: "OrderedDict[str, dict]" = OrderedDict()
+def _load_maps(map_dir: Path) -> OrderedDict[str, dict]:
+    graphs: OrderedDict[str, dict] = OrderedDict()
     for path in sorted(map_dir.glob("*.json")):
-        if path.name.startswith("._") or path.name.startswith("_"):
+        if not _looks_like_map_file(path):
             continue
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, Mapping) or "graph_key" not in payload or "options" not in payload:
@@ -92,6 +91,20 @@ def _load_maps(map_dir: Path) -> "OrderedDict[str, dict]":
     if not graphs:
         raise RuntimeError(f"no fusion-count maps found under {map_dir}")
     return graphs
+
+
+def _looks_like_map_file(path: Path) -> bool:
+    name = path.name
+    if name.startswith("._") or name.startswith("_"):
+        return False
+    stem = path.stem
+    return (
+        stem == "block4"
+        or stem.startswith("block1_")
+        or stem.startswith("block2_")
+        or stem.startswith("block3_exp_n")
+        or stem.startswith("block5_n")
+    )
 
 
 def _block_offsets(fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]]) -> Dict[int, int]:
