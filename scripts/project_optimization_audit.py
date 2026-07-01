@@ -58,6 +58,7 @@ FLOW_STAGES: list[dict[str, Any]] = [
             "blb_stage2_rl/sequential_runner.py",
             "scripts/stage2_ngpu_ab_compare.py",
             "scripts/gpu_utilization_report.py",
+            "scripts/stage2_reward_probe_scaling_report.py",
         ],
         "optimization_surfaces": [
             "episode-parallel GPU workers",

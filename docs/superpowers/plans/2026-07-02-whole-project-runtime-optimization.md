@@ -194,10 +194,12 @@ defaults.
 
 - Modify: `scripts/stage2_ngpu_ab_compare.py`
 - Modify: `scripts/gpu_utilization_report.py`
+- Modify: `scripts/stage2_reward_probe_scaling_report.py`
 - Modify only after coordination: `blb_stage2_rl/parallel_runner.py`,
   `blb_stage2_rl/probe_runner.py`, `blb_stage2_rl/sequential_runner.py`
 - Test: `tests/test_stage2_ngpu_ab_compare.py`
 - Test: `tests/test_gpu_utilization_report.py`
+- Test: `tests/test_stage2_reward_probe_scaling_report.py`
 - Test: `tests/test_stage2_parallel_runner.py`
 
 - [x] **Step 1: Strengthen evidence tools**
@@ -220,6 +222,12 @@ Progress 2026-07-02: the same report now streams `episodes.jsonl` through a
 single-pass row summarizer instead of loading every episode into memory first.
 This keeps report generation and evidence bundling lightweight for 60k+ episode
 Stage-2 runs while preserving the existing CLI output shape.
+
+Progress 2026-07-02: extracted the reward-probe scaling benchmark postprocessor
+from `scripts/stage2_reward_probe_scaling_benchmark.sh` into
+`scripts/stage2_reward_probe_scaling_report.py`. The new report script is
+unit-tested and streams `runs.jsonl`, per-run `episodes.jsonl`, and sampled
+`nvidia-smi` CSV files instead of reading them into large strings.
 
 - [x] **Step 2: Do not change core RL during concurrent edits**
 
