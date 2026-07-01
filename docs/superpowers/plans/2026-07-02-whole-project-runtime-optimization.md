@@ -354,7 +354,10 @@ Progress 2026-07-02: added torch-free
 Stage-1 parallel timing, Stage-2 GPU utilization, and Stage-2 persistent
 verification outputs into one manifest/index, with optional `--tar-gz` archive
 output. This reduces server post-run manual stitching before evidence
-promotion; actual server A/B artifact pullback is still pending.
+promotion. The project audit artifact scan now walks each artifact root once
+instead of once per pattern, reducing post-run evidence packaging overhead on
+large `experiments/` trees. Actual server A/B artifact pullback is still
+pending.
 
 - [ ] **Step 3: Commit/push source and evidence**
 

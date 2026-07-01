@@ -99,6 +99,42 @@ class ProjectOptimizationAuditTest(unittest.TestCase):
         self.assertEqual(artifacts["counts"]["html_reports"], 1)
         self.assertEqual(artifacts["missing_evidence"], [])
 
+    def test_artifact_summary_walks_each_root_once(self):
+        audit = _load_audit_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run = root / "run"
+            files = [
+                run / "diagnostics" / "episodes.jsonl",
+                run / "diagnostics" / "ppo_updates.jsonl",
+                run / "nvidia_smi.csv",
+                run / "status.json",
+                run / "report.html",
+                run / "curve.npz",
+            ]
+            for path in files:
+                _touch(path, "{}\n")
+            calls = []
+
+            def walk_once(path):
+                calls.append(Path(path))
+                return list(files)
+
+            artifacts = audit.summarize_artifacts(
+                root,
+                artifact_roots=[run],
+                walk_files=walk_once,
+            )
+
+        self.assertEqual(calls, [run])
+        self.assertEqual(artifacts["counts"]["episodes_jsonl"], 1)
+        self.assertEqual(artifacts["counts"]["ppo_updates_jsonl"], 1)
+        self.assertEqual(artifacts["counts"]["nvidia_smi_csv"], 1)
+        self.assertEqual(artifacts["counts"]["status_json"], 1)
+        self.assertEqual(artifacts["counts"]["html_reports"], 1)
+        self.assertEqual(artifacts["counts"]["npz_curves"], 1)
+
     def test_cli_writes_json_and_markdown(self):
         audit = _load_audit_module()
 

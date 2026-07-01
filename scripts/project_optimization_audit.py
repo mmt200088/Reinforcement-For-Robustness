@@ -9,9 +9,10 @@ whether available artifacts contain timing/GPU evidence.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 FLOW_STAGES: list[dict[str, Any]] = [
     {
@@ -163,18 +164,10 @@ def _default_artifact_roots(root: Path) -> list[Path]:
     return [path for path in candidates if path.exists()]
 
 
-def _count_pattern(root: Path, pattern: str, limit: int) -> tuple[int, list[str]]:
-    count = 0
-    examples: list[str] = []
+def _iter_files(root: Path) -> Iterable[Path]:
     if not root.exists():
-        return 0, examples
-    for path in root.rglob(pattern):
-        if not path.is_file():
-            continue
-        count += 1
-        if len(examples) < int(limit):
-            examples.append(str(path))
-    return count, examples
+        return []
+    return (path for path in root.rglob("*") if path.is_file())
 
 
 def summarize_artifacts(
@@ -182,6 +175,7 @@ def summarize_artifacts(
         artifact_roots: Sequence[str | Path] = (),
         *,
         example_limit: int = 5,
+        walk_files: Callable[[Path], Iterable[Path]] = _iter_files,
         ) -> dict[str, Any]:
     roots = [Path(path) for path in artifact_roots] if artifact_roots else _default_artifact_roots(root)
     roots = [path if path.is_absolute() else root / path for path in roots]
@@ -189,10 +183,16 @@ def summarize_artifacts(
     examples: dict[str, list[str]] = {key: [] for key in ARTIFACT_PATTERNS}
 
     for artifact_root in roots:
-        for key, pattern in ARTIFACT_PATTERNS.items():
-            count, found = _count_pattern(artifact_root, pattern, int(example_limit) - len(examples[key]))
-            counts[key] += count
-            examples[key].extend(found)
+        for path in walk_files(artifact_root):
+            if not Path(path).is_file():
+                continue
+            name = Path(path).name
+            for key, pattern in ARTIFACT_PATTERNS.items():
+                if not fnmatch.fnmatch(name, pattern):
+                    continue
+                counts[key] += 1
+                if len(examples[key]) < int(example_limit):
+                    examples[key].append(str(path))
 
     missing_evidence: list[str] = []
     if roots and counts["episodes_jsonl"] == 0:
