@@ -25,13 +25,9 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   quickly check that the work stayed aligned with the requested goal.
 - Server GPU time is expensive. When the user has approved server-side work,
   keep the rented hardware busy and use available CPUs/GPUs efficiently rather
-  than leaving them idle. Parallel server jobs are acceptable, including running
-  RL training alongside other experiments, when the interference is limited to
-  slower wall-clock speed. Avoid parallelism only when it can contaminate
-  experimental correctness, change stochastic/evaluation semantics, exhaust
-  memory in a way that kills jobs, or otherwise invalidate results. Do not start
-  unapproved experiment families; when the next useful server action needs user
-  direction, report back.
+  than leaving them idle. Do this within the active objective only: do not start
+  unapproved experiments, do not interfere with running jobs, and report back
+  when the next useful server action needs user direction.
 - Current Codex role in this project, added 2026-07-02: focus on runtime
   efficiency optimization across code produced by the other agents. This means
   profiling, reducing wall-clock time, improving CPU/GPU parallelism, reducing
