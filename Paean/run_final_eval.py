@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import subprocess
 import sys
 import time
-from pathlib import Path
 from typing import Callable, Dict, List
 
 from .config import (
-    DATASET_CHOICES,
-    FinalEvalSettings,
     PRESET_DIR,
     REPO_ROOT,
+    FinalEvalSettings,
     final_eval_output_run_dir,
     format_command,
     list_presets,
@@ -189,6 +188,63 @@ def log_path_for(settings: FinalEvalSettings, output_dir: Path) -> Path:
     return output_dir / "logs" / logfile_name
 
 
+def _action_range_value_count(range_spec: str) -> int:
+    if "=" not in range_spec:
+        return 1
+    _name, raw_values = range_spec.split("=", 1)
+    values = [value.strip() for value in raw_values.split(",") if value.strip()]
+    return max(1, len(values))
+
+
+def estimate_workload(settings: FinalEvalSettings) -> Dict[str, object]:
+    selected_config_count = 1
+    for range_spec in settings.action_ranges:
+        selected_config_count *= _action_range_value_count(str(range_spec))
+
+    legacy_random_control_count = 0
+    if settings.random_enabled:
+        legacy_random_control_count = sum(
+            max(0, int(count))
+            for count in (
+                settings.perm_trials,
+                settings.cost_trials,
+                settings.budget_trials,
+                settings.stage1_budget_trials,
+                settings.stage2_budget_trials,
+            )
+        )
+
+    cost_matched_random_count = max(0, int(settings.cost_match_count))
+    total_config_count = (
+        selected_config_count
+        + legacy_random_control_count
+        + cost_matched_random_count
+    )
+    repeat = max(1, int(settings.repeat))
+    total_repeated_evaluations = total_config_count * repeat
+    gpu_parallelism_candidate = total_config_count > 1
+
+    return {
+        "action_range_dimensions": len(settings.action_ranges),
+        "selected_config_count": selected_config_count,
+        "legacy_random_control_count": legacy_random_control_count,
+        "cost_matched_random_count": cost_matched_random_count,
+        "total_config_count": total_config_count,
+        "repeat": repeat,
+        "total_repeated_evaluations": total_repeated_evaluations,
+        "batch_size": int(settings.batch_size),
+        "stage2_k_trials": int(settings.stage2_k_trials),
+        "stage2_probe_size": int(settings.stage2_probe_size),
+        "launcher_processes": 1,
+        "gpu_parallelism_candidate": gpu_parallelism_candidate,
+        "gpu_parallelism_hint": (
+            "independent final-eval configs can be scheduled across GPUs"
+            if gpu_parallelism_candidate
+            else "single final-eval config"
+        ),
+    }
+
+
 def configuration_lines(
     settings: FinalEvalSettings,
     output_dir: Path,
@@ -196,6 +252,7 @@ def configuration_lines(
     *,
     include_command: bool = True,
 ) -> List[str]:
+    workload = estimate_workload(settings)
     lines = [
         "final_eval standalone configuration:",
         f"  dataset: {settings.dataset}",
@@ -221,6 +278,25 @@ def configuration_lines(
     if settings.resume_from:
         lines.append(f"  resume_from: {settings.resume_from}")
     lines.append(f"  output_dir: {output_dir}")
+    lines.extend(
+        [
+            "  workload:",
+            f"    selected_configs: {workload['selected_config_count']}",
+            f"    action_range_dimensions: {workload['action_range_dimensions']}",
+            f"    legacy_random_controls: {workload['legacy_random_control_count']}",
+            f"    cost_matched_random_configs: {workload['cost_matched_random_count']}",
+            f"    total_configs: {workload['total_config_count']}",
+            f"    repeat: {workload['repeat']}",
+            f"    total_repeated_evaluations: {workload['total_repeated_evaluations']}",
+            f"    batch_size: {workload['batch_size']}",
+            f"    stage2_k_trials: {workload['stage2_k_trials']}",
+            f"    stage2_probe_size: {workload['stage2_probe_size']}",
+            f"    launcher_processes: {workload['launcher_processes']}",
+            "    gpu_parallelism_candidate: "
+            f"{str(workload['gpu_parallelism_candidate']).lower()}",
+            f"    gpu_parallelism_hint: {workload['gpu_parallelism_hint']}",
+        ]
+    )
     if include_command:
         lines.append(f"  command: {format_command(command)}")
     return lines
