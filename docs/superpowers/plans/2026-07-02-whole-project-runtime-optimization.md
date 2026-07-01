@@ -352,9 +352,9 @@ Import compact summaries into `experiments/server_command_runs/` or
 Progress 2026-07-02: added torch-free
 `scripts/optimization_evidence_bundle.py`, which packages project audit,
 Stage-1 parallel timing, Stage-2 GPU utilization, and Stage-2 persistent
-verification outputs into one manifest/index. This reduces server post-run
-manual stitching before evidence promotion; actual server A/B artifact pullback
-is still pending.
+verification outputs into one manifest/index, with optional `--tar-gz` archive
+output. This reduces server post-run manual stitching before evidence
+promotion; actual server A/B artifact pullback is still pending.
 
 - [ ] **Step 3: Commit/push source and evidence**
 

@@ -82,6 +82,7 @@ class OptimizationEvidenceBundleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             out_dir = root / "bundle"
+            out_tgz = root / "bundle.tgz"
             stage1_log = root / "stage1.log"
             _write_text(
                 stage1_log,
@@ -115,6 +116,8 @@ class OptimizationEvidenceBundleTest(unittest.TestCase):
                     "1",
                     "--min-ppo-updates",
                     "1",
+                    "--tar-gz",
+                    str(out_tgz),
                 ]
             )
 
@@ -132,6 +135,7 @@ class OptimizationEvidenceBundleTest(unittest.TestCase):
             self.assertIn("server_resource_snapshot.md", index)
             self.assertIn("stage1_parallel_report.md", index)
             self.assertIn("stage2_gpu_utilization_report.md", index)
+            self.assertTrue(out_tgz.is_file())
 
 
 if __name__ == "__main__":

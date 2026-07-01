@@ -22,6 +22,7 @@ import io
 import json
 from pathlib import Path
 import sys
+import tarfile
 from typing import Any, Sequence
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -82,6 +83,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-ppo-updates", type=int, default=1)
     parser.add_argument("--require-png", action="store_true")
     parser.add_argument("--no-require-details", action="store_true")
+    parser.add_argument("--tar-gz", default="", help="optional tar.gz archive path for the generated bundle")
     return parser
 
 
@@ -224,6 +226,15 @@ def render_index(manifest: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _write_tar_gz(out_dir: Path, tar_path: Path) -> None:
+    tar_path.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(tar_path, "w:gz") as archive:
+        for path in sorted(out_dir.rglob("*")):
+            if not path.is_file() or path.resolve() == tar_path.resolve():
+                continue
+            archive.add(path, arcname=str(Path(out_dir.name) / path.relative_to(out_dir)))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     root = Path(args.root).resolve()
@@ -256,9 +267,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if int(verifier.get("returncode", 0)) != 0:
             manifest["status"] = "failed"
             manifest["warnings"].append("Stage-2 persistent verifier failed.")
+    if args.tar_gz:
+        manifest["tar_gz"] = str(Path(args.tar_gz).resolve())
 
     _write_json(out_dir / "manifest.json", manifest)
     _write_text(out_dir / "index.md", render_index(manifest))
+    if args.tar_gz:
+        _write_tar_gz(out_dir, Path(args.tar_gz).resolve())
     return 0 if manifest["status"] == "ok" else 1
 
 
