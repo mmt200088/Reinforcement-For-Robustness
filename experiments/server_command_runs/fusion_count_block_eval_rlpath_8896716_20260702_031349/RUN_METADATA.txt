@@ -1,0 +1,4 @@
+runroot=/hy-tmp/fusion_block_eval_rlpath_8896716_20260702_030732
+source_commit=8896716a61d988c0412c0e99dae0a5f25573bd76
+out=/hy-tmp/fusion_block_eval_rlpath_8896716_20260702_030732/src/experiments/server_command_runs/fusion_count_block_eval_rlpath_8896716_20260702_031349
+2026-07-02T03:13:49+08:00

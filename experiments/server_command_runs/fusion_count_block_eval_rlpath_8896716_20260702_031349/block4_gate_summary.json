@@ -1,0 +1,50 @@
+{
+  "pass": true,
+  "failures": [],
+  "block4_rows": [
+    {
+      "name": "block4_fusionmax_1_layer",
+      "priority": null,
+      "loss_mean": 0.38514777294227054,
+      "metric1_mean": 0.8638392857142858,
+      "metric2_mean": 0.8638392857142858,
+      "fusion_total": 0,
+      "fusion_by_block": {},
+      "k_distribution": {},
+      "boosted_steps": 1
+    },
+    {
+      "name": "block4_fusionmax_2_layers",
+      "priority": null,
+      "loss_mean": 0.38352923478399004,
+      "metric1_mean": 0.8674107142857143,
+      "metric2_mean": 0.8674107142857143,
+      "fusion_total": 0,
+      "fusion_by_block": {},
+      "k_distribution": {},
+      "boosted_steps": 2
+    },
+    {
+      "name": "block4_fusionmax_4_layers",
+      "priority": null,
+      "loss_mean": 0.3826566551412855,
+      "metric1_mean": 0.8642857142857142,
+      "metric2_mean": 0.8642857142857142,
+      "fusion_total": 0,
+      "fusion_by_block": {},
+      "k_distribution": {},
+      "boosted_steps": 4
+    },
+    {
+      "name": "one_hot_block4",
+      "priority": null,
+      "loss_mean": 0.3829307522092547,
+      "metric1_mean": 0.8647321428571427,
+      "metric2_mean": 0.8647321428571427,
+      "fusion_total": 0,
+      "fusion_by_block": {},
+      "k_distribution": {},
+      "boosted_steps": 12
+    }
+  ]
+}
