@@ -541,10 +541,15 @@ class ReplanSession:
         *,
         configs: Mapping[str, Union[str, Path]],
         baseline_archive: Union[str, Path],
+        baselines: Optional[Mapping[str, BaselineRecord]] = None,
     ) -> None:
         self.configs = {str(k): Path(v) for k, v in configs.items()}
         self.baseline_archive = Path(baseline_archive)
-        self.baselines = load_static_skeleton_baselines(self.baseline_archive)
+        self.baselines = (
+            dict(baselines)
+            if baselines is not None
+            else load_static_skeleton_baselines(self.baseline_archive)
+        )
 
         self._graphs: Dict[str, RescaleGraph] = {}
         self._delta_baselines: Dict[str, List[Tuple[int, Any]]] = {}
@@ -582,7 +587,7 @@ class ReplanSession:
             path = cfg_dir / f"{graph_key}.json"
             if path.exists():
                 configs[graph_key] = path
-        return cls(configs=configs, baseline_archive=archive)
+        return cls(configs=configs, baseline_archive=archive, baselines=baselines)
 
     @property
     def graph_keys(self) -> List[str]:

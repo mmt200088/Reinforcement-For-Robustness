@@ -263,6 +263,12 @@ Allowed changes:
 - Cache feasibility DAGs keyed by graph/config hash.
 - Stream map summaries without loading sidecars as maps.
 
+Progress 2026-07-02: `ReplanSession.from_profile()` now passes the static
+skeleton baselines it already loaded into `ReplanSession.__init__()`, avoiding a
+second read/parse of the same `static_skeletons_<profile>.json` archive during
+session construction. This reduces repeated worker/session setup overhead in
+Rescale/fusion-map paths without changing replan semantics.
+
 - [ ] **Step 3: Verify**
 
 Run:
