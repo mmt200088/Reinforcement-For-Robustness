@@ -63,6 +63,23 @@ MAX_ENCODE_SF = 46
 FINAL_ENCODE_MIN = 15
 
 
+def _phase2_final_encode_floor(
+        topology: "ChainTopology",
+        final_field: Optional[str],
+        base_final: int,
+        ) -> int:
+    """Lower bound for phase-2 final-encode redistribution.
+
+    Most final encodes may trade precision for the last rescale's ``sf_post`` down
+    to ``FINAL_ENCODE_MIN``. Block4's ``ln_var_inv_d_sf`` is different: it feeds the
+    LayerNorm variance inverse path and is marked non-addable in the topology, so
+    phase 2 must not lower it below the pre-boost/baseline value.
+    """
+    if topology.graph_key == "block4" and final_field == "ln_var_inv_d_sf":
+        return int(base_final)
+    return int(FINAL_ENCODE_MIN)
+
+
 def target_output_sf(graph_key: str, profile: str, root: str) -> int:
     """The phase-2 output-SF ceiling for one block type, read from its
     Rescale_optimizer config: ``q_tail_bits - amplitude_budgets[-1] - h_sf``.
@@ -679,7 +696,8 @@ def generate_phase2_candidates(
     ``target_output_sf`` (== ``last_rescale.sf_post + final_encode``).
 
     The composition is parameterized by the final encode SF: it may rise OR fall
-    (down to the hardcoded floor ``FINAL_ENCODE_MIN``), with
+    (down to ``FINAL_ENCODE_MIN``, except protected fields such as block4's
+    ``ln_var_inv_d_sf`` which stay at or above their base value), with
     ``sf_post = target − final_encode`` taking the remainder. Raising ``sf_post``
     needs the pre-scale entering the last rescale to rise; that rise is supplied
     by the upstream encodes (REUSING the phase-1 geometry: bit-weights through the
@@ -717,7 +735,8 @@ def generate_phase2_candidates(
     if final_field is None:
         fe_values: Sequence[int] = (0,)
     else:
-        fe_values = range(FINAL_ENCODE_MIN, base_final + delta + 1)
+        fe_floor = _phase2_final_encode_floor(topology, final_field, base_final)
+        fe_values = range(fe_floor, base_final + delta + 1)
 
     out: List[Candidate] = []
     seen = set()

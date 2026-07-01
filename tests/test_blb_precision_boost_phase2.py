@@ -4,9 +4,11 @@ Phase 1 (``precision_boost.boost_option``) raises the intermediate short modulus
 primes; it leaves the final OUTPUT scale ("last node SF") fixed. Phase 2 raises
 that output scale to its ceiling ``target = q_tail_bits - amplitude_budgets[-1] -
 h_sf`` (read from the block's Rescale_optimizer config), distributing the gained
-SF between the final encode and the last rescale's ``sf_post`` (with the final
-encode allowed to DROP to a hardcoded floor of 15), keeping the last prime as
-high as possible and every prime before it constant, at minimum installed noise.
+SF between the final encode and the last rescale's ``sf_post``. Most final encodes
+may drop to a hardcoded floor of 15; protected fields such as block4's
+``ln_var_inv_d_sf`` must stay at or above their base value. The last prime stays
+as high as possible and every prime before it constant, at minimum installed
+noise.
 
 Lanes mirror the phase-1 test file:
   * pure structural / config lanes (torch-free AND rescale_optimizer-free);
@@ -117,9 +119,9 @@ BASE5_P1 = {  # block5_n2: output = 31 + 0 = 31 (NO final encode), last prime 60
 
 class Phase2CandidateGenTest(unittest.TestCase):
     """Structural enumeration (torch-free, replan-free): the composition space is
-    ``final_encode ∈ [15, base+delta]``, ``sf_post = target − final_encode``, with
-    the pre-scale rise supplied upstream. Asserts the user's named methods + the
-    block4 decrease-to-15 special case are all generated."""
+    ``final_encode ∈ [floor, base+delta]``, ``sf_post = target − final_encode``,
+    with the pre-scale rise supplied upstream. Asserts the user's named methods
+    and the block4 ``ln_var_inv_d_sf`` base-value guard."""
 
     def _by_field(self, cands, **want):
         """Candidates whose edits match every (field == value) in want."""
@@ -148,25 +150,23 @@ class Phase2CandidateGenTest(unittest.TestCase):
         # the final encode never goes below the hardcoded floor 15.
         self.assertTrue(all(c.edits["qkt_merge_mask_sf"] >= 15 for c in cands))
 
-    def test_block4_decrease_mechanism_is_general_when_uncapped(self):
-        # The decrease-to-floor mechanism itself (the user's special case): with the
-        # install cap lifted, the final encode walks down to 15 and the last sf_post
-        # absorbs it (the worked example 98 -> 38 / 15). This proves the composition
-        # is GENERAL; the real install cap (next test) is what gates it per block.
+    def test_block4_ln_var_guard_blocks_decrease_to_floor_when_uncapped(self):
+        # block4's final encode is ln_var_inv_d_sf. It feeds the LayerNorm variance
+        # inverse path and must not be lowered below the base action's SF.
         cands = pb.generate_phase2_candidates(
             pb.BLOCK4_MRPC_TOPOLOGY, BASE4_P1, target_output_sf=53, base_last_prime=59,
             max_installed_sf=60,
         )
         for c in cands:
             self.assertEqual(c.edits["ln_square_rescale_sf"] + c.edits["ln_var_inv_d_sf"], 53)
-        self.assertTrue(self._by_field(cands, ln_var_inv_d_sf=15, ln_square_rescale_sf=38))
-        self.assertTrue(all(c.edits["ln_var_inv_d_sf"] >= 15 for c in cands))  # hard floor
+        self.assertFalse(self._by_field(cands, ln_var_inv_d_sf=15, ln_square_rescale_sf=38))
+        self.assertTrue(all(c.edits["ln_var_inv_d_sf"] >= BASE4_P1["ln_var_inv_d_sf"] for c in cands))
 
-    def test_block4_decrease_available_under_default_cap(self):
+    def test_block4_ln_var_guard_applies_under_default_cap(self):
         # ADR (SF>46 = no noise): the default install cap is now q_max=60, not 46.
-        # block4's decrease route (final encode -> 15, sf_post -> 38, ln_mean_rescale
-        # -> 49) is generated even with the DEFAULT cap; installed points may exceed
-        # 46 (up to q_max). Only the hard final-encode floor 15 binds now.
+        # The cap no longer blocks over-46 compensation rescales, so this test must
+        # explicitly lock the semantic guard: ln_var_inv_d_sf cannot drop below the
+        # baseline/pre-phase2 value even though the scale-only route exists.
         cands = pb.generate_phase2_candidates(
             pb.BLOCK4_MRPC_TOPOLOGY, BASE4_P1, target_output_sf=53, base_last_prime=59,
         )
@@ -174,9 +174,9 @@ class Phase2CandidateGenTest(unittest.TestCase):
         for c in cands:
             self.assertEqual(c.edits["ln_square_rescale_sf"] + c.edits["ln_var_inv_d_sf"], 53)
             self.assertLessEqual(max(c.edits.values()), 60, f"over q_max in {c.edits}")
-            self.assertGreaterEqual(c.edits["ln_var_inv_d_sf"], 15)  # only the hard floor binds
-        # the decrease-to-15 route (ln_mean_rescale -> 49, >46 = no noise) is available.
-        self.assertTrue(self._by_field(cands, ln_var_inv_d_sf=15, ln_square_rescale_sf=38))
+            self.assertGreaterEqual(c.edits["ln_var_inv_d_sf"], BASE4_P1["ln_var_inv_d_sf"])
+        self.assertFalse(self._by_field(cands, ln_var_inv_d_sf=15, ln_square_rescale_sf=38))
+        self.assertTrue(self._by_field(cands, ln_var_inv_d_sf=20, ln_square_rescale_sf=33))
 
     def test_generality_composition_adapts_to_chain_change(self):
         # The user's automation requirement: nothing is hardcoded to the committed
