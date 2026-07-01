@@ -1,6 +1,6 @@
 {
   "graph_key": "block4",
-  "profile": "mrpc",
+  "profile": "rte",
   "block_idx": 4,
   "gelu_degree": 4,
   "attn_degree": 2,
@@ -146,7 +146,7 @@
     "fast_wall_seconds": 2240.66,
     "precision_boost_applied": true,
     "precision_boost_phase2_applied": true,
-    "profile": "mrpc",
+    "profile": "rte",
     "source_profile_built_from": "mrpc",
     "copied_from_identical_block4_profile": "mrpc",
     "block4_config_and_skeleton_identical_across_profiles": [
