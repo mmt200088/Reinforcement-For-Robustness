@@ -211,6 +211,11 @@ global policy rollout wall statistics, replan/optimizer wall statistics, and
 optional JSONL/report hot-path wall fields when they are present in
 `episodes.jsonl`.
 
+Progress 2026-07-02: the same report now streams `episodes.jsonl` through a
+single-pass row summarizer instead of loading every episode into memory first.
+This keeps report generation and evidence bundling lightweight for 60k+ episode
+Stage-2 runs while preserving the existing CLI output shape.
+
 - [x] **Step 2: Do not change core RL during concurrent edits**
 
 Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.

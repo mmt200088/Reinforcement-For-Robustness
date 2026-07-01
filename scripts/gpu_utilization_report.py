@@ -85,9 +85,8 @@ def _find_episodes_path(path: str | Path) -> Path:
     raise FileNotFoundError(f"could not find episodes.jsonl under {candidate}")
 
 
-def _load_jsonl(path: str | Path) -> list[dict[str, Any]]:
+def _iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
     episodes_path = _find_episodes_path(path)
-    rows: list[dict[str, Any]] = []
     with episodes_path.open(encoding="utf-8") as handle:
         for line_no, line in enumerate(handle, start=1):
             stripped = line.strip()
@@ -98,8 +97,7 @@ def _load_jsonl(path: str | Path) -> list[dict[str, Any]]:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{episodes_path}:{line_no}: invalid JSON") from exc
             if isinstance(row, dict):
-                rows.append(row)
-    return rows
+                yield row
 
 
 def _float_value(value: object) -> float | None:
@@ -244,16 +242,14 @@ def _load_nvidia_smi_csv(path: str | Path | None) -> dict[str, dict[str, float |
     return summary
 
 
-def summarize_run(
-        episodes: str | Path,
+def summarize_rows(
+        rows: Iterable[Mapping[str, Any]],
         *,
-        nvidia_smi_csv: str | Path | None = None,
+        gpu_utilization: Mapping[str, Mapping[str, float | int]] | None = None,
         visible_devices: str | Sequence[object] | None = None,
         low_util_threshold_pct: float = LOW_UTIL_THRESHOLD_PCT,
         ) -> dict[str, Any]:
-    rows = _load_jsonl(episodes)
-    gpu_utilization = _load_nvidia_smi_csv(nvidia_smi_csv)
-
+    gpu_utilization = dict(gpu_utilization or {})
     used_devices: set[str] = set()
     device_sets: set[tuple[str, ...]] = set()
     trial_splits: set[tuple[int, ...]] = set()
@@ -267,8 +263,10 @@ def summarize_run(
     probe_wall_by_device: dict[str, list[float]] = collections.defaultdict(list)
     hot_path_timings: dict[str, list[float]] = collections.defaultdict(list)
     mismatched_trial_rows = 0
+    episode_count = 0
 
     for row in rows:
+        episode_count += 1
         devices = parse_device_spec(row.get("terminal_probe_devices") if isinstance(row, Mapping) else None)
         counts = _int_list(row.get("terminal_probe_trial_counts") if isinstance(row, Mapping) else None)
         if devices:
@@ -308,7 +306,7 @@ def summarize_run(
     idle_visible = sorted(set(visible) - used_devices, key=_device_sort_key)
     sorted_used = sorted(used_devices, key=_device_sort_key)
 
-    if rows and not sorted_used:
+    if episode_count and not sorted_used:
         warnings.append("No terminal_probe_devices were recorded in episode diagnostics.")
         recommendations.append("Enable terminal reward-probe diagnostics before judging GPU utilization.")
     if idle_visible:
@@ -328,7 +326,7 @@ def summarize_run(
             recommendations.append("Check whether reward probes are balanced across visible GPUs.")
 
     return {
-        "episodes": len(rows),
+        "episodes": episode_count,
         "visible_devices": sorted(visible, key=_device_sort_key),
         "used_probe_devices": sorted_used,
         "idle_visible_devices": idle_visible,
@@ -351,6 +349,21 @@ def summarize_run(
         "warnings": warnings,
         "recommendations": sorted(set(recommendations)),
     }
+
+
+def summarize_run(
+        episodes: str | Path,
+        *,
+        nvidia_smi_csv: str | Path | None = None,
+        visible_devices: str | Sequence[object] | None = None,
+        low_util_threshold_pct: float = LOW_UTIL_THRESHOLD_PCT,
+        ) -> dict[str, Any]:
+    return summarize_rows(
+        _iter_jsonl(episodes),
+        gpu_utilization=_load_nvidia_smi_csv(nvidia_smi_csv),
+        visible_devices=visible_devices,
+        low_util_threshold_pct=low_util_threshold_pct,
+    )
 
 
 def _join_or_none(values: Sequence[str]) -> str:

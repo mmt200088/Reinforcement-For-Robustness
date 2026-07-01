@@ -119,6 +119,45 @@ class GpuUtilizationReportTest(unittest.TestCase):
         self.assertEqual(summary["gpu_utilization"]["cuda:1"]["active_sample_rate"], 0.5)
         self.assertTrue(any("cuda:1 max utilization 3.0%" in item for item in summary["warnings"]))
 
+    def test_summarizes_rows_from_single_pass_iterable(self):
+        report = _load_report_module()
+
+        class SinglePassRows:
+            def __init__(self):
+                self.iterated = False
+
+            def __iter__(self):
+                if self.iterated:
+                    raise AssertionError("rows were iterated more than once")
+                self.iterated = True
+                yield {
+                    "episode": 0,
+                    "terminal_probe_devices": ["cuda:0", "cuda:1"],
+                    "terminal_probe_trial_counts": [1, 3],
+                    "terminal_probe_wall_seconds": 2.0,
+                    "terminal_probe_wall_seconds_by_device": {"cuda:0": 1.5, "cuda:1": 2.5},
+                    "policy_rollout_wall_seconds": 0.25,
+                }
+                yield {
+                    "episode": 1,
+                    "terminal_probe_devices": ["cuda:1"],
+                    "terminal_probe_trial_counts": [4],
+                    "terminal_probe_wall_seconds": 1.0,
+                    "terminal_probe_wall_seconds_by_device": {"cuda:1": 1.0},
+                    "policy_rollout_wall_seconds": 0.75,
+                }
+
+        summary = report.summarize_rows(SinglePassRows(), visible_devices=["0", "1", "2"])
+
+        self.assertEqual(summary["episodes"], 2)
+        self.assertEqual(summary["used_probe_devices"], ["cuda:0", "cuda:1"])
+        self.assertEqual(summary["idle_visible_devices"], ["cuda:2"])
+        self.assertEqual(summary["probe_trial_counts_by_device"], {"cuda:0": 1, "cuda:1": 7})
+        self.assertEqual(summary["probe_episode_counts_by_device"], {"cuda:0": 1, "cuda:1": 2})
+        self.assertEqual(summary["terminal_probe_wall_seconds"]["mean"], 1.5)
+        self.assertEqual(summary["policy_rollout_wall_seconds"]["mean"], 0.5)
+        self.assertEqual(summary["probe_wall_seconds_by_device"]["cuda:1"]["mean"], 1.75)
+
     def test_cli_writes_json_and_markdown_reports(self):
         report = _load_report_module()
 
