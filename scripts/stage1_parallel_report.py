@@ -13,7 +13,6 @@ import argparse
 import json
 from pathlib import Path
 import re
-import statistics
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -54,13 +53,6 @@ def _split_csv(text: str) -> list[str]:
     return [item.strip() for item in str(text or "").split(",") if item.strip()]
 
 
-def _parse_float_list(text: str) -> list[float]:
-    out: list[float] = []
-    for item in _split_csv(text):
-        out.append(float(item))
-    return out
-
-
 def _parse_int_list(text: str) -> list[int]:
     out: list[int] = []
     for item in _split_csv(text):
@@ -75,9 +67,21 @@ def _safe_div(numer: float, denom: float) -> float | None:
 
 
 def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
-    rollout_windows: list[dict[str, Any]] = []
-    totals: list[dict[str, Any]] = []
-    cache_rows: list[dict[str, Any]] = []
+    rollout_window_count = 0
+    total_window_count = 0
+    total_episodes = 0
+    total_wall_seconds = 0.0
+    component_seconds = {key: 0.0 for key in COMPONENT_KEYS}
+    speedup_sum = 0.0
+    speedup_count = 0
+    max_speedup: float | None = None
+    last_cache = {
+        "window": None,
+        "hits": 0,
+        "misses": 0,
+        "distinct": 0,
+        "hit_rate": None,
+    }
     worker_episode_counts: dict[str, int] = {}
     devices_seen: set[str] = set()
     warnings: list[str] = []
@@ -87,88 +91,60 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
         if rollout_match:
             devices = _split_csv(rollout_match.group("devices"))
             counts = _parse_int_list(rollout_match.group("counts"))
-            worker_seconds = _parse_float_list(rollout_match.group("worker_seconds"))
             for device, count in zip(devices, counts):  # noqa: B905 - diagnostics emit matching lists on py39.
                 devices_seen.add(device)
                 worker_episode_counts[device] = worker_episode_counts.get(device, 0) + int(count)
-            rollout_windows.append(
-                {
-                    "window": int(rollout_match.group("window")),
-                    "eps_per_worker": int(rollout_match.group("eps_per_worker")),
-                    "devices": devices,
-                    "counts": counts,
-                    "wall_seconds": float(rollout_match.group("wall")),
-                    "worker_seconds": worker_seconds,
-                    "speedup_vs_sequential": float(rollout_match.group("speedup")),
-                }
-            )
+            speedup = float(rollout_match.group("speedup"))
+            speedup_sum += speedup
+            speedup_count += 1
+            max_speedup = speedup if max_speedup is None else max(max_speedup, speedup)
+            rollout_window_count += 1
             continue
 
         cache_match = CACHE_RE.search(line)
         if cache_match:
-            cache_rows.append(
-                {
-                    "window": int(cache_match.group("window")),
-                    "hits": int(cache_match.group("hits")),
-                    "misses": int(cache_match.group("misses")),
-                    "distinct": int(cache_match.group("distinct")),
-                    "hit_rate": float(cache_match.group("hit_rate")) / 100.0,
-                }
-            )
+            last_cache = {
+                "window": int(cache_match.group("window")),
+                "hits": int(cache_match.group("hits")),
+                "misses": int(cache_match.group("misses")),
+                "distinct": int(cache_match.group("distinct")),
+                "hit_rate": float(cache_match.group("hit_rate")) / 100.0,
+            }
             continue
 
         total_match = TOTAL_RE.search(line)
         if total_match:
-            row = {
-                "window": int(total_match.group("window")),
-                "episodes": int(total_match.group("episodes")),
-                "total_seconds": float(total_match.group("total")),
-                "throughput_ep_per_hour": float(total_match.group("throughput")),
-            }
+            total_window_count += 1
+            total_episodes += int(total_match.group("episodes"))
+            total_wall_seconds += float(total_match.group("total"))
             for key in COMPONENT_KEYS:
-                row[f"{key}_seconds"] = float(total_match.group(key))
-            totals.append(row)
+                component_seconds[key] += float(total_match.group(key))
 
-    total_episodes = int(sum(row["episodes"] for row in totals))
-    total_wall_seconds = float(sum(row["total_seconds"] for row in totals))
-    component_seconds = {
-        key: float(sum(row[f"{key}_seconds"] for row in totals))
-        for key in COMPONENT_KEYS
-    }
     component_share = {
         key: _safe_div(value, total_wall_seconds)
         for key, value in component_seconds.items()
     }
-    speedups = [float(row["speedup_vs_sequential"]) for row in rollout_windows]
     throughput = (
         total_episodes * 3600.0 / total_wall_seconds
         if total_episodes and total_wall_seconds > 0.0
         else None
     )
-    if not rollout_windows:
+    if not rollout_window_count:
         warnings.append("No [stage1-rollout] worker timing lines found.")
-    if not totals:
+    if not total_window_count:
         warnings.append("No [stage1-rollout-total] window timing lines found.")
     if worker_episode_counts:
         counts = list(worker_episode_counts.values())
         if min(counts) and max(counts) / min(counts) > 1.2:
             warnings.append("Worker episode counts are imbalanced across devices.")
 
-    last_cache = cache_rows[-1] if cache_rows else {
-        "window": None,
-        "hits": 0,
-        "misses": 0,
-        "distinct": 0,
-        "hit_rate": None,
-    }
-
     return {
-        "windows": max(len(rollout_windows), len(totals)),
+        "windows": max(rollout_window_count, total_window_count),
         "total_episodes": total_episodes,
         "total_wall_seconds": total_wall_seconds,
         "throughput_ep_per_hour": throughput,
-        "mean_worker_speedup": float(statistics.mean(speedups)) if speedups else None,
-        "max_worker_speedup": float(max(speedups)) if speedups else None,
+        "mean_worker_speedup": speedup_sum / speedup_count if speedup_count else None,
+        "max_worker_speedup": max_speedup,
         "device_count": len(devices_seen),
         "devices": sorted(devices_seen),
         "worker_episode_counts_by_device": dict(sorted(worker_episode_counts.items())),

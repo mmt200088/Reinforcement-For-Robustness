@@ -179,6 +179,11 @@ training logs from a single-pass line iterator, and
 `scripts/optimization_evidence_bundle.py` streams Stage-1 log files into that
 parser instead of concatenating all logs into one large in-memory string.
 
+Progress 2026-07-02: `scripts/stage1_parallel_report.py` now aggregates
+Stage-1 rollout windows, total timing windows, cache status, and worker speedup
+with running counters instead of retaining every parsed window row before
+rendering the report.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:

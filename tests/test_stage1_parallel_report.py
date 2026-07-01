@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = REPO_ROOT / "scripts" / "stage1_parallel_report.py"
@@ -64,6 +65,15 @@ class Stage1ParallelReportTest(unittest.TestCase):
         self.assertEqual(summary["worker_episode_counts_by_device"], {"cuda:0": 60, "cuda:1": 60})
         self.assertAlmostEqual(summary["throughput_ep_per_hour"], 1963.6363636)
         self.assertEqual(summary["eval_cache"]["hit_rate"], 0.25)
+
+    def test_parse_log_lines_uses_running_speedup_aggregate(self):
+        report = _load_report_module()
+
+        with mock.patch.object(report, "statistics", object(), create=True):
+            summary = report.parse_log_lines(SAMPLE_LOG.splitlines())
+
+        self.assertAlmostEqual(summary["mean_worker_speedup"], 1.965)
+        self.assertAlmostEqual(summary["max_worker_speedup"], 1.97)
 
     def test_cli_writes_json_and_markdown(self):
         report = _load_report_module()
