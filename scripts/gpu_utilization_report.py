@@ -1,0 +1,370 @@
+#!/usr/bin/env python3
+"""Summarize GPU utilization evidence from RL run artifacts.
+
+The script is intentionally dependency-free. It reads structured episode
+diagnostics plus optional nvidia-smi CSV samples and reports whether visible
+GPUs were actually exercised by terminal reward probes.
+"""
+from __future__ import annotations
+
+import argparse
+import collections
+import csv
+import json
+from pathlib import Path
+import re
+import statistics
+import sys
+from typing import Any, Iterable, Mapping, Sequence
+
+LOW_UTIL_THRESHOLD_PCT = 10.0
+
+
+def _device_sort_key(device: str) -> tuple[int, int | str]:
+    match = re.fullmatch(r"cuda:(\d+)", device)
+    if match:
+        return (0, int(match.group(1)))
+    return (1, device)
+
+
+def normalize_device_token(value: object) -> str:
+    text = str(value).strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    if lowered in {"none", "null", "nil", "-1"}:
+        return ""
+    if lowered == "cpu":
+        return "cpu"
+    if lowered.startswith("cuda:"):
+        suffix = lowered.split("cuda:", 1)[1].strip()
+        return f"cuda:{suffix}" if suffix else ""
+    if lowered.isdigit():
+        return f"cuda:{lowered}"
+    return text
+
+
+def parse_device_spec(value: str | Sequence[object] | None) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw_items: Iterable[object] = value.split(",")
+    else:
+        raw_items = value
+    devices = [normalize_device_token(item) for item in raw_items]
+    return [device for device in devices if device]
+
+
+def _find_episodes_path(path: str | Path) -> Path:
+    candidate = Path(path)
+    if candidate.is_file():
+        return candidate
+    candidates = [
+        candidate / "episodes.jsonl",
+        candidate / "diagnostics" / "episodes.jsonl",
+        candidate / "progress" / "diagnostics" / "episodes.jsonl",
+    ]
+    for item in candidates:
+        if item.is_file():
+            return item
+    for item in candidate.rglob("episodes.jsonl"):
+        if item.is_file():
+            return item
+    raise FileNotFoundError(f"could not find episodes.jsonl under {candidate}")
+
+
+def _load_jsonl(path: str | Path) -> list[dict[str, Any]]:
+    episodes_path = _find_episodes_path(path)
+    rows: list[dict[str, Any]] = []
+    with episodes_path.open(encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                row = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{episodes_path}:{line_no}: invalid JSON") from exc
+            if isinstance(row, dict):
+                rows.append(row)
+    return rows
+
+
+def _float_value(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    match = re.search(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)", text)
+    if not match:
+        return None
+    return float(match.group(0))
+
+
+def _int_list(value: object) -> list[int]:
+    if not isinstance(value, list):
+        return []
+    out: list[int] = []
+    for item in value:
+        parsed = _float_value(item)
+        if parsed is not None:
+            out.append(int(parsed))
+    return out
+
+
+def _series_stats(values: Sequence[float]) -> dict[str, float | int | None]:
+    if not values:
+        return {"count": 0, "mean": None, "min": None, "max": None}
+    return {
+        "count": len(values),
+        "mean": float(statistics.mean(values)),
+        "min": float(min(values)),
+        "max": float(max(values)),
+    }
+
+
+def _normalized_fieldnames(row: Mapping[str, str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key, value in row.items():
+        normalized = re.sub(r"[^a-z0-9]+", "_", str(key).strip().lower()).strip("_")
+        out[normalized] = value
+    return out
+
+
+def _first_present(row: Mapping[str, str], keys: Sequence[str]) -> str | None:
+    for key in keys:
+        if key in row:
+            return row[key]
+    return None
+
+
+def _load_nvidia_smi_csv(path: str | Path | None) -> dict[str, dict[str, float | int]]:
+    if not path:
+        return {}
+    csv_path = Path(path)
+    if not csv_path.is_file():
+        raise FileNotFoundError(f"nvidia-smi CSV not found: {csv_path}")
+    samples: dict[str, list[tuple[float, float | None]]] = collections.defaultdict(list)
+    with csv_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for raw_row in reader:
+            row = _normalized_fieldnames(raw_row)
+            idx = _first_present(row, ["index", "gpu_idx", "gpu_index", "gpu"])
+            util = _first_present(
+                row,
+                [
+                    "utilization_gpu",
+                    "utilization_gpu_pct",
+                    "util_pct",
+                    "gpu_util_pct",
+                    "gpu_util",
+                ],
+            )
+            mem = _first_present(
+                row,
+                [
+                    "memory_used",
+                    "memory_used_mib",
+                    "mem_used_mib",
+                    "memory_used_mi_b",
+                    "memory_used_mib",
+                ],
+            )
+            device = normalize_device_token(idx) if idx is not None else ""
+            util_pct = _float_value(util)
+            mem_mib = _float_value(mem)
+            if device and util_pct is not None:
+                samples[device].append((float(util_pct), mem_mib))
+    summary: dict[str, dict[str, float | int]] = {}
+    for device in sorted(samples, key=_device_sort_key):
+        util_values = [item[0] for item in samples[device]]
+        mem_values = [item[1] for item in samples[device] if item[1] is not None]
+        active = [value for value in util_values if value > 0.0]
+        summary[device] = {
+            "samples": len(util_values),
+            "mean_util_pct": float(statistics.mean(util_values)),
+            "max_util_pct": float(max(util_values)),
+            "active_sample_rate": float(len(active) / len(util_values)),
+            "max_memory_mib": float(max(mem_values)) if mem_values else 0.0,
+        }
+    return summary
+
+
+def summarize_run(
+        episodes: str | Path,
+        *,
+        nvidia_smi_csv: str | Path | None = None,
+        visible_devices: str | Sequence[object] | None = None,
+        low_util_threshold_pct: float = LOW_UTIL_THRESHOLD_PCT,
+        ) -> dict[str, Any]:
+    rows = _load_jsonl(episodes)
+    gpu_utilization = _load_nvidia_smi_csv(nvidia_smi_csv)
+
+    used_devices: set[str] = set()
+    device_sets: set[tuple[str, ...]] = set()
+    trial_splits: set[tuple[int, ...]] = set()
+    trial_counts: collections.Counter[str] = collections.Counter()
+    warnings: list[str] = []
+    recommendations: list[str] = []
+    terminal_probe_wall: list[float] = []
+    policy_rollout_wall: list[float] = []
+    mismatched_trial_rows = 0
+
+    for row in rows:
+        devices = parse_device_spec(row.get("terminal_probe_devices") if isinstance(row, Mapping) else None)
+        counts = _int_list(row.get("terminal_probe_trial_counts") if isinstance(row, Mapping) else None)
+        if devices:
+            used_devices.update(devices)
+            device_sets.add(tuple(devices))
+        if counts:
+            trial_splits.add(tuple(counts))
+        if devices and counts:
+            if len(devices) == len(counts):
+                for device, count in zip(devices, counts):  # noqa: B905 - lengths checked above for py39.
+                    trial_counts[device] += int(count)
+            else:
+                mismatched_trial_rows += 1
+
+        probe_s = _float_value(row.get("terminal_probe_wall_seconds"))
+        if probe_s is not None:
+            terminal_probe_wall.append(probe_s)
+        policy_s = _float_value(row.get("policy_rollout_wall_seconds"))
+        if policy_s is not None:
+            policy_rollout_wall.append(policy_s)
+
+    visible = parse_device_spec(visible_devices)
+    if not visible:
+        visible = sorted(set(gpu_utilization) | used_devices, key=_device_sort_key)
+    idle_visible = sorted(set(visible) - used_devices, key=_device_sort_key)
+    sorted_used = sorted(used_devices, key=_device_sort_key)
+
+    if rows and not sorted_used:
+        warnings.append("No terminal_probe_devices were recorded in episode diagnostics.")
+        recommendations.append("Enable terminal reward-probe diagnostics before judging GPU utilization.")
+    if idle_visible:
+        joined = ", ".join(idle_visible)
+        warnings.append(f"visible GPUs were not used by terminal probes: {joined}")
+        recommendations.append("Forward all intended devices with --stage2-rl-devices or --blb-v3-reward-devices.")
+    if mismatched_trial_rows:
+        warnings.append(
+            f"{mismatched_trial_rows} episode rows had terminal_probe_devices/trial_counts length mismatches."
+        )
+    for device, info in gpu_utilization.items():
+        max_util = float(info.get("max_util_pct", 0.0) or 0.0)
+        if max_util < float(low_util_threshold_pct):
+            warnings.append(
+                f"{device} max utilization {max_util:.1f}% below {float(low_util_threshold_pct):.1f}%."
+            )
+            recommendations.append("Check whether reward probes are balanced across visible GPUs.")
+
+    return {
+        "episodes": len(rows),
+        "visible_devices": sorted(visible, key=_device_sort_key),
+        "used_probe_devices": sorted_used,
+        "idle_visible_devices": idle_visible,
+        "probe_trial_counts_by_device": dict(sorted(trial_counts.items(), key=lambda item: _device_sort_key(item[0]))),
+        "probe_device_sets": [list(item) for item in sorted(device_sets, key=lambda item: (_device_sort_key(item[0]) if item else (9, ""), item))],
+        "probe_trial_splits": [list(item) for item in sorted(trial_splits)],
+        "terminal_probe_wall_seconds": _series_stats(terminal_probe_wall),
+        "policy_rollout_wall_seconds": _series_stats(policy_rollout_wall),
+        "gpu_utilization": gpu_utilization,
+        "warnings": warnings,
+        "recommendations": sorted(set(recommendations)),
+    }
+
+
+def _join_or_none(values: Sequence[str]) -> str:
+    return ", ".join(values) if values else "none"
+
+
+def render_markdown(summary: Mapping[str, Any]) -> str:
+    lines = [
+        "# GPU Utilization Report",
+        "",
+        f"Episodes: {summary.get('episodes', 0)}",
+        f"Visible devices: {_join_or_none(list(summary.get('visible_devices') or []))}",
+        f"Used probe devices: {_join_or_none(list(summary.get('used_probe_devices') or []))}",
+        f"Idle visible devices: {_join_or_none(list(summary.get('idle_visible_devices') or []))}",
+        "",
+        "## Probe Timing",
+    ]
+    probe_stats = summary.get("terminal_probe_wall_seconds") or {}
+    policy_stats = summary.get("policy_rollout_wall_seconds") or {}
+    lines.append(f"Terminal probe mean seconds: {probe_stats.get('mean')}")
+    lines.append(f"Policy rollout mean seconds: {policy_stats.get('mean')}")
+    lines.append("")
+    lines.append("## Trial Balance")
+    counts = summary.get("probe_trial_counts_by_device") or {}
+    if counts:
+        for device, count in counts.items():
+            lines.append(f"- {device}: {count}")
+    else:
+        lines.append("- none")
+    gpu_util = summary.get("gpu_utilization") or {}
+    if gpu_util:
+        lines.append("")
+        lines.append("## Nvidia SMI")
+        for device, info in gpu_util.items():
+            lines.append(
+                "- "
+                f"{device}: max_util_pct={info.get('max_util_pct')}, "
+                f"mean_util_pct={info.get('mean_util_pct')}, "
+                f"active_sample_rate={info.get('active_sample_rate')}, "
+                f"max_memory_mib={info.get('max_memory_mib')}"
+            )
+    lines.append("")
+    lines.append("## Warnings")
+    warnings = summary.get("warnings") or []
+    if warnings:
+        for item in warnings:
+            lines.append(f"- {item}")
+    else:
+        lines.append("- none")
+    recommendations = summary.get("recommendations") or []
+    if recommendations:
+        lines.append("")
+        lines.append("## Recommendations")
+        for item in recommendations:
+            lines.append(f"- {item}")
+    return "\n".join(lines) + "\n"
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--episodes", required=True, help="episodes.jsonl path or run directory")
+    parser.add_argument("--nvidia-smi-csv", default=None, help="optional nvidia-smi CSV sample log")
+    parser.add_argument("--visible-devices", default="", help="comma-separated visible GPU ids, e.g. 0,1,2,3")
+    parser.add_argument("--out-json", default="", help="optional JSON output path")
+    parser.add_argument("--out-md", default="", help="optional markdown output path")
+    parser.add_argument(
+        "--low-util-threshold-pct",
+        type=float,
+        default=LOW_UTIL_THRESHOLD_PCT,
+        help="warn when sampled max GPU utilization is below this percent",
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    summary = summarize_run(
+        args.episodes,
+        nvidia_smi_csv=args.nvidia_smi_csv,
+        visible_devices=args.visible_devices,
+        low_util_threshold_pct=float(args.low_util_threshold_pct),
+    )
+    if args.out_json:
+        Path(args.out_json).write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    markdown = render_markdown(summary)
+    if args.out_md:
+        Path(args.out_md).write_text(markdown, encoding="utf-8")
+    if not args.out_json and not args.out_md:
+        sys.stdout.write(markdown)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

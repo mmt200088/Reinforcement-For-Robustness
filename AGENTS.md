@@ -19,6 +19,39 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   the user. When asking, include the recommended answer.
 - For coding tasks, implement only what was requested and verify with the
   narrowest meaningful command or test.
+- After finishing any user task, include a concise audit summary of what was
+  done and how it matches the user's requested direction. Keep it high-level
+  unless the user asks for detailed evidence; the purpose is to let the user
+  quickly check that the work stayed aligned with the requested goal.
+- Server GPU time is expensive. When the user has approved server-side work,
+  keep the rented hardware busy and use available CPUs/GPUs efficiently rather
+  than leaving them idle. Parallel server jobs are acceptable, including running
+  RL training alongside other experiments, when the interference is limited to
+  slower wall-clock speed. Avoid parallelism only when it can contaminate
+  experimental correctness, change stochastic/evaluation semantics, exhaust
+  memory in a way that kills jobs, or otherwise invalidate results. Do not start
+  unapproved experiment families; when the next useful server action needs user
+  direction, report back.
+- Current Codex role in this project, added 2026-07-02: focus on runtime
+  efficiency optimization across code produced by the other agents. This means
+  profiling, reducing wall-clock time, improving CPU/GPU parallelism, reducing
+  avoidable I/O or serialization overhead, and keeping approved server hardware
+  well utilized. Do not change research semantics, reward/evaluation validity,
+  or reported scientific conclusions merely to make runs faster; preserve
+  outputs unless the user explicitly asks for a behavior change.
+- GPU utilization clarification, added 2026-07-02: when a task is semantically
+  suitable for GPU or multi-GPU execution, prefer moving it off CPU and onto
+  the server GPUs instead of leaving expensive hardware idle. Treat this as one
+  optimization angle, not the only one: also consider batching, async overlap,
+  data movement, caching, serialization, process/thread scheduling, and
+  algorithmic hot-path reduction. Do not force GPU use for workloads already
+  shown to be CPU-bound by design, such as pure-Python Rescale_optimizer replan
+  enumeration, unless profiling identifies a correct GPU-equivalent path.
+- Concurrent-agent note, added 2026-07-02: another agent is actively modifying
+  the Stage-2 RL algorithm code. Efficiency work should avoid overlapping those
+  core Stage-2 RL algorithm files unless the user explicitly coordinates the
+  handoff; prefer low-conflict launcher, gate, profiling, reporting, or
+  server-orchestration changes for now.
 - All Stage-1 and Stage-2 RL runs must mirror raw training data points to the
   project-root `rl_training_data_points/` tree, classified by stage, model,
   dataset, and run id. Persist enough structured JSON/JSONL to redraw paper
@@ -706,6 +739,10 @@ Current verified server facts:
   `ALLOW_VERIFIED_HEAD_WITHOUT_PULL=1`. This fallback is only valid when
   `git rev-parse HEAD` exactly matches the expected commit; otherwise the
   script must still abort instead of running a stale checkout.
+- Current user-provided GPUShare endpoint, added 2026-07-02:
+  `ssh -p 37498 root@i-2.gpushare.com`. The password was provided in chat for
+  ephemeral use only; do not store it in repo files, shell profiles, SSH config,
+  scripts, or logs.
 
 ### N-GPU / Four-GPU Reward-Probe Parallelism
 

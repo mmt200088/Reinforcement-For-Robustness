@@ -1752,6 +1752,23 @@ else
   fi
 fi
 
+if [ "$SEARCH_ALGORITHM" = "rl" ] && command -v python3 >/dev/null 2>&1 && [ -f "scripts/launcher_gpu_audit.py" ]; then
+  _GPU_AUDIT_ARGS=(
+    python3 scripts/launcher_gpu_audit.py
+    --search-algorithm "$SEARCH_ALGORITHM"
+    --run-mode "$RUN_MODE"
+    --stage2-rl-variant "$STAGE2_RL_VARIANT"
+    --stage1-rl-devices "$STAGE1_RL_DEVICES"
+    --stage2-rl-devices "$STAGE2_RL_DEVICES"
+    --blb-v3-reward-devices "$BLB_V3_REWARD_DEVICES"
+    --stage2-k-trials "$STAGE2_K_TRIALS"
+  )
+  if [ "${RFR_GPU_AUDIT_STRICT:-0}" = "1" ]; then
+    _GPU_AUDIT_ARGS+=(--strict)
+  fi
+  "${_GPU_AUDIT_ARGS[@]}" || err "GPU audit strict gate failed. Set the appropriate multi-GPU flags or unset RFR_GPU_AUDIT_STRICT."
+fi
+
 printf -v CMD_STR '%q ' "${CMD[@]}"
 echo "启动配置："
 show "搜索算法" "$(algzh "$SEARCH_ALGORITHM")" "$S_SEARCH_ALGORITHM"
