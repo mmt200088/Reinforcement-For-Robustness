@@ -7,9 +7,9 @@ import csv
 import html
 import json
 import math
+from pathlib import Path
 import statistics
 import time
-from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 
@@ -17,13 +17,14 @@ def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
     if not path.exists():
         return []
     out: List[Dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if not line.strip():
-            continue
-        try:
-            out.append(json.loads(line))
-        except Exception:
-            continue
+    with path.open(encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            try:
+                out.append(json.loads(line))
+            except Exception:
+                continue
     return out
 
 
@@ -42,7 +43,7 @@ def _is_nonfinite(value: Any) -> bool:
         return False
 
 
-def _window(values: List[float], size: int) -> Optional[Dict[str, float]]:
+def _window(values: List[float], size: int) -> Dict[str, float] | None:
     if len(values) < size:
         return None
     tail = values[-size:]
@@ -50,7 +51,7 @@ def _window(values: List[float], size: int) -> Optional[Dict[str, float]]:
     def pct(q: float) -> float:
         if not ordered:
             return 0.0
-        idx = min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * q))))
+        idx = min(len(ordered) - 1, max(0, round((len(ordered) - 1) * q)))
         return float(ordered[idx])
     return {
         "size": int(size),
@@ -78,7 +79,7 @@ def _max_consecutive(items: Iterable[bool]) -> int:
 
 def _gpu_stats(path: Path) -> Dict[str, Any]:
     rows = []
-    if path.exists():
+    if path.is_file():
         with path.open(newline="", encoding="utf-8", errors="replace") as f:
             for row in csv.DictReader(f):
                 try:

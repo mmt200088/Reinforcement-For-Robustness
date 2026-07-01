@@ -332,6 +332,12 @@ fails when `episodes.jsonl` or `ppo_updates.jsonl` drops required reward,
 metric, cost, action-summary, PPO, or timing fields. This did not modify the
 dirty `rl_data_points.py` worktree file.
 
+Progress 2026-07-02: `scripts/stage2_first10k_monitor.py` now reads JSONL
+diagnostics line by line instead of building a full `read_text().splitlines()`
+string first, and it treats a missing/empty `nvidia_log` path as no GPU samples
+instead of trying to open the current directory. This keeps long-run monitoring
+memory-bounded and avoids a default-path crash during post-run summaries.
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
