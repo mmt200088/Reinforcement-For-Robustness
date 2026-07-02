@@ -40,15 +40,32 @@ def _mask_logits_for_slot(
     if slot_idx >= len(action_mask):
         raise ValueError(f"action_mask has no slot {slot_idx}")
     raw = action_mask[slot_idx]
-    mask = torch.as_tensor(raw, dtype=torch.bool, device=logits.device).reshape(-1)
-    if mask.numel() != logits.shape[-1]:
-        raise ValueError(
-            f"action_mask slot {slot_idx} width {mask.numel()} != logits width {logits.shape[-1]}"
-        )
-    if not bool(mask.any().item()):
-        raise ValueError(f"action_mask slot {slot_idx} allows no actions")
+    if isinstance(raw, torch.Tensor):
+        raw_mask = raw.reshape(-1).to(dtype=torch.bool)
+        mask_width = int(raw_mask.numel())
+        if mask_width != logits.shape[-1]:
+            raise ValueError(
+                f"action_mask slot {slot_idx} width {mask_width} != logits width {logits.shape[-1]}"
+            )
+        if raw_mask.device.type == "cpu":
+            has_allowed = bool(raw_mask.any())
+        else:
+            has_allowed = bool(raw_mask.detach().cpu().any())
+        if not has_allowed:
+            raise ValueError(f"action_mask slot {slot_idx} allows no actions")
+        mask = raw_mask.to(device=logits.device, non_blocking=True)
+    else:
+        raw_arr = np.asarray(raw, dtype=bool).reshape(-1)
+        mask_width = int(raw_arr.size)
+        if mask_width != logits.shape[-1]:
+            raise ValueError(
+                f"action_mask slot {slot_idx} width {mask_width} != logits width {logits.shape[-1]}"
+            )
+        if not bool(raw_arr.any()):
+            raise ValueError(f"action_mask slot {slot_idx} allows no actions")
+        mask = torch.as_tensor(raw_arr, dtype=torch.bool, device=logits.device)
     view_shape = [1] * logits.dim()
-    view_shape[-1] = int(mask.numel())
+    view_shape[-1] = mask_width
     mask = mask.reshape(view_shape)
     return logits.masked_fill(~mask, torch.finfo(logits.dtype).min)
 

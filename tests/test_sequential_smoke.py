@@ -62,8 +62,13 @@ def _load_module_standalone(rel_path: str, name: str):
 
 
 def _method_region_from_source(source: str, method_name: str) -> str:
-    start = source.index(f"    def {method_name}")
-    next_method = source.find("\n    def ", start + 1)
+    needle = f"    def {method_name}"
+    next_needle = "\n    def "
+    if needle not in source:
+        needle = f"def {method_name}"
+        next_needle = "\ndef "
+    start = source.index(needle)
+    next_method = source.find(next_needle, start + 1)
     if next_method == -1:
         next_method = len(source)
     return source[start:next_method]
@@ -893,6 +898,15 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             "values = np.array([s.value for s in self._samples], dtype=np.float32)",
         ):
             self.assertNotIn(old_pattern, to_tensors_region, msg=f"old multi-pass pack remains: {old_pattern!r}")
+
+    def test_legacy_action_mask_validation_avoids_gpu_scalar_sync_for_numpy_masks(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
+        mask_region = _method_region_from_source(policy_src, "_mask_logits_for_slot")
+
+        self.assertIn("raw_arr = np.asarray(raw, dtype=bool).reshape(-1)", mask_region)
+        self.assertIn("if not bool(raw_arr.any()):", mask_region)
+        self.assertIn("torch.as_tensor(raw_arr, dtype=torch.bool, device=logits.device)", mask_region)
+        self.assertNotIn("mask.any().item()", mask_region)
 
     def test_action_dist_avoids_gpu_sync_for_zero_exploration_floor(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
