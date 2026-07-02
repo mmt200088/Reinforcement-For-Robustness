@@ -1,7 +1,6 @@
 """Shared helpers for fusion-count fixed-action evaluation scripts."""
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 import sys
@@ -12,7 +11,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_json_int_list  # noqa: E402
-from json_utils import stable_json_hash, stable_json_key  # noqa: E402
+from json_utils import read_json_file, stable_json_hash, stable_json_key  # noqa: E402
 
 
 def resolve_repo_path(path: str | os.PathLike[str]) -> Path:
@@ -39,7 +38,7 @@ def iter_action_config_paths(action_dir: Path) -> Iterable[Path]:
 def load_paean_action_configs(action_dir: Path) -> List[dict]:
     configs = []
     for path in iter_action_config_paths(action_dir):
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_json_file(path)
         action = payload.get("action_vec")
         slots = payload.get("slots")
         base = payload.get("base")
@@ -90,7 +89,7 @@ def rlpath_config_group_key(cfg: Mapping[str, Any]) -> str:
 def load_rlpath_action_configs(action_dir: Path) -> List[dict]:
     configs: List[dict] = []
     for path in iter_action_config_paths(action_dir):
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_json_file(path)
         group = payload.get("group") or {}
         name = str(group.get("name") or path.stem)
         cfg = {

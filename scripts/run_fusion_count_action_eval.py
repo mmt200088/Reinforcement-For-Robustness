@@ -27,7 +27,7 @@ from scripts.fusion_count_action_eval_common import (
     resolve_repo_path,
     unique_paean_action_configs,
 )
-from json_utils import write_json_file
+from json_utils import read_json_file, write_json_file
 from report_format_utils import html_table, metric_float
 
 DEFAULT_RUN_DIR = REPO_ROOT / "experiments" / "server_command_runs" / "fusion_count_map_action_eval_20260610"
@@ -138,7 +138,7 @@ def _run_one(
 
 
 def _load_result(path: Path) -> dict:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = read_json_file(path)
     candidates = payload.get("candidate_results") or []
     if not candidates:
         raise RuntimeError(f"missing candidate_results in {path}")
@@ -362,7 +362,7 @@ def main() -> int:
                 env=env,
             )
 
-    map_report = json.loads(map_report_path.read_text(encoding="utf-8"))
+    map_report = read_json_file(map_report_path)
     combined = _build_combined(
         configs=configs,
         output_root=output_root,

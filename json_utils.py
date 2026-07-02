@@ -166,3 +166,8 @@ def write_json_file(
         text += "\n"
     out_path.write_text(text, encoding="utf-8")
     return out_path
+
+
+def read_json_file(path: str | Path, *, encoding: str = "utf-8") -> Any:
+    """Read a JSON artifact through the repository's shared file seam."""
+    return json.loads(Path(path).read_text(encoding=encoding))

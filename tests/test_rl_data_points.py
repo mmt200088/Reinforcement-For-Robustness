@@ -11,6 +11,7 @@ import numpy as np
 
 from json_utils import (
     json_default,
+    read_json_file,
     stable_json_hash,
     stable_json_key,
     to_jsonable as shared_to_jsonable,
@@ -123,6 +124,13 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertTrue(text.endswith("\n"))
         self.assertEqual(json.loads(text), {"a": "x", "b": 2})
 
+    def test_read_json_file_reads_artifact_payload(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "payload.json"
+            path.write_text('{"a": 1, "b": [2]}', encoding="utf-8")
+
+            self.assertEqual(read_json_file(path), {"a": 1, "b": [2]})
+
     def test_json_artifact_scripts_use_shared_writer(self):
         checks = {
             "scripts/blb_f0_scan_feasible_domain.py": "from json_utils import stable_json_hash, write_json_file",
@@ -133,17 +141,31 @@ class RLDataPointWriterTest(unittest.TestCase):
             "scripts/stage1_parallel_report.py": "from json_utils import write_json_file",
             "scripts/stage2_reward_probe_scaling_report.py": "from json_utils import write_json_file",
             "scripts/report_fusion_count_map.py": "from json_utils import write_json_file",
-            "scripts/run_fusion_count_action_eval.py": "from json_utils import write_json_file",
-            "scripts/run_fusion_count_action_eval_rlpath.py": "from json_utils import to_jsonable, write_json_file",
-            "scripts/blb_apply_precision_boost.py": "from json_utils import write_json_file",
-            "scripts/blb_make_fusion_fixed_action_config.py": "from json_utils import write_json_file",
-            "scripts/blb_make_run_manifest.py": "from json_utils import write_json_file",
+            "scripts/run_fusion_count_action_eval.py": "from json_utils import read_json_file, write_json_file",
+            "scripts/run_fusion_count_action_eval_rlpath.py": "from json_utils import read_json_file, to_jsonable, write_json_file",
+            "scripts/blb_apply_precision_boost.py": "from json_utils import read_json_file, write_json_file",
+            "scripts/blb_make_fusion_fixed_action_config.py": "from json_utils import read_json_file, write_json_file",
+            "scripts/blb_make_run_manifest.py": "from json_utils import read_json_file, write_json_file",
         }
         for rel, needle in checks.items():
             with self.subTest(path=rel):
                 text = (REPO_ROOT / rel).read_text(encoding="utf-8")
                 self.assertIn(needle, text)
                 self.assertNotIn("def _write_json(", text)
+
+    def test_json_artifact_scripts_use_shared_reader(self):
+        checks = {
+            "scripts/fusion_count_action_eval_common.py": "from json_utils import read_json_file",
+            "scripts/run_fusion_count_action_eval.py": "from json_utils import read_json_file",
+            "scripts/run_fusion_count_action_eval_rlpath.py": "from json_utils import read_json_file",
+            "scripts/blb_apply_precision_boost.py": "from json_utils import read_json_file",
+            "scripts/blb_make_fusion_fixed_action_config.py": "from json_utils import read_json_file",
+            "scripts/blb_make_run_manifest.py": "from json_utils import read_json_file",
+        }
+        for rel, needle in checks.items():
+            with self.subTest(path=rel):
+                text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+                self.assertIn(needle, text)
 
     def test_to_jsonable_does_not_import_torch_for_json_native_scalars(self):
         import builtins

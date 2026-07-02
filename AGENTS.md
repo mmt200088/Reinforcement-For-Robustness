@@ -94,12 +94,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `json_utils.stable_json_hash()`. For JSON artifact files that need parent
   directory creation plus normalized `indent=2` output, use
   `json_utils.write_json_file()` instead of script-local `_write_json` helpers.
+  For JSON artifact reads, use `json_utils.read_json_file()` instead of
+  script-local `json.loads(path.read_text(...))` loops in core
+  RL/Paean/final-eval/report tools.
   Do not add local `_json_ready`, `_jsonable`, `_json_safe`, `_json_default`,
-  `json_default`, `_stable_json`, `_sha256_json`, or `_write_json` helpers in
-  core RL/Paean/final-eval code or standalone experiment scripts; keep
-  legacy-named helpers only as thin wrappers around `json_utils` when
-  compatibility requires them. Extend `json_utils.py` and its tests when a new
-  serializable type or JSON artifact convention is needed.
+  `json_default`, `_stable_json`, `_sha256_json`, `_read_json`, `_load_json`,
+  or `_write_json` helpers in core RL/Paean/final-eval code or standalone
+  experiment scripts; keep legacy-named helpers only as thin wrappers around
+  `json_utils` when compatibility requires them. Extend `json_utils.py` and its
+  tests when a new serializable type or JSON artifact convention is needed.
 - Shared report-format helper rule, added 2026-07-03: lightweight HTML/metrics
   reports must use `report_format_utils.py` for common table and number
   rendering. Use `html_table()` for small escaped tables, enabling

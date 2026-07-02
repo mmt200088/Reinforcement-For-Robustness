@@ -28,7 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from json_utils import to_jsonable, write_json_file
+from json_utils import read_json_file, to_jsonable, write_json_file
 from report_format_utils import format_float, html_table, metric_float
 from scripts.fusion_count_action_eval_common import (
     load_rlpath_action_configs,
@@ -512,7 +512,7 @@ def main() -> int:
     print(f"[info] groups={len(configs)} unique_group_actions={len(unique)}", flush=True)
     ev = _build_evaluator(args, stage1_gelu=stage1_gelu, stage1_softmax=stage1_softmax)
     seq_env, baseline = _build_seq_env(args, ev, stage1_gelu=stage1_gelu, stage1_softmax=stage1_softmax)
-    original = json.loads(original_json.read_text(encoding="utf-8"))
+    original = read_json_file(original_json)
     original_by_name = {
         str(r.get("name")): r
         for r in (original.get("group_results") or [])

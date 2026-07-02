@@ -17,7 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from blb_stage2_rl.action_space import action_dims_for_config, per_layer_field_offsets  # noqa: E402
-from json_utils import write_json_file  # noqa: E402
+from json_utils import read_json_file, write_json_file  # noqa: E402
 
 
 def _run_git(args: Sequence[str]) -> str | None:
@@ -148,7 +148,7 @@ def _load_stage1_config(
         }
     payload: Any = None
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_json_file(path)
     except Exception:
         payload = None
     candidates = payload
@@ -185,7 +185,7 @@ def _load_registry_hash(path_text: str | None) -> str | None:
     if not path.exists():
         return None
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_json_file(path)
     except Exception:
         return _file_sha256(path)
     if isinstance(payload, dict) and payload.get("registry_hash"):

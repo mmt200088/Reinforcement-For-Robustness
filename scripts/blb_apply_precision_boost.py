@@ -20,7 +20,6 @@ same phase-1+phase-2 options.
 from __future__ import annotations
 
 import argparse
-import json
 import pathlib
 import sys
 
@@ -29,7 +28,7 @@ for p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimiz
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from json_utils import write_json_file  # noqa: E402
+from json_utils import read_json_file, write_json_file  # noqa: E402
 
 # (graph_key, block_idx, gelu_degree, attn_degree) for each boostable block-type.
 # Mirrors scripts/blb_build_fusion_count_map.py's block_types_for_profile degrees.
@@ -76,7 +75,7 @@ def main() -> int:
         if not path.exists():
             print(f"[skip] {graph_key}: no map at {path}")
             continue
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_json_file(path)
         options = payload["options"]
 
         ctx = fusion_enum.prepare_block_type_context(

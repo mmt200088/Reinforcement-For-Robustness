@@ -12,7 +12,6 @@ fusion-count maps while leaving the K slot exactly as encoded in the flat vector
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence
 import sys
@@ -23,12 +22,12 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
         sys.path.insert(0, _p)
 
 from cli_parse_utils import parse_exact_json_int_list
-from json_utils import write_json_file
+from json_utils import read_json_file, write_json_file
 from blb_stage2_rl.fusion_fixed_action import build_fusion_fixed_config
 
 
 def _load_action_vec(path: Path) -> List[int]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = read_json_file(path)
     if not isinstance(payload, Mapping) or not isinstance(payload.get("action_vec"), list):
         raise ValueError(f"{path} must contain a top-level action_vec list")
     return [int(x) for x in payload["action_vec"]]
