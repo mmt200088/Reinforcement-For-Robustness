@@ -470,6 +470,82 @@ def _open_step_level_mask(
     return mask
 
 
+@dataclass(frozen=True)
+class _StepStaticTensors:
+    slot_mask_np: np.ndarray
+    levels_np: np.ndarray
+    slot_mask_t: torch.Tensor
+    levels_t: torch.Tensor
+
+
+def _step_static_cache_key(
+        *,
+        schedule: Sequence[Any],
+        max_step_dim: int,
+        max_num_levels: int,
+        device: torch.device,
+        ) -> Tuple[str, int, int, Tuple[Tuple[Any, ...], ...]]:
+    items: List[Tuple[Any, ...]] = []
+    for pos, spec in enumerate(schedule):
+        step_idx = int(getattr(spec, "step_idx", pos))
+        if hasattr(spec, "fusion_num_options"):
+            items.append((
+                "fusion",
+                step_idx,
+                int(spec.fusion_num_options),
+                int(spec.k_num_levels),
+            ))
+        else:
+            items.append((
+                "per_slot",
+                step_idx,
+                tuple(int(d) for d in getattr(spec, "slot_dims", ())),
+            ))
+    return (
+        str(torch.device(device)),
+        int(max_step_dim),
+        int(max_num_levels),
+        tuple(items),
+    )
+
+
+def _get_cached_step_static_tensors(
+        env: BLBStage2SequentialEnv,
+        *,
+        max_step_dim: int,
+        max_num_levels: int,
+        device: torch.device,
+        ) -> List[_StepStaticTensors]:
+    schedule = env.schedule
+    key = _step_static_cache_key(
+        schedule=schedule,
+        max_step_dim=int(max_step_dim),
+        max_num_levels=int(max_num_levels),
+        device=torch.device(device),
+    )
+    cached = getattr(env, "_stage2_static_step_tensor_cache", None)
+    if isinstance(cached, tuple) and len(cached) == 2 and cached[0] == key:
+        return cached[1]
+
+    by_step: Dict[int, _StepStaticTensors] = {}
+    for pos, spec in enumerate(schedule):
+        step_idx = int(getattr(spec, "step_idx", pos))
+        if step_idx in by_step:
+            raise ValueError(f"duplicate sequential step index {step_idx}")
+        slot_mask_np, levels_np = step_to_mask_and_levels(
+            spec, int(max_step_dim), int(max_num_levels),
+        )
+        by_step[step_idx] = _StepStaticTensors(
+            slot_mask_np=slot_mask_np,
+            levels_np=levels_np,
+            slot_mask_t=torch.as_tensor(slot_mask_np, device=device).unsqueeze(0),
+            levels_t=torch.as_tensor(levels_np, device=device).unsqueeze(0),
+        )
+    step_static_tensors = [by_step[i] for i in range(len(schedule))]
+    setattr(env, "_stage2_static_step_tensor_cache", (key, step_static_tensors))
+    return step_static_tensors
+
+
 def _build_step_level_mask(
         *,
         spec: Any,
@@ -1922,6 +1998,12 @@ def train_sequential(
             else None
         )
         obs = env.reset(seed=seed_for_this_ep)
+        step_static_tensors = _get_cached_step_static_tensors(
+            env,
+            max_step_dim=policy.cfg.max_step_dim,
+            max_num_levels=policy.cfg.max_num_levels,
+            device=device,
+        )
         per_step_sum = 0.0
         terminal_reward = 0.0
         invalid_steps = 0
@@ -2160,12 +2242,12 @@ def train_sequential(
         while True:
             spec = env.current_spec()
             fusion_mode = hasattr(spec, "fusion_num_options")
-            slot_mask_np, levels_np = step_to_mask_and_levels(
-                spec, policy.cfg.max_step_dim, policy.cfg.max_num_levels,
-            )
+            step_static = step_static_tensors[int(spec.step_idx)]
+            slot_mask_np = step_static.slot_mask_np
+            levels_np = step_static.levels_np
             obs_t = torch.from_numpy(obs).float().to(device).unsqueeze(0)
-            slot_mask_t = torch.from_numpy(slot_mask_np).to(device).unsqueeze(0)
-            levels_t = torch.from_numpy(levels_np).to(device).unsqueeze(0)
+            slot_mask_t = step_static.slot_mask_t
+            levels_t = step_static.levels_t
             n_active = int(slot_mask_np.sum())
             action_level_mask_np: Optional[np.ndarray] = None
             action_level_mask_t = None

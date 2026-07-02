@@ -69,9 +69,9 @@ from .seed_utils import (
     derive_probe_seed,
 )
 from .sequential_env import BLBStage2SequentialEnv
-from .sequential_policy import step_to_mask_and_levels
 from .sequential_runner import (
     EpisodeRecord,
+    _get_cached_step_static_tensors,
     _open_step_level_mask,
     _resolve_baseline_prior_scale,
 )
@@ -272,6 +272,12 @@ def collect_fusion_episode(
     )
 
     obs = env.reset(seed=None)
+    step_static_tensors = _get_cached_step_static_tensors(
+        env,
+        max_step_dim=policy.cfg.max_step_dim,
+        max_num_levels=policy.cfg.max_num_levels,
+        device=device,
+    )
     env.base.probe_noise_seed = derive_probe_seed(int(base_seed), int(absolute_ep))
 
     per_step_sum = 0.0
@@ -350,12 +356,12 @@ def collect_fusion_episode(
 
     while True:
         spec = env.current_spec()
-        slot_mask_np, levels_np = step_to_mask_and_levels(
-            spec, policy.cfg.max_step_dim, policy.cfg.max_num_levels,
-        )
+        step_static = step_static_tensors[int(spec.step_idx)]
+        slot_mask_np = step_static.slot_mask_np
+        levels_np = step_static.levels_np
         obs_t = torch.from_numpy(obs).float().to(device).unsqueeze(0)
-        slot_mask_t = torch.from_numpy(slot_mask_np).to(device).unsqueeze(0)
-        levels_t = torch.from_numpy(levels_np).to(device).unsqueeze(0)
+        slot_mask_t = step_static.slot_mask_t
+        levels_t = step_static.levels_t
         n_active = int(slot_mask_np.sum())
 
         if fusion_curriculum_active and not fusion_curriculum_open:

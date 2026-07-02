@@ -899,6 +899,43 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         ):
             self.assertNotIn(old_pattern, policy_src, msg=f"old multi-pass pack remains: {old_pattern!r}")
 
+    def test_stage2_step_static_tensors_are_cached_per_schedule_device(self):
+        runner_src = (REPO_ROOT / "blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        parallel_src = (REPO_ROOT / "blb_stage2_rl/parallel_runner.py").read_text(
+            encoding="utf-8"
+        )
+
+        for needle in (
+            "class _StepStaticTensors:",
+            "def _get_cached_step_static_tensors(",
+            "_stage2_static_step_tensor_cache",
+            "torch.as_tensor(slot_mask_np, device=device).unsqueeze(0)",
+            "torch.as_tensor(levels_np, device=device).unsqueeze(0)",
+        ):
+            self.assertIn(needle, runner_src, msg=f"sequential_runner.py missing: {needle!r}")
+        for src_name, src in (
+            ("sequential_runner.py", runner_src),
+            ("parallel_runner.py", parallel_src),
+        ):
+            for needle in (
+                "step_static_tensors = _get_cached_step_static_tensors(",
+                "step_static = step_static_tensors[int(spec.step_idx)]",
+                "slot_mask_t = step_static.slot_mask_t",
+                "levels_t = step_static.levels_t",
+            ):
+                self.assertIn(needle, src, msg=f"{src_name} missing cache use: {needle!r}")
+            for old_pattern in (
+                "slot_mask_t = torch.from_numpy(slot_mask_np).to(device).unsqueeze(0)",
+                "levels_t = torch.from_numpy(levels_np).to(device).unsqueeze(0)",
+            ):
+                self.assertNotIn(
+                    old_pattern,
+                    src,
+                    msg=f"{src_name} still rebuilds static step tensors per step: {old_pattern!r}",
+                )
+
     def test_sequential_stage2_rollout_defers_logprob_value_sync_until_buffer_pack(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
         runner_src = (REPO_ROOT / "blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
