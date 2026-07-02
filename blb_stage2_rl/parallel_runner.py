@@ -237,6 +237,41 @@ def _default_terminal_snapshot() -> Dict[str, Any]:
     return snap
 
 
+def _materialize_transition_scalar_tensors(
+        transitions: List[Dict[str, Any]],
+        ) -> List[Dict[str, Any]]:
+    tensor_rows: List[torch.Tensor] = []
+    tensor_indices: List[int] = []
+    for idx, transition in enumerate(transitions):
+        log_prob = transition.get("log_prob", 0.0)
+        value = transition.get("value", 0.0)
+        if not (torch.is_tensor(log_prob) or torch.is_tensor(value)):
+            continue
+        device = (
+            log_prob.device if torch.is_tensor(log_prob)
+            else value.device
+        )
+        log_prob_t = (
+            log_prob.detach().reshape(())
+            if torch.is_tensor(log_prob)
+            else torch.as_tensor(float(log_prob), device=device)
+        )
+        value_t = (
+            value.detach().reshape(())
+            if torch.is_tensor(value)
+            else torch.as_tensor(float(value), device=device)
+        )
+        tensor_rows.append(torch.stack((log_prob_t, value_t)))
+        tensor_indices.append(int(idx))
+    if not tensor_rows:
+        return transitions
+    packed = torch.stack(tensor_rows).detach().cpu().numpy()
+    for row_idx, transition_idx in enumerate(tensor_indices):
+        transitions[transition_idx]["log_prob"] = float(packed[row_idx, 0])
+        transitions[transition_idx]["value"] = float(packed[row_idx, 1])
+    return transitions
+
+
 # ---------------------------------------------------------------------------
 # Worker-side fusion episode collection
 # ---------------------------------------------------------------------------
@@ -394,8 +429,8 @@ def collect_fusion_episode(
         )
 
         chosen_action_np: Optional[np.ndarray] = None
-        chosen_log_prob = 0.0
-        chosen_value = 0.0
+        chosen_log_prob: Any = 0.0
+        chosen_value: Any = 0.0
         chosen_eval_info: Optional[Dict[str, Any]] = None
 
         if force_this_ep:
@@ -418,8 +453,8 @@ def collect_fusion_episode(
             policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
             chosen_eval_info = env.evaluate_step(forced_action.tolist())
             chosen_action_np = forced_padded
-            chosen_log_prob = float(lp_t.item())
-            chosen_value = float(val_t.item())
+            chosen_log_prob = lp_t.detach().reshape(())
+            chosen_value = val_t.detach().reshape(())
         else:
             action_np_try: Optional[np.ndarray] = None
             log_prob_t = value_t = None
@@ -487,8 +522,8 @@ def collect_fusion_episode(
                 eval_info = env.evaluate_step(step_action_try)
                 if eval_info["valid"]:
                     chosen_action_np = action_np_try
-                    chosen_log_prob = float(log_prob_t.item())
-                    chosen_value = float(value_t.item())
+                    chosen_log_prob = log_prob_t.detach().reshape(())
+                    chosen_value = value_t.detach().reshape(())
                     chosen_eval_info = eval_info
                     break
 
@@ -528,8 +563,8 @@ def collect_fusion_episode(
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 chosen_eval_info = env.evaluate_step(fallback_action.tolist())
                 chosen_action_np = fallback_padded
-                chosen_log_prob = float(lp_t.item())
-                chosen_value = float(val_t.item())
+                chosen_log_prob = lp_t.detach().reshape(())
+                chosen_value = val_t.detach().reshape(())
                 steps_fallen_back_to_baseline += 1
 
         assert chosen_action_np is not None and chosen_eval_info is not None
@@ -573,8 +608,8 @@ def collect_fusion_episode(
             slot_mask=slot_mask_np,
             per_slot_num_levels=levels_np,
             action_level_mask=action_level_mask_np,
-            log_prob=float(chosen_log_prob),
-            value=float(chosen_value),
+            log_prob=chosen_log_prob,
+            value=chosen_value,
             reward=float(reward),
             done=bool(done),
             baseline_prior_scale=float(baseline_prior_scale),
@@ -702,7 +737,7 @@ def collect_fusion_episode(
     return FusionEpisodeOutcome(
         rel_ep=int(rel_ep),
         absolute_ep=int(absolute_ep),
-        transitions=transitions,
+        transitions=_materialize_transition_scalar_tensors(transitions),
         record=record,
         pending_full_vec=(
             None if pending_full_vec is None

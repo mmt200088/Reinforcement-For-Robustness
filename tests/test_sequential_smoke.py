@@ -936,6 +936,37 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
                     msg=f"{src_name} still rebuilds static step tensors per step: {old_pattern!r}",
                 )
 
+    def test_stage2_parallel_rollout_batches_worker_scalar_sync_at_episode_end(self):
+        parallel_src = (REPO_ROOT / "blb_stage2_rl/parallel_runner.py").read_text(
+            encoding="utf-8"
+        )
+        collect_region = _method_region_from_source(parallel_src, "collect_fusion_episode")
+
+        self.assertIn("def _materialize_transition_scalar_tensors(", parallel_src)
+        self.assertIn("_materialize_transition_scalar_tensors(transitions)", collect_region)
+        for needle in (
+            "chosen_log_prob = lp_t.detach().reshape(())",
+            "chosen_value = val_t.detach().reshape(())",
+            "chosen_log_prob = log_prob_t.detach().reshape(())",
+            "chosen_value = value_t.detach().reshape(())",
+            "log_prob=chosen_log_prob",
+            "value=chosen_value",
+        ):
+            self.assertIn(needle, collect_region, msg=f"parallel_runner.py missing: {needle!r}")
+        for old_sync in (
+            "chosen_log_prob = float(lp_t.item())",
+            "chosen_value = float(val_t.item())",
+            "chosen_log_prob = float(log_prob_t.item())",
+            "chosen_value = float(value_t.item())",
+            "log_prob=float(chosen_log_prob)",
+            "value=float(chosen_value)",
+        ):
+            self.assertNotIn(
+                old_sync,
+                collect_region,
+                msg=f"parallel rollout still syncs scalar per step: {old_sync!r}",
+            )
+
     def test_sequential_stage2_rollout_defers_logprob_value_sync_until_buffer_pack(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
         runner_src = (REPO_ROOT / "blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
