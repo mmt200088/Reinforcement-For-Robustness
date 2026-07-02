@@ -92,6 +92,7 @@ class CliParseUtilsTest(unittest.TestCase):
             "scripts/blb_f0_scan_feasible_domain.py": "from cli_parse_utils import parse_int_list_text, parse_optional_int_list",
             "scripts/bert_mrpc_layer_noise_experiment.py": "from cli_parse_utils import parse_float_list_text",
             "scripts/stage1_parallel_report.py": "from cli_parse_utils import parse_int_list_text, split_int_tokens",
+            "Paean/action_grid.py": "from cli_parse_utils import parse_int_list_text",
             "rl_tune.py": "from cli_parse_utils import",
             "rl_tune_general.py": "from cli_parse_utils import",
             "rl_tune_genetic.py": "from cli_parse_utils import",

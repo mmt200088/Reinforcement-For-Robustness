@@ -199,7 +199,8 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   wrappers when adding a new fusion-count experiment; extend the common helper
   and its tests if the shared contract needs a new variant.
 - Shared CLI numeric parser rule, added 2026-07-03: small scripts that parse
-  command-line integer/float vectors must use `cli_parse_utils.py`. Use
+  command-line integer/float vectors and Paean/final-eval action vector text
+  fields must use `cli_parse_utils.py`. Use
   `parse_json_int_list()` for JSON-list flags with defaults,
   `parse_exact_json_int_list()` for exact-length JSON vectors,
   `parse_optional_int_list()` / `parse_int_list_text()` for comma/semicolon
