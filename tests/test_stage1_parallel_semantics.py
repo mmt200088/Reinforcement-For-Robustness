@@ -86,7 +86,7 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertIn("rollout.actions_g.append(gelu_action_idx)", worker_region)
         self.assertIn("cont_feat_np, dtype=torch.float32, device=device", worker_region)
         self.assertIn("gelu_mask_np, dtype=torch.bool, device=device", worker_region)
-        self.assertIn("torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long, device=device)", worker_region)
+        self.assertIn("seq_prev_g[0, step] = int(prev_g_idx)", worker_region)
 
         self.assertIn("prev_g_idx = SOS_TOKEN_GELU", source)
         self.assertIn("action_g=gelu_action_idx", source)
@@ -95,6 +95,21 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertNotIn("GELU_MAP[int(gelu_action.item())]", source)
         self.assertNotIn("prev_g=prev_g.squeeze().item()", source)
         self.assertNotIn("action_g=gelu_action.item()", source)
+
+    def test_stage1_rollout_reuses_preallocated_sequence_tensors(self):
+        source = _source(LAYER_EVALUATOR)
+        worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
+
+        self.assertIn("seq_cont_feats = torch.empty(", worker_region)
+        self.assertIn("seq_cont_feats[0, step].copy_(cont_feat_t)", worker_region)
+        self.assertIn("full_cont = seq_cont_feats[:, : step + 1, :]", worker_region)
+        self.assertIn("full_prev_g = seq_prev_g[:, : step + 1]", worker_region)
+
+        self.assertIn("seq_cont_feats = torch.empty(", source)
+        self.assertNotIn("torch.cat(seq_cont_feats", source)
+        self.assertNotIn("torch.cat(seq_layer_indices", source)
+        self.assertNotIn("torch.cat(seq_prev_g", source)
+        self.assertNotIn("torch.cat(seq_gelu_masks", source)
 
 
 if __name__ == "__main__":

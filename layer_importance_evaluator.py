@@ -5668,15 +5668,24 @@ class LayerImportanceEvaluator(TrainerCallback):
         env = worker.env
         state = env.reset()
 
-        # Per-episode action-history accumulators live on the worker's device
+        # Per-episode action-history buffers live on the worker's device
         # (where its policy replica lives).
-        prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long, device=device)
         prev_g_idx = SOS_TOKEN_GELU
 
-        seq_cont_feats: List[torch.Tensor] = []
-        seq_layer_indices: List[torch.Tensor] = []
-        seq_prev_g: List[torch.Tensor] = []
-        seq_gelu_masks: List[torch.Tensor] = []
+        seq_cont_feats = torch.empty(
+            (1, self.total_layers, LSTM_CONT_DIM), dtype=torch.float32, device=device,
+        )
+        seq_layer_indices = torch.empty(
+            (1, self.total_layers), dtype=torch.long, device=device,
+        )
+        seq_prev_g = torch.empty(
+            (1, self.total_layers), dtype=torch.long, device=device,
+        )
+        seq_gelu_masks = torch.empty(
+            (1, self.total_layers, int(STAGE1_GELU_ACTION_MASK.size)),
+            dtype=torch.bool,
+            device=device,
+        )
 
         rollout = EpisodeRollout(
             cont_features=[], layer_indices=[], prev_g_actions=[],
@@ -5698,22 +5707,21 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             cont_feat_t = torch.as_tensor(
                 cont_feat_np, dtype=torch.float32, device=device
-            ).unsqueeze(0).unsqueeze(0)
-            layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long, device=device)
+            )
             gelu_mask_np = env.get_gelu_action_mask(layer_idx)
             gelu_mask_t = torch.as_tensor(
                 gelu_mask_np, dtype=torch.bool, device=device
-            ).unsqueeze(0).unsqueeze(0)
+            )
 
-            seq_cont_feats.append(cont_feat_t)
-            seq_layer_indices.append(layer_idx_t)
-            seq_prev_g.append(prev_g)
-            seq_gelu_masks.append(gelu_mask_t)
+            seq_cont_feats[0, step].copy_(cont_feat_t)
+            seq_layer_indices[0, step] = int(layer_idx)
+            seq_prev_g[0, step] = int(prev_g_idx)
+            seq_gelu_masks[0, step].copy_(gelu_mask_t)
 
-            full_cont = torch.cat(seq_cont_feats, dim=1)
-            full_layer = torch.cat(seq_layer_indices, dim=1)
-            full_prev_g = torch.cat(seq_prev_g, dim=1)
-            full_gelu_mask = torch.cat(seq_gelu_masks, dim=1)
+            full_cont = seq_cont_feats[:, : step + 1, :]
+            full_layer = seq_layer_indices[:, : step + 1]
+            full_prev_g = seq_prev_g[:, : step + 1]
+            full_gelu_mask = seq_gelu_masks[:, : step + 1, :]
 
             # Per-worker replica on the worker's own device — NO lock. Seed the
             # worker's device RNG so Categorical.sample() is reproducible and,
@@ -5766,7 +5774,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "current_entropy_coef": None,
             })
 
-            prev_g = gelu_action.reshape(1, 1)
             prev_g_idx = gelu_action_idx
 
             episode_reward += reward
@@ -6459,14 +6466,25 @@ class LayerImportanceEvaluator(TrainerCallback):
                 if not _handled_via_parallel:
                     # GTrXL Rollout：环境重置 + SOS标记 + 空token序列（gelu-only）
                     state = env.reset()
-                    prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long, device=self.device)
                     prev_g_idx = SOS_TOKEN_GELU
 
-                    # GTrXL：token序列累积器（每步追加，因果掩码自动处理时序依赖）
-                    seq_cont_feats = []
-                    seq_layer_indices = []
-                    seq_prev_g = []
-                    seq_gelu_masks = []
+                    # GTrXL：预分配 token 序列缓存（每步切 prefix，避免反复 torch.cat）
+                    seq_cont_feats = torch.empty(
+                        (1, self.total_layers, LSTM_CONT_DIM),
+                        dtype=torch.float32,
+                        device=self.device,
+                    )
+                    seq_layer_indices = torch.empty(
+                        (1, self.total_layers), dtype=torch.long, device=self.device,
+                    )
+                    seq_prev_g = torch.empty(
+                        (1, self.total_layers), dtype=torch.long, device=self.device,
+                    )
+                    seq_gelu_masks = torch.empty(
+                        (1, self.total_layers, int(STAGE1_GELU_ACTION_MASK.size)),
+                        dtype=torch.bool,
+                        device=self.device,
+                    )
 
                     episode_reward = 0
                     step_infos = []
@@ -6481,25 +6499,24 @@ class LayerImportanceEvaluator(TrainerCallback):
 
                         cont_feat_t = torch.as_tensor(
                             cont_feat_np, dtype=torch.float32, device=self.device
-                        ).unsqueeze(0).unsqueeze(0)  # (1,1,6)
-                        layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long, device=self.device)  # (1,1)
+                        )
 
                         gelu_mask_np = env.get_gelu_action_mask(layer_idx)
                         gelu_mask_t = torch.as_tensor(
                             gelu_mask_np, dtype=torch.bool, device=self.device
-                        ).unsqueeze(0).unsqueeze(0)  # (1,1,4)
+                        )
 
-                        # GTrXL：将当前token追加到序列
-                        seq_cont_feats.append(cont_feat_t)
-                        seq_layer_indices.append(layer_idx_t)
-                        seq_prev_g.append(prev_g)
-                        seq_gelu_masks.append(gelu_mask_t)
+                        # GTrXL：写入当前 token，前缀 slice 作为因果输入
+                        seq_cont_feats[0, step].copy_(cont_feat_t)
+                        seq_layer_indices[0, step] = int(layer_idx)
+                        seq_prev_g[0, step] = int(prev_g_idx)
+                        seq_gelu_masks[0, step].copy_(gelu_mask_t)
 
-                        # 拼接完整序列 (1, step+1, ...)
-                        full_cont = torch.cat(seq_cont_feats, dim=1)
-                        full_layer = torch.cat(seq_layer_indices, dim=1)
-                        full_prev_g = torch.cat(seq_prev_g, dim=1)
-                        full_gelu_mask = torch.cat(seq_gelu_masks, dim=1)
+                        # 切出当前完整前缀序列 (1, step+1, ...)
+                        full_cont = seq_cont_feats[:, : step + 1, :]
+                        full_layer = seq_layer_indices[:, : step + 1]
+                        full_prev_g = seq_prev_g[:, : step + 1]
+                        full_gelu_mask = seq_gelu_masks[:, : step + 1, :]
 
                         # GTrXL：因果自注意力推理（无hidden state）
                         with torch.no_grad():
@@ -6550,7 +6567,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                         )
 
                         # 更新前一步动作（自回归输入下一步）
-                        prev_g = gelu_action.reshape(1, 1)
                         prev_g_idx = gelu_action_idx
 
                         episode_reward += reward
