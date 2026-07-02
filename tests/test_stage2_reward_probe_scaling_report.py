@@ -26,35 +26,37 @@ def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 class Stage2RewardProbeScalingReportTest(unittest.TestCase):
-    def test_iter_jsonl_passes_unstripped_lines_to_json_loader(self):
+    def test_episode_summary_reader_passes_unstripped_lines_to_json_loader(self):
+        import jsonl_utils
+
         report = _load_report_module()
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "rows.jsonl"
-            path.write_text('{"label": "bs128_g1"}\n', encoding="utf-8")
+            path.write_text('{"terminal_probe_wall_seconds": 1.0}\n', encoding="utf-8")
             seen = []
-            original_loads = report.json.loads
+            original_loads = jsonl_utils.json.loads
 
             def recording_loads(value):
                 seen.append(value)
                 return original_loads(value)
 
-            with mock.patch.object(report.json, "loads", recording_loads):
-                rows = list(report._iter_jsonl(path))
+            with mock.patch.object(jsonl_utils.json, "loads", recording_loads):
+                summary = report._summarize_episodes(path)
 
-        self.assertEqual(rows, [{"label": "bs128_g1"}])
+        self.assertEqual(summary["probe_calls"], 1)
         self.assertTrue(seen[0].endswith("\n"))
 
-    def test_iter_jsonl_skips_whitespace_only_lines(self):
+    def test_episode_summary_reader_skips_whitespace_only_lines(self):
         report = _load_report_module()
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "rows.jsonl"
-            path.write_text('\n  \n{"label": "bs128_g1"}\n', encoding="utf-8")
+            path.write_text('\n  \n{"terminal_probe_wall_seconds": 1.0}\n', encoding="utf-8")
 
-            rows = list(report._iter_jsonl(path))
+            summary = report._summarize_episodes(path)
 
-        self.assertEqual(rows, [{"label": "bs128_g1"}])
+        self.assertEqual(summary["probe_calls"], 1)
 
     def test_episode_summary_uses_running_means(self):
         report = _load_report_module()
@@ -198,15 +200,19 @@ class Stage2RewardProbeScalingReportTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with mock.patch.object(
-                report,
-                "_normalized_row",
-                side_effect=AssertionError("CSV headers should be normalized once"),
-            ):
+            calls = []
+            original = report.normalized_field_index
+
+            def recording_normalized_field_index(header):
+                calls.append(tuple(header))
+                return original(header)
+
+            with mock.patch.object(report, "normalized_field_index", recording_normalized_field_index):
                 gpu_util, gpu_mem = report._summarize_gpu_samples(smi)
 
         self.assertEqual(gpu_util, {"0": 40.0})
         self.assertEqual(gpu_mem, {"0": 1500.0})
+        self.assertEqual(len(calls), 1)
 
     def test_gpu_sample_summary_avoids_per_row_dict_reader(self):
         report = _load_report_module()
@@ -231,17 +237,31 @@ class Stage2RewardProbeScalingReportTest(unittest.TestCase):
         self.assertEqual(gpu_util, {"0": 40.0})
         self.assertEqual(gpu_mem, {"0": 1500.0})
 
-    def test_float_value_uses_precompiled_pattern(self):
+    def test_gpu_sample_summary_uses_shared_float_parser(self):
         report = _load_report_module()
 
-        with mock.patch.object(
-            report.re,
-            "search",
-            side_effect=AssertionError("float parsing should use the compiled hot-path regex"),
-        ):
-            self.assertEqual(report._float_value("40 %"), 40.0)
-            self.assertEqual(report._float_value("1500 MiB"), 1500.0)
-            self.assertIsNone(report._float_value("n/a"))
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            smi = root / "samples.csv"
+            smi.write_text(
+                "gpu index, utilization.gpu [%], memory.used [MiB]\n"
+                "0,40 %,1500 MiB\n",
+                encoding="utf-8",
+            )
+            calls = []
+            original = report.parse_first_float
+
+            def recording_parse_first_float(value):
+                calls.append(value)
+                return original(value)
+
+            with mock.patch.object(report, "parse_first_float", recording_parse_first_float):
+                gpu_util, gpu_mem = report._summarize_gpu_samples(smi)
+
+        self.assertEqual(gpu_util, {"0": 40.0})
+        self.assertEqual(gpu_mem, {"0": 1500.0})
+        self.assertIn("40 %", calls)
+        self.assertIn("1500 MiB", calls)
 
     def test_render_html_iterates_runs_without_materializing_list(self):
         report = _load_report_module()
