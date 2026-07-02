@@ -332,6 +332,25 @@ class StatusBoardLiveSummaryTest(unittest.TestCase):
 
 
 class EpisodeTraceMigrationTest(unittest.TestCase):
+    def test_trace_append_skips_rechecking_known_current_schema(self):
+        with tempfile.TemporaryDirectory() as d:
+            persistence.append_blb_episode_trace_row(d, {"episode": 120})
+            old_migrate = persistence._migrate_trace_schema_if_needed
+
+            def fail_migrate(*_args, **_kwargs):
+                raise AssertionError("current trace schema should be cached after first append")
+
+            persistence._migrate_trace_schema_if_needed = fail_migrate
+            try:
+                trace_path = persistence.append_blb_episode_trace_row(d, {"episode": 240})
+            finally:
+                persistence._migrate_trace_schema_if_needed = old_migrate
+
+            with open(trace_path, encoding="utf-8", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual([row["episode"] for row in rows], ["120", "240"])
+
     def test_trace_schema_migration_streams_rows_without_writerows(self):
         old_writerows = persistence.csv.DictWriter.writerows
 

@@ -54,6 +54,7 @@ BLB_SEARCH_LOG_TXT = "blb_stage2_search_log.txt"
 BLB_ERROR_TXT = "blb_stage2_error.txt"
 BLB_EPISODE_TRACE_CSV = "blb_stage2_episode_trace.csv"
 _PLOT_RENDER_FALSE_VALUES = {"0", "false", "no", "off", "skip", "none"}
+_TRACE_SCHEMA_CURRENT_PATHS: set[str] = set()
 
 BLB_TRACE_FIELDNAMES = (
     "episode",
@@ -269,6 +270,9 @@ def _to_jsonable(obj: Any) -> Any:
 
 def _migrate_trace_schema_if_needed(path: str, *, log_fn=None) -> None:
     """Keep live trace CSV readable when new rollout columns are added."""
+    cache_key = os.path.abspath(path)
+    if cache_key in _TRACE_SCHEMA_CURRENT_PATHS:
+        return
     if (not os.path.isfile(path)) or os.path.getsize(path) == 0:
         return
 
@@ -281,6 +285,7 @@ def _migrate_trace_schema_if_needed(path: str, *, log_fn=None) -> None:
             except StopIteration:
                 return
             if old_fields == current_fields:
+                _TRACE_SCHEMA_CURRENT_PATHS.add(cache_key)
                 return
 
             old_index = {field: idx for idx, field in enumerate(old_fields)}
@@ -321,6 +326,7 @@ def _migrate_trace_schema_if_needed(path: str, *, log_fn=None) -> None:
                             migrated["cost_probe_count"] = "0"
                         writer.writerow(migrated)
                 os.replace(tmp_path, path)
+                _TRACE_SCHEMA_CURRENT_PATHS.add(cache_key)
                 if log_fn is not None:
                     log_fn(f"  [BLB trace] migrated CSV schema -> {path} (backup: {backup_path})")
             except Exception as exc:
@@ -350,7 +356,9 @@ def append_blb_episode_trace_row(
     log = log_fn or (lambda _msg: None)
     os.makedirs(persistence_dir, exist_ok=True)
     path = os.path.join(persistence_dir, BLB_EPISODE_TRACE_CSV)
-    _migrate_trace_schema_if_needed(path, log_fn=log)
+    cache_key = os.path.abspath(path)
+    if cache_key not in _TRACE_SCHEMA_CURRENT_PATHS:
+        _migrate_trace_schema_if_needed(path, log_fn=log)
     write_header = (not os.path.isfile(path)) or os.path.getsize(path) == 0
     safe_row = {
         key: _to_jsonable(row.get(key, ""))
@@ -362,6 +370,7 @@ def append_blb_episode_trace_row(
             if write_header:
                 writer.writeheader()
             writer.writerow(safe_row)
+        _TRACE_SCHEMA_CURRENT_PATHS.add(cache_key)
     except Exception as exc:
         try:
             log(f"  [BLB trace][warning] failed to write {path}: {exc}")
