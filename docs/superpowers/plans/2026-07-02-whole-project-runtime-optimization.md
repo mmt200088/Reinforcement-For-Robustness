@@ -837,6 +837,14 @@ preserved indexes and reduced lookup time from `1.802358s` to `0.447846s`
 (`4.02x`), with traced peak allocation dropping from `404B` to `124B` over
 10k calls.
 
+Progress 2026-07-02: `Paean/action_grid.py` now caches selector-to-slot
+resolution by `(num_layers, selector)` during action-grid expansion. Repeated
+final-eval action-range candidates no longer rescan every layer's action-space
+fields for the same selector before setting values. A local 200k-call repeated
+selector benchmark preserved vector writes and reduced setter time from
+`4.215663s` to `1.279825s` (`3.29x`), with traced peak allocation dropping
+from `1,576B` to `124B` over 10k calls.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for

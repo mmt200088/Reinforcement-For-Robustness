@@ -93,6 +93,32 @@ class PaeanActionGridTest(unittest.TestCase):
         self.assertEqual((first, second), (3, 4))
         self.assertEqual(calls, 5)
 
+    def test_selector_slots_are_cached_across_repeated_sets(self):
+        action_grid = _load_action_grid_module()
+        calls = 0
+
+        def counting_offsets():
+            nonlocal calls
+            calls += 1
+            return [
+                (1, "mean_rescale_sf", "R"),
+                (2, "wffn1_sf", "x"),
+            ]
+
+        class MaxSfs:
+            def get(self, _block_idx, _field_name):
+                return 30
+
+        action_grid.per_layer_field_offsets = counting_offsets
+        vec = [0] * 24
+
+        action_grid._set_selector_value(vec, 12, MaxSfs(), "block2.wffn1", 30)
+        action_grid._set_selector_value(vec, 12, MaxSfs(), "block2.wffn1", 28)
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(vec[1], 3)
+        self.assertEqual(vec[23], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

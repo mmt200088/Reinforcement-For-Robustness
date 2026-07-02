@@ -585,7 +585,12 @@ def _set_selector_value(vec, num_layers, max_sfs, selector: str, value: int) -> 
         vec[int(slot["offset"])] = int(idx)
 
 
-def _selector_slots(num_layers: int, selector: str) -> List[Dict[str, object]]:
+def _selector_slots(num_layers: int, selector: str) -> Tuple[Dict[str, object], ...]:
+    return _selector_slots_cached(int(num_layers), str(selector))
+
+
+@lru_cache(maxsize=None)
+def _selector_slots_cached(num_layers: int, selector: str) -> Tuple[Dict[str, object], ...]:
     parsed = _parse_selector(selector, num_layers)
     name = parsed["field_name"]
     exact_block = parsed["block_idx"]
@@ -595,13 +600,13 @@ def _selector_slots(num_layers: int, selector: str) -> List[Dict[str, object]]:
     slots: List[Dict[str, object]] = []
 
     if name in ("first_input", "firstinput"):
-        return [{
+        return ({
             "offset": int(num_layers) * layer_dim,
             "block_idx": 0,
             "layer_idx": None,
             "field_name": "first_input",
             "kind": "F",
-        }]
+        },)
 
     for layer_idx in range(int(num_layers)):
         if target_layers is not None and layer_idx not in target_layers:
@@ -628,7 +633,7 @@ def _selector_slots(num_layers: int, selector: str) -> List[Dict[str, object]]:
                     "field_name": str(field_name),
                     "kind": str(kind),
                 })
-    return slots
+    return tuple(slots)
 
 
 def _value_to_action_index(*, value: int, block_idx: int, field_name: str, kind: str, max_sfs) -> int:
