@@ -30,16 +30,6 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from rescale_optimizer_bridge import (
-    apply_optimizer_output_to_cfg,
-    apply_rotation_flags_to_cfg,
-    sync_block2_aux_fresh_binding,
-    sync_block2_qk_binding,
-    sync_block4_v_mask_binding,
-    sync_block5_aux_fresh_binding,
-    _strip_layer_suffix,
-)
-
 from .action_space import (
     _BLOCK_SPECS,
     _block_default_N,
@@ -59,6 +49,7 @@ from .action_space import (
 )
 from .env import BLBStage2Env
 from .fusion_cost import BlockChoice, compute_fusion_cost_saving
+from .optimizer_cost import apply_optimizer_outputs_to_cfgs
 from .reward import (
     FUSION_COST_BUDGET_FRACTION,
     FUSION_COST_W,
@@ -438,38 +429,33 @@ class BLBStage2SequentialEnv:
         }
 
         # 3) Apply optimizer cfg overrides on the (now committed) block_cfg.
+        #    Use the same canonical write-back helper as full-action RL and
+        #    Paean final eval so block2/block4/block5 binding mirrors cannot
+        #    drift between training and evaluation.
         if valid and eval_info.get("optimizer_output") is not None:
             out = eval_info["optimizer_output"]
             block_cfg = eval_info["block_cfg"]
             invoker_baselines: Mapping[str, Any] = (
                 getattr(self.base.rescale_bridge.invoker, "baselines", {}) or {}
             )
-            graph_key, _ = _strip_layer_suffix(config_name)
-            baseline_entry = invoker_baselines.get(graph_key)
-            baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
-            rotation_name_map = (self.base.env_cfg.rotation_name_map or {}).get(
-                (int(spec.block_idx), str(self.profile)), {}
+            cfgs_dict = {f"block{int(spec.block_idx)}": {int(spec.layer_idx): block_cfg}}
+
+            def _rotation_provider(block_idx: int, profile: str) -> Mapping[str, str]:
+                return (self.base.env_cfg.rotation_name_map or {}).get(
+                    (int(block_idx), str(profile)), {}
+                )
+
+            replan_application = apply_optimizer_outputs_to_cfgs(
+                profile=str(self.profile),
+                cfgs_dict=cfgs_dict,
+                opt_outputs={str(config_name): out},
+                invoker_baselines=invoker_baselines,
+                rotation_name_map_provider=_rotation_provider,
             )
-            overrides = apply_optimizer_output_to_cfg(
-                block_cfg,
-                output_raw=out.raw,
-                block_idx=int(spec.block_idx),
-                graph_key=graph_key,
-                baseline_skeleton=baseline_skeleton,
-                rotation_name_map=rotation_name_map,
-            )
-            if int(spec.block_idx) == 2:
-                overrides = list(overrides) + sync_block2_qk_binding(block_cfg)
-                overrides = list(overrides) + sync_block2_aux_fresh_binding(block_cfg)
-            elif int(spec.block_idx) == 4:
-                overrides = list(overrides) + sync_block4_v_mask_binding(block_cfg)
-            elif int(spec.block_idx) == 5:
-                overrides = list(overrides) + sync_block5_aux_fresh_binding(block_cfg)
-            if overrides:
-                info["optimizer_cfg_overrides"] = [
-                    (e.cfg_attr, e.source, e.old_value, e.new_value)
-                    for e in overrides
-                ]
+            info["replan_application"] = replan_application
+            per_config_overrides = replan_application.get("optimizer_cfg_overrides", {})
+            if per_config_overrides:
+                info["optimizer_cfg_overrides"] = per_config_overrides.get(str(config_name), [])
 
         # 4) Advance step counter + terminal handoff.
         self._step_idx += 1

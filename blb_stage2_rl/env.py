@@ -22,14 +22,7 @@ _NULL_CTX = contextlib.nullcontext()
 from blb_rl_bridge import BLBNoiseRLBridge
 from rescale_optimizer_bridge import (
     RescaleOptimizerBridge,
-    _strip_layer_suffix,
     aggregate_optimizer_signals,
-    apply_optimizer_output_to_cfg,
-    apply_rotation_flags_to_cfg,
-    sync_block2_aux_fresh_binding,
-    sync_block2_qk_binding,
-    sync_block4_v_mask_binding,
-    sync_block5_aux_fresh_binding,
 )
 
 from .action_space import (
@@ -43,14 +36,13 @@ from .action_space import (
     build_optimizer_requests,
     layer_dims,
     make_all_max_action_vector,
-    parse_config_name,
 )
 from .candidate_store import action_hash
 from .eval_metrics import (
     finalize_probe_trial_metrics as _finalize_probe_trial_metrics,
     probe_batch_sample_count as _probe_batch_sample_count,
 )
-from .optimizer_cost import evaluate_action_for_cost
+from .optimizer_cost import apply_optimizer_outputs_to_cfgs, evaluate_action_for_cost
 from .probe_runner import ProbeRunner, format_diagnostics_line
 from .reward import (
     BaselineCostStats,
@@ -548,42 +540,20 @@ class BLBStage2Env:
 
         bridge_invoker = getattr(self.rescale_bridge, "invoker", None)
         invoker_baselines: Mapping[str, Any] = getattr(bridge_invoker, "baselines", {}) or {}
-        per_config_overrides: Dict[str, List[Tuple[str, str, Any, Any]]] = {}
-        if not any_invalid:
-            for cn, out in opt_outputs.items():
-                try:
-                    block_idx, _profile, layer_idx = parse_config_name(cn)
-                except Exception:
-                    continue
-                if layer_idx < 0:
-                    continue
-                target_cfg = cfgs_dict[f"block{block_idx}"][int(layer_idx)]
-                graph_key, _ = _strip_layer_suffix(cn)
-                baseline_entry = invoker_baselines.get(graph_key)
-                baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
-                rotation_name_map = (self.env_cfg.rotation_name_map or {}).get(
-                    (int(block_idx), str(self.env_cfg.profile)), {}
-                )
-                overrides = apply_optimizer_output_to_cfg(
-                    target_cfg,
-                    output_raw=out.raw,
-                    block_idx=int(block_idx),
-                    graph_key=graph_key,
-                    baseline_skeleton=baseline_skeleton,
-                    rotation_name_map=rotation_name_map,
-                )
-                if int(block_idx) == 2:
-                    overrides = list(overrides) + sync_block2_qk_binding(target_cfg)
-                    overrides = list(overrides) + sync_block2_aux_fresh_binding(target_cfg)
-                elif int(block_idx) == 4:
-                    overrides = list(overrides) + sync_block4_v_mask_binding(target_cfg)
-                elif int(block_idx) == 5:
-                    overrides = list(overrides) + sync_block5_aux_fresh_binding(target_cfg)
-                if overrides:
-                    per_config_overrides[cn] = [
-                        (e.cfg_attr, e.source, e.old_value, e.new_value)
-                        for e in overrides
-                    ]
+
+        def _rotation_provider(block_idx: int, profile: str) -> Mapping[str, str]:
+            return (self.env_cfg.rotation_name_map or {}).get(
+                (int(block_idx), str(profile)), {}
+            )
+
+        replan_application = apply_optimizer_outputs_to_cfgs(
+            profile=str(self.env_cfg.profile),
+            cfgs_dict=cfgs_dict,
+            opt_outputs=opt_outputs,
+            invoker_baselines=invoker_baselines,
+            rotation_name_map_provider=_rotation_provider,
+        )
+        per_config_overrides = replan_application.get("optimizer_cfg_overrides", {})
 
         info: Dict[str, Any] = {
             "decoded": decoded,
@@ -603,6 +573,7 @@ class BLBStage2Env:
             info["model_degree_sync"] = degree_sync
         if per_config_overrides:
             info["optimizer_cfg_overrides"] = per_config_overrides
+        info["replan_application"] = replan_application
 
         return {
             "action_vec": action_vec,
@@ -875,74 +846,25 @@ class BLBStage2Env:
             summarize_optimizer_invalid_outputs(opt_outputs) if any_invalid else ""
         )
 
-        # 2) Optimizer-driven cfg override: rewrite every (block, layer) cfg in
-        #    place so that the noise actually installed below reflects
-        #    Rescale_optimizer's chosen SFs / fused rescales / effective
-        #    rotations, rather than only the RL action's raw proposal.
+        # 2) Optimizer-driven cfg override: shared canonical write-back.
+        #    This must stay identical to Paean final eval and fixed-action
+        #    experiments; keep the block-specific binding sync in
+        #    optimizer_cost.apply_optimizer_outputs_to_cfgs.
         bridge_invoker = getattr(self.rescale_bridge, "invoker", None)
         invoker_baselines: Mapping[str, Any] = getattr(bridge_invoker, "baselines", {}) or {}
-        per_config_overrides: Dict[str, List[Tuple[str, str, Any, Any]]] = {}
-        if not any_invalid:
-            for cn, out in opt_outputs.items():
-                try:
-                    block_idx, _profile, layer_idx = parse_config_name(cn)
-                except Exception:
-                    continue
-                if layer_idx < 0:
-                    continue
-                target_cfg = cfgs_dict[f"block{block_idx}"][int(layer_idx)]
-                graph_key, _ = _strip_layer_suffix(cn)
-                baseline_entry = invoker_baselines.get(graph_key)
-                # invoker.baselines is the InProcessInvoker tuple form
-                # (skeleton, t_baseline, q_bits_baseline)
-                baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
-                rotation_name_map = (self.env_cfg.rotation_name_map or {}).get(
-                    (int(block_idx), str(self.env_cfg.profile)), {}
-                )
-                overrides = apply_optimizer_output_to_cfg(
-                    target_cfg,
-                    output_raw=out.raw,
-                    block_idx=int(block_idx),
-                    graph_key=graph_key,
-                    baseline_skeleton=baseline_skeleton,
-                    rotation_name_map=rotation_name_map,
-                )
-                # Block 2 has Q/K binding (action_space writes wk_sf to both
-                # wk_encode and wq_encode). The optimizer-driven override above
-                # only refreshes the K-side encodes (those are the names in
-                # GRAPH_NODE_TO_CFG_ATTR[2]); without this sync the model would
-                # install Q-channel noise at the pre-override RL SF while
-                # K-channel uses the optimizer-snapped SF.
-                if int(block_idx) == 2:
-                    # Q/K mask binding (action_space writes wk_sf to both
-                    # K-side and Q-side encodes; optimizer write-back only
-                    # refreshes K-side).
-                    overrides = list(overrides) + sync_block2_qk_binding(target_cfg)
-                    # x_centered_fresh / inv_std_fresh "x2" binding (action_space
-                    # writes inv_std_fresh.sf to both; optimizer write-back only
-                    # refreshes inv_std_fresh — apply_optimizer_output_to_cfg's
-                    # SOURCE entry for block2 is cfg.inv_std_fresh).
-                    overrides = list(overrides) + sync_block2_aux_fresh_binding(target_cfg)
-                # Block 4 has mask2 binding (action_space writes the shared
-                # softmax_out_mask SF to both softmax_out_mask_encode and
-                # v_mask_encode). The optimizer-driven override only refreshes
-                # softmax_out_mask_encode (the entry in GRAPH_NODE_TO_CFG_ATTR[4]
-                # for ``ctpt_mask2``); without this sync, V-side install + the
-                # ``ctct_rot_softmax_mul_v`` delta computation (which reads
-                # cfg.v_mask_encode.scaling_factor) would drift from the
-                # softmax_out side.
-                elif int(block_idx) == 4:
-                    overrides = list(overrides) + sync_block4_v_mask_binding(target_cfg)
-                # Block 5 mirror of Block 2: x_centered_fresh / inv_std_fresh
-                # "x2" binding. The SOURCE entry for block5 is cfg.x_centered_fresh,
-                # so the optimizer refreshes that and we mirror onto inv_std_fresh.
-                elif int(block_idx) == 5:
-                    overrides = list(overrides) + sync_block5_aux_fresh_binding(target_cfg)
-                if overrides:
-                    per_config_overrides[cn] = [
-                        (e.cfg_attr, e.source, e.old_value, e.new_value)
-                        for e in overrides
-                    ]
+        def _rotation_provider(block_idx: int, profile: str) -> Mapping[str, str]:
+            return (self.env_cfg.rotation_name_map or {}).get(
+                (int(block_idx), str(profile)), {}
+            )
+
+        replan_application = apply_optimizer_outputs_to_cfgs(
+            profile=str(self.env_cfg.profile),
+            cfgs_dict=cfgs_dict,
+            opt_outputs=opt_outputs,
+            invoker_baselines=invoker_baselines,
+            rotation_name_map_provider=_rotation_provider,
+        )
+        per_config_overrides = replan_application.get("optimizer_cfg_overrides", {})
 
         # 3) 基础诊断信息。Rescale_optimizer 的 invalid 是成本/可行性信号，
         #    但不能再作为跳过模型 forward 的理由；终端 reward 必须看到
@@ -965,6 +887,7 @@ class BLBStage2Env:
             info["model_degree_sync"] = degree_sync
         if per_config_overrides:
             info["optimizer_cfg_overrides"] = per_config_overrides
+        info["replan_application"] = replan_application
 
         # 3.5) Short-circuit: if Rescale_optimizer already marked any block as
         # invalid_chain, the assembled cfg is incoherent — installing it would

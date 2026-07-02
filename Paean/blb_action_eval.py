@@ -24,26 +24,20 @@ from blb_stage2_rl.action_space import (
     build_block5_cfg_from_action,
     build_optimizer_requests,
     load_max_sfs,
-    parse_config_name,
     step_schedule,
     sum_truncation_k_in_action,
 )
 from blb_stage2_rl.feasibility import build_final_eval_feasibility
 from blb_stage2_rl.eval_metrics import summarize_eval_trials
 from blb_stage2_rl.fusion_fixed_action import select_fusion_eval_metadata
+from blb_stage2_rl.optimizer_cost import apply_optimizer_outputs_to_cfgs
 from final_evaluation_module import UnifiedFinalEvaluationModule
 from rescale_optimizer_bridge import (
     InProcessInvoker,
     RescaleOptimizerBridge,
     SubprocessInvoker,
-    _strip_layer_suffix,
     aggregate_optimizer_signals,
-    apply_optimizer_output_to_cfg,
     load_baseline_archive,
-    sync_block2_aux_fresh_binding,
-    sync_block2_qk_binding,
-    sync_block4_v_mask_binding,
-    sync_block5_aux_fresh_binding,
 )
 
 from .action_grid import (
@@ -839,175 +833,21 @@ class BLBActionFinalEvaluationModule:
             ) -> Dict[str, Any]:
         """Apply Rescale_optimizer/replan results to cfgs before model forward.
 
-        ``action_vector_to_cfgs`` produces the action-proposed BLB cfgs.  The
-        true executable cfg is the optimizer's ``new_compact_config`` mirrored
-        back into those cfg objects.  Stage-2 training already does this in
-        ``BLBStage2Env.step``; final-eval must do the same before
-        ``BLBNoiseRLBridge.apply`` installs noise wrappers.
+        The executable Stage-2 cfg is the optimizer's ``new_compact_config``
+        mirrored back into action-decoded cfg objects.  Delegate to the shared
+        helper used by RL training and fixed-action experiments so every path
+        installs the same cfg before inference.
         """
         bridge = getattr(self, "rescale_bridge", None)
         invoker = getattr(bridge, "invoker", None)
         invoker_baselines: Mapping[str, Any] = getattr(invoker, "baselines", {}) or {}
-        per_config: Dict[str, Dict[str, Any]] = {}
-        invalid_count = 0
-        missing_compact_count = 0
-        missing_cfg_count = 0
-        apply_error_count = 0
-        applied_count = 0
-        override_total = 0
-
-        batch_has_invalid = any(
-            not bool(getattr(out, "valid", False))
-            for out in (opt_outputs or {}).values()
+        return apply_optimizer_outputs_to_cfgs(
+            profile=str(profile),
+            cfgs_dict=cfgs_dict,
+            opt_outputs=opt_outputs,
+            invoker_baselines=invoker_baselines,
+            rotation_name_map_provider=self._rotation_name_map_for,
         )
-        if batch_has_invalid:
-            for config_name, out in (opt_outputs or {}).items():
-                valid = bool(getattr(out, "valid", False))
-                if not valid:
-                    invalid_count += 1
-                per_config[str(config_name)] = {
-                    "valid": valid,
-                    "applied": False,
-                    "override_count": 0,
-                    "overrides": [],
-                    "skipped_reason": (
-                        "optimizer_invalid"
-                        if not valid
-                        else "optimizer_invalid_batch"
-                    ),
-                }
-            return {
-                "applied_before_forward": False,
-                "model_uses_replan_config": False,
-                "expected_config_count": int(len(opt_outputs or {})),
-                "applied_config_count": 0,
-                "invalid_config_count": int(invalid_count),
-                "missing_compact_config_count": 0,
-                "missing_decoded_cfg_count": 0,
-                "apply_error_count": 0,
-                "override_total": 0,
-                "per_config": per_config,
-            }
-
-        for config_name, out in (opt_outputs or {}).items():
-            name = str(config_name)
-            raw = getattr(out, "raw", {}) or {}
-            valid = bool(getattr(out, "valid", False))
-            record: Dict[str, Any] = {
-                "valid": valid,
-                "applied": False,
-                "override_count": 0,
-                "overrides": [],
-            }
-            if not valid:
-                invalid_count += 1
-                record["skipped_reason"] = "optimizer_invalid"
-                per_config[name] = record
-                continue
-            if not isinstance(raw, Mapping) or not isinstance(raw.get("new_compact_config"), Mapping):
-                missing_compact_count += 1
-                record["skipped_reason"] = "missing_new_compact_config"
-                per_config[name] = record
-                continue
-
-            try:
-                block_idx, _cfg_profile, layer_idx = parse_config_name(name)
-            except Exception as exc:
-                apply_error_count += 1
-                record["skipped_reason"] = "parse_config_name_failed"
-                record["error"] = str(exc)
-                per_config[name] = record
-                continue
-            if int(layer_idx) < 0:
-                missing_cfg_count += 1
-                record["skipped_reason"] = "missing_layer_suffix"
-                per_config[name] = record
-                continue
-
-            block_key = f"block{int(block_idx)}"
-            block_cfgs = cfgs_dict.get(block_key, {}) if isinstance(cfgs_dict, Mapping) else {}
-            target_cfg = block_cfgs.get(int(layer_idx))
-            if target_cfg is None:
-                missing_cfg_count += 1
-                record["skipped_reason"] = "decoded_cfg_missing"
-                record["block"] = block_key
-                record["layer"] = int(layer_idx)
-                per_config[name] = record
-                continue
-
-            graph_key, _ = _strip_layer_suffix(name)
-            baseline_entry = invoker_baselines.get(graph_key)
-            baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
-            rotation_name_map = self._rotation_name_map_for(int(block_idx), str(profile))
-            try:
-                overrides = apply_optimizer_output_to_cfg(
-                    target_cfg,
-                    output_raw=raw,
-                    block_idx=int(block_idx),
-                    graph_key=graph_key,
-                    baseline_skeleton=baseline_skeleton,
-                    rotation_name_map=rotation_name_map,
-                )
-                if int(block_idx) == 2:
-                    overrides = list(overrides) + sync_block2_qk_binding(target_cfg)
-                    overrides = list(overrides) + sync_block2_aux_fresh_binding(target_cfg)
-                elif int(block_idx) == 4:
-                    overrides = list(overrides) + sync_block4_v_mask_binding(target_cfg)
-                elif int(block_idx) == 5:
-                    overrides = list(overrides) + sync_block5_aux_fresh_binding(target_cfg)
-            except Exception as exc:
-                apply_error_count += 1
-                record["skipped_reason"] = "apply_optimizer_output_to_cfg_failed"
-                record["error"] = str(exc)
-                per_config[name] = record
-                continue
-
-            override_rows = [
-                {
-                    "cfg_attr": str(e.cfg_attr),
-                    "graph_node": e.graph_node,
-                    "source": str(e.source),
-                    "old_value": e.old_value,
-                    "new_value": e.new_value,
-                }
-                for e in overrides
-            ]
-            applied_count += 1
-            override_total += len(override_rows)
-            record.update(
-                {
-                    "applied": True,
-                    "block": block_key,
-                    "layer": int(layer_idx),
-                    "graph_key": graph_key,
-                    "baseline_skeleton_available": bool(baseline_skeleton),
-                    "rotation_name_map_available": bool(rotation_name_map),
-                    "override_count": int(len(override_rows)),
-                    "overrides": override_rows,
-                }
-            )
-            per_config[name] = record
-
-        expected = len(opt_outputs or {})
-        fully_applied = (
-            expected == applied_count
-            and invalid_count == 0
-            and missing_compact_count == 0
-            and missing_cfg_count == 0
-            and apply_error_count == 0
-        )
-        return {
-            "applied_before_forward": True,
-            "model_uses_replan_config": bool(fully_applied),
-            "expected_config_count": int(expected),
-            "applied_config_count": int(applied_count),
-            "invalid_config_count": int(invalid_count),
-            "missing_compact_config_count": int(missing_compact_count),
-            "missing_decoded_cfg_count": int(missing_cfg_count),
-            "apply_error_count": int(apply_error_count),
-            "override_total": int(override_total),
-            "per_config": per_config,
-        }
 
     def _rotation_name_map_for(self, block_idx: int, profile: str) -> Mapping[str, str]:
         raw = (

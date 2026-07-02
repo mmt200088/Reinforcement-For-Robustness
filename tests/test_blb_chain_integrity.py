@@ -32,6 +32,7 @@ try:
         apply_optimizer_output_to_cfg,
         sync_block2_qk_binding,
     )
+    from blb_stage2_rl.optimizer_cost import apply_optimizer_outputs_to_cfgs
     from blb_stage2_rl.sequential_policy import (
         BLBStage2SequentialPolicy,
         SequentialPolicyConfig,
@@ -50,6 +51,7 @@ except Exception as _exc:  # torch / transformers / function_handler missing
     make_block2_default_config = None  # type: ignore
     apply_optimizer_output_to_cfg = None  # type: ignore
     sync_block2_qk_binding = None  # type: ignore
+    apply_optimizer_outputs_to_cfgs = None  # type: ignore
     BLBStage2SequentialPolicy = None  # type: ignore
     SequentialPolicyConfig = None  # type: ignore
     _split_round_robin = None  # type: ignore
@@ -394,6 +396,122 @@ class SyncBlock2QKBindingTest(unittest.TestCase):
         overrides = sync_block2_qk_binding(self.cfg)
         self.assertEqual(overrides, [],
                          "sync must be a no-op when Q already matches K")
+
+
+# ---------------------------------------------------------------------------
+# Canonical Stage-2 optimizer write-back helper
+# ---------------------------------------------------------------------------
+@unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
+class ApplyOptimizerOutputsToCfgsSharedHelperTest(unittest.TestCase):
+    """RL, fixed-action eval, and final eval must share one cfg write-back path."""
+
+    def _out(self, raw):
+        class _Output:
+            valid = True
+
+            def __init__(self, payload):
+                self.raw = payload
+
+        return _Output(raw)
+
+    def test_shared_helper_applies_block2_bindings(self):
+        cfg = make_block2_default_config(
+            N=16384,
+            inv_std_fresh_sf=18,
+            x_centered_fresh_sf=12,
+            wk_sf=20,
+            wq_sf=10,
+            kt_mask1_sf=21,
+            q_mask1_sf=11,
+            kt_mask2_sf=22,
+            q_mask2_sf=12,
+        )
+        raw = {
+            "new_compact_config": {
+                "cut_point_sf": [
+                    {"i": 0, "name": "inv_std", "type": "SOURCE", "sf": 31},
+                ],
+                "propagation_deltas": [
+                    {"name": "ctpt_wq_wk", "delta": 28},
+                    {"name": "ctpt_rotKT_mask1", "delta": 26},
+                    {"name": "ctpt_rotKT_mask2", "delta": 24},
+                ],
+                "effective_rotations": [],
+            },
+            "result": {"valid": True},
+        }
+        diag = apply_optimizer_outputs_to_cfgs(
+            profile="mrpc",
+            cfgs_dict={"block2": {0: cfg}},
+            opt_outputs={"block2_mrpc_L0": self._out(raw)},
+            invoker_baselines={"block2_mrpc": ([0, 2, 4, 6], [], [])},
+        )
+        self.assertTrue(diag["model_uses_replan_config"], diag)
+        self.assertEqual(cfg.inv_std_fresh.scaling_factor, 31)
+        self.assertEqual(cfg.x_centered_fresh.scaling_factor, 31)
+        self.assertEqual(cfg.wk_encode.scaling_factor, 28)
+        self.assertEqual(cfg.wq_encode.scaling_factor, 28)
+        self.assertEqual(cfg.kt_mask1_encode.scaling_factor, 26)
+        self.assertEqual(cfg.q_mask1_encode.scaling_factor, 26)
+        self.assertEqual(cfg.kt_mask2_encode.scaling_factor, 24)
+        self.assertEqual(cfg.q_mask2_encode.scaling_factor, 24)
+
+    def test_shared_helper_applies_block4_v_mask_binding(self):
+        from function_handler import make_block4_default_config
+
+        cfg = make_block4_default_config(
+            N=16384,
+            softmax_out_mask_sf=29,
+            v_mask_sf=15,
+        )
+        raw = {
+            "new_compact_config": {
+                "cut_point_sf": [],
+                "propagation_deltas": [
+                    {"name": "ctpt_mask2", "delta": 27},
+                ],
+                "effective_rotations": [],
+            },
+            "result": {"valid": True},
+        }
+        diag = apply_optimizer_outputs_to_cfgs(
+            profile="mrpc",
+            cfgs_dict={"block4": {0: cfg}},
+            opt_outputs={"block4_L0": self._out(raw)},
+            invoker_baselines={"block4": ([0, 2, 5, 6], [], [])},
+        )
+        self.assertTrue(diag["model_uses_replan_config"], diag)
+        self.assertEqual(cfg.softmax_out_mask_encode.scaling_factor, 27)
+        self.assertEqual(cfg.v_mask_encode.scaling_factor, 27)
+
+    def test_shared_helper_applies_block5_aux_fresh_binding(self):
+        from function_handler import make_block5_default_config
+
+        cfg = make_block5_default_config(
+            gelu_degree=4,
+            N=16384,
+            inv_std_fresh_sf=16,
+            x_centered_fresh_sf=18,
+        )
+        raw = {
+            "new_compact_config": {
+                "cut_point_sf": [
+                    {"i": 0, "name": "x_mean", "type": "SOURCE", "sf": 32},
+                ],
+                "propagation_deltas": [],
+                "effective_rotations": [],
+            },
+            "result": {"valid": True},
+        }
+        diag = apply_optimizer_outputs_to_cfgs(
+            profile="mrpc",
+            cfgs_dict={"block5": {0: cfg}},
+            opt_outputs={"block5_n4_L0": self._out(raw)},
+            invoker_baselines={"block5_n4": ([0, 1, 3, 4, 6, 7], [], [])},
+        )
+        self.assertTrue(diag["model_uses_replan_config"], diag)
+        self.assertEqual(cfg.x_centered_fresh.scaling_factor, 32)
+        self.assertEqual(cfg.inv_std_fresh.scaling_factor, 32)
 
 
 # ---------------------------------------------------------------------------
