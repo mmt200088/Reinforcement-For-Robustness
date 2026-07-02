@@ -31,6 +31,26 @@ class FusionCountActionEvalTest(unittest.TestCase):
         self.assertIn("action_hash", configs[0])
         self.assertNotIn("payload", configs[0])
 
+    def test_load_action_configs_scans_directory_without_path_glob(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "_summary.json").write_text("{}", encoding="utf-8")
+            (root / "._candidate.json").write_text("{}", encoding="utf-8")
+            (root / "notes.txt").write_text("ignored", encoding="utf-8")
+            (root / "candidate.json").write_text(
+                json.dumps({"group": {"name": "candidate"}, "action_vec": [1, 2, 3]}),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                Path,
+                "glob",
+                side_effect=AssertionError("action config loading should not use Path.glob"),
+            ):
+                configs = action_eval._load_action_configs(root)
+
+        self.assertEqual([cfg["name"] for cfg in configs], ["candidate"])
+
     def test_build_combined_avoids_deepcopying_large_candidate_payloads(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

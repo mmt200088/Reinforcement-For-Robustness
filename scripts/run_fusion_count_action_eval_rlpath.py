@@ -102,11 +102,25 @@ def _json_int_list(raw: str | None, *, default: Sequence[int], name: str) -> Lis
     return [int(v) for v in payload]
 
 
+def _iter_action_config_paths(action_dir: Path) -> Iterable[Path]:
+    try:
+        with os.scandir(action_dir) as entries:
+            names = sorted(
+                entry.name
+                for entry in entries
+                if entry.is_file()
+                and entry.name.endswith(".json")
+                and not entry.name.startswith(("._", "_"))
+            )
+    except OSError:
+        names = []
+    for name in names:
+        yield action_dir / name
+
+
 def _load_action_configs(action_dir: Path) -> List[dict]:
     out: List[dict] = []
-    for path in sorted(action_dir.glob("*.json")):
-        if path.name.startswith("._") or path.name.startswith("_"):
-            continue
+    for path in _iter_action_config_paths(action_dir):
         payload = json.loads(path.read_text(encoding="utf-8"))
         group = payload.get("group") or {}
         name = str(group.get("name") or path.stem)

@@ -613,6 +613,15 @@ large unused payload fields preserved config count while reducing retained
 current memory from `254.69MB` to `0.65MB` and traced peak memory from
 `255.42MB` to `5.60MB`.
 
+Progress 2026-07-02: `scripts/run_fusion_count_action_eval.py` and
+`scripts/run_fusion_count_action_eval_rlpath.py` now discover action config
+JSON files with `os.scandir()` and pre-filter `_`/`._` sidecars before building
+`Path` objects, instead of using `Path.glob("*.json")` and then filtering.
+Regression tests patch `Path.glob()` out of both loaders. A local directory
+benchmark with 3000 valid configs plus 2000 sidecar/non-JSON files preserved
+config ordering and improved discovery from `0.036433s` / `2.17MB` to
+`0.020808s` / `0.86MB` (`1.75x`).
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
