@@ -56,6 +56,19 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         self.assertNotIn("model(**kwargs)", env)
         self.assertNotIn("model(**kwargs)", probe)
 
+    def test_repeat_evaluation_payloads_use_shared_pack_helper(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        paean = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
+        final_eval = (repo / "final_evaluation_module.py").read_text(encoding="utf-8")
+        eval_metrics = (repo / "blb_stage2_rl" / "eval_metrics.py").read_text(encoding="utf-8")
+
+        self.assertIn("def pack_repeat_evaluation(", eval_metrics)
+        self.assertIn("pack_repeat_evaluation", paean)
+        self.assertIn("pack_repeat_evaluation", final_eval)
+        for text in (paean, final_eval):
+            self.assertNotIn('"trial": i + 1', text)
+            self.assertNotIn("for i, t in enumerate(trials)", text)
+
 
 if __name__ == "__main__":
     unittest.main()

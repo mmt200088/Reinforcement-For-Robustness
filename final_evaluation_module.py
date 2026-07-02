@@ -26,6 +26,8 @@ from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 
+from blb_stage2_rl.eval_metrics import pack_repeat_evaluation
+
 NOISE_SCALING_FACTOR_KEYS = (
     "input_noise_scaling_factors",
     "wq_noise_scaling_factors",
@@ -215,23 +217,13 @@ class UnifiedFinalEvaluationModule:
         variance_cache: Dict = {}
 
         def _pack_noise_summary(summary):
-            return {
-                "trials": [
-                    {
-                        "trial": i + 1,
-                        "loss": float(t["loss"]),
-                        "p": float(t["p"]),
-                        "s": float(t["s"]),
-                        "time_ms": float(t["time_ms"]),
-                    }
-                    for i, t in enumerate(summary["trials"])
-                ],
-                "stats": {
-                    k: (float(v) if isinstance(v, (int, float, np.integer, np.floating)) else v)
-                    for k, v in summary.items()
-                    if k != "trials"
-                },
-            }
+            repeat = pack_repeat_evaluation(summary["trials"])
+            repeat["stats"].update({
+                k: (float(v) if isinstance(v, (int, float, np.integer, np.floating)) else v)
+                for k, v in summary.items()
+                if k != "trials"
+            })
+            return repeat
 
         def _log_noise_variance_stats(label, variance_eval):
             stats = variance_eval["stats"]

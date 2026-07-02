@@ -28,7 +28,7 @@ from blb_stage2_rl.action_space import (
     sum_truncation_k_in_action,
 )
 from blb_stage2_rl.feasibility import build_final_eval_feasibility
-from blb_stage2_rl.eval_metrics import summarize_eval_trials
+from blb_stage2_rl.eval_metrics import pack_repeat_evaluation
 from blb_stage2_rl.fusion_fixed_action import select_fusion_eval_metadata
 from blb_stage2_rl.optimizer_cost import apply_optimizer_outputs_to_cfgs
 from final_evaluation_module import UnifiedFinalEvaluationModule
@@ -419,8 +419,11 @@ class BLBActionFinalEvaluationModule:
             )
             for _idx in range(repeats)
         ]
-        stats = summarize_eval_trials(trials)
-        stats["evaluation_mode"] = "clean_baseline_repeated_validation_full"
+        repeat = pack_repeat_evaluation(
+            trials,
+            evaluation_mode="clean_baseline_repeated_validation_full",
+        )
+        stats = repeat["stats"]
         result = {
             "name": "Baseline (Stage-1 Exact)",
             "family": "Baseline",
@@ -433,19 +436,7 @@ class BLBActionFinalEvaluationModule:
             "s_std": float(stats["s_std"]),
             "evaluation_n": int(stats["n"]),
             "evaluation_protocol": f"repeated_mean_n={int(stats['n'])}",
-            "repeat_evaluation": {
-                "trials": [
-                    {
-                        "trial": i + 1,
-                        "loss": float(t["loss"]),
-                        "p": float(t["p"]),
-                        "s": float(t["s"]),
-                        "time_ms": float(t["time_ms"]),
-                    }
-                    for i, t in enumerate(trials)
-                ],
-                "stats": stats,
-            },
+            "repeat_evaluation": repeat,
         }
         return result
 
@@ -1305,21 +1296,10 @@ class BLBActionFinalEvaluationModule:
         trials = []
         for _idx in range(repeats):
             trials.append(self._run_single_blb_eval(decoded, gelu=gelu, softmax=softmax))
-        stats = summarize_eval_trials(trials)
-        stats["evaluation_mode"] = "blb_action_repeated_validation_full"
-        repeat = {
-            "trials": [
-                {
-                    "trial": i + 1,
-                    "loss": float(t["loss"]),
-                    "p": float(t["p"]),
-                    "s": float(t["s"]),
-                    "time_ms": float(t["time_ms"]),
-                }
-                for i, t in enumerate(trials)
-            ],
-            "stats": stats,
-        }
+        repeat = pack_repeat_evaluation(
+            trials,
+            evaluation_mode="blb_action_repeated_validation_full",
+        )
         return {
             "loss": float(repeat["stats"]["loss_mean"]),
             "p": float(repeat["stats"]["p_mean"]),

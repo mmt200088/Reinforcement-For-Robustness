@@ -84,15 +84,23 @@ Design notes
 from __future__ import annotations
 
 import heapq
-import hashlib
 import json
 import os
+import sys
 import time
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
 import numpy as np
+
+try:  # Package import path.
+    from .candidate_store import action_hash
+except Exception:  # Standalone test/script loading via spec_from_file_location.
+    _HERE = os.path.dirname(os.path.abspath(__file__))
+    if _HERE not in sys.path:
+        sys.path.insert(0, _HERE)
+    from candidate_store import action_hash
 
 
 @dataclass
@@ -569,7 +577,7 @@ class RLDiagnosticsRecorder:
                 "action_vec": np.asarray(full_action_vec, dtype=int).tolist(),
             }
             if not payload["terminal_pareto_action_hash"]:
-                payload["terminal_pareto_action_hash"] = _action_vec_hash(payload["action_vec"])
+                payload["terminal_pareto_action_hash"] = action_hash(payload["action_vec"])
             self._consider_pareto_candidate(payload)
             rank_key = self._candidate_rank_key(payload)
             payload["top_candidate_rank_key"] = [float(x) for x in rank_key]
@@ -1365,17 +1373,6 @@ def _pareto_dominates(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
             if av > bv:
                 strictly_better = True
     return strictly_better
-
-
-def _action_vec_hash(action_vec: Any) -> str:
-    if hasattr(action_vec, "tolist"):
-        action_vec = action_vec.tolist()
-    payload = json.dumps(
-        [int(x) for x in np.asarray(action_vec, dtype=int).reshape(-1).tolist()],
-        ensure_ascii=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _pareto_number(value: Any, direction: str) -> float:

@@ -65,9 +65,19 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `blb_stage2_rl.inference_eval`: use
   `run_installed_model_on_dataloader()` for full-validation/final-eval style
   dataloaders and `run_installed_probe_trial()` for online Stage-2 reward probe
-  trials. If new special handling is needed, extend those shared modules and
-  their tests instead of adding another local forward/metric/repeat
-  implementation in RL, Paean, or experiment scripts.
+  trials. Repeat-evaluation JSON payloads and mean/std trial summaries must use
+  `blb_stage2_rl.eval_metrics.pack_repeat_evaluation()` /
+  `summarize_eval_trials()`; do not hand-roll per-caller `trial: i + 1`,
+  `loss_mean`, `p_std`, or `time_mean_ms` structures. If new special handling is
+  needed, extend those shared modules and their tests instead of adding another
+  local forward/metric/repeat implementation in RL, Paean, or experiment
+  scripts.
+- Stage-2 shared action-identity rule, added 2026-07-02: all raw BLB action
+  vector identity hashes must use `blb_stage2_rl.candidate_store.action_hash()`
+  (or the explicit raw/effective hash helpers in that same module). Do not
+  hand-roll JSON normalization plus SHA256 in diagnostics, reports, candidate
+  stores, or experiment scripts; extending `candidate_store.py` is the shared
+  seam if action identity semantics need to change.
 - All Stage-1 and Stage-2 RL runs must mirror raw training data points to the
   project-root `rl_training_data_points/` tree, classified by stage, model,
   dataset, and run id. Persist enough structured JSON/JSONL to redraw paper

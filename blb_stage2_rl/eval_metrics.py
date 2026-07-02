@@ -235,3 +235,33 @@ def summarize_eval_trials(trials: Sequence[Mapping[str, Any]]) -> dict:
         "time_mean_ms": float(times.mean()),
         "time_std_ms": float(times.std(ddof=0)),
     }
+
+
+def pack_repeat_evaluation(
+        trials: Sequence[Mapping[str, Any]],
+        *,
+        evaluation_mode: Optional[str] = None,
+        ) -> dict:
+    """Build the canonical repeated-evaluation payload.
+
+    Keep the trial numbering, numeric coercion, and population-stat semantics in
+    this helper so Paean final eval, fixed-action experiments, and future report
+    writers do not drift in their JSON shape.
+    """
+    normalized_trials = [
+        {
+            "trial": int(idx + 1),
+            "loss": float(trial["loss"]),
+            "p": float(trial["p"]),
+            "s": float(trial["s"]),
+            "time_ms": float(trial.get("time_ms", 0.0)),
+        }
+        for idx, trial in enumerate(trials)
+    ]
+    stats = summarize_eval_trials(normalized_trials)
+    if evaluation_mode is not None:
+        stats["evaluation_mode"] = str(evaluation_mode)
+    return {
+        "trials": normalized_trials,
+        "stats": stats,
+    }

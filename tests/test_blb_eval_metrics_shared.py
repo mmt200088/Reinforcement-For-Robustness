@@ -59,6 +59,23 @@ class SharedEvalMetricsTest(unittest.TestCase):
         self.assertAlmostEqual(summary["s_std"], 2.0)
         self.assertAlmostEqual(summary["time_mean_ms"], 15.0)
 
+    def test_pack_repeat_evaluation_numbers_trials_and_stats(self):
+        packed = eval_metrics.pack_repeat_evaluation(
+            [
+                {"loss": "1.0", "p": 2, "s": 3, "time_ms": 10},
+                {"loss": 3, "p": "4.0", "s": 7, "time_ms": 20},
+            ],
+            evaluation_mode="unit_repeat",
+        )
+
+        self.assertEqual(packed["trials"][0]["trial"], 1)
+        self.assertEqual(packed["trials"][1]["trial"], 2)
+        self.assertIsInstance(packed["trials"][0]["loss"], float)
+        self.assertEqual(packed["stats"]["evaluation_mode"], "unit_repeat")
+        self.assertEqual(packed["stats"]["n"], 2)
+        self.assertAlmostEqual(packed["stats"]["loss_mean"], 2.0)
+        self.assertAlmostEqual(packed["stats"]["time_mean_ms"], 15.0)
+
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")
     def test_probe_eval_uses_the_shared_installed_inference_module(self):
         from blb_stage2_rl.inference_eval import run_installed_probe_trial

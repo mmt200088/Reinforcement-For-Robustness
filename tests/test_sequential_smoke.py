@@ -250,6 +250,13 @@ class SequentialArtifactContractsTest(unittest.TestCase):
         self.assertEqual(payload["count"], len(rows))
         self.assertTrue(rows)
         self.assertTrue(os.path.isfile(html_path))
+        from blb_stage2_rl.candidate_store import action_hash
+
+        for row in rows:
+            self.assertEqual(
+                row.get("terminal_pareto_action_hash"),
+                action_hash(row.get("action_vec")),
+            )
         self.assertIn("terminal_fusion_gain", payload["objectives"]["maximize"])
         self.assertIn("terminal_k_gain", payload["objectives"]["maximize"])
         self.assertIn("terminal_bits_gain", payload["objectives"]["maximize"])
