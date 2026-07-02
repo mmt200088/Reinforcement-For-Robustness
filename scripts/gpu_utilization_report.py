@@ -18,6 +18,8 @@ import re
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
+from device_utils import split_device_spec_tokens
+
 LOW_UTIL_THRESHOLD_PCT = 10.0
 HOT_PATH_TIMING_FIELDS = (
     "jsonl_write_wall_seconds",
@@ -60,13 +62,7 @@ def normalize_device_token(value: object) -> str:
 
 
 def parse_device_spec(value: str | Sequence[object] | None) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        raw_items: Iterable[object] = value.split(",")
-    else:
-        raw_items = value
-    devices = [normalize_device_token(item) for item in raw_items]
+    devices = [normalize_device_token(item) for item in split_device_spec_tokens(value)]
     return [device for device in devices if device]
 
 

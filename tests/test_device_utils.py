@@ -1,6 +1,6 @@
 import unittest
 
-from device_utils import parse_device_ids
+from device_utils import parse_device_ids, split_device_spec_tokens
 
 
 class DeviceUtilsTest(unittest.TestCase):
@@ -22,6 +22,15 @@ class DeviceUtilsTest(unittest.TestCase):
             parse_device_ids([0, False])
         with self.assertRaises(ValueError):
             parse_device_ids("0,abc")
+
+    def test_split_device_spec_tokens_preserves_physical_tokens(self):
+        self.assertEqual(split_device_spec_tokens("0, GPU-abcd "), ["0", "GPU-abcd"])
+        self.assertEqual(split_device_spec_tokens("(0, 1)"), ["0", "1"])
+        self.assertEqual(split_device_spec_tokens(["0", " GPU-abcd "]), ["0", "GPU-abcd"])
+        self.assertEqual(
+            split_device_spec_tokens("disabled", disabled_tokens={"disabled"}),
+            [],
+        )
 
 
 if __name__ == "__main__":

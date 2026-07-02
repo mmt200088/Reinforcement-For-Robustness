@@ -14,6 +14,8 @@ import subprocess
 import sys
 from typing import Iterable, List, Sequence
 
+from device_utils import split_device_spec_tokens
+
 
 def _normalise(value: object) -> str:
     return str(value or "").strip()
@@ -30,17 +32,10 @@ def parse_device_spec(raw: object) -> List[str]:
     logical cuda ids after visibility filtering, so this function returns tokens
     only for counting. Recommendations are generated separately as logical ids.
     """
-    text = _normalise(raw)
-    if not text:
-        return []
-    lowered = text.lower()
-    if lowered in {"none", "no", "off", "disabled", "void", "-1"}:
-        return []
-    if (text.startswith("(") and text.endswith(")")) or (
-        text.startswith("[") and text.endswith("]")
-    ):
-        text = text[1:-1].strip()
-    return _strip_nonempty(text.split(","))
+    return split_device_spec_tokens(
+        raw,
+        disabled_tokens={"none", "no", "off", "disabled", "void", "-1"},
+    )
 
 
 def _detect_nvidia_smi_devices() -> List[str]:

@@ -1,7 +1,47 @@
 """Shared device-list parsing helpers for Stage-1 and Stage-2 runners."""
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, Iterable, List, Sequence
+
+
+def split_device_spec_tokens(
+        spec: Any,
+        *,
+        disabled_tokens: Iterable[str] = (),
+        ) -> List[str]:
+    """Split CLI/CUDA-visible device specs into non-empty string tokens.
+
+    This deliberately does not normalize logical ids to ``cuda:N`` because
+    CUDA_VISIBLE_DEVICES can contain physical ids or UUIDs. Callers that need
+    logical ``cuda:N`` names should normalize these tokens separately.
+    """
+    if spec is None:
+        return []
+    disabled = {str(token).lower() for token in disabled_tokens}
+    if isinstance(spec, str):
+        text = spec.strip()
+        if not text or text.lower() in disabled:
+            return []
+        if (text.startswith("(") and text.endswith(")")) or (
+            text.startswith("[") and text.endswith("]")
+        ):
+            text = text[1:-1].strip()
+        raw_items: Iterable[Any] = text.split(",")
+    elif isinstance(spec, Sequence) and not isinstance(spec, (bytes, bytearray)):
+        raw_items = spec
+    else:
+        text = str(spec).strip()
+        if not text or text.lower() in disabled:
+            return []
+        raw_items = [text]
+
+    out: List[str] = []
+    for item in raw_items:
+        token = str(item).strip()
+        if not token or token.lower() in disabled:
+            continue
+        out.append(token)
+    return out
 
 
 def parse_device_ids(spec: Any) -> List[int]:
@@ -19,14 +59,7 @@ def parse_device_ids(spec: Any) -> List[int]:
     elif isinstance(spec, (list, tuple)):
         tokens = list(spec)
     else:
-        text = str(spec).strip()
-        if not text:
-            return []
-        if (text.startswith("(") and text.endswith(")")) or (
-            text.startswith("[") and text.endswith("]")
-        ):
-            text = text[1:-1].strip()
-        tokens = [tok.strip() for tok in text.split(",") if tok.strip()]
+        tokens = split_device_spec_tokens(spec)
 
     out: List[int] = []
     for tok in tokens:

@@ -103,7 +103,10 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   device flags must use `device_utils.parse_device_ids()` for int/list/tuple,
   comma-separated string, and Python Fire tuple-string forms. `stage1_rl` and
   `blb_stage2_rl.probe_runner` may re-export the helper for compatibility, but
-  do not clone new parser variants in launchers, runners, or reports.
+  do not clone new parser variants in launchers, runners, or reports. When a
+  script needs raw CUDA_VISIBLE_DEVICES/UUID tokens rather than integer ids,
+  split with `device_utils.split_device_spec_tokens()` and then apply only the
+  caller-specific normalization needed by that report or launcher audit.
 - All Stage-1 and Stage-2 RL runs must mirror raw training data points to the
   project-root `rl_training_data_points/` tree, classified by stage, model,
   dataset, and run id. Persist enough structured JSON/JSONL to redraw paper
