@@ -61,6 +61,14 @@ def _load_module_standalone(rel_path: str, name: str):
     return mod
 
 
+def _method_region_from_source(source: str, method_name: str) -> str:
+    start = source.index(f"    def {method_name}")
+    next_method = source.find("\n    def ", start + 1)
+    if next_method == -1:
+        next_method = len(source)
+    return source[start:next_method]
+
+
 class SequentialArtifactContractsTest(unittest.TestCase):
     """Drive the artifact pipeline on synthetic data."""
 
@@ -867,6 +875,16 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             "returns, advantages = self.compute_gae(gamma=gamma, lam=lam)",
         ):
             self.assertNotIn(old_pattern, policy_src, msg=f"old multi-pass pack remains: {old_pattern!r}")
+
+    def test_action_dist_avoids_gpu_sync_for_zero_exploration_floor(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
+        action_dist_region = _method_region_from_source(policy_src, "_action_dist")
+        setter_region = _method_region_from_source(policy_src, "set_slot_exploration_epsilon")
+
+        self.assertIn("self._slot_exploration_enabled = False", policy_src)
+        self.assertIn("self._slot_exploration_enabled = bool(", setter_region)
+        self.assertIn("if not self._slot_exploration_enabled:", action_dist_region)
+        self.assertNotIn(".item()", action_dist_region)
 
     def test_truncated_policy_forward_matches_full_causal_prefix(self):
         try:

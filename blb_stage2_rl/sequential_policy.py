@@ -297,6 +297,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             torch.zeros(cfg.max_step_dim, dtype=torch.float32),
             persistent=False,
         )
+        self._slot_exploration_enabled = False
         self._causal_mask_cache: Dict[Tuple[int, torch.device], torch.Tensor] = {}
         self._init_weights()
 
@@ -685,6 +686,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             )
         if bool((eps < 0).any()) or bool((eps >= 1).any()):
             raise ValueError("exploration epsilon must be in [0, 1)")
+        self._slot_exploration_enabled = bool((eps > 0).any().item())
         with torch.no_grad():
             self._slot_exploration_epsilon.copy_(eps.to(self._slot_exploration_epsilon.device))
 
@@ -699,9 +701,9 @@ class BLBStage2SequentialPolicy(nn.Module):
         support); ``safe_logits`` is the NaN-safe version used for softmax.
         With all epsilons 0 this reduces exactly to Categorical(safe_logits).
         """
-        eps = self._slot_exploration_epsilon
-        if float(eps.max().item()) <= 0.0:
+        if not self._slot_exploration_enabled:
             return torch.distributions.Categorical(logits=safe_logits)
+        eps = self._slot_exploration_epsilon
         probs = torch.softmax(safe_logits, dim=-1)
         allowed = torch.isfinite(logits).float()
         denom = allowed.sum(dim=-1, keepdim=True)
