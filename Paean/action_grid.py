@@ -24,6 +24,9 @@ from blb_stage2_rl.action_space import (
     sum_truncation_k_in_action,
 )
 
+_K_LEVEL_TO_INDEX = {int(value): int(idx) for idx, value in enumerate(K_LEVELS)}
+_K_LEVEL_CHOICES_TEXT = str(sorted(int(value) for value in K_LEVELS))
+
 
 @dataclass(frozen=True)
 class ActionCandidate:
@@ -629,9 +632,12 @@ def _value_to_action_index(*, value: int, block_idx: int, field_name: str, kind:
         raise ValueError(f"first_input={value} is not selectable; expected one of 22,24,26,28,30")
 
     if kind == "K":
-        if int(value) not in K_LEVELS:
-            raise ValueError(f"truncation={value} is not selectable; expected one of {sorted(K_LEVELS)}")
-        return list(K_LEVELS).index(int(value))
+        try:
+            return _K_LEVEL_TO_INDEX[int(value)]
+        except KeyError as exc:
+            raise ValueError(
+                f"truncation={value} is not selectable; expected one of {_K_LEVEL_CHOICES_TEXT}"
+            ) from exc
 
     levels = NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[str(kind)]
     max_sf = max_sfs.get(int(block_idx), str(field_name))

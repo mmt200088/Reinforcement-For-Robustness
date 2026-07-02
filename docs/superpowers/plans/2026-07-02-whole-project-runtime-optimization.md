@@ -804,6 +804,14 @@ benchmark with 3000 valid configs plus 2000 sidecar/non-JSON files preserved
 config ordering and improved discovery from `0.036433s` / `2.17MB` to
 `0.020808s` / `0.86MB` (`1.75x`).
 
+Progress 2026-07-02: `Paean/action_grid.py` now precomputes the truncation
+`K_LEVELS` value-to-action-index map and the invalid-value choices string at
+module import. Action-range and slot decoding no longer allocates
+`list(K_LEVELS)` for every K value conversion. A local same-signature 1M-call
+benchmark preserved indexes and reduced K lookup time from `0.293003s` to
+`0.213070s` (`1.38x`), with traced peak allocation dropping from `180B` to
+`156B` over 10k calls.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
