@@ -343,6 +343,15 @@ sorted `os.walk()` fallback to locate nested `episodes.jsonl` files instead of
 tree preserved the same discovery result and reduced fallback lookup from
 `0.0084s`/`0.05MB` to `0.0052s`/`0.02MB`.
 
+Progress 2026-07-02: `_find_episodes_path()` in
+`scripts/gpu_utilization_report.py` now avoids sorting each directory's
+`filenames` list during fallback search because it only needs an
+`"episodes.jsonl"` membership check. Directory traversal order remains stable
+via `dirnames.sort()`. A local 120k-filename synthetic directory preserved the
+same discovered path and reduced fallback lookup from `0.021896s` to
+`0.000526s` (`41.66x`), with traced peak memory dropping from `1.37MB` to
+`0.92MB`.
+
 Progress 2026-07-02: extracted the reward-probe scaling benchmark postprocessor
 from `scripts/stage2_reward_probe_scaling_benchmark.sh` into
 `scripts/stage2_reward_probe_scaling_report.py`. The new report script is

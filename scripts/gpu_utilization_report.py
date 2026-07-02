@@ -82,7 +82,6 @@ def _find_episodes_path(path: str | Path) -> Path:
             return item
     for dirpath, dirnames, filenames in os.walk(candidate):
         dirnames.sort()
-        filenames.sort()
         if "episodes.jsonl" in filenames:
             item = Path(dirpath) / "episodes.jsonl"
             if item.is_file():

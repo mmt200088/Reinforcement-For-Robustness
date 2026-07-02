@@ -299,6 +299,33 @@ class GpuUtilizationReportTest(unittest.TestCase):
 
         self.assertEqual(found, episodes)
 
+    def test_find_episodes_path_does_not_sort_filenames_for_membership_check(self):
+        report = _load_report_module()
+
+        class NoSortFileNames(list):
+            def sort(self, *_args, **_kwargs):
+                raise AssertionError("filename sorting is unnecessary for membership checks")
+
+        root = Path("/tmp/missing-direct-candidates")
+
+        def fake_walk(_root):
+            yield (
+                "/tmp/missing-direct-candidates/nested",
+                [],
+                NoSortFileNames(["other.txt", "episodes.jsonl"]),
+            )
+
+        def fake_is_file(path):
+            return str(path) == "/tmp/missing-direct-candidates/nested/episodes.jsonl"
+
+        with (
+            mock.patch.object(Path, "is_file", fake_is_file),
+            mock.patch.object(report.os, "walk", fake_walk),
+        ):
+            found = report._find_episodes_path(root)
+
+        self.assertEqual(found, Path("/tmp/missing-direct-candidates/nested/episodes.jsonl"))
+
     def test_iter_jsonl_passes_unstripped_lines_to_json_loader(self):
         report = _load_report_module()
 
