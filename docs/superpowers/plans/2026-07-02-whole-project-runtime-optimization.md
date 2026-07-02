@@ -359,6 +359,11 @@ the Stage-2 total-cost combination plan for a reused solution-map set. Repeated
 samples no longer rebuild the same suffix reachability table or rescan cost
 keys for every noise domain.
 
+Progress 2026-07-02: Stage1Budget/Budget random final-eval sampling now caches
+the feasible GELU/Softmax total-cost pair list for a reused solution-map pair
+and target. Repeated Stage-1 budget samples no longer rescan the GELU cost-key
+domain for every random control.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for

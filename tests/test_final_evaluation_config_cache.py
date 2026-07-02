@@ -151,6 +151,39 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertTrue(all(cfg is not None for cfg in configs))
         self.assertEqual(key_scan_count, len(fem.BREAKDOWN_KEYS))
 
+    def test_stage1_total_cost_sampling_reuses_feasible_pairs(self):
+        runner = fem.UnifiedFinalEvaluationModule.__new__(fem.UnifiedFinalEvaluationModule)
+        runner.allowed_gelu_random = [1, 2]
+        runner.allowed_softmax = [6]
+        key_scan_count = 0
+
+        class CountingSolutionMap(dict):
+            def keys(self):
+                nonlocal key_scan_count
+                key_scan_count += 1
+                return super().keys()
+
+        gelu_solution_map = CountingSolutionMap({
+            1: [(2, 0)],
+            2: [(0, 2)],
+        })
+        softmax_solution_map = {
+            3: [(2,)],
+        }
+        rng = np.random.default_rng(123)
+        configs = [
+            runner._sample_stage1_total_cost(
+                rng,
+                gelu_solution_map,
+                softmax_solution_map,
+                target_total_cost=2.0,
+            )
+            for _ in range(3)
+        ]
+
+        self.assertTrue(all(cfg is not None for cfg in configs))
+        self.assertEqual(key_scan_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

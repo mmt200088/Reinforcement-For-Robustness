@@ -901,11 +901,11 @@ class UnifiedFinalEvaluationModule:
         self, rng, gelu_solution_map, softmax_solution_map, target_total_cost
     ):
         target_key = self._cost_key(target_total_cost)
-        feasible_pairs = []
-        for g_key in gelu_solution_map.keys():
-            s_key = target_key - g_key
-            if s_key in softmax_solution_map:
-                feasible_pairs.append((g_key, s_key))
+        feasible_pairs = self._stage1_total_cost_pairs(
+            gelu_solution_map,
+            softmax_solution_map,
+            target_key,
+        )
         if not feasible_pairs:
             return None
         for _ in range(200):
@@ -919,6 +919,27 @@ class UnifiedFinalEvaluationModule:
                 self._counts_to_shuffled_config(self.allowed_softmax, s_choice, rng),
             )
         return None
+
+    def _stage1_total_cost_pairs(self, gelu_solution_map, softmax_solution_map, target_key):
+        cache_key = (
+            id(gelu_solution_map),
+            len(gelu_solution_map),
+            id(softmax_solution_map),
+            len(softmax_solution_map),
+            int(target_key),
+        )
+        cache = getattr(self, "_stage1_total_cost_pair_cache", {})
+        if cache_key in cache:
+            return cache[cache_key]
+
+        feasible_pairs = []
+        for g_key in gelu_solution_map.keys():
+            s_key = target_key - g_key
+            if s_key in softmax_solution_map:
+                feasible_pairs.append((g_key, s_key))
+        cache[cache_key] = tuple(feasible_pairs)
+        self._stage1_total_cost_pair_cache = cache
+        return cache[cache_key]
 
     def _sample_stage1_equiv(
         self, rng, gelu_solution_map, softmax_solution_map, target_g_cost, target_s_cost
