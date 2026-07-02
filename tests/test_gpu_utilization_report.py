@@ -146,6 +146,30 @@ class GpuUtilizationReportTest(unittest.TestCase):
         self.assertEqual(summary["cuda:0"]["active_sample_rate"], 1.0)
         self.assertEqual(summary["cuda:0"]["max_memory_mib"], 1500.0)
 
+    def test_nvidia_smi_csv_normalizes_header_once_not_per_row(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            smi = root / "nvidia_smi.csv"
+            smi.write_text(
+                "gpu index, utilization.gpu [%], memory.used [MiB]\n"
+                "0,20 %,1000 MiB\n"
+                "0,40 %,1500 MiB\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                report,
+                "_normalized_fieldnames",
+                side_effect=AssertionError("CSV headers should be normalized once"),
+            ):
+                summary = report._load_nvidia_smi_csv(smi)
+
+        self.assertEqual(summary["cuda:0"]["samples"], 2)
+        self.assertEqual(summary["cuda:0"]["mean_util_pct"], 30.0)
+        self.assertEqual(summary["cuda:0"]["max_memory_mib"], 1500.0)
+
     def test_summarizes_rows_uses_running_timing_stats(self):
         report = _load_report_module()
 

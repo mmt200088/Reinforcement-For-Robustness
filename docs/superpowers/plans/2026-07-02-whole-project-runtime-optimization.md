@@ -308,6 +308,13 @@ optional `nvidia-smi` CSV samples with running per-device aggregates instead of
 keeping every utilization sample in memory before computing means and maxima.
 This keeps GPU evidence reports memory-bounded for long server sampling logs.
 
+Progress 2026-07-02: `scripts/gpu_utilization_report.py` now normalizes
+`nvidia-smi` CSV headers once per file and uses a raw-field lookup for every
+sample row, instead of regex-normalizing the header keys again for each row.
+A local 200k-row sampled GPU CSV benchmark preserved the per-device summary
+and reduced CSV post-processing from `4.274366s` to `2.521548s` (`1.70x`),
+with traced peak allocation dropping from `62,023B` to `51,313B`.
+
 Progress 2026-07-02: the same report now aggregates Stage-2 episode timing
 fields (`terminal_probe_wall_seconds`, policy rollout, replan/optimizer,
 per-device probe walls, and optional hot-path write/render timings) with
