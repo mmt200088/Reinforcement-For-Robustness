@@ -136,6 +136,14 @@ Progress 2026-07-02: `scripts/server_resource_snapshot.py` now parses offline
 keeping server evidence capture memory-bounded if a sampled GPU log is supplied
 instead of a tiny one-shot inventory.
 
+Progress 2026-07-02: `scripts/server_resource_snapshot.py` now detects sampled
+`nvidia-smi` CSV headers and collapses repeated samples into one max-util/max
+memory row per GPU. This keeps snapshot `gpu_count` tied to unique devices and
+keeps evidence bundles small when they reuse a long sampled GPU log. A local
+100k-sample CSV benchmark reduced parsed rows from `100001` to `4`, traced
+peak memory from `28.24MB` to `0.05MB`, and serialized GPU JSON from about
+`10.5MB` to `504B`.
+
 - [x] **Step 3: Verify**
 
 Run:

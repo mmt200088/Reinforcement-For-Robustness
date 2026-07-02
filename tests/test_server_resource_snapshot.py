@@ -33,6 +33,30 @@ class ServerResourceSnapshotTest(unittest.TestCase):
         self.assertEqual(rows[0]["utilization_gpu_pct"], 57)
         self.assertEqual(rows[1]["utilization_gpu_pct"], 0)
 
+    def test_parse_nvidia_smi_sample_csv_collapses_rows_by_gpu(self):
+        snap = _load_snapshot_module()
+
+        rows = snap.parse_nvidia_smi_csv(
+            "timestamp,index,name,memory_total_mib,memory_used_mib,utilization_gpu_pct\n"
+            "2026/07/02 00:00:00.000,0,NVIDIA A100-SXM4-40GB,40960,1024,57\n"
+            "2026/07/02 00:00:00.000,1,NVIDIA A100-SXM4-40GB,40960,0,0\n"
+            "2026/07/02 00:00:15.000,0,NVIDIA A100-SXM4-40GB,40960,2048,81\n"
+            "2026/07/02 00:00:15.000,1,NVIDIA A100-SXM4-40GB,40960,512,9\n"
+        )
+        summary = snap._gpu_summary(rows)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["index"], 0)
+        self.assertEqual(rows[0]["memory_used_mib"], 2048)
+        self.assertEqual(rows[0]["utilization_gpu_pct"], 81)
+        self.assertEqual(rows[1]["index"], 1)
+        self.assertEqual(rows[1]["memory_used_mib"], 512)
+        self.assertEqual(rows[1]["utilization_gpu_pct"], 9)
+        self.assertEqual(summary["gpu_count"], 2)
+        self.assertEqual(summary["active_gpu_count"], 2)
+        self.assertEqual(summary["memory_total_mib"], 81920)
+        self.assertEqual(summary["max_utilization_gpu_pct"], 81)
+
     def test_cli_writes_json_and_markdown_from_offline_gpu_csv(self):
         snap = _load_snapshot_module()
 

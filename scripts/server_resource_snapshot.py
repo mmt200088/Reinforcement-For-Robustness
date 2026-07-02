@@ -9,6 +9,7 @@ whether hardware was actually available and which source snapshot was used.
 from __future__ import annotations
 
 import argparse
+import csv
 from datetime import datetime, timezone
 import json
 import os
@@ -29,25 +30,124 @@ def _int_from_text(value: object, default: int = 0) -> int:
         return int(default)
 
 
+def _normalize_header(value: object) -> str:
+    text = str(value or "").strip().lower()
+    chars = [char if char.isalnum() else "_" for char in text]
+    return "_".join(part for part in "".join(chars).split("_") if part)
+
+
+def _first_header_index(header: Sequence[str], keys: Sequence[str]) -> int | None:
+    normalized = [_normalize_header(value) for value in header]
+    for key in keys:
+        if key in normalized:
+            return normalized.index(key)
+    return None
+
+
+def _part_at(parts: Sequence[str], index: int | None) -> str:
+    if index is None or index < 0 or index >= len(parts):
+        return ""
+    return parts[index]
+
+
+def _merge_gpu_row(rows_by_index: dict[int, dict[str, Any]], row: dict[str, Any]) -> None:
+    index = int(row.get("index", 0) or 0)
+    current = rows_by_index.get(index)
+    if current is None:
+        rows_by_index[index] = row
+        return
+    if row.get("name"):
+        current["name"] = current.get("name") or row.get("name")
+    current["memory_total_mib"] = max(
+        int(current.get("memory_total_mib", 0) or 0),
+        int(row.get("memory_total_mib", 0) or 0),
+    )
+    current["memory_used_mib"] = max(
+        int(current.get("memory_used_mib", 0) or 0),
+        int(row.get("memory_used_mib", 0) or 0),
+    )
+    current["utilization_gpu_pct"] = max(
+        int(current.get("utilization_gpu_pct", 0) or 0),
+        int(row.get("utilization_gpu_pct", 0) or 0),
+    )
+
+
+def _header_indices(header: Sequence[str]) -> dict[str, int | None]:
+    return {
+        "index": _first_header_index(header, ("index", "gpu_idx", "gpu_index", "gpu")),
+        "name": _first_header_index(header, ("name", "gpu_name")),
+        "memory_total_mib": _first_header_index(
+            header,
+            ("memory_total_mib", "memory_total", "memory_total_mi_b"),
+        ),
+        "memory_used_mib": _first_header_index(
+            header,
+            ("memory_used_mib", "memory_used", "memory_used_mi_b", "mem_used_mib"),
+        ),
+        "utilization_gpu_pct": _first_header_index(
+            header,
+            ("utilization_gpu_pct", "utilization_gpu", "gpu_util_pct", "gpu_util", "util_pct"),
+        ),
+    }
+
+
+def _row_from_header_indices(indices: dict[str, int | None], parts: Sequence[str]) -> dict[str, Any]:
+    return {
+        "index": _int_from_text(_part_at(parts, indices.get("index"))),
+        "name": str(_part_at(parts, indices.get("name"))),
+        "memory_total_mib": _int_from_text(
+            _part_at(parts, indices.get("memory_total_mib"))
+        ),
+        "memory_used_mib": _int_from_text(
+            _part_at(parts, indices.get("memory_used_mib"))
+        ),
+        "utilization_gpu_pct": _int_from_text(
+            _part_at(parts, indices.get("utilization_gpu_pct"))
+        ),
+    }
+
+
+def _row_from_legacy_parts(parts: Sequence[str]) -> dict[str, Any]:
+    return {
+        "index": _int_from_text(parts[0]),
+        "name": parts[1],
+        "memory_total_mib": _int_from_text(parts[2]),
+        "memory_used_mib": _int_from_text(parts[3]),
+        "utilization_gpu_pct": _int_from_text(parts[4]),
+    }
+
+
+def _looks_like_header(parts: Sequence[str]) -> bool:
+    normalized = {_normalize_header(part) for part in parts}
+    return bool(
+        normalized
+        & {
+            "index",
+            "gpu_idx",
+            "gpu_index",
+            "timestamp",
+            "utilization_gpu",
+            "utilization_gpu_pct",
+            "memory_used",
+            "memory_used_mib",
+        }
+    ) and _int_from_text(parts[0], default=-1) == -1
+
+
 def parse_nvidia_smi_lines(lines: Iterable[str]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for raw_line in lines:
-        line = raw_line.strip()
-        if not line:
-            continue
-        parts = [part.strip() for part in line.split(",")]
+    rows_by_index: dict[int, dict[str, Any]] = {}
+    reader = csv.reader(line for line in lines if str(line).strip())
+    header_indices: dict[str, int | None] | None = None
+    for parts in reader:
+        parts = [part.strip() for part in parts]
         if len(parts) < 5:
             continue
-        rows.append(
-            {
-                "index": _int_from_text(parts[0]),
-                "name": parts[1],
-                "memory_total_mib": _int_from_text(parts[2]),
-                "memory_used_mib": _int_from_text(parts[3]),
-                "utilization_gpu_pct": _int_from_text(parts[4]),
-            }
-        )
-    return rows
+        if header_indices is None and _looks_like_header(parts):
+            header_indices = _header_indices(parts)
+            continue
+        row = _row_from_header_indices(header_indices, parts) if header_indices is not None else _row_from_legacy_parts(parts)
+        _merge_gpu_row(rows_by_index, row)
+    return [rows_by_index[index] for index in sorted(rows_by_index)]
 
 
 def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
