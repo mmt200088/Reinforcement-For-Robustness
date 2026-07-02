@@ -15,30 +15,18 @@ import json
 from pathlib import Path
 import re
 import sys
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from csv_field_utils import first_present_by_index, normalized_field_index  # noqa: E402
+from jsonl_utils import iter_jsonl  # noqa: E402
 from report_format_utils import format_float  # noqa: E402
 from stats_utils import median_sorted  # noqa: E402
 
 FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
-
-
-def _iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:
-    with path.open(encoding="utf-8") as handle:
-        for line_no, line in enumerate(handle, start=1):
-            if not line or line.isspace():
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{path}:{line_no}: invalid JSON") from exc
-            if isinstance(payload, dict):
-                yield payload
 
 
 def _float_value(value: object) -> float | None:
@@ -69,7 +57,7 @@ def _summarize_episodes(path: Path) -> dict[str, Any]:
             "trial_splits": [],
         }
 
-    for rec in _iter_jsonl(path):
+    for rec in iter_jsonl(path, errors="raise"):
         wall = _float_value(rec.get("terminal_probe_wall_seconds")) or 0.0
         if wall > 0.0:
             probe_walls.append(float(wall))
@@ -147,7 +135,7 @@ def build_summary(root: str | Path) -> dict[str, Any]:
     root_path = Path(root)
     runs_path = root_path / "runs.jsonl"
     rows: list[dict[str, Any]] = []
-    for run in _iter_jsonl(runs_path):
+    for run in iter_jsonl(runs_path, errors="raise"):
         label = str(run["label"])
         episode_summary = _summarize_episodes(root_path / f"{label}_episodes.jsonl")
         gpu_util, gpu_mem = _summarize_gpu_samples(root_path / f"{label}_nvidia_smi.csv")

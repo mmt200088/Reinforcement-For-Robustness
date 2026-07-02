@@ -24,6 +24,7 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from jsonl_utils import iter_jsonl  # noqa: E402
 from stats_utils import fraction_true, mean_from_total, mean_or_default, ratio_or_default  # noqa: E402
 
 LOSS_CAP = 100.0  # terminal_loss_mean sentinel for an accuracy-collapse episode
@@ -56,16 +57,7 @@ def load_episodes(run_dir: str) -> List[Dict[str, Any]]:
 
 
 def _iter_episode_rows(path: str):
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            if not line or line.isspace():
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(row, dict):
-                yield row
+    yield from iter_jsonl(path, errors="skip")
 
 
 def _scan_and_window_ordered_path(path: str, anchor: int, window: int) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:

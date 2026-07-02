@@ -125,6 +125,16 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `_normalized_field_lookup`, `_normalized_field_index`,
   `_first_present_by_lookup`, or `_first_present_by_index`; extend
   `csv_field_utils.py` and `tests/test_csv_field_utils.py` instead.
+- Shared JSONL reader rule, added 2026-07-03: report, monitor, and verifier
+  scripts that consume JSONL artifacts must use `jsonl_utils.py` for common
+  blank-line handling, malformed-line policy, dict-only filtering, and missing
+  file behavior. Use `iter_jsonl(..., errors="skip")` for live logs that may
+  contain partial/bad rows, `iter_jsonl(..., errors="raise")` for verifier
+  scripts that should report `path:line`, and `read_jsonl(..., missing_ok=True)`
+  for optional artifacts. Do not add new script-local `_read_jsonl` or raw
+  `for line in handle: json.loads(line)` loops in report scripts; extend
+  `jsonl_utils.py` and `tests/test_jsonl_utils.py` if another JSONL convention
+  is needed.
 - Fusion-count fixed-action experiment helper rule, added 2026-07-03:
   Paean-path and RL-path fixed-action evaluation scripts must share action
   config directory scanning, JSON-list parsing, stable JSON hashes/keys, and

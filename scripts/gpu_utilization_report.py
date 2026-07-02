@@ -24,6 +24,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from csv_field_utils import first_present_by_index, normalized_field_index  # noqa: E402
 from device_utils import split_device_spec_tokens  # noqa: E402
+from jsonl_utils import iter_jsonl  # noqa: E402
 
 LOW_UTIL_THRESHOLD_PCT = 10.0
 HOT_PATH_TIMING_FIELDS = (
@@ -94,16 +95,7 @@ def _find_episodes_path(path: str | Path) -> Path:
 
 def _iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
     episodes_path = _find_episodes_path(path)
-    with episodes_path.open(encoding="utf-8") as handle:
-        for line_no, line in enumerate(handle, start=1):
-            if not line or line.isspace():
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{episodes_path}:{line_no}: invalid JSON") from exc
-            if isinstance(row, dict):
-                yield row
+    yield from iter_jsonl(episodes_path, errors="raise")
 
 
 def _float_value(value: object) -> float | None:

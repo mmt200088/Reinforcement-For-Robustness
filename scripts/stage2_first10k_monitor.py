@@ -17,22 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from jsonl_utils import read_jsonl  # noqa: E402
 from stats_utils import mean_or_none, median_sorted  # noqa: E402
-
-
-def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    if not path.exists():
-        return []
-    out: List[Dict[str, Any]] = []
-    with path.open(encoding="utf-8", errors="replace") as handle:
-        for line in handle:
-            if not line or line.isspace():
-                continue
-            try:
-                out.append(json.loads(line))
-            except Exception:
-                continue
-    return out
 
 
 def _finite(value: Any, default: float = 0.0) -> float:
@@ -179,12 +165,12 @@ def _expected_trial_split(k_trials: int, device_count: int) -> List[int]:
 def _load_monitor_rows(args: argparse.Namespace) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     artifact = Path(args.artifact_dir)
     stage2_noise = Path(args.stage2_noise)
-    episodes = _read_jsonl(artifact / "episodes.jsonl")
+    episodes = read_jsonl(artifact / "episodes.jsonl", missing_ok=True)
     if not episodes:
-        episodes = _read_jsonl(stage2_noise / "progress" / "diagnostics" / "episodes.jsonl")
-    ppo = _read_jsonl(artifact / "ppo_updates.jsonl")
+        episodes = read_jsonl(stage2_noise / "progress" / "diagnostics" / "episodes.jsonl", missing_ok=True)
+    ppo = read_jsonl(artifact / "ppo_updates.jsonl", missing_ok=True)
     if not ppo:
-        ppo = _read_jsonl(stage2_noise / "progress" / "diagnostics" / "ppo_updates.jsonl")
+        ppo = read_jsonl(stage2_noise / "progress" / "diagnostics" / "ppo_updates.jsonl", missing_ok=True)
     return episodes, ppo
 
 
