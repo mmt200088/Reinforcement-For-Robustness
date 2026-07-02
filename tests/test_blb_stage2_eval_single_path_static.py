@@ -89,7 +89,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         rl_ga = (repo / "rl_ga_compare_runner.py").read_text(encoding="utf-8")
 
         for text in (paean, final_eval):
-            self.assertIn("from json_utils import to_jsonable", text)
+            self.assertRegex(text, r"from json_utils import .*\bto_jsonable\b")
             self.assertIn("to_jsonable(", text)
             self.assertNotIn("def _json_ready", text)
         self.assertIn("from json_utils import to_jsonable as _to_jsonable", persistence)
@@ -103,7 +103,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         self.assertIn("from json_utils import to_jsonable", rl_ga)
         self.assertNotIn("def to_jsonable(value)", rl_ga)
         rlpath = (repo / "scripts" / "run_fusion_count_action_eval_rlpath.py").read_text(encoding="utf-8")
-        self.assertIn("from json_utils import to_jsonable", rlpath)
+        self.assertRegex(rlpath, r"from json_utils import .*\bto_jsonable\b")
         self.assertNotIn("def _jsonable", rlpath)
 
     def test_json_default_scripts_use_shared_adapter(self):
@@ -130,7 +130,10 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
 
         self.assertIn("from json_utils import stable_json_hash", candidate_store)
         self.assertIn("from json_utils import stable_json_hash", action_mask)
-        self.assertIn("from json_utils import stable_json_hash, stable_json_key", fusion_common)
+        self.assertRegex(
+            fusion_common,
+            r"from json_utils import .*\bstable_json_hash\b.*\bstable_json_key\b",
+        )
         self.assertIn("from json_utils import stable_json_hash", f0_scan)
         self.assertIn("from json_utils import stable_json_hash", registry)
         self.assertNotIn("def _stable_json", candidate_store)
