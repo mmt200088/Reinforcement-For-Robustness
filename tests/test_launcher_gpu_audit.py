@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import subprocess
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AUDIT_PATH = REPO_ROOT / "scripts" / "launcher_gpu_audit.py"
@@ -17,6 +19,20 @@ def _load_audit_module():
 
 
 class LauncherGpuAuditTest(unittest.TestCase):
+    def test_nvidia_smi_detection_uses_timeout(self):
+        audit = _load_audit_module()
+
+        def fake_check_output(cmd, **kwargs):
+            self.assertEqual(cmd, ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"])
+            self.assertIn("timeout", kwargs)
+            self.assertLessEqual(kwargs["timeout"], 5)
+            return "0\n1\n"
+
+        with mock.patch.object(subprocess, "check_output", fake_check_output):
+            devices = audit._detect_nvidia_smi_devices()
+
+        self.assertEqual(devices, ["0", "1"])
+
     def test_stage1_warns_when_multiple_gpus_visible_without_stage1_devices(self):
         audit = _load_audit_module()
 

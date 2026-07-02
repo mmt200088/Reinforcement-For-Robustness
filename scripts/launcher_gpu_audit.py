@@ -45,6 +45,7 @@ def _detect_nvidia_smi_devices() -> List[str]:
             ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
             text=True,
             stderr=subprocess.DEVNULL,
+            timeout=5,
         )
     except Exception:
         return []

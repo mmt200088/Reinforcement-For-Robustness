@@ -144,6 +144,11 @@ keeps evidence bundles small when they reuse a long sampled GPU log. A local
 peak memory from `28.24MB` to `0.05MB`, and serialized GPU JSON from about
 `10.5MB` to `504B`.
 
+Progress 2026-07-02: `scripts/launcher_gpu_audit.py` now bounds fallback
+`nvidia-smi` GPU discovery with a 5-second timeout. This prevents the
+non-fatal GPU audit gate from stalling expensive RL launchers when the server
+driver/CLI is slow or wedged and `CUDA_VISIBLE_DEVICES` was not set.
+
 - [x] **Step 3: Verify**
 
 Run:
