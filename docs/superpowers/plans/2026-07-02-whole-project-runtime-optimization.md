@@ -264,6 +264,12 @@ running count/sum/min/max stats instead of retaining every float in lists. A
 local 100k-row parity benchmark kept the same stats and reduced timing-summary
 peak memory from `15.28MB` to `0.02MB`.
 
+Progress 2026-07-02: `scripts/gpu_utilization_report.py` now uses a streaming
+sorted `os.walk()` fallback to locate nested `episodes.jsonl` files instead of
+`Path.rglob("episodes.jsonl")`. A local 241-directory/2401-file synthetic run
+tree preserved the same discovery result and reduced fallback lookup from
+`0.0084s`/`0.05MB` to `0.0052s`/`0.02MB`.
+
 Progress 2026-07-02: extracted the reward-probe scaling benchmark postprocessor
 from `scripts/stage2_reward_probe_scaling_benchmark.sh` into
 `scripts/stage2_reward_probe_scaling_report.py`. The new report script is

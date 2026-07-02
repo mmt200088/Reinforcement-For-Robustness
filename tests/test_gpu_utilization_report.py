@@ -220,6 +220,24 @@ class GpuUtilizationReportTest(unittest.TestCase):
         self.assertEqual(summary["policy_rollout_wall_seconds"]["mean"], 0.5)
         self.assertEqual(summary["probe_wall_seconds_by_device"]["cuda:1"]["mean"], 1.75)
 
+    def test_find_episodes_path_fallback_streams_without_path_rglob(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            episodes = root / "nested" / "run" / "diagnostics" / "episodes.jsonl"
+            episodes.parent.mkdir(parents=True)
+            episodes.write_text("{}\n", encoding="utf-8")
+
+            with mock.patch.object(
+                Path,
+                "rglob",
+                side_effect=AssertionError("episode fallback search should stream with os.walk"),
+            ):
+                found = report._find_episodes_path(root)
+
+        self.assertEqual(found, episodes)
+
     def test_cli_writes_json_and_markdown_reports(self):
         report = _load_report_module()
 

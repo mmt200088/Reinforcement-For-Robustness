@@ -11,6 +11,7 @@ import argparse
 import collections
 import csv
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -78,9 +79,13 @@ def _find_episodes_path(path: str | Path) -> Path:
     for item in candidates:
         if item.is_file():
             return item
-    for item in candidate.rglob("episodes.jsonl"):
-        if item.is_file():
-            return item
+    for dirpath, dirnames, filenames in os.walk(candidate):
+        dirnames.sort()
+        filenames.sort()
+        if "episodes.jsonl" in filenames:
+            item = Path(dirpath) / "episodes.jsonl"
+            if item.is_file():
+                return item
     raise FileNotFoundError(f"could not find episodes.jsonl under {candidate}")
 
 
