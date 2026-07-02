@@ -579,6 +579,14 @@ discovery and skips `.json` directories before optimizer work starts. A local
 discovery from `0.052645s` / `4.31MB` to `0.031833s` / `1.18MB`, and headroom
 discovery from `0.071282s` / `5.20MB` to `0.046929s` / `2.41MB`.
 
+Progress 2026-07-02: `Rescale_optimizer/scripts/update_noise_tables_from_csv.py`
+now uses the same `os.scandir()` real-file config discovery for noise-table
+maintenance runs, avoiding full `Path.glob("*.json")` materialization and
+skipping `.json` directories before any file rewrite attempt. A local
+4000-config / 4000-sidecar / 200-json-directory benchmark preserved real config
+ordering and reduced discovery from `0.073012s` / `5.20MB` to `0.030925s` /
+`1.18MB`.
+
 - [ ] **Step 3: Verify**
 
 Run:

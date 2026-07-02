@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -223,6 +224,17 @@ def update_one(
     return True, f"updated (N={N}, {len(sfs)} entries)"
 
 
+def _discover_config_paths(config_dir: Path) -> List[Path]:
+    names = sorted(
+        entry.name
+        for entry in os.scandir(config_dir)
+        if entry.is_file()
+        and entry.name.endswith(".json")
+        and not entry.name.startswith("static_skeletons")
+    )
+    return [config_dir / name for name in names]
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--csv", default=str(DEFAULT_CSV))
@@ -245,9 +257,7 @@ def main() -> int:
         if not dpath.is_dir():
             print(f"[skip ] {dpath} does not exist")
             continue
-        for cfg in sorted(dpath.glob("*.json")):
-            if cfg.name.startswith("static_skeletons"):
-                continue
+        for cfg in _discover_config_paths(dpath):
             n_total += 1
             try:
                 changed, msg = update_one(
