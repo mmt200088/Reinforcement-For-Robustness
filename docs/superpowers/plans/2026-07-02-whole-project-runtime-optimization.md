@@ -696,6 +696,13 @@ splitting it into columns. A local 120k-row top-candidate benchmark preserved
 the plotted points and reduced this read path from `0.8249s` / `39.78MB` to
 `0.6445s` / `7.81MB`.
 
+Progress 2026-07-02: `blb_stage2_rl/candidate_store.py` now skips blank
+candidate JSONL rows with `isspace()` and passes nonblank rows directly to
+`json.loads()` instead of allocating stripped copies while loading append-only
+candidate stores. A local 100k-row synthetic `top_candidates.jsonl` benchmark
+preserved record count and reduced `read_all()` from `0.720805s` to
+`0.691242s` (`1.04x`).
+
 Progress 2026-07-02: `tools/aggregate_seeds.py` now finds the latest Paean
 `blb_action_final_eval_results_*.json` by streaming `os.walk()` and retaining
 only the newest path, instead of recursive `glob` plus sorting a materialized

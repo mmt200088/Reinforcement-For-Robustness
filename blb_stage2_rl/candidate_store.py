@@ -345,10 +345,9 @@ class CandidateStore:
         records: List[Dict[str, Any]] = []
         with self.path.open("r", encoding="utf-8") as f:
             for line in f:
-                text = line.strip()
-                if not text:
+                if not line or line.isspace():
                     continue
-                payload = json.loads(text)
+                payload = json.loads(line)
                 payload.setdefault("legacy_record", is_legacy_record(payload))
                 records.append(payload)
         return records

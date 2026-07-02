@@ -1,9 +1,41 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 class BLBCandidateStoreIdentityTests(unittest.TestCase):
+    def test_read_all_skips_blank_lines_without_strip_copy(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+
+        class NoStripLine(str):
+            def strip(self, *_args, **_kwargs):
+                raise AssertionError("CandidateStore.read_all should not allocate strip() copies")
+
+        class FakeHandle:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                return iter([
+                    NoStripLine('{"action_indices": [1], "valid": true}\n'),
+                    NoStripLine("   \n"),
+                    NoStripLine('{"action_indices": [2], "valid": true}\n'),
+                ])
+
+        fake_path = mock.Mock()
+        fake_path.exists.return_value = True
+        fake_path.open.return_value = FakeHandle()
+        store = CandidateStore("unused.jsonl")
+        store.path = fake_path
+
+        records = store.read_all()
+
+        self.assertEqual([record["action_indices"] for record in records], [[1], [2]])
+
     def test_candidate_key_binds_action_and_context_hashes(self):
         from blb_stage2_rl.candidate_store import (
             build_candidate_identity_context,
