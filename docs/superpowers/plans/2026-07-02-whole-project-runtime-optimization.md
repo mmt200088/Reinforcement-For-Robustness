@@ -369,6 +369,12 @@ preserved report summaries and reduced `gpu_utilization_report` from
 `3.0698s` to `2.8886s` (`1.06x`) and reward-probe scaling episode summary
 from `1.3052s` to `1.2424s` (`1.05x`).
 
+Progress 2026-07-02: `scripts/gpu_utilization_report.py` now uses a
+precompiled hot-path float regex for episode timing fields and sampled
+`nvidia-smi` values, instead of dispatching through `re.search()` for every
+numeric parse. A local 200k-value mixed GPU/timing benchmark preserved parsed
+values and reduced `_float_value()` from `0.103639s` to `0.072524s` (`1.43x`).
+
 Progress 2026-07-02: `scripts/blb_fusion_ab_compare.py` now analyzes ordered
 Stage-2 `episodes.jsonl` files with a streaming two-pass path for summary and
 bounded-window rows, avoiding materializing full 60k+ episode lists during A/B

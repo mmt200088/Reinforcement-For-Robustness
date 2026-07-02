@@ -195,6 +195,18 @@ class GpuUtilizationReportTest(unittest.TestCase):
         self.assertEqual(summary["cuda:0"]["max_util_pct"], 40.0)
         self.assertEqual(summary["cuda:0"]["max_memory_mib"], 1500.0)
 
+    def test_float_value_uses_precompiled_pattern(self):
+        report = _load_report_module()
+
+        with mock.patch.object(
+            report.re,
+            "search",
+            side_effect=AssertionError("float parsing should use the compiled hot-path regex"),
+        ):
+            self.assertEqual(report._float_value("95 %"), 95.0)
+            self.assertEqual(report._float_value("12000 MiB"), 12000.0)
+            self.assertIsNone(report._float_value("n/a"))
+
     def test_summarizes_rows_uses_running_timing_stats(self):
         report = _load_report_module()
 

@@ -30,6 +30,7 @@ REPLAN_TIMING_FIELDS = (
     "rejection_optimizer_wall_seconds",
     "terminal_cost_eval_wall_seconds",
 )
+FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
 
 
 def _device_sort_key(device: str) -> tuple[int, int | str]:
@@ -111,7 +112,7 @@ def _float_value(value: object) -> float | None:
     text = str(value).strip()
     if not text:
         return None
-    match = re.search(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)", text)
+    match = FLOAT_RE.search(text)
     if not match:
         return None
     return float(match.group(0))
