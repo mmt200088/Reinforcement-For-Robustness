@@ -852,6 +852,22 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertIn("policy.eval()", runner_src)
         self.assertIn("policy_rollout_wall_seconds", runner_src)
 
+    def test_sequential_rollout_buffer_packs_numpy_arrays_in_single_pass(self):
+        policy_src = open("blb_stage2_rl/sequential_policy.py", encoding="utf-8").read()
+        for needle in (
+            "def _pack_numpy_arrays",
+            "for i, t in enumerate(buf):",
+            "returns, advantages = _compute_gae_from_arrays(",
+        ):
+            self.assertIn(needle, policy_src, msg=f"sequential_policy.py missing: {needle!r}")
+        for old_pattern in (
+            "states = np.stack([t.state for t in self._buf])",
+            "actions = np.stack([t.action for t in self._buf])",
+            "old_values = np.array([t.value for t in self._buf], dtype=np.float32)",
+            "returns, advantages = self.compute_gae(gamma=gamma, lam=lam)",
+        ):
+            self.assertNotIn(old_pattern, policy_src, msg=f"old multi-pass pack remains: {old_pattern!r}")
+
     def test_truncated_policy_forward_matches_full_causal_prefix(self):
         try:
             import numpy as np

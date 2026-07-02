@@ -20,15 +20,14 @@ Three pieces:
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 import math
-from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 
 # ---------------------------------------------------------------------------
 # Policy
@@ -798,6 +797,30 @@ class SequentialTransition:
     baseline_prior_scale: float = 0.0
 
 
+def _compute_gae_from_arrays(
+        rewards: np.ndarray,
+        values: np.ndarray,
+        dones: np.ndarray,
+        *,
+        gamma: float,
+        lam: float,
+        ) -> Tuple[np.ndarray, np.ndarray]:
+    n = int(rewards.shape[0])
+    advantages = np.zeros(n, dtype=np.float32)
+    last_gae = 0.0
+    for t in range(n - 1, -1, -1):
+        if bool(dones[t]) or t == n - 1:
+            next_value = 0.0
+        else:
+            next_value = float(values[t + 1])
+        not_done = 0.0 if bool(dones[t]) else 1.0
+        delta = float(rewards[t]) + float(gamma) * next_value * not_done - float(values[t])
+        last_gae = delta + float(gamma) * float(lam) * not_done * last_gae
+        advantages[t] = last_gae
+    returns = advantages + values
+    return returns, advantages
+
+
 class SequentialRolloutBuffer:
     """Stores transitions across multiple horizon-N episodes; computes GAE.
 
@@ -874,24 +897,20 @@ class SequentialRolloutBuffer:
         n = len(self._buf)
         if n == 0:
             return np.zeros(0, dtype=np.float32), np.zeros(0, dtype=np.float32)
-        rewards = np.array([t.reward for t in self._buf], dtype=np.float32)
-        values = np.array([t.value for t in self._buf], dtype=np.float32)
-        dones = np.array([t.done for t in self._buf], dtype=bool)
-
-        advantages = np.zeros(n, dtype=np.float32)
-        last_gae = 0.0
-        for t in range(n - 1, -1, -1):
-            if dones[t] or t == n - 1:
-                next_value = 0.0
-                next_nonterm = 0.0
-            else:
-                next_value = float(values[t + 1])
-                next_nonterm = 1.0 - float(dones[t + 1])
-            delta = float(rewards[t]) + gamma * next_value * (0.0 if dones[t] else 1.0) - float(values[t])
-            last_gae = delta + gamma * lam * (0.0 if dones[t] else 1.0) * last_gae
-            advantages[t] = last_gae
-        returns = advantages + values
-        return returns, advantages
+        rewards = np.empty(n, dtype=np.float32)
+        values = np.empty(n, dtype=np.float32)
+        dones = np.empty(n, dtype=bool)
+        for i, t in enumerate(self._buf):
+            rewards[i] = float(t.reward)
+            values[i] = float(t.value)
+            dones[i] = bool(t.done)
+        return _compute_gae_from_arrays(
+            rewards,
+            values,
+            dones,
+            gamma=float(gamma),
+            lam=float(lam),
+        )
 
     def grpo_advantages(
             self,
@@ -928,29 +947,25 @@ class SequentialRolloutBuffer:
         """
         if not self._buf:
             raise RuntimeError("SequentialRolloutBuffer is empty")
-        states = np.stack([t.state for t in self._buf])
-        actions = np.stack([t.action for t in self._buf])
-        slot_masks = np.stack([t.slot_mask for t in self._buf])
-        levels = np.stack([t.per_slot_num_levels for t in self._buf])
-        concrete_level_masks = [
-            t.action_level_mask for t in self._buf
-            if t.action_level_mask is not None
-        ]
-        level_masks = None
-        if concrete_level_masks:
-            mask_shape = tuple(concrete_level_masks[0].shape)
-            level_masks = np.stack([
-                (
-                    np.ones(mask_shape, dtype=bool)
-                    if t.action_level_mask is None
-                    else np.asarray(t.action_level_mask, dtype=bool)
-                )
-                for t in self._buf
-            ])
-        log_probs = np.array([t.log_prob for t in self._buf], dtype=np.float32)
-        old_values = np.array([t.value for t in self._buf], dtype=np.float32)
-        prior_scales = np.array([t.baseline_prior_scale for t in self._buf], dtype=np.float32)
-        returns, advantages = self.compute_gae(gamma=gamma, lam=lam)
+        (
+            states,
+            actions,
+            slot_masks,
+            levels,
+            level_masks,
+            log_probs,
+            old_values,
+            rewards,
+            dones,
+            prior_scales,
+        ) = self._pack_numpy_arrays()
+        returns, advantages = _compute_gae_from_arrays(
+            rewards,
+            old_values,
+            dones,
+            gamma=float(gamma),
+            lam=float(lam),
+        )
         if advantage_normalize and advantages.size > 1:
             adv_std = float(advantages.std())
             if adv_std > 1e-3:
@@ -966,6 +981,67 @@ class SequentialRolloutBuffer:
             torch.from_numpy(returns).to(device),
             torch.from_numpy(advantages).to(device),
             torch.from_numpy(prior_scales).to(device),
+        )
+
+    def _pack_numpy_arrays(
+            self,
+            ) -> Tuple[
+                np.ndarray,
+                np.ndarray,
+                np.ndarray,
+                np.ndarray,
+                Optional[np.ndarray],
+                np.ndarray,
+                np.ndarray,
+                np.ndarray,
+                np.ndarray,
+                np.ndarray,
+            ]:
+        buf = self._buf
+        if not buf:
+            raise RuntimeError("SequentialRolloutBuffer is empty")
+        n = len(buf)
+        first = buf[0]
+        states = np.empty((n,) + tuple(first.state.shape), dtype=np.float32)
+        actions = np.empty((n,) + tuple(first.action.shape), dtype=np.int64)
+        slot_masks = np.empty((n,) + tuple(first.slot_mask.shape), dtype=bool)
+        levels = np.empty((n,) + tuple(first.per_slot_num_levels.shape), dtype=np.int64)
+        log_probs = np.empty(n, dtype=np.float32)
+        old_values = np.empty(n, dtype=np.float32)
+        rewards = np.empty(n, dtype=np.float32)
+        dones = np.empty(n, dtype=bool)
+        prior_scales = np.empty(n, dtype=np.float32)
+
+        level_masks = None
+
+        for i, t in enumerate(buf):
+            states[i] = t.state
+            actions[i] = t.action
+            slot_masks[i] = t.slot_mask
+            levels[i] = t.per_slot_num_levels
+            log_probs[i] = float(t.log_prob)
+            old_values[i] = float(t.value)
+            rewards[i] = float(t.reward)
+            dones[i] = bool(t.done)
+            prior_scales[i] = float(t.baseline_prior_scale)
+            if t.action_level_mask is not None:
+                if level_masks is None:
+                    level_masks = np.ones(
+                        (n,) + tuple(t.action_level_mask.shape),
+                        dtype=bool,
+                    )
+                level_masks[i] = t.action_level_mask
+        return (
+            states,
+            actions,
+            slot_masks,
+            levels,
+            level_masks,
+            log_probs,
+            old_values,
+            rewards,
+            dones,
+            prior_scales,
         )
 
 
