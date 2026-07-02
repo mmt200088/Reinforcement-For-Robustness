@@ -725,6 +725,14 @@ same selected run IDs while improving latest-run de-duplication from `0.1253s`
 to `0.0454s` (`2.76x`) and best-by-dataset selection from `0.1291s` to
 `0.0613s` (`2.11x`).
 
+Progress 2026-07-02: `scripts/blb_export_action_registry.py` now lazily imports
+`blb_stage2_rl.action_space` only when registry generation actually needs it,
+so dependency-light imports and help/static tooling no longer pull the torch
+stack. `build_registry_payload()` also computes `per_layer_field_offsets()`
+once and reuses the result for expected slot count, block counts, and summary
+slot count. A synthetic 120k-offset benchmark preserved the registry summary
+and reduced the offset-counting path from `0.447s` to `0.226s` (`1.97x`).
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run

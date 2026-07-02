@@ -15,14 +15,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from blb_stage2_rl.action_space import (  # noqa: E402
-    K_LEVELS,
-    describe_action_vector,
-    load_max_sfs,
-    make_all_max_action_vector,
-    per_layer_field_offsets,
-)
-
 
 SEMANTIC_TYPE_BY_KIND = {
     "F": "fresh",
@@ -32,6 +24,30 @@ SEMANTIC_TYPE_BY_KIND = {
     "R": "rescale",
     "K": "truncation",
 }
+
+_ACTION_SPACE_DEPS: Dict[str, Any] | None = None
+
+
+def _load_action_space_deps() -> Dict[str, Any]:
+    """Import action-space helpers only when registry generation needs them."""
+    global _ACTION_SPACE_DEPS
+    if _ACTION_SPACE_DEPS is None:
+        from blb_stage2_rl.action_space import (
+            K_LEVELS,
+            describe_action_vector,
+            load_max_sfs,
+            make_all_max_action_vector,
+            per_layer_field_offsets,
+        )
+
+        _ACTION_SPACE_DEPS = {
+            "K_LEVELS": K_LEVELS,
+            "describe_action_vector": describe_action_vector,
+            "load_max_sfs": load_max_sfs,
+            "make_all_max_action_vector": make_all_max_action_vector,
+            "per_layer_field_offsets": per_layer_field_offsets,
+        }
+    return _ACTION_SPACE_DEPS
 
 
 FIELD_SEMANTICS = {
@@ -182,9 +198,11 @@ def _active_condition(record: Dict[str, Any]) -> str:
     return str(record.get("ineffective_reason", "")) or "inactive in current degree/profile"
 
 
-def _all_max_action_index(record: Dict[str, Any]) -> int:
+def _all_max_action_index(record: Dict[str, Any], *, k_levels: Sequence[int] | None = None) -> int:
     if record.get("value_type") == "truncation_k":
-        return int(list(K_LEVELS).index(max(K_LEVELS)))
+        if k_levels is None:
+            k_levels = _load_action_space_deps()["K_LEVELS"]
+        return int(list(k_levels).index(max(k_levels)))
     return int(record.get("num_levels", 1)) - 1
 
 
@@ -192,7 +210,7 @@ def _nullable_int(value: Any) -> Any:
     return None if value is None else int(value)
 
 
-def _registry_record(record: Dict[str, Any]) -> Dict[str, Any]:
+def _registry_record(record: Dict[str, Any], *, k_levels: Sequence[int] | None = None) -> Dict[str, Any]:
     note = str(record.get("note", "") or "")
     block_idx = record.get("block_index")
     block_key = None if block_idx is None else int(block_idx)
@@ -239,7 +257,7 @@ def _registry_record(record: Dict[str, Any]) -> Dict[str, Any]:
         "index_to_value": {str(i): _nullable_int(v) for i, v in enumerate(action_values)},
         "decoded_value": _nullable_int(record["value"]),
         "effective_value": record.get("effective_value"),
-        "all_max_action_index": _all_max_action_index(record),
+        "all_max_action_index": _all_max_action_index(record, k_levels=k_levels),
         "distribution": str(record.get("distribution", "")),
         "noise_lookup_distribution": _noise_lookup_distribution(record),
         "scale_semantics": _scale_semantics(record),
@@ -409,10 +427,17 @@ def build_registry_payload(
         attn_degree: str | Sequence[int] | None = None,
         expected_slots_per_layer: int | None = None,
         ) -> Dict[str, Any]:
+    deps = _load_action_space_deps()
+    k_levels = deps["K_LEVELS"]
+    describe_action_vector = deps["describe_action_vector"]
+    load_max_sfs = deps["load_max_sfs"]
+    make_all_max_action_vector = deps["make_all_max_action_vector"]
+    per_layer_offsets = list(deps["per_layer_field_offsets"]())
+
     gelu = _parse_degree_vector(gelu_degree, num_layers=num_layers, default=4)
     attn = _parse_degree_vector(attn_degree, num_layers=num_layers, default=4)
     if expected_slots_per_layer is None:
-        expected_slots_per_layer = len(per_layer_field_offsets())
+        expected_slots_per_layer = len(per_layer_offsets)
     action = make_all_max_action_vector(num_layers=num_layers)
     description = describe_action_vector(
         action,
@@ -422,7 +447,7 @@ def build_registry_payload(
         attn_degree=attn,
         profile=profile,
     )
-    records = [_registry_record(record) for record in description["records"]]
+    records = [_registry_record(record, k_levels=k_levels) for record in description["records"]]
     effective = [record for record in records if record["is_required"]]
     slot_check = _slot_count_markdown(
         profile=profile,
@@ -431,7 +456,7 @@ def build_registry_payload(
         records=records,
     )
     block_counts: Dict[str, int] = {}
-    for _block_idx, _field, _kind in per_layer_field_offsets():
+    for _block_idx, _field, _kind in per_layer_offsets:
         key = f"block{int(_block_idx)}"
         block_counts[key] = block_counts.get(key, 0) + 1
     registry_hash = hashlib.sha256(
@@ -452,7 +477,7 @@ def build_registry_payload(
             "ineffective_or_compat_extra_count": len(records) - len(effective),
             "required_count_by_layer": _required_count_by_layer(records),
             "block_slot_counts_per_layer": block_counts,
-            "per_layer_slot_count": int(len(per_layer_field_offsets())),
+            "per_layer_slot_count": int(len(per_layer_offsets)),
             "first_input_tail_slots": 1,
             "full_action_length": int(len(records)),
         },
