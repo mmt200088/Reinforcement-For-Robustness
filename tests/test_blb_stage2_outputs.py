@@ -22,12 +22,14 @@ never triggered. matplotlib is optional (PNG asserts are skipped if absent);
 the NPZ / text artifacts are always produced.
 """
 import csv
+import builtins
 import importlib.util
 import json
 import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -70,6 +72,23 @@ class _CountingSequence:
     def __iter__(self):
         self.iterations += 1
         return iter(self.values)
+
+
+class _IterOnlyText:
+    def __init__(self, text):
+        self._lines = text.splitlines(keepends=True)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def read(self, *_args, **_kwargs):
+        raise AssertionError("baseline parsing should scan lines instead of reading the whole file")
+
+    def __iter__(self):
+        return iter(self._lines)
 
 
 class UpgradedCurvesTest(unittest.TestCase):
@@ -487,6 +506,48 @@ class RegeneratorEndToEndTest(unittest.TestCase):
         ):
             self.assertEqual(ep[key], [], key)
 
+    def test_baseline_parser_streams_report_and_summary(self):
+        regen = _load_standalone("blb_regen_baseline_test", "scripts/blb_regen_stage2_outputs.py")
+        with tempfile.TemporaryDirectory() as d:
+            diag = os.path.join(d, "diagnostics")
+            os.makedirs(diag, exist_ok=True)
+            report = os.path.join(d, "blb_stage2_report.md")
+            summary = os.path.join(diag, "diagnostics_summary.md")
+            with open(report, "w", encoding="utf-8") as f:
+                f.write(
+                    "| `loss_mean` | 0.367 |\n"
+                    "| `metric1_mean` | 0.871 |\n"
+                    "| `metric2_mean` | 0.861 |\n"
+                )
+            with open(summary, "w", encoding="utf-8") as f:
+                f.write("baseline avg_k: **13.0**\n")
+
+            original_open = builtins.open
+
+            def guarded_open(path, *args, **kwargs):
+                if os.path.abspath(path) == os.path.abspath(report):
+                    return _IterOnlyText(
+                        "| `loss_mean` | 0.367 |\n"
+                        "| `metric1_mean` | 0.871 |\n"
+                        "| `metric2_mean` | 0.861 |\n"
+                    )
+                if os.path.abspath(path) == os.path.abspath(summary):
+                    return _IterOnlyText("baseline avg_k: **13.0**\n")
+                return original_open(path, *args, **kwargs)
+
+            with mock.patch.object(builtins, "open", guarded_open):
+                baselines = regen._parse_baselines(d)
+
+        self.assertEqual(
+            baselines,
+            {
+                "loss_mean": 0.367,
+                "metric1_mean": 0.871,
+                "metric2_mean": 0.861,
+                "avg_k": 13.0,
+            },
+        )
+
     def test_regenerator_plain_jsonl(self):
         with tempfile.TemporaryDirectory() as d:
             self._make_fake_run(d, gz=False)
@@ -500,7 +561,8 @@ class RegeneratorEndToEndTest(unittest.TestCase):
                 self.assertTrue(_nonempty_file(os.path.join(out_dir, "blb_stage2_entropy_curve.png")))
             # search log reflects the synthetic hot collapse + priority histogram
             # + ADR-014 collapse attribution (HOT verdict from the runaway fusion).
-            text = open(os.path.join(out_dir, "blb_stage2_search_log.txt"), encoding="utf-8").read()
+            with open(os.path.join(out_dir, "blb_stage2_search_log.txt"), encoding="utf-8") as f:
+                text = f.read()
             self.assertIn("P3(cost)", text)
             self.assertIn("崩溃归因", text)
             self.assertIn("HOT", text)

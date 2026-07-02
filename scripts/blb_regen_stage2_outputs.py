@@ -163,6 +163,11 @@ def _read_entropy(progress_dir: str):
 
 
 _BASELINE_KEYS = ("loss_mean", "metric1_mean", "metric2_mean", "avg_k")
+_BASELINE_PATTERNS = {
+    key: re.compile(rf"`{re.escape(key)}`\s*\|\s*([-\d.eE+]+)")
+    for key in _BASELINE_KEYS
+}
+_SUMMARY_AVG_K_PATTERN = re.compile(r"baseline avg_k.*?\*\*([\d.]+)\*\*")
 
 
 def _parse_baselines(progress_dir: str):
@@ -171,11 +176,16 @@ def _parse_baselines(progress_dir: str):
     report = os.path.join(progress_dir, "blb_stage2_report.md")
     if os.path.isfile(report):
         try:
-            text = open(report, "r", encoding="utf-8").read()
-            for key in _BASELINE_KEYS:
-                m = re.search(rf"`{re.escape(key)}`\s*\|\s*([-\d.eE+]+)", text)
-                if m:
-                    out[key] = float(m.group(1))
+            missing = set(_BASELINE_KEYS)
+            with open(report, "r", encoding="utf-8") as f:
+                for line in f:
+                    for key in tuple(missing):
+                        m = _BASELINE_PATTERNS[key].search(line)
+                        if m:
+                            out[key] = float(m.group(1))
+                            missing.remove(key)
+                    if not missing:
+                        break
         except Exception:
             pass
     # diagnostics_summary.md 兜底 avg_k
@@ -183,10 +193,12 @@ def _parse_baselines(progress_dir: str):
         summ = os.path.join(progress_dir, "diagnostics", "diagnostics_summary.md")
         if os.path.isfile(summ):
             try:
-                m = re.search(r"baseline avg_k.*?\*\*([\d.]+)\*\*",
-                              open(summ, "r", encoding="utf-8").read())
-                if m:
-                    out["avg_k"] = float(m.group(1))
+                with open(summ, "r", encoding="utf-8") as f:
+                    for line in f:
+                        m = _SUMMARY_AVG_K_PATTERN.search(line)
+                        if m:
+                            out["avg_k"] = float(m.group(1))
+                            break
             except Exception:
                 pass
     return out

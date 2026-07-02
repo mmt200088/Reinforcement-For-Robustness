@@ -709,6 +709,14 @@ all-zero lists before plotting. A local 100k-row legacy-log benchmark preserved
 the base reward/loss/metric series and reduced parsing from `1.068s` /
 `25.97MB` to `0.973s` / `19.10MB`.
 
+Progress 2026-07-02: `scripts/blb_regen_stage2_outputs.py` now parses
+baseline reference values from `blb_stage2_report.md` and
+`diagnostics_summary.md` by scanning lines and stopping once the needed values
+are found, instead of reading the whole Markdown files. A local synthetic
+report with the baseline table followed by 200k tail lines preserved parsed
+baselines and reduced parsing from `0.0006s` / `4.20MB` to `0.0001s` /
+`0.02MB`.
+
 - [ ] **Step 3: Verify**
 
 Run:
