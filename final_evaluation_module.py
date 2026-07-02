@@ -982,17 +982,7 @@ class UnifiedFinalEvaluationModule:
 
     def _sample_stage2_total_cost(self, rng, target_total, total_layers):
         target_key = self._stage2_cost_key(target_total)
-        specs = []
-        solution_maps = []
-        for short in BREAKDOWN_KEYS:
-            allowed = self._stage2_allowed(short)
-            solution_map = self._enumerate_stage2_count_solutions(
-                allowed,
-                self._stage2_cost_map(short),
-                total_layers,
-            )
-            specs.append((short, SHORT_KEY_TO_FULL[short], allowed))
-            solution_maps.append(solution_map)
+        specs, solution_maps = self._stage2_total_cost_solution_maps(total_layers)
 
         count_choices = self._sample_stage2_count_combo(rng, solution_maps, target_key)
         if count_choices is None:
@@ -1004,6 +994,37 @@ class UnifiedFinalEvaluationModule:
         if self._stage2_config_cost_key(cfg) != target_key:
             return None
         return cfg
+
+    def _stage2_total_cost_solution_maps(self, total_layers):
+        specs = []
+        cache_parts = []
+        for short in BREAKDOWN_KEYS:
+            allowed = tuple(int(v) for v in self._stage2_allowed(short))
+            cost_map = self._stage2_cost_map(short)
+            cost_keys = tuple(
+                (int(value), self._stage2_cost_key(cost_map[int(value)]))
+                for value in allowed
+            )
+            specs.append((short, SHORT_KEY_TO_FULL[short], allowed))
+            cache_parts.append((short, allowed, cost_keys))
+
+        cache_key = (int(total_layers), tuple(cache_parts))
+        cache = getattr(self, "_stage2_total_cost_solution_cache", {})
+        if cache_key in cache:
+            return cache[cache_key]
+
+        solution_maps = [
+            self._enumerate_stage2_count_solutions(
+                allowed,
+                self._stage2_cost_map(short),
+                total_layers,
+            )
+            for short, _full, allowed in specs
+        ]
+        cached = (specs, solution_maps)
+        cache[cache_key] = cached
+        self._stage2_total_cost_solution_cache = cache
+        return cached
 
     def _enumerate_stage2_count_solutions(self, allowed_degrees, cost_map, total_layers):
         solution_map: Dict[int, list] = {}

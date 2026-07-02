@@ -343,6 +343,12 @@ prevents Stage-1 and Stage-2 JSON resolution from opening/parsing the same
 config file twice in a single final-eval flow while preserving config-source
 semantics.
 
+Progress 2026-07-02: `UnifiedFinalEvaluationModule` now caches the Stage-2
+total-cost count-solution maps used by random final-eval groups. Repeated
+Stage2Budget/Budget sampling in one final-eval run reuses the same per-noise
+domain enumerations instead of rebuilding all seven maps for every sampled
+config.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
