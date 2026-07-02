@@ -210,6 +210,14 @@ Stage-1 rollout windows, total timing windows, cache status, and worker speedup
 with running counters instead of retaining every parsed window row before
 rendering the report.
 
+Progress 2026-07-02: `scripts/stage1_parallel_report.py` now skips regex
+matching for unrelated training-log lines that do not contain
+`[stage1-rollout`, and `parse_log_text()` streams text through a small line
+iterator instead of materializing `splitlines()`. A local noisy 250k-line log
+benchmark preserved the full summary; the file/line parser path improved from
+`1.1329s` to `0.8107s` (`1.40x`), while the text-entry path reduced
+`splitlines()` peak memory from `38.77MB` to `0.01MB`.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:

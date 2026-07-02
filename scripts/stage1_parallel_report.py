@@ -87,6 +87,8 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
     warnings: list[str] = []
 
     for line in lines:
+        if "[stage1-rollout" not in line:
+            continue
         rollout_match = ROLLOUT_RE.search(line)
         if rollout_match:
             devices = _split_csv(rollout_match.group("devices"))
@@ -155,8 +157,19 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
     }
 
 
+def _iter_text_lines(text: str) -> Iterable[str]:
+    start = 0
+    while start < len(text):
+        end = text.find("\n", start)
+        if end < 0:
+            yield text[start:]
+            return
+        yield text[start:end + 1]
+        start = end + 1
+
+
 def parse_log_text(text: str) -> dict[str, Any]:
-    return parse_log_lines(str(text or "").splitlines())
+    return parse_log_lines(_iter_text_lines(str(text or "")))
 
 
 def _iter_log_lines(paths: Sequence[str]) -> Iterable[str]:

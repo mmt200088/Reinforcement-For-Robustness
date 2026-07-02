@@ -66,6 +66,22 @@ class Stage1ParallelReportTest(unittest.TestCase):
         self.assertAlmostEqual(summary["throughput_ep_per_hour"], 1963.6363636)
         self.assertEqual(summary["eval_cache"]["hit_rate"], 0.25)
 
+    def test_parse_log_text_streams_text_lines_without_list(self):
+        report = _load_report_module()
+        captured = {}
+
+        def fake_parse_lines(lines):
+            captured["is_list"] = isinstance(lines, list)
+            captured["rows"] = list(lines)
+            return {"windows": 0}
+
+        with mock.patch.object(report, "parse_log_lines", fake_parse_lines):
+            summary = report.parse_log_text("first\nsecond\n")
+
+        self.assertEqual(summary, {"windows": 0})
+        self.assertFalse(captured["is_list"])
+        self.assertEqual(captured["rows"], ["first\n", "second\n"])
+
     def test_parse_log_lines_uses_running_speedup_aggregate(self):
         report = _load_report_module()
 
@@ -74,6 +90,23 @@ class Stage1ParallelReportTest(unittest.TestCase):
 
         self.assertAlmostEqual(summary["mean_worker_speedup"], 1.965)
         self.assertAlmostEqual(summary["max_worker_speedup"], 1.97)
+
+    def test_parse_log_lines_skips_regex_for_unrelated_lines(self):
+        report = _load_report_module()
+
+        class BombPattern:
+            def search(self, _line):
+                raise AssertionError("unrelated lines should not hit regex")
+
+        with (
+            mock.patch.object(report, "ROLLOUT_RE", BombPattern()),
+            mock.patch.object(report, "CACHE_RE", BombPattern()),
+            mock.patch.object(report, "TOTAL_RE", BombPattern()),
+        ):
+            summary = report.parse_log_lines(["epoch 1 loss=0.1\n", "saving checkpoint\n"])
+
+        self.assertEqual(summary["windows"], 0)
+        self.assertIn("No [stage1-rollout] worker timing lines found.", summary["warnings"])
 
     def test_cli_writes_json_and_markdown(self):
         report = _load_report_module()
