@@ -1,13 +1,65 @@
 import json
 import tempfile
 import unittest
+from collections.abc import Mapping
 from pathlib import Path
 from unittest import mock
 
 from tools import experiments_log
 
 
+class LazyMaterializationRecord(Mapping):
+    def __init__(self, payload, *, materialize_ok, message):
+        self.payload = dict(payload)
+        self.materialize_ok = bool(materialize_ok)
+        self.message = str(message)
+
+    def get(self, key, default=None):
+        return self.payload.get(key, default)
+
+    def __getitem__(self, key):
+        if not self.materialize_ok:
+            raise AssertionError(self.message)
+        return self.payload[key]
+
+    def __iter__(self):
+        if not self.materialize_ok:
+            raise AssertionError(self.message)
+        return iter(self.payload)
+
+    def __len__(self):
+        return len(self.payload)
+
+
 class ExperimentsLogTest(unittest.TestCase):
+    def test_latest_per_run_id_does_not_materialize_overwritten_records(self):
+        rows = experiments_log._latest_per_run_id([
+            LazyMaterializationRecord(
+                {
+                    "run_id": "same-run",
+                    "registered_at": "2026-07-02T00:00:00",
+                    "notes": "old",
+                },
+                materialize_ok=False,
+                message="overwritten records should not be materialized",
+            ),
+            LazyMaterializationRecord(
+                {
+                    "run_id": "same-run",
+                    "registered_at": "2026-07-02T00:01:00",
+                    "notes": "new",
+                },
+                materialize_ok=True,
+                message="overwritten records should not be materialized",
+            ),
+        ])
+
+        self.assertEqual(rows, [{
+            "run_id": "same-run",
+            "registered_at": "2026-07-02T00:01:00",
+            "notes": "new",
+        }])
+
     def test_query_streams_registry_without_load_records(self):
         with tempfile.TemporaryDirectory() as td:
             registry = Path(td) / "registry.jsonl"
@@ -115,6 +167,32 @@ class ExperimentsLogTest(unittest.TestCase):
         self.assertEqual(set(best), {"mrpc", "rte"})
         self.assertEqual(best["mrpc"]["run_id"], "b")
         self.assertEqual(best["rte"]["run_id"], "d")
+
+    def test_best_by_dataset_does_not_materialize_overwritten_best(self):
+        best = experiments_log._best_by_dataset([
+            LazyMaterializationRecord(
+                {
+                    "run_id": "old-best",
+                    "dataset": "mrpc",
+                    "status": "complete",
+                    "best_reward": 0.1,
+                },
+                materialize_ok=False,
+                message="overwritten best records should not be materialized",
+            ),
+            LazyMaterializationRecord(
+                {
+                    "run_id": "new-best",
+                    "dataset": "mrpc",
+                    "status": "complete",
+                    "best_reward": 0.9,
+                },
+                materialize_ok=True,
+                message="overwritten best records should not be materialized",
+            ),
+        ])
+
+        self.assertEqual(best["mrpc"]["run_id"], "new-best")
 
 
 if __name__ == "__main__":

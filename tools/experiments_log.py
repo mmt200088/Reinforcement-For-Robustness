@@ -201,19 +201,19 @@ def register(
 # ---------------------------------------------------------------------------
 
 def _latest_per_run_id(records: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any]]:
-    by_id: Dict[str, Dict[str, Any]] = {}
+    by_id: Dict[str, Mapping[str, Any]] = {}
     for r in records:
         rid = str(r.get("run_id", ""))
         if not rid:
             continue
         prev = by_id.get(rid)
         if prev is None:
-            by_id[rid] = dict(r)
+            by_id[rid] = r
             continue
         # keep the later-registered one
         if str(r.get("registered_at", "")) >= str(prev.get("registered_at", "")):
-            by_id[rid] = dict(r)
-    return list(by_id.values())
+            by_id[rid] = r
+    return [dict(r) for r in by_id.values()]
 
 
 def _md_row(r: Mapping[str, Any]) -> str:
@@ -243,7 +243,7 @@ def _md_row(r: Mapping[str, Any]) -> str:
 
 
 def _best_by_dataset(records: Iterable[Mapping[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    best: Dict[str, Dict[str, Any]] = {}
+    best: Dict[str, Mapping[str, Any]] = {}
     for r in records:
         if r.get("status") not in ("complete", "training_only"):
             continue
@@ -258,8 +258,8 @@ def _best_by_dataset(records: Iterable[Mapping[str, Any]]) -> Dict[str, Dict[str
             else float("-inf")
         )
         if prev is None or score > prev_score:
-            best[ds] = dict(r)
-    return best
+            best[ds] = r
+    return {dataset: dict(record) for dataset, record in best.items()}
 
 
 def _rebuild_index(registry_path: str = REGISTRY_REL, index_path: str = INDEX_REL) -> str:

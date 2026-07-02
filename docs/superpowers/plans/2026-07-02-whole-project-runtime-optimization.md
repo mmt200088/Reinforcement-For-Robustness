@@ -614,6 +614,14 @@ every latest run record before filtering. A local 120k-record registry
 preserved `last_n=20` results while reducing query wall time from `0.9792s` to
 `0.8729s`; peak memory is still dominated by latest-run de-duplication.
 
+Progress 2026-07-02: `tools/experiments_log.py` now delays materializing
+registry rows while selecting the latest record per `run_id` and best record
+per dataset. Overwritten records are kept as mapping references during the scan
+and only final winners are copied. A local 100k-row synthetic registry kept the
+same selected run IDs while improving latest-run de-duplication from `0.1253s`
+to `0.0454s` (`2.76x`) and best-by-dataset selection from `0.1291s` to
+`0.0613s` (`2.11x`).
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
