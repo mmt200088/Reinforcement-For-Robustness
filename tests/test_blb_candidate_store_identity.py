@@ -137,6 +137,50 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             self.assertIsNotNone(store.best_for_action(action, identity_context=ctx))
             self.assertFalse(store.should_evaluate(action, "F1", identity_context=ctx))
 
+    def test_context_lookup_with_legacy_fallback_reads_store_once(self):
+        from blb_stage2_rl.candidate_store import (
+            CandidateStore,
+            action_hash,
+            build_candidate_identity_context,
+            candidate_key,
+        )
+
+        ctx = build_candidate_identity_context(
+            action_space_version="current-code-v1",
+            registry_hash="registry-a",
+            max_sfs_hash="max-sfs-a",
+            stage1_hash="stage1-a",
+            stage1_degrees={"gelu": [4], "softmax": [2]},
+            profile="mrpc",
+            rescale_optimizer_mode="in_process_real",
+            rescale_optimizer_root="Rescale_optimizer",
+            rescale_optimizer_hash="rescale-a",
+            decode_version="decode-v1",
+            dataset="mrpc",
+            model="bert-base",
+            metric_policy_version="mrpc-acc-f1-std-v1",
+            threshold_policy_hash="threshold-a",
+        )
+        action = [4, 4, 3, 2]
+        contextual = {
+            "candidate_key": candidate_key(action, ctx),
+            "fidelity": "F1",
+            "valid": True,
+        }
+        legacy = {
+            "action_hash": action_hash(action),
+            "legacy_record": True,
+            "fidelity": "F0",
+            "valid": True,
+        }
+        store = CandidateStore("unused.jsonl")
+        store.read_all = mock.Mock(return_value=[contextual, legacy])
+
+        best = store.best_for_action(action, identity_context=ctx, allow_legacy=True)
+
+        self.assertIs(best, contextual)
+        store.read_all.assert_called_once_with()
+
     def test_store_records_raw_and_effective_action_identity(self):
         from blb_stage2_rl.candidate_store import (
             CandidateStore,

@@ -192,7 +192,6 @@ def candidate_key(
         effective_action_indices: Any | None = None,
         effective_action_hash_value: str | None = None,
         ) -> str:
-    raw_hash = action_hash(action_indices)
     effective_hash = (
         str(effective_action_hash_value)
         if effective_action_hash_value is not None
@@ -399,6 +398,7 @@ class CandidateStore:
             allow_legacy: bool = False,
             ) -> Optional[Dict[str, Any]]:
         wanted = action_hash(action_indices)
+        records = self.read_all()
         if identity_context is not None:
             effective_indices = effective_action_indices
             if effective_indices is None and registry_or_description is not None:
@@ -413,16 +413,16 @@ class CandidateStore:
                 effective_action_indices=effective_indices,
             )
             matches = [
-                r for r in self.read_all()
+                r for r in records
                 if r.get("candidate_key") == wanted_key
             ]
             if allow_legacy:
                 matches.extend([
-                    r for r in self.read_all()
+                    r for r in records
                     if r.get("action_hash") == wanted and bool(r.get("legacy_record", False))
                 ])
         else:
-            matches = [r for r in self.read_all() if r.get("action_hash") == wanted]
+            matches = [r for r in records if r.get("action_hash") == wanted]
         if not matches:
             return None
         return sorted(
