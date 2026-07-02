@@ -97,6 +97,47 @@ class BlbMakeRunManifestTest(unittest.TestCase):
 
         self.assertTrue(result["git"]["dirty"])
 
+    def test_build_manifest_reuses_per_layer_offsets(self):
+        manifest = _load_manifest_module()
+        calls = 0
+
+        def counted_offsets():
+            nonlocal calls
+            calls += 1
+            return [(1, "a", "F"), (2, "b", "W")]
+
+        args = argparse.Namespace(
+            registry_path="",
+            max_sfs_path="",
+            rescale_optimizer_root="",
+            stage1_config_path="",
+            stage1_source="",
+            model="bert-base",
+            profile="mrpc",
+            threshold_source="manual",
+            dataset="mrpc",
+            rescale_optimizer_mode="canonical",
+            action_space_version="test",
+            num_layers=12,
+            decode_version="test",
+            acc_limit=0.0,
+            f1_limit=0.0,
+            acc_std_limit=0.0,
+            f1_std_limit=0.0,
+            strict_z=1.0,
+            mpc_truncation_cost_enabled=False,
+        )
+
+        with (
+            mock.patch.object(manifest, "per_layer_field_offsets", counted_offsets),
+            mock.patch.object(manifest, "_run_git", return_value=""),
+        ):
+            result = manifest.build_manifest(args)
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(result["action_space"]["slot_counts"], {"block1": 1, "block2": 1})
+        self.assertEqual(result["action_space"]["per_layer_slot_count"], 2)
+
     def test_canonical_rescale_optimizer_hash_streams_file_contents(self):
         manifest = _load_manifest_module()
         original_read_bytes = Path.read_bytes

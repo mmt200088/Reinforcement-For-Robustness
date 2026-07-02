@@ -197,9 +197,10 @@ def _git_diff_hash() -> str:
     return _sha256_bytes(diff.encode("utf-8", errors="replace"))
 
 
-def _block_slot_counts() -> Dict[str, int]:
+def _block_slot_counts(offsets: Iterable[Sequence[Any]] | None = None) -> Dict[str, int]:
     counts: Dict[str, int] = {}
-    for block_idx, _field, _kind in per_layer_field_offsets():
+    source_offsets = offsets if offsets is not None else per_layer_field_offsets()
+    for block_idx, _field, _kind in source_offsets:
         key = f"block{int(block_idx)}"
         counts[key] = counts.get(key, 0) + 1
     return counts
@@ -211,6 +212,7 @@ def build_manifest(args: argparse.Namespace) -> Dict[str, Any]:
     max_sfs_hash = _path_hash(args.max_sfs_path)
     rescale_full_tree_hash = _path_hash(args.rescale_optimizer_root)
     rescale_hash = _canonical_rescale_optimizer_hash(args.rescale_optimizer_root, args.profile)
+    field_offsets = tuple(per_layer_field_offsets())
     stage1 = _load_stage1_config(
         args.stage1_config_path,
         args.stage1_source,
@@ -263,8 +265,8 @@ def build_manifest(args: argparse.Namespace) -> Dict[str, Any]:
             "version": args.action_space_version,
             "registry_path": args.registry_path,
             "registry_hash": registry_hash,
-            "slot_counts": _block_slot_counts(),
-            "per_layer_slot_count": len(per_layer_field_offsets()),
+            "slot_counts": _block_slot_counts(field_offsets),
+            "per_layer_slot_count": len(field_offsets),
             "full_action_length": len(action_dims_for_config(int(args.num_layers))),
             "decode_version": args.decode_version,
         },

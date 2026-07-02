@@ -1150,6 +1150,13 @@ status edge scan in evidence packaging. A local 200k-row synthetic status
 benchmark preserved the dirty result and improved the second-check path from
 `0.078152s` to `0.060709s` over 200k repeats (`1.29x`).
 
+Progress 2026-07-02: `scripts/blb_make_run_manifest.py` now builds
+`per_layer_field_offsets()` once per manifest and reuses that tuple for both
+per-block slot counts and total per-layer slot count. A local 120k-offset
+synthetic benchmark preserved the manifest-derived counts, improved best time
+from `0.349566s` to `0.222708s` (`1.57x`), and cut traced peak memory from
+`30.30MB` to `15.18MB` (`2.00x`).
+
 Progress 2026-07-02: `_dir_sha256()` in `scripts/blb_make_run_manifest.py` now
 prunes skip directories such as `.git`, `__pycache__`, `.pytest_cache`, and
 `.mypy_cache` before calling `iterdir()` on them, while preserving the existing
