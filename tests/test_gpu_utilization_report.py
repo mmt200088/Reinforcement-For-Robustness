@@ -367,19 +367,21 @@ class GpuUtilizationReportTest(unittest.TestCase):
         self.assertEqual(found, Path("/tmp/missing-direct-candidates/nested/episodes.jsonl"))
 
     def test_iter_jsonl_passes_unstripped_lines_to_json_loader(self):
+        import jsonl_utils
+
         report = _load_report_module()
 
         with tempfile.TemporaryDirectory() as td:
             episodes = Path(td) / "episodes.jsonl"
             episodes.write_text('{"episode": 0}\n', encoding="utf-8")
             seen = []
-            original_loads = report.json.loads
+            original_loads = jsonl_utils.json.loads
 
             def recording_loads(value):
                 seen.append(value)
                 return original_loads(value)
 
-            with mock.patch.object(report.json, "loads", recording_loads):
+            with mock.patch.object(jsonl_utils.json, "loads", recording_loads):
                 rows = list(report._iter_jsonl(episodes))
 
         self.assertEqual(rows, [{"episode": 0}])

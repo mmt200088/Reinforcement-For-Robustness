@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime, timezone
-import json
 import os
 from pathlib import Path
 import subprocess
@@ -23,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from csv_field_utils import first_present_index, normalize_field_name, normalized_field_index  # noqa: E402
+from json_utils import write_json_file  # noqa: E402
 from text_utils import iter_text_lines  # noqa: E402
 
 
@@ -328,10 +328,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     markdown = render_markdown(snapshot)
     if args.out_json:
-        Path(args.out_json).write_text(
-            json.dumps(snapshot, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        write_json_file(args.out_json, snapshot, sort_keys=True)
     if args.out_md:
         Path(args.out_md).write_text(markdown, encoding="utf-8")
     if not args.out_json and not args.out_md:

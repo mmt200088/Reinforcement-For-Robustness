@@ -11,7 +11,6 @@ import argparse
 import collections
 import csv
 import functools
-import json
 import os
 from pathlib import Path
 import re
@@ -24,6 +23,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from csv_field_utils import first_present_by_index, normalized_field_index  # noqa: E402
 from device_utils import normalize_logical_device_token, parse_logical_device_spec  # noqa: E402
+from json_utils import write_json_file  # noqa: E402
 from jsonl_utils import iter_jsonl  # noqa: E402
 from numeric_parse_utils import parse_first_float  # noqa: E402
 
@@ -464,7 +464,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         low_util_threshold_pct=float(args.low_util_threshold_pct),
     )
     if args.out_json:
-        Path(args.out_json).write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        write_json_file(args.out_json, summary, sort_keys=True)
     markdown = render_markdown(summary)
     if args.out_md:
         Path(args.out_md).write_text(markdown, encoding="utf-8")

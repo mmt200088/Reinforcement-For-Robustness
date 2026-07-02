@@ -128,6 +128,10 @@ class RLDataPointWriterTest(unittest.TestCase):
             "scripts/blb_f0_scan_feasible_domain.py": "from json_utils import stable_json_hash, write_json_file",
             "scripts/blb_compare_optimizer_modes.py": "from json_utils import write_json_file",
             "scripts/optimization_evidence_bundle.py": "from json_utils import write_json_file",
+            "scripts/gpu_utilization_report.py": "from json_utils import write_json_file",
+            "scripts/server_resource_snapshot.py": "from json_utils import write_json_file",
+            "scripts/stage1_parallel_report.py": "from json_utils import write_json_file",
+            "scripts/stage2_reward_probe_scaling_report.py": "from json_utils import write_json_file",
         }
         for rel, needle in checks.items():
             with self.subTest(path=rel):

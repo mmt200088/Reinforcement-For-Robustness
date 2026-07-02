@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import csv
 import html
-import json
 from pathlib import Path
 import sys
 from typing import Any, Mapping, Sequence
@@ -21,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from csv_field_utils import first_present_by_index, normalized_field_index  # noqa: E402
+from json_utils import write_json_file  # noqa: E402
 from jsonl_utils import iter_jsonl  # noqa: E402
 from numeric_parse_utils import parse_first_float  # noqa: E402
 from report_format_utils import format_float  # noqa: E402
@@ -194,10 +194,7 @@ trial split is one independent trial per GPU.</p>
 def write_report(root: str | Path) -> dict[str, Any]:
     root_path = Path(root)
     summary = build_summary(root_path)
-    (root_path / "benchmark_summary.json").write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    write_json_file(root_path / "benchmark_summary.json", summary, trailing_newline=False)
     best = summary.get("best")
     if isinstance(best, Mapping):
         (root_path / "best_batch_size.txt").write_text(

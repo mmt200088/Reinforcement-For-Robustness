@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Collection
-import json
 from pathlib import Path
 import re
 import sys
@@ -22,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_int_list_text, split_int_tokens  # noqa: E402
+from json_utils import write_json_file  # noqa: E402
 from stats_utils import safe_div_or_none  # noqa: E402
 from text_utils import iter_text_lines  # noqa: E402
 
@@ -245,10 +245,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = parse_log_lines(_iter_log_lines(args.log))
     markdown = render_markdown(summary)
     if args.out_json:
-        Path(args.out_json).write_text(
-            json.dumps(summary, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        write_json_file(args.out_json, summary, sort_keys=True)
     if args.out_md:
         Path(args.out_md).write_text(markdown, encoding="utf-8")
     if not args.out_json and not args.out_md:
