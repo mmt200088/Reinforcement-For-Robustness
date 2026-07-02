@@ -13,20 +13,29 @@ does not call the Paean final-eval decoder.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict
 from datetime import datetime, timezone
 import html
 import json
 import os
 from pathlib import Path
 import sys
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, ValuesView
+from typing import Any, Dict, List, Mapping, Sequence, ValuesView
 
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+from json_utils import to_jsonable
+from scripts.fusion_count_action_eval_common import (
+    iter_action_config_paths,
+    load_rlpath_action_configs,
+    parse_json_int_list,
+    rlpath_group_key,
+    unique_configs_by_key,
+)
 
 
 DEFAULT_STAGE1_GELU = [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
@@ -93,58 +102,19 @@ def _resolve(path: str | os.PathLike[str]) -> Path:
 
 
 def _json_int_list(raw: str | None, *, default: Sequence[int], name: str) -> List[int]:
-    text = str(raw or "").strip()
-    if not text:
-        return [int(v) for v in default]
-    payload = json.loads(text)
-    if not isinstance(payload, list):
-        raise SystemExit(f"{name} must be a JSON list")
-    return [int(v) for v in payload]
+    return parse_json_int_list(raw, default=default, name=name)
 
 
-def _iter_action_config_paths(action_dir: Path) -> Iterable[Path]:
-    try:
-        with os.scandir(action_dir) as entries:
-            names = sorted(
-                entry.name
-                for entry in entries
-                if entry.is_file()
-                and entry.name.endswith(".json")
-                and not entry.name.startswith(("._", "_"))
-            )
-    except OSError:
-        names = []
-    for name in names:
-        yield action_dir / name
+def _iter_action_config_paths(action_dir: Path):
+    return iter_action_config_paths(action_dir)
 
 
 def _load_action_configs(action_dir: Path) -> List[dict]:
-    out: List[dict] = []
-    for path in _iter_action_config_paths(action_dir):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        group = payload.get("group") or {}
-        name = str(group.get("name") or path.stem)
-        cfg = {
-            "name": name,
-            "path": path,
-            "group": group,
-            "baseline_k_index": int(payload.get("baseline_k_index", 3)),
-        }
-        cfg["group_key"] = _group_key(cfg)
-        out.append(cfg)
-    if not out:
-        raise RuntimeError(f"no action configs found under {action_dir}")
-    return out
+    return load_rlpath_action_configs(action_dir)
 
 
 def _group_key(cfg: Mapping[str, Any]) -> str:
-    group = cfg.get("group") or {}
-    key_payload = {
-        "option_by_graph": group.get("option_by_graph") or {},
-        "option_by_step": group.get("option_by_step") or {},
-        "baseline_k_index": cfg.get("baseline_k_index", 3),
-    }
-    return json.dumps(key_payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return rlpath_group_key(cfg)
 
 
 def _config_group_key(cfg: Mapping[str, Any]) -> str:
@@ -155,10 +125,11 @@ def _config_group_key(cfg: Mapping[str, Any]) -> str:
 
 
 def _unique_configs(configs: Sequence[Mapping[str, Any]]) -> ValuesView[Mapping[str, Any]]:
-    seen: Dict[str, Mapping[str, Any]] = {}
-    for cfg in configs:
-        seen.setdefault(_config_group_key(cfg), cfg)
-    return seen.values()
+    return unique_configs_by_key(
+        configs,
+        key_name="group_key",
+        fallback_key_fn=_group_key,
+    )
 
 
 def _base_model(model_type: str, dataset: str) -> str:
@@ -394,44 +365,7 @@ def _metric_dict(metrics: Any) -> Dict[str, float]:
 
 
 def _jsonable(value: Any) -> Any:
-    if isinstance(value, np.ndarray):
-        return _jsonable(value.tolist())
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    if is_dataclass(value):
-        return _jsonable(asdict(value))
-    if isinstance(value, dict):
-        converted_dict: dict[str, Any] | None = None
-        for key, item in value.items():
-            converted = _jsonable(item)
-            out_key = key if isinstance(key, str) else str(key)
-            if converted_dict is None:
-                if out_key is key and converted is item:
-                    continue
-                converted_dict = {}
-                for prefix_key, prefix_item in value.items():
-                    if prefix_key == key:
-                        break
-                    converted_dict[str(prefix_key)] = prefix_item
-            converted_dict[str(out_key)] = converted
-        return value if converted_dict is None else converted_dict
-    if isinstance(value, Mapping):
-        return {str(k): _jsonable(v) for k, v in value.items()}
-    if isinstance(value, list):
-        converted_list: list[Any] | None = None
-        for idx, item in enumerate(value):
-            converted = _jsonable(item)
-            if converted_list is None:
-                if converted is item:
-                    continue
-                converted_list = value[:idx]
-            converted_list.append(converted)
-        return value if converted_list is None else converted_list
-    if isinstance(value, tuple):
-        return [_jsonable(v) for v in value]
-    return str(value)
+    return to_jsonable(value, stringify_unknown=True, preserve_native=True)
 
 
 def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:

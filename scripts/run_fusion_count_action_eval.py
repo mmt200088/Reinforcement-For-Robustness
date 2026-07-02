@@ -9,16 +9,26 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-import hashlib
 import html
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, ValuesView
+from typing import Any, Dict, List, Mapping, Sequence, ValuesView
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.fusion_count_action_eval_common import (
+    iter_action_config_paths,
+    load_paean_action_configs,
+    parse_json_int_list,
+    stable_json_hash,
+    unique_configs_by_key,
+)
+
 DEFAULT_RUN_DIR = REPO_ROOT / "experiments" / "server_command_runs" / "fusion_count_map_action_eval_20260610"
 DEFAULT_ACTION_DIR = DEFAULT_RUN_DIR / "action_configs"
 DEFAULT_MAP_REPORT = DEFAULT_RUN_DIR / "fusion_count_map_report.json"
@@ -44,79 +54,27 @@ def _resolve(path: str | os.PathLike[str]) -> Path:
 
 
 def _json_int_list(raw: str | None, *, default: Sequence[int], name: str) -> List[int]:
-    text = str(raw or "").strip()
-    if not text:
-        return [int(v) for v in default]
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"{name} must be a JSON list: {exc}") from exc
-    if not isinstance(payload, list):
-        raise SystemExit(f"{name} must be a JSON list")
-    return [int(v) for v in payload]
+    return parse_json_int_list(raw, default=default, name=name)
 
 
 def _json_hash(payload: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
+    return stable_json_hash(payload)
 
 
-def _iter_action_config_paths(action_dir: Path) -> Iterable[Path]:
-    try:
-        with os.scandir(action_dir) as entries:
-            names = sorted(
-                entry.name
-                for entry in entries
-                if entry.is_file()
-                and entry.name.endswith(".json")
-                and not entry.name.startswith(("._", "_"))
-            )
-    except OSError:
-        names = []
-    for name in names:
-        yield action_dir / name
+def _iter_action_config_paths(action_dir: Path):
+    return iter_action_config_paths(action_dir)
 
 
 def _load_action_configs(action_dir: Path) -> List[dict]:
-    configs = []
-    for path in _iter_action_config_paths(action_dir):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        action = payload.get("action_vec")
-        slots = payload.get("slots")
-        base = payload.get("base")
-        legacy = payload.get("legacy_action_vec")
-        has_executable_slots = isinstance(slots, (list, dict))
-        has_executable_vec = isinstance(action, list)
-        if not (has_executable_slots or has_executable_vec):
-            continue
-        group = payload.get("group") or {}
-        name = str(group.get("name") or path.stem)
-        hash_payload = (
-            {
-                "slots": slots,
-                "base": base,
-                "legacy_action_vec": legacy,
-            }
-            if has_executable_slots
-            else [int(v) for v in action]
-        )
-        configs.append({
-            "name": name,
-            "path": path,
-            "action_hash": _json_hash(hash_payload),
-            "group": group,
-        })
-    if not configs:
-        raise RuntimeError(f"no action config JSON files found under {action_dir}")
-    return configs
+    return load_paean_action_configs(action_dir)
 
 
 def _unique_configs(configs: Sequence[Mapping[str, Any]]) -> ValuesView[Mapping[str, Any]]:
-    first_by_hash: Dict[str, Mapping[str, Any]] = {}
-    for cfg in configs:
-        first_by_hash.setdefault(str(cfg["action_hash"]), cfg)
-    return first_by_hash.values()
+    return unique_configs_by_key(
+        configs,
+        key_name="action_hash",
+        fallback_key_fn=lambda cfg: cfg["action_hash"],
+    )
 
 
 def _output_dir(output_root: Path, run_name: str) -> Path:

@@ -196,3 +196,16 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
 
         self.assertEqual(len(unique), 1)
         self.assertIs(next(iter(unique)), first)
+
+    def test_loader_wrapper_delegates_to_shared_common_helper(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        with mock.patch.object(
+            rlpath,
+            "load_rlpath_action_configs",
+            return_value=[{"name": "shared"}],
+        ) as helper:
+            configs = rlpath._load_action_configs(Path("actions"))
+
+        helper.assert_called_once_with(Path("actions"))
+        self.assertEqual(configs, [{"name": "shared"}])

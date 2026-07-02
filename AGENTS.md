@@ -91,6 +91,14 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   optional torch tensors. Do not add local `_json_ready`, `_jsonable`, or
   `_json_safe` helpers in core RL/Paean/final-eval code; extend
   `json_utils.py` and its tests when a new serializable type is needed.
+- Fusion-count fixed-action experiment helper rule, added 2026-07-03:
+  Paean-path and RL-path fixed-action evaluation scripts must share action
+  config directory scanning, JSON-list parsing, stable JSON hashes/keys, and
+  duplicate-action folding through
+  `scripts/fusion_count_action_eval_common.py`. Keep script-local
+  `_load_action_configs`, `_json_int_list`, `_group_key`, or `_unique_configs`
+  only as compatibility wrappers; do not reintroduce recursive loaders or
+  per-script hash/key implementations when adding a new fusion-count experiment.
 - All Stage-1 and Stage-2 RL runs must mirror raw training data points to the
   project-root `rl_training_data_points/` tree, classified by stage, model,
   dataset, and run id. Persist enough structured JSON/JSONL to redraw paper

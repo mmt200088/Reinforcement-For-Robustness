@@ -143,6 +143,17 @@ class FusionCountActionEvalTest(unittest.TestCase):
         self.assertEqual(len(unique), 1)
         self.assertIs(next(iter(unique)), first)
 
+    def test_loader_wrapper_delegates_to_shared_common_helper(self):
+        with mock.patch.object(
+            action_eval,
+            "load_paean_action_configs",
+            return_value=[{"name": "shared"}],
+        ) as helper:
+            configs = action_eval._load_action_configs(Path("actions"))
+
+        helper.assert_called_once_with(Path("actions"))
+        self.assertEqual(configs, [{"name": "shared"}])
+
 
 if __name__ == "__main__":
     unittest.main()
