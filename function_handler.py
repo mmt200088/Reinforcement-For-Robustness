@@ -1190,8 +1190,8 @@ def _make_block2_qkt_merge_hook(
             if rotation_after_qkt_matmul_rescale:
                 qkt_result = qkt_result + _sample_gaussian_for_point(qkt_result, _make_rotation_point(qkt_matmul_rescale))
         # 2. ⊙ ones-mask（CKKS ewmulcp）
-        ones = torch.ones_like(qkt_result)
-        noisy_mask = ones + _sample_gaussian_for_point(ones, merge_mask_encode)
+        noisy_mask = _sample_gaussian_for_point(qkt_result, merge_mask_encode)
+        noisy_mask.add_(1.0)
         out = qkt_result * noisy_mask
         # 3. rescale on mask 乘法结果（可选）
         if merge_mask_rescale is not None:
@@ -1356,16 +1356,16 @@ def _make_block2_bsgs_mask_hook(
     """
     def hook(tensor: Tensor) -> Tensor:
         # ----- 第 1 步：tensor ⊙ (ones + ε_enc1) -----
-        ones1 = torch.ones_like(tensor)
-        noisy_mask1 = ones1 + _sample_gaussian_for_point(ones1, mask1_encode)
+        noisy_mask1 = _sample_gaussian_for_point(tensor, mask1_encode)
+        noisy_mask1.add_(1.0)
         out = tensor * noisy_mask1
         if mask1_rescale is not None:
             out = out + _sample_gaussian_for_point(out, mask1_rescale)
             if rotation_after_mask1_rescale:
                 out = out + _sample_gaussian_for_point(out, _make_rotation_point(mask1_rescale))
         # ----- 第 2 步：out ⊙ (ones + ε_enc2) -----
-        ones2 = torch.ones_like(out)
-        noisy_mask2 = ones2 + _sample_gaussian_for_point(ones2, mask2_encode)
+        noisy_mask2 = _sample_gaussian_for_point(out, mask2_encode)
+        noisy_mask2.add_(1.0)
         out = out * noisy_mask2
         if mask2_rescale is not None:
             out = out + _sample_gaussian_for_point(out, mask2_rescale)
@@ -1570,8 +1570,8 @@ def _make_block4_input_mask_hook(
         # 1. fresh on tensor
         out = tensor + _sample_gaussian_for_point(tensor, fresh_point)
         # 2. ⊙ ones-mask (CKKS ewmulcp)
-        ones = torch.ones_like(out)
-        noisy_mask = ones + _sample_gaussian_for_point(ones, mask_encode_point)
+        noisy_mask = _sample_gaussian_for_point(out, mask_encode_point)
+        noisy_mask.add_(1.0)
         out = out * noisy_mask
         # 3. optional rescale + optional rotation
         if mask_rescale_point is not None:
@@ -1600,8 +1600,8 @@ def _make_block4_softmax_v_hook(
             if rotation_after_matmul_rescale:
                 tensor = tensor + _sample_gaussian_for_point(tensor, _make_rotation_point(matmul_rescale))
         # 2. ⊙ ones-mask
-        ones = torch.ones_like(tensor)
-        noisy_mask = ones + _sample_gaussian_for_point(ones, mask_encode)
+        noisy_mask = _sample_gaussian_for_point(tensor, mask_encode)
+        noisy_mask.add_(1.0)
         out = tensor * noisy_mask
         # 3. optional rescale + optional rotation
         if mask_rescale is not None:

@@ -54,6 +54,59 @@ def _source_region(source: str, start_marker: str, end_marker: str) -> str:
 
 
 class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
+    def test_ones_mask_encode_samples_noise_without_full_shape_ones_prefill(self):
+        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        regions = {
+            "block2_qkt": _source_region(
+                source,
+                "def _make_block2_qkt_merge_hook(",
+                "    return hook\n\n\n# ============================================================================\n# BLB Block 3",
+            ),
+            "block2_bsgs": _source_region(
+                source,
+                "def _make_block2_bsgs_mask_hook(",
+                "# ============================================================================\n# BLB Block 4",
+            ),
+            "block4_input": _source_region(
+                source,
+                "def _make_block4_input_mask_hook(",
+                "def _make_block4_softmax_v_hook",
+            ),
+            "block4_softmax_v": _source_region(
+                source,
+                "def _make_block4_softmax_v_hook(",
+                "def _make_block4_wo_forward",
+            ),
+        }
+
+        self.assertIn(
+            "noisy_mask = _sample_gaussian_for_point(qkt_result, merge_mask_encode)",
+            regions["block2_qkt"],
+        )
+        self.assertIn("noisy_mask.add_(1.0)", regions["block2_qkt"])
+        self.assertIn(
+            "noisy_mask1 = _sample_gaussian_for_point(tensor, mask1_encode)",
+            regions["block2_bsgs"],
+        )
+        self.assertIn("noisy_mask1.add_(1.0)", regions["block2_bsgs"])
+        self.assertIn(
+            "noisy_mask2 = _sample_gaussian_for_point(out, mask2_encode)",
+            regions["block2_bsgs"],
+        )
+        self.assertIn("noisy_mask2.add_(1.0)", regions["block2_bsgs"])
+        self.assertIn(
+            "noisy_mask = _sample_gaussian_for_point(out, mask_encode_point)",
+            regions["block4_input"],
+        )
+        self.assertIn("noisy_mask.add_(1.0)", regions["block4_input"])
+        self.assertIn(
+            "noisy_mask = _sample_gaussian_for_point(tensor, mask_encode)",
+            regions["block4_softmax_v"],
+        )
+        self.assertIn("noisy_mask.add_(1.0)", regions["block4_softmax_v"])
+        for region in regions.values():
+            self.assertNotIn("torch.ones_like", region)
+
     def test_gelu_piecewise_select_uses_scalar_zero_branch(self):
         source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
         helper_region = _source_region(

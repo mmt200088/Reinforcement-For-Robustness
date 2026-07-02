@@ -342,6 +342,13 @@ now uses scalar `0.0` for the low/NaN branch instead of allocating
 tensor allocation from both installed forward paths while preserving the same
 piecewise boundaries.
 
+Progress 2026-07-03: Block-2 QK-merge, Block-2 BSGS, and Block-4 input /
+softmax-V ones-mask encode hooks in `function_handler.py` now sample the
+same-shape encode noise against the current tensor and `add_(1.0)` instead of
+allocating `torch.ones_like(...)` before adding noise. This removes five
+full-shape ones tensor allocations from shared installed forward paths while
+preserving the CKKS `ones + encode-noise` mask semantics.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:
