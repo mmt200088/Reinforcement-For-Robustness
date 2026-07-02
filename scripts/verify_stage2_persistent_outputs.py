@@ -48,7 +48,7 @@ def _count_jsonl(path: Path) -> int:
     n = 0
     with path.open("r", encoding="utf-8") as f:
         for line in f:
-            if not line.strip():
+            if not line or line.isspace():
                 continue
             json.loads(line)
             n += 1
@@ -62,7 +62,7 @@ def _count_jsonl_with_required_fields(path: Path, required_fields: tuple[str, ..
     missing_row_count = 0
     with path.open("r", encoding="utf-8") as f:
         for line_no, line in enumerate(f, start=1):
-            if not line.strip():
+            if not line or line.isspace():
                 continue
             payload = json.loads(line)
             n += 1

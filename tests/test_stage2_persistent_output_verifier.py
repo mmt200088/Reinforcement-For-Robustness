@@ -98,6 +98,41 @@ def _write_minimal_progress(
 
 
 class Stage2PersistentOutputVerifierTest(unittest.TestCase):
+    def test_required_field_counter_skips_blank_lines_without_strip_copy(self):
+        class NoStripLine(str):
+            def strip(self, *_args, **_kwargs):
+                raise AssertionError("JSONL counter should not allocate strip() copies")
+
+        class FakeHandle:
+            def __init__(self):
+                self.lines = [
+                    NoStripLine('{"episode": 0, "total_reward": 1.0}\n'),
+                    NoStripLine("   \n"),
+                    NoStripLine('{"episode": 1, "total_reward": 2.0}\n'),
+                ]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                return iter(self.lines)
+
+        class FakePath:
+            def open(self, *_args, **_kwargs):
+                return FakeHandle()
+
+        count, failures = verifier._count_jsonl_with_required_fields(
+            FakePath(),
+            ("episode", "total_reward"),
+            "episodes.jsonl",
+        )
+
+        self.assertEqual(count, 2)
+        self.assertEqual(failures, [])
+
     def test_detail_file_count_does_not_sort_or_materialize_files(self):
         with tempfile.TemporaryDirectory(prefix="stage2_verify_details_") as td:
             progress_dir = Path(td) / "progress"
