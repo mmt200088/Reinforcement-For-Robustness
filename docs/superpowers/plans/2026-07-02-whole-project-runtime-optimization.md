@@ -563,6 +563,15 @@ for the whole combined-report flow. A local 120-config synthetic benchmark kept
 the same action hashes and reduced retained loader memory from `16.90MB` to
 `0.17MB` (`101.86x`), with comparable wall time (`0.3065s` -> `0.3008s`).
 
+Progress 2026-07-02: `scripts/run_fusion_count_action_eval_rlpath.py` now keeps
+its action-config records dependency-light and payload-light: module import no
+longer pulls torch/HF/RL dependencies, and `_load_action_configs()` retains only
+the group metadata, config path/name, and `baseline_k_index` needed by
+deduplication and `_run_group()`. A local 120-config synthetic benchmark with
+large unused payload fields preserved config count while reducing retained
+current memory from `254.69MB` to `0.65MB` and traced peak memory from
+`255.42MB` to `5.60MB`.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for

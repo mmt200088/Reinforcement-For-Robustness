@@ -23,35 +23,68 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 import numpy as np
-import torch
-from datasets import DatasetDict
-from transformers import (
-    AutoConfig,
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-    DataCollatorWithPadding,
-)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from rl_tune import load_glue_dataset_equivalent, seed_everything
-from layer_importance_evaluator import LayerImportanceEvaluator
-from blb_stage2_rl.action_space import K_LEVELS
-from blb_stage2_rl.baseline_bootstrap import (
-    load_static_skeletons_baseline,
-    static_skeletons_baseline_to_action,
-)
-from blb_stage2_rl.env import BLBStage2Env, BLBStage2EnvConfig, estimate_baseline_cost_stats
-from blb_stage2_rl.fusion_count_map import FusionCountMap
-from blb_stage2_rl.reward import BaselineCostStats, RewardWeights, calibrate_weights_from_baseline
-from blb_stage2_rl.runner import BLBStage2RLRunner, BLBStage2TrainConfig
-from blb_stage2_rl.sequential_env import BLBStage2SequentialEnv, SequentialEnvConfig
-
 
 DEFAULT_STAGE1_GELU = [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
 DEFAULT_STAGE1_SOFTMAX = [6] * 12
+
+_RUNTIME_DEPS: dict[str, object] | None = None
+
+
+def _load_runtime_deps() -> dict[str, object]:
+    """Import model/RL dependencies only for the actual RL-path evaluation."""
+    global _RUNTIME_DEPS
+    if _RUNTIME_DEPS is None:
+        import torch
+        from transformers import (
+            AutoConfig,
+            AutoModelForSequenceClassification,
+            AutoTokenizer,
+            DataCollatorWithPadding,
+        )
+
+        from rl_tune import load_glue_dataset_equivalent, seed_everything
+        from layer_importance_evaluator import LayerImportanceEvaluator
+        from blb_stage2_rl.action_space import K_LEVELS
+        from blb_stage2_rl.baseline_bootstrap import (
+            load_static_skeletons_baseline,
+            static_skeletons_baseline_to_action,
+        )
+        from blb_stage2_rl.env import BLBStage2Env, BLBStage2EnvConfig, estimate_baseline_cost_stats
+        from blb_stage2_rl.fusion_count_map import FusionCountMap
+        from blb_stage2_rl.reward import BaselineCostStats, RewardWeights, calibrate_weights_from_baseline
+        from blb_stage2_rl.runner import BLBStage2RLRunner, BLBStage2TrainConfig
+        from blb_stage2_rl.sequential_env import BLBStage2SequentialEnv, SequentialEnvConfig
+
+        _RUNTIME_DEPS = {
+            "torch": torch,
+            "AutoConfig": AutoConfig,
+            "AutoModelForSequenceClassification": AutoModelForSequenceClassification,
+            "AutoTokenizer": AutoTokenizer,
+            "DataCollatorWithPadding": DataCollatorWithPadding,
+            "load_glue_dataset_equivalent": load_glue_dataset_equivalent,
+            "seed_everything": seed_everything,
+            "LayerImportanceEvaluator": LayerImportanceEvaluator,
+            "K_LEVELS": K_LEVELS,
+            "load_static_skeletons_baseline": load_static_skeletons_baseline,
+            "static_skeletons_baseline_to_action": static_skeletons_baseline_to_action,
+            "BLBStage2Env": BLBStage2Env,
+            "BLBStage2EnvConfig": BLBStage2EnvConfig,
+            "estimate_baseline_cost_stats": estimate_baseline_cost_stats,
+            "FusionCountMap": FusionCountMap,
+            "BaselineCostStats": BaselineCostStats,
+            "RewardWeights": RewardWeights,
+            "calibrate_weights_from_baseline": calibrate_weights_from_baseline,
+            "BLBStage2RLRunner": BLBStage2RLRunner,
+            "BLBStage2TrainConfig": BLBStage2TrainConfig,
+            "BLBStage2SequentialEnv": BLBStage2SequentialEnv,
+            "SequentialEnvConfig": SequentialEnvConfig,
+        }
+    return _RUNTIME_DEPS
 
 
 def _resolve(path: str | os.PathLike[str]) -> Path:
@@ -77,19 +110,23 @@ def _load_action_configs(action_dir: Path) -> List[dict]:
         payload = json.loads(path.read_text(encoding="utf-8"))
         group = payload.get("group") or {}
         name = str(group.get("name") or path.stem)
-        out.append({"name": name, "path": path, "payload": payload, "group": group})
+        out.append({
+            "name": name,
+            "path": path,
+            "group": group,
+            "baseline_k_index": int(payload.get("baseline_k_index", 3)),
+        })
     if not out:
         raise RuntimeError(f"no action configs found under {action_dir}")
     return out
 
 
 def _group_key(cfg: Mapping[str, Any]) -> str:
-    payload = cfg.get("payload") or {}
-    group = payload.get("group") or {}
+    group = cfg.get("group") or {}
     key_payload = {
         "option_by_graph": group.get("option_by_graph") or {},
         "option_by_step": group.get("option_by_step") or {},
-        "baseline_k_index": payload.get("baseline_k_index", 3),
+        "baseline_k_index": cfg.get("baseline_k_index", 3),
     }
     return json.dumps(key_payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
@@ -107,7 +144,7 @@ def _base_model(model_type: str, dataset: str) -> str:
     return "textattack/bert-base-uncased-MRPC"
 
 
-def _tokenize_glue(data: DatasetDict, *, task: str, tokenizer, seed: int):
+def _tokenize_glue(data, *, task: str, tokenizer, seed: int):
     def tokenize_fn(examples):
         if task == "mrpc":
             return tokenizer(
@@ -131,6 +168,16 @@ def _tokenize_glue(data: DatasetDict, *, task: str, tokenizer, seed: int):
 
 
 def _build_evaluator(args, *, stage1_gelu: Sequence[int], stage1_softmax: Sequence[int]):
+    deps = _load_runtime_deps()
+    torch = deps["torch"]
+    AutoTokenizer = deps["AutoTokenizer"]
+    AutoConfig = deps["AutoConfig"]
+    AutoModelForSequenceClassification = deps["AutoModelForSequenceClassification"]
+    DataCollatorWithPadding = deps["DataCollatorWithPadding"]
+    load_glue_dataset_equivalent = deps["load_glue_dataset_equivalent"]
+    seed_everything = deps["seed_everything"]
+    LayerImportanceEvaluator = deps["LayerImportanceEvaluator"]
+
     seed_everything(int(args.seed))
     tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token if tokenizer.eos_token else "[PAD]"
@@ -196,6 +243,21 @@ def _build_evaluator(args, *, stage1_gelu: Sequence[int], stage1_softmax: Sequen
 
 
 def _build_seq_env(args, ev, *, stage1_gelu: Sequence[int], stage1_softmax: Sequence[int]):
+    deps = _load_runtime_deps()
+    BLBStage2RLRunner = deps["BLBStage2RLRunner"]
+    BLBStage2TrainConfig = deps["BLBStage2TrainConfig"]
+    load_static_skeletons_baseline = deps["load_static_skeletons_baseline"]
+    static_skeletons_baseline_to_action = deps["static_skeletons_baseline_to_action"]
+    BLBStage2Env = deps["BLBStage2Env"]
+    BLBStage2EnvConfig = deps["BLBStage2EnvConfig"]
+    estimate_baseline_cost_stats = deps["estimate_baseline_cost_stats"]
+    BaselineCostStats = deps["BaselineCostStats"]
+    RewardWeights = deps["RewardWeights"]
+    calibrate_weights_from_baseline = deps["calibrate_weights_from_baseline"]
+    FusionCountMap = deps["FusionCountMap"]
+    BLBStage2SequentialEnv = deps["BLBStage2SequentialEnv"]
+    SequentialEnvConfig = deps["SequentialEnvConfig"]
+
     runner = BLBStage2RLRunner(ev)
     train_cfg = BLBStage2TrainConfig(
         total_episodes=1,
@@ -324,12 +386,12 @@ def _jsonable(value: Any) -> Any:
     return str(value)
 
 
-def _run_group(seq_env: BLBStage2SequentialEnv, cfg: Mapping[str, Any], *, seed: int) -> dict:
-    payload = cfg["payload"]
-    group = payload.get("group") or {}
+def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
+    K_LEVELS = _load_runtime_deps()["K_LEVELS"]
+    group = cfg.get("group") or {}
     option_by_graph = {str(k): int(v) for k, v in dict(group.get("option_by_graph") or {}).items()}
     option_by_step = {str(k): int(v) for k, v in dict(group.get("option_by_step") or {}).items()}
-    k_index = int(payload.get("baseline_k_index", 3))
+    k_index = int(cfg.get("baseline_k_index", 3))
     if k_index < 0 or k_index >= len(K_LEVELS):
         raise ValueError(f"invalid baseline_k_index={k_index} for {cfg['name']}")
 
