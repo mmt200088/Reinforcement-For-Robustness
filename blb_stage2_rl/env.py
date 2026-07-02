@@ -38,10 +38,7 @@ from .action_space import (
     make_all_max_action_vector,
 )
 from .candidate_store import action_hash
-from .eval_metrics import (
-    finalize_probe_trial_metrics as _finalize_probe_trial_metrics,
-    probe_batch_sample_count as _probe_batch_sample_count,
-)
+from .inference_eval import run_installed_probe_trial
 from .optimizer_cost import apply_optimizer_outputs_to_cfgs, evaluate_action_for_cost
 from .probe_runner import ProbeRunner, format_diagnostics_line
 from .reward import (
@@ -73,36 +70,6 @@ class ProbeBatch:
         tt = batch.get("token_type_ids")
         tt = tt.to(device, non_blocking=True) if tt is not None else None
         return cls(input_ids=ii, attention_mask=am, labels=lb, token_type_ids=tt)
-
-
-def _logits_to_classes(preds: torch.Tensor) -> torch.Tensor:
-    if preds.dim() == 1:
-        return (preds > 0.5).long()
-    return preds.argmax(dim=-1)
-
-
-def _compute_metrics_on_batch(
-        logits: torch.Tensor,
-        labels: torch.Tensor,
-        is_regression: bool = False,
-        ) -> Tuple[float, float, float]:
-    """返回 (loss, metric1, metric2)。
-
-    跑 cross-entropy loss + 简单 accuracy；用于 RL 评估子集（不追求与最终 final-eval
-    完全相同的指标，只要差分单调即可指导 RL）。
-    """
-    if labels.dtype == torch.long and not is_regression:
-        loss = torch.nn.functional.cross_entropy(
-            logits.float(), labels.long(), reduction="mean"
-        ).item()
-        preds = _logits_to_classes(logits.detach())
-        acc = (preds.detach().long() == labels.detach().long()).float().mean().item()
-        return float(loss), float(acc), float(acc)
-    # 回归 / STSB
-    pred_flat = logits.float().reshape(-1)
-    label_flat = labels.float().reshape(-1)
-    loss = torch.nn.functional.mse_loss(pred_flat, label_flat).item()
-    return float(loss), -float(loss), -float(loss)   # metric=-mse 越大越好
 
 
 # ---------------------------------------------------------------------------
@@ -1267,48 +1234,16 @@ class BLBStage2Env:
                             if torch.cuda.is_available():
                                 torch.cuda.manual_seed_all(seed)
 
-                            losses, m1s, m2s = [], [], []
-                            counts: List[int] = []
-                            trial_preds: List[np.ndarray] = []
-                            trial_labels: List[np.ndarray] = []
-                            for batch in self.probe_batches:
-                                kwargs: Dict[str, torch.Tensor] = {
-                                    "input_ids": batch.input_ids,
-                                    "attention_mask": batch.attention_mask,
-                                    "labels": batch.labels,
-                                }
-                                if batch.token_type_ids is not None:
-                                    kwargs["token_type_ids"] = batch.token_type_ids
-                                outputs = self.model(**kwargs)
-                                logits = outputs.logits if hasattr(outputs, "logits") else outputs[1]
-                                loss, m1, m2 = _compute_metrics_on_batch(
-                                    logits, batch.labels, is_regression=self.is_regression,
-                                )
-                                losses.append(loss)
-                                m1s.append(m1)
-                                m2s.append(m2)
-                                counts.append(_probe_batch_sample_count(batch.labels))
-                                if not self.is_regression:
-                                    trial_preds.append(
-                                        _logits_to_classes(logits.detach()).detach().cpu().numpy()
-                                    )
-                                    trial_labels.append(batch.labels.detach().cpu().numpy())
-
-                            trial_metrics = _finalize_probe_trial_metrics(
-                                losses,
-                                m1s,
-                                m2s,
-                                counts,
-                                metric_profile=self.env_cfg.profile,
+                            loss, m1, m2 = run_installed_probe_trial(
+                                self.model,
+                                self.probe_batches,
                                 is_regression=bool(self.is_regression),
-                                preds=trial_preds,
-                                labels=trial_labels,
+                                metric_profile=str(self.env_cfg.profile),
+                                restore_training=False,
                             )
-                            if trial_metrics is not None:
-                                loss, m1, m2 = trial_metrics
-                                per_trial_loss.append(loss)
-                                per_trial_metric1.append(m1)
-                                per_trial_metric2.append(m2)
+                            per_trial_loss.append(loss)
+                            per_trial_metric1.append(m1)
+                            per_trial_metric2.append(m2)
                     wall_elapsed = time.perf_counter() - probe_wall_start
                     self._last_probe_diagnostics = {
                         "k": int(k),
@@ -1377,48 +1312,16 @@ class BLBStage2Env:
                     with lock:
                         reseed_noise_rng_for_device(self._device, seed)
 
-                        losses, m1s, m2s = [], [], []
-                        counts: List[int] = []
-                        trial_preds: List[np.ndarray] = []
-                        trial_labels: List[np.ndarray] = []
-                        for batch in self.probe_batches:
-                            kwargs: Dict[str, torch.Tensor] = {
-                                "input_ids": batch.input_ids,
-                                "attention_mask": batch.attention_mask,
-                                "labels": batch.labels,
-                            }
-                            if batch.token_type_ids is not None:
-                                kwargs["token_type_ids"] = batch.token_type_ids
-                            outputs = self.model(**kwargs)
-                            logits = outputs.logits if hasattr(outputs, "logits") else outputs[1]
-                            loss, m1, m2 = _compute_metrics_on_batch(
-                                logits, batch.labels, is_regression=self.is_regression,
-                            )
-                            losses.append(loss)
-                            m1s.append(m1)
-                            m2s.append(m2)
-                            counts.append(_probe_batch_sample_count(batch.labels))
-                            if not self.is_regression:
-                                trial_preds.append(
-                                    _logits_to_classes(logits.detach()).detach().cpu().numpy()
-                                )
-                                trial_labels.append(batch.labels.detach().cpu().numpy())
-
-                    trial_metrics = _finalize_probe_trial_metrics(
-                        losses,
-                        m1s,
-                        m2s,
-                        counts,
-                        metric_profile=self.env_cfg.profile,
-                        is_regression=bool(self.is_regression),
-                        preds=trial_preds,
-                        labels=trial_labels,
-                    )
-                    if trial_metrics is not None:
-                        loss, m1, m2 = trial_metrics
-                        per_trial_loss.append(loss)
-                        per_trial_metric1.append(m1)
-                        per_trial_metric2.append(m2)
+                        loss, m1, m2 = run_installed_probe_trial(
+                            self.model,
+                            self.probe_batches,
+                            is_regression=bool(self.is_regression),
+                            metric_profile=str(self.env_cfg.profile),
+                            restore_training=False,
+                        )
+                    per_trial_loss.append(loss)
+                    per_trial_metric1.append(m1)
+                    per_trial_metric2.append(m2)
         finally:
             if was_training:
                 self.model.train()

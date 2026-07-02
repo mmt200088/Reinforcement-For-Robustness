@@ -42,6 +42,20 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         self.assertIn("replan_config_not_fully_applied", text)
         self.assertIn("skipped_forward:{skip_reason}", text)
 
+    def test_installed_model_forward_paths_use_shared_inference_eval(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        layer_eval = (repo / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
+        probe = (repo / "blb_stage2_rl" / "probe_runner.py").read_text(encoding="utf-8")
+
+        self.assertIn("run_installed_model_on_dataloader", layer_eval)
+        self.assertIn("run_installed_probe_trial", env)
+        self.assertIn("run_installed_probe_trial", probe)
+        self.assertNotIn("def _compute_metrics_on_batch", env)
+        self.assertNotIn("def _compute_metrics_on_batch_local", probe)
+        self.assertNotIn("model(**kwargs)", env)
+        self.assertNotIn("model(**kwargs)", probe)
+
 
 if __name__ == "__main__":
     unittest.main()

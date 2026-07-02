@@ -60,18 +60,10 @@ class SharedEvalMetricsTest(unittest.TestCase):
         self.assertAlmostEqual(summary["time_mean_ms"], 15.0)
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")
-    def test_env_and_probe_runner_use_the_shared_probe_finalizer(self):
-        from blb_stage2_rl.env import _finalize_probe_trial_metrics
-        from blb_stage2_rl.probe_runner import _finalize_probe_trial_metrics_local
+    def test_probe_eval_uses_the_shared_installed_inference_module(self):
+        from blb_stage2_rl.inference_eval import run_installed_probe_trial
 
-        self.assertIs(
-            _finalize_probe_trial_metrics,
-            eval_metrics.finalize_probe_trial_metrics,
-        )
-        self.assertIs(
-            _finalize_probe_trial_metrics_local,
-            eval_metrics.finalize_probe_trial_metrics,
-        )
+        self.assertTrue(callable(run_installed_probe_trial))
 
 
 if __name__ == "__main__":

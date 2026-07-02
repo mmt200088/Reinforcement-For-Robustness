@@ -194,7 +194,11 @@ def finalize_probe_trial_metrics(
     if not losses:
         return None
     loss, m1, m2 = weighted_probe_batch_means(losses, m1s, m2s, counts)
-    if (
+    if is_regression and preds and labels:
+        all_preds = np.concatenate([np.asarray(p).reshape(-1) for p in preds])
+        all_labels = np.concatenate([np.asarray(l).reshape(-1) for l in labels])
+        m1, m2 = metric_pair_for_dataset(metric_profile, all_labels, all_preds)
+    elif (
             not is_regression
             and uses_weighted_f1_metric2(metric_profile)
             and preds

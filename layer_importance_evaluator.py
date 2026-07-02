@@ -41,11 +41,12 @@ from torch.utils.data import DataLoader
 from transformers.trainer_callback import TrainerCallback
 from sklearn.model_selection import train_test_split
 from blb_stage2_rl.eval_metrics import (
-    accuracy_from_labels as shared_accuracy_from_labels,
-    logits_to_classes as shared_logits_to_classes,
-    metric_pair_for_dataset,
-    sample_weighted_mean,
     summarize_eval_trials,
+)
+from blb_stage2_rl.inference_eval import (
+    normalize_labels_for_metrics as shared_normalize_labels_for_metrics,
+    normalize_logits_for_metrics as shared_normalize_logits_for_metrics,
+    run_installed_model_on_dataloader,
 )
 from function_handler import (
     ReversibleLayerHandler,
@@ -5169,71 +5170,33 @@ class LayerImportanceEvaluator(TrainerCallback):
         if _model is self.model and not self._eval_infra_ready:
             _model.to(_device)
             self._eval_infra_ready = True
-        all_preds, all_labels = [], []
-        _use_cuda = torch.cuda.is_available()
-        _t0 = time.time()
-        # 延迟同步：循环内不做任何 GPU→CPU 拷贝（旧版每 batch 的 loss.item() +
-        # logits.cpu() 各强制一次同步，阻塞了下一个 batch 的 kernel 提交）。
-        # 改为暂存 GPU 张量，循环结束后按原顺序逐 batch 转换 —— 每个 batch 的
-        # 数组、loss 的 float64 累加顺序与旧实现完全一致（bit-identical）。
-        _batch_losses = []          # 每 batch 的 0-dim GPU loss（或 None 跳过）
-        _batch_logits = []          # 每 batch 的 GPU logits
-        _batch_labels = []          # 每 batch 的 CPU labels（已 normalize）
-        with torch.inference_mode():
-            for batch in dataloader:
-                # 在 GPU 传输前直接从 CPU 读取 labels, 避免 labels 被多余地发到 GPU 再拷回 CPU
-                _labels_tensor = batch["labels"]
-                if isinstance(_labels_tensor, torch.Tensor):
-                    labels_np_raw = _labels_tensor.detach().numpy()
-                else:
-                    labels_np_raw = np.asarray(_labels_tensor)
-                labels = self._normalize_labels_for_metrics(labels_np_raw)
-
-                # 异步 CPU→GPU 传输; 与 pin_memory 配合使用提升数据传输效率
-                batch = {k: v.to(_device, non_blocking=True) for k, v in batch.items()}
-                outputs = _model(**batch)
-                _batch_losses.append(
-                    outputs.loss.detach() if outputs.loss is not None else None
-                )
-                _batch_logits.append(outputs.logits.detach())
-                _batch_labels.append(labels)
-            # 单一同步点：所有 forward 已提交后再做 D2H 转换。
-            _loss_values = []
-            _loss_counts = []
-            for _loss_t, _logits_t, labels in zip(_batch_losses, _batch_logits, _batch_labels):
-                if _loss_t is not None:
-                    _loss_values.append(float(_loss_t.item()))
-                    _loss_counts.append(len(labels))
-                logits = self._normalize_logits_for_metrics(
-                    _logits_t.cpu().numpy(),
-                    expected_batch_size=len(labels),
-                )
-                all_preds.extend(logits.tolist())
-                all_labels.extend(labels.tolist())
-        avg_loss = sample_weighted_mean(_loss_values, _loss_counts) if _loss_values else 0.0
-        # avg_time 以整体墙钟时间平均给出（避免每批次 cuda.synchronize 的阻塞开销）
-        # 训练路径不使用 avg_time 字段, 仅日志用途
-        _n_batches = max(1, len(dataloader))
-        avg_time = (time.time() - _t0) * 1000.0 / _n_batches
         ds = self.dataset_key
         try:
+            mnli_metric2_fn = None
             if ds == 'mnli':
-                pred_classes = shared_logits_to_classes(all_preds)
-                metric1 = shared_accuracy_from_labels(all_labels, pred_classes)
                 mm_dataloader = None
                 if split_name is not None:
                     mm_dataloader = self.dataloaders_mm.get(split_name)
                 elif not use_train:
                     mm_dataloader = self.dataloader_test_mm
                 if not use_train and mm_dataloader is not None:
-                    metric2 = self._evaluate_accuracy_on_dataloader(mm_dataloader)
-                else:
-                    metric2 = metric1
-            else:
-                metric1, metric2 = metric_pair_for_dataset(ds, all_labels, all_preds)
+                    mnli_metric2_fn = lambda: self._evaluate_accuracy_on_dataloader(mm_dataloader)
+            result = run_installed_model_on_dataloader(
+                _model,
+                dataloader,
+                device=_device,
+                metric_profile=ds,
+                use_train=bool(use_train),
+                split_name=split_name,
+                mnli_metric2_fn=mnli_metric2_fn,
+            )
+            avg_loss = result.loss
+            metric1 = result.metric1
+            metric2 = result.metric2
+            avg_time = result.time_ms
         except Exception as e:
             print(f"[警告] 为数据集（dataset）'{ds}' 计算指标失败: {e}")
-            metric1, metric2 = 0.0, 0.0
+            avg_loss, avg_time, metric1, metric2 = 0.0, 0.0, 0.0, 0.0
         return avg_loss, metric1, metric2, avg_time
 
     def evaluate_model(
@@ -5290,41 +5253,22 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     @staticmethod
     def _normalize_labels_for_metrics(labels):
-        return np.asarray(labels).reshape(-1)
+        return shared_normalize_labels_for_metrics(labels)
 
     @staticmethod
     def _normalize_logits_for_metrics(logits, expected_batch_size):
-        logits_arr = np.asarray(logits)
-        expected_batch_size = max(int(expected_batch_size), 1)
-        if logits_arr.ndim == 0:
-            logits_arr = logits_arr.reshape(1)
-        if logits_arr.shape[0] != expected_batch_size:
-            logits_arr = logits_arr.reshape(expected_batch_size, -1)
-        elif expected_batch_size == 1 and logits_arr.ndim == 1:
-            logits_arr = logits_arr.reshape(1, -1)
-        if logits_arr.ndim == 2 and logits_arr.shape[1] == 1:
-            return logits_arr.reshape(-1)
-        return logits_arr
+        return shared_normalize_logits_for_metrics(logits, expected_batch_size)
 
     def _evaluate_accuracy_on_dataloader(self, dataloader):
         """在指定 dataloader 上计算 accuracy（用于 MNLI mismatched）"""
-        all_preds, all_labels = [], []
-        self.model.eval()
-        with torch.no_grad():
-            for batch in dataloader:
-                batch = {k: v.to(self.device) for k, v in batch.items()}
-                labels = self._normalize_labels_for_metrics(
-                    batch["labels"].detach().cpu().numpy()
-                )
-                outputs = self.model(**batch)
-                logits = self._normalize_logits_for_metrics(
-                    outputs.logits.detach().cpu().numpy(),
-                    expected_batch_size=len(labels),
-                )
-                all_preds.extend(logits.tolist())
-                all_labels.extend(labels.tolist())
-        pred_classes = shared_logits_to_classes(all_preds)
-        return shared_accuracy_from_labels(all_labels, pred_classes)
+        result = run_installed_model_on_dataloader(
+            self.model,
+            dataloader,
+            device=self.device,
+            metric_profile=self.dataset_key,
+            use_train=False,
+        )
+        return float(result.metric1)
 
     def compute_gae(self, rewards, values, dones, gamma=PPO_GAMMA, lam=PPO_LAMBDA):
         """计算广义优势估计 (GAE)"""

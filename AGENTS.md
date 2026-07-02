@@ -57,6 +57,17 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   dependencies, shared artifacts, and handoff contracts, then choose
   optimizations by end-to-end wall-clock impact and hardware utilization rather
   than by isolated local speedups.
+- Stage-2 shared evaluation-chain rule, added 2026-07-02: do not reimplement
+  the BLB action-to-model pipeline in ad hoc callers. Optimizer/replan cfg
+  write-back must go through
+  `blb_stage2_rl.optimizer_cost.apply_optimizer_outputs_to_cfgs()`. The actual
+  already-installed model inference loop must go through
+  `blb_stage2_rl.inference_eval`: use
+  `run_installed_model_on_dataloader()` for full-validation/final-eval style
+  dataloaders and `run_installed_probe_trial()` for online Stage-2 reward probe
+  trials. If new special handling is needed, extend those shared modules and
+  their tests instead of adding another local forward/metric/repeat
+  implementation in RL, Paean, or experiment scripts.
 - All Stage-1 and Stage-2 RL runs must mirror raw training data points to the
   project-root `rl_training_data_points/` tree, classified by stage, model,
   dataset, and run id. Persist enough structured JSON/JSONL to redraw paper
