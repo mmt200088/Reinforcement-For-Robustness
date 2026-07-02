@@ -49,6 +49,57 @@ class BLBInstallLogRegressionTests(unittest.TestCase):
 
 
 class BLBActionFinalEvalRegressionTests(unittest.TestCase):
+    def test_clean_baseline_uses_repeat_protocol_without_eval_cache(self):
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+        class FakeEvaluator:
+            total_layers = 1
+            dataset_key = "mrpc"
+            layers_attribute = "encoder.layer"
+
+            def __init__(self):
+                self.calls = 0
+                self.applied = []
+                self.dataloaders = {"validation_full": object()}
+
+            def apply_configuration(self, gelu, softmax):
+                self.applied.append((tuple(gelu), tuple(softmax)))
+
+            def _resolve_eval_split(self, *, use_train, split):
+                self.assertFalse(use_train)
+                self.assertEqual(split, "validation_full")
+                return "validation_full"
+
+            def _run_evaluation(self, _loader, *, use_train, split_name):
+                self.assertFalse(use_train)
+                self.assertEqual(split_name, "validation_full")
+                self.calls += 1
+                return (
+                    0.30 + (0.01 * self.calls),
+                    0.80 + (0.01 * self.calls),
+                    0.70 + (0.02 * self.calls),
+                    10.0 * self.calls,
+                )
+
+        runner = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
+        runner.evaluator = FakeEvaluator()
+        runner.repeat_n = 3
+        runner._clear_all_noise = lambda: None
+
+        result = runner._evaluate_clean_baseline(
+            baseline_stage1_gelu=np.asarray([1], dtype=int),
+            baseline_stage1_softmax=np.asarray([6], dtype=int),
+        )
+
+        self.assertEqual(runner.evaluator.calls, 3)
+        self.assertEqual(result["evaluation_n"], 3)
+        self.assertEqual(result["evaluation_protocol"], "repeated_mean_n=3")
+        self.assertAlmostEqual(result["loss"], 0.32)
+        self.assertAlmostEqual(result["p"], 0.82)
+        self.assertAlmostEqual(result["s"], 0.74)
+        self.assertGreater(result["loss_std"], 0.0)
+        self.assertIn("repeat_evaluation", result)
+
     def test_resolve_base_action_accepts_numpy_arrays_without_truthiness(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
 

@@ -405,12 +405,68 @@ class BLBActionFinalEvaluationModule:
         return None
 
     def _evaluate_clean_baseline(self, *, baseline_stage1_gelu, baseline_stage1_softmax):
+        repeats = max(1, int(getattr(self, "repeat_n", 1)))
+        if repeats <= 1:
+            single = self._run_single_clean_baseline_eval(
+                baseline_stage1_gelu=baseline_stage1_gelu,
+                baseline_stage1_softmax=baseline_stage1_softmax,
+            )
+            single["loss_std"] = 0.0
+            single["p_std"] = 0.0
+            single["s_std"] = 0.0
+            single["evaluation_n"] = 1
+            single["evaluation_protocol"] = "single_validation_full"
+            return single
+
+        trials = [
+            self._run_single_clean_baseline_eval(
+                baseline_stage1_gelu=baseline_stage1_gelu,
+                baseline_stage1_softmax=baseline_stage1_softmax,
+            )
+            for _idx in range(repeats)
+        ]
+        stats = summarize_eval_trials(trials)
+        stats["evaluation_mode"] = "clean_baseline_repeated_validation_full"
+        result = {
+            "name": "Baseline (Stage-1 Exact)",
+            "family": "Baseline",
+            "loss": float(stats["loss_mean"]),
+            "p": float(stats["p_mean"]),
+            "s": float(stats["s_mean"]),
+            "time_ms": float(stats["time_mean_ms"]),
+            "loss_std": float(stats["loss_std"]),
+            "p_std": float(stats["p_std"]),
+            "s_std": float(stats["s_std"]),
+            "evaluation_n": int(stats["n"]),
+            "evaluation_protocol": f"repeated_mean_n={int(stats['n'])}",
+            "repeat_evaluation": {
+                "trials": [
+                    {
+                        "trial": i + 1,
+                        "loss": float(t["loss"]),
+                        "p": float(t["p"]),
+                        "s": float(t["s"]),
+                        "time_ms": float(t["time_ms"]),
+                    }
+                    for i, t in enumerate(trials)
+                ],
+                "stats": stats,
+            },
+        }
+        return result
+
+    def _run_single_clean_baseline_eval(self, *, baseline_stage1_gelu, baseline_stage1_softmax):
         ev = self.evaluator
-        loss, p, s, t = ev.evaluate_model(
+        ev.apply_configuration(
             np.asarray(baseline_stage1_gelu, dtype=int),
             np.asarray(baseline_stage1_softmax, dtype=int),
+        )
+        self._clear_all_noise()
+        split_name = ev._resolve_eval_split(use_train=False, split="validation_full")
+        loss, p, s, t = ev._run_evaluation(
+            ev.dataloaders[split_name],
             use_train=False,
-            split="validation_full",
+            split_name=split_name,
         )
         return {
             "name": "Baseline (Stage-1 Exact)",
@@ -1522,6 +1578,10 @@ class BLBActionFinalEvaluationModule:
             f"- clean baseline loss: `{baseline_result['loss']:.6f}`",
             f"- clean baseline {primary}: `{baseline_result['p']:.6f}`",
             f"- clean baseline {secondary}: `{baseline_result['s']:.6f}`",
+            f"- clean baseline protocol: `{baseline_result.get('evaluation_protocol', 'single_validation_full')}`",
+            f"- clean baseline loss std: `{float(baseline_result.get('loss_std', 0.0)):.6f}`",
+            f"- clean baseline {primary} std: `{float(baseline_result.get('p_std', 0.0)):.6f}`",
+            f"- clean baseline {secondary} std: `{float(baseline_result.get('s_std', 0.0)):.6f}`",
             "",
         ]
         if cost_match_diagnostics:

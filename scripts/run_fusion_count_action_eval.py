@@ -262,6 +262,14 @@ def _build_combined(
         candidate["s_delta_vs_baseline"] = _metric(candidate, "s") - _metric(baseline, "s")
         group_results.append(candidate)
 
+    baseline_repeat_n = int(
+        (baseline.get("repeat_evaluation") or {}).get("stats", {}).get(
+            "n",
+            baseline.get("evaluation_n", 1),
+        )
+    )
+    stage2_repeat_n = int(max((int((r.get("evaluation_n") or 1)) for r in group_results), default=1))
+
     return {
         "schema_version": "fusion_count_action_eval_combined_v1",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -275,7 +283,9 @@ def _build_combined(
         "evaluation_protocol": {
             "split": "validation_full",
             "baseline": "original plaintext, original GELU/Softmax, no BLB noise",
+            "baseline_repeat_n": baseline_repeat_n,
             "stage2_groups": "manual Stage-1 GELU/Softmax, fixed baseline K, only fusion-count options varied",
+            "stage2_repeat_n": stage2_repeat_n,
             "manual_stage1_gelu": [int(v) for v in stage1_gelu],
             "manual_stage1_softmax": [int(v) for v in stage1_softmax],
             "unique_action_runs": len(result_by_hash),
@@ -293,11 +303,11 @@ def _render_html(combined: Mapping[str, Any]) -> str:
         "baseline",
         "",
         f"{_metric(baseline, 'loss'):.6f}",
-        "0.000000",
+        f"{_metric(baseline, 'loss_std'):.6f}",
         f"{_metric(baseline, 'p'):.6f}",
-        "0.000000",
+        f"{_metric(baseline, 'p_std'):.6f}",
         f"{_metric(baseline, 's'):.6f}",
-        "0.000000",
+        f"{_metric(baseline, 's_std'):.6f}",
         "",
         "",
         "",
@@ -356,12 +366,14 @@ def _render_html(combined: Mapping[str, Any]) -> str:
         "其它组固定最新 MRPC Stage-1 配置，只改变 fusion-count map option；K 全部固定在 baseline K=13。</div>",
         "<h2>Context</h2>",
         _html_table(
-            ["profile", "Stage-1 GELU", "Stage-1 Softmax", "baseline K", "unique action runs", "requested groups"],
+            ["profile", "Stage-1 GELU", "Stage-1 Softmax", "baseline K", "baseline repeat", "stage2 repeat", "unique action runs", "requested groups"],
             [[
                 ctx.get("profile"),
                 json.dumps(ctx.get("stage1_gelu")),
                 json.dumps(ctx.get("stage1_softmax")),
                 ctx.get("baseline_k_value"),
+                combined["evaluation_protocol"].get("baseline_repeat_n"),
+                combined["evaluation_protocol"].get("stage2_repeat_n"),
                 combined["evaluation_protocol"]["unique_action_runs"],
                 combined["evaluation_protocol"]["requested_group_count"],
             ]],
