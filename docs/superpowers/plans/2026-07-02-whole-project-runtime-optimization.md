@@ -558,6 +558,15 @@ calling the deterministic precision-boost pass. A 300k-option synthetic
 benchmark preserved the effective option count while eliminating `0.089972s`
 of tuple-copy time and `25.22MB` of traced peak allocation.
 
+Progress 2026-07-02: `Rescale_optimizer/scripts/batch_run_configs.py` and
+`Rescale_optimizer/scripts/check_compress_headroom.py` now discover config JSON
+files with `os.scandir()` and filename filtering instead of materializing
+`Path.glob("*.json")` results. The new path preserves sorted real-file config
+discovery and skips `.json` directories before optimizer work starts. A local
+4000-config / 4000-sidecar / 200-json-directory benchmark reduced batch
+discovery from `0.052645s` / `4.31MB` to `0.031833s` / `1.18MB`, and headroom
+discovery from `0.071282s` / `5.20MB` to `0.046929s` / `2.41MB`.
+
 - [ ] **Step 3: Verify**
 
 Run:

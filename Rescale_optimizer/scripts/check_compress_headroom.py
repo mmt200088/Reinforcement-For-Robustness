@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -140,6 +141,26 @@ def diagnose(config_path: Path) -> Optional[Dict[str, Any]]:
     }
 
 
+def _discover_configs(configs_dir: Path, explicit: Optional[List[str]]) -> List[Path]:
+    if explicit:
+        configs = []
+        for n in explicit:
+            cand = n if n.endswith(".json") else n + ".json"
+            p_ = configs_dir / cand if not Path(cand).is_absolute() else Path(cand)
+            if p_.exists():
+                configs.append(p_)
+        return configs
+
+    names = sorted(
+        entry.name
+        for entry in os.scandir(configs_dir)
+        if entry.is_file()
+        and entry.name.endswith(".json")
+        and entry.name != "static_skeletons.json"
+    )
+    return [configs_dir / name for name in names]
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--configs-dir", default=str(REPO_ROOT / "configs"))
@@ -150,16 +171,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     setup_logging(level=logging.WARNING)
 
     configs_dir = Path(args.configs_dir)
-    if args.configs:
-        configs = []
-        for n in args.configs:
-            cand = n if n.endswith(".json") else n + ".json"
-            p_ = configs_dir / cand if not Path(cand).is_absolute() else Path(cand)
-            if p_.exists():
-                configs.append(p_)
-    else:
-        configs = sorted(p for p in configs_dir.glob("*.json")
-                         if p.name != "static_skeletons.json")
+    configs = _discover_configs(configs_dir, args.configs)
 
     print()
     print(f"{'config':<22} | {'r':>2} | {'s_r':>3} | {'path summary':<35} "

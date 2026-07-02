@@ -93,6 +93,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 import time
 import traceback
@@ -389,8 +390,14 @@ def _discover_configs(configs_dir: Path,
                 continue
             out.append(p)
         return out
-    return sorted(p for p in configs_dir.glob("*.json")
-                  if not p.name.startswith("static_skeletons"))
+    names = sorted(
+        entry.name
+        for entry in os.scandir(configs_dir)
+        if entry.is_file()
+        and entry.name.endswith(".json")
+        and not entry.name.startswith("static_skeletons")
+    )
+    return [configs_dir / name for name in names]
 
 
 # ---------------------------------------------------------------------------
