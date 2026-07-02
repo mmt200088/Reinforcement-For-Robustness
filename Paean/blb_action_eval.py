@@ -1368,8 +1368,9 @@ class BLBActionFinalEvaluationModule:
     def _clear_legacy_noise(self):
         ev = self.evaluator
         handler = ev.reversible_handler
+        layer_indices = list(range(ev.total_layers))
         try:
-            handler.restore_layer_input_noise(layer_indices=list(range(ev.total_layers)))
+            handler.restore_layer_input_noise(layer_indices=layer_indices)
         except Exception:
             pass
         for restore_name in (
@@ -1385,13 +1386,15 @@ class BLBActionFinalEvaluationModule:
             if method is None:
                 continue
             try:
-                method(layer_indices=list(range(ev.total_layers)))
+                method(layer_indices=layer_indices)
             except Exception:
                 pass
 
     def _clear_all_noise(self):
         self._clear_legacy_noise()
         ev = self.evaluator
+        layer_indices = list(range(ev.total_layers))
+        layer_name = "model." + ev.layers_attribute
         for restore_name in (
             "restore_layer_block5_noise",
             "restore_layer_block4_noise",
@@ -1405,8 +1408,8 @@ class BLBActionFinalEvaluationModule:
                 continue
             try:
                 method(
-                    layer_indices=list(range(ev.total_layers)),
-                    layer_name="model." + ev.layers_attribute,
+                    layer_indices=layer_indices,
+                    layer_name=layer_name,
                 )
             except Exception:
                 pass
