@@ -21,6 +21,7 @@ All torch-free: ``persistence`` and the regenerator are loaded via
 never triggered. matplotlib is optional (PNG asserts are skipped if absent);
 the NPZ / text artifacts are always produced.
 """
+import csv
 import importlib.util
 import json
 import os
@@ -328,6 +329,54 @@ class StatusBoardLiveSummaryTest(unittest.TestCase):
         self.assertIn("Last priority: 1", text)
         self.assertIn("policy_loss", text)
         self.assertIn("diagnostics/episodes.jsonl", text)
+
+
+class EpisodeTraceMigrationTest(unittest.TestCase):
+    def test_trace_schema_migration_streams_rows_without_writerows(self):
+        old_writerows = persistence.csv.DictWriter.writerows
+
+        def fail_writerows(self, rowdicts):
+            raise AssertionError("schema migration should stream rows")
+
+        persistence.csv.DictWriter.writerows = fail_writerows
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                trace_path = os.path.join(d, persistence.BLB_EPISODE_TRACE_CSV)
+                old_header = [
+                    field for field in persistence.BLB_TRACE_FIELDNAMES
+                    if field != "cost_probe_count"
+                ]
+                with open(trace_path, "w", encoding="utf-8", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(old_header)
+                    for episode in (120, 240, 360):
+                        row = {field: "" for field in old_header}
+                        row.update({
+                            "episode": episode,
+                            "anchor_count": 1,
+                            "policy_loss": 0.01,
+                        })
+                        writer.writerow([row.get(field, "") for field in old_header])
+
+                persistence.append_blb_episode_trace_row(
+                    d,
+                    {
+                        "episode": 480,
+                        "anchor_count": 2,
+                        "cost_probe_count": 3,
+                        "policy_loss": 0.02,
+                    },
+                )
+                with open(trace_path, encoding="utf-8", newline="") as f:
+                    rows = list(csv.DictReader(f))
+        finally:
+            persistence.csv.DictWriter.writerows = old_writerows
+
+        self.assertEqual(list(rows[0].keys()), list(persistence.BLB_TRACE_FIELDNAMES))
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[0]["cost_probe_count"], "0")
+        self.assertEqual(rows[-1]["cost_probe_count"], "3")
+        self.assertEqual(rows[-1]["episode"], "480")
 
 
 class RegeneratorEndToEndTest(unittest.TestCase):

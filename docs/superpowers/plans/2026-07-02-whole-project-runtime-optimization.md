@@ -588,6 +588,13 @@ benchmark kept the NPZ byte size identical (`3374656` bytes) with comparable
 median write time (`0.0123s` -> `0.0116s`), while removing avoidable temporary
 copies from the training hot path.
 
+Progress 2026-07-02: Stage-2 live trace CSV schema migration now streams old
+rows directly into the migrated file instead of materializing all rows in a
+list and calling `writerows()`. A regression test patches `writerows()` out of
+the migration path, and a local 50k-row old-schema trace benchmark preserved
+the migrated row count while reducing migration peak memory from `137.08MB` to
+`0.19MB` and wall time from `0.980s` to `0.877s`.
+
 Progress 2026-07-02: `scripts/blb_regen_stage2_outputs.py` now lazily
 materializes ADR-014 optional diagnostic series while reading `episodes.jsonl`.
 Older runs that do not contain those fields no longer allocate nine extra
