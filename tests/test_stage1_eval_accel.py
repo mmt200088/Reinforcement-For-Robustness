@@ -118,6 +118,24 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         self.assertIn("torch.where((x >= -2.7) & (x < 0), y_neg, 0.0)", helper_region)
         self.assertNotIn("torch.zeros_like", helper_region)
 
+    def test_softmax_lower_bound_zero_branch_uses_scalar_zero(self):
+        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        bert_region = _source_region(
+            source,
+            "    def approximation_softmax(self, x: torch.Tensor) -> torch.Tensor:",
+            "    # error construction",
+        )
+        gpt2_region = _source_region(
+            source,
+            "def _approx_softmax(x: torch.Tensor, degree: int, lower_bound: float) -> torch.Tensor:",
+            "def _make_gpt2_approx_attn_forward",
+        )
+
+        self.assertIn("torch.where(x < self.lower_bound, 0.0, exp_approx)", bert_region)
+        self.assertIn("torch.where(x < lower_bound, 0.0, exp_approx)", gpt2_region)
+        self.assertNotIn("torch.zeros_like", bert_region)
+        self.assertNotIn("torch.zeros_like", gpt2_region)
+
     def test_scalar_encode_constants_sample_noise_without_full_shape_prefill(self):
         source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
         block1_region = _source_region(

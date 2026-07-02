@@ -349,6 +349,12 @@ allocating `torch.ones_like(...)` before adding noise. This removes five
 full-shape ones tensor allocations from shared installed forward paths while
 preserving the CKKS `ones + encode-noise` mask semantics.
 
+Progress 2026-07-03: BERT and GPT-2 approximation-softmax lower-bound masks in
+`function_handler.py` now use scalar `0.0` in `torch.where(...)` instead of
+allocating `torch.zeros_like(x)` before discarding below-band values. This
+removes two full-shape zero tensor allocations from shared approximate-softmax
+forward paths while preserving the same lower-bound zeroing semantics.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:

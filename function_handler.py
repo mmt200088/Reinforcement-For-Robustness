@@ -2199,7 +2199,7 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
         # print(x.abs().max())  # 确认数值量级
 
         exp_approx = self.approximation_exponential(x)
-        exp_out = torch.where(x < self.lower_bound, torch.zeros_like(x), exp_approx)
+        exp_out = torch.where(x < self.lower_bound, 0.0, exp_approx)
         sum_exp = torch.sum(exp_out, dim=-1, keepdim=True) + 1e-9
         # print(f"this is exp_out: {exp_out}; this is sum_exp: {sum_exp}")
         return exp_out / sum_exp  # 统一使用掩码后结果
@@ -2467,7 +2467,7 @@ def _approx_softmax(x: torch.Tensor, degree: int, lower_bound: float) -> torch.T
     """使用指数近似计算 softmax, 与 BertSelfAttentionWithAproximation 保持一致."""
     x = x - x.max(dim=-1, keepdim=True)[0] + 1e-9
     exp_approx = _approx_exponential(x, degree)
-    exp_out = torch.where(x < lower_bound, torch.zeros_like(x), exp_approx)
+    exp_out = torch.where(x < lower_bound, 0.0, exp_approx)
     sum_exp = torch.sum(exp_out, dim=-1, keepdim=True) + 1e-9
     return exp_out / sum_exp
 
