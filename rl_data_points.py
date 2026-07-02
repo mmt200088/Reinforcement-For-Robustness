@@ -8,11 +8,11 @@ under the repository root.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
-import re
-from datetime import datetime, timezone
 from pathlib import Path
+import re
 from typing import Any, Dict, Optional, TextIO
 
 from json_utils import to_jsonable
@@ -53,11 +53,15 @@ class RLDataPointWriter:
         stage: str,
         model_type: str,
         dataset: str,
+        jsonl_buffer_size: int = 1024 * 1024,
+        jsonl_flush_interval: int = 64,
     ) -> None:
         self.root_dir = Path(root_dir)
         self.stage = str(stage)
         self.model_type = str(model_type)
         self.dataset = str(dataset)
+        self._jsonl_buffer_size = max(1, int(jsonl_buffer_size))
+        self._jsonl_flush_interval = max(1, int(jsonl_flush_interval))
         self.run_id = _safe_slug(run_id)
         self.run_dir = (
             self.root_dir
@@ -68,6 +72,7 @@ class RLDataPointWriter:
         )
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self._files: Dict[str, TextIO] = {}
+        self._line_counts: Dict[str, int] = {}
 
     def write_manifest(self, payload: Dict[str, Any]) -> None:
         doc = dict(payload)
@@ -104,15 +109,23 @@ class RLDataPointWriter:
 
     def close(self) -> None:
         for fh in self._files.values():
+            fh.flush()
             fh.close()
         self._files.clear()
+        self._line_counts.clear()
 
     def _write_jsonl(self, name: str, payload: Dict[str, Any]) -> None:
         fh = self._files.get(name)
         if fh is None:
-            fh = (self.run_dir / name).open("a", encoding="utf-8", buffering=1)
+            fh = (
+                self.run_dir / name
+            ).open("a", encoding="utf-8", buffering=self._jsonl_buffer_size)
             self._files[name] = fh
+            self._line_counts[name] = 0
         fh.write(json.dumps(to_jsonable(payload), ensure_ascii=False, sort_keys=True) + "\n")
+        self._line_counts[name] = self._line_counts.get(name, 0) + 1
+        if self._line_counts[name] % self._jsonl_flush_interval == 0:
+            fh.flush()
 
     def __enter__(self) -> "RLDataPointWriter":
         return self

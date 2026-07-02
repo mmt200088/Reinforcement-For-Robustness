@@ -1,17 +1,16 @@
-import json
+from dataclasses import dataclass
 import importlib.util
+import json
+from pathlib import Path
 import sys
 import tempfile
 import unittest
-from dataclasses import dataclass
-from pathlib import Path
 from unittest import mock
 
 import numpy as np
 
 from json_utils import to_jsonable as shared_to_jsonable
 from rl_data_points import RLDataPointWriter, make_unique_run_id, to_jsonable
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,6 +49,28 @@ class RLDataPointWriterTest(unittest.TestCase):
             step = json.loads((writer.run_dir / "steps.jsonl").read_text().splitlines()[0])
             self.assertEqual(step["state"], [1, 2])
             self.assertEqual(step["prob"], 0.5)
+
+    def test_jsonl_writer_batches_os_flushes(self):
+        with tempfile.TemporaryDirectory() as td:
+            writer = RLDataPointWriter(
+                root_dir=Path(td),
+                run_id="flush-test",
+                stage="stage1",
+                model_type="bert-base",
+                dataset="mrpc",
+                jsonl_buffer_size=4096,
+                jsonl_flush_interval=2,
+            )
+            fake_handle = mock.MagicMock()
+
+            with mock.patch.object(Path, "open", return_value=fake_handle) as open_mock:
+                writer.write_episode({"episode": 0})
+                writer.write_episode({"episode": 1})
+
+            open_mock.assert_called_once()
+            self.assertEqual(open_mock.call_args.kwargs["buffering"], 4096)
+            self.assertEqual(fake_handle.write.call_count, 2)
+            fake_handle.flush.assert_called_once()
 
     def test_to_jsonable_handles_nested_numpy_values(self):
         value = {"a": np.int64(3), "b": [np.float32(1.5), np.array([2, 4])]}
