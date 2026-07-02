@@ -988,6 +988,7 @@ class BLBStage2RLRunner:
                 layers_attribute="model." + ev.layers_attribute,
                 is_regression=bool(getattr(ev, "is_regression", False)),
                 device_ids=list(train_cfg.reward_devices),
+                metric_profile=train_cfg.profile,
                 log_fn=lambda m: log(f"  {bullet} {m}"),
             )
 

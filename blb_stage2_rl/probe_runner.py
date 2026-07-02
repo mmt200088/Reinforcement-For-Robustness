@@ -180,6 +180,99 @@ def _compute_metrics_on_batch_local(
     return (loss, acc, acc)
 
 
+def _logits_to_classes_local(logits: torch.Tensor) -> torch.Tensor:
+    if logits.dim() == 1:
+        return (logits > 0.5).long()
+    return logits.argmax(dim=-1)
+
+
+def _uses_weighted_f1_metric2_local(profile: str) -> bool:
+    normalized = str(profile or "").lower()
+    return "mrpc" in normalized or "qqp" in normalized
+
+
+def _weighted_f1_from_labels_local(preds: np.ndarray, labels: np.ndarray) -> float:
+    preds = np.asarray(preds).reshape(-1)
+    labels = np.asarray(labels).reshape(-1)
+    if labels.size == 0:
+        return 0.0
+    classes = np.union1d(preds, labels)
+    total_support = float(labels.size)
+    weighted = 0.0
+    for cls in classes:
+        pred_pos = preds == cls
+        label_pos = labels == cls
+        support = float(np.sum(label_pos))
+        if support <= 0.0:
+            continue
+        tp = float(np.sum(pred_pos & label_pos))
+        fp = float(np.sum(pred_pos & ~label_pos))
+        fn = float(np.sum(~pred_pos & label_pos))
+        precision = tp / (tp + fp) if (tp + fp) > 0.0 else 0.0
+        recall = tp / (tp + fn) if (tp + fn) > 0.0 else 0.0
+        f1 = (
+            2.0 * precision * recall / (precision + recall)
+            if (precision + recall) > 0.0
+            else 0.0
+        )
+        weighted += support * f1
+    return float(weighted / max(1.0, total_support))
+
+
+def _probe_batch_sample_count_local(labels: torch.Tensor) -> int:
+    if not isinstance(labels, torch.Tensor):
+        return 1
+    if labels.dim() == 0:
+        return 1
+    return int(labels.shape[0])
+
+
+def _weighted_probe_batch_means_local(
+        losses: Sequence[float],
+        m1s: Sequence[float],
+        m2s: Sequence[float],
+        counts: Sequence[int],
+        ) -> Tuple[float, float, float]:
+    weights = np.asarray([max(0, int(c)) for c in counts], dtype=float)
+    if weights.size == 0 or float(weights.sum()) <= 0.0:
+        return (
+            float(np.mean(losses)) if losses else float("nan"),
+            float(np.mean(m1s)) if m1s else float("nan"),
+            float(np.mean(m2s)) if m2s else float("nan"),
+        )
+    return (
+        float(np.average(np.asarray(losses, dtype=float), weights=weights)),
+        float(np.average(np.asarray(m1s, dtype=float), weights=weights)),
+        float(np.average(np.asarray(m2s, dtype=float), weights=weights)),
+    )
+
+
+def _finalize_probe_trial_metrics_local(
+        losses: Sequence[float],
+        m1s: Sequence[float],
+        m2s: Sequence[float],
+        counts: Sequence[int],
+        *,
+        metric_profile: str,
+        is_regression: bool,
+        preds: Optional[Sequence[np.ndarray]] = None,
+        labels: Optional[Sequence[np.ndarray]] = None,
+        ) -> Optional[Tuple[float, float, float]]:
+    if not losses:
+        return None
+    loss, m1, m2 = _weighted_probe_batch_means_local(losses, m1s, m2s, counts)
+    if (
+            not is_regression
+            and _uses_weighted_f1_metric2_local(metric_profile)
+            and preds
+            and labels
+            ):
+        all_preds = np.concatenate([np.asarray(p).reshape(-1) for p in preds])
+        all_labels = np.concatenate([np.asarray(l).reshape(-1) for l in labels])
+        m2 = _weighted_f1_from_labels_local(all_preds, all_labels)
+    return float(loss), float(m1), float(m2)
+
+
 # ---------------------------------------------------------------------------
 # ProbeWorker — one per device
 # ---------------------------------------------------------------------------
@@ -193,6 +286,7 @@ class ProbeWorker:
     bridge: Any   # BLBNoiseRLBridge
     probe_batches: List[Any]
     is_regression: bool
+    metric_profile: str = ""
     role: str = "primary"  # "primary" (worker 0, reuses env model) or "replica"
 
     def install(self, decoded: ActionDecodeResult) -> None:
@@ -229,6 +323,9 @@ class ProbeWorker:
             losses: List[float] = []
             m1s: List[float] = []
             m2s: List[float] = []
+            counts: List[int] = []
+            trial_preds: List[np.ndarray] = []
+            trial_labels: List[np.ndarray] = []
             was_training = self.model.training
             self.model.eval()
             try:
@@ -247,18 +344,32 @@ class ProbeWorker:
                         loss, m1, m2 = _compute_metrics_on_batch_local(
                             logits, batch.labels, is_regression=self.is_regression,
                         )
-                        losses.append(loss); m1s.append(m1); m2s.append(m2)
+                        losses.append(loss)
+                        m1s.append(m1)
+                        m2s.append(m2)
+                        counts.append(_probe_batch_sample_count_local(batch.labels))
+                        if not self.is_regression:
+                            trial_preds.append(
+                                _logits_to_classes_local(logits.detach()).detach().cpu().numpy()
+                            )
+                            trial_labels.append(batch.labels.detach().cpu().numpy())
             finally:
                 if was_training:
                     self.model.train()
 
-            if not losses:
-                return (float("nan"), float("nan"), float("nan"))
-            return (
-                float(np.mean(losses)),
-                float(np.mean(m1s)),
-                float(np.mean(m2s)),
+            trial_metrics = _finalize_probe_trial_metrics_local(
+                losses,
+                m1s,
+                m2s,
+                counts,
+                metric_profile=self.metric_profile,
+                is_regression=bool(self.is_regression),
+                preds=trial_preds,
+                labels=trial_labels,
             )
+            if trial_metrics is None:
+                return (float("nan"), float("nan"), float("nan"))
+            return trial_metrics
 
 
 # ---------------------------------------------------------------------------
@@ -596,6 +707,7 @@ def build_probe_runner(
         layers_attribute: str,
         is_regression: bool,
         device_ids: Sequence[int],
+        metric_profile: str = "",
         log_fn: Optional[Callable[[str], None]] = None,
         ) -> ProbeRunner:
     """Construct a ProbeRunner with one worker per device id.
@@ -640,6 +752,7 @@ def build_probe_runner(
         bridge=primary_bridge,
         probe_batches=list(primary_probe_batches),
         is_regression=bool(is_regression),
+        metric_profile=str(metric_profile or ""),
         role="primary",
     ))
     log(f"[probe-runner] worker 0: {primary_device} (primary, reusing env.bridge)")
@@ -671,6 +784,7 @@ def build_probe_runner(
             bridge=replica_bridge,
             probe_batches=replica_batches,
             is_regression=bool(is_regression),
+            metric_profile=str(metric_profile or ""),
             role="replica",
         ))
         log(f"[probe-runner] worker {len(workers)-1}: {device} (deepcopy replica)")

@@ -385,6 +385,7 @@ def run_substage_via_runner(
             layers_attribute="model." + ev.layers_attribute,
             is_regression=bool(getattr(ev, "is_regression", False)),
             device_ids=reward_devices,
+            metric_profile=train_cfg.profile,
             log_fn=lambda m: log(f"  [multi-gpu] {m}"),
         )
 
