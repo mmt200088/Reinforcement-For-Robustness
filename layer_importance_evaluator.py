@@ -5424,9 +5424,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             device=device, dtype=torch.float32
         )
         
-        last_policy_loss = 0.0
-        last_value_loss = 0.0
-        last_entropy = 0.0
+        last_policy_loss_t = None
+        last_value_loss_t = None
+        last_entropy_t = None
         
         kl_early_stop = False
         for epoch in range(PPO_K_EPOCHS):
@@ -5504,9 +5504,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                     epoch_kl_acc += approx_kl
                     epoch_kl_count += 1
 
-                last_policy_loss = policy_loss.item()
-                last_value_loss = value_loss.item()
-                last_entropy = mean_entropy.item()
+                last_policy_loss_t = policy_loss.detach()
+                last_value_loss_t = value_loss.detach()
+                last_entropy_t = mean_entropy.detach()
 
             if (RL_OPT_FLAGS.get("use_kl_early_stop", False)
                     and epoch_kl_count > 0):
@@ -5514,6 +5514,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                 if avg_kl > 1.5 * float(RL_OPT_FLAGS.get("kl_target", 0.02)):
                     kl_early_stop = True
 
+        last_policy_loss = (
+            float(last_policy_loss_t.item()) if last_policy_loss_t is not None else 0.0
+        )
+        last_value_loss = (
+            float(last_value_loss_t.item()) if last_value_loss_t is not None else 0.0
+        )
+        last_entropy = float(last_entropy_t.item()) if last_entropy_t is not None else 0.0
         return last_policy_loss, last_value_loss, last_entropy
 
     def grpo_update_gtrxl(self, gtrxl_net, reference_gtrxl, optimizer, buffer, device,

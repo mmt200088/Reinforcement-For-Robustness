@@ -994,7 +994,24 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             update_region,
         )
         self.assertNotIn("if mean_entropy.item() < _entropy_lb:", update_region)
-        self.assertEqual(update_region.count("mean_entropy.item()"), 1)
+        self.assertNotIn("mean_entropy.item()", update_region)
+
+    def test_stage1_ppo_return_metrics_sync_once_after_minibatches(self):
+        evaluator_src = (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(evaluator_src, "ppo_update_gtrxl")
+
+        self.assertIn("last_policy_loss_t = None", update_region)
+        self.assertIn("last_value_loss_t = None", update_region)
+        self.assertIn("last_entropy_t = None", update_region)
+        self.assertIn("last_policy_loss_t = policy_loss.detach()", update_region)
+        self.assertIn("last_value_loss_t = value_loss.detach()", update_region)
+        self.assertIn("last_entropy_t = mean_entropy.detach()", update_region)
+        self.assertIn("float(last_policy_loss_t.item())", update_region)
+        self.assertIn("float(last_value_loss_t.item())", update_region)
+        self.assertIn("float(last_entropy_t.item())", update_region)
+        self.assertNotIn("last_policy_loss = policy_loss.item()", update_region)
+        self.assertNotIn("last_value_loss = value_loss.item()", update_region)
+        self.assertNotIn("last_entropy = mean_entropy.item()", update_region)
 
     def test_legacy_action_mask_validation_avoids_gpu_scalar_sync_for_numpy_masks(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
