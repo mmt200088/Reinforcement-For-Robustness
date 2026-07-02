@@ -128,6 +128,40 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         self.assertIs(converted["steps"], steps)
         self.assertEqual(converted["array"], [1, 2, 3])
 
+    def test_jsonable_does_not_reconvert_changed_list_item(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        class CountedString:
+            calls = 0
+
+            def __str__(self):
+                type(self).calls += 1
+                return "converted"
+
+        native = {"step_idx": 1, "valid": True}
+        converted = rlpath._jsonable([native, CountedString()])
+
+        self.assertEqual(converted, [native, "converted"])
+        self.assertIs(converted[0], native)
+        self.assertEqual(CountedString.calls, 1)
+
+    def test_jsonable_does_not_reconvert_changed_dict_item(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        class CountedString:
+            calls = 0
+
+            def __str__(self):
+                type(self).calls += 1
+                return "converted"
+
+        native = {"step_idx": 1, "valid": True}
+        converted = rlpath._jsonable({"native": native, "custom": CountedString()})
+
+        self.assertEqual(converted, {"native": native, "custom": "converted"})
+        self.assertIs(converted["native"], native)
+        self.assertEqual(CountedString.calls, 1)
+
     def test_unique_configs_reuses_first_config_without_copying(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
 

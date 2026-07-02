@@ -403,19 +403,32 @@ def _jsonable(value: Any) -> Any:
     if is_dataclass(value):
         return _jsonable(asdict(value))
     if isinstance(value, dict):
+        converted_dict: dict[str, Any] | None = None
         for key, item in value.items():
             converted = _jsonable(item)
-            if not isinstance(key, str) or converted is not item:
-                return {str(k): _jsonable(v) for k, v in value.items()}
-        return value
+            out_key = key if isinstance(key, str) else str(key)
+            if converted_dict is None:
+                if out_key is key and converted is item:
+                    continue
+                converted_dict = {}
+                for prefix_key, prefix_item in value.items():
+                    if prefix_key == key:
+                        break
+                    converted_dict[str(prefix_key)] = prefix_item
+            converted_dict[str(out_key)] = converted
+        return value if converted_dict is None else converted_dict
     if isinstance(value, Mapping):
         return {str(k): _jsonable(v) for k, v in value.items()}
     if isinstance(value, list):
-        for item in value:
+        converted_list: list[Any] | None = None
+        for idx, item in enumerate(value):
             converted = _jsonable(item)
-            if converted is not item:
-                return [_jsonable(v) for v in value]
-        return value
+            if converted_list is None:
+                if converted is item:
+                    continue
+                converted_list = value[:idx]
+            converted_list.append(converted)
+        return value if converted_list is None else converted_list
     if isinstance(value, tuple):
         return [_jsonable(v) for v in value]
     return str(value)
