@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import collections
 import csv
+import functools
 import json
 import os
 from pathlib import Path
@@ -33,6 +34,7 @@ REPLAN_TIMING_FIELDS = (
 FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
 
 
+@functools.lru_cache(maxsize=256)
 def _device_sort_key(device: str) -> tuple[int, int | str]:
     match = re.fullmatch(r"cuda:(\d+)", device)
     if match:

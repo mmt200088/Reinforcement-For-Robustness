@@ -207,6 +207,28 @@ class GpuUtilizationReportTest(unittest.TestCase):
             self.assertEqual(report._float_value("12000 MiB"), 12000.0)
             self.assertIsNone(report._float_value("n/a"))
 
+    def test_device_sort_key_caches_repeated_cuda_parsing(self):
+        report = _load_report_module()
+        if hasattr(report._device_sort_key, "cache_clear"):
+            report._device_sort_key.cache_clear()
+
+        real_fullmatch = report.re.fullmatch
+        calls = 0
+
+        def counted_fullmatch(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return real_fullmatch(*args, **kwargs)
+
+        with mock.patch.object(report.re, "fullmatch", counted_fullmatch):
+            for _ in range(5):
+                self.assertEqual(
+                    sorted(["cuda:10", "cuda:2"], key=report._device_sort_key),
+                    ["cuda:2", "cuda:10"],
+                )
+
+        self.assertLessEqual(calls, 2)
+
     def test_summarizes_rows_uses_running_timing_stats(self):
         report = _load_report_module()
 
